@@ -1,6 +1,8 @@
 # Worktree lifecycle: how it is built
 
-Date: 2026-09-30, revision 4.
+Date: 2026-09-30, revision 5 (review round 3: F12-V own-lock residue on every failure path; F15 dry-run gates pane closing).
+
+Revision 4 history:
 - Revision 4 corrects review round 2 and the Advisor's revision-3 notes:
   - F11: the fetch is reported, and dry-run removes nothing;
   - F12 and R3-SDK-2: exact lock facts and command-owned lock cleanup;
@@ -215,7 +217,7 @@ enum GitIntegrationUnknownReason {
 // ── Branch deletion (E3): one complete mutation on the writer lane, no suspension inside it.
 func deleteLocalBranch(
     _ request: GitDeleteLocalBranchRequest
-) async throws(GitDeleteLocalBranchError) -> GitDeleteLocalBranchResult
+) async throws(GitLockedOperationFailure<GitDeleteLocalBranchErrorReason>) -> GitDeleteLocalBranchResult
 struct GitDeleteLocalBranchRequest { let repositoryPath: URL; let branchName: String; let expectedCommit: String }
 enum GitDeleteLocalBranchResult {
     case deleted(GitBranchMetadataCleanup)
@@ -232,7 +234,7 @@ enum GitBranchRetentionReason {
     case moved(currentCommit: String)
     case checkedOut(worktreePaths: [URL])
 }
-enum GitDeleteLocalBranchError: Error {       // pre-mutation, nothing changed
+enum GitDeleteLocalBranchErrorReason {         // no ref, config or reflog change; thrown inside GitLockedOperationFailure
     case invalidBranchName, refLockContended, checkoutUnreadable(worktreePath: URL?)
     case notADirectCommitReference
     case gitFailure(GitDataPlaneError)
@@ -250,8 +252,15 @@ enum GitLockResource { case index(worktreePath: URL), reference(name: String), p
 //    case lockHeld(GitLockFact)                 // the exact lock file for a known resource exists
 //    case lockUnidentified(GitLockResource)     // a lock is certain, but its file couldn't be established
 //    case permissionDenied(path: URL?)          // EACCES that libgit2 reported as GIT_ELOCKED
-// Operation results that can create locks gain `lockResidue: [URL]` (normally empty): GitWorktreeRemovalEffects,
-// GitDeleteLocalBranchResult.deleted/retained, GitForkWorktreeResult / cleanupIncomplete residue, fetch result.
+// Every SDK operation that can take a lock carries its own-lock evidence on EVERY terminal path, success or failure:
+//   success results:  `lockResidue: [URL]` (normally empty) on GitWorktreeRemovalEffects,
+//                     GitDeleteLocalBranchResult.deleted / .retained / .uncertain, GitFetchResult;
+//   thrown failures:  struct GitLockedOperationFailure<Reason>: Error { let reason: Reason; let lockResidue: [URL] }
+//                     — thrown by deleteLocalBranch (Reason = GitDeleteLocalBranchErrorReason, the former error cases),
+//                     removeWorktree after its first mutation, and fetch (Reason = GitDataPlaneError);
+//   fork:             GitWorktreeForkResidueKind gains .lockFile, so cleanupIncomplete lists it with the other residue.
+// The original failure is never replaced; the leaf maps both into the outcome and never reports a clean finish
+// while `lockResidue` is non-empty.
 
 // ── Removal (E10): observed effects replace the String partial.
 struct GitWorktreeRemovalResult {               // name kept; String partial removed (hard cutover)
@@ -553,7 +562,9 @@ Worktree rows keep their existing paths: discovery for add and remove, and enric
 
 `WorktreeLifecycleCoordinator` lives in `App/Coordination`. It is `@MainActor` and owns no state. For each app-executed operation it:
 1. resolves the target from the workspace;
-2. hands the leaf a **live** probe, which reads current pane associations on MainActor each time the leaf asks. With `closePanes`, before the leaf's first activity check, the coordinator dispatches the existing pane-close action for each associated pane. It awaits each pane's closed fact, then lets the leaf proceed. A pane that doesn't close stops the removal with `openInPane`, listing it;
+2. hands the leaf a **live** probe, which reads current pane associations on MainActor each time the leaf asks.
+   - With `closePanes` on a real run, before the leaf's first activity check, the coordinator dispatches the existing pane-close action for each associated pane and awaits each pane's closed fact. A pane that doesn't close stops the removal with `openInPane`, listing it.
+   - With `dryRun`, the coordinator dispatches nothing. The plan lists the panes it would close, and the leaf plans as if they were closed (F15). Pane closing is a durable workspace write, so the preview guard must sit here, before any host action, not only in the leaf;
 3. runs the leaf runner off-main;
 4. awaits the existing `refreshWatchedFolder` for the affected watched folder (creation keeps its publication hold);
 5. returns the outcome.
@@ -596,11 +607,11 @@ The IPC methods and the UI both call it.
 | SDK removal effects | real repositories with permission faults on the owning prune path | partial administration; partial directory; unreadable observation → `unknown`; `removeWorkingDirectory: false` → `notRequested` |
 | SDK changes-only | real repositories; the existing named fault and cancellation seams | the LR2 payload cases; LR3 refusals; content-changed-with-same-status, HEAD move, symlink swap → `sourceChanged`; failure or cancellation after every phase → rollback or exact residue; the APFS clone path is never invoked; injected non-APFS host facts prove the gate is bypassed (not real non-APFS proof) |
 | Fetch | a local bare repository as the remote (no network) | E4 advances after the fetch; `--no-fetch`; a failed fetch and a held ref lock fall back with their status |
-| Git locks | real repositories with planted index, ref, packed-refs and config locks, fresh and older than the stale age, with and without a running git process; an `EACCES` directory; a worktree lock; a denied unlink of a command-owned lock (named fault seam) | each blocker reported by its actual path and resource; EACCES → `permissionDenied`, not a lock; `lockUnidentified` offers retry only; `--remove-stale-lock` removes exactly that file after its identity re-check; own-lock leftovers appear in `lockResidue`; foreign locks survive refusals |
+| Git locks | real repositories with planted index, ref, packed-refs and config locks, fresh and older than the stale age, with and without a running git process; an `EACCES` directory; a worktree lock; a denied unlink of a command-owned lock (named fault seam) | each blocker reported by its actual path and resource; EACCES → `permissionDenied`, not a lock; `lockUnidentified` offers retry only; `--remove-stale-lock` removes exactly that file after its identity re-check; own-lock leftovers appear in `lockResidue` on success and on failure (a checkout read failing after the ref lock is taken, then a denied release; a failed fetch; an uncertain delete), next to the original failure; foreign locks survive refusals |
 | Leaf removal/prune | real SDK and repositories; the activity probe is a scripted double that answers per call (a host fact) | refusal order; `failed` (not `refused`) after the archive; effects projection; branch step skipped on partial effects |
 | CLI | real top-level dispatch with injected output | goldens for every outcome, exit codes, no IPC client or credential read |
 | Branch list | the real cache and SDK against a temporary repository | pop and re-push inside one command-bar session re-reads after an external delete, create, rename or pack; one read shared within an opening |
-| App executor + IPC (PR 2) | the real registry and coordinator, real SDK; await the typed topology fact, never time | parity with the CLI; a pane opened after check 1 → refusal or failure; the sidebar reflects the change when the call returns; no per-call catalog fetch |
+| App executor + IPC (PR 2) | the real registry and coordinator, real SDK; await the typed topology fact, never time | parity with the CLI; `dryRun` + `closePanes` leaves the pane open and workspace state unchanged, while the real run closes and awaits it; a pane opened after check 1 → refusal or failure; the sidebar reflects the change when the call returns; no per-call catalog fetch |
 | Real app | debug build, CLI and plain `git` from outside | rows and branch lists per LR20–LR22 |
 
 ## Trace
@@ -625,8 +636,8 @@ The IPC methods and the UI both call it.
 | L1, L7 | LR16 activity | E9 | host | `WorktreeActivityProbe`, asked twice (last check just before SDK submit) | leaf port; live app implementation; `closePanes` option | two checks | `openInPane` with options, or failed after archive | leaf scripted double + IPC test |
 | L1, L2 | LR17 prune | E2–E10 | leaf prune runner | `.prune`; `worktree.prune` | `WorktreePruneSummary` → `IPCWorktreePruneResult` | per candidate | per-entry failed → exit 2 | leaf + IPC integration |
 | L1, L7 | LR18 IPC | E12 | app coordinator (PR 2) | `worktree.create/fork/remove/prune/list` | `IPCWorktree<Verb>Params/Result` (ProgrammaticControl) | awaits rescan | same outcomes | IPC registry tests |
-| L1 | LR25 dry run | E10, E12 | leaf removal runner | `dryRun` | `planned` entries in `WorktreeRemovalReport` | only the reported fetch written | same codes and options as a real run; `--remove-stale-lock` reported, not done | CLI golden + snapshot (refs change only by the reported fetch) |
-| L13 | LR26 git locks | E14 | SDK (exact facts, own-lock cleanup evidence) + leaf (age, staleness, removal) | `lockHeld(GitLockFact)`, `lockUnidentified`, `permissionDenied`; `lockResidue`; `removeStaleLock` | `GitLockFact`, `WorktreeStaleLockAssessment` | per step | removal only for an exact stale fact; residue reported by path | lock integration (competing locks, EACCES, denied own-lock cleanup) |
+| L1 | LR25 dry run | E10, E12 | leaf removal runner + app coordinator (no pane close in preview) | `dryRun` | `planned` entries in `WorktreeRemovalReport` | only the reported fetch written | same codes and options as a real run; `--remove-stale-lock` reported, not done | CLI golden + snapshot (refs change only by the reported fetch) |
+| L13 | LR26 git locks | E14 | SDK (exact facts, own-lock cleanup evidence) + leaf (age, staleness, removal) | `lockHeld(GitLockFact)`, `lockUnidentified`, `permissionDenied`; `lockResidue` on results and `GitLockedOperationFailure`; `removeStaleLock` | `GitLockFact`, `WorktreeStaleLockAssessment` | per step | removal only for an exact stale fact; residue reported by path | lock integration (competing locks, EACCES, denied own-lock cleanup) |
 | L1 | LR19 standalone | — | CLI dispatch | `WorktreeCommandLine.dispatch` | shipped | — | — | dispatch test |
 | L6 | LR20 worktree rows | E2 | discovery (existing) | scan → reconciliation | existing | existing | existing | real-app proof |
 | L6 | LR21 branch label | E2, E3 | enrichment (existing) | `branchChanged` | existing | existing | existing | real-app proof |
