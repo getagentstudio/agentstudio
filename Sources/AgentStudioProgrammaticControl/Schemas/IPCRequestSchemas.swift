@@ -67,7 +67,32 @@ extension IPCPaneCloseParams: IPCSchemaProviding {
 
 extension IPCDrawerAddPaneParams: IPCSchemaProviding {
     package static func ipcSchema() throws -> IPCJSONSchema {
-        .object(fields: [IPCRequestSchemaFields.pane("parentPaneHandle"), IPCRequestSchemaFields.correlation])
+        .object(fields: [
+            IPCRequestSchemaFields.pane("parentPaneHandle"),
+            .optional(
+                "content", description: "New drawer child content; omission adds a terminal",
+                schema: try IPCDrawerChildContent.ipcSchema()),
+            IPCRequestSchemaFields.correlation,
+        ])
+    }
+}
+
+extension IPCDrawerChildContent: IPCSchemaProviding {
+    package static func ipcSchema() throws -> IPCJSONSchema {
+        .oneOf([
+            kindOnly("terminal", "A terminal drawer child"),
+            .object(fields: [
+                .init(name: "kind", description: "A browser drawer child", schema: .string(allowedValues: ["browser"])),
+                .init(
+                    name: "url", description: "Absolute http or https URL to open", schema: .string(minimumLength: 1)),
+            ]),
+            kindOnly("bridge", "Bridge content; always refused in a drawer"),
+            kindOnly("codeViewer", "Code-viewer content; always refused in a drawer"),
+        ])
+    }
+
+    private static func kindOnly(_ kind: String, _ description: String) -> IPCJSONSchema {
+        .object(fields: [.init(name: "kind", description: description, schema: .string(allowedValues: [kind]))])
     }
 }
 

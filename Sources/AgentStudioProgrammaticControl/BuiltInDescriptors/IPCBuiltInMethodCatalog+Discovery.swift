@@ -92,8 +92,14 @@ extension IPCBuiltInMethodCatalog {
                 bridgeFileViewOpen: methods["bridge.fileView.open"]?.commandRelationship ?? .noInteractiveIdentity
             ), examples: examples
         )
+        let recognizedHiddenNames = Set(catalog.recognizedUnexposedMethods.map(\.name))
         return try IPCBuiltInMethodCatalog(inputs: inputs).erasedDescriptors.compactMap { descriptor in
-            guard let advertised = methods[descriptor.metadata.name] else { return nil }
+            guard let advertised = methods[descriptor.metadata.name] else {
+                // A method the app recognizes but this channel hides has no
+                // advertised contract. The compiled one still types the
+                // request, and the app refuses it by name before validating.
+                return recognizedHiddenNames.contains(descriptor.metadata.name) ? descriptor : nil
+            }
             let compiled = descriptor.metadata
             guard compiled.parameterSchema == advertised.parameterSchema,
                 compiled.resultSchema == advertised.resultSchema,

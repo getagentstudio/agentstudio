@@ -51,15 +51,20 @@ struct AppCommandExecutionRequest: Equatable, Sendable {
     let command: AppCommand
     let arguments: AppCommandExecutionArguments
     let executionContext: AppCommandExecutionContext
+    /// Set when a pane agent requested the command, so the owner re-checks at
+    /// effect time that every pane it touches is still in the agent's own pane.
+    let ownPaneAssertion: WorkspaceOwnPaneAssertion?
 
     init(
         command: AppCommand,
         arguments: AppCommandExecutionArguments = .noArguments,
-        executionContext: AppCommandExecutionContext = .interactive
+        executionContext: AppCommandExecutionContext = .interactive,
+        ownPaneAssertion: WorkspaceOwnPaneAssertion? = nil
     ) {
         self.command = command
         self.arguments = arguments
         self.executionContext = executionContext
+        self.ownPaneAssertion = ownPaneAssertion
     }
 }
 
@@ -88,6 +93,8 @@ enum AppCommandExecutionOutcome: Equatable, Sendable {
     case unavailable(IPCCommandUnavailableReason)
     case stateUnavailable
     case unsupportedCommand
+    /// A pane agent's target left its own pane before the effect applied.
+    case outsideOwnPane
 }
 
 @MainActor

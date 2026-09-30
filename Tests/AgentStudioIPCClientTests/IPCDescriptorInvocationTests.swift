@@ -25,7 +25,7 @@ struct IPCDescriptorInvocationTests {
         #expect(invocation.presentation == .tooling)
         #expect(
             try decodeIPCDescriptorInvocationParameters(
-                IPCDescriptorInvocationToolingParameters.self, from: invocation.normalizedParameters)
+                IPCDescriptorInvocationToolingParameters.self, from: invocation.normalizedParameters.data)
                 == IPCDescriptorInvocationToolingParameters(
                     retryCount: 3,
                     isEnabled: true,
@@ -51,7 +51,7 @@ struct IPCDescriptorInvocationTests {
         )
 
         let parameters = try decodeIPCDescriptorInvocationParameters(
-            IPCDescriptorInvocationToolingParameters.self, from: invocation.normalizedParameters)
+            IPCDescriptorInvocationToolingParameters.self, from: invocation.normalizedParameters.data)
         #expect(parameters.displayMode == .compact)
         #expect(parameters.isEnabled == false)
     }
@@ -73,7 +73,7 @@ struct IPCDescriptorInvocationTests {
         )
 
         let parameters = try decodeIPCDescriptorInvocationParameters(
-            IPCDescriptorInvocationToolingParameters.self, from: invocation.normalizedParameters)
+            IPCDescriptorInvocationToolingParameters.self, from: invocation.normalizedParameters.data)
         #expect(parameters.correlationId == callerCorrelation)
         #expect(correlationGenerator.invocationCount == 0)
     }
@@ -108,7 +108,7 @@ struct IPCDescriptorInvocationTests {
         #expect(jsonInvocation.normalizedParameters == standardInputInvocation.normalizedParameters)
         #expect(
             try decodeIPCDescriptorInvocationParameters(
-                IPCDescriptorInvocationToolingParameters.self, from: jsonInvocation.normalizedParameters)
+                IPCDescriptorInvocationToolingParameters.self, from: jsonInvocation.normalizedParameters.data)
                 == IPCDescriptorInvocationToolingParameters(
                     retryCount: 4,
                     isEnabled: true,
@@ -213,7 +213,7 @@ struct IPCDescriptorInvocationTests {
         #expect(message.descriptor.metadata.name == "fixture.note")
         #expect(
             try decodeIPCDescriptorInvocationParameters(
-                IPCDescriptorInvocationMessageParameters.self, from: message.normalizedParameters)
+                IPCDescriptorInvocationMessageParameters.self, from: message.normalizedParameters.data)
                 == IPCDescriptorInvocationMessageParameters(
                     text: messageText, correlationId: messageCorrelation)
         )
@@ -231,7 +231,7 @@ struct IPCDescriptorInvocationTests {
         )
         #expect(
             try decodeIPCDescriptorInvocationParameters(
-                IPCDescriptorInvocationReportParameters.self, from: needsYou.normalizedParameters)
+                IPCDescriptorInvocationReportParameters.self, from: needsYou.normalizedParameters.data)
                 == IPCDescriptorInvocationReportParameters(
                     operation: .needsYou,
                     explanation: explanation,
@@ -244,7 +244,7 @@ struct IPCDescriptorInvocationTests {
         #expect(needsYou.presentation.modelInvocation?.isOfflineEligible == true)
         #expect(
             try decodeIPCDescriptorInvocationParameters(
-                IPCDescriptorInvocationReportParameters.self, from: done.normalizedParameters)
+                IPCDescriptorInvocationReportParameters.self, from: done.normalizedParameters.data)
                 == IPCDescriptorInvocationReportParameters(
                     operation: .done,
                     explanation: nil,
@@ -268,7 +268,7 @@ struct IPCDescriptorInvocationTests {
 
         #expect(
             try decodeIPCDescriptorInvocationParameters(
-                IPCDescriptorInvocationReportParameters.self, from: invocation.normalizedParameters)
+                IPCDescriptorInvocationReportParameters.self, from: invocation.normalizedParameters.data)
                 == IPCDescriptorInvocationReportParameters(
                     operation: .clear,
                     explanation: nil,
@@ -302,11 +302,11 @@ struct IPCDescriptorInvocationTests {
 
         #expect(
             try decodeIPCDescriptorInvocationParameters(
-                IPCDescriptorInvocationMessageParameters.self, from: literalDetail.normalizedParameters
+                IPCDescriptorInvocationMessageParameters.self, from: literalDetail.normalizedParameters.data
             ).text == "--detail")
         #expect(
             try decodeIPCDescriptorInvocationParameters(
-                IPCDescriptorInvocationReportParameters.self, from: literalClear.normalizedParameters
+                IPCDescriptorInvocationReportParameters.self, from: literalClear.normalizedParameters.data
             ).explanation
                 == "--clear"
         )

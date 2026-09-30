@@ -9,11 +9,12 @@ import Testing
 @Suite("AgentStudio IPC command presentation isolation")
 struct AgentStudioIPCCommandPresentationIsolationTests {
     @Test("S3 catalog excludes presentation and future debug commands")
-    func s3CatalogExcludesPresentationAndFutureDebugCommands() throws {
-        let catalog = try makeIPCCommandAdapterForPresentationIsolationTests().listCommands()
+    func s3CatalogExcludesPresentationAndFutureDebugCommands() async throws {
+        let catalog = try await makeIPCCommandCatalogOffMain(
+            from: makeIPCCommandAdapterForPresentationIsolationTests())
         let ids = Set(catalog.commands.map(\.id.rawValue))
 
-        #expect(catalog.commands.count == 16)
+        #expect(catalog.commands.count == 24)
         #expect(ids.contains(AppCommand.zoomPane.rawValue))
         #expect(ids.contains(AppCommand.showReposSidebar.rawValue))
         #expect(!ids.contains(AppCommand.showCommandBarEverything.rawValue))
@@ -46,8 +47,9 @@ struct AgentStudioIPCCommandPresentationIsolationTests {
     }
 
     @Test("encoded command descriptors exclude interactive presentation policy")
-    func encodedCommandDescriptorsExcludeInteractivePresentationPolicy() throws {
-        let catalog = try makeIPCCommandAdapterForPresentationIsolationTests().listCommands()
+    func encodedCommandDescriptorsExcludeInteractivePresentationPolicy() async throws {
+        let catalog = try await makeIPCCommandCatalogOffMain(
+            from: makeIPCCommandAdapterForPresentationIsolationTests())
         let encoded = try JSONEncoder().encode(catalog)
         let object = try #require(JSONSerialization.jsonObject(with: encoded) as? [String: Any])
         let commands = try #require(object["commands"] as? [[String: Any]])

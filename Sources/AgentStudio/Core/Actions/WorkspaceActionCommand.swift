@@ -28,6 +28,21 @@ package enum SplitResizeDirection: Equatable, Hashable, CustomStringConvertible 
     }
 }
 
+/// How creating a drawer child presents it. Interactive creation expands the
+/// drawer, selects the child and focuses it; background creation leaves the
+/// drawer's expansion, selection and keyboard focus exactly as they were.
+package enum DrawerChildPresentation: Equatable, Hashable, Sendable {
+    case interactive
+    case background
+}
+
+/// What a drawer child created in the background holds. Drawers never hold
+/// Bridge or code-viewer content, so neither is representable here.
+package enum BackgroundDrawerChildContent: Equatable, Hashable {
+    case terminal
+    case webview(WebviewState)
+}
+
 /// Identifies where a pane being inserted comes from.
 package enum PaneSource: Equatable, Hashable {
     /// Moving an existing pane from its current location
@@ -167,6 +182,9 @@ package enum WorkspaceActionCommand: Equatable, Hashable {
     case addDrawerPane(parentPaneId: UUID)
     /// Add a browser drawer pane to a parent pane.
     case addWebviewDrawerPane(parentPaneId: UUID, state: WebviewState)
+    /// Add a drawer child named up front without expanding the drawer, changing
+    /// its selection or moving focus. IPC creates drawer children this way.
+    case addDrawerChildInBackground(parentPaneId: UUID, childPaneId: UUID, content: BackgroundDrawerChildContent)
     /// Remove a drawer pane from its parent.
     case removeDrawerPane(parentPaneId: UUID, drawerPaneId: UUID)
     /// Toggle a pane's drawer expanded/collapsed.

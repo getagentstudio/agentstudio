@@ -46,9 +46,7 @@ describe("chapter surfaces on the home page", () => {
       for (const caption of observation.captions) {
         expect(caption.textWrap).toBe("pretty");
         expect(caption.lineCount === 1 || caption.lastLineWordCount > 1).toBe(true);
-        expect(caption.lineCount === 1 || caption.paragraphWidth >= caption.innerWidth * 0.6).toBe(
-          true,
-        );
+        expect(caption.paragraphWidth).toBeGreaterThanOrEqual(caption.innerWidth * 0.9);
       }
     }
   });

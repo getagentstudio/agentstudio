@@ -2,10 +2,23 @@ import Foundation
 
 extension IPCJSONSchema {
     package init(from decoder: any Decoder) throws {
+        let schemaContext =
+            decoder.userInfo[IPCMethodCatalogSchemaContext.userInfoKey]
+            as? IPCMethodCatalogSchemaContext
+        if let cachedSchema = schemaContext?.cachedSchema(for: decoder.codingPath) {
+            self = cachedSchema
+            return
+        }
         let document = try IPCSchemaValue(from: decoder)
-        self = try Self.decodeDocument(document)
-        // Reuse constructor validation, including defaults and contradictory bounds.
-        _ = try jsonSchemaData()
+        let decodedSchema = try Self.decodeDocument(document)
+        self = decodedSchema
+        if let schemaContext {
+            let validatedSchema = try IPCValidatedJSONSchema(schema: decodedSchema)
+            schemaContext.capture(validatedSchema, codingPath: decoder.codingPath)
+        } else {
+            // Reuse constructor validation, including defaults and contradictory bounds.
+            _ = try jsonSchemaData()
+        }
     }
 
     private static func decodeDocument(_ value: IPCSchemaValue) throws -> Self {

@@ -276,6 +276,19 @@ def cold(reason):
     print("cold " + reason)
 
 
+def report_swift_input_changes(seed, current):
+    previous = {item["path"]: item for item in seed["records"]}
+    changed_count = sum(
+        item["kind"] == "file" and item["path"].endswith(".swift") and (
+            item["path"] not in previous or
+            item["digest"] != previous[item["path"]]["digest"])
+        for item in current["records"]
+    )
+    print("lane-report swift_cache_seed_commit=" + seed["producer_commit"], file=sys.stderr)
+    print("lane-report swift_cache_tested_tree=" + current["producer_commit"], file=sys.stderr)
+    print("lane-report swift_cache_changed_swift_inputs=" + str(changed_count), file=sys.stderr)
+
+
 def main():
     if len(sys.argv) < 2:
         raise ValueError("expected fingerprint, inventory, verify, or restamp")
@@ -299,6 +312,7 @@ def main():
                     os.utime(input_path, ns=(input_path.lstat().st_atime_ns, stamp), follow_symlinks=False)
                     if input_path.lstat().st_mtime_ns != stamp:
                         raise ValueError("stamp read-back mismatch: " + name)
+                report_swift_input_changes(seed, current)
             print("warm " + seed["producer_commit"] + " r" + str(seed["producer_run"]) +
                   " " + seed["manifest_digest"])
         except (OSError, ValueError, OverflowError, KeyError, TypeError, json.JSONDecodeError) as error:

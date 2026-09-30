@@ -219,6 +219,134 @@ struct AgentStudioAppIPCReusableCredentialTests {
         #expect(barrierPort.registrationCallCount == 1)
     }
 
+    /// Joining connection handlers before draining credentials is the fix for
+    /// S1/R9: a handler that authenticated enqueues its registration
+    /// synchronously, on its own task, before that task returns — so by the
+    /// time the handler is joined, the enqueue has already happened. This is
+    /// a real-path completion proof: a genuine handler-originated write
+    /// reaches and clears the drain, with join running first. It does not
+    /// itself force or reproduce the late-enqueue race — that ordering
+    /// guarantee is pinned statically in ApplicationEntrypointArchitectureTests
+    /// against the production source, not re-derived here by scheduling.
+    @Test("a handler's enqueued write reaches the drain after joining, in a real auth.login round trip")
+    func aHandlersEnqueuedWriteReachesTheDrainAfterJoiningInARealRoundTrip() async throws {
+        let fixture = try ReusableCredentialFixture()
+        defer { fixture.cleanup() }
+        let datastore = fixture.makeDatastore()
+        guard await fixture.prepareDatastoreForIPC(datastore) else {
+            Issue.record("Database preparation failed")
+            return
+        }
+        let repository = IPCContinuityRepository(datastore: datastore)
+        let barrierPort = HeldCredentialContinuityPort(repository: repository)
+        let serverFixture = try fixture.makeServer(
+            credentialResolver: IPCContinuityCredentialResolver(repository: repository),
+            credentialContinuityPort: barrierPort
+        )
+        // Error-safe by construction: ReusableCredentialFixture/LiveServerFixture's
+        // own cleanup only stops the server and deletes roots — neither
+        // releases a held continuation, so a throw after the write is held
+        // (a transport or decode failure, say) would otherwise leave the
+        // credential worker suspended past this test's return. Every path
+        // below releases, stops ingress, joins and drains before fixture
+        // storage is removed.
+        do {
+            try serverFixture.server.start()
+            let token = AgentStudioIPCSubjectToken(rawValue: "join-before-drain-token")
+            try serverFixture.server.principalRegistry.registerIssuedPaneCredential(
+                paneID: serverFixture.boundPaneId,
+                workspaceID: serverFixture.workspaceId,
+                credentialRecordID: UUIDv7.generate(),
+                verifierSHA256: Data(SHA256.hash(data: Data(token.rawValue.utf8)))
+            )
+
+            // The handler's own task: it enqueues synchronously (inside
+            // auth.login's authenticate closure) before returning the
+            // response, so the login round trip already proves the enqueue
+            // happened.
+            let response = try await fixture.loginResponse(fixture: serverFixture, token: token, requestID: 90)
+            #expect(try decodeResponseResult(IPCAuthStatusResult.self, from: response).isAuthenticated)
+            // Event-driven: the worker has genuinely started the held write,
+            // not merely been enqueued and left pending.
+            await barrierPort.waitUntilRegistrationHeld()
+            #expect(barrierPort.registrationCallCount == 1)
+
+            serverFixture.server.stopAcceptingConnections()
+            // The handler's own task is independent of the credential worker
+            // task the held write is parked in, so joining it does not
+            // itself wait on the held write — this is the production
+            // ordering, not an incidental step.
+            await serverFixture.server.joinConnectionHandlers()
+
+            barrierPort.releaseRegistration()
+            let result = await serverFixture.server.drainCredentialPersistence()
+            #expect(result.failedOperationCount == 0)
+            #expect(barrierPort.registrationCallCount == 1)
+            serverFixture.cleanup()
+        } catch {
+            await releaseHeldRegistrationJoinAndDrain(server: serverFixture.server, barrierPort: barrierPort)
+            serverFixture.cleanup()
+            throw error
+        }
+    }
+
+    /// R10: proves the failure-cleanup path this test's own do/catch relies
+    /// on actually reaches completion — a throw staged after the write is
+    /// held, deliberately, without production failure injection.
+    @Test("a throw after the write is held still releases it, joins, and drains")
+    func aThrowAfterTheWriteIsHeldStillReleasesJoinsAndDrains() async throws {
+        let fixture = try ReusableCredentialFixture()
+        defer { fixture.cleanup() }
+        let datastore = fixture.makeDatastore()
+        guard await fixture.prepareDatastoreForIPC(datastore) else {
+            Issue.record("Database preparation failed")
+            return
+        }
+        let repository = IPCContinuityRepository(datastore: datastore)
+        let barrierPort = HeldCredentialContinuityPort(repository: repository)
+        let serverFixture = try fixture.makeServer(
+            credentialResolver: IPCContinuityCredentialResolver(repository: repository),
+            credentialContinuityPort: barrierPort
+        )
+        defer { serverFixture.cleanup() }
+        // Widened to cover the whole resource-owning body, not just the
+        // deliberate throw below: a real failure in start/register/login/
+        // decode, before the write is ever held or while it is, must reach
+        // the same cleanup as the staged one — the catch runs it either way
+        // and only swallows the deliberate case, rethrowing anything else.
+        do {
+            try serverFixture.server.start()
+            let token = AgentStudioIPCSubjectToken(rawValue: "throw-after-hold-token")
+            try serverFixture.server.principalRegistry.registerIssuedPaneCredential(
+                paneID: serverFixture.boundPaneId,
+                workspaceID: serverFixture.workspaceId,
+                credentialRecordID: UUIDv7.generate(),
+                verifierSHA256: Data(SHA256.hash(data: Data(token.rawValue.utf8)))
+            )
+            let response = try await fixture.loginResponse(fixture: serverFixture, token: token, requestID: 91)
+            #expect(try decodeResponseResult(IPCAuthStatusResult.self, from: response).isAuthenticated)
+            await barrierPort.waitUntilRegistrationHeld()
+            #expect(barrierPort.registrationCallCount == 1)
+
+            // Deliberate, test-local failure: stands in for the
+            // transport/decode throw the reviewer identified, staged after
+            // the write is held and before any release.
+            throw ReusableCredentialTestError.deliberateFailureAfterHold
+        } catch {
+            await releaseHeldRegistrationJoinAndDrain(server: serverFixture.server, barrierPort: barrierPort)
+            guard case ReusableCredentialTestError.deliberateFailureAfterHold = error else {
+                throw error
+            }
+        }
+
+        // Asserts on what the cleanup above left behind, not on a second
+        // guess: the continuity port observed the release, the one queued
+        // write was processed, and no handler is left tracked.
+        #expect(barrierPort.observedRelease)
+        #expect(barrierPort.registrationCallCount == 1)
+        #expect(serverFixture.server.trackedConnectionHandlerCount == 0)
+    }
+
     @Test("graceful shutdown persists an unused issued token that authenticates after reopen")
     func gracefulShutdownPersistsUnusedIssuedToken() async throws {
         let fixture = try ReusableCredentialFixture()
@@ -455,6 +583,7 @@ private final class HeldCredentialContinuityPort: AgentStudioIPCCredentialContin
     }
 
     var registrationCallCount: Int { lock.withLock { storedRegistrationCallCount } }
+    var observedRelease: Bool { lock.withLock { didRelease } }
 
     func registerIssuedPaneCredential(
         _ credential: AgentStudioIPCIssuedPaneCredential,
@@ -503,6 +632,22 @@ private final class HeldCredentialContinuityPort: AgentStudioIPCCredentialContin
     }
 }
 
+/// The error-safe cleanup a held-write test must run before removing
+/// fixture storage, whether the test body succeeded or threw: releases the
+/// held registration (a no-op if nothing was ever held or it was already
+/// released — `releaseRegistration()` is idempotent), stops ingress so a
+/// handler's blocking read unblocks, joins handlers, then drains whatever
+/// credential work they queued.
+private func releaseHeldRegistrationJoinAndDrain(
+    server: AgentStudioAppIPCServer,
+    barrierPort: HeldCredentialContinuityPort
+) async {
+    barrierPort.releaseRegistration()
+    server.stopAcceptingConnections()
+    await server.joinConnectionHandlers()
+    _ = await server.drainCredentialPersistence()
+}
+
 private final class ReusableCredentialMembershipGate: @unchecked Sendable {
     private let lock = NSLock()
     private var storedIsMember = true
@@ -523,4 +668,8 @@ private struct ReusableCredentialLoginResult: Equatable {
 private enum ReusableCredentialTestError: Error {
     case unauthenticated
     case databasePreparationFailed
+    /// Stands in for a transport/decode failure staged after a credential
+    /// write is held, so the failure-cleanup path can be exercised without a
+    /// production hook.
+    case deliberateFailureAfterHold
 }

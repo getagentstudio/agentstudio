@@ -87,6 +87,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
     var runtime: SessionRuntime!
     var appIPCServer: AgentStudioAppIPCServer?
     var appIPCInitializationTask: Task<Void, Never>?
+    var didRecordAppIPCStartOutcome = false
     var appIPCRuntimeID: UUID!
     var appIPCPaths: AgentStudioIPCPaths!
     var appIPCContinuityRepository: IPCContinuityRepository!
@@ -96,6 +97,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
     /// credential, resolved once when IPC identity is composed. Stable and beta
     /// leave it nil and never hand a credential out.
     var appIPCDebugCredentialEscrowURL: URL?
+    /// The channel the IPC server composes for: the build's own channel unless
+    /// composition input names another, so a debug build can serve the stable
+    /// registry and exposure rules.
+    var appIPCServerChannel: AgentStudioIPCChannel = AppDelegate.compiledAppIPCChannel()
     var paneIPCIdentityOwner: PaneIPCIdentityOwner!
     var appIPCSessionsIngestion: SessionsIngestion?
     var paneReportSpoolDrainTask: Task<Void, Never>?

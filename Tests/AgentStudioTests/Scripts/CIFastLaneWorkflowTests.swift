@@ -1,3 +1,4 @@
+// swiftlint:disable file_length
 import AgentStudioInfrastructure
 import AgentStudioTestSupport
 import Foundation
@@ -388,7 +389,6 @@ struct CIFastLaneWorkflowTests {
         #expect(!testHelperScript.contains("    Script\n    SourceScan\n    Smoke\n    Integration"))
         #expect(testHelperScript.contains("large_serial_non_webkit_filter_pattern()"))
         #expect(testHelperScript.contains("AgentStudioIPCBridgeServiceTests"))
-        #expect(testHelperScript.contains("AgentStudioAppIPCServiceCommandTests"))
         #expect(testHelperScript.contains("AgentStudioAppIPCServiceContributionTests"))
         #expect(!largeSerialFilter.contains("PaneAgentLaunchOwnerTests"))
         #expect(fastLaneMode.contains("run_fast_non_webkit_swift_tests"))
@@ -619,27 +619,7 @@ struct CIFastLaneWorkflowTests {
             }
         )
 
-        for suiteName in [
-            "EagerDerivedAtomTests",
-            "EagerDerivedAtomFamilyTests",
-            "TerminalActivationSchedulerTests",
-            "TabBarAdapterTests",
-            "TabBarAdapterMaterializationTests",
-            "TabBarAffectedItemTelemetryTests",
-            "MainSplitViewControllerSidebarStateTests",
-            "FlatTabStripContainerAllMinimizedTests",
-            "TerminalPaneMountViewExitBehaviorTests",
-            "TerminalActivityProjectorTests",
-            "GitWorkingDirectoryProjectorTests",
-            "AgentStudioAppIPCServiceTests",
-            "AgentStudioAppIPCServiceAuthModeTests",
-            "AgentStudioAppIPCServiceCommandTests",
-            "AgentStudioAppIPCServiceContributionTests",
-            "AgentStudioIPCBridgeServiceTests",
-            "AgentStudioAppIPCCommandExecuteContractTests",
-            "WorkspaceStoreTests",
-            "WorkspaceComparisonIntentProcessRestartTests",
-        ] {
+        for suiteName in aggregateIsolatedSuiteNames() {
             #expect(discoveredSuiteFilters.contains("\(suiteName)\n"))
         }
         #expect(serializedSuitePattern.contains("@MainActor"))
@@ -666,7 +646,8 @@ struct CIFastLaneWorkflowTests {
                 "if ! aggregate_serial_suite_filters=\"$(aggregate_serial_non_webkit_suite_filters)\"; then"))
         #expect(aggregateRunner.contains("dispatch_isolated_suites fast \"${selected_filters[@]}\""))
         #expect(isolatedDispatcher.contains("swift_test_isolated_process_concurrency"))
-        #expect(isolatedDispatcher.contains("wait \"$wrapper_pid\""))
+        #expect(isolatedDispatcher.contains("wait \"$reporter_pid\""))
+        #expect(isolatedDispatcher.contains("wait \"$reporting_child_pid\""))
         #expect(isolatedDispatcher.contains("swift_test_record_failed_isolated_suite"))
         #expect(isolatedDispatcher.contains("read -r -u 7 completed_slot completed_pid completed_status"))
         #expect(isolatedSuiteRunner.contains("isolated process-global non-WebKit suite: $suite_filter"))
@@ -686,6 +667,38 @@ struct CIFastLaneWorkflowTests {
         #expect(fastRunner.contains("failed to prepare fast-lane skip pattern; no fast suites were started"))
         #expect(fastRunner.contains("run_aggregate_serial_non_webkit_swift_tests"))
         #expect(fastRunner.contains("run_fast_serial_process_swift_tests"))
+    }
+
+    private func aggregateIsolatedSuiteNames() -> [String] {
+        [
+            "EagerDerivedAtomTests",
+            "EagerDerivedAtomFamilyTests",
+            "TerminalActivationSchedulerTests",
+            "TabBarAdapterTests",
+            "TabBarAdapterMaterializationTests",
+            "TabBarAffectedItemTelemetryTests",
+            "MainSplitViewControllerSidebarStateTests",
+            "FlatTabStripContainerAllMinimizedTests",
+            "TerminalPaneMountViewExitBehaviorTests",
+            "TerminalActivityProjectorTests",
+            "GitWorkingDirectoryProjectorTests",
+            "AgentStudioAppIPCServiceTests",
+            "AgentStudioAppIPCServiceAuthModeTests",
+            "AgentStudioAppIPCServiceCommandTests",
+            "AgentStudioAppIPCServiceContributionTests",
+            "AgentStudioIPCBridgeServiceTests",
+            "AgentStudioIPCBridgeRenderDiagnosticsTests",
+            "AgentStudioIPCBridgeSearchModeTests",
+            "AgentStudioIPCBridgeNonBridgeTargetTests",
+            "AgentStudioIPCBridgeDiagnosticTargetTests",
+            "AgentStudioIPCBridgePaneAgentTests",
+            "AgentStudioIPCBridgeRejectedControlTests",
+            "AgentStudioAppIPCCommandExecuteContractTests",
+            "AgentStudioIPCStableCatalogRefusalTests",
+            "AgentStudioAppIPCConnectionHandlerLifecycleTests",
+            "WorkspaceStoreTests",
+            "WorkspaceComparisonIntentProcessRestartTests",
+        ]
     }
 
     @Test("WebKit dispatch uses its serial policy")
@@ -843,8 +856,12 @@ struct CIFastLaneWorkflowTests {
                     + "    swift_test_args+=(--skip ZmxE2ETests)"
             )
         )
-        #expect(forwardedArgumentsBlock.contains("swift test --skip-build \"${swift_test_args[@]}\""))
-        #expect(!forwardedArgumentsBlock.contains("swift test --skip-build \"$@\" --skip ZmxE2ETests"))
+        #expect(
+            forwardedArgumentsBlock.contains(
+                "swift test $(swift_package_sandbox_arguments) --skip-build \"${swift_test_args[@]}\""))
+        #expect(
+            !forwardedArgumentsBlock.contains(
+                "swift test $(swift_package_sandbox_arguments) --skip-build \"$@\" --skip ZmxE2ETests"))
         #expect(defaultTestCase.contains("--filter \"$(swift_test_lane_filter_pattern e2e)\""))
         #expect(defaultTestCase.contains("--skip \"$(swift_test_lane_filter_pattern zmx)\""))
         #expect(!defaultTestCase.contains("SWIFT_TEST_INCLUDE_ZMX_E2E"))

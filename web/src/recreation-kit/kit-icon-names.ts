@@ -37,6 +37,7 @@ export const kitIconNames = [
   "clock",
   "return",
   "arrow-right",
+  "check",
 ] as const;
 
 export type KitIconName = (typeof kitIconNames)[number];

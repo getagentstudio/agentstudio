@@ -98,6 +98,62 @@ struct RepoExplorerFilterFocusIntegrationTests {
         #expect(sidebarState.sidebarHasFocus)
     }
 
+    @Test("Repos to Panes surface switching preserves active list keyboard focus")
+    func reposToPanesSwitchPreservesListKeyboardFocus() async throws {
+        let sidebarState = CoreAtomScope.store.workspaceSidebarState
+        let previousFilterText = sidebarState.filterText
+        let previousSidebarCollapsed = sidebarState.sidebarCollapsed
+        let previousSidebarSurface = sidebarState.sidebarSurface
+        let previousSidebarHasFocus = sidebarState.sidebarHasFocus
+        sidebarState.setSidebarCollapsed(false)
+        sidebarState.setSidebarSurface(.repos)
+
+        let view = RepoExplorerView(
+            store: WorkspaceStore(startsObserving: false),
+            octiconLoader: makeRepoExplorerTestOcticonLoader(),
+            repoExplorerPrefs: RepoExplorerSidebarPrefsAtom(sidebarState: sidebarState),
+            bridgeAttendanceSnapshot: { _ in nil },
+            commandDispatcher: FakeRepoExplorerAppCommandDispatcher(),
+            onRefocusActivePane: {},
+            onSidebarVisibleWorktreesChanged: {}
+        )
+        let hostingView = RepoExplorerFilterHostingView(rootView: AnyView(view))
+        let window = RepoExplorerFilterWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 360, height: 480),
+            styleMask: [.titled],
+            backing: .buffered,
+            defer: false
+        )
+        window.isReleasedWhenClosed = false
+        window.contentView = hostingView
+        defer {
+            hostingView.rootView = AnyView(EmptyView())
+            hostingView.layoutSubtreeIfNeeded()
+            window.close()
+            sidebarState.setFilterText(previousFilterText)
+            sidebarState.setSidebarCollapsed(previousSidebarCollapsed)
+            sidebarState.setSidebarSurface(previousSidebarSurface)
+            sidebarState.setSidebarHasFocus(previousSidebarHasFocus)
+        }
+
+        window.layoutIfNeeded()
+        hostingView.layoutSubtreeIfNeeded()
+        let listHost = try #require(
+            await hostingView.descendant(RepoExplorerMaterializationHost.self)
+        )
+        #expect(window.makeFirstResponder(listHost))
+        #expect(window.firstResponder === listHost)
+        #expect(sidebarState.sidebarHasFocus)
+
+        sidebarState.setSidebarSurface(.panes)
+        hostingView.layoutSubtreeIfNeeded()
+
+        #expect(!sidebarState.sidebarCollapsed)
+        #expect(view.isProjectionDemanded)
+        #expect(window.firstResponder === listHost)
+        #expect(sidebarState.sidebarHasFocus)
+    }
+
     @Test("opening an organization selector reports preview eligibility loss")
     func organizationSelectorOpeningReportsPreviewEligibilityLoss() throws {
         var eligibilityLossCount = 0

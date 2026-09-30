@@ -47,12 +47,19 @@ export function initializeInstallCommand(root: HTMLElement): () => void {
   let feedbackResetTimer: number | undefined;
   const feedbackLabels = [...root.querySelectorAll<HTMLElement>("[data-install-copy-feedback]")];
   const idleLabels = feedbackLabels.map((label) => label.textContent ?? "");
+  const copyIcon = root.querySelector<SVGElement>("[data-install-copy-icon]");
+  const copiedIcon = root.querySelector<SVGElement>("[data-install-copied-icon]");
+  const renderCopiedIcon = (copied: boolean): void => {
+    copyIcon?.toggleAttribute("data-install-icon-hidden", copied);
+    copiedIcon?.toggleAttribute("data-install-icon-hidden", !copied);
+  };
   const feedbackDurationMs = Number(root.dataset["installFeedbackMs"]);
   const resetFeedback = (): void => {
     feedbackLabels.forEach((label, index) => {
       label.textContent = idleLabels[index] ?? "";
     });
     status.textContent = "";
+    renderCopiedIcon(false);
     feedbackResetTimer = undefined;
   };
 
@@ -99,6 +106,7 @@ export function initializeInstallCommand(root: HTMLElement): () => void {
         .then((): void => {
           state = reduceInstallCommandState(state, { kind: "copy-succeeded" });
           status.textContent = copyStatusText(state);
+          renderCopiedIcon(true);
           const copiedLabel = root.dataset["installCopiedLabel"];
           if (copiedLabel !== undefined) {
             for (const label of feedbackLabels) label.textContent = copiedLabel;

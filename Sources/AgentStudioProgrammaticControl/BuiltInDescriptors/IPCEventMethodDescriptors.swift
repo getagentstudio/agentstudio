@@ -66,12 +66,17 @@ package struct IPCEventMethodDescriptors: Sendable {
         )
     }
 
-    var erased: [IPCAnyMethodDescriptor] {
+    var descriptorRepresentations: [any IPCMethodDescriptorRepresentation] {
         get throws {
-            try [
-                IPCAnyMethodDescriptor(erasing: eventsSubscribe),
-                IPCAnyMethodDescriptor(erasing: eventsUnsubscribe),
+            let representations: [any IPCMethodDescriptorRepresentation] = try [
+                IPCMethodDescriptorRepresentations(typedDescriptor: eventsSubscribe),
+                IPCMethodDescriptorRepresentations(typedDescriptor: eventsUnsubscribe),
             ]
+            return representations
         }
+    }
+
+    var erased: [IPCAnyMethodDescriptor] {
+        get throws { try descriptorRepresentations.map(\.erasedDescriptor) }
     }
 }

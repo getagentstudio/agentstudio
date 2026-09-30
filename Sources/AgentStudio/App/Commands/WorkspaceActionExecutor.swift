@@ -3,6 +3,22 @@ import AgentStudioCore
 import Foundation
 import os.log
 
+/// What an action submitted on a pane agent's behalf reached.
+enum WorkspaceScopedActionOutcome: Equatable, Sendable {
+    case applied
+    case rejected
+    /// The own-pane re-check refused the action: a touched pane left the
+    /// agent's own pane after authorization. Nothing was applied.
+    case outsideOwnPane
+}
+
+/// Carries a scoped gesture's outcome out of the serialized gesture, whose
+/// own result is only whether it applied.
+@MainActor
+private final class ScopedActionOutcomeRecord {
+    var outcome = WorkspaceScopedActionOutcome.rejected
+}
+
 /// Executes validated PaneActions by delegating to `WorkspaceSurfaceCoordinator`.
 /// This class remains the app-facing entry point and preserves historical action
 /// API semantics while orchestration now lives in `WorkspaceSurfaceCoordinator`.
@@ -254,6 +270,33 @@ final class WorkspaceActionExecutor {
         submitGesture { execute in await execute(action) }
     }
 
+    /// Runs a pane agent's action through the same serialized gesture queue,
+    /// re-checking its own-pane assertion inside validation after every queued
+    /// predecessor has finished.
+    func execute(
+        _ action: WorkspaceActionCommand,
+        ownPaneAssertion: WorkspaceOwnPaneAssertion
+    ) async -> WorkspaceScopedActionOutcome {
+        await submitScopedAction(action, ownPaneAssertion: ownPaneAssertion).value
+    }
+
+    /// Enqueues synchronously, like `submit(_:)`: the assertion travels with
+    /// the action and is evaluated only when the gesture runs.
+    func submitScopedAction(
+        _ action: WorkspaceActionCommand,
+        ownPaneAssertion: WorkspaceOwnPaneAssertion
+    ) -> Task<WorkspaceScopedActionOutcome, Never> {
+        let recorded = ScopedActionOutcomeRecord()
+        let gesture = submitGesture { [self] _ in
+            recorded.outcome = await executeValidatedAction(action, ownPaneAssertion: ownPaneAssertion)
+            return recorded.outcome == .applied
+        }
+        return Task { @MainActor in
+            _ = await gesture.value
+            return recorded.outcome
+        }
+    }
+
     /// One admitted user operation includes resolution and dependent effects, not just its first mutation.
     func submitGesture(
         _ operation: @escaping @MainActor (@MainActor (WorkspaceActionCommand) async -> Bool) async -> Bool
@@ -264,7 +307,9 @@ final class WorkspaceActionExecutor {
         let generation = submittedGestureGeneration
         let task = Task { @MainActor [self] in
             _ = await predecessor?.value
-            let result = await operation { [self] action in await executeValidatedAction(action) }
+            let result = await operation { [self] action in
+                await executeValidatedAction(action, ownPaneAssertion: nil) == .applied
+            }
             if submittedGestureGeneration == generation { submittedGestureTail = nil }
             return result
         }
@@ -278,7 +323,10 @@ final class WorkspaceActionExecutor {
         _ = await submittedGestureTail?.value
     }
 
-    private func executeValidatedAction(_ action: WorkspaceActionCommand) async -> Bool {
+    private func executeValidatedAction(
+        _ action: WorkspaceActionCommand,
+        ownPaneAssertion: WorkspaceOwnPaneAssertion?
+    ) async -> WorkspaceScopedActionOutcome {
         let tabLayout = store.tabLayoutAtom
         let repositoryTopology = store.repositoryTopologyAtom
         let snapshot = WorkspaceCommandResolver.snapshot(
@@ -297,20 +345,21 @@ final class WorkspaceActionExecutor {
                 arrangementView.activeVisiblePaneIds(forTab: tab.id)
             }
         )
-        switch WorkspaceCommandValidator.validate(action, state: snapshot) {
+        switch WorkspaceCommandValidator.validate(action, ownPaneAssertion: ownPaneAssertion, state: snapshot) {
         case .success(let validated):
             do {
                 try await coordinator.execute(validated.action)
-                return true
+                return .applied
             } catch {
                 Self.logger.error("Workspace action failed before completion")
-                return false
+                return .rejected
             }
         case .failure(let error):
             Self.logger.warning(
                 "Action rejected: \(String(describing: action), privacy: .public) reason=\(String(describing: error), privacy: .public)"
             )
-            return false
+            if case .outsideOwnPane = error { return .outsideOwnPane }
+            return .rejected
         }
     }
 

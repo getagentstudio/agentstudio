@@ -50,7 +50,8 @@ struct GitObservationLifetimeTests {
                     materialized: .init(
                         result: .available(fixture.status), facts: .init(status: fixture.status),
                         detail: nil, refreshedDetail: false, capacityCompletionGeneration: nil),
-                    changeset: fixture.changeset, computeStart: .now, scope: .full, pathspecCount: 0
+                    changeset: fixture.changeset,
+                    context: .init(computeStart: .now, scope: .full, pathspecCount: 0, refreshFactScope: nil)
                 )
             }
         }

@@ -328,7 +328,7 @@ package enum IPCDescriptorInvocationParser {
         _ data: Data,
         descriptor: IPCAnyMethodDescriptor,
         correlationIDGenerator: @Sendable () -> UUID
-    ) throws -> Data {
+    ) throws -> IPCValidatedJSON {
         let candidateData: Data
         if descriptor.metadata.correlationPolicy == .required {
             let decodedObject: Any
@@ -355,7 +355,7 @@ package enum IPCDescriptorInvocationParser {
     private static func normalizeThroughDescriptor(
         _ data: Data,
         descriptor: IPCAnyMethodDescriptor
-    ) throws -> Data {
+    ) throws -> IPCValidatedJSON {
         do {
             return try descriptor.normalizeParameters(data)
         } catch let validationError as IPCSchemaValidationError {

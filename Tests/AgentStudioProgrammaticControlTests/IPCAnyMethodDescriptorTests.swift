@@ -26,7 +26,7 @@ struct IPCAnyMethodDescriptorTests {
         let normalized = try descriptor.normalizeParameters(
             Data(#"{"text":"hello"}"#.utf8)
         )
-        #expect(try JSONDecoder().decode(TextParameters.self, from: normalized).text == "hello")
+        #expect(try JSONDecoder().decode(TextParameters.self, from: normalized.data).text == "hello")
 
         #expect(throws: IPCSchemaValidationError.self) {
             try descriptor.normalizeParameters(
@@ -236,7 +236,7 @@ struct IPCAnyMethodDescriptorTests {
     func erasedResultsUseConcreteResultDecoder() throws {
         let descriptor = try IPCAnyMethodDescriptor(erasing: textDescriptor())
         let normalized = try descriptor.normalizeResult(Data(#"{"echoed":"hello"}"#.utf8))
-        #expect(try JSONDecoder().decode(TextResult.self, from: normalized).echoed == "hello")
+        #expect(try JSONDecoder().decode(TextResult.self, from: normalized.data).echoed == "hello")
         #expect(throws: IPCSchemaValidationError.self) {
             try descriptor.normalizeResult(Data(#"{"echoed":"hello","privateField":"private-value"}"#.utf8))
         }

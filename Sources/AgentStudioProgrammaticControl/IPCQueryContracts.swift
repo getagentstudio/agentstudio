@@ -304,22 +304,89 @@ public struct IPCPaneCloseResult: Codable, Equatable, Sendable {
     }
 }
 
+/// What a new drawer child holds. Drawers hold terminals and browsers only;
+/// Bridge and code-viewer requests are named so they can be refused, never
+/// created.
+public enum IPCDrawerChildContent: Codable, Equatable, Sendable {
+    case terminal
+    case browser(url: String)
+    case bridge
+    case codeViewer
+
+    private enum CodingKeys: String, CodingKey {
+        case kind
+        case url
+    }
+
+    private enum Kind: String, Codable {
+        case terminal
+        case browser
+        case bridge
+        case codeViewer
+    }
+
+    public init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        switch try container.decode(Kind.self, forKey: .kind) {
+        case .terminal: self = .terminal
+        case .browser: self = .browser(url: try container.decode(String.self, forKey: .url))
+        case .bridge: self = .bridge
+        case .codeViewer: self = .codeViewer
+        }
+    }
+
+    public func encode(to encoder: any Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        switch self {
+        case .terminal:
+            try container.encode(Kind.terminal, forKey: .kind)
+        case .browser(let url):
+            try container.encode(Kind.browser, forKey: .kind)
+            try container.encode(url, forKey: .url)
+        case .bridge:
+            try container.encode(Kind.bridge, forKey: .kind)
+        case .codeViewer:
+            try container.encode(Kind.codeViewer, forKey: .kind)
+        }
+    }
+
+    /// The browser URL a drawer child may open: an absolute http or https URL
+    /// with a host. `nil` for anything else, before any pane is created.
+    public var admissibleBrowserURL: URL? {
+        guard case .browser(let rawURL) = self,
+            let url = URL(string: rawURL),
+            let scheme = url.scheme?.lowercased(),
+            scheme == "http" || scheme == "https",
+            url.host()?.isEmpty == false
+        else { return nil }
+        return url
+    }
+}
+
 public struct IPCDrawerAddPaneParams: Codable, Equatable, Sendable {
     public let parentPaneHandle: String
+    /// Absent means a terminal.
+    public let content: IPCDrawerChildContent?
     public let correlationId: UUID?
 
-    public init(parentPaneHandle: String, correlationId: UUID?) {
+    public init(parentPaneHandle: String, content: IPCDrawerChildContent? = nil, correlationId: UUID?) {
         self.parentPaneHandle = parentPaneHandle
+        self.content = content
         self.correlationId = correlationId
     }
 }
 
 public struct IPCDrawerAddPaneResult: Codable, Equatable, Sendable {
     public let parentPaneId: UUID
+    public let childPaneId: UUID
+    /// Selector that targets the new drawer child in later calls.
+    public let childHandle: String
     public let correlationId: UUID?
 
-    public init(parentPaneId: UUID, correlationId: UUID?) {
+    public init(parentPaneId: UUID, childPaneId: UUID, correlationId: UUID?) {
         self.parentPaneId = parentPaneId
+        self.childPaneId = childPaneId
+        self.childHandle = childPaneId.uuidString
         self.correlationId = correlationId
     }
 }

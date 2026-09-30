@@ -13,6 +13,7 @@ export const findAndFocusParts = {
   commandBar: "command-bar",
   commandPlaceholder: "command-placeholder",
   commandQuery: "command-query",
+  commandShortcut: "command-shortcut",
   recentSection: "recent-repositories",
   panesSection: "pane-results",
   worktreesSection: "worktree-results",
@@ -46,6 +47,7 @@ export const findAndFocusCommandBar: KitCommandBarModel = {
   placeholder: "Search or jump to...",
   query: "tool",
   contextLabel: "sidebar-filter",
+  shortcutHint: "⌘P",
   sections: [
     {
       title: "RECENT REPOSITORIES",
@@ -74,9 +76,9 @@ export const findAndFocusCommandBar: KitCommandBarModel = {
       scenePart: findAndFocusParts.panesSection,
       rows: [
         {
-          icon: "pane",
-          label: "tool-portal",
-          meta: "agent-vm · tool-portal",
+          icon: "terminal",
+          label: "Terminal — tool-portal",
+          subtitle: "parallel work · Tab 1 · Pane 2 · Active",
           selected: true,
           settledPresence: "shown",
         },

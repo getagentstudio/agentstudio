@@ -200,7 +200,7 @@ struct AgentStudioIPCCommandOwnerEffectTests {
                         commandId: .init(rawValue: command.rawValue),
                         correlationId: UUIDv7.generate(),
                         arguments: arguments
-                    )
+                    ), ownPaneAssertion: nil
                 )
             }
         )

@@ -6,12 +6,10 @@ extension GitWorkingDirectoryProjector {
         _ statusSnapshot: GitWorkingTreeStatus,
         materialized: MaterializedGitStatus,
         changeset: FileChangeset,
-        computeStart: ContinuousClock.Instant,
-        scope: GitStatusScope,
-        pathspecCount: Int
+        context: StatusCompletionContext
     ) async {
         let statusCompletion = envelopeClock.now
-        let statusDuration = computeStart.duration(to: statusCompletion)
+        let statusDuration = context.computeStart.duration(to: statusCompletion)
         consecutiveStatusFailureCountByWorktreeId.removeValue(forKey: changeset.worktreeId)
         performanceTraceRecorder?.recordDuration(
             .gitStatusComputed,
@@ -20,8 +18,8 @@ extension GitWorkingDirectoryProjector {
                 for: changeset,
                 unavailable: nil,
                 context: GitStatusCompletionTraceContext(
-                    scope: scope,
-                    pathspecCount: pathspecCount,
+                    scope: context.scope,
+                    pathspecCount: context.pathspecCount,
                     statusCompletion: statusCompletion,
                     outcome: .completed,
                     consecutiveFailureCount: 0,
@@ -49,7 +47,7 @@ extension GitWorkingDirectoryProjector {
             || previousAccepted.detail != materialized.detail
         lastStatusEntriesByWorktreeId[changeset.worktreeId] = currentStatusSnapshot.entries
         lastAcceptedStatusFactsByWorktreeId[changeset.worktreeId] = currentAcceptedFacts
-        acceptExactCleanAuthority(from: materialized, scope: scope, changeset: changeset)
+        acceptExactCleanAuthority(from: materialized, scope: context.scope, changeset: changeset)
         if let detail = materialized.detail {
             lastAcceptedLineDetailByWorktreeId[changeset.worktreeId] = detail
             if materialized.refreshedDetail {
@@ -109,6 +107,7 @@ extension GitWorkingDirectoryProjector {
         }
         closeCompletedRefreshFact(
             worktreeId: changeset.worktreeId,
+            ifCurrent: context.refreshFactScope,
             snapshotChanged: snapshotChanged,
             branchChanged: branchChanged
         )
@@ -116,11 +115,13 @@ extension GitWorkingDirectoryProjector {
 
     private func closeCompletedRefreshFact(
         worktreeId: UUID,
+        ifCurrent refreshFactScope: GitProjectorScope?,
         snapshotChanged: Bool,
         branchChanged: Bool
     ) {
         closeRefreshFact(
             worktreeId: worktreeId,
+            ifCurrent: refreshFactScope,
             outcome: snapshotChanged || branchChanged
                 ? .completed(snapshotChanged: snapshotChanged, branchChanged: branchChanged)
                 : .equal

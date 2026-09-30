@@ -22,21 +22,18 @@ import Testing
 /// rather than a pane token, so it addresses the pane by its canonical handle
 /// where a real hook sends `self`.
 @MainActor
-@Suite("App IPC Codex hook vertical", .serialized)
+@Suite("App IPC Codex hook vertical", .serialized, SessionsVerticalHarnessTrait(providerProfiles: .shipped))
 struct AgentStudioIPCCodexHookVerticalTests {
-    init() { installTestCoreAtomsIfNeeded() }
-
     @Test("a Codex session start, prompt and permission request reach the query as needs-you")
     func codexHooksDriveThePaneToNeedsYou() async throws {
         // Arrange
-        let harness = try await SessionsVerticalHarness.make(
-            providerProfiles: SessionsProviderProfile.shippedProfiles)
-        defer { harness.tearDown() }
+        let harness = try await #require(SessionsVerticalHarnessContext.current).freshPanePair()
+        let identity = CodexHookScenarioIdentity()
 
         // Act — SessionStart binds the pane.
         let bind = try await harness.sessionEvent(
             params: try CodexHookVerticalFixtures.params(
-                event: .sessionStart, paneId: harness.boundPaneId))
+                event: .sessionStart, paneId: harness.boundPaneId, identity: identity))
 
         // Assert
         #expect(bind.disposition == .admitted)
@@ -47,7 +44,7 @@ struct AgentStudioIPCCodexHookVerticalTests {
         // Act — the user's prompt starts a turn.
         let turnStart = try await harness.sessionEvent(
             params: try CodexHookVerticalFixtures.params(
-                event: .userPromptSubmit, paneId: harness.boundPaneId))
+                event: .userPromptSubmit, paneId: harness.boundPaneId, identity: identity))
 
         // Assert
         #expect(turnStart.disposition == .admitted)
@@ -57,7 +54,7 @@ struct AgentStudioIPCCodexHookVerticalTests {
 
         // Act — Codex asks the user to approve a tool call.
         let permissionParams = try CodexHookVerticalFixtures.params(
-            event: .permissionRequest, paneId: harness.boundPaneId)
+            event: .permissionRequest, paneId: harness.boundPaneId, identity: identity)
         let permission = try await harness.sessionEvent(params: permissionParams)
 
         // Assert — the derived request identity is what the query reports back.
@@ -69,7 +66,7 @@ struct AgentStudioIPCCodexHookVerticalTests {
         // Act — the session ends.
         let ended = try await harness.sessionEvent(
             params: try CodexHookVerticalFixtures.params(
-                event: .sessionEnd, paneId: harness.boundPaneId))
+                event: .sessionEnd, paneId: harness.boundPaneId, identity: identity))
 
         // Assert — the source generation is retired, not merely recorded
         // against. `AgentStudioIPCSessionsAdapter` maps a session end to
@@ -86,14 +83,13 @@ struct AgentStudioIPCCodexHookVerticalTests {
     @Test("a session end on an unbound pane is refused without ending anything")
     func sessionEndOnUnboundPaneIsRefused() async throws {
         // Arrange
-        let harness = try await SessionsVerticalHarness.make(
-            providerProfiles: SessionsProviderProfile.shippedProfiles)
-        defer { harness.tearDown() }
+        let harness = try await #require(SessionsVerticalHarnessContext.current).freshPanePair()
+        let identity = CodexHookScenarioIdentity()
 
         // Act
         let refused = try await harness.sessionEvent(
             params: try CodexHookVerticalFixtures.params(
-                event: .sessionEnd, paneId: harness.sparePaneId))
+                event: .sessionEnd, paneId: harness.sparePaneId, identity: identity))
 
         // Assert
         #expect(refused.disposition == .unqualified)
@@ -103,20 +99,19 @@ struct AgentStudioIPCCodexHookVerticalTests {
     @Test("a Codex turn that finishes without a permission request reaches the query as done")
     func codexStopReachesTheQueryAsDone() async throws {
         // Arrange
-        let harness = try await SessionsVerticalHarness.make(
-            providerProfiles: SessionsProviderProfile.shippedProfiles)
-        defer { harness.tearDown() }
+        let harness = try await #require(SessionsVerticalHarnessContext.current).freshPanePair()
+        let identity = CodexHookScenarioIdentity()
         _ = try await harness.sessionEvent(
             params: try CodexHookVerticalFixtures.params(
-                event: .sessionStart, paneId: harness.boundPaneId))
+                event: .sessionStart, paneId: harness.boundPaneId, identity: identity))
         _ = try await harness.sessionEvent(
             params: try CodexHookVerticalFixtures.params(
-                event: .userPromptSubmit, paneId: harness.boundPaneId))
+                event: .userPromptSubmit, paneId: harness.boundPaneId, identity: identity))
 
         // Act
         let stop = try await harness.sessionEvent(
             params: try CodexHookVerticalFixtures.params(
-                event: .stop, paneId: harness.boundPaneId))
+                event: .stop, paneId: harness.boundPaneId, identity: identity))
 
         // Assert
         #expect(stop.disposition == .admitted)
@@ -129,20 +124,19 @@ struct AgentStudioIPCCodexHookVerticalTests {
     @Test("a tool event and a subagent event are admitted against the shipped profile")
     func codexToolAndSubagentEventsAreAdmitted() async throws {
         // Arrange
-        let harness = try await SessionsVerticalHarness.make(
-            providerProfiles: SessionsProviderProfile.shippedProfiles)
-        defer { harness.tearDown() }
+        let harness = try await #require(SessionsVerticalHarnessContext.current).freshPanePair()
+        let identity = CodexHookScenarioIdentity()
         _ = try await harness.sessionEvent(
             params: try CodexHookVerticalFixtures.params(
-                event: .sessionStart, paneId: harness.boundPaneId))
+                event: .sessionStart, paneId: harness.boundPaneId, identity: identity))
 
         // Act
         let tool = try await harness.sessionEvent(
             params: try CodexHookVerticalFixtures.params(
-                event: .preToolUse, paneId: harness.boundPaneId))
+                event: .preToolUse, paneId: harness.boundPaneId, identity: identity))
         let subagent = try await harness.sessionEvent(
             params: try CodexHookVerticalFixtures.params(
-                event: .subagentStart, paneId: harness.boundPaneId))
+                event: .subagentStart, paneId: harness.boundPaneId, identity: identity))
 
         // Assert
         #expect(tool.disposition == .admitted)
@@ -154,11 +148,10 @@ struct AgentStudioIPCCodexHookVerticalTests {
     @Test("a Codex version the profile does not name is refused")
     func unqualifiedCodexVersionIsRefused() async throws {
         // Arrange
-        let harness = try await SessionsVerticalHarness.make(
-            providerProfiles: SessionsProviderProfile.shippedProfiles)
-        defer { harness.tearDown() }
+        let harness = try await #require(SessionsVerticalHarnessContext.current).freshPanePair()
+        let identity = CodexHookScenarioIdentity()
         let params = try CodexHookVerticalFixtures.params(
-            event: .sessionStart, paneId: harness.boundPaneId, reportedVersion: "0.153.0")
+            event: .sessionStart, paneId: harness.boundPaneId, reportedVersion: "0.153.0", identity: identity)
 
         // Act
         let refused = try await harness.sessionEvent(params: params)
@@ -179,11 +172,12 @@ enum CodexHookVerticalFixtures {
     static func params(
         event: CodexHookEventName,
         paneId: UUID,
-        reportedVersion: String? = nil
+        reportedVersion: String? = nil,
+        identity: CodexHookScenarioIdentity
     ) throws -> IPCSessionEventParams {
         let payload = CodexHookPayload(
-            sessionId: "01994d2f-8f1a-7c3b-9d44-2a6f5b8c1e07",
-            turnId: turnId(for: event),
+            sessionId: identity.sessionId,
+            turnId: turnId(for: event, identity: identity),
             hookEventName: event.rawValue,
             toolName: event == .preToolUse || event == .permissionRequest ? "shell" : nil,
             toolUseId: event == .preToolUse ? "call_9f2c41ab" : nil,
@@ -202,10 +196,15 @@ enum CodexHookVerticalFixtures {
     }
 
     /// Codex sends no `turn_id` with the session lifecycle events.
-    private static func turnId(for event: CodexHookEventName) -> String? {
+    private static func turnId(for event: CodexHookEventName, identity: CodexHookScenarioIdentity) -> String? {
         switch event {
         case .sessionStart, .sessionEnd: nil
-        default: "01994d30-1b22-7a55-8e91-4c7d0f2a6b13"
+        default: identity.turnId
         }
     }
+}
+
+struct CodexHookScenarioIdentity {
+    let sessionId = UUIDv7.generate().uuidString
+    let turnId = UUIDv7.generate().uuidString
 }

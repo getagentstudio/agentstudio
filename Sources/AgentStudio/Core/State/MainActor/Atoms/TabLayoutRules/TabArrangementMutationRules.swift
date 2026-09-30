@@ -96,6 +96,9 @@ enum TabArrangementMutationRules {
         let targetDrawerPaneId: UUID?
         let direction: SplitNewDirection
         let sizingMode: DropSizingMode
+        /// Background creation keeps an existing selection; a first child of
+        /// an empty drawer is still its only, and so its active, child.
+        var selectsInsertedChild = true
     }
 
     static func insertingDrawerPane(
@@ -129,7 +132,14 @@ enum TabArrangementMutationRules {
             guard var drawerView = updated.arrangements[arrangementIndex].drawerViews[insertion.drawerId] else {
                 continue
             }
-            drawerView.minimizedPaneIds.remove(drawerPaneId)
+            if insertion.selectsInsertedChild || drawerView.activeChildId != nil {
+                drawerView.minimizedPaneIds.remove(drawerPaneId)
+            } else {
+                // Background creation keeps selection unchanged. A drawer with
+                // no selection has every child minimized, and a visible child
+                // there would need one, so the new child joins them minimized.
+                drawerView.minimizedPaneIds.insert(drawerPaneId)
+            }
             updated.arrangements[arrangementIndex].drawerViews[insertion.drawerId] = drawerView
         }
         return updated
@@ -173,7 +183,7 @@ enum TabArrangementMutationRules {
                     )
                 {
                     drawerView.layout = updatedLayout
-                    if arrangementIndex == activeIndex {
+                    if arrangementIndex == activeIndex, insertion.selectsInsertedChild {
                         drawerView.activeChildId = drawerPaneId
                     }
                     didPlaceDrawerPane = true

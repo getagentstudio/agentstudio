@@ -13,11 +13,13 @@ flowchart TD
   subgraph main["main push: cold publisher (serialized by the workflow concurrency group)"]
     direction TB
     M1[checkout, vendors, generated inputs] --> M2[inventory inputs, read back times]
-    M2 --> M3[cold prebuild + all Swift lanes]
-    M3 -->|green, inputs unchanged since inventory| M4{newer seed exists?}
+    M2 --> M3[cold prebuild]
+    M3 -->|prebuild green, inputs unchanged since inventory| M4{newer seed exists?}
     M4 -->|no| M5[save seed: build path + manifest + provenance]
     M4 -->|yes| M7[skip save]
     M5 --> M6[prune job: confirm new key, delete strictly older owned seeds]
+    M5 --> M8[all Swift test lanes run; their results do not gate the seed]
+    M7 --> M8
   end
   subgraph pr["pull request: never saves"]
     direction TB
@@ -41,7 +43,7 @@ SwiftPM and the Swift driver skip an input whose modification time **equals** th
 |---|---|---|
 | `scripts/ci-swift-build-inputs.sh` (`fingerprint`, `inventory`, `verify`, `restamp`) | Swift job | Input inventory, full-content digests, manifest comparison, applying and reading back times |
 | Restore step (PR only) | Swift job, before prebuild | Fetching the newest seed for the prefix |
-| Publish step (main only, after all Swift lanes) | Swift job | Skip-if-newer check (needs `actions: read`), save, save disposition output |
+| Publish step (main only, after a successful prebuild, before the Swift test lanes) | Swift job | Skip-if-newer check (needs `actions: read`), save, save disposition output |
 | `prune-swift-build-cache` job (main push only, ubuntu, `actions: write`) | separate job, needs the Swift job | The only deleter: consumes the save disposition and key, confirms, deletes strictly older owned entries |
 | Prebuild and receipts (`swift-test-helpers.sh:511–527`) | unchanged | Building; receipts that name the tested commit |
 
@@ -90,10 +92,13 @@ After restore, before any compilation:
 
 ## Main publication and pruning (O1, O4, O5)
 
-- The main job inventories inputs before the cold build and verifies them again after all Swift lanes pass. If anything changed, it doesn't publish.
+- The main job inventories inputs before the cold build and verifies them again right after the prebuild, before any test lane starts. If anything changed, or the prebuild failed, it doesn't publish.
+- Test results don't gate publication. A build cache is valid for its verified inputs whatever the tests say, and a red main must not stop the seed from following main. Gating on green used to leave PRs on a seed hours old, recompiling main's changes. Every Swift test lane still runs on main.
+- The prune job runs with `always()`, so a later failing lane can't suppress it. It still acts only on a `saved` or `skipped-budget` disposition.
+- Each PR run reports its restored seed commit, the merge tree it tested, and how many Swift inputs differ between them. A warm run that still rebuilt a lot therefore explains itself.
 - Skip-if-newer: list owned main-ref entries (paginated, run numbers parsed as integers, across all compatibility families). Skip saving if any has a higher run number.
 - Budget check before saving: current total + measured seed size must stay ≤ 8.5 GB, otherwise skip and report. Seeds are about 2 GB (2.05 GB measured with gzip; the real zstd size is recorded at the first publication). Today's usage is 4.33 GB.
-- The save step outputs a disposition (`saved <key>`, `skipped-newer`, `skipped-budget`, `failed`). The prune job acts only on `saved`: it confirms that exact key exists on `refs/heads/main`, then deletes owned (`swift-build-v1-`, main-ref) entries with a strictly lower run number. It never touches PR, branch, experiment or other entries.
+- The save step outputs a disposition (`saved <key>`, `skipped-newer`, `skipped-budget`, `failed`). The prune job acts on `saved` and on `skipped-budget`. On `saved` it first confirms that exact key exists on `refs/heads/main`. In both cases it then deletes owned (`swift-build-v1-`, main-ref) entries with a strictly lower run number. On `skipped-budget` this frees space so the next main run can save. Until that run saves, there may be no seed, and PRs build cold, which is correct and only slower. It never touches PR, branch, experiment or other entries.
 - Failures: a failed save deletes nothing. A failed prune keeps the confirmed new seed and reports what's left over. The next run's budget check sees those entries and skips saving until they're cleaned up.
 - The namespace belongs to this workflow. Renaming or replacing the workflow means a new namespace version (`v2`).
 

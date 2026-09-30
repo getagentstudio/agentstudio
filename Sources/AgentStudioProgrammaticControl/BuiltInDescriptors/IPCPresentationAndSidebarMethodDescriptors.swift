@@ -26,7 +26,8 @@ package struct IPCPresentationAndSidebarMethodDescriptors: Sendable {
                 targetKinds: [.window],
                 owner: .uiPresentation,
                 semantics: .presented,
-                errors: Self.presentationErrors)
+                errors: Self.presentationErrors,
+                agentEligibility: .notYetAllowed)
         )
         uiArrangementsOpen = try IPCBuiltInDescriptorSupport.mutation(
             name: "ui.arrangements.open",
@@ -48,7 +49,8 @@ package struct IPCPresentationAndSidebarMethodDescriptors: Sendable {
                 targetKinds: [.window],
                 owner: .uiPresentation,
                 semantics: .presented,
-                errors: Self.presentationErrors)
+                errors: Self.presentationErrors,
+                agentEligibility: .notYetAllowed)
         )
         sidebarGroupingGet = try IPCBuiltInDescriptorSupport.read(
             name: "sidebar.grouping.get",
@@ -57,7 +59,8 @@ package struct IPCPresentationAndSidebarMethodDescriptors: Sendable {
             result: IPCSidebarGroupingResult(surface: .repo, mode: .repo),
             privilege: .workspaceRead,
             dataScope: .unspecified,
-            errors: [IPCBuiltInDescriptorSupport.unavailable]
+            errors: [IPCBuiltInDescriptorSupport.unavailable],
+            agentEligibility: .notYetAllowed
         )
         sidebarSurfaceGet = try IPCBuiltInDescriptorSupport.read(
             name: "sidebar.surface.get",
@@ -66,7 +69,8 @@ package struct IPCPresentationAndSidebarMethodDescriptors: Sendable {
             result: IPCSidebarSurfaceResult(surface: .repo),
             privilege: .workspaceRead,
             dataScope: .unspecified,
-            errors: [IPCBuiltInDescriptorSupport.unavailable]
+            errors: [IPCBuiltInDescriptorSupport.unavailable],
+            agentEligibility: .notYetAllowed
         )
     }
 
@@ -76,14 +80,19 @@ package struct IPCPresentationAndSidebarMethodDescriptors: Sendable {
         IPCBuiltInDescriptorSupport.unavailable,
     ]
 
-    var erased: [IPCAnyMethodDescriptor] {
+    var descriptorRepresentations: [any IPCMethodDescriptorRepresentation] {
         get throws {
-            try [
-                IPCAnyMethodDescriptor(erasing: uiCommandBarOpen),
-                IPCAnyMethodDescriptor(erasing: uiArrangementsOpen),
-                IPCAnyMethodDescriptor(erasing: sidebarGroupingGet),
-                IPCAnyMethodDescriptor(erasing: sidebarSurfaceGet),
+            let representations: [any IPCMethodDescriptorRepresentation] = try [
+                IPCMethodDescriptorRepresentations(typedDescriptor: uiCommandBarOpen),
+                IPCMethodDescriptorRepresentations(typedDescriptor: uiArrangementsOpen),
+                IPCMethodDescriptorRepresentations(typedDescriptor: sidebarGroupingGet),
+                IPCMethodDescriptorRepresentations(typedDescriptor: sidebarSurfaceGet),
             ]
+            return representations
         }
+    }
+
+    var erased: [IPCAnyMethodDescriptor] {
+        get throws { try descriptorRepresentations.map(\.erasedDescriptor) }
     }
 }

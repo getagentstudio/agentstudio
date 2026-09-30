@@ -5,7 +5,11 @@ export interface StepHopObservation {
   readonly autoHeldState: string | undefined;
   readonly autoHeldGlyphVisible: boolean;
   readonly autoHeldRingOpacity: string;
-  readonly pausedState: string | undefined;
+  readonly clickedState: string | undefined;
+  readonly togglePausedState: string | undefined;
+  readonly togglePauseGlyphVisible: boolean;
+  readonly toggleResumedState: string | undefined;
+  readonly replayedElapsedSeconds: number | undefined;
   readonly pauseGlyphVisible: boolean;
   readonly glyphGlassClearance: number;
   readonly previewCount: number;
@@ -128,7 +132,7 @@ export const verifyChapterStepHop = defineBrowserCommand(
         );
         const beforeY = nextChapter?.getBoundingClientRect().top ?? Number.NaN;
         steps[1]?.click();
-        const pausedState = root.querySelector<HTMLElement>("[data-chapter-step-line]")?.dataset[
+        const clickedState = root.querySelector<HTMLElement>("[data-chapter-step-line]")?.dataset[
           "stepPlayback"
         ];
         const pauseGlyphVisible =
@@ -191,6 +195,9 @@ export const verifyChapterStepHop = defineBrowserCommand(
         travel?.finish();
         previewAnimation?.finish();
         await Promise.all([travel?.finished, previewAnimation?.finished]);
+        toggle.click();
+        const togglePausedState = scene.dataset["scenePlaybackState"];
+        const togglePauseGlyphVisible = !pauseGlyph.hidden;
         const glass = root.querySelector<HTMLElement>("[data-rail-surface-target]");
         const glyphGlassClearance =
           glass === null
@@ -199,6 +206,18 @@ export const verifyChapterStepHop = defineBrowserCommand(
         const previewCountAfterFinish = root.querySelectorAll("[data-scene-step-preview]").length;
         const layoutShift = Math.abs(
           (nextChapter?.getBoundingClientRect().top ?? Number.NaN) - beforeY,
+        );
+        toggle.click();
+        const toggleResumedState = scene.dataset["scenePlaybackState"];
+        control.seek(3.8);
+        let replayedElapsedSeconds: number | undefined;
+        root.addEventListener(
+          "agentstudio:scene-step-timing",
+          (event: Event): void => {
+            if (event instanceof CustomEvent && event.detail.stepId === "watch-folders")
+              replayedElapsedSeconds = event.detail.elapsedSeconds;
+          },
+          { once: true },
         );
         steps[1]?.click();
         const resumedState = scene.dataset["scenePlaybackState"];
@@ -219,7 +238,11 @@ export const verifyChapterStepHop = defineBrowserCommand(
           autoHeldState,
           autoHeldGlyphVisible,
           autoHeldRingOpacity,
-          pausedState,
+          clickedState,
+          togglePausedState,
+          togglePauseGlyphVisible,
+          toggleResumedState,
+          replayedElapsedSeconds,
           pauseGlyphVisible,
           glyphGlassClearance,
           previewCount,

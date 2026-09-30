@@ -23,7 +23,8 @@ struct AgentStudioIPCRuntimeAdapterTests {
         runtime.capabilities = [.input, .resize, .search]
         harness.runtimeRegistry.register(runtime)
 
-        let status = try harness.adapter.terminalStatus(IPCHandle(kind: .pane, reference: .canonicalUUID(pane.id)))
+        let status = try harness.adapter.terminalStatus(
+            IPCHandle(kind: .pane, reference: .canonicalUUID(pane.id)), ownPaneAssertion: nil)
 
         #expect(status.paneId == pane.id)
         #expect(status.lifecycle == .created)
@@ -52,7 +53,8 @@ struct AgentStudioIPCRuntimeAdapterTests {
         runtime.lastSeq = 42
         harness.runtimeRegistry.register(runtime)
 
-        let snapshot = try harness.adapter.terminalSnapshot(IPCHandle(kind: .pane, reference: .friendlyOrdinal(1)))
+        let snapshot = try harness.adapter.terminalSnapshot(
+            IPCHandle(kind: .pane, reference: .friendlyOrdinal(1)), ownPaneAssertion: nil)
         let encoded = try encodedJSONString(snapshot)
 
         #expect(snapshot.paneId == pane.id)
@@ -78,7 +80,8 @@ struct AgentStudioIPCRuntimeAdapterTests {
         )
         harness.runtimeRegistry.register(runtime)
 
-        let snapshot = try harness.adapter.terminalSnapshot(IPCHandle(kind: .pane, reference: .canonicalUUID(pane.id)))
+        let snapshot = try harness.adapter.terminalSnapshot(
+            IPCHandle(kind: .pane, reference: .canonicalUUID(pane.id)), ownPaneAssertion: nil)
 
         #expect(snapshot.rendererHealthy == true)
         #expect(snapshot.readOnly == false)
@@ -105,7 +108,7 @@ struct AgentStudioIPCRuntimeAdapterTests {
             let result = try await adapter.sendTerminalInput(
                 to: IPCHandle(kind: .pane, reference: .canonicalUUID(pane.id)),
                 input: "echo hi\n",
-                correlationId: correlationId
+                correlationId: correlationId, ownPaneAssertion: nil
             )
 
             #expect(result.paneId == pane.id)
@@ -135,7 +138,8 @@ struct AgentStudioIPCRuntimeAdapterTests {
         let result = try await harness.adapter.sendTerminalInput(
             to: IPCHandle(kind: .pane, reference: .canonicalUUID(pane.id)),
             input: input,
-            correlationId: correlationId
+            correlationId: correlationId,
+            ownPaneAssertion: nil
         )
 
         #expect(result.paneId == pane.id)
@@ -173,7 +177,7 @@ struct AgentStudioIPCRuntimeAdapterTests {
             _ = try await harness.adapter.sendTerminalInput(
                 to: IPCHandle(kind: .pane, reference: .canonicalUUID(UUID())),
                 input: "echo hi\n",
-                correlationId: nil
+                correlationId: nil, ownPaneAssertion: nil
             )
             Issue.record("terminal.send unexpectedly succeeded for a missing pane")
         } catch let error as AppIPCRuntimeError {
@@ -190,7 +194,7 @@ struct AgentStudioIPCRuntimeAdapterTests {
         let result = try await harness.adapter.waitForTerminal(
             IPCHandle(kind: .pane, reference: .canonicalUUID(pane.id)),
             condition: .attachReady,
-            timeout: .milliseconds(1)
+            timeout: .milliseconds(1), ownPaneAssertion: nil
         )
 
         #expect(result.paneId == pane.id)
@@ -210,7 +214,7 @@ struct AgentStudioIPCRuntimeAdapterTests {
             try await harness.adapter.waitForTerminal(
                 IPCHandle(kind: .pane, reference: .canonicalUUID(pane.id)),
                 condition: .attachReady,
-                timeout: .seconds(1)
+                timeout: .seconds(1), ownPaneAssertion: nil
             )
         }
         await Task.yield()
@@ -220,6 +224,70 @@ struct AgentStudioIPCRuntimeAdapterTests {
         #expect(result.paneId == pane.id)
         #expect(result.condition == .attachReady)
         #expect(result.eventName == .terminalAttachReady)
+    }
+
+    @Test("terminal reads of a drawer child that left the agent's own pane are refused")
+    func terminalReadsRecheckOwnPane() throws {
+        let harness = RuntimeAdapterHarness()
+        let parent = harness.createTerminalPane()
+        let child = try #require(harness.workspaceStore.addDrawerPane(to: parent.id))
+        harness.runtimeRegistry.register(RecordingTerminalIPCRuntime(paneId: PaneId(existingUUID: child.id)))
+        let agent = AppIPCOwnPaneAssertion(boundPaneId: parent.id)
+        let childHandle = IPCHandle(kind: .pane, reference: .canonicalUUID(child.id))
+
+        _ = try harness.adapter.terminalStatus(childHandle, ownPaneAssertion: agent)
+        _ = try harness.adapter.terminalSnapshot(childHandle, ownPaneAssertion: agent)
+        _ = try #require(harness.workspaceStore.paneAtom.detachDrawerPane(child.id, from: parent.id))
+
+        #expect(throws: AuthorizationError.notYetAllowed("terminal.status")) {
+            _ = try harness.adapter.terminalStatus(childHandle, ownPaneAssertion: agent)
+        }
+        #expect(throws: AuthorizationError.notYetAllowed("terminal.snapshot")) {
+            _ = try harness.adapter.terminalSnapshot(childHandle, ownPaneAssertion: agent)
+        }
+    }
+
+    @Test("a terminal wait whose drawer child leaves the agent's own pane mid-wait yields nothing")
+    func terminalWaitRechecksOwnPaneBeforeReturning() async throws {
+        let waitClock = TestPushClock()
+        let harness = RuntimeAdapterHarness(terminalEventWaitClock: waitClock)
+        let parent = harness.createTerminalPane()
+        let child = try #require(harness.workspaceStore.addDrawerPane(to: parent.id))
+        let childId = PaneId(existingUUID: child.id)
+        let runtime = RecordingTerminalIPCRuntime(paneId: childId)
+        harness.runtimeRegistry.register(runtime)
+
+        let waitTask = Task {
+            try await harness.adapter.waitForTerminal(
+                IPCHandle(kind: .pane, reference: .canonicalUUID(child.id)),
+                condition: .commandFinished,
+                timeout: schedulerStressIPCWaitTimeout,
+                ownPaneAssertion: AppIPCOwnPaneAssertion(boundPaneId: parent.id)
+            )
+        }
+        // Causal barrier: the wait was admitted and is subscribed before the
+        // child leaves the own pane.
+        await runtime.waitForSubscriptionCount(atLeast: 1)
+        await waitClock.waitForPendingSleepCount()
+        _ = try #require(harness.workspaceStore.paneAtom.detachDrawerPane(child.id, from: parent.id))
+        runtime.emit(
+            RuntimeEnvelope.pane(
+                PaneEnvelope(
+                    source: .pane(childId),
+                    seq: 1,
+                    timestamp: ContinuousClock.now,
+                    correlationId: nil,
+                    commandId: UUIDv7.generate(),
+                    paneId: childId,
+                    paneKind: .terminal,
+                    event: .terminal(.commandFinished(exitCode: 0, duration: 1))
+                )
+            )
+        )
+
+        await #expect(throws: AuthorizationError.notYetAllowed("terminal.wait")) {
+            _ = try await waitTask.value
+        }
     }
 
     @Test("terminal wait commandFinished resolves from pane runtime event")
@@ -237,7 +305,7 @@ struct AgentStudioIPCRuntimeAdapterTests {
             try await harness.adapter.waitForTerminal(
                 IPCHandle(kind: .pane, reference: .canonicalUUID(pane.id)),
                 condition: .commandFinished,
-                timeout: schedulerStressIPCWaitTimeout
+                timeout: schedulerStressIPCWaitTimeout, ownPaneAssertion: nil
             )
         }
         await runtime.waitForSubscriptionCount(atLeast: 1)
@@ -297,7 +365,7 @@ struct AgentStudioIPCRuntimeAdapterTests {
             IPCHandle(kind: .pane, reference: .canonicalUUID(pane.id)),
             condition: .commandFinished,
             timeout: .milliseconds(1),
-            afterSequence: 1
+            afterSequence: 1, ownPaneAssertion: nil
         )
 
         #expect(result.paneId == pane.id)
@@ -324,7 +392,7 @@ struct AgentStudioIPCRuntimeAdapterTests {
                 IPCHandle(kind: .pane, reference: .canonicalUUID(pane.id)),
                 condition: .titleChanged,
                 timeout: schedulerStressIPCWaitTimeout,
-                afterSequence: 10
+                afterSequence: 10, ownPaneAssertion: nil
             )
         }
         await Task.yield()
@@ -382,7 +450,7 @@ struct AgentStudioIPCRuntimeAdapterTests {
                 IPCHandle(kind: .pane, reference: .canonicalUUID(pane.id)),
                 condition: .commandFinished,
                 timeout: .seconds(1),
-                afterSequence: 1
+                afterSequence: 1, ownPaneAssertion: nil
             )
             Issue.record("terminal.wait unexpectedly succeeded with a replay gap")
         } catch let error as AppIPCRuntimeError {
@@ -406,7 +474,7 @@ struct AgentStudioIPCRuntimeAdapterTests {
             try await harness.adapter.waitForTerminal(
                 IPCHandle(kind: .pane, reference: .canonicalUUID(pane.id)),
                 condition: .commandFinished,
-                timeout: .milliseconds(1)
+                timeout: .milliseconds(1), ownPaneAssertion: nil
             )
         }
         await runtime.waitForSubscriptionCount(atLeast: 1)
@@ -423,6 +491,52 @@ struct AgentStudioIPCRuntimeAdapterTests {
         await runtime.waitForActiveSubscriptionCount(exactly: 0)
     }
 
+    /// `waitForTerminalEvent` races a timeout child against a stream-reading
+    /// child inside one `withTaskGroup`; cancelling the parent task should
+    /// resolve that race without needing the timeout's own deadline to be
+    /// reached. This never calls `waitClock.advance(...)`, so the assertions
+    /// below can only be satisfied through the cancellation path, not the
+    /// natural timeout path `terminalWaitTimesOutWhenNoExportedFactMatches`
+    /// already covers.
+    @Test("terminal wait resolves as timed out on cancellation, with the clock's own deadline never reached")
+    func terminalWaitResolvesAsTimedOutOnCancellationWithoutClockAdvancing() async throws {
+        let waitClock = TestPushClock()
+        let eventBus = makeTestPaneRuntimeEventBus()
+        let harness = RuntimeAdapterHarness(
+            eventBus: eventBus,
+            terminalEventWaitClock: waitClock
+        )
+        let pane = harness.createTerminalPane()
+        let runtime = RecordingTerminalIPCRuntime(paneId: PaneId(existingUUID: pane.id))
+        harness.runtimeRegistry.register(runtime)
+
+        // A long timeout: without cancellation resolving this, only an
+        // explicit `waitClock.advance(...)` could still complete it, and
+        // this test never calls that.
+        let waitTask = Task {
+            try await harness.adapter.waitForTerminal(
+                IPCHandle(kind: .pane, reference: .canonicalUUID(pane.id)),
+                condition: .commandFinished,
+                timeout: .seconds(3600), ownPaneAssertion: nil
+            )
+        }
+        await runtime.waitForSubscriptionCount(atLeast: 1)
+        // Event-driven: waits for the timeout child to have genuinely parked
+        // its sleep against the controlled clock, not for a fixed duration.
+        await waitClock.waitForPendingSleepCount()
+
+        waitTask.cancel()
+
+        do {
+            _ = try await waitTask.value
+            Issue.record("terminal.wait unexpectedly succeeded after cancellation")
+        } catch let error as AppIPCRuntimeError {
+            #expect(error.reason == .timeout)
+        }
+        await waitClock.waitForPendingSleepCount(exactly: 0)
+        await runtime.waitForActiveSubscriptionCount(exactly: 0)
+    }
+
     @Test("terminal send reports missing runtime separately from missing pane")
     func terminalSendReportsMissingRuntimeSeparatelyFromMissingPane() async throws {
         let harness = RuntimeAdapterHarness()
@@ -432,7 +546,7 @@ struct AgentStudioIPCRuntimeAdapterTests {
             _ = try await harness.adapter.sendTerminalInput(
                 to: IPCHandle(kind: .pane, reference: .canonicalUUID(pane.id)),
                 input: "echo hi\n",
-                correlationId: nil
+                correlationId: nil, ownPaneAssertion: nil
             )
             Issue.record("terminal.send unexpectedly succeeded without a registered runtime")
         } catch let error as AppIPCRuntimeError {
@@ -477,14 +591,16 @@ struct AgentStudioIPCRuntimeAdapterTests {
         harness.workspaceStore.appendTab(Tab(paneId: webPane.id))
 
         do {
-            _ = try harness.adapter.terminalStatus(IPCHandle(kind: .pane, reference: .canonicalUUID(webPane.id)))
+            _ = try harness.adapter.terminalStatus(
+                IPCHandle(kind: .pane, reference: .canonicalUUID(webPane.id)), ownPaneAssertion: nil)
             Issue.record("terminal.status unexpectedly accepted a web pane")
         } catch let error as AppIPCRuntimeError {
             #expect(error.reason == .unsupportedCommand)
         }
 
         do {
-            _ = try harness.adapter.terminalStatus(IPCHandle(kind: .workspace, reference: .friendlyOrdinal(1)))
+            _ = try harness.adapter.terminalStatus(
+                IPCHandle(kind: .workspace, reference: .friendlyOrdinal(1)), ownPaneAssertion: nil)
             Issue.record("terminal.status unexpectedly accepted a workspace handle")
         } catch let error as AppIPCRuntimeError {
             #expect(error.reason == .validationRejected)
@@ -504,7 +620,7 @@ struct AgentStudioIPCRuntimeAdapterTests {
             _ = try await harness.adapter.sendTerminalInput(
                 to: IPCHandle(kind: .pane, reference: .canonicalUUID(pane.id)),
                 input: "echo hi\n",
-                correlationId: nil
+                correlationId: nil, ownPaneAssertion: nil
             )
             Issue.record("terminal.send unexpectedly succeeded for \(reason)")
         } catch let error as AppIPCRuntimeError {

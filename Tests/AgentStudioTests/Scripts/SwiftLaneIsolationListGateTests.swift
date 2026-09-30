@@ -32,9 +32,16 @@ struct SwiftLaneIsolationListGateTests {
             "AgentStudioAppIPCServiceCommandTests",
             "AgentStudioAppIPCServiceContributionTests",
             "AgentStudioIPCBridgeServiceTests",
+            "AgentStudioIPCBridgeRenderDiagnosticsTests",
+            "AgentStudioIPCBridgeSearchModeTests",
+            "AgentStudioIPCBridgeNonBridgeTargetTests",
+            "AgentStudioIPCBridgeDiagnosticTargetTests",
+            "AgentStudioIPCBridgePaneAgentTests",
+            "AgentStudioIPCBridgeRejectedControlTests",
             "AgentStudioAppIPCCommandExecuteContractTests",
             "AppIPCDynamicCommandClientTests",
             "AppIPCErrorCorrectionTests",
+            "AgentStudioAppIPCConnectionHandlerLifecycleTests",
         ]
         #expect(aggregateSuiteNames == formerAggregateSuiteNames)
         #expect(explicitSuitePathPairs(in: largeFunction).isEmpty)

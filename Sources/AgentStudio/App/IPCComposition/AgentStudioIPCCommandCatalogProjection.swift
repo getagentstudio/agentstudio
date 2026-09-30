@@ -23,30 +23,73 @@ enum AgentStudioIPCCommandCatalogProjection {
         AppCommand.allCases.filter { admitsCommand($0, on: channel) }
     }
 
-    static func makeDescriptor(for command: AppCommand) throws -> IPCCommandDescriptor {
-        let examples = try command.ipcSpec.argumentVariants.map { variant in
-            let request = try exampleRequest(for: command, variant: variant)
-            return IPCCommandExample(
-                description: "Execute with explicit typed \(variant.rawValue) context.",
-                request: request,
-                result: exampleResult(for: command, request: request)
-            )
+    /// Captures only the admitted commands' immutable IPC spec values on
+    /// MainActor. Example generation and descriptor/schema work happen in
+    /// `AppIPCDescriptorCatalogBuilder.buildOffMain`.
+    static func captureBuildInputs(on channel: AgentStudioIPCChannel) -> AppIPCCommandCatalogProjectionInputs {
+        let commandDescriptorInputs = admittedCommands(on: channel).map { command in
+            command.ipcSpec.descriptorInput(definition: command.definition, examples: [])
         }
-        return try IPCCommandDescriptorFactory.make(
-            command.ipcSpec.descriptorInput(definition: command.definition, examples: examples)
+        return AppIPCCommandCatalogProjectionInputs(
+            commandDescriptorInputs: commandDescriptorInputs,
+            recognizedCommands: recognizedCommands,
+            recognizedUnexposedCommands: recognizedUnexposedCommands(on: channel)
         )
     }
 
-    /// The receipt an example advertises. It is the first result variant the
-    /// projection declares for the command, so discovery never promises a
-    /// stronger boundary than the owner can prove.
+    /// Every command on every channel, with its exposure and agent
+    /// eligibility, so the registry can refuse a pane agent by command name.
+    static var recognizedCommands: [AppIPCRecognizedEntry] {
+        AppCommand.allCases.map {
+            AppIPCRecognizedEntry(
+                name: $0.rawValue,
+                exposure: $0.ipcSpec.exposure,
+                agentEligibility: $0.ipcSpec.agentEligibility
+            )
+        }
+    }
+
+    /// Commands this build recognizes that the channel hides, for discovery.
+    static func recognizedUnexposedCommands(on channel: AgentStudioIPCChannel) -> [IPCRecognizedUnexposedName] {
+        AppCommand.allCases.filter { !admitsCommand($0, on: channel) }.map {
+            IPCRecognizedUnexposedName(name: $0.rawValue, agentEligibility: $0.ipcSpec.agentEligibility)
+        }
+    }
+
+    static func makeDescriptor(from capturedInput: IPCCommandDescriptorInput) throws -> IPCCommandDescriptor {
+        let examples = try capturedInput.argumentVariants.map { variant in
+            let request = try exampleRequest(commandIdentifier: capturedInput.id, variant: variant)
+            return IPCCommandExample(
+                description: "Execute with explicit typed \(variant.rawValue) context.",
+                request: request,
+                result: exampleResult(for: capturedInput.resultVariants, request: request)
+            )
+        }
+        return try IPCCommandDescriptorFactory.make(
+            IPCCommandDescriptorInput(
+                id: capturedInput.id,
+                title: capturedInput.title,
+                description: capturedInput.description,
+                exposure: capturedInput.exposure,
+                executionMode: capturedInput.executionMode,
+                argumentVariants: capturedInput.argumentVariants,
+                requiredPrivileges: capturedInput.requiredPrivileges,
+                dataScope: capturedInput.dataScope,
+                allowedTargetKinds: capturedInput.allowedTargetKinds,
+                resultVariants: capturedInput.resultVariants,
+                examples: examples,
+                agentEligibility: capturedInput.agentEligibility
+            )
+        )
+    }
+
     static func exampleResult(
-        for command: AppCommand,
+        for resultVariants: [IPCCommandResultVariant],
         request: IPCCommandExecutionRequest
     ) -> IPCCommandExecutionResult {
         let commandId = request.commandId
         let correlationId = request.correlationId
-        switch command.ipcSpec.resultVariants.first {
+        switch resultVariants.first {
         case .accepted:
             return .accepted(.init(commandId: commandId, correlationId: correlationId, operationId: nil))
         case .presented:
@@ -63,8 +106,15 @@ enum AgentStudioIPCCommandCatalogProjection {
         for command: AppCommand,
         variant: IPCCommandArgumentVariant
     ) throws -> IPCCommandExecutionRequest {
+        try exampleRequest(commandIdentifier: IPCCommandIdentifier(rawValue: command.rawValue), variant: variant)
+    }
+
+    private static func exampleRequest(
+        commandIdentifier: IPCCommandIdentifier,
+        variant: IPCCommandArgumentVariant
+    ) throws -> IPCCommandExecutionRequest {
         IPCCommandExecutionRequest(
-            commandId: .init(rawValue: command.rawValue),
+            commandId: commandIdentifier,
             correlationId: ExampleIdentities.correlation,
             arguments: try exampleArguments(for: variant)
         )

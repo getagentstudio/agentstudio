@@ -32,7 +32,7 @@ extension AppIPCBuiltInMethodRegistrations {
         let descriptors = inputs.catalog.bridge.review
         return try [
             AppIPCTypedMethodRegistration(
-                descriptor: descriptors.bridgeDiffLoad,
+                descriptorRepresentations: try inputs.descriptorRepresentations(for: descriptors.bridgeDiffLoad),
                 correlation: .required {
                     try AppIPCBuiltInRegistrationSupport.requiredCorrelation($0.correlationId)
                 },
@@ -50,7 +50,7 @@ extension AppIPCBuiltInMethodRegistrations {
                 }
             ).erase(),
             AppIPCTypedMethodRegistration(
-                descriptor: descriptors.bridgeFileViewOpen,
+                descriptorRepresentations: try inputs.descriptorRepresentations(for: descriptors.bridgeFileViewOpen),
                 correlation: .required {
                     try AppIPCBuiltInRegistrationSupport.requiredCorrelation($0.correlationId)
                 },
@@ -169,7 +169,7 @@ extension AppIPCBuiltInMethodRegistrations {
             correlationPolicy = .notRequired
         }
         return try AppIPCTypedMethodRegistration(
-            descriptor: binding.descriptor,
+            descriptorRepresentations: try inputs.descriptorRepresentations(for: binding.descriptor),
             correlation: correlationPolicy,
             resolveTarget: { parameters, _, tools in
                 try await AppIPCBuiltInRegistrationSupport.validatedBridgePaneTarget(

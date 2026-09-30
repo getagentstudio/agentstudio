@@ -3,12 +3,12 @@ import Foundation
 
 package struct IPCDescriptorInvocation: Sendable {
     package let descriptor: IPCAnyMethodDescriptor
-    package let normalizedParameters: Data
+    package let normalizedParameters: IPCValidatedJSON
     package let presentation: IPCDescriptorInvocationPresentation
 
     package init(
         descriptor: IPCAnyMethodDescriptor,
-        normalizedParameters: Data,
+        normalizedParameters: IPCValidatedJSON,
         presentation: IPCDescriptorInvocationPresentation
     ) {
         self.descriptor = descriptor

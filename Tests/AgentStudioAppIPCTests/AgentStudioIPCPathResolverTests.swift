@@ -1,4 +1,5 @@
 import AgentStudioAppIPC
+import AgentStudioInfrastructure
 import AgentStudioProgrammaticControl
 import Foundation
 import Testing
@@ -48,16 +49,64 @@ struct AgentStudioIPCPathResolverTests {
         #expect(try fixture.mode(for: paths.ipcDirectory) & 0o777 == 0o700)
     }
 
-    @Test("fails closed for group-readable roots")
-    func failsClosedForGroupReadableRoots() throws {
-        let fixture = try IPCPathFixture(rootMode: 0o750)
+    @Test("allows a group-readable data root while keeping the ipc directory owner-only")
+    func allowsGroupReadableDataRoot() throws {
+        let fixture = try IPCPathFixture(rootMode: 0o755)
         defer { fixture.cleanup() }
 
         let paths = AgentStudioIPCPathResolver().paths(rootDirectory: fixture.root)
 
-        #expect(throws: AgentStudioIPCFilesystemTrustError.self) {
-            try AgentStudioIPCFilesystem.prepare(paths: paths)
+        try AgentStudioIPCFilesystem.prepare(paths: paths)
+
+        #expect(try fixture.mode(for: fixture.root) & 0o777 == 0o755)
+        #expect(try fixture.mode(for: paths.ipcDirectory) & 0o777 == 0o700)
+    }
+
+    @Test("rejects group- or world-writable data roots with a distinct reason")
+    func rejectsGroupOrWorldWritableDataRoots() throws {
+        for rootMode in [mode_t(0o775), mode_t(0o757)] {
+            let fixture = try IPCPathFixture(rootMode: rootMode)
+            defer { fixture.cleanup() }
+
+            let paths = AgentStudioIPCPathResolver().paths(rootDirectory: fixture.root)
+            let error = filesystemTrustError(for: paths)
+
+            #expect(error?.reason == .groupOrWorldWritable)
+            #expect(error?.path == fixture.root.path)
         }
+    }
+
+    @Test("fails closed for a symlinked data root")
+    func failsClosedForSymlinkedDataRoot() throws {
+        let fixture = try IPCPathFixture()
+        defer { fixture.cleanup() }
+        let symlinkRoot = FileManager.default.temporaryDirectory
+            .appending(path: "asipc-path-link-\(UUIDv7.generate().uuidString.prefix(8))", directoryHint: .isDirectory)
+        defer { try? FileManager.default.removeItem(at: symlinkRoot) }
+        try FileManager.default.createSymbolicLink(at: symlinkRoot, withDestinationURL: fixture.root)
+
+        let paths = AgentStudioIPCPathResolver().paths(rootDirectory: symlinkRoot)
+        let error = filesystemTrustError(for: paths)
+
+        #expect(error?.reason == .symlinkNotAllowed)
+        #expect(error?.path == symlinkRoot.path)
+    }
+
+    @Test("keeps a pre-existing ipc directory owner-only under a 0755 data root")
+    func rejectsGroupAccessibleIPCDirectoryWithinGroupReadableDataRoot() throws {
+        let fixture = try IPCPathFixture(rootMode: 0o755)
+        defer { fixture.cleanup() }
+
+        let paths = AgentStudioIPCPathResolver().paths(rootDirectory: fixture.root)
+        try FileManager.default.createDirectory(
+            at: paths.ipcDirectory,
+            withIntermediateDirectories: false,
+            attributes: [.posixPermissions: 0o755]
+        )
+        let error = filesystemTrustError(for: paths)
+
+        #expect(error?.reason == .groupOrWorldAccessible)
+        #expect(error?.path == paths.ipcDirectory.path)
     }
 
     @Test("fails closed for symlinked ipc directories")
@@ -156,6 +205,17 @@ struct AgentStudioIPCPathResolverTests {
             resolver.decision(for: .differentRuntime(UUID()), expectedRuntimeId: runtimeId)
                 == .refuseDifferentLiveRuntime
         )
+    }
+}
+
+private func filesystemTrustError(for paths: AgentStudioIPCPaths) -> AgentStudioIPCFilesystemTrustError? {
+    do {
+        try AgentStudioIPCFilesystem.prepare(paths: paths)
+        return nil
+    } catch let error as AgentStudioIPCFilesystemTrustError {
+        return error
+    } catch {
+        return nil
     }
 }
 

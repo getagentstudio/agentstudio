@@ -451,6 +451,15 @@ extension WorkspaceSurfaceCoordinator {
         case .addWebviewDrawerPane(let parentPaneId, let state):
             executeAddWebviewDrawerPane(parentPaneId: parentPaneId, state: state)
 
+        case .addDrawerChildInBackground(let parentPaneId, let childPaneId, .terminal):
+            try await executeInsertDrawerPane(
+                parentPaneId: parentPaneId, targetDrawerPaneId: nil, direction: .right, sizingMode: .halveTarget,
+                childPaneId: childPaneId, presentation: .background)
+
+        case .addDrawerChildInBackground(let parentPaneId, let childPaneId, .webview(let state)):
+            executeAddWebviewDrawerPane(
+                parentPaneId: parentPaneId, state: state, childPaneId: childPaneId, presentation: .background)
+
         case .removeDrawerPane(let parentPaneId, let drawerPaneId):
             try await executeDiscardDrawerPane(parentPaneId: parentPaneId, drawerPaneId: drawerPaneId)
 

@@ -37,7 +37,8 @@ extension PaneTabViewController {
 
     func executeDrawerCommand(
         _ command: AppCommand,
-        arguments: IPCCommandArguments
+        arguments: IPCCommandArguments,
+        ownPaneAssertion: WorkspaceOwnPaneAssertion?
     ) async -> AppCommandExecutionOutcome {
         switch arguments {
         case .drawerParent(let value):
@@ -57,7 +58,7 @@ extension PaneTabViewController {
                 let drawerPaneId = AppCommandTypedIPCPane.canonicalId(value.drawerPaneSelector)
             else { return .stateUnavailable }
             return await executeDrawerChildCommand(
-                command, parentPaneId: parentPaneId, drawerPaneId: drawerPaneId)
+                command, parentPaneId: parentPaneId, drawerPaneId: drawerPaneId, ownPaneAssertion: ownPaneAssertion)
         case .detachedDrawerPane(let value):
             guard command == .detachDrawerPane,
                 let drawerPaneId = AppCommandTypedIPCPane.canonicalId(value.drawerPaneSelector),
@@ -127,7 +128,8 @@ extension PaneTabViewController {
     private func executeDrawerChildCommand(
         _ command: AppCommand,
         parentPaneId: UUID,
-        drawerPaneId: UUID
+        drawerPaneId: UUID,
+        ownPaneAssertion: WorkspaceOwnPaneAssertion?
     ) async -> AppCommandExecutionOutcome {
         switch command {
         case .navigateDrawerPane:
@@ -136,8 +138,13 @@ extension PaneTabViewController {
                 for: command
             )
         case .closeDrawerPane:
-            return await applyWorkspaceAction(
-                .removeDrawerPane(parentPaneId: parentPaneId, drawerPaneId: drawerPaneId), for: command)
+            let action = WorkspaceActionCommand.removeDrawerPane(parentPaneId: parentPaneId, drawerPaneId: drawerPaneId)
+            guard let ownPaneAssertion else { return await applyWorkspaceAction(action, for: command) }
+            switch await executor.execute(action, ownPaneAssertion: ownPaneAssertion) {
+            case .applied: return .applied
+            case .outsideOwnPane: return .outsideOwnPane
+            case .rejected: return headlessIPCOutcome(false, for: command)
+            }
         default:
             return .unsupportedCommand
         }

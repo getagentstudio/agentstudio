@@ -340,7 +340,7 @@ describe("scene playback", () => {
     }
   });
 
-  it("seeks to a requested step and holds it against autoplay", () => {
+  it("seeks to a requested step and keeps playing", () => {
     stubReducedMotion(false);
     const scene = createFakeSceneFixture();
     const playback = createScenePlayback({
@@ -363,18 +363,18 @@ describe("scene playback", () => {
       }),
     );
 
-    expect(scene.playbackState()).toBe("paused");
-    expect(timing.at(-1)?.manualPause).toBe(true);
+    expect(scene.playbackState()).toBe("playing");
+    expect(timing.at(-1)?.manualPause).toBe(false);
     expect(scene.timeline().time()).toBe(scene.timeline().labels["beat-watch"]);
     expect(reachedSteps).toEqual(["watch-folders"]);
     playback.synchronize(1, true);
-    expect(scene.timeline().paused()).toBe(true);
+    expect(scene.timeline().paused()).toBe(false);
     expect(reachedSteps).toEqual(["watch-folders"]);
 
     playback.dispose();
   });
 
-  it("publishes exact step timing and resumes a paused step on request", () => {
+  it("publishes exact step timing and replays the current step from its label", () => {
     stubReducedMotion(false);
     const scene = createFakeSceneFixture();
     const playback = createScenePlayback({
@@ -406,14 +406,20 @@ describe("scene playback", () => {
         detail: { stepId: "watch-folders" },
       }),
     );
-    expect(timing.at(-1)).toMatchObject({ stepId: "watch-folders", running: false });
+    expect(timing.at(-1)).toMatchObject({ stepId: "watch-folders", running: true });
+    scene.timeline().time(1.5);
     scene.surface.dispatchEvent(
-      new CustomEvent("agentstudio:chapter-step-resume-requested", {
+      new CustomEvent("agentstudio:chapter-step-requested", {
         detail: { stepId: "watch-folders" },
       }),
     );
     expect(scene.playbackState()).toBe("playing");
-    expect(timing.at(-1)).toMatchObject({ stepId: "watch-folders", running: true });
+    expect(timing.at(-1)).toMatchObject({
+      stepId: "watch-folders",
+      running: true,
+      elapsedSeconds: 0,
+    });
+    expect(scene.timeline().time()).toBe(scene.timeline().labels["beat-watch"]);
     playback.dispose();
   });
 
@@ -532,6 +538,7 @@ describe("scene playback", () => {
     proof.innerHTML = "<video data-scene-proof-video controls muted playsinline></video>";
     const video = proof.querySelector("video");
     if (!(video instanceof HTMLVideoElement)) throw new Error("Proof video is missing");
+    Object.defineProperty(video, "readyState", { configurable: true, value: 3 });
     let videoPaused = true;
     Object.defineProperty(video, "paused", { configurable: true, get: (): boolean => videoPaused });
     Object.defineProperty(video, "duration", { configurable: true, get: (): number => 5 });
@@ -571,6 +578,38 @@ describe("scene playback", () => {
     playback.dispose();
   });
 
+  it("recovers a source error that arrives before the proof handoff", () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    stubReducedMotion(false);
+    const scene = createFakeSceneFixture();
+    requiredHtmlElement(scene.surface, "[data-scene-proof]").innerHTML =
+      "<video data-scene-proof-video controls muted playsinline></video>";
+    const video = scene.surface.querySelector("video");
+    if (video === null) throw new Error("Proof video missing");
+    Object.defineProperty(video, "readyState", { configurable: true, value: 0 });
+    Object.defineProperty(video, "error", {
+      configurable: true,
+      value: { code: 4, message: "Source unavailable" },
+    });
+    const play = vi.spyOn(video, "play").mockRejectedValue(new Error("Source unavailable"));
+    const playback = createScenePlayback({
+      resolveModule: () => scene.module,
+      sceneRoot: scene.sceneRoot,
+      surface: scene.surface,
+    });
+    try {
+      playback.synchronize(1, true);
+      video.dispatchEvent(new Event("error"));
+      scene.timeline().progress(1);
+      vi.advanceTimersByTime(3000);
+      expect(scene.playbackState()).toBe("playing");
+      expect(observeProof(scene.surface).state).toBe("hidden");
+      expect(play).not.toHaveBeenCalled();
+    } finally {
+      playback.dispose();
+    }
+  });
+
   it.each(["error", "rejected-play"])("replays after a proof video %s", async (failure) => {
     vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
     stubReducedMotion(false);
@@ -579,6 +618,7 @@ describe("scene playback", () => {
     proof.innerHTML = "<video data-scene-proof-video controls muted playsinline></video>";
     const video = proof.querySelector("video");
     if (!(video instanceof HTMLVideoElement)) throw new Error("Proof video is missing");
+    Object.defineProperty(video, "readyState", { configurable: true, value: 3 });
     vi.spyOn(video, "play").mockImplementation(() =>
       failure === "rejected-play" ? Promise.reject(new Error("decode failed")) : Promise.resolve(),
     );
@@ -605,6 +645,7 @@ describe("scene playback", () => {
       "<video data-scene-proof-video controls muted playsinline></video>";
     const video = scene.surface.querySelector("video");
     if (!(video instanceof HTMLVideoElement)) throw new Error("Proof video is missing");
+    Object.defineProperty(video, "readyState", { configurable: true, value: 3 });
     let paused = true;
     Object.defineProperty(video, "paused", { configurable: true, get: () => paused });
     vi.spyOn(video, "play").mockImplementation(() => {
@@ -656,7 +697,7 @@ describe("scene playback", () => {
       state: "hidden",
       transition: "instant",
     });
-    expect(scene.playbackState()).toBe("paused");
+    expect(scene.playbackState()).toBe("playing");
     expect(scene.timeline().time()).toBe(scene.timeline().labels["beat-watch"]);
     playback.dispose();
   });

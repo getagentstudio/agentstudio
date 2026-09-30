@@ -15,7 +15,7 @@ extension AppIPCBuiltInMethodRegistrations {
         let descriptors = inputs.catalog.presentationAndSidebar
         return try [
             AppIPCTypedMethodRegistration(
-                descriptor: descriptors.uiCommandBarOpen,
+                descriptorRepresentations: try inputs.descriptorRepresentations(for: descriptors.uiCommandBarOpen),
                 correlation: .required {
                     try AppIPCBuiltInRegistrationSupport.requiredCorrelation($0.correlationId)
                 },
@@ -30,7 +30,7 @@ extension AppIPCBuiltInMethodRegistrations {
                 }
             ).erase(),
             AppIPCTypedMethodRegistration(
-                descriptor: descriptors.uiArrangementsOpen,
+                descriptorRepresentations: try inputs.descriptorRepresentations(for: descriptors.uiArrangementsOpen),
                 correlation: .required {
                     try AppIPCBuiltInRegistrationSupport.requiredCorrelation($0.correlationId)
                 },
@@ -63,7 +63,7 @@ extension AppIPCBuiltInMethodRegistrations {
                 }
             ).erase(),
             AppIPCTypedMethodRegistration(
-                descriptor: descriptors.sidebarGroupingGet,
+                descriptorRepresentations: try inputs.descriptorRepresentations(for: descriptors.sidebarGroupingGet),
                 correlation: .notRequired,
                 resolveTarget: { parameters, _, _ in AppIPCBuiltInRegistrationSupport.appTarget(parameters) },
                 connectionHandler: { parameters, _, _ in
@@ -71,7 +71,7 @@ extension AppIPCBuiltInMethodRegistrations {
                 }
             ).erase(),
             AppIPCTypedMethodRegistration(
-                descriptor: descriptors.sidebarSurfaceGet,
+                descriptorRepresentations: try inputs.descriptorRepresentations(for: descriptors.sidebarSurfaceGet),
                 correlation: .notRequired,
                 resolveTarget: { parameters, _, _ in AppIPCBuiltInRegistrationSupport.appTarget(parameters) },
                 connectionHandler: { parameters, _, _ in
@@ -87,7 +87,7 @@ extension AppIPCBuiltInMethodRegistrations {
         let events = inputs.catalog.events
         return try [
             AppIPCTypedMethodRegistration(
-                descriptor: events.eventsSubscribe,
+                descriptorRepresentations: try inputs.descriptorRepresentations(for: events.eventsSubscribe),
                 correlation: .required(\.correlationId),
                 resolveTarget: { parameters, context, _ in
                     try AppIPCBuiltInRegistrationSupport.principalTarget(parameters, context: context)
@@ -105,7 +105,7 @@ extension AppIPCBuiltInMethodRegistrations {
                 }
             ).erase(),
             AppIPCTypedMethodRegistration(
-                descriptor: events.eventsUnsubscribe,
+                descriptorRepresentations: try inputs.descriptorRepresentations(for: events.eventsUnsubscribe),
                 correlation: .required(\.correlationId),
                 resolveTarget: { parameters, context, _ in
                     try AppIPCBuiltInRegistrationSupport.principalTarget(parameters, context: context)

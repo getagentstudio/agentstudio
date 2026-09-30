@@ -90,7 +90,7 @@ struct AppIPCSessionMethodRegistrationTests {
                 connectionContext: fixture.connectionContext(principal: panePrincipal, channel: .stable),
                 targetResolutionTools: fixture.targetResolutionTools(),
                 authorize: { principal, request in
-                    try authorizationService.authorize(principal: principal, request: request)
+                    try await authorizationService.authorize(principal: principal, request: request)
                 }
             )
         }
@@ -120,7 +120,7 @@ struct AppIPCSessionMethodRegistrationTests {
             connectionContext: fixture.connectionContext(principal: panePrincipal, channel: .stable),
             targetResolutionTools: fixture.targetResolutionTools(),
             authorize: { principal, request in
-                try authorizationService.authorize(principal: principal, request: request)
+                try await authorizationService.authorize(principal: principal, request: request)
             }
         )
 
@@ -148,9 +148,12 @@ struct AppIPCSessionMethodRegistrationTests {
         registrations: [AnyAppIPCMethodRegistration]
     ) throws -> AuthorizationService {
         AuthorizationService(
-            methodRegistry: try AppIPCMethodRegistry(registrations: registrations, channel: .stable),
+            methodRegistry: try makeTestAppIPCMethodRegistry(
+                registrations: registrations, recognizedCommands: [], channel: .stable),
             grantLedger: GrantLedger(),
-            canonicalizer: PermissionScopeCanonicalizer()
+            canonicalizer: PermissionScopeCanonicalizer(),
+            ownPaneScopePort: StaticOwnPaneScopePort(),
+            agentAuthorizationTelemetry: RecordingAgentAuthorizationTelemetry()
         )
     }
 

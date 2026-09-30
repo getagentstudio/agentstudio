@@ -99,11 +99,11 @@
 
   .topology-mainline {
     stroke: color-mix(in srgb, var(--color-primary) 46%, transparent);
-    stroke-width: 2px;
+    stroke-width: var(--rail-trunk-width);
   }
 
   :global(.topology-route > path) {
-    stroke-width: 1.5px;
+    stroke-width: var(--rail-line-width);
   }
 
   :global(.topology-route > .topology-clearance) {
@@ -163,8 +163,7 @@
   }
 
   :global([data-topology-terminal-route] > path:not(.topology-clearance)) {
-    stroke: var(--color-glyph);
-    stroke-width: 2px;
+    stroke: var(--color-primary);
   }
 
   :global(.topology-port-stop-main),
@@ -193,7 +192,8 @@
   :global([data-topology-suppressed]) { display: none; }
   :global([data-node] .node-commit),
   :global([data-node] .node-chapter),
-  :global([data-node] .node-merge-ring) {
+  :global([data-node] .node-merge-ring),
+  :global([data-node] .node-end-ring) {
     fill: var(--color-canvas);
     stroke: color-mix(in srgb, var(--color-ink-faint) 45%, transparent);
     stroke-width: 1px;
@@ -203,7 +203,8 @@
       stroke-width 240ms ease;
   }
 
-  :global([data-node] .node-merge-core) {
+  :global([data-node] .node-merge-core),
+  :global([data-node] .node-end-core) {
     fill: currentColor;
     opacity: 0;
     transition: opacity 240ms ease;
@@ -214,12 +215,14 @@
     stroke: currentColor;
   }
 
-  :global([data-node][data-topology-node-revealed] .node-merge-ring) {
+  :global([data-node][data-topology-node-revealed] .node-merge-ring),
+  :global([data-node][data-topology-node-revealed] .node-end-ring) {
     stroke: currentColor;
     stroke-width: 2px;
   }
 
-  :global([data-node][data-topology-node-revealed] .node-merge-core) {
+  :global([data-node][data-topology-node-revealed] .node-merge-core),
+  :global([data-node][data-topology-node-revealed] .node-end-core) {
     opacity: 1;
   }
 
@@ -311,7 +314,9 @@
     :global([data-node] .node-commit),
     :global([data-node] .node-chapter),
     :global([data-node] .node-merge-ring),
-    :global([data-node] .node-merge-core) {
+    :global([data-node] .node-merge-core),
+    :global([data-node] .node-end-ring),
+    :global([data-node] .node-end-core) {
       transition: none;
     }
 

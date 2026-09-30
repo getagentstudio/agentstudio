@@ -79,8 +79,14 @@ final class RepoExplorerTableMaterializer: NSObject,
     // Render-only input; key routing always checks the actual responder and current owner.
     var showsKeyboardHints = false
     private var boundsObserver: NSObjectProtocol?
+    /// A size-only change of the clip view (sidebar re-shown or expanded) posts a frame
+    /// change but not a bounds change; it is the moment suspended rows become representable.
+    private var clipFrameObserver: NSObjectProtocol?
     private(set) var isDetached = false
     private var isDemandActive = true
+    /// Set when suspension cleared represented cells and no row was representable to rebind
+    /// at resume (the view had no laid-out bounds yet). The next geometry change rebinds once.
+    private var needsRepresentedRebindAfterLayout = false
 
     init(
         materializationHostLifetimeID: RepoExplorerMaterializationHostLifetimeID =
@@ -144,6 +150,16 @@ final class RepoExplorerTableMaterializer: NSObject,
         ) { [weak self] _ in
             MainActor.assumeIsolated {
                 self?.boundsDidChange()
+            }
+        }
+        scrollView.contentView.postsFrameChangedNotifications = true
+        clipFrameObserver = NotificationCenter.default.addObserver(
+            forName: NSView.frameDidChangeNotification,
+            object: scrollView.contentView,
+            queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated {
+                self?.rebindRepresentedCellsAfterSuspension()
             }
         }
         updateTableFrame()
@@ -388,6 +404,7 @@ final class RepoExplorerTableMaterializer: NSObject,
         isDemandActive = false
         invalidateScheduledViewportPublication()
         clearRepresentedCellsForReuse()
+        needsRepresentedRebindAfterLayout = true
         publishClearedViewportDemand()
     }
 
@@ -402,7 +419,7 @@ final class RepoExplorerTableMaterializer: NSObject,
         )
         acceptedCommandPresentationSnapshot = .empty
         acceptedCommandGeneration = 0
-        rebindRepresentedCells()
+        rebindRepresentedCellsAfterSuspension()
         scheduleViewportPublication()
     }
 
@@ -412,6 +429,10 @@ final class RepoExplorerTableMaterializer: NSObject,
         invalidateScheduledViewportPublication()
         clearRepresentedCellsForReuse()
         clearViewportDemand()
+        if let clipFrameObserver {
+            NotificationCenter.default.removeObserver(clipFrameObserver)
+            self.clipFrameObserver = nil
+        }
         if let boundsObserver {
             NotificationCenter.default.removeObserver(boundsObserver)
             self.boundsObserver = nil
@@ -636,6 +657,7 @@ final class RepoExplorerTableMaterializer: NSObject,
                 restore(anchor: anchor, priorSnapshot: snapshot)
             }
         }
+        rebindRepresentedCellsAfterSuspension()
         scheduleViewportPublication()
     }
 
@@ -904,5 +926,18 @@ extension RepoExplorerTableMaterializer {
 extension Array {
     fileprivate subscript(safe index: Index) -> Element? {
         indices.contains(index) ? self[index] : nil
+    }
+}
+
+extension RepoExplorerTableMaterializer {
+    /// A resume that runs before the re-shown view is laid out sees no represented rows, so
+    /// the cells suspension cleared would stay blank until a scroll. Keep the rebind pending
+    /// until a geometry change makes rows representable.
+    fileprivate func rebindRepresentedCellsAfterSuspension() {
+        guard !isDetached, needsRepresentedRebindAfterLayout, isDemandActive else { return }
+        let representedRows = representedRowIndexes()
+        guard !representedRows.isEmpty else { return }
+        needsRepresentedRebindAfterLayout = false
+        rebindRepresentedCells(at: representedRows)
     }
 }

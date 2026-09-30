@@ -48,19 +48,30 @@ struct AgentStudioAppIPCServiceContributionTests {
         #expect(queryPort.snapshotPaneIds == [paneId, paneId])
     }
 
-    @Test("typed pane snapshot remains hidden from a pane principal")
-    func typedPaneSnapshotRejectsPanePrincipalBeforeTargetResolution() throws {
-        let scenario = try makeSnapshotScenario()
-        defer { scenario.fixture.cleanup() }
-        try scenario.fixture.server.start()
-        let client = try authenticatedPaneClient(fixture: scenario.fixture, boundPaneId: scenario.paneId)
+    @Test("typed pane snapshot reaches a pane agent's own pane and refuses another pane by name")
+    func typedPaneSnapshotAdmitsOnlyTheAgentsOwnPane() throws {
+        let ownPaneId = UUIDv7.generate()
+        let otherPaneId = UUIDv7.generate()
+        let queryPort = RecordingSnapshotQueryPort(
+            runtimeId: UUIDv7.generate(),
+            panes: [makePaneSummary(id: ownPaneId, ordinal: 1), makePaneSummary(id: otherPaneId, ordinal: 2)]
+        )
+        let fixture = try LiveServerFixture(channel: .stable, panes: queryPort.panes, queryPort: queryPort)
+        defer { fixture.cleanup() }
+        try fixture.server.start()
+        let client = try authenticatedPaneClient(fixture: fixture, boundPaneId: ownPaneId)
         defer { client.connection.close() }
 
-        let response = try sendPaneSnapshot(client: client, handle: "pane:1")
+        let own = try sendPaneSnapshot(client: client, handle: "pane:1")
+        let other = try sendPaneSnapshot(client: client, handle: "pane:2")
 
-        #expect(response.error?.code == -32_601)
-        #expect(response.error?.message == "method not found")
-        #expect(scenario.queryPort.snapshotPaneIds.isEmpty)
+        #expect(own.error == nil)
+        #expect(try decodeResponseResult(IPCPaneSnapshotResult.self, from: own).pane.id == ownPaneId)
+        #expect(other.result == nil)
+        #expect(other.error?.code == -32_011)
+        #expect(
+            other.error?.data
+                == .object(["reason": .string("notYetAllowed"), "name": .string("pane.snapshot")]))
     }
 
     @Test("typed pane snapshot rejects malformed parameters before dispatch")
@@ -160,7 +171,7 @@ struct AgentStudioAppIPCServiceContributionTests {
         let registration = try fixture.registration(named: "pane.snapshot", in: registrations)
         let principal = fixture.diagnosticPrincipal
         let tools = AppIPCTargetResolutionTools(canonicalizePaneHandle: { _ in
-            _ = try await queryPort.snapshotPane(fixture.paneId)
+            _ = try await queryPort.snapshotPane(fixture.paneId, ownPaneAssertion: nil)
             return IPCHandle(kind: .pane, reference: .canonicalUUID(fixture.paneId))
         })
 

@@ -153,11 +153,12 @@ package struct AgentStudioGitWorkingTreeStatusProvider: GitExactCleanStatusProvi
                 }
                 let barrier: GitCleanContinuityBarrier?
                 if let observationPlan {
-                    barrier = await continuityWitness.prepare(
+                    let prepareOutcome = await continuityWitness.prepare(
                         worktreeId: worktreeId,
                         rootPath: rootPath,
                         observationPlan: observationPlan
                     )
+                    barrier = prepareOutcome.barrier
                 } else {
                     barrier = nil
                 }

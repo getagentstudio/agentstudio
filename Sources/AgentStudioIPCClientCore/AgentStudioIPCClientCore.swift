@@ -13,7 +13,9 @@ package struct AgentStudioIPCClient: Sendable {
 
     package func requestFrame(_ invocation: IPCDescriptorInvocation, requestID: Int = 1) throws -> String {
         do {
-            let parameters = try invocation.descriptor.normalizeParameters(invocation.normalizedParameters)
+            let parameters = try invocation.normalizedParameters.data(
+                validatedFor: invocation.descriptor.metadata.parameterSchema
+            )
             return try JSONRPCCodec.encodeRequest(
                 JSONRPCClientRequest(
                     id: .number(requestID),
@@ -179,7 +181,8 @@ package struct AgentStudioIPCClient: Sendable {
         let status: IPCAuthStatusResult
         do {
             guard let result = response.result else { throw failure(.notSubmitted, .authenticationResponse) }
-            let data = try authentication.descriptor.normalizeResult(JSONEncoder().encode(result))
+            let normalized = try authentication.descriptor.normalizeResult(JSONEncoder().encode(result))
+            let data = try normalized.data(validatedFor: authentication.descriptor.metadata.resultSchema)
             status = try JSONDecoder().decode(IPCAuthStatusResult.self, from: data)
         } catch { throw failure(.notSubmitted, .authenticationResponse) }
         guard case .authenticated = status else { throw failure(.authenticationRejected, .authenticationResponse) }

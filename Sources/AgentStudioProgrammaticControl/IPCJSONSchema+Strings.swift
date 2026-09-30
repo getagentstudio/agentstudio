@@ -24,7 +24,12 @@ extension IPCJSONSchema {
         )
     }
 
-    func normalizeString(_ value: IPCSchemaValue, constraints: IPCStringSchema, path: String) throws -> IPCSchemaValue {
+    func normalizeString(
+        _ value: IPCSchemaValue,
+        constraints: IPCStringSchema,
+        path: String,
+        compiledPattern: NSRegularExpression? = nil
+    ) throws -> IPCSchemaValue {
         guard case .string(let text) = value else {
             throw failure(.wrongType, path: path, expected: "string")
         }
@@ -38,8 +43,22 @@ extension IPCJSONSchema {
         guard constraints.allowedValues.map({ $0.contains(text) }) ?? true else {
             throw failure(.invalidValue, path: path, expected: "a declared enum value")
         }
-        if let pattern = constraints.pattern, try !matchesPattern(text, pattern: pattern) {
-            throw failure(.invalidValue, path: path, expected: "the declared string pattern")
+        if constraints.pattern != nil {
+            let matches: Bool
+            if let compiledPattern {
+                matches =
+                    compiledPattern.firstMatch(
+                        in: text,
+                        range: NSRange(text.startIndex..<text.endIndex, in: text)
+                    ) != nil
+            } else if let pattern = constraints.pattern {
+                matches = try matchesPattern(text, pattern: pattern)
+            } else {
+                matches = true
+            }
+            guard matches else {
+                throw failure(.invalidValue, path: path, expected: "the declared string pattern")
+            }
         }
         return value
     }

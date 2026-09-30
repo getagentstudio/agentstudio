@@ -10,10 +10,10 @@ struct GoodEventDrivenWaitTest {
         return nil
     }
 
-    /// A continuation gate resumed by the event, not a poll.
-    func awaitsCompletionGate(register: (@escaping @Sendable () -> Void) -> Void) async {
-        await withCheckedContinuation { continuation in
-            register { continuation.resume() }
+    /// Awaits a completion event through the async sequence, not a poll.
+    func awaitsCompletionGate(completions: AsyncStream<Void>) async {
+        for await _ in completions {
+            return
         }
     }
 

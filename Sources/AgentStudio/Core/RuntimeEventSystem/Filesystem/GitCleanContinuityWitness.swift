@@ -430,7 +430,7 @@ package protocol GitCleanContinuityWitness: Sendable {
         worktreeId: UUID,
         rootPath: URL,
         observationPlan: AgentStudioGit.GitStatusObservationPlan
-    ) async -> GitCleanContinuityBarrier?
+    ) async -> GitCleanContinuityPrepareOutcome
     func commit(_ barrier: GitCleanContinuityBarrier) async -> GitCleanContinuityAuthorityValidation
     func renew(_ authority: GitCleanContinuityAuthority) async -> GitCleanContinuityAuthorityValidation
     func retire(worktreeId: UUID, rootPath: URL)

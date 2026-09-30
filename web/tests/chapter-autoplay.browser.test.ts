@@ -34,7 +34,7 @@ for (const [width, height] of [
   [1600, 1000],
   [390, 844],
 ] as const) {
-  it(`changes the visible scene for each clicked step and holds a manual choice at ${width}px`, async () => {
+  it(`changes the visible scene for each clicked step and keeps playing at ${width}px`, async () => {
     const samples = await commands.verifyChapterSceneClicks(
       inject("siteHeaderBrowserTestUrl"),
       width,
@@ -45,7 +45,15 @@ for (const [width, height] of [
       "watch-folders",
       "navigation",
     ]);
-    expect(samples.every((sample) => sample.sceneState === "paused")).toBe(true);
+    expect(samples.every((sample) => sample.sceneState === "playing")).toBe(true);
+    for (const sample of samples) {
+      expect(sample.clickTiming).toMatchObject({
+        stepId: sample.stepId,
+        running: true,
+        manualPause: false,
+        elapsedSeconds: 0,
+      });
+    }
     expect(new Set(samples.map((sample) => sample.stageImageHash)).size).toBe(3);
   });
 }

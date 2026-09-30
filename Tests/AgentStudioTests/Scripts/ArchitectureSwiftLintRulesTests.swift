@@ -16,10 +16,12 @@ struct ArchitectureSwiftLintRulesTests {
         #expect(lintScript.contains("swiftlint lint --strict"))
         #expect(
             lintScript.contains(
-                "swift build -c release --package-path Tools/AgentStudioArchitectureLint"
+                "swift build $(swift_package_sandbox_arguments) -c release --package-path Tools/AgentStudioArchitectureLint"
             ))
         #expect(lintScript.contains("release/agentstudio-architecture-lint\" --timings"))
         #expect(lintScript.contains("--ledger Tools/AgentStudioArchitectureLint/architecture-debt-ledger.tsv"))
+        #expect(lintScript.contains("--ledger Tools/AgentStudioArchitectureLint/forbidden-test-wait-ledger.tsv"))
+        #expect(lintScript.contains("--ledger Tools/AgentStudioArchitectureLint/adhoc-continuation-wait-ledger.tsv"))
         #expect(lintScript.contains("run_architecture_lint Sources Tests"))
         #expect(!miseConfig.contains(legacyRunnerScriptPath))
         #expect(!miseConfig.contains("scripts/check-core-boundary-imports.sh"))
@@ -41,6 +43,8 @@ struct ArchitectureSwiftLintRulesTests {
             encoding: .utf8
         )
         #expect(ratchetScript.contains("\"Tools/AgentStudioArchitectureLint/architecture-debt-ledger.tsv\""))
+        #expect(ratchetScript.contains("\"Tools/AgentStudioArchitectureLint/forbidden-test-wait-ledger.tsv\""))
+        #expect(ratchetScript.contains("\"Tools/AgentStudioArchitectureLint/adhoc-continuation-wait-ledger.tsv\""))
         #expect(ratchetScript.contains("\"BridgeWeb/architecture-debt-ledger.tsv\""))
         #expect(ciWorkflow.contains("fetch-depth: 0"))
         #expect(!ciWorkflow.contains(legacyBuildToolName))

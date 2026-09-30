@@ -4,6 +4,7 @@ set -euo pipefail
 repository_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$repository_root"
 source "${repository_root}/scripts/swift-build-slot.sh"
+source "${repository_root}/scripts/swift-package-sandbox.sh"
 swift_build_slot_acquire build "mise run lint"
 trap swift_build_slot_release EXIT
 
@@ -27,7 +28,7 @@ run_architecture_lint() {
   local build_path="${repository_root}/${SWIFT_BUILD_DIR}/architecture-lint"
   local stage_started_ms
   stage_started_ms="$(now_ms)"
-  swift build -c release --package-path Tools/AgentStudioArchitectureLint \
+  swift build $(swift_package_sandbox_arguments) -c release --package-path Tools/AgentStudioArchitectureLint \
     --build-path "$build_path" \
     --product agentstudio-architecture-lint 2>&1 \
     || { echo "agentstudio architecture lint: build FAIL"; exit 1; }
@@ -38,6 +39,7 @@ run_architecture_lint() {
   "${build_path}/release/agentstudio-architecture-lint" --timings \
     --ledger Tools/AgentStudioArchitectureLint/architecture-debt-ledger.tsv \
     --ledger Tools/AgentStudioArchitectureLint/forbidden-test-wait-ledger.tsv \
+    --ledger Tools/AgentStudioArchitectureLint/adhoc-continuation-wait-ledger.tsv \
     "$@" 2>&1 || lint_status=$?
   report_stage_time "architecture-lint" "$stage_started_ms"
   if [[ $lint_status -eq 0 ]]; then
@@ -81,7 +83,8 @@ if [[ $# -eq 0 ]]; then
 
   echo "--- SwiftLint ---"
   stage_started_ms="$(now_ms)"
-  swiftlint lint --strict 2>&1 \
+  # The cache lives in the held slot: agent sandboxes deny writes to ~/Library/Caches.
+  swiftlint lint --strict --cache-path "${repository_root}/${SWIFT_BUILD_DIR}/swiftlint-cache" 2>&1 \
     && echo "swiftlint: OK" \
     || { echo "swiftlint: FAIL"; exit 1; }
   report_stage_time "swiftlint" "$stage_started_ms"

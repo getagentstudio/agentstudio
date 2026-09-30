@@ -8,7 +8,6 @@ export const sceneStepReachedEventName = "agentstudio:scene-step-reached";
 
 /** Dispatched on the chapter surface when a visitor selects a step. */
 export const chapterStepRequestedEventName = "agentstudio:chapter-step-requested";
-export const chapterStepResumeRequestedEventName = "agentstudio:chapter-step-resume-requested";
 export const sceneStepTimingEventName = "agentstudio:scene-step-timing";
 
 export interface SceneStepTimingDetail {

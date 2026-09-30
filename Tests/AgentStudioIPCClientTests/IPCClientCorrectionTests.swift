@@ -1,12 +1,28 @@
-import AgentStudioIPCClientCore
 import AgentStudioIPCTransport
 import AgentStudioPrimitives
 import AgentStudioProgrammaticControl
 import Foundation
 import Testing
 
+@testable import AgentStudioIPCClientCore
+
 @Suite("IPC client finite error corrections", .serialized)
 struct IPCClientCorrectionTests {
+    @Test("terminal wait timeout is recognized by its built-in descriptor")
+    func terminalWaitTimeoutIsDocumentedByBuiltInDescriptor() throws {
+        let catalog = try makeClientBuiltInMethodCatalog()
+        let terminalWaitDescriptor = try IPCAnyMethodDescriptor(erasing: catalog.terminal.terminalWait)
+        let error = JSONRPCErrorPayload(
+            code: -32_009,
+            message: "timeout",
+            data: .object(["reason": .string("timeout")])
+        )
+
+        let failure = IPCDescriptorRemoteFailureDecoder.decode(error, descriptor: terminalWaitDescriptor)
+
+        #expect(failure.documentedReason == "timeout")
+    }
+
     @Test("schema-produced wrong-type correction survives the real client socket path")
     func schemaProducedWrongTypeCorrectionSurvivesRemoteFailure() throws {
         let catalog = try IPCDescriptorClientFixtureCatalog.make()
@@ -201,6 +217,37 @@ struct IPCClientCorrectionTests {
         #expect(correction.reason == .invalidValue)
         #expect(!correction.expected.isEmpty)
     }
+}
+
+private func makeClientBuiltInMethodCatalog() throws -> IPCBuiltInMethodCatalog {
+    let examples = IPCBuiltInMethodExampleContext(
+        runtimeId: UUIDv7.generate(),
+        windowId: UUIDv7.generate(),
+        workspaceId: UUIDv7.generate(),
+        repositoryId: UUIDv7.generate(),
+        worktreeId: UUIDv7.generate(),
+        tabId: UUIDv7.generate(),
+        paneId: UUIDv7.generate(),
+        commandId: UUIDv7.generate(),
+        correlationId: UUIDv7.generate(),
+        subscriptionId: UUIDv7.generate()
+    )
+    let relationships = IPCBuiltInMethodRelationshipInputs(
+        paneFocus: .noInteractiveIdentity,
+        paneClose: .noInteractiveIdentity,
+        drawerToggle: .noInteractiveIdentity,
+        drawerAddPane: .noInteractiveIdentity,
+        bridgeDiffLoad: .noInteractiveIdentity,
+        bridgeFileViewOpen: .noInteractiveIdentity
+    )
+
+    return try IPCBuiltInMethodCatalog(
+        inputs: IPCBuiltInMethodCatalogInputs(
+            terminalWaitMaximumSeconds: 9,
+            relationships: relationships,
+            examples: examples
+        )
+    )
 }
 
 private struct IPCClientCorrectionSocketFixture {

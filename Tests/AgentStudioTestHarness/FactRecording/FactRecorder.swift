@@ -27,9 +27,20 @@ package final class FactRecorder<Scope: Hashable & Sendable, Fact: Sendable>: Se
     /// The owner calls this synchronously; it never creates a task.
     package func append(scope: Scope, fact: Fact) {
         let waiters = state.withLock { state -> [CheckedContinuation<Void, any Error>] in
-            guard !state.stopping, state.sourceTerminal == nil else { return [] }
-            state.nextSequence += 1
-            record(scope: scope, fact: fact, sequence: state.nextSequence, in: &state)
+            guard !state.stopping else { return [] }
+            if let terminal = state.sourceTerminal {
+                state.violations.append(
+                    (
+                        scope,
+                        FactAfterSourceTerminated(
+                            actual: vocabulary.describeFact(fact), terminal: terminal.description,
+                            scope: vocabulary.describeScope(scope), callSite: "source emission"
+                        )
+                    ))
+            } else {
+                state.nextSequence += 1
+                record(scope: scope, fact: fact, sequence: state.nextSequence, in: &state)
+            }
             state.revision += 1
             return state.takeWaiters()
         }

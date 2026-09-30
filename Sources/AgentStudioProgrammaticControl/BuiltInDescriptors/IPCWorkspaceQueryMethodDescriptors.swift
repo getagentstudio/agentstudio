@@ -87,7 +87,9 @@ package struct IPCWorkspaceQueryMethodDescriptors: Sendable {
             privilege: .paneContextRead,
             dataScope: .paneContext,
             targetKinds: [.pane],
-            errors: [IPCBuiltInDescriptorSupport.invalidParams, IPCBuiltInDescriptorSupport.targetNotFound]
+            exposure: .allChannels,
+            errors: [IPCBuiltInDescriptorSupport.invalidParams, IPCBuiltInDescriptorSupport.targetNotFound],
+            agentEligibility: .ownPane
         )
     }
 
@@ -105,21 +107,28 @@ package struct IPCWorkspaceQueryMethodDescriptors: Sendable {
             result: result,
             privilege: privilege,
             dataScope: dataScope,
-            errors: [IPCBuiltInDescriptorSupport.unavailable]
+            exposure: .allChannels,
+            errors: [IPCBuiltInDescriptorSupport.unavailable],
+            agentEligibility: .anyTarget
         )
     }
 
-    var erased: [IPCAnyMethodDescriptor] {
+    var descriptorRepresentations: [any IPCMethodDescriptorRepresentation] {
         get throws {
-            try [
-                IPCAnyMethodDescriptor(erasing: windowList),
-                IPCAnyMethodDescriptor(erasing: windowCurrent),
-                IPCAnyMethodDescriptor(erasing: workspaceList),
-                IPCAnyMethodDescriptor(erasing: workspaceCurrent),
-                IPCAnyMethodDescriptor(erasing: paneList),
-                IPCAnyMethodDescriptor(erasing: paneCurrent),
-                IPCAnyMethodDescriptor(erasing: paneSnapshot),
+            let representations: [any IPCMethodDescriptorRepresentation] = try [
+                IPCMethodDescriptorRepresentations(typedDescriptor: windowList),
+                IPCMethodDescriptorRepresentations(typedDescriptor: windowCurrent),
+                IPCMethodDescriptorRepresentations(typedDescriptor: workspaceList),
+                IPCMethodDescriptorRepresentations(typedDescriptor: workspaceCurrent),
+                IPCMethodDescriptorRepresentations(typedDescriptor: paneList),
+                IPCMethodDescriptorRepresentations(typedDescriptor: paneCurrent),
+                IPCMethodDescriptorRepresentations(typedDescriptor: paneSnapshot),
             ]
+            return representations
         }
+    }
+
+    var erased: [IPCAnyMethodDescriptor] {
+        get throws { try descriptorRepresentations.map(\.erasedDescriptor) }
     }
 }

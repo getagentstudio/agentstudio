@@ -83,7 +83,8 @@ struct GhosttyActionRouterMixedPressureTests {
                 routeLocalTranslatedSample(sampleIndex, fixture: fixture)
             }
 
-            let ipcSnapshotBeforeExactFact = try fixture.ipcAdapter.terminalSnapshot(fixture.paneHandle)
+            let ipcSnapshotBeforeExactFact = try fixture.ipcAdapter.terminalSnapshot(
+                fixture.paneHandle, ownPaneAssertion: nil)
             #expect(ipcSnapshotBeforeExactFact.lastSequence == UInt64(factIndex))
             routeExactCommandFinishedFact(factIndex, fixture: fixture)
         }
@@ -202,13 +203,14 @@ struct GhosttyActionRouterMixedPressureTests {
         #expect(deliveryDiagnostics.liveDroppedCount == 0)
         #expect(deliveryDiagnostics.replayDroppedCount == 0)
 
-        let finalIPCSnapshot = try fixture.ipcAdapter.terminalSnapshot(fixture.paneHandle)
+        let finalIPCSnapshot = try fixture.ipcAdapter.terminalSnapshot(fixture.paneHandle, ownPaneAssertion: nil)
         #expect(finalIPCSnapshot.lastSequence == UInt64(exactFactCount))
         let ipcWaitResult = try await fixture.ipcAdapter.waitForTerminal(
             fixture.paneHandle,
             condition: .commandFinished,
             timeout: .milliseconds(1),
-            afterSequence: 0
+            afterSequence: 0,
+            ownPaneAssertion: nil
         )
         #expect(ipcWaitResult.eventName == .terminalCommandFinished)
         #expect(ipcWaitResult.exitCode == 0)

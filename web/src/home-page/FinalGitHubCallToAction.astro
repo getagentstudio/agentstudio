@@ -7,7 +7,6 @@ import {
   railTerminalTargetAttribute,
 } from "@/chapters/chapter-dom-contract";
 import { installCommandText, marketingCopy } from "@/marketing-copy";
-import KitIcon from "@/recreation-kit/KitIcon.astro";
 
 const terminalRailAttributes = {
   [railAnchorAttribute]: "final-cta",
@@ -36,28 +35,30 @@ const terminalRailAttributes = {
     <h2 id="final-cta-title" class="m-0 font-display text-closing-display font-extrabold">{marketingCopy.productName}</h2>
   </div>
 
+  <div class="finale-pill-frame relative inline-flex max-w-full">
   <div
-    class="finale-split-pill floating-glass-material relative inline-flex max-w-full items-stretch overflow-hidden rounded-full"
+    class="finale-split-pill floating-glass-material relative inline-flex max-w-full items-stretch overflow-hidden rounded-full border text-step-label font-normal text-ink"
     {...terminalRailAttributes}
     data-finale-split-pill
     data-install-command-root
     data-install-command={installCommandText}
-    data-install-copied-label={marketingCopy.finalCallToAction.copiedInstall}
+    data-install-copied-label={marketingCopy.installation.copiedStatus}
     data-install-feedback-ms="2000"
   >
     <a class="final-star-button relative z-[1] inline-flex items-center justify-center" data-final-star-button href={marketingCopy.githubUrl} target="_blank" rel="noopener noreferrer">
-      <svg class="finale-star-icon" viewBox="0 0 24 24" aria-hidden="true"><path data-finale-star-outline d="M12 2.5 14.93 8.55 21.6 9.52 16.8 14.2 17.94 20.82 12 17.69 6.06 20.82 7.2 14.2 2.4 9.52 9.07 8.55Z"></path><path data-finale-star-fill d="M12 2.5 14.93 8.55 21.6 9.52 16.8 14.2 17.94 20.82 12 17.69 6.06 20.82 7.2 14.2 2.4 9.52 9.07 8.55Z"></path></svg>
+      <svg class="finale-action-icon finale-github-icon" viewBox="0 0 24 24" aria-hidden="true"><path data-finale-github-outline d="M9 19c-4.3 1.3-4.3-2.2-6-2.7m12 5v-3.8c0-1.1-.4-1.8-1-2.2 3.3-.4 6.8-1.6 6.8-7.2 0-1.6-.6-2.9-1.6-4 .2-.4.7-1.9-.2-4.1 0 0-1.3-.4-4.3 1.6a15 15 0 0 0-7.8 0C4 0 2.7.4 2.7.4c-.9 2.2-.4 3.7-.2 4.1C1.5 5.6 1 6.9 1 8.5c0 5.6 3.5 6.8 6.8 7.2-.5.4-1 1.1-1 2.2V22" transform="translate(1 1) scale(.9)"></path></svg>
       <span class="finale-label-full">{marketingCopy.finalCallToAction.starOnGitHub}</span>
       <span class="finale-label-short">{marketingCopy.finalCallToAction.starShort}</span>
     </a>
     <button type="button" class="finale-copy-button relative z-[1] inline-flex items-center justify-center" data-install-copy aria-label={marketingCopy.installation.copyButton}>
-      <KitIcon name="copy" class="h-4 w-4" />
+      <svg class="finale-action-icon" viewBox="0 0 24 24" aria-hidden="true"><g data-install-copy-icon><rect x="8" y="8" width="12" height="12" rx="2"></rect><path d="M16 8V4a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h4"></path></g><path data-install-copied-icon d="m5 12 4 4L19 6" data-install-icon-hidden></path></svg>
       <span class="finale-label-full" data-install-copy-feedback>{marketingCopy.finalCallToAction.copyInstall}</span>
       <span class="finale-label-short" data-install-copy-feedback>{marketingCopy.finalCallToAction.copyShort}</span>
     </button>
     <span class="sr-only" data-install-status aria-live="polite"></span>
     <code data-install-code hidden>{installCommandText}</code>
-    <svg class="finale-border-trace pointer-events-none absolute inset-0 z-[2] h-full w-full overflow-visible" aria-hidden="true"><path data-finale-border-trace></path></svg>
+  </div>
+  <svg class="finale-border-trace pointer-events-none absolute inset-0 z-[2] h-full w-full overflow-visible" aria-hidden="true"><path data-finale-border-trace></path></svg>
   </div>
 
   <p class="m-0 text-[14px] text-ink-faint">{marketingCopy.installation.systemRequirement}</p>
@@ -89,30 +90,31 @@ const terminalRailAttributes = {
   .finale-terminal__prompt { position: absolute; left: 9%; top: 35.7%; color: #74c7ec; font: 0.16em var(--font-mono-product); }
   .finale-app-logo { position: absolute; z-index: 5; top: -0.131em; left: -0.123em; width: 1.35em; height: 1.35em; max-width: none; object-fit: contain; }
   .final-cta[data-finale-state="ready"] .finale-app-logo, .final-cta[data-finale-state="playing"] .finale-app-logo { opacity: 0; }
-  .final-cta[data-finale-state="ready"] .finale-star-icon, .final-cta[data-finale-state="ready"] .finale-border-trace { opacity: 0; }
+  .final-cta[data-finale-state="ready"] .finale-github-icon, .final-cta[data-finale-state="ready"] .finale-border-trace { opacity: 0; }
   .final-cta[data-finale-state="settled"] .finale-plane, .final-cta[data-finale-state="settled"] .finale-terminal { opacity: 0; }
-  .final-cta[data-finale-state="settled"] .finale-border-trace { opacity: 0.6; }
-  .finale-split-pill { width: max-content; min-height: 50px; justify-self: start; margin-top: 19px; margin-left: var(--finale-left-inset); white-space: nowrap; }
-  .final-cta .finale-split-pill { border: 0; border-color: transparent; background: rgb(30 30 46 / 88%); box-shadow: 0 20px 46px rgb(8 9 14 / 28%), 0 6px 16px rgb(10 11 17 / 18%); }
-  .final-cta:is([data-finale-state="ready"], [data-finale-state="playing"]) .finale-split-pill { box-shadow: inset 0 0 0 1px rgb(137 180 250 / 38%), 0 20px 46px rgb(8 9 14 / 28%), 0 6px 16px rgb(10 11 17 / 18%); }
+  .final-cta[data-finale-state="settled"] .finale-border-trace { opacity: 0; }
+  .finale-pill-frame { width: max-content; justify-self: start; margin-top: 19px; margin-left: var(--finale-left-inset); }
+  .finale-split-pill { width: max-content; min-height: 50px; white-space: nowrap; }
+  .final-cta:is([data-finale-state="ready"], [data-finale-state="playing"]) .finale-split-pill { border-color: transparent; box-shadow: inset 0 0 0 1px var(--color-floating-glass-border), var(--floating-glass-shadow); }
   .final-cta > p { margin-top: 22px; margin-left: var(--finale-left-inset); }
-  .final-star-button, .finale-copy-button { min-height: 48px; gap: 9px; padding: 0 22px; font-size: 14px; font-weight: 650; white-space: nowrap; }
-  .final-star-button { min-width: 260px; border-radius: 0; background: var(--color-primary); color: var(--color-canvas); }
-  .final-star-button:hover { background: color-mix(in srgb, var(--color-primary) 86%, white); }
-  .finale-copy-button { min-width: 180px; cursor: pointer; border-left: 1px solid rgb(255 255 255 / 16%); border-radius: 0 999px 999px 0; color: var(--color-ink-secondary); }
-  .finale-copy-button:hover { background: rgb(255 255 255 / 7%); }
-  .finale-star-icon { width: 18px; height: 18px; flex: none; }
-  .finale-star-icon path { stroke: currentColor; stroke-width: 1.8; stroke-linejoin: round; }
-  .finale-star-icon [data-finale-star-outline] { fill: none; }
-  .finale-star-icon [data-finale-star-fill] { fill: currentColor; }
+  .final-star-button, .finale-copy-button { min-height: 48px; gap: 9px; padding: 0 22px; font: inherit; color: inherit; white-space: nowrap; }
+  .final-star-button { min-width: 200px; border-radius: 999px 0 0 999px; }
+  .finale-copy-button { min-width: 180px; cursor: pointer; border-radius: 0 999px 999px 0; }
+  .finale-copy-button::before { position: absolute; top: 25%; bottom: 25%; left: 0; width: 1px; background: color-mix(in srgb, var(--color-floating-glass-border) 55%, transparent); content: ""; }
+  .final-star-button:hover, .finale-copy-button:hover { background: rgb(255 255 255 / 7%); }
+  .final-star-button:focus-visible, .finale-copy-button:focus-visible { outline: 2px solid var(--color-primary); outline-offset: -4px; }
+  .finale-action-icon { width: 15px; height: 15px; flex: none; opacity: 0.7; }
+  .finale-action-icon path, .finale-action-icon rect { fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
+  .finale-action-icon [data-install-icon-hidden] { display: none; }
   .finale-label-short { display: none; }
-  .finale-border-trace path { fill: none; stroke: #e2efff; stroke-width: 2.5px; }
+  .finale-border-trace path { fill: none; stroke: var(--color-floating-glass-border); stroke-width: 1px; }
   .final-cta[data-short-labels] .finale-label-full { display: none; }
   .final-cta[data-short-labels] .finale-label-short { display: inline; }
   .final-cta[data-short-labels] .final-star-button, .final-cta[data-short-labels] .finale-copy-button { min-width: 0; }
   @media (width < 38.75rem) {
     .final-cta { gap: 9px; padding-top: 17px; padding-bottom: 20px; }
-    .finale-split-pill { min-height: 47px; margin-top: 16px; }
+    .finale-pill-frame { margin-top: 16px; }
+    .finale-split-pill { min-height: 47px; }
     .final-cta > p { margin-top: 25px; }
     .final-star-button, .finale-copy-button { min-width: 0; min-height: 45px; padding: 0 16px; }
     .finale-label-full { display: none; }

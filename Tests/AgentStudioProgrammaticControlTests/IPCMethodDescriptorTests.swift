@@ -24,6 +24,22 @@ struct IPCMethodDescriptorTests {
                 == .appCommandParameter(field: "operation"))
     }
 
+    @Test("an agent-eligible method cannot be debug-only; a not-yet-allowed one can")
+    func agentEligibleMethodMustReachEveryChannel() throws {
+        for eligibility in [IPCAgentEligibility.ownPane, .anyTarget] {
+            #expect(throws: IPCMethodDescriptorError.agentEligibleMethodMustBeExposedOnAllChannels) {
+                try makeDescriptor(
+                    correlationId: UUIDv7.generate(), exposure: .debugTesting, agentEligibility: eligibility)
+            }
+        }
+        let refused = try makeDescriptor(
+            correlationId: UUIDv7.generate(), exposure: .debugTesting, agentEligibility: .notYetAllowed)
+        let established = try makeDescriptor(correlationId: UUIDv7.generate(), exposure: .debugTesting)
+
+        #expect(refused.metadata.agentEligibility == .notYetAllowed)
+        #expect(established.metadata.agentEligibility == nil)
+    }
+
     @Test("descriptor uses one typed contract for examples, admission, and results")
     func descriptorUsesOneTypedContract() throws {
         let correlationId = UUIDv7.generate()
@@ -339,7 +355,9 @@ struct IPCMethodDescriptorTests {
         correlationPolicy: IPCCorrelationPolicy = .required,
         offlineEligibility: IPCMethodOfflineEligibility = .never,
         modelCalls: [IPCModelCallProjection] = [],
-        parameterSchema: IPCJSONSchema? = nil
+        parameterSchema: IPCJSONSchema? = nil,
+        exposure: IPCMethodExposure = .allChannels,
+        agentEligibility: IPCAgentEligibility? = nil
     ) throws -> IPCMethodDescriptor<DescriptorFixtureParameters, DescriptorFixtureResult> {
         try IPCMethodDescriptor(
             name: "example.mutation",
@@ -357,7 +375,7 @@ struct IPCMethodDescriptorTests {
                     result: DescriptorFixtureResult(disposition: "saved")
                 )
             ],
-            exposure: .allChannels,
+            exposure: exposure,
             requiredPrivileges: [.layoutMutate],
             dataScope: .paneContext,
             allowedTargetKinds: [.pane],
@@ -369,7 +387,8 @@ struct IPCMethodDescriptorTests {
             isMutating: true,
             correlationPolicy: correlationPolicy,
             offlineEligibility: offlineEligibility,
-            modelCalls: modelCalls
+            modelCalls: modelCalls,
+            agentEligibility: agentEligibility
         )
     }
 }

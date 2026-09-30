@@ -22,27 +22,31 @@ struct AgentStudioIPCCatalogFrameTransportTests {
     @Test("system.capabilities crosses the socket in one frame larger than the request bound")
     func systemCapabilitiesCrossesTheSocket() async throws {
         let harness = try await SessionsVerticalHarness.make()
-        defer { harness.tearDown() }
+        do {
+            let frame = try await harness.responseFrame(method: "system.capabilities", params: .object([:]))
+            let frameByteCount = frame.utf8.count
 
-        let frame = try await harness.responseFrame(method: "system.capabilities", params: .object([:]))
-        let frameByteCount = frame.utf8.count
+            // Asserting the size proves the case is real: a catalog that fits the
+            // request bound would not have exercised the outbound bound at all.
+            #expect(
+                frameByteCount > IPCFramePolicy.maximumRequestFrameBytes,
+                "system.capabilities frame measured \(frameByteCount) bytes"
+            )
+            #expect(frameByteCount <= IPCFramePolicy.maximumResponseFrameBytes)
 
-        // Asserting the size proves the case is real: a catalog that fits the
-        // request bound would not have exercised the outbound bound at all.
-        #expect(
-            frameByteCount > IPCFramePolicy.maximumRequestFrameBytes,
-            "system.capabilities frame measured \(frameByteCount) bytes"
-        )
-        #expect(frameByteCount <= IPCFramePolicy.maximumResponseFrameBytes)
-
-        let message = try JSONRPCCodec.decodeResponse(frame)
-        #expect(message.error == nil)
-        let result = try #require(message.result)
-        let catalog = try JSONDecoder().decode(
-            IPCMethodCatalogResult.self, from: try JSONEncoder().encode(result)
-        )
-        #expect(catalog.methods.contains { $0.name == "system.capabilities" })
-        #expect(catalog.methods.contains { $0.name == "session.message" })
+            let message = try JSONRPCCodec.decodeResponse(frame)
+            #expect(message.error == nil)
+            let result = try #require(message.result)
+            let catalog = try JSONDecoder().decode(
+                IPCMethodCatalogResult.self, from: try JSONEncoder().encode(result)
+            )
+            #expect(catalog.methods.contains { $0.name == "system.capabilities" })
+            #expect(catalog.methods.contains { $0.name == "session.message" })
+        } catch {
+            await harness.tearDown()
+            throw error
+        }
+        await harness.tearDown()
     }
 
     /// The catalog cannot change while a runtime is up, so the encoding that
@@ -55,51 +59,63 @@ struct AgentStudioIPCCatalogFrameTransportTests {
     @Test("repeated capabilities requests are served from one composition")
     func repeatedCapabilitiesRequestsServeOneComposition() async throws {
         let harness = try await SessionsVerticalHarness.make()
-        defer { harness.tearDown() }
-        let capabilitiesCache = try #require(
-            harness.appDelegate.appIPCServer?.service.methodRegistry.capabilitiesTransportResultCache
-        )
+        do {
+            let capabilitiesCache = try #require(
+                harness.appDelegate.appIPCServer?.service.methodRegistry.capabilitiesTransportResultCache
+            )
 
-        // Nothing has asked for the catalog yet, so nothing has encoded it.
-        #expect(capabilitiesCache.compositionCount == 0)
-        #expect(!capabilitiesCache.hasComposedValue)
+            // Startup composition already validated the catalog bytes; the cache has not
+            // materialized their JSONValue projection yet.
+            #expect(capabilitiesCache.compositionCount == 0)
+            #expect(!capabilitiesCache.hasComposedValue)
 
-        let firstFrame = try await harness.responseFrame(method: "system.capabilities", params: .object([:]))
-        let secondFrame = try await harness.responseFrame(method: "system.capabilities", params: .object([:]))
-        let thirdFrame = try await harness.responseFrame(method: "system.capabilities", params: .object([:]))
+            let firstFrame = try await harness.responseFrame(method: "system.capabilities", params: .object([:]))
+            let secondFrame = try await harness.responseFrame(method: "system.capabilities", params: .object([:]))
+            let thirdFrame = try await harness.responseFrame(method: "system.capabilities", params: .object([:]))
 
-        // The answer, not its byte layout: JSON object key order is not part of
-        // the contract, and the transport re-serializes the cached value.
-        let firstResult = try JSONRPCCodec.decodeResponse(firstFrame).result
-        let secondResult = try JSONRPCCodec.decodeResponse(secondFrame).result
-        let thirdResult = try JSONRPCCodec.decodeResponse(thirdFrame).result
-        #expect(firstResult != nil)
-        #expect(firstResult == secondResult)
-        #expect(secondResult == thirdResult)
+            // The answer, not its byte layout: JSON object key order is not part of
+            // the contract, and the transport re-serializes the cached value.
+            let firstResult = try JSONRPCCodec.decodeResponse(firstFrame).result
+            let secondResult = try JSONRPCCodec.decodeResponse(secondFrame).result
+            let thirdResult = try JSONRPCCodec.decodeResponse(thirdFrame).result
+            #expect(firstResult != nil)
+            #expect(firstResult == secondResult)
+            #expect(secondResult == thirdResult)
 
-        // Three requests crossed the socket; the catalog was encoded for one.
-        #expect(capabilitiesCache.compositionCount == 1)
-        #expect(capabilitiesCache.hasComposedValue)
+            // Three requests crossed the socket; the cached transport value was
+            // materialized once from the validated composition result.
+            #expect(capabilitiesCache.compositionCount == 1)
+            #expect(capabilitiesCache.hasComposedValue)
 
-        // The size is what makes reuse worth proving: this is the one response
-        // larger than any request the transport accepts.
-        #expect(firstFrame.utf8.count > IPCFramePolicy.maximumRequestFrameBytes)
+            // The size is what makes reuse worth proving: this is the one response
+            // larger than any request the transport accepts.
+            #expect(firstFrame.utf8.count > IPCFramePolicy.maximumRequestFrameBytes)
+        } catch {
+            await harness.tearDown()
+            throw error
+        }
+        await harness.tearDown()
     }
 
     @Test("command.list crosses the socket and carries the debug command catalog")
     func commandListCrossesTheSocket() async throws {
         let harness = try await SessionsVerticalHarness.make()
-        defer { harness.tearDown() }
+        do {
+            let frame = try await harness.responseFrame(method: "command.list", params: .object([:]))
+            let message = try JSONRPCCodec.decodeResponse(frame)
 
-        let frame = try await harness.responseFrame(method: "command.list", params: .object([:]))
-        let message = try JSONRPCCodec.decodeResponse(frame)
-
-        #expect(message.error == nil)
-        let result = try #require(message.result)
-        guard case .object(let fields) = result, case .array(let commands)? = fields["commands"] else {
-            Issue.record("command.list result did not carry a commands array")
-            return
+            #expect(message.error == nil)
+            let result = try #require(message.result)
+            guard case .object(let fields) = result, case .array(let commands)? = fields["commands"] else {
+                Issue.record("command.list result did not carry a commands array")
+                await harness.tearDown()
+                return
+            }
+            #expect(commands.count == 154)
+        } catch {
+            await harness.tearDown()
+            throw error
         }
-        #expect(commands.count == 154)
+        await harness.tearDown()
     }
 }

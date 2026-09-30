@@ -24,7 +24,7 @@ public protocol AppIPCQueryPort: Sendable {
     func currentWorkspace() throws -> IPCCurrentWorkspaceResult
     func listPanes() throws -> IPCPaneListResult
     func currentPane() throws -> IPCPaneSnapshotResult
-    func snapshotPane(_ paneId: UUID) throws -> IPCPaneSnapshotResult
+    func snapshotPane(_ paneId: UUID, ownPaneAssertion: AppIPCOwnPaneAssertion?) throws -> IPCPaneSnapshotResult
 }
 
 public struct AppIPCLayoutError: Error, Equatable, Sendable {
@@ -45,8 +45,12 @@ public struct AppIPCLayoutError: Error, Equatable, Sendable {
 public protocol AppIPCLayoutPort: Sendable {
     func focusPane(_ handle: IPCHandle) async throws -> IPCPaneFocusResult
     func splitPane(_ params: IPCPaneSplitParams) async throws -> IPCPaneSplitResult
-    func closePane(_ params: IPCPaneCloseParams) async throws -> IPCPaneCloseResult
-    func addDrawerPane(_ params: IPCDrawerAddPaneParams) async throws -> IPCDrawerAddPaneResult
+    func closePane(
+        _ params: IPCPaneCloseParams, ownPaneAssertion: AppIPCOwnPaneAssertion?
+    ) async throws -> IPCPaneCloseResult
+    func addDrawerPane(
+        _ params: IPCDrawerAddPaneParams, ownPaneAssertion: AppIPCOwnPaneAssertion?
+    ) async throws -> IPCDrawerAddPaneResult
     func toggleDrawer(_ params: IPCDrawerToggleParams) async throws -> IPCDrawerToggleResult
 }
 
@@ -73,18 +77,24 @@ public struct AppIPCRuntimeError: Error, Equatable, Sendable {
 
 @MainActor
 public protocol AppIPCRuntimePort: Sendable {
-    func terminalStatus(_ handle: IPCHandle) throws -> IPCTerminalStatusResult
-    func terminalSnapshot(_ handle: IPCHandle) throws -> IPCTerminalSnapshotResult
+    func terminalStatus(
+        _ handle: IPCHandle, ownPaneAssertion: AppIPCOwnPaneAssertion?
+    ) throws -> IPCTerminalStatusResult
+    func terminalSnapshot(
+        _ handle: IPCHandle, ownPaneAssertion: AppIPCOwnPaneAssertion?
+    ) throws -> IPCTerminalSnapshotResult
     func sendTerminalInput(
         to handle: IPCHandle,
         input: String,
-        correlationId: UUID?
+        correlationId: UUID?,
+        ownPaneAssertion: AppIPCOwnPaneAssertion?
     ) async throws -> IPCTerminalSendInputResult
     func waitForTerminal(
         _ handle: IPCHandle,
         condition: IPCTerminalWaitCondition,
         timeout: Duration,
-        afterSequence: UInt64?
+        afterSequence: UInt64?,
+        ownPaneAssertion: AppIPCOwnPaneAssertion?
     ) async throws -> IPCTerminalWaitResult
 }
 
@@ -154,25 +164,31 @@ package struct AppIPCPreparedCommand: Sendable {
     package let canonicalHandle: IPCHandle?
     package let target: IPCTargetScope
     package let requiredScopes: [IPCPermissionScope]
+    /// Every canonical pane identity the command arguments name.
+    package let resolvedPaneIds: [UUID]
+    package let agentArgumentRule: AppIPCAgentArgumentRule
 
     package init(
         request: IPCCommandExecutionRequest, canonicalHandle: IPCHandle?, target: IPCTargetScope,
-        requiredScopes: [IPCPermissionScope]
+        requiredScopes: [IPCPermissionScope], resolvedPaneIds: [UUID], agentArgumentRule: AppIPCAgentArgumentRule
     ) {
         self.request = request
         self.canonicalHandle = canonicalHandle
         self.target = target
         self.requiredScopes = requiredScopes
+        self.resolvedPaneIds = resolvedPaneIds
+        self.agentArgumentRule = agentArgumentRule
     }
 }
 
 @MainActor
 package protocol AppIPCCommandPort: Sendable {
-    func listCommands() throws -> IPCCommandCatalogResult
     func prepareCommand(
         _ params: IPCCommandExecutionRequest, principal: IPCPrincipal, tools: AppIPCTargetResolutionTools
     ) async throws -> AppIPCPreparedCommand
-    func executeCommand(_ params: IPCCommandExecutionRequest) async throws -> IPCCommandExecutionResult
+    func executeCommand(
+        _ params: IPCCommandExecutionRequest, ownPaneAssertion: AppIPCOwnPaneAssertion?
+    ) async throws -> IPCCommandExecutionResult
 }
 
 public protocol AppIPCPermissionApprovalPort: Sendable {
@@ -215,6 +231,8 @@ package struct AgentStudioAppIPCPorts: Sendable {
     package let sidebarPort: any AppIPCSidebarPort
     package let sessionsPort: any AppIPCSessionsPort
     package let permissionApprovalPort: any AppIPCPermissionApprovalPort
+    package let ownPaneScopePort: any AppIPCOwnPaneScopePort
+    package let agentAuthorizationTelemetry: any AppIPCAgentAuthorizationTelemetry
 
     package init(
         queryPort: any AppIPCQueryPort,
@@ -225,7 +243,9 @@ package struct AgentStudioAppIPCPorts: Sendable {
         uiPresentationPort: any AppIPCUIPresentationPort,
         sidebarPort: any AppIPCSidebarPort,
         sessionsPort: any AppIPCSessionsPort,
-        permissionApprovalPort: any AppIPCPermissionApprovalPort
+        permissionApprovalPort: any AppIPCPermissionApprovalPort,
+        ownPaneScopePort: any AppIPCOwnPaneScopePort,
+        agentAuthorizationTelemetry: any AppIPCAgentAuthorizationTelemetry
     ) {
         self.queryPort = queryPort
         self.layoutPort = layoutPort
@@ -236,6 +256,8 @@ package struct AgentStudioAppIPCPorts: Sendable {
         self.sidebarPort = sidebarPort
         self.sessionsPort = sessionsPort
         self.permissionApprovalPort = permissionApprovalPort
+        self.ownPaneScopePort = ownPaneScopePort
+        self.agentAuthorizationTelemetry = agentAuthorizationTelemetry
     }
 }
 

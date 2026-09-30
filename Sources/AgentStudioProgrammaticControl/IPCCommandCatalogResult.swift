@@ -3,13 +3,32 @@ import Foundation
 package struct IPCCommandCatalogResult: Codable, Equatable, Sendable {
     package let compatibility: IPCProtocolCatalogCompatibility
     package let commands: [IPCCommandDescriptor]
+    /// Recognized commands this channel does not expose, with their eligibility.
+    package let recognizedUnexposedCommands: [IPCRecognizedUnexposedName]
 
     package init(
         compatibility: IPCProtocolCatalogCompatibility,
-        commands: [IPCCommandDescriptor]
+        commands: [IPCCommandDescriptor],
+        recognizedUnexposedCommands: [IPCRecognizedUnexposedName] = []
     ) {
         self.compatibility = compatibility
         self.commands = commands
+        self.recognizedUnexposedCommands = recognizedUnexposedCommands
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case compatibility
+        case commands
+        case recognizedUnexposedCommands
+    }
+
+    package init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        compatibility = try container.decode(IPCProtocolCatalogCompatibility.self, forKey: .compatibility)
+        commands = try container.decode([IPCCommandDescriptor].self, forKey: .commands)
+        recognizedUnexposedCommands =
+            try container.decodeIfPresent([IPCRecognizedUnexposedName].self, forKey: .recognizedUnexposedCommands)
+            ?? []
     }
 
     /// Builds a finite schema from validated descriptor fields, schema-document
@@ -51,6 +70,10 @@ package struct IPCCommandCatalogResult: Codable, Equatable, Sendable {
                 name: "commands",
                 description: "Complete available typed command metadata in identity order",
                 schema: commandsSchema
+            ),
+            try IPCRecognizedUnexposedName.discoveryField(
+                "recognizedUnexposedCommands",
+                description: "Recognized commands this channel does not expose, with their agent eligibility"
             ),
         ])
     }

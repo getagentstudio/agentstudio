@@ -87,6 +87,33 @@ struct IPCMethodCatalogDecoderTests {
         }
     }
 
+    @Test("an invalid example in a middle catalog entry is rejected")
+    func invalidExampleInMiddleCatalogEntryIsRejected() throws {
+        let fixture = try IPCMethodCatalogDecoderFixture()
+        let methodCount = fixture.composition.result.methods.count
+        let candidates = fixture.composition.result.methods.enumerated().filter { candidate in
+            guard candidate.offset > 0, candidate.offset < methodCount - 1,
+                !candidate.element.examples.isEmpty
+            else {
+                return false
+            }
+            if case .object = candidate.element.parameterSchema { return true }
+            return false
+        }
+        let middleCandidate = try #require(candidates.dropFirst(candidates.count / 2).first)
+        let data = try fixture.encodedResult { object in
+            try fixture.mutateMethod(named: middleCandidate.element.name, in: &object) { method in
+                var examples = try #require(method["examples"] as? [[String: Any]])
+                examples[0]["parameters"] = ["unadvertisedMiddleValue": true]
+                method["examples"] = examples
+            }
+        }
+
+        #expect(throws: IPCSchemaValidationError.self) {
+            try IPCMethodCatalogDecoder.decode(data)
+        }
+    }
+
     @Test("duplicate unsorted or missing capabilities entries are rejected")
     func catalogIdentityInvariantsAreRequired() throws {
         let fixture = try IPCMethodCatalogDecoderFixture()

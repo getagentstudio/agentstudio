@@ -16,6 +16,9 @@
   --color-parallel: #ef9f76;
   --color-line: rgb(255 255 255 / 10%);
   --color-line-strong: rgb(255 255 255 / 20%);
+  --color-floating-glass-border: rgb(137 180 250 / 38%);
+  --text-step-label: 13px;
+  --text-step-label--line-height: 20px;
 
   --font-product: -apple-system, BlinkMacSystemFont, "SF Pro Text", Inter, system-ui, sans-serif;
   --font-display: -apple-system, BlinkMacSystemFont, "SF Pro Display", Inter, sans-serif;
@@ -58,6 +61,11 @@
   --breakpoint-phone: 38.75rem;
 }
 
+:root {
+  --rail-line-width: 1.5px;
+  --rail-trunk-width: calc(var(--rail-line-width) * 1.2);
+}
+
 @media (width >= 38.75rem) {
   :root {
     --spacing-hero-copy: 112px;
@@ -69,15 +77,14 @@
   .finale-split-pill,
   .site-header[data-visual-state="floating"]
 ) {
-  border-color: rgb(137 180 250 / 38%);
+  border-color: var(--color-floating-glass-border);
   background:
     linear-gradient(135deg, rgb(137 180 250 / 11%), transparent 40%, rgb(116 199 236 / 6%)),
     rgb(30 30 46 / 88%);
-  box-shadow:
-    0 20px 46px rgb(8 9 14 / 28%),
-    0 6px 16px rgb(10 11 17 / 18%),
-    0 1px 0 rgb(137 180 250 / 8%),
+  --floating-glass-shadow:
+    0 20px 46px rgb(8 9 14 / 28%), 0 6px 16px rgb(10 11 17 / 18%), 0 1px 0 rgb(137 180 250 / 8%),
     inset 0 1px rgb(255 255 255 / 10%);
+  box-shadow: var(--floating-glass-shadow);
   backdrop-filter: blur(20px) saturate(120%);
   -webkit-backdrop-filter: blur(20px) saturate(120%);
 }
@@ -138,9 +145,8 @@ body:has([data-finale-state="ready"]) [data-topology-terminal-route] {
 }
 
 .chapter-caption__copy {
+  flex: 1;
   min-width: 0;
-  width: max(72ch, 60%);
-  max-width: calc(100% - 32px);
 }
 
 .chapter-caption__copy p,

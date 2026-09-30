@@ -41,6 +41,9 @@ package enum ActionValidationError: Error, Equatable {
     case zoomActive(tabId: UUID)
     case drawerChildContentRejected(parentPaneId: UUID, content: DrawerChildContentKind)
     case drawerOwnerNotZoomSource(parentPaneId: UUID)
+    /// A pane agent's target is no longer inside its own pane, or the action is
+    /// not one an agent may apply.
+    case outsideOwnPane(paneId: UUID)
 }
 
 package enum DrawerLayoutValidationFailure: Error, Equatable, Sendable, CustomStringConvertible {
@@ -67,6 +70,54 @@ package enum DrawerLayoutValidationFailure: Error, Equatable, Sendable, CustomSt
 /// Takes a resolved action and a state snapshot, returns validated or error.
 /// No side effects, no UI dependencies, no NSViews.
 package enum WorkspaceCommandValidator {
+
+    /// Validates an action a pane agent requested. The own-pane re-check runs
+    /// against the same fresh snapshot as ordinary validation, after every
+    /// queued predecessor and before any durable work.
+    package static func validate(
+        _ action: WorkspaceActionCommand,
+        ownPaneAssertion: WorkspaceOwnPaneAssertion?,
+        state: ActionStateSnapshot
+    ) -> Result<ValidatedAction, ActionValidationError> {
+        if let ownPaneAssertion {
+            guard let touchedPaneIds = agentTouchedPaneIds(of: action) else {
+                return .failure(.outsideOwnPane(paneId: ownPaneAssertion.boundPaneId))
+            }
+            if let outside = touchedPaneIds.first(where: { !ownPaneAssertion.admits($0, state: state) }) {
+                return .failure(.outsideOwnPane(paneId: outside))
+            }
+            // Authorization already refuses an agent closing its own pane; the
+            // effect owner holds the same line.
+            if closedPaneId(of: action) == ownPaneAssertion.boundPaneId {
+                return .failure(.outsideOwnPane(paneId: ownPaneAssertion.boundPaneId))
+            }
+        }
+        return validate(action, state: state)
+    }
+
+    private static func closedPaneId(of action: WorkspaceActionCommand) -> UUID? {
+        switch action {
+        case .closePane(_, let paneId), .removeDrawerPane(_, let paneId):
+            paneId
+        default:
+            nil
+        }
+    }
+
+    /// The panes an agent-originated action touches, or `nil` for an action no
+    /// agent may apply.
+    private static func agentTouchedPaneIds(of action: WorkspaceActionCommand) -> [UUID]? {
+        switch action {
+        case .closePane(_, let paneId):
+            [paneId]
+        case .removeDrawerPane(let parentPaneId, let drawerPaneId):
+            [parentPaneId, drawerPaneId]
+        case .addDrawerChildInBackground(let parentPaneId, _, _):
+            [parentPaneId]
+        default:
+            nil
+        }
+    }
 
     package static func validate(
         _ action: WorkspaceActionCommand,
@@ -418,9 +469,23 @@ package enum WorkspaceCommandValidator {
                 return .failure(.paneNotFound(paneId: parentPaneId, tabId: state.activeTabId ?? UUID()))
             }
             return .success(ValidatedAction(action))
-        case .removeDrawerPane(let parentPaneId, _):
+        case .addDrawerChildInBackground(let parentPaneId, let childPaneId, _):
+            guard state.tabOwning(paneId: parentPaneId) != nil, state.drawerParentPaneId(of: parentPaneId) == nil
+            else {
+                return .failure(.paneNotFound(paneId: parentPaneId, tabId: state.activeTabId ?? UUIDv7.generate()))
+            }
+            guard !state.knownPaneIds.contains(childPaneId) else {
+                return .failure(.paneAlreadyInLayout(paneId: childPaneId))
+            }
+            return .success(ValidatedAction(action))
+        case .removeDrawerPane(let parentPaneId, let drawerPaneId):
             guard state.tabOwning(paneId: parentPaneId) != nil else {
                 return .failure(.paneNotFound(paneId: parentPaneId, tabId: state.activeTabId ?? UUID()))
+            }
+            // The named child must belong to the named parent; otherwise the
+            // discard would silently do nothing and still report applied.
+            guard state.drawerParentPaneId(of: drawerPaneId) == parentPaneId else {
+                return .failure(.paneNotFound(paneId: drawerPaneId, tabId: state.activeTabId ?? UUIDv7.generate()))
             }
             return .success(ValidatedAction(action))
         case .toggleDrawer(let parentPaneId):

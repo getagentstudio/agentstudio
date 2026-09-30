@@ -2,9 +2,27 @@ import Foundation
 
 extension IPCJSONSchema {
     func validateTypedEncoding(normalized: Data, encoded: Data) throws {
+        _ = try validateTypedEncodingAndCompare(normalized: normalized, encoded: encoded)
+    }
+
+    func validateTypedEncodingAndCompare(
+        normalized: IPCNormalizedJSON,
+        encoded: Data
+    ) throws -> Bool {
+        try validateTypedEncodingAndCompare(
+            normalized: normalized.data(validatedFor: self),
+            encoded: encoded
+        )
+    }
+
+    private func validateTypedEncodingAndCompare(
+        normalized: Data,
+        encoded: Data
+    ) throws -> Bool {
         let input = try JSONDecoder().decode(IPCSchemaValue.self, from: normalized)
         let output = try JSONDecoder().decode(IPCSchemaValue.self, from: encoded)
         try validateTypedEncoding(input: input, output: output, path: "$")
+        return input == output
     }
 
     private func validateTypedEncoding(

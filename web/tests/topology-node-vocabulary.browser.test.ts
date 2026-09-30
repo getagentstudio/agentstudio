@@ -20,6 +20,27 @@ function ofKind(
 }
 
 describe("topology node vocabulary on the home page", () => {
+  it("classifies the finale ring as the primary end node, separate from merges", async () => {
+    const result = await commands.verifyTopologyNodeVocabulary(inject("siteHeaderBrowserTestUrl"));
+    const terminals = result.afterReveal.filter((glyph) => glyph.finaleTerminal);
+    expect(terminals).toHaveLength(1);
+    expect
+      .soft(
+        ofKind(result.afterReveal, ["merge"])
+          .filter((glyph) => glyph.glyph.color === glyph.laneColor)
+          .map((glyph) => ({ kind: glyph.kind, finaleTerminal: glyph.finaleTerminal })),
+      )
+      .toEqual([]);
+    expect(terminals[0]?.kind).toBe("end");
+    expect(terminals[0]?.glyph.stroke).toBe(result.primaryColor);
+    expect(terminals[0]?.glyph.fill).toBe(result.canvasColor);
+    expect(terminals[0]?.glyph.radius).toBe(6);
+    expect(terminals[0]?.glyph.strokeWidth).toBe("2px");
+    expect(terminals[0]?.core?.radius).toBe(2.5);
+    expect(terminals[0]?.core?.fill).toBe(result.primaryColor);
+    expect(ofKind(result.afterReveal, ["merge"]).some((glyph) => glyph.finaleTerminal)).toBe(false);
+  });
+
   it("draws each node kind with its own glyph, color, and size", async () => {
     // Act
     const result = await commands.verifyTopologyNodeVocabulary(inject("siteHeaderBrowserTestUrl"));
@@ -88,7 +109,7 @@ describe("topology node vocabulary on the home page", () => {
     expect(result.stepLineCount).toBeGreaterThan(0);
     expect(stepLinePorts).toHaveLength(result.stepLineCount);
     for (const port of result.ports) {
-      expect(port.strokeWidth).toBe(port.terminal ? "2px" : port.laneStrokeWidth);
+      expect(port.strokeWidth).toBe(port.laneStrokeWidth);
       expect(port.nodeCount).toBe(0);
       expect(port.endpointOffset).toBeLessThanOrEqual(port.terminal ? 6.5 : 1);
     }

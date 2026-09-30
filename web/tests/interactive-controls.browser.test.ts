@@ -302,7 +302,7 @@ describe("interactive website controllers", () => {
     const fixture = addFixture(`
       <div data-install-command="brew tap ShravanSunder/agentstudio\nbrew install --cask agent-studio" data-install-copied-label="Copied ✓" data-install-feedback-ms="2000">
         <code data-install-code hidden></code>
-        <button data-install-copy><span data-install-copy-feedback>Copy install</span></button>
+        <button data-install-copy><svg><g data-install-copy-icon></g><path data-install-copied-icon data-install-icon-hidden></path></svg><span data-install-copy-feedback>Copy install</span></button>
         <span data-install-status aria-live="polite"></span>
       </div>
     `);
@@ -319,11 +319,23 @@ describe("interactive website controllers", () => {
       "brew tap ShravanSunder/agentstudio\nbrew install --cask agent-studio",
     );
     expect(label.textContent).toBe("Copied ✓");
+    expect(
+      root.querySelector("[data-install-copy-icon]")?.hasAttribute("data-install-icon-hidden"),
+    ).toBe(true);
+    expect(
+      root.querySelector("[data-install-copied-icon]")?.hasAttribute("data-install-icon-hidden"),
+    ).toBe(false);
     expect(status.textContent).toBe(marketingCopy.installation.copiedStatus);
     vi.advanceTimersByTime(1999);
     expect(label.textContent).toBe("Copied ✓");
     vi.advanceTimersByTime(1);
     expect(label.textContent).toBe("Copy install");
+    expect(
+      root.querySelector("[data-install-copy-icon]")?.hasAttribute("data-install-icon-hidden"),
+    ).toBe(false);
+    expect(
+      root.querySelector("[data-install-copied-icon]")?.hasAttribute("data-install-icon-hidden"),
+    ).toBe(true);
     expect(status.textContent).toBe("");
     dispose();
   });

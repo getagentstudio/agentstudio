@@ -81,7 +81,9 @@ extension WorkspaceSurfaceCoordinator {
         parentPaneId: UUID,
         targetDrawerPaneId: UUID?,
         direction: SplitNewDirection,
-        sizingMode: DropSizingMode
+        sizingMode: DropSizingMode,
+        childPaneId: UUID? = nil,
+        presentation: DrawerChildPresentation = .interactive
     ) async throws {
         guard let tabID = store.tabLayoutAtom.tabContaining(paneId: parentPaneId)?.id else {
             Self.logger.warning("Drawer creation rejected a parent without an owning tab")
@@ -95,12 +97,14 @@ extension WorkspaceSurfaceCoordinator {
             placement: .drawer(
                 .init(
                     tabID: tabID, parentID: parentPaneId, anchorID: targetDrawerPaneId,
-                    direction: direction, sizingMode: sizingMode)),
+                    direction: direction, sizingMode: sizingMode,
+                    childID: childPaneId, presentation: presentation)),
             nameForPane: { [self] in tabNameForPane($0) },
             willPublish: { [self] in prepareTerminalPaneSlot($0) })
         registerTerminalPlaceholderIfNeeded(for: drawerPane, mode: .preparing)
         traceTerminalLayoutInsertedAndViewCreateStarted(drawerPane)
         ensureTerminalPaneView(drawerPane)
+        guard presentation == .interactive else { return }
         focusVisiblePaneHost(drawerPane.id)
     }
 

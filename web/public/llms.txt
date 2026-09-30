@@ -1,0 +1,19 @@
+# Agent Studio
+
+> Agent Studio is a native macOS IDE for parallel coding agents, with your repositories and worktrees within reach. Your agents run in Ghostty terminals with files and diffs right beside them.
+
+Requires macOS 26 or later.
+
+## Install
+
+```sh
+brew tap ShravanSunder/agentstudio
+brew install --cask agent-studio
+```
+
+## Links
+
+- [Website](https://getagentstudio.dev/)
+- [GitHub](https://github.com/ShravanSunder/agentstudio)
+- [README](https://github.com/ShravanSunder/agentstudio#readme)
+- [Documentation](https://github.com/ShravanSunder/agentstudio/tree/main/docs)

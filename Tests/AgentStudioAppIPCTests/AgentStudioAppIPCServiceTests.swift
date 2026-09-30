@@ -19,7 +19,8 @@ struct AgentStudioAppIPCServiceTests {
         )
 
         let eventBroker = IPCEventBroker()
-        let registry = try AppIPCMethodRegistry(registrations: fixture.registrations(), channel: .debug)
+        let registry = try makeTestAppIPCMethodRegistry(
+            registrations: fixture.registrations(), recognizedCommands: [], channel: .debug)
         let service = AgentStudioAppIPCService(
             configuration: configuration,
             ports: AgentStudioAppIPCPorts(
@@ -31,7 +32,9 @@ struct AgentStudioAppIPCServiceTests {
                 uiPresentationPort: FakeUIPresentationPort(),
                 sidebarPort: FakeSidebarPort(),
                 sessionsPort: RecordingSessionsPort(),
-                permissionApprovalPort: FakePermissionApprovalPort()
+                permissionApprovalPort: FakePermissionApprovalPort(),
+                ownPaneScopePort: StaticOwnPaneScopePort(),
+                agentAuthorizationTelemetry: RecordingAgentAuthorizationTelemetry()
             ),
             methodRegistry: registry,
             eventBroker: eventBroker
@@ -507,22 +510,17 @@ struct AgentStudioAppIPCServiceTests {
             )
         )
 
+        // The friendly ordinal names another pane, so an own-pane command is
+        // refused by name after the canonical identity is known.
         let response = try reader.receiveResponse(connection: connection)
         #expect(response.id == .number(41))
-        #expect(response.error?.code == -32_002)
-        #expect(response.error?.message == "missing grant")
-        guard case .object(let correction)? = response.error?.data,
-            let requiredScopeValue = correction["requiredScope"]
-        else {
-            Issue.record("Expected canonical missing-grant correction")
-            return
-        }
-        let requiredScope = try decodeJSONValue(IPCPermissionScope.self, from: requiredScopeValue)
-        #expect(correction["reason"] == .string("missingGrant"))
-        #expect(correction["fieldPath"] == .string("$.authorization"))
-        #expect(requiredScope.target == .pane(scenario.firstPaneId.uuidString))
-        #expect(requiredScope.privilege == .appCommandExecute)
-        #expect(requiredScope.dataScope == .unspecified)
+        #expect(response.error?.code == -32_011)
+        #expect(response.error?.message == "not yet allowed")
+        #expect(
+            response.error?.data
+                == .object([
+                    "reason": .string("notYetAllowed"), "name": .string(scenario.commandId.rawValue),
+                ]))
         guard case .pane(let preparedArguments)? = scenario.commandPort.preparedRequests.first?.arguments else {
             Issue.record("Expected the command port to receive canonical pane arguments")
             return
@@ -714,10 +712,6 @@ private final class PreparedCommandRecordingPort: AppIPCCommandPort, @unchecked 
         lock.withLock { preparedRequestsStorage }
     }
 
-    func listCommands() throws -> IPCCommandCatalogResult {
-        try underlying.listCommands()
-    }
-
     func prepareCommand(
         _ params: IPCCommandExecutionRequest,
         principal: IPCPrincipal,
@@ -728,8 +722,10 @@ private final class PreparedCommandRecordingPort: AppIPCCommandPort, @unchecked 
         return prepared
     }
 
-    func executeCommand(_ params: IPCCommandExecutionRequest) async throws -> IPCCommandExecutionResult {
-        try await underlying.executeCommand(params)
+    func executeCommand(
+        _ params: IPCCommandExecutionRequest, ownPaneAssertion: AppIPCOwnPaneAssertion?
+    ) async throws -> IPCCommandExecutionResult {
+        try await underlying.executeCommand(params, ownPaneAssertion: ownPaneAssertion)
     }
 }
 
@@ -765,7 +761,9 @@ private struct OrdinalCommandAuthorizationScenario {
                 requiredPrivileges: [.appCommandExecute, .layoutMutate],
                 dataScope: .paneContext,
                 allowedTargetKinds: [.pane],
-                result: result
+                result: result,
+                exposure: .allChannels,
+                agentEligibility: .ownPane
             )
         )
         let underlyingCommandPort = FakeCommandPort(

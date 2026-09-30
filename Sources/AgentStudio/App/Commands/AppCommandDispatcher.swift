@@ -215,7 +215,7 @@ final class AppCommandDispatcher: AppCommandDispatching {
         switch appCommandRouter?.executeWorktreeCreation(request) {
         case .accepted, .applied:
             return true
-        case .presented, .unavailable, .stateUnavailable, .unsupportedCommand, nil:
+        case .presented, .unavailable, .stateUnavailable, .unsupportedCommand, .outsideOwnPane, nil:
             return false
         }
     }

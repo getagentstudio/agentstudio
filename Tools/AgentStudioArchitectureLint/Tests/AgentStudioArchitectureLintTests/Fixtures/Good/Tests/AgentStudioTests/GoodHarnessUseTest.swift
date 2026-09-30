@@ -1,11 +1,11 @@
-import Foundation
+import AgentStudioTestHarness
 
 struct GoodCountingGate {
     var count = 0
 }
 
-final class GoodEventRecorder: @unchecked Sendable {
-    private var waiters: [CheckedContinuation<Void, Never>] = []
+struct GoodEventRecorder {
+    let heldStep: HeldStep<Void>
 }
 
 func waitUntilDrained() async -> Int { 1 }

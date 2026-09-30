@@ -184,8 +184,9 @@ These are the permitted forms. Anything not in the left column is a poll.
 
 **No correctness budgets.** A test must not decide pass or fail by an
 elapsed-time budget, a poll count, or a scheduler-turn count. A wait must
-complete because a named event, a completion signal, an observed state change,
-or a quiescence signal occurred. The test for whether a wait is a budget: *can
+complete because a named event, an owner's typed fact, or an observed state
+change occurred. Idle or quiescence is never a test wait; it is a production
+lifecycle contract ([Quiescence](#quiescence)). The test for whether a wait is a budget: *can
 it expire while the awaited work is correct and still in flight?* If yes, it is
 a budget.
 

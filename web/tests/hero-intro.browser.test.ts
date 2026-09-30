@@ -1,6 +1,7 @@
 import { describe, expect, inject, it } from "vitest";
 import { commands } from "vitest/browser";
 
+import type { HeroEyebrowSettleObservation } from "./hero-eyebrow-settle-browser-command";
 import type {
   HeroLayoutObservation,
   HeroPlaybackObservation,
@@ -12,6 +13,11 @@ import type {
 
 declare module "vitest/browser" {
   interface BrowserCommands {
+    verifyHeroEyebrowSettle(
+      pageUrl: string,
+      width: number,
+      height: number,
+    ): Promise<HeroEyebrowSettleObservation>;
     verifyHeroIntroLayout(
       pageUrl: string,
       viewports: readonly { readonly width: number; readonly height: number }[],
@@ -53,6 +59,25 @@ const viewports = [
 ] as const;
 
 describe("hero intro", () => {
+  it.each([
+    [1600, 1000],
+    [390, 844],
+  ])("keeps the animated eyebrow identical to its settled CSS at %ix%i", async (width, height) => {
+    const observation = await commands.verifyHeroEyebrowSettle(
+      inject("siteHeaderBrowserTestUrl"),
+      width,
+      height,
+    );
+    expect(observation.settledState).toBe("settled");
+    expect(
+      Math.abs(observation.animatedSpacing - observation.settledSpacing),
+      observation.viewport,
+    ).toBeLessThanOrEqual(0.01);
+    expect(
+      Math.abs(observation.animatedWidth - observation.settledWidth),
+      observation.viewport,
+    ).toBeLessThanOrEqual(0.5);
+  });
   it("fits the 390px finale before its responsive script runs", async () => {
     const observation = await commands.verifyHeroNoScriptWidth(inject("siteHeaderBrowserTestUrl"));
     expect(observation.shortLabels).toBe(false);

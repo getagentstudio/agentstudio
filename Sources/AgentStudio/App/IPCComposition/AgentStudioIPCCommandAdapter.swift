@@ -39,13 +39,8 @@ struct AgentStudioIPCCommandAdapter: AppIPCCommandPort, @unchecked Sendable {
         )
     }
 
-    func listCommands() throws -> IPCCommandCatalogResult {
-        let commands =
-            try AgentStudioIPCCommandCatalogProjection
-            .admittedCommands(on: channel)
-            .map(AgentStudioIPCCommandCatalogProjection.makeDescriptor)
-            .sorted { $0.id.rawValue < $1.id.rawValue }
-        return IPCCommandCatalogResult(compatibility: .current, commands: commands)
+    func commandCatalogProjectionInputs() -> AppIPCCommandCatalogProjectionInputs {
+        AgentStudioIPCCommandCatalogProjection.captureBuildInputs(on: channel)
     }
 
     func prepareCommand(
@@ -70,11 +65,30 @@ struct AgentStudioIPCCommandAdapter: AppIPCCommandPort, @unchecked Sendable {
                     target: resolved.target,
                     dataScope: PermissionScopeCanonicalizer.dataScope(for: privilege)
                 )
-            ]
+            ],
+            resolvedPaneIds: resolved.paneIds,
+            agentArgumentRule: Self.agentArgumentRule(for: command, arguments: resolved.arguments)
         )
     }
 
-    func executeCommand(_ request: IPCCommandExecutionRequest) async throws -> IPCCommandExecutionResult {
+    /// Commands whose effect, not only their target, decides agent admission.
+    private static func agentArgumentRule(
+        for command: AppCommand,
+        arguments: IPCCommandArguments
+    ) -> AppIPCAgentArgumentRule {
+        switch (command, arguments) {
+        case (.closeDrawerPane, .drawerPane(let value)):
+            AppCommandTypedIPCPane.canonicalId(value.drawerPaneSelector).map(AppIPCAgentArgumentRule.closesPane)
+                ?? .targetOnly
+        default:
+            .targetOnly
+        }
+    }
+
+    func executeCommand(
+        _ request: IPCCommandExecutionRequest,
+        ownPaneAssertion: AppIPCOwnPaneAssertion?
+    ) async throws -> IPCCommandExecutionResult {
         let command = try activeCommand(for: request)
         guard shellCommandHandler != nil else { throw AppIPCCommandError(reason: .stateUnavailable) }
         try targetResolver.validateForExecution(request.arguments)
@@ -83,7 +97,8 @@ struct AgentStudioIPCCommandAdapter: AppIPCCommandPort, @unchecked Sendable {
             AppCommandExecutionRequest(
                 command: command,
                 arguments: .typedIPC(request.arguments),
-                executionContext: .headlessIPC(admitsDebugTestingCommands: channel == .debug)
+                executionContext: .headlessIPC(admitsDebugTestingCommands: channel == .debug),
+                ownPaneAssertion: ownPaneAssertion.map { WorkspaceOwnPaneAssertion(boundPaneId: $0.boundPaneId) }
             )
         )
         return try makeResult(command: command, request: request, outcome: outcome)
@@ -129,6 +144,8 @@ struct AgentStudioIPCCommandAdapter: AppIPCCommandPort, @unchecked Sendable {
             return .unavailable(.init(commandId: commandId, correlationId: correlationId, reason: reason))
         case .unsupportedCommand:
             throw AppIPCCommandError(reason: .unsupportedCommand)
+        case .outsideOwnPane:
+            throw AuthorizationError.notYetAllowed(command.rawValue)
         case .applied, .accepted, .presented, .unavailable, .stateUnavailable:
             throw AppIPCCommandError(reason: .stateUnavailable)
         }

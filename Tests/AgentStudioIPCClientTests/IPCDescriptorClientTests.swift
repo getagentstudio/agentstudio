@@ -64,7 +64,7 @@ struct IPCDescriptorClientTests {
         }
         let decoded = try JSONDecoder().decode(
             IPCDescriptorClientQueryResult.self,
-            from: response.normalizedResult
+            from: response.normalizedResult.data
         )
 
         #expect(response.descriptor.metadata.name == "fixture.query")
@@ -141,7 +141,7 @@ struct IPCDescriptorClientTests {
         #expect(
             try JSONDecoder().decode(
                 IPCDescriptorClientQueryResult.self,
-                from: response.normalizedResult
+                from: response.normalizedResult.data
             ) == IPCDescriptorClientQueryResult(value: "authenticated")
         )
     }
@@ -398,7 +398,7 @@ struct IPCDescriptorClientTests {
         #expect(
             try JSONDecoder().decode(
                 IPCDescriptorClientSubscriptionResult.self,
-                from: response.normalizedResult
+                from: response.normalizedResult.data
             ) == IPCDescriptorClientSubscriptionResult(subscriptionId: subscriptionID)
         )
         #expect(notification.contains(#""method":"events.notification""#))

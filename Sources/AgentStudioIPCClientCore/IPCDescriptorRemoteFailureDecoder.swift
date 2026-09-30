@@ -16,9 +16,32 @@ enum IPCDescriptorRemoteFailureDecoder {
                 descriptor: descriptor
             ),
             correction: schemaCorrection(from: error.data),
-            requiredScope: missingGrantScope(from: error)
+            requiredScope: missingGrantScope(from: error),
+            agentRefusal: agentRefusal(from: error)
         )
     }
+
+    /// Accepts exactly the app's agent refusal shape: its own code, the
+    /// matching reason, and an identifier-shaped name.
+    private static func agentRefusal(from error: JSONRPCErrorPayload) -> IPCAgentRefusal? {
+        let reason: IPCAgentRefusal.Reason
+        switch error.code {
+        case -32_011: reason = .notYetAllowed
+        case -32_012: reason = .refusedForAgent
+        default: return nil
+        }
+        guard case .object(let fields) = error.data,
+            Set(fields.keys) == ["name", "reason"],
+            fields["reason"] == .string(reason.rawValue),
+            case .string(let name)? = fields["name"],
+            name.wholeMatch(of: refusedIdentifierPattern) != nil
+        else {
+            return nil
+        }
+        return IPCAgentRefusal(reason: reason, name: name)
+    }
+
+    private nonisolated(unsafe) static let refusedIdentifierPattern = /[A-Za-z][A-Za-z0-9.]{0,127}/
 
     private static func documentedReason(
         from data: JSONValue?,

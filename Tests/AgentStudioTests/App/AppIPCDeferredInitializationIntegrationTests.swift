@@ -142,7 +142,8 @@ struct AppIPCDeferredInitializationIntegrationTests {
         await task.value
 
         #expect(appDelegate.appIPCInitializationTask != nil)
-        appDelegate.stopAppIPCServer()
+        await appDelegate.stopAcceptingAppIPCConnections()
+        await appDelegate.drainAppIPCCredentialPersistence()
         #expect(appDelegate.appIPCInitializationTask == nil)
     }
 
@@ -157,7 +158,8 @@ struct AppIPCDeferredInitializationIntegrationTests {
         firstTask.cancel()
 
         #expect(appDelegate.appIPCInitializationTask?.isCancelled == true)
-        appDelegate.stopAppIPCServer()
+        await appDelegate.stopAcceptingAppIPCConnections()
+        await appDelegate.drainAppIPCCredentialPersistence()
         await firstTask.value
     }
 
@@ -168,14 +170,16 @@ struct AppIPCDeferredInitializationIntegrationTests {
 
         appDelegate.scheduleAppIPCInitialization()
         let firstTask = try #require(appDelegate.appIPCInitializationTask)
-        appDelegate.stopAppIPCServer()
+        await appDelegate.stopAcceptingAppIPCConnections()
+        await appDelegate.drainAppIPCCredentialPersistence()
         appDelegate.scheduleAppIPCInitialization()
         let secondTask = try #require(appDelegate.appIPCInitializationTask)
         await firstTask.value
 
         #expect(!secondTask.isCancelled)
         #expect(appDelegate.appIPCInitializationTask != nil)
-        appDelegate.stopAppIPCServer()
+        await appDelegate.stopAcceptingAppIPCConnections()
+        await appDelegate.drainAppIPCCredentialPersistence()
         await secondTask.value
     }
 

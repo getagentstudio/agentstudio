@@ -16,6 +16,8 @@ function buildReviewScene(
   const diffView = requireScenePart(root, reviewParts.diffView);
   const changedLine = requireScenePart(root, reviewParts.changedLine);
   const commentThread = requireScenePart(root, reviewParts.commentThread);
+  const annotationSlot = commentThread.closest<HTMLElement>(".kit-diff-view__annotation");
+  if (annotationSlot === null) throw new ScenePartMissingError("review annotation slot");
   const diffLines = [...diffView.querySelectorAll<HTMLElement>(".kit-diff-view__line")];
   if (diffLines.length < 5) throw new ScenePartMissingError("review diff lines");
   const builder = new SceneTimelineBuilder(timeline, options.seed);
@@ -30,7 +32,8 @@ function buildReviewScene(
     { boxShadow: "inset 0 0 0 1px rgb(137 180 250 / 80%)", duration: 0.35, ease: "power2.out" },
     1.1,
   );
-  builder.reveal(commentThread, 1.65, { duration: 0.4, fromY: 10, ease: "power2.out" });
+  builder.expand(annotationSlot, 1.65, 0.4);
+  builder.reveal(commentThread, 1.65, { duration: 0.4, ease: "power2.out" });
   builder.holdUntil(totalDurationSeconds);
 }
 

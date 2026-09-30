@@ -31,7 +31,7 @@ import HeroIconStack from "./HeroIconStack.astro";
   :global(.hero-terminal-pane) { position: relative; display: flex; flex: 1 1 50%; flex-direction: column; min-width: 0; min-height: 0; }
   :global(.hero-pane-lift) { position: absolute; inset: 0; z-index: 2; pointer-events: none; }
   :global(.hero-terminal-pane--codex) { border-left: 1px solid rgb(255 255 255 / 10%); }
-  :global(.hero-terminal-transcript) { position: relative; flex: 1 1 auto; min-width: 0; min-height: 0; margin-bottom: 20px; overflow-y: auto; scrollbar-width: none; padding: 12px 16px 24px; }
+  :global(.hero-terminal-transcript) { position: relative; flex: 1 1 auto; min-width: 0; min-height: 0; margin-bottom: 20px; overflow-y: hidden; scrollbar-width: none; padding: 12px 16px 24px; }
   :global(.hero-terminal-transcript::-webkit-scrollbar) { display: none; }
   :global(.hero-codex-swap-slot), :global(.hero-claude-swap-slot) { display: grid; }
   :global(.hero-codex-swap-slot > *), :global(.hero-claude-swap-slot > *) { grid-area: 1 / 1; min-width: 0; }

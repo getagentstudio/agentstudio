@@ -46,7 +46,7 @@ struct FakeQueryPort: AppIPCQueryPort {
         throw AppIPCQueryError(reason: .noActiveWindow)
     }
 
-    func snapshotPane(_ paneId: UUID) throws -> IPCPaneSnapshotResult {
+    func snapshotPane(_ paneId: UUID, ownPaneAssertion _: AppIPCOwnPaneAssertion?) throws -> IPCPaneSnapshotResult {
         guard let pane = panes.first(where: { $0.id == paneId }) else {
             throw AppIPCQueryError(reason: .targetNotFound)
         }
@@ -109,7 +109,7 @@ final class RecordingSnapshotQueryPort: AppIPCQueryPort, @unchecked Sendable {
         return makePaneSnapshotResult(pane: pane, paneCount: panes.count)
     }
 
-    func snapshotPane(_ paneId: UUID) throws -> IPCPaneSnapshotResult {
+    func snapshotPane(_ paneId: UUID, ownPaneAssertion _: AppIPCOwnPaneAssertion?) throws -> IPCPaneSnapshotResult {
         lock.withLock {
             snapshotPaneIdsStorage.append(paneId)
         }

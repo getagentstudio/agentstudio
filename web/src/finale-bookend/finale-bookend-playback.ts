@@ -73,8 +73,7 @@ export function initializeFinaleBookend(root: HTMLElement): () => void {
   const terminal = requiredPart<HTMLElement>(root, "[data-finale-terminal]");
   const logo = requiredPart<HTMLElement>(root, "[data-finale-logo]");
   const borderTrace = requiredPart<SVGPathElement>(root, "[data-finale-border-trace]");
-  const starOutline = requiredPart<SVGPathElement>(root, "[data-finale-star-outline]");
-  const starFill = requiredPart<SVGPathElement>(root, "[data-finale-star-fill]");
+  const githubOutline = requiredPart<SVGPathElement>(root, "[data-finale-github-outline]");
   const lifecycle = new AbortController();
   let timeline: gsap.core.Timeline | undefined = undefined;
   let started = false;
@@ -90,7 +89,7 @@ export function initializeFinaleBookend(root: HTMLElement): () => void {
     settled = true;
     timeline?.kill();
     gsap
-      .set([rearOne, rearTwo, front, terminal, logo, borderTrace, starOutline, starFill], {
+      .set([rearOne, rearTwo, front, terminal, logo, borderTrace, githubOutline], {
         clearProps: "all",
       })
       .kill();
@@ -150,7 +149,7 @@ export function initializeFinaleBookend(root: HTMLElement): () => void {
   root.dataset["finaleState"] = "ready";
   const readyPillShadow = getComputedStyle(pill).boxShadow;
   const borderLength = tracePillBorder(pill, borderTrace);
-  const starLength = starOutline.getTotalLength();
+  const githubLength = githubOutline.getTotalLength();
   timeline = gsap.timeline({
     paused: true,
     onComplete: settle,
@@ -169,8 +168,7 @@ export function initializeFinaleBookend(root: HTMLElement): () => void {
     { strokeDasharray: borderLength, strokeDashoffset: borderLength, opacity: 0 },
     0,
   );
-  timeline.set(starOutline, { strokeDasharray: starLength, strokeDashoffset: starLength }, 0);
-  timeline.set(starFill, { opacity: 0 }, 0);
+  timeline.set(githubOutline, { strokeDasharray: githubLength, strokeDashoffset: githubLength }, 0);
   timeline.set(logo, { opacity: 0 }, 0);
   timeline.set([rearOne, rearTwo, front, terminal], { opacity: 1 }, 0);
   timeline.set(borderTrace, { opacity: 1 }, 0.55);
@@ -182,8 +180,7 @@ export function initializeFinaleBookend(root: HTMLElement): () => void {
   );
   timeline.to(borderTrace, { strokeDashoffset: 0, duration: 0.6, ease: "power1.inOut" }, 0.55);
   timeline.to(borderTrace, { opacity: 0.6, duration: 0.01 }, 1.15);
-  timeline.to(starOutline, { strokeDashoffset: 0, duration: 0.3, ease: "power1.inOut" }, 0.95);
-  timeline.to(starFill, { opacity: 1, duration: 0.15 }, 1.25);
+  timeline.to(githubOutline, { strokeDashoffset: 0, duration: 0.3, ease: "power1.inOut" }, 0.95);
   timeline.to(
     terminal,
     { x: 1, y: 2, scale: 0.58, opacity: 0, duration: 0.8, ease: "power3.inOut" },

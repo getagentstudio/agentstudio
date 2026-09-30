@@ -248,16 +248,20 @@ package final class DarwinFSEventStreamClient: FSEventStreamClient, GitCleanCont
         worktreeId: UUID,
         rootPath: URL,
         observationPlan: AgentStudioGit.GitStatusObservationPlan
-    ) async -> GitCleanContinuityBarrier? {
-        guard observationPlan.support == .supported else { return nil }
+    ) async -> GitCleanContinuityPrepareOutcome {
+        guard observationPlan.support == .supported else { return .unavailable(.unsupportedObservation) }
         let canonicalRootPath = DarwinFSEventPathCanonicalizer.canonicalURL(rootPath)
         guard
             let binding = DarwinFSEventBindingPlanner.plan(observationPlan: observationPlan)
-        else { return nil }
+        else { return .unavailable(.bindingPlanUnavailable) }
         let observationIdentity = observationPlan.identity
 
-        let currentRegistration = retainedRegistration(worktreeId: worktreeId)
-        guard let currentRegistration, currentRegistration.rootPath == canonicalRootPath else { return nil }
+        let initialState = lifecycleLock.withLock {
+            (hasShutdown: hasShutdown, registration: streamByWorktreeId[worktreeId])
+        }
+        guard !initialState.hasShutdown else { return .unavailable(.clientShutdown) }
+        guard let currentRegistration = initialState.registration else { return .unavailable(.registrationMissing) }
+        guard currentRegistration.rootPath == canonicalRootPath else { return .unavailable(.rootMismatch) }
 
         let registration: StreamRegistration
         if currentRegistration.observationIdentity == observationIdentity,
@@ -285,23 +289,22 @@ package final class DarwinFSEventStreamClient: FSEventStreamClient, GitCleanCont
                     watchedPaths: binding.localWatchedPaths
                 )
             else {
-                return nil
+                return .unavailable(.replacementCreationFailed)
             }
 
-            let installed = lifecycleLock.withLock { () -> Bool in
-                guard !hasShutdown,
+            let installFailure = lifecycleLock.withLock { () -> GitCleanContinuityPrepareFailure? in
+                guard !hasShutdown else { return .shutdownDuringReplacementInstall }
+                guard
                     streamByWorktreeId[worktreeId]?.lifecycleGeneration
                         == currentRegistration.lifecycleGeneration
-                else {
-                    return false
-                }
+                else { return .replacementInstallLost }
                 streamByWorktreeId[worktreeId] = replacement
-                return true
+                return nil
             }
-            guard installed else {
+            if let installFailure {
                 Self.teardown(replacement)
                 continuityLedger.unregister(registrationId: worktreeId)
-                return nil
+                return .unavailable(installFailure)
             }
             continuityLedger.register(registrationId: worktreeId, identity: observationIdentity)
             replacement.eventActivationGate.activate()
@@ -316,36 +319,40 @@ package final class DarwinFSEventStreamClient: FSEventStreamClient, GitCleanCont
                 exactItemsByParent: binding.sharedExactItemsByParent
             )
         else {
-            return nil
+            return .unavailable(.sharedBindingInstallFailed)
         }
         guard
             let preFlushBarrier = continuityLedger.beginBarrier(
                 registrationId: worktreeId,
                 identity: observationIdentity
-            ),
+            )
+        else { return .unavailable(.preFlushBarrierUnavailable) }
+        guard
             let streamRetention = retainCompositeStreams(
                 worktreeId: worktreeId,
                 observationIdentity: observationIdentity,
                 requiresSharedBinding: !binding.sharedExactItemsByParent.isEmpty
             )
         else {
-            return nil
+            return .unavailable(.compositeStreamsUnavailable)
         }
-        guard flush(streamRetention) else { return nil }
+        guard flush(streamRetention) else { return .unavailable(.streamFlushFailed) }
         guard
             let postFlushBarrier = continuityLedger.beginBarrier(
                 registrationId: worktreeId,
                 identity: observationIdentity
-            ),
-            postFlushBarrier == preFlushBarrier,
+            )
+        else { return .unavailable(.postFlushBarrierUnavailable) }
+        guard postFlushBarrier == preFlushBarrier else { return .unavailable(.barrierChangedDuringFlush) }
+        guard
             compositeStreamsAreCurrent(
                 worktreeId: worktreeId,
                 streamRetention: streamRetention
             )
         else {
-            return nil
+            return .unavailable(.compositeStreamsChangedDuringFlush)
         }
-        return postFlushBarrier
+        return .prepared(postFlushBarrier)
     }
 
     @concurrent

@@ -108,6 +108,7 @@ export interface KitCommandBarRow {
   readonly icon: KitIconName;
   readonly label: string;
   readonly meta?: string;
+  readonly subtitle?: string;
   readonly selected: boolean;
   readonly settledPresence: KitSettledPresence;
   readonly scenePart?: string;
@@ -124,6 +125,7 @@ export interface KitCommandBarModel {
   readonly placeholder: string;
   readonly query: string;
   readonly contextLabel: string;
+  readonly shortcutHint?: string;
   readonly sections: readonly KitCommandBarSection[];
   readonly scopeHints: readonly string[];
   readonly closeHint: string;

@@ -38,12 +38,14 @@ extension DarwinSharedExactItemObserverTests {
             worktreeRoot: worktreeRoot,
             exactItem: exactItem
         )
+        let prepareOutcome = await client.prepare(
+            worktreeId: worktreeId,
+            rootPath: worktreeRoot,
+            observationPlan: observationPlan
+        )
         let barrier = try #require(
-            await client.prepare(
-                worktreeId: worktreeId,
-                rootPath: worktreeRoot,
-                observationPlan: observationPlan
-            )
+            prepareOutcome.barrier,
+            Comment(rawValue: "preparation: \(prepareOutcome)")
         )
         let authority = try #require((await client.commit(barrier)).scriptedAuthority)
         #expect(await client.renew(authority) == .authoritative(authority))
@@ -84,15 +86,17 @@ extension DarwinSharedExactItemObserverTests {
         defer { client.shutdown() }
         let worktreeId = UUIDv7.generate()
         _ = client.register(worktreeId: worktreeId, repoId: UUIDv7.generate(), rootPath: worktreeRoot)
-        let barrier = try #require(
-            await client.prepare(
-                worktreeId: worktreeId,
-                rootPath: worktreeRoot,
-                observationPlan: makeSharedAuthorityObservationPlan(
-                    worktreeRoot: worktreeRoot,
-                    exactItem: exactItem
-                )
+        let prepareOutcome = await client.prepare(
+            worktreeId: worktreeId,
+            rootPath: worktreeRoot,
+            observationPlan: makeSharedAuthorityObservationPlan(
+                worktreeRoot: worktreeRoot,
+                exactItem: exactItem
             )
+        )
+        let barrier = try #require(
+            prepareOutcome.barrier,
+            Comment(rawValue: "preparation: \(prepareOutcome)")
         )
 
         // The direct prepare/commit seam supplies the ordering. No scheduler hold is needed.
@@ -141,15 +145,17 @@ extension DarwinSharedExactItemObserverTests {
         }
         var authorities: [UUID: GitCleanContinuityAuthority] = [:]
         for registration in registrations {
-            let barrier = try #require(
-                await client.prepare(
-                    worktreeId: registration.worktreeId,
-                    rootPath: registration.root,
-                    observationPlan: makeSharedAuthorityObservationPlan(
-                        worktreeRoot: registration.root,
-                        exactItem: exactItem
-                    )
+            let prepareOutcome = await client.prepare(
+                worktreeId: registration.worktreeId,
+                rootPath: registration.root,
+                observationPlan: makeSharedAuthorityObservationPlan(
+                    worktreeRoot: registration.root,
+                    exactItem: exactItem
                 )
+            )
+            let barrier = try #require(
+                prepareOutcome.barrier,
+                Comment(rawValue: "preparation: \(prepareOutcome)")
             )
             let authority = try #require(
                 (await client.commit(barrier)).scriptedAuthority
@@ -301,15 +307,17 @@ extension DarwinSharedExactItemObserverTests {
                 repoId: UUIDv7.generate(),
                 rootPath: registration.root
             )
-            let barrier = try #require(
-                await client.prepare(
-                    worktreeId: registration.worktreeId,
-                    rootPath: registration.root,
-                    observationPlan: makeSharedAuthorityObservationPlan(
-                        worktreeRoot: registration.root,
-                        exactItem: exactItem
-                    )
+            let prepareOutcome = await client.prepare(
+                worktreeId: registration.worktreeId,
+                rootPath: registration.root,
+                observationPlan: makeSharedAuthorityObservationPlan(
+                    worktreeRoot: registration.root,
+                    exactItem: exactItem
                 )
+            )
+            let barrier = try #require(
+                prepareOutcome.barrier,
+                Comment(rawValue: "preparation: \(prepareOutcome)")
             )
             let authority = try #require(
                 (await client.commit(barrier)).scriptedAuthority
@@ -332,15 +340,17 @@ extension DarwinSharedExactItemObserverTests {
             repoId: UUIDv7.generate(),
             rootPath: registration.root
         )
-        let barrier = try #require(
-            await client.prepare(
-                worktreeId: registration.worktreeId,
-                rootPath: registration.root,
-                observationPlan: makeSharedAuthorityObservationPlan(
-                    worktreeRoot: registration.root,
-                    exactItem: replacementParentExactItem
-                )
+        let prepareOutcome = await client.prepare(
+            worktreeId: registration.worktreeId,
+            rootPath: registration.root,
+            observationPlan: makeSharedAuthorityObservationPlan(
+                worktreeRoot: registration.root,
+                exactItem: replacementParentExactItem
             )
+        )
+        let barrier = try #require(
+            prepareOutcome.barrier,
+            Comment(rawValue: "preparation: \(prepareOutcome)")
         )
         let replacementAuthority = try #require(
             (await client.commit(barrier)).scriptedAuthority

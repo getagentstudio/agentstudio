@@ -28,6 +28,17 @@ for (const [width, height] of [
       if (sample === undefined) throw new Error(`Missing ${time}s sample`);
       return sample;
     };
+    expect(observation.wheelScrolls.map((scroll) => scroll.pane)).toEqual(
+      width < 1024 ? ["claude"] : ["claude", "codex"],
+    );
+    for (const scroll of observation.wheelScrolls) {
+      expect(scroll.transcriptAfter, `${width}px ${scroll.pane} visitor wheel`).toBe(
+        scroll.transcriptBefore,
+      );
+      expect(scroll.pageAfter, `${width}px ${scroll.pane} wheel scrolls page`).toBeGreaterThan(
+        scroll.pageBefore,
+      );
+    }
     expect(at(0).firstLine).toBe(0);
     expect(at(0.3).firstLine).toBeGreaterThan(0);
     expect(at(0.8).firstLine).toBe(1);

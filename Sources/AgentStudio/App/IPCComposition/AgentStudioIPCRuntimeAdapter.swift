@@ -27,8 +27,12 @@ struct AgentStudioIPCRuntimeAdapter: AppIPCRuntimePort, @unchecked Sendable {
         terminalEventWaitDelay = terminalEventWaitClock.map(AsyncDelay.clock) ?? .taskSleep
     }
 
-    func terminalStatus(_ handle: IPCHandle) throws -> IPCTerminalStatusResult {
+    func terminalStatus(
+        _ handle: IPCHandle,
+        ownPaneAssertion: AppIPCOwnPaneAssertion?
+    ) throws -> IPCTerminalStatusResult {
         let paneId = try resolveTerminalPaneId(handle)
+        try requireOwnPane(ownPaneAssertion, paneId: paneId, method: "terminal.status")
         let runtimeSnapshot = try terminalRuntimeSnapshot(for: paneId)
         return IPCTerminalStatusResult(
             paneId: paneId,
@@ -39,8 +43,12 @@ struct AgentStudioIPCRuntimeAdapter: AppIPCRuntimePort, @unchecked Sendable {
         )
     }
 
-    func terminalSnapshot(_ handle: IPCHandle) throws -> IPCTerminalSnapshotResult {
+    func terminalSnapshot(
+        _ handle: IPCHandle,
+        ownPaneAssertion: AppIPCOwnPaneAssertion?
+    ) throws -> IPCTerminalSnapshotResult {
         let paneId = try resolveTerminalPaneId(handle)
+        try requireOwnPane(ownPaneAssertion, paneId: paneId, method: "terminal.snapshot")
         let runtime = try terminalRuntime(for: paneId)
         let runtimeSnapshot = runtime.snapshot()
         let terminalRuntimeFacts = (runtime as? any TerminalRuntimeSnapshotFactProviding)?
@@ -61,10 +69,15 @@ struct AgentStudioIPCRuntimeAdapter: AppIPCRuntimePort, @unchecked Sendable {
     func sendTerminalInput(
         to handle: IPCHandle,
         input: String,
-        correlationId: UUID?
+        correlationId: UUID?,
+        ownPaneAssertion: AppIPCOwnPaneAssertion?
     ) async throws -> IPCTerminalSendInputResult {
         let paneId = try resolveTerminalPaneId(handle)
         _ = try terminalRuntime(for: paneId)
+        // Checked in the same main-actor step that hands the input to the
+        // runtime: a pane that left the agent's own pane since authorization
+        // receives nothing.
+        try requireOwnPane(ownPaneAssertion, paneId: paneId, method: "terminal.send")
 
         let result = await commandDispatcher.dispatchRuntimeCommand(
             .terminal(.sendInput(input)),
@@ -78,9 +91,25 @@ struct AgentStudioIPCRuntimeAdapter: AppIPCRuntimePort, @unchecked Sendable {
         _ handle: IPCHandle,
         condition: IPCTerminalWaitCondition,
         timeout: Duration,
-        afterSequence: UInt64? = nil
+        afterSequence: UInt64? = nil,
+        ownPaneAssertion: AppIPCOwnPaneAssertion?
     ) async throws -> IPCTerminalWaitResult {
         let paneId = try resolveTerminalPaneId(handle)
+        try requireOwnPane(ownPaneAssertion, paneId: paneId, method: "terminal.wait")
+        let result = try await waitForTerminalResult(
+            paneId: paneId, condition: condition, timeout: timeout, afterSequence: afterSequence)
+        // A wait spans later events; a pane that left the own pane while the
+        // agent waited yields nothing.
+        try requireOwnPane(ownPaneAssertion, paneId: paneId, method: "terminal.wait")
+        return result
+    }
+
+    private func waitForTerminalResult(
+        paneId: UUID,
+        condition: IPCTerminalWaitCondition,
+        timeout: Duration,
+        afterSequence: UInt64?
+    ) async throws -> IPCTerminalWaitResult {
         let runtime = try terminalRuntime(for: paneId)
         if condition == .attachReady {
             return try await waitForAttachReady(runtime: runtime, paneId: paneId, timeout: timeout)
@@ -186,7 +215,27 @@ struct AgentStudioIPCRuntimeAdapter: AppIPCRuntimePort, @unchecked Sendable {
             guard start.duration(to: ContinuousClock.now) <= timeout else {
                 throw AppIPCRuntimeError(reason: .timeout)
             }
-            try? await Task.sleep(nanoseconds: Duration.milliseconds(100).nanosecondsForTaskSleep)
+            do {
+                try await Task.sleep(nanoseconds: Duration.milliseconds(100).nanosecondsForTaskSleep)
+            } catch {
+                // A cancelled poll must not spin back through this loop: with
+                // no wait remaining, that would busy-loop the executor until
+                // the real-clock guard above finally elapses. Resolve it the
+                // same way a real timeout does.
+                throw AppIPCRuntimeError(reason: .timeout)
+            }
+        }
+    }
+
+    /// Re-checks a pane agent's own pane in the same main-actor step as the
+    /// read or handoff it guards.
+    private func requireOwnPane(_ assertion: AppIPCOwnPaneAssertion?, paneId: UUID, method: String) throws {
+        guard let assertion else { return }
+        guard
+            workspaceStore.ownPaneAssertionHolds(
+                WorkspaceOwnPaneAssertion(boundPaneId: assertion.boundPaneId), for: paneId)
+        else {
+            throw AuthorizationError.notYetAllowed(method)
         }
     }
 

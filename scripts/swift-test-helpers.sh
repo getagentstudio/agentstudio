@@ -13,6 +13,8 @@
 
 # shellcheck source=scripts/xcb-helpers.sh
 source "$(dirname "${BASH_SOURCE[0]}")/xcb-helpers.sh"
+# shellcheck source=scripts/swift-package-sandbox.sh
+source "$(dirname "${BASH_SOURCE[0]}")/swift-package-sandbox.sh"
 
 # Maximum test cases Swift Testing may run concurrently inside one test process.
 # OPT-IN, WITH NO DEFAULT, ON PURPOSE.
@@ -59,9 +61,23 @@ swift_test_parallelization_width_label() {
 # How many isolated suite PROCESSES the aggregate phase runs at once. Process
 # fan-out follows the machine: never more than one per core, and never more
 # than 4 (the fan-out that developer machines already used).
+# Agent sandboxes can deny sysctl reads. Fall back to sysconf through getconf,
+# then to 1: fewer processes is always safe, only slower.
+swift_test_cpu_count() {
+  local cpu_count
+  cpu_count="$(sysctl -n hw.ncpu 2>/dev/null || true)"
+  if ! [[ "$cpu_count" =~ ^[1-9][0-9]*$ ]]; then
+    cpu_count="$(getconf _NPROCESSORS_ONLN 2>/dev/null || true)"
+  fi
+  if ! [[ "$cpu_count" =~ ^[1-9][0-9]*$ ]]; then
+    cpu_count=1
+  fi
+  echo "$cpu_count"
+}
+
 swift_test_isolated_process_concurrency() {
   local cpu_count
-  cpu_count="$(sysctl -n hw.ncpu)"
+  cpu_count="$(swift_test_cpu_count)"
   if [ "$cpu_count" -lt 4 ]; then
     echo "$cpu_count"
   else
@@ -213,10 +229,18 @@ LANE_STACK_SAMPLE_TOOL="${LANE_STACK_SAMPLE_TOOL:-/usr/bin/sample}"
 # Lane labels are prose ("native-concurrent fast non-WebKit suites"), so they are
 # slugged before reaching a filename.
 lane_event_stream_label_slug() {
-  printf '%s' "${1:-lane}" \
+  local label="${1:-lane}"
+  local label_slug
+  label_slug="$(printf '%s' "$label" \
     | tr '[:upper:]' '[:lower:]' \
     | tr -cs 'a-z0-9' '-' \
-    | sed -E 's/^-+//; s/-+$//'
+    | sed -E 's/^-+//; s/-+$//')"
+  if [ "${#label_slug}" -gt 91 ]; then
+    local label_hash
+    label_hash="$(printf '%s' "$label" | shasum -a 256 | cut -c 1-10)"
+    label_slug="${label_slug:0:80}-$label_hash"
+  fi
+  printf '%s\n' "$label_slug"
 }
 
 # Copies the event stream somewhere durable and prints where. Called on the paths
@@ -792,6 +816,7 @@ large|SwiftLaneHangEvidenceTests|concurrent
 large|SwiftLaneIsolationListGateTests|concurrent
 large|SwiftLaneReceiptTests|concurrent
 large|SwiftLaneRunnerReportTests|concurrent
+large|SwiftPackageSandboxScriptTests|concurrent
 large|TerminalActivityAgentSettledHeuristicTests|process-global
 large|TitlePanePerformanceWorkloadScriptTests|concurrent
 large|TopologyEventPipelineIntegrationTests|process-global
@@ -1205,6 +1230,24 @@ aggregate_serial_non_webkit_suite_filters() {
       'Tests/AgentStudioAppIPCTests/AgentStudioIPCBridgeServiceTests.swift' \
       'AgentStudioIPCBridgeServiceTests'
     printf '%s:%s\n' \
+      'Tests/AgentStudioAppIPCTests/AgentStudioIPCBridgeServiceTests.swift' \
+      'AgentStudioIPCBridgeRenderDiagnosticsTests'
+    printf '%s:%s\n' \
+      'Tests/AgentStudioAppIPCTests/AgentStudioIPCBridgeServiceTests.swift' \
+      'AgentStudioIPCBridgeSearchModeTests'
+    printf '%s:%s\n' \
+      'Tests/AgentStudioAppIPCTests/AgentStudioIPCBridgeServiceTests.swift' \
+      'AgentStudioIPCBridgeNonBridgeTargetTests'
+    printf '%s:%s\n' \
+      'Tests/AgentStudioAppIPCTests/AgentStudioIPCBridgeServiceTests.swift' \
+      'AgentStudioIPCBridgeDiagnosticTargetTests'
+    printf '%s:%s\n' \
+      'Tests/AgentStudioAppIPCTests/AgentStudioIPCBridgeServiceTests.swift' \
+      'AgentStudioIPCBridgePaneAgentTests'
+    printf '%s:%s\n' \
+      'Tests/AgentStudioAppIPCTests/AgentStudioIPCBridgeServiceTests.swift' \
+      'AgentStudioIPCBridgeRejectedControlTests'
+    printf '%s:%s\n' \
       'Tests/AgentStudioAppIPCTests/AgentStudioAppIPCCommandExecuteContractTests.swift' \
       'AgentStudioAppIPCCommandExecuteContractTests'
     printf '%s:%s\n' \
@@ -1213,6 +1256,9 @@ aggregate_serial_non_webkit_suite_filters() {
     printf '%s:%s\n' \
       'Tests/AgentStudioAppIPCTests/AppIPCErrorCorrectionTests.swift' \
       'AppIPCErrorCorrectionTests'
+    printf '%s:%s\n' \
+      'Tests/AgentStudioAppIPCTests/AgentStudioAppIPCConnectionHandlerLifecycleTests.swift' \
+      'AgentStudioAppIPCConnectionHandlerLifecycleTests'
   )"; then
     echo "[test] failed to create explicit serialized-suite candidates" >&2
     return 1
@@ -1396,7 +1442,7 @@ prebuild_swift_tests() {
           run_swift_with_timeout \
             "prebuild test bundles" \
             "$PREBUILD_TIMEOUT_SECONDS" \
-            swift build --build-tests ${EXTRA_SWIFT_TEST_ARGS:-} --build-path "$BUILD_PATH" \
+            swift build $(swift_package_sandbox_arguments) --build-tests ${EXTRA_SWIFT_TEST_ARGS:-} --build-path "$BUILD_PATH" \
             -Xswiftc -stats-output-dir -Xswiftc "$SWIFT_BUILD_STATS_DIR"
           return $?
         fi
@@ -1408,7 +1454,7 @@ prebuild_swift_tests() {
   run_swift_with_timeout \
     "prebuild test bundles" \
     "$PREBUILD_TIMEOUT_SECONDS" \
-    swift build --build-tests ${EXTRA_SWIFT_TEST_ARGS:-} --build-path "$BUILD_PATH"
+    swift build $(swift_package_sandbox_arguments) --build-tests ${EXTRA_SWIFT_TEST_ARGS:-} --build-path "$BUILD_PATH"
 }
 
 run_aggregate_serial_non_webkit_swift_tests() {
@@ -1496,17 +1542,17 @@ swift_test_failed_isolated_suite_count() {
   /usr/bin/awk 'END { print NR + 0 }' "$tally_file"
 }
 
-# The parent owns the one completion channel and reaps by PID. A wrapper waits
-# for its worker and writes one short line even when that worker is killed;
-# FIFO lines stay
-# atomic because they are shorter than PIPE_BUF. Bash 3.2 has no wait -n.
+# The dispatcher reaps reporting subshells by PID. Each reporter waits for its
+# wrapper, so a wrapper killed before publishing its worker status still has a
+# terminal outcome. FIFO records are atomic (shorter than PIPE_BUF). Bash 3.2
+# needs neither wait -n nor a signal trap interrupting a blocked FIFO read.
 dispatch_isolated_suites() {
   local lane_kind="$1"
   shift
   [ "$#" -gt 0 ] || return 0
   local -a suite_filters=("$@") active_pids=() active_filters=()
   local concurrency next_filter=0 active_count=0 dispatch_ordinal=0
-  local slot suite_filter wrapper_pid completed_slot completed_pid completed_status waited_status
+  local slot suite_filter reporter_pid completed_slot completed_pid completed_status completed_reason waited_status
   local lane_status=0 timing_eligible_ms dispatch_dir fifo_path
   if [ "$lane_kind" = webkit ]; then
     concurrency="$(swift_test_webkit_process_concurrency)"
@@ -1530,51 +1576,70 @@ dispatch_isolated_suites() {
       next_filter=$((next_filter + 1))
       dispatch_ordinal=$((dispatch_ordinal + 1))
       (
-        # Bash 3.2 lacks BASHPID and $$ is the parent shell. An immediate
-        # child reports its PPID through a slot-local file, avoiding a second
-        # FIFO handshake that can strand a rapidly completing worker.
-        /bin/sh -c 'printf "%s\n" "$PPID"' >"$dispatch_dir/pid-$slot"
-        read -r child_pid <"$dispatch_dir/pid-$slot"
-        rm -f "$dispatch_dir/pid-$slot"
-        export LANE_TIMING_PHASE="$lane_kind" LANE_TIMING_FILTER="$suite_filter" LANE_TIMING_BATCH="$dispatch_ordinal"
-        export LANE_TIMING_SLOT="$slot" LANE_TIMING_CONCURRENCY="$concurrency"
-        export LANE_TIMING_ELIGIBLE_MS="$timing_eligible_ms"
-        local child_status=0
-        (run_selected_isolated_suite "$lane_kind" "$suite_filter") &
-        local worker_pid=$!
-        wait "$worker_pid" || child_status=$?
-        printf '%s %s %s\n' "$slot" "$child_pid" "$child_status" >&7
+        local child_status=0 completion_reason=completed worker_pid=""
+        (
+          # Keep the wrapper's Bash 3.2 PID handshake before worker launch.
+          # The reporter, rather than this fallible wrapper, owns FIFO output.
+          /bin/sh -c 'printf "%s\n" "$PPID"' >"$dispatch_dir/pid-$slot"
+          read -r child_pid <"$dispatch_dir/pid-$slot"
+          rm -f "$dispatch_dir/pid-$slot"
+          export LANE_TIMING_PHASE="$lane_kind" LANE_TIMING_FILTER="$suite_filter" LANE_TIMING_BATCH="$dispatch_ordinal"
+          export LANE_TIMING_SLOT="$slot" LANE_TIMING_CONCURRENCY="$concurrency"
+          export LANE_TIMING_ELIGIBLE_MS="$timing_eligible_ms"
+          local worker_status=0
+          (run_selected_isolated_suite "$lane_kind" "$suite_filter") &
+          local worker_pid=$!
+          # If SIGKILL lands before this write, the reporter has no worker PID to reap.
+          printf '%s\n' "$worker_pid" >"$dispatch_dir/worker-$slot"
+          wait "$worker_pid" || worker_status=$?
+          printf '%s\n' "$worker_status" >"$dispatch_dir/status-$slot"
+          exit "$worker_status"
+        ) &
+        local reporting_child_pid=$!
+        wait "$reporting_child_pid" || child_status=$?
+        if [ ! -f "$dispatch_dir/status-$slot" ]; then
+          completion_reason=wrapper_exited_without_completion
+          if [ -r "$dispatch_dir/worker-$slot" ] && read -r worker_pid <"$dispatch_dir/worker-$slot"; then
+            [ -z "$worker_pid" ] || terminate_lane_child_tree TERM "$worker_pid"
+          fi
+        fi
+        rm -f "$dispatch_dir/pid-$slot" "$dispatch_dir/status-$slot" "$dispatch_dir/worker-$slot" || true
+        # The writer's PPID is the reporter, including on Bash 3.2 where $$
+        # still names the lane shell. No fallible reporter PID handshake.
+        /bin/sh -c 'printf "%s %s %s %s\n" "$1" "$PPID" "$2" "$3"' \
+          sh "$slot" "$child_status" "$completion_reason" >&7
         exit "$child_status"
       ) &
-      wrapper_pid=$!
-      active_pids[$slot]="$wrapper_pid"
+      reporter_pid=$!
+      active_pids[$slot]="$reporter_pid"
       active_filters[$slot]="$suite_filter"
-      SWIFT_TEST_ACTIVE_ISOLATED_PIDS="$SWIFT_TEST_ACTIVE_ISOLATED_PIDS $wrapper_pid"
+      SWIFT_TEST_ACTIVE_ISOLATED_PIDS="$SWIFT_TEST_ACTIVE_ISOLATED_PIDS $reporter_pid"
       active_count=$((active_count + 1))
     done
 
-    if ! read -r -u 7 completed_slot completed_pid completed_status; then
+    if ! read -r -u 7 completed_slot completed_pid completed_status completed_reason; then
       lane_status=1
       break
     fi
-    wrapper_pid="${active_pids[$completed_slot]:-}"
-    if [ -z "$wrapper_pid" ] || [ "$wrapper_pid" != "$completed_pid" ]; then
+    reporter_pid="${active_pids[$completed_slot]:-}"
+    if [ -z "$reporter_pid" ] || [ "$reporter_pid" != "$completed_pid" ]; then
       echo "[$LOG_PREFIX] invalid isolated completion: slot=$completed_slot pid=$completed_pid" >&2
       lane_status=1
       break
     fi
     waited_status=0
-    wait "$wrapper_pid" || waited_status=$?
+    wait "$reporter_pid" || waited_status=$?
     suite_filter="${active_filters[$completed_slot]}"
     active_pids[$completed_slot]=""
     active_filters[$completed_slot]=""
     active_count=$((active_count - 1))
     SWIFT_TEST_ACTIVE_ISOLATED_PIDS=" ${active_pids[*]}"
-    if [ "$completed_status" -ne 0 ] || [ "$waited_status" -ne "$completed_status" ]; then
+    if [ "$completed_status" -ne 0 ] || [ "$waited_status" -ne "$completed_status" ] ||
+      [ "$completed_reason" != completed ]; then
       lane_status=1
-      if [ "$lane_kind" != webkit ]; then
+      if [ "$lane_kind" != webkit ] || [ "$completed_reason" != completed ]; then
         echo "[$LOG_PREFIX] isolated suite failed: $suite_filter" \
-          "status=$completed_status signal=$(swift_test_signal_name "$completed_status")" >&2
+          "status=$completed_status signal=$(swift_test_signal_name "$completed_status") reason=$completed_reason" >&2
         swift_test_record_failed_isolated_suite "$suite_filter" "$completed_status"
       fi
     fi
@@ -1658,7 +1723,7 @@ run_fast_non_webkit_swift_tests() {
   run_swift_with_timeout \
     "native-concurrent fast non-WebKit suites" \
     "$TIMEOUT_SECONDS" \
-    env AGENT_STUDIO_BENCHMARK_MODE=off AGENTSTUDIO_TRACE_BACKEND="${SWIFT_TEST_TRACE_BACKEND:-jsonl}" $(swift_test_parallelization_env_word) swift test ${EXTRA_SWIFT_TEST_ARGS:-} --skip-build \
+    env AGENT_STUDIO_BENCHMARK_MODE=off AGENTSTUDIO_TRACE_BACKEND="${SWIFT_TEST_TRACE_BACKEND:-jsonl}" $(swift_test_parallelization_env_word) swift test $(swift_package_sandbox_arguments) ${EXTRA_SWIFT_TEST_ARGS:-} --skip-build \
     --skip "$fast_lane_skip_pattern" --build-path "$BUILD_PATH"
 
   run_aggregate_serial_non_webkit_swift_tests
@@ -1686,7 +1751,7 @@ run_large_non_webkit_swift_tests() {
     run_swift_with_timeout \
       "parallel large non-WebKit suites" \
       "$TIMEOUT_SECONDS" \
-      env AGENT_STUDIO_BENCHMARK_MODE=off AGENTSTUDIO_TRACE_BACKEND="${SWIFT_TEST_TRACE_BACKEND:-jsonl}" $(swift_test_parallelization_env_word) swift test ${EXTRA_SWIFT_TEST_ARGS:-} --skip-build \
+      env AGENT_STUDIO_BENCHMARK_MODE=off AGENTSTUDIO_TRACE_BACKEND="${SWIFT_TEST_TRACE_BACKEND:-jsonl}" $(swift_test_parallelization_env_word) swift test $(swift_package_sandbox_arguments) ${EXTRA_SWIFT_TEST_ARGS:-} --skip-build \
       "${parallel_args[@]}" \
       --filter "$large_concurrent_filter_pattern" \
       --skip "$large_serial_filter_pattern|$large_process_global_filter_pattern" \
@@ -1695,14 +1760,14 @@ run_large_non_webkit_swift_tests() {
     run_swift_with_timeout \
       "serial large process suites" \
       "$TIMEOUT_SECONDS" \
-      env AGENT_STUDIO_BENCHMARK_MODE=off AGENTSTUDIO_TRACE_BACKEND="${SWIFT_TEST_TRACE_BACKEND:-jsonl}" $(swift_test_parallelization_env_word) swift test ${EXTRA_SWIFT_TEST_ARGS:-} --skip-build \
+      env AGENT_STUDIO_BENCHMARK_MODE=off AGENTSTUDIO_TRACE_BACKEND="${SWIFT_TEST_TRACE_BACKEND:-jsonl}" $(swift_test_parallelization_env_word) swift test $(swift_package_sandbox_arguments) ${EXTRA_SWIFT_TEST_ARGS:-} --skip-build \
       --filter "$large_serial_filter_pattern" \
       --build-path "$BUILD_PATH"
   else
     run_swift_with_timeout \
       "serial large non-WebKit suites" \
       "$TIMEOUT_SECONDS" \
-      env AGENT_STUDIO_BENCHMARK_MODE=off AGENTSTUDIO_TRACE_BACKEND="${SWIFT_TEST_TRACE_BACKEND:-jsonl}" $(swift_test_parallelization_env_word) swift test ${EXTRA_SWIFT_TEST_ARGS:-} --skip-build \
+      env AGENT_STUDIO_BENCHMARK_MODE=off AGENTSTUDIO_TRACE_BACKEND="${SWIFT_TEST_TRACE_BACKEND:-jsonl}" $(swift_test_parallelization_env_word) swift test $(swift_package_sandbox_arguments) ${EXTRA_SWIFT_TEST_ARGS:-} --skip-build \
       --filter "$large_concurrent_filter_pattern|$large_serial_filter_pattern" \
       --skip "$large_process_global_filter_pattern" \
       --build-path "$BUILD_PATH"
@@ -2335,7 +2400,7 @@ run_webkit_suite() {
     # shellcheck disable=SC2086
     output=$(run_swift_with_timeout "$filter" "$TIMEOUT_SECONDS" \
       env AGENT_STUDIO_BENCHMARK_MODE=off AGENTSTUDIO_TRACE_BACKEND="${SWIFT_TEST_TRACE_BACKEND:-jsonl}" $(swift_test_parallelization_env_word) \
-      swift test ${EXTRA_SWIFT_TEST_ARGS} --skip-build --filter "$filter" --build-path "$BUILD_PATH" \
+      swift test $(swift_package_sandbox_arguments) ${EXTRA_SWIFT_TEST_ARGS} --skip-build --filter "$filter" --build-path "$BUILD_PATH" \
       2>&1) || command_status=$?
   else
     output=$(run_swift_with_timeout "$filter" "$TIMEOUT_SECONDS" \

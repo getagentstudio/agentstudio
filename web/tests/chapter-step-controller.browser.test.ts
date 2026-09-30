@@ -175,16 +175,16 @@ describe("chapter step tabs", () => {
     controller.destroy();
   });
 
-  it("tracks published dwell progress and resumes the selected paused step", async () => {
+  it("tracks published dwell progress and replays the selected step", async () => {
     const root = createChapterStepsFixture();
     const surface = requiredHtmlElement(root, "[data-rail-surface-target]");
     const controller = initializeChapterSteps(root);
     const ring = root.querySelector<SVGSVGElement>("[data-chapter-step-ring]");
     const progress = root.querySelector<SVGCircleElement>("[data-chapter-step-ring-progress]");
     if (ring === null || progress === null) throw new Error("Ring fixture missing");
-    const resumed: string[] = [];
-    surface.addEventListener("agentstudio:chapter-step-resume-requested", (event: Event): void => {
-      resumed.push(readChapterStepEventStepId(event) ?? "");
+    const requested: string[] = [];
+    surface.addEventListener("agentstudio:chapter-step-requested", (event: Event): void => {
+      requested.push(readChapterStepEventStepId(event) ?? "");
     });
     surface.dispatchEvent(
       new CustomEvent("agentstudio:scene-step-timing", {
@@ -220,20 +220,20 @@ describe("chapter step tabs", () => {
 
     requiredButton(root, '[data-chapter-step="git-context"]').click();
     expect(root.querySelector("[data-chapter-step-line]")?.getAttribute("data-step-playback")).toBe(
-      "paused",
+      "playing",
     );
-    expect(requiredHtmlElement(root, "[data-chapter-step-pause-glyph]").hidden).toBe(false);
+    expect(requiredHtmlElement(root, "[data-chapter-step-pause-glyph]").hidden).toBe(true);
     requiredButton(root, '[data-chapter-step="git-context"]').click();
-    expect(resumed).toEqual(["git-context"]);
+    expect(requested).toEqual(["git-context", "git-context"]);
     controller.destroy();
   });
 
-  it.each(["Space", "Enter"])("resumes a selected paused tab once with %s", async (key) => {
+  it.each(["Space", "Enter"])("replays a selected playing tab once with %s", async (key) => {
     const root = createChapterStepsFixture();
     const surface = requiredHtmlElement(root, "[data-rail-surface-target]");
-    const resumed: string[] = [];
-    surface.addEventListener("agentstudio:chapter-step-resume-requested", (event: Event): void => {
-      resumed.push(readChapterStepEventStepId(event) ?? "unreadable");
+    const requested: string[] = [];
+    surface.addEventListener("agentstudio:chapter-step-requested", (event: Event): void => {
+      requested.push(readChapterStepEventStepId(event) ?? "unreadable");
     });
     const controller = initializeChapterSteps(root);
     const sceneRoot = requiredHtmlElement(surface, "[data-scene-root]");
@@ -262,9 +262,9 @@ describe("chapter step tabs", () => {
     playback.synchronize(1, true);
     const selected = requiredButton(root, '[data-chapter-step="git-context"]');
     selected.click();
-    expect(sceneRoot.dataset["scenePlaybackState"]).toBe("paused");
+    expect(sceneRoot.dataset["scenePlaybackState"]).toBe("playing");
     expect(root.querySelector("[data-chapter-step-line]")?.getAttribute("data-step-playback")).toBe(
-      "paused",
+      "playing",
     );
     const travel = requiredHtmlElement(root, "[data-chapter-step-line]")
       .querySelector("[data-chapter-step-ring]")
@@ -274,7 +274,7 @@ describe("chapter step tabs", () => {
     selected.focus();
     await userEvent.keyboard(key === "Space" ? " " : "{Enter}");
 
-    expect(resumed).toEqual(["git-context"]);
+    expect(requested).toEqual(["git-context", "git-context"]);
     expect(sceneRoot.dataset["scenePlaybackState"]).toBe("playing");
     expect(root.querySelector("[data-chapter-step-line]")?.getAttribute("data-step-playback")).toBe(
       "playing",

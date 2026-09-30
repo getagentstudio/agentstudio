@@ -8,6 +8,23 @@ import Testing
 /// ledger, all side by side where the CI failure upload selects them.
 @Suite("Swift lane hang evidence")
 struct SwiftLaneHangEvidenceTests {
+    @Test("long event stream labels keep a stable bounded slug and short labels keep their slug")
+    func eventStreamLabelSlugBoundsLongLabelsWithoutChangingShortLabels() async throws {
+        let output = try await laneBash(
+            "source scripts/swift-test-helpers.sh; "
+                + "long_filter=$(printf '%400s' '' | tr ' ' 'A'); "
+                + "first_slug=$(lane_event_stream_label_slug \"$long_filter\"); "
+                + "second_slug=$(lane_event_stream_label_slug \"$long_filter\"); "
+                + "short_slug=$(lane_event_stream_label_slug 'Native concurrent fast non-WebKit suites'); "
+                + "printf 'LONG_LENGTH=%s\\nLONG_STABLE=%s\\nSHORT=%s\\n' \"${#first_slug}\" "
+                + "\"$([ \"$first_slug\" = \"$second_slug\" ] && echo yes || echo no)\" \"$short_slug\""
+        )
+
+        #expect(output.contains("LONG_LENGTH=91"))
+        #expect(output.contains("LONG_STABLE=yes"))
+        #expect(output.contains("SHORT=native-concurrent-fast-non-webkit-suites"))
+    }
+
     @Test("a hung test process gets a concurrency task dump before it is terminated")
     func hungTestProcessGetsTaskDumpBeforeTermination() async throws {
         // The fake child carries the test-bundle name so the runner selects it

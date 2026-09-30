@@ -3,7 +3,7 @@ import Testing
 
 @Suite("CI topology workflow")
 struct CITopologyWorkflowTests {
-    @Test("Swift cache stays PR restore only, main publish only, and prunes after save or budget skip")
+    @Test("Swift cache publishes verified prebuild before tests and prunes even when later tests fail")
     func swiftBuildCacheOwnershipAndOrder() throws {
         let workflow = try String(contentsOfFile: ".github/workflows/ci.yml", encoding: .utf8)
         #expect(!workflow.contains("CI_SWIFT_TRUSTED_PRODUCER_REF"))
@@ -18,12 +18,22 @@ struct CITopologyWorkflowTests {
         #expect(restore.contains("uses: actions/cache/restore@v4"))
         #expect(save.contains("if: github.event_name == 'push' && github.ref == 'refs/heads/main'"))
         #expect(save.contains("uses: actions/cache/save@v4"))
-        let webKitStep = try #require(swiftJob.range(of: "name: Test WebKit lane"))
+        let prebuildStep = try #require(swiftJob.range(of: "name: Prebuild Swift test bundles"))
+        let inventoryStep = try #require(swiftJob.range(of: "name: Inventory main Swift inputs after prebuild"))
         let saveStep = try #require(swiftJob.range(of: "name: Save Swift build seed"))
-        #expect(webKitStep.lowerBound < saveStep.lowerBound)
+        let finalizeStep = try #require(swiftJob.range(of: "name: Finalize Swift seed disposition"))
+        let fastStep = try #require(swiftJob.range(of: "name: Test fast lane"))
+        #expect(prebuildStep.lowerBound < inventoryStep.lowerBound)
+        #expect(inventoryStep.lowerBound < saveStep.lowerBound)
+        #expect(saveStep.lowerBound < finalizeStep.lowerBound)
+        #expect(finalizeStep.lowerBound < fastStep.lowerBound)
+        let publicationPlan = try topologyBlock(
+            startingWith: "      - name: Plan main Swift seed publication\n", endingBefore: "\n      - ", in: swiftJob)
+        #expect(publicationPlan.contains("steps.swift-cache-inventory-after.outputs.unchanged == 'true'"))
         #expect(swiftJob.contains("actions: read"))
         #expect(!swiftJob.contains("actions: write"))
         #expect(pruneJob.contains("needs: swift-test-suite"))
+        #expect(pruneJob.contains("if: always() && github.event_name == 'push'"))
         #expect(pruneJob.contains("actions: write"))
         #expect(pruneJob.contains("needs.swift-test-suite.outputs.swift_cache_disposition"))
         #expect(pruneJob.contains("needs.swift-test-suite.outputs.swift_cache_disposition == 'skipped-budget'"))
@@ -62,6 +72,32 @@ struct CITopologyWorkflowTests {
             )
         )
         #expect(concurrency.contains("cancel-in-progress: ${{ github.event_name == 'pull_request' }}"))
+    }
+
+    @Test("moving Swift lanes preserves their prebuild, timeout, and renderer environment")
+    func swiftLaneEnvironmentsStayComplete() throws {
+        let workflow = try String(contentsOfFile: ".github/workflows/ci.yml", encoding: .utf8)
+        let swiftJob = try topologyJob(named: "swift-test-suite", in: workflow)
+        for (laneName, rendererKey, rendererValue) in [
+            ("Test fast lane", "_XCB_BYPASS", "1"),
+            ("Test large lane", "_XCB_BYPASS", "1"),
+            ("Test WebKit lane", "XCB_EXTRA_ARGS", "--renderer github-actions"),
+        ] {
+            let laneStep = try topologyBlock(
+                startingWith: "      - name: \(laneName)\n", endingBefore: "\n      - ", in: swiftJob)
+            let environment = try topologyBlock(
+                startingWith: "        env:\n", endingBefore: "        run:", in: laneStep)
+            let assignments = environment.split(separator: "\n").dropFirst().compactMap { line -> String? in
+                let trimmed = line.trimmingCharacters(in: .whitespaces)
+                return trimmed.isEmpty || trimmed.hasPrefix("#") ? nil : trimmed
+            }
+            #expect(
+                Set(assignments)
+                    == Set([
+                        "SWIFT_TEST_SKIP_PREBUILD: \"1\"", "SWIFT_TEST_TIMEOUT_SECONDS: \"600\"",
+                        "\(rendererKey): \"\(rendererValue)\"",
+                    ]), "\(laneName) environment changed")
+        }
     }
 
     @Test("portable CI checks retain their browser, lint, and release contracts")

@@ -3,6 +3,7 @@ import { defineBrowserCommand } from "@vitest/browser-playwright";
 /** One rendered glyph, read from the served home page with its real styles. */
 export interface TopologyGlyphObservation {
   readonly kind: string;
+  readonly finaleTerminal: boolean;
   readonly chapterState: string | undefined;
   readonly revealed: boolean;
   /** The lane color the node sits on (the group's `color`). */
@@ -17,7 +18,7 @@ export interface TopologyGlyphObservation {
     /** The glyph's own `color`: the incoming lane for a merge ring. */
     readonly color: string;
   };
-  /** Merge nodes only: the inner dot. */
+  /** Merge and finale end rings: the inner dot. */
   readonly core:
     | { readonly radius: number; readonly fill: string; readonly opacity: string }
     | undefined;
@@ -113,16 +114,17 @@ function readGlyphs(): TopologyGlyphObservation[] {
   }
   return [...artwork.querySelectorAll<SVGGElement>("[data-node]")].map((node) => {
     const glyph = node.querySelector<SVGCircleElement>(
-      ".node-commit, .node-chapter, .node-merge-ring",
+      ".node-commit, .node-chapter, .node-merge-ring, .node-end-ring",
     );
     if (glyph === null) {
       throw new Error("A topology node has no glyph");
     }
     const glyphStyle = getComputedStyle(glyph);
-    const core = node.querySelector<SVGCircleElement>(".node-merge-core");
+    const core = node.querySelector<SVGCircleElement>(".node-merge-core, .node-end-core");
     const terminal = node.querySelector<SVGCircleElement>(".node-terminal");
     return {
       kind: node.dataset["nodeKind"] ?? "",
+      finaleTerminal: node.hasAttribute("data-topology-terminal-node"),
       chapterState: node.dataset["chapterState"],
       revealed: node.hasAttribute("data-topology-node-revealed"),
       laneColor: getComputedStyle(node).color,

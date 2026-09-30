@@ -1,10 +1,9 @@
+import AgentStudioCore
 import AgentStudioTestHarness
 import Foundation
 
-@testable import AgentStudioCore
-
 extension FactVocabulary<GitProjectorScope, GitProjectorFact> {
-    static let gitProjector = FactVocabulary(
+    package static let gitProjector = FactVocabulary(
         describeScope: { String(describing: $0) },
         describeFact: { String(describing: $0) },
         isClosing: { scope, fact in
@@ -27,7 +26,7 @@ extension FactVocabulary<GitProjectorScope, GitProjectorFact> {
 }
 
 extension FactRecorder where Scope == GitProjectorScope, Fact == GitProjectorFact {
-    func expectNextRefreshStarted(
+    package func expectNextRefreshStarted(
         worktreeId: UUID,
         fileID: String = #fileID, line: Int = #line, function: String = #function
     ) async throws -> UInt64 {
@@ -52,7 +51,7 @@ extension FactRecorder where Scope == GitProjectorScope, Fact == GitProjectorFac
         return requestSequence
     }
 
-    func expectRefreshStarted(
+    package func expectRefreshStarted(
         worktreeId: UUID, requestSequence: UInt64,
         fileID: String = #fileID, line: Int = #line, function: String = #function
     ) async throws {
@@ -61,7 +60,7 @@ extension FactRecorder where Scope == GitProjectorScope, Fact == GitProjectorFac
         try await expectNext(in: scope, .refreshStarted, fileID: fileID, line: line, function: function)
     }
 
-    func expectRefreshClosed(
+    package func expectRefreshClosed(
         worktreeId: UUID,
         requestSequence: UInt64,
         fileID: String = #fileID, line: Int = #line, function: String = #function
@@ -87,7 +86,7 @@ extension FactRecorder where Scope == GitProjectorScope, Fact == GitProjectorFac
 
     /// Consume earlier input facts in this lifetime and stop at the requested envelope.
     /// Each iteration awaits an emitted fact; no scheduler turn or elapsed time decides the verdict.
-    func expectHandledEnvelope(
+    package func expectHandledEnvelope(
         seq expectedSequence: UInt64,
         lifetime: UInt64 = 1,
         fileID: String = #fileID, line: Int = #line, function: String = #function
@@ -97,7 +96,13 @@ extension FactRecorder where Scope == GitProjectorScope, Fact == GitProjectorFac
                 in: .lifetime(lifetime), where: { _ in true }, "envelope handled through sequence \(expectedSequence)",
                 fileID: fileID, line: line, function: function
             )
-            guard case .envelopeHandled(let sequence, let disposition) = fact else { continue }
+            guard case .envelopeHandled(let sequence, let disposition) = fact else {
+                throw UnexpectedFact.forExpectation(
+                    expected: "envelope handled through sequence \(expectedSequence)",
+                    actual: String(describing: fact),
+                    scope: String(describing: GitProjectorScope.lifetime(lifetime)),
+                    callSite: "\(fileID):\(line) \(function)")
+            }
             if sequence == expectedSequence { return disposition }
             if sequence > expectedSequence {
                 throw UnexpectedProjectorEnvelopeSequence(expected: expectedSequence, actual: sequence)
@@ -105,7 +110,7 @@ extension FactRecorder where Scope == GitProjectorScope, Fact == GitProjectorFac
         }
     }
 
-    func expectShutdownCompleted(
+    package func expectShutdownCompleted(
         lifetime: UInt64 = 1,
         fileID: String = #fileID, line: Int = #line, function: String = #function
     ) async throws -> UInt64 {
@@ -132,7 +137,7 @@ extension FactRecorder where Scope == GitProjectorScope, Fact == GitProjectorFac
         }
     }
 
-    func expectNoDroppedEnvelopes(
+    package func expectNoDroppedEnvelopes(
         from opening: OpeningPosition<GitProjectorScope>,
         fileID: String = #fileID, line: Int = #line, function: String = #function
     ) async throws {
@@ -156,19 +161,21 @@ private struct UnexpectedProjectorEnvelopeSequence: Error {
 }
 
 /// Adapts the projector's fact sink to the local recorder.
-final class GitProjectorFactSource: Sendable {
+package final class GitProjectorFactSource: Sendable {
+    package init() {}
+
     private let localSource = LocalFactSource(
         vocabulary: FactVocabulary<GitProjectorScope, GitProjectorFact>.gitProjector)
 
-    var sink: GitProjectorFactSink {
+    package var sink: GitProjectorFactSink {
         localSource.sink
     }
 
-    func attach() throws -> FactRecorder<GitProjectorScope, GitProjectorFact> {
+    package func attach() throws -> FactRecorder<GitProjectorScope, GitProjectorFact> {
         try localSource.attach()
     }
 
-    func expectNextRefreshClosed(
+    package func expectNextRefreshClosed(
         facts: FactRecorder<GitProjectorScope, GitProjectorFact>,
         worktreeId: UUID,
         fileID: String = #fileID, line: Int = #line, function: String = #function
@@ -193,7 +200,7 @@ final class GitProjectorFactSource: Sendable {
         )
     }
 
-    func expectDeadlineRegistered(
+    package func expectDeadlineRegistered(
         facts: FactRecorder<GitProjectorScope, GitProjectorFact>,
         worktreeId: UUID,
         kind: GitProjectorDeadlineKind,
@@ -217,7 +224,7 @@ final class GitProjectorFactSource: Sendable {
         return scope
     }
 
-    func expectDeadlineRegistered(
+    package func expectDeadlineRegistered(
         facts: FactRecorder<GitProjectorScope, GitProjectorFact>,
         kind: GitProjectorDeadlineKind,
         fileID: String = #fileID, line: Int = #line, function: String = #function

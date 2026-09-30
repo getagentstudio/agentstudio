@@ -100,7 +100,7 @@ struct AgentStudioAppIPCServiceCommandTests {
             principal: diagnosticCommandPrincipal(),
             tools: unusedCommandTargetTools()
         )
-        let executed = try await port.executeCommand(prepared.request)
+        let executed = try await port.executeCommand(prepared.request, ownPaneAssertion: nil)
 
         #expect(prepared.target == .app)
         #expect(

@@ -16,6 +16,7 @@ package actor GitWorkingDirectoryProjector {
     static let logger = Logger(subsystem: "com.agentstudio", category: "GitWorkingDirectoryProjector")
 
     let runtimeBus: EventBus<RuntimeEnvelope>
+    let runtimeEnvelopePoster: any RuntimeEnvelopePosting
     /// Not `private` so the pathspec-status extension can dispatch scoped and full
     /// status reads (see `GitWorkingDirectoryProjector+PathspecStatus`).
     let gitWorkingTreeProvider: any GitWorkingTreeStatusProvider
@@ -162,10 +163,12 @@ package actor GitWorkingDirectoryProjector {
         subscriptionBufferLimit: Int = 256,
         performanceTraceRecorder: (any GitProjectorPerformanceRecording)? = nil,
         factSink: GitProjectorFactSink? = nil,
+        runtimeEnvelopePoster: (any RuntimeEnvelopePosting)? = nil,
         remoteReferenceOriginHandler: (@Sendable (UUID, String?, RepositoryObservationLifetime?) async -> Void)? = nil,
         pathExistenceProbe: @escaping @Sendable (URL) -> Bool = { _ in true }
     ) {
         self.runtimeBus = bus
+        self.runtimeEnvelopePoster = runtimeEnvelopePoster ?? bus
         self.gitWorkingTreeProvider = gitWorkingTreeProvider
         self.envelopeClock = envelopeClock
         if let sleepClock {
@@ -768,7 +771,7 @@ package actor GitWorkingDirectoryProjector {
             factSink?(coalescingScope, .deadlineDisposition(.admitted))
         }
 
-        await computeAndEmit(changeset: nextChangeset)
+        await computeAndEmit(changeset: nextChangeset, refreshFactScope: refreshFactScope)
     }
 
     func isCurrent(_ changeset: FileChangeset) -> Bool {

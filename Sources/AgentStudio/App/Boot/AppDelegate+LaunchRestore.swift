@@ -143,7 +143,10 @@ extension AppDelegate {
                     "Launch restore timed out — isSettled=\(self.windowLifecycleStore.isLaunchLayoutSettled, privacy: .public) bounds=\(NSStringFromRect(self.windowLifecycleStore.terminalContainerBounds), privacy: .public)"
                 )
                 let fallbackBounds = self.windowLifecycleStore.terminalContainerBounds
-                guard !fallbackBounds.isEmpty else { return }
+                guard !fallbackBounds.isEmpty else {
+                    // Readiness remains observable; a later bounds publication can still restore.
+                    return
+                }
                 launchRestoreLogger.error(
                     "Launch restore timeout recovery: attempting restore with stored bounds \(NSStringFromRect(fallbackBounds), privacy: .public)"
                 )

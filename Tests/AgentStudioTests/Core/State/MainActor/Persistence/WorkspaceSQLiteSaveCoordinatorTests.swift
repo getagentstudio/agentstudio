@@ -85,6 +85,108 @@ struct WorkspaceSQLiteSaveCoordinatorTests {
         #expect(await fixture.probe.events.contains(.saveWorkspaceSnapshot))
     }
 
+    @Test(
+        "a background drawer terminal creation's preserved live selection survives an ordinary save and reload"
+    )
+    func backgroundDrawerInsertionPreservedSelectionSurvivesSaveAndReload() async throws {
+        // Arrange
+        let fixture = try await makeFixture()
+        let mutationCoordinator = WorkspaceMutationCoordinator(
+            repositoryTopologyAtom: fixture.repositoryTopologyAtom,
+            workspacePaneAtom: fixture.workspacePaneAtom,
+            workspaceTabShellAtom: fixture.tabLayoutAtom.shellAtom,
+            workspaceTabArrangementAtom: fixture.tabLayoutAtom.arrangementAtom
+        )
+        let drawerChildCWD = URL(
+            filePath: "/tmp/agentstudio-save-regression/drawer-cursor-roundtrip", directoryHint: .isDirectory)
+        let makeDrawerChild: (String) -> Pane? = { title in
+            fixture.workspacePaneAtom.addDrawerPane(
+                to: fixture.rootPaneID,
+                content: .terminal(
+                    TerminalState(provider: .zmx, lifetime: .persistent, zmxSessionID: .generateUUIDv7())
+                ),
+                metadata: PaneMetadata(
+                    launchDirectory: drawerChildCWD, title: title,
+                    facets: PaneContextFacets(cwd: drawerChildCWD))
+            )
+        }
+        let childA = try #require(makeDrawerChild("A"))
+        let childB = try #require(makeDrawerChild("B"))
+        let drawerID = try #require(fixture.workspacePaneAtom.pane(fixture.rootPaneID)?.drawer?.drawerId)
+        fixture.tabLayoutAtom.arrangementAtom.addDrawerPaneView(
+            drawerId: drawerID, parentPaneId: fixture.rootPaneID, drawerPaneId: childA.id, inTab: fixture.tabID)
+        fixture.tabLayoutAtom.arrangementAtom.addDrawerPaneView(
+            drawerId: drawerID, parentPaneId: fixture.rootPaneID, drawerPaneId: childB.id, inTab: fixture.tabID)
+        fixture.tabLayoutAtom.arrangementAtom.setActiveDrawerPane(childA.id, drawerId: drawerID, inTab: fixture.tabID)
+
+        // Capture the tab exactly as `commitTerminalCreation` would before its
+        // awaited off-main prepare and SQLite save: A selected, no C yet.
+        let capturedTab = try #require(fixture.tabLayoutAtom.tab(fixture.tabID))
+        let capturedState = TabArrangementState(
+            tabId: capturedTab.id, allPaneIds: capturedTab.allPaneIds,
+            arrangements: capturedTab.arrangements, activeArrangementId: capturedTab.activeArrangementId
+        )
+        let childC = Pane(
+            content: .terminal(
+                TerminalState(provider: .zmx, lifetime: .persistent, zmxSessionID: .generateUUIDv7())),
+            metadata: PaneMetadata(title: "Drawer"),
+            kind: .drawerChild(parentPaneId: fixture.rootPaneID)
+        )
+        // Build the published proposal's tab the same way production's
+        // off-main composition does (`preparePlacementOffMain`): insert the
+        // new child without selecting it, since this is a background creation.
+        let insertedState = try #require(
+            TabArrangementMutationRules.insertingNewDrawerPane(
+                childC.id, in: capturedState,
+                insertion: .init(
+                    parentPaneId: fixture.rootPaneID, drawerId: drawerID, targetDrawerPaneId: nil,
+                    direction: .right, sizingMode: .halveTarget, selectsInsertedChild: false
+                )
+            )
+        )
+        let publishedTab = Tab(
+            id: capturedTab.id, name: capturedTab.name,
+            allPaneIds: insertedState.allPaneIds, arrangements: insertedState.arrangements,
+            activeArrangementId: insertedState.activeArrangementId, colorHex: capturedTab.colorHex
+        )
+
+        // Act
+        // The race: a human selects B in the drawer after the capture above,
+        // while the background creation's save is still (hypothetically) in flight.
+        fixture.tabLayoutAtom.arrangementAtom.setActiveDrawerPane(childB.id, drawerId: drawerID, inTab: fixture.tabID)
+        let proposal = WorkspaceTerminalCreationProposal(
+            bundle: .init(workspace: .init(id: UUIDv7.generate())),
+            pane: childC, tab: publishedTab, associationOutcome: .freeNil,
+            placement: .drawer(
+                .init(
+                    tabID: fixture.tabID, parentID: fixture.rootPaneID, anchorID: nil,
+                    direction: .right, sizingMode: .halveTarget,
+                    childID: childC.id, presentation: .background
+                ))
+        )
+        mutationCoordinator.applyCommittedTerminalCreation(proposal)
+        _ = try await fixture.coordinator.save(persistedAt: Date(timeIntervalSince1970: 1_784_000_200))
+        let reloadDatastore = try await preparedWorkspaceSQLiteDatastore(
+            coreRepository: fixture.coreRepository,
+            preparedApplicationLocalRepository: fixture.preparedApplicationLocalRepository
+        )
+        let loadedWorkspace = await reloadDatastore.loadWorkspaceSnapshot()
+
+        // Assert
+        guard case .loaded(let workspace) = loadedWorkspace else {
+            Issue.record("Expected saved workspace to reload")
+            return
+        }
+        #expect(workspace.panes.contains { $0.id == childC.id })
+        let reloadedArrangement = try #require(
+            workspace.tabs.first { $0.id == fixture.tabID }?.arrangements.first {
+                $0.id == capturedTab.activeArrangementId
+            }
+        )
+        #expect(reloadedArrangement.drawerViews[drawerID]?.layout.contains(childC.id) == true)
+        #expect(reloadedArrangement.drawerViews[drawerID]?.activeChildId == childB.id)
+    }
+
     @Test("direct worktree unregistration commits later workspace snapshot")
     func directWorktreeUnregistrationCommitsLaterWorkspaceSnapshot() async throws {
         // Arrange

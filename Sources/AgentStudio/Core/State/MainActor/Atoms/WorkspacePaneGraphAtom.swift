@@ -709,7 +709,8 @@ package final class WorkspacePaneGraphAtom {
     func addDrawerPane(
         to parentPaneId: UUID,
         content: PaneContent,
-        metadata: PaneMetadata
+        metadata: PaneMetadata,
+        childPaneId: UUID? = nil
     ) -> PaneGraphState? {
         guard paneStateMap.snapshotValue(for: parentPaneId) != nil else {
             workspacePaneLogger.warning("addDrawerPane: parent pane \(parentPaneId) not found")
@@ -718,7 +719,7 @@ package final class WorkspacePaneGraphAtom {
         guard let admittedMetadata = admittedMetadata(for: content, metadata: metadata) else { return nil }
 
         let drawerPane = Pane(
-            id: UUIDv7.generate(),
+            id: childPaneId ?? UUIDv7.generate(),
             content: content,
             metadata: admittedMetadata,
             residency: .active,

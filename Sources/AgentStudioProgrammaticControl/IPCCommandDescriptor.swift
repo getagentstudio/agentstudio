@@ -15,6 +15,7 @@ package enum IPCCommandDescriptorError: Error, Equatable, Sendable {
     case exampleCorrelationMismatch
     case exampleArgumentVariantNotAllowed
     case exampleResultVariantNotAllowed
+    case agentEligibleCommandMustBeExposedOnAllChannels
 }
 
 /// One executable example retains the complete envelope and result so command
@@ -50,6 +51,7 @@ package struct IPCCommandDescriptorInput: Sendable {
     package let allowedTargetKinds: Set<IPCHandleKind>
     package let resultVariants: [IPCCommandResultVariant]
     package let examples: [IPCCommandExample]
+    package let agentEligibility: IPCAgentEligibility
 
     package init(
         id: IPCCommandIdentifier,
@@ -62,7 +64,8 @@ package struct IPCCommandDescriptorInput: Sendable {
         dataScope: IPCDataScope,
         allowedTargetKinds: Set<IPCHandleKind>,
         resultVariants: [IPCCommandResultVariant],
-        examples: [IPCCommandExample]
+        examples: [IPCCommandExample],
+        agentEligibility: IPCAgentEligibility
     ) {
         self.id = id
         self.title = title
@@ -75,6 +78,7 @@ package struct IPCCommandDescriptorInput: Sendable {
         self.allowedTargetKinds = allowedTargetKinds
         self.resultVariants = resultVariants
         self.examples = examples
+        self.agentEligibility = agentEligibility
     }
 }
 
@@ -94,6 +98,8 @@ package struct IPCCommandDescriptor: Codable, Equatable, Sendable {
     package let resultVariants: [IPCCommandResultVariant]
     package let resultSchema: IPCJSONSchema
     package let examples: [IPCCommandExample]
+    /// What a pane-bound agent may do with this command.
+    package let agentEligibility: IPCAgentEligibility
 
     package var catalogEntrySchema: IPCJSONSchema {
         get throws {
@@ -184,6 +190,11 @@ package struct IPCCommandDescriptor: Codable, Equatable, Sendable {
                     description: "Validated typed command request and result examples",
                     schema: .array(items: exampleSchema, minimumCount: 1)
                 ),
+                .init(
+                    name: "agentEligibility",
+                    description: "What a pane-bound agent may do with this command",
+                    schema: try IPCAgentEligibility.ipcSchema()
+                ),
             ])
         }
     }
@@ -201,7 +212,8 @@ package struct IPCCommandDescriptor: Codable, Equatable, Sendable {
         allowedTargetKinds: [IPCHandleKind],
         resultVariants: [IPCCommandResultVariant],
         resultSchema: IPCJSONSchema,
-        examples: [IPCCommandExample]
+        examples: [IPCCommandExample],
+        agentEligibility: IPCAgentEligibility
     ) {
         self.id = id
         self.title = title
@@ -216,6 +228,7 @@ package struct IPCCommandDescriptor: Codable, Equatable, Sendable {
         self.resultVariants = resultVariants
         self.resultSchema = resultSchema
         self.examples = examples
+        self.agentEligibility = agentEligibility
     }
 }
 
@@ -233,7 +246,9 @@ package enum IPCCommandDescriptorFactory {
                 argumentVariants: input.argumentVariants,
                 requiredPrivileges: input.requiredPrivileges,
                 resultVariants: input.resultVariants,
-                examples: input.examples
+                examples: input.examples,
+                exposure: input.exposure,
+                agentEligibility: input.agentEligibility
             )
         )
 
@@ -267,7 +282,8 @@ package enum IPCCommandDescriptorFactory {
             allowedTargetKinds: input.allowedTargetKinds.sorted { $0.rawValue < $1.rawValue },
             resultVariants: sortedResultVariants,
             resultSchema: resultSchema,
-            examples: input.examples
+            examples: input.examples,
+            agentEligibility: input.agentEligibility
         )
     }
 
@@ -291,6 +307,9 @@ package enum IPCCommandDescriptorFactory {
             throw IPCCommandDescriptorError.missingAppCommandExecutePrivilege
         }
         guard !input.examples.isEmpty else { throw IPCCommandDescriptorError.missingExample }
+        if input.agentEligibility.requiresAllChannelExposure, input.exposure != .allChannels {
+            throw IPCCommandDescriptorError.agentEligibleCommandMustBeExposedOnAllChannels
+        }
 
         for example in input.examples {
             guard !example.description.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
@@ -320,4 +339,6 @@ private struct DescriptorValidationInput {
     let requiredPrivileges: Set<IPCPrivilegeClass>
     let resultVariants: [IPCCommandResultVariant]
     let examples: [IPCCommandExample]
+    let exposure: IPCMethodExposure
+    let agentEligibility: IPCAgentEligibility
 }

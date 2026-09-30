@@ -218,8 +218,7 @@ function createRouteGroup(ownerDocument: Document, route: TopologyRoute): SVGGEl
       y: route.targetPoint.y,
       ownerId: "main",
       accent: "main",
-      incomingAccent: "cyan",
-      kind: "merge",
+      kind: "end",
       anchorId: undefined,
       terminal: true,
     });
@@ -270,6 +269,13 @@ function createRowNode(ownerDocument: Document, dot: TopologyRowDot): SVGGElemen
       ),
       createCircle(ownerDocument, "node-merge-core", topologyNodeRadii.mergeCore),
     );
+  } else if (dot.kind === "end" && dot.terminal === true) {
+    // The finale ends the rail; it is not a two-parent merge. Keep its
+    // established ring and core geometry tangent to the install pill.
+    group.append(
+      createCircle(ownerDocument, "node-end-ring", topologyNodeRadii.merge),
+      createCircle(ownerDocument, "node-end-core", topologyNodeRadii.mergeCore),
+    );
   } else if (dot.kind === "chapter") {
     group.append(createCircle(ownerDocument, "node-chapter", topologyNodeRadii.chapter));
   } else {
@@ -277,7 +283,7 @@ function createRowNode(ownerDocument: Document, dot: TopologyRowDot): SVGGElemen
   }
   if (terminal) {
     group.append(createCircle(ownerDocument, "node-terminal-halo", topologyNodeRadii.terminal));
-    if (dot.kind !== "merge") {
+    if (dot.kind !== "merge" && dot.terminal !== true) {
       group.append(createCircle(ownerDocument, "node-terminal", topologyNodeRadii.terminal));
     }
   }

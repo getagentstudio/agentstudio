@@ -45,8 +45,11 @@ struct AgentStudioIPCClientCoreTests {
                 let request = try JSONRPCCodec.decodeRequest(client.requestFrame(invocation, requestID: 14))
                 #expect(request.id == .number(14))
                 #expect(request.method == descriptor.metadata.name)
-                #expect(
-                    try request.params == JSONDecoder().decode(JSONValue.self, from: invocation.normalizedParameters))
+                let normalizedParameters = try JSONDecoder().decode(
+                    JSONValue.self,
+                    from: invocation.normalizedParameters.data
+                )
+                #expect(request.params == normalizedParameters)
             }
         }
     }
@@ -61,7 +64,7 @@ struct AgentStudioIPCClientCoreTests {
                 correlation.uuidString,
             ], descriptors: catalog
         ).descriptorInvocation
-        let sendParams = try JSONDecoder().decode(IPCTerminalSendParams.self, from: send.normalizedParameters)
+        let sendParams = try JSONDecoder().decode(IPCTerminalSendParams.self, from: send.normalizedParameters.data)
         #expect(sendParams.input == "echo 雪\n")
         #expect(sendParams.correlationId == correlation)
         let wait = try parse(
@@ -70,7 +73,7 @@ struct AgentStudioIPCClientCoreTests {
                 "--after-sequence", "41",
             ], descriptors: catalog
         ).descriptorInvocation
-        let waitParams = try JSONDecoder().decode(IPCTerminalWaitParams.self, from: wait.normalizedParameters)
+        let waitParams = try JSONDecoder().decode(IPCTerminalWaitParams.self, from: wait.normalizedParameters.data)
         #expect(waitParams.afterSequence == 41)
         #expect(waitParams.timeoutSeconds == 5)
     }
@@ -89,7 +92,8 @@ struct AgentStudioIPCClientCoreTests {
                 ["bridge.fileTree.setFilter", "--stdin"], descriptors: descriptors, input: JSONEncoder().encode(params)
             ).descriptorInvocation
             #expect(
-                try JSONDecoder().decode(IPCBridgeFileTreeSetFilterParams.self, from: invocation.normalizedParameters)
+                try JSONDecoder().decode(
+                    IPCBridgeFileTreeSetFilterParams.self, from: invocation.normalizedParameters.data)
                     == params)
         }
         let invalidCandidates: [[String: Any]] = [
@@ -121,7 +125,7 @@ struct AgentStudioIPCClientCoreTests {
         #expect(invocation.configuration.authToken == "fixture-token")
         #expect(
             try JSONDecoder().decode(
-                IPCAuthLoginParams.self, from: invocation.descriptorInvocation.normalizedParameters
+                IPCAuthLoginParams.self, from: invocation.descriptorInvocation.normalizedParameters.data
             ).token == "fixture-token")
         for args in [
             ["--token", "secret", "auth.login"],
@@ -374,6 +378,45 @@ struct AgentStudioIPCClientCoreTests {
                 [
                     "terminal.wait", "--handle", "self", "--condition", "commandFinished", "--timeout-seconds", "10",
                 ], descriptors: matched)
+        }
+    }
+
+    @Test("a method the channel hides but lists as recognized is typed by the compiled contract and framed")
+    func recognizedHiddenMethodIsFramedForTheApp() throws {
+        let catalog = try makeCatalog()
+        let ping = try IPCAnyMethodDescriptor(erasing: catalog.systemAndAuth.systemPing)
+        let hiddenNames: Set<String> = ["pane.focus", "bridge.diff.getPackage"]
+        let discovered = try IPCSystemCapabilitiesDescriptorFactory.compose(
+            compatibility: .current,
+            availableDescriptors: catalog.erasedDescriptors.filter { !hiddenNames.contains($0.metadata.name) },
+            illustrativeDescriptor: ping,
+            recognizedUnexposedMethods: [
+                IPCRecognizedUnexposedName(name: "pane.focus", agentEligibility: .notYetAllowed)
+            ]
+        ).result
+
+        let matched = try IPCBuiltInMethodCatalog.matchingDiscoveredMethods(
+            discovered, examples: .init(illustrativeIdentifier: UUIDv7.generate())
+        )
+        let focus = try parse(["pane.focus", "--handle", "self"], descriptors: matched).descriptorInvocation
+        let frame = try AgentStudioIPCClient(
+            configuration: .init(socketPath: "/tmp/unused.sock"), descriptors: matched
+        ).requestFrame(focus, requestID: 3)
+        let framed = try JSONRPCCodec.decodeRequest(frame)
+
+        #expect(framed.method == "pane.focus")
+        guard case .object(let parameters)? = framed.params else {
+            Issue.record("pane.focus framed without an object: \(String(describing: framed.params))")
+            return
+        }
+        #expect(parameters["handle"] == .string("self"))
+        // Hidden but not listed as recognized, and unknown: both stay local.
+        #expect(!matched.contains { $0.metadata.name == "bridge.diff.getPackage" })
+        #expect(throws: IPCDescriptorInvocationError.self) {
+            try parse(["bridge.diff.getPackage", "--handle", "self"], descriptors: matched)
+        }
+        #expect(throws: IPCDescriptorInvocationError.self) {
+            try parse(["bogus.method"], descriptors: matched)
         }
     }
 

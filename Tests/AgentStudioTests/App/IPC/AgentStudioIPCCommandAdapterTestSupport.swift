@@ -114,6 +114,46 @@ final class RecordingWorkspaceIPCCommandHandler: WorkspaceCommandHandling {
     }
 }
 
+@MainActor
+func makeIPCCommandCatalogOffMain(
+    from adapter: AgentStudioIPCCommandAdapter,
+    channel: AgentStudioIPCChannel = .stable
+) async throws -> IPCCommandCatalogResult {
+    try await makeIPCCommandCompositionOffMain(from: adapter, channel: channel).catalogResult
+}
+
+@MainActor
+func makeIPCCommandCompositionOffMain(
+    from adapter: AgentStudioIPCCommandAdapter,
+    channel: AgentStudioIPCChannel = .stable
+) async throws -> IPCCommandMethodComposition {
+    let buildDescriptorCatalog:
+        @Sendable (AppIPCDescriptorCatalogBuildInputs) async throws -> AppIPCDescriptorCatalogBuildResult =
+            AppIPCDescriptorCatalogBuilder.buildOffMain
+    let result = try await buildDescriptorCatalog(
+        AppIPCDescriptorCatalogBuildInputs(
+            builtInCatalogInputs: appIPCTestBuiltInMethodCatalogInputs(),
+            channel: channel,
+            commandCatalogProjectionInputs: adapter.commandCatalogProjectionInputs()
+        ))
+    return result.commandComposition
+}
+
+private func appIPCTestBuiltInMethodCatalogInputs() -> IPCBuiltInMethodCatalogInputs {
+    IPCBuiltInMethodCatalogInputs(
+        terminalWaitMaximumSeconds: AppPolicies.IPC.maximumTerminalWaitSeconds,
+        relationships: IPCBuiltInMethodRelationshipInputs(
+            paneFocus: .appCommand(identifier: AppCommand.focusPane.rawValue),
+            paneClose: .appCommand(identifier: AppCommand.closePane.rawValue),
+            drawerToggle: .appCommand(identifier: AppCommand.toggleDrawer.rawValue),
+            drawerAddPane: .appCommand(identifier: AppCommand.addDrawerPane.rawValue),
+            bridgeDiffLoad: .appCommand(identifier: AppCommand.showBridgeReview.rawValue),
+            bridgeFileViewOpen: .appCommand(identifier: AppCommand.showBridgeFiles.rawValue)
+        ),
+        examples: .init(illustrativeIdentifier: UUIDv7.generate())
+    )
+}
+
 func commandAdapterTestPrincipal() -> IPCPrincipal {
     IPCPrincipal(
         principalId: UUIDv7.generate(),

@@ -212,4 +212,5 @@ package struct IPCMethodDescriptorMetadata<
     package let responseDelivery: IPCMethodResponseDelivery
     package let offlineEligibility: IPCMethodOfflineEligibility
     package let modelCalls: [IPCModelCallProjection]
+    package let agentEligibility: IPCAgentEligibility?
 }

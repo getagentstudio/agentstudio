@@ -23,6 +23,11 @@ for (const [width, height] of [
       width,
       height,
     );
+    expect.soft(observation.trunkWidth).toBe(1.8);
+    expect.soft(observation.otherLineWidths.length).toBeGreaterThan(0);
+    expect.soft(observation.otherLineWidths.every((width) => width === 1.5)).toBe(true);
+    expect.soft(observation.stepTrackHeights.every((height) => height === 1.5)).toBe(true);
+    expect.soft(observation.trunkWidth / 1.5).toBe(1.2);
     const [colour, grey, absent] = observation.pixels;
     if (colour === undefined || grey === undefined || absent === undefined)
       throw new Error("Rail band samples are missing");

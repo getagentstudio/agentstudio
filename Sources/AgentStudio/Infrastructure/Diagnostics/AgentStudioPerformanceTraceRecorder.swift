@@ -218,6 +218,8 @@ package final class AgentStudioPerformanceTraceRecorder: @unchecked Sendable {
         case gitSuppressedInputSkipped = "performance.git.suppressed_input_skipped"
         case gitTick = "performance.git.tick"
         case interactionLatency = "performance.interaction.latency"
+        case ipcAgentAuthorization = "performance.ipc.agent_authorization"
+        case ipcAgentAuthorizationMainActorHeld = "performance.ipc.agent_authorization.main_actor_held"
         case managementLayerAppKitState = "performance.management_layer.appkit_state"
         case managementLayerCommand = "performance.management_layer.command"
         case paneAssociation = "performance.pane.association"

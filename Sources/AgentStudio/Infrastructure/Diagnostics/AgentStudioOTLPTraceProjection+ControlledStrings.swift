@@ -43,6 +43,17 @@ extension AgentStudioOTLPTraceProjection {
         case "agentstudio.performance.interaction.kind":
             return ["command_bar_open", "command_bar_close", "tab_move", "divider_frame", "cmd_r"]
                 .contains(value)
+        case "agentstudio.app.ipc.start.reason":
+            return [
+                "first_frame_cancelled", "first_frame_timeout", "initialization_cancelled",
+                "local_store_unavailable",
+                "optional_schema_unavailable", "sessions_ingestion_failed", "no_active_window",
+                "ipc_path_untrusted", "socket_in_use", "server_start_failed",
+                "restore_bounds_unavailable",
+            ]
+            .contains(value)
+        case "agentstudio.performance.ipc.agent_authorization.outcome":
+            return ["authorized", "not_yet_allowed", "refused_for_agent"].contains(value)
         case "agentstudio.performance.focus.responder_change.reason":
             return AgentStudioFocusResponderChangeReason(rawValue: value) != nil
         case "agentstudio.performance.startup.source":

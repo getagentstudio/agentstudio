@@ -19,7 +19,8 @@ package struct IPCBridgeTelemetryMethodDescriptors: Sendable {
             dataScope: .bridgeTelemetry,
             targetKinds: [.pane],
             owner: .bridgeCapability,
-            errors: Self.telemetryErrors
+            errors: Self.telemetryErrors,
+            agentEligibility: .notYetAllowed
         )
         bridgeTelemetryFlush = try IPCBuiltInDescriptorSupport.mutation(
             name: "bridge.telemetry.flush",
@@ -40,7 +41,8 @@ package struct IPCBridgeTelemetryMethodDescriptors: Sendable {
                 dataScope: .bridgeTelemetry,
                 targetKinds: [.pane],
                 owner: .bridgeCapability,
-                errors: Self.telemetryErrors)
+                errors: Self.telemetryErrors,
+                agentEligibility: .notYetAllowed)
         )
     }
 
@@ -50,13 +52,18 @@ package struct IPCBridgeTelemetryMethodDescriptors: Sendable {
         IPCBuiltInDescriptorSupport.unavailable,
     ]
 
-    var erased: [IPCAnyMethodDescriptor] {
+    var descriptorRepresentations: [any IPCMethodDescriptorRepresentation] {
         get throws {
-            try [
-                IPCAnyMethodDescriptor(erasing: bridgeTelemetrySnapshot),
-                IPCAnyMethodDescriptor(erasing: bridgeTelemetryFlush),
+            let representations: [any IPCMethodDescriptorRepresentation] = try [
+                IPCMethodDescriptorRepresentations(typedDescriptor: bridgeTelemetrySnapshot),
+                IPCMethodDescriptorRepresentations(typedDescriptor: bridgeTelemetryFlush),
             ]
+            return representations
         }
+    }
+
+    var erased: [IPCAnyMethodDescriptor] {
+        get throws { try descriptorRepresentations.map(\.erasedDescriptor) }
     }
 }
 
@@ -71,7 +78,15 @@ package struct IPCBridgeMethodDescriptors: Sendable {
         telemetry = try IPCBridgeTelemetryMethodDescriptors(examples: inputs.examples)
     }
 
+    var descriptorRepresentations: [any IPCMethodDescriptorRepresentation] {
+        get throws {
+            try review.descriptorRepresentations
+                + control.descriptorRepresentations
+                + telemetry.descriptorRepresentations
+        }
+    }
+
     var erased: [IPCAnyMethodDescriptor] {
-        get throws { try review.erased + control.erased + telemetry.erased }
+        get throws { try descriptorRepresentations.map(\.erasedDescriptor) }
     }
 }

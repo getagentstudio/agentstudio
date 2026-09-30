@@ -74,6 +74,47 @@ struct CISwiftBuildInputsScriptTests {
         try await assertUnchangedInputRestamped("Sources/AgentStudio/Resources/BridgeWeb/index.html")
     }
 
+    @Test("warm receipt counts Swift content changes against the verified seed and names the tested tree")
+    func warmReceiptAccountsForTestedTree() async throws {
+        for (transition, expectedChanges) in [("unchanged", 0), ("content", 1), ("added-source", 1)] {
+            let fixture = try SwiftInputFixture()
+            defer { fixture.remove() }
+            let seed = try await fixture.inventory("seed")
+            try fixture.apply(transition, seed: seed)
+            let current = try await fixture.inventory(
+                "current", extra: ["CI_SWIFT_PRODUCER_COMMIT": "tested-merge-tree"])
+            let receipt = try await fixture.run(
+                "restamp", seed.path.path, current.path.path, includeDiagnostics: true)
+            #expect(receipt.hasPrefix("warm "))
+            #expect(receipt.contains("lane-report swift_cache_seed_commit=producer"))
+            #expect(receipt.contains("lane-report swift_cache_tested_tree=tested-merge-tree"))
+            #expect(receipt.contains("lane-report swift_cache_changed_swift_inputs=\(expectedChanges)"))
+        }
+    }
+
+    @Test("resource-only changes stay warm without claiming a Swift input change")
+    func resourceChangeLeavesSwiftInputCountUnchanged() async throws {
+        let fixture = try SwiftInputFixture()
+        defer { fixture.remove() }
+        try FileManager.default.setAttributes(
+            [.modificationDate: Date(timeIntervalSince1970: 1_700_000_100)], ofItemAtPath: fixture.resource.path)
+        let seed = try await fixture.inventory("seed")
+        try "changed resource".write(to: fixture.resource, atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes(
+            [.modificationDate: Date(timeIntervalSince1970: 1_700_000_200)], ofItemAtPath: fixture.resource.path)
+        let current = try await fixture.inventory("current")
+
+        let receipt = try await fixture.run(
+            "restamp", seed.path.path, current.path.path, includeDiagnostics: true)
+
+        #expect(receipt.hasPrefix("warm "))
+        #expect(receipt.contains("lane-report swift_cache_changed_swift_inputs=0"))
+        let restored = try await fixture.inventory("restored")
+        let resourcePath = "Sources/AgentStudio/Resources/BridgeWeb/index.html"
+        #expect(restored.modificationTimes[resourcePath] == current.modificationTimes[resourcePath])
+        #expect(restored.modificationTimes[resourcePath] != seed.modificationTimes[resourcePath])
+    }
+
     @Test("unchanged copied framework files regain their seed time")
     func copiedFrameworkRestamp() async throws {
         try await assertUnchangedInputRestamped("Frameworks/GhosttyKit.xcframework/binary")
@@ -271,8 +312,10 @@ private final class SwiftInputFixture {
         #expect(exitCodes == [0, 0])
     }
 
-    func run(_ arguments: String..., extra: [String: String] = [:], expectedExitCode: Int32 = 0) async throws -> String
-    {
+    func run(
+        _ arguments: String..., extra: [String: String] = [:], expectedExitCode: Int32 = 0,
+        includeDiagnostics: Bool = false
+    ) async throws -> String {
         let environment = ProcessInfo.processInfo.environment.merging(
             [
                 "CI_SWIFT_ROOT": root.path,
@@ -292,9 +335,11 @@ private final class SwiftInputFixture {
             environment: environment
         )
         #expect(output.terminationStatus == expectedExitCode)
-        return try #require(
-            String(bytes: output.standardOutput, encoding: .utf8)
-        )
+        let standardOutput = try #require(String(bytes: output.standardOutput, encoding: .utf8))
+        if includeDiagnostics {
+            return standardOutput + (try #require(String(bytes: output.standardError, encoding: .utf8)))
+        }
+        return standardOutput
     }
 
     func inventory(_ name: String, extra: [String: String] = [:]) async throws -> SwiftInputManifest {

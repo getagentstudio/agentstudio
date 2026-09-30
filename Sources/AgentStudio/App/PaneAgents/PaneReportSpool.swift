@@ -323,7 +323,7 @@ actor PaneReportSpool {
         case Self.reportMethodName:
             guard
                 let reportParameters = try? JSONDecoder().decode(
-                    IPCSessionReportParams.self, from: normalizedParameters),
+                    IPCSessionReportParams.self, from: normalizedParameters.data),
                 Self.isOfflineEligible(Self.modelCallVariant(for: reportParameters.kind), in: descriptor),
                 Self.resolvesToPane(handle: reportParameters.handle, paneId: paneId)
             else {
@@ -338,7 +338,7 @@ actor PaneReportSpool {
         case Self.messageMethodName:
             guard
                 let messageParameters = try? JSONDecoder().decode(
-                    IPCSessionMessageParams.self, from: normalizedParameters),
+                    IPCSessionMessageParams.self, from: normalizedParameters.data),
                 Self.isOfflineEligible(.message, in: descriptor),
                 Self.resolvesToPane(handle: messageParameters.handle, paneId: paneId)
             else {

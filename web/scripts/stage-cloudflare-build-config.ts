@@ -11,6 +11,7 @@ const rootPublicAssets = [
   "agent-studio-x-profile-banner.png",
   "agent-studio-youtube-channel-banner.png",
   "robots.txt",
+  "llms.txt",
   "sitemap.xml",
 ];
 

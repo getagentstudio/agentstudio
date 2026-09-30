@@ -228,6 +228,44 @@ struct PaneTabViewControllerTerminalShortcutCommandTests {
         )
     }
 
+    @Test("headless scroll commands issue the interactive fractions without moving focus or selection")
+    func headlessScrollCommandsUseInteractiveFractions() async throws {
+        let harness = makeHarness()
+        defer { try? FileManager.default.removeItem(at: harness.tempDir) }
+        let parentPane = harness.store.createPane()
+        let tab = Tab(paneId: parentPane.id)
+        harness.store.appendTab(tab)
+        harness.store.setActiveTab(tab.id)
+        harness.store.setActivePane(parentPane.id, inTab: tab.id)
+        let selectedChild = try #require(harness.store.addDrawerPane(to: parentPane.id))
+        let scrolledChild = try #require(harness.store.addDrawerPane(to: parentPane.id))
+        harness.store.setActiveDrawerPane(selectedChild.id, in: parentPane.id)
+        atom(\.workspaceFocusOwner).focusMainPane(parentPane.id)
+        let scrolledRuntime = RecordingCommandPaneRuntime(paneId: PaneId(existingUUID: scrolledChild.id))
+        harness.runtimeRegistry.register(scrolledRuntime)
+        let focusOwnerBefore = atom(\.workspaceFocusOwner).owner
+
+        var outcomes: [AppCommandExecutionOutcome] = []
+        for command in [AppCommand.scrollPageDown, .scrollSmallStepUp, .scrollSmallStepDown] {
+            outcomes.append(try await harness.executeHeadlessPaneCommand(command, paneId: scrolledChild.id))
+        }
+
+        #expect(outcomes == [.applied, .applied, .applied])
+        #expect(scrolledRuntime.receivedCommands.count == 3)
+        let fractions = [
+            AppPolicies.TerminalNavigation.pageFraction,
+            -AppPolicies.TerminalNavigation.smallStepFraction,
+            AppPolicies.TerminalNavigation.smallStepFraction,
+        ]
+        for (envelope, fraction) in zip(scrolledRuntime.receivedCommands, fractions) {
+            #expect(envelope.targetPaneId == PaneId(existingUUID: scrolledChild.id))
+            expectFractionalScroll(envelope, fraction: fraction)
+        }
+        #expect(atom(\.workspaceFocusOwner).owner == focusOwnerBefore)
+        #expect(harness.store.drawerView(forParent: parentPane.id)?.activeChildId == selectedChild.id)
+        #expect(harness.store.tabLayoutAtom.tab(tab.id)?.activePaneId == parentPane.id)
+    }
+
     private func makeTerminalNavigationKeyEvents() throws -> [NSEvent] {
         let bindings: [(NSEvent.ModifierFlags, String, UInt16)] = [
             ([.command, .shift], "I", 34),

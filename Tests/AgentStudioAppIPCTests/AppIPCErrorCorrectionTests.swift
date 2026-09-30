@@ -1,14 +1,36 @@
-import AgentStudioAppIPC
 import AgentStudioIPCTransport
 import AgentStudioInfrastructure
 import AgentStudioProgrammaticControl
 import Foundation
 import Testing
 
+@testable import AgentStudioAppIPC
+
 @Suite("App IPC finite error corrections", .serialized)
 struct AppIPCErrorCorrectionTests {
-    @Test("cross-pane denial returns the canonical missing grant scope")
-    func crossPaneDenialReturnsCanonicalMissingGrantScope() async throws {
+    @Test("runtime errors preserve codes and expose canonical data reasons")
+    func runtimeErrorsPreserveCodesAndExposeCanonicalReasons() {
+        let cases: [(AppIPCRuntimeError.Reason, Int, JSONValue?)] = [
+            (.targetNotFound, -32_004, .object(["reason": .string("targetNotFound")])),
+            (.noRuntime, -32_005, .object(["reason": .string("runtimeNotReady")])),
+            (.runtimeNotReady, -32_005, .object(["reason": .string("runtimeNotReady")])),
+            (.backendUnavailable, -32_005, .object(["reason": .string("runtimeNotReady")])),
+            (.validationRejected, -32_007, .object(["reason": .string("invalidParams")])),
+            (.timeout, -32_009, .object(["reason": .string("timeout")])),
+            (.replayGap, -32_010, .object(["reason": .string("replayGap")])),
+            (.unsupportedCommand, -32_003, nil),
+        ]
+
+        for (reason, expectedCode, expectedData) in cases {
+            let requestError = AgentStudioAppIPCRequestError(AppIPCRuntimeError(reason: reason))
+
+            #expect(requestError.code == expectedCode)
+            #expect(requestError.data == expectedData)
+        }
+    }
+
+    @Test("a pane agent's cross-pane command is refused by name before execution")
+    func crossPaneCommandIsNotYetAllowedForPaneAgent() async throws {
         let boundPaneId = UUIDv7.generate()
         let targetPaneId = UUIDv7.generate()
         let commandId = IPCCommandIdentifier(rawValue: "fixtureCrossPaneCommand")
@@ -24,7 +46,9 @@ struct AppIPCErrorCorrectionTests {
                 requiredPrivileges: [.appCommandExecute, .layoutMutate],
                 dataScope: .paneContext,
                 allowedTargetKinds: [],
-                result: result
+                result: result,
+                exposure: .allChannels,
+                agentEligibility: .ownPane
             )
         )
         let commandPort = FakeCommandPort(
@@ -79,6 +103,44 @@ struct AppIPCErrorCorrectionTests {
         )
         let response = try await reader.receiveResponseWithoutBlockingMainActor(connection: connection)
 
+        #expect(response.error?.code == -32_011)
+        #expect(response.error?.message == "not yet allowed")
+        #expect(
+            try requireCorrection(response)
+                == ["reason": .string("notYetAllowed"), "name": .string(commandId.rawValue)])
+        #expect(commandPort.receivedExecutionRequests.isEmpty)
+    }
+
+    @Test("cross-pane denial of an established session method returns the canonical missing grant scope")
+    func crossPaneDenialReturnsCanonicalMissingGrantScope() async throws {
+        let boundPaneId = UUIDv7.generate()
+        let targetPaneId = UUIDv7.generate()
+        let fixture = try LiveServerFixture(
+            panes: [makePaneSummary(id: boundPaneId, ordinal: 1), makePaneSummary(id: targetPaneId, ordinal: 2)]
+        )
+        defer { fixture.cleanup() }
+        try fixture.server.start()
+        let token = try fixture.issueTestCredential(
+            for: .pane(paneId: boundPaneId, credentialRecordId: UUIDv7.generate(), status: .registered)
+        )
+        let connection = try UnixSocketClient.connect(
+            endpoint: UnixSocketEndpoint(path: fixture.paths.socketURL.path)
+        )
+        defer { connection.close() }
+        var reader = TestFrameReader()
+        try await loginWithoutBlockingMainActor(
+            connection: connection, token: token, requestId: 1, reader: &reader)
+
+        try sendRequest(
+            connection: connection,
+            request: JSONRPCClientRequest(
+                id: .number(2),
+                method: "session.query",
+                params: .object(["handle": .string(targetPaneId.uuidString)])
+            )
+        )
+        let response = try await reader.receiveResponseWithoutBlockingMainActor(connection: connection)
+
         #expect(response.error?.code == -32_002)
         #expect(response.error?.message == "missing grant")
         let correction = try requireCorrection(response)
@@ -91,12 +153,11 @@ struct AppIPCErrorCorrectionTests {
         #expect(
             requiredScope
                 == IPCPermissionScope(
-                    privilege: .appCommandExecute,
+                    privilege: .sessionStateRead,
                     target: .pane(targetPaneId.uuidString),
-                    dataScope: .unspecified
+                    dataScope: .sessionState
                 )
         )
-        #expect(commandPort.receivedExecutionRequests.isEmpty)
     }
 
     @Test("unknown method returns a finite correction without reflecting input")

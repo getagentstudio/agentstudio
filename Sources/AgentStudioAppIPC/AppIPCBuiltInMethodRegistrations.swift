@@ -18,6 +18,13 @@ package struct AppIPCBuiltInRegistrationInputs: Sendable {
         self.ports = ports
         self.eventBroker = eventBroker
     }
+
+    package func descriptorRepresentations<Parameters, Result>(
+        for descriptor: IPCMethodDescriptor<Parameters, Result>
+    ) throws -> IPCMethodDescriptorRepresentations<Parameters, Result>
+    where Parameters: Codable & Sendable, Result: Codable & Sendable {
+        try catalog.descriptorRepresentations(for: descriptor)
+    }
 }
 
 package enum AppIPCBuiltInMethodRegistrations {
@@ -63,6 +70,7 @@ enum AppIPCBuiltInRegistrationSupport {
         _ parameters: Parameters,
         rawHandle: String,
         tools: AppIPCTargetResolutionTools,
+        agentArgumentRule: @Sendable (UUID) -> AppIPCAgentArgumentRule = { _ in .targetOnly },
         replacingHandle: @Sendable (Parameters, String) -> Parameters
     ) async throws -> AppIPCTargetResolution<Parameters> {
         let canonicalHandle = try await tools.canonicalizePaneHandle(rawHandle)
@@ -72,7 +80,8 @@ enum AppIPCBuiltInRegistrationSupport {
         return AppIPCTargetResolution(
             parameters: replacingHandle(parameters, "pane:\(paneId.uuidString)"),
             canonicalHandle: canonicalHandle,
-            target: .pane(paneId.uuidString)
+            target: .pane(paneId.uuidString),
+            agentArgumentRule: agentArgumentRule(paneId)
         )
     }
 

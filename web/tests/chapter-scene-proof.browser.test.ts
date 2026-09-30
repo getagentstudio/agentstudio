@@ -61,6 +61,7 @@ for (const sceneId of ["chapter-review", "chapter-come-back"] as const) {
     const proofVideo = proof.querySelector("video");
     let videoPlayCalls = 0;
     if (proofVideo !== null) {
+      Object.defineProperty(proofVideo, "readyState", { configurable: true, value: 3 });
       let paused = true;
       Object.defineProperty(proofVideo, "paused", {
         configurable: true,

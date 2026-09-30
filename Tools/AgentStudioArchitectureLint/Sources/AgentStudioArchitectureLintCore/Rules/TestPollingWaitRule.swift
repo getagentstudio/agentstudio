@@ -125,7 +125,7 @@ private final class TestPollingWaitVisitor: SyntaxVisitor {
                 position: keyword.positionAfterSkippingLeadingTrivia,
                 message:
                     "Polling wait: a loop around a yield, sleep, or clock deadline decides a test by "
-                    + "machine speed. Await the event, state, or quiescence seam instead — "
+                    + "machine speed. Await the owner's typed fact, the event, or the observed state instead — "
                     + "docs/architecture/testing/testing_architecture.md#how-a-test-may-wait"
             )
         )

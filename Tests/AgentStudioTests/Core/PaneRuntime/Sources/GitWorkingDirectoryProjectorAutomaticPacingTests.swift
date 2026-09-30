@@ -252,6 +252,7 @@ struct GitWorkingDirectoryProjectorAutomaticPacingTests {
         clock.advance(by: max(.zero, nextAutomaticStartAt - deadlineClockNow))
         let thirdStartLabels = try await gate.waitForArrival(3)
         #expect(thirdStartLabels.count == 3)
+        #expect(await gate.activeCallCount == 1)
         let thirdStartedIndex = try #require(rootPaths.firstIndex { $0.lastPathComponent == thirdStartLabels[2] })
         _ = try await facts.expectNextRefreshStarted(worktreeId: worktreeIds[thirdStartedIndex])
         clock.advance(by: policy.minimumAutomaticStartInterval - .milliseconds(1))
@@ -259,6 +260,7 @@ struct GitWorkingDirectoryProjectorAutomaticPacingTests {
         clock.advance(by: .milliseconds(1))
         let fourthStartLabels = try await gate.waitForArrival(4)
         #expect(fourthStartLabels.count == 4)
+        #expect(await gate.activeCallCount == 2)
         let fourthStartedIndex = try #require(rootPaths.firstIndex { $0.lastPathComponent == fourthStartLabels[3] })
         _ = try await facts.expectNextRefreshStarted(worktreeId: worktreeIds[fourthStartedIndex])
 
@@ -332,7 +334,7 @@ private func prepareLowerTierPacingScenario() async throws -> PreparedLowerTierP
     let secondStartedIndex = try #require(rootPaths.firstIndex { $0.lastPathComponent == secondStartLabels[1] })
     let secondRequestSequence = try await facts.expectNextRefreshStarted(worktreeId: worktreeIds[secondStartedIndex])
     #expect(await gate.activeCallCount == 2)
-    await gate.releaseAll()
+    await gate.releaseArrivedCalls()
     _ = try await facts.expectRefreshClosed(
         worktreeId: worktreeIds[firstStartedIndex], requestSequence: firstRequestSequence
     )
@@ -417,6 +419,12 @@ private actor AutomaticPacingStatusGate {
 
     func releaseAll() {
         for arrival in callArrivals { arrival.release() }
+    }
+
+    func releaseArrivedCalls() {
+        // HeldStep release is sticky: future paced calls must stay held so
+        // completion duty cannot move the admission deadline under the test.
+        for arrival in callArrivals.prefix(labels.count) { arrival.release() }
     }
 }
 

@@ -24,7 +24,7 @@ extension GitWorkingDirectoryProjector {
             )
         )
 
-        let droppedCount = (await runtimeBus.post(envelope)).droppedCount
+        let droppedCount = (await runtimeEnvelopePoster.post(envelope)).droppedCount
         if droppedCount > 0 {
             Self.logger.warning(
                 "Git projector event delivery dropped for \(droppedCount, privacy: .public) subscriber(s); seq=\(self.nextEnvelopeSequence, privacy: .public)"

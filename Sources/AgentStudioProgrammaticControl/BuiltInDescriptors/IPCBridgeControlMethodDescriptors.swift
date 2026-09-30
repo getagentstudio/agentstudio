@@ -128,7 +128,8 @@ package struct IPCBridgeControlMethodDescriptors: Sendable {
             dataScope: .bridgeContent,
             targetKinds: [.pane],
             owner: .bridgeCapability,
-            errors: Self.bridgeErrors
+            errors: Self.bridgeErrors,
+            agentEligibility: .notYetAllowed
         )
     }
 
@@ -175,22 +176,28 @@ package struct IPCBridgeControlMethodDescriptors: Sendable {
                 targetKinds: [.pane],
                 owner: .bridgeCapability,
                 semantics: .accepted,
-                errors: Self.bridgeErrors)
+                errors: Self.bridgeErrors,
+                agentEligibility: .notYetAllowed)
         )
     }
 
-    var erased: [IPCAnyMethodDescriptor] {
+    var descriptorRepresentations: [any IPCMethodDescriptorRepresentation] {
         get throws {
-            try [
-                IPCAnyMethodDescriptor(erasing: bridgeDiffScrollToFile),
-                IPCAnyMethodDescriptor(erasing: bridgeDiffExpandFile),
-                IPCAnyMethodDescriptor(erasing: bridgeDiffCollapseFile),
-                IPCAnyMethodDescriptor(erasing: bridgeFileTreeSearch),
-                IPCAnyMethodDescriptor(erasing: bridgeFileTreeSetFilter),
-                IPCAnyMethodDescriptor(erasing: bridgeFileTreeRevealPath),
-                IPCAnyMethodDescriptor(erasing: bridgeFileViewGetContent),
-                IPCAnyMethodDescriptor(erasing: bridgeFileViewShowMarkdownPreview),
+            let representations: [any IPCMethodDescriptorRepresentation] = try [
+                IPCMethodDescriptorRepresentations(typedDescriptor: bridgeDiffScrollToFile),
+                IPCMethodDescriptorRepresentations(typedDescriptor: bridgeDiffExpandFile),
+                IPCMethodDescriptorRepresentations(typedDescriptor: bridgeDiffCollapseFile),
+                IPCMethodDescriptorRepresentations(typedDescriptor: bridgeFileTreeSearch),
+                IPCMethodDescriptorRepresentations(typedDescriptor: bridgeFileTreeSetFilter),
+                IPCMethodDescriptorRepresentations(typedDescriptor: bridgeFileTreeRevealPath),
+                IPCMethodDescriptorRepresentations(typedDescriptor: bridgeFileViewGetContent),
+                IPCMethodDescriptorRepresentations(typedDescriptor: bridgeFileViewShowMarkdownPreview),
             ]
+            return representations
         }
+    }
+
+    var erased: [IPCAnyMethodDescriptor] {
+        get throws { try descriptorRepresentations.map(\.erasedDescriptor) }
     }
 }

@@ -20,6 +20,7 @@ import {
   verifyChapterTitleAnchors,
   verifyCaptionTextLayout,
 } from "./tests/chapter-surface-browser-command.ts";
+import { verifyHeroEyebrowSettle } from "./tests/hero-eyebrow-settle-browser-command.ts";
 import {
   verifyHeroIntroLayout,
   verifyHeroNoScriptWidth,
@@ -41,6 +42,12 @@ import {
 import { verifySiteHeaderScrollStability } from "./tests/site-header-browser-command.ts";
 import { verifyFinaleBookend, verifyTopologyEnd } from "./tests/topology-end-browser-command.ts";
 import { verifyTopologyNodeVocabulary } from "./tests/topology-node-vocabulary-browser-command.ts";
+import { verifySkipToContent } from "./tests/website-access-browser-command.ts";
+import {
+  verifyDeferredProofVideo,
+  verifyHeroProofImage,
+  verifyCaptureDelivery,
+} from "./tests/website-loading-browser-command.ts";
 import { verifyWebsiteQualityLayout } from "./tests/website-quality-browser-command.ts";
 
 export function selectChromeLaunchOptions(
@@ -74,6 +81,10 @@ export default defineConfig({
           include: ["tests/**/*.browser.test.ts"],
           browser: {
             commands: {
+              verifySkipToContent,
+              verifyDeferredProofVideo,
+              verifyHeroProofImage,
+              verifyCaptureDelivery,
               verifyChapterActivity,
               verifyStepLineJoins,
               buildSceneBundlesForBrowserTest,
@@ -93,6 +104,7 @@ export default defineConfig({
               verifyHeroScrollCue,
               verifyHeroPhoneMidIntro,
               verifyHeroIntroFinale,
+              verifyHeroEyebrowSettle,
               verifyHeroWorkspace,
               verifyInstallCommandLayout,
               verifyChapterStepRow,

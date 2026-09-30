@@ -220,7 +220,8 @@ struct AgentStudioIPCLayoutAdapterTests {
         let workspaceActionExecutor = RecordingIPCLayoutActionExecutor()
         let harness = LayoutAdapterHarness(store: store, workspaceActionExecutor: workspaceActionExecutor)
 
-        let result = try await harness.adapter.closePane(IPCPaneCloseParams(handle: "pane:2", correlationId: nil))
+        let result = try await harness.adapter.closePane(
+            IPCPaneCloseParams(handle: "pane:2", correlationId: nil), ownPaneAssertion: nil)
 
         #expect(result.paneId == secondPane.id)
         #expect(workspaceActionExecutor.actions == [.closePane(tabId: tab.id, paneId: secondPane.id)])
@@ -236,20 +237,49 @@ struct AgentStudioIPCLayoutAdapterTests {
         let workspaceActionExecutor = RecordingIPCLayoutActionExecutor()
         let harness = LayoutAdapterHarness(store: store, workspaceActionExecutor: workspaceActionExecutor)
 
-        let addResult = try await harness.adapter.addDrawerPane(
-            IPCDrawerAddPaneParams(parentPaneHandle: "pane:1", correlationId: nil)
-        )
+        // The recording seam creates nothing, so the adapter's check that the
+        // named child exists refuses to report a pane it cannot find.
+        await #expect(throws: AppIPCLayoutError(reason: .validationRejected)) {
+            _ = try await harness.adapter.addDrawerPane(
+                IPCDrawerAddPaneParams(parentPaneHandle: "pane:1", correlationId: nil), ownPaneAssertion: nil
+            )
+        }
         let toggleResult = try await harness.adapter.toggleDrawer(
             IPCDrawerToggleParams(parentPaneHandle: "pane:1", correlationId: nil)
         )
 
-        #expect(addResult.parentPaneId == parentPane.id)
         #expect(toggleResult.parentPaneId == parentPane.id)
-        #expect(
-            workspaceActionExecutor.actions == [
-                .addDrawerPane(parentPaneId: parentPane.id),
-                .toggleDrawer(paneId: parentPane.id),
-            ])
+        #expect(workspaceActionExecutor.actions.count == 2)
+        guard
+            case .addDrawerChildInBackground(parentPane.id, _, .terminal)? = workspaceActionExecutor.actions.first
+        else {
+            Issue.record("drawer.addPane must create its child in the background")
+            return
+        }
+        #expect(workspaceActionExecutor.actions.last == .toggleDrawer(paneId: parentPane.id))
+    }
+
+    @Test("drawer.addPane refuses Bridge, code-viewer and non-web browser content before creating a pane")
+    func drawerAddPaneRefusesDisallowedContent() async throws {
+        let store = makeIPCLayoutWorkspaceStore()
+        let parentPane = store.createPane(title: "Parent")
+        let tab = makeTab(paneIds: [parentPane.id], activePaneId: parentPane.id)
+        store.appendTab(tab)
+        store.setActiveTab(tab.id)
+        let workspaceActionExecutor = RecordingIPCLayoutActionExecutor()
+        let harness = LayoutAdapterHarness(store: store, workspaceActionExecutor: workspaceActionExecutor)
+
+        for content in [
+            IPCDrawerChildContent.bridge, .codeViewer, .browser(url: "file:///tmp/x"), .browser(url: "about:blank"),
+        ] {
+            await #expect(throws: AppIPCLayoutError(reason: .validationRejected), "\(content)") {
+                _ = try await harness.adapter.addDrawerPane(
+                    IPCDrawerAddPaneParams(parentPaneHandle: "pane:1", content: content, correlationId: nil),
+                    ownPaneAssertion: nil
+                )
+            }
+        }
+        #expect(workspaceActionExecutor.actions.isEmpty)
     }
 
     @Test("drawer methods reject drawer child handles as parents")
@@ -269,7 +299,7 @@ struct AgentStudioIPCLayoutAdapterTests {
 
         do {
             _ = try await harness.adapter.addDrawerPane(
-                IPCDrawerAddPaneParams(parentPaneHandle: "pane:2", correlationId: nil)
+                IPCDrawerAddPaneParams(parentPaneHandle: "pane:2", correlationId: nil), ownPaneAssertion: nil
             )
             Issue.record("drawer.addPane unexpectedly accepted a drawer child as parent")
         } catch let error as AppIPCLayoutError {
@@ -469,11 +499,13 @@ struct AgentStudioIPCLayoutAdapterTests {
             #expect(splitFacets.cwd?.standardizedFileURL.path == worktree.path.standardizedFileURL.path)
 
             let panesBeforeDrawerAdd = harness.store.paneAtom.graphAtom.paneIDs
-            _ = try await adapter.addDrawerPane(
-                IPCDrawerAddPaneParams(parentPaneHandle: "pane:1", correlationId: nil)
+            let added = try await adapter.addDrawerPane(
+                IPCDrawerAddPaneParams(parentPaneHandle: "pane:1", correlationId: nil), ownPaneAssertion: nil
             )
             let drawerPaneIds = harness.store.paneAtom.graphAtom.paneIDs.subtracting(panesBeforeDrawerAdd)
             let drawerPaneId = try #require(drawerPaneIds.first)
+            #expect(drawerPaneIds == [added.childPaneId])
+            #expect(added.childHandle == drawerPaneId.uuidString)
 
             #expect(harness.store.paneAtom.pane(drawerPaneId)?.isDrawerChild == true)
             #expect(harness.viewRegistry.view(for: drawerPaneId) != nil)
@@ -593,6 +625,14 @@ private final class RecordingIPCLayoutActionExecutor: AgentStudioIPCLayoutAction
     func execute(_ action: WorkspaceActionCommand) -> Bool {
         actions.append(action)
         return accepted
+    }
+
+    func execute(
+        _ action: WorkspaceActionCommand,
+        ownPaneAssertion _: WorkspaceOwnPaneAssertion
+    ) -> WorkspaceScopedActionOutcome {
+        actions.append(action)
+        return accepted ? .applied : .rejected
     }
 }
 

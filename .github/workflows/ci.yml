@@ -539,6 +539,7 @@ jobs:
         run: echo "epoch=$(date +%s)" >> "$GITHUB_OUTPUT"
 
       - name: Prebuild Swift test bundles
+        id: swift-prebuild
         env:
           SWIFT_TEST_TIMEOUT_SECONDS: "600"
           SWIFT_TEST_PREBUILD_TIMEOUT_SECONDS: "1200"
@@ -551,32 +552,10 @@ jobs:
           echo "build_seconds=$build_seconds" >> "$GITHUB_OUTPUT"
           echo "lane-report swift_cache_build_seconds=$build_seconds"
 
-      - name: Test fast lane
-        env:
-          SWIFT_TEST_SKIP_PREBUILD: "1"
-          SWIFT_TEST_TIMEOUT_SECONDS: "600"
-          _XCB_BYPASS: "1"
-        run: mise run --skip-deps --raw test:swift:fast
-
-      - name: Test large lane
-        env:
-          SWIFT_TEST_SKIP_PREBUILD: "1"
-          SWIFT_TEST_TIMEOUT_SECONDS: "600"
-          _XCB_BYPASS: "1"
-        run: mise run --skip-deps --raw test:swift:large
-
-      - name: Test WebKit lane
-        env:
-          # WebKit teardown can crash swiftpm-testing-helper after assertions pass;
-          # this lane isolates real WebKit runtime suites, one process each. A crash
-          # fails the lane and the receipt names the suite and signal; it is never retried.
-          SWIFT_TEST_SKIP_PREBUILD: "1"
-          SWIFT_TEST_TIMEOUT_SECONDS: "600"
-          XCB_EXTRA_ARGS: "--renderer github-actions"
-        run: mise run --skip-deps test:swift:webkit
-
-      - name: Inventory main Swift inputs after lanes
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+      # Publish the completed prebuild before tests can write to its build path.
+      # The verified input manifest establishes reuse; test outcomes do not.
+      - name: Inventory main Swift inputs after prebuild
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.swift-prebuild.outcome == 'success'
         id: swift-cache-inventory-after
         env:
           CI_SWIFT_BUILD_PATH: .build-ci
@@ -589,6 +568,9 @@ jobs:
           after="$(python3 -c 'import json; value=json.load(open("tmp/plan-workflows/ci-runs/swift-inputs-after.json")); print(value["manifest_digest"], value["fingerprint"])')"
           if [ "$before" = "$after" ]; then
             echo "unchanged=true" >> "$GITHUB_OUTPUT"
+            echo "lane-report swift_cache_seed_commit=${{ github.sha }}"
+            echo "lane-report swift_cache_tested_tree=${{ github.sha }}"
+            echo "lane-report swift_cache_changed_swift_inputs=0"
           else
             echo "unchanged=false" >> "$GITHUB_OUTPUT"
             echo "Swift inputs changed during main build; seed publication disabled"
@@ -627,13 +609,37 @@ jobs:
         if: always() && github.event_name == 'push' && github.ref == 'refs/heads/main'
         id: swift-cache-final
         run: |
-          planned="${{ steps.swift-publish-plan.outputs.disposition }}"
+          planned="${{ steps.swift-publish-plan.outputs.disposition || 'failed' }}"
           if [[ "$planned" == saved\ * ]] && [ "${{ steps.swift-cache-save.outcome }}" != success ]; then
             planned=failed
           fi
           echo "disposition=${planned%% *}" >> "$GITHUB_OUTPUT"
           echo "key=${{ steps.swift-publish-plan.outputs.key }}" >> "$GITHUB_OUTPUT"
           echo "Swift cache publication: $planned"
+
+      - name: Test fast lane
+        env:
+          SWIFT_TEST_SKIP_PREBUILD: "1"
+          SWIFT_TEST_TIMEOUT_SECONDS: "600"
+          _XCB_BYPASS: "1"
+        run: mise run --skip-deps --raw test:swift:fast
+
+      - name: Test large lane
+        env:
+          SWIFT_TEST_SKIP_PREBUILD: "1"
+          SWIFT_TEST_TIMEOUT_SECONDS: "600"
+          _XCB_BYPASS: "1"
+        run: mise run --skip-deps --raw test:swift:large
+
+      - name: Test WebKit lane
+        env:
+          # WebKit teardown can crash swiftpm-testing-helper after assertions pass;
+          # this lane isolates real WebKit runtime suites, one process each. A crash
+          # fails the lane and the receipt names the suite and signal; it is never retried.
+          SWIFT_TEST_SKIP_PREBUILD: "1"
+          SWIFT_TEST_TIMEOUT_SECONDS: "600"
+          XCB_EXTRA_ARGS: "--renderer github-actions"
+        run: mise run --skip-deps test:swift:webkit
 
       - name: Verify release-script contract
         run: mise run lint:release-scripts
@@ -712,7 +718,7 @@ jobs:
 
   prune-swift-build-cache:
     name: Prune Swift build cache
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && (needs.swift-test-suite.outputs.swift_cache_disposition == 'saved' || needs.swift-test-suite.outputs.swift_cache_disposition == 'skipped-budget')
+    if: always() && github.event_name == 'push' && github.ref == 'refs/heads/main' && (needs.swift-test-suite.outputs.swift_cache_disposition == 'saved' || needs.swift-test-suite.outputs.swift_cache_disposition == 'skipped-budget')
     needs: swift-test-suite
     runs-on: ubuntu-24.04
     permissions:

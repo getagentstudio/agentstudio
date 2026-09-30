@@ -46,7 +46,7 @@ struct AppIPCDebugCredentialEscrowTests {
 
         #expect(try await loginSucceeds(socketPath: harness.socketPath, token: escrow.token))
 
-        harness.tearDown()
+        await harness.tearDown()
 
         #expect(!FileManager.default.fileExists(atPath: escrowURL.path))
         await #expect(throws: (any Error).self) {
@@ -57,17 +57,21 @@ struct AppIPCDebugCredentialEscrowTests {
     @Test("a debug app without an escrow path writes no credential file")
     func debugServerWithoutEscrowPathPublishesNothing() async throws {
         let harness = try await SessionsVerticalHarness.make()
-        defer { harness.tearDown() }
-
-        #expect(harness.appDelegate.appIPCDebugCredentialEscrowURL == nil)
-        let ipcDirectoryEntries = try FileManager.default.contentsOfDirectory(
-            atPath: harness.appDelegate.appIPCPaths.ipcDirectory.path
-        )
-        #expect(
-            ipcDirectoryEntries.allSatisfy {
-                ["agentstudio.sock", "runtime.json", "spool"].contains($0)
-            }
-        )
+        do {
+            #expect(harness.appDelegate.appIPCDebugCredentialEscrowURL == nil)
+            let ipcDirectoryEntries = try FileManager.default.contentsOfDirectory(
+                atPath: harness.appDelegate.appIPCPaths.ipcDirectory.path
+            )
+            #expect(
+                ipcDirectoryEntries.allSatisfy {
+                    ["agentstudio.sock", "runtime.json", "spool"].contains($0)
+                }
+            )
+        } catch {
+            await harness.tearDown()
+            throw error
+        }
+        await harness.tearDown()
     }
 
     private func loginSucceeds(socketPath: String, token: String) async throws -> Bool {

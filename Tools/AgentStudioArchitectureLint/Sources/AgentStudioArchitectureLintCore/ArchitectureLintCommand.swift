@@ -7,6 +7,11 @@ import Foundation
 #endif
 
 public struct ArchitectureLintCommand {
+    private static let specializedRuleIDByLedgerFilename: [String: String] = [
+        "forbidden-test-wait-ledger.tsv": "agentstudio_no_forbidden_test_wait",
+        "adhoc-continuation-wait-ledger.tsv": "agentstudio_no_adhoc_continuation_wait",
+    ]
+
     private let fileManager: FileManager
     private let standardOutput: FileHandle
     private let standardError: FileHandle
@@ -119,18 +124,26 @@ public struct ArchitectureLintCommand {
         guard !arguments.ledgerPaths.isEmpty else { return run.siteDiagnostics }
         let ledgers = try arguments.ledgerPaths.map(loadLedger)
         try validateLedgerOwnership(ledgers)
+        let specializedRuleIDs = Set(
+            ledgers.compactMap { Self.specializedRuleID(forLedgerPath: $0.sourcePath) }
+        )
+        let allRuleIDs = Set(rules.map(\.id) + documentRules.map(\.id))
         let ownedRules = Set(
             ledgers.flatMap { ledger in
-                ledger.sourcePath.hasSuffix("forbidden-test-wait-ledger.tsv")
-                    ? ["agentstudio_no_forbidden_test_wait"]
-                    : (rules.map(\.id) + documentRules.map(\.id)).filter { $0 != "agentstudio_no_forbidden_test_wait" }
+                if let specializedRuleID = Self.specializedRuleID(forLedgerPath: ledger.sourcePath) {
+                    return [specializedRuleID]
+                }
+                return allRuleIDs.filter { !specializedRuleIDs.contains($0) }
             })
         var diagnostics = run.siteDiagnostics.filter { !ownedRules.contains($0.ruleID) }
 
         for var ledger in ledgers {
-            let isForbiddenLedger = ledger.sourcePath.hasSuffix("forbidden-test-wait-ledger.tsv")
+            let specializedRuleID = Self.specializedRuleID(forLedgerPath: ledger.sourcePath)
             let sites = run.siteDiagnostics.filter {
-                ($0.ruleID == "agentstudio_no_forbidden_test_wait") == isForbiddenLedger
+                if let specializedRuleID {
+                    return $0.ruleID == specializedRuleID
+                }
+                return !specializedRuleIDs.contains($0.ruleID)
             }
             let reconciliation = normalizedReconciliation(run: run, ledger: ledger)
             var outcome = reconciliation.reconcile(diagnostics: sites) { relativeWorkspacePath($0.path) }
@@ -173,7 +186,8 @@ public struct ArchitectureLintCommand {
 
     private func validateLedgerOwnership(_ ledgers: [ArchitectureDebtLedger]) throws {
         var seenKeys: Set<DebtLedgerKey> = []
-        var seenKinds: Set<Bool> = []
+        var seenKinds: Set<String> = []
+        let specializedRuleIDs = Set(Self.specializedRuleIDByLedgerFilename.values)
         for ledger in ledgers {
             for entry in ledger.entries {
                 guard seenKeys.insert(entry.key).inserted else {
@@ -185,21 +199,30 @@ public struct ArchitectureLintCommand {
             }
         }
         for ledger in ledgers {
-            let isForbiddenLedger = ledger.sourcePath.hasSuffix("forbidden-test-wait-ledger.tsv")
+            let specializedRuleID = Self.specializedRuleID(forLedgerPath: ledger.sourcePath)
             for entry in ledger.entries {
-                guard (entry.key.ruleID == "agentstudio_no_forbidden_test_wait") == isForbiddenLedger else {
+                let entryBelongsToLedger =
+                    specializedRuleID.map { $0 == entry.key.ruleID }
+                    ?? !specializedRuleIDs.contains(entry.key.ruleID)
+                guard entryBelongsToLedger else {
                     throw DebtLedgerError.malformed(
                         path: ledger.sourcePath, line: entry.line,
                         reason: "rule \(entry.key.ruleID) belongs in the other Swift debt ledger"
                     )
                 }
             }
-            guard seenKinds.insert(isForbiddenLedger).inserted else {
+            let ledgerKind = specializedRuleID ?? "general"
+            guard seenKinds.insert(ledgerKind).inserted else {
                 throw DebtLedgerError.malformed(
                     path: ledger.sourcePath, line: 1, reason: "a ledger for this rule family was already supplied"
                 )
             }
         }
+    }
+
+    private static func specializedRuleID(forLedgerPath path: String) -> String? {
+        let filename = URL(fileURLWithPath: path).lastPathComponent
+        return specializedRuleIDByLedgerFilename[filename]
     }
 
     /// A merge base without a ledger has nothing to ratchet against: the

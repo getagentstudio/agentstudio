@@ -58,7 +58,7 @@ struct IPCSessionModelInvocationTests {
         let generated = UUIDv7.generate()
         let invocation = try parse(["needs-you", "waiting on approval"], correlationId: generated)
         let parameters = try JSONDecoder().decode(
-            SessionReportInvocationEnvelope.self, from: invocation.normalizedParameters
+            SessionReportInvocationEnvelope.self, from: invocation.normalizedParameters.data
         )
 
         #expect(parameters.kind == "needsYou")
@@ -71,7 +71,7 @@ struct IPCSessionModelInvocationTests {
     func optionalAndRequiredScalarArgumentsAreEnforced() throws {
         let parameters = try JSONDecoder().decode(
             SessionReportInvocationEnvelope.self,
-            from: try parse(["needs-you"]).normalizedParameters
+            from: try parse(["needs-you"]).normalizedParameters.data
         )
         #expect(parameters.explanation == nil)
         #expect(parameters.kind == "needsYou")

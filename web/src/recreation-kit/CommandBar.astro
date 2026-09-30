@@ -10,9 +10,10 @@ interface Props {
   readonly scenePart?: string | undefined;
   readonly placeholderPart?: string | undefined;
   readonly queryPart?: string | undefined;
+  readonly shortcutPart?: string | undefined;
 }
 
-const { commandBar, settledPresence, scenePart, placeholderPart, queryPart } = Astro.props;
+const { commandBar, settledPresence, scenePart, placeholderPart, queryPart, shortcutPart } = Astro.props;
 const hasQuery = commandBar.query !== "";
 ---
 
@@ -27,6 +28,7 @@ const hasQuery = commandBar.query !== "";
     {commandBar.contextLabel}
   </div>
   <div class="kit-command-bar__search">
+    {commandBar.shortcutHint === undefined ? null : <kbd class="kit-command-bar__key kit-command-bar__shortcut" {...scenePartAttributes(shortcutPart)}>{commandBar.shortcutHint}</kbd>}
     <KitIcon name="search" />
     <span class="kit-command-bar__search-text">
       <span
@@ -56,9 +58,9 @@ const hasQuery = commandBar.query !== "";
                 {...scenePartAttributes(row.scenePart)}
               >
                 <div class="kit-command-bar__collapsible-inner">
-                  <div class="kit-command-bar__row" data-selected={row.selected ? "" : undefined}>
+                  <div class="kit-command-bar__row" data-selected={row.selected ? "" : undefined} data-has-subtitle={row.subtitle === undefined ? undefined : ""}>
                     <KitIcon name={row.icon} />
-                    <span class="kit-command-bar__label">{row.label}</span>
+                    <span class="kit-command-bar__row-copy"><span class="kit-command-bar__label">{row.label}</span>{row.subtitle === undefined ? null : <span class="kit-command-bar__subtitle">{row.subtitle}</span>}</span>
                     {row.meta === undefined ? null : (
                       <span class="kit-command-bar__meta" data-kit-phone="hidden">
                         {row.meta}
@@ -204,6 +206,9 @@ const hasQuery = commandBar.query !== "";
     font-weight: 500;
     text-overflow: ellipsis;
   }
+  .kit-command-bar__row-copy { display: flex; flex: 1 1 auto; flex-direction: column; min-width: 0; }
+  .kit-command-bar__row[data-has-subtitle] { height: 3.6em; }
+  .kit-command-bar__subtitle { overflow: hidden; color: var(--kit-text-supporting); font-size: 0.85em; text-overflow: ellipsis; }
 
   .kit-command-bar__meta {
     flex: none;
@@ -252,6 +257,7 @@ const hasQuery = commandBar.query !== "";
     border-radius: 0.3em;
     background: rgb(255 255 255 / 8%);
   }
+  .kit-command-bar__shortcut { width: auto; min-width: 2em; padding: 0.1em 0.35em; border: 1px solid var(--kit-outline); font: inherit; font-size: 0.82em; color: var(--kit-text-supporting); }
 
   @container recreation-kit (max-width: 600px) {
     .kit-command-bar {

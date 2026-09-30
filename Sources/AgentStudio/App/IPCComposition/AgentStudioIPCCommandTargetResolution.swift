@@ -9,6 +9,9 @@ struct AgentStudioIPCResolvedCommandTargets: Sendable {
     let arguments: IPCCommandArguments
     let handle: IPCHandle?
     let target: IPCTargetScope
+    /// Every pane identity the arguments name, so pane-agent admission checks
+    /// each one rather than only the permission target.
+    let paneIds: [UUID]
 }
 
 /// Turns friendly typed command arguments into canonical stored identities.
@@ -43,7 +46,8 @@ struct AgentStudioIPCCommandTargetResolver {
         return AgentStudioIPCResolvedCommandTargets(
             arguments: canonical,
             handle: handle(for: canonical),
-            target: targetScope(for: canonical)
+            target: targetScope(for: canonical),
+            paneIds: paneIdentities(in: canonical)
         )
     }
 

@@ -19,8 +19,13 @@ struct BridgeHeadlessManifestVerifierScriptTests {
         #expect(source.contains("source \"$PROJECT_ROOT/scripts/swift-build-slot.sh\""))
         #expect(source.contains("swift_build_slot_acquire test \"verify-bridge-headless-manifest\""))
         #expect(source.contains("trap swift_build_slot_release EXIT"))
-        #expect(source.contains("swift build --build-path \"$SWIFT_BUILD_DIR\" --build-tests"))
-        #expect(source.contains("swift test --build-path \"$SWIFT_BUILD_DIR\" --skip-build --filter \"$TEST_FILTER\""))
+        #expect(
+            source.contains(
+                "swift build $(swift_package_sandbox_arguments) --build-path \"$SWIFT_BUILD_DIR\" --build-tests"))
+        #expect(
+            source.contains(
+                "swift test $(swift_package_sandbox_arguments) --build-path \"$SWIFT_BUILD_DIR\" --skip-build --filter \"$TEST_FILTER\""
+            ))
         #expect(source.contains("expectedMetadataFileTotal"))
         #expect(source.contains("emittedMetadataFileTotal"))
         #expect(source.contains("missingExpectedFilePaths"))

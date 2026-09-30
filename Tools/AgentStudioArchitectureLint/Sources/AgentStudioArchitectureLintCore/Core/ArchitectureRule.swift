@@ -64,6 +64,7 @@ enum ArchitectureRuleRegistry {
         TestTaskSleepRule(),
         TestPollingWaitRule(),
         ForbiddenTestWaitRule(),
+        AdHocContinuationWaitRule(),
         TestBlockingWaitOffCooperativePoolRule(),
         TestElapsedTimeBudgetRule(),
         TestCoreAtomFallbackOwnershipRule(),

@@ -16,6 +16,7 @@ package enum IPCMethodDescriptorError: Error, Equatable, Sendable {
     case invalidModelSelectorValue(String)
     case modelSelectorsMustMatchOneAlternative
     case invalidOfflineEligibility
+    case agentEligibleMethodMustBeExposedOnAllChannels
 }
 
 package struct IPCMethodDescriptor<
@@ -40,6 +41,8 @@ package struct IPCMethodDescriptor<
     package let responseDelivery: IPCMethodResponseDelivery
     package let offlineEligibility: IPCMethodOfflineEligibility
     package let modelCalls: [IPCModelCallProjection]
+    /// `nil` keeps the established Agent IPC v2 admission for pane agents.
+    package let agentEligibility: IPCAgentEligibility?
 
     package init(
         name: String,
@@ -58,7 +61,8 @@ package struct IPCMethodDescriptor<
         correlationPolicy: IPCCorrelationPolicy,
         responseDelivery: IPCMethodResponseDelivery = .single,
         offlineEligibility: IPCMethodOfflineEligibility = .never,
-        modelCalls: [IPCModelCallProjection] = []
+        modelCalls: [IPCModelCallProjection] = [],
+        agentEligibility: IPCAgentEligibility? = nil
     ) throws where Parameters: IPCSchemaProviding, Result: IPCSchemaProviding {
         try self.init(
             name: name,
@@ -79,7 +83,8 @@ package struct IPCMethodDescriptor<
             correlationPolicy: correlationPolicy,
             responseDelivery: responseDelivery,
             offlineEligibility: offlineEligibility,
-            modelCalls: modelCalls
+            modelCalls: modelCalls,
+            agentEligibility: agentEligibility
         )
     }
 
@@ -102,7 +107,8 @@ package struct IPCMethodDescriptor<
         correlationPolicy: IPCCorrelationPolicy,
         responseDelivery: IPCMethodResponseDelivery = .single,
         offlineEligibility: IPCMethodOfflineEligibility = .never,
-        modelCalls: [IPCModelCallProjection] = []
+        modelCalls: [IPCModelCallProjection] = [],
+        agentEligibility: IPCAgentEligibility? = nil
     ) throws {
         let contract = try IPCMethodContract<Parameters, Result>(
             parameterSchema: parameterSchema,
@@ -123,6 +129,10 @@ package struct IPCMethodDescriptor<
                 modelCalls: modelCalls
             )
         )
+
+        if agentEligibility?.requiresAllChannelExposure == true, exposure != .allChannels {
+            throw IPCMethodDescriptorError.agentEligibleMethodMustBeExposedOnAllChannels
+        }
 
         for example in examples {
             guard !example.description.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
@@ -149,6 +159,7 @@ package struct IPCMethodDescriptor<
         self.responseDelivery = responseDelivery
         self.offlineEligibility = offlineEligibility
         self.modelCalls = modelCalls
+        self.agentEligibility = agentEligibility
     }
 
     package func decodeParameters(from data: Data) throws -> Parameters {
@@ -179,7 +190,8 @@ package struct IPCMethodDescriptor<
             correlationPolicy: correlationPolicy,
             responseDelivery: responseDelivery,
             offlineEligibility: offlineEligibility,
-            modelCalls: modelCalls
+            modelCalls: modelCalls,
+            agentEligibility: agentEligibility
         )
     }
 

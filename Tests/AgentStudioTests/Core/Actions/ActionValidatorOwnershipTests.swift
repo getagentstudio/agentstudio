@@ -122,6 +122,7 @@ struct WorkspaceCommandValidatorOwnershipTests {
         let tabId = UUID()
         let visiblePaneId = UUIDv7.generate()
         let hiddenParentPaneId = UUIDv7.generate()
+        let drawerChildPaneId = UUIDv7.generate()
         let snapshot = makeSnapshot(
             tabs: [
                 TabSnapshot(
@@ -130,15 +131,45 @@ struct WorkspaceCommandValidatorOwnershipTests {
                     ownedPaneIds: [visiblePaneId, hiddenParentPaneId],
                     activePaneId: visiblePaneId
                 )
-            ]
+            ],
+            drawerParentByPaneId: [drawerChildPaneId: hiddenParentPaneId]
         )
 
         let result = WorkspaceCommandValidator.validate(
-            .removeDrawerPane(parentPaneId: hiddenParentPaneId, drawerPaneId: UUIDv7.generate()),
+            .removeDrawerPane(parentPaneId: hiddenParentPaneId, drawerPaneId: drawerChildPaneId),
             state: snapshot
         )
 
         #expect((try? result.get()) != nil)
+    }
+
+    @Test
+    func removeDrawerPane_childOfAnotherParent_fails() {
+        let tabId = UUIDv7.generate()
+        let parentPaneId = UUIDv7.generate()
+        let siblingChildPaneId = UUIDv7.generate()
+        let drawerChildPaneId = UUIDv7.generate()
+        let snapshot = makeSnapshot(
+            tabs: [
+                TabSnapshot(
+                    id: tabId, visiblePaneIds: [parentPaneId], ownedPaneIds: [parentPaneId],
+                    activePaneId: parentPaneId)
+            ],
+            drawerParentByPaneId: [siblingChildPaneId: parentPaneId, drawerChildPaneId: parentPaneId]
+        )
+
+        // A sibling drawer child named as the parent owns a tab through its
+        // parent, but it is not the child's parent.
+        let result = WorkspaceCommandValidator.validate(
+            .removeDrawerPane(parentPaneId: siblingChildPaneId, drawerPaneId: drawerChildPaneId),
+            state: snapshot
+        )
+
+        guard case .failure(.paneNotFound(let refusedPaneId, _)) = result else {
+            Issue.record("expected the unrelated child to be refused")
+            return
+        }
+        #expect(refusedPaneId == drawerChildPaneId)
     }
 
     @Test

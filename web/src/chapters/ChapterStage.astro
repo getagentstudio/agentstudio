@@ -2,6 +2,7 @@
 import { Image } from "astro:assets";
 
 import MotionPlaybackToggle from "@/home-page/MotionPlaybackToggle.astro";
+import { createPhoneCaptureSources } from "@/home-page/capture-image-sources";
 import ScrollAutoplayVideo from "@/home-page/ScrollAutoplayVideo.astro";
 import { marketingCopy } from "@/marketing-copy";
 import type { SceneId } from "@/motion-scenes/scene-contract";
@@ -32,6 +33,8 @@ const sceneMarkupById = {
 
 const { chapter } = Astro.props;
 const { stage } = chapter;
+const phoneCaptureSources = stage.proofKind === "image"
+  ? await createPhoneCaptureSources(stage.proofPhoneImage) : undefined;
 const SceneMarkup = sceneMarkupById[stage.sceneId];
 const proofLayerAttributes = {
   [sceneProofAttribute]: stage.sceneId,
@@ -58,7 +61,8 @@ const sessionRestoreVideoAttributes =
         <picture class="block h-full w-full">
           <source
             media="(width < 38.75rem)"
-            srcset={stage.proofPhoneImage.src}
+            srcset={phoneCaptureSources}
+            sizes="calc(100vw - 72px)"
             width={stage.proofPhoneImage.width}
             height={stage.proofPhoneImage.height}
           />
@@ -68,6 +72,7 @@ const sessionRestoreVideoAttributes =
             widths={[720, 1080, 1440, 2160]}
             sizes="(width < 64rem) 100vw, 62vw"
             format="png"
+            quality={100}
             loading="lazy"
             decoding="async"
             class="block h-full w-full object-contain phone:object-cover phone:object-left-top"
@@ -77,6 +82,7 @@ const sessionRestoreVideoAttributes =
         <ScrollAutoplayVideo
           {...sessionRestoreVideoAttributes}
           autoplayOnScroll={false}
+          deferSource
           data-scene-proof-video
           accessibilityLabel={stage.proofLabel}
           fallbackText={marketingCopy.chapters.comeBack.sessionRestoreVideoFallback}

@@ -80,34 +80,39 @@ struct AgentStudioIPCCursorHookVerticalTests {
         let harness = try await SessionsVerticalHarness.make(
             additionalProviderProfiles: [.cursorCommandLine]
         )
-        defer { harness.tearDown() }
-        let paneId = harness.boundPaneId
+        do {
+            let paneId = harness.boundPaneId
 
-        // Act
-        let sessionStart = try await send("sessionStart", paneId: paneId, harness: harness)
-        let turnStart = try await send("beforeSubmitPrompt", paneId: paneId, harness: harness)
-        let tool = try await send("preToolUse", paneId: paneId, harness: harness)
-        let afterTool = try await harness.sessionQuery(paneId: paneId)
-        let turnDone = try await send("stop", paneId: paneId, harness: harness)
-        let afterStop = try await harness.sessionQuery(paneId: paneId)
-        let sessionEnd = try await send("sessionEnd", paneId: paneId, harness: harness)
-        let afterSessionEnd = try await harness.sessionQuery(paneId: paneId)
+            // Act
+            let sessionStart = try await send("sessionStart", paneId: paneId, harness: harness)
+            let turnStart = try await send("beforeSubmitPrompt", paneId: paneId, harness: harness)
+            let tool = try await send("preToolUse", paneId: paneId, harness: harness)
+            let afterTool = try await harness.sessionQuery(paneId: paneId)
+            let turnDone = try await send("stop", paneId: paneId, harness: harness)
+            let afterStop = try await harness.sessionQuery(paneId: paneId)
+            let sessionEnd = try await send("sessionEnd", paneId: paneId, harness: harness)
+            let afterSessionEnd = try await harness.sessionQuery(paneId: paneId)
 
-        // Assert
-        #expect(sessionStart.disposition == .admitted)
-        #expect(turnStart.disposition == .admitted)
-        #expect(tool.disposition == .admitted)
-        #expect(turnDone.disposition == .admitted)
-        #expect(sessionEnd.disposition == .admitted)
-        #expect(afterTool.sourceHealth == .live)
-        // Cursor reports nothing that asks the person for a decision, so a
-        // Cursor session never reaches needs-you from its hooks alone.
-        #expect(afterTool.state == .running)
-        #expect(afterStop.origin == .reported)
-        // `sessionEnd` retires the source generation itself rather than
-        // recording evidence against it, so the pane reports a source that has
-        // ended rather than one that is live with nothing arriving on it.
-        #expect(afterSessionEnd.sourceHealth == .ended)
+            // Assert
+            #expect(sessionStart.disposition == .admitted)
+            #expect(turnStart.disposition == .admitted)
+            #expect(tool.disposition == .admitted)
+            #expect(turnDone.disposition == .admitted)
+            #expect(sessionEnd.disposition == .admitted)
+            #expect(afterTool.sourceHealth == .live)
+            // Cursor reports nothing that asks the person for a decision, so a
+            // Cursor session never reaches needs-you from its hooks alone.
+            #expect(afterTool.state == .running)
+            #expect(afterStop.origin == .reported)
+            // `sessionEnd` retires the source generation itself rather than
+            // recording evidence against it, so the pane reports a source that has
+            // ended rather than one that is live with nothing arriving on it.
+            #expect(afterSessionEnd.sourceHealth == .ended)
+        } catch {
+            await harness.tearDown()
+            throw error
+        }
+        await harness.tearDown()
     }
 
     @Test("Turn done lands against the turn that turn start opened")
@@ -137,31 +142,36 @@ struct AgentStudioIPCCursorHookVerticalTests {
         let harness = try await SessionsVerticalHarness.make(
             additionalProviderProfiles: [.cursorCommandLine]
         )
-        defer { harness.tearDown() }
-        let paneId = harness.boundPaneId
-        _ = try await send("sessionStart", paneId: paneId, harness: harness)
-        _ = try await send("beforeSubmitPrompt", paneId: paneId, harness: harness)
-        let first = try await send("preToolUse", paneId: paneId, harness: harness)
+        do {
+            let paneId = harness.boundPaneId
+            _ = try await send("sessionStart", paneId: paneId, harness: harness)
+            _ = try await send("beforeSubmitPrompt", paneId: paneId, harness: harness)
+            let first = try await send("preToolUse", paneId: paneId, harness: harness)
 
-        // Act
-        let replay = try await harness.response(
-            method: "session.event",
-            params: try JSONDecoder().decode(
-                JSONValue.self,
-                from: try JSONEncoder().encode(Self.addressed("preToolUse", to: paneId))
+            // Act
+            let replay = try await harness.response(
+                method: "session.event",
+                params: try JSONDecoder().decode(
+                    JSONValue.self,
+                    from: try JSONEncoder().encode(Self.addressed("preToolUse", to: paneId))
+                )
             )
-        )
 
-        // Assert
-        #expect(first.disposition == .admitted)
-        #expect(
-            replay.error?.data
-                == .object([
-                    "reason": .string("correlationConflict"),
-                    "fieldPath": .string("$.correlationId"),
-                ])
-        )
-        #expect(try await harness.sessionQuery(paneId: paneId).state == .running)
+            // Assert
+            #expect(first.disposition == .admitted)
+            #expect(
+                replay.error?.data
+                    == .object([
+                        "reason": .string("correlationConflict"),
+                        "fieldPath": .string("$.correlationId"),
+                    ])
+            )
+            #expect(try await harness.sessionQuery(paneId: paneId).state == .running)
+        } catch {
+            await harness.tearDown()
+            throw error
+        }
+        await harness.tearDown()
     }
 
     @Test("Another Cursor release is refused rather than admitted as qualified")
@@ -170,28 +180,33 @@ struct AgentStudioIPCCursorHookVerticalTests {
         let harness = try await SessionsVerticalHarness.make(
             additionalProviderProfiles: [.cursorCommandLine]
         )
-        defer { harness.tearDown() }
-        let projected = try Self.projectedParams("sessionStart")
-        let upgraded = IPCSessionEventParams(
-            handle: harness.sparePaneId.uuidString,
-            provider: IPCSessionProviderIdentity(
-                identifier: projected.provider.identifier,
-                version: "2099.01.01-ffffff0",
-                mode: projected.provider.mode
-            ),
-            event: projected.event,
-            correlationId: UUIDv7.generate()
-        )
+        do {
+            let projected = try Self.projectedParams("sessionStart")
+            let upgraded = IPCSessionEventParams(
+                handle: harness.sparePaneId.uuidString,
+                provider: IPCSessionProviderIdentity(
+                    identifier: projected.provider.identifier,
+                    version: "2099.01.01-ffffff0",
+                    mode: projected.provider.mode
+                ),
+                event: projected.event,
+                correlationId: UUIDv7.generate()
+            )
 
-        // Act
-        let result: IPCSessionEventResult = try await harness.decoded(
-            method: "session.event",
-            params: try JSONDecoder().decode(JSONValue.self, from: try JSONEncoder().encode(upgraded))
-        )
+            // Act
+            let result: IPCSessionEventResult = try await harness.decoded(
+                method: "session.event",
+                params: try JSONDecoder().decode(JSONValue.self, from: try JSONEncoder().encode(upgraded))
+            )
 
-        // Assert
-        #expect(result.disposition == .unknownCapability)
-        #expect(try await harness.sessionQuery(paneId: harness.sparePaneId).sourceHealth == .unbound)
+            // Assert
+            #expect(result.disposition == .unknownCapability)
+            #expect(try await harness.sessionQuery(paneId: harness.sparePaneId).sourceHealth == .unbound)
+        } catch {
+            await harness.tearDown()
+            throw error
+        }
+        await harness.tearDown()
     }
 
     @Test("The app's provider profile and the hook's reported identity agree")

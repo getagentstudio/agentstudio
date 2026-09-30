@@ -90,6 +90,8 @@
   overflow: hidden;
   color: var(--kit-text);
   font-family: var(--kit-font-ui);
+
+  --kit-annotation-border: rgb(255 255 255 / 14%);
   -webkit-font-smoothing: antialiased;
 }
 

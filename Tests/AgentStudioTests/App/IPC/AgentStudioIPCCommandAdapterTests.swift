@@ -12,15 +12,16 @@ import Testing
 @MainActor
 @Suite("AgentStudio IPC command adapter", .serialized)
 struct AgentStudioIPCCommandAdapterTests {
-    @Test("catalog exposes exactly the current 15 typed headless commands")
-    func catalogContainsCurrentHeadlessCommandsOnly() throws {
+    @Test("stable catalog exposes the all-channel headless commands and the agent own-pane set")
+    func catalogContainsCurrentHeadlessCommandsOnly() async throws {
         let harness = CommandAdapterHarness()
-        let catalog = try harness.adapter.listCommands()
+        let catalog = try await makeIPCCommandCatalogOffMain(from: harness.adapter)
         let ids = Set(catalog.commands.map(\.id.rawValue))
 
         #expect(catalog.compatibility == .current)
-        #expect(catalog.commands.count == 16)
+        #expect(catalog.commands.count == 24)
         #expect(ids.contains(AppCommand.zoomPane.rawValue))
+        #expect(ids.contains(AppCommand.closeDrawerPane.rawValue))
         #expect(ids.contains(AppCommand.reloadBridgeWebView.rawValue))
         #expect(ids.contains(AppCommand.showReposSidebar.rawValue))
         #expect(ids.contains(AppCommand.pinRepo.rawValue))
@@ -38,6 +39,14 @@ struct AgentStudioIPCCommandAdapterTests {
         #expect(reload.requiredPrivileges == [.appCommandExecute, .workspaceRead])
     }
 
+    @Test("descriptor catalog composition has a sendable nonisolated builder type")
+    func commandDescriptorCompositionBuilderIsNonisolated() {
+        let buildDescriptorCatalog:
+            @Sendable (AppIPCDescriptorCatalogBuildInputs) async throws -> AppIPCDescriptorCatalogBuildResult =
+                AppIPCDescriptorCatalogBuilder.buildOffMain
+        _ = buildDescriptorCatalog
+    }
+
     @Test("retired Panes organization commands remain unavailable without reaching an owner")
     func retiredPanesOrganizationCommandsRemainUnavailable() async throws {
         let shell = RecordingShellCommandHandler()
@@ -52,7 +61,7 @@ struct AgentStudioIPCCommandAdapterTests {
                         commandId: .init(rawValue: command.rawValue),
                         correlationId: UUIDv7.generate(),
                         arguments: .workspaceWindow(.init(workspaceWindowId: harness.windowId))
-                    )
+                    ), ownPaneAssertion: nil
                 )
                 Issue.record("Retired Panes organization command unexpectedly executed")
             } catch let error as AppIPCCommandError {
@@ -78,7 +87,7 @@ struct AgentStudioIPCCommandAdapterTests {
                 AppCommandDispatcher.shared.appCommandRouter = shell
             },
             body: {
-                try await harness.adapter.executeCommand(request)
+                try await harness.adapter.executeCommand(request, ownPaneAssertion: nil)
             }
         )
 
@@ -148,7 +157,7 @@ struct AgentStudioIPCCommandAdapterTests {
                 AppCommandDispatcher.shared.appCommandRouter = nil
             },
             body: {
-                try await harness.adapter.executeCommand(request)
+                try await harness.adapter.executeCommand(request, ownPaneAssertion: nil)
             }
         )
 
@@ -179,7 +188,7 @@ struct AgentStudioIPCCommandAdapterTests {
 
         #expect(historicalLifecycle.registeredWindowIds.contains(historicalWindowId))
         await #expect(throws: AppIPCCommandError.self) {
-            try await harness.adapter.executeCommand(request)
+            try await harness.adapter.executeCommand(request, ownPaneAssertion: nil)
         }
         #expect(shell.handledRequests.isEmpty)
     }
@@ -209,7 +218,7 @@ struct AgentStudioIPCCommandAdapterTests {
         shell.currentWindowId = replacementWindowId
 
         await #expect(throws: AppIPCCommandError.self) {
-            try await harness.adapter.executeCommand(prepared.request)
+            try await harness.adapter.executeCommand(prepared.request, ownPaneAssertion: nil)
         }
         #expect(shell.handledRequests.isEmpty)
     }
@@ -239,7 +248,7 @@ struct AgentStudioIPCCommandAdapterTests {
                     AppCommandDispatcher.shared.appCommandRouter = nil
                 },
                 body: {
-                    try await harness.adapter.executeCommand(request)
+                    try await harness.adapter.executeCommand(request, ownPaneAssertion: nil)
                 }
             )
         }
@@ -268,13 +277,10 @@ struct AgentStudioIPCCommandAdapterTests {
     }
 
     @Test("complete actual capabilities catalog fits the existing one MiB NDJSON frame")
-    func completeActualCapabilitiesCatalogFitsExistingFrame() throws {
+    func completeActualCapabilitiesCatalogFitsExistingFrame() async throws {
         let adapter = CommandAdapterHarness().adapter
-        let commandCatalog = try adapter.listCommands()
-        let commandComposition = try IPCCommandMethodComposition(
-            compatibility: .current,
-            commands: commandCatalog.commands
-        )
+        let commandComposition = try await makeIPCCommandCompositionOffMain(from: adapter)
+        let commandCatalog = commandComposition.catalogResult
         let builtIns = try IPCBuiltInMethodCatalog(
             inputs: IPCBuiltInMethodCatalogInputs(
                 terminalWaitMaximumSeconds: AppPolicies.IPC.maximumTerminalWaitSeconds,
@@ -304,7 +310,7 @@ struct AgentStudioIPCCommandAdapterTests {
         )
 
         #expect(builtIns.erasedDescriptors.count == 47)
-        #expect(commandCatalog.commands.count == 16)
+        #expect(commandCatalog.commands.count == 24)
         #expect(capabilities.result.methods.count == 50)
 
         let encodedCatalog = try capabilities.descriptor.encodeResult(capabilities.result)

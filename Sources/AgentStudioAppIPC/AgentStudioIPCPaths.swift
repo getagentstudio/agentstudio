@@ -86,6 +86,7 @@ public struct AgentStudioIPCFilesystemTrustError: Error, Equatable, Sendable {
         case symlinkNotAllowed
         case notOwnedByCurrentUser
         case groupOrWorldAccessible
+        case groupOrWorldWritable
         case directoryCreationFailed
         case metadataEncodingFailed
         case metadataWriteFailed
@@ -107,10 +108,18 @@ public struct AgentStudioIPCFilesystemTrustError: Error, Equatable, Sendable {
 
 public enum AgentStudioIPCFilesystem {
     public static func prepare(paths: AgentStudioIPCPaths) throws {
-        try validateTrustedExistingPath(paths.rootDirectory, requireDirectory: true)
+        try validateTrustedExistingPath(
+            paths.rootDirectory,
+            requireDirectory: true,
+            permissionPolicy: .dataRoot
+        )
 
         if FileManager.default.fileExists(atPath: paths.ipcDirectory.path) {
-            try validateTrustedExistingPath(paths.ipcDirectory, requireDirectory: true)
+            try validateTrustedExistingPath(
+                paths.ipcDirectory,
+                requireDirectory: true,
+                permissionPolicy: .ownerOnly
+            )
         } else {
             do {
                 try FileManager.default.createDirectory(at: paths.ipcDirectory, withIntermediateDirectories: false)
@@ -126,11 +135,19 @@ public enum AgentStudioIPCFilesystem {
             }
         }
 
-        try validateTrustedExistingPath(paths.ipcDirectory, requireDirectory: true)
+        try validateTrustedExistingPath(
+            paths.ipcDirectory,
+            requireDirectory: true,
+            permissionPolicy: .ownerOnly
+        )
 
         if paths.socketDirectory != paths.ipcDirectory {
             if FileManager.default.fileExists(atPath: paths.socketDirectory.path) {
-                try validateTrustedExistingPath(paths.socketDirectory, requireDirectory: true)
+                try validateTrustedExistingPath(
+                    paths.socketDirectory,
+                    requireDirectory: true,
+                    permissionPolicy: .ownerOnly
+                )
             } else {
                 do {
                     try FileManager.default.createDirectory(
@@ -147,12 +164,20 @@ public enum AgentStudioIPCFilesystem {
                 }
             }
 
-            try validateTrustedExistingPath(paths.socketDirectory, requireDirectory: true)
+            try validateTrustedExistingPath(
+                paths.socketDirectory,
+                requireDirectory: true,
+                permissionPolicy: .ownerOnly
+            )
         }
     }
 
     public static func writeMetadata(_ metadata: AgentStudioIPCRuntimeMetadata, paths: AgentStudioIPCPaths) throws {
-        try validateTrustedExistingPath(paths.ipcDirectory, requireDirectory: true)
+        try validateTrustedExistingPath(
+            paths.ipcDirectory,
+            requireDirectory: true,
+            permissionPolicy: .ownerOnly
+        )
 
         let encoder = JSONEncoder()
         encoder.dateEncodingStrategy = .iso8601
@@ -253,7 +278,16 @@ public enum AgentStudioIPCFilesystem {
         try? FileManager.default.removeItem(at: escrowURL)
     }
 
-    private static func validateTrustedExistingPath(_ url: URL, requireDirectory: Bool) throws {
+    private enum ExistingPathPermissionPolicy {
+        case dataRoot
+        case ownerOnly
+    }
+
+    private static func validateTrustedExistingPath(
+        _ url: URL,
+        requireDirectory: Bool,
+        permissionPolicy: ExistingPathPermissionPolicy
+    ) throws {
         #if canImport(Darwin)
             var statBuffer = stat()
             guard lstat(url.path, &statBuffer) == 0 else {
@@ -273,8 +307,15 @@ public enum AgentStudioIPCFilesystem {
                 throw AgentStudioIPCFilesystemTrustError(reason: .notOwnedByCurrentUser, path: url.path)
             }
 
-            guard (mode & 0o077) == 0 else {
-                throw AgentStudioIPCFilesystemTrustError(reason: .groupOrWorldAccessible, path: url.path)
+            switch permissionPolicy {
+            case .dataRoot:
+                guard (mode & 0o022) == 0 else {
+                    throw AgentStudioIPCFilesystemTrustError(reason: .groupOrWorldWritable, path: url.path)
+                }
+            case .ownerOnly:
+                guard (mode & 0o077) == 0 else {
+                    throw AgentStudioIPCFilesystemTrustError(reason: .groupOrWorldAccessible, path: url.path)
+                }
             }
         #else
             throw AgentStudioIPCFilesystemTrustError(reason: .unsupportedPlatform, path: url.path)

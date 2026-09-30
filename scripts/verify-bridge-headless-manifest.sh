@@ -310,10 +310,11 @@ if [ "$VALIDATE_ONLY" != "1" ]; then
     exit 1
   fi
   source "$PROJECT_ROOT/scripts/swift-build-slot.sh"
+  source "$PROJECT_ROOT/scripts/swift-package-sandbox.sh"
   swift_build_slot_acquire test "verify-bridge-headless-manifest"
   trap swift_build_slot_release EXIT
   bash "$PROJECT_ROOT/scripts/vendor-worktree.sh" verify
-  swift build --build-path "$SWIFT_BUILD_DIR" --build-tests
+  swift build $(swift_package_sandbox_arguments) --build-path "$SWIFT_BUILD_DIR" --build-tests
   PROJECT_ROOT="$PROJECT_ROOT" \
     AGENTSTUDIO_BRIDGE_HEADLESS_PROOF_DIR="$PROOF_ROOT" \
     AGENTSTUDIO_BRIDGE_HEADLESS_BENCHMARK_MODE=1 \
@@ -326,7 +327,7 @@ if [ "$VALIDATE_ONLY" != "1" ]; then
     OTEL_EXPORTER_OTLP_ENDPOINT="${OTEL_EXPORTER_OTLP_ENDPOINT:-http://127.0.0.1:4318}" \
     OTEL_EXPORTER_OTLP_PROTOCOL="${OTEL_EXPORTER_OTLP_PROTOCOL:-http/protobuf}" \
     SWIFT_TEST_TIMEOUT_SECONDS="$SWIFT_TIMEOUT" \
-    swift test --build-path "$SWIFT_BUILD_DIR" --skip-build --filter "$TEST_FILTER"
+    swift test $(swift_package_sandbox_arguments) --build-path "$SWIFT_BUILD_DIR" --skip-build --filter "$TEST_FILTER"
 fi
 
 ARTIFACT="$(artifact_path)"

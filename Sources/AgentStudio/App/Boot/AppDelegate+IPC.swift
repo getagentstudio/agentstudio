@@ -7,17 +7,59 @@ import CryptoKit
 import Foundation
 import Security
 
+/// Why optional App IPC did not start. Agent IPC v2 R-25 keeps IPC
+/// unavailable without retry when its release edges or optional work fail;
+/// `app.ipc.start` records which, so the unavailability is explicit.
+enum AppIPCStartUnavailability: String, Equatable, Sendable {
+    case firstFrameCancelled = "first_frame_cancelled"
+    case firstFrameTimeout = "first_frame_timeout"
+    case initializationCancelled = "initialization_cancelled"
+    case localStoreUnavailable = "local_store_unavailable"
+    case optionalSchemaUnavailable = "optional_schema_unavailable"
+    case sessionsIngestionFailed = "sessions_ingestion_failed"
+    case noActiveWindow = "no_active_window"
+    case ipcPathUntrusted = "ipc_path_untrusted"
+    case socketInUse = "socket_in_use"
+    case serverStartFailed = "server_start_failed"
+    case restoreBoundsUnavailable = "restore_bounds_unavailable"
+
+    /// Names the server-start failures the owner can act on; anything else
+    /// stays `server_start_failed`.
+    init(serverStartError error: any Error) {
+        switch error {
+        case let layoutError as AppIPCLayoutError where layoutError.reason == .noActiveWindow:
+            self = .noActiveWindow
+        case is AgentStudioIPCFilesystemTrustError:
+            self = .ipcPathUntrusted
+        case let serverError as AgentStudioAppIPCServerError where serverError.reason == .liveSocketAlreadyExists:
+            self = .socketInUse
+        default:
+            self = .serverStartFailed
+        }
+    }
+}
+
 @MainActor
 enum AppIPCDeferredInitialization {
+    /// Runs `initialization` after the first interactive frame. Returns why it
+    /// did not start or complete, or `nil` after normal completion.
+    @discardableResult
     static func run(
         windowLifecycleStore: WindowLifecycleAtom,
         initialization: @escaping @MainActor @Sendable () async -> Void
-    ) async {
-        guard await windowLifecycleStore.waitUntilFirstInteractiveFramePublished() == .completed else {
-            return
+    ) async -> AppIPCStartUnavailability? {
+        switch await windowLifecycleStore.waitUntilFirstInteractiveFramePublished() {
+        case .completed:
+            break
+        case .fallbackTimeout:
+            return .firstFrameTimeout
+        case .cancelled:
+            return .firstFrameCancelled
         }
-        guard !Task.isCancelled else { return }
+        guard !Task.isCancelled else { return .firstFrameCancelled }
         await initialization()
+        // Preserve cancellation that arrives during optional IPC initialization for the caller to record.
+        return Task.isCancelled ? .initializationCancelled : nil
     }
 
     static func prepareOptionalSchema(
@@ -95,51 +137,66 @@ extension AppDelegate {
         guard appIPCServer == nil, appIPCInitializationTask == nil else { return }
         let windowLifecycleStore = windowLifecycleStore!
         appIPCInitializationTask = Task { @MainActor [weak self] in
-            await AppIPCDeferredInitialization.run(
+            let unavailability = await AppIPCDeferredInitialization.run(
                 windowLifecycleStore: windowLifecycleStore
             ) { [weak self] in
                 await self?.startAppIPCServer()
             }
+            if let unavailability {
+                self?.recordAppIPCStart(unavailable: unavailability)
+            }
         }
+    }
+
+    /// Records `app.ipc.start`: started, or unavailable with its reason.
+    func recordAppIPCStart(unavailable reason: AppIPCStartUnavailability? = nil) {
+        guard !didRecordAppIPCStartOutcome else {
+            appLogger.warning("Ignoring duplicate app.ipc.start outcome")
+            return
+        }
+        didRecordAppIPCStartOutcome = true
+        startupTraceRecorder?.recordAppStartup(
+            "app.ipc.start",
+            phase: "app_ipc",
+            outcome: reason == nil ? "started" : "unavailable",
+            attributes: reason.map { ["agentstudio.app.ipc.start.reason": .string($0.rawValue)] } ?? [:]
+        )
     }
 
     func startAppIPCServer() async {
         guard appIPCServer == nil else { return }
         guard let workspaceSQLiteDatastore else {
             appLogger.warning("App IPC server skipped: local SQLite is unavailable")
+            recordAppIPCStart(unavailable: .localStoreUnavailable)
             return
         }
         guard await AppIPCDeferredInitialization.prepareOptionalSchema(using: workspaceSQLiteDatastore) else {
             appLogger.warning("App IPC server skipped: optional local schema is unavailable")
+            // A cancelled attempt is a shutdown, not an unavailable store.
+            if !Task.isCancelled { recordAppIPCStart(unavailable: .optionalSchemaUnavailable) }
             return
         }
         guard appIPCServer == nil else { return }
         guard let sessionsIngestion = await prepareAppIPCSessionsIngestion(datastore: workspaceSQLiteDatastore) else {
+            if !Task.isCancelled { recordAppIPCStart(unavailable: .sessionsIngestionFailed) }
             return
         }
 
         do {
-            let composition = try makeAppIPCServer(sessionsIngestion: sessionsIngestion)
+            guard let composition = try await makeAppIPCServer(sessionsIngestion: sessionsIngestion) else { return }
             try composition.server.start()
             appIPCServer = composition.server
             appLogger.info("App IPC server started at \(composition.socketURL.path, privacy: .private)")
             publishDebugCredentialEscrow(socketURL: composition.socketURL)
             startPaneReportSpoolDrain(sessionsIngestion: sessionsIngestion)
+            recordAppIPCStart()
         } catch {
             appLogger.warning(
                 "App IPC server failed to start: \(error.localizedDescription, privacy: .private)")
+            if !Task.isCancelled {
+                recordAppIPCStart(unavailable: AppIPCStartUnavailability(serverStartError: error))
+            }
         }
-    }
-
-    func stopAppIPCServer() {
-        appIPCInitializationTask?.cancel()
-        appIPCInitializationTask = nil
-        paneReportSpoolDrainTask?.cancel()
-        paneReportSpoolDrainTask = nil
-        retireDebugCredentialEscrow()
-        appIPCServer?.stop()
-        appIPCServer = nil
-        finishAppIPCSessionsIngestion()
     }
 
     /// Only a debug app whose launcher named an escrow file hands out a reusable
@@ -149,7 +206,7 @@ extension AppDelegate {
     /// leaves debug authentication unavailable; it never falls back to the
     /// separate unsafe no-auth composition.
     private func publishDebugCredentialEscrow(socketURL: URL) {
-        guard Self.appIPCChannel() == .debug,
+        guard Self.compiledAppIPCChannel() == .debug,
             let escrowURL = appIPCDebugCredentialEscrowURL
         else { return }
         var credentialBytes = Data(count: 32)
@@ -264,10 +321,10 @@ extension AppDelegate {
         return ingestion
     }
 
-    private func finishAppIPCSessionsIngestion() {
+    private func finishAppIPCSessionsIngestion() async {
         guard let ingestion = appIPCSessionsIngestion else { return }
         appIPCSessionsIngestion = nil
-        Task { await ingestion.finish() }
+        await ingestion.finish()
     }
 
     /// Ends IPC ingress and nothing else. No durable write happens here and
@@ -276,6 +333,9 @@ extension AppDelegate {
     /// mutate state the flush has already written. The escrow file only names
     /// the socket, so it is retired here too.
     func stopAcceptingAppIPCConnections() async {
+        if !launchRestoreObservationState.didComplete {
+            recordAppIPCStart(unavailable: .restoreBoundsUnavailable)
+        }
         let initializationTask = appIPCInitializationTask
         initializationTask?.cancel()
         await initializationTask?.value
@@ -287,19 +347,36 @@ extension AppDelegate {
     /// The durable half, which runs after the workspace flush. It writes
     /// through the same serialized workspace datastore actor the offline spool
     /// drain admits through, and that drain holds a file lock across admission,
-    /// so it is retired before this waits on anything.
+    /// so the spool drain is cancelled and joined before this waits on anything
+    /// else. In-flight connection handlers are joined next, before the
+    /// credential drain: a handler mid-request can still enqueue persistence
+    /// work (`auth.login`'s `schedulePersistence` call, for one), and the
+    /// drain only waits for what is already queued when it starts. Joining
+    /// first is what makes every handler-originated write visible to this
+    /// drain, not an afterthought to it.
+    ///
+    /// Requires `stopAcceptingAppIPCConnections()` to have already run:
+    /// `joinConnectionHandlers()`'s own precondition is that callers close
+    /// connections first, which is what unblocks a handler parked on the
+    /// socket. This does not re-call `stopAcceptingConnections()` as a
+    /// safety net — it queues new credential persistence via
+    /// `beginGracefulShutdownAndSnapshotUnsavedCredentials()`, and nothing
+    /// after this point drains it.
     func drainAppIPCCredentialPersistence() async {
-        paneReportSpoolDrainTask?.cancel()
+        let spoolDrainTask = paneReportSpoolDrainTask
+        spoolDrainTask?.cancel()
         paneReportSpoolDrainTask = nil
+        await spoolDrainTask?.value
         guard let server = appIPCServer else {
             appIPCPrincipalRegistry?.shutdown()
-            finishAppIPCSessionsIngestion()
+            await finishAppIPCSessionsIngestion()
             appLogger.info("App IPC shutdown completed without a published server or durable drain")
             return
         }
+        await server.joinConnectionHandlers()
         let result = await server.drainCredentialPersistence()
         appIPCServer = nil
-        finishAppIPCSessionsIngestion()
+        await finishAppIPCSessionsIngestion()
         if result.failedOperationCount > 0 {
             appLogger.warning(
                 "App IPC credential persistence drain completed with \(result.failedOperationCount) failures"
@@ -309,7 +386,7 @@ extension AppDelegate {
 
     private func makeAppIPCServer(
         sessionsIngestion: SessionsIngestion
-    ) throws -> (server: AgentStudioAppIPCServer, socketURL: URL) {
+    ) async throws -> (server: AgentStudioAppIPCServer, socketURL: URL)? {
         let runtimeId = appIPCRuntimeID!
         let accessMode = Self.appIPCAccessMode()
         let paths = appIPCPaths!
@@ -317,6 +394,13 @@ extension AppDelegate {
         guard mainWindowController?.acceptsIPCCommands == true else {
             throw AppIPCLayoutError(reason: .noActiveWindow)
         }
+        let commandPort = AgentStudioIPCCommandAdapter(
+            workspaceId: store.identityAtom.workspaceId,
+            channel: appIPCServerChannel,
+            targetAuthorizer: WorkspaceDurableTargetAuthorizationPort(workspaceStore: store),
+            shellCommandHandler: self
+        )
+        let commandCatalogProjectionInputs = commandPort.commandCatalogProjectionInputs()
         let ports = AgentStudioAppIPCPorts(
             queryPort: AgentStudioIPCQueryAdapter(
                 runtimeId: runtimeId,
@@ -341,12 +425,7 @@ extension AppDelegate {
                 viewRegistry: viewRegistry,
                 actionExecutor: executor
             ),
-            commandPort: AgentStudioIPCCommandAdapter(
-                workspaceId: store.identityAtom.workspaceId,
-                channel: Self.appIPCChannel(),
-                targetAuthorizer: WorkspaceDurableTargetAuthorizationPort(workspaceStore: store),
-                shellCommandHandler: self
-            ),
+            commandPort: commandPort,
             uiPresentationPort: AgentStudioIPCUIPresentationAdapter(
                 presenter: self,
                 targetAuthorizer: WorkspaceDurableTargetAuthorizationPort(workspaceStore: store)
@@ -362,22 +441,21 @@ extension AppDelegate {
                 ),
                 activityClock: paneActivityClock
             ),
-            permissionApprovalPort: AgentStudioIPCHumanApprovalPort()
+            permissionApprovalPort: AgentStudioIPCHumanApprovalPort(),
+            ownPaneScopePort: WorkspaceOwnPaneScopePort(
+                workspaceStore: store, performanceTraceRecorder: performanceTraceRecorder),
+            agentAuthorizationTelemetry: AgentStudioIPCAgentAuthorizationTelemetry(
+                performanceTraceRecorder: performanceTraceRecorder)
         )
         let eventBroker = IPCEventBroker()
-        let catalog = try Self.appIPCBuiltInMethodCatalog()
-        var registrations = try AppIPCBuiltInMethodRegistrations.make(
-            inputs: .init(catalog: catalog, runtimeId: runtimeId, ports: ports, eventBroker: eventBroker)
-        )
-        let commandComposition = try IPCCommandMethodComposition(
-            compatibility: .current,
-            commands: ports.commandPort.listCommands().commands
-        )
-        registrations += try AppIPCCommandMethodRegistrations.make(
-            composition: commandComposition,
-            port: ports.commandPort
-        )
-        let registry = try AppIPCMethodRegistry(registrations: registrations, channel: Self.appIPCChannel())
+        guard
+            let registry = try await makeAppIPCMethodRegistry(
+                runtimeId: runtimeId,
+                ports: ports,
+                eventBroker: eventBroker,
+                commandCatalogProjectionInputs: commandCatalogProjectionInputs
+            )
+        else { return nil }
         let service = AgentStudioAppIPCService(
             configuration: AgentStudioAppIPCConfiguration(runtimeId: runtimeId, accessMode: accessMode),
             ports: ports,
@@ -388,7 +466,7 @@ extension AppDelegate {
             AgentStudioAppIPCServer(
                 service: service,
                 paths: paths,
-                channel: Self.appIPCChannel(),
+                channel: appIPCServerChannel,
                 principalRegistry: appIPCPrincipalRegistry,
                 credentialContinuityPort: appIPCContinuityRepository
             ),
@@ -396,28 +474,66 @@ extension AppDelegate {
         )
     }
 
+    private func makeAppIPCMethodRegistry(
+        runtimeId: UUID,
+        ports: AgentStudioAppIPCPorts,
+        eventBroker: IPCEventBroker,
+        commandCatalogProjectionInputs: AppIPCCommandCatalogProjectionInputs
+    ) async throws -> AppIPCMethodRegistry? {
+        let channel = appIPCServerChannel
+        let recognizedCommands = commandCatalogProjectionInputs.recognizedCommands
+        let builderInputs = AppIPCDescriptorCatalogBuildInputs(
+            builtInCatalogInputs: Self.appIPCBuiltInMethodCatalogInputs(),
+            channel: channel,
+            commandCatalogProjectionInputs: commandCatalogProjectionInputs
+        )
+        let descriptorComposition = try await AppIPCDescriptorCatalogBuilder.buildOffMain(inputs: builderInputs)
+        // The deferred initializer reports cancellation after this closure returns.
+        guard !Task.isCancelled else { return nil }
+        guard appIPCServer == nil else { return nil }
+
+        var registrations = try AppIPCBuiltInMethodRegistrations.make(
+            inputs: .init(
+                catalog: descriptorComposition.builtInCatalog,
+                runtimeId: runtimeId,
+                ports: ports,
+                eventBroker: eventBroker
+            )
+        )
+        registrations += try AppIPCCommandMethodRegistrations.make(
+            composition: descriptorComposition.commandComposition,
+            port: ports.commandPort
+        )
+        return try AppIPCMethodRegistry(
+            registrations: registrations,
+            recognizedCommands: recognizedCommands,
+            channel: channel,
+            capabilitiesComposition: descriptorComposition.systemCapabilities
+        )
+    }
+
     private static func appIPCAppVersion() -> String {
         Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "dev"
     }
 
-    private static func appIPCBuiltInMethodCatalog() throws -> IPCBuiltInMethodCatalog {
-        try IPCBuiltInMethodCatalog(
-            inputs: .init(
-                terminalWaitMaximumSeconds: AppPolicies.IPC.maximumTerminalWaitSeconds,
-                relationships: .init(
-                    paneFocus: .appCommand(identifier: AppCommand.focusPane.rawValue),
-                    paneClose: .appCommand(identifier: AppCommand.closePane.rawValue),
-                    drawerToggle: .appCommand(identifier: AppCommand.toggleDrawer.rawValue),
-                    drawerAddPane: .appCommand(identifier: AppCommand.addDrawerPane.rawValue),
-                    bridgeDiffLoad: .appCommand(identifier: AppCommand.showBridgeReview.rawValue),
-                    bridgeFileViewOpen: .appCommand(identifier: AppCommand.showBridgeFiles.rawValue)
-                ),
-                examples: .init(illustrativeIdentifier: UUIDv7.generate())
-            )
+    private static func appIPCBuiltInMethodCatalogInputs() -> IPCBuiltInMethodCatalogInputs {
+        IPCBuiltInMethodCatalogInputs(
+            terminalWaitMaximumSeconds: AppPolicies.IPC.maximumTerminalWaitSeconds,
+            relationships: IPCBuiltInMethodRelationshipInputs(
+                paneFocus: .appCommand(identifier: AppCommand.focusPane.rawValue),
+                paneClose: .appCommand(identifier: AppCommand.closePane.rawValue),
+                drawerToggle: .appCommand(identifier: AppCommand.toggleDrawer.rawValue),
+                drawerAddPane: .appCommand(identifier: AppCommand.addDrawerPane.rawValue),
+                bridgeDiffLoad: .appCommand(identifier: AppCommand.showBridgeReview.rawValue),
+                bridgeFileViewOpen: .appCommand(identifier: AppCommand.showBridgeFiles.rawValue)
+            ),
+            examples: .init(illustrativeIdentifier: UUIDv7.generate())
         )
     }
 
-    private static func appIPCChannel() -> AgentStudioIPCChannel {
+    /// The channel this build serves. Composition reads `appIPCServerChannel`,
+    /// which starts from this value.
+    static func compiledAppIPCChannel() -> AgentStudioIPCChannel {
         #if DEBUG
             return .debug
         #else

@@ -1,4 +1,5 @@
 import AgentStudioGit
+import AgentStudioTestHarness
 import AgentStudioTestSupport
 import Foundation
 import Testing
@@ -9,33 +10,39 @@ import Testing
 @Suite("GitWorkingDirectoryProjector exact-clean continuity")
 struct GitWorkingDirectoryProjectorContinuityTests {
     @Test("verified clean checkpoint renews without facts or detail reads")
-    func verifiedCleanCheckpointRenewsWithoutPhysicalReads() async {
+    func verifiedCleanCheckpointRenewsWithoutPhysicalReads() async throws {
+        let source = GitProjectorFactSource()
+        let facts = try source.attach()
+        let noDropsFrom = await facts.mark(.lifetime(1))
         let bus = EventBus<RuntimeEnvelope>()
         let clock = TestPushClock()
         let provider = VerifiedCleanProjectorProvider(initialOutcome: .clean)
         let performanceRecorder = ContinuityPerformanceRecorder()
         let actor = makeProjector(
-            bus: bus,
-            clock: clock,
-            provider: provider,
-            performanceRecorder: performanceRecorder
+            bus: bus, clock: clock, provider: provider,
+            performanceRecorder: performanceRecorder, factSink: source.sink
         )
         await actor.start()
         let worktreeId = UUIDv7.generate()
         let rootPath = URL(fileURLWithPath: "/tmp/verified-clean-\(worktreeId.uuidString)")
         await actor.setActivePaneWorktree(worktreeId: worktreeId)
         await bus.post(registrationEnvelope(sequence: 1, worktreeId: worktreeId, rootPath: rootPath))
-        #expect(
-            await eventually {
-                guard provider.exactFactsReadCount == 1 else { return false }
-                return await actor.lastAcceptedStatusAtByWorktreeId[worktreeId] != nil
-            }
-        )
+        _ = try await source.expectNextRefreshClosed(facts: facts, worktreeId: worktreeId)
+        #expect(provider.exactFactsReadCount == 1)
+        #expect(await actor.lastAcceptedStatusAtByWorktreeId[worktreeId] != nil)
         #expect(provider.detailReadCount == 0)
 
+        let deadline = try await source.expectDeadlineRegistered(
+            facts: facts, worktreeId: worktreeId, kind: .automatic)
+        await clock.waitForPendingSleepCount(exactly: 1)
+        let renewalInterval = await facts.mark(deadline)
         clock.advance(by: .seconds(1))
-        #expect(await eventually { provider.renewalCount == 1 })
+        try await facts.expectNone(
+            of: { $0 == .deadlineDisposition(.admitted) }, "physical refresh admitted during clean renewal",
+            from: renewalInterval, closedBy: { $0 == .deadlineDisposition(.deferred) }
+        )
 
+        #expect(provider.renewalCount == 1)
         #expect(provider.exactFactsReadCount == 1)
         #expect(provider.ordinaryFactsReadCount == 0)
         #expect(provider.detailReadCount == 0)
@@ -49,36 +56,34 @@ struct GitWorkingDirectoryProjectorContinuityTests {
         #expect(aggregate?.avoidedPhysicalDetailRead == 2)
         #expect(aggregate?.exactCleanAuthorityCurrent == 1)
         await actor.shutdown()
+        try await facts.expectNoDroppedEnvelopes(from: noDropsFrom)
     }
 
     @Test("raced clean barrier triggers exactly one ordinary full fallback")
-    func racedCleanBarrierTriggersOneFallback() async {
+    func racedCleanBarrierTriggersOneFallback() async throws {
+        let source = GitProjectorFactSource()
+        let facts = try source.attach()
+        let noDropsFrom = await facts.mark(.lifetime(1))
         let bus = EventBus<RuntimeEnvelope>()
         let clock = TestPushClock()
         let provider = VerifiedCleanProjectorProvider(initialOutcome: .requiresExact)
         let performanceRecorder = ContinuityPerformanceRecorder()
         let actor = makeProjector(
-            bus: bus,
-            clock: clock,
-            provider: provider,
-            performanceRecorder: performanceRecorder
+            bus: bus, clock: clock, provider: provider,
+            performanceRecorder: performanceRecorder, factSink: source.sink
         )
         await actor.start()
         let worktreeId = UUIDv7.generate()
         let rootPath = URL(fileURLWithPath: "/tmp/verified-clean-race-\(worktreeId.uuidString)")
         await actor.setActivePaneWorktree(worktreeId: worktreeId)
         await bus.post(registrationEnvelope(sequence: 1, worktreeId: worktreeId, rootPath: rootPath))
-
-        #expect(
-            await eventually {
-                guard provider.ordinaryFactsReadCount == 1 else { return false }
-                return await actor.lastAcceptedStatusAtByWorktreeId[worktreeId] != nil
-            }
-        )
+        _ = try await source.expectNextRefreshClosed(facts: facts, worktreeId: worktreeId)
+        #expect(await actor.lastAcceptedStatusAtByWorktreeId[worktreeId] != nil)
         #expect(provider.exactFactsReadCount == 1)
         #expect(provider.ordinaryFactsReadCount == 1)
         #expect(provider.detailReadCount == 1)
         await actor.shutdown()
+        try await facts.expectNoDroppedEnvelopes(from: noDropsFrom)
         let aggregate = performanceRecorder.lastGitAggregateSnapshot
         #expect(aggregate?.exactCleanBaselinePrepared == 1)
         #expect(aggregate?.exactCleanBaselineRejected == 1)
@@ -87,85 +92,78 @@ struct GitWorkingDirectoryProjectorContinuityTests {
     }
 
     @Test("unregistration while renewal is suspended creates no fallback debt")
-    func unregistrationDuringRenewalCreatesNoFallbackDebt() async {
+    func unregistrationDuringRenewalCreatesNoFallbackDebt() async throws {
+        let source = GitProjectorFactSource()
+        let facts = try source.attach()
+        let noDropsFrom = await facts.mark(.lifetime(1))
         let bus = EventBus<RuntimeEnvelope>()
         let clock = TestPushClock()
-        let renewalGate = RenewalGate()
-        let provider = VerifiedCleanProjectorProvider(
-            initialOutcome: .clean,
-            renewalGate: renewalGate
-        )
-        let actor = makeProjector(bus: bus, clock: clock, provider: provider)
+        let renewalStep = HeldStep<Void>("clean renewal before unregistration", cancellation: .holdThroughCancellation)
+        let provider = VerifiedCleanProjectorProvider(initialOutcome: .clean, renewalStep: renewalStep)
+        let actor = makeProjector(bus: bus, clock: clock, provider: provider, factSink: source.sink)
         await actor.start()
         let worktreeId = UUIDv7.generate()
         let rootPath = URL(fileURLWithPath: "/tmp/verified-clean-remove-\(worktreeId.uuidString)")
         await actor.setActivePaneWorktree(worktreeId: worktreeId)
         await bus.post(registrationEnvelope(sequence: 1, worktreeId: worktreeId, rootPath: rootPath))
-        #expect(
-            await eventually {
-                guard provider.exactFactsReadCount == 1 else { return false }
-                let authority = await actor.exactCleanAuthorityByWorktreeId[worktreeId]
-                let deadline = await actor.automaticRefreshDeadlineByWorktreeId[worktreeId]
-                return authority != nil && deadline != nil
-            }
-        )
+        _ = try await source.expectNextRefreshClosed(facts: facts, worktreeId: worktreeId)
+        let deadline = try await source.expectDeadlineRegistered(
+            facts: facts, worktreeId: worktreeId, kind: .automatic)
+        await clock.waitForPendingSleepCount(exactly: 1)
+        #expect(await actor.exactCleanAuthorityByWorktreeId[worktreeId] != nil)
 
         clock.advance(by: .seconds(1))
-        await renewalGate.waitUntilStarted()
+        _ = try await renewalStep.firstArrival()
         await bus.post(unregistrationEnvelope(sequence: 2, worktreeId: worktreeId))
-        await renewalGate.release()
+        #expect(try await facts.expectHandledEnvelope(seq: 2) == .routed)
+        renewalStep.release()
+        try await facts.expectNext(in: deadline, .deadlineDisposition(.obsolete))
 
-        #expect(await eventually { await actor.rootPathByWorktreeId[worktreeId] == nil })
+        #expect(await actor.rootPathByWorktreeId[worktreeId] == nil)
         #expect(provider.exactFactsReadCount == 1)
         #expect(provider.ordinaryFactsReadCount == 0)
         #expect(await actor.pendingByWorktreeId[worktreeId] == nil)
         #expect(await actor.automaticRefreshDeadlineByWorktreeId[worktreeId] == nil)
         await actor.shutdown()
+        try await facts.expectNoDroppedEnvelopes(from: noDropsFrom)
     }
 
     @Test("renewal uncertainty triggers one exact fallback and restores authority")
-    func renewalUncertaintyTriggersOneFallback() async {
+    func renewalUncertaintyTriggersOneFallback() async throws {
+        let source = GitProjectorFactSource()
+        let facts = try source.attach()
+        let noDropsFrom = await facts.mark(.lifetime(1))
         let bus = EventBus<RuntimeEnvelope>()
         let clock = TestPushClock()
-        let provider = VerifiedCleanProjectorProvider(
-            initialOutcome: .clean,
-            renewalOutcome: .requiresExact
-        )
+        let provider = VerifiedCleanProjectorProvider(initialOutcome: .clean, renewalOutcome: .requiresExact)
         let performanceRecorder = ContinuityPerformanceRecorder()
         let actor = makeProjector(
-            bus: bus,
-            clock: clock,
-            provider: provider,
-            performanceRecorder: performanceRecorder
+            bus: bus, clock: clock, provider: provider,
+            performanceRecorder: performanceRecorder, factSink: source.sink
         )
         await actor.start()
         let worktreeId = UUIDv7.generate()
         let rootPath = URL(fileURLWithPath: "/tmp/verified-clean-uncertain-\(worktreeId.uuidString)")
         await actor.setActivePaneWorktree(worktreeId: worktreeId)
         await bus.post(registrationEnvelope(sequence: 1, worktreeId: worktreeId, rootPath: rootPath))
-        #expect(
-            await eventually {
-                guard provider.exactFactsReadCount == 1 else { return false }
-                let authority = await actor.exactCleanAuthorityByWorktreeId[worktreeId]
-                let deadline = await actor.automaticRefreshDeadlineByWorktreeId[worktreeId]
-                return authority != nil && deadline != nil
-            }
-        )
+        _ = try await source.expectNextRefreshClosed(facts: facts, worktreeId: worktreeId)
+        let deadline = try await source.expectDeadlineRegistered(
+            facts: facts, worktreeId: worktreeId, kind: .automatic)
+        await clock.waitForPendingSleepCount(exactly: 1)
+        #expect(await actor.exactCleanAuthorityByWorktreeId[worktreeId] != nil)
 
         clock.advance(by: .seconds(1))
-        #expect(
-            await eventually {
-                provider.renewalCount == 1
-                    && provider.exactFactsReadCount == 2
-            }
-        )
+        try await facts.expectNext(in: deadline, .deadlineDisposition(.admitted))
+        _ = try await source.expectNextRefreshClosed(facts: facts, worktreeId: worktreeId)
 
+        #expect(provider.renewalCount == 1)
         #expect(provider.exactFactsReadCount == 2)
         #expect(provider.ordinaryFactsReadCount == 0)
         #expect(provider.detailReadCount == 0)
         #expect(await actor.exactCleanAuthorityByWorktreeId[worktreeId] != nil)
         #expect(await actor.pendingByWorktreeId[worktreeId] == nil)
         await actor.shutdown()
+        try await facts.expectNoDroppedEnvelopes(from: noDropsFrom)
         let aggregate = performanceRecorder.lastGitAggregateSnapshot
         #expect(aggregate?.exactCleanBaselinePrepared == 2)
         #expect(aggregate?.exactCleanBaselineAccepted == 2)
@@ -176,43 +174,32 @@ struct GitWorkingDirectoryProjectorContinuityTests {
     }
 
     @Test("filesystem mutation records one authority invalidation")
-    func filesystemMutationRecordsOneAuthorityInvalidation() async {
+    func filesystemMutationRecordsOneAuthorityInvalidation() async throws {
+        let source = GitProjectorFactSource()
+        let facts = try source.attach()
+        let noDropsFrom = await facts.mark(.lifetime(1))
         let bus = EventBus<RuntimeEnvelope>()
         let clock = TestPushClock()
         let provider = VerifiedCleanProjectorProvider(initialOutcome: .clean)
         let performanceRecorder = ContinuityPerformanceRecorder()
         let actor = makeProjector(
-            bus: bus,
-            clock: clock,
-            provider: provider,
-            performanceRecorder: performanceRecorder
+            bus: bus, clock: clock, provider: provider,
+            performanceRecorder: performanceRecorder, factSink: source.sink
         )
         await actor.start()
         let worktreeId = UUIDv7.generate()
         let rootPath = URL(fileURLWithPath: "/tmp/verified-clean-mutation-\(worktreeId.uuidString)")
         await actor.setActivePaneWorktree(worktreeId: worktreeId)
         await bus.post(registrationEnvelope(sequence: 1, worktreeId: worktreeId, rootPath: rootPath))
-        #expect(
-            await eventually {
-                await actor.exactCleanAuthorityByWorktreeId[worktreeId] != nil
-            }
-        )
+        _ = try await source.expectNextRefreshClosed(facts: facts, worktreeId: worktreeId)
+        #expect(await actor.exactCleanAuthorityByWorktreeId[worktreeId] != nil)
 
-        await bus.post(
-            filesChangedEnvelope(
-                sequence: 2,
-                worktreeId: worktreeId,
-                rootPath: rootPath
-            )
-        )
-        #expect(
-            await eventually {
-                guard provider.ordinaryFactsReadCount == 1 else { return false }
-                return await actor.exactCleanAuthorityByWorktreeId[worktreeId] == nil
-            }
-        )
-
+        await bus.post(filesChangedEnvelope(sequence: 2, worktreeId: worktreeId, rootPath: rootPath))
+        _ = try await source.expectNextRefreshClosed(facts: facts, worktreeId: worktreeId)
+        #expect(provider.ordinaryFactsReadCount == 1)
+        #expect(await actor.exactCleanAuthorityByWorktreeId[worktreeId] == nil)
         await actor.shutdown()
+        try await facts.expectNoDroppedEnvelopes(from: noDropsFrom)
         #expect(performanceRecorder.lastGitAggregateSnapshot?.exactCleanMutationInvalidated == 1)
     }
 
@@ -220,7 +207,8 @@ struct GitWorkingDirectoryProjectorContinuityTests {
         bus: EventBus<RuntimeEnvelope>,
         clock: TestPushClock,
         provider: VerifiedCleanProjectorProvider,
-        performanceRecorder: ContinuityPerformanceRecorder? = nil
+        performanceRecorder: ContinuityPerformanceRecorder? = nil,
+        factSink: @escaping GitProjectorFactSink
     ) -> GitWorkingDirectoryProjector {
         GitWorkingDirectoryProjector(
             bus: bus,
@@ -234,7 +222,8 @@ struct GitWorkingDirectoryProjectorContinuityTests {
                 backgroundCadence: .seconds(4),
                 lineDetailFreshnessInterval: .seconds(1)
             ),
-            performanceTraceRecorder: performanceRecorder
+            performanceTraceRecorder: performanceRecorder,
+            factSink: factSink
         )
     }
 
@@ -298,16 +287,6 @@ struct GitWorkingDirectoryProjectorContinuityTests {
         )
     }
 
-    private func eventually(
-        maximumTurns: Int = 10_000,
-        condition: @escaping @Sendable () async -> Bool
-    ) async -> Bool {
-        for _ in 0..<maximumTurns {
-            if await condition() { return true }
-            await Task.yield()
-        }
-        return await condition()
-    }
 }
 
 private final class ContinuityPerformanceRecorder: GitProjectorPerformanceRecording, @unchecked Sendable {
@@ -352,7 +331,7 @@ private final class VerifiedCleanProjectorProvider: GitExactCleanStatusProviding
     private let lock = NSLock()
     private let initialOutcome: InitialOutcome
     private let renewalOutcome: RenewalOutcome
-    private let renewalGate: RenewalGate?
+    private let renewalStep: HeldStep<Void>?
     private var _exactFactsReadCount = 0
     private var _ordinaryFactsReadCount = 0
     private var _detailReadCount = 0
@@ -361,11 +340,11 @@ private final class VerifiedCleanProjectorProvider: GitExactCleanStatusProviding
     init(
         initialOutcome: InitialOutcome,
         renewalOutcome: RenewalOutcome = .renewed,
-        renewalGate: RenewalGate? = nil
+        renewalStep: HeldStep<Void>? = nil
     ) {
         self.initialOutcome = initialOutcome
         self.renewalOutcome = renewalOutcome
-        self.renewalGate = renewalGate
+        self.renewalStep = renewalStep
     }
 
     var exactFactsReadCount: Int { lock.withLock { _exactFactsReadCount } }
@@ -420,7 +399,7 @@ private final class VerifiedCleanProjectorProvider: GitExactCleanStatusProviding
         _ authority: GitCleanContinuityAuthority
     ) async -> GitExactCleanRenewalResult {
         lock.withLock { _renewalCount += 1 }
-        await renewalGate?.suspend()
+        if let renewalStep { try? await renewalStep.arrive(()) }
         switch renewalOutcome {
         case .renewed:
             return .renewed(authority)
@@ -442,33 +421,5 @@ private final class VerifiedCleanProjectorProvider: GitExactCleanStatusProviding
             ),
             exactCleanAuthority: authority
         )
-    }
-}
-
-private actor RenewalGate {
-    private var started = false
-    private var released = false
-    private var startWaiters: [CheckedContinuation<Void, Never>] = []
-    private var releaseWaiters: [CheckedContinuation<Void, Never>] = []
-
-    func suspend() async {
-        started = true
-        let currentStartWaiters = startWaiters
-        startWaiters.removeAll(keepingCapacity: false)
-        for waiter in currentStartWaiters { waiter.resume() }
-        guard !released else { return }
-        await withCheckedContinuation { releaseWaiters.append($0) }
-    }
-
-    func waitUntilStarted() async {
-        guard !started else { return }
-        await withCheckedContinuation { startWaiters.append($0) }
-    }
-
-    func release() {
-        released = true
-        let currentReleaseWaiters = releaseWaiters
-        releaseWaiters.removeAll(keepingCapacity: false)
-        for waiter in currentReleaseWaiters { waiter.resume() }
     }
 }

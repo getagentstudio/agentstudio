@@ -265,6 +265,15 @@ extension RepoExplorerView {
                 showsActiveBackground: false,
                 action: { commandDispatcher.dispatch(command) }
             )
+            .sidebarShortcutHint(
+                sidebarShortcutDisplay(for: command),
+                style: .toolbarStamp,
+                alignment: .bottomTrailing,
+                offset: CGSize(
+                    width: -AppStyles.Shell.Sidebar.KeyboardHint.controlTrailingInset,
+                    height: AppStyles.Shell.Sidebar.KeyboardHint.toggleVerticalOffset
+                )
+            )
             .disabled(!presented.isEnabled)
         }
     }

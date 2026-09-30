@@ -35,12 +35,15 @@ enum IPCCommandDescriptorTestFixtures {
                         request: request,
                         result: result
                     )
-                ]
+                ],
+                agentEligibility: .notYetAllowed
             )
         )
     }
 
-    static func secondDescriptor() throws -> IPCCommandDescriptor {
+    static func secondDescriptor(
+        agentEligibility: IPCAgentEligibility = .notYetAllowed
+    ) throws -> IPCCommandDescriptor {
         let request = try secondRequest()
         return try IPCCommandDescriptorFactory.make(
             IPCCommandDescriptorInput(
@@ -60,7 +63,8 @@ enum IPCCommandDescriptorTestFixtures {
                         request: request,
                         result: secondResult(correlationId: request.correlationId)
                     )
-                ]
+                ],
+                agentEligibility: agentEligibility
             )
         )
     }

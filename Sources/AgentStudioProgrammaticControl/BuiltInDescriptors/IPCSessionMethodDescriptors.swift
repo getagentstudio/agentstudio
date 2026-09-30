@@ -263,14 +263,19 @@ package struct IPCSessionMethodDescriptors: Sendable {
         ]
     }
 
-    var erased: [IPCAnyMethodDescriptor] {
+    var descriptorRepresentations: [any IPCMethodDescriptorRepresentation] {
         get throws {
-            try [
-                IPCAnyMethodDescriptor(erasing: sessionEvent),
-                IPCAnyMethodDescriptor(erasing: sessionMessage),
-                IPCAnyMethodDescriptor(erasing: sessionQuery),
-                IPCAnyMethodDescriptor(erasing: sessionReport),
+            let representations: [any IPCMethodDescriptorRepresentation] = try [
+                IPCMethodDescriptorRepresentations(typedDescriptor: sessionEvent),
+                IPCMethodDescriptorRepresentations(typedDescriptor: sessionMessage),
+                IPCMethodDescriptorRepresentations(typedDescriptor: sessionQuery),
+                IPCMethodDescriptorRepresentations(typedDescriptor: sessionReport),
             ]
+            return representations
         }
+    }
+
+    var erased: [IPCAnyMethodDescriptor] {
+        get throws { try descriptorRepresentations.map(\.erasedDescriptor) }
     }
 }

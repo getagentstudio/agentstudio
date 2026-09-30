@@ -11,7 +11,7 @@ struct AgentStudioGitWorkingTreeStatusProviderTests {
     func sdkStatusSnapshotMapsIntoAgentStudioWorkingTreeStatus() async throws {
         let provider = AgentStudioGitWorkingTreeStatusProvider(
             statusReader: { _, _ in
-                makeSnapshot(
+                gitStatusProviderTestSnapshot(
                     head: AgentStudioGit.GitHeadSnapshot(
                         kind: .branch,
                         oid: "abc123",
@@ -56,7 +56,7 @@ struct AgentStudioGitWorkingTreeStatusProviderTests {
     func scopedModifiedEntryPreservesFullSummaryWithoutIdentityAmbiguity() async throws {
         let provider = AgentStudioGitWorkingTreeStatusProvider(
             statusReader: { _, _ in
-                makeSnapshot(
+                gitStatusProviderTestSnapshot(
                     summary: makeSummary(
                         unstagedFileCount: 1,
                         aheadCount: 2,
@@ -90,7 +90,7 @@ struct AgentStudioGitWorkingTreeStatusProviderTests {
     func scopedStandaloneAddedAndUntrackedEntriesPreserveIdentityAmbiguity() async throws {
         let provider = AgentStudioGitWorkingTreeStatusProvider(
             statusReader: { _, _ in
-                makeSnapshot(
+                gitStatusProviderTestSnapshot(
                     entries: [
                         makeStatusEntry(path: "added.txt", worktreeState: .added),
                         makeStatusEntry(path: "untracked.txt", untracked: true),
@@ -113,7 +113,7 @@ struct AgentStudioGitWorkingTreeStatusProviderTests {
     func scopedStandaloneDeletedEntryPreservesIdentityAmbiguity() async throws {
         let provider = AgentStudioGitWorkingTreeStatusProvider(
             statusReader: { _, _ in
-                makeSnapshot(
+                gitStatusProviderTestSnapshot(
                     entries: [makeStatusEntry(path: "deleted.txt", indexState: .deleted)]
                 )
             }
@@ -133,7 +133,7 @@ struct AgentStudioGitWorkingTreeStatusProviderTests {
     func fullStatusDoesNotReportScopedIdentityAmbiguity() async throws {
         let provider = AgentStudioGitWorkingTreeStatusProvider(
             statusReader: { _, _ in
-                makeSnapshot(
+                gitStatusProviderTestSnapshot(
                     entries: [
                         makeStatusEntry(path: "added.txt", indexState: .added),
                         makeStatusEntry(path: "deleted.txt", worktreeState: .deleted),
@@ -150,14 +150,14 @@ struct AgentStudioGitWorkingTreeStatusProviderTests {
     @Test("SDK origin states preserve AgentStudio origin-resolution semantics")
     func sdkOriginStatesPreserveAgentStudioOriginResolutionSemantics() async throws {
         let awaitingProvider = AgentStudioGitWorkingTreeStatusProvider(
-            statusReader: { _, _ in makeSnapshot(originResolution: .awaitingResolution) }
+            statusReader: { _, _ in gitStatusProviderTestSnapshot(originResolution: .awaitingResolution) }
         )
         let absentProvider = AgentStudioGitWorkingTreeStatusProvider(
-            statusReader: { _, _ in makeSnapshot(originResolution: .confirmedAbsent) }
+            statusReader: { _, _ in gitStatusProviderTestSnapshot(originResolution: .confirmedAbsent) }
         )
         let credentialedRemoteProvider = AgentStudioGitWorkingTreeStatusProvider(
             statusReader: { _, _ in
-                makeSnapshot(
+                gitStatusProviderTestSnapshot(
                     originResolution: .resolved(
                         AgentStudioGit.GitRemoteSnapshot(
                             name: "origin",
@@ -184,7 +184,7 @@ struct AgentStudioGitWorkingTreeStatusProviderTests {
     func detachedAndUnbornSDKHeadsMapToBranchlessSyncUnknownStatus() async throws {
         let detachedProvider = AgentStudioGitWorkingTreeStatusProvider(
             statusReader: { _, _ in
-                makeSnapshot(
+                gitStatusProviderTestSnapshot(
                     head: AgentStudioGit.GitHeadSnapshot(kind: .detached, oid: "abc123", shortName: nil),
                     summary: makeSummary(hasUpstream: false)
                 )
@@ -192,7 +192,7 @@ struct AgentStudioGitWorkingTreeStatusProviderTests {
         )
         let unbornProvider = AgentStudioGitWorkingTreeStatusProvider(
             statusReader: { _, _ in
-                makeSnapshot(
+                gitStatusProviderTestSnapshot(
                     head: AgentStudioGit.GitHeadSnapshot(kind: .unborn, oid: nil, shortName: "main"),
                     summary: makeSummary(hasUpstream: false)
                 )
@@ -241,7 +241,7 @@ struct AgentStudioGitWorkingTreeStatusProviderTests {
     @Test("fact-only status uses the fact reader without complete status or line detail")
     func factOnlyStatusUsesOnlyFactReader() async throws {
         let invocationTracker = StatusReaderInvocationTracker()
-        let snapshot = makeSnapshot(linesAdded: 8, linesDeleted: 4)
+        let snapshot = gitStatusProviderTestSnapshot(linesAdded: 8, linesDeleted: 4)
         let provider = AgentStudioGitWorkingTreeStatusProvider(
             slowObservationScheduler: PassiveStatusSlowObservationScheduler(),
             physicalGate: AgentStudioGitStatusPhysicalGate(),
@@ -278,10 +278,10 @@ struct AgentStudioGitWorkingTreeStatusProviderTests {
     func verifiedExactCleanScanReturnsAuthorityWithoutLineDetail() async throws {
         let rootPath = URL(fileURLWithPath: "/tmp/repo")
         let worktreeId = UUIDv7.generate()
-        let observationPlan = makeObservationPlan(rootPath: rootPath)
+        let observationPlan = gitStatusProviderTestObservationPlan(rootPath: rootPath)
         let witness = TestGitCleanContinuityWitness(commitSucceeds: true)
         let invocationTracker = StatusReaderInvocationTracker()
-        let snapshot = makeSnapshot()
+        let snapshot = gitStatusProviderTestSnapshot()
         let provider = AgentStudioGitWorkingTreeStatusProvider(
             slowObservationScheduler: PassiveStatusSlowObservationScheduler(),
             physicalGate: AgentStudioGitStatusPhysicalGate(),
@@ -322,9 +322,9 @@ struct AgentStudioGitWorkingTreeStatusProviderTests {
     @Test("post-scan barrier failure rejects clean facts")
     func postScanBarrierFailureRejectsCleanFacts() async throws {
         let rootPath = URL(fileURLWithPath: "/tmp/repo")
-        let observationPlan = makeObservationPlan(rootPath: rootPath)
+        let observationPlan = gitStatusProviderTestObservationPlan(rootPath: rootPath)
         let witness = TestGitCleanContinuityWitness(commitSucceeds: false)
-        let snapshot = makeSnapshot()
+        let snapshot = gitStatusProviderTestSnapshot()
         let provider = AgentStudioGitWorkingTreeStatusProvider(
             slowObservationScheduler: PassiveStatusSlowObservationScheduler(),
             physicalGate: AgentStudioGitStatusPhysicalGate(),
@@ -365,13 +365,13 @@ struct AgentStudioGitWorkingTreeStatusProviderTests {
             await tracker.recordStarted()
             await readGate.waitUntilReleased()
             await tracker.recordFinished()
-            return makeSnapshot()
+            return gitStatusProviderTestSnapshot()
         }
         let distinctProvider = AgentStudioGitWorkingTreeStatusProvider(
             slowObservationScheduler: PassiveStatusSlowObservationScheduler(),
             physicalGate: physicalGate
         ) { _, _ in
-            makeSnapshot()
+            gitStatusProviderTestSnapshot()
         }
 
         let slowRead = Task {
@@ -411,14 +411,14 @@ struct AgentStudioGitWorkingTreeStatusProviderTests {
             await tracker.recordStarted()
             await readGate.waitUntilReleased()
             await tracker.recordFinished()
-            return makeSnapshot()
+            return gitStatusProviderTestSnapshot()
         }
         let overlappingProvider = AgentStudioGitWorkingTreeStatusProvider(
             slowObservationScheduler: PassiveStatusSlowObservationScheduler(),
             physicalGate: physicalGate
         ) { _, _ in
             await tracker.recordStarted()
-            return makeSnapshot()
+            return gitStatusProviderTestSnapshot()
         }
 
         let firstRead = Task {
@@ -456,7 +456,7 @@ struct AgentStudioGitWorkingTreeStatusProviderTests {
             physicalGate: physicalGate
         ) { _, _ in
             await tracker.recordStarted()
-            return makeSnapshot()
+            return gitStatusProviderTestSnapshot()
         }
 
         let firstRead = Task { await firstProvider.statusResult(for: firstRootPath) }
@@ -493,7 +493,7 @@ struct AgentStudioGitWorkingTreeStatusProviderTests {
         let independentProvider = AgentStudioGitWorkingTreeStatusProvider(
             slowObservationScheduler: PassiveStatusSlowObservationScheduler(),
             physicalGate: physicalGate
-        ) { _, _ in makeSnapshot() }
+        ) { _, _ in gitStatusProviderTestSnapshot() }
 
         let cancelledRead = Task {
             await provider.statusResult(for: cancelledRootPath)
@@ -561,7 +561,7 @@ struct AgentStudioGitWorkingTreeStatusProviderTests {
             slowObservationScheduler: PassiveStatusSlowObservationScheduler(),
             physicalGate: physicalGate
         ) { _, _ in
-            makeSnapshot()
+            gitStatusProviderTestSnapshot()
         }
 
         let firstResult = await provider.statusResult(for: rootPath)
@@ -706,7 +706,7 @@ private final class ManualStatusSlowObservationScheduler: AgentStudioGitStatusSl
     }
 }
 
-private struct PassiveStatusSlowObservationScheduler: AgentStudioGitStatusSlowObservationScheduler {
+struct PassiveStatusSlowObservationScheduler: AgentStudioGitStatusSlowObservationScheduler {
     func scheduleObservation(
         after _: Duration,
         _: @escaping @Sendable () -> Void
@@ -816,7 +816,7 @@ private func makeBlockingProvider(
         await tracker.recordStarted()
         await readGate.waitUntilReleased()
         await tracker.recordFinished()
-        return makeSnapshot()
+        return gitStatusProviderTestSnapshot()
     }
 }
 
@@ -827,7 +827,7 @@ private func unavailableReason(
     return unavailable.reason
 }
 
-private func makeSnapshot(
+func gitStatusProviderTestSnapshot(
     head: AgentStudioGit.GitHeadSnapshot = AgentStudioGit.GitHeadSnapshot(
         kind: .branch,
         oid: "abc123",
@@ -900,7 +900,7 @@ private func makeSummary(
     )
 }
 
-private func makeObservationPlan(rootPath: URL) -> AgentStudioGit.GitStatusObservationPlan {
+func gitStatusProviderTestObservationPlan(rootPath: URL) -> AgentStudioGit.GitStatusObservationPlan {
     AgentStudioGit.GitStatusObservationPlan(
         identity: AgentStudioGit.GitStatusObservationIdentity(rawValue: "test-observation-identity"),
         scopes: [
@@ -910,14 +910,16 @@ private func makeObservationPlan(rootPath: URL) -> AgentStudioGit.GitStatusObser
     )
 }
 
-private final class TestGitCleanContinuityWitness: GitCleanContinuityWitness, @unchecked Sendable {
+final class TestGitCleanContinuityWitness: GitCleanContinuityWitness, @unchecked Sendable {
     private let lock = NSLock()
     private let commitSucceeds: Bool
+    private let prepareFailure: GitCleanContinuityPrepareFailure?
     private var _prepareCount = 0
     private var _commitCount = 0
 
-    init(commitSucceeds: Bool) {
+    init(commitSucceeds: Bool, prepareFailure: GitCleanContinuityPrepareFailure? = nil) {
         self.commitSucceeds = commitSucceeds
+        self.prepareFailure = prepareFailure
     }
 
     var prepareCount: Int { lock.withLock { _prepareCount } }
@@ -927,15 +929,17 @@ private final class TestGitCleanContinuityWitness: GitCleanContinuityWitness, @u
         worktreeId: UUID,
         rootPath _: URL,
         observationPlan: AgentStudioGit.GitStatusObservationPlan
-    ) async -> GitCleanContinuityBarrier? {
+    ) async -> GitCleanContinuityPrepareOutcome {
         lock.withLock { _prepareCount += 1 }
-        return GitCleanContinuityBarrier(
-            registrationId: worktreeId,
-            observationIdentity: observationPlan.identity,
-            registrationGeneration: 1,
-            mutationEpoch: 0,
-            uncertaintyEpoch: 0
-        )
+        if let prepareFailure { return .unavailable(prepareFailure) }
+        return .prepared(
+            GitCleanContinuityBarrier(
+                registrationId: worktreeId,
+                observationIdentity: observationPlan.identity,
+                registrationGeneration: 1,
+                mutationEpoch: 0,
+                uncertaintyEpoch: 0
+            ))
     }
 
     func commit(

@@ -10,6 +10,7 @@ import {
   campaignAttributionRegistry,
   campaignChannels,
 } from "../src/campaign-attribution/campaign-attribution-registry";
+import { marketingCopy } from "../src/marketing-copy";
 
 const canonicalHomeUrl = "https://getagentstudio.dev/";
 const canonicalSitemapUrl = "https://getagentstudio.dev/sitemap.xml";
@@ -121,6 +122,75 @@ describe("site discovery metadata", () => {
         });
       });
     }
+  });
+
+  it("publishes one truthful structured-data graph from the page's owned facts", async (): Promise<void> => {
+    const html = await (await fetch(previewOrigin)).text();
+    const scripts = [
+      ...html.matchAll(/<script\b[^>]*type="application\/ld\+json"[^>]*>([\s\S]*?)<\/script>/gu),
+    ];
+    expect(scripts).toHaveLength(1);
+    const graphText = scripts[0]?.[1];
+    if (graphText === undefined) throw new Error("Structured data missing");
+    const parsed: unknown = JSON.parse(graphText);
+    expect(parsed).toEqual({
+      "@context": "https://schema.org",
+      "@graph": [
+        {
+          "@type": "SoftwareApplication",
+          "@id": `${canonicalHomeUrl}#application`,
+          name: marketingCopy.productName,
+          description: marketingCopy.hero.description,
+          applicationCategory: marketingCopy.applicationCategory,
+          operatingSystem: marketingCopy.installation.systemRequirement
+            .replace(/^Requires /u, "")
+            .replace(/\.$/u, ""),
+          url: canonicalHomeUrl,
+          installUrl: `${marketingCopy.githubUrl}#install`,
+          softwareHelp: { "@type": "CreativeWork", url: `${marketingCopy.githubUrl}#readme` },
+          creator: { "@id": `${canonicalHomeUrl}#creator` },
+        },
+        {
+          "@type": "WebSite",
+          "@id": `${canonicalHomeUrl}#website`,
+          name: marketingCopy.productName,
+          url: canonicalHomeUrl,
+          description: marketingCopy.hero.description,
+        },
+        {
+          "@type": "Person",
+          "@id": `${canonicalHomeUrl}#creator`,
+          name: marketingCopy.finalCallToAction.creatorName,
+          sameAs: [marketingCopy.socialLinks.github.url, marketingCopy.socialLinks.x.url],
+        },
+      ],
+    });
+  });
+
+  it("serves a plain-text agent summary with exact rendered install command parity", async (): Promise<void> => {
+    const response = await fetch(new URL("/llms.txt", previewOrigin));
+    expect(response.status).toBe(200);
+    expect(response.headers.get("content-type")).toMatch(/^text\/plain\b/u);
+    const text = await response.text();
+    expect(await readFile(resolve(productionOutputDirectory, "public", "llms.txt"), "utf8")).toBe(
+      text,
+    );
+    const commands = text.match(/```sh\n([\s\S]*?)\n```/u)?.[1];
+    expect(commands).toBe(marketingCopy.installation.commands.join("\n"));
+    const html = await (await fetch(previewOrigin)).text();
+    const installTag = html.match(/<div\b[^>]*data-install-command-root[^>]*>/u)?.[0];
+    if (installTag === undefined) throw new Error("Rendered install box missing");
+    expect(commands).toBe(parseAttributes(installTag).get("data-install-command"));
+    expect(text).toContain(`# ${marketingCopy.productName}`);
+    expect(text).toContain(marketingCopy.hero.description);
+    expect(text).toContain(marketingCopy.installation.systemRequirement);
+    for (const url of [
+      canonicalHomeUrl,
+      marketingCopy.githubUrl,
+      `${marketingCopy.githubUrl}#readme`,
+      `${marketingCopy.githubUrl}/tree/main/docs`,
+    ])
+      expect(text).toContain(`](${url})`);
   });
 
   it("advertises a fetchable image favicon from the home page", async (): Promise<void> => {

@@ -2,8 +2,8 @@
 # Fails when a debt ledger raises a count or adds a row compared with the same
 # ledger at the merge base of HEAD and the given base ref (default origin/main).
 # The lint runs cannot see history, so this check owns the only-decrease rule
-# for both ledgers: the Swift architecture lint's and BridgeWeb's. They share
-# one format, so the architecture lint tool compares both.
+# for every Swift architecture and BridgeWeb debt ledger. They share one
+# format, so the architecture lint tool compares each ledger.
 #
 # A merge base that has no copy of a ledger passes for that ledger: the change
 # that introduces it records its initial baseline. A merge base that cannot be computed
@@ -19,6 +19,7 @@ base_ref="${1:-origin/main}"
 ledger_paths=(
   "Tools/AgentStudioArchitectureLint/architecture-debt-ledger.tsv"
   "Tools/AgentStudioArchitectureLint/forbidden-test-wait-ledger.tsv"
+  "Tools/AgentStudioArchitectureLint/adhoc-continuation-wait-ledger.tsv"
   "BridgeWeb/architecture-debt-ledger.tsv"
 )
 

@@ -484,7 +484,8 @@ package final class WorkspaceTabArrangementAtom {
         inTab tabId: UUID,
         targetDrawerPaneId: UUID? = nil,
         direction: SplitNewDirection = .right,
-        sizingMode: DropSizingMode = .halveTarget
+        sizingMode: DropSizingMode = .halveTarget,
+        selectsInsertedChild: Bool = true
     ) {
         guard let tabIndex = findTabIndex(tabId) else {
             workspaceTabArrangementLogger.warning("addNewDrawerPaneView: tab \(tabId) not found")
@@ -500,7 +501,8 @@ package final class WorkspaceTabArrangementAtom {
                     drawerId: drawerId,
                     targetDrawerPaneId: targetDrawerPaneId,
                     direction: direction,
-                    sizingMode: sizingMode
+                    sizingMode: sizingMode,
+                    selectsInsertedChild: selectsInsertedChild
                 )
             )
         else { return }

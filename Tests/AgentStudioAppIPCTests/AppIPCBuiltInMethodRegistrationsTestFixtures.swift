@@ -85,7 +85,9 @@ struct BuiltInMethodRegistrationsFixture {
                         ),
                     sidebarPort: FakeSidebarPort(),
                     sessionsPort: sessionsPort ?? RecordingSessionsPort(),
-                    permissionApprovalPort: FakePermissionApprovalPort()
+                    permissionApprovalPort: FakePermissionApprovalPort(),
+                    ownPaneScopePort: StaticOwnPaneScopePort(),
+                    agentAuthorizationTelemetry: RecordingAgentAuthorizationTelemetry()
                 ),
                 eventBroker: eventBroker
             )
@@ -263,18 +265,20 @@ final class BuiltInRecordingTerminalWaitPort: AppIPCRuntimePort, @unchecked Send
         lock.withLock { (recordedHandle, recordedTimeout, recordedAfterSequence) }
     }
 
-    func terminalStatus(_: IPCHandle) throws -> IPCTerminalStatusResult {
+    func terminalStatus(_: IPCHandle, ownPaneAssertion _: AppIPCOwnPaneAssertion?) throws -> IPCTerminalStatusResult {
         throw BuiltInMethodRegistrationFailure()
     }
 
-    func terminalSnapshot(_: IPCHandle) throws -> IPCTerminalSnapshotResult {
+    func terminalSnapshot(_: IPCHandle, ownPaneAssertion _: AppIPCOwnPaneAssertion?) throws -> IPCTerminalSnapshotResult
+    {
         throw BuiltInMethodRegistrationFailure()
     }
 
     func sendTerminalInput(
         to _: IPCHandle,
         input _: String,
-        correlationId _: UUID?
+        correlationId _: UUID?,
+        ownPaneAssertion _: AppIPCOwnPaneAssertion?
     ) async throws -> IPCTerminalSendInputResult {
         throw BuiltInMethodRegistrationFailure()
     }
@@ -283,7 +287,8 @@ final class BuiltInRecordingTerminalWaitPort: AppIPCRuntimePort, @unchecked Send
         _ handle: IPCHandle,
         condition: IPCTerminalWaitCondition,
         timeout: Duration,
-        afterSequence: UInt64?
+        afterSequence: UInt64?,
+        ownPaneAssertion _: AppIPCOwnPaneAssertion?
     ) async throws -> IPCTerminalWaitResult {
         lock.withLock {
             recordedHandle = handle

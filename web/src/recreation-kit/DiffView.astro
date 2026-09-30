@@ -6,9 +6,13 @@ import type { KitDiffViewModel } from "./recreation-kit-model";
 interface Props {
   readonly diff: KitDiffViewModel;
   readonly scenePart?: string | undefined;
+  readonly annotationAfterLine?: {
+    readonly kind: "context" | "added" | "removed";
+    readonly lineNumber: number;
+  } | undefined;
 }
 
-const { diff, scenePart } = Astro.props;
+const { diff, scenePart, annotationAfterLine } = Astro.props;
 ---
 
 <!-- One file of the continuous Review diff, as in review.png. -->
@@ -21,16 +25,25 @@ const { diff, scenePart } = Astro.props;
   </div>
   <div class="kit-diff-view__lines">
     {
-      diff.lines.map((line) =>
-        line.kind === "collapsed" ? (
-          <div class="kit-diff-view__collapsed">{line.label}</div>
-        ) : (
-          <div class="kit-diff-view__line" data-diff-kind={line.kind} {...scenePartAttributes(line.scenePart)}>
-            <span class="kit-diff-view__number">{line.lineNumber}</span>
-            <span class="kit-diff-view__text">{line.text}</span>
-          </div>
-        ),
-      )
+      diff.lines.map((line) => (
+        <Fragment>
+          {line.kind === "collapsed" ? (
+            <div class="kit-diff-view__collapsed">{line.label}</div>
+          ) : (
+            <div class="kit-diff-view__line" data-diff-kind={line.kind} {...scenePartAttributes(line.scenePart)}>
+              <span class="kit-diff-view__number">{line.lineNumber}</span>
+              <span class="kit-diff-view__text">{line.text}</span>
+            </div>
+          )}
+          {line.kind !== "collapsed" &&
+          line.kind === annotationAfterLine?.kind &&
+          line.lineNumber === annotationAfterLine.lineNumber ? (
+            <div class="kit-diff-view__annotation">
+              <div class="kit-diff-view__annotation-content"><slot name="annotation" /></div>
+            </div>
+          ) : null}
+        </Fragment>
+      ))
     }
   </div>
 </div>
@@ -107,6 +120,17 @@ const { diff, scenePart } = Astro.props;
 
   .kit-diff-view__text {
     min-width: 0;
+    overflow: hidden;
+  }
+
+  .kit-diff-view__annotation {
+    display: grid;
+    grid-template-rows: 1fr;
+    overflow: hidden;
+  }
+
+  .kit-diff-view__annotation-content {
+    min-height: 0;
     overflow: hidden;
   }
 </style>

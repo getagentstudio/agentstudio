@@ -1,7 +1,15 @@
 import { defineBrowserCommand } from "@vitest/browser-playwright";
 
+import {
+  observeFinalePillSurface,
+  type FinalePillSurfaceObservation,
+} from "./finale-pill-surface-observation";
+
 /** The final branch, lane closures and rendered path extent in page coordinates. */
 export interface TopologyEndObservation {
+  readonly endColourMaskEdge: number;
+  readonly endTerminalNodeBottom: number;
+  readonly attachJoinStroke: string;
   readonly width: number;
   readonly captionToFinaleGap: number;
   readonly pillLeft: number;
@@ -52,7 +60,7 @@ export interface TopologyEndObservation {
   readonly pathData: readonly { readonly kind: "rail" | "step"; readonly d: string }[];
 }
 
-export interface FinaleBookendObservation {
+export interface FinaleBookendObservation extends FinalePillSurfaceObservation {
   readonly readyOutlineAt03: boolean;
   readonly traceOpacityAt03: number;
   readonly readyOutlineAt08: boolean;
@@ -79,7 +87,7 @@ export interface FinaleBookendObservation {
   readonly finalState: string | undefined;
   readonly logoOpacity: string;
   readonly traceOpacity: string;
-  readonly starFillOpacity: string;
+  readonly copiedIconVisible: boolean;
   readonly railStartFraction: number;
   readonly railArrivalFraction: number;
   readonly nodeStartOpacity: string;
@@ -195,7 +203,11 @@ function observeFinaleArtwork(props: {
 }
 
 export const verifyFinaleBookend = defineBrowserCommand(
-  async ({ context }, pageUrl: string): Promise<FinaleBookendObservation> => {
+  async (
+    { context },
+    pageUrl: string,
+    proofWidth: number = 1600,
+  ): Promise<FinaleBookendObservation> => {
     const applicationPage = await context.newPage();
     const reducedMotionPage = await context.newPage();
     const skipPage = await context.newPage();
@@ -229,9 +241,13 @@ export const verifyFinaleBookend = defineBrowserCommand(
       });
     };
     try {
-      await applicationPage.setViewportSize({ width: 1600, height: 1000 });
+      await applicationPage.setViewportSize({
+        width: proofWidth,
+        height: proofWidth < 620 ? 844 : 1000,
+      });
       await applicationPage.addInitScript(installEventCounter);
       await applicationPage.goto(pageUrl, { waitUntil: "domcontentloaded" });
+      await applicationPage.evaluate(async () => await document.fonts.ready);
       await applicationPage.evaluate(() => window.dispatchEvent(new WheelEvent("wheel")));
       await applicationPage.waitForSelector('[data-hero-intro-state="settled"]');
       await applicationPage.waitForSelector("[data-finale-timeline-created]");
@@ -254,7 +270,6 @@ export const verifyFinaleBookend = defineBrowserCommand(
         const footer = document.querySelector<HTMLElement>("footer");
         const logo = root?.querySelector<HTMLElement>("[data-finale-logo]");
         const trace = root?.querySelector<SVGPathElement>("[data-finale-border-trace]");
-        const fill = root?.querySelector<SVGPathElement>("[data-finale-star-fill]");
         const terminalRoute = document.querySelector<SVGGElement>("[data-topology-terminal-route]");
         const railPath = terminalRoute?.querySelector<SVGPathElement>(
           '[data-topology-path-role="core"]',
@@ -269,8 +284,6 @@ export const verifyFinaleBookend = defineBrowserCommand(
           logo === undefined ||
           trace === null ||
           trace === undefined ||
-          fill === null ||
-          fill === undefined ||
           railPath === null ||
           railPath === undefined ||
           endNode === null ||
@@ -308,20 +321,23 @@ export const verifyFinaleBookend = defineBrowserCommand(
         const copyText = copy.textContent?.trim() ?? "";
         const pill = copy.closest<HTMLElement>("[data-finale-split-pill]");
         if (pill === null) throw new Error("Finale split pill is missing");
+        const stepPill = document.querySelector<HTMLElement>(".chapter-step-active-label");
+        if (stepPill === null) throw new Error("Chapter step-label pill missing");
+        const restingShadow = getComputedStyle(stepPill).boxShadow;
         proofWindow.finaleControl.seek(0.3);
-        const readyOutlineAt03 = getComputedStyle(pill).boxShadow.includes("inset");
+        const readyOutlineAt03 = getComputedStyle(pill).boxShadow !== restingShadow;
         const traceOpacityAt03 = Number(getComputedStyle(trace).opacity);
         proofWindow.finaleControl.seek(0.35);
         const railArrivalFraction =
           Number.parseFloat(railPath.style.strokeDashoffset) / railPath.getTotalLength();
         const nodeArrivalOpacity = getComputedStyle(endNode).opacity;
         proofWindow.finaleControl.seek(0.8);
-        const readyOutlineAt08 = getComputedStyle(pill).boxShadow.includes("inset");
+        const readyOutlineAt08 = getComputedStyle(pill).boxShadow !== restingShadow;
         const traceOpacityAt08 = Number(getComputedStyle(trace).opacity);
         const traceDashFractionAt08 =
           Number.parseFloat(trace.style.strokeDashoffset) / trace.getTotalLength();
         proofWindow.finaleControl.seek(0.3);
-        const readyOutlineAfterReverseSeek = getComputedStyle(pill).boxShadow.includes("inset");
+        const readyOutlineAfterReverseSeek = getComputedStyle(pill).boxShadow !== restingShadow;
         const traceOpacityAfterReverseSeek = Number(getComputedStyle(trace).opacity);
         proofWindow.finaleControl.seek(0.8);
         const midTraceShift = sampleShift();
@@ -370,7 +386,13 @@ export const verifyFinaleBookend = defineBrowserCommand(
           finalState: root.dataset["finaleState"],
           logoOpacity: getComputedStyle(logo).opacity,
           traceOpacity: getComputedStyle(trace.closest("svg") ?? trace).opacity,
-          starFillOpacity: getComputedStyle(fill).opacity,
+          copiedIconVisible:
+            copy
+              .querySelector("[data-install-copied-icon]")
+              ?.hasAttribute("data-install-icon-hidden") === false &&
+            copy
+              .querySelector("[data-install-copy-icon]")
+              ?.hasAttribute("data-install-icon-hidden") === true,
           railStartFraction,
           railArrivalFraction,
           nodeStartOpacity,
@@ -390,9 +412,47 @@ export const verifyFinaleBookend = defineBrowserCommand(
             )?.textContent ?? "",
         };
       });
+      await applicationPage.evaluate(async () => {
+        const label = document.querySelector<HTMLElement>(
+          "[data-finale-split-pill] [data-install-copy-feedback]",
+        );
+        if (label === null) throw new Error("Finale copy label missing");
+        if (label.textContent?.startsWith("Copy") === true) return;
+        await new Promise<void>((resolve) => {
+          const observer = new MutationObserver(() => {
+            if (label.textContent?.startsWith("Copy") !== true) return;
+            observer.disconnect();
+            resolve();
+          });
+          observer.observe(label, { childList: true, characterData: true, subtree: true });
+        });
+      });
+      await applicationPage.evaluate(async () => {
+        const pill = document.querySelector<HTMLElement>("[data-finale-split-pill]");
+        const trace = document.querySelector<SVGPathElement>("[data-finale-border-trace]");
+        const svg = trace?.ownerSVGElement;
+        if (!pill || !trace || !svg) throw new Error("Finale trace resize signal missing");
+        const matchesPill = (): boolean =>
+          Math.abs(svg.viewBox.baseVal.width - pill.getBoundingClientRect().width) <= 0.5 &&
+          Math.abs(svg.viewBox.baseVal.height - pill.getBoundingClientRect().height) <= 0.5;
+        if (matchesPill()) return;
+        await new Promise<void>((resolve) => {
+          const observer = new MutationObserver(() => {
+            if (!matchesPill()) return;
+            observer.disconnect();
+            resolve();
+          });
+          observer.observe(svg, {
+            attributes: true,
+            attributeFilter: ["viewBox", "d"],
+            subtree: true,
+          });
+        });
+      });
+      const pillSurface = await applicationPage.evaluate(observeFinalePillSurface);
       const resizedTrace = await applicationPage.evaluate(async () => {
         const pill = document.querySelector<HTMLElement>("[data-finale-split-pill]");
-        const trace = pill?.querySelector<SVGPathElement>("[data-finale-border-trace]");
+        const trace = document.querySelector<SVGPathElement>("[data-finale-border-trace]");
         const svg = trace?.closest("svg");
         if (
           pill === null ||
@@ -490,6 +550,7 @@ export const verifyFinaleBookend = defineBrowserCommand(
       });
       return {
         ...normal,
+        ...pillSurface,
         ...resizedTrace,
         ...reduced,
         ...narrow,
@@ -502,7 +563,12 @@ export const verifyFinaleBookend = defineBrowserCommand(
   },
 );
 
-function observeEnd(width: number): Omit<TopologyEndObservation, "artworkStates"> {
+function observeEnd(
+  width: number,
+): Omit<
+  TopologyEndObservation,
+  "artworkStates" | "endColourMaskEdge" | "endTerminalNodeBottom" | "attachJoinStroke"
+> {
   const artwork = document.querySelector<SVGSVGElement>("[data-full-page-topology]");
   const lastGlass = document.querySelector('[data-rail-surface-target="come-back"]');
   const lastCaption = document.querySelector<HTMLElement>(
@@ -518,8 +584,8 @@ function observeEnd(width: number): Omit<TopologyEndObservation, "artworkStates"
   const finalPath = finalRoute?.querySelector<SVGPathElement>('[data-topology-path-role="core"]');
   const mainline = artwork?.querySelector<SVGPathElement>("[data-mainline]");
   const terminalNode = finalRoute?.querySelector<SVGGElement>("[data-topology-terminal-node]");
-  const ring = terminalNode?.querySelector<SVGCircleElement>(".node-merge-ring");
-  const core = terminalNode?.querySelector<SVGCircleElement>(".node-merge-core");
+  const ring = terminalNode?.querySelector<SVGCircleElement>(".node-end-ring");
+  const core = terminalNode?.querySelector<SVGCircleElement>(".node-end-core");
   const halo = terminalNode?.querySelector<SVGCircleElement>(".node-terminal-halo");
   if (
     artwork === null ||
@@ -668,7 +734,9 @@ function observeEnd(width: number): Omit<TopologyEndObservation, "artworkStates"
     bendDotPlain:
       bendDot?.dataset["nodeKind"] === "commit" &&
       !bendDot.hasAttribute("data-topology-suppressed") &&
-      bendDot.querySelector(".node-terminal, .node-terminal-halo, .node-merge-ring") === null,
+      bendDot.querySelector(
+        ".node-terminal, .node-terminal-halo, .node-merge-ring, .node-end-ring",
+      ) === null,
     innermostLaneX:
       mainlineStart.matrixTransform(mainline.getScreenCTM() ?? matrix).x +
       Number(artwork.dataset["laneCount"]) * Number(artwork.dataset["columnUnit"]),
@@ -713,6 +781,7 @@ export const verifyTopologyEnd = defineBrowserCommand(
     { context },
     pageUrl: string,
     widths: readonly number[],
+    viewportHeight?: number,
   ): Promise<TopologyEndObservation[]> => {
     const applicationPage = await context.newPage();
     const observations: TopologyEndObservation[] = [];
@@ -733,7 +802,7 @@ export const verifyTopologyEnd = defineBrowserCommand(
       for (const width of widths) {
         await applicationPage.setViewportSize({
           width,
-          height: width === 390 ? 844 : width === 1280 ? 800 : 1080,
+          height: viewportHeight ?? (width === 390 ? 844 : width === 1280 ? 800 : 1080),
         });
         await applicationPage.goto(pageUrl, { waitUntil: "domcontentloaded" });
         await applicationPage.waitForSelector(
@@ -761,8 +830,8 @@ export const verifyTopologyEnd = defineBrowserCommand(
         await applicationPage.evaluate(async () => {
           const node = document.querySelector("[data-topology-terminal-node]");
           if (node === null) throw new Error("Terminal node is missing after reveal");
-          const ring = node.querySelector(".node-merge-ring");
-          const core = node.querySelector(".node-merge-core");
+          const ring = node.querySelector(".node-end-ring");
+          const core = node.querySelector(".node-end-core");
           await Promise.all(
             [ring, core].flatMap(
               (part) => part?.getAnimations().map((animation) => animation.finished) ?? [],
@@ -797,7 +866,30 @@ export const verifyTopologyEnd = defineBrowserCommand(
           state: "settled" as const,
         });
         const end = await applicationPage.evaluate(observeEnd, width);
-        observations.push({ ...end, artworkStates: [initial, settled] });
+        await applicationPage.evaluate(() =>
+          window.scrollTo({ top: document.documentElement.scrollHeight, behavior: "instant" }),
+        );
+        await applicationPage.waitForSelector("[data-full-page-topology][data-topology-at-end]");
+        const colourAtEnd = await applicationPage.evaluate(() => {
+          const artwork = document.querySelector<SVGSVGElement>("[data-full-page-topology]");
+          const gradient = artwork?.querySelector<SVGLinearGradientElement>(
+            "#topology-rail-vibrancy-gradient",
+          );
+          const node = artwork?.querySelector<SVGCircleElement>(
+            "[data-topology-terminal-node] .node-end-ring",
+          );
+          const attach = artwork?.querySelector<SVGPathElement>(
+            '[data-route-kind="attach"].accent-main [data-topology-path-role="core"]',
+          );
+          if (!gradient || !node || !attach)
+            throw new Error("End colour mask or attach join missing");
+          return {
+            endColourMaskEdge: Number(gradient.getAttribute("y1")),
+            endTerminalNodeBottom: node.cy.baseVal.value + node.r.baseVal.value,
+            attachJoinStroke: getComputedStyle(attach).stroke,
+          };
+        });
+        observations.push({ ...end, ...colourAtEnd, artworkStates: [initial, settled] });
       }
       return observations;
     } finally {

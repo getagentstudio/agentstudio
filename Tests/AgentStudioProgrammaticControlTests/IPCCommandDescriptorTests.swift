@@ -59,6 +59,20 @@ struct IPCCommandDescriptorTests {
         }
     }
 
+    @Test("an agent-eligible command must reach every channel and its eligibility is discovered")
+    func agentEligibleCommandMustReachEveryChannel() throws {
+        for eligibility in [IPCAgentEligibility.ownPane, .anyTarget] {
+            #expect(throws: IPCCommandDescriptorError.agentEligibleCommandMustBeExposedOnAllChannels) {
+                try IPCCommandDescriptorTestFixtures.secondDescriptor(agentEligibility: eligibility)
+            }
+        }
+        let refused = try IPCCommandDescriptorTestFixtures.secondDescriptor()
+        let decoded = try refused.catalogEntrySchema.decode(
+            IPCCommandDescriptor.self, from: JSONEncoder().encode(refused))
+
+        #expect(decoded.agentEligibility == .notYetAllowed)
+    }
+
     @Test("factory rejects invalid identity, correlation, variants, and examples")
     func factoryRejectsInconsistentDescriptorMeaning() throws {
         let wrongCommandId = IPCCommandIdentifier(rawValue: "wrong.command")
@@ -77,7 +91,8 @@ struct IPCCommandDescriptorTests {
                     dataScope: .unspecified,
                     allowedTargetKinds: [],
                     resultVariants: [.applied],
-                    examples: []
+                    examples: [],
+                    agentEligibility: .notYetAllowed
                 )
             )
         }

@@ -18,6 +18,47 @@ extension JSONDecoder {
     }
 }
 
+func makeTestAppIPCMethodRegistry(
+    registrations: [AnyAppIPCMethodRegistration],
+    recognizedCommands: [AppIPCRecognizedEntry],
+    channel: AgentStudioIPCChannel
+) throws -> AppIPCMethodRegistry {
+    try AppIPCMethodRegistry(
+        registrations: registrations,
+        recognizedCommands: recognizedCommands,
+        channel: channel,
+        capabilitiesComposition: makeTestIPCSystemCapabilitiesComposition(
+            registrations: registrations,
+            channel: channel
+        )
+    )
+}
+
+func makeTestIPCSystemCapabilitiesComposition(
+    registrations: [AnyAppIPCMethodRegistration],
+    channel: AgentStudioIPCChannel
+) throws -> IPCSystemCapabilitiesComposition {
+    let available = registrations.filter {
+        $0.descriptor.metadata.exposure == .allChannels || channel == .debug
+    }
+    let availableNames = Set(available.map(\.descriptor.metadata.name))
+    let recognizedUnexposedMethods = registrations.map(\.descriptor.metadata)
+        .filter { !availableNames.contains($0.name) }
+        .map {
+            IPCRecognizedUnexposedName(name: $0.name, agentEligibility: $0.agentEligibility ?? .notYetAllowed)
+        }
+        .sorted { $0.name < $1.name }
+    guard let ping = available.first(where: { $0.descriptor.metadata.name == "system.ping" }) else {
+        throw IPCSystemCapabilitiesCompositionError.illustrativeDescriptorMissing
+    }
+    return try IPCSystemCapabilitiesDescriptorFactory.compose(
+        compatibility: .current,
+        availableDescriptors: available.map(\.descriptor),
+        illustrativeDescriptor: ping.descriptor,
+        recognizedUnexposedMethods: recognizedUnexposedMethods
+    )
+}
+
 struct LiveServerFixture {
     let runtimeId = UUID()
     let boundPaneId = UUID()
@@ -41,7 +82,8 @@ struct LiveServerFixture {
         commandComposition: IPCCommandMethodComposition? = nil,
         credentialResolver: (any AgentStudioIPCCredentialResolving)? = nil,
         credentialContinuityPort: any AgentStudioIPCCredentialContinuityPort = TestCredentialContinuityPort(),
-        canonicalPaneMembership: (@MainActor @Sendable (UUID, UUID) -> Bool)? = nil
+        canonicalPaneMembership: (@MainActor @Sendable (UUID, UUID) -> Bool)? = nil,
+        ownPaneScopes: [AppIPCOwnPaneScope] = []
     ) throws {
         let resolvedCredentialResolver = credentialResolver ?? IPCFixtureCredentialResolver()
         testCredentialResolver = resolvedCredentialResolver as? IPCFixtureCredentialResolver
@@ -53,67 +95,86 @@ struct LiveServerFixture {
         #if canImport(Darwin)
             _ = chmod(rootURL.path, 0o700)
         #endif
-        paths = AgentStudioIPCPathResolver().paths(rootDirectory: rootURL)
-        let ports = AgentStudioAppIPCPorts(
-            queryPort: queryPort ?? FakeQueryPort(runtimeId: runtimeId, panes: panes),
-            layoutPort: FakeLayoutPort(),
-            runtimePort: runtimePort,
-            bridgePort: bridgePort ?? FakeBridgePort(paneId: panes.first?.id ?? boundPaneId),
-            commandPort: commandPort,
-            uiPresentationPort: uiPresentationPort,
-            sidebarPort: sidebarPort,
-            sessionsPort: sessionsPort,
-            permissionApprovalPort: FakePermissionApprovalPort()
-        )
-        let eventBroker = IPCEventBroker()
-        let catalog = try makeLiveServerBuiltInCatalog(
-            runtimeId: runtimeId,
-            paneId: panes.first?.id ?? boundPaneId
-        )
-        var registrations = try AppIPCBuiltInMethodRegistrations.make(
-            inputs: AppIPCBuiltInRegistrationInputs(
-                catalog: catalog,
+        // Everything past this point can throw; unwind the created root
+        // directory rather than leak it, since a throw here never returns a
+        // fixture for a caller to `cleanup()`.
+        do {
+            paths = AgentStudioIPCPathResolver().paths(rootDirectory: rootURL)
+            let ports = AgentStudioAppIPCPorts(
+                queryPort: queryPort ?? FakeQueryPort(runtimeId: runtimeId, panes: panes),
+                layoutPort: FakeLayoutPort(),
+                runtimePort: runtimePort,
+                bridgePort: bridgePort ?? FakeBridgePort(paneId: panes.first?.id ?? boundPaneId),
+                commandPort: commandPort,
+                uiPresentationPort: uiPresentationPort,
+                sidebarPort: sidebarPort,
+                sessionsPort: sessionsPort,
+                permissionApprovalPort: FakePermissionApprovalPort(),
+                // Unless a test names scopes, every bound pane is a main-layout
+                // terminal with an empty drawer, so its own pane is itself.
+                ownPaneScopePort: StaticOwnPaneScopePort(scopes: ownPaneScopes),
+                agentAuthorizationTelemetry: RecordingAgentAuthorizationTelemetry()
+            )
+            let eventBroker = IPCEventBroker()
+            let catalog = try makeLiveServerBuiltInCatalog(
                 runtimeId: runtimeId,
+                paneId: panes.first?.id ?? boundPaneId
+            )
+            var registrations = try AppIPCBuiltInMethodRegistrations.make(
+                inputs: AppIPCBuiltInRegistrationInputs(
+                    catalog: catalog,
+                    runtimeId: runtimeId,
+                    ports: ports,
+                    eventBroker: eventBroker
+                )
+            )
+            if let commandComposition {
+                registrations += try AppIPCCommandMethodRegistrations.make(
+                    composition: commandComposition,
+                    port: commandPort
+                )
+            }
+            let methodRegistry = try makeTestAppIPCMethodRegistry(
+                registrations: registrations,
+                recognizedCommands: (commandComposition?.commands ?? []).map {
+                    AppIPCRecognizedEntry(
+                        name: $0.id.rawValue, exposure: $0.exposure, agentEligibility: $0.agentEligibility)
+                },
+                channel: channel
+            )
+            let service = AgentStudioAppIPCService(
+                configuration: AgentStudioAppIPCConfiguration(
+                    runtimeId: runtimeId,
+                    accessMode: accessMode
+                ),
                 ports: ports,
+                methodRegistry: methodRegistry,
                 eventBroker: eventBroker
             )
-        )
-        if let commandComposition {
-            registrations += try AppIPCCommandMethodRegistrations.make(
-                composition: commandComposition,
-                port: commandPort
-            )
-        }
-        let methodRegistry = try AppIPCMethodRegistry(registrations: registrations, channel: channel)
-        let service = AgentStudioAppIPCService(
-            configuration: AgentStudioAppIPCConfiguration(
+            let fixtureWorkspaceID = workspaceId
+            let fixtureBoundPaneID = boundPaneId
+            let eligiblePaneIDs = Set(panes.map(\.id))
+            let resolvedCanonicalPaneMembership =
+                canonicalPaneMembership ?? { candidatePaneID, candidateWorkspaceID in
+                    candidateWorkspaceID == fixtureWorkspaceID
+                        && (candidatePaneID == fixtureBoundPaneID || eligiblePaneIDs.contains(candidatePaneID))
+                }
+            let principalRegistry = AgentStudioIPCPrincipalRegistry(
                 runtimeId: runtimeId,
-                accessMode: accessMode
-            ),
-            ports: ports,
-            methodRegistry: methodRegistry,
-            eventBroker: eventBroker
-        )
-        let fixtureWorkspaceID = workspaceId
-        let fixtureBoundPaneID = boundPaneId
-        let eligiblePaneIDs = Set(panes.map(\.id))
-        let resolvedCanonicalPaneMembership =
-            canonicalPaneMembership ?? { candidatePaneID, candidateWorkspaceID in
-                candidateWorkspaceID == fixtureWorkspaceID
-                    && (candidatePaneID == fixtureBoundPaneID || eligiblePaneIDs.contains(candidatePaneID))
-            }
-        let principalRegistry = AgentStudioIPCPrincipalRegistry(
-            runtimeId: runtimeId,
-            credentialResolver: resolvedCredentialResolver,
-            canonicalPaneMembership: resolvedCanonicalPaneMembership
-        )
-        server = AgentStudioAppIPCServer(
-            service: service,
-            paths: paths,
-            channel: channel,
-            principalRegistry: principalRegistry,
-            credentialContinuityPort: credentialContinuityPort
-        )
+                credentialResolver: resolvedCredentialResolver,
+                canonicalPaneMembership: resolvedCanonicalPaneMembership
+            )
+            server = AgentStudioAppIPCServer(
+                service: service,
+                paths: paths,
+                channel: channel,
+                principalRegistry: principalRegistry,
+                credentialContinuityPort: credentialContinuityPort
+            )
+        } catch {
+            try? FileManager.default.removeItem(at: rootURL)
+            throw error
+        }
     }
 
     func issueTestCredential(for intent: IPCFixtureCredentialIntent) throws -> AgentStudioIPCSubjectToken {

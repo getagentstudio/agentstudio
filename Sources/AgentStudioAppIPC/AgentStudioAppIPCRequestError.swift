@@ -118,7 +118,21 @@ extension AgentStudioAppIPCRequestError {
                     "requiredScope": scopeValue,
                 ])
             )
+        case .notYetAllowed:
+            self = Self.agentRefusal(
+                code: -32_011, message: "not yet allowed", reason: "notYetAllowed", name: error.refusedName)
+        case .refusedForAgent:
+            self = Self.agentRefusal(
+                code: -32_012, message: "refused for agent", reason: "refusedForAgent", name: error.refusedName)
         }
+    }
+
+    /// The agent outcomes name the refused method or command so an agent can
+    /// tell them apart from authentication and missing-target failures.
+    private static func agentRefusal(code: Int, message: String, reason: String, name: String?) -> Self {
+        var data: [String: JSONValue] = ["reason": .string(reason)]
+        if let name { data["name"] = .string(name) }
+        return Self(code: code, message: message, data: .object(data))
     }
 
     private init(_ reason: AppIPCQueryError.Reason) {
@@ -144,19 +158,43 @@ extension AgentStudioAppIPCRequestError {
     private init(_ reason: AppIPCRuntimeError.Reason) {
         switch reason {
         case .targetNotFound:
-            self = Self(code: -32_004, message: "target not found")
+            self = Self(
+                code: -32_004,
+                message: "target not found",
+                data: .object(["reason": .string(AppIPCRuntimeError.Reason.targetNotFound.rawValue)])
+            )
         case .noRuntime, .runtimeNotReady:
-            self = Self(code: -32_005, message: "runtime not ready")
+            self = Self(
+                code: -32_005,
+                message: "runtime not ready",
+                data: .object(["reason": .string(AppIPCRuntimeError.Reason.runtimeNotReady.rawValue)])
+            )
         case .unsupportedCommand:
             self = Self(code: -32_003, message: "unsupported capability")
         case .backendUnavailable:
-            self = Self(code: -32_005, message: "backend unavailable")
+            self = Self(
+                code: -32_005,
+                message: "backend unavailable",
+                data: .object(["reason": .string(AppIPCRuntimeError.Reason.runtimeNotReady.rawValue)])
+            )
         case .validationRejected:
-            self = Self(code: -32_007, message: "validation rejected")
+            self = Self(
+                code: -32_007,
+                message: "validation rejected",
+                data: .object(["reason": .string("invalidParams")])
+            )
         case .timeout:
-            self = Self(code: -32_009, message: "timeout")
+            self = Self(
+                code: -32_009,
+                message: "timeout",
+                data: .object(["reason": .string(AppIPCRuntimeError.Reason.timeout.rawValue)])
+            )
         case .replayGap:
-            self = Self(code: -32_010, message: "replay gap")
+            self = Self(
+                code: -32_010,
+                message: "replay gap",
+                data: .object(["reason": .string(AppIPCRuntimeError.Reason.replayGap.rawValue)])
+            )
         }
     }
 

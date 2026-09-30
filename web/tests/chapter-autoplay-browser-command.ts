@@ -2,6 +2,9 @@ import { createHash } from "node:crypto";
 
 import { defineBrowserCommand } from "@vitest/browser-playwright";
 
+import type { SceneStepTimingDetail } from "../src/chapters/chapter-step-events.ts";
+import type { ScenePlaybackControl } from "../src/home-page/scene-playback.ts";
+
 export interface ChapterAutoplayObservation {
   readonly width: number;
   readonly stageVisibleFraction: number;
@@ -14,6 +17,24 @@ export interface ChapterClickObservation {
   readonly selectedStepId: string;
   readonly sceneState: string | undefined;
   readonly stageImageHash: string;
+  readonly clickTiming: SceneStepTimingDetail;
+}
+
+interface ChapterClickFact {
+  readonly selectedStepId: string;
+  readonly sceneState: string | undefined;
+  readonly timing: SceneStepTimingDetail | undefined;
+}
+
+interface ChapterClickCapture {
+  control: ScenePlaybackControl | undefined;
+  requestedStepId: string | undefined;
+  timing: SceneStepTimingDetail | undefined;
+  readonly facts: Record<string, ChapterClickFact>;
+}
+
+interface ChapterClickWindow extends Window {
+  chapterClickCapture?: ChapterClickCapture;
 }
 
 export interface ManualChapterClaimObservation {
@@ -89,6 +110,62 @@ export const verifyChapterSceneClicks = defineBrowserCommand(
     const applicationPage = await context.newPage();
     const samples: ChapterClickObservation[] = [];
     try {
+      await applicationPage.addInitScript((): void => {
+        const capture: ChapterClickCapture = {
+          control: undefined,
+          requestedStepId: undefined,
+          timing: undefined,
+          facts: {},
+        };
+        (window as ChapterClickWindow).chapterClickCapture = capture;
+        document.addEventListener("scene-playback-ready", (event: Event): void => {
+          if (
+            event instanceof CustomEvent &&
+            event.target instanceof HTMLElement &&
+            event.target.dataset["sceneRoot"] === "chapter-many-agents"
+          )
+            capture.control = event.detail as ScenePlaybackControl;
+        });
+        const isChapterRequest = (event: Event): event is CustomEvent<{ stepId: string }> =>
+          event instanceof CustomEvent &&
+          event.target instanceof HTMLElement &&
+          event.target.dataset["railSurfaceTarget"] === "many-agents";
+        document.addEventListener(
+          "agentstudio:chapter-step-requested",
+          (event: Event): void => {
+            if (!isChapterRequest(event)) return;
+            capture.requestedStepId = event.detail.stepId;
+            capture.timing = undefined;
+          },
+          { capture: true },
+        );
+        document.addEventListener("agentstudio:scene-step-timing", (event: Event): void => {
+          if (
+            !(event instanceof CustomEvent) ||
+            !(event.target instanceof HTMLElement) ||
+            event.target.dataset["sceneRoot"] !== "chapter-many-agents"
+          )
+            return;
+          const detail = event.detail as SceneStepTimingDetail;
+          if (detail.stepId === capture.requestedStepId) capture.timing = { ...detail };
+        });
+        document.addEventListener("agentstudio:chapter-step-requested", (event: Event): void => {
+          if (!isChapterRequest(event)) return;
+          // The scene owner has handled the request and posted its real
+          // running fact. Record that fact before holding the capture clock.
+          capture.facts[event.detail.stepId] = {
+            selectedStepId:
+              document
+                .querySelector('#many-agents [data-chapter-step][aria-selected="true"]')
+                ?.getAttribute("data-chapter-step") ?? "",
+            sceneState: document.querySelector<HTMLElement>("#many-agents [data-scene-root]")
+              ?.dataset["scenePlaybackState"],
+            timing: capture.timing,
+          };
+          capture.requestedStepId = undefined;
+          capture.control?.pause();
+        });
+      });
       await applicationPage.route(/\.(mp4|webm)(\?|$)/u, async (route) => {
         await route.abort();
       });
@@ -110,6 +187,13 @@ export const verifyChapterSceneClicks = defineBrowserCommand(
       );
       for (const stepId of ["parallel-agents", "watch-folders", "navigation"]) {
         await applicationPage.click(`#many-agents [data-chapter-step="${stepId}"]`);
+        const clickFact = await applicationPage.evaluate((requestedStepId: string) => {
+          const capture = (window as ChapterClickWindow).chapterClickCapture;
+          const fact = capture?.facts[requestedStepId];
+          if (capture?.control === undefined || fact?.timing === undefined)
+            throw new Error(`Missing scene-owned click timing fact for ${requestedStepId}`);
+          return { ...fact, timing: fact.timing };
+        }, stepId);
         await applicationPage.evaluate(async (): Promise<void> => {
           const preview = document.querySelector<HTMLElement>(
             "#many-agents [data-scene-step-preview]",
@@ -142,8 +226,9 @@ export const verifyChapterSceneClicks = defineBrowserCommand(
         });
         samples.push({
           stepId,
-          selectedStepId: geometry.selectedStepId,
-          sceneState: geometry.sceneState,
+          selectedStepId: clickFact.selectedStepId,
+          sceneState: clickFact.sceneState,
+          clickTiming: clickFact.timing,
           stageImageHash: createHash("sha256").update(image).digest("hex"),
         });
         if (stepId === "parallel-agents") {
@@ -162,10 +247,8 @@ export const verifyChapterSceneClicks = defineBrowserCommand(
               "scenePlaybackState"
             ],
           }));
-          if (stillFirst.selected !== "parallel-agents" || stillFirst.state !== "paused") {
-            throw new Error(
-              `Manual first step was reclaimed by autoplay: ${JSON.stringify(stillFirst)}`,
-            );
+          if (stillFirst.selected !== "parallel-agents" || stillFirst.state !== "playing") {
+            throw new Error(`Clicked first step stopped playing: ${JSON.stringify(stillFirst)}`);
           }
         }
       }

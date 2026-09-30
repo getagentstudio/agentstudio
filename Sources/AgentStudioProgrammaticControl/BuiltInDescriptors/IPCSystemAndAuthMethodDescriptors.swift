@@ -16,7 +16,8 @@ package struct IPCSystemAndAuthMethodDescriptors: Sendable {
             privilege: .systemRead,
             dataScope: .unspecified,
             exposure: .allChannels,
-            availability: .preAuthentication
+            availability: .preAuthentication,
+            agentEligibility: .anyTarget
         )
         systemIdentify = try IPCBuiltInDescriptorSupport.read(
             name: "system.identify",
@@ -29,7 +30,8 @@ package struct IPCSystemAndAuthMethodDescriptors: Sendable {
             ),
             privilege: .systemRead,
             dataScope: .unspecified,
-            exposure: .allChannels
+            exposure: .allChannels,
+            agentEligibility: .anyTarget
         )
         systemVersion = try IPCBuiltInDescriptorSupport.read(
             name: "system.version",
@@ -38,7 +40,8 @@ package struct IPCSystemAndAuthMethodDescriptors: Sendable {
             result: IPCSystemVersionResult(appVersion: "1.0.0"),
             privilege: .systemRead,
             dataScope: .unspecified,
-            exposure: .allChannels
+            exposure: .allChannels,
+            agentEligibility: .anyTarget
         )
         authLogin = try IPCMethodDescriptor(
             name: "auth.login",
@@ -77,19 +80,25 @@ package struct IPCSystemAndAuthMethodDescriptors: Sendable {
             privilege: .systemRead,
             dataScope: .unspecified,
             exposure: .allChannels,
-            availability: .preAuthentication
+            availability: .preAuthentication,
+            agentEligibility: nil
         )
     }
 
-    var erased: [IPCAnyMethodDescriptor] {
+    var descriptorRepresentations: [any IPCMethodDescriptorRepresentation] {
         get throws {
-            try [
-                IPCAnyMethodDescriptor(erasing: systemPing),
-                IPCAnyMethodDescriptor(erasing: systemIdentify),
-                IPCAnyMethodDescriptor(erasing: systemVersion),
-                IPCAnyMethodDescriptor(erasing: authLogin),
-                IPCAnyMethodDescriptor(erasing: authStatus),
+            let representations: [any IPCMethodDescriptorRepresentation] = try [
+                IPCMethodDescriptorRepresentations(typedDescriptor: systemPing),
+                IPCMethodDescriptorRepresentations(typedDescriptor: systemIdentify),
+                IPCMethodDescriptorRepresentations(typedDescriptor: systemVersion),
+                IPCMethodDescriptorRepresentations(typedDescriptor: authLogin),
+                IPCMethodDescriptorRepresentations(typedDescriptor: authStatus),
             ]
+            return representations
         }
+    }
+
+    var erased: [IPCAnyMethodDescriptor] {
+        get throws { try descriptorRepresentations.map(\.erasedDescriptor) }
     }
 }

@@ -170,10 +170,16 @@ package final class WorkspacePaneAtom {
         return didInsert
     }
 
-    func insertCommittedTerminalPane(_ pane: Pane, associationOutcome: PaneAssociationOutcome) {
+    func insertCommittedTerminalPane(
+        _ pane: Pane,
+        associationOutcome: PaneAssociationOutcome,
+        expandsDrawer: Bool = true
+    ) {
         precondition(graphAtom.paneState(pane.id) == nil, "Committed new pane must have a fresh identity")
         if let parentID = pane.parentPaneId {
-            precondition(restoreDrawerPane(pane, to: parentID), "Committed drawer parent must remain available")
+            precondition(
+                restoreDrawerPane(pane, to: parentID, expandsDrawer: expandsDrawer),
+                "Committed drawer parent must remain available")
         } else {
             precondition(insertRestoredPane(pane), "Committed new pane must publish")
         }
@@ -305,7 +311,9 @@ package final class WorkspacePaneAtom {
     package func addDrawerPane(
         to parentPaneId: UUID,
         content: PaneContent,
-        metadata: PaneMetadata
+        metadata: PaneMetadata,
+        childPaneId: UUID? = nil,
+        expandsDrawer: Bool = true
     ) -> Pane? {
         var admittedMetadata = metadata
         admittedMetadata.updateFacets(
@@ -315,12 +323,13 @@ package final class WorkspacePaneAtom {
             let drawerPane = graphAtom.addDrawerPane(
                 to: parentPaneId,
                 content: content,
-                metadata: admittedMetadata
+                metadata: admittedMetadata,
+                childPaneId: childPaneId
             )
         else {
             return nil
         }
-        if let drawerId = graphAtom.paneState(parentPaneId)?.drawer?.drawerId {
+        if expandsDrawer, let drawerId = graphAtom.paneState(parentPaneId)?.drawer?.drawerId {
             drawerCursorAtom.expandDrawer(drawerId: drawerId)
         }
         return pane(drawerPane.id)
@@ -434,12 +443,12 @@ package final class WorkspacePaneAtom {
     }
 
     @discardableResult
-    package func restoreDrawerPane(_ drawerPane: Pane, to parentPaneId: UUID) -> Bool {
+    package func restoreDrawerPane(_ drawerPane: Pane, to parentPaneId: UUID, expandsDrawer: Bool = true) -> Bool {
         let didRestore = graphAtom.restoreDrawerPane(drawerPane, to: parentPaneId)
         if didRestore {
             drawerCursorAtom.prune(validDrawerIds: graphAtom.drawerIds)
         }
-        if didRestore, let drawerId = graphAtom.paneState(parentPaneId)?.drawer?.drawerId {
+        if didRestore, expandsDrawer, let drawerId = graphAtom.paneState(parentPaneId)?.drawer?.drawerId {
             drawerCursorAtom.expandDrawer(drawerId: drawerId)
         }
         return didRestore

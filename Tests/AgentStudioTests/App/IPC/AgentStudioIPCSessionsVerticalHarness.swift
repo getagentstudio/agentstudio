@@ -57,110 +57,177 @@ struct SessionsVerticalHarness {
         installActivityClock: Bool = false
     ) async throws -> Self {
         let commandHarness = makeHarness()
-        let boundPane = commandHarness.store.createPane(title: "Bound pane")
-        let sparePane = commandHarness.store.createPane(title: "Spare pane")
-        commandHarness.store.appendTab(Tab(paneId: boundPane.id))
-        commandHarness.store.appendTab(Tab(paneId: sparePane.id))
-        // Pane handle canonicalization reads the current window before it
-        // resolves a pane, so the harness registers exactly one.
-        let workspaceWindowId = UUIDv7.generate()
-        commandHarness.windowLifecycleStore.recordWindowRegistered(workspaceWindowId)
-
-        let sqliteFixture = try makeWorkspaceSQLiteBridgeFixture(
-            workspaceId: commandHarness.store.identityAtom.workspaceId
-        )
-        let datastore = try preparedWorkspaceSQLiteDatastore(from: sqliteFixture.backend)
-        guard case .ready = await datastore.prepareOptionalApplicationLocalSchema() else {
-            throw SessionsVerticalHarnessError.optionalSchemaUnavailable
-        }
-
         let appDelegate = AppDelegate()
-        appDelegate.store = commandHarness.store
-        appDelegate.workspaceSQLiteDatastore = datastore
-        appDelegate.windowLifecycleStore = commandHarness.windowLifecycleStore
-        appDelegate.atomStore = commandHarness.atomRegistry
-        appDelegate.viewRegistry = commandHarness.viewRegistry
-        appDelegate.workspaceSurfaceCoordinator = commandHarness.coordinator
-        appDelegate.executor = commandHarness.executor
-        let mainWindowController = SessionsVerticalMainWindowController(window: nil)
-        mainWindowController.registeredWorkspaceWindowId = workspaceWindowId
-        appDelegate.mainWindowController = mainWindowController
-        appDelegate.appIPCSessionsProviderProfiles = providerProfiles + additionalProviderProfiles
-        appDelegate.installAppIPCIdentityAuthority(datastore: datastore)
-        var boundPaneToken: AgentStudioIPCSubjectToken?
-        if installActivityClock {
-            let activityAtom = appDelegate.atomStore.core.paneActivityTime
-            let clock = PaneActivityClock { batch in activityAtom.apply(batch) }
-            appDelegate.paneActivityClock = clock
-            await clock.start()
-            let paneToken = AgentStudioIPCSubjectToken(rawValue: "pane-activity-\(UUIDv7.generate().uuidString)")
-            try appDelegate.appIPCPrincipalRegistry.registerIssuedPaneCredential(
-                paneID: boundPane.id,
-                workspaceID: commandHarness.store.identityAtom.workspaceId,
-                credentialRecordID: UUIDv7.generate(),
-                verifierSHA256: await credentialVerifier(for: paneToken.rawValue)
-            )
-            boundPaneToken = paneToken
-        }
+        var createdRootDirectory: URL?
+        do {
+            let boundPane = commandHarness.store.createPane(title: "Bound pane")
+            let sparePane = commandHarness.store.createPane(title: "Spare pane")
+            commandHarness.store.appendTab(Tab(paneId: boundPane.id))
+            commandHarness.store.appendTab(Tab(paneId: sparePane.id))
+            // Pane handle canonicalization reads the current window before it
+            // resolves a pane, so the harness registers exactly one.
+            let workspaceWindowId = UUIDv7.generate()
+            commandHarness.windowLifecycleStore.recordWindowRegistered(workspaceWindowId)
 
-        // The tail of the identifier, not its head: a UUIDv7 begins with a
-        // millisecond timestamp, so two harnesses built in the same millisecond
-        // shared a directory name and the second failed to create it. The tail
-        // is cryptographic random. The whole identifier will not do — the
-        // socket underneath this root must fit in `sockaddr_un.sun_path`, which
-        // is 104 bytes including the temporary directory and `/ipc/agentstudio.sock`.
-        let rootDirectory = FileManager.default.temporaryDirectory
-            .appending(path: "as-ipc-\(UUIDv7.generate().uuidString.suffix(12))")
-        try FileManager.default.createDirectory(
-            at: rootDirectory,
-            withIntermediateDirectories: false,
-            attributes: [.posixPermissions: 0o700]
-        )
-        let paths = AgentStudioIPCPathResolver().paths(rootDirectory: rootDirectory)
-        appDelegate.appIPCPaths = paths
-
-        var token = AgentStudioIPCSubjectToken(rawValue: "sessions-vertical-\(UUIDv7.generate().uuidString)")
-        appDelegate.appIPCDebugCredentialEscrowURL = debugCredentialEscrowURL
-        if debugCredentialEscrowURL == nil {
-            _ = appDelegate.appIPCPrincipalRegistry.installDiagnosticCredential(
-                verifierSHA256: await credentialVerifier(for: token.rawValue)
+            let sqliteFixture = try makeWorkspaceSQLiteBridgeFixture(
+                workspaceId: commandHarness.store.identityAtom.workspaceId
             )
-        }
-        await appDelegate.startAppIPCServer()
-        guard appDelegate.appIPCServer != nil else {
-            throw SessionsVerticalHarnessError.serverUnavailable
-        }
-        if let debugCredentialEscrowURL {
-            guard let escrowData = try? Data(contentsOf: debugCredentialEscrowURL),
-                let escrow = try? JSONDecoder().decode(
-                    IPCDebugCredentialEscrowDocument.self, from: escrowData
-                )
-            else {
-                throw SessionsVerticalHarnessError.debugCredentialEscrowUnavailable
+            let datastore = try preparedWorkspaceSQLiteDatastore(from: sqliteFixture.backend)
+            guard case .ready = await datastore.prepareOptionalApplicationLocalSchema() else {
+                throw SessionsVerticalHarnessError.optionalSchemaUnavailable
             }
-            token = AgentStudioIPCSubjectToken(rawValue: escrow.token)
-        }
 
-        return Self(
-            appDelegate: appDelegate,
-            commandHarness: commandHarness,
-            rootDirectory: rootDirectory,
-            socketPath: paths.socketURL.path,
-            token: token,
-            boundPaneToken: boundPaneToken,
-            boundPaneId: boundPane.id,
-            sparePaneId: sparePane.id,
-            workspaceWindowId: workspaceWindowId
-        )
+            appDelegate.store = commandHarness.store
+            appDelegate.workspaceSQLiteDatastore = datastore
+            appDelegate.windowLifecycleStore = commandHarness.windowLifecycleStore
+            appDelegate.atomStore = commandHarness.atomRegistry
+            appDelegate.viewRegistry = commandHarness.viewRegistry
+            appDelegate.workspaceSurfaceCoordinator = commandHarness.coordinator
+            appDelegate.executor = commandHarness.executor
+            let mainWindowController = SessionsVerticalMainWindowController(window: nil)
+            mainWindowController.registeredWorkspaceWindowId = workspaceWindowId
+            appDelegate.mainWindowController = mainWindowController
+            appDelegate.appIPCSessionsProviderProfiles = providerProfiles + additionalProviderProfiles
+            appDelegate.installAppIPCIdentityAuthority(datastore: datastore)
+            var boundPaneToken: AgentStudioIPCSubjectToken?
+            if installActivityClock {
+                let activityAtom = appDelegate.atomStore.core.paneActivityTime
+                let clock = PaneActivityClock { batch in activityAtom.apply(batch) }
+                appDelegate.paneActivityClock = clock
+                await clock.start()
+                let paneToken = AgentStudioIPCSubjectToken(rawValue: "pane-activity-\(UUIDv7.generate().uuidString)")
+                try appDelegate.appIPCPrincipalRegistry.registerIssuedPaneCredential(
+                    paneID: boundPane.id,
+                    workspaceID: commandHarness.store.identityAtom.workspaceId,
+                    credentialRecordID: UUIDv7.generate(),
+                    verifierSHA256: await credentialVerifier(for: paneToken.rawValue)
+                )
+                boundPaneToken = paneToken
+            }
+
+            // The tail of the identifier, not its head: a UUIDv7 begins with a
+            // millisecond timestamp, so two harnesses built in the same millisecond
+            // shared a directory name and the second failed to create it. The tail
+            // is cryptographic random. The whole identifier will not do — the
+            // socket underneath this root must fit in `sockaddr_un.sun_path`, which
+            // is 104 bytes including the temporary directory and `/ipc/agentstudio.sock`.
+            let rootDirectory = FileManager.default.temporaryDirectory
+                .appending(path: "as-ipc-\(UUIDv7.generate().uuidString.suffix(12))")
+            try FileManager.default.createDirectory(
+                at: rootDirectory,
+                withIntermediateDirectories: false,
+                attributes: [.posixPermissions: 0o700]
+            )
+            createdRootDirectory = rootDirectory
+            let paths = AgentStudioIPCPathResolver().paths(rootDirectory: rootDirectory)
+            appDelegate.appIPCPaths = paths
+
+            var token = AgentStudioIPCSubjectToken(rawValue: "sessions-vertical-\(UUIDv7.generate().uuidString)")
+            appDelegate.appIPCDebugCredentialEscrowURL = debugCredentialEscrowURL
+            if debugCredentialEscrowURL == nil {
+                _ = appDelegate.appIPCPrincipalRegistry.installDiagnosticCredential(
+                    verifierSHA256: await credentialVerifier(for: token.rawValue)
+                )
+            }
+            await appDelegate.startAppIPCServer()
+            guard appDelegate.appIPCServer != nil else {
+                throw SessionsVerticalHarnessError.serverUnavailable
+            }
+            if let debugCredentialEscrowURL {
+                guard let escrowData = try? Data(contentsOf: debugCredentialEscrowURL),
+                    let escrow = try? JSONDecoder().decode(
+                        IPCDebugCredentialEscrowDocument.self, from: escrowData
+                    )
+                else {
+                    throw SessionsVerticalHarnessError.debugCredentialEscrowUnavailable
+                }
+                token = AgentStudioIPCSubjectToken(rawValue: escrow.token)
+            }
+
+            return Self(
+                appDelegate: appDelegate,
+                commandHarness: commandHarness,
+                rootDirectory: rootDirectory,
+                socketPath: paths.socketURL.path,
+                token: token,
+                boundPaneToken: boundPaneToken,
+                boundPaneId: boundPane.id,
+                sparePaneId: sparePane.id,
+                workspaceWindowId: workspaceWindowId
+            )
+        } catch {
+            // Unwind whatever this partial construction reached: a started
+            // server, a started pane activity clock, the command harness's
+            // coordinator/executor, and a created socket root, in that order
+            // — the same production shutdown pair `tearDown()` uses.
+            // paneActivityClock is nil unless installActivityClock installed
+            // it, and shutdown() is idempotent, so this is a safe no-op when
+            // it was never started.
+            await appDelegate.stopAcceptingAppIPCConnections()
+            await appDelegate.drainAppIPCCredentialPersistence()
+            await appDelegate.paneActivityClock?.shutdown()
+            await commandHarness.executor.stopAcceptingCommandsAndDrain()
+            await commandHarness.coordinator.shutdown()
+            if let createdRootDirectory {
+                try? FileManager.default.removeItem(at: createdRootDirectory)
+            }
+            throw error
+        }
     }
 
     @concurrent nonisolated private static func credentialVerifier(for token: String) async -> Data {
         Data(SHA256.hash(data: Data(token.utf8)))
     }
 
-    func tearDown() {
-        appDelegate.stopAppIPCServer()
+    /// Ingress closes first, then the durable drain — which now also joins
+    /// every in-flight connection handler — then the pane activity clock a
+    /// suite may have installed (nil, and this a no-op, unless
+    /// installActivityClock requested one), and only then the command
+    /// harness's own executor/coordinator shutdown, mirroring
+    /// `withWorkspaceCommandHarness`'s awaited cleanup for the same harness
+    /// type.
+    func tearDown() async {
+        await appDelegate.stopAcceptingAppIPCConnections()
+        await appDelegate.drainAppIPCCredentialPersistence()
+        await appDelegate.paneActivityClock?.shutdown()
+        await commandHarness.executor.stopAcceptingCommandsAndDrain()
+        await commandHarness.coordinator.shutdown()
         try? FileManager.default.removeItem(at: rootDirectory)
+    }
+
+    /// A suite keeps its server and datastore, while each case gets panes with
+    /// independent durable Sessions rows and source generations. When the
+    /// suite installed a bound-pane credential, this mints a fresh one for the
+    /// new bound pane rather than carrying the old pane's credential forward:
+    /// the principal registry binds a credential to the pane ID that requested
+    /// it, so reusing the old token here would authenticate as the wrong pane.
+    func freshPanePair() async throws -> Self {
+        let boundPane = commandHarness.store.createPane(title: "Bound pane")
+        let sparePane = commandHarness.store.createPane(title: "Spare pane")
+        commandHarness.store.appendTab(Tab(paneId: boundPane.id))
+        commandHarness.store.appendTab(Tab(paneId: sparePane.id))
+        var freshBoundPaneToken: AgentStudioIPCSubjectToken?
+        if boundPaneToken != nil {
+            let paneToken = AgentStudioIPCSubjectToken(rawValue: "pane-activity-\(UUIDv7.generate().uuidString)")
+            try appDelegate.appIPCPrincipalRegistry.registerIssuedPaneCredential(
+                paneID: boundPane.id,
+                workspaceID: commandHarness.store.identityAtom.workspaceId,
+                credentialRecordID: UUIDv7.generate(),
+                verifierSHA256: await Self.credentialVerifier(for: paneToken.rawValue)
+            )
+            freshBoundPaneToken = paneToken
+        }
+        return Self(
+            appDelegate: appDelegate,
+            commandHarness: commandHarness,
+            rootDirectory: rootDirectory,
+            socketPath: socketPath,
+            token: token,
+            boundPaneToken: freshBoundPaneToken,
+            boundPaneId: boundPane.id,
+            sparePaneId: sparePane.id,
+            workspaceWindowId: workspaceWindowId
+        )
     }
 
     func bindBoundPane() async throws -> IPCSessionEventResult {
@@ -351,6 +418,84 @@ struct SessionsVerticalHarness {
         try connection.send(
             try NDJSONFrameEncoder.encode(JSONRPCCodec.encodeRequest(request), maxFrameBytes: 65_536)
         )
+    }
+}
+
+/// Swift Testing scopes this trait around the suite, not each test case.
+/// Task-local inheritance gives every case the same live server; freshPanePair
+/// keeps their persisted state independent. A filtered suite still tears down.
+struct SessionsVerticalHarnessTrait: SuiteTrait, TestScoping {
+    enum ProviderProfiles: Sendable {
+        case defaultProfiles
+        case shipped
+        case claudeCode
+    }
+
+    let providerProfiles: ProviderProfiles
+    var isRecursive: Bool { false }
+
+    func provideScope(
+        for _: Test,
+        testCase _: Test.Case?,
+        performing function: @Sendable () async throws -> Void
+    ) async throws {
+        try await SessionsVerticalHarnessBox.withScope(
+            providerProfiles: providerProfiles,
+            performing: function
+        )
+    }
+}
+
+enum SessionsVerticalHarnessContext {
+    @TaskLocal static var current: SessionsVerticalHarnessBox?
+}
+
+@MainActor
+final class SessionsVerticalHarnessBox {
+    let harness: SessionsVerticalHarness
+
+    private init(harness: SessionsVerticalHarness) {
+        self.harness = harness
+    }
+
+    static func make(providerProfiles: SessionsVerticalHarnessTrait.ProviderProfiles) async throws -> Self {
+        installTestCoreAtomsIfNeeded()
+        let harness: SessionsVerticalHarness
+        switch providerProfiles {
+        case .defaultProfiles:
+            harness = try await SessionsVerticalHarness.make()
+        case .shipped:
+            harness = try await SessionsVerticalHarness.make(
+                providerProfiles: SessionsProviderProfile.shippedProfiles)
+        case .claudeCode:
+            harness = try await SessionsVerticalHarness.make(
+                additionalProviderProfiles: [.claudeCodeCommandLine])
+        }
+        return Self(harness: harness)
+    }
+
+    static func withScope(
+        providerProfiles: SessionsVerticalHarnessTrait.ProviderProfiles,
+        performing function: @Sendable () async throws -> Void
+    ) async throws {
+        let fixture = try await make(providerProfiles: providerProfiles)
+        do {
+            try await SessionsVerticalHarnessContext.$current.withValue(fixture) {
+                try await function()
+            }
+        } catch {
+            await fixture.tearDown()
+            throw error
+        }
+        await fixture.tearDown()
+    }
+
+    func freshPanePair() async throws -> SessionsVerticalHarness {
+        try await harness.freshPanePair()
+    }
+
+    func tearDown() async {
+        await harness.tearDown()
     }
 }
 

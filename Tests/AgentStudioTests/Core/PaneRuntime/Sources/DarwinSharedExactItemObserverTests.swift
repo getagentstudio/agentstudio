@@ -649,12 +649,14 @@ struct DarwinSharedExactItemObserverTests {
             support: .supported
         )
 
+        let prepareOutcome = await client.prepare(
+            worktreeId: worktreeId,
+            rootPath: worktreeRoot,
+            observationPlan: observationPlan
+        )
         let barrier = try #require(
-            await client.prepare(
-                worktreeId: worktreeId,
-                rootPath: worktreeRoot,
-                observationPlan: observationPlan
-            )
+            prepareOutcome.barrier,
+            Comment(rawValue: "preparation: \(prepareOutcome)")
         )
         let commitValidation = await client.commit(barrier)
         let authority = try #require(
@@ -713,9 +715,9 @@ struct DarwinSharedExactItemObserverTests {
         await streamFactory.waitUntilStreamStartBegins()
         client.unregister(worktreeId: worktreeId)
         streamFactory.allowStreamStartToComplete()
-        let barrier = await prepareTask.value
+        let prepareOutcome = await prepareTask.value
 
-        #expect(barrier == nil)
+        #expect(prepareOutcome == .unavailable(.sharedBindingInstallFailed))
         #expect(streamFactory.startCount == 1)
         #expect(streamFactory.retirementCount == 1)
     }

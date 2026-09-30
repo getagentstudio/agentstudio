@@ -447,7 +447,9 @@ struct AppIPCTypedMethodRegistrationTests {
             }
 
         return AppIPCTypedMethodRegistration(
-            descriptor: try descriptor ?? TypedRegistrationFixture.descriptor(),
+            descriptorRepresentations: try IPCMethodDescriptorRepresentations(
+                typedDescriptor: try descriptor ?? TypedRegistrationFixture.descriptor()
+            ),
             correlation: correlation,
             resolveTarget: resolvedTarget,
             connectionHandler: { parameters, context, target in

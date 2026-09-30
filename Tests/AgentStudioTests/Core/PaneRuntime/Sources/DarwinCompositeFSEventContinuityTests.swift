@@ -9,6 +9,38 @@ import Testing
 
 @Suite("DarwinCompositeFSEventContinuity", .serialized)
 struct DarwinCompositeFSEventContinuityTests {
+    @Test("local root replacement retires its generation before ordinary routing")
+    func localRootReplacementRequiresCompleteReregistration() async throws {
+        let fixture = try CompositeContinuityFixture()
+        let originalBarrier = try await fixture.requirePreparedBarrier()
+        let canonicalRootPath = DarwinFSEventPathCanonicalizer.canonicalURL(fixture.worktreeRoot).path
+
+        try #require(
+            fixture.localStreamFactory.send(
+                path: canonicalRootPath,
+                eventId: 200,
+                flags: FSEventStreamEventFlags(kFSEventStreamEventFlagRootChanged)
+            )
+        )
+        let rootReplacementBatch = try await fixture.requireFullRefreshBatch()
+        #expect(rootReplacementBatch.worktreeId == fixture.worktreeId)
+        #expect(rootReplacementBatch.paths == [canonicalRootPath])
+        #expect(rootReplacementBatch.requiresFullGitRefresh)
+        #expect(await fixture.client.commit(originalBarrier) == .requiresExact(.registrationMissing))
+        #expect(await fixture.prepare() == .unavailable(.registrationMissing))
+
+        try #require(
+            fixture.client.register(
+                worktreeId: fixture.worktreeId,
+                repoId: UUIDv7.generate(),
+                rootPath: fixture.worktreeRoot
+            ) == .observing
+        )
+        let replacementBarrier = try await fixture.requirePreparedBarrier()
+        #expect(replacementBarrier.registrationGeneration != originalBarrier.registrationGeneration)
+        await fixture.shutdown()
+    }
+
     @Test("unchanged shared ancestor ambiguity resolves without full Git fallback")
     func unchangedAncestorAmbiguityResolvesWithoutFallback() async throws {
         let fixture = try CompositeContinuityFixture()
@@ -191,7 +223,7 @@ struct DarwinCompositeFSEventContinuityTests {
     @Test("pre-prepare ancestor ambiguity is superseded by the exact scan")
     func prePrepareAncestorAmbiguityIsSuperseded() async throws {
         let fixture = try CompositeContinuityFixture()
-        _ = try #require(await fixture.prepare())
+        _ = try await fixture.requirePreparedBarrier()
         fixture.streamFactory.send(path: fixture.ancestorEventPath, eventId: 290)
         // Without a committed baseline, the ancestor recheck must first fall back
         // to an exact scan. Await that event before starting the replacement scan.
@@ -209,7 +241,7 @@ struct DarwinCompositeFSEventContinuityTests {
         let fixture = try CompositeContinuityFixture(
             regularFileOpened: fingerprintGate.regularFileOpened
         )
-        let barrier = try #require(await fixture.prepare())
+        let barrier = try await fixture.requirePreparedBarrier()
         fingerprintGate.blockNextRead()
         let commitTask = Task { await fixture.client.commit(barrier) }
 
@@ -235,10 +267,10 @@ struct DarwinCompositeFSEventContinuityTests {
         switch window {
         case .prepare:
             operationTask = Task {
-                await fixture.prepare() == nil
+                await fixture.prepare() == .unavailable(.barrierChangedDuringFlush)
             }
         case .commitBeforeFingerprint, .commitAfterFingerprint:
-            let barrier = try #require(await fixture.prepare())
+            let barrier = try await fixture.requirePreparedBarrier()
             operationTask = Task {
                 (await fixture.client.commit(barrier)).requiresExact
             }
@@ -263,7 +295,7 @@ struct DarwinCompositeFSEventContinuityTests {
     func sharedGenerationReplacementAfterRetainRejectsCommit() async throws {
         let fixture = try CompositeContinuityFixture(blockedFlushNumber: 2)
         defer { fixture.streamFactory.allowBlockedFlush(result: true) }
-        let barrier = try #require(await fixture.prepare())
+        let barrier = try await fixture.requirePreparedBarrier()
         let commitTask = Task { await fixture.client.commit(barrier) }
 
         await fixture.streamFactory.waitUntilBlockedFlushBegins()
@@ -281,7 +313,7 @@ struct DarwinCompositeFSEventContinuityTests {
     func unregisterDuringRetainedCompositeFlushRejectsCommit() async throws {
         let fixture = try CompositeContinuityFixture(blockedFlushNumber: 2)
         defer { fixture.streamFactory.allowBlockedFlush(result: true) }
-        let barrier = try #require(await fixture.prepare())
+        let barrier = try await fixture.requirePreparedBarrier()
         let commitTask = Task { await fixture.client.commit(barrier) }
 
         await fixture.streamFactory.waitUntilBlockedFlushBegins()
@@ -301,7 +333,7 @@ struct DarwinCompositeFSEventContinuityTests {
         await fixture.streamFactory.waitUntilBlockedFlushBegins()
         fixture.streamFactory.allowBlockedFlush(result: false)
 
-        #expect(await prepareTask.value == nil)
+        #expect(await prepareTask.value == .unavailable(.streamFlushFailed))
     }
 }
 
@@ -457,7 +489,7 @@ private final class CompositeContinuityFixture: @unchecked Sendable {
         try? FileManager.default.removeItem(at: fixtureRoot)
     }
 
-    func prepare() async -> GitCleanContinuityBarrier? {
+    func prepare() async -> GitCleanContinuityPrepareOutcome {
         await client.prepare(
             worktreeId: worktreeId,
             rootPath: worktreeRoot,
@@ -465,8 +497,17 @@ private final class CompositeContinuityFixture: @unchecked Sendable {
         )
     }
 
+    func requirePreparedBarrier() async throws -> GitCleanContinuityBarrier {
+        let outcome = await prepare()
+        return try #require(outcome.barrier, Comment(rawValue: "preparation: \(outcome)"))
+    }
+
     func prepareAuthority() async -> GitCleanContinuityAuthority? {
-        guard let barrier = await prepare() else { return nil }
+        let outcome = await prepare()
+        guard let barrier = outcome.barrier else {
+            Issue.record(Comment(rawValue: "authority preparation: \(outcome)"))
+            return nil
+        }
         return await client.commit(barrier).authority
     }
 
@@ -475,6 +516,23 @@ private final class CompositeContinuityFixture: @unchecked Sendable {
             return true
         }
         return false
+    }
+
+    func requireFullRefreshBatch() async throws -> FSEventBatch {
+        for await batch in fullRefreshEvents where batch.worktreeId == worktreeId {
+            return batch
+        }
+        throw CompositeFullRefreshStreamEnded()
+    }
+
+    func shutdown() async {
+        let task = ingressTask
+        ingressTask = nil
+        task?.cancel()
+        fullRefreshContinuation.finish()
+        streamFactory.allowBlockedFlush(result: false)
+        client.shutdown()
+        await task?.value
     }
 
     func sharedDeliveredEventID(in barrier: FSEventActivityBarrier) -> UInt64? {
@@ -493,12 +551,28 @@ private final class CompositeContinuityFixture: @unchecked Sendable {
 }
 
 private final class CompositeLocalStreamFactory: @unchecked Sendable {
+    private let lock = NSLock()
+    private var eventHandler: (@Sendable ([DarwinLocalFSEventRawEvent]) -> Void)?
+
     func makeStream(
-        request _: DarwinLocalFSEventStreamRequest
+        request: DarwinLocalFSEventStreamRequest
     ) -> (any DarwinLocalFSEventStreamLifetime)? {
-        CompositeLocalStreamLifetime()
+        lock.withLock { eventHandler = request.eventHandler }
+        return CompositeLocalStreamLifetime()
+    }
+
+    func send(
+        path: String,
+        eventId: FSEventStreamEventId,
+        flags: FSEventStreamEventFlags
+    ) -> Bool {
+        guard let eventHandler = lock.withLock({ eventHandler }) else { return false }
+        eventHandler([DarwinLocalFSEventRawEvent(path: path, eventId: eventId, flags: flags)])
+        return true
     }
 }
+
+private struct CompositeFullRefreshStreamEnded: Error {}
 
 private final class CompositeLocalStreamLifetime:
     DarwinLocalFSEventStreamLifetime, @unchecked Sendable

@@ -4,7 +4,7 @@ import Foundation
 package struct IPCDescriptorClientResponse: Sendable {
     package let descriptor: IPCAnyMethodDescriptor
     package let requestID: Int
-    package let normalizedResult: Data
+    package let normalizedResult: IPCValidatedJSON
 }
 
 package enum IPCDescriptorClientCallResult: Sendable {
@@ -23,6 +23,20 @@ package struct IPCDescriptorRemoteFailure: Error, Sendable {
     package let documentedReason: String?
     package let correction: IPCSchemaValidationError?
     package let requiredScope: IPCPermissionScope?
+    package let agentRefusal: IPCAgentRefusal?
+}
+
+/// The app refused a pane agent by name. Only the two agent outcomes and a
+/// method or command identifier are kept; nothing else from the remote error.
+package struct IPCAgentRefusal: Equatable, Sendable {
+    package enum Reason: String, Equatable, Sendable {
+        case notYetAllowed
+        case refusedForAgent
+    }
+
+    package let reason: Reason
+    /// The refused method or command identifier.
+    package let name: String
 }
 
 package struct IPCDescriptorClientFailure: Error, Equatable, Sendable {

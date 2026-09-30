@@ -15,7 +15,8 @@ extension AppIPCBuiltInMethodRegistrations {
         let descriptors = inputs.catalog
         return try [
             AppIPCTypedMethodRegistration(
-                descriptor: descriptors.systemAndAuth.systemPing,
+                descriptorRepresentations: try inputs.descriptorRepresentations(
+                    for: descriptors.systemAndAuth.systemPing),
                 correlation: .notRequired,
                 resolveTarget: { parameters, _, _ in
                     AppIPCBuiltInRegistrationSupport.appTarget(parameters)
@@ -25,7 +26,8 @@ extension AppIPCBuiltInMethodRegistrations {
                 }
             ).erase(),
             AppIPCTypedMethodRegistration(
-                descriptor: descriptors.systemAndAuth.systemIdentify,
+                descriptorRepresentations: try inputs.descriptorRepresentations(
+                    for: descriptors.systemAndAuth.systemIdentify),
                 correlation: .notRequired,
                 resolveTarget: { parameters, context, _ in
                     try AppIPCBuiltInRegistrationSupport.principalTarget(parameters, context: context)
@@ -35,7 +37,8 @@ extension AppIPCBuiltInMethodRegistrations {
                 }
             ).erase(),
             AppIPCTypedMethodRegistration(
-                descriptor: descriptors.systemAndAuth.systemVersion,
+                descriptorRepresentations: try inputs.descriptorRepresentations(
+                    for: descriptors.systemAndAuth.systemVersion),
                 correlation: .notRequired,
                 resolveTarget: { parameters, context, _ in
                     try AppIPCBuiltInRegistrationSupport.principalTarget(parameters, context: context)
@@ -45,7 +48,8 @@ extension AppIPCBuiltInMethodRegistrations {
                 }
             ).erase(),
             AppIPCTypedMethodRegistration(
-                descriptor: descriptors.systemAndAuth.authLogin,
+                descriptorRepresentations: try inputs.descriptorRepresentations(
+                    for: descriptors.systemAndAuth.authLogin),
                 correlation: .notRequired,
                 resolveTarget: { parameters, _, _ in
                     AppIPCBuiltInRegistrationSupport.appTarget(parameters)
@@ -55,7 +59,8 @@ extension AppIPCBuiltInMethodRegistrations {
                 }
             ).erase(),
             AppIPCTypedMethodRegistration(
-                descriptor: descriptors.systemAndAuth.authStatus,
+                descriptorRepresentations: try inputs.descriptorRepresentations(
+                    for: descriptors.systemAndAuth.authStatus),
                 correlation: .notRequired,
                 resolveTarget: { parameters, _, _ in
                     AppIPCBuiltInRegistrationSupport.appTarget(parameters)
@@ -73,43 +78,50 @@ extension AppIPCBuiltInMethodRegistrations {
         let descriptors = inputs.catalog
         return try [
             AppIPCTypedMethodRegistration(
-                descriptor: descriptors.workspaceQueries.windowList,
+                descriptorRepresentations: try inputs.descriptorRepresentations(
+                    for: descriptors.workspaceQueries.windowList),
                 correlation: .notRequired,
                 resolveTarget: { parameters, _, _ in AppIPCBuiltInRegistrationSupport.appTarget(parameters) },
                 connectionHandler: { _, _, _ in try await inputs.ports.queryPort.listWindows() }
             ).erase(),
             AppIPCTypedMethodRegistration(
-                descriptor: descriptors.workspaceQueries.windowCurrent,
+                descriptorRepresentations: try inputs.descriptorRepresentations(
+                    for: descriptors.workspaceQueries.windowCurrent),
                 correlation: .notRequired,
                 resolveTarget: { parameters, _, _ in AppIPCBuiltInRegistrationSupport.appTarget(parameters) },
                 connectionHandler: { _, _, _ in try await inputs.ports.queryPort.currentWindow() }
             ).erase(),
             AppIPCTypedMethodRegistration(
-                descriptor: descriptors.workspaceQueries.workspaceList,
+                descriptorRepresentations: try inputs.descriptorRepresentations(
+                    for: descriptors.workspaceQueries.workspaceList),
                 correlation: .notRequired,
                 resolveTarget: { parameters, _, _ in AppIPCBuiltInRegistrationSupport.appTarget(parameters) },
                 connectionHandler: { _, _, _ in try await inputs.ports.queryPort.listWorkspaces() }
             ).erase(),
             AppIPCTypedMethodRegistration(
-                descriptor: descriptors.workspaceQueries.workspaceCurrent,
+                descriptorRepresentations: try inputs.descriptorRepresentations(
+                    for: descriptors.workspaceQueries.workspaceCurrent),
                 correlation: .notRequired,
                 resolveTarget: { parameters, _, _ in AppIPCBuiltInRegistrationSupport.appTarget(parameters) },
                 connectionHandler: { _, _, _ in try await inputs.ports.queryPort.currentWorkspace() }
             ).erase(),
             AppIPCTypedMethodRegistration(
-                descriptor: descriptors.workspaceQueries.paneList,
+                descriptorRepresentations: try inputs.descriptorRepresentations(
+                    for: descriptors.workspaceQueries.paneList),
                 correlation: .notRequired,
                 resolveTarget: { parameters, _, _ in AppIPCBuiltInRegistrationSupport.appTarget(parameters) },
                 connectionHandler: { _, _, _ in try await inputs.ports.queryPort.listPanes() }
             ).erase(),
             AppIPCTypedMethodRegistration(
-                descriptor: descriptors.workspaceQueries.paneCurrent,
+                descriptorRepresentations: try inputs.descriptorRepresentations(
+                    for: descriptors.workspaceQueries.paneCurrent),
                 correlation: .notRequired,
                 resolveTarget: { parameters, _, _ in AppIPCBuiltInRegistrationSupport.appTarget(parameters) },
                 connectionHandler: { _, _, _ in try await inputs.ports.queryPort.currentPane() }
             ).erase(),
             AppIPCTypedMethodRegistration(
-                descriptor: descriptors.workspaceQueries.paneSnapshot,
+                descriptorRepresentations: try inputs.descriptorRepresentations(
+                    for: descriptors.workspaceQueries.paneSnapshot),
                 correlation: .notRequired,
                 resolveTarget: { parameters, _, tools in
                     try await AppIPCBuiltInRegistrationSupport.canonicalPaneTarget(
@@ -121,12 +133,13 @@ extension AppIPCBuiltInMethodRegistrations {
                         }
                     )
                 },
-                connectionHandler: { parameters, _, _ in
+                connectionHandler: { parameters, context, _ in
                     let handle = try IPCHandle.parse(parameters.handle)
                     guard case (.pane, .canonicalUUID(let paneId)) = (handle.kind, handle.reference) else {
                         throw AppIPCTypedMethodRegistrationError.targetKindNotAllowed
                     }
-                    return try await inputs.ports.queryPort.snapshotPane(paneId)
+                    return try await inputs.ports.queryPort.snapshotPane(
+                        paneId, ownPaneAssertion: AppIPCOwnPaneAssertion(principal: context.principal))
                 }
             ).erase(),
         ]

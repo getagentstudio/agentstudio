@@ -42,7 +42,7 @@ const { chapterId, steps } = Astro.props;
   <svg class="chapter-step-branch pointer-events-none absolute inset-0 h-[64px] w-full overflow-visible" aria-hidden="true">
     <path class="chapter-step-active-branch" d="M 28 12 C 28 47.1 29.9 51 47 51 L 52 51" data-chapter-step-branch />
   </svg>
-  <span class="chapter-step-active-label floating-glass-material absolute top-[37px] left-[52px] rounded-full border px-3 py-1 text-[13px] leading-[20px] whitespace-nowrap text-ink" data-chapter-step-active-label aria-hidden="true"><span data-chapter-step-active-label-text>{steps[0]?.label}</span></span>
+  <span class="chapter-step-active-label floating-glass-material absolute top-[37px] left-[52px] rounded-full border px-3 py-1 text-step-label font-normal whitespace-nowrap text-ink" data-chapter-step-active-label aria-hidden="true"><span data-chapter-step-active-label-text>{steps[0]?.label}</span></span>
 </div>
 
 <style>
@@ -52,7 +52,7 @@ const { chapterId, steps } = Astro.props;
     position: absolute;
     top: 11.25px;
     left: 0;
-    height: 1.5px;
+    height: var(--rail-line-width);
     pointer-events: none;
   }
   .chapter-step-ring { position: absolute; z-index: 2; top: -1px; left: 28px; width: 26px; height: 26px; overflow: visible; translate: -50% 0; pointer-events: none; }
@@ -94,7 +94,7 @@ const { chapterId, steps } = Astro.props;
   .chapter-step-active-branch {
     fill: none;
     stroke: color-mix(in srgb, var(--color-primary) 46%, transparent);
-    stroke-width: 1.5;
+    stroke-width: var(--rail-line-width);
     stroke-linecap: round;
   }
   .chapter-step-active-label { max-width: calc(100% - var(--chapter-step-label-left, 52px)); overflow: hidden; text-overflow: ellipsis; }

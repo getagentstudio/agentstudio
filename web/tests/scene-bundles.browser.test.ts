@@ -1,12 +1,13 @@
 import { gsap } from "gsap";
 import { afterEach, beforeAll, describe, expect, inject, it, vi } from "vitest";
-import { commands } from "vitest/browser";
+import { commands, page } from "vitest/browser";
 
 // The registry module also declares `window.AgentStudioScenes`, which scene.js fills.
 import type { RegisteredSceneBundle } from "../scripts/scene-bundles/scene-bundle-registry.ts";
 import { sceneIds } from "../src/motion-scenes/scene-contract";
 import { resolveSceneModule } from "../src/motion-scenes/scene-registry";
 import { kitPhoneAttribute } from "../src/recreation-kit/recreation-kit-dom";
+import { observeQuickFindScene } from "./quickfind-scene-observation";
 import type { BuiltSceneBundleFiles } from "./scene-bundle-browser-command.ts";
 
 declare module "vitest/browser" {
@@ -98,6 +99,21 @@ function phoneHiddenWidths(root: HTMLElement): readonly number[] {
   return Array.from(root.querySelectorAll(`[${kitPhoneAttribute}="hidden"]`), (element) =>
     Math.round(element.getBoundingClientRect().width),
   );
+}
+
+function hasNonWhitespaceDirectText(element: Element): boolean {
+  return Array.from(element.childNodes).some(
+    (childNode) =>
+      childNode.nodeType === Node.TEXT_NODE && (childNode.textContent ?? "").trim().length > 0,
+  );
+}
+
+function directTextContent(element: Element): string {
+  return Array.from(element.childNodes)
+    .filter((childNode) => childNode.nodeType === Node.TEXT_NODE)
+    .map((childNode) => childNode.textContent ?? "")
+    .join("")
+    .trim();
 }
 
 function requireBundle(sceneId: string): SceneBundleUnderTest {
@@ -321,6 +337,111 @@ describe("scene bundles for HyperFrames", () => {
     delete window.AgentStudioScenes;
   });
 
+  it.each([600, 1280])(
+    "shows the selected pane search result before quick-find jumps at %ipx",
+    async (stageWidth) => {
+      const bundle = requireBundle("chapter-find-and-focus");
+      await page.viewport(stageWidth, bundle.manifest.stage.height);
+      mountStyle(bundle.sceneCss);
+      const root = mountStage(bundle.sceneHtml, stageWidth, bundle.manifest.stage.height);
+      runClassicScript(bundle.sceneJs);
+      const timeline = gsap.timeline({ paused: true });
+      try {
+        window.AgentStudioScenes?.["chapter-find-and-focus"]?.buildScene(root, timeline, {
+          width: stageWidth,
+          height: bundle.manifest.stage.height,
+          seed: bundle.manifest.seed,
+        });
+        const samples = [];
+        for (let index = 5; index <= 25; index += 1) {
+          const time = index / 10;
+          timeline.time(time);
+          samples.push(observeQuickFindScene(root, time));
+        }
+        const selected = samples.filter(
+          (sample) =>
+            sample.query === "tool" &&
+            sample.paneVisible &&
+            sample.paneSelected &&
+            !sample.recentVisible,
+        );
+        expect(selected.length).toBeGreaterThan(0);
+        expect
+          .soft((selected.at(-1)?.time ?? 0) - (selected[0]?.time ?? 0))
+          .toBeGreaterThanOrEqual(0.6 - 0.000001);
+        expect.soft(samples.find((sample) => sample.time === 0.8)?.shortcutVisible).toBe(true);
+        expect.soft(selected.every((sample) => sample.subtitleVisible)).toBe(true);
+        expect
+          .soft(
+            samples
+              .filter((sample) => sample.query !== "")
+              .every((sample) => !sample.recentVisible),
+          )
+          .toBe(true);
+      } finally {
+        timeline.revert();
+        timeline.kill();
+      }
+    },
+  );
+
+  it.each([600, 1280])(
+    "uses native quick-find pane anatomy before the focus jump at %ipx",
+    (stageWidth) => {
+      const bundle = requireBundle("chapter-find-and-focus");
+      mountStyle(bundle.sceneCss);
+      const root = mountStage(bundle.sceneHtml, stageWidth, bundle.manifest.stage.height);
+      runClassicScript(bundle.sceneJs);
+      const timeline = gsap.timeline({ paused: true });
+      try {
+        window.AgentStudioScenes?.["chapter-find-and-focus"]?.buildScene(root, timeline, {
+          width: stageWidth,
+          height: bundle.manifest.stage.height,
+          seed: bundle.manifest.seed,
+        });
+        timeline.time(2);
+        const selected = observeQuickFindScene(root, 2);
+        expect.soft(selected.paneTitle).toBe("Terminal — tool-portal");
+        expect.soft(selected.paneSubtitle).toBe("parallel work · Tab 1 · Pane 2 · Active");
+        expect(selected).toMatchObject({
+          query: "tool",
+          paneVisible: true,
+          paneSelected: true,
+          subtitleVisible: true,
+          recentVisible: false,
+          shortcutVisible: true,
+        });
+        expect(
+          root.querySelector('[data-scene-part="pane-results"] .kit-command-bar__section')
+            ?.textContent,
+        ).toBe("PANES");
+        const focusRing = root.querySelector('[data-scene-part="target-focus-ring"]');
+        expect(Number(gsap.getProperty(focusRing, "opacity"))).toBe(0);
+        timeline.time(3.4);
+        expect(Number(gsap.getProperty(focusRing, "opacity"))).toBeGreaterThan(0.9);
+        const activityLineTextElements = [
+          ...root.querySelectorAll<HTMLElement>(".kit-pane-grid .kit-terminal__line--activity *"),
+        ].filter(hasNonWhitespaceDirectText);
+        expect(activityLineTextElements.length).toBeGreaterThan(0);
+        timeline.time(2.8);
+        expect(
+          activityLineTextElements.every((element) =>
+            element.hasAttribute("data-layout-allow-overlap"),
+          ),
+        ).toBe(true);
+        timeline.time(3.1);
+        expect(
+          activityLineTextElements.every(
+            (element) => !element.hasAttribute("data-layout-allow-overlap"),
+          ),
+        ).toBe(true);
+      } finally {
+        timeline.revert();
+        timeline.kill();
+      }
+    },
+  );
+
   it("keeps the quick-find overlay behind the settled panes and scopes its text occlusion", () => {
     const bundle = requireBundle("chapter-find-and-focus");
     const { width, height } = bundle.manifest.stage;
@@ -354,7 +475,11 @@ describe("scene bundles for HyperFrames", () => {
       paneTextContainers.every((pane) => pane.hasAttribute("data-layout-allow-occlusion")),
     ).toBe(true);
     expect(coveredRightLine?.hasAttribute("data-layout-allow-overlap")).toBe(true);
-    timeline.time(2.6);
+    timeline.time(2.8);
+    expect(
+      paneTextContainers.every((pane) => pane.hasAttribute("data-layout-allow-occlusion")),
+    ).toBe(true);
+    timeline.time(3.1);
     expect(
       paneTextContainers.every((pane) => !pane.hasAttribute("data-layout-allow-occlusion")),
     ).toBe(true);
@@ -362,6 +487,124 @@ describe("scene bundles for HyperFrames", () => {
     timeline.revert();
     timeline.kill();
   });
+
+  it.each([600, 1280])(
+    "marks every find-and-focus terminal text element as an allowed overlap only while the bar is open at %ipx",
+    (stageWidth) => {
+      const bundle = requireBundle("chapter-find-and-focus");
+      mountStyle(bundle.sceneCss);
+      const root = mountStage(bundle.sceneHtml, stageWidth, bundle.manifest.stage.height);
+      runClassicScript(bundle.sceneJs);
+      const timeline = gsap.timeline({ paused: true });
+      window.AgentStudioScenes?.["chapter-find-and-focus"]?.buildScene(root, timeline, {
+        width: stageWidth,
+        height: bundle.manifest.stage.height,
+        seed: bundle.manifest.seed,
+      });
+
+      const terminalTextElements = [
+        ...root.querySelectorAll<HTMLElement>(".kit-pane-grid .kit-terminal *"),
+      ].filter(hasNonWhitespaceDirectText);
+      const coveredLeaseText = terminalTextElements.find(
+        (element) => directTextContent(element) === "Reading src/lease.ts",
+      );
+      expect(terminalTextElements.length).toBeGreaterThan(0);
+      expect(coveredLeaseText).toBeDefined();
+
+      for (const [time, expected] of [
+        [0.3, false],
+        [0.6, true],
+        [1.7, true],
+        [2.9, true],
+        [3.1, false],
+        [1.7, true],
+        [0.3, false],
+      ] as const) {
+        timeline.time(time);
+        expect(
+          terminalTextElements.every((element) =>
+            element.hasAttribute("data-layout-allow-overlap"),
+          ),
+          `every terminal text element at ${stageWidth}px, t=${time}`,
+        ).toBe(expected);
+        expect(
+          coveredLeaseText?.hasAttribute("data-layout-allow-overlap"),
+          `lease typed text span itself at ${stageWidth}px, t=${time}`,
+        ).toBe(expected);
+      }
+      timeline.revert();
+      timeline.kill();
+    },
+  );
+
+  it.each([600, 1280])(
+    "renders the Review thread inline after line 49 with responsive file tree at %ipx",
+    (stageWidth) => {
+      const bundle = requireBundle("chapter-review");
+      mountStyle(bundle.sceneCss);
+      const root = mountStage(bundle.sceneHtml, stageWidth, bundle.manifest.stage.height);
+      runClassicScript(bundle.sceneJs);
+      const timeline = gsap.timeline({ paused: true });
+      window.AgentStudioScenes?.["chapter-review"]?.buildScene(root, timeline, {
+        width: stageWidth,
+        height: bundle.manifest.stage.height,
+        seed: bundle.manifest.seed,
+      });
+
+      const changedLine = root.querySelector<HTMLElement>(
+        '[data-scene-part="review-changed-line"]',
+      );
+      const nextLine = [...root.querySelectorAll<HTMLElement>(".kit-diff-view__line")].find(
+        (line) => line.querySelector(".kit-diff-view__number")?.textContent === "50",
+      );
+      const thread = root.querySelector<HTMLElement>('[data-scene-part="review-comment-thread"]');
+      const threadSlot = thread?.closest<HTMLElement>(".kit-diff-view__annotation");
+      const fileTree = root.querySelector<HTMLElement>(".kit-file-tree");
+      expect(changedLine).not.toBeNull();
+      expect(nextLine).toBeDefined();
+      expect(thread).not.toBeNull();
+      expect(threadSlot).not.toBeNull();
+      expect(fileTree).not.toBeNull();
+      expect(getComputedStyle(fileTree as HTMLElement).display).toBe(
+        stageWidth === 600 ? "none" : "flex",
+      );
+
+      timeline.time(1.0);
+      expect((threadSlot as HTMLElement).getBoundingClientRect().height).toBeLessThan(1);
+      timeline.time(2.2);
+      expect(changedLine?.nextElementSibling).toBe(threadSlot);
+      expect((threadSlot as HTMLElement).getBoundingClientRect().top).toBeGreaterThanOrEqual(
+        (changedLine as HTMLElement).getBoundingClientRect().bottom - 1,
+      );
+      expect((nextLine as HTMLElement).getBoundingClientRect().top).toBeGreaterThanOrEqual(
+        (threadSlot as HTMLElement).getBoundingClientRect().bottom - 1,
+      );
+      expect(["absolute", "fixed"]).not.toContain(getComputedStyle(thread as HTMLElement).position);
+      expect(thread?.textContent).toContain("1 comment");
+      expect(thread?.textContent).toContain("Open");
+      expect(thread?.querySelector(".scene-review__avatar")?.textContent).toBe("Y");
+      expect(thread?.querySelector(".scene-review__metadata strong")?.textContent).toBe("You");
+      expect(thread?.textContent).toContain("2m");
+      expect(thread?.textContent).toContain("Keep the comparison dated.");
+      expect(thread?.textContent).toContain("The current.md pin can stay brief.");
+      expect(thread?.textContent).toContain("Reply");
+      expect(thread?.textContent).toContain("Resolve");
+      const bodyFontSize = Number.parseFloat(
+        getComputedStyle(thread?.querySelector("p") as HTMLElement).fontSize,
+      );
+      const diffFontSize = Number.parseFloat(getComputedStyle(changedLine as HTMLElement).fontSize);
+      const metadataFontSize = Number.parseFloat(
+        getComputedStyle(thread?.querySelector(".scene-review__metadata") as HTMLElement).fontSize,
+      );
+      expect(bodyFontSize / diffFontSize).toBeGreaterThanOrEqual(0.9);
+      expect(bodyFontSize / diffFontSize).toBeLessThanOrEqual(1.05);
+      expect(metadataFontSize).toBeLessThan(bodyFontSize);
+      timeline.time(1.0);
+      expect((threadSlot as HTMLElement).getBoundingClientRect().height).toBeLessThan(1);
+      timeline.revert();
+      timeline.kill();
+    },
+  );
 
   it("marks only the truthful truncated sidebar label as allowed overflow", () => {
     const bundle = requireBundle("chapter-many-agents");

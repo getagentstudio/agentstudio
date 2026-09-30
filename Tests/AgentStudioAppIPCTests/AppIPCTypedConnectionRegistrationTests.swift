@@ -16,7 +16,7 @@ struct AppIPCTypedConnectionRegistrationTests {
             result: IPCSystemPingResult(runtimeId: fixture.runtimeId)
         )
         let registration = AppIPCTypedMethodRegistration(
-            descriptor: descriptor,
+            descriptorRepresentations: try IPCMethodDescriptorRepresentations(typedDescriptor: descriptor),
             correlation: AppIPCCorrelation<IPCEmptyParams>.notRequired,
             resolveTarget: { parameters, context, _ in
                 #expect(context.principal == nil)
@@ -65,7 +65,7 @@ struct AppIPCTypedConnectionRegistrationTests {
             result: expectedStatus
         )
         let registration = AppIPCTypedMethodRegistration(
-            descriptor: descriptor,
+            descriptorRepresentations: try IPCMethodDescriptorRepresentations(typedDescriptor: descriptor),
             correlation: AppIPCCorrelation<IPCAuthLoginParams>.notRequired,
             resolveTarget: { parameters, _, _ in
                 AppIPCTargetResolution(parameters: parameters, canonicalHandle: nil, target: .app)
@@ -110,7 +110,7 @@ struct AppIPCTypedConnectionRegistrationTests {
             result: expectedStatus
         )
         let registration = AppIPCTypedMethodRegistration(
-            descriptor: descriptor,
+            descriptorRepresentations: try IPCMethodDescriptorRepresentations(typedDescriptor: descriptor),
             correlation: AppIPCCorrelation<IPCEmptyParams>.notRequired,
             resolveTarget: { parameters, _, _ in
                 AppIPCTargetResolution(parameters: parameters, canonicalHandle: nil, target: .app)
@@ -313,7 +313,9 @@ struct AppIPCTypedConnectionRegistrationTests {
         let principal = fixture.panePrincipal
         let subscriber = TypedConnectionRecordingEventSubscriber()
         let registration = AppIPCTypedMethodRegistration(
-            descriptor: try TypedConnectionRegistrationFixture.eventDescriptor(),
+            descriptorRepresentations: try IPCMethodDescriptorRepresentations(
+                typedDescriptor: TypedConnectionRegistrationFixture.eventDescriptor()
+            ),
             correlation: AppIPCCorrelation<TypedConnectionEventParameters>.notRequired,
             resolveTarget: { parameters, context, _ in
                 #expect(context.contextId == fixture.contextId)
@@ -354,7 +356,9 @@ struct AppIPCTypedConnectionRegistrationTests {
         exposure: IPCMethodExposure = .allChannels
     ) throws -> AppIPCTypedMethodRegistration<TypedConnectionParameters, TypedConnectionResult> {
         AppIPCTypedMethodRegistration(
-            descriptor: try TypedConnectionRegistrationFixture.authenticatedDescriptor(exposure: exposure),
+            descriptorRepresentations: try IPCMethodDescriptorRepresentations(
+                typedDescriptor: TypedConnectionRegistrationFixture.authenticatedDescriptor(exposure: exposure)
+            ),
             correlation: .required(\.correlationId),
             resolveTarget: { parameters, context, tools in
                 await recorder.record(.resolveTarget)

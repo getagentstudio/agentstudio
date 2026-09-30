@@ -182,7 +182,13 @@ export function buildHeroIntroScene(
   timeline.fromTo(
     eyebrowSettled,
     { opacity: 0, letterSpacing: `${eyebrowStartSpacing}px` },
-    { opacity: 1, letterSpacing: `${eyebrowBaseSpacing}px`, duration: 0.3, ease: "power1.out" },
+    {
+      opacity: 1,
+      letterSpacing: `${eyebrowBaseSpacing}px`,
+      autoRound: false,
+      duration: 0.3,
+      ease: "power1.out",
+    },
     0.15,
   );
   timeline.fromTo(

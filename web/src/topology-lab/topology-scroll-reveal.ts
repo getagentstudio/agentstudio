@@ -197,8 +197,10 @@ export function initializeTopologyScrollReveal(
     }
 
     const artworkTop = artwork.getBoundingClientRect().top;
-    vibrancyGradient.setAttribute("y1", String(window.innerHeight * 0.73 - artworkTop));
-    vibrancyGradient.setAttribute("y2", String(window.innerHeight * 0.75 - artworkTop));
+    const viewportColourEdgeY = window.innerHeight * 0.73 - artworkTop;
+    const colourFadeHeight = window.innerHeight * 0.02;
+    vibrancyGradient.setAttribute("y1", String(viewportColourEdgeY));
+    vibrancyGradient.setAttribute("y2", String(viewportColourEdgeY + colourFadeHeight));
     vibrancyMaskRect.setAttribute("width", String(artwork.clientWidth));
     vibrancyMaskRect.setAttribute("height", String(artwork.clientHeight));
     opacityGradient.setAttribute("y1", String(window.innerHeight * 0.9 - artworkTop));
@@ -258,11 +260,29 @@ export function initializeTopologyScrollReveal(
     const terminalPath = artwork.querySelector<SVGPathElement>(
       '[data-topology-terminal-route] [data-topology-path-role="core"]',
     );
-    if (
-      !endReachedDispatched &&
+    const terminalReached =
       terminalPath !== null &&
-      revealProgress >= Number(terminalPath.dataset["topologyPathEnd"]) - 1e-6
-    ) {
+      revealProgress >= Number(terminalPath.dataset["topologyPathEnd"]) - 1e-6;
+    if (scrollProgress >= 0.9999 || endReachedDispatched || terminalReached) {
+      const terminalRing = artwork.querySelector<SVGCircleElement>(
+        "[data-topology-terminal-node] .node-end-ring",
+      );
+      const pathBounds = terminalPath?.getBBox();
+      const terminalBottomY = Math.max(
+        pathBounds === undefined ? 0 : pathBounds.y + pathBounds.height,
+        terminalRing === null
+          ? 0
+          : terminalRing.cy.baseVal.value +
+              terminalRing.r.baseVal.value +
+              Number.parseFloat(getComputedStyle(terminalRing).strokeWidth) / 2,
+      );
+      // Once reached, the terminal join stays wholly inside the colour copy,
+      // including its ring stroke after later scroll or viewport relayout.
+      const colourEdgeY = Math.max(viewportColourEdgeY, terminalBottomY + 8);
+      vibrancyGradient.setAttribute("y1", String(colourEdgeY));
+      vibrancyGradient.setAttribute("y2", String(colourEdgeY + colourFadeHeight));
+    }
+    if (!endReachedDispatched && terminalReached) {
       endReachedDispatched = true;
       artwork.setAttribute("data-topology-end-reached", "");
       artwork.ownerDocument.dispatchEvent(new Event("topology-end-reached"));

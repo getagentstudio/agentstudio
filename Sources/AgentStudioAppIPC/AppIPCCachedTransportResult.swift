@@ -1,14 +1,13 @@
 import AgentStudioIPCTransport
 import Foundation
 
-/// One immutable response, encoded for the wire once and then served.
+/// One immutable transport value, materialized once and then served.
 ///
 /// The two catalog methods answer with a value that is fixed for a runtime and
-/// a channel. Composing it already happens once, at server composition, but
-/// every request still re-encoded it through the typed contract: a JSON encode,
-/// a full schema normalization, a typed-encoding validation and a decode into
-/// the transport's `JSONValue`, four passes over the largest document this app
-/// produces. That work is identical every time, so it is done once here.
+/// a channel. `command.list` builds its transport value from the typed result on
+/// first use; `system.capabilities` supplies bytes validated during server
+/// composition. This cache materializes the transport's `JSONValue` once and
+/// reuses it for later requests.
 ///
 /// Nothing invalidates this. Round 1 registers no method or command
 /// dynamically, so the catalog a runtime advertises cannot change while it is

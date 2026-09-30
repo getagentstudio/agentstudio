@@ -10,8 +10,18 @@ package struct AppIPCMethodRegistry: Sendable {
     /// served from the stored value thereafter.
     package let capabilitiesTransportResultCache: AppIPCCachedTransportResult
     private let registrationsByName: [String: AnyAppIPCMethodRegistration]
+    /// Every method and command this build knows on every channel: names,
+    /// exposure and eligibility only, never handlers. It lets a pane agent
+    /// hear "not yet allowed" for a recognized name its channel hides.
+    private let recognizedMethodsByName: [String: AppIPCRecognizedEntry]
+    private let recognizedCommandsById: [String: AppIPCRecognizedEntry]
 
-    package init(registrations: [AnyAppIPCMethodRegistration], channel: AgentStudioIPCChannel) throws {
+    package init(
+        registrations: [AnyAppIPCMethodRegistration],
+        recognizedCommands: [AppIPCRecognizedEntry],
+        channel: AgentStudioIPCChannel,
+        capabilitiesComposition: IPCSystemCapabilitiesComposition
+    ) throws {
         var seenNames: Set<String> = []
         for registration in registrations {
             let name = registration.descriptor.metadata.name
@@ -22,21 +32,31 @@ package struct AppIPCMethodRegistry: Sendable {
         let available = registrations.filter {
             $0.descriptor.metadata.exposure == .allChannels || channel == .debug
         }
-        guard let ping = available.first(where: { $0.descriptor.metadata.name == "system.ping" }) else {
-            throw AppIPCMethodRegistryError.missingSystemPing
+        let availableNames = Set(available.map(\.descriptor.metadata.name))
+        let recognizedUnexposedMethods = registrations.map(\.descriptor.metadata)
+            .filter { !availableNames.contains($0.name) }
+            .map {
+                IPCRecognizedUnexposedName(name: $0.name, agentEligibility: $0.agentEligibility ?? .notYetAllowed)
+            }
+            .sorted { $0.name < $1.name }
+        let composition = capabilitiesComposition
+        let expectedMethodMetadata =
+            (available.map(\.descriptor.metadata) + [composition.erasedDescriptor.metadata]).sorted {
+                $0.name < $1.name
+            }
+        guard composition.result.methods == expectedMethodMetadata,
+            composition.result.recognizedUnexposedMethods == recognizedUnexposedMethods
+        else {
+            throw AppIPCMethodRegistryError.capabilitiesCompositionMismatch
         }
-        let composition = try IPCSystemCapabilitiesDescriptorFactory.compose(
-            compatibility: .current, availableDescriptors: available.map(\.descriptor),
-            illustrativeDescriptor: ping.descriptor
-        )
-        let capabilityDescriptor = composition.descriptor
         let capabilityResult = composition.result
+        let encodedCapabilityResult = composition.encodedResult
         let capabilitiesTransportResultCache = AppIPCCachedTransportResult {
             try JSONDecoder().decode(
-                JSONValue.self, from: try capabilityDescriptor.encodeResult(capabilityResult))
+                JSONValue.self, from: encodedCapabilityResult)
         }
         let capabilityRegistration = try AppIPCTypedMethodRegistration(
-            descriptor: composition.descriptor,
+            descriptorRepresentations: composition.descriptorRepresentations,
             correlation: .notRequired,
             resolveTarget: { parameters, context, _ in
                 try AppIPCBuiltInRegistrationSupport.principalTarget(parameters, context: context)
@@ -50,16 +70,90 @@ package struct AppIPCMethodRegistry: Sendable {
         self.registrationsByName = Dictionary(
             uniqueKeysWithValues: (available + [capabilityRegistration]).map { ($0.descriptor.metadata.name, $0) }
         )
+        self.recognizedMethodsByName = Dictionary(
+            uniqueKeysWithValues: (registrations + [capabilityRegistration]).map {
+                ($0.descriptor.metadata.name, AppIPCRecognizedEntry(metadata: $0.descriptor.metadata))
+            }
+        )
+        var recognizedCommandsById: [String: AppIPCRecognizedEntry] = [:]
+        for command in recognizedCommands {
+            guard recognizedCommandsById.updateValue(command, forKey: command.name) == nil else {
+                throw AppIPCMethodRegistryError.duplicateCommandIdentifier(command.name)
+            }
+        }
+        self.recognizedCommandsById = recognizedCommandsById
     }
 
     package func registration(named methodName: String) -> AnyAppIPCMethodRegistration? {
         registrationsByName[methodName]
     }
+
+    package func recognizesMethod(named methodName: String) -> Bool {
+        recognizedMethodsByName[methodName] != nil
+    }
+
+    /// The command's agent eligibility on this channel. A command this channel
+    /// hides, or one this build does not know, is not yet allowed.
+    package func commandAgentEligibility(_ commandId: String) -> IPCAgentEligibility {
+        guard let command = recognizedCommandsById[commandId], command.isExposed(on: channel) else {
+            return .notYetAllowed
+        }
+        return command.agentEligibility ?? .notYetAllowed
+    }
+
+    /// Routing admission for a pane agent, before schema validation: a
+    /// recognized method or command that this channel hides or that is not yet
+    /// allowed is refused by name, with no effect. An unknown method stays
+    /// method-not-found and an unknown command reaches the command adapter's
+    /// existing unknown-command outcome.
+    package func paneAgentRoutingRefusal(methodName: String, parameters: JSONValue?) -> AuthorizationError? {
+        guard let method = recognizedMethodsByName[methodName],
+            let eligibility = method.agentEligibility
+        else { return nil }
+        guard method.isExposed(on: channel), eligibility != .notYetAllowed else {
+            return .notYetAllowed(methodName)
+        }
+        guard methodName == AppIPCMethodNames.commandExecute,
+            case .object(let fields)? = parameters,
+            case .string(let commandId)? = fields["commandId"],
+            recognizedCommandsById[commandId] != nil,
+            commandAgentEligibility(commandId) == .notYetAllowed
+        else { return nil }
+        return .notYetAllowed(commandId)
+    }
+}
+
+/// One recognized method or command: enough to refuse a pane agent by name
+/// without reaching a handler.
+package struct AppIPCRecognizedEntry: Equatable, Sendable {
+    package let name: String
+    package let exposure: IPCMethodExposure
+    /// `nil` for an established Agent IPC v2 method.
+    package let agentEligibility: IPCAgentEligibility?
+
+    package init(name: String, exposure: IPCMethodExposure, agentEligibility: IPCAgentEligibility?) {
+        self.name = name
+        self.exposure = exposure
+        self.agentEligibility = agentEligibility
+    }
+
+    init(metadata: IPCMethodCatalogEntry) {
+        self.init(name: metadata.name, exposure: metadata.exposure, agentEligibility: metadata.agentEligibility)
+    }
+
+    func isExposed(on channel: AgentStudioIPCChannel) -> Bool {
+        exposure == .allChannels || channel == .debug
+    }
+}
+
+package enum AppIPCMethodNames {
+    package static let commandExecute = "command.execute"
 }
 
 package enum AppIPCMethodRegistryError: Error, Equatable, Sendable {
     case duplicateMethodName(String)
-    case missingSystemPing
+    case duplicateCommandIdentifier(String)
+    case capabilitiesCompositionMismatch
 }
 
 public struct AuthorizationError: Error, Equatable, Sendable {
@@ -68,14 +162,31 @@ public struct AuthorizationError: Error, Equatable, Sendable {
         case unauthorized
         case noBoundPane
         case missingGrant
+        /// A pane agent named a method, command or target outside this
+        /// layer's own-pane set.
+        case notYetAllowed
+        /// A pane agent asked for an effect agents are never allowed, such as
+        /// closing its own pane or putting Bridge content into a drawer.
+        case refusedForAgent
     }
 
     public let reason: Reason
     public let requiredScope: IPCPermissionScope?
+    /// The method or command the refusal names, for the agent outcomes.
+    public let refusedName: String?
 
-    public init(reason: Reason, requiredScope: IPCPermissionScope? = nil) {
+    public init(reason: Reason, requiredScope: IPCPermissionScope? = nil, refusedName: String? = nil) {
         self.reason = reason
         self.requiredScope = requiredScope
+        self.refusedName = refusedName
+    }
+
+    package static func notYetAllowed(_ name: String) -> Self {
+        Self(reason: .notYetAllowed, refusedName: name)
+    }
+
+    package static func refusedForAgent(_ name: String) -> Self {
+        Self(reason: .refusedForAgent, refusedName: name)
     }
 }
 
@@ -238,18 +349,30 @@ public struct AuthorizationService: Sendable {
     private let methodRegistry: AppIPCMethodRegistry
     private let grantLedger: GrantLedger
     private let canonicalizer: PermissionScopeCanonicalizer
+    private let paneAgentAuthorization: AppIPCPaneAgentAuthorization
 
     package init(
         methodRegistry: AppIPCMethodRegistry,
         grantLedger: GrantLedger,
-        canonicalizer: PermissionScopeCanonicalizer
+        canonicalizer: PermissionScopeCanonicalizer,
+        ownPaneScopePort: any AppIPCOwnPaneScopePort,
+        agentAuthorizationTelemetry: any AppIPCAgentAuthorizationTelemetry
     ) {
         self.methodRegistry = methodRegistry
         self.grantLedger = grantLedger
         self.canonicalizer = canonicalizer
+        self.paneAgentAuthorization = AppIPCPaneAgentAuthorization(
+            methodRegistry: methodRegistry, ownPaneScopePort: ownPaneScopePort,
+            telemetry: agentAuthorizationTelemetry)
     }
 
-    package func authorize(principal: IPCPrincipal, request: AppIPCMethodAuthorizationRequest) throws {
+    /// A pane agent's routing admission, before schema validation; see
+    /// `AppIPCMethodRegistry.paneAgentRoutingRefusal`.
+    package func paneAgentRoutingRefusal(methodName: String, parameters: JSONValue?) -> AuthorizationError? {
+        paneAgentAuthorization.routingRefusal(methodName: methodName, parameters: parameters)
+    }
+
+    package func authorize(principal: IPCPrincipal, request: AppIPCMethodAuthorizationRequest) async throws {
         guard let registration = methodRegistry.registration(named: request.methodName) else {
             throw AuthorizationError(reason: .methodNotFound)
         }
@@ -260,6 +383,16 @@ public struct AuthorizationService: Sendable {
             throw AuthorizationError(reason: .unauthorized)
         }
         if isDiagnostic(principal), methodRegistry.channel == .debug {
+            return
+        }
+        // A declared eligibility replaces the privilege baseline for pane
+        // agents; there is no fallback to it. Established v2 methods declare
+        // none and keep the path below unchanged.
+        if case .spawnedPaneAgent(let boundPaneId, _) = principal.kind,
+            let eligibility = metadata.agentEligibility
+        {
+            try await paneAgentAuthorization.authorize(
+                boundPaneId: boundPaneId, methodEligibility: eligibility, request: request)
             return
         }
         guard metadata.exposure == .allChannels else { throw AuthorizationError(reason: .unauthorized) }

@@ -1,3 +1,4 @@
+import AgentStudioInfrastructure
 import AgentStudioTestSupport
 import Foundation
 import Testing
@@ -353,6 +354,91 @@ struct WorkspaceMutationCoordinatorTests {
         #expect(restored.residency == pane.residency)
         #expect(restored.metadata.launchDirectory == pane.metadata.launchDirectory)
         #expect(arrangements.allPaneIds.contains(pane.id))
+    }
+
+    @Test(
+        "a background drawer terminal creation preserves a drawer selection a human made after its capture"
+    )
+    func applyCommittedTerminalCreation_backgroundDrawerInsertion_preservesLiveDrawerSelection() throws {
+        let store = WorkspaceStore(startsObserving: false)
+        let anchorPane = makePane(title: "Anchor")
+        let parentPane = makePane(
+            title: "Parent",
+            facets: PaneContextFacets(cwd: URL(filePath: "/tmp/f1-background-drawer-cursor-race"))
+        )
+        store.paneAtom.addPane(anchorPane)
+        store.paneAtom.addPane(parentPane)
+        let tab = Tab(paneId: anchorPane.id)
+        store.appendTab(tab)
+        #expect(
+            store.insertPane(
+                parentPane.id, inTab: tab.id, at: anchorPane.id,
+                direction: .horizontal, position: .after, sizingMode: .halveTarget
+            )
+        )
+
+        let childA = try #require(store.addDrawerPane(to: parentPane.id))
+        let childB = try #require(store.addDrawerPane(to: parentPane.id))
+        let drawerId = try #require(store.pane(parentPane.id)?.drawer?.drawerId)
+        store.setActiveDrawerPane(childA.id, in: parentPane.id)
+        // `addDrawerPane` defaults to expanding the drawer; collapse it back so
+        // the background creation below has a deterministic "not expanded" to
+        // prove it leaves alone, matching `DrawerChildPresentation.background`.
+        store.paneAtom.toggleDrawer(for: parentPane.id)
+        #expect(store.pane(parentPane.id)?.drawer?.isExpanded == false)
+
+        // Capture the tab exactly as `commitTerminalCreation` would before its
+        // awaited off-main prepare and SQLite save: A selected, no C yet.
+        let capturedTab = try #require(store.tab(tab.id))
+        let capturedState = TabArrangementState(
+            tabId: capturedTab.id, allPaneIds: capturedTab.allPaneIds,
+            arrangements: capturedTab.arrangements, activeArrangementId: capturedTab.activeArrangementId
+        )
+        let childC = Pane(
+            content: .terminal(TerminalState(provider: .zmx, lifetime: .persistent, zmxSessionID: .generateUUIDv7())),
+            metadata: PaneMetadata(title: "Drawer"),
+            kind: .drawerChild(parentPaneId: parentPane.id)
+        )
+        // Build the published proposal's tab the same way production's
+        // off-main composition does (`preparePlacementOffMain`): insert the
+        // new child without selecting it, since this is a background creation.
+        let insertedState = try #require(
+            TabArrangementMutationRules.insertingNewDrawerPane(
+                childC.id, in: capturedState,
+                insertion: .init(
+                    parentPaneId: parentPane.id, drawerId: drawerId, targetDrawerPaneId: nil,
+                    direction: .right, sizingMode: .halveTarget, selectsInsertedChild: false
+                )
+            )
+        )
+        let publishedTab = Tab(
+            id: capturedTab.id, name: capturedTab.name,
+            allPaneIds: insertedState.allPaneIds, arrangements: insertedState.arrangements,
+            activeArrangementId: insertedState.activeArrangementId, colorHex: capturedTab.colorHex
+        )
+
+        // The race: a human selects B in the drawer after the capture above,
+        // while the background creation's save is still (hypothetically)
+        // in flight.
+        store.setActiveDrawerPane(childB.id, in: parentPane.id)
+
+        let proposal = WorkspaceTerminalCreationProposal(
+            bundle: .init(workspace: .init(id: UUIDv7.generate())),
+            pane: childC, tab: publishedTab, associationOutcome: .freeNil,
+            placement: .drawer(
+                .init(
+                    tabID: tab.id, parentID: parentPane.id, anchorID: nil,
+                    direction: .right, sizingMode: .halveTarget,
+                    childID: childC.id, presentation: .background
+                ))
+        )
+
+        store.mutationCoordinator.applyCommittedTerminalCreation(proposal)
+
+        let drawerView = try #require(store.drawerView(forParent: parentPane.id))
+        #expect(drawerView.layout.contains(childC.id))
+        #expect(store.pane(parentPane.id)?.drawer?.isExpanded == false)
+        #expect(drawerView.activeChildId == childB.id)
     }
 
 }

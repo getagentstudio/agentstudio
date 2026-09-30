@@ -3,6 +3,52 @@ import Testing
 
 @Suite("Swift lane rolling isolated dispatcher")
 struct SwiftLaneRollingDispatcherTests {
+    @Test("a wrapper exit without a completion is terminal and the next suite runs", arguments: ["kill", "errexit"])
+    func wrapperExitCompletesDispatcher(failureMode: String) async throws {
+        for bashInterpreter in ["/bin/bash", "/usr/bin/env bash"] {
+            let result = try await runLaneScriptBash(
+                SwiftLaneWrapperExitFixtures.wrapperExitCommand(
+                    bashInterpreter: bashInterpreter, failureMode: failureMode
+                )
+            )
+            #expect(result.exitCode == 0, Comment(rawValue: result.output))
+            #expect(result.output.contains("COMPLETED After"))
+            #expect(result.output.contains("reason=wrapper_exited_without_completion"))
+            #expect(result.output.contains("WRAPPER_EXIT_DRAINED mode=\(failureMode)"))
+        }
+    }
+
+    @Test("two wrappers killed together both report and refill their slots")
+    func simultaneousWrapperExitsRefillBothSlots() async throws {
+        for bashInterpreter in ["/bin/bash", "/usr/bin/env bash"] {
+            let result = try await runLaneScriptBash(
+                SwiftLaneWrapperExitFixtures.wrapperExitCommand(
+                    bashInterpreter: bashInterpreter, failureMode: "coalesced"
+                )
+            )
+            #expect(result.exitCode == 0, Comment(rawValue: result.output))
+            #expect(result.output.contains("COMPLETED AfterOne"))
+            #expect(result.output.contains("COMPLETED AfterTwo"))
+            #expect(result.output.contains("WRAPPER_EXIT_DRAINED mode=coalesced"))
+        }
+    }
+
+    @Test("a wrapper killed after worker launch is red and its worker is gone at lane return")
+    func wrapperKilledAfterWorkerLaunchReapsWorker() async throws {
+        for bashInterpreter in ["/bin/bash", "/usr/bin/env bash"] {
+            let result = try await runLaneScriptBash(
+                SwiftLaneWrapperExitFixtures.wrapperExitCommand(
+                    bashInterpreter: bashInterpreter, failureMode: "after-worker"
+                )
+            )
+
+            #expect(result.exitCode == 0, Comment(rawValue: result.output))
+            #expect(result.output.contains("COMPLETED After"))
+            #expect(result.output.contains("reason=wrapper_exited_without_completion"))
+            #expect(result.output.contains("WRAPPER_WORKER_REAPED"))
+        }
+    }
+
     @Test("a killed worker reports KILL, finishes the lane, and leaves no children")
     func killedWorkerCompletesDispatcher() async throws {
         let command = #"""

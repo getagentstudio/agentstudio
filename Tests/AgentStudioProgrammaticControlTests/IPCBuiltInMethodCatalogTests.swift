@@ -28,7 +28,7 @@ struct IPCBuiltInMethodCatalogTests {
         }
     }
 
-    @Test("C4 debug methods and ordinary system auth event methods stay separated")
+    @Test("debug-only methods stay separate from established and agent-eligible all-channel methods")
     func exposureMatchesSettledChannelBoundary() throws {
         let catalog = try makeCatalog(waitMaximum: 9)
         let ordinaryNames = Set(
@@ -49,6 +49,51 @@ struct IPCBuiltInMethodCatalogTests {
         #expect(
             catalog.erasedDescriptors.filter { $0.metadata.responseDelivery == .subscription }
                 .map(\.metadata.name) == ["events.subscribe"]
+        )
+    }
+
+    @Test("every built-in method declares the A1 agent eligibility inventory")
+    func everyMethodDeclaresAgentEligibility() throws {
+        let catalog = try makeCatalog(waitMaximum: 9)
+        let declared = Dictionary(
+            uniqueKeysWithValues: catalog.erasedDescriptors.map { ($0.metadata.name, $0.metadata.agentEligibility) }
+        )
+
+        #expect(declared == expectedAgentEligibility)
+        #expect(
+            catalog.erasedDescriptors
+                .filter { $0.metadata.agentEligibility?.requiresAllChannelExposure == true }
+                .allSatisfy { $0.metadata.exposure == .allChannels }
+        )
+        #expect(
+            catalog.erasedDescriptors
+                .filter { $0.metadata.name.hasPrefix("bridge.") || $0.metadata.name.hasPrefix("sidebar.") }
+                .allSatisfy { $0.metadata.agentEligibility == .notYetAllowed }
+        )
+    }
+
+    @Test("discovery reports eligibility and omits it for established v2 methods")
+    func discoveryEncodesEligibility() throws {
+        let catalog = try makeCatalog(waitMaximum: 9)
+        let byName = Dictionary(uniqueKeysWithValues: catalog.erasedDescriptors.map { ($0.metadata.name, $0) })
+        let drawerAddPane = try #require(byName["drawer.addPane"])
+        let sessionReport = try #require(byName["session.report"])
+
+        let eligibleFields = try encodedFields(drawerAddPane.metadata)
+        let establishedFields = try encodedFields(sessionReport.metadata)
+
+        #expect(eligibleFields["agentEligibility"] as? String == "ownPane")
+        #expect(establishedFields["agentEligibility"] == nil)
+        for descriptor in [drawerAddPane, sessionReport] {
+            let decoded = try descriptor.catalogEntrySchema.decode(
+                IPCMethodCatalogEntry.self, from: JSONEncoder().encode(descriptor.metadata))
+            #expect(decoded.agentEligibility == descriptor.metadata.agentEligibility)
+        }
+    }
+
+    private func encodedFields(_ entry: IPCMethodCatalogEntry) throws -> [String: Any] {
+        try #require(
+            JSONSerialization.jsonObject(with: JSONEncoder().encode(entry)) as? [String: Any]
         )
     }
 
@@ -97,6 +142,19 @@ struct IPCBuiltInMethodCatalogTests {
         )
         let properties = try #require(document["properties"] as? [String: [String: Any]])
         #expect(properties["timeoutSeconds"]?["maximum"] as? Double == suppliedMaximum)
+    }
+
+    @Test("terminal wait documents timeout and replay-gap runtime failures")
+    func terminalWaitDocumentsTimeoutAndReplayGap() throws {
+        let catalog = try makeCatalog(waitMaximum: 9)
+        let documentedErrors = Dictionary(
+            uniqueKeysWithValues: catalog.terminal.terminalWait.documentedErrors.map {
+                ($0.reason, $0.description)
+            }
+        )
+
+        #expect(documentedErrors["timeout"] == "The condition was not observed before the bounded timeout")
+        #expect(documentedErrors["replayGap"] == "Events after `afterSequence` are no longer retained")
     }
 
     @Test("Bridge search retains text default and the 4096 UTF-16-unit limit")
@@ -219,12 +277,19 @@ struct IPCBuiltInMethodCatalogTests {
         try JSONSerialization.data(withJSONObject: value, options: [.sortedKeys])
     }
 
+    /// Established Agent IPC v2 methods plus every method a pane agent may
+    /// run in A1: agents reach eligible methods on every channel.
     private var ordinaryMethodNames: Set<String> {
         [
             "auth.login",
             "auth.status",
+            "drawer.addPane",
             "events.subscribe",
             "events.unsubscribe",
+            "pane.close",
+            "pane.current",
+            "pane.list",
+            "pane.snapshot",
             "session.event",
             "session.message",
             "session.query",
@@ -232,7 +297,38 @@ struct IPCBuiltInMethodCatalogTests {
             "system.identify",
             "system.ping",
             "system.version",
+            "terminal.send",
+            "terminal.snapshot",
+            "terminal.status",
+            "terminal.wait",
+            "window.current",
+            "window.list",
+            "workspace.current",
+            "workspace.list",
         ]
+    }
+
+    /// The Program Design's A1 eligibility inventory. `nil` marks an
+    /// established v2 method whose admission is unchanged.
+    private var expectedAgentEligibility: [String: IPCAgentEligibility?] {
+        let ownPane: [String] = [
+            "drawer.addPane", "pane.close", "pane.snapshot",
+            "terminal.send", "terminal.snapshot", "terminal.status", "terminal.wait",
+        ]
+        let anyTarget: [String] = [
+            "pane.current", "pane.list", "system.identify", "system.ping", "system.version",
+            "window.current", "window.list", "workspace.current", "workspace.list",
+        ]
+        let established: [String] = [
+            "auth.login", "auth.status", "events.subscribe", "events.unsubscribe",
+            "session.event", "session.message", "session.query", "session.report",
+        ]
+        var inventory: [String: IPCAgentEligibility?] = [:]
+        for name in expectedStaticMethodNames { inventory[name] = .some(.notYetAllowed) }
+        for name in ownPane { inventory[name] = .some(.ownPane) }
+        for name in anyTarget { inventory[name] = .some(.anyTarget) }
+        for name in established { inventory[name] = .some(nil) }
+        return inventory
     }
 
     private var mutatingMethodNames: Set<String> {

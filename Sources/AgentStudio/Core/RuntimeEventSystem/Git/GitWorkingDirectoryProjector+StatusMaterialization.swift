@@ -2,6 +2,13 @@ import AgentStudioInfrastructure
 import Foundation
 
 extension GitWorkingDirectoryProjector {
+    struct StatusCompletionContext: Sendable {
+        let computeStart: ContinuousClock.Instant
+        let scope: GitStatusScope
+        let pathspecCount: Int
+        let refreshFactScope: GitProjectorScope?
+    }
+
     struct MaterializedGitStatus: Sendable {
         let result: GitWorkingTreeStatusResult
         let facts: GitWorkingTreeStatusFacts
@@ -74,11 +81,11 @@ extension GitWorkingDirectoryProjector {
             )
         }
     }
-    func computeAndEmit(changeset: FileChangeset) async {
+    func computeAndEmit(changeset: FileChangeset, refreshFactScope: GitProjectorScope?) async {
         guard !Task.isCancelled else { return }
         guard !suppressedWorktreeIds.contains(changeset.worktreeId) else { return }
-        if let factSink, let scope = openRefreshFactScopeByWorktreeId[changeset.worktreeId] {
-            factSink(scope, .refreshStarted)
+        if let factSink, let refreshFactScope {
+            factSink(refreshFactScope, .refreshStarted)
         }
 
         // Provider contract: expensive git compute must run off actor isolation.
@@ -87,6 +94,12 @@ extension GitWorkingDirectoryProjector {
         let computeStart = envelopeClock.now
         let physicalCompletionGeneration = gitWorkingTreeProvider.physicalCompletionGeneration()
         let resolved = await resolveStatusResult(for: changeset)
+        let completionContext = StatusCompletionContext(
+            computeStart: computeStart,
+            scope: resolved.scope,
+            pathspecCount: resolved.pathspecCount,
+            refreshFactScope: refreshFactScope
+        )
         guard !Task.isCancelled else { return }
         guard !suppressedWorktreeIds.contains(changeset.worktreeId) else { return }
         guard isCurrentForPublication(changeset) else { return }
@@ -95,9 +108,7 @@ extension GitWorkingDirectoryProjector {
                 resolved.result.statusResult,
                 physicalCompletionGeneration: physicalCompletionGeneration,
                 changeset: changeset,
-                computeStart: computeStart,
-                scope: resolved.scope,
-                pathspecCount: resolved.pathspecCount
+                context: completionContext
             )
             return
         }
@@ -108,9 +119,7 @@ extension GitWorkingDirectoryProjector {
                 materialized.result,
                 physicalCompletionGeneration: materialized.capacityCompletionGeneration,
                 changeset: changeset,
-                computeStart: computeStart,
-                scope: resolved.scope,
-                pathspecCount: resolved.pathspecCount
+                context: completionContext
             )
             return
         }
@@ -118,9 +127,7 @@ extension GitWorkingDirectoryProjector {
             statusSnapshot,
             materialized: materialized,
             changeset: changeset,
-            computeStart: computeStart,
-            scope: resolved.scope,
-            pathspecCount: resolved.pathspecCount
+            context: completionContext
         )
     }
 
@@ -128,9 +135,7 @@ extension GitWorkingDirectoryProjector {
         _ statusResult: GitWorkingTreeStatusResult,
         physicalCompletionGeneration: UInt64?,
         changeset: FileChangeset,
-        computeStart: ContinuousClock.Instant,
-        scope: GitStatusScope,
-        pathspecCount: Int
+        context: StatusCompletionContext
     ) async {
         guard isCurrentForPublication(changeset) else { return }
         guard case .unavailable(let unavailable) = statusResult else { return }
@@ -141,13 +146,15 @@ extension GitWorkingDirectoryProjector {
                 afterPhysicalCompletionGeneration: physicalCompletionGeneration
             )
             if !capacityRetryWorktreeIds.contains(changeset.worktreeId) {
-                closeRefreshFact(worktreeId: changeset.worktreeId, outcome: .capacityExceeded)
+                closeRefreshFact(
+                    worktreeId: changeset.worktreeId, ifCurrent: context.refreshFactScope, outcome: .capacityExceeded
+                )
             }
             return
         }
 
         let statusCompletion = envelopeClock.now
-        let statusDuration = computeStart.duration(to: statusCompletion)
+        let statusDuration = context.computeStart.duration(to: statusCompletion)
         let statusOutcome: GitStatusOutcome
         let previousFailureCount = consecutiveStatusFailureCountByWorktreeId[changeset.worktreeId] ?? 0
         let consecutiveFailureCount = min(
@@ -163,8 +170,8 @@ extension GitWorkingDirectoryProjector {
                 for: changeset,
                 unavailable: unavailable,
                 context: GitStatusCompletionTraceContext(
-                    scope: scope,
-                    pathspecCount: pathspecCount,
+                    scope: context.scope,
+                    pathspecCount: context.pathspecCount,
                     statusCompletion: statusCompletion,
                     outcome: statusOutcome,
                     consecutiveFailureCount: consecutiveFailureCount,
@@ -200,6 +207,7 @@ extension GitWorkingDirectoryProjector {
         )
         closeRefreshFact(
             worktreeId: changeset.worktreeId,
+            ifCurrent: context.refreshFactScope,
             outcome: unavailable.reason == .timeout ? .timeout : .unavailable
         )
     }

@@ -29,7 +29,8 @@ package struct IPCBridgeReviewMethodDescriptors: Sendable {
                 targetKinds: [],
                 relationship: inputs.relationships.bridgeDiffLoad,
                 owner: .bridgeCapability,
-                errors: Self.bridgeErrors)
+                errors: Self.bridgeErrors,
+                agentEligibility: .notYetAllowed)
         )
         bridgeFileViewOpen = try IPCBuiltInDescriptorSupport.mutation(
             name: "bridge.fileView.open",
@@ -49,7 +50,8 @@ package struct IPCBridgeReviewMethodDescriptors: Sendable {
                 targetKinds: [],
                 relationship: inputs.relationships.bridgeFileViewOpen,
                 owner: .bridgeCapability,
-                errors: Self.bridgeErrors)
+                errors: Self.bridgeErrors,
+                agentEligibility: .notYetAllowed)
         )
         bridgeDiffRefresh = try IPCBuiltInDescriptorSupport.mutation(
             name: "bridge.diff.refresh",
@@ -71,7 +73,8 @@ package struct IPCBridgeReviewMethodDescriptors: Sendable {
                 dataScope: .bridgeReviewPackage,
                 targetKinds: [.pane],
                 owner: .bridgeCapability,
-                errors: Self.bridgeErrors)
+                errors: Self.bridgeErrors,
+                agentEligibility: .notYetAllowed)
         )
         bridgeDiffGetPackage = try IPCBuiltInDescriptorSupport.read(
             name: "bridge.diff.getPackage",
@@ -82,7 +85,8 @@ package struct IPCBridgeReviewMethodDescriptors: Sendable {
             dataScope: .bridgeReviewPackage,
             targetKinds: [.pane],
             owner: .bridgeCapability,
-            errors: Self.bridgeErrors
+            errors: Self.bridgeErrors,
+            agentEligibility: .notYetAllowed
         )
         bridgeDiffRenderState = try IPCBuiltInDescriptorSupport.read(
             name: "bridge.diff.renderState",
@@ -93,7 +97,8 @@ package struct IPCBridgeReviewMethodDescriptors: Sendable {
             dataScope: .bridgeReviewPackage,
             targetKinds: [.pane],
             owner: .bridgeCapability,
-            errors: Self.bridgeErrors
+            errors: Self.bridgeErrors,
+            agentEligibility: .notYetAllowed
         )
         bridgeDiffSelectFile = try Self.makeSelectDescriptor(example: example)
     }
@@ -120,7 +125,8 @@ package struct IPCBridgeReviewMethodDescriptors: Sendable {
                 dataScope: .bridgeReviewPackage,
                 targetKinds: [.pane],
                 owner: .bridgeCapability,
-                errors: Self.bridgeErrors)
+                errors: Self.bridgeErrors,
+                agentEligibility: .notYetAllowed)
         )
     }
 
@@ -198,16 +204,21 @@ package struct IPCBridgeReviewMethodDescriptors: Sendable {
         )
     }
 
-    var erased: [IPCAnyMethodDescriptor] {
+    var descriptorRepresentations: [any IPCMethodDescriptorRepresentation] {
         get throws {
-            try [
-                IPCAnyMethodDescriptor(erasing: bridgeDiffLoad),
-                IPCAnyMethodDescriptor(erasing: bridgeFileViewOpen),
-                IPCAnyMethodDescriptor(erasing: bridgeDiffRefresh),
-                IPCAnyMethodDescriptor(erasing: bridgeDiffGetPackage),
-                IPCAnyMethodDescriptor(erasing: bridgeDiffRenderState),
-                IPCAnyMethodDescriptor(erasing: bridgeDiffSelectFile),
+            let representations: [any IPCMethodDescriptorRepresentation] = try [
+                IPCMethodDescriptorRepresentations(typedDescriptor: bridgeDiffLoad),
+                IPCMethodDescriptorRepresentations(typedDescriptor: bridgeFileViewOpen),
+                IPCMethodDescriptorRepresentations(typedDescriptor: bridgeDiffRefresh),
+                IPCMethodDescriptorRepresentations(typedDescriptor: bridgeDiffGetPackage),
+                IPCMethodDescriptorRepresentations(typedDescriptor: bridgeDiffRenderState),
+                IPCMethodDescriptorRepresentations(typedDescriptor: bridgeDiffSelectFile),
             ]
+            return representations
         }
+    }
+
+    var erased: [IPCAnyMethodDescriptor] {
+        get throws { try descriptorRepresentations.map(\.erasedDescriptor) }
     }
 }

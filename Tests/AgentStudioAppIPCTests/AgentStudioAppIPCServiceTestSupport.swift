@@ -1,5 +1,6 @@
 import AgentStudioAppIPC
 import AgentStudioIPCTransport
+import AgentStudioInfrastructure
 import AgentStudioProgrammaticControl
 import Foundation
 import Testing
@@ -22,7 +23,9 @@ struct FakeLayoutPort: AppIPCLayoutPort {
             targetPaneId: paneId, direction: params.direction, correlationId: params.correlationId)
     }
 
-    func closePane(_ params: IPCPaneCloseParams) throws -> IPCPaneCloseResult {
+    func closePane(_ params: IPCPaneCloseParams, ownPaneAssertion _: AppIPCOwnPaneAssertion?) throws
+        -> IPCPaneCloseResult
+    {
         let handle = try IPCHandle.parse(params.handle)
         guard case .canonicalUUID(let paneId) = handle.reference else {
             throw AppIPCLayoutError(reason: .targetNotFound)
@@ -30,12 +33,15 @@ struct FakeLayoutPort: AppIPCLayoutPort {
         return IPCPaneCloseResult(paneId: paneId, correlationId: params.correlationId)
     }
 
-    func addDrawerPane(_ params: IPCDrawerAddPaneParams) throws -> IPCDrawerAddPaneResult {
+    func addDrawerPane(_ params: IPCDrawerAddPaneParams, ownPaneAssertion _: AppIPCOwnPaneAssertion?) throws
+        -> IPCDrawerAddPaneResult
+    {
         let handle = try IPCHandle.parse(params.parentPaneHandle)
         guard case .canonicalUUID(let paneId) = handle.reference else {
             throw AppIPCLayoutError(reason: .targetNotFound)
         }
-        return IPCDrawerAddPaneResult(parentPaneId: paneId, correlationId: params.correlationId)
+        return IPCDrawerAddPaneResult(
+            parentPaneId: paneId, childPaneId: UUIDv7.generate(), correlationId: params.correlationId)
     }
 
     func toggleDrawer(_ params: IPCDrawerToggleParams) throws -> IPCDrawerToggleResult {
@@ -85,7 +91,7 @@ struct FakeRuntimePort: AppIPCRuntimePort {
         self.successfulPaneId = successfulPaneId
     }
 
-    func terminalStatus(_: IPCHandle) throws -> IPCTerminalStatusResult {
+    func terminalStatus(_: IPCHandle, ownPaneAssertion _: AppIPCOwnPaneAssertion?) throws -> IPCTerminalStatusResult {
         guard let successfulPaneId else {
             throw AppIPCRuntimeError(reason: .noRuntime)
         }
@@ -98,7 +104,8 @@ struct FakeRuntimePort: AppIPCRuntimePort {
         )
     }
 
-    func terminalSnapshot(_: IPCHandle) throws -> IPCTerminalSnapshotResult {
+    func terminalSnapshot(_: IPCHandle, ownPaneAssertion _: AppIPCOwnPaneAssertion?) throws -> IPCTerminalSnapshotResult
+    {
         guard let successfulPaneId else {
             throw AppIPCRuntimeError(reason: .noRuntime)
         }
@@ -118,7 +125,8 @@ struct FakeRuntimePort: AppIPCRuntimePort {
     func sendTerminalInput(
         to _: IPCHandle,
         input _: String,
-        correlationId: UUID?
+        correlationId: UUID?,
+        ownPaneAssertion _: AppIPCOwnPaneAssertion?
     ) async throws -> IPCTerminalSendInputResult {
         guard let successfulPaneId else {
             throw AppIPCRuntimeError(reason: .noRuntime)
@@ -136,7 +144,8 @@ struct FakeRuntimePort: AppIPCRuntimePort {
         _: IPCHandle,
         condition _: IPCTerminalWaitCondition,
         timeout _: Duration,
-        afterSequence _: UInt64?
+        afterSequence _: UInt64?,
+        ownPaneAssertion _: AppIPCOwnPaneAssertion?
     ) async throws -> IPCTerminalWaitResult {
         throw AppIPCRuntimeError(reason: .timeout)
     }
@@ -534,10 +543,6 @@ final class FakeCommandPort: AppIPCCommandPort, @unchecked Sendable {
         }
     }
 
-    func listCommands() throws -> IPCCommandCatalogResult {
-        IPCCommandCatalogResult(compatibility: .current, commands: commands)
-    }
-
     func prepareCommand(
         _ request: IPCCommandExecutionRequest,
         principal _: IPCPrincipal,
@@ -587,11 +592,18 @@ final class FakeCommandPort: AppIPCCommandPort, @unchecked Sendable {
             request: preparedRequest,
             canonicalHandle: canonicalHandle,
             target: requiredScopes.first?.target ?? .app,
-            requiredScopes: requiredScopes
+            requiredScopes: requiredScopes,
+            resolvedPaneIds: canonicalHandle.flatMap { handle -> UUID? in
+                guard case .canonicalUUID(let paneId) = handle.reference else { return nil }
+                return paneId
+            }.map { [$0] } ?? [],
+            agentArgumentRule: .targetOnly
         )
     }
 
-    func executeCommand(_ request: IPCCommandExecutionRequest) async throws -> IPCCommandExecutionResult {
+    func executeCommand(
+        _ request: IPCCommandExecutionRequest, ownPaneAssertion _: AppIPCOwnPaneAssertion?
+    ) async throws -> IPCCommandExecutionResult {
         lock.withLock {
             receivedExecutionRequestsStorage.append(request)
         }
@@ -610,6 +622,8 @@ struct FakeCommandDescriptorInput {
     let dataScope: IPCDataScope
     let allowedTargetKinds: Set<IPCHandleKind>
     let result: IPCCommandExecutionResult
+    var exposure: IPCMethodExposure = .debugTesting
+    var agentEligibility: IPCAgentEligibility = .notYetAllowed
 }
 
 func makeFakeCommandDescriptor(_ input: FakeCommandDescriptorInput) throws -> IPCCommandDescriptor {
@@ -618,7 +632,7 @@ func makeFakeCommandDescriptor(_ input: FakeCommandDescriptorInput) throws -> IP
             id: input.id,
             title: "Fixture \(input.id.rawValue)",
             description: "Exercise one typed command fixture.",
-            exposure: .debugTesting,
+            exposure: input.exposure,
             executionMode: input.executionMode,
             argumentVariants: [input.arguments.variant],
             requiredPrivileges: input.requiredPrivileges,
@@ -635,7 +649,8 @@ func makeFakeCommandDescriptor(_ input: FakeCommandDescriptorInput) throws -> IP
                     ),
                     result: input.result
                 )
-            ]
+            ],
+            agentEligibility: input.agentEligibility
         )
     )
 }
@@ -707,18 +722,20 @@ final class RecordingWaitRuntimePort: AppIPCRuntimePort, @unchecked Sendable {
         }
     }
 
-    func terminalStatus(_: IPCHandle) throws -> IPCTerminalStatusResult {
+    func terminalStatus(_: IPCHandle, ownPaneAssertion _: AppIPCOwnPaneAssertion?) throws -> IPCTerminalStatusResult {
         throw AppIPCRuntimeError(reason: .noRuntime)
     }
 
-    func terminalSnapshot(_: IPCHandle) throws -> IPCTerminalSnapshotResult {
+    func terminalSnapshot(_: IPCHandle, ownPaneAssertion _: AppIPCOwnPaneAssertion?) throws -> IPCTerminalSnapshotResult
+    {
         throw AppIPCRuntimeError(reason: .noRuntime)
     }
 
     func sendTerminalInput(
         to _: IPCHandle,
         input _: String,
-        correlationId _: UUID?
+        correlationId _: UUID?,
+        ownPaneAssertion _: AppIPCOwnPaneAssertion?
     ) async throws -> IPCTerminalSendInputResult {
         throw AppIPCRuntimeError(reason: .noRuntime)
     }
@@ -727,7 +744,8 @@ final class RecordingWaitRuntimePort: AppIPCRuntimePort, @unchecked Sendable {
         _ handle: IPCHandle,
         condition: IPCTerminalWaitCondition,
         timeout _: Duration,
-        afterSequence: UInt64?
+        afterSequence: UInt64?,
+        ownPaneAssertion _: AppIPCOwnPaneAssertion?
     ) async throws -> IPCTerminalWaitResult {
         lock.withLock {
             recordedHandle = handle

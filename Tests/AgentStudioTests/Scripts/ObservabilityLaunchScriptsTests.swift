@@ -95,7 +95,9 @@ struct ObservabilityLaunchScriptsTests {
         #expect(wrapperScript.contains("--skip ZmxE2ETests"))
         #expect(wrapperScript.contains("swift_test_args=(\"$@\")"))
         #expect(wrapperScript.contains("swift_test_args+=("))
-        #expect(wrapperScript.contains("swift test --skip-build \"${swift_test_args[@]}\""))
+        #expect(
+            wrapperScript.contains(
+                "swift test $(swift_package_sandbox_arguments) --skip-build \"${swift_test_args[@]}\""))
         #expect(wrapperScript.contains("AGENTSTUDIO_TRACE_BACKEND=\"${SWIFT_TEST_TRACE_BACKEND:-jsonl}\""))
         #expect(
             testHelperScript.contains(

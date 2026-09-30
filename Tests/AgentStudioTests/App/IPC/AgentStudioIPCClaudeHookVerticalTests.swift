@@ -15,10 +15,8 @@ import Testing
 /// `session.event` body: whatever the installed hook would send is what the app
 /// admits, so a projection change that the app refuses fails here.
 @MainActor
-@Suite("Claude Code hook vertical", .serialized)
+@Suite("Claude Code hook vertical", .serialized, SessionsVerticalHarnessTrait(providerProfiles: .claudeCode))
 struct AgentStudioIPCClaudeHookVerticalTests {
-    init() { installTestCoreAtomsIfNeeded() }
-
     /// `Tests/AgentStudioTests/App/IPC` -> repository root -> the CLI suite's
     /// recorded Claude Code documents.
     private static func fixtureURL(_ event: String, file: String = #filePath) -> URL {
@@ -31,10 +29,23 @@ struct AgentStudioIPCClaudeHookVerticalTests {
             .appending(path: "Tests/AgentStudioIPCClientTests/Fixtures/claude-code-2.1/\(event).json")
     }
 
-    private static func projectedParams(_ event: String) throws -> IPCSessionEventParams {
-        let payload = try JSONDecoder().decode(
+    private static func projectedParams(_ event: String, sessionId: String? = nil) throws -> IPCSessionEventParams {
+        let recordedPayload = try JSONDecoder().decode(
             ClaudeCodeHookPayload.self, from: try Data(contentsOf: fixtureURL(event))
         )
+        // Real hook invocations carry a new session ID for each session. Give
+        // each suite case its own ID so deterministic tool occurrences do not
+        // replay against another case's durable row in the shared database.
+        let payload =
+            sessionId.map {
+                ClaudeCodeHookPayload(
+                    sessionId: $0,
+                    hookEventName: recordedPayload.hookEventName,
+                    promptId: recordedPayload.promptId,
+                    toolUseId: recordedPayload.toolUseId,
+                    agentId: recordedPayload.agentId
+                )
+            } ?? recordedPayload
         let outcome = ClaudeCodeHookProjection.project(
             announcedEvent: event,
             payload: payload,
@@ -48,11 +59,10 @@ struct AgentStudioIPCClaudeHookVerticalTests {
         return params
     }
 
-    /// The projected call, retargeted from the hook's `self` handle to the
-    /// harness pane. Only the handle changes: provider identity, event identity
-    /// and the derived occurrence stay exactly as the hook would send them.
+    /// The projected call uses this case's session ID and addresses its pane.
+    /// The recorded hook event, provider, turn and request fields stay intact.
     private static func addressed(_ event: String, to paneId: UUID) throws -> IPCSessionEventParams {
-        let params = try projectedParams(event)
+        let params = try projectedParams(event, sessionId: paneId.uuidString)
         return IPCSessionEventParams(
             handle: paneId.uuidString,
             provider: params.provider,
@@ -77,10 +87,7 @@ struct AgentStudioIPCClaudeHookVerticalTests {
     @Test("A real Claude Code session's hooks bind the pane, raise needs-you and complete the turn")
     func claudeCodeHooksDriveTheSessionLifecycle() async throws {
         // Arrange
-        let harness = try await SessionsVerticalHarness.make(
-            additionalProviderProfiles: [.claudeCodeCommandLine]
-        )
-        defer { harness.tearDown() }
+        let harness = try await #require(SessionsVerticalHarnessContext.current).freshPanePair()
         let paneId = harness.boundPaneId
 
         // Act
@@ -119,10 +126,7 @@ struct AgentStudioIPCClaudeHookVerticalTests {
         // Arrange: the hook derives one occurrence identity per tool invocation
         // but mints a fresh correlation per process, so a Claude Code retry of
         // the same hook arrives as the same occurrence under a new correlation.
-        let harness = try await SessionsVerticalHarness.make(
-            additionalProviderProfiles: [.claudeCodeCommandLine]
-        )
-        defer { harness.tearDown() }
+        let harness = try await #require(SessionsVerticalHarnessContext.current).freshPanePair()
         let paneId = harness.boundPaneId
         _ = try await send("SessionStart", paneId: paneId, harness: harness)
         _ = try await send("UserPromptSubmit", paneId: paneId, harness: harness)
@@ -152,10 +156,7 @@ struct AgentStudioIPCClaudeHookVerticalTests {
     @Test("Another Claude Code release is refused rather than admitted as qualified")
     func unknownReleaseIsRefused() async throws {
         // Arrange
-        let harness = try await SessionsVerticalHarness.make(
-            additionalProviderProfiles: [.claudeCodeCommandLine]
-        )
-        defer { harness.tearDown() }
+        let harness = try await #require(SessionsVerticalHarnessContext.current).freshPanePair()
         let projected = try Self.projectedParams("SessionStart")
         let upgraded = IPCSessionEventParams(
             handle: harness.sparePaneId.uuidString,

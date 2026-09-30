@@ -76,6 +76,13 @@ interface FinaleSample {
 }
 
 export interface FinaleObservation {
+  readonly wheelScrolls: readonly {
+    readonly pane: string;
+    readonly transcriptBefore: number;
+    readonly transcriptAfter: number;
+    readonly pageBefore: number;
+    readonly pageAfter: number;
+  }[];
   readonly samples: readonly FinaleSample[];
   readonly directSeekSpinnerVisible: boolean;
   readonly scrollProbe: {
@@ -788,6 +795,42 @@ export const verifyHeroIntroFinale = defineBrowserCommand(
         },
         sampleTimes,
       );
+      const wheelScrolls: FinaleObservation["wheelScrolls"][number][] = [];
+      for (const pane of width < 1024 ? ["claude"] : ["claude", "codex"]) {
+        const transcript = page.locator(`.hero-terminal-pane--${pane} .hero-terminal-transcript`);
+        const bounds = await transcript.boundingBox();
+        if (bounds === null) throw new Error(`Visible ${pane} transcript missing`);
+        await page.mouse.move(bounds.x + bounds.width / 2, bounds.y + bounds.height / 2);
+        const before = await transcript.evaluate((element) => {
+          const scrollFinished = new Promise<void>((resolve) => {
+            // Arm after the actual wheel so pending programmatic scrolls cannot close the probe.
+            element.addEventListener(
+              "wheel",
+              () =>
+                document.addEventListener("scrollend", () => resolve(), {
+                  once: true,
+                  capture: true,
+                }),
+              { once: true, passive: true },
+            );
+          });
+          (window as Window & { wheelScrollFinished?: Promise<void> }).wheelScrollFinished =
+            scrollFinished;
+          return { transcript: element.scrollTop, page: window.scrollY };
+        });
+        await page.mouse.wheel(0, 80);
+        const after = await transcript.evaluate(async (element) => {
+          await (window as Window & { wheelScrollFinished?: Promise<void> }).wheelScrollFinished;
+          return { transcript: element.scrollTop, page: window.scrollY };
+        });
+        wheelScrolls.push({
+          pane,
+          transcriptBefore: before.transcript,
+          transcriptAfter: after.transcript,
+          pageBefore: before.page,
+          pageAfter: after.page,
+        });
+      }
       await page.reload({ waitUntil: "commit" });
       await page.evaluate(
         async () => await (window as Window & { finaleReady?: Promise<unknown> }).finaleReady,
@@ -885,6 +928,7 @@ export const verifyHeroIntroFinale = defineBrowserCommand(
         };
       });
       return {
+        wheelScrolls,
         samples: timelineProof.samples,
         directSeekSpinnerVisible: timelineProof.directSeekSpinnerVisible,
         scrollProbe: timelineProof.scrollProbe,

@@ -27,6 +27,7 @@ import {
 import HeroTerminalWindow from "@/hero-intro/HeroTerminalWindow.astro";
 
 import { heroLoopMedia } from "./hero-loop-media";
+import { createPhoneCaptureSources } from "./capture-image-sources";
 import HeroLoopVideo from "./HeroLoopVideo.astro";
 import InstallCommand from "./InstallCommand.astro";
 import ScrollMaterialSurface from "./ScrollMaterialSurface.astro";
@@ -44,6 +45,7 @@ const appFrameRailAttributes = {
 // or "Terminal-first.".
 const eyebrowPhrases = marketingCopy.hero.eyebrow.split(/(?<=\.)\s+/u);
 const [payoffFirst, payoffSecond] = marketingCopy.hero.headlinePayoff.split(/(?<=\.)\s+/u);
+const phoneCaptureSources = await createPhoneCaptureSources(parallelWorkPhoneImage);
 ---
 
 <!--
@@ -126,18 +128,19 @@ const [payoffFirst, payoffSecond] = marketingCopy.hero.headlinePayoff.split(/(?<
           <picture class="block h-full w-full">
             <source
               media="(width < 38.75rem)"
-              srcset={parallelWorkPhoneImage.src}
+              srcset={phoneCaptureSources}
+              sizes="calc(100vw - 72px)"
               width={parallelWorkPhoneImage.width}
               height={parallelWorkPhoneImage.height}
             />
             <Image
               src={parallelAgentsImage}
               alt={marketingCopy.stories.parallelWork.imageDescription}
-              widths={[720, 1080, 1440, 2160, 2560]}
+              widths={[720, 1080, 1440, 2560]}
               sizes="(width < 38.75rem) 100vw, (width <= 90rem) 90vw, 1296px"
               format="png"
-              loading="eager"
-              fetchpriority="high"
+              quality={100}
+              loading="lazy"
               decoding="async"
               class="block h-full w-full object-cover object-top"
             />

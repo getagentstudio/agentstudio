@@ -81,6 +81,8 @@ extension WorkspaceActionCommand {
             return "addDrawerPane"
         case .addWebviewDrawerPane:
             return "addWebviewDrawerPane"
+        case .addDrawerChildInBackground:
+            return "addDrawerChildInBackground"
         case .removeDrawerPane:
             return "removeDrawerPane"
         case .toggleDrawer:

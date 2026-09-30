@@ -112,7 +112,7 @@ package struct AgentStudioIPCClientCommandLineRunner {
             ).descriptorInvocation
             if let commandCatalog {
                 let request = try JSONDecoder().decode(
-                    IPCCommandExecutionRequest.self, from: invocation.normalizedParameters)
+                    IPCCommandExecutionRequest.self, from: invocation.normalizedParameters.data)
                 invocation = try commandCatalog.makeInvocation(
                     commandId: request.commandId, correlationId: request.correlationId, arguments: request.arguments)
             }
@@ -141,7 +141,7 @@ package struct AgentStudioIPCClientCommandLineRunner {
         guard invocation.descriptor.metadata.responseDelivery != .subscription else {
             try client.stream(invocation) { frame in
                 switch frame {
-                case .initialResponse(let response): try write(response.normalizedResult)
+                case .initialResponse(let response): try write(response.normalizedResult.data)
                 case .notification(let notification): props.standardOutputSink(notification)
                 case .remoteFailure(let failure):
                     throw CLIExit.structured(CLIErrorPresentation(remoteFailure: failure))
@@ -167,7 +167,7 @@ package struct AgentStudioIPCClientCommandLineRunner {
             if case .model(let presentation) = invocation.presentation, !presentation.showsDetail {
                 props.standardOutputSink(presentation.successReply)
             } else {
-                try write(response.normalizedResult)
+                try write(response.normalizedResult.data)
             }
         case .remoteFailure(let failure):
             throw modelFailureExit(failure, invocation: invocation)
@@ -217,11 +217,13 @@ package struct AgentStudioIPCClientCommandLineRunner {
                 global, descriptors: [discovery.commandListInvocation.descriptor],
                 correlationIDGenerator: props.identifierGenerator,
                 standardInputProvider: standardInputProvider)
-            try write(response.normalizedResult)
+            try write(response.normalizedResult.data)
             return .completed
         }
+        // The payload is read with the compiled envelope so a recognized hidden
+        // command's arguments survive parsing; the catalog then binds it.
         return .resolved(
-            authenticationDescriptors + [commands.executeDescriptor], commandCatalog: commands)
+            authenticationDescriptors + [commands.requestEnvelopeDescriptor], commandCatalog: commands)
     }
 
     /// Discovery never reached the app, so the notification is classified from
@@ -393,6 +395,8 @@ private struct CLIErrorPresentation: Codable {
     let expected: String?
     let catalogMethod: String?
     let requiredScope: IPCPermissionScope?
+    /// The method or command a pane agent was refused, for the agent outcomes.
+    var refusedName: String?
 
     /// Every discovery failure already carries a field path and an expectation.
     /// Dropping them left a catalog mismatch indistinguishable from a bad
@@ -421,6 +425,15 @@ private struct CLIErrorPresentation: Codable {
     }
 
     init(remoteFailure: IPCDescriptorRemoteFailure) {
+        refusedName = remoteFailure.agentRefusal?.name
+        if let agentRefusal = remoteFailure.agentRefusal {
+            reason = agentRefusal.reason.rawValue
+            fieldPath = nil
+            expected = nil
+            catalogMethod = nil
+            requiredScope = nil
+            return
+        }
         if let requiredScope = remoteFailure.requiredScope {
             reason = "missingGrant"
             fieldPath = "$.authorization"

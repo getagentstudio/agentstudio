@@ -184,7 +184,9 @@ extension WorkspaceSurfaceCoordinator {
 
     func executeAddWebviewDrawerPane(
         parentPaneId: UUID,
-        state: WebviewState
+        state: WebviewState,
+        childPaneId: UUID? = nil,
+        presentation: DrawerChildPresentation = .interactive
     ) {
         guard let parentPane = store.paneAtom.pane(parentPaneId) else {
             Self.logger.warning("addWebviewDrawerPane: parent pane \(parentPaneId) not found")
@@ -197,7 +199,9 @@ extension WorkspaceSurfaceCoordinator {
             let pane = store.paneAtom.addDrawerPane(
                 to: parentPaneId,
                 content: .webview(state),
-                metadata: context.metadata
+                metadata: context.metadata,
+                childPaneId: childPaneId,
+                expandsDrawer: presentation == .interactive
             )
         else {
             Self.logger.warning("addWebviewDrawerPane: failed to create drawer pane for \(parentPaneId)")
@@ -224,9 +228,11 @@ extension WorkspaceSurfaceCoordinator {
             drawerId: drawerId,
             parentPaneId: parentPaneId,
             drawerPaneId: pane.id,
-            inTab: tabId
+            inTab: tabId,
+            selectsInsertedChild: presentation == .interactive
         )
 
+        guard presentation == .interactive else { return }
         focusVisiblePaneHost(pane.id)
     }
 }

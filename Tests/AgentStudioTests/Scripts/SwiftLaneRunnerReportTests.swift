@@ -141,6 +141,9 @@ struct SwiftLaneRunnerReportTests {
             "LOG_PREFIX=timing; PREBUILD_TIMEOUT_SECONDS=60; BUILD_PATH=.build-probe; "
                 + "source scripts/swift-test-helpers.sh; "
                 + "run_swift_with_timeout() { printf 'ARG:%s\\n' \"\u{0024}@\"; }; "
+                // The nested-sandbox flag has its own suite; pin it empty here so
+                // this claim holds inside an agent sandbox too.
+                + "swift_package_sandbox_arguments() { :; }; "
                 + "unset SWIFT_BUILD_STATS_DIR; prebuild_swift_tests; echo ENABLED; "
                 + "export SWIFT_BUILD_STATS_DIR='\(statisticsDirectory)'; prebuild_swift_tests"
         )
@@ -456,6 +459,38 @@ struct SwiftLaneRunnerReportTests {
         #expect(laneOutput.contains("CrashingSuite\t139\tSEGV"))
     }
 
+    @Test("the CPU count survives denied sysctl and getconf reads, as in agent sandboxes")
+    func cpuCountSurvivesDeniedMachineReads() async throws {
+        // Codex's Seatbelt sandbox denies the sysctl CLI. A lane that reads the
+        // CPU count must fall back, not exit before any test runs.
+        let fakeToolDirectory = NSTemporaryDirectory() + "agentstudio-denied-sysctl-\(UUIDv7.generate())"
+        defer { try? FileManager.default.removeItem(atPath: fakeToolDirectory) }
+        let deniedToolScript = "#!/bin/sh\\necho denied >&2\\nexit 1\\n"
+        let laneOutput = try await runBash(
+            "mkdir -p '\(fakeToolDirectory)'; "
+                + "printf '\(deniedToolScript)' > '\(fakeToolDirectory)/sysctl'; "
+                + "chmod +x '\(fakeToolDirectory)/sysctl'; "
+                + "source scripts/swift-test-helpers.sh; "
+                + "PATH='\(fakeToolDirectory)':\"$PATH\"; "
+                + "echo \"SYSCTL_DENIED_CPU=$(swift_test_cpu_count)\"; "
+                + "echo \"SYSCTL_DENIED_CONCURRENCY=$(swift_test_isolated_process_concurrency)\"; "
+                + "cp '\(fakeToolDirectory)/sysctl' '\(fakeToolDirectory)/getconf'; "
+                + "echo \"ALL_DENIED_CPU=$(swift_test_cpu_count)\""
+        )
+
+        let reportedCounts = Dictionary(
+            laneOutput.split(separator: "\n").compactMap { line -> (String, Int)? in
+                let fields = line.split(separator: "=", maxSplits: 1)
+                guard fields.count == 2, let count = Int(fields[1]) else { return nil }
+                return (String(fields[0]), count)
+            },
+            uniquingKeysWith: { _, latest in latest }
+        )
+        #expect((reportedCounts["SYSCTL_DENIED_CPU"] ?? 0) >= 1, Comment(rawValue: laneOutput))
+        #expect((1...4).contains(reportedCounts["SYSCTL_DENIED_CONCURRENCY"] ?? 0), Comment(rawValue: laneOutput))
+        #expect(reportedCounts["ALL_DENIED_CPU"] == 1, Comment(rawValue: laneOutput))
+    }
+
     @Test("a timed out child that ignores TERM is still reaped, and the report is still written")
     func timedOutChildThatIgnoresTermIsStillReaped() async throws {
         // The shape that survived the old parent-link walk: a child that traps
@@ -756,15 +791,14 @@ struct SwiftLaneRunnerReportTests {
         let observedConcurrency = try await runBash(
             "source scripts/swift-test-helpers.sh; swift_test_isolated_process_concurrency"
         )
-        let reportedCoreCount = try await runBash("sysctl -n hw.ncpu")
+        // The oracle reads the core count in-process, not through the sysctl
+        // command, which agent sandboxes deny.
+        let coreCount = ProcessInfo.processInfo.activeProcessorCount
         let concurrency = try #require(
             Int(observedConcurrency.trimmingCharacters(in: .whitespacesAndNewlines))
         )
-        let coreCount = try #require(
-            Int(reportedCoreCount.trimmingCharacters(in: .whitespacesAndNewlines))
-        )
 
-        #expect(concurrencyFunction.contains("sysctl -n hw.ncpu"))
+        #expect(concurrencyFunction.contains("swift_test_cpu_count"))
         #expect(concurrency == min(4, coreCount))
         #expect(concurrency >= 1)
     }

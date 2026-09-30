@@ -955,6 +955,7 @@ fi
 if [ -z "$build_path" ]; then
   # shellcheck disable=SC1091
   source "$PROJECT_ROOT/scripts/swift-build-slot.sh"
+  source "$PROJECT_ROOT/scripts/swift-package-sandbox.sh"
   swift_build_slot_acquire build "run-debug-observability"
   trap swift_build_slot_release EXIT
   build_path="$SWIFT_BUILD_DIR"
@@ -1081,7 +1082,7 @@ if [ "$skip_build" = false ]; then
     echo "observability state: $state_file" >&2
     exit 1
   fi
-  if ! swift build --build-path "$build_path"; then
+  if ! swift build $(swift_package_sandbox_arguments) --build-path "$build_path"; then
     mkdir -p "$(dirname "$state_file")"
     write_launch_failed_state swift_build_failed
     echo "debug AgentStudio build failed" >&2

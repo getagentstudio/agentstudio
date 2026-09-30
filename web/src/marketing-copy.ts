@@ -1,5 +1,6 @@
 export const marketingCopy = {
   productName: "Agent Studio",
+  applicationCategory: "DeveloperApplication",
   hero: {
     eyebrow: "Native macOS. Repo-aware. Terminal-first.",
     headline: "Run dozens of agents in one workspace. Stay oriented. Miss nothing.",
@@ -126,6 +127,7 @@ export const marketingCopy = {
     systemRequirement: "Requires macOS 26 or later.",
   },
   navigation: {
+    skipToContent: "Skip to content",
     homeLabel: "Agent Studio home",
     primaryLabel: "Primary navigation",
     githubAction: "GitHub",

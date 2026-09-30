@@ -56,6 +56,16 @@ struct RepoExplorerTableMaterializerTests {
         #expect(scrolled.actualVisibleFingerprint == scrolled.expectedVisibleFingerprint)
     }
 
+    @Test("resume rebinds represented cells when layout returns after zero-size suspension")
+    func resumeRebindsRepresentedCellsAfterZeroSizeLayout() async throws {
+        try await verifyResumeRebindsAfterZeroSizeLayout()
+    }
+
+    @Test("resume at the existing size rebinds represented cells immediately")
+    func resumeAtExistingSizeRebindsRepresentedCellsImmediately() async throws {
+        try await verifyResumeRebindsAtExistingSize()
+    }
+
     @Test("represented By Repo settlement publishes exact receipt without moving its anchor")
     func representedByRepoSettlementPublishesExactReceiptWithoutMovingAnchor() async throws {
         let repoID = UUIDv7.generate()

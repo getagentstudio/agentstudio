@@ -9,16 +9,25 @@ package enum IPCSystemCapabilitiesCompositionError: Error, Equatable, Sendable {
 }
 
 package struct IPCSystemCapabilitiesComposition: Sendable {
-    package let descriptor: IPCMethodDescriptor<IPCEmptyParams, IPCMethodCatalogResult>
-    package let erasedDescriptor: IPCAnyMethodDescriptor
+    package let descriptorRepresentations: IPCMethodDescriptorRepresentations<IPCEmptyParams, IPCMethodCatalogResult>
+    package let encodedResult: Data
     package let result: IPCMethodCatalogResult
+
+    package var descriptor: IPCMethodDescriptor<IPCEmptyParams, IPCMethodCatalogResult> {
+        descriptorRepresentations.typedDescriptor
+    }
+
+    package var erasedDescriptor: IPCAnyMethodDescriptor {
+        descriptorRepresentations.erasedDescriptor
+    }
 }
 
 package enum IPCSystemCapabilitiesDescriptorFactory {
     package static func compose(
         compatibility: IPCProtocolCatalogCompatibility,
         availableDescriptors: [IPCAnyMethodDescriptor],
-        illustrativeDescriptor: IPCAnyMethodDescriptor
+        illustrativeDescriptor: IPCAnyMethodDescriptor,
+        recognizedUnexposedMethods: [IPCRecognizedUnexposedName] = []
     ) throws -> IPCSystemCapabilitiesComposition {
         guard compatibility == .current else {
             throw IPCSystemCapabilitiesCompositionError.incompatibleIdentity
@@ -68,23 +77,25 @@ package enum IPCSystemCapabilitiesDescriptorFactory {
                 )
             ],
             isMutating: false,
-            correlationPolicy: .notAccepted
+            correlationPolicy: .notAccepted,
+            agentEligibility: .anyTarget
         )
-        let erasedDescriptor = try IPCAnyMethodDescriptor(erasing: descriptor)
+        let descriptorRepresentations = try IPCMethodDescriptorRepresentations(typedDescriptor: descriptor)
+        let erasedDescriptor = descriptorRepresentations.erasedDescriptor
         let result = IPCMethodCatalogResult(
             compatibility: compatibility,
             methods: (sortedAvailableDescriptors.map(\.metadata) + [erasedDescriptor.metadata])
-                .sorted { $0.name < $1.name }
+                .sorted { $0.name < $1.name },
+            recognizedUnexposedMethods: recognizedUnexposedMethods.sorted { $0.name < $1.name }
         )
 
-        _ = try descriptor.encodeResult(result)
-        _ = try erasedDescriptor.catalogEntrySchema.decode(
-            IPCMethodCatalogEntry.self,
-            from: JSONEncoder().encode(erasedDescriptor.metadata)
-        )
+        // Keep the full result validation and exact encoded bytes from this
+        // composed catalog. The type-erased descriptor already validates its
+        // metadata against catalogEntrySchema during erasure.
+        let encodedResult = try descriptorRepresentations.typedDescriptor.encodeResult(result)
         return IPCSystemCapabilitiesComposition(
-            descriptor: descriptor,
-            erasedDescriptor: erasedDescriptor,
+            descriptorRepresentations: descriptorRepresentations,
+            encodedResult: encodedResult,
             result: result
         )
     }

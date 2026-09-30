@@ -53,7 +53,7 @@ struct ObservabilityDebugLaunchScriptsTests {
         #expect(script.contains("source \"$PROJECT_ROOT/scripts/swift-build-slot.sh\""))
         #expect(!script.contains("swift-build-slot.sh\" debug"))
         #expect(script.contains("mise run bridge-web-build"))
-        #expect(script.contains("swift build --build-path \"$build_path\""))
+        #expect(script.contains("swift build $(swift_package_sandbox_arguments) --build-path \"$build_path\""))
     }
 
     @Test("debug launcher uses ai-tools observability stack contract")

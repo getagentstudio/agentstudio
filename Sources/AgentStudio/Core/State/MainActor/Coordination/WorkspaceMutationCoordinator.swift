@@ -97,17 +97,37 @@ package final class WorkspaceMutationCoordinator {
     }
 
     func applyCommittedTerminalCreation(_ proposal: WorkspaceTerminalCreationProposal) {
-        workspacePaneAtom.insertCommittedTerminalPane(proposal.pane, associationOutcome: proposal.associationOutcome)
+        let expandsDrawer: Bool
+        if case .drawer(let insertion) = proposal.placement {
+            expandsDrawer = insertion.presentation == .interactive
+        } else {
+            expandsDrawer = true
+        }
+        workspacePaneAtom.insertCommittedTerminalPane(
+            proposal.pane, associationOutcome: proposal.associationOutcome, expandsDrawer: expandsDrawer)
         switch proposal.placement {
         case .newTab:
             workspaceTabShellAtom.appendTabShell(
                 .init(id: proposal.tab.id, name: proposal.tab.name, colorHex: proposal.tab.colorHex))
             workspaceTabArrangementAtom.appendState(Self.arrangementState(from: proposal.tab))
             workspaceTabShellAtom.setActiveTab(proposal.tab.id)
-        case .split, .drawer:
+        case .split:
             workspaceTabArrangementAtom.replaceArrangementStates(
                 workspaceTabArrangementAtom.arrangementStates.map {
                     $0.tabId == proposal.tab.id ? Self.arrangementState(from: proposal.tab) : $0
+                })
+        case .drawer(let insertion):
+            // `proposal.tab` was captured before this creation's awaited
+            // off-main prepare and SQLite save; a human cursor write (for
+            // example selecting a different drawer child) can land during
+            // that wait and must survive this stale capture's publish.
+            let publishedState = Self.arrangementState(from: proposal.tab)
+            let liveState = workspaceTabArrangementAtom.arrangementState(proposal.tab.id)
+            let committedState = TabArrangementCursorPreservation.committedDrawerInsertionState(
+                published: publishedState, live: liveState, presentation: insertion.presentation)
+            workspaceTabArrangementAtom.replaceArrangementStates(
+                workspaceTabArrangementAtom.arrangementStates.map {
+                    $0.tabId == proposal.tab.id ? committedState : $0
                 })
         }
     }

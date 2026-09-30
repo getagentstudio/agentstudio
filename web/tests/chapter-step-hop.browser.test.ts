@@ -31,8 +31,12 @@ for (const width of [390, 820, 1600]) {
     expect(result.autoHeldState).toBe("held");
     expect(result.autoHeldGlyphVisible).toBe(false);
     expect(result.autoHeldRingOpacity).toBe("1");
-    expect(result.pausedState).toBe("paused");
-    expect(result.pauseGlyphVisible).toBe(true);
+    expect(result.clickedState).toBe("playing");
+    expect(result.pauseGlyphVisible).toBe(false);
+    expect(result.togglePausedState).toBe("paused");
+    expect(result.togglePauseGlyphVisible).toBe(true);
+    expect(result.toggleResumedState).toBe("playing");
+    expect(result.replayedElapsedSeconds).toBe(0);
     if (width < 1024) expect(result.glyphGlassClearance).toBeGreaterThanOrEqual(6);
     expect(result.previewCount).toBe(1);
     expect(result.previewCountAfterFinish).toBe(0);

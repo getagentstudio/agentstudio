@@ -102,6 +102,7 @@ final class FilesystemGitPipeline: WorkspaceFilesystemSourceManaging, WatchedFol
         gitCoalescingWindow: Duration = AppPolicies.GitRefresh.filesystemDerivedCoalescingWindow,
         gitRefreshPolicy: AppPolicies.GitRefresh.Policy = AppPolicies.GitRefresh.defaultPolicy,
         gitSleepClock: any Clock<Duration> & Sendable = ContinuousClock(),
+        projectorFactSink: GitProjectorFactSink? = nil,
         performanceTraceRecorder: AgentStudioPerformanceTraceRecorder? = nil,
         repositoryFactDemandPerformanceRecorder:
             (any RepositoryFactDemandPerformanceRecording)? = nil
@@ -138,6 +139,7 @@ final class FilesystemGitPipeline: WorkspaceFilesystemSourceManaging, WatchedFol
             sleepClock: gitSleepClock,
             refreshPolicy: gitRefreshPolicy,
             performanceTraceRecorder: performanceTraceRecorder,
+            factSink: projectorFactSink,
             remoteReferenceOriginHandler: { repoId, expectedOrigin, expectedLifetime in
                 await remoteReferenceRefreshActor.setOrigin(
                     repoId: repoId, expectedOrigin: expectedOrigin, expectedLifetime: expectedLifetime)

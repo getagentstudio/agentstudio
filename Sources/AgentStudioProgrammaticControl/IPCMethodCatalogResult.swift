@@ -21,13 +21,32 @@ package struct IPCProtocolCatalogCompatibility: Codable, Equatable, Sendable {
 package struct IPCMethodCatalogResult: Codable, Equatable, Sendable {
     package let compatibility: IPCProtocolCatalogCompatibility
     package let methods: [IPCMethodCatalogEntry]
+    /// Recognized methods this channel does not expose, with their eligibility.
+    package let recognizedUnexposedMethods: [IPCRecognizedUnexposedName]
 
     package init(
         compatibility: IPCProtocolCatalogCompatibility,
-        methods: [IPCMethodCatalogEntry]
+        methods: [IPCMethodCatalogEntry],
+        recognizedUnexposedMethods: [IPCRecognizedUnexposedName] = []
     ) {
         self.compatibility = compatibility
         self.methods = methods
+        self.recognizedUnexposedMethods = recognizedUnexposedMethods
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case compatibility
+        case methods
+        case recognizedUnexposedMethods
+    }
+
+    package init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        compatibility = try container.decode(IPCProtocolCatalogCompatibility.self, forKey: .compatibility)
+        methods = try container.decode([IPCMethodCatalogEntry].self, forKey: .methods)
+        recognizedUnexposedMethods =
+            try container.decodeIfPresent([IPCRecognizedUnexposedName].self, forKey: .recognizedUnexposedMethods)
+            ?? []
     }
 
     package static func schema(
@@ -53,6 +72,10 @@ package struct IPCMethodCatalogResult: Codable, Equatable, Sendable {
                 name: "methods",
                 description: "Complete available typed method metadata in name order",
                 schema: methodsSchema
+            ),
+            try IPCRecognizedUnexposedName.discoveryField(
+                "recognizedUnexposedMethods",
+                description: "Recognized methods this channel does not expose, with their agent eligibility"
             ),
         ])
     }

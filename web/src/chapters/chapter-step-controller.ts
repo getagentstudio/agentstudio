@@ -2,7 +2,6 @@ import { localDropTurnPath } from "../topology-lab/full-page-topology-paths";
 import { isChapterStepId, type ChapterStepId } from "./chapter-ids";
 import {
   chapterStepRequestedEventName,
-  chapterStepResumeRequestedEventName,
   createChapterStepEvent,
   readChapterStepEventStepId,
   readSceneStepTiming,
@@ -385,19 +384,9 @@ export function initializeChapterSteps(root: HTMLElement): ChapterStepsControlle
     // A visitor's choice enters on the glass, where the scene listens; the
     // event bubbles back to this root for other chapter observers.
     const chooseStep = (stepIndex: number): void => {
-      if (stepIndex === selectedIndex && stepLine?.dataset["stepPlayback"] === "paused") {
-        const currentStep = validatedContract.steps[stepIndex];
-        if (currentStep !== undefined)
-          root
-            .querySelector("[data-rail-surface-target]")
-            ?.dispatchEvent(
-              createChapterStepEvent(chapterStepResumeRequestedEventName, currentStep.stepId),
-            );
-        return;
-      }
       selectStep(stepIndex);
-      if (stepLine !== null && stepLine !== undefined) stepLine.dataset["stepPlayback"] = "paused";
-      if (pauseGlyph !== undefined && pauseGlyph !== null) pauseGlyph.hidden = false;
+      if (stepLine !== null && stepLine !== undefined) stepLine.dataset["stepPlayback"] = "playing";
+      if (pauseGlyph !== undefined && pauseGlyph !== null) pauseGlyph.hidden = true;
       const chosenStep = validatedContract.steps[stepIndex];
       if (chosenStep !== undefined) {
         root

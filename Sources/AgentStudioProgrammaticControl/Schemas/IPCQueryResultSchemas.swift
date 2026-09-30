@@ -199,7 +199,14 @@ extension IPCPaneCloseResult: IPCSchemaProviding {
 
 extension IPCDrawerAddPaneResult: IPCSchemaProviding {
     package static func ipcSchema() throws -> IPCJSONSchema {
-        paneCorrelationResult(idField: "parentPaneId", description: "UUID of the drawer parent pane")
+        .object(fields: [
+            .init(name: "parentPaneId", description: "UUID of the drawer parent pane", schema: IPCSchemaScalars.uuid),
+            .init(name: "childPaneId", description: "UUID of the new drawer child", schema: IPCSchemaScalars.uuid),
+            .init(
+                name: "childHandle", description: "Selector that targets the new drawer child in later calls",
+                schema: IPCSchemaScalars.uuid),
+            correlationField(),
+        ])
     }
 }
 
