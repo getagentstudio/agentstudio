@@ -1,6 +1,6 @@
 # Worktree lifecycle: how it is built
 
-Date: 2026-09-30, revision 6 (owner decisions: open panes warn with options incl. `removeWithOpenPanes`; D1/D4/D6/D7 recorded). Revision 5 (review round 3: F12-V own-lock residue on every failure path; F15 dry-run gates pane closing).
+Date: 2026-09-30, revision 7 (S4 implementation stop: removeWorktree returns partial and failed outcomes instead of throwing, so observed effects reach the caller). Revision 6 (owner decisions: open panes warn with options incl. `removeWithOpenPanes`; D1/D4/D6/D7 recorded). Revision 5 (review round 3: F12-V own-lock residue on every failure path; F15 dry-run gates pane closing).
 
 Revision 4 history:
 - Revision 4 corrects review round 2 and the Advisor's revision-3 notes:
@@ -256,8 +256,14 @@ enum GitLockResource { case index(worktreePath: URL), reference(name: String), p
 //   success results:  `lockResidue: [URL]` (normally empty) on GitWorktreeRemovalEffects,
 //                     GitDeleteLocalBranchResult.deleted / .retained / .uncertain, GitFetchResult;
 //   thrown failures:  struct GitLockedOperationFailure<Reason>: Error { let reason: Reason; let lockResidue: [URL] }
-//                     — thrown by deleteLocalBranch (Reason = GitDeleteLocalBranchErrorReason, the former error cases),
-//                     removeWorktree after its first mutation, and fetch (Reason = GitDataPlaneError);
+//                     — thrown by deleteLocalBranch (Reason = GitDeleteLocalBranchErrorReason, the former error cases)
+//                     and fetch (Reason = GitDataPlaneError);
+//   removeWorktree:   never throws after its first mutation. It keeps `throws(GitDataPlaneError)` for pre-mutation
+//                     refusals only (main, locked, dirty, path mismatch, unreadable before any change). Once prune has
+//                     been called, every outcome — complete, partial, or failed — is RETURNED as GitWorktreeRemovalResult
+//                     whose effects carry the observed administration/directory dispositions, `failure` (a closed
+//                     GitWorktreeRemovalFailureKind, nil on complete success) and `lockResidue`. A thrown error could
+//                     not carry the observed effects that choice 8 requires.
 //   fork:             GitWorktreeForkResidueKind gains .lockFile, so cleanupIncomplete lists it with the other residue.
 // The original failure is never replaced; the leaf maps both into the outcome and never reports a clean finish
 // while `lockResidue` is non-empty.
