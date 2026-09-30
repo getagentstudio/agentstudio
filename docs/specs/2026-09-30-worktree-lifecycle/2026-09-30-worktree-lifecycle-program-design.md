@@ -579,6 +579,29 @@ The IPC methods and the UI both call it.
 | `AppCommand` (UI verbs) | New `removeWorktree` and `forkWorktreeChangesOnly` spec entries (label, `CommandIcon`, help, surface policy), with IPC classified in the same change as reachable through the `worktree.*` methods. The existing creation commands keep their interactive role. |
 | UI | Worktree row menu → Remove Worktree…. The command bar opens a removal step (Features/CommandBar) showing the assessment, changes, branch disposition and evidence choice (`NSOpenPanel` for the archive folder). Close Panes and Remove dispatches the existing pane-close action per listed pane, then removes. New Worktree → Fork gains the changes-only row. |
 
+## What runs where
+
+Owner, 2026-09-30: "make sure you properly create separations, nothing in main actor". This follows the project's performance rule: publish on MainActor, derive off it.
+
+| Work | Where it runs | Why |
+|---|---|---|
+| Integration assessment, status reads, lock facts | agentstudio-git read executor (blocking pool) | libgit2 is blocking I/O |
+| Branch deletion, worktree removal, forks | agentstudio-git writer lane (a serial queue per repository) | one mutation at a time per repository |
+| One-branch fetch | agentstudio-git remote client (system git subprocess), awaited off-main | network and process I/O |
+| `tmp/` archive copy and verification | the leaf, `@concurrent nonisolated` | filesystem I/O |
+| Stale-lock age and "git process found" probe, stale-lock removal | the leaf, `@concurrent nonisolated` | filesystem and process I/O |
+| Refusal order, stop catalog, outcome building | the leaf, a plain async function, no actor | pure logic |
+| CLI host | the CLI process's own async main; no MainActor work at all | no UI |
+| App: resolving the target from the workspace | MainActor, one synchronous read of topology values, handed off as plain values | the state lives in MainActor atoms |
+| App: the pane-activity probe | MainActor, one synchronous read of pane associations per check | the state lives in MainActor atoms; no work beyond the read |
+| App: running the leaf | off-main (`Task` / `@concurrent`); the coordinator only awaits | keeps MainActor free while git works |
+| App: `closePanes` | MainActor dispatch of the existing pane-close action, then await its closed fact | pane closing is an existing MainActor-owned action |
+| App: sidebar refresh after the operation | the existing `refreshWatchedFolder` (filesystem actor), awaited | existing path |
+| App: the branch list | `WorktreeBranchListingCache` actor, off-main SDK read; MainActor only records the returned names | existing path, new key |
+| Publishing the outcome (IPC reply, command-bar state) | MainActor, assignment only | UI publication |
+
+No atom, store, observer, timer or bus event is added. The coordinator owns no state and makes no domain decisions: it sequences reads, the off-main leaf call, and the refresh.
+
 ## Concurrency and ordering
 
 - **SDK:** mutations for one repository run FIFO on its writer lane. Assessment and status reads run on the read executor. Branch deletion holds a native ref lock only for its compare-and-remove.
