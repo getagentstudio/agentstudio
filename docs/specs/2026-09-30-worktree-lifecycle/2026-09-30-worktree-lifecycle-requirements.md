@@ -1,6 +1,6 @@
 # Worktree lifecycle: what it needs and why
 
-Date: 2026-09-30, revision 2 (the whole design written before owner review; open decisions carry a written-in default, listed at the end). Author: Worktrees orchestrator (Claude 9304749a). This extends the shipped [worktree CLI requirements](../2026-09-27-worktree-cli/2026-09-27-worktree-cli-requirements.md). W1–W4, W6 and W7 stay in force. W5 stays in force for the CLI and is extended by an IPC surface (L1). Authority comes from the owner's words on 2026-09-30, quoted here. Rows marked *default* are written into the design with a recommended answer and wait for the owner's confirmation in [Decisions waiting on the owner](#decisions-waiting-on-the-owner).
+Date: 2026-09-30, revision 3 (L12 confirmed by the owner; the agentstudio-git slice ships first; D7 added; IPC follows the fast-CLI rule). Revision 2 wrote the whole design before owner review; open decisions carry a written-in default, listed at the end. Author: Worktrees orchestrator (Claude 9304749a). This extends the shipped [worktree CLI requirements](../2026-09-27-worktree-cli/2026-09-27-worktree-cli-requirements.md). W1–W4, W6 and W7 stay in force. W5 stays in force for the CLI and is extended by an IPC surface (L1). Authority comes from the owner's words on 2026-09-30, quoted here. Rows marked *default* are written into the design with a recommended answer and wait for the owner's confirmation in [Decisions waiting on the owner](#decisions-waiting-on-the-owner).
 
 Next: [Specification](2026-09-30-worktree-lifecycle-specification.md) → [Program Design](2026-09-30-worktree-lifecycle-program-design.md).
 
@@ -65,7 +65,7 @@ journey
 | L9 | Worktrees stay beside the repository (the shipped naming rule). The event-intake cost is fixed at the source, not by moving worktrees | moving them broke things (the `/private/tmp` alias, lint, config overrides) | **authorized** direction: fix at the source (2026-09-30) | Must |
 | L10 | Removing a worktree never silently loses its `tmp/` evidence: it's archived to a place the caller names, or discarded only when the caller says so | the manual copy before every removal | *default D3*: explicit archive destination or explicit discard | Should |
 | L11 | Merged detection works offline, from local git content, with no GitHub | works for any repository and branch, no network or auth | *default D1/L11*: offline only | Must if confirmed |
-| L12 | agentstudio-git may change: branch deletion, an integration check, a changes-only fork | the SDK can't do these today, and the owner owns it | *default L12*: yes | Must if confirmed |
+| L12 | agentstudio-git may change: branch deletion, an integration check, typed removal effects, a changes-only fork. It ships first, as its own slice, well designed and well tested | the SDK can't do these today, and the owner owns it | **authorized** (2026-09-30): "it doesnt stop our work on agentstudio git"; "get that done and well tested and well design reviewed first as first slice of work with advisor" | Must |
 
 ## Boundary
 
@@ -101,6 +101,6 @@ Each has a recommended default already written into the Specification and Progra
 | D3 | `tmp/` on remove: must the caller name an archive folder or say discard? | yes: a non-empty `tmp/` is refused unless `--archive-to <folder>` or `--discard-tmp` | Spec LR9, LR10 |
 | D4 | Changes-only: always an explicit choice, never a fallback after a failed APFS fork? | explicit only | Spec LR11 |
 | D5 | Unattended `prune` when the CLI can't see what's open in the app: warn, or skip? | standalone CLI warns ("activity not checked"); IPC and UI refuse worktrees open in a pane | Spec LR8, LR14 |
-| D6 | IPC: expose the same operations through the running app, so it can refuse removing a worktree open in a pane and wait until the sidebar shows the change? (The CLI stays standalone either way.) | yes: create, fork, remove and worktree state through IPC, same outcome object as the CLI; shipped with the UI in app PR 2 (both need the app-side executor), so app PR 1 is CLI-only for agents | Spec LR16, LR18; PR cut |
+| D6 | IPC: expose the same operations through the running app, so it can refuse removing a worktree open in a pane and wait until the sidebar shows the change? | yes: `worktree.create/fork/remove/prune/list`, same outcome object as the CLI, compiled into the CLI per the fast-CLI rule (owner, 2026-09-30); shipped with the UI in app PR 2, after the fast-CLI PR, since both need the app-side executor | Spec LR16, LR18; PR cut |
+| D7 | When a CLI worktree verb runs, does it do the work in its own process (works with the app closed, shipped W5 and #388), or always hand it to the running app? Either way agentstudio-git is called directly, in that process | its own process; the app-routed IPC methods (D6) serve callers that want the open-pane check | Spec LR19; app PR 1 runner |
 | L11 | Offline only (no GitHub)? | yes | Spec LR5 |
-| L12 | agentstudio-git may change? | yes | Program Design topology |

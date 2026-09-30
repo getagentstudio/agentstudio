@@ -1,6 +1,15 @@
 # Worktree lifecycle: how it is built
 
-Date: 2026-09-30, revision 1. Realizes [the Specification](2026-09-30-worktree-lifecycle-specification.md) (LR1–LR24) for [the Requirements](2026-09-30-worktree-lifecycle-requirements.md). Builds on the shipped [worktree CLI design](../2026-09-27-worktree-cli/2026-09-27-worktree-cli-program-design.md): the `AgentStudioWorktreeOperations` leaf, its outcome contract and its error mapper stay, and grow. Anchors are agent-studio `07006b402` and agentstudio-git `origin/main` `8719325`.
+Date: 2026-09-30, revision 2.
+- Revision 2 corrects review round 1: findings F1–F9, plus the Advisor's SDK pass.
+- It covers the SDK contracts, deletion under a native ref lock, removal effects, the changes-only overlay, branch-list currentness, the live activity recheck, IPC prune, and the fast-CLI IPC contract and target graph.
+
+It realizes [the Specification](2026-09-30-worktree-lifecycle-specification.md) (LR1–LR24) for [the Requirements](2026-09-30-worktree-lifecycle-requirements.md). It builds on the shipped [worktree CLI design](../2026-09-27-worktree-cli/2026-09-27-worktree-cli-program-design.md): the `AgentStudioWorktreeOperations` leaf, its outcome contract and its error mapper stay, and grow.
+
+Anchors:
+- agent-studio `07006b402`;
+- agentstudio-git `origin/main` `8719325`;
+- libgit2 as pinned by agentstudio-git, `f7164261`.
 
 ## The shape in one picture
 
@@ -15,197 +24,291 @@ flowchart TB
     REM["WorktreeRemovalRunner (new)<br/>refusal order, archive, remove, branch"]
     PRU["WorktreePruneRunner (new)"]
     ARC["WorktreeEvidenceArchiver (new)"]
-    ACT["WorktreeActivityProbe (new port)<br/>CLI: notChecked · app: pane associations"]
+    ACT["WorktreeActivityProbe (new port)<br/>asked twice per removal"]
   end
-  subgraph SDK["agentstudio-git (SDK PR)"]
-    INT["assessBranchIntegration (new)"]
-    DEL["deleteLocalBranch (new, expected commit)"]
-    RMV["removeWorktree (typed partial result)"]
-    FRK["forkWorktree + changesOnly materialization (new)"]
+  subgraph SDK["agentstudio-git (first slice, one PR)"]
+    INT["assessBranchIntegration (new, read)"]
+    DEL["deleteLocalBranch (new, writer lane,<br/>native ref lock)"]
+    RMV["removeWorktree (typed effects)"]
+    FRK["forkWorktree(.changesOnly) (new<br/>internal planner + materializer)"]
   end
   CLI --> RUN & REM & PRU
-  APPX --> RUN & REM
-  APPX -. "supplies pane-association probe" .-> ACT
+  APPX --> RUN & REM & PRU
+  APPX -. "live pane-association probe" .-> ACT
   REM --> ARC & ACT & INT & RMV & DEL
   PRU --> REM
   RUN --> INT & FRK
-  BL["App: WorktreeBranchListingCache<br/>(modified, PR 1: keyed per list open)"]
+  BL["App: WorktreeBranchListingCache<br/>(modified, PR 1: keyed per list opening)"]
 ```
-
-Three delivery units, in order:
 
 | Unit | Owns | Depends on |
 |---|---|---|
-| **agentstudio-git PR** | Git truth: integration assessment, expected-commit branch deletion, typed removal partial result, changes-only fork | nothing new |
-| **App PR 1: agent CLI + branch-list currentness** | CLI `new --from-branch`, `fork --changes-only`, `list` with state, `remove`, `prune`; the leaf's removal/prune/archive policy; branch list read fresh per open (LR22); the SDK pin bump | merged SDK commit |
-| **App PR 2: app-executed lifecycle (IPC + UI)** | App executor; IPC commands and the state query; Remove Worktree… and the changes-only fork in the UI; open-pane refusal; await-sidebar | PR 1 |
+| **agentstudio-git PR (first slice)** | Git truth: integration assessment, expected-commit branch deletion, typed removal effects, the changes-only fork | nothing new |
+| **App PR 1: agent CLI + branch-list currentness** | CLI `new --from-branch`, `fork --changes-only`, `list` with state, `remove`, `prune`; the leaf's removal/prune/archive policy; the branch list read fresh per opening (LR22); one pin bump to the merged SDK | merged SDK commit |
+| **App PR 2: app-executed lifecycle (IPC + UI)** | the app executor; the `worktree.*` IPC methods compiled into the CLI; Remove Worktree… and the changes-only fork in the UI; the open-pane refusal; waiting for the sidebar | PR 1, and the IPC team's fast-CLI + store PR |
 
-IPC moves to PR 2 because it needs the same app-side executor as the UI: the pane-association probe, the awaited rescan, and target resolution from the workspace. PR 1 is complete for agents on its own: the CLI covers every verb. This is decision **D6** in the Requirements.
+**The SDK slice is one PR, built in three commit groups that are reviewed separately:**
+1. integration assessment + branch deletion;
+2. typed removal effects;
+3. changes-only fork.
+
+The Advisor proposed a three-PR stack. One PR follows the owner's rule that one owner-defined piece is one PR. The commit groups keep the separate review the stack would have given. The app stays on its current pin until the whole SDK slice is merged, then cuts over once (D6 sets the app PR cut).
+
+## Target graph
+
+```mermaid
+flowchart LR
+  CLIX["agentstudio-cli<br/>(AgentStudioIPCClient)"] --> CC["AgentStudioIPCClientCore"]
+  CLIX --> WO["AgentStudioWorktreeOperations"]
+  CC --> TR["AgentStudioIPCTransport"]
+  CC --> PC["AgentStudioProgrammaticControl<br/>(contracts, Foundation only)"]
+  WO -->|"new edge (PR 2)"| PC
+  WO --> GIT["agentstudio-git (libgit2)"]
+  APP["AgentStudio (app)"] --> WO
+  APP --> AIPC["AgentStudioAppIPC"] --> PC
+  APP --> CORE["AgentStudioCore"] --> WO
+```
+
+- Every arrow points one way. `ProgrammaticControl` imports only Foundation, so nothing can loop back into the leaf, and libgit2 never reaches an IPC client.
+- The new `WorktreeOperations → ProgrammaticControl` edge is deliberate. It updates the pinned allowlist in `CommandLineClientLeafTargetArchitectureTests.swift:34-38`.
+- The IPC team's own new target, `AgentStudioCLIStore`, isn't used by worktree work: the worktree verbs persist no state.
 
 ## What exists (checked in code)
 
 | Area | Fact | Anchor |
 |---|---|---|
-| SDK remove | `removeWorktree(GitRemoveWorktreeRequest{worktreeID?, canonicalPath?, removeWorkingDirectory, forceDiscardChanges})`. It refuses `mainWorktree`, `locked` (always), and `stagedChanges` / `dirtyTrackedChanges` / `untrackedFiles` unless forced. Ignored files aren't counted. It never deletes a branch. Result `partialFailure: String?` when prune errs after metadata is gone. No "current worktree" refusal. | `LibGit2WorktreeWriter.swift:123-181`; `GitDataPlaneError.swift:247-255`; `GitWorktreeContracts.swift:105-128` |
-| SDK branch | `branches(for:)` → `name, isCurrent, upstreamName?`; no public delete; an internal `deleteBranch` exists for fork rollback. | `GitStatusContracts.swift:21-25`; `WorktreeForkGitHandles.swift:105` |
-| SDK history | `git_merge_bases` is used privately and fails closed on several bases; `readTree`, `diff`, `countCommitRange` exist; no ancestry, integration or patch comparison API. | `LibGit2ContributionDiffReader.swift:288-317`; `GitDiffContentContracts.swift:150-206` |
-| SDK fork | APFS fork rebuilds the index from the captured HEAD, never from source staging, so staged work arrives unstaged. It has a rollback journal and typed residue. | `WorktreeForkIndexBuilder.swift:13-50`; `WorktreeForkRollbackJournal.swift:76-132`; spec table `docs/specs/2026-08-15-apfs-cow-worktree-creation/specification.md:246-252` |
-| SDK concurrency | One FIFO writer lane per repository, **per process**; no cross-process lock. | `GitRepositoryWriterRegistry.swift:4-75` |
-| Leaf | `WorktreeOperationRunner`, outcome types, error mapper, arguments, formatter; CLI dispatches `worktree` before any IPC. | `Sources/AgentStudioWorktreeOperations/*`; `Sources/AgentStudioIPCClient/main.swift:13-32` |
-| App creation | `WorktreeCreationCoordinator` holds publication, creates via the SDK, then awaits `refreshWatchedFolder`; "From a branch" is a new branch at the chosen branch's tip. | `WorktreeCreationCoordinator.swift:80-180` |
-| App IPC | The four creation `AppCommand`s are `.debugTesting`, `.noArguments`, and headless-unavailable. `command.execute` results are generic (`applied`, `accepted`, …) with no payload. Workspace headless execution is `async`. | `AppCommand+IPCProjection.swift:67-77,232,294`; `AppDelegate+HeadlessIPCCommandHandling.swift:47-50`; `IPCCommandResultVariant.swift:5-12`; `AppCommandExecution.swift:84-101` |
-| App panes | Each pane carries `durableContextFacets.worktreeId`; `pane.list` exposes `worktreeId`. Discovery removal clears the association and keeps the pane. | `WorkspaceMutationCoordinator.swift:259-276`; `IPCQueryContracts.swift:195-226` |
-| App discovery | Worktree add/remove reaches the sidebar through watched-folder scan → `RepositoryLifecycleReconciliation` → topology atom. Any `/.git/` path triggers a scan. | `WatchedFolderTopologyAdmission.swift:9-53`; `RepositoryLifecycleReconciliation.swift:27-276` |
-| **The L6 miss** | `WorktreeBranchListingCache` re-queries only when the app-wide `repoCache.cacheRevision` moves. A local ref change raises `containsGitInternalChanges`, the projector refreshes, and an equal status snapshot is suppressed, so the revision need not move. The command bar has a per-open `rootSessionGeneration`. | `WorktreeCreationPorts.swift:42-103`; `CommandBarPanelController+WorktreeCreation.swift:77-125`; `FilesystemPathFilter.swift:60-80`; `RepoCacheAtom.swift:131-151,395-399` |
+| SDK conventions | Reads go through `LibGit2BlockingReadExecutor`, mutations through the per-repository writer lane. Public payloads are `Codable, Equatable, Hashable, Sendable` with public initializers. OIDs are `String` (for example `GitHeadSnapshot.oid`). `GitRevisionTarget` wraps a revision **name** that is resolved later. | `LibGit2AgentStudioGitLocalClient.swift:62-150`; `GitStatusContracts.swift:9-20`; `GitRepositoryIdentity.swift:23` |
+| SDK remove | `GitWorktreeRemovalResult{removedWorktreeID, removedWorkingDirectory, partialFailure: String?}`. `partialFailure` is returned whenever `metadataStillExists` is false, and that probe returns false on **every** read error. `removedWorkingDirectory` echoes the request. | `GitWorktreeContracts.swift:105-128`; `LibGit2WorktreeWriter.swift:123-181`; `LibGit2WorktreeRemovalSafety.swift:62-68` |
+| libgit2 prune | `git_worktree_prune` recursively deletes the administration **first**, then the working directory; either can fail after a partial delete. | libgit2 `worktree.c:633-663` |
+| libgit2 branch delete | `git_branch_delete` removes configuration before the ref. `git_branch_is_checked_out` collapses enumeration errors to false. The filesystem refdb's delete removes the **reflog before** comparing the expected value, so a moved branch keeps its ref but loses its reflog. The ref transaction path (`git_transaction_lock_ref`, then `git_transaction_remove`) reaches the compare without that reflog deletion. | libgit2 `branch.c:179-226`; `refdb_fs.c:1732-1791`; `refdb_fs.c:1242-1255`; `transaction.h:34-107` |
+| SDK fork | The APFS planner walks the whole source and applies volume checks. The linked-worktree add helper uses `GIT_CHECKOUT_NONE`. The index is rebuilt from the captured HEAD. The rollback journal confirms ownership before any compensation and reports residue. Race reasons are `entryMissing`, `entryKindChanged`, `entryIdentityChanged` and `containmentEscape`. `GitWorktreeForkRejectionReason` is a `String` raw enum, so it can't take a payload case. Eligibility takes only source and destination. | `WorktreeForkPlanner.swift:20-85`; `WorktreeForkGitHandles.swift:73`; `WorktreeForkIndexBuilder.swift:13`; `WorktreeForkRollbackJournal.swift:6-153`; `GitWorktreeForkError.swift:20-52`; `AgentStudioGitSDK.swift:13` |
+| SDK status | Status entries carry paths and flags, no content identity; they prefer the head-to-index path. | `GitStatusContracts.swift:137-171`; `LibGit2StatusReader.swift:185-249` |
+| SDK diff | The public diff always does rename finding and line stats, so it's the wrong primitive for exact deltas. | `LibGit2DiffReader.swift:8-21,255-278` |
+| Leaf | `WorktreeOperationRunner`, outcome types, error mapper, arguments, formatter; the CLI dispatches `worktree` before any IPC. | `Sources/AgentStudioWorktreeOperations/*`; `Sources/AgentStudioIPCClient/main.swift:13-32` |
+| App creation | `WorktreeCreationCoordinator` holds publication, creates, then awaits `refreshWatchedFolder`. "From a branch" is a new branch at the chosen tip. | `WorktreeCreationCoordinator.swift:80-180` |
+| App panes | Each pane carries `durableContextFacets.worktreeId`. Discovery removal clears the association and keeps the pane. | `WorkspaceMutationCoordinator.swift:259-276` |
+| IPC conventions | Types are `IPC<Noun><Verb>Params` / `IPC<Noun><Verb>Result`. Descriptor structs live in `BuiltInDescriptors/` (for example `IPCSessionMethodDescriptors`). The fast path is `IPCBuiltInMethodCatalog.locallyResolvableDescriptors`. | `Sources/AgentStudioProgrammaticControl/`; IPC team, board 01a0cdc9, activity 3533 |
+| **The L6 miss** | The branch cache re-queries only when app-wide `repoCache.cacheRevision` moves, and a ref-only change can leave it unchanged. The per-session `rootSessionGeneration` doesn't advance on `pushLevel`/`popLevel`, so reopening the branch list inside one command-bar session reuses stored names. | `WorktreeCreationPorts.swift:42-103`; `CommandBarPanelController+WorktreeCreation.swift:77-125`; `CommandBarState.swift:236-291,364-390` |
 
 ## Choices
 
-1. **The SDK owns Git truth; the leaf owns lifecycle policy; hosts own what only they know.** The SDK answers "is this branch integrated, and how", "delete this branch only at this commit", "remove this worktree", "fork with changes only". The leaf decides refusal order, archiving, branch disposition, prune selection and output. The CLI host supplies "activity not checked"; the app host supplies pane associations and waits for the sidebar. No archive, activity or product policy enters the SDK.
-2. **One removal sequence for every host.** `WorktreeRemovalRunner` runs the same code for the CLI, IPC and UI (LR16 differs only by the injected probe).
-3. **No cross-process lock.** Each destructive step re-checks at the moment it runs: the SDK's remove re-reads dirtiness and lock, and branch deletion compares the tip to the assessed commit. The residual window (a tool writes a file between the last check and the directory removal) is named in the Specification's "Not promised". A cooperative lock would only order agentstudio processes, not git or editors, and would add a stale-lock recovery path.
-4. **The branch list is keyed per open, not per enrichment revision** (LR22). The cache key becomes the command bar's `rootSessionGeneration`, and the retry-on-revision-move logic goes. One read per open, shared by concurrent requests in that open. This adds no event, bus fact, atom or observer. It matches the owner's "live list when I open the cmd bar … lazy".
-5. **Integration is exact and bounded.** Cheap graph proofs first, then one exact aggregate-delta comparison against the target's recent first-parent commits (500). No patch-id: libgit2's is whitespace-normalizing (Advisor [L1]), which would weaken the proof.
-6. **Changes-only is a second materialization of `forkWorktree`, not a new verb in the SDK.** It reuses the fork's capture, rollback journal, residue types and error cases, so the leaf's error mapper and leftovers contract apply unchanged.
-7. **IPC goes through `AppCommand` (PR 2).** Create, fork and remove are user-visible verbs, so they stay `AppCommand`s with `ipcSpec` arguments (the command-spec rule), plus one new result variant that carries the operation outcome. The state read is a query method in the IPC registry, like `pane.list`. Privilege is the existing `appCommandExecute`. A stronger gate would protect nothing, because the standalone CLI performs the same removal with no credential.
+1. **The SDK owns Git truth; the leaf owns lifecycle policy; hosts own what only they know.** No archive, activity or product policy enters the SDK. The leaf keeps product notions such as "no default target" and "detached worktree". The SDK assesses branches against a target it is given.
+2. **One removal sequence for every host.** `WorktreeRemovalRunner` runs for the CLI, IPC and UI. Only the injected probe differs.
+3. **No new cross-process lock.** Each destructive step re-checks at the moment it runs, using Git's own mutation boundaries:
+   - the SDK's remove re-reads dirtiness and lock;
+   - branch deletion compares the tip under libgit2's native ref lock.
+
+   These are the ordinary per-ref locks Git itself uses, not a new repository-wide lock. The residual windows are named in the Specification's "Not promised".
+4. **The branch list is current per opening** (LR22). Each time the branch-list level is pushed, the controller starts a new listing opening. It drops stored names for that repository, and the cache keys on that opening's token. Concurrent requests in one opening share one read, and stale responses are rejected by token. No event, bus fact, atom or observer is added.
+5. **Integration is exact, read-only and bounded.** Graph proofs come first. Then one exact aggregate-delta comparison runs against up to 500 first-parent target commits, computed lazily and shared by every branch in the call. No patch-id, no rename detection, no normalization. A hash only finds candidates; the full lists are always compared.
+6. **Changes-only is a public materialization of `forkWorktree`, with its own internal planner and materializer.**
+   - It shares the fork's source/destination/branch capture, cancellation, linked-identity creation and rollback journal.
+   - It doesn't share the APFS planner, which walks the whole source and checks volumes.
+   - It performs an explicit checkout of the captured HEAD inside the journaled transaction, because the add helper doesn't check out.
+7. **Branch deletion is ref-first, under a native ref transaction lock**, with metadata cleanup reported separately. It never calls `git_branch_delete` (config before ref) or `git_reference_delete` (reflog before compare).
+8. **Removal reports what it observed, never what it assumes.** Directory and administration effects are observed independently after the prune call, on success and failure. An unreadable path is `unknown`, never "gone".
+9. **App activity is checked live, twice.** The app's probe reads current pane associations each time it is asked. The leaf asks before archiving and again immediately before the SDK remove.
+10. **IPC follows the fast-CLI rule (PR 2).**
+    - The contracts are `IPCWorktreeCreateParams`/`Result` (and `Fork`, `Remove`, `Prune`, `List`), in `AgentStudioProgrammaticControl`, with one `BuiltInDescriptors/IPCWorktreeMethodDescriptors.swift`.
+    - They are listed in `locallyResolvableDescriptors`, so a call goes straight to the app with one connection, one login and no per-call catalog fetch.
+    - The app registers them from `App/IPCComposition/Worktrees/`.
+    - The leaf's outcome and the IPC result are the same Codable shape, defined once in `ProgrammaticControl`. The CLI's `--json` prints it, and IPC returns it.
 
 ## Where each thing lives
 
 | Entity | Semantic owner | Home | Status |
 |---|---|---|---|
 | E1 Repository, E2 Worktree | SDK (identity), leaf (discovery rules) | `GitWorktreeSnapshot`; leaf discovery (shipped) | existing |
-| E3 Local branch | SDK | `GitBranchSnapshot`; `deleteLocalBranch` | modified (delete) |
-| E4 Integration target | leaf | `WorktreeDefaultStartPoint` resolver (shipped) → passed to SDK as `GitRevisionTarget` | existing |
-| E5 Assessment | SDK | `GitBranchIntegrationAssessment` in `AgentStudioGitContracts` | new |
-| E6 Working changes | SDK | `statusFacts` summary counts; removal safety | existing |
-| E7 Evidence folder, E8 Archive | leaf | `WorktreeEvidenceArchiver` | new |
-| E9 Pane activity | host | `WorktreeActivityProbe` port in leaf; app implementation over pane `worktreeId` | new |
-| E10 Removal | leaf | `WorktreeRemovalRunner`, `WorktreeRemovalSummary` / `WorktreeRemovalEffects` | new |
-| E11 Materialization | SDK | `GitWorktreeForkMaterialization` + result report enum | modified |
-| E12 Outcome | leaf | `WorktreeOperationOutcome` (+ `removed`, `pruned`); formatter; IPC result variant (PR 2) | modified |
-| E13 Branch list | App | `WorktreeBranchListingCache` keyed by `rootSessionGeneration` | modified |
+| E3 Local branch | SDK | `GitBranchSnapshot`; `deleteLocalBranch` | modified |
+| E4 Integration target | leaf | shipped default start-point resolver; the resolved commit is passed to the SDK as the target | existing |
+| E5 Assessment | SDK | `GitBranchIntegrationAssessment` (`AgentStudioGitContracts`) | new |
+| E6 Working changes | SDK | `statusFacts` counts; removal safety | existing |
+| E7 Evidence folder, E8 Archive | leaf | `WorktreeEvidenceArchiver` (in-memory verification, no files written) | new |
+| E9 Pane activity | host | `WorktreeActivityProbe` (leaf port); app implementation over pane `worktreeId` | new |
+| E10 Removal | leaf over SDK effects | `WorktreeRemovalRunner`; `GitWorktreeRemovalEffects` (SDK) | new |
+| E11 Materialization | SDK | `GitWorktreeForkMaterialization`, `GitWorktreeMaterializationResult` | modified |
+| E12 Outcome | leaf; wire shape in `ProgrammaticControl` | `WorktreeOperationOutcome` (leaf) → `IPCWorktree<Verb>Result` (contracts) | modified |
+| E13 Branch list | App | `WorktreeBranchListingCache` keyed by listing-opening token | modified |
 
-## Interfaces
+## SDK interfaces (first slice)
 
-### agentstudio-git (new and changed)
+These are the contracts the implementation must match. Every public payload follows SDK convention: `Codable, Equatable, Hashable, Sendable`, public initializers, explicit tags on associated-value enums, and invalid states rejected at decoding.
 
 ```swift
-// Integration (E5). Batched so target history deltas are computed once per call.
+// ── Integration (E5): one blocking read, one opened repository, never the writer lane.
 func assessBranchIntegration(
     _ request: GitBranchIntegrationRequest
-) async throws(GitDataPlaneError) -> [GitBranchIntegrationAssessment]
+) async throws(GitDataPlaneError) -> GitBranchIntegrationReport
 
-struct GitBranchIntegrationRequest: Sendable, Equatable {
+struct GitBranchIntegrationRequest {
     let repositoryPath: URL
-    let branchNames: [String]
-    let target: GitRevisionTarget           // resolved by the caller (E4)
-    let squashSearchCommitLimit: Int        // 500 from the leaf's policy
+    let branchNames: [String]          // short local names; empty → empty report, no walk
+    let targetCommit: String           // an OID the caller already resolved (E4); validated as a commit
+    let squashSearchCommitLimit: Int   // 0...10_000; 0 disables the squash search; leaf passes 500
 }
-struct GitBranchIntegrationAssessment: Sendable, Equatable {
+struct GitBranchIntegrationReport {
+    let targetCommit: String                                  // echoes what was assessed
+    let assessments: [GitBranchIntegrationAssessment]         // one per requested name, input order
+}
+struct GitBranchIntegrationAssessment {
     let branchName: String
-    let branchCommit: GitObjectID?           // nil only for .unknown(.branchNotFound)
-    let targetCommit: GitObjectID
+    let branchCommit: String?          // the captured ref OID; nil only when the ref is absent/unreadable
     let grade: GitBranchIntegrationGrade
 }
-enum GitBranchIntegrationGrade: Sendable, Equatable {
+enum GitBranchIntegrationGrade {
     case integrated(GitIntegrationProof)
     case hasRemainingContribution
     case unknown(GitIntegrationUnknownReason)
 }
-enum GitIntegrationProof: Sendable, Equatable {
-    case sameCommit, ancestor, sameContent, emptyDelta
-    case squash(commit: GitObjectID)
+enum GitIntegrationProof { case sameCommit, ancestor, sameContent, emptyDelta, squash(commit: String) }
+enum GitIntegrationUnknownReason {
+    case branchNotFound, noMergeBase, multipleMergeBases,
+         historyLimitReached, incompleteHistory, missingObjects, readFailed
 }
-enum GitIntegrationUnknownReason: Sendable, Equatable {
-    case branchNotFound, noMergeBase, multipleMergeBases, historyLimitReached, missingObjects
-}
+// Throws only for repository-level failures (repository or target unopenable). A failure on one
+// branch becomes that branch's .unknown(.readFailed), never an error for the whole batch.
 
-// Branch deletion (E3). Runs on the repository's writer lane.
+// ── Branch deletion (E3): one complete mutation on the writer lane, no suspension inside it.
 func deleteLocalBranch(
     _ request: GitDeleteLocalBranchRequest
-) async throws(GitDataPlaneError) -> GitDeleteLocalBranchResult
-struct GitDeleteLocalBranchRequest: Sendable, Equatable {
-    let repositoryPath: URL
-    let branchName: String
-    let expectedCommit: GitObjectID
+) async throws(GitDeleteLocalBranchError) -> GitDeleteLocalBranchResult
+struct GitDeleteLocalBranchRequest { let repositoryPath: URL; let branchName: String; let expectedCommit: String }
+enum GitDeleteLocalBranchResult {
+    case deleted(GitBranchMetadataCleanup)
+    case retained(GitBranchRetentionReason)       // ref, configuration and reflog all untouched
 }
-enum GitDeleteLocalBranchResult: Sendable, Equatable {
-    case deleted(configurationCleanup: GitBranchConfigurationCleanup)  // .complete | .incomplete
-    case retained(GitBranchRetentionReason)   // .notFound | .moved(current:) | .checkedOut(worktreePath:)
+struct GitBranchMetadataCleanup {
+    let configuration: GitBranchMetadataDisposition   // removed | absent | leftInPlace(reason)
+    let reflog: GitBranchMetadataDisposition
+}
+enum GitBranchMetadataLeftInPlaceReason { case recreatedMeanwhile, removalFailed }
+enum GitBranchRetentionReason {
+    case notFound
+    case moved(currentCommit: String)
+    case checkedOut(worktreePaths: [URL])
+}
+enum GitDeleteLocalBranchError: Error {       // pre-mutation, nothing changed
+    case invalidBranchName, refLockContended, checkoutUnreadable(worktreePath: URL?)
+    case notADirectCommitReference
+    case gitFailure(GitDataPlaneError)
+    case outcomeUncertain(GitDataPlaneError)   // native error after staging removal; the re-probe couldn't tell
 }
 
-// Removal (E10): the String partial becomes typed (no raw libgit2 text can leak).
-struct GitRemoveWorktreeResult { let removedWorktreeID: …; let removedWorkingDirectory: Bool
-                                 let partialFailure: GitWorktreeRemovalPartialFailure? }
-enum GitWorktreeRemovalPartialFailure: Sendable, Equatable {
-    case workingDirectoryIncomplete      // administration gone, some directory content remains
+// ── Removal (E10): observed effects replace the String partial.
+struct GitWorktreeRemovalResult {               // name kept; String partial removed (hard cutover)
+    let removedWorktreeID: GitWorktreeID
+    let effects: GitWorktreeRemovalEffects
 }
+struct GitWorktreeRemovalEffects {
+    let administration: GitRemovalEffect        // removed | retained | partial | unknown
+    let workingDirectory: GitRemovalEffect      // …plus notRequested
+    let failure: GitWorktreeRemovalFailureKind? // nil on complete success; closed native kinds, no text
+}
+// Pre-mutation refusals (main, locked, dirty, path mismatch) stay GitDataPlaneError, unchanged.
 
-// Changes-only fork (E11). Hard cutover of the result's materialization field.
-enum GitWorktreeForkMaterialization: Sendable, Equatable { case copyOnWrite, changesOnly }
-// GitForkWorktreeRequest gains `materialization` (no default: every caller states it).
-enum GitWorktreeMaterializationResult: Sendable, Equatable {
-    case copyOnWrite(GitWorktreeMaterializationReport)          // the existing report
-    case changesOnly(GitChangesOnlyMaterializationReport)       // trackedChanges, untrackedFiles
+// ── Changes-only fork (E11).
+enum GitWorktreeForkMaterialization { case copyOnWrite, changesOnly }
+// GitForkWorktreeRequest gains `materialization` (no default).
+// forkWorktreeEligibility(sourceWorktreePath:destinationPath:materialization:). For .changesOnly, "available"
+// means only the capability; volume and APFS checks are skipped, while root/parent/overlap validation
+// stays. The operation's own preflight remains authoritative.
+enum GitWorktreeMaterializationResult {
+    case copyOnWrite(GitWorktreeMaterializationReport)
+    case changesOnly(GitChangesOnlyMaterializationReport)   // changedTrackedPaths, copiedUntrackedPaths
 }
-// GitWorktreeForkRejectionReason gains: conflictsPresent, operationInProgress,
-// submoduleOrNestedRepositoryChanged, unsupportedEntry(relativePath:)
+// Rejection: GitWorktreeForkError.rejected keeps its String reason enum for existing cases; changes-only
+// working-state refusals use a new case:
+//   GitWorktreeForkError.workingStateUnsupported(GitWorktreeWorkingStateRefusal)
+//   GitWorktreeWorkingStateRefusal { reason: conflicts | operationInProgress | submoduleChanged |
+//     nestedRepository | sparseOrSkipWorktree | intentToAdd | unsupportedEntryKind; relativePath: String? }
+// Source races: GitWorktreeForkSourceRaceReason gains contentChanged and repositoryStateChanged.
 ```
 
-`forkWorktreeEligibility` answers `.available` for `.changesOnly` without volume checks. Changes-only needs no APFS.
+The leaf maps each SDK error through its existing total mapper, extended case by case. No raw libgit2 text reaches output.
 
-### AgentStudioWorktreeOperations (leaf)
+## How integration is assessed
 
-```swift
-enum WorktreeOperationRequest: Sendable, Equatable {
-    case createFromDefault(start: URL, branch: String)
-    case createFromBranch(start: URL, branch: String, startBranch: String)        // new (LR1)
-    case fork(start: URL, branch: String, materialization: WorktreeForkMaterialization)  // modified
-    case list(start: URL)
-    case remove(WorktreeRemovalRequest)                                            // new
-    case prune(WorktreePruneRequest)                                               // new
-}
-struct WorktreeRemovalRequest: Sendable, Equatable {
-    let start: URL                        // --repo or current directory
-    let callerDirectory: URL?             // for targetIsCurrent; nil from app hosts
-    let target: String                    // branch name or path (LR10)
-    let discardWorkingChanges: Bool       // -f
-    let branchPolicy: WorktreeBranchPolicy       // .deleteIfIntegrated | .deleteAtObservedCommit (-D) | .keep
-    let evidencePolicy: WorktreeEvidencePolicy   // .requireEmpty | .archive(to: URL) | .discard
-}
-struct WorktreePruneRequest: Sendable, Equatable {
-    let start: URL; let callerDirectory: URL?
-    let apply: Bool; let archiveRoot: URL?
-}
-
-/// What a host knows about panes. The CLI passes `.notChecked`; the app passes a live snapshot.
-protocol WorktreeActivityProbe: Sendable {
-    func activity(forWorktreeAt canonicalPath: URL) async -> WorktreeActivity
-}
-enum WorktreeActivity: Sendable, Equatable { case notChecked, none, openPanes(Int) }
-
-enum WorktreeOperationOutcome: Sendable, Equatable {
-    case created(WorktreeCreatedSummary)       // materialization becomes the E11 enum
-    case listed(WorktreeListingSummary)        // + target, per-worktree state (LR9)
-    case removed(WorktreeRemovalSummary)       // new (LR15)
-    case pruned(WorktreePruneSummary)          // new (LR17)
-    case refused(WorktreeOperationRefusal)     // + LR1/LR3/LR11 reasons
-    case failed(WorktreeOperationFailure)      // create/fork keep `leftovers`; remove carries `effects`
-}
-struct WorktreeRemovalEffects: Sendable, Equatable {
-    let directory: WorktreeDirectoryEffect         // removed | retained | partial | unknown | notApplicable
-    let administration: WorktreeAdministrationEffect  // removed | retained | unknown | notApplicable
-    let branch: WorktreeBranchEffect               // deleted | retained(reason) | unknown | notApplicable
-    let evidence: WorktreeEvidenceEffect           // archived(path, files) | discarded | none
-}
+```mermaid
+flowchart TB
+  S["capture: branch ref OID B (per name), target T (given)"] --> C1{"B == T?"}
+  C1 -->|yes| P1["integrated(sameCommit)"]
+  C1 -->|no| C2{"git_graph_descendant_of(T, B)?"}
+  C2 -->|yes| P2["integrated(ancestor)"]
+  C2 -->|no| C3{"tree(B) == tree(T)?"}
+  C3 -->|yes| P3["integrated(sameContent)"]
+  C3 -->|no| MB{"git_merge_bases(B, T)"}
+  MB -->|none| U1["unknown(noMergeBase)"]
+  MB -->|several| U2["unknown(multipleMergeBases)"]
+  MB -->|one: M| D{"delta(M→B) empty?"}
+  D -->|yes| P4["integrated(emptyDelta)"]
+  D -->|no| SQ["look up hash(delta(M→B)) in the shared<br/>target delta index; on a hit, compare full lists"]
+  SQ -->|equal| P5["integrated(squash X)"]
+  SQ -->|no match, root reached| R["hasRemainingContribution"]
+  SQ -->|no match, older history remains| U3["unknown(historyLimitReached)"]
+  SQ -->|shallow or graft boundary met| U4["unknown(incompleteHistory)"]
 ```
 
-New refusals: `startBranchNotFound`, `unsupportedWorkingState(reason, relativePath?)`, `notFound`, `mainWorktree`, `targetIsCurrent`, `locked`, `dirty(counts)`, `evidenceNotArchived`, `openInPane(count)`, `archiveDestinationExists`, `archiveDestinationInsideWorktree`. `forkUnavailable` gains the `changesOnly` alternative in output only.
+**Delta.**
+- A delta is the list of leaf entries `(raw path bytes, old mode, old OID, new mode, new OID)`, from `git_diff_tree_to_tree`.
+- Options:
+  - `GIT_DIFF_SKIP_BINARY_CHECK`;
+  - no `git_diff_find_similar`;
+  - no patch or hunk construction;
+  - submodule ignore forced to none;
+  - no type-change-trees flag (a type change is a delete plus an add);
+  - no pathspec, case folding or Unicode normalization.
+- Entries are sorted by raw path bytes, never by Swift `String` equality or locale. User config (`diff.ignoreSubmodules`, `core.filemode`, `core.ignorecase`, attributes, drivers) can't change the result.
 
-The JSON shapes are a `Codable` outcome document owned by the leaf. The CLI formatter prints it; the PR 2 IPC result carries the same document (one shape, LR18).
+**Shared target index.**
+- The index is built lazily in one call:
+  - walk T, then parent 0, then parent 0 again, up to `squashSearchCommitLimit` candidates;
+  - compute each candidate's delta against its first parent once;
+  - keep a hash → candidates bucket;
+  - stop as soon as every unresolved branch is answered.
+- Candidate numbering:
+  - T is candidate 1, and candidate 500 is evaluated;
+  - candidate 501 isn't;
+  - a parent is observed only to decide whether history remains.
+- Merge commits are candidates, compared to parent 0. A root ends the walk, and it isn't a candidate. A shallow or grafted boundary is detected and gives `incompleteHistory`, never an empty-tree delta.
+- `missingObjects` means objects the proof needs: commits, trees and parents. Blob and gitlink OIDs are compared, never read.
+- The index lives for one call only: no cache and no actor. Nothing writes objects, the index, refs, configuration or working files.
+
+**The 500 bound limits recall, not runtime.** Heavy ancestry or very large trees stay on the read executor. If a further object or byte budget proves necessary, it returns `unknown` with a named reason. It never truncates a list and compares a prefix.
+
+## How a branch is deleted
+
+```mermaid
+sequenceDiagram
+  autonumber
+  participant L as Leaf
+  participant W as SDK writer lane
+  participant G as libgit2
+  L->>W: deleteLocalBranch(name, expectedCommit)
+  W->>W: validate short local name → refs/heads/<name> only
+  W->>G: git_transaction_new + git_transaction_lock_ref(refs/heads/<name>)
+  G-->>W: locked (or contended → refLockContended, nothing changed)
+  W->>G: read the ref's direct target while locked
+  alt absent / different / symbolic
+    W-->>L: retained(notFound) / retained(moved) / notADirectCommitReference (lock released)
+  end
+  W->>G: read main + every registered linked worktree HEAD (errors preserved)
+  alt checked out anywhere / unreadable
+    W-->>L: retained(checkedOut) / checkoutUnreadable (lock released)
+  end
+  W->>G: git_transaction_remove + git_transaction_commit
+  W->>G: re-read ref: gone? (native error → re-probe → deleted | retained | outcomeUncertain)
+  W->>G: clean branch.<name> config and reflog only if no ref of that name exists now
+  W-->>L: deleted(configuration, reflog dispositions)
+```
+
+- **Order.** The compare happens **after** the lock is held; transaction removal takes no expected value itself, so the locked compare is essential. The checkout scan reuses the SDK's linked-worktree administration reading, and a read failure refuses deletion.
+- **Metadata cleanup.**
+  - Only the repository-local `branch.<name>` section and the branch's reflog are touched, never global or included configuration.
+  - Cleanup runs only if no ref of that name exists after the commit. If a same-name branch was created meanwhile, cleanup is `leftInPlace(recreatedMeanwhile)`.
+  - Cleanup isn't atomic with the ref deletion; partial cleanup is reported, not hidden.
+- **Residual race.** The ref lock doesn't stop another process checking the branch out in the moment after the HEAD scan. This is named, not locked out (choice 3).
 
 ## How a removal runs
-
-This path is new. Its predecessor is `wt remove`, outside this system.
 
 ```mermaid
 sequenceDiagram
@@ -216,97 +319,85 @@ sequenceDiagram
   participant G as agentstudio-git
   participant A as WorktreeEvidenceArchiver
   H->>R: remove(request)
-  R->>G: validateWorktree + worktrees + branches (discovery, LR10 target)
+  R->>G: validateWorktree + worktrees + branches (LR10 target)
   R->>R: refusals: notFound, mainWorktree, targetIsCurrent, locked
-  R->>G: statusFacts(target) → E6
-  R->>R: refuse dirty unless -f · refuse evidenceNotArchived (E7 non-empty, no policy)
-  R->>P: activity(target)
+  R->>G: statusFacts(target) → E6 · refuse dirty unless -f
+  R->>R: refuse evidenceNotArchived (E7 non-empty, no policy)
+  R->>P: activity(target)   [check 1]
   P-->>R: notChecked | none | openPanes(n) → refuse openInPane
-  R->>G: resolve E4 · assessBranchIntegration([branch]) → E5 (captured tip)
+  R->>G: assessBranchIntegration([branch], target commit) → E5, captured tip
   opt evidencePolicy = archive
-    R->>A: copy tmp/ → <folder>/<worktree folder>/, verify manifest
-    A-->>R: archived(path, files) | failure → failed, directory retained, stop
+    R->>A: copy tmp/ → <folder>/<worktree folder>/, verify in memory
+    A-->>R: archived | partialCopy → failed (directory retained), stop
   end
+  R->>P: activity(target)   [check 2, immediately before removal]
+  P-->>R: openPanes(n) → failed if archived / refused if nothing written
   R->>G: removeWorktree(canonicalPath, removeWorkingDirectory, force = -f)
-  Note over G: re-checks lock and dirtiness at this moment
-  G-->>R: removed | refusal (→ refused, nothing changed except a verified archive) | partial
-  alt branch policy allows deletion (LR14)
+  Note over G: re-checks lock and dirtiness now · returns observed effects
+  G-->>R: effects {administration, workingDirectory} | pre-mutation refusal
+  alt both removed and branch policy allows (LR14)
     R->>G: deleteLocalBranch(name, expectedCommit = captured tip)
-    G-->>R: deleted | retained(moved / checkedOut / notFound)
-  else keep / not integrated / isTarget
-    R->>R: branch retained(reason)
+    G-->>R: deleted(cleanup) | retained(reason) | error
+  else otherwise
+    R->>R: branch retained(reason) — no deletion attempted
   end
-  R-->>H: removed(summary with E10 effects) | failed(effects)
+  R-->>H: removed(effects) | failed(effects) | refused
 ```
 
-The branch is never deleted before the directory is gone, so a failure can't leave a worktree whose HEAD names a missing branch. If the SDK's remove refuses after an archive was written (someone dirtied the tree in between), the outcome is `refused` with the evidence effect `archived`, and the archive is kept, never deleted. A branch-only target (LR10) skips the directory steps.
+**`refused` vs `failed`.** `refused` is returned only when nothing was written. A check that fails after an archive exists returns `failed`. That covers the second activity check and the SDK's own re-check, and the failure carries directory `retained`, administration `retained`, branch `retained` and evidence `archived`. The archive is never deleted to fake a no-change result. A branch-only target skips the directory steps.
 
-### Removal states and failure effects
+### Removal states
 
 ```mermaid
 stateDiagram-v2
   [*] --> Checking
-  Checking --> Refused: any LR11 refusal
+  Checking --> Refused: any LR11 refusal (nothing written)
   Checking --> Archiving: evidence policy = archive
-  Checking --> RemovingDirectory: no archive needed
-  Archiving --> Failed_DirRetained: copy or verify fails
-  Archiving --> RemovingDirectory: verified
-  RemovingDirectory --> Refused_ArchiveKept: SDK re-check refuses
-  RemovingDirectory --> Failed_Partial: typed partial (directory partial)
-  RemovingDirectory --> BranchDisposition: removed
+  Checking --> ActivityRecheck: no archive needed
+  Archiving --> Failed_PartialCopy: copy or verify fails
+  Archiving --> ActivityRecheck: verified
+  ActivityRecheck --> Refused: pane open, nothing written
+  ActivityRecheck --> Failed_ArchiveKept: pane open after archive
+  ActivityRecheck --> RemovingDirectory: clear
+  RemovingDirectory --> Refused: SDK re-check refuses, nothing written
+  RemovingDirectory --> Failed_ArchiveKept: SDK re-check refuses after archive
+  RemovingDirectory --> Failed_Effects: partial or unknown effect
+  RemovingDirectory --> BranchDisposition: administration + directory removed
   BranchDisposition --> Removed: deleted or retained(reason)
-  BranchDisposition --> Failed_BranchUnknown: SDK throws during delete
+  BranchDisposition --> Failed_BranchUnknown: outcomeUncertain
   Removed --> [*]
 ```
 
 | Failure | Detected by | Contained by | Reported effects |
 |---|---|---|---|
-| Archive copy/verify fails | archiver manifest comparison | stop before directory | directory retained, branch retained, evidence none (partial copy left in the new destination folder, named) |
-| SDK remove refuses at execution | SDK re-check | nothing removed | `refused`, evidence archived if written |
-| SDK remove partial | typed `workingDirectoryIncomplete` | branch step skipped | directory partial, administration removed, branch retained |
-| Branch moved / checked out | `deleteLocalBranch` CAS / HEAD scan | branch kept | `removed` with branch retained(reason) |
-| Branch config cleanup incomplete | SDK result | ref already deleted | `removed`, branch deleted; a warning names the leftover configuration |
-| SDK throws during branch delete | typed error | — | `failed`: directory removed, branch unknown |
-
-## How integration is assessed
-
-```mermaid
-flowchart TB
-  S["branch tip B, target T (captured commits)"] --> C1{"B == T?"}
-  C1 -->|yes| P1["integrated(sameCommit)"]
-  C1 -->|no| C2{"B reachable from T?"}
-  C2 -->|yes| P2["integrated(ancestor)"]
-  C2 -->|no| C3{"tree(B) == tree(T)?"}
-  C3 -->|yes| P3["integrated(sameContent)"]
-  C3 -->|no| MB{"merge bases of B, T"}
-  MB -->|none| U1["unknown(noMergeBase)"]
-  MB -->|several| U2["unknown(multipleMergeBases)"]
-  MB -->|one: M| D{"delta(M→B) empty?"}
-  D -->|yes| P4["integrated(emptyDelta)"]
-  D -->|no| SQ{"delta(M→B) equals delta(parent→X)<br/>for some X in T's first-parent<br/>history, within 500 commits?"}
-  SQ -->|yes| P5["integrated(squash X)"]
-  SQ -->|no, history ended inside bound| R["hasRemainingContribution"]
-  SQ -->|no, bound reached| U3["unknown(historyLimitReached)"]
-```
-
-A **delta** is the sorted list of `(path, old mode, old object, new mode, new object)` from a recursive tree diff with rename detection off. Two deltas are equal when the lists are identical. One call computes each target commit's delta at most once and indexes it by a hash of the list. Every branch in a batched `list` or `prune` looks up that index. A missing object anywhere yields `unknown(missingObjects)`. The walk never writes objects, the index, or the working tree.
+| Archive copy/verify fails | in-memory comparison | stop before the directory | directory retained, branch retained, evidence `partialCopy(path)` |
+| Pane opened, or SDK re-check refuses, after archive | activity check 2 / SDK | nothing removed | failed; archive kept; everything else retained |
+| Prune fails partway | SDK observed effects | branch step skipped | administration/directory `partial` or `unknown`, branch retained |
+| Branch moved / checked out / unreadable checkout | `deleteLocalBranch` | branch kept, metadata untouched | `removed`, branch retained(reason) |
+| Metadata cleanup incomplete | SDK cleanup disposition | ref already gone | `removed`, branch deleted, cleanup warning |
+| Native error after staging deletion | SDK re-probe | — | failed: directory removed, branch `deleted`/`retained`/`unknown` as observed |
 
 ## How a changes-only fork runs
 
 ```mermaid
-flowchart LR
-  A["capture source: HEAD commit,<br/>status entries (Git ignore rules),<br/>repository state"] --> B{"preflight"}
-  B -->|conflicts / operation in progress /<br/>submodule or nested repo changed /<br/>unsupported entry| RJ["rejected(reason) → refused"]
-  B -->|ok| C["journal: create branch at HEAD,<br/>add linked worktree, clean checkout"]
-  C --> D["apply entries: modified → copy file;<br/>deleted → unlink; untracked/staged-new → copy;<br/>symlink → link text; modes kept"]
-  D --> E["validate: source status unchanged<br/>since capture"]
-  E -->|changed| F["sourceChanged → journal rollback"]
-  E -->|ok| G["result .changesOnly(report)"]
-  D -->|entry fails| F
+flowchart TB
+  A["capture (writer lane): HEAD commit, index + repository-operation state,<br/>carried-path set (HEAD/index/status as hints, no renames),<br/>and for each carried path: kind, mode, size, content hash or link text,<br/>via descriptor-relative no-follow reads"] --> B{"preflight on carried paths"}
+  B -->|conflicts / operation / submodule or nested repo /<br/>sparse, skip-worktree, intent-to-add / unsupported kind| RJ["workingStateUnsupported → refused"]
+  B -->|ok| C["journal: create branch at HEAD, add linked worktree,<br/>explicit checkout of captured HEAD (clean)"]
+  C --> D["apply the overlay in order: removals → type replacements →<br/>directories → files and links; each file copied from a<br/>descriptor, bytes verified against its captured hash"]
+  D --> E["final validation: every carried path still matches its capture;<br/>HEAD, index and operation state unchanged; destination matches overlay"]
+  E -->|mismatch| F["sourceChanged(contentChanged / repositoryStateChanged /<br/>existing reasons) → journal rollback"]
+  E -->|ok| G["index stays at HEAD → result .changesOnly(report)"]
+  D -->|entry fails / cancelled| F
   F -->|rollback incomplete| H["cleanupIncomplete(residue)"]
 ```
 
-The index stays at the new HEAD, so every carried change is unstaged or untracked, the same staging result as the APFS fork (D2). Ignored files are never enumerated, because the status read excludes them. A tracked file that matches an ignore rule is still a tracked change and is carried. The source is read only.
+- **The overlay.** For each carried path, the destination ends with the source's file on disk: absent, file, directory or symlink, with the same mode. It never gets an index-only version. That makes LR2's cases fall out naturally:
+  - a staged delete followed by recreation copies the recreated file;
+  - a staged new file that was then deleted is absent in the source, and absent in HEAD, so nothing happens;
+  - a staged change undone on disk matches HEAD, so it isn't carried.
+- **Validation.** Validation is per carried path plus repository state, not a whole-worktree snapshot. Paths that aren't carried may change. Rollback, residue and cancellation reuse the existing journal: ownership is confirmed before compensation, a created branch is compensated only at its expected OID, and cancellation returns only after compensation.
+- **Reporting.** Counts are net: changed HEAD-tracked paths, and copied untracked paths.
 
 ## How the branch list stays current (PR 1)
 
@@ -315,109 +406,109 @@ sequenceDiagram
   participant CB as CommandBarPanelController
   participant BL as WorktreeBranchListingCache (actor)
   participant G as agentstudio-git branches(for:)
-  Note over CB,BL: Current: key = repoCache.cacheRevision (app-wide).<br/>A ref-only change leaves it unchanged → stale list.
-  CB->>BL: branchNames(repo, generation = rootSessionGeneration)
-  alt cached for this generation
+  Note over CB: pushLevel(From a branch) → new listing opening token<br/>drop stored names for that repository
+  CB->>BL: branchNames(repo, opening: token)
+  alt cached for this opening
     BL-->>CB: names
-  else first request in this open
+  else first request in this opening
     BL->>G: branches(for: repositoryPath)   (off-main)
     G-->>BL: snapshots
-    BL-->>CB: names (cached for this generation only)
+    BL-->>CB: names (cached for this opening only · stale token dropped)
   end
-  Note over CB: removed: the "revision moved → re-request" retry<br/>and state.branchListingRevisionByRepositoryId
+  Note over CB,BL: removed: the cacheRevision key, the "revision moved → re-request" retry,<br/>and state.branchListingRevisionByRepositoryId
 ```
 
-Each open of the command bar starts a new generation, so any branch created, deleted, renamed or packed since the last open is read fresh. Worktree rows keep their existing path: discovery for add and remove, enrichment for the checked-out branch (LR20, LR21, unchanged code). The separate intake measurement track may later narrow what triggers a scan; LR20 is the invariant it must keep.
+Worktree rows keep their existing paths: discovery for add and remove, and enrichment for the checked-out branch (LR20, LR21; unchanged code).
 
 ## The app executor (PR 2)
 
-`WorktreeLifecycleCoordinator` (App/Coordination, `@MainActor`, owns no state) sequences an app-executed operation:
+`WorktreeLifecycleCoordinator` lives in `App/Coordination`. It is `@MainActor` and owns no state. For each app-executed operation it:
+1. resolves the target from the workspace;
+2. hands the leaf a **live** probe, which reads current pane associations on MainActor each time the leaf asks;
+3. runs the leaf runner off-main;
+4. awaits the existing `refreshWatchedFolder` for the affected watched folder (creation keeps its publication hold);
+5. returns the outcome.
 
-1. Resolve the target from the workspace (repository id, worktree id, or path).
-2. Capture a pane-association snapshot as the probe: a worktree's canonical path maps to the count of panes whose `worktreeId` is that worktree.
-3. Run the leaf runner off-main.
-4. Await the existing `refreshWatchedFolder` for the affected watched folder. Creation keeps the existing publication hold.
-5. Return the outcome.
-
-Both the IPC handler and the UI call it.
+The IPC methods and the UI both call it.
 
 | Surface | Change |
 |---|---|
-| `AppCommand` | `newWorktreeFromDefault`, `newWorktreeFromBranch`, `forkWorktree` get argument variants and `.headless` exposure. New `forkWorktreeChangesOnly` and `removeWorktree` get spec entries (label, `CommandIcon`, help, surface policy, `ipcSpec`), classified in the same change. |
-| `IPCCommandArgumentVariant` | `worktreeCreation` (target, branch, start branch?) and `worktreeRemoval` (target, `force`, `branchPolicy`, `evidence`) |
-| `IPCCommandResultVariant` | `worktreeOperation`, carrying the leaf's outcome document |
-| IPC registry | `worktree.list` query (`workspaceRead`): LR9's document with `activity` from the probe |
-| UI | Worktree row menu → Remove Worktree…; command bar opens a removal step (Features/CommandBar) that shows the assessment, changes, branch disposition and evidence choice (`NSOpenPanel` for the archive folder). Close Panes and Remove dispatches the existing pane-close action for each listed pane, then removes. New Worktree → Fork gains the changes-only row. |
-
-All copy, icons and help come through the command spec catalog. No view defines its own verb.
+| Contracts (`AgentStudioProgrammaticControl`) | `IPCWorktreeCreateParams`/`Result`, `IPCWorktreeForkParams`/`Result`, `IPCWorktreeRemoveParams`/`Result`, `IPCWorktreePruneParams`/`Result`, `IPCWorktreeListParams`/`Result`; `BuiltInDescriptors/IPCWorktreeMethodDescriptors.swift`; listed in `locallyResolvableDescriptors` |
+| App IPC composition | `App/IPCComposition/Worktrees/` registers `worktree.create/fork/remove/prune/list` and dispatches to the coordinator. Privilege: the existing `appCommandExecute` for mutations and `workspaceRead` for list, since the standalone CLI already performs the same work with no credential. |
+| `AppCommand` (UI verbs) | New `removeWorktree` and `forkWorktreeChangesOnly` spec entries (label, `CommandIcon`, help, surface policy), with IPC classified in the same change as reachable through the `worktree.*` methods. The existing creation commands keep their interactive role. |
+| UI | Worktree row menu → Remove Worktree…. The command bar opens a removal step (Features/CommandBar) showing the assessment, changes, branch disposition and evidence choice (`NSOpenPanel` for the archive folder). Close Panes and Remove dispatches the existing pane-close action per listed pane, then removes. New Worktree → Fork gains the changes-only row. |
 
 ## Concurrency and ordering
 
-- **Within one process:** SDK mutations for one repository run FIFO on its writer lane (existing). Assessment and status reads are off the lane, on the SDK's read executor.
-- **Across processes (two agents, CLI and app):** there is no lock (choice 3). Correctness rests on:
-  - the SDK's remove re-checking at execution;
-  - `deleteLocalBranch` comparing the tip to the expected commit;
-  - libgit2 refusing to delete a checked-out branch.
-
-  Two agents removing the same worktree: the second sees `notFound`, or a refusal from the SDK re-check.
-- **App MainActor:** only the pane snapshot capture and the outcome publication run on MainActor. Assessment, status, archive and SDK calls run off-main. That keeps the performance lane directive: publish on MainActor, derive off it.
-- **Branch list:** one in-flight query per repository per generation, shared (existing mechanism, new key).
+- **SDK:** mutations for one repository run FIFO on its writer lane. Assessment and status reads run on the read executor. Branch deletion holds a native ref lock only for its compare-and-remove.
+- **Across processes:** no new lock. Correctness rests on:
+  - the SDK remove re-checking at execution;
+  - the locked compare in branch deletion;
+  - the preserved-error checkout scan.
+- **App MainActor:** only the probe reads and outcome publication run there. Everything else runs off-main.
+- **Branch list:** one read per repository per listing opening, shared.
 
 ## Cross-cutting realization
 
 | Obligation | Realized by |
 |---|---|
-| No raw Git text (WR5 carried) | typed SDK removal partial and branch results; the leaf maps every SDK error through the existing total mapper, extended |
-| Privacy | archiver writes only to the caller's folder; the app's OTLP events carry operation kind and outcome kind only, no paths or branch names (existing scrub rule) |
-| Performance | batched assessment with a shared delta index; cheap proofs short-circuit; the 500-commit bound is `WorktreeCreationPolicy` data in the leaf, not a UI style |
-| Safety | refusal order is one function in the leaf, covered by one table test; the lock is never overridden, because the SDK itself refuses |
+| No raw Git text (WR5 carried) | closed SDK effect, failure and cleanup kinds; the leaf's total mapper extended |
+| Privacy | the archiver writes only to the caller's folder; OTLP carries operation and outcome kinds only |
+| No CLI state files | the archive is verified in memory; nothing else is written |
+| Performance | lazy shared delta index; cheap proofs short-circuit; the 500 bound is leaf policy data; `list` duration measured on this repository |
+| Safety | refusal order is one leaf function; locks are never overridden; branch deletion is compare-under-lock; effects are observed, not assumed |
 
 ## Proof seams
 
 | Seam | Real vs fake | What it observes |
 |---|---|---|
-| SDK integration and branch deletion | real libgit2 against temporary repositories built by Git fixtures; the #388 and #395 object pairs imported as fixture objects | each grade/proof/unknown; CAS retention on a moved tip; checked-out retention |
-| SDK changes-only fork | real temporary repositories, including a non-APFS-independent path | the payload table, refusals, `sourceChanged` rollback, residue |
-| Leaf removal/prune | real SDK and temporary repositories; the activity probe is a test double that returns `openPanes(n)` (a host fact, not the behavior under test) | refusal order, archive-before-remove, effects on each failure, branch dispositions |
-| CLI | the real top-level dispatch with injected output | goldens, exit codes, no IPC client or credential read |
-| Branch list | the real `WorktreeBranchListingCache` with the real SDK query against a temporary repository | a new generation re-reads after a branch is deleted, created or packed with no status change |
-| App executor + IPC (PR 2) | the real IPC registry and coordinator; real SDK; await the typed topology fact for the affected folder, never time | outcome parity with the CLI; `openInPane`; sidebar reflects the change at return |
+| SDK integration | real temporary repositories via the existing Git fixtures, with scrubbed config; the #388/#395 objects as a checked-in, non-thin pack plus manifest, imported with system Git (no network); targets pinned at an advanced commit where #388 and #395 sit at first-parent positions 14 and 4 of `07006b402` | every grade, proof and unknown; bound edges 1/499/500/501 and limit 0; byte-exact paths and modes; binary, symlink, gitlink; shallow and graft boundaries; a batch with one bad branch; before/after filesystem snapshot plus mutation monitor proving zero writes; #388 against its own squash → `sameContent`, both against the advanced target → `squash` |
+| SDK branch deletion | real repositories; a second native Git client moves the tip or checks out the branch at a named barrier seam | loose and packed refs; moved after lookup (ref, config and reflog untouched); checked out in main or linked; unreadable linked administration; lock contention; cleanup success, failure and recreated-meanwhile; tags and remotes untouched |
+| SDK removal effects | real repositories with permission faults on the owning prune path | partial administration; partial directory; unreadable observation → `unknown`; `removeWorkingDirectory: false` → `notRequested` |
+| SDK changes-only | real repositories; the existing named fault and cancellation seams | the LR2 payload cases; LR3 refusals; content-changed-with-same-status, HEAD move, symlink swap → `sourceChanged`; failure or cancellation after every phase → rollback or exact residue; the APFS clone path is never invoked; injected non-APFS host facts prove the gate is bypassed (not real non-APFS proof) |
+| Leaf removal/prune | real SDK and repositories; the activity probe is a scripted double that answers per call (a host fact) | refusal order; `failed` (not `refused`) after the archive; effects projection; branch step skipped on partial effects |
+| CLI | real top-level dispatch with injected output | goldens for every outcome, exit codes, no IPC client or credential read |
+| Branch list | the real cache and SDK against a temporary repository | pop and re-push inside one command-bar session re-reads after an external delete, create, rename or pack; one read shared within an opening |
+| App executor + IPC (PR 2) | the real registry and coordinator, real SDK; await the typed topology fact, never time | parity with the CLI; a pane opened after check 1 → refusal or failure; the sidebar reflects the change when the call returns; no per-call catalog fetch |
 | Real app | debug build, CLI and plain `git` from outside | rows and branch lists per LR20–LR22 |
 
 ## Trace
 
 | U | R | E | Owner | Interface | Shape and home | State | Failure | Proof |
 |---|---|---|---|---|---|---|---|---|
-| L3 | LR1 from-branch | E3 | leaf runner | `createFromBranch` | `WorktreeOperationRequest` (leaf) | — | `startBranchNotFound` | leaf integration |
-| L4 | LR2 changes-only payload | E11 | SDK fork writer | `forkWorktree(materialization: .changesOnly)` | `GitWorktreeMaterializationResult` (SDK) | journaled fork | `sourceChanged`, `entryFailed`, `cleanupIncomplete` → leftovers | SDK fork tests |
-| L4 | LR3 refusals | E6, E11 | SDK fork writer | rejection reasons | `GitWorktreeForkRejectionReason` (+4) | preflight | `refused unsupportedWorkingState` | SDK fork tests |
-| L4 | LR4 no fallback | E11, E12 | leaf formatter | outcome document | `forkUnavailable` + alternative | — | — | CLI golden |
-| L2, L11 | LR5 target, offline | E4 | leaf | default start point → `GitRevisionTarget` | shipped resolver | — | `unknown(noTarget)` | leaf integration, no network |
-| L2 | LR6 proofs | E5 | SDK | `assessBranchIntegration` | `GitBranchIntegrationGrade` (SDK) | per call | — | SDK integration tests |
-| L2 | LR7 squash | E5 | SDK | same | `.squash(commit:)` | shared delta index | `historyLimitReached` | SDK tests + #388/#395 pairs |
-| L2 | LR8 unknown | E5 | SDK | same | `GitIntegrationUnknownReason` | — | never integrated | SDK tests |
-| L5 | LR9 list state | E5–E7, E9 | leaf runner | `.list` | `WorktreeListingSummary` (leaf) | — | read failure → `notNeeded` (shipped) | CLI golden |
+| L3 | LR1 from-branch | E3 | leaf runner | `createFromBranch` | leaf request | — | `startBranchNotFound` | leaf integration |
+| L4 | LR2 overlay payload | E11 | SDK changes-only materializer | `forkWorktree(.changesOnly)` | `GitWorktreeMaterializationResult` (SDK) | journaled fork | `sourceChanged(contentChanged, repositoryStateChanged, …)`, `cleanupIncomplete` | SDK fork tests |
+| L4 | LR3 refusals | E6, E11 | SDK changes-only planner | `workingStateUnsupported` | `GitWorktreeWorkingStateRefusal` (SDK) | preflight | `refused unsupportedWorkingState` | SDK fork tests |
+| L4 | LR4 no fallback | E11, E12 | leaf formatter | outcome shape | `forkUnavailable` + alternative | — | — | CLI golden |
+| L2, L11 | LR5 target, offline | E4 | leaf | resolved target commit → SDK | shipped resolver | — | `unknown(noTarget)` in the leaf | leaf integration, no network |
+| L2 | LR6 proofs | E5 | SDK | `assessBranchIntegration` | `GitBranchIntegrationGrade` | per call | — | SDK integration tests |
+| L2 | LR7 squash | E5 | SDK | `assessBranchIntegration` | `.squash(commit:)`; shared delta index | per call | `historyLimitReached`, `incompleteHistory` | SDK tests + #388/#395 pack |
+| L2 | LR8 unknowns | E5 | SDK (+ leaf for `noTarget`, detached) | `assessBranchIntegration` | `GitIntegrationUnknownReason` | per branch | never integrated | SDK + leaf tests |
+| L5 | LR9 list, failure granularity | E5–E7, E9 | leaf runner | `.list` | `WorktreeListingSummary` → `IPCWorktreeListResult` | per row | whole-list read failure → `notNeeded`; row failures → `unknown` | CLI golden (mixed list) |
 | L1 | LR10 target | E2, E3 | leaf removal runner | `WorktreeRemovalRequest.target` | leaf | — | `notFound` | leaf integration |
-| L1, L10 | LR11 refusal order | E2, E6, E7, E9 | leaf removal runner | refusal function | `WorktreeOperationRefusal` (leaf) | Checking | `refused`, nothing changed | leaf table test |
-| L10 | LR12 archive | E7, E8 | leaf archiver | `WorktreeEvidenceArchiver` | manifest (leaf) | Archiving | failed, directory retained | leaf integration |
-| L1 | LR13 directory | E2, E6 | SDK remove | `removeWorktree(force:)` | typed partial (SDK) | RemovingDirectory | SDK re-check refusal; partial | leaf integration |
-| L1, L2 | LR14 branch disposition | E3, E5 | leaf runner + SDK | `deleteLocalBranch(expectedCommit:)` | `GitDeleteLocalBranchResult` (SDK) | BranchDisposition | retained(moved/checkedOut) | SDK + leaf tests |
-| L1 | LR15 effects | E10 | leaf | outcome document | `WorktreeRemovalEffects` (leaf) | terminal | failed with effects | leaf failure-table test |
-| L1, L7 | LR16 activity | E9 | host | `WorktreeActivityProbe` | leaf port; app impl (PR 2) | captured snapshot | `openInPane` | leaf test double + IPC test |
-| L1, L2 | LR17 prune | E2–E10 | leaf prune runner | `.prune` | `WorktreePruneSummary` (leaf) | per-candidate removal | per-entry failed → exit 2 | leaf integration |
-| L1, L7 | LR18 IPC | E12 | app coordinator (PR 2) | `command.execute` + `worktree.list` | result variant `worktreeOperation` (ProgrammaticControl) | awaits rescan | same outcomes | IPC registry tests |
+| L1, L10 | LR11 refusals | E2, E6, E7, E9 | leaf removal runner | refusal function | `WorktreeOperationRefusal` | Checking | `refused` only when nothing written | leaf table test |
+| L10 | LR12 archive | E7, E8 | leaf archiver | `WorktreeEvidenceArchiver` | in-memory verification | Archiving | `failed`, `partialCopy` | leaf integration |
+| L1 | LR13 directory | E2, E6 | SDK remove | `removeWorktree` | `GitWorktreeRemovalEffects` | RemovingDirectory | observed `partial`/`unknown` | SDK removal tests |
+| L1, L2 | LR14 branch | E3, E5 | SDK writer + leaf policy | `deleteLocalBranch(expectedCommit:)` | `GitDeleteLocalBranchResult`/`Error` | BranchDisposition | retained(moved/checkedOut), `checkoutUnreadable`, cleanup `leftInPlace` | SDK deletion tests |
+| L1 | LR15 effects | E10 | leaf over SDK effects | outcome shape | `WorktreeRemovalEffects` (leaf) | terminal | failed with every effect | leaf failure-table test |
+| L1, L7 | LR16 activity | E9 | host | `WorktreeActivityProbe`, asked twice | leaf port; live app implementation | two checks | `openInPane` refused, or failed after archive | leaf scripted double + IPC test |
+| L1, L2 | LR17 prune | E2–E10 | leaf prune runner | `.prune`; `worktree.prune` | `WorktreePruneSummary` → `IPCWorktreePruneResult` | per candidate | per-entry failed → exit 2 | leaf + IPC integration |
+| L1, L7 | LR18 IPC | E12 | app coordinator (PR 2) | `worktree.create/fork/remove/prune/list` | `IPCWorktree<Verb>Params/Result` (ProgrammaticControl) | awaits rescan | same outcomes | IPC registry tests |
 | L1 | LR19 standalone | — | CLI dispatch | `WorktreeCommandLine.dispatch` | shipped | — | — | dispatch test |
 | L6 | LR20 worktree rows | E2 | discovery (existing) | scan → reconciliation | existing | existing | existing | real-app proof |
 | L6 | LR21 branch label | E2, E3 | enrichment (existing) | `branchChanged` | existing | existing | existing | real-app proof |
-| L6 | LR22 branch list per open | E13 | App cache | `branchNames(…, generation:)` | `WorktreeBranchListingCache` (modified) | per generation | query failure shown (existing) | cache integration + real-app |
-| L7 | LR23 Remove UI | E5, E6, E9, E10 | CommandBar step + app coordinator (PR 2) | `removeWorktree` command | command spec | confirmation step | same refusals shown | native screenshots |
-| L4, L7 | LR24 changes-only UI | E11 | command spec | `forkWorktreeChangesOnly` | command spec | — | same as LR3/LR4 | native screenshot |
+| L6 | LR22 branch list per opening | E13 | App cache | `branchNames(…, opening:)` | `WorktreeBranchListingCache` | per opening | query failure shown (existing) | cache integration + real app |
+| L7 | LR23 Remove UI | E5, E6, E9, E10 | CommandBar step + app coordinator | `removeWorktree` command | command spec | confirmation step | same refusals shown | native screenshots |
+| L4, L7 | LR24 changes-only UI | E11 | command spec | `forkWorktreeChangesOnly` | command spec | — | as LR3/LR4 | native screenshot |
 
 ## Deviations and decisions for the owner
 
-- **D1–D6** (Requirements) are written in with their defaults. D6 also sets the PR cut above: IPC ships with the UI in app PR 2.
-- **New coordinator responsibility** (CLAUDE.md "ask first"): `WorktreeLifecycleCoordinator` in PR 2. It could instead extend `WorktreeCreationCoordinator` into a lifecycle coordinator. I recommend a separate one: creation holds publication, and removal doesn't.
-- **New IPC contract pieces** (PR 2): two argument variants, one result variant, one query method. Each is additive.
-- **No new atom, store, bus event or observer.** The L6 fix changes one cache key.
-- **SDK breaking changes**, hard cutover in one pin bump: the fork request's `materialization` field, the fork result's materialization enum, and the typed removal partial.
-- **Gap:** no generated UI images for LR23 and LR24; this session has no image generation, so the screens are specified in words.
+- **D1–D7** (Requirements) carry their defaults. D7 (does the CLI do the work in its own process?) is needed before app PR 1's runner, not for the SDK slice.
+- **New coordinator responsibility** (CLAUDE.md "ask first"): `WorktreeLifecycleCoordinator` in PR 2.
+- **New IPC pieces** (PR 2): five method pairs and one descriptor file, following the IPC team's conventions; one new target edge (`WorktreeOperations → ProgrammaticControl`). All additive.
+- **No new atom, store, bus event, observer or lock.** The L6 fix changes one cache key. Deletion uses Git's own ref lock.
+- **SDK breaking changes**, hard cutover in one pin bump:
+  - the fork request's `materialization` field and the eligibility signature;
+  - the materialization result enum;
+  - `GitWorktreeRemovalResult` gains observed effects in place of the `String` partial.
+- **Gap:** no generated UI images for LR23 and LR24; the screens are specified in words.
