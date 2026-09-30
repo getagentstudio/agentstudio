@@ -1,6 +1,6 @@
 # Worktree lifecycle: what it needs and why
 
-Date: 2026-09-30, revision 3 (L12 confirmed by the owner; the agentstudio-git slice ships first; D7 added; IPC follows the fast-CLI rule). Revision 2 wrote the whole design before owner review; open decisions carry a written-in default, listed at the end. Author: Worktrees orchestrator (Claude 9304749a). This extends the shipped [worktree CLI requirements](../2026-09-27-worktree-cli/2026-09-27-worktree-cli-requirements.md). W1–W4, W6 and W7 stay in force. W5 stays in force for the CLI and is extended by an IPC surface (L1). Authority comes from the owner's words on 2026-09-30, quoted here. Rows marked *default* are written into the design with a recommended answer and wait for the owner's confirmation in [Decisions waiting on the owner](#decisions-waiting-on-the-owner).
+Date: 2026-09-30, revision 4 (owner's Socratic round: agents decide, the tool informs and offers options; automatic fetch; `tmp/` and git-lock refusals with options; sane defaults). Revision 3: L12 confirmed, the agentstudio-git slice first, D7, the fast-CLI IPC rule. Revision 2 wrote the whole design before owner review; open decisions carry a written-in default, listed at the end. Author: Worktrees orchestrator (Claude 9304749a). This extends the shipped [worktree CLI requirements](../2026-09-27-worktree-cli/2026-09-27-worktree-cli-requirements.md). W1–W4, W6 and W7 stay in force. W5 stays in force for the CLI and is extended by an IPC surface (L1). Authority comes from the owner's words on 2026-09-30, quoted here. Rows marked *default* are written into the design with a recommended answer and wait for the owner's confirmation in [Decisions waiting on the owner](#decisions-waiting-on-the-owner).
 
 Next: [Specification](2026-09-30-worktree-lifecycle-specification.md) → [Program Design](2026-09-30-worktree-lifecycle-program-design.md).
 
@@ -50,6 +50,21 @@ journey
     prune clears every proven-integrated worktree: 4: Agent
 ```
 
+## How the tool treats an agent
+
+Owner, 2026-09-30:
+- "The agent needs to know how to respond in these scenarios … the right feedback and flags to continue, override, have a pathway … while the agent can make those decisions."
+- "if tmp is there show agent error they can override it"
+- "same with lock show lock error and tell agent what options they have, at that point they decide"
+- "wt is done really well, but it is definitely done for humans with some agent things bolted on"
+- "have sane defaults"
+
+So:
+- **The agent decides.** When something is in the way, the tool stops, shows what's there, and lists the exact options that continue.
+- **The tool may refresh information on its own** (a fetch), because that loses nothing. It never makes a lossy choice for the agent.
+- **Hard stops, which no option overrides:** removing the main worktree, and deleting the default branch.
+- **The CLI is agent-native:** machine-readable outcomes, a stable reason code, the options that continue, a preview (`--dry-run`), and safe retries.
+
 ## The needs
 
 | # | Need | Why | Authority | Priority |
@@ -57,15 +72,16 @@ journey
 | L1 | Replace every `wt` step agents use, from the `agentstudio worktree` CLI and an equivalent IPC surface: create (new, from a branch, fork), list, remove a worktree and its branch, and clean up merged ones | agents stop depending on worktrunk; the CLI works without the app, IPC lets the app apply what only it knows | **authorized**: "agent first is better", "why not both … usable in app and outside app" (2026-09-30); the replacement direction (2026-09-27) | Must |
 | L2 | A branch merged by **squash** counts as merged, validated on real squash-merged branches | the `-D -f` friction every time | **authorized**: "make sure squash merge is validated" | Must |
 | L3 | Create from a chosen existing branch in the CLI and IPC, matching the app's "From a branch" | parity with the app (#395) | **authorized**: "good to have parity" | Must |
-| L4 | A **changes-only** fork keeps uncommitted work when an APFS fork isn't wanted or possible, with wt-like ergonomics. It is chosen explicitly and never replaces a failed APFS fork on its own | forking must still keep your work; a silent, narrower fork would surprise the caller | **authorized**: "yes so change only for same ergonomics its part of 2. wt has ergonomics down really well". *default D4*: explicit choice, no automatic fallback | Must |
+| L4 | A **changes-only** fork keeps uncommitted work when an APFS fork isn't wanted or possible, with wt-like ergonomics. It is chosen explicitly and never replaces a failed APFS fork on its own | forking must still keep your work; a silent, narrower fork would surprise the caller | **authorized**: "yes so change only for same ergonomics its part of 2. wt has ergonomics down really well". staging decided (owner, 2026-09-30, "yes"): everything arrives unstaged, matching the APFS fork. *default D4*: explicit choice, no automatic fallback | Must |
 | L5 | `list` shows each worktree's state: integrated (merged), uncommitted changes, locked, current, `tmp/` evidence, and, when the app answers (IPC), whether it's open in a pane | agents decide what to clean up | **authorized** as part of the accepted verb set ("yeah agent first … parity") | Must |
 | L6 | Agent Studio shows every add, change and removal of **worktrees and local branches**, whichever tool made it (CLI, git, wt, the app) | one truth; no stale rows or branch lists | **authorized**: "we need both" (removal as well as add/change) | Must |
 | L7 | The app offers the same lifecycle actions as the CLI (remove worktree, integrated state), with the same rules | parity | **authorized**: "good to have parity"; "this can be 2 PRs" | Must (second PR) |
 | L8 | No interactive switcher or picker in the CLI. Agent Studio's UI is where you switch and resume | Agent Studio is the UI | **authorized**: "we dont need wt switch tui gui etc we have agent studio" | Must |
 | L9 | Worktrees stay beside the repository (the shipped naming rule). The event-intake cost is fixed at the source, not by moving worktrees | moving them broke things (the `/private/tmp` alias, lint, config overrides) | **authorized** direction: fix at the source (2026-09-30) | Must |
-| L10 | Removing a worktree never silently loses its `tmp/` evidence: it's archived to a place the caller names, or discarded only when the caller says so | the manual copy before every removal | *default D3*: explicit archive destination or explicit discard | Should |
-| L11 | Merged detection works offline, from local git content, with no GitHub | works for any repository and branch, no network or auth | *default D1/L11*: offline only | Must if confirmed |
+| L10 | Removing a worktree never silently loses its `tmp/` evidence. When `tmp/` has files, removal stops and offers the ways through: copy it into the main worktree's `tmp/`, copy it to a folder the agent names, or discard it | the manual copy before every removal | **authorized**: "if tmp is there show agent error they can override it"; "copy things to main worktree tmp or tell them to do so" | Must |
+| L11 | Merged detection uses local git content, not GitHub. Before judging, the tool fetches the default branch on its own, skippable with `--no-fetch`. If the fetch fails, it carries on with local content and says so | right after a GitHub merge the local target is stale; no forge or auth dependency | **authorized**: "yes i agree with recommendation for fetch" (2026-09-30) | Must |
 | L12 | agentstudio-git may change: branch deletion, an integration check, typed removal effects, a changes-only fork. It ships first, as its own slice, well designed and well tested | the SDK can't do these today, and the owner owns it | **authorized** (2026-09-30): "it doesnt stop our work on agentstudio git"; "get that done and well tested and well design reviewed first as first slice of work with advisor" | Must |
+| L13 | A git lock in the way (`index.lock`, a ref lock) is shown to the agent with its path, its age, and whether it looks stale (older than 2 minutes, no git process running), plus the options: wait and retry, or remove it if stale. The tool's own commands never leave a lock file behind | lock errors block agents; the agent decides | **authorized**: "show lock error and tell agent what options they have"; "if lock is older than 2 min usually it's stale" | Must |
 
 ## Boundary
 
@@ -74,7 +90,7 @@ journey
   - `wt merge`-style merging (squash, rebase, push);
   - an interactive switch or picker (L8);
   - moving worktrees out of the watched folder (L9);
-  - GitHub or pull-request state (L11);
+  - GitHub or pull-request state (L11 uses local git content after a fetch);
   - deleting remote branches, tags, or any ref other than the worktree's local branch;
   - sweeping local branches that have no worktree (`prune` handles worktrees only);
   - stopping or killing processes that run in a worktree;
@@ -97,10 +113,7 @@ Each has a recommended default already written into the Specification and Progra
 | # | Question | Default written in | What it changes |
 |---|---|---|---|
 | D1 | What "merged" means: integrated **at some point** (a later revert doesn't unmerge it), or **still fully present** in the target today? | integrated at some point, labelled with its proof kind (ancestor, same content, or squash) | Spec E6, LR5–LR7 |
-| D2 | Changes-only fork and staging: keep staged vs unstaged separate, or match today's APFS fork (everything arrives unstaged)? | match the APFS fork: everything unstaged | Spec LR12 |
-| D3 | `tmp/` on remove: must the caller name an archive folder or say discard? | yes: a non-empty `tmp/` is refused unless `--archive-to <folder>` or `--discard-tmp` | Spec LR9, LR10 |
 | D4 | Changes-only: always an explicit choice, never a fallback after a failed APFS fork? | explicit only | Spec LR11 |
-| D5 | Unattended `prune` when the CLI can't see what's open in the app: warn, or skip? | standalone CLI warns ("activity not checked"); IPC and UI refuse worktrees open in a pane | Spec LR8, LR14 |
+| D5 | Open panes: the standalone CLI can't see them, so it only reports "activity not checked". IPC and UI stop on open panes and offer "close them" as an explicit option. The last pane check happens just before the app hands the removal to agentstudio-git; a pane opened after that isn't blocked (it stays open and loses its worktree link). OK? | yes | Spec LR16 |
 | D6 | IPC: expose the same operations through the running app, so it can refuse removing a worktree open in a pane and wait until the sidebar shows the change? | yes: `worktree.create/fork/remove/prune/list`, same outcome object as the CLI, compiled into the CLI per the fast-CLI rule (owner, 2026-09-30); shipped with the UI in app PR 2, after the fast-CLI PR, since both need the app-side executor | Spec LR16, LR18; PR cut |
 | D7 | When a CLI worktree verb runs, does it do the work in its own process (works with the app closed, shipped W5 and #388), or always hand it to the running app? Either way agentstudio-git is called directly, in that process | its own process; the app-routed IPC methods (D6) serve callers that want the open-pane check | Spec LR19; app PR 1 runner |
-| L11 | Offline only (no GitHub)? | yes | Spec LR5 |

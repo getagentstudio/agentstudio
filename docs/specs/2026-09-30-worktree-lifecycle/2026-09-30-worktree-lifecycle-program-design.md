@@ -1,6 +1,13 @@
 # Worktree lifecycle: how it is built
 
-Date: 2026-09-30, revision 2.
+Date: 2026-09-30, revision 3.
+- Revision 3 applies the owner's Socratic round:
+  - every stop carries reason, details and options;
+  - automatic fetch of the default branch;
+  - `tmp/` and git-lock refusals, with `--archive-to-main` and `--remove-stale-lock`;
+  - several targets, `--dry-run`, safe retries;
+  - sane-default policy values.
+- It also closes review residuals F4, F5, F9 and F10, and the Advisor's two follow-ups.
 - Revision 2 corrects review round 1: findings F1–F9, plus the Advisor's SDK pass.
 - It covers the SDK contracts, deletion under a native ref lock, removal effects, the changes-only overlay, branch-list currentness, the live activity recheck, IPC prune, and the fast-CLI IPC contract and target graph.
 
@@ -106,8 +113,28 @@ flowchart LR
    - It doesn't share the APFS planner, which walks the whole source and checks volumes.
    - It performs an explicit checkout of the captured HEAD inside the journaled transaction, because the add helper doesn't check out.
 7. **Branch deletion is ref-first, under a native ref transaction lock**, with metadata cleanup reported separately. It never calls `git_branch_delete` (config before ref) or `git_reference_delete` (reflog before compare).
+   - Cleanup of `branch.<name>` configuration and the reflog runs under a **fresh** native lock on the now-absent ref. Holding that lock stops anyone creating a same-name branch while cleanup runs.
+   - If that lock can't be taken, or a ref of that name exists, cleanup is deferred and reported `leftInPlace`. Nothing is removed on a guess.
 8. **Removal reports what it observed, never what it assumes.** Directory and administration effects are observed independently after the prune call, on success and failure. An unreadable path is `unknown`, never "gone".
-9. **App activity is checked live, twice.** The app's probe reads current pane associations each time it is asked. The leaf asks before archiving and again immediately before the SDK remove.
+9. **App activity is checked live, twice.** The app's probe reads current pane associations each time it is asked. The leaf asks before archiving and again as the last step before it submits the SDK remove.
+   - The SDK writer-lane queue wait after that is **not** observed: a pane opened then isn't blocked (Spec LR16, D5).
+   - The alternative, a host callback executed inside the SDK lane, would put app knowledge into the SDK. It's rejected.
+11. **Every stop is agent-actionable.**
+    - One table in the leaf, `WorktreeStopCatalog`, maps each reason code to its message template, its details and its options (flags or commands, with their effect).
+    - The formatter and the IPC result both render from it, so no view or caller spells options by hand.
+    - Hard stops (`mainWorktree`, `defaultBranch`) carry no options.
+12. **Fetch is automatic, one branch, fail-soft.**
+    - The leaf resolves E4, then calls agentstudio-git's remote client with a new optional `branchName` on `GitFetchRequest`. That fetches only `+refs/heads/<branch>:refs/remotes/<remote>/<branch>`, through the SDK's existing system-git runner.
+    - Failure or a held lock gives a `fetch` status in the outcome and carries on with local refs. `--no-fetch` skips it.
+13. **Git locks are surfaced, never waited on silently.**
+    - agentstudio-git reports a blocking lock as a typed `GitDataPlaneError.lockHeld(path:)`. It comes from libgit2 `GIT_ELOCKED` or the system-git "Unable to create … .lock" failure, never from parsed message text beyond that one mapping.
+    - The leaf adds the age and a best-effort "git process running" probe, then decides "looks stale" (older than `WorktreeLifecyclePolicy.staleLockAge`, 2 minutes, and no git process).
+    - `--remove-stale-lock` re-checks the same file identity and staleness before removing exactly that file.
+14. **Sane defaults live in one policy type.** `WorktreeLifecyclePolicy` in the leaf holds:
+    - the 500-commit squash bound;
+    - the 2-minute stale-lock age;
+    - fetch on/off;
+    - the `<main worktree>/tmp/<worktree folder>/` archive rule.
 10. **IPC follows the fast-CLI rule (PR 2).**
     - The contracts are `IPCWorktreeCreateParams`/`Result` (and `Fork`, `Remove`, `Prune`, `List`), in `AgentStudioProgrammaticControl`, with one `BuiltInDescriptors/IPCWorktreeMethodDescriptors.swift`.
     - They are listed in `locallyResolvableDescriptors`, so a call goes straight to the app with one connection, one login and no per-call catalog fetch.
@@ -176,12 +203,13 @@ struct GitDeleteLocalBranchRequest { let repositoryPath: URL; let branchName: St
 enum GitDeleteLocalBranchResult {
     case deleted(GitBranchMetadataCleanup)
     case retained(GitBranchRetentionReason)       // ref, configuration and reflog all untouched
+    case uncertain(GitDataPlaneError)             // a native error after the removal was staged, and the re-probe couldn't tell
 }
 struct GitBranchMetadataCleanup {
     let configuration: GitBranchMetadataDisposition   // removed | absent | leftInPlace(reason)
     let reflog: GitBranchMetadataDisposition
 }
-enum GitBranchMetadataLeftInPlaceReason { case recreatedMeanwhile, removalFailed }
+enum GitBranchMetadataLeftInPlaceReason { case recreatedMeanwhile, reservationUnavailable, removalFailed }
 enum GitBranchRetentionReason {
     case notFound
     case moved(currentCommit: String)
@@ -191,8 +219,13 @@ enum GitDeleteLocalBranchError: Error {       // pre-mutation, nothing changed
     case invalidBranchName, refLockContended, checkoutUnreadable(worktreePath: URL?)
     case notADirectCommitReference
     case gitFailure(GitDataPlaneError)
-    case outcomeUncertain(GitDataPlaneError)   // native error after staging removal; the re-probe couldn't tell
-}
+}                                              // every case here means nothing changed
+
+// ── Fetch (LR5): one optional field on the existing request; nil keeps today's whole-remote fetch.
+struct GitFetchRequest { let repositoryPath: URL; let remoteName: String; let branchName: String? }
+
+// ── Locks (LR26): one new GitDataPlaneError case, raised wherever a lock blocks a read or write.
+//    case lockHeld(path: URL)      // libgit2 GIT_ELOCKED, or system git's "Unable to create '<path>': File exists"
 
 // ── Removal (E10): observed effects replace the String partial.
 struct GitWorktreeRemovalResult {               // name kept; String partial removed (hard cutover)
@@ -226,11 +259,74 @@ enum GitWorktreeMaterializationResult {
 
 The leaf maps each SDK error through its existing total mapper, extended case by case. No raw libgit2 text reaches output.
 
+## Leaf interfaces (app PR 1)
+
+`AgentStudioWorktreeOperations` owns requests, policy and outcomes; the wire shape of each outcome is the `IPCWorktree<Verb>Result` type in `ProgrammaticControl` (PR 2), which the CLI's `--json` also prints.
+
+```swift
+enum WorktreeOperationRequest: Sendable, Equatable {
+    case createFromDefault(start: URL, branch: String)
+    case createFromBranch(start: URL, branch: String, startBranch: String)                 // LR1
+    case fork(start: URL, branch: String, materialization: WorktreeForkMaterialization)   // LR2-LR4
+    case list(start: URL, targets: [String], fetchPolicy: WorktreeFetchPolicy)             // LR9
+    case remove(WorktreeRemovalRequest)                                                    // LR10-LR16, LR25, LR26
+    case prune(WorktreePruneRequest)                                                       // LR17
+}
+struct WorktreeRemovalRequest: Sendable, Equatable {
+    let start: URL                               // --repo or current directory
+    let callerDirectory: URL?                    // for targetIsCurrent; nil from app hosts
+    let targets: [String]                        // branch names or paths, handled one by one
+    let discardWorkingChanges: Bool              // -f
+    let branchPolicy: WorktreeBranchPolicy       // .deleteIfIntegrated | .deleteAtObservedCommit (-D) | .keep
+    let evidencePolicy: WorktreeEvidencePolicy   // .requireEmpty | .archiveToMain | .archive(to: URL) | .discard
+    let fetchPolicy: WorktreeFetchPolicy         // .defaultBranch | .skip
+    let removeStaleLock: Bool                    // --remove-stale-lock
+    let closePanes: Bool                         // IPC/UI only; the CLI never sets it
+    let dryRun: Bool                             // --dry-run -> .planned
+}
+struct WorktreePruneRequest: Sendable, Equatable {
+    let start: URL; let callerDirectory: URL?
+    let apply: Bool; let evidencePolicy: WorktreeEvidencePolicy; let fetchPolicy: WorktreeFetchPolicy
+}
+
+/// What a host knows about panes. The CLI passes one that answers `.notChecked`;
+/// the app passes a live one that reads current pane associations on each call.
+protocol WorktreeActivityProbe: Sendable {
+    func activity(forWorktreeAt canonicalPath: URL) async -> WorktreeActivity
+}
+enum WorktreeActivity: Sendable, Equatable { case notChecked, none, openPanes([WorktreePaneReference]) }
+
+enum WorktreeOperationOutcome: Sendable, Equatable {
+    case created(WorktreeCreatedSummary)
+    case listed(WorktreeListingSummary)            // + target, fetch status, per-row state, removable, blockers
+    case removed(WorktreeRemovalSummary)           // one entry per target
+    case pruned(WorktreePruneSummary)
+    case planned(WorktreeRemovalPlan)              // --dry-run
+    case refused(WorktreeOperationRefusal)         // nothing written; carries its options
+    case failed(WorktreeOperationFailure)          // create/fork keep `leftovers`; remove carries `effects`
+}
+/// One row per stop reason: message, details, options. Hard stops have no options.
+struct WorktreeStopCatalog { static func entry(for reason: WorktreeStopReason) -> WorktreeStopEntry }
+struct WorktreeStopOption: Sendable, Equatable { let action: WorktreeStopAction; let effect: String } // .flag / .command
+enum WorktreeLifecyclePolicy {
+    static let squashSearchCommitLimit = 500
+    static let staleLockAge: Duration = .seconds(120)
+    static let fetchesDefaultBranch = true
+    static func archiveToMainDestination(mainWorktree: URL, worktreeFolder: String) -> URL  // <main>/tmp/<folder>/
+}
+```
+
+New stop reasons: `defaultBranch` (hard), `mainWorktree` (hard), `notFound`, `alreadyRemoved`, `startBranchNotFound`, `unsupportedWorkingState`, `targetIsCurrent`, `worktreeLocked`, `dirty`, `evidenceInTmp`, `openInPane`, `gitLockHeld`, `archiveDestinationExists`, `archiveDestinationInsideWorktree`. `forkUnavailable` gains the `changesOnly` option.
+
 ## How integration is assessed
 
 ```mermaid
 flowchart TB
-  S["capture: branch ref OID B (per name), target T (given)"] --> C1{"B == T?"}
+  S["capture: branch ref OID B (per name), target T (given)"] --> OV{"shallow or grafted history?<br/>(checked once, before any graph proof)"}
+  OV -->|yes| OVY{"B == T or tree(B) == tree(T)?"}
+  OVY -->|yes| P0["integrated(sameCommit / sameContent)"]
+  OVY -->|no| U0["unknown(incompleteHistory)"]
+  OV -->|no| C1{"B == T?"}
   C1 -->|yes| P1["integrated(sameCommit)"]
   C1 -->|no| C2{"git_graph_descendant_of(T, B)?"}
   C2 -->|yes| P2["integrated(ancestor)"]
@@ -296,8 +392,13 @@ sequenceDiagram
     W-->>L: retained(checkedOut) / checkoutUnreadable (lock released)
   end
   W->>G: git_transaction_remove + git_transaction_commit
-  W->>G: re-read ref: gone? (native error → re-probe → deleted | retained | outcomeUncertain)
-  W->>G: clean branch.<name> config and reflog only if no ref of that name exists now
+  W->>G: re-read ref: gone? (native error → re-probe → deleted | retained | uncertain)
+  W->>G: new transaction: lock the now-absent refs/heads/<name> (blocks same-name creation)
+  alt reservation held and no ref of that name
+    W->>G: remove repository-local branch.<name> config and the reflog, then release
+  else reservation unavailable or ref exists
+    W->>W: cleanup deferred → leftInPlace(reservationUnavailable / recreatedMeanwhile)
+  end
   W-->>L: deleted(configuration, reflog dispositions)
 ```
 
@@ -319,7 +420,8 @@ sequenceDiagram
   participant G as agentstudio-git
   participant A as WorktreeEvidenceArchiver
   H->>R: remove(request)
-  R->>G: validateWorktree + worktrees + branches (LR10 target)
+  R->>G: fetch E4's branch only (unless --no-fetch) → fetch status, never fatal
+  R->>G: validateWorktree + worktrees + branches (LR10 target · several targets run one by one)
   R->>R: refusals: notFound, mainWorktree, targetIsCurrent, locked
   R->>G: statusFacts(target) → E6 · refuse dirty unless -f
   R->>R: refuse evidenceNotArchived (E7 non-empty, no policy)
@@ -335,7 +437,7 @@ sequenceDiagram
   R->>G: removeWorktree(canonicalPath, removeWorkingDirectory, force = -f)
   Note over G: re-checks lock and dirtiness now · returns observed effects
   G-->>R: effects {administration, workingDirectory} | pre-mutation refusal
-  alt both removed and branch policy allows (LR14)
+  alt (worktree target with both removed, or branch-only target) and branch policy allows (LR14)
     R->>G: deleteLocalBranch(name, expectedCommit = captured tip)
     G-->>R: deleted(cleanup) | retained(reason) | error
   else otherwise
@@ -364,7 +466,7 @@ stateDiagram-v2
   RemovingDirectory --> Failed_Effects: partial or unknown effect
   RemovingDirectory --> BranchDisposition: administration + directory removed
   BranchDisposition --> Removed: deleted or retained(reason)
-  BranchDisposition --> Failed_BranchUnknown: outcomeUncertain
+  BranchDisposition --> Failed_BranchUnknown: uncertain
   Removed --> [*]
 ```
 
@@ -375,7 +477,8 @@ stateDiagram-v2
 | Prune fails partway | SDK observed effects | branch step skipped | administration/directory `partial` or `unknown`, branch retained |
 | Branch moved / checked out / unreadable checkout | `deleteLocalBranch` | branch kept, metadata untouched | `removed`, branch retained(reason) |
 | Metadata cleanup incomplete | SDK cleanup disposition | ref already gone | `removed`, branch deleted, cleanup warning |
-| Native error after staging deletion | SDK re-probe | — | failed: directory removed, branch `deleted`/`retained`/`unknown` as observed |
+| Native error after staging deletion | SDK re-probe (`uncertain`) | — | failed: directory removed, branch `deleted`/`retained`/`unknown` as observed |
+| A git lock blocks a step | `lockHeld(path)` | stop at that step | refused if nothing written, else failed with effects; options: retry, or `--remove-stale-lock` when stale |
 
 ## How a changes-only fork runs
 
@@ -466,6 +569,8 @@ The IPC methods and the UI both call it.
 | SDK branch deletion | real repositories; a second native Git client moves the tip or checks out the branch at a named barrier seam | loose and packed refs; moved after lookup (ref, config and reflog untouched); checked out in main or linked; unreadable linked administration; lock contention; cleanup success, failure and recreated-meanwhile; tags and remotes untouched |
 | SDK removal effects | real repositories with permission faults on the owning prune path | partial administration; partial directory; unreadable observation → `unknown`; `removeWorkingDirectory: false` → `notRequested` |
 | SDK changes-only | real repositories; the existing named fault and cancellation seams | the LR2 payload cases; LR3 refusals; content-changed-with-same-status, HEAD move, symlink swap → `sourceChanged`; failure or cancellation after every phase → rollback or exact residue; the APFS clone path is never invoked; injected non-APFS host facts prove the gate is bypassed (not real non-APFS proof) |
+| Fetch | a local bare repository as the remote (no network) | E4 advances after the fetch; `--no-fetch`; a failed fetch and a held ref lock fall back with their status |
+| Git locks | real repositories with a planted `index.lock` / ref `.lock`, fresh and older than the stale age, with and without a running git process | `gitLockHeld` details and options; `--remove-stale-lock` removes exactly that file after its re-check; no worktree command leaves a lock behind (every lock path checked after each failure-injection test) |
 | Leaf removal/prune | real SDK and repositories; the activity probe is a scripted double that answers per call (a host fact) | refusal order; `failed` (not `refused`) after the archive; effects projection; branch step skipped on partial effects |
 | CLI | real top-level dispatch with injected output | goldens for every outcome, exit codes, no IPC client or credential read |
 | Branch list | the real cache and SDK against a temporary repository | pop and re-push inside one command-bar session re-reads after an external delete, create, rename or pack; one read shared within an opening |
@@ -480,20 +585,22 @@ The IPC methods and the UI both call it.
 | L4 | LR2 overlay payload | E11 | SDK changes-only materializer | `forkWorktree(.changesOnly)` | `GitWorktreeMaterializationResult` (SDK) | journaled fork | `sourceChanged(contentChanged, repositoryStateChanged, …)`, `cleanupIncomplete` | SDK fork tests |
 | L4 | LR3 refusals | E6, E11 | SDK changes-only planner | `workingStateUnsupported` | `GitWorktreeWorkingStateRefusal` (SDK) | preflight | `refused unsupportedWorkingState` | SDK fork tests |
 | L4 | LR4 no fallback | E11, E12 | leaf formatter | outcome shape | `forkUnavailable` + alternative | — | — | CLI golden |
-| L2, L11 | LR5 target, offline | E4 | leaf | resolved target commit → SDK | shipped resolver | — | `unknown(noTarget)` in the leaf | leaf integration, no network |
+| L2, L11 | LR5 target + automatic fetch | E4 | leaf + SDK remote client | `fetch(GitFetchRequest.branchName)` → resolved target commit | shipped resolver; `fetch` status in outcome | — | fetch failure/lock → local fallback; `unknown(noTarget)` in the leaf | fetch from a local bare remote |
 | L2 | LR6 proofs | E5 | SDK | `assessBranchIntegration` | `GitBranchIntegrationGrade` | per call | — | SDK integration tests |
 | L2 | LR7 squash | E5 | SDK | `assessBranchIntegration` | `.squash(commit:)`; shared delta index | per call | `historyLimitReached`, `incompleteHistory` | SDK tests + #388/#395 pack |
-| L2 | LR8 unknowns | E5 | SDK (+ leaf for `noTarget`, detached) | `assessBranchIntegration` | `GitIntegrationUnknownReason` | per branch | never integrated | SDK + leaf tests |
+| L2 | LR8 unknowns | E5 | SDK (+ leaf for `noTarget`, detached) | `assessBranchIntegration` | `GitIntegrationUnknownReason`; overlay check first | per branch | never integrated; shallow/graft → `incompleteHistory` before graph proofs | SDK + leaf tests |
 | L5 | LR9 list, failure granularity | E5–E7, E9 | leaf runner | `.list` | `WorktreeListingSummary` → `IPCWorktreeListResult` | per row | whole-list read failure → `notNeeded`; row failures → `unknown` | CLI golden (mixed list) |
 | L1 | LR10 target | E2, E3 | leaf removal runner | `WorktreeRemovalRequest.target` | leaf | — | `notFound` | leaf integration |
-| L1, L10 | LR11 refusals | E2, E6, E7, E9 | leaf removal runner | refusal function | `WorktreeOperationRefusal` | Checking | `refused` only when nothing written | leaf table test |
-| L10 | LR12 archive | E7, E8 | leaf archiver | `WorktreeEvidenceArchiver` | in-memory verification | Archiving | `failed`, `partialCopy` | leaf integration |
+| L1, L10, L13 | LR11 stops with options | E2, E6, E7, E9, E14 | leaf removal runner | stop order + `WorktreeStopCatalog` | `WorktreeOperationRefusal` + options | Checking | `refused` only when nothing written; hard stops carry no options | leaf table test (every code has its options) |
+| L10 | LR12 archive | E7, E8 | leaf archiver | `WorktreeEvidenceArchiver` (`archiveToMain`, `archive(to:)`) | in-memory verification | Archiving | `failed`, `partialCopy` | leaf integration |
 | L1 | LR13 directory | E2, E6 | SDK remove | `removeWorktree` | `GitWorktreeRemovalEffects` | RemovingDirectory | observed `partial`/`unknown` | SDK removal tests |
-| L1, L2 | LR14 branch | E3, E5 | SDK writer + leaf policy | `deleteLocalBranch(expectedCommit:)` | `GitDeleteLocalBranchResult`/`Error` | BranchDisposition | retained(moved/checkedOut), `checkoutUnreadable`, cleanup `leftInPlace` | SDK deletion tests |
+| L1, L2 | LR14 branch | E3, E5 | SDK writer + leaf policy | `deleteLocalBranch(expectedCommit:)` | `GitDeleteLocalBranchResult` (incl. `uncertain`)/`Error` (no-change only) | BranchDisposition (branch-only targets enter directly) | retained(moved/checkedOut), `checkoutUnreadable`, cleanup `leftInPlace` under reservation | SDK deletion tests |
 | L1 | LR15 effects | E10 | leaf over SDK effects | outcome shape | `WorktreeRemovalEffects` (leaf) | terminal | failed with every effect | leaf failure-table test |
-| L1, L7 | LR16 activity | E9 | host | `WorktreeActivityProbe`, asked twice | leaf port; live app implementation | two checks | `openInPane` refused, or failed after archive | leaf scripted double + IPC test |
+| L1, L7 | LR16 activity | E9 | host | `WorktreeActivityProbe`, asked twice (last check just before SDK submit) | leaf port; live app implementation; `closePanes` option | two checks | `openInPane` with options, or failed after archive | leaf scripted double + IPC test |
 | L1, L2 | LR17 prune | E2–E10 | leaf prune runner | `.prune`; `worktree.prune` | `WorktreePruneSummary` → `IPCWorktreePruneResult` | per candidate | per-entry failed → exit 2 | leaf + IPC integration |
 | L1, L7 | LR18 IPC | E12 | app coordinator (PR 2) | `worktree.create/fork/remove/prune/list` | `IPCWorktree<Verb>Params/Result` (ProgrammaticControl) | awaits rescan | same outcomes | IPC registry tests |
+| L1 | LR25 dry run | E10, E12 | leaf removal runner | `dryRun` | `WorktreeRemovalPlan` → `planned` | none written | same codes and options as a real run | CLI golden + no-change snapshot |
+| L13 | LR26 git locks | E14 | SDK (typed) + leaf (age, staleness, removal) | `GitDataPlaneError.lockHeld`; `removeStaleLock` | stop catalog `gitLockHeld` | per step | stale re-check before removal; never leaves a lock | lock integration |
 | L1 | LR19 standalone | — | CLI dispatch | `WorktreeCommandLine.dispatch` | shipped | — | — | dispatch test |
 | L6 | LR20 worktree rows | E2 | discovery (existing) | scan → reconciliation | existing | existing | existing | real-app proof |
 | L6 | LR21 branch label | E2, E3 | enrichment (existing) | `branchChanged` | existing | existing | existing | real-app proof |
@@ -503,7 +610,8 @@ The IPC methods and the UI both call it.
 
 ## Deviations and decisions for the owner
 
-- **D1–D7** (Requirements) carry their defaults. D7 (does the CLI do the work in its own process?) is needed before app PR 1's runner, not for the SDK slice.
+- **D1, D4–D7** (Requirements) carry their defaults; D2 is decided (everything unstaged), D3 is replaced by L10's options. D7 (does the CLI do the work in its own process?) is needed before app PR 1's runner, not for the SDK slice.
+- **SDK additions from the Socratic round:** `GitFetchRequest.branchName` and `GitDataPlaneError.lockHeld(path:)`. Both are additive.
 - **New coordinator responsibility** (CLAUDE.md "ask first"): `WorktreeLifecycleCoordinator` in PR 2.
 - **New IPC pieces** (PR 2): five method pairs and one descriptor file, following the IPC team's conventions; one new target edge (`WorktreeOperations → ProgrammaticControl`). All additive.
 - **No new atom, store, bus event, observer or lock.** The L6 fix changes one cache key. Deletion uses Git's own ref lock.
