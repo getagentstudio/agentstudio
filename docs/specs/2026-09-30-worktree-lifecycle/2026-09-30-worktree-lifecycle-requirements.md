@@ -1,6 +1,6 @@
 # Worktree lifecycle: what it needs and why
 
-Date: 2026-09-30, revision 4 (owner's Socratic round: agents decide, the tool informs and offers options; automatic fetch; `tmp/` and git-lock refusals with options; sane defaults). Revision 3: L12 confirmed, the agentstudio-git slice first, D7, the fast-CLI IPC rule. Revision 2 wrote the whole design before owner review; open decisions carry a written-in default, listed at the end. Author: Worktrees orchestrator (Claude 9304749a). This extends the shipped [worktree CLI requirements](../2026-09-27-worktree-cli/2026-09-27-worktree-cli-requirements.md). W1–W4, W6 and W7 stay in force. W5 stays in force for the CLI and is extended by an IPC surface (L1). Authority comes from the owner's words on 2026-09-30, quoted here. Rows marked *default* are written into the design with a recommended answer and wait for the owner's confirmation in [Decisions waiting on the owner](#decisions-waiting-on-the-owner).
+Date: 2026-09-30, revision 5 (owner decisions D1, D4–D7 recorded; open panes warn with options). Revision 4 (owner's Socratic round: agents decide, the tool informs and offers options; automatic fetch; `tmp/` and git-lock refusals with options; sane defaults). Revision 3: L12 confirmed, the agentstudio-git slice first, D7, the fast-CLI IPC rule. Revision 2 wrote the whole design before owner review; open decisions carry a written-in default, listed at the end. Author: Worktrees orchestrator (Claude 9304749a). This extends the shipped [worktree CLI requirements](../2026-09-27-worktree-cli/2026-09-27-worktree-cli-requirements.md). W1–W4, W6 and W7 stay in force. W5 stays in force for the CLI and is extended by an IPC surface (L1). Authority comes from the owner's words on 2026-09-30, quoted here. Rows marked *default* are written into the design with a recommended answer and wait for the owner's confirmation in [Decisions waiting on the owner](#decisions-waiting-on-the-owner).
 
 Next: [Specification](2026-09-30-worktree-lifecycle-specification.md) → [Program Design](2026-09-30-worktree-lifecycle-program-design.md).
 
@@ -106,14 +106,15 @@ The second PR adds:
 
 The current app has no remove-worktree UI (`no current UI` for that moment). Rows don't gain a live integrated marker: that would need integration tracked continuously, and the confirmation is where the decision is made. The Specification (LR23, LR24) pins what the user sees. A generated screen image is a gap: this session has no image generation, so the screens are described in words.
 
-## Decisions waiting on the owner
+## Owner decisions (2026-09-30)
 
-Each has a recommended default already written into the Specification and Program Design. Confirming keeps it; correcting changes the rows named.
-
-| # | Question | Default written in | What it changes |
+| # | Question | Owner's answer | What it changes |
 |---|---|---|---|
-| D1 | What "merged" means: integrated **at some point** (a later revert doesn't unmerge it), or **still fully present** in the target today? | integrated at some point, labelled with its proof kind (ancestor, same content, or squash) | Spec E6, LR5–LR7 |
-| D4 | Changes-only: always an explicit choice, never a fallback after a failed APFS fork? | explicit only | Spec LR11 |
-| D5 | Open panes: the standalone CLI can't see them, so it only reports "activity not checked". IPC and UI stop on open panes and offer "close them" as an explicit option. The last pane check happens just before the app hands the removal to agentstudio-git; a pane opened after that isn't blocked (it stays open and loses its worktree link). OK? | yes | Spec LR16 |
-| D6 | IPC: expose the same operations through the running app, so it can refuse removing a worktree open in a pane and wait until the sidebar shows the change? | yes: `worktree.create/fork/remove/prune/list`, same outcome object as the CLI, compiled into the CLI per the fast-CLI rule (owner, 2026-09-30); shipped with the UI in app PR 2, after the fast-CLI PR, since both need the app-side executor | Spec LR16, LR18; PR cut |
-| D7 | When a CLI worktree verb runs, does it do the work in its own process (works with the app closed, shipped W5 and #388), or always hand it to the running app? Either way agentstudio-git is called directly, in that process | its own process; the app-routed IPC methods (D6) serve callers that want the open-pane check | Spec LR19; app PR 1 runner |
+| D1 | What "merged" means | **integrated at some point**: a later revert doesn't unmerge it; the proof kind is reported | Spec LR6–LR8 |
+| D2 | Changes-only staging | **everything unstaged**, matching the APFS fork ("yes") | Spec LR2 |
+| D4 | Silent fallback to changes-only after a failed APFS fork? | **no**: the failure is reported, and `--changes-only` is offered | Spec LR4 |
+| D5 | Open panes and the moment between the last check and the removal | **"if gap happens it's fine"; "we allow the user to do this … we just warn them"**: open panes produce a warning with options (close them and remove, remove anyway, cancel), not a flat refusal | Spec LR16, LR23 |
+| D6 | IPC ships with the UI in app PR 2, after the fast-CLI PR | **"sure"** | Spec LR18; PR cut |
+| D7 | Where CLI worktree verbs do their work | **A: in the CLI's own process**; works with the app closed | Spec LR19 |
+| — | New app coordinator + `worktree.*` IPC methods | approved with D6; the owner asks for clean separations with nothing heavy on the MainActor | Program Design |
+| — | Who builds the CLI (app PR 1) | **the Worktrees orchestrator**: "properly plan it with orchestrator skills … coordinate with ipc agent" | delivery |

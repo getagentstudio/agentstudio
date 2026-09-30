@@ -1,6 +1,6 @@
 # Worktree lifecycle: how it is built
 
-Date: 2026-09-30, revision 5 (review round 3: F12-V own-lock residue on every failure path; F15 dry-run gates pane closing).
+Date: 2026-09-30, revision 6 (owner decisions: open panes warn with options incl. `removeWithOpenPanes`; D1/D4/D6/D7 recorded). Revision 5 (review round 3: F12-V own-lock residue on every failure path; F15 dry-run gates pane closing).
 
 Revision 4 history:
 - Revision 4 corrects review round 2 and the Advisor's revision-3 notes:
@@ -317,6 +317,7 @@ struct WorktreeRemovalRequest: Sendable, Equatable {
     let fetchPolicy: WorktreeFetchPolicy         // .defaultBranch | .skip
     let removeStaleLock: Bool                    // --remove-stale-lock
     let closePanes: Bool                         // IPC/UI only; the CLI never sets it
+    let removeWithOpenPanes: Bool                // IPC/UI only (D5): proceed past openInPane; panes lose their worktree link
     let dryRun: Bool                             // --dry-run -> .planned
 }
 struct WorktreePruneRequest: Sendable, Equatable {
