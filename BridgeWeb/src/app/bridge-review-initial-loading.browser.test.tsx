@@ -3,15 +3,16 @@ import { expect, test, vi } from 'vitest';
 import { render } from 'vitest-browser-react';
 import { page } from 'vitest/browser';
 
-import { makeBridgeMainCodeViewItem } from '../core/comm-worker/bridge-main-render-snapshot-store.test-support.js';
+import type { BridgeMainCodeViewItem } from '../core/comm-worker/bridge-main-render-snapshot-store.js';
+import { createBridgeTelemetryRecorder } from '../foundation/telemetry/bridge-telemetry-recorder.js';
 
 // oxlint-disable-next-line import/no-unassigned-import -- Exercise the production Review layout and skeletons.
 import './bridge-app.css';
-import { createBridgeTelemetryRecorder } from '../foundation/telemetry/bridge-telemetry-recorder.js';
+import { parseBridgeCodeViewDiffForBrowserTest } from '../review-viewer/code-view/bridge-code-view-browser-test-diff.js';
+import { waitForBridgeReviewRecoveryDomState } from '../review-viewer/test-support/bridge-review-recovery-dom-state.test-support.js';
 import {
 	makeReviewSurfaceHarness,
 	reviewDisplayEvent,
-	settleRenderedReviewFrame,
 } from './bridge-app-review-render-snapshot-controller.browser-harness.test-support.js';
 import { BridgeReviewViewerMode } from './bridge-app-review-viewer-mode.js';
 
@@ -28,7 +29,6 @@ test('cold Review waits for its first source with skeletons instead of no-target
 	}
 	expect(document.body.textContent).not.toContain('Choose a comparison target');
 	await act(async (): Promise<void> => {
-		await settleRenderedReviewFrame();
 		await page.screenshot({ path: '../../../tmp/g1-L-cold-review-loading.png' });
 	});
 
@@ -44,23 +44,32 @@ test('cold Review waits for its first source with skeletons instead of no-target
 			}),
 		);
 		await import('../review-viewer/shell/review-viewer-shell.js');
-		await settleRenderedReviewFrame();
-		const contentItem = makeBridgeMainCodeViewItem('cold-review-item');
-		if (contentItem.type !== 'file') throw new Error('Cold source fixture requires a file body.');
+	});
+	await expect.element(rendered.getByTestId('bridge-review-canvas')).toBeVisible();
+	await act(async (): Promise<void> => {
+		const contentItem = {
+			id: 'cold-review-item',
+			type: 'diff',
+			version: 1,
+			fileDiff: parseBridgeCodeViewDiffForBrowserTest(
+				{ name: 'First.swift', contents: '' },
+				{ name: 'First.swift', contents: 'let firstSourceArrived = true;\n' },
+			),
+			bridgeMetadata: {
+				itemId: 'cold-review-item',
+				displayPath: 'First.swift',
+				contentState: 'hydrated',
+				contentRoles: ['base', 'head'],
+				cacheKey: 'cold-review-body',
+				lineCount: 1,
+			},
+		} satisfies BridgeMainCodeViewItem;
 		harness.reviewClient.renderStore.applySnapshotUpdate({
 			codeViewItemPatches: [
 				{
 					operation: 'upsert',
 					itemId: contentItem.id,
-					item: {
-						...contentItem,
-						file: {
-							name: 'First.swift',
-							contents: 'let firstSourceArrived = true;\n',
-							lang: 'swift',
-						},
-						bridgeMetadata: { ...contentItem.bridgeMetadata, displayPath: 'First.swift' },
-					},
+					item: contentItem,
 				},
 			],
 			workerPatches: [
@@ -72,9 +81,15 @@ test('cold Review waits for its first source with skeletons instead of no-target
 				},
 			],
 		});
-		await settleRenderedReviewFrame();
 	});
-	await expect.element(rendered.getByTestId('bridge-review-canvas')).toBeVisible();
+	const paintedText = await waitForBridgeReviewRecoveryDomState({
+		readState: (): string =>
+			[...document.querySelectorAll('diffs-container')]
+				.map((element): string => element.shadowRoot?.textContent ?? '')
+				.join(' '),
+		isExpected: (text): boolean => text.includes('firstSourceArrived'),
+	});
+	expect(paintedText).toContain('firstSourceArrived');
 	await expect
 		.element(
 			rendered.getByTestId('bridge-code-view-panel').getByText('First.swift', { exact: true }),
@@ -95,17 +110,19 @@ test('cold Review waits for its first source with skeletons instead of no-target
 
 test('native selectionRequired certifies the no-target line', async (): Promise<void> => {
 	const harness = makeReviewSurfaceHarness();
-	harness.reviewClient.renderStore.applyWorkerPatch({
-		slice: 'panelChrome',
-		operation: 'upsert',
-		payload: {
-			reviewComparison: {
-				activeTarget: null,
-				attempt: { status: 'selectionRequired' },
-				displayedSnapshot: { status: 'none' },
-				repositoryDefaultTarget: null,
+	await act(async (): Promise<void> => {
+		harness.reviewClient.renderStore.applyWorkerPatch({
+			slice: 'panelChrome',
+			operation: 'upsert',
+			payload: {
+				reviewComparison: {
+					activeTarget: null,
+					attempt: { status: 'selectionRequired' },
+					displayedSnapshot: { status: 'none' },
+					repositoryDefaultTarget: null,
+				},
 			},
-		},
+		});
 	});
 	const rendered = await render(reviewMode(harness));
 	await expect
@@ -117,7 +134,6 @@ test('native selectionRequired certifies the no-target line', async (): Promise<
 		).toBe('noSelection');
 	expect(document.querySelector('[data-slot="skeleton"]')).toBeNull();
 	await act(async (): Promise<void> => {
-		await settleRenderedReviewFrame();
 		await page.screenshot({ path: '../../../tmp/g1-L-certified-no-target.png' });
 		await rendered.unmount();
 	});
