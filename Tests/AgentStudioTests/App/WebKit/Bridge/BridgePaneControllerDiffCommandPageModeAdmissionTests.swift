@@ -42,6 +42,7 @@ extension WebKitSerializedTests.BridgePaneControllerTests {
             productAdmission: fixture.productAdmission,
             sequence: 1
         )
+        try await fixture.factTrace.expectResumedBuildStarted(commandId)
         let result = await commandTask.value
         assertDiffCommandWasAccepted(result, commandId: commandId)
         #expect(fixture.controller.pendingReviewPackageBuildReasons.isEmpty)
@@ -54,6 +55,7 @@ extension WebKitSerializedTests.BridgePaneControllerTests {
             contributionRequests.map(\.symbolicTarget) == [target]
         )
         #expect(fixture.controller.paneState.diff.packageMetadata?.orderedItemIds == ["item-pending"])
+        try await fixture.factTrace.expectPackageDelivery(commandId)
         try await fixture.factTrace.expectCommandEnded(commandId, outcome: .completed)
 
         _ = await fixture.controller.beginTeardown().value
@@ -109,6 +111,7 @@ extension WebKitSerializedTests.BridgePaneControllerTests {
             productAdmission: fixture.productAdmission,
             sequence: 1
         )
+        try await fixture.factTrace.expectResumedBuildStarted(latestCommandId)
         assertDiffCommandWasAccepted(
             await latestCommandTask.value,
             commandId: latestCommandId
@@ -123,6 +126,7 @@ extension WebKitSerializedTests.BridgePaneControllerTests {
             contributionRequests.map(\.symbolicTarget) == [latestTarget]
         )
         try await fixture.factTrace.expectCommandEnded(firstCommandId, outcome: .superseded)
+        try await fixture.factTrace.expectPackageDelivery(latestCommandId)
         try await fixture.factTrace.expectCommandEnded(latestCommandId, outcome: .completed)
 
         _ = await fixture.controller.beginTeardown().value
@@ -165,6 +169,7 @@ extension WebKitSerializedTests.BridgePaneControllerTests {
             productAdmission: fixture.productAdmission,
             sequence: 2
         )
+        try await fixture.factTrace.expectResumedBuildStarted(commandId)
         assertDiffCommandWasAccepted(await commandTask.value, commandId: commandId)
         #expect(fixture.controller.pendingReviewPackageBuildReasons.isEmpty)
         #expect(fixture.controller.activeReviewRefreshTask == nil)
@@ -175,6 +180,7 @@ extension WebKitSerializedTests.BridgePaneControllerTests {
         #expect(
             contributionRequests.map(\.symbolicTarget) == [target]
         )
+        try await fixture.factTrace.expectPackageDelivery(commandId)
         try await fixture.factTrace.expectCommandEnded(commandId, outcome: .completed)
 
         _ = await fixture.controller.beginTeardown().value
@@ -218,6 +224,7 @@ extension WebKitSerializedTests.BridgePaneControllerTests {
             sequence: 2
         )
         await defaultTargetGate.waitForStart()
+        try await fixture.factTrace.expectResumptionScheduledAndAdmitted(commandId)
         await sendPageActiveViewerMode(
             .file,
             controller: fixture.controller,
@@ -237,6 +244,7 @@ extension WebKitSerializedTests.BridgePaneControllerTests {
             productAdmission: fixture.productAdmission,
             sequence: 4
         )
+        try await fixture.factTrace.expectResumedBuildStarted(commandId)
         assertDiffCommandWasAccepted(await commandTask.value, commandId: commandId)
         #expect(fixture.controller.pendingReviewPackageBuildReasons.isEmpty)
         #expect(fixture.controller.activeReviewRefreshTask == nil)
@@ -245,6 +253,7 @@ extension WebKitSerializedTests.BridgePaneControllerTests {
         #expect(requests.count == 1)
         #expect(requests.map(\.headEndpoint.worktreeId) == [artifact.worktreeId])
         #expect(requests.map(\.symbolicTarget) == [target])
+        try await fixture.factTrace.expectPackageDelivery(commandId)
         try await fixture.factTrace.expectCommandEnded(commandId, outcome: .completed)
         _ = await fixture.controller.beginTeardown().value
         try await fixture.factTrace.finish()
@@ -334,6 +343,7 @@ extension WebKitSerializedTests.BridgePaneControllerTests {
                 sequence: 2
             )
             await captureGate.waitForStart()
+            try await fixture.factTrace.expectResumedBuildStarted(commandId)
             #expect(fixture.controller.reviewConstructionProgress.activeWaitCount() == 1)
             #expect(await fixture.provider.recordedContributionRequests().count == 1)
 
@@ -473,6 +483,47 @@ private struct DiffCommandPageModeAdmissionTrace {
                 $0 == .pendingExplicitCommandAwaitingPageMode(commandId: commandId)
             },
             "The original explicit Review command returns to pending page-mode ownership"
+        )
+    }
+
+    func expectResumptionScheduledAndAdmitted(_ commandId: UUID) async throws {
+        _ = try await recorder.expectNext(
+            in: .pendingExplicitCommand(commandId),
+            where: { $0 == .pendingExplicitCommandResumptionScheduled(commandId: commandId) },
+            "Explicit Review command resumption is scheduled"
+        )
+        _ = try await recorder.expectNext(
+            in: .pendingExplicitCommand(commandId),
+            where: { $0 == .pendingExplicitCommandResumptionAdmissionAcquired(commandId: commandId) },
+            "Explicit Review command acquires its current E1 admission"
+        )
+    }
+
+    func expectResumedBuildStarted(_ commandId: UUID) async throws {
+        try await expectResumptionScheduledAndAdmitted(commandId)
+        _ = try await recorder.expectNext(
+            in: .pendingExplicitCommand(commandId),
+            where: { $0 == .explicitReviewPackageBuildStarted(commandId: commandId) },
+            "Explicit Review package construction starts"
+        )
+        _ = try await recorder.expectNext(
+            in: .pendingExplicitCommand(commandId),
+            where: { $0 == .pendingExplicitCommandBuildStarted(commandId: commandId) },
+            "Resumed explicit Review package construction starts"
+        )
+    }
+
+    func expectPackageDelivery(_ commandId: UUID) async throws {
+        _ = try await recorder.expectNext(
+            in: .pendingExplicitCommand(commandId),
+            where: {
+                if case .explicitReviewPackageDelivery(let factCommandId, _) = $0 {
+                    factCommandId == commandId
+                } else {
+                    false
+                }
+            },
+            "Explicit Review package delivery is classified"
         )
     }
 
