@@ -2,7 +2,10 @@ import type { CodeViewLineSelection, CodeViewOptions, SelectedLineRange } from '
 import { CodeView, type CodeViewHandle } from '@pierre/diffs/react';
 import { useCallback, useLayoutEffect, useMemo, useRef, useState, type ReactElement } from 'react';
 
-import type { BridgeRegionPresentationState } from '../app/bridge-region-presentation-state.js';
+import type {
+	BridgeRegionPresentationState,
+	BridgeRegionSurfaceStatus,
+} from '../app/bridge-region-presentation-state.js';
 import {
 	BridgeRegionPresentation,
 	BridgeRegionUpdatingIndicator,
@@ -58,7 +61,8 @@ import { bridgeFileViewerCodeViewOptions } from './bridge-file-viewer-code-view-
 export type { BridgeFileViewerCodePanelState, BridgeFileViewerSelectedCodeViewItem };
 
 export interface BridgeFileViewerCodePanelProps {
-	readonly presentationState?: BridgeRegionPresentationState;
+	readonly surfaceStatus?: BridgeRegionSurfaceStatus;
+	readonly noSource?: boolean;
 	readonly codeViewOptions?: Readonly<CodeViewOptions<undefined>>;
 	readonly codeViewWorkerFactory?: () => Worker;
 	readonly codeViewWorkerPoolEnabled?: boolean;
@@ -178,7 +182,12 @@ export function BridgeFileViewerCodePanel(props: BridgeFileViewerCodePanelProps)
 				thread.context.path === previousItem.bridgeMetadata.displayPath &&
 				thread.context.sourceIdentity === previousSourceId,
 		);
-	const displayedCodeViewItem = retainsAnnotationSource ? previousItem : candidateItem;
+	const displayedCodeViewItem =
+		bridgeFileViewerCodeViewItemsForPanelState({
+			openFileState: props.openFileState,
+			selectedCodeViewItem: retainsAnnotationSource ? previousItem : candidateItem,
+			lastCompleteCodeViewItem: previousItem,
+		}).at(0) ?? null;
 	useLayoutEffect((): void => {
 		// Retain the committed presentation reference, never a second copy of source bytes.
 		lastDisplayedItemRef.current = displayedCodeViewItem;
@@ -239,13 +248,12 @@ export function BridgeFileViewerCodePanel(props: BridgeFileViewerCodePanelProps)
 		props.openFileState,
 		displayedCodeViewItem,
 	]);
-	const basePresentationState =
-		props.presentationState ??
-		bridgeFileContentPresentation({
-			openFileState: props.openFileState,
-			displayedFileId: displayedCodeViewItem?.bridgeMetadata.itemId ?? null,
-			surface: { kind: 'current' },
-		});
+	const basePresentationState = bridgeFileContentPresentation({
+		noSource: props.noSource ?? false,
+		openFileState: props.openFileState,
+		displayedFileId: displayedCodeViewItem?.bridgeMetadata.itemId ?? null,
+		surface: props.surfaceStatus ?? { kind: 'current' },
+	});
 	const presentationState: BridgeRegionPresentationState =
 		retainsAnnotationSource && basePresentationState.kind !== 'failed'
 			? { kind: 'updating', rest: 'held' }

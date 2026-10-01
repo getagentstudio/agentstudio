@@ -30,7 +30,6 @@ import type { BridgeTraceContext } from '../foundation/telemetry/bridge-trace-co
 import {
 	bridgeFileSurfacePresentationStatus,
 	bridgeFileTreePresentation,
-	bridgeFileContentPresentation,
 } from './bridge-file-region-presentation.js';
 import {
 	BridgeFileViewerCodePanel,
@@ -129,12 +128,6 @@ export function BridgeFileViewerShell(props: BridgeFileViewerShellProps): ReactE
 		});
 	const treePresentation = bridgeFileTreePresentation({
 		displayModel: props.displayModel,
-		surface: surfaceStatus,
-	});
-	const contentPresentation = bridgeFileContentPresentation({
-		noSource: props.displayModel.status?.state === 'noSource',
-		openFileState: props.openFileState,
-		displayedFileId: props.selectedCodeViewItem?.bridgeMetadata.itemId ?? null,
 		surface: surfaceStatus,
 	});
 	const failureSummaryTargetRef = useRef<HTMLDivElement | null>(null);
@@ -240,7 +233,8 @@ export function BridgeFileViewerShell(props: BridgeFileViewerShellProps): ReactE
 						props.markdownPresentation === null || props.markdownPresentation === undefined ? (
 							<BridgeFileViewerCodePanel
 								renderRegion={renderContentRegion}
-								presentationState={contentPresentation}
+								surfaceStatus={surfaceStatus}
+								noSource={props.displayModel.status?.state === 'noSource'}
 								openFileState={props.openFileState}
 								renderFulfillmentCoordinator={props.renderFulfillmentCoordinator}
 								selectedCodeViewItem={props.selectedCodeViewItem}
