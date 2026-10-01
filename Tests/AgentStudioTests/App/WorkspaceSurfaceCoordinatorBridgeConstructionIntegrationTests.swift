@@ -753,10 +753,18 @@ private func expectAvailableFileSource(
 ) async throws {
     let provider = try #require(controller.productSchemeProvider)
     let request = try bridgeFileSourceCurrentRequest(paneId: controller.paneId)
-    guard case .callCompleted(let response) = await provider.response(for: request),
+    let fileSourceResponse = await provider.response(for: request)
+    let hasAvailableFileSource =
+        if case .callCompleted(let response) = fileSourceResponse,
+            case .fileSourceCurrent(.available) = response.call
+        { true } else { false }
+    #expect(
+        hasAvailableFileSource,
+        Comment(rawValue: "Expected production-injected File source authority; actual: \(fileSourceResponse)")
+    )
+    guard case .callCompleted(let response) = fileSourceResponse,
         case .fileSourceCurrent(.available(let source)) = response.call
     else {
-        Issue.record("Expected production-injected File source authority")
         return
     }
     #expect(source.repoId == repoId.uuidString)

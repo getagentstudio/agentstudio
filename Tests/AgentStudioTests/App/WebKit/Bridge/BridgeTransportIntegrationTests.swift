@@ -127,10 +127,12 @@ extension WebKitSerializedTests {
                 )
 
                 // Assert
-                guard case .success = commandResult else {
-                    Issue.record("Expected smoke provider diff command to succeed")
-                    return
-                }
+                let commandSucceeded = if case .success = commandResult { true } else { false }
+                #expect(
+                    commandSucceeded,
+                    Comment(rawValue: "Expected smoke provider diff command to succeed; actual: \(commandResult)")
+                )
+                guard commandSucceeded else { return }
                 // The assertion reads `hasReviewShell`, which is computed from this
                 // exact element, so the wait and the assertion read the same thing.
                 try await WebPageEventWaits.waitForDocumentSelector(page, bridgeReviewShellSelector)
@@ -139,7 +141,8 @@ extension WebKitSerializedTests {
                 #expect(!renderState.summary.hasEmptyShell)
                 #expect(renderState.diagnostics.evaluateSucceeded)
                 #expect(renderState.diagnostics.pageErrorCount == 0)
-                #expect(await pageErrorProbeDescription(page) == "[]")
+                let pageErrors = await pageErrorProbeDescription(page)
+                #expect(pageErrors == "[]", Comment(rawValue: pageErrors))
             }
         }
 
@@ -187,7 +190,8 @@ extension WebKitSerializedTests {
                 #expect(!renderState.summary.hasEmptyShell)
                 #expect(renderState.diagnostics.evaluateSucceeded)
                 #expect(renderState.diagnostics.pageErrorCount == 0)
-                #expect(await pageErrorProbeDescription(page) == "[]")
+                let pageErrors = await pageErrorProbeDescription(page)
+                #expect(pageErrors == "[]", Comment(rawValue: pageErrors))
             }
         }
     }
