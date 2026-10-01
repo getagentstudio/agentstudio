@@ -1,4 +1,6 @@
+import AgentStudioInfrastructure
 import Foundation
+import JavaScriptCore
 import Testing
 
 @testable import AgentStudioBridge
@@ -46,8 +48,80 @@ final class BridgeBootstrapTests {
         let script = BridgeBootstrap.generateScript()
 
         #expect(script.contains("__bridge_handshake"))
-        #expect(script.contains("detail: { telemetryConfig: TELEMETRY_CONFIG, pageConfiguration: PAGE_CONFIGURATION }"))
+        #expect(
+            script.contains(
+                "detail: { telemetryConfig: TELEMETRY_CONFIG, pageConfiguration: PAGE_CONFIGURATION, pageCommands: PAGE_COMMANDS }"
+            ))
         #expect(script.contains("__bridge_handshake_request"))
+    }
+
+    @Test
+    func pageReloadProjectionComesFromTheInteractiveCatalog() throws {
+        let command = BridgePageCommand.reloadBridgeWebView
+        let display = command.display
+        let catalog = command.appCommand.definition
+        #expect(display.label == catalog.label)
+        #expect(display.helpText == catalog.helpText)
+        #expect(catalog.surfacePolicy.exposes(.bridgePage))
+        #expect(display.icon == "arrow.clockwise")
+        #expect(BridgePageCommand.allCases == [.reloadBridgeWebView])
+        let script = BridgeBootstrap.generateScript()
+        #expect(script.contains("const PAGE_COMMANDS ="))
+        #expect(script.contains("__bridge_page_command_request"))
+        #expect(script.contains("detail.command !== 'reloadBridgeWebView'"))
+        #expect(script.contains("method: 'bridge.pageCommand.run'"))
+        #expect(script.contains("id: detail.requestId"))
+    }
+
+    @MainActor
+    @Test
+    func bootstrapRelaysExactlyOneClosedPageReloadToNative() throws {
+        let context = try #require(JSContext())
+        context.evaluateScript(
+            """
+            var listeners = {};
+            var posted = [];
+            var handshake = null;
+            var console = { warn: function() {} };
+            var window = { webkit: { messageHandlers: { rpc: { postMessage: function(body) { posted.push(body); } } } } };
+            function CustomEvent(type, options) { this.type = type; this.detail = options.detail; }
+            var document = {
+                documentElement: { setAttribute: function() {} },
+                addEventListener: function(type, listener) { (listeners[type] || (listeners[type] = [])).push(listener); },
+                dispatchEvent: function(event) {
+                    if (event.type === '__bridge_handshake') handshake = event.detail;
+                    (listeners[event.type] || []).forEach(function(listener) { listener(event); });
+                }
+            };
+            """)
+        context.evaluateScript(BridgeBootstrap.generateScript())
+        #expect(context.exception == nil)
+        #expect(context.evaluateScript("handshake.pageCommands.length")?.toInt32() == 1)
+        #expect(
+            context.evaluateScript("handshake.pageCommands[0].label")?.toString()
+                == BridgePageCommand.reloadBridgeWebView.display.label)
+        #expect(
+            context.evaluateScript("handshake.pageCommands[0].icon")?.toString()
+                == BridgePageCommand.reloadBridgeWebView.display.icon)
+        let requestId = UUIDv7.generate().uuidString
+        context.evaluateScript(
+            """
+            document.dispatchEvent(new CustomEvent('__bridge_page_command_request', {
+                detail: { command: 'showBridgeFiles', requestId: '\(requestId)' }
+            }));
+            document.dispatchEvent(new CustomEvent('__bridge_page_command_request', {
+                detail: { command: 'reloadBridgeWebView', requestId: '\(requestId)', paneId: 'other-pane' }
+            }));
+            document.dispatchEvent(new CustomEvent('__bridge_page_command_request', {
+                detail: { command: 'reloadBridgeWebView', requestId: '\(requestId)' }
+            }));
+            """)
+        #expect(context.exception == nil)
+        #expect(context.evaluateScript("posted.length")?.toInt32() == 1)
+        let posted = try #require(context.evaluateScript("posted[0]")?.toString())
+        #expect(
+            BridgeReadyMessageHandler.decodeBootstrapMessage(from: posted)
+                == .runPageCommand(requestId: requestId, command: .reloadBridgeWebView))
     }
 
     @Test

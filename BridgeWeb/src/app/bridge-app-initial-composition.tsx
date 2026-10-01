@@ -6,21 +6,27 @@ import {
 	type BridgePaneRuntime,
 } from '../core/comm-worker/bridge-pane-runtime.js';
 import type { BridgeAppProps } from './bridge-app.js';
+import { readNativeBridgePaneReloadPort } from './bridge-native-pane-reload-port.js';
+import type { BridgePaneReloadPort } from './bridge-pane-reload-port.js';
 import { BridgeViewerAppShell } from './bridge-viewer-app-shell.js';
 
-type BridgeInitialRuntimeComposition =
+type BridgeInitialRuntimeComposition = (
 	| { readonly kind: 'ready'; readonly runtime: BridgePaneRuntime; readonly ownsRuntime: boolean }
-	| { readonly kind: 'configurationFailed' };
+	| { readonly kind: 'configurationFailed' }
+) & { readonly paneReloadPort: BridgePaneReloadPort | undefined };
 
 function prepareInitialRuntime(props: BridgeAppProps): BridgeInitialRuntimeComposition {
+	const paneReloadPort = props.paneReloadPort ?? readNativeBridgePaneReloadPort(props.target);
 	try {
 		return {
 			kind: 'ready',
+			paneReloadPort,
 			runtime: props.paneRuntime ?? (props.paneRuntimeFactory ?? createBridgePaneRuntime)(),
 			ownsRuntime: props.paneRuntime === undefined,
 		};
 	} catch (error: unknown) {
-		if (error instanceof BridgePageConfigurationReadError) return { kind: 'configurationFailed' };
+		if (error instanceof BridgePageConfigurationReadError)
+			return { kind: 'configurationFailed', paneReloadPort };
 		throw error;
 	}
 }
@@ -48,12 +54,22 @@ export function BridgeAppInitialComposition(
 				appOwner="BridgeApp"
 				mode={props.viewerMode ?? 'review'}
 				paneFailedStart={{ kind: 'failedStart', cause: 'configurationUnavailable' }}
-				{...(props.paneReloadPort === undefined ? {} : { paneReloadPort: props.paneReloadPort })}
+				{...(composition.paneReloadPort === undefined
+					? {}
+					: { paneReloadPort: composition.paneReloadPort })}
 			>
 				{null}
 			</BridgeViewerAppShell>
 		);
 	}
 	const ReadyContent = props.readyContent;
-	return <ReadyContent {...props} paneRuntime={composition.runtime} />;
+	return (
+		<ReadyContent
+			{...props}
+			paneRuntime={composition.runtime}
+			{...(composition.paneReloadPort === undefined
+				? {}
+				: { paneReloadPort: composition.paneReloadPort })}
+		/>
+	);
 }
