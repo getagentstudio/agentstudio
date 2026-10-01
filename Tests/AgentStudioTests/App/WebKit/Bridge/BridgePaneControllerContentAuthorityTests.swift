@@ -381,6 +381,7 @@ extension WebKitSerializedTests {
                 ),
                 reviewSourceProvider: provider
             )
+            try await showReviewInNativeFixture(controller)
             let commandId = UUID()
             let headHandle = BridgeReviewPackageBuilder.contentHandle(
                 for: changedFile,

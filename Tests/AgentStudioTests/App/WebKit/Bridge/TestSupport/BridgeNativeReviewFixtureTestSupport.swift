@@ -7,10 +7,13 @@ import Testing
 /// Native composition fixtures own this worker lease. Live page carriers send
 /// their own mode updates and must not call this step.
 @MainActor
-func showReviewInNativeFixture(_ controller: BridgePaneController) async throws {
+func showReviewInNativeFixture(
+    _ controller: BridgePaneController,
+    metadataProducerLease: BridgeProductProducerLease? = nil
+) async throws {
     let installation = try #require(await controller.productSessionOwner.activeInstallation)
     let productAdmission = try #require(installation.productAdapter.acquireAdmission())
-    if controller.currentBridgeProductMetadataStreamId == nil {
+    if metadataProducerLease == nil {
         _ = try await installRefreshAdmissionMetadataProducer(
             installation: installation,
             productProvider: try #require(controller.productSchemeProvider),
@@ -28,11 +31,12 @@ func showReviewInNativeFixture(_ controller: BridgePaneController) async throws 
 @MainActor
 func beginInitialReviewInNativeFixture(
     _ controller: BridgePaneController,
-    facts: BridgePaneReviewBuildAdmissionTrace
+    facts: BridgePaneReviewBuildAdmissionTrace,
+    metadataProducerLease: BridgeProductProducerLease? = nil
 ) async throws -> BridgePaneReviewBuildAttemptOutcome {
     // G2 makes the accepted page mode the initial build trigger. Starting a
     // second direct load here would race the real scheduled attempt.
-    try await showReviewInNativeFixture(controller)
+    try await showReviewInNativeFixture(controller, metadataProducerLease: metadataProducerLease)
     let attempt = try #require(controller.activeReviewRefreshTask)
     await attempt.value
     let outcome = try await facts.nextAttemptOutcome()

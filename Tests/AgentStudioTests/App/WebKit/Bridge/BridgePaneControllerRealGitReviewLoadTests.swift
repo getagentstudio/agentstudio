@@ -35,7 +35,8 @@ extension WebKitSerializedTests {
             }
 
             // Act
-            let result = try await beginInitialReviewInNativeFixture(harness.controller, facts: harness.buildFacts)
+            let result = try await beginInitialReviewInNativeFixture(
+                harness.controller, facts: harness.buildFacts, metadataProducerLease: metadataLease)
             let completedResult = result
             guard case .succeeded = completedResult else {
                 metadataEventsTask.cancel()
@@ -113,9 +114,8 @@ extension WebKitSerializedTests {
             }
 
             // Act
-            let initialResult = try #require(
-                try await beginInitialReviewInNativeFixture(harness.controller, facts: harness.buildFacts)
-            )
+            let initialResult = try await beginInitialReviewInNativeFixture(
+                harness.controller, facts: harness.buildFacts, metadataProducerLease: metadataLease)
             guard case .succeeded = initialResult else {
                 Issue.record("Expected the real contribution package to load: \(initialResult)")
                 return

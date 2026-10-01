@@ -141,7 +141,6 @@ extension WebKitSerializedTests.BridgePaneControllerTests {
         let fixture = try await makeContributionRefreshFixture()
         let controller = fixture.controller
         defer { _ = controller.beginTeardown() }  // fire-and-forget: defer cannot await; cleanup only
-        try await showReviewInNativeFixture(controller)
         guard
             case .success = await controller.handleDiffCommand(
                 .loadDiff(
@@ -464,12 +463,12 @@ extension WebKitSerializedTests.BridgePaneControllerTests {
             )
         )
         let productAdmission = try #require(productAdmissionGate.acquire())
-        _ = try await installDiffLoadMetadataProducer(
+        let metadataProducerLease = try await installDiffLoadMetadataProducer(
             installation: installation,
             productProvider: productProvider,
             productAdmission: productAdmission
         )
-        try await showReviewInNativeFixture(controller)
+        try await showReviewInNativeFixture(controller, metadataProducerLease: metadataProducerLease)
         let commandId = UUIDv7.generate()
 
         // Act
