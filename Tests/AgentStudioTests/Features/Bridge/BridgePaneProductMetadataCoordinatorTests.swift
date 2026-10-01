@@ -1,3 +1,4 @@
+import AgentStudioTestHarness
 import Foundation
 import Testing
 
@@ -17,13 +18,16 @@ struct BridgePaneProductMetadataCoordinatorTests {
             productAdmission: harness.productAdmission.context,
             acknowledgeLifecycle: { _ in true }
         )
-        let failureCapture = UnavailableFileRefreshFailureCapture()
+        let currentFileFailure = HeldStep<BridgePaneProductFileRefreshFailure>(
+            "current retryable File refresh failure"
+        )
         let coordinator = BridgePaneProductMetadataCoordinator(
             fileMetadataSource: BridgeUnavailablePaneProductFileMetadataSource(),
             reviewMetadataSource: BridgeUnavailablePaneProductReviewMetadataSource(),
             refreshWorkAdmissionSource: refreshWorkAdmission.source,
             recordCurrentFileRefreshFailure: { failure in
-                Task { await failureCapture.record(failure) }
+                guard let failure else { return }
+                Task { try? await currentFileFailure.arrive(failure) }
             }
         )
         await coordinator.install(
@@ -50,7 +54,7 @@ struct BridgePaneProductMetadataCoordinatorTests {
             effect,
             productAdmission: harness.productAdmission.context
         )
-        let currentFailure = await failureCapture.waitUntilFailure()
+        let currentFailure = try await currentFileFailure.firstArrival()
         let producerSnapshot = await harness.session.producerSnapshot()
         let retainedSubscription = await harness.session.subscriptionSnapshot(
             subscriptionId: "file-subscription-1"
@@ -726,26 +730,6 @@ struct BridgePanePresentationCoordinatorTests {
         #expect(error.code == .resyncRequired)
         #expect(error.retryable)
         await coordinator.uninstall(lease: lease)
-    }
-}
-
-private actor UnavailableFileRefreshFailureCapture {
-    private var currentFailure: BridgePaneProductFileRefreshFailure?
-    private var failureWaiters: [CheckedContinuation<BridgePaneProductFileRefreshFailure, Never>] = []
-
-    func record(_ failure: BridgePaneProductFileRefreshFailure?) {
-        guard let failure else { return }
-        currentFailure = failure
-        let waiters = failureWaiters
-        failureWaiters.removeAll(keepingCapacity: false)
-        for waiter in waiters { waiter.resume(returning: failure) }
-    }
-
-    func waitUntilFailure() async -> BridgePaneProductFileRefreshFailure {
-        if let currentFailure { return currentFailure }
-        return await withCheckedContinuation { continuation in
-            failureWaiters.append(continuation)
-        }
     }
 }
 
