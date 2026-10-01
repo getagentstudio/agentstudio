@@ -188,6 +188,10 @@ extension BridgePaneController {
             pendingCommand.installationAdmission.withValidAdmission({ true }) == true,
             pendingCommand.foregroundWorkAdmission.withValidAdmission({ true }) == true
         else {
+            recordReviewBuildAdmissionFact(
+                .pendingExplicitCommandResumptionPreflightRejected(commandId: pendingCommand.commandId),
+                scope: .pendingExplicitCommand(pendingCommand.commandId)
+            )
             finishPendingExplicitReviewCommand(
                 pendingCommand,
                 result: Self.closedExplicitReviewCommandResult(),
@@ -208,6 +212,10 @@ extension BridgePaneController {
             await self.runExplicitReviewCommandResumption(pendingCommand)
         }
         resumingExplicitReviewCommandTasksById[pendingCommand.commandId] = resumptionTask
+        recordReviewBuildAdmissionFact(
+            .pendingExplicitCommandResumptionScheduled(commandId: pendingCommand.commandId),
+            scope: .pendingExplicitCommand(pendingCommand.commandId)
+        )
         return true
     }
 
@@ -394,6 +402,16 @@ extension BridgePaneController {
     ) async -> BridgeExplicitReviewPackageLoadPreparation {
         var reviewLoadStage = "package"
         do {
+            recordReviewBuildAdmissionFact(
+                .explicitReviewPackageBuildStarted(commandId: request.commandId),
+                scope: .pendingExplicitCommand(request.commandId)
+            )
+            if case .resumedCommand = request.entryPoint {
+                recordReviewBuildAdmissionFact(
+                    .pendingExplicitCommandBuildStarted(commandId: request.commandId),
+                    scope: .pendingExplicitCommand(request.commandId)
+                )
+            }
             let constructionResult = try await loadReviewPackageResult(
                 artifact: request.artifact,
                 reset: reset,
@@ -530,6 +548,10 @@ extension BridgePaneController {
         else { return }
 
         guard let installationAdmission = currentInstallationAdmission(for: pendingCommand) else {
+            recordReviewBuildAdmissionFact(
+                .pendingExplicitCommandResumptionAdmissionRejected(commandId: pendingCommand.commandId),
+                scope: .pendingExplicitCommand(pendingCommand.commandId)
+            )
             finishPendingExplicitReviewCommand(
                 pendingCommand,
                 result: Self.closedExplicitReviewCommandResult(),
@@ -537,6 +559,10 @@ extension BridgePaneController {
             )
             return
         }
+        recordReviewBuildAdmissionFact(
+            .pendingExplicitCommandResumptionAdmissionAcquired(commandId: pendingCommand.commandId),
+            scope: .pendingExplicitCommand(pendingCommand.commandId)
+        )
         let execution = await resumePendingExplicitReviewPackageCommand(
             pendingCommand,
             productAdmission: installationAdmission

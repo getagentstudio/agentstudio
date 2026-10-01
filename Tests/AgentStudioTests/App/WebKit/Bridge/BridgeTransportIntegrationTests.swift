@@ -1,4 +1,5 @@
 import Foundation
+import Synchronization
 import Testing
 import WebKit
 
@@ -98,12 +99,14 @@ extension WebKitSerializedTests {
         func test_handleDiffCommandWithSmokeProvider_rendersReviewViewerShell() async throws {
             // Arrange
             let paneId = UUIDv7.generate()
+            let reviewBuildFacts = BridgeSmokeReviewBuildFacts()
             let controller = BridgePaneController(
                 paneId: paneId,
                 state: BridgePaneState(panelKind: .diffViewer, source: nil),
                 appRootURL: testBridgeAppRootURL(),
                 reviewSourceProvider: BridgeObservabilitySmokeReviewSourceProvider(),
-                initialPaneActivity: .foreground
+                initialPaneActivity: .foreground,
+                reviewBuildAdmissionFactSink: reviewBuildFacts.sink
             )
             defer { _ = controller.beginTeardown() }  // fire-and-forget: defer cannot await; cleanup only
 
@@ -114,6 +117,7 @@ extension WebKitSerializedTests {
                 try await installPageErrorProbe(page)
 
                 // Act
+                let commandId = UUIDv7.generate()
                 let commandResult = await controller.handleDiffCommand(
                     .loadDiff(
                         DiffArtifact(
@@ -122,18 +126,36 @@ extension WebKitSerializedTests {
                             patchData: Data()
                         )
                     ),
-                    commandId: UUIDv7.generate(),
+                    commandId: commandId,
                     correlationId: nil
                 )
 
                 // Assert
+                let diagnosticFacts = reviewBuildFacts.describe(
+                    controller: controller,
+                    commandId: commandId,
+                    commandResult: commandResult
+                )
                 guard case .success = commandResult else {
-                    Issue.record("Expected smoke provider diff command to succeed")
+                    Issue.record(
+                        Comment(rawValue: "Expected smoke provider diff command to succeed.\n\(diagnosticFacts)"))
                     return
                 }
                 // The assertion reads `hasReviewShell`, which is computed from this
                 // exact element, so the wait and the assertion read the same thing.
-                try await WebPageEventWaits.waitForDocumentSelector(page, bridgeReviewShellSelector)
+                _ = try await WebPageEventWaits.waitForDocumentValue(
+                    page,
+                    reader: "return document.querySelector(selector) === null ? null : true;",
+                    arguments: ["selector": bridgeReviewShellSelector],
+                    milestone: "Bridge Review shell; \(diagnosticFacts)",
+                    lastObservation: """
+                        const shell = document.querySelector(selector);
+                        return JSON.stringify({
+                          reviewShellPresent: shell !== null,
+                          viewerMode: document.querySelector('[data-bridge-viewer-mode-host]')?.getAttribute('data-bridge-viewer-mode-host') ?? null
+                        });
+                        """
+                )
                 let renderState = try await controller.renderStateForIPC()
                 #expect(renderState.summary.hasReviewShell)
                 #expect(!renderState.summary.hasEmptyShell)
@@ -190,6 +212,107 @@ extension WebKitSerializedTests {
                 #expect(await pageErrorProbeDescription(page) == "[]")
             }
         }
+    }
+}
+
+private final class BridgeSmokeReviewBuildFacts: Sendable {
+    private let facts = Mutex<[(BridgePaneReviewBuildAdmissionScope, BridgePaneReviewBuildAdmissionFact)]>([])
+
+    var sink: BridgePaneReviewBuildAdmissionFactSink {
+        { [facts] scope, fact in
+            facts.withLock { $0.append((scope, fact)) }
+        }
+    }
+
+    @MainActor
+    func describe(
+        controller: BridgePaneController,
+        commandId: UUID,
+        commandResult: ActionResult
+    ) -> String {
+        let commandFacts = facts.withLock { recordedFacts in
+            recordedFacts.compactMap { scope, fact -> BridgePaneReviewBuildAdmissionFact? in
+                scope == .pendingExplicitCommand(commandId) ? fact : nil
+            }
+        }
+        let pendingCommand = controller.pendingExplicitReviewCommand
+        let resumingCommand = controller.resumingExplicitReviewCommandsById[commandId]
+        let installationPresent =
+            controller.productSessionOwner.installationFenceProjection.snapshot.installation != nil
+        let admissionResult: String
+        if commandFacts.contains(where: {
+            if case .pendingExplicitCommandResumptionAdmissionAcquired(let factCommandId) = $0 {
+                factCommandId == commandId
+            } else {
+                false
+            }
+        }) {
+            admissionResult = "acquired"
+        } else if commandFacts.contains(where: {
+            if case .pendingExplicitCommandResumptionAdmissionRejected(let factCommandId) = $0 {
+                factCommandId == commandId
+            } else {
+                false
+            }
+        }) {
+            admissionResult = "rejected"
+        } else if commandFacts.contains(where: {
+            if case .pendingExplicitCommandResumptionPreflightRejected(let factCommandId) = $0 {
+                factCommandId == commandId
+            } else {
+                false
+            }
+        }) {
+            admissionResult = "preflight rejected"
+        } else {
+            admissionResult = "not attempted for this command"
+        }
+        let resumptionScheduled = commandFacts.contains {
+            if case .pendingExplicitCommandResumptionScheduled(let factCommandId) = $0 {
+                factCommandId == commandId
+            } else {
+                false
+            }
+        }
+        let buildStarted = commandFacts.contains {
+            if case .explicitReviewPackageBuildStarted(let factCommandId) = $0 {
+                factCommandId == commandId
+            } else {
+                false
+            }
+        }
+        let resumedBuildStarted = commandFacts.contains {
+            if case .pendingExplicitCommandBuildStarted(let factCommandId) = $0 {
+                factCommandId == commandId
+            } else {
+                false
+            }
+        }
+        let commandSucceeded: Bool
+        if case .success = commandResult {
+            commandSucceeded = true
+        } else {
+            commandSucceeded = false
+        }
+
+        return [
+            "commandId=\(commandId.uuidString)",
+            "commandSucceeded=\(commandSucceeded)",
+            "acceptedMode=\(String(describing: controller.activeViewerModeSignalState.acceptedMode))",
+            "acceptedSequence=\(String(describing: controller.activeViewerModeSignalState.lastSequence))",
+            "installationPresent=\(installationPresent)",
+            "pendingCommandId=\(pendingCommand?.commandId.uuidString ?? "none")",
+            "resumingCommandId=\(resumingCommand?.commandId.uuidString ?? "none")",
+            "resumingTaskPresent=\(controller.resumingExplicitReviewCommandTasksById[commandId] != nil)",
+            "resumptionScheduled=\(resumptionScheduled)",
+            "resumptionAdmission=\(admissionResult)",
+            "buildStarted=\(buildStarted)",
+            "resumedBuildStarted=\(resumedBuildStarted)",
+            "commandFacts=\(commandFacts.map(String.init(describing:)))",
+            "diffStatus=\(String(describing: controller.paneState.diff.status))",
+            "reviewPackagePresent=\(controller.paneState.diff.packageMetadata != nil)",
+            "activeConstructionWaits=\(controller.reviewConstructionProgress.activeWaitCount())",
+        ].joined(separator: "\n")
     }
 }
 
