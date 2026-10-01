@@ -32,6 +32,21 @@ struct WorktreeCommandLineTests {
                     usesJSONOutput: true
                 ))
 
+        let createFromBranch = try WorktreeCommandLineArgumentParser.parse(
+            ["new", "feature/from-source", "--from-branch", "feature/source", "--repo", "repositories/main"],
+            currentDirectory: currentDirectory
+        )
+        #expect(
+            createFromBranch
+                == WorktreeCommandLineInvocation(
+                    request: .createFromBranch(
+                        start: currentDirectory.appending(path: "repositories/main").standardizedFileURL,
+                        branch: "feature/from-source",
+                        startBranch: "feature/source"
+                    ),
+                    usesJSONOutput: false
+                ))
+
         let fork = try WorktreeCommandLineArgumentParser.parse(
             ["fork", "feature/fork", "--from", "linked/nested"],
             currentDirectory: currentDirectory
@@ -41,9 +56,25 @@ struct WorktreeCommandLineTests {
                 == WorktreeCommandLineInvocation(
                     request: .fork(
                         start: currentDirectory.appending(path: "linked/nested").standardizedFileURL,
-                        branch: "feature/fork"
+                        branch: "feature/fork",
+                        materialization: .copyOnWrite
                     ),
                     usesJSONOutput: false
+                ))
+
+        let changesOnlyFork = try WorktreeCommandLineArgumentParser.parse(
+            ["fork", "feature/changes", "--changes-only", "--from", "linked/nested", "--json"],
+            currentDirectory: currentDirectory
+        )
+        #expect(
+            changesOnlyFork
+                == WorktreeCommandLineInvocation(
+                    request: .fork(
+                        start: currentDirectory.appending(path: "linked/nested").standardizedFileURL,
+                        branch: "feature/changes",
+                        materialization: .changesOnly
+                    ),
+                    usesJSONOutput: true
                 ))
 
         let list = try WorktreeCommandLineArgumentParser.parse(
@@ -177,7 +208,12 @@ struct WorktreeCommandLineTests {
             ["fork", "feature/fork", "--repo", "/tmp/repository"],
             ["list", "--repo"],
             ["new", "feature/new", "--repo", "--json"],
+            ["new", "feature/new", "--from-branch", "--json"],
+            ["new", "feature/new", "--from-branch", "feature/start", "--from-branch", "feature/other"],
+            ["new", "feature/new", "--changes-only"],
             ["fork", "feature/fork", "--from", "--json"],
+            ["fork", "feature/fork", "--from-branch", "feature/start"],
+            ["fork", "feature/fork", "--changes-only", "--changes-only"],
             ["new"],
             ["fork"],
         ]
@@ -281,6 +317,13 @@ struct WorktreeCommandLineTests {
                 humanText: "refused: destinationExists /tmp/worktree-output/repository.feature-cli",
                 jsonText:
                     "{\"outcome\":\"refused\",\"path\":\"/tmp/worktree-output/repository.feature-cli\",\"reason\":\"destinationExists\"}",
+                exitCode: 1
+            ),
+            FormatterGolden(
+                outcome: .refused(.forkUnavailable(.sourceFilesystemNotAPFS)),
+                humanText: "refused: forkUnavailable sourceFilesystemNotAPFS --changes-only",
+                jsonText:
+                    "{\"alternative\":\"changesOnly\",\"detail\":\"sourceFilesystemNotAPFS\",\"outcome\":\"refused\",\"reason\":\"forkUnavailable\"}",
                 exitCode: 1
             ),
             FormatterGolden(

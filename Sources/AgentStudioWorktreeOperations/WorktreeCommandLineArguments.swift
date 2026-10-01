@@ -39,8 +39,12 @@ package enum WorktreeCommandLineArgumentError: Error, Equatable, Sendable {
             "unknown worktree option"
         case .unsupportedOption:
             "option is not supported for this worktree subcommand"
+        case .missingOptionValue("--from-branch"):
+            "--from-branch requires a branch name"
         case .missingOptionValue(let option):
             "\(option) requires a path"
+        case .emptyOptionValue("--from-branch"):
+            "--from-branch branch name must not be empty"
         case .emptyOptionValue(let option):
             "\(option) path must not be empty"
         case .duplicateOption(let option):
@@ -61,13 +65,20 @@ package enum WorktreeCommandLineArgumentParser {
         }
 
         let allowedPathOptions: Set<String>
+        let allowedValueOptions: Set<String>
         switch subcommand {
-        case "new", "list":
+        case "new":
             allowedPathOptions = ["--repo"]
+            allowedValueOptions = ["--from-branch"]
+        case "list":
+            allowedPathOptions = ["--repo"]
+            allowedValueOptions = []
         case "fork":
             allowedPathOptions = ["--from"]
+            allowedValueOptions = []
         case "remove", "prune":
             allowedPathOptions = ["--repo", "--archive-to"]
+            allowedValueOptions = []
         default:
             throw WorktreeCommandLineArgumentError.unknownSubcommand
         }
@@ -76,7 +87,8 @@ package enum WorktreeCommandLineArgumentParser {
             arguments.dropFirst(),
             subcommand: subcommand,
             currentDirectory: currentDirectory,
-            allowedPathOptions: allowedPathOptions
+            allowedPathOptions: allowedPathOptions,
+            allowedValueOptions: allowedValueOptions
         )
         let request = try makeRequest(
             subcommand: subcommand,
@@ -90,7 +102,8 @@ package enum WorktreeCommandLineArgumentParser {
         _ arguments: ArraySlice<String>,
         subcommand: String,
         currentDirectory: URL,
-        allowedPathOptions: Set<String>
+        allowedPathOptions: Set<String>,
+        allowedValueOptions: Set<String>
     ) throws -> ParsedArguments {
         var parsedArguments = ParsedArgumentAccumulator()
         var index = arguments.startIndex
@@ -106,6 +119,14 @@ package enum WorktreeCommandLineArgumentParser {
                 from: arguments,
                 allowedPathOptions: allowedPathOptions,
                 currentDirectory: currentDirectory,
+                index: &index
+            ) {
+                continue
+            }
+            if try parsedArguments.consumeValueOption(
+                argument,
+                from: arguments,
+                allowedValueOptions: allowedValueOptions,
                 index: &index
             ) {
                 continue
@@ -128,26 +149,15 @@ package enum WorktreeCommandLineArgumentParser {
     ) throws -> WorktreeOperationRequest {
         let positionalArguments = parsedArguments.positionalArguments
         let repositoryPath = parsedArguments.repositoryPath
-        let sourcePath = parsedArguments.sourcePath
         let archivePath = parsedArguments.archivePath
         let request: WorktreeOperationRequest
         switch subcommand {
-        case "new":
-            guard let branch = positionalArguments.first else {
-                throw WorktreeCommandLineArgumentError.missingBranch
-            }
-            guard positionalArguments.count == 1 else {
-                throw WorktreeCommandLineArgumentError.unexpectedArgument
-            }
-            request = .createFromDefault(start: repositoryPath ?? callerDirectory, branch: branch)
-        case "fork":
-            guard let branch = positionalArguments.first else {
-                throw WorktreeCommandLineArgumentError.missingBranch
-            }
-            guard positionalArguments.count == 1 else {
-                throw WorktreeCommandLineArgumentError.unexpectedArgument
-            }
-            request = .fork(start: sourcePath ?? callerDirectory, branch: branch)
+        case "new", "fork":
+            request = try makeCreationRequest(
+                subcommand: subcommand,
+                callerDirectory: callerDirectory,
+                parsedArguments: parsedArguments
+            )
         case "list":
             request = .list(
                 start: repositoryPath ?? callerDirectory,
@@ -217,6 +227,36 @@ package enum WorktreeCommandLineArgumentParser {
 
         return request
     }
+
+    private static func makeCreationRequest(
+        subcommand: String,
+        callerDirectory: URL,
+        parsedArguments: ParsedArguments
+    ) throws -> WorktreeOperationRequest {
+        guard let branch = parsedArguments.positionalArguments.first else {
+            throw WorktreeCommandLineArgumentError.missingBranch
+        }
+        guard parsedArguments.positionalArguments.count == 1 else {
+            throw WorktreeCommandLineArgumentError.unexpectedArgument
+        }
+
+        switch subcommand {
+        case "new":
+            let start = parsedArguments.repositoryPath ?? callerDirectory
+            if let startBranch = parsedArguments.startBranch {
+                return .createFromBranch(start: start, branch: branch, startBranch: startBranch)
+            }
+            return .createFromDefault(start: start, branch: branch)
+        case "fork":
+            return .fork(
+                start: parsedArguments.sourcePath ?? callerDirectory,
+                branch: branch,
+                materialization: parsedArguments.changesOnly ? .changesOnly : .copyOnWrite
+            )
+        default:
+            throw WorktreeCommandLineArgumentError.unknownSubcommand
+        }
+    }
 }
 
 private struct ParsedArguments {
@@ -226,6 +266,8 @@ private struct ParsedArguments {
     let archivePath: URL?
     let usesJSONOutput: Bool
     let fetchPolicy: WorktreeFetchPolicy
+    let startBranch: String?
+    let changesOnly: Bool
     let discardWorkingChanges: Bool
     let deleteAtObservedCommit: Bool
     let keepBranch: Bool
@@ -241,8 +283,10 @@ private struct ParsedArgumentAccumulator {
     var repositoryPath: URL?
     var sourcePath: URL?
     var archivePath: URL?
+    var startBranch: String?
     var usesJSONOutput = false
     var fetchPolicy = WorktreeFetchPolicy.defaultBranch
+    var changesOnly = false
     var discardWorkingChanges = false
     var deleteAtObservedCommit = false
     var keepBranch = false
@@ -258,6 +302,16 @@ private struct ParsedArgumentAccumulator {
     mutating func consumeFlag(_ argument: String, subcommand: String) throws -> Bool {
         if argument == "--json" {
             usesJSONOutput = true
+            return true
+        }
+        if argument == "--changes-only" {
+            guard subcommand == "fork" else {
+                throw WorktreeCommandLineArgumentError.unsupportedOption
+            }
+            guard seenFlags.insert(argument).inserted else {
+                throw WorktreeCommandLineArgumentError.duplicateOption(argument)
+            }
+            changesOnly = true
             return true
         }
         if argument == "--no-fetch" {
@@ -347,6 +401,35 @@ private struct ParsedArgumentAccumulator {
         return true
     }
 
+    mutating func consumeValueOption(
+        _ argument: String,
+        from arguments: ArraySlice<String>,
+        allowedValueOptions: Set<String>,
+        index: inout ArraySlice<String>.Index
+    ) throws -> Bool {
+        guard Self.valueOptions.contains(argument) else { return false }
+        guard allowedValueOptions.contains(argument) else {
+            throw WorktreeCommandLineArgumentError.unsupportedOption
+        }
+        let valueIndex = arguments.index(after: index)
+        guard valueIndex < arguments.endIndex else {
+            throw WorktreeCommandLineArgumentError.missingOptionValue(argument)
+        }
+        let value = arguments[valueIndex]
+        guard !value.isEmpty else {
+            throw WorktreeCommandLineArgumentError.emptyOptionValue(argument)
+        }
+        guard !value.hasPrefix("-") else {
+            throw WorktreeCommandLineArgumentError.missingOptionValue(argument)
+        }
+        guard startBranch == nil else {
+            throw WorktreeCommandLineArgumentError.duplicateOption(argument)
+        }
+        startBranch = value
+        index = arguments.index(after: valueIndex)
+        return true
+    }
+
     func finish() throws -> ParsedArguments {
         if deleteAtObservedCommit, keepBranch {
             throw WorktreeCommandLineArgumentError.conflictingOptions("-D", "--no-delete-branch")
@@ -363,6 +446,8 @@ private struct ParsedArgumentAccumulator {
             archivePath: archivePath,
             usesJSONOutput: usesJSONOutput,
             fetchPolicy: fetchPolicy,
+            startBranch: startBranch,
+            changesOnly: changesOnly,
             discardWorkingChanges: discardWorkingChanges,
             deleteAtObservedCommit: deleteAtObservedCommit,
             keepBranch: keepBranch,
@@ -379,4 +464,5 @@ private struct ParsedArgumentAccumulator {
         "--remove-stale-lock", "--dry-run",
     ]
     private static let pathOptions: Set<String> = ["--repo", "--from", "--archive-to"]
+    private static let valueOptions: Set<String> = ["--from-branch"]
 }

@@ -3,7 +3,8 @@ import Foundation
 
 package enum WorktreeOperationRequest: Sendable, Equatable {
     case createFromDefault(start: URL, branch: String)
-    case fork(start: URL, branch: String)
+    case createFromBranch(start: URL, branch: String, startBranch: String)
+    case fork(start: URL, branch: String, materialization: WorktreeForkMaterialization)
     case list(
         start: URL,
         callerDirectory: URL?,
@@ -12,6 +13,11 @@ package enum WorktreeOperationRequest: Sendable, Equatable {
     )
     case remove(WorktreeRemovalRequest)
     case prune(WorktreePruneRequest)
+}
+
+package enum WorktreeForkMaterialization: String, Sendable, Equatable {
+    case copyOnWrite
+    case changesOnly
 }
 
 package enum WorktreeBranchNameProblem: Sendable, Equatable {
@@ -63,6 +69,7 @@ package enum WorktreeOperationRefusal: Sendable, Equatable {
     case invalidBranchName(WorktreeBranchNameProblem)
     case emptyBranchSlug
     case branchAlreadyExists(String)
+    case startBranchNotFound(String)
     case destinationExists(URL)
     case destinationParentMissing(URL)
     case unsupportedRepositoryLayout(URL)

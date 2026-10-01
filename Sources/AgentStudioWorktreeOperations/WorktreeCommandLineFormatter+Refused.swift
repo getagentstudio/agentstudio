@@ -4,7 +4,9 @@ import Foundation
 extension WorktreeCommandLineFormatter {
     package static func refusedHumanLine(_ refusal: WorktreeOperationRefusal) -> String {
         let details = refusalDetails(for: refusal)
-        let suffix = [details.path, details.detail].compactMap { $0 }.joined(separator: " ")
+        let suffix = [details.path, details.detail, details.alternative?.commandLineFlag]
+            .compactMap { $0 }
+            .joined(separator: " ")
         return suffix.isEmpty ? "refused: \(details.reason)" : "refused: \(details.reason) \(suffix)"
     }
 
@@ -14,7 +16,8 @@ extension WorktreeCommandLineFormatter {
             WorktreeRefusedCommandLineJSON(
                 reason: details.reason,
                 path: details.path,
-                detail: details.detail
+                detail: details.detail,
+                alternative: details.alternative?.rawValue
             )
         )
     }
@@ -27,6 +30,8 @@ extension WorktreeCommandLineFormatter {
             WorktreeRefusalDetails(reason: "notInWorktree", path: absolutePath(path), detail: nil)
         case .noDefaultBranch:
             WorktreeRefusalDetails(reason: "noDefaultBranch", path: nil, detail: nil)
+        case .startBranchNotFound(let branch):
+            WorktreeRefusalDetails(reason: "startBranchNotFound", path: nil, detail: branch)
         case .invalidBranchName(.local(let rejection)):
             WorktreeRefusalDetails(reason: "invalidBranchName", path: nil, detail: branchRejectionDetail(rejection))
         case .invalidBranchName(.rejectedByGit):
@@ -42,7 +47,12 @@ extension WorktreeCommandLineFormatter {
         case .unsupportedRepositoryLayout(let path):
             WorktreeRefusalDetails(reason: "unsupportedRepositoryLayout", path: absolutePath(path), detail: nil)
         case .forkUnavailable(let reason):
-            WorktreeRefusalDetails(reason: "forkUnavailable", path: nil, detail: reason.rawValue)
+            WorktreeRefusalDetails(
+                reason: "forkUnavailable",
+                path: nil,
+                detail: reason.rawValue,
+                alternative: .changesOnly
+            )
         case .unsupportedWorkingState(let refusal):
             WorktreeRefusalDetails(
                 reason: "unsupportedWorkingState",
@@ -74,6 +84,30 @@ private struct WorktreeRefusalDetails {
     let reason: String
     let path: String?
     let detail: String?
+    let alternative: WorktreeRefusalAlternative?
+
+    init(
+        reason: String,
+        path: String?,
+        detail: String?,
+        alternative: WorktreeRefusalAlternative? = nil
+    ) {
+        self.reason = reason
+        self.path = path
+        self.detail = detail
+        self.alternative = alternative
+    }
+}
+
+private enum WorktreeRefusalAlternative: String {
+    case changesOnly
+
+    var commandLineFlag: String {
+        switch self {
+        case .changesOnly:
+            "--changes-only"
+        }
+    }
 }
 
 private struct WorktreeRefusedCommandLineJSON: Encodable {
@@ -81,4 +115,5 @@ private struct WorktreeRefusedCommandLineJSON: Encodable {
     let reason: String
     let path: String?
     let detail: String?
+    let alternative: String?
 }

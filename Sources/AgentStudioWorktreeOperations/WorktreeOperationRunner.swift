@@ -20,8 +20,10 @@ package struct WorktreeOperationRunner {
         switch request {
         case .createFromDefault(let start, let branch):
             return await createFromDefault(start: start, branch: branch)
-        case .fork(let start, let branch):
-            return await fork(start: start, branch: branch)
+        case .createFromBranch(let start, let branch, let startBranch):
+            return await createFromBranch(start: start, branch: branch, startBranch: startBranch)
+        case .fork(let start, let branch, let materialization):
+            return await fork(start: start, branch: branch, materialization: materialization)
         case .list(let start, let callerDirectory, let targets, let fetchPolicy):
             return await list(
                 start: start,
@@ -45,45 +47,89 @@ package struct WorktreeOperationRunner {
         case .outcome(let outcome):
             return outcome
         case .ready(let prepared):
-            guard case .resolved(_, let startPoint) = prepared.defaultStartPoint else {
-                return .refused(.noDefaultBranch)
-            }
+            let startPoint: String
             do {
-                let worktree = try await client.createWorktree(
-                    GitCreateWorktreeRequest(
-                        repositoryPath: prepared.repositoryPath,
-                        destinationPath: prepared.destinationPath,
-                        mode: .newBranch(
-                            name: prepared.branchName.rawValue,
-                            startPoint: GitRevisionTarget.named(startPoint)
-                        )
-                    ))
-                return .created(
-                    WorktreeCreatedSummary(
-                        operation: .new,
-                        branch: prepared.branchName.rawValue,
-                        path: worktree.canonicalPath,
-                        repository: prepared.repositoryPath,
-                        materialization: nil
-                    ))
+                switch try await defaultStartPointResolver.resolveDefaultStartPoint(
+                    repositoryPath: prepared.repositoryPath)
+                {
+                case .resolved(_, let resolvedStartPoint):
+                    startPoint = resolvedStartPoint
+                case .noDefaultBranch:
+                    return .refused(.noDefaultBranch)
+                }
             } catch {
-                return .failed(WorktreeOperationErrorMapper.createFailure(error))
+                return .failed(WorktreeOperationErrorMapper.readFailure(error))
             }
+            return await createNewBranch(prepared, startPoint: startPoint)
         }
     }
 
-    private func fork(start: URL, branch: String) async -> WorktreeOperationOutcome {
+    private func createFromBranch(
+        start: URL,
+        branch: String,
+        startBranch: String
+    ) async -> WorktreeOperationOutcome {
+        switch await preflightCreation(start: start, branch: branch, operation: .new) {
+        case .outcome(let outcome):
+            return outcome
+        case .ready(let prepared):
+            guard prepared.branches.contains(where: { $0.name == startBranch }) else {
+                return .refused(.startBranchNotFound(startBranch))
+            }
+            return await createNewBranch(prepared, startPoint: "refs/heads/\(startBranch)")
+        }
+    }
+
+    private func createNewBranch(
+        _ prepared: PreparedWorktreeCreation,
+        startPoint: String
+    ) async -> WorktreeOperationOutcome {
+        do {
+            let worktree = try await client.createWorktree(
+                GitCreateWorktreeRequest(
+                    repositoryPath: prepared.repositoryPath,
+                    destinationPath: prepared.destinationPath,
+                    mode: .newBranch(
+                        name: prepared.branchName.rawValue,
+                        startPoint: GitRevisionTarget.named(startPoint)
+                    )
+                ))
+            return .created(
+                WorktreeCreatedSummary(
+                    operation: .new,
+                    branch: prepared.branchName.rawValue,
+                    path: worktree.canonicalPath,
+                    repository: prepared.repositoryPath,
+                    materialization: nil
+                ))
+        } catch {
+            return .failed(WorktreeOperationErrorMapper.createFailure(error))
+        }
+    }
+
+    private func fork(
+        start: URL,
+        branch: String,
+        materialization: WorktreeForkMaterialization
+    ) async -> WorktreeOperationOutcome {
         switch await preflightCreation(start: start, branch: branch, operation: .fork) {
         case .outcome(let outcome):
             return outcome
         case .ready(let prepared):
+            let sdkMaterialization: GitWorktreeForkMaterialization
+            switch materialization {
+            case .copyOnWrite:
+                sdkMaterialization = .copyOnWrite
+            case .changesOnly:
+                sdkMaterialization = .changesOnly
+            }
             do throws(GitWorktreeForkError) {
                 let fork = try await client.forkWorktree(
                     GitForkWorktreeRequest(
                         sourceWorktreePath: prepared.sourceWorktreePath,
                         destinationPath: prepared.destinationPath,
                         mode: .newBranch(name: prepared.branchName.rawValue),
-                        materialization: .copyOnWrite
+                        materialization: sdkMaterialization
                     ))
                 return .created(
                     WorktreeCreatedSummary(
@@ -319,26 +365,14 @@ package struct WorktreeOperationRunner {
             return .outcome(.refused(.destinationParentMissing(destinationParent)))
         }
 
+        let branches: [GitBranchSnapshot]
         do {
-            let branches = try await client.branches(for: discovery.repositoryPath)
+            branches = try await client.branches(for: discovery.repositoryPath)
             guard !branches.contains(where: { $0.name == branchName.rawValue }) else {
                 return .outcome(.refused(.branchAlreadyExists(branchName.rawValue)))
             }
         } catch {
             return .outcome(.failed(WorktreeOperationErrorMapper.readFailure(error)))
-        }
-
-        var defaultStartPoint: WorktreeDefaultStartPoint = .noDefaultBranch
-        if operation == .new {
-            do {
-                defaultStartPoint = try await defaultStartPointResolver.resolveDefaultStartPoint(
-                    repositoryPath: discovery.repositoryPath)
-            } catch {
-                return .outcome(.failed(WorktreeOperationErrorMapper.readFailure(error)))
-            }
-            guard defaultStartPoint != .noDefaultBranch else {
-                return .outcome(.refused(.noDefaultBranch))
-            }
         }
 
         return .ready(
@@ -347,7 +381,7 @@ package struct WorktreeOperationRunner {
                 sourceWorktreePath: discovery.sourceWorktreePath,
                 repositoryPath: discovery.repositoryPath,
                 destinationPath: destinationPath,
-                defaultStartPoint: defaultStartPoint
+                branches: branches
             ))
     }
 
@@ -398,7 +432,7 @@ private struct PreparedWorktreeCreation {
     let sourceWorktreePath: URL
     let repositoryPath: URL
     let destinationPath: URL
-    let defaultStartPoint: WorktreeDefaultStartPoint
+    let branches: [GitBranchSnapshot]
 }
 
 private enum WorktreeCreationPreparation {

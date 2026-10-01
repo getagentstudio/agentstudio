@@ -100,7 +100,8 @@ struct WorktreeOperationRunnerTests {
         }
         defer { try? FileManager.default.removeItem(at: destination) }
 
-        let outcome = await WorktreeOperationRunner(client: client).run(.fork(start: nestedStart, branch: branch))
+        let outcome = await WorktreeOperationRunner(client: client).run(
+            .fork(start: nestedStart, branch: branch, materialization: .copyOnWrite))
 
         switch outcome {
         case .created(let created):
@@ -164,7 +165,9 @@ struct WorktreeOperationRunnerTests {
             ) == .refused(.notInRepository(outsideRepository))
         )
         #expect(
-            await runner.run(.fork(start: outsideRepository, branch: "feature/outside"))
+            await runner.run(
+                .fork(start: outsideRepository, branch: "feature/outside", materialization: .copyOnWrite)
+            )
                 == .refused(.notInWorktree(outsideRepository)))
     }
 
@@ -243,7 +246,9 @@ struct WorktreeOperationRunnerTests {
 
         let runner = WorktreeOperationRunner()
         let newOutcome = await runner.run(.createFromDefault(start: repository, branch: "feature/unsupported-layout"))
-        let forkOutcome = await runner.run(.fork(start: repository, branch: "fork/unsupported-layout"))
+        let forkOutcome = await runner.run(
+            .fork(start: repository, branch: "fork/unsupported-layout", materialization: .copyOnWrite)
+        )
         expectUnsupportedLayout(newOutcome, repository: repository)
         expectUnsupportedLayout(forkOutcome, repository: repository)
     }
