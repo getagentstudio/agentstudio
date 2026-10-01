@@ -53,16 +53,17 @@ func makeBridgePaneProductSessionOwnerFrameWaiterFixture() throws
         firstFrameWaiterRegistration,
         secondFrameWaiterRegistration,
     ]
-    let frameWaiterRegistrationCount = Mutex(0)
+    let frameWaiterRegistrationLeases = Mutex<Set<BridgeProductProducerLease>>([])
     let session = try BridgeProductSession(
         paneSessionId: paneSessionId,
         workerInstanceId: workerInstanceId,
         capabilityBytes: capabilityBytes,
         producerFrameWaiterRegistrationObserver: { lease in
-            let registrationIndex = frameWaiterRegistrationCount.withLock { count in
-                count += 1
-                return count
+            let registrationIndex = frameWaiterRegistrationLeases.withLock { leases -> Int? in
+                guard leases.insert(lease).inserted else { return nil }
+                return leases.count
             }
+            guard let registrationIndex else { return }
             guard frameWaiterRegistrationSteps.indices.contains(registrationIndex - 1) else {
                 return
             }
