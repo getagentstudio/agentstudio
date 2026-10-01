@@ -448,7 +448,7 @@ struct WorktreeOutcomeDocumentsTests {
         )
         #expect(
             try Self.json(removedEntry)
-                == #"{"details":{"effects":{"activity":{"status":"notChecked"},"administration":"removed","assessment":{"grade":"integrated","proof":{"commit":"c0ffee","proof":"squash"}},"branch":{"cleanupWarnings":[],"commit":"abc123","disposition":"deleted","name":"feature/done"},"directory":"removed","evidence":{"status":"none"}},"inputs":[],"target":"feature/done"},"status":"removed"}"#
+                == #"{"details":{"effects":{"activity":{"status":"notChecked"},"administration":"removed","assessment":{"grade":"integrated","proof":{"commit":"c0ffee","proof":"squash"}},"branch":{"cleanupWarnings":[],"commit":"abc123","disposition":"deleted","name":"feature/done","options":[]},"directory":"removed","evidence":{"status":"none"},"lockResidue":[]},"inputs":[],"target":"feature/done"},"status":"removed"}"#
         )
 
         let dirtyDetails = WorktreeStopDetails.dirty(
@@ -482,7 +482,7 @@ struct WorktreeOutcomeDocumentsTests {
         let encodedFailedEntry = try Self.json(failedEntry)
         #expect(
             encodedFailedEntry
-                == #"{"details":{"failure":{"effects":{"activity":{"status":"none"},"administration":"partial","assessment":{"grade":"unknown","reason":"readFailed"},"directory":"retained","evidence":{"files":2,"path":"/main/tmp/feature/partial","status":"archived"}},"kind":{"code":-1,"kind":"pruneFailed","klass":20}},"inputs":[],"target":"feature/partial"},"status":"failed"}"#
+                == #"{"details":{"failure":{"effects":{"activity":{"status":"none"},"administration":"partial","assessment":{"grade":"unknown","reason":"readFailed"},"directory":"retained","evidence":{"files":2,"path":"/main/tmp/feature/partial","status":"archived"},"lockResidue":[]},"kind":{"code":-1,"kind":"pruneFailed","klass":20}},"inputs":[],"target":"feature/partial"},"status":"failed"}"#
         )
 
         let report = WorktreeRemovalReport(
