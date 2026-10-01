@@ -20,6 +20,7 @@ import type {
 	BridgeMarkdownRenderIntent,
 } from '../app/markdown/use-bridge-markdown-presentation.js';
 import { useBridgeViewerSearchFocusRestoration } from '../app/use-bridge-viewer-search-focus-restoration.js';
+import { DomSlotPortal } from '../components/ui/dom-slot-portal.js';
 import type { BridgeMainFileTreePatchStream } from '../core/comm-worker/bridge-main-file-display-patch-applier.js';
 import type { BridgeMainRenderFulfillmentCoordinator } from '../core/comm-worker/bridge-main-render-fulfillment-coordinator.js';
 import type { BridgeWorkerPanelChromePatchPayload } from '../core/comm-worker/bridge-worker-contracts.js';
@@ -136,6 +137,8 @@ export function BridgeFileViewerShell(props: BridgeFileViewerShellProps): ReactE
 		displayedFileId: props.selectedCodeViewItem?.bridgeMetadata.itemId ?? null,
 		surface: surfaceStatus,
 	});
+	const failureSummaryTargetRef = useRef<HTMLDivElement | null>(null);
+	const failureSlot = <div ref={failureSummaryTargetRef} data-testid="bridge-pane-failure-slot" />;
 	const renderContentRegion: BridgeRegionPresentationRenderSlot = ({
 		body,
 		state,
@@ -168,68 +171,26 @@ export function BridgeFileViewerShell(props: BridgeFileViewerShellProps): ReactE
 			/>
 		);
 		return (
-			<BridgeViewerResizableRailLayout
-				autosaveId="bridge-viewer-right-rail"
-				isActive
-				railVisible={props.railVisible}
-				failureSummary={failureSummary}
-				content={
-					<section className="grid h-full min-h-0 min-w-0 grid-rows-[auto_minmax(0,1fr)]">
-						<BridgeViewerContentHeader
-							controls={props.viewerHeaderControls}
-							mode="file"
-							statusText={null}
-							title={props.contentHeaderTitle}
-							regionIndicator={<BridgeRegionUpdatingIndicator state={state} held={held} />}
-						/>
-						<BridgeViewerContextPanelViewport testId="bridge-file-viewer-context-panel-viewport">
-							{body}
-						</BridgeViewerContextPanelViewport>
-					</section>
-				}
-				contentTestId="bridge-file-viewer-content-panel"
-				handleTestId="bridge-file-viewer-rail-resize-handle"
-				rail={
-					<BridgeFileViewerTreePanel
-						failureSummary={props.railVisible === false ? null : failureSummary}
-						presentationState={treePresentation}
-						completeFileQueryTransaction={props.completeFileQueryTransaction}
-						filterMode={props.filterMode}
-						isFilterMenuOpen={props.isFilterMenuOpen}
-						fileTreePatchStream={props.fileTreePatchStream}
-						fileActivationSequence={props.fileActivationSequence ?? null}
-						fileActivationStartedAtPerfNow={props.fileActivationStartedAtPerfNow ?? null}
-						isActive={props.isActive}
-						isSearchOpen={props.isSearchOpen}
-						onFilterMenuOpenChange={props.onFilterMenuOpenChange}
-						onFilterModeChange={props.onFilterModeChange}
-						onClearSearch={props.onClearSearch}
-						onSearchModeChange={props.onSearchModeChange}
-						onSearchTextChange={props.onSearchTextChange}
-						onSelectFile={props.onSelectFile}
-						onToggleSearch={props.onToggleSearch}
-						onVisibleFileDemandChange={props.dispatchVisibleFileDemand}
-						searchMode={props.searchMode}
-						searchError={props.searchError}
-						searchText={props.searchText}
-						searchStatusMessage={props.searchStatusMessage}
-						selectedPath={props.selectedPath}
-						searchTriggerRef={searchTriggerRef}
-						source={props.displayModel.source}
-						{...(props.telemetryRecorder === undefined
-							? {}
-							: { telemetryRecorder: props.telemetryRecorder })}
-						telemetryTraceContext={props.telemetryTraceContext}
-						totalTreeHeightPixels={props.totalTreeHeight.heightPixels}
-						totalTreeHeightSource={props.totalTreeHeight.source}
-						totalTreeRowCount={props.totalTreeRowCount}
-						viewerContextSwitcher={props.viewerContextSwitcher}
-						projectedTreeRowCount={props.displayModel.projectedRowCount}
-						treeRowByPath={props.displayModel.treeRowByPath}
+			<>
+				<DomSlotPortal
+					key={props.railVisible === false ? 'content' : 'rail'}
+					container={failureSummaryTargetRef}
+				>
+					{failureSummary}
+				</DomSlotPortal>
+				<section className="grid h-full min-h-0 min-w-0 grid-rows-[auto_minmax(0,1fr)]">
+					<BridgeViewerContentHeader
+						controls={props.viewerHeaderControls}
+						mode="file"
+						statusText={null}
+						title={props.contentHeaderTitle}
+						regionIndicator={<BridgeRegionUpdatingIndicator state={state} held={held} />}
 					/>
-				}
-				railTestId="bridge-file-viewer-resizable-rail"
-			/>
+					<BridgeViewerContextPanelViewport testId="bridge-file-viewer-context-panel-viewport">
+						{body}
+					</BridgeViewerContextPanelViewport>
+				</section>
+			</>
 		);
 	};
 	return (
@@ -270,46 +231,97 @@ export function BridgeFileViewerShell(props: BridgeFileViewerShellProps): ReactE
 					})}
 		>
 			<BridgeViewerContextPanelProvider>
-				{props.markdownPresentation === null || props.markdownPresentation === undefined ? (
-					<BridgeFileViewerCodePanel
-						renderRegion={renderContentRegion}
-						presentationState={contentPresentation}
-						openFileState={props.openFileState}
-						renderFulfillmentCoordinator={props.renderFulfillmentCoordinator}
-						selectedCodeViewItem={props.selectedCodeViewItem}
-						totalHeightPixels={props.openFileTotalHeightPixels}
-						{...(props.codeViewOptions === undefined
-							? {}
-							: { codeViewOptions: props.codeViewOptions })}
-						{...(props.codeViewWorkerFactory === undefined
-							? {}
-							: { codeViewWorkerFactory: props.codeViewWorkerFactory })}
-						{...(props.codeViewWorkerPoolEnabled === undefined
-							? {}
-							: { codeViewWorkerPoolEnabled: props.codeViewWorkerPoolEnabled })}
-					/>
-				) : (
-					<BridgeMarkdownCanvas
-						surfaceStatus={surfaceStatus}
-						renderRegion={renderContentRegion}
-						annotationSource={{ item: props.selectedCodeViewItem }}
-						isActive={props.isActive}
-						presentationState={props.markdownPresentation.presentationState}
-						{...(props.markdownPresentation.intent === null || props.selectedCodeViewItem === null
-							? {}
-							: {
-									renderFulfillment: {
-										coordinator: props.renderFulfillmentCoordinator,
-										intent: props.markdownPresentation.intent,
-										selectedItem: props.selectedCodeViewItem,
-									},
-								})}
-						retry={props.markdownPresentation.retry}
-						{...(props.markdownPresentation.mermaidRenderer === undefined
-							? {}
-							: { mermaidRenderer: props.markdownPresentation.mermaidRenderer })}
-					/>
-				)}
+				<BridgeViewerResizableRailLayout
+					autosaveId="bridge-viewer-right-rail"
+					isActive
+					railVisible={props.railVisible}
+					failureSummary={props.railVisible === false ? failureSlot : null}
+					content={
+						props.markdownPresentation === null || props.markdownPresentation === undefined ? (
+							<BridgeFileViewerCodePanel
+								renderRegion={renderContentRegion}
+								presentationState={contentPresentation}
+								openFileState={props.openFileState}
+								renderFulfillmentCoordinator={props.renderFulfillmentCoordinator}
+								selectedCodeViewItem={props.selectedCodeViewItem}
+								totalHeightPixels={props.openFileTotalHeightPixels}
+								{...(props.codeViewOptions === undefined
+									? {}
+									: { codeViewOptions: props.codeViewOptions })}
+								{...(props.codeViewWorkerFactory === undefined
+									? {}
+									: { codeViewWorkerFactory: props.codeViewWorkerFactory })}
+								{...(props.codeViewWorkerPoolEnabled === undefined
+									? {}
+									: { codeViewWorkerPoolEnabled: props.codeViewWorkerPoolEnabled })}
+							/>
+						) : (
+							<BridgeMarkdownCanvas
+								surfaceStatus={surfaceStatus}
+								renderRegion={renderContentRegion}
+								annotationSource={{ item: props.selectedCodeViewItem }}
+								isActive={props.isActive}
+								presentationState={props.markdownPresentation.presentationState}
+								{...(props.markdownPresentation.intent === null ||
+								props.selectedCodeViewItem === null
+									? {}
+									: {
+											renderFulfillment: {
+												coordinator: props.renderFulfillmentCoordinator,
+												intent: props.markdownPresentation.intent,
+												selectedItem: props.selectedCodeViewItem,
+											},
+										})}
+								retry={props.markdownPresentation.retry}
+								{...(props.markdownPresentation.mermaidRenderer === undefined
+									? {}
+									: { mermaidRenderer: props.markdownPresentation.mermaidRenderer })}
+							/>
+						)
+					}
+					contentTestId="bridge-file-viewer-content-panel"
+					handleTestId="bridge-file-viewer-rail-resize-handle"
+					rail={
+						<BridgeFileViewerTreePanel
+							failureSummary={props.railVisible === false ? null : failureSlot}
+							presentationState={treePresentation}
+							completeFileQueryTransaction={props.completeFileQueryTransaction}
+							filterMode={props.filterMode}
+							isFilterMenuOpen={props.isFilterMenuOpen}
+							fileTreePatchStream={props.fileTreePatchStream}
+							fileActivationSequence={props.fileActivationSequence ?? null}
+							fileActivationStartedAtPerfNow={props.fileActivationStartedAtPerfNow ?? null}
+							isActive={props.isActive}
+							isSearchOpen={props.isSearchOpen}
+							onFilterMenuOpenChange={props.onFilterMenuOpenChange}
+							onFilterModeChange={props.onFilterModeChange}
+							onClearSearch={props.onClearSearch}
+							onSearchModeChange={props.onSearchModeChange}
+							onSearchTextChange={props.onSearchTextChange}
+							onSelectFile={props.onSelectFile}
+							onToggleSearch={props.onToggleSearch}
+							onVisibleFileDemandChange={props.dispatchVisibleFileDemand}
+							searchMode={props.searchMode}
+							searchError={props.searchError}
+							searchText={props.searchText}
+							searchStatusMessage={props.searchStatusMessage}
+							selectedPath={props.selectedPath}
+							searchTriggerRef={searchTriggerRef}
+							source={props.displayModel.source}
+							{...(props.telemetryRecorder === undefined
+								? {}
+								: { telemetryRecorder: props.telemetryRecorder })}
+							telemetryTraceContext={props.telemetryTraceContext}
+							totalTreeHeightPixels={props.totalTreeHeight.heightPixels}
+							totalTreeHeightSource={props.totalTreeHeight.source}
+							totalTreeRowCount={props.totalTreeRowCount}
+							viewerContextSwitcher={props.viewerContextSwitcher}
+							projectedTreeRowCount={props.displayModel.projectedRowCount}
+							treeRowByPath={props.displayModel.treeRowByPath}
+						/>
+					}
+					railTestId="bridge-file-viewer-resizable-rail"
+				/>
 			</BridgeViewerContextPanelProvider>
 		</main>
 	);
