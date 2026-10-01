@@ -150,9 +150,12 @@ extension WebKitSerializedTests {
                     milestone: "Bridge Review shell; \(diagnosticFacts)",
                     lastObservation: """
                         const shell = document.querySelector(selector);
+                        const activeViewerModeHost = document.querySelector(
+                          '[data-bridge-viewer-mode-active="true"]'
+                        );
                         return JSON.stringify({
                           reviewShellPresent: shell !== null,
-                          viewerMode: document.querySelector('[data-bridge-viewer-mode-host]')?.getAttribute('data-bridge-viewer-mode-host') ?? null
+                          activeViewerMode: activeViewerModeHost?.getAttribute('data-bridge-viewer-mode-host') ?? null
                         });
                         """
                 )
