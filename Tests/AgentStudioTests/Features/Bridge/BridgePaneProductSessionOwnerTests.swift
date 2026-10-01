@@ -379,9 +379,7 @@ struct BridgePaneProductSessionOwnerTests {
         _ = try await contentFirstDataReceipt.firstArrival()
         let firstRegisteredLease = try await fixture.firstFrameWaiterRegistration.firstArrival()
         let secondRegisteredLease = try await fixture.secondFrameWaiterRegistration.firstArrival()
-        let registeredWaiterCount = fixture.frameWaiterRegistrationCount.withLock { $0 }
         #expect(firstRegisteredLease != secondRegisteredLease)
-        #expect(registeredWaiterCount == 2)
         let liveSnapshot = await owner.snapshot()
 
         // Act
@@ -403,6 +401,7 @@ struct BridgePaneProductSessionOwnerTests {
         #expect(liveSnapshot.activeProducerCount == 2)
         #expect(liveSnapshot.activeProducerTaskCount == 2)
         #expect(liveSnapshot.activeContentLeaseCount == 1)
+        #expect(liveSnapshot.pendingFrameWaiterCount == 2)
         let liveDeliveryResidueCount =
             liveSnapshot.queuedFrameCount
             + liveSnapshot.pendingFrameWaiterCount

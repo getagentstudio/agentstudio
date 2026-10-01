@@ -9,7 +9,6 @@ import Testing
 
 final class BridgePaneProductSessionOwnerFrameWaiterFixture {
     let firstFrameWaiterRegistration: HeldStep<BridgeProductProducerLease>
-    let frameWaiterRegistrationCount: Mutex<Int>
     let installation: BridgeProductSessionInstallation
     let owner: BridgePaneProductSessionOwner
     let provider: BridgePaneProductSessionProviderGate
@@ -17,14 +16,12 @@ final class BridgePaneProductSessionOwnerFrameWaiterFixture {
 
     init(
         firstFrameWaiterRegistration: HeldStep<BridgeProductProducerLease>,
-        frameWaiterRegistrationCount: Mutex<Int>,
         installation: BridgeProductSessionInstallation,
         owner: BridgePaneProductSessionOwner,
         provider: BridgePaneProductSessionProviderGate,
         secondFrameWaiterRegistration: HeldStep<BridgeProductProducerLease>
     ) {
         self.firstFrameWaiterRegistration = firstFrameWaiterRegistration
-        self.frameWaiterRegistrationCount = frameWaiterRegistrationCount
         self.installation = installation
         self.owner = owner
         self.provider = provider
@@ -97,7 +94,6 @@ func makeBridgePaneProductSessionOwnerFrameWaiterFixture() throws
     )
     return .init(
         firstFrameWaiterRegistration: firstFrameWaiterRegistration,
-        frameWaiterRegistrationCount: frameWaiterRegistrationCount,
         installation: installation,
         owner: owner,
         provider: provider,
