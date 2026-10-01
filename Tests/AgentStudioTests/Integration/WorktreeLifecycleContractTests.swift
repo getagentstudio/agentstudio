@@ -10,6 +10,7 @@ struct WorktreeLifecyclePolicyTests {
         #expect(WorktreeLifecyclePolicy.squashSearchCommitLimit == 500)
         #expect(WorktreeLifecyclePolicy.staleLockAge == .seconds(120))
         #expect(WorktreeLifecyclePolicy.fetchesDefaultBranch)
+        #expect(WorktreeLifecyclePolicy.firstPathsLimit == 10)
         #expect(
             WorktreeLifecyclePolicy.archiveToMainDestination(
                 mainWorktree: URL(filePath: "/repositories/main"),
@@ -76,11 +77,27 @@ struct WorktreeStopCatalogTests {
                 ]
             ),
             ExpectedEntry(
+                reason: .changesUnknown,
+                message: "The worktree's uncommitted changes could not be read.",
+                options: [
+                    command("retry", effect: "Retry after the worktree status can be read."),
+                    flag("-f", effect: "Remove the worktree and discard whatever uncommitted changes it contains."),
+                ]
+            ),
+            ExpectedEntry(
                 reason: .evidenceInTmp,
                 message: "The worktree contains evidence in tmp/.",
                 options: [
                     flag("--archive-to-main", effect: "Archive tmp/ under the main worktree's tmp/ folder."),
                     flag("--archive-to <folder>", effect: "Archive tmp/ under a folder you choose."),
+                    flag("--discard-tmp", effect: "Discard tmp/ with the worktree."),
+                ]
+            ),
+            ExpectedEntry(
+                reason: .evidenceUnknown,
+                message: "The worktree's tmp/ evidence could not be read.",
+                options: [
+                    command("retry", effect: "Retry after tmp/ can be read."),
                     flag("--discard-tmp", effect: "Discard tmp/ with the worktree."),
                 ]
             ),
@@ -125,24 +142,27 @@ struct WorktreeStopCatalogTests {
     func catalogMatchesEveryStopReason() {
         #expect(expectedEntries.map(\.reason) == WorktreeStopReason.allCases)
         for expected in expectedEntries {
-            let entry = WorktreeStopCatalog.entry(for: expected.reason)
+            let details = details(for: expected.reason)
+            let entry = WorktreeStopCatalog.entry(for: details)
             #expect(entry.reason == expected.reason)
             #expect(entry.message == expected.message)
+            #expect(entry.details == details)
             #expect(entry.options == expected.options)
         }
 
         let hardStops: Set<WorktreeStopReason> = [.mainWorktree, .defaultBranch]
         for reason in hardStops {
-            #expect(WorktreeStopCatalog.entry(for: reason).options.isEmpty)
+            #expect(WorktreeStopCatalog.entry(for: details(for: reason)).options.isEmpty)
         }
     }
 
     @Test("stale lock removal appears only when its eligibility is established")
     func staleLockOptionIsConditional() {
-        let heldLockOptions = WorktreeStopCatalog.entry(for: .gitLockHeld).options
+        let heldLockOptions = WorktreeStopCatalog.entry(
+            for: .gitLockHeld(lockObservation(looksStale: false))
+        ).options
         let staleLockOptions = WorktreeStopCatalog.entry(
-            for: .gitLockHeld,
-            offersStaleLockRemoval: true
+            for: .gitLockHeld(lockObservation(looksStale: true))
         ).options
 
         #expect(heldLockOptions.count == 1)
@@ -178,6 +198,66 @@ struct WorktreeStopCatalogTests {
         let reason: WorktreeStopReason
         let message: String
         let options: [WorktreeStopOption]
+    }
+
+    private func details(for reason: WorktreeStopReason) -> WorktreeStopDetails {
+        switch reason {
+        case .defaultBranch:
+            .defaultBranch
+        case .mainWorktree:
+            .mainWorktree
+        case .gitLockUnidentified:
+            .gitLockUnidentified(resource: .packedRefs)
+        case .notFound:
+            .notFound(target: "feature/missing")
+        case .alreadyRemoved:
+            .alreadyRemoved(target: "feature/removed")
+        case .startBranchNotFound:
+            .startBranchNotFound(branch: "feature/start")
+        case .unsupportedWorkingState:
+            .unsupportedWorkingState(
+                GitWorktreeWorkingStateRefusal(reason: .customFilter, relativePath: "tracked.bin")
+            )
+        case .targetIsCurrent:
+            .targetIsCurrent(path: "/repo/worktree")
+        case .worktreeLocked:
+            .worktreeLocked(reason: "reason")
+        case .dirty:
+            .dirty(
+                WorktreeDirtyStopDetails(
+                    staged: 1,
+                    unstaged: 2,
+                    untracked: 3,
+                    conflicted: 4,
+                    firstPaths: ["changed.txt"]
+                ))
+        case .changesUnknown:
+            .changesUnknown
+        case .evidenceInTmp:
+            .evidenceInTmp(fileCount: 2, byteCount: 64, firstPaths: ["tmp/trace.jsonl"])
+        case .evidenceUnknown:
+            .evidenceUnknown(path: "/repo/worktree/tmp")
+        case .openInPane:
+            .openInPane(panes: [WorktreeStopPaneDetails(paneId: "pane-1", title: "review")])
+        case .gitLockHeld:
+            .gitLockHeld(lockObservation(looksStale: false))
+        case .archiveDestinationExists:
+            .archiveDestinationExists(path: "/archive/existing")
+        case .archiveDestinationInsideWorktree:
+            .archiveDestinationInsideWorktree(path: "/repo/worktree/tmp/archive")
+        case .forkUnavailable:
+            .forkUnavailable(.clientCapabilityUnavailable)
+        }
+    }
+
+    private func lockObservation(looksStale: Bool) -> WorktreeLockObservation {
+        WorktreeLockObservation(
+            path: "/repo/.git/index.lock",
+            resource: .index(worktreePath: URL(fileURLWithPath: "/repo")),
+            ageSeconds: looksStale ? 121 : 1,
+            gitProcessFound: !looksStale,
+            looksStale: looksStale
+        )
     }
 
     private func flag(_ value: String, effect: String) -> WorktreeStopOption {
@@ -300,10 +380,18 @@ struct WorktreeOutcomeDocumentsTests {
 
     @Test("refusal options, planned entries, and removal reports have JSON goldens")
     func refusalPlanAndReportJSONGoldens() throws {
-        let refusal = WorktreeRefusalDocument(reason: .dirty)
+        let dirtyDetails = WorktreeStopDetails.dirty(
+            WorktreeDirtyStopDetails(
+                staged: 1,
+                unstaged: 2,
+                untracked: 3,
+                conflicted: 0,
+                firstPaths: ["changed.txt"]
+            ))
+        let refusal = WorktreeRefusalDocument(details: dirtyDetails)
         #expect(
             try Self.json(refusal)
-                == #"{"message":"The worktree contains uncommitted changes.","options":[{"effect":"Remove the worktree and discard its uncommitted changes.","flag":"-f"},{"command":"commit the changes first","effect":"Keep the changes in the repository history."},{"command":"agentstudio worktree fork <branch> --changes-only --from <path>","effect":"Copy the worktree's changes before removing it."}],"reason":"dirty"}"#
+                == #"{"details":{"dirty":{"conflicted":0,"firstPaths":["changed.txt"],"staged":1,"unstaged":2,"untracked":3}},"message":"The worktree contains uncommitted changes.","options":[{"effect":"Remove the worktree and discard its uncommitted changes.","flag":"-f"},{"command":"commit the changes first","effect":"Keep the changes in the repository history."},{"command":"agentstudio worktree fork <branch> --changes-only --from <path>","effect":"Copy the worktree's changes before removing it."}],"reason":"dirty"}"#
         )
 
         #expect(
@@ -363,12 +451,23 @@ struct WorktreeOutcomeDocumentsTests {
                 == #"{"details":{"effects":{"activity":{"status":"notChecked"},"administration":"removed","assessment":{"grade":"integrated","proof":{"commit":"c0ffee","proof":"squash"}},"branch":{"cleanupWarnings":[],"commit":"abc123","disposition":"deleted","name":"feature/done"},"directory":"removed","evidence":{"status":"none"}},"inputs":[],"target":"feature/done"},"status":"removed"}"#
         )
 
+        let dirtyDetails = WorktreeStopDetails.dirty(
+            WorktreeDirtyStopDetails(
+                staged: 1,
+                unstaged: 2,
+                untracked: 3,
+                conflicted: 0,
+                firstPaths: ["changed.txt"]
+            ))
         let refusedEntry = WorktreeRemovalEntry.refused(
-            WorktreeRefusedEntryDocument(target: "feature/dirty", refusal: WorktreeRefusalDocument(reason: .dirty))
+            WorktreeRefusedEntryDocument(
+                target: "feature/dirty",
+                refusal: WorktreeRefusalDocument(details: dirtyDetails)
+            )
         )
         #expect(
             try Self.json(refusedEntry)
-                == #"{"details":{"inputs":[],"refusal":{"message":"The worktree contains uncommitted changes.","options":[{"effect":"Remove the worktree and discard its uncommitted changes.","flag":"-f"},{"command":"commit the changes first","effect":"Keep the changes in the repository history."},{"command":"agentstudio worktree fork <branch> --changes-only --from <path>","effect":"Copy the worktree's changes before removing it."}],"reason":"dirty"},"target":"feature/dirty"},"status":"refused"}"#
+                == #"{"details":{"inputs":[],"refusal":{"details":{"dirty":{"conflicted":0,"firstPaths":["changed.txt"],"staged":1,"unstaged":2,"untracked":3}},"message":"The worktree contains uncommitted changes.","options":[{"effect":"Remove the worktree and discard its uncommitted changes.","flag":"-f"},{"command":"commit the changes first","effect":"Keep the changes in the repository history."},{"command":"agentstudio worktree fork <branch> --changes-only --from <path>","effect":"Copy the worktree's changes before removing it."}],"reason":"dirty"},"target":"feature/dirty"},"status":"refused"}"#
         )
 
         let failedEntry = WorktreeRemovalEntry.failed(

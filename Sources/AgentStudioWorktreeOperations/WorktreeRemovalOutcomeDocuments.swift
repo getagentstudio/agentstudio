@@ -125,24 +125,24 @@ package struct WorktreeRemovalPlanDocument: Codable, Sendable, Equatable {
 package struct WorktreeRefusalDocument: Codable, Sendable, Equatable {
     package let reason: WorktreeStopReason
     package let message: String
+    package let details: WorktreeStopDetails
     package let options: [WorktreeStopOption]
 
     package init(
         reason: WorktreeStopReason,
         message: String,
+        details: WorktreeStopDetails,
         options: [WorktreeStopOption]
     ) {
         self.reason = reason
         self.message = message
+        self.details = details
         self.options = options
     }
 
-    package init(reason: WorktreeStopReason, offersStaleLockRemoval: Bool = false) {
-        let entry = WorktreeStopCatalog.entry(
-            for: reason,
-            offersStaleLockRemoval: offersStaleLockRemoval
-        )
-        self.init(reason: reason, message: entry.message, options: entry.options)
+    package init(details: WorktreeStopDetails) {
+        let entry = WorktreeStopCatalog.entry(for: details)
+        self.init(reason: entry.reason, message: entry.message, details: entry.details, options: entry.options)
     }
 }
 

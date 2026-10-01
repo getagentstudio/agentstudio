@@ -11,12 +11,31 @@ package enum WorktreeStopReason: String, CaseIterable, Codable, Sendable {
     case targetIsCurrent
     case worktreeLocked
     case dirty
+    case changesUnknown
     case evidenceInTmp
+    case evidenceUnknown
     case openInPane
     case gitLockHeld
     case archiveDestinationExists
     case archiveDestinationInsideWorktree
     case forkUnavailable
+
+    package static let lr11Order: [Self] = [
+        .mainWorktree,
+        .defaultBranch,
+        .notFound,
+        .targetIsCurrent,
+        .worktreeLocked,
+        .dirty,
+        .changesUnknown,
+        .evidenceInTmp,
+        .evidenceUnknown,
+        .openInPane,
+        .gitLockHeld,
+        .gitLockUnidentified,
+        .archiveDestinationExists,
+        .archiveDestinationInsideWorktree,
+    ]
 }
 
 package enum WorktreeStopAction: Sendable, Equatable {
@@ -74,24 +93,32 @@ package struct WorktreeStopOption: Codable, Sendable, Equatable {
 package struct WorktreeStopEntry: Sendable, Equatable {
     package let reason: WorktreeStopReason
     package let message: String
+    package let details: WorktreeStopDetails
     package let options: [WorktreeStopOption]
 
-    package init(reason: WorktreeStopReason, message: String, options: [WorktreeStopOption]) {
+    package init(
+        reason: WorktreeStopReason,
+        message: String,
+        details: WorktreeStopDetails,
+        options: [WorktreeStopOption]
+    ) {
         self.reason = reason
         self.message = message
+        self.details = details
         self.options = options
     }
 }
 
 package enum WorktreeStopCatalog {
     package static func entry(
-        for reason: WorktreeStopReason,
-        offersStaleLockRemoval: Bool = false
+        for details: WorktreeStopDetails
     ) -> WorktreeStopEntry {
-        WorktreeStopEntry(
+        let reason = details.reason
+        return WorktreeStopEntry(
             reason: reason,
             message: message(for: reason),
-            options: options(for: reason, offersStaleLockRemoval: offersStaleLockRemoval)
+            details: details,
+            options: options(for: reason, offersStaleLockRemoval: details.offersStaleLockRemoval)
         )
     }
 
@@ -117,8 +144,12 @@ package enum WorktreeStopCatalog {
             "The worktree is locked."
         case .dirty:
             "The worktree contains uncommitted changes."
+        case .changesUnknown:
+            "The worktree's uncommitted changes could not be read."
         case .evidenceInTmp:
             "The worktree contains evidence in tmp/."
+        case .evidenceUnknown:
+            "The worktree's tmp/ evidence could not be read."
         case .openInPane:
             "The worktree is open in Agent Studio panes."
         case .gitLockHeld:
@@ -160,10 +191,20 @@ package enum WorktreeStopCatalog {
                     effect: "Copy the worktree's changes before removing it."
                 ),
             ]
+        case .changesUnknown:
+            return [
+                command("retry", effect: "Retry after the worktree status can be read."),
+                flag("-f", effect: "Remove the worktree and discard whatever uncommitted changes it contains."),
+            ]
         case .evidenceInTmp:
             return [
                 flag("--archive-to-main", effect: "Archive tmp/ under the main worktree's tmp/ folder."),
                 flag("--archive-to <folder>", effect: "Archive tmp/ under a folder you choose."),
+                flag("--discard-tmp", effect: "Discard tmp/ with the worktree."),
+            ]
+        case .evidenceUnknown:
+            return [
+                command("retry", effect: "Retry after tmp/ can be read."),
                 flag("--discard-tmp", effect: "Discard tmp/ with the worktree."),
             ]
         case .openInPane:

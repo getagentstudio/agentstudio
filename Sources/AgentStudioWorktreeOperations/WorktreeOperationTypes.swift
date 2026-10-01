@@ -4,7 +4,12 @@ import Foundation
 package enum WorktreeOperationRequest: Sendable, Equatable {
     case createFromDefault(start: URL, branch: String)
     case fork(start: URL, branch: String)
-    case list(start: URL)
+    case list(
+        start: URL,
+        callerDirectory: URL?,
+        targets: [String],
+        fetchPolicy: WorktreeFetchPolicy
+    )
 }
 
 package enum WorktreeBranchNameProblem: Sendable, Equatable {
@@ -20,6 +25,7 @@ package enum WorktreeOperationKind: String, Sendable, Equatable {
 package enum WorktreeOperationOutcome: Sendable, Equatable {
     case created(WorktreeCreatedSummary)
     case listed(WorktreeListingSummary)
+    case listFailed(WorktreeListFailureDocument)
     case refused(WorktreeOperationRefusal)
     case failed(WorktreeOperationFailure)
 }
@@ -43,28 +49,6 @@ package struct WorktreeCreatedSummary: Sendable, Equatable {
         self.path = path
         self.repository = repository
         self.materialization = materialization
-    }
-}
-
-package struct WorktreeListingSummary: Sendable, Equatable {
-    package let repository: URL
-    package let worktrees: [WorktreeListing]
-
-    package init(repository: URL, worktrees: [WorktreeListing]) {
-        self.repository = repository
-        self.worktrees = worktrees
-    }
-}
-
-package struct WorktreeListing: Sendable, Equatable {
-    package let path: URL
-    package let branch: String?
-    package let isMain: Bool
-
-    package init(path: URL, branch: String?, isMain: Bool) {
-        self.path = path
-        self.branch = branch
-        self.isMain = isMain
     }
 }
 

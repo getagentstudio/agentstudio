@@ -53,7 +53,50 @@ struct WorktreeCommandLineTests {
         #expect(
             list
                 == WorktreeCommandLineInvocation(
-                    request: .list(start: URL(fileURLWithPath: "/tmp/another-repository")),
+                    request: .list(
+                        start: URL(fileURLWithPath: "/tmp/another-repository"),
+                        callerDirectory: currentDirectory,
+                        targets: [],
+                        fetchPolicy: .defaultBranch
+                    ),
+                    usesJSONOutput: false
+                ))
+    }
+
+    @Test("list preserves caller directory, filters, and fetch policy")
+    func parsesListCallerDirectoryTargetsAndFetchPolicy() throws {
+        let currentDirectory = URL(fileURLWithPath: "/tmp/linked-worktree/nested", isDirectory: true)
+        let repository = URL(fileURLWithPath: "/tmp/another-repository")
+
+        let noFetch = try WorktreeCommandLineArgumentParser.parse(
+            ["list", "feature/search", "../worktrees/one", "--repo", repository.path, "--no-fetch", "--json"],
+            currentDirectory: currentDirectory
+        )
+        #expect(
+            noFetch
+                == WorktreeCommandLineInvocation(
+                    request: .list(
+                        start: repository,
+                        callerDirectory: currentDirectory,
+                        targets: ["feature/search", "../worktrees/one"],
+                        fetchPolicy: .skip
+                    ),
+                    usesJSONOutput: true
+                ))
+
+        let defaultFetch = try WorktreeCommandLineArgumentParser.parse(
+            ["list"],
+            currentDirectory: currentDirectory
+        )
+        #expect(
+            defaultFetch
+                == WorktreeCommandLineInvocation(
+                    request: .list(
+                        start: currentDirectory,
+                        callerDirectory: currentDirectory,
+                        targets: [],
+                        fetchPolicy: .defaultBranch
+                    ),
                     usesJSONOutput: false
                 ))
     }
@@ -85,13 +128,14 @@ struct WorktreeCommandLineTests {
             [],
             ["unknown"],
             ["list", "--unknown"],
+            ["list", "--no-fetch", "--no-fetch"],
+            ["new", "feature/new", "--no-fetch"],
             ["fork", "feature/fork", "--repo", "/tmp/repository"],
             ["list", "--repo"],
             ["new", "feature/new", "--repo", "--json"],
             ["fork", "feature/fork", "--from", "--json"],
             ["new"],
             ["fork"],
-            ["list", "unexpected"],
         ]
         let currentDirectory = URL(fileURLWithPath: "/tmp/worktree-cli", isDirectory: true)
 
@@ -120,7 +164,6 @@ struct WorktreeCommandLineTests {
     func formatsEveryOutcomeKind() throws {
         let repository = URL(fileURLWithPath: "/tmp/worktree-output/repository")
         let createdPath = URL(fileURLWithPath: "/tmp/worktree-output/repository.feature-cli")
-        let detachedPath = URL(fileURLWithPath: "/tmp/worktree-output/detached")
         let failureResidue = WorktreeCleanupLeftover(
             kind: .createdBranch,
             location: "refs/heads/feature/cli",
@@ -172,17 +215,22 @@ struct WorktreeCommandLineTests {
                 outcome: .listed(
                     WorktreeListingSummary(
                         repository: repository,
-                        worktrees: [
-                            WorktreeListing(path: repository, branch: "main", isMain: true),
-                            WorktreeListing(path: detachedPath, branch: nil, isMain: false),
-                        ]
+                        target: nil,
+                        fetch: .skipped(reason: .noTarget),
+                        worktrees: []
                     )
                 ),
-                humanText:
-                    "main main at /tmp/worktree-output/repository\nworktree detached at /tmp/worktree-output/detached",
+                humanText: "fetch: skipped (noTarget)",
                 jsonText:
-                    "{\"outcome\":\"listed\",\"repository\":\"/tmp/worktree-output/repository\",\"worktrees\":[{\"branch\":\"main\",\"isMain\":true,\"path\":\"/tmp/worktree-output/repository\"},{\"isMain\":false,\"path\":\"/tmp/worktree-output/detached\"}]}",
+                    "{\"fetch\":{\"reason\":\"noTarget\",\"status\":\"skipped\"},\"outcome\":\"listed\",\"repository\":\"/tmp/worktree-output/repository\",\"target\":null,\"worktrees\":[]}",
                 exitCode: 0
+            ),
+            FormatterGolden(
+                outcome: .listFailed(WorktreeListFailureDocument(fetch: .skipped(reason: .noTarget))),
+                humanText: "failed: readFailed; leftovers: notNeeded; fetch: skipped (noTarget)",
+                jsonText:
+                    "{\"failure\":{\"kind\":\"readFailed\"},\"fetch\":{\"reason\":\"noTarget\",\"status\":\"skipped\"},\"leftovers\":{\"status\":\"notNeeded\"},\"outcome\":\"failed\"}",
+                exitCode: 2
             ),
             FormatterGolden(
                 outcome: .refused(.destinationExists(createdPath)),
@@ -206,17 +254,7 @@ struct WorktreeCommandLineTests {
             ),
         ]
 
-        for testCase in cases {
-            #expect(
-                try WorktreeCommandLineFormatter.format(outcome: testCase.outcome, usesJSONOutput: false)
-                    == WorktreeCommandLineResponse(text: testCase.humanText, exitCode: testCase.exitCode))
-            let jsonResponse = try WorktreeCommandLineFormatter.format(
-                outcome: testCase.outcome,
-                usesJSONOutput: true
-            )
-            #expect(jsonResponse.text == testCase.jsonText)
-            #expect(jsonResponse.exitCode == testCase.exitCode)
-        }
+        try expectFormatterGoldens(cases)
     }
 
     @Test("working-state outcomes preserve the SDK refusal details in human and JSON output")
@@ -247,6 +285,20 @@ struct WorktreeCommandLineTests {
             ),
         ]
 
+        for testCase in cases {
+            #expect(
+                try WorktreeCommandLineFormatter.format(outcome: testCase.outcome, usesJSONOutput: false)
+                    == WorktreeCommandLineResponse(text: testCase.humanText, exitCode: testCase.exitCode))
+            let jsonResponse = try WorktreeCommandLineFormatter.format(
+                outcome: testCase.outcome,
+                usesJSONOutput: true
+            )
+            #expect(jsonResponse.text == testCase.jsonText)
+            #expect(jsonResponse.exitCode == testCase.exitCode)
+        }
+    }
+
+    private func expectFormatterGoldens(_ cases: [FormatterGolden]) throws {
         for testCase in cases {
             #expect(
                 try WorktreeCommandLineFormatter.format(outcome: testCase.outcome, usesJSONOutput: false)
@@ -292,7 +344,11 @@ struct WorktreeCommandLineTests {
             }
         )
         #expect(dispatchExitCode == 0)
-        #expect(dispatchProbe.outputSnapshot() == ["main main at \(repository.standardizedFileURL.path)"])
+        #expect(
+            dispatchProbe.outputSnapshot()
+                == [
+                    "fetch: skipped (noRemote)\nmain main at \(repository.standardizedFileURL.path)  dirty  isTarget"
+                ])
         #expect(dispatchProbe.ipcClientFactoryCallCount() == 0)
         #expect(dispatchProbe.credentialReaderCallCount() == 0)
 

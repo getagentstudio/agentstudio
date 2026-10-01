@@ -4,13 +4,16 @@ import Foundation
 package struct WorktreeOperationRunner {
     private let client: any AgentStudioGitLocalClient
     private let defaultStartPointResolver: any WorktreeDefaultStartPointResolving
+    private let remoteClient: any AgentStudioGitRemoteClient
 
     package init(
         client: any AgentStudioGitLocalClient = LibGit2AgentStudioGitLocalClient(),
-        defaultStartPointResolver: any WorktreeDefaultStartPointResolving = SDKWorktreeDefaultStartPointResolver()
+        defaultStartPointResolver: any WorktreeDefaultStartPointResolving = SDKWorktreeDefaultStartPointResolver(),
+        remoteClient: any AgentStudioGitRemoteClient = SystemGitRemoteClient()
     ) {
         self.client = client
         self.defaultStartPointResolver = defaultStartPointResolver
+        self.remoteClient = remoteClient
     }
 
     package func run(_ request: WorktreeOperationRequest) async -> WorktreeOperationOutcome {
@@ -19,8 +22,13 @@ package struct WorktreeOperationRunner {
             await createFromDefault(start: start, branch: branch)
         case .fork(let start, let branch):
             await fork(start: start, branch: branch)
-        case .list(let start):
-            await list(start: start)
+        case .list(let start, let callerDirectory, let targets, let fetchPolicy):
+            await list(
+                start: start,
+                callerDirectory: callerDirectory,
+                targets: targets,
+                fetchPolicy: fetchPolicy
+            )
         }
     }
 
@@ -87,22 +95,174 @@ package struct WorktreeOperationRunner {
         }
     }
 
-    private func list(start: URL) async -> WorktreeOperationOutcome {
+    private func list(
+        start: URL,
+        callerDirectory: URL?,
+        targets: [String],
+        fetchPolicy: WorktreeFetchPolicy
+    ) async -> WorktreeOperationOutcome {
         switch await discover(start: start, forkSource: false) {
         case .outcome(let outcome):
+            if case .failed = outcome {
+                return .listFailed(WorktreeListFailureDocument(fetch: .skipped(reason: .noTarget)))
+            }
             return outcome
         case .found(let discovered):
-            do {
-                let worktrees = try await client.worktrees(for: discovered.repositoryPath)
-                return .listed(
-                    WorktreeListingSummary(
-                        repository: discovered.repositoryPath,
-                        worktrees: worktrees.map(worktreeListing)
-                    ))
-            } catch {
-                return .failed(WorktreeOperationErrorMapper.readFailure(error))
-            }
+            return await list(
+                repositoryPath: discovered.repositoryPath,
+                callerDirectory: callerDirectory,
+                targets: targets,
+                fetchPolicy: fetchPolicy
+            )
         }
+    }
+
+    private func list(
+        repositoryPath: URL,
+        callerDirectory: URL?,
+        targets: [String],
+        fetchPolicy: WorktreeFetchPolicy
+    ) async -> WorktreeOperationOutcome {
+        let initialTarget: WorktreeIntegrationTarget?
+        do {
+            initialTarget = try await WorktreeIntegrationTargetResolver(client: client)
+                .resolve(repositoryPath: repositoryPath)
+        } catch {
+            return .listFailed(WorktreeListFailureDocument(fetch: .skipped(reason: .noTarget)))
+        }
+
+        let fetchResult = await WorktreeFetchStep(localClient: client, remoteClient: remoteClient).run(
+            repositoryPath: repositoryPath,
+            target: initialTarget,
+            policy: fetchPolicy
+        )
+
+        do {
+            let snapshots = try await client.worktrees(for: repositoryPath)
+            let summary = await listingSummary(
+                repositoryPath: repositoryPath,
+                callerDirectory: callerDirectory,
+                targets: targets,
+                fetchResult: fetchResult,
+                snapshots: snapshots
+            )
+            return .listed(summary)
+        } catch {
+            return .listFailed(WorktreeListFailureDocument(fetch: fetchResult.status))
+        }
+    }
+
+    private func listingSummary(
+        repositoryPath: URL,
+        callerDirectory: URL?,
+        targets: [String],
+        fetchResult: WorktreeFetchStepResult,
+        snapshots: [GitWorktreeSnapshot]
+    ) async -> WorktreeListingSummary {
+        let selectedSnapshots = WorktreeListingProjector.filteredWorktrees(
+            snapshots,
+            targets: targets,
+            callerDirectory: callerDirectory
+        )
+        let branchNames = branchNames(in: selectedSnapshots, excluding: fetchResult.target?.branchName)
+        let gradesByBranch = await integrationGrades(
+            repositoryPath: repositoryPath,
+            branchNames: branchNames,
+            target: fetchResult.target
+        )
+        let rows = await listingRows(
+            selectedSnapshots,
+            repositoryPath: repositoryPath,
+            callerDirectory: callerDirectory,
+            target: fetchResult.target,
+            gradesByBranch: gradesByBranch
+        )
+        return WorktreeListingSummary(
+            repository: repositoryPath,
+            target: fetchResult.target.map {
+                WorktreeListingTargetDocument(ref: $0.referenceName, commit: $0.commit)
+            },
+            fetch: fetchResult.status,
+            worktrees: rows
+        )
+    }
+
+    private func integrationGrades(
+        repositoryPath: URL,
+        branchNames: [String],
+        target: WorktreeIntegrationTarget?
+    ) async -> [String: GitBranchIntegrationGrade] {
+        guard let target, !branchNames.isEmpty else { return [:] }
+        do {
+            let report = try await client.assessBranchIntegration(
+                GitBranchIntegrationRequest(
+                    repositoryPath: repositoryPath,
+                    branchNames: branchNames,
+                    targetCommit: target.commit,
+                    squashSearchCommitLimit: WorktreeLifecyclePolicy.squashSearchCommitLimit
+                ))
+            return Dictionary(
+                report.assessments.map { ($0.branchName, $0.grade) },
+                uniquingKeysWith: { first, _ in first }
+            )
+        } catch {
+            return Dictionary(
+                uniqueKeysWithValues: branchNames.map {
+                    ($0, GitBranchIntegrationGrade.unknown(.readFailed))
+                }
+            )
+        }
+    }
+
+    private func listingRows(
+        _ snapshots: [GitWorktreeSnapshot],
+        repositoryPath: URL,
+        callerDirectory: URL?,
+        target: WorktreeIntegrationTarget?,
+        gradesByBranch: [String: GitBranchIntegrationGrade]
+    ) async -> [WorktreeListing] {
+        let evidenceScanner = WorktreeTmpEvidenceScanner()
+        var rows: [WorktreeListing] = []
+        rows.reserveCapacity(snapshots.count)
+        for snapshot in snapshots {
+            let status = try? await client.statusFacts(
+                for: snapshot.canonicalPath,
+                options: GitStatusOptions(includeIgnored: false, includeUntracked: true),
+                observationPlan: nil
+            )
+            let evidence = await evidenceScanner.scan(worktreePath: snapshot.canonicalPath)
+            let branch = WorktreeListingProjector.branchName(in: snapshot.head)
+            rows.append(
+                WorktreeListingProjector.listing(
+                    WorktreeListingProjectionInput(
+                        snapshot: snapshot,
+                        repositoryPath: repositoryPath,
+                        callerDirectory: callerDirectory,
+                        target: target,
+                        integrationGrade: branch.flatMap { gradesByBranch[$0] },
+                        status: status,
+                        evidence: evidence
+                    )
+                ))
+        }
+        return rows
+    }
+
+    private func branchNames(
+        in snapshots: [GitWorktreeSnapshot],
+        excluding targetBranch: String?
+    ) -> [String] {
+        Set(
+            snapshots.compactMap { snapshot -> String? in
+                guard let head = snapshot.head else { return nil }
+                switch head.kind {
+                case .branch, .unborn:
+                    return head.shortName
+                case .detached:
+                    return nil
+                }
+            }.filter { $0 != targetBranch }
+        ).sorted()
     }
 
     private func preflightCreation(
@@ -212,16 +372,6 @@ package struct WorktreeOperationRunner {
             ))
     }
 
-    private func worktreeListing(_ snapshot: GitWorktreeSnapshot) -> WorktreeListing {
-        let branch: String?
-        switch snapshot.head?.kind {
-        case .branch, .unborn:
-            branch = snapshot.head?.shortName
-        case .detached, .none:
-            branch = nil
-        }
-        return WorktreeListing(path: snapshot.canonicalPath, branch: branch, isMain: snapshot.isMainWorktree)
-    }
 }
 
 private struct WorktreeDiscovery {

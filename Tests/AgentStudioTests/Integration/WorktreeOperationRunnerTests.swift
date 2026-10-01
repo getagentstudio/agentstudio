@@ -43,7 +43,9 @@ struct WorktreeOperationRunnerTests {
         let defaultBranchHead = try await git(at: repository, "rev-parse", "refs/heads/main")
         #expect(destinationHead == defaultBranchHead)
 
-        let listOutcome = await runner.run(.list(start: nestedStart))
+        let listOutcome = await runner.run(
+            .list(start: nestedStart, callerDirectory: nestedStart, targets: [], fetchPolicy: .skip)
+        )
         guard case .listed(let listing) = listOutcome else {
             Issue.record("expected listed outcome, received \(listOutcome)")
             return
@@ -119,7 +121,9 @@ struct WorktreeOperationRunnerTests {
             let sourceHead = try await git(at: sourceWorktree, "rev-parse", "HEAD")
             #expect(destinationHead == sourceHead)
 
-            let listOutcome = await WorktreeOperationRunner(client: client).run(.list(start: nestedStart))
+            let listOutcome = await WorktreeOperationRunner(client: client).run(
+                .list(start: nestedStart, callerDirectory: nestedStart, targets: [], fetchPolicy: .skip)
+            )
             guard case .listed(let listing) = listOutcome else {
                 Issue.record("expected listed outcome from linked source, received \(listOutcome)")
                 return
@@ -149,7 +153,16 @@ struct WorktreeOperationRunnerTests {
         defer { try? FileManager.default.removeItem(at: outsideRepository) }
         let runner = WorktreeOperationRunner()
 
-        #expect(await runner.run(.list(start: outsideRepository)) == .refused(.notInRepository(outsideRepository)))
+        #expect(
+            await runner.run(
+                .list(
+                    start: outsideRepository,
+                    callerDirectory: outsideRepository,
+                    targets: [],
+                    fetchPolicy: .skip
+                )
+            ) == .refused(.notInRepository(outsideRepository))
+        )
         #expect(
             await runner.run(.fork(start: outsideRepository, branch: "feature/outside"))
                 == .refused(.notInWorktree(outsideRepository)))
@@ -335,16 +348,50 @@ private struct WorktreeOperationStartPointStub: WorktreeDefaultStartPointResolvi
     }
 }
 
-private struct WorktreeOperationClientStub: AgentStudioGitLocalClient {
+struct WorktreeOperationClientStub: AgentStudioGitLocalClient {
     let startPath: URL
     let snapshot: GitWorktreeSnapshot
     let identity: GitRepositoryIdentity
+    let baseClient: (any AgentStudioGitLocalClient)?
+    let listedWorktrees: [GitWorktreeSnapshot]?
+    let branchSnapshots: [GitBranchSnapshot]?
+    let integrationGrades: [String: GitBranchIntegrationGrade]?
+    let statusFailurePaths: Set<String>
+    let failsWorktreeListing: Bool
 
-    func repositoryIdentity(for _: URL) async throws(GitDataPlaneError) -> GitRepositoryIdentity {
-        identity
+    init(
+        startPath: URL,
+        snapshot: GitWorktreeSnapshot,
+        identity: GitRepositoryIdentity,
+        baseClient: (any AgentStudioGitLocalClient)? = nil,
+        listedWorktrees: [GitWorktreeSnapshot]? = nil,
+        branchSnapshots: [GitBranchSnapshot]? = nil,
+        integrationGrades: [String: GitBranchIntegrationGrade]? = nil,
+        statusFailurePaths: Set<String> = [],
+        failsWorktreeListing: Bool = false
+    ) {
+        self.startPath = startPath
+        self.snapshot = snapshot
+        self.identity = identity
+        self.baseClient = baseClient
+        self.listedWorktrees = listedWorktrees
+        self.branchSnapshots = branchSnapshots
+        self.integrationGrades = integrationGrades
+        self.statusFailurePaths = statusFailurePaths
+        self.failsWorktreeListing = failsWorktreeListing
     }
 
-    func worktrees(for _: URL) async throws(GitDataPlaneError) -> [GitWorktreeSnapshot] {
+    func repositoryIdentity(for worktreePath: URL) async throws(GitDataPlaneError) -> GitRepositoryIdentity {
+        if let baseClient { return try await baseClient.repositoryIdentity(for: worktreePath) }
+        return identity
+    }
+
+    func worktrees(for repositoryPath: URL) async throws(GitDataPlaneError) -> [GitWorktreeSnapshot] {
+        if failsWorktreeListing {
+            throw .unsupported(message: "injected worktree-list read failure")
+        }
+        if let listedWorktrees { return listedWorktrees }
+        if let baseClient { return try await baseClient.worktrees(for: repositoryPath) }
         throw .unsupported(message: "unexpected worktree listing")
     }
 
@@ -393,10 +440,20 @@ private struct WorktreeOperationClientStub: AgentStudioGitLocalClient {
         throw .unsupported(message: "unexpected status observation plan")
     }
 
-    func statusFacts(for _: URL, options _: GitStatusOptions, observationPlan _: GitStatusObservationPlan?)
+    func statusFacts(for worktreePath: URL, options: GitStatusOptions, observationPlan: GitStatusObservationPlan?)
         async
         throws(GitDataPlaneError) -> GitStatusFactsRead
     {
+        if statusFailurePaths.contains(worktreePath.standardizedFileURL.path) {
+            throw .permissionDenied(path: worktreePath)
+        }
+        if let baseClient {
+            return try await baseClient.statusFacts(
+                for: worktreePath,
+                options: options,
+                observationPlan: observationPlan
+            )
+        }
         throw .unsupported(message: "unexpected status facts")
     }
 
@@ -426,13 +483,26 @@ private struct WorktreeOperationClientStub: AgentStudioGitLocalClient {
         throw .unsupported(message: "unexpected ignored path list")
     }
 
-    func branches(for _: URL) async throws(GitDataPlaneError) -> [GitBranchSnapshot] {
+    func branches(for repositoryPath: URL) async throws(GitDataPlaneError) -> [GitBranchSnapshot] {
+        if let branchSnapshots { return branchSnapshots }
+        if let baseClient { return try await baseClient.branches(for: repositoryPath) }
         throw .unsupported(message: "unexpected branch lookup")
     }
 
-    func assessBranchIntegration(_: GitBranchIntegrationRequest) async throws(GitDataPlaneError)
+    func assessBranchIntegration(_ request: GitBranchIntegrationRequest) async throws(GitDataPlaneError)
         -> GitBranchIntegrationReport
     {
+        if let integrationGrades {
+            let assessments = request.branchNames.map { branchName in
+                GitBranchIntegrationAssessment(
+                    branchName: branchName,
+                    branchCommit: nil,
+                    grade: integrationGrades[branchName] ?? .unknown(.readFailed)
+                )
+            }
+            return GitBranchIntegrationReport(targetCommit: request.targetCommit, assessments: assessments)
+        }
+        if let baseClient { return try await baseClient.assessBranchIntegration(request) }
         throw .unsupported(message: "unexpected branch integration assessment")
     }
 
@@ -445,9 +515,10 @@ private struct WorktreeOperationClientStub: AgentStudioGitLocalClient {
         )
     }
 
-    func resolveReviewDefaultTarget(for _: URL) async throws(GitDataPlaneError)
+    func resolveReviewDefaultTarget(for repositoryPath: URL) async throws(GitDataPlaneError)
         -> GitReviewComparisonBranchTarget?
     {
+        if let baseClient { return try await baseClient.resolveReviewDefaultTarget(for: repositoryPath) }
         throw .unsupported(message: "unexpected default target lookup")
     }
 
@@ -458,7 +529,9 @@ private struct WorktreeOperationClientStub: AgentStudioGitLocalClient {
         throw .unsupported(message: "unexpected comparison target capture")
     }
 
-    func resolveRevision(_: GitRevisionResolutionRequest) async throws(GitDataPlaneError) -> GitResolvedRevision {
+    func resolveRevision(_ request: GitRevisionResolutionRequest) async throws(GitDataPlaneError) -> GitResolvedRevision
+    {
+        if let baseClient { return try await baseClient.resolveRevision(request) }
         throw .unsupported(message: "unexpected revision resolution")
     }
 

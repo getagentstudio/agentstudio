@@ -19,6 +19,8 @@ package enum WorktreeCommandLineFormatter {
         switch outcome {
         case .created, .listed:
             exitCode = 0
+        case .listFailed:
+            exitCode = 2
         case .refused:
             exitCode = 1
         case .failed:
@@ -48,6 +50,8 @@ package enum WorktreeCommandLineFormatter {
             createdHumanLine(summary)
         case .listed(let summary):
             listedHumanLine(summary)
+        case .listFailed(let failure):
+            listFailureHumanLine(failure)
         case .refused(let refusal):
             refusedHumanLine(refusal)
         case .failed(let failure):
@@ -61,6 +65,8 @@ package enum WorktreeCommandLineFormatter {
             try createdJSONText(summary)
         case .listed(let summary):
             try listedJSONText(summary)
+        case .listFailed(let failure):
+            try listFailureJSONText(failure)
         case .refused(let refusal):
             try refusedJSONText(refusal)
         case .failed(let failure):
