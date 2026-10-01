@@ -5,6 +5,7 @@ import type { BridgeMainViewRecoveryStatus } from '../core/comm-worker/bridge-ma
 import { bridgeReviewFallbackRegionPresentation } from '../features/review/bridge-review-region-presentation.js';
 import { BridgeReviewFallbackShell } from '../review-viewer/shell/review-viewer-fallback-shells.js';
 import type { ReviewViewerShellProps } from '../review-viewer/shell/review-viewer-shell.js';
+import type { BridgePaneReloadPort } from './bridge-pane-reload-port.js';
 import type { BridgeRegionSurfaceStatus } from './bridge-region-presentation-state.js';
 import type { BridgeReviewComparisonPaneState } from './bridge-review-comparison-pane-state.js';
 import type { BridgeReviewComparisonTarget } from './bridge-review-comparison-target.js';
@@ -32,6 +33,8 @@ export type BridgeReviewViewerPresentationState =
 			>;
 	  };
 export interface BridgeReviewViewerShellBoundaryProps {
+	readonly paneReloadPort?: BridgePaneReloadPort | undefined;
+	readonly railVisible?: boolean | undefined;
 	readonly regionSurfaceStatus?: BridgeRegionSurfaceStatus;
 	readonly comparisonPaneState: BridgeReviewComparisonPaneState;
 	readonly isActive: boolean;
@@ -74,6 +77,8 @@ export function BridgeReviewViewerShellBoundary(
 						: 'bridge-review-empty-shell';
 		return (
 			<BridgeReviewFallbackShell
+				paneReloadPort={props.paneReloadPort}
+				railVisible={props.railVisible}
 				certifiedEmpty={status === 'readyEmpty'}
 				state={state}
 				contentTestId={contentTestId}

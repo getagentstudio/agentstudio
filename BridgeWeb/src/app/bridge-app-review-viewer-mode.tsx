@@ -49,6 +49,7 @@ import {
 import { useBridgeReviewSelectionController } from './bridge-app-review-selection-controller.js';
 import { BridgeReviewViewerShellBoundary } from './bridge-app-review-viewer-shell-boundary.js';
 import { bridgePaneFailedStartSurfaceStatus } from './bridge-pane-failed-start-presentation.js';
+import type { BridgePaneReloadPort } from './bridge-pane-reload-port.js';
 import {
 	bridgeReviewComparisonPackageMatch,
 	bridgeReviewComparisonPaneIsLoading,
@@ -72,6 +73,8 @@ import { useBridgeReviewControlEventListeners } from './use-bridge-review-contro
 import { useBridgeViewerToolbarShortcuts } from './use-bridge-viewer-toolbar-shortcuts.js';
 
 export interface BridgeReviewViewerModeProps {
+	readonly paneReloadPort?: BridgePaneReloadPort | undefined;
+	readonly railVisible?: boolean | undefined;
 	readonly paneFailedStart?: BridgePaneFailedStartFact | null;
 	readonly activationCause?: 'context_switcher' | 'native_request' | 'review_file_corner';
 	readonly activationSequence?: number;
@@ -630,6 +633,11 @@ function BridgeReviewViewerModeContent(props: BridgeReviewViewerModeProps): Reac
 		selectReviewItem: selectReviewItemAndRevealTree,
 	});
 	const presentationState = bridgeReviewRegionShellPresentation({
+		paneReloadPort: props.paneReloadPort,
+		railVisible: props.railVisible,
+		onRetryRead: (): void => {
+			if (selectedItemId !== null) controller.emitSelectedReviewItemIntent(selectedItemId, 'user');
+		},
 		regionSurfaceStatus,
 		onRetryRegion,
 		annotationReveal,
@@ -686,6 +694,8 @@ function BridgeReviewViewerModeContent(props: BridgeReviewViewerModeProps): Reac
 	});
 	return (
 		<BridgeReviewViewerShellBoundary
+			paneReloadPort={props.paneReloadPort}
+			railVisible={props.railVisible}
 			regionSurfaceStatus={regionSurfaceStatus}
 			recoveryStatus={controller.viewRecoveryStatus}
 			onRetryMetadata={onRetryRegion}

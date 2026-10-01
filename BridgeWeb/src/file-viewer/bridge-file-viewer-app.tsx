@@ -493,6 +493,15 @@ export function BridgeFileViewerAppImplementation(
 			}
 		>
 			<FileViewerShell
+				paneReloadPort={props.paneReloadPort}
+				railVisible={props.railVisible}
+				onRetryFileRead={(): void => {
+					if (selection !== null)
+						renderSnapshotController.dispatchSelectedFileViewContentRequest({
+							fileId: selection.fileId,
+							selectedSource: 'user',
+						});
+				}}
 				paneFailedStart={props.paneFailedStart ?? null}
 				recoveryFailed={
 					renderSnapshotController.fileViewRecoveryStatus?.status === 'failedRetryable'

@@ -37,7 +37,7 @@ describe('Bridge Review comparison shell Browser Mode', () => {
 				comparisonPaneState={{ kind: 'settled' }}
 				isActive
 				onRetryComparison={(): void => {}}
-				presentationState={{ status: 'empty' }}
+				presentationState={{ status: 'noTarget' }}
 				viewerContextSwitcher={<div>Files and Review</div>}
 				viewerHeaderControls={<div>Review controls</div>}
 			/>,
@@ -90,7 +90,7 @@ describe('Bridge Review comparison shell Browser Mode', () => {
 					}}
 					isActive
 					onRetryComparison={(): void => {}}
-					presentationState={{ status: 'empty' }}
+					presentationState={{ status: 'metadataLoading' }}
 					viewerContextSwitcher={<button type="button">Files and Review</button>}
 					viewerHeaderControls={<div>Review controls</div>}
 				/>
@@ -205,7 +205,7 @@ describe('Bridge Review comparison shell Browser Mode', () => {
 			}),
 		);
 		await expect
-			.element(rendered.getByTestId('bridge-review-canvas').getByRole('alert'))
+			.element(rendered.getByTestId('bridge-pane-failure-summary').getByRole('alert'))
 			.toBeVisible();
 		const failedGeometry = loadedReviewViewportGeometry(rendered);
 		expectLoadedReviewViewportFillsContentFrame(failedGeometry);

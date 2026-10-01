@@ -17,7 +17,6 @@ import { bridgeViewerTreeStyle } from '../app/bridge-viewer-tree-theme.js';
 import type { BridgeMainFileTreePatchStream } from '../core/comm-worker/bridge-main-file-display-patch-applier.js';
 import type { BridgeTelemetryRecorder } from '../foundation/telemetry/bridge-telemetry-recorder.js';
 import type { BridgeTraceContext } from '../foundation/telemetry/bridge-trace-context.js';
-import { WorktreeAnnotationRecoveryWarning } from '../worktree-annotations/worktree-annotation-recovery-warning.js';
 import type {
 	BridgeFileViewerFilterMode,
 	BridgeFileViewerSearchMode,
@@ -32,9 +31,8 @@ import { BridgeFileViewerFacetMenu } from './bridge-file-viewer-facet-menu.js';
 import { useBridgeFileViewerPierreTreeRuntime } from './bridge-file-viewer-pierre-tree-runtime.js';
 
 export interface BridgeFileViewerTreePanelProps {
+	readonly failureSummary?: ReactNode;
 	readonly presentationState?: BridgeRegionPresentationState;
-	readonly failureControl?: 'primary' | 'summary';
-	readonly retryControl?: ReactNode;
 	readonly completeFileQueryTransaction: (transactionId: string) => boolean;
 	readonly filterMode: BridgeFileViewerFilterMode;
 	readonly fileTreePatchStream: BridgeMainFileTreePatchStream;
@@ -108,12 +106,10 @@ export function BridgeFileViewerTreePanel(props: BridgeFileViewerTreePanelProps)
 				ariaLabel: 'Files',
 				body: (
 					<BridgeRegionPresentation
-						failureControl={props.failureControl ?? 'primary'}
 						keepContentMounted
 						region="file-tree"
 						shape="tree"
 						state={props.presentationState ?? { kind: 'content' }}
-						retry={props.retryControl}
 						emptyCopy={{ noSelection: 'Select a worktree', certified: 'No files' }}
 					>
 						<FileTree
@@ -186,7 +182,7 @@ export function BridgeFileViewerTreePanel(props: BridgeFileViewerTreePanelProps)
 				}),
 				toolbarBelow: (
 					<>
-						<WorktreeAnnotationRecoveryWarning />
+						{props.failureSummary}
 						{shouldShowSearchInput ? (
 							<BridgeViewerSearchField
 								clearButtonTestId="worktree-file-search-clear"

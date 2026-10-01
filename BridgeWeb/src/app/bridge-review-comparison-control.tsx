@@ -27,10 +27,7 @@ import {
 	bridgeReviewComparisonTargetLabel,
 	type BridgeReviewComparisonTarget,
 } from './bridge-review-comparison-target.js';
-import {
-	bridgeReviewFailureDisplaySpec,
-	bridgeReviewRegionDisplaySpec,
-} from './bridge-review-region-display-spec.js';
+import { bridgeReviewRegionDisplaySpec } from './bridge-review-region-display-spec.js';
 import { BridgeViewerContextPanel } from './bridge-viewer-context-panel.js';
 
 export interface BridgeReviewComparisonFinalFocusContext {
@@ -252,10 +249,6 @@ export function BridgeReviewComparisonControl(
 					onCommitOIDChange={setCommitOID}
 					onComparisonBasisChange={setComparisonBasis}
 					onQueryTargets={onQueryTargets}
-					onRetryTarget={(target): void => {
-						applyComparisonTarget(target);
-						cancelTargetQueryAndClose();
-					}}
 					onSelectTarget={(target): void => {
 						applyComparisonTarget(target);
 						cancelTargetQueryAndClose();
@@ -359,35 +352,8 @@ function comparisonStatePresentation(
 					};
 		case 'settled':
 			return null;
-		case 'unavailable': {
-			const failureDisplay = bridgeReviewFailureDisplaySpec(
-				comparisonPresentation.attempt.failureKind,
-			);
-			const unavailableDescription =
-				comparisonPresentation.attempt.failureKind === 'refreshUnavailable'
-					? displayedContribution === null
-						? failureDisplay.correctiveAction
-						: bridgeReviewRegionDisplaySpec.stale
-					: displayedContribution?.heading === 'Previous comparison'
-						? 'The selected target could not be refreshed. The previous comparison remains visible.'
-						: 'The selected target could not be compared.';
-			if (
-				comparisonPresentation.attempt.retryable &&
-				comparisonPresentation.activeTarget !== null
-			) {
-				return {
-					description: unavailableDescription,
-					heading: failureDisplay.message,
-					kind: 'retry',
-					retryTarget: comparisonPresentation.activeTarget,
-				};
-			}
-			return {
-				description: unavailableDescription,
-				heading: failureDisplay.message,
-				kind: 'message',
-			};
-		}
+		case 'unavailable':
+			return null;
 	}
 	return unreachableComparisonValue(comparisonPresentation.attempt);
 }
@@ -416,10 +382,7 @@ function closedComparisonLabel(props: BridgeReviewComparisonControlProps): strin
 		return attemptStatus === 'pending' ||
 			(attemptStatus === 'settled' && isDisplayedPackageAwaitingPresentationDelivery(props))
 			? `Compare to: ${requestedTargetLabel} · Updating`
-			: attemptStatus === 'unavailable' &&
-				  props.comparisonPresentation?.attempt.failureKind !== 'refreshUnavailable'
-				? `Compare to: ${requestedTargetLabel} · Unavailable`
-				: `Compare to: ${displayedTargetLabel} · ${bridgeReviewRegionDisplaySpec.staleComparison}`;
+			: `Compare to: ${displayedTargetLabel} · ${bridgeReviewRegionDisplaySpec.staleComparison}`;
 	}
 	const activeTarget = props.comparisonPresentation?.activeTarget;
 	if (activeTarget === undefined || activeTarget === null) {

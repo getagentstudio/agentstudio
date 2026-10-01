@@ -113,9 +113,7 @@ describe('Bridge File viewer render snapshot controller Browser Mode', () => {
 		for (const region of ['file-tree', 'file-content']) {
 			const element = document.querySelector(`[data-bridge-region="${region}"]`);
 			expect(element?.getAttribute('data-presentation-state')).toBe('failed');
-			expect(element?.querySelectorAll('button[aria-label="Retry"]')).toHaveLength(
-				region === 'file-content' ? 1 : 0,
-			);
+			expect(element?.querySelectorAll('button[aria-label="Retry"]')).toHaveLength(0);
 			expect(element?.querySelector('[data-slot="skeleton"]')).toBeNull();
 		}
 		await actUpdateAndWaitForBridgeFileViewerWorkerPublication((): void => {

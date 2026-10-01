@@ -1,14 +1,6 @@
 import type { CodeViewLineSelection, CodeViewOptions, SelectedLineRange } from '@pierre/diffs';
 import { CodeView, type CodeViewHandle } from '@pierre/diffs/react';
-import {
-	useCallback,
-	useLayoutEffect,
-	useMemo,
-	useRef,
-	useState,
-	type ReactElement,
-	type ReactNode,
-} from 'react';
+import { useCallback, useLayoutEffect, useMemo, useRef, useState, type ReactElement } from 'react';
 
 import type { BridgeRegionPresentationState } from '../app/bridge-region-presentation-state.js';
 import {
@@ -67,7 +59,6 @@ export type { BridgeFileViewerCodePanelState, BridgeFileViewerSelectedCodeViewIt
 
 export interface BridgeFileViewerCodePanelProps {
 	readonly presentationState?: BridgeRegionPresentationState;
-	readonly retryControl?: ReactNode;
 	readonly codeViewOptions?: Readonly<CodeViewOptions<undefined>>;
 	readonly codeViewWorkerFactory?: () => Worker;
 	readonly codeViewWorkerPoolEnabled?: boolean;
@@ -569,7 +560,6 @@ export function BridgeFileViewerCodePanel(props: BridgeFileViewerCodePanelProps)
 				region="file-content"
 				shape="code"
 				state={presentationState}
-				retry={props.retryControl}
 				emptyCopy={{ noSelection: 'Select a file', certified: 'File is empty' }}
 			>
 				<BridgePierreWorkerPoolProvider

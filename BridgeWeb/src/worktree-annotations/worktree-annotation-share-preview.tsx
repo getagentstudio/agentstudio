@@ -83,7 +83,6 @@ export function WorktreeAnnotationSharePreview(
 			region="comments"
 			shape="comments"
 			state={state}
-			retry={props.retryControl}
 			emptyCopy={{
 				noSelection: 'Choose a review session',
 				certified: props.scope === 'pending' ? 'No pending comments.' : 'No annotations yet.',

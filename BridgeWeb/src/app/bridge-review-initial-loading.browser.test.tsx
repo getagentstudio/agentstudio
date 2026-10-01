@@ -43,6 +43,7 @@ test('cold Review waits for its first source with skeletons instead of no-target
 		await import('../review-viewer/shell/review-viewer-shell.js');
 		await settleRenderedReviewFrame();
 		const contentItem = makeBridgeMainCodeViewItem('cold-review-item');
+		if (contentItem.type !== 'file') throw new Error('Cold source fixture requires a file body.');
 		harness.reviewClient.renderStore.applySnapshotUpdate({
 			codeViewItemPatches: [
 				{

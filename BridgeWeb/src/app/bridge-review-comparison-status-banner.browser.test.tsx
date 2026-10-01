@@ -4,6 +4,7 @@ import { render } from 'vitest-browser-react';
 
 // oxlint-disable-next-line import/no-unassigned-import -- Browser Mode must load production app CSS.
 import './bridge-app.css';
+import { BridgeReviewViewerShellBoundary } from './bridge-app-review-viewer-shell-boundary.js';
 import { BridgeReviewComparisonStatusBanner } from './bridge-review-comparison-status-banner.js';
 
 describe('BridgeReviewComparisonStatusBanner', () => {
@@ -49,31 +50,39 @@ describe('BridgeReviewComparisonStatusBanner', () => {
 		expect(rendered.getByTestId('bridge-review-comparison-status-region').query()).toBeNull();
 	});
 
-	test('keeps failure and retry inside the comparison pane banner', async () => {
+	test('moves comparison failure and Retry into the pane summary above the tree', async () => {
 		const retryTarget = {
 			basis: 'commonCommit' as const,
 			kind: 'ref' as const,
 			name: 'feature/new-target',
 		};
 		const onRetry = vi.fn();
+		const state = {
+			displayedTargetLabel: 'origin/main',
+			kind: 'failedPrevious',
+			failureKind: 'targetNotFound',
+			requestedTargetLabel: 'feature/new-target',
+			retryTarget,
+		} as const;
 		const rendered = await render(
-			<BridgeReviewComparisonStatusBanner
-				onRetry={onRetry}
-				state={{
-					displayedTargetLabel: 'origin/main',
-					kind: 'failedPrevious',
-					failureKind: 'targetNotFound',
-					requestedTargetLabel: 'feature/new-target',
-					retryTarget,
-				}}
+			<BridgeReviewViewerShellBoundary
+				comparisonPaneState={state}
+				isActive
+				onRetryComparison={onRetry}
+				presentationState={{ status: 'metadataFailed', error: null }}
+				viewerContextSwitcher={null}
+				viewerHeaderControls={null}
 			/>,
 		);
-
-		await expect
-			.element(rendered.getByRole('alert'))
-			.toHaveTextContent(
-				'Couldn’t load feature/new-target. Showing the previous comparison with origin/main.',
-			);
+		await expect.element(rendered.getByRole('alert')).toHaveTextContent("Review couldn't load.");
+		expect(rendered.getByTestId('bridge-review-comparison-status-region').query()).toBeNull();
+		expect(document.querySelectorAll('[role="alert"]')).toHaveLength(1);
+		expect(
+			rendered
+				.getByTestId('bridge-review-sidebar')
+				.element()
+				.contains(rendered.getByRole('alert').element()),
+		).toBe(true);
 		await act(async (): Promise<void> => {
 			await rendered.getByRole('button', { name: 'Retry' }).click();
 		});

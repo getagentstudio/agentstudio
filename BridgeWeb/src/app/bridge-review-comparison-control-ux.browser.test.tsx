@@ -358,15 +358,9 @@ describe('BridgeReviewComparisonControl UX Browser Mode', () => {
 		// Assert
 		await expect
 			.element(rendered.getByTestId('bridge-review-comparison-trigger'))
-			.toHaveTextContent('release/next · Unavailable');
-		await expect.element(rendered.getByText('Comparison unavailable')).toBeVisible();
-		await expect
-			.element(
-				rendered.getByText(
-					'The selected target could not be refreshed. The previous comparison remains visible.',
-				),
-			)
-			.toBeVisible();
+			.toHaveTextContent('master · Stale');
+		expect(rendered.getByText('Comparison unavailable').query()).toBeNull();
+		expect(rendered.getByRole('button', { name: 'Retry' }).query()).toBeNull();
 		await expect
 			.element(rendered.getByTestId('bridge-review-comparison-current-target'))
 			.toHaveTextContent('master');

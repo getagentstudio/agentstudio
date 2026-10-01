@@ -5,7 +5,6 @@ import { Drawer } from '@/components/ui/drawer.js';
 
 import { BridgeRegionUpdatingIndicator } from '../app/bridge-region-presentation.js';
 import { BridgeViewerContextPanel } from '../app/bridge-viewer-context-panel.js';
-import { BridgeViewerRecoveryRetryButton } from '../app/bridge-viewer-recovery-retry-button.js';
 import {
 	useWorktreeAnnotationNavigation,
 	type WorktreeAnnotationDestination,
@@ -17,6 +16,7 @@ import {
 	useWorktreeAnnotationOutputPendingController,
 } from './worktree-annotation-output-pending-controller.js';
 import { annotationOutputFeedback } from './worktree-annotation-output-presentation.js';
+import { WorktreeAnnotationRecoveryNotice } from './worktree-annotation-recovery-notice.js';
 import {
 	worktreeAnnotationSurfacePresentationStatus,
 	worktreeAnnotationRegionPresentation,
@@ -126,6 +126,7 @@ export function WorktreeAnnotationSharePanelControl(props: {
 				inert={!isOpen}
 				testId="worktree-annotation-share-shelf"
 			>
+				<WorktreeAnnotationRecoveryNotice />
 				<WorktreeAnnotationShareSurfaceContent
 					onNavigationClose={closeForNavigation}
 					outputPendingController={props.outputPendingController}
@@ -145,15 +146,6 @@ function WorktreeAnnotationShareSurfaceContent(props: {
 	const interaction = useWorktreeAnnotationInteraction();
 	const projection = useWorktreeAnnotationProjection();
 	const commentsSurface = worktreeAnnotationSurfacePresentationStatus(projection.readStatus);
-	const commentsRetry = (
-		<BridgeViewerRecoveryRetryButton
-			surface="comments"
-			onClick={(): void => {
-				client.retryViewRecovery();
-				client.retryProjection();
-			}}
-		/>
-	);
 	const selection = useWorktreeAnnotationSessionSelection();
 	const viewedController = useWorktreeAnnotationViewedController();
 	const navigation = useWorktreeAnnotationNavigation();
@@ -230,7 +222,6 @@ function WorktreeAnnotationShareSurfaceContent(props: {
 				<WorktreeAnnotationSharePreview
 					presentationState={presentationState}
 					surfaceStatus={commentsSurface}
-					retryControl={commentsRetry}
 					hasSelection={!selection.requiresExplicitSelection}
 					scope={displayedScope}
 					inlineThreads={[]}
@@ -428,7 +419,6 @@ function WorktreeAnnotationShareSurfaceContent(props: {
 			<WorktreeAnnotationSharePreview
 				presentationState={commentsPresentation}
 				surfaceStatus={commentsSurface}
-				retryControl={commentsRetry}
 				scope={displayedScope}
 				{...(navigation === null
 					? {}

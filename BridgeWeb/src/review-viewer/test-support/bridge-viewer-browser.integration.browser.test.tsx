@@ -845,7 +845,7 @@ function ReviewBoundaryActivationProbe(props: {
 	);
 	return (
 		<>
-			<button onClick={(): void => setPresentationState({ status: 'empty' })} type="button">
+			<button onClick={(): void => setPresentationState({ status: 'noTarget' })} type="button">
 				Show empty Review fallback
 			</button>
 			<button onClick={(): void => setPresentationState(props.readyPresentation)} type="button">

@@ -5,13 +5,14 @@ import { page } from 'vitest/browser';
 
 // oxlint-disable-next-line import/no-unassigned-import -- Browser Mode must load production app CSS.
 import '../app/bridge-app.css';
+import { BridgePaneFailureSummarySlot } from '../app/bridge-pane-failure-summary-slot.js';
 import {
 	annotationSessionId,
 	annotationSessionSummary,
 	RecordingAnnotationBrowserSurface,
 } from './worktree-annotation-browser-test-support.js';
 import { WorktreeAnnotationOutputHistoryControl } from './worktree-annotation-output-history-control.js';
-import { WorktreeAnnotationRecoveryWarning } from './worktree-annotation-recovery-warning.js';
+import { WorktreeAnnotationRecoveryNotice } from './worktree-annotation-recovery-notice.js';
 import type { WorktreeAnnotationOutputHistorySummary } from './worktree-annotation-surface-client.js';
 import {
 	useWorktreeAnnotationProjection,
@@ -39,7 +40,7 @@ describe('worktree annotation recovery and rail history controls', () => {
 			await Promise.resolve();
 		});
 
-		await expect.element(rendered.getByText('Comments unavailable')).toBeVisible();
+		await expect.element(rendered.getByText("Comments couldn't load.")).toBeVisible();
 		await expect
 			.element(rendered.getByText(`Last good comments: ${annotationSessionId}`))
 			.toBeVisible();
@@ -295,7 +296,8 @@ function RecoveryAndHistoryFixture(props: {
 		<div style={{ width: props.width ?? 180 }}>
 			<WorktreeAnnotationSurfaceProvider surfaceClient={props.surface.client}>
 				<LastGoodCommentsProbe />
-				<WorktreeAnnotationRecoveryWarning />
+				<BridgePaneFailureSummarySlot entries={[]} />
+				<WorktreeAnnotationRecoveryNotice />
 				<WorktreeAnnotationOutputHistoryControl />
 			</WorktreeAnnotationSurfaceProvider>
 		</div>

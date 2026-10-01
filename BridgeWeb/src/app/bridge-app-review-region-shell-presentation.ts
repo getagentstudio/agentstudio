@@ -15,6 +15,7 @@ import type { bridgeReviewPresentationSnapshotForDisplay } from './bridge-app-re
 import type { BridgeReviewRenderSnapshotController } from './bridge-app-review-render-snapshot-controller.js';
 import type { BridgeReviewViewerModeProps } from './bridge-app-review-viewer-mode.js';
 import type { BridgeReviewViewerPresentationState } from './bridge-app-review-viewer-shell-boundary.js';
+import type { BridgePaneReloadPort } from './bridge-pane-reload-port.js';
 import type { BridgeRegionSurfaceStatus } from './bridge-region-presentation-state.js';
 import type { bridgeReviewComparisonPaneState } from './bridge-review-comparison-pane-state.js';
 import type { BridgeViewerSearchError } from './bridge-viewer-search-state.js';
@@ -23,6 +24,9 @@ type BridgeReviewFilterCandidate = Extract<
 	{ readonly surface: 'review' }
 >;
 export function bridgeReviewRegionShellPresentation(props: {
+	readonly paneReloadPort?: BridgePaneReloadPort | undefined;
+	readonly railVisible?: boolean | undefined;
+	readonly onRetryRead?: (() => void) | undefined;
 	readonly regionSurfaceStatus: BridgeRegionSurfaceStatus;
 	readonly onRetryRegion: () => void;
 	readonly annotationReveal: BridgeCodeViewAnnotationReveal | null;
@@ -96,6 +100,9 @@ export function bridgeReviewRegionShellPresentation(props: {
 	return {
 		presentationKey: props.presentationSnapshot.presentationKey,
 		shellProps: {
+			paneReloadPort: props.paneReloadPort,
+			railVisible: props.railVisible,
+			onRetryRead: props.onRetryRead,
 			regionSurfaceStatus: props.regionSurfaceStatus,
 			onRetryRegion: props.onRetryRegion,
 			annotationReveal: props.annotationReveal,

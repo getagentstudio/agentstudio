@@ -1,3 +1,4 @@
+import { bridgePaneFailureDisplaySpec } from '../app/bridge-pane-failure-summary.js';
 import {
 	projectBridgeRegionPresentation,
 	type BridgeRegionPresentationState,
@@ -13,12 +14,12 @@ export function worktreeAnnotationSurfacePresentationStatus(
 		return {
 			kind: 'failed',
 			failure: readStatus.retryable
-				? { kind: 'retryable', scope: 'surface', message: 'Comments unavailable' }
+				? { kind: 'retryable', scope: 'surface', message: bridgePaneFailureDisplaySpec.comments }
 				: {
 						kind: 'permanent',
 						scope: 'surface',
-						message: 'Comments unavailable',
-						correctiveAction: 'Correct the local history failure before reopening Comments.',
+						message: bridgePaneFailureDisplaySpec.comments,
+						correctiveAction: bridgePaneFailureDisplaySpec.commentsCorrectiveAction,
 					},
 		};
 	return readStatus.kind === 'refreshing' ? { kind: 'updating' } : { kind: 'current' };

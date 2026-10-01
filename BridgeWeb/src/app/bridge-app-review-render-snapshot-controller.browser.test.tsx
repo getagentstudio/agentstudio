@@ -113,7 +113,9 @@ describe('useBridgeReviewRenderSnapshotController Browser Mode', () => {
 			<ReviewRecoveryRetryProbe comparisonTarget={target} reviewClient={harness.reviewClient} />,
 		);
 
-		await expect.element(rendered.getByText('Review metadata unavailable')).toBeVisible();
+		await expect
+			.element(rendered.getByText("Review couldn't update. Showing the last version."))
+			.toBeVisible();
 		await expect.element(rendered.getByText(lastGoodReviewPath, { exact: true })).toBeVisible();
 		expect(document.querySelectorAll('button[aria-label="Retry"]')).toHaveLength(1);
 		const retryButton = rendered.getByRole('button', { name: 'Retry' }).element();
@@ -754,7 +756,9 @@ describe('useBridgeReviewRenderSnapshotController Browser Mode', () => {
 			);
 			await Promise.resolve();
 		});
-		await expect.element(rendered.getByRole('alert')).toHaveTextContent('Update unavailable');
+		await expect
+			.element(rendered.getByRole('alert'))
+			.toHaveTextContent("Review couldn't update. Showing the last version.");
 		await act(async (): Promise<void> => {
 			await rendered.getByRole('button', { name: 'Retry' }).click();
 			await Promise.resolve();
@@ -827,7 +831,9 @@ describe('useBridgeReviewRenderSnapshotController Browser Mode', () => {
 				viewerContextSwitcher={<div />}
 			/>,
 		);
-		await expect.element(rendered.getByTestId('bridge-review-empty-shell')).toBeVisible();
+		await expect
+			.element(rendered.getByTestId('bridge-review-metadata-loading-shell'))
+			.toBeVisible();
 
 		// Act
 		await act(async (): Promise<void> => {

@@ -1,7 +1,6 @@
-import { act, type ReactElement } from 'react';
+import type { ReactElement } from 'react';
 import { describe, expect, test, vi } from 'vitest';
 import { render } from 'vitest-browser-react';
-import { page } from 'vitest/browser';
 
 // oxlint-disable-next-line import/no-unassigned-import -- Browser Mode must load production app CSS.
 import './bridge-app.css';
@@ -26,7 +25,7 @@ const candidateIdentity = {
 } as const;
 
 describe('Bridge Review refresh header chrome', () => {
-	test('an ordinary installation failure exposes Retry without semantic attention or a spinner', async () => {
+	test('an ordinary installation failure leaves the toolbar silent for the pane summary', async () => {
 		const rendered = await renderRefreshHeader(
 			{
 				activeIdentity: null,
@@ -41,17 +40,9 @@ describe('Bridge Review refresh header chrome', () => {
 			},
 			[],
 		);
-		await expect.element(rendered.getByRole('button', { name: 'Retry' })).toBeVisible();
-		await expect
-			.element(rendered.getByTestId('bridge-review-refresh-header-group'))
-			.toHaveTextContent('Update unavailable');
-		expect(
-			rendered
-				.getByTestId('bridge-review-refresh-header-group')
-				.element()
-				.querySelector('.lucide-loader-circle'),
-		).toBeNull();
-		await page.screenshot({ path: '../../../tmp/C14-installation-failure-header.png' });
+		expect(rendered.getByRole('button', { name: 'Retry' }).query()).toBeNull();
+		expect(rendered.getByTestId('bridge-review-refresh-header-group').query()).toBeNull();
+		expect(document.body.innerText).not.toContain('unavailable');
 	});
 
 	test('keeps ordinary, replacement, and unaffected promoted candidates silent', async () => {
@@ -181,48 +172,15 @@ describe('Bridge Review refresh header chrome', () => {
 		expect(readySlotBounds.width).toBe(silentSlotBounds.width);
 	});
 
-	test('renders retryable promoted failure through the owned button and preserves focus', async () => {
-		const onRetry = vi.fn();
-		const refreshPresentation = failurePresentation(true);
-		const headerPresentation = bridgeReviewRefreshHeaderPresentation({
-			attentionItemIds: ['item-1'],
-			canRetry: true,
-			refreshPresentation,
-		});
-		const rendered = await render(
-			<BridgeViewerContentHeader
-				controls={
-					<BridgeReviewRefreshHeaderGroup
-						onApplyNow={vi.fn()}
-						onRetry={onRetry}
-						presentation={headerPresentation}
-					/>
-				}
-				mode="review"
-				statusText={null}
-				title="Sources/First.swift"
-			/>,
-		);
-		await expect
-			.element(rendered.getByTestId('bridge-review-refresh-header-group'))
-			.toHaveTextContent('Update unavailable');
-		expect(
-			rendered.getByTestId('bridge-review-refresh-header-group').element().className,
-		).toContain('text-warning');
-		const retry = rendered.getByRole('button', { name: 'Retry' });
-		await act(async (): Promise<void> => {
-			retry.element().focus();
-			await retry.click();
-		});
-		expect(onRetry).toHaveBeenCalledOnce();
-		expect(document.activeElement).toBe(retry.element());
-
-		await rendered.rerender(refreshHeader(failurePresentation(false), ['item-1']));
-		await expect
-			.element(rendered.getByTestId('bridge-review-refresh-header-group'))
-			.toHaveTextContent('Update unavailable');
-		expect(rendered.getByRole('button', { name: 'Retry' }).query()).toBeNull();
-	});
+	test.each([true, false])(
+		'promoted failure (retryable %s) has no toolbar failure copy or control',
+		async (retryable): Promise<void> => {
+			const rendered = await renderRefreshHeader(failurePresentation(retryable), ['item-1']);
+			expect(rendered.getByTestId('bridge-review-refresh-header-group').query()).toBeNull();
+			expect(rendered.getByRole('button', { name: 'Retry' }).query()).toBeNull();
+			expect(document.body.innerText).not.toContain('unavailable');
+		},
+	);
 });
 
 async function renderRefreshHeader(

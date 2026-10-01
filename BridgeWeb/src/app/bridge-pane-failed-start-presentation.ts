@@ -1,7 +1,7 @@
 import type { BridgePaneFailedStartFact } from '../core/models/bridge-pane-failed-start.js';
 import type { BridgeRegionSurfaceStatus } from './bridge-region-presentation-state.js';
 
-export const bridgePaneFailedStartDisplaySpec = { message: 'Bridge failed to start' } as const;
+export const bridgePaneFailedStartDisplaySpec = { message: "Bridge couldn't start." } as const;
 
 export function bridgePaneFailedStartSurfaceStatus(
 	fact: BridgePaneFailedStartFact | null | undefined,
