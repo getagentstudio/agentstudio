@@ -10,7 +10,6 @@ extension WorkspaceSurfaceCoordinator {
     }
 
     nonisolated static func computeCrossTabMoveViewTransitions(
-        sourceVisibleBefore: Set<UUID>,
         destinationVisibleBefore: Set<UUID>,
         destinationVisibleAfter: Set<UUID>,
         movedPaneIds: Set<UUID>
@@ -20,7 +19,9 @@ extension WorkspaceSurfaceCoordinator {
         let hiddenDestinationPaneIds = destinationVisibleBefore.subtracting(destinationVisibleAfter)
 
         return CrossTabMoveViewTransitions(
-            paneIdsToDetach: sourceVisibleBefore.union(movedPaneIds).union(hiddenDestinationPaneIds),
+            // Persistent source-tab hosts stay mounted. Keep their surfaces attached so
+            // renderer visibility reconciliation can resume them when that tab returns.
+            paneIdsToDetach: movedPaneIds.union(hiddenDestinationPaneIds),
             paneIdsToReattach: newlyVisibleDestinationPaneIds.union(movedPaneIdsVisibleAfterMove)
         )
     }
@@ -34,7 +35,6 @@ extension WorkspaceSurfaceCoordinator {
             return
         }
 
-        let sourceVisibleBefore = Set(crossTabMoveVisiblePaneIds(forTab: sourceTabId))
         let destinationVisibleBefore = Set(crossTabMoveVisiblePaneIds(forTab: destTabId))
         let capturedZoomCompanion =
             store.panePresentationAtom.zoomCompanion(forSourcePane: paneId)
@@ -71,7 +71,6 @@ extension WorkspaceSurfaceCoordinator {
         )
         let destinationVisibleAfter = Set(crossTabMoveVisiblePaneIds(forTab: destTabId))
         let transitions = Self.computeCrossTabMoveViewTransitions(
-            sourceVisibleBefore: sourceVisibleBefore,
             destinationVisibleBefore: destinationVisibleBefore,
             destinationVisibleAfter: destinationVisibleAfter,
             movedPaneIds: movedPaneIds

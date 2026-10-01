@@ -14,6 +14,11 @@ import Synchronization
 ///
 ///     waiting<TAB><instance id><TAB><step name><TAB><test>
 ///     arrived<TAB><instance id><TAB><step name>
+///     wait_settled<TAB><instance id><TAB><waiter id><TAB><outcome>
+///
+/// Every record ends with a JSON metadata field carrying CLOCK_UPTIME_RAW
+/// seconds/nanos, the framework test/case IDs, and the optional waiter ID.
+/// Settlements distinguish a cancelled wait from a first arrival never reached.
 ///
 /// Each line is one `write(2)` on a descriptor opened with `O_APPEND`, so a
 /// process killed mid-test loses nothing it already logged and concurrent
@@ -33,16 +38,24 @@ package struct HeldStepEventLog: Sendable {
         self.path = path
     }
 
-    package func recordWaiting(instanceID: UInt64, stepName: String, test: String) {
-        append("waiting\t\(instanceID)\t\(stepName)\t\(test)\n")
+    package func recordWaiting(instanceID: UInt64, waiterID: UInt64, stepName: String, test: String) {
+        TestEventLogWriter.append("waiting\t\(instanceID)\t\(stepName)\t\(test)\n", path: path, waiterID: waiterID)
     }
 
-    func recordArrived(instanceID: UInt64, stepName: String) {
-        append("arrived\t\(instanceID)\t\(stepName)\n")
+    func recordArrived(instanceID: UInt64, stepName: String, identity: TestEventLogIdentity?) {
+        TestEventLogWriter.append("arrived\t\(instanceID)\t\(stepName)\n", path: path, identity: identity)
     }
 
-    private func append(_ line: String) {
-        TestEventLogWriter.append(line, path: path)
+    func recordWaitSettled(instanceID: UInt64, waiterID: UInt64, outcome: FirstArrivalSettlement) {
+        TestEventLogWriter.append(
+            "wait_settled\t\(instanceID)\t\(waiterID)\t\(outcome.rawValue)\n", path: path, waiterID: waiterID
+        )
+    }
+
+    enum FirstArrivalSettlement: String {
+        case arrived
+        case cancelled
+        case threw
     }
 }
 
@@ -51,15 +64,26 @@ package struct HeldStepEventLog: Sendable {
 package enum TestEventLogWriter {
     private static let reportedUnavailable = Mutex(false)
 
-    package static func append(_ line: String, path: String?) {
+    package static func append(
+        _ line: String, path: String?, waiterID: UInt64? = nil, identity: TestEventLogIdentity? = nil
+    ) {
         guard let path else { return }
+        let observation = TestEventLogObservation(identity: identity, waiterID: waiterID)
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
+        guard let metadata = try? encoder.encode(observation),
+            let metadataText = String(bytes: metadata, encoding: .utf8)
+        else {
+            reportUnavailable(path: path, errorNumber: EIO)
+            return
+        }
         let descriptor = open(path, O_WRONLY | O_APPEND | O_CREAT, 0o644)
         guard descriptor >= 0 else {
             reportUnavailable(path: path, errorNumber: errno)
             return
         }
         defer { close(descriptor) }
-        let bytes = Array(line.utf8)
+        let bytes = Array((String(line.dropLast()) + "\t" + metadataText + "\n").utf8)
         let written = bytes.withUnsafeBytes { buffer in
             write(descriptor, buffer.baseAddress, buffer.count)
         }

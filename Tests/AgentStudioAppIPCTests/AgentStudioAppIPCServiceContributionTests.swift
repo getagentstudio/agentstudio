@@ -8,156 +8,165 @@ import Testing
 @Suite("AgentStudio App IPC typed pane snapshot", .serialized)
 struct AgentStudioAppIPCServiceContributionTests {
     @Test("system capabilities advertise the typed pane snapshot registration")
-    func systemCapabilitiesAdvertiseTypedPaneSnapshot() throws {
-        let fixture = try LiveServerFixture()
-        defer { fixture.cleanup() }
-        try fixture.server.start()
-        let client = try authenticatedPaneClient(fixture: fixture)
-        defer { client.connection.close() }
+    func systemCapabilitiesAdvertiseTypedPaneSnapshot() async throws {
+        try await withLiveServer(
+            makeFixture: { try LiveServerFixture() },
+            body: { fixture in
+                try fixture.server.start()
+                let client = try await authenticatedPaneClient(fixture: fixture)
+                defer { client.connection.close() }
 
-        try sendRequest(
-            connection: client.connection,
-            request: JSONRPCClientRequest(id: .number(79), method: "system.capabilities", params: .object([:]))
-        )
-        let response = try client.reader.receiveResponse(connection: client.connection)
-        let result = try decodeResponseResult(IPCMethodCatalogResult.self, from: response)
-        let paneSnapshot = result.methods.first { $0.name == "pane.snapshot" }
+                try await sendRequestWithoutBlockingCooperativePool(
+                    connection: client.connection,
+                    request: JSONRPCClientRequest(id: .number(79), method: "system.capabilities", params: .object([:]))
+                )
+                let response = try await client.reader.receiveResponseWithoutBlockingMainActor(
+                    connection: client.connection)
+                let result = try decodeResponseResult(IPCMethodCatalogResult.self, from: response)
+                let paneSnapshot = result.methods.first { $0.name == "pane.snapshot" }
 
-        #expect(response.error == nil)
-        #expect(paneSnapshot?.requiredPrivileges == [.paneContextRead])
-        #expect(paneSnapshot?.executionOwner == .queryReader)
-        #expect(paneSnapshot?.dataScope == .paneContext)
+                #expect(response.error == nil)
+                #expect(paneSnapshot?.requiredPrivileges == [.paneContextRead])
+                #expect(paneSnapshot?.executionOwner == .queryReader)
+                #expect(paneSnapshot?.dataScope == .paneContext)
+            })
     }
 
     @Test("typed pane snapshot canonicalizes a friendly handle before dispatch")
-    func typedPaneSnapshotCanonicalizesFriendlyHandle() throws {
+    func typedPaneSnapshotCanonicalizesFriendlyHandle() async throws {
         let paneId = UUIDv7.generate()
         let queryPort = RecordingSnapshotQueryPort(
             runtimeId: UUIDv7.generate(), panes: [makePaneSummary(id: paneId, ordinal: 1)])
-        let fixture = try LiveServerFixture(panes: queryPort.panes, queryPort: queryPort)
-        defer { fixture.cleanup() }
-        try fixture.server.start()
-        let client = try authenticatedDiagnosticClient(fixture: fixture)
-        defer { client.connection.close() }
+        try await withLiveServer(
+            makeFixture: { try LiveServerFixture(panes: queryPort.panes, queryPort: queryPort) },
+            body: { fixture in
+                try fixture.server.start()
+                let client = try await authenticatedDiagnosticClient(fixture: fixture)
+                defer { client.connection.close() }
 
-        let response = try sendPaneSnapshot(client: client, handle: "pane:1")
-        let result = try decodeResponseResult(IPCPaneSnapshotResult.self, from: response)
+                let response = try await sendPaneSnapshot(client: client, handle: "pane:1")
+                let result = try decodeResponseResult(IPCPaneSnapshotResult.self, from: response)
 
-        #expect(response.error == nil)
-        #expect(result.pane.id == paneId)
-        #expect(queryPort.snapshotPaneIds == [paneId, paneId])
+                #expect(response.error == nil)
+                #expect(result.pane.id == paneId)
+                #expect(queryPort.snapshotPaneIds == [paneId, paneId])
+            })
     }
 
     @Test("typed pane snapshot reaches a pane agent's own pane and refuses another pane by name")
-    func typedPaneSnapshotAdmitsOnlyTheAgentsOwnPane() throws {
+    func typedPaneSnapshotAdmitsOnlyTheAgentsOwnPane() async throws {
         let ownPaneId = UUIDv7.generate()
         let otherPaneId = UUIDv7.generate()
         let queryPort = RecordingSnapshotQueryPort(
             runtimeId: UUIDv7.generate(),
             panes: [makePaneSummary(id: ownPaneId, ordinal: 1), makePaneSummary(id: otherPaneId, ordinal: 2)]
         )
-        let fixture = try LiveServerFixture(channel: .stable, panes: queryPort.panes, queryPort: queryPort)
-        defer { fixture.cleanup() }
-        try fixture.server.start()
-        let client = try authenticatedPaneClient(fixture: fixture, boundPaneId: ownPaneId)
-        defer { client.connection.close() }
+        try await withLiveServer(
+            makeFixture: { try LiveServerFixture(channel: .stable, panes: queryPort.panes, queryPort: queryPort) },
+            body: { fixture in
+                try fixture.server.start()
+                let client = try await authenticatedPaneClient(fixture: fixture, boundPaneId: ownPaneId)
+                defer { client.connection.close() }
 
-        let own = try sendPaneSnapshot(client: client, handle: "pane:1")
-        let other = try sendPaneSnapshot(client: client, handle: "pane:2")
+                let own = try await sendPaneSnapshot(client: client, handle: "pane:1")
+                let other = try await sendPaneSnapshot(client: client, handle: "pane:2")
 
-        #expect(own.error == nil)
-        #expect(try decodeResponseResult(IPCPaneSnapshotResult.self, from: own).pane.id == ownPaneId)
-        #expect(other.result == nil)
-        #expect(other.error?.code == -32_011)
-        #expect(
-            other.error?.data
-                == .object(["reason": .string("notYetAllowed"), "name": .string("pane.snapshot")]))
+                #expect(own.error == nil)
+                #expect(try decodeResponseResult(IPCPaneSnapshotResult.self, from: own).pane.id == ownPaneId)
+                #expect(other.result == nil)
+                #expect(other.error?.code == -32_011)
+                #expect(
+                    other.error?.data
+                        == .object(["reason": .string("notYetAllowed"), "name": .string("pane.snapshot")]))
+            })
     }
 
     @Test("typed pane snapshot rejects malformed parameters before dispatch")
-    func typedPaneSnapshotRejectsMalformedParameters() throws {
-        let scenario = try makeSnapshotScenario()
-        defer { scenario.fixture.cleanup() }
-        try scenario.fixture.server.start()
-        let client = try authenticatedDiagnosticClient(fixture: scenario.fixture)
-        defer { client.connection.close() }
+    func typedPaneSnapshotRejectsMalformedParameters() async throws {
+        try await withSnapshotScenario(body: { scenario in
+            try scenario.fixture.server.start()
+            let client = try await authenticatedDiagnosticClient(fixture: scenario.fixture)
+            defer { client.connection.close() }
 
-        try sendRequest(
-            connection: client.connection,
-            request: JSONRPCClientRequest(id: .number(85), method: "pane.snapshot", params: .object([:]))
-        )
-        let response = try client.reader.receiveResponse(connection: client.connection)
-
-        #expect(response.error?.code == -32_602)
-        #expect(response.error?.message == "invalid params")
-        guard case .object(let correction)? = response.error?.data else {
-            Issue.record("Expected structured schema correction data")
-            return
-        }
-        #expect(correction["fieldPath"] == .string("$.handle"))
-        #expect(correction["reason"] == .string("missingField"))
-        #expect(correction["expected"] != nil)
-
-        let privateValue = "fixture-private-value"
-        try sendRequest(
-            connection: client.connection,
-            request: JSONRPCClientRequest(
-                id: .number(86),
-                method: "pane.snapshot",
-                params: .object([
-                    "handle": .string("pane:1"),
-                    "privateField": .string(privateValue),
-                ])
+            try await sendRequestWithoutBlockingCooperativePool(
+                connection: client.connection,
+                request: JSONRPCClientRequest(id: .number(85), method: "pane.snapshot", params: .object([:]))
             )
-        )
-        let privateResponse = try client.reader.receiveResponse(connection: client.connection)
-        let encodedCorrection = try JSONEncoder().encode(privateResponse.error?.data)
-        let correctionText = try #require(String(data: encodedCorrection, encoding: .utf8))
-        #expect(privateResponse.error?.code == -32_602)
-        #expect(!correctionText.contains(privateValue))
-        #expect(!correctionText.contains("privateField"))
-        #expect(scenario.queryPort.snapshotPaneIds.isEmpty)
+            let response = try await client.reader.receiveResponseWithoutBlockingMainActor(
+                connection: client.connection)
+
+            #expect(response.error?.code == -32_602)
+            #expect(response.error?.message == "invalid params")
+            guard case .object(let correction)? = response.error?.data else {
+                Issue.record("Expected structured schema correction data")
+                return
+            }
+            #expect(correction["fieldPath"] == .string("$.handle"))
+            #expect(correction["reason"] == .string("missingField"))
+            #expect(correction["expected"] != nil)
+
+            let privateValue = "fixture-private-value"
+            try await sendRequestWithoutBlockingCooperativePool(
+                connection: client.connection,
+                request: JSONRPCClientRequest(
+                    id: .number(86),
+                    method: "pane.snapshot",
+                    params: .object([
+                        "handle": .string("pane:1"),
+                        "privateField": .string(privateValue),
+                    ])
+                )
+            )
+            let privateResponse = try await client.reader.receiveResponseWithoutBlockingMainActor(
+                connection: client.connection)
+            let encodedCorrection = try JSONEncoder().encode(privateResponse.error?.data)
+            let correctionText = try #require(String(data: encodedCorrection, encoding: .utf8))
+            #expect(privateResponse.error?.code == -32_602)
+            #expect(!correctionText.contains(privateValue))
+            #expect(!correctionText.contains("privateField"))
+            #expect(scenario.queryPort.snapshotPaneIds.isEmpty)
+        })
     }
 
     @Test("typed pane snapshot rejects a wrong target kind before dispatch")
-    func typedPaneSnapshotRejectsWrongTargetKind() throws {
-        let scenario = try makeSnapshotScenario()
-        defer { scenario.fixture.cleanup() }
-        try scenario.fixture.server.start()
-        let client = try authenticatedDiagnosticClient(fixture: scenario.fixture)
-        defer { client.connection.close() }
+    func typedPaneSnapshotRejectsWrongTargetKind() async throws {
+        try await withSnapshotScenario(body: { scenario in
+            try scenario.fixture.server.start()
+            let client = try await authenticatedDiagnosticClient(fixture: scenario.fixture)
+            defer { client.connection.close() }
 
-        let response = try sendPaneSnapshot(
-            client: client,
-            handle: "workspace:\(UUIDv7.generate().uuidString)"
-        )
+            let response = try await sendPaneSnapshot(
+                client: client,
+                handle: "workspace:\(UUIDv7.generate().uuidString)"
+            )
 
-        #expect(response.error?.code == -32_602)
-        #expect(response.error?.message == "invalid params")
-        guard case .object(let correction)? = response.error?.data else {
-            Issue.record("Expected wrong-target schema correction")
-            return
-        }
-        #expect(correction["fieldPath"] == .string("$.handle"))
-        #expect(correction["reason"] == .string("invalidValue"))
-        #expect(scenario.queryPort.snapshotPaneIds.isEmpty)
+            #expect(response.error?.code == -32_602)
+            #expect(response.error?.message == "invalid params")
+            guard case .object(let correction)? = response.error?.data else {
+                Issue.record("Expected wrong-target schema correction")
+                return
+            }
+            #expect(correction["fieldPath"] == .string("$.handle"))
+            #expect(correction["reason"] == .string("invalidValue"))
+            #expect(scenario.queryPort.snapshotPaneIds.isEmpty)
+        })
     }
 
     @Test("typed pane snapshot is unavailable before authentication")
-    func typedPaneSnapshotRejectsPreAuthenticationInvocation() throws {
-        let scenario = try makeSnapshotScenario()
-        defer { scenario.fixture.cleanup() }
-        try scenario.fixture.server.start()
+    func typedPaneSnapshotRejectsPreAuthenticationInvocation() async throws {
+        try await withSnapshotScenario(body: { scenario in
+            try scenario.fixture.server.start()
 
-        let response = try sendRequest(
-            socketPath: scenario.fixture.paths.socketURL.path,
-            request: JSONRPCClientRequest(
-                id: .number(84), method: "pane.snapshot", params: .object(["handle": .string("pane:1")]))
-        )
+            let response = try await sendRequestWithoutBlockingCooperativePool(
+                socketPath: scenario.fixture.paths.socketURL.path,
+                request: JSONRPCClientRequest(
+                    id: .number(84), method: "pane.snapshot", params: .object(["handle": .string("pane:1")]))
+            )
 
-        #expect(response.error?.code == -32_001)
-        #expect(response.error?.message == "unauthenticated")
-        #expect(scenario.queryPort.snapshotPaneIds.isEmpty)
+            #expect(response.error?.code == -32_001)
+            #expect(response.error?.message == "unauthenticated")
+            #expect(scenario.queryPort.snapshotPaneIds.isEmpty)
+        })
     }
 
     @Test("authorization denial permits membership lookup but prevents the snapshot handler read")
@@ -202,21 +211,28 @@ private struct TypedPaneSnapshotScenario {
     let fixture: LiveServerFixture
 }
 
-private func makeSnapshotScenario() throws -> TypedPaneSnapshotScenario {
+private func withSnapshotScenario<Result>(body: (TypedPaneSnapshotScenario) async throws -> Result) async throws
+    -> Result
+{
     let paneId = UUIDv7.generate()
     let queryPort = RecordingSnapshotQueryPort(
         runtimeId: UUIDv7.generate(), panes: [makePaneSummary(id: paneId, ordinal: 1)])
-    return try TypedPaneSnapshotScenario(
-        paneId: paneId,
-        queryPort: queryPort,
-        fixture: LiveServerFixture(panes: queryPort.panes, queryPort: queryPort)
-    )
+    return try await withLiveServer(
+        makeFixture: { try LiveServerFixture(panes: queryPort.panes, queryPort: queryPort) },
+        body: { fixture in
+            let scenario = TypedPaneSnapshotScenario(
+                paneId: paneId,
+                queryPort: queryPort,
+                fixture: fixture
+            )
+            return try await body(scenario)
+        })
 }
 
 private func authenticatedPaneClient(
     fixture: LiveServerFixture,
     boundPaneId: UUID? = nil
-) throws -> TypedPaneSnapshotClient {
+) async throws -> TypedPaneSnapshotClient {
     let token = try fixture.issueTestCredential(
         for: .pane(
             paneId: boundPaneId ?? fixture.boundPaneId,
@@ -224,32 +240,32 @@ private func authenticatedPaneClient(
             status: .registered
         )
     )
-    let connection = try UnixSocketClient.connect(endpoint: UnixSocketEndpoint(path: fixture.paths.socketURL.path))
+    let connection = try await connectWithoutBlockingCooperativePool(socketPath: fixture.paths.socketURL.path)
     let client = TypedPaneSnapshotClient(connection: connection)
-    try login(connection: connection, token: token, requestId: 80, reader: &client.reader)
+    try await loginWithoutBlockingMainActor(connection: connection, token: token, requestId: 80, reader: &client.reader)
     return client
 }
 
 private func authenticatedDiagnosticClient(
     fixture: LiveServerFixture
-) throws -> TypedPaneSnapshotClient {
+) async throws -> TypedPaneSnapshotClient {
     let token = fixture.installDebugCredential()
-    let connection = try UnixSocketClient.connect(endpoint: UnixSocketEndpoint(path: fixture.paths.socketURL.path))
+    let connection = try await connectWithoutBlockingCooperativePool(socketPath: fixture.paths.socketURL.path)
     let client = TypedPaneSnapshotClient(connection: connection)
-    try login(connection: connection, token: token, requestId: 80, reader: &client.reader)
+    try await loginWithoutBlockingMainActor(connection: connection, token: token, requestId: 80, reader: &client.reader)
     return client
 }
 
 private func sendPaneSnapshot(
     client: TypedPaneSnapshotClient,
     handle: String
-) throws -> JSONRPCResponseMessage {
-    try sendRequest(
+) async throws -> JSONRPCResponseMessage {
+    try await sendRequestWithoutBlockingCooperativePool(
         connection: client.connection,
         request: JSONRPCClientRequest(
             id: .number(81), method: "pane.snapshot", params: .object(["handle": .string(handle)]))
     )
-    return try client.reader.receiveResponse(connection: client.connection)
+    return try await client.reader.receiveResponseWithoutBlockingMainActor(connection: client.connection)
 }
 
 private struct TypedPaneSnapshotAuthorizationDenied: Error {}

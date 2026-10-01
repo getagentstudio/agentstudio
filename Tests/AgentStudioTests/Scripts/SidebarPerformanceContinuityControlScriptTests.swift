@@ -1,4 +1,5 @@
 import AgentStudioInfrastructure
+import AgentStudioTestHarness
 import Foundation
 import Testing
 
@@ -61,7 +62,7 @@ struct SidebarPerformanceContinuityControlScriptTests {
         )
         #expect(configuredOrigin.contains("url = \(originRoot.path)"))
         let controlStatus = try await RunToExitProcessExecutor().execute(
-            command: "/usr/bin/git",
+            command: try await TestToolResolver.resolved().git.path,
             args: ["-C", controlRoot.path, "status", "--porcelain=v1", "--untracked-files=all"],
             cwd: nil,
             environment: nil

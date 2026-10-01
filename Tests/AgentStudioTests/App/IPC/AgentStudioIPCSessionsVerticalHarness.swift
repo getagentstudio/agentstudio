@@ -56,7 +56,7 @@ struct SessionsVerticalHarness {
         debugCredentialEscrowURL: URL? = nil,
         installActivityClock: Bool = false
     ) async throws -> Self {
-        let commandHarness = makeHarness()
+        let (commandHarness, datastore) = try makeCanonicalIPCWorkspaceCommandHarness()
         let appDelegate = AppDelegate()
         var createdRootDirectory: URL?
         do {
@@ -69,10 +69,6 @@ struct SessionsVerticalHarness {
             let workspaceWindowId = UUIDv7.generate()
             commandHarness.windowLifecycleStore.recordWindowRegistered(workspaceWindowId)
 
-            let sqliteFixture = try makeWorkspaceSQLiteBridgeFixture(
-                workspaceId: commandHarness.store.identityAtom.workspaceId
-            )
-            let datastore = try preparedWorkspaceSQLiteDatastore(from: sqliteFixture.backend)
             guard case .ready = await datastore.prepareOptionalApplicationLocalSchema() else {
                 throw SessionsVerticalHarnessError.optionalSchemaUnavailable
             }
@@ -394,10 +390,11 @@ struct SessionsVerticalHarness {
             }
             authenticationToken = boundPaneToken
         }
-        let connection = try UnixSocketClient.connect(endpoint: UnixSocketEndpoint(path: socketPath))
+        let endpoint = UnixSocketEndpoint(path: socketPath)
+        let connection = try await withoutBlockingCooperativePool { try UnixSocketClient.connect(endpoint: endpoint) }
         defer { connection.close() }
         var reader = SessionsVerticalFrameReader()
-        try send(
+        try await send(
             connection: connection,
             request: try JSONRPCClientRequest(
                 id: .number(1),
@@ -407,17 +404,19 @@ struct SessionsVerticalHarness {
         )
         let loginResponse = try await reader.receiveResponse(connection: connection)
         try #require(loginResponse.error == nil)
-        try send(
+        try await send(
             connection: connection,
             request: try JSONRPCClientRequest(id: .number(2), method: method, params: params)
         )
         return try await reader.receiveFrame(connection: connection)
     }
 
-    private func send(connection: UnixSocketConnection, request: JSONRPCClientRequest) throws {
-        try connection.send(
-            try NDJSONFrameEncoder.encode(JSONRPCCodec.encodeRequest(request), maxFrameBytes: 65_536)
-        )
+    private func send(connection: UnixSocketConnection, request: JSONRPCClientRequest) async throws {
+        try await withoutBlockingCooperativePool {
+            try connection.send(
+                try NDJSONFrameEncoder.encode(JSONRPCCodec.encodeRequest(request), maxFrameBytes: 65_536)
+            )
+        }
     }
 }
 

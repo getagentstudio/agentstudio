@@ -310,7 +310,7 @@ extension FunctionCallExprSyntax {
     /// The call already moved this work off the cooperative executor: the shared
     /// wrappers (the harness's `valueFromDedicatedThread` and TestSupport's
     /// `withoutBlockingCooperativePool`, which delegates to it), a
-    /// `DispatchQueue` submission, or a thread of its own. A socket listener
+    /// asynchronous `DispatchQueue` submission, or a thread of its own. A socket listener
     /// hands its handler such a queue too, so those bodies are fine.
     fileprivate var isCooperativePoolOffloadCall: Bool {
         let offloadHelperNames: Set<String> = ["withoutBlockingCooperativePool", "valueFromDedicatedThread"]
@@ -320,7 +320,7 @@ extension FunctionCallExprSyntax {
             return true
         }
         guard let memberAccess = calledExpression.as(MemberAccessExprSyntax.self) else { return false }
-        let submissionNames: Set<String> = ["async", "sync", "asyncAfter", "detachNewThread"]
+        let submissionNames: Set<String> = ["async", "asyncAfter", "detachNewThread"]
         guard submissionNames.contains(memberAccess.declName.baseName.text) else { return false }
         return memberAccess.base?.namesADispatchTarget == true
     }

@@ -1,6 +1,7 @@
 import { act } from 'react';
 
 import { findBridgeViewerTreeItemButton } from '../review-viewer/test-support/bridge-viewer-browser-dom.js';
+import { waitForBridgeFileViewerBrowserDomState } from './bridge-file-viewer-browser-test-dom-state.js';
 import {
 	actFrame,
 	bridgeFileViewerNoopResizeObserverIsInstalled,
@@ -138,63 +139,39 @@ export function fileViewerPendingCanvasIsVisible(visibleText: string): boolean {
 
 export async function waitForFileViewerHTMLElement(props: {
 	readonly selector: string;
-	readonly remainingAttempts?: number;
 }): Promise<HTMLElement> {
-	const element = document.querySelector(props.selector);
-	if (element instanceof HTMLElement) {
-		return element;
-	}
-	const remainingAttempts = props.remainingAttempts ?? 180;
-	if (remainingAttempts <= 0) {
-		throw new Error(`Expected FileView browser element for selector ${props.selector}.`);
-	}
-	await actFrame();
-	return waitForFileViewerHTMLElement({
-		...props,
-		remainingAttempts: remainingAttempts - 1,
+	const element = await waitForBridgeFileViewerBrowserDomState({
+		readState: (): Element | null => document.querySelector(props.selector),
+		isExpected: (candidate): boolean => candidate instanceof HTMLElement,
 	});
+	if (!(element instanceof HTMLElement))
+		throw new Error(`Expected FileView element ${props.selector}.`);
+	return element;
 }
 
 export async function waitForFileViewerTreeItemButtonInAct(props: {
 	readonly path: string;
-	readonly remainingAttempts?: number;
 }): Promise<HTMLButtonElement> {
-	const button = findBridgeViewerTreeItemButton(props.path);
-	if (button !== null) {
-		return button;
-	}
-	const remainingAttempts = props.remainingAttempts ?? 180;
-	if (remainingAttempts <= 0) {
-		throw new Error(`Expected FileView tree item button for ${props.path}.`);
-	}
-	await actFrame();
-	return waitForFileViewerTreeItemButtonInAct({
-		...props,
-		remainingAttempts: remainingAttempts - 1,
+	const button = await waitForBridgeFileViewerBrowserDomState({
+		readState: (): HTMLButtonElement | null => findBridgeViewerTreeItemButton(props.path),
+		isExpected: (candidate): boolean => candidate !== null,
 	});
+	if (button === null) throw new Error(`Expected FileView tree item ${props.path}.`);
+	return button;
 }
 
 export async function waitForFileViewerMenuOptionContaining(props: {
 	readonly text: string;
-	readonly remainingAttempts?: number;
 }): Promise<HTMLElement> {
-	const matchingOption = [
-		...document.querySelectorAll('[data-testid="worktree-file-filter-menu-option"]'),
-	]
-		.filter((option): option is HTMLElement => option instanceof HTMLElement)
-		.find((option): boolean => option.textContent?.includes(props.text) ?? false);
-	if (matchingOption !== undefined) {
-		return matchingOption;
-	}
-	const remainingAttempts = props.remainingAttempts ?? 180;
-	if (remainingAttempts <= 0) {
-		throw new Error(`Expected Worktree/File filter option containing ${props.text}.`);
-	}
-	await actFrame();
-	return waitForFileViewerMenuOptionContaining({
-		...props,
-		remainingAttempts: remainingAttempts - 1,
+	const option = await waitForBridgeFileViewerBrowserDomState({
+		readState: (): HTMLElement | undefined =>
+			[...document.querySelectorAll('[data-testid="worktree-file-filter-menu-option"]')]
+				.filter((candidate): candidate is HTMLElement => candidate instanceof HTMLElement)
+				.find((candidate): boolean => candidate.textContent?.includes(props.text) ?? false),
+		isExpected: (candidate): boolean => candidate !== undefined,
 	});
+	if (option === undefined) throw new Error(`Expected FileView menu option ${props.text}.`);
+	return option;
 }
 
 export async function actInteractAndSettleFileViewerCheckedMenuOption(props: {
@@ -238,8 +215,32 @@ export async function actClickAndSettleFileViewerMenu(element: HTMLElement): Pro
 	await act(async (): Promise<void> => {
 		element.click();
 	});
-	await waitForFileViewerMenuState({ element, expectedExpandedState });
-	await settleBaseUiTransitionMachine();
+	await commitFileViewerMenuTransition();
+	await act(async (): Promise<void> => {
+		const popup = document.querySelector('[data-slot="dropdown-menu-content"]');
+		if (popup instanceof HTMLElement) {
+			await Promise.all(
+				popup.getAnimations({ subtree: true }).map(async (animation): Promise<void> => {
+					try {
+						await animation.finished;
+					} catch {
+						/* Reversing a transition cancels its predecessor. */
+					}
+				}),
+			);
+		}
+		await waitForFileViewerMenuState({ element, expectedExpandedState });
+	});
+}
+
+async function commitFileViewerMenuTransition(): Promise<void> {
+	// Base UI's starting-state cleanup and queued menu focus run on their registered frame.
+	// Commit that state in its own act turn before waiting for animation/DOM completion.
+	await act(async (): Promise<void> => {
+		await new Promise<void>((resolve): void => {
+			requestAnimationFrame((): void => resolve());
+		});
+	});
 }
 
 async function settleBaseUiTransitionMachine(
@@ -259,30 +260,21 @@ async function settleBaseUiTransitionMachine(
 async function waitForFileViewerMenuState(props: {
 	readonly element: HTMLElement;
 	readonly expectedExpandedState: 'false' | 'true';
-	readonly remainingAttempts?: number;
 }): Promise<void> {
-	const menuContent = document.querySelector('[data-slot="dropdown-menu-content"]');
-	const contentMatches =
-		props.expectedExpandedState === 'true'
-			? menuContent instanceof HTMLElement && menuContent.hasAttribute('data-open')
-			: menuContent === null;
-	if (
-		props.element.getAttribute('aria-expanded') === props.expectedExpandedState &&
-		contentMatches
-	) {
-		return;
-	}
-
-	const remainingAttempts = props.remainingAttempts ?? 180;
-	if (remainingAttempts <= 0) {
-		throw new Error(
-			`Expected FileView menu state aria-expanded=${props.expectedExpandedState}; ` +
-				`actual=${props.element.getAttribute('aria-expanded') ?? 'missing'}.`,
-		);
-	}
-	await actFrame();
-	await waitForFileViewerMenuState({
-		...props,
-		remainingAttempts: remainingAttempts - 1,
+	await waitForBridgeFileViewerBrowserDomState({
+		readState: (): boolean => {
+			const popup = document.querySelector('[data-slot="dropdown-menu-content"]');
+			const popupMatches =
+				props.expectedExpandedState === 'true'
+					? popup instanceof HTMLElement &&
+						popup.hasAttribute('data-open') &&
+						!popup.hasAttribute('data-starting-style') &&
+						!popup.hasAttribute('data-ending-style')
+					: popup === null;
+			return (
+				props.element.getAttribute('aria-expanded') === props.expectedExpandedState && popupMatches
+			);
+		},
+		isExpected: (settled): boolean => settled,
 	});
 }

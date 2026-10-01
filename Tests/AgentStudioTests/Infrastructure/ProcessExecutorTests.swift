@@ -158,19 +158,37 @@ final class ProcessExecutorTests {
 
     @Test
     func test_execute_timeoutTerminatesHangingProcess() async throws {
-        // Arrange — keep timeout short to validate behavior without a multi-second wall-clock hit.
-        let timeoutSeconds: TimeInterval = 0.35
-        let shortTimeoutExecutor = DefaultProcessExecutor(timeout: timeoutSeconds)
-
-        // Act — `sleep 20` would hang for 20s, but timeout should kill it quickly.
-        // Keep the fallback sleep bounded so failure modes do not burn a full minute.
-        do {
-            _ = try await shortTimeoutExecutor.execute(
+        // Arrange
+        let clock = TestPushClock()
+        let timeoutSeconds: TimeInterval = 1
+        let launchStep = HeldStep<Void>("timeout process before launch")
+        let controlledExecutor = DefaultProcessExecutor(
+            timeout: timeoutSeconds,
+            clock: clock,
+            beforeLaunch: { try? launchStep.arriveBlocking(()) }
+        )
+        let task = Task {
+            try await controlledExecutor.execute(
                 command: "sleep",
                 args: ["20"],
                 cwd: nil,
                 environment: nil
             )
+        }
+        defer {
+            launchStep.release()
+            task.cancel()
+        }
+
+        // Act — the timeout sleep is registered only after Process.run succeeds.
+        _ = try await launchStep.firstArrival()
+        launchStep.release()
+        await clock.waitForPendingSleepCount(exactly: 1)
+        clock.advance(by: .seconds(timeoutSeconds))
+
+        // Assert
+        do {
+            _ = try await task.value
             Issue.record("Expected ProcessError.timedOut to be thrown")
         } catch let error as ProcessError {
             // Assert
@@ -183,15 +201,17 @@ final class ProcessExecutorTests {
         } catch {
             Issue.record("Expected .timedOut, got: \(error)")
         }
+        #expect(clock.pendingSleepCount == 0)
     }
 
     @Test
     func test_execute_normalCommandDoesNotTimeout() async throws {
-        // Arrange — short timeout but the command finishes quickly
-        let shortTimeoutExecutor = DefaultProcessExecutor(timeout: 5)
+        // Arrange — time never advances; normal exit cancels the timeout sleep.
+        let clock = TestPushClock()
+        let controlledExecutor = DefaultProcessExecutor(clock: clock)
 
         // Act
-        let result = try await shortTimeoutExecutor.execute(
+        let result = try await controlledExecutor.execute(
             command: "echo",
             args: ["fast"],
             cwd: nil,
@@ -201,14 +221,14 @@ final class ProcessExecutorTests {
         // Assert — should succeed normally, no timeout
         #expect(result.stdout == "fast")
         #expect(result.succeeded)
+        #expect(clock.pendingSleepCount == 0)
     }
 
     @Test
     func test_execute_concurrentTimeoutsDoNotStarve() async throws {
-        let timeoutSeconds: TimeInterval = 0.35
-        let concurrentExecutor = DefaultProcessExecutor(timeout: timeoutSeconds)
-        let clock = ContinuousClock()
-        let start = clock.now
+        let clock = TestPushClock()
+        let timeoutSeconds: TimeInterval = 1
+        let concurrentExecutor = DefaultProcessExecutor(timeout: timeoutSeconds, clock: clock)
 
         await withTaskGroup(of: Void.self) { group in
             for _ in 0..<6 {
@@ -234,18 +254,20 @@ final class ProcessExecutorTests {
                 }
             }
 
+            await clock.waitForPendingSleepCount(exactly: 6)
+            clock.advance(by: .seconds(timeoutSeconds))
             await group.waitForAll()
         }
 
-        let elapsed = start.duration(to: clock.now)
-        #expect(elapsed < .seconds(5))
+        #expect(clock.pendingSleepCount == 0)
     }
 
     @Test
     func test_execute_cancellationWinsOverProcessTimeout() async throws {
         // Arrange — cancellation should tear down the child process promptly instead of
         // waiting for the executor's subprocess timeout path to fire.
-        let cancellationExecutor = DefaultProcessExecutor(timeout: 0.35)
+        let clock = TestPushClock()
+        let cancellationExecutor = DefaultProcessExecutor(clock: clock)
 
         // Act
         let task = Task {
@@ -267,6 +289,7 @@ final class ProcessExecutorTests {
         } catch {
             Issue.record("Expected CancellationError, got: \(error)")
         }
+        #expect(clock.pendingSleepCount == 0)
     }
 
     @Test

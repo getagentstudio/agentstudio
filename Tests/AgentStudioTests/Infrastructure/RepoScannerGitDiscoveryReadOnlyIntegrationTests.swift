@@ -1,4 +1,5 @@
 import AgentStudioGit
+import AgentStudioTestHarness
 import Foundation
 import Testing
 
@@ -202,18 +203,19 @@ struct RepoScannerGitDiscoveryReadOnlyIntegrationTests {
         defer { try? stderrHandle.close() }
 
         let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/usr/bin/git")
+        process.executableURL = try await TestToolResolver.resolved().git
         process.arguments = ["-C", directory.path] + arguments
         process.standardError = stderrHandle
         try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
             process.terminationHandler = { _ in continuation.resume() }
             do {
-                try process.run()
+                try TestToolResolver.launch(process)
             } catch {
                 process.terminationHandler = nil
                 continuation.resume(throwing: error)
             }
         }
+        TestToolResolver.recordFailedExit(process)
         try stderrHandle.close()
         guard process.terminationStatus == 0 else {
             let errorText = try String(contentsOf: stderrURL, encoding: .utf8)

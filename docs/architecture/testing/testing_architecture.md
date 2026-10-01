@@ -114,6 +114,8 @@ One owner: the `mise run test:*` tasks and
 which dispatches on a mode and sources
 [`scripts/swift-test-helpers.sh`](../../../scripts/swift-test-helpers.sh). CI
 calls those same mise tasks; it never recreates a raw `swift test` command.
+Pull requests and the nightly run execute every lane below; a push to main runs
+only `test:swift:prebuild` and the seed publication (owner decision 2026-09-30).
 
 ```text
    mise run test                          CI (.github/workflows/ci.yml)
@@ -137,7 +139,7 @@ calls those same mise tasks; it never recreates a raw `swift test` command.
 | width comparison | `test:swift:width-comparison` | One prebuild, then the fast lane at width 3 and with the width unset on that same bundle. Each half prints its own receipt as a `reused` bundle linked to that prebuild's build receipt and keeps every ledger under `tmp/plan-workflows/ci-runs/width-comparison/`. It is an experiment, not a pull-request gate, and it never changes the default width |
 | E2E | `test:swift:e2e` | `E2ESerializedTests`; inside `mise run test` only when `SWIFT_TEST_INCLUDE_E2E=1` |
 | zmx E2E | `test:swift:zmx-e2e` | `ZmxE2ETests`; opt-in, not a pull-request gate |
-| benchmark | `test:swift:benchmark` | The two benchmark suites; post-merge, not a pull-request gate |
+| benchmark | `test:swift:benchmark` | The two benchmark suites; nightly on main, not a pull-request gate |
 
 **Why process-global suites get a process each.** `@Suite(.serialized)`
 serializes tests *within one suite*. It does not isolate that suite from the

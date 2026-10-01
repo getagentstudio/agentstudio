@@ -8,8 +8,29 @@ import Testing
 @testable import AgentStudioTestSupport
 
 struct BridgeProductWebKitCarrierApplicationReceipt: Equatable, Sendable {
-    let accepted: Bool
+    let applicationResult: BridgeReviewDisplayedApplicationResult
     let publicationId: UUID
+}
+
+func assertReviewApplicationReceiptAdvances(
+    _ receipts: [BridgeProductWebKitCarrierApplicationReceipt],
+    expectedPublicationIds: [UUID]
+) {
+    var advancedPublicationIds: [UUID] = []
+    for receipt in receipts {
+        switch receipt.applicationResult {
+        case .advanced:
+            advancedPublicationIds.append(receipt.publicationId)
+        case .duplicate:
+            #expect(
+                advancedPublicationIds.contains(receipt.publicationId),
+                "a duplicate receipt must name an already-acknowledged publication"
+            )
+        case .rejected:
+            Issue.record("The worker reported a rejected displayed application receipt")
+        }
+    }
+    #expect(advancedPublicationIds == expectedPublicationIds, "displayed advancement order and count must be exact")
 }
 
 @MainActor
@@ -75,7 +96,7 @@ final class BridgeProductWebKitCarrierControllerTarget {
             ) ?? .rejected
         applicationReceipts.append(
             BridgeProductWebKitCarrierApplicationReceipt(
-                accepted: result != .rejected,
+                applicationResult: result,
                 publicationId: publicationId
             )
         )
@@ -115,7 +136,7 @@ final class BridgeProductWebKitCarrierControllerTarget {
 
     private func hasAcceptedApplication(for publicationId: UUID) -> Bool {
         applicationReceipts.contains {
-            $0.accepted && $0.publicationId == publicationId
+            $0.applicationResult != .rejected && $0.publicationId == publicationId
         }
     }
 

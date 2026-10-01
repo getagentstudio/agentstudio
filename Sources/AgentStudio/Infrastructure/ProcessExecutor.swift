@@ -51,22 +51,29 @@ enum ProcessError: Error, LocalizedError {
 /// Production executor that spawns real processes and reports completion asynchronously.
 ///
 /// The implementation keeps process lifecycle out of `AsyncStream` and task-group races.
-/// Dispatch sources/handlers drive pipe reads, process exit, timeout, and cancellation;
-/// one checked continuation is resumed exactly once.
+/// Dispatch sources/handlers drive pipe reads, process exit, and cancellation;
+/// a clock task drives timeout. One checked continuation is resumed exactly once.
 package struct DefaultProcessExecutor: ProcessExecutor {
     /// Default timeout for process execution.
     package let timeout: TimeInterval
+    private let clock: any Clock<Duration>
     private let beforeLaunch: @Sendable () -> Void
 
-    package init(timeout: TimeInterval = 15) {
+    package init(timeout: TimeInterval = 15, clock: any Clock<Duration> = ContinuousClock()) {
         self.timeout = timeout
+        self.clock = clock
         beforeLaunch = {}
     }
 
     /// Internal launch seam for deterministic lifecycle tests. Production execution uses
     /// the standard package initializer above and never pauses before the launch decision.
-    init(timeout: TimeInterval, beforeLaunch: @escaping @Sendable () -> Void) {
+    init(
+        timeout: TimeInterval,
+        clock: any Clock<Duration> = ContinuousClock(),
+        beforeLaunch: @escaping @Sendable () -> Void
+    ) {
         self.timeout = timeout
+        self.clock = clock
         self.beforeLaunch = beforeLaunch
     }
 
@@ -125,7 +132,7 @@ package struct DefaultProcessExecutor: ProcessExecutor {
             hardKillGraceSeconds: 0.2,
             beforeLaunch: beforeLaunch
         )
-        return try await execution.run()
+        return try await execution.run(clock: clock)
     }
 
     fileprivate static func decodeAndTrim(_ data: Data) -> String {
@@ -172,7 +179,7 @@ private final class ProcessExecution: @unchecked Sendable {
     private var processSource: DispatchSourceProcess?
     private var stdoutSource: DispatchSourceRead?
     private var stderrSource: DispatchSourceRead?
-    private var timeoutSource: DispatchSourceTimer?
+    private var timeoutTask: Task<Void, Never>?
 
     init(
         command: String,
@@ -193,11 +200,11 @@ private final class ProcessExecution: @unchecked Sendable {
         queue = DispatchQueue(label: "com.agentstudio.process-executor.\(UUID().uuidString)", qos: .userInitiated)
     }
 
-    func run() async throws -> ProcessResult {
+    func run(clock: any Clock<Duration>) async throws -> ProcessResult {
         try await withTaskCancellationHandler {
             try await withCheckedThrowingContinuation { continuation in
                 queue.async {
-                    self.start(continuation)
+                    self.start(continuation, clock: clock)
                 }
             }
         } onCancel: {
@@ -205,7 +212,7 @@ private final class ProcessExecution: @unchecked Sendable {
         }
     }
 
-    private func start(_ continuation: Continuation) {
+    private func start(_ continuation: Continuation, clock: any Clock<Duration>) {
         self.continuation = continuation
         guard terminationCause != .cancellation else {
             complete(.failure(CancellationError()))
@@ -228,11 +235,10 @@ private final class ProcessExecution: @unchecked Sendable {
 
         configurePipeSources()
         configureProcessSource()
-        configureTimeoutSource()
+        configureTimeoutTask(using: clock)
         stdoutSource?.resume()
         stderrSource?.resume()
         processSource?.resume()
-        timeoutSource?.resume()
     }
 
     private func configurePipeSources() {
@@ -283,13 +289,22 @@ private final class ProcessExecution: @unchecked Sendable {
         processSource = source
     }
 
-    private func configureTimeoutSource() {
-        let source = DispatchSource.makeTimerSource(queue: queue)
-        source.schedule(deadline: .now() + timeoutSeconds)
-        source.setEventHandler { [self] in
-            markTimedOut()
+    private func configureTimeoutTask<TimeoutClock: Clock>(using clock: TimeoutClock)
+    where TimeoutClock.Duration == Duration {
+        // Capture the deadline at configuration, so scheduling the task later
+        // does not extend the child's timeout.
+        let deadline = clock.now.advanced(by: .seconds(timeoutSeconds))
+        timeoutTask = Task { [weak self] in
+            do {
+                try await clock.sleep(until: deadline, tolerance: nil)
+            } catch {
+                return
+            }
+            guard !Task.isCancelled, let self else { return }
+            self.queue.async {
+                self.markTimedOut()
+            }
         }
-        timeoutSource = source
     }
 
     private func append(_ data: Data, from kind: PipeKind) {
@@ -414,11 +429,11 @@ private final class ProcessExecution: @unchecked Sendable {
 
     private func cleanupSources() {
         process.terminationHandler = nil
-        timeoutSource?.cancel()
+        timeoutTask?.cancel()
         processSource?.cancel()
         stdoutSource?.cancel()
         stderrSource?.cancel()
-        timeoutSource = nil
+        timeoutTask = nil
         processSource = nil
         stdoutSource = nil
         stderrSource = nil

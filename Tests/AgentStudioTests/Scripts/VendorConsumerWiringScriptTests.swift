@@ -1,3 +1,4 @@
+import AgentStudioTestHarness
 import AgentStudioTestSupport
 import Darwin
 import Foundation
@@ -61,7 +62,7 @@ struct VendorConsumerWiringScriptTests {
         try writeExecutable(
             at: fakeBin.appending(path: "xcrun"), source: "#!/bin/bash\nprintf called > \"$STRIP_MARKER\"\n")
         let result = try await RunToExitProcessExecutor().execute(
-            command: "/usr/bin/python3", args: [helper.path], cwd: root,
+            command: try await TestToolResolver.resolved().python3.path, args: [helper.path], cwd: root,
             environment: ["PATH": "\(fakeBin.path):/usr/bin:/bin", "STRIP_MARKER": stripMarker.path]
         )
         #expect(try Data(contentsOf: sentinel) == sentinelBytes)
@@ -123,8 +124,9 @@ struct VendorConsumerWiringScriptTests {
             vendorVerificationOffset(in: buildScriptSource),
             "Bridge development server build script must verify vendors")
         let swiftBuildOffset = try #require(
-            buildScriptSource.range(of: "swift build")?.lowerBound,
-            "Bridge development server build script must invoke swift build")
+            buildScriptSource.range(of: "swift_compilation_policy_build_arguments bridge-development-server")?
+                .lowerBound,
+            "Bridge development server build script must delegate its build to the compilation policy")
 
         // Assert
         #expect(!task.contains("depends = [\"verify-vendors\"]"))
@@ -137,7 +139,7 @@ struct VendorConsumerWiringScriptTests {
         let contracts = [
             DirectVendorConsumerContract(
                 path: "scripts/build-bridge-development-server.sh",
-                requiredConsumers: ["swift build"]),
+                requiredConsumers: ["swift_compilation_policy_build_arguments bridge-development-server"]),
             DirectVendorConsumerContract(
                 path: "scripts/run-swift-test-task.sh",
                 requiredConsumers: ["prebuild_swift_tests"]),
@@ -290,7 +292,9 @@ struct VendorConsumerWiringScriptTests {
             "scripts/verify-bridge-headless-manifest.sh",
         ]
         let sourcedOnlyHelpers: Set<String> = [
-            "scripts/swift-test-helpers.sh"
+            "scripts/swift-test-helpers.sh",
+            "scripts/swift-package-sandbox.sh",
+            "scripts/swift-compilation-policy.sh",
         ]
         // Scripts whose Swift commands build only the standalone architecture
         // lint package, which consumes no vendored framework.
@@ -490,8 +494,10 @@ struct VendorConsumerWiringScriptTests {
         guard let verification = vendorVerificationOffset(in: task) else {
             return false
         }
-        let consumerOffsets = ["swift build", "swift test", "run-swift-test-task.sh"]
-            .compactMap { task.range(of: $0)?.lowerBound }
+        let consumerOffsets = [
+            "swift build", "swift test", "run-swift-test-task.sh", "swift_compilation_policy_build_arguments",
+        ]
+        .compactMap { task.range(of: $0)?.lowerBound }
         guard let firstConsumer = consumerOffsets.min() else {
             return false
         }
@@ -501,7 +507,9 @@ struct VendorConsumerWiringScriptTests {
     /// Every shell command that runs `swift build`, `swift test`,
     /// `swift package` or `swift run`, with `\` continuations joined.
     private func swiftCommands(in source: String) -> [String] {
-        let commandPrefixes = ["swift build", "swift test", "swift package", "swift run"]
+        let commandPrefixes = [
+            "swift build", "swift test", "swift package", "swift run", "swift_compilation_policy_build_arguments",
+        ]
         let logicalLines = source.replacingOccurrences(of: "\\\n", with: " ")
             .split(separator: "\n")
             .map(String.init)

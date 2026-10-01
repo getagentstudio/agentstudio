@@ -1,3 +1,4 @@
+import AgentStudioTestHarness
 import AgentStudioTestSupport
 import Foundation
 import Testing
@@ -13,9 +14,9 @@ struct GitRefreshPerformanceWorkloadScriptTests {
         let syntax = try await runScript(arguments: ["-n", scriptPath])
         let cleanupSyntax = try await runScript(arguments: ["-n", cleanupScriptPath])
         let comparisonSyntax = try await runScript(arguments: ["-n", comparisonScriptPath])
-        let comparisonPythonSyntax = try await runScript(arguments: [
-            "-c", "/usr/bin/python3 -m py_compile \(comparisonPythonScriptPath)",
-        ])
+        let comparisonPythonSyntax = try await runCommandToExit(
+            command: try await TestToolResolver.resolved().python3.path,
+            arguments: ["-m", "py_compile", comparisonPythonScriptPath])
         #expect(syntax.exitCode == 0)
         #expect(cleanupSyntax.exitCode == 0)
         #expect(comparisonSyntax.exitCode == 0, Comment(rawValue: comparisonSyntax.stderr))

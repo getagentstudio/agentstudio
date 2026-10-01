@@ -2,8 +2,6 @@ name: CI / Post-merge Benchmarks
 
 on:
   workflow_dispatch:
-  push:
-    branches: [main]
   # Nightly run keeps the timing policies (benchmark suites, BridgeWeb stress, large lane)
   # exercised without putting wall-clock gates in the pull-request lanes.
   schedule:

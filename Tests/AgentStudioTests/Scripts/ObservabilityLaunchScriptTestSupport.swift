@@ -1,3 +1,4 @@
+import AgentStudioTestHarness
 import AgentStudioTestSupport
 import Darwin
 import Foundation
@@ -129,7 +130,7 @@ struct LauncherScriptFixture {
 
     func worktreeDebugCode(for rootPath: String = FileManager.default.currentDirectoryPath) async throws -> String {
         let output = try await run(
-            executableURL: URL(fileURLWithPath: "/usr/bin/python3"),
+            executableURL: try await TestToolResolver.resolved().python3,
             arguments: [
                 "-c",
                 """

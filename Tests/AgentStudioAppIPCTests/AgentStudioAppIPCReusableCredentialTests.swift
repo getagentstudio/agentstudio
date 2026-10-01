@@ -27,51 +27,52 @@ struct AgentStudioAppIPCReusableCredentialTests {
             return
         }
         let repository = IPCContinuityRepository(datastore: datastore)
-        let serverFixture = try fixture.makeServer(
+        try await fixture.withServer(
             credentialResolver: IPCContinuityCredentialResolver(repository: repository),
-            credentialContinuityPort: repository
-        )
-        defer { serverFixture.cleanup() }
-        let paneID = serverFixture.boundPaneId
-        let durableRecordID = UUIDv7.generate()
-        let currentRecordID = UUIDv7.generate()
-        try await repository.registerPaneCredential(
-            IPCPaneCredential(
-                paneID: paneID,
-                workspaceID: serverFixture.workspaceId,
-                credentialRecordID: durableRecordID,
-                verifierSHA256: durableVerifier,
-                status: .registered
-            )
-        )
-        try serverFixture.server.principalRegistry.registerIssuedPaneCredential(
-            paneID: paneID,
-            workspaceID: serverFixture.workspaceId,
-            credentialRecordID: currentRecordID,
-            verifierSHA256: currentVerifier
-        )
-        try serverFixture.server.start()
+            credentialContinuityPort: repository,
+            body: { serverFixture in
+                let paneID = serverFixture.boundPaneId
+                let durableRecordID = UUIDv7.generate()
+                let currentRecordID = UUIDv7.generate()
+                try await repository.registerPaneCredential(
+                    IPCPaneCredential(
+                        paneID: paneID,
+                        workspaceID: serverFixture.workspaceId,
+                        credentialRecordID: durableRecordID,
+                        verifierSHA256: durableVerifier,
+                        status: .registered
+                    )
+                )
+                try serverFixture.server.principalRegistry.registerIssuedPaneCredential(
+                    paneID: paneID,
+                    workspaceID: serverFixture.workspaceId,
+                    credentialRecordID: currentRecordID,
+                    verifierSHA256: currentVerifier
+                )
+                try serverFixture.server.start()
 
-        for (index, token) in [currentToken, durableToken, currentToken, durableToken].enumerated() {
-            let login = try await fixture.loginAndReadSystemVersion(
-                fixture: serverFixture,
-                token: token,
-                requestID: 10 + (index * 10)
-            )
-            #expect(login.runtimeID == serverFixture.runtimeId)
-            #expect(login.accessMode == .agentStudioOnly)
-        }
+                for (index, token) in [currentToken, durableToken, currentToken, durableToken].enumerated() {
+                    let login = try await fixture.loginAndReadSystemVersion(
+                        fixture: serverFixture,
+                        token: token,
+                        requestID: 10 + (index * 10)
+                    )
+                    #expect(login.runtimeID == serverFixture.runtimeId)
+                    #expect(login.accessMode == .agentStudioOnly)
+                }
 
-        let forged = AgentStudioIPCSubjectToken(rawValue: Data(repeating: 0x5A, count: 32).base64EncodedString())
-        let rejected = try await fixture.loginResponse(fixture: serverFixture, token: forged, requestID: 30)
-        #expect(rejected.error?.code == -32_001)
-        let stored = try #require(
-            try await repository.paneCredential(paneID: paneID, credentialRecordID: durableRecordID))
-        #expect(stored.verifierSHA256 == durableVerifier)
-        #expect(stored.verifierSHA256 != Data(durableToken.rawValue.utf8))
-        #expect(
-            try await repository.paneCredential(paneID: paneID, credentialRecordID: currentRecordID)?.status
-                == .registered)
+                let forged = AgentStudioIPCSubjectToken(
+                    rawValue: Data(repeating: 0x5A, count: 32).base64EncodedString())
+                let rejected = try await fixture.loginResponse(fixture: serverFixture, token: forged, requestID: 30)
+                #expect(rejected.error?.code == -32_001)
+                let stored = try #require(
+                    try await repository.paneCredential(paneID: paneID, credentialRecordID: durableRecordID))
+                #expect(stored.verifierSHA256 == durableVerifier)
+                #expect(stored.verifierSHA256 != Data(durableToken.rawValue.utf8))
+                #expect(
+                    try await repository.paneCredential(paneID: paneID, credentialRecordID: currentRecordID)?.status
+                        == .registered)
+            })
     }
 
     @Test("revoked durable pane credential cannot authenticate")
@@ -85,23 +86,23 @@ struct AgentStudioAppIPCReusableCredentialTests {
             return
         }
         let repository = IPCContinuityRepository(datastore: datastore)
-        let serverFixture = try fixture.makeServer(
+        try await fixture.withServer(
             credentialResolver: IPCContinuityCredentialResolver(repository: repository),
-            credentialContinuityPort: repository
-        )
-        defer { serverFixture.cleanup() }
-        try await repository.registerPaneCredential(
-            IPCPaneCredential(
-                paneID: serverFixture.boundPaneId,
-                workspaceID: serverFixture.workspaceId,
-                credentialRecordID: UUIDv7.generate(),
-                verifierSHA256: Data(SHA256.hash(data: Data(token.rawValue.utf8))),
-                status: .revoked
-            )
-        )
-        try serverFixture.server.start()
-        let response = try await fixture.loginResponse(fixture: serverFixture, token: token, requestID: 40)
-        #expect(response.error?.code == -32_001)
+            credentialContinuityPort: repository,
+            body: { serverFixture in
+                try await repository.registerPaneCredential(
+                    IPCPaneCredential(
+                        paneID: serverFixture.boundPaneId,
+                        workspaceID: serverFixture.workspaceId,
+                        credentialRecordID: UUIDv7.generate(),
+                        verifierSHA256: Data(SHA256.hash(data: Data(token.rawValue.utf8))),
+                        status: .revoked
+                    )
+                )
+                try serverFixture.server.start()
+                let response = try await fixture.loginResponse(fixture: serverFixture, token: token, requestID: 40)
+                #expect(response.error?.code == -32_001)
+            })
     }
 
     @Test("canonical close denial and final revocation refuse existing pane credential without a result")
@@ -119,66 +120,67 @@ struct AgentStudioAppIPCReusableCredentialTests {
             return
         }
         let repository = IPCContinuityRepository(datastore: datastore)
-        let serverFixture = try fixture.makeServer(
+        try await fixture.withServer(
             credentialResolver: IPCContinuityCredentialResolver(repository: repository),
             credentialContinuityPort: repository,
-            canonicalPaneMembership: { _, _ in membership.isMember }
-        )
-        defer { serverFixture.cleanup() }
-        try await repository.registerPaneCredential(
-            IPCPaneCredential(
-                paneID: serverFixture.boundPaneId,
-                workspaceID: serverFixture.workspaceId,
-                credentialRecordID: UUIDv7.generate(),
-                verifierSHA256: Data(SHA256.hash(data: Data(durableToken.rawValue.utf8))),
-                status: .registered
-            )
-        )
-        try serverFixture.server.principalRegistry.registerIssuedPaneCredential(
-            paneID: serverFixture.boundPaneId,
-            workspaceID: serverFixture.workspaceId,
-            credentialRecordID: UUIDv7.generate(),
-            verifierSHA256: Data(SHA256.hash(data: Data(currentToken.rawValue.utf8)))
-        )
-        try serverFixture.server.start()
-        let connection = try UnixSocketClient.connect(
-            endpoint: UnixSocketEndpoint(path: serverFixture.paths.socketURL.path)
-        )
-        defer { connection.close() }
-        var reader = TestFrameReader()
-        try sendRequest(
-            connection: connection,
-            request: JSONRPCClientRequest(
-                id: .number(50), method: "auth.login", params: .object(["token": .string(durableToken.rawValue)]))
-        )
-        let initialLoginResponse = try await reader.receiveResponseWithoutBlockingMainActor(connection: connection)
-        let initialLoginStatus = try decodeResponseResult(IPCAuthStatusResult.self, from: initialLoginResponse)
-        guard case .authenticated = initialLoginStatus else {
-            Issue.record("Expected initial credential login to authenticate")
-            return
-        }
+            canonicalPaneMembership: { _, _ in membership.isMember },
+            body: { serverFixture in
+                try await repository.registerPaneCredential(
+                    IPCPaneCredential(
+                        paneID: serverFixture.boundPaneId,
+                        workspaceID: serverFixture.workspaceId,
+                        credentialRecordID: UUIDv7.generate(),
+                        verifierSHA256: Data(SHA256.hash(data: Data(durableToken.rawValue.utf8))),
+                        status: .registered
+                    )
+                )
+                try serverFixture.server.principalRegistry.registerIssuedPaneCredential(
+                    paneID: serverFixture.boundPaneId,
+                    workspaceID: serverFixture.workspaceId,
+                    credentialRecordID: UUIDv7.generate(),
+                    verifierSHA256: Data(SHA256.hash(data: Data(currentToken.rawValue.utf8)))
+                )
+                try serverFixture.server.start()
+                let connection = try await connectWithoutBlockingCooperativePool(
+                    socketPath: serverFixture.paths.socketURL.path)
+                defer { connection.close() }
+                var reader = TestFrameReader()
+                try await sendRequestWithoutBlockingCooperativePool(
+                    connection: connection,
+                    request: JSONRPCClientRequest(
+                        id: .number(50), method: "auth.login",
+                        params: .object(["token": .string(durableToken.rawValue)]))
+                )
+                let initialLoginResponse = try await reader.receiveResponseWithoutBlockingMainActor(
+                    connection: connection)
+                let initialLoginStatus = try decodeResponseResult(IPCAuthStatusResult.self, from: initialLoginResponse)
+                guard case .authenticated = initialLoginStatus else {
+                    Issue.record("Expected initial credential login to authenticate")
+                    return
+                }
 
-        membership.setMember(false)
-        try sendRequest(
-            connection: connection,
-            request: JSONRPCClientRequest(id: .number(51), method: "system.version", params: .object([:]))
-        )
-        let closedResponse = try await reader.receiveResponseWithoutBlockingMainActor(connection: connection)
-        #expect(closedResponse.result == nil)
-        #expect(closedResponse.error?.code == -32_001)
+                membership.setMember(false)
+                try await sendRequestWithoutBlockingCooperativePool(
+                    connection: connection,
+                    request: JSONRPCClientRequest(id: .number(51), method: "system.version", params: .object([:]))
+                )
+                let closedResponse = try await reader.receiveResponseWithoutBlockingMainActor(connection: connection)
+                #expect(closedResponse.result == nil)
+                #expect(closedResponse.error?.code == -32_001)
 
-        serverFixture.server.finalRevokePrincipals(boundToPaneID: serverFixture.boundPaneId)
-        #expect(await serverFixture.server.drainCredentialPersistence().failedOperationCount == 0)
-        membership.setMember(true)
-        for (index, token) in [durableToken, currentToken].enumerated() {
-            let finalResponse = try await fixture.loginResponse(
-                fixture: serverFixture,
-                token: token,
-                requestID: 52 + index
-            )
-            #expect(finalResponse.result == nil)
-            #expect(finalResponse.error?.code == -32_001)
-        }
+                serverFixture.server.finalRevokePrincipals(boundToPaneID: serverFixture.boundPaneId)
+                #expect(await serverFixture.server.drainCredentialPersistence().failedOperationCount == 0)
+                membership.setMember(true)
+                for (index, token) in [durableToken, currentToken].enumerated() {
+                    let finalResponse = try await fixture.loginResponse(
+                        fixture: serverFixture,
+                        token: token,
+                        requestID: 52 + index
+                    )
+                    #expect(finalResponse.result == nil)
+                    #expect(finalResponse.error?.code == -32_001)
+                }
+            })
     }
 
     @Test("socket authentication does not await held persistence and duplicate admission coalesces")
@@ -192,31 +194,31 @@ struct AgentStudioAppIPCReusableCredentialTests {
         }
         let repository = IPCContinuityRepository(datastore: datastore)
         let barrierPort = HeldCredentialContinuityPort(repository: repository)
-        let serverFixture = try fixture.makeServer(
+        try await fixture.withServer(
             credentialResolver: IPCContinuityCredentialResolver(repository: repository),
-            credentialContinuityPort: barrierPort
-        )
-        defer { serverFixture.cleanup() }
-        try serverFixture.server.start()
-        let token = AgentStudioIPCSubjectToken(rawValue: "held-persistence-token")
-        try serverFixture.server.principalRegistry.registerIssuedPaneCredential(
-            paneID: serverFixture.boundPaneId,
-            workspaceID: serverFixture.workspaceId,
-            credentialRecordID: UUIDv7.generate(),
-            verifierSHA256: Data(SHA256.hash(data: Data(token.rawValue.utf8)))
-        )
+            credentialContinuityPort: barrierPort, releaseHeldWork: { barrierPort.releaseRegistration() },
+            body: { serverFixture in
+                try serverFixture.server.start()
+                let token = AgentStudioIPCSubjectToken(rawValue: "held-persistence-token")
+                try serverFixture.server.principalRegistry.registerIssuedPaneCredential(
+                    paneID: serverFixture.boundPaneId,
+                    workspaceID: serverFixture.workspaceId,
+                    credentialRecordID: UUIDv7.generate(),
+                    verifierSHA256: Data(SHA256.hash(data: Data(token.rawValue.utf8)))
+                )
 
-        let first = try await fixture.loginResponse(fixture: serverFixture, token: token, requestID: 60)
-        let second = try await fixture.loginResponse(fixture: serverFixture, token: token, requestID: 61)
-        #expect(try decodeResponseResult(IPCAuthStatusResult.self, from: first).isAuthenticated)
-        #expect(try decodeResponseResult(IPCAuthStatusResult.self, from: second).isAuthenticated)
-        await barrierPort.waitUntilRegistrationHeld()
-        #expect(barrierPort.registrationCallCount == 1)
+                let first = try await fixture.loginResponse(fixture: serverFixture, token: token, requestID: 60)
+                let second = try await fixture.loginResponse(fixture: serverFixture, token: token, requestID: 61)
+                #expect(try decodeResponseResult(IPCAuthStatusResult.self, from: first).isAuthenticated)
+                #expect(try decodeResponseResult(IPCAuthStatusResult.self, from: second).isAuthenticated)
+                await barrierPort.waitUntilRegistrationHeld()
+                #expect(barrierPort.registrationCallCount == 1)
 
-        barrierPort.releaseRegistration()
-        serverFixture.server.stopAcceptingConnections()
-        #expect(await serverFixture.server.drainCredentialPersistence().failedOperationCount == 0)
-        #expect(barrierPort.registrationCallCount == 1)
+                barrierPort.releaseRegistration()
+                serverFixture.stopAcceptingConnections()
+                #expect(await serverFixture.server.drainCredentialPersistence().failedOperationCount == 0)
+                #expect(barrierPort.registrationCallCount == 1)
+            })
     }
 
     /// Joining connection handlers before draining credentials is the fix for
@@ -239,55 +241,42 @@ struct AgentStudioAppIPCReusableCredentialTests {
         }
         let repository = IPCContinuityRepository(datastore: datastore)
         let barrierPort = HeldCredentialContinuityPort(repository: repository)
-        let serverFixture = try fixture.makeServer(
+        try await fixture.withServer(
             credentialResolver: IPCContinuityCredentialResolver(repository: repository),
-            credentialContinuityPort: barrierPort
-        )
-        // Error-safe by construction: ReusableCredentialFixture/LiveServerFixture's
-        // own cleanup only stops the server and deletes roots — neither
-        // releases a held continuation, so a throw after the write is held
-        // (a transport or decode failure, say) would otherwise leave the
-        // credential worker suspended past this test's return. Every path
-        // below releases, stops ingress, joins and drains before fixture
-        // storage is removed.
-        do {
-            try serverFixture.server.start()
-            let token = AgentStudioIPCSubjectToken(rawValue: "join-before-drain-token")
-            try serverFixture.server.principalRegistry.registerIssuedPaneCredential(
-                paneID: serverFixture.boundPaneId,
-                workspaceID: serverFixture.workspaceId,
-                credentialRecordID: UUIDv7.generate(),
-                verifierSHA256: Data(SHA256.hash(data: Data(token.rawValue.utf8)))
-            )
+            credentialContinuityPort: barrierPort, releaseHeldWork: { barrierPort.releaseRegistration() },
+            body: { serverFixture in
+                try serverFixture.server.start()
+                let token = AgentStudioIPCSubjectToken(rawValue: "join-before-drain-token")
+                try serverFixture.server.principalRegistry.registerIssuedPaneCredential(
+                    paneID: serverFixture.boundPaneId,
+                    workspaceID: serverFixture.workspaceId,
+                    credentialRecordID: UUIDv7.generate(),
+                    verifierSHA256: Data(SHA256.hash(data: Data(token.rawValue.utf8)))
+                )
 
-            // The handler's own task: it enqueues synchronously (inside
-            // auth.login's authenticate closure) before returning the
-            // response, so the login round trip already proves the enqueue
-            // happened.
-            let response = try await fixture.loginResponse(fixture: serverFixture, token: token, requestID: 90)
-            #expect(try decodeResponseResult(IPCAuthStatusResult.self, from: response).isAuthenticated)
-            // Event-driven: the worker has genuinely started the held write,
-            // not merely been enqueued and left pending.
-            await barrierPort.waitUntilRegistrationHeld()
-            #expect(barrierPort.registrationCallCount == 1)
+                // The handler's own task: it enqueues synchronously (inside
+                // auth.login's authenticate closure) before returning the
+                // response, so the login round trip already proves the enqueue
+                // happened.
+                let response = try await fixture.loginResponse(fixture: serverFixture, token: token, requestID: 90)
+                #expect(try decodeResponseResult(IPCAuthStatusResult.self, from: response).isAuthenticated)
+                // Event-driven: the worker has genuinely started the held write,
+                // not merely been enqueued and left pending.
+                await barrierPort.waitUntilRegistrationHeld()
+                #expect(barrierPort.registrationCallCount == 1)
 
-            serverFixture.server.stopAcceptingConnections()
-            // The handler's own task is independent of the credential worker
-            // task the held write is parked in, so joining it does not
-            // itself wait on the held write — this is the production
-            // ordering, not an incidental step.
-            await serverFixture.server.joinConnectionHandlers()
+                serverFixture.stopAcceptingConnections()
+                // The handler's own task is independent of the credential worker
+                // task the held write is parked in, so joining it does not
+                // itself wait on the held write — this is the production
+                // ordering, not an incidental step.
+                await serverFixture.server.joinConnectionHandlers()
 
-            barrierPort.releaseRegistration()
-            let result = await serverFixture.server.drainCredentialPersistence()
-            #expect(result.failedOperationCount == 0)
-            #expect(barrierPort.registrationCallCount == 1)
-            serverFixture.cleanup()
-        } catch {
-            await releaseHeldRegistrationJoinAndDrain(server: serverFixture.server, barrierPort: barrierPort)
-            serverFixture.cleanup()
-            throw error
-        }
+                barrierPort.releaseRegistration()
+                let result = await serverFixture.server.drainCredentialPersistence()
+                #expect(result.failedOperationCount == 0)
+                #expect(barrierPort.registrationCallCount == 1)
+            })
     }
 
     /// R10: proves the failure-cleanup path this test's own do/catch relies
@@ -304,40 +293,35 @@ struct AgentStudioAppIPCReusableCredentialTests {
         }
         let repository = IPCContinuityRepository(datastore: datastore)
         let barrierPort = HeldCredentialContinuityPort(repository: repository)
-        let serverFixture = try fixture.makeServer(
-            credentialResolver: IPCContinuityCredentialResolver(repository: repository),
-            credentialContinuityPort: barrierPort
-        )
-        defer { serverFixture.cleanup() }
-        // Widened to cover the whole resource-owning body, not just the
-        // deliberate throw below: a real failure in start/register/login/
-        // decode, before the write is ever held or while it is, must reach
-        // the same cleanup as the staged one — the catch runs it either way
-        // and only swallows the deliberate case, rethrowing anything else.
+        var scopedServer: LiveServerFixture?
         do {
-            try serverFixture.server.start()
-            let token = AgentStudioIPCSubjectToken(rawValue: "throw-after-hold-token")
-            try serverFixture.server.principalRegistry.registerIssuedPaneCredential(
-                paneID: serverFixture.boundPaneId,
-                workspaceID: serverFixture.workspaceId,
-                credentialRecordID: UUIDv7.generate(),
-                verifierSHA256: Data(SHA256.hash(data: Data(token.rawValue.utf8)))
-            )
-            let response = try await fixture.loginResponse(fixture: serverFixture, token: token, requestID: 91)
-            #expect(try decodeResponseResult(IPCAuthStatusResult.self, from: response).isAuthenticated)
-            await barrierPort.waitUntilRegistrationHeld()
-            #expect(barrierPort.registrationCallCount == 1)
+            try await fixture.withServer(
+                credentialResolver: IPCContinuityCredentialResolver(repository: repository),
+                credentialContinuityPort: barrierPort, releaseHeldWork: { barrierPort.releaseRegistration() },
+                body: { serverFixture in
+                    scopedServer = serverFixture
+                    try serverFixture.server.start()
+                    let token = AgentStudioIPCSubjectToken(rawValue: "throw-after-hold-token")
+                    try serverFixture.server.principalRegistry.registerIssuedPaneCredential(
+                        paneID: serverFixture.boundPaneId,
+                        workspaceID: serverFixture.workspaceId,
+                        credentialRecordID: UUIDv7.generate(),
+                        verifierSHA256: Data(SHA256.hash(data: Data(token.rawValue.utf8)))
+                    )
+                    let response = try await fixture.loginResponse(fixture: serverFixture, token: token, requestID: 91)
+                    #expect(try decodeResponseResult(IPCAuthStatusResult.self, from: response).isAuthenticated)
+                    await barrierPort.waitUntilRegistrationHeld()
+                    #expect(barrierPort.registrationCallCount == 1)
 
-            // Deliberate, test-local failure: stands in for the
-            // transport/decode throw the reviewer identified, staged after
-            // the write is held and before any release.
-            throw ReusableCredentialTestError.deliberateFailureAfterHold
+                    // Deliberate, test-local failure: stands in for the
+                    // transport/decode throw the reviewer identified, staged after
+                    // the write is held and before any release.
+                    throw ReusableCredentialTestError.deliberateFailureAfterHold
+                })
         } catch {
-            await releaseHeldRegistrationJoinAndDrain(server: serverFixture.server, barrierPort: barrierPort)
-            guard case ReusableCredentialTestError.deliberateFailureAfterHold = error else {
-                throw error
-            }
+            guard case ReusableCredentialTestError.deliberateFailureAfterHold = error else { throw error }
         }
+        let serverFixture = try #require(scopedServer)
 
         // Asserts on what the cleanup above left behind, not on a second
         // guess: the continuity port observed the release, the one queued
@@ -360,17 +344,17 @@ struct AgentStudioAppIPCReusableCredentialTests {
             return
         }
         let reopenedRepository = IPCContinuityRepository(datastore: reopenedDatastore)
-        let secondServer = try fixture.makeServer(
+        try await fixture.withServer(
             credentialResolver: IPCContinuityCredentialResolver(repository: reopenedRepository),
             credentialContinuityPort: reopenedRepository,
             canonicalPaneMembership: { paneID, workspaceID in
                 paneID == persistedIdentity.paneID && workspaceID == persistedIdentity.workspaceID
-            }
-        )
-        defer { secondServer.cleanup() }
-        try secondServer.server.start()
-        let response = try await fixture.loginResponse(fixture: secondServer, token: token, requestID: 70)
-        #expect(try decodeResponseResult(IPCAuthStatusResult.self, from: response).isAuthenticated)
+            },
+            body: { secondServer in
+                try secondServer.server.start()
+                let response = try await fixture.loginResponse(fixture: secondServer, token: token, requestID: 70)
+                #expect(try decodeResponseResult(IPCAuthStatusResult.self, from: response).isAuthenticated)
+            })
     }
 
     @MainActor
@@ -384,51 +368,49 @@ struct AgentStudioAppIPCReusableCredentialTests {
             return
         }
         let repository = IPCContinuityRepository(datastore: datastore)
-        let serverFixture = try fixture.makeServer(
+        try await fixture.withServer(
             credentialResolver: IPCContinuityCredentialResolver(repository: repository),
-            credentialContinuityPort: repository
-        )
-        defer { serverFixture.cleanup() }
-        let durableRecordID = UUIDv7.generate()
-        let issuedRecordID = UUIDv7.generate()
-        let appDelegate = AppDelegate()
-        appDelegate.appIPCPrincipalRegistry = serverFixture.server.principalRegistry
-        appDelegate.paneIPCIdentityOwner = PaneIPCIdentityOwner(
-            principalRegistry: serverFixture.server.principalRegistry,
-            socketURL: serverFixture.paths.socketURL,
-            spoolDirectory: serverFixture.paths.spoolDirectory,
-            cliExecutableURL: fixture.rootURL.appending(path: "AgentStudio.app/Contents/Helpers/agentstudio"),
-            inheritedEnvironment: [:],
-            canonicalPaneMembership: { _, _ in true }
-        )
-        #expect(appDelegate.appIPCPrincipalRegistry === serverFixture.server.principalRegistry)
-        try await repository.registerPaneCredential(
-            IPCPaneCredential(
-                paneID: serverFixture.boundPaneId,
-                workspaceID: serverFixture.workspaceId,
-                credentialRecordID: durableRecordID,
-                verifierSHA256: Data(repeating: 0xA5, count: 32),
-                status: .registered
-            )
-        )
-        try serverFixture.server.principalRegistry.registerIssuedPaneCredential(
-            paneID: serverFixture.boundPaneId,
-            workspaceID: serverFixture.workspaceId,
-            credentialRecordID: issuedRecordID,
-            verifierSHA256: Data(repeating: 0xB4, count: 32)
-        )
-        appDelegate.appIPCWorkspaceSurfaceLifecycle().finalRevokePaneIDs([serverFixture.boundPaneId])
+            credentialContinuityPort: repository,
+            body: { serverFixture in
+                let durableRecordID = UUIDv7.generate()
+                let issuedRecordID = UUIDv7.generate()
+                let appDelegate = AppDelegate()
+                appDelegate.appIPCPrincipalRegistry = serverFixture.server.principalRegistry
+                appDelegate.paneIPCIdentityOwner = PaneIPCIdentityOwner(
+                    principalRegistry: serverFixture.server.principalRegistry,
+                    socketURL: serverFixture.paths.socketURL,
+                    spoolDirectory: serverFixture.paths.spoolDirectory,
+                    cliExecutableURL: fixture.rootURL.appending(path: "AgentStudio.app/Contents/Helpers/agentstudio"),
+                    inheritedEnvironment: [:],
+                    canonicalPaneMembership: { _, _ in true }
+                )
+                #expect(appDelegate.appIPCPrincipalRegistry === serverFixture.server.principalRegistry)
+                try await repository.registerPaneCredential(
+                    IPCPaneCredential(
+                        paneID: serverFixture.boundPaneId,
+                        workspaceID: serverFixture.workspaceId,
+                        credentialRecordID: durableRecordID,
+                        verifierSHA256: Data(repeating: 0xA5, count: 32),
+                        status: .registered
+                    )
+                )
+                try serverFixture.server.principalRegistry.registerIssuedPaneCredential(
+                    paneID: serverFixture.boundPaneId,
+                    workspaceID: serverFixture.workspaceId,
+                    credentialRecordID: issuedRecordID,
+                    verifierSHA256: Data(repeating: 0xB4, count: 32)
+                )
+                appDelegate.appIPCWorkspaceSurfaceLifecycle().finalRevokePaneIDs([serverFixture.boundPaneId])
 
-        try serverFixture.server.start()
-        appDelegate.appIPCServer = serverFixture.server
-        await appDelegate.stopAcceptingAppIPCConnections()
-        await appDelegate.drainAppIPCCredentialPersistence()
-        #expect(appDelegate.appIPCServer == nil)
+                try serverFixture.server.start()
+                await serverFixture.shutdownThroughApplication(appDelegate)
+                #expect(appDelegate.appIPCServer == nil)
 
-        let storedCredentials = try await repository.paneCredentials(paneID: serverFixture.boundPaneId)
-        #expect(storedCredentials.map(\.credentialRecordID) == [durableRecordID])
-        #expect(storedCredentials.first?.status == .revoked)
-        #expect(!storedCredentials.contains { $0.credentialRecordID == issuedRecordID })
+                let storedCredentials = try await repository.paneCredentials(paneID: serverFixture.boundPaneId)
+                #expect(storedCredentials.map(\.credentialRecordID) == [durableRecordID])
+                #expect(storedCredentials.first?.status == .revoked)
+                #expect(!storedCredentials.contains { $0.credentialRecordID == issuedRecordID })
+            })
     }
 
 }
@@ -459,16 +441,21 @@ private struct ReusableCredentialFixture {
         return true
     }
 
-    func makeServer(
+    nonisolated(nonsending) func withServer<Result>(
         credentialResolver: any AgentStudioIPCCredentialResolving,
         credentialContinuityPort: any AgentStudioIPCCredentialContinuityPort,
-        canonicalPaneMembership: (@MainActor @Sendable (UUID, UUID) -> Bool)? = nil
-    ) throws -> LiveServerFixture {
-        try LiveServerFixture(
-            credentialResolver: credentialResolver,
-            credentialContinuityPort: credentialContinuityPort,
-            canonicalPaneMembership: canonicalPaneMembership
-        )
+        canonicalPaneMembership: (@MainActor @Sendable (UUID, UUID) -> Bool)? = nil,
+        releaseHeldWork: @Sendable () async -> Void = {},
+        body: (LiveServerFixture) async throws -> Result
+    ) async throws -> Result {
+        try await withLiveServer(
+            makeFixture: {
+                try LiveServerFixture(
+                    credentialResolver: credentialResolver,
+                    credentialContinuityPort: credentialContinuityPort,
+                    canonicalPaneMembership: canonicalPaneMembership
+                )
+            }, releaseHeldWork: releaseHeldWork, body: body)
     }
 
     func persistUnusedIssuedTokenBeforeShutdown(
@@ -479,34 +466,34 @@ private struct ReusableCredentialFixture {
             throw ReusableCredentialTestError.databasePreparationFailed
         }
         let repository = IPCContinuityRepository(datastore: datastore)
-        let serverFixture = try makeServer(
+        return try await withServer(
             credentialResolver: IPCContinuityCredentialResolver(repository: repository),
-            credentialContinuityPort: repository
-        )
-        try await datastore.saveWorkspaceSnapshotBundle(
-            WorkspaceSQLiteSaveBundle(
-                workspace: .init(id: serverFixture.workspaceId, name: "IPC graceful shutdown reopen")
-            )
-        )
-        try serverFixture.server.start()
-        try serverFixture.server.principalRegistry.registerIssuedPaneCredential(
-            paneID: serverFixture.boundPaneId,
-            workspaceID: serverFixture.workspaceId,
-            credentialRecordID: UUIDv7.generate(),
-            verifierSHA256: Data(SHA256.hash(data: Data(token.rawValue.utf8)))
-        )
-        serverFixture.server.stopAcceptingConnections()
-        #expect(await serverFixture.server.drainCredentialPersistence().failedOperationCount == 0)
-        #expect(throws: AgentStudioIPCIssuedCredentialRegistrationError.registryShutdown) {
-            try serverFixture.server.principalRegistry.registerIssuedPaneCredential(
-                paneID: UUIDv7.generate(),
-                workspaceID: serverFixture.workspaceId,
-                credentialRecordID: UUIDv7.generate(),
-                verifierSHA256: Data(repeating: 0xA5, count: 32)
-            )
-        }
-        serverFixture.cleanup()
-        return (serverFixture.boundPaneId, serverFixture.workspaceId)
+            credentialContinuityPort: repository,
+            body: { serverFixture in
+                try await datastore.saveWorkspaceSnapshotBundle(
+                    WorkspaceSQLiteSaveBundle(
+                        workspace: .init(id: serverFixture.workspaceId, name: "IPC graceful shutdown reopen")
+                    )
+                )
+                try serverFixture.server.start()
+                try serverFixture.server.principalRegistry.registerIssuedPaneCredential(
+                    paneID: serverFixture.boundPaneId,
+                    workspaceID: serverFixture.workspaceId,
+                    credentialRecordID: UUIDv7.generate(),
+                    verifierSHA256: Data(SHA256.hash(data: Data(token.rawValue.utf8)))
+                )
+                serverFixture.stopAcceptingConnections()
+                #expect(await serverFixture.server.drainCredentialPersistence().failedOperationCount == 0)
+                #expect(throws: AgentStudioIPCIssuedCredentialRegistrationError.registryShutdown) {
+                    try serverFixture.server.principalRegistry.registerIssuedPaneCredential(
+                        paneID: UUIDv7.generate(),
+                        workspaceID: serverFixture.workspaceId,
+                        credentialRecordID: UUIDv7.generate(),
+                        verifierSHA256: Data(repeating: 0xA5, count: 32)
+                    )
+                }
+                return (serverFixture.boundPaneId, serverFixture.workspaceId)
+            })
     }
 
     func loginAndReadSystemVersion(
@@ -514,10 +501,10 @@ private struct ReusableCredentialFixture {
         token: AgentStudioIPCSubjectToken,
         requestID: Int
     ) async throws -> ReusableCredentialLoginResult {
-        let connection = try UnixSocketClient.connect(endpoint: UnixSocketEndpoint(path: fixture.paths.socketURL.path))
+        let connection = try await connectWithoutBlockingCooperativePool(socketPath: fixture.paths.socketURL.path)
         defer { connection.close() }
         var reader = TestFrameReader()
-        try sendRequest(
+        try await sendRequestWithoutBlockingCooperativePool(
             connection: connection,
             request: JSONRPCClientRequest(
                 id: .number(requestID), method: "auth.login", params: .object(["token": .string(token.rawValue)])
@@ -525,7 +512,7 @@ private struct ReusableCredentialFixture {
         )
         let loginResponse = try await reader.receiveResponseWithoutBlockingMainActor(connection: connection)
         let loginStatus = try decodeResponseResult(IPCAuthStatusResult.self, from: loginResponse)
-        try sendRequest(
+        try await sendRequestWithoutBlockingCooperativePool(
             connection: connection,
             request: JSONRPCClientRequest(id: .number(requestID + 1), method: "system.version", params: .object([:]))
         )
@@ -543,9 +530,9 @@ private struct ReusableCredentialFixture {
         token: AgentStudioIPCSubjectToken,
         requestID: Int
     ) async throws -> JSONRPCResponseMessage {
-        let connection = try UnixSocketClient.connect(endpoint: UnixSocketEndpoint(path: fixture.paths.socketURL.path))
+        let connection = try await connectWithoutBlockingCooperativePool(socketPath: fixture.paths.socketURL.path)
         defer { connection.close() }
-        try sendRequest(
+        try await sendRequestWithoutBlockingCooperativePool(
             connection: connection,
             request: JSONRPCClientRequest(
                 id: .number(requestID), method: "auth.login", params: .object(["token": .string(token.rawValue)])
@@ -630,22 +617,6 @@ private final class HeldCredentialContinuityPort: AgentStudioIPCCredentialContin
             if resumeNow { continuation.resume() }
         }
     }
-}
-
-/// The error-safe cleanup a held-write test must run before removing
-/// fixture storage, whether the test body succeeded or threw: releases the
-/// held registration (a no-op if nothing was ever held or it was already
-/// released — `releaseRegistration()` is idempotent), stops ingress so a
-/// handler's blocking read unblocks, joins handlers, then drains whatever
-/// credential work they queued.
-private func releaseHeldRegistrationJoinAndDrain(
-    server: AgentStudioAppIPCServer,
-    barrierPort: HeldCredentialContinuityPort
-) async {
-    barrierPort.releaseRegistration()
-    server.stopAcceptingConnections()
-    await server.joinConnectionHandlers()
-    _ = await server.drainCredentialPersistence()
 }
 
 private final class ReusableCredentialMembershipGate: @unchecked Sendable {

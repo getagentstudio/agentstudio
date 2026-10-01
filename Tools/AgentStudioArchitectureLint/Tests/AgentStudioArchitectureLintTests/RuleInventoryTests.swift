@@ -49,6 +49,7 @@ enum ExpectedRuleInventory {
         ExpectedRule(id: "agentstudio_no_polling_wait_in_tests", severity: .error),
         ExpectedRule(id: "agentstudio_no_forbidden_test_wait", severity: .error),
         ExpectedRule(id: "agentstudio_no_adhoc_continuation_wait", severity: .error),
+        ExpectedRule(id: "agentstudio_no_blocking_socket_io_in_tests", severity: .error),
         ExpectedRule(id: "agentstudio_test_blocking_wait_off_cooperative_pool", severity: .error),
         ExpectedRule(id: "agentstudio_no_test_elapsed_time_budget", severity: .error),
         ExpectedRule(id: "agentstudio_test_core_atom_fallback_ownership", severity: .error),

@@ -616,8 +616,8 @@ private func runFixtureGitToExit(arguments: [String]) async throws -> FixtureGit
     }
 
     let process = Process()
-    process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
-    process.arguments = ["git"] + arguments
+    process.executableURL = try await TestToolResolver.resolved().git
+    process.arguments = arguments
     process.standardOutput = standardOutputHandle
     process.standardError = standardErrorHandle
     let exitCode = try await awaitProcessExit(process)

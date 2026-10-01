@@ -113,10 +113,9 @@ struct AppTerminationDrainDeadlineTests {
             // the listener is closed, so there is no path by which a late
             // command.execute or Bridge open reaches the app and mutates state the
             // workspace flush is about to write.
-            #expect(throws: (any Error).self) {
-                try UnixSocketClient.connect(
-                    endpoint: UnixSocketEndpoint(path: harness.socketPath)
-                ).close()
+            let endpoint = UnixSocketEndpoint(path: harness.socketPath)
+            await #expect(throws: (any Error).self) {
+                try await withoutBlockingCooperativePool { try UnixSocketClient.connect(endpoint: endpoint).close() }
             }
         } catch {
             await harness.tearDown()
@@ -129,15 +128,20 @@ struct AppTerminationDrainDeadlineTests {
     func stillOpenConnectionDoesNotDelayTheWorkspaceFlush() async throws {
         let harness = try await SessionsVerticalHarness.make()
         do {
-            let connection = try UnixSocketClient.connect(endpoint: UnixSocketEndpoint(path: harness.socketPath))
+            let endpoint = UnixSocketEndpoint(path: harness.socketPath)
+            let connection = try await withoutBlockingCooperativePool {
+                try UnixSocketClient.connect(endpoint: endpoint)
+            }
             let loginRequest = try JSONRPCClientRequest(
                 id: .number(1),
                 method: "auth.login",
                 params: .object(["token": .string(harness.token.rawValue)])
             )
-            try connection.send(
-                try NDJSONFrameEncoder.encode(
-                    try JSONRPCCodec.encodeRequest(loginRequest), maxFrameBytes: 65_536))
+            try await withoutBlockingCooperativePool {
+                try connection.send(
+                    try NDJSONFrameEncoder.encode(
+                        try JSONRPCCodec.encodeRequest(loginRequest), maxFrameBytes: 65_536))
+            }
             // Causal barrier: bytes back prove the server's handler accepted
             // the connection, processed this request, and looped back to its
             // next blocking read. The connection is still open and the

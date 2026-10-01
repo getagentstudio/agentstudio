@@ -7,13 +7,13 @@ import Testing
 @Suite("AgentStudio IPC Bridge service", .serialized, BridgeLiveServerFixtureTrait(configuration: .unsafeBridge))
 struct AgentStudioIPCBridgeServiceTests {
     @Test("debug unsafe no-auth refreshes Bridge diff package")
-    func debugUnsafeNoAuthRefreshesBridgeDiffPackage() throws {
+    func debugUnsafeNoAuthRefreshesBridgeDiffPackage() async throws {
         let scoped = try #require(BridgeLiveServerFixtureContext.current)
         let paneId = scoped.paneId
         let correlationId = UUID()
         let fixture = scoped.fixture
 
-        let response = try sendRequest(
+        let response = try await sendRequestWithoutBlockingCooperativePool(
             socketPath: fixture.paths.socketURL.path,
             request: JSONRPCClientRequest(
                 id: .number(65),
@@ -36,14 +36,14 @@ struct AgentStudioIPCBridgeServiceTests {
     }
 
     @Test("debug unsafe no-auth opens Bridge file view")
-    func debugUnsafeNoAuthOpensBridgeFileView() throws {
+    func debugUnsafeNoAuthOpensBridgeFileView() async throws {
         let scoped = try #require(BridgeLiveServerFixtureContext.current)
         let paneId = scoped.paneId
         let worktreeId = UUID()
         let correlationId = UUID()
         let fixture = scoped.fixture
 
-        let response = try sendRequest(
+        let response = try await sendRequestWithoutBlockingCooperativePool(
             socketPath: fixture.paths.socketURL.path,
             request: JSONRPCClientRequest(
                 id: .number(64),
@@ -64,12 +64,12 @@ struct AgentStudioIPCBridgeServiceTests {
     }
 
     @Test("debug unsafe no-auth serves Bridge package status and file view descriptor methods")
-    func debugUnsafeNoAuthServesBridgePackageStatusAndFileViewDescriptorMethods() throws {
+    func debugUnsafeNoAuthServesBridgePackageStatusAndFileViewDescriptorMethods() async throws {
         let scoped = try #require(BridgeLiveServerFixtureContext.current)
         let paneId = scoped.paneId
         let fixture = scoped.fixture
 
-        let packageResponse = try sendRequest(
+        let packageResponse = try await sendRequestWithoutBlockingCooperativePool(
             socketPath: fixture.paths.socketURL.path,
             request: JSONRPCClientRequest(
                 id: .number(66),
@@ -86,7 +86,7 @@ struct AgentStudioIPCBridgeServiceTests {
         #expect(package.reviewGeneration == 1)
         #expect(package.items.isEmpty)
 
-        let contentResponse = try sendRequest(
+        let contentResponse = try await sendRequestWithoutBlockingCooperativePool(
             socketPath: fixture.paths.socketURL.path,
             request: JSONRPCClientRequest(
                 id: .number(67),
@@ -109,12 +109,12 @@ struct AgentStudioIPCBridgeServiceTests {
     }
 
     @Test("debug unsafe no-auth serves Bridge render state method")
-    func debugUnsafeNoAuthServesBridgeRenderStateMethod() throws {
+    func debugUnsafeNoAuthServesBridgeRenderStateMethod() async throws {
         let scoped = try #require(BridgeLiveServerFixtureContext.current)
         let paneId = scoped.paneId
         let fixture = scoped.fixture
 
-        let response = try sendRequest(
+        let response = try await sendRequestWithoutBlockingCooperativePool(
             socketPath: fixture.paths.socketURL.path,
             request: JSONRPCClientRequest(
                 id: .number(71),
@@ -144,12 +144,12 @@ struct AgentStudioIPCBridgeServiceTests {
     }
 
     @Test("debug unsafe no-auth serves Bridge telemetry snapshot method")
-    func debugUnsafeNoAuthServesBridgeTelemetrySnapshotMethod() throws {
+    func debugUnsafeNoAuthServesBridgeTelemetrySnapshotMethod() async throws {
         let scoped = try #require(BridgeLiveServerFixtureContext.current)
         let paneId = scoped.paneId
         let fixture = scoped.fixture
 
-        let response = try sendRequest(
+        let response = try await sendRequestWithoutBlockingCooperativePool(
             socketPath: fixture.paths.socketURL.path,
             request: JSONRPCClientRequest(
                 id: .number(73),
@@ -173,7 +173,7 @@ struct AgentStudioIPCBridgeServiceTests {
     }
 
     @Test("debug unsafe no-auth serves semantic Bridge control methods")
-    func debugUnsafeNoAuthServesSemanticBridgeControlMethods() throws {
+    func debugUnsafeNoAuthServesSemanticBridgeControlMethods() async throws {
         let scoped = try #require(BridgeLiveServerFixtureContext.current)
         let filterCorrelationId = UUIDv7.generate()
         let revealCorrelationId = UUIDv7.generate()
@@ -181,7 +181,7 @@ struct AgentStudioIPCBridgeServiceTests {
         let scrollCorrelationId = UUIDv7.generate()
         let fixture = scoped.fixture
 
-        let filterResponse = try sendRequest(
+        let filterResponse = try await sendRequestWithoutBlockingCooperativePool(
             socketPath: fixture.paths.socketURL.path,
             request: JSONRPCClientRequest(
                 id: .number(75),
@@ -208,7 +208,7 @@ struct AgentStudioIPCBridgeServiceTests {
         #expect(!filterResult.showLarge)
         #expect(filterResult.correlationId == filterCorrelationId)
 
-        let revealResponse = try sendRequest(
+        let revealResponse = try await sendRequestWithoutBlockingCooperativePool(
             socketPath: fixture.paths.socketURL.path,
             request: JSONRPCClientRequest(
                 id: .number(76),
@@ -226,7 +226,7 @@ struct AgentStudioIPCBridgeServiceTests {
         #expect(revealResult.path == "Sources/App/View.swift")
         #expect(revealResult.correlationId == revealCorrelationId)
 
-        let markdownResponse = try sendRequest(
+        let markdownResponse = try await sendRequestWithoutBlockingCooperativePool(
             socketPath: fixture.paths.socketURL.path,
             request: JSONRPCClientRequest(
                 id: .number(77),
@@ -244,7 +244,7 @@ struct AgentStudioIPCBridgeServiceTests {
         #expect(markdownResult.renderMode == "markdownPreview")
         #expect(markdownResult.correlationId == markdownCorrelationId)
 
-        let scrollResponse = try sendRequest(
+        let scrollResponse = try await sendRequestWithoutBlockingCooperativePool(
             socketPath: fixture.paths.socketURL.path,
             request: JSONRPCClientRequest(
                 id: .number(78),
@@ -263,12 +263,12 @@ struct AgentStudioIPCBridgeServiceTests {
     }
 
     @Test("debug unsafe no-auth preserves the Files filter candidate")
-    func debugUnsafeNoAuthPreservesFilesFilterCandidate() throws {
+    func debugUnsafeNoAuthPreservesFilesFilterCandidate() async throws {
         let scoped = try #require(BridgeLiveServerFixtureContext.current)
         let correlationId = UUIDv7.generate()
         let fixture = scoped.fixture
 
-        let response = try sendRequest(
+        let response = try await sendRequestWithoutBlockingCooperativePool(
             socketPath: fixture.paths.socketURL.path,
             request: JSONRPCClientRequest(
                 id: .number(91),
@@ -294,14 +294,14 @@ struct AgentStudioIPCBridgeServiceTests {
     }
 
     @Test("debug unsafe no-auth serves Bridge diff expand and collapse methods")
-    func debugUnsafeNoAuthServesBridgeDiffExpandAndCollapseMethods() throws {
+    func debugUnsafeNoAuthServesBridgeDiffExpandAndCollapseMethods() async throws {
         let scoped = try #require(BridgeLiveServerFixtureContext.current)
         let paneId = scoped.paneId
         let collapseCorrelationId = UUIDv7.generate()
         let expandCorrelationId = UUIDv7.generate()
         let fixture = scoped.fixture
 
-        let collapseResponse = try sendRequest(
+        let collapseResponse = try await sendRequestWithoutBlockingCooperativePool(
             socketPath: fixture.paths.socketURL.path,
             request: JSONRPCClientRequest(
                 id: .number(79),
@@ -318,7 +318,7 @@ struct AgentStudioIPCBridgeServiceTests {
         #expect(collapseResult.itemId == "item-source")
         #expect(collapseResult.correlationId == collapseCorrelationId)
 
-        let expandResponse = try sendRequest(
+        let expandResponse = try await sendRequestWithoutBlockingCooperativePool(
             socketPath: fixture.paths.socketURL.path,
             request: JSONRPCClientRequest(
                 id: .number(80),
@@ -342,7 +342,7 @@ struct AgentStudioIPCBridgeServiceTests {
 @Suite("AgentStudioIPCBridgeRenderDiagnosticsTests", .serialized)
 struct AgentStudioIPCBridgeRenderDiagnosticsTests {
     @Test("Bridge render state preserves bounded native activity diagnostics through JSON-RPC")
-    func bridgeRenderStatePreservesBoundedNativeActivityDiagnosticsThroughJSONRPC() throws {
+    func bridgeRenderStatePreservesBoundedNativeActivityDiagnosticsThroughJSONRPC() async throws {
         let paneId = UUID()
         let fixtureResult = try JSONDecoder().decode(
             IPCBridgeRenderStateResult.self,
@@ -382,39 +382,41 @@ struct AgentStudioIPCBridgeRenderDiagnosticsTests {
                 """.utf8
             )
         )
-        let fixture = try LiveServerFixture(
-            accessMode: .unsafeDebug,
-            channel: .debug,
-            panes: [makePaneSummary(id: paneId, ordinal: 1, contentKind: .bridgePanel)],
-            bridgePort: FakeBridgePort(paneId: paneId, renderStateResult: fixtureResult)
-        )
-        defer {
-            fixture.cleanup()
-        }
-        try fixture.server.start()
+        try await withLiveServer(
+            makeFixture: {
+                try LiveServerFixture(
+                    accessMode: .unsafeDebug,
+                    channel: .debug,
+                    panes: [makePaneSummary(id: paneId, ordinal: 1, contentKind: .bridgePanel)],
+                    bridgePort: FakeBridgePort(paneId: paneId, renderStateResult: fixtureResult)
+                )
+            },
+            body: { fixture in
+                try fixture.server.start()
 
-        let response = try sendRequest(
-            socketPath: fixture.paths.socketURL.path,
-            request: JSONRPCClientRequest(
-                id: .number(72),
-                method: "bridge.diff.renderState",
-                params: .object(["handle": .string("pane:1")])
-            )
-        )
+                let response = try await sendRequestWithoutBlockingCooperativePool(
+                    socketPath: fixture.paths.socketURL.path,
+                    request: JSONRPCClientRequest(
+                        id: .number(72),
+                        method: "bridge.diff.renderState",
+                        params: .object(["handle": .string("pane:1")])
+                    )
+                )
 
-        #expect(response.id == .number(72))
-        #expect(response.error == nil)
-        guard case .object(let result)? = response.result,
-            case .object(let diagnostics)? = result["diagnostics"]
-        else {
-            Issue.record("expected Bridge render-state diagnostics object")
-            return
-        }
-        #expect(diagnostics["nativeActivity"] == .string("loadedHidden"))
-        #expect(diagnostics["foregroundWorkEpoch"] == .number(7))
-        #expect(diagnostics["dirtyFactPresent"] == .bool(true))
-        #expect(diagnostics["activeRefreshPassPresent"] == .bool(false))
-        #expect(diagnostics["refreshPassCount"] == .number(3))
+                #expect(response.id == .number(72))
+                #expect(response.error == nil)
+                guard case .object(let result)? = response.result,
+                    case .object(let diagnostics)? = result["diagnostics"]
+                else {
+                    Issue.record("expected Bridge render-state diagnostics object")
+                    return
+                }
+                #expect(diagnostics["nativeActivity"] == .string("loadedHidden"))
+                #expect(diagnostics["foregroundWorkEpoch"] == .number(7))
+                #expect(diagnostics["dirtyFactPresent"] == .bool(true))
+                #expect(diagnostics["activeRefreshPassPresent"] == .bool(false))
+                #expect(diagnostics["refreshPassCount"] == .number(3))
+            })
     }
 
 }
@@ -422,45 +424,47 @@ struct AgentStudioIPCBridgeRenderDiagnosticsTests {
 @Suite("AgentStudioIPCBridgeSearchModeTests", .serialized)
 struct AgentStudioIPCBridgeSearchModeTests {
     @Test("debug unsafe no-auth preserves semantic Bridge Search mode")
-    func debugUnsafeNoAuthPreservesSemanticBridgeSearchMode() throws {
+    func debugUnsafeNoAuthPreservesSemanticBridgeSearchMode() async throws {
         let paneId = UUIDv7.generate()
         let correlationId = UUIDv7.generate()
         let searchModeInvocationRecorder = BridgeSearchModeInvocationRecorder()
-        let fixture = try LiveServerFixture(
-            accessMode: .unsafeDebug,
-            channel: .debug,
-            panes: [makePaneSummary(id: paneId, ordinal: 1, contentKind: .bridgePanel)],
-            bridgePort: FakeBridgePort(
-                paneId: paneId,
-                searchModeInvocationRecorder: searchModeInvocationRecorder
-            )
-        )
-        defer {
-            fixture.cleanup()
-        }
-        try fixture.server.start()
+        try await withLiveServer(
+            makeFixture: {
+                try LiveServerFixture(
+                    accessMode: .unsafeDebug,
+                    channel: .debug,
+                    panes: [makePaneSummary(id: paneId, ordinal: 1, contentKind: .bridgePanel)],
+                    bridgePort: FakeBridgePort(
+                        paneId: paneId,
+                        searchModeInvocationRecorder: searchModeInvocationRecorder
+                    )
+                )
+            },
+            body: { fixture in
+                try fixture.server.start()
 
-        let response = try sendRequest(
-            socketPath: fixture.paths.socketURL.path,
-            request: JSONRPCClientRequest(
-                id: .number(74),
-                method: "bridge.fileTree.search",
-                params: .object([
-                    "handle": .string("pane:1"),
-                    "searchText": .string("BridgePaneController"),
-                    "searchMode": .object(["kind": .string("regex")]),
-                    "correlationId": .string(correlationId.uuidString),
-                ])
-            )
-        )
+                let response = try await sendRequestWithoutBlockingCooperativePool(
+                    socketPath: fixture.paths.socketURL.path,
+                    request: JSONRPCClientRequest(
+                        id: .number(74),
+                        method: "bridge.fileTree.search",
+                        params: .object([
+                            "handle": .string("pane:1"),
+                            "searchText": .string("BridgePaneController"),
+                            "searchMode": .object(["kind": .string("regex")]),
+                            "correlationId": .string(correlationId.uuidString),
+                        ])
+                    )
+                )
 
-        let result = try decodeResponseResult(IPCBridgePageControlResult.self, from: response)
-        #expect(result.paneId == paneId)
-        #expect(result.method == "bridge.fileTree.search")
-        #expect(result.status == "accepted")
-        #expect(result.treeSearchText == "BridgePaneController")
-        #expect(searchModeInvocationRecorder.snapshot() == [.regex])
-        #expect(result.correlationId == correlationId)
+                let result = try decodeResponseResult(IPCBridgePageControlResult.self, from: response)
+                #expect(result.paneId == paneId)
+                #expect(result.method == "bridge.fileTree.search")
+                #expect(result.status == "accepted")
+                #expect(result.treeSearchText == "BridgePaneController")
+                #expect(searchModeInvocationRecorder.snapshot() == [.regex])
+                #expect(result.correlationId == correlationId)
+            })
     }
 
 }
@@ -470,12 +474,12 @@ struct AgentStudioIPCBridgeSearchModeTests {
     BridgeLiveServerFixtureTrait(configuration: .unsafeTerminal))
 struct AgentStudioIPCBridgeNonBridgeTargetTests {
     @Test("Bridge methods reject valid non-Bridge pane targets as unsupported")
-    func bridgeMethodsRejectValidNonBridgePaneTargetsAsUnsupported() throws {
+    func bridgeMethodsRejectValidNonBridgePaneTargetsAsUnsupported() async throws {
         let scoped = try #require(BridgeLiveServerFixtureContext.current)
         let fixture = scoped.fixture
 
         for bridgeRequest in nonBridgeTargetRequests() {
-            let response = try sendRequest(
+            let response = try await sendRequestWithoutBlockingCooperativePool(
                 socketPath: fixture.paths.socketURL.path,
                 request: JSONRPCClientRequest(
                     id: .number(bridgeRequest.id),
@@ -492,7 +496,7 @@ struct AgentStudioIPCBridgeNonBridgeTargetTests {
     }
 
     @Test("Bridge expand and collapse methods reject valid non-Bridge pane targets as unsupported")
-    func bridgeExpandAndCollapseMethodsRejectValidNonBridgePaneTargetsAsUnsupported() throws {
+    func bridgeExpandAndCollapseMethodsRejectValidNonBridgePaneTargetsAsUnsupported() async throws {
         let scoped = try #require(BridgeLiveServerFixtureContext.current)
         let fixture = scoped.fixture
 
@@ -502,7 +506,7 @@ struct AgentStudioIPCBridgeNonBridgeTargetTests {
         ]
 
         for bridgeRequest in bridgeRequests {
-            let response = try sendRequest(
+            let response = try await sendRequestWithoutBlockingCooperativePool(
                 socketPath: fixture.paths.socketURL.path,
                 request: JSONRPCClientRequest(
                     id: .number(bridgeRequest.id),
@@ -527,38 +531,40 @@ struct AgentStudioIPCBridgeNonBridgeTargetTests {
 @Suite("AgentStudioIPCBridgeDiagnosticTargetTests", .serialized)
 struct AgentStudioIPCBridgeDiagnosticTargetTests {
     @Test("diagnostic Bridge reads reject non-Bridge pane targets")
-    func diagnosticBridgeReadsRejectNonBridgePaneTargets() throws {
+    func diagnosticBridgeReadsRejectNonBridgePaneTargets() async throws {
         let paneId = UUID()
-        let fixture = try LiveServerFixture(
-            panes: [makePaneSummary(id: paneId, ordinal: 1, contentKind: .terminal)]
-        )
-        defer {
-            fixture.cleanup()
-        }
-        try fixture.server.start()
-        let token = fixture.installDebugCredential()
-        let connection = try UnixSocketClient.connect(
-            endpoint: UnixSocketEndpoint(path: fixture.paths.socketURL.path)
-        )
-        defer {
-            connection.close()
-        }
-        var frameReader = TestFrameReader()
-        try login(connection: connection, token: token, requestId: 91, reader: &frameReader)
+        try await withLiveServer(
+            makeFixture: {
+                try LiveServerFixture(
+                    panes: [makePaneSummary(id: paneId, ordinal: 1, contentKind: .terminal)]
+                )
+            },
+            body: { fixture in
+                try fixture.server.start()
+                let token = fixture.installDebugCredential()
+                let connection = try await connectWithoutBlockingCooperativePool(
+                    socketPath: fixture.paths.socketURL.path)
+                defer {
+                    connection.close()
+                }
+                var frameReader = TestFrameReader()
+                try await loginWithoutBlockingMainActor(
+                    connection: connection, token: token, requestId: 91, reader: &frameReader)
 
-        try sendRequest(
-            connection: connection,
-            request: JSONRPCClientRequest(
-                id: .number(92),
-                method: "bridge.diff.getPackage",
-                params: .object(["handle": .string("pane:1")])
-            )
-        )
+                try await sendRequestWithoutBlockingCooperativePool(
+                    connection: connection,
+                    request: JSONRPCClientRequest(
+                        id: .number(92),
+                        method: "bridge.diff.getPackage",
+                        params: .object(["handle": .string("pane:1")])
+                    )
+                )
 
-        let response = try frameReader.receiveResponse(connection: connection)
-        #expect(response.error?.code == -32_003)
-        #expect(response.error?.message == "unsupported target")
-        #expect(response.result == nil)
+                let response = try await frameReader.receiveResponseWithoutBlockingMainActor(connection: connection)
+                #expect(response.error?.code == -32_003)
+                #expect(response.error?.message == "unsupported target")
+                #expect(response.result == nil)
+            })
     }
 
 }
@@ -566,23 +572,22 @@ struct AgentStudioIPCBridgeDiagnosticTargetTests {
 @Suite("AgentStudioIPCBridgePaneAgentTests", .serialized, BridgeLiveServerFixtureTrait(configuration: .safeBridge))
 struct AgentStudioIPCBridgePaneAgentTests {
     @Test("pane principals hear that the Bridge open method is not yet allowed")
-    func panePrincipalsCannotDiscoverDebugOnlyBridgeOpenMethod() throws {
+    func panePrincipalsCannotDiscoverDebugOnlyBridgeOpenMethod() async throws {
         let scoped = try #require(BridgeLiveServerFixtureContext.current)
         let paneId = scoped.paneId
         let fixture = scoped.fixture
         let token = try fixture.issueTestCredential(
             for: .pane(paneId: paneId, credentialRecordId: UUIDv7.generate(), status: .registered)
         )
-        let connection = try UnixSocketClient.connect(
-            endpoint: UnixSocketEndpoint(path: fixture.paths.socketURL.path)
-        )
+        let connection = try await connectWithoutBlockingCooperativePool(socketPath: fixture.paths.socketURL.path)
         defer {
             connection.close()
         }
         var frameReader = TestFrameReader()
-        try login(connection: connection, token: token, requestId: 71, reader: &frameReader)
+        try await loginWithoutBlockingMainActor(
+            connection: connection, token: token, requestId: 71, reader: &frameReader)
 
-        try sendRequest(
+        try await sendRequestWithoutBlockingCooperativePool(
             connection: connection,
             request: JSONRPCClientRequest(
                 id: .number(72),
@@ -593,7 +598,7 @@ struct AgentStudioIPCBridgePaneAgentTests {
             )
         )
 
-        let response = try frameReader.receiveResponse(connection: connection)
+        let response = try await frameReader.receiveResponseWithoutBlockingMainActor(connection: connection)
         #expect(response.error?.code == -32_011)
         #expect(
             response.error?.data
@@ -602,22 +607,20 @@ struct AgentStudioIPCBridgePaneAgentTests {
     }
 
     @Test("Bridge select publishes notification for a diagnostic subscriber")
-    func bridgeSelectPublishesNotificationForDiagnosticSubscriber() throws {
+    func bridgeSelectPublishesNotificationForDiagnosticSubscriber() async throws {
         let scoped = try #require(BridgeLiveServerFixtureContext.current)
         let paneId = scoped.paneId
         let correlationId = UUIDv7.generate()
         let fixture = scoped.fixture
         let token = fixture.installDebugCredential()
-        let connection = try UnixSocketClient.connect(
-            endpoint: UnixSocketEndpoint(path: fixture.paths.socketURL.path)
-        )
+        let connection = try await connectWithoutBlockingCooperativePool(socketPath: fixture.paths.socketURL.path)
         defer {
             connection.close()
         }
         var frameReader = TestFrameReader()
         let subscriptionCorrelationId = UUIDv7.generate()
 
-        try sendRequest(
+        try await sendRequestWithoutBlockingCooperativePool(
             connection: connection,
             request: JSONRPCClientRequest(
                 id: .number(68),
@@ -625,9 +628,9 @@ struct AgentStudioIPCBridgePaneAgentTests {
                 params: .object(["token": .string(token.rawValue)])
             )
         )
-        _ = try frameReader.receiveResponse(connection: connection)
+        _ = try await frameReader.receiveResponseWithoutBlockingMainActor(connection: connection)
 
-        try sendRequest(
+        try await sendRequestWithoutBlockingCooperativePool(
             connection: connection,
             request: JSONRPCClientRequest(
                 id: .number(69),
@@ -638,12 +641,12 @@ struct AgentStudioIPCBridgePaneAgentTests {
                 ])
             )
         )
-        let subscriptionResponse = try frameReader.receiveResponse(connection: connection)
+        let subscriptionResponse = try await frameReader.receiveResponseWithoutBlockingMainActor(connection: connection)
         try #require(subscriptionResponse.error == nil)
         let subscription = try decodeResponseResult(IPCEventSubscriptionResult.self, from: subscriptionResponse)
         #expect(subscription.eventNames == [.bridgeFileSelected])
 
-        try sendRequest(
+        try await sendRequestWithoutBlockingCooperativePool(
             connection: connection,
             request: JSONRPCClientRequest(
                 id: .number(70),
@@ -666,17 +669,17 @@ struct AgentStudioIPCBridgePaneAgentTests {
             #expect(result.correlationId == correlationId)
         }
 
-        let firstFrame = try frameReader.receiveFrame(connection: connection)
+        let firstFrame = try await frameReader.receiveFrameWithoutBlockingCooperativePool(connection: connection)
         let response: JSONRPCResponseMessage
         let notificationFrame: String
         if firstFrame.contains("events.notification") {
             notificationFrame = firstFrame
-            response = try frameReader.receiveResponse(connection: connection)
+            response = try await frameReader.receiveResponseWithoutBlockingMainActor(connection: connection)
             try validateSelectionResponse(response)
         } else {
             response = try JSONRPCCodec.decodeResponse(firstFrame)
             try validateSelectionResponse(response)
-            notificationFrame = try frameReader.receiveFrame(connection: connection)
+            notificationFrame = try await frameReader.receiveFrameWithoutBlockingCooperativePool(connection: connection)
         }
 
         let notificationObject = try #require(
@@ -797,67 +800,70 @@ private func bridgeReviewFilterParams(handle: String, correlationId: UUID) -> JS
 @Suite("AgentStudioIPCBridgeRejectedControlTests", .serialized)
 struct AgentStudioIPCBridgeRejectedControlTests {
     @Test("rejected Bridge page-control commands do not publish file selection notifications")
-    func rejectedBridgePageControlCommandsDoNotPublishFileSelectionNotifications() throws {
+    func rejectedBridgePageControlCommandsDoNotPublishFileSelectionNotifications() async throws {
         let paneId = UUID()
-        let fixture = try LiveServerFixture(
-            panes: [makePaneSummary(id: paneId, ordinal: 1, contentKind: .bridgePanel)],
-            bridgePort: FakeBridgePort(
-                paneId: paneId,
-                pageControlStatus: "rejected",
-                pageControlReason: "missing_item"
-            )
-        )
-        defer {
-            fixture.cleanup()
-        }
-        try fixture.server.start()
-        let token = fixture.installDebugCredential()
-        let connection = try UnixSocketClient.connect(
-            endpoint: UnixSocketEndpoint(path: fixture.paths.socketURL.path)
-        )
-        defer {
-            connection.close()
-        }
-        var frameReader = TestFrameReader()
-        try login(connection: connection, token: token, requestId: 93, reader: &frameReader)
-        let subscriptionCorrelationId = UUIDv7.generate()
-        let correlationId = UUIDv7.generate()
+        try await withLiveServer(
+            makeFixture: {
+                try LiveServerFixture(
+                    panes: [makePaneSummary(id: paneId, ordinal: 1, contentKind: .bridgePanel)],
+                    bridgePort: FakeBridgePort(
+                        paneId: paneId,
+                        pageControlStatus: "rejected",
+                        pageControlReason: "missing_item"
+                    )
+                )
+            },
+            body: { fixture in
+                try fixture.server.start()
+                let token = fixture.installDebugCredential()
+                let connection = try await connectWithoutBlockingCooperativePool(
+                    socketPath: fixture.paths.socketURL.path)
+                defer {
+                    connection.close()
+                }
+                var frameReader = TestFrameReader()
+                try await loginWithoutBlockingMainActor(
+                    connection: connection, token: token, requestId: 93, reader: &frameReader)
+                let subscriptionCorrelationId = UUIDv7.generate()
+                let correlationId = UUIDv7.generate()
 
-        try sendRequest(
-            connection: connection,
-            request: JSONRPCClientRequest(
-                id: .number(94),
-                method: "events.subscribe",
-                params: .object([
-                    "eventNames": .array([.string(IPCEventName.bridgeFileSelected.rawValue)]),
-                    "correlationId": .string(subscriptionCorrelationId.uuidString),
-                ])
-            )
-        )
-        let subscriptionResponse = try frameReader.receiveResponse(connection: connection)
-        try #require(subscriptionResponse.error == nil)
-        let subscription = try decodeResponseResult(IPCEventSubscriptionResult.self, from: subscriptionResponse)
-        #expect(subscription.eventNames == [.bridgeFileSelected])
+                try await sendRequestWithoutBlockingCooperativePool(
+                    connection: connection,
+                    request: JSONRPCClientRequest(
+                        id: .number(94),
+                        method: "events.subscribe",
+                        params: .object([
+                            "eventNames": .array([.string(IPCEventName.bridgeFileSelected.rawValue)]),
+                            "correlationId": .string(subscriptionCorrelationId.uuidString),
+                        ])
+                    )
+                )
+                let subscriptionResponse = try await frameReader.receiveResponseWithoutBlockingMainActor(
+                    connection: connection)
+                try #require(subscriptionResponse.error == nil)
+                let subscription = try decodeResponseResult(IPCEventSubscriptionResult.self, from: subscriptionResponse)
+                #expect(subscription.eventNames == [.bridgeFileSelected])
 
-        try sendRequest(
-            connection: connection,
-            request: JSONRPCClientRequest(
-                id: .number(95),
-                method: "bridge.diff.scrollToFile",
-                params: .object([
-                    "handle": .string("pane:1"),
-                    "itemId": .string("missing-item"),
-                    "correlationId": .string(correlationId.uuidString),
-                ])
-            )
-        )
+                try await sendRequestWithoutBlockingCooperativePool(
+                    connection: connection,
+                    request: JSONRPCClientRequest(
+                        id: .number(95),
+                        method: "bridge.diff.scrollToFile",
+                        params: .object([
+                            "handle": .string("pane:1"),
+                            "itemId": .string("missing-item"),
+                            "correlationId": .string(correlationId.uuidString),
+                        ])
+                    )
+                )
 
-        let response = try frameReader.receiveResponse(connection: connection)
-        let result = try decodeResponseResult(IPCBridgePageControlResult.self, from: response)
-        #expect(result.status == "rejected")
-        #expect(result.reason == "missing_item")
-        #expect(result.correlationId == correlationId)
-        #expect(!frameReader.hasBufferedFrame(containing: "events.notification"))
+                let response = try await frameReader.receiveResponseWithoutBlockingMainActor(connection: connection)
+                let result = try decodeResponseResult(IPCBridgePageControlResult.self, from: response)
+                #expect(result.status == "rejected")
+                #expect(result.reason == "missing_item")
+                #expect(result.correlationId == correlationId)
+                #expect(!frameReader.hasBufferedFrame(containing: "events.notification"))
+            })
     }
 
 }

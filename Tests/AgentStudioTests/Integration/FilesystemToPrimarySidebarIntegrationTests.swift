@@ -1,3 +1,4 @@
+import AgentStudioTestHarness
 import Foundation
 import Testing
 
@@ -337,13 +338,15 @@ struct FilesystemToPrimarySidebarIntegrationTests {
     }
 
     private func initializeGitRepository(at path: URL) async throws {
+        let git = try await TestToolResolver.resolved().git
         try FileManager.default.createDirectory(at: path, withIntermediateDirectories: true)
         let exitCode = try await withoutBlockingCooperativePool {
             let process = Process()
-            process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
-            process.arguments = ["git", "-C", path.path, "init"]
-            try process.run()
+            process.executableURL = git
+            process.arguments = ["-C", path.path, "init"]
+            try TestToolResolver.launch(process)
             process.waitUntilExit()
+            TestToolResolver.recordFailedExit(process)
             return process.terminationStatus
         }
         #expect(exitCode == 0)

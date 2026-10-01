@@ -1,3 +1,4 @@
+import AgentStudioTestHarness
 import Foundation
 import Testing
 
@@ -10,7 +11,7 @@ struct TitlePanePerformanceWorkloadScriptTests {
     func systemPythonCompatibleVictoriaTimestampParser() async throws {
         let source = try String(contentsOfFile: scriptPath, encoding: .utf8)
         let result = try await RunToExitProcessExecutor().execute(
-            command: "/usr/bin/python3",
+            command: try await TestToolResolver.resolved().python3.path,
             args: [
                 "-c",
                 "import datetime, sys; print(datetime.datetime.strptime(sys.argv[1], '%Y-%m-%dT%H:%M:%S.%f%z').microsecond)",

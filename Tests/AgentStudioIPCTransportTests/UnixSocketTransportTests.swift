@@ -28,10 +28,10 @@ struct UnixSocketTransportTests {
         }
         defer { listener.stop() }
 
-        let client = try UnixSocketClient.connect(endpoint: fixture.endpoint)
+        let client = try await valueFromDedicatedThread { try UnixSocketClient.connect(endpoint: fixture.endpoint) }
         defer { client.close() }
 
-        try client.send(Data("ping\n".utf8))
+        try await valueFromDedicatedThread { try client.send(Data("ping\n".utf8)) }
         let response = try await valueFromDedicatedThread { try client.receive(maxBytes: 64) }
 
         #expect(String(data: response, encoding: .utf8) == "pong\n")
@@ -58,7 +58,7 @@ struct UnixSocketTransportTests {
         }
         defer { listener.stop() }
 
-        let client = try UnixSocketClient.connect(endpoint: fixture.endpoint)
+        let client = try await valueFromDedicatedThread { try UnixSocketClient.connect(endpoint: fixture.endpoint) }
         defer { client.close() }
 
         #expect(try await handledConnection.firstArrival()?.userIdentifier == getuid())
@@ -96,7 +96,9 @@ struct UnixSocketTransportTests {
                 try descriptorProbe.recordListeningDescriptor()
 
                 // Arrange: occupy the loop inside the handler.
-                let served = try UnixSocketClient.connect(endpoint: fixture.endpoint)
+                let served = try await valueFromDedicatedThread {
+                    try UnixSocketClient.connect(endpoint: fixture.endpoint)
+                }
                 defer { served.close() }
                 try await handler.firstArrival()
 
@@ -124,8 +126,8 @@ struct UnixSocketTransportTests {
                 defer { probe.cleanup() }
                 #expect(probe.isOpen)
                 #expect(probe.readBack() == "listener must not own this descriptor")
-                #expect(throws: (any Error).self) {
-                    _ = try UnixSocketClient.connect(endpoint: fixture.endpoint)
+                await #expect(throws: (any Error).self) {
+                    try await valueFromDedicatedThread { _ = try UnixSocketClient.connect(endpoint: fixture.endpoint) }
                 }
                 #expect(handler.recordedArrivals.count == 1)
                 #expect(!descriptorProbe.descriptorOwnsEndpoint)
@@ -168,7 +170,9 @@ struct UnixSocketTransportTests {
 
             do {
                 try descriptorProbe.recordListeningDescriptor()
-                let served = try UnixSocketClient.connect(endpoint: fixture.endpoint)
+                let served = try await valueFromDedicatedThread {
+                    try UnixSocketClient.connect(endpoint: fixture.endpoint)
+                }
                 defer { served.close() }
                 try await handler.firstArrival()
 
@@ -193,8 +197,8 @@ struct UnixSocketTransportTests {
                 #expect(!stopReturnedAtSecondJoin)
                 #expect(stopReturned.recordedArrivals.count == 1)
                 #expect(joinWait.invocationCount == 2)
-                #expect(throws: (any Error).self) {
-                    _ = try UnixSocketClient.connect(endpoint: fixture.endpoint)
+                await #expect(throws: (any Error).self) {
+                    try await valueFromDedicatedThread { _ = try UnixSocketClient.connect(endpoint: fixture.endpoint) }
                 }
             } catch {
                 let fixtureError = error
@@ -235,7 +239,9 @@ struct UnixSocketTransportTests {
 
             do {
                 try descriptorProbe.recordListeningDescriptor()
-                let served = try UnixSocketClient.connect(endpoint: fixture.endpoint)
+                let served = try await valueFromDedicatedThread {
+                    try UnixSocketClient.connect(endpoint: fixture.endpoint)
+                }
                 defer { served.close() }
                 try await handler.firstArrival()
 
@@ -264,8 +270,8 @@ struct UnixSocketTransportTests {
                 #expect(stopReturned.recordedArrivals.count == 1)
                 #expect(selectedJoinCount == 2)
                 #expect(joinCountAfterRepeatedStop == 3)
-                #expect(throws: (any Error).self) {
-                    _ = try UnixSocketClient.connect(endpoint: fixture.endpoint)
+                await #expect(throws: (any Error).self) {
+                    try await valueFromDedicatedThread { _ = try UnixSocketClient.connect(endpoint: fixture.endpoint) }
                 }
             } catch {
                 let fixtureError = error
@@ -303,7 +309,7 @@ struct UnixSocketTransportTests {
     }
 
     @Test("send to a disconnected peer fails without SIGPIPE")
-    func sendToDisconnectedPeerFailsWithoutSIGPIPE() throws {
+    func sendToDisconnectedPeerFailsWithoutSIGPIPE() async throws {
         #if canImport(Darwin)
             var descriptors: [Int32] = [0, 0]
             guard socketpair(AF_UNIX, SOCK_STREAM, 0, &descriptors) == 0 else {
@@ -330,14 +336,14 @@ struct UnixSocketTransportTests {
                 peerDescriptor = nil
             }
 
-            #expect(throws: UnixSocketTransportError.self) {
-                try connection.send(Data("reply\n".utf8))
+            await #expect(throws: UnixSocketTransportError.self) {
+                try await valueFromDedicatedThread { try connection.send(Data("reply\n".utf8)) }
             }
         #endif
     }
 
     @Test("closed connection rejects operations before descriptor access")
-    func closedConnectionRejectsOperationsBeforeDescriptorAccess() throws {
+    func closedConnectionRejectsOperationsBeforeDescriptorAccess() async throws {
         #if canImport(Darwin)
             var descriptors: [Int32] = [0, 0]
             guard socketpair(AF_UNIX, SOCK_STREAM, 0, &descriptors) == 0 else {
@@ -354,11 +360,11 @@ struct UnixSocketTransportTests {
             }
             #expect(credentialProvider.invocationCount == 0)
 
-            #expect(throws: UnixSocketTransportError(reason: .connectionClosed)) {
-                try connection.send(Data("stale\n".utf8))
+            await #expect(throws: UnixSocketTransportError(reason: .connectionClosed)) {
+                try await valueFromDedicatedThread { try connection.send(Data("stale\n".utf8)) }
             }
-            #expect(throws: UnixSocketTransportError(reason: .connectionClosed)) {
-                _ = try connection.receive(maxBytes: 64)
+            await #expect(throws: UnixSocketTransportError(reason: .connectionClosed)) {
+                try await valueFromDedicatedThread { _ = try connection.receive(maxBytes: 64) }
             }
         #endif
     }

@@ -22,7 +22,7 @@ package func awaitProcessExit(_ process: Process) async throws -> Int32 {
                         state = .cancelled
                         throw CancellationError()
                     }
-                    try process.run()
+                    try TestToolResolver.launch(process)
                     state = .running
                     if Task.isCancelled {
                         state = .cancelled
@@ -59,6 +59,7 @@ package func awaitProcessExit(_ process: Process) async throws -> Int32 {
             process.terminate()
         }
     }
+    TestToolResolver.recordFailedExit(process)
     try Task.checkCancellation()
     return exitStatus
 }

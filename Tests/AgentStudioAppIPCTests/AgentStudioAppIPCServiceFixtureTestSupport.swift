@@ -4,7 +4,10 @@ import AgentStudioInfrastructure
 import AgentStudioProgrammaticControl
 import CryptoKit
 import Foundation
+import Synchronization
 import Testing
+
+@testable import AgentStudio
 
 #if canImport(Darwin)
     import Darwin
@@ -59,13 +62,47 @@ func makeTestIPCSystemCapabilitiesComposition(
     )
 }
 
-struct LiveServerFixture {
+nonisolated(nonsending) func withLiveServer<Result>(
+    makeFixture: () throws -> LiveServerFixture,
+    releaseHeldWork: @Sendable () async -> Void = {},
+    body: (LiveServerFixture) async throws -> Result
+) async throws -> Result {
+    let fixture = try makeFixture()
+    do {
+        let result = try await body(fixture)
+        await tearDownLiveServer(fixture, releaseHeldWork: releaseHeldWork)
+        return result
+    } catch {
+        await tearDownLiveServer(fixture, releaseHeldWork: releaseHeldWork)
+        throw error
+    }
+}
+
+nonisolated(nonsending) private func tearDownLiveServer(
+    _ fixture: LiveServerFixture,
+    releaseHeldWork: @Sendable () async -> Void
+) async {
+    await releaseHeldWork()
+    fixture.stopAcceptingConnections()
+    await fixture.server.joinConnectionHandlers()
+    let result = await fixture.server.drainCredentialPersistence()
+    if result.failedOperationCount > 0 {
+        Issue.record("Live-server fixture credential persistence drain failed: \(result)")
+    }
+    do {
+        try FileManager.default.removeItem(at: fixture.rootURL)
+    } catch {
+        Issue.record(error, "Live-server fixture root removal failed")
+    }
+}
+
+struct LiveServerFixture: Sendable {
     let runtimeId = UUID()
     let boundPaneId = UUID()
     let workspaceId = UUIDv7.generate()
     let rootURL: URL
     let paths: AgentStudioIPCPaths
-    let server: AgentStudioAppIPCServer
+    let server: LiveServerFixtureServer
     private let testCredentialResolver: IPCFixtureCredentialResolver?
 
     init(
@@ -97,7 +134,7 @@ struct LiveServerFixture {
         #endif
         // Everything past this point can throw; unwind the created root
         // directory rather than leak it, since a throw here never returns a
-        // fixture for a caller to `cleanup()`.
+        // fixture for the async scope to tear down.
         do {
             paths = AgentStudioIPCPathResolver().paths(rootDirectory: rootURL)
             let ports = AgentStudioAppIPCPorts(
@@ -164,12 +201,14 @@ struct LiveServerFixture {
                 credentialResolver: resolvedCredentialResolver,
                 canonicalPaneMembership: resolvedCanonicalPaneMembership
             )
-            server = AgentStudioAppIPCServer(
-                service: service,
-                paths: paths,
-                channel: channel,
-                principalRegistry: principalRegistry,
-                credentialContinuityPort: credentialContinuityPort
+            server = LiveServerFixtureServer(
+                AgentStudioAppIPCServer(
+                    service: service,
+                    paths: paths,
+                    channel: channel,
+                    principalRegistry: principalRegistry,
+                    credentialContinuityPort: credentialContinuityPort
+                )
             )
         } catch {
             try? FileManager.default.removeItem(at: rootURL)
@@ -194,9 +233,82 @@ struct LiveServerFixture {
         return token
     }
 
-    func cleanup() {
+    func stop() {
         server.stop()
-        try? FileManager.default.removeItem(at: rootURL)
+    }
+
+    func stopAcceptingConnections() {
+        server.stopAcceptingConnections()
+    }
+
+    @MainActor
+    func shutdownThroughApplication(_ appDelegate: AppDelegate) async {
+        await server.shutdownThroughApplication(appDelegate)
+    }
+}
+
+/// The raw owner stays private so even a direct `fixture.server.stop()` goes
+/// through the same checkpoint as scope teardown. Joins and drains remain
+/// available as behavior-test stimuli; neither can reopen admission.
+final class LiveServerFixtureServer: Sendable {
+    private let owner: AgentStudioAppIPCServer
+    private let hasStopped = Mutex(false)
+
+    init(_ owner: AgentStudioAppIPCServer) {
+        self.owner = owner
+    }
+
+    var principalRegistry: AgentStudioIPCPrincipalRegistry { owner.principalRegistry }
+    var trackedConnectionHandlerCount: Int { owner.trackedConnectionHandlerCount }
+
+    func start(
+        processIdentifier: Int32 = Int32(ProcessInfo.processInfo.processIdentifier),
+        startedAt: Date = Date()
+    ) throws {
+        try hasStopped.withLock { stopped in
+            try owner.start(processIdentifier: processIdentifier, startedAt: startedAt)
+            stopped = false
+        }
+    }
+
+    func stop() {
+        hasStopped.withLock { stopped in
+            guard !stopped else { return }
+            stopped = true
+            owner.stop()
+        }
+    }
+
+    func stopAcceptingConnections() {
+        hasStopped.withLock { stopped in
+            guard !stopped else { return }
+            stopped = true
+            owner.stopAcceptingConnections()
+        }
+    }
+
+    func joinConnectionHandlers() async {
+        await owner.joinConnectionHandlers()
+    }
+
+    func drainCredentialPersistence() async -> AgentStudioIPCCredentialPersistenceDrainResult {
+        await owner.drainCredentialPersistence()
+    }
+
+    func invalidatePrincipals(boundToPaneId paneId: String) {
+        owner.invalidatePrincipals(boundToPaneId: paneId)
+    }
+
+    func finalRevokePrincipals(boundToPaneID paneID: UUID) {
+        owner.finalRevokePrincipals(boundToPaneID: paneID)
+    }
+
+    @MainActor
+    func shutdownThroughApplication(_ appDelegate: AppDelegate) async {
+        appDelegate.appIPCServer = owner
+        await appDelegate.stopAcceptingAppIPCConnections()
+        hasStopped.withLock { $0 = true }
+        await appDelegate.drainAppIPCCredentialPersistence()
     }
 }
 

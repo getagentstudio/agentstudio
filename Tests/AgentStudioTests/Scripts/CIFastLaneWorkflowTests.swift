@@ -320,7 +320,8 @@ struct CIFastLaneWorkflowTests {
         let benchmarkStep = try workflowStep(named: "Swift benchmark tests", in: benchmarkWorkflow)
 
         #expect(benchmarkWorkflow.contains("  schedule:\n    - cron: \"0 9 * * *\""))
-        #expect(benchmarkWorkflow.contains("  push:\n    branches: [main]"))
+        #expect(!benchmarkWorkflow.contains("  push:"))
+        #expect(benchmarkWorkflow.contains("  workflow_dispatch:"))
         #expect(benchmarkWorkflow.contains("concurrency:\n  group: benchmarks-${{ github.ref }}"))
         #expect(benchmarkWorkflow.contains("cancel-in-progress: false"))
         #expect(benchmarkStep.contains("grep -oE \"REPO_EXPLORER_NATIVE_TABLE_PILOT_RESULT"))
@@ -357,7 +358,7 @@ struct CIFastLaneWorkflowTests {
         )
 
         #expect(ciWorkflow.contains("SWIFT_BUILD_DIR: .build-ci"))
-        #expect(benchmarkWorkflow.contains("push:\n    branches: [main]"))
+        #expect(!benchmarkWorkflow.contains("  push:"))
         #expect(benchmarkWorkflow.contains("workflow_dispatch:"))
         #expect(prebuildStep.contains("SWIFT_TEST_TIMEOUT_SECONDS: \"600\""))
         #expect(prebuildStep.contains("SWIFT_TEST_PREBUILD_TIMEOUT_SECONDS: \"1200\""))
