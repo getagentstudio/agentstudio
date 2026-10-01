@@ -154,9 +154,8 @@ extension BridgePaneController {
         let hiddenInput = BridgePaneReviewBuildAdmissionInput.filesystemCatchUp(
             batchSequence: dirtyFact.latestBatchSequence
         )
-        guard let productAdmission = productAdmissionGate.acquire(),
-            let isReviewShown = productAdmission.withValidAdmission({ isReviewShownByPage })
-        else { return }
+        guard productAdmissionGate.diagnosticSnapshot.isOpen else { return }
+        let isReviewShown = isReviewShownByPage
         guard isReviewShown else {
             recordReviewBuildAdmissionFact(
                 .deferredHidden(input: hiddenInput),
