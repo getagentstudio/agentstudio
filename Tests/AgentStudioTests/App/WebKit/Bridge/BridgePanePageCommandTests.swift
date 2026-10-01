@@ -41,7 +41,7 @@ extension WebKitSerializedTests {
                         let delivery = try #require(handler.receiveValidatedBootstrapMessage(message))
                         await delivery.value
                         #expect(!controller.isBridgeReady)
-                        #expect(await controller.productSessionOwner.activeInstallation == nil)
+                        #expect(!controller.hasPublishedProductSessionBootstrap)
                         #expect(
                             owner.executions == [
                                 .init(command: .reloadBridgeWebView, paneId: paneId, targetType: .pane)
