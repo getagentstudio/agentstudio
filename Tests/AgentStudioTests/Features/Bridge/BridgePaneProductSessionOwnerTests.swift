@@ -351,6 +351,15 @@ struct BridgePaneProductSessionOwnerTests {
         )
         let installation = try await installFirstCandidate(in: owner)
         try await openBridgePaneProductSession(installation)
+        // Producer-start facts follow enqueue, but collectors can consume before sampling.
+        let metadataFirstDataReceipt = HeldStep<Void>(
+            "metadata delivery reaches its collector",
+            cancellation: .holdThroughCancellation
+        )
+        let contentFirstDataReceipt = HeldStep<Void>(
+            "content delivery reaches its collector",
+            cancellation: .holdThroughCancellation
+        )
         let schemeRouter = await owner.schemeRouter
         let handler = BridgeSchemeHandler(
             paneId: UUID(),
@@ -360,18 +369,28 @@ struct BridgePaneProductSessionOwnerTests {
         let metadataReply = try await startBridgePaneProductMetadataReply(
             installation: installation,
             provider: provider,
-            handler: handler
+            handler: handler,
+            firstDataReceipt: metadataFirstDataReceipt
         )
         let contentReply = try await startContentReply(
             installation: installation,
             provider: provider,
             identitySuffix: "pane-disposal",
-            handler: handler
+            handler: handler,
+            firstDataReceipt: contentFirstDataReceipt
         )
+        _ = try await metadataFirstDataReceipt.firstArrival()
+        _ = try await contentFirstDataReceipt.firstArrival()
         let liveSnapshot = await owner.snapshot()
 
         // Act
-        let retirement = await owner.retire(reason: .paneDisposal)
+        let retirementTask = Task {
+            await owner.retire(reason: .paneDisposal)
+        }
+        _ = await provider.waitForLifecycleAcknowledgement(count: 1)
+        metadataFirstDataReceipt.release()
+        contentFirstDataReceipt.release()
+        let retirement = await retirementTask.value
         _ = try? await metadataReply.value
         _ = try? await contentReply.value
         let finalSnapshot = await owner.snapshot()
@@ -589,7 +608,8 @@ func installFirstCandidate(
 func startBridgePaneProductMetadataReply(
     installation: BridgeProductSessionInstallation,
     provider: BridgePaneProductSessionProviderGate,
-    handler: BridgeSchemeHandler? = nil
+    handler: BridgeSchemeHandler? = nil,
+    firstDataReceipt: HeldStep<Void>? = nil
 ) async throws -> Task<BridgeProductSchemeReplyObservation, any Error> {
     let body = try JSONSerialization.data(
         withJSONObject: [
@@ -613,7 +633,8 @@ func startBridgePaneProductMetadataReply(
                 route: BridgeProductWireContract.streamRoute,
                 capability: capabilityHeader,
                 body: body
-            )
+            ),
+            firstDataReceipt: firstDataReceipt
         )
     }
     try await provider.waitUntilMetadataProducerStarted()
@@ -624,7 +645,8 @@ func startContentReply(
     installation: BridgeProductSessionInstallation,
     provider: BridgePaneProductSessionProviderGate,
     identitySuffix: String,
-    handler: BridgeSchemeHandler? = nil
+    handler: BridgeSchemeHandler? = nil,
+    firstDataReceipt: HeldStep<Void>? = nil
 ) async throws -> Task<BridgeProductSchemeReplyObservation, any Error> {
     let request = try paneOwnerContentRequest(
         installation: installation,
@@ -641,7 +663,8 @@ func startContentReply(
                 route: BridgeProductWireContract.contentRoute,
                 capability: capabilityHeader,
                 body: try JSONEncoder().encode(request)
-            )
+            ),
+            firstDataReceipt: firstDataReceipt
         )
     }
     try await provider.waitUntilContentProducerStarted()
@@ -651,17 +674,20 @@ func startContentReply(
 private func collectPaneOwnerProductReply(
     handler: BridgeSchemeHandler?,
     adapter: BridgeProductSchemeAdapter,
-    request: URLRequest
+    request: URLRequest,
+    firstDataReceipt: HeldStep<Void>? = nil
 ) async throws -> BridgeProductSchemeReplyObservation {
     if let handler {
         return try await collectBridgeSchemeHandlerProductReply(
             handler: handler,
-            request: request
+            request: request,
+            firstDataReceipt: firstDataReceipt
         )
     }
     return try await collectBridgeProductSchemeReply(
         adapter: adapter,
-        request: request
+        request: request,
+        firstDataReceipt: firstDataReceipt
     )
 }
 
@@ -696,11 +722,13 @@ func paneOwnerProductCallSchemeRequest(
 
 func collectBridgeSchemeHandlerProductReply(
     handler: BridgeSchemeHandler,
-    request: URLRequest
+    request: URLRequest,
+    firstDataReceipt: HeldStep<Void>? = nil
 ) async throws -> BridgeProductSchemeReplyObservation {
     var body = Data()
     var events: [BridgeProductSchemeReplyObservation.Event] = []
     var response: HTTPURLResponse?
+    var hasHeldFirstDataReceipt = false
     for try await result in handler.reply(for: request) {
         switch result {
         case .response(let emittedResponse):
@@ -709,6 +737,10 @@ func collectBridgeSchemeHandlerProductReply(
         case .data(let chunk):
             events.append(.data)
             body.append(chunk)
+            if !hasHeldFirstDataReceipt, let firstDataReceipt {
+                hasHeldFirstDataReceipt = true
+                try await firstDataReceipt.arrive(())
+            }
         @unknown default:
             Issue.record("Unexpected URL scheme task result")
         }
