@@ -309,8 +309,15 @@ extension BridgePaneController {
     ) async {
         guard let productAdmission = productAdmissionGate.acquire() else { return }
         latestProductSessionBootstrapRequestId = requestId
-        let expected =
-            predecessor ?? (hasPublishedProductSessionBootstrap ? productSessionOwner.closeActiveInstallation() : nil)
+        let expected: BridgeProductInstallationFenceSnapshot?
+        if let predecessor {
+            expected = predecessor
+        } else if hasPublishedProductSessionBootstrap {
+            expected = productSessionOwner.closeActiveInstallation()
+            retirePendingExplicitReviewCommand()
+        } else {
+            expected = nil
+        }
         let precedingTransition = productSessionBootstrapTransitionTail
         let transition = Task { @MainActor [weak self] in
             if let precedingTransition {

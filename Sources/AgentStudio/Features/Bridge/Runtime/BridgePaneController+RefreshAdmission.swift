@@ -148,6 +148,7 @@ extension BridgePaneController {
     }
 
     private func scheduleReviewCatchUpIfPossible() {
+        guard pendingExplicitReviewCommand == nil else { return }
         guard let dirtyFact = refreshAdmissionCoordinator.diagnosticSnapshot.dirtyFact,
             dirtyFact.requiresReviewRefresh
         else { return }

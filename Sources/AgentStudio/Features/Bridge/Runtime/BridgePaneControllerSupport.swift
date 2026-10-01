@@ -61,6 +61,7 @@ enum BridgePaneReviewComparisonEffectDisposition: Equatable, Sendable {
 
 package enum BridgePaneReviewBuildAdmissionScope: Hashable, Sendable {
     case hiddenInput(BridgePaneReviewBuildAdmissionInput)
+    case pendingExplicitCommand(UUID)
     case attempt(UUID)
 }
 
@@ -72,9 +73,20 @@ package enum BridgePaneReviewBuildAttemptOutcome: Equatable, Sendable {
     case streamReset
 }
 
+package enum BridgePanePendingExplicitReviewCommandOutcome: Equatable, Sendable {
+    case completed
+    case superseded
+    case retired
+}
+
 package enum BridgePaneReviewBuildAdmissionFact: Equatable, Sendable {
     case admitted(attempt: UUID)
     case deferredHidden(input: BridgePaneReviewBuildAdmissionInput)
+    case pendingExplicitCommandAwaitingPageMode(commandId: UUID)
+    case pendingExplicitCommandEnded(
+        commandId: UUID,
+        outcome: BridgePanePendingExplicitReviewCommandOutcome
+    )
     case attemptEnded(attempt: UUID, outcome: BridgePaneReviewBuildAttemptOutcome)
 }
 
