@@ -7,13 +7,29 @@ import Testing
 
 @testable import AgentStudioBridge
 
-struct BridgePaneProductSessionOwnerFrameWaiterFixture {
+final class BridgePaneProductSessionOwnerFrameWaiterFixture {
     let firstFrameWaiterRegistration: HeldStep<BridgeProductProducerLease>
     let frameWaiterRegistrationCount: Mutex<Int>
     let installation: BridgeProductSessionInstallation
     let owner: BridgePaneProductSessionOwner
     let provider: BridgePaneProductSessionProviderGate
     let secondFrameWaiterRegistration: HeldStep<BridgeProductProducerLease>
+
+    init(
+        firstFrameWaiterRegistration: HeldStep<BridgeProductProducerLease>,
+        frameWaiterRegistrationCount: Mutex<Int>,
+        installation: BridgeProductSessionInstallation,
+        owner: BridgePaneProductSessionOwner,
+        provider: BridgePaneProductSessionProviderGate,
+        secondFrameWaiterRegistration: HeldStep<BridgeProductProducerLease>
+    ) {
+        self.firstFrameWaiterRegistration = firstFrameWaiterRegistration
+        self.frameWaiterRegistrationCount = frameWaiterRegistrationCount
+        self.installation = installation
+        self.owner = owner
+        self.provider = provider
+        self.secondFrameWaiterRegistration = secondFrameWaiterRegistration
+    }
 }
 
 func makeBridgePaneProductSessionOwnerFrameWaiterFixture() throws
