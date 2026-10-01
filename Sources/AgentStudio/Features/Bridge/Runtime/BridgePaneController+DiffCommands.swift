@@ -227,7 +227,15 @@ extension BridgePaneController: BridgeRuntimeCommandHandling {
             case .committed(let deliveryDisposition) =
                 await commitReviewPackageLoadAndPublishDiffLoaded(commit)
         else {
-            if !isReviewShownByPage {
+            // Teardown closes E1 and clears page visibility; classify retirement before hidden.
+            guard
+                let reviewIsShown = commit.productAdmission.withValidAdmission({
+                    isReviewShownByPage
+                })
+            else {
+                return .failure(.invalidPayload(description: "Bridge pane is closed"))
+            }
+            if !reviewIsShown {
                 retainReviewPackageBuildReasonIfCurrent(
                     reset: commit.reset,
                     productAdmission: commit.productAdmission
@@ -295,7 +303,8 @@ extension BridgePaneController: BridgeRuntimeCommandHandling {
         foregroundWorkAdmission: BridgePaneRefreshWorkAdmission,
         packageTraceContext: BridgeTraceContext?
     ) -> Bool {
-        foregroundWorkAdmission.withValidAdmission {
+        guard productAdmission.withValidAdmission({ isReviewShownByPage }) == true else { return false }
+        return foregroundWorkAdmission.withValidAdmission {
             productAdmission.withValidAdmission {
                 guard isReviewShownByPage,
                     reset.reviewGeneration == nextReviewGeneration,
@@ -313,7 +322,8 @@ extension BridgePaneController: BridgeRuntimeCommandHandling {
         productAdmission: BridgeProductAdmissionContext,
         foregroundWorkAdmission: BridgePaneRefreshWorkAdmission
     ) -> Bool {
-        foregroundWorkAdmission.withValidAdmission {
+        guard productAdmission.withValidAdmission({ isReviewShownByPage }) == true else { return false }
+        return foregroundWorkAdmission.withValidAdmission {
             productAdmission.withValidAdmission {
                 isReviewShownByPage
                     && reset.reviewGeneration == nextReviewGeneration
@@ -326,7 +336,9 @@ extension BridgePaneController: BridgeRuntimeCommandHandling {
     private func commitReviewPackageLoadAndPublishDiffLoaded(
         _ request: ReviewPackageLoadCommit
     ) async -> BridgeReviewPackageLoadCommitDisposition {
-        guard isReviewShownByPage else { return .rejected }
+        guard request.productAdmission.withValidAdmission({ isReviewShownByPage }) == true else {
+            return .rejected
+        }
         let commitDisposition = await commitReviewPackageLoad(
             request.load,
             expectedReviewGeneration: request.reset.reviewGeneration,
@@ -562,7 +574,7 @@ extension BridgePaneController: BridgeRuntimeCommandHandling {
         foregroundWorkAdmission: BridgePaneRefreshWorkAdmission,
         productAdmission: BridgeProductAdmissionContext
     ) async -> BridgePaneRefreshCatchUpOutcome {
-        guard isReviewShownByPage,
+        guard productAdmission.withValidAdmission({ isReviewShownByPage }) == true,
             foregroundWorkAdmission.withValidAdmission({ true }) == true,
             refreshAdmissionCoordinator.isRefreshPassCurrent(reservation)
         else { return .stale }
@@ -674,8 +686,8 @@ extension BridgePaneController: BridgeRuntimeCommandHandling {
                 packageTraceContext: packageTraceContext
             )
             guard
+                productAdmission.withValidAdmission({ isReviewShownByPage }) == true,
                 !Task.isCancelled,
-                isReviewShownByPage,
                 foregroundWorkAdmission.withValidAdmission({ true }) == true,
                 refreshAdmissionCoordinator.isRefreshPassCurrent(reservation),
                 refreshGeneration == nextReviewGeneration,

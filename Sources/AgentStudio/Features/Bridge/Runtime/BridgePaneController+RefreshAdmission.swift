@@ -40,8 +40,8 @@ extension BridgePaneController {
         reservation: BridgePaneRefreshCatchUpReservation,
         packageTraceContext: BridgeTraceContext?
     ) -> Bool {
-        isReviewShownByPage
-            && !Task.isCancelled
+        guard productAdmission.withValidAdmission({ isReviewShownByPage }) == true else { return false }
+        return !Task.isCancelled
             && foregroundWorkAdmission.withValidAdmission({ true }) == true
             && refreshAdmissionCoordinator.isRefreshPassCurrent(reservation)
             && refreshGeneration == nextReviewGeneration
@@ -154,7 +154,10 @@ extension BridgePaneController {
         let hiddenInput = BridgePaneReviewBuildAdmissionInput.filesystemCatchUp(
             batchSequence: dirtyFact.latestBatchSequence
         )
-        guard isReviewShownByPage else {
+        guard let productAdmission = productAdmissionGate.acquire(),
+            let isReviewShown = productAdmission.withValidAdmission({ isReviewShownByPage })
+        else { return }
+        guard isReviewShown else {
             recordReviewBuildAdmissionFact(
                 .deferredHidden(input: hiddenInput),
                 scope: .hiddenInput(hiddenInput)
