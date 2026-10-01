@@ -219,7 +219,7 @@ private final class BridgeSmokeReviewBuildFacts: Sendable {
     private let facts = Mutex<[(BridgePaneReviewBuildAdmissionScope, BridgePaneReviewBuildAdmissionFact)]>([])
 
     var sink: BridgePaneReviewBuildAdmissionFactSink {
-        { [facts] scope, fact in
+        { [self] scope, fact in
             facts.withLock { $0.append((scope, fact)) }
         }
     }
