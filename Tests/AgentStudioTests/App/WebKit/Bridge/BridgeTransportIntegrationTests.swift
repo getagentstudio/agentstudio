@@ -312,7 +312,7 @@ private final class BridgeSmokeReviewBuildFacts: Sendable {
             "diffStatus=\(String(describing: controller.paneState.diff.status))",
             "reviewPackagePresent=\(controller.paneState.diff.packageMetadata != nil)",
             "activeConstructionWaits=\(controller.reviewConstructionProgress.activeWaitCount())",
-        ].joined(separator: "\n")
+        ].joined(separator: "; ")
     }
 }
 
