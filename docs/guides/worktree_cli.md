@@ -30,7 +30,7 @@ Exit codes: `0` created or listed · `1` refused, nothing changed (bad branch na
 ## Which one
 
 - **`fork`**: you want your exact current state, including uncommitted work and build output, in a second worktree. It's the cheapest option for big repositories.
-- **`new`**: you want a clean branch from the default start point.
+- **`new`**: you want a clean branch from the default start point. Prefer it when you don't need the source's build state: `fork` also clones `.build`, `node_modules` and the like, so one fork can add hundreds of thousands of files at once inside `~/Documents/dev/project-dev`, which the running app watches through FSEvents.
 - Reuse an existing checkout when you can.
 
 ## Works / doesn't (beta 0.0.105-beta.71, checked 2026-10-01)
