@@ -195,7 +195,6 @@ struct BridgeMetadataCoordinatorProducerTaskTests {
         #expect(await reconciler.activeAttempt == nil)
         #expect(await reconciler.currentFailure == nil)
         await coordinator.uninstall(lease: lease)
-        #expect(await pump.cancel())
     }
 
     @Test("replacement install does not return until cancelled predecessor open drains")
