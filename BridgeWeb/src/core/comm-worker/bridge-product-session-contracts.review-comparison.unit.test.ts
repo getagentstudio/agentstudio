@@ -36,9 +36,7 @@ describe('Bridge product session Review comparison contract', () => {
 		expect(bridgeProductMetadataFrameSchema.parse(frame)).toEqual(frame);
 		const rootFailureWireValue = { failureKind: 'fileSourceUnavailable', retryable: true } as const;
 		const rootFailureFrame = { ...frame, fileRefreshFailure: rootFailureWireValue } as const;
-		expect(bridgeProductMetadataFrameSchema.parse(rootFailureFrame).fileRefreshFailure).toEqual(
-			rootFailureWireValue,
-		);
+		expect(bridgeProductMetadataFrameSchema.parse(rootFailureFrame)).toEqual(rootFailureFrame);
 		for (const rootSpecificFailure of [
 			{ failureKind: 'missingRoot', retryable: true },
 			{ failureKind: 'unreadable', retryable: true },
