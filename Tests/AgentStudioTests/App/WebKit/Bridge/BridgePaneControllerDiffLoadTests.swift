@@ -493,10 +493,8 @@ extension WebKitSerializedTests.BridgePaneControllerTests {
         let retirementTask = controller.beginTeardown()
         await reviewMetadataSource.releaseReadyPublication()
 
-        #expect(
-            await commandResult
-                == .failure(.invalidPayload(description: "Bridge pane is closed"))
-        )
+        let completedResult = await commandResult
+        #expect(completedResult == .failure(.invalidPayload(description: "Bridge pane is closed")))
         #expect(controller.runtime.snapshot().lastSeq == 0)
         let replay = await controller.runtime.eventsSince(seq: 0)
         #expect(!replay.events.contains(where: isDiffLoadWitnessEvent))
