@@ -16,7 +16,7 @@ const LazyReviewViewerShell = lazy(async () => {
 export type BridgeReviewViewerPresentationState =
 	| {
 			readonly status:
-				| 'empty'
+				| 'noTarget'
 				| 'readyEmpty'
 				| 'metadataLoading'
 				| 'projectionPending'
@@ -52,14 +52,7 @@ export function BridgeReviewViewerShellBoundary(
 	}, [props.isActive, props.presentationState]);
 	const fallback = (pendingModule = false): ReactElement => {
 		const status = props.presentationState.status;
-		const regionStatus =
-			pendingModule || status === 'metadataLoading' || status === 'projectionPending'
-				? 'loading'
-				: status === 'metadataFailed' || status === 'projectionFailed'
-					? 'failed'
-					: status === 'readyEmpty'
-						? 'certifiedEmpty'
-						: 'noSelection';
+		const regionStatus = pendingModule ? 'loading' : bridgeReviewFallbackStatus(status);
 		const comparison = props.comparisonPaneState;
 		const retryTarget =
 			comparison.kind === 'failedInitial' || comparison.kind === 'failedPrevious'
@@ -106,4 +99,28 @@ export function BridgeReviewViewerShellBoundary(
 			/>
 		</Suspense>
 	);
+}
+
+function bridgeReviewFallbackStatus(
+	status: BridgeReviewViewerPresentationState['status'],
+): Parameters<typeof bridgeReviewFallbackRegionPresentation>[0]['status'] {
+	switch (status) {
+		case 'noTarget':
+			return 'noSelection';
+		case 'readyEmpty':
+			return 'certifiedEmpty';
+		case 'metadataLoading':
+		case 'projectionPending':
+		case 'ready':
+			return 'loading';
+		case 'metadataFailed':
+		case 'projectionFailed':
+			return 'failed';
+		default:
+			return assertNeverReviewPresentationStatus(status);
+	}
+}
+
+function assertNeverReviewPresentationStatus(status: never): never {
+	throw new Error(`Unexpected Review presentation status: ${String(status)}`);
 }
