@@ -1,4 +1,5 @@
 import AgentStudioCore
+import AgentStudioTestHarness
 import Foundation
 import Testing
 
@@ -231,6 +232,17 @@ struct BridgeMetadataReconnectTests {
             subscriptionId: context.retainedSubscription.subscriptionId
         )
         #expect(await context.harness.session.producerSnapshot().hasZeroResidue)
+        let retainedScope = await context.harness.session.acceptedViewScope(
+            subscriptionId: context.retainedSubscription.subscriptionId
+        )
+        let openCompletionStep = HeldStep<Void>(
+            "reattached File source waits before retained view demand is applied",
+            cancellation: .holdThroughCancellation
+        )
+        await context.fileSource.holdOpenCompletion(
+            ordinal: before.openCallCount + 1,
+            at: openCompletionStep
+        )
         let replacement = try await installReconnectMetadataStream(
             request: bridgeProductMetadataStreamRequest(
                 metadataStreamId: "metadata-retained-interests",
@@ -239,14 +251,25 @@ struct BridgeMetadataReconnectTests {
             provider: context.provider,
             harness: context.harness
         )
-        await waitForReconnectSourceActivity(context.fileSource)
-        let disposition = await context.provider.publishFileChangeset(
-            try reconnectFileChangeset(),
-            productAdmission: context.harness.productAdmission.context,
-            foregroundWorkAdmission: context.refreshWorkAdmission,
-            operationCorrelationID: String(repeating: "b", count: 64),
-            operationStageAttempt: 1
-        )
+        _ = try await openCompletionStep.firstArrival()
+        #expect(retainedScope?.handle == "file-reconnect-view-handle")
+        #expect(retainedScope?.revision == 1)
+
+        let publicationTask = Task {
+            await context.provider.publishFileChangeset(
+                try reconnectFileChangeset(),
+                productAdmission: context.harness.productAdmission.context,
+                foregroundWorkAdmission: context.refreshWorkAdmission,
+                operationCorrelationID: String(repeating: "b", count: 64),
+                operationStageAttempt: 1
+            )
+        }
+        let disposition = try await publicationTask.value
+        let heldDiagnostics = await context.fileSource.diagnostics
+        #expect(heldDiagnostics.updateCallCount == before.updateCallCount)
+        #expect(heldDiagnostics.viewHandle == nil)
+        openCompletionStep.release()
+        await context.fileSource.waitForUpdateCallCount(before.updateCallCount + 1)
         let publication =
             disposition == .applied
             ? try await pullPostReconnectPublication(from: replacement.pump) : nil
