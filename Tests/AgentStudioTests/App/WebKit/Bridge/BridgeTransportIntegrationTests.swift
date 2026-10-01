@@ -114,6 +114,14 @@ extension WebKitSerializedTests {
                 try await installPageErrorProbe(page)
 
                 // Act
+                let loadInputs = (
+                    acceptedMode: controller.activeViewerModeSignalState.acceptedMode,
+                    modeSequence: controller.activeViewerModeSignalState.lastSequence,
+                    reviewGeneration: controller.nextReviewGeneration,
+                    authorityGeneration: controller.refreshAdmissionCoordinator.currentAuthorityGeneration(
+                        for: .review),
+                    activity: controller.refreshAdmissionCoordinator.diagnosticSnapshot.activity
+                )
                 let commandResult = await controller.handleDiffCommand(
                     .loadDiff(
                         DiffArtifact(
@@ -127,10 +135,21 @@ extension WebKitSerializedTests {
                 )
 
                 // Assert
+                let loadOutputs = (
+                    acceptedMode: controller.activeViewerModeSignalState.acceptedMode,
+                    modeSequence: controller.activeViewerModeSignalState.lastSequence,
+                    reviewGeneration: controller.nextReviewGeneration,
+                    authorityGeneration: controller.refreshAdmissionCoordinator.currentAuthorityGeneration(
+                        for: .review),
+                    activity: controller.refreshAdmissionCoordinator.diagnosticSnapshot.activity
+                )
                 let commandSucceeded = if case .success = commandResult { true } else { false }
                 #expect(
                     commandSucceeded,
-                    Comment(rawValue: "Expected smoke provider diff command to succeed; actual: \(commandResult)")
+                    Comment(
+                        rawValue:
+                            "Expected smoke provider diff command to succeed; actual: \(commandResult); inputs: \(loadInputs); outputs: \(loadOutputs)"
+                    )
                 )
                 guard commandSucceeded else { return }
                 // The assertion reads `hasReviewShell`, which is computed from this
