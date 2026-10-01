@@ -177,7 +177,8 @@ extension WebKitSerializedTests {
             #expect(proof.updatingReviewStatus.comparisonStatusText == nil)
             #expect(proof.updatingReviewStatus.reviewStatusText == nil)
             #expect(proof.updatingReviewStatus.fileStatusText == nil)
-            #expect(proof.updatingFileStatus.fileStatusText == "Updating files…")
+            #expect(proof.updatingFileStatus.fileTreePresentationState == "updating")
+            #expect(proof.updatingFileStatus.fileStatusText == nil)
             #expect(proof.updatingFileStatus.reviewStatusText == nil)
             #expect(
                 proof.paneOneWorkerIdBeforeHide == proof.paneOneWorkerIdAfterReturn,
