@@ -339,11 +339,12 @@ private struct ParsedArgumentAccumulator {
         guard subcommand == "remove" || (subcommand == "prune" && argument == "--archive-to-main") else {
             throw WorktreeCommandLineArgumentError.unsupportedOption
         }
-        guard seenFlags.insert(argument).inserted else {
+        let flagIdentity = argument == "--force" ? "-f" : argument
+        guard seenFlags.insert(flagIdentity).inserted else {
             throw WorktreeCommandLineArgumentError.duplicateOption(argument)
         }
         switch argument {
-        case "-f": discardWorkingChanges = true
+        case "-f", "--force": discardWorkingChanges = true
         case "-D": deleteAtObservedCommit = true
         case "--no-delete-branch": keepBranch = true
         case "--archive-to-main":
@@ -460,7 +461,7 @@ private struct ParsedArgumentAccumulator {
     }
 
     private static let removeFlags: Set<String> = [
-        "-f", "-D", "--no-delete-branch", "--archive-to-main", "--discard-tmp",
+        "-f", "--force", "-D", "--no-delete-branch", "--archive-to-main", "--discard-tmp",
         "--remove-stale-lock", "--dry-run",
     ]
     private static let pathOptions: Set<String> = ["--repo", "--from", "--archive-to"]

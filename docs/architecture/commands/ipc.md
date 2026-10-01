@@ -511,11 +511,11 @@ agentstudio-cli executable (bundled as Contents/Helpers/agentstudio)
            -> AgentStudioIPCTransport and AgentStudioProgrammaticControl
 ```
 
-`agentstudio worktree new`, `fork`, and `list` use the local Git client inside
-the CLI process. They do not read IPC credentials, open the app socket, or use
-app permissions. Other arguments continue through the existing command-line
-runner, which handles local provider/package commands and sends app-backed
-methods through `AgentStudioIPCClientCore`.
+`agentstudio worktree new`, `fork`, `list`, `remove`, and `prune` use the local
+Git client inside the CLI process. They do not read IPC credentials, open the
+app socket, or use app permissions. Other arguments continue through the
+existing command-line runner, which handles local provider/package commands
+and sends app-backed methods through `AgentStudioIPCClientCore`.
 
 ```sh
 agentstudio worktree new feature/cleanup --repo /path/to/repository
@@ -524,16 +524,40 @@ agentstudio worktree list --repo /path/to/repository
 ```
 
 `--repo` and `--from` accept a folder inside the relevant worktree. Without
-either option, the command starts from the current directory. `new` and `list`
-accept `--repo`; `fork` accepts `--from`.
+either option, the command starts from the current directory. `--from-branch`
+starts `new` at the tip of an existing local branch and creates a new branch.
+`fork` copies the current worktree by default; `--changes-only` carries tracked
+changes and eligible untracked files without ignored files. `list` accepts
+optional worktree or branch targets and reports working-change, integration,
+evidence, lock, and removal-readiness state. `remove` accepts one or more
+targets. `prune` previews eligible linked worktrees by default; `--apply`
+performs the removals.
+
+| Command | Options |
+| --- | --- |
+| `new <branch>` | `--repo <path>`, `--from-branch <local-branch>`, `--json` |
+| `fork <branch>` | `--from <worktree-path>`, `--changes-only`, `--json` |
+| `list [target...]` | `--repo <path>`, `--no-fetch`, `--json` |
+| `remove <target...>` | `--repo <path>`, `--no-fetch`, `-f` / `--force`, `-D`, `--no-delete-branch`, `--archive-to-main`, `--archive-to <path>`, `--discard-tmp`, `--remove-stale-lock`, `--dry-run`, `--json` |
+| `prune` | `--repo <path>`, `--no-fetch`, `--archive-to-main`, `--archive-to <path>`, `--apply`, `--json` |
+
+`-f` and `--force` are aliases for discarding working changes during
+`remove`. `-D` permits deletion of a branch with remaining contribution;
+`--no-delete-branch` keeps the branch. `--archive-to-main` and
+`--archive-to <path>` copy `tmp/` evidence before removal. `--discard-tmp`
+discards that evidence. `--remove-stale-lock` removes an identified stale lock
+after checking its identity and age. `--dry-run` reports the removal plan
+without changing the worktree lifecycle; the automatic fetch still runs unless
+`--no-fetch` is supplied. `prune` accepts neither `-f` / `--force` nor `-D`.
+Its only mutation option is `--apply`.
 
 The worktree commands use these exit codes:
 
 | Code | Meaning |
 | --- | --- |
-| 0 | Worktree created or list returned. |
-| 1 | Operation refused before changing anything. |
-| 2 | Operation failed after preflight. |
+| 0 | Creation or listing succeeded. Removal has no refused or failed entry. Prune has no failed entry; skipped worktrees do not change its exit code. |
+| 1 | Creation or fork was refused, or removal includes a refused entry and no entry failed. A dry-run target that cannot be resolved also returns 1. |
+| 2 | A command failed, a removal entry failed, or a prune entry failed. |
 | 64 | Malformed arguments. One usage line goes to stderr; stdout stays empty, including with `--json`. |
 
 The IPC client remains a client surface. It cannot import `AgentStudioAppIPC`

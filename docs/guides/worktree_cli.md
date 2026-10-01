@@ -1,54 +1,100 @@
 # Agent Studio worktree CLI: agent manual
 
-Use this instead of `wt` to **create** worktrees. Keep using `wt remove` to **remove** them until app PR 1 ships `remove` and `prune`.
+Use the Beta helper below for worktree creation, inspection, removal, and
+pruning. The stable bundle will get these verbs in the later stable cut.
 
 ## Why use it
 
-- `fork` makes an APFS copy-on-write clone of a worktree: the same files, uncommitted and ignored ones included (`.build`, `node_modules`, `tmp/`). It costs almost no disk. Not measured yet: whether an incremental build in the fork reuses that build output. SwiftPM `.build` and cargo `target/` can embed absolute paths, so the first build after a fork may be partly or fully cold.
-- It goes straight to Git through agentstudio-git. No shelling out to `git`, and no app or IPC needed.
-- `--json` gives a machine-readable result, and exit codes tell you what happened.
-- It puts worktrees at `<repo>.<branch>` next to the repository, the same default path as `wt`, so the sidebar and `wt` both see them as ordinary git worktrees.
+- `fork` makes an APFS copy-on-write clone of a worktree, including uncommitted
+  and ignored files such as `.build`, `node_modules`, and `tmp/`. The first
+  build in a fork may be partly or fully cold. Whether an incremental build
+  reuses the copied output has not been measured. SwiftPM `.build` and cargo
+  `target/` can embed absolute paths.
+- The helper calls Git through agentstudio-git. It does not shell out to `git`
+  and does not need the app or IPC.
+- `--json` returns machine-readable results. Exit codes report the overall
+  outcome.
+- Worktrees are created at `<repo>.<branch>` next to the repository, the same
+  default path as `wt`. The sidebar and `wt` discover them as ordinary Git
+  worktrees.
 
 ## Run it
 
-**Never run bare `agentstudio`.** In Agent Studio panes, `PATH` can include `AgentStudio.app/Contents/MacOS`. APFS ignores case, so `agentstudio` resolves to the GUI app binary and starts a stray second app instead of the CLI. Always use the full, quoted Helpers path:
+**Never run bare `agentstudio`.** In Agent Studio panes, `PATH` can include
+`AgentStudio.app/Contents/MacOS`. APFS ignores case, so `agentstudio` resolves
+to the GUI app binary and starts a second app. Always use the full, quoted
+Helpers path:
 
 ```bash
 ASW="/Applications/AgentStudio Beta.app/Contents/Helpers/agentstudio"   # beta: has the worktree verbs
 ```
 
-The stable helper (`/Applications/AgentStudio.app/Contents/Helpers/agentstudio`, 0.0.104) doesn't have the `worktree` verbs yet.
+The stable helper at
+`/Applications/AgentStudio.app/Contents/Helpers/agentstudio` does not include
+the worktree verbs yet. Use the Beta helper until the stable cut.
 
-| Command | Does | Options |
+| Command | Behavior | Options |
 |---|---|---|
-| `"$ASW" worktree new <branch>` | new branch + worktree from the default start point (`origin/HEAD`, else `main`, else `master`) | `--repo <path>` (default: current directory), `--json` |
-| `"$ASW" worktree fork <branch>` | copy-on-write clone of a worktree, current state included, on a new branch | `--from <worktree path>` (default: current directory), `--json` |
-| `"$ASW" worktree list` | the repository's worktrees with branch and path | `--repo <path>`, `--json` |
+| `"$ASW" worktree new <branch>` | Creates a new branch and worktree from the default start point (`origin/HEAD`, else `main`, else `master`). | `--repo <path>` (defaults to the current directory), `--from-branch <local-branch>`, `--json` |
+| `"$ASW" worktree fork <branch>` | Copies the current worktree by default, including uncommitted and ignored files, onto a new branch. | `--from <worktree path>` (defaults to the current directory), `--changes-only`, `--json` |
+| `"$ASW" worktree list [target...]` | Lists worktrees with branch, path, current/locked state, working changes, integration, `tmp/` evidence, blockers, and removal readiness. Targets limit the rows. | `--repo <path>`, `--no-fetch`, `--json` |
+| `"$ASW" worktree remove <target...>` | Removes worktrees or branch-only targets. Processes each target and reports its result. | `--repo <path>`, `--no-fetch`, `-f` / `--force`, `-D`, `--no-delete-branch`, `--archive-to-main`, `--archive-to <path>`, `--discard-tmp`, `--remove-stale-lock`, `--dry-run`, `--json` |
+| `"$ASW" worktree prune` | Previews eligible linked worktrees. Skipped rows include the reason and available remove commands. | `--repo <path>`, `--no-fetch`, `--archive-to-main`, `--archive-to <path>`, `--apply`, `--json` |
 
-Exit codes: `0` created or listed · `1` refused, nothing changed (bad branch name, branch or destination exists, not in a repository, fork not possible) · `2` failed (Git error, or the fork's source changed while it was copying; the output says what was left behind).
+`new --from-branch <local-branch>` creates the new branch at the named local
+branch tip. `fork --changes-only` carries tracked changes and eligible
+untracked files, excludes ignored files, and leaves the destination index at
+HEAD. Use the default `fork` when you need the source worktree's full state.
+
+`list`, `remove`, and `prune` fetch the integration target branch before
+assessing it. `--no-fetch` skips that fetch. `remove --dry-run` reports the
+steps and any stop without changing the worktree lifecycle. It may still fetch;
+add `--no-fetch` for a fully read-only preview.
+
+`-f` and `--force` are aliases for discarding working changes during
+`remove`. `-D` permits deleting a branch with remaining contribution, subject
+to the other branch safety checks. `--no-delete-branch` keeps the branch.
+`--archive-to-main` copies `tmp/` evidence to the main worktree, and
+`--archive-to <path>` copies it to the selected folder. `--discard-tmp`
+discards that evidence. `--remove-stale-lock` removes an identified stale lock
+only after checking its identity and age. `prune` accepts neither `-f` /
+`--force` nor `-D`; `--apply` performs its eligible removals.
+
+Exit codes:
+
+- `0`: creation or listing succeeded; remove has no refused or failed entries;
+  prune has no failed entries. Prune skips still return `0`.
+- `1`: creation or fork was refused, or remove includes a refused entry and no
+  entry failed. A dry-run target that cannot be resolved also returns `1`.
+- `2`: the command failed, a remove entry failed, or a prune entry failed.
+- `64`: arguments are malformed. One usage line is written to stderr and
+  stdout stays empty, including with `--json`.
 
 ## Which one
 
-- **`fork`**: you want your exact current state, including uncommitted work and build output, in a second worktree. It's the cheapest option for big repositories.
-- **`new`**: you want a clean branch from the default start point. Prefer it when you don't need the source's build state: `fork` also clones `.build`, `node_modules` and the like, so one fork can add hundreds of thousands of files at once inside `~/Documents/dev/project-dev`, which the running app watches through FSEvents.
+- `fork` preserves the exact current state, including uncommitted work and
+  build output. It is useful when a second checkout needs the same working
+  files.
+- `fork --changes-only` starts from HEAD and carries tracked changes plus
+  eligible untracked files. It excludes ignored files and build output.
+- `new` creates a clean branch from the default start point or from the local
+  branch named by `--from-branch`.
 - Reuse an existing checkout when you can.
 
-## Works / doesn't (beta 0.0.105-beta.71, checked 2026-10-01)
+The default copy-on-write `fork` refuses when the source or destination is not
+on APFS, crosses volumes, is not a worktree root, or the destination already
+exists.
 
-| Works | Not yet, coming in app PR 1 |
-|---|---|
-| `new`, `fork`, `list`, `--json`, running without the app open | `remove`, `prune`: use `wt remove <branch>` (archive `tmp/` and push first) |
-| worktrees that `wt list` and `wt remove` handle normally | merged / dirty / locked state in `list` (use `wt list`'s `⊂` for "merged" meanwhile) |
-| | `fork --changes-only` (only your changes, on top of HEAD) |
-| | `new --from-branch <branch>` |
-| | `--help` on subcommands (it prints "unknown worktree option") |
-
-**Git LFS:** `new` leaves LFS files as pointer files (libgit2 doesn't run Git's `lfs` filter). In an LFS repository, which includes agent-studio's website captures, run `git -C <new worktree> lfs pull` right after `new`. `fork` copies the source's real files, so it isn't affected.
-
-`fork` refuses (exit 1, nothing changed) when the source or destination isn't on APFS, crosses volumes, isn't a worktree root, or the destination already exists.
+**Git LFS:** `new` leaves LFS files as pointer files because libgit2 does not
+run Git's `lfs` filter. In an LFS repository, including Agent Studio's website
+captures, run `git -C <new worktree> lfs pull` right after `new`. `fork` copies
+the source's real files, so it is not affected.
 
 ## Rules
 
-- Never put worktrees in `~/dev/worktrees`, `~/dev/agent-studio-worktrees` or `/private/tmp`.
-- Remove a worktree as soon as its work is merged or abandoned: archive `tmp/`, push, then `wt remove <branch>`.
-- Problems or gaps go to the Worktrees Lead: claude-local `9304749a-6517-41da-952d-243201c32337`.
+- Never put development worktrees in `~/dev/worktrees`,
+  `~/dev/agent-studio-worktrees`, or `/private/tmp`.
+- When work is merged or abandoned, archive `tmp/`, push, then remove the
+  worktree with `agentstudio worktree remove --repo <repo> <branch-or-path>`.
+- Problems or gaps go to the Worktrees Lead: claude-local
+  `9304749a-6517-41da-952d-243201c32337`.

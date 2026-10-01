@@ -176,6 +176,40 @@ struct WorktreeCommandLineTests {
                 ))
     }
 
+    @Test("remove accepts --force as the -f alias and prune rejects it")
+    func parsesForceAliasOnlyForRemoval() throws {
+        let currentDirectory = URL(fileURLWithPath: "/tmp/worktree-cli", isDirectory: true)
+        let shortForce = try WorktreeCommandLineArgumentParser.parse(
+            ["remove", "feature/force", "-f"],
+            currentDirectory: currentDirectory
+        )
+        let longForce = try WorktreeCommandLineArgumentParser.parse(
+            ["remove", "feature/force", "--force"],
+            currentDirectory: currentDirectory
+        )
+        #expect(longForce == shortForce)
+
+        do {
+            _ = try WorktreeCommandLineArgumentParser.parse(
+                ["remove", "feature/force", "-f", "--force"],
+                currentDirectory: currentDirectory
+            )
+            Issue.record("expected aliases for one option to be rejected as duplicates")
+        } catch let error as WorktreeCommandLineArgumentError {
+            #expect(error == .duplicateOption("--force"))
+        }
+
+        do {
+            _ = try WorktreeCommandLineArgumentParser.parse(
+                ["prune", "--force"],
+                currentDirectory: currentDirectory
+            )
+            Issue.record("expected prune --force to be rejected")
+        } catch let error as WorktreeCommandLineArgumentError {
+            #expect(error == .unsupportedOption)
+        }
+    }
+
     @Test("path options reject another option as their value")
     func pathOptionsRejectFollowingFlagsAsValues() throws {
         let currentDirectory = URL(fileURLWithPath: "/tmp/worktree-cli", isDirectory: true)
