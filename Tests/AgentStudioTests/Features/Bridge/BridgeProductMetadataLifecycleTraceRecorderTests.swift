@@ -303,7 +303,7 @@ struct BridgeProductMetadataLifecycleTraceRecorderTests {
                 (.refused, .accessRefused, "file_root_access_refused"),
             ]
 
-        for (rootError, expectedReason, expectedTelemetryValue) in rootCases {
+        for (rootError, expectedReason, _) in rootCases {
             let failureReason = BridgePaneProductMetadataCoordinator.producerFailureReason(for: rootError)
             #expect(failureReason == expectedReason)
             await recorder.record(
