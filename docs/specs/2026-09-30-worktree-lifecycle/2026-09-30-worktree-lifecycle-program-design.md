@@ -1,6 +1,6 @@
 # Worktree lifecycle: how it is built
 
-Date: 2026-09-30, revision 7 (S4 implementation stop: removeWorktree returns partial and failed outcomes instead of throwing, so observed effects reach the caller). Revision 6 (owner decisions: open panes warn with options incl. `removeWithOpenPanes`; D1/D4/D6/D7 recorded). Revision 5 (review round 3: F12-V own-lock residue on every failure path; F15 dry-run gates pane closing).
+Date: 2026-09-30, revision 8 (S5: the fetch's lockResidue is optional; nil = not observed, for the legacy whole-remote fetch). Revision 7 (S4 implementation stop: removeWorktree returns partial and failed outcomes instead of throwing, so observed effects reach the caller). Revision 6 (owner decisions: open panes warn with options incl. `removeWithOpenPanes`; D1/D4/D6/D7 recorded). Revision 5 (review round 3: F12-V own-lock residue on every failure path; F15 dry-run gates pane closing).
 
 Revision 4 history:
 - Revision 4 corrects review round 2 and the Advisor's revision-3 notes:
@@ -267,6 +267,9 @@ enum GitLockResource { case index(worktreePath: URL), reference(name: String), p
 //   fork:             GitWorktreeForkResidueKind gains .lockFile, so cleanupIncomplete lists it with the other residue.
 // The original failure is never replaced; the leaf maps both into the outcome and never reports a clean finish
 // while `lockResidue` is non-empty.
+// Fetch only: `lockResidue` is optional ([URL]?) on GitFetchResult and on a fetch's GitLockedOperationFailure.
+// nil = not observed (the legacy whole-remote fetch, branchName == nil, unchanged); [] = observed, none left
+// (the one-branch fetch the worktree commands use).
 
 // ── Removal (E10): observed effects replace the String partial.
 struct GitWorktreeRemovalResult {               // name kept; String partial removed (hard cutover)
