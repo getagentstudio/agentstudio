@@ -428,6 +428,8 @@ extension WebKitSerializedTests {
                 for: [setup.firstPane, setup.secondPane],
                 in: harness
             )
+            // G2 retains hidden Review invalidations; only the foreground native fixture shows Review.
+            try await showReviewInNativeFixture(secondView.controller)
             await waitForActiveReviewRefreshTaskToFinish(secondView.controller)
             let owner = BridgeWorktreeProductOwnerKey(
                 repoIdentity: setup.repoId.uuidString,
