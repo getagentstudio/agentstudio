@@ -1,6 +1,6 @@
 # Worktree lifecycle: how it is built
 
-Date: 2026-09-30, revision 8 (S5: the fetch's lockResidue is optional; nil = not observed, for the legacy whole-remote fetch). Revision 7 (S4 implementation stop: removeWorktree returns partial and failed outcomes instead of throwing, so observed effects reach the caller). Revision 6 (owner decisions: open panes warn with options incl. `removeWithOpenPanes`; D1/D4/D6/D7 recorded). Revision 5 (review round 3: F12-V own-lock residue on every failure path; F15 dry-run gates pane closing).
+Date: 2026-09-30, revision 9 (S6 stop: verified LFS content for paths that aren't carried; other custom filter drivers refused). Revision 8 (S5: the fetch's lockResidue is optional; nil = not observed, for the legacy whole-remote fetch). Revision 7 (S4 implementation stop: removeWorktree returns partial and failed outcomes instead of throwing, so observed effects reach the caller). Revision 6 (owner decisions: open panes warn with options incl. `removeWithOpenPanes`; D1/D4/D6/D7 recorded). Revision 5 (review round 3: F12-V own-lock residue on every failure path; F15 dry-run gates pane closing).
 
 Revision 4 history:
 - Revision 4 corrects review round 2 and the Advisor's revision-3 notes:
@@ -297,7 +297,7 @@ enum GitWorktreeMaterializationResult {
 // working-state refusals use a new case:
 //   GitWorktreeForkError.workingStateUnsupported(GitWorktreeWorkingStateRefusal)
 //   GitWorktreeWorkingStateRefusal { reason: conflicts | operationInProgress | submoduleChanged |
-//     nestedRepository | sparseOrSkipWorktree | intentToAdd | unsupportedEntryKind; relativePath: String? }
+//     nestedRepository | sparseOrSkipWorktree | intentToAdd | unsupportedEntryKind | customFilter; relativePath: String? }
 // Source races: GitWorktreeForkSourceRaceReason gains contentChanged and repositoryStateChanged.
 ```
 
@@ -544,6 +544,11 @@ flowchart TB
   - a staged delete followed by recreation copies the recreated file;
   - a staged new file that was then deleted is absent in the source, and absent in HEAD, so nothing happens;
   - a staged change undone on disk matches HEAD, so it isn't carried.
+- **Filters (S6 stop, 2026-09-30).** libgit2's checkout runs only its built-in CRLF and ident filters (`checkout.c:1556`, `filter.c:191-208`), never external drivers such as Git LFS. agent-studio itself uses LFS (`web/**/*.png` and others). So:
+  - for each path in captured HEAD whose attributes name `filter=lfs` and which isn't carried, the materializer parses the HEAD blob as an LFS pointer (SHA-256 oid plus size). If the source worktree's file is a regular file whose bytes hash to that oid and size, it copies those bytes, descriptor-relative and verified, over the checked-out pointer. Otherwise it leaves the pointer that the checkout wrote, which equals what an LFS-less checkout gives;
+  - this reuses the SDK's existing LFS pointer parsing and verification (`LibGit2LargeFilePointerCleanliness`);
+  - a path whose attributes name any other filter driver is refused in preflight as `workingStateUnsupported(customFilter, path)`;
+  - no external process and no network.
 - **Validation.** Validation is per carried path plus repository state, not a whole-worktree snapshot. Paths that aren't carried may change. Rollback, residue and cancellation reuse the existing journal: ownership is confirmed before compensation, a created branch is compensated only at its expected OID, and cancellation returns only after compensation.
 - **Reporting.** Counts are net: changed HEAD-tracked paths, and copied untracked paths.
 
