@@ -288,6 +288,44 @@ struct BridgeProductMetadataLifecycleTraceRecorderTests {
         }
     }
 
+    @Test("File root access causes remain distinct in native producer telemetry")
+    func fileRootAccessFailuresKeepNativeTelemetryCause() async throws {
+        let sink = BridgeProductMetadataLifecycleTraceSink()
+        let recorder = BridgeProductMetadataLifecycleTraceRecorder(recorder: sink)
+        let rootCases:
+            [(
+                BridgeWorktreeFileRootAccessError,
+                BridgeProductMetadataProducerFailureReason,
+                String
+            )] = [
+                (.missingRoot, .missingRoot, "file_root_missing"),
+                (.unreadable, .unreadableRoot, "file_root_unreadable"),
+                (.refused, .accessRefused, "file_root_access_refused"),
+            ]
+
+        for (rootError, expectedReason, expectedTelemetryValue) in rootCases {
+            let failureReason = BridgePaneProductMetadataCoordinator.producerFailureReason(for: rootError)
+            #expect(failureReason == expectedReason)
+            await recorder.record(
+                .init(
+                    stage: .producerFailed,
+                    subscriptionKind: .fileMetadata,
+                    result: .failure,
+                    failureReason: failureReason,
+                    traceContext: nil
+                )
+            )
+        }
+
+        let samples = await sink.recordedSamples()
+        #expect(samples.count == rootCases.count)
+        for (sample, rootCase) in zip(samples, rootCases) {
+            #expect(sample.name == "performance.bridge.swift.metadata_bootstrap_lifecycle")
+            #expect(sample.stringAttributes["agentstudio.bridge.result_reason"] == rootCase.2)
+            #expect(sample.stringAttributes["agentstudio.bridge.protocol"] == "file")
+        }
+    }
+
     @Test("Pane presentation lifecycle exports comparison state and bounded correlation")
     func panePresentationLifecycleExportsComparisonStateAndBoundedCorrelation() async throws {
         // Arrange

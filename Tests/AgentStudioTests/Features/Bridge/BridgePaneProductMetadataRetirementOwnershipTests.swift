@@ -1,12 +1,15 @@
+import AgentStudioCore
 import AgentStudioTestHarness
+import CryptoKit
 import Foundation
+import Synchronization
 import Testing
 
 @testable import AgentStudioBridge
 
-@Suite("Bridge metadata reset retirement ownership")
+@Suite("Bridge metadata retirement ownership")
 struct BridgeMetadataRetirementOwnershipTests {
-    @Test("a retained resync survives a predecessor producer's late reset")
+    @Test("a retained resync survives a predecessor producer's current File failure")
     func retainedResyncSurvivesPredecessorFailure() async throws {
         let refreshWorkAdmission = await BridgePaneRefreshWorkAdmissionTestContext.foreground()
         let harness = try await BridgeProductSessionLifecycleHarness.opened()
@@ -17,7 +20,8 @@ struct BridgeMetadataRetirementOwnershipTests {
             productAdmission: harness.productAdmission.context,
             acknowledgeLifecycle: { _ in true }
         )
-        let probe = MetadataRetirementOwnershipProbe(holdBeforeReset: true)
+        let probe = MetadataRetirementOwnershipProbe(holdPredecessorFailure: true)
+        let publishedFileFailures = Mutex<[BridgePaneProductFileRefreshFailure?]>([])
         var observations = probe.observations.makeAsyncIterator()
         let registry = try BridgePaneProductMetadataNativeApplicationRegistry(applications: [
             .init(
@@ -34,6 +38,9 @@ struct BridgeMetadataRetirementOwnershipTests {
             fileMetadataSource: BridgeUnavailablePaneProductFileMetadataSource(),
             reviewMetadataSource: BridgeUnavailablePaneProductReviewMetadataSource(),
             refreshWorkAdmissionSource: refreshWorkAdmission.source,
+            recordCurrentFileRefreshFailure: { failure in
+                publishedFileFailures.withLock { $0.append(failure) }
+            },
             lifecycleTraceRecorder: probe,
             nativeApplicationRegistry: registry
         )
@@ -63,14 +70,18 @@ struct BridgeMetadataRetirementOwnershipTests {
         _ = try await pullMetadataFrame(from: pump)
         await coordinator.apply(openEffect, productAdmission: harness.productAdmission.context)
         await harness.session.settleControlProviderDispatch(token: openToken)
-        #expect(await observations.next() == .producerFailedBeforeReset)
+        #expect(await observations.next() == .predecessorFailureHeld)
 
         #expect(try await reconcileRetainedFileSubscription(harness, subscription) == ["retained"])
 
         #expect(await pump.cancel())
         let successorLease = try await harness.admitMetadataFrames(through: 0)
         await probe.releaseProducerFailure()
-        #expect(await probe.waitForFailedProducerReason() == .producerRejection(.unknownLease))
+        #expect(await probe.waitForFailedProducerReason() == nil)
+        #expect(await probe.didEnqueueReset == false)
+        let currentFailure = publishedFileFailures.withLock { $0.compactMap { $0 }.last }
+        #expect(currentFailure == .init(failureKind: .fileSourceUnavailable))
+        #expect(currentFailure?.retryable == true)
 
         let resnapshotRequest = try reconnectFileResnapshotRequest()
         let resnapshotAdmission = try await harness.begin(resnapshotRequest)
@@ -95,35 +106,156 @@ struct BridgeMetadataRetirementOwnershipTests {
         await probe.finish()
     }
 
-    @Test("failed predecessor completion cannot retire a replacement producer", .timeLimit(.minutes(1)))
+    @Test("a stale File failure cannot retire its same-E3 replacement", .timeLimit(.minutes(1)))
     func failedPredecessorCannotRetireReplacement() async throws {
         // Arrange
+        let scenario = try await RetirementOwnershipReplacementScenario.make()
+        defer { scenario.fixture.remove() }
+
+        do {
+            var observations = scenario.probe.observations.makeAsyncIterator()
+
+            var openObject = bridgeProductLifecycleFileSubscriptionOpenObject(requestSequence: 2, epoch: 1)
+            openObject["subscription"] = try JSONSerialization.jsonObject(
+                with: JSONEncoder().encode(scenario.fixture.openSnapshot().subscription)
+            )
+            let openRequest = try bridgeProductLifecycleControlRequest(openObject)
+            let token = try #require(controlExecutionToken(try await scenario.harness.begin(openRequest)))
+            #expect(await scenario.harness.session.admitControlProviderExecution(token: token))
+            let response = try BridgeProductControlResponse.subscriptionOpenAccepted(
+                correlating: openRequest,
+                worktreeId: nil
+            )
+            let effect = try await scenario.harness.session.completeAdmittedControl(
+                token: token,
+                exactResponseBytes: try JSONEncoder().encode(response)
+            )
+            guard case .subscriptionOpened(let subscription) = effect else {
+                Issue.record("Opening File subscription did not produce a lifecycle effect")
+                await scenario.close()
+                return
+            }
+            let acceptedFrame = try await pullMetadataFrame(from: scenario.pump)
+            guard case .subscriptionAccepted(let accepted) = acceptedFrame else {
+                Issue.record("Expected the File subscription to retain its metadata stream")
+                await scenario.close()
+                return
+            }
+            await scenario.coordinator.apply(effect, productAdmission: scenario.harness.productAdmission.context)
+            await scenario.harness.session.settleControlProviderDispatch(token: token)
+            #expect(await observations.next() == .predecessorFailureHeld)
+
+            // Act: a material view-scope change supersedes the held predecessor on this same E3.
+            let changedScope = try retirementOwnershipFileScopeRequest(path: scenario.fixture.demandedPath)
+            #expect(
+                await scenario.coordinator.acceptViewScope(
+                    changedScope,
+                    productAdmission: scenario.harness.productAdmission.context
+                ) == nil
+            )
+            #expect(await observations.next() == .replacementOpened)
+            let delivered = try await waitForRetirementOwnershipDescriptor(
+                from: scenario.pump,
+                demandedPath: scenario.fixture.demandedPath
+            )
+            let expectedBytes = try Data(contentsOf: scenario.fixture.demandedFileURL)
+            let expectedSHA = SHA256.hash(data: expectedBytes).map { String(format: "%02x", $0) }.joined()
+            #expect(delivered.descriptor.expectedSha256 == expectedSHA)
+            #expect(delivered.complete.identity.subscriptionId == subscription.subscriptionId)
+            #expect(delivered.complete.identity.frame.streamSequence > accepted.frameIdentity.streamSequence)
+            let callbackCountBeforePredecessorCompletion = scenario.publishedFileFailures.withLock { $0.count }
+
+            // Finish the stale predecessor only after the successor's certificate is delivered.
+            await scenario.probe.releaseProducerFailure()
+            #expect(await observations.next() == .failedProducerFinished)
+
+            // Assert
+            #expect(await scenario.probe.cancellationCount == 0)
+            #expect(await scenario.probe.didEnqueueReset == false)
+            #expect(
+                scenario.publishedFileFailures.withLock { $0.count } == callbackCountBeforePredecessorCompletion,
+                "The stale predecessor must not publish or clear the successor's current failure"
+            )
+            #expect(
+                scenario.publishedFileFailures.withLock { $0.compactMap { $0 }.isEmpty },
+                "The superseded predecessor must not publish a current File failure"
+            )
+            #expect(await scenario.coordinator.activeStream?.lease == scenario.lease)
+            #expect(await scenario.coordinator.fileSurfaceReconciler.activeAttempt == nil)
+            #expect(await scenario.coordinator.fileSurfaceReconciler.currentFailure == nil)
+            #expect(await scenario.coordinator.subscriptionKindById[subscription.subscriptionId] == .fileMetadata)
+            #expect(
+                await scenario.harness.session.subscriptionSnapshot(subscriptionId: subscription.subscriptionId)
+                    == subscription
+            )
+
+            // Prove the successor still publishes File changes after the predecessor finishes.
+            try await scenario.publishSuccessorChange(after: delivered.descriptor)
+            await scenario.close()
+        } catch {
+            await scenario.close()
+            throw error
+        }
+    }
+}
+
+private struct RetirementOwnershipReplacementScenario {
+    let refreshWorkAdmission: BridgePaneRefreshWorkAdmissionTestContext
+    let harness: BridgeProductSessionLifecycleHarness
+    let lease: BridgeProductProducerLease
+    let fixture: ProductFileSourceFixture
+    let constructionCoordinator: BridgeWorktreeProductConstructionCoordinator
+    let pump: BridgeProductSchemeFramePump
+    let probe: MetadataRetirementOwnershipProbe
+    let publishedFileFailures: Mutex<[BridgePaneProductFileRefreshFailure?]>
+    let coordinator: BridgePaneProductMetadataCoordinator
+
+    static func make() async throws -> Self {
         let refreshWorkAdmission = await BridgePaneRefreshWorkAdmissionTestContext.foreground()
         let harness = try await BridgeProductSessionLifecycleHarness.opened()
         let lease = try await harness.admitMetadataFrames(through: 0)
-        let pump = BridgeProductSchemeFramePump(
-            session: harness.session,
-            producerLease: lease,
-            productAdmission: harness.productAdmission.context,
-            acknowledgeLifecycle: { _ in true }
+        let fixture = try ProductFileSourceFixture(
+            fileCount: 1,
+            productAdmission: harness.productAdmission
         )
-        let probe = MetadataRetirementOwnershipProbe()
-        var observations = probe.observations.makeAsyncIterator()
+        let constructionCoordinator = BridgeWorktreeProductConstructionCoordinator()
+        let fileSource = fixture.makeSource(constructionCoordinator: constructionCoordinator)
+        let probe = MetadataRetirementOwnershipProbe(holdPredecessorFailure: true)
+        let publishedFileFailures = Mutex<[BridgePaneProductFileRefreshFailure?]>([])
         let registry = try BridgePaneProductMetadataNativeApplicationRegistry(applications: [
             .init(
                 registration: AnyBridgeProductMetadataApplicationProtocol(
                     BridgeProductFileMetadataApplication.self
                 ),
                 adapter: .init(
-                    open: { _, _, _, _, _, _, _ in try await probe.open() },
-                    cancel: { _, _ in await probe.cancel() }
+                    open: { _, subscription, _, productAdmission, foregroundWorkAdmission, _, _ in
+                        try await probe.openReplacement(
+                            using: fileSource,
+                            subscription: subscription,
+                            productAdmission: productAdmission,
+                            foregroundWorkAdmission: foregroundWorkAdmission
+                        )
+                    },
+                    cancel: { _, subscriptionId in
+                        await probe.cancel()
+                        await fileSource.cancel(subscriptionId: subscriptionId)
+                    }
                 )
             )
         ])
+        let pump = BridgeProductSchemeFramePump(
+            session: harness.session,
+            producerLease: lease,
+            productAdmission: harness.productAdmission.context,
+            acknowledgeLifecycle: { _ in true }
+        )
         let coordinator = BridgePaneProductMetadataCoordinator(
-            fileMetadataSource: BridgeUnavailablePaneProductFileMetadataSource(),
+            fileMetadataSource: fileSource,
             reviewMetadataSource: BridgeUnavailablePaneProductReviewMetadataSource(),
             refreshWorkAdmissionSource: refreshWorkAdmission.source,
+            recordCurrentFileRefreshFailure: { failure in
+                publishedFileFailures.withLock { $0.append(failure) }
+            },
             lifecycleTraceRecorder: probe,
             nativeApplicationRegistry: registry
         )
@@ -133,46 +265,108 @@ struct BridgeMetadataRetirementOwnershipTests {
             productAdmission: harness.productAdmission.context,
             session: harness.session
         )
-        let openRequest = try bridgeProductLifecycleControlRequest(
-            bridgeProductLifecycleFileSubscriptionOpenObject(requestSequence: 2, epoch: 1)
+        return .init(
+            refreshWorkAdmission: refreshWorkAdmission,
+            harness: harness,
+            lease: lease,
+            fixture: fixture,
+            constructionCoordinator: constructionCoordinator,
+            pump: pump,
+            probe: probe,
+            publishedFileFailures: publishedFileFailures,
+            coordinator: coordinator
         )
-        let token = try #require(controlExecutionToken(try await harness.begin(openRequest)))
-        #expect(await harness.session.admitControlProviderExecution(token: token))
-        let response = try BridgeProductControlResponse.subscriptionOpenAccepted(
-            correlating: openRequest,
-            worktreeId: nil
-        )
-        let effect = try await harness.session.completeAdmittedControl(
-            token: token,
-            exactResponseBytes: try JSONEncoder().encode(response)
-        )
-        guard case .subscriptionOpened(let subscription) = effect else {
-            Issue.record("Opening File subscription did not produce a lifecycle effect")
-            return
-        }
-        _ = try await pullMetadataFrame(from: pump)
-        await coordinator.apply(effect, productAdmission: harness.productAdmission.context)
-        let producerEffect = BridgeProductSessionCompletionEffect.subscriptionOpened(subscription)
-        #expect(await observations.next() == .resetEnqueued)
-        #expect(await harness.session.subscriptionSnapshot(subscriptionId: subscription.subscriptionId) == nil)
-        await harness.session.settleControlProviderDispatch(token: token)
+    }
 
-        // Act: hold the old failure after its reset is enqueued, install its
-        // successor, then let the stale completion reach the retirement owner.
-        await coordinator.apply(
-            producerEffect,
-            productAdmission: harness.productAdmission.context
+    func publishSuccessorChange(after priorDescriptor: BridgeProductFileContentDescriptor) async throws {
+        let successorContent = Data("successor remains live after predecessor failure\n".utf8)
+        try successorContent.write(to: fixture.demandedFileURL)
+        let successorWorkAdmission = try #require(refreshWorkAdmission.source.acquire())
+        let disposition = await coordinator.publish(
+            changeset: FileChangeset(
+                worktreeId: fixture.worktreeId,
+                repoId: fixture.repoId,
+                rootPath: fixture.rootURL,
+                paths: [fixture.demandedPath],
+                timestamp: ContinuousClock().now,
+                batchSeq: 1
+            ),
+            productAdmission: harness.productAdmission.context,
+            foregroundWorkAdmission: successorWorkAdmission
         )
-        #expect(await observations.next() == .replacementOpened)
-        await probe.releaseFailureCompletion()
-        #expect(await observations.next() == .failedProducerFinished)
+        #expect(disposition == .applied)
+        let followup = try await waitForRetirementOwnershipDescriptor(
+            from: pump,
+            demandedPath: fixture.demandedPath
+        )
+        let successorSHA = SHA256.hash(data: successorContent).map { String(format: "%02x", $0) }.joined()
+        #expect(followup.descriptor.expectedSha256 == successorSHA)
+        #expect(followup.descriptor.expectedSha256 != priorDescriptor.expectedSha256)
+        #expect(followup.complete.identity.subscriptionId == "file-subscription-1")
+    }
 
-        // Assert
-        #expect(await probe.cancellationCount == 0)
-        #expect(await coordinator.subscriptionKindById[subscription.subscriptionId] == .fileMetadata)
+    func close() async {
+        await probe.releaseProducerFailure()
         await coordinator.uninstall(lease: lease)
         #expect(await pump.cancel())
+        await constructionCoordinator.shutdown()
         await probe.finish()
+    }
+}
+
+private func retirementOwnershipFileScopeRequest(path: String) throws -> BridgeProductViewScopeRequest {
+    let encoded = try JSONSerialization.data(
+        withJSONObject: [
+            "domain": "default",
+            "handle": "file-handle-1",
+            "incarnation": "file-incarnation-1",
+            "kind": "subscription.setScope",
+            "paneSessionId": "pane-session-1",
+            "requestId": "retirement-file-scope",
+            "requestSequence": 3,
+            "scope": [
+                "changeFilter": ["kind": "none"],
+                "interests": [["lane": "foreground", "paths": [path]]],
+                "kind": "file",
+                "pathScope": [path],
+            ],
+            "scopeRevision": 1,
+            "subscriptionId": "file-subscription-1",
+            "subscriptionKind": "file.metadata",
+            "workerInstanceId": "worker-instance-1",
+            "wireVersion": 2,
+        ],
+        options: [.sortedKeys]
+    )
+    return try BridgeProductStrictJSON.decode(BridgeProductViewScopeRequest.self, from: encoded)
+}
+
+private func waitForRetirementOwnershipDescriptor(
+    from pump: BridgeProductSchemeFramePump,
+    demandedPath: String
+) async throws -> (descriptor: BridgeProductFileContentDescriptor, complete: BridgeProductBatchCompleteFrame) {
+    var descriptorByBatchId: [String: BridgeProductFileContentDescriptor] = [:]
+    while true {
+        let frame = try await pullMetadataFrame(from: pump)
+        guard case .batch(let batchFrame) = frame else { continue }
+        switch batchFrame {
+        case .part(let part):
+            guard case .put(_, _, .object(let fields)) = part.part,
+                case .string(let displayKey)? = fields["displayKey"],
+                displayKey == demandedPath,
+                let encodedDescriptor = fields["readDescriptor"], encodedDescriptor != .null
+            else { continue }
+            descriptorByBatchId[part.identity.batchId] = try JSONDecoder().decode(
+                BridgeProductFileContentDescriptor.self,
+                from: JSONEncoder().encode(encodedDescriptor)
+            )
+        case .complete(let complete):
+            if let descriptor = descriptorByBatchId.removeValue(forKey: complete.identity.batchId) {
+                return (descriptor, complete)
+            }
+        default:
+            continue
+        }
     }
 }
 
@@ -214,7 +408,7 @@ private func reconcileRetainedFileSubscription(
 
 private actor MetadataRetirementOwnershipProbe: BridgeProductMetadataLifecycleTraceRecording {
     enum Observation: Equatable, Sendable {
-        case producerFailedBeforeReset
+        case predecessorFailureHeld
         case resetEnqueued
         case replacementOpened
         case failedProducerFinished
@@ -222,21 +416,21 @@ private actor MetadataRetirementOwnershipProbe: BridgeProductMetadataLifecycleTr
 
     nonisolated let observations: AsyncStream<Observation>
     private let continuation: AsyncStream<Observation>.Continuation
-    private let failureCompletionRelease = HeldStep<Void>(
-        "failed bootstrap reset completion", cancellation: .holdThroughCancellation)
     private let producerFailureRelease = HeldStep<Void>(
-        "producer failure before reset", cancellation: .holdThroughCancellation)
+        "predecessor producer failure completion", cancellation: .holdThroughCancellation)
     private var failedProducerFinishedWaiters:
         [CheckedContinuation<BridgeProductMetadataProducerFailureReason?, Never>] = []
     private var failedProducerFinished = false
     private var failedProducerReason: BridgeProductMetadataProducerFailureReason?
-    private let holdBeforeReset: Bool
+    private let holdPredecessorFailure: Bool
+    private var producerFailureReleased = false
     private var replacementRelease: CheckedContinuation<Void, Never>?
     private var operationCount = 0
     private(set) var cancellationCount = 0
+    private(set) var didEnqueueReset = false
 
-    init(holdBeforeReset: Bool = false) {
-        self.holdBeforeReset = holdBeforeReset
+    init(holdPredecessorFailure: Bool = false) {
+        self.holdPredecessorFailure = holdPredecessorFailure
         let stream = AsyncStream.makeStream(of: Observation.self, bufferingPolicy: .bufferingNewest(8))
         observations = stream.stream
         continuation = stream.continuation
@@ -244,6 +438,25 @@ private actor MetadataRetirementOwnershipProbe: BridgeProductMetadataLifecycleTr
 
     func open() async throws {
         try await runProducer()
+    }
+
+    func openReplacement(
+        using fileMetadataSource: any BridgePaneProductFileMetadataProducing,
+        subscription: BridgeProductSubscriptionSnapshot,
+        productAdmission: BridgeProductAdmissionContext,
+        foregroundWorkAdmission: BridgePaneRefreshWorkAdmission
+    ) async throws {
+        operationCount += 1
+        guard operationCount > 1 else {
+            throw BridgePaneProductFileMetadataSourceError.unavailableAuthority
+        }
+        try await fileMetadataSource.open(
+            subscription: subscription,
+            productAdmission: productAdmission,
+            foregroundWorkAdmission: foregroundWorkAdmission,
+            emit: { _ in }
+        )
+        continuation.yield(.replacementOpened)
     }
 
     private func runProducer() async throws {
@@ -264,12 +477,12 @@ private actor MetadataRetirementOwnershipProbe: BridgeProductMetadataLifecycleTr
     }
 
     func record(_ event: BridgeProductMetadataLifecycleTraceEvent) async {
-        if holdBeforeReset, event.stage == .producerFailed {
-            continuation.yield(.producerFailedBeforeReset)
-            try? await producerFailureRelease.arrive(())
-        } else if event.stage == .subscriptionResetEnqueued, !holdBeforeReset {
+        if event.stage == .subscriptionResetEnqueued {
+            didEnqueueReset = true
             continuation.yield(.resetEnqueued)
-            try? await failureCompletionRelease.arrive(())
+        } else if holdPredecessorFailure, event.stage == .producerFailed {
+            continuation.yield(.predecessorFailureHeld)
+            try? await producerFailureRelease.arrive(())
         } else if event.stage == .bootstrapFinished, event.result == .failure {
             failedProducerReason = event.failureReason
             failedProducerFinished = true
@@ -282,11 +495,9 @@ private actor MetadataRetirementOwnershipProbe: BridgeProductMetadataLifecycleTr
 
     func record(_: BridgeProductReviewMetadataPublicationTraceEvent) {}
 
-    func releaseFailureCompletion() {
-        failureCompletionRelease.release()
-    }
-
     func releaseProducerFailure() {
+        guard !producerFailureReleased else { return }
+        producerFailureReleased = true
         producerFailureRelease.release()
     }
 

@@ -297,7 +297,7 @@ struct BridgePaneProductContentActivityAdmissionTests {
         try await finishActivityContentContext(context)
     }
 
-    @Test("File byte-count overflow resets the stream and closes its reader once")
+    @Test("File byte-count overflow ends the content read and closes its reader once")
     @MainActor
     func fileByteCountOverflowClosesReaderOnce() async throws {
         // Arrange
@@ -326,20 +326,25 @@ struct BridgePaneProductContentActivityAdmissionTests {
         )
 
         // Act
-        let resetDelivery = try await requiredActivityContentFrame(context)
-        let resetFrame = try #require(try decoder.append(resetDelivery.frame.data).first)
+        let terminalDelivery = try await requiredActivityContentFrame(context)
+        let terminalFrame = try #require(try decoder.append(terminalDelivery.frame.data).first)
         let finishedSnapshot = await waitForActivityContentState(context) { snapshot in
             snapshot.activeProducerTaskCount == 0
         }
 
         // Assert
-        guard case .reset(let resetHeader) = resetFrame.header else {
-            Issue.record("Expected File byte-count overflow to emit a reset terminal")
+        guard case .error(let errorHeader) = terminalFrame.header else {
+            Issue.record("Expected File byte-count overflow to end the content read with a typed error")
             try await finishActivityContentContext(context)
             return
         }
-        #expect(resetHeader.reason == .staleSource)
+        #expect(errorHeader.code == .superseded)
+        #expect(errorHeader.retryable)
         #expect(finishedSnapshot.activeProducerTaskCount == 0)
+        #expect(
+            finishedSnapshot.queuedFrameCount == 0,
+            "No content frame may be delivered after the terminal superseded error"
+        )
         #expect(await context.fileReaderHarness.readCount == 1)
         #expect(await context.fileReaderHarness.closeCount == 1)
         try await finishActivityContentContext(context)

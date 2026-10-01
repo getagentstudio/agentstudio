@@ -99,19 +99,11 @@ actor BridgeFileSurfaceReconciler {
         let cause: FailureCause
 
         var refreshFailure: BridgePaneProductFileRefreshFailure {
-            switch cause {
-            case .missingRoot:
-                .init(rootAccessFailure: .missingRoot)
-            case .unreadableRoot:
-                .init(rootAccessFailure: .unreadable)
-            case .accessRefused:
-                .init(rootAccessFailure: .refused)
-            case .providerCancellation, .constructionInvalidated, .repeatedSupersession,
-                .interruptedRepeatedly, .progressExpired, .providerFailure,
-                .unrecognizedProviderFailure:
-                .init(
-                    failureKind: disposition == .retryable ? .fileSourceUnavailable : .producerRejected
-                )
+            switch disposition {
+            case .retryable:
+                .init(failureKind: .fileSourceUnavailable)
+            case .permanent:
+                .init(failureKind: .producerRejected)
             }
         }
     }

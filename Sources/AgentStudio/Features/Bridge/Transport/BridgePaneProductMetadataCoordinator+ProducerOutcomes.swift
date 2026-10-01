@@ -4,30 +4,9 @@ enum BridgePaneProductFileRefreshFailureKind: String, Codable, CaseIterable, Sen
     case fileRefreshFailed
     case fileSourceUnavailable
     case producerRejected
-    case missingRoot
-    case unreadable
-    case refused
 
     var retryable: Bool {
-        switch self {
-        case .fileSourceUnavailable, .missingRoot, .unreadable:
-            true
-        case .fileRefreshFailed, .producerRejected, .refused:
-            false
-        }
-    }
-
-    var safeMessage: String? {
-        switch self {
-        case .missingRoot:
-            "The File root is unavailable. Restore it, then retry."
-        case .unreadable:
-            "The File root or range cannot be read. Check access, then retry."
-        case .refused:
-            "Choose an accessible directory as the File root."
-        case .fileRefreshFailed, .fileSourceUnavailable, .producerRejected:
-            nil
-        }
+        self == .fileSourceUnavailable
     }
 }
 
@@ -35,29 +14,14 @@ struct BridgePaneProductFileRefreshFailure: Codable, Equatable, Sendable {
     private enum CodingKeys: String, CodingKey, CaseIterable {
         case failureKind
         case retryable
-        case safeMessage
     }
 
     let failureKind: BridgePaneProductFileRefreshFailureKind
     let retryable: Bool
-    var safeMessage: String? { failureKind.safeMessage }
 
     init(failureKind: BridgePaneProductFileRefreshFailureKind) {
         self.failureKind = failureKind
         self.retryable = failureKind.retryable
-    }
-
-    init(rootAccessFailure: BridgeWorktreeFileRootAccessError) {
-        let failureKind: BridgePaneProductFileRefreshFailureKind
-        switch rootAccessFailure {
-        case .missingRoot:
-            failureKind = .missingRoot
-        case .unreadable:
-            failureKind = .unreadable
-        case .refused:
-            failureKind = .refused
-        }
-        self.init(failureKind: failureKind)
     }
 
     init(from decoder: Decoder) throws {
@@ -78,18 +42,6 @@ struct BridgePaneProductFileRefreshFailure: Codable, Equatable, Sendable {
                 codingPath: decoder.codingPath
             )
         }
-        let safeMessage: String?
-        if container.contains(.safeMessage) {
-            safeMessage = try container.decode(String.self, forKey: .safeMessage)
-        } else {
-            safeMessage = nil
-        }
-        guard safeMessage == failureKind.safeMessage else {
-            throw BridgeProductContractDecoding.invalidValue(
-                "File refresh safe copy must match its closed failure kind",
-                codingPath: decoder.codingPath
-            )
-        }
         self.init(failureKind: failureKind)
     }
 
@@ -97,7 +49,6 @@ struct BridgePaneProductFileRefreshFailure: Codable, Equatable, Sendable {
         var container = encoder.container(keyedBy: CodingKeys.self)
         try container.encode(failureKind, forKey: .failureKind)
         try container.encode(retryable, forKey: .retryable)
-        try container.encodeIfPresent(safeMessage, forKey: .safeMessage)
     }
 }
 
@@ -114,7 +65,8 @@ extension BridgePaneProductMetadataCoordinator {
         for error: any Error
     ) -> BridgePaneProductFileRefreshPublicationDisposition {
         if let rootAccessFailure = error as? BridgeWorktreeFileRootAccessError {
-            return .failed(.init(rootAccessFailure: rootAccessFailure))
+            let failure = BridgeFileSurfaceReconciler.failure(for: rootAccessFailure, phase: .build)
+            return .failed(failure.refreshFailure)
         }
         if error is BridgePaneProductFileMetadataSourceError {
             return .failed(.init(failureKind: .fileSourceUnavailable))
@@ -169,7 +121,16 @@ extension BridgePaneProductMetadataCoordinator {
     static func producerFailureReason(
         for error: any Error
     ) -> BridgeProductMetadataProducerFailureReason {
-        if error is BridgeWorktreeFileRootAccessError { return .fileSourceUnavailable }
+        if let rootAccessError = error as? BridgeWorktreeFileRootAccessError {
+            switch rootAccessError {
+            case .missingRoot:
+                return .missingRoot
+            case .unreadable:
+                return .unreadableRoot
+            case .refused:
+                return .accessRefused
+            }
+        }
         if error is CancellationError { return .cancellation }
         if let reviewSourceError = error as? BridgePaneProductReviewMetadataSourceError {
             switch reviewSourceError {

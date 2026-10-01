@@ -202,9 +202,14 @@ struct BridgePaneProductPanePublicationTests {
         let bootstrap = try await fixture.openFileSubscription()
 
         #expect(bootstrap.result == .failure)
+        let reconcilerFailure = await fixture.coordinator.fileSurfaceReconciler.currentFailure
+        #expect(reconcilerFailure?.cause == .missingRoot)
+        #expect(reconcilerFailure?.disposition == .retryable)
+        #expect(reconcilerFailure?.refreshFailure.failureKind == .fileSourceUnavailable)
+        #expect(reconcilerFailure?.refreshFailure.retryable == true)
         #expect(
             fixture.refresh.diagnosticSnapshot.fileRefreshFailure
-                == .init(rootAccessFailure: .missingRoot)
+                == .init(failureKind: .fileSourceUnavailable)
         )
         #expect(fixture.refresh.diagnosticSnapshot.dirtyFact == nil)
         #expect((await fixture.harness.session.producerSnapshot()).queuedFrameCount == 0)
@@ -232,9 +237,12 @@ struct BridgePaneProductPanePublicationTests {
 
         let failedBootstrap = try await fixture.openFileSubscription()
         #expect(failedBootstrap.result == .failure)
+        let reconcilerFailure = await fixture.coordinator.fileSurfaceReconciler.currentFailure
+        #expect(reconcilerFailure?.cause == .missingRoot)
+        #expect(reconcilerFailure?.disposition == .retryable)
         #expect(
             fixture.refresh.diagnosticSnapshot.fileRefreshFailure
-                == .init(rootAccessFailure: .missingRoot)
+                == .init(failureKind: .fileSourceUnavailable)
         )
         let subscriptionBeforeRetry = await fixture.harness.session.subscriptionSnapshot(
             subscriptionId: "file-subscription-1"
