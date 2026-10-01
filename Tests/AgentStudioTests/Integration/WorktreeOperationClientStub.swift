@@ -11,6 +11,7 @@ struct WorktreeOperationClientStub: AgentStudioGitLocalClient {
     let integrationGrades: [String: GitBranchIntegrationGrade]?
     let statusFailurePaths: Set<String>
     let failsWorktreeListing: Bool
+    let failsDefaultTargetResolution: Bool
     let removeWorktreeHandler:
         (@Sendable (GitRemoveWorktreeRequest) async -> Result<GitWorktreeRemovalResult, GitDataPlaneError>)?
     let deleteLocalBranchHandler:
@@ -30,6 +31,7 @@ struct WorktreeOperationClientStub: AgentStudioGitLocalClient {
         integrationGrades: [String: GitBranchIntegrationGrade]? = nil,
         statusFailurePaths: Set<String> = [],
         failsWorktreeListing: Bool = false,
+        failsDefaultTargetResolution: Bool = false,
         removeWorktreeHandler: (
             @Sendable (GitRemoveWorktreeRequest) async -> Result<GitWorktreeRemovalResult, GitDataPlaneError>
         )? = nil,
@@ -48,6 +50,7 @@ struct WorktreeOperationClientStub: AgentStudioGitLocalClient {
         self.integrationGrades = integrationGrades
         self.statusFailurePaths = statusFailurePaths
         self.failsWorktreeListing = failsWorktreeListing
+        self.failsDefaultTargetResolution = failsDefaultTargetResolution
         self.removeWorktreeHandler = removeWorktreeHandler
         self.deleteLocalBranchHandler = deleteLocalBranchHandler
     }
@@ -172,11 +175,23 @@ struct WorktreeOperationClientStub: AgentStudioGitLocalClient {
         -> GitBranchIntegrationReport
     {
         if let integrationGrades {
+            let baseAssessments: [String: GitBranchIntegrationAssessment]
+            if let baseClient,
+                let report = try? await baseClient.assessBranchIntegration(request)
+            {
+                baseAssessments = Dictionary(
+                    report.assessments.map { ($0.branchName, $0) },
+                    uniquingKeysWith: { first, _ in first }
+                )
+            } else {
+                baseAssessments = [:]
+            }
             let assessments = request.branchNames.map { branchName in
-                GitBranchIntegrationAssessment(
+                let baseAssessment = baseAssessments[branchName]
+                return GitBranchIntegrationAssessment(
                     branchName: branchName,
-                    branchCommit: nil,
-                    grade: integrationGrades[branchName] ?? .unknown(.readFailed)
+                    branchCommit: baseAssessment?.branchCommit,
+                    grade: integrationGrades[branchName] ?? baseAssessment?.grade ?? .unknown(.readFailed)
                 )
             }
             return GitBranchIntegrationReport(targetCommit: request.targetCommit, assessments: assessments)
@@ -204,6 +219,9 @@ struct WorktreeOperationClientStub: AgentStudioGitLocalClient {
     func resolveReviewDefaultTarget(for repositoryPath: URL) async throws(GitDataPlaneError)
         -> GitReviewComparisonBranchTarget?
     {
+        if failsDefaultTargetResolution {
+            throw .unsupported(message: "injected default-target read failure")
+        }
         if let baseClient { return try await baseClient.resolveReviewDefaultTarget(for: repositoryPath) }
         throw .unsupported(message: "unexpected default target lookup")
     }

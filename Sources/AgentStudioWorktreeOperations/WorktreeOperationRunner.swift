@@ -19,18 +19,24 @@ package struct WorktreeOperationRunner {
     package func run(_ request: WorktreeOperationRequest) async -> WorktreeOperationOutcome {
         switch request {
         case .createFromDefault(let start, let branch):
-            await createFromDefault(start: start, branch: branch)
+            return await createFromDefault(start: start, branch: branch)
         case .fork(let start, let branch):
-            await fork(start: start, branch: branch)
+            return await fork(start: start, branch: branch)
         case .list(let start, let callerDirectory, let targets, let fetchPolicy):
-            await list(
+            return await list(
                 start: start,
                 callerDirectory: callerDirectory,
                 targets: targets,
                 fetchPolicy: fetchPolicy
             )
         case .remove(let removalRequest):
-            .removal(await WorktreeRemovalRunner(client: client, remoteClient: remoteClient).run(removalRequest))
+            let report = await WorktreeRemovalRunner(client: client, remoteClient: remoteClient).run(removalRequest)
+            if let failure = report.fetchingReadFailure {
+                return .fetchingReadFailure(failure)
+            }
+            return .removal(report)
+        case .prune(let pruneRequest):
+            return await WorktreePruneRunner(client: client, remoteClient: remoteClient).run(pruneRequest)
         }
     }
 
@@ -106,7 +112,7 @@ package struct WorktreeOperationRunner {
         switch await discover(start: start, forkSource: false) {
         case .outcome(let outcome):
             if case .failed = outcome {
-                return .listFailed(WorktreeListFailureDocument(fetch: .skipped(reason: .noTarget)))
+                return .fetchingReadFailure(WorktreeFetchingReadFailure(fetch: .skipped(reason: .noTarget)))
             }
             return outcome
         case .found(let discovered):
@@ -130,7 +136,7 @@ package struct WorktreeOperationRunner {
             initialTarget = try await WorktreeIntegrationTargetResolver(client: client)
                 .resolve(repositoryPath: repositoryPath)
         } catch {
-            return .listFailed(WorktreeListFailureDocument(fetch: .skipped(reason: .noTarget)))
+            return .fetchingReadFailure(WorktreeFetchingReadFailure(fetch: .skipped(reason: .noTarget)))
         }
 
         let fetchResult = await WorktreeFetchStep(localClient: client, remoteClient: remoteClient).run(
@@ -150,7 +156,7 @@ package struct WorktreeOperationRunner {
             )
             return .listed(summary)
         } catch {
-            return .listFailed(WorktreeListFailureDocument(fetch: fetchResult.status))
+            return .fetchingReadFailure(WorktreeFetchingReadFailure(fetch: fetchResult.status))
         }
     }
 

@@ -26,9 +26,9 @@ package enum WorktreeCommandLineArgumentError: Error, Equatable, Sendable {
     package var message: String {
         switch self {
         case .missingSubcommand:
-            "usage: agentstudio worktree new|fork|list|remove [target...]"
+            "usage: agentstudio worktree new|fork|list|remove|prune [target...]"
         case .unknownSubcommand:
-            "unknown worktree subcommand; expected new, fork, list, or remove [target...]"
+            "unknown worktree subcommand; expected new, fork, list, remove, or prune"
         case .missingBranch:
             "a branch name is required for worktree new and fork"
         case .missingTarget:
@@ -66,7 +66,7 @@ package enum WorktreeCommandLineArgumentParser {
             allowedPathOptions = ["--repo"]
         case "fork":
             allowedPathOptions = ["--from"]
-        case "remove":
+        case "remove", "prune":
             allowedPathOptions = ["--repo", "--archive-to"]
         default:
             throw WorktreeCommandLineArgumentError.unknownSubcommand
@@ -191,6 +191,26 @@ package enum WorktreeCommandLineArgumentParser {
                     removeWithOpenPanes: false,
                     dryRun: parsedArguments.dryRun
                 ))
+        case "prune":
+            guard positionalArguments.isEmpty else {
+                throw WorktreeCommandLineArgumentError.unexpectedArgument
+            }
+            let evidencePolicy: WorktreeEvidencePolicy
+            if parsedArguments.archiveToMain {
+                evidencePolicy = .archiveToMain
+            } else if let archivePath {
+                evidencePolicy = .archive(to: archivePath)
+            } else {
+                evidencePolicy = .requireEmpty
+            }
+            request = .prune(
+                WorktreePruneRequest(
+                    start: repositoryPath ?? callerDirectory,
+                    callerDirectory: callerDirectory,
+                    apply: parsedArguments.apply,
+                    evidencePolicy: evidencePolicy,
+                    fetchPolicy: parsedArguments.fetchPolicy
+                ))
         default:
             throw WorktreeCommandLineArgumentError.unknownSubcommand
         }
@@ -213,6 +233,7 @@ private struct ParsedArguments {
     let discardTmp: Bool
     let removeStaleLock: Bool
     let dryRun: Bool
+    let apply: Bool
 }
 
 private struct ParsedArgumentAccumulator {
@@ -229,6 +250,7 @@ private struct ParsedArgumentAccumulator {
     var discardTmp = false
     var removeStaleLock = false
     var dryRun = false
+    var apply = false
     private var noFetchSpecified = false
     private var evidenceOptionOrder: [String] = []
     private var seenFlags: Set<String> = []
@@ -239,7 +261,7 @@ private struct ParsedArgumentAccumulator {
             return true
         }
         if argument == "--no-fetch" {
-            guard subcommand == "list" || subcommand == "remove" else {
+            guard subcommand == "list" || subcommand == "remove" || subcommand == "prune" else {
                 throw WorktreeCommandLineArgumentError.unsupportedOption
             }
             guard !noFetchSpecified else {
@@ -249,8 +271,18 @@ private struct ParsedArgumentAccumulator {
             fetchPolicy = .skip
             return true
         }
+        if argument == "--apply" {
+            guard subcommand == "prune" else {
+                throw WorktreeCommandLineArgumentError.unsupportedOption
+            }
+            guard seenFlags.insert(argument).inserted else {
+                throw WorktreeCommandLineArgumentError.duplicateOption(argument)
+            }
+            apply = true
+            return true
+        }
         guard Self.removeFlags.contains(argument) else { return false }
-        guard subcommand == "remove" else {
+        guard subcommand == "remove" || (subcommand == "prune" && argument == "--archive-to-main") else {
             throw WorktreeCommandLineArgumentError.unsupportedOption
         }
         guard seenFlags.insert(argument).inserted else {
@@ -337,7 +369,8 @@ private struct ParsedArgumentAccumulator {
             archiveToMain: archiveToMain,
             discardTmp: discardTmp,
             removeStaleLock: removeStaleLock,
-            dryRun: dryRun
+            dryRun: dryRun,
+            apply: apply
         )
     }
 

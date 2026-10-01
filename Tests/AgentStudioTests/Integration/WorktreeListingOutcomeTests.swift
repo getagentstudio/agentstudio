@@ -68,10 +68,10 @@ struct WorktreeListingOutcomeTests {
         )
     }
 
-    @Test("a list read failure retains its fetch result")
+    @Test("a fetching read failure retains its fetch result")
     func listFailureJSONCarriesFetch() throws {
-        let outcome = WorktreeOperationOutcome.listFailed(
-            WorktreeListFailureDocument(fetch: .fetched(commit: "cafe"))
+        let outcome = WorktreeOperationOutcome.fetchingReadFailure(
+            WorktreeFetchingReadFailure(fetch: .fetched(commit: "cafe"))
         )
         let response = try WorktreeCommandLineFormatter.format(outcome: outcome, usesJSONOutput: true)
 

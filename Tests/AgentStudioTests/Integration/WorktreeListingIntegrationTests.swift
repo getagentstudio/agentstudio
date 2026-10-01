@@ -504,8 +504,8 @@ struct WorktreeListingIntegrationTests {
             .list(start: repository, callerDirectory: repository, targets: [], fetchPolicy: .defaultBranch)
         )
 
-        guard case .listFailed(let failure) = outcome else {
-            Issue.record("expected listFailed after the successful fetch, got \(outcome)")
+        guard case .fetchingReadFailure(let failure) = outcome else {
+            Issue.record("expected fetchingReadFailure after the successful fetch, got \(outcome)")
             return
         }
         #expect(failure.fetch == .fetched(commit: fetchedCommit))

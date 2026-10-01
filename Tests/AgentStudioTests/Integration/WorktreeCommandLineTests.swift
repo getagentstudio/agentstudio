@@ -101,6 +101,50 @@ struct WorktreeCommandLineTests {
                 ))
     }
 
+    @Test("prune parsing preserves caller directory, fetch, archive, and apply policy")
+    func parsesPrunePolicies() throws {
+        let currentDirectory = URL(fileURLWithPath: "/tmp/linked-worktree/nested", isDirectory: true)
+        let repository = currentDirectory.appending(path: "../repositories/main").standardizedFileURL
+
+        let preview = try WorktreeCommandLineArgumentParser.parse(
+            ["prune", "--repo", "../repositories/main", "--no-fetch", "--json"],
+            currentDirectory: currentDirectory
+        )
+        #expect(
+            preview
+                == WorktreeCommandLineInvocation(
+                    request: .prune(
+                        WorktreePruneRequest(
+                            start: repository,
+                            callerDirectory: currentDirectory,
+                            apply: false,
+                            evidencePolicy: .requireEmpty,
+                            fetchPolicy: .skip
+                        )
+                    ),
+                    usesJSONOutput: true
+                ))
+
+        let apply = try WorktreeCommandLineArgumentParser.parse(
+            ["prune", "--repo", repository.path, "--apply", "--archive-to-main"],
+            currentDirectory: currentDirectory
+        )
+        #expect(
+            apply
+                == WorktreeCommandLineInvocation(
+                    request: .prune(
+                        WorktreePruneRequest(
+                            start: repository,
+                            callerDirectory: currentDirectory,
+                            apply: true,
+                            evidencePolicy: .archiveToMain,
+                            fetchPolicy: .defaultBranch
+                        )
+                    ),
+                    usesJSONOutput: false
+                ))
+    }
+
     @Test("path options reject another option as their value")
     func pathOptionsRejectFollowingFlagsAsValues() throws {
         let currentDirectory = URL(fileURLWithPath: "/tmp/worktree-cli", isDirectory: true)
@@ -226,7 +270,7 @@ struct WorktreeCommandLineTests {
                 exitCode: 0
             ),
             FormatterGolden(
-                outcome: .listFailed(WorktreeListFailureDocument(fetch: .skipped(reason: .noTarget))),
+                outcome: .fetchingReadFailure(WorktreeFetchingReadFailure(fetch: .skipped(reason: .noTarget))),
                 humanText: "failed: readFailed; leftovers: notNeeded; fetch: skipped (noTarget)",
                 jsonText:
                     "{\"failure\":{\"kind\":\"readFailed\"},\"fetch\":{\"reason\":\"noTarget\",\"status\":\"skipped\"},\"leftovers\":{\"status\":\"notNeeded\"},\"outcome\":\"failed\"}",

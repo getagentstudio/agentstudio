@@ -25,7 +25,10 @@ extension WorktreeCommandLineFormatter {
     }
 
     package static func removalHumanLines(_ report: WorktreeRemovalReport) -> String {
-        ([fetchHumanLine(report.fetch)] + report.entries.map(removalHumanLine)).joined(separator: "\n")
+        if let failure = report.fetchingReadFailure {
+            return fetchingReadFailureHumanLine(failure)
+        }
+        return ([fetchHumanLine(report.fetch)] + report.entries.map(removalHumanLine)).joined(separator: "\n")
     }
 
     private static func removalFailureName(_ failure: WorktreeRemovalFailureKindDocument) -> String {
@@ -107,7 +110,7 @@ extension WorktreeCommandLineFormatter {
         }
     }
 
-    private static func assessmentHumanLine(_ assessment: WorktreeIntegrationAssessmentDocument?) -> String {
+    package static func assessmentHumanLine(_ assessment: WorktreeIntegrationAssessmentDocument?) -> String {
         guard let assessment else { return "notApplicable" }
         return switch assessment {
         case .integrated(let proof):
@@ -144,7 +147,7 @@ extension WorktreeCommandLineFormatter {
         }
     }
 
-    private static func stopHumanLine(_ refusal: WorktreeRefusalDocument) -> String {
+    package static func stopHumanLine(_ refusal: WorktreeRefusalDocument) -> String {
         let details = stopDetailsHumanLine(refusal.details)
         let options = refusal.options.map { option in
             switch option.action {

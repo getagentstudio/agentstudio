@@ -65,12 +65,8 @@ extension WorktreeCommandLineFormatter {
         }
     }
 
-    package static func listFailureHumanLine(_ failure: WorktreeListFailureDocument) -> String {
+    package static func fetchingReadFailureHumanLine(_ failure: WorktreeFetchingReadFailure) -> String {
         "failed: readFailed; leftovers: notNeeded; \(fetchHumanLine(failure.fetch))"
-    }
-
-    package static func listFailureJSONText(_ failure: WorktreeListFailureDocument) throws -> String {
-        try encodeJSON(failure)
     }
 }
 

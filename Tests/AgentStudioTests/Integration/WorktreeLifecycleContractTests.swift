@@ -493,6 +493,53 @@ struct WorktreeOutcomeDocumentsTests {
         #expect(try JSONDecoder().decode(WorktreeRemovalEntry.self, from: Data(encodedFailedEntry.utf8)) == failedEntry)
     }
 
+    @Test("prune and removal JSON keep their fetch and lifecycle outcome shapes")
+    func pruneAndRemovalJSONGoldens() throws {
+        let pruneSummary = WorktreePruneSummary(
+            target: WorktreeListingTargetDocument(ref: "refs/remotes/origin/main", commit: "cafe"),
+            fetch: .fetched(commit: "cafe"),
+            applied: false,
+            entries: [
+                .skipped(
+                    WorktreePruneSkippedDocument(
+                        target: "/repo/feature/remaining",
+                        skip: WorktreePruneSkip(
+                            reason: .notIntegrated,
+                            options: ["agentstudio worktree remove --repo /repo /repo/feature/remaining -D"]
+                        )
+                    )
+                )
+            ]
+        )
+        let pruneResponse = try WorktreeCommandLineFormatter.format(
+            outcome: .pruned(pruneSummary),
+            usesJSONOutput: true
+        )
+
+        #expect(pruneResponse.exitCode == 0)
+        #expect(
+            pruneResponse.text
+                == #"{"applied":false,"entries":[{"details":{"skip":{"options":["agentstudio worktree remove --repo /repo /repo/feature/remaining -D"],"reason":{"kind":"notIntegrated"}},"target":"/repo/feature/remaining"},"status":"skipped"}],"fetch":{"commit":"cafe","status":"fetched"},"outcome":"pruned","target":{"commit":"cafe","ref":"refs/remotes/origin/main"}}"#
+        )
+
+        let fetchingReadFailure = WorktreeFetchingReadFailure(fetch: .fetched(commit: "cafe"))
+        let removalReport = WorktreeRemovalReport(
+            entries: [],
+            fetch: .fetched(commit: "cafe"),
+            fetchingReadFailure: fetchingReadFailure
+        )
+        let removalResponse = try WorktreeCommandLineFormatter.format(
+            removalReport: removalReport,
+            usesJSONOutput: true
+        )
+
+        #expect(removalResponse.exitCode == 2)
+        #expect(
+            removalResponse.text
+                == #"{"failure":{"kind":"readFailed"},"fetch":{"commit":"cafe","status":"fetched"},"leftovers":{"status":"notNeeded"},"outcome":"failed"}"#
+        )
+    }
+
     private static func json<TDocument: Encodable>(_ document: TDocument) throws -> String {
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]

@@ -361,13 +361,20 @@ package enum WorktreeRemovalEntry: Codable, Sendable, Equatable {
 package struct WorktreeRemovalReport: Codable, Sendable, Equatable {
     package let entries: [WorktreeRemovalEntry]
     package let fetch: WorktreeFetchStatus
+    package let fetchingReadFailure: WorktreeFetchingReadFailure?
 
-    package init(entries: [WorktreeRemovalEntry], fetch: WorktreeFetchStatus) {
+    package init(
+        entries: [WorktreeRemovalEntry],
+        fetch: WorktreeFetchStatus,
+        fetchingReadFailure: WorktreeFetchingReadFailure? = nil
+    ) {
         self.entries = entries
         self.fetch = fetch
+        self.fetchingReadFailure = fetchingReadFailure
     }
 
     package var exitCode: Int32 {
+        if fetchingReadFailure != nil { return 2 }
         if entries.contains(where: { if case .failed = $0 { true } else { false } }) {
             return 2
         }
@@ -392,6 +399,13 @@ package struct WorktreeRemovalReport: Codable, Sendable, Equatable {
     package init(from decoder: any Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         let outcome = try container.decode(String.self, forKey: .outcome)
+        if outcome == "failed" {
+            let failure = try WorktreeFetchingReadFailure(from: decoder)
+            entries = []
+            fetch = failure.fetch
+            fetchingReadFailure = failure
+            return
+        }
         guard outcome == "removal" else {
             throw DecodingError.dataCorruptedError(
                 forKey: .outcome,
@@ -401,9 +415,14 @@ package struct WorktreeRemovalReport: Codable, Sendable, Equatable {
         }
         entries = try container.decode([WorktreeRemovalEntry].self, forKey: .entries)
         fetch = try container.decode(WorktreeFetchStatus.self, forKey: .fetch)
+        fetchingReadFailure = nil
     }
 
     package func encode(to encoder: any Encoder) throws {
+        if let fetchingReadFailure {
+            try fetchingReadFailure.encode(to: encoder)
+            return
+        }
         var container = encoder.container(keyedBy: CodingKeys.self)
         try container.encode("removal", forKey: .outcome)
         try container.encode(entries, forKey: .entries)

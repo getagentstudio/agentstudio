@@ -11,6 +11,7 @@ package enum WorktreeOperationRequest: Sendable, Equatable {
         fetchPolicy: WorktreeFetchPolicy
     )
     case remove(WorktreeRemovalRequest)
+    case prune(WorktreePruneRequest)
 }
 
 package enum WorktreeBranchNameProblem: Sendable, Equatable {
@@ -26,8 +27,9 @@ package enum WorktreeOperationKind: String, Sendable, Equatable {
 package enum WorktreeOperationOutcome: Sendable, Equatable {
     case created(WorktreeCreatedSummary)
     case listed(WorktreeListingSummary)
-    case listFailed(WorktreeListFailureDocument)
+    case fetchingReadFailure(WorktreeFetchingReadFailure)
     case removal(WorktreeRemovalReport)
+    case pruned(WorktreePruneSummary)
     case refused(WorktreeOperationRefusal)
     case failed(WorktreeOperationFailure)
 }

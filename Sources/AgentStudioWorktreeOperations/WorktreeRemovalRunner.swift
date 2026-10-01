@@ -127,7 +127,7 @@ package struct WorktreeRemovalRunner: Sendable {
     @concurrent
     package func run(_ request: WorktreeRemovalRequest) async -> WorktreeRemovalReport {
         guard let repository = await repositoryContext(start: request.start) else {
-            return failureReport(request.targets, fetch: .skipped(reason: .noTarget))
+            return failureReport(fetch: .skipped(reason: .noTarget))
         }
 
         let initialTarget = try? await WorktreeIntegrationTargetResolver(client: client)
@@ -144,7 +144,7 @@ package struct WorktreeRemovalRunner: Sendable {
             worktrees = try await client.worktrees(for: repository.repositoryPath)
             branches = try await client.branches(for: repository.repositoryPath)
         } catch {
-            return failureReport(request.targets, fetch: fetchResult.status)
+            return failureReport(fetch: fetchResult.status)
         }
 
         let mainWorktreePath =
@@ -257,21 +257,11 @@ package struct WorktreeRemovalRunner: Sendable {
         )
     }
 
-    private func failureReport(_ targets: [String], fetch: WorktreeFetchStatus) -> WorktreeRemovalReport {
-        let effects = removalEffects(
-            WorktreeRemovalEffectsState(
-                directory: .unknown,
-                administration: .unknown,
-                branch: nil,
-                evidence: .noEvidence,
-                assessment: nil,
-                activity: .notChecked,
-                lockResidue: []
-            )
+    private func failureReport(fetch: WorktreeFetchStatus) -> WorktreeRemovalReport {
+        WorktreeRemovalReport(
+            entries: [],
+            fetch: fetch,
+            fetchingReadFailure: WorktreeFetchingReadFailure(fetch: fetch)
         )
-        let entries = targets.map { target in
-            failedEntry(target: target, inputs: [target], kind: .observationFailed, effects: effects)
-        }
-        return WorktreeRemovalReport(entries: entries, fetch: fetch)
     }
 }
