@@ -1,3 +1,4 @@
+import AgentStudioGit
 import AgentStudioWorktreeOperations
 import Foundation
 import Testing
@@ -192,6 +193,13 @@ struct WorktreeStopCatalogTests {
 struct WorktreeOutcomeDocumentsTests {
     @Test("fetch status variants encode stable tags")
     func fetchStatusJSONGoldens() throws {
+        let lockPath = "/repo/.git/refs/remotes/origin/main.lock"
+        let lockResiduePath = "/repo/.git/packed-refs.lock"
+        let heldLock = WorktreeFetchLock(
+            path: lockPath,
+            resource: .reference(name: "refs/remotes/origin/main")
+        )
+        let unidentifiedLock = WorktreeFetchLock(path: nil, resource: .packedRefs)
         #expect(
             try Self.json(WorktreeFetchStatus.fetched(commit: "c0ffee"))
                 == #"{"commit":"c0ffee","status":"fetched"}"#
@@ -201,8 +209,92 @@ struct WorktreeOutcomeDocumentsTests {
                 == #"{"reason":"noRemote","status":"skipped"}"#
         )
         #expect(
+            try Self.json(WorktreeFetchStatus.skipped(reason: .noTarget))
+                == #"{"reason":"noTarget","status":"skipped"}"#
+        )
+        #expect(
             try Self.json(WorktreeFetchStatus.failed(reason: .networkFailure))
                 == #"{"reason":"networkFailure","status":"failed"}"#
+        )
+        #expect(
+            try Self.json(
+                WorktreeFetchStatus.failed(reason: .gitLockHeld, lock: heldLock)
+            )
+                == #"{"lock":{"path":"/repo/.git/refs/remotes/origin/main.lock","resource":{"reference":{"name":"refs/remotes/origin/main"}}},"reason":"gitLockHeld","status":"failed"}"#
+        )
+        #expect(
+            try Self.json(
+                WorktreeFetchStatus.failed(reason: .gitLockUnidentified, lock: unidentifiedLock)
+            )
+                == #"{"lock":{"resource":{"packedRefs":{}}},"reason":"gitLockUnidentified","status":"failed"}"#
+        )
+        #expect(
+            try Self.json(
+                WorktreeFetchStatus.failed(reason: .processFailure, lockResidue: [lockResiduePath])
+            )
+                == #"{"lockResidue":["/repo/.git/packed-refs.lock"],"reason":"processFailure","status":"failed"}"#
+        )
+        #expect(
+            try Self.json(
+                WorktreeFetchStatus.failed(
+                    reason: .gitLockHeld,
+                    lock: heldLock,
+                    lockResidue: [lockResiduePath]
+                )
+            )
+                == #"{"lock":{"path":"/repo/.git/refs/remotes/origin/main.lock","resource":{"reference":{"name":"refs/remotes/origin/main"}}},"lockResidue":["/repo/.git/packed-refs.lock"],"reason":"gitLockHeld","status":"failed"}"#
+        )
+        #expect(
+            try Self.json(WorktreeFetchStatus.failed(reason: .upstreamNotOrigin))
+                == #"{"reason":"upstreamNotOrigin","status":"failed"}"#
+        )
+
+        let roundTripStatuses: [WorktreeFetchStatus] = [
+            .failed(reason: .networkFailure),
+            .failed(reason: .gitLockHeld, lock: heldLock),
+            .failed(reason: .gitLockUnidentified, lock: unidentifiedLock),
+            .failed(reason: .processFailure, lockResidue: [lockResiduePath]),
+            .failed(reason: .gitLockHeld, lock: heldLock, lockResidue: [lockResiduePath]),
+            .failed(reason: .upstreamNotOrigin),
+            .skipped(reason: .noTarget),
+        ]
+        for status in roundTripStatuses {
+            let encoded = try Self.json(status)
+            #expect(try JSONDecoder().decode(WorktreeFetchStatus.self, from: Data(encoded.utf8)) == status)
+        }
+
+        let emptyResidueJSON = try Self.json(
+            WorktreeFetchStatus.failed(reason: .processFailure, lockResidue: [])
+        )
+        #expect(emptyResidueJSON == #"{"reason":"processFailure","status":"failed"}"#)
+        #expect(
+            try JSONDecoder().decode(WorktreeFetchStatus.self, from: Data(emptyResidueJSON.utf8))
+                == .failed(reason: .processFailure)
+        )
+    }
+
+    @Test("human fetch status names lock resources and retained paths on one line")
+    func fetchLockHumanLineIsActionable() {
+        let held = WorktreeFetchStatus.failed(
+            reason: .gitLockHeld,
+            lock: WorktreeFetchLock(
+                path: "/repo/.git/refs/remotes/origin/main.lock",
+                resource: .reference(name: "refs/remotes/origin/main")
+            ),
+            lockResidue: ["/repo/.git/FETCH_HEAD.lock"]
+        )
+        let unidentified = WorktreeFetchStatus.failed(
+            reason: .gitLockUnidentified,
+            lock: WorktreeFetchLock(path: nil, resource: .packedRefs)
+        )
+
+        #expect(
+            WorktreeCommandLineFormatter.fetchHumanLine(held)
+                == "fetch: failed (gitLockHeld); lock path /repo/.git/refs/remotes/origin/main.lock (reference refs/remotes/origin/main); leftover lock paths /repo/.git/FETCH_HEAD.lock"
+        )
+        #expect(
+            WorktreeCommandLineFormatter.fetchHumanLine(unidentified)
+                == "fetch: failed (gitLockUnidentified); lock resource packed-refs"
         )
     }
 
