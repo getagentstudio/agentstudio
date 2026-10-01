@@ -149,13 +149,13 @@ export const claudeFinaleTranscript: readonly TranscriptRow[] = [
   { kind: "assistant-text", text: "● I'll install it with Homebrew.", tiers: allTiers },
   {
     kind: "tool-call",
-    text: "● Bash(brew tap ShravanSunder/agentstudio && brew install --cask agent-studio)",
+    text: "● Bash(brew tap getagentstudio/agentstudio && brew install --cask agent-studio)",
     tiers: desktopTiers,
   },
   { kind: "tool-call", text: "● Bash(brew install --cask agent-studio)", tiers: ["phone"] },
   {
     kind: "tool-result",
-    text: "  ⎿ ==> Tapping shravansunder/agentstudio",
+    text: "  ⎿ ==> Tapping getagentstudio/agentstudio",
     tiers: desktopTiers,
     beat: "progress",
   },

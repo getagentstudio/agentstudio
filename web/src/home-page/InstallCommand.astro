@@ -54,6 +54,10 @@ import KitIcon from "@/recreation-kit/KitIcon.astro";
   .install-command__copy-icon { display: none; }
   .install-command[data-compact-copy] { flex-direction: column; }
   .install-command[data-compact-copy] .install-command__code { padding-inline: 8px; }
+  /* The tap command is 37 monospace characters at the 11px floor; the narrowest phones need the inline padding back. */
+  @media (width < 360px) {
+    .install-command[data-compact-copy] .install-command__code { padding-inline: 5px; }
+  }
   .install-command[data-compact-copy] .install-command__copy {
     display: flex;
     width: 100%;

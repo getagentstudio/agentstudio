@@ -434,7 +434,7 @@ struct VendorConsumerWiringScriptTests {
         #expect(agentInstructions.contains("reuses those prepared inputs from linked worktrees"))
         #expect(
             readme.contains(
-                "git clone https://github.com/ShravanSunder/agentstudio.git agent-studio\ncd agent-studio"))
+                "git clone https://github.com/getagentstudio/agentstudio.git agent-studio\ncd agent-studio"))
         #expect(readme.contains("normally unhydrated in linked worktrees"))
         #expect(readme.contains("[zmx](https://github.com/neurosnap/zmx)"))
     }

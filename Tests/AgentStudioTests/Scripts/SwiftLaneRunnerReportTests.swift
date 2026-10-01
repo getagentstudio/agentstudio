@@ -106,7 +106,8 @@ struct SwiftLaneRunnerReportTests {
         let evidenceDirectory = NSTemporaryDirectory() + "agentstudio-timing-sidecar-\(UUIDv7.generate())"
         defer { try? FileManager.default.removeItem(atPath: evidenceDirectory) }
         let output = try await runBash(
-            "LOG_PREFIX=timing; export LANE_EVENT_STREAM_DIR='\(evidenceDirectory)' "
+            "LOG_PREFIX=timing; BUILD_PATH='\(evidenceDirectory)/build'; "
+                + "export BUILD_PATH LANE_EVENT_STREAM_DIR='\(evidenceDirectory)' "
                 + "LANE_TIMING_FILTER=FixtureSuite LANE_TIMING_BATCH=2 LANE_TIMING_SLOT=3 "
                 + "LANE_TIMING_CONCURRENCY=4; "
                 + "source scripts/swift-test-helpers.sh; set +e; "
@@ -458,6 +459,43 @@ struct SwiftLaneRunnerReportTests {
         #expect(result.output.contains("FAIL_CHILD_STATUS=7"))
     }
 
+    @Test("lane stdout sources use one persistent line relay per stream")
+    func laneStdoutSourcesUseOnePersistentLineRelayPerStream() throws {
+        let helperScript = try String(contentsOfFile: "scripts/swift-test-helpers.sh", encoding: .utf8)
+        let laneTaskScript = try String(contentsOfFile: "scripts/run-swift-test-task.sh", encoding: .utf8)
+        let outputRelayScript = try String(contentsOfFile: "scripts/swift-test-output-relay.pl", encoding: .utf8)
+        let outputRelayBegin = try shellFunction(named: "swift_test_output_relay_begin_command", in: helperScript)
+        let outputRelayFinish = try shellFunction(named: "swift_test_output_relay_finish_command", in: helperScript)
+        let commandWrapper = try shellFunction(named: "run_swift_with_timeout", in: helperScript)
+        let commandBody = try shellFunction(named: "swift_test_run_with_timeout_body", in: helperScript)
+        let pipelineChild = try shellFunction(named: "swift_test_run_pipeline_child", in: helperScript)
+        let isolatedDispatcher = try shellFunction(named: "dispatch_isolated_suites", in: helperScript)
+
+        let beginRange = commandWrapper.range(of: "swift_test_output_relay_begin_command")
+        let bodyRange = commandWrapper.range(of: "swift_test_run_with_timeout_body")
+        let finishRange = commandWrapper.range(of: "swift_test_output_relay_finish_command")
+        #expect(beginRange != nil)
+        #expect(bodyRange != nil)
+        #expect(finishRange != nil)
+        if let beginRange, let bodyRange, let finishRange {
+            #expect(beginRange.lowerBound < bodyRange.lowerBound)
+            #expect(bodyRange.lowerBound < finishRange.lowerBound)
+        }
+
+        #expect(commandBody.contains("still running ("))
+        #expect(pipelineChild.contains("| $xcb_pipe 94>&- 99>&- |"))
+        #expect(pipelineChild.contains("$SWIFT_TEST_OUTPUT_RELAY_SCRIPT_PATH"))
+        #expect(pipelineChild.contains("stream 94>&- 1>&99"))
+        #expect(isolatedDispatcher.contains("swift_test_output_message"))
+        #expect(laneTaskScript.contains("swift_test_output_relay_begin_dispatcher"))
+        #expect(laneTaskScript.contains("swift_test_output_relay_finish_dispatcher"))
+        #expect(outputRelayBegin.contains("exec 1>\"$relay_fifo\""))
+        #expect(outputRelayFinish.contains("exec 1>&99"))
+        #expect(outputRelayScript.contains("flock($lock_file, LOCK_EX)"))
+        #expect(outputRelayScript.contains("substr($line, $offset, 512)"))
+        #expect(outputRelayScript.contains("syswrite(STDOUT, $chunk)"))
+    }
+
     @Test("signal names are resolved only for signalled exits")
     func signalNamesAreResolvedOnlyForSignalledExits() async throws {
         let names = try await runBash(
@@ -628,7 +666,7 @@ struct SwiftLaneRunnerReportTests {
     @Test("the inactivity timeout names the test cases that were still running")
     func inactivityTimeoutNamesTheTestCasesThatWereStillRunning() async throws {
         let helperScript = try String(contentsOfFile: "scripts/swift-test-helpers.sh", encoding: .utf8)
-        let timeoutRunner = try shellFunction(named: "run_swift_with_timeout", in: helperScript)
+        let timeoutRunner = try shellFunction(named: "swift_test_run_with_timeout_body", in: helperScript)
         // Case 1 of alpha ends; case 2 and beta do not, and the truncated final
         // line a killed writer leaves behind must not derail the parse.
         let streamRecords = [
@@ -773,7 +811,7 @@ struct SwiftLaneRunnerReportTests {
     @Test("event-stream flags reach every test invocation but not the prebuild")
     func eventStreamFlagsReachEveryTestInvocationButNotThePrebuild() async throws {
         let helperScript = try String(contentsOfFile: "scripts/swift-test-helpers.sh", encoding: .utf8)
-        let timeoutRunner = try shellFunction(named: "run_swift_with_timeout", in: helperScript)
+        let timeoutRunner = try shellFunction(named: "swift_test_run_with_timeout_body", in: helperScript)
         let acceptsEventStream = try shellFunction(
             named: "swift_test_command_accepts_event_stream",
             in: helperScript

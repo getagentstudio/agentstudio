@@ -18,7 +18,7 @@ cleanup() {
     rmdir "$TAP_DIR"
     local tap_parent
     tap_parent="$(dirname "$TAP_DIR")"
-    if [[ "$tap_parent" == */ShravanSunder ]]; then
+    if [[ "$tap_parent" == */getagentstudio ]]; then
       rmdir "$tap_parent" 2>/dev/null || true
     fi
   fi
@@ -30,7 +30,7 @@ make_tap_clone_dir() {
     local brew_repository
     brew_repository="$(brew --repository 2>/dev/null || true)"
     if [[ -n "$brew_repository" ]]; then
-      local tap_parent="$brew_repository/Library/Taps/ShravanSunder"
+      local tap_parent="$brew_repository/Library/Taps/getagentstudio"
       local preferred_tap_dir="$tap_parent/homebrew-agentstudio"
       if mkdir -p "$tap_parent" 2>/dev/null; then
         if [[ -e "$preferred_tap_dir" ]]; then
@@ -68,7 +68,7 @@ else
 
   TAP_DIR="$(make_tap_clone_dir)"
   CLEANUP_TAP_DIR=1
-  git clone "https://x-access-token:${HOMEBREW_TAP_TOKEN}@github.com/ShravanSunder/homebrew-agentstudio.git" "$TAP_DIR"
+  git clone "https://x-access-token:${HOMEBREW_TAP_TOKEN}@github.com/getagentstudio/homebrew-agentstudio.git" "$TAP_DIR"
 fi
 
 mkdir -p "$TAP_DIR/Casks"

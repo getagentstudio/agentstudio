@@ -211,7 +211,7 @@ for (const [width, height] of [
       ).toBe(true);
       expect(sample.installTransform, `${sample.time}: install transform`).toBe("none");
       expect(sample.realCommandLines, `${sample.time}: command text`).toEqual([
-        "$ brew tap ShravanSunder/agentstudio",
+        "$ brew tap getagentstudio/agentstudio",
         "$ brew install --cask agent-studio",
       ]);
       expect(Math.abs(sample.appTop - at(0).appTop), `${sample.time}: app`).toBeLessThanOrEqual(

@@ -119,7 +119,7 @@ export const marketingCopy = {
     playVideo: "Play video",
   },
   installation: {
-    commands: ["brew tap ShravanSunder/agentstudio", "brew install --cask agent-studio"],
+    commands: ["brew tap getagentstudio/agentstudio", "brew install --cask agent-studio"],
     copyButton: "Copy install commands",
     copyButtonVisible: "Copy",
     copiedStatus: "Copied",
@@ -154,7 +154,7 @@ export const marketingCopy = {
     creatorPrefix: "🛠️ Made by ",
     creatorName: "Shravan Sunder",
   },
-  githubUrl: "https://github.com/ShravanSunder/agentstudio",
+  githubUrl: "https://github.com/getagentstudio/agentstudio",
 } as const;
 
 export const installCommandText = marketingCopy.installation.commands.join("\n");

@@ -31,7 +31,7 @@ describe("hero intro scene contract", () => {
         <div data-hero-brew-bar></div><span data-hero-bash-dot>●</span><span data-hero-codex-verb>Running</span>
         <div class="hero-codex-footer">Ask Codex</div>
       </div></div>
-      <div data-hero-intro-install><code><span>$ brew tap ShravanSunder/agentstudio<span data-install-decode-line aria-hidden="true"></span></span><span>$ brew install --cask agent-studio<span data-install-decode-line aria-hidden="true"></span></span></code><button data-install-copy>COPY</button></div><p data-hero-intro-description>Description</p>
+      <div data-hero-intro-install><code><span>$ brew tap getagentstudio/agentstudio<span data-install-decode-line aria-hidden="true"></span></span><span>$ brew install --cask agent-studio<span data-install-decode-line aria-hidden="true"></span></span></code><button data-install-copy>COPY</button></div><p data-hero-intro-description>Description</p>
       <div data-hero-intro-glow></div>
     `;
     document.head.append(fixtureStyle);
@@ -189,11 +189,11 @@ describe("hero intro scene contract", () => {
       const overlays = [...fixture.querySelectorAll<HTMLElement>("[data-install-decode-line]")];
       expect(overlays.every((line) => Number(getComputedStyle(line).opacity) === 0)).toBe(true);
       expect(overlays.map((line) => line.parentElement?.textContent).join(" ")).toContain(
-        "brew tap ShravanSunder/agentstudio",
+        "brew tap getagentstudio/agentstudio",
       );
       for (const second of [0, 4.6, 6.9, 7.2, 7.8, 13.4]) {
         timeline.time(second);
-        expect(install.textContent).toContain("brew tap ShravanSunder/agentstudio");
+        expect(install.textContent).toContain("brew tap getagentstudio/agentstudio");
         expect(getComputedStyle(install).transform).toBe("none");
       }
       timeline.time(5.0);

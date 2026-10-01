@@ -54,6 +54,8 @@ struct HomebrewBetaReleaseScriptsTests {
         #expect(stable.stdout.contains("cask \"agent-studio\" do"))
         #expect(stable.stdout.contains("version \"0.0.54\""))
         #expect(stable.stdout.contains("name \"Agent Studio\""))
+        #expect(stable.stdout.contains(#"url "https://github.com/getagentstudio/agentstudio/releases/"#))
+        #expect(stable.stdout.contains(#"homepage "https://github.com/getagentstudio/agentstudio""#))
         #expect(!stable.stdout.contains("conflicts_with cask: \"agent-studio@beta\""))
         #expect(stable.stdout.contains("depends_on macos: :tahoe"))
         #expect(stable.stdout.contains("app \"AgentStudio.app\""))
@@ -68,6 +70,12 @@ struct HomebrewBetaReleaseScriptsTests {
         #expect(beta.stdout.contains("cask \"agent-studio@beta\" do"))
         #expect(beta.stdout.contains("version \"0.0.54-beta.1\""))
         #expect(beta.stdout.contains("name \"Agent Studio Beta\""))
+        #expect(beta.stdout.contains(#"url "https://github.com/getagentstudio/agentstudio/releases/"#))
+        #expect(beta.stdout.contains(#"homepage "https://github.com/getagentstudio/agentstudio""#))
+
+        let checkedInCask = try String(contentsOfFile: "homebrew/Casks/agent-studio.rb", encoding: .utf8)
+        #expect(checkedInCask.contains(#"url "https://github.com/getagentstudio/agentstudio/releases/"#))
+        #expect(checkedInCask.contains(#"homepage "https://github.com/getagentstudio/agentstudio""#))
         #expect(!beta.stdout.contains("conflicts_with cask: \"agent-studio\""))
         #expect(beta.stdout.contains("depends_on macos: :tahoe"))
         #expect(beta.stdout.contains("app \"AgentStudio Beta.app\""))
@@ -150,6 +158,14 @@ struct HomebrewBetaReleaseScriptsTests {
                 atPath: tapRoot.appending(path: "Casks/agent-studio.rb").path
             )
         )
+
+        let renderedCask = try String(
+            contentsOf: tapRoot.appending(path: "Casks/agent-studio@beta.rb"), encoding: .utf8)
+        #expect(renderedCask.contains(#"homepage "https://github.com/getagentstudio/agentstudio""#))
+        let tapUpdater = try String(contentsOfFile: "scripts/update-homebrew-tap.sh", encoding: .utf8)
+        #expect(tapUpdater.contains("/Library/Taps/getagentstudio"))
+        #expect(tapUpdater.contains("*/getagentstudio"))
+        #expect(tapUpdater.contains("github.com/getagentstudio/homebrew-agentstudio.git"))
     }
 
     private let validSHA = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"

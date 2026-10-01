@@ -195,6 +195,7 @@ finish_lane_invocation() {
     swift_test_cleanup_active_command_groups_directory || true
   fi
   swift_build_slot_release || true
+  swift_test_output_relay_finish_dispatcher || true
   return "$exit_status"
 }
 
@@ -266,6 +267,7 @@ begin_lane_accounting
 LANE_BUNDLE_STATE=not_built
 trap finish_lane_invocation EXIT
 trap_lane_termination_signals
+swift_test_output_relay_begin_dispatcher
 
 if [ "$mode" != "test-prebuild" ] && [ "${SWIFT_TEST_SKIP_PREBUILD:-0}" = "1" ]; then
   echo "[$LOG_PREFIX] skipping prebuild test bundles (SWIFT_TEST_SKIP_PREBUILD=1)"

@@ -556,12 +556,12 @@ run = """
 set -euo pipefail
 source "${PROJECT_ROOT}/scripts/swift-build-slot.sh"
 removed=0
-for slot_name in build test; do
-  build_directory="$(swift_build_slot_resolve_directory "$slot_name")"
+# One slot per worktree: build and test claimants share this directory.
+for build_directory in "$(swift_build_slot_resolve_directory build)"; do
   [ -d "$build_directory" ] || continue
   if ! swift_build_slot_lock_is_free "$build_directory"; then
     holder="$(cat "$build_directory/.slot.holder" 2>/dev/null || echo "holder_task=unknown")"
-    echo "[clean-agent-builds] preserved held slot=$slot_name $holder"
+    echo "[clean-agent-builds] preserved held slot $holder"
     continue
   fi
   # The slot is free: remove a stale holder note and any claim directory left
@@ -589,33 +589,19 @@ run = """
 #!/usr/bin/env bash
 set -e
 
-# Find the freshest release artifact across the two shared build slots.
+# Use the release artifact from the worktree's one build slot (or CI's path).
 if [ -n "${SWIFT_BUILD_DIR:-}" ] && \
   { [ "$SWIFT_BUILD_DIR" = ".build-agent-1" ] || \
-    [ "$SWIFT_BUILD_DIR" = ".build-agent-2" ] || \
     { { [ "${CI:-}" = "true" ] || [ "${GITHUB_ACTIONS:-}" = "true" ]; } && \
       [ "$SWIFT_BUILD_DIR" = ".build-ci" ]; }; } && \
   [ -f "$SWIFT_BUILD_DIR/release/AgentStudio" ]
 then
   BUILD_PATH="$SWIFT_BUILD_DIR"
+elif [ -f ".build-agent-1/release/AgentStudio" ]; then
+  BUILD_PATH=".build-agent-1"
 else
-  BUILD_PATH=""
-  newest_mtime=0
-  for n in 1 2; do
-    candidate=".build-agent-$n"
-    binary="$candidate/release/AgentStudio"
-    if [ -f "$binary" ]; then
-      mtime=$(stat -f %m "$binary")
-      if [ "$mtime" -gt "$newest_mtime" ]; then
-        newest_mtime="$mtime"
-        BUILD_PATH="$candidate"
-      fi
-    fi
-  done
-  if [ -z "$BUILD_PATH" ]; then
-    echo "create-app-bundle: no release artifact found in .build-agent-1 or .build-agent-2" >&2
-    exit 1
-  fi
+  echo "create-app-bundle: no release artifact found in .build-agent-1" >&2
+  exit 1
 fi
 echo "[create-app-bundle] BUILD_PATH=$BUILD_PATH"
 APP_DIR="AgentStudio.app/Contents"

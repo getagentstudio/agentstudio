@@ -7,13 +7,13 @@ Requires macOS 26 or later.
 ## Install
 
 ```sh
-brew tap ShravanSunder/agentstudio
+brew tap getagentstudio/agentstudio
 brew install --cask agent-studio
 ```
 
 ## Links
 
 - [Website](https://getagentstudio.dev/)
-- [GitHub](https://github.com/ShravanSunder/agentstudio)
-- [README](https://github.com/ShravanSunder/agentstudio#readme)
-- [Documentation](https://github.com/ShravanSunder/agentstudio/tree/main/docs)
+- [GitHub](https://github.com/getagentstudio/agentstudio)
+- [README](https://github.com/getagentstudio/agentstudio#readme)
+- [Documentation](https://github.com/getagentstudio/agentstudio/tree/main/docs)

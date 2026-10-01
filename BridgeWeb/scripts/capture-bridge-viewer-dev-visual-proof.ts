@@ -6,7 +6,7 @@ import { z } from 'zod';
 
 const defaultDevServerUrl =
 	'http://127.0.0.1:5173/?fixture=large-diffshub&workers=on&scenario=scroll';
-const defaultDiffshubReferenceUrl = 'https://diffshub.com/ShravanSunder/agentstudio/pull/180';
+const defaultDiffshubReferenceUrl = 'https://diffshub.com/getagentstudio/agentstudio/pull/180';
 const preferredTargetPaths = [
 	process.env['BRIDGE_VIEWER_VISUAL_TARGET_PATH'],
 	'Sources/BridgeViewer/NewPanel.ts',

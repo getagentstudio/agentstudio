@@ -504,27 +504,39 @@ struct CIFastLaneWorkflowTests {
     @Test("Swift command watchdog measures output inactivity")
     func swiftCommandWatchdogMeasuresOutputInactivity() throws {
         let helperScript = try String(contentsOfFile: "scripts/swift-test-helpers.sh", encoding: .utf8)
-        let timeoutRunner = try shellFunction(named: "run_swift_with_timeout", in: helperScript)
+        let timeoutBody = try shellFunction(named: "swift_test_run_with_timeout_body", in: helperScript)
+        let pipelineChild = try shellFunction(named: "swift_test_run_pipeline_child", in: helperScript)
         let watchdogState = try shellFunction(named: "swift_test_watchdog_state", in: helperScript)
         let watchdogTimeoutStatus = try shellFunction(
             named: "swift_test_watchdog_timeout_status",
             in: helperScript
         )
 
-        #expect(timeoutRunner.contains("output_size=$(wc -c <\"$output_file\" | tr -d '[:space:]')"))
-        #expect(timeoutRunner.contains("watchdog_state=\"$("))
-        #expect(timeoutRunner.contains("read -r last_output_size last_progress_epoch <<<\"$watchdog_state\""))
-        #expect(!timeoutRunner.contains("read -r last_output_size last_progress_epoch < <("))
-        #expect(timeoutRunner.contains("swift_test_watchdog_state"))
+        #expect(timeoutBody.contains("output_size=$(wc -c <\"$output_file\" | tr -d '[:space:]')"))
+        #expect(timeoutBody.contains("watchdog_state=\"$("))
+        #expect(timeoutBody.contains("read -r last_output_size last_progress_epoch <<<\"$watchdog_state\""))
+        #expect(!timeoutBody.contains("read -r last_output_size last_progress_epoch < <("))
+        #expect(timeoutBody.contains("swift_test_watchdog_state"))
         #expect(watchdogState.contains("if [ \"$current_output_size\" -gt \"$previous_output_size\" ]; then"))
         #expect(watchdogState.contains("printf '%s %s\\n' \"$current_output_size\" \"$current_epoch\""))
         #expect(watchdogState.contains("printf '%s %s\\n' \"$previous_output_size\" \"$previous_progress_epoch\""))
-        #expect(timeoutRunner.contains("inactive_seconds=$((now_epoch - last_progress_epoch))"))
-        #expect(timeoutRunner.contains("if ! swift_test_watchdog_timeout_status"))
+        #expect(timeoutBody.contains("inactive_seconds=$((now_epoch - last_progress_epoch))"))
+        #expect(timeoutBody.contains("if ! swift_test_watchdog_timeout_status"))
         #expect(watchdogTimeoutStatus.contains("inactive_seconds=$((current_epoch - last_progress_epoch))"))
         #expect(watchdogTimeoutStatus.contains("if [ \"$inactive_seconds\" -ge \"$timeout_seconds\" ]; then"))
         #expect(watchdogTimeoutStatus.contains("return 124"))
-        #expect(!timeoutRunner.contains("if [ \"$elapsed_seconds\" -ge \"$timeout_seconds\" ]; then"))
+        #expect(!timeoutBody.contains("if [ \"$elapsed_seconds\" -ge \"$timeout_seconds\" ]; then"))
+
+        let outputFileWrite = pipelineChild.range(of: "| tee \"$output_file\"")
+        let xcbFilter = pipelineChild.range(of: "| $xcb_pipe 94>&- 99>&-")
+        let streamRelay = pipelineChild.range(of: "$SWIFT_TEST_OUTPUT_RELAY_SCRIPT_PATH")
+        #expect(outputFileWrite != nil)
+        #expect(xcbFilter != nil)
+        #expect(streamRelay != nil)
+        if let outputFileWrite, let xcbFilter, let streamRelay {
+            #expect(outputFileWrite.lowerBound < xcbFilter.lowerBound)
+            #expect(xcbFilter.lowerBound < streamRelay.lowerBound)
+        }
     }
 
     @Test("Swift command watchdog advances only when output grows")

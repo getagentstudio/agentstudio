@@ -9,7 +9,7 @@ Agent-agnostic. Repo-aware. Keyboard-first. Built on [Ghostty](https://github.co
 ## Install
 
 ```bash
-brew tap ShravanSunder/agentstudio
+brew tap getagentstudio/agentstudio
 brew install --cask agent-studio
 ```
 
@@ -152,7 +152,7 @@ before assuming the repo build is broken locally.
 ### Clone
 
 ```bash
-git clone https://github.com/ShravanSunder/agentstudio.git agent-studio
+git clone https://github.com/getagentstudio/agentstudio.git agent-studio
 cd agent-studio
 mise install
 mise run doctor-mac

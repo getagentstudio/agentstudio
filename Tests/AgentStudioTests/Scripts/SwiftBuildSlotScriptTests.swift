@@ -67,21 +67,15 @@ struct SwiftBuildSlotScriptTests {
         #expect(missingTask.output.contains("task label is required"))
     }
 
-    @Test("build and test own distinct fixed paths without replacing existing contents")
-    func buildAndTestSlotsRemainDistinctAndPreserveExistingContents() async throws {
+    @Test("build and test share the worktree's one slot, wait for each other, and keep existing contents")
+    func buildAndTestShareOneSlotAndPreserveExistingContents() async throws {
         let fixture = try SwiftBuildSlotFixture()
-        let buildMarker = fixture.rootURL.appending(path: ".build-agent-1/build-artifact")
-        let testMarker = fixture.rootURL.appending(path: ".build-agent-2/test-artifact")
+        let existingMarker = fixture.rootURL.appending(path: ".build-agent-1/existing-artifact")
         try FileManager.default.createDirectory(
-            at: buildMarker.deletingLastPathComponent(),
+            at: existingMarker.deletingLastPathComponent(),
             withIntermediateDirectories: true
         )
-        try FileManager.default.createDirectory(
-            at: testMarker.deletingLastPathComponent(),
-            withIntermediateDirectories: true
-        )
-        try Data("existing-build".utf8).write(to: buildMarker)
-        try Data("existing-test".utf8).write(to: testMarker)
+        try Data("existing-build".utf8).write(to: existingMarker)
 
         let result = try await fixture.withOwnedProcesses { fixture in
             let buildOwner = fixture.makeProcess(
@@ -94,25 +88,30 @@ struct SwiftBuildSlotScriptTests {
             buildOwner.start()
             var output = try await buildOwner.readOutput(until: "BUILD_READY")
 
-            let testOwner = fixture.makeProcess(
+            let testWaiter = fixture.makeProcess(
                 "source scripts/swift-build-slot.sh\n"
                     + "trap swift_build_slot_release EXIT\n"
-                    + "swift_build_slot_acquire test \"test-owner\"\n"
+                    + "swift_build_slot_acquire test \"test-waiter\"\n"
                     + "printf 'TEST_READY\\n'\n"
             )
-            testOwner.start()
-            output += try await testOwner.readOutputToEnd()
+            testWaiter.start()
+            output += try await testWaiter.readOutput(until: "waiting slot=test holder_task=build-owner")
+
             try writeLine("release\n", to: buildOwner.standardInput)
             output += try await buildOwner.readOutputToEnd()
-
-            return (try await buildOwner.waitForExit(), output)
+            let buildStatus = try await buildOwner.waitForExit()
+            output += try await testWaiter.readOutputToEnd()
+            return (buildStatus, try await testWaiter.waitForExit(), output)
         }
 
         #expect(result.0 == 0)
-        #expect(result.1.contains("using slot=build path=.build-agent-1 task=build-owner"))
-        #expect(result.1.contains("using slot=test path=.build-agent-2 task=test-owner"))
-        #expect(try String(contentsOf: buildMarker, encoding: .utf8) == "existing-build")
-        #expect(try String(contentsOf: testMarker, encoding: .utf8) == "existing-test")
+        #expect(result.1 == 0)
+        #expect(result.2.contains("using slot=build path=.build-agent-1 task=build-owner"))
+        #expect(result.2.contains("waiting slot=test holder_task=build-owner"))
+        #expect(result.2.contains("using slot=test path=.build-agent-1 task=test-waiter"))
+        #expect(result.2.contains("TEST_READY"))
+        #expect(try String(contentsOf: existingMarker, encoding: .utf8) == "existing-build")
+        #expect(!FileManager.default.fileExists(atPath: fixture.rootURL.appending(path: ".build-agent-2").path))
     }
 
     @Test("a same-slot claimant reports its holder once and runs after release")
@@ -183,7 +182,7 @@ struct SwiftBuildSlotScriptTests {
                     + "swift_build_slot_acquire test \"after-exit\""
             )
             #expect(next.exitCode == 0)
-            #expect(next.output.contains("using slot=test path=.build-agent-2 task=after-exit"))
+            #expect(next.output.contains("using slot=test path=.build-agent-1 task=after-exit"))
         }
     }
 
@@ -273,14 +272,12 @@ struct SwiftBuildSlotScriptTests {
         #expect(next.exitCode == 0)
     }
 
-    @Test("cleanup removes leftovers only from a free slot and preserves a held one")
+    @Test("cleanup preserves leftovers while the slot is held and removes them once it is free")
     func cleanupPreservesHeldSlotAndRemovesFreeLeftovers() async throws {
         let fixture = try SwiftBuildSlotFixture()
-        let freeLegacyClaim = fixture.rootURL.appending(path: ".build-agent-1/.slot-claim")
-        let heldLegacyClaim = fixture.rootURL.appending(path: ".build-agent-2/.slot-claim")
-        try FileManager.default.createDirectory(at: freeLegacyClaim, withIntermediateDirectories: true)
-        try FileManager.default.createDirectory(at: heldLegacyClaim, withIntermediateDirectories: true)
-        try Data().write(to: freeLegacyClaim.appending(path: "holder"))
+        let legacyClaim = fixture.rootURL.appending(path: ".build-agent-1/.slot-claim")
+        try FileManager.default.createDirectory(at: legacyClaim, withIntermediateDirectories: true)
+        try Data().write(to: legacyClaim.appending(path: "holder"))
 
         let miseConfig = try String(contentsOfFile: ".mise.toml", encoding: .utf8)
         let cleanerBody = try miseTaskBody(named: "clean-agent-builds", in: miseConfig)
@@ -294,19 +291,29 @@ struct SwiftBuildSlotScriptTests {
             )
             owner.start()
             _ = try await owner.readOutput(until: "OWNER_READY")
-            let cleaner = fixture.makeProcess(cleanerBody, environment: ["PROJECT_ROOT": fixture.rootURL.path])
-            cleaner.start()
-            let output = try await cleaner.readOutputToEnd()
-            let status = try await cleaner.waitForExit()
+            let heldCleaner = fixture.makeProcess(cleanerBody, environment: ["PROJECT_ROOT": fixture.rootURL.path])
+            heldCleaner.start()
+            let heldOutput = try await heldCleaner.readOutputToEnd()
+            let heldStatus = try await heldCleaner.waitForExit()
+            let claimSurvivedWhileHeld = FileManager.default.fileExists(atPath: legacyClaim.path)
+
             try writeLine("release\n", to: owner.standardInput)
             _ = try await owner.readOutputToEnd()
-            return (status, output)
+            _ = try await owner.waitForExit()
+
+            let freeCleaner = fixture.makeProcess(cleanerBody, environment: ["PROJECT_ROOT": fixture.rootURL.path])
+            freeCleaner.start()
+            let freeOutput = try await freeCleaner.readOutputToEnd()
+            let freeStatus = try await freeCleaner.waitForExit()
+            return (heldStatus, heldOutput, claimSurvivedWhileHeld, freeStatus, freeOutput)
         }
 
         #expect(result.0 == 0)
-        #expect(!FileManager.default.fileExists(atPath: freeLegacyClaim.path))
-        #expect(FileManager.default.fileExists(atPath: heldLegacyClaim.path))
-        #expect(result.1.contains("preserved held slot=test holder_task=held-owner"))
+        #expect(result.1.contains("preserved held slot holder_task=held-owner"))
+        #expect(result.2)
+        #expect(result.3 == 0)
+        #expect(result.4.contains("removed legacy claim"))
+        #expect(!FileManager.default.fileExists(atPath: legacyClaim.path))
         #expect(
             FileManager.default.fileExists(atPath: fixture.rootURL.appending(path: ".build-agent-1/.slot.lock").path))
     }

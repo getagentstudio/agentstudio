@@ -13,9 +13,9 @@ struct AgentStudioGitDependencyTests {
         let releaseWorkflow = try String(contentsOfFile: ".github/workflows/release.yml", encoding: .utf8)
 
         #expect(!packageManifest.contains(#".package(path: "../agentstudio-git")"#))
-        #expect(packageManifest.contains(#"url: "https://github.com/ShravanSunder/agentstudio-git.git""#))
+        #expect(packageManifest.contains(#"url: "https://github.com/getagentstudio/agentstudio-git.git""#))
         #expect(packageManifest.contains("revision: \"\(expectedAgentStudioGitRevision)\""))
-        #expect(packageResolved.contains(#""location" : "https://github.com/ShravanSunder/agentstudio-git.git""#))
+        #expect(packageResolved.contains(#""location" : "https://github.com/getagentstudio/agentstudio-git.git""#))
         #expect(packageResolved.contains("\"revision\" : \"\(expectedAgentStudioGitRevision)\""))
 
         for configuration in [miseConfig, ciWorkflow, releaseWorkflow] {

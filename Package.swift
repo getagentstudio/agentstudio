@@ -28,8 +28,8 @@ let package = Package(
         .package(url: "https://github.com/hummingbird-project/hummingbird.git", from: "2.0.0"),
         .package(url: "https://github.com/groue/GRDB.swift.git", from: "7.10.0"),
         .package(
-            url: "https://github.com/ShravanSunder/agentstudio-git.git",
-            revision: "b63c319ee2e020be97f9b274f2526e9d4bc79c80"
+            url: "https://github.com/getagentstudio/agentstudio-git.git",
+            revision: "8d6afe87d6c1fd79be72e444c918fce8dac2c77f"
         ),
     ],
     targets: [

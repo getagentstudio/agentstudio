@@ -43,10 +43,10 @@ printf 'cask "%s" do\n' "$TOKEN"
 printf '  version "%s"\n' "$VERSION"
 printf '  sha256 "%s"\n' "$SHA256"
 printf '\n'
-printf '  url "https://github.com/ShravanSunder/agentstudio/releases/download/v#{version}/AgentStudio-v#{version}-macos.zip"\n'
+printf '  url "https://github.com/getagentstudio/agentstudio/releases/download/v#{version}/AgentStudio-v#{version}-macos.zip"\n'
 printf '  name "%s"\n' "$CASK_NAME"
 printf '  desc "Terminal application with Ghostty terminal emulator and project management"\n'
-printf '  homepage "https://github.com/ShravanSunder/agentstudio"\n'
+printf '  homepage "https://github.com/getagentstudio/agentstudio"\n'
 printf '\n'
 printf '  depends_on macos: :tahoe\n'
 printf '\n'
