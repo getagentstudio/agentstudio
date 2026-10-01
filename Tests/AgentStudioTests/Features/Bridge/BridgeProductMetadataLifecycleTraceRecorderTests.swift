@@ -322,7 +322,7 @@ struct BridgeProductMetadataLifecycleTraceRecorderTests {
         for (sample, rootCase) in zip(samples, rootCases) {
             #expect(sample.name == "performance.bridge.swift.metadata_bootstrap_lifecycle")
             #expect(sample.stringAttributes["agentstudio.bridge.result_reason"] == rootCase.2)
-            #expect(sample.stringAttributes["agentstudio.bridge.protocol"] == "file")
+            #expect(sample.stringAttributes["agentstudio.bridge.protocol"] == "worktree-file")
         }
     }
 

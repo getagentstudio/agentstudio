@@ -5,8 +5,8 @@ import Testing
 
 @Suite("Bridge product session protocol lifecycle admission")
 struct BridgePaneProductMetadataCoordinatorTests {
-    @Test("unavailable File source resets the accepted subscription and retires delivery")
-    func unavailableFileSourceResetsAcceptedSubscription() async throws {
+    @Test("unavailable File source publishes retryable failure without resetting the subscription")
+    func unavailableFileSourcePublishesRetryableFailureWithoutReset() async throws {
         // Arrange
         let refreshWorkAdmission = await BridgePaneRefreshWorkAdmissionTestContext.foreground()
         let harness = try await BridgeProductSessionLifecycleHarness.opened()
@@ -17,10 +17,14 @@ struct BridgePaneProductMetadataCoordinatorTests {
             productAdmission: harness.productAdmission.context,
             acknowledgeLifecycle: { _ in true }
         )
+        let failureCapture = UnavailableFileRefreshFailureCapture()
         let coordinator = BridgePaneProductMetadataCoordinator(
             fileMetadataSource: BridgeUnavailablePaneProductFileMetadataSource(),
             reviewMetadataSource: BridgeUnavailablePaneProductReviewMetadataSource(),
-            refreshWorkAdmissionSource: refreshWorkAdmission.source
+            refreshWorkAdmissionSource: refreshWorkAdmission.source,
+            recordCurrentFileRefreshFailure: { failure in
+                Task { await failureCapture.record(failure) }
+            }
         )
         await coordinator.install(
             request: try coordinatorMetadataStreamRequest(),
@@ -46,22 +50,22 @@ struct BridgePaneProductMetadataCoordinatorTests {
             effect,
             productAdmission: harness.productAdmission.context
         )
-        let resetFrame = try await pullMetadataFrame(from: pump)
+        let currentFailure = await failureCapture.waitUntilFailure()
+        let producerSnapshot = await harness.session.producerSnapshot()
+        let retainedSubscription = await harness.session.subscriptionSnapshot(
+            subscriptionId: "file-subscription-1"
+        )
 
         // Assert
-        guard case .subscriptionAccepted(let accepted) = acceptedFrame,
-            case .subscriptionReset(let reset) = resetFrame
-        else {
-            Issue.record("Expected accepted followed by subscription reset")
+        guard case .subscriptionAccepted(let accepted) = acceptedFrame else {
+            Issue.record("Expected accepted File subscription")
             return
         }
         #expect(accepted.frameIdentity.streamSequence == 1)
-        #expect(reset.identity.frameIdentity.streamSequence == 2)
-        #expect(reset.identity.subscriptionIdentity.subscriptionSequence == 1)
-        #expect(reset.reason == .staleSource)
-        #expect(
-            await harness.session.subscriptionSnapshot(subscriptionId: "file-subscription-1") == nil
-        )
+        #expect(currentFailure == .init(failureKind: .fileSourceUnavailable))
+        #expect(currentFailure.retryable)
+        #expect(producerSnapshot.queuedFrameCount == 0)
+        #expect(retainedSubscription != nil)
         await harness.session.settleControlProviderDispatch(token: token)
         #expect(await pump.cancel())
     }
@@ -722,6 +726,26 @@ struct BridgePanePresentationCoordinatorTests {
         #expect(error.code == .resyncRequired)
         #expect(error.retryable)
         await coordinator.uninstall(lease: lease)
+    }
+}
+
+private actor UnavailableFileRefreshFailureCapture {
+    private var currentFailure: BridgePaneProductFileRefreshFailure?
+    private var failureWaiters: [CheckedContinuation<BridgePaneProductFileRefreshFailure, Never>] = []
+
+    func record(_ failure: BridgePaneProductFileRefreshFailure?) {
+        guard let failure else { return }
+        currentFailure = failure
+        let waiters = failureWaiters
+        failureWaiters.removeAll(keepingCapacity: false)
+        for waiter in waiters { waiter.resume(returning: failure) }
+    }
+
+    func waitUntilFailure() async -> BridgePaneProductFileRefreshFailure {
+        if let currentFailure { return currentFailure }
+        return await withCheckedContinuation { continuation in
+            failureWaiters.append(continuation)
+        }
     }
 }
 
