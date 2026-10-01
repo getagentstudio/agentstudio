@@ -1,7 +1,6 @@
 import AgentStudioCommandBar
 import AgentStudioCore
 import AgentStudioGit
-import AgentStudioInfrastructure
 import Foundation
 
 /// The SDK reads and writes worktree creation needs, narrowed so the coordinator can be
@@ -37,19 +36,18 @@ struct LibGit2WorktreeCreationGitClient: WorktreeCreationGitClient {
     }
 }
 
-/// Lazy, repository-keyed local branch listing. A newer enrichment revision invalidates
-/// only that repository's entry; one query per revision is shared across callers.
+/// Lazy, repository-keyed branch listing. Each opened level owns one immutable snapshot;
+/// concurrent requests in that opening share its query, and older responses cannot replace it.
 actor WorktreeBranchListingCache: WorktreeBranchListing {
     typealias BranchQuery = @Sendable (URL) async throws -> [GitBranchSnapshot]
 
     private struct CachedListing {
-        let enrichmentRevision: Int
+        let openingToken: UUID
         let snapshots: [GitBranchSnapshot]
     }
 
     private struct InFlightListing {
-        let enrichmentRevision: Int
-        let token: UUID
+        let openingToken: UUID
         let task: Task<[GitBranchSnapshot], Error>
     }
 
@@ -68,36 +66,35 @@ actor WorktreeBranchListingCache: WorktreeBranchListing {
     func branchNames(
         forRepositoryId repositoryId: UUID,
         repositoryPath: URL,
-        enrichmentRevision: Int
+        openingToken: UUID
     ) async throws -> [String] {
         if let cached = cachedListingsByRepositoryId[repositoryId],
-            cached.enrichmentRevision == enrichmentRevision
+            cached.openingToken == openingToken
         {
             return cached.snapshots.map(\.name)
         }
         cachedListingsByRepositoryId.removeValue(forKey: repositoryId)
 
         if let inFlight = inFlightListingsByRepositoryId[repositoryId],
-            inFlight.enrichmentRevision == enrichmentRevision
+            inFlight.openingToken == openingToken
         {
             return try await inFlight.task.value.map(\.name)
         }
 
-        let token = UUIDv7.generate()
         let query = query
         let task = Task { try await query(repositoryPath) }
         inFlightListingsByRepositoryId[repositoryId] = InFlightListing(
-            enrichmentRevision: enrichmentRevision, token: token, task: task)
+            openingToken: openingToken, task: task)
         do {
             let snapshots = try await task.value
-            if inFlightListingsByRepositoryId[repositoryId]?.token == token {
+            if inFlightListingsByRepositoryId[repositoryId]?.openingToken == openingToken {
                 cachedListingsByRepositoryId[repositoryId] = CachedListing(
-                    enrichmentRevision: enrichmentRevision, snapshots: snapshots)
+                    openingToken: openingToken, snapshots: snapshots)
                 inFlightListingsByRepositoryId.removeValue(forKey: repositoryId)
             }
             return snapshots.map(\.name)
         } catch {
-            if inFlightListingsByRepositoryId[repositoryId]?.token == token {
+            if inFlightListingsByRepositoryId[repositoryId]?.openingToken == openingToken {
                 inFlightListingsByRepositoryId.removeValue(forKey: repositoryId)
             }
             throw error
