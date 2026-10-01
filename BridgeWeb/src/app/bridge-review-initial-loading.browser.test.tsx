@@ -27,7 +27,10 @@ test('cold Review waits for its first source with skeletons instead of no-target
 		).toBe(region === 'review-content' ? 'diff' : 'tree');
 	}
 	expect(document.body.textContent).not.toContain('Choose a comparison target');
-	await page.screenshot({ path: '../../../tmp/g1-L-cold-review-loading.png' });
+	await act(async (): Promise<void> => {
+		await settleRenderedReviewFrame();
+		await page.screenshot({ path: '../../../tmp/g1-L-cold-review-loading.png' });
+	});
 
 	await act(async (): Promise<void> => {
 		harness.publish(
@@ -83,7 +86,11 @@ test('cold Review waits for its first source with skeletons instead of no-target
 			?.getAttribute('data-presentation-state'),
 	).toBe('content');
 	expect(document.body.textContent).not.toContain('Choose a comparison target');
-	await page.screenshot({ path: '../../../tmp/g1-L-review-source-arrived.png' });
+	await act(async (): Promise<void> => {
+		await page.screenshot({ path: '../../../tmp/g1-L-review-source-arrived.png' });
+		await rendered.unmount();
+	});
+	harness.reviewClient.renderStore.dispose();
 });
 
 test('native selectionRequired certifies the no-target line', async (): Promise<void> => {
@@ -109,7 +116,12 @@ test('native selectionRequired certifies the no-target line', async (): Promise<
 			document.querySelector(`[data-bridge-region="${region}"]`)?.getAttribute('data-empty-reason'),
 		).toBe('noSelection');
 	expect(document.querySelector('[data-slot="skeleton"]')).toBeNull();
-	await page.screenshot({ path: '../../../tmp/g1-L-certified-no-target.png' });
+	await act(async (): Promise<void> => {
+		await settleRenderedReviewFrame();
+		await page.screenshot({ path: '../../../tmp/g1-L-certified-no-target.png' });
+		await rendered.unmount();
+	});
+	harness.reviewClient.renderStore.dispose();
 });
 
 function reviewMode(harness: ReturnType<typeof makeReviewSurfaceHarness>): ReactElement {
