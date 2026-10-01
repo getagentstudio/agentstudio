@@ -17,7 +17,7 @@ extension BridgePaneController {
             traceContext: packageTraceContext,
             contentRegisterStart: contentRegisterStart
         )
-        guard isReviewShownByPage else { return .stale }
+        guard productAdmission.withValidAdmission({ isReviewShownByPage }) == true else { return .stale }
         let disposition = await commitReviewPackageLoad(
             load,
             expectedReviewGeneration: refreshGeneration,
@@ -67,10 +67,9 @@ extension BridgePaneController {
                 candidatePackage: load.package
             )
         }
-        guard isReviewShownByPage,
+        guard productAdmission.withValidAdmission({ isReviewShownByPage }) == true,
             !Task.isCancelled,
             foregroundWorkAdmission.withValidAdmission({ true }) == true,
-            productAdmission.withValidAdmission({ true }) == true,
             refreshAdmissionCoordinator.isRefreshPassCurrent(reservation),
             refreshGeneration == nextReviewGeneration,
             reviewPublicationCoordinator.isCurrentPublication(
