@@ -1,7 +1,16 @@
 # Agent Studio worktree CLI: agent manual
 
-Use the Beta helper below for worktree creation, inspection, removal, and
-pruning. The stable bundle will get these verbs in the later stable cut.
+This guide covers the Beta helper's current commands and the lifecycle
+additions that arrive after app PR 1 merges.
+
+## Availability
+
+The installed Beta helper, 0.0.105-beta.71, supports `new`, `fork`, and the
+earlier `list` output. Removal, pruning, list state and blockers,
+`new --from-branch`, `fork --changes-only`, and `remove --force` arrive in the
+first Beta built after app PR 1 merges. Until then, archive `tmp/` and push
+before removing a worktree with `wt remove <branch>`. The stable cut comes
+later.
 
 ## Why use it
 
@@ -31,7 +40,8 @@ ASW="/Applications/AgentStudio Beta.app/Contents/Helpers/agentstudio"   # beta: 
 
 The stable helper at
 `/Applications/AgentStudio.app/Contents/Helpers/agentstudio` does not include
-the worktree verbs yet. Use the Beta helper until the stable cut.
+the worktree verbs yet. The Beta helper gains the lifecycle additions after
+app PR 1 merges; the stable cut comes later.
 
 | Command | Behavior | Options |
 |---|---|---|
@@ -94,7 +104,9 @@ the source's real files, so it is not affected.
 
 - Never put development worktrees in `~/dev/worktrees`,
   `~/dev/agent-studio-worktrees`, or `/private/tmp`.
-- When work is merged or abandoned, archive `tmp/`, push, then remove the
-  worktree with `agentstudio worktree remove --repo <repo> <branch-or-path>`.
+- Until the first Beta built after app PR 1 merges is available, archive
+  `tmp/`, push, then remove the worktree with `wt remove <branch>`.
+- After that Beta is available, remove a worktree with
+  `"$ASW" worktree remove --repo <repo> <branch-or-path>`.
 - Problems or gaps go to the Worktrees Lead: claude-local
   `9304749a-6517-41da-952d-243201c32337`.
