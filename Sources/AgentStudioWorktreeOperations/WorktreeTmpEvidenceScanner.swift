@@ -1,4 +1,3 @@
-import Darwin
 import Foundation
 
 package enum WorktreeTmpEvidenceScanResult: Sendable, Equatable {
@@ -15,16 +14,17 @@ package struct WorktreeTmpEvidenceScanner: Sendable {
         let worktreeRoot = worktreePath.standardizedFileURL
         let temporaryRoot = worktreeRoot.appending(path: "tmp", directoryHint: .isDirectory)
 
-        guard Self.fileType(at: worktreeRoot.path) == S_IFDIR else {
+        guard Self.fileType(at: worktreeRoot.path) == .typeDirectory else {
             return .unknown(path: temporaryRoot)
         }
 
-        var temporaryMetadata = stat()
-        let temporaryStatus = temporaryRoot.path.withCString { lstat($0, &temporaryMetadata) }
-        guard temporaryStatus == 0 else {
-            return errno == ENOENT ? .empty : .unknown(path: temporaryRoot)
+        let temporaryAttributes: [FileAttributeKey: Any]
+        do {
+            temporaryAttributes = try FileManager.default.attributesOfItem(atPath: temporaryRoot.path)
+        } catch {
+            return Self.isMissingItem(error) ? .empty : .unknown(path: temporaryRoot)
         }
-        guard temporaryMetadata.st_mode & S_IFMT == S_IFDIR else {
+        guard Self.fileType(in: temporaryAttributes) == .typeDirectory else {
             return .unknown(path: temporaryRoot)
         }
 
@@ -49,11 +49,34 @@ package struct WorktreeTmpEvidenceScanner: Sendable {
         }
     }
 
-    private static func fileType(at path: String) -> mode_t? {
-        var metadata = stat()
-        let result = path.withCString { lstat($0, &metadata) }
-        guard result == 0 else { return nil }
-        return metadata.st_mode & S_IFMT
+    private static func fileType(at path: String) -> FileAttributeType? {
+        guard let attributes = try? FileManager.default.attributesOfItem(atPath: path) else { return nil }
+        return fileType(in: attributes)
+    }
+
+    private static func fileType(in attributes: [FileAttributeKey: Any]) -> FileAttributeType? {
+        attributes[.type] as? FileAttributeType
+    }
+
+    private static func isMissingItem(_ error: Error) -> Bool {
+        let foundationError = error as NSError
+        if foundationError.domain == NSCocoaErrorDomain,
+            foundationError.code == CocoaError.Code.fileNoSuchFile.rawValue
+                || foundationError.code == CocoaError.Code.fileReadNoSuchFile.rawValue
+        {
+            return true
+        }
+
+        if foundationError.domain == NSPOSIXErrorDomain,
+            POSIXErrorCode(rawValue: Int32(foundationError.code)) == .ENOENT
+        {
+            return true
+        }
+
+        if let underlyingError = foundationError.userInfo[NSUnderlyingErrorKey] as? NSError {
+            return isMissingItem(underlyingError)
+        }
+        return false
     }
 
     private static func scanDirectory(
@@ -71,11 +94,14 @@ package struct WorktreeTmpEvidenceScanner: Sendable {
 
         for childName in childNames {
             let child = directory.appending(path: childName)
-            var metadata = stat()
-            let result = child.path.withCString { lstat($0, &metadata) }
-            guard result == 0 else { throw ScanFailure(path: child) }
+            let attributes: [FileAttributeKey: Any]
+            do {
+                attributes = try FileManager.default.attributesOfItem(atPath: child.path)
+            } catch {
+                throw ScanFailure(path: child)
+            }
 
-            if metadata.st_mode & S_IFMT == S_IFDIR {
+            if Self.fileType(in: attributes) == .typeDirectory {
                 try scanDirectory(
                     child,
                     worktreeRoot: worktreeRoot,
@@ -85,7 +111,8 @@ package struct WorktreeTmpEvidenceScanner: Sendable {
                 continue
             }
 
-            let (byteCount, overflow) = summary.byteCount.addingReportingOverflow(Int64(max(0, metadata.st_size)))
+            guard let size = attributes[.size] as? NSNumber else { throw ScanFailure(path: child) }
+            let (byteCount, overflow) = summary.byteCount.addingReportingOverflow(max(0, size.int64Value))
             guard !overflow else { throw ScanFailure(path: child) }
             summary.byteCount = byteCount
             summary.fileCount += 1

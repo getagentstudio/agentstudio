@@ -188,6 +188,42 @@ struct WorktreeListingIntegrationTests {
         #expect(row.remove == nil)
     }
 
+    @Test("tmp evidence scans report symlinks without traversing their targets")
+    func tmpEvidenceScannerDoesNotFollowSymlinks() async throws {
+        let repository = try await FilesystemTestGitRepo.create(named: "worktree-list-tmp-symlink")
+        let temporaryRoot = repository.appending(path: "tmp", directoryHint: .isDirectory)
+        let externalDirectory = repository.deletingLastPathComponent()
+            .appending(path: "\(repository.lastPathComponent).external", directoryHint: .isDirectory)
+        defer {
+            try? FileManager.default.removeItem(at: temporaryRoot)
+            try? FileManager.default.removeItem(at: externalDirectory)
+            FilesystemTestGitRepo.destroy(repository)
+        }
+
+        try FileManager.default.createDirectory(at: temporaryRoot, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: externalDirectory, withIntermediateDirectories: true)
+        try "outside evidence\n".write(
+            to: externalDirectory.appending(path: "evidence.txt"),
+            atomically: true,
+            encoding: .utf8
+        )
+        let escapeLink = temporaryRoot.appending(path: "escape", directoryHint: .isDirectory)
+        try FileManager.default.createSymbolicLink(at: escapeLink, withDestinationURL: externalDirectory)
+
+        let scanner = WorktreeTmpEvidenceScanner()
+        let nestedLinkResult = await scanner.scan(worktreePath: repository)
+        guard case .nonEmpty(let fileCount, _, let firstPaths) = nestedLinkResult else {
+            Issue.record("expected the tmp symlink to count as evidence without traversal, got \(nestedLinkResult)")
+            return
+        }
+        #expect(fileCount == 1)
+        #expect(firstPaths == ["tmp/escape"])
+
+        try FileManager.default.removeItem(at: temporaryRoot)
+        try FileManager.default.createSymbolicLink(at: temporaryRoot, withDestinationURL: externalDirectory)
+        #expect(await scanner.scan(worktreePath: repository) == .unknown(path: temporaryRoot))
+    }
+
     @Test("shallow history stays unknown for graph based integration")
     func shallowHistoryAssessmentRemainsUnknown() async throws {
         let sourceRepository = try await FilesystemTestGitRepo.create(named: "worktree-list-shallow-source")

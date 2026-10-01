@@ -58,20 +58,21 @@ struct WorktreeFetchFailureMapperTests {
 
     @Test("fetch process failures preserve network and authentication categories")
     func classifiesProcessFailures() {
+        let redactionInputExecutable = "/opt/agentstudio-test/git"
         let networkFailure = GitRemoteProcessFailure.redacting(
-            executable: "/usr/bin/git",
+            executable: redactionInputExecutable,
             arguments: ["fetch", "origin"],
             exitCode: 128,
             stderr: "fatal: Could not resolve host: example.invalid"
         )
         let authenticationFailure = GitRemoteProcessFailure.redacting(
-            executable: "/usr/bin/git",
+            executable: redactionInputExecutable,
             arguments: ["fetch", "origin"],
             exitCode: 128,
             stderr: "fatal: Authentication failed"
         )
         let unrelatedFailure = GitRemoteProcessFailure.redacting(
-            executable: "/usr/bin/git",
+            executable: redactionInputExecutable,
             arguments: ["fetch", "origin"],
             exitCode: 128,
             stderr: "fatal: remote rejected the request"
