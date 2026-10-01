@@ -43,6 +43,8 @@ Exit codes: `0` created or listed · `1` refused, nothing changed (bad branch na
 | | `new --from-branch <branch>` |
 | | `--help` on subcommands (it prints "unknown worktree option") |
 
+**Git LFS:** `new` leaves LFS files as pointer files (libgit2 doesn't run Git's `lfs` filter). In an LFS repository, which includes agent-studio's website captures, run `git -C <new worktree> lfs pull` right after `new`. `fork` copies the source's real files, so it isn't affected.
+
 `fork` refuses (exit 1, nothing changed) when the source or destination isn't on APFS, crosses volumes, isn't a worktree root, or the destination already exists.
 
 ## Rules
