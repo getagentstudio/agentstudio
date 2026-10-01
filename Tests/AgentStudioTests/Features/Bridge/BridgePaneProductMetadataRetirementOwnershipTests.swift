@@ -163,7 +163,7 @@ struct BridgeMetadataRetirementOwnershipTests {
             #expect(delivered.descriptor.expectedSha256 == expectedSHA)
             #expect(delivered.complete.identity.subscriptionId == subscription.subscriptionId)
             #expect(delivered.complete.identity.frame.streamSequence > accepted.frameIdentity.streamSequence)
-            let callbackCountBeforePredecessorCompletion = scenario.publishedFileFailures.withLock { $0.count }
+            let callbackCountBeforePredecessorCompletion = scenario.publishedFileFailures.snapshot().count
 
             // Finish the stale predecessor only after the successor's certificate is delivered.
             await scenario.probe.releaseProducerFailure()
@@ -173,11 +173,11 @@ struct BridgeMetadataRetirementOwnershipTests {
             #expect(await scenario.probe.cancellationCount == 0)
             #expect(await scenario.probe.didEnqueueReset == false)
             #expect(
-                scenario.publishedFileFailures.withLock { $0.count } == callbackCountBeforePredecessorCompletion,
+                scenario.publishedFileFailures.snapshot().count == callbackCountBeforePredecessorCompletion,
                 "The stale predecessor must not publish or clear the successor's current failure"
             )
             #expect(
-                scenario.publishedFileFailures.withLock { $0.compactMap { $0 }.isEmpty },
+                scenario.publishedFileFailures.snapshot().compactMap { $0 }.isEmpty,
                 "The superseded predecessor must not publish a current File failure"
             )
             #expect(await scenario.coordinator.activeStream?.lease == scenario.lease)
@@ -199,6 +199,18 @@ struct BridgeMetadataRetirementOwnershipTests {
     }
 }
 
+private final class MetadataFileRefreshFailureRecorder: @unchecked Sendable {
+    private let failures = Mutex<[BridgePaneProductFileRefreshFailure?]>([])
+
+    func append(_ failure: BridgePaneProductFileRefreshFailure?) {
+        failures.withLock { $0.append(failure) }
+    }
+
+    func snapshot() -> [BridgePaneProductFileRefreshFailure?] {
+        failures.withLock { $0 }
+    }
+}
+
 private struct RetirementOwnershipReplacementScenario {
     let refreshWorkAdmission: BridgePaneRefreshWorkAdmissionTestContext
     let harness: BridgeProductSessionLifecycleHarness
@@ -207,7 +219,7 @@ private struct RetirementOwnershipReplacementScenario {
     let constructionCoordinator: BridgeWorktreeProductConstructionCoordinator
     let pump: BridgeProductSchemeFramePump
     let probe: MetadataRetirementOwnershipProbe
-    let publishedFileFailures: Mutex<[BridgePaneProductFileRefreshFailure?]>
+    let publishedFileFailures: MetadataFileRefreshFailureRecorder
     let coordinator: BridgePaneProductMetadataCoordinator
 
     static func make() async throws -> Self {
@@ -221,7 +233,7 @@ private struct RetirementOwnershipReplacementScenario {
         let constructionCoordinator = BridgeWorktreeProductConstructionCoordinator()
         let fileSource = fixture.makeSource(constructionCoordinator: constructionCoordinator)
         let probe = MetadataRetirementOwnershipProbe(holdPredecessorFailure: true)
-        let publishedFileFailures = Mutex<[BridgePaneProductFileRefreshFailure?]>([])
+        let publishedFileFailures = MetadataFileRefreshFailureRecorder()
         let registry = try BridgePaneProductMetadataNativeApplicationRegistry(applications: [
             .init(
                 registration: AnyBridgeProductMetadataApplicationProtocol(
@@ -254,7 +266,7 @@ private struct RetirementOwnershipReplacementScenario {
             reviewMetadataSource: BridgeUnavailablePaneProductReviewMetadataSource(),
             refreshWorkAdmissionSource: refreshWorkAdmission.source,
             recordCurrentFileRefreshFailure: { failure in
-                publishedFileFailures.withLock { $0.append(failure) }
+                publishedFileFailures.append(failure)
             },
             lifecycleTraceRecorder: probe,
             nativeApplicationRegistry: registry
