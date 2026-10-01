@@ -124,19 +124,23 @@ final class BridgeProductAdmissionGate: @unchecked Sendable {
 
     private let lock = NSLock()
     private let identity = Identity()
-    private var isOpen = true
+    private var admissionIsOpen = true
     private var epoch: UInt64 = 0
     private var closeObservers: [UUID: @Sendable () -> Void] = [:]
 
+    var isOpen: Bool {
+        lock.withLock { admissionIsOpen }
+    }
+
     var diagnosticSnapshot: DiagnosticSnapshot {
         lock.withLock {
-            DiagnosticSnapshot(isOpen: isOpen, epoch: epoch)
+            DiagnosticSnapshot(isOpen: admissionIsOpen, epoch: epoch)
         }
     }
 
     func acquire() -> BridgeProductAdmissionContext? {
         lock.withLock {
-            guard isOpen else { return nil }
+            guard admissionIsOpen else { return nil }
             return BridgeProductAdmissionContext(
                 gate: self,
                 token: Token(gateIdentity: identity, epoch: epoch)
@@ -150,7 +154,7 @@ final class BridgeProductAdmissionGate: @unchecked Sendable {
     ) rethrows -> MutationResult? {
         try lock.withLock {
             guard
-                isOpen,
+                admissionIsOpen,
                 token.gateIdentity === identity,
                 token.epoch == epoch
             else {
@@ -162,8 +166,8 @@ final class BridgeProductAdmissionGate: @unchecked Sendable {
 
     func close() {
         let observers: [@Sendable () -> Void] = lock.withLock {
-            guard isOpen else { return [] }
-            isOpen = false
+            guard admissionIsOpen else { return [] }
+            admissionIsOpen = false
             epoch += 1
             let observers = Array(closeObservers.values)
             closeObservers.removeAll()
@@ -176,7 +180,7 @@ final class BridgeProductAdmissionGate: @unchecked Sendable {
     {
         let observationId = UUIDv7.generate()
         let registered = lock.withLock {
-            guard isOpen else { return false }
+            guard admissionIsOpen else { return false }
             closeObservers[observationId] = observer
             return true
         }

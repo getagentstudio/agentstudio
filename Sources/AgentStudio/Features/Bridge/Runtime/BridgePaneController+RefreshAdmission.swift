@@ -154,7 +154,7 @@ extension BridgePaneController {
         let hiddenInput = BridgePaneReviewBuildAdmissionInput.filesystemCatchUp(
             batchSequence: dirtyFact.latestBatchSequence
         )
-        guard productAdmissionGate.diagnosticSnapshot.isOpen else { return }
+        guard productAdmissionGate.isOpen else { return }
         let isReviewShown = isReviewShownByPage
         guard isReviewShown else {
             recordReviewBuildAdmissionFact(
