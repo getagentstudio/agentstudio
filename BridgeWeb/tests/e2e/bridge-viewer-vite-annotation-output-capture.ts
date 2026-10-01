@@ -148,7 +148,8 @@ export async function verifyAnnotationOutputCaptures(
 		name: /^History \((?:[2-9]|[1-9][0-9]+)\)$/u,
 	});
 	await completedHistory.waitFor({ state: 'visible', timeout: props.timeoutMilliseconds });
-	await completedHistory.click();
+	// JSON export retains the drawer and the History disclosure opened for the clipboard clear.
+	expect(await completedHistory.getAttribute('aria-expanded')).toBe('true');
 	await markOutputNotHandled(props.page, 'jsonFile');
 	await waitForPendingCommentCount(props.page, props.timeoutMilliseconds, (count) => count > 0);
 	expect(

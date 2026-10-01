@@ -276,6 +276,7 @@ const bridgeDevRestrictedStringAttributeValuesByKey = new Map<string, ReadonlySe
 		'agentstudio.bridge.render_publication.outcome',
 		new Set([
 			'cleared',
+			'held',
 			'painted',
 			'published',
 			'queued',
