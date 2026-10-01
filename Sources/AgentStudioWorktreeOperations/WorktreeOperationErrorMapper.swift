@@ -43,12 +43,12 @@ package enum WorktreeOperationErrorMapper {
             .worktreeNotFound
         case .locked:
             .locked
-        case .lockHeld:
-            .lockHeld
+        case .lockHeld(let fact):
+            .lockHeld(fact)
         case .lockUnidentified:
             .lockUnidentified
-        case .permissionDenied:
-            .permissionDenied
+        case .permissionDenied(let path):
+            .permissionDenied(path: path)
         case .worktreeNotPrunable:
             .worktreeNotPrunable
         case .unsafeWorktreeRemoval:

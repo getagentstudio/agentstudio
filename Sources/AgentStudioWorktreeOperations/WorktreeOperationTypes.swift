@@ -130,13 +130,13 @@ package enum WorktreeLeftoverBase: Sendable, Equatable {
     case temporary
 }
 
-package enum WorktreeGitErrorKind: String, Sendable, Equatable {
+package enum WorktreeGitErrorKind: Sendable, Equatable {
     case repositoryNotFound
     case worktreeNotFound
     case locked
-    case lockHeld
+    case lockHeld(GitLockFact)
     case lockUnidentified
-    case permissionDenied
+    case permissionDenied(path: URL?)
     case worktreeNotPrunable
     case unsafeWorktreeRemoval
     case contentTooLarge
@@ -153,4 +153,63 @@ package enum WorktreeGitErrorKind: String, Sendable, Equatable {
     case remoteRefTransactionIndeterminate
     case libgit2Failure
     case unsupported
+
+    package var name: String {
+        switch self {
+        case .repositoryNotFound:
+            "repositoryNotFound"
+        case .worktreeNotFound:
+            "worktreeNotFound"
+        case .locked:
+            "locked"
+        case .lockHeld:
+            "lockHeld"
+        case .lockUnidentified:
+            "lockUnidentified"
+        case .permissionDenied:
+            "permissionDenied"
+        case .worktreeNotPrunable:
+            "worktreeNotPrunable"
+        case .unsafeWorktreeRemoval:
+            "unsafeWorktreeRemoval"
+        case .contentTooLarge:
+            "contentTooLarge"
+        case .pathEscapesRepository:
+            "pathEscapesRepository"
+        case .revisionUnavailable:
+            "revisionUnavailable"
+        case .headUnavailable:
+            "headUnavailable"
+        case .requiredObjectNotFound:
+            "requiredObjectNotFound"
+        case .noSharedHistory:
+            "noSharedHistory"
+        case .multipleBestMergeBases:
+            "multipleBestMergeBases"
+        case .processFailed:
+            "processFailed"
+        case .processTimedOut:
+            "processTimedOut"
+        case .processCancelled:
+            "processCancelled"
+        case .processOutputTooLarge:
+            "processOutputTooLarge"
+        case .remoteRefTransactionIndeterminate:
+            "remoteRefTransactionIndeterminate"
+        case .libgit2Failure:
+            "libgit2Failure"
+        case .unsupported:
+            "unsupported"
+        }
+    }
+
+    package var lockFact: GitLockFact? {
+        guard case .lockHeld(let fact) = self else { return nil }
+        return fact
+    }
+
+    package var permissionPath: URL? {
+        guard case .permissionDenied(let path) = self else { return nil }
+        return path
+    }
 }

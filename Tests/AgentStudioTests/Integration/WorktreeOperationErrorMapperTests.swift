@@ -20,7 +20,11 @@ struct WorktreeOperationErrorMapperTests {
             (.worktreeNotFound, .worktreeNotFound(id: worktreeID)),
             (.locked, .locked(message: "private detail")),
             (
-                .lockHeld,
+                .lockHeld(
+                    GitLockFact(
+                        path: repositoryPath.appending(path: "refs/heads/main.lock"),
+                        resource: .reference(name: "refs/heads/main")
+                    )),
                 .lockHeld(
                     GitLockFact(
                         path: repositoryPath.appending(path: "refs/heads/main.lock"),
@@ -28,7 +32,7 @@ struct WorktreeOperationErrorMapperTests {
                     ))
             ),
             (.lockUnidentified, .lockUnidentified(.packedRefs)),
-            (.permissionDenied, .permissionDenied(path: repositoryPath)),
+            (.permissionDenied(path: repositoryPath), .permissionDenied(path: repositoryPath)),
             (.worktreeNotPrunable, .worktreeNotPrunable(id: worktreeID, reason: .liveWorktree)),
             (.unsafeWorktreeRemoval, .unsafeWorktreeRemoval(reason: .dirtyTrackedChanges)),
             (.contentTooLarge, .contentTooLarge(path: "large.bin", sizeBytes: 2, maxSizeBytes: 1)),
@@ -63,6 +67,45 @@ struct WorktreeOperationErrorMapperTests {
         #expect(
             WorktreeOperationErrorMapper.createFailure(gitError)
                 == WorktreeOperationFailure(failure: .createFailed(.libgit2Failure), leftovers: .unverified))
+    }
+
+    @Test("lock facts and permission paths survive human and JSON failure formatting")
+    func formatsGitLockFactAndPermissionPath() throws {
+        let lockPath = URL(fileURLWithPath: "/tmp/worktree-error-mapping/refs/heads/main.lock")
+        let lockFact = GitLockFact(path: lockPath, resource: .reference(name: "refs/heads/main"))
+        let lockFailure = WorktreeOperationErrorMapper.createFailure(.lockHeld(lockFact))
+        let lockHumanLine = WorktreeCommandLineFormatter.failedHumanLine(lockFailure)
+        let lockJSON = try WorktreeCommandLineFormatter.failedJSONText(lockFailure)
+
+        #expect(
+            lockHumanLine
+                == "failed: createFailed lockHeld \(lockPath.path) reference refs/heads/main; leftovers: unverified")
+        #expect(
+            lockJSON
+                == #"{"failure":{"gitErrorKind":"lockHeld","gitLockFact":{"path":"/tmp/worktree-error-mapping/refs/heads/main.lock","resource":{"reference":{"name":"refs/heads/main"}}},"kind":"createFailed"},"leftovers":{"status":"unverified"},"outcome":"failed"}"#
+        )
+
+        let permissionPath = URL(fileURLWithPath: "/tmp/worktree-error-mapping/config")
+        let permissionFailure = WorktreeOperationErrorMapper.createFailure(.permissionDenied(path: permissionPath))
+        let permissionHumanLine = WorktreeCommandLineFormatter.failedHumanLine(permissionFailure)
+        let permissionJSON = try WorktreeCommandLineFormatter.failedJSONText(permissionFailure)
+
+        #expect(
+            permissionHumanLine
+                == "failed: createFailed permissionDenied \(permissionPath.path); leftovers: unverified")
+        #expect(
+            permissionJSON
+                == #"{"failure":{"gitErrorKind":"permissionDenied","kind":"createFailed","permissionPath":"/tmp/worktree-error-mapping/config"},"leftovers":{"status":"unverified"},"outcome":"failed"}"#
+        )
+
+        let ordinaryFailure = WorktreeOperationErrorMapper.createFailure(.unsupported(message: "private detail"))
+        #expect(
+            WorktreeCommandLineFormatter.failedHumanLine(ordinaryFailure)
+                == "failed: createFailed unsupported; leftovers: unverified")
+        #expect(
+            try WorktreeCommandLineFormatter.failedJSONText(ordinaryFailure)
+                == #"{"failure":{"gitErrorKind":"unsupported","kind":"createFailed"},"leftovers":{"status":"unverified"},"outcome":"failed"}"#
+        )
     }
 
     @Test("every typed fork rejection maps to its refusal without losing the SDK reason")
