@@ -264,7 +264,7 @@ package enum WorktreeListingProjector {
         candidatePath == rootPath || candidatePath.hasPrefix(rootPath.hasSuffix("/") ? rootPath : rootPath + "/")
     }
 
-    private static func shellArgument(_ argument: String) -> String {
+    package static func shellArgument(_ argument: String) -> String {
         guard argument.range(of: #"^[A-Za-z0-9_./:@+-]+$"#, options: .regularExpression) == nil else {
             return argument
         }

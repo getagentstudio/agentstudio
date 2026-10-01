@@ -19,17 +19,76 @@ package enum WorktreeAdministrationEffect: String, Codable, Sendable {
 package enum WorktreeBranchDisposition: String, Codable, Sendable {
     case deleted
     case retained
+    case alreadyAbsent
     case unknown
 }
 
-package enum WorktreeBranchRetentionReason: String, Codable, Sendable {
+package enum WorktreeBranchRetentionReason: Sendable, Equatable {
     case defaultBranch
     case branchPolicyKeep
     case hasRemainingContribution
     case unknownAssessment
-    case checkedOut
+    case checkedOut(worktreePaths: [String])
     case checkoutUnknown
     case movedSinceAssessment
+}
+
+extension WorktreeBranchRetentionReason: Codable {
+    private enum CodingKeys: String, CodingKey {
+        case kind
+        case worktreePaths
+    }
+
+    private enum Kind: String, Codable {
+        case defaultBranch
+        case branchPolicyKeep
+        case hasRemainingContribution
+        case unknownAssessment
+        case checkedOut
+        case checkoutUnknown
+        case movedSinceAssessment
+    }
+
+    package init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        switch try container.decode(Kind.self, forKey: .kind) {
+        case .defaultBranch:
+            self = .defaultBranch
+        case .branchPolicyKeep:
+            self = .branchPolicyKeep
+        case .hasRemainingContribution:
+            self = .hasRemainingContribution
+        case .unknownAssessment:
+            self = .unknownAssessment
+        case .checkedOut:
+            self = .checkedOut(worktreePaths: try container.decode([String].self, forKey: .worktreePaths))
+        case .checkoutUnknown:
+            self = .checkoutUnknown
+        case .movedSinceAssessment:
+            self = .movedSinceAssessment
+        }
+    }
+
+    package func encode(to encoder: any Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        switch self {
+        case .defaultBranch:
+            try container.encode(Kind.defaultBranch, forKey: .kind)
+        case .branchPolicyKeep:
+            try container.encode(Kind.branchPolicyKeep, forKey: .kind)
+        case .hasRemainingContribution:
+            try container.encode(Kind.hasRemainingContribution, forKey: .kind)
+        case .unknownAssessment:
+            try container.encode(Kind.unknownAssessment, forKey: .kind)
+        case .checkedOut(let worktreePaths):
+            try container.encode(Kind.checkedOut, forKey: .kind)
+            try container.encode(worktreePaths, forKey: .worktreePaths)
+        case .checkoutUnknown:
+            try container.encode(Kind.checkoutUnknown, forKey: .kind)
+        case .movedSinceAssessment:
+            try container.encode(Kind.movedSinceAssessment, forKey: .kind)
+        }
+    }
 }
 
 package enum WorktreeBranchCleanupWarning: String, Codable, Sendable {
@@ -43,19 +102,22 @@ package struct WorktreeBranchDispositionDocument: Codable, Sendable, Equatable {
     package let disposition: WorktreeBranchDisposition
     package let reason: WorktreeBranchRetentionReason?
     package let cleanupWarnings: [WorktreeBranchCleanupWarning]
+    package let options: [String]
 
     package init(
         name: String,
         commit: String?,
         disposition: WorktreeBranchDisposition,
         reason: WorktreeBranchRetentionReason? = nil,
-        cleanupWarnings: [WorktreeBranchCleanupWarning] = []
+        cleanupWarnings: [WorktreeBranchCleanupWarning] = [],
+        options: [String] = []
     ) {
         self.name = name
         self.commit = commit
         self.disposition = disposition
         self.reason = reason
         self.cleanupWarnings = cleanupWarnings
+        self.options = options
     }
 }
 
@@ -281,6 +343,7 @@ package struct WorktreeRemovalEffectsDocument: Codable, Sendable, Equatable {
     package let evidence: WorktreeEvidenceDispositionDocument
     package let assessment: WorktreeIntegrationAssessmentDocument?
     package let activity: WorktreeActivityDocument
+    package let lockResidue: [String]
 
     package init(
         directory: WorktreeDirectoryEffect,
@@ -288,7 +351,8 @@ package struct WorktreeRemovalEffectsDocument: Codable, Sendable, Equatable {
         branch: WorktreeBranchDispositionDocument?,
         evidence: WorktreeEvidenceDispositionDocument,
         assessment: WorktreeIntegrationAssessmentDocument?,
-        activity: WorktreeActivityDocument
+        activity: WorktreeActivityDocument,
+        lockResidue: [String] = []
     ) {
         self.directory = directory
         self.administration = administration
@@ -296,5 +360,6 @@ package struct WorktreeRemovalEffectsDocument: Codable, Sendable, Equatable {
         self.evidence = evidence
         self.assessment = assessment
         self.activity = activity
+        self.lockResidue = lockResidue
     }
 }

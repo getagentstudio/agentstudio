@@ -29,6 +29,8 @@ package struct WorktreeOperationRunner {
                 targets: targets,
                 fetchPolicy: fetchPolicy
             )
+        case .remove(let removalRequest):
+            .removal(await WorktreeRemovalRunner(client: client, remoteClient: remoteClient).run(removalRequest))
         }
     }
 

@@ -1,3 +1,4 @@
+import AgentStudioGit
 import Foundation
 
 package enum WorktreeRemovalFailureKindDocument: Codable, Sendable, Equatable {
@@ -7,12 +8,14 @@ package enum WorktreeRemovalFailureKindDocument: Codable, Sendable, Equatable {
     case observationFailed
     case removalIncomplete
     case branchDeletionUncertain
+    case branchDeletionFailed(WorktreeGitErrorKind)
     case lockCleanupIncomplete
 
     private enum CodingKeys: String, CodingKey {
         case kind
         case code
         case klass
+        case cause
     }
 
     private enum Kind: String, Codable {
@@ -22,6 +25,7 @@ package enum WorktreeRemovalFailureKindDocument: Codable, Sendable, Equatable {
         case observationFailed
         case removalIncomplete
         case branchDeletionUncertain
+        case branchDeletionFailed
         case lockCleanupIncomplete
     }
 
@@ -43,6 +47,16 @@ package enum WorktreeRemovalFailureKindDocument: Codable, Sendable, Equatable {
             self = .removalIncomplete
         case .branchDeletionUncertain:
             self = .branchDeletionUncertain
+        case .branchDeletionFailed:
+            let cause = try container.decode(WorktreeGitErrorDocument.self, forKey: .cause)
+            guard let error = cause.worktreeErrorKind else {
+                throw DecodingError.dataCorruptedError(
+                    forKey: .cause,
+                    in: container,
+                    debugDescription: "Unknown worktree Git error kind."
+                )
+            }
+            self = .branchDeletionFailed(error)
         case .lockCleanupIncomplete:
             self = .lockCleanupIncomplete
         }
@@ -65,6 +79,9 @@ package enum WorktreeRemovalFailureKindDocument: Codable, Sendable, Equatable {
             try container.encode(Kind.removalIncomplete, forKey: .kind)
         case .branchDeletionUncertain:
             try container.encode(Kind.branchDeletionUncertain, forKey: .kind)
+        case .branchDeletionFailed(let cause):
+            try container.encode(Kind.branchDeletionFailed, forKey: .kind)
+            try container.encode(WorktreeGitErrorDocument(cause), forKey: .cause)
         case .lockCleanupIncomplete:
             try container.encode(Kind.lockCleanupIncomplete, forKey: .kind)
         }
@@ -74,10 +91,87 @@ package enum WorktreeRemovalFailureKindDocument: Codable, Sendable, Equatable {
 package struct WorktreeRemovalFailureDocument: Codable, Sendable, Equatable {
     package let kind: WorktreeRemovalFailureKindDocument
     package let effects: WorktreeRemovalEffectsDocument
+    package let stop: WorktreeRefusalDocument?
 
-    package init(kind: WorktreeRemovalFailureKindDocument, effects: WorktreeRemovalEffectsDocument) {
+    package init(
+        kind: WorktreeRemovalFailureKindDocument,
+        effects: WorktreeRemovalEffectsDocument,
+        stop: WorktreeRefusalDocument? = nil
+    ) {
         self.kind = kind
         self.effects = effects
+        self.stop = stop
+    }
+}
+
+package struct WorktreeGitErrorDocument: Codable, Sendable, Equatable {
+    package let kind: String
+    package let path: String?
+    package let lockPath: String?
+    package let lockResource: GitLockResource?
+
+    package init(_ error: WorktreeGitErrorKind) {
+        kind = error.name
+        path = error.permissionPath?.standardizedFileURL.path
+        lockPath = error.lockFact?.path.standardizedFileURL.path
+        lockResource = error.lockFact?.resource
+    }
+
+    package var worktreeErrorKind: WorktreeGitErrorKind? {
+        switch kind {
+        case "repositoryNotFound":
+            .repositoryNotFound
+        case "worktreeNotFound":
+            .worktreeNotFound
+        case "locked":
+            .locked
+        case "lockHeld":
+            lockPath.flatMap { lockPath in
+                lockResource.map { resource in
+                    WorktreeGitErrorKind.lockHeld(
+                        GitLockFact(path: URL(fileURLWithPath: lockPath), resource: resource)
+                    )
+                }
+            }
+        case "lockUnidentified":
+            .lockUnidentified
+        case "permissionDenied":
+            .permissionDenied(path: path.map { URL(fileURLWithPath: $0) })
+        case "worktreeNotPrunable":
+            .worktreeNotPrunable
+        case "unsafeWorktreeRemoval":
+            .unsafeWorktreeRemoval
+        case "contentTooLarge":
+            .contentTooLarge
+        case "pathEscapesRepository":
+            .pathEscapesRepository
+        case "revisionUnavailable":
+            .revisionUnavailable
+        case "headUnavailable":
+            .headUnavailable
+        case "requiredObjectNotFound":
+            .requiredObjectNotFound
+        case "noSharedHistory":
+            .noSharedHistory
+        case "multipleBestMergeBases":
+            .multipleBestMergeBases
+        case "processFailed":
+            .processFailed
+        case "processTimedOut":
+            .processTimedOut
+        case "processCancelled":
+            .processCancelled
+        case "processOutputTooLarge":
+            .processOutputTooLarge
+        case "remoteRefTransactionIndeterminate":
+            .remoteRefTransactionIndeterminate
+        case "libgit2Failure":
+            .libgit2Failure
+        case "unsupported":
+            .unsupported
+        default:
+            nil
+        }
     }
 }
 
@@ -278,6 +372,12 @@ package struct WorktreeRemovalReport: Codable, Sendable, Equatable {
             return 2
         }
         if entries.contains(where: { if case .refused = $0 { true } else { false } }) {
+            return 1
+        }
+        if entries.contains(where: { entry in
+            guard case .planned(let details) = entry else { return false }
+            return details.plan.stopsAt?.reason == .notFound
+        }) {
             return 1
         }
         return 0

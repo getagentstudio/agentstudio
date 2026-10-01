@@ -21,6 +21,8 @@ package enum WorktreeCommandLineFormatter {
             exitCode = 0
         case .listFailed:
             exitCode = 2
+        case .removal(let report):
+            exitCode = report.exitCode
         case .refused:
             exitCode = 1
         case .failed:
@@ -39,7 +41,7 @@ package enum WorktreeCommandLineFormatter {
         if usesJSONOutput {
             text = try encodeJSON(removalReport)
         } else {
-            text = removalReport.entries.map(removalHumanLine).joined(separator: "\n")
+            text = removalHumanLines(removalReport)
         }
         return WorktreeCommandLineResponse(text: text, exitCode: removalReport.exitCode)
     }
@@ -52,6 +54,8 @@ package enum WorktreeCommandLineFormatter {
             listedHumanLine(summary)
         case .listFailed(let failure):
             listFailureHumanLine(failure)
+        case .removal(let report):
+            removalHumanLines(report)
         case .refused(let refusal):
             refusedHumanLine(refusal)
         case .failed(let failure):
@@ -67,6 +71,8 @@ package enum WorktreeCommandLineFormatter {
             try listedJSONText(summary)
         case .listFailed(let failure):
             try listFailureJSONText(failure)
+        case .removal(let report):
+            try encodeJSON(report)
         case .refused(let refusal):
             try refusedJSONText(refusal)
         case .failed(let failure):
