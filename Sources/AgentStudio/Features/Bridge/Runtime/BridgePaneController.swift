@@ -95,6 +95,8 @@ package final class BridgePaneController {
     var surfaceSelectionTransitionTail: Task<Bool, Never>?
     var pendingReviewPackageBuildReasons: Set<BridgeReviewPackageBuildReason> = []
     @ObservationIgnored var pendingExplicitReviewCommand: BridgePendingExplicitReviewCommand?
+    @ObservationIgnored var resumingExplicitReviewCommandsById: [UUID: BridgePendingExplicitReviewCommand] = [:]
+    @ObservationIgnored var resumingExplicitReviewCommandTasksById: [UUID: Task<Void, Never>] = [:]
     var activeViewerModeSignalState = BridgeActiveViewerModeSignalState()
     var surfaceSelectionAuthority = BridgePaneSurfaceSelectionAuthority()
 
@@ -577,6 +579,7 @@ package final class BridgePaneController {
             let reviewRefreshTasks =
                 Array(retiringReviewRefreshTaskById.values)
                 + [activeReviewRefreshTask].compactMap { $0 }
+                + Array(resumingExplicitReviewCommandTasksById.values)
             for task in reviewRefreshTasks { task.cancel() }
             activeReviewRefreshTask = nil
             activeReviewRefreshTaskId = nil
