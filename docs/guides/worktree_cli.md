@@ -4,7 +4,7 @@ Use this instead of `wt` to **create** worktrees. Keep using `wt remove` to **re
 
 ## Why use it
 
-- `fork` makes an APFS copy-on-write clone of a worktree: the same files, uncommitted and ignored ones included (`.build`, `node_modules`, `tmp/`). It costs almost no disk and needs no rebuild.
+- `fork` makes an APFS copy-on-write clone of a worktree: the same files, uncommitted and ignored ones included (`.build`, `node_modules`, `tmp/`). It costs almost no disk. Not measured yet: whether an incremental build in the fork reuses that build output. SwiftPM `.build` and cargo `target/` can embed absolute paths, so the first build after a fork may be partly or fully cold.
 - It goes straight to Git through agentstudio-git. No shelling out to `git`, and no app or IPC needed.
 - `--json` gives a machine-readable result, and exit codes tell you what happened.
 - It puts worktrees at `<repo>.<branch>` next to the repository, the same default path as `wt`, so the sidebar and `wt` both see them as ordinary git worktrees.
