@@ -251,7 +251,7 @@ extension WebKitSerializedTests {
 
         @Test("background catch-up without a publication expires its shared build join")
         func noPublicationCatchUpJoinExpiresAndFencesLateResult() async throws {
-            let pair = try await makeReviewNativeProgressPair(secondSchedulesInitialReviewIntake: false)
+            let pair = try await makeReviewNativeProgressPair()
             let (coldIntake, catchUp) = try await pair.startHeldInitialCatchUp()
             do {
                 try #require(pair.secondProgress.activeWaitCount() == 1)
@@ -434,13 +434,23 @@ private struct ReviewNativeProgressPair {
     let secondProgress: BridgeReviewConstructionProgressWaitOwner
 
     func startHeldInitialCatchUp() async throws -> (Task<Void, Never>, Task<Void, Never>) {
+        // G2 schedules initial intake whenever Review is shown. A no-publication
+        // catch-up therefore follows a real failed initial attempt.
+        await targetsProvider.failNextSharedCapture()
+        let initialForeground = second.controller.applyBridgePaneActivity(.foreground)
+        let failedInitialAttempt = try #require(second.controller.activeReviewRefreshTask)
+        await initialForeground?.value
+        await failedInitialAttempt.value
+        #expect(second.controller.paneState.diff.status == .error)
+        #expect(second.controller.paneState.diff.packageMetadata == nil)
+        #expect(second.controller.pendingReviewPackageBuildReasons.isEmpty)
+        let hiddenTransition = second.controller.applyBridgePaneActivity(.loadedHidden)
+        await hiddenTransition?.value
         await provider.holdCapture()
         for fixture in [first, second] {
             fixture.controller.refreshAdmissionCoordinator.recordInvalidation(
                 fileChangeset: nil, requiresReviewRefresh: true)
         }
-        // Arrange a previous initial failure, with no initial-intake request queued.
-        second.controller.paneState.diff.setStatus(.error)
         let firstForeground = first.controller.applyBridgePaneActivity(.foreground)
         let coldIntake = try #require(first.controller.activeReviewRefreshTask)
         await firstForeground?.value
@@ -482,7 +492,6 @@ private struct ReviewNativeProgressPair {
 
 @MainActor
 private func makeReviewNativeProgressPair(
-    secondSchedulesInitialReviewIntake: Bool = true,
     initialContributionTarget: WorkspaceReviewContributionTarget? = .ref(name: "main")
 ) async throws
     -> ReviewNativeProgressPair
@@ -518,7 +527,7 @@ private func makeReviewNativeProgressPair(
             let shared = NativeProgressSharedReviewProvider(source: provider)
             catalogProvider = shared
             return shared
-        }, schedulesInitialReviewIntake: secondSchedulesInitialReviewIntake)
+        })
     return ReviewNativeProgressPair(
         first: first, second: second, provider: try #require(heldProvider),
         targetsProvider: try #require(catalogProvider), coordinator: coordinator,

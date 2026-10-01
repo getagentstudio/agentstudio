@@ -102,6 +102,7 @@ extension WebKitSerializedTests {
                 reviewSourceProvider: provider
             )
             defer { _ = controller.beginTeardown() }  // fire-and-forget: defer cannot await; cleanup only
+            try await showReviewInNativeFixture(controller)
             let firstCommandId = UUID()
             let secondCommandId = UUID()
 
@@ -188,6 +189,7 @@ extension WebKitSerializedTests {
                 reviewSourceProvider: provider
             )
             defer { _ = controller.beginTeardown() }  // fire-and-forget: defer cannot await; cleanup only
+            try await showReviewInNativeFixture(controller)
             let firstCommandId = UUID()
             let secondCommandId = UUID()
 
@@ -251,7 +253,7 @@ extension WebKitSerializedTests {
 
         @Test("refresh preserves previous content authority when new metadata is invalid")
         func refresh_preserves_previous_content_authority_when_new_metadata_is_invalid() async throws {
-            let fixture = makeRefreshRevisionFixture()
+            let fixture = try await makeRefreshRevisionFixture()
             defer { _ = fixture.controller.beginTeardown() }  // fire-and-forget: defer cannot await; cleanup only
             let initialHandle = BridgeReviewPackageBuilder.contentHandle(
                 for: makeBridgeEndpointChangedFile(
@@ -312,7 +314,7 @@ extension WebKitSerializedTests {
 
         @Test("teardown synchronously revokes direct review content authority")
         func teardown_synchronously_revokes_direct_review_content_authority() async throws {
-            let fixture = makeRefreshRevisionFixture()
+            let fixture = try await makeRefreshRevisionFixture()
             let initialHandle = BridgeReviewPackageBuilder.contentHandle(
                 for: makeBridgeEndpointChangedFile(
                     fileId: "old",
@@ -442,6 +444,7 @@ extension WebKitSerializedTests {
                 reviewSourceProvider: provider
             )
             defer { _ = controller.beginTeardown() }  // fire-and-forget: defer cannot await; cleanup only
+            try await showReviewInNativeFixture(controller)
             let commandId = UUID()
             let invalidHandle = BridgeReviewPackageBuilder.contentHandle(
                 for: invalidFile,

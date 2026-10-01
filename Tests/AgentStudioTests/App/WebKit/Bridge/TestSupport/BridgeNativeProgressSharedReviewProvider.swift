@@ -14,9 +14,11 @@ actor NativeProgressSharedReviewProvider: BridgeSharedReviewConstructionSourcePr
     private var holdsCapture = false
     private var holdsInstall = false
     private var holdsComparison = false
+    private var failsNextCapture = false
 
     init(source: BridgeReviewSourceProviderFake) { self.source = source }
     func holdCapture() { holdsCapture = true }
+    func failNextSharedCapture() { failsNextCapture = true }
     func holdInstall() { holdsInstall = true }
     func holdComparison() { holdsComparison = true }
 
@@ -94,6 +96,10 @@ actor NativeProgressSharedReviewProvider: BridgeSharedReviewConstructionSourcePr
     func captureSharedContent(handles: [BridgeContentHandle], freshnessKey _: BridgeGitReadFreshnessKey) async throws
         -> BridgeSharedReviewContentBacking
     {
+        if failsNextCapture {
+            failsNextCapture = false
+            throw BridgeProviderFailure.providerUnavailable
+        }
         var sources: [BridgeSharedReviewContentIdentity: BridgeSharedReviewContentSource] = [:]
         for handle in handles {
             sources[.init(itemIdentity: handle.itemId, role: handle.role, contentHash: handle.contentHash)] =

@@ -35,19 +35,21 @@ extension WebKitSerializedTests {
                 ),
                 contentByHandleId: [:]
             )
+            let buildFacts = try BridgePaneReviewBuildAdmissionTrace()
             let controller = makeController(
                 source: .workspace(
                     rootPath: "/tmp/worktree",
                     baseline: .unstaged),
                 repoId: repoId,
                 worktreeId: worktreeId,
-                provider: provider
+                provider: provider,
+                reviewBuildAdmissionFactSink: buildFacts.source.sink
             )
             defer { _ = controller.beginTeardown() }  // fire-and-forget: defer cannot await; cleanup only
 
-            let result = await controller.loadInitialReviewPackageIfPossible(correlationId: nil)
+            let result = try await beginInitialReviewInNativeFixture(controller, facts: buildFacts)
 
-            guard case .success = result else {
+            guard case .succeeded = result else {
                 Issue.record("Expected initial Bridge review package load to succeed")
                 return
             }
@@ -82,6 +84,7 @@ extension WebKitSerializedTests {
                     baseline: .branch(name: "reviewer-selected")
                 )
             )
+            let buildFacts = try BridgePaneReviewBuildAdmissionTrace()
             let controller = BridgePaneController(
                 paneId: UUIDv7.generate(),
                 state: BridgePaneState(
@@ -107,13 +110,14 @@ extension WebKitSerializedTests {
                 initialContributionTargetCommit: { target in
                     targetRecorder.record(target)
                     return .unchanged(reviewerState)
-                }
+                },
+                reviewBuildAdmissionFactSink: buildFacts.source.sink
             )
             defer { _ = controller.beginTeardown() }  // fire-and-forget: defer cannot await; cleanup only
 
-            let result = await controller.loadInitialReviewPackageIfPossible(correlationId: nil)
+            let result = try await beginInitialReviewInNativeFixture(controller, facts: buildFacts)
 
-            guard case .success = result else {
+            guard case .succeeded = result else {
                 Issue.record("Expected canonical reviewer target contribution load to succeed")
                 return
             }
@@ -186,6 +190,7 @@ extension WebKitSerializedTests {
                         comparison: comparison
                     ),
                 )
+                let buildFacts = try BridgePaneReviewBuildAdmissionTrace()
                 let controller = makeController(
                     source: .workspace(
                         rootPath: "/tmp/worktree",
@@ -193,13 +198,14 @@ extension WebKitSerializedTests {
                     ),
                     repoId: repoId,
                     worktreeId: worktreeId,
-                    provider: provider
+                    provider: provider,
+                    reviewBuildAdmissionFactSink: buildFacts.source.sink
                 )
                 defer { _ = controller.beginTeardown() }  // fire-and-forget: defer cannot await; cleanup only
 
-                let result = await controller.loadInitialReviewPackageIfPossible(correlationId: nil)
+                let result = try await beginInitialReviewInNativeFixture(controller, facts: buildFacts)
 
-                guard case .success = result else {
+                guard case .succeeded = result else {
                     Issue.record("Expected initial Bridge review package load to succeed")
                     return
                 }
@@ -240,6 +246,7 @@ extension WebKitSerializedTests {
                 contentByHandleId: [:],
                 comparisonFailureByBaseProviderIdentity: [:]
             )
+            let buildFacts = try BridgePaneReviewBuildAdmissionTrace()
             let controller = makeController(
                 source: .workspace(
                     rootPath: "/tmp/worktree",
@@ -250,13 +257,14 @@ extension WebKitSerializedTests {
                 initialContributionTargetCommit: { target in
                     targetRecorder.record(target)
                     return .paneMissing
-                }
+                },
+                reviewBuildAdmissionFactSink: buildFacts.source.sink
             )
             defer { _ = controller.beginTeardown() }  // fire-and-forget: defer cannot await; cleanup only
 
-            let result = await controller.loadInitialReviewPackageIfPossible(correlationId: nil)
+            let result = try await beginInitialReviewInNativeFixture(controller, facts: buildFacts)
 
-            guard case .failure = result else {
+            guard case .failed = result else {
                 Issue.record("Expected targetless contribution load to require selection")
                 return
             }
@@ -277,19 +285,21 @@ extension WebKitSerializedTests {
                 contentByHandleId: [:],
                 contributionFailure: .providerFailed(message: "revspec 'HEAD' not found")
             )
+            let buildFacts = try BridgePaneReviewBuildAdmissionTrace()
             let controller = makeController(
                 source: .workspace(
                     rootPath: "/tmp/worktree",
                     baseline: .ref(name: "HEAD")
                 ),
                 worktreeId: UUIDv7.generate(),
-                provider: provider
+                provider: provider,
+                reviewBuildAdmissionFactSink: buildFacts.source.sink
             )
             defer { _ = controller.beginTeardown() }  // fire-and-forget: defer cannot await; cleanup only
 
-            let result = await controller.loadInitialReviewPackageIfPossible(correlationId: nil)
+            let result = try await beginInitialReviewInNativeFixture(controller, facts: buildFacts)
 
-            guard case .failure = result else {
+            guard case .failed = result else {
                 Issue.record("Expected raw provider prose to remain a failure")
                 return
             }
@@ -308,19 +318,21 @@ extension WebKitSerializedTests {
                 contentByHandleId: [:],
                 contributionFailure: .unavailableEndpoint(endpointId: "baseline-main")
             )
+            let buildFacts = try BridgePaneReviewBuildAdmissionTrace()
             let controller = makeController(
                 source: .workspace(
                     rootPath: "/tmp/worktree",
                     baseline: .ref(name: "main")
                 ),
                 worktreeId: UUIDv7.generate(),
-                provider: provider
+                provider: provider,
+                reviewBuildAdmissionFactSink: buildFacts.source.sink
             )
             defer { _ = controller.beginTeardown() }  // fire-and-forget: defer cannot await; cleanup only
 
-            let result = await controller.loadInitialReviewPackageIfPossible(correlationId: nil)
+            let result = try await beginInitialReviewInNativeFixture(controller, facts: buildFacts)
 
-            guard case .failure = result else {
+            guard case .failed = result else {
                 Issue.record("Expected named-ref failure without fallback")
                 return
             }
@@ -342,19 +354,21 @@ extension WebKitSerializedTests {
                         "gitDataPlane:libgit2Failure:code=-1:klass=2:reason=operationNotPermitted"
                 )
             )
+            let buildFacts = try BridgePaneReviewBuildAdmissionTrace()
             let controller = makeController(
                 source: .workspace(
                     rootPath: "/tmp/worktree",
                     baseline: .branch(name: "main")
                 ),
                 worktreeId: UUIDv7.generate(),
-                provider: provider
+                provider: provider,
+                reviewBuildAdmissionFactSink: buildFacts.source.sink
             )
             defer { _ = controller.beginTeardown() }  // fire-and-forget: defer cannot await; cleanup only
 
-            let result = await controller.loadInitialReviewPackageIfPossible(correlationId: nil)
+            let result = try await beginInitialReviewInNativeFixture(controller, facts: buildFacts)
 
-            guard case .failure = result else {
+            guard case .failed = result else {
                 Issue.record("Expected native review package load to fail")
                 return
             }
@@ -435,21 +449,21 @@ extension WebKitSerializedTests {
                 ),
                 contentByHandleId: [:]
             )
+            let buildFacts = try BridgePaneReviewBuildAdmissionTrace()
             let controller = makeController(
                 source: .workspace(
                     rootPath: "/tmp/worktree",
                     baseline: .unstaged),
                 worktreeId: UUIDv7.generate(),
-                provider: provider
+                provider: provider,
+                reviewBuildAdmissionFactSink: buildFacts.source.sink
             )
             defer { _ = controller.beginTeardown() }  // fire-and-forget: defer cannot await; cleanup only
 
             // Act — wait for the exact scheduled attempt, not for elapsed time. A completion
             // callback that manufactures another intake replaces activeReviewRefreshTask before
             // this captured task returns.
-            controller.scheduleInitialReviewPackageLoadIfPossible(reason: .initialIntake)
-            let firstAttempt = try #require(controller.activeReviewRefreshTask)
-            await firstAttempt.value
+            #expect(try await beginInitialReviewInNativeFixture(controller, facts: buildFacts) == .failed)
 
             // Assert
             #expect(await provider.recordedComparisonRequestsCount() == 1)
@@ -470,20 +484,20 @@ extension WebKitSerializedTests {
                 ),
                 contentByHandleId: [:]
             )
+            let buildFacts = try BridgePaneReviewBuildAdmissionTrace()
             let controller = makeController(
                 source: .workspace(
                     rootPath: "/tmp/worktree",
                     baseline: .unstaged),
                 worktreeId: UUIDv7.generate(),
-                provider: provider
+                provider: provider,
+                reviewBuildAdmissionFactSink: buildFacts.source.sink
             )
             defer { _ = controller.beginTeardown() }  // fire-and-forget: defer cannot await; cleanup only
             controller.paneState.diff.setStatus(.error, error: "metadataUnavailable")
 
             // Act
-            controller.scheduleInitialReviewPackageLoadIfPossible(reason: .initialIntake)
-            let recoveryAttempt = try #require(controller.activeReviewRefreshTask)
-            await recoveryAttempt.value
+            #expect(try await beginInitialReviewInNativeFixture(controller, facts: buildFacts) == .succeeded)
 
             // Assert
             #expect(await provider.recordedComparisonRequestsCount() == 1)
@@ -540,6 +554,7 @@ extension WebKitSerializedTests {
             let repoId = UUIDv7.generate()
             let worktreeId = UUIDv7.generate()
             let gitReadContext = makeBridgeGitReadContext(rootURL: repoURL)
+            let buildFacts = try BridgePaneReviewBuildAdmissionTrace()
             let controller = BridgePaneController(
                 paneId: paneId,
                 state: BridgePaneState(
@@ -567,15 +582,16 @@ extension WebKitSerializedTests {
                     gitReadContext: gitReadContext
                 ),
                 gitReadContext: gitReadContext,
-                initialPaneActivity: .foreground
+                initialPaneActivity: .foreground,
+                reviewBuildAdmissionFactSink: buildFacts.source.sink
             )
             defer { _ = controller.beginTeardown() }  // fire-and-forget: defer cannot await; cleanup only
 
             // Act
-            let result = await controller.loadInitialReviewPackageIfPossible(correlationId: nil)
+            let result = try await beginInitialReviewInNativeFixture(controller, facts: buildFacts)
 
             // Assert
-            guard case .success = result else {
+            guard case .succeeded = result else {
                 Issue.record(
                     "Expected one real-git initial load to commit; result=\(String(describing: result)), status=\(controller.paneState.diff.status), error=\(controller.paneState.diff.error ?? "none"), publication=\(controller.reviewPublicationCoordinator.diagnosticSnapshot), generation=\(controller.nextReviewGeneration.rawValue)"
                 )
@@ -633,7 +649,7 @@ extension WebKitSerializedTests {
         }
 
         @Test("file viewer controller loads its initial review package for a review switch")
-        func fileViewerControllerLoadsInitialReviewPackage() async {
+        func fileViewerControllerLoadsInitialReviewPackage() async throws {
             let worktreeId = UUIDv7.generate()
             let provider = BridgeReviewSourceProviderFake(
                 comparison: BridgeEndpointComparison(
@@ -649,19 +665,21 @@ extension WebKitSerializedTests {
                 ),
                 contentByHandleId: [:]
             )
+            let buildFacts = try BridgePaneReviewBuildAdmissionTrace()
             let controller = makeController(
                 panelKind: .fileViewer,
                 source: .workspace(
                     rootPath: "/tmp/worktree",
                     baseline: .unstaged),
                 worktreeId: worktreeId,
-                provider: provider
+                provider: provider,
+                reviewBuildAdmissionFactSink: buildFacts.source.sink
             )
             defer { _ = controller.beginTeardown() }  // fire-and-forget: defer cannot await; cleanup only
 
-            let result = await controller.loadInitialReviewPackageIfPossible(correlationId: nil)
+            let result = try await beginInitialReviewInNativeFixture(controller, facts: buildFacts)
 
-            guard case .success = result else {
+            guard case .succeeded = result else {
                 Issue.record("Expected a file-viewer pane to load its review package for a review switch")
                 return
             }
@@ -744,7 +762,8 @@ extension WebKitSerializedTests {
             provider: any BridgeReviewSourceProvider,
             initialPaneActivity: BridgePaneActivity = .foreground,
             initialContributionTargetCommit:
-                (@MainActor @Sendable (WorkspaceReviewContributionTarget) -> BridgePaneStateMutationResult)? = nil
+                (@MainActor @Sendable (WorkspaceReviewContributionTarget) -> BridgePaneStateMutationResult)? = nil,
+            reviewBuildAdmissionFactSink: @escaping BridgePaneReviewBuildAdmissionFactSink = { _, _ in }
         ) -> BridgePaneController {
             BridgePaneController(
                 paneId: UUIDv7.generate(),
@@ -757,7 +776,8 @@ extension WebKitSerializedTests {
                 ),
                 reviewSourceProvider: provider,
                 initialPaneActivity: initialPaneActivity,
-                initialContributionTargetCommit: initialContributionTargetCommit
+                initialContributionTargetCommit: initialContributionTargetCommit,
+                reviewBuildAdmissionFactSink: reviewBuildAdmissionFactSink
             )
         }
 
