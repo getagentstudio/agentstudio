@@ -97,7 +97,9 @@ export function applyReviewDisplayPatchEventInPlace(props: {
 			case 'reviewComparison':
 				mutableState.panelChromeSlice = {
 					...mutableState.panelChromeSlice,
-					reviewComparison: bridgeMainReviewComparisonPresentationSchema.parse(patch.payload),
+					reviewComparison: bridgeMainReviewComparisonPresentationSchema
+						.nullable()
+						.parse(patch.payload),
 				};
 				comparisonChanged = true;
 				break;
