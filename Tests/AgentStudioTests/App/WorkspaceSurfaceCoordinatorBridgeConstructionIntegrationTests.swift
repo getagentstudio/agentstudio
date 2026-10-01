@@ -680,9 +680,10 @@ private struct TwoPaneWorktreeSetup {
 private func makeTwoPaneWorktreeSetup(
     in harness: BridgePaneActivityTestHarness
 ) throws -> TwoPaneWorktreeSetup {
-    let repo = harness.store.addRepo(
-        at: harness.tempDirectory.appending(path: "shared-construction-repo")
-    )
+    let repositoryURL = harness.tempDirectory.appending(path: "shared-construction-repo")
+    // C2 validates File roots before minting source authority; this fixture owns a healthy root.
+    try FileManager.default.createDirectory(at: repositoryURL, withIntermediateDirectories: true)
+    let repo = harness.store.addRepo(at: repositoryURL)
     let worktree = try #require(
         harness.store.repo(repo.id)?.worktrees.first(where: { $0.isMainWorktree })
     )
