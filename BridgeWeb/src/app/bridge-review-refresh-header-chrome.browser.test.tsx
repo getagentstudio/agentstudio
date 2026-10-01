@@ -153,6 +153,13 @@ describe('Bridge Review refresh header chrome', () => {
 			},
 		});
 		const rendered = await renderRefreshHeader(silentPresentation, ['item-1']);
+		const sizer = rendered.getByTestId('bridge-review-refresh-header-sizer').element();
+		expect(
+			sizer.querySelector('button, a, input, select, textarea, [tabindex], [contenteditable]'),
+		).toBeNull();
+		expect(sizer.textContent).toBe('');
+		expect(sizer.getAttribute('aria-hidden')).toBe('true');
+		expect(sizer.hasAttribute('inert')).toBe(true);
 		const title = rendered.getByTestId('bridge-viewer-content-title').element();
 		const silentTitleBounds = title.getBoundingClientRect();
 		const silentSlotBounds = rendered

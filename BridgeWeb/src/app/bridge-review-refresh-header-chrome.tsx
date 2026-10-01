@@ -5,7 +5,10 @@ import type { BridgeRegionSurfaceStatus } from './bridge-region-presentation-sta
 import { BridgeRegionUpdatingIndicator } from './bridge-region-presentation.js';
 import { bridgeReviewRegionDisplaySpec } from './bridge-review-region-display-spec.js';
 import { BridgeViewerButton } from './bridge-viewer-button.js';
-import { bridgeViewerChromeStatusGroupClassName } from './bridge-viewer-chrome.js';
+import {
+	bridgeViewerChromeStatusGroupClassName,
+	bridgeViewerChromeStatusSlotClassName,
+} from './bridge-viewer-chrome.js';
 import { bridgeViewerRegionApplyActionSpec } from './bridge-viewer-region-apply-action-spec.js';
 import { cn } from './class-name.js';
 
@@ -63,8 +66,16 @@ export function BridgeReviewRefreshHeaderGroup(props: {
 			/>
 		);
 	return (
-		<div className="grid h-6 shrink-0" data-testid="bridge-review-refresh-header-slot">
-			<BridgeReviewRefreshHeaderGroupSizer />
+		<div
+			className={bridgeViewerChromeStatusSlotClassName}
+			data-testid="bridge-review-refresh-header-slot"
+		>
+			<span
+				aria-hidden="true"
+				inert
+				className="col-start-1 row-start-1"
+				data-testid="bridge-review-refresh-header-sizer"
+			/>
 			{refreshGroup}
 		</div>
 	);
@@ -114,21 +125,6 @@ function BridgeReviewRefreshHeaderGroupContent(props: {
 		);
 	}
 	return null;
-}
-
-function BridgeReviewRefreshHeaderGroupSizer(): ReactElement {
-	const display = bridgeViewerRegionApplyActionSpec('review', false);
-	return (
-		<span
-			aria-hidden="true"
-			className={cn(bridgeViewerChromeStatusGroupClassName, 'invisible col-start-1 row-start-1')}
-		>
-			{display.statusLabel}
-			<BridgeViewerButton ariaLabel={display.accessibleName} size="xs" disabled>
-				{display.label}
-			</BridgeViewerButton>
-		</span>
-	);
 }
 
 function BridgeReviewRefreshHeaderAction(props: {
