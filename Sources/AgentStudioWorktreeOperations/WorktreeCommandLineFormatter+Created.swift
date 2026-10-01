@@ -25,5 +25,5 @@ private struct WorktreeCreatedCommandLineJSON: Encodable {
     let branch: String
     let path: String
     let repository: String
-    let materialization: GitWorktreeMaterializationReport?
+    let materialization: GitWorktreeMaterializationResult?
 }

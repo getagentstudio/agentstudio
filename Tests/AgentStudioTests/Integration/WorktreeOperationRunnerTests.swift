@@ -105,7 +105,12 @@ struct WorktreeOperationRunnerTests {
             #expect(created.operation == .fork)
             #expect(canonicalPath(created.path) == canonicalPath(destination))
             #expect(canonicalPath(created.repository) == canonicalPath(repository))
-            #expect(created.materialization != nil)
+            switch created.materialization {
+            case .copyOnWrite:
+                #expect(true)
+            case .changesOnly, .none:
+                Issue.record("expected the existing fork command to select copy-on-write materialization")
+            }
             #expect(
                 try String(contentsOf: destination.appending(path: "linked-only.txt"), encoding: .utf8)
                     == "linked source\n")
@@ -423,6 +428,21 @@ private struct WorktreeOperationClientStub: AgentStudioGitLocalClient {
 
     func branches(for _: URL) async throws(GitDataPlaneError) -> [GitBranchSnapshot] {
         throw .unsupported(message: "unexpected branch lookup")
+    }
+
+    func assessBranchIntegration(_: GitBranchIntegrationRequest) async throws(GitDataPlaneError)
+        -> GitBranchIntegrationReport
+    {
+        throw .unsupported(message: "unexpected branch integration assessment")
+    }
+
+    func deleteLocalBranch(_: GitDeleteLocalBranchRequest)
+        async throws(GitLockedOperationFailure<GitDeleteLocalBranchErrorReason>) -> GitDeleteLocalBranchResult
+    {
+        throw GitLockedOperationFailure(
+            reason: .gitFailure(.unsupported(message: "unexpected local branch deletion")),
+            lockResidue: nil
+        )
     }
 
     func resolveReviewDefaultTarget(for _: URL) async throws(GitDataPlaneError)

@@ -31,6 +31,9 @@ extension WorktreeCommandLineFormatter {
         case .validationFailed(let reason, let relativePath):
             let path = relativePath.map { " \($0)" } ?? ""
             return "validationFailed \(reason.rawValue)\(path)"
+        case .workingStateUnsupported(let refusal):
+            let path = refusal.relativePath.map { " \($0)" } ?? ""
+            return "workingStateUnsupported \(refusal.reason.rawValue)\(path)"
         case .cancelled:
             return "cancelled"
         case .rejectedAfterChange(let reason):
@@ -82,6 +85,12 @@ extension WorktreeCommandLineFormatter {
             return .init(kind: "entryFailed", relativePath: relativePath, reason: reason.rawValue, errno: errorNumber)
         case .validationFailed(let reason, let relativePath):
             return .init(kind: "validationFailed", relativePath: relativePath, reason: reason.rawValue)
+        case .workingStateUnsupported(let refusal):
+            return .init(
+                kind: "workingStateUnsupported",
+                relativePath: refusal.relativePath,
+                reason: refusal.reason.rawValue
+            )
         case .cancelled:
             return .init(kind: "cancelled")
         case .rejectedAfterChange(let reason):

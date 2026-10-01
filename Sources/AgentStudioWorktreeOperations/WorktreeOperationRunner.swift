@@ -61,12 +61,13 @@ package struct WorktreeOperationRunner {
         case .outcome(let outcome):
             return outcome
         case .ready(let prepared):
-            do {
+            do throws(GitWorktreeForkError) {
                 let fork = try await client.forkWorktree(
                     GitForkWorktreeRequest(
                         sourceWorktreePath: prepared.sourceWorktreePath,
                         destinationPath: prepared.destinationPath,
-                        mode: .newBranch(name: prepared.branchName.rawValue)
+                        mode: .newBranch(name: prepared.branchName.rawValue),
+                        materialization: .copyOnWrite
                     ))
                 return .created(
                     WorktreeCreatedSummary(

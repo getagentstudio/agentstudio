@@ -43,6 +43,12 @@ extension WorktreeCommandLineFormatter {
             WorktreeRefusalDetails(reason: "unsupportedRepositoryLayout", path: absolutePath(path), detail: nil)
         case .forkUnavailable(let reason):
             WorktreeRefusalDetails(reason: "forkUnavailable", path: nil, detail: reason.rawValue)
+        case .unsupportedWorkingState(let refusal):
+            WorktreeRefusalDetails(
+                reason: "unsupportedWorkingState",
+                path: refusal.relativePath,
+                detail: refusal.reason.rawValue
+            )
         }
     }
 

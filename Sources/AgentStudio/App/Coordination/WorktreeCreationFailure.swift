@@ -61,6 +61,16 @@ extension WorktreeCreationFailure {
             "The start commit \(target.name) could not be resolved."
         case .locked(let message):
             "The repository is locked: \(message)"
+        case .lockHeld(let fact):
+            "Git is using the repository lock at \(fact.path.path)."
+        case .lockUnidentified:
+            "Git could not identify the repository lock."
+        case .permissionDenied(let path):
+            if let path {
+                "Git does not have permission to access \(path.path)."
+            } else {
+                "Git does not have permission to access the repository."
+            }
         case .libgit2Failure(_, _, let message):
             "Git reported: \(message)"
         case .unsupported(let message):
@@ -79,6 +89,8 @@ extension WorktreeCreationFailure {
         switch error {
         case .rejected(let reason):
             "Nothing was changed: \(WorktreeForkRejectionCopy.phrase(for: reason))."
+        case .workingStateUnsupported(let refusal):
+            "Nothing was changed: \(workingStateUnsupportedCause(refusal))"
         case .gitFailure(let gitError):
             "\(gitFailureDetail(gitError)) The fork was rolled back."
         case .sourceChanged(let relativePath, _):
@@ -100,6 +112,8 @@ extension WorktreeCreationFailure {
         switch error {
         case .rejected(let reason):
             "The fork was rejected: \(WorktreeForkRejectionCopy.phrase(for: reason))."
+        case .workingStateUnsupported(let refusal):
+            workingStateUnsupportedCause(refusal)
         case .gitFailure(let gitError):
             gitFailureDetail(gitError)
         case .sourceChanged(let relativePath, _):
@@ -113,6 +127,11 @@ extension WorktreeCreationFailure {
         case .cleanupIncomplete(let primary, _):
             forkFailureCause(primary)
         }
+    }
+
+    private static func workingStateUnsupportedCause(_ refusal: GitWorktreeWorkingStateRefusal) -> String {
+        let location = refusal.relativePath.map { " at \($0)" } ?? ""
+        return "The source has unsupported Git state (\(refusal.reason.rawValue))\(location)."
     }
 }
 

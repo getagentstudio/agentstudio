@@ -1,3 +1,4 @@
+import AgentStudioGit
 import AgentStudioInfrastructure
 import AgentStudioTestSupport
 import AgentStudioWorktreeOperations
@@ -142,6 +143,32 @@ struct WorktreeCommandLineTests {
                 exitCode: 0
             ),
             FormatterGolden(
+                outcome: .created(
+                    WorktreeCreatedSummary(
+                        operation: .fork,
+                        branch: "feature/cow",
+                        path: createdPath,
+                        repository: repository,
+                        materialization: .copyOnWrite(
+                            GitWorktreeMaterializationReport(
+                                clonedRegularFileCount: 0,
+                                createdDirectoryCount: 0,
+                                recreatedSymbolicLinkCount: 0,
+                                preservedHardLinkCount: 0,
+                                preservedGitRepositoryCount: 0,
+                                recreatedFIFOCount: 0,
+                                logicalRegularFileBytes: 0,
+                                skippedEntries: [],
+                                normalizedEntries: []
+                            ))
+                    )
+                ),
+                humanText: "created feature/cow at /tmp/worktree-output/repository.feature-cli",
+                jsonText:
+                    "{\"branch\":\"feature/cow\",\"materialization\":{\"clonedRegularFileCount\":0,\"createdDirectoryCount\":0,\"kind\":\"copyOnWrite\",\"logicalRegularFileBytes\":0,\"normalizedEntries\":[],\"preservedGitRepositoryCount\":0,\"preservedHardLinkCount\":0,\"recreatedFIFOCount\":0,\"recreatedSymbolicLinkCount\":0,\"skippedEntries\":[]},\"operation\":\"fork\",\"outcome\":\"created\",\"path\":\"/tmp/worktree-output/repository.feature-cli\",\"repository\":\"/tmp/worktree-output/repository\"}",
+                exitCode: 0
+            ),
+            FormatterGolden(
                 outcome: .listed(
                     WorktreeListingSummary(
                         repository: repository,
@@ -175,6 +202,47 @@ struct WorktreeCommandLineTests {
                     "failed: rejectedAfterChange branchAlreadyExists; leftovers: incomplete [createdBranch refs/heads/feature/cli (branch reference)]",
                 jsonText:
                     "{\"failure\":{\"kind\":\"rejectedAfterChange\",\"reason\":\"branchAlreadyExists\"},\"leftovers\":{\"items\":[{\"base\":\"branchReference\",\"kind\":\"createdBranch\",\"location\":\"refs/heads/feature/cli\"}],\"status\":\"incomplete\"},\"outcome\":\"failed\"}",
+                exitCode: 2
+            ),
+        ]
+
+        for testCase in cases {
+            #expect(
+                try WorktreeCommandLineFormatter.format(outcome: testCase.outcome, usesJSONOutput: false)
+                    == WorktreeCommandLineResponse(text: testCase.humanText, exitCode: testCase.exitCode))
+            let jsonResponse = try WorktreeCommandLineFormatter.format(
+                outcome: testCase.outcome,
+                usesJSONOutput: true
+            )
+            #expect(jsonResponse.text == testCase.jsonText)
+            #expect(jsonResponse.exitCode == testCase.exitCode)
+        }
+    }
+
+    @Test("working-state outcomes preserve the SDK refusal details in human and JSON output")
+    func formatsWorkingStateOutcomes() throws {
+        let cases: [FormatterGolden] = [
+            FormatterGolden(
+                outcome: .refused(
+                    .unsupportedWorkingState(
+                        GitWorktreeWorkingStateRefusal(reason: .attributesChanged, relativePath: ".gitattributes"))
+                ),
+                humanText: "refused: unsupportedWorkingState .gitattributes attributesChanged",
+                jsonText:
+                    "{\"detail\":\"attributesChanged\",\"outcome\":\"refused\",\"path\":\".gitattributes\",\"reason\":\"unsupportedWorkingState\"}",
+                exitCode: 1
+            ),
+            FormatterGolden(
+                outcome: .failed(
+                    WorktreeOperationFailure(
+                        failure: .workingStateUnsupported(
+                            GitWorktreeWorkingStateRefusal(reason: .customFilter, relativePath: "tracked.bin")),
+                        leftovers: .noLeftovers
+                    )
+                ),
+                humanText: "failed: workingStateUnsupported customFilter tracked.bin; leftovers: noLeftovers",
+                jsonText:
+                    "{\"failure\":{\"kind\":\"workingStateUnsupported\",\"reason\":\"customFilter\",\"relativePath\":\"tracked.bin\"},\"leftovers\":{\"status\":\"noLeftovers\"},\"outcome\":\"failed\"}",
                 exitCode: 2
             ),
         ]

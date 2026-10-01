@@ -19,6 +19,16 @@ struct WorktreeOperationErrorMapperTests {
             (.repositoryNotFound, .repositoryNotFound(path: repositoryPath)),
             (.worktreeNotFound, .worktreeNotFound(id: worktreeID)),
             (.locked, .locked(message: "private detail")),
+            (
+                .lockHeld,
+                .lockHeld(
+                    GitLockFact(
+                        path: repositoryPath.appending(path: "refs/heads/main.lock"),
+                        resource: .reference(name: "refs/heads/main")
+                    ))
+            ),
+            (.lockUnidentified, .lockUnidentified(.packedRefs)),
+            (.permissionDenied, .permissionDenied(path: repositoryPath)),
             (.worktreeNotPrunable, .worktreeNotPrunable(id: worktreeID, reason: .liveWorktree)),
             (.unsafeWorktreeRemoval, .unsafeWorktreeRemoval(reason: .dirtyTrackedChanges)),
             (.contentTooLarge, .contentTooLarge(path: "large.bin", sizeBytes: 2, maxSizeBytes: 1)),
@@ -37,7 +47,7 @@ struct WorktreeOperationErrorMapperTests {
             (.unsupported, .unsupported(message: "private detail")),
         ]
 
-        #expect(errors.count == 19)
+        #expect(errors.count == 22)
         for (expectedKind, error) in errors {
             #expect(WorktreeOperationErrorMapper.gitErrorKind(for: error) == expectedKind)
         }
@@ -107,6 +117,19 @@ struct WorktreeOperationErrorMapperTests {
         }
     }
 
+    @Test("working-state fork refusals retain their reason and repository-relative path")
+    func mapsWorkingStateForkRefusals() {
+        let refusal = GitWorktreeWorkingStateRefusal(reason: .attributesChanged, relativePath: ".gitattributes")
+        let destination = URL(fileURLWithPath: "/tmp/worktree-error-mapping/repo.feature")
+
+        #expect(
+            WorktreeOperationErrorMapper.forkOutcome(
+                .workingStateUnsupported(refusal),
+                destinationPath: destination,
+                branchName: "feature/example"
+            ) == .refused(.unsupportedWorkingState(refusal)))
+    }
+
     @Test("compensated fork failures say no leftovers and preserve typed details")
     func mapsCompensatedForkFailures() {
         let errors: [(GitWorktreeForkError, WorktreeFailureKind)] = [
@@ -145,6 +168,7 @@ struct WorktreeOperationErrorMapperTests {
             (.nestedAdministration, "modules/nested/worktrees/repo", .repositoryGitDirectory),
             (.createdBranch, "refs/heads/feature/example", .branchReference),
             (.temporaryArtifact, "worktrees/.temporary-artifact", .temporary),
+            (.lockFile, "worktrees/repo/index.lock", .repositoryGitDirectory),
         ]
 
         for (kind, location, base) in residueLocations {
@@ -220,5 +244,90 @@ struct WorktreeOperationErrorMapperTests {
                         ])
                     )
                 ))
+    }
+
+    @Test("cleanup preserves a working-state primary and lock-file residue")
+    func mapsWorkingStateCleanupWithLockResidue() {
+        let refusal = GitWorktreeWorkingStateRefusal(reason: .customFilter, relativePath: "tracked.bin")
+        let lockResidue = GitWorktreeForkResidue(kind: .lockFile, location: "worktrees/repo/index.lock")
+        let error = GitWorktreeForkError.cleanupIncomplete(
+            primary: .workingStateUnsupported(refusal),
+            residue: [lockResidue]
+        )
+
+        #expect(
+            WorktreeOperationErrorMapper.forkOutcome(
+                error,
+                destinationPath: URL(fileURLWithPath: "/tmp/worktree-error-mapping/repo.feature"),
+                branchName: "feature/example"
+            )
+                == .failed(
+                    WorktreeOperationFailure(
+                        failure: .workingStateUnsupported(refusal),
+                        leftovers: .incomplete([
+                            WorktreeCleanupLeftover(
+                                kind: .lockFile,
+                                location: "worktrees/repo/index.lock",
+                                base: .repositoryGitDirectory
+                            )
+                        ])
+                    )
+                ))
+    }
+
+    @Test("locked operation residue distinguishes unobserved, empty, and retained states")
+    func mapsLockedOperationFailureResidue() {
+        let repositoryPath = URL(fileURLWithPath: "/tmp/worktree-error-mapping")
+        let error = GitDataPlaneError.lockUnidentified(.packedRefs)
+        let unobserved = GitLockedOperationFailure<GitDataPlaneError>(reason: error, lockResidue: nil)
+        let noneRetained = GitLockedOperationFailure<GitDataPlaneError>(reason: error, lockResidue: [])
+        let retainedPath = repositoryPath.appending(path: "packed-refs.lock")
+        let retained = GitLockedOperationFailure<GitDataPlaneError>(reason: error, lockResidue: [retainedPath])
+        let mapReason: (GitDataPlaneError) -> WorktreeFailureKind = {
+            .createFailed(WorktreeOperationErrorMapper.gitErrorKind(for: $0))
+        }
+
+        #expect(
+            WorktreeOperationErrorMapper.lockedOperationFailure(unobserved, mapReason: mapReason)
+                == WorktreeOperationFailure(failure: .createFailed(.lockUnidentified), leftovers: .unverified))
+        #expect(
+            WorktreeOperationErrorMapper.lockedOperationFailure(noneRetained, mapReason: mapReason)
+                == WorktreeOperationFailure(failure: .createFailed(.lockUnidentified), leftovers: .noLeftovers))
+        #expect(
+            WorktreeOperationErrorMapper.lockedOperationFailure(retained, mapReason: mapReason)
+                == WorktreeOperationFailure(
+                    failure: .createFailed(.lockUnidentified),
+                    leftovers: .incomplete([
+                        WorktreeCleanupLeftover(
+                            kind: .lockFile,
+                            location: retainedPath.path,
+                            base: .repositoryGitDirectory
+                        )
+                    ])
+                ))
+    }
+
+    @Test("SDK removal effects map every effect and failure to the leaf documents")
+    func mapsSDKRemovalEffects() {
+        let effectCases: [(GitRemovalEffect, WorktreeDirectoryEffect, WorktreeAdministrationEffect)] = [
+            (.removed, .removed, .removed),
+            (.retained, .retained, .retained),
+            (.partial, .partial, .partial),
+            (.unknown, .unknown, .unknown),
+            (.notRequested, .notApplicable, .notApplicable),
+        ]
+        for (sdkEffect, directory, administration) in effectCases {
+            #expect(WorktreeOperationErrorMapper.removalDirectoryEffect(for: sdkEffect) == directory)
+            #expect(WorktreeOperationErrorMapper.removalAdministrationEffect(for: sdkEffect) == administration)
+        }
+
+        let failureCases: [(GitWorktreeRemovalFailureKind, WorktreeRemovalFailureKindDocument)] = [
+            (.pruneFailed(code: 1, klass: 2), .pruneFailed(code: 1, klass: 2)),
+            (.observationFailed, .observationFailed),
+            (.removalIncomplete, .removalIncomplete),
+        ]
+        for (sdkFailure, documentFailure) in failureCases {
+            #expect(WorktreeOperationErrorMapper.removalFailureKind(for: sdkFailure) == documentFailure)
+        }
     }
 }

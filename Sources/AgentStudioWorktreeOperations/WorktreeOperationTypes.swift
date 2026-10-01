@@ -29,14 +29,14 @@ package struct WorktreeCreatedSummary: Sendable, Equatable {
     package let branch: String
     package let path: URL
     package let repository: URL
-    package let materialization: GitWorktreeMaterializationReport?
+    package let materialization: GitWorktreeMaterializationResult?
 
     package init(
         operation: WorktreeOperationKind,
         branch: String,
         path: URL,
         repository: URL,
-        materialization: GitWorktreeMaterializationReport?
+        materialization: GitWorktreeMaterializationResult?
     ) {
         self.operation = operation
         self.branch = branch
@@ -79,6 +79,7 @@ package enum WorktreeOperationRefusal: Sendable, Equatable {
     case destinationParentMissing(URL)
     case unsupportedRepositoryLayout(URL)
     case forkUnavailable(GitWorktreeForkRejectionReason)
+    case unsupportedWorkingState(GitWorktreeWorkingStateRefusal)
 }
 
 package struct WorktreeOperationFailure: Sendable, Equatable {
@@ -98,6 +99,7 @@ package enum WorktreeFailureKind: Sendable, Equatable {
     case sourceChanged(relativePath: String, reason: GitWorktreeForkSourceRaceReason)
     case entryFailed(relativePath: String, reason: GitWorktreeForkEntryFailureReason, errno: Int32?)
     case validationFailed(reason: GitWorktreeForkValidationFailureReason, relativePath: String?)
+    case workingStateUnsupported(GitWorktreeWorkingStateRefusal)
     case cancelled
     case rejectedAfterChange(GitWorktreeForkRejectionReason)
 }
@@ -132,6 +134,9 @@ package enum WorktreeGitErrorKind: String, Sendable, Equatable {
     case repositoryNotFound
     case worktreeNotFound
     case locked
+    case lockHeld
+    case lockUnidentified
+    case permissionDenied
     case worktreeNotPrunable
     case unsafeWorktreeRemoval
     case contentTooLarge
