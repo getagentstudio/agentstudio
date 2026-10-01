@@ -255,6 +255,22 @@ extension BridgePaneController: BridgeRuntimeCommandHandling {
             }
             return .failure(.invalidPayload(description: "Failed to load bridge review package"))
         }
+        let deliveryFact: BridgePaneReviewPackageDeliveryFact
+        switch deliveryDisposition {
+        case .deferred:
+            deliveryFact = .deferred
+        case .failed:
+            deliveryFact = .failed
+        case .viewBatchSealed:
+            deliveryFact = .viewBatchSealed
+        }
+        recordReviewBuildAdmissionFact(
+            .explicitReviewPackageDelivery(
+                commandId: commit.commandId,
+                disposition: deliveryFact
+            ),
+            scope: .pendingExplicitCommand(commit.commandId)
+        )
         if deliveryDisposition == .failed {
             await productSchemeProvider?.resetCurrentReviewSubscriptionsForUnavailableSource(
                 productAdmission: commit.productAdmission,

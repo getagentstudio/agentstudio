@@ -155,7 +155,8 @@ extension WebKitSerializedTests {
                         );
                         return JSON.stringify({
                           reviewShellPresent: shell !== null,
-                          activeViewerMode: activeViewerModeHost?.getAttribute('data-bridge-viewer-mode-host') ?? null
+                          activeViewerMode: activeViewerModeHost?.getAttribute('data-bridge-viewer-mode-host') ?? null,
+                          javascriptErrors: window.__bridgeErrorProbe ?? []
                         });
                         """
                 )
@@ -291,6 +292,13 @@ private final class BridgeSmokeReviewBuildFacts: Sendable {
                 false
             }
         }
+        let publicationDelivery =
+            commandFacts.compactMap { fact -> String? in
+                guard case .explicitReviewPackageDelivery(let factCommandId, let disposition) = fact,
+                    factCommandId == commandId
+                else { return nil }
+                return String(describing: disposition)
+            }.last ?? "not recorded"
         let commandSucceeded: Bool
         if case .success = commandResult {
             commandSucceeded = true
@@ -311,6 +319,7 @@ private final class BridgeSmokeReviewBuildFacts: Sendable {
             "resumptionAdmission=\(admissionResult)",
             "buildStarted=\(buildStarted)",
             "resumedBuildStarted=\(resumedBuildStarted)",
+            "publicationDelivery=\(publicationDelivery)",
             "commandFacts=\(commandFacts.map(String.init(describing:)))",
             "diffStatus=\(String(describing: controller.paneState.diff.status))",
             "reviewPackagePresent=\(controller.paneState.diff.packageMetadata != nil)",

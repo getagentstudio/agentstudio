@@ -79,6 +79,12 @@ package enum BridgePanePendingExplicitReviewCommandOutcome: Equatable, Sendable 
     case retired
 }
 
+package enum BridgePaneReviewPackageDeliveryFact: Equatable, Sendable {
+    case deferred
+    case failed
+    case viewBatchSealed
+}
+
 package enum BridgePaneReviewBuildAdmissionFact: Equatable, Sendable {
     case admitted(attempt: UUID)
     case deferredHidden(input: BridgePaneReviewBuildAdmissionInput)
@@ -89,6 +95,10 @@ package enum BridgePaneReviewBuildAdmissionFact: Equatable, Sendable {
     case pendingExplicitCommandResumptionAdmissionRejected(commandId: UUID)
     case explicitReviewPackageBuildStarted(commandId: UUID)
     case pendingExplicitCommandBuildStarted(commandId: UUID)
+    case explicitReviewPackageDelivery(
+        commandId: UUID,
+        disposition: BridgePaneReviewPackageDeliveryFact
+    )
     case pendingExplicitCommandEnded(
         commandId: UUID,
         outcome: BridgePanePendingExplicitReviewCommandOutcome
