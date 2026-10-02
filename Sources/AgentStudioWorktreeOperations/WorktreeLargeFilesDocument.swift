@@ -79,7 +79,7 @@ package enum WorktreeLargeFilesProjector {
         guard let fill, !fill.residuePaths.isEmpty else { return nil }
         return .incomplete(
             fill.residuePaths.map {
-                WorktreeCleanupLeftover(kind: .temporaryArtifact, location: $0, base: .temporary)
+                WorktreeCleanupLeftover(kind: .temporaryArtifact, location: $0, base: .destination)
             }
         )
     }

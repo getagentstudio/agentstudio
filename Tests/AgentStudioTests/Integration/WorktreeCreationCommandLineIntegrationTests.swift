@@ -1,7 +1,6 @@
 import AgentStudioGit
 import AgentStudioTestSupport
 import AgentStudioWorktreeOperations
-import CryptoKit
 import Darwin
 import Foundation
 import Testing
@@ -91,7 +90,10 @@ struct WorktreeCreationCommandLineIntegrationTests {
 
     @Test("new fills an LFS pointer from the local store and remains clean through list and remove")
     func fillsLargeFileFromLocalStoreAndRemovesWithoutForce() async throws {
-        let fixture = try await makeLargeFileFixture(named: "cli-lfs-filled", includeStoreObject: true)
+        let fixture = try await WorktreeCreationLargeFileFixture.create(
+            named: "cli-lfs-filled",
+            includeStoreObject: true
+        )
         defer { FilesystemTestGitRepo.destroy(fixture.repository) }
 
         let branch = "feature/lfs-filled"
@@ -151,7 +153,10 @@ struct WorktreeCreationCommandLineIntegrationTests {
 
     @Test("new and changes-only fork quote pull options for missing LFS objects")
     func reportsQuotedPullOptionsForMissingLargeFiles() async throws {
-        let fixture = try await makeLargeFileFixture(named: "cli lfs ' absent", includeStoreObject: false)
+        let fixture = try await WorktreeCreationLargeFileFixture.create(
+            named: "cli lfs ' absent",
+            includeStoreObject: false
+        )
         defer { FilesystemTestGitRepo.destroy(fixture.repository) }
 
         let branch = "feature/lfs-absent"
@@ -237,7 +242,10 @@ struct WorktreeCreationCommandLineIntegrationTests {
 
     @Test("changes-only fork reports LFS materialized from the local store")
     func changesOnlyForkReportsLargeFileMaterialization() async throws {
-        let fixture = try await makeLargeFileFixture(named: "cli-lfs-fork", includeStoreObject: true)
+        let fixture = try await WorktreeCreationLargeFileFixture.create(
+            named: "cli-lfs-fork",
+            includeStoreObject: true
+        )
         defer { FilesystemTestGitRepo.destroy(fixture.repository) }
 
         let branch = "feature/lfs-fork"
@@ -370,6 +378,65 @@ struct WorktreeCreationCommandLineIntegrationTests {
         let humanResponse = try WorktreeCommandLineFormatter.format(outcome: outcome, usesJSONOutput: false)
         #expect(humanResponse.exitCode == 0)
         #expect(humanResponse.text.contains("scan incomplete (gitFailure headUnavailable)"))
+    }
+
+    @Test("nested LFS residue is rooted at the new worktree with zero fills and misses")
+    func reportsNestedResidueRelativeToCreatedWorktree() async throws {
+        let repository = try await FilesystemTestGitRepo.create(named: "cli-lfs-residue-only")
+        defer { FilesystemTestGitRepo.destroy(repository) }
+        try await FilesystemTestGitRepo.seedTrackedAndUntrackedChanges(at: repository)
+
+        let branch = "feature/lfs-residue-only"
+        let destination = try siblingDestination(repository: repository, branch: branch)
+        defer { try? FileManager.default.removeItem(at: destination) }
+        let residuePath = "assets/.agentstudio-lfs-fill-orphan"
+        let residueFile = destination.appending(path: residuePath)
+
+        let realClient = LibGit2AgentStudioGitLocalClient()
+        let snapshot = try #require(await realClient.worktrees(for: repository).first)
+        let identity = try await realClient.repositoryIdentity(for: repository)
+        let fill = GitLargeFileFill(
+            materializedCount: 0,
+            missing: [],
+            residuePaths: [residuePath],
+            scan: .complete
+        )
+        let client = WorktreeOperationClientStub(
+            startPath: repository,
+            snapshot: snapshot,
+            identity: identity,
+            baseClient: realClient,
+            largeFileFillOverride: fill
+        )
+        let outcome = await WorktreeOperationRunner(client: client).run(
+            .createFromDefault(start: repository, branch: branch)
+        )
+        guard case .created = outcome else {
+            Issue.record("expected creation to report its retained LFS residue, got \(outcome)")
+            return
+        }
+
+        try FileManager.default.createDirectory(
+            at: residueFile.deletingLastPathComponent(),
+            withIntermediateDirectories: true
+        )
+        try Data("orphaned temporary file".utf8).write(to: residueFile)
+        let jsonResponse = try WorktreeCommandLineFormatter.format(outcome: outcome, usesJSONOutput: true)
+        #expect(jsonResponse.exitCode == 0)
+        let document = try #require(JSONSerialization.jsonObject(with: Data(jsonResponse.text.utf8)) as? [String: Any])
+        let largeFiles = try #require(document["largeFiles"] as? [String: Any])
+        #expect(largeFiles["materialized"] as? Int == 0)
+        #expect((largeFiles["missing"] as? [Any])?.isEmpty == true)
+        #expect(largeFiles["missingCount"] as? Int == 0)
+        #expect(largeFiles["options"] == nil)
+        let leftovers = try #require(document["leftovers"] as? [String: Any])
+        let item = try #require((leftovers["items"] as? [[String: Any]])?.first)
+        #expect(item["base"] as? String == "destination")
+        #expect(item["location"] as? String == residuePath)
+        #expect(FileManager.default.fileExists(atPath: residueFile.path))
+
+        let humanResponse = try WorktreeCommandLineFormatter.format(outcome: outcome, usesJSONOutput: false)
+        #expect(humanResponse.text.contains("temporaryArtifact \(residuePath) (destination)"))
     }
 
     @Test("new from a missing local branch refuses with startBranchNotFound")
@@ -522,79 +589,9 @@ struct WorktreeCreationCommandLineIntegrationTests {
         #expect(try await git(at: repository, "branch", "--list", branch).isEmpty)
     }
 
-    private func makeLargeFileFixture(named name: String, includeStoreObject: Bool) async throws -> LargeFileFixture {
-        let repository = try await FilesystemTestGitRepo.create(named: name)
-        let payload = Data("local LFS payload for \(name)\n".utf8)
-        let objectID = SHA256.hash(data: payload).map { String(format: "%02x", $0) }.joined()
-        let pointer = "version https://git-lfs.github.com/spec/v1\noid sha256:\(objectID)\nsize \(payload.count)\n"
-        try "*.bin filter=lfs diff=lfs merge=lfs -text\n".write(
-            to: repository.appending(path: ".gitattributes"), atomically: true, encoding: .utf8)
-        try pointer.write(to: repository.appending(path: "asset.bin"), atomically: true, encoding: .utf8)
-        try await git(at: repository, "add", ".gitattributes", "asset.bin")
-        try await git(at: repository, "commit", "-m", "commit LFS pointer")
-
-        let firstPrefix = String(objectID.prefix(2))
-        let secondPrefix = String(objectID.dropFirst(2).prefix(2))
-        let objectDirectory =
-            repository
-            .appending(path: ".git/lfs/objects")
-            .appending(path: firstPrefix)
-            .appending(path: secondPrefix)
-        if includeStoreObject {
-            try FileManager.default.createDirectory(at: objectDirectory, withIntermediateDirectories: true)
-            try payload.write(to: objectDirectory.appending(path: objectID), options: .atomic)
-        }
-        return LargeFileFixture(repository: repository, payload: payload, pointer: pointer)
-    }
-
-    private func siblingDestination(repository: URL, branch: String) throws -> URL {
-        let branchName = try WorktreeBranchName.validated(branch).get()
-        return try #require(
-            WorktreeDestinationNaming.siblingPath(
-                repositoryPath: repository,
-                branchName: branchName
-            ))
-    }
-
     @discardableResult
     private func git(at repository: URL, _ arguments: String...) async throws -> String {
         try await FilesystemTestGitRepo.runGit(at: repository, args: arguments)
             .trimmingCharacters(in: .whitespacesAndNewlines)
-    }
-}
-
-private struct LargeFileFixture {
-    let repository: URL
-    let payload: Data
-    let pointer: String
-}
-
-private final class WorktreeCreationCommandLineProbe: @unchecked Sendable {
-    private let lock = NSLock()
-    private var outputs: [String] = []
-    private var errors: [String] = []
-
-    func appendOutput(_ output: String) {
-        lock.lock()
-        outputs.append(output)
-        lock.unlock()
-    }
-
-    func appendError(_ error: String) {
-        lock.lock()
-        errors.append(error)
-        lock.unlock()
-    }
-
-    func outputSnapshot() -> [String] {
-        lock.lock()
-        defer { lock.unlock() }
-        return outputs
-    }
-
-    func errorSnapshot() -> [String] {
-        lock.lock()
-        defer { lock.unlock() }
-        return errors
     }
 }
