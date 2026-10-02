@@ -7,31 +7,8 @@ import Testing
 
 @Suite("Worktree creation command line integration")
 struct WorktreeCreationCommandLineIntegrationTests {
-    private struct CreatedDocument: Decodable {
-        let outcome: String
-        let operation: String
-        let branch: String
-        let path: String
-        let repository: String
-        let materialization: WorktreeLargeFileCLIContract.MaterializationDocument?
-        let largeFiles: LargeFilesDocument?
-    }
-
-    private struct LargeFilesDocument: Decodable {
-        let materialized: Int
-        let missing: [GitLargeFileFillMiss]
-        let missingCount: Int
-        let options: [String]?
-        let scan: WorktreeLargeFileCLIContract.ScanDocument
-    }
-
-    private struct RefusedDocument: Decodable {
-        let outcome: String
-        let reason: String
-        let path: String?
-        let detail: String?
-        let alternative: String?
-    }
+    private typealias CreatedDocument = WorktreeCreationCommandLineDocuments.CreatedDocument
+    private typealias RefusedDocument = WorktreeCreationCommandLineDocuments.RefusedDocument
 
     @Test("new from branch creates its new branch at the named local branch tip")
     func createsNewBranchFromNamedLocalBranchTip() async throws {
@@ -111,10 +88,7 @@ struct WorktreeCreationCommandLineIntegrationTests {
         #expect(createExitCode == 0)
         #expect(createProbe.errorSnapshot().isEmpty)
         let creationJSON = try #require(createProbe.outputSnapshot().first)
-        let created = try JSONDecoder().decode(
-            CreatedDocument.self,
-            from: Data(creationJSON.utf8)
-        )
+        let created = try JSONDecoder().decode(CreatedDocument.self, from: Data(creationJSON.utf8))
         #expect(created.largeFiles?.materialized == 1)
         #expect(created.largeFiles?.missing.isEmpty == true)
         #expect(created.largeFiles?.missingCount == 0)
@@ -193,10 +167,7 @@ struct WorktreeCreationCommandLineIntegrationTests {
         )
         #expect(jsonExitCode == 0)
         let creationJSON = try #require(jsonProbe.outputSnapshot().first)
-        let created = try JSONDecoder().decode(
-            CreatedDocument.self,
-            from: Data(creationJSON.utf8)
-        )
+        let created = try JSONDecoder().decode(CreatedDocument.self, from: Data(creationJSON.utf8))
         #expect(created.largeFiles?.materialized == 0)
         #expect(created.largeFiles?.missing == [GitLargeFileFillMiss(path: "asset.bin", reason: .objectAbsent)])
         #expect(created.largeFiles?.missingCount == 1)
@@ -263,9 +234,7 @@ struct WorktreeCreationCommandLineIntegrationTests {
         #expect(exitCode == 0)
         #expect(probe.errorSnapshot().isEmpty)
         let created = try JSONDecoder().decode(
-            CreatedDocument.self,
-            from: Data(try #require(probe.outputSnapshot().first).utf8)
-        )
+            CreatedDocument.self, from: Data(try #require(probe.outputSnapshot().first).utf8))
         #expect(created.largeFiles?.materialized == 1)
         #expect(created.largeFiles?.missing.isEmpty == true)
         #expect(created.largeFiles?.missingCount == 0)
@@ -586,13 +555,43 @@ struct WorktreeCreationCommandLineIntegrationTests {
         #expect(document.reason == "unsupportedWorkingState")
         #expect(document.path == ".gitattributes")
         #expect(document.detail == "attributesChanged")
+        let expectedOptions = [
+            WorktreeStopOption(
+                action: .command("commit the changed .gitattributes first"),
+                effect: "Commit the changed attributes, then retry --changes-only."
+            ),
+            WorktreeStopOption(
+                action: .command("stash the changed .gitattributes first"),
+                effect: "Stash the changed attributes, then retry --changes-only."
+            ),
+            WorktreeStopOption(
+                action: .command("agentstudio worktree fork <branch> --from <source>"),
+                effect: "Use the APFS copy-on-write fork without --changes-only."
+            ),
+        ]
+        #expect(document.options == expectedOptions)
+        #expect(!FileManager.default.fileExists(atPath: destination.path))
+        #expect(try await git(at: repository, "branch", "--list", branch).isEmpty)
+
+        let humanProbe = WorktreeCreationCommandLineProbe()
+        let humanExitCode = await WorktreeCommandLine.run(
+            arguments: ["fork", branch, "--from", repository.path, "--changes-only"],
+            currentDirectory: repository,
+            output: { humanProbe.appendOutput($0) },
+            errorOutput: { humanProbe.appendError($0) }
+        )
+        #expect(humanExitCode == 1)
+        #expect(humanProbe.errorSnapshot().isEmpty)
+        let humanOutput = try #require(humanProbe.outputSnapshot().first)
+        #expect(humanOutput.contains("commit the changed .gitattributes first"))
+        #expect(humanOutput.contains("stash the changed .gitattributes first"))
+        #expect(humanOutput.contains("agentstudio worktree fork <branch> --from <source>"))
         #expect(!FileManager.default.fileExists(atPath: destination.path))
         #expect(try await git(at: repository, "branch", "--list", branch).isEmpty)
     }
 
     @discardableResult
     private func git(at repository: URL, _ arguments: String...) async throws -> String {
-        try await FilesystemTestGitRepo.runGit(at: repository, args: arguments)
-            .trimmingCharacters(in: .whitespacesAndNewlines)
+        try await worktreeCreationGit(at: repository, arguments: arguments)
     }
 }

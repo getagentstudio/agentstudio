@@ -1,3 +1,4 @@
+import AgentStudioTestSupport
 import AgentStudioWorktreeOperations
 import Foundation
 import Testing
@@ -39,4 +40,10 @@ func siblingDestination(repository: URL, branch: String) throws -> URL {
             repositoryPath: repository,
             branchName: branchName
         ))
+}
+
+@discardableResult
+func worktreeCreationGit(at repository: URL, arguments: [String]) async throws -> String {
+    try await FilesystemTestGitRepo.runGit(at: repository, args: arguments)
+        .trimmingCharacters(in: .whitespacesAndNewlines)
 }

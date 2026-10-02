@@ -7,7 +7,10 @@ extension WorktreeCommandLineFormatter {
         let suffix = [details.path, details.detail, details.alternative?.commandLineFlag]
             .compactMap { $0 }
             .joined(separator: " ")
-        return suffix.isEmpty ? "refused: \(details.reason)" : "refused: \(details.reason) \(suffix)"
+        let refusalLine = suffix.isEmpty ? "refused: \(details.reason)" : "refused: \(details.reason) \(suffix)"
+        guard !details.options.isEmpty else { return refusalLine }
+        let options = details.options.map(humanOption).joined(separator: "; ")
+        return "\(refusalLine); options: [\(options)]"
     }
 
     package static func refusedJSONText(_ refusal: WorktreeOperationRefusal) throws -> String {
@@ -17,7 +20,8 @@ extension WorktreeCommandLineFormatter {
                 reason: details.reason,
                 path: details.path,
                 detail: details.detail,
-                alternative: details.alternative?.rawValue
+                alternative: details.alternative?.rawValue,
+                options: details.options.isEmpty ? nil : details.options
             )
         )
     }
@@ -57,8 +61,38 @@ extension WorktreeCommandLineFormatter {
             WorktreeRefusalDetails(
                 reason: "unsupportedWorkingState",
                 path: refusal.relativePath,
-                detail: refusal.reason.rawValue
+                detail: refusal.reason.rawValue,
+                options: unsupportedWorkingStateOptions(for: refusal)
             )
+        }
+    }
+
+    private static func unsupportedWorkingStateOptions(
+        for refusal: GitWorktreeWorkingStateRefusal
+    ) -> [WorktreeStopOption] {
+        guard refusal.reason == .attributesChanged else { return [] }
+        return [
+            WorktreeStopOption(
+                action: .command("commit the changed .gitattributes first"),
+                effect: "Commit the changed attributes, then retry --changes-only."
+            ),
+            WorktreeStopOption(
+                action: .command("stash the changed .gitattributes first"),
+                effect: "Stash the changed attributes, then retry --changes-only."
+            ),
+            WorktreeStopOption(
+                action: .command("agentstudio worktree fork <branch> --from <source>"),
+                effect: "Use the APFS copy-on-write fork without --changes-only."
+            ),
+        ]
+    }
+
+    private static func humanOption(_ option: WorktreeStopOption) -> String {
+        switch option.action {
+        case .flag(let flag):
+            "\(flag): \(option.effect)"
+        case .command(let command):
+            "\(command): \(option.effect)"
         }
     }
 
@@ -85,17 +119,20 @@ private struct WorktreeRefusalDetails {
     let path: String?
     let detail: String?
     let alternative: WorktreeRefusalAlternative?
+    let options: [WorktreeStopOption]
 
     init(
         reason: String,
         path: String?,
         detail: String?,
-        alternative: WorktreeRefusalAlternative? = nil
+        alternative: WorktreeRefusalAlternative? = nil,
+        options: [WorktreeStopOption] = []
     ) {
         self.reason = reason
         self.path = path
         self.detail = detail
         self.alternative = alternative
+        self.options = options
     }
 }
 
@@ -116,4 +153,5 @@ private struct WorktreeRefusedCommandLineJSON: Encodable {
     let path: String?
     let detail: String?
     let alternative: String?
+    let options: [WorktreeStopOption]?
 }
