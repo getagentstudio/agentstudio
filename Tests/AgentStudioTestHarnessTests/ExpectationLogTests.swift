@@ -13,7 +13,8 @@ struct ExpectationLogTests {
             let log = ExpectationLog(path: missingPath)
             let firstID = log.expecting(expectedCase: "first", scope: "scope", test: "Suite", callSite: "File:1")
             log.settled(firstID, outcome: .ended)
-            HeldStepEventLog(path: missingPath).recordWaiting(instanceID: 1, stepName: "step", test: "Suite")
+            HeldStepEventLog(path: missingPath).recordWaiting(
+                instanceID: 1, waiterID: 1, stepName: "step", test: "Suite")
         }
 
         let lines = stderrText.split(separator: "\n")
@@ -38,7 +39,9 @@ struct ExpectationLogTests {
         log.settled(firstID, outcome: .matched)
         log.settled(secondID, outcome: .lost)
 
-        let lines = try String(contentsOf: logURL, encoding: .utf8).split(separator: "\n").map(String.init)
+        let lines = try String(contentsOf: logURL, encoding: .utf8).split(separator: "\n").map {
+            $0.split(separator: "\t", omittingEmptySubsequences: false).dropLast().joined(separator: "\t")
+        }
         #expect(lines.count == 4)
         #expect(firstID != secondID)
         #expect(firstID.hasPrefix("\(getpid())-"))
@@ -69,7 +72,9 @@ struct ExpectationLogTests {
         }
         try await recorder.finish()
 
-        let lines = try String(contentsOf: logURL, encoding: .utf8).split(separator: "\n").map(String.init)
+        let lines = try String(contentsOf: logURL, encoding: .utf8).split(separator: "\n").map {
+            $0.split(separator: "\t", omittingEmptySubsequences: false).dropLast().joined(separator: "\t")
+        }
         #expect(lines.count == 2)
         #expect(lines[0].hasPrefix("expecting\t"))
         #expect(lines[0].contains("\texpected\tscope\t"))

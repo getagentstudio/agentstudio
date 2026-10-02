@@ -20,7 +20,7 @@ it("keeps both install commands on one row and copies without a horizontal scrol
       expect(box.commandRowHeights, `${width}px`).toHaveLength(2);
       for (const rowHeight of box.commandRowHeights)
         expect(rowHeight, `${width}px`).toBeLessThanOrEqual(box.lineHeight + 1);
-      expect(box.copied).toContain("brew tap ShravanSunder/agentstudio");
+      expect(box.copied).toContain("brew tap getagentstudio/agentstudio");
       if (width < 620) {
         expect(box.compact, `${width}px`).toBe(true);
         expect(box.copyTop, `${width}px`).toBeGreaterThanOrEqual(box.codeBottom);

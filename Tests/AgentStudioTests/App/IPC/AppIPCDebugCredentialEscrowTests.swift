@@ -75,21 +75,25 @@ struct AppIPCDebugCredentialEscrowTests {
     }
 
     private func loginSucceeds(socketPath: String, token: String) async throws -> Bool {
-        let connection = try UnixSocketClient.connect(endpoint: UnixSocketEndpoint(path: socketPath))
+        let connection = try await withoutBlockingCooperativePool {
+            try UnixSocketClient.connect(endpoint: UnixSocketEndpoint(path: socketPath))
+        }
         defer { connection.close() }
         var reader = SessionsVerticalFrameReader()
-        try connection.send(
-            try NDJSONFrameEncoder.encode(
-                JSONRPCCodec.encodeRequest(
-                    try JSONRPCClientRequest(
-                        id: .number(1),
-                        method: "auth.login",
-                        params: .object(["token": .string(token)])
-                    )
-                ),
-                maxFrameBytes: 65_536
+        try await withoutBlockingCooperativePool {
+            try connection.send(
+                try NDJSONFrameEncoder.encode(
+                    JSONRPCCodec.encodeRequest(
+                        try JSONRPCClientRequest(
+                            id: .number(1),
+                            method: "auth.login",
+                            params: .object(["token": .string(token)])
+                        )
+                    ),
+                    maxFrameBytes: 65_536
+                )
             )
-        )
+        }
         let response = try await reader.receiveResponse(connection: connection)
         guard response.error == nil else {
             throw AppIPCDebugCredentialEscrowTestError.loginRejected

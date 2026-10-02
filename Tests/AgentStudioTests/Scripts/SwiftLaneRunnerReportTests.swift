@@ -106,7 +106,8 @@ struct SwiftLaneRunnerReportTests {
         let evidenceDirectory = NSTemporaryDirectory() + "agentstudio-timing-sidecar-\(UUIDv7.generate())"
         defer { try? FileManager.default.removeItem(atPath: evidenceDirectory) }
         let output = try await runBash(
-            "LOG_PREFIX=timing; export LANE_EVENT_STREAM_DIR='\(evidenceDirectory)' "
+            "LOG_PREFIX=timing; BUILD_PATH='\(evidenceDirectory)/build'; "
+                + "export BUILD_PATH LANE_EVENT_STREAM_DIR='\(evidenceDirectory)' "
                 + "LANE_TIMING_FILTER=FixtureSuite LANE_TIMING_BATCH=2 LANE_TIMING_SLOT=3 "
                 + "LANE_TIMING_CONCURRENCY=4; "
                 + "source scripts/swift-test-helpers.sh; set +e; "
@@ -144,6 +145,7 @@ struct SwiftLaneRunnerReportTests {
                 // The nested-sandbox flag has its own suite; pin it empty here so
                 // this claim holds inside an agent sandbox too.
                 + "swift_package_sandbox_arguments() { :; }; "
+                + "CI_SWIFT_SANDBOX_POLICY_PATH=/dev/null; "
                 + "unset SWIFT_BUILD_STATS_DIR; prebuild_swift_tests; echo ENABLED; "
                 + "export SWIFT_BUILD_STATS_DIR='\(statisticsDirectory)'; prebuild_swift_tests"
         )
@@ -419,6 +421,81 @@ struct SwiftLaneRunnerReportTests {
         #expect(laneOutput.contains("RETURNED=139"))
     }
 
+    @Test("invalid child bytes do not break a passing lane or its failure diagnostics")
+    func invalidChildBytesDoNotBreakLaneOutput() async throws {
+        let fixtureDirectory = NSTemporaryDirectory() + "agentstudio-invalid-lane-output-\(UUIDv7.generate())"
+        let command = #"""
+            set -euo pipefail
+            source scripts/swift-test-helpers.sh
+            LOG_PREFIX=utf8-probe
+            BUILD_PATH=.build-agent-1
+            fixture_directory='\#(fixtureDirectory)'
+            mkdir -p "$fixture_directory/events"
+            export LANE_EVENT_STREAM_DIR="$fixture_directory/events"
+            swift_test_begin_active_command_groups
+            trap 'swift_test_cleanup_active_command_groups_directory; rm -f "$fixture_directory"/events/*; rmdir "$fixture_directory/events" "$fixture_directory"' EXIT
+
+            passed_status=0
+            run_swift_with_timeout 'passing invalid-byte probe' 20 /usr/bin/perl -e \
+              'binmode STDOUT; print "PASS_CHILD_BEFORE\n"; print "\xff"; print "PASS_CHILD_AFTER\n"' -- \
+              || passed_status=$?
+            [ "$passed_status" -eq 0 ] || exit 41
+            printf 'PASS_CHILD_STATUS=%s\n' "$passed_status"
+
+            failed_status=0
+            run_swift_with_timeout 'failed invalid-byte probe' 20 /usr/bin/perl -e \
+              'binmode STDOUT; print "TESTS_PASSED\n"; print "\xff"; exit 7' -- \
+              || failed_status=$?
+            [ "$failed_status" -eq 7 ] || exit 42
+            printf 'FAIL_CHILD_STATUS=%s\n' "$failed_status"
+            """#
+
+        let result = try await runLaneScriptBash(command)
+        #expect(result.exitCode == 0, Comment(rawValue: result.output))
+        #expect(result.output.contains("PASS_CHILD_BEFORE"))
+        #expect(result.output.contains("PASS_CHILD_AFTER"))
+        #expect(result.output.contains("PASS_CHILD_STATUS=0"))
+        #expect(result.output.contains("TESTS_PASSED"))
+        #expect(result.output.contains("FAIL_CHILD_STATUS=7"))
+    }
+
+    @Test("lane stdout sources use one persistent line relay per stream")
+    func laneStdoutSourcesUseOnePersistentLineRelayPerStream() throws {
+        let helperScript = try String(contentsOfFile: "scripts/swift-test-helpers.sh", encoding: .utf8)
+        let laneTaskScript = try String(contentsOfFile: "scripts/run-swift-test-task.sh", encoding: .utf8)
+        let outputRelayScript = try String(contentsOfFile: "scripts/swift-test-output-relay.pl", encoding: .utf8)
+        let outputRelayBegin = try shellFunction(named: "swift_test_output_relay_begin_command", in: helperScript)
+        let outputRelayFinish = try shellFunction(named: "swift_test_output_relay_finish_command", in: helperScript)
+        let commandWrapper = try shellFunction(named: "run_swift_with_timeout", in: helperScript)
+        let commandBody = try shellFunction(named: "swift_test_run_with_timeout_body", in: helperScript)
+        let pipelineChild = try shellFunction(named: "swift_test_run_pipeline_child", in: helperScript)
+        let isolatedDispatcher = try shellFunction(named: "dispatch_isolated_suites", in: helperScript)
+
+        let beginRange = commandWrapper.range(of: "swift_test_output_relay_begin_command")
+        let bodyRange = commandWrapper.range(of: "swift_test_run_with_timeout_body")
+        let finishRange = commandWrapper.range(of: "swift_test_output_relay_finish_command")
+        #expect(beginRange != nil)
+        #expect(bodyRange != nil)
+        #expect(finishRange != nil)
+        if let beginRange, let bodyRange, let finishRange {
+            #expect(beginRange.lowerBound < bodyRange.lowerBound)
+            #expect(bodyRange.lowerBound < finishRange.lowerBound)
+        }
+
+        #expect(commandBody.contains("still running ("))
+        #expect(pipelineChild.contains("| $xcb_pipe 94>&- 99>&- |"))
+        #expect(pipelineChild.contains("$SWIFT_TEST_OUTPUT_RELAY_SCRIPT_PATH"))
+        #expect(pipelineChild.contains("stream 94>&- 1>&99"))
+        #expect(isolatedDispatcher.contains("swift_test_output_message"))
+        #expect(laneTaskScript.contains("swift_test_output_relay_begin_dispatcher"))
+        #expect(laneTaskScript.contains("swift_test_output_relay_finish_dispatcher"))
+        #expect(outputRelayBegin.contains("exec 1>\"$relay_fifo\""))
+        #expect(outputRelayFinish.contains("exec 1>&99"))
+        #expect(outputRelayScript.contains("flock($lock_file, LOCK_EX)"))
+        #expect(outputRelayScript.contains("substr($line, $offset, 512)"))
+        #expect(outputRelayScript.contains("syswrite(STDOUT, $chunk)"))
+    }
+
     @Test("signal names are resolved only for signalled exits")
     func signalNamesAreResolvedOnlyForSignalledExits() async throws {
         let names = try await runBash(
@@ -489,131 +566,6 @@ struct SwiftLaneRunnerReportTests {
         #expect((reportedCounts["SYSCTL_DENIED_CPU"] ?? 0) >= 1, Comment(rawValue: laneOutput))
         #expect((1...4).contains(reportedCounts["SYSCTL_DENIED_CONCURRENCY"] ?? 0), Comment(rawValue: laneOutput))
         #expect(reportedCounts["ALL_DENIED_CPU"] == 1, Comment(rawValue: laneOutput))
-    }
-
-    @Test("a timed out child that ignores TERM is still reaped, and the report is still written")
-    func timedOutChildThatIgnoresTermIsStillReaped() async throws {
-        // The shape that survived the old parent-link walk: a child that traps
-        // TERM, so only a group-wide KILL removes it. One of these left alive
-        // holds a build slot, and the NEXT run dies with "all 2 slots are busy",
-        // which reads like an unrelated slot error rather than this timeout.
-        let workDirectory = NSTemporaryDirectory() + "agentstudio-s2e-reap-\(UUIDv7.generate())"
-        defer { try? FileManager.default.removeItem(atPath: workDirectory) }
-        let laneOutput = try await runBashAllowingFailure(
-            "mkdir -p '\(workDirectory)'; "
-                + "LOG_PREFIX=lane; TIMEOUT_SECONDS=2; BUILD_PATH=.build-agent-1; "
-                + "export LANE_EVENT_STREAM_DIR='\(workDirectory)/ci-runs'; "
-                + "source scripts/swift-test-helpers.sh; set +e; "
-                + "run_swift_with_timeout 'reap probe' 2 /bin/bash -c "
-                + #"'trap \"\" TERM; echo $$ > \"$0\"/child.pid; while true; do sleep 1; done' "#
-                + "'\(workDirectory)' "
-                + "|| returned=$?; echo \"RETURNED=${returned:-0}\"; "
-                + "child_pid=$(cat '\(workDirectory)/child.pid' 2>/dev/null || echo 0); "
-                + "if [ \"$child_pid\" -gt 0 ] && kill -0 \"$child_pid\" 2>/dev/null; then "
-                + "echo CHILD_ALIVE=yes; kill -9 \"$child_pid\" 2>/dev/null; "
-                + "else echo CHILD_ALIVE=no; fi"
-        )
-
-        // The reap is the point: nothing of the lane's child outlives the timeout.
-        #expect(laneOutput.contains("CHILD_ALIVE=no"))
-        // And it took the KILL branch, because this child ignores TERM. Asserting
-        // the exact branch keeps the test honest: a child that happened to exit on
-        // its own would report `terminated` and prove nothing about the escalation.
-        #expect(laneOutput.contains("timeout_reap=killed"))
-        // And the report still happens — reaping must not cost the diagnosis.
-        #expect(laneOutput.contains("ERROR: no output progress from 'reap probe'"))
-        #expect(laneOutput.contains("RETURNED=124"))
-    }
-
-    @Test("a grandchild that outlives its parent is still reaped")
-    func grandchildThatOutlivesItsParentIsStillReaped() async throws {
-        // The real defect. The parent honours TERM and dies; its child ignores
-        // TERM and re-parents, so it is no longer reachable by walking live parent
-        // links from the lane's own pid. That survivor is the `swiftpm-testing-helper`
-        // that kept holding a build slot and made the next run fail with
-        // "all 2 slots are busy". Only this run's unique event-stream path can
-        // still find it — which is why the KILL path sweeps that token.
-        let workDirectory = NSTemporaryDirectory() + "agentstudio-s2e-orphan-\(UUIDv7.generate())"
-        defer { try? FileManager.default.removeItem(atPath: workDirectory) }
-        let laneOutput = try await runBashAllowingFailure(
-            "mkdir -p '\(workDirectory)'; "
-                + "LOG_PREFIX=lane; TIMEOUT_SECONDS=2; BUILD_PATH=.build-agent-1; "
-                + "export LANE_EVENT_STREAM_DIR='\(workDirectory)/ci-runs'; "
-                + "source scripts/swift-test-helpers.sh; set +e; "
-                + "run_swift_with_timeout 'orphan probe' 2 /bin/bash -c "
-                // The subshell inherits this invocation's argv, so it carries the
-                // event-stream path the runner appended — the token that finds it.
-                // The PARENT records the pid with `$!` and only then exits, so the
-                // pid is on disk before anything can race it. Writing it from
-                // inside the subshell lost the race against `exit 0`, and reading
-                // `$$` there would have recorded the parent instead — either way
-                // the liveness check below would have passed vacuously.
-                // `trap : TERM` installs a no-op handler without needing nested
-                // quotes.
-                + "'( trap : TERM; while true; do sleep 1; done ) & "
-                + "echo $! > \(workDirectory)/orphan.pid; exit 0' "
-                + "|| returned=$?; echo \"RETURNED=${returned:-0}\"; "
-                + "orphan_pid=$(cat '\(workDirectory)/orphan.pid' 2>/dev/null || echo 0); "
-                + "echo \"ORPHAN_PID=${orphan_pid:-0}\"; "
-                + "if [ \"${orphan_pid:-0}\" -gt 0 ] && kill -0 \"$orphan_pid\" 2>/dev/null; then "
-                + "echo ORPHAN_ALIVE=yes; kill -9 \"$orphan_pid\" 2>/dev/null; "
-                + "else echo ORPHAN_ALIVE=no; fi"
-        )
-
-        // The probe must actually have produced an orphan, or "no survivor" below
-        // would be true for the wrong reason.
-        #expect(!laneOutput.contains("ORPHAN_PID=0"))
-        // Nothing of this run outlives the lane, however it re-parented.
-        #expect(laneOutput.contains("ORPHAN_ALIVE=no"))
-        #expect(laneOutput.contains("timeout_reap=killed"))
-        #expect(laneOutput.contains("RETURNED=124"))
-    }
-
-    @Test("a wedged run keeps its event-stream ledger, and a clean run does not")
-    func wedgedRunKeepsItsEventStreamLedger() async throws {
-        // The ledger is the only authoritative record of which cases started and
-        // ended. Without it the same wedged runs produced two contradictory
-        // unfinished-suite counts from console archaeology.
-        let workDirectory = NSTemporaryDirectory() + "agentstudio-s2e-ledger-\(UUIDv7.generate())"
-        defer { try? FileManager.default.removeItem(atPath: workDirectory) }
-        let ledgerDirectory = workDirectory + "/ci-runs"
-        // The child writes real records to the path the runner handed it, then
-        // stalls without output, which is exactly how a wedged suite behaves.
-        let wedgedOutput = try await runBashAllowingFailure(
-            "mkdir -p '\(workDirectory)'; "
-                + "LOG_PREFIX=lane; TIMEOUT_SECONDS=2; BUILD_PATH=.build-agent-1; "
-                + "export LANE_EVENT_STREAM_DIR='\(ledgerDirectory)'; "
-                + "source scripts/swift-test-helpers.sh; set +e; "
-                + "run_swift_with_timeout 'ledger probe' 2 /bin/bash -c "
-                + #"'while [ \"$#\" -gt 0 ]; do if [ \"$1\" = \"--event-stream-output-path\" ]; "#
-                + #"then printf \"%s\\n\" LEDGER_RECORD_ONE LEDGER_RECORD_TWO > \"$2\"; fi; shift; done; "#
-                + #"while true; do sleep 1; done' probe "#
-                + "|| returned=$?; echo \"RETURNED=${returned:-0}\"; "
-                + "for ledger in '\(ledgerDirectory)'/*.events.jsonl; do "
-                + "echo \"LEDGER_AT=$ledger\"; cat \"$ledger\"; done"
-        )
-
-        #expect(wedgedOutput.contains("RETURNED=124"))
-        // The path is printed under the lane prefix so a reader can find it.
-        #expect(wedgedOutput.contains("lane-report event_stream=\(ledgerDirectory)/lane-ledger-probe-"))
-        // ...and the records survived the reap.
-        #expect(wedgedOutput.contains("LEDGER_RECORD_ONE"))
-        #expect(wedgedOutput.contains("LEDGER_RECORD_TWO"))
-
-        let cleanDirectory = workDirectory + "/clean-runs"
-        let cleanOutput = try await runBash(
-            "LOG_PREFIX=lane; TIMEOUT_SECONDS=60; BUILD_PATH=.build-agent-1; "
-                + "export LANE_EVENT_STREAM_DIR='\(cleanDirectory)' LANE_EVENT_STREAM_RETAIN_ALWAYS=0; "
-                + "source scripts/swift-test-helpers.sh; "
-                + "run_swift_with_timeout 'clean probe' 60 /bin/bash -c 'echo CLEAN_RUN_OK'; "
-                + "echo \"LEDGERS=$(find '\(cleanDirectory)' -name '*.events.jsonl' | wc -l | tr -d '[:space:]')\"; "
-                + "echo \"TIMINGS=$(find '\(cleanDirectory)' -name '*.timing.json' | wc -l | tr -d '[:space:]')\""
-        )
-
-        // A run that ended cleanly has nothing to explain, so it keeps nothing.
-        #expect(cleanOutput.contains("CLEAN_RUN_OK"))
-        #expect(cleanOutput.contains("LEDGERS=0"))
-        #expect(cleanOutput.contains("TIMINGS=1"))
     }
 
     @Test("an isolated suite filter matches its type, never a file named after it")
@@ -714,7 +666,7 @@ struct SwiftLaneRunnerReportTests {
     @Test("the inactivity timeout names the test cases that were still running")
     func inactivityTimeoutNamesTheTestCasesThatWereStillRunning() async throws {
         let helperScript = try String(contentsOfFile: "scripts/swift-test-helpers.sh", encoding: .utf8)
-        let timeoutRunner = try shellFunction(named: "run_swift_with_timeout", in: helperScript)
+        let timeoutRunner = try shellFunction(named: "swift_test_run_with_timeout_body", in: helperScript)
         // Case 1 of alpha ends; case 2 and beta do not, and the truncated final
         // line a killed writer leaves behind must not derail the parse.
         let streamRecords = [
@@ -859,7 +811,7 @@ struct SwiftLaneRunnerReportTests {
     @Test("event-stream flags reach every test invocation but not the prebuild")
     func eventStreamFlagsReachEveryTestInvocationButNotThePrebuild() async throws {
         let helperScript = try String(contentsOfFile: "scripts/swift-test-helpers.sh", encoding: .utf8)
-        let timeoutRunner = try shellFunction(named: "run_swift_with_timeout", in: helperScript)
+        let timeoutRunner = try shellFunction(named: "swift_test_run_with_timeout_body", in: helperScript)
         let acceptsEventStream = try shellFunction(
             named: "swift_test_command_accepts_event_stream",
             in: helperScript

@@ -1,6 +1,12 @@
 #!/usr/bin/env bash
-# Source, then acquire one named worktree-local slot. Callers own the EXIT trap
+# Source, then acquire the worktree's one build slot. Callers own the EXIT trap
 # and invoke swift_build_slot_release from that handler.
+#
+# Each worktree has ONE build directory, .build-agent-1, shared by build tasks
+# and test tasks (owner decision 2026-10-01: a second directory per worktree
+# costs several GB of disk). The `build` or `test` name labels the claimant in
+# logs and holder notes; both claim the same lock, so a test run waits for a
+# build in the same worktree and vice versa.
 #
 # A slot is a kernel flock on <build dir>/.slot.lock, held by a small perl
 # holder process started for the acquiring shell. The kernel drops the lock
@@ -18,8 +24,7 @@
 
 swift_build_slot_resolve_directory() {
   case "$1" in
-    build) printf '%s\n' '.build-agent-1' ;;
-    test) printf '%s\n' '.build-agent-2' ;;
+    build | test) printf '%s\n' '.build-agent-1' ;;
     *)
       echo "swift-build-slot: expected slot 'build' or 'test', got '$1'" >&2
       return 2

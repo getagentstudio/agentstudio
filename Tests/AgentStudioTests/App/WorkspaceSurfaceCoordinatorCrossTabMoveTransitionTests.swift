@@ -1,3 +1,4 @@
+import AgentStudioInfrastructure
 import AppKit
 import Foundation
 import GhosttyKit
@@ -10,21 +11,20 @@ import Testing
 @testable import AgentStudioTestSupport
 
 @MainActor
-@Suite("WorkspaceSurfaceCoordinator cross-tab move view transitions")
+@Suite("WorkspaceSurfaceCoordinator cross-tab move view transitions", .serialized)
 struct WorkspaceCrossTabMoveTransitionTests {
     init() {
         installTestCoreAtomsIfNeeded()
     }
 
-    @Test("cross-tab move detaches moved and source-left panes but reattaches only destination visibility transitions")
+    @Test(
+        "cross-tab move preserves remaining source attachments and reattaches only destination visibility transitions")
     func crossTabMoveTransitionsExcludeDestinationPanesThatWereAlreadyVisible() {
-        let movedPane = UUID()
-        let sourceLeftPane = UUID()
-        let existingDestinationPane = UUID()
-        let otherExistingDestinationPane = UUID()
+        let movedPane = UUIDv7.generate()
+        let existingDestinationPane = UUIDv7.generate()
+        let otherExistingDestinationPane = UUIDv7.generate()
 
         let transitions = WorkspaceSurfaceCoordinator.computeCrossTabMoveViewTransitions(
-            sourceVisibleBefore: [movedPane, sourceLeftPane],
             destinationVisibleBefore: [existingDestinationPane, otherExistingDestinationPane],
             destinationVisibleAfter: [
                 movedPane,
@@ -34,18 +34,17 @@ struct WorkspaceCrossTabMoveTransitionTests {
             movedPaneIds: [movedPane]
         )
 
-        #expect(transitions.paneIdsToDetach == [movedPane, sourceLeftPane])
+        #expect(transitions.paneIdsToDetach == [movedPane])
         #expect(transitions.paneIdsToReattach == [movedPane])
     }
 
     @Test("cross-tab move reattaches moved drawer children visible in the destination active view")
     func crossTabMoveTransitionsReattachVisibleMovedDrawerChildren() {
-        let movedParentPane = UUID()
-        let visibleMovedDrawerChildPane = UUID()
-        let existingDestinationPane = UUID()
+        let movedParentPane = UUIDv7.generate()
+        let visibleMovedDrawerChildPane = UUIDv7.generate()
+        let existingDestinationPane = UUIDv7.generate()
 
         let transitions = WorkspaceSurfaceCoordinator.computeCrossTabMoveViewTransitions(
-            sourceVisibleBefore: [movedParentPane],
             destinationVisibleBefore: [existingDestinationPane],
             destinationVisibleAfter: [movedParentPane, existingDestinationPane, visibleMovedDrawerChildPane],
             movedPaneIds: [movedParentPane, visibleMovedDrawerChildPane]
@@ -57,19 +56,17 @@ struct WorkspaceCrossTabMoveTransitionTests {
 
     @Test("cross-tab move detaches destination panes that transition from visible to hidden")
     func crossTabMoveTransitionsDetachDestinationPanesThatBecomeHidden() {
-        let movedPane = UUID()
-        let sourceLeftPane = UUID()
-        let remainingDestinationPane = UUID()
-        let hiddenDestinationPane = UUID()
+        let movedPane = UUIDv7.generate()
+        let remainingDestinationPane = UUIDv7.generate()
+        let hiddenDestinationPane = UUIDv7.generate()
 
         let transitions = WorkspaceSurfaceCoordinator.computeCrossTabMoveViewTransitions(
-            sourceVisibleBefore: [movedPane, sourceLeftPane],
             destinationVisibleBefore: [remainingDestinationPane, hiddenDestinationPane],
             destinationVisibleAfter: [movedPane, remainingDestinationPane],
             movedPaneIds: [movedPane]
         )
 
-        #expect(transitions.paneIdsToDetach == [movedPane, sourceLeftPane, hiddenDestinationPane])
+        #expect(transitions.paneIdsToDetach == [movedPane, hiddenDestinationPane])
         #expect(transitions.paneIdsToReattach == [movedPane])
     }
 
@@ -79,7 +76,7 @@ struct WorkspaceCrossTabMoveTransitionTests {
             atoms.managementLayer.deactivate()
 
             let tempDir = FileManager.default.temporaryDirectory
-                .appending(path: "agentstudio-cross-tab-move-\(UUID().uuidString)")
+                .appending(path: "agentstudio-cross-tab-move-\(UUIDv7.generate().uuidString)")
             defer { try? FileManager.default.removeItem(at: tempDir) }
 
             let store = WorkspaceStore()
@@ -127,10 +124,10 @@ struct WorkspaceCrossTabMoveTransitionTests {
             )
 
             let surfaceIdsByPaneId = [
-                movedPane.id: UUID(),
-                sourceLeftPane.id: UUID(),
-                existingDestinationPane.id: UUID(),
-                otherExistingDestinationPane.id: UUID(),
+                movedPane.id: UUIDv7.generate(),
+                sourceLeftPane.id: UUIDv7.generate(),
+                existingDestinationPane.id: UUIDv7.generate(),
+                otherExistingDestinationPane.id: UUIDv7.generate(),
             ]
             surfaceManager.paneIdsBySurfaceId = Dictionary(
                 uniqueKeysWithValues: surfaceIdsByPaneId.map { paneId, surfaceId in
@@ -157,7 +154,7 @@ struct WorkspaceCrossTabMoveTransitionTests {
             )
 
             #expect(surfaceManager.attachedPaneIds == [movedPane.id])
-            #expect(Set(surfaceManager.detachedPaneIds) == [movedPane.id, sourceLeftPane.id])
+            #expect(Set(surfaceManager.detachedPaneIds) == [movedPane.id])
             #expect(!surfaceManager.attachedPaneIds.contains(existingDestinationPane.id))
             #expect(!surfaceManager.attachedPaneIds.contains(otherExistingDestinationPane.id))
         }
@@ -169,7 +166,7 @@ struct WorkspaceCrossTabMoveTransitionTests {
             atoms.managementLayer.deactivate()
 
             let tempDir = FileManager.default.temporaryDirectory
-                .appending(path: "agentstudio-cross-tab-drawer-move-\(UUID().uuidString)")
+                .appending(path: "agentstudio-cross-tab-drawer-move-\(UUIDv7.generate().uuidString)")
             defer { try? FileManager.default.removeItem(at: tempDir) }
 
             let store = WorkspaceStore()
@@ -208,10 +205,10 @@ struct WorkspaceCrossTabMoveTransitionTests {
             let drawerPane = try #require(store.addDrawerPane(to: movedPane.id))
 
             let surfaceIdsByPaneId = [
-                movedPane.id: UUID(),
-                sourceLeftPane.id: UUID(),
-                existingDestinationPane.id: UUID(),
-                drawerPane.id: UUID(),
+                movedPane.id: UUIDv7.generate(),
+                sourceLeftPane.id: UUIDv7.generate(),
+                existingDestinationPane.id: UUIDv7.generate(),
+                drawerPane.id: UUIDv7.generate(),
             ]
             surfaceManager.paneIdsBySurfaceId = Dictionary(
                 uniqueKeysWithValues: surfaceIdsByPaneId.map { paneId, surfaceId in
@@ -238,7 +235,7 @@ struct WorkspaceCrossTabMoveTransitionTests {
             )
 
             #expect(Set(surfaceManager.attachedPaneIds) == [movedPane.id, drawerPane.id])
-            #expect(Set(surfaceManager.detachedPaneIds) == [movedPane.id, sourceLeftPane.id, drawerPane.id])
+            #expect(Set(surfaceManager.detachedPaneIds) == [movedPane.id, drawerPane.id])
             #expect(!surfaceManager.attachedPaneIds.contains(existingDestinationPane.id))
         }
     }

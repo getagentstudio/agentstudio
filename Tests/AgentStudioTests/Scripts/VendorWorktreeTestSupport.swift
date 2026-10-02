@@ -1,4 +1,5 @@
 import AgentStudioInfrastructure
+import AgentStudioTestHarness
 import AgentStudioTestSupport
 import Darwin
 import Foundation
@@ -286,7 +287,8 @@ struct VendorWorktreeFixture {
         }
     }
 
-    func makeCommandSpies(logURL: URL) throws -> URL {
+    func makeCommandSpies(logURL: URL) async throws -> URL {
+        let git = try await TestToolResolver.resolved().git
         let directory = temporaryRoot.appending(path: "command spies")
         try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
         try writeExecutable(
@@ -294,7 +296,7 @@ struct VendorWorktreeFixture {
             contents: """
                 #!/bin/bash
                 printf 'git %s\\n' "$*" >> \(Self.shellQuote(logURL.path))
-                exec /usr/bin/git "$@"
+                exec \(Self.shellQuote(git.path)) "$@"
                 """)
         try writeExecutable(
             at: directory.appending(path: "zig"),
@@ -512,7 +514,7 @@ struct VendorWorktreeFixture {
 
     static func runGit(_ arguments: [String], in directory: URL) async throws -> VendorCommandResult {
         try await run(
-            executable: URL(fileURLWithPath: "/usr/bin/git"),
+            executable: try await TestToolResolver.resolved().git,
             arguments: arguments,
             in: directory,
             environment: ["GIT_ALLOW_PROTOCOL": "file"])
@@ -554,8 +556,9 @@ struct VendorWorktreeFixture {
             process.environment = mergedEnvironment
             process.standardOutput = stdoutHandle
             process.standardError = stderrHandle
-            try process.run()
+            try TestToolResolver.launch(process)
             process.waitUntilExit()
+            TestToolResolver.recordFailedExit(process)
             try stdoutHandle.close()
             try stderrHandle.close()
             return VendorCommandResult(

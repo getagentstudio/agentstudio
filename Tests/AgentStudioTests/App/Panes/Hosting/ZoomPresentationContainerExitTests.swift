@@ -10,7 +10,7 @@ import Testing
 @testable import AgentStudioTestSupport
 
 @MainActor
-@Suite
+@Suite(.serialized)
 struct ZoomPresentationContainerExitTests {
     init() {
         installTestAtomRegistryIfNeeded()

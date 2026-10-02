@@ -3,6 +3,110 @@ import Testing
 
 @Suite("CI topology workflow")
 struct CITopologyWorkflowTests {
+    @Test("main pushes publish a cold prebuild while nightly and pull requests run both macOS jobs")
+    func workflowEventsSelectTheirMacOSTopology() throws {
+        let workflow = try String(contentsOfFile: ".github/workflows/ci.yml", encoding: .utf8)
+        let bridgeJob = try topologyJob(named: "bridge-web", in: workflow)
+        let swiftJob = try topologyJob(named: "swift-test-suite", in: workflow)
+        #expect(workflow.contains("  schedule:\n    - cron: \"0 9 * * *\""))
+        #expect(workflow.contains("  workflow_dispatch:"))
+        #expect(workflow.components(separatedBy: "runs-on: macos-26").count == 3)
+        let bridgeHeader = try topologyBlock(startingWith: "  bridge-web:\n", endingBefore: "    steps:", in: bridgeJob)
+        let swiftHeader = try topologyBlock(
+            startingWith: "  swift-test-suite:\n", endingBefore: "    steps:", in: swiftJob)
+        #expect(bridgeHeader.contains("    if: github.event_name != 'push'\n"))
+        #expect(!swiftHeader.contains("\n    if:"))
+        #expect(!swiftHeader.contains("\n    needs:"))
+        #expect(!swiftJob.contains("needs.bridge-web"))
+        for stepName in ["Compute Swift cache compatibility prefix", "Inventory Swift build inputs before prebuild"] {
+            let step = try topologyBlock(
+                startingWith: "      - name: \(stepName)\n", endingBefore: "\n      - ", in: swiftJob)
+            #expect(!step.contains("\n        if:"))
+        }
+        let macOSJobs = [("bridge-web", bridgeHeader), ("swift-test-suite", swiftHeader)]
+        for eventName in ["push", "pull_request", "schedule", "workflow_dispatch"] {
+            let activeJobs: Set<String> =
+                eventName == "push" ? ["swift-test-suite"] : ["bridge-web", "swift-test-suite"]
+            let selectedJobs = Set(
+                macOSJobs.compactMap { jobName, jobHeader -> String? in
+                    if jobHeader.contains("    if: github.event_name != 'push'\n"), eventName == "push" { return nil }
+                    return jobName
+                })
+            #expect(selectedJobs == activeJobs, "\(eventName) macOS topology changed")
+        }
+        for stepName in ["Test fast lane", "Test large lane", "Test WebKit lane", "Verify release-script contract"] {
+            let step = try topologyBlock(
+                startingWith: "      - name: \(stepName)\n", endingBefore: "\n      - ", in: swiftJob)
+            #expect(step.contains("        if: github.event_name != 'push'\n"))
+        }
+        let coldStart = try topologyBlock(
+            startingWith: "      - name: Inventory main Swift inputs before cold build\n",
+            endingBefore: "\n      - ", in: swiftJob)
+        #expect(coldStart.contains("if: github.event_name != 'pull_request'"))
+        #expect(coldStart.contains("test ! -e .build-ci"))
+        let prebuild = try topologyBlock(
+            startingWith: "      - name: Prebuild Swift test bundles\n", endingBefore: "\n      - ", in: swiftJob)
+        #expect(!prebuild.contains("        if:"))
+        #expect(prebuild.contains("mise run --skip-deps test:swift:prebuild"))
+        let benchmarkWorkflow = try String(contentsOfFile: ".github/workflows/benchmarks.yml", encoding: .utf8)
+        let benchmarkTriggers = try topologyBlock(
+            startingWith: "on:\n", endingBefore: "\npermissions:", in: benchmarkWorkflow)
+        #expect(!benchmarkTriggers.contains("  push:"))
+        #expect(benchmarkTriggers.contains("  schedule:"))
+        #expect(benchmarkTriggers.contains("  workflow_dispatch:"))
+    }
+
+    @Test("BridgeWeb consumes the shared verified seed after setup without publishing")
+    func bridgeWebUsesSharedSwiftSeed() throws {
+        let workflow = try String(contentsOfFile: ".github/workflows/ci.yml", encoding: .utf8)
+        let bridgeJob = try topologyJob(named: "bridge-web", in: workflow)
+        let swiftJob = try topologyJob(named: "swift-test-suite", in: workflow)
+        for stepName in [
+            "Compute Swift cache compatibility prefix", "Start Swift cache restore timer",
+            "Restore Swift build seed", "Record Swift cache restore time",
+            "Inventory Swift build inputs before prebuild", "Verify and restamp PR Swift seed",
+        ] {
+            let marker = "      - name: \(stepName)\n"
+            let bridgeStep = try topologyBlock(startingWith: marker, endingBefore: "\n      - ", in: bridgeJob)
+            let swiftStep = try topologyBlock(startingWith: marker, endingBefore: "\n      - ", in: swiftJob)
+            #expect(
+                bridgeStep.trimmingCharacters(in: .whitespacesAndNewlines)
+                    == swiftStep.trimmingCharacters(in: .whitespacesAndNewlines))
+        }
+        for job in [bridgeJob, swiftJob] {
+            #expect(
+                job.contains("SWIFT_BUILD_STATS_DIR: ${{ github.workspace }}/tmp/plan-workflows/ci-runs/compiler-stats")
+            )
+        }
+        #expect(!bridgeJob.contains("actions/cache/save"))
+        #expect(!bridgeJob.contains("actions: write"))
+        #expect(!bridgeJob.contains("needs:"))
+        let restore = try topologyBlock(
+            startingWith: "      - name: Restore Swift build seed\n", endingBefore: "\n      - ", in: bridgeJob)
+        #expect(restore.contains("if: github.event_name == 'pull_request'"))
+        #expect(restore.contains("continue-on-error: true"))
+        let inventory = try #require(bridgeJob.range(of: "name: Inventory Swift build inputs before prebuild"))
+        let verify = try #require(bridgeJob.range(of: "name: Verify and restamp PR Swift seed"))
+        let build = try #require(bridgeJob.range(of: "name: Build BridgeWeb Swift development backend"))
+        for setupName in ["BridgeWeb packaged build", "Copy XCFramework", "Setup dev resources"] {
+            let setup = try #require(bridgeJob.range(of: "name: \(setupName)"))
+            #expect(setup.lowerBound < inventory.lowerBound)
+        }
+        #expect(inventory.lowerBound < verify.lowerBound)
+        #expect(verify.lowerBound < build.lowerBound)
+        #expect(bridgeJob.contains("pnpm --dir BridgeWeb run build:swift-dev-server"))
+        #expect(bridgeJob.contains("pnpm --dir BridgeWeb run test:integration:node:prepared"))
+        #expect(bridgeJob.contains("pnpm --dir BridgeWeb run test:e2e:prepared:ordinary"))
+        #expect(bridgeJob.contains("lane-report bridge_swift_product_build_seconds=$build_seconds"))
+        for anchorName in [
+            "swift-cache-prefix-step", "swift-cache-restore-start-step", "swift-cache-restore-step",
+            "swift-cache-restore-time-step", "swift-cache-inventory-step", "swift-cache-verify-step",
+        ] {
+            #expect(workflow.components(separatedBy: "- &\(anchorName)\n").count == 2)
+            #expect(workflow.components(separatedBy: "- *\(anchorName)\n").count == 2)
+        }
+    }
+
     @Test("Swift cache publishes verified prebuild before tests and prunes even when later tests fail")
     func swiftBuildCacheOwnershipAndOrder() throws {
         let workflow = try String(contentsOfFile: ".github/workflows/ci.yml", encoding: .utf8)
@@ -68,7 +172,7 @@ struct CITopologyWorkflowTests {
 
         #expect(
             concurrency.contains(
-                "group: \"${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}\""
+                "group: \"${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}\""
             )
         )
         #expect(concurrency.contains("cancel-in-progress: ${{ github.event_name == 'pull_request' }}"))
@@ -215,6 +319,7 @@ private enum CITopologyWorkflowError: Error {
 }
 
 private func topologyJob(named jobName: String, in workflow: String) throws -> String {
+    let workflow = try topologyResolvingCacheStepAliases(in: workflow)
     let workflowLines = workflow.split(separator: "\n", omittingEmptySubsequences: false)
     guard let startIndex = workflowLines.firstIndex(where: { $0 == "  \(jobName):" }) else {
         throw CITopologyWorkflowError.missingBlock(jobName)
@@ -230,6 +335,36 @@ private func topologyJob(named jobName: String, in workflow: String) throws -> S
     }
 
     return workflowLines[startIndex..<endIndex].joined(separator: "\n")
+}
+
+// Resolve the shared cache mappings before the existing text assertions inspect
+// each job. Keep the same assertions on the effective steps in both consumers.
+private func topologyResolvingCacheStepAliases(in workflow: String) throws -> String {
+    let lines = workflow.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
+    var resolved = workflow
+    for (startIndex, line) in lines.enumerated() where line.hasPrefix("      - &swift-cache-") {
+        let anchorName = String(line.dropFirst("      - &".count))
+        var endIndex = startIndex + 1
+        while endIndex < lines.count {
+            let nextLine = lines[endIndex]
+            if nextLine.hasPrefix("      - ")
+                || (nextLine.hasPrefix("  ") && !nextLine.hasPrefix("    ") && !nextLine.isEmpty)
+            {
+                break
+            }
+            endIndex += 1
+        }
+        guard startIndex + 1 < endIndex, lines[startIndex + 1].hasPrefix("        name:") else {
+            throw CITopologyWorkflowError.missingBlock(anchorName)
+        }
+        let definition = lines[startIndex..<endIndex].joined(separator: "\n")
+        let step =
+            "      - " + lines[startIndex + 1].trimmingCharacters(in: .whitespaces) + "\n"
+            + lines[(startIndex + 2)..<endIndex].joined(separator: "\n")
+        resolved = resolved.replacingOccurrences(of: definition, with: step)
+        resolved = resolved.replacingOccurrences(of: "      - *\(anchorName)\n", with: step + "\n")
+    }
+    return resolved
 }
 
 private func topologyBlock(startingWith marker: String, endingBefore terminator: String, in text: String) throws

@@ -209,13 +209,16 @@ struct SwiftLaneReceiptTests {
         let laneRunnerScript = try String(contentsOfFile: "scripts/run-swift-test-task.sh", encoding: .utf8)
         let invocationExit = try laneScriptShellFunction(named: "finish_lane_invocation", in: laneRunnerScript)
         let repositoryRoot = FileManager.default.currentDirectoryPath
+        let slotRoot = NSTemporaryDirectory() + "agentstudio-receipt-slot-\(UUIDv7.generate())"
+        try FileManager.default.createDirectory(atPath: slotRoot, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(atPath: slotRoot) }
         let output = try await laneBash(
             "set -euo pipefail\n"
                 + "unset SWIFT_BUILD_DIR CI GITHUB_ACTIONS\n"
                 + "source '\(repositoryRoot)/scripts/swift-build-slot.sh'\n"
-                // The test runner owns the test slot. Exercise the nested EXIT
-                // handler with the free build slot so the proof cannot wait on
-                // its own parent lane.
+                // The running lane holds this worktree's one slot. Claim a slot in a
+                // private root so the proof cannot wait on its own parent lane.
+                + "cd '\(slotRoot)'\n"
                 + "swift_build_slot_acquire build \"receipt-test\"\n"
                 + "print_closing_lane_report() { echo CLOSING_RECEIPT; }\n"
                 + "swift_test_terminate_active_isolated_suites() { :; }\n"

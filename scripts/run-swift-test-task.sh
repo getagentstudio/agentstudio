@@ -26,7 +26,7 @@ TIMEOUT_SECONDS="${SWIFT_TEST_TIMEOUT_SECONDS:-600}"
 PREBUILD_TIMEOUT_SECONDS="${SWIFT_TEST_PREBUILD_TIMEOUT_SECONDS:-1200}"
 
 LOG_PREFIX="$mode"
-EXTRA_SWIFT_TEST_ARGS=""
+EXTRA_SWIFT_TEST_ARGS="${EXTRA_SWIFT_TEST_ARGS:-}"
 source scripts/swift-test-helpers.sh
 
 echo "[$LOG_PREFIX] BUILD_PATH=$BUILD_PATH"
@@ -73,6 +73,8 @@ lane_children_cpu_seconds() {
 # owns its own tally files, so two lanes in one invocation never share counts.
 begin_lane_accounting() {
   LANE_START_SECONDS="$SECONDS"
+  swift_test_f2_begin_lane_accounting || true
+  swift_test_begin_active_command_groups
   LANE_TIMES_FILE="$(mktemp "${TMPDIR:-/tmp}/agentstudio-lane-times.XXXXXX")"
   SWIFT_TEST_PEAK_ANNOUNCED_FILE="$(mktemp "${TMPDIR:-/tmp}/agentstudio-lane-peak-announced.XXXXXX")"
   SWIFT_TEST_PEAK_RUNNING_FILE="$(mktemp "${TMPDIR:-/tmp}/agentstudio-lane-peak-running.XXXXXX")"
@@ -100,6 +102,7 @@ print_closing_lane_report() {
   echo "[$LOG_PREFIX] lane-report exit_status=$exit_status"
   echo "[$LOG_PREFIX] lane-report wall_seconds=$wall_seconds"
   echo "[$LOG_PREFIX] lane-report cpu_seconds=$cpu_seconds"
+  swift_test_f2_report_resource_table || true
   echo "[$LOG_PREFIX] lane-report cpu_utilization=$(
     /usr/bin/awk -v cpu="$cpu_seconds" -v wall="$wall_seconds" -v cores="$LANE_CPU_COUNT" \
       'BEGIN { if (wall <= 0 || cores <= 0) { print "0.00" } else { printf "%.2f\n", cpu / (wall * cores) } }'
@@ -145,24 +148,56 @@ print_closing_lane_report() {
 
   rm -f "$LANE_TIMES_FILE" "${SWIFT_TEST_PEAK_ANNOUNCED_FILE:-}" "${SWIFT_TEST_PEAK_RUNNING_FILE:-}" \
     "${SWIFT_TEST_FAILED_ISOLATED_SUITES_FILE:-}"
+  swift_test_cleanup_active_command_groups_directory
 }
 
 # A lane ended by a signal exits with 128+signal, so its receipt says so. Without
 # these, bash runs the EXIT trap after a fatal signal with `$?` still holding the
 # last completed command's status, and a SIGTERMed lane printed
 # `exit_status=0 verdict=pass`.
+# These handlers also run in receipt fixtures that do not source the process-group
+# helpers, so group forwarding is optional and every cleanup must leave slot release reachable.
 trap_lane_termination_signals() {
-  trap 'swift_test_terminate_active_isolated_suites; exit 129' HUP
-  trap 'swift_test_terminate_active_isolated_suites; exit 130' INT
-  trap 'swift_test_terminate_active_isolated_suites; exit 143' TERM
+  trap '
+    if declare -F swift_test_signal_active_command_groups >/dev/null 2>&1; then
+      swift_test_signal_active_command_groups HUP || true
+    fi
+    swift_test_terminate_active_isolated_suites || true
+    exit 129
+  ' HUP
+  trap '
+    if declare -F swift_test_signal_active_command_groups >/dev/null 2>&1; then
+      swift_test_signal_active_command_groups INT || true
+    fi
+    swift_test_terminate_active_isolated_suites || true
+    exit 130
+  ' INT
+  trap '
+    if declare -F swift_test_signal_active_command_groups >/dev/null 2>&1; then
+      swift_test_signal_active_command_groups TERM || true
+    fi
+    swift_test_terminate_active_isolated_suites || true
+    exit 143
+  ' TERM
 }
 
 # The invocation's single EXIT handler owns the lane receipt and slot release.
 finish_lane_invocation() {
   local exit_status=$?
-  swift_test_terminate_active_isolated_suites
+  # Optional group helpers and cleanup failures must never prevent the slot release.
+  if declare -F swift_test_signal_active_command_groups >/dev/null 2>&1; then
+    swift_test_signal_active_command_groups TERM || true
+  fi
+  swift_test_terminate_active_isolated_suites || true
+  if declare -F swift_test_signal_active_command_groups >/dev/null 2>&1; then
+    swift_test_signal_active_command_groups KILL || true
+  fi
   print_closing_lane_report "$exit_status" || true
+  if declare -F swift_test_cleanup_active_command_groups_directory >/dev/null 2>&1; then
+    swift_test_cleanup_active_command_groups_directory || true
+  fi
   swift_build_slot_release || true
+  swift_test_output_relay_finish_dispatcher || true
   return "$exit_status"
 }
 
@@ -234,6 +269,7 @@ begin_lane_accounting
 LANE_BUNDLE_STATE=not_built
 trap finish_lane_invocation EXIT
 trap_lane_termination_signals
+swift_test_output_relay_begin_dispatcher
 
 if [ "$mode" != "test-prebuild" ] && [ "${SWIFT_TEST_SKIP_PREBUILD:-0}" = "1" ]; then
   echo "[$LOG_PREFIX] skipping prebuild test bundles (SWIFT_TEST_SKIP_PREBUILD=1)"

@@ -11,10 +11,40 @@
 #   EXTRA_SWIFT_TEST_ARGS - Additional swift test flags (e.g. "--enable-code-coverage")
 #   XCB_EXTRA_ARGS        - Extra xcbeautify flags (e.g. "--renderer github-actions")
 
+# Give SwiftPM time to cancel and reap its separate helper process group after SIGINT.
+# SwiftPM 6.3.3 uses a 30-second cancellation deadline, then AsyncProcess escalates
+# its child group to SIGKILL and waits: Cancellator.swift:147-189 and
+# AsyncProcess.swift:223-245 at the swift-6.3.3-RELEASE tag.
+SWIFT_TEST_SIGINT_CANCELLATION_GRACE_SECONDS=35
+
 # shellcheck source=scripts/xcb-helpers.sh
 source "$(dirname "${BASH_SOURCE[0]}")/xcb-helpers.sh"
 # shellcheck source=scripts/swift-package-sandbox.sh
 source "$(dirname "${BASH_SOURCE[0]}")/swift-package-sandbox.sh"
+# Observation support is optional to execution, but an incomplete installation
+# must be visible. Keep the original launcher and legacy hang evidence usable.
+if [ -r "$(dirname "${BASH_SOURCE[0]}")/swift-test-invocation-receipts.sh" ] && \
+  [ -r "$(dirname "${BASH_SOURCE[0]}")/swift-test-invocation-receipts.pl" ] && \
+  source "$(dirname "${BASH_SOURCE[0]}")/swift-test-invocation-receipts.sh"
+then
+  :
+else
+  echo "[${LOG_PREFIX:-test}] warning: invocation_observation=unavailable receipt support could not be loaded" >&2
+  swift_test_f2_begin_receipt() { :; }
+  swift_test_f2_collect_events() { :; }
+  swift_test_f2_finalize_resources() { :; }
+  swift_test_f2_attach_receipt() { :; }
+  swift_test_f2_begin_lane_accounting() { :; }
+  swift_test_f2_report_resource_table() { :; }
+  swift_test_f2_print_pending_waits() {
+    print_held_steps_unarrived_at_timeout "$2" "$3"
+  }
+  swift_test_f2_launch_command_group() {
+    shift # The receipt stem is irrelevant when observation support is absent.
+    swift_test_launch_command_group /bin/bash -c \
+      'unset SWIFT_TEST_F2_SIDECAR_LIST; exec "$@"' swift-test-no-receipts "$@"
+  }
+fi
 
 # Maximum test cases Swift Testing may run concurrently inside one test process.
 # OPT-IN, WITH NO DEFAULT, ON PURPOSE.
@@ -700,6 +730,7 @@ swift_test_command_accepts_event_stream() {
 swift_test_suite_lane_inventory() {
   cat <<'EOF'
 fast|AgentStudioFileViewStartupDiagnosticTests|concurrent
+fast|AgentStudioIPCCursorHookProjectionTests|concurrent
 large|AgentStudioGitDependencyTests|concurrent
 large|AgentStudioIPCPhaseASmokeScriptTests|concurrent
 large|AgentStudioOTLPBootstrapSmokeTests|process-global
@@ -712,6 +743,7 @@ large|ArchitectureSwiftLintRulesTests|concurrent
 large|AtomLibCompileFailureScriptTests|concurrent
 large|BridgeBrowserNativeRPCCutoverSourceScanTests|concurrent
 large|BridgeCapacityIntegrationTests|concurrent
+large|BridgeDevelopmentServerBuildScriptTests|concurrent
 large|BridgeFullPyramidSmokeVerifierScriptTests|concurrent
 large|BridgeHeadlessManifestVerifierScriptTests|concurrent
 large|BridgeObservabilitySmokeReviewSourceProviderTests|concurrent
@@ -732,6 +764,7 @@ large|CIFirstAttemptGateWorkflowTests|concurrent
 large|CISwiftBuildCachePublishScriptTests|concurrent
 large|CISwiftBuildInputsScriptTests|concurrent
 benchmark|CommandBarSearchBenchmarkTests|process-global
+large|CrossTabMoveRendererIntegrationTests|process-global
 large|CursorPackageInstallerTests|concurrent
 large|DarwinCompositeFSEventContinuityTests|process-global
 large|DarwinFSEventStreamClientTests|process-global
@@ -813,8 +846,11 @@ large|StartupPerformanceWorkloadScriptTests|concurrent
 large|SurfaceRendererVisibilityIntegrationTests|process-global
 fast|SwiftBuildSlotScriptTests|concurrent
 large|SwiftLaneHangEvidenceTests|concurrent
+large|SwiftLaneHelperCancellationTests|concurrent
 large|SwiftLaneIsolationListGateTests|concurrent
 large|SwiftLaneReceiptTests|concurrent
+large|SwiftLaneReapingTests|concurrent
+large|SwiftLaneOutputRelayTests|concurrent
 large|SwiftLaneRunnerReportTests|concurrent
 large|SwiftPackageSandboxScriptTests|concurrent
 large|TerminalActivityAgentSettledHeuristicTests|process-global
@@ -1434,27 +1470,12 @@ run_fast_serial_process_swift_tests() {
 }
 
 prebuild_swift_tests() {
-  if [ -n "${SWIFT_BUILD_STATS_DIR:-}" ]; then
-    case "$SWIFT_BUILD_STATS_DIR" in
-      /*)
-        if mkdir -p "$SWIFT_BUILD_STATS_DIR" 2>/dev/null; then
-          # shellcheck disable=SC2086
-          run_swift_with_timeout \
-            "prebuild test bundles" \
-            "$PREBUILD_TIMEOUT_SECONDS" \
-            swift build $(swift_package_sandbox_arguments) --build-tests ${EXTRA_SWIFT_TEST_ARGS:-} --build-path "$BUILD_PATH" \
-            -Xswiftc -stats-output-dir -Xswiftc "$SWIFT_BUILD_STATS_DIR"
-          return $?
-        fi
-        ;;
-    esac
-    echo "[$LOG_PREFIX] warning: compiler statistics disabled (directory must be writable and absolute)" >&2
-  fi
-  # shellcheck disable=SC2086
+  source "${CI_SWIFT_COMPILATION_POLICY_PATH:-$(dirname "${BASH_SOURCE[0]}")/swift-compilation-policy.sh}" || return $?
+  swift_compilation_policy_build_arguments test-bundles "$BUILD_PATH" || return $?
   run_swift_with_timeout \
     "prebuild test bundles" \
     "$PREBUILD_TIMEOUT_SECONDS" \
-    swift build $(swift_package_sandbox_arguments) --build-tests ${EXTRA_SWIFT_TEST_ARGS:-} --build-path "$BUILD_PATH"
+    "${SWIFT_COMPILATION_COMMAND[@]}"
 }
 
 run_aggregate_serial_non_webkit_swift_tests() {
@@ -1556,10 +1577,10 @@ dispatch_isolated_suites() {
   local lane_status=0 timing_eligible_ms dispatch_dir fifo_path
   if [ "$lane_kind" = webkit ]; then
     concurrency="$(swift_test_webkit_process_concurrency)"
-    echo "[$LOG_PREFIX] WebKit process-global concurrency: $concurrency"
+    swift_test_output_message "[$LOG_PREFIX] WebKit process-global concurrency: $concurrency"
   else
     concurrency="$(swift_test_isolated_process_concurrency)"
-    echo "[$LOG_PREFIX] isolated process-global concurrency: $concurrency"
+    swift_test_output_message "[$LOG_PREFIX] isolated process-global concurrency: $concurrency"
   fi
   timing_eligible_ms="$(lane_timing_now_ms 2>/dev/null || true)"
   mkdir -p "$LANE_EVENT_STREAM_DIR"
@@ -1599,6 +1620,7 @@ dispatch_isolated_suites() {
         wait "$reporting_child_pid" || child_status=$?
         if [ ! -f "$dispatch_dir/status-$slot" ]; then
           completion_reason=wrapper_exited_without_completion
+          swift_test_signal_active_command_groups TERM
           if [ -r "$dispatch_dir/worker-$slot" ] && read -r worker_pid <"$dispatch_dir/worker-$slot"; then
             [ -z "$worker_pid" ] || terminate_lane_child_tree TERM "$worker_pid"
           fi
@@ -1646,7 +1668,9 @@ dispatch_isolated_suites() {
   done
 
   if [ "$active_count" -gt 0 ]; then
+    swift_test_signal_active_command_groups TERM
     swift_test_terminate_active_isolated_suites
+    swift_test_signal_active_command_groups KILL
   fi
   SWIFT_TEST_ACTIVE_ISOLATED_PIDS=""
   exec 7>&-
@@ -1908,11 +1932,311 @@ write_lane_timing_sidecar() {
       print JSON::PP->new->canonical->encode($record), "\n";
     ' >"$sidecar_path" 2>/dev/null || \
     echo "[${LOG_PREFIX:-test}] warning: timing sidecar unavailable: $sidecar_path" >&2
+  swift_test_f2_attach_receipt "$sidecar_path" || true
   rm -f "$child_timing_file" || true
   return 0
 }
 
-run_swift_with_timeout() {
+swift_test_begin_active_command_groups() {
+  local registry_directory
+  registry_directory="$(mktemp -d "${TMPDIR:-/tmp}/agentstudio-command-groups.XXXXXX")" || return 1
+  unset SWIFT_TEST_ACTIVE_COMMAND_GROUPS_DIR SWIFT_TEST_ACTIVE_COMMAND_GROUPS_DIR_OWNED \
+    SWIFT_TEST_ACTIVE_COMMAND_GROUPS_DIR_LANE
+  SWIFT_TEST_ACTIVE_COMMAND_GROUPS_DIR="$registry_directory"
+  SWIFT_TEST_ACTIVE_COMMAND_GROUPS_DIR_OWNED=1
+  SWIFT_TEST_ACTIVE_COMMAND_GROUPS_DIR_LANE=1
+}
+
+swift_test_ensure_active_command_groups_directory() {
+  if [ -z "${SWIFT_TEST_ACTIVE_COMMAND_GROUPS_DIR:-}" ]; then
+    unset SWIFT_TEST_ACTIVE_COMMAND_GROUPS_DIR SWIFT_TEST_ACTIVE_COMMAND_GROUPS_DIR_OWNED
+    SWIFT_TEST_ACTIVE_COMMAND_GROUPS_DIR="$(mktemp -d "${TMPDIR:-/tmp}/agentstudio-command-groups.XXXXXX")" || return 1
+    SWIFT_TEST_ACTIVE_COMMAND_GROUPS_DIR_OWNED=1
+  else
+    mkdir -p "$SWIFT_TEST_ACTIVE_COMMAND_GROUPS_DIR"
+  fi
+}
+
+swift_test_register_active_command_group() {
+  local group_pid="$1"
+  local registry_directory temporary_file
+  case "$group_pid" in
+    '' | *[!0-9]*) return 2 ;;
+  esac
+  swift_test_ensure_active_command_groups_directory || return 1
+  registry_directory="$SWIFT_TEST_ACTIVE_COMMAND_GROUPS_DIR"
+  temporary_file="$(mktemp "$registry_directory/.register.XXXXXX")" || return 1
+  if ! printf '%s\n' "$group_pid" >"$temporary_file" ||
+    ! mv -f "$temporary_file" "$registry_directory/$group_pid"
+  then
+    rm -f "$temporary_file"
+    return 1
+  fi
+}
+
+swift_test_unregister_active_command_group() {
+  local group_pid="$1"
+  [ -n "${SWIFT_TEST_ACTIVE_COMMAND_GROUPS_DIR:-}" ] || return 0
+  rm -f "$SWIFT_TEST_ACTIVE_COMMAND_GROUPS_DIR/$group_pid"
+  if [ "${SWIFT_TEST_ACTIVE_COMMAND_GROUPS_DIR_OWNED:-0}" = 1 ] &&
+    [ "${SWIFT_TEST_ACTIVE_COMMAND_GROUPS_DIR_LANE:-0}" != 1 ] &&
+    [ -z "$(find "$SWIFT_TEST_ACTIVE_COMMAND_GROUPS_DIR" -type f -print -quit 2>/dev/null)" ]
+  then
+    rmdir "$SWIFT_TEST_ACTIVE_COMMAND_GROUPS_DIR" 2>/dev/null || true
+    unset SWIFT_TEST_ACTIVE_COMMAND_GROUPS_DIR SWIFT_TEST_ACTIVE_COMMAND_GROUPS_DIR_OWNED
+  fi
+}
+
+swift_test_cleanup_active_command_groups_directory() {
+  local registry_directory group_file
+  [ "${SWIFT_TEST_ACTIVE_COMMAND_GROUPS_DIR_OWNED:-0}" = 1 ] || return 0
+  registry_directory="${SWIFT_TEST_ACTIVE_COMMAND_GROUPS_DIR:-}"
+  [ -n "$registry_directory" ] && [ -d "$registry_directory" ] || return 0
+  swift_test_signal_active_command_groups TERM
+  swift_test_signal_active_command_groups KILL
+  for group_file in "$registry_directory"/* "$registry_directory"/.[!.]* "$registry_directory"/..?*; do
+    [ -f "$group_file" ] || continue
+    rm -f "$group_file"
+  done
+  rmdir "$registry_directory" 2>/dev/null || true
+  unset SWIFT_TEST_ACTIVE_COMMAND_GROUPS_DIR SWIFT_TEST_ACTIVE_COMMAND_GROUPS_DIR_OWNED \
+    SWIFT_TEST_ACTIVE_COMMAND_GROUPS_DIR_LANE
+}
+
+swift_test_signal_command_group() {
+  local signal="$1"
+  local group_pid="$2"
+  case "$group_pid" in
+    '' | *[!0-9]*) return 2 ;;
+  esac
+  kill -"$signal" -- "-$group_pid" 2>/dev/null || true
+}
+
+swift_test_signal_active_command_groups() {
+  local signal="$1"
+  local registry_directory group_file group_pid
+  registry_directory="${SWIFT_TEST_ACTIVE_COMMAND_GROUPS_DIR:-}"
+  [ -n "$registry_directory" ] && [ -d "$registry_directory" ] || return 0
+  for group_file in "$registry_directory"/*; do
+    [ -f "$group_file" ] || continue
+    group_pid="${group_file##*/}"
+    case "$group_pid" in
+      '' | *[!0-9]*) continue ;;
+    esac
+    swift_test_signal_command_group "$signal" "$group_pid"
+  done
+}
+
+swift_test_process_group_has_survivors() {
+  local group_pid="$1"
+  perl -e 'use Errno qw(ESRCH); my $pgid = shift; exit 0 if kill 0, -$pgid; exit($! == ESRCH ? 1 : 0);' \
+    "$group_pid"
+}
+
+swift_test_process_id_has_survivors() {
+  local process_pid="$1"
+  perl -e 'use Errno qw(ESRCH); my $pid = shift; exit 0 if kill 0, $pid; exit($! == ESRCH ? 1 : 0);' \
+    "$process_pid"
+}
+
+swift_test_wait_for_command_group_exit() {
+  local group_pid="$1"
+  local grace_deadline=$((SECONDS + SWIFT_TEST_SIGINT_CANCELLATION_GRACE_SECONDS))
+
+  while swift_test_process_group_has_survivors "$group_pid" ||
+    swift_test_process_id_has_survivors "$group_pid"
+  do
+    [ "$SECONDS" -lt "$grace_deadline" ] || return 1
+    sleep 1
+  done
+}
+
+swift_test_launch_command_group() {
+  local group_pid
+  # This command's PID is the PGID: setpgrp runs in the shim before exec, so
+  # group ownership does not depend on Bash job control or who launched the lane.
+  # A child that calls setsid can escape this group; the event-token sweep below
+  # remains an additional fallback where pgrep is available.
+  perl -e 'use POSIX (); setpgrp(0, 0) or die $!; POSIX::close(94); exec @ARGV or die $!' "$@" &
+  group_pid=$!
+  if ! swift_test_register_active_command_group "$group_pid"; then
+    swift_test_signal_command_group KILL "$group_pid"
+    wait "$group_pid" 2>/dev/null || true
+    return 1
+  fi
+  SWIFT_TEST_STARTED_COMMAND_GROUP_PID="$group_pid"
+}
+
+swift_test_output_relay_prepare_paths() {
+  local script_directory lock_directory absolute_build_directory worktree_key
+
+  if [ -n "${SWIFT_TEST_OUTPUT_RELAY_LOCK_PATH:-}" ] &&
+    [ -n "${SWIFT_TEST_OUTPUT_RELAY_SCRIPT_PATH:-}" ]
+  then
+    return 0
+  fi
+
+  script_directory="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)" || return 1
+  SWIFT_TEST_OUTPUT_RELAY_SCRIPT_PATH="$script_directory/swift-test-output-relay.pl"
+
+  if [ -n "${BUILD_PATH:-}" ]; then
+    if ! mkdir -p "$BUILD_PATH"; then
+      echo "swift-test-output-relay: cannot create build directory $BUILD_PATH" >&2
+      return 1
+    fi
+    absolute_build_directory="$(cd "$BUILD_PATH" && pwd -P)" || return 1
+    lock_directory="$absolute_build_directory"
+  else
+    mkdir -p "${TMPDIR:-/tmp}" || return 1
+    worktree_key="$(printf '%s\n' "$PWD" | /usr/bin/cksum | /usr/bin/awk '{ print $1 }')" || return 1
+    lock_directory="${TMPDIR:-/tmp}/agentstudio-swift-test-output-$worktree_key"
+    if ! mkdir -p "$lock_directory"; then
+      echo "swift-test-output-relay: cannot create TMPDIR fallback $lock_directory" >&2
+      return 1
+    fi
+    echo "[${LOG_PREFIX:-test}] warning: BUILD_PATH unset; output relay lock uses TMPDIR fallback" >&2
+  fi
+
+  SWIFT_TEST_OUTPUT_RELAY_LOCK_PATH="$lock_directory/.swift-test-output.lock"
+  if ! : >>"$SWIFT_TEST_OUTPUT_RELAY_LOCK_PATH"; then
+    echo "swift-test-output-relay: cannot create lock $SWIFT_TEST_OUTPUT_RELAY_LOCK_PATH" >&2
+    return 1
+  fi
+  if [ ! -r "$SWIFT_TEST_OUTPUT_RELAY_SCRIPT_PATH" ]; then
+    echo "swift-test-output-relay: missing relay $SWIFT_TEST_OUTPUT_RELAY_SCRIPT_PATH" >&2
+    return 1
+  fi
+
+  export SWIFT_TEST_OUTPUT_RELAY_LOCK_PATH SWIFT_TEST_OUTPUT_RELAY_SCRIPT_PATH
+}
+
+# A lane-level source for dispatcher messages. Per-command and per-pipeline
+# relays use the same permanent build-slot lock, so no process writes a
+# multi-writer lane stream directly.
+swift_test_output_relay_begin_dispatcher() {
+  [ "${SWIFT_TEST_OUTPUT_RELAY_DISPATCH_ACTIVE:-0}" = "1" ] && return 0
+  swift_test_output_relay_prepare_paths || return $?
+
+  local relay_directory relay_fifo relay_pid
+  relay_directory="$(mktemp -d "${TMPDIR:-/tmp}/agentstudio-dispatch-output.XXXXXX")" || return 1
+  relay_fifo="$relay_directory/messages"
+  if ! mkfifo "$relay_fifo"; then
+    rmdir "$relay_directory" 2>/dev/null || true
+    return 1
+  fi
+
+  /usr/bin/perl "$SWIFT_TEST_OUTPUT_RELAY_SCRIPT_PATH" \
+    "$SWIFT_TEST_OUTPUT_RELAY_LOCK_PATH" dispatcher <"$relay_fifo" &
+  relay_pid="$!"
+  if ! { exec 94>"$relay_fifo"; } 2>/dev/null; then
+    kill -TERM "$relay_pid" 2>/dev/null || true
+    /bin/rm -f "$relay_fifo"
+    rmdir "$relay_directory" 2>/dev/null || true
+    echo "swift-test-output-relay: cannot open dispatcher channel" >&2
+    return 1
+  fi
+
+  SWIFT_TEST_OUTPUT_RELAY_DISPATCH_DIRECTORY="$relay_directory"
+  SWIFT_TEST_OUTPUT_RELAY_DISPATCH_FIFO="$relay_fifo"
+  SWIFT_TEST_OUTPUT_RELAY_DISPATCH_PID="$relay_pid"
+  SWIFT_TEST_OUTPUT_RELAY_DISPATCH_ACTIVE=1
+}
+
+swift_test_output_message() {
+  local message="$*"
+  if [ "${SWIFT_TEST_OUTPUT_RELAY_DISPATCH_ACTIVE:-0}" = "1" ]; then
+    printf '%s\n' "$message" >&94
+  else
+    printf '%s\n' "$message"
+  fi
+}
+
+swift_test_output_relay_finish_dispatcher() {
+  local relay_status=0
+  [ "${SWIFT_TEST_OUTPUT_RELAY_DISPATCH_ACTIVE:-0}" = "1" ] || return 0
+
+  exec 94>&-
+  wait "$SWIFT_TEST_OUTPUT_RELAY_DISPATCH_PID" || relay_status=$?
+  /bin/rm -f "$SWIFT_TEST_OUTPUT_RELAY_DISPATCH_FIFO"
+  rmdir "$SWIFT_TEST_OUTPUT_RELAY_DISPATCH_DIRECTORY" 2>/dev/null || true
+  unset SWIFT_TEST_OUTPUT_RELAY_DISPATCH_DIRECTORY SWIFT_TEST_OUTPUT_RELAY_DISPATCH_FIFO
+  unset SWIFT_TEST_OUTPUT_RELAY_DISPATCH_PID SWIFT_TEST_OUTPUT_RELAY_DISPATCH_ACTIVE
+  return "$relay_status"
+}
+
+swift_test_output_relay_begin_command() {
+  swift_test_output_relay_prepare_paths || return $?
+
+  local relay_directory relay_fifo relay_pid
+  relay_directory="$(mktemp -d "${TMPDIR:-/tmp}/agentstudio-command-output.XXXXXX")" || return 1
+  relay_fifo="$relay_directory/messages"
+  if ! mkfifo "$relay_fifo"; then
+    rmdir "$relay_directory" 2>/dev/null || true
+    return 1
+  fi
+
+  exec 99>&1
+  /usr/bin/perl "$SWIFT_TEST_OUTPUT_RELAY_SCRIPT_PATH" \
+    "$SWIFT_TEST_OUTPUT_RELAY_LOCK_PATH" command <"$relay_fifo" &
+  relay_pid="$!"
+  if ! { exec 1>"$relay_fifo"; } 2>/dev/null; then
+    exec 99>&-
+    kill -TERM "$relay_pid" 2>/dev/null || true
+    /bin/rm -f "$relay_fifo"
+    rmdir "$relay_directory" 2>/dev/null || true
+    echo "swift-test-output-relay: cannot open command channel" >&2
+    return 1
+  fi
+
+  SWIFT_TEST_OUTPUT_RELAY_COMMAND_DIRECTORY="$relay_directory"
+  SWIFT_TEST_OUTPUT_RELAY_COMMAND_FIFO="$relay_fifo"
+  SWIFT_TEST_OUTPUT_RELAY_COMMAND_PID="$relay_pid"
+}
+
+swift_test_output_relay_finish_command() {
+  local relay_status=0
+  [ -n "${SWIFT_TEST_OUTPUT_RELAY_COMMAND_PID:-}" ] || return 0
+
+  exec 1>&99
+  exec 99>&-
+  wait "$SWIFT_TEST_OUTPUT_RELAY_COMMAND_PID" || relay_status=$?
+  /bin/rm -f "$SWIFT_TEST_OUTPUT_RELAY_COMMAND_FIFO"
+  rmdir "$SWIFT_TEST_OUTPUT_RELAY_COMMAND_DIRECTORY" 2>/dev/null || true
+  unset SWIFT_TEST_OUTPUT_RELAY_COMMAND_DIRECTORY SWIFT_TEST_OUTPUT_RELAY_COMMAND_FIFO
+  unset SWIFT_TEST_OUTPUT_RELAY_COMMAND_PID
+  return "$relay_status"
+}
+
+swift_test_run_pipeline_child() {
+  local output_file="$1"
+  local child_timing_file="$2"
+  local xcb_pipe="$3"
+  local held_step_log="$4"
+  shift 4
+  local command_start_ms command_exit_ms pipeline_result
+  local -a pipeline_status
+
+  if [ -n "$held_step_log" ]; then
+    export AGENTSTUDIO_HELD_STEP_LOG="$held_step_log"
+  fi
+  command_start_ms="$(lane_timing_now_ms 2>/dev/null || true)"
+  set +e
+  # The test stream has its own long-lived line relay after xcb. Shell messages
+  # stay on the command relay, and both writers serialize on the slot-local lock.
+  # Close relay descriptors in upstream children so they cannot prolong either
+  # relay after their command has exited.
+  # shellcheck disable=SC2086
+  "$@" 2>&1 94>&- 99>&- | tee "$output_file" 94>&- 99>&- | $xcb_pipe 94>&- 99>&- | \
+    /usr/bin/perl "$SWIFT_TEST_OUTPUT_RELAY_SCRIPT_PATH" \
+      "$SWIFT_TEST_OUTPUT_RELAY_LOCK_PATH" stream 94>&- 1>&99
+  pipeline_result=$? pipeline_status=("${PIPESTATUS[@]}")
+  command_exit_ms="$(lane_timing_now_ms 2>/dev/null || true)"
+  printf '%s %s %s\n' "$command_start_ms" "$command_exit_ms" "${pipeline_status[0]}" \
+    >"$child_timing_file" 2>/dev/null || true
+  exit "$pipeline_result"
+}
+
+swift_test_run_with_timeout_body() {
   local timing_dispatch_ms
   timing_dispatch_ms="$(lane_timing_now_ms 2>/dev/null || true)"
   local label="$1"
@@ -1941,6 +2265,7 @@ run_swift_with_timeout() {
   evidence_stem="$(lane_evidence_stem "$label")"
   mkdir -p "$LANE_EVENT_STREAM_DIR" 2>/dev/null || true
   local child_timing_file="$evidence_stem.child-timing"
+  swift_test_f2_begin_receipt "$evidence_stem" || true
   # The test process appends to this log through AGENTSTUDIO_HELD_STEP_LOG; it is
   # handed over as an absolute path because the test process's working directory
   # is not this script's to promise.
@@ -1957,28 +2282,28 @@ run_swift_with_timeout() {
     : >"$held_step_log"
   fi
 
-  # Run command piped through xcbeautify in a subshell so we track one PID.
-  # Subshell inherits pipefail from parent — swift exit code propagates.
-  #
-  # shellcheck disable=SC2086
-  (
-    if [ -n "$held_step_log" ]; then
-      export AGENTSTUDIO_HELD_STEP_LOG="$held_step_log"
-    fi
-    local command_start_ms pipeline_result command_exit_ms
-    local -a pipeline_status
-    command_start_ms="$(lane_timing_now_ms 2>/dev/null || true)"
-    set +e
-    "$@" 2>&1 | tee "$output_file" | $xcb_pipe
-    pipeline_result=$? pipeline_status=("${PIPESTATUS[@]}")
-    command_exit_ms="$(lane_timing_now_ms 2>/dev/null || true)"
-    printf '%s %s %s\n' "$command_start_ms" "$command_exit_ms" "${pipeline_status[0]}" \
-      >"$child_timing_file" 2>/dev/null || true
-    exit "$pipeline_result"
-  ) &
-  local command_pid=$!
+  # The nested Bash sources this helper to run the existing pipeline supervisor.
+  # The Perl shim creates the process group before exec, and its PID remains the
+  # tracked command PID after both execs.
+  SWIFT_TEST_HELPERS_PATH="${BASH_SOURCE[0]}"
+  export SWIFT_TEST_HELPERS_PATH
+  if ! swift_test_f2_launch_command_group "$evidence_stem" \
+    /bin/bash -c \
+    'set -u -o pipefail; source "$SWIFT_TEST_HELPERS_PATH"; swift_test_run_pipeline_child "$@"' \
+    swift-test-pipeline "$output_file" "$child_timing_file" "$xcb_pipe" "$held_step_log" "$@"
+  then
+    echo "[$LOG_PREFIX] failed to launch command process group for '$label'" >&2
+    swift_test_f2_collect_events "$evidence_stem" "$output_file" "$event_stream_file" "$held_step_log" launch_error || true
+    swift_test_f2_finalize_resources "$evidence_stem" "$child_timing_file" "$timing_dispatch_ms" \
+      "$(lane_timing_now_ms 2>/dev/null || true)" "$timed_out" || true
+    write_lane_timing_sidecar "$evidence_stem.timing.json" "$label" "$child_timing_file" \
+      "$timing_dispatch_ms" "$(lane_timing_now_ms 2>/dev/null || true)" "$timed_out" "" || true
+    rm -f "$output_file" ${event_stream_file:+"$event_stream_file"}
+    return 1
+  fi
+  local command_pid="$SWIFT_TEST_STARTED_COMMAND_GROUP_PID"
 
-  while kill -0 "$command_pid" 2>/dev/null; do
+  while swift_test_process_id_has_survivors "$command_pid"; do
     sleep 1
     local now_epoch
     now_epoch=$(date +%s)
@@ -1994,10 +2319,15 @@ run_swift_with_timeout() {
     )"; then
       echo "[$LOG_PREFIX] lane-report watchdog state generation failed" >&2
       preserve_lane_event_stream "$label" "$event_stream_file" "$evidence_stem"
+      swift_test_signal_command_group KILL "$command_pid"
       terminate_lane_child_tree KILL "$command_pid"
       kill_lane_processes_by_run_token "$event_stream_file"
       wait "$command_pid" 2>/dev/null || true
+      swift_test_unregister_active_command_group "$command_pid"
       swift_test_record_lane_peaks "$output_file" "$event_stream_file"
+      swift_test_f2_collect_events "$evidence_stem" "$output_file" "$event_stream_file" "$held_step_log" watchdog_error || true
+      swift_test_f2_finalize_resources "$evidence_stem" "$child_timing_file" "$timing_dispatch_ms" \
+        "$(lane_timing_now_ms 2>/dev/null || true)" "$timed_out" || true
       discard_empty_held_step_log "$held_step_log"
       rm -f "$output_file" ${event_stream_file:+"$event_stream_file"}
       local retained_event_stream=""
@@ -2035,10 +2365,11 @@ run_swift_with_timeout() {
     # Read the stream before terminating anything: this names what was still
     # executing at the timeout, not what survived the kill.
     print_running_parameterized_cases_at_timeout "$event_stream_file"
-    print_held_steps_unarrived_at_timeout "$held_step_log" "$output_file"
+    swift_test_f2_collect_events "$evidence_stem" "$output_file" "$event_stream_file" "$held_step_log" before_reap || true
+    swift_test_f2_print_pending_waits "$evidence_stem" "$held_step_log" "$output_file" || true
     print_timeout_process_diagnostics "$label" "$command_pid" "$evidence_stem"
     echo "[$LOG_PREFIX] raw output tail for '$label':"
-    tail -n 120 "$output_file" || true
+    print_swift_test_output_tail "$output_file" || true
     # Copy the ledger BEFORE anything is signalled, while the writer is still
     # alive: the child holds the stream open and a copy taken after termination
     # can miss records it had not flushed. Copying rather than moving also keeps
@@ -2046,27 +2377,42 @@ run_swift_with_timeout() {
     # cross-filesystem move would not — it would leave the child appending to an
     # unlinked inode.
     preserve_lane_event_stream "$label" "$event_stream_file" "$evidence_stem"
-    terminate_lane_child_tree TERM "$command_pid"
-    # Writing the report IS the grace period. It is work the lane must do anyway,
-    # so a child that honours TERM exits while it happens and no `sleep` has to
-    # guess how long that takes.
-    swift_test_record_lane_peaks "$output_file" "$event_stream_file"
-
-    if lane_run_has_survivors "$command_pid" "$event_stream_file"; then
-      terminate_lane_child_tree KILL "$command_pid"
-      # The tree walk cannot see a survivor that re-parented, so sweep this run's
-      # token as well. SIGKILL can be neither caught nor ignored, so the wait
-      # below returns as soon as the kernel has finished teardown — however long
-      # that takes on this machine. The only thing that could hold it is a
-      # process wedged in an uninterruptible kernel wait, which is a kernel fault
-      # outside this runner's remit and already covered by the job-level timeout.
-      kill_lane_processes_by_run_token "$event_stream_file"
+    local timeout_reap_stage
+    swift_test_signal_command_group INT "$command_pid"
+    if swift_test_wait_for_command_group_exit "$command_pid"; then
       wait "$command_pid" 2>/dev/null || true
-      echo "[$LOG_PREFIX] lane-report timeout_reap=killed"
+      swift_test_record_lane_peaks "$output_file" "$event_stream_file"
+      timeout_reap_stage=sigint_cancelled
     else
-      echo "[$LOG_PREFIX] lane-report timeout_reap=terminated"
-      wait "$command_pid" 2>/dev/null || true
+      # SwiftPM's SIGINT handler owns helper-group cancellation. Only take over
+      # with TERM/KILL if the tracked command group outlives its cancellation grace.
+      swift_test_signal_command_group TERM "$command_pid"
+      terminate_lane_child_tree TERM "$command_pid"
+      # Writing the report IS the TERM grace period. It is work the lane must do
+      # anyway, so a child that honours TERM exits while it happens.
+      swift_test_record_lane_peaks "$output_file" "$event_stream_file"
+
+      if lane_run_has_survivors "$command_pid" "$event_stream_file"; then
+        swift_test_signal_command_group KILL "$command_pid"
+        terminate_lane_child_tree KILL "$command_pid"
+        # The tree walk cannot see a survivor that re-parented, so sweep this run's
+        # token as well. SIGKILL can be neither caught nor ignored, so the wait
+        # below returns as soon as the kernel has finished teardown — however long
+        # that takes on this machine. The only thing that could hold it is a
+        # process wedged in an uninterruptible kernel wait, which is a kernel fault
+        # outside this runner's remit and already covered by the job-level timeout.
+        kill_lane_processes_by_run_token "$event_stream_file"
+        wait "$command_pid" 2>/dev/null || true
+        timeout_reap_stage=killed
+      else
+        wait "$command_pid" 2>/dev/null || true
+        timeout_reap_stage=terminated
+      fi
     fi
+    echo "[$LOG_PREFIX] lane-report timeout_reap=$timeout_reap_stage"
+    swift_test_unregister_active_command_group "$command_pid"
+    swift_test_f2_finalize_resources "$evidence_stem" "$child_timing_file" "$timing_dispatch_ms" \
+      "$(lane_timing_now_ms 2>/dev/null || true)" "$timed_out" || true
     discard_empty_held_step_log "$held_step_log"
     rm -f "$output_file" ${event_stream_file:+"$event_stream_file"}
     local retained_event_stream=""
@@ -2081,6 +2427,7 @@ run_swift_with_timeout() {
   wait "$command_pid"
   local command_status=$?
   set -e
+  swift_test_unregister_active_command_group "$command_pid"
   local should_preserve_event_stream=0
 
   if [ "$command_status" -eq 0 ] && swift_test_output_has_failures "$output_file"; then
@@ -2098,6 +2445,9 @@ run_swift_with_timeout() {
     should_preserve_event_stream=1
   fi
 
+  swift_test_f2_collect_events "$evidence_stem" "$output_file" "$event_stream_file" "$held_step_log" command_exit || true
+  swift_test_f2_finalize_resources "$evidence_stem" "$child_timing_file" "$timing_dispatch_ms" \
+    "$(lane_timing_now_ms 2>/dev/null || true)" "$timed_out" || true
   swift_test_record_lane_peaks "$output_file" "$event_stream_file"
   # A width comparison compares what ran, so it keeps every ledger, passing or not.
   if [ "$should_preserve_event_stream" -eq 1 ] || [ "${LANE_EVENT_STREAM_RETAIN_ALWAYS:-0}" = "1" ]; then
@@ -2121,6 +2471,34 @@ run_swift_with_timeout() {
 
 # The signal that killed a child, or `none` when the status is an ordinary exit
 # code. Shells report a signalled child as 128 + signal number.
+run_swift_with_timeout() {
+  local parent_errexit=0 command_status=0 relay_status=0
+  case "$-" in
+    *e*) parent_errexit=1 ;;
+  esac
+
+  swift_test_output_relay_begin_command || return $?
+  set +e
+  (
+    if [ "$parent_errexit" = "1" ]; then
+      set -e
+    else
+      set +e
+    fi
+    swift_test_run_with_timeout_body "$@"
+  )
+  command_status=$?
+  if [ "$parent_errexit" = "1" ]; then
+    set -e
+  fi
+
+  swift_test_output_relay_finish_command || relay_status=$?
+  if [ "$command_status" -eq 0 ] && [ "$relay_status" -ne 0 ]; then
+    command_status="$relay_status"
+  fi
+  return "$command_status"
+}
+
 swift_test_signal_name() {
   local status="${1:-0}"
 
@@ -2165,7 +2543,15 @@ print_failed_child_diagnostics() {
   echo "[$LOG_PREFIX] ERROR: '$label' exited $status with no recorded test failure" >&2
   echo "[$LOG_PREFIX] exit_status=$status signal=$signal_name" >&2
   echo "[$LOG_PREFIX] raw output tail for '$label':" >&2
-  tail -n 120 "$output_file" >&2 || true
+  print_swift_test_output_tail "$output_file" >&2 || true
+}
+
+# Captured child output is kept byte-for-byte for failure detection. Sanitize
+# only when echoing the diagnostic tail so malformed output cannot make Mise's
+# UTF-8 reader close the lane's stdout pipe.
+print_swift_test_output_tail() {
+  local output_file="$1"
+  tail -n 120 "$output_file" | /usr/bin/iconv -f UTF-8 -t UTF-8 -c
 }
 
 swift_test_output_has_failures() {
@@ -2184,10 +2570,22 @@ print_timeout_process_diagnostics() {
   local root_pid="$2"
   local evidence_stem="${3:-$(lane_evidence_stem "$label")}"
 
+  if ! swift_test_process_listing_available; then
+    echo "[$LOG_PREFIX] process listing unavailable in this environment; reaping by process group"
+    return 0
+  fi
   echo "[$LOG_PREFIX] process tree for timed out '$label' (root pid=$root_pid):"
   print_timeout_process_tree "$root_pid" 0
   print_timeout_process_snapshot "$label" "$root_pid"
   sample_stuck_swift_test_processes "$label" "$root_pid" "$evidence_stem"
+}
+
+swift_test_process_listing_available() {
+  local ps_status=0 pgrep_status=0
+  ps -p "$$" -o pid= >/dev/null 2>&1 || ps_status=$?
+  pgrep -P "$$" >/dev/null 2>&1 || pgrep_status=$?
+  [ "$ps_status" -eq 0 ] &&
+    { [ "$pgrep_status" -eq 0 ] || [ "$pgrep_status" -eq 1 ]; }
 }
 
 print_timeout_process_tree() {
@@ -2318,16 +2716,9 @@ dump_stuck_swift_test_process_tasks() {
   rm -f "$dump_error_file"
 }
 
-# Signals one process tree: children first, then the root.
-#
-# A process-group attempt was reverted because it was environment-dependent.
-# `set -m` only puts a background job in its own group when bash's job control is
-# active, and whether that happens depends on the launching context: the same
-# probe put the subshell in its own group in one worktree and left it in the
-# parent's group in another, where `kill -<sig> -<pid>` was ESRCH and the liveness
-# check then read "gone". A reap whose branch depends on the launching context
-# cannot be shipped, so the tree walk is back and the survivors it cannot see are
-# handled by the run token below.
+# Best-effort extra sweep for environments where pgrep can walk parent links.
+# The explicit command group is the primary owner and also works when pgrep is
+# denied by the sandbox.
 terminate_lane_child_tree() {
   local signal="$1"
   local root_pid="$2"
@@ -2361,18 +2752,17 @@ kill_lane_processes_by_run_token() {
   done
 }
 
-# True while any process of this run is still alive — the lane's own child, or a
-# survivor that re-parented away from it.
-#
-# Both halves are needed. Checking only the child pid would report "gone" the
-# moment the subshell honoured TERM, even though the grandchild that ignored it
-# is still running and still holding a slot; that is the exact defect this path
-# exists to close, and the token is the only thing that can still see it.
+# True while any process of this run is still alive. The group check sees
+# re-parented descendants even when process listing is unavailable; the PID and
+# event-token checks remain extra coverage for the leader and setsid escapees.
 lane_run_has_survivors() {
   local child_pid="$1"
   local run_token="${2:-}"
 
-  if kill -0 "$child_pid" 2>/dev/null; then
+  if swift_test_process_group_has_survivors "$child_pid"; then
+    return 0
+  fi
+  if swift_test_process_id_has_survivors "$child_pid"; then
     return 0
   fi
   [ -n "$run_token" ] || return 1
@@ -2392,7 +2782,7 @@ run_webkit_suite() {
   swift_testing_helper="$(swift_testing_helper_path)"
   testing_framework_path="$(swift_testing_framework_path)"
 
-  echo "[webkit] running $filter"
+  swift_test_output_message "[webkit] running $filter"
   # Use the already-built helper directly, as in the other isolated phases.
   # Concurrent `swift test --skip-build` calls contend for SwiftPM's build lock.
   # Preserve raw output so a signalled helper remains visible in the receipt.
@@ -2415,7 +2805,7 @@ run_webkit_suite() {
       2>&1) || command_status=$?
   fi
   unset _XCB_BYPASS
-  echo "$output"
+  swift_test_output_message "$output"
 
   if [ "$command_status" -ne 0 ]; then
     local signal_name

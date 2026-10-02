@@ -1,8 +1,7 @@
 // Builds the production site into a private directory and reads back the home
 // page and its stylesheets: the real components' rendered markup and CSS.
 
-import { mkdtemp, readdir, readFile, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { mkdir, mkdtemp, readdir, readFile, rm } from "node:fs/promises";
 import path from "node:path";
 
 import { build as buildAstroSite } from "astro";
@@ -30,14 +29,31 @@ async function readEmittedStylesheets(
 }
 
 export async function buildHomePageForSceneBundles(webRoot: string): Promise<BuiltHomePage> {
-  const outputDirectory = await mkdtemp(path.join(tmpdir(), "agent-studio-scene-bundle-site-"));
+  // Every path stays inside web/ and unique per call: Astro stages prerender
+  // output under cwd/.astro when outDir is outside cwd, and Vite defaults to the
+  // shared node_modules/.vite, so concurrent builds would delete each other's files.
+  const isolatedBuildsDirectory = path.join(
+    webRoot,
+    "node_modules",
+    ".cache",
+    "astro-isolated-builds",
+  );
+  await mkdir(isolatedBuildsDirectory, { recursive: true });
+  const isolatedBuildRoot = await mkdtemp(path.join(isolatedBuildsDirectory, "build-"));
+  const outputDirectory = path.join(isolatedBuildRoot, "dist");
   try {
-    await buildAstroSite({ root: webRoot, outDir: outputDirectory, logLevel: "warn" });
+    await buildAstroSite({
+      root: webRoot,
+      outDir: outputDirectory,
+      cacheDir: path.join(isolatedBuildRoot, "cache"),
+      vite: { cacheDir: path.join(isolatedBuildRoot, "vite-cache") },
+      logLevel: "warn",
+    });
     return {
       homePageHtml: await readFile(path.join(outputDirectory, "index.html"), "utf8"),
       stylesheetTextByHref: await readEmittedStylesheets(outputDirectory),
     };
   } finally {
-    await rm(outputDirectory, { force: true, recursive: true });
+    await rm(isolatedBuildRoot, { force: true, recursive: true });
   }
 }

@@ -40,6 +40,15 @@ struct RuleParityTests {
         #expect(actualIDs.isSuperset(of: expectedIDs))
     }
 
+    @Test("dedicated-thread expectation fixtures reject unattributed issues and allow returned observations")
+    func expectationsRemainOnTheTestTask() throws {
+        let ruleID = "agentstudio_no_expectation_off_test_task"
+        let failures = try lintFixtureCorpus("Bad").filter { $0.ruleID == ruleID }
+        #expect(failures.count == 6)
+        #expect(failures.allSatisfy { $0.severity == .error })
+        #expect(try lintFixtureCorpus("Good").allSatisfy { $0.ruleID != ruleID })
+    }
+
     @Test("good fixture corpus stays clean")
     func goodFixtureCorpusStaysClean() throws {
         let diagnostics = try lintFixtureCorpus("Good")

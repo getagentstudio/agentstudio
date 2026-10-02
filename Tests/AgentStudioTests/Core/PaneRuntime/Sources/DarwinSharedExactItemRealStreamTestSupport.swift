@@ -1,4 +1,5 @@
 import AgentStudioGit
+import AgentStudioTestHarness
 import AgentStudioTestSupport
 import CoreServices
 import Foundation
@@ -543,6 +544,7 @@ private struct IsolatedGitProcess {
 
     func run(_ arguments: [String]) async throws {
         let repositoryPath = repositoryPath
+        let git = try await TestToolResolver.resolved().git
         try await withoutBlockingCooperativePool {
             let outputDirectory = FileManager.default.temporaryDirectory
                 .appending(path: "darwin-real-stream-git-\(UUIDv7.generate().uuidString)")
@@ -554,10 +556,9 @@ private struct IsolatedGitProcess {
             defer { try? stderrHandle.close() }
 
             let process = Process()
-            process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
+            process.executableURL = git
             process.arguments =
                 [
-                    "git",
                     "-c", "user.name=AgentStudio Test",
                     "-c", "user.email=agentstudio@example.invalid",
                     "-c", "commit.gpgsign=false",
@@ -577,8 +578,9 @@ private struct IsolatedGitProcess {
             process.standardOutput = FileHandle.nullDevice
             process.standardError = stderrHandle
 
-            try process.run()
+            try TestToolResolver.launch(process)
             process.waitUntilExit()
+            TestToolResolver.recordFailedExit(process)
             try stderrHandle.close()
 
             guard process.terminationStatus == 0 else {

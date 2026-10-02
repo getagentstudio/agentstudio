@@ -1,6 +1,6 @@
+import AgentStudioTestHarness
 import Foundation
 import Testing
-import os
 
 @testable import AgentStudio
 @testable import AgentStudioCore
@@ -12,19 +12,22 @@ import os
 @Suite("PrimarySidebarPipeline")
 struct PrimarySidebarPipelineIntegrationTests {
     @Test("filesystem -> git -> forge -> cache converges for two repos sharing one remote identity")
-    func twoReposWithSharedRemoteIdentityConverge() async {
+    func twoReposWithSharedRemoteIdentityConverge() async throws {
         let bus = EventBus<RuntimeEnvelope>()
         let workspaceStore = makeWorkspaceStore()
         let repoCache = RepoCacheAtom()
+        let applications = try WorkspaceCacheApplicationRecorder(cache: repoCache)
         let (forgeActor, coordinator, projector) = makePipelineActors(
             bus: bus,
             workspaceStore: workspaceStore,
-            repoCache: repoCache
+            repoCache: repoCache,
+            applications: applications
         )
 
-        await withStartedPipelineActors(
+        try await withStartedPipelineActors(
             bus: bus,
             coordinator: coordinator,
+            applications: applications,
             projector: projector,
             forgeActor: forgeActor
         ) {
@@ -47,17 +50,6 @@ struct PrimarySidebarPipelineIntegrationTests {
                 Issue.record("Expected canonical observation lifetimes for both primary worktrees")
                 return
             }
-            let repoARefresh = await observeReadyPullRequestFacts(
-                bus: bus,
-                repositoryID: repoA.id,
-                subscriberName: "PrimarySidebarPipeline.repoARefresh"
-            )
-            let repoBRefresh = await observeReadyPullRequestFacts(
-                bus: bus,
-                repositoryID: repoB.id,
-                subscriberName: "PrimarySidebarPipeline.repoBRefresh"
-            )
-
             await registerForgeWorktree(worktreeA, repository: repoA, forgeActor: forgeActor)
             await registerForgeWorktree(worktreeB, repository: repoB, forgeActor: forgeActor)
             await attendRepositoryFacts(
@@ -86,58 +78,61 @@ struct PrimarySidebarPipelineIntegrationTests {
                 observationLifetime: worktreeBLifetime
             )
 
-            #expect(await repoARefresh.value?["main"]?.openCount == 1)
-            #expect(await repoBRefresh.value?["main"]?.openCount == 1)
-
-            let identityConverged = await eventually("repo identity should resolve for both repos") {
-                guard case .some(.resolvedRemote(_, _, let identityA, _)) = repoCache.repoEnrichmentByRepoId[repoA.id]
-                else {
-                    return false
+            for (repoId, worktreeId) in [(repoA.id, worktreeA), (repoB.id, worktreeB)] {
+                try await applications.expectApplied(repositoryID: repoId, kind: .repositoryIdentity) {
+                    guard case .resolvedRemote(_, _, let identity, _) = $0.repository else { return false }
+                    return identity.groupKey == "remote:askluna/agent-studio"
                 }
-                guard case .some(.resolvedRemote(_, _, let identityB, _)) = repoCache.repoEnrichmentByRepoId[repoB.id]
-                else {
-                    return false
+                try await applications.expectApplied(
+                    repositoryID: repoId, kind: .worktreeEnrichment, worktreeID: worktreeId
+                ) { $0.worktree?.branch == "main" }
+                let key = try #require(RepoBranchKey(repoId: repoId, branch: "main"))
+                try await applications.expectApplied(repositoryID: repoId, kind: .repositoryProjection) {
+                    $0.pullRequests[key]?.openCount == 1 && !$0.isLoading
                 }
-                return identityA.groupKey == "remote:askluna/agent-studio" && identityA.groupKey == identityB.groupKey
+                #expect(repoCache.pullRequestFactsForTest(worktreeId: worktreeId)?.openCount == 1)
             }
-            #expect(identityConverged)
+            guard case .resolvedRemote(_, _, let identityA, _) = repoCache.repoEnrichment(for: repoA.id),
+                case .resolvedRemote(_, _, let identityB, _) = repoCache.repoEnrichment(for: repoB.id)
+            else {
+                Issue.record("Expected resolved identities for both repositories")
+                return
+            }
+            #expect(identityA.groupKey == "remote:askluna/agent-studio")
+            #expect(identityA.groupKey == identityB.groupKey)
 
-            let pullRequestCountsConverged = await eventually("forge pull request counts should map to both worktrees")
-            {
-                repoCache.pullRequestFactsForTest(worktreeId: worktreeA)?.openCount == 1
-                    && repoCache.pullRequestFactsForTest(worktreeId: worktreeB)?.openCount == 1
-            }
-            #expect(pullRequestCountsConverged)
         }
     }
 
     @Test("message-driven repo discovery seeds unresolved enrichment before origin resolves")
-    func messageDrivenRepoDiscoverySeedsUnresolvedBeforeResolution() async {
+    func messageDrivenRepoDiscoverySeedsUnresolvedBeforeResolution() async throws {
         let bus = EventBus<RuntimeEnvelope>()
         let workspaceStore = makeWorkspaceStore()
         let repoCache = RepoCacheAtom()
+        let applications = try WorkspaceCacheApplicationRecorder(cache: repoCache)
         let (forgeActor, coordinator, projector) = makePipelineActors(
             bus: bus,
             workspaceStore: workspaceStore,
-            repoCache: repoCache
+            repoCache: repoCache,
+            applications: applications
         )
 
-        await withStartedPipelineActors(
+        try await withStartedPipelineActors(
             bus: bus,
             coordinator: coordinator,
+            applications: applications,
             projector: projector,
             forgeActor: forgeActor
         ) {
-            let repoPath = URL(fileURLWithPath: "/tmp/pipeline-discovered-\(UUID().uuidString)")
+            let repoPath = URL(fileURLWithPath: "/tmp/pipeline-discovered-\(UUIDv7.generate().uuidString)")
             await postRepoDiscovered(bus: bus, repoPath: repoPath)
 
-            let unresolvedSeeded = await eventually("repo discovery should seed unresolved enrichment") {
-                guard let repo = workspaceStore.repos.first(where: { $0.repoPath == repoPath }) else {
-                    return false
-                }
-                return repoCache.repoEnrichmentByRepoId[repo.id] == .awaitingOrigin(repoId: repo.id)
+            let seeded = try await applications.expectApplied(kind: .repositoryIdentity) {
+                if case .awaitingOrigin = $0.repository { return true }
+                return false
             }
-            #expect(unresolvedSeeded)
+            let discoveredRepoId = try #require(seeded.repository?.repoId)
+            #expect(repoCache.repoEnrichment(for: discoveredRepoId) == .awaitingOrigin(repoId: discoveredRepoId))
 
             guard let repo = workspaceStore.repos.first(where: { $0.repoPath == repoPath }),
                 let worktreeId = repo.worktrees.first?.id
@@ -165,27 +160,28 @@ struct PrimarySidebarPipelineIntegrationTests {
                 rootPath: repoPath
             )
 
-            let resolvedIdentity = await eventually(
-                "worktree registration should converge unresolved to resolved identity"
-            ) {
-                guard
-                    case .some(.resolvedRemote(_, let raw, let identity, _)) = repoCache.repoEnrichmentByRepoId[
-                        repo.id]
-                else {
-                    return false
-                }
+            let resolved = try await applications.expectApplied(repositoryID: repo.id, kind: .repositoryIdentity) {
+                guard case .resolvedRemote(_, let raw, let identity, _) = $0.repository else { return false }
                 return raw.origin == "git@github.com:askluna/agent-studio.git"
                     && identity.groupKey == "remote:askluna/agent-studio"
             }
-            #expect(resolvedIdentity)
+            guard case .resolvedRemote(_, let raw, let identity, _) = resolved.repository
+            else {
+                Issue.record("Expected resolved repository identity")
+                return
+            }
+            #expect(raw.origin == "git@github.com:askluna/agent-studio.git")
+            #expect(identity.groupKey == "remote:askluna/agent-studio")
+
         }
     }
 
     @Test("message-driven origin and branch events trigger one admitted repository refresh")
-    func messageDrivenOriginAndBranchEventsTriggerOneAdmittedRefresh() async {
+    func messageDrivenOriginAndBranchEventsTriggerOneAdmittedRefresh() async throws {
         let bus = EventBus<RuntimeEnvelope>()
         let workspaceStore = makeWorkspaceStore()
         let repoCache = RepoCacheAtom()
+        let applications = try WorkspaceCacheApplicationRecorder(cache: repoCache)
         let callCounter = ForgeProviderCallCounter()
         let forgeActor = ForgeActor(
             bus: bus,
@@ -220,10 +216,13 @@ struct PrimarySidebarPipelineIntegrationTests {
                     break
                 }
             },
-            enrichmentApplyTickCadence: .zero
+            enrichmentApplyTickCadence: .zero,
+            factSink: applications.sink
         )
 
-        await withStartedForgeScopeCoordinator(bus: bus, coordinator: coordinator, forgeActor: forgeActor) {
+        try await withStartedForgeScopeCoordinator(
+            bus: bus, coordinator: coordinator, applications: applications, forgeActor: forgeActor
+        ) {
             let repo = workspaceStore.addRepo(at: URL(fileURLWithPath: "/tmp/pipeline-forge-dedupe"))
             guard let worktreeId = repo.worktrees.first?.id,
                 let observationLifetime = workspaceStore.repositoryTopologyAtom.worktreeObservationLifetimes[
@@ -258,12 +257,12 @@ struct PrimarySidebarPipelineIntegrationTests {
                 observationLifetime: observationLifetime
             )
 
-            let reachedExpectedCalls = await eventually(
-                "forge provider should be invoked once after origin and branch resolve"
-            ) {
-                await callCounter.value() == 1
+            let key = try #require(RepoBranchKey(repoId: repo.id, branch: "main"))
+            try await applications.expectApplied(repositoryID: repo.id, kind: .repositoryProjection) {
+                $0.pullRequests[key]?.openCount == 1 && !$0.isLoading
             }
-            #expect(reachedExpectedCalls)
+            #expect(await callCounter.value() == 1)
+
         }
 
         #expect(await callCounter.value() == 1)
@@ -347,6 +346,7 @@ struct PrimarySidebarPipelineIntegrationTests {
         let bus = EventBus<RuntimeEnvelope>()
         let workspaceStore = makeWorkspaceStore()
         let repoCache = RepoCacheAtom()
+        let applications = try WorkspaceCacheApplicationRecorder(cache: repoCache)
         let financeRemote = "git@github.com:askluna/askluna-finance.git"
         let pathStatusByRootPath = makePathStatusByRootPath(
             root: tempRoot,
@@ -357,12 +357,14 @@ struct PrimarySidebarPipelineIntegrationTests {
             bus: bus,
             workspaceStore: workspaceStore,
             repoCache: repoCache,
+            applications: applications,
             gitStatusByRootPath: pathStatusByRootPath
         )
 
         try await withStartedPipelineActors(
             bus: bus,
             coordinator: coordinator,
+            applications: applications,
             projector: projector,
             forgeActor: forgeActor
         ) {
@@ -378,20 +380,16 @@ struct PrimarySidebarPipelineIntegrationTests {
                 )
             )
 
-            // Both waits complete on the RepoCacheAtom change that makes them true; the
-            // forge and cache pipeline announces nothing else, and a turn budget here expired
-            // on a three-core runner while the pipeline was still correct.
             try #require(!fixture.financeRepositoryIDs.isEmpty)
-            let financeGroupKeys = await awaitObservedValue { () -> Set<String>? in
-                var groupKeys: Set<String> = []
-                for repoId in fixture.financeRepositoryIDs {
-                    guard case .some(.resolvedRemote(_, _, let identity, _)) = repoCache.repoEnrichmentByRepoId[repoId]
-                    else {
-                        return nil
-                    }
-                    groupKeys.insert(identity.groupKey)
+            var financeGroupKeys: Set<String> = []
+            for repoId in fixture.financeRepositoryIDs {
+                let applied = try await applications.expectApplied(repositoryID: repoId, kind: .repositoryIdentity) {
+                    guard case .resolvedRemote(_, _, let identity, _) = $0.repository else { return false }
+                    return identity.groupKey == "remote:askluna/askluna-finance"
                 }
-                return groupKeys == ["remote:askluna/askluna-finance"] ? groupKeys : nil
+                if case .resolvedRemote(_, _, let identity, _) = applied.repository {
+                    financeGroupKeys.insert(identity.groupKey)
+                }
             }
             #expect(financeGroupKeys == ["remote:askluna/askluna-finance"])
 
@@ -399,11 +397,24 @@ struct PrimarySidebarPipelineIntegrationTests {
             let transactionTableId = try #require(fixture.financeWorktreeIDByBranch["transaction-table-3"])
             let rlvrForkingId = try #require(fixture.financeWorktreeIDByBranch["rlvr-forking"])
             let expectedOpenCounts = [1, 2, 3]
-            let financeOpenCounts = await awaitObservedValue { () -> [Int]? in
-                let openCounts = [primaryBranchId, transactionTableId, rlvrForkingId].compactMap {
-                    repoCache.pullRequestFactsForTest(worktreeId: $0)?.openCount
+            for (worktreeId, branch, count) in [
+                (primaryBranchId, "master", 1), (transactionTableId, "transaction-table-3", 2),
+                (rlvrForkingId, "rlvr-forking", 3),
+            ] {
+                let repoId = try #require(
+                    workspaceStore.repos.first { $0.worktrees.contains { $0.id == worktreeId } }?.id)
+                let key = try #require(RepoBranchKey(repoId: repoId, branch: branch))
+                try await applications.expectApplied(
+                    repositoryID: repoId, kind: .worktreeEnrichment, worktreeID: worktreeId
+                ) {
+                    $0.worktree?.branch == branch
                 }
-                return openCounts == expectedOpenCounts ? openCounts : nil
+                try await applications.expectApplied(repositoryID: repoId, kind: .repositoryProjection) {
+                    $0.pullRequests[key]?.openCount == count && !$0.isLoading
+                }
+            }
+            let financeOpenCounts = [primaryBranchId, transactionTableId, rlvrForkingId].compactMap {
+                repoCache.pullRequestFactsForTest(worktreeId: $0)?.openCount
             }
             #expect(financeOpenCounts == expectedOpenCounts)
 
@@ -501,6 +512,7 @@ struct PrimarySidebarPipelineIntegrationTests {
         bus: EventBus<RuntimeEnvelope>,
         workspaceStore: WorkspaceStore,
         repoCache: RepoCacheAtom,
+        applications: WorkspaceCacheApplicationRecorder,
         gitStatusByRootPath: [String: GitWorkingTreeStatus]? = nil
     ) -> (ForgeActor, WorkspaceCacheCoordinator, GitWorkingDirectoryProjector) {
         let forgeActor = ForgeActor(
@@ -559,7 +571,8 @@ struct PrimarySidebarPipelineIntegrationTests {
                     break
                 }
             },
-            enrichmentApplyTickCadence: .zero
+            enrichmentApplyTickCadence: .zero,
+            factSink: applications.sink
         )
         let projector = GitWorkingDirectoryProjector(
             bus: bus,
@@ -582,7 +595,7 @@ struct PrimarySidebarPipelineIntegrationTests {
 
     private func makeProjectDevShapeFixture() async throws -> URL {
         let root = FileManager.default.temporaryDirectory
-            .appending(path: "project-dev-shape-\(UUID().uuidString)")
+            .appending(path: "project-dev-shape-\(UUIDv7.generate().uuidString)")
 
         let repoPaths = [
             "-worktrees/askluna-finance/transaction-table-3",
@@ -599,13 +612,15 @@ struct PrimarySidebarPipelineIntegrationTests {
     }
 
     private func initializeGitRepository(at path: URL) async throws {
+        let git = try await TestToolResolver.resolved().git
         try FileManager.default.createDirectory(at: path, withIntermediateDirectories: true)
         let exitCode = try await withoutBlockingCooperativePool {
             let process = Process()
-            process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
-            process.arguments = ["git", "-C", path.path, "init"]
-            try process.run()
+            process.executableURL = git
+            process.arguments = ["-C", path.path, "init"]
+            try TestToolResolver.launch(process)
             process.waitUntilExit()
+            TestToolResolver.recordFailedExit(process)
             return process.terminationStatus
         }
         #expect(exitCode == 0)
@@ -731,56 +746,14 @@ struct PrimarySidebarPipelineIntegrationTests {
         )
     }
 
-    /// Suspends until `read` returns a value and returns it, re-reading after each observed
-    /// change to the state `read` touches. There is no turn or time budget: the wait ends on
-    /// the atom change that satisfies it, and the lane's hang bound is the only elapsed-time
-    /// bound. Each round arms observation and reads in one step, so a change that lands
-    /// between two reads still wakes it.
-    private func awaitObservedValue<Value: Sendable>(
-        _ read: @escaping @MainActor () -> Value?
-    ) async -> Value {
-        while true {
-            let observed: Value? = await withCheckedContinuation { continuation in
-                let pendingContinuation = OSAllocatedUnfairLock<CheckedContinuation<Value?, Never>?>(
-                    initialState: continuation
-                )
-                let current = withObservationTracking {
-                    read()
-                } onChange: {
-                    pendingContinuation.withLock { $0.take() }?.resume(returning: nil)
-                }
-                if let current {
-                    pendingContinuation.withLock { $0.take() }?.resume(returning: current)
-                }
-            }
-            if let observed {
-                return observed
-            }
-        }
-    }
-
-    private func eventually(
-        _ description: String,
-        maxTurns: Int = 100,
-        condition: @escaping @MainActor () async -> Bool
-    ) async -> Bool {
-        for _ in 0..<maxTurns {
-            if await condition() {
-                return true
-            }
-            await Task.yield()
-        }
-        Issue.record("\(description) timed out")
-        return false
-    }
-
     private func withStartedPipelineActors(
         bus: EventBus<RuntimeEnvelope>,
         coordinator: WorkspaceCacheCoordinator,
+        applications: WorkspaceCacheApplicationRecorder,
         projector: GitWorkingDirectoryProjector,
         forgeActor: ForgeActor,
         operation: @MainActor () async throws -> Void
-    ) async rethrows {
+    ) async throws {
         await coordinator.startConsuming()
         await projector.start()
         await forgeActor.start()
@@ -789,14 +762,13 @@ struct PrimarySidebarPipelineIntegrationTests {
             await projector.shutdown()
             await forgeActor.shutdown()
             await coordinator.shutdown()
-            let busDrained = await eventually("primary sidebar pipeline world should leave no subscribers behind") {
-                await bus.subscriberCount == 0
-            }
-            #expect(busDrained)
+            #expect(await bus.subscriberCount == 0)
+            try await applications.finish()
         } catch {
             await projector.shutdown()
             await forgeActor.shutdown()
             await coordinator.shutdown()
+            try? await applications.finish()
             throw error
         }
     }
@@ -804,22 +776,22 @@ struct PrimarySidebarPipelineIntegrationTests {
     private func withStartedForgeScopeCoordinator(
         bus: EventBus<RuntimeEnvelope>,
         coordinator: WorkspaceCacheCoordinator,
+        applications: WorkspaceCacheApplicationRecorder,
         forgeActor: ForgeActor,
         operation: @MainActor () async throws -> Void
-    ) async rethrows {
+    ) async throws {
         await coordinator.startConsuming()
         await forgeActor.start()
         do {
             try await operation()
             await forgeActor.shutdown()
             await coordinator.shutdown()
-            let busDrained = await eventually("forge scope test world should leave no subscribers behind") {
-                await bus.subscriberCount == 0
-            }
-            #expect(busDrained)
+            #expect(await bus.subscriberCount == 0)
+            try await applications.finish()
         } catch {
             await forgeActor.shutdown()
             await coordinator.shutdown()
+            try? await applications.finish()
             throw error
         }
     }
@@ -839,33 +811,6 @@ extension PrimarySidebarPipelineIntegrationTests {
     fileprivate struct ProjectDevPipelineFixture {
         let financeWorktreeIDByBranch: [String: UUID]
         let financeRepositoryIDs: [UUID]
-    }
-
-    fileprivate func observeReadyPullRequestFacts(
-        bus: EventBus<RuntimeEnvelope>,
-        repositoryID: UUID,
-        subscriberName: String
-    ) async -> Task<[String: PullRequestFacts]?, Never> {
-        let subscription = await bus.subscribe(
-            policy: .lossyNewest(BusSubscriberPolicy.standardLossyBufferLimit),
-            subscriberName: subscriberName
-        )
-        return Task {
-            for await envelope in subscription {
-                guard case .worktree(let worktreeEnvelope) = envelope,
-                    case .forge(
-                        .pullRequestRepositoryProjectionChanged(
-                            let eventRepositoryID,
-                            .stable(.ready(let factsByBranch)),
-                            _
-                        )
-                    ) = worktreeEnvelope.event,
-                    eventRepositoryID == repositoryID
-                else { continue }
-                return factsByBranch
-            }
-            return nil
-        }
     }
 
     fileprivate func prepareProjectDevPipelineFixture(

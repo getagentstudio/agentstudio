@@ -314,7 +314,8 @@ package final class TerminalActivityRouter {
         )
     }
 
-    private func consume(_ envelope: RuntimeEnvelope) async {
+    /// Internal for @testable owner-application proof; production calls it from busTask.
+    func consume(_ envelope: RuntimeEnvelope) async {
         guard case .pane(let paneEnvelope) = envelope else { return }
         activityAtom.consume(paneEnvelope)
         if case .terminal(let event) = paneEnvelope.event,

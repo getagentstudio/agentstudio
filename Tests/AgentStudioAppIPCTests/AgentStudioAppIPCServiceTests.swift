@@ -2,6 +2,7 @@ import AgentStudioAppIPC
 import AgentStudioIPCTransport
 import AgentStudioInfrastructure
 import AgentStudioProgrammaticControl
+import AgentStudioTestSupport
 import Foundation
 import Testing
 
@@ -50,641 +51,657 @@ struct AgentStudioAppIPCServiceTests {
     }
 
     @Test("server starts Unix socket and answers pre-auth ping")
-    func serverStartsUnixSocketAndAnswersPreAuthPing() throws {
-        let fixture = try LiveServerFixture()
-        defer {
-            fixture.cleanup()
-        }
-        try fixture.server.start(processIdentifier: 12_345, startedAt: Date(timeIntervalSince1970: 1_800_000_000))
+    func serverStartsUnixSocketAndAnswersPreAuthPing() async throws {
+        try await withLiveServer(
+            makeFixture: { try LiveServerFixture() },
+            body: { fixture in
+                try fixture.server.start(
+                    processIdentifier: 12_345, startedAt: Date(timeIntervalSince1970: 1_800_000_000))
 
-        let response = try sendRequest(
-            socketPath: fixture.paths.socketURL.path,
-            request: JSONRPCClientRequest(id: .number(1), method: "system.ping", params: .object([:]))
-        )
+                let response = try await sendRequestWithoutBlockingCooperativePool(
+                    socketPath: fixture.paths.socketURL.path,
+                    request: JSONRPCClientRequest(id: .number(1), method: "system.ping", params: .object([:]))
+                )
 
-        #expect(response.id == .number(1))
-        guard case .object(let result)? = response.result else {
-            Issue.record("expected object result")
-            return
-        }
-        #expect(result["ok"] == .bool(true))
-        #expect(result["runtimeId"] == .string(fixture.runtimeId.uuidString))
+                #expect(response.id == .number(1))
+                guard case .object(let result)? = response.result else {
+                    Issue.record("expected object result")
+                    return
+                }
+                #expect(result["ok"] == .bool(true))
+                #expect(result["runtimeId"] == .string(fixture.runtimeId.uuidString))
 
-        let metadataData = try Data(contentsOf: fixture.paths.metadataURL)
-        let metadata = try JSONDecoder.iso8601.decode(AgentStudioIPCRuntimeMetadata.self, from: metadataData)
-        #expect(metadata.runtimeId == fixture.runtimeId)
-        #expect(metadata.processIdentifier == 12_345)
-        #expect(metadata.socketPath == fixture.paths.socketURL.path)
+                let metadataData = try Data(contentsOf: fixture.paths.metadataURL)
+                let metadata = try JSONDecoder.iso8601.decode(AgentStudioIPCRuntimeMetadata.self, from: metadataData)
+                #expect(metadata.runtimeId == fixture.runtimeId)
+                #expect(metadata.processIdentifier == 12_345)
+                #expect(metadata.socketPath == fixture.paths.socketURL.path)
+            })
     }
 
     @Test("server authenticates and serves a command on the same socket")
     func serverAuthenticatesAndServesCommandOnSameSocket() async throws {
-        let fixture = try LiveServerFixture()
-        defer {
-            fixture.cleanup()
-        }
-        try fixture.server.start()
-        let token = try fixture.issueTestCredential(
-            for: .pane(
-                paneId: fixture.boundPaneId,
-                credentialRecordId: UUIDv7.generate(),
-                status: .registered
-            )
-        )
-        let connection = try UnixSocketClient.connect(
-            endpoint: UnixSocketEndpoint(path: fixture.paths.socketURL.path)
-        )
-        defer {
-            connection.close()
-        }
-        var frameReader = TestFrameReader()
+        try await withLiveServer(
+            makeFixture: { try LiveServerFixture() },
+            body: { fixture in
+                try fixture.server.start()
+                let token = try fixture.issueTestCredential(
+                    for: .pane(
+                        paneId: fixture.boundPaneId,
+                        credentialRecordId: UUIDv7.generate(),
+                        status: .registered
+                    )
+                )
+                let connection = try await connectWithoutBlockingCooperativePool(
+                    socketPath: fixture.paths.socketURL.path)
+                defer {
+                    connection.close()
+                }
+                var frameReader = TestFrameReader()
 
-        try sendRequest(
-            connection: connection,
-            request: JSONRPCClientRequest(
-                id: .number(9),
-                method: "system.ping",
-                params: .object([:])
-            )
-        )
-        let ping = try await frameReader.receiveResponseWithoutBlockingMainActor(connection: connection)
-        try #require(ping.id == .number(9))
-        try #require(ping.error == nil, "server must remain running immediately before auth.login")
+                try await sendRequestWithoutBlockingCooperativePool(
+                    connection: connection,
+                    request: JSONRPCClientRequest(
+                        id: .number(9),
+                        method: "system.ping",
+                        params: .object([:])
+                    )
+                )
+                let ping = try await frameReader.receiveResponseWithoutBlockingMainActor(connection: connection)
+                try #require(ping.id == .number(9))
+                try #require(ping.error == nil, "server must remain running immediately before auth.login")
 
-        try await loginWithoutBlockingMainActor(
-            connection: connection,
-            token: token,
-            requestId: 10,
-            reader: &frameReader
-        )
+                try await loginWithoutBlockingMainActor(
+                    connection: connection,
+                    token: token,
+                    requestId: 10,
+                    reader: &frameReader
+                )
 
-        try sendRequest(
-            connection: connection,
-            request: JSONRPCClientRequest(id: .number(11), method: "system.identify", params: .object([:]))
-        )
-        let identify = try await frameReader.receiveResponseWithoutBlockingMainActor(connection: connection)
+                try await sendRequestWithoutBlockingCooperativePool(
+                    connection: connection,
+                    request: JSONRPCClientRequest(id: .number(11), method: "system.identify", params: .object([:]))
+                )
+                let identify = try await frameReader.receiveResponseWithoutBlockingMainActor(connection: connection)
 
-        try #require(identify.id == .number(11))
-        try #require(identify.error == nil)
-        guard case .object(let result)? = identify.result else {
-            Issue.record("expected identify result")
-            return
-        }
-        #expect(result["runtimeId"] == .string(fixture.runtimeId.uuidString))
-        #expect(result["accessMode"] == .string(IPCAccessMode.agentStudioOnly.rawValue))
+                try #require(identify.id == .number(11))
+                try #require(identify.error == nil)
+                guard case .object(let result)? = identify.result else {
+                    Issue.record("expected identify result")
+                    return
+                }
+                #expect(result["runtimeId"] == .string(fixture.runtimeId.uuidString))
+                #expect(result["accessMode"] == .string(IPCAccessMode.agentStudioOnly.rawValue))
+            })
     }
 
     @Test("server rejects authenticated commands before login")
-    func serverRejectsAuthenticatedCommandsBeforeLogin() throws {
-        let fixture = try LiveServerFixture()
-        defer {
-            fixture.cleanup()
-        }
-        try fixture.server.start()
+    func serverRejectsAuthenticatedCommandsBeforeLogin() async throws {
+        try await withLiveServer(
+            makeFixture: { try LiveServerFixture() },
+            body: { fixture in
+                try fixture.server.start()
 
-        let response = try sendRequest(
-            socketPath: fixture.paths.socketURL.path,
-            request: JSONRPCClientRequest(id: .number(2), method: "terminal.status", params: .object([:]))
-        )
+                let response = try await sendRequestWithoutBlockingCooperativePool(
+                    socketPath: fixture.paths.socketURL.path,
+                    request: JSONRPCClientRequest(id: .number(2), method: "terminal.status", params: .object([:]))
+                )
 
-        #expect(response.id == .number(2))
-        #expect(response.error?.code == -32_001)
-        #expect(response.error?.message == "unauthenticated")
+                #expect(response.id == .number(2))
+                #expect(response.error?.code == -32_001)
+                #expect(response.error?.message == "unauthenticated")
+            })
     }
 
     @Test("debug unsafe no-auth reports an explicit unsafe debug principal")
-    func debugUnsafeNoAuthReportsExplicitUnsafeDebugPrincipal() throws {
-        let fixture = try LiveServerFixture(accessMode: .unsafeDebug, channel: .debug)
-        defer {
-            fixture.cleanup()
-        }
-        try fixture.server.start()
+    func debugUnsafeNoAuthReportsExplicitUnsafeDebugPrincipal() async throws {
+        try await withLiveServer(
+            makeFixture: { try LiveServerFixture(accessMode: .unsafeDebug, channel: .debug) },
+            body: { fixture in
+                try fixture.server.start()
 
-        let response = try sendRequest(
-            socketPath: fixture.paths.socketURL.path,
-            request: JSONRPCClientRequest(id: .number(60), method: "auth.status", params: .object([:]))
-        )
+                let response = try await sendRequestWithoutBlockingCooperativePool(
+                    socketPath: fixture.paths.socketURL.path,
+                    request: JSONRPCClientRequest(id: .number(60), method: "auth.status", params: .object([:]))
+                )
 
-        #expect(response.id == .number(60))
-        #expect(response.error == nil)
-        guard case .object(let result)? = response.result else {
-            Issue.record("expected auth status result")
-            return
-        }
-        #expect(result["authenticated"] == .bool(true))
-        #expect(result["accessMode"] == .string(IPCAccessMode.unsafeDebug.rawValue))
+                #expect(response.id == .number(60))
+                #expect(response.error == nil)
+                guard case .object(let result)? = response.result else {
+                    Issue.record("expected auth status result")
+                    return
+                }
+                #expect(result["authenticated"] == .bool(true))
+                #expect(result["accessMode"] == .string(IPCAccessMode.unsafeDebug.rawValue))
+            })
     }
 
     @Test("debug unsafe no-auth authorizes terminal send without login")
-    func debugUnsafeNoAuthAuthorizesTerminalSendWithoutLogin() throws {
+    func debugUnsafeNoAuthAuthorizesTerminalSendWithoutLogin() async throws {
         let paneId = UUID()
-        let fixture = try LiveServerFixture(
-            accessMode: .unsafeDebug,
-            channel: .debug,
-            panes: [makePaneSummary(id: paneId, ordinal: 1)],
-            runtimePort: FakeRuntimePort(successfulPaneId: paneId)
-        )
-        defer {
-            fixture.cleanup()
-        }
-        try fixture.server.start()
+        try await withLiveServer(
+            makeFixture: {
+                try LiveServerFixture(
+                    accessMode: .unsafeDebug,
+                    channel: .debug,
+                    panes: [makePaneSummary(id: paneId, ordinal: 1)],
+                    runtimePort: FakeRuntimePort(successfulPaneId: paneId)
+                )
+            },
+            body: { fixture in
+                try fixture.server.start()
 
-        let response = try sendRequest(
-            socketPath: fixture.paths.socketURL.path,
-            request: JSONRPCClientRequest(
-                id: .number(61),
-                method: "terminal.send",
-                params: .object([
-                    "handle": .string("pane:1"),
-                    "input": .string("echo unsafe-debug\n"),
-                    "correlationId": .string(UUIDv7.generate().uuidString),
-                ])
-            )
-        )
+                let response = try await sendRequestWithoutBlockingCooperativePool(
+                    socketPath: fixture.paths.socketURL.path,
+                    request: JSONRPCClientRequest(
+                        id: .number(61),
+                        method: "terminal.send",
+                        params: .object([
+                            "handle": .string("pane:1"),
+                            "input": .string("echo unsafe-debug\n"),
+                            "correlationId": .string(UUIDv7.generate().uuidString),
+                        ])
+                    )
+                )
 
-        #expect(response.id == .number(61))
-        #expect(response.error == nil)
-        let result = try decodeResponseResult(IPCTerminalSendInputResult.self, from: response)
-        #expect(result.paneId == paneId)
-        #expect(result.disposition == .accepted)
+                #expect(response.id == .number(61))
+                #expect(response.error == nil)
+                let result = try decodeResponseResult(IPCTerminalSendInputResult.self, from: response)
+                #expect(result.paneId == paneId)
+                #expect(result.disposition == .accepted)
+            })
     }
 
     @Test("failed auth login prevents unsafe debug fallback on same socket")
-    func failedAuthLoginPreventsUnsafeDebugFallbackOnSameSocket() throws {
+    func failedAuthLoginPreventsUnsafeDebugFallbackOnSameSocket() async throws {
         let paneId = UUID()
-        let fixture = try LiveServerFixture(
-            accessMode: .unsafeDebug,
-            channel: .debug,
-            panes: [makePaneSummary(id: paneId, ordinal: 1)],
-            runtimePort: FakeRuntimePort(successfulPaneId: paneId)
-        )
-        defer {
-            fixture.cleanup()
-        }
-        try fixture.server.start()
+        try await withLiveServer(
+            makeFixture: {
+                try LiveServerFixture(
+                    accessMode: .unsafeDebug,
+                    channel: .debug,
+                    panes: [makePaneSummary(id: paneId, ordinal: 1)],
+                    runtimePort: FakeRuntimePort(successfulPaneId: paneId)
+                )
+            },
+            body: { fixture in
+                try fixture.server.start()
 
-        let connection = try UnixSocketClient.connect(endpoint: UnixSocketEndpoint(path: fixture.paths.socketURL.path))
-        defer {
-            connection.close()
-        }
-        var reader = TestFrameReader()
+                let connection = try await connectWithoutBlockingCooperativePool(
+                    socketPath: fixture.paths.socketURL.path)
+                defer {
+                    connection.close()
+                }
+                var reader = TestFrameReader()
 
-        try sendRequest(
-            connection: connection,
-            request: JSONRPCClientRequest(
-                id: .number(62),
-                method: "auth.login",
-                params: .object(["token": .string("invalid-token")])
-            )
-        )
-        let loginResponse = try reader.receiveResponse(connection: connection)
-        #expect(loginResponse.id == .number(62))
-        #expect(loginResponse.error?.code == -32_001)
+                try await sendRequestWithoutBlockingCooperativePool(
+                    connection: connection,
+                    request: JSONRPCClientRequest(
+                        id: .number(62),
+                        method: "auth.login",
+                        params: .object(["token": .string("invalid-token")])
+                    )
+                )
+                let loginResponse = try await reader.receiveResponseWithoutBlockingMainActor(connection: connection)
+                #expect(loginResponse.id == .number(62))
+                #expect(loginResponse.error?.code == -32_001)
 
-        try sendRequest(
-            connection: connection,
-            request: JSONRPCClientRequest(
-                id: .number(63),
-                method: "terminal.send",
-                params: .object([
-                    "handle": .string("pane:1"),
-                    "input": .string("echo should-not-run\n"),
-                    "correlationId": .string(UUIDv7.generate().uuidString),
-                ])
-            )
-        )
-        let sendResponse = try reader.receiveResponse(connection: connection)
-        #expect(sendResponse.id == .number(63))
-        #expect(sendResponse.error?.code == -32_001)
-        #expect(sendResponse.error?.message == "unauthenticated")
+                try await sendRequestWithoutBlockingCooperativePool(
+                    connection: connection,
+                    request: JSONRPCClientRequest(
+                        id: .number(63),
+                        method: "terminal.send",
+                        params: .object([
+                            "handle": .string("pane:1"),
+                            "input": .string("echo should-not-run\n"),
+                            "correlationId": .string(UUIDv7.generate().uuidString),
+                        ])
+                    )
+                )
+                let sendResponse = try await reader.receiveResponseWithoutBlockingMainActor(connection: connection)
+                #expect(sendResponse.id == .number(63))
+                #expect(sendResponse.error?.code == -32_001)
+                #expect(sendResponse.error?.message == "unauthenticated")
+            })
     }
 
     @Test("terminal wait forwards after sequence to runtime port")
-    func terminalWaitForwardsAfterSequenceToRuntimePort() throws {
+    func terminalWaitForwardsAfterSequenceToRuntimePort() async throws {
         let paneId = UUID()
         let runtimePort = RecordingWaitRuntimePort(successfulPaneId: paneId)
-        let fixture = try LiveServerFixture(
-            accessMode: .unsafeDebug,
-            channel: .debug,
-            panes: [makePaneSummary(id: paneId, ordinal: 1)],
-            runtimePort: runtimePort
-        )
-        defer {
-            fixture.cleanup()
-        }
-        try fixture.server.start()
+        try await withLiveServer(
+            makeFixture: {
+                try LiveServerFixture(
+                    accessMode: .unsafeDebug,
+                    channel: .debug,
+                    panes: [makePaneSummary(id: paneId, ordinal: 1)],
+                    runtimePort: runtimePort
+                )
+            },
+            body: { fixture in
+                try fixture.server.start()
 
-        let response = try sendRequest(
-            socketPath: fixture.paths.socketURL.path,
-            request: JSONRPCClientRequest(
-                id: .number(64),
-                method: "terminal.wait",
-                params: .object([
-                    "handle": .string("pane:1"),
-                    "condition": .string(IPCTerminalWaitCondition.commandFinished.rawValue),
-                    "timeoutSeconds": .number(1),
-                    "afterSequence": .number(41),
-                ])
-            )
-        )
+                let response = try await sendRequestWithoutBlockingCooperativePool(
+                    socketPath: fixture.paths.socketURL.path,
+                    request: JSONRPCClientRequest(
+                        id: .number(64),
+                        method: "terminal.wait",
+                        params: .object([
+                            "handle": .string("pane:1"),
+                            "condition": .string(IPCTerminalWaitCondition.commandFinished.rawValue),
+                            "timeoutSeconds": .number(1),
+                            "afterSequence": .number(41),
+                        ])
+                    )
+                )
 
-        #expect(response.id == .number(64))
-        #expect(response.error == nil)
-        #expect(runtimePort.lastAfterSequence == 41)
-        #expect(runtimePort.lastHandle == IPCHandle(kind: .pane, reference: .canonicalUUID(paneId)))
-        let result = try decodeResponseResult(IPCTerminalWaitResult.self, from: response)
-        #expect(result.paneId == paneId)
-        #expect(result.condition == .commandFinished)
+                #expect(response.id == .number(64))
+                #expect(response.error == nil)
+                #expect(runtimePort.lastAfterSequence == 41)
+                #expect(runtimePort.lastHandle == IPCHandle(kind: .pane, reference: .canonicalUUID(paneId)))
+                let result = try decodeResponseResult(IPCTerminalWaitResult.self, from: response)
+                #expect(result.paneId == paneId)
+                #expect(result.condition == .commandFinished)
+            })
     }
 
     @Test("terminal wait rejects out-of-range timeout before runtime dispatch")
-    func terminalWaitRejectsOutOfRangeTimeoutBeforeRuntimeDispatch() throws {
+    func terminalWaitRejectsOutOfRangeTimeoutBeforeRuntimeDispatch() async throws {
         let paneId = UUID()
         let runtimePort = RecordingWaitRuntimePort(successfulPaneId: paneId)
-        let fixture = try LiveServerFixture(
-            accessMode: .unsafeDebug,
-            channel: .debug,
-            panes: [makePaneSummary(id: paneId, ordinal: 1)],
-            runtimePort: runtimePort
-        )
-        defer {
-            fixture.cleanup()
-        }
-        try fixture.server.start()
+        try await withLiveServer(
+            makeFixture: {
+                try LiveServerFixture(
+                    accessMode: .unsafeDebug,
+                    channel: .debug,
+                    panes: [makePaneSummary(id: paneId, ordinal: 1)],
+                    runtimePort: runtimePort
+                )
+            },
+            body: { fixture in
+                try fixture.server.start()
 
-        let response = try sendRequest(
-            socketPath: fixture.paths.socketURL.path,
-            request: JSONRPCClientRequest(
-                id: .number(65),
-                method: "terminal.wait",
-                params: .object([
-                    "handle": .string("pane:1"),
-                    "condition": .string(IPCTerminalWaitCondition.commandFinished.rawValue),
-                    "timeoutSeconds": .number(86_400.001),
-                ])
-            )
-        )
+                let response = try await sendRequestWithoutBlockingCooperativePool(
+                    socketPath: fixture.paths.socketURL.path,
+                    request: JSONRPCClientRequest(
+                        id: .number(65),
+                        method: "terminal.wait",
+                        params: .object([
+                            "handle": .string("pane:1"),
+                            "condition": .string(IPCTerminalWaitCondition.commandFinished.rawValue),
+                            "timeoutSeconds": .number(86_400.001),
+                        ])
+                    )
+                )
 
-        #expect(response.id == .number(65))
-        #expect(response.error?.code == -32_602)
-        #expect(response.error?.message == "invalid params")
-        #expect(response.result == nil)
-        #expect(runtimePort.lastHandle == nil)
+                #expect(response.id == .number(65))
+                #expect(response.error?.code == -32_602)
+                #expect(response.error?.message == "invalid params")
+                #expect(response.result == nil)
+                #expect(runtimePort.lastHandle == nil)
+            })
     }
 
     @Test("non-debug server channels ignore unsafe no-auth access mode")
-    func nonDebugServerChannelsIgnoreUnsafeNoAuthAccessMode() throws {
-        let fixture = try LiveServerFixture(accessMode: .unsafeDebug, channel: .beta)
-        defer {
-            fixture.cleanup()
-        }
-        try fixture.server.start()
+    func nonDebugServerChannelsIgnoreUnsafeNoAuthAccessMode() async throws {
+        try await withLiveServer(
+            makeFixture: { try LiveServerFixture(accessMode: .unsafeDebug, channel: .beta) },
+            body: { fixture in
+                try fixture.server.start()
 
-        let status = try sendRequest(
-            socketPath: fixture.paths.socketURL.path,
-            request: JSONRPCClientRequest(id: .number(62), method: "auth.status", params: .object([:]))
-        )
-        #expect(status.error == nil)
-        guard case .object(let statusResult)? = status.result else {
-            Issue.record("expected auth status result")
-            return
-        }
-        #expect(statusResult["authenticated"] == .bool(false))
+                let status = try await sendRequestWithoutBlockingCooperativePool(
+                    socketPath: fixture.paths.socketURL.path,
+                    request: JSONRPCClientRequest(id: .number(62), method: "auth.status", params: .object([:]))
+                )
+                #expect(status.error == nil)
+                guard case .object(let statusResult)? = status.result else {
+                    Issue.record("expected auth status result")
+                    return
+                }
+                #expect(statusResult["authenticated"] == .bool(false))
 
-        let version = try sendRequest(
-            socketPath: fixture.paths.socketURL.path,
-            request: JSONRPCClientRequest(
-                id: .number(63),
-                method: "system.version",
-                params: .object([:])
-            )
-        )
-        #expect(version.error?.code == -32_001)
-        #expect(version.error?.message == "unauthenticated")
+                let version = try await sendRequestWithoutBlockingCooperativePool(
+                    socketPath: fixture.paths.socketURL.path,
+                    request: JSONRPCClientRequest(
+                        id: .number(63),
+                        method: "system.version",
+                        params: .object([:])
+                    )
+                )
+                #expect(version.error?.code == -32_001)
+                #expect(version.error?.message == "unauthenticated")
+            })
     }
 
     @Test("explicit diagnostic credential can authenticate two connections")
-    func explicitDiagnosticCredentialAuthenticatesTwoConnections() throws {
-        let fixture = try LiveServerFixture(channel: .debug)
-        defer {
-            fixture.cleanup()
-        }
-        try fixture.server.start()
-        let token = fixture.installDebugCredential()
+    func explicitDiagnosticCredentialAuthenticatesTwoConnections() async throws {
+        try await withLiveServer(
+            makeFixture: { try LiveServerFixture(channel: .debug) },
+            body: { fixture in
+                try fixture.server.start()
+                let token = fixture.installDebugCredential()
 
-        for requestId in [65, 66] {
-            let connection = try UnixSocketClient.connect(
-                endpoint: UnixSocketEndpoint(path: fixture.paths.socketURL.path)
-            )
-            defer { connection.close() }
-            var reader = TestFrameReader()
-            try login(connection: connection, token: token, requestId: requestId, reader: &reader)
-            try sendRequest(
-                connection: connection,
-                request: JSONRPCClientRequest(
-                    id: .number(requestId + 1),
-                    method: "auth.status",
-                    params: .object([:])
-                )
-            )
-            let response = try reader.receiveResponse(connection: connection)
-            #expect(response.error == nil)
-        }
+                for requestId in [65, 66] {
+                    let connection = try await connectWithoutBlockingCooperativePool(
+                        socketPath: fixture.paths.socketURL.path)
+                    defer { connection.close() }
+                    var reader = TestFrameReader()
+                    try await loginWithoutBlockingMainActor(
+                        connection: connection, token: token, requestId: requestId, reader: &reader)
+                    try await sendRequestWithoutBlockingCooperativePool(
+                        connection: connection,
+                        request: JSONRPCClientRequest(
+                            id: .number(requestId + 1),
+                            method: "auth.status",
+                            params: .object([:])
+                        )
+                    )
+                    let response = try await reader.receiveResponseWithoutBlockingMainActor(connection: connection)
+                    #expect(response.error == nil)
+                }
+            })
     }
 
     @Test("unsafe debug client can invoke semantic layout control methods")
-    func unsafeDebugClientCanInvokeSemanticLayoutControlMethods() throws {
+    func unsafeDebugClientCanInvokeSemanticLayoutControlMethods() async throws {
         let paneId = UUID()
-        let fixture = try LiveServerFixture(
-            accessMode: .unsafeDebug,
-            channel: .debug,
-            panes: [makePaneSummary(id: paneId, ordinal: 1)]
-        )
-        defer {
-            fixture.cleanup()
-        }
-        try fixture.server.start()
-
-        let split = try sendRequest(
-            socketPath: fixture.paths.socketURL.path,
-            request: JSONRPCClientRequest(
-                id: .number(71),
-                method: "pane.split",
-                params: try JSONRPCCodec.encodeJSONValue(
-                    IPCPaneSplitParams(
-                        handle: "pane:1", direction: .right, correlationId: UUIDv7.generate())
+        try await withLiveServer(
+            makeFixture: {
+                try LiveServerFixture(
+                    accessMode: .unsafeDebug,
+                    channel: .debug,
+                    panes: [makePaneSummary(id: paneId, ordinal: 1)]
                 )
-            )
-        )
-        #expect(split.error == nil)
-        let splitResult = try decodeResponseResult(IPCPaneSplitResult.self, from: split)
-        #expect(splitResult.targetPaneId == paneId)
-        #expect(splitResult.direction == .right)
+            },
+            body: { fixture in
+                try fixture.server.start()
 
-        let close = try sendRequest(
-            socketPath: fixture.paths.socketURL.path,
-            request: JSONRPCClientRequest(
-                id: .number(74),
-                method: "pane.close",
-                params: try JSONRPCCodec.encodeJSONValue(
-                    IPCPaneCloseParams(handle: "pane:1", correlationId: UUIDv7.generate())
+                let split = try await sendRequestWithoutBlockingCooperativePool(
+                    socketPath: fixture.paths.socketURL.path,
+                    request: JSONRPCClientRequest(
+                        id: .number(71),
+                        method: "pane.split",
+                        params: try JSONRPCCodec.encodeJSONValue(
+                            IPCPaneSplitParams(
+                                handle: "pane:1", direction: .right, correlationId: UUIDv7.generate())
+                        )
+                    )
                 )
-            )
-        )
-        #expect(close.error == nil)
-        let closeResult = try decodeResponseResult(IPCPaneCloseResult.self, from: close)
-        #expect(closeResult.paneId == paneId)
+                #expect(split.error == nil)
+                let splitResult = try decodeResponseResult(IPCPaneSplitResult.self, from: split)
+                #expect(splitResult.targetPaneId == paneId)
+                #expect(splitResult.direction == .right)
 
-        let drawerAdd = try sendRequest(
-            socketPath: fixture.paths.socketURL.path,
-            request: JSONRPCClientRequest(
-                id: .number(75),
-                method: "drawer.addPane",
-                params: try JSONRPCCodec.encodeJSONValue(
-                    IPCDrawerAddPaneParams(
-                        parentPaneHandle: "pane:1", correlationId: UUIDv7.generate())
+                let close = try await sendRequestWithoutBlockingCooperativePool(
+                    socketPath: fixture.paths.socketURL.path,
+                    request: JSONRPCClientRequest(
+                        id: .number(74),
+                        method: "pane.close",
+                        params: try JSONRPCCodec.encodeJSONValue(
+                            IPCPaneCloseParams(handle: "pane:1", correlationId: UUIDv7.generate())
+                        )
+                    )
                 )
-            )
-        )
-        #expect(drawerAdd.error == nil)
-        let drawerAddResult = try decodeResponseResult(IPCDrawerAddPaneResult.self, from: drawerAdd)
-        #expect(drawerAddResult.parentPaneId == paneId)
+                #expect(close.error == nil)
+                let closeResult = try decodeResponseResult(IPCPaneCloseResult.self, from: close)
+                #expect(closeResult.paneId == paneId)
 
-        let drawerToggle = try sendRequest(
-            socketPath: fixture.paths.socketURL.path,
-            request: JSONRPCClientRequest(
-                id: .number(76),
-                method: "drawer.toggle",
-                params: try JSONRPCCodec.encodeJSONValue(
-                    IPCDrawerToggleParams(
-                        parentPaneHandle: "pane:1", correlationId: UUIDv7.generate())
+                let drawerAdd = try await sendRequestWithoutBlockingCooperativePool(
+                    socketPath: fixture.paths.socketURL.path,
+                    request: JSONRPCClientRequest(
+                        id: .number(75),
+                        method: "drawer.addPane",
+                        params: try JSONRPCCodec.encodeJSONValue(
+                            IPCDrawerAddPaneParams(
+                                parentPaneHandle: "pane:1", correlationId: UUIDv7.generate())
+                        )
+                    )
                 )
-            )
-        )
-        #expect(drawerToggle.error == nil)
-        let drawerToggleResult = try decodeResponseResult(IPCDrawerToggleResult.self, from: drawerToggle)
-        #expect(drawerToggleResult.parentPaneId == paneId)
+                #expect(drawerAdd.error == nil)
+                let drawerAddResult = try decodeResponseResult(IPCDrawerAddPaneResult.self, from: drawerAdd)
+                #expect(drawerAddResult.parentPaneId == paneId)
+
+                let drawerToggle = try await sendRequestWithoutBlockingCooperativePool(
+                    socketPath: fixture.paths.socketURL.path,
+                    request: JSONRPCClientRequest(
+                        id: .number(76),
+                        method: "drawer.toggle",
+                        params: try JSONRPCCodec.encodeJSONValue(
+                            IPCDrawerToggleParams(
+                                parentPaneHandle: "pane:1", correlationId: UUIDv7.generate())
+                        )
+                    )
+                )
+                #expect(drawerToggle.error == nil)
+                let drawerToggleResult = try decodeResponseResult(IPCDrawerToggleResult.self, from: drawerToggle)
+                #expect(drawerToggleResult.parentPaneId == paneId)
+            })
     }
 
     @Test("server canonicalizes friendly pane ordinals before cross-pane command authorization")
-    func serverCanonicalizesFriendlyPaneOrdinalsBeforeCrossPaneCommandAuthorization() throws {
-        let scenario = try OrdinalCommandAuthorizationScenario.make()
-        defer {
-            scenario.fixture.cleanup()
-        }
-        try scenario.fixture.server.start()
+    func serverCanonicalizesFriendlyPaneOrdinalsBeforeCrossPaneCommandAuthorization() async throws {
+        try await OrdinalCommandAuthorizationScenario.withScope(body: { scenario in
+            try scenario.fixture.server.start()
 
-        let token = try scenario.fixture.issueTestCredential(
-            for: .pane(
-                paneId: scenario.secondPaneId,
-                credentialRecordId: UUIDv7.generate(),
-                status: .registered
+            let token = try scenario.fixture.issueTestCredential(
+                for: .pane(
+                    paneId: scenario.secondPaneId,
+                    credentialRecordId: UUIDv7.generate(),
+                    status: .registered
+                )
             )
-        )
-        let connection = try UnixSocketClient.connect(
-            endpoint: UnixSocketEndpoint(path: scenario.fixture.paths.socketURL.path)
-        )
-        defer {
-            connection.close()
-        }
-        var reader = TestFrameReader()
-        try login(connection: connection, token: token, requestId: 40, reader: &reader)
+            let connection = try await connectWithoutBlockingCooperativePool(
+                socketPath: scenario.fixture.paths.socketURL.path)
+            defer {
+                connection.close()
+            }
+            var reader = TestFrameReader()
+            try await loginWithoutBlockingMainActor(
+                connection: connection, token: token, requestId: 40, reader: &reader)
 
-        try sendRequest(
-            connection: connection,
-            request: JSONRPCClientRequest(
-                id: .number(41),
-                method: "command.execute",
-                params: try JSONRPCCodec.encodeJSONValue(
-                    IPCCommandExecutionRequest(
-                        commandId: scenario.commandId,
-                        correlationId: scenario.correlationId,
-                        arguments: .pane(
-                            IPCPaneCommandArguments(
-                                workspaceWindowId: scenario.workspaceWindowId,
-                                paneSelector: try IPCPaneSelector(rawValue: "pane:1")
+            try await sendRequestWithoutBlockingCooperativePool(
+                connection: connection,
+                request: JSONRPCClientRequest(
+                    id: .number(41),
+                    method: "command.execute",
+                    params: try JSONRPCCodec.encodeJSONValue(
+                        IPCCommandExecutionRequest(
+                            commandId: scenario.commandId,
+                            correlationId: scenario.correlationId,
+                            arguments: .pane(
+                                IPCPaneCommandArguments(
+                                    workspaceWindowId: scenario.workspaceWindowId,
+                                    paneSelector: try IPCPaneSelector(rawValue: "pane:1")
+                                )
                             )
                         )
                     )
                 )
             )
-        )
 
-        // The friendly ordinal names another pane, so an own-pane command is
-        // refused by name after the canonical identity is known.
-        let response = try reader.receiveResponse(connection: connection)
-        #expect(response.id == .number(41))
-        #expect(response.error?.code == -32_011)
-        #expect(response.error?.message == "not yet allowed")
-        #expect(
-            response.error?.data
-                == .object([
-                    "reason": .string("notYetAllowed"), "name": .string(scenario.commandId.rawValue),
-                ]))
-        guard case .pane(let preparedArguments)? = scenario.commandPort.preparedRequests.first?.arguments else {
-            Issue.record("Expected the command port to receive canonical pane arguments")
-            return
-        }
-        #expect(preparedArguments.paneSelector.rawValue == scenario.firstPaneId.uuidString)
-        #expect(scenario.underlyingCommandPort.receivedExecutionRequests.isEmpty)
+            // The friendly ordinal names another pane, so an own-pane command is
+            // refused by name after the canonical identity is known.
+            let response = try await reader.receiveResponseWithoutBlockingMainActor(connection: connection)
+            #expect(response.id == .number(41))
+            #expect(response.error?.code == -32_011)
+            #expect(response.error?.message == "not yet allowed")
+            #expect(
+                response.error?.data
+                    == .object([
+                        "reason": .string("notYetAllowed"), "name": .string(scenario.commandId.rawValue),
+                    ]))
+            guard case .pane(let preparedArguments)? = scenario.commandPort.preparedRequests.first?.arguments else {
+                Issue.record("Expected the command port to receive canonical pane arguments")
+                return
+            }
+            #expect(preparedArguments.paneSelector.rawValue == scenario.firstPaneId.uuidString)
+            #expect(scenario.underlyingCommandPort.receivedExecutionRequests.isEmpty)
+        })
     }
 
     @Test("server stop closes existing authenticated socket sessions")
     func serverStopClosesExistingAuthenticatedSocketSessions() async throws {
-        let fixture = try LiveServerFixture()
-        defer {
-            fixture.cleanup()
-        }
-        try fixture.server.start()
-        let token = try fixture.issueTestCredential(
-            for: .pane(
-                paneId: fixture.boundPaneId,
-                credentialRecordId: UUIDv7.generate(),
-                status: .registered
-            )
-        )
-        let connection = try UnixSocketClient.connect(
-            endpoint: UnixSocketEndpoint(path: fixture.paths.socketURL.path)
-        )
-        defer {
-            connection.close()
-        }
-        var reader = TestFrameReader()
-        try sendRequest(
-            connection: connection,
-            request: JSONRPCClientRequest(
-                id: .number(49),
-                method: "system.ping",
-                params: .object([:])
-            )
-        )
-        let ping = try await reader.receiveResponseWithoutBlockingMainActor(connection: connection)
-        try #require(ping.id == .number(49))
-        try #require(ping.error == nil, "server must remain running immediately before auth.login")
+        try await withLiveServer(
+            makeFixture: { try LiveServerFixture() },
+            body: { fixture in
+                try fixture.server.start()
+                let token = try fixture.issueTestCredential(
+                    for: .pane(
+                        paneId: fixture.boundPaneId,
+                        credentialRecordId: UUIDv7.generate(),
+                        status: .registered
+                    )
+                )
+                let connection = try await connectWithoutBlockingCooperativePool(
+                    socketPath: fixture.paths.socketURL.path)
+                defer {
+                    connection.close()
+                }
+                var reader = TestFrameReader()
+                try await sendRequestWithoutBlockingCooperativePool(
+                    connection: connection,
+                    request: JSONRPCClientRequest(
+                        id: .number(49),
+                        method: "system.ping",
+                        params: .object([:])
+                    )
+                )
+                let ping = try await reader.receiveResponseWithoutBlockingMainActor(connection: connection)
+                try #require(ping.id == .number(49))
+                try #require(ping.error == nil, "server must remain running immediately before auth.login")
 
-        try await loginWithoutBlockingMainActor(
-            connection: connection,
-            token: token,
-            requestId: 50,
-            reader: &reader
-        )
+                try await loginWithoutBlockingMainActor(
+                    connection: connection,
+                    token: token,
+                    requestId: 50,
+                    reader: &reader
+                )
 
-        fixture.server.stop()
+                fixture.stop()
 
-        do {
-            try sendRequest(
-                connection: connection,
-                request: JSONRPCClientRequest(id: .number(51), method: "system.identify", params: .object([:]))
-            )
-            let responseData = try connection.receive(maxBytes: 4096)
-            if responseData.isEmpty {
-                return
-            }
-            var decoder = NDJSONFrameDecoder(maxFrameBytes: 65_536)
-            let frames = try decoder.append(responseData)
-            let response = try JSONRPCCodec.decodeResponse(try #require(frames.first))
-            #expect(response.error?.code == -32_001)
-        } catch let error as UnixSocketTransportError {
-            #expect(error.reason == .writeFailed || error.reason == .readFailed)
-        }
+                do {
+                    try await sendRequestWithoutBlockingCooperativePool(
+                        connection: connection,
+                        request: JSONRPCClientRequest(id: .number(51), method: "system.identify", params: .object([:]))
+                    )
+                    let responseData = try await withoutBlockingCooperativePool {
+                        try connection.receive(maxBytes: 4096)
+                    }
+                    if responseData.isEmpty {
+                        return
+                    }
+                    var decoder = NDJSONFrameDecoder(maxFrameBytes: 65_536)
+                    let frames = try decoder.append(responseData)
+                    let response = try JSONRPCCodec.decodeResponse(try #require(frames.first))
+                    #expect(response.error?.code == -32_001)
+                } catch let error as UnixSocketTransportError {
+                    #expect(error.reason == .writeFailed || error.reason == .readFailed)
+                }
+            })
     }
 
     @Test("pane invalidation closes existing bound principal socket sessions")
-    func paneInvalidationClosesExistingBoundPrincipalSocketSessions() throws {
-        let fixture = try LiveServerFixture()
-        defer {
-            fixture.cleanup()
-        }
-        try fixture.server.start()
-        let token = try fixture.issueTestCredential(
-            for: .pane(
-                paneId: fixture.boundPaneId,
-                credentialRecordId: UUIDv7.generate(),
-                status: .registered
-            )
-        )
-        let connection = try UnixSocketClient.connect(
-            endpoint: UnixSocketEndpoint(path: fixture.paths.socketURL.path)
-        )
-        defer {
-            connection.close()
-        }
-        var reader = TestFrameReader()
-        try login(connection: connection, token: token, requestId: 52, reader: &reader)
+    func paneInvalidationClosesExistingBoundPrincipalSocketSessions() async throws {
+        try await withLiveServer(
+            makeFixture: { try LiveServerFixture() },
+            body: { fixture in
+                try fixture.server.start()
+                let token = try fixture.issueTestCredential(
+                    for: .pane(
+                        paneId: fixture.boundPaneId,
+                        credentialRecordId: UUIDv7.generate(),
+                        status: .registered
+                    )
+                )
+                let connection = try await connectWithoutBlockingCooperativePool(
+                    socketPath: fixture.paths.socketURL.path)
+                defer {
+                    connection.close()
+                }
+                var reader = TestFrameReader()
+                try await loginWithoutBlockingMainActor(
+                    connection: connection, token: token, requestId: 52, reader: &reader)
 
-        fixture.server.invalidatePrincipals(boundToPaneId: fixture.boundPaneId.uuidString)
+                fixture.server.invalidatePrincipals(boundToPaneId: fixture.boundPaneId.uuidString)
 
-        do {
-            try sendRequest(
-                connection: connection,
-                request: JSONRPCClientRequest(id: .number(53), method: "system.identify", params: .object([:]))
-            )
-            let responseData = try connection.receive(maxBytes: 4096)
-            #expect(responseData.isEmpty)
-        } catch let error as UnixSocketTransportError {
-            #expect(error.reason == .writeFailed || error.reason == .readFailed)
-        }
+                do {
+                    try await sendRequestWithoutBlockingCooperativePool(
+                        connection: connection,
+                        request: JSONRPCClientRequest(id: .number(53), method: "system.identify", params: .object([:]))
+                    )
+                    let responseData = try await withoutBlockingCooperativePool {
+                        try connection.receive(maxBytes: 4096)
+                    }
+                    #expect(responseData.isEmpty)
+                } catch let error as UnixSocketTransportError {
+                    #expect(error.reason == .writeFailed || error.reason == .readFailed)
+                }
+            })
     }
 
     @Test("authenticated pane requests recheck canonical membership")
-    func authenticatedPaneRequestsRecheckCanonicalMembership() throws {
+    func authenticatedPaneRequestsRecheckCanonicalMembership() async throws {
         let membership = PaneMembershipGate()
-        let fixture = try LiveServerFixture(
-            canonicalPaneMembership: { _, _ in membership.isMember }
-        )
-        defer { fixture.cleanup() }
-        try fixture.server.start()
-        let token = try fixture.issueTestCredential(
-            for: .pane(
-                paneId: fixture.boundPaneId,
-                credentialRecordId: UUIDv7.generate(),
-                status: .registered
-            )
-        )
-        let connection = try UnixSocketClient.connect(
-            endpoint: UnixSocketEndpoint(path: fixture.paths.socketURL.path)
-        )
-        defer { connection.close() }
-        var reader = TestFrameReader()
-        try login(connection: connection, token: token, requestId: 60, reader: &reader)
+        try await withLiveServer(
+            makeFixture: {
+                try LiveServerFixture(
+                    canonicalPaneMembership: { _, _ in membership.isMember }
+                )
+            },
+            body: { fixture in
+                try fixture.server.start()
+                let token = try fixture.issueTestCredential(
+                    for: .pane(
+                        paneId: fixture.boundPaneId,
+                        credentialRecordId: UUIDv7.generate(),
+                        status: .registered
+                    )
+                )
+                let connection = try await connectWithoutBlockingCooperativePool(
+                    socketPath: fixture.paths.socketURL.path)
+                defer { connection.close() }
+                var reader = TestFrameReader()
+                try await loginWithoutBlockingMainActor(
+                    connection: connection, token: token, requestId: 60, reader: &reader)
 
-        membership.setMember(false)
-        try sendRequest(
-            connection: connection,
-            request: JSONRPCClientRequest(id: .number(61), method: "system.version", params: .object([:]))
-        )
-        let response = try reader.receiveResponse(connection: connection)
+                membership.setMember(false)
+                try await sendRequestWithoutBlockingCooperativePool(
+                    connection: connection,
+                    request: JSONRPCClientRequest(id: .number(61), method: "system.version", params: .object([:]))
+                )
+                let response = try await reader.receiveResponseWithoutBlockingMainActor(connection: connection)
 
-        #expect(response.error?.code == -32_001)
-        #expect(response.error?.message == "unauthenticated")
+                #expect(response.error?.code == -32_001)
+                #expect(response.error?.message == "unauthenticated")
+            })
     }
 
     @Test("pane authentication uses canonical fixture credential metadata")
-    func paneAuthenticationUsesCanonicalFixtureCredentialMetadata() throws {
-        let fixture = try LiveServerFixture()
-        defer {
-            fixture.cleanup()
-        }
-        try fixture.server.start()
-        let token = try fixture.issueTestCredential(
-            for: .pane(
-                paneId: fixture.boundPaneId,
-                credentialRecordId: UUIDv7.generate(),
-                status: .registered
-            )
-        )
-        let connection = try UnixSocketClient.connect(
-            endpoint: UnixSocketEndpoint(path: fixture.paths.socketURL.path)
-        )
-        defer { connection.close() }
-        var reader = TestFrameReader()
-        try login(connection: connection, token: token, requestId: 67, reader: &reader)
-        try sendRequest(
-            connection: connection,
-            request: JSONRPCClientRequest(id: .number(68), method: "system.identify", params: .object([:]))
-        )
-        let response = try reader.receiveResponse(connection: connection)
-        #expect(response.error == nil)
+    func paneAuthenticationUsesCanonicalFixtureCredentialMetadata() async throws {
+        try await withLiveServer(
+            makeFixture: { try LiveServerFixture() },
+            body: { fixture in
+                try fixture.server.start()
+                let token = try fixture.issueTestCredential(
+                    for: .pane(
+                        paneId: fixture.boundPaneId,
+                        credentialRecordId: UUIDv7.generate(),
+                        status: .registered
+                    )
+                )
+                let connection = try await connectWithoutBlockingCooperativePool(
+                    socketPath: fixture.paths.socketURL.path)
+                defer { connection.close() }
+                var reader = TestFrameReader()
+                try await loginWithoutBlockingMainActor(
+                    connection: connection, token: token, requestId: 67, reader: &reader)
+                try await sendRequestWithoutBlockingCooperativePool(
+                    connection: connection,
+                    request: JSONRPCClientRequest(id: .number(68), method: "system.identify", params: .object([:]))
+                )
+                let response = try await reader.receiveResponseWithoutBlockingMainActor(connection: connection)
+                #expect(response.error == nil)
+            })
     }
 }
 
@@ -739,7 +756,7 @@ private struct OrdinalCommandAuthorizationScenario {
     let underlyingCommandPort: FakeCommandPort
     let fixture: LiveServerFixture
 
-    static func make() throws -> Self {
+    static func withScope<Result>(body: (Self) async throws -> Result) async throws -> Result {
         let firstPaneId = UUIDv7.generate()
         let secondPaneId = UUIDv7.generate()
         let workspaceWindowId = UUIDv7.generate()
@@ -775,25 +792,32 @@ private struct OrdinalCommandAuthorizationScenario {
             ]
         )
         let commandPort = PreparedCommandRecordingPort(underlying: underlyingCommandPort)
-        return try Self(
-            firstPaneId: firstPaneId,
-            secondPaneId: secondPaneId,
-            workspaceWindowId: workspaceWindowId,
-            commandId: commandId,
-            correlationId: correlationId,
-            commandPort: commandPort,
-            underlyingCommandPort: underlyingCommandPort,
-            fixture: LiveServerFixture(
-                panes: [
-                    makePaneSummary(id: firstPaneId, ordinal: 1),
-                    makePaneSummary(id: secondPaneId, ordinal: 2),
-                ],
-                commandPort: commandPort,
-                commandComposition: IPCCommandMethodComposition(
-                    compatibility: .current,
-                    commands: [descriptor]
+        return try await withLiveServer(
+            makeFixture: {
+                try LiveServerFixture(
+                    panes: [
+                        makePaneSummary(id: firstPaneId, ordinal: 1),
+                        makePaneSummary(id: secondPaneId, ordinal: 2),
+                    ],
+                    commandPort: commandPort,
+                    commandComposition: IPCCommandMethodComposition(
+                        compatibility: .current,
+                        commands: [descriptor]
+                    )
                 )
-            )
-        )
+            },
+            body: { fixture in
+                let scenario = Self(
+                    firstPaneId: firstPaneId,
+                    secondPaneId: secondPaneId,
+                    workspaceWindowId: workspaceWindowId,
+                    commandId: commandId,
+                    correlationId: correlationId,
+                    commandPort: commandPort,
+                    underlyingCommandPort: underlyingCommandPort,
+                    fixture: fixture
+                )
+                return try await body(scenario)
+            })
     }
 }

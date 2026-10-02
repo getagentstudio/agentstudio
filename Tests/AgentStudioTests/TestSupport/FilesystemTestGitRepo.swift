@@ -1,3 +1,4 @@
+import AgentStudioTestHarness
 import Foundation
 
 package enum FilesystemTestGitRepo {
@@ -36,7 +37,8 @@ package enum FilesystemTestGitRepo {
 
     @discardableResult
     package static func runGit(at repoURL: URL, args: [String]) async throws -> String {
-        try await withoutBlockingCooperativePool {
+        let git = try await TestToolResolver.resolved().git
+        return try await withoutBlockingCooperativePool {
             let outputDirectory = try FileManager.default.url(
                 for: .itemReplacementDirectory,
                 in: .userDomainMask,
@@ -56,13 +58,14 @@ package enum FilesystemTestGitRepo {
             }
 
             let process = Process()
-            process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
-            process.arguments = ["git", "-C", repoURL.path] + args
+            process.executableURL = git
+            process.arguments = ["-C", repoURL.path] + args
             process.standardOutput = stdoutHandle
             process.standardError = stderrHandle
 
-            try process.run()
+            try TestToolResolver.launch(process)
             process.waitUntilExit()
+            TestToolResolver.recordFailedExit(process)
             try stdoutHandle.close()
             try stderrHandle.close()
 

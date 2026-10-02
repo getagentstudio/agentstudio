@@ -3,8 +3,10 @@ import AgentStudioIPCClientCore
 import AgentStudioIPCTransport
 import AgentStudioInfrastructure
 import AgentStudioProgrammaticControl
+import AgentStudioTestHarness
 import Dispatch
 import Foundation
+import Synchronization
 import Testing
 
 /// The provider hooks and the model verbs run several times a turn under short
@@ -38,20 +40,22 @@ struct AppIPCCLICatalogDiscoverySkipTests {
 
     @Test("a bare --json on a parameterless method means no parameters")
     func bareJSONFlagMeansNoParameters() async throws {
-        let fixture = try LiveServerFixture(accessMode: .unsafeDebug, channel: .debug)
-        defer { fixture.cleanup() }
-        try fixture.server.start()
-        var environment = ProcessInfo.processInfo.environment
-        environment["AGENTSTUDIO_IPC_SOCKET"] = fixture.paths.socketURL.path
-        environment.removeValue(forKey: "AGENTSTUDIO_PANE_TOKEN")
+        try await withLiveServer(
+            makeFixture: { try LiveServerFixture(accessMode: .unsafeDebug, channel: .debug) },
+            body: { fixture in
+                try fixture.server.start()
+                var environment = ProcessInfo.processInfo.environment
+                environment["AGENTSTUDIO_IPC_SOCKET"] = fixture.paths.socketURL.path
+                environment.removeValue(forKey: "AGENTSTUDIO_PANE_TOKEN")
 
-        let bare = await runClientCommandLineOffCooperativePool(
-            arguments: ["system.ping", "--json"], environment: environment)
-        let plain = await runClientCommandLineOffCooperativePool(
-            arguments: ["system.ping"], environment: environment)
+                let bare = await runClientCommandLineOffCooperativePool(
+                    arguments: ["system.ping", "--json"], environment: environment)
+                let plain = await runClientCommandLineOffCooperativePool(
+                    arguments: ["system.ping"], environment: environment)
 
-        #expect(bare.exitCode == 0, "stderr: \(bare.standardError)")
-        #expect(bare.standardOutput == plain.standardOutput)
+                #expect(bare.exitCode == 0, "stderr: \(bare.standardError)")
+                #expect(bare.standardOutput == plain.standardOutput)
+            })
     }
 
     @Test("command.execute still resolves its arguments from the live catalog")
@@ -66,33 +70,36 @@ struct AppIPCCLICatalogDiscoverySkipTests {
 /// Runs the CLI dispatch against a proxy that forwards to the real server and
 /// records every request method the client sends.
 private func runClientThroughRecordingProxy(arguments: [String]) async throws -> [String] {
-    let fixture = try LiveServerFixture(accessMode: .unsafeDebug, channel: .debug)
-    defer { fixture.cleanup() }
-    try fixture.server.start()
     let recorder = RequestMethodRecorder()
     let proxyPath = "/tmp/asipc-skip-\(UUIDv7.generate().uuidString).sock"
     let proxy = UnixSocketListener(endpoint: UnixSocketEndpoint(path: proxyPath))
-    defer {
-        proxy.stop()
-        try? FileManager.default.removeItem(atPath: proxyPath)
-    }
-    try proxy.start { clientConnection in
-        guard
-            let serverConnection = try? UnixSocketClient.connect(
-                endpoint: UnixSocketEndpoint(path: fixture.paths.socketURL.path))
-        else {
-            clientConnection.close()
-            return
-        }
-        pumpRecordingRequests(from: clientConnection, to: serverConnection, recorder: recorder)
-        pumpResponses(from: serverConnection, to: clientConnection)
-    }
+    let pumps = RecordingProxyPumpOwner()
+    return try await withLiveServer(
+        makeFixture: { try LiveServerFixture(accessMode: .unsafeDebug, channel: .debug) },
+        releaseHeldWork: {
+            proxy.stop()
+            await pumps.closeAndJoin()
+            try? FileManager.default.removeItem(atPath: proxyPath)
+        },
+        body: { fixture in
+            try fixture.server.start()
+            try proxy.start { clientConnection in
+                guard
+                    let serverConnection = try? UnixSocketClient.connect(
+                        endpoint: UnixSocketEndpoint(path: fixture.paths.socketURL.path))
+                else {
+                    clientConnection.close()
+                    return
+                }
+                pumps.admit(client: clientConnection, server: serverConnection, recorder: recorder)
+            }
 
-    var environment = ProcessInfo.processInfo.environment
-    environment["AGENTSTUDIO_IPC_SOCKET"] = proxyPath
-    environment.removeValue(forKey: "AGENTSTUDIO_PANE_TOKEN")
-    _ = await runClientCommandLineOffCooperativePool(arguments: arguments, environment: environment)
-    return recorder.methods()
+            var environment = ProcessInfo.processInfo.environment
+            environment["AGENTSTUDIO_IPC_SOCKET"] = proxyPath
+            environment.removeValue(forKey: "AGENTSTUDIO_PANE_TOKEN")
+            _ = await runClientCommandLineOffCooperativePool(arguments: arguments, environment: environment)
+            return recorder.methods()
+        })
 }
 
 private struct ClientCommandLineOutcome {
@@ -145,31 +152,74 @@ private func pumpRecordingRequests(
     from source: UnixSocketConnection,
     to destination: UnixSocketConnection,
     recorder: RequestMethodRecorder
-) {
-    DispatchQueue.global(qos: .userInitiated).async {
-        var decoder = NDJSONFrameDecoder(maxFrameBytes: IPCFramePolicy.maximumRequestFrameBytes)
-        while true {
-            guard let data = try? source.receive(maxBytes: 16_384), !data.isEmpty else { break }
-            if let frames = try? decoder.append(data) {
-                for frame in frames {
-                    if let request = try? JSONRPCCodec.decodeRequest(frame) {
-                        recorder.record(request.method)
+) -> Task<Void, Never> {
+    Task {
+        await valueFromDedicatedThread {
+            var decoder = NDJSONFrameDecoder(maxFrameBytes: IPCFramePolicy.maximumRequestFrameBytes)
+            while true {
+                guard let data = try? source.receive(maxBytes: 16_384), !data.isEmpty else { break }
+                if let frames = try? decoder.append(data) {
+                    for frame in frames {
+                        if let request = try? JSONRPCCodec.decodeRequest(frame) {
+                            recorder.record(request.method)
+                        }
                     }
                 }
+                guard (try? destination.send(data)) != nil else { break }
             }
-            guard (try? destination.send(data)) != nil else { break }
+            destination.close()
         }
-        destination.close()
     }
 }
 
-private func pumpResponses(from source: UnixSocketConnection, to destination: UnixSocketConnection) {
-    DispatchQueue.global(qos: .userInitiated).async {
-        while true {
-            guard let data = try? source.receive(maxBytes: 16_384), !data.isEmpty else { break }
-            guard (try? destination.send(data)) != nil else { break }
+private func pumpResponses(from source: UnixSocketConnection, to destination: UnixSocketConnection) -> Task<Void, Never>
+{
+    Task {
+        await valueFromDedicatedThread {
+            while true {
+                guard let data = try? source.receive(maxBytes: 16_384), !data.isEmpty else { break }
+                guard (try? destination.send(data)) != nil else { break }
+            }
+            destination.close()
         }
-        destination.close()
+    }
+}
+
+/// Owns both directions until their blocking reads have actually returned.
+/// Closing the sockets, rather than cancelling their Tasks alone, unblocks IO.
+private final class RecordingProxyPumpOwner: Sendable {
+    private struct State {
+        var isClosing = false
+        var connections: [UnixSocketConnection] = []
+        var tasks: [Task<Void, Never>] = []
+    }
+
+    private let state = Mutex(State())
+
+    func admit(client: UnixSocketConnection, server: UnixSocketConnection, recorder: RequestMethodRecorder) {
+        state.withLock { state in
+            guard !state.isClosing else {
+                client.close()
+                server.close()
+                return
+            }
+            state.connections.append(contentsOf: [client, server])
+            state.tasks.append(pumpRecordingRequests(from: client, to: server, recorder: recorder))
+            state.tasks.append(pumpResponses(from: server, to: client))
+        }
+    }
+
+    func closeAndJoin() async {
+        let owned = state.withLock { state in
+            state.isClosing = true
+            let owned = (connections: state.connections, tasks: state.tasks)
+            state.connections.removeAll()
+            state.tasks.removeAll()
+            return owned
+        }
+        for connection in owned.connections { connection.close() }
+        for task in owned.tasks { task.cancel() }
+        for task in owned.tasks { await task.value }
     }
 }
 

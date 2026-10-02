@@ -1,4 +1,5 @@
 import AgentStudioInfrastructure
+import AgentStudioTestHarness
 import AgentStudioTestSupport
 import Foundation
 import Testing
@@ -28,18 +29,18 @@ struct CISwiftBuildInputsScriptTests {
             ("CI_SWIFT_GHOSTTY_GITLINK", "ghostty-change"),
             ("CI_SWIFT_ZMX_GITLINK", "zmx-change"),
             ("EXTRA_SWIFT_TEST_ARGS", "-DCHANGE"),
-            ("SWIFT_BUILD_STATS_DIR", "/different/stats"),
+            ("SWIFT_BUILD_STATS_DIR", fixture.root.appendingPathComponent("different-stats").path),
         ] {
             let changed = try await fixture.inventory(name, extra: [name: value])
             #expect(changed.prefix != original.prefix, "\(name) did not change fingerprint")
         }
         for path in [
             "Package.swift", "Package.resolved", "Frameworks/GhosttyKit.xcframework/binary",
-            "prebuild-helper.sh", "verifier.sh",
+            "compilation-policy.sh", "sandbox-policy.sh", "verifier.sh",
         ] {
             let file = fixture.root.appendingPathComponent(path)
             let prior = try String(contentsOf: file, encoding: .utf8)
-            try (prior + "changed").write(to: file, atomically: true, encoding: .utf8)
+            try (prior + "\n# changed\n").write(to: file, atomically: true, encoding: .utf8)
             #expect(
                 try await fixture.inventory("changed").prefix != original.prefix, "\(path) did not change fingerprint")
             try prior.write(to: file, atomically: true, encoding: .utf8)
@@ -48,6 +49,74 @@ struct CISwiftBuildInputsScriptTests {
         let sourceChange = try await fixture.inventory("source-change")
         #expect(sourceChange.prefix == original.prefix)
         #expect(sourceChange.digest != original.digest)
+    }
+
+    @Test("a test lane inventory registration preserves compilation compatibility")
+    func laneInventoryRegistrationPreservesCompilationCompatibility() async throws {
+        let fixture = try SwiftInputFixture()
+        defer { fixture.remove() }
+        let original = try await fixture.inventory("original")
+        let helper = fixture.root.appendingPathComponent("prebuild-helper.sh")
+        let helperText = try String(contentsOf: helper, encoding: .utf8)
+        try (helperText + "\nlarge|InventoryRegistrationExampleTests|concurrent\n")
+            .write(to: helper, atomically: true, encoding: .utf8)
+
+        let registered = try await fixture.inventory("registered")
+
+        #expect(registered.prefix == original.prefix)
+        let disposition = try await fixture.run("verify", original.path.path, registered.path.path)
+        #expect(disposition.hasPrefix("warm "))
+        #expect(FileManager.default.fileExists(atPath: fixture.marker.path))
+    }
+
+    @Test("disabled statistics requests share their effective policy and enabled statistics do not")
+    func effectiveStatisticsSettingsDetermineCompatibility() async throws {
+        let fixture = try SwiftInputFixture()
+        defer { fixture.remove() }
+        let disabled = try await fixture.inventory("disabled", extra: ["SWIFT_BUILD_STATS_DIR": "relative-one"])
+        let alsoDisabled = try await fixture.inventory(
+            "also-disabled", extra: ["SWIFT_BUILD_STATS_DIR": "relative-two"])
+        #expect(disabled.prefix == alsoDisabled.prefix)
+
+        let enabled = try await fixture.inventory(
+            "enabled", extra: ["SWIFT_BUILD_STATS_DIR": fixture.root.appendingPathComponent("statistics").path])
+        #expect(enabled.prefix != disabled.prefix)
+        let seed = try await fixture.inventory("seed")
+        let disposition = try await fixture.run("verify", seed.path.path, enabled.path.path)
+        #expect(disposition.hasPrefix("cold "))
+        #expect(!FileManager.default.fileExists(atPath: fixture.marker.path))
+    }
+
+    @Test("a changed compilation policy is rejected even when its resolved flags are unchanged")
+    func changedCompilationPolicyRequiresColdBuild() async throws {
+        let fixture = try SwiftInputFixture()
+        defer { fixture.remove() }
+        let seed = try await fixture.inventory("seed")
+        let policy = fixture.root.appendingPathComponent("compilation-policy.sh")
+        let original = try String(contentsOf: policy, encoding: .utf8)
+        try (original + "\n# policy revision\n").write(to: policy, atomically: true, encoding: .utf8)
+        let current = try await fixture.inventory("current")
+
+        let disposition = try await fixture.run("verify", seed.path.path, current.path.path)
+
+        #expect(disposition.hasPrefix("cold "))
+        #expect(!FileManager.default.fileExists(atPath: fixture.marker.path))
+    }
+
+    @Test("an unavailable compilation policy cannot verify a restored seed")
+    func unavailableCompilationPolicyRequiresColdBuild() async throws {
+        let fixture = try SwiftInputFixture()
+        defer { fixture.remove() }
+        let seed = try await fixture.inventory("seed")
+        try FileManager.default.removeItem(at: fixture.root.appendingPathComponent("compilation-policy.sh"))
+        let currentPath = fixture.root.appendingPathComponent("unavailable-policy.json")
+        _ = try await fixture.run("inventory", currentPath.path, expectedExitCode: 1)
+
+        let disposition = try await fixture.run("verify", seed.path.path, currentPath.path)
+
+        #expect(disposition.hasPrefix("cold "))
+        #expect(!FileManager.default.fileExists(atPath: fixture.marker.path))
+        #expect(FileManager.default.fileExists(atPath: fixture.unrelated.path))
     }
 
     @Test("build and compiler statistics outputs do not change compatibility")
@@ -280,6 +349,7 @@ private final class SwiftInputFixture {
         for (path, value) in [
             ("Package.swift", "package"), ("Package.resolved", "resolved"),
             ("prebuild-helper.sh", "prebuild"), ("verifier.sh", "verifier"),
+            ("sandbox-policy.sh", "swift_package_sandbox_arguments() { return 0; }\n"),
             ("Sources/Example.swift", "let example = 1"),
             ("Sources/AgentStudio/Resources/BridgeWeb/index.html", "one"),
             ("Frameworks/GhosttyKit.xcframework/binary", "binary"), ("build/marker", "keep"),
@@ -287,6 +357,9 @@ private final class SwiftInputFixture {
         ] {
             try value.write(to: root.appendingPathComponent(path), atomically: true, encoding: .utf8)
         }
+        try FileManager.default.copyItem(
+            at: URL(fileURLWithPath: "scripts/swift-compilation-policy.sh"),
+            to: root.appendingPathComponent("compilation-policy.sh"))
         try FileManager.default.setAttributes(
             [.modificationDate: Date(timeIntervalSince1970: 1_700_000_000)], ofItemAtPath: source.path)
     }
@@ -294,6 +367,7 @@ private final class SwiftInputFixture {
     func remove() { try? FileManager.default.removeItem(at: root) }
 
     func trackOnlySourceFile() async throws {
+        let git = try await TestToolResolver.resolved().git
         let rootPath = root.path
         let gitCommands = [
             ["-C", rootPath, "init", "-q"],
@@ -302,10 +376,11 @@ private final class SwiftInputFixture {
         let exitCodes = try await withoutBlockingCooperativePool {
             try gitCommands.map { arguments in
                 let process = Process()
-                process.executableURL = URL(fileURLWithPath: "/usr/bin/git")
+                process.executableURL = git
                 process.arguments = arguments
-                try process.run()
+                try TestToolResolver.launch(process)
                 process.waitUntilExit()
+                TestToolResolver.recordFailedExit(process)
                 return process.terminationStatus
             }
         }
@@ -322,7 +397,8 @@ private final class SwiftInputFixture {
                 "CI_SWIFT_BUILD_PATH": root.appendingPathComponent("build").path,
                 "CI_SWIFT_ALL_FILES": "1",
                 "CI_SWIFT_VERIFIER_PATH": root.appendingPathComponent("verifier.sh").path,
-                "CI_SWIFT_PREBUILD_HELPER_PATH": root.appendingPathComponent("prebuild-helper.sh").path,
+                "CI_SWIFT_COMPILATION_POLICY_PATH": root.appendingPathComponent("compilation-policy.sh").path,
+                "CI_SWIFT_SANDBOX_POLICY_PATH": root.appendingPathComponent("sandbox-policy.sh").path,
                 "CI_SWIFT_COMPILER_VERSION": "swift-fixture", "CI_SWIFT_XCODE_BUILD": "xcode-fixture",
                 "CI_SWIFT_SDK_BUILD": "sdk-fixture", "CI_SWIFT_GHOSTTY_GITLINK": "ghostty-fixture",
                 "CI_SWIFT_ZMX_GITLINK": "zmx-fixture", "CI_SWIFT_PRODUCER_COMMIT": "producer",
@@ -407,19 +483,21 @@ private final class SwiftInputFixture {
 
     func setUnrepresentableSeedTime(_ manifest: URL) async throws {
         let manifestPath = manifest.path
+        let python = try await TestToolResolver.resolved().python3
         let exitCode = try await withoutBlockingCooperativePool {
             let process = Process()
-            process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
+            process.executableURL = python
             process.arguments = [
-                "python3", "-c",
+                "-c",
                 "import hashlib,json,sys; p=sys.argv[1]; m=json.load(open(p)); "
                     + "next(r for r in m['records'] if r['path']=='Sources/Example.swift')['mtime_ns']=9223372036854775808; "
                     + "m['manifest_digest']=hashlib.sha256(json.dumps(m['records'],sort_keys=True,separators=(',',':'),ensure_ascii=True).encode()).hexdigest(); "
                     + "json.dump(m,open(p,'w'))",
                 manifestPath,
             ]
-            try process.run()
+            try TestToolResolver.launch(process)
             process.waitUntilExit()
+            TestToolResolver.recordFailedExit(process)
             return process.terminationStatus
         }
         #expect(exitCode == 0)

@@ -168,14 +168,30 @@ export async function settleBrowserCondition(
 export async function settleThreadMotion(element: Element, failureMessage: string): Promise<void> {
 	if (!(element instanceof HTMLElement)) throw new Error(failureMessage);
 	const panel = element;
-	// Opening state is committed on a browser frame. Flush each observed frame
-	// through act until that state commits; a frame count is not completion.
-	while (panel.isConnected && panel.hasAttribute('data-starting-style')) {
+	const needsTransitionCommit =
+		panel.isConnected &&
+		(panel.hasAttribute('data-starting-style') ||
+			(!panel.hasAttribute('data-open') &&
+				!panel.hasAttribute('data-ending-style') &&
+				!panel.hasAttribute('hidden')));
+	if (needsTransitionCommit) {
+		// Base UI defers starting -> idle and closing -> ending to its queued frame.
+		// Let that exact transition commit when this act returns. Holding the same act
+		// open until panel removal would prevent ending's passive effect from starting.
 		await act(async (): Promise<void> => {
 			await new Promise<void>((resolve): void => {
 				requestAnimationFrame((): void => resolve());
 			});
 		});
+		if (
+			panel.isConnected &&
+			(panel.hasAttribute('data-starting-style') ||
+				(!panel.hasAttribute('data-open') &&
+					!panel.hasAttribute('data-ending-style') &&
+					!panel.hasAttribute('hidden')))
+		) {
+			throw new Error(`${failureMessage} Base UI's deferred transition did not commit.`);
+		}
 	}
 	await act(async (): Promise<void> => {
 		await Promise.all(
@@ -206,6 +222,39 @@ export async function settleThreadMotion(element: Element, failureMessage: strin
 			checkCompletion();
 		});
 	});
+}
+
+export async function waitForWorktreeAnnotationBrowserDomState<TState>(props: {
+	readonly readState: () => TState;
+	readonly isExpected: (state: TState) => boolean;
+}): Promise<TState> {
+	let observedState = props.readState();
+	await act(async (): Promise<void> => {
+		if (props.isExpected(observedState)) return;
+		observedState = await new Promise<TState>((resolve): void => {
+			const observer = new MutationObserver(publishWhenExpected);
+			function publishWhenExpected(): void {
+				const state = props.readState();
+				if (!props.isExpected(state)) return;
+				observer.disconnect();
+				document.removeEventListener('focusin', publishWhenExpected, true);
+				document.removeEventListener('focusout', publishWhenExpected, true);
+				document.removeEventListener('transitionend', publishWhenExpected, true);
+				resolve(state);
+			}
+			observer.observe(document.documentElement, {
+				attributes: true,
+				characterData: true,
+				childList: true,
+				subtree: true,
+			});
+			document.addEventListener('focusin', publishWhenExpected, true);
+			document.addEventListener('focusout', publishWhenExpected, true);
+			document.addEventListener('transitionend', publishWhenExpected, true);
+			publishWhenExpected();
+		});
+	});
+	return observedState;
 }
 
 export function createDeferred<TValue>(): {

@@ -25,7 +25,7 @@ enum BridgeProductWebKitReplayStartup {
 
     static func prepare(_ input: Input) async throws -> OpenedSubscriptions {
         let outcome = try await input.controllerTarget.waitForFirstApplicationReceipt()
-        guard case .receipt(let receipt) = outcome, receipt.accepted else {
+        guard case .receipt(let receipt) = outcome, receipt.applicationResult == .advanced else {
             throw StartupError.initialPublicationEnded(
                 await BridgeProductWebKitFirstApplicationDiagnostic.capture(
                     .init(

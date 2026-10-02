@@ -146,7 +146,7 @@ struct VendorWorktreeScriptTests {
         let fixture = try await VendorWorktreeFixture()
         defer { fixture.cleanup() }
         let commandLog = fixture.temporaryRoot.appending(path: "command log.txt")
-        let spyDirectory = try fixture.makeCommandSpies(logURL: commandLog)
+        let spyDirectory = try await fixture.makeCommandSpies(logURL: commandLog)
 
         // Act
         let setup = try await fixture.runHelper(

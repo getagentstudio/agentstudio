@@ -63,7 +63,8 @@ struct SwiftPackageSandboxScriptTests {
         // A SwiftPM call on one line: `swift build` / `swift test` followed by a
         // flag, a variable, or a line continuation. Log strings ("requested swift
         // test args") and case patterns (`*"swift test"*`) are not calls.
-        let swiftPackageCallPattern = #/(?:^|[^\w-])swift (build|test)(?=\s+(?:--|-c\s|\\\s*$|\$\{|\$\()|\s*\\?\s*$)/#
+        let swiftPackageCallPattern =
+            #/(?:^|[^\w-])swift (build|test)(?=\s+(?:--|-c\s|\\\s*$|\$\{|\$\(|"\$)|\s*\\?\s*$)/#
         var unguardedCalls: [String] = []
         var unsourcedOwners: [String] = []
         let scriptsDirectory = URL(fileURLWithPath: "scripts")
@@ -85,8 +86,16 @@ struct SwiftPackageSandboxScriptTests {
             let callLines = owner.text.components(separatedBy: "\n").filter { line in
                 !line.trimmingCharacters(in: .whitespaces).hasPrefix("#") && line.contains(swiftPackageCallPattern)
             }
+            if owner.name == "scripts/swift-test-invocation-receipts.sh" {
+                #expect(callLines.isEmpty, "Receipt support observes commands without owning a SwiftPM call")
+            }
             guard !callLines.isEmpty else { continue }
-            for line in callLines where !line.contains(sandboxArgumentsCall) {
+            for line in callLines
+            where !line.contains(sandboxArgumentsCall)
+                && !(owner.name == "scripts/swift-compilation-policy.sh"
+                    && (line.contains("SWIFT_COMPILATION_SANDBOX_ARGUMENTS")
+                        || line.contains("SWIFT_COMPILATION_COMMON_ARGUMENTS")))
+            {
                 unguardedCalls.append("\(owner.name): \(line.trimmingCharacters(in: .whitespaces))")
             }
             if !owner.text.contains(sandboxScriptPath) && !owner.text.contains("/swift-package-sandbox.sh") {

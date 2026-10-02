@@ -1,5 +1,6 @@
 import AgentStudioGit
 import AgentStudioInfrastructure
+import AgentStudioTestHarness
 import AgentStudioTestSupport
 import Foundation
 import Testing
@@ -459,7 +460,8 @@ private enum WorktreeAnnotationGitFixture {
 
     @discardableResult
     static func runGit(at repositoryURL: URL, args: [String]) async throws -> String {
-        try await withoutBlockingCooperativePool {
+        let git = try await TestToolResolver.resolved().git
+        return try await withoutBlockingCooperativePool {
             let outputDirectory = FileManager.default.temporaryDirectory
                 .appending(path: "annotation-git-output-\(UUIDv7.generate().uuidString)")
             try FileManager.default.createDirectory(at: outputDirectory, withIntermediateDirectories: true)
@@ -476,12 +478,13 @@ private enum WorktreeAnnotationGitFixture {
             }
 
             let process = Process()
-            process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
-            process.arguments = ["git", "-C", repositoryURL.path] + args
+            process.executableURL = git
+            process.arguments = ["-C", repositoryURL.path] + args
             process.standardOutput = stdoutHandle
             process.standardError = stderrHandle
-            try process.run()
+            try TestToolResolver.launch(process)
             process.waitUntilExit()
+            TestToolResolver.recordFailedExit(process)
             try stdoutHandle.close()
             try stderrHandle.close()
             guard process.terminationStatus == 0 else {

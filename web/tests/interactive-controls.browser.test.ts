@@ -300,7 +300,7 @@ describe("interactive website controllers", () => {
 
   it("restores the finale copy label exactly two seconds after a successful copy", async () => {
     const fixture = addFixture(`
-      <div data-install-command="brew tap ShravanSunder/agentstudio\nbrew install --cask agent-studio" data-install-copied-label="Copied ✓" data-install-feedback-ms="2000">
+      <div data-install-command="brew tap getagentstudio/agentstudio\nbrew install --cask agent-studio" data-install-copied-label="Copied ✓" data-install-feedback-ms="2000">
         <code data-install-code hidden></code>
         <button data-install-copy><svg><g data-install-copy-icon></g><path data-install-copied-icon data-install-icon-hidden></path></svg><span data-install-copy-feedback>Copy install</span></button>
         <span data-install-status aria-live="polite"></span>
@@ -316,7 +316,7 @@ describe("interactive website controllers", () => {
     button.click();
     await Promise.resolve();
     expect(writeText).toHaveBeenCalledWith(
-      "brew tap ShravanSunder/agentstudio\nbrew install --cask agent-studio",
+      "brew tap getagentstudio/agentstudio\nbrew install --cask agent-studio",
     );
     expect(label.textContent).toBe("Copied ✓");
     expect(

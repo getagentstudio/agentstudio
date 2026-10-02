@@ -6,6 +6,7 @@
   "scripts": {
     "audit:captures": "node --experimental-strip-types scripts/audit-capture-pixels.ts",
     "build": "ASTRO_TELEMETRY_DISABLED=1 astro build && node --experimental-strip-types scripts/verify-session-restore-player.ts && node --experimental-strip-types scripts/stage-cloudflare-build-config.ts",
+    "build:media-callout": "node --experimental-strip-types scripts/build-media-callout.ts",
     "build:scene-bundles": "ASTRO_TELEMETRY_DISABLED=1 node --experimental-strip-types scripts/build-scene-bundles.ts",
     "campaign:links": "node --experimental-strip-types scripts/list-campaign-links.ts",
     "campaign:requests": "node --experimental-strip-types scripts/query-campaign-request-analytics.ts",

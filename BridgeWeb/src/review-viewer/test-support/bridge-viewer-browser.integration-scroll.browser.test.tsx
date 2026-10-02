@@ -5,7 +5,10 @@ import { cleanup } from 'vitest-browser-react';
 // oxlint-disable-next-line import/no-unassigned-import -- Browser Mode must load production app CSS.
 import '../../app/bridge-app.css';
 import {
-	advanceBridgeReviewRecoveryWitnessFrames,
+	scrollBridgeReviewRecoveryWitnessTo,
+	waitForBridgeReviewRecoveryDomState,
+} from './bridge-review-recovery-dom-state.test-support.js';
+import {
 	disposeBridgeReviewRecoveryWitnessHarnesses,
 	makeBridgeReviewRecoveryWitnessFiles,
 	renderBridgeReviewRecoveryWitness,
@@ -14,9 +17,10 @@ import {
 
 describe('Bridge Review sustained deep-scroll Browser witness', () => {
 	afterEach(async (): Promise<void> => {
-		await cleanup();
-		disposeBridgeReviewRecoveryWitnessHarnesses();
-		await advanceBridgeReviewRecoveryWitnessFrames(2);
+		await act(async (): Promise<void> => {
+			await cleanup();
+			disposeBridgeReviewRecoveryWitnessHarnesses();
+		});
 		document.body.replaceChildren();
 	});
 
@@ -40,11 +44,17 @@ describe('Bridge Review sustained deep-scroll Browser witness', () => {
 
 		// Act
 		await harness.publishDisplay();
-		await expect.poll(() => harness.selectedItemCommandCount()).toBe(1);
+		await waitForBridgeReviewRecoveryDomState({
+			readState: harness.selectedItemCommandCount,
+			isExpected: (count): boolean => count === 1,
+		});
 		await expect
 			.element(harness.renderResult.getByTestId('bridge-code-view-panel'))
 			.toHaveAttribute('data-code-view-item-count', String(files.length));
-		await expect.poll(() => harness.codeScrollOwner()).not.toBeNull();
+		await waitForBridgeReviewRecoveryDomState({
+			readState: harness.codeScrollOwner,
+			isExpected: (owner): boolean => owner !== null,
+		});
 		const scrollOwner = harness.codeScrollOwner();
 		if (scrollOwner === null) throw new Error('Production Review CodeView has no scroll owner.');
 		const scrollTopBeforeHydration = scrollOwner.scrollTop;
@@ -52,8 +62,12 @@ describe('Bridge Review sustained deep-scroll Browser witness', () => {
 		await expect
 			.element(harness.renderResult.getByTestId('review-viewer-shell'))
 			.toHaveAttribute('data-selected-content-state', 'ready');
-		await expect.poll(() => scrollOwner.scrollHeight > scrollOwner.clientHeight).toBe(true);
-		await advanceBridgeReviewRecoveryWitnessFrames(4);
+		await waitForBridgeReviewRecoveryDomState({
+			readState: (): string => harness.visibleCodeText(scrollOwner),
+			isExpected: (text): boolean =>
+				scrollOwner.scrollHeight > scrollOwner.clientHeight &&
+				text.includes(earlyFile.contentMarker),
+		});
 		const initialVisibleText = harness.visibleCodeText(scrollOwner);
 		if (!initialVisibleText.includes(earlyFile.contentMarker)) {
 			const codePanel = harness.renderResult.container.querySelector(
@@ -122,12 +136,18 @@ describe('Bridge Review sustained deep-scroll Browser witness', () => {
 		});
 		const harness = await renderBridgeReviewRecoveryWitness(files);
 		await harness.publishDisplay();
-		await expect.poll(() => harness.selectedItemCommandCount()).toBe(1);
-		await expect.poll(() => harness.renderedCodeViewItemIds().length).toBeGreaterThan(1);
-		await expect
-			.poll(() => harness.viewportCommandVisibleItemIds().some((itemIds) => itemIds.length > 0))
-			.toBe(true);
-		await advanceBridgeReviewRecoveryWitnessFrames(4);
+		await waitForBridgeReviewRecoveryDomState({
+			readState: harness.selectedItemCommandCount,
+			isExpected: (count): boolean => count === 1,
+		});
+		await waitForBridgeReviewRecoveryDomState({
+			readState: harness.renderedCodeViewItemIds,
+			isExpected: (itemIds): boolean => itemIds.length > 1,
+		});
+		await waitForBridgeReviewRecoveryDomState({
+			readState: harness.viewportCommandVisibleItemIds,
+			isExpected: (windows): boolean => windows.some((itemIds): boolean => itemIds.length > 0),
+		});
 		const codePanel = harness.renderResult.container.querySelector(
 			'[data-testid="bridge-code-view-panel"]',
 		);
@@ -145,9 +165,10 @@ describe('Bridge Review sustained deep-scroll Browser witness', () => {
 		const viewportCommandsAfterHide = harness.viewportCommandVisibleItemIds();
 		expect(viewportCommandsAfterHide.slice(viewportCommandCountBeforeTransition)).toEqual([[]]);
 		await harness.setActive(true);
-		await expect
-			.poll(() => harness.viewportCommandVisibleItemIds().length)
-			.toBeGreaterThan(viewportCommandsAfterHide.length);
+		await waitForBridgeReviewRecoveryDomState({
+			readState: harness.viewportCommandVisibleItemIds,
+			isExpected: (windows): boolean => windows.length > viewportCommandsAfterHide.length,
+		});
 
 		// Assert: activation republishes the retained Pierre window after the exact inactive clear.
 		const transitionViewportCommands = harness
@@ -204,21 +225,27 @@ describe('Bridge Review sustained deep-scroll Browser witness', () => {
 		const harness = await renderBridgeReviewRecoveryWitness(files);
 		await harness.publishDisplay();
 		await harness.publishCompleteContent();
-		await expect.poll(() => harness.selectedItemCommandCount()).toBe(1);
-		await expect.poll(() => harness.codeScrollOwner()).not.toBeNull();
+		await waitForBridgeReviewRecoveryDomState({
+			readState: harness.selectedItemCommandCount,
+			isExpected: (count): boolean => count === 1,
+		});
+		await waitForBridgeReviewRecoveryDomState({
+			readState: harness.codeScrollOwner,
+			isExpected: (owner): boolean => owner !== null,
+		});
 
 		const selectedTreeRow = await harness.scrollTreePathIntoView(selectedFile.path);
 		await act(async (): Promise<void> => {
 			selectedTreeRow.click();
 			await Promise.resolve();
 		});
-		await expect
-			.poll(() =>
+		await waitForBridgeReviewRecoveryDomState({
+			readState: (): string | null | undefined =>
 				harness.renderResult.container
 					.querySelector('[data-testid="bridge-code-view-panel"]')
 					?.getAttribute('data-selected-item-id'),
-			)
-			.toBe(selectedFile.itemId);
+			isExpected: (itemId): boolean => itemId === selectedFile.itemId,
+		});
 
 		const collapsedDirectoryPath = 'Sources/RecoveryGroup01';
 		const collapsedDirectory = await harness.scrollTreePathIntoView(collapsedDirectoryPath);
@@ -226,32 +253,36 @@ describe('Bridge Review sustained deep-scroll Browser witness', () => {
 			collapsedDirectory.click();
 			await Promise.resolve();
 		});
-		await expect
-			.poll(() => harness.pierreTreePath(collapsedDirectoryPath)?.getAttribute('aria-expanded'))
-			.toBe('false');
+		await waitForBridgeReviewRecoveryDomState({
+			readState: (): string | null | undefined =>
+				harness.pierreTreePath(collapsedDirectoryPath)?.getAttribute('aria-expanded'),
+			isExpected: (expanded): boolean => expanded === 'false',
+		});
 
 		const scrollOwnerBeforeReplacement = harness.codeScrollOwner();
 		const treeHostBeforeReplacement = harness.pierreTreeHost();
 		if (scrollOwnerBeforeReplacement === null || treeHostBeforeReplacement === null) {
 			throw new Error('Hidden-generation Review fixture requires mounted Pierre surfaces.');
 		}
-		await expect
-			.poll(
-				() => scrollOwnerBeforeReplacement.scrollHeight > scrollOwnerBeforeReplacement.clientHeight,
-			)
-			.toBe(true);
+		await waitForBridgeReviewRecoveryDomState({
+			readState: (): boolean =>
+				scrollOwnerBeforeReplacement.scrollHeight > scrollOwnerBeforeReplacement.clientHeight,
+			isExpected: (scrollable): boolean => scrollable,
+		});
 		await act(async (): Promise<void> => {
-			const maximumScrollTop =
-				scrollOwnerBeforeReplacement.scrollHeight - scrollOwnerBeforeReplacement.clientHeight;
 			scrollOwnerBeforeReplacement.dispatchEvent(
 				new WheelEvent('wheel', {
 					bubbles: true,
 					deltaY: scrollOwnerBeforeReplacement.clientHeight,
 				}),
 			);
-			scrollOwnerBeforeReplacement.scrollTop = Math.floor(maximumScrollTop * 0.72);
-			scrollOwnerBeforeReplacement.dispatchEvent(new Event('scroll', { bubbles: true }));
-			await Promise.resolve();
+		});
+		await scrollBridgeReviewRecoveryWitnessTo({
+			scrollOwner: scrollOwnerBeforeReplacement,
+			scrollTop: Math.floor(
+				(scrollOwnerBeforeReplacement.scrollHeight - scrollOwnerBeforeReplacement.clientHeight) *
+					0.72,
+			),
 		});
 		const metadataRevisionBeforeReplacement = Number(
 			harness.renderResult.container
@@ -404,75 +435,41 @@ async function waitForSettledReviewPosition(props: {
 	readonly harness: Awaited<ReturnType<typeof renderBridgeReviewRecoveryWitness>>;
 	readonly scrollOwner: HTMLElement;
 }): Promise<SettledReviewPositionReceipt> {
-	let previousReceipt: SettledReviewPositionReceipt | null = null;
-	let lastDiagnostic: Readonly<Record<string, unknown>> = {};
-	for (let attempt = 0; attempt < 30; attempt += 1) {
-		// Each sample crosses a real apply/paint boundary. Two matching samples are the receipt that
-		// revision adoption, the exact manifest, and Pierre's visible geometry have all settled.
-		// oxlint-disable-next-line no-await-in-loop -- Consecutive observed frames are the synchronization contract.
-		await advanceBridgeReviewRecoveryWitnessFrames(1);
-		const reviewShell = props.harness.renderResult.container.querySelector(
-			'[data-testid="review-viewer-shell"]',
-		);
-		const codePanel = props.harness.renderResult.container.querySelector(
-			'[data-testid="bridge-code-view-panel"]',
-		);
-		const semanticAnchor = firstVisibleReviewAnchor(props.harness, props.scrollOwner);
-		const maximumScrollTop = Math.max(
-			props.scrollOwner.scrollHeight - props.scrollOwner.clientHeight,
-			1,
-		);
-		const rawScrollTop = props.scrollOwner.scrollTop;
-		const currentReceipt =
-			semanticAnchor === null
-				? null
-				: {
-						maximumScrollTop,
-						rawScrollTop,
-						semanticAnchor,
-					};
-		const anchorPaintedLineCount =
-			semanticAnchor === null
-				? 0
-				: (props.harness
-						.paintedCodeViewItems()
-						.find((paintedItem): boolean => paintedItem.itemId === semanticAnchor.itemId)
-						?.paintedLineCount ?? 0);
-		const exactRevisionAndManifestArePainted =
-			reviewShell?.getAttribute('data-review-metadata-revision') ===
-				String(props.expectedMetadataRevision) &&
-			codePanel?.getAttribute('data-code-view-item-count') === String(props.expectedItemCount) &&
-			codePanel?.getAttribute('data-selected-item-id') === props.expectedSelectedItemId &&
-			anchorPaintedLineCount > 0;
-		const positionIsStable =
-			currentReceipt !== null &&
-			previousReceipt !== null &&
-			currentReceipt.semanticAnchor.itemId === previousReceipt.semanticAnchor.itemId &&
-			Math.abs(
-				currentReceipt.semanticAnchor.viewportOffsetPixels -
-					previousReceipt.semanticAnchor.viewportOffsetPixels,
-			) <= 1 &&
-			Math.abs(currentReceipt.maximumScrollTop - previousReceipt.maximumScrollTop) <= 1 &&
-			Math.abs(currentReceipt.rawScrollTop - previousReceipt.rawScrollTop) <= 1;
-		lastDiagnostic = {
-			anchorPaintedLineCount,
-			attempt,
-			codeViewItemCount: codePanel?.getAttribute('data-code-view-item-count') ?? null,
-			currentReceipt,
-			expectedItemCount: props.expectedItemCount,
-			expectedMetadataRevision: props.expectedMetadataRevision,
-			metadataRevision: reviewShell?.getAttribute('data-review-metadata-revision') ?? null,
-			previousReceipt,
-			selectedItemId: codePanel?.getAttribute('data-selected-item-id') ?? null,
-		};
-		if (exactRevisionAndManifestArePainted && positionIsStable && currentReceipt !== null) {
-			return currentReceipt;
-		}
-		previousReceipt = exactRevisionAndManifestArePainted ? currentReceipt : null;
-	}
-	throw new Error(
-		`Review position did not settle after exact revision/manifest paint: ${JSON.stringify(lastDiagnostic)}`,
-	);
+	const observedPosition = await waitForBridgeReviewRecoveryDomState({
+		readState: (): SettledReviewPositionReceipt | null => {
+			const reviewShell = props.harness.renderResult.container.querySelector(
+				'[data-testid="review-viewer-shell"]',
+			);
+			const codePanel = props.harness.renderResult.container.querySelector(
+				'[data-testid="bridge-code-view-panel"]',
+			);
+			const semanticAnchor = firstVisibleReviewAnchor(props.harness, props.scrollOwner);
+			if (
+				reviewShell?.getAttribute('data-review-metadata-revision') !==
+					String(props.expectedMetadataRevision) ||
+				codePanel?.getAttribute('data-code-view-item-count') !== String(props.expectedItemCount) ||
+				codePanel?.getAttribute('data-selected-item-id') !== props.expectedSelectedItemId ||
+				semanticAnchor === null ||
+				(props.harness
+					.paintedCodeViewItems()
+					.find((item): boolean => item.itemId === semanticAnchor.itemId)?.paintedLineCount ??
+					0) === 0
+			)
+				return null;
+			return {
+				maximumScrollTop: Math.max(
+					props.scrollOwner.scrollHeight - props.scrollOwner.clientHeight,
+					1,
+				),
+				rawScrollTop: props.scrollOwner.scrollTop,
+				semanticAnchor,
+			};
+		},
+		isExpected: (position): boolean => position !== null,
+	});
+	if (observedPosition === null)
+		throw new Error('Expected exact Review revision, manifest, and painted anchor.');
+	return observedPosition;
 }
 
 function firstVisibleReviewAnchor(

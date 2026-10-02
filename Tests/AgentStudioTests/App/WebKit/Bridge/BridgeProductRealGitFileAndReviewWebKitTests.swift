@@ -37,7 +37,7 @@ extension WebKitSerializedTests {
             case successorReviewPublicationMissing
         }
 
-        private struct TransactionalPublicationHarness {
+        struct TransactionalPublicationHarness {
             let controller: BridgePaneController
             let controllerTarget: BridgeProductWebKitCarrierControllerTarget
             let fileMetadataSource: BridgeWebKitTrackingFileMetadataSource
@@ -47,7 +47,7 @@ extension WebKitSerializedTests {
             let traceRecorder: BridgeProductWebKitCarrierTraceRecorder
         }
 
-        private struct FirstPublicationCheckpoint {
+        struct FirstPublicationCheckpoint {
             let fileSnapshot: BridgeProductWebKitCarrierFileSubscriptionSnapshot
             let nativeSnapshot: BridgeProductWebKitCarrierNativeSnapshot
             let publication: BridgeReviewCommittedPublication
@@ -219,7 +219,7 @@ extension WebKitSerializedTests {
             BridgeProductWebKitSurfaceJourneyTestSupport.assertProof(proof)
         }
 
-        private func makeTransactionalPublicationHarness(
+        func makeTransactionalPublicationHarness(
             repoURL: URL
         ) -> TransactionalPublicationHarness {
             let paneId = UUIDv7.generate()
@@ -451,8 +451,8 @@ extension WebKitSerializedTests {
         ) async throws -> FirstPublicationCheckpoint {
             guard
                 let firstReceipt = harness.controllerTarget.applicationReceipts.first,
-                firstReceipt.accepted,
-                harness.controllerTarget.applicationReceipts.count == 1,
+                firstReceipt.applicationResult == .advanced,
+                harness.controllerTarget.applicationReceipts.filter { $0.applicationResult == .advanced }.count == 1,
                 let publication = harness.controllerTarget.committedPublication(
                     productAdmission: harness.productAdmission
                 ),
@@ -593,27 +593,17 @@ extension WebKitSerializedTests {
             let proof = run.value
             let firstPublicationId = proof.firstPublication.publicationId
             let secondPublicationId = proof.secondPublication.publicationId
-            #expect(
-                proof.applicationReceiptsBeforeReplay == [
-                    BridgeProductWebKitCarrierApplicationReceipt(
-                        accepted: true,
-                        publicationId: firstPublicationId
-                    )
-                ],
-                "transport-acknowledged invalid B must not produce an application receipt"
+            assertReviewApplicationReceiptAdvances(
+                proof.applicationReceiptsBeforeReplay,
+                expectedPublicationIds: [firstPublicationId]
             )
             #expect(
-                proof.applicationReceiptsAfterReplay == [
-                    BridgeProductWebKitCarrierApplicationReceipt(
-                        accepted: true,
-                        publicationId: firstPublicationId
-                    ),
-                    BridgeProductWebKitCarrierApplicationReceipt(
-                        accepted: true,
-                        publicationId: secondPublicationId
-                    ),
-                ],
-                "the worker must apply exact A then exact replayed B once"
+                proof.applicationReceiptsBeforeReplay.allSatisfy { $0.publicationId != secondPublicationId },
+                "transport-acknowledged invalid B must not produce an application receipt"
+            )
+            assertReviewApplicationReceiptAdvances(
+                proof.applicationReceiptsAfterReplay,
+                expectedPublicationIds: [firstPublicationId, secondPublicationId]
             )
             #expect(proof.reviewAfterFailure.didCorruptViewCapture)
             #expect(proof.reviewAfterFailure.corruptedPublicationId == secondPublicationId)
@@ -657,7 +647,7 @@ extension WebKitSerializedTests {
             #expect(run.teardownSnapshot.hasZeroResidue)
         }
 
-        private func seedMultiWindowReviewChanges(at repoURL: URL) throws {
+        func seedMultiWindowReviewChanges(at repoURL: URL) throws {
             for index in 0..<70 {
                 let filename = String(format: "bridge-window-%03d.txt", index)
                 try "publication A \(index)\n".write(

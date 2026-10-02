@@ -90,6 +90,101 @@ struct SurfaceRendererVisibilityIntegrationTests {
 
     // MARK: - Tests
 
+    @Test("returning to the source tab after a cross-tab move restores its remaining terminal renderer and focus")
+    func sourceTabRemainingTerminalResumesAfterCrossTabMove() async throws {
+        try await withAsyncTestCoreAtoms { _ in
+            let store = WorkspaceStore()
+            let movedPane = store.createPane(title: "Moved")
+            let remainingSourcePane = store.createPane(title: "Remaining source")
+            let destinationPane = store.createPane(title: "Destination")
+            let sourceTab = Tab(paneId: movedPane.id)
+            let destinationTab = Tab(paneId: destinationPane.id)
+            store.appendTab(sourceTab)
+            store.appendTab(destinationTab)
+            #expect(
+                store.insertPane(
+                    remainingSourcePane.id,
+                    inTab: sourceTab.id,
+                    at: movedPane.id,
+                    direction: .horizontal,
+                    position: .after,
+                    sizingMode: .halveTarget
+                )
+            )
+            store.setActiveTab(sourceTab.id)
+
+            let delivery = RecordingSurfaceRendererStateDelivery()
+            let surfaceManager = makeManager(delivery: delivery)
+            let viewRegistry = ViewRegistry()
+            var surfacesByPaneID: [UUID: ManagedSurface] = [:]
+            for paneID in [movedPane.id, remainingSourcePane.id, destinationPane.id] {
+                let managedSurface = try acceptedSurface(makeBareSurface(), in: surfaceManager)
+                surfacesByPaneID[paneID] = managedSurface
+                surfaceManager.attach(managedSurface.id, to: paneID)
+                let paneHost = PaneHostView(paneId: paneID)
+                paneHost.mountContentView(
+                    TerminalPaneMountView(restoredSurfaceId: managedSurface.id, paneId: paneID)
+                )
+                viewRegistry.register(paneHost, for: paneID)
+            }
+            defer {
+                for (paneID, managedSurface) in surfacesByPaneID {
+                    viewRegistry.view(for: paneID)?.retire()
+                    surfaceManager.destroy(managedSurface.id)
+                }
+            }
+            let remainingSurface = try #require(surfacesByPaneID[remainingSourcePane.id])
+            let windowLifecycleStore = WindowLifecycleAtom()
+            let windowID = UUIDv7.generate()
+            windowLifecycleStore.recordWindowRegistered(windowID)
+            windowLifecycleStore.recordWindowPresentation(
+                WindowPresentationFacts(isVisible: true, isMiniaturized: false, isOccluded: false),
+                for: windowID
+            )
+            let coordinator = WorkspaceSurfaceCoordinator(
+                store: store,
+                viewRegistry: viewRegistry,
+                runtime: SessionRuntime(store: store),
+                surfaceManager: surfaceManager,
+                runtimeRegistry: RuntimeRegistry(),
+                paneEventBus: EventBus<RuntimeEnvelope>(),
+                windowLifecycleStore: windowLifecycleStore,
+                ipcLifecycle: .testUnavailable,
+                bridgePaneAttendance: BridgePaneAttendanceAtom()
+            )
+            coordinator.bindRendererVisibility(toOwningWindowId: windowID)
+
+            coordinator.executeMovePaneAcrossTabs(
+                CrossTabPaneMoveRequest(
+                    paneId: movedPane.id,
+                    sourceTabId: sourceTab.id,
+                    destTabId: destinationTab.id,
+                    targetPaneId: destinationPane.id,
+                    direction: .horizontal,
+                    position: .after
+                )
+            )
+            delivery.reset()
+
+            // Drive the existing visibility owner synchronously; the verdict does not
+            // depend on when its observation task receives the tab-selection change.
+            store.setActiveTab(sourceTab.id)
+            coordinator.restartRendererVisibilityObservation()
+            surfaceManager.surfaceDidBecomeFirstResponder(remainingSurface.id)
+
+            #expect(
+                delivery.visibilityCalls.contains(.init(surfaceID: remainingSurface.id, visible: true)),
+                "The remaining source terminal must resume drawing when its tab becomes visible"
+            )
+            #expect(
+                delivery.focusCalls.contains(.init(surfaceID: remainingSurface.id, focused: true)),
+                "The remaining source terminal must admit renderer focus after returning"
+            )
+            #expect(surfaceManager.activeSurfaceCount == 3)
+            await coordinator.shutdown()
+        }
+    }
+
     @Test("bulk close hides every surface before publishing one attached-set change")
     func bulkClosePublishesOneAttachedSetChange() throws {
         let delivery = RecordingSurfaceRendererStateDelivery()

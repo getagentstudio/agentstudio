@@ -30,6 +30,24 @@ describe('script runtime contract', () => {
 		expect(scripts['benchmark:viewer']).toBe('vitest --config vitest.benchmark.config.ts run');
 	});
 
+	test('bounds Go execution only at the type-aware lint owner', async () => {
+		const scripts = await readPackageScripts();
+
+		expect(scripts['lint:types']).toBe('GOMAXPROCS=1 oxlint --type-aware');
+		expect(scripts['lint']).toBe('oxlint');
+		expect(
+			Object.entries(scripts)
+				.filter(([, command]): boolean => command.includes('oxlint --type-aware'))
+				.map(([scriptName]): string => scriptName),
+		).toEqual(['lint:types']);
+	});
+
+	test('aggregate checks route through the bounded type-aware lint owner', async () => {
+		const scripts = await readPackageScripts();
+
+		expect(scripts['check']?.split(' && ')[0]).toBe('pnpm run lint:types');
+	});
+
 	test('keeps the required stress E2E isolated from ordinary product journeys', async () => {
 		// Arrange
 		const scripts = await readPackageScripts();

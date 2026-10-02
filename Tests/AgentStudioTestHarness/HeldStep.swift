@@ -29,6 +29,7 @@ package final class HeldStep<Arrival: Sendable>: Sendable {
     package let instanceID: UInt64
     private let cancellationPolicy: HeldStepCancellationPolicy
     private let eventLog: HeldStepEventLog
+    private let logIdentity: TestEventLogIdentity?
     private let test: String
     private let state = Mutex(HeldStepState<Arrival>())
 
@@ -48,6 +49,7 @@ package final class HeldStep<Arrival: Sendable>: Sendable {
         self.instanceID = heldStepInstanceCounter.wrappingAdd(1, ordering: .relaxed).newValue
         self.cancellationPolicy = cancellationPolicy
         self.eventLog = eventLog
+        self.logIdentity = eventLog.path == nil ? nil : TestEventLogIdentity.current
         self.test = "\(fileID) \(function)"
     }
 
@@ -129,30 +131,40 @@ package final class HeldStep<Arrival: Sendable>: Sendable {
     package func firstArrival() async throws -> Arrival {
         let (waiterID, hasArrival) = state.withLock { ($0.allocateID(), !$0.arrivals.isEmpty) }
         if !hasArrival {
-            eventLog.recordWaiting(instanceID: instanceID, stepName: name, test: test)
+            eventLog.recordWaiting(instanceID: instanceID, waiterID: waiterID, stepName: name, test: test)
         }
-        return try await withTaskCancellationHandler {
-            try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Arrival, any Error>) in
-                let outcome = state.withLock { state -> Result<Arrival, any Error>? in
-                    if let misuse = state.blockingArrivalMisuse {
-                        return .failure(misuse)
+        do {
+            let arrival = try await withTaskCancellationHandler {
+                try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Arrival, any Error>) in
+                    let outcome = state.withLock { state -> Result<Arrival, any Error>? in
+                        if let misuse = state.blockingArrivalMisuse {
+                            return .failure(misuse)
+                        }
+                        if let firstArrival = state.arrivals.first {
+                            return .success(firstArrival)
+                        }
+                        if Task.isCancelled {
+                            return .failure(HeldStepNeverReached(stepName: name))
+                        }
+                        state.firstArrivalWaiters[waiterID] = continuation
+                        return nil
                     }
-                    if let firstArrival = state.arrivals.first {
-                        return .success(firstArrival)
+                    if let outcome {
+                        continuation.resume(with: outcome)
                     }
-                    if Task.isCancelled {
-                        return .failure(HeldStepNeverReached(stepName: name))
-                    }
-                    state.firstArrivalWaiters[waiterID] = continuation
-                    return nil
                 }
-                if let outcome {
-                    continuation.resume(with: outcome)
-                }
+            } onCancel: {
+                let waiter = state.withLock { $0.firstArrivalWaiters.removeValue(forKey: waiterID) }
+                waiter?.resume(throwing: HeldStepNeverReached(stepName: name))
             }
-        } onCancel: {
-            let waiter = state.withLock { $0.firstArrivalWaiters.removeValue(forKey: waiterID) }
-            waiter?.resume(throwing: HeldStepNeverReached(stepName: name))
+            eventLog.recordWaitSettled(instanceID: instanceID, waiterID: waiterID, outcome: .arrived)
+            return arrival
+        } catch {
+            let wasCancelled = error is CancellationError || (error is HeldStepNeverReached && Task.isCancelled)
+            eventLog.recordWaitSettled(
+                instanceID: instanceID, waiterID: waiterID, outcome: wasCancelled ? .cancelled : .threw
+            )
+            throw error
         }
     }
 
@@ -221,7 +233,7 @@ package final class HeldStep<Arrival: Sendable>: Sendable {
     private func admitArrival(_ arrival: Arrival, parking: HeldStepParking) -> HeldStepAdmission<Arrival> {
         let admission = state.withLock { $0.admit(arrival, parking: parking) }
         if admission.isFirstArrival {
-            eventLog.recordArrived(instanceID: instanceID, stepName: name)
+            eventLog.recordArrived(instanceID: instanceID, stepName: name, identity: logIdentity)
         }
         for waiter in admission.firstArrivalWaiters {
             waiter.resume(returning: arrival)

@@ -59,197 +59,207 @@ struct AppIPCErrorCorrectionTests {
                 .layoutMutate: .pane(targetPaneId.uuidString),
             ]
         )
-        let fixture = try LiveServerFixture(
-            panes: [
-                makePaneSummary(id: boundPaneId, ordinal: 1),
-                makePaneSummary(id: targetPaneId, ordinal: 2),
-            ],
-            commandPort: commandPort,
-            commandComposition: IPCCommandMethodComposition(
-                compatibility: .current,
-                commands: [descriptor]
-            )
-        )
-        defer { fixture.cleanup() }
-        try fixture.server.start()
-        let token = try fixture.issueTestCredential(
-            for: .pane(
-                paneId: boundPaneId,
-                credentialRecordId: UUIDv7.generate(),
-                status: .registered
-            )
-        )
-        let connection = try UnixSocketClient.connect(
-            endpoint: UnixSocketEndpoint(path: fixture.paths.socketURL.path)
-        )
-        defer { connection.close() }
-        var reader = TestFrameReader()
-        try await loginWithoutBlockingMainActor(
-            connection: connection, token: token, requestId: 1, reader: &reader)
-
-        try sendRequest(
-            connection: connection,
-            request: JSONRPCClientRequest(
-                id: .number(2),
-                method: "command.execute",
-                params: try JSONRPCCodec.encodeJSONValue(
-                    IPCCommandExecutionRequest(
-                        commandId: commandId,
-                        correlationId: correlationId,
-                        arguments: .noArguments
+        try await withLiveServer(
+            makeFixture: {
+                try LiveServerFixture(
+                    panes: [
+                        makePaneSummary(id: boundPaneId, ordinal: 1),
+                        makePaneSummary(id: targetPaneId, ordinal: 2),
+                    ],
+                    commandPort: commandPort,
+                    commandComposition: IPCCommandMethodComposition(
+                        compatibility: .current,
+                        commands: [descriptor]
                     )
                 )
-            )
-        )
-        let response = try await reader.receiveResponseWithoutBlockingMainActor(connection: connection)
+            },
+            body: { fixture in
+                try fixture.server.start()
+                let token = try fixture.issueTestCredential(
+                    for: .pane(
+                        paneId: boundPaneId,
+                        credentialRecordId: UUIDv7.generate(),
+                        status: .registered
+                    )
+                )
+                let connection = try await connectWithoutBlockingCooperativePool(
+                    socketPath: fixture.paths.socketURL.path)
+                defer { connection.close() }
+                var reader = TestFrameReader()
+                try await loginWithoutBlockingMainActor(
+                    connection: connection, token: token, requestId: 1, reader: &reader)
 
-        #expect(response.error?.code == -32_011)
-        #expect(response.error?.message == "not yet allowed")
-        #expect(
-            try requireCorrection(response)
-                == ["reason": .string("notYetAllowed"), "name": .string(commandId.rawValue)])
-        #expect(commandPort.receivedExecutionRequests.isEmpty)
+                try await sendRequestWithoutBlockingCooperativePool(
+                    connection: connection,
+                    request: JSONRPCClientRequest(
+                        id: .number(2),
+                        method: "command.execute",
+                        params: try JSONRPCCodec.encodeJSONValue(
+                            IPCCommandExecutionRequest(
+                                commandId: commandId,
+                                correlationId: correlationId,
+                                arguments: .noArguments
+                            )
+                        )
+                    )
+                )
+                let response = try await reader.receiveResponseWithoutBlockingMainActor(connection: connection)
+
+                #expect(response.error?.code == -32_011)
+                #expect(response.error?.message == "not yet allowed")
+                #expect(
+                    try requireCorrection(response)
+                        == ["reason": .string("notYetAllowed"), "name": .string(commandId.rawValue)])
+                #expect(commandPort.receivedExecutionRequests.isEmpty)
+            })
     }
 
     @Test("cross-pane denial of an established session method returns the canonical missing grant scope")
     func crossPaneDenialReturnsCanonicalMissingGrantScope() async throws {
         let boundPaneId = UUIDv7.generate()
         let targetPaneId = UUIDv7.generate()
-        let fixture = try LiveServerFixture(
-            panes: [makePaneSummary(id: boundPaneId, ordinal: 1), makePaneSummary(id: targetPaneId, ordinal: 2)]
-        )
-        defer { fixture.cleanup() }
-        try fixture.server.start()
-        let token = try fixture.issueTestCredential(
-            for: .pane(paneId: boundPaneId, credentialRecordId: UUIDv7.generate(), status: .registered)
-        )
-        let connection = try UnixSocketClient.connect(
-            endpoint: UnixSocketEndpoint(path: fixture.paths.socketURL.path)
-        )
-        defer { connection.close() }
-        var reader = TestFrameReader()
-        try await loginWithoutBlockingMainActor(
-            connection: connection, token: token, requestId: 1, reader: &reader)
-
-        try sendRequest(
-            connection: connection,
-            request: JSONRPCClientRequest(
-                id: .number(2),
-                method: "session.query",
-                params: .object(["handle": .string(targetPaneId.uuidString)])
-            )
-        )
-        let response = try await reader.receiveResponseWithoutBlockingMainActor(connection: connection)
-
-        #expect(response.error?.code == -32_002)
-        #expect(response.error?.message == "missing grant")
-        let correction = try requireCorrection(response)
-        #expect(correction["reason"] == .string("missingGrant"))
-        #expect(correction["fieldPath"] == .string("$.authorization"))
-        let requiredScope = try decodeJSONValue(
-            IPCPermissionScope.self,
-            from: try #require(correction["requiredScope"])
-        )
-        #expect(
-            requiredScope
-                == IPCPermissionScope(
-                    privilege: .sessionStateRead,
-                    target: .pane(targetPaneId.uuidString),
-                    dataScope: .sessionState
+        try await withLiveServer(
+            makeFixture: {
+                try LiveServerFixture(
+                    panes: [
+                        makePaneSummary(id: boundPaneId, ordinal: 1), makePaneSummary(id: targetPaneId, ordinal: 2),
+                    ]
                 )
-        )
+            },
+            body: { fixture in
+                try fixture.server.start()
+                let token = try fixture.issueTestCredential(
+                    for: .pane(paneId: boundPaneId, credentialRecordId: UUIDv7.generate(), status: .registered)
+                )
+                let connection = try await connectWithoutBlockingCooperativePool(
+                    socketPath: fixture.paths.socketURL.path)
+                defer { connection.close() }
+                var reader = TestFrameReader()
+                try await loginWithoutBlockingMainActor(
+                    connection: connection, token: token, requestId: 1, reader: &reader)
+
+                try await sendRequestWithoutBlockingCooperativePool(
+                    connection: connection,
+                    request: JSONRPCClientRequest(
+                        id: .number(2),
+                        method: "session.query",
+                        params: .object(["handle": .string(targetPaneId.uuidString)])
+                    )
+                )
+                let response = try await reader.receiveResponseWithoutBlockingMainActor(connection: connection)
+
+                #expect(response.error?.code == -32_002)
+                #expect(response.error?.message == "missing grant")
+                let correction = try requireCorrection(response)
+                #expect(correction["reason"] == .string("missingGrant"))
+                #expect(correction["fieldPath"] == .string("$.authorization"))
+                let requiredScope = try decodeJSONValue(
+                    IPCPermissionScope.self,
+                    from: try #require(correction["requiredScope"])
+                )
+                #expect(
+                    requiredScope
+                        == IPCPermissionScope(
+                            privilege: .sessionStateRead,
+                            target: .pane(targetPaneId.uuidString),
+                            dataScope: .sessionState
+                        )
+                )
+            })
     }
 
     @Test("unknown method returns a finite correction without reflecting input")
     func unknownMethodReturnsControlledCorrection() async throws {
-        let fixture = try LiveServerFixture(accessMode: .unsafeDebug, channel: .debug)
-        defer { fixture.cleanup() }
-        try fixture.server.start()
-        let rawMethod = "private.future.method.DO_NOT_REFLECT"
+        try await withLiveServer(
+            makeFixture: { try LiveServerFixture(accessMode: .unsafeDebug, channel: .debug) },
+            body: { fixture in
+                try fixture.server.start()
+                let rawMethod = "private.future.method.DO_NOT_REFLECT"
 
-        let response = try await sendRequestWithoutBlockingCooperativePool(
-            socketPath: fixture.paths.socketURL.path,
-            request: JSONRPCClientRequest(id: .number(3), method: rawMethod, params: .object([:]))
-        )
+                let response = try await sendRequestWithoutBlockingCooperativePool(
+                    socketPath: fixture.paths.socketURL.path,
+                    request: JSONRPCClientRequest(id: .number(3), method: rawMethod, params: .object([:]))
+                )
 
-        #expect(response.error?.code == -32_601)
-        #expect(response.error?.message == "method not found")
-        let correction = try requireCorrection(response)
-        #expect(
-            correction == [
-                "reason": .string("unknownMethod"),
-                "fieldPath": .string("$.method"),
-                "catalogMethod": .string("system.capabilities"),
-            ])
-        let encoded = try encodedError(response)
-        #expect(!encoded.contains(rawMethod))
+                #expect(response.error?.code == -32_601)
+                #expect(response.error?.message == "method not found")
+                let correction = try requireCorrection(response)
+                #expect(
+                    correction == [
+                        "reason": .string("unknownMethod"),
+                        "fieldPath": .string("$.method"),
+                        "catalogMethod": .string("system.capabilities"),
+                    ])
+                let encoded = try encodedError(response)
+                #expect(!encoded.contains(rawMethod))
+            })
     }
 
     @Test("unknown command is distinct from known unavailable command")
     func unknownCommandHasControlledCatalogCorrection() async throws {
-        let scenario = try makeCommandScenario()
-        defer { scenario.fixture.cleanup() }
-        try scenario.fixture.server.start()
-        let unknownId = "privateFutureCommandDoNotReflect"
+        try await withCommandScenario(body: { scenario in
+            try scenario.fixture.server.start()
+            let unknownId = "privateFutureCommandDoNotReflect"
 
-        let unknown = try await sendCommand(
-            fixture: scenario.fixture,
-            commandId: unknownId,
-            paneId: scenario.paneId,
-            requestId: 4
-        )
-        #expect(unknown.error?.code == -32_003)
-        let correction = try requireCorrection(unknown)
-        #expect(
-            correction == [
-                "reason": .string("unknownCommand"),
-                "fieldPath": .string("$.commandId"),
-                "catalogMethod": .string("command.list"),
-            ])
-        let encodedUnknown = try encodedError(unknown)
-        #expect(!encodedUnknown.contains(unknownId))
+            let unknown = try await sendCommand(
+                fixture: scenario.fixture,
+                commandId: unknownId,
+                paneId: scenario.paneId,
+                requestId: 4
+            )
+            #expect(unknown.error?.code == -32_003)
+            let correction = try requireCorrection(unknown)
+            #expect(
+                correction == [
+                    "reason": .string("unknownCommand"),
+                    "fieldPath": .string("$.commandId"),
+                    "catalogMethod": .string("command.list"),
+                ])
+            let encodedUnknown = try encodedError(unknown)
+            #expect(!encodedUnknown.contains(unknownId))
 
-        let knownUnavailable = try await sendCommand(
-            fixture: scenario.fixture,
-            commandId: scenario.commandId.rawValue,
-            paneId: scenario.paneId,
-            requestId: 5
-        )
-        #expect(knownUnavailable.error?.code == -32_005)
-        let unavailableCorrection = try requireCorrection(knownUnavailable)
-        #expect(unavailableCorrection["reason"] != .string("unknownCommand"))
-        #expect(scenario.commandPort.receivedExecutionRequests.count == 1)
+            let knownUnavailable = try await sendCommand(
+                fixture: scenario.fixture,
+                commandId: scenario.commandId.rawValue,
+                paneId: scenario.paneId,
+                requestId: 5
+            )
+            #expect(knownUnavailable.error?.code == -32_005)
+            let unavailableCorrection = try requireCorrection(knownUnavailable)
+            #expect(unavailableCorrection["reason"] != .string("unknownCommand"))
+            #expect(scenario.commandPort.receivedExecutionRequests.count == 1)
+        })
     }
 
     @Test("wrong command target kind is structured and rejected before the port")
     func wrongCommandTargetKindRejectsBeforeEffect() async throws {
-        let scenario = try makeCommandScenario()
-        defer { scenario.fixture.cleanup() }
-        try scenario.fixture.server.start()
+        try await withCommandScenario(body: { scenario in
+            try scenario.fixture.server.start()
 
-        let response = try await sendRequestWithoutBlockingCooperativePool(
-            socketPath: scenario.fixture.paths.socketURL.path,
-            request: JSONRPCClientRequest(
-                id: .number(6),
-                method: "command.execute",
-                params: .object([
-                    "commandId": .string(scenario.commandId.rawValue),
-                    "correlationId": .string(UUIDv7.generate().uuidString),
-                    "arguments": .object([
-                        "kind": .string("pane"),
-                        "workspaceWindowId": .string(UUIDv7.generate().uuidString),
-                        "paneSelector": .string("workspace:\(UUIDv7.generate().uuidString)"),
-                    ]),
-                ])
+            let response = try await sendRequestWithoutBlockingCooperativePool(
+                socketPath: scenario.fixture.paths.socketURL.path,
+                request: JSONRPCClientRequest(
+                    id: .number(6),
+                    method: "command.execute",
+                    params: .object([
+                        "commandId": .string(scenario.commandId.rawValue),
+                        "correlationId": .string(UUIDv7.generate().uuidString),
+                        "arguments": .object([
+                            "kind": .string("pane"),
+                            "workspaceWindowId": .string(UUIDv7.generate().uuidString),
+                            "paneSelector": .string("workspace:\(UUIDv7.generate().uuidString)"),
+                        ]),
+                    ])
+                )
             )
-        )
 
-        #expect(response.error?.code == -32_602)
-        let correction = try requireCorrection(response)
-        #expect(correction["fieldPath"] != nil)
-        #expect(correction["reason"] != nil)
-        #expect(correction["expected"] != nil)
-        #expect(scenario.commandPort.receivedExecutionRequests.isEmpty)
+            #expect(response.error?.code == -32_602)
+            let correction = try requireCorrection(response)
+            #expect(correction["fieldPath"] != nil)
+            #expect(correction["reason"] != nil)
+            #expect(correction["expected"] != nil)
+            #expect(scenario.commandPort.receivedExecutionRequests.isEmpty)
+        })
     }
 }
 
@@ -260,7 +270,7 @@ private struct ErrorCommandScenario {
     let paneId: UUID
 }
 
-private func makeCommandScenario() throws -> ErrorCommandScenario {
+private func withCommandScenario<Result>(body: (ErrorCommandScenario) async throws -> Result) async throws -> Result {
     let commandId = IPCCommandIdentifier(rawValue: "fixturePaneCommand")
     let paneId = UUIDv7.generate()
     let correlationId = UUIDv7.generate()
@@ -288,18 +298,25 @@ private func makeCommandScenario() throws -> ErrorCommandScenario {
         compatibility: .current,
         commands: [descriptor]
     )
-    return try ErrorCommandScenario(
-        fixture: LiveServerFixture(
-            accessMode: .unsafeDebug,
-            channel: .debug,
-            panes: [makePaneSummary(id: paneId, ordinal: 1)],
-            commandPort: commandPort,
-            commandComposition: composition
-        ),
-        commandPort: commandPort,
-        commandId: commandId,
-        paneId: paneId
-    )
+    return try await withLiveServer(
+        makeFixture: {
+            try LiveServerFixture(
+                accessMode: .unsafeDebug,
+                channel: .debug,
+                panes: [makePaneSummary(id: paneId, ordinal: 1)],
+                commandPort: commandPort,
+                commandComposition: composition
+            )
+        },
+        body: { fixture in
+            let scenario = ErrorCommandScenario(
+                fixture: fixture,
+                commandPort: commandPort,
+                commandId: commandId,
+                paneId: paneId
+            )
+            return try await body(scenario)
+        })
 }
 
 private func sendCommand(

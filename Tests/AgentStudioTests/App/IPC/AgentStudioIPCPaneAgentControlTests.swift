@@ -229,10 +229,16 @@ struct AgentStudioIPCPaneAgentControlTests {
                 token: token, method: "drawer.addPane",
                 params: .object([
                     "parentPaneHandle": .string("self"),
-                    "content": .object(["kind": .string("browser"), "url": .string("https://example.com")]),
+                    "content": .object(["kind": .string("terminal")]),
                     "correlationId": .string(UUIDv7.generate().uuidString),
                 ]))
             let added = try decodeAddResult(add)
+            let addedPane = try #require(harness.store.paneAtom.pane(added.childPaneId))
+            if case .terminal = addedPane.content {
+                // This targeting case stays in the non-WebKit lane.
+            } else {
+                Issue.record("Expected background targeting fixture to create a terminal drawer child")
+            }
             let snapshot = try await harness.response(
                 token: token, method: "pane.snapshot", params: .object(["handle": .string(added.childHandle)]))
             let bridge = try await harness.response(

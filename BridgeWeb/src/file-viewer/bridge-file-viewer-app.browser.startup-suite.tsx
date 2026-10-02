@@ -149,18 +149,20 @@ describe('BridgeFileViewerApp Browser Mode', () => {
 	});
 
 	test('uses the shared compact rail chrome before opening tree search', async () => {
-		await render(
-			<BridgeFileViewerApp
-				initialFileBatch={makeBrowserFileBatchWithDescriptors(
-					makeBrowserFileDescriptorOutcome({ path: 'src/app.ts' }),
-					makeBrowserFileDescriptorOutcome({
-						descriptorId: 'docs-content',
-						fileId: 'file-docs',
-						path: 'docs/readme.md',
-					}),
-				)}
-			/>,
-		);
+		await act(async (): Promise<void> => {
+			await render(
+				<BridgeFileViewerApp
+					initialFileBatch={makeBrowserFileBatchWithDescriptors(
+						makeBrowserFileDescriptorOutcome({ path: 'src/app.ts' }),
+						makeBrowserFileDescriptorOutcome({
+							descriptorId: 'docs-content',
+							fileId: 'file-docs',
+							path: 'docs/readme.md',
+						}),
+					)}
+				/>,
+			);
+		});
 		await waitForFileViewerTreeItemButtonInAct({ path: 'src/app.ts' });
 
 		const toolbar = await waitForFileViewerHTMLElement({

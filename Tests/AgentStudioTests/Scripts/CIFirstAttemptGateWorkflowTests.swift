@@ -76,6 +76,8 @@ struct CIFirstAttemptGateWorkflowTests {
         )
         let unreadableLabels = try await fixture.run(attempt: 3, event: "pull_request", ghMode: "error")
         let pushRerun = try await fixture.run(attempt: 2, event: "push", ghMode: "labels:ci-rerun-approved")
+        let scheduledFirstAttempt = try await fixture.run(attempt: 1, event: "schedule", ghMode: "error")
+        let scheduledRerun = try await fixture.run(attempt: 2, event: "schedule", ghMode: "labels:ci-rerun-approved")
 
         // Attempt 1 never consults the API.
         #expect(firstAttempt.exitCode == 0)
@@ -95,6 +97,10 @@ struct CIFirstAttemptGateWorkflowTests {
         #expect(pushRerun.exitCode == 1)
         #expect(!pushRerun.output.contains("GH_CALLED"))
         #expect(pushRerun.output.contains("'ci-rerun-approved'"))
+        #expect(scheduledFirstAttempt.exitCode == 0)
+        #expect(!scheduledFirstAttempt.output.contains("GH_CALLED"))
+        #expect(scheduledRerun.exitCode == 1)
+        #expect(!scheduledRerun.output.contains("GH_CALLED"))
     }
 }
 

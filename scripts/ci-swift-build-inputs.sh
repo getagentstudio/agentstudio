@@ -79,6 +79,13 @@ def fingerprint_inputs():
     compiler = configured("CI_SWIFT_COMPILER_VERSION", lambda: command_output(["swift", "--version"]))
     xcode = configured("CI_SWIFT_XCODE_BUILD", lambda: command_output(["xcodebuild", "-version"]))
     sdk = configured("CI_SWIFT_SDK_BUILD", lambda: command_output(["xcrun", "--sdk", "macosx", "--show-sdk-build-version"]))
+    policy = Path(os.environ.get("CI_SWIFT_COMPILATION_POLICY_PATH", ROOT / "scripts/swift-compilation-policy.sh"))
+    if not policy.is_absolute():
+        policy = ROOT / policy
+    sandbox_policy = Path(os.environ.get("CI_SWIFT_SANDBOX_POLICY_PATH", policy.parent / "swift-package-sandbox.sh"))
+    if not sandbox_policy.is_absolute():
+        sandbox_policy = ROOT / sandbox_policy
+    resolved_policy = json.loads(command_output(["/bin/bash", str(policy), "describe", str(BUILD)]))
     return {
         "scheme": SCHEME,
         "os": configured("CI_SWIFT_OS", lambda: command_output(["uname", "-s"])),
@@ -87,18 +94,15 @@ def fingerprint_inputs():
         "xcode": xcode,
         "sdk": sdk,
         "deployment": os.environ.get("MACOSX_DEPLOYMENT_TARGET", "26.0"),
-        "configuration": os.environ.get("CI_SWIFT_CONFIGURATION", "debug"),
+        "configuration": resolved_policy["configuration"],
         "package": tree_digest(ROOT / "Package.swift"),
         "resolved": tree_digest(ROOT / "Package.resolved"),
         "ghostty_gitlink": gitlink("ghostty"),
         "zmx_gitlink": gitlink("zmx"),
         "framework": tree_digest(ROOT / "Frameworks/GhosttyKit.xcframework"),
-        "build_path": str(BUILD),
-        "stats_mode": bool(os.environ.get("SWIFT_BUILD_STATS_DIR")),
-        "stats_path": os.environ.get("SWIFT_BUILD_STATS_DIR", ""),
-        "extra_flags": os.environ.get("EXTRA_SWIFT_TEST_ARGS", ""),
-        "prebuild_helper": file_digest(Path(os.environ.get(
-            "CI_SWIFT_PREBUILD_HELPER_PATH", ROOT / "scripts/swift-test-helpers.sh"))),
+        "resolved_policy": resolved_policy,
+        "compilation_policy": file_digest(policy),
+        "sandbox_policy": file_digest(sandbox_policy),
         "verifier": file_digest(Path(os.environ.get(
             "CI_SWIFT_VERIFIER_PATH", ROOT / "scripts/ci-swift-build-inputs.sh"))),
     }

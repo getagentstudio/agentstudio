@@ -20,7 +20,10 @@ import {
 	useWorktreeAnnotationProjection,
 	WorktreeAnnotationSurfaceProvider,
 } from './worktree-annotation-surface-provider.js';
-import { settleThreadMotion } from './worktree-annotation-thread.browser.test-support.js';
+import {
+	settleThreadMotion,
+	waitForWorktreeAnnotationBrowserDomState,
+} from './worktree-annotation-thread.browser.test-support.js';
 import { WorktreeAnnotationThread } from './worktree-annotation-thread.js';
 
 describe('worktree annotation inline shell', () => {
@@ -48,7 +51,9 @@ describe('worktree annotation inline shell', () => {
 	});
 
 	afterEach(async (): Promise<void> => {
-		await cleanup();
+		await act(async (): Promise<void> => {
+			await cleanup();
+		});
 	});
 
 	test('expands complete chronology on one inline timeline and moves following content', async () => {
@@ -59,7 +64,7 @@ describe('worktree annotation inline shell', () => {
 			.getByTestId('worktree-annotation-thread')
 			.getByText('Latest message.');
 
-		await expect.element(visibleLatestMessage).toBeVisible();
+		await waitForInlineShellVisibleElement(visibleLatestMessage);
 		expect(document.body.textContent).not.toContain('Root message.');
 		const compactThread = rendered.getByTestId('worktree-annotation-thread').element();
 		expect(compactThread.classList).toContain('max-w-3xl');
@@ -73,7 +78,7 @@ describe('worktree annotation inline shell', () => {
 		expect(expandButton.classList).not.toContain('rounded-full');
 		expect(expandButton.classList).not.toContain('border-comment-border');
 		expect(getComputedStyle(expandButton).color).toBe('rgb(234, 234, 234)');
-		await expect.element(rendered.getByText('1 pending')).toBeVisible();
+		await waitForInlineShellVisibleElement(rendered.getByText('1 pending'));
 		const pendingStatus = rendered.getByTestId('worktree-annotation-pending-status').element();
 		expect(pendingStatus.classList).toContain('text-annotation-status-pending');
 		expect(pendingStatus.querySelector('.bg-annotation-status-pending')).not.toBeNull();
@@ -86,8 +91,8 @@ describe('worktree annotation inline shell', () => {
 		await settleThreadMotion(historyPanel, 'Expected thread expansion motion to settle.');
 
 		const thread = rendered.getByTestId('worktree-annotation-thread').element();
-		await expect.element(rendered.getByText('Root message.')).toBeVisible();
-		await expect.element(rendered.getByText('1 pending')).toBeVisible();
+		await waitForInlineShellVisibleElement(rendered.getByText('Root message.'));
+		await waitForInlineShellVisibleElement(rendered.getByText('1 pending'));
 		expect(rendered.getByTestId('worktree-annotation-pending-status').element()).toBe(
 			pendingStatus,
 		);
@@ -159,12 +164,11 @@ describe('worktree annotation inline shell', () => {
 			await userEvent.unhover(collapseButton);
 		});
 		await settleThreadMotion(historyPanel, 'Expected thread collapse motion to settle.');
-		await settleBrowserCondition(
-			(): boolean => !document.body.textContent?.includes('Root message.'),
-			'Expected thread collapse motion to settle.',
-			30,
-		);
-		await expect.element(visibleLatestMessage).toBeVisible();
+		await waitForWorktreeAnnotationBrowserDomState({
+			readState: (): boolean => !document.body.textContent?.includes('Root message.'),
+			isExpected: (collapsed): boolean => collapsed,
+		});
+		await waitForInlineShellVisibleElement(visibleLatestMessage);
 		expect(followingDiffRow.getBoundingClientRect().top).toBeCloseTo(followingDiffRowTop, 1);
 	});
 
@@ -189,7 +193,7 @@ describe('worktree annotation inline shell', () => {
 
 		const thread = rendered.getByTestId('worktree-annotation-thread').element();
 		const composer = rendered.getByRole('textbox', { name: 'Reply with Markdown' });
-		await expect.element(composer).toBeVisible();
+		await waitForInlineShellVisibleElement(composer);
 		expect(thread.contains(composer.element())).toBe(true);
 		const replyFrame = composer.element().closest('[data-annotation-frame-placement="embedded"]');
 		if (!(replyFrame instanceof HTMLElement)) throw new Error('Expected an embedded reply frame.');
@@ -198,7 +202,7 @@ describe('worktree annotation inline shell', () => {
 		if (!(editorSurface instanceof HTMLElement))
 			throw new Error('Expected the reply editor surface.');
 		expect(getComputedStyle(editorSurface).boxShadow).not.toBe('none');
-		await expect.element(rendered.getByText('Root message.')).toBeVisible();
+		await waitForInlineShellVisibleElement(rendered.getByText('Root message.'));
 		const timelineMessages = [
 			...thread.querySelectorAll<HTMLElement>('[data-testid="worktree-annotation-message"]'),
 		];
@@ -221,7 +225,13 @@ describe('worktree annotation inline shell', () => {
 		await act(async (): Promise<void> => {
 			await composer.fill('Inline reply draft');
 		});
-		await expect.element(composer).toHaveValue('Inline reply draft');
+		await waitForWorktreeAnnotationBrowserDomState({
+			readState: (): string | null => {
+				const textbox = composer.element();
+				return textbox instanceof HTMLTextAreaElement ? textbox.value : null;
+			},
+			isExpected: (body): boolean => body === 'Inline reply draft',
+		});
 		expect(thread.contains(composer.element())).toBe(true);
 	});
 
@@ -239,8 +249,8 @@ describe('worktree annotation inline shell', () => {
 		);
 		const thread = rendered.getByTestId('worktree-annotation-thread').element();
 		const composer = rendered.getByRole('textbox', { name: 'Reply with Markdown' });
-		await expect.element(composer).toBeVisible();
-		await expect.element(rendered.getByText('Root message.')).toBeVisible();
+		await waitForInlineShellVisibleElement(composer);
+		await waitForInlineShellVisibleElement(rendered.getByText('Root message.'));
 		const rootMessage = rendered
 			.getByText('Root message.')
 			.element()
@@ -261,7 +271,7 @@ describe('worktree annotation inline shell', () => {
 			await Promise.resolve();
 		});
 
-		await expect.element(composer).toBeVisible();
+		await waitForInlineShellVisibleElement(composer);
 		expect(rendered.getByTestId('worktree-annotation-thread').element()).toBe(thread);
 		expect(thread.getAttribute('data-annotation-expanded')).toBe('true');
 		expect(
@@ -276,7 +286,7 @@ describe('worktree annotation inline shell', () => {
 				.element()
 				.closest('[data-testid="worktree-annotation-message"]'),
 		).toBe(latestMessage);
-		await expect.element(rendered.getByText('Root message.')).toBeVisible();
+		await waitForInlineShellVisibleElement(rendered.getByText('Root message.'));
 	});
 
 	test('reveals five-message history with one downward soft mask', async () => {
@@ -303,10 +313,7 @@ describe('worktree annotation inline shell', () => {
 			await userEvent.unhover(expandButton);
 		});
 		const historyPanel = rendered.getByTestId('worktree-annotation-thread-history').element();
-		await settleBrowserCondition(
-			(): boolean => !historyPanel.hasAttribute('data-starting-style'),
-			'Expected grouped history entrance to start.',
-		);
+		await settleThreadMotion(historyPanel, 'Expected grouped history entrance to settle.');
 		const historyGroup = rendered.getByTestId('worktree-annotation-thread-history-group').element();
 		expect(
 			historyGroup.querySelectorAll('[data-testid="worktree-annotation-message"]'),
@@ -323,7 +330,6 @@ describe('worktree annotation inline shell', () => {
 		expect(getComputedStyle(historyGroup).transitionProperty).toContain('mask-position');
 		expect(getComputedStyle(historyGroup).transitionDelay).toBe('0s');
 		expect(getComputedStyle(historyGroup).transitionDuration).toBe('0.12s');
-		await settleThreadMotion(historyPanel, 'Expected grouped five-message motion to settle.');
 		await page.screenshot({ path: '../../../tmp/bridgeweb-inline-five-message-expanded.png' });
 
 		await act(async (): Promise<void> => {
@@ -373,7 +379,11 @@ describe('worktree annotation inline shell', () => {
 				.click();
 			await Promise.resolve();
 		});
-		await expect.element(rendered.getByText('Root message.')).toBeVisible();
+		await settleThreadMotion(
+			rendered.getByTestId('worktree-annotation-thread-history').element(),
+			'Expected activated history to settle.',
+		);
+		await waitForInlineShellVisibleElement(rendered.getByText('Root message.'));
 		expect(rendered.getByTestId('worktree-annotation-thread').element().classList).toContain(
 			'ring-warning',
 		);
@@ -383,11 +393,6 @@ describe('worktree annotation inline shell', () => {
 		document.body.append(externalFocusTarget);
 		await act(async (): Promise<void> => {
 			externalFocusTarget.focus();
-			await new Promise<void>((resolve): void => {
-				requestAnimationFrame((): void => {
-					requestAnimationFrame((): void => resolve());
-				});
-			});
 		});
 		expect(
 			rendered
@@ -403,11 +408,10 @@ describe('worktree annotation inline shell', () => {
 			rendered.getByTestId('worktree-annotation-thread-history').element(),
 			'Expected Collapse transition to settle.',
 		);
-		await settleBrowserCondition(
-			(): boolean => !document.body.textContent?.includes('Root message.'),
-			'Expected Collapse to restore compact presentation.',
-			30,
-		);
+		await waitForWorktreeAnnotationBrowserDomState({
+			readState: (): boolean => !document.body.textContent?.includes('Root message.'),
+			isExpected: (collapsed): boolean => collapsed,
+		});
 	});
 
 	test('keeps permanent local Edit and outlined thread actions at their exact owners', async () => {
@@ -417,22 +421,22 @@ describe('worktree annotation inline shell', () => {
 
 		const thread = rendered.getByTestId('worktree-annotation-thread');
 		const editButton = thread.getByRole('button', { name: 'Edit annotation' });
-		await expect.element(editButton).toBeVisible();
+		await waitForInlineShellVisibleElement(editButton);
 		const editCommands = editButton
 			.element()
 			.closest<HTMLElement>('[aria-label="Annotation commands"]');
 		if (editCommands === null) throw new Error('Expected permanent annotation Edit commands.');
 		expect(getComputedStyle(editCommands).opacity).toBe('1');
-		await expect
-			.element(thread.getByRole('button', { name: 'Reply to annotation thread' }))
-			.toBeVisible();
+		await waitForInlineShellVisibleElement(
+			thread.getByRole('button', { name: 'Reply to annotation thread' }),
+		);
 		const replyButton = thread
 			.getByRole('button', { name: 'Reply to annotation thread' })
 			.element();
 		expect(replyButton.classList).toContain('border-border');
 		expect(replyButton.classList).toContain('size-6');
 		const resolveButton = thread.getByRole('button', { name: 'Resolve annotation thread' });
-		await expect.element(resolveButton).toBeVisible();
+		await waitForInlineShellVisibleElement(resolveButton);
 		expect(resolveButton.element().classList).toContain('border-success/50');
 		expect(resolveButton.element().classList).toContain('text-success');
 		expect(resolveButton.element().classList).toContain('size-6');
@@ -440,14 +444,16 @@ describe('worktree annotation inline shell', () => {
 		await act(async (): Promise<void> => {
 			await thread.getByText('Latest message.').click();
 		});
-		await expect.element(rendered.getByText('Root message.')).toBeVisible();
+		await settleThreadMotion(
+			rendered.getByTestId('worktree-annotation-thread-history').element(),
+			'Expected saved-message activation to settle before Edit.',
+		);
+		await waitForInlineShellVisibleElement(rendered.getByText('Root message.'));
 		expect(rendered.getByRole('textbox', { name: 'Annotation Markdown' }).all()).toHaveLength(0);
 		await act(async (): Promise<void> => {
 			await userEvent.dblClick(thread.getByText('Latest message.').element());
 		});
-		await expect
-			.element(rendered.getByRole('textbox', { name: 'Annotation Markdown' }))
-			.toBeVisible();
+		await waitForInlineAnnotationEditor();
 	});
 
 	test('offers direct Edit and supports Enter from message focus', async () => {
@@ -474,7 +480,7 @@ describe('worktree annotation inline shell', () => {
 			'Expected direct Edit thread expansion to settle.',
 		);
 		const editor = rendered.getByRole('textbox', { name: 'Annotation Markdown' });
-		await expect.element(editor).toBeVisible();
+		await waitForInlineAnnotationEditor();
 		const editingMessage = editor
 			.element()
 			.closest<HTMLElement>('[data-testid="worktree-annotation-message"]');
@@ -495,15 +501,15 @@ describe('worktree annotation inline shell', () => {
 		expect(editor.element().getBoundingClientRect().right).toBeLessThanOrEqual(
 			revertBounds.left - 8,
 		);
-		let commandFocusedBoxShadow = 'none';
 		await act(async (): Promise<void> => {
 			revert.element().focus();
-			await nextAnimationFrame();
-			await nextAnimationFrame();
-			commandFocusedBoxShadow = getComputedStyle(editorSurface).boxShadow;
+		});
+		const commandFocusedBoxShadow = await waitForWorktreeAnnotationBrowserDomState({
+			readState: (): string => getComputedStyle(editorSurface).boxShadow,
+			isExpected: (shadow): boolean => shadow !== 'none',
+		});
+		await act(async (): Promise<void> => {
 			editor.element().focus();
-			await nextAnimationFrame();
-			await nextAnimationFrame();
 		});
 		expect(editingMessage.getAttribute('data-annotation-editing')).toBe('true');
 		expect(commandFocusedBoxShadow).not.toBe('none');
@@ -511,9 +517,12 @@ describe('worktree annotation inline shell', () => {
 		await performBrowserAction(async (): Promise<void> => {
 			rendered.getByTestId('worktree-annotation-thread').element().focus();
 		});
-		await expect.element(editor).toBeVisible();
+		await waitForInlineAnnotationEditor();
 		expect(editingMessage.getAttribute('data-annotation-editing')).toBe('true');
-		await expect.poll(() => getComputedStyle(editorSurface).boxShadow).toBe('none');
+		await waitForWorktreeAnnotationBrowserDomState({
+			readState: (): string => getComputedStyle(editorSurface).boxShadow,
+			isExpected: (shadow): boolean => shadow === 'none',
+		});
 		expect(rendered.getByTestId('worktree-annotation-thread').element().classList).toContain(
 			'ring-warning',
 		);
@@ -551,9 +560,7 @@ describe('worktree annotation inline shell', () => {
 			rendered.getByTestId('worktree-annotation-thread-history').element(),
 			'Expected Enter thread expansion to settle.',
 		);
-		await expect
-			.element(rendered.getByRole('textbox', { name: 'Annotation Markdown' }))
-			.toBeVisible();
+		await waitForInlineAnnotationEditor();
 	});
 
 	test('preserves message links and selected text without entering edit mode', async () => {
@@ -635,19 +642,40 @@ async function renderInlineShell(
 	);
 }
 
-function nextAnimationFrame(): Promise<void> {
-	return new Promise((resolve): void => {
-		requestAnimationFrame((): void => resolve());
+async function performBrowserAction(action: () => Promise<void>): Promise<void> {
+	await act(action);
+}
+
+async function waitForInlineShellVisibleElement(locator: {
+	readonly all: () => readonly { readonly element: () => Element }[];
+}): Promise<void> {
+	await waitForWorktreeAnnotationBrowserDomState({
+		readState: (): Element | null => locator.all()[0]?.element() ?? null,
+		isExpected: (element): boolean => element !== null && inlineShellElementIsVisible(element),
 	});
 }
 
-async function performBrowserAction(action: () => Promise<void>): Promise<void> {
-	await act(async (): Promise<void> => {
-		await action();
-		await Promise.resolve();
-		await nextAnimationFrame();
-		await Promise.resolve();
+function inlineShellElementIsVisible(element: Element): boolean {
+	const bounds = element.getBoundingClientRect();
+	const style = getComputedStyle(element);
+	return (
+		element.isConnected &&
+		bounds.width > 0 &&
+		bounds.height > 0 &&
+		style.visibility !== 'hidden' &&
+		style.visibility !== 'collapse'
+	);
+}
+
+async function waitForInlineAnnotationEditor(): Promise<HTMLTextAreaElement> {
+	const editor = await waitForWorktreeAnnotationBrowserDomState({
+		readState: (): HTMLTextAreaElement | null =>
+			document.querySelector('textarea[aria-label="Annotation Markdown"]'),
+		isExpected: (candidate): boolean =>
+			candidate !== null && !candidate.disabled && inlineShellElementIsVisible(candidate),
 	});
+	if (editor === null) throw new Error('Expected the settled inline annotation editor.');
+	return editor;
 }
 
 async function publishTwoMessageThread(surface: RecordingAnnotationBrowserSurface): Promise<void> {
@@ -724,18 +752,3 @@ const locatedContext: WorktreeAnnotationThreadContext = {
 	startLine: 7,
 	threadId,
 };
-
-async function settleBrowserCondition(
-	predicate: () => boolean,
-	failureMessage: string,
-	remainingFrames: number = 10,
-): Promise<void> {
-	await act(async (): Promise<void> => {
-		await new Promise<void>((resolve): void => {
-			requestAnimationFrame((): void => resolve());
-		});
-	});
-	if (predicate()) return;
-	if (remainingFrames <= 0) throw new Error(failureMessage);
-	await settleBrowserCondition(predicate, failureMessage, remainingFrames - 1);
-}

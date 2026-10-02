@@ -8,6 +8,45 @@ import Testing
 /// ledger, all side by side where the CI failure upload selects them.
 @Suite("Swift lane hang evidence")
 struct SwiftLaneHangEvidenceTests {
+    @Test("receipt metadata and a cancelled settlement preserve the existing parser's payload pairing")
+    func receiptMetadataPreservesExistingParserPairing() async throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("harness-parser-receipts-\(UUIDv7.generate())")
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let legacyRecords = [
+            "waiting\tstep-1\tstill missing\tSuite.swift pending()",
+            "waiting\tstep-2\tcancelled then arrived\tSuite.swift closed()",
+            "arrived\tstep-2\tcancelled then arrived",
+            "expecting\texpectation-1\trefreshClosed\tscope\tSuite.swift pending()\tSuite.swift:4 pending()",
+            "expecting\texpectation-2\talreadyClosed\tscope\tSuite.swift closed()\tSuite.swift:5 closed()",
+            "settled\texpectation-2\tmatched",
+        ]
+        var receiptRecords = legacyRecords
+        // A cancelled waiter can be followed by a later producer arrival, as
+        // HeldStepTests.eventLogRecordsWaitingAndFirstArrival exercises.
+        receiptRecords.insert("wait_settled\tstep-2\t8\tcancelled", at: 2)
+        let metadata =
+            #"{"clockDomain":"CLOCK_UPTIME_RAW","seconds":100,"nanoseconds":42,"testID":"Module.Suite/test()","caseID":null,"parameterized":true,"waiterID":8}"#
+        let oldURL = root.appendingPathComponent("old.log")
+        let newURL = root.appendingPathComponent("new.log")
+        try (legacyRecords.joined(separator: "\n") + "\n").write(to: oldURL, atomically: true, encoding: .utf8)
+        try (receiptRecords.map { $0 + "\t" + metadata }.joined(separator: "\n") + "\n")
+            .write(to: newURL, atomically: true, encoding: .utf8)
+
+        let output = try await laneBash(
+            "LOG_PREFIX=lane; source scripts/swift-test-helpers.sh; "
+                + "echo OLD; print_held_steps_unarrived_at_timeout '\(oldURL.path)'; "
+                + "echo NEW; print_held_steps_unarrived_at_timeout '\(newURL.path)'"
+        )
+        let expected = [
+            "[lane] lane-report held_step_unarrived name=still missing id=step-1 test=Suite.swift pending()",
+            "[lane] lane-report fact_expected id=expectation-1 expected=refreshClosed scope=scope "
+                + "test=Suite.swift pending() site=Suite.swift:4 pending()",
+        ]
+        #expect(laneOutputLines(output) == ["OLD"] + expected + ["NEW"] + expected)
+    }
+
     @Test("long event stream labels keep a stable bounded slug and short labels keep their slug")
     func eventStreamLabelSlugBoundsLongLabelsWithoutChangingShortLabels() async throws {
         let output = try await laneBash(

@@ -168,20 +168,20 @@ swift test --build-path "$SWIFT_BUILD_DIR" --filter "CommandBarState"
 
 | Env Var | Default | Purpose |
 |---------|---------|---------|
-| `SWIFT_BUILD_DIR` | `.build-agent-1` for `build`; `.build-agent-2` for `test`; `.build-ci` on CI | The caller acquires a named slot with `swift_build_slot_acquire build|test "task label"`. Local overrides are not supported. |
+| `SWIFT_BUILD_DIR` | `.build-agent-1` for both `build` and `test`; `.build-ci` on CI | The caller acquires the worktree's one slot with `swift_build_slot_acquire build|test "task label"`. Local overrides are not supported. |
 | `SWIFT_TEST_PARALLEL` | `1` (enabled) | Set to `0` to disable parallel workers |
 
 ### Swift Build-Slot Recovery
 
-**Two named slots in each worktree.** `build` owns `.build-agent-1` for debug and release builds, Swift lint and format, the Bridge development-server build, and architecture-lint compilation. `test` owns `.build-agent-2` for test tasks from prebuild through the last test process, including `mise run test:architecture`. The fixed paths preserve existing build outputs without a copy or rebuild. SwiftPM's own kernel-level flock handles serialization inside each path.
+**One slot per worktree.** Every Swift build and test task in a worktree uses `.build-agent-1`: debug and release builds, Swift lint and format, the Bridge development-server build, architecture-lint compilation, and test tasks from prebuild through the last test process. A second per-worktree build directory cost several GB of disk, so the owner removed it on 2026-10-01. The `build` or `test` argument only labels the claimant in logs and holder notes; both take the same lock, so a test run in a worktree waits for a build in that worktree, and the reverse.
 
-**Acquisition and release.** The caller runs `swift_build_slot_acquire build|test "task label"`, then installs its own EXIT handler to call `swift_build_slot_release`. A claimant creates `.slot-claim` atomically. A caller waiting on the same slot prints the holder task, PID, and process start time once, then checks for the slot every second. That one-second interval schedules contention only; it never times out a build. A build and a test can run at the same time because they own different paths.
+**Acquisition and release.** The caller runs `swift_build_slot_acquire build|test "task label"`, then installs its own EXIT handler to call `swift_build_slot_release`. The slot is a kernel `flock` on `.build-agent-1/.slot.lock`, held by a small holder process; the kernel drops it whenever that holder exits (release, error, Ctrl-C, `kill -9`, crash), so there are no stale claims to reap and no process inspection, which keeps it working inside agent sandboxes. A waiting caller prints the holder's task, PID and start time once, then waits in the kernel; nothing times out on contention.
 
-**Stale claims.** Each claim records its owner PID and process start time. `mise run clean-agent-builds` reaps a dead or PID-reused owner only after `lsof +D` confirms that no process has files open under its build path. This protects active descendants whose parent shell exited. A pre-upgrade claim without metadata is removed only when its claim directory is empty and `lsof` confirms the build path is idle; active legacy holders are reported with their PID, command, and start time.
+**Leftovers.** `mise run clean-agent-builds` removes a stale holder note and any `.slot-claim` directory left by the old ps-based script, only while the slot is free. It never deletes `.slot.lock`. An old `.build-agent-2` directory is no longer used by anything and can be deleted.
 
 **CI path.** CI uses `.build-ci` when `CI=true` or `GITHUB_ACTIONS=true`; the local slot allocator is bypassed. Other caller-provided `SWIFT_BUILD_DIR` values are rejected.
 
-**Contention and lock recovery.** If `mise run build` or a `mise run test:*` task waits, read its one-time holder line. The lanes keep their own hang bounds — `SWIFT_TEST_TIMEOUT_SECONDS` defaults to 600 and `SWIFT_TEST_PREBUILD_TIMEOUT_SECONDS` to 1200 in [`scripts/run-swift-test-task.sh`](../../scripts/run-swift-test-task.sh), matching CI. Do not impose a shorter timeout to detect contention. Run `mise run clean-agent-builds` to retire confirmed stale claims. Do not blanket-kill SwiftPM or `swift-build`; inspect the specific owner and wait for it or terminate only a confirmed stale process.
+**Contention and lock recovery.** If `mise run build` or a `mise run test:*` task waits, read its one-time holder line. The lanes keep their own hang bounds — `SWIFT_TEST_TIMEOUT_SECONDS` defaults to 600 and `SWIFT_TEST_PREBUILD_TIMEOUT_SECONDS` to 1200 in [`scripts/run-swift-test-task.sh`](../../scripts/run-swift-test-task.sh), matching CI. Do not impose a shorter timeout to detect contention. Run `mise run clean-agent-builds` to remove leftover holder notes. Do not blanket-kill SwiftPM or `swift-build`; inspect the specific owner and wait for it or terminate only a confirmed stale process.
 
 ### Peekaboo PID Targeting
 
@@ -197,8 +197,9 @@ PID=$!
 peekaboo see --app "PID:$PID" --json
 ```
 
-Test builds use `.build-agent-2`; for example, `mise run test:swift` acquires
-the `test` slot before its prebuild and holds it through the final test process.
+Test builds share `.build-agent-1`; for example, `mise run test:swift` acquires
+the slot before its prebuild and holds it through the final test process, so a
+build in the same worktree waits for it.
 
 Treat Peekaboo output as visual/render/interaction proof, not a replacement for
 unit, integration, or marker-scoped observability proof.

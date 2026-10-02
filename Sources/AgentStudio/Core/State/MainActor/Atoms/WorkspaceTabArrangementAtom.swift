@@ -567,7 +567,10 @@ package final class WorkspaceTabArrangementAtom {
                 continue
             }
             if drawerView.activeChildId == drawerPaneId {
-                drawerView.activeChildId = drawerView.layout.paneIds.first
+                drawerView.activeChildId = DrawerChildSelectionRule.firstVisibleChild(
+                    orderedPaneIds: drawerView.layout.paneIds,
+                    minimizedPaneIds: drawerView.minimizedPaneIds
+                )
             }
             arrangementStates[tabIndex].arrangements[arrangementIndex].drawerViews[drawerId] = drawerView
         }

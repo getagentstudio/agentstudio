@@ -34,6 +34,42 @@ extension PaneTabViewControllerDrawerCommandTests {
         }
     }
 
+    @Test(
+        "detaching the selected drawer child skips minimized siblings and persists the workspace",
+        arguments: [false, true]
+    )
+    func targetedDetachDrawerPane_skipsMinimizedSiblings_andPersists(allSiblingsMinimized: Bool) async throws {
+        let harness = makeHarness()
+        defer { try? FileManager.default.removeItem(at: harness.tempDir) }
+        try await withWorkspaceCommandHarness(harness) {
+            let parent = harness.store.createPane()
+            let tab = Tab(paneId: parent.id)
+            harness.store.appendTab(tab)
+            harness.store.setActiveTab(tab.id)
+            harness.store.setActivePane(parent.id, inTab: tab.id)
+            let first = try #require(harness.store.addDrawerPane(to: parent.id))
+            let selected = try #require(harness.store.addDrawerPane(to: parent.id))
+            let last = try #require(harness.store.addDrawerPane(to: parent.id))
+            harness.store.setActiveDrawerPane(selected.id, in: parent.id)
+            #expect(harness.store.minimizeDrawerPane(first.id, in: parent.id))
+            if allSiblingsMinimized {
+                #expect(harness.store.minimizeDrawerPane(last.id, in: parent.id))
+            }
+            #expect(harness.store.drawerView(forParent: parent.id)?.activeChildId == selected.id)
+            #expect(await harness.store.flushAsync() == .persisted)
+
+            await harness.executeCommand(.detachDrawerPane, target: selected.id, targetType: .pane)
+
+            #expect(harness.store.pane(selected.id)?.parentPaneId == nil)
+            #expect(harness.store.tab(tab.id)?.activePaneIds.contains(selected.id) == true)
+            #expect(harness.store.pane(parent.id)?.drawer?.paneIds == [first.id, last.id])
+            let remainingView = try #require(harness.store.drawerView(forParent: parent.id))
+            #expect(remainingView.activeChildId == (allSiblingsMinimized ? nil : last.id))
+            #expect(remainingView.minimizedPaneIds == (allSiblingsMinimized ? [first.id, last.id] : [first.id]))
+            #expect(await harness.store.flushAsync() == .persisted)
+        }
+    }
+
     @Test("direct detachDrawerPane promotes the focused drawer pane")
     func directDetachDrawerPane_promotesFocusedDrawerPane() async throws {
         let harness = makeHarness()

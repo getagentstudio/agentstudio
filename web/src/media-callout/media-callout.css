@@ -1,0 +1,80 @@
+[data-scene-root="media-callout"].media-callout-layer {
+  position: absolute;
+  z-index: 1;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+
+[data-scene-root="media-callout"] .media-callout__routes {
+  position: absolute;
+  inset: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+
+[data-scene-root="media-callout"] .media-callout__route {
+  fill: none;
+  stroke: var(--color-primary);
+  stroke-width: var(--rail-line-width);
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  vector-effect: non-scaling-stroke;
+}
+
+[data-scene-root="media-callout"] .media-callout__node-anchor {
+  position: absolute;
+  z-index: 1;
+  display: block;
+  width: 14px;
+  height: 14px;
+  transform: translate(-50%, -50%);
+}
+
+[data-scene-root="media-callout"] .media-callout__target-node {
+  display: block;
+  width: 14px;
+  height: 14px;
+  overflow: visible;
+  transform-box: fill-box;
+  transform-origin: center;
+}
+
+[data-scene-root="media-callout"] .media-callout__node-ring {
+  fill: none;
+  stroke: var(--color-primary);
+  stroke-width: 2px;
+  vector-effect: non-scaling-stroke;
+}
+
+[data-scene-root="media-callout"] .media-callout__node-core {
+  fill: var(--color-primary);
+}
+
+[data-scene-root="media-callout"] .media-callout__label {
+  position: absolute;
+  z-index: 2;
+  display: inline-block;
+  border: 1px solid var(--color-floating-glass-border);
+  font-family: var(--font-product);
+  font-size: var(--text-step-label);
+  font-weight: 400;
+  line-height: var(--text-step-label--line-height);
+}
+
+.media-callout-preview-body {
+  display: grid;
+  min-height: 100vh;
+  margin: 0;
+  place-items: center;
+  background: var(--color-canvas);
+}
+
+.media-callout-preview-stage {
+  position: relative;
+  overflow: hidden;
+  background: var(--color-canvas);
+}

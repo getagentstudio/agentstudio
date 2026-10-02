@@ -28,7 +28,7 @@ let package = Package(
         .package(url: "https://github.com/hummingbird-project/hummingbird.git", from: "2.0.0"),
         .package(url: "https://github.com/groue/GRDB.swift.git", from: "7.10.0"),
         .package(
-            url: "https://github.com/ShravanSunder/agentstudio-git.git",
+            url: "https://github.com/getagentstudio/agentstudio-git.git",
             revision: "87193257e55e7516e43bb1e8338b929c586355ae"
         ),
     ],
@@ -522,6 +522,7 @@ let package = Package(
         .testTarget(
             name: "AgentStudioTerminalTests",
             dependencies: [
+                "AgentStudioTestHarness",
                 "AgentStudioCore",
                 "AgentStudioInfrastructure",
                 "AgentStudioSharedComponents",

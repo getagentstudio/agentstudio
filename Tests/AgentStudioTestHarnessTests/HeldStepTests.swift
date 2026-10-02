@@ -214,8 +214,12 @@ struct HeldStepTests {
 
         // Assert
         let lines = try String(contentsOf: logURL, encoding: .utf8).split(separator: "\n").map(String.init)
+        #expect(lines.count == 3)
+        let payloads = lines.filter { !$0.hasPrefix("wait_settled\t") }.map {
+            $0.split(separator: "\t", omittingEmptySubsequences: false).dropLast().joined(separator: "\t")
+        }
         #expect(
-            lines == [
+            payloads == [
                 "waiting\t\(step.instanceID)\tlogged step\tAgentStudioTestHarnessTests/HeldStepTests.swift "
                     + "eventLogRecordsWaitingAndFirstArrival()",
                 "arrived\t\(step.instanceID)\tlogged step",
@@ -242,9 +246,13 @@ struct HeldStepTests {
 
         // Assert
         let lines = try String(contentsOf: logURL, encoding: .utf8).split(separator: "\n").map(String.init)
+        #expect(lines.count == 3)
+        let payloads = lines.filter { !$0.hasPrefix("wait_settled\t") }.map {
+            $0.split(separator: "\t", omittingEmptySubsequences: false).dropLast().joined(separator: "\t")
+        }
         #expect(arrivedFirst.instanceID != neverReached.instanceID)
         #expect(
-            lines == [
+            payloads == [
                 "arrived\t\(arrivedFirst.instanceID)\tshared name",
                 "waiting\t\(neverReached.instanceID)\tshared name\tAgentStudioTestHarnessTests/HeldStepTests.swift "
                     + "sameNamedStepsLogDistinctInstances()",

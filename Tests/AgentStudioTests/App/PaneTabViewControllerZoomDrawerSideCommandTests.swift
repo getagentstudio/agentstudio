@@ -212,6 +212,109 @@ struct PaneTabViewControllerZoomDrawerSideCommandTests {
         #expect(command(.normal, true) == nil)
     }
 
+    enum ZoomAuthorityChange: CaseIterable, Sendable {
+        case cancelZoom
+        case retargetZoom
+    }
+
+    @Test(
+        "move control task key changes when Zoom authority changes with the same command and target",
+        arguments: [AppCommand.moveZoomDrawerToTerminal, .moveZoomDrawerToBridge], ZoomAuthorityChange.allCases
+    )
+    func moveControlKeyTracksZoomAuthority(command: AppCommand, authorityChange: ZoomAuthorityChange) async throws {
+        let fixture = try makeZoomDrawerFixture()
+        defer { try? FileManager.default.removeItem(at: fixture.harness.tempDir) }
+        try await withWorkspaceCommandHarness(fixture.harness) {
+            try await withIsolatedCommandDispatcher(
+                configure: {
+                    AppCommandDispatcher.shared.handler = fixture.harness.controller
+                    AppCommandDispatcher.shared.appCommandRouter = nil
+                },
+                body: {
+                    let store = fixture.harness.store
+                    let alternateSource = store.createPane()
+                    #expect(
+                        store.insertPane(
+                            alternateSource.id, inTab: fixture.tab.id, at: fixture.sourcePane.id,
+                            direction: .horizontal, position: .after, sizingMode: .halveTarget))
+                    let windowId = UUIDv7.generate()
+                    @MainActor func resolutionKey() -> DrawerPanelOverlay.MoveControlResolutionKey {
+                        DrawerPanelOverlay.makeMoveControlResolutionKey(
+                            command: command,
+                            ownerPaneId: fixture.sourcePane.id,
+                            tabId: fixture.tab.id,
+                            workspaceWindowId: windowId,
+                            zoomPresentation: store.panePresentationAtom.zoomPresentation(forTab: fixture.tab.id)
+                        )
+                    }
+                    @MainActor func resolveAction() -> TargetedCommandControlAction? {
+                        TargetedCommandControlAction.resolve(
+                            command: command, surface: .inlineControl,
+                            target: fixture.sourcePane.id, targetType: .pane,
+                            dispatcher: AppCommandDispatcher.shared
+                        )
+                    }
+                    let initialKey = resolutionKey()
+                    let initialAction = try #require(resolveAction())
+                    #expect(initialAction.isEnabled)
+
+                    switch authorityChange {
+                    case .cancelZoom:
+                        store.panePresentationAtom.cancelZoom(inTab: fixture.tab.id)
+                    case .retargetZoom:
+                        #expect(
+                            store.panePresentationAtom.retargetZoom(
+                                inTab: fixture.tab.id, to: alternateSource.id,
+                                viewerPresentation: .unavailableVisible))
+                    }
+
+                    let changedAction = try #require(resolveAction())
+                    #expect(!changedAction.isEnabled)
+                    let changedKey = resolutionKey()
+                    #expect(changedKey != initialKey)
+                    #expect(changedKey.command == initialKey.command)
+                    #expect(changedKey.ownerPaneId == initialKey.ownerPaneId)
+                    #expect(changedKey.tabId == initialKey.tabId)
+                    #expect(changedKey.workspaceWindowId == initialKey.workspaceWindowId)
+
+                    store.panePresentationAtom.enterZoom(
+                        inTab: fixture.tab.id, sourcePaneId: fixture.sourcePane.id,
+                        viewerPresentation: .unavailableVisible)
+                    let restoredAction = try #require(resolveAction())
+                    #expect(restoredAction.isEnabled)
+                    #expect(resolutionKey() == initialKey)
+                    #expect(resolutionKey() != changedKey)
+                }
+            )
+        }
+    }
+
+    @Test("move control task key ignores viewer and split-ratio changes that preserve Zoom authority")
+    func moveControlKeyIgnoresNonAuthorityZoomChanges() async throws {
+        let fixture = try makeZoomDrawerFixture()
+        defer { try? FileManager.default.removeItem(at: fixture.harness.tempDir) }
+        await withWorkspaceCommandHarness(fixture.harness) {
+            let store = fixture.harness.store
+            @MainActor func resolutionKey() -> DrawerPanelOverlay.MoveControlResolutionKey {
+                DrawerPanelOverlay.makeMoveControlResolutionKey(
+                    command: .moveZoomDrawerToBridge,
+                    ownerPaneId: fixture.sourcePane.id,
+                    tabId: fixture.tab.id,
+                    workspaceWindowId: nil,
+                    zoomPresentation: store.panePresentationAtom.zoomPresentation(forTab: fixture.tab.id)
+                )
+            }
+            let initialKey = resolutionKey()
+
+            #expect(store.panePresentationAtom.setZoomSplitRatio(0.5, inTab: fixture.tab.id))
+            store.panePresentationAtom.enterZoom(
+                inTab: fixture.tab.id, sourcePaneId: fixture.sourcePane.id,
+                viewerPresentation: .retryable)
+
+            #expect(resolutionKey() == initialKey)
+        }
+    }
+
     @Test("each side command's catalog icon points where the drawer will go")
     func sideCommandIconsPointTowardTheDestination() {
         #expect(AppCommand.moveZoomDrawerToBridge.definition.icon == .system(.arrowRight))

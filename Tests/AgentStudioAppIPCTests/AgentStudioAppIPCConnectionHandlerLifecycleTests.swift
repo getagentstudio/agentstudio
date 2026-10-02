@@ -2,6 +2,7 @@ import AgentStudioAppIPC
 import AgentStudioIPCTransport
 import AgentStudioInfrastructure
 import AgentStudioProgrammaticControl
+import AgentStudioTestHarness
 import Foundation
 import Testing
 
@@ -11,55 +12,105 @@ import Testing
 /// it does.
 @Suite("App IPC connection handler lifecycle")
 struct AgentStudioAppIPCConnectionHandlerLifecycleTests {
-    @Test("joinConnectionHandlers waits for a handler held inside a request, then clears its entry")
-    func joinWaitsForAHeldHandlerThenClearsItsEntry() async throws {
+    @Test("a throwing live-server scope joins a handler before returning its error")
+    func throwingFixtureScopeJoinsItsHeldHandler() async throws {
         let paneId = UUIDv7.generate()
         let port = SuspendingTerminalWaitPort()
         let fixture = try LiveServerFixture(
             accessMode: .unsafeDebug,
-            channel: .debug,
             panes: [makePaneSummary(id: paneId, ordinal: 1)],
             runtimePort: port
         )
-        defer { fixture.cleanup() }
-        try fixture.server.start()
-
-        // Sent from its own Task, off the cooperative pool: this request
-        // parks inside the port until cancellation reaches it, so it must
-        // not block the test's own async execution while it's held.
-        let heldRequest = Task {
-            try await sendRequestWithoutBlockingCooperativePool(
-                socketPath: fixture.paths.socketURL.path,
-                request: JSONRPCClientRequest(
-                    id: .number(1),
-                    method: "terminal.wait",
-                    params: .object([
-                        "handle": .string("pane:1"),
-                        "condition": .string(IPCTerminalWaitCondition.commandFinished.rawValue),
-                        "timeoutSeconds": .number(60),
-                    ])
-                )
-            )
+        do {
+            try await withLiveServer(
+                makeFixture: { fixture },
+                body: { fixture in
+                    try fixture.server.start()
+                    let connection = try await valueFromDedicatedThread {
+                        try UnixSocketClient.connect(endpoint: .init(path: fixture.paths.socketURL.path))
+                    }
+                    defer { connection.close() }
+                    try await valueFromDedicatedThread {
+                        try sendRequest(
+                            connection: connection,
+                            request: JSONRPCClientRequest(
+                                id: .number(1), method: "terminal.wait",
+                                params: .object([
+                                    "handle": .string("pane:1"),
+                                    "condition": .string(IPCTerminalWaitCondition.commandFinished.rawValue),
+                                    "timeoutSeconds": .number(60),
+                                ])
+                            )
+                        )
+                    }
+                    _ = await port.waitUntilEntered()
+                    throw FixtureScopeTestError.bodyFailed
+                })
+            Issue.record("Expected the fixture body's error")
+        } catch FixtureScopeTestError.bodyFailed {
+            // The fixture must preserve the original body error after joining.
         }
 
-        // Event-driven: resolves once the port has genuinely parked a
-        // continuation, whether this call's own registration or the entry
-        // itself won that race — waitUntilEntered is a latched fact, not an
-        // observation of which side arrived first.
-        _ = await port.waitUntilEntered()
-        #expect(fixture.server.trackedConnectionHandlerCount == 1)
+        let handlerCountAtScopeReturn = fixture.server.trackedConnectionHandlerCount
+        let observedCancellationAtScopeReturn = port.observedCancellation
+        #expect(handlerCountAtScopeReturn == 0)
+        #expect(observedCancellationAtScopeReturn)
+        #expect(!FileManager.default.fileExists(atPath: fixture.rootURL.path))
+    }
 
-        await fixture.server.joinConnectionHandlers()
+    @Test("joinConnectionHandlers waits for a handler held inside a request, then clears its entry")
+    func joinWaitsForAHeldHandlerThenClearsItsEntry() async throws {
+        let paneId = UUIDv7.generate()
+        let port = SuspendingTerminalWaitPort()
+        try await withLiveServer(
+            makeFixture: {
+                try LiveServerFixture(
+                    accessMode: .unsafeDebug,
+                    channel: .debug,
+                    panes: [makePaneSummary(id: paneId, ordinal: 1)],
+                    runtimePort: port
+                )
+            },
+            body: { fixture in
+                try fixture.server.start()
 
-        #expect(port.observedCancellation)
-        #expect(fixture.server.trackedConnectionHandlerCount == 0)
+                // Sent from its own Task, off the cooperative pool: this request
+                // parks inside the port until cancellation reaches it, so it must
+                // not block the test's own async execution while it's held.
+                let heldRequest = Task {
+                    try await sendRequestWithoutBlockingCooperativePool(
+                        socketPath: fixture.paths.socketURL.path,
+                        request: JSONRPCClientRequest(
+                            id: .number(1),
+                            method: "terminal.wait",
+                            params: .object([
+                                "handle": .string("pane:1"),
+                                "condition": .string(IPCTerminalWaitCondition.commandFinished.rawValue),
+                                "timeoutSeconds": .number(60),
+                            ])
+                        )
+                    )
+                }
 
-        // Nothing left to cancel or await: a second join is a no-op over an
-        // empty tracked set.
-        await fixture.server.joinConnectionHandlers()
-        #expect(fixture.server.trackedConnectionHandlerCount == 0)
+                // Event-driven: resolves once the port has genuinely parked a
+                // continuation, whether this call's own registration or the entry
+                // itself won that race — waitUntilEntered is a latched fact, not an
+                // observation of which side arrived first.
+                _ = await port.waitUntilEntered()
+                #expect(fixture.server.trackedConnectionHandlerCount == 1)
 
-        _ = try? await heldRequest.value
+                await fixture.server.joinConnectionHandlers()
+
+                #expect(port.observedCancellation)
+                #expect(fixture.server.trackedConnectionHandlerCount == 0)
+
+                // Nothing left to cancel or await: a second join is a no-op over an
+                // empty tracked set.
+                await fixture.server.joinConnectionHandlers()
+                #expect(fixture.server.trackedConnectionHandlerCount == 0)
+
+                _ = try? await heldRequest.value
+            })
     }
 
     /// waitUntilEntered() awaits a latched fact — "has this fresh port's
@@ -124,6 +175,10 @@ struct AgentStudioAppIPCConnectionHandlerLifecycleTests {
         _ = try? await waitTask.value
         #expect(port.observedCancellation)
     }
+}
+
+private enum FixtureScopeTestError: Error {
+    case bodyFailed
 }
 
 /// A runtime port whose `waitForTerminal` parks on a continuation until the

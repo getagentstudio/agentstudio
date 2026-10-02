@@ -93,7 +93,8 @@ package struct CommandRunResult: Sendable {
 /// Runs `command` to exit under `DefaultProcessExecutor`'s command contract,
 /// with no timeout.
 ///
-/// `command` is resolved through `/usr/bin/env`, `environment` merges over the
+/// Git and Python use the cached developer-tool resolver; other commands resolve
+/// through `/usr/bin/env`. `environment` merges over the
 /// inherited one with the Homebrew toolchain prefixed to `PATH`, and both
 /// streams come back trimmed, so a converted test sees the results it saw
 /// before, only without the elapsed-time budget. See `runProcessToExit` for how
@@ -110,7 +111,7 @@ package func runCommandToExit(
     }
     let output = try await runProcessToExit(
         executableURL: URL(fileURLWithPath: "/usr/bin/env"),
-        arguments: [command] + arguments,
+        arguments: [try await TestToolResolver.resolveCommand(command)] + arguments,
         currentDirectoryURL: currentDirectoryURL,
         environment: CommandEnvironment.normalized(mergedEnvironment)
     )
