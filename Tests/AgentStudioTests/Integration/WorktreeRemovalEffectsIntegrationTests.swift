@@ -75,6 +75,120 @@ struct WorktreeRemovalEffectsIntegrationTests {
         #expect(try Data(contentsOf: destination.appending(path: "evidence.txt")) == Data("main archive".utf8))
     }
 
+    @Test("a pre-existing index lock refuses before archive-to-main")
+    func refusesPreExistingIndexLockBeforeArchiveToMain() async throws {
+        var fixture = try await WorktreeRemovalRepository.create(named: "worktree-remove-archive-index-lock")
+        defer { fixture.destroy() }
+        let worktree = try await fixture.addWorktree(branch: "feature/archive-index-lock")
+        let evidence = try addEvidence("keep this evidence", to: worktree)
+        let snapshot = try #require(
+            await fixture.client.worktrees(for: fixture.path).first {
+                $0.canonicalPath.standardizedFileURL.path == worktree.standardizedFileURL.path
+            }
+        )
+        let lockPath = URL(fileURLWithPath: snapshot.indexPath.path + ".lock")
+        let foreignBytes = Data("foreign index writer\n".utf8)
+        try foreignBytes.write(to: lockPath)
+        let archiveDestination = WorktreeLifecyclePolicy.archiveToMainDestination(
+            mainWorktree: fixture.path,
+            worktreeFolder: worktree.lastPathComponent
+        )
+
+        let report = await WorktreeRemovalRunner(client: fixture.client).run(
+            worktreeRemovalRequest(
+                repository: fixture.path,
+                targets: [worktree.path],
+                callerDirectory: fixture.path,
+                branchPolicy: .keep,
+                evidencePolicy: .archiveToMain
+            )
+        )
+
+        guard case .refused(let entry)? = report.entries.first,
+            case .gitLockHeld(let observation) = entry.refusal.details
+        else {
+            Issue.record("expected a pre-archive index-lock refusal, got \(report)")
+            return
+        }
+        #expect(observation.path == lockPath.standardizedFileURL.path)
+        guard case .index(let observedWorktreePath) = observation.resource else {
+            Issue.record("expected an index lock resource, got \(observation.resource)")
+            return
+        }
+        #expect(observedWorktreePath.standardizedFileURL.path == worktree.standardizedFileURL.path)
+        #expect(FileManager.default.fileExists(atPath: worktree.path))
+        #expect(FileManager.default.fileExists(atPath: evidence.path))
+        #expect(!FileManager.default.fileExists(atPath: archiveDestination.path))
+        #expect(try Data(contentsOf: lockPath) == foreignBytes)
+    }
+
+    @Test("preview and execution refuse a pre-existing branch ref lock before archive")
+    func previewAndExecutionMatchForPreExistingBranchRefLock() async throws {
+        var fixture = try await WorktreeRemovalRepository.create(named: "worktree-remove-archive-ref-lock")
+        defer { fixture.destroy() }
+        let branchName = "feature/archive-ref-lock"
+        let worktree = try await fixture.addWorktree(branch: branchName)
+        let evidence = try addEvidence("keep this evidence", to: worktree)
+        let lockPath = fixture.path.appending(path: ".git/refs/heads/feature/archive-ref-lock.lock")
+        let foreignBytes = Data("foreign branch writer\n".utf8)
+        try FileManager.default.createDirectory(
+            at: lockPath.deletingLastPathComponent(),
+            withIntermediateDirectories: true
+        )
+        try foreignBytes.write(to: lockPath)
+        let archiveDestination = WorktreeLifecyclePolicy.archiveToMainDestination(
+            mainWorktree: fixture.path,
+            worktreeFolder: worktree.lastPathComponent
+        )
+        let runner = WorktreeRemovalRunner(client: fixture.client)
+
+        let preview = await runner.run(
+            worktreeRemovalRequest(
+                repository: fixture.path,
+                targets: [worktree.path],
+                callerDirectory: fixture.path,
+                branchPolicy: .deleteAtObservedCommit,
+                evidencePolicy: .archiveToMain,
+                dryRun: true
+            )
+        )
+        guard case .planned(let planned)? = preview.entries.first,
+            planned.plan.stopsAt?.reason == .gitLockHeld,
+            case .gitLockHeld(let previewObservation) = planned.plan.stopsAt?.details
+        else {
+            Issue.record("expected a planned branch-lock stop, got \(preview)")
+            return
+        }
+        #expect(previewObservation.path == lockPath.standardizedFileURL.path)
+        #expect(previewObservation.resource == .reference(name: "refs/heads/\(branchName)"))
+        #expect(!previewObservation.looksStale)
+
+        let report = await runner.run(
+            worktreeRemovalRequest(
+                repository: fixture.path,
+                targets: [worktree.path],
+                callerDirectory: fixture.path,
+                branchPolicy: .deleteAtObservedCommit,
+                evidencePolicy: .archiveToMain
+            )
+        )
+        guard case .refused(let refused)? = report.entries.first,
+            case .gitLockHeld(let observation) = refused.refusal.details
+        else {
+            Issue.record("expected execution to refuse at the same branch lock, got \(report)")
+            return
+        }
+
+        #expect(observation.path == lockPath.standardizedFileURL.path)
+        #expect(observation.resource == .reference(name: "refs/heads/\(branchName)"))
+        #expect(FileManager.default.fileExists(atPath: worktree.path))
+        #expect(FileManager.default.fileExists(atPath: evidence.path))
+        #expect(!FileManager.default.fileExists(atPath: archiveDestination.path))
+        #expect(try Data(contentsOf: lockPath) == foreignBytes)
+        #expect(
+            try await removalGit(fixture.path, "show-ref", "--verify", "refs/heads/\(branchName)").isEmpty == false)
+    }
+
     @Test("force discards working changes; discard-tmp removes ignored evidence with the worktree")
     func appliesSeparateWorkingChangeAndEvidencePolicies() async throws {
         var fixture = try await WorktreeRemovalRepository.create(named: "worktree-remove-discard-policies")
@@ -178,12 +292,33 @@ struct WorktreeRemovalEffectsIntegrationTests {
         )
         let lockPath = URL(fileURLWithPath: snapshot.indexPath.path + ".lock")
         let foreignBytes = Data("active index writer\n".utf8)
-        try foreignBytes.write(to: lockPath)
-        try await setModificationTimeUsingTouch(Date(), at: lockPath)
+        let mainSnapshot = try #require(
+            await fixture.client.worktrees(for: fixture.path).first(where: \.isMainWorktree)
+        )
+        let identity = try await fixture.client.repositoryIdentity(for: fixture.path)
+        let client = WorktreeOperationClientStub(
+            startPath: fixture.path,
+            snapshot: mainSnapshot,
+            identity: identity,
+            baseClient: fixture.client,
+            removeWorktreeHandler: { _ in
+                do {
+                    try foreignBytes.write(to: lockPath)
+                } catch {
+                    return .failure(.unsupported(message: "could not plant the post-archive index lock"))
+                }
+                return .failure(
+                    .lockHeld(
+                        GitLockFact(
+                            path: lockPath,
+                            resource: .index(worktreePath: worktree.standardizedFileURL)
+                        )))
+            }
+        )
         let archiveRoot = fixture.path.appending(path: "archives", directoryHint: .isDirectory)
         let archiveDestination = archiveRoot.appending(path: worktree.lastPathComponent, directoryHint: .isDirectory)
 
-        let outcome = await WorktreeOperationRunner(client: fixture.client).run(
+        let outcome = await WorktreeOperationRunner(client: client).run(
             .remove(
                 worktreeRemovalRequest(
                     repository: fixture.path,
@@ -207,6 +342,7 @@ struct WorktreeRemovalEffectsIntegrationTests {
         #expect(entry.failure.effects.administration == .retained)
         #expect(entry.failure.effects.evidence == .archived(path: archiveDestination.path, files: 1))
         #expect(observation.path == lockPath.standardizedFileURL.path)
+        #expect(FileManager.default.fileExists(atPath: lockPath.path))
         guard case .index(let observedWorktreePath) = observation.resource else {
             Issue.record("expected index lock resource, got \(observation.resource)")
             return

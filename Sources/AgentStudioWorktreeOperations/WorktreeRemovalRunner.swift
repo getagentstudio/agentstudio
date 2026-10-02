@@ -99,7 +99,7 @@ package struct WorktreeRemovalRunner: Sendable {
         let wouldRemoveLockPaths: [String]
     }
 
-    struct DryRunLockCheck: Sendable {
+    struct WorktreeLockPreflight: Sendable {
         let stop: WorktreeStopDetails?
         let wouldRemovePaths: [String]
     }

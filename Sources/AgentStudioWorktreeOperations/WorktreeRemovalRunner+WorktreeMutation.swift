@@ -45,48 +45,36 @@ extension WorktreeRemovalRunner {
         } else {
             assessment = nil
         }
+        let lockCheck = preEffectLockCheck(
+            snapshot: snapshot,
+            branchName: branchName,
+            assessment: assessment,
+            request: request,
+            repository: repository,
+            targetResolution: fetchResult.resolution
+        )
+        let plannedRequest = WorktreePlanEntryRequest(
+            target: targetName,
+            inputs: inputs,
+            isWorktree: true,
+            request: request,
+            fetchStatus: fetchResult.status,
+            preflight: preflight,
+            assessment: assessment,
+            targetResolution: fetchResult.resolution,
+            stop: nil,
+            wouldRemoveLockPaths: lockCheck.wouldRemovePaths
+        )
+        if let stop = lockCheck.stop {
+            return preflightStopEntry(stop, request: request, plannedRequest: plannedRequest)
+        }
+
         if let stop = preflight.archiveDestinationStop {
-            return request.dryRun
-                ? plannedEntry(
-                    WorktreePlanEntryRequest(
-                        target: targetName,
-                        inputs: inputs,
-                        isWorktree: true,
-                        request: request,
-                        fetchStatus: fetchResult.status,
-                        preflight: preflight,
-                        assessment: assessment,
-                        targetResolution: fetchResult.resolution,
-                        stop: stop,
-                        wouldRemoveLockPaths: []
-                    )
-                )
-                : refusedEntry(target: targetName, inputs: inputs, stop: stop)
+            return preflightStopEntry(stop, request: request, plannedRequest: plannedRequest)
         }
 
         if request.dryRun {
-            let lockCheck = dryRunLockCheck(
-                snapshot: snapshot,
-                branchName: branchName,
-                assessment: assessment,
-                request: request,
-                repository: repository,
-                targetResolution: fetchResult.resolution
-            )
-            return plannedEntry(
-                WorktreePlanEntryRequest(
-                    target: targetName,
-                    inputs: inputs,
-                    isWorktree: true,
-                    request: request,
-                    fetchStatus: fetchResult.status,
-                    preflight: preflight,
-                    assessment: assessment,
-                    targetResolution: fetchResult.resolution,
-                    stop: lockCheck.stop,
-                    wouldRemoveLockPaths: lockCheck.wouldRemovePaths
-                )
-            )
+            return plannedEntry(plannedRequest)
         }
 
         return await executeWorktreeRemoval(
@@ -137,7 +125,7 @@ extension WorktreeRemovalRunner {
             resolution: fetchResult.resolution
         )
         if request.dryRun {
-            let lockCheck = dryRunLockCheck(
+            let lockCheck = preEffectLockCheck(
                 snapshot: nil,
                 branchName: branchName,
                 assessment: assessment,

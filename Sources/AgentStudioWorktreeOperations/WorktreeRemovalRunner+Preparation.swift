@@ -177,14 +177,14 @@ extension WorktreeRemovalRunner {
         )
     }
 
-    func dryRunLockCheck(
+    func preEffectLockCheck(
         snapshot: GitWorktreeSnapshot?,
         branchName: String?,
         assessment: BranchAssessment?,
         request: WorktreeRemovalRequest,
         repository: RepositoryContext,
         targetResolution: WorktreeIntegrationTargetResolution
-    ) -> DryRunLockCheck {
+    ) -> WorktreeLockPreflight {
         var facts: [GitLockFact] = []
         if let snapshot {
             facts.append(
@@ -225,13 +225,37 @@ extension WorktreeRemovalRunner {
             if request.removeStaleLock, lockAssessment.observation.looksStale {
                 wouldRemovePaths.append(fact.path.standardizedFileURL.path)
             } else {
-                return DryRunLockCheck(
+                return WorktreeLockPreflight(
                     stop: .gitLockHeld(lockAssessment.observation),
                     wouldRemovePaths: wouldRemovePaths
                 )
             }
         }
-        return DryRunLockCheck(stop: nil, wouldRemovePaths: wouldRemovePaths)
+        return WorktreeLockPreflight(stop: nil, wouldRemovePaths: wouldRemovePaths)
+    }
+
+    func preflightStopEntry(
+        _ stop: WorktreeStopDetails,
+        request: WorktreeRemovalRequest,
+        plannedRequest: WorktreePlanEntryRequest
+    ) -> WorktreeRemovalEntry {
+        guard request.dryRun else {
+            return refusedEntry(target: plannedRequest.target, inputs: plannedRequest.inputs, stop: stop)
+        }
+        return plannedEntry(
+            WorktreePlanEntryRequest(
+                target: plannedRequest.target,
+                inputs: plannedRequest.inputs,
+                isWorktree: plannedRequest.isWorktree,
+                request: plannedRequest.request,
+                fetchStatus: plannedRequest.fetchStatus,
+                preflight: plannedRequest.preflight,
+                assessment: plannedRequest.assessment,
+                targetResolution: plannedRequest.targetResolution,
+                stop: stop,
+                wouldRemoveLockPaths: plannedRequest.wouldRemoveLockPaths
+            )
+        )
     }
 
     func plannedEntry(_ input: WorktreePlanEntryRequest) -> WorktreeRemovalEntry {

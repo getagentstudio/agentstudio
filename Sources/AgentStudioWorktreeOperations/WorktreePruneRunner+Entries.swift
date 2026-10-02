@@ -48,7 +48,7 @@ extension WorktreePruneRunner {
                 document: $0.document
             )
         }
-        let lockCheck = context.removalRunner.dryRunLockCheck(
+        let lockCheck = context.removalRunner.preEffectLockCheck(
             snapshot: snapshot,
             branchName: branchName,
             assessment: removalAssessment,
