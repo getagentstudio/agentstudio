@@ -88,7 +88,16 @@ Exit codes:
 - `fork --changes-only` starts from HEAD and carries tracked changes plus
   eligible untracked files. It excludes ignored files and build output.
 - `new` creates a clean branch from the default start point or from the local
-  branch named by `--from-branch`.
+  branch named by `--from-branch`. It checks out **tracked files only**:
+  submodules stay empty and ignored build output doesn't exist. In
+  agent-studio that means `vendor/ghostty` and `vendor/zmx` are empty and
+  there's no `Frameworks/`, so run `mise run setup` (as AGENTS.md says) before
+  building or reading vendored headers. Expect a cold first build.
+- **agent-studio default: `fork --from <main checkout>`** (the main checkout
+  on its default branch, clean). That APFS-clones the populated submodules,
+  `Frameworks/` and build output, so no setup is needed and nothing is
+  downloaded. Use `new` + `mise run setup` only when the main checkout isn't
+  clean or isn't on the default branch.
 - Reuse an existing checkout when you can.
 
 The default copy-on-write `fork` refuses when the source or destination is not
