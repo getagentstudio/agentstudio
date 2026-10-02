@@ -1,4 +1,3 @@
-import AgentStudioGit
 import Foundation
 
 extension WorktreeCommandLineFormatter {
@@ -36,22 +35,18 @@ extension WorktreeCommandLineFormatter {
 
     private static func largeFilesHumanLine(_ largeFiles: WorktreeLargeFilesDocument) -> String {
         var line = "LFS: \(largeFiles.materialized) filled, \(largeFiles.missingCount) missing"
-        if case .incomplete(let failure) = largeFiles.scan {
-            line += ", scan incomplete (\(humanScanFailure(failure)))"
+        switch largeFiles.scan {
+        case .complete:
+            break
+        case .incompleteReadFailed(let errno):
+            line += ", scan incomplete (readFailed errno \(errno))"
+        case .incompleteGitFailure(let kind):
+            line += ", scan incomplete (gitFailure \(kind))"
         }
         if let option = largeFiles.options?.first {
             line += " (run: \(option))"
         }
         return line
-    }
-
-    private static func humanScanFailure(_ failure: GitLargeFileScanFailure) -> String {
-        switch failure {
-        case .readFailed(let errorNumber):
-            "readFailed errno \(errorNumber)"
-        case .gitFailure(let kind):
-            "gitFailure \(kind.rawValue)"
-        }
     }
 }
 

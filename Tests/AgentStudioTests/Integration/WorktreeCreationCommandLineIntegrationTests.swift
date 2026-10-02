@@ -23,7 +23,7 @@ struct WorktreeCreationCommandLineIntegrationTests {
         let missing: [GitLargeFileFillMiss]
         let missingCount: Int
         let options: [String]?
-        let scan: GitLargeFileScan
+        let scan: WorktreeLargeFileScanCLIContract.ScanDocument
     }
 
     private struct RefusedDocument: Decodable {
@@ -108,15 +108,17 @@ struct WorktreeCreationCommandLineIntegrationTests {
 
         #expect(createExitCode == 0)
         #expect(createProbe.errorSnapshot().isEmpty)
+        let creationJSON = try #require(createProbe.outputSnapshot().first)
         let created = try JSONDecoder().decode(
             CreatedDocument.self,
-            from: Data(try #require(createProbe.outputSnapshot().first).utf8)
+            from: Data(creationJSON.utf8)
         )
         #expect(created.largeFiles?.materialized == 1)
         #expect(created.largeFiles?.missing.isEmpty == true)
         #expect(created.largeFiles?.missingCount == 0)
         #expect(created.largeFiles?.options == nil)
         #expect(created.largeFiles?.scan == .complete)
+        #expect(try WorktreeLargeFileScanCLIContract.rawScanJSON(in: creationJSON) == #""complete""#)
         #expect(try Data(contentsOf: destination.appending(path: "asset.bin")) == fixture.payload)
 
         let listProbe = WorktreeCreationCommandLineProbe()
@@ -182,15 +184,17 @@ struct WorktreeCreationCommandLineIntegrationTests {
             errorOutput: { jsonProbe.appendError($0) }
         )
         #expect(jsonExitCode == 0)
+        let creationJSON = try #require(jsonProbe.outputSnapshot().first)
         let created = try JSONDecoder().decode(
             CreatedDocument.self,
-            from: Data(try #require(jsonProbe.outputSnapshot().first).utf8)
+            from: Data(creationJSON.utf8)
         )
         #expect(created.largeFiles?.materialized == 0)
         #expect(created.largeFiles?.missing == [GitLargeFileFillMiss(path: "asset.bin", reason: .objectAbsent)])
         #expect(created.largeFiles?.missingCount == 1)
         #expect(created.largeFiles?.options == ["git -C \(jsonDestination.path) lfs pull"])
         #expect(created.largeFiles?.scan == .complete)
+        #expect(try WorktreeLargeFileScanCLIContract.rawScanJSON(in: creationJSON) == #""complete""#)
     }
 
     @Test("changes-only fork reports LFS materialized from the local store")
@@ -263,15 +267,71 @@ struct WorktreeCreationCommandLineIntegrationTests {
         let jsonResponse = try WorktreeCommandLineFormatter.format(outcome: outcome, usesJSONOutput: true)
         #expect(jsonResponse.exitCode == 0)
         let created = try JSONDecoder().decode(CreatedDocument.self, from: Data(jsonResponse.text.utf8))
-        #expect(created.largeFiles?.scan == .incomplete(.readFailed(errno: EIO)))
+        #expect(created.largeFiles?.scan == .incompleteReadFailed(errno: EIO))
         #expect(created.largeFiles?.missing.isEmpty == true)
         #expect(created.largeFiles?.options == ["git -C \(destination.path) lfs pull"])
+        #expect(
+            try WorktreeLargeFileScanCLIContract.rawScanJSON(in: jsonResponse.text)
+                == "{\"incomplete\":{\"readFailed\":\(EIO)}}")
         #expect(FileManager.default.fileExists(atPath: destination.path))
 
         let humanResponse = try WorktreeCommandLineFormatter.format(outcome: outcome, usesJSONOutput: false)
         #expect(humanResponse.exitCode == 0)
         #expect(humanResponse.text.contains("scan incomplete (readFailed errno \(EIO))"))
         #expect(humanResponse.text.contains("git -C \(destination.path) lfs pull"))
+    }
+
+    @Test("incomplete Git scan uses the CLI's string failure shape")
+    func rendersIncompleteGitFailureScanAtCreationBoundary() async throws {
+        let repository = try await FilesystemTestGitRepo.create(named: "cli-lfs-incomplete-git-scan")
+        defer { FilesystemTestGitRepo.destroy(repository) }
+        try await FilesystemTestGitRepo.seedTrackedAndUntrackedChanges(at: repository)
+
+        let branch = "feature/incomplete-git-scan"
+        let destination = try siblingDestination(repository: repository, branch: branch)
+        defer { try? FileManager.default.removeItem(at: destination) }
+
+        let realClient = LibGit2AgentStudioGitLocalClient()
+        let snapshots = try await realClient.worktrees(for: repository)
+        let snapshot = try #require(snapshots.first)
+        let identity = try await realClient.repositoryIdentity(for: repository)
+        let incompleteFill = GitLargeFileFill(
+            materializedCount: 0,
+            missing: [],
+            residuePaths: [],
+            scan: .incomplete(.gitFailure(kind: .headUnavailable))
+        )
+        let client = WorktreeOperationClientStub(
+            startPath: repository,
+            snapshot: snapshot,
+            identity: identity,
+            baseClient: realClient,
+            largeFileFillOverride: incompleteFill
+        )
+        let outcome = await WorktreeOperationRunner(client: client).run(
+            .createFromDefault(start: repository, branch: branch)
+        )
+        guard case .created = outcome else {
+            Issue.record("expected worktree creation to succeed with an incomplete Git scan, received \(outcome)")
+            return
+        }
+
+        let jsonResponse = try WorktreeCommandLineFormatter.format(outcome: outcome, usesJSONOutput: true)
+        #expect(jsonResponse.exitCode == 0)
+        let created = try JSONDecoder().decode(CreatedDocument.self, from: Data(jsonResponse.text.utf8))
+        #expect(created.largeFiles?.materialized == 0)
+        #expect(created.largeFiles?.missing.isEmpty == true)
+        #expect(created.largeFiles?.missingCount == 0)
+        #expect(created.largeFiles?.scan == .incompleteGitFailure(kind: "headUnavailable"))
+        #expect(created.largeFiles?.options == ["git -C \(destination.path) lfs pull"])
+        #expect(
+            try WorktreeLargeFileScanCLIContract.rawScanJSON(in: jsonResponse.text)
+                == #"{"incomplete":{"gitFailure":"headUnavailable"}}"#)
+        #expect(FileManager.default.fileExists(atPath: destination.path))
+
+        let humanResponse = try WorktreeCommandLineFormatter.format(outcome: outcome, usesJSONOutput: false)
+        #expect(humanResponse.exitCode == 0)
+        #expect(humanResponse.text.contains("scan incomplete (gitFailure headUnavailable)"))
     }
 
     @Test("new from a missing local branch refuses with startBranchNotFound")
