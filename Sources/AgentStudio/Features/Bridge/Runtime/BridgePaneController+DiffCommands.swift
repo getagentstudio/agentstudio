@@ -62,7 +62,9 @@ extension BridgePaneController: BridgeRuntimeCommandHandling {
         reviewAuthorityGeneration: UInt64
     ) async -> ActionResult {
         guard let foregroundWorkAdmission = refreshAdmissionCoordinator.acquireForegroundWork(),
-            let productAdmission = productAdmissionGate.acquire()
+            let paneAdmission = productAdmissionGate.acquire(),
+            let installation = productSessionOwner.installationFenceProjection.snapshot.installation,
+            let productAdmission = paneAdmission.withInstallation(installation.gate)
         else {
             return .failure(.invalidPayload(description: "Bridge pane is closed"))
         }
@@ -72,11 +74,20 @@ extension BridgePaneController: BridgeRuntimeCommandHandling {
                 artifact: artifact,
                 commandId: commandId,
                 correlationId: correlationId,
-                productAdmission: productAdmission,
+                admissions: ExplicitReviewLoadAdmissions(
+                    paneAdmission: paneAdmission,
+                    installationAdmission: productAdmission
+                ),
                 foregroundWorkAdmission: foregroundWorkAdmission,
                 reviewAuthorityGeneration: reviewAuthorityGeneration
             )
         }
+    }
+
+    /// Keeps pane command authority distinct from current-installation Review authority.
+    struct ExplicitReviewLoadAdmissions: Sendable {
+        let paneAdmission: BridgeProductAdmissionContext
+        let installationAdmission: BridgeProductAdmissionContext
     }
 
     struct ReviewPackageLoadReset {
@@ -119,7 +130,7 @@ extension BridgePaneController: BridgeRuntimeCommandHandling {
         artifact: DiffArtifact,
         commandId: UUID,
         correlationId: UUID?,
-        productAdmission: BridgeProductAdmissionContext,
+        admissions: ExplicitReviewLoadAdmissions,
         foregroundWorkAdmission: BridgePaneRefreshWorkAdmission,
         reviewAuthorityGeneration: UInt64
     ) async -> ActionResult {
@@ -127,7 +138,7 @@ extension BridgePaneController: BridgeRuntimeCommandHandling {
             artifact: artifact,
             commandId: commandId,
             correlationId: correlationId,
-            productAdmission: productAdmission,
+            admissions: admissions,
             foregroundWorkAdmission: foregroundWorkAdmission,
             reviewAuthorityGeneration: reviewAuthorityGeneration
         ) {
@@ -138,7 +149,7 @@ extension BridgePaneController: BridgeRuntimeCommandHandling {
             artifact: artifact,
             commandId: commandId,
             correlationId: correlationId,
-            productAdmission: productAdmission,
+            productAdmission: admissions.installationAdmission,
             foregroundWorkAdmission: foregroundWorkAdmission,
             reviewAuthorityGeneration: reviewAuthorityGeneration
         )
@@ -177,10 +188,11 @@ extension BridgePaneController: BridgeRuntimeCommandHandling {
         artifact: DiffArtifact,
         commandId: UUID,
         correlationId: UUID?,
-        productAdmission: BridgeProductAdmissionContext,
+        admissions: ExplicitReviewLoadAdmissions,
         foregroundWorkAdmission: BridgePaneRefreshWorkAdmission,
         reviewAuthorityGeneration: UInt64
     ) async -> ActionResult? {
+        let productAdmission = admissions.installationAdmission
         let pageModeAdmission = reviewPageModeAdmissionDisposition(
             productAdmission: productAdmission,
             foregroundWorkAdmission: foregroundWorkAdmission
@@ -193,7 +205,7 @@ extension BridgePaneController: BridgeRuntimeCommandHandling {
                 artifact: artifact,
                 commandId: commandId,
                 correlationId: correlationId,
-                productAdmission: productAdmission,
+                admissions: admissions,
                 foregroundWorkAdmission: foregroundWorkAdmission,
                 reviewAuthorityGeneration: reviewAuthorityGeneration
             )
@@ -206,7 +218,7 @@ extension BridgePaneController: BridgeRuntimeCommandHandling {
                 artifact: artifact,
                 commandId: commandId,
                 correlationId: correlationId,
-                productAdmission: productAdmission,
+                admissions: admissions,
                 foregroundWorkAdmission: foregroundWorkAdmission,
                 reviewAuthorityGeneration: reviewAuthorityGeneration
             )

@@ -121,6 +121,38 @@ struct BridgeProductAdmissionStaticContractTests {
         let acquisitionCountBySource = try bridgeProductAdmissionAcquisitionCountBySource(
             under: agentStudioSources
         )
+        let diffCommandsSource = bridgeProductAdmissionNormalizeWhitespace(
+            try bridgeProductAdmissionSource(
+                projectRoot: projectRoot,
+                relativePath:
+                    "Sources/AgentStudio/Features/Bridge/Runtime/BridgePaneController+DiffCommands.swift"
+            )
+        )
+        let ipcProjectionSource = bridgeProductAdmissionNormalizeWhitespace(
+            try bridgeProductAdmissionSource(
+                projectRoot: projectRoot,
+                relativePath:
+                    "Sources/AgentStudio/Features/Bridge/Runtime/BridgePaneController+IPCProjection.swift"
+            )
+        )
+        let refreshAdmissionSource = bridgeProductAdmissionNormalizeWhitespace(
+            try bridgeProductAdmissionSource(
+                projectRoot: projectRoot,
+                relativePath:
+                    "Sources/AgentStudio/Features/Bridge/Runtime/BridgePaneController+RefreshAdmission.swift"
+            )
+        )
+        let installationCompositionCountBySource = [
+            "DiffCommands": diffCommandsSource.components(
+                separatedBy: "withInstallation(installation.gate)"
+            ).count - 1,
+            "IPCProjection": ipcProjectionSource.components(
+                separatedBy: "withInstallation(installation.gate)"
+            ).count - 1,
+            "RefreshAdmission": refreshAdmissionSource.components(
+                separatedBy: "withInstallation(installation.gate)"
+            ).count - 1,
+        ]
 
         // Assert
         #expect(
@@ -136,6 +168,14 @@ struct BridgeProductAdmissionStaticContractTests {
                 "Features/Bridge/Transport/BridgeProductSchemeAdapter.swift": 1,
             ],
             "Downstream product owners must carry the original context instead of reacquiring pane admission"
+        )
+        #expect(
+            installationCompositionCountBySource == [
+                "DiffCommands": 1,
+                "IPCProjection": 2,
+                "RefreshAdmission": 1,
+            ],
+            "Each existing Review ingress carries its single pane acquisition composed with the current E1"
         )
         let routerSource = bridgeProductAdmissionNormalizeWhitespace(
             try bridgeProductAdmissionSource(

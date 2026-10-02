@@ -128,12 +128,12 @@ extension BridgePaneController {
         artifact: DiffArtifact,
         commandId: UUID,
         correlationId: UUID?,
-        productAdmission: BridgeProductAdmissionContext,
+        admissions: ExplicitReviewLoadAdmissions,
         foregroundWorkAdmission: BridgePaneRefreshWorkAdmission,
         reviewAuthorityGeneration: UInt64
     ) async -> ActionResult {
-        guard let installationFence = productSessionOwner.installationFenceProjection.snapshot.installation,
-            let installationAdmission = productAdmission.withInstallation(installationFence.gate)
+        guard admissions.paneAdmission.withValidAdmission({ true }) == true,
+            admissions.installationAdmission.withValidAdmission({ true }) == true
         else {
             return Self.closedExplicitReviewCommandResult()
         }
@@ -143,8 +143,8 @@ extension BridgePaneController {
                 artifact: artifact,
                 commandId: commandId,
                 correlationId: correlationId,
-                productAdmission: productAdmission,
-                installationAdmission: installationAdmission,
+                productAdmission: admissions.paneAdmission,
+                installationAdmission: admissions.installationAdmission,
                 foregroundWorkAdmission: foregroundWorkAdmission,
                 reviewAuthorityGeneration: reviewAuthorityGeneration,
                 continuation: continuation
@@ -162,13 +162,13 @@ extension BridgePaneController {
                 scope: .pendingExplicitCommand(commandId)
             )
             pendingCommand.installCloseObservation(
-                installationAdmission.observeClose { [weak self] in
+                admissions.installationAdmission.observeClose { [weak self] in
                     Task { @MainActor [weak self] in
                         self?.retirePendingExplicitReviewCommand(commandId: commandId)
                     }
                 }
             )
-            guard installationAdmission.withValidAdmission({ true }) == true else {
+            guard admissions.installationAdmission.withValidAdmission({ true }) == true else {
                 finishPendingExplicitReviewCommand(
                     pendingCommand,
                     result: Self.closedExplicitReviewCommandResult(),

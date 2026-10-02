@@ -212,7 +212,9 @@ extension BridgePaneController {
         itemId: String,
         correlationId: UUID?
     ) async throws -> IPCBridgeReviewSelectFileResult {
-        guard let productAdmission = productAdmissionGate.acquire(),
+        guard let paneAdmission = productAdmissionGate.acquire(),
+            let installation = productSessionOwner.installationFenceProjection.snapshot.installation,
+            let productAdmission = paneAdmission.withInstallation(installation.gate),
             let publication = reviewPublicationCoordinator.committedPublicationForReplay(
                 productAdmission: productAdmission
             )
@@ -309,7 +311,10 @@ extension BridgePaneController {
         contentHandleId: String,
         reviewGeneration: Int
     ) async throws -> IPCBridgeContentGetResult {
-        guard let productAdmission = productAdmissionGate.acquire() else {
+        guard let paneAdmission = productAdmissionGate.acquire(),
+            let installation = productSessionOwner.installationFenceProjection.snapshot.installation,
+            let productAdmission = paneAdmission.withInstallation(installation.gate)
+        else {
             throw BridgeIPCProjectionError(reason: .contentUnavailable)
         }
         let requestedGeneration = BridgeReviewGeneration(reviewGeneration)

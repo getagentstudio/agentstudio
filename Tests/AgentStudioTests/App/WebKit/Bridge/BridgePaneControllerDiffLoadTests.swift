@@ -29,7 +29,8 @@ extension WebKitSerializedTests.BridgePaneControllerTests {
             Issue.record("Expected initial contribution load")
             return
         }
-        let productAdmission = try #require(fixture.controller.productAdmissionGate.acquire())
+        let installation = try #require(await fixture.controller.productSessionOwner.activeInstallation)
+        let productAdmission = try #require(installation.productAdapter.acquireAdmission())
         let initialPublication = try #require(
             fixture.controller.reviewPublicationCoordinator.committedPublicationForReplay(
                 productAdmission: productAdmission
@@ -79,7 +80,8 @@ extension WebKitSerializedTests.BridgePaneControllerTests {
             commandId: initialCommandId,
             correlationId: nil
         )
-        let productAdmission = try #require(controller.productAdmissionGate.acquire())
+        let installation = try #require(await controller.productSessionOwner.activeInstallation)
+        let productAdmission = try #require(installation.productAdapter.acquireAdmission())
         let predecessor = try #require(
             controller.reviewPublicationCoordinator.committedPublicationForReplay(
                 productAdmission: productAdmission
@@ -252,7 +254,8 @@ extension WebKitSerializedTests.BridgePaneControllerTests {
             addedItemIds: ["item-new"],
             removedItemIds: ["item-old"]
         )
-        let productAdmission = try #require(fixture.controller.productAdmissionGate.acquire())
+        let installation = try #require(await fixture.controller.productSessionOwner.activeInstallation)
+        let productAdmission = try #require(installation.productAdapter.acquireAdmission())
         let changedPublication = try #require(
             fixture.controller.reviewPublicationCoordinator.committedPublicationForReplay(
                 productAdmission: productAdmission
@@ -462,7 +465,7 @@ extension WebKitSerializedTests.BridgePaneControllerTests {
                 productProvider: productProvider
             )
         )
-        let productAdmission = try #require(productAdmissionGate.acquire())
+        let productAdmission = try #require(installation.productAdapter.acquireAdmission())
         let metadataProducerLease = try await installDiffLoadMetadataProducer(
             installation: installation,
             productProvider: productProvider,
@@ -586,7 +589,8 @@ extension WebKitSerializedTests.BridgePaneControllerTests {
         await reservationGate.releaseReservation()
 
         #expect(await commandResult != .success(commandId: commandId))
-        let productAdmission = try #require(productAdmissionGate.acquire())
+        let currentInstallation = try #require(await controller.productSessionOwner.activeInstallation)
+        let productAdmission = try #require(currentInstallation.productAdapter.acquireAdmission())
         #expect(
             controller.reviewPublicationCoordinator.committedPublicationForReplay(
                 productAdmission: productAdmission

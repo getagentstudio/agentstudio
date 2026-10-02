@@ -258,7 +258,7 @@ func makeRefreshAdmissionIntegrationFixture(
         reviewConstructionProgress: reviewConstructionProgress,
         contributionTargetCommit: contributionTargetCommit
     )
-    let productAdmission = try #require(productAdmissionGate.acquire())
+    let productAdmission = try #require(installation.productAdapter.acquireAdmission())
     let metadataProducerLease = try await installRefreshAdmissionMetadataProducer(
         installation: installation,
         productProvider: productProvider,
