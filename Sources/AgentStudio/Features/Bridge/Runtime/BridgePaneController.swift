@@ -250,9 +250,7 @@ package final class BridgePaneController {
             productSessionDependencies: resolvedProductSessionDependencies
         )
         self.worktreeRefreshDriver = refreshDriver
-        resolvedProductSessionDependencies.fileSourceAcceptanceRelay?.bind { [weak refreshDriver] source in
-            refreshDriver?.recordFileSourceAccepted(source)
-        }
+        Self.bindFileSourceAcceptanceRelay(resolvedProductSessionDependencies, to: refreshDriver)
         let initialManagementScript = Self.makeInitialManagementScript()
         self.managementScript = initialManagementScript
         self.isContentInteractionEnabled = !atom(\.managementLayer).isActive
@@ -326,6 +324,15 @@ package final class BridgePaneController {
             bootstrapScript: bootstrapScript,
             readyMessageHandler: readyMessageHandler
         )
+    }
+
+    private static func bindFileSourceAcceptanceRelay(
+        _ productSessionDependencies: BridgePaneProductSessionDependencies,
+        to refreshDriver: BridgePaneWorktreeRefreshDriver
+    ) {
+        productSessionDependencies.fileSourceAcceptanceRelay?.bind { [weak refreshDriver] source in
+            refreshDriver?.recordFileSourceAccepted(source)
+        }
     }
 
     private static func makeWorktreeRefreshDriver(
