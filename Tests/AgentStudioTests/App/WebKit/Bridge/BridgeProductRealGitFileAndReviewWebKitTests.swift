@@ -445,14 +445,14 @@ extension WebKitSerializedTests {
             }
         }
 
-        private func prepareFirstPublicationCheckpoint(
+        func prepareFirstPublicationCheckpoint(
             controller: BridgePaneController,
             harness: TransactionalPublicationHarness
         ) async throws -> FirstPublicationCheckpoint {
             guard
                 let firstReceipt = harness.controllerTarget.applicationReceipts.first,
                 firstReceipt.applicationResult == .advanced,
-                harness.controllerTarget.applicationReceipts.filter { $0.applicationResult == .advanced }.count == 1,
+                harness.controllerTarget.applicationReceipts.filter({ $0.applicationResult == .advanced }).count == 1,
                 let publication = harness.controllerTarget.committedPublication(
                     productAdmission: harness.productAdmission
                 ),
