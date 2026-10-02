@@ -208,7 +208,7 @@ final class BridgePaneWorktreeRefreshDriver {
                 } else {
                     reservation = nil
                     if outcome == .failed, let failure {
-                        coordinator.recordFileRefreshFailure(failure)
+                        coordinator.recordCurrentFileRefreshFailure(failure)
                     }
                 }
                 // fire-and-forget: publication joins the presentation tail; closeAndDrain awaits it
@@ -262,6 +262,25 @@ final class BridgePaneWorktreeRefreshDriver {
         // fire-and-forget: publication joins the presentation tail; closeAndDrain awaits it
         _ = schedulePresentationPublication()
         scheduleFileCatchUpIfPossible()
+    }
+
+    func retryUnavailableFileRefreshAndWait(ifAdmittedBy admission: BridgeProductAdmissionContext) async {
+        guard !isClosed,
+            admission.withValidAdmission({ true }) == true,
+            coordinator.hasPendingFileRefreshWork
+        else { return }
+
+        if admission.withValidAdmission({ coordinator.beginExplicitFileRefreshRetry() }) == true {
+            scheduleFileCatchUpIfPossible()
+        }
+
+        while coordinator.hasPendingFileRefreshWork,
+            let task = activeFileTask,
+            let taskID = activeFileTaskID
+        {
+            await task.value
+            if activeFileTaskID == taskID { return }
+        }
     }
 
     func retireActiveFileOperation() {

@@ -3,10 +3,17 @@ import Foundation
 enum BridgePaneProductFileRefreshFailureKind: String, Codable, CaseIterable, Sendable {
     case fileRefreshFailed
     case fileSourceUnavailable
+    case missingRoot
+    case unreadableRoot
     case producerRejected
 
     var retryable: Bool {
-        self == .fileSourceUnavailable
+        switch self {
+        case .fileSourceUnavailable, .missingRoot, .unreadableRoot:
+            true
+        case .fileRefreshFailed, .producerRejected:
+            false
+        }
     }
 }
 
@@ -65,8 +72,8 @@ extension BridgePaneProductMetadataCoordinator {
         for error: any Error
     ) -> BridgePaneProductFileRefreshPublicationDisposition {
         if let rootAccessFailure = error as? BridgeWorktreeFileRootAccessError {
-            return .failed(
-                .init(failureKind: rootAccessFailure.retryable ? .fileSourceUnavailable : .producerRejected))
+            let failure = BridgeFileSurfaceReconciler.failure(for: rootAccessFailure, phase: .build)
+            return .failed(failure.refreshFailure)
         }
         if error is BridgePaneProductFileMetadataSourceError {
             return .failed(.init(failureKind: .fileSourceUnavailable))
@@ -81,7 +88,9 @@ extension BridgePaneProductMetadataCoordinator {
                 return .failed(.init(failureKind: .producerRejected))
             }
         }
-        return .failed(.init(failureKind: .fileRefreshFailed))
+        return .failed(
+            BridgeFileSurfaceReconciler.failure(for: error, phase: .delivery).refreshFailure
+        )
     }
 }
 
@@ -119,7 +128,16 @@ extension BridgePaneProductMetadataCoordinator {
     static func producerFailureReason(
         for error: any Error
     ) -> BridgeProductMetadataProducerFailureReason {
-        if error is BridgeWorktreeFileRootAccessError { return .fileSourceUnavailable }
+        if let rootAccessError = error as? BridgeWorktreeFileRootAccessError {
+            switch rootAccessError {
+            case .missingRoot:
+                return .missingRoot
+            case .unreadable:
+                return .unreadableRoot
+            case .refused:
+                return .accessRefused
+            }
+        }
         if error is CancellationError { return .cancellation }
         if let reviewSourceError = error as? BridgePaneProductReviewMetadataSourceError {
             switch reviewSourceError {

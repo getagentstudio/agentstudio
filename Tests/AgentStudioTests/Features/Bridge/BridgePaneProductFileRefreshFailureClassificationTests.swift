@@ -1,3 +1,4 @@
+import AgentStudioTestSupport
 import Foundation
 import Testing
 
@@ -5,6 +6,13 @@ import Testing
 
 @Suite("Bridge pane product File refresh failure classification")
 struct BridgeFileRefreshFailureClassificationTests {
+    private struct ExpectedRootFailureClassification {
+        let error: BridgeWorktreeFileRootAccessError
+        let fixtureCaseName: String
+        let cause: BridgeFileSurfaceReconciler.FailureCause
+        let disposition: BridgeFileSurfaceReconciler.FailureDisposition
+    }
+
     @Test("every closed failure kind round-trips with derived retryability")
     func everyFailureKindRoundTrips() throws {
         for failureKind in BridgePaneProductFileRefreshFailureKind.allCases {
@@ -13,6 +21,76 @@ struct BridgeFileRefreshFailureClassificationTests {
 
             #expect(try JSONDecoder().decode(BridgePaneProductFileRefreshFailure.self, from: encoded) == failure)
             #expect(failure.retryable == failureKind.retryable)
+        }
+    }
+
+    @Test("typed root failures encode the shared page-decodable failure cases")
+    func typedRootFailuresEncodeSharedWireValues() throws {
+        let projectRoot = URL(fileURLWithPath: TestPathResolver.projectRoot(from: #filePath))
+        let corpusData = try Data(
+            contentsOf: projectRoot.appending(
+                path: "Tests/BridgeContractFixtures/valid/bridge-product-session-corpus.json"
+            )
+        )
+        let corpus = try #require(JSONSerialization.jsonObject(with: corpusData) as? [String: Any])
+        let sharedCases = try #require(corpus["fileRefreshFailureCases"] as? [[String: Any]])
+        let cases: [ExpectedRootFailureClassification] = [
+            .init(
+                error: .missingRoot,
+                fixtureCaseName: "missingRoot",
+                cause: .missingRoot,
+                disposition: .retryable
+            ),
+            .init(
+                error: .unreadable,
+                fixtureCaseName: "unreadable",
+                cause: .unreadableRoot,
+                disposition: .retryable
+            ),
+            .init(
+                error: .refused,
+                fixtureCaseName: "refused",
+                cause: .accessRefused,
+                disposition: .permanent
+            ),
+        ]
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys]
+
+        for expected in cases {
+            let classification = BridgeFileSurfaceReconciler.failure(for: expected.error, phase: .build)
+            #expect(classification.cause == expected.cause)
+            #expect(classification.disposition == expected.disposition)
+
+            guard
+                case .failed(let wireFailure) =
+                    BridgePaneProductMetadataCoordinator.fileRefreshDisposition(for: expected.error)
+            else {
+                Issue.record("Expected root access failure to use its File failure wire value")
+                continue
+            }
+            guard
+                let sharedCase = sharedCases.first(
+                    where: { $0["rootAccessFailure"] as? String == expected.fixtureCaseName }
+                ),
+                let expectedFailure = sharedCase["failure"] as? [String: Any]
+            else {
+                Issue.record("Expected a shared File failure case for \(expected.fixtureCaseName)")
+                continue
+            }
+            let expectedKind = try #require(expectedFailure["failureKind"] as? String)
+            let expectedRetryable = try #require(expectedFailure["retryable"] as? Bool)
+            #expect(wireFailure.failureKind.rawValue == expectedKind)
+            #expect(wireFailure.retryable == expectedRetryable)
+            #expect(wireFailure.retryable == (expected.disposition == .retryable))
+
+            let encodedJSON = try #require(String(data: encoder.encode(wireFailure), encoding: .utf8))
+            let expectedJSONData = try JSONSerialization.data(
+                withJSONObject: expectedFailure,
+                options: [.sortedKeys]
+            )
+            let expectedJSON = try #require(String(data: expectedJSONData, encoding: .utf8))
+            #expect(encodedJSON == expectedJSON)
         }
     }
 

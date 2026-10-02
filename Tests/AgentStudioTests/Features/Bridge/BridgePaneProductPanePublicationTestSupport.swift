@@ -13,6 +13,8 @@ struct PanePublicationFixture {
     let harness: BridgeProductSessionLifecycleHarness
     let lease: BridgeProductProducerLease
     let pump: BridgeProductSchemeFramePump
+    let fileRefreshDriver: BridgePaneWorktreeRefreshDriver
+    let schemeProvider: BridgePaneProductSchemeProvider
     let coordinator: BridgePaneProductMetadataCoordinator
     let refresh: BridgePaneRefreshAdmissionCoordinator
     let fileFixture: ProductFileSourceFixture
@@ -38,49 +40,131 @@ struct PanePublicationFixture {
         let replay = AvailabilityReviewPublicationProvider()
         let trace = PanePublicationBootstrapTrace()
         let refresh = BridgePaneRefreshAdmissionCoordinator(initialActivity: .foreground)
-        let coordinator = BridgePaneProductMetadataCoordinator(
-            fileMetadataSource: fileSource, reviewMetadataSource: reviewSource,
+        let fileRefreshDriver = BridgePaneWorktreeRefreshDriver(
+            coordinator: refresh,
+            acquireProductAdmission: { harness.productAdmission.context },
+            publishFileChangeset: { _, _, _, _, _ in .notRequired },
+            publishFileStatus: { _, _, _, _, _ in .notRequired },
+            publishPresentation: { _, _ in }
+        )
+        let schemeProvider = BridgePaneProductSchemeProvider(
+            fileMetadataSource: fileSource,
+            reviewMetadataSource: reviewSource,
+            reviewContentSource: BridgeUnavailablePaneProductReviewContentSource(),
             reviewPublicationReplay: { _ in replay.publication },
+            markReviewItemViewed: { _, _ in },
+            applyFileRefreshRetry: { admission in
+                await fileRefreshDriver.retryUnavailableFileRefreshAndWait(ifAdmittedBy: admission)
+            },
+            recordCurrentFileRefreshFailure: { failure in
+                refresh.recordCurrentFileRefreshFailure(failure)
+            },
             refreshWorkAdmissionSource: refresh.workAdmissionSource,
             lifecycleTraceRecorder: trace)
+        let coordinator = await schemeProvider.metadataCoordinator
         await coordinator.install(
             request: try coordinatorMetadataStreamRequest(), lease: lease, productAdmission: composed,
             session: harness.session)
         return Self(
             paneAdmission: original.productAdmission.context, installationGate: installationGate,
-            harness: harness, lease: lease, pump: pump, coordinator: coordinator, refresh: refresh,
+            harness: harness, lease: lease, pump: pump, fileRefreshDriver: fileRefreshDriver,
+            schemeProvider: schemeProvider,
+            coordinator: coordinator, refresh: refresh,
             fileFixture: fileFixture, fileSource: fileSource, reviewSource: reviewSource, replay: replay, trace: trace)
     }
 
     func openFile() async throws {
+        let completion = try await openFileSubscription()
+        #expect(completion.result == .success)
+        try await acceptFileViewScope()
+        _ = try await nextBatch()
+    }
+
+    func openFileSubscription() async throws -> BridgeProductMetadataLifecycleTraceEvent {
         var object = bridgeProductLifecycleFileSubscriptionOpenObject(requestSequence: 2, epoch: 1)
         object["subscription"] = try JSONSerialization.jsonObject(
             with: JSONEncoder().encode(fileFixture.openSnapshot().subscription))
-        try await openSubscription(object)
+        return try await openSubscription(object)
+    }
+
+    func beginFileSubscription() async throws -> (bootstrapCount: Int, token: BridgeProductControlAdmissionToken) {
+        var object = bridgeProductLifecycleFileSubscriptionOpenObject(requestSequence: 2, epoch: 1)
+        object["subscription"] = try JSONSerialization.jsonObject(
+            with: JSONEncoder().encode(fileFixture.openSnapshot().subscription))
+        let request = try bridgeProductLifecycleControlRequest(object)
+        guard case .subscriptionOpen(let opening) = request else {
+            throw ProductFileSourceFixtureError.invalidControlRequest
+        }
+        let bootstrapCount = await trace.count(for: opening.subscription.subscriptionKind) + 1
+        let token = try #require(controlExecutionToken(try await harness.begin(request)))
+        #expect(await harness.session.admitControlProviderExecution(token: token))
+        let response = try BridgeProductControlResponse.subscriptionOpenAccepted(
+            correlating: request,
+            worktreeId: nil
+        )
+        let effect = try await harness.session.completeAdmittedControl(
+            token: token,
+            exactResponseBytes: JSONEncoder().encode(response)
+        )
+        _ = try await pullMetadataFrame(from: pump)
+        await coordinator.apply(effect, productAdmission: harness.productAdmission.context)
+        return (bootstrapCount, token)
+    }
+
+    func acceptFileViewScope(requestSequence: Int = 3) async throws {
         let scope = try BridgeProductStrictJSON.decode(
             BridgeProductViewScopeRequest.self,
             from: JSONSerialization.data(withJSONObject: [
                 "kind": "subscription.setScope", "wireVersion": BridgeProductWireContract.version,
                 "paneSessionId": "pane-session-1", "workerInstanceId": "worker-instance-1",
                 "requestId": "pane-file-scope",
-                "requestSequence": 3, "subscriptionId": "file-subscription-1", "subscriptionKind": "file.metadata",
+                "requestSequence": requestSequence, "subscriptionId": "file-subscription-1",
+                "subscriptionKind": "file.metadata",
                 "domain": "default", "handle": "pane-file-handle", "incarnation": "pane-file-incarnation",
                 "scopeRevision": 1,
                 "scope": ["kind": "file", "changeFilter": ["kind": "none"], "interests": [], "pathScope": []],
             ]))
         #expect(await coordinator.acceptViewScope(scope, productAdmission: harness.productAdmission.context) == nil)
-        _ = try await nextBatch()
+    }
+
+    func retryFileSurfaceWithCommittedControlCall() async throws {
+        let dispatcher = makeBridgeProductSchemeControlDispatcher(
+            session: harness.session,
+            provider: schemeProvider,
+            productAdmission: harness.productAdmission.context
+        )
+        let sessionSnapshot = await harness.session.snapshot
+        let request = try BridgeProductStrictJSON.decode(
+            BridgeProductControlRequest.self,
+            from: fileRefreshRetryControlBody(
+                requestSequence: sessionSnapshot.controlReplay.nextExpectedRequestSequence,
+                workerDerivationEpoch: sessionSnapshot.workerDerivationEpochBySurface[.file] ?? 0
+            )
+        )
+        let admission = try await dispatcher.dispatch(
+            exactRequestBytes: try JSONEncoder().encode(request),
+            presentedCapability: harness.capabilityHeader
+        )
+        let result = try await awaitBridgeProductAdmittedControlResult(
+            admission,
+            session: harness.session,
+            productAdmission: harness.productAdmission.context
+        )
+        #expect(result.outcome == .succeeded)
     }
 
     func openReview(subscriptionID: String = "review-subscription-1", sequence: Int = 2) async throws {
         var object = bridgeProductLifecycleReviewSubscriptionOpenObject(requestSequence: sequence, epoch: 1)
         object["subscriptionId"] = subscriptionID
-        try await openSubscription(object)
+        let completion = try await openSubscription(object)
+        #expect(completion.result == .success)
         // The real source's open completion is the subscription bootstrap's causal seam.
         #expect(try await reviewSource.opened.firstArrival() == harness.productAdmission.context)
     }
 
-    private func openSubscription(_ object: [String: Any]) async throws {
+    private func openSubscription(_ object: [String: Any]) async throws
+        -> BridgeProductMetadataLifecycleTraceEvent
+    {
         let request = try bridgeProductLifecycleControlRequest(object)
         guard case .subscriptionOpen(let opening) = request else {
             throw ProductFileSourceFixtureError.invalidControlRequest
@@ -93,9 +177,12 @@ struct PanePublicationFixture {
             token: token, exactResponseBytes: JSONEncoder().encode(response))
         _ = try await pullMetadataFrame(from: pump)
         await coordinator.apply(effect, productAdmission: harness.productAdmission.context)
-        #expect(
-            try await trace.finished(opening.subscription.subscriptionKind, count: bootstrapCount).result == .success)
+        let completion = try await trace.finished(
+            opening.subscription.subscriptionKind,
+            count: bootstrapCount
+        )
         await harness.session.settleControlProviderDispatch(token: token)
+        return completion
     }
 
     func nextBatch() async throws -> [BridgeProductMetadataFrame] {
@@ -133,11 +220,32 @@ struct PanePublicationFixture {
     }
 
     func close() async {
+        await fileRefreshDriver.closeAndDrain()
         await coordinator.closeAndDrain()
         _ = await pump.cancel()
         fileFixture.remove()
         refresh.close()
     }
+}
+
+private func fileRefreshRetryControlBody(
+    requestSequence: Int,
+    workerDerivationEpoch: Int
+) -> Data {
+    Data(
+        """
+        {
+          "call": { "method": "file.refresh.retry", "request": {} },
+          "kind": "product.call",
+          "paneSessionId": "\(bridgeProductTestPaneSessionId)",
+          "requestId": "file-refresh-retry",
+          "requestSequence": \(requestSequence),
+          "wireVersion": 2,
+          "workerDerivationEpoch": \(workerDerivationEpoch),
+          "workerInstanceId": "\(bridgeProductTestWorkerInstanceId)"
+        }
+        """.utf8
+    )
 }
 
 func panePublicationStatus() -> GitWorkingTreeStatus {
@@ -147,9 +255,25 @@ func panePublicationStatus() -> GitWorkingTreeStatus {
 actor PanePublicationFileSource: BridgePaneProductFileMetadataProducing {
     let source: BridgePaneProductFileMetadataSource
     private var heldPublication: HeldStep<BridgeProductAdmissionContext>?
+    private var openCallCount = 0
+    private var openFailureByOrdinal: [Int: any Error] = [:]
+    private var openStepByOrdinal: [Int: HeldStep<BridgeProductAdmissionContext>] = [:]
 
     init(source: BridgePaneProductFileMetadataSource) { self.source = source }
     func holdPublication(_ step: HeldStep<BridgeProductAdmissionContext>) { heldPublication = step }
+    func holdNextOpen(_ step: HeldStep<BridgeProductAdmissionContext>) {
+        openStepByOrdinal[openCallCount + 1] = step
+    }
+    func holdOpen(ordinal: Int, at step: HeldStep<BridgeProductAdmissionContext>) {
+        openStepByOrdinal[ordinal] = step
+    }
+    func failOpen(ordinal: Int, with error: any Error) {
+        openFailureByOrdinal[ordinal] = error
+    }
+    func numberOfOpenCalls() -> Int { openCallCount }
+    func sourceDiagnostics() async -> BridgeFileMetadataSourceDiagnostics {
+        await source.diagnosticSnapshot()
+    }
     func currentSource() async throws(BridgeWorktreeFileRootAccessError) -> BridgeProductFileSourceCurrentResult {
         try await source.currentSource()
     }
@@ -157,6 +281,13 @@ actor PanePublicationFileSource: BridgePaneProductFileMetadataProducing {
         subscription: BridgeProductSubscriptionSnapshot, productAdmission: BridgeProductAdmissionContext,
         foregroundWorkAdmission: BridgePaneRefreshWorkAdmission, emit: @escaping BridgePaneProductFileSourceFactSink
     ) async throws {
+        openCallCount += 1
+        let ordinal = openCallCount
+        if let openStep = openStepByOrdinal.removeValue(forKey: ordinal) {
+            try await openStep.arrive(productAdmission)
+            try Task.checkCancellation()
+        }
+        if let error = openFailureByOrdinal.removeValue(forKey: ordinal) { throw error }
         try await source.open(
             subscription: subscription, productAdmission: productAdmission,
             foregroundWorkAdmission: foregroundWorkAdmission, emit: emit)

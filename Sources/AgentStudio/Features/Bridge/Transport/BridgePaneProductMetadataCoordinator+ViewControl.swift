@@ -148,29 +148,138 @@ extension BridgePaneProductMetadataCoordinator {
             let current = await activeStream.session.acceptedViewScope(subscriptionId: subscriptionId),
             current.handle == expectedHandle,
             current.revision == expectedRevision,
+            let subscription = await activeStream.session.subscriptionSnapshot(
+                subscriptionId: subscriptionId
+            ),
+            let source = subscription.subscription.fileMetadataSource,
             let state = try? BridgeProductViewScopeContract.fileDemand(from: current.scope),
             let foregroundWorkAdmission = refreshWorkAdmissionSource.acquire()
         else { return }
-        try? await fileMetadataSource.applyViewDemand(
-            subscriptionId: subscriptionId,
-            demand: .init(
-                admissionSequence: current.admissionSequence,
-                handle: current.handle,
-                scopeRevision: current.revision,
-                state: state
-            ),
-            productAdmission: productAdmission,
-            foregroundWorkAdmission: foregroundWorkAdmission,
-            forceRecapture: forceRecapture
-        ) { _ in
-            _ = try await self.publishFileViewCapture(
+        let inputBasis = BridgeFileSurfaceInputBasis.admitted(source: source, scope: current.scope)
+        if await fileSurfaceReconciler.currentInputBasis != inputBasis {
+            let action = await fileSurfaceReconciler.inputsChanged(to: inputBasis)
+            await handleFileSurfaceAction(
+                action,
+                subscription: subscription,
+                activeStream: activeStream,
+                productAdmission: productAdmission,
+                foregroundWorkAdmission: foregroundWorkAdmission
+            )
+            return
+        }
+        guard await fileSurfaceReconciler.currentFailure == nil else { return }
+        let surfaceAttempt: BridgeFileSurfaceReconciler.Attempt?
+        let ownsSurfaceAttempt: Bool
+        if let activeAttempt = await fileSurfaceReconciler.activeAttempt {
+            surfaceAttempt = activeAttempt
+            ownsSurfaceAttempt = false
+        } else if case .start(let attempt) = await fileSurfaceReconciler.beginAttempt(
+            inputBasis: inputBasis
+        ) {
+            surfaceAttempt = attempt
+            ownsSurfaceAttempt = true
+        } else {
+            surfaceAttempt = nil
+            ownsSurfaceAttempt = false
+        }
+
+        do {
+            try await fileMetadataSource.applyViewDemand(
+                subscriptionId: subscriptionId,
+                demand: .init(
+                    admissionSequence: current.admissionSequence,
+                    handle: current.handle,
+                    scopeRevision: current.revision,
+                    state: state
+                ),
+                productAdmission: productAdmission,
+                foregroundWorkAdmission: foregroundWorkAdmission,
+                forceRecapture: forceRecapture
+            ) { _ in
+                _ = try await self.publishFileViewCapture(
+                    subscriptionId: subscriptionId,
+                    productAdmission: productAdmission
+                )
+            }
+            _ = try await publishFileViewCapture(
                 subscriptionId: subscriptionId,
                 productAdmission: productAdmission
             )
+            if ownsSurfaceAttempt, let surfaceAttempt {
+                let action = await fileSurfaceReconciler.builderFinished(
+                    surfaceAttempt,
+                    outcome: .built
+                )
+                await handleFileSurfaceAction(
+                    action,
+                    subscription: subscription,
+                    activeStream: activeStream,
+                    productAdmission: productAdmission,
+                    foregroundWorkAdmission: foregroundWorkAdmission
+                )
+            }
+        } catch {
+            await handleFileViewDemandFailure(
+                error,
+                surfaceAttempt: surfaceAttempt,
+                subscription: subscription,
+                activeStream: activeStream,
+                productAdmission: productAdmission,
+                foregroundWorkAdmission: foregroundWorkAdmission
+            )
         }
-        _ = try? await publishFileViewCapture(
-            subscriptionId: subscriptionId,
-            productAdmission: productAdmission
+    }
+
+    private func handleFileViewDemandFailure(
+        _ error: any Error,
+        surfaceAttempt: BridgeFileSurfaceReconciler.Attempt?,
+        subscription: BridgeProductSubscriptionSnapshot,
+        activeStream: ActiveStream,
+        productAdmission: BridgeProductAdmissionContext,
+        foregroundWorkAdmission: BridgePaneRefreshWorkAdmission
+    ) async {
+        guard let surfaceAttempt else { return }
+        if Task.isCancelled || Self.isForegroundWorkInvalidation(error) {
+            let isAutomaticRestartEligible =
+                self.activeStream?.lease == activeStream.lease
+                && productAdmission.withValidAdmission({ true }) == true
+                && foregroundWorkAdmission.withValidAdmission({ true }) == true
+            let interruptionAction = await fileSurfaceReconciler.builderCancelled(
+                surfaceAttempt,
+                phase: .delivery,
+                isAutomaticRestartEligible: isAutomaticRestartEligible
+            )
+            await fileSurfaceReconciler.retirementCompleted(surfaceAttempt)
+            await handleFileSurfaceAction(
+                interruptionAction,
+                subscription: subscription,
+                activeStream: activeStream,
+                productAdmission: productAdmission,
+                foregroundWorkAdmission: foregroundWorkAdmission
+            )
+            return
+        }
+        let newerInputBasis: BridgeFileSurfaceInputBasis?
+        if (error as? BridgeWorktreeProductConstructionError) == .invalidated {
+            newerInputBasis = await fileSurfaceInputBasis(
+                for: subscription,
+                activeStream: activeStream
+            )
+        } else {
+            newerInputBasis = nil
+        }
+        let action = await fileSurfaceReconciler.builderFailed(
+            surfaceAttempt,
+            error: error,
+            phase: .delivery,
+            newerInputBasis: newerInputBasis
+        )
+        await handleFileSurfaceAction(
+            action,
+            subscription: subscription,
+            activeStream: activeStream,
+            productAdmission: productAdmission,
+            foregroundWorkAdmission: foregroundWorkAdmission
         )
     }
 

@@ -159,6 +159,7 @@ extension BridgePaneProductSchemeProvider {
                 break
             case .fileRefreshRetry:
                 await applyFileRefreshRetry(productAdmission)
+                await metadataCoordinator.retryFailedFileSurface(productAdmission: productAdmission)
             case .fileActiveViewerModeUpdate, .reviewActiveViewerModeUpdate:
                 await applyActiveViewerModeUpdate(
                     committedProductCall,

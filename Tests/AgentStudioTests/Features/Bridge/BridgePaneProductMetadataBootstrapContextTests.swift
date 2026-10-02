@@ -315,12 +315,14 @@ private func runBootstrapContextSchedule(
         openEffect,
         productAdmission: resources.harness.productAdmission.context
     )
+    #expect(await resources.lifecycleRecorder.bootstrapStartedCount == 1)
+    await resources.lifecycleRecorder.releaseFirstBootstrapStart()
     let firstAcceptedSource = await resources.sourceObserver.waitUntilFirstAcceptanceIsHeld()
     #expect(firstAcceptedSource.subscriptionGeneration == 1)
-    await resources.lifecycleRecorder.releaseFirstBootstrapStart()
-    #expect(await resources.lifecycleRecorder.waitUntilBootstrapFinished(count: 1) >= 1)
+    let acceptedSources = await resources.sourceObserver.acceptedSources
+    #expect(acceptedSources.count == 1)
     await resources.sourceObserver.releaseFirstAcceptance()
-    #expect(await resources.lifecycleRecorder.waitUntilBootstrapFinished(count: 2) >= 2)
+    #expect(await resources.lifecycleRecorder.waitUntilBootstrapFinished(count: 1) >= 1)
     await replay.value
 }
 

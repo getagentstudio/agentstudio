@@ -318,11 +318,13 @@ struct BridgeProductSchemeReplyObservation: Equatable, Sendable {
 
 func collectBridgeProductSchemeReply(
     adapter: BridgeProductSchemeAdapter,
-    request: URLRequest
+    request: URLRequest,
+    firstDataReceipt: HeldStep<Void>? = nil
 ) async throws -> BridgeProductSchemeReplyObservation {
     var body = Data()
     var events: [BridgeProductSchemeReplyObservation.Event] = []
     var response: HTTPURLResponse?
+    var hasHeldFirstDataReceipt = false
     for try await result in bridgeProductSchemeReply(adapter: adapter, request: request) {
         switch result {
         case .response(let emittedResponse):
@@ -331,6 +333,10 @@ func collectBridgeProductSchemeReply(
         case .data(let chunk):
             events.append(.data)
             body.append(chunk)
+            if !hasHeldFirstDataReceipt, let firstDataReceipt {
+                hasHeldFirstDataReceipt = true
+                try await firstDataReceipt.arrive(())
+            }
         @unknown default:
             break
         }

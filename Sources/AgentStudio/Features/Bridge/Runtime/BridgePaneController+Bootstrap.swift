@@ -38,6 +38,7 @@ struct BridgeProductSessionDependencyInput {
     let reviewContentLoaderCache: BridgeReviewContentLoaderCache
     let reviewPublicationCoordinator: BridgeReviewPublicationCoordinator
     let refreshWorkAdmissionSource: BridgePaneRefreshWorkAdmissionSource
+    let recordCurrentFileRefreshFailure: @MainActor @Sendable (BridgePaneProductFileRefreshFailure?) -> Void
     let initialProductPresentation: BridgePaneProductPresentationSnapshot
     let telemetryRecorder: (any BridgePerformanceTraceRecording)?
     let reviewSourceProvider: any BridgeReviewSourceProvider
@@ -101,7 +102,9 @@ final class BridgePaneProductCommittedCallTarget {
 
     func applyFileRefreshRetry(productAdmission: BridgeProductAdmissionContext) async {
         guard (productAdmission.withValidAdmission { true }) == true else { return }
-        controller?.worktreeRefreshDriver.retryUnavailableFileRefresh(ifAdmittedBy: productAdmission)
+        await controller?.worktreeRefreshDriver.retryUnavailableFileRefreshAndWait(
+            ifAdmittedBy: productAdmission
+        )
     }
 
     func applyReviewIntakeReady(
@@ -603,6 +606,7 @@ extension BridgePaneController {
             },
             applyReviewComparisonUpdate: committedCallTarget.applyReviewComparisonUpdate,
             applyFileRefreshRetry: committedCallTarget.applyFileRefreshRetry,
+            recordCurrentFileRefreshFailure: input.recordCurrentFileRefreshFailure,
             applyWorktreeAnnotationCommand: makeWorktreeAnnotationCommandHandler(
                 input,
                 fileMetadataSource: fileMetadataSource

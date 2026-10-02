@@ -343,14 +343,19 @@ struct BridgePaneProductSessionOwnerTests {
     @Test("tracked pane disposal drains scheme tasks producers leases and acknowledgements")
     func trackedDisposalReachesZeroResidue() async throws {
         // Arrange
-        let provider = BridgePaneProductSessionProviderGate()
-        let owner = try BridgePaneProductSessionOwner(
-            paneSessionId: bridgeProductTestPaneSessionId,
-            provider: provider,
-            productAdmissionGate: BridgeProductAdmissionGate()
-        )
-        let installation = try await installFirstCandidate(in: owner)
+        let fixture = try makeBridgePaneProductSessionOwnerFrameWaiterFixture()
+        let provider = fixture.provider
+        let owner = fixture.owner
+        let installation = fixture.installation
         try await openBridgePaneProductSession(installation)
+        let metadataFirstDataReceipt = HeldStep<Void>(
+            "metadata delivery reaches its collector",
+            cancellation: .holdThroughCancellation
+        )
+        let contentFirstDataReceipt = HeldStep<Void>(
+            "content delivery reaches its collector",
+            cancellation: .holdThroughCancellation
+        )
         let schemeRouter = await owner.schemeRouter
         let handler = BridgeSchemeHandler(
             paneId: UUID(),
@@ -360,18 +365,33 @@ struct BridgePaneProductSessionOwnerTests {
         let metadataReply = try await startBridgePaneProductMetadataReply(
             installation: installation,
             provider: provider,
-            handler: handler
+            handler: handler,
+            firstDataReceipt: metadataFirstDataReceipt
         )
         let contentReply = try await startContentReply(
             installation: installation,
             provider: provider,
             identitySuffix: "pane-disposal",
-            handler: handler
+            handler: handler,
+            firstDataReceipt: contentFirstDataReceipt
         )
+        _ = try await metadataFirstDataReceipt.firstArrival()
+        _ = try await contentFirstDataReceipt.firstArrival()
+        let firstRegisteredLease = try await fixture.firstFrameWaiterRegistration.firstArrival()
+        let secondRegisteredLease = try await fixture.secondFrameWaiterRegistration.firstArrival()
+        #expect(firstRegisteredLease != secondRegisteredLease)
         let liveSnapshot = await owner.snapshot()
 
         // Act
-        let retirement = await owner.retire(reason: .paneDisposal)
+        let retirementTask = Task {
+            await owner.retire(reason: .paneDisposal)
+        }
+        _ = await provider.waitForLifecycleAcknowledgement(count: 1)
+        metadataFirstDataReceipt.release()
+        contentFirstDataReceipt.release()
+        fixture.firstFrameWaiterRegistration.release()
+        fixture.secondFrameWaiterRegistration.release()
+        let retirement = await retirementTask.value
         _ = try? await metadataReply.value
         _ = try? await contentReply.value
         let finalSnapshot = await owner.snapshot()
@@ -381,6 +401,7 @@ struct BridgePaneProductSessionOwnerTests {
         #expect(liveSnapshot.activeProducerCount == 2)
         #expect(liveSnapshot.activeProducerTaskCount == 2)
         #expect(liveSnapshot.activeContentLeaseCount == 1)
+        #expect(liveSnapshot.pendingFrameWaiterCount == 2)
         let liveDeliveryResidueCount =
             liveSnapshot.queuedFrameCount
             + liveSnapshot.pendingFrameWaiterCount
@@ -584,182 +605,6 @@ func installFirstCandidate(
         ) == .activated
     )
     return candidate
-}
-
-func startBridgePaneProductMetadataReply(
-    installation: BridgeProductSessionInstallation,
-    provider: BridgePaneProductSessionProviderGate,
-    handler: BridgeSchemeHandler? = nil
-) async throws -> Task<BridgeProductSchemeReplyObservation, any Error> {
-    let body = try JSONSerialization.data(
-        withJSONObject: [
-            "kind": "metadataStream.open",
-            "metadataStreamId": "metadata-pane-owner",
-            "paneSessionId": installation.bootstrap.paneSessionId,
-            "resumeFromStreamSequence": NSNull(),
-            "wireVersion": BridgeProductWireContract.version,
-            "workerInstanceId": installation.bootstrap.workerInstanceId,
-        ],
-        options: [.sortedKeys]
-    )
-    let capabilityHeader = try BridgeProductCapabilityHeaderEncoding.encode(
-        installation.capabilityBytes
-    )
-    let replyTask = Task {
-        try await collectPaneOwnerProductReply(
-            handler: handler,
-            adapter: installation.productAdapter,
-            request: bridgeProductSchemeRequest(
-                route: BridgeProductWireContract.streamRoute,
-                capability: capabilityHeader,
-                body: body
-            )
-        )
-    }
-    try await provider.waitUntilMetadataProducerStarted()
-    return replyTask
-}
-
-func startContentReply(
-    installation: BridgeProductSessionInstallation,
-    provider: BridgePaneProductSessionProviderGate,
-    identitySuffix: String,
-    handler: BridgeSchemeHandler? = nil
-) async throws -> Task<BridgeProductSchemeReplyObservation, any Error> {
-    let request = try paneOwnerContentRequest(
-        installation: installation,
-        identitySuffix: identitySuffix
-    )
-    let capabilityHeader = try BridgeProductCapabilityHeaderEncoding.encode(
-        installation.capabilityBytes
-    )
-    let replyTask = Task {
-        try await collectPaneOwnerProductReply(
-            handler: handler,
-            adapter: installation.productAdapter,
-            request: bridgeProductSchemeRequest(
-                route: BridgeProductWireContract.contentRoute,
-                capability: capabilityHeader,
-                body: try JSONEncoder().encode(request)
-            )
-        )
-    }
-    try await provider.waitUntilContentProducerStarted()
-    return replyTask
-}
-
-private func collectPaneOwnerProductReply(
-    handler: BridgeSchemeHandler?,
-    adapter: BridgeProductSchemeAdapter,
-    request: URLRequest
-) async throws -> BridgeProductSchemeReplyObservation {
-    if let handler {
-        return try await collectBridgeSchemeHandlerProductReply(
-            handler: handler,
-            request: request
-        )
-    }
-    return try await collectBridgeProductSchemeReply(
-        adapter: adapter,
-        request: request
-    )
-}
-
-func paneOwnerProductCallSchemeRequest(
-    installation: BridgeProductSessionInstallation,
-    identitySuffix: String
-) throws -> URLRequest {
-    let body = try JSONSerialization.data(
-        withJSONObject: [
-            "call": [
-                "method": "review.markFileViewed",
-                "request": ["itemId": "item-\(identitySuffix)"],
-            ],
-            "kind": "product.call",
-            "paneSessionId": installation.bootstrap.paneSessionId,
-            "requestId": "product-call-\(identitySuffix)",
-            "requestSequence": 2,
-            "wireVersion": BridgeProductWireContract.version,
-            "workerDerivationEpoch": 1,
-            "workerInstanceId": installation.bootstrap.workerInstanceId,
-        ],
-        options: [.sortedKeys]
-    )
-    return bridgeProductSchemeRequest(
-        route: BridgeProductWireContract.commandRoute,
-        capability: try BridgeProductCapabilityHeaderEncoding.encode(
-            installation.capabilityBytes
-        ),
-        body: body
-    )
-}
-
-func collectBridgeSchemeHandlerProductReply(
-    handler: BridgeSchemeHandler,
-    request: URLRequest
-) async throws -> BridgeProductSchemeReplyObservation {
-    var body = Data()
-    var events: [BridgeProductSchemeReplyObservation.Event] = []
-    var response: HTTPURLResponse?
-    for try await result in handler.reply(for: request) {
-        switch result {
-        case .response(let emittedResponse):
-            events.append(.response)
-            response = emittedResponse as? HTTPURLResponse
-        case .data(let chunk):
-            events.append(.data)
-            body.append(chunk)
-        @unknown default:
-            Issue.record("Unexpected URL scheme task result")
-        }
-    }
-    return .init(body: body, events: events, response: response)
-}
-
-private func paneOwnerContentRequest(
-    installation: BridgeProductSessionInstallation,
-    identitySuffix: String
-) throws -> BridgeProductContentRequest {
-    let requestJSON = """
-        {
-          "kind": "content.open",
-          "wireVersion": 2,
-          "paneSessionId": "\(installation.bootstrap.paneSessionId)",
-          "workerDerivationEpoch": 1,
-          "workerInstanceId": "\(installation.bootstrap.workerInstanceId)",
-          "contentRequestId": "content-request-\(identitySuffix)",
-          "leaseId": "lease-\(identitySuffix)",
-          "operationCorrelationId": null,
-          "contentKind": "file.content",
-          "descriptor": {
-            "contentKind": "file.content",
-            "declaredByteLength": 3,
-            "descriptorId": "file-descriptor-\(identitySuffix)",
-            "encoding": "utf-8",
-            "expectedSha256": "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad",
-            "fileId": "file-\(identitySuffix)",
-            "maximumBytes": 3,
-            "source": {
-              "repoId": "00000000-0000-4000-8000-000000000001",
-              "rootRevisionToken": null,
-              "sourceCursor": "source-cursor-\(identitySuffix)",
-              "sourceId": "source-\(identitySuffix)",
-              "subscriptionGeneration": 11,
-              "worktreeId": "00000000-0000-4000-8000-000000000002"
-            },
-            "window": {
-              "kind": "prefix",
-              "maximumBytes": 3,
-              "maximumLines": 10000,
-              "startByte": 0
-            }
-          }
-        }
-        """
-    return try BridgeProductStrictJSON.decode(
-        BridgeProductContentRequest.self,
-        from: Data(requestJSON.utf8)
-    )
 }
 
 actor BridgePaneProductSessionProviderGate: BridgeProductSchemeProvider {

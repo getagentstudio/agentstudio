@@ -35,6 +35,7 @@ actor BridgePaneProductMetadataCoordinator {
     private let contentDemandAuthority: BridgePaneProductContentDemandAuthority
     let annotationSource: BridgePaneAnnotationNotificationSource
     let fileMetadataSource: any BridgePaneProductFileMetadataProducing
+    let fileSurfaceReconciler: BridgeFileSurfaceReconciler
     let lifecycleTraceRecorder: (any BridgeProductMetadataLifecycleTraceRecording)?
     let nativeApplicationRegistry: BridgePaneProductMetadataNativeApplicationRegistry
     let refreshWorkAdmissionSource: BridgePaneRefreshWorkAdmissionSource
@@ -42,6 +43,7 @@ actor BridgePaneProductMetadataCoordinator {
     let reviewPublicationReplay:
         @MainActor @Sendable (BridgeProductAdmissionContext) -> BridgeReviewCommittedPublication?
     let reviewMetadataSource: any BridgePaneProductReviewMetadataProducing
+    let recordCurrentFileRefreshFailure: @MainActor @Sendable (BridgePaneProductFileRefreshFailure?) -> Void
     private var latestPanePresentation: BridgePaneProductPresentationSnapshot?
     private var latestPaneSurfaceSelectionRequest: BridgePaneSurfaceSelectionRequest?
     private(set) var activeStream: ActiveStream?
@@ -57,6 +59,7 @@ actor BridgePaneProductMetadataCoordinator {
     init(
         annotationSource: BridgePaneAnnotationNotificationSource = .unavailable,
         fileMetadataSource: any BridgePaneProductFileMetadataProducing,
+        fileSurfaceReconciler: BridgeFileSurfaceReconciler = BridgeFileSurfaceReconciler(),
         reviewMetadataSource: any BridgePaneProductReviewMetadataProducing,
         reviewContentSource: any BridgePaneProductReviewContentProducing =
             BridgeUnavailablePaneProductReviewContentSource(),
@@ -67,10 +70,13 @@ actor BridgePaneProductMetadataCoordinator {
             @escaping @MainActor @Sendable (UUID, BridgeProductAdmissionContext) -> Bool = { _, _ in true },
         initialPanePresentation: BridgePaneProductPresentationSnapshot? = nil,
         refreshWorkAdmissionSource: BridgePaneRefreshWorkAdmissionSource,
+        recordCurrentFileRefreshFailure:
+            @escaping @MainActor @Sendable (BridgePaneProductFileRefreshFailure?) -> Void = { _ in },
         lifecycleTraceRecorder: (any BridgeProductMetadataLifecycleTraceRecording)? = nil,
         nativeApplicationRegistry: BridgePaneProductMetadataNativeApplicationRegistry = .product
     ) {
         self.annotationSource = annotationSource
+        self.fileSurfaceReconciler = fileSurfaceReconciler
         self.contentDemandAuthority = BridgePaneProductContentDemandAuthority(
             fileMetadataSource: fileMetadataSource,
             reviewContentSource: reviewContentSource
@@ -86,6 +92,7 @@ actor BridgePaneProductMetadataCoordinator {
         self.refreshWorkAdmissionSource = refreshWorkAdmissionSource
         self.reviewMetadataSource = reviewMetadataSource
         self.reviewPublicationReplay = reviewPublicationReplay
+        self.recordCurrentFileRefreshFailure = recordCurrentFileRefreshFailure
     }
 
     var hasActiveStream: Bool { activeStream != nil }
@@ -240,7 +247,7 @@ actor BridgePaneProductMetadataCoordinator {
         )
         switch effect {
         case .subscriptionOpened(let subscription):
-            applySubscriptionOpened(subscription, productAdmission: productAdmission)
+            await applySubscriptionOpened(subscription, productAdmission: productAdmission)
         case .subscriptionCancelled(let subscription):
             let producerTasks = producerTaskLifecycle.takeAndCancelProducerTasks(
                 subscriptionId: subscription.subscriptionId
@@ -275,7 +282,7 @@ actor BridgePaneProductMetadataCoordinator {
                         activeStream?.lease == retainedStream.lease,
                         subscriptionKindById[outcome.subscriptionId] == nil
                     else { continue }
-                    applySubscriptionOpened(subscription, productAdmission: productAdmission)
+                    await applySubscriptionOpened(subscription, productAdmission: productAdmission)
                 }
             }
             for subscriptionId in result.revokedNativeOnlySubscriptionIds {
@@ -301,7 +308,7 @@ actor BridgePaneProductMetadataCoordinator {
     private func applySubscriptionOpened(
         _ subscription: BridgeProductSubscriptionSnapshot,
         productAdmission: BridgeProductAdmissionContext
-    ) {
+    ) async {
         guard let activeStream,
             activeStream.productAdmission.matches(productAdmission)
         else { return }
@@ -309,23 +316,24 @@ actor BridgePaneProductMetadataCoordinator {
             deferSubscriptionOpen(subscription, productAdmission: productAdmission)
             return
         }
-        let didStart =
+        let didAdmit =
             foregroundWorkAdmission.withValidAdmission {
                 productAdmission.withValidAdmission { () -> Bool in
                     subscriptionKindById[subscription.subscriptionId] = subscription.subscriptionKind
                     deferredOpenSubscriptionIds.remove(subscription.subscriptionId)
-                    startSubscriptionOpen(
-                        subscription,
-                        activeStream: activeStream,
-                        productAdmission: productAdmission,
-                        foregroundWorkAdmission: foregroundWorkAdmission
-                    )
                     return true
                 } ?? false
             } ?? false
-        if !didStart {
+        guard didAdmit else {
             deferSubscriptionOpen(subscription, productAdmission: productAdmission)
+            return
         }
+        await startSubscriptionOpen(
+            subscription,
+            activeStream: activeStream,
+            productAdmission: productAdmission,
+            foregroundWorkAdmission: foregroundWorkAdmission
+        )
     }
 
     private func deferSubscriptionOpen(
@@ -362,15 +370,14 @@ actor BridgePaneProductMetadataCoordinator {
             else { continue }
             deferredOpenSubscriptionIds.remove(subscriptionId)
             if openedSourceSubscriptionIds.contains(subscriptionId),
-                let scope = await activeStream.session.acceptedViewScope(subscriptionId: subscriptionId)
+                await activeStream.session.acceptedViewScope(subscriptionId: subscriptionId) != nil
             {
                 if subscription.subscriptionKind == .fileMetadata {
-                    await applyAcceptedFileViewDemand(
-                        subscriptionId: subscriptionId,
-                        expectedHandle: scope.handle,
-                        expectedRevision: scope.revision,
-                        forceRecapture: true,
-                        productAdmission: activeStream.productAdmission
+                    await startSubscriptionOpen(
+                        subscription,
+                        activeStream: activeStream,
+                        productAdmission: activeStream.productAdmission,
+                        foregroundWorkAdmission: foregroundWorkAdmission
                     )
                 } else if subscription.subscriptionKind == .reviewMetadata {
                     _ = try? await publishReviewViewSnapshot(
@@ -378,7 +385,7 @@ actor BridgePaneProductMetadataCoordinator {
                         productAdmission: activeStream.productAdmission
                     )
                 } else {
-                    startSubscriptionOpen(
+                    await startSubscriptionOpen(
                         subscription,
                         activeStream: activeStream,
                         productAdmission: activeStream.productAdmission,
@@ -386,7 +393,7 @@ actor BridgePaneProductMetadataCoordinator {
                     )
                 }
             } else {
-                startSubscriptionOpen(
+                await startSubscriptionOpen(
                     subscription,
                     activeStream: activeStream,
                     productAdmission: activeStream.productAdmission,

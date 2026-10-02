@@ -480,10 +480,14 @@ final class BridgePaneRefreshAdmissionCoordinator {
         advancePresentationRevisionIfNeeded(from: previousPresentation)
     }
 
-    func recordFileRefreshFailure(_ failure: BridgePaneProductFileRefreshFailure) {
+    func recordCurrentFileRefreshFailure(_ failure: BridgePaneProductFileRefreshFailure?) {
         guard activity != .closed, fileRefreshFailure != failure else { return }
         fileRefreshFailure = failure
         presentationRevision += 1
+    }
+
+    var hasPendingFileRefreshWork: Bool {
+        dirtyFactByLane[.file] != nil
     }
 
     @discardableResult

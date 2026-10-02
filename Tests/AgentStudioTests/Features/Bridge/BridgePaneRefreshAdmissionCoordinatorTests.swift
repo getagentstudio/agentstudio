@@ -92,7 +92,7 @@ struct BridgePaneRefreshAdmissionCoordinatorTests {
             coordinator.reserveForegroundRefreshPass(for: .file)
         )
         coordinator.completeRefreshPass(failedReservation, outcome: .failed)
-        coordinator.recordFileRefreshFailure(
+        coordinator.recordCurrentFileRefreshFailure(
             .init(failureKind: .fileSourceUnavailable)
         )
 
@@ -113,7 +113,7 @@ struct BridgePaneRefreshAdmissionCoordinatorTests {
     func newFileInvalidationClearsRetainedRefreshFailureAndAdmitsCurrentDirtyWork() throws {
         // Arrange
         let coordinator = BridgePaneRefreshAdmissionCoordinator(initialActivity: .foreground)
-        coordinator.recordFileRefreshFailure(
+        coordinator.recordCurrentFileRefreshFailure(
             .init(failureKind: .fileSourceUnavailable)
         )
         let unavailableRevision = coordinator.productPresentationSnapshot.presentationRevision

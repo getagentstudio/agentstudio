@@ -27,28 +27,4 @@ extension BridgePaneProductSchemeProvider {
             }
         )
     }
-
-    func enqueueStaleSourceReset(
-        for lease: BridgeProductProducerLease,
-        productAdmission: BridgeProductAdmissionContext,
-        foregroundWorkAdmission: BridgePaneRefreshWorkAdmission,
-        session: BridgeProductSession
-    ) async throws {
-        _ = try await session.enqueueTerminalContentFrame(
-            for: lease,
-            productAdmission: productAdmission,
-            foregroundWorkAdmission: foregroundWorkAdmission,
-            build: { sequence in
-                .content(
-                    .init(
-                        header: try .reset(
-                            contentSequence: sequence,
-                            reason: .staleSource
-                        ),
-                        payload: Data()
-                    )
-                )
-            }
-        )
-    }
 }

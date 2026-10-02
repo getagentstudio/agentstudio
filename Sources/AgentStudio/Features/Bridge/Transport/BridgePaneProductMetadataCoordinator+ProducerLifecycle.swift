@@ -5,6 +5,7 @@ struct BridgePaneProductMetadataProducerExecutionContext: Sendable {
     let metadataLease: BridgeProductProducerLease
     let productAdmission: BridgeProductAdmissionContext
     let session: BridgeProductSession
+    let fileSurfaceAttempt: BridgeFileSurfaceReconciler.Attempt?
 }
 
 enum BridgePaneProductMetadataProducerCompletion: Equatable, Sendable {
@@ -25,7 +26,13 @@ struct BridgePaneProductMetadataProducerTaskLifecycle {
         let subscriptionId: String
         let subscriptionKind: BridgeProductSubscriptionKind
         let executionContext: BridgePaneProductMetadataProducerExecutionContext
-        let taskFinished: @Sendable (String, UUID, BridgePaneProductMetadataProducerCompletion) async -> Void
+        let taskFinished:
+            @Sendable (
+                String,
+                UUID,
+                BridgePaneProductMetadataProducerCompletion,
+                (any Error)?
+            ) async -> Void
         let operation: @Sendable (BridgeTraceContext?) async throws -> Void
     }
 
@@ -40,7 +47,13 @@ struct BridgePaneProductMetadataProducerTaskLifecycle {
         subscriptionId: String,
         subscriptionKind: BridgeProductSubscriptionKind,
         executionContext: BridgePaneProductMetadataProducerExecutionContext,
-        taskFinished: @escaping @Sendable (String, UUID, BridgePaneProductMetadataProducerCompletion) async -> Void,
+        taskFinished:
+            @escaping @Sendable (
+                String,
+                UUID,
+                BridgePaneProductMetadataProducerCompletion,
+                (any Error)?
+            ) async -> Void,
         operation: @escaping @Sendable (BridgeTraceContext?) async throws -> Void
     ) {
         startTask(
@@ -68,6 +81,7 @@ struct BridgePaneProductMetadataProducerTaskLifecycle {
         let task = Task {
             let traceContext = BridgeTraceContextFactory.live.makeRootContext()
             var completion = BridgePaneProductMetadataProducerCompletion.completed
+            var surfacedError: (any Error)?
             await lifecycleTraceRecorder?.record(
                 .init(
                     stage: .bootstrapStarted,
@@ -95,6 +109,11 @@ struct BridgePaneProductMetadataProducerTaskLifecycle {
                     )
                 } else {
                     completion = .failedWithoutReset
+                    if subscriptionKind == .fileMetadata,
+                        request.executionContext.fileSurfaceAttempt != nil
+                    {
+                        surfacedError = error
+                    }
                     await lifecycleTraceRecorder?.record(
                         .init(
                             stage: .producerFailed,
@@ -106,29 +125,31 @@ struct BridgePaneProductMetadataProducerTaskLifecycle {
                             traceContext: traceContext
                         )
                     )
-                    let resetResult = try? await session.enqueueSubscriptionReset(
-                        originatingMetadataLease: originatingMetadataLease,
-                        subscriptionId: subscriptionId,
-                        reason: .staleSource,
-                        productAdmission: productAdmission,
-                        foregroundWorkAdmission: foregroundWorkAdmission
-                    )
-                    if case .enqueued? = resetResult {
-                        completion = .resetEnqueued
-                        await lifecycleTraceRecorder?.record(
-                            .init(
-                                stage: .subscriptionResetEnqueued,
-                                subscriptionKind: subscriptionKind,
-                                result: .queued,
-                                traceContext: traceContext
-                            )
+                    if surfacedError == nil {
+                        let resetResult = try? await session.enqueueSubscriptionReset(
+                            originatingMetadataLease: originatingMetadataLease,
+                            subscriptionId: subscriptionId,
+                            reason: .staleSource,
+                            productAdmission: productAdmission,
+                            foregroundWorkAdmission: foregroundWorkAdmission
                         )
-                    } else if case .rejected(.unknownLease)? = resetResult {
-                        completion = .staleProducer
+                        if case .enqueued? = resetResult {
+                            completion = .resetEnqueued
+                            await lifecycleTraceRecorder?.record(
+                                .init(
+                                    stage: .subscriptionResetEnqueued,
+                                    subscriptionKind: subscriptionKind,
+                                    result: .queued,
+                                    traceContext: traceContext
+                                )
+                            )
+                        } else if case .rejected(.unknownLease)? = resetResult {
+                            completion = .staleProducer
+                        }
                     }
                 }
             }
-            await taskFinished(subscriptionId, taskId, completion)
+            await taskFinished(subscriptionId, taskId, completion, surfacedError)
             await lifecycleTraceRecorder?.record(
                 .init(
                     stage: .bootstrapFinished,

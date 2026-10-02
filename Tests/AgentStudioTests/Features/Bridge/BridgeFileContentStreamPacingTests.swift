@@ -94,6 +94,30 @@ struct BridgeFileContentStreamPacingTests {
         #expect(await context.readerHarness.closeCount == 1)
         #expect((await context.harness.session.producerSnapshot()).hasZeroResidue)
     }
+
+    @Test("a moved File descriptor ends its read as superseded without resetting E3")
+    func movedFileDescriptorEndsAsSupersededWithoutResettingE3() async throws {
+        let context = try await makePacingStreamContext(
+            sourceData: Data("original File bytes".utf8),
+            readerData: Data("moved File bytes".utf8)
+        )
+        let decoder = try BridgeProductContentFrameDecoder()
+        let openingQueuedFrameCount = try await observeAcceptedFrameBeforeFileAccess(
+            context: context,
+            decoder: decoder
+        )
+
+        let evidence = try await consumePacedStream(
+            context: context,
+            decoder: decoder,
+            openingQueuedFrameCount: openingQueuedFrameCount
+        )
+
+        #expect(evidence.errorHeaders.map(\.code) == [.superseded])
+        #expect(evidence.resetHeaders.isEmpty)
+        #expect(evidence.contentEndHeader == nil)
+        #expect(evidence.teardownSnapshot.hasZeroResidue)
+    }
 }
 
 private struct PacingFileContentStreamContext {
@@ -119,7 +143,8 @@ private struct PacingFileContentStreamEvidence {
 }
 
 private func makePacingStreamContext(
-    sourceData: Data
+    sourceData: Data,
+    readerData: Data? = nil
 ) async throws -> PacingFileContentStreamContext {
     let sourceSHA256 = sha256(sourceData)
     let request = try fileContentRequest(
@@ -135,7 +160,7 @@ private func makePacingStreamContext(
             rootURL: FileManager.default.temporaryDirectory
         )
     )
-    let readerHarness = PacingFileContentReaderHarness(sourceData: sourceData)
+    let readerHarness = PacingFileContentReaderHarness(sourceData: readerData ?? sourceData)
     let refreshWorkAdmission = await BridgePaneRefreshWorkAdmissionTestContext.foreground()
     let provider = BridgePaneProductSchemeProvider(
         fileMetadataSource: fileMetadataSource,

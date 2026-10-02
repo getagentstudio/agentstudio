@@ -20,10 +20,15 @@ struct BridgeWorktreeFileRootEnumerationTests {
         #expect(result.failure != nil)
         #expect(result.failure as? BridgeWorktreeFileRootAccessError == .missingRoot)
         if let failure = result.failure {
+            let surfaceFailure = BridgeFileSurfaceReconciler.failure(for: failure, phase: .build)
+            #expect(surfaceFailure.cause == .missingRoot)
+            #expect(surfaceFailure.disposition == .retryable)
+            #expect(surfaceFailure.refreshFailure.retryable)
             #expect(
                 BridgePaneProductMetadataCoordinator.fileRefreshDisposition(for: failure)
-                    == .failed(.init(failureKind: .fileSourceUnavailable)))
-            #expect(BridgePaneProductMetadataCoordinator.producerFailureReason(for: failure) == .fileSourceUnavailable)
+                    == .failed(surfaceFailure.refreshFailure))
+            #expect(surfaceFailure.refreshFailure.failureKind == .missingRoot)
+            #expect(BridgePaneProductMetadataCoordinator.producerFailureReason(for: failure) == .missingRoot)
         }
     }
 
@@ -48,9 +53,15 @@ struct BridgeWorktreeFileRootEnumerationTests {
         #expect(result.failure as? BridgeWorktreeFileRootAccessError == .unreadable)
         #expect(result.windows.allSatisfy { !$0.isFinalWindow })
         if let failure = result.failure {
+            let surfaceFailure = BridgeFileSurfaceReconciler.failure(for: failure, phase: .build)
+            #expect(surfaceFailure.cause == .unreadableRoot)
+            #expect(surfaceFailure.disposition == .retryable)
+            #expect(surfaceFailure.refreshFailure.retryable)
             #expect(
                 BridgePaneProductMetadataCoordinator.fileRefreshDisposition(for: failure)
-                    == .failed(.init(failureKind: .fileSourceUnavailable)))
+                    == .failed(surfaceFailure.refreshFailure))
+            #expect(surfaceFailure.refreshFailure.failureKind == .unreadableRoot)
+            #expect(BridgePaneProductMetadataCoordinator.producerFailureReason(for: failure) == .unreadableRoot)
         }
     }
 

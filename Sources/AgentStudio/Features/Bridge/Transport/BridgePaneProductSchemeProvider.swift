@@ -122,6 +122,8 @@ actor BridgePaneProductSchemeProvider: BridgeProductSchemeProvider {
             ) async -> Void = { _, _, _ in },
         applyFileRefreshRetry:
             @escaping @MainActor @Sendable (BridgeProductAdmissionContext) async -> Void = { _ in },
+        recordCurrentFileRefreshFailure:
+            @escaping @MainActor @Sendable (BridgePaneProductFileRefreshFailure?) -> Void = { _ in },
         applyWorktreeAnnotationCommand:
             @escaping @MainActor @Sendable (
                 BridgeProductWorktreeAnnotationCommandRequest,
@@ -168,6 +170,7 @@ actor BridgePaneProductSchemeProvider: BridgeProductSchemeProvider {
             isReviewPublicationCurrent: isReviewPublicationCurrent,
             initialPanePresentation: initialPanePresentation,
             refreshWorkAdmissionSource: refreshWorkAdmissionSource,
+            recordCurrentFileRefreshFailure: recordCurrentFileRefreshFailure,
             lifecycleTraceRecorder: lifecycleTraceRecorder
         )
         self.lifecycleTraceRecorder = lifecycleTraceRecorder
@@ -836,7 +839,7 @@ actor BridgePaneProductSchemeProvider: BridgeProductSchemeProvider {
             }
         } catch {
             guard foregroundWorkAdmission.withValidAdmission({ true }) == true else { return }
-            try? await enqueueStaleSourceReset(
+            try? await enqueueSupersededContentTerminal(
                 for: lease,
                 productAdmission: productAdmission,
                 foregroundWorkAdmission: foregroundWorkAdmission,
@@ -862,7 +865,7 @@ actor BridgePaneProductSchemeProvider: BridgeProductSchemeProvider {
                 digest.sha256 == request.descriptor.expectedSha256
             else {
                 guard foregroundWorkAdmission.withValidAdmission({ true }) == true else { return }
-                try await enqueueStaleSourceReset(
+                try await enqueueSupersededContentTerminal(
                     for: lease,
                     productAdmission: productAdmission,
                     foregroundWorkAdmission: foregroundWorkAdmission,
@@ -893,7 +896,7 @@ actor BridgePaneProductSchemeProvider: BridgeProductSchemeProvider {
         } catch {
             await reader.close()
             guard foregroundWorkAdmission.withValidAdmission({ true }) == true else { return }
-            try? await enqueueStaleSourceReset(
+            try? await enqueueSupersededContentTerminal(
                 for: lease,
                 productAdmission: productAdmission,
                 foregroundWorkAdmission: foregroundWorkAdmission,
@@ -935,7 +938,7 @@ actor BridgePaneProductSchemeProvider: BridgeProductSchemeProvider {
             guard !overflowed,
                 nextByteCount <= descriptor.declaredByteLength
             else {
-                try await enqueueStaleSourceReset(
+                try await enqueueSupersededContentTerminal(
                     for: lease,
                     productAdmission: productAdmission,
                     foregroundWorkAdmission: foregroundWorkAdmission,

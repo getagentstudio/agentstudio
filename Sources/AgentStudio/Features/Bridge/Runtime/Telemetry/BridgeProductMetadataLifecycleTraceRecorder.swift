@@ -216,6 +216,9 @@ enum BridgeProductReviewMetadataPublicationTraceEvent: Equatable, Sendable {
 enum BridgeProductMetadataProducerFailureReason: Equatable, Sendable {
     case cancellation
     case fileSourceUnavailable
+    case missingRoot
+    case unreadableRoot
+    case accessRefused
     case producerQueueReset
     case producerRejection(BridgeProductProducerEnqueueRejection)
     case reviewEventConstruction
@@ -231,6 +234,12 @@ enum BridgeProductMetadataProducerFailureReason: Equatable, Sendable {
             "cancellation"
         case .fileSourceUnavailable:
             "file_source_unavailable"
+        case .missingRoot:
+            "file_root_missing"
+        case .unreadableRoot:
+            "file_root_unreadable"
+        case .accessRefused:
+            "file_root_access_refused"
         case .producerQueueReset:
             "producer_queue_reset"
         case .producerRejection(let rejection):

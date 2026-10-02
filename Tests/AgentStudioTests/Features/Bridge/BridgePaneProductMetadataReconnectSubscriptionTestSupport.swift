@@ -1,4 +1,5 @@
 import AgentStudioCore
+import AgentStudioTestHarness
 import Foundation
 import Testing
 
@@ -37,7 +38,19 @@ actor ReconnectFileMetadataSource: BridgePaneProductFileMetadataProducing {
     private var publicationCallCount = 0
     private var updateCallCount = 0
     private var activeSubscriptionWaiters: [CheckedContinuation<Void, Never>] = []
-    private var updateCallWaiters: [CheckedContinuation<Void, Never>] = []
+    private var updateCallWaiters: [(Int, CheckedContinuation<Void, Never>)] = []
+    private var openCompletionStepByOrdinal: [Int: HeldStep<Void>] = [:]
+
+    func holdOpenCompletion(ordinal: Int, at step: HeldStep<Void>) {
+        openCompletionStepByOrdinal[ordinal] = step
+    }
+
+    func waitForUpdateCallCount(_ count: Int) async {
+        if updateCallCount >= count { return }
+        await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+            updateCallWaiters.append((count, continuation))
+        }
+    }
 
     var hasActiveSubscription: Bool { !activeSubscriptionIds.isEmpty }
 
@@ -54,16 +67,6 @@ actor ReconnectFileMetadataSource: BridgePaneProductFileMetadataProducing {
         }
     }
 
-    /// Returns once `update(_:)` has been applied at least once, signalled by that call.
-    func waitForUpdateCall() async {
-        if updateCallCount >= 1 {
-            return
-        }
-        await withCheckedContinuation { continuation in
-            updateCallWaiters.append(continuation)
-        }
-    }
-
     private func resumeActiveSubscriptionWaiters() {
         let waiters = activeSubscriptionWaiters
         activeSubscriptionWaiters.removeAll()
@@ -73,9 +76,9 @@ actor ReconnectFileMetadataSource: BridgePaneProductFileMetadataProducing {
     }
 
     private func resumeUpdateCallWaiters() {
-        let waiters = updateCallWaiters
-        updateCallWaiters.removeAll()
-        for waiter in waiters {
+        let readyWaiters = updateCallWaiters.filter { $0.0 <= updateCallCount }
+        updateCallWaiters.removeAll { $0.0 <= updateCallCount }
+        for (_, waiter) in readyWaiters {
             waiter.resume()
         }
     }
@@ -132,6 +135,10 @@ actor ReconnectFileMetadataSource: BridgePaneProductFileMetadataProducing {
         // waiter should not be held behind the first event's delivery.
         resumeActiveSubscriptionWaiters()
         try await emit(try reconnectFileSourceAcceptedEvent(cursor: "initial"))
+        if let openCompletionStep = openCompletionStepByOrdinal.removeValue(forKey: openCallCount) {
+            try await openCompletionStep.arrive(())
+            try Task.checkCancellation()
+        }
     }
 
     func applyViewDemand(
@@ -472,7 +479,7 @@ func waitForReconnectSourceActivity(_ source: ReconnectFileMetadataSource) async
 }
 
 func waitForReconnectSourceUpdate(_ source: ReconnectFileMetadataSource) async {
-    await source.waitForUpdateCall()
+    await source.waitForUpdateCallCount(1)
 }
 
 enum ReconnectSubscriptionTestError: Error {

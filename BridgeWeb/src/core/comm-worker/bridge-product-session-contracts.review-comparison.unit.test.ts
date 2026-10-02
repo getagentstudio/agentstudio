@@ -3,7 +3,7 @@ import { describe, expect, test } from 'vitest';
 import { bridgeProductMetadataFrameSchema } from './bridge-product-session-contracts.js';
 
 describe('Bridge product session Review comparison contract', () => {
-	test('accepts the exact comparison-aware pane presentation and rejects the activity-only shape', () => {
+	test('keeps comparison and generic File failure wire contracts closed', () => {
 		const frame = {
 			fileRefreshFailure: null,
 			kind: 'pane.presentation',
@@ -34,6 +34,21 @@ describe('Bridge product session Review comparison contract', () => {
 		} as const;
 
 		expect(bridgeProductMetadataFrameSchema.parse(frame)).toEqual(frame);
+		const rootFailureWireValue = { failureKind: 'fileSourceUnavailable', retryable: true } as const;
+		const rootFailureFrame = { ...frame, fileRefreshFailure: rootFailureWireValue } as const;
+		expect(bridgeProductMetadataFrameSchema.parse(rootFailureFrame)).toEqual(rootFailureFrame);
+		for (const rootSpecificFailure of [
+			{ failureKind: 'missingRoot', retryable: true },
+			{ failureKind: 'unreadable', retryable: true },
+			{ failureKind: 'refused', retryable: false },
+		]) {
+			expect(
+				bridgeProductMetadataFrameSchema.safeParse({
+					...frame,
+					fileRefreshFailure: rootSpecificFailure,
+				}).success,
+			).toBe(false);
+		}
 		expect(
 			bridgeProductMetadataFrameSchema.safeParse({
 				...frame,

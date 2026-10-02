@@ -114,7 +114,7 @@ extension BridgeDevelopmentProductHost {
             _ = refreshAdmissionCoordinator.advanceAuthority(for: .file)
             _ = refreshAdmissionCoordinator.advanceAuthority(for: .review)
             worktreeRefreshDriver.retireActiveFileOperation()
-            refreshAdmissionCoordinator.recordFileRefreshFailure(
+            refreshAdmissionCoordinator.recordCurrentFileRefreshFailure(
                 .init(failureKind: .fileRefreshFailed)
             )
             refreshAdmissionCoordinator.beginReviewComparisonAttempt(
