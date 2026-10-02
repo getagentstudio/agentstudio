@@ -339,6 +339,8 @@ const bridgeProductMetadataFrameIdentityShape = {
 } as const;
 
 export const bridgeProductFileRefreshFailureSchema = z.discriminatedUnion('failureKind', [
+	z.object({ failureKind: z.literal('missingRoot'), retryable: z.literal(true) }).strict(),
+	z.object({ failureKind: z.literal('unreadableRoot'), retryable: z.literal(true) }).strict(),
 	z.object({ failureKind: z.literal('fileRefreshFailed'), retryable: z.literal(false) }).strict(),
 	z
 		.object({ failureKind: z.literal('fileSourceUnavailable'), retryable: z.literal(true) })

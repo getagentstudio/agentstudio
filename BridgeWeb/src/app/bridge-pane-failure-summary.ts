@@ -17,6 +17,8 @@ export const bridgePaneFailureDisplaySpec = {
 	comments: "Comments couldn't load.",
 	commentsCorrectiveAction: 'Correct the local history failure before reopening Comments.',
 	fileLoad: "Files couldn't load.",
+	fileMissingRoot: "Files couldn't load. The worktree folder is missing.",
+	fileUnreadableRoot: "Files couldn't load. The worktree folder can't be read.",
 	fileUpdate: "Files couldn't update. Showing the last version.",
 	markdownLoad: "Markdown couldn't load.",
 	markdownUpdate: "Markdown couldn't update. Showing the last version.",
@@ -67,26 +69,30 @@ export function projectBridgePaneFailureSummary(
 	if (first === undefined) return null;
 	const readEntry = failedEntries.find((entry): boolean => entry.state.failure.scope === 'read');
 	const fileName = readEntry?.fileName?.split('/').at(-1);
+	const fileRootMessage =
+		first.part === 'file' ? fileRootFailureSummaryMessage(failedEntries) : null;
 	const message =
 		paneEntry !== undefined
 			? bridgePaneFailureDisplaySpec.pane
 			: parts.length > 1
 				? bridgePaneFailureDisplaySpec.several(parts)
-				: fileName !== undefined
-					? bridgePaneFailureDisplaySpec.openFile(fileName)
-					: first.part === 'review'
-						? failedEntries.some((entry): boolean => entry.state.retainsContent)
-							? bridgePaneFailureDisplaySpec.reviewUpdate
-							: bridgePaneFailureDisplaySpec.reviewLoad
-						: first.part === 'comments'
-							? bridgePaneFailureDisplaySpec.comments
-							: first.part === 'file'
-								? first.state.retainsContent
-									? bridgePaneFailureDisplaySpec.fileUpdate
-									: bridgePaneFailureDisplaySpec.fileLoad
-								: first.state.retainsContent
-									? bridgePaneFailureDisplaySpec.markdownUpdate
-									: bridgePaneFailureDisplaySpec.markdownLoad;
+				: fileRootMessage !== null
+					? fileRootMessage
+					: fileName !== undefined
+						? bridgePaneFailureDisplaySpec.openFile(fileName)
+						: first.part === 'review'
+							? failedEntries.some((entry): boolean => entry.state.retainsContent)
+								? bridgePaneFailureDisplaySpec.reviewUpdate
+								: bridgePaneFailureDisplaySpec.reviewLoad
+							: first.part === 'comments'
+								? bridgePaneFailureDisplaySpec.comments
+								: first.part === 'file'
+									? first.state.retainsContent
+										? bridgePaneFailureDisplaySpec.fileUpdate
+										: bridgePaneFailureDisplaySpec.fileLoad
+									: first.state.retainsContent
+										? bridgePaneFailureDisplaySpec.markdownUpdate
+										: bridgePaneFailureDisplaySpec.markdownLoad;
 	const permanentEntries = (paneEntry === undefined ? failedEntries : [paneEntry]).filter(
 		(entry) => entry.state.failure.kind === 'permanent',
 	);
@@ -128,4 +134,24 @@ export function projectBridgePaneFailureSummary(
 					},
 		correctiveAction: correctiveActions.length === 0 ? undefined : correctiveActions.join(' '),
 	};
+}
+
+function fileRootFailureSummaryMessage(
+	entries: readonly (BridgePaneFailureEntry & {
+		readonly state: Extract<BridgeRegionPresentationState, { readonly kind: 'failed' }>;
+	})[],
+): string | null {
+	for (const entry of entries) {
+		const failure = entry.state.failure;
+		if (failure.scope !== 'surface' || failure.kind !== 'retryable') continue;
+		switch (failure.fileRootCause) {
+			case 'missingRoot':
+				return bridgePaneFailureDisplaySpec.fileMissingRoot;
+			case 'unreadableRoot':
+				return bridgePaneFailureDisplaySpec.fileUnreadableRoot;
+			case undefined:
+				break;
+		}
+	}
+	return null;
 }
