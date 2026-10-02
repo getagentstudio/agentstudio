@@ -1,6 +1,24 @@
 import AgentStudioGit
 import Foundation
 
+actor WorktreeDefaultTargetResolutionFailureSchedule {
+    private let failingReadNumbers: Set<Int>
+    private var readCount = 0
+
+    init(failingReadNumbers: Set<Int>) {
+        self.failingReadNumbers = failingReadNumbers
+    }
+
+    func shouldFailNextRead() -> Bool {
+        readCount += 1
+        return failingReadNumbers.contains(readCount)
+    }
+
+    func observedReadCount() -> Int {
+        readCount
+    }
+}
+
 struct WorktreeOperationClientStub: AgentStudioGitLocalClient {
     let startPath: URL
     let snapshot: GitWorktreeSnapshot
@@ -13,6 +31,7 @@ struct WorktreeOperationClientStub: AgentStudioGitLocalClient {
     let statusFailurePaths: Set<String>
     let failsWorktreeListing: Bool
     let failsDefaultTargetResolution: Bool
+    let defaultTargetResolutionFailureSchedule: WorktreeDefaultTargetResolutionFailureSchedule?
     let removeWorktreeHandler:
         (@Sendable (GitRemoveWorktreeRequest) async -> Result<GitWorktreeRemovalResult, GitDataPlaneError>)?
     let deleteLocalBranchHandler:
@@ -34,6 +53,7 @@ struct WorktreeOperationClientStub: AgentStudioGitLocalClient {
         statusFailurePaths: Set<String> = [],
         failsWorktreeListing: Bool = false,
         failsDefaultTargetResolution: Bool = false,
+        defaultTargetResolutionFailureSchedule: WorktreeDefaultTargetResolutionFailureSchedule? = nil,
         removeWorktreeHandler: (
             @Sendable (GitRemoveWorktreeRequest) async -> Result<GitWorktreeRemovalResult, GitDataPlaneError>
         )? = nil,
@@ -54,6 +74,7 @@ struct WorktreeOperationClientStub: AgentStudioGitLocalClient {
         self.statusFailurePaths = statusFailurePaths
         self.failsWorktreeListing = failsWorktreeListing
         self.failsDefaultTargetResolution = failsDefaultTargetResolution
+        self.defaultTargetResolutionFailureSchedule = defaultTargetResolutionFailureSchedule
         self.removeWorktreeHandler = removeWorktreeHandler
         self.deleteLocalBranchHandler = deleteLocalBranchHandler
     }
@@ -227,7 +248,8 @@ struct WorktreeOperationClientStub: AgentStudioGitLocalClient {
     func resolveReviewDefaultTarget(for repositoryPath: URL) async throws(GitDataPlaneError)
         -> GitReviewComparisonBranchTarget?
     {
-        if failsDefaultTargetResolution {
+        let scheduledFailure = await defaultTargetResolutionFailureSchedule?.shouldFailNextRead() ?? false
+        if failsDefaultTargetResolution || scheduledFailure {
             throw .unsupported(message: "injected default-target read failure")
         }
         if let baseClient { return try await baseClient.resolveReviewDefaultTarget(for: repositoryPath) }

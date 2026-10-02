@@ -51,6 +51,7 @@ package struct WorktreeDirtyStopDetails: Codable, Sendable, Equatable {
 
 package enum WorktreeStopDetails: Codable, Sendable, Equatable {
     case defaultBranch
+    case defaultBranchUnverified
     case mainWorktree
     case gitLockUnidentified(resource: GitLockResource)
     case notFound(target: String)
@@ -71,6 +72,7 @@ package enum WorktreeStopDetails: Codable, Sendable, Equatable {
 
     private enum CodingKeys: String, CodingKey {
         case defaultBranch
+        case defaultBranchUnverified
         case mainWorktree
         case gitLockUnidentified
         case notFound
@@ -157,6 +159,9 @@ package enum WorktreeStopDetails: Codable, Sendable, Equatable {
         case .defaultBranch:
             _ = try container.decode(EmptyPayload.self, forKey: key)
             self = .defaultBranch
+        case .defaultBranchUnverified:
+            _ = try container.decode(EmptyPayload.self, forKey: key)
+            self = .defaultBranchUnverified
         case .mainWorktree:
             _ = try container.decode(EmptyPayload.self, forKey: key)
             self = .mainWorktree
@@ -206,6 +211,8 @@ package enum WorktreeStopDetails: Codable, Sendable, Equatable {
         switch self {
         case .defaultBranch:
             try container.encode(EmptyPayload(), forKey: .defaultBranch)
+        case .defaultBranchUnverified:
+            try container.encode(EmptyPayload(), forKey: .defaultBranchUnverified)
         case .mainWorktree:
             try container.encode(EmptyPayload(), forKey: .mainWorktree)
         case .gitLockUnidentified(let resource):
@@ -250,6 +257,8 @@ package enum WorktreeStopDetails: Codable, Sendable, Equatable {
         switch self {
         case .defaultBranch:
             .defaultBranch
+        case .defaultBranchUnverified:
+            .defaultBranchUnverified
         case .mainWorktree:
             .mainWorktree
         case .gitLockUnidentified:

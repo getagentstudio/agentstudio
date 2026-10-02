@@ -68,7 +68,7 @@ package struct WorktreeRemovalRunner: Sendable {
         let branchName: String
         let request: WorktreeRemovalRequest
         let repositoryPath: URL
-        let fetchTarget: WorktreeIntegrationTarget?
+        let targetResolution: WorktreeIntegrationTargetResolution
         let assessment: BranchAssessment?
         let completion: WorktreeRemovalCompletion
         let priorMutation: Bool
@@ -83,7 +83,7 @@ package struct WorktreeRemovalRunner: Sendable {
         let preflight: WorktreePreflight
         let request: WorktreeRemovalRequest
         let repository: RepositoryContext
-        let fetchTarget: WorktreeIntegrationTarget?
+        let targetResolution: WorktreeIntegrationTargetResolution
     }
 
     struct WorktreePlanEntryRequest: Sendable {
@@ -94,7 +94,7 @@ package struct WorktreeRemovalRunner: Sendable {
         let fetchStatus: WorktreeFetchStatus
         let preflight: WorktreePreflight?
         let assessment: BranchAssessment?
-        let fetchTarget: WorktreeIntegrationTarget?
+        let targetResolution: WorktreeIntegrationTargetResolution
         let stop: WorktreeStopDetails?
         let wouldRemoveLockPaths: [String]
     }
@@ -130,11 +130,11 @@ package struct WorktreeRemovalRunner: Sendable {
             return failureReport(fetch: .skipped(reason: .noTarget))
         }
 
-        let initialTarget = try? await WorktreeIntegrationTargetResolver(client: client)
+        let targetResolution = await WorktreeIntegrationTargetResolver(client: client)
             .resolve(repositoryPath: repository.repositoryPath)
         let fetchResult = await WorktreeFetchStep(localClient: client, remoteClient: remoteClient).run(
             repositoryPath: repository.repositoryPath,
-            target: initialTarget,
+            resolution: targetResolution,
             policy: request.fetchPolicy
         )
 
@@ -175,7 +175,7 @@ package struct WorktreeRemovalRunner: Sendable {
                                 fetchStatus: fetchResult.status,
                                 preflight: nil,
                                 assessment: nil,
-                                fetchTarget: fetchResult.target,
+                                targetResolution: fetchResult.resolution,
                                 stop: .alreadyRemoved(target: name),
                                 wouldRemoveLockPaths: []
                             )
@@ -195,7 +195,7 @@ package struct WorktreeRemovalRunner: Sendable {
                                 fetchStatus: fetchResult.status,
                                 preflight: nil,
                                 assessment: nil,
-                                fetchTarget: fetchResult.target,
+                                targetResolution: fetchResult.resolution,
                                 stop: .notFound(target: name),
                                 wouldRemoveLockPaths: []
                             )

@@ -179,17 +179,12 @@ package struct WorktreeOperationRunner {
         targets: [String],
         fetchPolicy: WorktreeFetchPolicy
     ) async -> WorktreeOperationOutcome {
-        let initialTarget: WorktreeIntegrationTarget?
-        do {
-            initialTarget = try await WorktreeIntegrationTargetResolver(client: client)
-                .resolve(repositoryPath: repositoryPath)
-        } catch {
-            return .fetchingReadFailure(WorktreeFetchingReadFailure(fetch: .skipped(reason: .noTarget)))
-        }
+        let targetResolution = await WorktreeIntegrationTargetResolver(client: client)
+            .resolve(repositoryPath: repositoryPath)
 
         let fetchResult = await WorktreeFetchStep(localClient: client, remoteClient: remoteClient).run(
             repositoryPath: repositoryPath,
-            target: initialTarget,
+            resolution: targetResolution,
             policy: fetchPolicy
         )
 

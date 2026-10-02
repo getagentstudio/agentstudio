@@ -49,19 +49,12 @@ package struct WorktreePruneRunner: Sendable {
             )
         }
 
-        let initialTarget: WorktreeIntegrationTarget?
-        do {
-            initialTarget = try await WorktreeIntegrationTargetResolver(client: client)
-                .resolve(repositoryPath: repository.repositoryPath)
-        } catch {
-            return .fetchingReadFailure(
-                WorktreeFetchingReadFailure(fetch: .skipped(reason: .noTarget))
-            )
-        }
+        let targetResolution = await WorktreeIntegrationTargetResolver(client: client)
+            .resolve(repositoryPath: repository.repositoryPath)
 
         let fetchResult = await WorktreeFetchStep(localClient: client, remoteClient: remoteClient).run(
             repositoryPath: repository.repositoryPath,
-            target: initialTarget,
+            resolution: targetResolution,
             policy: request.fetchPolicy
         )
 
@@ -99,7 +92,7 @@ package struct WorktreePruneRunner: Sendable {
             evidenceArchiver: evidenceArchiver
         )
         let entryContext = WorktreePruneEntryContext(
-            target: fetchResult.target,
+            targetResolution: fetchResult.resolution,
             request: request,
             repository: removalRepository,
             mainWorktreePath: mainWorktreePath,

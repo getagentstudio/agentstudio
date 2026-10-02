@@ -5,10 +5,14 @@ extension WorktreeRemovalRunner {
     func branchAssessment(
         _ branchName: String,
         repositoryPath: URL,
-        target: WorktreeIntegrationTarget?
+        resolution: WorktreeIntegrationTargetResolution
     ) async -> BranchAssessment {
         var grade: GitBranchIntegrationGrade?
         var commit: String?
+        let target = resolution.target
+        if resolution.hasReadFailure {
+            grade = .unknown(.readFailed)
+        }
         if let target, branchName != target.branchName {
             do {
                 let report = try await client.assessBranchIntegration(
@@ -45,7 +49,7 @@ extension WorktreeRemovalRunner {
             commit: commit,
             document: WorktreeRemovalOutcomeProjector.assessmentDocument(
                 branchName: branchName,
-                target: target,
+                resolution: resolution,
                 grade: grade
             )
         )
@@ -179,7 +183,7 @@ extension WorktreeRemovalRunner {
         assessment: BranchAssessment?,
         request: WorktreeRemovalRequest,
         repository: RepositoryContext,
-        fetchTarget: WorktreeIntegrationTarget?
+        targetResolution: WorktreeIntegrationTargetResolution
     ) -> DryRunLockCheck {
         var facts: [GitLockFact] = []
         if let snapshot {
@@ -190,7 +194,12 @@ extension WorktreeRemovalRunner {
                 ))
         }
         if let branchName,
-            shouldDeleteBranch(branchName, assessment: assessment, request: request, target: fetchTarget)
+            shouldDeleteBranch(
+                branchName,
+                assessment: assessment,
+                request: request,
+                resolution: targetResolution
+            )
         {
             let referenceName = "refs/heads/\(branchName)"
             facts.append(
@@ -233,7 +242,7 @@ extension WorktreeRemovalRunner {
         let fetchStatus = input.fetchStatus
         let preflight = input.preflight
         let assessment = input.assessment
-        let fetchTarget = input.fetchTarget
+        let targetResolution = input.targetResolution
         let stop = input.stop
         let wouldRemoveLockPaths = input.wouldRemoveLockPaths
         let lockDetail =
@@ -272,7 +281,7 @@ extension WorktreeRemovalRunner {
             branchName,
             assessment: assessment,
             request: request,
-            target: fetchTarget
+            resolution: targetResolution
         ) {
             branchDisposition = .skipped
             branchDetail = Self.branchReasonName(reason)
@@ -280,7 +289,7 @@ extension WorktreeRemovalRunner {
             branchName,
             assessment: assessment,
             request: request,
-            target: fetchTarget
+            resolution: targetResolution
         ) {
             branchDisposition = .wouldDelete
             branchDetail = nil
@@ -304,10 +313,11 @@ extension WorktreeRemovalRunner {
         _ branchName: String?,
         assessment: BranchAssessment?,
         request: WorktreeRemovalRequest,
-        target: WorktreeIntegrationTarget?
+        resolution: WorktreeIntegrationTargetResolution
     ) -> WorktreeBranchRetentionReason? {
         guard let branchName else { return nil }
-        if branchName == target?.branchName { return .defaultBranch }
+        if resolution.hasUnreadableBranchName { return .defaultBranchUnverified }
+        if branchName == resolution.branchName { return .defaultBranch }
         if request.branchPolicy == .keep { return .branchPolicyKeep }
         guard request.branchPolicy == .deleteIfIntegrated else { return nil }
         switch assessment?.grade {
@@ -324,9 +334,11 @@ extension WorktreeRemovalRunner {
         _ branchName: String?,
         assessment: BranchAssessment?,
         request: WorktreeRemovalRequest,
-        target: WorktreeIntegrationTarget?
+        resolution: WorktreeIntegrationTargetResolution
     ) -> Bool {
-        guard let branchName, branchName != target?.branchName,
+        guard let branchName,
+            !resolution.hasUnreadableBranchName,
+            branchName != resolution.branchName,
             request.branchPolicy != .keep,
             assessment?.commit != nil
         else {
@@ -337,6 +349,15 @@ extension WorktreeRemovalRunner {
         return false
     }
 
+    func branchProtectionStop(
+        _ branchName: String,
+        resolution: WorktreeIntegrationTargetResolution
+    ) -> WorktreeStopDetails? {
+        if resolution.hasUnreadableBranchName { return .defaultBranchUnverified }
+        if branchName == resolution.branchName { return .defaultBranch }
+        return nil
+    }
+
     static func fetchDetail(_ status: WorktreeFetchStatus) -> String {
         WorktreeCommandLineFormatter.fetchHumanLine(status)
     }
@@ -345,6 +366,8 @@ extension WorktreeRemovalRunner {
         switch reason {
         case .defaultBranch:
             "defaultBranch"
+        case .defaultBranchUnverified:
+            "defaultBranchUnverified"
         case .branchPolicyKeep:
             "branchPolicyKeep"
         case .hasRemainingContribution:

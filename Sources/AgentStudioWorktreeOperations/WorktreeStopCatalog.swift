@@ -2,6 +2,7 @@ import Foundation
 
 package enum WorktreeStopReason: String, CaseIterable, Codable, Sendable {
     case defaultBranch
+    case defaultBranchUnverified
     case mainWorktree
     case gitLockUnidentified
     case notFound
@@ -126,6 +127,8 @@ package enum WorktreeStopCatalog {
         switch reason {
         case .defaultBranch:
             "The default branch cannot be deleted."
+        case .defaultBranchUnverified:
+            "The default branch could not be verified, so no branch was deleted."
         case .mainWorktree:
             "The main worktree cannot be removed."
         case .gitLockUnidentified:
@@ -171,6 +174,8 @@ package enum WorktreeStopCatalog {
         case .defaultBranch, .mainWorktree, .notFound, .alreadyRemoved,
             .startBranchNotFound, .unsupportedWorkingState:
             return []
+        case .defaultBranchUnverified:
+            return [command("retry", effect: "Retry after the default branch can be read.")]
         case .gitLockUnidentified:
             return [command("retry", effect: "Retry after the unidentified lock clears.")]
         case .targetIsCurrent:

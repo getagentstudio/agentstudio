@@ -180,6 +180,223 @@ struct WorktreeRemovalBranchIntegrationTests {
                 .isEmpty)
     }
 
+    @Test("a missing upstream ref cannot make force-delete remove the known default branch")
+    func missingUpstreamRefKeepsKnownDefaultBranchProtected() async throws {
+        let fixture = try await WorktreeRemovalRepository.create(named: "worktree-remove-missing-upstream")
+        defer { fixture.destroy() }
+        try await configureMissingOriginTrackingRef(in: fixture.path)
+        try await removalGit(fixture.path, "checkout", "--detach")
+
+        let branchCommitBefore = try await removalGit(fixture.path, "rev-parse", "refs/heads/main")
+        let configPath = fixture.path.appending(path: ".git/config")
+        let reflogPath = fixture.path.appending(path: ".git/logs/refs/heads/main")
+        let configBytesBefore = try Data(contentsOf: configPath)
+        let reflogBytesBefore = try Data(contentsOf: reflogPath)
+        #expect(
+            try await removalGit(
+                fixture.path, "for-each-ref", "--format=%(refname)", "refs/remotes/origin/main"
+            ).isEmpty
+        )
+        #expect(
+            !FileManager.default.fileExists(
+                atPath: fixture.path.appending(path: ".git/refs/remotes/origin/HEAD").path
+            )
+        )
+
+        let report = await WorktreeRemovalRunner(client: fixture.client).run(
+            worktreeRemovalRequest(
+                repository: fixture.path,
+                targets: ["main"],
+                callerDirectory: fixture.path,
+                branchPolicy: .deleteAtObservedCommit
+            )
+        )
+
+        guard case .refused(let entry)? = report.entries.first else {
+            Issue.record("expected the known default branch to refuse deletion, got \(report)")
+            return
+        }
+        #expect(entry.refusal.reason == .defaultBranch)
+        #expect(report.fetch == .skipped(reason: .noTarget))
+        #expect(
+            try await removalGit(
+                fixture.path, "for-each-ref", "--format=%(objectname)", "refs/heads/main"
+            ) == branchCommitBefore
+        )
+        #expect(try Data(contentsOf: configPath) == configBytesBefore)
+        #expect(try Data(contentsOf: reflogPath) == reflogBytesBefore)
+    }
+
+    @Test("a linked worktree on main is removed while its unreadable E4 branch is retained")
+    func removesLinkedDefaultWorktreeButRetainsItsBranchWhenUpstreamRefIsMissing() async throws {
+        var fixture = try await WorktreeRemovalRepository.create(named: "worktree-remove-linked-missing-upstream")
+        defer { fixture.destroy() }
+        try await configureMissingOriginTrackingRef(in: fixture.path)
+        try await removalGit(fixture.path, "checkout", "--detach")
+        let linkedMainPath = try await fixture.addExistingBranchWorktree(
+            branch: "main",
+            directoryName: "linked-main-missing-upstream"
+        )
+
+        let branchCommitBefore = try await removalGit(fixture.path, "rev-parse", "refs/heads/main")
+        let configPath = fixture.path.appending(path: ".git/config")
+        let reflogPath = fixture.path.appending(path: ".git/logs/refs/heads/main")
+        let configBytesBefore = try Data(contentsOf: configPath)
+        let reflogBytesBefore = try reflogBytes(at: reflogPath)
+
+        let report = await WorktreeRemovalRunner(client: fixture.client).run(
+            worktreeRemovalRequest(
+                repository: fixture.path,
+                targets: [linkedMainPath.path],
+                callerDirectory: fixture.path,
+                branchPolicy: .deleteAtObservedCommit
+            )
+        )
+
+        guard case .removed(let entry)? = report.entries.first,
+            let branch = entry.effects.branch
+        else {
+            Issue.record("expected linked main removal with its branch retained, got \(report)")
+            return
+        }
+        #expect(entry.effects.directory == .removed)
+        #expect(branch.disposition == .retained)
+        #expect(branch.reason == .defaultBranch)
+        #expect(branch.options.isEmpty)
+        #expect(!FileManager.default.fileExists(atPath: linkedMainPath.path))
+        #expect(
+            try await removalGit(
+                fixture.path, "for-each-ref", "--format=%(objectname)", "refs/heads/main"
+            ) == branchCommitBefore
+        )
+        #expect(try Data(contentsOf: configPath) == configBytesBefore)
+        #expect(try reflogBytes(at: reflogPath) == reflogBytesBefore)
+    }
+
+    @Test("an unreadable E4 name refuses branch-only force deletion")
+    func refusesBranchOnlyDeletionWhenDefaultBranchNameIsUnreadable() async throws {
+        let fixture = try await WorktreeRemovalRepository.create(named: "worktree-remove-unverified-default")
+        defer { fixture.destroy() }
+        let branchName = "feature/unverified-default"
+        try await removalGit(fixture.path, "branch", branchName)
+        let mainSnapshot = try #require(
+            await fixture.client.worktrees(for: fixture.path).first(where: \.isMainWorktree)
+        )
+        let identity = try await fixture.client.repositoryIdentity(for: fixture.path)
+        let client = WorktreeOperationClientStub(
+            startPath: fixture.path,
+            snapshot: mainSnapshot,
+            identity: identity,
+            baseClient: fixture.client,
+            failsDefaultTargetResolution: true
+        )
+        let branchCommitBefore = try await removalGit(fixture.path, "rev-parse", "refs/heads/\(branchName)")
+
+        let report = await WorktreeRemovalRunner(client: client).run(
+            worktreeRemovalRequest(
+                repository: fixture.path,
+                targets: [branchName],
+                callerDirectory: fixture.path,
+                branchPolicy: .deleteAtObservedCommit
+            )
+        )
+
+        guard case .refused(let entry)? = report.entries.first else {
+            Issue.record("expected an unverified-default hard stop, got \(report)")
+            return
+        }
+        #expect(entry.refusal.reason.rawValue == "defaultBranchUnverified")
+        #expect(
+            try await removalGit(
+                fixture.path, "for-each-ref", "--format=%(objectname)", "refs/heads/\(branchName)"
+            ) == branchCommitBefore
+        )
+    }
+
+    @Test("an unreadable E4 name retains a linked worktree branch even with force")
+    func retainsLinkedBranchWhenDefaultBranchNameIsUnreadable() async throws {
+        var fixture = try await WorktreeRemovalRepository.create(named: "worktree-remove-linked-unverified-default")
+        defer { fixture.destroy() }
+        let branchName = "feature/linked-unverified-default"
+        let worktree = try await fixture.addWorktree(branch: branchName)
+        let mainSnapshot = try #require(
+            await fixture.client.worktrees(for: fixture.path).first(where: \.isMainWorktree)
+        )
+        let identity = try await fixture.client.repositoryIdentity(for: fixture.path)
+        let client = WorktreeOperationClientStub(
+            startPath: fixture.path,
+            snapshot: mainSnapshot,
+            identity: identity,
+            baseClient: fixture.client,
+            failsDefaultTargetResolution: true
+        )
+        let branchCommitBefore = try await removalGit(fixture.path, "rev-parse", "refs/heads/\(branchName)")
+
+        let report = await WorktreeRemovalRunner(client: client).run(
+            worktreeRemovalRequest(
+                repository: fixture.path,
+                targets: [worktree.path],
+                callerDirectory: fixture.path,
+                branchPolicy: .deleteAtObservedCommit
+            )
+        )
+
+        guard case .removed(let entry)? = report.entries.first,
+            let branch = entry.effects.branch
+        else {
+            Issue.record("expected worktree removal with a retained branch, got \(report)")
+            return
+        }
+        #expect(entry.effects.directory == .removed)
+        #expect(branch.disposition == .retained)
+        #expect(branch.reason == .defaultBranchUnverified)
+        #expect(
+            String(bytes: try JSONEncoder().encode(branch.reason), encoding: .utf8)
+                == #"{"kind":"defaultBranchUnverified"}"#
+        )
+        #expect(
+            branch.options == [
+                "agentstudio worktree remove --repo \(fixture.path.path) \(branchName)"
+            ])
+        #expect(!FileManager.default.fileExists(atPath: worktree.path))
+        #expect(
+            try await removalGit(
+                fixture.path, "for-each-ref", "--format=%(objectname)", "refs/heads/\(branchName)"
+            ) == branchCommitBefore
+        )
+    }
+
+    @Test("a legitimately targetless repository keeps branch deletion behavior")
+    func permitsBranchDeletionWhenE4IsLegitimatelyAbsent() async throws {
+        let fixture = try await WorktreeRemovalRepository.create(named: "worktree-remove-no-target")
+        defer { fixture.destroy() }
+        let branchName = "feature/no-default-target"
+        try await removalGit(fixture.path, "branch", branchName)
+        try await removalGit(fixture.path, "checkout", "--detach")
+        try await removalGit(fixture.path, "branch", "-D", "main")
+
+        let report = await WorktreeRemovalRunner(client: fixture.client).run(
+            worktreeRemovalRequest(
+                repository: fixture.path,
+                targets: [branchName],
+                callerDirectory: fixture.path,
+                branchPolicy: .deleteAtObservedCommit
+            )
+        )
+
+        guard case .removed(let entry)? = report.entries.first else {
+            Issue.record("expected a legitimately targetless branch removal, got \(report)")
+            return
+        }
+        #expect(entry.effects.branch?.disposition == .deleted)
+        #expect(report.fetch == .skipped(reason: .noTarget))
+        #expect(
+            try await removalGit(
+                fixture.path, "for-each-ref", "--format=%(refname)", "refs/heads/\(branchName)"
+            ).isEmpty
+        )
+    }
+
     @Test("a known deletion error after directory removal fails with its typed cause")
     func reportsKnownBranchDeletionFailure() async throws {
         var fixture = try await WorktreeRemovalRepository.create(named: "worktree-remove-branch-failure")
@@ -471,5 +688,18 @@ struct WorktreeRemovalBranchIntegrationTests {
         #expect(
             try await removalGit(fixture.path, "show-ref", "--verify", "refs/heads/feature/unknown-grade").isEmpty
                 == false)
+    }
+
+    private func configureMissingOriginTrackingRef(in repository: URL) async throws {
+        let origin = repository.appending(path: "tmp/origin.git", directoryHint: .isDirectory)
+        try await removalGit(repository, "init", "--bare", origin.path)
+        try await removalGit(repository, "remote", "add", "origin", origin.path)
+        try await removalGit(repository, "config", "branch.main.remote", "origin")
+        try await removalGit(repository, "config", "branch.main.merge", "refs/heads/main")
+    }
+
+    private func reflogBytes(at path: URL) throws -> Data? {
+        guard FileManager.default.fileExists(atPath: path.path) else { return nil }
+        return try Data(contentsOf: path)
     }
 }

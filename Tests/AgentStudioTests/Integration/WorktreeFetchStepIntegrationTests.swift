@@ -19,7 +19,8 @@ struct WorktreeFetchStepIntegrationTests {
         )
 
         #expect(!FileManager.default.fileExists(atPath: fixture.originHeadPath.path))
-        let initialTarget = try #require(await resolver.resolve(repositoryPath: fixture.repository))
+        let initialResolution = await resolver.resolve(repositoryPath: fixture.repository)
+        let initialTarget = try #require(initialResolution.target)
         #expect(initialTarget.referenceName == "refs/remotes/origin/main")
         #expect(initialTarget.branchName == "main")
         #expect(initialTarget.commit == fixture.initialCommit)
@@ -27,7 +28,7 @@ struct WorktreeFetchStepIntegrationTests {
 
         let skipped = await step.run(
             repositoryPath: fixture.repository,
-            target: initialTarget,
+            resolution: initialResolution,
             policy: .skip
         )
         #expect(skipped.status == .skipped(reason: .noFetchFlag))
@@ -36,7 +37,7 @@ struct WorktreeFetchStepIntegrationTests {
 
         let fetched = await step.run(
             repositoryPath: fixture.repository,
-            target: initialTarget,
+            resolution: initialResolution,
             policy: .defaultBranch
         )
         #expect(fetched.status == .fetched(commit: fixture.remoteCommit))
@@ -56,11 +57,12 @@ struct WorktreeFetchStepIntegrationTests {
         let client = LibGit2AgentStudioGitLocalClient()
         let resolver = WorktreeIntegrationTargetResolver(client: client)
         let step = WorktreeFetchStep(localClient: client)
-        let target = try #require(await resolver.resolve(repositoryPath: repository))
+        let resolution = await resolver.resolve(repositoryPath: repository)
+        let target = try #require(resolution.target)
 
         #expect(target.referenceName == "refs/heads/main")
         #expect(target.fetchSource == .noRemote)
-        let result = await step.run(repositoryPath: repository, target: target, policy: .defaultBranch)
+        let result = await step.run(repositoryPath: repository, resolution: resolution, policy: .defaultBranch)
         #expect(result.status == .skipped(reason: .noRemote))
         #expect(result.target == target)
     }
@@ -72,11 +74,14 @@ struct WorktreeFetchStepIntegrationTests {
         let client = LibGit2AgentStudioGitLocalClient()
         let resolver = WorktreeIntegrationTargetResolver(client: client)
         let step = WorktreeFetchStep(localClient: client)
-        let target = try await resolver.resolve(repositoryPath: repository)
+        let resolution = await resolver.resolve(repositoryPath: repository)
 
-        #expect(target == nil)
-        let fetching = await step.run(repositoryPath: repository, target: target, policy: .defaultBranch)
-        let skipping = await step.run(repositoryPath: repository, target: target, policy: .skip)
+        guard case .absent = resolution else {
+            Issue.record("expected a legitimately absent E4, got \(resolution)")
+            return
+        }
+        let fetching = await step.run(repositoryPath: repository, resolution: resolution, policy: .defaultBranch)
+        let skipping = await step.run(repositoryPath: repository, resolution: resolution, policy: .skip)
         #expect(fetching.target == nil)
         #expect(fetching.status == .skipped(reason: .noTarget))
         #expect(skipping.target == nil)
@@ -107,14 +112,15 @@ struct WorktreeFetchStepIntegrationTests {
             localClient: client,
             remoteClient: SystemGitRemoteClient(configuration: .init(allowedProtocols: [.file]))
         )
-        let target = try #require(await resolver.resolve(repositoryPath: repository))
+        let resolution = await resolver.resolve(repositoryPath: repository)
+        let target = try #require(resolution.target)
         let targetCommit = try await reference("refs/remotes/company/main", in: repository)
 
         #expect(target.referenceName == "refs/remotes/company/main")
         #expect(target.branchName == "main")
         #expect(target.commit == targetCommit)
         #expect(target.fetchSource == .upstreamNotOrigin)
-        let result = await step.run(repositoryPath: repository, target: target, policy: .defaultBranch)
+        let result = await step.run(repositoryPath: repository, resolution: resolution, policy: .defaultBranch)
         #expect(result.status == .failed(reason: .upstreamNotOrigin))
         #expect(result.target == target)
         #expect(try await reference("refs/remotes/company/main", in: repository) == targetCommit)
@@ -134,10 +140,11 @@ struct WorktreeFetchStepIntegrationTests {
             localClient: client,
             remoteClient: SystemGitRemoteClient(configuration: .init(allowedProtocols: [.file]))
         )
-        let target = try #require(await resolver.resolve(repositoryPath: fixture.repository))
+        let resolution = await resolver.resolve(repositoryPath: fixture.repository)
+        let target = try #require(resolution.target)
         #expect(target.commit == fixture.initialCommit)
 
-        let result = await step.run(repositoryPath: fixture.repository, target: target, policy: .defaultBranch)
+        let result = await step.run(repositoryPath: fixture.repository, resolution: resolution, policy: .defaultBranch)
         #expect(result.target == target)
         guard case .failed(let reason, let lock, let lockResidue) = result.status else {
             Issue.record("expected a fail-soft fetch status, received \(result.status)")
@@ -166,8 +173,9 @@ struct WorktreeFetchStepIntegrationTests {
             localClient: client,
             remoteClient: SystemGitRemoteClient(configuration: .init(allowedProtocols: [.file]))
         )
-        let target = try #require(await resolver.resolve(repositoryPath: fixture.repository))
-        let result = await step.run(repositoryPath: fixture.repository, target: target, policy: .defaultBranch)
+        let resolution = await resolver.resolve(repositoryPath: fixture.repository)
+        let target = try #require(resolution.target)
+        let result = await step.run(repositoryPath: fixture.repository, resolution: resolution, policy: .defaultBranch)
 
         #expect(
             result.status
@@ -181,6 +189,68 @@ struct WorktreeFetchStepIntegrationTests {
         )
         #expect(result.target == target)
         #expect(try Data(contentsOf: lockPath) == lockBytes)
+    }
+
+    @Test("a successful fetch keeps its status and protects the branch when E4 refresh cannot be read")
+    func protectsBranchAfterSuccessfulFetchAndUnreadableRefresh() async throws {
+        let fixture = try await WorktreeFetchRepositoryFixture.create()
+        defer { fixture.destroy() }
+        try await FilesystemTestGitRepo.runGit(at: fixture.repository, args: ["checkout", "--detach"])
+        #expect(!FileManager.default.fileExists(atPath: fixture.originHeadPath.path))
+        let branchName = "feature/refresh-read-failure"
+        let linkedWorktreePath = fixture.repository.deletingLastPathComponent()
+            .appending(path: "linked-refresh-read-failure", directoryHint: .isDirectory)
+        defer { try? FileManager.default.removeItem(at: linkedWorktreePath) }
+        try await FilesystemTestGitRepo.runGit(
+            at: fixture.repository,
+            args: ["worktree", "add", "-b", branchName, linkedWorktreePath.path]
+        )
+        let branchCommitBefore = try await reference("refs/heads/\(branchName)", in: fixture.repository)
+
+        let baseClient = LibGit2AgentStudioGitLocalClient()
+        let mainSnapshot = try #require(
+            await baseClient.worktrees(for: fixture.repository).first(where: \.isMainWorktree))
+        let identity = try await baseClient.repositoryIdentity(for: fixture.repository)
+        let defaultTargetFailures = WorktreeDefaultTargetResolutionFailureSchedule(failingReadNumbers: [2])
+        let client = WorktreeOperationClientStub(
+            startPath: fixture.repository,
+            snapshot: mainSnapshot,
+            identity: identity,
+            baseClient: baseClient,
+            defaultTargetResolutionFailureSchedule: defaultTargetFailures
+        )
+        let configPath = fixture.repository.appending(path: ".git/config")
+        let reflogPath = fixture.repository.appending(path: ".git/logs/refs/heads/main")
+        let configBytesBefore = try Data(contentsOf: configPath)
+        let reflogBytesBefore = try Data(contentsOf: reflogPath)
+
+        let report = await WorktreeRemovalRunner(
+            client: client,
+            remoteClient: SystemGitRemoteClient(configuration: .init(allowedProtocols: [.file]))
+        ).run(
+            worktreeRemovalRequest(
+                repository: fixture.repository,
+                targets: [linkedWorktreePath.path],
+                callerDirectory: fixture.repository,
+                branchPolicy: .deleteAtObservedCommit,
+                fetchPolicy: .defaultBranch
+            )
+        )
+
+        guard case .removed(let entry)? = report.entries.first else {
+            Issue.record("expected linked worktree removal with its branch retained, got \(report)")
+            return
+        }
+        #expect(report.fetch == .fetched(commit: fixture.remoteCommit))
+        #expect(entry.effects.assessment == .unknown(.readFailed))
+        #expect(entry.effects.branch?.disposition == .retained)
+        #expect(entry.effects.branch?.reason == .defaultBranchUnverified)
+        #expect(!FileManager.default.fileExists(atPath: linkedWorktreePath.path))
+        #expect(try await reference("refs/heads/\(branchName)", in: fixture.repository) == branchCommitBefore)
+        #expect(try await fixture.reference("refs/remotes/origin/main") == fixture.remoteCommit)
+        #expect(try Data(contentsOf: configPath) == configBytesBefore)
+        #expect(try Data(contentsOf: reflogPath) == reflogBytesBefore)
+        #expect(await defaultTargetFailures.observedReadCount() == 2)
     }
 
     private func createInitialCommit(in repository: URL) async throws {

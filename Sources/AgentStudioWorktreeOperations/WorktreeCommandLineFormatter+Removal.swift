@@ -82,6 +82,8 @@ extension WorktreeCommandLineFormatter {
         switch reason {
         case .defaultBranch:
             "defaultBranch"
+        case .defaultBranchUnverified:
+            "defaultBranchUnverified"
         case .branchPolicyKeep:
             "branchPolicyKeep"
         case .hasRemainingContribution:
@@ -164,7 +166,7 @@ extension WorktreeCommandLineFormatter {
 
     private static func stopDetailsHumanLine(_ details: WorktreeStopDetails) -> String {
         switch details {
-        case .defaultBranch, .mainWorktree, .changesUnknown:
+        case .defaultBranch, .defaultBranchUnverified, .mainWorktree, .changesUnknown:
             ""
         case .gitLockUnidentified(let resource):
             "resource=\(lockResourceHumanLine(resource))"

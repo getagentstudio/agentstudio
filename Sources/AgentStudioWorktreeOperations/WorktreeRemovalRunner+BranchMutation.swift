@@ -7,7 +7,7 @@ extension WorktreeRemovalRunner {
             context.branchName,
             assessment: context.assessment,
             request: context.request,
-            target: context.fetchTarget
+            resolution: context.targetResolution
         ) {
             return retainBranch(reason, context: context, commit: context.assessment?.commit)
         }

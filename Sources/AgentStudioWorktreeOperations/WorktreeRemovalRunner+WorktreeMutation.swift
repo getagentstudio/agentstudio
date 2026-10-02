@@ -27,7 +27,7 @@ extension WorktreeRemovalRunner {
                         fetchStatus: fetchResult.status,
                         preflight: preflight,
                         assessment: nil,
-                        fetchTarget: fetchResult.target,
+                        targetResolution: fetchResult.resolution,
                         stop: stop,
                         wouldRemoveLockPaths: []
                     )
@@ -40,7 +40,7 @@ extension WorktreeRemovalRunner {
             assessment = await branchAssessment(
                 branchName,
                 repositoryPath: repository.repositoryPath,
-                target: fetchResult.target
+                resolution: fetchResult.resolution
             )
         } else {
             assessment = nil
@@ -56,7 +56,7 @@ extension WorktreeRemovalRunner {
                         fetchStatus: fetchResult.status,
                         preflight: preflight,
                         assessment: assessment,
-                        fetchTarget: fetchResult.target,
+                        targetResolution: fetchResult.resolution,
                         stop: stop,
                         wouldRemoveLockPaths: []
                     )
@@ -71,7 +71,7 @@ extension WorktreeRemovalRunner {
                 assessment: assessment,
                 request: request,
                 repository: repository,
-                fetchTarget: fetchResult.target
+                targetResolution: fetchResult.resolution
             )
             return plannedEntry(
                 WorktreePlanEntryRequest(
@@ -82,7 +82,7 @@ extension WorktreeRemovalRunner {
                     fetchStatus: fetchResult.status,
                     preflight: preflight,
                     assessment: assessment,
-                    fetchTarget: fetchResult.target,
+                    targetResolution: fetchResult.resolution,
                     stop: lockCheck.stop,
                     wouldRemoveLockPaths: lockCheck.wouldRemovePaths
                 )
@@ -99,7 +99,7 @@ extension WorktreeRemovalRunner {
                 preflight: preflight,
                 request: request,
                 repository: repository,
-                fetchTarget: fetchResult.target
+                targetResolution: fetchResult.resolution
             )
         )
     }
@@ -112,8 +112,7 @@ extension WorktreeRemovalRunner {
         fetchResult: WorktreeFetchStepResult
     ) async -> WorktreeRemovalEntry {
         let targetName = branchName
-        if branchName == fetchResult.target?.branchName {
-            let stop = WorktreeStopDetails.defaultBranch
+        if let stop = branchProtectionStop(branchName, resolution: fetchResult.resolution) {
             return request.dryRun
                 ? plannedEntry(
                     WorktreePlanEntryRequest(
@@ -124,7 +123,7 @@ extension WorktreeRemovalRunner {
                         fetchStatus: fetchResult.status,
                         preflight: nil,
                         assessment: nil,
-                        fetchTarget: fetchResult.target,
+                        targetResolution: fetchResult.resolution,
                         stop: stop,
                         wouldRemoveLockPaths: []
                     )
@@ -135,7 +134,7 @@ extension WorktreeRemovalRunner {
         let assessment = await branchAssessment(
             branchName,
             repositoryPath: repository.repositoryPath,
-            target: fetchResult.target
+            resolution: fetchResult.resolution
         )
         if request.dryRun {
             let lockCheck = dryRunLockCheck(
@@ -144,7 +143,7 @@ extension WorktreeRemovalRunner {
                 assessment: assessment,
                 request: request,
                 repository: repository,
-                fetchTarget: fetchResult.target
+                targetResolution: fetchResult.resolution
             )
             return plannedEntry(
                 WorktreePlanEntryRequest(
@@ -155,7 +154,7 @@ extension WorktreeRemovalRunner {
                     fetchStatus: fetchResult.status,
                     preflight: nil,
                     assessment: assessment,
-                    fetchTarget: fetchResult.target,
+                    targetResolution: fetchResult.resolution,
                     stop: lockCheck.stop,
                     wouldRemoveLockPaths: lockCheck.wouldRemovePaths
                 )
@@ -167,7 +166,7 @@ extension WorktreeRemovalRunner {
                 branchName: branchName,
                 request: request,
                 repositoryPath: repository.repositoryPath,
-                fetchTarget: fetchResult.target,
+                targetResolution: fetchResult.resolution,
                 assessment: assessment,
                 completion: WorktreeRemovalCompletion(
                     target: targetName,
@@ -380,7 +379,7 @@ extension WorktreeRemovalRunner {
                 branchName: branchName,
                 request: context.request,
                 repositoryPath: context.repository.repositoryPath,
-                fetchTarget: context.fetchTarget,
+                targetResolution: context.targetResolution,
                 assessment: context.assessment,
                 completion: WorktreeRemovalCompletion(
                     target: context.targetName,

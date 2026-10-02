@@ -25,6 +25,7 @@ package enum WorktreeBranchDisposition: String, Codable, Sendable {
 
 package enum WorktreeBranchRetentionReason: Sendable, Equatable {
     case defaultBranch
+    case defaultBranchUnverified
     case branchPolicyKeep
     case hasRemainingContribution
     case unknownAssessment
@@ -41,6 +42,7 @@ extension WorktreeBranchRetentionReason: Codable {
 
     private enum Kind: String, Codable {
         case defaultBranch
+        case defaultBranchUnverified
         case branchPolicyKeep
         case hasRemainingContribution
         case unknownAssessment
@@ -54,6 +56,8 @@ extension WorktreeBranchRetentionReason: Codable {
         switch try container.decode(Kind.self, forKey: .kind) {
         case .defaultBranch:
             self = .defaultBranch
+        case .defaultBranchUnverified:
+            self = .defaultBranchUnverified
         case .branchPolicyKeep:
             self = .branchPolicyKeep
         case .hasRemainingContribution:
@@ -74,6 +78,8 @@ extension WorktreeBranchRetentionReason: Codable {
         switch self {
         case .defaultBranch:
             try container.encode(Kind.defaultBranch, forKey: .kind)
+        case .defaultBranchUnverified:
+            try container.encode(Kind.defaultBranchUnverified, forKey: .kind)
         case .branchPolicyKeep:
             try container.encode(Kind.branchPolicyKeep, forKey: .kind)
         case .hasRemainingContribution:

@@ -6,12 +6,14 @@ package enum WorktreeFetchPolicy: Sendable, Equatable {
     case skip
 }
 
-package struct WorktreeFetchStepResult: Sendable, Equatable {
-    package let target: WorktreeIntegrationTarget?
+package struct WorktreeFetchStepResult: Sendable {
+    package let resolution: WorktreeIntegrationTargetResolution
     package let status: WorktreeFetchStatus
 
-    package init(target: WorktreeIntegrationTarget?, status: WorktreeFetchStatus) {
-        self.target = target
+    package var target: WorktreeIntegrationTarget? { resolution.target }
+
+    package init(resolution: WorktreeIntegrationTargetResolution, status: WorktreeFetchStatus) {
+        self.resolution = resolution
         self.status = status
     }
 }
@@ -33,22 +35,22 @@ package struct WorktreeFetchStep: Sendable {
     @concurrent
     package func run(
         repositoryPath: URL,
-        target: WorktreeIntegrationTarget?,
+        resolution: WorktreeIntegrationTargetResolution,
         policy: WorktreeFetchPolicy
     ) async -> WorktreeFetchStepResult {
-        guard let target else {
-            return WorktreeFetchStepResult(target: nil, status: .skipped(reason: .noTarget))
+        guard case .resolved(let target) = resolution else {
+            return WorktreeFetchStepResult(resolution: resolution, status: .skipped(reason: .noTarget))
         }
         guard policy == .defaultBranch else {
-            return WorktreeFetchStepResult(target: target, status: .skipped(reason: .noFetchFlag))
+            return WorktreeFetchStepResult(resolution: resolution, status: .skipped(reason: .noFetchFlag))
         }
 
         switch target.fetchSource {
         case .noRemote:
-            return WorktreeFetchStepResult(target: target, status: .skipped(reason: .noRemote))
+            return WorktreeFetchStepResult(resolution: resolution, status: .skipped(reason: .noRemote))
         case .upstreamNotOrigin:
             return WorktreeFetchStepResult(
-                target: target,
+                resolution: resolution,
                 status: .failed(reason: .upstreamNotOrigin)
             )
         case .origin(let branchName):
@@ -59,15 +61,15 @@ package struct WorktreeFetchStep: Sendable {
                         remoteName: "origin",
                         branchName: branchName
                     ))
-                let refreshedTarget = try? await targetResolver.resolve(repositoryPath: repositoryPath)
-                let fetchedCommit = refreshedTarget?.commit ?? fetched.fetchedCommit ?? target.commit
+                let refreshedResolution = await targetResolver.resolve(repositoryPath: repositoryPath)
+                let fetchedCommit = refreshedResolution.target?.commit ?? fetched.fetchedCommit ?? target.commit
                 return WorktreeFetchStepResult(
-                    target: refreshedTarget,
+                    resolution: refreshedResolution,
                     status: .fetched(commit: fetchedCommit)
                 )
             } catch {
                 return WorktreeFetchStepResult(
-                    target: target,
+                    resolution: resolution,
                     status: WorktreeFetchFailureMapper.status(for: error)
                 )
             }

@@ -4,6 +4,18 @@ import Foundation
 package enum WorktreeRemovalOutcomeProjector {
     package static func assessmentDocument(
         branchName: String?,
+        resolution: WorktreeIntegrationTargetResolution,
+        grade: GitBranchIntegrationGrade?
+    ) -> WorktreeIntegrationAssessmentDocument? {
+        if resolution.hasReadFailure {
+            guard branchName != nil else { return nil }
+            return .unknown(.readFailed)
+        }
+        return assessmentDocument(branchName: branchName, target: resolution.target, grade: grade)
+    }
+
+    package static func assessmentDocument(
+        branchName: String?,
         target: WorktreeIntegrationTarget?,
         grade: GitBranchIntegrationGrade?
     ) -> WorktreeIntegrationAssessmentDocument? {
@@ -81,6 +93,8 @@ package enum WorktreeRemovalOutcomeProjector {
         return switch reason {
         case .defaultBranch, .branchPolicyKeep:
             []
+        case .defaultBranchUnverified:
+            ["agentstudio worktree remove --repo \(repositoryArgument) \(branchArgument)"]
         case .hasRemainingContribution, .unknownAssessment:
             ["agentstudio worktree remove --repo \(repositoryArgument) \(branchArgument) -D"]
         case .movedSinceAssessment, .checkoutUnknown:

@@ -25,6 +25,11 @@ struct WorktreeStopCatalogTests {
     private var expectedEntries: [ExpectedEntry] {
         [
             ExpectedEntry(reason: .defaultBranch, message: "The default branch cannot be deleted.", options: []),
+            ExpectedEntry(
+                reason: .defaultBranchUnverified,
+                message: "The default branch could not be verified, so no branch was deleted.",
+                options: [command("retry", effect: "Retry after the default branch can be read.")]
+            ),
             ExpectedEntry(reason: .mainWorktree, message: "The main worktree cannot be removed.", options: []),
             ExpectedEntry(
                 reason: .gitLockUnidentified,
@@ -204,6 +209,8 @@ struct WorktreeStopCatalogTests {
         switch reason {
         case .defaultBranch:
             .defaultBranch
+        case .defaultBranchUnverified:
+            .defaultBranchUnverified
         case .mainWorktree:
             .mainWorktree
         case .gitLockUnidentified:

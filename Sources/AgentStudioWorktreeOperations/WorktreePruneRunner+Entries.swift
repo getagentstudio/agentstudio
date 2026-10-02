@@ -2,7 +2,7 @@ import AgentStudioGit
 import Foundation
 
 struct WorktreePruneEntryContext: Sendable {
-    let target: WorktreeIntegrationTarget?
+    let targetResolution: WorktreeIntegrationTargetResolution
     let request: WorktreePruneRequest
     let repository: WorktreeRemovalRunner.RepositoryContext
     let mainWorktreePath: URL
@@ -18,7 +18,7 @@ extension WorktreePruneRunner {
         let worktreePath = snapshot.canonicalPath.standardizedFileURL
         let branchName = WorktreeListingProjector.branchName(in: snapshot.head)
 
-        if let branchName, branchName == context.target?.branchName {
+        if let branchName, branchName == context.targetResolution.branchName {
             return skippedEntry(
                 target: worktreePath.path,
                 reason: .defaultBranch,
@@ -54,7 +54,7 @@ extension WorktreePruneRunner {
             assessment: removalAssessment,
             request: removalRequest,
             repository: context.repository,
-            fetchTarget: context.target
+            targetResolution: context.targetResolution
         )
         let stops = [preflight.stop, preflight.archiveDestinationStop, lockCheck.stop].compactMap { $0 }
         if let stop = firstStopInLifecycleOrder(stops) {
@@ -95,7 +95,7 @@ extension WorktreePruneRunner {
         guard let assessment else {
             return skippedEntry(
                 target: worktreePath.path,
-                reason: .assessmentUnknown(context.target == nil ? .noTarget : .readFailed),
+                reason: .assessmentUnknown(context.targetResolution.hasReadFailure ? .readFailed : .noTarget),
                 repositoryPath: context.repository.repositoryPath,
                 worktreePath: worktreePath
             )
@@ -299,7 +299,7 @@ extension WorktreePruneRunner {
             return []
         case .gitLockUnidentified:
             return [retry]
-        case .targetIsCurrent, .worktreeLocked:
+        case .targetIsCurrent, .worktreeLocked, .defaultBranchUnverified:
             return [retry]
         case .dirty:
             return [removeCommand(repositoryPath, worktreePath, flags: ["-f"])]

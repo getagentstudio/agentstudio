@@ -38,6 +38,38 @@ package struct WorktreeIntegrationTarget: Sendable, Equatable {
     }
 }
 
+package enum WorktreeIntegrationTargetResolution: Sendable {
+    case resolved(WorktreeIntegrationTarget)
+    case absent
+    case unreadable(branchName: String?, cause: GitDataPlaneError)
+
+    package var target: WorktreeIntegrationTarget? {
+        guard case .resolved(let target) = self else { return nil }
+        return target
+    }
+
+    package var branchName: String? {
+        switch self {
+        case .resolved(let target):
+            target.branchName
+        case .unreadable(let branchName, _):
+            branchName
+        case .absent:
+            nil
+        }
+    }
+
+    package var hasUnreadableBranchName: Bool {
+        if case .unreadable(branchName: nil, _) = self { return true }
+        return false
+    }
+
+    package var hasReadFailure: Bool {
+        if case .unreadable = self { return true }
+        return false
+    }
+}
+
 package struct WorktreeIntegrationTargetResolver: Sendable {
     private static let originTrackingPrefix = "refs/remotes/origin/"
 
@@ -103,29 +135,43 @@ package struct WorktreeIntegrationTargetResolver: Sendable {
     }
 
     @concurrent
-    package func resolve(repositoryPath: URL) async throws(GitDataPlaneError) -> WorktreeIntegrationTarget? {
-        let originHead = try await client.resolveReviewDefaultTarget(for: repositoryPath)
+    package func resolve(repositoryPath: URL) async -> WorktreeIntegrationTargetResolution {
+        let originHead: GitReviewComparisonBranchTarget?
+        do {
+            originHead = try await client.resolveReviewDefaultTarget(for: repositoryPath)
+        } catch {
+            return .unreadable(branchName: nil, cause: error)
+        }
+
         let targetPlan: WorktreeIntegrationTargetPlan?
         if let originHeadPlan = Self.plan(originHead: originHead, branches: []) {
             targetPlan = originHeadPlan
         } else {
-            let branches = try await client.branches(for: repositoryPath)
+            let branches: [GitBranchSnapshot]
+            do {
+                branches = try await client.branches(for: repositoryPath)
+            } catch {
+                return .unreadable(branchName: nil, cause: error)
+            }
             targetPlan = Self.plan(originHead: originHead, branches: branches)
         }
-        guard let targetPlan else {
-            return nil
-        }
+        guard let targetPlan else { return .absent }
 
-        let revision = try await client.resolveRevision(
-            GitRevisionResolutionRequest(
-                repositoryPath: repositoryPath,
-                target: .named(targetPlan.referenceName)
-            ))
-        return WorktreeIntegrationTarget(
-            referenceName: targetPlan.referenceName,
-            branchName: targetPlan.branchName,
-            commit: revision.oid,
-            fetchSource: targetPlan.fetchSource
-        )
+        do {
+            let revision = try await client.resolveRevision(
+                GitRevisionResolutionRequest(
+                    repositoryPath: repositoryPath,
+                    target: .named(targetPlan.referenceName)
+                ))
+            return .resolved(
+                WorktreeIntegrationTarget(
+                    referenceName: targetPlan.referenceName,
+                    branchName: targetPlan.branchName,
+                    commit: revision.oid,
+                    fetchSource: targetPlan.fetchSource
+                ))
+        } catch {
+            return .unreadable(branchName: targetPlan.branchName, cause: error)
+        }
     }
 }
