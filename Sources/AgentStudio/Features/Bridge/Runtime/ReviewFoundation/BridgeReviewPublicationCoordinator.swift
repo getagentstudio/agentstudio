@@ -268,17 +268,36 @@ final class BridgeReviewPublicationCoordinator {
     ) -> Bool {
         guard !isClosed,
             let pendingPublication,
-            pendingPublication.publication.productAdmission.matches(productAdmission)
+            Self.pendingPublicationCanBeSuperseded(
+                producerAdmission: pendingPublication.publication.productAdmission,
+                retirementAdmission: productAdmission
+            )
         else { return false }
-        return productAdmission.withValidAdmission {
+        let pendingPublicationId = pendingPublication.publication.publicationId
+        return pendingPublication.publication.productAdmission.withValidAdmission {
             guard !isClosed,
-                let pendingPublication = self.pendingPublication,
-                pendingPublication.publication.productAdmission.matches(productAdmission)
+                let currentPendingPublication = self.pendingPublication,
+                currentPendingPublication.publication.publicationId == pendingPublicationId,
+                Self.pendingPublicationCanBeSuperseded(
+                    producerAdmission: currentPendingPublication.publication.productAdmission,
+                    retirementAdmission: productAdmission
+                )
             else { return false }
-            releasePublication(pendingPublication.publication)
+            releasePublication(currentPendingPublication.publication)
             self.pendingPublication = nil
             return true
         } ?? false
+    }
+
+    private static func pendingPublicationCanBeSuperseded(
+        producerAdmission: BridgeProductAdmissionContext,
+        retirementAdmission: BridgeProductAdmissionContext
+    ) -> Bool {
+        // Pane retirement may not carry the staged E1 token. The producer's own admission
+        // validates that E1 here; SessionOwner closes it before publishing a successor.
+        producerAdmission.matches(retirementAdmission)
+            || (retirementAdmission.isPaneOnly
+                && producerAdmission.hasSamePaneAuthority(as: retirementAdmission))
     }
 
     /// Commits native B and presents pane B without suspension.
