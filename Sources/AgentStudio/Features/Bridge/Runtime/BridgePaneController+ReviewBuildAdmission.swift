@@ -11,6 +11,12 @@ extension BridgePaneController {
                 || paneState.diff.status == .error,
             paneState.diff.packageMetadata == nil
         else { return }
+        if pendingExplicitReviewCommand != nil {
+            pendingReviewPackageBuildReasons.insert(reason)
+            return
+        }
+        guard !hasResumingExplicitReviewCommand else { return }
+        guard activeReviewPackageLoad == nil else { return }
         let hiddenInput = BridgePaneReviewBuildAdmissionInput.initialIntake
         guard isReviewShownByPage else {
             pendingReviewPackageBuildReasons.insert(reason)
@@ -54,6 +60,8 @@ extension BridgePaneController {
         admissionInput: BridgePaneReviewBuildAdmissionInput? = nil
     ) {
         guard !pendingReviewPackageBuildReasons.isEmpty else { return }
+        guard !hasPendingOrResumingExplicitReviewCommand else { return }
+        guard activeReviewPackageLoad == nil else { return }
         let hiddenInput = admissionInput ?? .retainedPackageBuild
         guard isReviewShownByPage else {
             recordReviewBuildAdmissionFact(

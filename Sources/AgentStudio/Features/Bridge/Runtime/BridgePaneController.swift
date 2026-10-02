@@ -94,6 +94,9 @@ package final class BridgePaneController {
     var retiringReviewRefreshTaskById: [UUID: Task<Void, Never>] = [:]
     var surfaceSelectionTransitionTail: Task<Bool, Never>?
     var pendingReviewPackageBuildReasons: Set<BridgeReviewPackageBuildReason> = []
+    @ObservationIgnored var pendingExplicitReviewCommand: BridgePendingExplicitReviewCommand?
+    @ObservationIgnored var resumingExplicitReviewCommandsById: [UUID: BridgePendingExplicitReviewCommand] = [:]
+    @ObservationIgnored var resumingExplicitReviewCommandTasksById: [UUID: Task<Void, Never>] = [:]
     var activeViewerModeSignalState = BridgeActiveViewerModeSignalState()
     var surfaceSelectionAuthority = BridgePaneSurfaceSelectionAuthority()
 
@@ -425,7 +428,9 @@ package final class BridgePaneController {
                 hasPublishedProductSessionBootstrap || reason == .workerReplacement
                     || snapshot.installation?.gate.diagnosticSnapshot.isOpen == false
             else { return nil }
-            return productSessionOwner.closeActiveInstallation()
+            let predecessor = productSessionOwner.closeActiveInstallation()
+            retirePendingExplicitReviewCommand()
+            return predecessor
         }
         readyMessageHandler.onProductBootstrapRequest = { [weak self] requestId, reason, predecessor in
             guard let self, latestProductSessionBootstrapRequestId == requestId else { return }
@@ -549,6 +554,7 @@ package final class BridgePaneController {
         guard canReloadWebView else { return false }
         latestProductSessionBootstrapRequestId = nil
         _ = productSessionOwner.closeActiveInstallation()
+        retirePendingExplicitReviewCommand()
         _ = page.reload()
         return true
     }
@@ -563,6 +569,7 @@ package final class BridgePaneController {
             isTeardownStarted = true
             refreshAdmissionCoordinator.close()
             productAdmissionGate.close()
+            retirePendingExplicitReviewCommand()
             surfaceSelectionAuthority.invalidate()
             let reviewPublicationCloseDrain = reviewPublicationCoordinator.close()
             let reviewPublicationCleanupSnapshot = reviewPublicationCoordinator.diagnosticSnapshot
@@ -572,6 +579,7 @@ package final class BridgePaneController {
             let reviewRefreshTasks =
                 Array(retiringReviewRefreshTaskById.values)
                 + [activeReviewRefreshTask].compactMap { $0 }
+                + Array(resumingExplicitReviewCommandTasksById.values)
             for task in reviewRefreshTasks { task.cancel() }
             activeReviewRefreshTask = nil
             activeReviewRefreshTaskId = nil

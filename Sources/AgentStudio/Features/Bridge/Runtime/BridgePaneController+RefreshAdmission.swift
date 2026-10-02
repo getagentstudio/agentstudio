@@ -148,6 +148,7 @@ extension BridgePaneController {
     }
 
     private func scheduleReviewCatchUpIfPossible() {
+        guard !hasPendingOrResumingExplicitReviewCommand else { return }
         guard let dirtyFact = refreshAdmissionCoordinator.diagnosticSnapshot.dirtyFact,
             dirtyFact.requiresReviewRefresh
         else { return }
@@ -271,7 +272,9 @@ extension BridgePaneController {
         _ reservation: BridgePaneRefreshCatchUpReservation
     ) async -> BridgePaneRefreshCatchUpOutcome {
         guard reservation.foregroundWorkAdmission.withValidAdmission({ true }) == true,
-            let productAdmission = productAdmissionGate.acquire()
+            let paneAdmission = productAdmissionGate.acquire(),
+            let installation = productSessionOwner.installationFenceProjection.snapshot.installation,
+            let productAdmission = paneAdmission.withInstallation(installation.gate)
         else { return .stale }
         return await refreshCurrentReviewPackage(
             reservation: reservation,

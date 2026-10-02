@@ -7,6 +7,163 @@ import Testing
 @MainActor
 @Suite("Canonical Review across installation replacement", .serialized)
 struct BridgeReviewInstallationAdmissionTests {
+    @Test("the committing E1 admission can replay and display its publication")
+    func committingInstallationAdmissionCanReplayAndDisplayPublication() async throws {
+        let paneAdmission = try BridgeProductAdmissionTestContext.make()
+        let installationGate = BridgeProductAdmissionGate()
+        let installationAdmission = try #require(
+            paneAdmission.context.withInstallation(installationGate)
+        )
+        let coordinator = BridgeReviewPublicationCoordinator()
+        let prepared = try await makeReviewPreparedPublication(
+            suffix: "installation-bound-replay",
+            reviewGeneration: 1
+        )
+        let committed = try commitObserved(
+            prepared,
+            in: coordinator,
+            productAdmission: installationAdmission
+        )
+
+        #expect(
+            coordinator.committedPublicationForReplay(productAdmission: installationAdmission)
+                == committed
+        )
+        #expect(
+            coordinator.isCurrentCanonicalPublication(
+                publicationId: committed.publicationId,
+                productAdmission: installationAdmission
+            )
+        )
+        #expect(
+            coordinator.activeContentHandle(
+                handleId: prepared.contentHandles[0].handleId,
+                requestedGeneration: prepared.package.reviewGeneration,
+                productAdmission: installationAdmission
+            ) == prepared.contentHandles[0]
+        )
+        #expect(
+            coordinator.admitDisplayInstallation(
+                expectedDisplayedPublicationId: nil,
+                candidatePublicationId: committed.publicationId,
+                workerInstanceId: "installation-bound-worker",
+                productAdmission: installationAdmission
+            ) == .admitted
+        )
+        #expect(
+            coordinator.recordDisplayedApplication(
+                publicationId: committed.publicationId,
+                workerInstanceId: "installation-bound-worker",
+                productAdmission: installationAdmission
+            ) == .advanced
+        )
+        #expect(
+            coordinator.acknowledgedDisplayedPublication(productAdmission: installationAdmission)
+                == committed
+        )
+        let publicationIdentity = try BridgeProductReviewAnnotationPublicationIdentity(
+            packageId: committed.package.packageId,
+            publicationId: committed.publicationId,
+            reviewGeneration: committed.package.reviewGeneration.rawValue,
+            revision: committed.package.revision,
+            sourceIdentity: committed.package.query.queryId
+        )
+        #expect(
+            coordinator.retainedPublication(
+                matching: publicationIdentity,
+                productAdmission: installationAdmission
+            ) == committed
+        )
+        let closeDrain = coordinator.close()
+        #expect(closeDrain.artifactPins.isEmpty)
+        #expect(closeDrain.priorReleaseTask == nil)
+        installationGate.close()
+        paneAdmission.close()
+    }
+
+    @Test("pane-only and foreign E1 authority cannot read an E1-bound publication")
+    func foreignOrPaneAuthorityCannotReadInstallationBoundPublication() async throws {
+        let paneAdmission = try BridgeProductAdmissionTestContext.make()
+        let installationGate = BridgeProductAdmissionGate()
+        let installationAdmission = try #require(
+            paneAdmission.context.withInstallation(installationGate)
+        )
+        let foreignInstallationGate = BridgeProductAdmissionGate()
+        let foreignInstallationAdmission = try #require(
+            paneAdmission.context.withInstallation(foreignInstallationGate)
+        )
+        let coordinator = BridgeReviewPublicationCoordinator()
+        let prepared = try await makeReviewPreparedPublication(
+            suffix: "installation-bound-isolation",
+            reviewGeneration: 1
+        )
+        let committed = try commitObserved(
+            prepared,
+            in: coordinator,
+            productAdmission: installationAdmission
+        )
+        let publicationIdentity = try BridgeProductReviewAnnotationPublicationIdentity(
+            packageId: committed.package.packageId,
+            publicationId: committed.publicationId,
+            reviewGeneration: committed.package.reviewGeneration.rawValue,
+            revision: committed.package.revision,
+            sourceIdentity: committed.package.query.queryId
+        )
+
+        #expect(
+            coordinator.committedPublicationForReplay(productAdmission: foreignInstallationAdmission) == nil
+        )
+        #expect(
+            coordinator.committedPublicationForReplay(productAdmission: paneAdmission.context) == nil
+        )
+        #expect(
+            !coordinator.isCurrentCanonicalPublication(
+                publicationId: committed.publicationId,
+                productAdmission: foreignInstallationAdmission
+            )
+        )
+        #expect(
+            !coordinator.isCurrentCanonicalPublication(
+                publicationId: committed.publicationId,
+                productAdmission: paneAdmission.context
+            )
+        )
+        #expect(
+            coordinator.retainedPublication(
+                matching: publicationIdentity,
+                productAdmission: foreignInstallationAdmission
+            ) == nil
+        )
+        #expect(
+            coordinator.retainedPublication(
+                matching: publicationIdentity,
+                productAdmission: paneAdmission.context
+            ) == nil
+        )
+        #expect(
+            coordinator.activeContentHandle(
+                handleId: prepared.contentHandles[0].handleId,
+                requestedGeneration: prepared.package.reviewGeneration,
+                productAdmission: foreignInstallationAdmission
+            ) == nil
+        )
+        #expect(
+            coordinator.admitDisplayInstallation(
+                expectedDisplayedPublicationId: nil,
+                candidatePublicationId: committed.publicationId,
+                workerInstanceId: "foreign-installation-worker",
+                productAdmission: foreignInstallationAdmission
+            ) == .rejected
+        )
+
+        let closeDrain = coordinator.close()
+        #expect(closeDrain.artifactPins.isEmpty)
+        #expect(closeDrain.priorReleaseTask == nil)
+        installationGate.close()
+        foreignInstallationGate.close()
+        paneAdmission.close()
+    }
+
     @Test("B reads and installs pane publication while closed A and foreign pane are refused")
     func canonicalPublicationSurvivesInstallationReplacement() async throws {
         let paneGate = BridgeProductAdmissionGate()

@@ -111,9 +111,11 @@ extension BridgePaneController {
             )
         }
         if didAcceptSequence, activeViewerModeSignalState.acceptedMode == .review {
-            scheduleInitialReviewPackageLoadIfPossible(reason: .initialIntake)
-            scheduleRetainedReviewPackageBuildIfPossible()
-            scheduleWorktreeProductCatchUpIfPossible()
+            if !resumePendingExplicitReviewCommandIfPossible() {
+                scheduleInitialReviewPackageLoadIfPossible(reason: .initialIntake)
+                scheduleRetainedReviewPackageBuildIfPossible()
+                scheduleWorktreeProductCatchUpIfPossible()
+            }
         }
     }
 
