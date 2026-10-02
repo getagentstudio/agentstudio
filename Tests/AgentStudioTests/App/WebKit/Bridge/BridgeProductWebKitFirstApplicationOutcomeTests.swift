@@ -23,7 +23,8 @@ struct BridgeProductWebKitFirstApplicationOutcomeTests {
     func unrelatedFileFailureDoesNotEndReviewWait() async throws {
         let recorder = BridgeProductWebKitFirstApplicationRecorder()
         recorder.observe(sample(phase: "metadata_producer_failed", protocolName: "worktree-file"))
-        let receipt = BridgeProductWebKitCarrierApplicationReceipt(accepted: true, publicationId: UUIDv7.generate())
+        let receipt = BridgeProductWebKitCarrierApplicationReceipt(
+            applicationResult: .advanced, publicationId: UUIDv7.generate())
         recorder.record(.receipt(receipt))
         #expect(try await recorder.wait() == .receipt(receipt))
     }
@@ -31,7 +32,8 @@ struct BridgeProductWebKitFirstApplicationOutcomeTests {
     @Test
     func firstReceiptWinsOverLaterRecoveryFailuresAndReceipts() async throws {
         let recorder = BridgeProductWebKitFirstApplicationRecorder()
-        let receipt = BridgeProductWebKitCarrierApplicationReceipt(accepted: true, publicationId: UUIDv7.generate())
+        let receipt = BridgeProductWebKitCarrierApplicationReceipt(
+            applicationResult: .advanced, publicationId: UUIDv7.generate())
         recorder.record(.receipt(receipt))
         recorder.observe(sample(phase: "review_refresh_candidate_superseded", protocolName: "review"))
         recorder.record(.receipt(receipt))
