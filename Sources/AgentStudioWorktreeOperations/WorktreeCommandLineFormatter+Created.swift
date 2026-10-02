@@ -1,3 +1,4 @@
+import AgentStudioGit
 import Foundation
 
 extension WorktreeCommandLineFormatter {
