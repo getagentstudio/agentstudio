@@ -5,15 +5,18 @@ package struct WorktreeOperationRunner {
     private let client: any AgentStudioGitLocalClient
     private let defaultStartPointResolver: any WorktreeDefaultStartPointResolving
     private let remoteClient: any AgentStudioGitRemoteClient
+    private let staleLockAssessment: WorktreeStaleLockAssessment
 
     package init(
         client: any AgentStudioGitLocalClient = LibGit2AgentStudioGitLocalClient(),
         defaultStartPointResolver: any WorktreeDefaultStartPointResolving = SDKWorktreeDefaultStartPointResolver(),
-        remoteClient: any AgentStudioGitRemoteClient = SystemGitRemoteClient()
+        remoteClient: any AgentStudioGitRemoteClient = SystemGitRemoteClient(),
+        staleLockAssessment: WorktreeStaleLockAssessment = WorktreeStaleLockAssessment()
     ) {
         self.client = client
         self.defaultStartPointResolver = defaultStartPointResolver
         self.remoteClient = remoteClient
+        self.staleLockAssessment = staleLockAssessment
     }
 
     package func run(_ request: WorktreeOperationRequest) async -> WorktreeOperationOutcome {
@@ -32,7 +35,11 @@ package struct WorktreeOperationRunner {
                 fetchPolicy: fetchPolicy
             )
         case .remove(let removalRequest):
-            let report = await WorktreeRemovalRunner(client: client, remoteClient: remoteClient).run(removalRequest)
+            let report = await WorktreeRemovalRunner(
+                client: client,
+                remoteClient: remoteClient,
+                staleLockAssessment: staleLockAssessment
+            ).run(removalRequest)
             if let failure = report.fetchingReadFailure {
                 return .fetchingReadFailure(failure)
             }
@@ -166,6 +173,7 @@ package struct WorktreeOperationRunner {
         case .found(let discovered):
             return await list(
                 repositoryPath: discovered.repositoryPath,
+                commonDirectory: discovered.identity.canonicalCommonDirectory,
                 callerDirectory: callerDirectory,
                 targets: targets,
                 fetchPolicy: fetchPolicy
@@ -175,6 +183,7 @@ package struct WorktreeOperationRunner {
 
     private func list(
         repositoryPath: URL,
+        commonDirectory: URL,
         callerDirectory: URL?,
         targets: [String],
         fetchPolicy: WorktreeFetchPolicy
@@ -192,6 +201,7 @@ package struct WorktreeOperationRunner {
             let snapshots = try await client.worktrees(for: repositoryPath)
             let summary = await listingSummary(
                 repositoryPath: repositoryPath,
+                commonDirectory: commonDirectory,
                 callerDirectory: callerDirectory,
                 targets: targets,
                 fetchResult: fetchResult,
@@ -205,6 +215,7 @@ package struct WorktreeOperationRunner {
 
     private func listingSummary(
         repositoryPath: URL,
+        commonDirectory: URL,
         callerDirectory: URL?,
         targets: [String],
         fetchResult: WorktreeFetchStepResult,
@@ -224,6 +235,7 @@ package struct WorktreeOperationRunner {
         let rows = await listingRows(
             selectedSnapshots,
             repositoryPath: repositoryPath,
+            commonDirectory: commonDirectory,
             callerDirectory: callerDirectory,
             targetResolution: fetchResult.resolution,
             gradesByBranch: gradesByBranch
@@ -274,6 +286,7 @@ package struct WorktreeOperationRunner {
     private func listingRows(
         _ snapshots: [GitWorktreeSnapshot],
         repositoryPath: URL,
+        commonDirectory: URL,
         callerDirectory: URL?,
         targetResolution: WorktreeIntegrationTargetResolution,
         gradesByBranch: [String: GitBranchIntegrationGrade]
@@ -289,6 +302,14 @@ package struct WorktreeOperationRunner {
             )
             let evidence = await evidenceScanner.scan(worktreePath: snapshot.canonicalPath)
             let branch = WorktreeListingProjector.branchName(in: snapshot.head)
+            let integrationGrade = branch.flatMap { gradesByBranch[$0] }
+            let lockObservations = await listingLockObservations(
+                snapshot: snapshot,
+                commonDirectory: commonDirectory,
+                branch: branch,
+                targetResolution: targetResolution,
+                integrationGrade: integrationGrade
+            )
             rows.append(
                 WorktreeListingProjector.listing(
                     WorktreeListingProjectionInput(
@@ -296,13 +317,53 @@ package struct WorktreeOperationRunner {
                         repositoryPath: repositoryPath,
                         callerDirectory: callerDirectory,
                         targetResolution: targetResolution,
-                        integrationGrade: branch.flatMap { gradesByBranch[$0] },
+                        integrationGrade: integrationGrade,
                         status: status,
-                        evidence: evidence
+                        evidence: evidence,
+                        lockObservations: lockObservations
                     )
                 ))
         }
         return rows
+    }
+
+    @concurrent
+    private func listingLockObservations(
+        snapshot: GitWorktreeSnapshot,
+        commonDirectory: URL,
+        branch: String?,
+        targetResolution: WorktreeIntegrationTargetResolution,
+        integrationGrade: GitBranchIntegrationGrade?
+    ) async -> [WorktreeLockObservation] {
+        guard !snapshot.isMainWorktree else { return [] }
+        var facts = [
+            GitLockFact(
+                path: URL(fileURLWithPath: snapshot.indexPath.path + ".lock"),
+                resource: .index(worktreePath: snapshot.canonicalPath)
+            )
+        ]
+        if let branch,
+            !targetResolution.hasUnreadableBranchName,
+            branch != targetResolution.branchName,
+            case .integrated? = integrationGrade
+        {
+            let referenceName = "refs/heads/\(branch)"
+            facts.append(
+                GitLockFact(
+                    path: commonDirectory.appending(path: "\(referenceName).lock"),
+                    resource: .reference(name: referenceName)
+                ))
+            facts.append(GitLockFact(path: commonDirectory.appending(path: "packed-refs.lock"), resource: .packedRefs))
+        }
+
+        return facts.compactMap { fact in
+            guard let attributes = try? FileManager.default.attributesOfItem(atPath: fact.path.path),
+                attributes[.type] as? FileAttributeType == .typeRegular
+            else {
+                return nil
+            }
+            return staleLockAssessment.inspect(fact).observation
+        }
     }
 
     private func branchNames(

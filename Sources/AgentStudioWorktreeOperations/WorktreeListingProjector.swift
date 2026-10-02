@@ -9,6 +9,7 @@ package struct WorktreeListingProjectionInput: Sendable {
     package let integrationGrade: GitBranchIntegrationGrade?
     package let status: GitStatusFactsRead?
     package let evidence: WorktreeTmpEvidenceScanResult
+    package let lockObservations: [WorktreeLockObservation]
 
     package init(
         snapshot: GitWorktreeSnapshot,
@@ -17,7 +18,8 @@ package struct WorktreeListingProjectionInput: Sendable {
         targetResolution: WorktreeIntegrationTargetResolution,
         integrationGrade: GitBranchIntegrationGrade?,
         status: GitStatusFactsRead?,
-        evidence: WorktreeTmpEvidenceScanResult
+        evidence: WorktreeTmpEvidenceScanResult,
+        lockObservations: [WorktreeLockObservation]
     ) {
         self.snapshot = snapshot
         self.repositoryPath = repositoryPath
@@ -26,6 +28,7 @@ package struct WorktreeListingProjectionInput: Sendable {
         self.integrationGrade = integrationGrade
         self.status = status
         self.evidence = evidence
+        self.lockObservations = lockObservations
     }
 }
 
@@ -65,7 +68,8 @@ package enum WorktreeListingProjector {
             isCurrent: isCurrent,
             changes: changes,
             status: status,
-            evidence: evidence
+            evidence: evidence,
+            lockObservations: input.lockObservations
         )
         let removable = blockers.isEmpty
         let remove =
@@ -211,7 +215,8 @@ package enum WorktreeListingProjector {
         isCurrent: Bool,
         changes: WorktreeChangesDocument,
         status: GitStatusFactsRead?,
-        evidence: WorktreeTmpEvidenceScanResult
+        evidence: WorktreeTmpEvidenceScanResult,
+        lockObservations: [WorktreeLockObservation]
     ) -> [WorktreeRefusalDocument] {
         var details: [WorktreeStopDetails] = []
         if snapshot.isMainWorktree {
@@ -254,11 +259,18 @@ package enum WorktreeListingProjector {
         case .unknown(let path):
             details.append(.evidenceUnknown(path: path.standardizedFileURL.path))
         }
+        details.append(contentsOf: lockObservations.map(WorktreeStopDetails.gitLockHeld))
 
         let order = Dictionary(uniqueKeysWithValues: WorktreeStopReason.lr11Order.enumerated().map { ($1, $0) })
         return
             details
-            .sorted { (order[$0.reason] ?? Int.max) < (order[$1.reason] ?? Int.max) }
+            .enumerated()
+            .sorted { lhs, rhs in
+                let leftOrder = order[lhs.element.reason] ?? Int.max
+                let rightOrder = order[rhs.element.reason] ?? Int.max
+                return leftOrder == rightOrder ? lhs.offset < rhs.offset : leftOrder < rightOrder
+            }
+            .map(\.element)
             .map(WorktreeRefusalDocument.init(details:))
     }
 
