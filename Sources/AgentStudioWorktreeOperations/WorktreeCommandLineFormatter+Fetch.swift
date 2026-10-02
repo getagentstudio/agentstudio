@@ -4,8 +4,10 @@ import Foundation
 extension WorktreeCommandLineFormatter {
     package static func fetchHumanLine(_ status: WorktreeFetchStatus) -> String {
         switch status {
-        case .fetched(let commit):
-            return "fetch: fetched \(commit)"
+        case .fetched(let commit, let lockResidue):
+            let details = lockResidue.flatMap { $0.isEmpty ? nil : $0 }
+            guard let details else { return "fetch: fetched \(commit)" }
+            return "fetch: fetched \(commit); leftover lock paths \(details.joined(separator: ", "))"
         case .skipped(let reason):
             return "fetch: skipped (\(reason.rawValue))"
         case .failed(let reason, let lock, let lockResidue):

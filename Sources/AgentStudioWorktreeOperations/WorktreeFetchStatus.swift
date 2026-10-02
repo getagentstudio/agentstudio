@@ -28,7 +28,7 @@ package struct WorktreeFetchLock: Codable, Sendable, Equatable {
 }
 
 package enum WorktreeFetchStatus: Codable, Sendable, Equatable {
-    case fetched(commit: String)
+    case fetched(commit: String, lockResidue: [String]? = nil)
     case skipped(reason: WorktreeFetchSkipReason)
     case failed(
         reason: WorktreeFetchFailureReason,
@@ -61,13 +61,12 @@ package enum WorktreeFetchStatus: Codable, Sendable, Equatable {
         case .fetched:
             guard let commit,
                 lock == nil,
-                lockResidue == nil,
                 try container.decodeIfPresent(WorktreeFetchSkipReason.self, forKey: .reason) == nil,
                 try container.decodeIfPresent(WorktreeFetchFailureReason.self, forKey: .reason) == nil
             else {
                 throw Self.invalidPayload(in: container)
             }
-            self = .fetched(commit: commit)
+            self = .fetched(commit: commit, lockResidue: lockResidue?.isEmpty == true ? nil : lockResidue)
         case .skipped:
             guard commit == nil,
                 lock == nil,
@@ -90,9 +89,12 @@ package enum WorktreeFetchStatus: Codable, Sendable, Equatable {
     package func encode(to encoder: any Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
         switch self {
-        case .fetched(let commit):
+        case .fetched(let commit, let lockResidue):
             try container.encode(Status.fetched, forKey: .status)
             try container.encode(commit, forKey: .commit)
+            if let lockResidue, !lockResidue.isEmpty {
+                try container.encode(lockResidue, forKey: .lockResidue)
+            }
         case .skipped(let reason):
             try container.encode(Status.skipped, forKey: .status)
             try container.encode(reason, forKey: .reason)

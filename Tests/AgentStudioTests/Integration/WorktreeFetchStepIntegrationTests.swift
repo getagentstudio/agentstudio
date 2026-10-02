@@ -88,6 +88,116 @@ struct WorktreeFetchStepIntegrationTests {
         #expect(skipping.status == .skipped(reason: .noTarget))
     }
 
+    @Test("successful fetch residue stays visible in list and a later read failure")
+    func successfulFetchResidueSurvivesListAndReadFailure() async throws {
+        let fixture = try await WorktreeFetchRepositoryFixture.create()
+        defer { fixture.destroy() }
+        let client = LibGit2AgentStudioGitLocalClient()
+        let residuePath = fixture.repository.appending(path: ".git/FETCH_HEAD.lock")
+        let expectedFetch = fetchStatus(fixture: fixture, residuePath: residuePath)
+        let remoteClient = fetchResidueRemoteClient(fixture: fixture, residuePath: residuePath)
+        let outcome = await WorktreeOperationRunner(client: client, remoteClient: remoteClient).run(
+            .list(
+                start: fixture.repository, callerDirectory: fixture.repository, targets: [], fetchPolicy: .defaultBranch
+            )
+        )
+        try expectFetchResidue(outcome, expected: expectedFetch, path: residuePath)
+
+        let mainSnapshot = try #require(
+            await client.worktrees(for: fixture.repository).first(where: \.isMainWorktree)
+        )
+        let identity = try await client.repositoryIdentity(for: fixture.repository)
+        let unreadableListClient = WorktreeOperationClientStub(
+            startPath: fixture.repository,
+            snapshot: mainSnapshot,
+            identity: identity,
+            baseClient: client,
+            failsWorktreeListing: true
+        )
+        let readFailureOutcome = await WorktreeOperationRunner(
+            client: unreadableListClient,
+            remoteClient: remoteClient
+        ).run(
+            .list(
+                start: fixture.repository, callerDirectory: fixture.repository, targets: [], fetchPolicy: .defaultBranch
+            )
+        )
+        try expectFetchResidue(readFailureOutcome, expected: expectedFetch, path: residuePath)
+    }
+
+    @Test("successful fetch residue stays visible in remove, preview and prune")
+    func successfulFetchResidueSurvivesRemovalAndPrune() async throws {
+        let fixture = try await WorktreeFetchRepositoryFixture.create()
+        defer { fixture.destroy() }
+        let client = LibGit2AgentStudioGitLocalClient()
+        let removalPath = fixture.repository.deletingLastPathComponent()
+            .appending(path: "fetch-residue-remove", directoryHint: .isDirectory)
+        let previewPath = fixture.repository.deletingLastPathComponent()
+            .appending(path: "fetch-residue-preview", directoryHint: .isDirectory)
+        let prunePath = fixture.repository.deletingLastPathComponent()
+            .appending(path: "fetch-residue-prune", directoryHint: .isDirectory)
+        let linkedPaths = [removalPath, previewPath, prunePath]
+        defer {
+            for path in linkedPaths {
+                try? FileManager.default.removeItem(at: path)
+            }
+        }
+        let branchNames = [
+            "feature/fetch-residue-remove", "feature/fetch-residue-preview", "feature/fetch-residue-prune",
+        ]
+        for (branchName, destinationPath) in zip(branchNames, linkedPaths) {
+            _ = try await client.createWorktree(
+                GitCreateWorktreeRequest(
+                    repositoryPath: fixture.repository,
+                    destinationPath: destinationPath,
+                    mode: .newBranch(name: branchName, startPoint: .named("refs/heads/main"))
+                ))
+        }
+
+        let residuePath = fixture.repository.appending(path: ".git/FETCH_HEAD.lock")
+        let expectedFetch = fetchStatus(fixture: fixture, residuePath: residuePath)
+        let runner = WorktreeOperationRunner(
+            client: client,
+            remoteClient: fetchResidueRemoteClient(fixture: fixture, residuePath: residuePath)
+        )
+        let previewOutcome = await runner.run(
+            .remove(
+                worktreeRemovalRequest(
+                    repository: fixture.repository,
+                    targets: [previewPath.path],
+                    callerDirectory: fixture.repository,
+                    branchPolicy: .keep,
+                    fetchPolicy: .defaultBranch,
+                    dryRun: true
+                ))
+        )
+        try expectFetchResidue(previewOutcome, expected: expectedFetch, path: residuePath)
+
+        let removalOutcome = await runner.run(
+            .remove(
+                worktreeRemovalRequest(
+                    repository: fixture.repository,
+                    targets: [removalPath.path],
+                    callerDirectory: fixture.repository,
+                    branchPolicy: .keep,
+                    fetchPolicy: .defaultBranch
+                ))
+        )
+        try expectFetchResidue(removalOutcome, expected: expectedFetch, path: residuePath)
+
+        let pruneOutcome = await runner.run(
+            .prune(
+                WorktreePruneRequest(
+                    start: fixture.repository,
+                    callerDirectory: fixture.repository,
+                    apply: false,
+                    evidencePolicy: .requireEmpty,
+                    fetchPolicy: .defaultBranch
+                ))
+        )
+        try expectFetchResidue(pruneOutcome, expected: expectedFetch, path: residuePath)
+    }
+
     @Test("a non-origin upstream is assessed as-is without fetching")
     func nonOriginUpstreamIsNotFetched() async throws {
         let repository = try await FilesystemTestGitRepo.create(named: "fetch-non-origin")
@@ -260,6 +370,57 @@ struct WorktreeFetchStepIntegrationTests {
     }
 }
 
+private struct WorktreeFetchResidueRemoteClient: AgentStudioGitRemoteClient {
+    let result: GitFetchResult
+
+    func clone(_ request: GitCloneRequest) async throws(GitDataPlaneError) -> GitCloneResult {
+        throw .unsupported(message: "clone is unused by the fetch residue test")
+    }
+
+    func fetch(_ request: GitFetchRequest)
+        async throws(GitLockedOperationFailure<GitDataPlaneError>) -> GitFetchResult
+    {
+        result
+    }
+
+    func captureRemoteTrackingSnapshot(_ request: GitRemoteTrackingSnapshotRequest)
+        async throws(GitDataPlaneError) -> GitRemoteTrackingSnapshot
+    {
+        throw .unsupported(message: "remote snapshot is unused by the fetch residue test")
+    }
+
+    func stageFetch(_ request: GitStagedFetchRequest) async throws(GitDataPlaneError) -> GitStagedFetchResult {
+        throw .unsupported(message: "staged fetch is unused by the fetch residue test")
+    }
+
+    func promoteStagedFetch(_ request: GitPromoteStagedFetchRequest)
+        async throws(GitDataPlaneError) -> GitPromoteStagedFetchResult
+    {
+        throw .unsupported(message: "staged fetch promotion is unused by the fetch residue test")
+    }
+
+    func cleanupStagedFetch(_ request: GitCleanupStagedFetchRequest)
+        async throws(GitDataPlaneError) -> GitCleanupStagedFetchResult
+    {
+        throw .unsupported(message: "staged fetch cleanup is unused by the fetch residue test")
+    }
+
+    func cleanupAbandonedStagedFetches(_ request: GitCleanupAbandonedStagedFetchesRequest)
+        async throws(GitDataPlaneError) -> GitCleanupStagedFetchResult
+    {
+        throw .unsupported(message: "abandoned fetch cleanup is unused by the fetch residue test")
+    }
+
+    func push(_ request: GitPushRequest) async throws(GitDataPlaneError) -> GitPushResult {
+        throw .unsupported(message: "push is unused by the fetch residue test")
+    }
+
+    func remoteReferences(_ request: GitRemoteReferencesRequest) async throws(GitDataPlaneError) -> [GitRemoteReference]
+    {
+        throw .unsupported(message: "remote reference lookup is unused by the fetch residue test")
+    }
+}
+
 private struct WorktreeFetchRepositoryFixture {
     let repository: URL
     let bareRemote: URL
@@ -368,4 +529,54 @@ private struct WorktreeFetchRepositoryFixture {
 private func reference(_ name: String, in repository: URL) async throws -> String {
     try await FilesystemTestGitRepo.runGit(at: repository, args: ["rev-parse", "--verify", name])
         .trimmingCharacters(in: .whitespacesAndNewlines)
+}
+
+private func fetchStatus(
+    fixture: WorktreeFetchRepositoryFixture,
+    residuePath: URL
+) -> WorktreeFetchStatus {
+    .fetched(
+        commit: fixture.initialCommit,
+        lockResidue: [residuePath.standardizedFileURL.path]
+    )
+}
+
+private func fetchResidueRemoteClient(
+    fixture: WorktreeFetchRepositoryFixture,
+    residuePath: URL
+) -> WorktreeFetchResidueRemoteClient {
+    WorktreeFetchResidueRemoteClient(
+        result: GitFetchResult(
+            fetchedRemoteName: "origin",
+            fetchedCommit: fixture.initialCommit,
+            lockResidue: [residuePath]
+        )
+    )
+}
+
+private func expectFetchResidue(
+    _ outcome: WorktreeOperationOutcome,
+    expected: WorktreeFetchStatus,
+    path: URL
+) throws {
+    let observedFetch: WorktreeFetchStatus
+    switch outcome {
+    case .listed(let listing):
+        observedFetch = listing.fetch
+    case .fetchingReadFailure(let failure):
+        observedFetch = failure.fetch
+    case .removal(let report):
+        observedFetch = report.fetch
+    case .pruned(let summary):
+        observedFetch = summary.fetch
+    case .created, .refused, .failed:
+        Issue.record("expected a worktree outcome that carries fetch status, got \(outcome)")
+        return
+    }
+
+    #expect(observedFetch == expected)
+    let json = try WorktreeCommandLineFormatter.format(outcome: outcome, usesJSONOutput: true)
+    let human = try WorktreeCommandLineFormatter.format(outcome: outcome, usesJSONOutput: false)
+    #expect(json.text.contains(path.standardizedFileURL.path))
+    #expect(human.text.contains("leftover lock paths \(path.standardizedFileURL.path)"))
 }

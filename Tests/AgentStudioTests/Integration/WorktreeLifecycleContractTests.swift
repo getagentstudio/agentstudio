@@ -291,6 +291,11 @@ struct WorktreeOutcomeDocumentsTests {
             try Self.json(WorktreeFetchStatus.fetched(commit: "c0ffee"))
                 == #"{"commit":"c0ffee","status":"fetched"}"#
         )
+        let fetchedResidue = WorktreeFetchStatus.fetched(commit: "c0ffee", lockResidue: [lockResiduePath])
+        #expect(
+            try Self.json(fetchedResidue)
+                == #"{"commit":"c0ffee","lockResidue":["/repo/.git/packed-refs.lock"],"status":"fetched"}"#
+        )
         #expect(
             try Self.json(WorktreeFetchStatus.skipped(reason: .noRemote))
                 == #"{"reason":"noRemote","status":"skipped"}"#
@@ -337,6 +342,8 @@ struct WorktreeOutcomeDocumentsTests {
         )
 
         let roundTripStatuses: [WorktreeFetchStatus] = [
+            .fetched(commit: "c0ffee"),
+            fetchedResidue,
             .failed(reason: .networkFailure),
             .failed(reason: .gitLockHeld, lock: heldLock),
             .failed(reason: .gitLockUnidentified, lock: unidentifiedLock),
@@ -350,6 +357,15 @@ struct WorktreeOutcomeDocumentsTests {
             #expect(try JSONDecoder().decode(WorktreeFetchStatus.self, from: Data(encoded.utf8)) == status)
         }
 
+        let emptyFetchedResidueJSON = try Self.json(
+            WorktreeFetchStatus.fetched(commit: "c0ffee", lockResidue: [])
+        )
+        #expect(emptyFetchedResidueJSON == #"{"commit":"c0ffee","status":"fetched"}"#)
+        #expect(
+            try JSONDecoder().decode(WorktreeFetchStatus.self, from: Data(emptyFetchedResidueJSON.utf8))
+                == .fetched(commit: "c0ffee")
+        )
+
         let emptyResidueJSON = try Self.json(
             WorktreeFetchStatus.failed(reason: .processFailure, lockResidue: [])
         )
@@ -362,6 +378,10 @@ struct WorktreeOutcomeDocumentsTests {
 
     @Test("human fetch status names lock resources and retained paths on one line")
     func fetchLockHumanLineIsActionable() {
+        let fetched = WorktreeFetchStatus.fetched(
+            commit: "cafe",
+            lockResidue: ["/repo/.git/FETCH_HEAD.lock"]
+        )
         let held = WorktreeFetchStatus.failed(
             reason: .gitLockHeld,
             lock: WorktreeFetchLock(
@@ -375,6 +395,10 @@ struct WorktreeOutcomeDocumentsTests {
             lock: WorktreeFetchLock(path: nil, resource: .packedRefs)
         )
 
+        #expect(
+            WorktreeCommandLineFormatter.fetchHumanLine(fetched)
+                == "fetch: fetched cafe; leftover lock paths /repo/.git/FETCH_HEAD.lock"
+        )
         #expect(
             WorktreeCommandLineFormatter.fetchHumanLine(held)
                 == "fetch: failed (gitLockHeld); lock path /repo/.git/refs/remotes/origin/main.lock (reference refs/remotes/origin/main); leftover lock paths /repo/.git/FETCH_HEAD.lock"

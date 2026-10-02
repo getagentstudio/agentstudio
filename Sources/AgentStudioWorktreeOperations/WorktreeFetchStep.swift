@@ -65,7 +65,10 @@ package struct WorktreeFetchStep: Sendable {
                 let fetchedCommit = refreshedResolution.target?.commit ?? fetched.fetchedCommit ?? target.commit
                 return WorktreeFetchStepResult(
                     resolution: refreshedResolution,
-                    status: .fetched(commit: fetchedCommit)
+                    status: .fetched(
+                        commit: fetchedCommit,
+                        lockResidue: WorktreeFetchFailureMapper.nonEmptyPaths(fetched.lockResidue)
+                    )
                 )
             } catch {
                 return WorktreeFetchStepResult(
@@ -133,7 +136,7 @@ package enum WorktreeFetchFailureMapper {
         return .processFailure
     }
 
-    private static func nonEmptyPaths(_ paths: [URL]?) -> [String]? {
+    package static func nonEmptyPaths(_ paths: [URL]?) -> [String]? {
         guard let paths else { return nil }
         let standardizedPaths = paths.map { $0.standardizedFileURL.path }
         return standardizedPaths.isEmpty ? nil : standardizedPaths
