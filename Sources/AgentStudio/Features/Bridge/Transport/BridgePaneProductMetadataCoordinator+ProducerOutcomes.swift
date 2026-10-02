@@ -88,9 +88,14 @@ extension BridgePaneProductMetadataCoordinator {
                 return .failed(.init(failureKind: .producerRejected))
             }
         }
-        return .failed(
-            BridgeFileSurfaceReconciler.failure(for: error, phase: .delivery).refreshFailure
-        )
+        if error is CancellationError
+            || (error as? BridgeWorktreeProductConstructionError) == .invalidated
+        {
+            return .failed(
+                BridgeFileSurfaceReconciler.failure(for: error, phase: .delivery).refreshFailure
+            )
+        }
+        return .failed(.init(failureKind: .fileRefreshFailed))
     }
 }
 
