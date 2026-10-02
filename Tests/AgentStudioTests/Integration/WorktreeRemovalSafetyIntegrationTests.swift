@@ -196,6 +196,54 @@ struct WorktreeRemovalSafetyIntegrationTests {
         )
     }
 
+    @Test("a replacement during the last process probe is preserved and refused")
+    func refusesWhenIndexLockIsReplacedDuringFinalProcessProbe() async throws {
+        var fixture = try await WorktreeRemovalRepository.create(named: "worktree-remove-replaced-stale-lock")
+        defer { fixture.destroy() }
+        let worktreePath = try await fixture.addWorktree(branch: "feature/replaced-stale-lock")
+        let snapshot = try #require(
+            await fixture.client.worktrees(for: fixture.path).first {
+                $0.canonicalPath.standardizedFileURL.path == worktreePath.standardizedFileURL.path
+            }
+        )
+        let lockPath = URL(fileURLWithPath: snapshot.indexPath.path + ".lock")
+        let originalBytes = Data("original stale lock\n".utf8)
+        let replacementBytes = Data("replacement stale lock\n".utf8)
+        try originalBytes.write(to: lockPath)
+        try await setModificationTimeUsingTouch(Date(timeIntervalSinceNow: -300), at: lockPath)
+        let before = try await removalRepositorySnapshot(fixture.path)
+        let processProbe = ReplacingLockDuringFinalProcessProbe(
+            lockPath: lockPath,
+            replacementBytes: replacementBytes,
+            modificationDate: Date(timeIntervalSinceNow: -300)
+        )
+
+        let report = await WorktreeRemovalRunner(
+            client: fixture.client,
+            staleLockAssessment: WorktreeStaleLockAssessment(processProbe: processProbe)
+        ).run(
+            worktreeRemovalRequest(
+                repository: fixture.path,
+                targets: [worktreePath.path],
+                callerDirectory: fixture.path,
+                branchPolicy: .keep,
+                removeStaleLock: true
+            )
+        )
+
+        #expect(processProbe.didReplaceDuringProbe)
+        guard case .refused(let entry)? = report.entries.first,
+            case .gitLockHeld(let observation) = entry.refusal.details
+        else {
+            Issue.record("expected replacement lock refusal, got \(report)")
+            return
+        }
+        #expect(observation.path == lockPath.standardizedFileURL.path)
+        #expect(FileManager.default.fileExists(atPath: worktreePath.path))
+        #expect(try Data(contentsOf: lockPath) == replacementBytes)
+        #expect(try await removalRepositorySnapshot(fixture.path) == before)
+    }
+
     @Test("dry-run reports but does not remove an exact stale index lock")
     func previewsStaleIndexLockWithoutMutation() async throws {
         var fixture = try await WorktreeRemovalRepository.create(named: "worktree-remove-preview-stale-lock")
@@ -321,5 +369,66 @@ private struct RemovalFixedGitProcessProbe: WorktreeGitProcessProbing {
 
     func probe() -> WorktreeGitProcessProbeResult {
         result
+    }
+}
+
+private final class ReplacingLockDuringFinalProcessProbe: WorktreeGitProcessProbing, @unchecked Sendable {
+    private let stateLock = NSLock()
+    private let lockPath: URL
+    private let replacementBytes: Data
+    private let modificationDate: Date
+    private var probeCount = 0
+    private var replacementOccurred = false
+
+    init(lockPath: URL, replacementBytes: Data, modificationDate: Date) {
+        self.lockPath = lockPath
+        self.replacementBytes = replacementBytes
+        self.modificationDate = modificationDate
+    }
+
+    var didReplaceDuringProbe: Bool {
+        stateLock.lock()
+        defer { stateLock.unlock() }
+        return replacementOccurred
+    }
+
+    func probe() -> WorktreeGitProcessProbeResult {
+        stateLock.lock()
+        probeCount += 1
+        let shouldReplace = probeCount == 2
+        stateLock.unlock()
+        guard shouldReplace else { return .notFound }
+
+        let originalPath = lockPath.appendingPathExtension("probe-original")
+        let replacementPath = lockPath.appendingPathExtension("probe-replacement")
+        do {
+            try replacementBytes.write(to: replacementPath)
+            try FileManager.default.setAttributes(
+                [.modificationDate: modificationDate],
+                ofItemAtPath: replacementPath.path
+            )
+            try FileManager.default.moveItem(at: lockPath, to: originalPath)
+            do {
+                try FileManager.default.moveItem(at: replacementPath, to: lockPath)
+            } catch {
+                try FileManager.default.moveItem(at: originalPath, to: lockPath)
+                throw error
+            }
+            try FileManager.default.removeItem(at: originalPath)
+            stateLock.lock()
+            replacementOccurred = true
+            stateLock.unlock()
+            return .notFound
+        } catch {
+            if FileManager.default.fileExists(atPath: replacementPath.path) {
+                try? FileManager.default.removeItem(at: replacementPath)
+            }
+            if FileManager.default.fileExists(atPath: originalPath.path),
+                !FileManager.default.fileExists(atPath: lockPath.path)
+            {
+                try? FileManager.default.moveItem(at: originalPath, to: lockPath)
+            }
+            return .found
+        }
     }
 }

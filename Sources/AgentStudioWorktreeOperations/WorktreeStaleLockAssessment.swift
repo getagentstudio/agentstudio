@@ -60,11 +60,11 @@ package struct WorktreeStaleLockAssessment: Sendable {
     ) -> Bool {
         guard assessment.observation.looksStale,
             let expectedIdentity = assessment.fileIdentity,
+            processProbe.probe() == .notFound,
             let currentIdentity = Self.fileIdentity(at: lockPath.standardizedFileURL),
             currentIdentity == expectedIdentity,
             Duration.seconds(Self.ageSeconds(since: currentIdentity.modificationDate, now: now))
-                >= WorktreeLifecyclePolicy.staleLockAge,
-            processProbe.probe() == .notFound
+                >= WorktreeLifecyclePolicy.staleLockAge
         else {
             return false
         }
