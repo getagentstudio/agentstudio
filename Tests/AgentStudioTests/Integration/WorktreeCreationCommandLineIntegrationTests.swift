@@ -22,6 +22,7 @@ struct WorktreeCreationCommandLineIntegrationTests {
         let materialized: Int
         let missing: [GitLargeFileFillMiss]
         let missingCount: Int
+        let options: [String]?
         let scan: GitLargeFileScan
     }
 
@@ -114,6 +115,7 @@ struct WorktreeCreationCommandLineIntegrationTests {
         #expect(created.largeFiles?.materialized == 1)
         #expect(created.largeFiles?.missing.isEmpty == true)
         #expect(created.largeFiles?.missingCount == 0)
+        #expect(created.largeFiles?.options == nil)
         #expect(created.largeFiles?.scan == .complete)
         #expect(try Data(contentsOf: destination.appending(path: "asset.bin")) == fixture.payload)
 
@@ -187,6 +189,7 @@ struct WorktreeCreationCommandLineIntegrationTests {
         #expect(created.largeFiles?.materialized == 0)
         #expect(created.largeFiles?.missing == [GitLargeFileFillMiss(path: "asset.bin", reason: .objectAbsent)])
         #expect(created.largeFiles?.missingCount == 1)
+        #expect(created.largeFiles?.options == ["git -C \(jsonDestination.path) lfs pull"])
         #expect(created.largeFiles?.scan == .complete)
     }
 
@@ -216,6 +219,7 @@ struct WorktreeCreationCommandLineIntegrationTests {
         #expect(created.largeFiles?.materialized == 1)
         #expect(created.largeFiles?.missing.isEmpty == true)
         #expect(created.largeFiles?.missingCount == 0)
+        #expect(created.largeFiles?.options == nil)
         #expect(created.largeFiles?.scan == .complete)
         #expect(try Data(contentsOf: destination.appending(path: "asset.bin")) == fixture.payload)
     }
@@ -261,6 +265,7 @@ struct WorktreeCreationCommandLineIntegrationTests {
         let created = try JSONDecoder().decode(CreatedDocument.self, from: Data(jsonResponse.text.utf8))
         #expect(created.largeFiles?.scan == .incomplete(.readFailed(errno: EIO)))
         #expect(created.largeFiles?.missing.isEmpty == true)
+        #expect(created.largeFiles?.options == ["git -C \(destination.path) lfs pull"])
         #expect(FileManager.default.fileExists(atPath: destination.path))
 
         let humanResponse = try WorktreeCommandLineFormatter.format(outcome: outcome, usesJSONOutput: false)

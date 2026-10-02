@@ -431,6 +431,66 @@ struct WorktreeCommandLineTests {
         #expect(humanResponse.text.contains("LFS: 1 filled, \(missingCount) missing"))
         #expect(humanResponse.text.contains("git -C \(worktree.path) lfs pull"))
         #expect(humanResponse.text.contains("temporaryArtifact .agentstudio-lfs-fill-orphan (temporary)"))
+        #expect(largeFiles["options"] as? [String] == ["git -C \(worktree.path) lfs pull"])
+    }
+
+    @Test("missing LFS JSON includes the full pull command in its created outcome golden")
+    func formatsPullCommandForMissingLargeFile() throws {
+        let repository = URL(fileURLWithPath: "/tmp/worktree-output/repository")
+        let worktree = URL(fileURLWithPath: "/tmp/worktree-output/repository.feature-lfs")
+        let fill = GitLargeFileFill(
+            materializedCount: 0,
+            missing: [GitLargeFileFillMiss(path: "asset.bin", reason: .objectAbsent)],
+            residuePaths: [],
+            scan: .complete
+        )
+        let summary = WorktreeCreatedSummary(
+            operation: .new,
+            branch: "feature/lfs",
+            path: worktree,
+            repository: repository,
+            materialization: nil,
+            largeFiles: fill
+        )
+
+        let response = try WorktreeCommandLineFormatter.format(
+            outcome: .created(summary),
+            usesJSONOutput: true
+        )
+
+        #expect(
+            response.text
+                == "{\"branch\":\"feature/lfs\",\"largeFiles\":{\"materialized\":0,\"missing\":[{\"path\":\"asset.bin\",\"reason\":{\"kind\":\"objectAbsent\"}}],\"missingCount\":1,\"options\":[\"git -C /tmp/worktree-output/repository.feature-lfs lfs pull\"],\"scan\":\"complete\"},\"operation\":\"new\",\"outcome\":\"created\",\"path\":\"/tmp/worktree-output/repository.feature-lfs\",\"repository\":\"/tmp/worktree-output/repository\"}"
+        )
+    }
+
+    @Test("complete LFS materialization omits an unnecessary pull option")
+    func omitsPullOptionWhenScanIsCompleteAndNothingIsMissing() throws {
+        let repository = URL(fileURLWithPath: "/tmp/worktree-output/repository")
+        let worktree = URL(fileURLWithPath: "/tmp/worktree-output/repository.feature-lfs")
+        let summary = WorktreeCreatedSummary(
+            operation: .new,
+            branch: "feature/lfs",
+            path: worktree,
+            repository: repository,
+            materialization: nil,
+            largeFiles: GitLargeFileFill(
+                materializedCount: 1,
+                missing: [],
+                residuePaths: [],
+                scan: .complete
+            )
+        )
+
+        let response = try WorktreeCommandLineFormatter.format(
+            outcome: .created(summary),
+            usesJSONOutput: true
+        )
+        let json = try #require(try JSONSerialization.jsonObject(with: Data(response.text.utf8)) as? [String: Any])
+        let largeFiles = try #require(json["largeFiles"] as? [String: Any])
+
+        #expect(response.exitCode == 0)
+        #expect(largeFiles["options"] == nil)
     }
 
     @Test("working-state outcomes preserve the SDK refusal details in human and JSON output")

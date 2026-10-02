@@ -5,12 +5,18 @@ package struct WorktreeLargeFilesDocument: Encodable, Sendable, Equatable {
     package let materialized: Int
     package let missing: [GitLargeFileFillMiss]
     package let missingCount: Int
+    package let options: [String]?
     package let scan: GitLargeFileScan
 
-    package init(fill: GitLargeFileFill) {
+    package init(fill: GitLargeFileFill, worktreePath: URL) {
         materialized = fill.materializedCount
         missing = Array(fill.missing.prefix(WorktreeLifecyclePolicy.firstPathsLimit))
         missingCount = fill.missing.count
+        if fill.missing.isEmpty, case .complete = fill.scan {
+            options = nil
+        } else {
+            options = ["git -C \(worktreePath.standardizedFileURL.path) lfs pull"]
+        }
         scan = fill.scan
     }
 }
@@ -21,9 +27,9 @@ package enum WorktreeLargeFilesProjector {
         return report.largeFiles
     }
 
-    package static func document(for fill: GitLargeFileFill?) -> WorktreeLargeFilesDocument? {
+    package static func document(for fill: GitLargeFileFill?, worktreePath: URL) -> WorktreeLargeFilesDocument? {
         guard let fill, shouldInclude(fill) else { return nil }
-        return WorktreeLargeFilesDocument(fill: fill)
+        return WorktreeLargeFilesDocument(fill: fill, worktreePath: worktreePath)
     }
 
     package static func cleanupLeftovers(for fill: GitLargeFileFill?) -> WorktreeLeftoverStatus? {

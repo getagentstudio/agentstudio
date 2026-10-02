@@ -4,8 +4,11 @@ import Foundation
 extension WorktreeCommandLineFormatter {
     package static func createdHumanLine(_ summary: WorktreeCreatedSummary) -> String {
         var lines = ["created \(summary.branch) at \(absolutePath(summary.path))"]
-        if let largeFiles = WorktreeLargeFilesProjector.document(for: summary.largeFiles) {
-            lines.append(largeFilesHumanLine(largeFiles, worktreePath: summary.path))
+        if let largeFiles = WorktreeLargeFilesProjector.document(
+            for: summary.largeFiles,
+            worktreePath: summary.path
+        ) {
+            lines.append(largeFilesHumanLine(largeFiles))
         }
         if let leftovers = WorktreeLargeFilesProjector.cleanupLeftovers(for: summary.largeFiles) {
             lines.append("leftovers: \(WorktreeCleanupLeftoversFormatter.human(leftovers))")
@@ -21,27 +24,23 @@ extension WorktreeCommandLineFormatter {
                 path: absolutePath(summary.path),
                 repository: absolutePath(summary.repository),
                 materialization: summary.materialization,
-                largeFiles: WorktreeLargeFilesProjector.document(for: summary.largeFiles),
+                largeFiles: WorktreeLargeFilesProjector.document(
+                    for: summary.largeFiles,
+                    worktreePath: summary.path
+                ),
                 leftovers: WorktreeLargeFilesProjector.cleanupLeftovers(for: summary.largeFiles)
                     .map(WorktreeCleanupLeftoversFormatter.document)
             )
         )
     }
 
-    private static func largeFilesHumanLine(
-        _ largeFiles: WorktreeLargeFilesDocument,
-        worktreePath: URL
-    ) -> String {
+    private static func largeFilesHumanLine(_ largeFiles: WorktreeLargeFilesDocument) -> String {
         var line = "LFS: \(largeFiles.materialized) filled, \(largeFiles.missingCount) missing"
-        let isIncomplete: Bool
         if case .incomplete(let failure) = largeFiles.scan {
-            isIncomplete = true
             line += ", scan incomplete (\(humanScanFailure(failure)))"
-        } else {
-            isIncomplete = false
         }
-        if largeFiles.missingCount > 0 || isIncomplete {
-            line += " (run: git -C \(absolutePath(worktreePath)) lfs pull)"
+        if let option = largeFiles.options?.first {
+            line += " (run: \(option))"
         }
         return line
     }
