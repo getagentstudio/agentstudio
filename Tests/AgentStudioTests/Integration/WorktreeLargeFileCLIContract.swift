@@ -2,6 +2,13 @@ import Foundation
 import Testing
 
 enum WorktreeLargeFileCLIContract {
+    struct MaterializationDocument: Decodable {
+        let kind: String
+        let trackedChanges: Int?
+        let untrackedFiles: Int?
+        let ignoredExcluded: Bool?
+    }
+
     enum ScanDocument: Decodable, Equatable {
         case complete
         case incompleteReadFailed(errno: Int32)

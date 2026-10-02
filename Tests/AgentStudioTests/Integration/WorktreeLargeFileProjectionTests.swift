@@ -111,4 +111,46 @@ struct WorktreeLargeFileProjectionTests {
         #expect(response.exitCode == 0)
         #expect(largeFiles["options"] == nil)
     }
+
+    @Test("changes-only fork keeps one capped LFS report with its full miss count")
+    func capsChangesOnlyLargeFileMissesAtTheLeaf() throws {
+        let repository = URL(fileURLWithPath: "/tmp/worktree-output/repository")
+        let worktree = URL(fileURLWithPath: "/tmp/worktree-output/repository.feature-changes-only")
+        let missingCount = WorktreeLifecyclePolicy.firstPathsLimit + 2
+        let missing = (0..<missingCount).map { index in
+            GitLargeFileFillMiss(path: "asset-\(index).bin", reason: .objectAbsent)
+        }
+        let fill = GitLargeFileFill(
+            materializedCount: 0,
+            missing: missing,
+            residuePaths: [],
+            scan: .complete
+        )
+        let summary = WorktreeCreatedSummary(
+            operation: .fork,
+            branch: "feature/changes-only",
+            path: worktree,
+            repository: repository,
+            materialization: .changesOnly(
+                GitChangesOnlyMaterializationReport(trackedChanges: 1, untrackedFiles: 1, largeFiles: fill)),
+            largeFiles: fill
+        )
+
+        let response = try WorktreeCommandLineFormatter.format(outcome: .created(summary), usesJSONOutput: true)
+        let json = try #require(JSONSerialization.jsonObject(with: Data(response.text.utf8)) as? [String: Any])
+        let materialization = try #require(json["materialization"] as? [String: Any])
+        #expect(response.exitCode == 0)
+        #expect(materialization["kind"] as? String == "changesOnly")
+        #expect(materialization["trackedChanges"] as? Int == 1)
+        #expect(materialization["untrackedFiles"] as? Int == 1)
+        #expect(materialization["ignoredExcluded"] as? Bool == true)
+        #expect(materialization["largeFiles"] == nil)
+
+        let largeFiles = try #require(json["largeFiles"] as? [String: Any])
+        let missingDocuments = try #require(largeFiles["missing"] as? [[String: Any]])
+        #expect(missingDocuments.count == WorktreeLifecyclePolicy.firstPathsLimit)
+        #expect(largeFiles["missingCount"] as? Int == missingCount)
+        #expect(missingDocuments.first?["path"] as? String == "asset-0.bin")
+        #expect(missingDocuments.last?["path"] as? String == "asset-\(WorktreeLifecyclePolicy.firstPathsLimit - 1).bin")
+    }
 }

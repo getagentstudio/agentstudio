@@ -13,7 +13,7 @@ struct WorktreeCreationCommandLineIntegrationTests {
         let branch: String
         let path: String
         let repository: String
-        let materialization: GitWorktreeMaterializationResult?
+        let materialization: WorktreeLargeFileCLIContract.MaterializationDocument?
         let largeFiles: LargeFilesDocument?
     }
 
@@ -516,18 +516,19 @@ struct WorktreeCreationCommandLineIntegrationTests {
         #expect(exitCode == 0)
         #expect(probe.errorSnapshot().isEmpty)
         let output = try #require(probe.outputSnapshot().first)
+        #expect(!output.contains("\"largeFiles\""))
         let document = try JSONDecoder().decode(CreatedDocument.self, from: Data(output.utf8))
         #expect(document.outcome == "created")
         #expect(document.operation == "fork")
         #expect(document.branch == branch)
         #expect(document.path == destination.path)
-        guard case .changesOnly(let report) = document.materialization else {
+        guard let report = document.materialization, report.kind == "changesOnly" else {
             Issue.record("expected the CLI to report changesOnly materialization")
             return
         }
         #expect(report.trackedChanges == 1)
         #expect(report.untrackedFiles == 1)
-        #expect(report.ignoredExcluded)
+        #expect(report.ignoredExcluded == true)
         #expect(try await git(at: destination, "rev-parse", "HEAD") == expectedHead)
         #expect(
             try String(contentsOf: destination.appending(path: "tracked.txt"), encoding: .utf8)
