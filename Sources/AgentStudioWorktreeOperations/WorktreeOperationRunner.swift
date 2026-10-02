@@ -215,17 +215,17 @@ package struct WorktreeOperationRunner {
             targets: targets,
             callerDirectory: callerDirectory
         )
-        let branchNames = branchNames(in: selectedSnapshots, excluding: fetchResult.target?.branchName)
+        let branchNames = branchNames(in: selectedSnapshots, excluding: fetchResult.resolution.branchName)
         let gradesByBranch = await integrationGrades(
             repositoryPath: repositoryPath,
             branchNames: branchNames,
-            target: fetchResult.target
+            resolution: fetchResult.resolution
         )
         let rows = await listingRows(
             selectedSnapshots,
             repositoryPath: repositoryPath,
             callerDirectory: callerDirectory,
-            target: fetchResult.target,
+            targetResolution: fetchResult.resolution,
             gradesByBranch: gradesByBranch
         )
         return WorktreeListingSummary(
@@ -241,9 +241,15 @@ package struct WorktreeOperationRunner {
     private func integrationGrades(
         repositoryPath: URL,
         branchNames: [String],
-        target: WorktreeIntegrationTarget?
+        resolution: WorktreeIntegrationTargetResolution
     ) async -> [String: GitBranchIntegrationGrade] {
-        guard let target, !branchNames.isEmpty else { return [:] }
+        guard !branchNames.isEmpty else { return [:] }
+        if resolution.hasReadFailure {
+            return Dictionary(
+                uniqueKeysWithValues: branchNames.map { ($0, GitBranchIntegrationGrade.unknown(.readFailed)) }
+            )
+        }
+        guard let target = resolution.target else { return [:] }
         do {
             let report = try await client.assessBranchIntegration(
                 GitBranchIntegrationRequest(
@@ -269,7 +275,7 @@ package struct WorktreeOperationRunner {
         _ snapshots: [GitWorktreeSnapshot],
         repositoryPath: URL,
         callerDirectory: URL?,
-        target: WorktreeIntegrationTarget?,
+        targetResolution: WorktreeIntegrationTargetResolution,
         gradesByBranch: [String: GitBranchIntegrationGrade]
     ) async -> [WorktreeListing] {
         let evidenceScanner = WorktreeTmpEvidenceScanner()
@@ -289,7 +295,7 @@ package struct WorktreeOperationRunner {
                         snapshot: snapshot,
                         repositoryPath: repositoryPath,
                         callerDirectory: callerDirectory,
-                        target: target,
+                        targetResolution: targetResolution,
                         integrationGrade: branch.flatMap { gradesByBranch[$0] },
                         status: status,
                         evidence: evidence

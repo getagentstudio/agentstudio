@@ -306,10 +306,12 @@ private struct WorktreePrunePolicyScenario {
 
 @Suite("Worktree prune fetching read failures")
 struct WorktreePruneFetchingReadFailureIntegrationTests {
-    @Test("a repository target read failure before E4 reports no target")
-    func reportsNoTargetWhenE4CannotBeRead() async throws {
-        let fixture = try await WorktreeRemovalRepository.create(named: "worktree-prune-no-target-read")
+    @Test("an unreadable E4 target returns one unknown skip per linked worktree")
+    func keepsEveryWorktreeRowWhenDefaultTargetCannotBeRead() async throws {
+        var fixture = try await WorktreeRemovalRepository.create(named: "worktree-prune-unreadable-target")
         defer { fixture.destroy() }
+        _ = try await fixture.addWorktree(branch: "feature/prune-target-read-first")
+        _ = try await fixture.addWorktree(branch: "feature/prune-target-read-second")
         let snapshots = try await fixture.client.worktrees(for: fixture.path)
         let mainSnapshot = try #require(snapshots.first(where: { $0.isMainWorktree }))
         let identity = try await fixture.client.repositoryIdentity(for: fixture.path)
@@ -326,12 +328,20 @@ struct WorktreePruneFetchingReadFailureIntegrationTests {
             pruneRequest(repository: fixture.path, callerDirectory: fixture.path, apply: false)
         )
 
-        #expect(
-            outcome
-                == .fetchingReadFailure(
-                    WorktreeFetchingReadFailure(fetch: .skipped(reason: .noTarget))
-                )
-        )
+        guard case .pruned(let summary) = outcome else {
+            Issue.record("expected one prune entry per linked worktree, got \(outcome)")
+            return
+        }
+        #expect(summary.entries.count == 2)
+        #expect(summary.fetch == .skipped(reason: .noTarget))
+        for entry in summary.entries {
+            guard case .skipped(let skipped) = entry else {
+                Issue.record("expected unreadable E4 to skip pruning, got \(entry)")
+                continue
+            }
+            #expect(skipped.skip.reason == .assessmentUnknown(.readFailed))
+        }
+        #expect(try WorktreeCommandLineFormatter.format(outcome: outcome, usesJSONOutput: true).exitCode == 0)
     }
 
     @Test("a worktree-list read failure after a real fetch retains its fetched status")

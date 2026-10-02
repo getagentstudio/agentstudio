@@ -5,7 +5,7 @@ package struct WorktreeListingProjectionInput: Sendable {
     package let snapshot: GitWorktreeSnapshot
     package let repositoryPath: URL
     package let callerDirectory: URL?
-    package let target: WorktreeIntegrationTarget?
+    package let targetResolution: WorktreeIntegrationTargetResolution
     package let integrationGrade: GitBranchIntegrationGrade?
     package let status: GitStatusFactsRead?
     package let evidence: WorktreeTmpEvidenceScanResult
@@ -14,7 +14,7 @@ package struct WorktreeListingProjectionInput: Sendable {
         snapshot: GitWorktreeSnapshot,
         repositoryPath: URL,
         callerDirectory: URL?,
-        target: WorktreeIntegrationTarget?,
+        targetResolution: WorktreeIntegrationTargetResolution,
         integrationGrade: GitBranchIntegrationGrade?,
         status: GitStatusFactsRead?,
         evidence: WorktreeTmpEvidenceScanResult
@@ -22,7 +22,7 @@ package struct WorktreeListingProjectionInput: Sendable {
         self.snapshot = snapshot
         self.repositoryPath = repositoryPath
         self.callerDirectory = callerDirectory
-        self.target = target
+        self.targetResolution = targetResolution
         self.integrationGrade = integrationGrade
         self.status = status
         self.evidence = evidence
@@ -45,7 +45,7 @@ package enum WorktreeListingProjector {
         let snapshot = input.snapshot
         let repositoryPath = input.repositoryPath
         let callerDirectory = input.callerDirectory
-        let target = input.target
+        let targetResolution = input.targetResolution
         let integrationGrade = input.integrationGrade
         let status = input.status
         let evidence = input.evidence
@@ -53,7 +53,7 @@ package enum WorktreeListingProjector {
         let changes = changesDocument(status)
         let integration = integrationDocument(
             branch: branch,
-            target: target,
+            resolution: targetResolution,
             grade: integrationGrade
         )
         let temporaryStatus = temporaryDocument(evidence)
@@ -147,10 +147,12 @@ package enum WorktreeListingProjector {
 
     private static func integrationDocument(
         branch: String?,
-        target: WorktreeIntegrationTarget?,
+        resolution: WorktreeIntegrationTargetResolution,
         grade: GitBranchIntegrationGrade?
     ) -> WorktreeIntegrationAssessmentDocument? {
         guard let branch else { return nil }
+        if resolution.hasReadFailure { return .unknown(.readFailed) }
+        let target = resolution.target
         guard let target else { return .unknown(.noTarget) }
         guard branch != target.branchName else { return nil }
         guard let grade else { return .unknown(.readFailed) }

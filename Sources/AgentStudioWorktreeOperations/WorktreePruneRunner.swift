@@ -68,12 +68,12 @@ package struct WorktreePruneRunner: Sendable {
         let linkedWorktrees = snapshots.filter { !$0.isMainWorktree }
         let branchNames = Set(
             linkedWorktrees.compactMap { WorktreeListingProjector.branchName(in: $0.head) }
-                .filter { $0 != fetchResult.target?.branchName }
+                .filter { $0 != fetchResult.resolution.branchName }
         ).sorted()
         let assessments = await branchAssessments(
             branchNames: branchNames,
             repositoryPath: repository.repositoryPath,
-            target: fetchResult.target
+            resolution: fetchResult.resolution
         )
         let mainWorktreePath =
             repository.mainWorktreePath
@@ -152,13 +152,29 @@ package struct WorktreePruneRunner: Sendable {
     private func branchAssessments(
         branchNames: [String],
         repositoryPath: URL,
-        target: WorktreeIntegrationTarget?
+        resolution: WorktreeIntegrationTargetResolution
     ) async -> [String: BranchAssessment] {
         guard !branchNames.isEmpty else { return [:] }
+        if resolution.hasReadFailure {
+            return Dictionary(
+                uniqueKeysWithValues: branchNames.map { branchName in
+                    (
+                        branchName,
+                        assessment(
+                            branchName: branchName,
+                            grade: .unknown(.readFailed),
+                            commit: nil,
+                            resolution: resolution
+                        )
+                    )
+                }
+            )
+        }
+        let target = resolution.target
         guard let target else {
             return Dictionary(
                 uniqueKeysWithValues: branchNames.map { branchName in
-                    (branchName, assessment(branchName: branchName, grade: nil, commit: nil, target: nil))
+                    (branchName, assessment(branchName: branchName, grade: nil, commit: nil, resolution: resolution))
                 }
             )
         }
@@ -187,7 +203,12 @@ package struct WorktreePruneRunner: Sendable {
                 let result = gradesByBranch[branchName] ?? (.unknown(.branchNotFound), nil)
                 return (
                     branchName,
-                    assessment(branchName: branchName, grade: result.grade, commit: result.commit, target: target)
+                    assessment(
+                        branchName: branchName,
+                        grade: result.grade,
+                        commit: result.commit,
+                        resolution: resolution
+                    )
                 )
             }
         )
@@ -197,7 +218,7 @@ package struct WorktreePruneRunner: Sendable {
         branchName: String,
         grade: GitBranchIntegrationGrade?,
         commit: String?,
-        target: WorktreeIntegrationTarget?
+        resolution: WorktreeIntegrationTargetResolution
     ) -> BranchAssessment {
         BranchAssessment(
             branchName: branchName,
@@ -205,7 +226,7 @@ package struct WorktreePruneRunner: Sendable {
             commit: commit,
             document: WorktreeRemovalOutcomeProjector.assessmentDocument(
                 branchName: branchName,
-                target: target,
+                resolution: resolution,
                 grade: grade
             ) ?? .unknown(.readFailed)
         )

@@ -149,6 +149,43 @@ struct WorktreeListingIntegrationTests {
         #expect(row.remove == nil)
     }
 
+    @Test("an unreadable E4 target keeps every worktree row with a readFailed assessment")
+    func defaultTargetReadFailureKeepsEveryWorktreeRow() async throws {
+        var fixture = try await WorktreeRemovalRepository.create(named: "worktree-list-unreadable-target")
+        defer { fixture.destroy() }
+        let firstWorktreePath = try await fixture.addWorktree(branch: "feature/target-read-first")
+        let secondWorktreePath = try await fixture.addWorktree(branch: "feature/target-read-second")
+        let mainSnapshot = try #require(
+            await fixture.client.worktrees(for: fixture.path).first(where: \.isMainWorktree)
+        )
+        let identity = try await fixture.client.repositoryIdentity(for: fixture.path)
+        let client = WorktreeOperationClientStub(
+            startPath: fixture.path,
+            snapshot: mainSnapshot,
+            identity: identity,
+            baseClient: fixture.client,
+            failsDefaultTargetResolution: true
+        )
+
+        let outcome = await WorktreeOperationRunner(client: client).run(
+            .list(start: fixture.path, callerDirectory: nil, targets: [], fetchPolicy: .defaultBranch)
+        )
+
+        guard case .listed(let listing) = outcome else {
+            Issue.record("expected all worktree rows despite an unreadable E4 target, got \(outcome)")
+            return
+        }
+        #expect(listing.worktrees.count == 3)
+        #expect(
+            Set(listing.worktrees.map { $0.path.standardizedFileURL.path })
+                == Set([fixture.path.path, firstWorktreePath.path, secondWorktreePath.path])
+        )
+        #expect(listing.target == nil)
+        #expect(listing.fetch == .skipped(reason: .noTarget))
+        #expect(listing.worktrees.allSatisfy { $0.integration == .unknown(.readFailed) })
+        #expect(try WorktreeCommandLineFormatter.format(outcome: outcome, usesJSONOutput: true).exitCode == 0)
+    }
+
     @Test("an unreadable tmp directory becomes an evidenceUnknown blocker")
     func unreadableTmpDirectoryFailsClosed() async throws {
         let repository = try await FilesystemTestGitRepo.create(named: "worktree-list-unknown-tmp")
