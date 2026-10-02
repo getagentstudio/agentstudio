@@ -1,7 +1,7 @@
 import Foundation
 import Testing
 
-enum WorktreeLargeFileScanCLIContract {
+enum WorktreeLargeFileCLIContract {
     enum ScanDocument: Decodable, Equatable {
         case complete
         case incompleteReadFailed(errno: Int32)
@@ -53,5 +53,10 @@ enum WorktreeLargeFileScanCLIContract {
         let scan = try #require(largeFiles["scan"])
         let encoded = try JSONSerialization.data(withJSONObject: scan, options: [.fragmentsAllowed, .sortedKeys])
         return try #require(String(bytes: encoded, encoding: .utf8))
+    }
+
+    static func expectedPullCommand(for worktreePath: URL) -> String {
+        let escapedPath = worktreePath.standardizedFileURL.path.replacingOccurrences(of: "'", with: "'\"'\"'")
+        return "git -C '\(escapedPath)' lfs pull"
     }
 }

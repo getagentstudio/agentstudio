@@ -23,7 +23,7 @@ struct WorktreeCreationCommandLineIntegrationTests {
         let missing: [GitLargeFileFillMiss]
         let missingCount: Int
         let options: [String]?
-        let scan: WorktreeLargeFileScanCLIContract.ScanDocument
+        let scan: WorktreeLargeFileCLIContract.ScanDocument
     }
 
     private struct RefusedDocument: Decodable {
@@ -118,7 +118,7 @@ struct WorktreeCreationCommandLineIntegrationTests {
         #expect(created.largeFiles?.missingCount == 0)
         #expect(created.largeFiles?.options == nil)
         #expect(created.largeFiles?.scan == .complete)
-        #expect(try WorktreeLargeFileScanCLIContract.rawScanJSON(in: creationJSON) == #""complete""#)
+        #expect(try WorktreeLargeFileCLIContract.rawScanJSON(in: creationJSON) == #""complete""#)
         #expect(try Data(contentsOf: destination.appending(path: "asset.bin")) == fixture.payload)
 
         let listProbe = WorktreeCreationCommandLineProbe()
@@ -149,9 +149,9 @@ struct WorktreeCreationCommandLineIntegrationTests {
         #expect(!FileManager.default.fileExists(atPath: destination.path))
     }
 
-    @Test("new reports absent LFS objects and offers the pull command without failing")
-    func reportsMissingLargeFileFromLocalStore() async throws {
-        let fixture = try await makeLargeFileFixture(named: "cli-lfs-absent", includeStoreObject: false)
+    @Test("new and changes-only fork quote pull options for missing LFS objects")
+    func reportsQuotedPullOptionsForMissingLargeFiles() async throws {
+        let fixture = try await makeLargeFileFixture(named: "cli lfs ' absent", includeStoreObject: false)
         defer { FilesystemTestGitRepo.destroy(fixture.repository) }
 
         let branch = "feature/lfs-absent"
@@ -170,8 +170,11 @@ struct WorktreeCreationCommandLineIntegrationTests {
         #expect(probe.errorSnapshot().isEmpty)
         #expect(try Data(contentsOf: destination.appending(path: "asset.bin")) == Data(fixture.pointer.utf8))
         let output = try #require(probe.outputSnapshot().first)
+        let expectedHumanPullCommand = WorktreeLargeFileCLIContract.expectedPullCommand(for: destination)
+        #expect(destination.path.contains(" "))
+        #expect(destination.path.contains("'"))
         #expect(output.contains("LFS: 0 filled, 1 missing"))
-        #expect(output.contains("git -C \(destination.path) lfs pull"))
+        #expect(output.contains(expectedHumanPullCommand))
 
         let jsonProbe = WorktreeCreationCommandLineProbe()
         let jsonBranch = "feature/lfs-absent-json"
@@ -192,9 +195,44 @@ struct WorktreeCreationCommandLineIntegrationTests {
         #expect(created.largeFiles?.materialized == 0)
         #expect(created.largeFiles?.missing == [GitLargeFileFillMiss(path: "asset.bin", reason: .objectAbsent)])
         #expect(created.largeFiles?.missingCount == 1)
-        #expect(created.largeFiles?.options == ["git -C \(jsonDestination.path) lfs pull"])
+        #expect(created.largeFiles?.options == [WorktreeLargeFileCLIContract.expectedPullCommand(for: jsonDestination)])
         #expect(created.largeFiles?.scan == .complete)
-        #expect(try WorktreeLargeFileScanCLIContract.rawScanJSON(in: creationJSON) == #""complete""#)
+        #expect(try WorktreeLargeFileCLIContract.rawScanJSON(in: creationJSON) == #""complete""#)
+
+        let forkBranch = "feature/lfs-absent-fork"
+        let forkDestination = try siblingDestination(repository: fixture.repository, branch: forkBranch)
+        defer { try? FileManager.default.removeItem(at: forkDestination) }
+        let forkProbe = WorktreeCreationCommandLineProbe()
+        let forkExitCode = await WorktreeCommandLine.run(
+            arguments: ["fork", forkBranch, "--from", fixture.repository.path, "--changes-only"],
+            currentDirectory: fixture.repository,
+            output: { forkProbe.appendOutput($0) },
+            errorOutput: { forkProbe.appendError($0) }
+        )
+        #expect(forkExitCode == 0)
+        #expect(forkProbe.errorSnapshot().isEmpty)
+        #expect(
+            forkProbe.outputSnapshot().first?.contains(
+                WorktreeLargeFileCLIContract.expectedPullCommand(for: forkDestination)) == true)
+
+        let forkJSONBranch = "feature/lfs-absent-fork-json"
+        let forkJSONDestination = try siblingDestination(repository: fixture.repository, branch: forkJSONBranch)
+        defer { try? FileManager.default.removeItem(at: forkJSONDestination) }
+        let forkJSONProbe = WorktreeCreationCommandLineProbe()
+        let forkJSONExitCode = await WorktreeCommandLine.run(
+            arguments: ["fork", forkJSONBranch, "--from", fixture.repository.path, "--changes-only", "--json"],
+            currentDirectory: fixture.repository,
+            output: { forkJSONProbe.appendOutput($0) },
+            errorOutput: { forkJSONProbe.appendError($0) }
+        )
+        #expect(forkJSONExitCode == 0)
+        #expect(forkJSONProbe.errorSnapshot().isEmpty)
+        let forkJSONOutput = try #require(forkJSONProbe.outputSnapshot().first)
+        let forkCreated = try JSONDecoder().decode(CreatedDocument.self, from: Data(forkJSONOutput.utf8))
+        #expect(forkCreated.largeFiles?.missing == [GitLargeFileFillMiss(path: "asset.bin", reason: .objectAbsent)])
+        #expect(
+            forkCreated.largeFiles?.options
+                == [WorktreeLargeFileCLIContract.expectedPullCommand(for: forkJSONDestination)])
     }
 
     @Test("changes-only fork reports LFS materialized from the local store")
@@ -271,7 +309,7 @@ struct WorktreeCreationCommandLineIntegrationTests {
         #expect(created.largeFiles?.missing.isEmpty == true)
         #expect(created.largeFiles?.options == ["git -C \(destination.path) lfs pull"])
         #expect(
-            try WorktreeLargeFileScanCLIContract.rawScanJSON(in: jsonResponse.text)
+            try WorktreeLargeFileCLIContract.rawScanJSON(in: jsonResponse.text)
                 == "{\"incomplete\":{\"readFailed\":\(EIO)}}")
         #expect(FileManager.default.fileExists(atPath: destination.path))
 
@@ -325,7 +363,7 @@ struct WorktreeCreationCommandLineIntegrationTests {
         #expect(created.largeFiles?.scan == .incompleteGitFailure(kind: "headUnavailable"))
         #expect(created.largeFiles?.options == ["git -C \(destination.path) lfs pull"])
         #expect(
-            try WorktreeLargeFileScanCLIContract.rawScanJSON(in: jsonResponse.text)
+            try WorktreeLargeFileCLIContract.rawScanJSON(in: jsonResponse.text)
                 == #"{"incomplete":{"gitFailure":"headUnavailable"}}"#)
         #expect(FileManager.default.fileExists(atPath: destination.path))
 

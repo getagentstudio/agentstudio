@@ -15,7 +15,8 @@ package struct WorktreeLargeFilesDocument: Encodable, Sendable, Equatable {
         if fill.missing.isEmpty, case .complete = fill.scan {
             options = nil
         } else {
-            options = ["git -C \(worktreePath.standardizedFileURL.path) lfs pull"]
+            let quotedPath = WorktreeListingProjector.shellArgument(worktreePath.standardizedFileURL.path)
+            options = ["git -C \(quotedPath) lfs pull"]
         }
         scan = WorktreeLargeFileScanDocument(fill.scan)
     }
