@@ -149,7 +149,7 @@ extension WorktreePruneRunner {
         removalRunner: WorktreeRemovalRunner
     ) async -> WorktreePruneEntry {
         let targetPath = snapshot.canonicalPath.standardizedFileURL
-        let report = await removalRunner.run(
+        let removalResult = await removalRunner.runForPruneCandidate(
             removalRequest(
                 repositoryPath: repository.repositoryPath,
                 callerDirectory: request.callerDirectory,
@@ -159,6 +159,56 @@ extension WorktreePruneRunner {
                 dryRun: false
             )
         )
+        switch removalResult {
+        case .candidateRejected(let rejection):
+            let reason: WorktreePruneSkipReason
+            guard rejection.branchName != nil else {
+                reason = .detached
+                return skippedEntry(
+                    target: targetPath.path,
+                    reason: reason,
+                    repositoryPath: repository.repositoryPath,
+                    worktreePath: targetPath
+                )
+            }
+            guard let freshAssessment = rejection.assessment else {
+                return skippedEntry(
+                    target: targetPath.path,
+                    reason: .assessmentUnknown(.noTarget),
+                    repositoryPath: repository.repositoryPath,
+                    worktreePath: targetPath
+                )
+            }
+            switch freshAssessment {
+            case .hasRemainingContribution:
+                reason = .notIntegrated
+            case .unknown(let unknownReason):
+                reason = .assessmentUnknown(unknownReason)
+            case .integrated:
+                return failedObservationEntry(targetPath: targetPath, assessment: assessment?.document)
+            }
+            return skippedEntry(
+                target: targetPath.path,
+                reason: reason,
+                repositoryPath: repository.repositoryPath,
+                worktreePath: targetPath
+            )
+        case .report(let report):
+            return removalReportEntry(
+                report,
+                targetPath: targetPath,
+                assessment: assessment,
+                repository: repository
+            )
+        }
+    }
+
+    private func removalReportEntry(
+        _ report: WorktreeRemovalReport,
+        targetPath: URL,
+        assessment: WorktreeRemovalRunner.BranchAssessment?,
+        repository: WorktreeRemovalRunner.RepositoryContext
+    ) -> WorktreePruneEntry {
         if report.fetchingReadFailure != nil {
             return failedObservationEntry(targetPath: targetPath, assessment: assessment?.document)
         }

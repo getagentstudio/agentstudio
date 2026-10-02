@@ -71,6 +71,159 @@ struct WorktreePrunePolicyIntegrationTests {
         }
         #expect(try Data(contentsOf: scenario.lockPath) == scenario.foreignLockBytes)
     }
+
+    @Test("apply skips a candidate that gains an unmerged commit before its fresh assessment")
+    func skipsCandidateThatBecomesUnintegratedBeforeApplyAssessment() async throws {
+        var fixture = try await WorktreeRemovalRepository.create(named: "worktree-prune-fresh-unintegrated")
+        defer { fixture.destroy() }
+        let worktree = try await fixture.addWorktree(branch: "feature/prune-fresh-unintegrated")
+        let baseClient = fixture.client
+        let identity = try await baseClient.repositoryIdentity(for: fixture.path)
+        let repositoryPath = identity.mainWorktreePath?.standardizedFileURL ?? fixture.path.standardizedFileURL
+        let mainSnapshot = try #require(await baseClient.worktrees(for: repositoryPath).first(where: \.isMainWorktree))
+        let assessmentSchedule = WorktreePruneFreshAssessmentSchedule(
+            behavior: .advanceBranch(afterCall: 2, worktreePath: worktree)
+        )
+        let client = WorktreeOperationClientStub(
+            startPath: repositoryPath,
+            snapshot: mainSnapshot,
+            identity: identity,
+            baseClient: baseClient,
+            integrationAssessmentHandler: { request in
+                await assessmentSchedule.assess(request, using: baseClient)
+            }
+        )
+        let runner = WorktreePruneRunner(client: client)
+
+        let previewOutcome = await runner.run(
+            pruneRequest(repository: repositoryPath, callerDirectory: repositoryPath, apply: false)
+        )
+        guard case .pruned(let preview) = previewOutcome,
+            case .wouldRemove(let candidate)? = preview.entries.first
+        else {
+            Issue.record("expected an integrated candidate in preview, got \(previewOutcome)")
+            return
+        }
+        #expect(candidate.branch == "feature/prune-fresh-unintegrated")
+
+        let applyOutcome = await runner.run(
+            pruneRequest(repository: repositoryPath, callerDirectory: repositoryPath, apply: true)
+        )
+        guard case .pruned(let applied) = applyOutcome,
+            case .skipped(let skipped)? = applied.entries.first
+        else {
+            Issue.record("expected an unintegrated skip on apply, got \(applyOutcome)")
+            return
+        }
+        #expect(skipped.skip.reason == WorktreePruneSkipReason.notIntegrated)
+        #expect(FileManager.default.fileExists(atPath: worktree.path))
+        #expect(try await removalGit(worktree, "status", "--porcelain").isEmpty)
+
+        let branchCommit = try await removalGit(
+            repositoryPath, "rev-parse", "refs/heads/feature/prune-fresh-unintegrated")
+        let worktreeCommit = try await removalGit(worktree, "rev-parse", "HEAD")
+        #expect(branchCommit == worktreeCommit)
+        let worktreeAdministration = try await removalGit(repositoryPath, "worktree", "list", "--porcelain")
+        #expect(worktreeAdministration.contains("branch refs/heads/feature/prune-fresh-unintegrated"))
+    }
+
+    @Test("apply skips without removing a candidate when its fresh assessment becomes unknown")
+    func skipsCandidateWhenFreshAssessmentBecomesUnknown() async throws {
+        var fixture = try await WorktreeRemovalRepository.create(named: "worktree-prune-fresh-unknown")
+        defer { fixture.destroy() }
+        let worktree = try await fixture.addWorktree(branch: "feature/prune-fresh-unknown")
+        let baseClient = fixture.client
+        let identity = try await baseClient.repositoryIdentity(for: fixture.path)
+        let repositoryPath = identity.mainWorktreePath?.standardizedFileURL ?? fixture.path.standardizedFileURL
+        let mainSnapshot = try #require(await baseClient.worktrees(for: repositoryPath).first(where: \.isMainWorktree))
+        let assessmentSchedule = WorktreePruneFreshAssessmentSchedule(behavior: .failOnCall(3))
+        let client = WorktreeOperationClientStub(
+            startPath: repositoryPath,
+            snapshot: mainSnapshot,
+            identity: identity,
+            baseClient: baseClient,
+            integrationAssessmentHandler: { request in
+                await assessmentSchedule.assess(request, using: baseClient)
+            }
+        )
+        let runner = WorktreePruneRunner(client: client)
+
+        let previewOutcome = await runner.run(
+            pruneRequest(repository: repositoryPath, callerDirectory: repositoryPath, apply: false)
+        )
+        guard case .pruned(let preview) = previewOutcome,
+            case .wouldRemove? = preview.entries.first
+        else {
+            Issue.record("expected an integrated candidate in preview, got \(previewOutcome)")
+            return
+        }
+
+        let applyOutcome = await runner.run(
+            pruneRequest(repository: repositoryPath, callerDirectory: repositoryPath, apply: true)
+        )
+        guard case .pruned(let applied) = applyOutcome,
+            case .skipped(let skipped)? = applied.entries.first
+        else {
+            Issue.record("expected an unknown-assessment skip on apply, got \(applyOutcome)")
+            return
+        }
+        #expect(
+            skipped.skip.reason
+                == WorktreePruneSkipReason.assessmentUnknown(WorktreeIntegrationUnknownReasonDocument.readFailed))
+        #expect(FileManager.default.fileExists(atPath: worktree.path))
+        #expect(
+            try await removalGit(repositoryPath, "show-ref", "--verify", "refs/heads/feature/prune-fresh-unknown")
+                .isEmpty == false)
+        let worktreeAdministration = try await removalGit(repositoryPath, "worktree", "list", "--porcelain")
+        #expect(worktreeAdministration.contains("branch refs/heads/feature/prune-fresh-unknown"))
+    }
+}
+
+private actor WorktreePruneFreshAssessmentSchedule {
+    enum Behavior: Sendable {
+        case advanceBranch(afterCall: Int, worktreePath: URL)
+        case failOnCall(Int)
+    }
+
+    private let behavior: Behavior
+    private var assessmentCallCount = 0
+
+    init(behavior: Behavior) {
+        self.behavior = behavior
+    }
+
+    func assess(
+        _ request: GitBranchIntegrationRequest,
+        using client: any AgentStudioGitLocalClient
+    ) async -> Result<GitBranchIntegrationReport, GitDataPlaneError> {
+        assessmentCallCount += 1
+        let call = assessmentCallCount
+        if case .failOnCall(let failureCall) = behavior, call == failureCall {
+            return .failure(.unsupported(message: "injected fresh branch-assessment read failure"))
+        }
+
+        let report: GitBranchIntegrationReport
+        do {
+            report = try await client.assessBranchIntegration(request)
+        } catch {
+            return .failure(error)
+        }
+        if case .advanceBranch(let advanceCall, let worktreePath) = behavior, call == advanceCall {
+            do {
+                try "unmerged contribution\n".write(
+                    to: worktreePath.appending(path: "unmerged.txt"),
+                    atomically: true,
+                    encoding: .utf8
+                )
+                try await removalGit(worktreePath, "add", "unmerged.txt")
+                try await removalGit(worktreePath, "commit", "-m", "Advance prune candidate")
+            } catch {
+                return .failure(
+                    .unsupported(message: "could not advance the prune candidate at the assessment seam"))
+            }
+        }
+        return .success(report)
+    }
 }
 
 private struct WorktreePrunePolicyScenario {

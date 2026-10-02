@@ -25,6 +25,21 @@ package struct WorktreeRemovalRunner: Sendable {
         let document: WorktreeIntegrationAssessmentDocument?
     }
 
+    struct PruneCandidateAssessmentRejection: Sendable {
+        let branchName: String?
+        let assessment: WorktreeIntegrationAssessmentDocument?
+    }
+
+    enum WorktreeRemovalAttemptResult: Sendable {
+        case entry(WorktreeRemovalEntry)
+        case candidateRejected(PruneCandidateAssessmentRejection)
+    }
+
+    enum RemovalRunResult: Sendable {
+        case report(WorktreeRemovalReport)
+        case candidateRejected(PruneCandidateAssessmentRejection)
+    }
+
     struct WorktreePreflight: Sendable {
         let stop: WorktreeStopDetails?
         let status: GitStatusFactsRead?
@@ -126,8 +141,26 @@ package struct WorktreeRemovalRunner: Sendable {
 
     @concurrent
     package func run(_ request: WorktreeRemovalRequest) async -> WorktreeRemovalReport {
+        switch await execute(request, requireIntegratedCandidate: false) {
+        case .report(let report):
+            return report
+        case .candidateRejected:
+            preconditionFailure("Ordinary removal cannot reject a prune candidate")
+        }
+    }
+
+    @concurrent
+    func runForPruneCandidate(_ request: WorktreeRemovalRequest) async -> RemovalRunResult {
+        await execute(request, requireIntegratedCandidate: true)
+    }
+
+    @concurrent
+    private func execute(
+        _ request: WorktreeRemovalRequest,
+        requireIntegratedCandidate: Bool
+    ) async -> RemovalRunResult {
         guard let repository = await repositoryContext(start: request.start) else {
-            return failureReport(fetch: .skipped(reason: .noTarget))
+            return .report(failureReport(fetch: .skipped(reason: .noTarget)))
         }
 
         let targetResolution = await WorktreeIntegrationTargetResolver(client: client)
@@ -144,9 +177,28 @@ package struct WorktreeRemovalRunner: Sendable {
             worktrees = try await client.worktrees(for: repository.repositoryPath)
             branches = try await client.branches(for: repository.repositoryPath)
         } catch {
-            return failureReport(fetch: fetchResult.status)
+            return .report(failureReport(fetch: fetchResult.status))
         }
 
+        return await processTargets(
+            request: request,
+            repository: repository,
+            fetchResult: fetchResult,
+            worktrees: worktrees,
+            branches: branches,
+            requireIntegratedCandidate: requireIntegratedCandidate
+        )
+    }
+
+    @concurrent
+    private func processTargets(
+        request: WorktreeRemovalRequest,
+        repository: RepositoryContext,
+        fetchResult: WorktreeFetchStepResult,
+        worktrees: [GitWorktreeSnapshot],
+        branches: [GitBranchSnapshot],
+        requireIntegratedCandidate: Bool
+    ) async -> RemovalRunResult {
         let mainWorktreePath =
             repository.mainWorktreePath
             ?? worktrees.first(where: \.isMainWorktree)?.canonicalPath.standardizedFileURL
@@ -210,14 +262,20 @@ package struct WorktreeRemovalRunner: Sendable {
                             )))
                 }
             case .worktree(let snapshot, let inputs):
-                entries.append(
-                    await removeWorktree(
-                        snapshot,
-                        inputs: inputs,
-                        request: request,
-                        repository: repository,
-                        fetchResult: fetchResult
-                    ))
+                switch await removeWorktree(
+                    snapshot,
+                    inputs: inputs,
+                    request: request,
+                    repository: repository,
+                    fetchResult: fetchResult,
+                    requireIntegratedCandidate: requireIntegratedCandidate
+                )
+                {
+                case .entry(let entry):
+                    entries.append(entry)
+                case .candidateRejected(let rejection):
+                    return .candidateRejected(rejection)
+                }
             case .branch(let branchName, let inputs):
                 entries.append(
                     await removeBranch(
@@ -229,7 +287,7 @@ package struct WorktreeRemovalRunner: Sendable {
                     ))
             }
         }
-        return WorktreeRemovalReport(entries: entries, fetch: fetchResult.status)
+        return .report(WorktreeRemovalReport(entries: entries, fetch: fetchResult.status))
     }
 
     private func repositoryContext(start: URL) async -> RepositoryContext? {

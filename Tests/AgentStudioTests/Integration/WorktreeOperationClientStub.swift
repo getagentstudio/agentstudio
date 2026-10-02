@@ -28,6 +28,11 @@ struct WorktreeOperationClientStub: AgentStudioGitLocalClient {
     let listedWorktrees: [GitWorktreeSnapshot]?
     let branchSnapshots: [GitBranchSnapshot]?
     let integrationGrades: [String: GitBranchIntegrationGrade]?
+    let integrationAssessmentHandler:
+        (
+            @Sendable (GitBranchIntegrationRequest) async
+                -> Result<GitBranchIntegrationReport, GitDataPlaneError>
+        )?
     let statusFailurePaths: Set<String>
     let failsWorktreeListing: Bool
     let failsDefaultTargetResolution: Bool
@@ -50,6 +55,10 @@ struct WorktreeOperationClientStub: AgentStudioGitLocalClient {
         listedWorktrees: [GitWorktreeSnapshot]? = nil,
         branchSnapshots: [GitBranchSnapshot]? = nil,
         integrationGrades: [String: GitBranchIntegrationGrade]? = nil,
+        integrationAssessmentHandler: (
+            @Sendable (GitBranchIntegrationRequest) async
+                -> Result<GitBranchIntegrationReport, GitDataPlaneError>
+        )? = nil,
         statusFailurePaths: Set<String> = [],
         failsWorktreeListing: Bool = false,
         failsDefaultTargetResolution: Bool = false,
@@ -71,6 +80,7 @@ struct WorktreeOperationClientStub: AgentStudioGitLocalClient {
         self.listedWorktrees = listedWorktrees
         self.branchSnapshots = branchSnapshots
         self.integrationGrades = integrationGrades
+        self.integrationAssessmentHandler = integrationAssessmentHandler
         self.statusFailurePaths = statusFailurePaths
         self.failsWorktreeListing = failsWorktreeListing
         self.failsDefaultTargetResolution = failsDefaultTargetResolution
@@ -203,6 +213,12 @@ struct WorktreeOperationClientStub: AgentStudioGitLocalClient {
     func assessBranchIntegration(_ request: GitBranchIntegrationRequest) async throws(GitDataPlaneError)
         -> GitBranchIntegrationReport
     {
+        if let integrationAssessmentHandler {
+            switch await integrationAssessmentHandler(request) {
+            case .success(let report): return report
+            case .failure(let error): throw error
+            }
+        }
         if let integrationGrades {
             let baseAssessments: [String: GitBranchIntegrationAssessment]
             if let baseClient,

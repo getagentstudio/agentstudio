@@ -7,8 +7,9 @@ extension WorktreeRemovalRunner {
         inputs: [String],
         request: WorktreeRemovalRequest,
         repository: RepositoryContext,
-        fetchResult: WorktreeFetchStepResult
-    ) async -> WorktreeRemovalEntry {
+        fetchResult: WorktreeFetchStepResult,
+        requireIntegratedCandidate: Bool
+    ) async -> WorktreeRemovalAttemptResult {
         let targetName = snapshot.canonicalPath.standardizedFileURL.path
         let branchName = WorktreeListingProjector.branchName(in: snapshot.head)
         let preflight = await preflight(
@@ -17,22 +18,24 @@ extension WorktreeRemovalRunner {
             mainWorktreePath: repository.mainWorktreePath ?? repository.repositoryPath
         )
         if let stop = preflight.stop {
-            return request.dryRun
-                ? plannedEntry(
-                    WorktreePlanEntryRequest(
-                        target: targetName,
-                        inputs: inputs,
-                        isWorktree: true,
-                        request: request,
-                        fetchStatus: fetchResult.status,
-                        preflight: preflight,
-                        assessment: nil,
-                        targetResolution: fetchResult.resolution,
-                        stop: stop,
-                        wouldRemoveLockPaths: []
+            return .entry(
+                request.dryRun
+                    ? plannedEntry(
+                        WorktreePlanEntryRequest(
+                            target: targetName,
+                            inputs: inputs,
+                            isWorktree: true,
+                            request: request,
+                            fetchStatus: fetchResult.status,
+                            preflight: preflight,
+                            assessment: nil,
+                            targetResolution: fetchResult.resolution,
+                            stop: stop,
+                            wouldRemoveLockPaths: []
+                        )
                     )
-                )
-                : refusedEntry(target: targetName, inputs: inputs, stop: stop)
+                    : refusedEntry(target: targetName, inputs: inputs, stop: stop)
+            )
         }
 
         let assessment: BranchAssessment?
@@ -44,6 +47,17 @@ extension WorktreeRemovalRunner {
             )
         } else {
             assessment = nil
+        }
+        if requireIntegratedCandidate {
+            guard let freshAssessment = assessment,
+                case .integrated? = freshAssessment.document
+            else {
+                return .candidateRejected(
+                    PruneCandidateAssessmentRejection(
+                        branchName: branchName,
+                        assessment: assessment?.document
+                    ))
+            }
         }
         let lockCheck = preEffectLockCheck(
             snapshot: snapshot,
@@ -66,28 +80,30 @@ extension WorktreeRemovalRunner {
             wouldRemoveLockPaths: lockCheck.wouldRemovePaths
         )
         if let stop = lockCheck.stop {
-            return preflightStopEntry(stop, request: request, plannedRequest: plannedRequest)
+            return .entry(preflightStopEntry(stop, request: request, plannedRequest: plannedRequest))
         }
 
         if let stop = preflight.archiveDestinationStop {
-            return preflightStopEntry(stop, request: request, plannedRequest: plannedRequest)
+            return .entry(preflightStopEntry(stop, request: request, plannedRequest: plannedRequest))
         }
 
         if request.dryRun {
-            return plannedEntry(plannedRequest)
+            return .entry(plannedEntry(plannedRequest))
         }
 
-        return await executeWorktreeRemoval(
-            WorktreeRemovalExecutionContext(
-                snapshot: snapshot,
-                targetName: targetName,
-                inputs: inputs,
-                branchName: branchName,
-                assessment: assessment,
-                preflight: preflight,
-                request: request,
-                repository: repository,
-                targetResolution: fetchResult.resolution
+        return .entry(
+            await executeWorktreeRemoval(
+                WorktreeRemovalExecutionContext(
+                    snapshot: snapshot,
+                    targetName: targetName,
+                    inputs: inputs,
+                    branchName: branchName,
+                    assessment: assessment,
+                    preflight: preflight,
+                    request: request,
+                    repository: repository,
+                    targetResolution: fetchResult.resolution
+                )
             )
         )
     }
