@@ -85,7 +85,7 @@ package struct WorktreeOperationRunner {
         startPoint: String
     ) async -> WorktreeOperationOutcome {
         do {
-            let worktree = try await client.createWorktree(
+            let creation = try await client.createWorktree(
                 GitCreateWorktreeRequest(
                     repositoryPath: prepared.repositoryPath,
                     destinationPath: prepared.destinationPath,
@@ -98,9 +98,10 @@ package struct WorktreeOperationRunner {
                 WorktreeCreatedSummary(
                     operation: .new,
                     branch: prepared.branchName.rawValue,
-                    path: worktree.canonicalPath,
+                    path: creation.worktree.canonicalPath,
                     repository: prepared.repositoryPath,
-                    materialization: nil
+                    materialization: nil,
+                    largeFiles: creation.largeFiles
                 ))
         } catch {
             return .failed(WorktreeOperationErrorMapper.createFailure(error))
@@ -137,7 +138,8 @@ package struct WorktreeOperationRunner {
                         branch: prepared.branchName.rawValue,
                         path: fork.worktree.canonicalPath,
                         repository: prepared.repositoryPath,
-                        materialization: fork.materialization
+                        materialization: fork.materialization,
+                        largeFiles: WorktreeLargeFilesProjector.fill(from: fork.materialization)
                     ))
             } catch {
                 return WorktreeOperationErrorMapper.forkOutcome(

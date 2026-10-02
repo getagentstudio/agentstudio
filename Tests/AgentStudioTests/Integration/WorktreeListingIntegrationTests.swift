@@ -558,7 +558,8 @@ private func createBranchWorktree(
             repositoryPath: repository,
             destinationPath: destination,
             mode: .newBranch(name: branch, startPoint: .named("refs/heads/main"))
-        ))
+        )
+    ).worktree
 }
 
 private func path(for branch: String, beside repository: URL) -> URL {

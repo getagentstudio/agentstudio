@@ -6,6 +6,7 @@ struct WorktreeOperationClientStub: AgentStudioGitLocalClient {
     let snapshot: GitWorktreeSnapshot
     let identity: GitRepositoryIdentity
     let baseClient: (any AgentStudioGitLocalClient)?
+    let largeFileFillOverride: GitLargeFileFill?
     let listedWorktrees: [GitWorktreeSnapshot]?
     let branchSnapshots: [GitBranchSnapshot]?
     let integrationGrades: [String: GitBranchIntegrationGrade]?
@@ -26,6 +27,7 @@ struct WorktreeOperationClientStub: AgentStudioGitLocalClient {
         snapshot: GitWorktreeSnapshot,
         identity: GitRepositoryIdentity,
         baseClient: (any AgentStudioGitLocalClient)? = nil,
+        largeFileFillOverride: GitLargeFileFill? = nil,
         listedWorktrees: [GitWorktreeSnapshot]? = nil,
         branchSnapshots: [GitBranchSnapshot]? = nil,
         integrationGrades: [String: GitBranchIntegrationGrade]? = nil,
@@ -45,6 +47,7 @@ struct WorktreeOperationClientStub: AgentStudioGitLocalClient {
         self.snapshot = snapshot
         self.identity = identity
         self.baseClient = baseClient
+        self.largeFileFillOverride = largeFileFillOverride
         self.listedWorktrees = listedWorktrees
         self.branchSnapshots = branchSnapshots
         self.integrationGrades = integrationGrades
@@ -78,7 +81,12 @@ struct WorktreeOperationClientStub: AgentStudioGitLocalClient {
         return GitWorktreeValidation(snapshot: snapshot, isValid: true)
     }
 
-    func createWorktree(_: GitCreateWorktreeRequest) async throws(GitDataPlaneError) -> GitWorktreeSnapshot {
+    func createWorktree(_ request: GitCreateWorktreeRequest) async throws(GitDataPlaneError) -> GitWorktreeCreation {
+        if let baseClient {
+            let creation = try await baseClient.createWorktree(request)
+            guard let largeFileFillOverride else { return creation }
+            return GitWorktreeCreation(worktree: creation.worktree, largeFiles: largeFileFillOverride)
+        }
         throw .unsupported(message: "unexpected worktree creation")
     }
 

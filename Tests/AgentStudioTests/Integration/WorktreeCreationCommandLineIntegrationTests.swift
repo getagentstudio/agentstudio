@@ -1,6 +1,8 @@
 import AgentStudioGit
 import AgentStudioTestSupport
 import AgentStudioWorktreeOperations
+import CryptoKit
+import Darwin
 import Foundation
 import Testing
 
@@ -13,6 +15,14 @@ struct WorktreeCreationCommandLineIntegrationTests {
         let path: String
         let repository: String
         let materialization: GitWorktreeMaterializationResult?
+        let largeFiles: LargeFilesDocument?
+    }
+
+    private struct LargeFilesDocument: Decodable {
+        let materialized: Int
+        let missing: [GitLargeFileFillMiss]
+        let missingCount: Int
+        let scan: GitLargeFileScan
     }
 
     private struct RefusedDocument: Decodable {
@@ -72,9 +82,191 @@ struct WorktreeCreationCommandLineIntegrationTests {
         #expect(document.path == destination.path)
         #expect(document.repository == repository.path)
         #expect(document.materialization == nil)
+        #expect(document.largeFiles == nil)
         #expect(try await git(at: destination, "rev-parse", "--abbrev-ref", "HEAD") == branch)
         #expect(try await git(at: destination, "rev-parse", "HEAD") == expectedTip)
         #expect(try await git(at: repository, "rev-parse", "refs/heads/\(startBranch)") == expectedTip)
+    }
+
+    @Test("new fills an LFS pointer from the local store and remains clean through list and remove")
+    func fillsLargeFileFromLocalStoreAndRemovesWithoutForce() async throws {
+        let fixture = try await makeLargeFileFixture(named: "cli-lfs-filled", includeStoreObject: true)
+        defer { FilesystemTestGitRepo.destroy(fixture.repository) }
+
+        let branch = "feature/lfs-filled"
+        let destination = try siblingDestination(repository: fixture.repository, branch: branch)
+        defer { try? FileManager.default.removeItem(at: destination) }
+
+        let createProbe = WorktreeCreationCommandLineProbe()
+        let createExitCode = await WorktreeCommandLine.run(
+            arguments: ["new", branch, "--repo", fixture.repository.path, "--json"],
+            currentDirectory: fixture.repository,
+            output: { createProbe.appendOutput($0) },
+            errorOutput: { createProbe.appendError($0) }
+        )
+
+        #expect(createExitCode == 0)
+        #expect(createProbe.errorSnapshot().isEmpty)
+        let created = try JSONDecoder().decode(
+            CreatedDocument.self,
+            from: Data(try #require(createProbe.outputSnapshot().first).utf8)
+        )
+        #expect(created.largeFiles?.materialized == 1)
+        #expect(created.largeFiles?.missing.isEmpty == true)
+        #expect(created.largeFiles?.missingCount == 0)
+        #expect(created.largeFiles?.scan == .complete)
+        #expect(try Data(contentsOf: destination.appending(path: "asset.bin")) == fixture.payload)
+
+        let listProbe = WorktreeCreationCommandLineProbe()
+        let listExitCode = await WorktreeCommandLine.run(
+            arguments: ["list", "--repo", fixture.repository.path, "--no-fetch", "--json"],
+            currentDirectory: fixture.repository,
+            output: { listProbe.appendOutput($0) },
+            errorOutput: { listProbe.appendError($0) }
+        )
+        #expect(listExitCode == 0)
+        let listing = try JSONDecoder().decode(
+            WorktreeListingSummary.self,
+            from: Data(try #require(listProbe.outputSnapshot().first).utf8)
+        )
+        let listed = try #require(
+            listing.worktrees.first { $0.path.standardizedFileURL == destination.standardizedFileURL })
+        #expect(listed.changes.status == .clean)
+
+        let removeProbe = WorktreeCreationCommandLineProbe()
+        let removeExitCode = await WorktreeCommandLine.run(
+            arguments: ["remove", branch, "--repo", fixture.repository.path, "--json"],
+            currentDirectory: fixture.repository,
+            output: { removeProbe.appendOutput($0) },
+            errorOutput: { removeProbe.appendError($0) }
+        )
+        #expect(removeExitCode == 0)
+        #expect(removeProbe.errorSnapshot().isEmpty)
+        #expect(!FileManager.default.fileExists(atPath: destination.path))
+    }
+
+    @Test("new reports absent LFS objects and offers the pull command without failing")
+    func reportsMissingLargeFileFromLocalStore() async throws {
+        let fixture = try await makeLargeFileFixture(named: "cli-lfs-absent", includeStoreObject: false)
+        defer { FilesystemTestGitRepo.destroy(fixture.repository) }
+
+        let branch = "feature/lfs-absent"
+        let destination = try siblingDestination(repository: fixture.repository, branch: branch)
+        defer { try? FileManager.default.removeItem(at: destination) }
+        let probe = WorktreeCreationCommandLineProbe()
+
+        let exitCode = await WorktreeCommandLine.run(
+            arguments: ["new", branch, "--repo", fixture.repository.path],
+            currentDirectory: fixture.repository,
+            output: { probe.appendOutput($0) },
+            errorOutput: { probe.appendError($0) }
+        )
+
+        #expect(exitCode == 0)
+        #expect(probe.errorSnapshot().isEmpty)
+        #expect(try Data(contentsOf: destination.appending(path: "asset.bin")) == Data(fixture.pointer.utf8))
+        let output = try #require(probe.outputSnapshot().first)
+        #expect(output.contains("LFS: 0 filled, 1 missing"))
+        #expect(output.contains("git -C \(destination.path) lfs pull"))
+
+        let jsonProbe = WorktreeCreationCommandLineProbe()
+        let jsonBranch = "feature/lfs-absent-json"
+        let jsonDestination = try siblingDestination(repository: fixture.repository, branch: jsonBranch)
+        defer { try? FileManager.default.removeItem(at: jsonDestination) }
+        let jsonExitCode = await WorktreeCommandLine.run(
+            arguments: ["new", jsonBranch, "--repo", fixture.repository.path, "--json"],
+            currentDirectory: fixture.repository,
+            output: { jsonProbe.appendOutput($0) },
+            errorOutput: { jsonProbe.appendError($0) }
+        )
+        #expect(jsonExitCode == 0)
+        let created = try JSONDecoder().decode(
+            CreatedDocument.self,
+            from: Data(try #require(jsonProbe.outputSnapshot().first).utf8)
+        )
+        #expect(created.largeFiles?.materialized == 0)
+        #expect(created.largeFiles?.missing == [GitLargeFileFillMiss(path: "asset.bin", reason: .objectAbsent)])
+        #expect(created.largeFiles?.missingCount == 1)
+        #expect(created.largeFiles?.scan == .complete)
+    }
+
+    @Test("changes-only fork reports LFS materialized from the local store")
+    func changesOnlyForkReportsLargeFileMaterialization() async throws {
+        let fixture = try await makeLargeFileFixture(named: "cli-lfs-fork", includeStoreObject: true)
+        defer { FilesystemTestGitRepo.destroy(fixture.repository) }
+
+        let branch = "feature/lfs-fork"
+        let destination = try siblingDestination(repository: fixture.repository, branch: branch)
+        defer { try? FileManager.default.removeItem(at: destination) }
+        let probe = WorktreeCreationCommandLineProbe()
+
+        let exitCode = await WorktreeCommandLine.run(
+            arguments: ["fork", branch, "--from", fixture.repository.path, "--changes-only", "--json"],
+            currentDirectory: fixture.repository,
+            output: { probe.appendOutput($0) },
+            errorOutput: { probe.appendError($0) }
+        )
+
+        #expect(exitCode == 0)
+        #expect(probe.errorSnapshot().isEmpty)
+        let created = try JSONDecoder().decode(
+            CreatedDocument.self,
+            from: Data(try #require(probe.outputSnapshot().first).utf8)
+        )
+        #expect(created.largeFiles?.materialized == 1)
+        #expect(created.largeFiles?.missing.isEmpty == true)
+        #expect(created.largeFiles?.missingCount == 0)
+        #expect(created.largeFiles?.scan == .complete)
+        #expect(try Data(contentsOf: destination.appending(path: "asset.bin")) == fixture.payload)
+    }
+
+    @Test("incomplete LFS scan is rendered as a successful creation without placeholder misses")
+    func rendersIncompleteLargeFileScanFromCreationBoundary() async throws {
+        let repository = try await FilesystemTestGitRepo.create(named: "cli-lfs-incomplete-scan")
+        defer { FilesystemTestGitRepo.destroy(repository) }
+        try await FilesystemTestGitRepo.seedTrackedAndUntrackedChanges(at: repository)
+
+        let branch = "feature/incomplete-scan"
+        let destination = try siblingDestination(repository: repository, branch: branch)
+        defer { try? FileManager.default.removeItem(at: destination) }
+
+        let realClient = LibGit2AgentStudioGitLocalClient()
+        let snapshots = try await realClient.worktrees(for: repository)
+        let snapshot = try #require(snapshots.first)
+        let identity = try await realClient.repositoryIdentity(for: repository)
+        let incompleteFill = GitLargeFileFill(
+            materializedCount: 0,
+            missing: [],
+            residuePaths: [],
+            scan: .incomplete(.readFailed(errno: EIO))
+        )
+        let client = WorktreeOperationClientStub(
+            startPath: repository,
+            snapshot: snapshot,
+            identity: identity,
+            baseClient: realClient,
+            largeFileFillOverride: incompleteFill
+        )
+
+        let outcome = await WorktreeOperationRunner(client: client).run(
+            .createFromDefault(start: repository, branch: branch)
+        )
+        guard case .created = outcome else {
+            Issue.record("expected worktree creation to succeed with an incomplete LFS scan, received \(outcome)")
+            return
+        }
+
+        let jsonResponse = try WorktreeCommandLineFormatter.format(outcome: outcome, usesJSONOutput: true)
+        #expect(jsonResponse.exitCode == 0)
+        let created = try JSONDecoder().decode(CreatedDocument.self, from: Data(jsonResponse.text.utf8))
+        #expect(created.largeFiles?.scan == .incomplete(.readFailed(errno: EIO)))
+        #expect(created.largeFiles?.missing.isEmpty == true)
+        #expect(FileManager.default.fileExists(atPath: destination.path))
+
+        let humanResponse = try WorktreeCommandLineFormatter.format(outcome: outcome, usesJSONOutput: false)
+        #expect(humanResponse.exitCode == 0)
+        #expect(humanResponse.text.contains("scan incomplete (readFailed errno \(EIO))"))
+        #expect(humanResponse.text.contains("git -C \(destination.path) lfs pull"))
     }
 
     @Test("new from a missing local branch refuses with startBranchNotFound")
@@ -227,11 +419,51 @@ struct WorktreeCreationCommandLineIntegrationTests {
         #expect(try await git(at: repository, "branch", "--list", branch).isEmpty)
     }
 
+    private func makeLargeFileFixture(named name: String, includeStoreObject: Bool) async throws -> LargeFileFixture {
+        let repository = try await FilesystemTestGitRepo.create(named: name)
+        let payload = Data("local LFS payload for \(name)\n".utf8)
+        let objectID = SHA256.hash(data: payload).map { String(format: "%02x", $0) }.joined()
+        let pointer = "version https://git-lfs.github.com/spec/v1\noid sha256:\(objectID)\nsize \(payload.count)\n"
+        try "*.bin filter=lfs diff=lfs merge=lfs -text\n".write(
+            to: repository.appending(path: ".gitattributes"), atomically: true, encoding: .utf8)
+        try pointer.write(to: repository.appending(path: "asset.bin"), atomically: true, encoding: .utf8)
+        try await git(at: repository, "add", ".gitattributes", "asset.bin")
+        try await git(at: repository, "commit", "-m", "commit LFS pointer")
+
+        let firstPrefix = String(objectID.prefix(2))
+        let secondPrefix = String(objectID.dropFirst(2).prefix(2))
+        let objectDirectory =
+            repository
+            .appending(path: ".git/lfs/objects")
+            .appending(path: firstPrefix)
+            .appending(path: secondPrefix)
+        if includeStoreObject {
+            try FileManager.default.createDirectory(at: objectDirectory, withIntermediateDirectories: true)
+            try payload.write(to: objectDirectory.appending(path: objectID), options: .atomic)
+        }
+        return LargeFileFixture(repository: repository, payload: payload, pointer: pointer)
+    }
+
+    private func siblingDestination(repository: URL, branch: String) throws -> URL {
+        let branchName = try WorktreeBranchName.validated(branch).get()
+        return try #require(
+            WorktreeDestinationNaming.siblingPath(
+                repositoryPath: repository,
+                branchName: branchName
+            ))
+    }
+
     @discardableResult
     private func git(at repository: URL, _ arguments: String...) async throws -> String {
         try await FilesystemTestGitRepo.runGit(at: repository, args: arguments)
             .trimmingCharacters(in: .whitespacesAndNewlines)
     }
+}
+
+private struct LargeFileFixture {
+    let repository: URL
+    let payload: Data
+    let pointer: String
 }
 
 private final class WorktreeCreationCommandLineProbe: @unchecked Sendable {

@@ -378,6 +378,61 @@ struct WorktreeCommandLineTests {
         try expectFormatterGoldens(cases)
     }
 
+    @Test("created LFS report caps missing paths and reuses cleanup leftovers for temp residue")
+    func formatsLargeFileReportAndTemporaryResidue() throws {
+        let repository = URL(fileURLWithPath: "/tmp/worktree-output/repository")
+        let worktree = URL(fileURLWithPath: "/tmp/worktree-output/repository.feature-lfs")
+        let missingCount = WorktreeLifecyclePolicy.firstPathsLimit + 2
+        let missing = (0..<missingCount).map { index in
+            GitLargeFileFillMiss(path: "asset-\(index).bin", reason: .objectAbsent)
+        }
+        let fill = GitLargeFileFill(
+            materializedCount: 1,
+            missing: missing,
+            residuePaths: [".agentstudio-lfs-fill-orphan"],
+            scan: .complete
+        )
+        let summary = WorktreeCreatedSummary(
+            operation: .new,
+            branch: "feature/lfs",
+            path: worktree,
+            repository: repository,
+            materialization: nil,
+            largeFiles: fill
+        )
+
+        let response = try WorktreeCommandLineFormatter.format(
+            outcome: .created(summary),
+            usesJSONOutput: true
+        )
+        let json = try #require(try JSONSerialization.jsonObject(with: Data(response.text.utf8)) as? [String: Any])
+        let largeFiles = try #require(json["largeFiles"] as? [String: Any])
+        let missingDocuments = try #require(largeFiles["missing"] as? [[String: Any]])
+        #expect(response.exitCode == 0)
+        #expect(largeFiles["materialized"] as? Int == 1)
+        #expect(missingDocuments.count == WorktreeLifecyclePolicy.firstPathsLimit)
+        #expect(largeFiles["missingCount"] as? Int == missingCount)
+        #expect(largeFiles["scan"] as? String == "complete")
+        #expect(missingDocuments.first?["path"] as? String == "asset-0.bin")
+
+        let leftovers = try #require(json["leftovers"] as? [String: Any])
+        let items = try #require(leftovers["items"] as? [[String: Any]])
+        let item = try #require(items.first)
+        #expect(leftovers["status"] as? String == "incomplete")
+        #expect(items.count == 1)
+        #expect(item["base"] as? String == "temporary")
+        #expect(item["kind"] as? String == "temporaryArtifact")
+        #expect(item["location"] as? String == ".agentstudio-lfs-fill-orphan")
+
+        let humanResponse = try WorktreeCommandLineFormatter.format(
+            outcome: .created(summary),
+            usesJSONOutput: false
+        )
+        #expect(humanResponse.text.contains("LFS: 1 filled, \(missingCount) missing"))
+        #expect(humanResponse.text.contains("git -C \(worktree.path) lfs pull"))
+        #expect(humanResponse.text.contains("temporaryArtifact .agentstudio-lfs-fill-orphan (temporary)"))
+    }
+
     @Test("working-state outcomes preserve the SDK refusal details in human and JSON output")
     func formatsWorkingStateOutcomes() throws {
         let cases: [FormatterGolden] = [

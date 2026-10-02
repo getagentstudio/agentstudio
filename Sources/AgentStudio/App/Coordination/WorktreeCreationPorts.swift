@@ -6,7 +6,7 @@ import Foundation
 /// The SDK reads and writes worktree creation needs, narrowed so the coordinator can be
 /// proven with a fake and the production path stays the SDK's serial writer lane.
 protocol WorktreeCreationGitClient: Sendable {
-    func createWorktree(_ request: GitCreateWorktreeRequest) async throws(GitDataPlaneError) -> GitWorktreeSnapshot
+    func createWorktree(_ request: GitCreateWorktreeRequest) async throws(GitDataPlaneError) -> GitWorktreeCreation
     /// Copy-on-write fork of the source's current files at its captured HEAD.
     func forkWorktree(_ request: GitForkWorktreeRequest) async throws(GitWorktreeForkError) -> GitForkWorktreeResult
 }
@@ -27,7 +27,7 @@ struct LibGit2WorktreeCreationGitClient: WorktreeCreationGitClient {
         self.client = client
     }
 
-    func createWorktree(_ request: GitCreateWorktreeRequest) async throws(GitDataPlaneError) -> GitWorktreeSnapshot {
+    func createWorktree(_ request: GitCreateWorktreeRequest) async throws(GitDataPlaneError) -> GitWorktreeCreation {
         try await client.createWorktree(request)
     }
 

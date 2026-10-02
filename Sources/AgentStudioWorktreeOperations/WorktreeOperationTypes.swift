@@ -46,19 +46,22 @@ package struct WorktreeCreatedSummary: Sendable, Equatable {
     package let path: URL
     package let repository: URL
     package let materialization: GitWorktreeMaterializationResult?
+    package let largeFiles: GitLargeFileFill?
 
     package init(
         operation: WorktreeOperationKind,
         branch: String,
         path: URL,
         repository: URL,
-        materialization: GitWorktreeMaterializationResult?
+        materialization: GitWorktreeMaterializationResult?,
+        largeFiles: GitLargeFileFill? = nil
     ) {
         self.operation = operation
         self.branch = branch
         self.path = path
         self.repository = repository
         self.materialization = materialization
+        self.largeFiles = largeFiles
     }
 }
 

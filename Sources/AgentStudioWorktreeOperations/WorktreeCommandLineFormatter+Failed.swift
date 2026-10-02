@@ -3,14 +3,14 @@ import Foundation
 
 extension WorktreeCommandLineFormatter {
     package static func failedHumanLine(_ failure: WorktreeOperationFailure) -> String {
-        "failed: \(humanFailure(failure.failure)); leftovers: \(humanLeftovers(failure.leftovers))"
+        "failed: \(humanFailure(failure.failure)); leftovers: \(WorktreeCleanupLeftoversFormatter.human(failure.leftovers))"
     }
 
     package static func failedJSONText(_ failure: WorktreeOperationFailure) throws -> String {
         try encodeJSON(
             WorktreeFailedCommandLineJSON(
                 failure: jsonFailure(failure.failure),
-                leftovers: jsonLeftovers(failure.leftovers)
+                leftovers: WorktreeCleanupLeftoversFormatter.document(failure.leftovers)
             )
         )
     }
@@ -65,36 +65,6 @@ extension WorktreeCommandLineFormatter {
         }
     }
 
-    private static func humanLeftovers(_ leftovers: WorktreeLeftoverStatus) -> String {
-        switch leftovers {
-        case .notNeeded:
-            return "notNeeded"
-        case .noLeftovers:
-            return "noLeftovers"
-        case .unverified:
-            return "unverified"
-        case .incomplete(let items):
-            guard !items.isEmpty else { return "incomplete" }
-            let descriptions = items.map { item in
-                "\(item.kind.rawValue) \(item.location) (\(humanBase(item.base)))"
-            }
-            return "incomplete [\(descriptions.joined(separator: "; "))]"
-        }
-    }
-
-    private static func humanBase(_ base: WorktreeLeftoverBase) -> String {
-        switch base {
-        case .destination:
-            return "destination"
-        case .repositoryGitDirectory:
-            return "repository Git directory"
-        case .branchReference:
-            return "branch reference"
-        case .temporary:
-            return "temporary"
-        }
-    }
-
     private static func jsonFailure(_ failure: WorktreeFailureKind) -> WorktreeFailedCommandLineJSON.Failure {
         switch failure {
         case .readFailed(let gitErrorKind):
@@ -133,43 +103,11 @@ extension WorktreeCommandLineFormatter {
             permissionPath: gitError.permissionPath?.path
         )
     }
-
-    private static func jsonLeftovers(_ leftovers: WorktreeLeftoverStatus) -> WorktreeFailedCommandLineJSON.Leftovers {
-        switch leftovers {
-        case .notNeeded:
-            return .init(status: "notNeeded", items: nil)
-        case .noLeftovers:
-            return .init(status: "noLeftovers", items: nil)
-        case .unverified:
-            return .init(status: "unverified", items: nil)
-        case .incomplete(let items):
-            return .init(
-                status: "incomplete",
-                items: items.map {
-                    .init(kind: $0.kind.rawValue, location: $0.location, base: jsonBase($0.base))
-                }
-            )
-        }
-    }
-
-    private static func jsonBase(_ base: WorktreeLeftoverBase) -> String {
-        switch base {
-        case .destination:
-            return "destination"
-        case .repositoryGitDirectory:
-            return "repositoryGitDirectory"
-        case .branchReference:
-            return "branchReference"
-        case .temporary:
-            return "temporary"
-        }
-    }
 }
 
 private struct WorktreeFailedCommandLineJSON: Encodable {
     let outcome = "failed"
     let failure: Failure
-    let leftovers: Leftovers
 
     struct Failure: Encodable {
         let kind: String
@@ -209,14 +147,5 @@ private struct WorktreeFailedCommandLineJSON: Encodable {
         }
     }
 
-    struct Leftovers: Encodable {
-        let status: String
-        let items: [Leftover]?
-    }
-
-    struct Leftover: Encodable {
-        let kind: String
-        let location: String
-        let base: String
-    }
+    let leftovers: WorktreeCleanupLeftoversDocument
 }

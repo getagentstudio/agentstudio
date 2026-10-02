@@ -95,10 +95,11 @@ The default copy-on-write `fork` refuses when the source or destination is not
 on APFS, crosses volumes, is not a worktree root, or the destination already
 exists.
 
-**Git LFS:** `new` leaves LFS files as pointer files because libgit2 does not
-run Git's `lfs` filter. In an LFS repository, including Agent Studio's website
-captures, run `git -C <new worktree> lfs pull` right after `new`. `fork` copies
-the source's real files, so it is not affected.
+**Git LFS:** `new` and `fork --changes-only` fill LFS pointers from the
+repository's local object store when those objects are available. They do not
+download objects. The created result lists files that could not be filled with
+their reasons; run `git -C <worktree> lfs pull` for them. An incomplete scan is
+also reported with its reason and the same command.
 
 ## Rules
 

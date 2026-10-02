@@ -123,9 +123,7 @@ actor AgentStudioGitLocalClientFake: AgentStudioGitLocalClient {
         throw GitDataPlaneError.unsupported(message: "not used")
     }
 
-    func createWorktree(_ request: GitCreateWorktreeRequest) async throws(GitDataPlaneError)
-        -> GitWorktreeSnapshot
-    {
+    func createWorktree(_ request: GitCreateWorktreeRequest) async throws(GitDataPlaneError) -> GitWorktreeCreation {
         throw GitDataPlaneError.unsupported(message: "not used")
     }
 
