@@ -446,8 +446,8 @@ struct WorktreeRemovalBranchIntegrationTests {
         #expect(report.exitCode == 2)
     }
 
-    @Test("an exact foreign ref lock is attached to the failed entry and left untouched")
-    func reportsExactBranchRefLockAfterWorktreeRemoval() async throws {
+    @Test("an exact foreign ref lock refuses before worktree removal and remains untouched")
+    func refusesBeforeWorktreeRemovalForExactForeignRefLock() async throws {
         var fixture = try await WorktreeRemovalRepository.create(named: "worktree-remove-ref-lock")
         defer { fixture.destroy() }
         let worktree = try await fixture.addWorktree(branch: "feature/ref-lock")
@@ -467,26 +467,22 @@ struct WorktreeRemovalBranchIntegrationTests {
                 branchPolicy: .deleteAtObservedCommit
             )
         )
-        guard case .failed(let entry)? = report.entries.first,
-            let stop = entry.failure.stop,
-            case .gitLockHeld(let observation) = stop.details
+        guard case .refused(let entry)? = report.entries.first,
+            case .gitLockHeld(let observation) = entry.refusal.details
         else {
-            Issue.record("expected branch deletion failure with exact ref lock details, got \(report)")
+            Issue.record("expected refusal with exact ref lock details, got \(report)")
             return
         }
-        #expect(
-            entry.failure.kind
-                == .branchDeletionFailed(
-                    .lockHeld(
-                        GitLockFact(path: lockPath, resource: .reference(name: "refs/heads/feature/ref-lock"))
-                    )))
+        #expect(entry.refusal.reason == .gitLockHeld)
         #expect(observation.path == lockPath.standardizedFileURL.path)
         #expect(observation.resource == .reference(name: "refs/heads/feature/ref-lock"))
-        #expect(entry.failure.effects.directory == .removed)
-        #expect(entry.failure.effects.administration == .removed)
+        #expect(FileManager.default.fileExists(atPath: worktree.path))
+        let worktreeAdministration = try await removalGit(fixture.path, "worktree", "list", "--porcelain")
+        #expect(worktreeAdministration.contains("branch refs/heads/feature/ref-lock"))
         #expect(try Data(contentsOf: lockPath) == foreignBytes)
         #expect(
             try await removalGit(fixture.path, "show-ref", "--verify", "refs/heads/feature/ref-lock").isEmpty == false)
+        #expect(report.exitCode == 1)
     }
 
     @Test("an unidentified branch lock remains a failed stop with retry as its only option")
