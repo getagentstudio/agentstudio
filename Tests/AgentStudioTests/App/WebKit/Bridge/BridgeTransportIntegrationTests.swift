@@ -75,6 +75,7 @@ extension WebKitSerializedTests {
                 // Act
                 controller.loadApp()
                 await WebPageEventWaits.waitForNavigationToFinish(page)
+                try await installPageErrorProbe(page)
                 let didNavigateToAppURL = page.url?.absoluteString == "agentstudio://app/index.html"
                 await WebPageEventWaits.waitForTitle(page, equals: "AgentStudio Bridge")
                 await WebPageEventWaits.waitForBridgeReady(controller)
@@ -82,14 +83,32 @@ extension WebKitSerializedTests {
                 // Assert
                 #expect(didNavigateToAppURL)
 
-                _ = try await page.callJavaScript(
-                    """
-                    document.title = document.querySelector('[data-testid="bridge-review-empty-shell"]') !== null
-                      ? 'AgentStudio Bridge Visible'
-                      : 'AgentStudio Bridge Missing Shell'
-                    """
+                let emptyShellObserved = try await WebPageEventWaits.waitForDocumentValue(
+                    page,
+                    reader: "return document.querySelector(selector) === null ? null : true;",
+                    arguments: ["selector": "[data-testid=\"bridge-review-empty-shell\"]"],
+                    milestone: "Packaged React app reaches Review no-target shell",
+                    lastObservation: """
+                        return JSON.stringify({
+                          title: document.title,
+                          emptyShellPresent: document.querySelector(selector) !== null,
+                          activeViewerMode: document.querySelector('[data-testid="bridge-app-root"]')
+                            ?.getAttribute('data-bridge-viewer-mode') ?? null,
+                          reviewRegions: Array.from(document.querySelectorAll('[data-bridge-region^="review-"]'))
+                            .map((region) => ({
+                              region: region.getAttribute('data-bridge-region'),
+                              presentationState: region.getAttribute('data-presentation-state'),
+                              emptyReason: region.getAttribute('data-empty-reason')
+                            })),
+                          javascriptErrors: window.__bridgeErrorProbe ?? []
+                        });
+                        """
                 )
+                #expect(emptyShellObserved as? Bool == true)
+                _ = try await page.callJavaScript("document.title = 'AgentStudio Bridge Visible';")
                 await WebPageEventWaits.waitForTitle(page, equals: "AgentStudio Bridge Visible")
+                let pageErrors = await pageErrorProbeDescription(page)
+                #expect(pageErrors == "[]", Comment(rawValue: pageErrors))
             }
 
             await teardownBridgeControllerForTest(controller)
