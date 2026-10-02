@@ -93,7 +93,8 @@ Exit codes:
   agent-studio that means `vendor/ghostty` and `vendor/zmx` are empty and
   there's no `Frameworks/`, so run `mise run setup` (as AGENTS.md says) before
   building or reading vendored headers. Expect a cold first build.
-- **agent-studio default: `fork --from <main checkout>`** (the main checkout
+- **Known bug (beta.71/72): `fork` fails with `entryCreationFailed` on any nested repository whose `.git/HEAD` is read-only, which includes SwiftPM checkouts in `.build/checkouts/*` (agent-studio's main checkout has them under `Tools/AgentStudioArchitectureLint/.build`). Until a beta with the SDK fix ships, use `new` + `mise run setup` in agent-studio.**
+- **agent-studio default once fixed: `fork --from <main checkout>`** (the main checkout
   on its default branch, clean). That APFS-clones the populated submodules,
   `Frameworks/` and build output, so no setup is needed and nothing is
   downloaded. Use `new` + `mise run setup` only when the main checkout isn't
