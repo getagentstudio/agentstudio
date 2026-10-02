@@ -24,7 +24,7 @@ struct WorktreeRemovalDiscoveryIntegrationTests {
                 let discovered = try await discoverLinkedWorktree(in: scenario, atoms: atoms)
                 try await removeLinkedWorktree(in: scenario, discovered: discovered)
                 assertRemovedSidebarRowAndOpenPane(in: scenario, discovered: discovered)
-                await finishScenario(scenario)
+                try await finishScenario(scenario)
             } catch {
                 await stopScenario(scenario)
                 throw error
