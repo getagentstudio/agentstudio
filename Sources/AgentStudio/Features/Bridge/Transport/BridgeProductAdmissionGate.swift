@@ -27,6 +27,16 @@ package struct BridgeProductAdmissionContext: Sendable, Equatable {
         }.flatMap { $0 }
     }
 
+    /// Makes a successfully validated installation commit pane-readable without minting a new token.
+    /// The original pane + E1 admission remains held while `mutation` records the pane-owned result.
+    func withCanonicalPaneAuthority<MutationResult>(
+        _ mutation: (Self) throws -> MutationResult
+    ) rethrows -> MutationResult? {
+        try withValidAdmission {
+            try mutation(Self(gate: gate, token: token))
+        }
+    }
+
     func matches(_ other: Self) -> Bool {
         guard hasSamePaneAuthority(as: other) else { return false }
         switch (installation, other.installation) {

@@ -297,7 +297,7 @@ final class BridgeReviewPublicationCoordinator {
         guard pendingMatches(token, productAdmission: productAdmission) else {
             return .superseded
         }
-        return productAdmission.withValidAdmission {
+        return productAdmission.withCanonicalPaneAuthority { canonicalPaneAdmission in
             guard !isClosed,
                 let pendingPublication,
                 pendingPublication.publication.publicationId == token.publicationId,
@@ -329,7 +329,7 @@ final class BridgeReviewPublicationCoordinator {
             activePublication = Publication(
                 publicationId: pendingPublication.publication.publicationId,
                 preparedPublication: pendingPublication.publication.preparedPublication,
-                productAdmission: pendingPublication.publication.productAdmission,
+                productAdmission: canonicalPaneAdmission,
                 committedPublication: committedPublication,
                 operationCorrelationID: pendingPublication.publication.operationCorrelationID
             )
@@ -675,7 +675,10 @@ final class BridgeReviewPublicationCoordinator {
     ) -> Bool {
         guard let activePublication else { return false }
         return activePublication.publicationId == publicationId
-            && activePublication.productAdmission.matches(productAdmission)
+            && publicationProducerAdmissionAllowsRead(
+                storedProducerAdmission: activePublication.productAdmission,
+                requestAdmission: productAdmission
+            )
     }
 
     private func activePanePublicationMatches(publicationId: UUID, productAdmission: BridgeProductAdmissionContext)
