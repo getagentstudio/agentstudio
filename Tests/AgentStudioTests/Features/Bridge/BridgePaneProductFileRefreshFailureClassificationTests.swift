@@ -138,4 +138,36 @@ struct BridgeFileRefreshFailureClassificationTests {
                 )
         )
     }
+
+    @Test("unknown File changeset publication failures keep the permanent disposition")
+    func unknownChangesetPublicationFailureKeepsPermanentDisposition() {
+        let disposition = BridgePaneProductMetadataCoordinator.fileRefreshDisposition(
+            for: UnknownChangesetPublicationFailure.injected
+        )
+
+        guard case .failed(let failure) = disposition else {
+            Issue.record("Expected unknown changeset publication failure to retain a File failure")
+            return
+        }
+        #expect(failure == .init(failureKind: .fileRefreshFailed))
+        #expect(!failure.retryable)
+    }
+
+    @Test("current File cancellation and construction invalidation stay retryable")
+    func currentCancellationAndConstructionInvalidationStayRetryable() {
+        let errors: [any Error] = [
+            CancellationError(),
+            BridgeWorktreeProductConstructionError.invalidated,
+        ]
+        for error in errors {
+            #expect(
+                BridgePaneProductMetadataCoordinator.fileRefreshDisposition(for: error)
+                    == .failed(.init(failureKind: .fileSourceUnavailable))
+            )
+        }
+    }
+
+    private enum UnknownChangesetPublicationFailure: Error {
+        case injected
+    }
 }
