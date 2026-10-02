@@ -323,7 +323,7 @@ describe('BridgeReviewComparisonControl Browser Mode', () => {
 			.toHaveTextContent('aaaaaaaaaaaa');
 	});
 
-	test('retries a retryable unavailable comparison with the canonical active target', async () => {
+	test('keeps E2 failure recovery out of the chooser and with the pane summary', async () => {
 		// Arrange
 		const activeTarget = { basis: 'commonCommit', kind: 'branch', name: 'release/next' } as const;
 		const applyTarget = vi.fn();
@@ -352,19 +352,10 @@ describe('BridgeReviewComparisonControl Browser Mode', () => {
 		});
 
 		// Assert
-		await expect.element(rendered.getByText('Comparison unavailable')).toBeVisible();
-		await expect
-			.element(rendered.getByText('The selected target could not be compared.'))
-			.toBeVisible();
-
-		// Act
-		await performComparisonAction(async (): Promise<void> => {
-			await rendered.getByRole('button', { name: 'Retry' }).click();
-		});
-
-		// Assert
-		expect(applyTarget).toHaveBeenCalledExactlyOnceWith(activeTarget);
-		expect(cancelTargetQuery).toHaveBeenCalledExactlyOnceWith();
+		expect(rendered.getByText('Comparison unavailable').query()).toBeNull();
+		expect(rendered.getByRole('button', { name: 'Retry' }).query()).toBeNull();
+		expect(applyTarget).not.toHaveBeenCalled();
+		expect(cancelTargetQuery).not.toHaveBeenCalled();
 	});
 
 	test('shows searchable default, local, and remote-tracking branch choices', async () => {

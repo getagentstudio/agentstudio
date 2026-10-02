@@ -71,7 +71,7 @@ test('failure takes precedence over certified empty and stops every rail skeleto
 	expect(document.querySelector('button')).toBeNull();
 });
 
-test('healthy-target refresh failure uses Update unavailable in the comparison popup', async (): Promise<void> => {
+test('healthy-target refresh failure has no second failure message in the comparison popup', async (): Promise<void> => {
 	const store = createBridgeMainRenderSnapshotStore();
 	store.applyWorkerPatch({
 		slice: 'panelChrome',
@@ -96,7 +96,7 @@ test('healthy-target refresh failure uses Update unavailable in the comparison p
 		await performComparisonAction(async (): Promise<void> => {
 			await rendered.getByTestId('bridge-review-comparison-trigger').click();
 		});
-		await expect.element(rendered.getByText('Update unavailable', { exact: true })).toBeVisible();
+		expect(rendered.getByText('Update unavailable', { exact: true }).query()).toBeNull();
 		expect(rendered.getByText('Comparison unavailable', { exact: true }).query()).toBeNull();
 	} finally {
 		store.dispose();
@@ -206,7 +206,9 @@ test('a permanently unavailable selected read leaves the Review tree settled and
 			payload: { state: 'unavailable', reason: 'content_unavailable' },
 		});
 	});
-	await expect.element(rendered.getByRole('alert')).toHaveTextContent('Content unavailable');
+	await expect
+		.element(rendered.getByRole('alert'))
+		.toHaveTextContent("Couldn't open Unavailable.swift.");
 	await expect
 		.element(rendered.getByRole('alert'))
 		.toHaveTextContent('Open this file in an external editor.');
@@ -259,5 +261,5 @@ test('a failed refresh keeps its healthy comparison labelled stale', async (): P
 	await performComparisonAction(async (): Promise<void> => {
 		await rendered.getByTestId('bridge-review-comparison-trigger').click();
 	});
-	await expect.element(rendered.getByText('Update unavailable', { exact: true })).toBeVisible();
+	expect(rendered.getByText('Update unavailable', { exact: true }).query()).toBeNull();
 });

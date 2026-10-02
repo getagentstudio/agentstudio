@@ -23,10 +23,12 @@ import type { BridgeTelemetryRecorder } from '../foundation/telemetry/bridge-tel
 import { recordBridgeFrameJankTelemetrySample } from '../foundation/telemetry/bridge-viewer-telemetry-adapter.js';
 import { WorktreeAnnotationSurfaceProvider } from '../worktree-annotations/worktree-annotation-surface-provider.js';
 import type { BridgeAppNavigationSource } from './bridge-app-navigation-admission.js';
+import type { BridgePaneReloadPort } from './bridge-pane-reload-port.js';
 import type { BridgeMermaidRenderer } from './markdown/bridge-mermaid-renderer.js';
 import type { BridgeMarkdownRenderWorkerClient } from './markdown/worker/bridge-markdown-render-worker-client.js';
 
 export interface BridgeFileViewerModeProps {
+	readonly paneReloadPort?: BridgePaneReloadPort | undefined;
 	readonly paneFailedStart?: BridgePaneFailedStartFact | null;
 	readonly controlTarget: EventTarget;
 	readonly codeViewWorkerFactory?: () => Worker;
@@ -126,6 +128,7 @@ export function BridgeFileViewerMode(props: BridgeFileViewerModeProps): ReactEle
 					)
 				) : (
 					<BridgeFileViewerApp
+						paneReloadPort={props.paneReloadPort}
 						paneFailedStart={props.paneFailedStart ?? null}
 						{...props.fileViewerProps}
 						{...(props.codeViewWorkerFactory === undefined

@@ -1,6 +1,11 @@
 import { describe, expect, test } from 'vitest';
 
+import { projectBridgePaneFailureSummary } from '../../app/bridge-pane-failure-summary.js';
 import { bridgeReviewRefreshHeaderPresentation } from '../../app/bridge-review-refresh-header-chrome.js';
+import {
+	bridgeReviewFallbackRegionPresentation,
+	bridgeReviewRegionSurfaceStatus,
+} from '../../features/review/bridge-review-region-presentation.js';
 import { createBridgeMainRenderSnapshotStore } from './bridge-main-render-snapshot-store.js';
 import type { BridgeMainReviewPublicationIdentity } from './bridge-main-review-candidate-bank.js';
 import { createBridgeMainReviewPresentationInstallationGate } from './bridge-main-review-presentation-installation-gate.js';
@@ -81,9 +86,22 @@ describe('Review install admission failure on the real candidate bank', () => {
 						refreshPresentation: store.getReviewRefreshPresentation(),
 					}),
 				).toEqual({
-					action: 'retry',
-					statusText: 'Update unavailable',
+					action: null,
+					statusText: null,
 				});
+				const state = bridgeReviewFallbackRegionPresentation({
+					status: kind === 'initial' ? 'loading' : 'certifiedEmpty',
+					comparisonPaneState: { kind: 'settled' },
+					surface: bridgeReviewRegionSurfaceStatus({
+						comparisonPaneState: { kind: 'settled' },
+						refreshPresentation: store.getReviewRefreshPresentation(),
+					}),
+				});
+				const summary = projectBridgePaneFailureSummary([
+					{ part: 'review', state, retry: (): void => {} },
+				]);
+				expect(summary?.state.failure.kind).toBe('retryable');
+				expect(summary?.retry).toBeTypeOf('function');
 				await gate.semanticAttentionChanged({
 					activeEditorStableFileIdentities: [],
 					stableFileIdentities: [],

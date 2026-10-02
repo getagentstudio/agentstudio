@@ -3,6 +3,7 @@ import { act } from 'react';
 import type { BridgeCommWorkerPort } from '../core/comm-worker/bridge-comm-worker-entry.js';
 import { encodeBridgeWorkerActiveViewerModeUpdateCommand } from '../core/comm-worker/bridge-comm-worker-protocol.js';
 import { registerBridgeCommWorkerRuntimePortProtocol } from '../core/comm-worker/bridge-comm-worker-runtime-protocol.js';
+import { createIdleWorktreeAnnotationSubscription } from '../core/comm-worker/bridge-comm-worker-runtime-protocol.worker-test-support.js';
 import { createBridgeMainRenderSnapshotStore } from '../core/comm-worker/bridge-main-render-snapshot-store.js';
 import type {
 	BridgePaneCommWorkerDispatcher,
@@ -14,7 +15,11 @@ import type {
 } from '../core/comm-worker/bridge-pane-runtime.js';
 import { BridgeProductBoundedAsyncQueue } from '../core/comm-worker/bridge-product-async-queue.js';
 import type { BridgeProductBatchFrameSinks } from '../core/comm-worker/bridge-product-batch-frame-router.js';
-import type { BridgeProductCallResult } from '../core/comm-worker/bridge-product-call-contracts.js';
+import {
+	bridgeProductFileWorktreeAnnotationCommandRequestSchema,
+	bridgeProductReviewWorktreeAnnotationCommandRequestSchema,
+	type BridgeProductCallResult,
+} from '../core/comm-worker/bridge-product-call-contracts.js';
 import {
 	bridgeProductFileContentDescriptorSchema,
 	type BridgeProductContentFrameFor,
@@ -523,6 +528,26 @@ function createBrowserTestProductTransport(props: {
 					props.onFileSourceDiscoveryCompleted();
 				}
 			}
+			if (method === 'file.annotations.command' || method === 'review.annotations.command') {
+				const request = (
+					method === 'file.annotations.command'
+						? bridgeProductFileWorktreeAnnotationCommandRequestSchema
+						: bridgeProductReviewWorktreeAnnotationCommandRequestSchema
+				).parse(arguments_[1]);
+				if (request.operation.kind !== 'session.discover')
+					throw new Error('File browser fixture supports only Comments discovery.');
+				// The unrelated Comments source is admitted and idle, never a fabricated permanent failure.
+				// oxlint-disable-next-line typescript/no-unsafe-type-assertion -- The narrowed annotation call returns its completed discovery contract.
+				return {
+					kind: 'completed',
+					outcome: {
+						requestId: 'browser-comments-discovery',
+						sessionId: null,
+						status: { kind: 'committed' },
+						surface: method === 'file.annotations.command' ? 'file' : 'review',
+					},
+				} as never;
+			}
 			if (method === 'file.activeViewerMode.update' || method === 'file.refresh.retry')
 				return null as never;
 			throw new Error(`Unexpected browser-test product call: ${method}.`);
@@ -595,6 +620,10 @@ function createBrowserTestProductTransport(props: {
 		},
 		subscribe: (...arguments_): never => {
 			const [protocol, options] = arguments_;
+			if (protocol.kind === 'file.annotations' || protocol.kind === 'review.annotations') {
+				// oxlint-disable-next-line typescript/no-unsafe-type-assertion -- This branch closes over an idle annotation subscription, unrelated to the File behavior under test.
+				return createIdleWorktreeAnnotationSubscription(protocol) as never;
+			}
 			if (protocol.kind !== 'file.metadata') {
 				throw new Error(`Unexpected browser-test product subscription: ${protocol.kind}.`);
 			}

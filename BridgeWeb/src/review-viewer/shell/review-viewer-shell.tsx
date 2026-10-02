@@ -1,6 +1,8 @@
 import { useEffect, useRef, type ReactElement, type ReactNode, type RefObject } from 'react';
 
 import type { BridgeFileTreeFilterCandidate } from '../../app/bridge-app-control.js';
+import { BridgePaneFailureSummarySlot } from '../../app/bridge-pane-failure-summary-slot.js';
+import type { BridgePaneReloadPort } from '../../app/bridge-pane-reload-port.js';
 import type {
 	BridgeRegionSurfaceStatus,
 	BridgeRegionFailure,
@@ -20,7 +22,6 @@ import {
 import type { BridgeViewerFileCategory } from '../../app/bridge-viewer-file-class-options.js';
 import type { BridgeViewerFacetMenuOption } from '../../app/bridge-viewer-filter-menu.js';
 import { BridgeViewerRailToolbar } from '../../app/bridge-viewer-rail-toolbar.js';
-import { BridgeViewerRecoveryRetryButton } from '../../app/bridge-viewer-recovery-retry-button.js';
 import { BridgeViewerResizableRailLayout } from '../../app/bridge-viewer-resizable-rail-layout.js';
 import { BridgeViewerRightRailShell } from '../../app/bridge-viewer-right-rail-shell.js';
 import { BridgeViewerSearchControl } from '../../app/bridge-viewer-search-control.js';
@@ -50,7 +51,6 @@ import type {
 } from '../../foundation/review-package/bridge-review-package.js';
 import type { BridgeTelemetryRecorder } from '../../foundation/telemetry/bridge-telemetry-recorder.js';
 import type { BridgeTraceContext } from '../../foundation/telemetry/bridge-trace-context.js';
-import { WorktreeAnnotationRecoveryWarning } from '../../worktree-annotations/worktree-annotation-recovery-warning.js';
 import { BridgeReviewFacetMenu } from '../chrome/bridge-review-facet-menu.js';
 import type { BridgeCodeViewItemPresentation } from '../code-view/bridge-code-view-materialization.js';
 import type { BridgeReviewCodeViewOptions } from '../code-view/bridge-code-view-options.js';
@@ -73,6 +73,9 @@ import { BridgeReviewTreesPanel } from '../trees/bridge-trees-panel.js';
 import type { BridgeReviewTreeSelectionRevealRequest } from '../trees/bridge-trees-panel.js';
 
 export interface ReviewViewerShellProps {
+	readonly paneReloadPort?: BridgePaneReloadPort | undefined;
+	readonly railVisible?: boolean | undefined;
+	readonly onRetryRead?: (() => void) | undefined;
 	readonly regionSurfaceStatus?: BridgeRegionSurfaceStatus;
 	readonly onRetryRegion?: () => void;
 	readonly annotationReveal?: BridgeCodeViewAnnotationReveal | null;
@@ -277,15 +280,27 @@ export function renderReviewViewerShellPresentation(presentation: {
 		props.comparisonPaneState.kind === 'failedInitial'
 			? props.comparisonPaneState.retryTarget
 			: null;
-	const retry = (
-		<BridgeViewerRecoveryRetryButton
-			surface="review"
-			onClick={
-				props.onRetryRegion ??
-				((): void => {
-					if (retryTarget !== null) props.onRetryComparison(retryTarget);
-				})
-			}
+	const retrySurface =
+		props.onRetryRegion ??
+		((): void => {
+			if (retryTarget !== null) props.onRetryComparison(retryTarget);
+		});
+	const failureSummary = (
+		<BridgePaneFailureSummarySlot
+			active={props.isActive}
+			paneReloadPort={props.paneReloadPort}
+			entries={[
+				{ part: 'review', state: treePresentation, retry: retrySurface },
+				{
+					part: 'review',
+					state: contentPresentation,
+					fileName: selectedDisplayPath,
+					retry:
+						contentPresentation.kind === 'failed' && contentPresentation.failure.scope === 'read'
+							? props.onRetryRead
+							: retrySurface,
+				},
+			]}
 		/>
 	);
 
@@ -422,6 +437,8 @@ export function renderReviewViewerShellPresentation(presentation: {
 			tabIndex={-1}
 		>
 			<BridgeViewerResizableRailLayout
+				railVisible={props.railVisible}
+				failureSummary={failureSummary}
 				autosaveId="bridge-viewer-right-rail"
 				// The loaded review shell keeps its resizable frame mounted across activation so the
 				// CodeView and tree are never remounted when Review goes hidden.
@@ -457,9 +474,7 @@ export function renderReviewViewerShellPresentation(presentation: {
 										testId={hasChangedFiles ? undefined : 'bridge-review-empty-canvas'}
 										shape="diff"
 										state={contentPresentation}
-										retry={retry}
 										keepContentMounted
-										retainedContentCopy={bridgeReviewRegionDisplaySpec.stale}
 										emptyCopy={{
 											noSelection: bridgeReviewRegionDisplaySpec.noFileSelection,
 											certified: bridgeReviewRegionDisplaySpec.certifiedContent,
@@ -556,14 +571,11 @@ export function renderReviewViewerShellPresentation(presentation: {
 							inert={comparisonIsLoading || undefined}
 						>
 							<BridgeRegionPresentation
-								failureControl="summary"
 								region="review-tree"
 								testId={hasChangedFiles ? undefined : 'bridge-review-empty-file-tree'}
 								shape="tree"
 								state={treePresentation}
-								retry={retry}
 								keepContentMounted
-								retainedContentCopy={bridgeReviewRegionDisplaySpec.stale}
 								emptyCopy={{
 									noSelection: bridgeReviewRegionDisplaySpec.noSelection,
 									certified: bridgeReviewRegionDisplaySpec.certifiedTree,
@@ -622,7 +634,7 @@ export function renderReviewViewerShellPresentation(presentation: {
 					testId: 'bridge-review-sidebar',
 					toolbarBelow: (
 						<>
-							<WorktreeAnnotationRecoveryWarning />
+							{props.railVisible === false ? null : failureSummary}
 							{treeSearchOpen ? (
 								<BridgeViewerSearchField
 									clearButtonTestId="bridge-review-search-clear"

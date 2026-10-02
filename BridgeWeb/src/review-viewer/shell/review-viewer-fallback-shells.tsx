@@ -1,5 +1,7 @@
 import type { ReactElement, ReactNode } from 'react';
 
+import { BridgePaneFailureSummarySlot } from '../../app/bridge-pane-failure-summary-slot.js';
+import type { BridgePaneReloadPort } from '../../app/bridge-pane-reload-port.js';
 import type { BridgeRegionPresentationState } from '../../app/bridge-region-presentation-state.js';
 import { BridgeRegionPresentation } from '../../app/bridge-region-presentation.js';
 import { bridgeReviewRegionDisplaySpec } from '../../app/bridge-review-region-display-spec.js';
@@ -9,11 +11,12 @@ import {
 	BridgeViewerContextPanelViewport,
 } from '../../app/bridge-viewer-context-panel-host.js';
 import { BridgeViewerRailToolbar } from '../../app/bridge-viewer-rail-toolbar.js';
-import { BridgeViewerRecoveryRetryButton } from '../../app/bridge-viewer-recovery-retry-button.js';
 import { BridgeViewerResizableRailLayout } from '../../app/bridge-viewer-resizable-rail-layout.js';
 import { BridgeViewerRightRailShell } from '../../app/bridge-viewer-right-rail-shell.js';
 
 export function BridgeReviewFallbackShell(props: {
+	readonly paneReloadPort?: BridgePaneReloadPort | undefined;
+	readonly railVisible?: boolean | undefined;
 	readonly certifiedEmpty: boolean;
 	readonly state: BridgeRegionPresentationState;
 	readonly contentTestId: string;
@@ -22,16 +25,21 @@ export function BridgeReviewFallbackShell(props: {
 	readonly viewerContextSwitcher?: ReactNode;
 	readonly viewerHeaderControls?: ReactNode;
 }): ReactElement {
-	const retry =
-		props.onRetry === undefined ? undefined : (
-			<BridgeViewerRecoveryRetryButton onClick={props.onRetry} surface="review" />
-		);
+	const failureSummary = (
+		<BridgePaneFailureSummarySlot
+			active={props.isActive}
+			paneReloadPort={props.paneReloadPort}
+			entries={[{ part: 'review', state: props.state, retry: props.onRetry }]}
+		/>
+	);
 	return (
 		<main
 			className="flex h-full min-h-0 w-full flex-col overflow-hidden bg-background text-foreground"
 			data-testid="bridge-review-fallback-frame"
 		>
 			<BridgeViewerResizableRailLayout
+				railVisible={props.railVisible}
+				failureSummary={failureSummary}
 				autosaveId="bridge-viewer-right-rail"
 				isActive={props.isActive}
 				content={
@@ -51,10 +59,8 @@ export function BridgeReviewFallbackShell(props: {
 									<div className="h-full min-h-0" data-testid={props.contentTestId}>
 										<BridgeRegionPresentation
 											region="review-content"
-											retainedContentCopy={bridgeReviewRegionDisplaySpec.stale}
 											shape="diff"
 											state={props.state}
-											retry={retry}
 											emptyCopy={{
 												noSelection: bridgeReviewRegionDisplaySpec.noSelection,
 												certified: bridgeReviewRegionDisplaySpec.certifiedContent,
@@ -77,12 +83,9 @@ export function BridgeReviewFallbackShell(props: {
 				rail={BridgeViewerRightRailShell({
 					body: (
 						<BridgeRegionPresentation
-							failureControl="summary"
 							region="review-tree"
-							retainedContentCopy={bridgeReviewRegionDisplaySpec.stale}
 							shape="tree"
 							state={props.state}
-							retry={retry}
 							emptyCopy={{
 								noSelection: bridgeReviewRegionDisplaySpec.noSelection,
 								certified: bridgeReviewRegionDisplaySpec.certifiedTree,
@@ -98,6 +101,7 @@ export function BridgeReviewFallbackShell(props: {
 					bodyClassName: 'min-h-0 flex-1 overflow-hidden overscroll-contain p-3',
 					bodyTestId: 'bridge-review-rail-scroll',
 					layout: 'stack',
+					toolbarBelow: props.railVisible === false ? null : failureSummary,
 					testId: 'bridge-review-sidebar',
 					toolbar: BridgeViewerRailToolbar({
 						leading: props.viewerContextSwitcher,

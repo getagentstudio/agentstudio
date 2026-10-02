@@ -421,7 +421,8 @@ async function waitForMarkdownSelector(selector: string): Promise<void> {
 	const terminalFailure =
 		selector === '[role="alert"]'
 			? null
-			: (document.querySelector('[role="alert"]')?.textContent ??
+			: (document.querySelector('[data-bridge-region="markdown"][data-presentation-state="failed"]')
+					?.textContent ??
 				document.querySelector('[data-bridge-mermaid-state="failed"]')?.textContent);
 	if (terminalFailure !== null && terminalFailure !== undefined) {
 		throw new Error(

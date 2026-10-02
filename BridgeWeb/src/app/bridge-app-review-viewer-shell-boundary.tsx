@@ -5,6 +5,7 @@ import type { BridgeMainViewRecoveryStatus } from '../core/comm-worker/bridge-ma
 import { bridgeReviewFallbackRegionPresentation } from '../features/review/bridge-review-region-presentation.js';
 import { BridgeReviewFallbackShell } from '../review-viewer/shell/review-viewer-fallback-shells.js';
 import type { ReviewViewerShellProps } from '../review-viewer/shell/review-viewer-shell.js';
+import type { BridgePaneReloadPort } from './bridge-pane-reload-port.js';
 import type { BridgeRegionSurfaceStatus } from './bridge-region-presentation-state.js';
 import type { BridgeReviewComparisonPaneState } from './bridge-review-comparison-pane-state.js';
 import type { BridgeReviewComparisonTarget } from './bridge-review-comparison-target.js';
@@ -16,7 +17,7 @@ const LazyReviewViewerShell = lazy(async () => {
 export type BridgeReviewViewerPresentationState =
 	| {
 			readonly status:
-				| 'empty'
+				| 'noTarget'
 				| 'readyEmpty'
 				| 'metadataLoading'
 				| 'projectionPending'
@@ -32,6 +33,8 @@ export type BridgeReviewViewerPresentationState =
 			>;
 	  };
 export interface BridgeReviewViewerShellBoundaryProps {
+	readonly paneReloadPort?: BridgePaneReloadPort | undefined;
+	readonly railVisible?: boolean | undefined;
 	readonly regionSurfaceStatus?: BridgeRegionSurfaceStatus;
 	readonly comparisonPaneState: BridgeReviewComparisonPaneState;
 	readonly isActive: boolean;
@@ -52,14 +55,7 @@ export function BridgeReviewViewerShellBoundary(
 	}, [props.isActive, props.presentationState]);
 	const fallback = (pendingModule = false): ReactElement => {
 		const status = props.presentationState.status;
-		const regionStatus =
-			pendingModule || status === 'metadataLoading' || status === 'projectionPending'
-				? 'loading'
-				: status === 'metadataFailed' || status === 'projectionFailed'
-					? 'failed'
-					: status === 'readyEmpty'
-						? 'certifiedEmpty'
-						: 'noSelection';
+		const regionStatus = pendingModule ? 'loading' : bridgeReviewFallbackStatus(status);
 		const comparison = props.comparisonPaneState;
 		const retryTarget =
 			comparison.kind === 'failedInitial' || comparison.kind === 'failedPrevious'
@@ -81,6 +77,8 @@ export function BridgeReviewViewerShellBoundary(
 						: 'bridge-review-empty-shell';
 		return (
 			<BridgeReviewFallbackShell
+				paneReloadPort={props.paneReloadPort}
+				railVisible={props.railVisible}
 				certifiedEmpty={status === 'readyEmpty'}
 				state={state}
 				contentTestId={contentTestId}
@@ -106,4 +104,28 @@ export function BridgeReviewViewerShellBoundary(
 			/>
 		</Suspense>
 	);
+}
+
+function bridgeReviewFallbackStatus(
+	status: BridgeReviewViewerPresentationState['status'],
+): Parameters<typeof bridgeReviewFallbackRegionPresentation>[0]['status'] {
+	switch (status) {
+		case 'noTarget':
+			return 'noSelection';
+		case 'readyEmpty':
+			return 'certifiedEmpty';
+		case 'metadataLoading':
+		case 'projectionPending':
+		case 'ready':
+			return 'loading';
+		case 'metadataFailed':
+		case 'projectionFailed':
+			return 'failed';
+		default:
+			return assertNeverReviewPresentationStatus(status);
+	}
+}
+
+function assertNeverReviewPresentationStatus(status: never): never {
+	throw new Error(`Unexpected Review presentation status: ${String(status)}`);
 }

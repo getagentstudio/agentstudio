@@ -3,6 +3,7 @@ export type BridgeRegionFailure =
 			readonly kind: 'retryable';
 			readonly scope: 'pane' | 'surface' | 'read';
 			readonly message: string;
+			readonly fileRootCause?: 'missingRoot' | 'unreadableRoot';
 	  }
 	| {
 			readonly kind: 'permanent';

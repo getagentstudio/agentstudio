@@ -130,6 +130,7 @@ package final class BridgePaneController {
     var telemetrySessionBootstrapTransitionTail: Task<Void, Never>?
     var hasPublishedTelemetrySessionBootstrap = false
     private var teardownCleanupTask: Task<Void, Never>?
+    private let pageCommandRunner: (@MainActor @Sendable (BridgePageCommand, UUID) -> Void)?
     let telemetryScopeGate: BridgeTelemetryScopeGate
     let telemetryRecorder: (any BridgePerformanceTraceRecording)?
     let traceContextFactory: BridgeTraceContextFactory
@@ -176,9 +177,11 @@ package final class BridgePaneController {
             (@MainActor @Sendable (WorkspaceReviewContributionTarget) -> BridgePaneStateMutationResult)? = nil,
         contributionTargetCommit:
             (@MainActor @Sendable (WorkspaceReviewContributionTarget) -> BridgePaneStateMutationResult)? = nil,
-        reviewBuildAdmissionFactSink: @escaping BridgePaneReviewBuildAdmissionFactSink = { _, _ in }
+        reviewBuildAdmissionFactSink: @escaping BridgePaneReviewBuildAdmissionFactSink = { _, _ in },
+        pageCommandRunner: (@MainActor @Sendable (BridgePageCommand, UUID) -> Void)? = nil
     ) {
         (self.paneId, self.bridgePaneState) = (paneId, state)
+        self.pageCommandRunner = pageCommandRunner
         let reviewComparisonTargetProjection = BridgeReviewComparisonTargetProjection(state: state)
         self.reviewComparisonTargetProjection = reviewComparisonTargetProjection
         self.worktreeAnnotationStore = worktreeAnnotationStore
@@ -440,6 +443,9 @@ package final class BridgePaneController {
         readyMessageHandler.onBootstrapRequest = { [weak self] bootstrapMessage in
             guard let self else { return }
             switch bootstrapMessage {
+            case .runPageCommand(_, let command):
+                guard !isTeardownStarted else { return }
+                pageCommandRunner?(command, paneId)
             case .ready(let requestId):
                 if handleBridgeReady() || isBridgeReady {
                     await emitBridgeReadyAcknowledgement(id: requestId, result: nil, error: nil)

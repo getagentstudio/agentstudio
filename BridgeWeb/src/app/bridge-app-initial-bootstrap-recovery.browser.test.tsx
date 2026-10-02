@@ -117,10 +117,10 @@ describe('BridgeApp initial bootstrap failure recovery', () => {
 			};
 			expect(
 				document
-					.querySelector('[data-bridge-region="pane-start"]')
+					.querySelector('[data-bridge-region="pane-failure"]')
 					?.getAttribute('data-presentation-state'),
 			).toBe('failed');
-			expect(presentation.text).toContain('Bridge failed to start');
+			expect(presentation.text).toContain("Bridge couldn't start.");
 			expect(presentation.text).not.toMatch(
 				/Waiting for review metadata|Choose a comparison target/,
 			);

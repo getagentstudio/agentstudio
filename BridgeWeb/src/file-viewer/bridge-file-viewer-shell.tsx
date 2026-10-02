@@ -1,6 +1,8 @@
 import { useRef, type ReactElement, type ReactNode } from 'react';
 
 import { bridgePaneFailedStartSurfaceStatus } from '../app/bridge-pane-failed-start-presentation.js';
+import { BridgePaneFailureSummarySlot } from '../app/bridge-pane-failure-summary-slot.js';
+import type { BridgePaneReloadPort } from '../app/bridge-pane-reload-port.js';
 import {
 	BridgeRegionUpdatingIndicator,
 	type BridgeRegionPresentationRenderSlot,
@@ -10,7 +12,6 @@ import {
 	BridgeViewerContextPanelProvider,
 	BridgeViewerContextPanelViewport,
 } from '../app/bridge-viewer-context-panel-host.js';
-import { BridgeViewerRecoveryRetryButton } from '../app/bridge-viewer-recovery-retry-button.js';
 import { BridgeViewerResizableRailLayout } from '../app/bridge-viewer-resizable-rail-layout.js';
 import { BridgeMarkdownCanvas } from '../app/markdown/bridge-markdown-canvas.js';
 import type { BridgeMermaidRenderer } from '../app/markdown/bridge-mermaid-renderer.js';
@@ -19,6 +20,7 @@ import type {
 	BridgeMarkdownRenderIntent,
 } from '../app/markdown/use-bridge-markdown-presentation.js';
 import { useBridgeViewerSearchFocusRestoration } from '../app/use-bridge-viewer-search-focus-restoration.js';
+import { DomSlotPortal } from '../components/ui/dom-slot-portal.js';
 import type { BridgeMainFileTreePatchStream } from '../core/comm-worker/bridge-main-file-display-patch-applier.js';
 import type { BridgeMainRenderFulfillmentCoordinator } from '../core/comm-worker/bridge-main-render-fulfillment-coordinator.js';
 import type { BridgeWorkerPanelChromePatchPayload } from '../core/comm-worker/bridge-worker-contracts.js';
@@ -28,7 +30,6 @@ import type { BridgeTraceContext } from '../foundation/telemetry/bridge-trace-co
 import {
 	bridgeFileSurfacePresentationStatus,
 	bridgeFileTreePresentation,
-	bridgeFileContentPresentation,
 } from './bridge-file-region-presentation.js';
 import {
 	BridgeFileViewerCodePanel,
@@ -49,6 +50,9 @@ import { BridgeFileViewerTreePanel } from './bridge-file-viewer-tree-panel.js';
 
 export interface BridgeFileViewerShellProps {
 	readonly paneFailedStart?: BridgePaneFailedStartFact | null;
+	readonly paneReloadPort?: BridgePaneReloadPort | undefined;
+	readonly railVisible?: boolean | undefined;
+	readonly onRetryFileRead?: () => void;
 	readonly recoveryFailed?: boolean;
 	readonly onRetryFile?: () => void;
 	readonly codeViewOptions?: BridgeFilesCodeViewOptions;
@@ -126,34 +130,62 @@ export function BridgeFileViewerShell(props: BridgeFileViewerShellProps): ReactE
 		displayModel: props.displayModel,
 		surface: surfaceStatus,
 	});
-	const contentPresentation = bridgeFileContentPresentation({
-		noSource: props.displayModel.status?.state === 'noSource',
-		openFileState: props.openFileState,
-		displayedFileId: props.selectedCodeViewItem?.bridgeMetadata.itemId ?? null,
-		surface: surfaceStatus,
-	});
-	const retryControl =
-		props.onRetryFile === undefined ? undefined : (
-			<BridgeViewerRecoveryRetryButton surface="file" onClick={props.onRetryFile} />
-		);
+	const failureSummaryTargetRef = useRef<HTMLDivElement | null>(null);
+	const failureSlot = <div ref={failureSummaryTargetRef} data-testid="bridge-pane-failure-slot" />;
 	const renderContentRegion: BridgeRegionPresentationRenderSlot = ({
 		body,
 		state,
 		held,
-	}): ReactElement => (
-		<section className="grid h-full min-h-0 min-w-0 grid-rows-[auto_minmax(0,1fr)]">
-			<BridgeViewerContentHeader
-				controls={props.viewerHeaderControls}
-				mode="file"
-				statusText={null}
-				title={props.contentHeaderTitle}
-				regionIndicator={<BridgeRegionUpdatingIndicator state={state} held={held} />}
+	}): ReactElement => {
+		const isMarkdown = props.markdownPresentation != null;
+		const failureSummary = (
+			<BridgePaneFailureSummarySlot
+				active={props.isActive}
+				paneReloadPort={props.paneReloadPort}
+				entries={[
+					{ part: 'file', state: treePresentation, retry: props.onRetryFile },
+					{
+						part:
+							state.kind === 'failed' && state.failure.scope === 'surface'
+								? 'file'
+								: isMarkdown
+									? 'markdown'
+									: 'file',
+						state,
+						fileName: props.selectedPath,
+						retry:
+							state.kind === 'failed' && state.failure.scope === 'surface'
+								? props.onRetryFile
+								: isMarkdown
+									? props.markdownPresentation?.retry
+									: props.onRetryFileRead,
+					},
+				]}
 			/>
-			<BridgeViewerContextPanelViewport testId="bridge-file-viewer-context-panel-viewport">
-				{body}
-			</BridgeViewerContextPanelViewport>
-		</section>
-	);
+		);
+		return (
+			<>
+				<DomSlotPortal
+					key={props.railVisible === false ? 'content' : 'rail'}
+					container={failureSummaryTargetRef}
+				>
+					{failureSummary}
+				</DomSlotPortal>
+				<section className="grid h-full min-h-0 min-w-0 grid-rows-[auto_minmax(0,1fr)]">
+					<BridgeViewerContentHeader
+						controls={props.viewerHeaderControls}
+						mode="file"
+						statusText={null}
+						title={props.contentHeaderTitle}
+						regionIndicator={<BridgeRegionUpdatingIndicator state={state} held={held} />}
+					/>
+					<BridgeViewerContextPanelViewport testId="bridge-file-viewer-context-panel-viewport">
+						{body}
+					</BridgeViewerContextPanelViewport>
+				</section>
+			</>
+		);
+	};
 	return (
 		<main
 			ref={surfaceRootRef}
@@ -191,16 +223,18 @@ export function BridgeFileViewerShell(props: BridgeFileViewerShellProps): ReactE
 						'data-file-display-truncation-kind': selectedDisplayItem.truncationKind,
 					})}
 		>
-			<BridgeViewerResizableRailLayout
-				autosaveId="bridge-viewer-right-rail"
-				isActive={true}
-				content={
-					<BridgeViewerContextPanelProvider>
-						{props.markdownPresentation === null || props.markdownPresentation === undefined ? (
+			<BridgeViewerContextPanelProvider>
+				<BridgeViewerResizableRailLayout
+					autosaveId="bridge-viewer-right-rail"
+					isActive
+					railVisible={props.railVisible}
+					failureSummary={props.railVisible === false ? failureSlot : null}
+					content={
+						props.markdownPresentation === null || props.markdownPresentation === undefined ? (
 							<BridgeFileViewerCodePanel
 								renderRegion={renderContentRegion}
-								presentationState={contentPresentation}
-								retryControl={retryControl}
+								surfaceStatus={surfaceStatus}
+								noSource={props.displayModel.status?.state === 'noSource'}
 								openFileState={props.openFileState}
 								renderFulfillmentCoordinator={props.renderFulfillmentCoordinator}
 								selectedCodeViewItem={props.selectedCodeViewItem}
@@ -218,7 +252,6 @@ export function BridgeFileViewerShell(props: BridgeFileViewerShellProps): ReactE
 						) : (
 							<BridgeMarkdownCanvas
 								surfaceStatus={surfaceStatus}
-								surfaceRetry={retryControl}
 								renderRegion={renderContentRegion}
 								annotationSource={{ item: props.selectedCodeViewItem }}
 								isActive={props.isActive}
@@ -238,53 +271,52 @@ export function BridgeFileViewerShell(props: BridgeFileViewerShellProps): ReactE
 									? {}
 									: { mermaidRenderer: props.markdownPresentation.mermaidRenderer })}
 							/>
-						)}
-					</BridgeViewerContextPanelProvider>
-				}
-				contentTestId="bridge-file-viewer-content-panel"
-				handleTestId="bridge-file-viewer-rail-resize-handle"
-				rail={
-					<BridgeFileViewerTreePanel
-						failureControl="summary"
-						presentationState={treePresentation}
-						retryControl={retryControl}
-						completeFileQueryTransaction={props.completeFileQueryTransaction}
-						filterMode={props.filterMode}
-						isFilterMenuOpen={props.isFilterMenuOpen}
-						fileTreePatchStream={props.fileTreePatchStream}
-						fileActivationSequence={props.fileActivationSequence ?? null}
-						fileActivationStartedAtPerfNow={props.fileActivationStartedAtPerfNow ?? null}
-						isActive={props.isActive}
-						isSearchOpen={props.isSearchOpen}
-						onFilterMenuOpenChange={props.onFilterMenuOpenChange}
-						onFilterModeChange={props.onFilterModeChange}
-						onClearSearch={props.onClearSearch}
-						onSearchModeChange={props.onSearchModeChange}
-						onSearchTextChange={props.onSearchTextChange}
-						onSelectFile={props.onSelectFile}
-						onToggleSearch={props.onToggleSearch}
-						onVisibleFileDemandChange={props.dispatchVisibleFileDemand}
-						searchMode={props.searchMode}
-						searchError={props.searchError}
-						searchText={props.searchText}
-						searchStatusMessage={props.searchStatusMessage}
-						selectedPath={props.selectedPath}
-						searchTriggerRef={searchTriggerRef}
-						source={props.displayModel.source}
-						{...(props.telemetryRecorder === undefined
-							? {}
-							: { telemetryRecorder: props.telemetryRecorder })}
-						telemetryTraceContext={props.telemetryTraceContext}
-						totalTreeHeightPixels={props.totalTreeHeight.heightPixels}
-						totalTreeHeightSource={props.totalTreeHeight.source}
-						totalTreeRowCount={props.totalTreeRowCount}
-						viewerContextSwitcher={props.viewerContextSwitcher}
-						projectedTreeRowCount={props.displayModel.projectedRowCount}
-						treeRowByPath={props.displayModel.treeRowByPath}
-					/>
-				}
-				railTestId="bridge-file-viewer-resizable-rail"
-			/>
+						)
+					}
+					contentTestId="bridge-file-viewer-content-panel"
+					handleTestId="bridge-file-viewer-rail-resize-handle"
+					rail={
+						<BridgeFileViewerTreePanel
+							failureSummary={props.railVisible === false ? null : failureSlot}
+							presentationState={treePresentation}
+							completeFileQueryTransaction={props.completeFileQueryTransaction}
+							filterMode={props.filterMode}
+							isFilterMenuOpen={props.isFilterMenuOpen}
+							fileTreePatchStream={props.fileTreePatchStream}
+							fileActivationSequence={props.fileActivationSequence ?? null}
+							fileActivationStartedAtPerfNow={props.fileActivationStartedAtPerfNow ?? null}
+							isActive={props.isActive}
+							isSearchOpen={props.isSearchOpen}
+							onFilterMenuOpenChange={props.onFilterMenuOpenChange}
+							onFilterModeChange={props.onFilterModeChange}
+							onClearSearch={props.onClearSearch}
+							onSearchModeChange={props.onSearchModeChange}
+							onSearchTextChange={props.onSearchTextChange}
+							onSelectFile={props.onSelectFile}
+							onToggleSearch={props.onToggleSearch}
+							onVisibleFileDemandChange={props.dispatchVisibleFileDemand}
+							searchMode={props.searchMode}
+							searchError={props.searchError}
+							searchText={props.searchText}
+							searchStatusMessage={props.searchStatusMessage}
+							selectedPath={props.selectedPath}
+							searchTriggerRef={searchTriggerRef}
+							source={props.displayModel.source}
+							{...(props.telemetryRecorder === undefined
+								? {}
+								: { telemetryRecorder: props.telemetryRecorder })}
+							telemetryTraceContext={props.telemetryTraceContext}
+							totalTreeHeightPixels={props.totalTreeHeight.heightPixels}
+							totalTreeHeightSource={props.totalTreeHeight.source}
+							totalTreeRowCount={props.totalTreeRowCount}
+							viewerContextSwitcher={props.viewerContextSwitcher}
+							projectedTreeRowCount={props.displayModel.projectedRowCount}
+							treeRowByPath={props.displayModel.treeRowByPath}
+						/>
+					}
+					railTestId="bridge-file-viewer-resizable-rail"
+				/>
+			</BridgeViewerContextPanelProvider>
 		</main>
 	);
 }

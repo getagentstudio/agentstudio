@@ -760,6 +760,29 @@
       }
     }
   ],
+  "fileRefreshFailureCases": [
+    {
+      "rootAccessFailure": "missingRoot",
+      "failure": {
+        "failureKind": "missingRoot",
+        "retryable": true
+      }
+    },
+    {
+      "rootAccessFailure": "unreadable",
+      "failure": {
+        "failureKind": "unreadableRoot",
+        "retryable": true
+      }
+    },
+    {
+      "rootAccessFailure": "refused",
+      "failure": {
+        "failureKind": "producerRejected",
+        "retryable": false
+      }
+    }
+  ],
   "reviewIntakeReadyCases": [
     {
       "name": "cold-intake",

@@ -21,6 +21,9 @@ export function bridgeFileSurfacePresentationStatus(props: {
 		props.displayModel.status?.state === 'failed'
 	) {
 		const message = props.panelChrome.message ?? 'Files unavailable';
+		const failureKind = props.panelChrome.fileRefreshFailure?.failureKind;
+		const fileRootCause =
+			failureKind === 'missingRoot' || failureKind === 'unreadableRoot' ? failureKind : undefined;
 		return {
 			kind: 'failed',
 			failure:
@@ -31,7 +34,12 @@ export function bridgeFileSurfacePresentationStatus(props: {
 							message,
 							correctiveAction: 'Correct the source failure, then reopen this worktree.',
 						}
-					: { kind: 'retryable', scope: 'surface', message },
+					: {
+							kind: 'retryable',
+							scope: 'surface',
+							message,
+							...(fileRootCause === undefined ? {} : { fileRootCause }),
+						},
 		};
 	}
 	if (props.panelChrome.isLoading || props.displayModel.status?.state === 'stale')

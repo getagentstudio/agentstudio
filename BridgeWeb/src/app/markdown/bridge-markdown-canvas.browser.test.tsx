@@ -1,9 +1,11 @@
-import { act } from 'react';
+import { act, type ReactElement } from 'react';
 import { afterEach, describe, expect, test, vi } from 'vitest';
 import { cleanup, render } from 'vitest-browser-react';
 
 // oxlint-disable-next-line import/no-unassigned-import -- Browser Mode must load the product Markdown styles.
 import '../bridge-app.css';
+import { BridgePaneFailureMessage } from '../bridge-region-presentation.js';
+import { BridgeViewerRecoveryRetryButton } from '../bridge-viewer-recovery-retry-button.js';
 import { BridgeMarkdownCanvas } from './bridge-markdown-canvas.js';
 import {
 	createBridgeMermaidRenderer,
@@ -32,11 +34,22 @@ describe('BridgeMarkdownCanvas Browser Mode', () => {
 		document.body.replaceChildren();
 	});
 
-	test('renders document Retry with the owned Button primitive and invokes recovery', async () => {
+	test('composes document failure into one pane Retry while the Markdown region stays quiet', async () => {
 		const retry = vi.fn();
 		await render(
 			<BridgeMarkdownCanvas
 				isActive={true}
+				renderRegion={({ body, state }): ReactElement => (
+					<>
+						<BridgePaneFailureMessage
+							entries={[{ part: 'markdown', fileName: 'markdown-proof.md', state, retry }]}
+							retryControl={(onClick): ReactElement => (
+								<BridgeViewerRecoveryRetryButton surface="pane" onClick={onClick} />
+							)}
+						/>
+						{body}
+					</>
+				)}
 				presentationState={{ status: 'failed', sourcePath: 'docs/markdown-proof.md' }}
 				retry={retry}
 			/>,
@@ -175,7 +188,7 @@ describe('BridgeMarkdownCanvas Browser Mode', () => {
 			await waitForSelector('[data-bridge-mermaid-state="failed"]', HTMLElement);
 		});
 		expect(renderDiagram).not.toHaveBeenCalled();
-		expect(document.body.textContent).toContain('Diagram could not be rendered.');
+		expect(document.body.textContent).toContain("Couldn't draw this diagram");
 		expect(document.body.textContent).toContain('Retry diagram');
 	});
 

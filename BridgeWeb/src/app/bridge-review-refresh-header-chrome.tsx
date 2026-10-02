@@ -1,4 +1,3 @@
-import { TriangleAlertIcon } from 'lucide-react';
 import type { ReactElement } from 'react';
 
 import type { BridgeMainReviewRefreshPresentation } from '../core/comm-worker/bridge-main-render-snapshot-store.js';
@@ -6,17 +5,17 @@ import type { BridgeRegionSurfaceStatus } from './bridge-region-presentation-sta
 import { BridgeRegionUpdatingIndicator } from './bridge-region-presentation.js';
 import { bridgeReviewRegionDisplaySpec } from './bridge-review-region-display-spec.js';
 import { BridgeViewerButton } from './bridge-viewer-button.js';
-import { bridgeViewerChromeStatusGroupClassName } from './bridge-viewer-chrome.js';
-import { BridgeViewerRecoveryRetryButton } from './bridge-viewer-recovery-retry-button.js';
+import {
+	bridgeViewerChromeStatusGroupClassName,
+	bridgeViewerChromeStatusSlotClassName,
+} from './bridge-viewer-chrome.js';
 import { bridgeViewerRegionApplyActionSpec } from './bridge-viewer-region-apply-action-spec.js';
 import { cn } from './class-name.js';
 
 export type BridgeReviewRefreshHeaderPresentation =
 	| { readonly action: null; readonly statusText: null }
 	| { readonly action: null; readonly statusText: 'Updating…' }
-	| { readonly action: 'applyNow'; readonly statusText: 'Update ready' }
-	| { readonly action: 'retry'; readonly statusText: 'Update unavailable' }
-	| { readonly action: null; readonly statusText: 'Update unavailable' };
+	| { readonly action: 'applyNow'; readonly statusText: 'Update ready' };
 
 export function bridgeReviewRegionRefreshHeaderPresentation(props: {
 	readonly isActive: boolean;
@@ -50,22 +49,6 @@ export function bridgeReviewRefreshHeaderPresentation(props: {
 			? { action: 'applyNow', statusText: 'Update ready' }
 			: { action: null, statusText: 'Updating…' };
 	}
-	const failure = props.refreshPresentation.failure;
-	if (
-		failure !== null &&
-		(failure.kind === 'installation' ||
-			(failure.presentationClass.kind === 'promoted' &&
-				promotedPresentationAffectsAttention({
-					affectedStableFileIdentities: failure.affectedStableFileIdentities,
-					attentionItemIds,
-					promotionReason: failure.presentationClass.reason,
-				})))
-	) {
-		return {
-			action: failure.retryable && props.canRetry ? 'retry' : null,
-			statusText: 'Update unavailable',
-		};
-	}
 	return { action: null, statusText: null };
 }
 
@@ -83,8 +66,16 @@ export function BridgeReviewRefreshHeaderGroup(props: {
 			/>
 		);
 	return (
-		<div className="grid h-6 shrink-0" data-testid="bridge-review-refresh-header-slot">
-			<BridgeReviewRefreshHeaderGroupSizer />
+		<div
+			className={bridgeViewerChromeStatusSlotClassName}
+			data-testid="bridge-review-refresh-header-slot"
+		>
+			<span
+				aria-hidden="true"
+				inert
+				className="col-start-1 row-start-1"
+				data-testid="bridge-review-refresh-header-sizer"
+			/>
 			{refreshGroup}
 		</div>
 	);
@@ -97,7 +88,7 @@ function BridgeReviewRefreshHeaderGroupContent(props: {
 		BridgeReviewRefreshHeaderPresentation,
 		{ readonly statusText: null }
 	>;
-}): ReactElement {
+}): ReactElement | null {
 	if (
 		props.presentation.statusText === 'Updating…' ||
 		props.presentation.statusText === 'Update ready'
@@ -133,52 +124,7 @@ function BridgeReviewRefreshHeaderGroupContent(props: {
 			</div>
 		);
 	}
-	const presentationClassName = 'text-warning';
-	return (
-		<div
-			className={cn(
-				bridgeViewerChromeStatusGroupClassName,
-				'col-start-1 row-start-1',
-				presentationClassName,
-			)}
-			data-testid="bridge-review-refresh-header-group"
-		>
-			<span
-				aria-atomic="true"
-				aria-live="polite"
-				className="inline-flex h-5 items-center gap-1 px-1.5 text-xs font-medium"
-				role="status"
-			>
-				<TriangleAlertIcon aria-hidden="true" className="size-3" />
-				{props.presentation.statusText}
-			</span>
-			<BridgeReviewRefreshHeaderAction
-				action={props.presentation.action}
-				onApplyNow={props.onApplyNow}
-				onRetry={props.onRetry}
-			/>
-		</div>
-	);
-}
-
-function BridgeReviewRefreshHeaderGroupSizer(): ReactElement {
-	return (
-		<div
-			aria-hidden="true"
-			className={cn(
-				bridgeViewerChromeStatusGroupClassName,
-				'invisible col-start-1 row-start-1 text-warning',
-			)}
-		>
-			<span className="inline-flex h-5 items-center gap-1 px-1.5 text-xs font-medium">
-				<TriangleAlertIcon aria-hidden="true" className="size-3" />
-				Update unavailable
-			</span>
-			<BridgeViewerButton ariaLabel="Retry" size="xs" disabled>
-				Retry
-			</BridgeViewerButton>
-		</div>
-	);
+	return null;
 }
 
 function BridgeReviewRefreshHeaderAction(props: {
@@ -197,8 +143,6 @@ function BridgeReviewRefreshHeaderAction(props: {
 					{bridgeViewerRegionApplyActionSpec('review', false).label}
 				</BridgeViewerButton>
 			);
-		case 'retry':
-			return <BridgeViewerRecoveryRetryButton surface="review" onClick={props.onRetry} />;
 		case null:
 			return null;
 		default:

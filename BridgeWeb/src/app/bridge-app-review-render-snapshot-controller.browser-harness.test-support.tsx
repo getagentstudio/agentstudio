@@ -41,8 +41,9 @@ import {
 	createBridgeReviewWorkerPierreCourier,
 	useBridgeReviewRenderSnapshotController,
 } from './bridge-app-review-render-snapshot-controller.js';
+import { BridgePaneFailureMessage } from './bridge-region-presentation.js';
 import type { BridgeReviewComparisonTarget } from './bridge-review-comparison-target.js';
-import { BridgeReviewMetadataRecoveryWarning } from './bridge-review-metadata-recovery-warning.js';
+import { BridgeViewerRecoveryRetryButton } from './bridge-viewer-recovery-retry-button.js';
 
 export { hierarchicalReviewDisplayEvent };
 
@@ -80,9 +81,24 @@ export function ReviewRecoveryRetryProbe(props: {
 	});
 	return (
 		<div>
-			<BridgeReviewMetadataRecoveryWarning
-				onRetry={(): void => controller.retryFailedMetadataView(props.comparisonTarget)}
-				status={controller.viewRecoveryStatus}
+			<BridgePaneFailureMessage
+				entries={[
+					{
+						part: 'review',
+						state:
+							controller.viewRecoveryStatus?.status === 'failedRetryable'
+								? {
+										kind: 'failed',
+										retainsContent: true,
+										failure: { kind: 'retryable', scope: 'surface', message: 'Review failure' },
+									}
+								: { kind: 'content' },
+						retry: (): void => controller.retryFailedMetadataView(props.comparisonTarget),
+					},
+				]}
+				retryControl={(onClick): ReactElement => (
+					<BridgeViewerRecoveryRetryButton surface="pane" onClick={onClick} />
+				)}
 			/>
 			<output data-testid="last-good-review">
 				{controller.displayStore.getReviewTreeRowAtIndex(0)?.path ?? ''}

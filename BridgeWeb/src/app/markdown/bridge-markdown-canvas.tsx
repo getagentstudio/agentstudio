@@ -7,7 +7,6 @@ import {
 	useRef,
 	useState,
 	type ReactElement,
-	type ReactNode,
 	type RefObject,
 } from 'react';
 import { createPortal } from 'react-dom';
@@ -24,13 +23,13 @@ import {
 	useWorktreeAnnotationPrepareActiveEditorsForInstallation,
 	useWorktreeAnnotationProjection,
 } from '../../worktree-annotations/worktree-annotation-surface-provider.js';
+import { bridgePaneFailureDisplaySpec } from '../bridge-pane-failure-summary.js';
 import type { BridgeRegionSurfaceStatus } from '../bridge-region-presentation-state.js';
 import {
 	BridgeRegionPresentation,
 	BridgeRegionUpdatingIndicator,
 	type BridgeRegionPresentationRenderSlot,
 } from '../bridge-region-presentation.js';
-import { BridgeViewerRecoveryRetryButton } from '../bridge-viewer-recovery-retry-button.js';
 import { bridgeViewerRegionApplyActionSpec } from '../bridge-viewer-region-apply-action-spec.js';
 import { BridgeViewerRegionApplyAction } from '../bridge-viewer-region-apply-action.js';
 import { BridgeMarkdownAnnotationLayer } from './bridge-markdown-annotation-layer.js';
@@ -69,7 +68,6 @@ export interface BridgeMarkdownCanvasProps {
 	readonly isActive: boolean;
 	readonly presentationState: BridgeMarkdownPresentationState;
 	readonly surfaceStatus?: BridgeRegionSurfaceStatus | undefined;
-	readonly surfaceRetry?: ReactNode;
 	readonly renderFulfillment?: BridgeMarkdownRenderFulfillment;
 	readonly retry: () => void;
 	readonly mermaidRenderer?: BridgeMermaidRenderer;
@@ -88,13 +86,6 @@ export function BridgeMarkdownCanvas(props: BridgeMarkdownCanvasProps): ReactEle
 				region="markdown"
 				shape="markdown"
 				emptyCopy={{ noSelection: 'Select a Markdown file', certified: 'Document is empty' }}
-				retry={
-					presentationState.kind === 'failed' && presentationState.failure.scope === 'surface' ? (
-						props.surfaceRetry
-					) : (
-						<BridgeViewerRecoveryRetryButton surface="markdown" onClick={props.retry} />
-					)
-				}
 				state={presentationState}
 			/>
 		);
@@ -109,7 +100,6 @@ export function BridgeMarkdownCanvas(props: BridgeMarkdownCanvasProps): ReactEle
 			isActive={props.isActive}
 			mermaidRenderer={props.mermaidRenderer}
 			surfaceStatus={props.surfaceStatus}
-			surfaceRetry={props.surfaceRetry}
 			presentation={props.presentationState}
 			{...(props.renderFulfillment === undefined
 				? {}
@@ -128,7 +118,6 @@ const BridgeMarkdownReadyDocument = memo(function BridgeMarkdownReadyDocument(pr
 	readonly mermaidRenderer: BridgeMermaidRenderer | undefined;
 	readonly presentation: Extract<BridgeMarkdownPresentationState, { readonly status: 'ready' }>;
 	readonly surfaceStatus?: BridgeRegionSurfaceStatus | undefined;
-	readonly surfaceRetry?: ReactNode;
 	readonly renderFulfillment?: BridgeMarkdownRenderFulfillment;
 }): ReactElement {
 	const [presentation, setPresentation] = useState(props.presentation);
@@ -330,18 +319,7 @@ const BridgeMarkdownReadyDocument = memo(function BridgeMarkdownReadyDocument(pr
 		),
 	};
 	const body = (
-		<BridgeRegionPresentation
-			region="markdown"
-			shape="markdown"
-			state={regionState}
-			retry={
-				regionState.kind === 'failed' && regionState.failure.scope === 'surface' ? (
-					props.surfaceRetry
-				) : (
-					<BridgeViewerRecoveryRetryButton surface="markdown" onClick={props.retry} />
-				)
-			}
-		>
+		<BridgeRegionPresentation region="markdown" shape="markdown" state={regionState}>
 			<div
 				className="bridge-scrollbar relative h-full min-h-0 overflow-auto bg-background"
 				data-markdown-scroll-viewport
@@ -423,7 +401,7 @@ interface BridgeMermaidFailureTarget {
 function BridgeMermaidFailure(props: { readonly onRetry: () => void }): ReactElement {
 	return (
 		<>
-			<span>Diagram could not be rendered.</span>
+			<span>{bridgePaneFailureDisplaySpec.diagram}</span>
 			<Button onClick={props.onRetry} size="sm" type="button" variant="outline">
 				Retry diagram
 			</Button>

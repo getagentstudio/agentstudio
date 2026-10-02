@@ -2,11 +2,17 @@ import type { ReactElement, ReactNode } from 'react';
 
 import { Alert, AlertAction, AlertDescription, AlertTitle } from '../components/ui/alert.js';
 import { Skeleton } from '../components/ui/skeleton.js';
+import { readNativeBridgePaneReloadPort } from './bridge-native-pane-reload-port.js';
+import {
+	bridgePaneFailureDisplaySpec,
+	projectBridgePaneFailureSummary,
+	type BridgePaneFailureEntry,
+} from './bridge-pane-failure-summary.js';
 import { BridgePaneReloadControl, type BridgePaneReloadPort } from './bridge-pane-reload-port.js';
 import type { BridgeRegionPresentationState } from './bridge-region-presentation-state.js';
 
 export interface BridgeRegionPresentationProps {
-	readonly paneReloadPort?: BridgePaneReloadPort;
+	readonly paneReloadPort?: BridgePaneReloadPort | undefined;
 	readonly keepContentMounted?: boolean;
 	readonly children?: ReactNode;
 	readonly emptyCopy?: {
@@ -17,10 +23,34 @@ export interface BridgeRegionPresentationProps {
 	readonly region: string;
 	readonly testId?: string | undefined;
 	readonly retry?: ReactNode;
-	readonly retainedContentCopy?: string;
-	readonly failureControl?: 'primary' | 'summary';
+	readonly failureSummary?: boolean;
+	readonly summaryCorrectiveAction?: string | undefined;
 	readonly shape: 'tree' | 'code' | 'diff' | 'comments' | 'markdown';
 	readonly state: BridgeRegionPresentationState;
+}
+
+export function BridgePaneFailureMessage(props: {
+	readonly entries: readonly BridgePaneFailureEntry[];
+	readonly retryControl: (retry: () => void) => ReactNode;
+	readonly paneReloadPort?: BridgePaneReloadPort | undefined;
+}): ReactElement | null {
+	const summary = projectBridgePaneFailureSummary(props.entries);
+	if (summary === null) return null;
+	const paneReloadPort =
+		props.paneReloadPort ??
+		(summary.state.failure.scope === 'pane' ? readNativeBridgePaneReloadPort() : undefined);
+	return (
+		<BridgeRegionPresentation
+			region="pane-failure"
+			testId="bridge-pane-failure-summary"
+			shape="code"
+			state={summary.state}
+			failureSummary
+			summaryCorrectiveAction={summary.correctiveAction}
+			paneReloadPort={paneReloadPort}
+			retry={summary.retry === undefined ? undefined : props.retryControl(summary.retry)}
+		/>
+	);
 }
 
 /** One non-content renderer; callers supply admitted content and command-backed actions. */
@@ -38,16 +68,14 @@ export function BridgeRegionPresentation(props: BridgeRegionPresentationProps): 
 		state.kind === 'content' ||
 		state.kind === 'updating' ||
 		(state.kind === 'failed' && state.retainsContent);
-	const failureControl =
-		props.failureControl ??
-		(state.kind === 'failed' && state.failure.scope === 'pane' && props.paneReloadPort === undefined
-			? 'summary'
-			: 'primary');
-	const showsFailureControl =
-		state.kind === 'failed' && (failureControl !== 'summary' || state.failure.scope === 'read');
+	const showsFailureControl = props.failureSummary === true;
 	return (
 		<div
-			className="relative flex h-full min-h-0 min-w-0 flex-col"
+			className={
+				props.failureSummary
+					? 'relative flex min-w-0 flex-col'
+					: 'relative flex h-full min-h-0 min-w-0 flex-col'
+			}
 			data-bridge-region={props.region}
 			data-testid={props.testId}
 			data-presentation-state={state.kind}
@@ -58,11 +86,8 @@ export function BridgeRegionPresentation(props: BridgeRegionPresentationProps): 
 				<Alert layout="banner" variant="warning">
 					<AlertTitle>{state.failure.message}</AlertTitle>
 					<AlertDescription>
-						{state.failure.kind === 'permanent'
-							? state.failure.correctiveAction
-							: state.retainsContent
-								? (props.retainedContentCopy ?? 'Last good content is shown. It is not current.')
-								: null}
+						{props.summaryCorrectiveAction ??
+							(state.failure.kind === 'permanent' ? state.failure.correctiveAction : null)}
 					</AlertDescription>
 					{state.failure.kind === 'retryable' && retryControl !== undefined ? (
 						<AlertAction>{retryControl}</AlertAction>
@@ -71,8 +96,20 @@ export function BridgeRegionPresentation(props: BridgeRegionPresentationProps): 
 			) : state.kind === 'failed' ? (
 				<p className="px-3 py-2 text-sm text-muted-foreground">
 					{state.retainsContent
-						? (props.retainedContentCopy ?? 'Last good content is shown. It is not current.')
-						: state.failure.message}
+						? bridgePaneFailureDisplaySpec.stale
+						: state.failure.scope === 'read'
+							? props.shape === 'markdown'
+								? bridgePaneFailureDisplaySpec.noDocument
+								: bridgePaneFailureDisplaySpec.noContent
+							: props.shape === 'diff'
+								? bridgePaneFailureDisplaySpec.noReview
+								: props.shape === 'tree'
+									? bridgePaneFailureDisplaySpec.noFiles
+									: props.shape === 'comments'
+										? bridgePaneFailureDisplaySpec.noComments
+										: props.shape === 'markdown'
+											? bridgePaneFailureDisplaySpec.noDocument
+											: bridgePaneFailureDisplaySpec.noContent}
 				</p>
 			) : null}
 			{state.kind === 'loading' ? (

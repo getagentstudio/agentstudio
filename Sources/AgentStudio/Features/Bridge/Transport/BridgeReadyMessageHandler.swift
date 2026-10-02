@@ -9,8 +9,8 @@ private let bridgeReadyMessageHandlerLogger = Logger(
 /// Receives the closed bootstrap-only request union from the bridge content world.
 ///
 /// Ordinary browser/native RPC uses the `agentstudio://rpc/command` scheme route.
-/// This handler intentionally accepts only the bootstrap-ready envelope so the
-/// script-message lane cannot stay alive as a parallel command transport.
+/// This handler accepts session bootstrap and the single pre-session pane reload
+/// command, so a failed session cannot disable its own escape hatch.
 final class BridgeReadyMessageHandler: NSObject, WKScriptMessageHandler {
     enum ProductSessionBootstrapReason: String, Sendable, Equatable {
         case initial
@@ -26,6 +26,7 @@ final class BridgeReadyMessageHandler: NSObject, WKScriptMessageHandler {
         case ready(requestId: String)
         case productSessionBootstrap(requestId: String, reason: ProductSessionBootstrapReason)
         case telemetrySessionBootstrap(requestId: String, reason: TelemetrySessionBootstrapReason)
+        case runPageCommand(requestId: String, command: BridgePageCommand)
         case invalid(id: String?, message: String)
     }
 
@@ -72,6 +73,14 @@ final class BridgeReadyMessageHandler: NSObject, WKScriptMessageHandler {
             return .invalid(id: requestId, message: "Invalid request")
         }
         switch method {
+        case "bridge.pageCommand.run":
+            guard params.keys.sorted() == ["command"],
+                let rawCommand = params["command"] as? String,
+                let command = BridgePageCommand(rawValue: rawCommand)
+            else {
+                return .invalid(id: requestId, message: "Invalid request")
+            }
+            return .runPageCommand(requestId: requestId, command: command)
         case BridgeReadyMethod.method:
             return params.isEmpty
                 ? .ready(requestId: requestId)

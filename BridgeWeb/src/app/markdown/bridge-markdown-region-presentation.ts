@@ -1,3 +1,4 @@
+import { bridgePaneFailureDisplaySpec } from '../bridge-pane-failure-summary.js';
 import {
 	projectBridgeRegionPresentation,
 	type BridgeRegionPresentationState,
@@ -29,7 +30,7 @@ export function bridgeMarkdownRegionPresentation(props: {
 						failure: {
 							kind: 'retryable',
 							scope: 'read',
-							message: 'Markdown refresh failed. Showing the previous document.',
+							message: bridgePaneFailureDisplaySpec.markdownUpdate,
 						},
 					}
 				: state.status === 'ready' && (state.refresh.kind === 'pending' || props.held)
@@ -48,7 +49,7 @@ export function bridgeMarkdownRegionPresentation(props: {
 						failure: {
 							kind: 'retryable',
 							scope: 'read',
-							message: 'Markdown could not be rendered.',
+							message: bridgePaneFailureDisplaySpec.markdownLoad,
 						},
 					}
 				: displayed === null

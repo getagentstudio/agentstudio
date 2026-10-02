@@ -88,6 +88,7 @@ test('no selection and certified empty have different quiet copy; partial covera
 test('permanent failure overrides ready empty, states the correction, and has no Retry', async () => {
 	await render(
 		<BridgeRegionPresentation
+			failureSummary
 			region="permanent"
 			shape="tree"
 			state={projectBridgeRegionPresentation({
@@ -158,6 +159,7 @@ test('failed pane start keeps retained content readable and marked stale', async
 	} satisfies BridgePaneReloadPort;
 	const rendered = await render(
 		<BridgeRegionPresentation
+			failureSummary
 			region="retained"
 			shape="code"
 			state={projectBridgeRegionPresentation({
@@ -199,6 +201,7 @@ test('pane failure uses only the supplied native command projection and reload p
 	} satisfies BridgePaneReloadPort;
 	const rendered = await render(
 		<BridgeRegionPresentation
+			failureSummary
 			region="pane-stand-in"
 			shape="code"
 			paneReloadPort={port}
@@ -219,14 +222,14 @@ test('pane failure uses only the supplied native command projection and reload p
 	await page.screenshot({ path: '../../../tmp/g1-w6-pane-reload-stand-in.png' });
 });
 
-test.each(['primary', 'summary'] as const)(
+test.each([false, true])(
 	'an unwired pane failure has no actionable control in its %s presentation',
-	async (failureControl): Promise<void> => {
+	async (failureSummary): Promise<void> => {
 		const rendered = await render(
 			<BridgeRegionPresentation
 				region="unwired-pane"
 				shape="code"
-				failureControl={failureControl}
+				failureSummary={failureSummary}
 				state={projectBridgeRegionPresentation({
 					...settledInput,
 					surface: {

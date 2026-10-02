@@ -64,11 +64,11 @@ test.each([undefined, { readyAcknowledgementDeadlineMilliseconds: -1 }])(
 				/>,
 			),
 		);
-		await expect.element(rendered.getByRole('alert')).toHaveTextContent('Bridge failed to start');
+		await expect.element(rendered.getByRole('alert')).toHaveTextContent("Bridge couldn't start.");
 		expect(readyRequestCount).toBe(0);
 		expect(
 			document
-				.querySelector('[data-bridge-region="pane-start"]')
+				.querySelector('[data-bridge-region="pane-failure"]')
 				?.getAttribute('data-presentation-state'),
 		).toBe('failed');
 		await actUpdate(async (): Promise<void> => {
@@ -94,10 +94,10 @@ test.each([undefined, { readyAcknowledgementDeadlineMilliseconds: -1 }])(
 			const rendered = await actWait(async () =>
 				render(<BridgeAppProtocolRouter codeViewWorkerPoolEnabled={false} protocol="review" />),
 			);
-			await expect.element(rendered.getByRole('alert')).toHaveTextContent('Bridge failed to start');
+			await expect.element(rendered.getByRole('alert')).toHaveTextContent("Bridge couldn't start.");
 			expect(
 				document
-					.querySelector('[data-bridge-region="pane-start"]')
+					.querySelector('[data-bridge-region="pane-failure"]')
 					?.getAttribute('data-presentation-state'),
 			).toBe('failed');
 		} finally {
