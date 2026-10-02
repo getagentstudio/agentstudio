@@ -255,6 +255,44 @@ struct PaneTabViewControllerDrawerCommandTests {
         }
     }
 
+    @Test(
+        "closing the active drawer child skips minimized siblings and preserves pane undo",
+        arguments: [false, true]
+    )
+    func executeCloseDrawerPane_skipsMinimizedSiblings_preservesUndo(allSiblingsMinimized: Bool) async throws {
+        let harness = makeHarness()
+        defer { try? FileManager.default.removeItem(at: harness.tempDir) }
+        try await withWorkspaceCommandHarness(harness) {
+            let parent = harness.store.createPane()
+            let tab = Tab(paneId: parent.id)
+            harness.store.appendTab(tab)
+            harness.store.setActiveTab(tab.id)
+            harness.store.setActivePane(parent.id, inTab: tab.id)
+            let first = try #require(harness.store.addDrawerPane(to: parent.id))
+            let selected = try #require(harness.store.addDrawerPane(to: parent.id))
+            let last = try #require(harness.store.addDrawerPane(to: parent.id))
+            harness.store.setActiveDrawerPane(selected.id, in: parent.id)
+            #expect(harness.store.minimizeDrawerPane(first.id, in: parent.id))
+            if allSiblingsMinimized {
+                #expect(harness.store.minimizeDrawerPane(last.id, in: parent.id))
+            }
+            #expect(harness.store.drawerView(forParent: parent.id)?.activeChildId == selected.id)
+
+            await harness.executeCommand(.closeDrawerPane)
+
+            #expect(harness.store.paneAtom.pane(selected.id) == nil)
+            #expect(harness.store.pane(parent.id)?.drawer?.paneIds == [first.id, last.id])
+            let remainingView = try #require(harness.store.drawerView(forParent: parent.id))
+            #expect(remainingView.activeChildId == (allSiblingsMinimized ? nil : last.id))
+            #expect(remainingView.minimizedPaneIds == (allSiblingsMinimized ? [first.id, last.id] : [first.id]))
+            guard case .pane(let snapshot)? = harness.coordinator.undoStack.last else {
+                Issue.record("Expected drawer close beside minimized siblings to preserve pane undo")
+                return
+            }
+            #expect(snapshot.pane.id == selected.id)
+        }
+    }
+
     @Test("option-j from empty drawer focus falls through instead of being consumed")
     func optionJ_emptyDrawerFocus_fallsThrough() async throws {
         let harness = makeHarness()

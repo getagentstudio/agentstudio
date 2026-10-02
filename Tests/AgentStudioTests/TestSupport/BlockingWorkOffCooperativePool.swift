@@ -21,6 +21,7 @@ import AgentStudioTestHarness
 /// and `Process` wait in a test body goes through here or through one of the
 /// `WithoutBlockingMainActor` helpers built on the same hop. The
 /// `agentstudio_test_blocking_wait_off_cooperative_pool` lint rule enforces it.
+/// Return observations; assert in the test task (agentstudio_no_expectation_off_test_task).
 package func withoutBlockingCooperativePool<Value: Sendable>(
     _ blockingWork: @escaping @Sendable () throws -> Value
 ) async throws -> Value {
@@ -29,6 +30,7 @@ package func withoutBlockingCooperativePool<Value: Sendable>(
 
 /// The non-throwing form, for a wait that reports through its own return value
 /// rather than by throwing, such as `DispatchSemaphore.wait(timeout:)`.
+/// Return observations; assert in the test task (agentstudio_no_expectation_off_test_task).
 package func withoutBlockingCooperativePool<Value: Sendable>(
     _ blockingWork: @escaping @Sendable () -> Value
 ) async -> Value {

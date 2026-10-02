@@ -78,23 +78,41 @@ struct TestRealToolResolverTests {
             for: .itemReplacementDirectory, in: .userDomainMask,
             appropriateFor: FileManager.default.temporaryDirectory, create: true)
         defer { try? FileManager.default.removeItem(at: directory) }
-        try await valueFromDedicatedThread {
+        let observation = await valueFromDedicatedThread {
             let process = Process()
             process.executableURL = directory.appending(path: "missing-executable")
             process.currentDirectoryURL = directory
             process.arguments = ["add", "."]
-            #expect(throws: (any Error).self) { try TestToolResolver.launch(process) }
-            let json = try #require(
-                TestToolResolver.failureReceipt(for: process, exitStatus: 7).split(separator: "\t").last)
-            let record = try #require(JSONSerialization.jsonObject(with: Data(json.utf8)) as? [String: Any])
-            #expect(record["executable"] as? String == process.executableURL?.path)
-            #expect(record["argv"] as? [String] == ["add", "."])
-            #expect(record["cwd"] as? String == directory.path)
-            #expect(record["exitStatus"] as? Int == 7)
+            let launchThrew: Bool
+            do {
+                try TestToolResolver.launch(process)
+                launchThrew = false
+            } catch {
+                launchThrew = true
+            }
+            let receipt = TestToolResolver.failureReceipt(for: process, exitStatus: 7)
             process.arguments = Array(repeating: String(repeating: "a", count: 500), count: 100)
-            let bounded = TestToolResolver.failureReceipt(for: process, exitStatus: nil)
-            #expect(bounded.utf8.count < 8000)
-            #expect(bounded.contains("\"argvTruncated\":true"))
+            return FailedLaunchObservation(
+                launchThrew: launchThrew,
+                executablePath: process.executableURL?.path,
+                receipt: receipt,
+                boundedReceipt: TestToolResolver.failureReceipt(for: process, exitStatus: nil))
         }
+        #expect(observation.launchThrew)
+        let json = try #require(observation.receipt.split(separator: "\t").last)
+        let record = try #require(JSONSerialization.jsonObject(with: Data(json.utf8)) as? [String: Any])
+        #expect(record["executable"] as? String == observation.executablePath)
+        #expect(record["argv"] as? [String] == ["add", "."])
+        #expect(record["cwd"] as? String == directory.path)
+        #expect(record["exitStatus"] as? Int == 7)
+        #expect(observation.boundedReceipt.utf8.count < 8000)
+        #expect(observation.boundedReceipt.contains("\"argvTruncated\":true"))
     }
+}
+
+private struct FailedLaunchObservation: Sendable {
+    let launchThrew: Bool
+    let executablePath: String?
+    let receipt: String
+    let boundedReceipt: String
 }

@@ -15,12 +15,13 @@ struct GhosttyStructureRuntimeEventTests {
         installTestCoreAtomsIfNeeded()
     }
 
-    @Test("structural events always drop while out-of-layout terminal facts remain filtered")
+    @Test("structural events always drop while terminal facts from panes in no tab remain filtered")
     func structuralRuntimeEventsDoNotMutateWorkspace() async throws {
         var submittedWorkspaceActions: [WorkspaceActionCommand] = []
         let commandHandler = StructuralRuntimeCommandHandler()
         let context = try makeStructuralRuntimeContext()
         defer { try? FileManager.default.removeItem(at: context.tempDir) }
+        await prepareHiddenRuntimeSources(context)
         context.coordinator.workspaceActionSubmission = { action in
             submittedWorkspaceActions.append(action)
         }
@@ -30,6 +31,7 @@ struct GhosttyStructureRuntimeEventTests {
         let initialActiveTabId = context.store.activeTabId
         let initialZoomPresentation = context.store.panePresentationAtom.zoomPresentation(forTab: context.sourceTabId)
         let events = structuralEvents()
+        let unattachedPaneId = UUIDv7.generate()
 
         do {
             try await withIsolatedCommandDispatcher(
@@ -51,14 +53,14 @@ struct GhosttyStructureRuntimeEventTests {
                         index: events.count,
                         through: context.runtime,
                         sourcePaneId: context.sourcePaneId,
-                        eventSourcePaneId: context.drawerChildId,
+                        eventSourcePaneId: unattachedPaneId,
                         eventSequence: 1,
                         barrierSequence: UInt64(events.count * 2 + 1)
                     )
                     #expect(
                         !outsideLayoutEvents.contains { event in
                             if case .worktreeBellRang(let paneId) = event {
-                                return paneId == context.drawerChildId
+                                return paneId == unattachedPaneId
                             }
                             return false
                         })
@@ -89,6 +91,78 @@ struct GhosttyStructureRuntimeEventTests {
         }
 
         await context.coordinator.shutdown()
+    }
+
+    @Test("drawer child terminal title facts update that child's metadata")
+    func drawerChildRuntimeTitleUpdatesPane() async throws {
+        let context = try makeStructuralRuntimeContext()
+        defer { try? FileManager.default.removeItem(at: context.tempDir) }
+        await prepareHiddenRuntimeSources(context)
+
+        _ = await emit(
+            .titleChanged("Drawer terminal title"), index: 0,
+            through: context.runtime, sourcePaneId: context.sourcePaneId,
+            eventSourcePaneId: context.drawerChildId
+        )
+        #expect(context.store.pane(context.drawerChildId)?.metadata.title == "Drawer terminal title")
+        _ = await emit(
+            .tabTitleChanged("Drawer tab title"), index: 1,
+            through: context.runtime, sourcePaneId: context.sourcePaneId,
+            eventSourcePaneId: context.drawerChildId
+        )
+        #expect(context.store.pane(context.drawerChildId)?.metadata.title == "Drawer tab title")
+
+        await context.coordinator.shutdown()
+    }
+
+    @Test("drawer child terminal CWD facts update that child's metadata")
+    func drawerChildRuntimeCWDUpdatesPane() async throws {
+        let context = try makeStructuralRuntimeContext()
+        defer { try? FileManager.default.removeItem(at: context.tempDir) }
+        await prepareHiddenRuntimeSources(context)
+        let expectedCWD = context.tempDir.appending(path: "Sources", directoryHint: .isDirectory)
+
+        _ = await emit(
+            .cwdChanged(expectedCWD.path), index: 0,
+            through: context.runtime, sourcePaneId: context.sourcePaneId,
+            eventSourcePaneId: context.drawerChildId
+        )
+        #expect(context.store.pane(context.drawerChildId)?.metadata.cwd == expectedCWD)
+
+        await context.coordinator.shutdown()
+    }
+
+    @Test("terminal metadata facts from a pane in no tab remain dropped")
+    func unattachedPaneRuntimeMetadataIsDropped() async throws {
+        let context = try makeStructuralRuntimeContext()
+        defer { try? FileManager.default.removeItem(at: context.tempDir) }
+        await prepareHiddenRuntimeSources(context)
+        let unattachedPane = context.store.createPane(title: "Unattached terminal")
+        let initialMetadata = unattachedPane.metadata
+        #expect(context.store.tabLayoutAtom.tabContaining(paneId: unattachedPane.id) == nil)
+
+        _ = await emit(
+            .titleChanged("Must stay dropped"), index: 0,
+            through: context.runtime, sourcePaneId: context.sourcePaneId,
+            eventSourcePaneId: unattachedPane.id
+        )
+        #expect(context.store.pane(unattachedPane.id)?.metadata == initialMetadata)
+        _ = await emit(
+            .cwdChanged(context.tempDir.appending(path: "Unattached").path), index: 1,
+            through: context.runtime, sourcePaneId: context.sourcePaneId,
+            eventSourcePaneId: unattachedPane.id
+        )
+        #expect(context.store.pane(unattachedPane.id)?.metadata == initialMetadata)
+
+        await context.coordinator.shutdown()
+    }
+
+    private func prepareHiddenRuntimeSources(_ context: GhosttyStructureRuntimeContext) async {
+        // Keep source and bell barrier in the same hidden priority tier so the
+        // reducer cannot move the barrier ahead of the fact being checked.
+        context.store.setActiveTab(context.store.tabs.last?.id)
+        await waitForBusSubscriberRegistration(
+            context.coordinator.paneEventBus, subscriberName: "WorkspaceSurfaceCoordinator")
     }
 
     private func makeStructuralRuntimeContext() throws -> GhosttyStructureRuntimeContext {

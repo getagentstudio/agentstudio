@@ -296,6 +296,12 @@ struct VendorConsumerWiringScriptTests {
             "scripts/swift-package-sandbox.sh",
             "scripts/swift-compilation-policy.sh",
         ]
+        // These observe the existing command pipeline; they never build a
+        // vendor consumer and therefore are not part of the Swift-command set.
+        let observationOnlySupport: Set<String> = [
+            "scripts/swift-test-invocation-receipts.sh",
+            "scripts/swift-test-invocation-receipts.pl",
+        ]
         // Scripts whose Swift commands build only the standalone architecture
         // lint package, which consumes no vendored framework.
         let independentToolPackageScripts: Set<String> = [
@@ -331,6 +337,10 @@ struct VendorConsumerWiringScriptTests {
             Classify every script containing a Swift command as a verified entry point, a sourced-only helper, \
             an independent tool-package script, or an independent toolchain installer
             """)
+        for path in observationOnlySupport {
+            let source = try String(contentsOfFile: path, encoding: .utf8)
+            #expect(swiftCommands(in: source).isEmpty, "\(path) must stay observation-only")
+        }
         for path in independentToolPackageScripts {
             let source = try String(contentsOfFile: path, encoding: .utf8)
             let commands = swiftCommands(in: source)

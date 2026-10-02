@@ -198,7 +198,12 @@ enum WorkspaceUndoComposition {
                 if view.layout.isEmpty {
                     arrangements[index].drawerViews.removeValue(forKey: drawerID)
                 } else {
-                    if view.activeChildId == pane.id { view.activeChildId = view.layout.paneIds.first }
+                    if view.activeChildId == pane.id {
+                        view.activeChildId = DrawerChildSelectionRule.firstVisibleChild(
+                            orderedPaneIds: view.layout.paneIds,
+                            minimizedPaneIds: view.minimizedPaneIds
+                        )
+                    }
                     arrangements[index].drawerViews[drawerID] = view
                 }
             }

@@ -8,6 +8,7 @@ import Foundation
 /// task stays free to await ``HeldStep/firstArrival()`` and end the step while
 /// the work is parked. The work itself cannot be cancelled; the runner's hang
 /// bound is what ends a call that never returns.
+/// Return observations; assert in the test task (agentstudio_no_expectation_off_test_task).
 package func valueFromDedicatedThread<Value: Sendable, Failure: Error>(
     _ blockingWork: @escaping @Sendable () throws(Failure) -> Value
 ) async throws(Failure) -> Value {

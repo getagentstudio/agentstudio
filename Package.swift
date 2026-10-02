@@ -522,6 +522,7 @@ let package = Package(
         .testTarget(
             name: "AgentStudioTerminalTests",
             dependencies: [
+                "AgentStudioTestHarness",
                 "AgentStudioCore",
                 "AgentStudioInfrastructure",
                 "AgentStudioSharedComponents",

@@ -8,7 +8,7 @@ import UniformTypeIdentifiers
 @testable import AgentStudio
 
 @MainActor
-@Suite
+@Suite(.serialized)
 struct WorktreeAnnotationOutputEffectsTests {
     @Test("clipboard output replaces stale contents with exact UTF-8 Markdown bytes")
     func clipboardOutputReplacesStaleContentsWithExactMarkdownBytes() async throws {

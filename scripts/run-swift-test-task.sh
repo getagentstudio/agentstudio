@@ -73,6 +73,7 @@ lane_children_cpu_seconds() {
 # owns its own tally files, so two lanes in one invocation never share counts.
 begin_lane_accounting() {
   LANE_START_SECONDS="$SECONDS"
+  swift_test_f2_begin_lane_accounting || true
   swift_test_begin_active_command_groups
   LANE_TIMES_FILE="$(mktemp "${TMPDIR:-/tmp}/agentstudio-lane-times.XXXXXX")"
   SWIFT_TEST_PEAK_ANNOUNCED_FILE="$(mktemp "${TMPDIR:-/tmp}/agentstudio-lane-peak-announced.XXXXXX")"
@@ -101,6 +102,7 @@ print_closing_lane_report() {
   echo "[$LOG_PREFIX] lane-report exit_status=$exit_status"
   echo "[$LOG_PREFIX] lane-report wall_seconds=$wall_seconds"
   echo "[$LOG_PREFIX] lane-report cpu_seconds=$cpu_seconds"
+  swift_test_f2_report_resource_table || true
   echo "[$LOG_PREFIX] lane-report cpu_utilization=$(
     /usr/bin/awk -v cpu="$cpu_seconds" -v wall="$wall_seconds" -v cores="$LANE_CPU_COUNT" \
       'BEGIN { if (wall <= 0 || cores <= 0) { print "0.00" } else { printf "%.2f\n", cpu / (wall * cores) } }'

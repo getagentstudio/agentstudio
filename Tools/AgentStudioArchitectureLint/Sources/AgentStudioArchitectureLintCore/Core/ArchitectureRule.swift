@@ -67,6 +67,7 @@ enum ArchitectureRuleRegistry {
         AdHocContinuationWaitRule(),
         TestBlockingSocketIORule(),
         TestBlockingWaitOffCooperativePoolRule(),
+        TestExpectationOffTestTaskRule(),
         TestElapsedTimeBudgetRule(),
         TestCoreAtomFallbackOwnershipRule(),
         CompletionHandleNotDiscardableRule(),

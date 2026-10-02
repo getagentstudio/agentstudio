@@ -86,6 +86,9 @@ struct SwiftPackageSandboxScriptTests {
             let callLines = owner.text.components(separatedBy: "\n").filter { line in
                 !line.trimmingCharacters(in: .whitespaces).hasPrefix("#") && line.contains(swiftPackageCallPattern)
             }
+            if owner.name == "scripts/swift-test-invocation-receipts.sh" {
+                #expect(callLines.isEmpty, "Receipt support observes commands without owning a SwiftPM call")
+            }
             guard !callLines.isEmpty else { continue }
             for line in callLines
             where !line.contains(sandboxArgumentsCall)
