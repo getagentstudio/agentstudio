@@ -5,6 +5,7 @@ import { page } from 'vitest/browser';
 
 // oxlint-disable-next-line import/no-unassigned-import -- Production layout proof.
 import './bridge-app.css';
+import { readNativeBridgePaneReloadPort } from './bridge-native-pane-reload-port.js';
 import type { BridgePaneFailureEntry } from './bridge-pane-failure-summary.js';
 import {
 	BridgePaneFailureMessage,
@@ -40,6 +41,29 @@ for (const railShown of [true, false]) {
 			const retry = vi.fn();
 			const commentsRetry = vi.fn();
 			const reload = vi.fn();
+			const nativeTarget = new EventTarget();
+			nativeTarget.addEventListener('__bridge_handshake_request', (): void => {
+				nativeTarget.dispatchEvent(
+					new CustomEvent('__bridge_handshake', {
+						detail: {
+							pageCommands: [
+								{
+									command: 'reloadBridgeWebView',
+									label: 'Reload Bridge',
+									helpText: 'Reload the Bridge browser page',
+									icon: 'arrow.clockwise',
+								},
+							],
+						},
+					}),
+				);
+			});
+			nativeTarget.addEventListener('__bridge_page_command_request', (event: Event): void => {
+				if ('detail' in event) reload(event.detail);
+			});
+			const reloadPort = readNativeBridgePaneReloadPort(nativeTarget);
+			if (reloadPort === undefined)
+				throw new Error('Expected native bootstrap page command catalog.');
 			const entry: BridgePaneFailureEntry = {
 				part: scenario.part,
 				fileName: scenario.name === 'file-read' ? 'Sources/First.swift' : null,
@@ -71,16 +95,7 @@ for (const railShown of [true, false]) {
 					retryControl={(onClick): ReactElement => (
 						<BridgeViewerRecoveryRetryButton surface="review" onClick={onClick} />
 					)}
-					paneReloadPort={{
-						command: 'reloadBridgeWebView',
-						display: {
-							accessibleName: 'Retry',
-							label: 'Retry',
-							helpText: 'Reload command stand-in',
-							icon: null,
-						},
-						requestPaneReload: reload,
-					}}
+					paneReloadPort={reloadPort}
 				/>
 			);
 			const content = (
@@ -147,8 +162,20 @@ for (const railShown of [true, false]) {
 				);
 			}
 			await act(async (): Promise<void> => {
-				await rendered.getByRole('button', { name: 'Retry', exact: true }).click();
+				await rendered
+					.getByRole('button', {
+						name: scenario.name === 'failed-start' ? 'Reload Bridge' : 'Retry',
+						exact: true,
+					})
+					.click();
 			});
+			if (scenario.name === 'failed-start') {
+				expect(rendered.getByRole('button', { name: 'Retry', exact: true }).query()).toBeNull();
+				expect(document.querySelector('[data-command-icon="arrow.clockwise"]')).not.toBeNull();
+				expect(reload).toHaveBeenCalledWith(
+					expect.objectContaining({ command: 'reloadBridgeWebView' }),
+				);
+			}
 			expect(reload).toHaveBeenCalledTimes(scenario.name === 'failed-start' ? 1 : 0);
 			expect(retry).toHaveBeenCalledTimes(scenario.name === 'failed-start' ? 0 : 1);
 			expect(commentsRetry).toHaveBeenCalledTimes(scenario.name === 'several' ? 1 : 0);

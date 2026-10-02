@@ -2,6 +2,7 @@ import type { ReactElement, ReactNode } from 'react';
 
 import { Alert, AlertAction, AlertDescription, AlertTitle } from '../components/ui/alert.js';
 import { Skeleton } from '../components/ui/skeleton.js';
+import { readNativeBridgePaneReloadPort } from './bridge-native-pane-reload-port.js';
 import {
 	bridgePaneFailureDisplaySpec,
 	projectBridgePaneFailureSummary,
@@ -35,6 +36,9 @@ export function BridgePaneFailureMessage(props: {
 }): ReactElement | null {
 	const summary = projectBridgePaneFailureSummary(props.entries);
 	if (summary === null) return null;
+	const paneReloadPort =
+		props.paneReloadPort ??
+		(summary.state.failure.scope === 'pane' ? readNativeBridgePaneReloadPort() : undefined);
 	return (
 		<BridgeRegionPresentation
 			region="pane-failure"
@@ -43,7 +47,7 @@ export function BridgePaneFailureMessage(props: {
 			state={summary.state}
 			failureSummary
 			summaryCorrectiveAction={summary.correctiveAction}
-			paneReloadPort={props.paneReloadPort}
+			paneReloadPort={paneReloadPort}
 			retry={summary.retry === undefined ? undefined : props.retryControl(summary.retry)}
 		/>
 	);
