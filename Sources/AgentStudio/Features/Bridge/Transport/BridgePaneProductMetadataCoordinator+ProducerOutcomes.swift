@@ -3,10 +3,17 @@ import Foundation
 enum BridgePaneProductFileRefreshFailureKind: String, Codable, CaseIterable, Sendable {
     case fileRefreshFailed
     case fileSourceUnavailable
+    case missingRoot
+    case unreadableRoot
     case producerRejected
 
     var retryable: Bool {
-        self == .fileSourceUnavailable
+        switch self {
+        case .fileSourceUnavailable, .missingRoot, .unreadableRoot:
+            true
+        case .fileRefreshFailed, .producerRejected:
+            false
+        }
     }
 }
 

@@ -27,7 +27,7 @@ struct BridgeWorktreeFileRootEnumerationTests {
             #expect(
                 BridgePaneProductMetadataCoordinator.fileRefreshDisposition(for: failure)
                     == .failed(surfaceFailure.refreshFailure))
-            #expect(surfaceFailure.refreshFailure.failureKind == .fileSourceUnavailable)
+            #expect(surfaceFailure.refreshFailure.failureKind == .missingRoot)
             #expect(BridgePaneProductMetadataCoordinator.producerFailureReason(for: failure) == .missingRoot)
         }
     }
@@ -60,7 +60,7 @@ struct BridgeWorktreeFileRootEnumerationTests {
             #expect(
                 BridgePaneProductMetadataCoordinator.fileRefreshDisposition(for: failure)
                     == .failed(surfaceFailure.refreshFailure))
-            #expect(surfaceFailure.refreshFailure.failureKind == .fileSourceUnavailable)
+            #expect(surfaceFailure.refreshFailure.failureKind == .unreadableRoot)
             #expect(BridgePaneProductMetadataCoordinator.producerFailureReason(for: failure) == .unreadableRoot)
         }
     }

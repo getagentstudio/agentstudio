@@ -25,6 +25,16 @@ struct BridgePaneProductFileRefreshFailureTests {
                 json: #"{"failureKind":"fileSourceUnavailable","retryable":true}"#
             ),
             .init(
+                failureKind: .missingRoot,
+                retryable: true,
+                json: #"{"failureKind":"missingRoot","retryable":true}"#
+            ),
+            .init(
+                failureKind: .unreadableRoot,
+                retryable: true,
+                json: #"{"failureKind":"unreadableRoot","retryable":true}"#
+            ),
+            .init(
                 failureKind: .producerRejected,
                 retryable: false,
                 json: #"{"failureKind":"producerRejected","retryable":false}"#
@@ -43,12 +53,11 @@ struct BridgePaneProductFileRefreshFailureTests {
         }
     }
 
-    @Test("decoder rejects deferred root-specific wire kinds and copy fields")
-    func decoderRejectsDeferredRootSpecificWireValues() {
+    @Test("decoder rejects invalid retryability and copy fields for root failures")
+    func decoderRejectsInvalidRootFailureValues() {
         for json in [
-            #"{"failureKind":"missingRoot","retryable":true}"#,
-            #"{"failureKind":"unreadable","retryable":true}"#,
-            #"{"failureKind":"refused","retryable":false}"#,
+            #"{"failureKind":"missingRoot","retryable":false}"#,
+            #"{"failureKind":"unreadableRoot","retryable":false}"#,
             #"{"failureKind":"fileSourceUnavailable","retryable":true,"safeMessage":"provider path leaked"}"#,
         ] {
             #expect(throws: DecodingError.self) {
