@@ -11,7 +11,7 @@ extension WebKitSerializedTests.BridgePaneControllerTests {
 
     @Test("unchanged contribution refresh commits successor seed without publication")
     func unchangedContributionRefreshCommitsSuccessorSeedWithoutPublication() async throws {
-        let fixture = makeContributionRefreshFixture()
+        let fixture = try await makeContributionRefreshFixture()
         defer { _ = fixture.controller.beginTeardown() }  // fire-and-forget: defer cannot await; cleanup only
         guard
             case .success = await fixture.controller.handleDiffCommand(
@@ -63,7 +63,7 @@ extension WebKitSerializedTests.BridgePaneControllerTests {
 
     @Test("contribution refresh captures fresh truth under stable lineage without endpoint replay")
     func contributionRefreshCapturesFreshTruthUnderStableLineageWithoutEndpointReplay() async throws {
-        let fixture = makeContributionRefreshFixture()
+        let fixture = try await makeContributionRefreshFixture()
         let controller = fixture.controller
         let provider = fixture.provider
         let paneId = fixture.paneId
@@ -138,7 +138,7 @@ extension WebKitSerializedTests.BridgePaneControllerTests {
     @Test("superseded contribution refresh retains lineage until its successor settles")
     func supersededContributionRefreshRetainsLineageUntilSuccessorSettles() async throws {
         // Arrange
-        let fixture = makeContributionRefreshFixture()
+        let fixture = try await makeContributionRefreshFixture()
         let controller = fixture.controller
         defer { _ = controller.beginTeardown() }  // fire-and-forget: defer cannot await; cleanup only
         guard
@@ -223,7 +223,7 @@ extension WebKitSerializedTests.BridgePaneControllerTests {
 
     @Test("filesystem context refresh preserves revisions across changed and no-op packages")
     func filesystemContextRefreshPreservesRevisionsAcrossChangedAndNoOpPackages() async throws {
-        let fixture = makeRefreshRevisionFixture()
+        let fixture = try await makeRefreshRevisionFixture()
         defer { _ = fixture.controller.beginTeardown() }  // fire-and-forget: defer cannot await; cleanup only
 
         let loadResult = await fixture.controller.handleDiffCommand(
@@ -290,7 +290,7 @@ extension WebKitSerializedTests.BridgePaneControllerTests {
 
     @Test("filesystem context refresh coalesces overlapping refresh events")
     func filesystemContextRefreshCoalescesOverlappingRefreshEvents() async throws {
-        let fixture = makeRefreshRevisionFixture()
+        let fixture = try await makeRefreshRevisionFixture()
         defer { _ = fixture.controller.beginTeardown() }  // fire-and-forget: defer cannot await; cleanup only
         let loadResult = await fixture.controller.handleDiffCommand(
             .loadDiff(
@@ -379,6 +379,7 @@ extension WebKitSerializedTests.BridgePaneControllerTests {
             reviewSourceProvider: provider
         )
         defer { _ = controller.beginTeardown() }  // fire-and-forget: defer cannot await; cleanup only
+        try await showReviewInNativeFixture(controller)
         let firstCommandId = UUID()
         let secondCommandId = UUID()
 
@@ -462,11 +463,12 @@ extension WebKitSerializedTests.BridgePaneControllerTests {
             )
         )
         let productAdmission = try #require(productAdmissionGate.acquire())
-        _ = try await installDiffLoadMetadataProducer(
+        let metadataProducerLease = try await installDiffLoadMetadataProducer(
             installation: installation,
             productProvider: productProvider,
             productAdmission: productAdmission
         )
+        try await showReviewInNativeFixture(controller, metadataProducerLease: metadataProducerLease)
         let commandId = UUIDv7.generate()
 
         // Act
@@ -491,10 +493,8 @@ extension WebKitSerializedTests.BridgePaneControllerTests {
         let retirementTask = controller.beginTeardown()
         await reviewMetadataSource.releaseReadyPublication()
 
-        #expect(
-            await commandResult
-                == .failure(.invalidPayload(description: "Bridge pane is closed"))
-        )
+        let completedResult = await commandResult
+        #expect(completedResult == .failure(.invalidPayload(description: "Bridge pane is closed")))
         #expect(controller.runtime.snapshot().lastSeq == 0)
         let replay = await controller.runtime.eventsSince(seq: 0)
         #expect(!replay.events.contains(where: isDiffLoadWitnessEvent))
@@ -567,6 +567,7 @@ extension WebKitSerializedTests.BridgePaneControllerTests {
             )
         )
         defer { _ = controller.beginTeardown() }  // fire-and-forget: defer cannot await; cleanup only
+        try await showReviewInNativeFixture(controller)
         let commandId = UUIDv7.generate()
         async let commandResult = controller.handleDiffCommand(
             .loadDiff(
@@ -622,6 +623,7 @@ extension WebKitSerializedTests.BridgePaneControllerTests {
             reviewSourceProvider: provider
         )
         defer { _ = controller.beginTeardown() }  // fire-and-forget: defer cannot await; cleanup only
+        try await showReviewInNativeFixture(controller)
         let commandId = UUID()
 
         let result = await controller.handleDiffCommand(
@@ -641,7 +643,7 @@ extension WebKitSerializedTests.BridgePaneControllerTests {
     }
 
     @Test("loadDiff publishes typed provider unavailable failure")
-    func loadDiff_publishes_typed_provider_unavailable_failure() async {
+    func loadDiff_publishes_typed_provider_unavailable_failure() async throws {
         let controller = BridgePaneController(
             paneId: UUIDv7.generate(),
             state: BridgePaneState(
@@ -654,6 +656,7 @@ extension WebKitSerializedTests.BridgePaneControllerTests {
             initialPaneActivity: .foreground
         )
         defer { _ = controller.beginTeardown() }  // fire-and-forget: defer cannot await; cleanup only
+        try await showReviewInNativeFixture(controller)
         let commandId = UUID()
         let artifact = DiffArtifact(
             diffId: UUIDv7.generate(),

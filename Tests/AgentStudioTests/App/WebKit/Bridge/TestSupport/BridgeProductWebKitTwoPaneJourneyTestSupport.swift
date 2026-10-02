@@ -16,6 +16,7 @@ struct BridgeProductWebKitTwoPanePositionSnapshot: Decodable, Equatable, Sendabl
     let fileRenderedPath: String?
     let fileSelectedPath: String?
     let fileStatusText: String?
+    let fileTreePresentationState: String?
     let fileTreeScrollTop: Double
     let hasAppRoot: Bool
     let reviewCodeScrollTop: Double
@@ -491,11 +492,7 @@ enum BridgeProductWebKitTwoPaneJourneyTestSupport {
             failure: "File mode did not activate during refresh"
         )
         await input.paneOneGitStatusProvider.armNextStatusRead()
-        try await armStatusObservation(
-            input.paneOne.page,
-            activeMode: "file",
-            expectedText: "Updating files…"
-        )
+        try await armFileTreeUpdatingObservation(input.paneOne.page)
         try appendTrackedChange(at: input.paneOneRepoURL)
         let fileChangeset = try makeChangeset(
             for: input.paneOne,
@@ -814,30 +811,20 @@ enum BridgeProductWebKitTwoPaneJourneyTestSupport {
         else { throw JourneyError.conditionFailed("foreground catch-up did not settle") }
     }
 
-    /// Arms the DOM observation before the File catch-up can publish a short-lived
-    /// updating status. The captured value is still the painted light-DOM state.
+    /// Arms the W6 region observation before File catch-up can publish Updating.
+    /// U13 renders the shared region indicator rather than the legacy status copy.
     ///
     /// A deadline here would be a verdict about machine speed on a page that
     /// renders no frames.
-    private static func armStatusObservation(
-        _ page: WebPage,
-        activeMode: String,
-        expectedText: String
-    ) async throws {
+    private static func armFileTreeUpdatingObservation(_ page: WebPage) async throws {
         _ = try await page.callJavaScript(
             """
             window.__bridgeTwoPaneStatusObservation = new Promise(resolve => {
               const capture = () => {
                 const encodedSnapshot = (() => { \(positionSnapshotReaderBody) })();
                 const snapshot = JSON.parse(encodedSnapshot);
-                if (snapshot.activeMode !== activeMode) return false;
-                const activeStatusText = activeMode === 'file'
-                  ? snapshot.fileStatusText
-                  : snapshot.reviewStatusText;
-                const inactiveStatusText = activeMode === 'file'
-                  ? snapshot.reviewStatusText
-                  : snapshot.fileStatusText;
-                if (activeStatusText !== expectedText || inactiveStatusText !== null) return false;
+                if (snapshot.activeMode !== 'file') return false;
+                if (snapshot.fileTreePresentationState !== 'updating' || snapshot.reviewStatusText !== null) return false;
                 resolve(encodedSnapshot);
                 return true;
               };
@@ -853,8 +840,7 @@ enum BridgeProductWebKitTwoPaneJourneyTestSupport {
               });
             });
             return true;
-            """,
-            arguments: ["activeMode": activeMode, "expectedText": expectedText]
+            """
         )
     }
 
@@ -862,9 +848,9 @@ enum BridgeProductWebKitTwoPaneJourneyTestSupport {
         -> BridgeProductWebKitTwoPanePositionSnapshot
     {
         do {
-            let encoded = try await page.callJavaScript(
-                "return await window.__bridgeTwoPaneStatusObservation;"
-            )
+            let encoded = try await awaitBridgeWebKitMilestone("FiletreeUpdating") {
+                try await page.callJavaScript("return await window.__bridgeTwoPaneStatusObservation;")
+            }
             guard let encoded = encoded as? String,
                 let data = encoded.data(using: .utf8)
             else {
@@ -958,6 +944,7 @@ enum BridgeProductWebKitTwoPaneJourneyTestSupport {
           fileRenderedPath: fileCanvas?.getAttribute('data-worktree-rendered-file-path') ?? null,
           fileSelectedPath: fileShell?.getAttribute('data-selected-display-path') ?? null,
           fileStatusText: fileHost?.querySelector('[data-testid="bridge-viewer-content-status"]')?.textContent ?? null,
+          fileTreePresentationState: fileHost?.querySelector('[data-bridge-region="file-tree"]')?.getAttribute('data-presentation-state') ?? null,
           fileTreeScrollTop: fileTreeScroll?.scrollTop ?? 0,
           hasAppRoot: document.querySelector('[data-testid="bridge-app-root"]') !== null,
           reviewCodeScrollTop: reviewCodeScroll?.scrollTop ?? 0,

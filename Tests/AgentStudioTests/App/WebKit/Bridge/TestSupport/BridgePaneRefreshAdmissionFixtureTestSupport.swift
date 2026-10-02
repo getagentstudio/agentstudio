@@ -186,8 +186,7 @@ func makeRefreshAdmissionIntegrationFixture(
     reviewConstructionProgress: BridgeReviewConstructionProgressWaitOwner = .init(),
     reviewProviderTransform: (@MainActor (BridgeReviewSourceProviderFake) -> any BridgeReviewSourceProvider)? = nil,
     contributionTargetCommit:
-        (@MainActor @Sendable (WorkspaceReviewContributionTarget) -> BridgePaneStateMutationResult)? = nil,
-    schedulesInitialReviewIntake: Bool = true
+        (@MainActor @Sendable (WorkspaceReviewContributionTarget) -> BridgePaneStateMutationResult)? = nil
 ) async throws -> RefreshAdmissionIntegrationFixture {
     let baseEndpoint = makeBridgeEndpoint(endpointId: "baseline-headMinusOne", kind: .gitRef)
     let headEndpoint = makeBridgeEndpoint(endpointId: "working-tree", kind: .workingTree)
@@ -265,12 +264,11 @@ func makeRefreshAdmissionIntegrationFixture(
         productProvider: productProvider,
         productAdmission: productAdmission
     )
-    // G2 defers hidden Review builds. Select Review after its metadata stream
-    // opens, through native admission, before requesting the initial package.
-    try await selectRefreshAdmissionReviewSurface(
-        controller: controller, installation: installation,
-        lease: metadataProducerLease, productAdmission: productAdmission)
-    if schedulesInitialReviewIntake { controller.scheduleInitialReviewPackageLoadIfPossible(reason: .initialIntake) }
+    // G2's accepted page Review mode queues initial intake, even while dormant.
+    // The real foreground transition starts it; a prior-failure catch-up fixture
+    // must settle that initial attempt rather than suppressing it.
+    await sendPageActiveViewerMode(
+        .review, controller: controller, productAdmission: productAdmission, sequence: 1)
     return RefreshAdmissionIntegrationFixture(
         baseEndpoint: baseEndpoint,
         headEndpoint: headEndpoint,
@@ -286,24 +284,6 @@ func makeRefreshAdmissionIntegrationFixture(
         productProvider: productProvider,
         controller: controller
     )
-}
-
-@MainActor
-private func selectRefreshAdmissionReviewSurface(
-    controller: BridgePaneController,
-    installation: BridgeProductSessionInstallation,
-    lease: BridgeProductProducerLease,
-    productAdmission: BridgeProductAdmissionContext
-) async throws {
-    #expect(controller.requestViewerSurface(.review))
-    #expect(await controller.surfaceSelectionTransitionTail?.value == true)
-    guard
-        let queuedFrame = await consumeNextBridgeProductProducerFrame(
-            for: lease, from: installation.session, productAdmission: productAdmission)
-    else { throw RefreshAdmissionIntegrationError.expectedMetadataFrame }
-    let decoder = try BridgeProductMetadataFrameDecoder()
-    guard case .paneSurfaceSelectionRequested = try decoder.append(queuedFrame.data).first
-    else { throw RefreshAdmissionIntegrationError.expectedMetadataFrame }
 }
 
 private func makeRefreshAdmissionSuccessorComparison(

@@ -35,9 +35,10 @@ extension WebKitSerializedTests {
             }
 
             // Act
-            let result = await harness.controller.loadInitialReviewPackageIfPossible(correlationId: nil)
-            let completedResult = try #require(result)
-            guard case .success = completedResult else {
+            let result = try await beginInitialReviewInNativeFixture(
+                harness.controller, facts: harness.buildFacts, metadataProducerLease: metadataLease)
+            let completedResult = result
+            guard case .succeeded = completedResult else {
                 metadataEventsTask.cancel()
                 try await closeBridgeProductSessionProducer(
                     metadataLease,
@@ -113,10 +114,9 @@ extension WebKitSerializedTests {
             }
 
             // Act
-            let initialResult = try #require(
-                await harness.controller.loadInitialReviewPackageIfPossible(correlationId: nil)
-            )
-            guard case .success = initialResult else {
+            let initialResult = try await beginInitialReviewInNativeFixture(
+                harness.controller, facts: harness.buildFacts, metadataProducerLease: metadataLease)
+            guard case .succeeded = initialResult else {
                 Issue.record("Expected the real contribution package to load: \(initialResult)")
                 return
             }
@@ -316,6 +316,7 @@ private func assertCompleteContributionContent(
 
 @MainActor
 private struct RealGitReviewLoadHarness {
+    let buildFacts: BridgePaneReviewBuildAdmissionTrace
     let capabilityHeader: String
     let controlDispatcher: BridgeProductSchemeControlDispatcher
     let controller: BridgePaneController
@@ -338,6 +339,7 @@ private struct RealGitReviewLoadHarness {
             statusPhysicalGate: AgentStudioGitStatusPhysicalGate()
         )
         let reviewSourceProvider = BridgeGitReviewSourceProvider(client: reviewDataClient)
+        let buildFacts = try BridgePaneReviewBuildAdmissionTrace()
         let controller = BridgePaneController(
             paneId: paneId,
             state: BridgePaneState(
@@ -362,7 +364,8 @@ private struct RealGitReviewLoadHarness {
             reviewSourceProvider: reviewSourceProvider,
             gitReadContext: gitReadContext,
             worktreeProductConstructionCoordinator: constructionCoordinator,
-            initialPaneActivity: .foreground
+            initialPaneActivity: .foreground,
+            reviewBuildAdmissionFactSink: buildFacts.source.sink
         )
         let productProvider = try #require(controller.productSchemeProvider)
         let installation = try #require(
@@ -380,6 +383,7 @@ private struct RealGitReviewLoadHarness {
         )
         #expect(controller.handleBridgeReady())
         return Self(
+            buildFacts: buildFacts,
             capabilityHeader: capabilityHeader,
             controlDispatcher: controlDispatcher,
             controller: controller,

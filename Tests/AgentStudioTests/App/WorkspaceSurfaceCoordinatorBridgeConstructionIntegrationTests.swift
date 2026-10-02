@@ -428,6 +428,8 @@ extension WebKitSerializedTests {
                 for: [setup.firstPane, setup.secondPane],
                 in: harness
             )
+            // G2 retains hidden Review invalidations; only the foreground native fixture shows Review.
+            try await showReviewInNativeFixture(secondView.controller)
             await waitForActiveReviewRefreshTaskToFinish(secondView.controller)
             let owner = BridgeWorktreeProductOwnerKey(
                 repoIdentity: setup.repoId.uuidString,
@@ -680,9 +682,10 @@ private struct TwoPaneWorktreeSetup {
 private func makeTwoPaneWorktreeSetup(
     in harness: BridgePaneActivityTestHarness
 ) throws -> TwoPaneWorktreeSetup {
-    let repo = harness.store.addRepo(
-        at: harness.tempDirectory.appending(path: "shared-construction-repo")
-    )
+    let repositoryURL = harness.tempDirectory.appending(path: "shared-construction-repo")
+    // C2 validates File roots before minting source authority; this fixture owns a healthy root.
+    try FileManager.default.createDirectory(at: repositoryURL, withIntermediateDirectories: true)
+    let repo = harness.store.addRepo(at: repositoryURL)
     let worktree = try #require(
         harness.store.repo(repo.id)?.worktrees.first(where: { $0.isMainWorktree })
     )
@@ -753,10 +756,18 @@ private func expectAvailableFileSource(
 ) async throws {
     let provider = try #require(controller.productSchemeProvider)
     let request = try bridgeFileSourceCurrentRequest(paneId: controller.paneId)
-    guard case .callCompleted(let response) = await provider.response(for: request),
+    let fileSourceResponse = await provider.response(for: request)
+    let hasAvailableFileSource =
+        if case .callCompleted(let response) = fileSourceResponse,
+            case .fileSourceCurrent(.available) = response.call
+        { true } else { false }
+    #expect(
+        hasAvailableFileSource,
+        Comment(rawValue: "Expected production-injected File source authority; actual: \(fileSourceResponse)")
+    )
+    guard case .callCompleted(let response) = fileSourceResponse,
         case .fileSourceCurrent(.available(let source)) = response.call
     else {
-        Issue.record("Expected production-injected File source authority")
         return
     }
     #expect(source.repoId == repoId.uuidString)

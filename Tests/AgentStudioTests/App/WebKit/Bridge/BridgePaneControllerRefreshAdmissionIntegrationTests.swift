@@ -8,9 +8,10 @@ import Testing
 @testable import AgentStudioTestSupport
 
 extension WebKitSerializedTests.BridgePaneControllerTests {
-    @Test("File invalidation does not admit initial Review before File warm-up")
+    @Test("hidden page mode defers initial Review build during File invalidation")
     func fileInvalidationDoesNotAdmitInitialReview() async {
         // Arrange
+        // Hidden behavior: this controller receives no accepted page Review mode.
         let worktreeId = UUIDv7.generate()
         let provider = BridgeReviewSourceProviderFake(
             comparison: BridgeEndpointComparison(
