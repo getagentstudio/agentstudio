@@ -1,6 +1,6 @@
 # Enable pane agents: how it is built
 
-Date: 2026-10-03. **Revision 28** (Lead, 2026-10-03): three delivery decisions from the fast CLI round-1 review, anchored on `fast-cli-store` at 5a921b816. First, `--reload-catalog` is removed, because the catalog is fixed per runtime and the CLI is the same build. Second, a brand-new CLI store is created atomically under a private name and published with an exclusive rename. Third, opening and migrating the store gets a first-open busy budget of at most 1 s within the call total; notice writes and purges keep 50 ms. Storage contents, ownership and the single-writer rule are unchanged. **Revision 27** (owner, 2026-10-02): choice 4 now leads with agents finding their way through `help` and `--help` (Spec R33). Discovery drops rev 26's catalog digest, because the CLI ships in the app bundle and is always the same build. There's no client re-check and discovery gets 500 ms. The digest, cache and filter wait for the Studio service design. **Revision 26** (owner, 2026-10-02): two changes to choice 4. Discovery is identified by a catalog digest, with a name filter, a one-row CLI-store cache and no client re-validation, and it comes within the 250 ms budget. Every hook verb is silent: no stdout, no stderr in normal operation, exit 0.
+Date: 2026-10-03. **Revision 29** (Lead, 2026-10-03; PR B S5): `notify` reserves `CLIPolicy.noticeQueueReserve` (250 ms) of its 5 s total for the outbox write, so a `notSent` notice always reaches the outbox when the app accepts but never reads. **Revision 28** (Lead, 2026-10-03): three delivery decisions from the fast CLI round-1 review, anchored on `fast-cli-store` at 5a921b816. First, `--reload-catalog` is removed, because the catalog is fixed per runtime and the CLI is the same build. Second, a brand-new CLI store is created atomically under a private name and published with an exclusive rename. Third, opening and migrating the store gets a first-open busy budget of at most 1 s within the call total; notice writes and purges keep 50 ms. Storage contents, ownership and the single-writer rule are unchanged. **Revision 27** (owner, 2026-10-02): choice 4 now leads with agents finding their way through `help` and `--help` (Spec R33). Discovery drops rev 26's catalog digest, because the CLI ships in the app bundle and is always the same build. There's no client re-check and discovery gets 500 ms. The digest, cache and filter wait for the Studio service design. **Revision 26** (owner, 2026-10-02): two changes to choice 4. Discovery is identified by a catalog digest, with a name filter, a one-row CLI-store cache and no client re-validation, and it comes within the 250 ms budget. Every hook verb is silent: no stdout, no stderr in normal operation, exit 0.
 
 **Revision 25** (owner, 2026-10-02): link removal ships without agent notification for now (Spec R19 deferred). Gaps item 4 is rewritten: no removal facts are consumed, and the replay request to Bridge is withdrawn.
 
@@ -633,6 +633,16 @@ call budget and `CLIStorePolicy.firstOpenMigrationLockWaitCap` (1 s), so a
 first open behind another process's migration doesn't drop its notice (rev
 28). Both waits stay inside the same total; an exhausted budget fails as a
 typed busy result and the hook still fails open.
+
+**A notice keeps budget for its own queue write (rev 29).** `notify` is the
+verb whose `notSent` outcome queues a notice. It spends at most the total minus
+`CLIPolicy.noticeQueueReserve` (250 ms) on the network, so a `notSent` notice
+always has budget to reach the outbox inside the same total. Without the
+reserve, an app that accepts the connection but never reads could use the
+whole 5 s, and the notice would fail to queue as busy. When the app isn't
+running at all, connect fails at once and the reserve is never touched.
+`outcomeUnknown` still queues nothing (Spec R31). Asks and every other verb
+exit `unavailable` on `notSent`, as before.
 
 ## Writers and write numbers
 
