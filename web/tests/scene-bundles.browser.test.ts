@@ -332,6 +332,115 @@ describe("scene bundles for HyperFrames", () => {
     delete window.AgentStudioScenes;
   });
 
+  it("renders GSAP function-property waivers during suppressed seeks and revert", () => {
+    const element = document.createElement("span");
+    let waiverState = 0;
+    const proxy = {
+      waiver(value?: number): number {
+        if (value !== undefined) {
+          waiverState = value;
+          if (value >= 0.5) {
+            element.setAttribute("data-layout-allow-overlap", "");
+          } else {
+            element.removeAttribute("data-layout-allow-overlap");
+          }
+        }
+        return waiverState;
+      },
+    };
+    const timeline = gsap.timeline({ paused: true });
+    try {
+      timeline.set(proxy, { waiver: 1 }, 1);
+      timeline.set(proxy, { waiver: 0 }, 3);
+      timeline.to({}, { duration: 1 }, 3);
+      timeline.seek(2);
+      expect(element.hasAttribute("data-layout-allow-overlap")).toBe(true);
+      timeline.pause(0);
+      expect(element.hasAttribute("data-layout-allow-overlap")).toBe(false);
+      timeline.seek(4);
+      expect(element.hasAttribute("data-layout-allow-overlap")).toBe(false);
+      timeline.seek(2);
+      expect(element.hasAttribute("data-layout-allow-overlap")).toBe(true);
+      timeline.revert();
+      expect(element.hasAttribute("data-layout-allow-overlap")).toBe(false);
+    } finally {
+      timeline.revert();
+      timeline.kill();
+    }
+  });
+
+  it.each([
+    {
+      sceneId: "chapter-context-with-task",
+      coveredTime: 6,
+      label: "task-drawers",
+      terminalSelector: '[data-scene-part="agent-terminal"]',
+    },
+    {
+      sceneId: "chapter-many-agents",
+      coveredTime: 4,
+      label: "parallel-agents",
+      terminalSelector: '[data-scene-part="left-terminal"]',
+    },
+    {
+      sceneId: "chapter-find-and-focus",
+      coveredTime: 2,
+      label: "quick-find",
+      terminalSelector: ".kit-pane-grid .kit-terminal",
+    },
+  ])(
+    "restores $sceneId waivers through real host replay calls",
+    ({ sceneId, coveredTime, label, terminalSelector }) => {
+      const bundle = requireBundle(sceneId);
+      mountStyle(bundle.sceneCss);
+      const root = mountStage(bundle.sceneHtml, 600, bundle.manifest.stage.height);
+      runClassicScript(bundle.sceneJs);
+      const timeline = gsap.timeline({ paused: true });
+      try {
+        window.AgentStudioScenes?.[sceneId]?.buildScene(root, timeline, {
+          width: 600,
+          height: bundle.manifest.stage.height,
+          seed: bundle.manifest.seed,
+        });
+        const terminals = [...root.querySelectorAll<HTMLElement>(terminalSelector)];
+        const leaves = terminals.flatMap((terminal) =>
+          [...terminal.querySelectorAll<HTMLElement>("*")].filter(hasNonWhitespaceDirectText),
+        );
+        expect(terminals.length).toBeGreaterThan(0);
+        expect(leaves.length).toBeGreaterThan(0);
+        const assertWaivers = (expected: boolean): void => {
+          for (const terminal of terminals) {
+            expect.soft(terminal.hasAttribute("data-layout-allow-occlusion")).toBe(expected);
+          }
+          for (const leaf of leaves) {
+            expect.soft(leaf.hasAttribute("data-layout-allow-overlap")).toBe(expected);
+          }
+        };
+        timeline.seek(coveredTime);
+        assertWaivers(true);
+        timeline.pause(0);
+        assertWaivers(false);
+        timeline.seek(coveredTime);
+        assertWaivers(true);
+        timeline.play(label);
+        assertWaivers(false);
+        timeline.pause();
+        timeline.seek(coveredTime);
+        assertWaivers(true);
+        timeline.restart();
+        assertWaivers(false);
+        timeline.pause();
+        timeline.seek(coveredTime);
+        assertWaivers(true);
+        timeline.revert();
+        assertWaivers(false);
+      } finally {
+        timeline.revert();
+        timeline.kill();
+      }
+    },
+  );
+
   it.each([600, 1280])(
     "shows the selected pane search result before quick-find jumps at %ipx",
     async (stageWidth) => {
@@ -458,23 +567,23 @@ describe("scene bundles for HyperFrames", () => {
       '.kit-pane-grid > .kit-pane:last-child [data-line="5"] [data-kit-typed]',
     );
 
-    timeline.time(0.17);
+    timeline.seek(0.17);
     expect(Number(gsap.getProperty(commandBar, "opacity"))).toBe(0);
     expect(
       paneTextContainers.every((pane) => !pane.hasAttribute("data-layout-allow-occlusion")),
     ).toBe(true);
     expect(coveredRightLine?.hasAttribute("data-layout-allow-overlap")).toBe(false);
-    timeline.time(0.8);
+    timeline.seek(0.8);
     expect(Number(gsap.getProperty(commandBar, "opacity"))).toBeGreaterThan(0);
     expect(
       paneTextContainers.every((pane) => pane.hasAttribute("data-layout-allow-occlusion")),
     ).toBe(true);
     expect(coveredRightLine?.hasAttribute("data-layout-allow-overlap")).toBe(true);
-    timeline.time(2.8);
+    timeline.seek(2.8);
     expect(
       paneTextContainers.every((pane) => pane.hasAttribute("data-layout-allow-occlusion")),
     ).toBe(true);
-    timeline.time(3.1);
+    timeline.seek(3.1);
     expect(
       paneTextContainers.every((pane) => !pane.hasAttribute("data-layout-allow-occlusion")),
     ).toBe(true);
@@ -515,7 +624,7 @@ describe("scene bundles for HyperFrames", () => {
         [1.7, true],
         [0.3, false],
       ] as const) {
-        timeline.time(time);
+        timeline.seek(time);
         expect(
           terminalTextElements.every((element) =>
             element.hasAttribute("data-layout-allow-overlap"),
@@ -537,6 +646,98 @@ describe("scene bundles for HyperFrames", () => {
       recreationKitPhoneMaxWidthPx,
     );
   });
+
+  it.each([390, 1280])(
+    "wraps drawer lines and scopes desktop editor overflow at %ipx",
+    (stageWidth) => {
+      const bundle = requireBundle("chapter-context-with-task");
+      mountStyle(bundle.sceneCss);
+      const root = mountStage(bundle.sceneHtml, stageWidth, bundle.manifest.stage.height);
+      runClassicScript(bundle.sceneJs);
+      const timeline = gsap.timeline({ paused: true });
+      try {
+        window.AgentStudioScenes?.["chapter-context-with-task"]?.buildScene(root, timeline, {
+          width: stageWidth,
+          height: bundle.manifest.stage.height,
+          seed: bundle.manifest.seed,
+        });
+        const codeArea = root.querySelector<HTMLElement>(".kit-source-view__code");
+        const drawerLines = [
+          ...root.querySelectorAll<HTMLElement>(".kit-drawer .kit-terminal__line"),
+        ];
+        expect(codeArea).not.toBeNull();
+        expect(drawerLines.length).toBeGreaterThan(0);
+        for (const drawerLine of drawerLines) {
+          expect.soft(getComputedStyle(drawerLine).whiteSpace).toBe("pre-wrap");
+          expect.soft(getComputedStyle(drawerLine).overflowWrap).toBe("anywhere");
+        }
+        for (const [time, covering] of [
+          [4.9, false],
+          [5.2, true],
+          [8.4, true],
+          [4.9, false],
+          [8.4, true],
+          [0, false],
+        ] as const) {
+          timeline.seek(time);
+          expect
+            .soft(codeArea?.hasAttribute("data-layout-allow-occlusion"), `code at t=${time}`)
+            .toBe(covering && stageWidth > recreationKitPhoneMaxWidthPx);
+        }
+        for (const replay of [
+          (): void => {
+            timeline.pause(0);
+          },
+          (): void => {
+            timeline.play("task-drawers");
+          },
+          (): void => {
+            timeline.restart();
+          },
+        ]) {
+          timeline.seek(8.4);
+          replay();
+          expect(codeArea?.hasAttribute("data-layout-allow-occlusion")).toBe(false);
+          timeline.pause();
+        }
+        if (stageWidth === 1280) {
+          const drawerBody = root.querySelector<HTMLElement>(".kit-drawer__body");
+          if (drawerBody === null) {
+            throw new Error("Missing drawer body");
+          }
+          for (const time of [3.5, 8.4, 8.5]) {
+            timeline.seek(time);
+            const bodyBounds = drawerBody.getBoundingClientRect();
+            for (const drawerLine of drawerLines) {
+              expect(drawerLine.getBoundingClientRect().bottom).toBeLessThanOrEqual(
+                bodyBounds.bottom + 1,
+              );
+            }
+            for (const commandArguments of drawerBody.querySelectorAll<HTMLElement>(
+              ".kit-terminal__command + .kit-terminal__preformatted",
+            )) {
+              expect(commandArguments.getBoundingClientRect().right).toBeLessThanOrEqual(
+                bodyBounds.right + 1,
+              );
+            }
+          }
+          const statusPrompt = drawerLines[0];
+          if (statusPrompt === undefined) {
+            throw new Error("Missing status prompt");
+          }
+          expect(statusPrompt.getBoundingClientRect().height).toBeGreaterThan(
+            Number.parseFloat(getComputedStyle(statusPrompt).lineHeight) * 1.5,
+          );
+        }
+        timeline.seek(8.4);
+        timeline.revert();
+        expect(codeArea?.hasAttribute("data-layout-allow-occlusion")).toBe(false);
+      } finally {
+        timeline.revert();
+        timeline.kill();
+      }
+    },
+  );
 
   it.each([390, recreationKitPhoneMaxWidthPx, 1280])(
     "scopes context-with-task Files takeover markers and restores them on rewind at %ipx",
@@ -582,7 +783,7 @@ describe("scene bundles for HyperFrames", () => {
           [6.139, true],
           [0, false],
         ] as const) {
-          timeline.time(time);
+          timeline.seek(time);
           const phoneCovering = covering && stageWidth <= recreationKitPhoneMaxWidthPx;
           expect
             .soft(
@@ -612,7 +813,7 @@ describe("scene bundles for HyperFrames", () => {
     },
   );
 
-  it("clips context-with-task source code and drawer at their edges without allow markers", () => {
+  it("clips context-with-task source code and drawer before their scene starts", () => {
     const bundle = requireBundle("chapter-context-with-task");
     mountStyle(bundle.sceneCss);
     const root = mountStage(bundle.sceneHtml, 1280, bundle.manifest.stage.height);
@@ -676,7 +877,7 @@ describe("scene bundles for HyperFrames", () => {
           [4.875, true],
           [0, false],
         ] as const) {
-          timeline.time(time);
+          timeline.seek(time);
           const phoneCovering = covering && stageWidth <= recreationKitPhoneMaxWidthPx;
           expect
             .soft(terminal?.hasAttribute("data-layout-allow-occlusion"), `terminal at t=${time}`)

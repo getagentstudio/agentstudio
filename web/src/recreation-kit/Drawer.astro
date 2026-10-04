@@ -47,4 +47,14 @@ const { scenePart } = Astro.props;
     border-radius: 0.5em;
     background: var(--kit-canvas);
   }
+
+  /* Terminal cells wrap at the drawer edge instead of hiding command arguments. */
+  .kit-drawer__body :global(.kit-terminal__line) {
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+  }
+
+  .kit-drawer__body :global(.kit-terminal__preformatted) {
+    white-space: pre-wrap;
+  }
 </style>

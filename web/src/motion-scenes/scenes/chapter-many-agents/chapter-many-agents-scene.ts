@@ -1,5 +1,6 @@
 import { recreationKitPhoneMaxWidthPx } from "../../../recreation-kit/recreation-kit-phone-breakpoint";
 import type { SceneBuildOptions, SceneModule, SceneTimeline } from "../../scene-contract";
+import { scheduleLayoutWaiver } from "../layout-waivers";
 import { collectSceneTextLeaves } from "../scene-text-leaves";
 import {
   requireLine,
@@ -94,26 +95,18 @@ function buildManyAgentsScene(
   // Only the phone sidebar covers the visible left pane, and it stays to the end.
   if (options.width <= recreationKitPhoneMaxWidthPx) {
     const sidebarOpenAt = 2.8;
-    for (const coveredContainer of [elements.leftTerminal, elements.leftFooterBadges]) {
-      timeline.set(
-        coveredContainer,
-        {
-          attr: { "data-layout-allow-occlusion": "" },
-          onReverseComplete: () => coveredContainer.removeAttribute("data-layout-allow-occlusion"),
-        },
-        sidebarOpenAt,
-      );
-    }
-    for (const terminalTextElement of elements.leftOverlapTextElements) {
-      timeline.set(
-        terminalTextElement,
-        {
-          attr: { "data-layout-allow-overlap": "" },
-          onReverseComplete: () => terminalTextElement.removeAttribute("data-layout-allow-overlap"),
-        },
-        sidebarOpenAt,
-      );
-    }
+    scheduleLayoutWaiver({
+      timeline,
+      elements: [elements.leftTerminal, elements.leftFooterBadges],
+      attribute: "data-layout-allow-occlusion",
+      fromSeconds: sidebarOpenAt,
+    });
+    scheduleLayoutWaiver({
+      timeline,
+      elements: elements.leftOverlapTextElements,
+      attribute: "data-layout-allow-overlap",
+      fromSeconds: sidebarOpenAt,
+    });
   }
   builder.variable(root, {
     name: "--scene-sidebar-focus",

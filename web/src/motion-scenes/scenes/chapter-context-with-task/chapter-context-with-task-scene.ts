@@ -1,11 +1,13 @@
 import { recreationKitPhoneMaxWidthPx } from "../../../recreation-kit/recreation-kit-phone-breakpoint";
 import type { SceneBuildOptions, SceneModule, SceneTimeline } from "../../scene-contract";
+import { scheduleLayoutWaiver } from "../layout-waivers";
 import { collectSceneTextLeaves } from "../scene-text-leaves";
 import {
   requireLine,
   requireScenePart,
   requireTerminalLines,
   SceneTimelineBuilder,
+  ScenePartMissingError,
 } from "../scene-timeline-builder";
 import {
   contextWithTaskFileTree,
@@ -25,12 +27,18 @@ interface ContextWithTaskElements {
   readonly drawerLines: readonly HTMLElement[];
   readonly footerBadges: HTMLElement;
   readonly sourceView: HTMLElement;
+  readonly sourceCode: HTMLElement;
   readonly sourceLines: readonly HTMLElement[];
   readonly fileTree: HTMLElement;
   readonly fileTreeRows: readonly HTMLElement[];
 }
 
 function resolveContextWithTaskElements(root: HTMLElement): ContextWithTaskElements {
+  const sourceView = requireScenePart(root, contextWithTaskParts.sourceView);
+  const sourceCode = sourceView.querySelector<HTMLElement>(".kit-source-view__code");
+  if (sourceCode === null) {
+    throw new ScenePartMissingError("source code area");
+  }
   const agentTerminal = requireScenePart(root, contextWithTaskParts.agentTerminal);
   const drawerTerminal = requireScenePart(root, contextWithTaskParts.drawerTerminal);
   return {
@@ -41,7 +49,8 @@ function resolveContextWithTaskElements(root: HTMLElement): ContextWithTaskEleme
     drawer: requireScenePart(root, contextWithTaskParts.drawer),
     drawerLines: requireTerminalLines(drawerTerminal, contextWithTaskParts.drawerTerminal, 9),
     footerBadges: requireScenePart(root, contextWithTaskParts.footerBadges),
-    sourceView: requireScenePart(root, contextWithTaskParts.sourceView),
+    sourceView,
+    sourceCode,
     sourceLines: contextWithTaskSource.lines.map((_line, lineIndex) =>
       requireScenePart(root, `${contextWithTaskParts.sourceLinePrefix}-${String(lineIndex)}`),
     ),
@@ -92,33 +101,30 @@ function buildContextWithTaskScene(
   // Beat 3: Files opens the changed source beside the same task.
   builder.label("files", 5.0);
   // The phone source view takes over the task and drawer through scene end.
-  // Desktop keeps them beside Files; overflowing drawer text is clipped by CSS.
+  // Desktop keeps them beside Files; drawer command lines wrap at their edge.
+  const sourceOpenAt = 5.05;
   if (options.width <= recreationKitPhoneMaxWidthPx) {
-    const sourceOpenAt = 5.05;
-    for (const coveredContainer of [
-      elements.agentTerminal,
-      elements.drawerTerminal,
-      elements.footerBadges,
-    ]) {
-      timeline.set(
-        coveredContainer,
-        {
-          attr: { "data-layout-allow-occlusion": "" },
-          onReverseComplete: () => coveredContainer.removeAttribute("data-layout-allow-occlusion"),
-        },
-        sourceOpenAt,
-      );
-    }
-    for (const terminalTextElement of elements.terminalOverlapTextElements) {
-      timeline.set(
-        terminalTextElement,
-        {
-          attr: { "data-layout-allow-overlap": "" },
-          onReverseComplete: () => terminalTextElement.removeAttribute("data-layout-allow-overlap"),
-        },
-        sourceOpenAt,
-      );
-    }
+    scheduleLayoutWaiver({
+      timeline,
+      elements: [elements.agentTerminal, elements.drawerTerminal, elements.footerBadges],
+      attribute: "data-layout-allow-occlusion",
+      fromSeconds: sourceOpenAt,
+    });
+    scheduleLayoutWaiver({
+      timeline,
+      elements: elements.terminalOverlapTextElements,
+      attribute: "data-layout-allow-overlap",
+      fromSeconds: sourceOpenAt,
+    });
+  } else {
+    // Like a real editor, long lines extend horizontally beyond the code viewport.
+    // CSS clips those pixels; the audit still measures their full span rectangles.
+    scheduleLayoutWaiver({
+      timeline,
+      elements: [elements.sourceCode],
+      attribute: "data-layout-allow-occlusion",
+      fromSeconds: sourceOpenAt,
+    });
   }
   builder.variable(root, {
     name: "--scene-files-reveal",

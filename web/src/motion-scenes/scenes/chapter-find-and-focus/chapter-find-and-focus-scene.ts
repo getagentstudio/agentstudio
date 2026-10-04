@@ -1,4 +1,5 @@
 import type { SceneBuildOptions, SceneModule, SceneTimeline } from "../../scene-contract";
+import { scheduleLayoutWaiver } from "../layout-waivers";
 import { collectSceneTextLeaves } from "../scene-text-leaves";
 import {
   requireLine,
@@ -72,24 +73,6 @@ function buildFindAndFocusScene(
   builder.label("quick-find", 0);
   // Let the pane entrance settle before the overlay crosses terminal text.
   const barOpenAt = 0.45;
-  for (const paneTextContainer of elements.paneTextContainers) {
-    timeline.set(paneTextContainer, { attr: { "data-layout-allow-occlusion": "" } }, barOpenAt);
-  }
-  for (const paneTextElement of elements.paneOverlapTextElements) {
-    timeline.set(
-      paneTextElement,
-      {
-        attr: { "data-layout-allow-overlap": "" },
-        onReverseComplete: () => paneTextElement.removeAttribute("data-layout-allow-overlap"),
-      },
-      barOpenAt,
-    );
-  }
-  timeline.set(
-    elements.rightPaneCoveredText,
-    { attr: { "data-layout-allow-overlap": "" } },
-    barOpenAt,
-  );
   builder.reveal(elements.commandBar, barOpenAt, { duration: 0.25, fromScale: 0.97, fromY: -8 });
   builder.conceal(elements.commandPlaceholder, 0.8, { duration: 0.1 });
   const queryTyped = builder.type(elements.commandQuery, 0.85, builder.vary(9, 0.1));
@@ -98,35 +81,20 @@ function buildFindAndFocusScene(
   builder.expand(elements.panesSection, queryTyped, 0.3);
   builder.expand(elements.worktreesSection, queryTyped + 0.1, 0.3);
   const barClosed = builder.conceal(elements.commandBar, 2.8, { duration: 0.2 });
-  for (const paneTextContainer of elements.paneTextContainers) {
-    timeline.set(
-      paneTextContainer,
-      {
-        onComplete: () => paneTextContainer.removeAttribute("data-layout-allow-occlusion"),
-        onReverseComplete: () => paneTextContainer.setAttribute("data-layout-allow-occlusion", ""),
-      },
-      barClosed,
-    );
-  }
-  for (const paneTextElement of elements.paneOverlapTextElements) {
-    timeline.set(
-      paneTextElement,
-      {
-        onComplete: () => paneTextElement.removeAttribute("data-layout-allow-overlap"),
-        onReverseComplete: () => paneTextElement.setAttribute("data-layout-allow-overlap", ""),
-      },
-      barClosed,
-    );
-  }
-  timeline.set(
-    elements.rightPaneCoveredText,
-    {
-      onComplete: () => elements.rightPaneCoveredText.removeAttribute("data-layout-allow-overlap"),
-      onReverseComplete: () =>
-        elements.rightPaneCoveredText.setAttribute("data-layout-allow-overlap", ""),
-    },
-    barClosed,
-  );
+  scheduleLayoutWaiver({
+    timeline,
+    elements: elements.paneTextContainers,
+    attribute: "data-layout-allow-occlusion",
+    fromSeconds: barOpenAt,
+    untilSeconds: barClosed,
+  });
+  scheduleLayoutWaiver({
+    timeline,
+    elements: [...elements.paneOverlapTextElements, elements.rightPaneCoveredText],
+    attribute: "data-layout-allow-overlap",
+    fromSeconds: barOpenAt,
+    untilSeconds: barClosed,
+  });
   builder.reveal(elements.targetFocusRing, barClosed + 0.05, { duration: 0.25 });
 
   // Beat 2: Pane Zoom gives the found pane the workspace; its agent keeps going.
