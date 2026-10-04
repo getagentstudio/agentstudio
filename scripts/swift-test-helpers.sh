@@ -775,6 +775,7 @@ large|AgentStudioIPCPhaseASmokeScriptTests|concurrent
 large|CLILatencyBenchmarkScriptTests|concurrent
 large|CLIHookSilenceScriptTests|concurrent
 large|CLIAgentHelpScriptTests|concurrent
+large|ProviderPermissionHookScriptTests|concurrent
 large|CLIPaneContextOrderingTests|process-global
 large|CLIPaneContextAvailabilityTests|process-global
 large|CLIPaneContextAnswersTests|process-global
