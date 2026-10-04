@@ -610,8 +610,8 @@ struct SidebarPerformanceProofShellReadback: Equatable, Sendable {
             guard observesShellState else { return }
             withObservationTracking {
                 publishCurrentReadback()
-            } onChange: {
-                Task { @MainActor [weak self] in
+            } onChange: { [weak self] in
+                Task { @MainActor in
                     await Task.yield()
                     await Task.yield()
                     await Task.yield()

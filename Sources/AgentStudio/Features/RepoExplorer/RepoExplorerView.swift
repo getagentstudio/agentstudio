@@ -173,8 +173,8 @@ package struct RepoExplorerView: View {
         }
         .animation(.easeOut(duration: 0.15), value: uiState.isFilterVisible)
         .task {
-            installSystemTimeInvalidationHandler { [weak projectionAdapter] in
-                projectionAdapter?.handleSystemTimeInvalidation()
+            installSystemTimeInvalidationHandler { [weak invalidatedAdapter = projectionAdapter] in
+                invalidatedAdapter?.handleSystemTimeInvalidation()
             }
             filterText = uiState.filterText
             projectionAdapter.updateDemand(

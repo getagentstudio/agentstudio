@@ -708,8 +708,8 @@ class PaneTabViewController: NSViewController, NSPopoverDelegate, WorkspaceComma
                 // registration re-runs the AppKit visibility projection.
                 _ = self.viewRegistry.slot(for: presentedTarget.paneID).host
             }
-        } onChange: {
-            Task { @MainActor [weak self] in
+        } onChange: { [weak self] in
+            Task { @MainActor in
                 guard let self else { return }
                 if observedSelection != self.tabSelectionObservation() {
                     self.handleTabSelectionStateChange()
@@ -763,8 +763,8 @@ class PaneTabViewController: NSViewController, NSPopoverDelegate, WorkspaceComma
             if !hasTabs {
                 _ = self.emptyStateModel
             }
-        } onChange: {
-            Task { @MainActor [weak self] in
+        } onChange: { [weak self] in
+            Task { @MainActor in
                 self?.rebuildEmptyStateView()
                 self?.updateEmptyState()
                 self?.observeForEmptyState()
@@ -775,8 +775,8 @@ class PaneTabViewController: NSViewController, NSPopoverDelegate, WorkspaceComma
     private func observeForPaneInboxMaintenance() {
         withObservationTracking {
             _ = self.store.paneAtom.graphAtom.paneIDs
-        } onChange: {
-            Task { @MainActor [weak self] in
+        } onChange: { [weak self] in
+            Task { @MainActor in
                 self?.syncPaneViewRegistrySlots()
                 self?.prunePaneInboxPresentationState()
                 self?.observeForPaneInboxMaintenance()
@@ -787,8 +787,8 @@ class PaneTabViewController: NSViewController, NSPopoverDelegate, WorkspaceComma
     private func observeForManagementLayerState() {
         withObservationTracking {
             _ = atom(\.managementLayer).isActive
-        } onChange: {
-            Task { @MainActor [weak self] in
+        } onChange: { [weak self] in
+            Task { @MainActor in
                 self?.handleManagementLayerStateChange()
                 self?.observeForManagementLayerState()
             }

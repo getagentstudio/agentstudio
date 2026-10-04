@@ -38,7 +38,18 @@ run = """
 #!/usr/bin/env bash
 set -euo pipefail
 bash "${PROJECT_ROOT}/scripts/vendor-worktree.sh" require-producer
-zig build -Doptimize=ReleaseFast
+# Xcode 27 SDK headers ask Clang's float.h for INFINITY/NAN (__need_infinity_nan),
+# which Zig 0.16's bundled headers predate, so Zig's bundled libc++ fails to build.
+# Give zmx the compat include dir Ghostty injects into its own steps
+# (vendor/ghostty/pkg/apple-sdk/include) through a --libc file. Harmless on older SDKs.
+zmx_libc_args=()
+if [[ "$(uname -s)" == "Darwin" ]]; then
+  mkdir -p .zig-cache
+  zmx_libc_file="$PWD/.zig-cache/agentstudio-apple-sdk-libc.txt"
+  zig libc | sed "s|^include_dir=.*|include_dir=${PROJECT_ROOT}/vendor/ghostty/pkg/apple-sdk/include|" > "$zmx_libc_file"
+  zmx_libc_args=(--libc "$zmx_libc_file")
+fi
+zig build -Doptimize=ReleaseFast ${zmx_libc_args[@]+"${zmx_libc_args[@]}"}
 """
 dir = "vendor/zmx"
 
