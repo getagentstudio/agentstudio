@@ -20,7 +20,9 @@ declare module "vitest/browser" {
 }
 
 it("admits the proof video near view and holds its poster until real canplay", async () => {
-  const observation = await commands.verifyDeferredProofVideo(inject("siteHeaderBrowserTestUrl"));
+  const observation = await commands.verifyDeferredProofVideo(
+    new URL("/__test/proof-video", inject("siteHeaderBrowserTestUrl")).href,
+  );
   expect(observation.initialRequests).toBe(0);
   expect(observation.initialBytes).toBe(0);
   expect(observation.initialPreload).toBe("none");

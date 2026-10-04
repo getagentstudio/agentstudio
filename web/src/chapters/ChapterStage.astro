@@ -41,8 +41,6 @@ const proofLayerAttributes = {
   [sceneProofStateAttribute]: "hidden",
   [sceneProofTransitionAttribute]: "instant",
 };
-const sessionRestoreVideoAttributes =
-  chapter.id === "come-back" ? { "data-session-restore-video": "" } : {};
 ---
 
 <!-- The scene, real proof and controls occupy one reserved stage box. -->
@@ -51,7 +49,7 @@ const sessionRestoreVideoAttributes =
   <div class="absolute inset-0">
     <SceneMarkup />
   </div>
-  <div
+  {stage.proofKind !== "none" && <div
     {...proofLayerAttributes}
     class="chapter-scene-proof absolute inset-0 bg-product-ground"
     aria-hidden="true"
@@ -80,7 +78,6 @@ const sessionRestoreVideoAttributes =
         </picture>
       ) : (
         <ScrollAutoplayVideo
-          {...sessionRestoreVideoAttributes}
           autoplayOnScroll={false}
           deferSource
           data-scene-proof-video
@@ -92,7 +89,7 @@ const sessionRestoreVideoAttributes =
         />
       )
     }
-  </div>
+  </div>}
   <MotionPlaybackToggle
     controlAttribute="data-scene-playback-toggle"
     pauseLabel={marketingCopy.motionControls.pauseAnimation}

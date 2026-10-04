@@ -52,10 +52,22 @@ export const marketingCopy = {
       imageDescription:
         "Agent Studio Review showing an AGENTS.md diff and its Changed Files tree, with the global sidebar hidden.",
     },
+    reviewComment: {
+      label: "Comment on a line",
+      description:
+        "Leave a Markdown comment on any changed line. The thread opens right in the diff.",
+      phoneDescription: "Comment on a line in the diff.",
+    },
     gitContext: {
       label: "Git and PR context",
       description: "See the branch, changes, and pull request beside the work.",
       phoneDescription: "See a PR beside its branch and worktree.",
+    },
+    quitInFlight: {
+      label: "Quit with work in flight",
+      description:
+        "Quit with agents mid-task. Their terminal sessions keep running while the app is closed.",
+      phoneDescription: "Quit mid-task; terminals keep running.",
     },
     persistence: {
       label: "Persistent terminal sessions",
@@ -106,7 +118,6 @@ export const marketingCopy = {
     },
     comeBack: {
       title: { beforeAccent: "Close the app. ", accent: "Agents keep running", afterAccent: "." },
-      sessionRestoreVideoLabel: "Agent Studio persistent session restore demonstration",
       sessionRestoreVideoFallback: "This browser cannot play the session restore video.",
     },
   },
