@@ -82,27 +82,7 @@ struct PaneCLICommandRunner: Sendable {
                 try result(
                     client.call(invocation("pane.message.withdraw", parameters: parameters, descriptors: descriptors))))
         case .answers:
-            let store = openStore()
-            defer { try? store?.close() }
-            let key = try? stateKey(.answerPosition, writer: writer)
-            var position = UInt64(key.flatMap { try? store?.answerPosition($0) } ?? 0)
-            var pageCorrelation = correlationID
-            while true {
-                let parameters = IPCPaneMessageChangesParams(
-                    handle: "self", writer: writer, after: position, correlationId: pageCorrelation)
-                let response = try result(
-                    client.call(invocation("pane.message.changes", parameters: parameters, descriptors: descriptors)))
-                let changes = try JSONDecoder().decode(IPCPaneMessageChangesResult.self, from: response)
-                try write(response)
-                if let key, let store, let next = Int64(exactly: changes.nextPosition) {
-                    do { try store.advanceAnswerPosition(key, to: next) } catch {
-                        CLIDiagnostics.record(.storeUnavailable)
-                    }
-                }
-                guard changes.more else { break }
-                position = changes.nextPosition
-                pageCorrelation = props.identifierGenerator()
-            }
+            try printAnswers(writer: writer, descriptors: descriptors, client: client, correlationID: correlationID)
         case .pane:
             try write(
                 try result(
@@ -110,6 +90,46 @@ struct PaneCLICommandRunner: Sendable {
                         invocation(
                             "pane.context.get", parameters: IPCPaneContextGetParams(handle: "self", page: .first),
                             descriptors: descriptors))))
+        }
+    }
+
+    private func printAnswers(
+        writer: IPCPaneWriterClaim?, descriptors: [IPCAnyMethodDescriptor],
+        client: AgentStudioIPCClient, correlationID: UUID
+    ) throws {
+        let store = openStore()
+        defer { try? store?.close() }
+        let key = try? stateKey(.answerPosition, writer: writer)
+        var position = UInt64(key.flatMap { try? store?.answerPosition($0) } ?? 0)
+        let first = try invocation(
+            "pane.message.changes",
+            parameters: IPCPaneMessageChangesParams(
+                handle: "self", writer: writer, after: position, correlationId: correlationID),
+            descriptors: descriptors)
+        let complete = try client.withAuthenticatedExchange(first: first) { exchange in
+            var entries: [IPCPaneMessageChangeEntry] = []
+            var request = first
+            while true {
+                let response = try result(exchange.call(request))
+                let page = try JSONDecoder().decode(IPCPaneMessageChangesResult.self, from: response)
+                entries.append(contentsOf: page.entries)
+                position = page.nextPosition
+                guard page.more else {
+                    return IPCPaneMessageChangesResult(entries: entries, nextPosition: position, more: false)
+                }
+                request = try invocation(
+                    "pane.message.changes",
+                    parameters: IPCPaneMessageChangesParams(
+                        handle: "self", writer: writer, after: position,
+                        correlationId: props.identifierGenerator()),
+                    descriptors: descriptors)
+            }
+        }
+        try write(JSONEncoder().encode(complete))
+        if let key, let store, let next = Int64(exactly: complete.nextPosition) {
+            do { try store.advanceAnswerPosition(key, to: next) } catch {
+                CLIDiagnostics.record(.storeUnavailable)
+            }
         }
     }
 

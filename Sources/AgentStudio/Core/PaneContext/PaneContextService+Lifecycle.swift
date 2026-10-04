@@ -115,6 +115,7 @@ extension PaneContextService {
     func deadlineReached() async {
         guard !isStopping else { return }
         let now = wallNow
+        let binding = currentBindingGeneration
         do {
             let commit = try await sqliteAccess.write { database in
                 let before = try PaneContextStorage.presentationRevisions(database)
@@ -131,7 +132,8 @@ extension PaneContextService {
                     return (
                         key,
                         try PaneContextAskSettlement.commit(
-                            database, paneId: key.paneId, id: key.messageId, cause: .deadline, now: instant)
+                            database, paneId: key.paneId, id: key.messageId, cause: .deadline, now: instant,
+                            currentBindingGeneration: binding)
                     )
                 }
                 try PaneContextStorage.expireLines(database, now: instant)
@@ -213,6 +215,7 @@ extension PaneContextService {
         await deadlineScheduler?.shutdown()
         if didOpen {
             let now = wallNow
+            let binding = currentBindingGeneration
             let commits = try? await sqliteAccess.write { database in
                 let rows = try Row.fetchAll(
                     database,
@@ -224,7 +227,8 @@ extension PaneContextService {
                     return (
                         key,
                         try PaneContextAskSettlement.commit(
-                            database, paneId: key.paneId, id: key.messageId, cause: .appStopping, now: now())
+                            database, paneId: key.paneId, id: key.messageId, cause: .appStopping, now: now(),
+                            currentBindingGeneration: binding)
                     )
                 }
             }

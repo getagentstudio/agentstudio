@@ -29,6 +29,12 @@ struct PaneContextSessionsBridgeTests {
             #expect(firstSent == .created(openAsk.messageId))
             #expect(secondSent == .created(priorAnswer.messageId))
             #expect(answered == .answered)
+            let liveDetail = try await fixture.detail()
+            #expect(
+                liveDetail.messages.first { $0.id == priorAnswer.messageId }?.shape
+                    == .ask(
+                        .question, .freeText(placeholder: nil), .nonBlocking,
+                        .answered(by: .localUser, value: .text("prior"), receipt: .notYetConfirmed)))
 
             await fixture.service.sessionEnded(bindingGenerationId: UUIDv7.generate())
             let unrelatedEnd = try await fixture.detail()
@@ -41,6 +47,10 @@ struct PaneContextSessionsBridgeTests {
                     .init(
                         paneId: fixture.paneId.uuid, sourceGenerationId: binding.sourceGenerationId,
                         endedAt: fixture.time.now)))
+            let liveGenerationAfterEnd = try await fixture.sqliteAccess.read {
+                try PaneContextSessionsBridge.currentBindingGeneration(paneId: fixture.paneId, in: $0)
+            }
+            #expect(liveGenerationAfterEnd == nil)
             let ended = try await fixture.detail()
             let statusWithAsk = try await fixture.ingestion.sessionSummary(paneId: fixture.paneId.uuid)
             #expect(
@@ -61,6 +71,70 @@ struct PaneContextSessionsBridgeTests {
             #expect(lateAnswer == .answered)
             #expect(recorded == .answered(.text("still valid")))
             #expect(statusAfterAnswer?.status == .idle(.ended))
+            let lateDetail = try await fixture.detail()
+            #expect(
+                lateDetail.messages.first { $0.id == openAsk.messageId }?.shape
+                    == .ask(
+                        .question, .freeText(placeholder: nil), .nonBlocking,
+                        .answered(by: .localUser, value: .text("still valid"), receipt: .unconfirmed)))
+            try await acknowledgeAnswer(openAsk.messageId, writer: writer, fixture: fixture)
+            let acknowledgedDetail = try await fixture.detail()
+            #expect(acknowledgedDetail.messages == lateDetail.messages)
+        }
+    }
+
+    @Test("late answers for replaced bindings stay unconfirmed while live answers can be confirmed")
+    func replacedBindingAnswerReceiptStaysUnconfirmed() async throws {
+        try await withPaneContextSessionsBridge { fixture in
+            let firstBinding = try await fixture.bindConversation("first")
+            let firstWriter = try fixture.sender(firstBinding)
+            let oldAsk = fixture.ask(writer: firstWriter, reason: .question)
+            let oldSent = await fixture.service.send(oldAsk)
+            #expect(oldSent == .created(oldAsk.messageId))
+            let replacement = try await fixture.bindConversation("second")
+            let replacementWriter = try fixture.sender(replacement)
+            let currentGeneration = try await fixture.sqliteAccess.read {
+                try PaneContextSessionsBridge.currentBindingGeneration(paneId: fixture.paneId, in: $0)
+            }
+            #expect(currentGeneration == replacement.bindingGenerationId)
+            #expect(currentGeneration != firstBinding.bindingGenerationId)
+            let beforeAnswer = try await fixture.detail()
+            #expect(
+                beforeAnswer.messages.first { $0.id == oldAsk.messageId }?.shape
+                    == .ask(.question, .freeText(placeholder: nil), .nonBlocking, .open))
+
+            let oldAnswer = await fixture.service.answer(
+                .init(messageId: oldAsk.messageId, paneId: fixture.paneId, by: .localUser, value: .text("late")))
+            let answeredDetail = try await fixture.detail()
+            #expect(oldAnswer == .answered)
+            #expect(
+                answeredDetail.messages.first { $0.id == oldAsk.messageId }?.shape
+                    == .ask(
+                        .question, .freeText(placeholder: nil), .nonBlocking,
+                        .answered(by: .localUser, value: .text("late"), receipt: .unconfirmed)))
+            try await acknowledgeAnswer(oldAsk.messageId, writer: firstWriter, fixture: fixture)
+            let acknowledgedDetail = try await fixture.detail()
+            #expect(acknowledgedDetail.messages == answeredDetail.messages)
+
+            let liveAsk = fixture.ask(writer: replacementWriter, reason: .question)
+            let liveSent = await fixture.service.send(liveAsk)
+            let liveAnswer = await fixture.service.answer(
+                .init(messageId: liveAsk.messageId, paneId: fixture.paneId, by: .localUser, value: .text("live")))
+            let liveDetail = try await fixture.detail()
+            #expect(liveSent == .created(liveAsk.messageId))
+            #expect(liveAnswer == .answered)
+            #expect(
+                liveDetail.messages.first { $0.id == liveAsk.messageId }?.shape
+                    == .ask(
+                        .question, .freeText(placeholder: nil), .nonBlocking,
+                        .answered(by: .localUser, value: .text("live"), receipt: .notYetConfirmed)))
+            try await acknowledgeAnswer(liveAsk.messageId, writer: replacementWriter, fixture: fixture)
+            let confirmedDetail = try await fixture.detail()
+            #expect(
+                confirmedDetail.messages.first { $0.id == liveAsk.messageId }?.shape
+                    == .ask(
+                        .question, .freeText(placeholder: nil), .nonBlocking,
+                        .answered(by: .localUser, value: .text("live"), receipt: .confirmed(at: fixture.time.now))))
         }
     }
 
@@ -290,4 +364,18 @@ struct PaneContextSessionsBridgeTests {
         }
     }
 
+}
+
+private func acknowledgeAnswer(
+    _ messageId: AgentMessageId, writer: AgentMessageSender, fixture: PaneContextSessionsBridgeFixture
+) async throws {
+    let result = await fixture.service.changes(
+        .init(paneId: fixture.paneId, writer: writer, after: AnswerPosition(0)))
+    let page: PaneMessageChangesPage?
+    if case .page(let value) = result { page = value } else { page = nil }
+    let delivered = try #require(page)
+    #expect(delivered.entries.contains { $0.messageId == messageId })
+    let acknowledged = await fixture.service.changes(
+        .init(paneId: fixture.paneId, writer: writer, after: delivered.nextPosition))
+    #expect(acknowledged == .page(.init(entries: [], nextPosition: delivered.nextPosition, more: false)))
 }

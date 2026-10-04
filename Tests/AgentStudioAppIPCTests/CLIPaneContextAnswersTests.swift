@@ -6,29 +6,28 @@ import Testing
 
 @Suite("Pane CLI answer bookmarks", .serialized)
 struct CLIPaneContextAnswersTests {
-    @Test("answers prints every page before saving its bookmark and consumes all returned pages")
+    @Test("answers uses one authenticated exchange and prints one complete document before saving its bookmark")
     func answersPagesBeforeStoringPosition() async throws {
         try await withS5PaneCLIContext(changesPageSize: 1) { context in
             let firstId = try await context.seedAnswer("first answer")
             let secondId = try await context.seedAnswer("second answer")
             let (output, observations) = await context.runAnswersRecordingBookmarks()
             #expect(output.exitCode == 0)
-            let pages = try output.standardOutput.split(separator: "\n").map {
-                try JSONDecoder().decode(IPCPaneMessageChangesResult.self, from: Data($0.utf8))
-            }
-            #expect(pages.count == 2)
-            let first = try #require(pages.first)
-            let last = try #require(pages.last)
-            #expect(first.more)
-            #expect(!last.more)
-            #expect(first.entries.map(\.messageId) == [firstId])
-            #expect(last.entries.map(\.messageId) == [secondId])
+            let complete = try JSONDecoder().decode(
+                IPCPaneMessageChangesResult.self, from: Data(output.standardOutput.utf8))
+            #expect(!complete.more)
+            #expect(complete.entries.map(\.messageId) == [firstId, secondId])
+            let firstEntry = try #require(complete.entries.first)
+            let lastEntry = try #require(complete.entries.last)
+            #expect(complete.nextPosition == lastEntry.position)
             let bookmarks = try observations.map { try $0.get() }
-            #expect(bookmarks == [0, Int64(first.nextPosition)])
-            #expect(context.port.changes.map(\.after) == [0, first.nextPosition])
+            #expect(bookmarks == [0])
+            #expect(context.port.wire.connections == 1)
+            #expect(context.port.wire.methods == ["auth.login", "pane.message.changes", "pane.message.changes"])
+            #expect(context.port.changes.map(\.after) == [0, firstEntry.position])
             #expect(context.port.changes.first?.correlationId != context.port.changes.last?.correlationId)
             let storedPosition = try await context.storedAnswerPosition()
-            #expect(storedPosition == Int64(last.nextPosition))
+            #expect(storedPosition == Int64(complete.nextPosition))
         }
     }
     @Test("a late older answers response cannot move the shared bookmark backward")

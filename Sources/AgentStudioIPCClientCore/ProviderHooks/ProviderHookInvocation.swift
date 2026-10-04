@@ -77,6 +77,7 @@ package enum ProviderHookInvocation {
 
     package struct Props: Sendable {
         package let eventName: String
+        package let sourceOccurredAt: Date
         package let environment: [String: String]
         package let standardInput: @Sendable () throws -> Data
         package let correlationIdProvider: @Sendable () -> UUID
@@ -84,6 +85,7 @@ package enum ProviderHookInvocation {
         package let standardErrorSink: @Sendable (String) -> Void
 
         package init(
+            sourceOccurredAt: Date,
             eventName: String,
             environment: [String: String],
             standardInput: @escaping @Sendable () throws -> Data,
@@ -92,6 +94,7 @@ package enum ProviderHookInvocation {
             standardErrorSink: @escaping @Sendable (String) -> Void
         ) {
             self.eventName = eventName
+            self.sourceOccurredAt = sourceOccurredAt
             self.environment = environment
             self.standardInput = standardInput
             self.correlationIdProvider = correlationIdProvider
@@ -119,7 +122,10 @@ package enum ProviderHookInvocation {
                 "agentstudio hook codex \(eventName.rawValue): unreadable hook payload")
             return 0
         }
-        guard let projected = CodexHookProjection.project(eventName: eventName, payload: payload) else {
+        guard
+            let projected = CodexHookProjection.project(
+                sourceOccurredAt: props.sourceOccurredAt, eventName: eventName, payload: payload)
+        else {
             return 0
         }
         do {

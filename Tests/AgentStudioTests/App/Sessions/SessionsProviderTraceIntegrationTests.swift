@@ -370,6 +370,7 @@ private func submitRecordedStatus(data: Data, adapter: AgentStudioIPCSessionsAda
 private func projectRecordedStatus(data: Data, occurrenceId: UUID = UUIDv7.generate()) throws -> IPCSessionEventParams {
     let payload = try JSONDecoder().decode(ClaudeCodeHookPayload.self, from: data)
     let projection = ClaudeCodeHookProjection.project(
+        sourceOccurredAt: Date(timeIntervalSince1970: 1_700_000_000),
         announcedEvent: payload.hookEventName, payload: payload, providerVersion: "2.1.286",
         correlationIdentifier: UUIDv7.generate(), freshOccurrenceIdentifier: { occurrenceId })
     guard case .projected(let params) = projection else { throw ClaudeCodeHookInvocationError.reportRejected }

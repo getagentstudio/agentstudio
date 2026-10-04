@@ -67,7 +67,9 @@ struct ProviderStatusHookInstallerTests {
         #expect(Set(CodexHookEventName.installedEvents.map(\.rawValue)) == expected)
         for event in CodexHookEventName.installedEvents {
             let projected = try #require(
-                CodexHookProjection.project(eventName: event, payload: CodexFixtures.payload(for: event)))
+                CodexHookProjection.project(
+                    sourceOccurredAt: Date(timeIntervalSince1970: 1_700_000_000), eventName: event,
+                    payload: CodexFixtures.payload(for: event)))
             #expect(projected.event.name.rawValue != "turnFailed")
             #expect(projected.event.name.rawValue != "question")
             #expect(projected.event.name.rawValue != "elicitation")

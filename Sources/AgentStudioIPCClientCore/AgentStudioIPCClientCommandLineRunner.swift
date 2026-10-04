@@ -59,7 +59,7 @@ package struct AgentStudioIPCClientCommandLineRunner {
         var endpointCameFromDebugEscrow = false
         do {
             let readInput = props.standardInput
-            if let code = providerCommandExit(readInput: readInput) {
+            if let code = providerCommandExit(readInput: readInput, sourceOccurredAt: wallStartedAt) {
                 return code
             }
             let resolver = IPCCompiledInvocationResolver()
@@ -276,7 +276,9 @@ package struct AgentStudioIPCClientCommandLineRunner {
     ///
     /// - Returns: the process exit code when the arguments address a provider
     ///   command, and `nil` when they belong to the descriptor CLI.
-    private func providerCommandExit(readInput: @escaping @Sendable () -> Data) -> Int32? {
+    private func providerCommandExit(
+        readInput: @escaping @Sendable () -> Data, sourceOccurredAt: Date
+    ) -> Int32? {
         let isHook: Bool = props.arguments.first == "hook"
         let providerDiagnostics: @Sendable (String) -> Void
         if isHook {
@@ -285,6 +287,7 @@ package struct AgentStudioIPCClientCommandLineRunner {
             providerDiagnostics = props.standardErrorSink
         }
         if let code = ClaudeCodeProviderRouter.exitCode(
+            sourceOccurredAt: sourceOccurredAt,
             arguments: props.arguments, environment: props.environment,
             executablePath: props.executablePath, standardInput: readInput,
             identifierGenerator: props.identifierGenerator,
@@ -301,11 +304,12 @@ package struct AgentStudioIPCClientCommandLineRunner {
             return code
         }
         guard let subcommand = AgentPackageSubcommand.parse(props.arguments) else { return nil }
-        return AgentPackageCommandRunner.run(subcommand, props: agentPackageProps(readInput: readInput))
+        return AgentPackageCommandRunner.run(
+            subcommand, props: agentPackageProps(readInput: readInput, sourceOccurredAt: sourceOccurredAt))
     }
 
     private func agentPackageProps(
-        readInput: @escaping @Sendable () -> Data
+        readInput: @escaping @Sendable () -> Data, sourceOccurredAt: Date
     ) -> AgentPackageCommandRunner.Props {
         let isHook: Bool = props.arguments.first == "hook"
         let packageDiagnostics: @Sendable (String) -> Void
@@ -316,6 +320,7 @@ package struct AgentStudioIPCClientCommandLineRunner {
         }
         let packageInput: @Sendable () throws -> Data = { readInput() }
         let packageProps = AgentPackageCommandRunner.Props(
+            sourceOccurredAt: sourceOccurredAt,
             environment: props.environment,
             executableURL: props.bundleExecutableURL,
             standardInput: packageInput,

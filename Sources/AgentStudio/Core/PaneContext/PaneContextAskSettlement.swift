@@ -8,7 +8,10 @@ struct PaneContextSettlementCommit: Sendable {
 }
 
 enum PaneContextAskSettlement {
-    static func commit(_ database: Database, paneId: PaneId, id: AgentMessageId, cause: AskSettlementCause, now: Date)
+    static func commit(
+        _ database: Database, paneId: PaneId, id: AgentMessageId, cause: AskSettlementCause, now: Date,
+        currentBindingGeneration: @Sendable (PaneId, Database) throws -> UUID?
+    )
         throws -> PaneContextSettlementCommit
     {
         guard let message = try PaneContextStorage.message(database, paneId: paneId, messageId: id),
@@ -21,6 +24,7 @@ enum PaneContextAskSettlement {
         let terminal: AskState
         let changeKind: String?
         var answer: AskAnswerValue?
+        var answerReceipt = AnswerReceipt.notYetConfirmed
         var answerWasExpired = false
         if case .blocking(let deadline) = waiting, deadline <= now {
             terminal = .expired
@@ -32,7 +36,9 @@ enum PaneContextAskSettlement {
                 if let invalid = PaneContextAdmission.answerInvalidity(value, form: form) {
                     return unchanged(.refused(.invalidAnswer(invalid)))
                 }
-                terminal = .answered(by: .localUser, value: value, receipt: .notYetConfirmed)
+                answerReceipt = try initialAnswerReceipt(
+                    database, message: message, currentBindingGeneration: currentBindingGeneration)
+                terminal = .answered(by: .localUser, value: value, receipt: answerReceipt)
                 answer = value
                 changeKind = "answer"
             case .dismiss:
@@ -71,7 +77,8 @@ enum PaneContextAskSettlement {
             fields["answered_at"] = PaneContextStorage.sqlValue(try PaneContextStorage.timestamp(now))
             fields["answer_position"] = PaneContextStorage.sqlValue(
                 try PaneContextStorage.integer(position, field: "answer_position"))
-            fields["receipt"] = PaneContextStorage.sqlValue("notYetConfirmed")
+            fields["receipt"] = PaneContextStorage.sqlValue(
+                answerReceipt == .unconfirmed ? "unconfirmed" : "notYetConfirmed")
         }
         let names = fields.keys.sorted()
         var arguments = StatementArguments(names.map { fields[$0] ?? .null })
@@ -92,6 +99,17 @@ enum PaneContextAskSettlement {
             result: answerWasExpired ? .refused(.expired) : .settled(terminal),
             outcome: PaneContextStorage.outcome(terminal), openAsks: update
         )
+    }
+
+    private static func initialAnswerReceipt(
+        _ database: Database, message: PaneContextStoredMessage,
+        currentBindingGeneration: @Sendable (PaneId, Database) throws -> UUID?
+    ) throws -> AnswerReceipt {
+        guard case .session(_, _, let generation) = message.detail.sender else {
+            throw PaneContextStorageFailure.decode("sender_binding_generation")
+        }
+        return try currentBindingGeneration(message.detail.sourcePaneId, database) == generation
+            ? .notYetConfirmed : .unconfirmed
     }
 
     private static func unchanged(_ result: AskSettlementResult, outcome: AskOutcome? = nil)

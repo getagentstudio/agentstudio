@@ -6,12 +6,14 @@ import Foundation
 /// process, named so tests drive it without a process.
 package struct ClaudeCodeHookInvocationInputs {
     package let arguments: [String]
+    package let sourceOccurredAt: Date
     package let environment: [String: String]
     package let standardInput: () throws -> Data
     package let identifierGenerator: () -> UUID
     package let diagnosticSink: (String) -> Void
 
     package init(
+        sourceOccurredAt: Date,
         arguments: [String],
         environment: [String: String],
         standardInput: @escaping () throws -> Data,
@@ -19,6 +21,7 @@ package struct ClaudeCodeHookInvocationInputs {
         diagnosticSink: @escaping (String) -> Void
     ) {
         self.arguments = arguments
+        self.sourceOccurredAt = sourceOccurredAt
         self.environment = environment
         self.standardInput = standardInput
         self.identifierGenerator = identifierGenerator
@@ -69,6 +72,7 @@ package enum ClaudeCodeHookInvocation {
                 ClaudeCodeHookPayload.self, from: try inputs.standardInput()
             )
             let outcome = ClaudeCodeHookProjection.project(
+                sourceOccurredAt: inputs.sourceOccurredAt,
                 announcedEvent: announcedEvent,
                 payload: payload,
                 providerVersion: providerVersion,

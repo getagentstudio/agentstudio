@@ -12,7 +12,7 @@ struct CodexHookProjectionTests {
     @Test("Codex hooks carry their CLI source observation time")
     func hookCarriesSourceObservationTime() throws {
         let projected = try projected(.preToolUse)
-        #expect(projected.event.sourceOccurredAt != nil)
+        #expect(projected.event.sourceOccurredAt == Date(timeIntervalSince1970: 1_700_000_000))
     }
     @Test(
         "each projected Codex event maps to its session event name",
@@ -36,7 +36,8 @@ struct CodexHookProjectionTests {
 
         // Act
         let projected = try #require(
-            CodexHookProjection.project(eventName: eventName, payload: payload))
+            CodexHookProjection.project(
+                sourceOccurredAt: Date(timeIntervalSince1970: 1_700_000_000), eventName: eventName, payload: payload))
 
         // Assert
         #expect(projected.event.name == expected)
@@ -95,8 +96,12 @@ struct CodexHookProjectionTests {
         let payload = try CodexFixtures.payload(for: .preToolUse)
 
         // Act
-        let first = try #require(CodexHookProjection.project(eventName: .preToolUse, payload: payload))
-        let second = try #require(CodexHookProjection.project(eventName: .preToolUse, payload: payload))
+        let first = try #require(
+            CodexHookProjection.project(
+                sourceOccurredAt: Date(timeIntervalSince1970: 1_700_000_000), eventName: .preToolUse, payload: payload))
+        let second = try #require(
+            CodexHookProjection.project(
+                sourceOccurredAt: Date(timeIntervalSince1970: 1_700_000_000), eventName: .preToolUse, payload: payload))
 
         // Assert
         #expect(first.event.occurrenceId == second.event.occurrenceId)
@@ -120,9 +125,13 @@ struct CodexHookProjectionTests {
 
         // Act
         let first = try #require(
-            CodexHookProjection.project(eventName: .permissionRequest, payload: shell))
+            CodexHookProjection.project(
+                sourceOccurredAt: Date(timeIntervalSince1970: 1_700_000_000), eventName: .permissionRequest,
+                payload: shell))
         let second = try #require(
-            CodexHookProjection.project(eventName: .permissionRequest, payload: applyPatch))
+            CodexHookProjection.project(
+                sourceOccurredAt: Date(timeIntervalSince1970: 1_700_000_000), eventName: .permissionRequest,
+                payload: applyPatch))
 
         // Assert
         #expect(first.event.occurrenceId != second.event.occurrenceId)
@@ -143,9 +152,13 @@ struct CodexHookProjectionTests {
 
         // Act
         let first = try #require(
-            CodexHookProjection.project(eventName: .permissionRequest, payload: payload))
+            CodexHookProjection.project(
+                sourceOccurredAt: Date(timeIntervalSince1970: 1_700_000_000), eventName: .permissionRequest,
+                payload: payload))
         let second = try #require(
-            CodexHookProjection.project(eventName: .permissionRequest, payload: payload))
+            CodexHookProjection.project(
+                sourceOccurredAt: Date(timeIntervalSince1970: 1_700_000_000), eventName: .permissionRequest,
+                payload: payload))
 
         // Assert
         #expect(first.event.occurrenceId == second.event.occurrenceId)
@@ -162,9 +175,13 @@ struct CodexHookProjectionTests {
         let researcher = Self.subagentPayload(agentId: "agent_91ba")
 
         // Act
-        let first = try #require(CodexHookProjection.project(eventName: eventName, payload: reviewer))
+        let first = try #require(
+            CodexHookProjection.project(
+                sourceOccurredAt: Date(timeIntervalSince1970: 1_700_000_000), eventName: eventName, payload: reviewer))
         let second = try #require(
-            CodexHookProjection.project(eventName: eventName, payload: researcher))
+            CodexHookProjection.project(
+                sourceOccurredAt: Date(timeIntervalSince1970: 1_700_000_000), eventName: eventName, payload: researcher)
+        )
 
         // Assert
         #expect(first.event.occurrenceId != second.event.occurrenceId)
@@ -186,9 +203,13 @@ struct CodexHookProjectionTests {
 
         // Act
         let start = try #require(
-            CodexHookProjection.project(eventName: .subagentStart, payload: payload))
+            CodexHookProjection.project(
+                sourceOccurredAt: Date(timeIntervalSince1970: 1_700_000_000), eventName: .subagentStart,
+                payload: payload))
         let stop = try #require(
-            CodexHookProjection.project(eventName: .subagentStop, payload: payload))
+            CodexHookProjection.project(
+                sourceOccurredAt: Date(timeIntervalSince1970: 1_700_000_000), eventName: .subagentStop, payload: payload
+            ))
 
         // Assert
         #expect(start.event.occurrenceId != stop.event.occurrenceId)
@@ -235,7 +256,10 @@ struct CodexHookProjectionTests {
 
         // Act / Assert
         #expect(CodexHookProjection.isProjected(eventName) == false)
-        #expect(CodexHookProjection.project(eventName: eventName, payload: payload) == nil)
+        #expect(
+            CodexHookProjection.project(
+                sourceOccurredAt: Date(timeIntervalSince1970: 1_700_000_000), eventName: eventName, payload: payload)
+                == nil)
     }
 
     @Test("a payload version overrides the verified default when a provider reports one")
@@ -244,7 +268,8 @@ struct CodexHookProjectionTests {
         let payload = CodexHookPayload(sessionId: "s", codexVersion: "0.155.1")
 
         // Act
-        let projected = CodexHookProjection.project(eventName: .sessionStart, payload: payload)
+        let projected = CodexHookProjection.project(
+            sourceOccurredAt: Date(timeIntervalSince1970: 1_700_000_000), eventName: .sessionStart, payload: payload)
 
         // Assert
         #expect(projected?.provider.version == "0.155.1")
@@ -263,6 +288,7 @@ struct CodexHookProjectionTests {
     private func projected(_ eventName: CodexHookEventName) throws -> CodexHookProjectedEvent {
         try #require(
             CodexHookProjection.project(
+                sourceOccurredAt: Date(timeIntervalSince1970: 1_700_000_000),
                 eventName: eventName, payload: try CodexFixtures.payload(for: eventName)))
     }
 }

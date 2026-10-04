@@ -95,6 +95,7 @@ package actor PaneContextService: PaneContextDetailReading, PaneContextPersonAct
         if opening == nil {
             let sqliteAccess = self.sqliteAccess
             let wallNow = self.wallNow
+            let binding = currentBindingGeneration
             openingToken = UUIDv7.generate()
             opening = Task {
                 try await sqliteAccess.write { database in
@@ -112,7 +113,8 @@ package actor PaneContextService: PaneContextDetailReading, PaneContextPersonAct
                         return (
                             key,
                             try PaneContextAskSettlement.commit(
-                                database, paneId: key.paneId, id: key.messageId, cause: .appStopping, now: now)
+                                database, paneId: key.paneId, id: key.messageId, cause: .appStopping, now: now,
+                                currentBindingGeneration: binding)
                         )
                     }
                     return PaneContextStartupCommit(settlements: settlements)

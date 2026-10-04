@@ -44,6 +44,7 @@ package enum AgentPackageSubcommand: Equatable, Sendable {
 /// Runs a parsed provider-package subcommand.
 package struct AgentPackageCommandRunner: Sendable {
     package struct Props: Sendable {
+        package let sourceOccurredAt: Date
         package let environment: [String: String]
         package let executableURL: URL?
         package let standardInput: @Sendable () throws -> Data
@@ -53,6 +54,7 @@ package struct AgentPackageCommandRunner: Sendable {
         package let standardErrorSink: @Sendable (String) -> Void
 
         package init(
+            sourceOccurredAt: Date,
             environment: [String: String],
             executableURL: URL?,
             standardInput: @escaping @Sendable () throws -> Data,
@@ -61,6 +63,7 @@ package struct AgentPackageCommandRunner: Sendable {
             standardOutputSink: @escaping @Sendable (String) -> Void,
             standardErrorSink: @escaping @Sendable (String) -> Void
         ) {
+            self.sourceOccurredAt = sourceOccurredAt
             self.environment = environment
             self.executableURL = executableURL
             self.standardInput = standardInput
@@ -91,6 +94,7 @@ package struct AgentPackageCommandRunner: Sendable {
         case CodexPackageInstaller.providerIdentifier:
             return ProviderHookInvocation.runCodexHook(
                 ProviderHookInvocation.Props(
+                    sourceOccurredAt: props.sourceOccurredAt,
                     eventName: eventName,
                     environment: props.environment,
                     standardInput: props.standardInput,
