@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'vitest';
 
 import noSourceAttempt from '../../test-fixtures/bridge-contract-fixtures/valid/bridge-product-review-comparison-attempt-no-source.json' with { type: 'json' };
+import nativeSessionCorpus from '../../test-fixtures/bridge-contract-fixtures/valid/bridge-product-session-corpus.json' with { type: 'json' };
 import { bridgeProductReviewComparisonPresentationSchema } from './bridge-product-review-comparison-presentation-contracts.js';
 import { bridgeProductMetadataFrameSchema } from './bridge-product-session-contracts.js';
 
@@ -33,7 +34,7 @@ describe('Bridge product session Review comparison contract', () => {
 		}
 	});
 
-	test('keeps comparison and generic File failure wire contracts closed', () => {
+	test('keeps comparison and typed File failure wire contracts closed', () => {
 		const frame = {
 			fileRefreshFailure: null,
 			kind: 'pane.presentation',
@@ -67,10 +68,32 @@ describe('Bridge product session Review comparison contract', () => {
 		const rootFailureWireValue = { failureKind: 'fileSourceUnavailable', retryable: true } as const;
 		const rootFailureFrame = { ...frame, fileRefreshFailure: rootFailureWireValue } as const;
 		expect(bridgeProductMetadataFrameSchema.parse(rootFailureFrame)).toEqual(rootFailureFrame);
+		const rootFailures = nativeSessionCorpus.fileRefreshFailureCases
+			.map((entry) => entry.failure)
+			.filter((failure) => ['missingRoot', 'unreadableRoot'].includes(failure.failureKind));
+		expect(rootFailures.map((failure) => failure.failureKind)).toEqual([
+			'missingRoot',
+			'unreadableRoot',
+		]);
+		for (const fileRefreshFailure of rootFailures) {
+			const acceptedFrame = { ...frame, fileRefreshFailure };
+			expect(bridgeProductMetadataFrameSchema.parse(acceptedFrame)).toEqual(acceptedFrame);
+			for (const invalidFailure of [
+				{ ...fileRefreshFailure, retryable: false },
+				{ ...fileRefreshFailure, message: 'unexpected payload' },
+			]) {
+				expect(
+					bridgeProductMetadataFrameSchema.safeParse({
+						...frame,
+						fileRefreshFailure: invalidFailure,
+					}).success,
+				).toBe(false);
+			}
+		}
 		for (const rootSpecificFailure of [
-			{ failureKind: 'missingRoot', retryable: true },
 			{ failureKind: 'unreadable', retryable: true },
 			{ failureKind: 'refused', retryable: false },
+			{ failureKind: 'refused', retryable: true },
 		]) {
 			expect(
 				bridgeProductMetadataFrameSchema.safeParse({
