@@ -1,16 +1,16 @@
 # Agent Studio worktree CLI: agent manual
 
-This guide covers the Beta helper's current commands and the lifecycle
+This guide covers the production helper's current commands and the lifecycle
 additions that arrive after app PR 1 merges.
 
 ## Availability
 
-The installed Beta helper, 0.0.105-beta.71, supports `new`, `fork`, and the
-earlier `list` output. Removal, pruning, list state and blockers,
+Production Agent Studio **0.0.105** ships `new`, `fork`, and the earlier
+`list` output, and its `fork` works on real Agent Studio checkouts
+(agentstudio-git deac01f). Removal, pruning, list state and blockers,
 `new --from-branch`, `fork --changes-only`, and `remove --force` arrive in the
-first Beta built after app PR 1 merges. Until then, archive `tmp/` and push
-before removing a worktree with `wt remove <branch>`. The stable cut comes
-later.
+first release built after app PR 1 merges. Until then, archive `tmp/` and push
+before removing a worktree with `wt remove <branch>`.
 
 ## Why use it
 
@@ -35,13 +35,12 @@ to the GUI app binary and starts a second app. Always use the full, quoted
 Helpers path:
 
 ```bash
-ASW="/Applications/AgentStudio Beta.app/Contents/Helpers/agentstudio"   # beta: has the worktree verbs
+ASW="/Applications/AgentStudio.app/Contents/Helpers/agentstudio"   # production 0.0.105+
 ```
 
-The stable helper at
-`/Applications/AgentStudio.app/Contents/Helpers/agentstudio` does not include
-the worktree verbs yet. The Beta helper gains the lifecycle additions after
-app PR 1 merges; the stable cut comes later.
+The Beta helper at `/Applications/AgentStudio Beta.app/Contents/Helpers/agentstudio`
+has the same verbs, but its fork needs a Beta built on agentstudio-git deac01f or
+later.
 
 | Command | Behavior | Options |
 |---|---|---|
@@ -93,12 +92,15 @@ Exit codes:
   agent-studio that means `vendor/ghostty` and `vendor/zmx` are empty and
   there's no `Frameworks/`, so run `mise run setup` (as AGENTS.md says) before
   building or reading vendored headers. Expect a cold first build.
-- **Known bug (beta.71/72): `fork` fails with `entryCreationFailed` on any nested repository whose `.git/HEAD` is read-only, which includes SwiftPM checkouts in `.build/checkouts/*` (agent-studio's main checkout has them under `Tools/AgentStudioArchitectureLint/.build`). Until a beta with the SDK fix ships, use `new` + `mise run setup` in agent-studio.**
-- **agent-studio default once fixed: `fork --from <main checkout>`** (the main checkout
-  on its default branch, clean). That APFS-clones the populated submodules,
-  `Frameworks/` and build output, so no setup is needed and nothing is
-  downloaded. Use `new` + `mise run setup` only when the main checkout isn't
-  clean or isn't on the default branch.
+- **agent-studio default: `fork --from <main checkout>`** (the main checkout
+  on its default branch, clean; production 0.0.105 or later). That APFS-clones
+  the populated submodules, `Frameworks/` and build output, so no setup is
+  needed and nothing is downloaded. Forking the agent-studio main checkout takes
+  about 20 seconds. Use `new` + `mise run setup` only when the main checkout
+  isn't clean or isn't on the default branch.
+- To recreate a worktree on an existing branch, use
+  `git worktree add <repo>.<branch> <branch>` and then `mise run setup`; neither
+  `new` nor `fork` checks out an existing branch.
 - Reuse an existing checkout when you can.
 
 The default copy-on-write `fork` refuses when the source or destination is not
@@ -115,9 +117,9 @@ also reported with its reason and the same command.
 
 - Never put development worktrees in `~/dev/worktrees`,
   `~/dev/agent-studio-worktrees`, or `/private/tmp`.
-- Until the first Beta built after app PR 1 merges is available, archive
+- Until the first release built after app PR 1 merges is available, archive
   `tmp/`, push, then remove the worktree with `wt remove <branch>`.
-- After that Beta is available, remove a worktree with
+- After that release is available, remove a worktree with
   `"$ASW" worktree remove --repo <repo> <branch-or-path>`.
 - Problems or gaps go to the Worktrees Lead: claude-local
   `9304749a-6517-41da-952d-243201c32337`.
