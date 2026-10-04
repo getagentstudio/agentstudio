@@ -39,6 +39,7 @@ struct WatchedFolderScanSchedulerValidationTests {
         #expect(await fixture.transfer(validatingLease) == .transferred)
         await fixture.scheduler.shutdown()
         #expect(await fixture.scheduler.stateSnapshot() == .shutDown)
+        try await fixture.facts.finish()
     }
 
     @Test("logical validation saturation becomes partial while the admitted request remains bounded")
@@ -76,6 +77,7 @@ struct WatchedFolderScanSchedulerValidationTests {
         #expect(heldLease.result.request.sourceID == held.sourceID)
         #expect(await fixture.transfer(heldLease) == .transferred)
         await fixture.scheduler.shutdown()
+        try await fixture.facts.finish()
     }
 
     @Test("replacement registration drains stale validation before advancing current truth")
@@ -219,6 +221,50 @@ struct WatchedFolderScanSchedulerValidationTests {
         await fixture.scheduler.shutdown()
         try await fixture.facts.finish()
     }
+
+    @Test("shutdown cancels parked replacement custody before the stale physical return")
+    func shutdownCancelsParkedReplacement() async throws {
+        let completions = LocalFactSource<FSEventRegistrationToken, GitRepositoryDiscoveryOutcome>(
+            vocabulary: FactVocabulary(
+                describeScope: { String(describing: $0) },
+                describeFact: { String(describing: $0) },
+                isClosing: { _, _ in true }
+            )
+        )
+        let completionFacts = try completions.attach()
+        let fixture = try ValidationSchedulerFixture(
+            maximumConcurrentScans: 1,
+            validationBudget: RepoDiscoveryValidationBudget(
+                logicalDeadline: .seconds(60), maximumPhysicalJobs: 1,
+                maximumQueuedRequests: 4, maximumQueuedRequestsPerRoot: 1
+            ),
+            validationCompletionSink: completions.sink
+        )
+        let original = try fixture.makeRequest(name: "shutdown-parked", containsGitMarker: true)
+        let replacement = try fixture.makeRequest(
+            name: "shutdown-parked", containsGitMarker: true, sourceID: original.sourceID,
+            registrationGeneration: 2,
+            rootURL: URL(fileURLWithPath: original.canonicalRoot.aliases.onceResolvedCanonical.path)
+        )
+        _ = await fixture.scheduler.submit(original)
+        let staleCandidate = await fixture.validationClient.nextCandidate()
+        _ = await fixture.scheduler.submit(replacement)
+        _ = try await fixture.expectParkedValidation(for: replacement, scanRunGeneration: 2)
+
+        let shutdownTask = Task {
+            await fixture.scheduler.shutdown()
+            completions.end()
+        }
+        try await completionFacts.expectNext(in: replacement.canonicalRoot.registration, .cancelled)
+        await fixture.validationClient.complete(staleCandidate, with: .cancelled)
+        await shutdownTask.value
+
+        #expect(await fixture.scheduler.stateSnapshot() == .shutDown)
+        #expect(await fixture.scheduler.validationExecutor.snapshot().physicalJobCount == 0)
+        #expect(await fixture.validationClient.pendingValidationCount == 0)
+        try await completionFacts.finish()
+        try await fixture.facts.finish()
+    }
 }
 
 private actor ControlledSchedulerValidationClient: RepoDiscoveryReadClient {
@@ -230,6 +276,8 @@ private actor ControlledSchedulerValidationClient: RepoDiscoveryReadClient {
     private var pendingValidations: [PendingValidation] = []
     private var bufferedCandidates: [URL] = []
     private var candidateWaiters: [CheckedContinuation<URL, Never>] = []
+
+    var pendingValidationCount: Int { pendingValidations.count }
 
     func validateDiscoveryCandidate(at candidateURL: URL) async -> GitRepositoryDiscoveryOutcome {
         await withCheckedContinuation { continuation in
@@ -277,7 +325,8 @@ private struct ValidationSchedulerFixture {
 
     init(
         maximumConcurrentScans: Int,
-        validationBudget: RepoDiscoveryValidationBudget = .productionDefault
+        validationBudget: RepoDiscoveryValidationBudget = .productionDefault,
+        validationCompletionSink: (@Sendable (FSEventRegistrationToken, GitRepositoryDiscoveryOutcome) -> Void)? = nil
     ) throws {
         let validationClient = self.validationClient
         let validationFacts = LocalFactSource<WatchedFolderScanValidationScope, WatchedFolderScanSchedulerFact>(
@@ -312,7 +361,10 @@ private struct ValidationSchedulerFixture {
                     id: scannerPort.id,
                     advanceOneQuantum: scannerPort.advanceOneQuantum,
                     cancel: scannerPort.cancel,
-                    consumeValidationCompletion: scannerPort.consumeValidationCompletion
+                    consumeValidationCompletion: { completion in
+                        validationCompletionSink?(request.canonicalRoot.registration, completion.outcome)
+                        return scannerPort.consumeValidationCompletion(completion)
+                    }
                 )
             }
         )

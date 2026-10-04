@@ -27,6 +27,8 @@ package actor WatchedFolderScanScheduler {
     var isShuttingDown = false
     private var isShutDown = false
     var validationCompletionDrainTask: Task<Void, Never>?
+    var validationPhysicalDrainTask: Task<Void, Never>?
+    var parkedValidationByRequestID: [RepoDiscoveryValidationRequestID: AwaitingValidation] = [:]
 
     init(
         maximumConcurrentScans: Int,
@@ -445,10 +447,7 @@ extension WatchedFolderScanScheduler {
                 cancelRunningQuantum(sourceID: sourceID, running: running)
             case .awaitingValidation(let awaiting),
                 .awaitingValidationAndDirty(let awaiting, _):
-                _ = awaiting.logicalScan.session.cancel()
-                _ = await validationExecutor.cancel(
-                    requestID: awaiting.executorRequest.requestID
-                )
+                await cancelAwaitingValidation(awaiting)
             case .pendingResult:
                 break
             case .pendingResultAndDirty(let pending, _):
@@ -464,6 +463,9 @@ extension WatchedFolderScanScheduler {
         for task in tasks { await task.value }
         if let validationCompletionDrainTask {
             await validationCompletionDrainTask.value
+        }
+        if let validationPhysicalDrainTask {
+            await validationPhysicalDrainTask.value
         }
         finalizeShutdownIfDrained()
     }
@@ -832,6 +834,7 @@ extension WatchedFolderScanScheduler {
         guard isShuttingDown, occupiedCreditCount == 0,
             stateCounts.awaitingValidation == 0,
             validationCompletionDrainTask == nil
+                && validationPhysicalDrainTask == nil
         else { return }
         isShutDown = true
         isShuttingDown = false

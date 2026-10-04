@@ -55,23 +55,40 @@ extension WatchedFolderScanScheduler {
         // before crossing into the bounded executor actor.
         _ = dispatchReadyQuanta()
         ensureValidationCompletionDrainStarted()
-        switch await validationExecutor.submit(executorRequest) {
+        await submitValidationRequest(awaiting)
+    }
+
+    func submitValidationRequest(_ awaiting: AwaitingValidation) async {
+        guard !isShuttingDown else {
+            parkedValidationByRequestID.removeValue(forKey: awaiting.executorRequest.requestID)
+            consumeSyntheticValidationOutcome(.cancelled, awaiting: awaiting)
+            return
+        }
+        let admission = await validationExecutor.submit(awaiting.executorRequest)
+        if case .rejected(.allPhysicalJobsDraining) = admission {
+            // This is the only rejection that retains scheduler custody for resubmission.
+        } else {
+            parkedValidationByRequestID.removeValue(forKey: awaiting.executorRequest.requestID)
+        }
+        switch admission {
         case .accepted:
+            let sourceID = awaiting.logicalScan.request.sourceID
+            // Cancellation or retirement may win while executor admission crosses actors.
+            guard let state = stateBySourceID[sourceID],
+                awaitingValidation(from: state)?.executorRequest == awaiting.executorRequest,
+                !isShuttingDown
+            else {
+                _ = await validationExecutor.cancel(requestID: awaiting.executorRequest.requestID)
+                return
+            }
             return
         case .rejected(.logicalCapacityReached):
             consumeSyntheticValidationOutcome(
                 .failure(.serviceFailed(detail: "validation logical capacity reached")),
                 awaiting: awaiting
             )
-        case .rejected(.allPhysicalJobsDraining(let count)):
-            consumeSyntheticValidationOutcome(
-                .failure(
-                    .serviceFailed(
-                        detail: "all \(count) validation physical jobs are draining"
-                    )
-                ),
-                awaiting: awaiting
-            )
+        case .rejected(.allPhysicalJobsDraining):
+            parkValidationRequest(awaiting)
         case .rejected(.shutdown):
             consumeSyntheticValidationOutcome(.cancelled, awaiting: awaiting)
         case .rejected(.duplicateRequest),
@@ -87,6 +104,11 @@ extension WatchedFolderScanScheduler {
     }
 
     func cancelAwaitingValidation(_ awaiting: AwaitingValidation) async {
+        if parkedValidationByRequestID.removeValue(forKey: awaiting.executorRequest.requestID) != nil {
+            consumeSyntheticValidationOutcome(.cancelled, awaiting: awaiting)
+            _ = awaiting.logicalScan.session.cancel()
+            return
+        }
         _ = awaiting.logicalScan.session.cancel()
         _ = await validationExecutor.cancel(requestID: awaiting.executorRequest.requestID)
     }
@@ -169,7 +191,7 @@ extension WatchedFolderScanScheduler {
         )
     }
 
-    private func consumeSyntheticValidationOutcome(
+    func consumeSyntheticValidationOutcome(
         _ outcome: GitRepositoryDiscoveryOutcome,
         awaiting: AwaitingValidation
     ) {
@@ -230,7 +252,7 @@ extension WatchedFolderScanScheduler {
         finalizeShutdownIfDrained()
     }
 
-    private func awaitingValidation(from state: RootSchedulingState) -> AwaitingValidation? {
+    func awaitingValidation(from state: RootSchedulingState) -> AwaitingValidation? {
         switch state {
         case .awaitingValidation(let awaiting),
             .awaitingValidationAndDirty(let awaiting, _):
