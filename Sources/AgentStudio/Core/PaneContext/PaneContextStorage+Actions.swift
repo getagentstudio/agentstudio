@@ -29,10 +29,12 @@ extension PaneContextStorage {
     }
 
     static func loadActions(_ database: Database, table: String, parentId: UUID) throws -> [MessageAction] {
-        try Row.fetchAll(
-            database, sql: "SELECT * FROM \(table) WHERE parent_id = ? ORDER BY ordinal",
-            arguments: [parentId.uuidString]
-        ).map { row in
+        let statement = try database.cachedStatement(sql: "SELECT * FROM \(table) WHERE parent_id = ? ORDER BY ordinal")
+        return try actions(Row.fetchAll(statement, arguments: [parentId.uuidString]))
+    }
+
+    static func actions(_ rows: [Row]) throws -> [MessageAction] {
+        try rows.map { row in
             let kind: String = try required(row, "kind")
             switch kind {
             case "openFile": return .openFile(path: try required(row, "path"), line: try optional(row, "line"))

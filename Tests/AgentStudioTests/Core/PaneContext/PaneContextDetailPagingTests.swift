@@ -393,6 +393,37 @@ struct PaneContextDetailPagingTests {
         }
     }
 
+    @Test("hiding a settled request never hides a live notice with the same table-local row id")
+    func retentionIdentityIncludesParentTable() async throws {
+        try await withPaneContextService { fixture, service in
+            let settled = fixture.ask()
+            let live = fixture.message()
+            try await fixture.sendCreated(settled, to: service)
+            let dismissed = await service.dismiss(messageId: settled.messageId, paneId: fixture.paneId)
+            #expect(dismissed == .done)
+            try await fixture.sendCreated(live, to: service)
+            try await fixture.databasePool.write { database in
+                guard
+                    let shared = try String.fetchOne(
+                        database, sql: "SELECT id FROM pane_request WHERE pane_id = ? AND message_id = ?",
+                        arguments: [fixture.paneId.uuidString, settled.messageId.uuid.uuidString])
+                else { throw PaneContextStorageFailure.decode("id") }
+                try database.execute(
+                    sql: "UPDATE pane_event SET id = ? WHERE pane_id = ? AND message_id = ? AND kind = 'notice'",
+                    arguments: [shared, fixture.paneId.uuidString, live.messageId.uuid.uuidString])
+            }
+            fixture.time.shiftWallTime(by: AppPolicies.PaneContext.settledMessageLifetime)
+            let detail = try await fixture.detail(service)
+            #expect(detail.messages.map(\.id) == [live.messageId])
+            let hidden = try await fixture.databasePool.read { database in
+                try Bool.fetchOne(
+                    database, sql: "SELECT display_hidden FROM pane_request WHERE pane_id = ? AND message_id = ?",
+                    arguments: [fixture.paneId.uuidString, settled.messageId.uuid.uuidString])
+            }
+            #expect(hidden == true)
+        }
+    }
+
     @Test("Only the newest twenty settled messages are visible; live messages are never aged out")
     func settledDisplayRetentionIsBounded() async throws {
         try await withPaneContextService { fixture, service in

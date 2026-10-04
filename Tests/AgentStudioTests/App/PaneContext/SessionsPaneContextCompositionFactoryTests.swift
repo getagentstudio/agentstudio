@@ -45,6 +45,71 @@ struct SessionsPaneContextCompositionFactoryTests {
         }
     }
 
+    @Test("wire byte accounting matches native JSON for real messages, drawers and changed ask states")
+    func replySizingMatchesNativeEncoding() async throws {
+        try await withCompositionFactory { fixture in
+            let service = fixture.composition.paneContextService
+            _ = try await fixture.composition.prepareForLaunch(at: fixture.now)
+            let binding = try await fixture.bind(paneId: fixture.ownerId, usingLateAdapter: false)
+            let writer = try fixture.sender(binding)
+            let choiceId = try AskChoiceId("allow")
+            let openAsk = PaneMessageSendRequest(
+                paneId: fixture.ownerId, messageId: .generateUUIDv7(), sender: writer, sourceOccurredAt: nil,
+                importance: .attention, body: "Choose \"漢字😀\" / a path\n", why: "A reason with / and \\",
+                actions: [.openFile(path: "/tmp/a\"b", line: 7), .goToPane(fixture.drawerId)],
+                shape: .ask(
+                    reason: .question,
+                    form: .choice(options: [.init(id: choiceId, label: "Allow 😀")], allowsMultiple: false),
+                    waiting: .nonBlocking))
+            let notice = PaneMessageSendRequest(
+                paneId: fixture.ownerId, messageId: .generateUUIDv7(), sender: writer, sourceOccurredAt: nil,
+                importance: .info, body: "Notice \"é\" /\n", why: nil, actions: [], shape: .notice)
+            let drawerNotice = PaneMessageSendRequest(
+                paneId: fixture.drawerId, messageId: .generateUUIDv7(), sender: .pane(fixture.drawerId),
+                sourceOccurredAt: nil,
+                importance: .failure, body: "Drawer 😀 /\n", why: "Details", actions: [.goToPane(fixture.ownerId)],
+                shape: .notice)
+            for request in [openAsk, notice, drawerNotice] {
+                let sent = await service.send(request)
+                #expect(sent == .created(request.messageId))
+            }
+            let firstRead = await service.readDetail(.init(paneId: fixture.ownerId, page: .first))
+            let full = try PaneContextIPCMapping.detail(firstRead)
+            let empty = IPCPaneContextGetResult(
+                paneId: full.paneId, revision: full.revision, agentTitle: full.agentTitle, agentLine: full.agentLine,
+                session: full.session, messages: [], drawerMessages: [], links: full.links,
+                pullRequests: full.pullRequests)
+            let subset = IPCPaneContextGetResult(
+                paneId: full.paneId, revision: full.revision, agentTitle: "Quoted \"title\" 😀",
+                agentLine: full.agentLine,
+                session: full.session, messages: Array(full.messages.prefix(1)),
+                drawerMessages: full.drawerMessages + [.init(sourcePaneId: fixture.ownerId.uuid, messages: [])],
+                links: full.links, pullRequests: full.pullRequests,
+                truncation: .init(
+                    omitted: [
+                        .init(
+                            source: fixture.drawerId.uuid, openAsks: 1, unreadNotices: 2,
+                            next: .init(rank: 1, position: 3))
+                    ],
+                    remainingLiveSources: 1, nextSourcesAfter: fixture.drawerId.uuid))
+            var sizing = PaneContextIPCReplySizing()
+            for candidate in [empty, full, subset, full] {
+                let measured = try sizing.encodedSize(candidate)
+                let actual = try JSONEncoder().encode(candidate).count
+                #expect(measured == actual)
+            }
+            let answered = await service.answer(
+                .init(
+                    messageId: openAsk.messageId, paneId: fixture.ownerId, by: .localUser, value: .choices([choiceId])))
+            #expect(answered == .answered)
+            let changedRead = await service.readDetail(.init(paneId: fixture.ownerId, page: .first))
+            let changed = try PaneContextIPCMapping.detail(changedRead)
+            let changedSize = try sizing.encodedSize(changed)
+            let actualChangedSize = try JSONEncoder().encode(changed).count
+            #expect(changedSize == actualChangedSize)
+        }
+    }
+
     @Test("both adapters resolve drawer ownership through the supplied directory", arguments: [false, true])
     func factoryInjectsOwnerLookup(usingLateAdapter: Bool) async throws {
         try await withCompositionFactory { fixture in

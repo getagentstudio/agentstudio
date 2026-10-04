@@ -1,6 +1,8 @@
 import AgentStudioInfrastructure
 import AgentStudioTestHarness
 import Foundation
+import GRDB
+import Synchronization
 import Testing
 
 @testable import AgentStudioCore
@@ -42,6 +44,40 @@ struct PaneContextPresentationServiceTests {
                 _ = await lineWrite.value
                 throw error
             }
+        }
+    }
+
+    @Test("full captures batch action reads and write projections load no message children at five and fifty notices")
+    func childQueryCountsDoNotGrowWithNoticeCount() async throws {
+        var observations: [PaneContextQueryObservation] = []
+        for count in [5, 50] {
+            let observation = try await withMeasuredPaneContextQueries(noticeCount: count)
+            observations.append(observation)
+        }
+        #expect(observations.count == 2)
+        #expect(observations[0].detail == observations[1].detail)
+        #expect(observations[0].notify == observations[1].notify)
+        #expect(observations[0].line == observations[1].line)
+        #expect(observations[0].detail.values.reduce(0, +) == 1)
+        #expect(observations[0].detail["pane_event_action"] == 1)
+        #expect(observations[0].notify.values.reduce(0, +) == 0)
+        #expect(observations[0].line == ["pane_state_action": 1])
+    }
+
+    @Test("full batched decode refuses a malformed live action without a partial page")
+    func malformedBatchedChildRemainsFailClosed() async throws {
+        try await withPaneContextPresentationService { fixture in
+            let storage = fixture.storage
+            let request = PaneMessageSendRequest(
+                paneId: storage.paneId, messageId: .generateUUIDv7(), sender: storage.sender,
+                sourceOccurredAt: nil, importance: .attention, body: "Valid parent", why: nil,
+                actions: [.openFile(path: "/tmp/valid", line: 1)], shape: .notice)
+            try await storage.sendCreated(request, to: fixture.service)
+            try await storage.databasePool.write { database in
+                try database.execute(sql: "UPDATE pane_event_action SET kind = 'invalid'")
+            }
+            let read = await fixture.service.readDetail(.init(paneId: storage.paneId, page: .first))
+            #expect(read == .unavailable(.decodeFailed("action.kind")))
         }
     }
 
@@ -353,4 +389,77 @@ private func informationalNotice(_ storage: PaneContextServiceFixture, paneId: P
     .init(
         paneId: paneId ?? storage.paneId, messageId: .generateUUIDv7(), sender: storage.sender,
         sourceOccurredAt: nil, importance: .info, body: "Information", why: nil, actions: [], shape: .notice)
+}
+
+private struct PaneContextQueryObservation: Sendable {
+    let notify: [String: Int]
+    let detail: [String: Int]
+    let line: [String: Int]
+}
+
+private final class PaneContextChildQueryRecorder: Sendable {
+    private let counts = Mutex<[String: Int]>([:])
+    private static let tables = [
+        "pane_request_action", "pane_event_action", "pane_request_choice", "pane_request_property",
+        "pane_request_property_choice", "pane_request_required", "pane_request_answer_value", "pane_state_action",
+    ]
+
+    func record(_ event: Database.TraceEvent) {
+        guard case .statement(let statement) = event else { return }
+        let sql = statement.sql.split(whereSeparator: { $0.isWhitespace }).joined(separator: " ")
+        guard sql.hasPrefix("SELECT ") else { return }
+        for table in Self.tables where sql.contains(" FROM \(table) ") {
+            counts.withLock { $0[table, default: 0] += 1 }
+        }
+    }
+
+    func takeCounts() -> [String: Int] {
+        counts.withLock { value in
+            defer { value.removeAll() }
+            return value
+        }
+    }
+}
+
+private func withMeasuredPaneContextQueries(noticeCount: Int) async throws -> PaneContextQueryObservation {
+    let observation = Mutex<PaneContextQueryObservation?>(nil)
+    try await withPaneContextPresentationService { fixture in
+        let storage = fixture.storage
+        _ = try await fixture.display()
+        for index in 0..<noticeCount {
+            let request = PaneMessageSendRequest(
+                paneId: storage.paneId, messageId: .generateUUIDv7(), sender: storage.sender,
+                sourceOccurredAt: nil, importance: .attention, body: "Notice \(index)", why: nil,
+                actions: [.openFile(path: "/tmp/notice-\(index)", line: index + 1)], shape: .notice)
+            try await storage.sendCreated(request, to: fixture.service)
+        }
+        let epoch = try await storage.epoch(fixture.service, stream: .line)
+        _ = await fixture.latestPublished(storage.paneId)
+        let recorder = PaneContextChildQueryRecorder()
+        try await storage.databasePool.write { database in database.trace(options: .statement) { recorder.record($0) } }
+        do {
+            let request = storage.message(body: "Measured notify")
+            let sent = await fixture.service.send(request)
+            let notifyCounts = recorder.takeCounts()
+            #expect(sent == .created(request.messageId))
+            let detail = try await storage.detail(fixture.service)
+            let detailCounts = recorder.takeCounts()
+            #expect(detail.messages.count == noticeCount + 1)
+            #expect(detail.messages.filter { $0.actions.count == 1 }.count == noticeCount)
+            let lineResult = await fixture.service.setLine(storage.line("Measured line", epoch: epoch, counter: 1))
+            let lineCounts = recorder.takeCounts()
+            #expect(lineResult == .applied)
+            let desired = fixture.mailbox.desiredDisplay(for: storage.paneId)
+            #expect(desired?.own.attentionCount == noticeCount + 1)
+            #expect(desired?.agentLine?.summary == "Measured line")
+            try await storage.databasePool.write { database in database.trace(options: []) }
+            observation.withLock {
+                $0 = PaneContextQueryObservation(notify: notifyCounts, detail: detailCounts, line: lineCounts)
+            }
+        } catch {
+            try? await storage.databasePool.write { database in database.trace(options: []) }
+            throw error
+        }
+    }
+    return try #require(observation.withLock { $0 })
 }

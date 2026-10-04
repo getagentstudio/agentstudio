@@ -108,6 +108,7 @@ struct PaneCLICommandRunner: Sendable {
             descriptors: descriptors)
         var entries: [IPCPaneMessageChangeEntry] = []
         var didReceivePage = false
+        var interruptedBy: (any Error)?
         let complete: IPCPaneMessageChangesResult
         do {
             complete = try client.withAuthenticatedExchange(first: first) { exchange in
@@ -131,6 +132,7 @@ struct PaneCLICommandRunner: Sendable {
             }
         } catch {
             guard didReceivePage else { throw error }
+            interruptedBy = error
             complete = IPCPaneMessageChangesResult(entries: entries, nextPosition: position, more: true)
         }
         try write(JSONEncoder().encode(complete))
@@ -139,7 +141,7 @@ struct PaneCLICommandRunner: Sendable {
                 CLIDiagnostics.record(.storeUnavailable)
             }
         }
-        if complete.more { props.standardErrorSink("answers interrupted; read again") }
+        if let interruptedBy { throw interruptedBy }
     }
 
     private func orderedWrite(

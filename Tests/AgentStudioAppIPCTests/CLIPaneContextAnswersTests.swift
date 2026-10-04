@@ -62,7 +62,7 @@ struct CLIPaneContextAnswersTests {
                 }
                 held.fail(UnixSocketTransportError(reason: .writeFailed))
                 let (output, observations) = await pending
-                #expect(output.exitCode == 0)
+                #expect(output.exitCode == 1)
                 let received = try JSONDecoder().decode(
                     IPCPaneMessageChangesResult.self, from: Data(output.standardOutput.utf8))
                 #expect(received.entries.map(\.messageId) == [firstId])
@@ -72,7 +72,7 @@ struct CLIPaneContextAnswersTests {
                 #expect(bookmarks == [0])
                 let stored = try await context.storedAnswerPosition()
                 #expect(stored == Int64(firstPosition))
-                #expect(output.standardError == "answers interrupted; read again")
+                #expect(output.standardError == "outcomeUnknown")
                 #expect(context.port.wire.connections == 1)
                 #expect(context.port.wire.methods == ["auth.login", "pane.message.changes", "pane.message.changes"])
             } catch {

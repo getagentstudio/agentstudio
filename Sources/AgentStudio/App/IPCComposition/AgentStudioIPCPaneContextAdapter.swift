@@ -184,21 +184,22 @@ struct AgentStudioIPCPaneContextAdapter: AppIPCPaneContextPort {
         guard cap > 0 else { throw AppIPCPaneContextError(reason: .tooLarge, field: "context") }
         let request = PaneContextReadRequest(
             paneId: PaneId(existingUUID: paneId), page: PaneContextIPCMapping.page(params.page))
+        var sizing = PaneContextIPCReplySizing()
         let full = try PaneContextIPCMapping.detail(
             await service.readDetail(request, maximumDetailBytes: AppPolicies.PaneContext.maximumDetailBytes))
-        if try JSONEncoder().encode(full).count <= cap { return full }
+        if try sizing.encodedSize(full) <= cap { return full }
         var fittingBudget = AppPolicies.PaneContext.minimumDetailBytes
         var oversizedBudget = AppPolicies.PaneContext.maximumDetailBytes
         var best = try PaneContextIPCMapping.detail(
             await service.readDetail(request, maximumDetailBytes: fittingBudget))
-        guard try JSONEncoder().encode(best).count <= cap else {
+        guard try sizing.encodedSize(best) <= cap else {
             throw AppIPCPaneContextError(reason: .tooLarge, field: "context")
         }
         // Each read halves the interval: at most ceil(log2(full budget - floor)) search reads.
         while oversizedBudget - fittingBudget > 1 {
             let budget = fittingBudget + (oversizedBudget - fittingBudget) / 2
             let result = try PaneContextIPCMapping.detail(await service.readDetail(request, maximumDetailBytes: budget))
-            if try JSONEncoder().encode(result).count <= cap {
+            if try sizing.encodedSize(result) <= cap {
                 fittingBudget = budget
                 best = result
             } else {

@@ -288,27 +288,31 @@ extension PaneContextStorage {
             guard let uuid = UUID(uuidString: text) else { throw PaneContextStorageFailure.decode("pane_id") }
             let pane = PaneId(existingUUID: uuid)
             guard try !isRetired(database, paneId: pane) else { continue }
-            let settled = try messages(database, paneId: pane).filter { $0.settledAt != nil && !$0.displayHidden }
-                .sorted { $0.position > $1.position }
-            var changed = false
-            for (index, message) in settled.enumerated() {
-                guard
-                    index >= AppPolicies.PaneContext.maximumSettledMessages
-                        || message.settledAt.map({
-                            $0.addingTimeInterval(AppPolicies.PaneContext.settledMessageLifetime) <= now
-                        }) == true
-                else { continue }
-                let table: String
-                switch message.detail.shape {
-                case .ask: table = "pane_request"
-                case .notice: table = "pane_event"
-                }
-                try database.execute(
-                    sql: "UPDATE \(table) SET display_hidden = 1 WHERE id = ?", arguments: [message.rowId.uuidString])
-                changed = true
-            }
-            if changed { try bumpRevision(database, paneId: pane) }
+            let rows = try messages(database, paneId: pane).map(PaneContextRetentionMessage.init)
+            _ = try hideSettled(database, paneId: pane, rows: rows, now: now)
         }
+    }
+
+    @discardableResult
+    static func hideSettled(
+        _ database: Database, paneId: PaneId, rows: [PaneContextRetentionMessage], now: Date
+    ) throws -> Set<PaneContextRetentionMessage.Key> {
+        let settled = rows.filter { $0.settledAt != nil && !$0.displayHidden }.sorted { $0.position > $1.position }
+        var hidden = Set<PaneContextRetentionMessage.Key>()
+        for (index, message) in settled.enumerated() {
+            guard
+                index >= AppPolicies.PaneContext.maximumSettledMessages
+                    || message.settledAt.map({
+                        $0.addingTimeInterval(AppPolicies.PaneContext.settledMessageLifetime) <= now
+                    }) == true
+            else { continue }
+            let statement = try database.cachedStatement(
+                sql: "UPDATE \(message.table.name) SET display_hidden = 1 WHERE id = ?")
+            try statement.execute(arguments: [message.rowId.uuidString])
+            hidden.insert(message.key)
+        }
+        if !hidden.isEmpty { try bumpRevision(database, paneId: paneId) }
+        return hidden
     }
 
     static func purgeRetired(_ database: Database, now: Date) throws {

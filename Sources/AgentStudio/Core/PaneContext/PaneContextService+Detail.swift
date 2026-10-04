@@ -71,10 +71,12 @@ func capturePaneContextDetail(
 ) throws -> PaneContextDetailSnapshot? {
     guard try !PaneContextStorage.isRetired(database, paneId: paneId) else { return nil }
     try PaneContextStorage.expireLines(database, now: now(), sources: sources)
-    try PaneContextStorage.hideSettled(database, now: now(), sources: sources)
     let messages: [[PaneContextStoredMessage]] = try sources.map { source in
         guard try !PaneContextStorage.isRetired(database, paneId: source) else { return [] }
-        return try PaneContextStorage.messages(database, paneId: source).filter { !$0.displayHidden }
+        let loaded = try PaneContextStorage.messages(database, paneId: source)
+        let hidden = try PaneContextStorage.hideSettled(
+            database, paneId: source, rows: loaded.map(PaneContextRetentionMessage.init), now: now())
+        return loaded.filter { !$0.displayHidden && !hidden.contains(PaneContextRetentionMessage($0).key) }
     }
     let cursors = messages.map { rows -> LiveMessageCursor? in
         guard let newest = rows.filter({ liveRank($0.detail) != nil }).map(\.position).max() else { return nil }

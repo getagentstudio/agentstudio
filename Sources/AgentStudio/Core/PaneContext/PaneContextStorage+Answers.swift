@@ -48,12 +48,10 @@ extension PaneContextStorage {
         }
     }
 
-    static func answer(_ row: Row, database: Database) throws -> AskAnswerValue {
+    static func answer(_ row: Row, children: PaneContextMessageChildren) throws -> AskAnswerValue {
         let kind: String = try required(row, "answer_kind")
         if kind == "text" { return .text(try required(row, "answer_text")) }
-        let rows = try Row.fetchAll(
-            database, sql: "SELECT * FROM pane_request_answer_value WHERE request_id = ? ORDER BY ordinal",
-            arguments: [try uuid(row, "id").uuidString])
+        let rows = children.answers[try uuid(row, "id")] ?? []
         if kind == "choices" {
             let choices = try rows.map { value in
                 guard try required(value, "value_kind") as String == "choice" else {
@@ -87,7 +85,7 @@ extension PaneContextStorage {
         return .form(ElicitationValues(properties: values))
     }
 
-    static func askState(_ row: Row, database: Database) throws -> AskState {
+    static func askState(_ row: Row, children: PaneContextMessageChildren) throws -> AskState {
         let state: String = try required(row, "state")
         switch state {
         case "open": return .open
@@ -100,16 +98,19 @@ extension PaneContextStorage {
             guard try required(row, "answered_by") as String == "localUser" else {
                 throw PaneContextStorageFailure.decode("answered_by")
             }
-            let receiptKind: String = try required(row, "receipt")
-            let receipt: AnswerReceipt
-            switch receiptKind {
-            case "notYetConfirmed": receipt = .notYetConfirmed
-            case "confirmed": receipt = .confirmed(at: try date(row, "receipt_at"))
-            case "unconfirmed": receipt = .unconfirmed
-            default: throw PaneContextStorageFailure.decode("receipt")
-            }
-            return .answered(by: .localUser, value: try answer(row, database: database), receipt: receipt)
+            let receipt = try answerReceipt(row)
+            return .answered(by: .localUser, value: try answer(row, children: children), receipt: receipt)
         default: throw PaneContextStorageFailure.decode("state")
+        }
+    }
+
+    static func answerReceipt(_ row: Row) throws -> AnswerReceipt {
+        let receiptKind: String = try required(row, "receipt")
+        switch receiptKind {
+        case "notYetConfirmed": return .notYetConfirmed
+        case "confirmed": return .confirmed(at: try date(row, "receipt_at"))
+        case "unconfirmed": return .unconfirmed
+        default: throw PaneContextStorageFailure.decode("receipt")
         }
     }
 

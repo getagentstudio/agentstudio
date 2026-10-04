@@ -10,13 +10,17 @@ extension PaneContextStorage {
             database, sql: "SELECT * FROM pane_request WHERE pane_id = ? AND message_id = ?",
             arguments: [paneId.uuidString, messageId.uuid.uuidString])
         {
-            return try requestMessage(row, database: database)
+            let children = try PaneContextMessageChildren(
+                database, selection: .message(try uuid(row, "id")), requests: [row], notices: [])
+            return try requestMessage(row, children: children)
         }
         if let row = try Row.fetchOne(
             database, sql: "SELECT * FROM pane_event WHERE pane_id = ? AND message_id = ? AND kind = 'notice'",
             arguments: [paneId.uuidString, messageId.uuid.uuidString])
         {
-            return try noticeMessage(row, database: database)
+            let children = try PaneContextMessageChildren(
+                database, selection: .message(try uuid(row, "id")), requests: [], notices: [row])
+            return try noticeMessage(row, children: children)
         }
         return nil
     }
@@ -25,23 +29,20 @@ extension PaneContextStorage {
         let requests = try Row.fetchAll(
             database, sql: "SELECT * FROM pane_request WHERE pane_id = ? AND display_hidden = 0",
             arguments: [paneId.uuidString]
-        ).map { try requestMessage($0, database: database) }
+        )
         let notices = try Row.fetchAll(
             database, sql: "SELECT * FROM pane_event WHERE pane_id = ? AND kind = 'notice' AND display_hidden = 0",
             arguments: [paneId.uuidString]
-        ).map { try noticeMessage($0, database: database) }
-        return requests + notices
+        )
+        let children = try PaneContextMessageChildren(
+            database, selection: .visiblePane(paneId), requests: requests, notices: notices)
+        return try requests.map { try requestMessage($0, children: children) }
+            + notices.map { try noticeMessage($0, children: children) }
     }
 
-    static func requestMessage(_ row: Row, database: Database) throws -> PaneContextStoredMessage {
+    static func requestMessage(_ row: Row, children: PaneContextMessageChildren) throws -> PaneContextStoredMessage {
         let rowId = try uuid(row, "id")
-        let waitingKind: String = try required(row, "waiting")
-        let waiting: AskWaiting
-        switch waitingKind {
-        case "nonBlocking": waiting = .nonBlocking
-        case "blocking": waiting = .blocking(deadline: try date(row, "deadline"))
-        default: throw PaneContextStorageFailure.decode("waiting")
-        }
+        let waiting = try askWaiting(row)
         return PaneContextStoredMessage(
             rowId: rowId, position: try unsigned(row, "position"),
             detail: AgentMessageDetail(
@@ -49,25 +50,17 @@ extension PaneContextStorage {
                 sourcePaneId: PaneId(existingUUID: try uuid(row, "pane_id")), sender: try sender(row, prefix: "sender"),
                 sentAt: try date(row, "sent_at"), sourceOccurredAt: try optionalDate(row, "source_occurred_at"),
                 importance: try importance(row), body: try required(row, "body"), why: try optional(row, "why"),
-                actions: try loadActions(database, table: "pane_request_action", parentId: rowId),
+                actions: try actions(children.requestActions[rowId] ?? []),
                 shape: .ask(
-                    try reason(row), try form(row, database: database), waiting, try askState(row, database: database))
+                    try reason(row), try form(row, children: children), waiting, try askState(row, children: children))
             ),
             settledAt: try optionalDate(row, "settled_at"), displayHidden: try flag(row, "display_hidden")
         )
     }
 
-    static func noticeMessage(_ row: Row, database: Database) throws -> PaneContextStoredMessage {
+    static func noticeMessage(_ row: Row, children: PaneContextMessageChildren) throws -> PaneContextStoredMessage {
         let rowId = try uuid(row, "id")
-        let stateName: String = try required(row, "notice_state")
-        let state: NoticeState
-        switch stateName {
-        case "unread": state = .unread
-        case "read": state = .read
-        case "dismissed": state = .dismissed
-        case "withdrawn": state = .withdrawn
-        default: throw PaneContextStorageFailure.decode("notice_state")
-        }
+        let state = try noticeState(row)
         return PaneContextStoredMessage(
             rowId: rowId, position: try unsigned(row, "position"),
             detail: AgentMessageDetail(
@@ -75,7 +68,7 @@ extension PaneContextStorage {
                 sourcePaneId: PaneId(existingUUID: try uuid(row, "pane_id")), sender: try sender(row, prefix: "sender"),
                 sentAt: try date(row, "sent_at"), sourceOccurredAt: try optionalDate(row, "source_occurred_at"),
                 importance: try importance(row), body: try required(row, "body"), why: try optional(row, "why"),
-                actions: try loadActions(database, table: "pane_event_action", parentId: rowId), shape: .notice(state)
+                actions: try actions(children.noticeActions[rowId] ?? []), shape: .notice(state)
             ),
             settledAt: try optionalDate(row, "settled_at"), displayHidden: try flag(row, "display_hidden")
         )
