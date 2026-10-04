@@ -52,7 +52,7 @@ struct BridgeProductHeldProviderStallTests {
     func cancelledSchemeResultReadPreservesSettlement() async throws {
         let (registrations, registrationContinuation) = AsyncStream.makeStream(
             of: String.self,
-            bufferingPolicy: .bufferingNewest(2)
+            bufferingPolicy: .unbounded
         )
         defer { registrationContinuation.finish() }
         let harness = try HeldProviderSessionHarness.make(
