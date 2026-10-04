@@ -106,24 +106,32 @@ struct PaneCLICommandRunner: Sendable {
             parameters: IPCPaneMessageChangesParams(
                 handle: "self", writer: writer, after: position, correlationId: correlationID),
             descriptors: descriptors)
-        let complete = try client.withAuthenticatedExchange(first: first) { exchange in
-            var entries: [IPCPaneMessageChangeEntry] = []
-            var request = first
-            while true {
-                let response = try result(exchange.call(request))
-                let page = try JSONDecoder().decode(IPCPaneMessageChangesResult.self, from: response)
-                entries.append(contentsOf: page.entries)
-                position = page.nextPosition
-                guard page.more else {
-                    return IPCPaneMessageChangesResult(entries: entries, nextPosition: position, more: false)
+        var entries: [IPCPaneMessageChangeEntry] = []
+        var didReceivePage = false
+        let complete: IPCPaneMessageChangesResult
+        do {
+            complete = try client.withAuthenticatedExchange(first: first) { exchange in
+                var request = first
+                while true {
+                    let response = try result(exchange.call(request))
+                    let page = try JSONDecoder().decode(IPCPaneMessageChangesResult.self, from: response)
+                    entries.append(contentsOf: page.entries)
+                    position = page.nextPosition
+                    didReceivePage = true
+                    guard page.more else {
+                        return IPCPaneMessageChangesResult(entries: entries, nextPosition: position, more: false)
+                    }
+                    request = try invocation(
+                        "pane.message.changes",
+                        parameters: IPCPaneMessageChangesParams(
+                            handle: "self", writer: writer, after: position,
+                            correlationId: props.identifierGenerator()),
+                        descriptors: descriptors)
                 }
-                request = try invocation(
-                    "pane.message.changes",
-                    parameters: IPCPaneMessageChangesParams(
-                        handle: "self", writer: writer, after: position,
-                        correlationId: props.identifierGenerator()),
-                    descriptors: descriptors)
             }
+        } catch {
+            guard didReceivePage else { throw error }
+            complete = IPCPaneMessageChangesResult(entries: entries, nextPosition: position, more: true)
         }
         try write(JSONEncoder().encode(complete))
         if let key, let store, let next = Int64(exactly: complete.nextPosition) {
@@ -131,6 +139,7 @@ struct PaneCLICommandRunner: Sendable {
                 CLIDiagnostics.record(.storeUnavailable)
             }
         }
+        if complete.more { props.standardErrorSink("answers interrupted; read again") }
     }
 
     private func orderedWrite(
