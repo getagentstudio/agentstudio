@@ -37,6 +37,33 @@ struct ProviderPermissionHookProjectionTests {
         #expect(CLIPolicy.permissionHookTimeoutSeconds == CLIPolicy.permissionApprovalWindow / .seconds(1) + 5)
     }
 
+    @Test("Permission approval projection carries the blocking session event")
+    func permissionApprovalCarriesBlockingSessionEvent() throws {
+        let sourceOccurredAt = Date(timeIntervalSince1970: 1_700_000_123)
+        let correlationId = UUID(uuidString: "01994d31-0000-7000-8000-000000000011")!
+        guard
+            case .approval(let request) = try ProviderPermissionHookProjection.project(
+                provider: .claude,
+                payload: RecordedClaudeStatusTrace.data("PermissionRequest"),
+                sourceOccurredAt: sourceOccurredAt,
+                providerVersion: "2.1.286",
+                correlationIdentifier: correlationId,
+                freshOccurrenceIdentifier: { correlationId })
+        else {
+            Issue.record("Recorded permission did not project an approval")
+            return
+        }
+
+        #expect(request.sessionEvent.permissionHandling == .blockingAsk)
+        #expect(request.sessionEvent.provider.identifier == "claude-code")
+        #expect(request.sessionEvent.provider.version == "2.1.286")
+        #expect(request.sessionEvent.event.name == .permission)
+        #expect(request.sessionEvent.event.conversationId == request.conversationId)
+        #expect(request.sessionEvent.event.sourceOccurredAt == sourceOccurredAt)
+        #expect(request.sessionEvent.event.toolName == "Read")
+        #expect(request.sessionEvent.correlationId == correlationId)
+    }
+
     @Test("Codex installation selects wait only for permission and derives its ceiling")
     func codexInstallationSelectsWaitingPolicy() throws {
         for event in CodexHookEventName.installedEvents {

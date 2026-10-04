@@ -14,6 +14,70 @@ import Testing
 
 @Suite("Provider permission hook real socket and person actions", .serialized)
 struct ProviderPermissionHookIntegrationTests {
+    @Test(
+        "Installed permission hook publishes blocking activity before the ask without a provider prompt",
+        arguments: PermissionHookTestProvider.allCases)
+    func installedHookPublishesBlockingActivity(provider: PermissionHookTestProvider) async throws {
+        try await withPermissionHookTestContext(provider: provider, liveSessions: true) { context in
+            let recorder = try context.domain.facts.attach()
+            let pending = context.startHook()
+            let first = try await recorder.expectNext(
+                in: context.domain.paneId,
+                where: { fact in
+                    fact == .activityPublished || fact == .openAskCount(1)
+                },
+                "activity publication or open permission ask")
+            switch first {
+            case .activityPublished:
+                try await recorder.expectNext(in: context.domain.paneId, .openAskCount(1))
+            case .openAskCount(1):
+                try await recorder.expectNext(in: context.domain.paneId, .activityPublished)
+            default:
+                Issue.record("Unexpected first permission hook fact: \(first)")
+            }
+            let message = try await context.openApproval()
+            let detail = await context.uiAdapter.readDetail(.init(paneId: context.paneId, page: .first))
+            guard case .detail(let detail) = detail else {
+                Issue.record("Blocking permission detail was unavailable")
+                return
+            }
+            #expect(detail.session?.providerPrompts.isEmpty == true)
+            #expect(detail.messages.contains { $0.id == message.id })
+            #expect(
+                await context.uiAdapter.answer(
+                    .init(
+                        messageId: message.id, paneId: context.paneId, by: .localUser,
+                        value: .choices([try AskChoiceId("Deny")]))) == .answered)
+            try await recorder.expectNext(in: context.domain.paneId, .openAskCount(0))
+            try await recorder.expectNext(in: context.domain.paneId, .clientExited)
+            #expect(try context.decision(in: await pending.value)?.behavior == "deny")
+            try await recorder.finish()
+        }
+    }
+
+    @Test(
+        "A failed blocking activity event does not gate the permission ask",
+        arguments: PermissionHookTestProvider.allCases)
+    func failedActivityEventDoesNotGateAsk(provider: PermissionHookTestProvider) async throws {
+        try await withPermissionHookTestContext(provider: provider) { context in
+            let recorder = try context.domain.facts.attach()
+            let eventRecorder = FailingPermissionEventDelivery()
+            let pending = context.startHook(eventDelivery: eventRecorder.delivery)
+            try await recorder.expectNext(in: context.domain.paneId, .openAskCount(1))
+            let message = try await context.openApproval()
+            #expect(eventRecorder.permissionHandling == .blockingAsk)
+            #expect(
+                await context.uiAdapter.answer(
+                    .init(
+                        messageId: message.id, paneId: context.paneId, by: .localUser,
+                        value: .choices([try AskChoiceId("Deny")]))) == .answered)
+            try await recorder.expectNext(in: context.domain.paneId, .openAskCount(0))
+            try await recorder.expectNext(in: context.domain.paneId, .clientExited)
+            #expect(try context.decision(in: await pending.value)?.behavior == "deny")
+            try await recorder.finish()
+        }
+    }
+
     @Test("Human Allow, Deny and Ask reach the waiting provider hook", arguments: PermissionHookTestProvider.allCases)
     func personDecisionsReachHook(provider: PermissionHookTestProvider) async throws {
         try await withPermissionHookTestContext(provider: provider) { context in
@@ -151,6 +215,24 @@ struct ProviderPermissionHookIntegrationTests {
 }
 
 private struct PermissionHookStorageTestFailure: Error {}
+
+private struct PermissionHookEventSendFailure: Error {}
+
+private final class FailingPermissionEventDelivery: @unchecked Sendable {
+    private let lock = NSLock()
+    private var permissionHandlingStorage: IPCSessionPermissionHandling?
+
+    var permissionHandling: IPCSessionPermissionHandling? {
+        lock.withLock { permissionHandlingStorage }
+    }
+
+    var delivery: ProviderHookDelivery {
+        ProviderHookDelivery { [self] params, _ in
+            lock.withLock { permissionHandlingStorage = params.permissionHandling }
+            throw PermissionHookEventSendFailure()
+        }
+    }
+}
 
 struct PermissionHookDecisionValue: Decodable {
     let behavior: String

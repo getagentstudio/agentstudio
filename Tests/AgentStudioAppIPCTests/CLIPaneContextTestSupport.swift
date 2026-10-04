@@ -170,6 +170,7 @@ struct S5PaneCLIContext: Sendable {
 }
 
 func withS5PaneCLIContext<Output: Sendable>(
+    liveSessions: Bool = false,
     dropFirstClaimReply: Bool = false, orderedWriteProof: S5OrderedWriteProof? = nil,
     heldReply: (id: JSONRPCIdentifier, step: HeldStep<Data>)? = nil, heldRead: HeldStep<Void>? = nil,
     changesPageSize: Int? = nil,
@@ -178,6 +179,7 @@ func withS5PaneCLIContext<Output: Sendable>(
     let executableURL = try cliExecutableURL()
     let output = try await withPaneContextIPCDomain { domain in
         let writer = try await domain.bind()
+        if liveSessions { await domain.activityClock.start() }
         let port = S5RecordingPaneContextPort(
             base: domain.adapter(), dropFirstClaimReply: dropFirstClaimReply, orderedWriteProof: orderedWriteProof,
             changesPageSize: changesPageSize)
@@ -185,7 +187,9 @@ func withS5PaneCLIContext<Output: Sendable>(
         return try await withLiveServer(
             makeFixture: {
                 try LiveServerFixture(
-                    channel: .debug, panes: [makePaneSummary(id: domain.paneId, ordinal: 1)], paneContextPort: port,
+                    channel: .debug, panes: [makePaneSummary(id: domain.paneId, ordinal: 1)],
+                    sessionsPort: liveSessions ? domain.sessionsAdapter() : RecordingSessionsPort(),
+                    paneContextPort: port,
                     makeConnectionIO: { connection in
                         port.wire.recordConnection()
                         let frames = S5CLIFrameRecorder(wire: port.wire)
@@ -236,6 +240,35 @@ func withS5PaneCLIContext<Output: Sendable>(
     }
     if let proof = orderedWriteProof { proof.facts.sink(proof.scope, .fixtureClosed) }
     return output
+}
+
+extension PaneContextIPCDomainCompanion {
+    func sessionsAdapter() -> AgentStudioIPCSessionsAdapter {
+        AgentStudioIPCSessionsAdapter(
+            ingestion: ingestion,
+            providerRegistry: .init(
+                profiles: [
+                    .init(
+                        providerIdentifier: ClaudeCodeProviderIdentity.identifier,
+                        exactVersion: ClaudeCodeProviderIdentity.supportedExactVersion,
+                        operatingMode: ClaudeCodeProviderIdentity.operatingMode,
+                        qualifiedCapabilities: [
+                            .sessionStart, .sessionEnd, .turnStart, .turnDone, .turnAbort, .turnFailed,
+                            .permission, .question, .elicitation, .elicitationResult, .toolCompleted,
+                            .toolFailed, .toolActivity, .subagentActivity,
+                        ]),
+                    .init(
+                        providerIdentifier: CodexHookProjection.providerIdentifier,
+                        exactVersion: CodexHookProjection.defaultProviderVersion,
+                        operatingMode: CodexHookProjection.providerMode,
+                        qualifiedCapabilities: [
+                            .sessionStart, .sessionEnd, .turnStart, .turnDone, .turnAbort, .turnFailed,
+                            .permission, .question, .elicitation, .elicitationResult, .toolCompleted,
+                            .toolFailed, .toolActivity, .subagentActivity,
+                        ]),
+                ]),
+            now: { self.time.now }, activityClock: self.activityClock)
+    }
 }
 
 final class S5CLIClientOwner: @unchecked Sendable {

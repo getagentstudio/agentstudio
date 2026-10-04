@@ -7,7 +7,7 @@ import Synchronization
 package enum ProviderPermissionHookInvocation {
     package static func handle(
         props: AgentStudioIPCClientCommandLineRunner.Props, sourceOccurredAt: Date,
-        startedAt: ContinuousClock.Instant
+        startedAt: ContinuousClock.Instant, eventDelivery: ProviderHookDelivery? = nil
     ) -> Int32? {
         guard props.arguments.count >= 3, props.arguments[0] == "hook",
             let provider = ProviderPermissionHookProvider(rawValue: props.arguments[1]),
@@ -19,7 +19,14 @@ package enum ProviderPermissionHookInvocation {
         else { return 0 }
         do {
             let payload = props.standardInput()
-            switch try ProviderPermissionHookProjection.project(provider: provider, payload: payload) {
+            switch try ProviderPermissionHookProjection.project(
+                provider: provider,
+                payload: payload,
+                sourceOccurredAt: sourceOccurredAt,
+                providerVersion: providerVersion(provider: provider, arguments: props.arguments),
+                correlationIdentifier: props.identifierGenerator(),
+                freshOccurrenceIdentifier: props.identifierGenerator)
+            {
             case .readOnlyQuestion:
                 return ClaudeCodeHookInvocation.handle(
                     .init(
@@ -28,7 +35,9 @@ package enum ProviderPermissionHookInvocation {
                         identifierGenerator: props.identifierGenerator,
                         diagnosticSink: { _ in CLIDiagnostics.record(.providerHookFailed) })) ?? 0
             case .approval(let request):
-                try waitForDecision(request, props: props, sourceOccurredAt: sourceOccurredAt, startedAt: startedAt)
+                try waitForDecision(
+                    request, props: props, sourceOccurredAt: sourceOccurredAt, startedAt: startedAt,
+                    eventDelivery: eventDelivery)
             }
         } catch {
             CLIDiagnostics.record(.providerHookFailed)
@@ -38,8 +47,22 @@ package enum ProviderPermissionHookInvocation {
 
     private static func waitForDecision(
         _ request: ProviderPermissionHookRequest, props: AgentStudioIPCClientCommandLineRunner.Props,
-        sourceOccurredAt: Date, startedAt: ContinuousClock.Instant
+        sourceOccurredAt: Date, startedAt: ContinuousClock.Instant, eventDelivery: ProviderHookDelivery?
     ) throws {
+        let deadline = CallDeadline(limit: CLIPolicy.permissionCallLimit, startedAt: startedAt)
+        do {
+            let delivery =
+                eventDelivery
+                ?? ProviderHookDelivery.liveIPC(
+                    exampleIdentifierProvider: props.identifierGenerator, environment: props.environment)
+            try delivery.deliver(
+                request.sessionEvent,
+                try paneConfiguration(environment: props.environment))
+        } catch {
+            // Activity is best effort. The approval ask must still receive the full
+            // remaining portion of the shared permission-call deadline.
+            CLIDiagnostics.record(.providerHookFailed)
+        }
         let resultText = Mutex<String?>(nil)
         let environment = request.writerEnvironment(props.environment)
         let askProps = AgentStudioIPCClientCommandLineRunner.Props(
@@ -51,7 +74,6 @@ package enum ProviderPermissionHookInvocation {
         let global = try AgentStudioIPCClientArguments.parseGlobal(
             askProps.arguments, environment: environment, standardInputProvider: askProps.standardInput)
         let intent = try PaneCLIIntent.parse(askProps.arguments, now: sourceOccurredAt)
-        let deadline = CallDeadline(limit: CLIPolicy.permissionCallLimit, startedAt: startedAt)
         try PaneCLICommandRunner(props: askProps, global: global, deadline: deadline, totalDeadline: deadline).run(
             intent)
         guard deadline.remainingBudget > .zero, let text = resultText.withLock({ $0 }) else { return }
@@ -59,5 +81,30 @@ package enum ProviderPermissionHookInvocation {
         if let decision = try ProviderPermissionHookDecision.json(for: outcome) {
             props.standardOutputSink(decision)
         }
+    }
+
+    private static func paneConfiguration(
+        environment: [String: String]
+    ) throws -> AgentStudioIPCClientConfiguration {
+        guard let token = environment["AGENTSTUDIO_PANE_TOKEN"], !token.isEmpty,
+            let socketPath = environment["AGENTSTUDIO_IPC_SOCKET"], !socketPath.isEmpty
+        else {
+            throw ProviderHookFailure.methodUnavailable
+        }
+        return AgentStudioIPCClientConfiguration(socketPath: socketPath, authToken: token)
+    }
+
+    private static func providerVersion(
+        provider: ProviderPermissionHookProvider, arguments: [String]
+    ) -> String? {
+        guard provider == .claude,
+            let flagIndex = arguments.firstIndex(of: "--provider-version"),
+            let valueIndex = arguments.index(
+                flagIndex, offsetBy: 1, limitedBy: arguments.index(before: arguments.endIndex))
+        else {
+            return nil
+        }
+        let value = arguments[valueIndex]
+        return value.isEmpty ? nil : value
     }
 }

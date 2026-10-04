@@ -17,7 +17,7 @@ enum PermissionHookTestProvider: String, CaseIterable, Sendable {
     case codex
 
     var identifier: String { self == .claude ? "claude-code" : "codex" }
-    var version: String { self == .claude ? "2.1.286" : "0.159.2" }
+    var version: String { self == .claude ? "2.1.286" : "0.154.0" }
 }
 
 enum PermissionHookTestFailure: CaseIterable {
@@ -70,7 +70,10 @@ struct PermissionHookTestContext: Sendable {
         return value.hookSpecificOutput.decision
     }
 
-    func startHook(failure: PermissionHookTestFailure? = nil) -> Task<ClientCommandLineOutcome, Never> {
+    func startHook(
+        failure: PermissionHookTestFailure? = nil,
+        eventDelivery: ProviderHookDelivery? = nil
+    ) -> Task<ClientCommandLineOutcome, Never> {
         var environment = cli.callEnvironment(store: nil, useStore: false)
         // Both ambient identities intentionally disagree with the hook document.
         environment["CLAUDE_CODE_SESSION_ID"] = "inherited-claude"
@@ -85,13 +88,21 @@ struct PermissionHookTestContext: Sendable {
         let task = Task {
             let output = await valueFromDedicatedThread {
                 let collector = PermissionHookOutputCollector()
-                let status = AgentStudioIPCClientCommandLineRunner.run(
-                    props: .init(
-                        arguments: callArguments, environment: callEnvironment,
-                        executablePath: cli.executableURL.path, bundleExecutableURL: nil,
-                        standardInput: { input }, identifierGenerator: { UUIDv7.generate() },
-                        standardOutputSink: collector.appendOutput, standardErrorSink: collector.appendError,
-                        now: { domain.time.now }))
+                let props = AgentStudioIPCClientCommandLineRunner.Props(
+                    arguments: callArguments, environment: callEnvironment,
+                    executablePath: cli.executableURL.path, bundleExecutableURL: nil,
+                    standardInput: { input }, identifierGenerator: { UUIDv7.generate() },
+                    standardOutputSink: collector.appendOutput, standardErrorSink: collector.appendError,
+                    now: { domain.time.now })
+                let status: Int32
+                if let eventDelivery {
+                    status =
+                        ProviderPermissionHookInvocation.handle(
+                            props: props, sourceOccurredAt: domain.time.now, startedAt: ContinuousClock.now,
+                            eventDelivery: eventDelivery) ?? 0
+                } else {
+                    status = AgentStudioIPCClientCommandLineRunner.run(props: props)
+                }
                 return collector.outcome(status)
             }
             domain.facts.sink(domain.paneId, .clientExited)
@@ -104,9 +115,10 @@ struct PermissionHookTestContext: Sendable {
 
 func withPermissionHookTestContext(
     provider: PermissionHookTestProvider,
+    liveSessions: Bool = false,
     _ body: (PermissionHookTestContext) async throws -> Void
 ) async throws {
-    try await withS5PaneCLIContext { cli in
+    try await withS5PaneCLIContext(liveSessions: liveSessions) { cli in
         let conversationId = UUIDv7.generate().uuidString
         _ = try await cli.domain.bind(
             conversationId: conversationId,

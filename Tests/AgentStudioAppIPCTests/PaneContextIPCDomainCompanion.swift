@@ -28,6 +28,7 @@ final class PaneContextIPCDomainCompanion: Sendable {
     let ingestion: SessionsIngestion
     let sessionsSQLiteAccess: WorkspaceSessionsSQLiteAccess
     let sessionsBridge = PaneContextSessionsBridge()
+    let activityClock: PaneActivityClock
     let facts: LocalFactSource<UUID, PaneContextIPCDomainFact>
 
     init() throws {
@@ -69,12 +70,16 @@ final class PaneContextIPCDomainCompanion: Sendable {
                 isClosing: { _, fact in
                     switch fact {
                     case .joined, .requestRefused: true
-                    case .openAskCount, .writeAdmissionReached, .clientExited: false
+                    case .openAskCount, .activityPublished, .writeAdmissionReached, .clientExited: false
                     }
                 }))
-        membership.addPane(PaneId(existingUUID: paneId))
         let facts = facts
         let paneId = paneId
+        activityClock = PaneActivityClock(publishInterval: .zero) { batch in
+            guard !batch.isEmpty else { return }
+            facts.sink(paneId, .activityPublished)
+        }
+        membership.addPane(PaneId(existingUUID: paneId))
         let sessionsBridge = sessionsBridge
         service = PaneContextService(
             sqliteAccess: access, clock: clock, wallNow: { [time] in time.now }, membership: membership,
@@ -202,6 +207,7 @@ final class PaneContextIPCDomainCompanion: Sendable {
         access.releaseHeldWork()
         await service.stop()
         await ingestion.finish()
+        await activityClock.shutdown()
         try await withoutBlockingCooperativePool { [corePool, localPool, rootURL] in
             try corePool.close()
             try localPool.close()
@@ -226,6 +232,7 @@ func withPaneContextIPCDomain<Output>(
 
 enum PaneContextIPCDomainFact: Equatable, Sendable {
     case openAskCount(Int)
+    case activityPublished
     case writeAdmissionReached
     case clientExited
     case requestRefused(requestId: JSONRPCIdentifier, reason: String?)
