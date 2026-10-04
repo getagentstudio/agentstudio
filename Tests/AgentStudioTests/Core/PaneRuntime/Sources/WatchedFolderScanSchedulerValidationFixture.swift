@@ -1,0 +1,211 @@
+import AgentStudioInfrastructure
+import AgentStudioTestHarness
+import AgentStudioTestSupport
+import Foundation
+import Testing
+
+@testable import AgentStudioCore
+
+actor ControlledSchedulerValidationClient: RepoDiscoveryReadClient {
+    private struct PendingValidation {
+        let candidateURL: URL
+        let continuation: CheckedContinuation<GitRepositoryDiscoveryOutcome, Never>
+    }
+
+    private var terminalOutcome: GitRepositoryDiscoveryOutcome?
+    private var pendingValidations: [PendingValidation] = []
+    private var bufferedCandidates: [URL] = []
+    private var candidateWaiters: [CheckedContinuation<URL, Never>] = []
+
+    var pendingValidationCount: Int { pendingValidations.count }
+
+    func validateDiscoveryCandidate(at candidateURL: URL) async -> GitRepositoryDiscoveryOutcome {
+        if let terminalOutcome { return terminalOutcome }
+        return await withCheckedContinuation { continuation in
+            pendingValidations.append(
+                PendingValidation(candidateURL: candidateURL, continuation: continuation)
+            )
+            if candidateWaiters.isEmpty {
+                bufferedCandidates.append(candidateURL)
+            } else {
+                candidateWaiters.removeFirst().resume(returning: candidateURL)
+            }
+        }
+    }
+
+    func completePendingAndStop() {
+        terminalOutcome = .cancelled
+        let pending = pendingValidations
+        pendingValidations.removeAll()
+        for validation in pending { validation.continuation.resume(returning: .cancelled) }
+    }
+
+    func nextCandidate() async -> URL {
+        if !bufferedCandidates.isEmpty { return bufferedCandidates.removeFirst() }
+        return await withCheckedContinuation { candidateWaiters.append($0) }
+    }
+
+    func complete(_ candidateURL: URL, with outcome: GitRepositoryDiscoveryOutcome) {
+        guard let index = pendingValidations.firstIndex(where: { $0.candidateURL == candidateURL })
+        else {
+            Issue.record("expected pending validation for candidate")
+            return
+        }
+        pendingValidations.remove(at: index).continuation.resume(returning: outcome)
+    }
+}
+
+struct InertSchedulerValidationDeadline: RepoDiscoveryDeadlineScheduler {
+    func scheduleDeadline(
+        after duration: Duration,
+        _ handler: @escaping @Sendable () -> Void
+    ) -> RepoDiscoveryScheduledDeadline {
+        RepoDiscoveryScheduledDeadline(cancel: {})
+    }
+}
+
+struct ValidationSchedulerFixture {
+    let validationClient = ControlledSchedulerValidationClient()
+    let consumer = WatchedFolderScanResultConsumerToken.make()
+    let scheduler: WatchedFolderScanScheduler
+    let validationFacts: LocalFactSource<WatchedFolderScanValidationScope, WatchedFolderScanSchedulerFact>
+    let facts: FactRecorder<WatchedFolderScanValidationScope, WatchedFolderScanSchedulerFact>
+
+    init(
+        maximumConcurrentScans: Int,
+        validationBudget: RepoDiscoveryValidationBudget = .productionDefault,
+        validationAdmissionAdapter: (
+            @Sendable (RepoScannerValidationExecutor, RepoDiscoveryValidationRequest) async ->
+                RepoDiscoveryValidationAdmissionResult
+        )? = nil,
+        validationCompletionSink: (@Sendable (FSEventRegistrationToken, GitRepositoryDiscoveryOutcome) -> Void)? = nil
+    ) throws {
+        let validationClient = self.validationClient
+        let validationFacts = LocalFactSource<WatchedFolderScanValidationScope, WatchedFolderScanSchedulerFact>(
+            vocabulary: FactVocabulary(
+                describeScope: { String(describing: $0) },
+                describeFact: { String(describing: $0) },
+                isClosing: { _, fact in
+                    if case .validationSettled = fact { return true }
+                    return false
+                }
+            )
+        )
+        self.validationFacts = validationFacts
+        facts = try validationFacts.attach()
+        let executor = try RepoScannerValidationExecutor(
+            validationClient: validationClient,
+            deadlineScheduler: InertSchedulerValidationDeadline(),
+            budget: validationBudget
+        )
+        scheduler = try WatchedFolderScanScheduler(
+            maximumConcurrentScans: maximumConcurrentScans,
+            now: { .zero },
+            validationExecutor: executor,
+            factSink: validationFacts.sink,
+            validationAdmissionSubmitter: { request in
+                if let validationAdmissionAdapter {
+                    return await validationAdmissionAdapter(executor, request)
+                }
+                return await executor.submit(request)
+            },
+            sessionFactory: { request, _ in
+                let rootURL = URL(
+                    fileURLWithPath: request.canonicalRoot.aliases.onceResolvedCanonical.path,
+                    isDirectory: true
+                )
+                let scannerPort = RepoScanner().makeSession(
+                    in: rootURL,
+                    serviceClock: TestPushClock()
+                )
+                return WatchedFolderScannerSessionPort(
+                    id: scannerPort.id,
+                    advanceOneQuantum: scannerPort.advanceOneQuantum,
+                    cancel: scannerPort.cancel,
+                    consumeValidationCompletion: { completion in
+                        validationCompletionSink?(request.canonicalRoot.registration, completion.outcome)
+                        return scannerPort.consumeValidationCompletion(completion)
+                    }
+                )
+            }
+        )
+    }
+
+    func expectParkedValidation(
+        for request: WatchedFolderScanRequest, scanRunGeneration: UInt64
+    ) async throws -> WatchedFolderScanValidationScope {
+        let scope = try await facts.expectNextOperation(
+            matching: {
+                $0.registration == request.canonicalRoot.registration
+                    && $0.scanRunGeneration == scanRunGeneration
+            },
+            opening: { $0 == .validationParked },
+            "replacement validation parked waiting for stale physical drain"
+        )
+        try await facts.expectNext(in: scope, .validationParked)
+        return scope
+    }
+
+    func makeRequest(
+        name: String,
+        containsGitMarker: Bool,
+        sourceID: FilesystemSourceID? = nil,
+        registrationGeneration: UInt64 = 1,
+        rootURL: URL? = nil
+    ) throws -> WatchedFolderScanRequest {
+        let rootURL =
+            rootURL
+            ?? FileManager.default.temporaryDirectory.appending(
+                path: "scheduler-validation-\(name)-\(UUIDv7.generate())",
+                directoryHint: .isDirectory
+            )
+        try FileManager.default.createDirectory(at: rootURL, withIntermediateDirectories: true)
+        if containsGitMarker {
+            try FileManager.default.createDirectory(
+                at: rootURL.appending(path: ".git", directoryHint: .isDirectory),
+                withIntermediateDirectories: true
+            )
+        }
+        let sourceID =
+            sourceID
+            ?? FilesystemSourceID(kind: .watchedParentMembership, rootID: UUIDv7.generate())
+        let descriptor = try FilesystemSourceConfiguration.registerRoot(
+            from: .hostAuthorized(
+                FilesystemHostAuthorizedRootInput(
+                    registration: FSEventRegistrationToken(
+                        sourceID: sourceID,
+                        registrationGeneration: registrationGeneration,
+                        rootGeneration: 1
+                    ),
+                    authorizedBoundary: rootURL,
+                    registeredRoot: rootURL
+                )
+            )
+        )
+        return WatchedFolderScanRequest(canonicalRoot: descriptor, cause: .manual)
+    }
+
+    func nextLease() async throws -> WatchedFolderScanResultLease {
+        _ = await scheduler.bindResultConsumer(consumer)
+        guard case .leased(let lease) = await scheduler.nextResultLease(for: consumer) else {
+            Issue.record("expected scheduled result lease")
+            throw ValidationSchedulerTestError.expectedLease
+        }
+        return lease
+    }
+
+    func transfer(
+        _ lease: WatchedFolderScanResultLease
+    ) async -> WatchedFolderScanResultLeaseResolutionResult {
+        await scheduler.resolveResultLease(
+            for: consumer,
+            leaseID: lease.leaseID,
+            resolution: .transferred
+        )
+    }
+
+}
+
+enum ValidationSchedulerTestError: Error {
+    case expectedLease
+}

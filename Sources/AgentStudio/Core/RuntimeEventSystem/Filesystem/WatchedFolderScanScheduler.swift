@@ -5,6 +5,10 @@ package actor WatchedFolderScanScheduler {
     typealias SessionFactory =
         @Sendable (WatchedFolderScanRequest, UInt64) async -> WatchedFolderScannerSessionPort
 
+    package typealias ValidationAdmissionSubmitter =
+        @Sendable (RepoDiscoveryValidationRequest) async -> RepoDiscoveryValidationAdmissionResult
+
+    let validationAdmissionSubmitter: ValidationAdmissionSubmitter
     private let maximumConcurrentScans: Int
     let now: @Sendable () -> Duration
     private let sessionFactory: SessionFactory
@@ -37,6 +41,7 @@ package actor WatchedFolderScanScheduler {
         now: @escaping @Sendable () -> Duration,
         validationExecutor: RepoScannerValidationExecutor,
         factSink: WatchedFolderScanSchedulerFactSink? = nil,
+        validationAdmissionSubmitter: ValidationAdmissionSubmitter? = nil,
         sessionFactory: @escaping SessionFactory
     ) throws {
         guard maximumConcurrentScans > 0 else {
@@ -50,6 +55,10 @@ package actor WatchedFolderScanScheduler {
         self.now = now
         self.validationExecutor = validationExecutor
         self.factSink = factSink
+        self.validationAdmissionSubmitter =
+            validationAdmissionSubmitter ?? { request in
+                await validationExecutor.submit(request)
+            }
         self.sessionFactory = sessionFactory
     }
 

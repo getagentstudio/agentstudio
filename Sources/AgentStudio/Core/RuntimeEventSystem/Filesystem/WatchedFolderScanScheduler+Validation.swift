@@ -64,7 +64,7 @@ extension WatchedFolderScanScheduler {
             consumeSyntheticValidationOutcome(.cancelled, awaiting: awaiting)
             return
         }
-        let admission = await validationExecutor.submit(awaiting.executorRequest)
+        let admission = await validationAdmissionSubmitter(awaiting.executorRequest)
         if case .rejected(.allPhysicalJobsDraining) = admission {
             // This is the only rejection that retains scheduler custody for resubmission.
         } else {
@@ -134,7 +134,7 @@ extension WatchedFolderScanScheduler {
         }
     }
 
-    private func receiveValidationCompletion(
+    func receiveValidationCompletion(
         _ executorCompletion: RepoDiscoveryValidationCompletion
     ) {
         let executorRequest = executorCompletion.schedulerRequest
@@ -146,6 +146,15 @@ extension WatchedFolderScanScheduler {
         guard let awaiting = awaitingValidation(from: state) else {
             recordStaleScanRunDrop(sourceID: sourceID)
             return
+        }
+        if awaiting.executorRequest == executorRequest {
+            let settlement: WatchedFolderScanValidationSettlement
+            switch executorCompletion {
+            case .finished: settlement = .finished
+            case .timedOut: settlement = .timedOut
+            case .cancelled: settlement = .cancelled
+            }
+            factSink?(awaiting.validationScope, .validationSettled(settlement))
         }
         guard awaiting.executorRequest == executorRequest,
             awaiting.scannerRequest.requestID.rawValue == executorRequest.requestID.rawValue,
