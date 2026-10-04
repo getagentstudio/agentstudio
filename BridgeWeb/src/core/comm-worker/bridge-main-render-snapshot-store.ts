@@ -488,6 +488,9 @@ export function createBridgeMainRenderSnapshotStore(
 		},
 		prepareForWorkerReplacement: (): void => {
 			if (isDisposed) return;
+			for (const itemId of Object.keys(snapshot.codeViewItemsById)) {
+				pendingReviewPaintReleaseItemIds.add(itemId);
+			}
 			publishBridgeMainListeners(workerReplacementListeners);
 			discardReviewCandidate();
 			if (reviewCandidateBankOwner.clearFailure()) publishReviewRefreshPresentation();
