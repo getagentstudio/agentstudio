@@ -1,3 +1,4 @@
+import AgentStudioIPCTransport
 import AgentStudioProgrammaticControl
 import Foundation
 
@@ -5,12 +6,14 @@ import Foundation
 /// process, named so tests drive it without a process.
 package struct ClaudeCodeHookInvocationInputs {
     package let arguments: [String]
+    package let sourceOccurredAt: Date
     package let environment: [String: String]
     package let standardInput: () throws -> Data
     package let identifierGenerator: () -> UUID
     package let diagnosticSink: (String) -> Void
 
     package init(
+        sourceOccurredAt: Date,
         arguments: [String],
         environment: [String: String],
         standardInput: @escaping () throws -> Data,
@@ -18,6 +21,7 @@ package struct ClaudeCodeHookInvocationInputs {
         diagnosticSink: @escaping (String) -> Void
     ) {
         self.arguments = arguments
+        self.sourceOccurredAt = sourceOccurredAt
         self.environment = environment
         self.standardInput = standardInput
         self.identifierGenerator = identifierGenerator
@@ -32,7 +36,7 @@ package struct ClaudeCodeHookInvocationInputs {
 /// leaves stdout empty, because Claude Code parses hook stdout as a decision
 /// document and treats a non-zero exit as a hook failure the user sees. Every
 /// refusal, missing credential and transport failure is therefore a silent
-/// success here, at most one line on stderr and never any payload content.
+/// success here. Diagnostics go only to the CLI's private log.
 package enum ClaudeCodeHookInvocation {
     package static let commandPrefix = ["hook", "claude"]
 
@@ -68,6 +72,7 @@ package enum ClaudeCodeHookInvocation {
                 ClaudeCodeHookPayload.self, from: try inputs.standardInput()
             )
             let outcome = ClaudeCodeHookProjection.project(
+                sourceOccurredAt: inputs.sourceOccurredAt,
                 announcedEvent: announcedEvent,
                 payload: payload,
                 providerVersion: providerVersion,
@@ -82,6 +87,7 @@ package enum ClaudeCodeHookInvocation {
     }
 
     private static func send(params: IPCSessionEventParams, environment: [String: String]) throws {
+        let deadline = CallDeadline(limit: CLIPolicy.hookCallLimit)
         let configuration = AgentStudioIPCClientConfiguration(
             socketPath: try AgentStudioIPCClientDiscovery.socketPath(
                 explicitSocketPath: nil, environment: environment, metadataURL: nil
@@ -89,17 +95,17 @@ package enum ClaudeCodeHookInvocation {
             authToken: environment["AGENTSTUDIO_PANE_TOKEN"]
         )
         let examples = IPCBuiltInMethodExampleContext(illustrativeIdentifier: params.correlationId)
-        let bootstrap = try IPCBuiltInMethodCatalog.bootstrapDescriptors(examples: examples)
-        // A hook fires several times a turn under a short provider timeout, so
-        // it resolves session.event from its own compiled contract rather than
-        // fetching the whole catalog first.
-        let descriptors = try IPCBuiltInMethodCatalog.locallyResolvableDescriptors(examples: examples)
+        let descriptors = try IPCCompiledInvocationResolver().resolve(
+            arguments: ["session.event"], authenticated: configuration.authToken != nil,
+            inputs: .init(examples: examples))
         guard let descriptor = descriptors.first(where: { $0.metadata.name == "session.event" }) else {
             throw ClaudeCodeHookInvocationError.sessionEventUnavailable
         }
+        let cleanup = CLIStoreCleanupHandler(
+            environment: environment, migrationLockWaitBudget: { deadline.remainingBudget })
         let client = AgentStudioIPCClient(
-            configuration: configuration, descriptors: bootstrap + [descriptor]
-        )
+            configuration: configuration, descriptors: descriptors, deadline: deadline,
+            onCallCompletion: { cleanup.handle(readThrough: $0) })
         let result = try client.call(
             IPCDescriptorInvocation(
                 descriptor: descriptor,

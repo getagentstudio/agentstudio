@@ -104,7 +104,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
     var paneIPCIdentityOwner: PaneIPCIdentityOwner!
     var appIPCSessionsPaneContextComposition: SessionsPaneContextComposition?
     var appIPCPaneContextUIAdapter: PaneContextUIAdapter?
-    var paneReportSpoolDrainTask: Task<Void, Never>?
+    var paneCLIOutboxDrainTask: Task<Void, Never>?
     /// Exact provider profiles are composition input. Only the releases listed
     /// here grant provider-reported authority; every other provider, version or
     /// mode reports as unqualified. Composition happens here because the

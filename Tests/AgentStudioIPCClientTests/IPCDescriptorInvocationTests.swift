@@ -198,15 +198,15 @@ struct IPCDescriptorInvocationTests {
         let explanation = "Blocked on \u{30C7}\u{30FC}\u{30BF}\nNeed a decision."
 
         let message = try parse(
-            ["message", messageText],
+            ["notify", messageText],
             correlationGenerator: IPCDescriptorInvocationCorrelationGenerator(messageCorrelation)
         )
         let needsYou = try parse(
-            ["needs-you", explanation],
+            ["ask", explanation],
             correlationGenerator: IPCDescriptorInvocationCorrelationGenerator(needsYouCorrelation)
         )
         let done = try parse(
-            ["done"],
+            ["line"],
             correlationGenerator: IPCDescriptorInvocationCorrelationGenerator(doneCorrelation)
         )
 
@@ -221,10 +221,10 @@ struct IPCDescriptorInvocationTests {
             message.presentation
                 == .model(
                     IPCModelInvocationPresentation(
-                        variant: .message,
+                        variant: .notify,
                         successReply: "Fixture message saved.",
                         queuedReply: "Fixture message queued.",
-                        isOfflineEligible: true,
+                        isOfflineEligible: false,
                         showsDetail: false
                     )
                 )
@@ -238,10 +238,10 @@ struct IPCDescriptorInvocationTests {
                     correlationId: needsYouCorrelation
                 )
         )
-        #expect(needsYou.presentation.modelInvocation?.variant == .needsYou)
+        #expect(needsYou.presentation.modelInvocation?.variant == .ask)
         #expect(needsYou.presentation.modelInvocation?.successReply == "Fixture help recorded.")
         #expect(needsYou.presentation.modelInvocation?.queuedReply == "Fixture report queued.")
-        #expect(needsYou.presentation.modelInvocation?.isOfflineEligible == true)
+        #expect(needsYou.presentation.modelInvocation?.isOfflineEligible == false)
         #expect(
             try decodeIPCDescriptorInvocationParameters(
                 IPCDescriptorInvocationReportParameters.self, from: done.normalizedParameters.data)
@@ -251,18 +251,18 @@ struct IPCDescriptorInvocationTests {
                     correlationId: doneCorrelation
                 )
         )
-        #expect(done.presentation.modelInvocation?.variant == .done)
+        #expect(done.presentation.modelInvocation?.variant == .line)
         #expect(done.presentation.modelInvocation?.successReply == "Fixture done recorded.")
         #expect(done.presentation.modelInvocation?.queuedReply == "Fixture report queued.")
-        #expect(done.presentation.modelInvocation?.isOfflineEligible == true)
+        #expect(done.presentation.modelInvocation?.isOfflineEligible == false)
     }
 
-    @Test("longest model prefix selects clear and clear is never offline eligible")
+    @Test("withdraw selects its scalar projection and is never offline eligible")
     func longestModelPrefixSelectsClear() throws {
         let correlation = UUIDv7.generate()
 
         let invocation = try parse(
-            ["needs-you", "--clear"],
+            ["withdraw"],
             correlationGenerator: IPCDescriptorInvocationCorrelationGenerator(correlation)
         )
 
@@ -279,7 +279,7 @@ struct IPCDescriptorInvocationTests {
             invocation.presentation
                 == .model(
                     IPCModelInvocationPresentation(
-                        variant: .needsYouClear,
+                        variant: .withdraw,
                         successReply: "Fixture help cleared.",
                         queuedReply: nil,
                         isOfflineEligible: false,
@@ -292,11 +292,11 @@ struct IPCDescriptorInvocationTests {
     @Test("detail changes presentation while delimiter preserves flag-shaped model text")
     func detailAndDelimiterRemainPresentationSyntax() throws {
         let literalDetail = try parse(
-            ["message", "--", "--detail"],
+            ["notify", "--", "--detail"],
             correlationGenerator: IPCDescriptorInvocationCorrelationGenerator(UUIDv7.generate())
         )
         let literalClear = try parse(
-            ["needs-you", "--detail", "--", "--clear"],
+            ["ask", "--detail", "--", "--clear"],
             correlationGenerator: IPCDescriptorInvocationCorrelationGenerator(UUIDv7.generate())
         )
 
@@ -311,7 +311,7 @@ struct IPCDescriptorInvocationTests {
                 == "--clear"
         )
         #expect(literalDetail.presentation.modelInvocation?.showsDetail == false)
-        #expect(literalClear.presentation.modelInvocation?.variant == .needsYou)
+        #expect(literalClear.presentation.modelInvocation?.variant == .ask)
         #expect(literalClear.presentation.modelInvocation?.showsDetail == true)
     }
 
@@ -375,10 +375,10 @@ struct IPCDescriptorInvocationTests {
             documentedErrors: [],
             isMutating: true,
             correlationPolicy: .required,
-            offlineEligibility: .modelCallVariants([.message]),
+            offlineEligibility: .never,
             modelCalls: [
                 .init(
-                    variant: .message,
+                    variant: .notify,
                     selectors: [],
                     scalarArguments: [
                         .init(
@@ -413,10 +413,10 @@ struct IPCDescriptorInvocationTests {
             documentedErrors: [],
             isMutating: true,
             correlationPolicy: .required,
-            offlineEligibility: .modelCallVariants([.needsYou, .done]),
+            offlineEligibility: .never,
             modelCalls: [
                 .init(
-                    variant: .needsYou,
+                    variant: .ask,
                     selectors: [.init(parameterField: "operation", equals: "needsYou")],
                     scalarArguments: [
                         .init(
@@ -430,14 +430,14 @@ struct IPCDescriptorInvocationTests {
                     queuedReply: "Fixture report queued."
                 ),
                 .init(
-                    variant: .needsYouClear,
+                    variant: .withdraw,
                     selectors: [.init(parameterField: "operation", equals: "clear")],
                     scalarArguments: [],
                     successReply: "Fixture help cleared.",
                     queuedReply: nil
                 ),
                 .init(
-                    variant: .done,
+                    variant: .line,
                     selectors: [.init(parameterField: "operation", equals: "done")],
                     scalarArguments: [],
                     successReply: "Fixture done recorded.",

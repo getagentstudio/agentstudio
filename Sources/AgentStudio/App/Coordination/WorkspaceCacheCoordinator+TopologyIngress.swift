@@ -19,12 +19,14 @@ extension WorkspaceCacheCoordinator {
                 repoPath: repoPath,
                 linkedWorktrees: linkedWorktrees,
                 stableIdentity: stableIdentity,
-                eventId: envelope.eventId
+                eventId: envelope.eventId,
+                envelopeSequence: envelope.seq
             )
         case .reposDiscovered(_, let repositories):
             handleReposDiscovered(
                 repositories: repositories,
-                eventId: envelope.eventId
+                eventId: envelope.eventId,
+                envelopeSequence: envelope.seq
             )
         case .repoRemoved(let repoPath):
             handleRepoRemoved(repoPath: repoPath)
@@ -40,6 +42,7 @@ extension WorkspaceCacheCoordinator {
         linkedWorktrees: LinkedWorktreeInfo,
         stableIdentity: DiscoveredRepoStableIdentity?,
         eventId: UUID,
+        envelopeSequence: UInt64,
         shouldRefreshTraceIdentity: Bool = true,
         shouldApplyTopologyEffects: Bool = true
     ) -> WorktreeTopologyDelta? {
@@ -68,7 +71,7 @@ extension WorkspaceCacheCoordinator {
 
         guard case .scanned(let linkedPaths) = linkedWorktrees else {
             if shouldInitializeRepoEnrichment {
-                repoCache.setRepoEnrichment(.awaitingOrigin(repoId: repoId))
+                initializeRepoEnrichment(repoId: repoId, envelopeID: eventId, envelopeSequence: envelopeSequence)
             }
             if shouldRefreshTraceIdentity {
                 refreshTraceIdentity()
@@ -111,7 +114,7 @@ extension WorkspaceCacheCoordinator {
         }
         guard delta.didChange else {
             if shouldInitializeRepoEnrichment {
-                repoCache.setRepoEnrichment(.awaitingOrigin(repoId: repoId))
+                initializeRepoEnrichment(repoId: repoId, envelopeID: eventId, envelopeSequence: envelopeSequence)
             }
             if shouldRefreshTraceIdentity {
                 refreshTraceIdentity()
@@ -131,12 +134,24 @@ extension WorkspaceCacheCoordinator {
             topologyEffectHandler?.topologyDidChange(delta)
         }
         if shouldInitializeRepoEnrichment {
-            repoCache.setRepoEnrichment(.awaitingOrigin(repoId: repoId))
+            initializeRepoEnrichment(repoId: repoId, envelopeID: eventId, envelopeSequence: envelopeSequence)
         }
         if shouldRefreshTraceIdentity {
             refreshTraceIdentity()
         }
         return delta
+    }
+
+    private func initializeRepoEnrichment(repoId: UUID, envelopeID: UUID, envelopeSequence: UInt64) {
+        repoCache.setRepoEnrichment(.awaitingOrigin(repoId: repoId))
+        guard let factSink else { return }
+        let lifetime: RepositoryFactObservationLifetime =
+            workspaceStore.repositoryTopologyAtom.repositoryObservationLifetimes[repoId].map { .repository($0) }
+            ?? .unscoped
+        factSink(
+            WorkspaceCacheApplicationScope(
+                repositoryID: repoId, worktreeID: nil, observationLifetime: lifetime,
+                envelopeID: envelopeID, envelopeSequence: envelopeSequence, kind: .repositoryIdentity), .applied)
     }
 
     private enum ScannedWorktreeDiscoveryRejection {
@@ -192,7 +207,8 @@ extension WorkspaceCacheCoordinator {
 
     private func handleReposDiscovered(
         repositories: [DiscoveredRepoTopologyInfo],
-        eventId: UUID
+        eventId: UUID,
+        envelopeSequence: UInt64
     ) {
         guard !repositories.isEmpty else { return }
         var topologyDeltas: [WorktreeTopologyDelta] = []
@@ -203,6 +219,7 @@ extension WorkspaceCacheCoordinator {
                     linkedWorktrees: repository.linkedWorktrees,
                     stableIdentity: repository.stableIdentity,
                     eventId: eventId,
+                    envelopeSequence: envelopeSequence,
                     shouldRefreshTraceIdentity: false,
                     shouldApplyTopologyEffects: false
                 ) {

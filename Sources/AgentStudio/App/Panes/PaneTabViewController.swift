@@ -3364,6 +3364,9 @@ class PaneTabViewController: NSViewController, NSPopoverDelegate, WorkspaceComma
             if didShowViewer {
                 executor.refreshZoomCompanionActivities()
                 executor.reevaluatePreparedTerminalGeometry()
+                // Revealing the viewer reshapes the zoom layout after focus was
+                // committed; re-assert it like the Zoom cancel path does.
+                requestPaneRefocus(.explicit)
             }
             return didShowViewer
         case .retryable:

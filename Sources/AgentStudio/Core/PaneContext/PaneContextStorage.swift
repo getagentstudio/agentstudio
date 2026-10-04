@@ -158,7 +158,8 @@ enum PaneContextStorage {
     static func revision(_ database: Database, paneId: PaneId) throws -> PaneContextRevision {
         let value =
             try Int64.fetchOne(
-                database, sql: "SELECT detail_revision FROM pane_state WHERE pane_id = ? AND kind = 'agentTitle'",
+                database.cachedStatement(
+                    sql: "SELECT detail_revision FROM pane_state WHERE pane_id = ? AND kind = 'agentTitle'"),
                 arguments: [paneId.uuidString]) ?? 0
         guard let value = UInt64(exactly: value) else { throw PaneContextStorageFailure.decode("detail_revision") }
         return PaneContextRevision(value)
@@ -166,7 +167,7 @@ enum PaneContextStorage {
 
     static func isRetired(_ database: Database, paneId: PaneId) throws -> Bool {
         try Bool.fetchOne(
-            database, sql: "SELECT EXISTS(SELECT 1 FROM pane_retirement WHERE pane_id = ?)",
+            database.cachedStatement(sql: "SELECT EXISTS(SELECT 1 FROM pane_retirement WHERE pane_id = ?)"),
             arguments: [paneId.uuidString]) == true
     }
 }

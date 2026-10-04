@@ -65,7 +65,6 @@ extension PaneContextService {
                     }
                 }
             }
-            await presentationLane?.publishPending()
         }
     }
 
@@ -87,7 +86,6 @@ extension PaneContextService {
             return
         }
         presentationLane.mailbox.reconcile(displays)
-        await presentationLane.publishPending()
     }
 
     func publishAffectedSources(_ sources: Set<PaneId>) async {
@@ -103,7 +101,6 @@ extension PaneContextService {
                 // Publication is retried by later demand; a failed read changes no desired value.
             }
         }
-        await presentationLane?.publishPending()
     }
 
     private func computeDisplay(paneId: PaneId) async throws -> PaneContextDisplay? {
@@ -114,7 +111,7 @@ extension PaneContextService {
         let session = try await sessionSummary(paneId)
         let now = wallNow
         let snapshot = try await sqliteAccess.write { database in
-            try capturePaneContextDetail(database, paneId: paneId, sources: sources, now: now)
+            try capturePaneContextDisplay(database, paneId: paneId, sources: sources, now: now)
         }
         guard let snapshot, !isStopping, !isPendingRetirement(paneId) else { return nil }
         guard let current = captureMembershipView(paneId: paneId) else { return nil }
@@ -131,13 +128,13 @@ extension PaneContextService {
         }
         let version = PaneContextDetailVersion(
             sources: sources, membershipRevision: view.revision, sourceRevisions: snapshot.sourceRevisions,
-            session: session)
+            session: session, readTimeVersions: snapshot.readTimeVersions)
         let display = PaneContextDisplay(
             revision: detailRevision(for: paneId, version: version), agentTitle: snapshot.title,
             agentLine: snapshot.line,
-            own: PaneMessageCountFold.summarize(messages: snapshot.messages.first ?? [], sourceOrder: [paneId]),
+            own: PaneMessageCountFold.summarize(inputs: snapshot.messages.first ?? [], sourceOrder: [paneId]),
             includingDrawers: PaneMessageCountFold.summarize(
-                messages: snapshot.messages.flatMap { $0 }, sourceOrder: sources),
+                inputs: snapshot.messages.flatMap { $0 }, sourceOrder: sources),
             pullRequests: .notApplicable)
         presentationLane?.mailbox.offer(display, for: paneId)
         return display

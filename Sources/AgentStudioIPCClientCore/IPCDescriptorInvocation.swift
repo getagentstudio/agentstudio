@@ -71,4 +71,43 @@ package struct IPCDescriptorInvocationError: Error, Equatable, Sendable,
     package var description: String {
         "\(reason.rawValue) at \(fieldPath): expected \(expected)"
     }
+
+    static func unknownMethod(named name: String, index: IPCBuiltInMethodIndex) -> Self {
+        let rankedMethods: [(methodName: String, distance: Int)] = index.methodNames.map { methodName in
+            let distance: Int = editDistance(name, methodName)
+            return (methodName: methodName, distance: distance)
+        }
+        let sortedMethods: [(methodName: String, distance: Int)] = rankedMethods.sorted { first, second in
+            if first.distance == second.distance { return first.methodName < second.methodName }
+            return first.distance < second.distance
+        }
+        let nearestMethods: ArraySlice<(methodName: String, distance: Int)> = sortedMethods.prefix(3)
+        let closestNames: [String]
+        switch name {
+        case "session.message": closestNames = ["pane.message.send", "pane.message.ask", "pane.context.get"]
+        case "session.report": closestNames = ["pane.message.ask", "pane.message.withdraw", "pane.line.set"]
+        default: closestNames = nearestMethods.map { $0.methodName }
+        }
+        return Self(
+            reason: .unknownMethod, fieldPath: "$.method",
+            expected: "a compiled method or model invocation; see agentstudio help; closest methods: "
+                + closestNames.joined(separator: ", "))
+    }
+
+    private static func editDistance(_ candidate: String, _ method: String) -> Int {
+        let methodCharacters = Array(method)
+        var previous = Array(0...methodCharacters.count)
+        for (row, character) in candidate.enumerated() {
+            var current = [row + 1]
+            for (column, methodCharacter) in methodCharacters.enumerated() {
+                let deletionCost: Int = previous[column + 1] + 1
+                let insertionCost: Int = current[column] + 1
+                let replacementCost: Int = previous[column] + (character == methodCharacter ? 0 : 1)
+                let lowestCost: Int = min(deletionCost, min(insertionCost, replacementCost))
+                current.append(lowestCost)
+            }
+            previous = current
+        }
+        return previous[methodCharacters.count]
+    }
 }

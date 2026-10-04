@@ -337,8 +337,8 @@ struct AgentStudioIPCClientCoreTests {
         }
     }
 
-    @Test("live capabilities validates before compiled method selection over the same protocol")
-    func liveCapabilitiesBuildsTypedInvocationCatalog() throws {
+    @Test("live capabilities can be read while method selection uses its compiled recipe")
+    func liveCapabilitiesDoNotDriveCompiledSelection() throws {
         let catalog = try makeCatalog()
         let ping = try IPCAnyMethodDescriptor(erasing: catalog.systemAndAuth.systemPing)
         let composition = try IPCSystemCapabilitiesDescriptorFactory.compose(
@@ -364,59 +364,50 @@ struct AgentStudioIPCClientCoreTests {
         )
         let discovered = try client.discoverCatalog()
         #expect(discovered == composition.result)
-        let matched = try IPCBuiltInMethodCatalog.matchingDiscoveredMethods(
-            discovered, examples: .init(illustrativeIdentifier: UUIDv7.generate())
-        )
-        #expect(matched.count == 55)
+        let matched = try IPCCompiledInvocationResolver().resolve(
+            arguments: ["terminal.wait"], authenticated: false,
+            inputs: .init(examples: .init(illustrativeIdentifier: UUIDv7.generate())))
+        #expect(matched.map(\.metadata.name) == ["terminal.wait"])
         let wait = try parse(
             [
                 "terminal.wait", "--handle", "self", "--condition", "commandFinished", "--timeout-seconds", "9",
             ], descriptors: matched)
         #expect(wait.descriptorInvocation.descriptor.metadata.name == "terminal.wait")
+        let aboveFormerMaximum = try parse(
+            [
+                "terminal.wait", "--handle", "self", "--condition", "commandFinished", "--timeout-seconds", "10",
+            ], descriptors: matched)
+        let aboveFormerMaximumParams = try JSONDecoder().decode(
+            IPCTerminalWaitParams.self, from: aboveFormerMaximum.descriptorInvocation.normalizedParameters.data)
+        #expect(aboveFormerMaximumParams.timeoutSeconds == 10)
         #expect(throws: IPCDescriptorInvocationError.self) {
             try parse(
                 [
-                    "terminal.wait", "--handle", "self", "--condition", "commandFinished", "--timeout-seconds", "10",
+                    "terminal.wait", "--handle", "self", "--condition", "commandFinished", "--timeout-seconds", "-1",
                 ], descriptors: matched)
         }
     }
 
-    @Test("a method the channel hides but lists as recognized is typed by the compiled contract and framed")
-    func recognizedHiddenMethodIsFramedForTheApp() throws {
-        let catalog = try makeCatalog()
-        let ping = try IPCAnyMethodDescriptor(erasing: catalog.systemAndAuth.systemPing)
-        let hiddenNames: Set<String> = ["pane.focus", "bridge.diff.getPackage"]
-        let discovered = try IPCSystemCapabilitiesDescriptorFactory.compose(
-            compatibility: .current,
-            availableDescriptors: catalog.erasedDescriptors.filter { !hiddenNames.contains($0.metadata.name) },
-            illustrativeDescriptor: ping,
-            recognizedUnexposedMethods: [
-                IPCRecognizedUnexposedName(name: "pane.focus", agentEligibility: .notYetAllowed)
-            ]
-        ).result
-
-        let matched = try IPCBuiltInMethodCatalog.matchingDiscoveredMethods(
-            discovered, examples: .init(illustrativeIdentifier: UUIDv7.generate())
-        )
-        let focus = try parse(["pane.focus", "--handle", "self"], descriptors: matched).descriptorInvocation
+    @Test("channel-hidden static methods are framed from compiled recipes for the app to refuse")
+    func hiddenStaticMethodsAreFramedWithoutDiscovery() throws {
+        let resolver = IPCCompiledInvocationResolver()
+        let inputs = IPCBuiltInMethodCatalogInputs(examples: .init(illustrativeIdentifier: UUIDv7.generate()))
+        let focusDescriptors = try resolver.resolve(arguments: ["pane.focus"], authenticated: false, inputs: inputs)
+        let focus = try parse(["pane.focus", "--handle", "self"], descriptors: focusDescriptors).descriptorInvocation
         let frame = try AgentStudioIPCClient(
-            configuration: .init(socketPath: "/tmp/unused.sock"), descriptors: matched
+            configuration: .init(socketPath: "/tmp/unused.sock"), descriptors: focusDescriptors
         ).requestFrame(focus, requestID: 3)
         let framed = try JSONRPCCodec.decodeRequest(frame)
-
         #expect(framed.method == "pane.focus")
         guard case .object(let parameters)? = framed.params else {
-            Issue.record("pane.focus framed without an object: \(String(describing: framed.params))")
+            Issue.record("pane.focus must frame an object")
             return
         }
         #expect(parameters["handle"] == .string("self"))
-        // Hidden but not listed as recognized, and unknown: both stay local.
-        #expect(!matched.contains { $0.metadata.name == "bridge.diff.getPackage" })
+        let bridge = try resolver.resolve(arguments: ["bridge.diff.getPackage"], authenticated: false, inputs: inputs)
+        #expect(bridge.map(\.metadata.name) == ["bridge.diff.getPackage"])
         #expect(throws: IPCDescriptorInvocationError.self) {
-            try parse(["bridge.diff.getPackage", "--handle", "self"], descriptors: matched)
-        }
-        #expect(throws: IPCDescriptorInvocationError.self) {
-            try parse(["bogus.method"], descriptors: matched)
+            try resolver.resolve(arguments: ["bogus.method"], authenticated: false, inputs: inputs)
         }
     }
 
@@ -432,7 +423,6 @@ struct AgentStudioIPCClientCoreTests {
     private func makeCatalog() throws -> IPCBuiltInMethodCatalog {
         try IPCBuiltInMethodCatalog(
             inputs: .init(
-                terminalWaitMaximumSeconds: 9,
                 relationships: .init(
                     paneFocus: .noInteractiveIdentity, paneClose: .noInteractiveIdentity,
                     drawerToggle: .noInteractiveIdentity, drawerAddPane: .noInteractiveIdentity,

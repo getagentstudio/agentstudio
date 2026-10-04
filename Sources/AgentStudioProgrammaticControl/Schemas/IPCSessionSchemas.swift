@@ -6,61 +6,6 @@ package enum IPCSessionSchemaLimits {
     package static let maximumQueryMessageCount = 20
 }
 
-extension IPCSessionReportParams: IPCSchemaProviding {
-    package static func ipcSchema() throws -> IPCJSONSchema {
-        .object(fields: [
-            try IPCRequestSchemaFields.paneDefaultingToSelf(),
-            .init(
-                name: "kind", description: "Deliberate report the agent is making",
-                schema: try IPCSessionReportKind.ipcSchema()),
-            .optional(
-                "explanation",
-                description: "Private reason shown with a needs-you assertion; never exported to telemetry",
-                schema: .string()),
-            IPCRequestSchemaFields.correlation,
-        ])
-    }
-}
-
-extension IPCSessionReportResult: IPCSchemaProviding {
-    package static func ipcSchema() throws -> IPCJSONSchema {
-        .object(fields: [
-            IPCSessionSchemaFields.pane,
-            try IPCSessionSchemaFields.state(),
-            try IPCSessionSchemaFields.origin(),
-            .optional(
-                "requestId", description: "App-derived attention request identity for a current needs-you assertion",
-                schema: .string(minimumLength: 1)),
-            IPCRequestSchemaFields.correlation,
-        ])
-    }
-}
-
-extension IPCSessionMessageParams: IPCSchemaProviding {
-    package static func ipcSchema() throws -> IPCJSONSchema {
-        .object(fields: [
-            try IPCRequestSchemaFields.paneDefaultingToSelf(),
-            .init(
-                name: "text", description: "Exact agent message text retained without reduction", schema: .string()),
-            IPCRequestSchemaFields.correlation,
-        ])
-    }
-}
-
-extension IPCSessionMessageResult: IPCSchemaProviding {
-    package static func ipcSchema() throws -> IPCJSONSchema {
-        .object(fields: [
-            IPCSessionSchemaFields.pane,
-            .init(
-                name: "occurrenceId", description: "Durable message occurrence UUID", schema: IPCSchemaScalars.uuid),
-            .init(
-                name: "attributed", description: "Whether the message resolved to a live conversation binding",
-                schema: .boolean),
-            IPCRequestSchemaFields.correlation,
-        ])
-    }
-}
-
 extension IPCSessionProviderIdentity: IPCSchemaProviding {
     package static func ipcSchema() throws -> IPCJSONSchema {
         .object(fields: [

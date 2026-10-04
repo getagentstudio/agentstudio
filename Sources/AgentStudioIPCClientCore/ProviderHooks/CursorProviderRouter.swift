@@ -14,7 +14,7 @@ package enum CursorProviderRouter {
         standardInput: @escaping () throws -> Data,
         identifierGenerator: @escaping () -> UUID,
         noticeSink: @escaping (String) -> Void = { print($0) },
-        diagnosticSink: @escaping (String) -> Void = { fputs("\($0)\n", stderr) }
+        diagnosticSink: @escaping (String) -> Void = { _ in CLIDiagnostics.record(.providerCommandFailed) }
     ) -> Int32? {
         if let code = CursorHookInvocation.handle(
             CursorHookInvocationInputs(

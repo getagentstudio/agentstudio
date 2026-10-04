@@ -7,6 +7,7 @@ struct PaneContextDetailSnapshot: Sendable {
     let line: AgentLineDetail?
     let sourceRevisions: [PaneContextRevision]
     let messages: [[PaneContextStoredMessage]]
+    let readTimeVersions: [PaneContextReadTimeVersion]
     let initialCursors: [LiveMessageCursor?]
 }
 
@@ -15,6 +16,7 @@ struct PaneContextDetailVersion: Sendable, Equatable {
     let membershipRevision: UInt64?
     let sourceRevisions: [PaneContextRevision]
     let session: SessionSummary?
+    let readTimeVersions: [PaneContextReadTimeVersion]
 }
 
 extension PaneContextService {
@@ -32,13 +34,14 @@ extension PaneContextService {
             guard sourceIsInView(page: request.page, sources: sources) else { return .sourceNotInView }
             let session = try await sessionSummary(request.paneId)
             let now = wallNow
-            let snapshot = try await sqliteAccess.write { database in
+            let snapshot = try await sqliteAccess.read { database in
                 try capturePaneContextDetail(database, paneId: request.paneId, sources: sources, now: now)
             }
             guard let snapshot, !isPendingRetirement(request.paneId) else { return .paneGone }
             let version = PaneContextDetailVersion(
                 sources: sources, membershipRevision: view.revision,
-                sourceRevisions: snapshot.sourceRevisions, session: session)
+                sourceRevisions: snapshot.sourceRevisions, session: session, readTimeVersions: snapshot.readTimeVersions
+            )
             let revision = detailRevision(for: request.paneId, version: version)
             var assembly = PaneContextDetailPageAssembly(
                 request: request, sources: sources, snapshot: snapshot, session: session,
@@ -70,21 +73,37 @@ func capturePaneContextDetail(
     _ database: Database, paneId: PaneId, sources: [PaneId], now: @Sendable () -> Date
 ) throws -> PaneContextDetailSnapshot? {
     guard try !PaneContextStorage.isRetired(database, paneId: paneId) else { return nil }
-    try PaneContextStorage.expireLines(database, now: now())
-    try PaneContextStorage.hideSettled(database, now: now())
+    let instant = now()
     let messages: [[PaneContextStoredMessage]] = try sources.map { source in
         guard try !PaneContextStorage.isRetired(database, paneId: source) else { return [] }
-        return try PaneContextStorage.messages(database, paneId: source).filter { !$0.displayHidden }
+        let loaded = try PaneContextStorage.messages(database, paneId: source)
+        let hidden = hiddenPaneContextSettledKeys(loaded.map(PaneContextRetentionMessage.init), now: instant)
+        return loaded.filter { !$0.displayHidden && !hidden.contains(PaneContextRetentionMessage($0).key) }
     }
     let cursors = messages.map { rows -> LiveMessageCursor? in
         guard let newest = rows.filter({ liveRank($0.detail) != nil }).map(\.position).max() else { return nil }
         return LiveMessageCursor(rank: 0, position: newest + 1)
     }
+    let line = try PaneContextStorage.line(database, paneId: paneId, now: instant)
+    let readTimeVersions = try sources.enumerated().map { index, source in
+        let stale: Bool?
+        if source == paneId {
+            stale = line?.stale
+        } else if try PaneContextStorage.isRetired(database, paneId: source) {
+            stale = nil
+        } else {
+            stale = try PaneContextStorage.lineStaleness(database, paneId: source, now: instant)
+        }
+        return PaneContextReadTimeVersion(
+            lineStale: stale,
+            visibleSettledIds: Set(
+                messages[index].filter { $0.settledAt != nil }.map { PaneContextRetentionMessage($0).key }))
+    }
     return PaneContextDetailSnapshot(
         title: try PaneContextStorage.title(database, paneId: paneId),
-        line: try PaneContextStorage.line(database, paneId: paneId),
+        line: line,
         sourceRevisions: try sources.map { try PaneContextStorage.revision(database, paneId: $0) },
-        messages: messages, initialCursors: cursors)
+        messages: messages, readTimeVersions: readTimeVersions, initialCursors: cursors)
 }
 
 /// One read's stack-local accounting; the service remains the read owner.

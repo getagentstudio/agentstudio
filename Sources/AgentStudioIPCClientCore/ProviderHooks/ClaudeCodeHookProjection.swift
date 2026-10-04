@@ -100,9 +100,8 @@ package enum ClaudeCodeHookProjectionOutcome: Equatable, Sendable {
     case refused(ClaudeCodeHookProjectionRefusal)
 }
 
-/// Translates one Claude Code hook document into one `session.event` call.
-/// Pure: every identifier it cannot derive from the document is supplied by the
-/// caller, so the projection is exercised without a socket or a clock.
+/// Purely translates one Claude Code hook document into one `session.event` call.
+/// Identifiers and observation time are supplied by the caller.
 package enum ClaudeCodeHookProjection {
     /// - Parameters:
     ///   - announcedEvent: the event name the installed hook command passed as
@@ -113,6 +112,7 @@ package enum ClaudeCodeHookProjection {
     ///   - freshOccurrenceIdentifier: used only when the document carries no
     ///     `tool_use_id`, where no stable natural key exists.
     package static func project(
+        sourceOccurredAt: Date,
         announcedEvent: String,
         payload: ClaudeCodeHookPayload,
         providerVersion: String,
@@ -131,6 +131,7 @@ package enum ClaudeCodeHookProjection {
             event == .preToolUse && payload.toolName == "AskUserQuestion" ? .question : event.projectedEventName
         let requestIdentifier = name == .permission ? payload.toolUseId : nil
         var providerFields = IPCSessionProviderEventFields()
+        providerFields.sourceOccurredAt = sourceOccurredAt
         providerFields.toolName = payload.toolName
         providerFields.questions = payload.toolInput?.questions
         providerFields.failureSummary = event == .stopFailure ? payload.error : nil

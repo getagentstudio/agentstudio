@@ -63,18 +63,26 @@ package struct IPCBuiltInMethodRelationshipInputs: Sendable {
 }
 
 package struct IPCBuiltInMethodCatalogInputs: Sendable {
-    package let terminalWaitMaximumSeconds: Double
     package let relationships: IPCBuiltInMethodRelationshipInputs
     package let examples: IPCBuiltInMethodExampleContext
 
     package init(
-        terminalWaitMaximumSeconds: Double,
         relationships: IPCBuiltInMethodRelationshipInputs,
         examples: IPCBuiltInMethodExampleContext
     ) {
-        self.terminalWaitMaximumSeconds = terminalWaitMaximumSeconds
         self.relationships = relationships
         self.examples = examples
+    }
+}
+
+extension IPCBuiltInMethodCatalogInputs {
+    package init(examples: IPCBuiltInMethodExampleContext) {
+        self.init(
+            relationships: .init(
+                paneFocus: .noInteractiveIdentity, paneClose: .noInteractiveIdentity,
+                drawerToggle: .noInteractiveIdentity, drawerAddPane: .noInteractiveIdentity,
+                bridgeDiffLoad: .noInteractiveIdentity, bridgeFileViewOpen: .noInteractiveIdentity),
+            examples: examples)
     }
 }
 
@@ -88,7 +96,7 @@ enum IPCBuiltInDescriptorSupport {
         let semantics: IPCResultSemantics
         let errors: [IPCMethodErrorCase]
         let exposure: IPCMethodExposure
-        let agentEligibility: IPCAgentEligibility
+        let agentEligibility: IPCAgentEligibility?
 
         init(
             privilege: IPCPrivilegeClass,
@@ -102,7 +110,7 @@ enum IPCBuiltInDescriptorSupport {
                 IPCBuiltInDescriptorSupport.targetNotFound,
             ],
             exposure: IPCMethodExposure = .debugTesting,
-            agentEligibility: IPCAgentEligibility
+            agentEligibility: IPCAgentEligibility?
         ) {
             self.privilege = privilege
             self.dataScope = dataScope

@@ -117,8 +117,8 @@ private final class StartupMembershipFixture {
     let lane: PaneContextPublicationLane
     let service: PaneContextService
 
-    init() throws {
-        let storage = try PaneContextServiceFixture()
+    init() async throws {
+        let storage = try await PaneContextServiceFixture.make()
         self.storage = storage
         let graph = try PaneContextMembershipGraphFixture(
             initialPane: PaneContextMembershipGraphFixture.makePane(
@@ -175,7 +175,7 @@ private final class StartupMembershipFixture {
         capture.held.retire()
         await service.stop()
         await lane.shutdown()
-        try storage.removeFiles()
+        try await storage.removeFiles()
     }
 }
 
@@ -183,7 +183,7 @@ private final class StartupMembershipFixture {
 private func withStartupMembershipCapture(
     _ operation: (StartupMembershipFixture) async throws -> Void
 ) async throws {
-    let fixture = try StartupMembershipFixture()
+    let fixture = try await StartupMembershipFixture()
     do {
         try await fixture.seedNotice()
         try await operation(fixture)

@@ -29,21 +29,24 @@ extension PaneContextStorage {
     }
 
     static func loadActions(_ database: Database, table: String, parentId: UUID) throws -> [MessageAction] {
-        try Row.fetchAll(
-            database, sql: "SELECT * FROM \(table) WHERE parent_id = ? ORDER BY ordinal",
-            arguments: [parentId.uuidString]
-        ).map { row in
-            let kind: String = try required(row, "kind")
+        try actions(
+            PaneContextReadLayout.action.fetchAll(
+                database, from: "\(table) WHERE parent_id = ? ORDER BY ordinal", arguments: [parentId.uuidString]))
+    }
+
+    static func actions(_ rows: [PaneContextReadRow]) throws -> [MessageAction] {
+        try rows.map { row in
+            let kind: String = try required(row, .kind)
             switch kind {
-            case "openFile": return .openFile(path: try required(row, "path"), line: try optional(row, "line"))
+            case "openFile": return .openFile(path: try required(row, .path), line: try optional(row, .line))
             case "openPullRequest":
                 do {
                     return .openPullRequest(
                         try ForgePullRequestIdentity(
-                            host: required(row, "host"), owner: required(row, "owner"),
-                            repository: required(row, "repository"), number: required(row, "number")))
+                            host: required(row, .host), owner: required(row, .owner),
+                            repository: required(row, .repository), number: required(row, .number)))
                 } catch { throw PaneContextStorageFailure.decode("action.pullRequest") }
-            case "goToPane": return .goToPane(PaneId(existingUUID: try uuid(row, "target_pane_id")))
+            case "goToPane": return .goToPane(PaneId(existingUUID: try uuid(row, .targetPaneId)))
             default: throw PaneContextStorageFailure.decode("action.kind")
             }
         }
@@ -58,8 +61,8 @@ extension PaneContextStorage {
         }
     }
 
-    static func importance(_ row: Row) throws -> MessageImportance {
-        let name: String = try required(row, "importance")
+    static func importance(_ row: PaneContextReadRow) throws -> MessageImportance {
+        let name: String = try required(row, .importance)
         switch name {
         case "info": return .info
         case "attention": return .attention
@@ -77,8 +80,8 @@ extension PaneContextStorage {
         }
     }
 
-    static func reason(_ row: Row) throws -> AskReason {
-        let name: String = try required(row, "reason")
+    static func reason(_ row: PaneContextReadRow) throws -> AskReason {
+        let name: String = try required(row, .reason)
         switch name {
         case "approval": return .approval
         case "question": return .question

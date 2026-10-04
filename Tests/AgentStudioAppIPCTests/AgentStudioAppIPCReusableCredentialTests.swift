@@ -215,7 +215,7 @@ struct AgentStudioAppIPCReusableCredentialTests {
                 #expect(barrierPort.registrationCallCount == 1)
 
                 barrierPort.releaseRegistration()
-                serverFixture.stopAcceptingConnections()
+                await serverFixture.stopAcceptingConnections()
                 #expect(await serverFixture.server.drainCredentialPersistence().failedOperationCount == 0)
                 #expect(barrierPort.registrationCallCount == 1)
             })
@@ -265,7 +265,7 @@ struct AgentStudioAppIPCReusableCredentialTests {
                 await barrierPort.waitUntilRegistrationHeld()
                 #expect(barrierPort.registrationCallCount == 1)
 
-                serverFixture.stopAcceptingConnections()
+                await serverFixture.stopAcceptingConnections()
                 // The handler's own task is independent of the credential worker
                 // task the held write is parked in, so joining it does not
                 // itself wait on the held write — this is the production
@@ -379,7 +379,8 @@ struct AgentStudioAppIPCReusableCredentialTests {
                 appDelegate.paneIPCIdentityOwner = PaneIPCIdentityOwner(
                     principalRegistry: serverFixture.server.principalRegistry,
                     socketURL: serverFixture.paths.socketURL,
-                    spoolDirectory: serverFixture.paths.spoolDirectory,
+                    cliStoreURL: serverFixture.paths.cliStoreURL,
+                    cliStoreChannel: .debug,
                     cliExecutableURL: fixture.rootURL.appending(path: "AgentStudio.app/Contents/Helpers/agentstudio"),
                     inheritedEnvironment: [:],
                     canonicalPaneMembership: { _, _ in true }
@@ -482,7 +483,7 @@ private struct ReusableCredentialFixture {
                     credentialRecordID: UUIDv7.generate(),
                     verifierSHA256: Data(SHA256.hash(data: Data(token.rawValue.utf8)))
                 )
-                serverFixture.stopAcceptingConnections()
+                await serverFixture.stopAcceptingConnections()
                 #expect(await serverFixture.server.drainCredentialPersistence().failedOperationCount == 0)
                 #expect(throws: AgentStudioIPCIssuedCredentialRegistrationError.registryShutdown) {
                     try serverFixture.server.principalRegistry.registerIssuedPaneCredential(
@@ -519,7 +520,7 @@ private struct ReusableCredentialFixture {
         let response = try await reader.receiveResponseWithoutBlockingMainActor(connection: connection)
         let version = try decodeResponseResult(IPCSystemVersionResult.self, from: response)
         #expect(!version.appVersion.isEmpty)
-        guard case .authenticated(let principalID, let runtimeID, let accessMode) = loginStatus else {
+        guard case .authenticated(let principalID, let runtimeID, let accessMode, _) = loginStatus else {
             throw ReusableCredentialTestError.unauthenticated
         }
         return .init(principalID: principalID, runtimeID: runtimeID, accessMode: accessMode)

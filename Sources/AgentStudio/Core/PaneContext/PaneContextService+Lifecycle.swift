@@ -23,8 +23,9 @@ extension PaneContextService {
 
     func drainRetirements() async throws {
         if let retirementCommit {
+            let generation = retirementCommitGeneration
             try await retirementCommit.value
-            return
+            if retirementCommitGeneration == generation { self.retirementCommit = nil }
         }
         let panes = retirementMailbox.state.withLock { mailbox in
             let panes = mailbox.pending
@@ -57,7 +58,7 @@ extension PaneContextService {
             throw error
         }
         if retirementCommitGeneration == generation { retirementCommit = nil }
-        await presentationLane?.publishPending()
+        await refreshDeadline()
         if retirementMailbox.state.withLock({ !$0.pending.isEmpty }) { try await drainRetirements() }
     }
 
@@ -83,10 +84,10 @@ extension PaneContextService {
                     sql: """
                         SELECT MIN(deadline) FROM (
                             SELECT deadline FROM pane_request WHERE state = 'open' AND waiting = 'blocking'
-                            UNION ALL SELECT expires_at FROM pane_state WHERE kind = 'agentLine' AND stale = 0 AND expires_at IS NOT NULL
+                            UNION ALL SELECT expires_at FROM pane_state WHERE kind = 'agentLine' AND stale = 0 AND expires_at IS NOT NULL AND pane_id NOT IN (SELECT pane_id FROM pane_retirement)
                             UNION ALL SELECT purge_after FROM pane_retirement
-                            UNION ALL SELECT settled_at + ? FROM pane_request WHERE display_hidden = 0 AND settled_at IS NOT NULL
-                            UNION ALL SELECT settled_at + ? FROM pane_event WHERE kind = 'notice' AND display_hidden = 0 AND settled_at IS NOT NULL
+                            UNION ALL SELECT settled_at + ? FROM pane_request WHERE display_hidden = 0 AND settled_at IS NOT NULL AND pane_id NOT IN (SELECT pane_id FROM pane_retirement)
+                            UNION ALL SELECT settled_at + ? FROM pane_event WHERE kind = 'notice' AND display_hidden = 0 AND settled_at IS NOT NULL AND pane_id NOT IN (SELECT pane_id FROM pane_retirement)
                         )
                         """,
                     arguments: [
@@ -113,6 +114,7 @@ extension PaneContextService {
     func deadlineReached() async {
         guard !isStopping else { return }
         let now = wallNow
+        let binding = currentBindingGeneration
         do {
             let commit = try await sqliteAccess.write { database in
                 let before = try PaneContextStorage.presentationRevisions(database)
@@ -129,7 +131,8 @@ extension PaneContextService {
                     return (
                         key,
                         try PaneContextAskSettlement.commit(
-                            database, paneId: key.paneId, id: key.messageId, cause: .deadline, now: instant)
+                            database, paneId: key.paneId, id: key.messageId, cause: .deadline, now: instant,
+                            currentBindingGeneration: binding)
                     )
                 }
                 try PaneContextStorage.expireLines(database, now: instant)
@@ -150,7 +153,6 @@ extension PaneContextService {
     package func sessionEnded(bindingGenerationId: UUID) async {
         do {
             try await ensureOpen()
-            let now = wallNow
             let commit = try await sqliteAccess.write { database in
                 let before = try PaneContextStorage.presentationRevisions(database)
                 let lines = try Row.fetchAll(
@@ -178,28 +180,10 @@ extension PaneContextService {
                     try PaneContextStorage.bumpRevision(
                         database, paneId: PaneId(existingUUID: PaneContextStorage.uuid(row, "pane_id")))
                 }
-                let asks = try Row.fetchAll(
-                    database,
-                    sql:
-                        "SELECT pane_id, message_id FROM pane_request WHERE sender_binding_generation = ? AND state = 'open'",
-                    arguments: [bindingGenerationId.uuidString])
-                let settlements = try asks.map { row in
-                    let key = PaneContextMessageKey(
-                        paneId: PaneId(existingUUID: try PaneContextStorage.uuid(row, "pane_id")),
-                        messageId: AgentMessageId(existingUUID: try PaneContextStorage.uuid(row, "message_id")))
-                    return (
-                        key,
-                        try PaneContextAskSettlement.commit(
-                            database, paneId: key.paneId, id: key.messageId, cause: .sessionEnded, now: now())
-                    )
-                }
-                return PaneContextLifecycleCommit(
-                    settlements: settlements,
-                    affectedSources: try PaneContextStorage.changedPresentationSources(database, since: before))
+                return try PaneContextStorage.changedPresentationSources(database, since: before)
             }
-            for (key, settlement) in commit.settlements { await acceptSettlement(settlement, key: key) }
             await agentLineSink(nil, bindingGenerationId)
-            await publishAffectedSources(commit.affectedSources)
+            await publishAffectedSources(commit)
             await refreshDeadline()
         } catch {
             // Persistent state is unchanged on a failed transaction.
@@ -209,21 +193,28 @@ extension PaneContextService {
     package func stop() async {
         guard !isStopping else { return }
         isStopping = true
+        let retirementDrain = retirementMailbox.state.withLock { mailbox in
+            mailbox.accepting = false
+            let drain = mailbox.drain
+            mailbox.drain = nil
+            return drain
+        }
         membershipDrain?.cancel()
         membershipReconcile?.cancel()
         await membershipReconcile?.value
         await membershipDrain?.value
         membershipDrain = nil
         await presentationLane?.shutdown()
-        retirementMailbox.state.withLock { $0.accepting = false }
         retirementWake.finish()
         retirementDrain?.cancel()
         await retirementDrain?.value
         try? await retirementCommit?.value
+        try? await drainRetirements()
         _ = try? await opening?.value
         await deadlineScheduler?.shutdown()
         if didOpen {
             let now = wallNow
+            let binding = currentBindingGeneration
             let commits = try? await sqliteAccess.write { database in
                 let rows = try Row.fetchAll(
                     database,
@@ -235,7 +226,8 @@ extension PaneContextService {
                     return (
                         key,
                         try PaneContextAskSettlement.commit(
-                            database, paneId: key.paneId, id: key.messageId, cause: .appStopping, now: now())
+                            database, paneId: key.paneId, id: key.messageId, cause: .appStopping, now: now(),
+                            currentBindingGeneration: binding)
                     )
                 }
             }
@@ -261,44 +253,73 @@ private func makePaneContextDeadlineScheduler<SourceClock: Clock & Sendable>(
 }
 
 extension PaneContextStorage {
-    static func expireLines(_ database: Database, now: Date) throws {
-        let rows = try Row.fetchAll(
-            database, sql: "SELECT pane_id FROM pane_state WHERE kind = 'agentLine' AND stale = 0 AND expires_at <= ?",
-            arguments: [try timestamp(now)])
-        try database.execute(
-            sql: "UPDATE pane_state SET stale = 1 WHERE kind = 'agentLine' AND stale = 0 AND expires_at <= ?",
-            arguments: [try timestamp(now)])
-        for row in rows { try bumpRevision(database, paneId: PaneId(existingUUID: uuid(row, "pane_id"))) }
+    static func expireLines(_ database: Database, now: Date, sources: [PaneId]? = nil) throws {
+        if let sources, sources.isEmpty { return }
+        let scope =
+            sources.map {
+                " AND pane_id IN (\(Array(repeating: "?", count: $0.count).joined(separator: ",")))"
+            } ?? ""
+        let arguments = StatementArguments(sources?.map(\.uuidString) ?? [])
+        let statement = try database.cachedStatement(
+            sql: """
+                SELECT id, pane_id, expires_at FROM pane_state
+                WHERE kind = 'agentLine' AND stale = 0 AND expires_at IS NOT NULL
+                AND pane_id NOT IN (SELECT pane_id FROM pane_retirement)\(scope)
+                """)
+        let rows = try Row.fetchAll(statement, arguments: arguments)
+        let update = try database.cachedStatement(sql: "UPDATE pane_state SET stale = 1 WHERE id = ?")
+        for row in rows {
+            let rawExpiry: DatabaseValue = row[2]
+            guard let micros = Int64.fromDatabaseValue(rawExpiry) else {
+                throw PaneContextStorageFailure.decode("expires_at")
+            }
+            let expiry = Date(timeIntervalSince1970: Double(micros) / 1_000_000)
+            guard lineIsExpired(expiresAt: expiry, now: now) else { continue }
+            let rawId: DatabaseValue = row[0]
+            let rawPane: DatabaseValue = row[1]
+            guard let rowId = String.fromDatabaseValue(rawId) else { throw PaneContextStorageFailure.decode("id") }
+            guard let paneText = String.fromDatabaseValue(rawPane), let paneUUID = UUID(uuidString: paneText) else {
+                throw PaneContextStorageFailure.decode("pane_id")
+            }
+            try update.execute(arguments: [rowId])
+            try bumpRevision(database, paneId: PaneId(existingUUID: paneUUID))
+        }
     }
 
-    static func hideSettled(_ database: Database, now: Date) throws {
-        let panes = try String.fetchAll(
-            database, sql: "SELECT pane_id FROM pane_request UNION SELECT pane_id FROM pane_event WHERE kind = 'notice'"
-        )
+    static func hideSettled(_ database: Database, now: Date, sources: [PaneId]? = nil) throws {
+        let panes: [String]
+        if let sources {
+            panes = sources.map(\.uuidString)
+        } else {
+            panes = try String.fetchAll(
+                database,
+                sql: """
+                    SELECT pane_id FROM (
+                        SELECT pane_id FROM pane_request UNION SELECT pane_id FROM pane_event WHERE kind = 'notice'
+                    ) WHERE pane_id NOT IN (SELECT pane_id FROM pane_retirement)
+                    """)
+        }
         for text in panes {
             guard let uuid = UUID(uuidString: text) else { throw PaneContextStorageFailure.decode("pane_id") }
             let pane = PaneId(existingUUID: uuid)
-            let settled = try messages(database, paneId: pane).filter { $0.settledAt != nil && !$0.displayHidden }
-                .sorted { $0.position > $1.position }
-            var changed = false
-            for (index, message) in settled.enumerated() {
-                guard
-                    index >= AppPolicies.PaneContext.maximumSettledMessages
-                        || message.settledAt.map({
-                            $0.addingTimeInterval(AppPolicies.PaneContext.settledMessageLifetime) <= now
-                        }) == true
-                else { continue }
-                let table: String
-                switch message.detail.shape {
-                case .ask: table = "pane_request"
-                case .notice: table = "pane_event"
-                }
-                try database.execute(
-                    sql: "UPDATE \(table) SET display_hidden = 1 WHERE id = ?", arguments: [message.rowId.uuidString])
-                changed = true
-            }
-            if changed { try bumpRevision(database, paneId: pane) }
+            guard try !isRetired(database, paneId: pane) else { continue }
+            let rows = try messages(database, paneId: pane).map(PaneContextRetentionMessage.init)
+            _ = try hideSettled(database, paneId: pane, rows: rows, now: now)
         }
+    }
+
+    @discardableResult
+    static func hideSettled(
+        _ database: Database, paneId: PaneId, rows: [PaneContextRetentionMessage], now: Date
+    ) throws -> Set<PaneContextRetentionMessage.Key> {
+        let hidden = hiddenPaneContextSettledKeys(rows, now: now)
+        for message in rows where hidden.contains(message.key) {
+            let statement = try database.cachedStatement(
+                sql: "UPDATE \(message.table.name) SET display_hidden = 1 WHERE id = ?")
+            try statement.execute(arguments: [message.rowId.uuidString])
+        }
+        if !hidden.isEmpty { try bumpRevision(database, paneId: paneId) }
+        return hidden
     }
 
     static func purgeRetired(_ database: Database, now: Date) throws {

@@ -43,7 +43,15 @@ struct SwiftLaneIsolationListGateTests {
             "AppIPCErrorCorrectionTests",
             "AgentStudioAppIPCConnectionHandlerLifecycleTests",
         ]
-        #expect(aggregateSuiteNames == formerAggregateSuiteNames)
+        let deadlineDependentCLISuiteNames: Set<String> = [
+            "AppIPCCLILocalResolutionTests",
+            "AppIPCCLIRawCommandTests",
+            "AppIPCTerminalWaitClampTests",
+            "AppIPCCLIHelpAndExitTests",
+            "AppIPCCLICatalogDiscoverySkipTests",
+            "AppIPCCLIStoreReadThroughTests",
+        ]
+        #expect(aggregateSuiteNames == formerAggregateSuiteNames.union(deadlineDependentCLISuiteNames))
         #expect(explicitSuitePathPairs(in: largeFunction).isEmpty)
 
         for entry in aggregateEntries {
@@ -62,6 +70,7 @@ struct SwiftLaneIsolationListGateTests {
 
         let aggregateIsolatedSuiteNames = try await shellHelperLines("aggregate_serial_non_webkit_suite_filters")
         #expect(formerAggregateSuiteNames.isSubset(of: aggregateIsolatedSuiteNames))
+        #expect(deadlineDependentCLISuiteNames.isSubset(of: aggregateIsolatedSuiteNames))
 
         // These nine explicit large process-global suites moved from the old
         // hand-kept path list into the exact lane inventory in batch 2.
@@ -83,6 +92,23 @@ struct SwiftLaneIsolationListGateTests {
                 row.mode == "process-global",
                 "Former hand-kept suite \(suiteName) must remain in a process-isolated lane"
             )
+        }
+    }
+
+    @Test("pane-context CLI deadline suites run one per process outside the large concurrent phase")
+    func paneContextDeadlineSuitesUseLargeProcessIsolation() async throws {
+        let inventoryRows = try await laneInventoryRows()
+        let isolated = try await shellHelperLines("large_process_global_suite_filters")
+        let concurrent = try await shellHelperLines("swift_test_lane_suite_types large concurrent")
+        for suiteName in [
+            "CLIPaneContextOrderingTests", "CLIPaneContextAvailabilityTests",
+            "CLIPaneContextAnswersTests", "CLIPaneContextDispatchTests",
+        ] {
+            let row = try #require(inventoryRows.first { $0.suiteTypePath == suiteName })
+            #expect(row.lane == "large")
+            #expect(row.mode == "process-global")
+            #expect(isolated.contains(suiteName))
+            #expect(!concurrent.contains(suiteName))
         }
     }
 

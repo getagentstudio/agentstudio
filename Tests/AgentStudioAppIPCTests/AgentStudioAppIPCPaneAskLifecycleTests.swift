@@ -16,6 +16,79 @@ import Testing
 
 @Suite("Pane ask IPC settlement lifecycle")
 struct AgentStudioAppIPCPaneAskLifecycleTests {
+    @Test(
+        "a settled blocking ask retries its recorded answer after replacement while a fresh old-writer ask is refused")
+    func historicalWriterReplaysCommittedOutcome() async throws {
+        try await withPaneContextIPCDomain { domain in
+            let writer = try await domain.bind(conversationId: "original")
+            let parameters = domain.askParameters(writer: writer)
+            let recorder = try domain.facts.attach()
+            try await withLiveServer(
+                makeFixture: {
+                    try LiveServerFixture(
+                        channel: .stable, panes: [makePaneSummary(id: domain.paneId, ordinal: 1)],
+                        paneContextPort: domain.adapter(),
+                        makeConnectionIO: { domain.connectionIOReportingRefusals($0) })
+                },
+                releaseHeldWork: { domain.access.releaseHeldWork() },
+                body: { fixture in
+                    try fixture.server.start()
+                    let token = try fixture.issueTestCredential(
+                        for: .pane(paneId: domain.paneId, credentialRecordId: UUIDv7.generate(), status: .registered))
+                    let connection = try await connectWithoutBlockingCooperativePool(
+                        socketPath: fixture.paths.socketURL.path)
+                    defer { connection.close() }
+                    var reader = TestFrameReader()
+                    try await loginWithoutBlockingMainActor(
+                        connection: connection, token: token, requestId: 1, reader: &reader)
+                    let request = try JSONRPCClientRequest(
+                        id: .number(2), method: "pane.message.ask", params: JSONRPCCodec.encodeJSONValue(parameters))
+                    try await sendRequestWithoutBlockingCooperativePool(connection: connection, request: request)
+                    try await recorder.expectNext(in: domain.paneId, .openAskCount(1))
+                    let answered = await domain.service.answer(
+                        .init(
+                            messageId: AgentMessageId(existingUUID: parameters.messageId),
+                            paneId: PaneId(existingUUID: domain.paneId), by: .localUser, value: .text("recorded")))
+                    #expect(answered == .answered)
+                    try await recorder.expectNext(in: domain.paneId, .openAskCount(0))
+                    let initialReply = try await reader.receiveResponseWithoutBlockingMainActor(connection: connection)
+                    let initial = try paneContextWireResult(IPCPaneAskOutcome.self, from: initialReply)
+                    #expect(initialReply.id == .number(2))
+                    #expect(initial == .answered(value: .text(value: "recorded")))
+                    _ = try await domain.bind(conversationId: "replacement")
+
+                    // Each CLI-style retry has its own connection; finishing the previous
+                    // waiting request must not be inferred from when its bytes arrive.
+                    var replayClient = try await PaneContextWireClient(fixture: fixture, paneId: domain.paneId)
+                    defer { replayClient.close() }
+                    let replayReply = try await replayClient.response(method: "pane.message.ask", params: parameters)
+                    let replayed = try paneContextWireResult(IPCPaneAskOutcome.self, from: replayReply)
+                    #expect(replayReply.id == .number(2))
+                    #expect(replayed == initial)
+
+                    let fresh = domain.askParameters(writer: writer)
+                    var freshClient = try await PaneContextWireClient(fixture: fixture, paneId: domain.paneId)
+                    defer { freshClient.close() }
+                    let refused = try await freshClient.response(method: "pane.message.ask", params: fresh)
+                    #expect(refused.id == .number(2))
+                    #expect(paneContextRefusalReason(refused) == "stale")
+                    if case .object(let fields)? = refused.error?.data {
+                        #expect(fields["staleness"] == .object(["kind": .string("writerReplaced")]))
+                    } else {
+                        Issue.record("Missing fresh historical-writer refusal")
+                    }
+                    let stored = await domain.service.readDetail(
+                        .init(paneId: PaneId(existingUUID: domain.paneId), page: .first))
+                    if case .detail(let detail) = stored {
+                        #expect(detail.messages.map { $0.id.uuid } == [parameters.messageId])
+                    } else {
+                        Issue.record("Missing recorded ask after replay")
+                    }
+                })
+            try await recorder.finish()
+        }
+    }
+
     @Test("Dismissal hands back; sender withdrawal returns withdrawn", arguments: [false, true])
     func terminalStateMappings(withdraw: Bool) async throws {
         try await withPaneContextIPCDomain { domain in
@@ -140,7 +213,7 @@ struct AgentStudioAppIPCPaneAskLifecycleTests {
                         failRead.withLock { $0 = true }
                         try await sendRequestWithoutBlockingCooperativePool(
                             connection: connection, request: try connectionContractRequest("system.ping", id: 4))
-                    case .stopping: await valueFromDedicatedThread { fixture.stop() }
+                    case .stopping: await fixture.stop()
                     }
                     try await recorder.expectNext(in: domain.paneId, .openAskCount(0))
                     await fixture.server.joinConnectionHandlers()

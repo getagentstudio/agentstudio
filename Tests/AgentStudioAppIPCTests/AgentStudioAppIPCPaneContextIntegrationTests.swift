@@ -2,6 +2,7 @@ import AgentStudioAppIPC
 import AgentStudioIPCTransport
 import AgentStudioInfrastructure
 import AgentStudioProgrammaticControl
+import AgentStudioSessions
 import AgentStudioTestHarness
 import AgentStudioTestSupport
 import Foundation
@@ -11,6 +12,41 @@ import Testing
 
 @Suite("Pane context IPC real domain integration")
 struct AgentStudioAppIPCPaneContextIntegrationTests {
+    @Test("a replaced writer can replay its nonblocking ask but cannot create another ask")
+    func historicalWriterReplaysRecordedAsk() async throws {
+        try await withPaneContextIPCDomain { domain in
+            let writer = try await domain.bind(conversationId: "original")
+            let parameters = domain.sendParameters(
+                writer: writer, shape: .ask(reason: .question, form: .freeText(placeholder: nil), waiting: .nonBlocking)
+            )
+            try await withPaneContextWire(domain: domain) { _, client in
+                let created = try await client.send(parameters)
+                #expect(created == .created(id: parameters.messageId))
+                _ = try await domain.bind(conversationId: "replacement")
+
+                let replayed = try await client.send(parameters)
+                #expect(replayed == .existing(id: parameters.messageId))
+                let fresh = domain.sendParameters(
+                    writer: writer,
+                    shape: .ask(reason: .question, form: .freeText(placeholder: nil), waiting: .nonBlocking))
+                let refused = try await client.response(method: "pane.message.send", params: fresh)
+                #expect(paneContextRefusalReason(refused) == "stale")
+                if case .object(let fields)? = refused.error?.data {
+                    #expect(fields["staleness"] == .object(["kind": .string("writerReplaced")]))
+                } else {
+                    Issue.record("Missing historical-writer refusal detail")
+                }
+                let detail = try await client.detail()
+                #expect(detail.messages.map(\.id) == [parameters.messageId])
+                #expect(
+                    detail.messages.first?.shape
+                        == .ask(
+                            reason: .question, form: .freeText(placeholder: nil), waiting: .nonBlocking, state: .open))
+                #expect(detail.session?.conversationId == "replacement")
+            }
+        }
+    }
+
     @Test("More can never read a source outside the credential pane's current view")
     func foreignPageSourceIsRefused() async throws {
         try await withPaneContextIPCDomain { domain in
@@ -214,6 +250,9 @@ struct AgentStudioAppIPCPaneContextIntegrationTests {
     @Test("Notice send replay, conflict, attribution and withdrawal use the production path")
     func noticeIdentityAndWithdrawal() async throws {
         try await withPaneContextIPCDomain { domain in
+            let unbound = try await domain.ingestion.snapshot(
+                .pane(domain.paneId, page: SessionsSnapshotPage(limit: 20, after: nil)))
+            #expect(unbound.currentBinding == nil)
             try await withLiveServer(
                 makeFixture: {
                     try LiveServerFixture(
@@ -274,6 +313,9 @@ struct AgentStudioAppIPCPaneContextIntegrationTests {
                     #expect(detail.messages.first?.sender == .pane(paneId: domain.paneId))
                     #expect(detail.messages.first?.body == sent.body)
                     #expect(detail.messages.first?.shape == .notice(state: .unread))
+                    let stillUnbound = try await domain.ingestion.snapshot(
+                        .pane(domain.paneId, page: SessionsSnapshotPage(limit: 20, after: nil)))
+                    #expect(stillUnbound.currentBinding == nil)
                     let withdraw = IPCPaneMessageWithdrawParams(
                         handle: "self", messageId: messageId, correlationId: UUIDv7.generate())
                     try await sendRequestWithoutBlockingCooperativePool(

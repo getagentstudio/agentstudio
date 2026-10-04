@@ -132,97 +132,27 @@ struct AgentStudioIPCSessionsVerticalTests {
         #expect(try await harness.sessionQuery(paneId: harness.sparePaneId).sourceHealth == .unbound)
     }
 
-    @Test("a needs-you report reaches the query as agent-reported state with a request identity")
+    @Test("a retired attention assertion cannot mutate a bound pane")
     func needsYouReportReachesTheQuery() async throws {
         let harness = try await #require(SessionsVerticalHarnessContext.current).freshPanePair()
         _ = try await harness.bindBoundPane()
-
-        let report = try await harness.sessionReport(
-            paneId: harness.boundPaneId,
-            kind: "needsYou",
-            explanation: "waiting on approval"
-        )
-        #expect(report.state == .needsYou)
-        #expect(report.origin == .agentReported)
-        let requestId = try #require(report.requestId)
-
-        let queried = try await harness.sessionQuery(paneId: harness.boundPaneId)
-        #expect(queried.state == .needsYou)
-        #expect(queried.origin == .agentReported)
-        #expect(queried.needsYou?.requestId == requestId)
-        #expect(queried.needsYou?.explanation == "waiting on approval")
+        let before = try await harness.paneSnapshot(paneId: harness.boundPaneId)
+        let response = try await harness.rawSessionReport(
+            paneId: harness.boundPaneId, kind: "needsYou", explanation: "waiting on approval")
+        let after = try await harness.paneSnapshot(paneId: harness.boundPaneId)
+        #expect(response.error?.code == -32_601)
+        #expect(after == before)
     }
 
-    @Test("a done report reaches the query as agent-reported done")
+    @Test("a retired done assertion cannot override hook-derived state")
     func doneReportReachesTheQuery() async throws {
         let harness = try await #require(SessionsVerticalHarnessContext.current).freshPanePair()
         _ = try await harness.bindBoundPane()
-
-        let report = try await harness.sessionReport(paneId: harness.boundPaneId, kind: "done", explanation: nil)
-        #expect(report.state == .done)
-
-        let queried = try await harness.sessionQuery(paneId: harness.boundPaneId)
-        #expect(queried.state == .done)
-        #expect(queried.origin == .agentReported)
-        #expect(queried.needsYou == nil)
-    }
-
-    @Test("a message with Unicode and an embedded newline round-trips exactly")
-    func messageTextRoundTripsExactly() async throws {
-        let harness = try await #require(SessionsVerticalHarnessContext.current).freshPanePair()
-        _ = try await harness.bindBoundPane()
-        let text = "migration \u{1F680} done\nsecond line \u{00E9}\u{4E2D}"
-
-        let sent = try await harness.sessionMessage(paneId: harness.boundPaneId, text: text)
-        #expect(sent.attributed)
-
-        let queried = try await harness.sessionQuery(paneId: harness.boundPaneId)
-        #expect(queried.messages.map(\.text) == [text])
-        #expect(queried.messages.first?.seen == false)
-        #expect(queried.messages.first?.occurrenceId == sent.occurrenceId)
-    }
-
-    @Test("the same message correlation sent twice stores one occurrence and returns the same result")
-    func repeatedMessageCorrelationStoresOneOccurrence() async throws {
-        let harness = try await #require(SessionsVerticalHarnessContext.current).freshPanePair()
-        _ = try await harness.bindBoundPane()
-        let correlationId = UUIDv7.generate()
-
-        let first = try await harness.sessionMessage(
-            paneId: harness.boundPaneId, text: "only once", correlationId: correlationId
-        )
-        let second = try await harness.sessionMessage(
-            paneId: harness.boundPaneId, text: "only once", correlationId: correlationId
-        )
-
-        #expect(first == second)
-        #expect(try await harness.sessionQuery(paneId: harness.boundPaneId).messages.count == 1)
-    }
-
-    @Test("an unbound pane keeps a message durable and unattributed but refuses a deliberate report")
-    func unboundPaneKeepsMessagesAndRefusesReports() async throws {
-        let harness = try await #require(SessionsVerticalHarnessContext.current).freshPanePair()
-
-        // The same awkward text as the bound case: an unattributed message is a
-        // successful durable outcome, so it may not lose a byte either.
-        let text = "no binding yet \u{1F9ED}\nsecond line \u{00E9}\u{4E2D}"
-        let sent = try await harness.sessionMessage(paneId: harness.sparePaneId, text: text)
-        #expect(!sent.attributed)
-
-        let queried = try await harness.sessionQuery(paneId: harness.sparePaneId)
-        #expect(queried.messages.map(\.text) == [text])
-        #expect(queried.messages.first?.occurrenceId == sent.occurrenceId)
-        #expect(queried.sourceHealth == .unbound)
-
-        let failure = try await harness.rawSessionReport(
-            paneId: harness.sparePaneId, kind: "needsYou", explanation: "nobody home"
-        )
-        let errorData = try #require(failure.error?.data)
-        guard case .object(let fields) = errorData, case .string(let reason)? = fields["reason"] else {
-            Issue.record("an unbound deliberate report did not report a typed reason")
-            return
-        }
-        #expect(reason == "bindingRequired")
+        let before = try await harness.paneSnapshot(paneId: harness.boundPaneId)
+        let response = try await harness.rawSessionReport(paneId: harness.boundPaneId, kind: "done", explanation: nil)
+        let after = try await harness.paneSnapshot(paneId: harness.boundPaneId)
+        #expect(response.error?.code == -32_601)
+        #expect(after == before)
     }
 
     /// Program design, Binding admission: an ended or older generation arriving

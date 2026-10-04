@@ -8,14 +8,6 @@ package enum IPCSessionFailureReason {
     package static let correlationConflict = "correlationConflict"
 }
 
-/// Deliberate model vocabulary. The model never types a request identifier: the
-/// app derives and coalesces the assertion identity behind these three verbs.
-package enum IPCSessionReportKind: String, Codable, CaseIterable, Equatable, Sendable, IPCSchemaProviding {
-    case needsYou
-    case clearNeedsYou
-    case done
-}
-
 /// Wire projection of the Sessions agent state. It mirrors the domain states
 /// without exporting the domain type across the protocol boundary.
 package enum IPCSessionAgentState: String, Codable, CaseIterable, Equatable, Sendable, IPCSchemaProviding {
@@ -65,68 +57,6 @@ package enum IPCSessionSourceHealth: String, Codable, CaseIterable, Equatable, S
     case unbound
     case live
     case ended
-}
-
-package struct IPCSessionReportParams: Codable, Equatable, Sendable {
-    package let handle: String
-    package let kind: IPCSessionReportKind
-    package let explanation: String?
-    package let correlationId: UUID
-
-    package init(handle: String, kind: IPCSessionReportKind, explanation: String?, correlationId: UUID) {
-        self.handle = handle
-        self.kind = kind
-        self.explanation = explanation
-        self.correlationId = correlationId
-    }
-}
-
-package struct IPCSessionReportResult: Codable, Equatable, Sendable {
-    package let paneId: UUID
-    package let state: IPCSessionAgentState
-    package let origin: IPCSessionEvidenceOrigin
-    package let requestId: String?
-    package let correlationId: UUID
-
-    package init(
-        paneId: UUID,
-        state: IPCSessionAgentState,
-        origin: IPCSessionEvidenceOrigin,
-        requestId: String?,
-        correlationId: UUID
-    ) {
-        self.paneId = paneId
-        self.state = state
-        self.origin = origin
-        self.requestId = requestId
-        self.correlationId = correlationId
-    }
-}
-
-package struct IPCSessionMessageParams: Codable, Equatable, Sendable {
-    package let handle: String
-    package let text: String
-    package let correlationId: UUID
-
-    package init(handle: String, text: String, correlationId: UUID) {
-        self.handle = handle
-        self.text = text
-        self.correlationId = correlationId
-    }
-}
-
-package struct IPCSessionMessageResult: Codable, Equatable, Sendable {
-    package let paneId: UUID
-    package let occurrenceId: UUID
-    package let attributed: Bool
-    package let correlationId: UUID
-
-    package init(paneId: UUID, occurrenceId: UUID, attributed: Bool, correlationId: UUID) {
-        self.paneId = paneId
-        self.occurrenceId = occurrenceId
-        self.attributed = attributed
-        self.correlationId = correlationId
-    }
 }
 
 package struct IPCSessionProviderIdentity: Codable, Equatable, Sendable {

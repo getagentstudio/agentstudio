@@ -38,7 +38,7 @@ enum IPCMethodMetadataValidator {
             try validateRequiredCorrelationField(in: input.parameterSchema)
         }
         try validateModelCalls(input.modelCalls, parameterSchema: input.parameterSchema)
-        try validateOfflineEligibility(input.offlineEligibility, modelCalls: input.modelCalls)
+        try validateOfflineEligibility(input.offlineEligibility, methodName: input.name)
     }
 
     private static func sortedUnique<RawValue>(
@@ -194,16 +194,10 @@ enum IPCMethodMetadataValidator {
         }
     }
 
-    private static func validateOfflineEligibility(
-        _ eligibility: IPCMethodOfflineEligibility,
-        modelCalls: [IPCModelCallProjection]
-    ) throws {
-        guard case .modelCallVariants(let eligibleVariants) = eligibility else { return }
-        let projectedVariants = Set(modelCalls.map(\.variant))
-        guard !eligibleVariants.isEmpty,
-            !eligibleVariants.contains(.needsYouClear),
-            eligibleVariants.isSubset(of: projectedVariants)
-        else {
+    private static func validateOfflineEligibility(_ eligibility: IPCMethodOfflineEligibility, methodName: String)
+        throws
+    {
+        guard eligibility != .noticeOnly || methodName == "pane.message.send" else {
             throw IPCMethodDescriptorError.invalidOfflineEligibility
         }
     }

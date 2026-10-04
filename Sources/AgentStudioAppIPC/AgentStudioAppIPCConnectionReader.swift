@@ -13,7 +13,8 @@ struct AgentStudioAppIPCConnectionReader: Sendable {
     let maxRequestFrameBytes: Int
     let isStopping: @Sendable () -> Bool
     let executeRequest:
-        @Sendable (JSONRPCRequest, JSONRPCIdentifier, AgentStudioAppIPCConnectionState) async throws -> JSONValue
+        @Sendable (JSONRPCRequest, JSONRPCIdentifier, AgentStudioAppIPCConnectionState) async throws
+            -> AppIPCInvocationResult
 
     func run(connectionState: AgentStudioAppIPCConnectionState) async {
         var decoder = NDJSONFrameDecoder(maxFrameBytes: maxRequestFrameBytes)
@@ -108,7 +109,7 @@ struct AgentStudioAppIPCConnectionReader: Sendable {
         guard let id = request.id else { return true }
         do {
             let result = try await executeRequest(request, id, connectionState)
-            return try await writer.sendResponse(JSONRPCResponse.success(id: id, result: result)) == .accepted
+            return try await writer.sendResult(id: id, result: result) == .accepted
         } catch let error as AgentStudioAppIPCRequestError {
             return try await writer.sendError(id: id, code: error.code, message: error.message, data: error.data)
                 == .accepted

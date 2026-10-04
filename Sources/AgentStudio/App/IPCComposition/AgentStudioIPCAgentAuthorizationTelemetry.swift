@@ -8,6 +8,13 @@ import Foundation
 struct AgentStudioIPCAgentAuthorizationTelemetry: AppIPCAgentAuthorizationTelemetry {
     let performanceTraceRecorder: AgentStudioPerformanceTraceRecorder?
 
+    func recordOfflineNoticeRefusal(reason: PaneCLIOutboxDrain.RefusalReason) {
+        performanceTraceRecorder?.recordDuration(
+            .ipcOutboxRefusal, duration: .zero,
+            attributes: ["agentstudio.performance.ipc.outbox_refusal.reason": .string(reason.rawValue)]
+        )
+    }
+
     func recordAgentAuthorization(elapsed: Duration, outcome: AppIPCAgentAuthorizationOutcome) {
         performanceTraceRecorder?.recordDuration(
             .ipcAgentAuthorization,

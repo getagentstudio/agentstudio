@@ -10,6 +10,7 @@ public struct ArchitectureLintCommand {
     private static let specializedRuleIDByLedgerFilename: [String: String] = [
         "forbidden-test-wait-ledger.tsv": "agentstudio_no_forbidden_test_wait",
         "adhoc-continuation-wait-ledger.tsv": "agentstudio_no_adhoc_continuation_wait",
+        "process-singleton-ledger.tsv": "agentstudio_no_new_process_singletons",
     ]
 
     private let fileManager: FileManager

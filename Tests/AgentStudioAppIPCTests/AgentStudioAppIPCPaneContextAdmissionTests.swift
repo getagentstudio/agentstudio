@@ -4,6 +4,7 @@ import AgentStudioInfrastructure
 import AgentStudioProgrammaticControl
 import AgentStudioTestSupport
 import Foundation
+import GRDB
 import Synchronization
 import Testing
 
@@ -169,41 +170,68 @@ struct AgentStudioAppIPCPaneContextAdmissionTests {
         #expect(lookupWitness.lookupCount == 0)
     }
 
-    @Test("Every pane-context registration refuses explicit foreign handles on the real socket")
-    func onlyCredentialSelfHandleIsAccepted() async throws {
-        try await withLiveServer(
-            makeFixture: { try LiveServerFixture(channel: .stable) },
-            body: { fixture in
-                try fixture.server.start()
-                let token = try fixture.issueTestCredential(
-                    for: .pane(paneId: fixture.boundPaneId, credentialRecordId: UUIDv7.generate(), status: .registered))
-                let connection = try await connectWithoutBlockingCooperativePool(
-                    socketPath: fixture.paths.socketURL.path)
-                defer { connection.close() }
-                var reader = TestFrameReader()
-                try await loginWithoutBlockingMainActor(
-                    connection: connection, token: token, requestId: 1, reader: &reader)
-                let catalog = try BuiltInMethodRegistrationsFixture().catalog
-                let methods = catalog.erasedDescriptors.map(\.metadata)
-                    .filter { $0.executionOwner == .paneContextService }
-                for (index, method) in methods.enumerated() {
-                    let example = try #require(method.examples.first)
-                    let encoded = try JSONRPCCodec.encodeJSONValue(example)
-                    guard case .object(let fields) = encoded, case .object(var parameters)? = fields["parameters"]
-                    else {
-                        Issue.record("Descriptor example must contain object parameters")
-                        return
+    @Test(
+        "Every pane-context registration refuses foreign handles without effects and preserves non-pane authorization",
+        arguments: [true, false])
+    func onlyCredentialSelfHandleIsAccepted(paneAgent: Bool) async throws {
+        try await withPaneContextIPCDomain { domain in
+            let before = try await paneContextMutationCounts(domain)
+            try await withLiveServer(
+                makeFixture: {
+                    try LiveServerFixture(
+                        channel: paneAgent ? .stable : .debug,
+                        panes: [makePaneSummary(id: domain.paneId, ordinal: 1)], paneContextPort: domain.adapter())
+                },
+                releaseHeldWork: { domain.access.releaseHeldWork() },
+                body: { fixture in
+                    try fixture.server.start()
+                    let token =
+                        paneAgent
+                        ? try fixture.issueTestCredential(
+                            for: .pane(
+                                paneId: fixture.boundPaneId, credentialRecordId: UUIDv7.generate(), status: .registered)
+                        )
+                        : fixture.installDebugCredential()
+                    let connection = try await connectWithoutBlockingCooperativePool(
+                        socketPath: fixture.paths.socketURL.path)
+                    defer { connection.close() }
+                    var reader = TestFrameReader()
+                    try await loginWithoutBlockingMainActor(
+                        connection: connection, token: token, requestId: 1, reader: &reader)
+                    let catalog = try BuiltInMethodRegistrationsFixture().catalog
+                    let methods = catalog.erasedDescriptors.map(\.metadata)
+                        .filter { $0.executionOwner == .paneContextService }
+                    #expect(methods.count == 8)
+                    for (index, method) in methods.enumerated() {
+                        #expect(method.documentedErrors.contains { $0.reason == "notOwnPane" })
+                        let notOwnPaneError = try #require(method.documentedErrors.first { $0.reason == "notOwnPane" })
+                        #expect(notOwnPaneError.description.contains("handle: self"))
+                        let example = try #require(method.examples.first)
+                        let encoded = try JSONRPCCodec.encodeJSONValue(example)
+                        guard case .object(let fields) = encoded, case .object(var parameters)? = fields["parameters"]
+                        else {
+                            Issue.record("Descriptor example must contain object parameters")
+                            return
+                        }
+                        parameters["handle"] = .string(paneAgent ? "pane:\(UUIDv7.generate().uuidString)" : "self")
+                        try await sendRequestWithoutBlockingCooperativePool(
+                            connection: connection,
+                            request: try JSONRPCClientRequest(
+                                id: .number(index + 2), method: method.name, params: .object(parameters)))
+                        let response = try await reader.receiveResponseWithoutBlockingMainActor(connection: connection)
+                        #expect(response.id == .number(index + 2))
+                        #expect(response.error?.code == -32_002)
+                        if paneAgent {
+                            #expect(response.error?.data == .object(["reason": .string("notOwnPane")]))
+                        } else {
+                            #expect(response.error?.data == nil)
+                            #expect(response.error?.message == "unauthorized")
+                        }
+                        let after = try await paneContextMutationCounts(domain)
+                        #expect(after == before)
                     }
-                    parameters["handle"] = .string("pane:\(UUIDv7.generate().uuidString)")
-                    try await sendRequestWithoutBlockingCooperativePool(
-                        connection: connection,
-                        request: try JSONRPCClientRequest(
-                            id: .number(index + 2), method: method.name, params: .object(parameters)))
-                    let response = try await reader.receiveResponseWithoutBlockingMainActor(connection: connection)
-                    #expect(response.id == .number(index + 2))
-                    #expect(response.error?.code == -32_002)
-                }
-            })
+                })
+        }
     }
 
     @Test(
@@ -258,5 +286,14 @@ private final class PaneContextScopeLookupWitness: AppIPCOwnPaneScopePort, Senda
     func ownPaneScope(boundPaneId: UUID) -> AppIPCOwnPaneScope? {
         count.withLock { $0 += 1 }
         return AppIPCOwnPaneScope(boundPaneId: boundPaneId, isDrawerTerminal: false, drawerChildPaneIds: [])
+    }
+}
+
+private func paneContextMutationCounts(_ domain: PaneContextIPCDomainCompanion) async throws -> [Int] {
+    try await domain.localPool.read { database in
+        try [
+            "pane_state", "pane_request", "pane_event", "pane_write_order", "pane_epoch_claim", "pane_answer_position",
+        ]
+        .map { table in try Int.fetchOne(database, sql: "SELECT COUNT(*) FROM \(table)") ?? 0 }
     }
 }

@@ -54,6 +54,18 @@ package actor AgentStudioAppIPCConnectionWriter {
     }
 
     @discardableResult
+    package func sendResult(id: JSONRPCIdentifier, result: AppIPCInvocationResult) throws -> AppIPCFrameEnqueueResult {
+        switch result {
+        case .encoded(let bytes):
+            guard isAcceptingFrames else { return .overloaded }
+            return try enqueueBytes(
+                JSONRPCCodec.encodeResponseBytes(id: id, encodedResult: bytes, maxFrameBytes: maxFrameBytes))
+        case .value(let value):
+            return try sendResponse(JSONRPCResponse.success(id: id, result: value))
+        }
+    }
+
+    @discardableResult
     package func sendResponse(_ response: JSONRPCResponse) throws -> AppIPCFrameEnqueueResult {
         try sendFrame(JSONRPCCodec.encodeResponse(response))
     }
@@ -76,6 +88,10 @@ package actor AgentStudioAppIPCConnectionWriter {
         // must not land behind it or abort bytes accepted before orderly EOF.
         guard isAcceptingFrames else { return .overloaded }
         let bytes = try NDJSONFrameEncoder.encode(frame, maxFrameBytes: maxFrameBytes)
+        return enqueueBytes(bytes)
+    }
+
+    private func enqueueBytes(_ bytes: Data) -> AppIPCFrameEnqueueResult {
         let accepted = outputState.withLock { state in
             guard !state.isClosed,
                 bytes.count <= AppPolicies.IPC.maximumQueuedOutputBytes - state.queuedByteCount

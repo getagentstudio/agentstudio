@@ -2,15 +2,33 @@ import AgentStudioIPCTransport
 import AgentStudioProgrammaticControl
 import Foundation
 
-struct AgentStudioAppIPCRequestError: Error, Equatable, Sendable {
-    let code: Int
-    let message: String
-    let data: JSONValue?
+package struct AgentStudioAppIPCRequestError: Error, Equatable, Sendable {
+    package let code: Int
+    package let message: String
+    package let data: JSONValue?
 
-    init(code: Int, message: String, data: JSONValue? = nil) {
+    package init(code: Int, message: String, data: JSONValue? = nil) {
         self.code = code
         self.message = message
         self.data = data
+    }
+
+    package static func invalidCommandArguments(_ correction: IPCSchemaValidationError) -> Self {
+        .init(
+            code: -32_602, message: "invalid arguments",
+            data: .object([
+                "reason": .string("invalidArguments"), "fieldPath": .string(correction.fieldPath),
+                "expected": .string(correction.expected),
+            ]))
+    }
+
+    package static func unknownCommand(commandId: String, closestMatches: [String]) -> Self {
+        .init(
+            code: -32_003, message: "unsupported capability",
+            data: .object([
+                "reason": .string("unknownCommand"), "commandId": .string(commandId),
+                "closestMatches": .array(closestMatches.prefix(5).map(JSONValue.string)),
+            ]))
     }
 
     static let unauthenticated = Self(code: -32_001, message: "unauthenticated")
@@ -33,8 +51,10 @@ struct AgentStudioAppIPCRequestError: Error, Equatable, Sendable {
 }
 
 extension AgentStudioAppIPCRequestError {
-    init(_ error: Error) {
+    package init(_ error: Error) {
         switch error {
+        case let requestError as Self:
+            self = requestError
         case let authorizationError as AuthorizationError:
             self.init(authorizationError)
         case let queryError as AppIPCQueryError:
@@ -100,6 +120,7 @@ extension AgentStudioAppIPCRequestError {
         switch error.reason {
         case .invalidField: code = -32_602
         case .tooLarge: code = -32_008
+        case .notOwnPane: code = -32_002
         case .unavailable: code = -32_005
         case .paneGone, .sourceNotInView: code = -32_004
         case .internalError: code = -32_603

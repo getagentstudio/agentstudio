@@ -1,3 +1,4 @@
+import AgentStudioTestHarness
 import Foundation
 import Testing
 
@@ -9,12 +10,159 @@ import Testing
 @MainActor
 @Suite("Workspace cache apply governor", .serialized)
 struct WorkspaceCacheCoordinatorApplyGovernorTests {
+    @Test("repository projection applies without receipt scope", arguments: [false, true])
+    func repositoryProjectionAppliesWithoutReceiptScope(installSink: Bool) throws {
+        let workspaceStore = WorkspaceStore()
+        let repoCache = RepoCacheAtom()
+        let repo = workspaceStore.addRepo(at: URL(fileURLWithPath: "/tmp/cache-without-receipt-scope"))
+        let lifetime = try #require(workspaceStore.repositoryTopologyAtom.repositoryObservationLifetimes[repo.id])
+        let key = try #require(RepoBranchKey(repoId: repo.id, branch: "main"))
+        let expected = PullRequestFacts(openCount: 2, exactOpenURL: nil)
+        let sink: WorkspaceCacheCoordinatorFactSink?
+        if installSink {
+            sink = { _, _ in Issue.record("A missing receipt scope must not emit a fact") }
+        } else {
+            sink = nil
+        }
+        let coordinator = WorkspaceCacheCoordinator(
+            bus: EventBus<RuntimeEnvelope>(), workspaceStore: workspaceStore, repoCache: repoCache,
+            scopeSyncHandler: { _ in }, factSink: sink)
+
+        coordinator.handleForgeEnrichment(
+            .pullRequestRepositoryProjectionChanged(
+                repoId: repo.id, projection: .stable(.ready(confirmedFactsByBranch: ["main": expected])),
+                invalidatedBranches: []),
+            envelopeSequence: 1, observationLifetime: .repository(lifetime), scope: nil)
+
+        #expect(repoCache.pullRequestFacts(for: key) == expected)
+        #expect(repoCache.cacheRevision == 1)
+        #expect(!repoCache.isPullRequestLoading(forRepository: repo.id))
+    }
+
+    @Test("source delivery does not prove held cache application")
+    func sourceDeliveryDoesNotProveCacheApplication() async throws {
+        let bus = EventBus<RuntimeEnvelope>()
+        let workspaceStore = WorkspaceStore()
+        let repoCache = RepoCacheAtom()
+        let repo = workspaceStore.addRepo(at: URL(fileURLWithPath: "/tmp/cache-application-order"))
+        let lifetime = try #require(workspaceStore.repositoryTopologyAtom.repositoryObservationLifetimes[repo.id])
+        let branchKey = try #require(RepoBranchKey(repoId: repo.id, branch: "main"))
+        let expected = PullRequestFacts(openCount: 1, exactOpenURL: nil)
+        let tick = HeldStep<TestPushClock.Instant>("coordinator application tick")
+        let clock = HeldCacheApplyClock(tick: tick)
+        let applications = try WorkspaceCacheApplicationRecorder(cache: repoCache)
+        let coordinator = WorkspaceCacheCoordinator(
+            bus: bus, workspaceStore: workspaceStore, repoCache: repoCache,
+            scopeSyncHandler: { _ in }, enrichmentApplyTickCadence: .milliseconds(25),
+            enrichmentApplyClock: clock, factSink: applications.sink
+        )
+        try await withCacheApplicationWorld(
+            coordinator: coordinator, applications: applications, heldTicks: [tick]
+        ) {
+            await bus.post(
+                .worktree(
+                    WorktreeEnvelope.test(
+                        event: .forge(
+                            .pullRequestRepositoryProjectionChanged(
+                                repoId: repo.id,
+                                projection: .stable(.ready(confirmedFactsByBranch: ["main": expected])),
+                                invalidatedBranches: [])),
+                        repoId: repo.id, worktreeId: nil,
+                        source: .system(.service(.gitForge(provider: "stub"))), seq: 1,
+                        eventId: UUIDv7.generate(), observationLifetime: .repository(lifetime))))
+            let deadline = try await tick.firstArrival()
+            #expect(repoCache.pullRequestFacts(for: branchKey) == nil)
+            clock.backing.advance(to: deadline)
+            tick.release()
+            try await applications.expectApplied(repositoryID: repo.id, kind: .repositoryProjection)
+            #expect(repoCache.pullRequestFacts(for: branchKey) == expected)
+        }
+    }
+
+    @Test("descending sequences preserve the winning payload and settle each enqueue once")
+    func descendingSequencesPreserveWinningPayload() async throws {
+        let bus = EventBus<RuntimeEnvelope>()
+        let workspaceStore = WorkspaceStore()
+        let repoCache = RepoCacheAtom()
+        let repo = workspaceStore.addRepo(at: URL(fileURLWithPath: "/tmp/cache-descending-sequence"))
+        let lifetime = try #require(workspaceStore.repositoryTopologyAtom.repositoryObservationLifetimes[repo.id])
+        let key = try #require(RepoBranchKey(repoId: repo.id, branch: "main"))
+        let winner = PullRequestFacts(openCount: 4, exactOpenURL: nil)
+        let olderValue = PullRequestFacts(openCount: 3, exactOpenURL: nil)
+        let tick = HeldStep<TestPushClock.Instant>("descending projection apply tick")
+        let clock = HeldCacheApplyClock(tick: tick)
+        let applications = try WorkspaceCacheApplicationRecorder(cache: repoCache)
+        let coordinator = WorkspaceCacheCoordinator(
+            bus: bus, workspaceStore: workspaceStore, repoCache: repoCache,
+            scopeSyncHandler: { _ in }, enrichmentApplyTickCadence: .milliseconds(25),
+            enrichmentApplyClock: clock, factSink: applications.sink)
+        try await withCacheApplicationWorld(coordinator: coordinator, applications: applications, heldTicks: [tick]) {
+            for (sequence, facts) in [(UInt64(4), winner), (UInt64(3), olderValue)] {
+                await bus.post(
+                    .worktree(
+                        WorktreeEnvelope.test(
+                            event: .forge(
+                                .pullRequestRepositoryProjectionChanged(
+                                    repoId: repo.id,
+                                    projection: .stable(.ready(confirmedFactsByBranch: ["main": facts])),
+                                    invalidatedBranches: [])),
+                            repoId: repo.id, worktreeId: nil,
+                            source: .system(.service(.gitForge(provider: "stub"))), seq: sequence,
+                            eventId: UUIDv7.generate(), observationLifetime: .repository(lifetime))))
+            }
+            try await applications.expectDisposition(
+                repositoryID: repo.id, sequence: 4, kind: .repositoryProjection, .superseded)
+            let deadline = try await tick.firstArrival()
+            clock.backing.advance(to: deadline)
+            tick.release()
+            try await applications.expectDisposition(
+                repositoryID: repo.id, sequence: 3, kind: .repositoryProjection, .applied)
+            #expect(repoCache.pullRequestFacts(for: key) == winner)
+            #expect(repoCache.cacheRevision == 1)
+        }
+    }
+
+    @Test("shutdown joins pending acknowledgements and reports ignored stale observations")
+    func shutdownJoinsPendingAcknowledgements() async throws {
+        let bus = EventBus<RuntimeEnvelope>()
+        let workspaceStore = WorkspaceStore()
+        let repoCache = RepoCacheAtom()
+        let repo = workspaceStore.addRepo(at: URL(fileURLWithPath: "/tmp/cache-shutdown-acknowledgement"))
+        let tick = HeldStep<TestPushClock.Instant>("stale projection apply tick")
+        let clock = HeldCacheApplyClock(tick: tick)
+        let applications = try WorkspaceCacheApplicationRecorder(cache: repoCache)
+        let coordinator = WorkspaceCacheCoordinator(
+            bus: bus, workspaceStore: workspaceStore, repoCache: repoCache,
+            scopeSyncHandler: { _ in }, enrichmentApplyTickCadence: .milliseconds(25),
+            enrichmentApplyClock: clock, factSink: applications.sink)
+        try await withCacheApplicationWorld(coordinator: coordinator, applications: applications, heldTicks: [tick]) {
+            await bus.post(
+                .worktree(
+                    WorktreeEnvelope.test(
+                        event: .forge(
+                            .pullRequestRepositoryProjectionChanged(
+                                repoId: repo.id, projection: .loading(baseline: .unknown, requestIdentity: 7),
+                                invalidatedBranches: [])),
+                        repoId: repo.id, worktreeId: nil,
+                        source: .system(.service(.gitForge(provider: "stub"))), seq: 7,
+                        eventId: UUIDv7.generate(), observationLifetime: .unscoped)))
+            _ = try await tick.firstArrival()
+            await coordinator.shutdown()
+            try await applications.expectDisposition(
+                repositoryID: repo.id, sequence: 7, kind: .repositoryProjection, .ignored)
+            #expect(repoCache.cacheRevision == 0)
+            #expect(!repoCache.isPullRequestLoading(forRepository: repo.id))
+        }
+    }
+
     @Test("repository projections coalesce by repository and apply latest sequence atomically")
     func repositoryProjectionsCoalesceAndApplyAtomically() async throws {
         let bus = EventBus<RuntimeEnvelope>()
         let workspaceStore = WorkspaceStore()
         let repoCache = RepoCacheAtom()
-        let clock = TestPushClock()
+        let tick = HeldStep<TestPushClock.Instant>("repository projection tick")
+        let clock = HeldCacheApplyClock(tick: tick)
+        let applications = try WorkspaceCacheApplicationRecorder(cache: repoCache)
         let repo = workspaceStore.addRepo(at: URL(fileURLWithPath: "/tmp/apply-governor-projection-repo"))
         let repoId = repo.id
         let observationLifetime = try #require(
@@ -29,62 +177,65 @@ struct WorkspaceCacheCoordinatorApplyGovernorTests {
             repoCache: repoCache,
             scopeSyncHandler: { _ in },
             enrichmentApplyTickCadence: .milliseconds(25),
-            enrichmentApplyClock: clock
+            enrichmentApplyClock: clock,
+            factSink: applications.sink
         )
-        await coordinator.startConsuming()
+        try await withCacheApplicationWorld(
+            coordinator: coordinator, applications: applications, heldTicks: [tick]
+        ) {
 
-        await bus.post(
-            .worktree(
-                WorktreeEnvelope.test(
-                    event: .forge(
-                        .pullRequestRepositoryProjectionChanged(
-                            repoId: repoId,
-                            projection: .loading(
-                                baseline: .unknown,
-                                requestIdentity: 1
-                            ),
-                            invalidatedBranches: []
-                        )
-                    ),
-                    repoId: repoId,
-                    worktreeId: nil,
-                    source: .system(.service(.gitForge(provider: "github"))),
-                    seq: 1,
-                    observationLifetime: .repository(observationLifetime)
+            await bus.post(
+                .worktree(
+                    WorktreeEnvelope.test(
+                        event: .forge(
+                            .pullRequestRepositoryProjectionChanged(
+                                repoId: repoId,
+                                projection: .loading(
+                                    baseline: .unknown,
+                                    requestIdentity: 1
+                                ),
+                                invalidatedBranches: []
+                            )
+                        ),
+                        repoId: repoId,
+                        worktreeId: nil,
+                        source: .system(.service(.gitForge(provider: "github"))),
+                        seq: 1,
+                        observationLifetime: .repository(observationLifetime)
+                    )
                 )
             )
-        )
-        await bus.post(
-            .worktree(
-                WorktreeEnvelope.test(
-                    event: .forge(
-                        .pullRequestRepositoryProjectionChanged(
-                            repoId: repoId,
-                            projection: .stable(
-                                .ready(confirmedFactsByBranch: [branch: facts])
-                            ),
-                            invalidatedBranches: []
-                        )
-                    ),
-                    repoId: repoId,
-                    worktreeId: nil,
-                    source: .system(.service(.gitForge(provider: "github"))),
-                    seq: 2,
-                    observationLifetime: .repository(observationLifetime)
+            await bus.post(
+                .worktree(
+                    WorktreeEnvelope.test(
+                        event: .forge(
+                            .pullRequestRepositoryProjectionChanged(
+                                repoId: repoId,
+                                projection: .stable(
+                                    .ready(confirmedFactsByBranch: [branch: facts])
+                                ),
+                                invalidatedBranches: []
+                            )
+                        ),
+                        repoId: repoId,
+                        worktreeId: nil,
+                        source: .system(.service(.gitForge(provider: "github"))),
+                        seq: 2,
+                        observationLifetime: .repository(observationLifetime)
+                    )
                 )
             )
-        )
-        await eventually("both repository projections should coalesce before draining") {
-            clock.pendingSleepCount == 1
-                && coordinator.pendingRepositoryProjectionSupersessionCount == 1
-        }
-        #expect(repoCache.cacheRevision == 0)
+            try await applications.expectDisposition(
+                repositoryID: repoId, sequence: 1, kind: .repositoryProjection, .superseded)
+            let deadline = try await tick.firstArrival()
+            #expect(repoCache.cacheRevision == 0)
 
-        clock.advance(by: .milliseconds(25))
-        await eventually("latest repository projection should apply") {
-            repoCache.pullRequestFacts(for: branchKey) == facts
+            clock.backing.advance(to: deadline)
+            tick.release()
+            try await applications.expectApplied(repositoryID: repoId, kind: .repositoryProjection) {
+                $0.pullRequests[branchKey] == facts && !$0.isLoading
+            }
         }
-        await coordinator.shutdown()
 
         #expect(repoCache.cacheRevision == 1)
         #expect(!repoCache.isPullRequestLoading(forRepository: repoId))
@@ -112,6 +263,7 @@ struct WorkspaceCacheCoordinatorApplyGovernorTests {
         let workspaceStore = WorkspaceStore()
         let repoCache = RepoCacheAtom()
         let clock = TestPushClock()
+        let applications = try WorkspaceCacheApplicationRecorder(cache: repoCache)
         let fixture = try makeThreeWorktreeFixture(in: workspaceStore)
         let repo = fixture.repository
         let registeredWorktrees = fixture.worktrees
@@ -123,64 +275,64 @@ struct WorkspaceCacheCoordinatorApplyGovernorTests {
             scopeSyncHandler: { _ in },
             enrichmentApplyTickCadence: .milliseconds(25),
             enrichmentApplyClock: clock,
-            performanceTraceRecorder: recorder
+            performanceTraceRecorder: recorder,
+            factSink: applications.sink
         )
-        await coordinator.startConsuming()
+        try await withCacheApplicationWorld(
+            coordinator: coordinator, applications: applications, heldTicks: []
+        ) {
 
-        for sequence in 0..<12 {
-            let worktree = registeredWorktrees[sequence % registeredWorktrees.count]
-            let worktreeLifetime = try #require(fixture.worktreeLifetimes[worktree.id])
+            for sequence in 0..<12 {
+                let worktree = registeredWorktrees[sequence % registeredWorktrees.count]
+                let worktreeLifetime = try #require(fixture.worktreeLifetimes[worktree.id])
+                await bus.post(
+                    .worktree(
+                        WorktreeEnvelope.test(
+                            event: .gitWorkingDirectory(
+                                .snapshotChanged(
+                                    snapshot: GitWorkingTreeSnapshot(
+                                        worktreeId: worktree.id,
+                                        repoId: repo.id,
+                                        rootPath: worktree.path,
+                                        summary: GitWorkingTreeSummary(
+                                            changed: sequence,
+                                            staged: 0,
+                                            untracked: 0
+                                        ),
+                                        branch: "branch-\(sequence)"
+                                    )
+                                )
+                            ),
+                            repoId: repo.id,
+                            worktreeId: worktree.id,
+                            source: .system(.builtin(.gitWorkingDirectoryProjector)),
+                            seq: UInt64(sequence),
+                            observationLifetime: .worktree(worktreeLifetime)
+                        )
+                    )
+                )
+            }
             await bus.post(
                 .worktree(
                     WorktreeEnvelope.test(
                         event: .gitWorkingDirectory(
-                            .snapshotChanged(
-                                snapshot: GitWorkingTreeSnapshot(
-                                    worktreeId: worktree.id,
-                                    repoId: repo.id,
-                                    rootPath: worktree.path,
-                                    summary: GitWorkingTreeSummary(
-                                        changed: sequence,
-                                        staged: 0,
-                                        untracked: 0
-                                    ),
-                                    branch: "branch-\(sequence)"
-                                )
+                            .originChanged(
+                                repoId: repo.id,
+                                from: "",
+                                to: "git@github.com:askluna/agent-studio.git"
                             )
                         ),
                         repoId: repo.id,
-                        worktreeId: worktree.id,
+                        worktreeId: registeredWorktrees[0].id,
                         source: .system(.builtin(.gitWorkingDirectoryProjector)),
-                        seq: UInt64(sequence),
-                        observationLifetime: .worktree(worktreeLifetime)
+                        observationLifetime: .worktree(
+                            try #require(fixture.worktreeLifetimes[registeredWorktrees[0].id]))
                     )
                 )
             )
+            try await applications.expectApplied(repositoryID: repo.id, kind: .repositoryIdentity)
+            #expect(repoCache.repoEnrichmentByRepoId[repo.id] != nil)
         }
-        await bus.post(
-            .worktree(
-                WorktreeEnvelope.test(
-                    event: .gitWorkingDirectory(
-                        .originChanged(
-                            repoId: repo.id,
-                            from: "",
-                            to: "git@github.com:askluna/agent-studio.git"
-                        )
-                    ),
-                    repoId: repo.id,
-                    worktreeId: registeredWorktrees[0].id,
-                    source: .system(.builtin(.gitWorkingDirectoryProjector)),
-                    observationLifetime: .worktree(
-                        try #require(fixture.worktreeLifetimes[registeredWorktrees[0].id]))
-                )
-            )
-        )
-        await eventually("ordering flush after enrichment burst") {
-            repoCache.repoEnrichmentByRepoId[repo.id] != nil
-        }
-        #expect(repoCache.repoEnrichmentByRepoId[repo.id] != nil)
-
-        await coordinator.shutdown()
         try await recorder.drain()
 
         #expect(repoCache.worktreeEnrichmentByWorktreeId.count == worktreeIds.count)
@@ -200,14 +352,18 @@ struct WorkspaceCacheCoordinatorApplyGovernorTests {
         let bus = EventBus<RuntimeEnvelope>()
         let workspaceStore = WorkspaceStore()
         let repoCache = RepoCacheAtom()
-        let clock = TestPushClock()
+        let snapshotTick = HeldStep<TestPushClock.Instant>("snapshot apply tick")
+        let branchTick = HeldStep<TestPushClock.Instant>("branch apply tick")
+        let clock = HeldCacheApplyClock(ticks: [snapshotTick, branchTick])
+        let applications = try WorkspaceCacheApplicationRecorder(cache: repoCache)
         let coordinator = WorkspaceCacheCoordinator(
             bus: bus,
             workspaceStore: workspaceStore,
             repoCache: repoCache,
             scopeSyncHandler: { _ in },
             enrichmentApplyTickCadence: .milliseconds(25),
-            enrichmentApplyClock: clock
+            enrichmentApplyClock: clock,
+            factSink: applications.sink
         )
         let repo = workspaceStore.addRepo(at: URL(fileURLWithPath: "/tmp/apply-governor-branch-repo"))
         let worktree = try #require(repo.worktrees.first { $0.isMainWorktree })
@@ -224,52 +380,55 @@ struct WorkspaceCacheCoordinatorApplyGovernorTests {
             branch: "main"
         )
 
-        await coordinator.startConsuming()
-        await bus.post(
-            .worktree(
-                WorktreeEnvelope.test(
-                    event: .gitWorkingDirectory(.snapshotChanged(snapshot: snapshot)),
-                    repoId: repoId,
-                    worktreeId: worktreeId,
-                    source: .system(.builtin(.gitWorkingDirectoryProjector)),
-                    observationLifetime: .worktree(observationLifetime)
-                )))
-        await eventually("snapshot flush should be scheduled") {
-            clock.pendingSleepCount == 1
-        }
-        #expect(clock.pendingSleepCount == 1)
-        clock.advance(by: .milliseconds(25))
-        await eventually("snapshot should apply before branch update") {
-            repoCache.worktreeEnrichment(for: worktreeId)?.snapshot == snapshot
-        }
-        #expect(repoCache.worktreeEnrichment(for: worktreeId)?.snapshot == snapshot)
+        try await withCacheApplicationWorld(
+            coordinator: coordinator, applications: applications, heldTicks: [snapshotTick, branchTick]
+        ) {
+            await bus.post(
+                .worktree(
+                    WorktreeEnvelope.test(
+                        event: .gitWorkingDirectory(.snapshotChanged(snapshot: snapshot)),
+                        repoId: repoId,
+                        worktreeId: worktreeId,
+                        source: .system(.builtin(.gitWorkingDirectoryProjector)),
+                        observationLifetime: .worktree(observationLifetime)
+                    )))
+            let snapshotDeadline = try await snapshotTick.firstArrival()
+            #expect(snapshotDeadline > clock.now)
+            clock.backing.advance(to: snapshotDeadline)
+            snapshotTick.release()
+            try await applications.expectApplied(
+                repositoryID: repoId, kind: .worktreeEnrichment, worktreeID: worktreeId
+            ) {
+                $0.worktree?.snapshot == snapshot
+            }
+            #expect(repoCache.worktreeEnrichment(for: worktreeId)?.snapshot == snapshot)
 
-        await bus.post(
-            .worktree(
-                WorktreeEnvelope.test(
-                    event: .gitWorkingDirectory(
-                        .branchChanged(
-                            worktreeId: worktreeId,
-                            repoId: repoId,
-                            from: "main",
-                            to: "feature/new"
-                        )
-                    ),
-                    repoId: repoId,
-                    worktreeId: worktreeId,
-                    source: .system(.builtin(.gitWorkingDirectoryProjector)),
-                    observationLifetime: .worktree(observationLifetime)
-                )))
-        await eventually("branch flush should be scheduled") {
-            clock.pendingSleepCount == 1
+            await bus.post(
+                .worktree(
+                    WorktreeEnvelope.test(
+                        event: .gitWorkingDirectory(
+                            .branchChanged(
+                                worktreeId: worktreeId,
+                                repoId: repoId,
+                                from: "main",
+                                to: "feature/new"
+                            )
+                        ),
+                        repoId: repoId,
+                        worktreeId: worktreeId,
+                        source: .system(.builtin(.gitWorkingDirectoryProjector)),
+                        observationLifetime: .worktree(observationLifetime)
+                    )))
+            let branchDeadline = try await branchTick.firstArrival()
+            #expect(branchDeadline > clock.now)
+            clock.backing.advance(to: branchDeadline)
+            branchTick.release()
+            try await applications.expectApplied(
+                repositoryID: repoId, kind: .worktreeEnrichment, worktreeID: worktreeId
+            ) {
+                $0.worktree?.branch == "feature/new"
+            }
         }
-        #expect(clock.pendingSleepCount == 1)
-        clock.advance(by: .milliseconds(25))
-        await eventually("branch update should preserve cached snapshot") {
-            repoCache.worktreeEnrichment(for: worktreeId)?.branch == "feature/new"
-        }
-
-        await coordinator.shutdown()
 
         #expect(repoCache.worktreeEnrichment(for: worktreeId)?.branch == "feature/new")
         #expect(repoCache.worktreeEnrichment(for: worktreeId)?.snapshot == snapshot)

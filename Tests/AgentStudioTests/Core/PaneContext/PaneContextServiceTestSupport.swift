@@ -9,6 +9,7 @@ import Testing
 
 final class PaneContextServiceFixture: Sendable {
     let rootDirectory: URL
+    let statements = PaneContextSQLStatementRecorder()
     let databasePool: DatabasePool
     let sqliteAccess: HeldPaneContextSQLiteAccess
     let clock = TestPushClock()
@@ -17,12 +18,16 @@ final class PaneContextServiceFixture: Sendable {
     let paneId = PaneId.generateUUIDv7()
     let sender: AgentMessageSender
 
-    init() throws {
+    static func make() async throws -> PaneContextServiceFixture {
+        try await withoutBlockingCooperativePool { try PaneContextServiceFixture() }
+    }
+
+    private init() throws {
         rootDirectory = FileManager.default.temporaryDirectory
             .appending(path: "agentstudio-pane-context-\(UUIDv7.generate())")
-        databasePool = try SQLiteDatabaseFactory.makeFileBackedPool(
+        databasePool = try statements.makePool(
             at: rootDirectory.appending(path: "local.sqlite"),
-            label: "AgentStudio.sqlite.pane-context-tests"
+            configuration: SQLiteDatabaseFactory.makeConfiguration(label: "AgentStudio.sqlite.pane-context-tests")
         )
         try WorkspaceLocalMigrations.migrate(databasePool)
         sqliteAccess = HeldPaneContextSQLiteAccess(databasePool: databasePool)
@@ -198,9 +203,11 @@ final class PaneContextServiceFixture: Sendable {
         }
     }
 
-    func removeFiles() throws {
-        try databasePool.close()
-        try FileManager.default.removeItem(at: rootDirectory)
+    func removeFiles() async throws {
+        try await withoutBlockingCooperativePool { [databasePool, rootDirectory] in
+            try databasePool.close()
+            try FileManager.default.removeItem(at: rootDirectory)
+        }
     }
 
     func sendCreated(_ request: PaneMessageSendRequest, to service: PaneContextService) async throws {
@@ -211,16 +218,16 @@ final class PaneContextServiceFixture: Sendable {
 func withPaneContextService<Output: Sendable>(
     _ operation: @Sendable (PaneContextServiceFixture, PaneContextService) async throws -> Output
 ) async throws -> Output {
-    let fixture = try PaneContextServiceFixture()
+    let fixture = try await PaneContextServiceFixture.make()
     let service = fixture.makeService()
     do {
         let output = try await operation(fixture, service)
         await service.stop()
-        try fixture.removeFiles()
+        try await fixture.removeFiles()
         return output
     } catch {
         await service.stop()
-        try? fixture.removeFiles()
+        try? await fixture.removeFiles()
         throw error
     }
 }

@@ -149,15 +149,17 @@ final class PaneContextSessionsBridgeFixture: Sendable {
     func close() async throws {
         await service.stop()
         await ingestion.finish()
-        try pool.close()
-        try FileManager.default.removeItem(at: root)
+        try await withoutBlockingCooperativePool { [pool, root] in
+            try pool.close()
+            try FileManager.default.removeItem(at: root)
+        }
     }
 }
 
 func withPaneContextSessionsBridge(operation: @Sendable (PaneContextSessionsBridgeFixture) async throws -> Void)
     async throws
 {
-    let fixture = try PaneContextSessionsBridgeFixture()
+    let fixture = try await withoutBlockingCooperativePool { try PaneContextSessionsBridgeFixture() }
     do {
         try await operation(fixture)
         try await fixture.close()

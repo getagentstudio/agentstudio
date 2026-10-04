@@ -141,7 +141,6 @@ func makeIPCCommandCompositionOffMain(
 
 private func appIPCTestBuiltInMethodCatalogInputs() -> IPCBuiltInMethodCatalogInputs {
     IPCBuiltInMethodCatalogInputs(
-        terminalWaitMaximumSeconds: AppPolicies.IPC.maximumTerminalWaitSeconds,
         relationships: IPCBuiltInMethodRelationshipInputs(
             paneFocus: .appCommand(identifier: AppCommand.focusPane.rawValue),
             paneClose: .appCommand(identifier: AppCommand.closePane.rawValue),
@@ -169,3 +168,23 @@ let retiredPanesOrganizationCommands: [AppCommand] = [
     .setPanesSortFieldActivity,
     .togglePanesSortDirection,
 ]
+
+/// Gives raw-wire adapter tests the existing isolated dispatcher ownership.
+@MainActor
+func withRawCommandAdapterDispatcher<Result>(
+    harness: CommandAdapterHarness, body: @MainActor () async throws -> Result
+) async throws -> Result {
+    try await withIsolatedCommandDispatcher(
+        configure: {
+            AppCommandDispatcher.shared.handler = nil
+            AppCommandDispatcher.shared.appCommandRouter = harness.shellCommandHandler
+        }, body: body)
+}
+
+@MainActor
+func rawCommandOwnerArguments(from harness: CommandAdapterHarness) -> [IPCCommandArguments] {
+    harness.shellCommandHandler.handledRequests.compactMap { request in
+        guard case .typedIPC(let arguments) = request.arguments else { return nil }
+        return arguments
+    }
+}

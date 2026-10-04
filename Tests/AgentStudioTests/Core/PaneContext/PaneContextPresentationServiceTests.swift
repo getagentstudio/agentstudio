@@ -1,12 +1,86 @@
 import AgentStudioInfrastructure
 import AgentStudioTestHarness
 import Foundation
+import GRDB
+import Synchronization
 import Testing
 
 @testable import AgentStudioCore
 
 @Suite("Pane context presentation service")
 struct PaneContextPresentationServiceTests {
+    @Test("committed line and notify replies return while the MainActor presentation sink is held")
+    func writesDoNotWaitForPresentationApply() async throws {
+        try await withPaneContextPresentationService { fixture in
+            let storage = fixture.storage
+            _ = try await fixture.display()
+            _ = await fixture.latestPublished(storage.paneId)
+            let epoch = try await storage.epoch(fixture.service, stream: .line)
+            let held = HeldStep<[PaneId: PaneContextPublication]>(
+                "MainActor presentation apply held while agent writes return", cancellation: .holdThroughCancellation)
+            let scope = fixture.holdNextPublication(held)
+            let lineWrite = Task {
+                await fixture.service.setLine(storage.line("Committed line", epoch: epoch, counter: 1))
+            }
+            do {
+                let heldBatch = try await held.firstArrival()
+                let heldValue = try #require(heldBatch[storage.paneId])
+                let lineResult = await lineWrite.value
+                #expect(lineResult == .applied)
+                let notice = storage.message(body: "Committed notify")
+                let notifyResult = await fixture.service.send(notice)
+                #expect(notifyResult == .created(notice.messageId))
+                let desired = fixture.mailbox.desiredDisplay(for: storage.paneId)
+                let committed = try #require(desired)
+                #expect(committed.agentLine?.summary == "Committed line")
+                #expect(committed.own.attentionCount == 1)
+                held.release()
+                try await fixture.expectPublication(heldValue, for: storage.paneId, in: scope)
+                try await fixture.expectPublication(.set(committed), for: storage.paneId, in: scope)
+                let latest = await fixture.latestPublished(storage.paneId)
+                #expect(latest == .set(committed))
+            } catch {
+                held.retire()
+                _ = await lineWrite.value
+                throw error
+            }
+        }
+    }
+
+    @Test("full captures batch action reads and write projections load no message children at five and fifty notices")
+    func childQueryCountsDoNotGrowWithNoticeCount() async throws {
+        var observations: [PaneContextQueryObservation] = []
+        for count in [5, 50] {
+            let observation = try await withMeasuredPaneContextQueries(noticeCount: count)
+            observations.append(observation)
+        }
+        #expect(observations.count == 2)
+        #expect(observations[0].detail == observations[1].detail)
+        #expect(observations[0].notify == observations[1].notify)
+        #expect(observations[0].line == observations[1].line)
+        #expect(observations[0].detail.values.reduce(0, +) == 1)
+        #expect(observations[0].detail["pane_event_action"] == 1)
+        #expect(observations[0].notify.values.reduce(0, +) == 0)
+        #expect(observations[0].line == ["pane_state_action": 1])
+    }
+
+    @Test("full batched decode refuses a malformed live action without a partial page")
+    func malformedBatchedChildRemainsFailClosed() async throws {
+        try await withPaneContextPresentationService { fixture in
+            let storage = fixture.storage
+            let request = PaneMessageSendRequest(
+                paneId: storage.paneId, messageId: .generateUUIDv7(), sender: storage.sender,
+                sourceOccurredAt: nil, importance: .attention, body: "Valid parent", why: nil,
+                actions: [.openFile(path: "/tmp/valid", line: 1)], shape: .notice)
+            try await storage.sendCreated(request, to: fixture.service)
+            try await storage.databasePool.write { database in
+                try database.execute(sql: "UPDATE pane_event_action SET kind = 'invalid'")
+            }
+            let read = await fixture.service.readDetail(.init(paneId: storage.paneId, page: .first))
+            #expect(read == .unavailable(.decodeFailed("action.kind")))
+        }
+    }
+
     @Test("Committed own and drawer messages produce independent outstanding count groups")
     func ownAndIncludingDrawersAreComputedFromRows() async throws {
         try await withPaneContextPresentationService { fixture in
@@ -115,7 +189,7 @@ struct PaneContextPresentationServiceTests {
         }
     }
 
-    @Test("Session end leaves the line stale and clears that binding's open asks")
+    @Test("Session end stales the line while only caller disconnect settles its blocking ask")
     func sessionEndPublishesStaleLineAndCounts() async throws {
         try await withPaneContextPresentationService { fixture in
             let storage = fixture.storage
@@ -123,13 +197,58 @@ struct PaneContextPresentationServiceTests {
             let epoch = try await storage.epoch(fixture.service, stream: .line)
             try #require(
                 await fixture.service.setLine(storage.line("Monitoring", epoch: epoch, counter: 1)) == .applied)
-            try await storage.sendCreated(storage.ask(blocking: true), to: fixture.service)
+            let ask = storage.ask(blocking: true)
+            try await storage.sendCreated(ask, to: fixture.service)
             await fixture.service.sessionEnded(bindingGenerationId: try storage.bindingGenerationId)
             let display = try await fixture.display()
             #expect(display.agentLine?.summary == "Monitoring")
             #expect(display.agentLine?.stale == true)
-            #expect(display.includingDrawers.needsApprovalCount == 0)
+            #expect(display.includingDrawers.needsApprovalCount == 1)
             #expect(await fixture.latestPublished(storage.paneId) == .set(display))
+            let disconnected = await fixture.service.settleAsk(
+                ask.messageId, paneId: storage.paneId, cause: .callerGone)
+            let afterDisconnect = try await fixture.display()
+            #expect(disconnected == .settled(.withdrawn))
+            #expect(afterDisconnect.includingDrawers.needsApprovalCount == 0)
+        }
+    }
+
+    @Test("answer acknowledgement publishes a new detail revision without a read-triggered recomputation")
+    func receiptConfirmationPublishesRevision() async throws {
+        try await withPaneContextPresentationService { fixture in
+            let storage = fixture.storage
+            _ = try await fixture.display()
+            let ask = storage.ask()
+            try await storage.sendCreated(ask, to: fixture.service)
+            let answer = await fixture.service.answer(
+                .init(messageId: ask.messageId, paneId: storage.paneId, by: .localUser, value: .text("answer")))
+            #expect(answer == .answered)
+            let before = await fixture.latestPublished(storage.paneId)
+            let beforeDisplay: PaneContextDisplay?
+            if case .set(let display)? = before { beforeDisplay = display } else { beforeDisplay = nil }
+            let answeredDisplay = try #require(beforeDisplay)
+            let firstPage = try await storage.changes(fixture.service)
+            let acknowledgement = PaneMessageChangesRequest(
+                paneId: storage.paneId, writer: storage.sender, after: firstPage.nextPosition)
+
+            let acknowledged = await fixture.service.changes(acknowledgement)
+            // This helper drains only the lane's offered values; it does not recompute display.
+            let after = await fixture.latestPublished(storage.paneId)
+            let afterDisplay: PaneContextDisplay?
+            if case .set(let display)? = after { afterDisplay = display } else { afterDisplay = nil }
+            let confirmedDisplay = try #require(afterDisplay)
+            #expect(confirmedDisplay.revision.value > answeredDisplay.revision.value)
+            #expect(confirmedDisplay.own == answeredDisplay.own)
+            #expect(confirmedDisplay.includingDrawers == answeredDisplay.includingDrawers)
+            if case .page(let page) = acknowledged {
+                #expect(page.entries.isEmpty)
+            } else {
+                Issue.record("Receipt acknowledgement did not return a page")
+            }
+            let unchanged = try await fixture.withNoPublication {
+                await fixture.service.changes(acknowledgement)
+            }
+            #expect(unchanged == acknowledged)
         }
     }
 
@@ -270,4 +389,80 @@ private func informationalNotice(_ storage: PaneContextServiceFixture, paneId: P
     .init(
         paneId: paneId ?? storage.paneId, messageId: .generateUUIDv7(), sender: storage.sender,
         sourceOccurredAt: nil, importance: .info, body: "Information", why: nil, actions: [], shape: .notice)
+}
+
+private struct PaneContextQueryObservation: Sendable {
+    let notify: [String: Int]
+    let detail: [String: Int]
+    let line: [String: Int]
+}
+
+private final class PaneContextChildQueryRecorder: Sendable {
+    private let counts = Mutex<[String: Int]>([:])
+    private static let tables = [
+        "pane_request_action", "pane_event_action", "pane_request_choice", "pane_request_property",
+        "pane_request_property_choice", "pane_request_required", "pane_request_answer_value", "pane_state_action",
+    ]
+
+    func record(_ event: Database.TraceEvent) {
+        guard case .statement(let statement) = event else { return }
+        let sql = statement.sql.split(whereSeparator: { $0.isWhitespace }).joined(separator: " ")
+        guard sql.hasPrefix("SELECT ") else { return }
+        for table in Self.tables where sql.contains(" FROM \(table) ") {
+            counts.withLock { $0[table, default: 0] += 1 }
+        }
+    }
+
+    func takeCounts() -> [String: Int] {
+        counts.withLock { value in
+            defer { value.removeAll() }
+            return value
+        }
+    }
+}
+
+private func withMeasuredPaneContextQueries(noticeCount: Int) async throws -> PaneContextQueryObservation {
+    let observation = Mutex<PaneContextQueryObservation?>(nil)
+    try await withPaneContextPresentationService { fixture in
+        let storage = fixture.storage
+        _ = try await fixture.display()
+        for index in 0..<noticeCount {
+            let request = PaneMessageSendRequest(
+                paneId: storage.paneId, messageId: .generateUUIDv7(), sender: storage.sender,
+                sourceOccurredAt: nil, importance: .attention, body: "Notice \(index)", why: nil,
+                actions: [.openFile(path: "/tmp/notice-\(index)", line: index + 1)], shape: .notice)
+            try await storage.sendCreated(request, to: fixture.service)
+        }
+        let epoch = try await storage.epoch(fixture.service, stream: .line)
+        _ = await fixture.latestPublished(storage.paneId)
+        let recorder = PaneContextChildQueryRecorder()
+        try await storage.databasePool.write { database in database.trace(options: .statement) { recorder.record($0) } }
+        await storage.sqliteAccess.traceReads { recorder.record($0) }
+        do {
+            let request = storage.message(body: "Measured notify")
+            let sent = await fixture.service.send(request)
+            let notifyCounts = recorder.takeCounts()
+            #expect(sent == .created(request.messageId))
+            let detail = try await storage.detail(fixture.service)
+            let detailCounts = recorder.takeCounts()
+            #expect(detail.messages.count == noticeCount + 1)
+            #expect(detail.messages.filter { $0.actions.count == 1 }.count == noticeCount)
+            let lineResult = await fixture.service.setLine(storage.line("Measured line", epoch: epoch, counter: 1))
+            let lineCounts = recorder.takeCounts()
+            #expect(lineResult == .applied)
+            let desired = fixture.mailbox.desiredDisplay(for: storage.paneId)
+            #expect(desired?.own.attentionCount == noticeCount + 1)
+            #expect(desired?.agentLine?.summary == "Measured line")
+            await storage.sqliteAccess.traceReads(nil)
+            try await storage.databasePool.write { database in database.trace(options: []) }
+            observation.withLock {
+                $0 = PaneContextQueryObservation(notify: notifyCounts, detail: detailCounts, line: lineCounts)
+            }
+        } catch {
+            await storage.sqliteAccess.traceReads(nil)
+            try? await storage.databasePool.write { database in database.trace(options: []) }
+            throw error
+        }
+    }
+    return try #require(observation.withLock { $0 })
 }

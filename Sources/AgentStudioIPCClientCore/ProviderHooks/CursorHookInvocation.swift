@@ -1,3 +1,4 @@
+import AgentStudioIPCTransport
 import AgentStudioProgrammaticControl
 import Foundation
 
@@ -84,6 +85,7 @@ package enum CursorHookInvocation {
     }
 
     private static func send(params: IPCSessionEventParams, environment: [String: String]) throws {
+        let deadline = CallDeadline(limit: CLIPolicy.hookCallLimit)
         let configuration = AgentStudioIPCClientConfiguration(
             socketPath: try AgentStudioIPCClientDiscovery.socketPath(
                 explicitSocketPath: nil, environment: environment, metadataURL: nil
@@ -91,17 +93,17 @@ package enum CursorHookInvocation {
             authToken: environment["AGENTSTUDIO_PANE_TOKEN"]
         )
         let examples = IPCBuiltInMethodExampleContext(illustrativeIdentifier: params.correlationId)
-        let bootstrap = try IPCBuiltInMethodCatalog.bootstrapDescriptors(examples: examples)
-        // A hook fires several times a turn under a short provider timeout, so
-        // it resolves session.event from its own compiled contract rather than
-        // fetching the whole catalog first.
-        let descriptors = try IPCBuiltInMethodCatalog.locallyResolvableDescriptors(examples: examples)
+        let descriptors = try IPCCompiledInvocationResolver().resolve(
+            arguments: ["session.event"], authenticated: configuration.authToken != nil,
+            inputs: .init(examples: examples))
         guard let descriptor = descriptors.first(where: { $0.metadata.name == "session.event" }) else {
             throw CursorHookInvocationError.sessionEventUnavailable
         }
+        let cleanup = CLIStoreCleanupHandler(
+            environment: environment, migrationLockWaitBudget: { deadline.remainingBudget })
         let client = AgentStudioIPCClient(
-            configuration: configuration, descriptors: bootstrap + [descriptor]
-        )
+            configuration: configuration, descriptors: descriptors, deadline: deadline,
+            onCallCompletion: { cleanup.handle(readThrough: $0) })
         let result = try client.call(
             IPCDescriptorInvocation(
                 descriptor: descriptor,

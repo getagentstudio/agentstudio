@@ -27,6 +27,14 @@ private let claudeCodeFixtureIdentifier = UUID(uuidString: "00000000-0000-4000-8
 
 @Suite("Claude Code hook projection")
 struct ClaudeCodeHookProjectionTests {
+    @Test("projected hooks carry the time the CLI observed them")
+    func hookCarriesSourceObservationTime() throws {
+        guard case .projected(let params) = try project("PreToolUse") else {
+            Issue.record("Expected a projected hook")
+            return
+        }
+        #expect(params.event.sourceOccurredAt == Date(timeIntervalSince1970: 1_700_000_000))
+    }
     private static let stableIdentifier = claudeCodeFixtureIdentifier
 
     private func project(
@@ -34,6 +42,7 @@ struct ClaudeCodeHookProjectionTests {
         freshOccurrenceIdentifier: () -> UUID = { claudeCodeFixtureIdentifier }
     ) throws -> ClaudeCodeHookProjectionOutcome {
         ClaudeCodeHookProjection.project(
+            sourceOccurredAt: Date(timeIntervalSince1970: 1_700_000_000),
             announcedEvent: event,
             payload: try ClaudeCodeHookFixture.payload(event),
             providerVersion: "2.1.274",
@@ -170,6 +179,7 @@ struct ClaudeCodeHookProjectionTests {
 
         // Act
         let outcome = ClaudeCodeHookProjection.project(
+            sourceOccurredAt: Date(timeIntervalSince1970: 1_700_000_000),
             announcedEvent: "SessionEnd",
             payload: payload,
             providerVersion: "2.1.274",
@@ -194,6 +204,7 @@ struct ClaudeCodeHookProjectionTests {
 
         // Act
         let outcome = ClaudeCodeHookProjection.project(
+            sourceOccurredAt: Date(timeIntervalSince1970: 1_700_000_000),
             announcedEvent: "PermissionRequest",
             payload: payload,
             providerVersion: "2.1.274",
@@ -220,6 +231,7 @@ struct ClaudeCodeHookInvocationTests {
         diagnostics: @escaping (String) -> Void = { _ in }
     ) -> ClaudeCodeHookInvocationInputs {
         ClaudeCodeHookInvocationInputs(
+            sourceOccurredAt: Date(timeIntervalSince1970: 1_700_000_000),
             arguments: arguments,
             environment: environment,
             standardInput: standardInput,

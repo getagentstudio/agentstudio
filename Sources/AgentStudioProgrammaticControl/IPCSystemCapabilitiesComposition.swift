@@ -23,6 +23,15 @@ package struct IPCSystemCapabilitiesComposition: Sendable {
 }
 
 package enum IPCSystemCapabilitiesDescriptorFactory {
+    package static var helpProjection: IPCMethodHelpProjection {
+        IPCMethodHelpProjection(
+            name: "system.capabilities",
+            summary: "Return compatibility identity and the complete available typed method catalog.",
+            agentAccess: .readOnly, argumentSyntax: .schemaOptions,
+            parameterSchema: { try IPCEmptyParams.ipcSchema() },
+            exampleArguments: { _ in ["--json", "'{}'"] })
+    }
+
     package static func compose(
         compatibility: IPCProtocolCatalogCompatibility,
         availableDescriptors: [IPCAnyMethodDescriptor],
@@ -49,7 +58,7 @@ package enum IPCSystemCapabilitiesDescriptorFactory {
             )
         )
         let selfEntrySchema = try IPCMethodCatalogEntry.schemaForExamples(
-            methodName: "system.capabilities",
+            methodName: helpProjection.name,
             examples: [illustrativeExample]
         )
         let resultSchema = try IPCMethodCatalogResult.schema(
@@ -57,8 +66,8 @@ package enum IPCSystemCapabilitiesDescriptorFactory {
             methodSchemas: sortedAvailableDescriptors.map(\.catalogEntrySchema) + [selfEntrySchema]
         )
         let descriptor = try IPCMethodDescriptor(
-            name: "system.capabilities",
-            description: "Return compatibility identity and the complete available typed method catalog.",
+            name: helpProjection.name,
+            description: helpProjection.summary,
             parameterSchema: try IPCEmptyParams.ipcSchema(),
             resultSchema: resultSchema,
             examples: [illustrativeExample],
@@ -106,7 +115,7 @@ package enum IPCSystemCapabilitiesDescriptorFactory {
     ) throws {
         var observedNames: Set<String> = []
         for descriptor in availableDescriptors {
-            guard descriptor.metadata.name != "system.capabilities" else {
+            guard descriptor.metadata.name != helpProjection.name else {
                 throw IPCSystemCapabilitiesCompositionError.capabilitiesAlreadyPresent
             }
             guard observedNames.insert(descriptor.metadata.name).inserted else {

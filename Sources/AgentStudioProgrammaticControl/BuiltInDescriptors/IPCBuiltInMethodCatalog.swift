@@ -14,25 +14,17 @@ package struct IPCBuiltInMethodCatalog: Sendable {
     package let erasedDescriptors: [IPCAnyMethodDescriptor]
 
     package init(inputs: IPCBuiltInMethodCatalogInputs) throws {
-        systemAndAuth = try IPCSystemAndAuthMethodDescriptors(examples: inputs.examples)
-        workspaceQueries = try IPCWorkspaceQueryMethodDescriptors(examples: inputs.examples)
-        layout = try IPCLayoutMethodDescriptors(inputs: inputs)
-        terminal = try IPCTerminalMethodDescriptors(inputs: inputs)
-        bridge = try IPCBridgeMethodDescriptors(inputs: inputs)
-        presentationAndSidebar = try IPCPresentationAndSidebarMethodDescriptors(examples: inputs.examples)
-        events = try IPCEventMethodDescriptors(examples: inputs.examples)
-        sessions = try IPCSessionMethodDescriptors(examples: inputs.examples)
-        paneContext = try IPCPaneContextMethodDescriptors(examples: inputs.examples)
-        let descriptorRepresentations = try
-            (systemAndAuth.descriptorRepresentations
-            + workspaceQueries.descriptorRepresentations
-            + layout.descriptorRepresentations
-            + terminal.descriptorRepresentations
-            + bridge.descriptorRepresentations
-            + presentationAndSidebar.descriptorRepresentations
-            + events.descriptorRepresentations
-            + sessions.descriptorRepresentations
-            + paneContext.descriptorRepresentations).sorted { $0.methodName < $1.methodName }
+        let descriptorRepresentations = try IPCBuiltInMethodIndex().makeRepresentations(inputs: inputs)
+        let byName = Dictionary(uniqueKeysWithValues: descriptorRepresentations.map { ($0.methodName, $0) })
+        systemAndAuth = try IPCSystemAndAuthMethodDescriptors(representations: byName)
+        workspaceQueries = try IPCWorkspaceQueryMethodDescriptors(representations: byName)
+        layout = try IPCLayoutMethodDescriptors(representations: byName)
+        terminal = try IPCTerminalMethodDescriptors(representations: byName)
+        bridge = try IPCBridgeMethodDescriptors(representations: byName)
+        presentationAndSidebar = try IPCPresentationAndSidebarMethodDescriptors(representations: byName)
+        events = try IPCEventMethodDescriptors(representations: byName)
+        sessions = try IPCSessionMethodDescriptors(representations: byName)
+        paneContext = try IPCPaneContextMethodDescriptors(representations: byName)
         self.descriptorRepresentations = descriptorRepresentations
         erasedDescriptors = descriptorRepresentations.map(\.erasedDescriptor)
     }

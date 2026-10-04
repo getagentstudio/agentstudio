@@ -81,6 +81,89 @@ struct WorkspaceLocalMigrationTests {
         #expect(result.1 == preservedWorkspaceID)
     }
 
+    @Test("fresh local database creates exactly the clean product schema")
+    func freshLocalDatabaseCreatesExactlyTheCleanProductSchema() throws {
+        let databaseQueue = try SQLiteDatabaseFactory.makeInMemoryQueue()
+
+        try WorkspaceLocalMigrations.migrate(databaseQueue)
+
+        let tableNames = try databaseQueue.read { database in
+            try Set(
+                String.fetchAll(
+                    database,
+                    sql: """
+                        SELECT name
+                        FROM sqlite_master
+                        WHERE type = 'table' AND name NOT LIKE 'sqlite_%' AND name != 'grdb_migrations'
+                        """
+                )
+            )
+        }
+        let expectedTableNames: Set<String> = [
+            "local_workspace_cursor",
+            "local_tab_cursor",
+            "local_arrangement_cursor",
+            "local_drawer_cursor",
+            "local_arrangement_drawer_cursor",
+            "local_window_state",
+            "local_window_sidebar_collapsed_group",
+            "local_entity_recency",
+            "local_workspace_entity_recency",
+            "local_repository_activity",
+            "local_repository_activity_cursor",
+            "local_notification_inbox_collapsed_group",
+            "local_notification_inbox_item",
+            "local_editor_preferences",
+            "local_repo_explorer_preferences",
+            "local_inbox_notification_preferences",
+            "cache_metadata",
+            "cache_repo_enrichment",
+            "cache_worktree_enrichment",
+            "annotation_session",
+            "annotation_thread",
+            "annotation_message",
+            "annotation_message_draft",
+            "annotation_output_attempt",
+            "annotation_output_attempt_message",
+            "annotation_output_event",
+            "local_recovery_provenance",
+            "sessions_conversation",
+            "sessions_pane_binding",
+            "sessions_source",
+            "sessions_evidence",
+            "sessions_message",
+            "sessions_attention",
+            "sessions_result",
+            "sessions_operation",
+            "sessions_loss",
+            "local_ipc_credential",
+            "pane_context_cli_outbox_cursor",
+            "pane_answer_position",
+            "pane_epoch_claim",
+            "pane_event",
+            "pane_event_action",
+            "pane_request",
+            "pane_request_action",
+            "pane_request_answer_value",
+            "pane_request_choice",
+            "pane_request_property",
+            "pane_request_property_choice",
+            "pane_request_required",
+            "pane_retirement",
+            "pane_state",
+            "pane_state_action",
+            "pane_write_order",
+            "sessions_provider_question",
+            "sessions_provider_question_option",
+            "local_drawer_presentation",
+        ]
+
+        #expect(tableNames == expectedTableNames)
+        #expect(!tableNames.contains("local_persistence_lane_marker"))
+        #expect(!tableNames.contains("local_workspace_sqlite_snapshot_status"))
+        #expect(!tableNames.contains("cache_notification_count"))
+    }
+
     @Test("clean local schema includes the collapsed sidebar group hard cut")
     func cleanLocalSchemaIncludesCollapsedSidebarGroupHardCut() throws {
         let databaseQueue = try SQLiteDatabaseFactory.makeInMemoryQueue()
@@ -706,35 +789,6 @@ struct WorkspaceLocalMigrationTests {
         }
     }
 }
-
-private let expectedBootRequiredLocalMigrationIdentifiers = [
-    "001_create_application_local_schema",
-    "002_replace_recent_targets_with_entity_recency",
-    "003_invert_sidebar_group_memory",
-    "004_remove_persisted_pull_request_counts",
-    "005_move_repo_grouping_to_window_sidebar_memory",
-    "006_add_repository_local_activity_facts",
-    "006_create_worktree_annotation_schema",
-    "007_add_worktree_annotation_message_handled",
-    "008_add_worktree_annotation_message_viewed_revision",
-    "009_add_worktree_annotation_reviewed_subject_evidence",
-    "010_remove_worktree_annotation_workspace_provenance",
-    "007_add_per_screen_sidebar_organization",
-    "015_add_panes_drawer_visibility",
-    "015_create_local_drawer_presentation",
-]
-
-private let expectedFullLocalMigrationIdentifiers =
-    expectedBootRequiredLocalMigrationIdentifiers
-    + [
-        "011_create_sessions_ingestion_schema", "020_sessions_status_and_replay",
-        "021_pane_context_current_values", "022_pane_context_messages",
-        "023_pane_context_write_order", "024_pane_context_answer_positions",
-        "025_pane_context_retirement",
-        "012_create_ipc_credential_schema",
-        "013_create_opaque_pane_credential_records",
-        "014_ipc_credentials_pane_only",
-    ]
 
 private struct Migration007Scenario: Sendable {
     let legacyMode: String

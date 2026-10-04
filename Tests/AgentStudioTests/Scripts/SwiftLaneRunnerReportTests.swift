@@ -365,6 +365,7 @@ struct SwiftLaneRunnerReportTests {
                 // Where a wedged run's event-stream ledger was kept, and whether
                 // the lane's own child group was actually reaped on the way out.
                 "event_stream",
+                "evidence_retention",
                 "exit_status",
                 "fact_expected",
                 "failed_isolated_suite",

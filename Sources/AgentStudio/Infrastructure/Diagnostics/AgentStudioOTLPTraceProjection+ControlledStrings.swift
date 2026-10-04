@@ -15,6 +15,9 @@ extension AgentStudioOTLPTraceProjection {
         if let isAllowed = RendererLifecycleOTLPProjectionKeys.isAllowedStringValue(key: key, value: value) {
             return isAllowed
         }
+        if let isAllowed = isAllowedIPCControlledStringValue(key: key, value: value) {
+            return isAllowed
+        }
         switch key {
         case "agentstudio.performance.sidebar.surface":
             return ["inbox", "repo"].contains(value)
@@ -43,17 +46,6 @@ extension AgentStudioOTLPTraceProjection {
         case "agentstudio.performance.interaction.kind":
             return ["command_bar_open", "command_bar_close", "tab_move", "divider_frame", "cmd_r"]
                 .contains(value)
-        case "agentstudio.app.ipc.start.reason":
-            return [
-                "first_frame_cancelled", "first_frame_timeout", "initialization_cancelled",
-                "local_store_unavailable",
-                "optional_schema_unavailable", "sessions_ingestion_failed", "no_active_window",
-                "ipc_path_untrusted", "socket_in_use", "server_start_failed",
-                "restore_bounds_unavailable",
-            ]
-            .contains(value)
-        case "agentstudio.performance.ipc.agent_authorization.outcome":
-            return ["authorized", "not_yet_allowed", "refused_for_agent"].contains(value)
         case "agentstudio.performance.focus.responder_change.reason":
             return AgentStudioFocusResponderChangeReason(rawValue: value) != nil
         case "agentstudio.performance.startup.source":
@@ -85,6 +77,29 @@ extension AgentStudioOTLPTraceProjection {
             .contains(value)
         default:
             return true
+        }
+    }
+
+    private static func isAllowedIPCControlledStringValue(key: String, value: String) -> Bool? {
+        switch key {
+        case "agentstudio.app.ipc.start.reason":
+            return [
+                "first_frame_cancelled", "first_frame_timeout", "initialization_cancelled",
+                "local_store_unavailable",
+                "optional_schema_unavailable", "sessions_ingestion_failed", "no_active_window",
+                "ipc_path_untrusted", "socket_in_use", "server_start_failed",
+                "restore_bounds_unavailable",
+            ]
+            .contains(value)
+        case "agentstudio.performance.ipc.outbox_refusal.reason":
+            return [
+                "malformedEnvelope", "ineligibleMethod", "ineligibleVariant", "foreignPane",
+                "unknownKind", "invalidStoredRow", "qualificationRejected", "foreignStore",
+            ].contains(value)
+        case "agentstudio.performance.ipc.agent_authorization.outcome":
+            return ["authorized", "not_yet_allowed", "refused_for_agent"].contains(value)
+        default:
+            return nil
         }
     }
 }

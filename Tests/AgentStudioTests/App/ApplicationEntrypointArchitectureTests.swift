@@ -493,8 +493,10 @@ struct ApplicationEntrypointArchitectureTests {
         #expect(appDelegateSource.contains("var appIPCSessionsPaneContextComposition: SessionsPaneContextComposition?"))
         #expect(ipcBootSource.contains("sessionsPort: sessionsComposition.liveSessionsAdapter"))
         #expect(ipcBootSource.contains("paneContextPort: sessionsComposition.paneContextIPCAdapter"))
-        #expect(ipcBootSource.contains("PaneReportSpool(admission: sessionsComposition.lateSessionsAdapter)"))
-        let spoolJoin = try #require(ipcBootSource.range(of: "await spoolDrainTask?.value")?.lowerBound)
+        #expect(ipcBootSource.contains("let noticeAdmission = sessionsComposition.paneContextIPCAdapter"))
+        #expect(ipcBootSource.contains("let drain = try PaneCLIOutboxDrain("))
+        #expect(ipcBootSource.contains("admission: noticeAdmission, sqliteAccess: sqliteAccess,"))
+        let outboxJoin = try #require(ipcBootSource.range(of: "await outboxDrainTask?.value")?.lowerBound)
         let handlerJoin = try #require(ipcBootSource.range(of: "await server.joinConnectionHandlers()")?.lowerBound)
         let credentialDrain = try #require(
             ipcBootSource.range(of: "await server.drainCredentialPersistence()")?.lowerBound)
@@ -502,7 +504,7 @@ struct ApplicationEntrypointArchitectureTests {
             ipcBootSource.range(
                 of: "await finishAppIPCSessionsPaneContext()", range: credentialDrain..<ipcBootSource.endIndex)?
                 .lowerBound)
-        #expect(spoolJoin < handlerJoin)
+        #expect(outboxJoin < handlerJoin)
         #expect(handlerJoin < credentialDrain)
         #expect(credentialDrain < ownerStop)
         let shutdownStart = try #require(compositionSource.range(of: "func shutdown() async {")?.upperBound)

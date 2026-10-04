@@ -20,6 +20,7 @@ package enum WorkspaceLocalMigrations {
         registerIPCCredentialSchema(in: &migrator)
         registerOpaquePaneCredentialRecords(in: &migrator)
         registerPaneOnlyCredentialRecords(in: &migrator)
+        registerCLIOutboxCursor(in: &migrator)
         return migrator
     }
 

@@ -7,6 +7,7 @@ package struct AppIPCPaneContextError: Error, Equatable, Sendable {
         case conflict
         case paneGone
         case notSender
+        case notOwnPane
         case noticeAlreadyRead
         case tooLarge
         case invalidField
@@ -224,8 +225,11 @@ enum AppIPCPaneContextTargetSupport {
     static func credentialTarget<Parameters: Sendable>(
         _ parameters: Parameters, handle: String, context: AppIPCConnectionContext
     ) throws -> AppIPCTargetResolution<Parameters> {
-        guard handle == "self",
-            case .spawnedPaneAgent(let boundPaneId, _)? = context.principal?.kind,
+        guard case .spawnedPaneAgent(let boundPaneId, _)? = context.principal?.kind else {
+            throw AuthorizationError(reason: .unauthorized)
+        }
+        guard handle == "self" else { throw AppIPCPaneContextError(reason: .notOwnPane) }
+        guard
             let paneId = UUID(uuidString: boundPaneId)
         else { throw AuthorizationError(reason: .unauthorized) }
         return AppIPCTargetResolution(

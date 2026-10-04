@@ -1,5 +1,7 @@
 import AgentStudioInfrastructure
+import AgentStudioTestHarness
 import Foundation
+import GRDB
 import Testing
 
 @testable import AgentStudioCore
@@ -312,6 +314,121 @@ struct PaneContextDetailPagingTests {
         }
     }
 
+    @Test(
+        "capture retention touches its live sources only; the deadline sweeps other live panes and skips retired rows")
+    func captureRetentionIsScopedAndDeadlineRemainsGlobal() async throws {
+        try await withPaneContextService { fixture, service in
+            let otherPane = PaneId.generateUUIDv7()
+            let retiredPane = PaneId.generateUUIDv7()
+            fixture.membership.addPane(otherPane)
+            fixture.membership.setDrawers([retiredPane], for: fixture.paneId)
+            let ownAsk = fixture.ask()
+            let otherAsk = fixture.ask(paneId: otherPane)
+            let retiredAsk = fixture.ask(paneId: retiredPane)
+            for ask in [ownAsk, otherAsk, retiredAsk] {
+                try await fixture.bind(fixture.sender, to: ask.paneId)
+                try await fixture.sendCreated(ask, to: service)
+                let dismissed = await service.dismiss(messageId: ask.messageId, paneId: ask.paneId)
+                #expect(dismissed == .done)
+                try await seedExpiringCaptureLine(fixture, service: service, paneId: ask.paneId)
+            }
+            let live = fixture.message(body: "Still outstanding")
+            try await fixture.sendCreated(live, to: service)
+            await fixture.clock.waitForPendingSleepCount(exactly: 1)
+            let retirementSleepGeneration = fixture.clock.scheduledSleepGeneration
+            let retired = HeldStep<Void>("retired scope marker committed", cancellation: .holdThroughCancellation)
+            let swept = HeldStep<Void>("global retention deadline committed", cancellation: .holdThroughCancellation)
+            await fixture.sqliteAccess.observeNextCommit(retired)
+            service.retire([retiredPane])
+            do {
+                try await retired.firstArrival()
+                retired.release()
+                await fixture.clock.waitForPendingSleepCount(atLeast: 1, fromGeneration: retirementSleepGeneration)
+                try await fixture.databasePool.write { database in
+                    // A full retired-row decode must fail. Scoped captures and the global
+                    // retention sweep must exclude it before message materialization.
+                    try database.execute(
+                        sql:
+                            "UPDATE pane_request SET sender_binding_generation = 'invalid-retired-generation' WHERE pane_id = ?",
+                        arguments: [retiredPane.uuidString])
+                }
+                fixture.time.shiftWallTime(by: AppPolicies.PaneContext.settledMessageLifetime)
+                let captured = try await fixture.detail(service)
+                #expect(captured.messages.map(\.id) == [live.messageId])
+                #expect(captured.agentLine?.stale == true)
+                #expect(captured.drawerMessages.isEmpty)
+                // Pure capture doesn't persist retention. An explicit write-path
+                // display computation persists its scoped maintenance before these
+                // original storage assertions; the global deadline still owns others.
+                _ = await service.readDisplay(paneId: fixture.paneId)
+                let ownFlags = try await captureRetentionFlags(fixture, ask: ownAsk)
+                let otherFlags = try await captureRetentionFlags(fixture, ask: otherAsk)
+                let retiredFlags = try await captureRetentionFlags(fixture, ask: retiredAsk)
+                #expect(ownFlags.hidden == true)
+                #expect(ownFlags.lineStale == true)
+                #expect(otherFlags.hidden == false)
+                #expect(otherFlags.lineStale == false)
+                #expect(retiredFlags.hidden == false)
+                #expect(retiredFlags.lineStale == false)
+
+                let nextDeadlineSleepGeneration = fixture.clock.scheduledSleepGeneration
+                await fixture.sqliteAccess.observeNextCommit(swept)
+                fixture.clock.advance(by: .seconds(AppPolicies.PaneContext.settledMessageLifetime))
+                try await swept.firstArrival()
+                let globallySwept = try await captureRetentionFlags(fixture, ask: otherAsk)
+                let retiredAfterDeadline = try await captureRetentionFlags(fixture, ask: retiredAsk)
+                #expect(globallySwept.hidden == true)
+                #expect(globallySwept.lineStale == true)
+                #expect(retiredAfterDeadline.hidden == false)
+                #expect(retiredAfterDeadline.lineStale == false)
+                swept.release()
+                await fixture.clock.waitForPendingSleepCount(atLeast: 1, fromGeneration: nextDeadlineSleepGeneration)
+                let remaining =
+                    AppPolicies.PaneContext.panePurgeLifetime
+                    - 2 * AppPolicies.PaneContext.settledMessageLifetime
+                #expect(
+                    fixture.clock.pendingSleepDeadlines
+                        == [fixture.clock.now.advanced(by: .seconds(remaining))])
+            } catch {
+                retired.retire()
+                swept.retire()
+                throw error
+            }
+        }
+    }
+
+    @Test("hiding a settled request never hides a live notice with the same table-local row id")
+    func retentionIdentityIncludesParentTable() async throws {
+        try await withPaneContextService { fixture, service in
+            let settled = fixture.ask()
+            let live = fixture.message()
+            try await fixture.sendCreated(settled, to: service)
+            let dismissed = await service.dismiss(messageId: settled.messageId, paneId: fixture.paneId)
+            #expect(dismissed == .done)
+            try await fixture.sendCreated(live, to: service)
+            try await fixture.databasePool.write { database in
+                guard
+                    let shared = try String.fetchOne(
+                        database, sql: "SELECT id FROM pane_request WHERE pane_id = ? AND message_id = ?",
+                        arguments: [fixture.paneId.uuidString, settled.messageId.uuid.uuidString])
+                else { throw PaneContextStorageFailure.decode("id") }
+                try database.execute(
+                    sql: "UPDATE pane_event SET id = ? WHERE pane_id = ? AND message_id = ? AND kind = 'notice'",
+                    arguments: [shared, fixture.paneId.uuidString, live.messageId.uuid.uuidString])
+            }
+            fixture.time.shiftWallTime(by: AppPolicies.PaneContext.settledMessageLifetime)
+            let detail = try await fixture.detail(service)
+            #expect(detail.messages.map(\.id) == [live.messageId])
+            await service.deadlineReached()
+            let hidden = try await fixture.databasePool.read { database in
+                try Bool.fetchOne(
+                    database, sql: "SELECT display_hidden FROM pane_request WHERE pane_id = ? AND message_id = ?",
+                    arguments: [fixture.paneId.uuidString, settled.messageId.uuid.uuidString])
+            }
+            #expect(hidden == true)
+        }
+    }
+
     @Test("Only the newest twenty settled messages are visible; live messages are never aged out")
     func settledDisplayRetentionIsBounded() async throws {
         try await withPaneContextService { fixture, service in
@@ -338,4 +455,37 @@ struct PaneContextDetailPagingTests {
 
 private func flatMessages(_ detail: PaneContextDetail) -> [AgentMessageDetail] {
     detail.messages + detail.drawerMessages.flatMap(\.messages)
+}
+
+private func seedExpiringCaptureLine(
+    _ fixture: PaneContextServiceFixture, service: PaneContextService, paneId: PaneId
+) async throws {
+    let claimed = await service.claimEpoch(
+        .init(paneId: paneId, writer: fixture.sender, stream: .line, claimId: UUIDv7.generate()))
+    let epoch: UInt64?
+    if case .claimed(let value) = claimed { epoch = value } else { epoch = nil }
+    let acceptedEpoch = try #require(epoch)
+    let result = await service.setLine(
+        .init(
+            paneId: paneId, writer: fixture.sender,
+            line: .init(
+                summary: "Expiry scoped to this pane", work: .working(.indeterminate), detail: nil, refs: [],
+                lifetime: .expires(
+                    at: fixture.time.now.addingTimeInterval(AppPolicies.PaneContext.settledMessageLifetime))),
+            writeNumber: .init(epoch: acceptedEpoch, counter: 1)))
+    #expect(result == .applied)
+}
+
+private func captureRetentionFlags(
+    _ fixture: PaneContextServiceFixture, ask: PaneMessageSendRequest
+) async throws -> (hidden: Bool?, lineStale: Bool?) {
+    try await fixture.databasePool.read { database in
+        let hidden = try Bool.fetchOne(
+            database, sql: "SELECT display_hidden FROM pane_request WHERE pane_id = ? AND message_id = ?",
+            arguments: [ask.paneId.uuidString, ask.messageId.uuid.uuidString])
+        let lineStale = try Bool.fetchOne(
+            database, sql: "SELECT stale FROM pane_state WHERE pane_id = ? AND kind = 'agentLine'",
+            arguments: [ask.paneId.uuidString])
+        return (hidden, lineStale)
+    }
 }

@@ -9,7 +9,6 @@ struct IPCPaneContextWireContractTests {
     func productionBuiltInCatalogConstructs() throws {
         let catalog = try IPCBuiltInMethodCatalog(
             inputs: .init(
-                terminalWaitMaximumSeconds: 10,
                 relationships: .init(
                     paneFocus: .noInteractiveIdentity,
                     paneClose: .noInteractiveIdentity,

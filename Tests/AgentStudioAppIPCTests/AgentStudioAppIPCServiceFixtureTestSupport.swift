@@ -2,6 +2,7 @@ import AgentStudioAppIPC
 import AgentStudioIPCTransport
 import AgentStudioInfrastructure
 import AgentStudioProgrammaticControl
+import AgentStudioTestHarness
 import CryptoKit
 import Foundation
 import Synchronization
@@ -83,7 +84,7 @@ nonisolated(nonsending) private func tearDownLiveServer(
     releaseHeldWork: @Sendable () async -> Void
 ) async {
     await releaseHeldWork()
-    fixture.stopAcceptingConnections()
+    await fixture.stopAcceptingConnections()
     await fixture.server.joinConnectionHandlers()
     let result = await fixture.server.drainCredentialPersistence()
     if result.failedOperationCount > 0 {
@@ -122,6 +123,7 @@ struct LiveServerFixture: Sendable {
         credentialContinuityPort: any AgentStudioIPCCredentialContinuityPort = TestCredentialContinuityPort(),
         canonicalPaneMembership: (@Sendable (UUID, UUID) -> Bool)? = nil,
         ownPaneScopes: [AppIPCOwnPaneScope] = [],
+        cliStoreReadThroughPort: (any AppIPCCLIStoreReadThroughPort)? = nil,
         additionalRegistrations: [AnyAppIPCMethodRegistration] = [],
         eventBroker: IPCEventBroker = IPCEventBroker(),
         makeConnectionIO: @escaping @Sendable (UnixSocketConnection) -> AppIPCConnectionIO = AppIPCConnectionIO.live,
@@ -216,6 +218,7 @@ struct LiveServerFixture: Sendable {
                     channel: channel,
                     principalRegistry: principalRegistry,
                     credentialContinuityPort: credentialContinuityPort,
+                    cliStoreReadThroughPort: cliStoreReadThroughPort,
                     makeConnectionIO: makeConnectionIO,
                     makeConnectionWriter: makeConnectionWriter
                 )
@@ -243,12 +246,12 @@ struct LiveServerFixture: Sendable {
         return token
     }
 
-    func stop() {
-        server.stop()
+    func stop() async {
+        await server.stop()
     }
 
-    func stopAcceptingConnections() {
-        server.stopAcceptingConnections()
+    func stopAcceptingConnections() async {
+        await server.stopAcceptingConnections()
     }
 
     @MainActor
@@ -281,19 +284,23 @@ final class LiveServerFixtureServer: Sendable {
         }
     }
 
-    func stop() {
-        hasStopped.withLock { stopped in
-            guard !stopped else { return }
-            stopped = true
-            owner.stop()
+    func stop() async {
+        await valueFromDedicatedThread { [self] in
+            hasStopped.withLock { stopped in
+                guard !stopped else { return }
+                stopped = true
+                owner.stop()
+            }
         }
     }
 
-    func stopAcceptingConnections() {
-        hasStopped.withLock { stopped in
-            guard !stopped else { return }
-            stopped = true
-            owner.stopAcceptingConnections()
+    func stopAcceptingConnections() async {
+        await valueFromDedicatedThread { [self] in
+            hasStopped.withLock { stopped in
+                guard !stopped else { return }
+                stopped = true
+                owner.stopAcceptingConnections()
+            }
         }
     }
 
@@ -416,7 +423,6 @@ private func makeLiveServerBuiltInCatalog(
     let illustrativeId = UUIDv7.generate()
     return try IPCBuiltInMethodCatalog(
         inputs: IPCBuiltInMethodCatalogInputs(
-            terminalWaitMaximumSeconds: 86_400,
             relationships: IPCBuiltInMethodRelationshipInputs(
                 paneFocus: .noInteractiveIdentity,
                 paneClose: .noInteractiveIdentity,

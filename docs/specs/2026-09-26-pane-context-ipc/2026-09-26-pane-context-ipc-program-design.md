@@ -1,6 +1,14 @@
 # Enable pane agents: how it is built
 
-Date: 2026-10-02. **Revision 23** folds in the decisions settled during delivery, 2026-10-01/02. Each was recorded first on board threads 01a0cdcb (IPC) and 01a0cdc9 (coordination), and each is anchored in code on `pane-context-ipc` or `fast-cli-store`:
+Date: 2026-10-04. **Revision 30** (Lead, 2026-10-04; PR B S6 review round 1): this revision restates rules the code drifted from; it adds no new mechanism. First, session end touches only Agent Lines and unconfirmed receipts: an ended or replaced session's open asks stay open and answerable. Second, permanent retirement is durable: it is processed off-main even before the service's first use, shutdown commits pending retirements, and each commit arms the purge deadline. Third, the render (item 4 of "What PR B adds") ships in PR C, which reads `value(for:)` and `PaneDisplayTitleDerived`, as agreed with Panes. PR B proves line, title, notices and asks through the app's own reads. **Revision 29** (Lead, 2026-10-03; PR B S5): `notify` reserves `CLIPolicy.noticeQueueReserve` (250 ms) of its 5 s total for the outbox write, so a `notSent` notice always reaches the outbox when the app accepts but never reads. **Revision 28** (Lead, 2026-10-03): three delivery decisions from the fast CLI round-1 review, anchored on `fast-cli-store` at 5a921b816. First, `--reload-catalog` is removed, because the catalog is fixed per runtime and the CLI is the same build. Second, a brand-new CLI store is created atomically under a private name and published with an exclusive rename. Third, opening and migrating the store gets a first-open busy budget of at most 1 s within the call total; notice writes and purges keep 50 ms. Storage contents, ownership and the single-writer rule are unchanged. **Revision 27** (owner, 2026-10-02): choice 4 now leads with agents finding their way through `help` and `--help` (Spec R33). Discovery drops rev 26's catalog digest, because the CLI ships in the app bundle and is always the same build. There's no client re-check and discovery gets 500 ms. The digest, cache and filter wait for the Studio service design. **Revision 26** (owner, 2026-10-02): two changes to choice 4. Discovery is identified by a catalog digest, with a name filter, a one-row CLI-store cache and no client re-validation, and it comes within the 250 ms budget. Every hook verb is silent: no stdout, no stderr in normal operation, exit 0.
+
+**Revision 25** (owner, 2026-10-02): link removal ships without agent notification for now (Spec R19 deferred). Gaps item 4 is rewritten: no removal facts are consumed, and the replay request to Bridge is withdrawn.
+
+**Revision 24** records two decisions from 2026-10-02:
+- the fast CLI's light index is realized as one typed-entry inventory, shared by the app's full catalog and the CLI's on-demand resolver (choice 4; built on `fast-cli-store`);
+- the pull-request chip registers no Forge demand until B2 links exist (agreed with Panes).
+
+**Revision 23** folds in the decisions settled during delivery, 2026-10-01/02. Each was recorded first on board threads 01a0cdcb (IPC) and 01a0cdc9 (coordination), and each is anchored in code on `pane-context-ipc` or `fast-cli-store`:
 - the display contract change Panes asked for (`own` / `includingDrawers` `PaneMessageCounts` and the `AgentMessageAttentionType` classifier; board 01a0f7b4);
 - the newest-blocking-ask tie-break;
 - the bounded `pane.context.get` reply (exact envelope overhead, a binary search on the detail budget) and source-list continuation;
@@ -113,6 +121,31 @@ Nothing computes on the main thread.
    parameters, resolves the target and authorizes before any handler runs
    (`AppIPCTypedMethodRegistration.swift:148-205`), so skipping the client
    check removes nothing the app relies on.
+   - **One method inventory feeds both sides.** Each built-in method is one
+     typed entry (`IPCBuiltInMethodEntry`, in ProgrammaticControl). An entry
+     holds the method's name, summary, model-call metadata, a deferred
+     parameter-schema factory and a factory for its one descriptor. Making
+     an entry builds nothing. `IPCBuiltInMethodIndex` lists the entries once.
+     - **The app** builds its full catalog by walking that same list, so its
+       catalog content and its typed group accessors are unchanged.
+     - **The CLI** resolves through `IPCCompiledInvocationResolver`
+       (ClientCore). It looks up the exact method name, or the longest
+       model-call prefix, and builds only that method plus `auth.login`. An
+       unknown name is refused before anything is built. A hook builds
+       `auth.login` and `session.event` and nothing else.
+     - **A hook is silent (rev 26; owner, 2026-10-02; Spec R6).** Every hook
+       verb writes nothing to stdout, because Claude Code feeds a SessionStart
+       hook's stdout to the model. It writes nothing to stderr in normal
+       operation and always exits 0. That holds whether the app is up, down,
+       slow or refusing, and outside a pane, where it returns at once without a
+       pane token. Diagnostics go to the CLI's own log or record, never to the
+       provider. Proof is a process-level test over every hook verb.
+     - **Help:** the overview reads names and summaries straight from the
+       entries. `METHOD --help` builds only that method's parameter schema.
+     - **Hard cutover:** the old eager CLI admission path
+       (`locallyResolvableDescriptors`) is gone, with no fallback to it.
+     - **At PR B's merge,** its eight `pane.*` recipes become entries, and the
+       inventory's exact-name check grows from 47 to 55.
    - **`command.execute` goes straight to the app too.** Today it costs three
      round trips (`system.capabilities`, `command.list`, then the call;
      `AgentStudioIPCClientCommandLineRunner.swift:84-118,194-227`). Now the CLI
@@ -139,8 +172,42 @@ Nothing computes on the main thread.
        (the effective wait) and `wasClamped`.
      - The advertised schema has no maximum.
    - **Discovery is explicit only:** `system.capabilities`, `command.list`
-     and `agentstudio help --live`. A `--reload-catalog` flag asks the app to
-     rebuild its catalog on demand.
+     and `agentstudio help --live`. There's no `--reload-catalog` flag (rev 28).
+     The app's catalog is fixed for the life of its runtime, and the CLI is the
+     same build, so a reload could only re-fetch the same bytes. Rebuilding the
+     catalog on demand waits for the Studio service design.
+   - **Discovery (rev 27; owner, 2026-10-02; Spec R31).** The CLI ships
+     inside the app bundle (`Contents/Helpers/agentstudio`), and an agent calls
+     its own app's copy through `AGENTSTUDIO_CLI`, so the CLI and the app are
+     always the same build. The CLI therefore doesn't re-validate the catalog
+     the app sends (client `IPCValidatedJSONSchema.normalize` was about 77% of
+     the 1.45 s p95); the app validated it when composing it. This is a hard
+     cutover. Explicit discovery is held to 500 ms.
+     - **Deferred to the Studio service design:** rev 26's catalog digest,
+       its cache and `--filter`. That design covers one tier-2 process that
+       the app starts and that stops with the app, serving the CLI, MCP (a
+       local network server) and plugins. Auth doesn't change: callers' own
+       pane tokens, and the app authorizes. The service restarts on a version
+       change. The Swift CLI is an intermediate step.
+   - **Agents find their way through `help` (rev 27; owner, 2026-10-02:
+     "more important than capabilities"; Spec R33).**
+     - **What an agent may do moves onto the entry.** Each
+       `IPCBuiltInMethodEntry` carries its `agentEligibility` (own pane,
+       any target / read-only, or not yet allowed). The descriptor factory
+       reads it from the entry, so there's one source and the overview
+       builds nothing.
+     - **`agentstudio help`** lists, from the entries alone and with no app
+       connection, every method with its summary and what an agent in a pane
+       may do with it.
+     - **`agentstudio <method> --help`** prints that method's arguments and
+       one example call, built only for that method.
+     - **An unknown method** is refused locally. The refusal names
+       `agentstudio help` and up to 3 closest method names (by edit distance
+       over the entry names), and never `system.capabilities`.
+     - **The shipped skill** (`AgentPackage/skills/agentstudio/SKILL.md`)
+       gains a short "Everything else" section: `"$AGENTSTUDIO_CLI" help`
+       lists what you can call, and `"$AGENTSTUDIO_CLI" <method> --help`
+       shows how. An agent acts on its own pane only.
    - **Budget:** p95 of `cli.call_total_ms` (process start to exit) on a warm
      debug app, measured over 50 calls: ≤ 150 ms for hook verbs and
      `line`/`title`/`notify`, ≤ 250 ms for other verbs.
@@ -198,6 +265,25 @@ Nothing computes on the main thread.
      - Only `agentstudio` processes write, migrate and purge this file. Many
        short-lived CLI processes share SQLite's write lock (WAL, the 50 ms busy
        timeout, fail open).
+     - **A brand-new store is created atomically (rev 28).**
+       - Why: two CLI processes could both find the file missing. Switching a
+         shared fresh file to WAL can then return `SQLITE_BUSY` at once,
+         without calling the busy handler (SQLite does this to avoid
+         deadlock), and one of them would lose its notice.
+       - How: each creator builds a complete store under a private name: WAL,
+         `synchronous=FULL`, migrations and identity, then a TRUNCATE
+         checkpoint and close. It then publishes with an exclusive rename. The
+         loser opens the winner's store. A published store is already in WAL,
+         so its writers skip the switch. Only an older store that isn't in WAL
+         yet still switches once on upgrade, which keeps the existing upgrade
+         path.
+       - The creator turns off persistent WAL on its private connection only,
+         so nothing private is left behind. The published store keeps Apple
+         SQLite's default of persistent `-wal`/`-shm`, which the app's
+         read-only opener needs.
+       - Between the rename and the first writer access, a read-only open may
+         be refused. It can never see a partial store, and no notice can exist
+         yet in that window.
      - The app opens the file **read-only** (GRDB `readonly`). In WAL mode it
        still takes shared read locks, but never the write lock, so a hook never
        waits on the app.
@@ -541,7 +627,22 @@ On timeout the call ends as one of two typed outcomes, never a guess:
   queued (Spec R31), and nothing is granted. A hook exits 0 so the provider
   continues. A verb exits with the `outcomeUnknown` code.
 
-Store access has its own short busy timeout (50 ms), inside the same total.
+Store access has its own short busy timeout (50 ms) for notice writes and
+purges. Opening and migrating the store waits for the smaller of the remaining
+call budget and `CLIStorePolicy.firstOpenMigrationLockWaitCap` (1 s), so a
+first open behind another process's migration doesn't drop its notice (rev
+28). Both waits stay inside the same total; an exhausted budget fails as a
+typed busy result and the hook still fails open.
+
+**A notice keeps budget for its own queue write (rev 29).** `notify` is the
+verb whose `notSent` outcome queues a notice. It spends at most the total minus
+`CLIPolicy.noticeQueueReserve` (250 ms) on the network, so a `notSent` notice
+always has budget to reach the outbox inside the same total. Without the
+reserve, an app that accepts the connection but never reads could use the
+whole 5 s, and the notice would fail to queue as busy. When the app isn't
+running at all, connect fails at once and the reserve is never touched.
+`outcomeUnknown` still queues nothing (Spec R31). Asks and every other verb
+exit `unavailable` on `notSent`, as before.
 
 ## Writers and write numbers
 
@@ -701,8 +802,12 @@ atom boundaries", item 5).
   another write.
 - **Session end reaches lines.** Sessions sends
   `sessionEnded(bindingGenerationId:)` through the App-composed port; the
-  service marks the Agent Lines written under that binding generation stale
-  and publishes. Keying by binding generation, not by conversation, means a
+  service marks the Agent Lines written under that binding generation stale,
+  turns that generation's `notYetConfirmed` receipts into `unconfirmed`
+  (R11a), and publishes. It never settles an ask: an ended or replaced
+  session's open asks stay open and answerable (Session status, step 2), and a
+  blocking ask still settles only through its own connection (`callerGone`) or
+  `appStopping` (rev 30). Keying by binding generation, not by conversation, means a
   resumed conversation's new binding is never marked stale by its old one's
   end.
 - **Any detail change bumps the revision.** `PaneContextRevision` (per pane)
@@ -921,7 +1026,11 @@ Rules the implementations keep:
   - `.unknown` and `.noPullRequest` members are neutral: they never count as good or bad.
   - The two axes are read separately. A pull request whose `checks == .unknown` gives no check evidence (it's not failed, running or passed), but its review still counts: `review == .changesRequested` makes it need attention. With unknown checks it can't make the state `allGood`, whatever its review.
 - **Where it runs:** inside `PaneContextService`'s off-main detail derivation, like the rest of `PaneContextDetail`. A Forge fact change for any member re-derives the summary. The pane's revision bumps only when the derived `PullRequestSummaryDetail` changed, which includes any member row, not only the state (Spec R4 and R32: publish on change). A fact the summary doesn't carry (mergeability, draft) re-derives an equal value and doesn't bump. This is the same rule as "Any detail change bumps the revision" above.
-- **Who keeps the facts fresh:** Forge's existing demand owner (`PullRequestDemandProjection`). PR C's visible chip registers a demand source there; PR B adds no poller. Two or more members are required; a single-worktree pane gets `.notApplicable` and keeps today's PR control (`PanePullRequestToolbarActionFactory`).
+- **Who keeps the facts fresh:** Forge's existing demand owner (`PullRequestDemandProjection`); PR B adds no poller.
+  - **Until B2, the chip registers no demand.** Without B2 links a pane has no member worktrees, so there is nothing to ask Forge for. PR C's chip registers nothing yet (agreed with Panes, 2026-10-02).
+  - **B2 adds the demand** as part of its links work: the union of every linked pane's member worktrees, registered with `PullRequestDemandProjection`.
+  - **Constraint for B2:** the existing demand input is built on the main actor (`visibleActiveTabWorktreeIds` and its helpers in `WorkspaceSurfaceCoordinator+RepositoryFactDemand.swift`). B2 must not grow that main-actor set-building with the member union. The main actor captures keyed facts; the union is computed off-main.
+  - Two or more members are required. A single-worktree pane gets `.notApplicable` and keeps today's PR control (`PanePullRequestToolbarActionFactory`).
 - **Confirmed by the owner, 2026-09-30:** changes requested counts as attention; review required doesn't; N counts worktrees, not checks; attention beats running.
 
 ## Bounds and retention
@@ -1048,7 +1157,7 @@ in Boot.
    - `goToPane` → `PaneFocusAppControl` / `PaneFocusExecutor`;
    - `openPullRequest` → the existing external opener callback.
    The popover then assigns its own local view state.
-4. **Render.** Views read keyed values with `value(for:)`. `PaneDisplayTitleDerived` composes the pane's own title with the agent title as it's read.
+4. **Render (PR C, rev 30).** Views read keyed values with `value(for:)`. `PaneDisplayTitleDerived` composes the pane's own title with the agent title as it's read. PR B publishes both atoms and ships `PaneDisplayTitleDerived`; PR C's pane chrome is their only reader (Panes rebind list: "PR C MUST only read `value(for: paneId)` from the two atoms"). PR B and PR C should merge together, so no release carries values nobody shows.
 5. **Pane viewed (rev 16, F4).** After `paneFocusExecutor.apply(decision)` returns true in `PaneTabViewController`'s focus path (`PaneTabViewController.swift:1031`), and only for **person-initiated** triggers (a click, or a person's keyboard focus including drawer-child selection), one `nonisolated` submit carries `(paneId, viewedAt: ContinuousClock.Instant)`. It's a `Mutex` write with no await.
    - Excluded: restore tail, parked replay, automatic repair, IPC focus, and a failed apply.
    - Sessions applies a view only to a `done` whose admission instant is earlier than `viewedAt`. So a view can never acknowledge a later Stop or a replacement binding.
@@ -1066,7 +1175,7 @@ Nothing else. No PR B handler, write, read, deadline or reduction runs on the ma
 | Pane existence and drawer ownership | ordered membership change | `PaneContextMembershipDirectory`, published inside `WorkspacePaneGraphAtom.commitPaneStates` (owner decision B, Gaps item 6) | one locked read at each point of use: auth, source-in-view, the lane's current-membership fence, `ownerPaneId(for:)` |
 | Pane viewed | an ordered occurrence per pane, coalesced to the latest instant | the person-initiated, successful-apply point in `PaneTabViewController`'s focus path (item 5 above), with `(paneId, viewedAt)` into a `nonisolated` Sessions mailbox | Sessions applies it only to a `done` admitted before `viewedAt` (monotonic, same process) |
 | Ask deadlines and Agent Line expiry | future eligibility deadline | one reschedulable next-deadline task in the service, on its injected clock | no fleet-wide timer |
-| Retirement | ordered fact | `retirePanesPermanently` calls the service's `nonisolated retire(_:)`, which appends to a `Mutex` mailbox without awaiting, as `PaneActivityClock.retire` already does | no await on the main actor |
+| Retirement | ordered fact | `retirePanesPermanently` calls the service's `nonisolated retire(_:)`, which appends to a `Mutex` mailbox without awaiting, as `PaneActivityClock.retire` already does. The mailbox wakes off-main processing even before the service's first use; `stop()` commits pending retirements before closing; each commit refreshes the deadline so the purge fires about a day later (rev 30) | no await on the main actor |
 | Per-pane display (title, line, counts, newest ask, PR summary) | latest-state projection | computed by the service after each commit | the publication lane below |
 | Per-pane session status | latest-state projection | computed by the Sessions reducer after each input | the publication lane below |
 | Pull-request summary | latest-state projection | `PullRequestSummaryFold` in the service, on a Forge fact change | a pure fold; an equal result publishes nothing |
@@ -1240,7 +1349,7 @@ GRDB migrations, additive, never a rebuild):
 | Measured budget (debug app) | `cli.call_total_ms` p95 over 50 calls per verb class against the stated budget |
 | Installer tests and recorded provider traces | R6, R13: permission hooks report-only; each wired event checked against a recorded trace from the installed Claude Code and Codex versions |
 | Skill content check | R24 |
-| Debug app smoke (computer use, focus-safe) | line, title, notify and ask show up; nothing takes focus |
+| Debug app smoke (computer use, focus-safe) | PR B: line, title, notices and asks are proven through the app's own reads (`pane`) in a real pane; nothing takes focus. PR C: they show up on screen (rev 30) |
 
 ## Trace table
 
@@ -1254,7 +1363,7 @@ GRDB migrations, additive, never a rebuild):
 | R3a, R13 | Sessions evidence: S13 prompt open/resolve/end in `SessionStatusState`; installer keeps permission hooks report-only |
 | R8–R11, R11a | `pane.message.ask` + waiter + one settle point + connection lifetime (\"Connections\"); receipt columns confirmed by `pane.message.changes` |
 | R14 | `pane.message.changes` + `pane_answer_position` + CLI position; paging and change-entry retention (\"Bounds and retention\") |
-| R16–R20 | B2: Bridge's single `show(pane:target:mode:)` (background default; take-over only after the handler's blocking approval ask is answered allow); R19 person removals from Bridge's post-commit `membershipFacts()`, resumed by generation once Bridge adds replay |
+| R16–R20 | B2: Bridge's single `show(pane:target:mode:)` (background default; take-over only after the handler's blocking approval ask is answered allow); R19 deferred: no removal facts are consumed; a removed link is simply absent from `pane.context.get` links |
 | R21–R23 | `pane_state` + write order + writer check ("Writers and write numbers") + title layer via `PaneDisplayTitleDerived`; expiry and session-end staleness ("Keeping displayed values current") |
 | R24 | bundled skill update |
 | R25 | `pane.context.get` composing service, Sessions status and (B2) links |
@@ -1314,13 +1423,20 @@ GRDB migrations, additive, never a rebuild):
    - `AgentStudioIPCHumanApprovalPort` (#364's grant policy) is not used.
      Projecting grant approvals into AgentMessage is a recorded follow-up.
    - The membership port is unchanged from #376.
-4. **Person removals in B2 (owner-approved, Bridge seq 2114).** Bridge emits
-   `BridgeLinkContributionsRemoved { receiver, item, removedContributions,
-   removedBy, generation }` after its durable commit, on
-   `PaneLinkMembershipPort.membershipFacts()`. That replaces "route every
-   removal through PR B's seam". A live stream isn't durable across an app
-   exit, so PR B stores the last consumed generation per receiver and asks
-   Bridge to replay facts after it on start. **Gap on main:** `membershipFacts()` is a live stream with no replay. Asked Bridge for an additive `membershipFacts(after: generation)` replay (board, 2026-09-27) before B2.
+4. **Person removals: deferred (owner, 2026-10-02).** Link removal ships
+   without agent notification. PR B and B2 consume no removal facts, and the
+   change feed has no link-removal kind (`PaneMessageChangeKind` is answer,
+   dismissal and withdrawal). An agent sees a removed link only as absent
+   from its pane's current links.
+   - The replay request to Bridge (`membershipFacts(after: generation)`,
+     board 2026-09-27) is **withdrawn**. Bridge builds no removal-fact
+     producer, replay or event store for now.
+   - Main's `PaneLinkMembershipPort.membershipFacts()` contract is unchanged
+     and has no consumer here.
+   - Deferred, not dropped: the earlier design (Bridge emits
+     `BridgeLinkContributionsRemoved` after its commit; PR B keeps the last
+     consumed generation per receiver) comes back only through a new owner
+     decision.
 5. **Contract row change.** The AgentMessage detail shapes, the `SessionStatusState` inputs (including "pane viewed") and the `SessionStatusAtom` value are hand-off contracts (delivery order). They are posted on thread 01a0cdc9 for Panes' acknowledgement before code.
 
 6. **Pane and drawer membership for off-main readers. Owner decision 2026-09-30: B, a membership directory** (no "crazy new machinery"; reviewed by the Sol xhigh advisor, `tmp/workspace-control/prb-review/membership-directory-review.md`, findings M1–M3 accepted). Design (rev 20):

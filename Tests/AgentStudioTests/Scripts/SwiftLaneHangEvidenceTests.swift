@@ -383,6 +383,60 @@ struct SwiftLaneHangEvidenceTests {
         #expect(retainedFiles == expectedFiles)
     }
 
+    @Test("a failed retention check cannot remove a member of any kept evidence stem", arguments: ["grep", "sort"])
+    func failedRetentionCheckKeepsEveryStemMember(failingCommand: String) async throws {
+        let fixtureRoot = FileManager.default.temporaryDirectory
+            .appendingPathComponent("agentstudio-retention-failure-\(UUIDv7.generate())")
+        defer { try? FileManager.default.removeItem(at: fixtureRoot) }
+        let evidenceDirectory = fixtureRoot.appendingPathComponent("evidence")
+        let shimDirectory = fixtureRoot.appendingPathComponent("shims")
+        try FileManager.default.createDirectory(at: evidenceDirectory, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: shimDirectory, withIntermediateDirectories: true)
+        var expectedFiles: [String] = []
+        for stemNumber in 2...6 {
+            let stem = "lane-retention-probe-20260924T00000\(stemNumber)-100"
+            for suffix in [".events.jsonl", ".timing.json", "-pid\(stemNumber)0.task-dump.txt"] {
+                let name = stem + suffix
+                try "evidence".write(
+                    to: evidenceDirectory.appendingPathComponent(name), atomically: true, encoding: .utf8)
+                expectedFiles.append(name)
+            }
+        }
+        // No discarded stem comes first: the third grep call checks kept stem2's timing file.
+        let grepShim = """
+            #!/bin/bash
+            invocation=0
+            if [[ -f "$GREP_INVOCATION_COUNTER" ]]; then
+              IFS= read -r invocation < "$GREP_INVOCATION_COUNTER"
+            fi
+            invocation=$((invocation + 1))
+            printf '%s\\n' "$invocation" > "$GREP_INVOCATION_COUNTER"
+            if [[ "$invocation" -eq 3 ]]; then
+              echo GREP_FAILURE=3 >&2
+              exit 2
+            fi
+            exec /usr/bin/grep "$@"
+            """
+        // A pipeline may emit a plausible partial set and still fail; do not use that set to delete.
+        let sortShim = """
+            #!/bin/bash
+            printf '%s\\n' 'lane-retention-probe-20260924T000006-100'
+            exit 2
+            """
+        let shimURL = shimDirectory.appendingPathComponent(failingCommand)
+        try (failingCommand == "grep" ? grepShim : sortShim).write(to: shimURL, atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: shimURL.path)
+        let output = try await laneBash(
+            "export LANE_EVENT_STREAM_DIR='\(evidenceDirectory.path)' LANE_EVENT_STREAM_KEEP_PER_LABEL=5 "
+                + "LANE_EVENT_STREAM_RETAIN_ALWAYS=0 GREP_INVOCATION_COUNTER='\(fixtureRoot.path)/grep-counter'; "
+                + "source scripts/swift-test-helpers.sh; set -euo pipefail; "
+                + "PATH='\(shimDirectory.path)':$PATH prune_lane_event_streams retention-probe; echo PRUNE_STATUS=$?"
+        )
+        #expect(output.contains("PRUNE_STATUS=0"))
+        let remainingFiles = try FileManager.default.contentsOfDirectory(atPath: evidenceDirectory.path).sorted()
+        #expect(remainingFiles == expectedFiles.sorted(), Comment(rawValue: output))
+    }
+
     @Test("a task dump is kept beside the ledger, and a refused attach is recorded with its reason")
     func taskDumpIsKeptBesideLedgerAndRefusalIsRecorded() async throws {
         // swift-inspect exits 0 when it cannot attach, printing only to stderr, so

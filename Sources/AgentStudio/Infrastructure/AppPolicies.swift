@@ -56,10 +56,9 @@ package enum AppPolicies {
         /// Includes the active partial write and every frame waiting behind it.
         package static let maximumQueuedOutputBytes: Int = 4 * 1_048_576
         package static let maximumTerminalWaitSeconds: Double = 86_400
-        /// One spooled notification is one wire frame, so the drainer accepts
-        /// exactly what the IPC server would have accepted live. A longer line
-        /// could never have been submitted and is malformed by construction.
-        package static let spoolDrainMaximumLineBytes: Int = 1_048_576
+        /// An offline notice is the live wire envelope, with the same inbound
+        /// bound. Larger payloads cannot reach live admission either.
+        package static let offlineNoticeMaximumPayloadBytes: Int = 1_048_576
         /// Deadline on the whole application termination drain. AppKit's
         /// `.terminateLater` has one exit, the reply, so an unbounded await in
         /// the drain does not delay quit — it cancels it.

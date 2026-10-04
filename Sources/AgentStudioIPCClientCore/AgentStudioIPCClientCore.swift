@@ -5,10 +5,19 @@ import Foundation
 package struct AgentStudioIPCClient: Sendable {
     package let configuration: AgentStudioIPCClientConfiguration
     private let descriptors: [IPCAnyMethodDescriptor]
+    private let onCallCompletion: @Sendable (IPCCLIStoreReadThrough?) -> Void
+    private let deadline: CallDeadline?
 
-    package init(configuration: AgentStudioIPCClientConfiguration, descriptors: [IPCAnyMethodDescriptor]) {
+    package init(
+        configuration: AgentStudioIPCClientConfiguration,
+        descriptors: [IPCAnyMethodDescriptor],
+        deadline: CallDeadline? = nil,
+        onCallCompletion: @escaping @Sendable (IPCCLIStoreReadThrough?) -> Void = { _ in }
+    ) {
         self.configuration = configuration
         self.descriptors = descriptors
+        self.deadline = deadline
+        self.onCallCompletion = onCallCompletion
     }
 
     package func requestFrame(_ invocation: IPCDescriptorInvocation, requestID: Int = 1) throws -> String {
@@ -31,17 +40,35 @@ package struct AgentStudioIPCClient: Sendable {
     package func call(_ invocation: IPCDescriptorInvocation, requestID: Int = 1) throws
         -> IPCDescriptorClientCallResult
     {
+        try withAuthenticatedExchange(first: invocation, requestID: requestID) { exchange in
+            try exchange.call(invocation)
+        }
+    }
+
+    /// One connection, login and original deadline serve every dependent step.
+    /// The connection closes when this synchronous scope ends.
+    package func withAuthenticatedExchange<Output>(
+        first invocation: IPCDescriptorInvocation, requestID: Int = 1,
+        _ body: (inout IPCAuthenticatedExchange) throws -> Output
+    ) throws -> Output {
         guard invocation.descriptor.metadata.responseDelivery == .single else {
             throw failure(.notSubmitted, .localRequestEncoding)
         }
-        let exchange = try prepareExchange(invocation, requestID: requestID)
+        let prepared = try prepareExchange(invocation, requestID: requestID)
         let connection = try connect()
-        defer { connection.close() }
+        var readThrough: IPCCLIStoreReadThrough?
+        defer {
+            connection.close()
+            onCallCompletion(readThrough)
+        }
         var reader = AgentStudioIPCClientFrameReader(maxFrameBytes: configuration.maxResponseFrameBytes)
-        try authenticateIfNeeded(exchange, connection: connection, reader: &reader)
-        try submit(exchange.commandFrame, connection: connection)
-        let response = try receiveResponse(id: exchange.commandRequestID, connection: connection, reader: &reader)
-        return try normalizedResponse(response, descriptor: invocation.descriptor, requestID: exchange.commandRequestID)
+        readThrough = try authenticateIfNeeded(prepared, connection: connection, reader: &reader)
+        var exchange = IPCAuthenticatedExchange(
+            owner: self, connection: connection, reader: reader,
+            requestID: prepared.commandRequestID, firstInvocation: invocation, firstFrame: prepared.commandFrame,
+            readThrough: readThrough)
+        defer { readThrough = exchange.readThrough }
+        return try body(&exchange)
     }
 
     package func stream(
@@ -54,9 +81,13 @@ package struct AgentStudioIPCClient: Sendable {
         }
         let exchange = try prepareExchange(invocation, requestID: requestID)
         let connection = try connect()
-        defer { connection.close() }
+        var readThrough: IPCCLIStoreReadThrough?
+        defer {
+            connection.close()
+            onCallCompletion(readThrough)
+        }
         var reader = AgentStudioIPCClientFrameReader(maxFrameBytes: configuration.maxResponseFrameBytes)
-        try authenticateIfNeeded(exchange, connection: connection, reader: &reader)
+        readThrough = try authenticateIfNeeded(exchange, connection: connection, reader: &reader)
         try submit(exchange.commandFrame, connection: connection)
         let initial = try receiveResponse(id: exchange.commandRequestID, connection: connection, reader: &reader)
         switch try normalizedResponse(initial, descriptor: invocation.descriptor, requestID: exchange.commandRequestID)
@@ -91,15 +122,34 @@ package struct AgentStudioIPCClient: Sendable {
         }
     }
 
-    /// Discovery has a concrete metadata decoder; received metadata never creates an invocable descriptor.
+    /// The bundled app has already validated its catalog. Preserve its bytes
+    /// for explicit discovery; typed reads are only for consumers of metadata.
+    package func discoverCatalogBytes(requestID: Int = 1) throws -> Data {
+        try callDiscovery(method: "system.capabilities", requestID: requestID)
+    }
+
     package func discoverCatalog(requestID: Int = 1) throws -> IPCMethodCatalogResult {
-        let authentication = try authenticationExchange(requestID: requestID, forMethod: "system.capabilities")
+        let encodedResult = try discoverCatalogBytes(requestID: requestID)
+        do {
+            return try JSONDecoder().decode(IPCMethodCatalogResult.self, from: encodedResult)
+        } catch {
+            throw failure(.deliveryUncertain, .invalidTypedResult)
+        }
+    }
+
+    package func discoverCommandBytes(requestID: Int = 1) throws -> Data {
+        try callDiscovery(method: "command.list", requestID: requestID)
+    }
+
+    /// Both explicit discovery methods share the same authenticated exchange.
+    private func callDiscovery(method: String, requestID: Int) throws -> Data {
+        let authentication = try authenticationExchange(requestID: requestID, forMethod: method)
         let commandID = authentication == nil ? requestID : requestID + 1
         let frame: Data
         do {
             frame = try NDJSONFrameEncoder.encode(
                 JSONRPCCodec.encodeRequest(
-                    JSONRPCClientRequest(id: .number(commandID), method: "system.capabilities", params: .object([:]))
+                    JSONRPCClientRequest(id: .number(commandID), method: method, params: .object([:]))
                 ), maxFrameBytes: configuration.maxRequestFrameBytes
             )
         } catch { throw failure(.notSubmitted, .localRequestEncoding) }
@@ -107,27 +157,30 @@ package struct AgentStudioIPCClient: Sendable {
             commandFrame: frame, commandRequestID: commandID, authentication: authentication
         )
         let connection = try connect()
-        defer { connection.close() }
+        var readThrough: IPCCLIStoreReadThrough?
+        defer {
+            connection.close()
+            onCallCompletion(readThrough)
+        }
         var reader = AgentStudioIPCClientFrameReader(maxFrameBytes: configuration.maxResponseFrameBytes)
-        try authenticateIfNeeded(exchange, connection: connection, reader: &reader)
+        readThrough = try authenticateIfNeeded(exchange, connection: connection, reader: &reader)
         try submit(frame, connection: connection)
-        let response = try receiveResponse(id: commandID, connection: connection, reader: &reader)
+        let responseFrame: String
+        do { responseFrame = try reader.receiveFrame(connection: connection) } catch {
+            throw failure(.deliveryUncertain, .commandResponseMissing)
+        }
+        let response: JSONRPCDiscoveryResponse
+        do { response = try JSONRPCCodec.decodeDiscoveryResponse(responseFrame) } catch {
+            throw failure(.deliveryUncertain, .invalidResponse)
+        }
+        guard response.id == .number(commandID) else { throw failure(.deliveryUncertain, .responseIDMismatch) }
         if let error = response.error {
             throw IPCDescriptorRemoteFailureDecoder.decode(error, descriptor: nil)
         }
-        guard let result = response.result else {
+        guard let result = response.resultBytes else {
             throw failure(.deliveryUncertain, .invalidResponse)
         }
-        do {
-            return try IPCMethodCatalogDecoder.decode(JSONEncoder().encode(result))
-        } catch let correction as IPCSchemaValidationError
-            where
-            correction.fieldPath == "$.compatibility" && correction.reason == .invalidValue
-        {
-            throw failure(.protocolRejected, .unsupportedVersion(correction))
-        } catch {
-            throw failure(.deliveryUncertain, .invalidTypedResult)
-        }
+        return result
     }
 
     private func prepareExchange(_ invocation: IPCDescriptorInvocation, requestID: Int) throws
@@ -170,8 +223,8 @@ package struct AgentStudioIPCClient: Sendable {
         _ exchange: PreparedDescriptorExchange,
         connection: UnixSocketConnection,
         reader: inout AgentStudioIPCClientFrameReader
-    ) throws {
-        guard let authentication = exchange.authentication else { return }
+    ) throws -> IPCCLIStoreReadThrough? {
+        guard let authentication = exchange.authentication else { return nil }
         let response: JSONRPCResponseMessage
         do {
             try connection.send(authentication.frame)
@@ -185,10 +238,13 @@ package struct AgentStudioIPCClient: Sendable {
             let data = try normalized.data(validatedFor: authentication.descriptor.metadata.resultSchema)
             status = try JSONDecoder().decode(IPCAuthStatusResult.self, from: data)
         } catch { throw failure(.notSubmitted, .authenticationResponse) }
-        guard case .authenticated = status else { throw failure(.authenticationRejected, .authenticationResponse) }
+        guard case .authenticated(_, _, _, let readThrough) = status else {
+            throw failure(.authenticationRejected, .authenticationResponse)
+        }
+        return readThrough
     }
 
-    private func normalizedResponse(
+    fileprivate func normalizedResponse(
         _ response: JSONRPCResponseMessage, descriptor: IPCAnyMethodDescriptor, requestID: Int
     ) throws -> IPCDescriptorClientCallResult {
         if let error = response.error {
@@ -211,17 +267,20 @@ package struct AgentStudioIPCClient: Sendable {
 
     private func connect() throws -> UnixSocketConnection {
         do {
-            return try UnixSocketClient.connect(endpoint: UnixSocketEndpoint(path: configuration.socketPath))
+            return try UnixSocketClient.connect(
+                endpoint: UnixSocketEndpoint(path: configuration.socketPath), deadline: deadline)
         } catch let error as UnixSocketTransportError where error.reason == .connectFailed {
             throw failure(.endpointUnavailableBeforeSubmission, .endpointConnectFailed(errnoCode: error.errnoCode))
+        } catch let error as UnixSocketTransportError {
+            throw failure(.notSubmitted, .endpointConnectFailed(errnoCode: error.errnoCode))
         } catch { throw failure(.notSubmitted, .localRequestEncoding) }
     }
 
-    private func submit(_ frame: Data, connection: UnixSocketConnection) throws {
-        do { try connection.send(frame) } catch { throw failure(.deliveryUncertain, .commandWrite) }
+    fileprivate func submit(_ frame: Data, connection: UnixSocketConnection) throws {
+        do { try connection.send(frame) } catch { throw failure(.notSubmitted, .commandWrite) }
     }
 
-    private func receiveResponse(
+    fileprivate func receiveResponse(
         id: Int, connection: UnixSocketConnection, reader: inout AgentStudioIPCClientFrameReader
     ) throws -> JSONRPCResponseMessage {
         let frame: String
@@ -274,5 +333,56 @@ private struct AgentStudioIPCClientFrameReader {
             queuedFrames.append(contentsOf: try decoder.append(data))
         }
         return queuedFrames.removeFirst()
+    }
+}
+
+/// A scoped sequential exchange over the client's existing framing and validation.
+package struct IPCAuthenticatedExchange {
+    private let owner: AgentStudioIPCClient
+    private let connection: UnixSocketConnection
+    private var reader: AgentStudioIPCClientFrameReader
+    private var nextRequestID: Int
+    private var firstRequest: (invocation: IPCDescriptorInvocation, frame: Data)?
+    fileprivate var readThrough: IPCCLIStoreReadThrough?
+
+    fileprivate init(
+        owner: AgentStudioIPCClient, connection: UnixSocketConnection, reader: AgentStudioIPCClientFrameReader,
+        requestID: Int, firstInvocation: IPCDescriptorInvocation, firstFrame: Data,
+        readThrough: IPCCLIStoreReadThrough?
+    ) {
+        self.owner = owner
+        self.connection = connection
+        self.reader = reader
+        nextRequestID = requestID
+        firstRequest = (firstInvocation, firstFrame)
+        self.readThrough = readThrough
+    }
+
+    package mutating func call(_ invocation: IPCDescriptorInvocation) throws -> IPCDescriptorClientCallResult {
+        guard invocation.descriptor.metadata.responseDelivery == .single,
+            nextRequestID > 0, nextRequestID < Int.max
+        else { throw IPCDescriptorClientFailure(disposition: .notSubmitted, reason: .localRequestEncoding) }
+        let requestID = nextRequestID
+        nextRequestID += 1
+        let frame: Data
+        if let first = firstRequest {
+            guard first.invocation.descriptor.metadata.name == invocation.descriptor.metadata.name,
+                first.invocation.normalizedParameters.data == invocation.normalizedParameters.data
+            else { throw IPCDescriptorClientFailure(disposition: .notSubmitted, reason: .localRequestEncoding) }
+            frame = first.frame
+            firstRequest = nil
+        } else {
+            frame = try NDJSONFrameEncoder.encode(
+                owner.requestFrame(invocation, requestID: requestID),
+                maxFrameBytes: owner.configuration.maxRequestFrameBytes)
+        }
+        try owner.submit(frame, connection: connection)
+        let response = try owner.receiveResponse(id: requestID, connection: connection, reader: &reader)
+        let result = try owner.normalizedResponse(response, descriptor: invocation.descriptor, requestID: requestID)
+        if invocation.descriptor.metadata.name == "auth.login", case .success(let success) = result {
+            let status = try JSONDecoder().decode(IPCAuthStatusResult.self, from: success.normalizedResult.data)
+            if case .authenticated(_, _, _, let mark) = status { readThrough = mark }
+        }
+        return result
     }
 }

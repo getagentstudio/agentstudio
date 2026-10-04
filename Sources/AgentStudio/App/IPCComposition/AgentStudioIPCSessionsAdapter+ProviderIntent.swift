@@ -16,8 +16,15 @@ extension AgentStudioIPCSessionsAdapter {
         let normalizedEvent = try IPCSessionEventIdentity.ipcSchema().decode(
             IPCSessionEventIdentity.self, from: encoder.encode(params.event)
         )
+        var providerFields = normalizedEvent.providerFields
+        providerFields.sourceOccurredAt = nil
+        let canonicalEvent = IPCSessionEventIdentity(
+            name: normalizedEvent.name, conversationId: normalizedEvent.conversationId,
+            turnId: normalizedEvent.turnId, requestId: normalizedEvent.requestId, toolId: normalizedEvent.toolId,
+            subagentId: normalizedEvent.subagentId, occurrenceId: normalizedEvent.occurrenceId,
+            providerFields: providerFields)
         encoder.dateEncodingStrategy = .secondsSince1970
-        return SHA256.hash(data: try encoder.encode(ProviderIntent(provider: params.provider, event: normalizedEvent)))
+        return SHA256.hash(data: try encoder.encode(ProviderIntent(provider: params.provider, event: canonicalEvent)))
             .map { String(format: "%02x", $0) }.joined()
     }
 

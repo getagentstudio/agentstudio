@@ -26,16 +26,6 @@ package enum IPCSessionEventProvenance: Sendable, Equatable {
 /// App composition owns the mapping to Sessions mutations; this boundary never
 /// sees a domain mutation or a SQLite row.
 package protocol AppIPCSessionsPort: Sendable {
-    func recordDeliberateReport(
-        paneId: UUID,
-        params: IPCSessionReportParams
-    ) async throws -> IPCSessionReportResult
-
-    func recordAgentMessage(
-        paneId: UUID,
-        params: IPCSessionMessageParams
-    ) async throws -> IPCSessionMessageResult
-
     func recordProviderEvent(
         paneId: UUID,
         params: IPCSessionEventParams,
@@ -55,55 +45,6 @@ extension AppIPCBuiltInMethodRegistrations {
         let descriptors = inputs.catalog.sessions
         let port = inputs.ports.sessionsPort
         return try [
-            AppIPCTypedMethodRegistration(
-                descriptorRepresentations: try inputs.descriptorRepresentations(for: descriptors.sessionReport),
-                correlation: .required(\.correlationId),
-                resolveTarget: { parameters, _, tools in
-                    try await AppIPCBuiltInRegistrationSupport.canonicalPaneTarget(
-                        parameters,
-                        rawHandle: parameters.handle,
-                        tools: tools,
-                        replacingHandle: { original, canonicalHandle in
-                            IPCSessionReportParams(
-                                handle: canonicalHandle,
-                                kind: original.kind,
-                                explanation: original.explanation,
-                                correlationId: original.correlationId
-                            )
-                        }
-                    )
-                },
-                connectionHandler: { parameters, _, target in
-                    try await port.recordDeliberateReport(
-                        paneId: AppIPCSessionTargetSupport.paneId(from: target),
-                        params: parameters
-                    )
-                }
-            ).erase(),
-            AppIPCTypedMethodRegistration(
-                descriptorRepresentations: try inputs.descriptorRepresentations(for: descriptors.sessionMessage),
-                correlation: .required(\.correlationId),
-                resolveTarget: { parameters, _, tools in
-                    try await AppIPCBuiltInRegistrationSupport.canonicalPaneTarget(
-                        parameters,
-                        rawHandle: parameters.handle,
-                        tools: tools,
-                        replacingHandle: { original, canonicalHandle in
-                            IPCSessionMessageParams(
-                                handle: canonicalHandle,
-                                text: original.text,
-                                correlationId: original.correlationId
-                            )
-                        }
-                    )
-                },
-                connectionHandler: { parameters, _, target in
-                    try await port.recordAgentMessage(
-                        paneId: AppIPCSessionTargetSupport.paneId(from: target),
-                        params: parameters
-                    )
-                }
-            ).erase(),
             AppIPCTypedMethodRegistration(
                 descriptorRepresentations: try inputs.descriptorRepresentations(for: descriptors.sessionEvent),
                 correlation: .required(\.correlationId),

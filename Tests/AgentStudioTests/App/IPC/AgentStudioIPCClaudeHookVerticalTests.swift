@@ -47,6 +47,7 @@ struct AgentStudioIPCClaudeHookVerticalTests {
                 )
             } ?? recordedPayload
         let outcome = ClaudeCodeHookProjection.project(
+            sourceOccurredAt: Date(timeIntervalSince1970: 1_700_000_000),
             announcedEvent: event,
             payload: payload,
             providerVersion: ClaudeCodeProviderIdentity.supportedExactVersion,

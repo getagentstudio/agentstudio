@@ -119,7 +119,7 @@ struct AgentStudioIPCCommandAdapterTests {
         }
 
         let prepared = try await harness.adapter.prepareCommand(
-            request,
+            IPCRawCommandExecutionRequest(typedRequest: request),
             principal: commandAdapterTestPrincipal(),
             tools: tools
         )
@@ -208,7 +208,7 @@ struct AgentStudioIPCCommandAdapterTests {
             arguments: .workspaceWindow(.init(workspaceWindowId: firstWindowId))
         )
         let prepared = try await harness.adapter.prepareCommand(
-            request,
+            IPCRawCommandExecutionRequest(typedRequest: request),
             principal: commandAdapterTestPrincipal(),
             tools: AppIPCTargetResolutionTools { _ in
                 throw AppIPCCommandError(reason: .validationRejected)
@@ -283,7 +283,6 @@ struct AgentStudioIPCCommandAdapterTests {
         let commandCatalog = commandComposition.catalogResult
         let builtIns = try IPCBuiltInMethodCatalog(
             inputs: IPCBuiltInMethodCatalogInputs(
-                terminalWaitMaximumSeconds: AppPolicies.IPC.maximumTerminalWaitSeconds,
                 relationships: IPCBuiltInMethodRelationshipInputs(
                     paneFocus: .appCommand(identifier: AppCommand.focusPane.rawValue),
                     paneClose: .appCommand(identifier: AppCommand.closePane.rawValue),
@@ -309,9 +308,10 @@ struct AgentStudioIPCCommandAdapterTests {
             illustrativeDescriptor: ping
         )
 
-        #expect(builtIns.erasedDescriptors.count == 55)
+        // 55 compiled methods minus the retired session.message and session.report.
+        #expect(builtIns.erasedDescriptors.count == 53)
         #expect(commandCatalog.commands.count == 24)
-        #expect(capabilities.result.methods.count == 58)
+        #expect(capabilities.result.methods.count == 56)
 
         let encodedCatalog = try capabilities.descriptor.encodeResult(capabilities.result)
         let decodedCatalog = try IPCMethodCatalogDecoder.decode(encodedCatalog)

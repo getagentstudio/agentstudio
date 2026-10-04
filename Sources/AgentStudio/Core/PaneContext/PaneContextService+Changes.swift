@@ -2,14 +2,21 @@ import AgentStudioInfrastructure
 import Foundation
 import GRDB
 
+private struct PaneContextChangesCommit: Sendable {
+    let result: PaneMessageChangesResult
+    let didConfirmReceipt: Bool
+}
+
 extension PaneContextService {
     package func changes(_ request: PaneMessageChangesRequest) async -> PaneMessageChangesResult {
         do {
             try await ensureOpen()
             let admission = scopeAdmission()
             let now = wallNow
-            return try await sqliteAccess.write { database in
-                guard try admission(request.paneId, database) else { return .refused(.paneGone) }
+            let commit = try await sqliteAccess.write { database -> PaneContextChangesCommit in
+                guard try admission(request.paneId, database) else {
+                    return PaneContextChangesCommit(result: .refused(.paneGone), didConfirmReceipt: false)
+                }
                 let key = PaneContextStorage.writerKey(request.writer)
                 let after = try PaneContextStorage.integer(request.after.value, field: "after")
                 try database.execute(
@@ -24,23 +31,8 @@ extension PaneContextService {
                         sql:
                             "SELECT last_reported_position FROM pane_answer_position WHERE pane_id = ? AND session_ref = ?",
                         arguments: [request.paneId.uuidString, key]) ?? after
-                let receipts = try Row.fetchAll(
-                    database,
-                    sql:
-                        "SELECT * FROM pane_request WHERE pane_id = ? AND receipt = 'notYetConfirmed' AND answer_position <= ?",
-                    arguments: [request.paneId.uuidString, position])
-                var changed = false
-                for row in receipts
-                where try PaneContextStorage.writerKey(PaneContextStorage.sender(row, prefix: "sender")) == key {
-                    try database.execute(
-                        sql: "UPDATE pane_request SET receipt = 'confirmed', receipt_at = ? WHERE id = ?",
-                        arguments: [
-                            try PaneContextStorage.timestamp(instant),
-                            try PaneContextStorage.uuid(row, "id").uuidString,
-                        ])
-                    changed = true
-                }
-                if changed { try PaneContextStorage.bumpRevision(database, paneId: request.paneId) }
+                let changed = try Self.confirmReceipts(
+                    database, paneId: request.paneId, writerKey: key, position: position, instant: instant)
                 let rows = try Row.fetchAll(
                     database, sql: "SELECT * FROM pane_event WHERE pane_id = ? AND kind != 'notice' ORDER BY position",
                     arguments: [request.paneId.uuidString])
@@ -94,10 +86,37 @@ extension PaneContextService {
                             messageId: id, kind: kind))
                     bytes += cost
                 }
-                return .page(
-                    PaneMessageChangesPage(
-                        entries: entries, nextPosition: entries.last?.position ?? request.after, more: more))
+                return PaneContextChangesCommit(
+                    result: .page(
+                        PaneMessageChangesPage(
+                            entries: entries, nextPosition: entries.last?.position ?? request.after, more: more)),
+                    didConfirmReceipt: changed)
             }
+            if commit.didConfirmReceipt { await publishAffectedSources([request.paneId]) }
+            return commit.result
         } catch { return .unavailable(storageFailure(error, writing: true)) }
+    }
+
+    private nonisolated static func confirmReceipts(
+        _ database: Database, paneId: PaneId, writerKey: String, position: Int64, instant: Date
+    ) throws -> Bool {
+        let receipts = try Row.fetchAll(
+            database,
+            sql:
+                "SELECT * FROM pane_request WHERE pane_id = ? AND receipt = 'notYetConfirmed' AND answer_position <= ?",
+            arguments: [paneId.uuidString, position])
+        var changed = false
+        for row in receipts
+        where try PaneContextStorage.writerKey(PaneContextStorage.sender(row, prefix: "sender")) == writerKey {
+            try database.execute(
+                sql: "UPDATE pane_request SET receipt = 'confirmed', receipt_at = ? WHERE id = ?",
+                arguments: [
+                    try PaneContextStorage.timestamp(instant),
+                    try PaneContextStorage.uuid(row, "id").uuidString,
+                ])
+            changed = true
+        }
+        if changed { try PaneContextStorage.bumpRevision(database, paneId: paneId) }
+        return changed
     }
 }

@@ -1,3 +1,4 @@
+import AgentStudioInfrastructure
 import AgentStudioProgrammaticControl
 import Foundation
 
@@ -211,13 +212,17 @@ extension AppIPCBuiltInMethodRegistrations {
                     )
                 },
                 connectionHandler: { parameters, context, _ in
-                    try await inputs.ports.runtimePort.waitForTerminal(
+                    let effective = min(parameters.timeoutSeconds, AppPolicies.IPC.maximumTerminalWaitSeconds)
+                    let observation = try await inputs.ports.runtimePort.waitForTerminal(
                         IPCHandle.parse(parameters.handle),
                         condition: parameters.condition,
-                        timeout: AppIPCBuiltInRegistrationSupport.duration(seconds: parameters.timeoutSeconds),
+                        timeout: AppIPCBuiltInRegistrationSupport.duration(seconds: effective),
                         afterSequence: parameters.afterSequence,
                         ownPaneAssertion: AppIPCOwnPaneAssertion(principal: context.principal)
                     )
+                    return IPCTerminalWaitResponse(
+                        observation: observation, timeoutSeconds: effective,
+                        wasClamped: effective < parameters.timeoutSeconds)
                 }
             ).erase(),
         ]

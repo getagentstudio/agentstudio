@@ -44,7 +44,8 @@ struct AppIPCProductionLifecycleIntegrationTests {
         #expect(environment["AGENTSTUDIO_PANE_ID"] == pane.id.uuidString)
         #expect(environment["AGENTSTUDIO_WORKSPACE_ID"] == workspaceID.uuidString)
         #expect(environment["AGENTSTUDIO_IPC_SOCKET"] == appDelegate.appIPCPaths.socketURL.path)
-        #expect(environment["AGENTSTUDIO_IPC_SPOOL_DIR"] == appDelegate.appIPCPaths.spoolDirectory.path)
+        #expect(environment["AGENTSTUDIO_CLI_STORE"] == appDelegate.appIPCPaths.cliStoreURL.path)
+        #expect(environment["AGENTSTUDIO_CLI_STORE_CHANNEL"] == appDelegate.appIPCServerChannel.rawValue)
         #expect(environment["AGENTSTUDIO_CLI"]?.hasSuffix("/Contents/Helpers/agentstudio") == true)
 
         let token = AgentStudioIPCSubjectToken(rawValue: rawToken)
@@ -121,7 +122,7 @@ struct AppIPCProductionLifecycleIntegrationTests {
         await appDelegate.startAppIPCServer()
 
         #expect(appDelegate.appIPCServer == nil)
-        #expect(appDelegate.paneReportSpoolDrainTask == nil)
+        #expect(appDelegate.paneCLIOutboxDrainTask == nil)
         #expect(appDelegate.appIPCSessionsPaneContextComposition == nil)
     }
 
@@ -229,7 +230,8 @@ func makeServerCapableAppIPCTestHarness(
     appDelegate.paneIPCIdentityOwner = PaneIPCIdentityOwner(
         principalRegistry: appDelegate.appIPCPrincipalRegistry,
         socketURL: paths.socketURL,
-        spoolDirectory: paths.spoolDirectory,
+        cliStoreURL: paths.cliStoreURL,
+        cliStoreChannel: .debug,
         cliExecutableURL: Bundle.main.bundleURL.appending(path: "Contents/Helpers/agentstudio"),
         canonicalPaneMembership: { paneID, candidateWorkspaceID in
             membershipDirectory.contains(paneID: paneID, inWorkspace: candidateWorkspaceID)

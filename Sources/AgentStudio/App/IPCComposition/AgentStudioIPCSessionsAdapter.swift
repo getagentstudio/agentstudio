@@ -34,6 +34,7 @@ private enum SessionsProviderEventGeneration: Sendable {
 /// wire-to-domain mapping: ordering, replay and reduction stay in Sessions, and
 /// nothing here touches MainActor.
 struct AgentStudioIPCSessionsAdapter: AppIPCSessionsPort {
+    private let performanceTraceRecorder: AgentStudioPerformanceTraceRecorder?
     private let ingestion: SessionsIngestion
     private let providerRegistry: SessionsProviderAdapterRegistry
     private let admissionFreshness: SessionsEvidenceFreshness
@@ -52,8 +53,10 @@ struct AgentStudioIPCSessionsAdapter: AppIPCSessionsPort {
         now: @escaping @Sendable () -> Date = { Date() },
         continuousNow: @escaping @Sendable () -> ContinuousClock.Instant = { ContinuousClock.now },
         activityClock: PaneActivityClock? = nil,
-        ownerPaneLookup: @escaping @Sendable (PaneId) -> PaneId? = { _ in nil }
+        ownerPaneLookup: @escaping @Sendable (PaneId) -> PaneId? = { _ in nil },
+        performanceTraceRecorder: AgentStudioPerformanceTraceRecorder? = nil
     ) {
+        self.performanceTraceRecorder = performanceTraceRecorder
         self.ingestion = ingestion
         self.providerRegistry = providerRegistry
         self.admissionFreshness = admissionFreshness
@@ -63,98 +66,19 @@ struct AgentStudioIPCSessionsAdapter: AppIPCSessionsPort {
         self.ownerPaneLookup = ownerPaneLookup
     }
 
-    func recordDeliberateReport(
-        paneId: UUID,
-        params: IPCSessionReportParams
-    ) async throws -> IPCSessionReportResult {
-        let reportedAt = now()
-        let mutation: SessionsMutation =
-            switch params.kind {
-            case .needsYou:
-                .deliberateNeedsYou(
-                    SessionsDeliberateNeedsYouMutation(
-                        paneId: paneId,
-                        explanation: params.explanation ?? "",
-                        freshness: admissionFreshness,
-                        reportedAt: reportedAt
-                    )
-                )
-            case .clearNeedsYou:
-                .clearDeliberateNeedsYou(
-                    SessionsClearDeliberateNeedsYouMutation(
-                        paneId: paneId,
-                        freshness: admissionFreshness,
-                        clearedAt: reportedAt
-                    )
-                )
-            case .done:
-                .deliberateDone(
-                    SessionsDeliberateDoneMutation(
-                        paneId: paneId,
-                        freshness: admissionFreshness,
-                        reportedAt: reportedAt
-                    )
-                )
-            }
-        do {
-            _ = try await ingestion.submit(correlationId: params.correlationId, mutation: mutation)
-        } catch {
-            throw Self.portError(from: error)
-        }
-        let snapshot = try await paneSnapshot(paneId: paneId)
-        return IPCSessionReportResult(
-            paneId: paneId,
-            state: Self.agentState(snapshot.state),
-            origin: Self.evidenceOrigin(snapshot.stateOrigin),
-            requestId: snapshot.currentAttention.first?.requestId,
-            correlationId: params.correlationId
-        )
-    }
-
-    func recordAgentMessage(
-        paneId: UUID,
-        params: IPCSessionMessageParams
-    ) async throws -> IPCSessionMessageResult {
-        // Attribution is decided before submission so one correlation always
-        // carries one semantic fingerprint. A binding that changes between
-        // retries surfaces as a correlation conflict, which R-09 requires,
-        // rather than quietly rewriting the retained outcome.
-        let snapshot = try await paneSnapshot(paneId: paneId)
-        let hasLiveBinding = snapshot.currentBinding?.status == .active
-        let context: SessionsReportContext =
-            hasLiveBinding ? .currentPaneBinding(paneId: paneId) : .unattributed(paneId: paneId)
-        let outcome: SessionsMutationOutcome
-        do {
-            outcome = try await ingestion.submit(
-                correlationId: params.correlationId,
-                mutation: .message(
-                    SessionsMessageMutation(
-                        context: context,
-                        text: params.text,
-                        freshness: admissionFreshness,
-                        receivedAt: now()
-                    )
-                )
-            )
-        } catch {
-            throw Self.portError(from: error)
-        }
-        guard case .messageSaved(let occurrenceId, let attribution) = outcome else {
-            throw AppIPCSessionsError(reason: .validationRejected)
-        }
-        return IPCSessionMessageResult(
-            paneId: paneId,
-            occurrenceId: occurrenceId,
-            attributed: attribution == .attributed,
-            correlationId: params.correlationId
-        )
-    }
-
     func recordProviderEvent(
         paneId: UUID,
         params: IPCSessionEventParams,
         provenance: IPCSessionEventProvenance
     ) async throws -> IPCSessionEventResult {
+        let spanBegan: ContinuousClock.Instant? =
+            performanceTraceRecorder?.isEnabled == true ? ContinuousClock.now : nil
+        defer {
+            if let spanBegan {
+                performanceTraceRecorder?.recordDuration(
+                    .ipcSessionEvent, duration: spanBegan.duration(to: ContinuousClock.now))
+            }
+        }
         let admission = try await providerAdmission(
             paneId: paneId,
             params: params,

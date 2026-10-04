@@ -85,11 +85,22 @@ jobs:
         run: |
           export DEBIAN_FRONTEND=noninteractive
           apt-get update
-          apt-get install -y --no-install-recommends gh jq perl curl lsof
+          apt-get install -y --no-install-recommends gh jq perl curl lsof python3
           perl -MJSON::PP -MTime::HiRes -e 1
 
       - name: Trust checkout for Git
         run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
+
+      - name: Check changed documentation links
+        if: github.event_name == 'pull_request'
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          mkdir -p tmp/ci-docs
+          merge_base="$(git merge-base "$BASE_SHA" "$HEAD_SHA")"
+          git diff --name-only -z --no-renames "$merge_base" "$HEAD_SHA" -- > tmp/ci-docs/changed-paths
+          python3 scripts/check-changed-doc-links.py --changed-files tmp/ci-docs/changed-paths
 
       - name: Setup mise
         uses: jdx/mise-action@v3
@@ -135,8 +146,35 @@ jobs:
           BASE_REF: ${{ github.event.pull_request.base.ref || 'main' }}
         run: /bin/bash Tools/AgentStudioArchitectureLint/check-ledger-ratchet.sh "origin/${BASE_REF}"
 
+  changes:
+    name: Changed-file classification
+    runs-on: ubuntu-24.04
+    outputs:
+      docs_only: ${{ steps.classify.outputs.docs_only }}
+    steps:
+      - *first-attempt-gate
+
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Classify changed files
+        id: classify
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          python3 scripts/ci-docs-changes.py classify \
+            --event "$EVENT_NAME" --base "$BASE_SHA" --head "$HEAD_SHA" \
+            --receipt tmp/ci-docs/changes.json --github-output "$GITHUB_OUTPUT"
+
   marketing-site-validation:
     name: Marketing site validation
+    needs: changes
+    if: ${{ !cancelled() && (github.event_name != 'pull_request' || needs.changes.outputs.docs_only != 'true') }}
     runs-on: ubuntu-24.04
 
     steps:
@@ -181,7 +219,8 @@ jobs:
 
   bridge-web:
     name: BridgeWeb
-    if: github.event_name != 'push'
+    needs: changes
+    if: ${{ !cancelled() && github.event_name != 'push' && (github.event_name != 'pull_request' || needs.changes.outputs.docs_only != 'true') }}
     runs-on: macos-26
     env:
       SWIFT_BUILD_DIR: .build-ci
@@ -420,6 +459,8 @@ jobs:
 
   swift-test-suite:
     name: Swift test suite
+    needs: changes
+    if: ${{ !cancelled() && (github.event_name != 'pull_request' || needs.changes.outputs.docs_only != 'true') }}
     runs-on: macos-26
     permissions:
       contents: read

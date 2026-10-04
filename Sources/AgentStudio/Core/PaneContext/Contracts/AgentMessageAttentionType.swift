@@ -8,16 +8,31 @@ package enum AgentMessageAttentionType: Sendable, Equatable {
         shape: AgentMessageShape,
         importance: MessageImportance
     ) -> Self {
+        let kind: ClassificationShape
         switch shape {
-        case .ask(_, _, .blocking, _):
-            return .needsApproval
-        case .ask(_, _, .nonBlocking, _):
-            return .needsReply
+        case .ask(_, _, .blocking, _): kind = .blockingAsk
+        case .ask(_, _, .nonBlocking, _): kind = .nonBlockingAsk
+        case .notice: kind = .notice
+        }
+        return classify(kind: kind, importance: importance)
+    }
+
+    enum ClassificationShape: Sendable {
+        case blockingAsk
+        case nonBlockingAsk
+        case notice
+    }
+
+    static func classify(kind: ClassificationShape, importance: MessageImportance) -> Self {
+        switch kind {
+        case .blockingAsk: .needsApproval
+        case .nonBlockingAsk: .needsReply
         case .notice:
             switch importance {
-            case .attention, .failure: return .attention
-            case .info, .done: return .informational
+            case .attention, .failure: .attention
+            case .info, .done: .informational
             }
         }
     }
+
 }

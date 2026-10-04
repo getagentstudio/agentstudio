@@ -23,8 +23,8 @@ struct FilesystemToPrimarySidebarIntegrationTests {
 
         let financeRemote = "git@github.com:askluna/askluna-finance.git"
         let statusByRootPath = makeStatusByRootPath(root: fixtureRoot, financeRemote: financeRemote)
-        let testSystem = makeIntegratedTestSystem(statusByRootPath: statusByRootPath)
-        await withStartedIntegratedTestSystem(testSystem) {
+        let testSystem = try makeIntegratedTestSystem(statusByRootPath: statusByRootPath)
+        try await withStartedIntegratedTestSystem(testSystem) {
             let intake = await registerDiscoveredRepos(
                 discoveredRepoPaths: discoveredRepoPaths,
                 workspaceStore: testSystem.workspaceStore,
@@ -42,35 +42,35 @@ struct FilesystemToPrimarySidebarIntegrationTests {
                 pipeline: testSystem.pipeline
             )
 
-            let enrichmentConverged = await eventually("remote identity enrichment should converge for finance repos") {
-                guard !intake.financeRepoIds.isEmpty else { return false }
-                for repoId in intake.financeRepoIds {
-                    guard
-                        case .some(.resolvedRemote(_, _, let identity, _)) = testSystem.repoCache
-                            .repoEnrichmentByRepoId[
-                                repoId]
-                    else {
-                        return false
-                    }
-                    guard identity.groupKey == "remote:askluna/askluna-finance" else { return false }
+            try #require(!intake.financeRepoIds.isEmpty)
+            for repoId in intake.financeRepoIds {
+                try await testSystem.applications.expectApplied(repositoryID: repoId, kind: .repositoryIdentity) {
+                    guard case .resolvedRemote(_, _, let identity, _) = $0.repository else { return false }
+                    return identity.groupKey == "remote:askluna/askluna-finance"
                 }
-                return true
-            }
-            #expect(enrichmentConverged)
-
-            let prCountsConverged = await eventually("forge PR counts should converge for known finance branches") {
-                guard let primaryBranchId = intake.financeWorktreeIdByBranch["master"],
-                    let transactionTableId = intake.financeWorktreeIdByBranch["transaction-table-3"],
-                    let rlvrForkingId = intake.financeWorktreeIdByBranch["rlvr-forking"]
+                guard case .resolvedRemote(_, _, let identity, _) = testSystem.repoCache.repoEnrichment(for: repoId)
                 else {
-                    return false
+                    Issue.record("Expected resolved finance repository identity")
+                    continue
                 }
-                return
-                    testSystem.repoCache.pullRequestFactsForTest(worktreeId: primaryBranchId)?.openCount == 1
-                    && testSystem.repoCache.pullRequestFactsForTest(worktreeId: transactionTableId)?.openCount == 2
-                    && testSystem.repoCache.pullRequestFactsForTest(worktreeId: rlvrForkingId)?.openCount == 3
+                #expect(identity.groupKey == "remote:askluna/askluna-finance")
             }
-            #expect(prCountsConverged)
+
+            for (branch, count) in [("master", 1), ("transaction-table-3", 2), ("rlvr-forking", 3)] {
+                let worktreeId = try #require(intake.financeWorktreeIdByBranch[branch])
+                let repoId = try #require(
+                    testSystem.workspaceStore.repos.first {
+                        $0.worktrees.contains { $0.id == worktreeId }
+                    }?.id)
+                let key = try #require(RepoBranchKey(repoId: repoId, branch: branch))
+                try await testSystem.applications.expectApplied(
+                    repositoryID: repoId, kind: .worktreeEnrichment, worktreeID: worktreeId
+                ) { $0.worktree?.branch == branch }
+                try await testSystem.applications.expectApplied(repositoryID: repoId, kind: .repositoryProjection) {
+                    $0.pullRequests[key]?.openCount == count && !$0.isLoading
+                }
+                #expect(testSystem.repoCache.pullRequestFactsForTest(worktreeId: worktreeId)?.openCount == count)
+            }
 
             let sidebarRepos = testSystem.workspaceStore.repos.map { repo in
                 RepoPresentationItem(
@@ -120,6 +120,7 @@ struct FilesystemToPrimarySidebarIntegrationTests {
         let repoCache: RepoCacheAtom
         let coordinator: WorkspaceCacheCoordinator
         let pipeline: FilesystemGitPipeline
+        let applications: WorkspaceCacheApplicationRecorder
     }
 
     private struct FinanceIntake {
@@ -129,10 +130,11 @@ struct FilesystemToPrimarySidebarIntegrationTests {
 
     private func makeIntegratedTestSystem(
         statusByRootPath: [String: GitWorkingTreeStatus]
-    ) -> IntegratedTestSystem {
+    ) throws -> IntegratedTestSystem {
         let bus = EventBus<RuntimeEnvelope>()
         let workspaceStore = makeWorkspaceStore()
         let repoCache = RepoCacheAtom()
+        let applications = try WorkspaceCacheApplicationRecorder(cache: repoCache)
         let pipeline = FilesystemGitPipeline(
             bus: bus,
             gitWorkingTreeProvider: StubGitWorkingTreeStatusProvider.stub { rootPath in
@@ -182,14 +184,16 @@ struct FilesystemToPrimarySidebarIntegrationTests {
                 guard let pipeline else { return }
                 await pipeline.applyScopeChange(scopeChange)
             },
-            enrichmentApplyTickCadence: .zero
+            enrichmentApplyTickCadence: .zero,
+            factSink: applications.sink
         )
         return IntegratedTestSystem(
             bus: bus,
             workspaceStore: workspaceStore,
             repoCache: repoCache,
             coordinator: coordinator,
-            pipeline: pipeline
+            pipeline: pipeline,
+            applications: applications
         )
     }
 
@@ -310,7 +314,7 @@ struct FilesystemToPrimarySidebarIntegrationTests {
 
     private func makeProjectDevShapeFixture() async throws -> URL {
         let root = FileManager.default.temporaryDirectory
-            .appending(path: "project-dev-shape-e2e-\(UUID().uuidString)")
+            .appending(path: "project-dev-shape-e2e-\(UUIDv7.generate().uuidString)")
         let fm = FileManager.default
 
         let repoPaths = [
@@ -378,38 +382,22 @@ struct FilesystemToPrimarySidebarIntegrationTests {
         ]
     }
 
-    private func eventually(
-        _ description: String,
-        maxTurns: Int = 50_000,
-        condition: @escaping @MainActor () async -> Bool
-    ) async -> Bool {
-        for _ in 0..<maxTurns {
-            if await condition() {
-                return true
-            }
-            await Task.yield()
-        }
-        Issue.record("\(description) timed out")
-        return false
-    }
-
     private func withStartedIntegratedTestSystem(
         _ testSystem: IntegratedTestSystem,
         operation: @MainActor () async throws -> Void
-    ) async rethrows {
+    ) async throws {
         await testSystem.pipeline.start()
         await testSystem.coordinator.startConsuming()
         do {
             try await operation()
             await testSystem.pipeline.shutdown()
             await testSystem.coordinator.shutdown()
-            let busDrained = await eventually("filesystem-to-sidebar world should leave no subscribers behind") {
-                await testSystem.bus.subscriberCount == 0
-            }
-            #expect(busDrained)
+            #expect(await testSystem.bus.subscriberCount == 0)
+            try await testSystem.applications.finish()
         } catch {
             await testSystem.pipeline.shutdown()
             await testSystem.coordinator.shutdown()
+            try? await testSystem.applications.finish()
             throw error
         }
     }

@@ -184,7 +184,10 @@ enum CodexHookVerticalFixtures {
             agentId: event == .subagentStart || event == .subagentStop ? "agent_4d71" : nil,
             codexVersion: reportedVersion
         )
-        guard let projected = CodexHookProjection.project(eventName: event, payload: payload) else {
+        guard
+            let projected = CodexHookProjection.project(
+                sourceOccurredAt: Date(timeIntervalSince1970: 1_700_000_000), eventName: event, payload: payload)
+        else {
             throw FixtureError.notProjected(event)
         }
         return IPCSessionEventParams(

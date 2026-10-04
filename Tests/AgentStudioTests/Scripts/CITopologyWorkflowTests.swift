@@ -14,9 +14,9 @@ struct CITopologyWorkflowTests {
         let bridgeHeader = try topologyBlock(startingWith: "  bridge-web:\n", endingBefore: "    steps:", in: bridgeJob)
         let swiftHeader = try topologyBlock(
             startingWith: "  swift-test-suite:\n", endingBefore: "    steps:", in: swiftJob)
-        #expect(bridgeHeader.contains("    if: github.event_name != 'push'\n"))
-        #expect(!swiftHeader.contains("\n    if:"))
-        #expect(!swiftHeader.contains("\n    needs:"))
+        #expect(bridgeHeader.contains("github.event_name != 'push'"))
+        #expect(swiftHeader.contains("needs.changes.outputs.docs_only != 'true'"))
+        #expect(swiftHeader.contains("\n    needs: changes"))
         #expect(!swiftJob.contains("needs.bridge-web"))
         for stepName in ["Compute Swift cache compatibility prefix", "Inventory Swift build inputs before prebuild"] {
             let step = try topologyBlock(
@@ -29,7 +29,7 @@ struct CITopologyWorkflowTests {
                 eventName == "push" ? ["swift-test-suite"] : ["bridge-web", "swift-test-suite"]
             let selectedJobs = Set(
                 macOSJobs.compactMap { jobName, jobHeader -> String? in
-                    if jobHeader.contains("    if: github.event_name != 'push'\n"), eventName == "push" { return nil }
+                    if jobHeader.contains("github.event_name != 'push'"), eventName == "push" { return nil }
                     return jobName
                 })
             #expect(selectedJobs == activeJobs, "\(eventName) macOS topology changed")
@@ -80,7 +80,7 @@ struct CITopologyWorkflowTests {
         }
         #expect(!bridgeJob.contains("actions/cache/save"))
         #expect(!bridgeJob.contains("actions: write"))
-        #expect(!bridgeJob.contains("needs:"))
+        #expect(bridgeJob.contains("needs: changes"))
         let restore = try topologyBlock(
             startingWith: "      - name: Restore Swift build seed\n", endingBefore: "\n      - ", in: bridgeJob)
         #expect(restore.contains("if: github.event_name == 'pull_request'"))
@@ -146,8 +146,8 @@ struct CITopologyWorkflowTests {
         #expect(inputScript.contains("swift-build-v1-"))
         #expect(workflow.contains("steps.swift-cache-prefix.outputs.prefix"))
     }
-    @Test("CI jobs start independently without cross-job dependencies")
-    func ciJobsStartIndependentlyWithoutCrossJobDependencies() throws {
+    @Test("heavy CI jobs depend only on classification while code quality stays independent")
+    func ciJobsDependOnlyOnClassification() throws {
         let workflow = try String(contentsOfFile: ".github/workflows/ci.yml", encoding: .utf8)
 
         for jobName in [
@@ -157,7 +157,11 @@ struct CITopologyWorkflowTests {
             "swift-test-suite",
         ] {
             let job = try topologyJob(named: jobName, in: workflow)
-            #expect(!job.contains("\n    needs:"))
+            if jobName == "code-quality" {
+                #expect(!job.contains("\n    needs:"))
+            } else {
+                #expect(job.contains("\n    needs: changes"))
+            }
         }
     }
 
