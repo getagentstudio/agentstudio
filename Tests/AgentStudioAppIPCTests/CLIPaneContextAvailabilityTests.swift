@@ -1,4 +1,6 @@
 import AgentStudioCore
+import AgentStudioDeadlineTestSupport
+import AgentStudioIPCClientCore
 import AgentStudioIPCTransport
 import AgentStudioInfrastructure
 import AgentStudioProgrammaticControl
@@ -68,7 +70,15 @@ struct CLIPaneContextAvailabilityTests {
                 let writer = try CLIStore.openWriter(url: storeURL, channel: .debug).get()
                 try writer.close()
             }
-            let output = try await context.run(["notify", "notice with reserved queue budget"])
+            let driver = ControlledDeadlineDriver()
+            defer { driver.close() }
+            let process = context.launchControlledDeadlineProcess(
+                ["notify", "notice with reserved queue budget"], driver: driver)
+            _ = try await held.firstArrival()
+            try await valueFromDedicatedThread {
+                try driver.advance(by: CLIPolicy.ordinaryCallLimit - CLIPolicy.noticeQueueReserve)
+            }
+            let output = try await process.value
             #expect(output.terminationStatus == 0)
             let text = try #require(String(bytes: output.standardOutput, encoding: .utf8))
             #expect(text.contains("notSent(authenticationTransport)"))
@@ -103,7 +113,15 @@ struct CLIPaneContextAvailabilityTests {
                 let writer = try CLIStore.openWriter(url: storeURL, channel: .debug).get()
                 try writer.close()
             }
-            let output = try await context.run(["notify", "committed once with no reply"])
+            let driver = ControlledDeadlineDriver()
+            defer { driver.close() }
+            let process = context.launchControlledDeadlineProcess(
+                ["notify", "committed once with no reply"], driver: driver)
+            _ = try await held.firstArrival()
+            try await valueFromDedicatedThread {
+                try driver.advance(by: CLIPolicy.ordinaryCallLimit - CLIPolicy.noticeQueueReserve)
+            }
+            let output = try await process.value
             #expect(output.terminationStatus != 0)
             let failureText = try #require(String(bytes: output.standardError, encoding: .utf8))
             #expect(failureText.contains("outcomeUnknown"))

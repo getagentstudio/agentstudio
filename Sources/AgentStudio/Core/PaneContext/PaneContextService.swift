@@ -175,11 +175,9 @@ package actor PaneContextService: PaneContextDetailReading, PaneContextPersonAct
         return writing ? .commitFailed : .databaseUnavailable
     }
 
-    package func openAskSummaries() async -> [PaneContextOpenAskUpdate] {
-        do {
-            try await ensureOpen()
-            return try await sqliteAccess.read { try PaneContextStorage.openAskUpdates($0) }
-        } catch { return [] }
+    package func openAskSummaries() async throws -> [PaneContextOpenAskUpdate] {
+        try await ensureOpen()
+        return try await sqliteAccess.read { try PaneContextStorage.openAskUpdates($0) }
     }
 
     package func waitForAskOutcome(messageId: AgentMessageId, paneId: PaneId) async -> AskOutcome {

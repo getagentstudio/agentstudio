@@ -77,11 +77,9 @@ struct AgentStudioIPCCodexHookVerticalTests {
         #expect(try await harness.sessionQuery(paneId: harness.boundPaneId).sourceHealth == .ended)
     }
 
-    /// Ending a pane that was never bound is not a caller error — there is no
-    /// source generation to retire — so it is refused rather than rejected as a
-    /// missing binding, and nothing is submitted.
-    @Test("a session end on an unbound pane is refused without ending anything")
-    func sessionEndOnUnboundPaneIsRefused() async throws {
+    /// Rev34 records a first End by binding and immediately ending its own source.
+    @Test("a first Codex session end binds and ends an unbound pane")
+    func firstSessionEndBindsAndEndsPane() async throws {
         // Arrange
         let harness = try await #require(SessionsVerticalHarnessContext.current).freshPanePair()
         let identity = CodexHookScenarioIdentity()
@@ -92,8 +90,8 @@ struct AgentStudioIPCCodexHookVerticalTests {
                 event: .sessionEnd, paneId: harness.sparePaneId, identity: identity))
 
         // Assert
-        #expect(refused.disposition == .unqualified)
-        #expect(try await harness.sessionQuery(paneId: harness.sparePaneId).sourceHealth == .unbound)
+        #expect(refused.disposition == .admitted)
+        #expect(try await harness.sessionQuery(paneId: harness.sparePaneId).sourceHealth == .ended)
     }
 
     @Test("a Codex turn that finishes without a permission request reaches the query as done")

@@ -37,7 +37,8 @@ package func runProcessToExit(
     executableURL: URL,
     arguments: [String],
     currentDirectoryURL: URL? = nil,
-    environment: [String: String]? = nil
+    environment: [String: String]? = nil,
+    standardInput: FileHandle? = nil
 ) async throws -> ExitedProcessOutput {
     let captureDirectory = try FileManager.default.url(
         for: .itemReplacementDirectory,
@@ -69,6 +70,7 @@ package func runProcessToExit(
     }
     process.standardOutput = standardOutputHandle
     process.standardError = standardErrorHandle
+    if let standardInput { process.standardInput = standardInput }
 
     let terminationStatus = try await awaitProcessExit(process)
     try Task.checkCancellation()

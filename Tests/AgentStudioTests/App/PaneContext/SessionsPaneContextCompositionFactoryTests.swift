@@ -325,7 +325,7 @@ struct SessionsPaneContextCompositionFactoryTests {
     }
 }
 
-private struct CompositionFactoryFixture: Sendable {
+struct CompositionFactoryFixture: Sendable {
     let root: URL
     let corePool: DatabasePool
     let localPool: DatabasePool
@@ -337,6 +337,21 @@ private struct CompositionFactoryFixture: Sendable {
     let ownerId: PaneId
     let drawerId: PaneId
     let now: Date
+
+    func restartComposition() -> SessionsPaneContextComposition {
+        let datastore = WorkspaceSQLiteDatastoreActor(
+            preparedCoreRepository: WorkspaceCoreRepository(databaseWriter: corePool),
+            preparationReceipt: .init(core: .uninitialized, local: .available(recovery: nil)),
+            preparedApplicationLocalRepository: WorkspaceLocalRepository(
+                workspaceId: workspaceId, databaseWriter: localPool))
+        let now = now
+        return SessionsPaneContextComposition.make(
+            inputs: .init(
+                datastore: datastore, directory: directory, workspaceId: workspaceId, clock: TestPushClock(),
+                wallNow: { now }, providerProfiles: [.claudeCodeCommandLine],
+                limits: .init(maximumPendingPerPane: 32, maximumPendingGlobal: 128),
+                paneViewedMailbox: .init(), presentationAtom: presentationAtom))
+    }
 
     @concurrent static func make(
         performanceTraceRecorder: AgentStudioPerformanceTraceRecorder? = nil
@@ -451,7 +466,7 @@ private struct CompositionFactoryFixture: Sendable {
 }
 
 @MainActor
-private func withCompositionFactory(
+func withCompositionFactory(
     performanceTraceRecorder: AgentStudioPerformanceTraceRecorder? = nil,
     operation: @Sendable (CompositionFactoryFixture) async throws -> Void
 ) async throws {

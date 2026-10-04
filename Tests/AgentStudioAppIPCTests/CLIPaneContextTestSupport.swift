@@ -1,5 +1,6 @@
 import AgentStudioAppIPC
 import AgentStudioCore
+import AgentStudioDeadlineTestSupport
 import AgentStudioIPCClientCore
 import AgentStudioIPCTransport
 import AgentStudioInfrastructure
@@ -41,6 +42,21 @@ struct S5PaneCLIContext: Sendable {
         try await runProcessToExit(
             executableURL: executableURL, arguments: arguments,
             environment: callEnvironment(store: store, useStore: useStore))
+    }
+
+    func launchControlledDeadlineProcess(_ arguments: [String], driver: ControlledDeadlineDriver) -> Task<
+        ExitedProcessOutput, any Error
+    > {
+        let environment = callEnvironment(store: nil, useStore: true)
+        let executable = executableURL.deletingLastPathComponent().appending(
+            path: "agentstudio-cli-deadline-process-fixture")
+        let task = Task {
+            try await runProcessToExit(
+                executableURL: executable, arguments: arguments, environment: environment,
+                standardInput: driver.pipe.fileHandleForReading)
+        }
+        clients.register(task)
+        return task
     }
 
     func launchCLIProcess(_ arguments: [String], scope: UUID, store: URL? = nil) -> Task<ExitedProcessOutput, any Error>

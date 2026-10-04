@@ -4,7 +4,9 @@ import AgentStudioIPCTransport
 import AgentStudioInfrastructure
 import AgentStudioProgrammaticControl
 import AgentStudioSessions
+import AgentStudioTestHarness
 import Foundation
+import Synchronization
 import Testing
 
 @testable import AgentStudio
@@ -12,57 +14,78 @@ import Testing
 extension AgentStudioIPCSessionsVerticalTests {
     @Test("blocking-ask permission admits activity once and only the open ask supplies approval attention")
     func blockingPermissionUsesAskAttention() async throws {
-        try await withPermissionHarness { harness in
-            let clock = try #require(harness.appDelegate.paneActivityClock)
-            let composition = try #require(harness.appDelegate.appIPCSessionsPaneContextComposition)
-            let paneId = PaneId(existingUUID: harness.boundPaneId)
-            let conversation = "permission-\(harness.boundPaneId)"
-            _ = try await harness.sessionEvent(
-                paneId: paneId.uuid, provider: permissionTestProvider, name: "sessionStart",
-                conversationId: conversation, authentication: .boundPane)
-            let occurrence = UUIDv7.generate()
-            let first = permissionParams(harness: harness, conversation: conversation, occurrence: occurrence)
-            let admitted: IPCSessionEventResult = try await harness.decoded(
-                method: "session.event", params: JSONRPCCodec.encodeJSONValue(first), authentication: .boundPane)
-            #expect(admitted.disposition == .admitted)
-            #expect(try await clock.settled() == .quiescent)
-            let activity = harness.appDelegate.atomStore.core.paneActivityTime
-            let firstTime = try #require(activity.value(for: paneId.uuid))
-            let firstRevision = activity.revision(for: paneId.uuid)
-            let beforeAsk = try await permissionDetail(harness)
-            #expect(beforeAsk.session?.providerPrompts.isEmpty == true)
-            #expect(beforeAsk.session?.status == .unknown)
+        let proof = PermissionActivityProof()
+        let recorder = try proof.facts.attach()
+        do {
+            try await withPermissionHarness(proof: proof) { harness in
+                _ = try #require(harness.appDelegate.paneActivityClock)
+                let composition = try #require(harness.appDelegate.appIPCSessionsPaneContextComposition)
+                let paneId = PaneId(existingUUID: harness.boundPaneId)
+                let conversation = "permission-\(harness.boundPaneId)"
+                _ = try await harness.sessionEvent(
+                    paneId: paneId.uuid, provider: permissionTestProvider, name: "sessionStart",
+                    conversationId: conversation, authentication: .boundPane)
+                let occurrence = UUIDv7.generate()
+                let first = permissionParams(harness: harness, conversation: conversation, occurrence: occurrence)
+                let admitted: IPCSessionEventResult = try await harness.decoded(
+                    method: "session.event", params: JSONRPCCodec.encodeJSONValue(first), authentication: .boundPane)
+                #expect(admitted.disposition == .admitted)
+                proof.facts.sink(proof.first, .closed)
+                try await recorder.expectNext(in: proof.first, .submitted)
+                try await recorder.expectNext(in: proof.first, .closed)
+                try await recorder.expectNext(in: proof.publication, .published)
+                let activity = harness.appDelegate.atomStore.core.paneActivityTime
+                let firstTime = try #require(activity.value(for: paneId.uuid))
+                let firstRevision = activity.revision(for: paneId.uuid)
+                let beforeAsk = try await permissionDetail(harness)
+                #expect(beforeAsk.session?.providerPrompts.isEmpty == true)
+                #expect(beforeAsk.session?.status == .unknown)
 
-            let replay = permissionParams(harness: harness, conversation: conversation, occurrence: occurrence)
-            let replayed: IPCSessionEventResult = try await harness.decoded(
-                method: "session.event", params: JSONRPCCodec.encodeJSONValue(replay), authentication: .boundPane)
-            #expect(replayed.disposition == .admitted)
-            #expect(try await clock.settled() == .quiescent)
-            #expect(activity.value(for: paneId.uuid) == firstTime)
-            #expect(activity.revision(for: paneId.uuid) == firstRevision)
-            let snapshot = try await harness.paneSnapshot(paneId: paneId.uuid)
-            let binding = try #require(snapshot.currentBinding)
-            let askId = AgentMessageId.generateUUIDv7()
-            let writer = AgentMessageSender.session(
-                provider: try BridgeAgentProviderName(binding.providerIdentifier),
-                sessionRef: try BridgeAgentSessionRef(binding.providerConversationId),
-                bindingGeneration: binding.bindingGenerationId)
-            let sent = await composition.paneContextService.send(
-                .init(
-                    paneId: paneId, messageId: askId, sender: writer, sourceOccurredAt: nil,
-                    importance: .attention, body: "Approve this permission", why: nil, actions: [],
-                    shape: .ask(reason: .approval, form: .freeText(placeholder: nil), waiting: .nonBlocking)))
-            #expect(sent == .created(askId))
-            let withAsk = try await permissionDetail(harness)
-            #expect(withAsk.session?.status == .needsYou(reason: .approval))
-            #expect(withAsk.session?.providerPrompts.isEmpty == true)
-            let dismissed = await composition.paneContextService.dismiss(messageId: askId, paneId: paneId)
-            #expect(dismissed == .done)
-            let afterAsk = try await permissionDetail(harness)
-            #expect(afterAsk.session?.status == .unknown)
-            #expect(afterAsk.session?.providerPrompts.isEmpty == true)
-            #expect(try await clock.settled() == .quiescent)
-            #expect(activity.revision(for: paneId.uuid) == firstRevision)
+                let replay = permissionParams(harness: harness, conversation: conversation, occurrence: occurrence)
+                proof.currentScope.withLock { $0 = proof.replay }
+                let replayOpening = await recorder.mark(proof.replay)
+                let replayed: IPCSessionEventResult = try await harness.decoded(
+                    method: "session.event", params: JSONRPCCodec.encodeJSONValue(replay), authentication: .boundPane)
+                #expect(replayed.disposition == .admitted)
+                proof.facts.sink(proof.replay, .closed)
+                try await recorder.expectNone(
+                    of: { $0 == .submitted }, "replayed permission activity",
+                    from: replayOpening, closedBy: { $0 == .closed })
+                #expect(activity.value(for: paneId.uuid) == firstTime)
+                #expect(activity.revision(for: paneId.uuid) == firstRevision)
+                let snapshot = try await harness.paneSnapshot(paneId: paneId.uuid)
+                let binding = try #require(snapshot.currentBinding)
+                let askId = AgentMessageId.generateUUIDv7()
+                proof.currentScope.withLock { $0 = proof.ask }
+                let askOpening = await recorder.mark(proof.ask)
+                let writer = AgentMessageSender.session(
+                    provider: try BridgeAgentProviderName(binding.providerIdentifier),
+                    sessionRef: try BridgeAgentSessionRef(binding.providerConversationId),
+                    bindingGeneration: binding.bindingGenerationId)
+                let sent = await composition.paneContextService.send(
+                    .init(
+                        paneId: paneId, messageId: askId, sender: writer, sourceOccurredAt: nil,
+                        importance: .attention, body: "Approve this permission", why: nil, actions: [],
+                        shape: .ask(reason: .approval, form: .freeText(placeholder: nil), waiting: .nonBlocking)))
+                #expect(sent == .created(askId))
+                let withAsk = try await permissionDetail(harness)
+                #expect(withAsk.session?.status == .needsYou(reason: .approval))
+                #expect(withAsk.session?.providerPrompts.isEmpty == true)
+                let dismissed = await composition.paneContextService.dismiss(messageId: askId, paneId: paneId)
+                #expect(dismissed == .done)
+                let afterAsk = try await permissionDetail(harness)
+                #expect(afterAsk.session?.status == .unknown)
+                #expect(afterAsk.session?.providerPrompts.isEmpty == true)
+                proof.facts.sink(proof.ask, .closed)
+                try await recorder.expectNone(
+                    of: { $0 == .submitted }, "ask lifecycle activity",
+                    from: askOpening, closedBy: { $0 == .closed })
+                #expect(activity.revision(for: paneId.uuid) == firstRevision)
+            }
+            try await recorder.finish()
+        } catch {
+            try? await recorder.finish()
+            throw error
         }
     }
 
@@ -138,12 +161,20 @@ private let permissionTestProvider = SessionsVerticalHarness.qualifiedProvider
 
 @MainActor
 private func withPermissionHarness(
+    proof: PermissionActivityProof? = nil,
     operation: @MainActor (SessionsVerticalHarness) async throws -> Void
 ) async throws {
     let profile = SessionsProviderProfile(
         providerIdentifier: permissionTestProvider.identifier, exactVersion: permissionTestProvider.version,
         operatingMode: permissionTestProvider.mode, qualifiedCapabilities: [.sessionStart, .permission])
-    let harness = try await SessionsVerticalHarness.make(providerProfiles: [profile], installActivityClock: true)
+    let harness = try await SessionsVerticalHarness.make(
+        providerProfiles: [profile], installActivityClock: true,
+        activitySubmissionObserver: { _ in
+            if let proof { proof.facts.sink(proof.currentScope.withLock { $0 }, .submitted) }
+        },
+        activityPublicationObserver: {
+            if let proof { proof.facts.sink(proof.publication, .published) }
+        })
     do {
         try await operation(harness)
         await harness.tearDown()
@@ -172,4 +203,19 @@ private func permissionDetail(_ harness: SessionsVerticalHarness) async throws -
         method: "pane.context.get",
         params: JSONRPCCodec.encodeJSONValue(IPCPaneContextGetParams(handle: "self", page: .first)),
         authentication: .boundPane)
+}
+
+private enum PermissionActivityFact: Sendable, Equatable { case submitted, published, closed }
+
+private final class PermissionActivityProof: Sendable {
+    let first = UUIDv7.generate()
+    let replay = UUIDv7.generate()
+    let ask = UUIDv7.generate()
+    let publication = UUIDv7.generate()
+    let currentScope: Mutex<UUID>
+    let facts = LocalFactSource<UUID, PermissionActivityFact>(
+        vocabulary: .init(
+            describeScope: { $0.uuidString }, describeFact: { String(describing: $0) },
+            isClosing: { _, fact in fact == .closed }))
+    init() { currentScope = Mutex(first) }
 }

@@ -19,6 +19,28 @@ import Testing
 struct AgentStudioIPCSessionsVerticalTests {
     init() { installTestCoreAtomsIfNeeded() }
 
+    @Test("a qualified first End needs its own capability, without an extra Start capability grant")
+    func firstEndUsesItsQualifiedCapability() async throws {
+        let provider = SessionsVerticalHarness.qualifiedProvider
+        let profile = SessionsProviderProfile(
+            providerIdentifier: provider.identifier, exactVersion: provider.version,
+            operatingMode: provider.mode, qualifiedCapabilities: [.sessionEnd])
+        let harness = try await SessionsVerticalHarness.make(providerProfiles: [profile])
+        do {
+            let ended = try await harness.sessionEvent(
+                paneId: harness.boundPaneId, provider: provider,
+                name: "sessionEnd", conversationId: "end-only")
+            #expect(ended.disposition == .admitted)
+            let read = try await harness.sessionQuery(paneId: harness.boundPaneId)
+            #expect(read.sourceHealth == .ended)
+            #expect(read.session?.status == .idle(state: .ended))
+            await harness.tearDown()
+        } catch {
+            await harness.tearDown()
+            throw error
+        }
+    }
+
     @Test("only a first qualified hook from the pane's own credential changes its activity time")
     func hookActivityAdmissionUsesCommittedPaneProvenance() async throws {
         let harness = try await SessionsVerticalHarness.make(installActivityClock: true)
@@ -242,11 +264,10 @@ struct AgentStudioIPCSessionsVerticalTests {
         #expect(try await harness.sessionQuery(paneId: harness.boundPaneId).sourceHealth == .ended)
     }
 
-    /// A conversation identifier this pane never bound is not late evidence
-    /// about anything. Recording it against the current generation would make
-    /// one pane's state answer for a session that was never on it.
-    @Test("an event naming a conversation the pane never bound is refused and stores nothing")
-    func eventNamingAnUnknownConversationIsRefused() async throws {
+    /// Rev34: a qualified first hook establishes its own conversation before
+    /// recording evidence, retiring the previously bound conversation.
+    @Test("a qualified hook for a never-bound conversation binds it before applying itself")
+    func firstHookBindsItsOwnConversation() async throws {
         let harness = try await #require(SessionsVerticalHarnessContext.current).freshPanePair()
         // Arrange
         _ = try await harness.sessionEvent(
@@ -265,12 +286,13 @@ struct AgentStudioIPCSessionsVerticalTests {
         )
 
         // Assert
-        #expect(foreign.disposition == .unqualified)
+        #expect(foreign.disposition == .admitted)
         let queried = try await harness.sessionQuery(paneId: harness.boundPaneId)
-        #expect(queried.session?.status == .unknown)
+        #expect(queried.session?.status == .working(state: .active))
         #expect(queried.sourceHealth == .live)
         let snapshot = try await harness.paneSnapshot(paneId: harness.boundPaneId)
         #expect(snapshot.historicalOccurrenceIds.isEmpty)
+        #expect(snapshot.currentBinding?.providerConversationId == "conversation-never-bound")
     }
 
     /// The event's own conversation still drives the pane it is bound to. This

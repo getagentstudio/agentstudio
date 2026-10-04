@@ -46,7 +46,7 @@ struct PaneContextRetirementTests {
             let purged = HeldStep<Void>(
                 "restarted retirement deadline committed", cancellation: .holdThroughCancellation)
             do {
-                _ = await restarted.openAskSummaries()
+                _ = try await restarted.openAskSummaries()
                 await fixture.clock.waitForPendingSleepCount(exactly: 1)
                 await fixture.sqliteAccess.observeNextCommit(purged)
                 fixture.clock.advance(by: .seconds(AppPolicies.PaneContext.panePurgeLifetime))

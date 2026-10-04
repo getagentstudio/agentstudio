@@ -54,7 +54,9 @@ struct SessionsVerticalHarness {
         providerProfiles: [SessionsProviderProfile] = [qualifiedProviderProfile],
         additionalProviderProfiles: [SessionsProviderProfile] = [],
         debugCredentialEscrowURL: URL? = nil,
-        installActivityClock: Bool = false
+        installActivityClock: Bool = false,
+        activitySubmissionObserver: @escaping @Sendable (PaneActivityOccurrence) -> Void = { _ in },
+        activityPublicationObserver: @escaping @MainActor @Sendable () -> Void = {}
     ) async throws -> Self {
         let (commandHarness, datastore) = try await makeCanonicalIPCWorkspaceCommandHarness()
         let appDelegate = AppDelegate()
@@ -88,7 +90,10 @@ struct SessionsVerticalHarness {
             var boundPaneToken: AgentStudioIPCSubjectToken?
             if installActivityClock {
                 let activityAtom = appDelegate.atomStore.core.paneActivityTime
-                let clock = PaneActivityClock { batch in activityAtom.apply(batch) }
+                let clock = PaneActivityClock(submissionObserver: activitySubmissionObserver) { batch in
+                    activityAtom.apply(batch)
+                    activityPublicationObserver()
+                }
                 appDelegate.paneActivityClock = clock
                 await clock.start()
                 let paneToken = AgentStudioIPCSubjectToken(rawValue: "pane-activity-\(UUIDv7.generate().uuidString)")

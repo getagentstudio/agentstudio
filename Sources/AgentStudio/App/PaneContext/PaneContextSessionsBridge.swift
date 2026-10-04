@@ -7,6 +7,7 @@ import Synchronization
 /// App owns the Core/Sessions join. The owners hold this adapter through their
 /// callbacks; weak endpoints keep those callbacks from forming a retain cycle.
 final class PaneContextSessionsBridge: SessionOpenAskReading, Sendable {
+    private enum AskSourceFailure: Error { case serviceUnavailable }
     private struct Endpoints {
         weak var service: PaneContextService?
         weak var ingestion: SessionsIngestion?
@@ -20,9 +21,9 @@ final class PaneContextSessionsBridge: SessionOpenAskReading, Sendable {
         }
     }
 
-    func openAskSummaries() async -> [SessionsOpenAskUpdate] {
-        guard let service = endpoints.withLock({ $0.service }) else { return [] }
-        let updates = await service.openAskSummaries()
+    func openAskSummaries() async throws -> [SessionsOpenAskUpdate] {
+        guard let service = endpoints.withLock({ $0.service }) else { throw AskSourceFailure.serviceUnavailable }
+        let updates = try await service.openAskSummaries()
         return updates.map(Self.sessionsOpenAskUpdate)
     }
 

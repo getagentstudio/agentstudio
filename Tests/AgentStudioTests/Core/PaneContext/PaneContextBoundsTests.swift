@@ -32,7 +32,7 @@ struct PaneContextBoundsTests {
                     sourceOccurredAt: fixture.time.now, importance: .failure, body: String(repeating: "x", count: 4096),
                     why: String(repeating: "x", count: 1024), actions: Array(repeating: action, count: 4),
                     shape: .ask(
-                        reason: .approval, form: .freeText(placeholder: String(repeating: "x", count: 8192)),
+                        reason: .approval, form: try boundaryForm(.freeText, encodedBytes: 8192),
                         waiting: .nonBlocking))
                 try await fixture.sendCreated(ask, to: service)
                 try #require(
@@ -75,41 +75,41 @@ struct PaneContextBoundsTests {
             }
         }
     }
-    @Test("Every form variant has the same whole-form byte budget", arguments: [false, true])
-    func uniformFormBudget(choice: Bool) async throws {
+    @Test(
+        "Complete tagged forms are admitted below and at 8192 and refused above", arguments: BoundaryFormShape.allCases,
+        [8191, 8192, 8193])
+    func completeEncodedFormBoundary(shape: BoundaryFormShape, encodedBytes: Int) async throws {
         try await withPaneContextService { fixture, service in
             let before = try await fixture.detail(service)
-            let form: AskForm
-            if choice {
-                form = .choice(
-                    options: [AskChoice(id: try AskChoiceId(String(repeating: "x", count: 8193)), label: "Choice")],
-                    allowsMultiple: false)
+            let form = try boundaryForm(shape, encodedBytes: encodedBytes)
+            let measured = PaneContextAdmission.formBytes(form)
+            #expect(measured == encodedBytes)
+            let request = fixture.ask(form: form)
+            let sent = await service.send(request)
+            if encodedBytes > 8192 {
+                #expect(sent == .refused(.tooLarge(.form)))
+                let after = try await fixture.detail(service)
+                #expect(after == before)
             } else {
-                form = .freeText(placeholder: String(repeating: "x", count: 8193))
+                #expect(sent == .created(request.messageId))
+                let after = try await fixture.detail(service)
+                #expect(after.messages.first?.id == request.messageId)
             }
-            #expect(await service.send(fixture.ask(form: form)) == .refused(.tooLarge(.form)))
-            #expect(try await fixture.detail(service) == before)
         }
     }
 
-    @Test("A form at exactly eight KiB is admitted", arguments: [false, true])
-    func exactWholeFormBudget(choice: Bool) async throws {
+    @Test(
+        "JSON escaping counts toward the complete form limit for every shape", arguments: BoundaryFormShape.allCases,
+        ["\"", "\\", "\n"])
+    func escapingCannotBypassFormBound(shape: BoundaryFormShape, escaped: String) async throws {
         try await withPaneContextService { fixture, service in
-            let form: AskForm
-            if choice {
-                form = .choice(
-                    options: [
-                        AskChoice(
-                            id: try AskChoiceId(
-                                String(repeating: "x", count: 8192 - "false".utf8.count - "Choice".utf8.count)),
-                            label: "Choice")
-                    ], allowsMultiple: false)
-            } else {
-                form = .freeText(placeholder: String(repeating: "x", count: 8192))
-            }
-            let ask = fixture.ask(form: form)
-            try await fixture.sendCreated(ask, to: service)
-            #expect(try await fixture.detail(service).messages.first?.id == ask.messageId)
+            let before = try await fixture.detail(service)
+            let form = try boundaryForm(shape, payload: String(repeating: escaped, count: 4096))
+            #expect(PaneContextAdmission.formBytes(form) > 8192)
+            let refusal = await service.send(fixture.ask(form: form))
+            #expect(refusal == .refused(.tooLarge(.form)))
+            let after = try await fixture.detail(service)
+            #expect(after == before)
         }
     }
 
@@ -124,7 +124,7 @@ struct PaneContextBoundsTests {
                 sourceOccurredAt: fixture.time.now, importance: .failure, body: String(repeating: "x", count: 4096),
                 why: String(repeating: "x", count: 1024), actions: Array(repeating: action, count: 4),
                 shape: .ask(
-                    reason: .approval, form: .freeText(placeholder: String(repeating: "x", count: 8192)),
+                    reason: .approval, form: try boundaryForm(.freeText, encodedBytes: 8192),
                     waiting: .nonBlocking))
             try await fixture.sendCreated(ask, to: service)
             try #require(
@@ -289,5 +289,28 @@ enum OversizedMessageField: CaseIterable, Sendable {
         case .actionBytes:
             return fixture.message(actions: [.openFile(path: String(repeating: "x", count: 1025), line: nil)])
         }
+    }
+}
+
+enum BoundaryFormShape: CaseIterable, Sendable { case freeText, choice, elicitation }
+
+private func boundaryForm(_ shape: BoundaryFormShape, encodedBytes: Int) throws -> AskForm {
+    let framing: String =
+        switch shape {
+        case .freeText: #"{"kind":"freeText","placeholder":""}"#
+        case .choice: #"{"kind":"choice","options":[{"id":"","label":"Choice"}],"allowsMultiple":false}"#
+        case .elicitation:
+            #"{"kind":"elicitation","schema":{"properties":[{"name":"flag","description":"","type":{"kind":"boolean"}}],"required":[]}}"#
+        }
+    return try boundaryForm(shape, payload: String(repeating: "x", count: encodedBytes - framing.utf8.count))
+}
+
+private func boundaryForm(_ shape: BoundaryFormShape, payload: String) throws -> AskForm {
+    switch shape {
+    case .freeText: return .freeText(placeholder: payload)
+    case .choice: return .choice(options: [.init(id: try AskChoiceId(payload), label: "Choice")], allowsMultiple: false)
+    case .elicitation:
+        return .elicitation(
+            .init(properties: [.init(name: "flag", title: nil, description: payload, type: .boolean)], required: []))
     }
 }

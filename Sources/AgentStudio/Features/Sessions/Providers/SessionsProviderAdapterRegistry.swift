@@ -202,14 +202,15 @@ package struct SessionsProviderAdapterRegistry: Sendable {
     }
 
     package func qualifiedSessionStartBind(
-        _ admission: SessionsQualifiedSessionStartAdmission
+        _ admission: SessionsQualifiedSessionStartAdmission,
+        qualifyingCapability: SessionsProviderCapability = .sessionStart
     ) -> SessionsBindMutation? {
         guard
             case .qualified = qualification(
                 providerIdentifier: admission.providerIdentifier,
                 exactVersion: admission.exactVersion,
                 operatingMode: admission.operatingMode,
-                capability: .sessionStart
+                capability: qualifyingCapability
             )
         else {
             return nil

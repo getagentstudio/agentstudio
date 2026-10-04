@@ -21,6 +21,8 @@ let package = Package(
             name: "agentstudio-cli-store-process-fixture",
             targets: ["AgentStudioCLIStoreProcessFixture"]
         ),
+        .executable(
+            name: "agentstudio-cli-deadline-process-fixture", targets: ["AgentStudioCLIDeadlineProcessFixture"]),
     ],
     dependencies: [
         .package(url: "https://github.com/apple/swift-async-algorithms", from: "1.0.0"),
@@ -378,6 +380,13 @@ let package = Package(
             path: "Tests/AgentStudioCLIStoreProcessFixture",
             swiftSettings: [.swiftLanguageMode(.v6)]
         ),
+        .target(
+            name: "AgentStudioDeadlineTestSupport", dependencies: ["AgentStudioIPCTransport"],
+            path: "Tests/AgentStudioDeadlineTestSupport", swiftSettings: [.swiftLanguageMode(.v6)]),
+        .executableTarget(
+            name: "AgentStudioCLIDeadlineProcessFixture",
+            dependencies: ["AgentStudioDeadlineTestSupport", "AgentStudioIPCClientCore", "AgentStudioPrimitives"],
+            path: "Tests/AgentStudioCLIDeadlineProcessFixture", swiftSettings: [.swiftLanguageMode(.v6)]),
         .testTarget(
             name: "AgentStudioCLIStoreTests",
             dependencies: [
@@ -587,6 +596,7 @@ let package = Package(
         .testTarget(
             name: "AgentStudioIPCTransportTests",
             dependencies: [
+                "AgentStudioDeadlineTestSupport",
                 "AgentStudioIPCTransport",
                 "AgentStudioTestHarness",
             ],
@@ -609,6 +619,8 @@ let package = Package(
         .testTarget(
             name: "AgentStudioAppIPCTests",
             dependencies: [
+                "AgentStudioCLIDeadlineProcessFixture",
+                "AgentStudioDeadlineTestSupport",
                 "AgentStudio",
                 "AgentStudioAppIPC",
                 "AgentStudioCLIStore",
