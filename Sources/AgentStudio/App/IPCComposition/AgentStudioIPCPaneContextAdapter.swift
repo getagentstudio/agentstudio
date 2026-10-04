@@ -26,8 +26,14 @@ struct AgentStudioIPCPaneContextAdapter: AppIPCPaneContextPort {
             min(IPCFramePolicy.maximumResponseFrameBytes, AppPolicies.IPC.maximumQueuedOutputBytes - 1))
     }
 
-    @concurrent
     func sendMessage(paneId: UUID, params: IPCPaneMessageSendParams) async throws -> IPCPaneMessageSendResult {
+        try await sendMessage(paneId: paneId, params: params, commitParticipant: nil)
+    }
+
+    @concurrent
+    func sendMessage(
+        paneId: UUID, params: IPCPaneMessageSendParams, commitParticipant: (any PaneContextCommitParticipant)?
+    ) async throws -> IPCPaneMessageSendResult {
         let writer = try await resolveWriter(params.writer, paneId: paneId)
         let shape: PaneMessageSendShape
         switch params.shape {
@@ -44,7 +50,8 @@ struct AgentStudioIPCPaneContextAdapter: AppIPCPaneContextPort {
                 paneId: PaneId(existingUUID: paneId), messageId: AgentMessageId(existingUUID: params.messageId),
                 sender: try writer.sender, sourceOccurredAt: params.sourceOccurredAt,
                 importance: PaneContextIPCMapping.importance(params.importance), body: params.body, why: params.why,
-                actions: try params.actions.map(PaneContextIPCMapping.action), shape: shape))
+                actions: try params.actions.map(PaneContextIPCMapping.action), shape: shape),
+            commitParticipant: commitParticipant)
         return try sendResult(result)
     }
 

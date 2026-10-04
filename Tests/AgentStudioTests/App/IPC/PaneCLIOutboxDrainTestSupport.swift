@@ -5,6 +5,7 @@ import AgentStudioInfrastructure
 import AgentStudioProgrammaticControl
 import AgentStudioSessions
 import AgentStudioTestHarness
+import AgentStudioTestSupport
 import Foundation
 import GRDB
 import Synchronization
@@ -39,7 +40,11 @@ final class PaneCLIOutboxDrainHarness {
     let sqliteAccess: FailableOutboxSessionsSQLiteAccess
     let repository: SessionsRepository
     let ingestion: SessionsIngestion
-    let admission: AgentStudioIPCSessionsAdapter
+    let admission: AgentStudioIPCPaneContextAdapter
+    let sessionAdmission: AgentStudioIPCSessionsAdapter
+    let paneService: PaneContextService
+    let membership = TestPaneContextMembership()
+    let clock = TestPushClock()
     let refusalRecorder = OutboxRefusalRecorder()
     private let drainOwner: PaneCLIOutboxDrain
     private let additionalRefusalProbe: @Sendable (PaneCLIOutboxDrain.RefusalReason) -> Void
@@ -75,10 +80,14 @@ final class PaneCLIOutboxDrainHarness {
                     exactVersion: Self.qualifiedProvider.version, operatingMode: Self.qualifiedProvider.mode,
                     qualifiedCapabilities: [.sessionStart, .sessionEnd])
             ]), admissionFreshness: .late)
-        self.admission = admission
+        sessionAdmission = admission
+        paneService = PaneContextService(
+            sqliteAccess: sqliteAccess, clock: clock, wallNow: { Date(timeIntervalSince1970: 1_700_000_000) },
+            membership: membership, currentBindingGeneration: PaneContextSessionsBridge.currentBindingGeneration)
+        self.admission = AgentStudioIPCPaneContextAdapter(service: paneService, ingestion: ingestion)
         let recorder = refusalRecorder
         drainOwner = try PaneCLIOutboxDrain(
-            admission: admission, sqliteAccess: sqliteAccess, expectedChannel: .debug,
+            admission: self.admission, sqliteAccess: sqliteAccess, expectedChannel: .debug,
             refusalProbe: {
                 recorder.record($0)
                 refusalProbe($0)
@@ -102,12 +111,13 @@ final class PaneCLIOutboxDrainHarness {
     }
 
     func append(paneID: UUID, line: String, messageID: UUID? = nil) async throws -> CLIOutboxEntry {
+        membership.addPane(PaneId(existingUUID: paneID))
         let resolvedID: UUID
         if let messageID {
             resolvedID = messageID
         } else if let request = try? JSONRPCCodec.decodeRequest(line),
             case .object(let parameters)? = request.params,
-            case .string(let correlation)? = parameters["correlationId"],
+            case .string(let correlation)? = parameters["messageId"] ?? parameters["correlationId"],
             let parsed = UUID(uuidString: correlation)
         {
             resolvedID = parsed
@@ -145,7 +155,8 @@ final class PaneCLIOutboxDrainHarness {
     }
 
     func bindPane(paneID: UUID) async throws {
-        let result = try await admission.recordProviderEvent(
+        membership.addPane(PaneId(existingUUID: paneID))
+        let result = try await sessionAdmission.recordProviderEvent(
             paneId: paneID,
             params: IPCSessionEventParams(
                 handle: paneID.uuidString, provider: Self.qualifiedProvider,
@@ -160,23 +171,42 @@ final class PaneCLIOutboxDrainHarness {
         #expect(binding.paneId == paneID)
     }
 
+    func paneMessages(paneID: UUID) async throws -> [AgentMessageDetail] {
+        let result = await paneService.readDetail(.init(paneId: PaneId(existingUUID: paneID), page: .first))
+        guard case .detail(let detail) = result else { throw OutboxStorageFailure() }
+        return detail.messages
+    }
+
     func simulateRelaunch() async throws {
         _ = try await ingestion.prepareForLaunch(at: Date())
     }
 
     func messageLine(text: String, handle: String = "self", correlationID: UUID = UUIDv7.generate()) throws -> String {
         try requestLine(
-            method: "session.message",
-            parameters: IPCSessionMessageParams(handle: handle, text: text, correlationId: correlationID))
+            method: "pane.message.send",
+            parameters: IPCPaneMessageSendParams(
+                handle: handle, messageId: correlationID, sourceOccurredAt: Date(timeIntervalSince1970: 1_700_000_000),
+                importance: .info, body: text, actions: [],
+                shape: .notice, correlationId: correlationID))
     }
 
-    func reportLine(kind: IPCSessionReportKind, explanation: String?, correlationID: UUID = UUIDv7.generate()) throws
-        -> String
-    {
-        try requestLine(
-            method: "session.report",
-            parameters: IPCSessionReportParams(
-                handle: "self", kind: kind, explanation: explanation, correlationId: correlationID))
+    func legacyMessageLine(text: String, correlationID: UUID = UUIDv7.generate()) throws -> String {
+        try JSONRPCCodec.encodeRequest(
+            .init(
+                id: .number(1), method: "session.message",
+                params: .object([
+                    "handle": .string("self"), "text": .string(text),
+                    "correlationId": .string(correlationID.uuidString),
+                ])))
+    }
+
+    func reportLine(kind: String, explanation: String?, correlationID: UUID = UUIDv7.generate()) throws -> String {
+        var parameters: [String: JSONValue] = [
+            "handle": .string("self"), "kind": .string(kind), "correlationId": .string(correlationID.uuidString),
+        ]
+        if let explanation { parameters["explanation"] = .string(explanation) }
+        return try JSONRPCCodec.encodeRequest(
+            .init(id: .number(1), method: "session.report", params: .object(parameters)))
     }
 
     func providerEventLine() throws -> String {
@@ -195,12 +225,15 @@ final class PaneCLIOutboxDrainHarness {
     }
 
     func writeLegacyFile(paneID: UUID, lines: [String]) throws {
+        membership.addPane(PaneId(existingUUID: paneID))
         try FileManager.default.createDirectory(at: legacyDirectory, withIntermediateDirectories: true)
         try Data(lines.map { "\($0)\n" }.joined().utf8).write(to: legacyFileURL(paneID: paneID))
     }
 
     func tearDown() async {
+        await paneService.stop()
         await ingestion.finish()
+        try? await valueFromDedicatedThread { [writer] in try writer.close() }
         try? FileManager.default.removeItem(at: rootURL)
     }
 
@@ -221,7 +254,7 @@ final class OutboxRefusalRecorder: Sendable {
     var reasons: [PaneCLIOutboxDrain.RefusalReason] { values.withLock { $0 } }
 }
 
-actor FailableOutboxSessionsSQLiteAccess: SessionsSQLiteAccess {
+actor FailableOutboxSessionsSQLiteAccess: SessionsSQLiteAccess, PaneContextSQLiteAccess {
     private let base: WorkspaceSessionsSQLiteAccess
     private var rejectsWrites = false
     private var rejectsCursorCommit = false

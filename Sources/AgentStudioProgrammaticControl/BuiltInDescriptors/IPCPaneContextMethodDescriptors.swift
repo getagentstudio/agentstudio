@@ -69,6 +69,7 @@ package struct IPCPaneContextMethodDescriptors: Sendable {
                 documentedErrors: Self.errors,
                 isMutating: true,
                 correlationPolicy: .required,
+                offlineEligibility: .noticeOnly,
                 agentEligibility: entryEligibility
             )
         })

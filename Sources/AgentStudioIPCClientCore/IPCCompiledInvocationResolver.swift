@@ -20,6 +20,12 @@ package struct IPCCompiledInvocationResolver: Sendable {
         }
         let selected = try selectedEntry(arguments: arguments)
         var requiredEntries = [selected]
+        if let name = arguments.first, PaneCLIVerb(rawValue: name)?.ordered == true {
+            guard let claim = index.entry(named: "pane.writer.claimEpoch") else {
+                throw IPCMethodDescriptorRepresentationLookupError.missingMethod("pane.writer.claimEpoch")
+            }
+            requiredEntries.insert(claim, at: 0)
+        }
         if authenticated, selected.name != "auth.login" {
             guard let authentication = index.entry(named: "auth.login") else {
                 throw IPCMethodDescriptorRepresentationLookupError.missingMethod("auth.login")
@@ -38,6 +44,10 @@ package struct IPCCompiledInvocationResolver: Sendable {
     private func selectedEntry(arguments: [String]) throws -> IPCBuiltInMethodIndexEntry {
         guard let name = arguments.first else {
             throw IPCDescriptorInvocationError.unknownMethod(named: "", index: index)
+        }
+        if let verb = PaneCLIVerb(rawValue: name), let entry = index.entry(named: verb.methodName(arguments: arguments))
+        {
+            return entry
         }
         if let exact = index.entry(named: name) { return exact }
         let candidates = index.entries.flatMap { entry in

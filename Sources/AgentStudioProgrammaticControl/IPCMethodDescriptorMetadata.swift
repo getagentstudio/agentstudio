@@ -17,10 +17,13 @@ package enum IPCCorrelationPolicy: String, Codable, CaseIterable, Equatable, Sen
 }
 
 package enum IPCModelCallVariant: String, Codable, CaseIterable, Equatable, Hashable, Sendable {
-    case message
-    case needsYou = "needs-you"
-    case needsYouClear = "needs-you --clear"
-    case done
+    case notify
+    case ask
+    case withdraw
+    case answers
+    case line
+    case title
+    case pane
 }
 
 package enum IPCCommandRelationship: Codable, Equatable, Sendable {
@@ -71,41 +74,24 @@ package enum IPCCommandRelationship: Codable, Equatable, Sendable {
 
 package enum IPCMethodOfflineEligibility: Codable, Equatable, Sendable {
     case never
-    case modelCallVariants(Set<IPCModelCallVariant>)
+    case noticeOnly
 
-    private enum CodingKeys: String, CodingKey {
-        case kind
-        case variants
-    }
-
-    private enum Kind: String, Codable {
-        case never
-        case modelCallVariants
-    }
+    private enum CodingKeys: String, CodingKey { case kind }
+    private enum Kind: String, Codable { case never, noticeOnly }
 
     package init(from decoder: any Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         switch try container.decode(Kind.self, forKey: .kind) {
-        case .never:
-            self = .never
-        case .modelCallVariants:
-            self = .modelCallVariants(
-                Set(try container.decode([IPCModelCallVariant].self, forKey: .variants))
-            )
+        case .never: self = .never
+        case .noticeOnly: self = .noticeOnly
         }
     }
 
     package func encode(to encoder: any Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
         switch self {
-        case .never:
-            try container.encode(Kind.never, forKey: .kind)
-        case .modelCallVariants(let variants):
-            try container.encode(Kind.modelCallVariants, forKey: .kind)
-            try container.encode(
-                variants.sorted { $0.rawValue < $1.rawValue },
-                forKey: .variants
-            )
+        case .never: try container.encode(Kind.never, forKey: .kind)
+        case .noticeOnly: try container.encode(Kind.noticeOnly, forKey: .kind)
         }
     }
 }

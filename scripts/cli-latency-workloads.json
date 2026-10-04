@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "notMeasured": ["line", "title", "notify"],
+  "notMeasured": ["line", "title"],
   "families": [
     {
       "name": "hook",
@@ -10,14 +10,8 @@
       "fixtureRequirement": "ownedPane"
     },
     {
-      "name": "message",
-      "argv": ["session.message", "--handle", "self", "--text", "benchmark notice ${sampleId}"],
-      "budgetClass": "hookOrNotice",
-      "fixtureRequirement": "ownedPane"
-    },
-    {
-      "name": "done",
-      "argv": ["session.report", "--handle", "self", "--kind", "done"],
+      "name": "notify",
+      "argv": ["notify", "benchmark notice ${sampleId}"],
       "budgetClass": "hookOrNotice",
       "fixtureRequirement": "ownedPane"
     },

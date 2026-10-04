@@ -58,7 +58,11 @@ struct AppIPCCLIStoreReadThroughTests {
                         )
                     }
                 }
-                #expect(observed.migrations == [CLIStoreMigrator.identityMigration, CLIStoreMigrator.outboxMigration])
+                #expect(
+                    observed.migrations == [
+                        CLIStoreMigrator.identityMigration, CLIStoreMigrator.outboxMigration,
+                        CLIStoreMigrator.stateMigration,
+                    ])
                 #expect(observed.storeID == identity.storeID.uuidString)
                 #expect(observed.identityCount == 1)
                 #expect(observed.hasOutbox)
@@ -72,46 +76,48 @@ struct AppIPCCLIStoreReadThroughTests {
         let storage = try await valueFromDedicatedThread { try ReadThroughStorageFixture(cursor: 2) }
         defer { storage.removeFiles() }
         let originalRows = try await storage.entries()
-        let paneID = UUIDv7.generate()
-        try await withLiveServer(
-            makeFixture: {
-                try LiveServerFixture(
-                    channel: .debug, panes: [makePaneSummary(id: paneID, ordinal: 1)],
-                    cliStoreReadThroughPort: storage.reader)
-            },
-            body: { fixture in
-                try fixture.server.start()
-                let held = HeldStep<Void>("CLI store cleanup is held by a real SQLite writer")
-                let writer = storage.writer
-                let lockOwner = Task {
-                    try await valueFromDedicatedThread {
-                        try writer.databaseQueue.write { _ in try held.arriveBlocking(()) }
+        try await withPaneContextIPCDomain { domain in
+            let paneID = domain.paneId
+            try await withLiveServer(
+                makeFixture: {
+                    try LiveServerFixture(
+                        channel: .debug, panes: [makePaneSummary(id: paneID, ordinal: 1)],
+                        paneContextPort: domain.adapter(), cliStoreReadThroughPort: storage.reader)
+                },
+                body: { fixture in
+                    try fixture.server.start()
+                    let held = HeldStep<Void>("CLI store cleanup is held by a real SQLite writer")
+                    let writer = storage.writer
+                    let lockOwner = Task {
+                        try await valueFromDedicatedThread {
+                            try writer.databaseQueue.write { _ in try held.arriveBlocking(()) }
+                        }
                     }
-                }
-                do {
-                    try await held.firstArrival()
-                    let token = try fixture.issueTestCredential(
-                        for: .pane(paneId: paneID, credentialRecordId: UUIDv7.generate(), status: .registered))
-                    let output = await runClientCommandLineOffCooperativePool(
-                        arguments: ["message", "notice succeeded"],
-                        environment: [
-                            "AGENTSTUDIO_IPC_SOCKET": fixture.paths.socketURL.path,
-                            "AGENTSTUDIO_PANE_TOKEN": token.rawValue,
-                            "AGENTSTUDIO_CLI_STORE": storage.storeURL.path,
-                            "AGENTSTUDIO_CLI_STORE_CHANNEL": "debug",
-                        ])
-                    held.release()
-                    try await lockOwner.value
-                    #expect(output.exitCode == 0)
-                    #expect(output.standardOutput.contains("message sent"))
-                    #expect(output.standardError.isEmpty)
-                    #expect(try await storage.entries() == originalRows)
-                } catch {
-                    held.release()
-                    _ = try? await lockOwner.value
-                    throw error
-                }
-            })
+                    do {
+                        try await held.firstArrival()
+                        let token = try fixture.issueTestCredential(
+                            for: .pane(paneId: paneID, credentialRecordId: UUIDv7.generate(), status: .registered))
+                        let output = await runClientCommandLineOffCooperativePool(
+                            arguments: ["notify", "notice succeeded"],
+                            environment: [
+                                "AGENTSTUDIO_IPC_SOCKET": fixture.paths.socketURL.path,
+                                "AGENTSTUDIO_PANE_TOKEN": token.rawValue,
+                                "AGENTSTUDIO_CLI_STORE": storage.storeURL.path,
+                                "AGENTSTUDIO_CLI_STORE_CHANNEL": "debug",
+                            ])
+                        held.release()
+                        try await lockOwner.value
+                        #expect(output.exitCode == 0)
+                        #expect(output.standardOutput.contains("created"))
+                        #expect(output.standardError.isEmpty)
+                        #expect(try await storage.entries() == originalRows)
+                    } catch {
+                        held.release()
+                        _ = try? await lockOwner.value
+                        throw error
+                    }
+                })
+        }
     }
 
     @Test(

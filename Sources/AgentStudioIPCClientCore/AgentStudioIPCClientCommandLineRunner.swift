@@ -1,4 +1,5 @@
 import AgentStudioCLIStore
+import AgentStudioIPCTransport
 import AgentStudioProgrammaticControl
 import Foundation
 
@@ -53,6 +54,8 @@ package struct AgentStudioIPCClientCommandLineRunner {
     private let props: Props
 
     private func dispatchCommandLine() -> Int32 {
+        let startedAt = ContinuousClock.now
+        let wallStartedAt = props.now()
         var endpointCameFromDebugEscrow = false
         do {
             let readInput = props.standardInput
@@ -69,10 +72,31 @@ package struct AgentStudioIPCClientCommandLineRunner {
                 standardInputProvider: readInput
             )
             endpointCameFromDebugEscrow = global.endpointCameFromDebugEscrow
+            let intent = try global.methodArguments.first.flatMap { name -> PaneCLIIntent? in
+                guard PaneCLIVerb(rawValue: name) != nil else { return nil }
+                return try PaneCLIIntent.parse(global.methodArguments, now: wallStartedAt)
+            }
+            let limit = intent?.callLimit ?? CLIPolicy.ordinaryCallLimit
+            let deadline = CallDeadline(limit: limit, startedAt: startedAt)
+            if let intent {
+                let networkDeadline: CallDeadline
+                if case .notify = intent {
+                    networkDeadline = CallDeadline(limit: limit - CLIPolicy.noticeQueueReserve, startedAt: startedAt)
+                } else {
+                    networkDeadline = deadline
+                }
+                try PaneCLICommandRunner(
+                    props: props, global: global, deadline: networkDeadline, totalDeadline: deadline
+                ).run(intent)
+                return 0
+            }
             let examples = IPCBuiltInMethodExampleContext(illustrativeIdentifier: props.identifierGenerator())
             let inputs = IPCBuiltInMethodCatalogInputs(examples: examples)
-            let offlineHandler = PaneNotificationOfflineHandler(environment: props.environment)
-            if try writeExplicitDiscovery(global: global, resolver: resolver, inputs: inputs, readInput: readInput) {
+            let offlineHandler = PaneNotificationOfflineHandler(
+                environment: props.environment, now: props.now, migrationLockWaitBudget: { deadline.remainingBudget })
+            if try writeExplicitDiscovery(
+                global: global, resolver: resolver, inputs: inputs, readInput: readInput, deadline: deadline)
+            {
                 return 0
             }
             let invocation: IPCDescriptorInvocation
@@ -95,7 +119,7 @@ package struct AgentStudioIPCClientCommandLineRunner {
             try deliver(
                 invocation: invocation,
                 client: makeClient(
-                    configuration: global.configuration, descriptors: descriptors),
+                    configuration: global.configuration, descriptors: descriptors, deadline: deadline),
                 offlineHandler: offlineHandler
             )
             return 0
@@ -106,7 +130,7 @@ package struct AgentStudioIPCClientCommandLineRunner {
 
     private func writeExplicitDiscovery(
         global: IPCClientGlobalArguments, resolver: IPCCompiledInvocationResolver,
-        inputs: IPCBuiltInMethodCatalogInputs, readInput: () -> Data
+        inputs: IPCBuiltInMethodCatalogInputs, readInput: () -> Data, deadline: CallDeadline
     ) throws -> Bool {
         guard
             global.methodArguments.first == "system.capabilities"
@@ -114,7 +138,8 @@ package struct AgentStudioIPCClientCommandLineRunner {
                 || global.methodArguments.first == "command.list"
         else { return false }
         let authentication = try resolver.resolve(arguments: ["auth.login"], authenticated: false, inputs: inputs)
-        let discoveryClient = makeClient(configuration: global.configuration, descriptors: authentication)
+        let discoveryClient = makeClient(
+            configuration: global.configuration, descriptors: authentication, deadline: deadline)
         if global.methodArguments.first == "system.capabilities" {
             try validateCapabilitiesParameters(global: global, readInput: readInput)
             try write(discoveryClient.discoverCatalogBytes())
@@ -223,19 +248,20 @@ package struct AgentStudioIPCClientCommandLineRunner {
         switch try handler.handleUnreachableApp(invocation: invocation, requestLine: requestLine) {
         case .queued(let reply):
             props.standardOutputSink(reply)
-        case .clearUnavailableWhileOffline:
-            throw CLIExit.message("Can't clear while Agent Studio is offline.")
         case .notQueued:
             throw unreachable
         }
     }
 
-    private func makeClient(configuration: AgentStudioIPCClientConfiguration, descriptors: [IPCAnyMethodDescriptor])
+    private func makeClient(
+        configuration: AgentStudioIPCClientConfiguration, descriptors: [IPCAnyMethodDescriptor], deadline: CallDeadline
+    )
         -> AgentStudioIPCClient
     {
-        let cleanup = CLIStoreCleanupHandler(environment: props.environment, now: props.now)
+        let cleanup = CLIStoreCleanupHandler(
+            environment: props.environment, now: props.now, migrationLockWaitBudget: { deadline.remainingBudget })
         return AgentStudioIPCClient(
-            configuration: configuration, descriptors: descriptors,
+            configuration: configuration, descriptors: descriptors, deadline: deadline,
             onCallCompletion: { cleanup.handle(readThrough: $0) })
     }
 
@@ -321,8 +347,12 @@ package struct AgentStudioIPCClientCommandLineRunner {
             // The escrow named this socket; nothing answering there means the
             // debug app that wrote the file is gone.
             props.standardErrorSink("Debug app not running; start it with the debug launcher.")
+        case let failure as PaneCLICommandFailure:
+            props.standardErrorSink(failure.description)
         case let failure as IPCDescriptorClientFailure where failure.disposition == .deliveryUncertain:
-            props.standardErrorSink("Delivery uncertain.")
+            props.standardErrorSink("outcomeUnknown")
+        case let failure as IPCDescriptorClientFailure where failure.disposition == .notSubmitted:
+            props.standardErrorSink("notSent(\(String(describing: failure.reason)))")
         case is IPCDescriptorClientFailure:
             writeUnavailableError()
         case let error as CLIExit:

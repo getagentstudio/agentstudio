@@ -284,20 +284,6 @@ struct SessionsVerticalHarness {
         )
     }
 
-    func sessionReport(
-        paneId: UUID,
-        kind: String,
-        explanation: String?,
-        correlationId: UUID = UUIDv7.generate()
-    ) async throws -> IPCSessionReportResult {
-        try await decoded(
-            method: "session.report",
-            params: Self.reportParams(
-                paneId: paneId, kind: kind, explanation: explanation, correlationId: correlationId
-            )
-        )
-    }
-
     func rawSessionReport(
         paneId: UUID,
         kind: String,
@@ -309,21 +295,6 @@ struct SessionsVerticalHarness {
             params: Self.reportParams(
                 paneId: paneId, kind: kind, explanation: explanation, correlationId: correlationId
             )
-        )
-    }
-
-    func sessionMessage(
-        paneId: UUID,
-        text: String,
-        correlationId: UUID = UUIDv7.generate()
-    ) async throws -> IPCSessionMessageResult {
-        try await decoded(
-            method: "session.message",
-            params: .object([
-                "handle": .string(paneId.uuidString),
-                "text": .string(text),
-                "correlationId": .string(correlationId.uuidString),
-            ])
         )
     }
 

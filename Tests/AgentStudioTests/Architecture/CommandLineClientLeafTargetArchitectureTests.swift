@@ -23,6 +23,7 @@ struct CommandLineClientLeafTargetArchitectureTests {
         "CryptoKit",
         "Security",
         "System",
+        "Synchronization",
         "Darwin",
         // Provider-silent CLI diagnostics go to the unified log.
         "os",

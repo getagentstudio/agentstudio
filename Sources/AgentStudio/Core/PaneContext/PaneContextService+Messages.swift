@@ -8,7 +8,9 @@ struct PaneContextSendCommit: Sendable {
 }
 
 extension PaneContextService {
-    package func send(_ request: PaneMessageSendRequest) async -> PaneMessageSendResult {
+    package func send(
+        _ request: PaneMessageSendRequest, commitParticipant: (any PaneContextCommitParticipant)? = nil
+    ) async -> PaneMessageSendResult {
         if let refusal = PaneContextAdmission.refusal(request) { return .refused(refusal) }
         do {
             try await ensureOpen()
@@ -23,11 +25,10 @@ extension PaneContextService {
                 if let existing = try PaneContextStorage.message(
                     database, paneId: request.paneId, messageId: request.messageId)
                 {
+                    let sameIntent = try PaneContextStorage.sameIntent(request, stored: existing, database: database)
+                    if sameIntent { try commitParticipant?.commit(in: database) }
                     return PaneContextSendCommit(
-                        result: try PaneContextStorage.sameIntent(request, stored: existing, database: database)
-                            ? .existing(request.messageId) : .refused(.conflict),
-                        openAsks: nil
-                    )
+                        result: sameIntent ? .existing(request.messageId) : .refused(.conflict), openAsks: nil)
                 }
                 let isAsk: Bool
                 switch request.shape {
@@ -48,6 +49,7 @@ extension PaneContextService {
                 let cap = isAsk ? AppPolicies.PaneContext.maximumOpenAsks : AppPolicies.PaneContext.maximumUnreadNotices
                 guard count < cap else { return refused(.tooLarge(isAsk ? .openAsks : .unreadNotices)) }
                 try PaneContextStorage.recordMessage(request, database: database, now: now())
+                try commitParticipant?.commit(in: database)
                 let update =
                     isAsk
                     ? try PaneContextStorage.openAskUpdate(

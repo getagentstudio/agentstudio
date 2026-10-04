@@ -4,13 +4,13 @@ import Testing
 
 @Suite("IPC deferred built-in method index")
 struct IPCBuiltInMethodIndexTests {
-    @Test("index keys retain the independent exact 55-method oracle and full catalog surface")
+    @Test("index keys retain the independent exact 53-method oracle and full catalog surface")
     func indexHasExactCompiledNameSet() throws {
         let index = IPCBuiltInMethodIndex()
         let catalog = try IPCBuiltInMethodCatalog(inputs: inputs)
         let names = index.entries.map(\.name)
         #expect(names == expectedStaticMethodNames)
-        #expect(names.count == 55)
+        #expect(names.count == 53)
         #expect(Set(names).count == names.count)
         #expect(Set(names) == Set(catalog.erasedDescriptors.map { $0.metadata.name }))
     }
@@ -74,9 +74,7 @@ struct IPCBuiltInMethodIndexTests {
             "pane.title.set",
             "pane.writer.claimEpoch",
             "session.event",
-            "session.message",
             "session.query",
-            "session.report",
             "sidebar.grouping.get",
             "sidebar.surface.get",
             "system.identify",

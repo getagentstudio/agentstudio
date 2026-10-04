@@ -77,17 +77,20 @@ package struct CLIOutboxReadBatch: Equatable, Sendable {
 /// read-only intake. Run it off the UI and cooperative executors.
 package final class CLIStore: Sendable {
     let databaseQueue: DatabaseQueue
+    let callBudget: @Sendable () -> Duration?
     package let identity: CLIStoreIdentity
     private let logDecodeIssue: @Sendable (CLIStoreDecodeIssue) -> Void
 
     private init(
         databaseQueue: DatabaseQueue,
         identity: CLIStoreIdentity,
-        logDecodeIssue: @escaping @Sendable (CLIStoreDecodeIssue) -> Void
+        logDecodeIssue: @escaping @Sendable (CLIStoreDecodeIssue) -> Void,
+        callBudget: @escaping @Sendable () -> Duration? = { nil }
     ) {
         self.databaseQueue = databaseQueue
         self.identity = identity
         self.logDecodeIssue = logDecodeIssue
+        self.callBudget = callBudget
     }
 
     package static func openWriter(
@@ -118,7 +121,7 @@ package final class CLIStore: Sendable {
     private static func openDatabaseWriter(
         url: URL,
         channel: CLIStoreChannel,
-        migrationLockWaitBudget: @Sendable () -> Duration?,
+        migrationLockWaitBudget: @escaping @Sendable () -> Duration?,
         prepareConnection: (@Sendable (Database) throws -> Void)?,
         logDecodeIssue: @escaping @Sendable (CLIStoreDecodeIssue) -> Void
     ) -> Result<CLIStore, CLIStoreFailure> {
@@ -178,7 +181,8 @@ package final class CLIStore: Sendable {
             }
             return .success(
                 CLIStore(
-                    databaseQueue: databaseQueue, identity: identity, logDecodeIssue: logDecodeIssue))
+                    databaseQueue: databaseQueue, identity: identity, logDecodeIssue: logDecodeIssue,
+                    callBudget: migrationLockWaitBudget))
         } catch {
             return .failure(classifyFailure(error, stage: stage))
         }
@@ -224,7 +228,7 @@ package final class CLIStore: Sendable {
                 exactly: (createdAt.timeIntervalSince1970 * CLIStorePolicy.millisecondsPerSecond).rounded())
         else { return .failure(.unavailable) }
         do {
-            let entry = try databaseQueue.write { database in
+            let entry = try budgetedWriteTransaction(stage: .append) { database in
                 // Returning the original entry makes repeats idempotent while
                 // preserving its immutable payload and time.
                 if let existing = try CLIOutboxRecord.fetchOne(
@@ -306,7 +310,7 @@ package final class CLIStore: Sendable {
                 exactly: (cutoff.timeIntervalSince1970 * CLIStorePolicy.millisecondsPerSecond).rounded(.up))
         else { return .failure(.unavailable) }
         do {
-            let removed = try databaseQueue.write { database in
+            let removed = try budgetedWriteTransaction(stage: .purge) { database in
                 let currentIdentity = try Self.readIdentity(database, expectedChannel: identity.channel)
                 guard currentIdentity.storeID == expectedStoreID else { return 0 }
                 try database.execute(
@@ -365,7 +369,7 @@ package final class CLIStore: Sendable {
     private static func publishNewStore(
         at url: URL,
         channel: CLIStoreChannel,
-        migrationLockWaitBudget: @Sendable () -> Duration?,
+        migrationLockWaitBudget: @escaping @Sendable () -> Duration?,
         prepareConnection: (@Sendable (Database) throws -> Void)?
     ) throws {
         let temporaryURL = url.deletingLastPathComponent().appending(

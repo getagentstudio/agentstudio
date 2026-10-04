@@ -769,6 +769,10 @@ large|AgentStudioIPCPhaseASmokeScriptTests|concurrent
 large|CLILatencyBenchmarkScriptTests|concurrent
 large|CLIHookSilenceScriptTests|concurrent
 large|CLIAgentHelpScriptTests|concurrent
+large|CLIPaneContextOrderingTests|concurrent
+large|CLIPaneContextAvailabilityTests|concurrent
+large|CLIPaneContextAnswersTests|concurrent
+large|CLIPaneContextDispatchTests|concurrent
 large|AgentStudioOTLPBootstrapSmokeTests|process-global
 fast|AgentStudioStartupDiagnosticActionParsingTests|concurrent
 fast|AgentStudioStartupDiagnosticActionTests|concurrent
@@ -1344,6 +1348,25 @@ aggregate_serial_non_webkit_suite_filters() {
     printf '%s:%s\n' \
       'Tests/AgentStudioAppIPCTests/AppIPCDynamicCommandClientTests.swift' \
       'AppIPCDynamicCommandClientTests'
+    # Real CLI/runner deadlines depend on the in-process AppIPC cooperative pool; isolate each suite.
+    printf '%s:%s\n' \
+      'Tests/AgentStudioAppIPCTests/AppIPCCLILocalResolutionTests.swift' \
+      'AppIPCCLILocalResolutionTests'
+    printf '%s:%s\n' \
+      'Tests/AgentStudioAppIPCTests/AppIPCCLIRawCommandTests.swift' \
+      'AppIPCCLIRawCommandTests'
+    printf '%s:%s\n' \
+      'Tests/AgentStudioAppIPCTests/AppIPCTerminalWaitClampTests.swift' \
+      'AppIPCTerminalWaitClampTests'
+    printf '%s:%s\n' \
+      'Tests/AgentStudioAppIPCTests/AppIPCCLIHelpAndExitTests.swift' \
+      'AppIPCCLIHelpAndExitTests'
+    printf '%s:%s\n' \
+      'Tests/AgentStudioAppIPCTests/AppIPCCLICatalogDiscoverySkipTests.swift' \
+      'AppIPCCLICatalogDiscoverySkipTests'
+    printf '%s:%s\n' \
+      'Tests/AgentStudioAppIPCTests/AppIPCCLIStoreReadThroughTests.swift' \
+      'AppIPCCLIStoreReadThroughTests'
     printf '%s:%s\n' \
       'Tests/AgentStudioAppIPCTests/AppIPCErrorCorrectionTests.swift' \
       'AppIPCErrorCorrectionTests'

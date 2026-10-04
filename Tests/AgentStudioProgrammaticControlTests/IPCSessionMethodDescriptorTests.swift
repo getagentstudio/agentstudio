@@ -5,7 +5,7 @@ import Testing
 
 @Suite("IPC session method descriptors")
 struct IPCSessionMethodDescriptorTests {
-    @Test("the four session methods reach every channel with pane targeting")
+    @Test("the two retained session methods reach every channel with pane targeting")
     func sessionMethodsAreExposedOnEveryChannel() throws {
         let catalog = try makeCatalog()
         let sessions = catalog.sessions
@@ -13,7 +13,7 @@ struct IPCSessionMethodDescriptorTests {
 
         #expect(
             descriptors.map(\.metadata.name)
-                == ["session.event", "session.message", "session.query", "session.report"]
+                == ["session.event", "session.query"]
         )
         for descriptor in descriptors {
             #expect(descriptor.metadata.exposure == .allChannels)
@@ -21,11 +21,8 @@ struct IPCSessionMethodDescriptorTests {
             #expect(descriptor.metadata.executionOwner == .sessionsIngest)
             #expect(descriptor.metadata.principalAvailability == .authenticated)
         }
-        #expect(sessions.sessionReport.requiredPrivileges == [.sessionReportWrite])
-        #expect(sessions.sessionMessage.requiredPrivileges == [.sessionReportWrite])
         #expect(sessions.sessionEvent.requiredPrivileges == [.sessionReportWrite])
         #expect(sessions.sessionQuery.requiredPrivileges == [.sessionStateRead])
-        #expect(sessions.sessionReport.dataScope == .sessionReport)
         #expect(sessions.sessionQuery.dataScope == .sessionState)
     }
 
@@ -33,12 +30,8 @@ struct IPCSessionMethodDescriptorTests {
     func correlationPolicyMatchesMutationBoundary() throws {
         let sessions = try makeCatalog().sessions
 
-        #expect(sessions.sessionReport.isMutating)
-        #expect(sessions.sessionMessage.isMutating)
         #expect(sessions.sessionEvent.isMutating)
         #expect(!sessions.sessionQuery.isMutating)
-        #expect(sessions.sessionReport.correlationPolicy == .required)
-        #expect(sessions.sessionMessage.correlationPolicy == .required)
         #expect(sessions.sessionEvent.correlationPolicy == .required)
         #expect(sessions.sessionQuery.correlationPolicy == .notAccepted)
     }
@@ -54,46 +47,33 @@ struct IPCSessionMethodDescriptorTests {
         }
     }
 
-    @Test("only the deliberate verbs and message project model calls")
+    @Test("session descriptors expose no deliberate scalar projections or retired methods")
     func modelCallsCoverTheDeliberateVocabulary() throws {
-        let sessions = try makeCatalog().sessions
-
+        let catalog = try makeCatalog()
+        #expect(catalog.sessions.sessionEvent.modelCalls.isEmpty)
+        #expect(catalog.sessions.sessionQuery.modelCalls.isEmpty)
         #expect(
-            sessions.sessionReport.modelCalls.map(\.variant) == [.needsYou, .needsYouClear, .done]
-        )
-        #expect(sessions.sessionMessage.modelCalls.map(\.variant) == [.message])
-        #expect(sessions.sessionEvent.modelCalls.isEmpty)
-        #expect(sessions.sessionQuery.modelCalls.isEmpty)
-
-        let replies = Dictionary(
-            uniqueKeysWithValues: sessions.sessionReport.modelCalls.map { ($0.variant, $0.successReply) }
-        )
-        #expect(replies[.needsYou] == "needs-you recorded")
-        #expect(replies[.needsYouClear] == "needs-you cleared")
-        #expect(replies[.done] == "done recorded")
-        #expect(sessions.sessionMessage.modelCalls.first?.successReply == "message sent")
+            !catalog.erasedDescriptors.contains {
+                $0.metadata.name == "session.message" || $0.metadata.name == "session.report"
+            })
     }
 
-    @Test("model scalar arguments stay optional for needs-you and required for message text")
+    @Test("the replacement notice carries a required exact body and optional writer")
     func modelScalarArgumentsMatchTheVocabulary() throws {
-        let sessions = try makeCatalog().sessions
-        let needsYou = try #require(sessions.sessionReport.modelCalls.first { $0.variant == .needsYou })
-        let clear = try #require(sessions.sessionReport.modelCalls.first { $0.variant == .needsYouClear })
-        let message = try #require(sessions.sessionMessage.modelCalls.first)
-
-        #expect(needsYou.scalarArguments.map(\.parameterField) == ["explanation"])
-        #expect(needsYou.scalarArguments.first?.isRequired == false)
-        #expect(clear.scalarArguments.isEmpty)
-        #expect(message.scalarArguments.map(\.parameterField) == ["text"])
-        #expect(message.scalarArguments.first?.isRequired == true)
+        let catalog = try makeCatalog()
+        let descriptor = try #require(catalog.erasedDescriptors.first { $0.metadata.name == "pane.message.send" })
+        guard case .object(let fields) = descriptor.metadata.parameterSchema else {
+            Issue.record("Expected message fields")
+            return
+        }
+        #expect(fields.first { $0.name == "body" }?.presence == .required)
+        #expect(fields.first { $0.name == "writer" }?.presence == .optional)
     }
 
-    @Test("offline eligibility covers needs-you done and message but never a clear or a hook event")
+    @Test("retained hook and query methods never queue")
     func offlineEligibilityMatchesSettledScope() throws {
         let sessions = try makeCatalog().sessions
 
-        #expect(sessions.sessionReport.offlineEligibility == .modelCallVariants([.needsYou, .done]))
-        #expect(sessions.sessionMessage.offlineEligibility == .modelCallVariants([.message]))
         #expect(sessions.sessionEvent.offlineEligibility == .never)
         #expect(sessions.sessionQuery.offlineEligibility == .never)
     }
@@ -101,15 +81,6 @@ struct IPCSessionMethodDescriptorTests {
     @Test("an omitted handle defaults to the authenticated self pane")
     func handleDefaultsToSelf() throws {
         let sessions = try makeCatalog().sessions
-        let correlationId = UUIDv7.generate()
-
-        let report = try sessions.sessionReport.decodeParameters(
-            from: encodedObject(["kind": "done", "correlationId": correlationId.uuidString])
-        )
-        #expect(report.handle == "self")
-        #expect(report.kind == .done)
-        #expect(report.explanation == nil)
-
         let query = try sessions.sessionQuery.decodeParameters(from: encodedObject([:]))
         #expect(query.handle == "self")
     }
@@ -128,19 +99,10 @@ struct IPCSessionMethodDescriptorTests {
         #expect(IPCSessionSchemaLimits.maximumQueryMessageCount == 20)
     }
 
-    @Test("an unknown report kind is rejected before any owner sees it")
+    @Test("a retired report cannot be looked up as a compiled method")
     func unknownReportKindIsRejected() throws {
-        let sessions = try makeCatalog().sessions
-
-        #expect(throws: IPCSchemaValidationError.self) {
-            try sessions.sessionReport.decodeParameters(
-                from: encodedObject([
-                    "handle": "self",
-                    "kind": "shipIt",
-                    "correlationId": UUIDv7.generate().uuidString,
-                ])
-            )
-        }
+        #expect(IPCBuiltInMethodIndex().entry(named: "session.report") == nil)
+        #expect(IPCBuiltInMethodIndex().entry(named: "session.message") == nil)
     }
 
     private static func sessionDescriptors(

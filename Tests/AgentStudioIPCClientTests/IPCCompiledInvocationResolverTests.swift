@@ -25,7 +25,7 @@ struct IPCCompiledInvocationResolverTests {
     func indexMetadataDoesNotConstructDescriptors() throws {
         let observation = ResolverFactoryObservation()
         let index = recordingIndex(observation)
-        #expect(index.entries.count == 55)
+        #expect(index.entries.count == 53)
         #expect(index.entry(named: "session.event")?.name == "session.event")
         #expect(observation.descriptorNames.isEmpty)
         #expect(observation.helpSchemaNames.isEmpty)
@@ -68,21 +68,22 @@ struct IPCCompiledInvocationResolverTests {
         #expect(observation.descriptorNames.isEmpty)
     }
 
-    @Test("longest model prefix selects only the real owning descriptor and authentication")
+    @Test("a waiting ask builds only its compiled owner and authentication")
     func modelAliasBuildsOnlyOwningMethodAndAuthentication() throws {
         let observation = ResolverFactoryObservation()
         let resolver = IPCCompiledInvocationResolver(index: recordingIndex(observation))
         let fixture = inputs
         let descriptors = try resolver.resolve(
-            arguments: ["needs-you", "--clear"], authenticated: true, inputs: fixture)
-        #expect(observation.descriptorNames.sorted() == ["auth.login", "session.report"])
-        let invocation = try IPCDescriptorInvocationParser.parse(
-            ["needs-you", "--clear"], descriptors: descriptors, correlationIDGenerator: { UUIDv7.generate() })
-        guard case .model(let projection) = invocation.presentation else {
-            Issue.record("The longest model prefix must retain model presentation")
+            arguments: ["ask", "Continue?", "--wait", "--timeout", "30"], authenticated: true, inputs: fixture)
+        #expect(observation.descriptorNames.sorted() == ["auth.login", "pane.message.ask"])
+        #expect(descriptors.map { $0.metadata.name }.sorted() == ["auth.login", "pane.message.ask"])
+        let intent = try PaneCLIIntent.parse(
+            ["ask", "Continue?", "--wait", "--timeout", "30"], now: Date(timeIntervalSince1970: 1))
+        guard case .ask(let draft) = intent else {
+            Issue.record("Expected a typed ask intent")
             return
         }
-        #expect(projection.variant == .needsYouClear)
+        #expect(draft.timeout == 30)
     }
 
     @Test("overview help retains names and summaries without descriptor or schema construction")

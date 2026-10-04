@@ -277,7 +277,7 @@ extension AppDelegate {
         guard paneCLIOutboxDrainTask == nil, let storeURL = appIPCPaths?.cliStoreURL else {
             return
         }
-        let lateAdmission = sessionsComposition.lateSessionsAdapter
+        let noticeAdmission = sessionsComposition.paneContextIPCAdapter
         let sqliteAccess = WorkspaceSessionsSQLiteAccess(datastore: datastore)
         let channel = cliStoreChannel
         let telemetry = AgentStudioIPCAgentAuthorizationTelemetry(performanceTraceRecorder: performanceTraceRecorder)
@@ -287,7 +287,7 @@ extension AppDelegate {
         paneCLIOutboxDrainTask = Task.detached(priority: .utility) {
             do {
                 let drain = try PaneCLIOutboxDrain(
-                    admission: lateAdmission, sqliteAccess: sqliteAccess,
+                    admission: noticeAdmission, sqliteAccess: sqliteAccess,
                     expectedChannel: channel,
                     refusalProbe: { reason in
                         telemetry.recordOfflineNoticeRefusal(reason: reason)

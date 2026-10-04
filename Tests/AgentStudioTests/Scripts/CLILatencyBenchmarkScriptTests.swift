@@ -10,17 +10,18 @@ struct CLILatencyBenchmarkScriptTests {
             .deletingLastPathComponent().deletingLastPathComponent()
     }
 
-    @Test("both notice families measure the owned-pane cleanup path under the hook-or-notice budget")
+    @Test("the replacement notice family measures the owned-pane cleanup path under the hook-or-notice budget")
     func noticeFamiliesAreMeasured() throws {
         let manifest = try object(Data(contentsOf: projectRoot.appending(path: "scripts/cli-latency-workloads.json")))
         let families = try #require(manifest["families"] as? [[String: Any]])
-        for name in ["message", "done"] {
+        #expect(!families.contains { $0["name"] as? String == "done" })
+        for name in ["notify"] {
             let family = try #require(
                 families.first { $0["name"] as? String == name }, "missing notice family: \(name)")
             #expect(family["budgetClass"] as? String == "hookOrNotice")
             #expect(family["fixtureRequirement"] as? String == "ownedPane")
             let arguments = try #require(family["argv"] as? [String])
-            let toolingMethod = name == "message" ? "session.message" : "session.report"
+            let toolingMethod = "pane.message.send"
             #expect(arguments.first == name || arguments.first == toolingMethod)
         }
     }
@@ -78,7 +79,7 @@ struct CLILatencyBenchmarkScriptTests {
         let output = try await runHarness(fixture)
         let report = try object(Data(contentsOf: fixture.outputURL.appendingPathComponent("report.json")))
         let families = try #require(report["families"] as? [[String: Any]])
-        #expect(families.count == 11)
+        #expect(families.count == 10)
         #expect(families.allSatisfy { $0["sampleCount"] as? Int == 50 })
         #expect(families.allSatisfy { $0["failedCalls"] as? Int == 0 })
         #expect(report["cleanup"] as? String == "closedOwnedPane")
@@ -88,11 +89,11 @@ struct CLILatencyBenchmarkScriptTests {
         #expect(report["verdict"] as? String == (allFamiliesPassed ? "PASS" : "FAIL"))
         #expect(output.terminationStatus == (allFamiliesPassed ? 0 : 1))
         let unmeasured = try #require(report["notMeasured"] as? [[String: Any]])
-        #expect(unmeasured.map { $0["family"] as? String } == ["line", "title", "notify"])
+        #expect(unmeasured.map { $0["family"] as? String } == ["line", "title"])
         #expect(unmeasured.allSatisfy { $0["verdict"] as? String == "NOT MEASURED" })
         let samples = try String(
             contentsOf: fixture.outputURL.appendingPathComponent("samples.jsonl"), encoding: .utf8)
-        #expect(samples.split(separator: "\n").count == 550)
+        #expect(samples.split(separator: "\n").count == 500)
         let saved = try String(contentsOf: fixture.outputURL.appendingPathComponent("report.json"), encoding: .utf8)
         let standardOutput = try #require(String(data: output.standardOutput, encoding: .utf8))
         for text in [saved, samples, standardOutput] {
@@ -105,7 +106,7 @@ struct CLILatencyBenchmarkScriptTests {
         #expect(calls.contains("hook SessionStart"))
         #expect(calls.contains("hook UserPromptSubmit"))
         #expect(calls.contains("pane.close"))
-        #expect(calls.split(separator: "\n").filter { $0 == "notice store=set" }.count == 102)
+        #expect(calls.split(separator: "\n").filter { $0 == "notice store=set" }.count == 51)
     }
 
     @Test("zero-exit fail-open hooks with diagnostics fail measurement and still close the owned pane")
@@ -201,7 +202,7 @@ private struct BenchmarkScriptFixture {
             my $method = $ARGV[0] // '';
             open my $calls, '>>', $ENV{BENCHMARK_TEST_RECORDS} or die "fixture records";
             print {$calls} $method eq 'hook' ? "hook $ARGV[2]\n" : "$method\n";
-            if ($method eq 'message' || $method eq 'done' || $method eq 'session.message' || $method eq 'session.report') {
+            if ($method eq 'notify' || $method eq 'pane.message.send') {
                 print {$calls} 'notice store=' . ($ENV{AGENTSTUDIO_CLI_STORE} ? 'set':'absent') . "\n";
             }
             close $calls;

@@ -39,7 +39,7 @@ enum IPCDescriptorCLIHelp {
                 "       agentstudio METHOD --help",
                 "       agentstudio help [--live]",
                 "Methods:",
-            ] + methods + [
+            ] + PaneCLIVerb.allCases.map { "  agentstudio \($0.usage)" } + methods + [
                 "Method help: agentstudio <method> --help",
                 "Live commands: agentstudio help --live",
                 "Use --json '{...}' or --stdin for a JSON parameter object.",
@@ -65,7 +65,8 @@ enum IPCDescriptorCLIHelp {
     private static func methodHelp(
         named name: String, index: IPCBuiltInMethodIndex, inputs: IPCBuiltInMethodCatalogInputs?
     ) throws -> String {
-        guard let entry = index.entry(named: name) else {
+        let verb = PaneCLIVerb(rawValue: name)
+        guard let entry = index.entry(named: verb?.methodName ?? name) else {
             if let projection = index.compositionHelp.first(where: { $0.name == name }) {
                 return try compositionMethodHelp(projection, inputs: inputs)
             }
@@ -75,6 +76,13 @@ enum IPCDescriptorCLIHelp {
             "\(entry.name) — \(entry.summary)",
             "Usage: agentstudio \(entry.name) [OPTIONS | --json '{...}' | --stdin]",
         ]
+        if let verb {
+            lines.insert("Usage: agentstudio \(verb.usage)", at: 0)
+            if verb == .ask {
+                lines.append("--wait defaults to 60 seconds; its transport limit is the timeout + 2 seconds.")
+            }
+            lines.append("Acts on handle: \"self\". Run it inside the owning pane.")
+        }
         if case .object(let fields) = try entry.parameterSchema(), !fields.isEmpty {
             lines.append("Parameters:")
             for field in fields {

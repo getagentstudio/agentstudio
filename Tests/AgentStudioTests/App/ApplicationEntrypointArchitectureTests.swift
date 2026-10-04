@@ -493,9 +493,9 @@ struct ApplicationEntrypointArchitectureTests {
         #expect(appDelegateSource.contains("var appIPCSessionsPaneContextComposition: SessionsPaneContextComposition?"))
         #expect(ipcBootSource.contains("sessionsPort: sessionsComposition.liveSessionsAdapter"))
         #expect(ipcBootSource.contains("paneContextPort: sessionsComposition.paneContextIPCAdapter"))
-        #expect(ipcBootSource.contains("let lateAdmission = sessionsComposition.lateSessionsAdapter"))
+        #expect(ipcBootSource.contains("let noticeAdmission = sessionsComposition.paneContextIPCAdapter"))
         #expect(ipcBootSource.contains("let drain = try PaneCLIOutboxDrain("))
-        #expect(ipcBootSource.contains("admission: lateAdmission, sqliteAccess: sqliteAccess,"))
+        #expect(ipcBootSource.contains("admission: noticeAdmission, sqliteAccess: sqliteAccess,"))
         let outboxJoin = try #require(ipcBootSource.range(of: "await outboxDrainTask?.value")?.lowerBound)
         let handlerJoin = try #require(ipcBootSource.range(of: "await server.joinConnectionHandlers()")?.lowerBound)
         let credentialDrain = try #require(

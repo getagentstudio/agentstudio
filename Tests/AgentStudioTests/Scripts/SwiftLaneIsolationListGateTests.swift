@@ -43,7 +43,15 @@ struct SwiftLaneIsolationListGateTests {
             "AppIPCErrorCorrectionTests",
             "AgentStudioAppIPCConnectionHandlerLifecycleTests",
         ]
-        #expect(aggregateSuiteNames == formerAggregateSuiteNames)
+        let deadlineDependentCLISuiteNames: Set<String> = [
+            "AppIPCCLILocalResolutionTests",
+            "AppIPCCLIRawCommandTests",
+            "AppIPCTerminalWaitClampTests",
+            "AppIPCCLIHelpAndExitTests",
+            "AppIPCCLICatalogDiscoverySkipTests",
+            "AppIPCCLIStoreReadThroughTests",
+        ]
+        #expect(aggregateSuiteNames == formerAggregateSuiteNames.union(deadlineDependentCLISuiteNames))
         #expect(explicitSuitePathPairs(in: largeFunction).isEmpty)
 
         for entry in aggregateEntries {
@@ -62,6 +70,7 @@ struct SwiftLaneIsolationListGateTests {
 
         let aggregateIsolatedSuiteNames = try await shellHelperLines("aggregate_serial_non_webkit_suite_filters")
         #expect(formerAggregateSuiteNames.isSubset(of: aggregateIsolatedSuiteNames))
+        #expect(deadlineDependentCLISuiteNames.isSubset(of: aggregateIsolatedSuiteNames))
 
         // These nine explicit large process-global suites moved from the old
         // hand-kept path list into the exact lane inventory in batch 2.

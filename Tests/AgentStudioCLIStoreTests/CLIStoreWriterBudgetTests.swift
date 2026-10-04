@@ -1,3 +1,4 @@
+import AgentStudioPrimitives
 import AgentStudioTestHarness
 import Foundation
 import GRDB
@@ -103,10 +104,81 @@ extension CLIStoreTests {
         #expect(observed.beforeNotice == 50)
         #expect(observed.afterNotice == 50)
         #expect(observed.afterOpenStatements.contains { $0.hasPrefix("INSERT INTO cli_outbox") })
-        #expect(!observed.afterOpenStatements.contains { $0.lowercased().hasPrefix("pragma busy_timeout =") })
+        let noticeTimeoutMutations = observed.afterOpenStatements.filter {
+            $0.lowercased().hasPrefix("pragma busy_timeout =")
+        }
+        switch callBudget {
+        case .belowCap, .aboveCap:
+            // Both remaining call budgets exceed the ordinary write cap.
+            #expect(noticeTimeoutMutations == ["PRAGMA busy_timeout = 50"])
+        case .noDeadline:
+            // With no original call budget, the configured ordinary cap remains in force.
+            #expect(noticeTimeoutMutations.isEmpty)
+        }
         switch observed.notice {
         case .notice(let notice):
             #expect(notice.id > 0)
+        }
+    }
+
+    @Test(
+        "append and purge clip the ordinary timeout to remaining budget and refuse exhaustion",
+        arguments: [17, 375, 0])
+    func noticeWritesClipRemainingBudget(remainingMilliseconds: Int) async throws {
+        let observed = try await valueFromDedicatedThread {
+            let fixture = try CLIStoreFileFixture()
+            defer { fixture.remove() }
+            let remaining = Mutex<Duration?>(.seconds(1))
+            let writer = try CLIStore.openWriter(
+                url: fixture.databaseURL, channel: .debug,
+                migrationLockWaitBudget: { remaining.withLock { $0 } }
+            ).get()
+            defer { try? writer.close() }
+            let original = try fixture.append(to: writer)
+            let trace = WriterBudgetTrace()
+            writer.databaseQueue.writeWithoutTransaction { database in
+                database.trace { event in
+                    guard case .statement(let statement) = event else { return }
+                    trace.recordStatement(statement.sql)
+                }
+            }
+            defer { writer.databaseQueue.writeWithoutTransaction { $0.trace(options: []) } }
+            remaining.withLock { $0 = .milliseconds(remainingMilliseconds) }
+            let appended = writer.appendNotice(
+                paneID: UUIDv7.generate(), messageID: UUIDv7.generate(),
+                payloadJSON: "budgeted append", createdAt: fixture.createdAt)
+            let purged = writer.purgeHandledOutbox(
+                expectedStoreID: writer.identity.storeID, through: original.id,
+                now: fixture.createdAt.addingTimeInterval(CLIStorePolicy.handledRetention + 1))
+            let appendFailure: CLIStoreFailure? = if case .failure(let failure) = appended { failure } else { nil }
+            let purgeFailure: CLIStoreFailure? = if case .failure(let failure) = purged { failure } else { nil }
+            let purgedCount: Int? = if case .success(let count) = purged { count } else { nil }
+            let entries = try writer.readOutbox(after: 0).get().entries
+            let timeoutMutations = trace.snapshot().statements.filter {
+                $0.lowercased().hasPrefix("pragma busy_timeout =")
+            }
+            return (
+                appendFailure: appendFailure, purgeFailure: purgeFailure, purgedCount: purgedCount,
+                timeoutMutations: timeoutMutations, entries: entries, original: original
+            )
+        }
+        if remainingMilliseconds == 0 {
+            #expect(observed.appendFailure == .busy(extendedResultCode: nil, stage: .append))
+            #expect(observed.purgeFailure == .busy(extendedResultCode: nil, stage: .purge))
+            #expect(observed.timeoutMutations.isEmpty)
+            #expect(observed.purgedCount == nil)
+            #expect(observed.entries == [observed.original])
+        } else {
+            let expectedMilliseconds = min(50, remainingMilliseconds)
+            #expect(observed.appendFailure == nil)
+            #expect(observed.purgeFailure == nil)
+            #expect(
+                observed.timeoutMutations == [
+                    "PRAGMA busy_timeout = \(expectedMilliseconds)", "PRAGMA busy_timeout = \(expectedMilliseconds)",
+                ])
+            #expect(observed.purgedCount == 1)
+            #expect(observed.entries.count == 1)
+            #expect(!observed.entries.contains(observed.original))
         }
     }
 }

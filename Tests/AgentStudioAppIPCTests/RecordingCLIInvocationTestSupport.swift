@@ -150,36 +150,38 @@ private func pumpRecordingRequests(
     to destination: UnixSocketConnection,
     recorder: CLIRequestRecorder
 ) -> Task<Void, Never> {
-    Task {
-        await valueFromDedicatedThread {
-            var decoder = NDJSONFrameDecoder(maxFrameBytes: IPCFramePolicy.maximumRequestFrameBytes)
-            while true {
-                guard let data = try? source.receive(maxBytes: 16_384), !data.isEmpty else { break }
-                if let frames = try? decoder.append(data) {
-                    for frame in frames {
-                        if let request = try? JSONRPCCodec.decodeRequest(frame) {
-                            recorder.record(request)
-                        }
+    let completion = DedicatedThreadCompletion()
+    Thread.detachNewThread {
+        defer { completion.finish() }
+        var decoder = NDJSONFrameDecoder(maxFrameBytes: IPCFramePolicy.maximumRequestFrameBytes)
+        while true {
+            guard let data = try? source.receive(maxBytes: 16_384), !data.isEmpty else { break }
+            if let frames = try? decoder.append(data) {
+                for frame in frames {
+                    if let request = try? JSONRPCCodec.decodeRequest(frame) {
+                        recorder.record(request)
                     }
                 }
-                guard (try? destination.send(data)) != nil else { break }
             }
-            destination.close()
+            guard (try? destination.send(data)) != nil else { break }
         }
+        destination.close()
     }
+    return Task { await completion.wait() }
 }
 
 private func pumpResponses(from source: UnixSocketConnection, to destination: UnixSocketConnection) -> Task<Void, Never>
 {
-    Task {
-        await valueFromDedicatedThread {
-            while true {
-                guard let data = try? source.receive(maxBytes: 16_384), !data.isEmpty else { break }
-                guard (try? destination.send(data)) != nil else { break }
-            }
-            destination.close()
+    let completion = DedicatedThreadCompletion()
+    Thread.detachNewThread {
+        defer { completion.finish() }
+        while true {
+            guard let data = try? source.receive(maxBytes: 16_384), !data.isEmpty else { break }
+            guard (try? destination.send(data)) != nil else { break }
         }
+        destination.close()
     }
+    return Task { await completion.wait() }
 }
 
 /// Owns both directions until their blocking reads have actually returned.

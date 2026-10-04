@@ -26,6 +26,7 @@ final class PaneContextIPCDomainCompanion: Sendable {
     let access: HeldPaneContextIPCSQLiteAccess
     let service: PaneContextService
     let ingestion: SessionsIngestion
+    let sessionsSQLiteAccess: WorkspaceSessionsSQLiteAccess
     let sessionsBridge = PaneContextSessionsBridge()
     let facts: LocalFactSource<UUID, PaneContextIPCDomainFact>
 
@@ -56,8 +57,9 @@ final class PaneContextIPCDomainCompanion: Sendable {
             preparedApplicationLocalRepository: WorkspaceLocalRepository(
                 workspaceId: UUIDv7.generate(), databaseWriter: localPool))
         access = HeldPaneContextIPCSQLiteAccess(base: WorkspacePaneContextSQLiteAccess(datastore: datastore))
+        sessionsSQLiteAccess = WorkspaceSessionsSQLiteAccess(datastore: datastore)
         ingestion = SessionsIngestion(
-            repository: SessionsRepository(sqliteAccess: WorkspaceSessionsSQLiteAccess(datastore: datastore)),
+            repository: SessionsRepository(sqliteAccess: sessionsSQLiteAccess),
             limits: SessionsIngestionLimits(maximumPendingPerPane: 32, maximumPendingGlobal: 128),
             probe: { _ in }, openAskSource: sessionsBridge)
         time = PaneContextIPCTestTime(clock: clock)

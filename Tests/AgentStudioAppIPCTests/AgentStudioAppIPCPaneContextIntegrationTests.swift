@@ -2,6 +2,7 @@ import AgentStudioAppIPC
 import AgentStudioIPCTransport
 import AgentStudioInfrastructure
 import AgentStudioProgrammaticControl
+import AgentStudioSessions
 import AgentStudioTestHarness
 import AgentStudioTestSupport
 import Foundation
@@ -214,6 +215,9 @@ struct AgentStudioAppIPCPaneContextIntegrationTests {
     @Test("Notice send replay, conflict, attribution and withdrawal use the production path")
     func noticeIdentityAndWithdrawal() async throws {
         try await withPaneContextIPCDomain { domain in
+            let unbound = try await domain.ingestion.snapshot(
+                .pane(domain.paneId, page: SessionsSnapshotPage(limit: 20, after: nil)))
+            #expect(unbound.currentBinding == nil)
             try await withLiveServer(
                 makeFixture: {
                     try LiveServerFixture(
@@ -274,6 +278,9 @@ struct AgentStudioAppIPCPaneContextIntegrationTests {
                     #expect(detail.messages.first?.sender == .pane(paneId: domain.paneId))
                     #expect(detail.messages.first?.body == sent.body)
                     #expect(detail.messages.first?.shape == .notice(state: .unread))
+                    let stillUnbound = try await domain.ingestion.snapshot(
+                        .pane(domain.paneId, page: SessionsSnapshotPage(limit: 20, after: nil)))
+                    #expect(stillUnbound.currentBinding == nil)
                     let withdraw = IPCPaneMessageWithdrawParams(
                         handle: "self", messageId: messageId, correlationId: UUIDv7.generate())
                     try await sendRequestWithoutBlockingCooperativePool(

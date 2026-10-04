@@ -5,13 +5,13 @@ import Testing
 
 @Suite("IPC built-in typed method catalog")
 struct IPCBuiltInMethodCatalogTests {
-    @Test("catalog exposes exactly 55 unique static methods in name order")
+    @Test("catalog exposes exactly 53 unique static methods in name order")
     func catalogHasExactStaticSurface() throws {
         let catalog = try makeCatalog(waitMaximum: 9)
         let names = catalog.erasedDescriptors.map(\.metadata.name)
 
         #expect(names == expectedStaticMethodNames)
-        #expect(Set(names).count == 55)
+        #expect(Set(names).count == 53)
         #expect(names == names.sorted())
     }
 
@@ -106,14 +106,14 @@ struct IPCBuiltInMethodCatalogTests {
         let catalog = try makeCatalog(waitMaximum: 9)
         let byName = Dictionary(uniqueKeysWithValues: catalog.erasedDescriptors.map { ($0.metadata.name, $0) })
         let drawerAddPane = try #require(byName["drawer.addPane"])
-        let sessionReport = try #require(byName["session.report"])
+        let sessionEvent = try #require(byName["session.event"])
 
         let eligibleFields = try encodedFields(drawerAddPane.metadata)
-        let establishedFields = try encodedFields(sessionReport.metadata)
+        let establishedFields = try encodedFields(sessionEvent.metadata)
 
         #expect(eligibleFields["agentEligibility"] as? String == "ownPane")
         #expect(establishedFields["agentEligibility"] == nil)
-        for descriptor in [drawerAddPane, sessionReport] {
+        for descriptor in [drawerAddPane, sessionEvent] {
             let decoded = try descriptor.catalogEntrySchema.decode(
                 IPCMethodCatalogEntry.self, from: JSONEncoder().encode(descriptor.metadata))
             #expect(decoded.agentEligibility == descriptor.metadata.agentEligibility)
@@ -342,9 +342,7 @@ struct IPCBuiltInMethodCatalogTests {
             "pane.title.set",
             "pane.writer.claimEpoch",
             "session.event",
-            "session.message",
             "session.query",
-            "session.report",
             "system.identify",
             "system.ping",
             "system.version",
@@ -374,7 +372,7 @@ struct IPCBuiltInMethodCatalogTests {
         ]
         let established: [String] = [
             "auth.login", "auth.status", "events.subscribe", "events.unsubscribe",
-            "session.event", "session.message", "session.query", "session.report",
+            "session.event", "session.query",
         ]
         var inventory: [String: IPCAgentEligibility?] = [:]
         for name in expectedStaticMethodNames { inventory[name] = .some(.notYetAllowed) }
@@ -413,8 +411,6 @@ struct IPCBuiltInMethodCatalogTests {
             "pane.title.set",
             "pane.writer.claimEpoch",
             "session.event",
-            "session.message",
-            "session.report",
             "terminal.send",
             "ui.arrangements.open",
             "ui.commandBar.open",
@@ -460,9 +456,7 @@ struct IPCBuiltInMethodCatalogTests {
             "pane.title.set",
             "pane.writer.claimEpoch",
             "session.event",
-            "session.message",
             "session.query",
-            "session.report",
             "sidebar.grouping.get",
             "sidebar.surface.get",
             "system.identify",

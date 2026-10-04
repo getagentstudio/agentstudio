@@ -77,7 +77,7 @@ struct IPCSystemCapabilitiesCompositionTests {
         let names = composition.result.methods.map(\.name)
 
         #expect(names == names.sorted())
-        #expect(names.count == 56)
+        #expect(names.count == 54)
         #expect(names.filter { $0 == "system.capabilities" }.count == 1)
         #expect(composition.erasedDescriptor.metadata.name == "system.capabilities")
         _ = try composition.descriptor.encodeResult(composition.result)

@@ -82,7 +82,12 @@ package struct IPCDescriptorInvocationError: Error, Equatable, Sendable,
             return first.distance < second.distance
         }
         let nearestMethods: ArraySlice<(methodName: String, distance: Int)> = sortedMethods.prefix(3)
-        let closestNames: [String] = nearestMethods.map { $0.methodName }
+        let closestNames: [String]
+        switch name {
+        case "session.message": closestNames = ["pane.message.send", "pane.message.ask", "pane.context.get"]
+        case "session.report": closestNames = ["pane.message.ask", "pane.message.withdraw", "pane.line.set"]
+        default: closestNames = nearestMethods.map { $0.methodName }
+        }
         return Self(
             reason: .unknownMethod, fieldPath: "$.method",
             expected: "a compiled method or model invocation; see agentstudio help; closest methods: "
