@@ -323,3 +323,52 @@ struct WatchedFolderScanSchedulerValidationTests {
         try await fixture.facts.finish()
     }
 }
+
+actor ControlledSchedulerValidationClient: RepoDiscoveryReadClient {
+    private struct PendingValidation {
+        let candidateURL: URL
+        let continuation: CheckedContinuation<GitRepositoryDiscoveryOutcome, Never>
+    }
+
+    private var terminalOutcome: GitRepositoryDiscoveryOutcome?
+    private var pendingValidations: [PendingValidation] = []
+    private var bufferedCandidates: [URL] = []
+    private var candidateWaiters: [CheckedContinuation<URL, Never>] = []
+
+    var pendingValidationCount: Int { pendingValidations.count }
+
+    func validateDiscoveryCandidate(at candidateURL: URL) async -> GitRepositoryDiscoveryOutcome {
+        if let terminalOutcome { return terminalOutcome }
+        return await withCheckedContinuation { continuation in
+            pendingValidations.append(
+                PendingValidation(candidateURL: candidateURL, continuation: continuation)
+            )
+            if candidateWaiters.isEmpty {
+                bufferedCandidates.append(candidateURL)
+            } else {
+                candidateWaiters.removeFirst().resume(returning: candidateURL)
+            }
+        }
+    }
+
+    func completePendingAndStop() {
+        terminalOutcome = .cancelled
+        let pending = pendingValidations
+        pendingValidations.removeAll()
+        for validation in pending { validation.continuation.resume(returning: .cancelled) }
+    }
+
+    func nextCandidate() async -> URL {
+        if !bufferedCandidates.isEmpty { return bufferedCandidates.removeFirst() }
+        return await withCheckedContinuation { candidateWaiters.append($0) }
+    }
+
+    func complete(_ candidateURL: URL, with outcome: GitRepositoryDiscoveryOutcome) {
+        guard let index = pendingValidations.firstIndex(where: { $0.candidateURL == candidateURL })
+        else {
+            Issue.record("expected pending validation for candidate")
+            return
+        }
+        pendingValidations.remove(at: index).continuation.resume(returning: outcome)
+    }
+}
