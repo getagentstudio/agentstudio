@@ -85,18 +85,35 @@ struct IPCSessionMethodDescriptorTests {
         #expect(query.handle == "self")
     }
 
-    @Test("a query page never advertises more than the newest twenty messages")
-    func queryPageStaysBounded() throws {
+    @Test("query exposes exactly the shared status summary and a required nullable session")
+    func queryHasOneSummaryShape() throws {
         let sessions = try makeCatalog().sessions
-        let document = try #require(
-            JSONSerialization.jsonObject(
-                with: sessions.sessionQuery.contract.resultSchema.jsonSchemaData()
-            ) as? [String: Any]
-        )
+        let decoded = try JSONSerialization.jsonObject(
+            with: sessions.sessionQuery.contract.resultSchema.jsonSchemaData())
+        let document = try #require(decoded as? [String: Any])
         let properties = try #require(document["properties"] as? [String: [String: Any]])
-
-        #expect(properties["messages"]?["maxItems"] as? Int == 20)
-        #expect(IPCSessionSchemaLimits.maximumQueryMessageCount == 20)
+        #expect(Set(properties.keys) == ["paneId", "sourceHealth", "session"])
+        let required = try #require(document["required"] as? [String])
+        #expect(Set(required) == ["paneId", "sourceHealth", "session"])
+        let result = IPCSessionQueryResult(paneId: UUIDv7.generate(), sourceHealth: .unbound, session: nil)
+        let encoded = try JSONEncoder().encode(result)
+        let object = try JSONSerialization.jsonObject(with: encoded)
+        let fields = try #require(object as? [String: Any])
+        #expect(fields["session"] is NSNull)
+        let roundtrip = try JSONDecoder().decode(IPCSessionQueryResult.self, from: encoded)
+        #expect(roundtrip == result)
+        var missing = fields
+        missing.removeValue(forKey: "session")
+        let missingData = try JSONSerialization.data(withJSONObject: missing)
+        #expect(throws: DecodingError.self) {
+            try JSONDecoder().decode(IPCSessionQueryResult.self, from: missingData)
+        }
+        var contradictory = fields
+        contradictory["sourceHealth"] = "live"
+        let contradictoryData = try JSONSerialization.data(withJSONObject: contradictory)
+        #expect(throws: DecodingError.self) {
+            try JSONDecoder().decode(IPCSessionQueryResult.self, from: contradictoryData)
+        }
     }
 
     @Test("a retired report cannot be looked up as a compiled method")

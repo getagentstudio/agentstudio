@@ -39,7 +39,7 @@ struct AgentStudioIPCCodexHookVerticalTests {
         #expect(bind.disposition == .admitted)
         let bound = try await harness.sessionQuery(paneId: harness.boundPaneId)
         #expect(bound.sourceHealth == .live)
-        #expect(bound.state == .unknown)
+        #expect(bound.session?.status == .unknown)
 
         // Act — the user's prompt starts a turn.
         let turnStart = try await harness.sessionEvent(
@@ -49,19 +49,19 @@ struct AgentStudioIPCCodexHookVerticalTests {
         // Assert
         #expect(turnStart.disposition == .admitted)
         let running = try await harness.sessionQuery(paneId: harness.boundPaneId)
-        #expect(running.state == .running)
-        #expect(running.origin == .reported)
+        #expect(running.session?.status == .working(state: .active))
+        #expect(running.sourceHealth == .live)
 
         // Act — Codex asks the user to approve a tool call.
         let permissionParams = try CodexHookVerticalFixtures.params(
             event: .permissionRequest, paneId: harness.boundPaneId, identity: identity)
         let permission = try await harness.sessionEvent(params: permissionParams)
 
-        // Assert — the derived request identity is what the query reports back.
+        // Assert — the qualified permission opens one approval prompt.
         #expect(permission.disposition == .admitted)
         let waiting = try await harness.sessionQuery(paneId: harness.boundPaneId)
-        #expect(waiting.state == .needsYou)
-        #expect(waiting.needsYou?.requestId == permissionParams.event.requestId)
+        #expect(waiting.session?.status == .needsYou(reason: .approval))
+        #expect(waiting.session?.providerPrompts.count == 1)
 
         // Act — the session ends.
         let ended = try await harness.sessionEvent(
@@ -116,9 +116,9 @@ struct AgentStudioIPCCodexHookVerticalTests {
         // Assert
         #expect(stop.disposition == .admitted)
         let finished = try await harness.sessionQuery(paneId: harness.boundPaneId)
-        #expect(finished.state == .done)
-        #expect(finished.origin == .reported)
-        #expect(finished.needsYou == nil)
+        #expect(finished.session?.status == .idle(state: .done))
+        #expect(finished.sourceHealth == .live)
+        #expect(finished.session?.providerPrompts.isEmpty == true)
     }
 
     @Test("a tool event and a subagent event are admitted against the shipped profile")

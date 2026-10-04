@@ -380,7 +380,7 @@ struct SessionsIngestionTests {
 
             let snapshot = try await ingestion.snapshot(makeSessionsSnapshotQuery(paneId: paneId))
             #expect(snapshot.currentBinding == bindingB)
-            #expect(snapshot.state == .unknown)
+            #expect(try await ingestion.sessionSummary(paneId: paneId)?.status == .unknown)
             #expect(snapshot.historicalOccurrenceIds.contains(delayedAOccurrenceId))
         }
     }
@@ -421,7 +421,7 @@ struct SessionsIngestionTests {
                 makeSessionsSnapshotQuery(paneId: paneId)
             )
             #expect(endedSnapshot.currentBinding?.status == .ended)
-            #expect(endedSnapshot.state == .unknown)
+            #expect(try await firstIngestion.sessionSummary(paneId: paneId)?.status == .idle(.ended))
             return firstBinding
         }
 
@@ -452,101 +452,4 @@ struct SessionsIngestionTests {
         }
     }
 
-    @Test("deliberate needs-you and done coalesce and clear by bound context")
-    func deliberateReportCoalescingAndMatchingClear() async throws {
-        let fixture = try SessionsDatabaseFixture()
-        try await withSessionsIngestion(repository: fixture.makeRepository()) { ingestion in
-            let paneId = UUIDv7.generate()
-            _ = try await ingestion.submit(
-                correlationId: UUIDv7.generate(),
-                mutation: .bind(
-                    makeQualifiedBindMutation(
-                        paneId: paneId,
-                        providerConversationId: "conversation-deliberate",
-                        sourceGenerationId: UUIDv7.generate(),
-                        reportedAt: 1
-                    )
-                )
-            )
-            let firstNeedsYou = try await ingestion.submit(
-                correlationId: UUIDv7.generate(),
-                mutation: .deliberateNeedsYou(
-                    SessionsDeliberateNeedsYouMutation(
-                        paneId: paneId,
-                        explanation: "Need the target branch",
-                        reportedAt: Date(timeIntervalSince1970: 2)
-                    )
-                )
-            )
-            guard case .attentionRecorded(let requestId, let firstOccurrenceId) = firstNeedsYou else {
-                Issue.record("Expected deliberate attention, got \(firstNeedsYou)")
-                return
-            }
-            let updatedNeedsYou = try await ingestion.submit(
-                correlationId: UUIDv7.generate(),
-                mutation: .deliberateNeedsYou(
-                    SessionsDeliberateNeedsYouMutation(
-                        paneId: paneId,
-                        explanation: "Need the exact target branch",
-                        reportedAt: Date(timeIntervalSince1970: 3)
-                    )
-                )
-            )
-            guard case .attentionRecorded(let updatedRequestId, let updatedOccurrenceId) = updatedNeedsYou
-            else {
-                Issue.record("Expected updated deliberate attention, got \(updatedNeedsYou)")
-                return
-            }
-            #expect(updatedRequestId == requestId)
-            #expect(updatedOccurrenceId != firstOccurrenceId)
-            let needsYouSnapshot = try await ingestion.snapshot(makeSessionsSnapshotQuery(paneId: paneId))
-            #expect(needsYouSnapshot.state == .needsYou)
-            #expect(needsYouSnapshot.currentAttention.count == 1)
-            #expect(needsYouSnapshot.currentAttention.first?.requestId == requestId)
-            #expect(needsYouSnapshot.currentAttention.first?.explanation == "Need the exact target branch")
-
-            let clearOutcome = try await ingestion.submit(
-                correlationId: UUIDv7.generate(),
-                mutation: .clearDeliberateNeedsYou(
-                    SessionsClearDeliberateNeedsYouMutation(
-                        paneId: paneId,
-                        clearedAt: Date(timeIntervalSince1970: 4)
-                    )
-                )
-            )
-            #expect(clearOutcome == .attentionCleared(requestId: requestId))
-            let firstDone = try await ingestion.submit(
-                correlationId: UUIDv7.generate(),
-                mutation: .deliberateDone(
-                    SessionsDeliberateDoneMutation(
-                        paneId: paneId,
-                        reportedAt: Date(timeIntervalSince1970: 5)
-                    )
-                )
-            )
-            let repeatedDone = try await ingestion.submit(
-                correlationId: UUIDv7.generate(),
-                mutation: .deliberateDone(
-                    SessionsDeliberateDoneMutation(
-                        paneId: paneId,
-                        reportedAt: Date(timeIntervalSince1970: 6)
-                    )
-                )
-            )
-            guard case .resultRecorded(let resultId, _) = firstDone,
-                case .resultRecorded(let repeatedResultId, _) = repeatedDone
-            else {
-                Issue.record("Expected deliberate completion results")
-                return
-            }
-            #expect(repeatedResultId == resultId)
-
-            let completedSnapshot = try await ingestion.snapshot(makeSessionsSnapshotQuery(paneId: paneId))
-            #expect(completedSnapshot.currentAttention.isEmpty)
-            #expect(completedSnapshot.state == .done)
-            #expect(completedSnapshot.stateOrigin == .agentReported)
-            #expect(completedSnapshot.results.count == 1)
-            #expect(completedSnapshot.results.first?.id == resultId)
-        }
-    }
 }

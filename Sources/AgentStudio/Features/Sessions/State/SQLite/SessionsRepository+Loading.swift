@@ -44,7 +44,6 @@ extension SessionsRepositoryStorage {
                 bindings: bindings,
                 sources: try loadSources(database: database, paneId: paneId),
                 evidence: try loadEvidence(database: database, paneId: paneId),
-                messages: [],
                 attention: try loadAttention(database: database, paneId: paneId),
                 results: try loadResults(database: database, paneId: paneId)
             )
@@ -57,21 +56,8 @@ extension SessionsRepositoryStorage {
                 bindings: bindings,
                 sources: try loadSources(database: database, paneId: paneId),
                 evidence: try loadEvidence(database: database, paneId: paneId),
-                messages: [],
                 attention: try loadAttention(database: database, paneId: paneId),
                 results: try loadResults(database: database, paneId: paneId)
-            )
-        case .message(let occurrenceId):
-            return SessionsRepositoryContext(
-                revision: revision,
-                matchingConversation: nil,
-                currentBinding: nil,
-                bindings: [],
-                sources: [],
-                evidence: [],
-                messages: try loadMessage(database: database, occurrenceId: occurrenceId).map { [$0] } ?? [],
-                attention: [],
-                results: []
             )
         case .allActiveSources:
             let bindings = try loadActiveBindings(database: database)
@@ -82,7 +68,6 @@ extension SessionsRepositoryStorage {
                 bindings: bindings,
                 sources: try loadActiveSources(database: database),
                 evidence: [],
-                messages: [],
                 attention: try loadActiveAttention(database: database),
                 results: []
             )
@@ -90,88 +75,43 @@ extension SessionsRepositoryStorage {
     }
 
     static func loadSnapshot(database: Database, query: SessionsSnapshotQuery) throws -> SessionsSnapshot {
+        let paneId: UUID
         switch query {
-        case .unattributed(let page):
-            let revision =
-                try Int64.fetchOne(
-                    database,
-                    sql: "SELECT MAX(commit_revision) FROM sessions_operation"
-                ) ?? 0
-            let messagePage = try loadMessagePage(
-                database: database,
-                paneId: nil,
-                unattributedOnly: true,
-                page: page,
-                snapshotRevision: revision
-            )
-            return SessionsSnapshot(
-                revision: revision,
-                currentBinding: nil,
-                state: .unknown,
-                stateOrigin: nil,
-                messages: messagePage.messages,
-                currentAttention: [],
-                staleAttention: [],
-                results: [],
-                historicalOccurrenceIds: [],
-                losses: [],
-                nextCursor: messagePage.nextCursor
-            )
-        case .pane(let paneId, let page):
-            let context = try loadContext(database: database, query: .pane(paneId))
-            let messagePage = try loadMessagePage(
-                database: database,
-                paneId: paneId,
-                unattributedOnly: false,
-                page: page,
-                snapshotRevision: context.revision
-            )
-            guard let binding = context.currentBinding else {
-                return SessionsSnapshot(
-                    revision: context.revision,
-                    currentBinding: nil,
-                    state: .unknown,
-                    stateOrigin: nil,
-                    messages: messagePage.messages,
-                    currentAttention: [],
-                    staleAttention: [],
-                    results: context.results,
-                    historicalOccurrenceIds: context.evidence.filter { $0.freshness != .live }.map(\.occurrenceId),
-                    losses: try loadLosses(database: database, paneId: paneId),
-                    nextCursor: messagePage.nextCursor
-                )
-            }
-            let endedSources = Set(context.sources.filter { $0.status != .active }.map(\.sourceGenerationId))
-            let activeSources = Set(context.sources.filter { $0.status == .active }.map(\.sourceGenerationId))
-            let currentTurnId = SessionsEvidenceReducer.currentTurnId(
-                evidence: context.evidence,
-                bindingGenerationId: binding.bindingGenerationId,
-                activeSourceGenerationIds: activeSources
-            )
-            let projection = SessionsEvidenceReducer.reduce(
-                SessionsReductionInput(
-                    conversationId: binding.conversationId,
-                    bindingGenerationId: binding.bindingGenerationId,
-                    currentTurnId: currentTurnId,
-                    evidence: context.evidence,
-                    endedSourceGenerationIds: endedSources
-                )
-            )
-            return SessionsSnapshot(
-                revision: context.revision,
-                currentBinding: binding,
-                state: projection.state,
-                stateOrigin: projection.stateOrigin,
-                messages: messagePage.messages,
-                currentAttention: projection.currentAttention,
-                staleAttention: projection.staleAttention,
-                results: context.results,
-                historicalOccurrenceIds: projection.historicalOccurrenceIds,
-                losses: try loadLosses(database: database, paneId: paneId),
-                nextCursor: messagePage.nextCursor
-            )
+        case .pane(let identifier): paneId = identifier
         }
+        let context = try loadContext(database: database, query: .pane(paneId))
+        let historicalEvidence: [SessionsEvidenceRecord]
+        if let binding = context.currentBinding {
+            let activeSources = Set(context.sources.filter { $0.status == .active }.map(\.sourceGenerationId))
+            let endedSources = Set(context.sources.filter { $0.status != .active }.map(\.sourceGenerationId))
+            let currentTurnId = SessionsEvidenceReducer.currentTurnId(
+                evidence: context.evidence, bindingGenerationId: binding.bindingGenerationId,
+                activeSourceGenerationIds: activeSources)
+            historicalEvidence = context.evidence.sorted(by: SessionsEvidenceReducer.evidenceOrder).filter {
+                $0.conversationId != binding.conversationId
+                    || $0.bindingGenerationId != binding.bindingGenerationId
+                    || $0.freshness != .live
+                    || endedSources.contains($0.sourceGenerationId)
+                    || (currentTurnId != nil && $0.turnId != currentTurnId)
+            }
+        } else {
+            historicalEvidence = context.evidence.filter { $0.freshness != .live }
+        }
+        return SessionsSnapshot(
+            revision: context.revision, currentBinding: context.currentBinding,
+            staleAttention: context.attention.filter { $0.disposition == .stale }.map { attention in
+                SessionsAttentionProjection(
+                    id: attention.id, requestId: attention.requestId, explanation: attention.explanation,
+                    sourceGenerationId: attention.sourceGenerationId, turnId: attention.turnId,
+                    subject: attention.subject, origin: attention.origin, freshness: attention.freshness,
+                    disposition: attention.disposition, openedOccurrenceId: attention.openedOccurrenceId,
+                    openedAt: attention.openedAt)
+            },
+            results: context.results,
+            historicalOccurrenceIds: historicalEvidence.map(\.occurrenceId),
+            losses: try loadLosses(database: database, paneId: paneId))
     }
+
 }
 
 extension SessionsRepositoryStorage {
@@ -275,79 +215,6 @@ extension SessionsRepositoryStorage {
                 """,
             arguments: [paneId.uuidString]
         ).map { try decodeEvidence($0, database: database) }
-    }
-
-    fileprivate struct LoadedMessagePage {
-        let messages: [SessionsMessageRecord]
-        let nextCursor: SessionsSnapshotCursor?
-    }
-
-    fileprivate static func loadMessagePage(
-        database: Database,
-        paneId: UUID?,
-        unattributedOnly: Bool,
-        page: SessionsSnapshotPage,
-        snapshotRevision: Int64
-    ) throws -> LoadedMessagePage {
-        guard page.limit > 0 else { throw SessionsRepositoryError.invalidPageLimit(page.limit) }
-        var conditions: [String] = []
-        var arguments: [any DatabaseValueConvertible] = []
-        if unattributedOnly {
-            conditions.append("attribution = 'unattributed'")
-        } else if let paneId {
-            conditions.append("pane_id = ?")
-            arguments.append(paneId.uuidString)
-        } else {
-            return LoadedMessagePage(messages: [], nextCursor: nil)
-        }
-        if let after = page.after {
-            guard after.snapshotRevision == snapshotRevision else {
-                throw SessionsRepositoryError.staleSnapshotCursor(
-                    expectedRevision: after.snapshotRevision,
-                    actualRevision: snapshotRevision
-                )
-            }
-            conditions.append(
-                "(committed_revision > ? OR (committed_revision = ? AND occurrence_id > ?))"
-            )
-            arguments.append(after.commitRevision)
-            arguments.append(after.commitRevision)
-            arguments.append(after.occurrenceId.uuidString)
-        }
-        arguments.append(page.limit + 1)
-        let rows = try Row.fetchAll(
-            database,
-            sql: """
-                SELECT * FROM sessions_message
-                WHERE \(conditions.joined(separator: " AND "))
-                ORDER BY committed_revision, occurrence_id
-                LIMIT ?
-                """,
-            arguments: StatementArguments(arguments)
-        )
-        let retainedRows = Array(rows.prefix(page.limit))
-        let nextCursor: SessionsSnapshotCursor?
-        if rows.count > page.limit, let lastRow = retainedRows.last {
-            nextCursor = SessionsSnapshotCursor(
-                snapshotRevision: snapshotRevision,
-                commitRevision: lastRow["committed_revision"],
-                occurrenceId: try decodeUuid(lastRow["occurrence_id"])
-            )
-        } else {
-            nextCursor = nil
-        }
-        return LoadedMessagePage(
-            messages: try retainedRows.map(decodeMessage),
-            nextCursor: nextCursor
-        )
-    }
-
-    fileprivate static func loadMessage(database: Database, occurrenceId: UUID) throws -> SessionsMessageRecord? {
-        try Row.fetchOne(
-            database,
-            sql: "SELECT * FROM sessions_message WHERE occurrence_id = ?",
-            arguments: [occurrenceId.uuidString]
-        ).map(decodeMessage)
     }
 
     fileprivate static func loadAttention(database: Database, paneId: UUID) throws -> [SessionsStoredAttentionRecord] {

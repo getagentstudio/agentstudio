@@ -103,6 +103,82 @@ struct ClaudeCodePackageInstallerTests {
         #expect(FileManager.default.isReadableFile(atPath: marker.path))
     }
 
+    @Test("every installed Claude lifecycle and report-only permission hook is async with its existing timeout")
+    func ownedHooksAreAsync() throws {
+        let fixture = try ClaudeCodePackageFixture.make()
+        defer { fixture.tearDown() }
+        try fixture.installation.install(notice: { _ in })
+        for event in ClaudeCodeHookEvent.allCases {
+            let groups = try fixture.hookGroups(for: event.rawValue)
+            let fields = try #require(Self.ownedHandler(groups))
+            #expect(fields["async"] == .bool(true))
+            #expect(fields["timeout"] == .number(ClaudeCodePackageInstallation.hookTimeoutSeconds))
+        }
+    }
+
+    @Test("reinstall upgrades old synchronous owned Claude hooks and leaves the user's own entries untouched")
+    func reinstallUpgradesOwnedHooksToAsync() throws {
+        let fixture = try ClaudeCodePackageFixture.make()
+        defer { fixture.tearDown() }
+        let userHook = JSONValue.object([
+            "matcher": .string("Bash"),
+            "hooks": .array([
+                .object([
+                    "type": .string("command"), "command": .string("/usr/local/bin/user-hook"),
+                    "async": .bool(false), "timeout": .number(42), "userNote": .string("Keep my hook"),
+                ])
+            ]),
+        ])
+        var events: [String: JSONValue] = [:]
+        for event in ClaudeCodeHookEvent.allCases {
+            let oldOwned = JSONValue.object([
+                "hooks": .array([
+                    .object([
+                        "type": .string("command"),
+                        "command": .string("\(fixture.installation.hookScriptURL.path) \(event.rawValue) 2.1.274"),
+                        "timeout": .number(ClaudeCodePackageInstallation.hookTimeoutSeconds),
+                    ])
+                ])
+            ])
+            events[event.rawValue] = .array([userHook, oldOwned])
+        }
+        try fixture.writeSettings(.object(["model": .string("user-model"), "hooks": .object(events)]))
+        var notices: [String] = []
+        try fixture.installation.install(notice: { notices.append($0) })
+        let expectedNotices = Set(
+            ClaudeCodeHookEvent.allCases.map {
+                "notice: replacing modified agentstudio entry \($0.rawValue)"
+            })
+        let observedNotices = Set(notices)
+        #expect(observedNotices == expectedNotices)
+        #expect(notices.count == ClaudeCodeHookEvent.allCases.count)
+        for event in ClaudeCodeHookEvent.allCases {
+            let groups = try fixture.hookGroups(for: event.rawValue)
+            #expect(groups.count == 2)
+            #expect(groups.first == userHook)
+            let commands = ownedCommands(groups)
+            #expect(commands.count == 1)
+            let handler = try #require(Self.ownedHandler(groups))
+            #expect(handler["async"] == .bool(true))
+            #expect(handler["timeout"] == .number(ClaudeCodePackageInstallation.hookTimeoutSeconds))
+        }
+        let fields = try fixture.settingsFields()
+        #expect(fields["model"] == .string("user-model"))
+    }
+
+    private static func ownedHandler(_ groups: [JSONValue]) -> [String: JSONValue]? {
+        for group in groups {
+            guard case .object(let fields) = group, case .array(let hooks)? = fields["hooks"] else { continue }
+            for hook in hooks {
+                guard case .object(let handler) = hook, case .string(let command)? = handler["command"],
+                    command.contains(ClaudeCodePackageInstallation.ownershipMarker)
+                else { continue }
+                return handler
+            }
+        }
+        return nil
+    }
+
     @Test("Unrelated settings and unrelated hooks survive install and uninstall")
     func unrelatedSettingsSurvive() throws {
         // Arrange

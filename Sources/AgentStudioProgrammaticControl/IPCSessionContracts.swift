@@ -8,24 +8,6 @@ package enum IPCSessionFailureReason {
     package static let correlationConflict = "correlationConflict"
 }
 
-/// Wire projection of the Sessions agent state. It mirrors the domain states
-/// without exporting the domain type across the protocol boundary.
-package enum IPCSessionAgentState: String, Codable, CaseIterable, Equatable, Sendable, IPCSchemaProviding {
-    case unknown
-    case running
-    case needsYou
-    case done
-}
-
-/// Server-assigned evidence origin. `unknown` reports the absence of a state
-/// origin rather than inventing a weaker one.
-package enum IPCSessionEvidenceOrigin: String, Codable, CaseIterable, Equatable, Sendable, IPCSchemaProviding {
-    case unknown
-    case estimated
-    case agentReported
-    case reported
-}
-
 /// Lifecycle capability a provider hook claims for one projected event.
 package enum IPCSessionEventName: String, Codable, CaseIterable, Equatable, Sendable, IPCSchemaProviding {
     case sessionStart
@@ -201,51 +183,34 @@ package struct IPCSessionQueryParams: Codable, Equatable, Sendable {
     }
 }
 
-package struct IPCSessionAttentionProjection: Codable, Equatable, Sendable {
-    package let requestId: String
-    package let explanation: String?
-
-    package init(requestId: String, explanation: String?) {
-        self.requestId = requestId
-        self.explanation = explanation
-    }
-}
-
-package struct IPCSessionMessageProjection: Codable, Equatable, Sendable {
-    package let occurrenceId: UUID
-    package let text: String
-    package let seen: Bool
-    package let receivedAt: Date
-
-    package init(occurrenceId: UUID, text: String, seen: Bool, receivedAt: Date) {
-        self.occurrenceId = occurrenceId
-        self.text = text
-        self.seen = seen
-        self.receivedAt = receivedAt
-    }
-}
-
 package struct IPCSessionQueryResult: Codable, Equatable, Sendable {
     package let paneId: UUID
-    package let state: IPCSessionAgentState
-    package let origin: IPCSessionEvidenceOrigin
-    package let needsYou: IPCSessionAttentionProjection?
-    package let messages: [IPCSessionMessageProjection]
     package let sourceHealth: IPCSessionSourceHealth
-
-    package init(
-        paneId: UUID,
-        state: IPCSessionAgentState,
-        origin: IPCSessionEvidenceOrigin,
-        needsYou: IPCSessionAttentionProjection?,
-        messages: [IPCSessionMessageProjection],
-        sourceHealth: IPCSessionSourceHealth
-    ) {
+    package let session: IPCPaneSessionSummary?
+    package init(paneId: UUID, sourceHealth: IPCSessionSourceHealth, session: IPCPaneSessionSummary?) {
         self.paneId = paneId
-        self.state = state
-        self.origin = origin
-        self.needsYou = needsYou
-        self.messages = messages
         self.sourceHealth = sourceHealth
+        self.session = session
+    }
+    private enum CodingKeys: String, CodingKey { case paneId, sourceHealth, session }
+    package init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        paneId = try container.decode(UUID.self, forKey: .paneId)
+        sourceHealth = try container.decode(IPCSessionSourceHealth.self, forKey: .sourceHealth)
+        session = try container.decode(IPCPaneSessionSummary?.self, forKey: .session)
+        guard (sourceHealth == .unbound) == (session == nil) else {
+            throw DecodingError.dataCorruptedError(
+                forKey: .session, in: container, debugDescription: "Session is null exactly when unbound")
+        }
+    }
+    package func encode(to encoder: any Encoder) throws {
+        guard (sourceHealth == .unbound) == (session == nil) else {
+            throw EncodingError.invalidValue(
+                self, .init(codingPath: encoder.codingPath, debugDescription: "Session is null exactly when unbound"))
+        }
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(paneId, forKey: .paneId)
+        try container.encode(sourceHealth, forKey: .sourceHealth)
+        try container.encode(session, forKey: .session)
     }
 }

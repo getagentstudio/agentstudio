@@ -30,6 +30,18 @@ extension SessionsIngestion: SessionOpenAskInput {
         return try statusRuntime.summary(paneId: paneId)
     }
 
+    package func readSessionStatus(paneId: UUID) async throws -> SessionsStatusReadResult {
+        try await restoreStatusIfNeeded(paneId: paneId)
+        consumePaneViewedBatch()
+        guard let generation = statusRuntime.currentBindingByPane[paneId] else { return .unbound }
+        guard let state = statusRuntime.states[generation], let summary = try statusRuntime.summary(paneId: paneId)
+        else { throw SessionsRepositoryError.invalidStoredValue("current session status") }
+        switch state.binding {
+        case .bound: return .live(summary)
+        case .ended, .replaced: return .ended(summary)
+        }
+    }
+
     func restoreStatusIfNeeded(paneId: UUID) async throws {
         guard !statusRuntime.retiredPaneIds.contains(paneId) else { return }
         if statusIngressTask == nil {
@@ -69,8 +81,8 @@ extension SessionsIngestion: SessionOpenAskInput {
                         input: .bindingReplaced(by: current.bindingGenerationId), sequence: sequence,
                         occurredAt: current.startedAt, admittedAt: admittedAt, turnId: nil))
                 statusRuntime.bindings[previous.bindingGenerationId] = previous
-                await sessionEnded(previous.bindingGenerationId)
                 installStatusBinding(current)
+                await sessionEnded(previous.bindingGenerationId)
             case .binding(.unchanged): break
             default: break
             }
@@ -113,8 +125,7 @@ extension SessionsIngestion: SessionOpenAskInput {
             }
         case .prepareForLaunch:
             for paneId in try await repository.statusPaneIds() { try await restoreStatusIfNeeded(paneId: paneId) }
-        case .message, .deliberateNeedsYou, .clearDeliberateNeedsYou, .deliberateDone, .acknowledgeMessage,
-            .recordLiveLoss:
+        case .recordLiveLoss:
             break
         }
         consumePaneViewedBatch()

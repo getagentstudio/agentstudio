@@ -73,8 +73,8 @@ struct AgentStudioIPCCursorHookVerticalTests {
             #expect(afterTool.sourceHealth == .live)
             // Cursor reports nothing that asks the person for a decision, so a
             // Cursor session never reaches needs-you from its hooks alone.
-            #expect(afterTool.state == .running)
-            #expect(afterStop.origin == .reported)
+            #expect(afterTool.session?.status == .working(state: .active))
+            #expect(afterStop.sourceHealth == .live)
             // `sessionEnd` retires the source generation itself rather than
             // recording evidence against it, so the pane reports a source that has
             // ended rather than one that is live with nothing arriving on it.
@@ -106,6 +106,7 @@ struct AgentStudioIPCCursorHookVerticalTests {
             #expect(replayParams.correlationId != firstParams.correlationId)
             let first = try await harness.sessionEvent(params: firstParams)
             let beforeReplay = try await harness.paneSnapshot(paneId: paneId)
+            let beforeStatus = try await harness.sessionQuery(paneId: paneId).session
 
             // Act
             let replay = try await harness.response(
@@ -126,17 +127,15 @@ struct AgentStudioIPCCursorHookVerticalTests {
             #expect(replayResult.paneId == first.paneId)
             #expect(replayResult.correlationId == replayParams.correlationId)
             let afterReplay = try await harness.paneSnapshot(paneId: paneId)
+            let afterStatus = try await harness.sessionQuery(paneId: paneId).session
+            #expect(afterStatus == beforeStatus)
             // Correlation aliases advance the operation ledger, not the domain state.
             #expect(afterReplay.currentBinding == beforeReplay.currentBinding)
-            #expect(afterReplay.state == beforeReplay.state)
-            #expect(afterReplay.stateOrigin == beforeReplay.stateOrigin)
-            #expect(afterReplay.messages == beforeReplay.messages)
-            #expect(afterReplay.currentAttention == beforeReplay.currentAttention)
             #expect(afterReplay.staleAttention == beforeReplay.staleAttention)
             #expect(afterReplay.results == beforeReplay.results)
             #expect(Set(afterReplay.historicalOccurrenceIds) == Set(beforeReplay.historicalOccurrenceIds))
             #expect(afterReplay.losses == beforeReplay.losses)
-            #expect(try await harness.sessionQuery(paneId: paneId).state == .running)
+            #expect(try await harness.sessionQuery(paneId: paneId).session?.status == .working(state: .active))
         } catch {
             await harness.tearDown()
             throw error

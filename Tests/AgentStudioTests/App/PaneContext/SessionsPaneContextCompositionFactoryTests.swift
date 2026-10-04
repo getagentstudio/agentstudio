@@ -422,7 +422,7 @@ private struct CompositionFactoryFixture: Sendable {
                 correlationId: UUIDv7.generate()), provenance: .matchingPane)
         #expect(result.disposition == .admitted)
         return try #require(
-            try await composition.ingestion.snapshot(.pane(paneId.uuid, page: .init(limit: 100, after: nil)))
+            try await composition.ingestion.snapshot(.pane(paneId.uuid))
                 .currentBinding)
     }
 

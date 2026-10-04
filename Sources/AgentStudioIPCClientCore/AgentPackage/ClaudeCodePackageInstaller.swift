@@ -134,6 +134,7 @@ extension ClaudeCodePackageInstallation {
                     "type": .string("command"),
                     "command": .string("\(hookScriptURL.path) \(event.rawValue) \(providerVersion)"),
                     "timeout": .number(Self.hookTimeoutSeconds),
+                    "async": .bool(true),
                 ])
             ])
         ])

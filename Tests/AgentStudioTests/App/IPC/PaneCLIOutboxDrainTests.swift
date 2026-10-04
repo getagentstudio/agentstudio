@@ -259,7 +259,7 @@ struct PaneCLIOutboxDrainTests {
             #expect(afterBinding.admittedEntryCount == 0)
             #expect(afterBinding.retryableEntryCount == 0)
             #expect(try await harness.cursor() == entry.id)
-            #expect(try await harness.snapshot(paneID: paneID).currentAttention.isEmpty)
+            #expect(try await harness.attention(paneID: paneID).isEmpty)
         }
     }
 
@@ -317,7 +317,7 @@ struct PaneCLIOutboxDrainTests {
             let paneID = UUIDv7.generate()
             try await harness.bindPane(paneID: paneID)
             try await harness.simulateRelaunch()
-            let stateAfterRelaunch = try await harness.snapshot(paneID: paneID).state
+            let stateAfterRelaunch = try await harness.sessionSummary(paneID: paneID)
             _ = try await harness.append(
                 paneID: paneID, line: harness.reportLine(kind: "needsYou", explanation: "approve the plan"))
             let last = try await harness.append(
@@ -329,8 +329,8 @@ struct PaneCLIOutboxDrainTests {
             #expect(report.malformedEntryCount == 2)
             #expect(try await harness.cursor() == last.id)
             let snapshot = try await harness.snapshot(paneID: paneID)
-            #expect(snapshot.state == stateAfterRelaunch)
-            #expect(snapshot.currentAttention.isEmpty)
+            #expect(try await harness.sessionSummary(paneID: paneID) == stateAfterRelaunch)
+            #expect(try await harness.attention(paneID: paneID).isEmpty)
             #expect(snapshot.results.isEmpty)
             #expect(snapshot.historicalOccurrenceIds.isEmpty)
             #expect(harness.refusalRecorder.reasons == [.ineligibleMethod, .ineligibleMethod])
@@ -516,7 +516,7 @@ struct PaneCLIOutboxDrainTests {
             let retried = try await harness.restartedDrain()
             #expect(retried.importedLegacyLineCount == 0)
             #expect(!FileManager.default.fileExists(atPath: harness.legacyFileURL(paneID: paneID).path))
-            #expect(try await harness.snapshot(paneID: paneID).currentAttention.isEmpty)
+            #expect(try await harness.attention(paneID: paneID).isEmpty)
         }
     }
 }

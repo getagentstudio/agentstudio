@@ -316,6 +316,7 @@ final class PaneContextIPCTestTime: Sendable {
 func withPaneContextWire(
     domain: PaneContextIPCDomainCompanion,
     panes: [IPCPaneSummary]? = nil,
+    sessionsPort: any AppIPCSessionsPort = RecordingSessionsPort(),
     maximumEncodedReplyBytes: Int = min(
         IPCFramePolicy.maximumResponseFrameBytes, AppPolicies.IPC.maximumQueuedOutputBytes - 1),
     body: (LiveServerFixture, inout PaneContextWireClient) async throws -> Void
@@ -324,6 +325,7 @@ func withPaneContextWire(
         makeFixture: {
             try LiveServerFixture(
                 channel: .stable, panes: panes ?? [makePaneSummary(id: domain.paneId, ordinal: 1)],
+                sessionsPort: sessionsPort,
                 paneContextPort: domain.adapter(maximumEncodedReplyBytes: maximumEncodedReplyBytes))
         },
         releaseHeldWork: { domain.access.releaseHeldWork() },

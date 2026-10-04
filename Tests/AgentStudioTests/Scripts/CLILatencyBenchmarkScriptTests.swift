@@ -274,7 +274,7 @@ private struct BenchmarkScriptFixture {
                 $result = {paneId=>$pane, revision=>0, messages=>[], drawerMessages=>[], links=>'unknown', pullRequests=>{kind=>'notApplicable'}};
             }
             if ($method eq 'answers') { $result = {entries=>[], nextPosition=>0, more=>JSON::PP::false}; }
-            if ($method eq 'session.query') { $result = {paneId=>$pane, sourceHealth=>(-e $state ? 'live':'unbound'), state=>'running', origin=>'reported'}; }
+            if ($method eq 'session.query') { $result = {paneId=>$pane, sourceHealth=>(-e $state ? 'live':'unbound'), session=>(-e $state ? {status=>{kind=>'working',state=>'active'}} : undef)}; }
             if ($method eq 'terminal.status') { $result = {isReady=>JSON::PP::true, paneId=>$pane}; }
             if ($method eq 'command.execute') {
                 if ($ENV{BENCHMARK_TEST_FAIL_COMMAND} || ($ARGV[1] // '') ne '--command-id' || ($ARGV[2] // '') ne 'scrollToBottom') {

@@ -24,7 +24,7 @@ package struct ProviderHookDelivery: Sendable {
         environment: [String: String]
     ) -> Self {
         Self { params, configuration in
-            let deadline = CallDeadline(limit: CLIPolicy.hookCallLimit)
+            let deadline = CallDeadline(limit: Self.codexCallLimit(for: params.event.name))
             let examples = IPCBuiltInMethodExampleContext(
                 illustrativeIdentifier: exampleIdentifierProvider()
             )
@@ -52,6 +52,12 @@ package struct ProviderHookDelivery: Sendable {
                 throw ProviderHookFailure.rejected(failure.documentedReason ?? "requestRejected")
             }
         }
+    }
+
+    /// Only Codex SessionEnd is provider-forced synchronous. Interrupt stays
+    /// async despite sharing the provider's lifecycle timeout cap.
+    package static func codexCallLimit(for event: IPCSessionEventName) -> Duration {
+        event == .sessionEnd ? CLIPolicy.synchronousLifecycleHookLimit : CLIPolicy.hookCallLimit
     }
 }
 

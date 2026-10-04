@@ -34,7 +34,7 @@ struct SessionsPaneContextCompositionTests {
                 conversationId: conversationId
             ).disposition == .admitted)
         let binding = try #require(
-            try await composition.ingestion.snapshot(.pane(paneId.uuid, page: .init(limit: 100, after: nil)))
+            try await composition.ingestion.snapshot(.pane(paneId.uuid))
                 .currentBinding)
         let writer = AgentMessageSender.session(
             provider: try BridgeAgentProviderName(binding.providerIdentifier),
@@ -95,7 +95,7 @@ struct SessionsPaneContextCompositionTests {
                 paneId: drawer.id, params: params, provenance: .matchingPane
             ).disposition == .admitted)
         let binding = try #require(
-            try await composition.ingestion.snapshot(.pane(drawer.id, page: .init(limit: 100, after: nil)))
+            try await composition.ingestion.snapshot(.pane(drawer.id))
                 .currentBinding)
         #expect(binding.ownerPaneId == parentId)
         #expect(binding.paneId == drawer.id)

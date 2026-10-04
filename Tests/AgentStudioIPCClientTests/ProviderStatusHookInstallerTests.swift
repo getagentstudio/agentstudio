@@ -46,7 +46,7 @@ struct ProviderStatusHookInstallerTests {
             }
             #expect(command.hasSuffix(" \(event) 2.1.286"))
             #expect(!command.contains("ask --wait"))
-            #expect(entry["async"] == nil)
+            #expect(entry["async"] == .bool(true))
         }
         #expect(hooks["Notification"] == nil)
         // PR B deliberately keeps permissions as session.event reports.

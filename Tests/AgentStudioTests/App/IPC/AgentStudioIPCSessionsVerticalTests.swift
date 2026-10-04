@@ -190,7 +190,7 @@ struct AgentStudioIPCSessionsVerticalTests {
         // Assert: it is durable against A's own generation and invisible to B.
         #expect(delayed.disposition == .admitted)
         let queried = try await harness.sessionQuery(paneId: harness.boundPaneId)
-        #expect(queried.state == .unknown)
+        #expect(queried.session?.status == .unknown)
         #expect(queried.sourceHealth == .live)
         let snapshot = try await harness.paneSnapshot(paneId: harness.boundPaneId)
         #expect(snapshot.historicalOccurrenceIds == [delayedOccurrenceId])
@@ -267,7 +267,7 @@ struct AgentStudioIPCSessionsVerticalTests {
         // Assert
         #expect(foreign.disposition == .unqualified)
         let queried = try await harness.sessionQuery(paneId: harness.boundPaneId)
-        #expect(queried.state == .unknown)
+        #expect(queried.session?.status == .unknown)
         #expect(queried.sourceHealth == .live)
         let snapshot = try await harness.paneSnapshot(paneId: harness.boundPaneId)
         #expect(snapshot.historicalOccurrenceIds.isEmpty)
@@ -297,7 +297,7 @@ struct AgentStudioIPCSessionsVerticalTests {
         // Assert
         #expect(turnStart.disposition == .admitted)
         let queried = try await harness.sessionQuery(paneId: harness.boundPaneId)
-        #expect(queried.state == .running)
-        #expect(queried.origin == .reported)
+        #expect(queried.session?.status == .working(state: .active))
+        #expect(queried.sourceHealth == .live)
     }
 }
