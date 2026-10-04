@@ -441,8 +441,9 @@ extension BridgePaneProductMetadataCoordinator {
             }
         }
         if completion == .interrupted,
-            fileSurfaceAttemptContext != nil,
-            activeStream != nil
+            let fileSurfaceAttemptContext,
+            activeStream?.lease == fileSurfaceAttemptContext.activeStream.lease,
+            fileSurfaceAttemptContext.productAdmission.withValidAdmission({ true }) == true
         {
             await resumeForegroundWork()
         }
