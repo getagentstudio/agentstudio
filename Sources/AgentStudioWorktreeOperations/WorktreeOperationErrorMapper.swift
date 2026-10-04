@@ -18,6 +18,8 @@ package enum WorktreeOperationErrorMapper {
         case entryFailed(relativePath: String, reason: GitWorktreeForkEntryFailureReason, errorNumber: Int32?)
         case validationFailed(reason: GitWorktreeForkValidationFailureReason, relativePath: String?)
         case rejectedAfterChange(GitWorktreeForkRejectionReason)
+        /// Only changes-only forks refuse on working state; this CLI forks copy-on-write.
+        case workingStateUnsupported
     }
 
     private struct FlattenedCleanupPrimary {
@@ -39,8 +41,11 @@ package enum WorktreeOperationErrorMapper {
             .repositoryNotFound
         case .worktreeNotFound:
             .worktreeNotFound
-        case .locked:
+        case .locked, .lockHeld, .lockUnidentified:
             .locked
+        // Raised by worktree removal primitives, which new/fork/list never call.
+        case .permissionDenied:
+            .libgit2Failure
         case .worktreeNotPrunable:
             .worktreeNotPrunable
         case .unsafeWorktreeRemoval:
@@ -131,6 +136,9 @@ package enum WorktreeOperationErrorMapper {
             .failed(forkFailure(.validationFailed(reason: reason, relativePath: relativePath)))
         case .cleanupIncomplete(let primary, let residue):
             .failed(forkFailure(.cleanupIncomplete(primary: primary, residue: residue)))
+        case .workingStateUnsupported:
+            .failed(
+                WorktreeOperationFailure(failure: forkFailureKind(.workingStateUnsupported), leftovers: .noLeftovers))
         }
     }
 
@@ -180,6 +188,8 @@ package enum WorktreeOperationErrorMapper {
             )
         case .cancelled:
             return FlattenedCleanupPrimary(failureKind: .cancelled, residue: [])
+        case .workingStateUnsupported:
+            return FlattenedCleanupPrimary(failureKind: .workingStateUnsupported, residue: [])
         case .gitFailure(let gitError):
             return FlattenedCleanupPrimary(failureKind: .gitFailure(gitError), residue: [])
         case .sourceChanged(let relativePath, let reason):
@@ -214,6 +224,8 @@ package enum WorktreeOperationErrorMapper {
             .validationFailed(reason: reason, relativePath: relativePath)
         case .rejectedAfterChange(let reason):
             .rejectedAfterChange(reason)
+        case .workingStateUnsupported:
+            .forkGitFailed(.unsupported)
         }
     }
 
@@ -228,6 +240,8 @@ package enum WorktreeOperationErrorMapper {
             base = .branchReference
         case .temporaryArtifact:
             base = .temporary
+        case .lockFile:
+            base = .repositoryGitDirectory
         }
         return WorktreeCleanupLeftover(kind: residue.kind, location: residue.location, base: base)
     }
