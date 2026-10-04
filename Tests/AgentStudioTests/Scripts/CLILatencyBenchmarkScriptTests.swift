@@ -79,7 +79,7 @@ struct CLILatencyBenchmarkScriptTests {
         let output = try await runHarness(fixture)
         let report = try object(Data(contentsOf: fixture.outputURL.appendingPathComponent("report.json")))
         let families = try #require(report["families"] as? [[String: Any]])
-        #expect(families.count == 10)
+        #expect(families.count == 14)
         #expect(families.allSatisfy { $0["sampleCount"] as? Int == 50 })
         #expect(families.allSatisfy { $0["failedCalls"] as? Int == 0 })
         #expect(report["cleanup"] as? String == "closedOwnedPane")
@@ -89,11 +89,11 @@ struct CLILatencyBenchmarkScriptTests {
         #expect(report["verdict"] as? String == (allFamiliesPassed ? "PASS" : "FAIL"))
         #expect(output.terminationStatus == (allFamiliesPassed ? 0 : 1))
         let unmeasured = try #require(report["notMeasured"] as? [[String: Any]])
-        #expect(unmeasured.map { $0["family"] as? String } == ["line", "title"])
+        #expect(unmeasured.map { $0["family"] as? String } == ["ask", "withdraw"])
         #expect(unmeasured.allSatisfy { $0["verdict"] as? String == "NOT MEASURED" })
         let samples = try String(
             contentsOf: fixture.outputURL.appendingPathComponent("samples.jsonl"), encoding: .utf8)
-        #expect(samples.split(separator: "\n").count == 500)
+        #expect(samples.split(separator: "\n").count == 700)
         let saved = try String(contentsOf: fixture.outputURL.appendingPathComponent("report.json"), encoding: .utf8)
         let standardOutput = try #require(String(data: output.standardOutput, encoding: .utf8))
         for text in [saved, samples, standardOutput] {
@@ -107,6 +107,8 @@ struct CLILatencyBenchmarkScriptTests {
         #expect(calls.contains("hook UserPromptSubmit"))
         #expect(calls.contains("pane.close"))
         #expect(calls.split(separator: "\n").filter { $0 == "notice store=set" }.count == 51)
+        let identityProofs = Set(calls.split(separator: "\n").filter { $0.hasPrefix("identity ") }.map(String.init))
+        #expect(identityProofs == ["identity pane=bound codex=absent", "identity debug=absent"])
     }
 
     @Test("zero-exit fail-open hooks with diagnostics fail measurement and still close the owned pane")
@@ -169,6 +171,8 @@ struct CLILatencyBenchmarkScriptTests {
     private func runHarness(_ fixture: BenchmarkScriptFixture) async throws -> ExitedProcessOutput {
         var environment = ProcessInfo.processInfo.environment
         environment["AGENTSTUDIO_CLI_BENCHMARK_OUTPUT"] = fixture.outputURL.path
+        environment["CLAUDE_CODE_SESSION_ID"] = "parent-claude-sentinel"
+        environment["CODEX_THREAD_ID"] = "parent-codex-sentinel"
         return try await runProcessToExit(
             executableURL: URL(fileURLWithPath: "/bin/bash"),
             arguments: [
@@ -205,21 +209,48 @@ private struct BenchmarkScriptFixture {
             if ($method eq 'notify' || $method eq 'pane.message.send') {
                 print {$calls} 'notice store=' . ($ENV{AGENTSTUDIO_CLI_STORE} ? 'set':'absent') . "\n";
             }
-            close $calls;
             my $json = JSON::PP->new;
             my $pane = $ENV{BENCHMARK_TEST_PANE};
             my $runtime = $ENV{BENCHMARK_TEST_RUNTIME};
             my $state = "$ENV{BENCHMARK_TEST_RECORDS}.state";
+            my $binding = "$ENV{BENCHMARK_TEST_RECORDS}.binding";
             if ($method eq 'hook') {
+                local $/;
+                my $payload = $json->decode(<STDIN>);
+                if ($ARGV[2] eq 'SessionStart') {
+                    open my $out, '>', $binding or die "fixture binding";
+                    print {$out} $payload->{session_id};
+                    close $out;
+                }
                 if ($ARGV[2] eq 'UserPromptSubmit') { open my $out, '>', $state; print {$out} 'live'; close $out; }
                 if ($ARGV[2] eq 'PreToolUse' && $ENV{BENCHMARK_TEST_FAIL_HOOK}) { print STDERR "not delivered\n"; }
+                close $calls;
                 exit 0;
             }
+            if ($method =~ /^(?:notify|line|title|pane|answers)$/) {
+                open my $bound, '<', $binding or die "fixture binding";
+                local $/;
+                my $conversation = <$bound>;
+                close $bound;
+                my $identity = ($ENV{CLAUDE_CODE_SESSION_ID} // '') eq $conversation ? 'bound' : 'invalid';
+                my $codex = exists $ENV{CODEX_THREAD_ID} ? 'present' : 'absent';
+                print {$calls} "identity pane=$identity codex=$codex\n";
+            }
+            if ($method =~ /^(?:help|system\.identify|command\.execute|system\.capabilities|command\.list|pane\.close)$/) {
+                my $identity = exists $ENV{CLAUDE_CODE_SESSION_ID} || exists $ENV{CODEX_THREAD_ID} ? 'present' : 'absent';
+                print {$calls} "identity debug=$identity\n";
+            }
+            close $calls;
             my $result = {};
             if ($method eq 'help') { print "local help\n"; exit 0; }
             if ($method eq 'system.identify') { $result = {runtimeId=>$runtime, accessMode=>'agentStudioOnly'}; }
             if ($method eq 'auth.status') { $result = {authenticated=>JSON::PP::true, runtimeId=>$runtime, accessMode=>'agentStudioOnly'}; }
             if ($method eq 'pane.snapshot') { $result = {pane=>{id=>$pane}}; }
+            if ($method eq 'line' || $method eq 'title') { $result = {kind=>'applied'}; }
+            if ($method eq 'pane') {
+                $result = {paneId=>$pane, revision=>0, messages=>[], drawerMessages=>[], links=>'unknown', pullRequests=>{kind=>'notApplicable'}};
+            }
+            if ($method eq 'answers') { $result = {entries=>[], nextPosition=>0, more=>JSON::PP::false}; }
             if ($method eq 'session.query') { $result = {paneId=>$pane, sourceHealth=>(-e $state ? 'live':'unbound'), state=>'running', origin=>'reported'}; }
             if ($method eq 'terminal.status') { $result = {isReady=>JSON::PP::true, paneId=>$pane}; }
             if ($method eq 'command.execute') {
