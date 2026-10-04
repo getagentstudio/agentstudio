@@ -60,7 +60,7 @@ struct SessionStatusReducerTests {
         #expect(drawer.status == .needsYou(.blocked))
         drawer.send(.question(toolCallId: "question", questions: statusTestQuestions))
         #expect(drawer.status == .needsYou(.question))
-        drawer.send(.permission(toolName: "Bash", questions: nil))
+        drawer.send(.permission(toolName: "Bash", questions: nil, handling: .reportOnly))
         #expect(drawer.status == .needsYou(.approval))
         drawer.send(.stop)
         #expect(drawer.status == .needsYou(.blocked))
@@ -70,7 +70,7 @@ struct SessionStatusReducerTests {
     @Test("permission is unaffected by parallel tools and silent interrupts")
     func parallelToolCannotResolvePermission() {
         var fixture = StatusReducerFixture()
-        fixture.send(.permission(toolName: "Bash", questions: nil))
+        fixture.send(.permission(toolName: "Bash", questions: nil, handling: .reportOnly))
         let openedPrompts = fixture.state.providerPrompts
         fixture.send(.toolActivity)
         fixture.send(.toolCompleted(toolCallId: "parallel-call"))
@@ -91,7 +91,7 @@ struct SessionStatusReducerTests {
         ]
         for (boundary, expected) in rows {
             var fixture = StatusReducerFixture()
-            fixture.send(.permission(toolName: "Bash", questions: nil))
+            fixture.send(.permission(toolName: "Bash", questions: nil, handling: .reportOnly))
             fixture.send(boundary)
             #expect(fixture.state.providerPrompts.isEmpty)
             #expect(fixture.status == expected)
@@ -118,10 +118,10 @@ struct SessionStatusReducerTests {
     func normalQuestionPermissionFold() {
         var fixture = StatusReducerFixture()
         fixture.send(.question(toolCallId: "question-call", questions: statusTestQuestions))
-        fixture.send(.permission(toolName: "AskUserQuestion", questions: statusTestQuestions))
+        fixture.send(.permission(toolName: "AskUserQuestion", questions: statusTestQuestions, handling: .reportOnly))
         #expect(fixture.state.providerPrompts.count == 1)
         #expect(fixture.state.providerPrompts[.toolCall("question-call")]?.absorbedPermission == true)
-        fixture.send(.permission(toolName: "AskUserQuestion", questions: statusTestQuestions))
+        fixture.send(.permission(toolName: "AskUserQuestion", questions: statusTestQuestions, handling: .reportOnly))
         #expect(fixture.state.providerPrompts.count == 2)
         fixture.send(.toolCompleted(toolCallId: "question-call"))
         #expect(fixture.status == .needsYou(.question))
@@ -141,7 +141,7 @@ struct SessionStatusReducerTests {
             }
             let questions = scenario == 1 ? statusOtherQuestions : statusTestQuestions
             fixture.send(
-                .permission(toolName: "AskUserQuestion", questions: questions),
+                .permission(toolName: "AskUserQuestion", questions: questions, handling: .reportOnly),
                 turnId: scenario == 3 ? "next-turn" : "turn")
             #expect(fixture.state.providerPrompts[.permission(fixture.sequence)]?.reason == .question)
             fixture.send(.toolCompleted(toolCallId: "first"))
@@ -176,7 +176,7 @@ struct SessionStatusReducerTests {
                 for hasAsk in [false, true] {
                     var fixture = StatusReducerFixture()
                     fixture.send(turn)
-                    fixture.send(.permission(toolName: "Bash", questions: nil))
+                    fixture.send(.permission(toolName: "Bash", questions: nil, handling: .reportOnly))
                     if hasAsk { fixture.send(.openAsks(.init(sequence: 1, approval: 0, question: 0, blocked: 1))) }
                     fixture.send(ending)
                     #expect(fixture.state.providerPrompts.isEmpty)

@@ -21,6 +21,7 @@ package enum WorkspaceLocalMigrations {
         registerOpaquePaneCredentialRecords(in: &migrator)
         registerPaneOnlyCredentialRecords(in: &migrator)
         registerCLIOutboxCursor(in: &migrator)
+        registerSessionsPermissionHandling(in: &migrator)
         return migrator
     }
 

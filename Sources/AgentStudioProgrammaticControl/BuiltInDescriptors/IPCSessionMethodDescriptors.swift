@@ -19,7 +19,9 @@ package struct IPCSessionMethodDescriptors: Sendable {
     }
 
     static let sessionEventEntry = IPCBuiltInMethodEntry<IPCSessionEventParams, IPCSessionEventResult>(
-        name: "session.event", summary: "Project one provider lifecycle event into Sessions for the target pane.",
+        name: "session.event",
+        summary:
+            "Project one provider lifecycle event into Sessions for the target pane. Permission events may set permissionHandling to blockingAsk when an ask supplies attention; absent or reportOnly opens a provider prompt.",
         modelCalls: [],
         correlationPolicy: .required,
         agentEligibility: nil,

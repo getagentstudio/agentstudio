@@ -28,6 +28,16 @@ extension SessionsRepositoryStorage {
     }
 
     static func decodeProviderSignal(_ row: Row, database: Database) throws -> SessionProviderSignal? {
+        let rawHandling: String? = row["permission_handling"]
+        let handling: SessionPermissionHandling
+        if let rawHandling {
+            guard let storedHandling = SessionPermissionHandling(rawValue: rawHandling) else {
+                throw SessionsRepositoryError.invalidStoredValue("permission_handling")
+            }
+            handling = storedHandling
+        } else {
+            handling = .reportOnly
+        }
         guard let eventName: String = row["provider_event"] else { return nil }
         guard let name = SessionProviderSignalName(rawValue: eventName) else {
             throw SessionsRepositoryError.invalidStoredValue("provider_event")
@@ -74,7 +84,7 @@ extension SessionsRepositoryStorage {
             return .turnFailed(category: category)
         case .toolActivity: return .toolActivity(toolName: toolName)
         case .subagentActivity: return .subagentActivity
-        case .permission: return .permission(toolName: toolName, questions: questions)
+        case .permission: return .permission(toolName: toolName, questions: questions, handling: handling)
         case .question:
             guard let identifier = toolCallId, let questions else {
                 throw SessionsRepositoryError.invalidStoredValue("question")

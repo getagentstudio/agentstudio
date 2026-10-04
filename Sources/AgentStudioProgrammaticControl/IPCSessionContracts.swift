@@ -144,22 +144,29 @@ package struct IPCSessionQuestionOption: Codable, Equatable, Sendable {
     package let description: String
 }
 
+package enum IPCSessionPermissionHandling: String, Codable, CaseIterable, Equatable, Sendable, IPCSchemaProviding {
+    case reportOnly, blockingAsk
+}
+
 package struct IPCSessionEventParams: Codable, Equatable, Sendable {
     package let handle: String
     package let provider: IPCSessionProviderIdentity
     package let event: IPCSessionEventIdentity
     package let correlationId: UUID
+    package let permissionHandling: IPCSessionPermissionHandling?
 
     package init(
         handle: String,
         provider: IPCSessionProviderIdentity,
         event: IPCSessionEventIdentity,
-        correlationId: UUID
+        correlationId: UUID,
+        permissionHandling: IPCSessionPermissionHandling? = nil
     ) {
         self.handle = handle
         self.provider = provider
         self.event = event
         self.correlationId = correlationId
+        self.permissionHandling = permissionHandling
     }
 }
 
