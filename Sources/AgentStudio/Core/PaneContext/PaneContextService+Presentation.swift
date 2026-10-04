@@ -65,7 +65,6 @@ extension PaneContextService {
                     }
                 }
             }
-            await presentationLane?.publishPending()
         }
     }
 
@@ -87,7 +86,6 @@ extension PaneContextService {
             return
         }
         presentationLane.mailbox.reconcile(displays)
-        await presentationLane.publishPending()
     }
 
     func publishAffectedSources(_ sources: Set<PaneId>) async {
@@ -103,7 +101,6 @@ extension PaneContextService {
                 // Publication is retried by later demand; a failed read changes no desired value.
             }
         }
-        await presentationLane?.publishPending()
     }
 
     private func computeDisplay(paneId: PaneId) async throws -> PaneContextDisplay? {

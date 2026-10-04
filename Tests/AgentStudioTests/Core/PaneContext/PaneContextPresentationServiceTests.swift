@@ -7,6 +7,44 @@ import Testing
 
 @Suite("Pane context presentation service")
 struct PaneContextPresentationServiceTests {
+    @Test("committed line and notify replies return while the MainActor presentation sink is held")
+    func writesDoNotWaitForPresentationApply() async throws {
+        try await withPaneContextPresentationService { fixture in
+            let storage = fixture.storage
+            _ = try await fixture.display()
+            _ = await fixture.latestPublished(storage.paneId)
+            let epoch = try await storage.epoch(fixture.service, stream: .line)
+            let held = HeldStep<[PaneId: PaneContextPublication]>(
+                "MainActor presentation apply held while agent writes return", cancellation: .holdThroughCancellation)
+            let scope = fixture.holdNextPublication(held)
+            let lineWrite = Task {
+                await fixture.service.setLine(storage.line("Committed line", epoch: epoch, counter: 1))
+            }
+            do {
+                let heldBatch = try await held.firstArrival()
+                let heldValue = try #require(heldBatch[storage.paneId])
+                let lineResult = await lineWrite.value
+                #expect(lineResult == .applied)
+                let notice = storage.message(body: "Committed notify")
+                let notifyResult = await fixture.service.send(notice)
+                #expect(notifyResult == .created(notice.messageId))
+                let desired = fixture.mailbox.desiredDisplay(for: storage.paneId)
+                let committed = try #require(desired)
+                #expect(committed.agentLine?.summary == "Committed line")
+                #expect(committed.own.attentionCount == 1)
+                held.release()
+                try await fixture.expectPublication(heldValue, for: storage.paneId, in: scope)
+                try await fixture.expectPublication(.set(committed), for: storage.paneId, in: scope)
+                let latest = await fixture.latestPublished(storage.paneId)
+                #expect(latest == .set(committed))
+            } catch {
+                held.retire()
+                _ = await lineWrite.value
+                throw error
+            }
+        }
+    }
+
     @Test("Committed own and drawer messages produce independent outstanding count groups")
     func ownAndIncludingDrawersAreComputedFromRows() async throws {
         try await withPaneContextPresentationService { fixture in

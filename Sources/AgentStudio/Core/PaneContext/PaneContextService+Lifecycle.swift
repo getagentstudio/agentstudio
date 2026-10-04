@@ -59,7 +59,6 @@ extension PaneContextService {
         }
         if retirementCommitGeneration == generation { retirementCommit = nil }
         await refreshDeadline()
-        await presentationLane?.publishPending()
         if retirementMailbox.state.withLock({ !$0.pending.isEmpty }) { try await drainRetirements() }
     }
 
@@ -85,10 +84,10 @@ extension PaneContextService {
                     sql: """
                         SELECT MIN(deadline) FROM (
                             SELECT deadline FROM pane_request WHERE state = 'open' AND waiting = 'blocking'
-                            UNION ALL SELECT expires_at FROM pane_state WHERE kind = 'agentLine' AND stale = 0 AND expires_at IS NOT NULL
+                            UNION ALL SELECT expires_at FROM pane_state WHERE kind = 'agentLine' AND stale = 0 AND expires_at IS NOT NULL AND pane_id NOT IN (SELECT pane_id FROM pane_retirement)
                             UNION ALL SELECT purge_after FROM pane_retirement
-                            UNION ALL SELECT settled_at + ? FROM pane_request WHERE display_hidden = 0 AND settled_at IS NOT NULL
-                            UNION ALL SELECT settled_at + ? FROM pane_event WHERE kind = 'notice' AND display_hidden = 0 AND settled_at IS NOT NULL
+                            UNION ALL SELECT settled_at + ? FROM pane_request WHERE display_hidden = 0 AND settled_at IS NOT NULL AND pane_id NOT IN (SELECT pane_id FROM pane_retirement)
+                            UNION ALL SELECT settled_at + ? FROM pane_event WHERE kind = 'notice' AND display_hidden = 0 AND settled_at IS NOT NULL AND pane_id NOT IN (SELECT pane_id FROM pane_retirement)
                         )
                         """,
                     arguments: [
@@ -254,23 +253,41 @@ private func makePaneContextDeadlineScheduler<SourceClock: Clock & Sendable>(
 }
 
 extension PaneContextStorage {
-    static func expireLines(_ database: Database, now: Date) throws {
+    static func expireLines(_ database: Database, now: Date, sources: [PaneId]? = nil) throws {
+        if let sources, sources.isEmpty { return }
+        let scope =
+            sources.map {
+                " AND pane_id IN (\(Array(repeating: "?", count: $0.count).joined(separator: ",")))"
+            } ?? ""
+        var arguments: StatementArguments = [try timestamp(now)]
+        if let sources { arguments += StatementArguments(sources.map(\.uuidString)) }
+        let predicate = """
+            kind = 'agentLine' AND stale = 0 AND expires_at <= ?
+            AND pane_id NOT IN (SELECT pane_id FROM pane_retirement)\(scope)
+            """
         let rows = try Row.fetchAll(
-            database, sql: "SELECT pane_id FROM pane_state WHERE kind = 'agentLine' AND stale = 0 AND expires_at <= ?",
-            arguments: [try timestamp(now)])
-        try database.execute(
-            sql: "UPDATE pane_state SET stale = 1 WHERE kind = 'agentLine' AND stale = 0 AND expires_at <= ?",
-            arguments: [try timestamp(now)])
+            database, sql: "SELECT pane_id FROM pane_state WHERE \(predicate)", arguments: arguments)
+        try database.execute(sql: "UPDATE pane_state SET stale = 1 WHERE \(predicate)", arguments: arguments)
         for row in rows { try bumpRevision(database, paneId: PaneId(existingUUID: uuid(row, "pane_id"))) }
     }
 
-    static func hideSettled(_ database: Database, now: Date) throws {
-        let panes = try String.fetchAll(
-            database, sql: "SELECT pane_id FROM pane_request UNION SELECT pane_id FROM pane_event WHERE kind = 'notice'"
-        )
+    static func hideSettled(_ database: Database, now: Date, sources: [PaneId]? = nil) throws {
+        let panes: [String]
+        if let sources {
+            panes = sources.map(\.uuidString)
+        } else {
+            panes = try String.fetchAll(
+                database,
+                sql: """
+                    SELECT pane_id FROM (
+                        SELECT pane_id FROM pane_request UNION SELECT pane_id FROM pane_event WHERE kind = 'notice'
+                    ) WHERE pane_id NOT IN (SELECT pane_id FROM pane_retirement)
+                    """)
+        }
         for text in panes {
             guard let uuid = UUID(uuidString: text) else { throw PaneContextStorageFailure.decode("pane_id") }
             let pane = PaneId(existingUUID: uuid)
+            guard try !isRetired(database, paneId: pane) else { continue }
             let settled = try messages(database, paneId: pane).filter { $0.settledAt != nil && !$0.displayHidden }
                 .sorted { $0.position > $1.position }
             var changed = false

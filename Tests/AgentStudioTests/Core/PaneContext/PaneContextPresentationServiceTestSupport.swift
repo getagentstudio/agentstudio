@@ -6,13 +6,14 @@ import Testing
 
 @testable import AgentStudioCore
 
-private enum PaneContextPresentationFact: Sendable {
-    case published
+enum PaneContextPresentationFact: Sendable {
+    case published([PaneId: PaneContextPublication])
     case drainFinished
 }
 
-private final class PaneContextPresentationBatchRecorder: Sendable {
+final class PaneContextPresentationBatchRecorder: Sendable {
     let values = Mutex<[[PaneId: PaneContextPublication]]>([])
+    private let heldPublication = Mutex<HeldStep<[PaneId: PaneContextPublication]>?>(nil)
     private let scope = Mutex(UUIDv7.generate())
     let facts = FactRecorder<UUID, PaneContextPresentationFact>(
         vocabulary: .init(
@@ -27,7 +28,18 @@ private final class PaneContextPresentationBatchRecorder: Sendable {
 
     func record(_ batch: [PaneId: PaneContextPublication]) {
         values.withLock { $0.append(batch) }
-        facts.append(scope: scope.withLock { $0 }, fact: .published)
+        facts.append(scope: scope.withLock { $0 }, fact: .published(batch))
+    }
+
+    func holdNextPublication(_ step: HeldStep<[PaneId: PaneContextPublication]>) {
+        heldPublication.withLock { $0 = step }
+    }
+
+    func takePublicationHold() -> HeldStep<[PaneId: PaneContextPublication]>? {
+        heldPublication.withLock { held in
+            defer { held = nil }
+            return held
+        }
     }
 
     func beginScope() -> UUID {
@@ -60,6 +72,9 @@ final class PaneContextPresentationServiceFixture: Sendable {
             mailbox: mailbox,
             sink: { batch in
                 MainActor.preconditionIsolated()
+                if let held = batches.takePublicationHold() {
+                    do { try await held.arrive(batch) } catch { return }
+                }
                 batches.record(batch)
             })
         service = storage.makeService(presentationLane: lane, membership: directory)
@@ -82,6 +97,21 @@ final class PaneContextPresentationServiceFixture: Sendable {
         try await storage.bind(storage.sender, to: child)
         await service.reconcileMembership()
         return child
+    }
+
+    func holdNextPublication(_ step: HeldStep<[PaneId: PaneContextPublication]>) -> UUID {
+        let scope = batches.beginScope()
+        batches.holdNextPublication(step)
+        return scope
+    }
+
+    func expectPublication(_ value: PaneContextPublication, for paneId: PaneId, in scope: UUID) async throws {
+        _ = try await batches.facts.expectNext(
+            in: scope,
+            where: { fact in
+                if case .published(let batch) = fact { return batch[paneId] == value }
+                return false
+            }, "expected MainActor pane value applied")
     }
 
     func publishedBatches() async -> [[PaneId: PaneContextPublication]] {

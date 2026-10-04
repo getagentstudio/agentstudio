@@ -40,6 +40,7 @@ struct SessionsPaneContextCompositionFactoryTests {
             #expect(try #require(detail).session?.bindingGeneration == binding.bindingGenerationId)
             #expect(try #require(detail).messages.count == 1)
             #expect(try #require(detail).messages.first?.id.uuid == messageId)
+            await composition.presentationLane.publishPending()
             #expect(await fixture.presentationAtom.value(for: fixture.ownerId)?.own.needsReplyCount == 1)
         }
     }

@@ -70,8 +70,8 @@ func capturePaneContextDetail(
     _ database: Database, paneId: PaneId, sources: [PaneId], now: @Sendable () -> Date
 ) throws -> PaneContextDetailSnapshot? {
     guard try !PaneContextStorage.isRetired(database, paneId: paneId) else { return nil }
-    try PaneContextStorage.expireLines(database, now: now())
-    try PaneContextStorage.hideSettled(database, now: now())
+    try PaneContextStorage.expireLines(database, now: now(), sources: sources)
+    try PaneContextStorage.hideSettled(database, now: now(), sources: sources)
     let messages: [[PaneContextStoredMessage]] = try sources.map { source in
         guard try !PaneContextStorage.isRetired(database, paneId: source) else { return [] }
         return try PaneContextStorage.messages(database, paneId: source).filter { !$0.displayHidden }
