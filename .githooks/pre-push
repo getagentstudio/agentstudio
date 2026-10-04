@@ -22,7 +22,7 @@ if ! command -v git-lfs >/dev/null 2>&1; then
 fi
 
 if [[ -n "$refs" ]]; then
-  printf '%s\n' "$refs" | git lfs pre-push "$@"
+  git lfs pre-push "$@" <<< "$refs"
 else
   git lfs pre-push "$@" </dev/null
 fi
