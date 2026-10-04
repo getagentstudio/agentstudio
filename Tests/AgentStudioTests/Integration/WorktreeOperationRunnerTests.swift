@@ -352,7 +352,7 @@ private struct WorktreeOperationClientStub: AgentStudioGitLocalClient {
         return GitWorktreeValidation(snapshot: snapshot, isValid: true)
     }
 
-    func createWorktree(_: GitCreateWorktreeRequest) async throws(GitDataPlaneError) -> GitWorktreeSnapshot {
+    func createWorktree(_: GitCreateWorktreeRequest) async throws(GitDataPlaneError) -> GitWorktreeCreation {
         throw .unsupported(message: "unexpected worktree creation")
     }
 
@@ -360,9 +360,11 @@ private struct WorktreeOperationClientStub: AgentStudioGitLocalClient {
         throw .rejected(reason: .clientCapabilityUnavailable)
     }
 
-    func forkWorktreeEligibility(sourceWorktreePath _: URL, destinationPath _: URL) async
-        -> GitWorktreeForkEligibility
-    {
+    func forkWorktreeEligibility(
+        sourceWorktreePath _: URL,
+        destinationPath _: URL,
+        materialization _: GitWorktreeForkMaterialization
+    ) async -> GitWorktreeForkEligibility {
         .unavailable(.clientCapabilityUnavailable)
     }
 
@@ -374,6 +376,19 @@ private struct WorktreeOperationClientStub: AgentStudioGitLocalClient {
 
     func removeWorktree(_: GitRemoveWorktreeRequest) async throws(GitDataPlaneError) -> GitWorktreeRemovalResult {
         throw .unsupported(message: "unexpected worktree removal")
+    }
+
+    func assessBranchIntegration(_: GitBranchIntegrationRequest) async throws(GitDataPlaneError)
+        -> GitBranchIntegrationReport
+    {
+        throw .unsupported(message: "unexpected branch integration assessment")
+    }
+
+    func deleteLocalBranch(_: GitDeleteLocalBranchRequest)
+        async throws(GitLockedOperationFailure<GitDeleteLocalBranchErrorReason>) -> GitDeleteLocalBranchResult
+    {
+        throw GitLockedOperationFailure(
+            reason: .gitFailure(.unsupported(message: "unexpected branch deletion")), lockResidue: nil)
     }
 
     func lockWorktree(_: GitLockWorktreeRequest) async throws(GitDataPlaneError) -> GitWorktreeSnapshot {

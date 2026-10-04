@@ -7,7 +7,7 @@ import Foundation
 /// The SDK reads and writes worktree creation needs, narrowed so the coordinator can be
 /// proven with a fake and the production path stays the SDK's serial writer lane.
 protocol WorktreeCreationGitClient: Sendable {
-    func createWorktree(_ request: GitCreateWorktreeRequest) async throws(GitDataPlaneError) -> GitWorktreeSnapshot
+    func createWorktree(_ request: GitCreateWorktreeRequest) async throws(GitDataPlaneError) -> GitWorktreeCreation
     /// Copy-on-write fork of the source's current files at its captured HEAD.
     func forkWorktree(_ request: GitForkWorktreeRequest) async throws(GitWorktreeForkError) -> GitForkWorktreeResult
 }
@@ -28,7 +28,7 @@ struct LibGit2WorktreeCreationGitClient: WorktreeCreationGitClient {
         self.client = client
     }
 
-    func createWorktree(_ request: GitCreateWorktreeRequest) async throws(GitDataPlaneError) -> GitWorktreeSnapshot {
+    func createWorktree(_ request: GitCreateWorktreeRequest) async throws(GitDataPlaneError) -> GitWorktreeCreation {
         try await client.createWorktree(request)
     }
 
@@ -111,7 +111,11 @@ actor WorktreeBranchListingCache: WorktreeBranchListing {
 /// stays authoritative after `.available`.
 struct SDKWorktreeForkEligibilityChecker: WorktreeForkEligibilityChecking {
     typealias EligibilityQuery =
-        @Sendable (_ sourceWorktreePath: URL, _ destinationPath: URL) async -> GitWorktreeForkEligibility
+        @Sendable (
+            _ sourceWorktreePath: URL,
+            _ destinationPath: URL,
+            _ materialization: GitWorktreeForkMaterialization
+        ) async -> GitWorktreeForkEligibility
 
     /// The branch name is not typed yet when the source is chosen, so the query names a
     /// placeholder leaf in the directory every sibling destination shares.
@@ -120,10 +124,11 @@ struct SDKWorktreeForkEligibilityChecker: WorktreeForkEligibilityChecking {
     private let query: EligibilityQuery
 
     init(
-        query: @escaping EligibilityQuery = { sourceWorktreePath, destinationPath in
+        query: @escaping EligibilityQuery = { sourceWorktreePath, destinationPath, materialization in
             await LibGit2AgentStudioGitLocalClient().forkWorktreeEligibility(
                 sourceWorktreePath: sourceWorktreePath,
-                destinationPath: destinationPath
+                destinationPath: destinationPath,
+                materialization: materialization
             )
         }
     ) {
@@ -134,7 +139,7 @@ struct SDKWorktreeForkEligibilityChecker: WorktreeForkEligibilityChecking {
     func forkEligibility(sourceWorktreePath: URL, destinationDirectory: URL) async -> WorktreeForkEligibility {
         let destinationPath = destinationDirectory.appending(
             path: Self.destinationProbeName, directoryHint: .isDirectory)
-        switch await query(sourceWorktreePath, destinationPath) {
+        switch await query(sourceWorktreePath, destinationPath, .copyOnWrite) {
         case .available:
             return .available
         case .unavailable(let reason):

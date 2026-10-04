@@ -46,7 +46,7 @@ package struct WorktreeOperationRunner {
                     WorktreeCreatedSummary(
                         operation: .new,
                         branch: prepared.branchName.rawValue,
-                        path: worktree.canonicalPath,
+                        path: worktree.worktree.canonicalPath,
                         repository: prepared.repositoryPath,
                         materialization: nil
                     ))
@@ -61,20 +61,27 @@ package struct WorktreeOperationRunner {
         case .outcome(let outcome):
             return outcome
         case .ready(let prepared):
-            do {
+            do throws(GitWorktreeForkError) {
                 let fork = try await client.forkWorktree(
                     GitForkWorktreeRequest(
                         sourceWorktreePath: prepared.sourceWorktreePath,
                         destinationPath: prepared.destinationPath,
-                        mode: .newBranch(name: prepared.branchName.rawValue)
+                        mode: .newBranch(name: prepared.branchName.rawValue),
+                        materialization: .copyOnWrite
                     ))
+                // This command always requests copy-on-write, so the SDK reports a copy-on-write result.
+                let copyOnWriteReport: GitWorktreeMaterializationReport? =
+                    switch fork.materialization {
+                    case .copyOnWrite(let report): report
+                    case .changesOnly: nil
+                    }
                 return .created(
                     WorktreeCreatedSummary(
                         operation: .fork,
                         branch: prepared.branchName.rawValue,
                         path: fork.worktree.canonicalPath,
                         repository: prepared.repositoryPath,
-                        materialization: fork.materialization
+                        materialization: copyOnWriteReport
                     ))
             } catch {
                 return WorktreeOperationErrorMapper.forkOutcome(
