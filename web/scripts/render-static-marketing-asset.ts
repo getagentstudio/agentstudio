@@ -140,6 +140,8 @@ export async function renderStaticMarketingAsset(
       .png({ compressionLevel: 9 })
       .toFile(props.outputPath);
   } finally {
-    await rm(temporaryDirectory, { force: true, recursive: true });
+    // The Chrome profile lives inside; its helper processes can still flush files
+    // just after the browser exits, so rm retries on ENOTEMPTY/EBUSY.
+    await rm(temporaryDirectory, { force: true, recursive: true, maxRetries: 10, retryDelay: 100 });
   }
 }

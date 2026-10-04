@@ -32,7 +32,15 @@ export async function resolveChromeExecutable(purpose: string): Promise<string> 
   throw new Error(`${purpose} requires Chrome or Brave. Set CHROME_BIN to a Chromium executable.`);
 }
 
-export async function stopBrowserProcess(browserProcess: ReturnType<typeof spawn>): Promise<void> {
+export interface StopBrowserProcessOptions {
+  /** How long a SIGTERM may go unanswered before the process is killed. */
+  readonly forcedExitAfterMs?: number;
+}
+
+export async function stopBrowserProcess(
+  browserProcess: ReturnType<typeof spawn>,
+  { forcedExitAfterMs = 5_000 }: StopBrowserProcessOptions = {},
+): Promise<void> {
   if (browserProcess.exitCode !== null || browserProcess.signalCode !== null) return;
 
   await new Promise<void>((resolveExit) => {
@@ -47,10 +55,11 @@ export async function stopBrowserProcess(browserProcess: ReturnType<typeof spawn
       resolveExit();
     };
 
+    // SIGKILL cannot be ignored, so the exit event still arrives; resolving before it
+    // would let callers delete the profile while Chrome is still writing to it.
     const forcedExitTimeout = setTimeout((): void => {
       browserProcess.kill("SIGKILL");
-      finish();
-    }, 5_000);
+    }, forcedExitAfterMs);
 
     browserProcess.once("exit", finish);
     if (browserProcess.exitCode !== null || browserProcess.signalCode !== null) {
