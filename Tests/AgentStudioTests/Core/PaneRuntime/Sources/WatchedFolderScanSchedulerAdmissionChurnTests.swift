@@ -122,6 +122,52 @@ struct WatchedFolderScanSchedulerAdmissionChurnTests {
         try await admissionFacts.finish()
     }
 
+    @Test("shutdown joins accepted admission even while its return is held")
+    func shutdownJoinsAcceptedAdmission() async throws {
+        let acceptedReturn = HeldStep<RepoDiscoveryValidationRequest>(
+            "accepted generation-2 return during shutdown", cancellation: .holdThroughCancellation
+        )
+        let fixture = try ValidationSchedulerFixture(
+            maximumConcurrentScans: 1,
+            validationBudget: RepoDiscoveryValidationBudget(
+                logicalDeadline: .seconds(60), maximumPhysicalJobs: 1,
+                maximumQueuedRequests: 4, maximumQueuedRequestsPerRoot: 1
+            ),
+            validationAdmissionAdapter: { executor, request in
+                let admission = await executor.submit(request)
+                if request.scanRunGeneration == 2, case .accepted = admission {
+                    do { try await acceptedReturn.arrive(request) } catch {
+                        Issue.record("accepted shutdown admission hold failed: \(error)")
+                    }
+                }
+                return admission
+            }
+        )
+        let original = try fixture.makeRequest(name: "admission-shutdown", containsGitMarker: true)
+        let replacement = try fixture.makeRequest(
+            name: "admission-shutdown", containsGitMarker: true, sourceID: original.sourceID,
+            registrationGeneration: 2,
+            rootURL: URL(fileURLWithPath: original.canonicalRoot.aliases.onceResolvedCanonical.path)
+        )
+        _ = await fixture.scheduler.submit(original)
+        let staleCandidate = await fixture.validationClient.nextCandidate()
+        _ = await fixture.scheduler.submit(replacement)
+        let scope = try await fixture.expectParkedValidation(for: replacement, scanRunGeneration: 2)
+        await fixture.validationClient.complete(staleCandidate, with: .cancelled)
+        try await fixture.facts.expectNext(in: scope, .validationResubmitted)
+        _ = try await acceptedReturn.firstArrival()
+        let acceptedCandidate = await fixture.validationClient.nextCandidate()
+
+        let shutdownTask = Task { await fixture.scheduler.shutdown() }
+        try await fixture.facts.expectNext(in: scope, .validationSettled(.cancelled))
+        await fixture.validationClient.complete(acceptedCandidate, with: .cancelled)
+        acceptedReturn.release()
+        await shutdownTask.value
+        #expect(await fixture.scheduler.stateSnapshot() == .shutDown)
+        #expect(await fixture.validationClient.pendingValidationCount == 0)
+        try await fixture.facts.finish()
+    }
+
     private func retainsAwaitingSuccessor(
         fixture: ValidationSchedulerFixture, sourceID: FilesystemSourceID
     ) async -> Bool {

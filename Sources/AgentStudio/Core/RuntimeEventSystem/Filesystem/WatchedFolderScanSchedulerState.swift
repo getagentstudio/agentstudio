@@ -76,6 +76,16 @@ extension WatchedFolderScanScheduler {
         let startedFromDirtyFollowUp: Bool
     }
 
+    enum ValidationAdmissionDisposition: Equatable, Sendable {
+        case submitting
+        case cancellationRequested
+    }
+
+    struct InFlightValidationAdmission: Sendable {
+        let task: Task<Void, Never>
+        var disposition: ValidationAdmissionDisposition
+    }
+
     struct AwaitingValidation: Sendable {
         let logicalScan: LogicalScan
         let scannerRequest: RepoScannerValidationRequest

@@ -47,7 +47,7 @@ extension WatchedFolderScanScheduler {
                 continue
             }
 
-            // Keep parked custody across admission so cancellation can still settle it.
+            // Submission claims parked-only custody before crossing into executor admission.
             factSink?(awaiting.validationScope, .validationResubmitted)
             await submitValidationRequest(awaiting)
         }

@@ -58,52 +58,18 @@ extension WatchedFolderScanScheduler {
         await submitValidationRequest(awaiting)
     }
 
-    func submitValidationRequest(_ awaiting: AwaitingValidation) async {
-        guard !isShuttingDown else {
-            parkedValidationByRequestID.removeValue(forKey: awaiting.executorRequest.requestID)
-            consumeSyntheticValidationOutcome(.cancelled, awaiting: awaiting)
-            return
-        }
-        let admission = await validationAdmissionSubmitter(awaiting.executorRequest)
-        if case .rejected(.allPhysicalJobsDraining) = admission {
-            // This is the only rejection that retains scheduler custody for resubmission.
-        } else {
-            parkedValidationByRequestID.removeValue(forKey: awaiting.executorRequest.requestID)
-        }
-        switch admission {
-        case .accepted:
-            let sourceID = awaiting.logicalScan.request.sourceID
-            // Cancellation or retirement may win while executor admission crosses actors.
-            guard let state = stateBySourceID[sourceID],
-                awaitingValidation(from: state)?.executorRequest == awaiting.executorRequest,
-                !isShuttingDown
-            else {
-                _ = await validationExecutor.cancel(requestID: awaiting.executorRequest.requestID)
-                return
-            }
-            return
-        case .rejected(.logicalCapacityReached):
-            consumeSyntheticValidationOutcome(
-                .failure(.serviceFailed(detail: "validation logical capacity reached")),
-                awaiting: awaiting
-            )
-        case .rejected(.allPhysicalJobsDraining):
-            parkValidationRequest(awaiting)
-        case .rejected(.shutdown):
-            consumeSyntheticValidationOutcome(.cancelled, awaiting: awaiting)
-        case .rejected(.duplicateRequest),
-            .rejected(.scannerSessionAlreadyOutstanding),
-            .rejected(.sourceAlreadyOutstanding):
-            rejectCorrelatedValidationCustody(awaiting)
-        }
-    }
-
     func ensureValidationCompletionDrainStarted() {
         guard validationCompletionDrainTask == nil else { return }
         validationCompletionDrainTask = Task { await drainValidationCompletions() }
     }
 
     func cancelAwaitingValidation(_ awaiting: AwaitingValidation) async {
+        let requestID = awaiting.executorRequest.requestID
+        if validationAdmissionsByRequestID[requestID] != nil {
+            validationAdmissionsByRequestID[requestID]?.disposition = .cancellationRequested
+            _ = awaiting.logicalScan.session.cancel()
+            return
+        }
         if parkedValidationByRequestID.removeValue(forKey: awaiting.executorRequest.requestID) != nil {
             consumeSyntheticValidationOutcome(.cancelled, awaiting: awaiting)
             _ = awaiting.logicalScan.session.cancel()
@@ -144,6 +110,10 @@ extension WatchedFolderScanScheduler {
             return
         }
         guard let awaiting = awaitingValidation(from: state) else {
+            recordStaleScanRunDrop(sourceID: sourceID)
+            return
+        }
+        guard awaiting.executorRequest.requestID == executorRequest.requestID else {
             recordStaleScanRunDrop(sourceID: sourceID)
             return
         }
@@ -250,13 +220,13 @@ extension WatchedFolderScanScheduler {
         }
     }
 
-    private func rejectCorrelatedValidationCustody(_ awaiting: AwaitingValidation) {
+    func rejectCorrelatedValidationCustody(_ awaiting: AwaitingValidation) {
         let sourceID = awaiting.logicalScan.request.sourceID
-        let state = stateBySourceID[sourceID]
         _ = awaiting.logicalScan.session.cancel()
-        if let state {
-            preserveDirtyAfterStaleCompletion(sourceID: sourceID, state: state)
-        }
+        guard let state = stateBySourceID[sourceID],
+            awaitingValidation(from: state)?.executorRequest == awaiting.executorRequest
+        else { return }
+        preserveDirtyAfterStaleCompletion(sourceID: sourceID, state: state)
         _ = dispatchReadyQuanta()
         finalizeShutdownIfDrained()
     }

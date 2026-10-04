@@ -33,6 +33,7 @@ package actor WatchedFolderScanScheduler {
     var validationCompletionDrainTask: Task<Void, Never>?
     var validationPhysicalDrainTask: Task<Void, Never>?
     var parkedValidationByRequestID: [RepoDiscoveryValidationRequestID: AwaitingValidation] = [:]
+    var validationAdmissionsByRequestID: [RepoDiscoveryValidationRequestID: InFlightValidationAdmission] = [:]
 
     init(
         maximumConcurrentScans: Int,
@@ -470,6 +471,8 @@ extension WatchedFolderScanScheduler {
         let tasks = Array(quantumTasksBySourceID.values)
         for task in tasks { task.cancel() }
         for task in tasks { await task.value }
+        let admissionTasks = validationAdmissionsByRequestID.values.map(\.task)
+        for task in admissionTasks { await task.value }
         if let validationCompletionDrainTask {
             await validationCompletionDrainTask.value
         }
@@ -842,6 +845,7 @@ extension WatchedFolderScanScheduler {
     func finalizeShutdownIfDrained() {
         guard isShuttingDown, occupiedCreditCount == 0,
             stateCounts.awaitingValidation == 0,
+            validationAdmissionsByRequestID.isEmpty,
             validationCompletionDrainTask == nil
                 && validationPhysicalDrainTask == nil
         else { return }
