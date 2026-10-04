@@ -35,9 +35,19 @@ struct WorktreeOperationErrorMapperTests {
             (.remoteRefTransactionIndeterminate, .remoteRefTransactionIndeterminate(message: "private detail")),
             (.libgit2Failure, .libgit2Failure(code: 1, klass: 2, message: "private detail")),
             (.unsupported, .unsupported(message: "private detail")),
+            // Finer SDK lock and permission classifications keep the CLI's earlier category.
+            (
+                .libgit2Failure,
+                .lockHeld(
+                    GitLockFact(
+                        path: repositoryPath.appending(path: ".git/refs/heads/feature.lock"),
+                        resource: .reference(name: "refs/heads/feature")))
+            ),
+            (.libgit2Failure, .lockUnidentified(.packedRefs)),
+            (.libgit2Failure, .permissionDenied(path: repositoryPath)),
         ]
 
-        #expect(errors.count == 19)
+        #expect(errors.count == 22)
         for (expectedKind, error) in errors {
             #expect(WorktreeOperationErrorMapper.gitErrorKind(for: error) == expectedKind)
         }
@@ -145,6 +155,7 @@ struct WorktreeOperationErrorMapperTests {
             (.nestedAdministration, "modules/nested/worktrees/repo", .repositoryGitDirectory),
             (.createdBranch, "refs/heads/feature/example", .branchReference),
             (.temporaryArtifact, "worktrees/.temporary-artifact", .temporary),
+            (.lockFile, "refs/heads/feature/example.lock", .repositoryGitDirectory),
         ]
 
         for (kind, location, base) in residueLocations {

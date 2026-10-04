@@ -41,10 +41,11 @@ package enum WorktreeOperationErrorMapper {
             .repositoryNotFound
         case .worktreeNotFound:
             .worktreeNotFound
-        case .locked, .lockHeld, .lockUnidentified:
+        case .locked:
             .locked
-        // Raised by worktree removal primitives, which new/fork/list never call.
-        case .permissionDenied:
+        // The pinned SDK classifies libgit2 lock and permission failures more finely. The CLI keeps
+        // reporting them as `libgit2Failure`, the category these failures had before the pin.
+        case .lockHeld, .lockUnidentified, .permissionDenied:
             .libgit2Failure
         case .worktreeNotPrunable:
             .worktreeNotPrunable

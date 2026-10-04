@@ -284,9 +284,7 @@ private actor NonCooperativeDiffAgentStudioGitClient: AgentStudioGitLocalClient 
         throw GitDataPlaneError.unsupported(message: "not used")
     }
 
-    func createWorktree(_ request: GitCreateWorktreeRequest) async throws(GitDataPlaneError)
-        -> GitWorktreeSnapshot
-    {
+    func createWorktree(_ request: GitCreateWorktreeRequest) async throws(GitDataPlaneError) -> GitWorktreeCreation {
         throw GitDataPlaneError.unsupported(message: "not used")
     }
 
@@ -340,6 +338,18 @@ private actor NonCooperativeDiffAgentStudioGitClient: AgentStudioGitLocalClient 
 
     func branches(for repositoryPath: URL) async throws(GitDataPlaneError) -> [GitBranchSnapshot] {
         throw GitDataPlaneError.unsupported(message: "not used")
+    }
+
+    func assessBranchIntegration(_: GitBranchIntegrationRequest) async throws(GitDataPlaneError)
+        -> GitBranchIntegrationReport
+    {
+        throw GitDataPlaneError.unsupported(message: "not used")
+    }
+
+    func deleteLocalBranch(_: GitDeleteLocalBranchRequest)
+        async throws(GitLockedOperationFailure<GitDeleteLocalBranchErrorReason>) -> GitDeleteLocalBranchResult
+    {
+        throw GitLockedOperationFailure(reason: .gitFailure(.unsupported(message: "not used")), lockResidue: nil)
     }
 
     func trackedPaths(
