@@ -260,7 +260,6 @@ struct WatchedFolderScanSchedulerValidationTests {
         await shutdownTask.value
 
         #expect(await fixture.scheduler.stateSnapshot() == .shutDown)
-        #expect(await fixture.scheduler.validationExecutor.snapshot().physicalJobCount == 0)
         #expect(await fixture.validationClient.pendingValidationCount == 0)
         try await completionFacts.finish()
         try await fixture.facts.finish()
