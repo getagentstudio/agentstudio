@@ -1,6 +1,6 @@
 # Worktree lifecycle: how it is built
 
-Date: 2026-10-02, revision 25 (app PR 1 review: three-way E4 result; name-keyed default protection; pre-effect lock preflight; fetched lockResidue; prune gate on fresh assessment; stale-lock identity last). Revision 24 (Advisor R17-A1: GitLargeFileFill.scan complete | incomplete). Revision 23 (reviewer LFS-F1/F2/F5/F7: owned-temp residue, fork fallback on the fork's own descriptor, no false objectAbsent for source-restored paths). Revision 22 (Advisor LFS-A1–A6/D1: no index stat rewrite; removal safety uses the LFS cleanliness check; temp ownership; fill only non-carried paths; empty lfs.storage = default; destination-ownership assumption). Revision 21 (LR27 result: typed per-path misses and index-update status; fill problems never throw). Revision 20 (LR27: LFS fill from the local store in the SDK; LFS-aware status). Revision 19 (B7 stop: one fetching-read-failure document shared by list, remove and prune). Revision 18 (B6 batch: branch-retention options; failed entries carry the blocking lock's stop document). Revision 17 (B4 stop: `changesUnknown` / `evidenceUnknown` stop reasons; unknown never counts as clean). Revision 16 (batched carrier audit: typed stop details, lock observation, removal lock residue, branch dispositions, prune skips). Revision 15 (B4 stop: the list request carries `callerDirectory` like removal and prune, so `isCurrent` survives `--repo`). Revision 14 (B3b stop: `WorktreeFetchSkipReason.noTarget` when E4 is none). Revision 13 (B3b stop: `WorktreeFetchStatus.failed` carries an optional lock fact and lock residue). Revision 12 (B3b stop: the upstream is the SDK's exact `GitBranchSnapshot.upstreamName` ref; only an `origin` upstream is fetched, matching the shipped origin-only rule). Revision 11 (B3b stop: the E4 resolver for integration takes the fallback branch's upstream; `new`'s start point is unchanged). Revision 10 (S6 stop: refuse a source whose `.gitattributes` differs from HEAD, so the standard attribute lookup equals HEAD's). Revision 9 (S6 stop: verified LFS content for paths that aren't carried; other custom filter drivers refused). Revision 8 (S5: the fetch's lockResidue is optional; nil = not observed, for the legacy whole-remote fetch). Revision 7 (S4 implementation stop: removeWorktree returns partial and failed outcomes instead of throwing, so observed effects reach the caller). Revision 6 (owner decisions: open panes warn with options incl. `removeWithOpenPanes`; D1/D4/D6/D7 recorded). Revision 5 (review round 3: F12-V own-lock residue on every failure path; F15 dry-run gates pane closing).
+Date: 2026-10-04, revision 26 (owner D8–D12: one warm `new`; SDK copy filter for ignored paths and nested same-repository worktrees; leaf reads `.agentstudio.config.json` and checks the main worktree's state and busy locks; `fork` verb removed). Revision 25 (app PR 1 review: three-way E4 result; name-keyed default protection; pre-effect lock preflight; fetched lockResidue; prune gate on fresh assessment; stale-lock identity last). Revision 24 (Advisor R17-A1: GitLargeFileFill.scan complete | incomplete). Revision 23 (reviewer LFS-F1/F2/F5/F7: owned-temp residue, fork fallback on the fork's own descriptor, no false objectAbsent for source-restored paths). Revision 22 (Advisor LFS-A1–A6/D1: no index stat rewrite; removal safety uses the LFS cleanliness check; temp ownership; fill only non-carried paths; empty lfs.storage = default; destination-ownership assumption). Revision 21 (LR27 result: typed per-path misses and index-update status; fill problems never throw). Revision 20 (LR27: LFS fill from the local store in the SDK; LFS-aware status). Revision 19 (B7 stop: one fetching-read-failure document shared by list, remove and prune). Revision 18 (B6 batch: branch-retention options; failed entries carry the blocking lock's stop document). Revision 17 (B4 stop: `changesUnknown` / `evidenceUnknown` stop reasons; unknown never counts as clean). Revision 16 (batched carrier audit: typed stop details, lock observation, removal lock residue, branch dispositions, prune skips). Revision 15 (B4 stop: the list request carries `callerDirectory` like removal and prune, so `isCurrent` survives `--repo`). Revision 14 (B3b stop: `WorktreeFetchSkipReason.noTarget` when E4 is none). Revision 13 (B3b stop: `WorktreeFetchStatus.failed` carries an optional lock fact and lock residue). Revision 12 (B3b stop: the upstream is the SDK's exact `GitBranchSnapshot.upstreamName` ref; only an `origin` upstream is fetched, matching the shipped origin-only rule). Revision 11 (B3b stop: the E4 resolver for integration takes the fallback branch's upstream; `new`'s start point is unchanged). Revision 10 (S6 stop: refuse a source whose `.gitattributes` differs from HEAD, so the standard attribute lookup equals HEAD's). Revision 9 (S6 stop: verified LFS content for paths that aren't carried; other custom filter drivers refused). Revision 8 (S5: the fetch's lockResidue is optional; nil = not observed, for the legacy whole-remote fetch). Revision 7 (S4 implementation stop: removeWorktree returns partial and failed outcomes instead of throwing, so observed effects reach the caller). Revision 6 (owner decisions: open panes warn with options incl. `removeWithOpenPanes`; D1/D4/D6/D7 recorded). Revision 5 (review round 3: F12-V own-lock residue on every failure path; F15 dry-run gates pane closing).
 
 Revision 4 history:
 - Revision 4 corrects review round 2 and the Advisor's revision-3 notes:
@@ -331,12 +331,16 @@ The leaf maps each SDK error through its existing total mapper, extended case by
 
 ```swift
 enum WorktreeOperationRequest: Sendable, Equatable {
-    case createFromDefault(start: URL, branch: String)
-    case createFromBranch(start: URL, branch: String, startBranch: String)                 // LR1
-    case fork(start: URL, branch: String, materialization: WorktreeForkMaterialization)   // LR2-LR4
+    case create(WorktreeCreateRequest)                                                      // LR1-LR4, LR28, LR29
     case list(start: URL, callerDirectory: URL?, targets: [String], fetchPolicy: WorktreeFetchPolicy) // LR9; callerDirectory → isCurrent, nil from app hosts
     case remove(WorktreeRemovalRequest)                                                    // LR10-LR16, LR25, LR26
     case prune(WorktreePruneRequest)                                                       // LR17
+}
+struct WorktreeCreateRequest: Sendable, Equatable {
+    let start: URL                               // --repo or current directory: finds E1 and its main worktree
+    let branch: String
+    let source: WorktreeCreateSource             // .mainWorktree (default) | .worktree(URL) (--from)
+    let materialization: WorktreeCreateMaterialization // .copyOnWrite (default) | .changesOnly | .trackedOnly(startBranch: String?)
 }
 struct WorktreeRemovalRequest: Sendable, Equatable {
     let start: URL                               // --repo or current directory
@@ -633,6 +637,38 @@ The IPC methods and the UI both call it.
 | App IPC composition | `App/IPCComposition/Worktrees/` registers `worktree.create/fork/remove/prune/list` and dispatches to the coordinator. Privilege: the existing `appCommandExecute` for mutations and `workspaceRead` for list, since the standalone CLI already performs the same work with no credential. |
 | `AppCommand` (UI verbs) | New `removeWorktree` and `forkWorktreeChangesOnly` spec entries (label, `CommandIcon`, help, surface policy), with IPC classified in the same change as reachable through the `worktree.*` methods. The existing creation commands keep their interactive role. |
 | UI | Worktree row menu → Remove Worktree…. The command bar opens a removal step (Features/CommandBar) showing the assessment, changes, branch disposition and evidence choice (`NSOpenPanel` for the archive folder). Close Panes and Remove dispatches the existing pane-close action per listed pane, then removes. New Worktree → Fork gains the changes-only row. |
+
+## How `new` copies (LR28, LR29)
+
+```mermaid
+flowchart TB
+  P["leaf: parse args → WorktreeCreateRequest<br/>(option-combination refusals: LR1)"] --> C["leaf: resolve E1, main worktree, source<br/>read E15 from &lt;main&gt;/.agentstudio.config.json<br/>(absent → empty; malformed → configInvalid)"]
+  C -->|trackedOnly| T["SDK createWorktree (shipped WR1 + LR27 fill)"]
+  C -->|copyOnWrite / changesOnly| B{"leaf preflight (LR29)"}
+  B -->|"source is main: E6 dirty → sourceDirty<br/>branch ≠ E4's branch → sourceNotOnDefaultBranch"| R["refused, nothing changed"]
+  B -->|"any source: a busyLocks file has a held lock → sourceBusy"| R
+  B -->|ok| F["SDK forkWorktree(request with copyRules)"]
+  F --> W["walker (unchanged) → filesystem plan"]
+  W --> X["copy filter (new, SDK): ignored roots from the source's ignore rules,<br/>minus those matching include (self or ancestor);<br/>plus nested linked worktrees whose common dir is E1's<br/>→ excluded subtrees"]
+  X --> E["plan.excludingSubtrees(...) (existing F6 seam)<br/>then topology planning, materialization, rehoming, validation (unchanged)"]
+  E --> O["created(.copyOnWrite(report + ignoredIncluded,<br/>ignoredExcludedCount, nestedWorktreesSkipped))"]
+```
+
+- **Owners.**
+  - The **SDK** owns the copy filter, because it's a property of a copy-on-write fork and needs the fork's plan and topology. It takes rules as data and knows no file names.
+  - The **leaf** owns the repository's config file, the main-worktree checks and the busy-lock test. Those are product policy, and the config file belongs to Agent Studio, not to Git.
+- **SDK request.** `GitForkWorktreeRequest` gains `copyRules: GitWorktreeCopyRules { ignoredPaths: .copyAll | .copyMatching([GitIgnorePattern]) }`. Excluding nested same-repository worktrees isn't a field: it always applies to copy-on-write forks, because copying another live worktree of the same repository is never wanted, and flattening one into an independent repository silently duplicates someone else's work.
+  - The app's own UI fork (New Worktree → Fork) keeps `.copyAll` until app PR 2 decides its UI. That's an explicit, recorded difference, not a second code path: same SDK call, different data.
+- **Ignored roots.** They're computed with the SDK's existing status machinery (the changes-only filter's ignore evaluation): untracked ignored entries without recursing into ignored directories, so an ignored directory is one root. Patterns are matched with gitignore semantics against each root's repository-relative path and its ancestors. A root that matches is kept whole; its contents aren't filtered further. Ignore rules are the source repository's own. Content inside a submodule or an independent nested repository is that repository's business: it's copied whole with it (LR28's "always"), including files that repository ignores, such as `vendor/ghostty`'s build outputs.
+- **Nested worktrees of the same repository.** The topology planner already classifies nested Git entries. A nested linked worktree whose common directory resolves to E1's common directory is added to the excluded subtrees **before** topology capture, so it's never flattened or re-homed. Independent nested repositories, submodules, and linked worktrees of *other* repositories keep today's handling.
+- **Exclusion uses the existing seam.** `WorktreeForkFilesystemPlan.excludingSubtrees` (added for F6) removes excluded subtrees from the plan, so the materializer, validator, finalization and clean adoption never see them. Its hard-link rule applies: a hard-link group whose cloned primary is excluded while another path is kept fails typed.
+- **Busy locks.** For each file under the source matching a `busyLocks` pattern (expanded with the same matcher, files only), the leaf opens it read-only and no-follow and tries `flock(LOCK_EX | LOCK_NB)`. `EWOULDBLOCK` means busy; otherwise the lock is released at once. It never creates, writes or deletes the file. agent-studio's config lists `.build*/.slot.lock`, the kernel lock `scripts/swift-build-slot.sh` holds for the length of a build or test.
+- **The config file.** `.agentstudio.config.json`, decoded with `Codable` into `AgentStudioRepositoryConfig { worktree: { include: [String], busyLocks: [String] } }`. Unknown keys are ignored, so the file can grow. It's read from the main worktree, because it's a repository-level declaration; a worktree's local edits don't change another worktree's copy. agent-studio commits its own file listing its caches: `.build*/`, `Frameworks/`, `node_modules/`, `BridgeWeb/node_modules/`, and the vendor build outputs `scripts/vendor-worktree.sh` names. It lists no `tmp/`.
+- **Removing `fork`.** The parser no longer knows `fork`, so it's a usage error, exit 64, whose single line names `new --from`. There's no alias (hard cutover).
+- **Proof seams.**
+  - SDK: integration tests on temporary repositories for each LR28 case, through `forkWorktree`, asserting the plan's excluded subtrees and the destination's contents.
+  - Leaf: unit tests for config decoding and option combinations; integration tests for each LR29 refusal with a real `flock` holder process.
+  - Real checkout: `new` from the agent-studio main checkout, then `mise run build` without setup.
 
 ## What runs where
 
