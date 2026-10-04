@@ -48,11 +48,19 @@ struct ProviderPermissionHookProjectionTests {
             let command = try #require(handler["command"] as? String)
             let permission = event == .permissionRequest
             #expect(command.contains("--permission-policy wait") == permission)
-            #expect(
-                handler["timeout"] as? Double
-                    == (permission
-                        ? CLIPolicy.permissionHookTimeoutSeconds : Double(CodexPackageInstaller.hookTimeoutSeconds)))
-            #expect(handler["async"] == nil)
+            if permission {
+                #expect(handler["timeout"] as? Double == CLIPolicy.permissionHookTimeoutSeconds)
+            } else {
+                let expectedTimeout =
+                    event == .sessionEnd || event == .interrupt
+                    ? 1 : CodexPackageInstaller.hookTimeoutSeconds
+                #expect(handler["timeout"] as? Int == expectedTimeout)
+            }
+            if permission || event == .sessionEnd {
+                #expect(handler["async"] == nil)
+            } else {
+                #expect(handler["async"] as? Bool == true)
+            }
         }
     }
 

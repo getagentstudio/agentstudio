@@ -54,7 +54,11 @@ struct ProviderStatusHookInstallerTests {
                             ? CLIPolicy.permissionHookTimeoutSeconds : ClaudeCodePackageInstallation.hookTimeoutSeconds)
             )
             #expect(!command.contains("ask --wait"))
-            #expect(entry["async"] == .bool(true))
+            if permission {
+                #expect(entry["async"] == nil)
+            } else {
+                #expect(entry["async"] == .bool(true))
+            }
         }
         #expect(hooks["Notification"] == nil)
         // The shell preserves the installer-selected permission policy for the CLI.

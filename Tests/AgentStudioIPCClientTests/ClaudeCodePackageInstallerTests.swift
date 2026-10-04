@@ -106,7 +106,7 @@ struct ClaudeCodePackageInstallerTests {
         #expect(FileManager.default.isReadableFile(atPath: marker.path))
     }
 
-    @Test("every installed Claude lifecycle and report-only permission hook is async with its existing timeout")
+    @Test("Claude permission waits synchronously while every other owned hook is async")
     func ownedHooksAreAsync() throws {
         let fixture = try ClaudeCodePackageFixture.make()
         defer { fixture.tearDown() }
@@ -114,8 +114,13 @@ struct ClaudeCodePackageInstallerTests {
         for event in ClaudeCodeHookEvent.allCases {
             let groups = try fixture.hookGroups(for: event.rawValue)
             let fields = try #require(Self.ownedHandler(groups))
-            #expect(fields["async"] == .bool(true))
-            #expect(fields["timeout"] == .number(ClaudeCodePackageInstallation.hookTimeoutSeconds))
+            if event == .permissionRequest {
+                #expect(fields["async"] == nil)
+                #expect(fields["timeout"] == .number(CLIPolicy.permissionHookTimeoutSeconds))
+            } else {
+                #expect(fields["async"] == .bool(true))
+                #expect(fields["timeout"] == .number(ClaudeCodePackageInstallation.hookTimeoutSeconds))
+            }
         }
     }
 
@@ -162,8 +167,13 @@ struct ClaudeCodePackageInstallerTests {
             let commands = ownedCommands(groups)
             #expect(commands.count == 1)
             let handler = try #require(Self.ownedHandler(groups))
-            #expect(handler["async"] == .bool(true))
-            #expect(handler["timeout"] == .number(ClaudeCodePackageInstallation.hookTimeoutSeconds))
+            if event == .permissionRequest {
+                #expect(handler["async"] == nil)
+                #expect(handler["timeout"] == .number(CLIPolicy.permissionHookTimeoutSeconds))
+            } else {
+                #expect(handler["async"] == .bool(true))
+                #expect(handler["timeout"] == .number(ClaudeCodePackageInstallation.hookTimeoutSeconds))
+            }
         }
         let fields = try fixture.settingsFields()
         #expect(fields["model"] == .string("user-model"))

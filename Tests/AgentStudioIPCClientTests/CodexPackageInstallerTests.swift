@@ -41,13 +41,15 @@ struct CodexPackageInstallerTests {
         for event in CodexHookEventName.installedEvents {
             let group = try #require(home.ownedGroup(event: event))
             let handler = try #require((group["hooks"] as? [[String: Any]])?.first)
-            if event == .sessionEnd {
+            if event == .sessionEnd || event == .permissionRequest {
                 #expect(handler["async"] == nil)
             } else {
                 #expect(handler["async"] as? Bool == true)
             }
             let expectedTimeout =
-                event == .sessionEnd || event == .interrupt ? 1 : CodexPackageInstaller.hookTimeoutSeconds
+                event == .permissionRequest
+                ? Int(CLIPolicy.permissionHookTimeoutSeconds)
+                : (event == .sessionEnd || event == .interrupt ? 1 : CodexPackageInstaller.hookTimeoutSeconds)
             #expect(handler["timeout"] as? Int == expectedTimeout)
         }
     }
@@ -99,13 +101,15 @@ struct CodexPackageInstallerTests {
             #expect(owned.count == 1)
             let group = try #require(owned.first)
             let handler = try #require((group["hooks"] as? [[String: Any]])?.first)
-            if event == .sessionEnd {
+            if event == .sessionEnd || event == .permissionRequest {
                 #expect(handler["async"] == nil)
             } else {
                 #expect(handler["async"] as? Bool == true)
             }
             let expectedTimeout =
-                event == .sessionEnd || event == .interrupt ? 1 : CodexPackageInstaller.hookTimeoutSeconds
+                event == .permissionRequest
+                ? Int(CLIPolicy.permissionHookTimeoutSeconds)
+                : (event == .sessionEnd || event == .interrupt ? 1 : CodexPackageInstaller.hookTimeoutSeconds)
             #expect(handler["timeout"] as? Int == expectedTimeout)
         }
     }
