@@ -1,9 +1,9 @@
-import AgentStudioInfrastructure
 import AgentStudioTestHarness
 import Foundation
 import Testing
 
 @testable import AgentStudioCore
+@testable import AgentStudioInfrastructure
 
 @Suite("Watched-folder validation admission churn")
 struct WatchedFolderScanSchedulerAdmissionChurnTests {
