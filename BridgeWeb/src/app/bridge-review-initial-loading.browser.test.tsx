@@ -4,17 +4,73 @@ import { render } from 'vitest-browser-react';
 import { page } from 'vitest/browser';
 
 import type { BridgeMainCodeViewItem } from '../core/comm-worker/bridge-main-render-snapshot-store.js';
+import { bridgeProductReviewComparisonPresentationSchema } from '../core/comm-worker/bridge-product-review-comparison-presentation-contracts.js';
 import { createBridgeTelemetryRecorder } from '../foundation/telemetry/bridge-telemetry-recorder.js';
+import { parseBridgeCodeViewDiffForBrowserTest } from '../review-viewer/code-view/bridge-code-view-browser-test-diff.js';
 
 // oxlint-disable-next-line import/no-unassigned-import -- Exercise the production Review layout and skeletons.
 import './bridge-app.css';
-import { parseBridgeCodeViewDiffForBrowserTest } from '../review-viewer/code-view/bridge-code-view-browser-test-diff.js';
 import { waitForBridgeReviewRecoveryDomState } from '../review-viewer/test-support/bridge-review-recovery-dom-state.test-support.js';
+import noSourceAttempt from '../test-fixtures/bridge-contract-fixtures/valid/bridge-product-review-comparison-attempt-no-source.json' with { type: 'json' };
 import {
 	makeReviewSurfaceHarness,
 	reviewDisplayEvent,
 } from './bridge-app-review-render-snapshot-controller.browser-harness.test-support.js';
 import { BridgeReviewViewerMode } from './bridge-app-review-viewer-mode.js';
+
+test('native noSource settles both Review regions without a source slice or skeleton', async (): Promise<void> => {
+	const consoleErrors = vi.spyOn(console, 'error');
+	const harness = makeReviewSurfaceHarness();
+	const rendered = await render(reviewMode(harness));
+	try {
+		for (const region of ['review-content', 'review-tree']) {
+			expect(
+				document
+					.querySelector(`[data-bridge-region="${region}"]`)
+					?.getAttribute('data-presentation-state'),
+			).toBe('loading');
+		}
+		await act(async (): Promise<void> => {
+			harness.reviewClient.renderStore.applyWorkerPatch({
+				slice: 'panelChrome',
+				operation: 'upsert',
+				payload: {
+					reviewComparison: bridgeProductReviewComparisonPresentationSchema.parse({
+						activeTarget: null,
+						attempt: noSourceAttempt,
+						displayedSnapshot: { status: 'none' },
+						repositoryDefaultTarget: null,
+					}),
+				},
+			});
+		});
+		for (const region of ['review-content', 'review-tree']) {
+			const element = document.querySelector(`[data-bridge-region="${region}"]`);
+			expect(element?.getAttribute('data-presentation-state')).toBe('empty');
+			expect(element?.getAttribute('data-empty-reason')).toBe('noSource');
+			await expect
+				.element(
+					page
+						.getByText('This pane has no worktree', { exact: true })
+						.nth(region === 'review-content' ? 0 : 1),
+				)
+				.toBeVisible();
+			expect(element?.querySelector('[data-slot="skeleton"]')).toBeNull();
+		}
+		expect(document.body.textContent).not.toContain('Choose a comparison target');
+		expect(document.querySelector('[role="alert"]')).toBeNull();
+		await act(async (): Promise<void> => {
+			await page.screenshot({ path: '../../../tmp/g1-IC3-review-no-source.png' });
+		});
+	} finally {
+		await act(async (): Promise<void> => {
+			await rendered.unmount();
+		});
+		harness.reviewClient.renderStore.dispose();
+		expect(consoleErrors.mock.calls).toEqual([]);
+		consoleErrors.mockRestore();
+	}
+});
 
 test('cold Review waits for its first source with skeletons instead of no-target copy', async (): Promise<void> => {
 	const harness = makeReviewSurfaceHarness();

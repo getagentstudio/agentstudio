@@ -70,7 +70,7 @@ export function bridgeReviewRegionSurfaceStatus(props: {
 
 export function bridgeReviewFallbackRegionPresentation(props: {
 	readonly surface?: BridgeRegionSurfaceStatus;
-	readonly status: 'noSelection' | 'certifiedEmpty' | 'loading' | 'failed';
+	readonly status: 'noSource' | 'noSelection' | 'certifiedEmpty' | 'loading' | 'failed';
 	readonly comparisonPaneState: BridgeReviewComparisonPaneState;
 	readonly recoveryStatus?: BridgeMainViewRecoveryStatus | null;
 }): BridgeRegionPresentationState {
@@ -87,13 +87,17 @@ export function bridgeReviewFallbackRegionPresentation(props: {
 		};
 	const loading =
 		props.status === 'loading' ||
-		(props.status !== 'certifiedEmpty' && props.comparisonPaneState.kind === 'loadingInitial');
+		(props.status !== 'certifiedEmpty' &&
+			props.status !== 'noSource' &&
+			props.comparisonPaneState.kind === 'loadingInitial');
 	return projectBridgeRegionPresentation({
 		demandedIdentity: props.status === 'noSelection' && !loading ? null : 'review',
 		read:
-			props.status === 'certifiedEmpty'
-				? { kind: 'complete', identity: 'review', hasContent: false }
-				: { kind: 'loading' },
+			props.status === 'noSource'
+				? { kind: 'noSource' }
+				: props.status === 'certifiedEmpty'
+					? { kind: 'complete', identity: 'review', hasContent: false }
+					: { kind: 'loading' },
 		surface: surface.kind === 'failed' ? surface : loading ? { kind: 'loading' } : surface,
 	});
 }

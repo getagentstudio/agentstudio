@@ -1,6 +1,7 @@
 import { expect, test } from 'vitest';
 
 import {
+	bridgeReviewFallbackRegionPresentation,
 	bridgeReviewReadyRegionPresentation,
 	bridgeReviewSelectedContentReadFailure,
 	bridgeReviewRegionSurfaceStatus,
@@ -14,6 +15,25 @@ const readyInput = {
 	selectedContentFailure: null,
 	surface: { kind: 'current' },
 } as const;
+
+test('no-source is Empty without a read, while pane failures still take precedence', (): void => {
+	expect(
+		bridgeReviewFallbackRegionPresentation({
+			status: 'noSource',
+			comparisonPaneState: { kind: 'settled' },
+		}),
+	).toEqual({ kind: 'empty', reason: 'noSource' });
+	expect(
+		bridgeReviewFallbackRegionPresentation({
+			status: 'noSource',
+			comparisonPaneState: { kind: 'settled' },
+			surface: {
+				kind: 'failed',
+				failure: { kind: 'retryable', scope: 'pane', message: "Bridge couldn't start." },
+			},
+		}),
+	).toMatchObject({ kind: 'failed', retainsContent: false, failure: { scope: 'pane' } });
+});
 
 test('selected-content Loading leaves its settled tree sibling current', (): void => {
 	expect(

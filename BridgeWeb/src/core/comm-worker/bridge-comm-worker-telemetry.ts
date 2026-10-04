@@ -65,6 +65,7 @@ export interface BridgeCommWorkerTelemetryRecorder {
 }
 
 type BridgeCommWorkerComparisonAttemptStatus =
+	| 'no_source'
 	| 'absent'
 	| 'pending'
 	| 'selection_required'
@@ -95,9 +96,11 @@ export function bridgeCommWorkerComparisonTelemetryFacts(
 	const comparisonAttemptStatus =
 		attempt === undefined
 			? 'absent'
-			: attempt.status === 'selectionRequired'
-				? 'selection_required'
-				: attempt.status;
+			: attempt.status === 'noSource'
+				? 'no_source'
+				: attempt.status === 'selectionRequired'
+					? 'selection_required'
+					: attempt.status;
 	return {
 		comparisonAttemptStatus,
 		...(attempt?.status === 'pending' || attempt?.status === 'settled'

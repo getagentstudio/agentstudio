@@ -336,6 +336,8 @@ function comparisonStatePresentation(
 		return null;
 	}
 	switch (comparisonPresentation.attempt.status) {
+		case 'noSource':
+			return null;
 		case 'selectionRequired':
 			return {
 				description: 'Select a branch or Git reference before reviewing changes.',

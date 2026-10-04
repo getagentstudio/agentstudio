@@ -817,9 +817,11 @@ function recordAppliedReviewPanelChrome(props: {
 			'agentstudio.bridge.comparison.attempt.status':
 				attempt === null || attempt === undefined
 					? 'absent'
-					: attempt.status === 'selectionRequired'
-						? 'selection_required'
-						: attempt.status,
+					: attempt.status === 'noSource'
+						? 'no_source'
+						: attempt.status === 'selectionRequired'
+							? 'selection_required'
+							: attempt.status,
 			'agentstudio.bridge.panel.operation': props.patch.operation,
 			'agentstudio.bridge.phase': 'panel_chrome_applied',
 			'agentstudio.bridge.plane': 'control',

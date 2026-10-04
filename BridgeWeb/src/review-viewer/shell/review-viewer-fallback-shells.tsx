@@ -62,6 +62,7 @@ export function BridgeReviewFallbackShell(props: {
 											shape="diff"
 											state={props.state}
 											emptyCopy={{
+												noSource: bridgeReviewRegionDisplaySpec.noSource,
 												noSelection: bridgeReviewRegionDisplaySpec.noSelection,
 												certified: bridgeReviewRegionDisplaySpec.certifiedContent,
 											}}
@@ -87,6 +88,7 @@ export function BridgeReviewFallbackShell(props: {
 							shape="tree"
 							state={props.state}
 							emptyCopy={{
+								noSource: bridgeReviewRegionDisplaySpec.noSource,
 								noSelection: bridgeReviewRegionDisplaySpec.noSelection,
 								certified: bridgeReviewRegionDisplaySpec.certifiedTree,
 							}}

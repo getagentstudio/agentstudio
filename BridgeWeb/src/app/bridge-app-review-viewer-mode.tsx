@@ -711,9 +711,10 @@ function BridgeReviewViewerModeContent(props: BridgeReviewViewerModeProps): Reac
 
 function bridgeReviewComparisonAttemptTelemetryStatus(
 	presentation: BridgeReviewRenderSnapshotController['panelChromeSlice']['reviewComparison'],
-): 'absent' | 'pending' | 'selection_required' | 'settled' | 'unavailable' {
+): 'absent' | 'no_source' | 'pending' | 'selection_required' | 'settled' | 'unavailable' {
 	const status = presentation?.attempt.status;
 	if (status === undefined) return 'absent';
+	if (status === 'noSource') return 'no_source';
 	return status === 'selectionRequired' ? 'selection_required' : status;
 }
 

@@ -1,8 +1,38 @@
 import { describe, expect, test } from 'vitest';
 
+import noSourceAttempt from '../../test-fixtures/bridge-contract-fixtures/valid/bridge-product-review-comparison-attempt-no-source.json' with { type: 'json' };
+import { bridgeProductReviewComparisonPresentationSchema } from './bridge-product-review-comparison-presentation-contracts.js';
 import { bridgeProductMetadataFrameSchema } from './bridge-product-session-contracts.js';
 
 describe('Bridge product session Review comparison contract', () => {
+	test('decodes the shared payload-free no-source attempt and refuses extra payload', (): void => {
+		const presentation = {
+			activeTarget: null,
+			attempt: noSourceAttempt,
+			displayedSnapshot: { status: 'none' },
+			repositoryDefaultTarget: null,
+		};
+		expect(noSourceAttempt).toEqual({ status: 'noSource' });
+		expect(bridgeProductReviewComparisonPresentationSchema.safeParse(presentation).success).toBe(
+			true,
+		);
+		expect(bridgeProductReviewComparisonPresentationSchema.parse(presentation)).toEqual(
+			presentation,
+		);
+		for (const payload of [
+			{ reviewGeneration: 1 },
+			{ failureKind: 'missingRoot' },
+			{ retryable: true },
+		]) {
+			expect(
+				bridgeProductReviewComparisonPresentationSchema.safeParse({
+					...presentation,
+					attempt: { ...noSourceAttempt, ...payload },
+				}).success,
+			).toBe(false);
+		}
+	});
+
 	test('keeps comparison and generic File failure wire contracts closed', () => {
 		const frame = {
 			fileRefreshFailure: null,
