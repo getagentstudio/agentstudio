@@ -75,6 +75,11 @@ extension IPCSessionEventParams: IPCSchemaProviding {
             .init(
                 name: "event", description: "Projected provider lifecycle event",
                 schema: try IPCSessionEventIdentity.ipcSchema()),
+            .optional(
+                "permissionHandling",
+                description:
+                    "Permission events only: reportOnly opens a provider prompt (the default); blockingAsk leaves attention to the ask",
+                schema: try IPCSessionPermissionHandling.ipcSchema()),
             IPCRequestSchemaFields.correlation,
         ])
     }

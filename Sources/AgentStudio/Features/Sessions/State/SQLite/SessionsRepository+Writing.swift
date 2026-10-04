@@ -237,8 +237,8 @@ extension SessionsRepositoryStorage {
                     evidence_kind, attention_id, origin, freshness, occurred_at,
                     committed_revision, admission_sequence, source_occurred_at,
                     provider_event, tool_name, tool_call_id, failure_summary,
-                    elicitation_id, prompt_summary, has_questions
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    elicitation_id, prompt_summary, has_questions, permission_handling
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(occurrence_id) DO NOTHING
                 """,
             arguments: [
@@ -265,6 +265,7 @@ extension SessionsRepositoryStorage {
                 evidence.providerSignal?.elicitationId,
                 evidence.providerSignal?.summary,
                 evidence.providerSignal?.questions == nil ? 0 : 1,
+                evidence.providerSignal?.permissionHandling?.rawValue,
             ]
         )
         try writeProviderQuestions(evidence: evidence, database: database)

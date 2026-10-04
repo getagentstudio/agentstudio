@@ -30,4 +30,5 @@ let expectedFullLocalMigrationIdentifiers =
         "013_create_opaque_pane_credential_records",
         "014_ipc_credentials_pane_only",
         "019_create_pane_context_cli_outbox_cursor",
+        "026_sessions_permission_handling",
     ]

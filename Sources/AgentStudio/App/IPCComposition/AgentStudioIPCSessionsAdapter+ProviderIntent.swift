@@ -8,6 +8,7 @@ extension AgentStudioIPCSessionsAdapter {
     private struct ProviderIntent: Encodable {
         let provider: IPCSessionProviderIdentity
         let event: IPCSessionEventIdentity
+        let permissionHandling: IPCSessionPermissionHandling?
     }
 
     static func providerIntentFingerprint(_ params: IPCSessionEventParams) throws -> String {
@@ -24,11 +25,19 @@ extension AgentStudioIPCSessionsAdapter {
             subagentId: normalizedEvent.subagentId, occurrenceId: normalizedEvent.occurrenceId,
             providerFields: providerFields)
         encoder.dateEncodingStrategy = .secondsSince1970
-        return SHA256.hash(data: try encoder.encode(ProviderIntent(provider: params.provider, event: canonicalEvent)))
-            .map { String(format: "%02x", $0) }.joined()
+        return SHA256.hash(
+            data: try encoder.encode(
+                ProviderIntent(
+                    provider: params.provider, event: canonicalEvent,
+                    permissionHandling: params.event.name == .permission
+                        ? (params.permissionHandling ?? .reportOnly) : nil))
+        )
+        .map { String(format: "%02x", $0) }.joined()
     }
 
-    static func providerSignal(for event: IPCSessionEventIdentity) throws -> SessionProviderSignal {
+    static func providerSignal(
+        for event: IPCSessionEventIdentity, permissionHandling: IPCSessionPermissionHandling? = nil
+    ) throws -> SessionProviderSignal {
         guard let name = SessionProviderSignalName(rawValue: event.name.rawValue) else {
             throw AppIPCSessionsError(reason: .validationRejected)
         }
@@ -54,7 +63,13 @@ extension AgentStudioIPCSessionsAdapter {
             return .turnFailed(category: category)
         case .toolActivity: return .toolActivity(toolName: event.toolName)
         case .subagentActivity: return .subagentActivity
-        case .permission: return .permission(toolName: event.toolName, questions: questions)
+        case .permission:
+            let handling: SessionPermissionHandling =
+                switch permissionHandling ?? .reportOnly {
+                case .reportOnly: .reportOnly
+                case .blockingAsk: .blockingAsk
+                }
+            return .permission(toolName: event.toolName, questions: questions, handling: handling)
         case .question:
             guard let identifier = event.toolId, let questions else {
                 throw AppIPCSessionsError(reason: .validationRejected)

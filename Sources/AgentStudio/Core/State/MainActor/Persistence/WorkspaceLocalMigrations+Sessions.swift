@@ -44,6 +44,12 @@ extension WorkspaceLocalMigrations {
         }
     }
 
+    static func registerSessionsPermissionHandling(in migrator: inout DatabaseMigrator) {
+        migrator.registerMigration("026_sessions_permission_handling") { database in
+            try database.execute(sql: "ALTER TABLE sessions_evidence ADD COLUMN permission_handling TEXT")
+        }
+    }
+
     private static let sessionsSchemaStatements: [String] = [
         """
         CREATE TABLE sessions_conversation (

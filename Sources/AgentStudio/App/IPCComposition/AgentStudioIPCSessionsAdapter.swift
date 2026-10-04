@@ -71,6 +71,13 @@ struct AgentStudioIPCSessionsAdapter: AppIPCSessionsPort {
         params: IPCSessionEventParams,
         provenance: IPCSessionEventProvenance
     ) async throws -> IPCSessionEventResult {
+        guard params.permissionHandling == nil || params.event.name == .permission else {
+            throw AgentStudioAppIPCRequestError(
+                code: -32_602, message: "invalid params",
+                data: .object([
+                    "reason": .string("invalidParams"), "fieldPath": .string("$.permissionHandling"),
+                ]))
+        }
         let spanBegan: ContinuousClock.Instant? =
             performanceTraceRecorder?.isEnabled == true ? ContinuousClock.now : nil
         defer {
@@ -247,7 +254,8 @@ extension AgentStudioIPCSessionsAdapter {
             sourceCursor: nil
         )
         evidence.sourceOccurredAt = params.event.sourceOccurredAt
-        evidence.providerSignal = try Self.providerSignal(for: params.event)
+        evidence.providerSignal = try Self.providerSignal(
+            for: params.event, permissionHandling: params.permissionHandling)
         evidence.providerIntentFingerprint = providerIntentFingerprint
         return .admitted(.recordEvidence(evidence))
     }

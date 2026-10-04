@@ -47,7 +47,7 @@ struct SessionsStatusRuntime {
         case .activityStarted: return .toolActivity
         case .completed: return .stop
         case .aborted: return .interrupt
-        case .needsYouOpened: return .permission(toolName: nil, questions: nil)
+        case .needsYouOpened: return .permission(toolName: nil, questions: nil, handling: .reportOnly)
         case .needsYouResolved: return nil
         }
     }

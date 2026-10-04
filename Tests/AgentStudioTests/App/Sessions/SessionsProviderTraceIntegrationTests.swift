@@ -14,6 +14,68 @@ import Testing
 
 @Suite("Sessions recorded provider trace integration")
 struct SessionsProviderTraceIntegrationTests {
+    @Test("permission handling survives a real database reopen and restore", arguments: [false, true])
+    func permissionHandlingPersistsAcrossRestore(blocking: Bool) async throws {
+        let fixture = try RecordedStatusDatabase()
+        defer { try? FileManager.default.removeItem(at: fixture.root) }
+        let paneId = UUIDv7.generate()
+        let projected = try projectRecordedStatus(data: recordedStatusData("AskUserQuestion.PermissionRequest"))
+        let handling: IPCSessionPermissionHandling = blocking ? .blockingAsk : .reportOnly
+        let params = IPCSessionEventParams(
+            handle: projected.handle, provider: projected.provider, event: projected.event,
+            correlationId: projected.correlationId, permissionHandling: handling)
+        let initial = try await fixture.withIngestion { ingestion, adapter in
+            try await sendRecordedStatus("AskUserQuestion.SessionStart", adapter: adapter, paneId: paneId)
+            let result = try await adapter.recordProviderEvent(
+                paneId: paneId, params: params, provenance: .matchingPane)
+            #expect(result.disposition == .admitted)
+            let summary = try #require(try await ingestion.sessionSummary(paneId: paneId))
+            #expect(summary.providerPrompts.count == (blocking ? 0 : 1))
+            #expect(summary.status == (blocking ? .unknown : .needsYou(.question)))
+            return summary
+        }
+        let reopened = try await fixture.withIngestion { ingestion, _ in
+            try await ingestion.sessionSummary(paneId: paneId)
+        }
+        #expect(reopened == initial)
+        let stored = try await valueFromDedicatedThread {
+            let queue = try DatabaseQueue(path: fixture.databaseURL.path)
+            defer { try? queue.close() }
+            return try queue.read { database in
+                try String.fetchOne(
+                    database, sql: "SELECT permission_handling FROM sessions_evidence WHERE occurrence_id = ?",
+                    arguments: [params.event.occurrenceId.uuidString])
+            }
+        }
+        #expect(stored == handling.rawValue)
+    }
+
+    @Test("unknown persisted permission handling fails closed with its field tag")
+    func unknownPermissionHandlingRejectsRestore() async throws {
+        let fixture = try RecordedStatusDatabase()
+        defer { try? FileManager.default.removeItem(at: fixture.root) }
+        let paneId = UUIDv7.generate()
+        try await fixture.withIngestion { _, adapter in
+            try await sendRecordedStatus("AskUserQuestion.SessionStart", adapter: adapter, paneId: paneId)
+            try await sendRecordedStatus("AskUserQuestion.PermissionRequest", adapter: adapter, paneId: paneId)
+        }
+        try await valueFromDedicatedThread {
+            let queue = try DatabaseQueue(path: fixture.databaseURL.path)
+            defer { try? queue.close() }
+            try queue.write {
+                try $0.execute(
+                    sql:
+                        "UPDATE sessions_evidence SET permission_handling = 'unknown' WHERE provider_event = 'permission'"
+                )
+            }
+        }
+        await #expect(throws: SessionsRepositoryError.invalidStoredValue("permission_handling")) {
+            try await fixture.withIngestion { ingestion, _ in
+                try await ingestion.sessionSummary(paneId: paneId)
+            }
+        }
+    }
+
     @Test("a keyed hook records source time and a later source time replays without a second effect")
     func keyedHookSourceTimeIsRecordedButNotCanonicalIntent() async throws {
         let fixture = try RecordedStatusDatabase()
