@@ -69,7 +69,7 @@ final class PaneContextIPCDomainCompanion: Sendable {
                 isClosing: { _, fact in
                     switch fact {
                     case .joined, .requestRefused: true
-                    case .openAskCount, .writeAdmissionReached: false
+                    case .openAskCount, .writeAdmissionReached, .clientExited: false
                     }
                 }))
         membership.addPane(PaneId(existingUUID: paneId))
@@ -121,9 +121,11 @@ final class PaneContextIPCDomainCompanion: Sendable {
         )
     }
 
-    func bind(conversationId: String = "current", to targetPaneId: UUID? = nil) async throws -> IPCPaneWriterClaim {
-        let provider = SessionsProviderIdentity(
+    func bind(
+        conversationId: String = "current", to targetPaneId: UUID? = nil,
+        provider: SessionsProviderIdentity = .init(
             providerIdentifier: "claude-code", exactVersion: "2.1.286", operatingMode: "interactive")
+    ) async throws -> IPCPaneWriterClaim {
         let source = SessionsBindingSourceIdentity(
             paneId: targetPaneId ?? paneId, providerConversationId: conversationId, sourceId: "ipc-pane-tests",
             sourceGenerationId: UUIDv7.generate(), occurrenceId: UUIDv7.generate())
@@ -225,6 +227,7 @@ func withPaneContextIPCDomain<Output>(
 enum PaneContextIPCDomainFact: Equatable, Sendable {
     case openAskCount(Int)
     case writeAdmissionReached
+    case clientExited
     case requestRefused(requestId: JSONRPCIdentifier, reason: String?)
     case joined
 }

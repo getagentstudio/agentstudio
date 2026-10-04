@@ -7,7 +7,7 @@ import Testing
 
 @Suite("Provider status hook installer")
 struct ProviderStatusHookInstallerTests {
-    @Test("installation wires every captured Claude status event to report-only hook commands")
+    @Test("installation wires captured status events and selects waiting permission policy")
     func installedEventsDecodeTheirRecordedPayloads() throws {
         let root = FileManager.default.temporaryDirectory.appending(
             path: "agentstudio-status-install-\(UUIDv7.generate())")
@@ -44,18 +44,26 @@ struct ProviderStatusHookInstallerTests {
                 Issue.record("Captured status event \(event) is not installed")
                 continue
             }
-            #expect(command.hasSuffix(" \(event) 2.1.286"))
+            let permission = event == "PermissionRequest"
+            let suffix = " \(event) 2.1.286" + (permission ? " --permission-policy wait" : "")
+            #expect(command.hasSuffix(suffix))
+            #expect(
+                entry["timeout"]
+                    == .number(
+                        permission
+                            ? CLIPolicy.permissionHookTimeoutSeconds : ClaudeCodePackageInstallation.hookTimeoutSeconds)
+            )
             #expect(!command.contains("ask --wait"))
             #expect(entry["async"] == nil)
         }
         #expect(hooks["Notification"] == nil)
-        // PR B deliberately keeps permissions as session.event reports.
+        // The shell preserves the installer-selected permission policy for the CLI.
         let script = try String(
             contentsOf: packageRoot.appending(path: "providers/claude/hooks/agentstudio-claude-hook.sh"),
             encoding: .utf8)
         #expect(script.contains("hook claude"))
         #expect(!script.contains("pane.message.ask"))
-        #expect(!script.contains("--wait"))
+        #expect(script.contains("\"$@\""))
     }
 
     @Test("Codex retains its installed vocabulary; no unreported failure or question capability is invented")

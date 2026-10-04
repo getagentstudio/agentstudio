@@ -95,7 +95,10 @@ struct ClaudeCodePackageInstallerTests {
         for event in ClaudeCodeHookEvent.allCases {
             let commands = ownedCommands(try fixture.hookGroups(for: event.rawValue))
             #expect(commands.count == 1)
-            #expect(commands.first?.hasSuffix(" \(event.rawValue) 2.1.274") == true)
+            let suffix =
+                " \(event.rawValue) 2.1.274"
+                + (event == .permissionRequest ? " --permission-policy wait" : "")
+            #expect(commands.first?.hasSuffix(suffix) == true)
         }
         let skill = fixture.configurationDirectory.appending(path: "skills/agentstudio/SKILL.md")
         let marker = fixture.configurationDirectory.appending(path: "skills/agentstudio/.agentstudio-package")

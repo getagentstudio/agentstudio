@@ -213,8 +213,10 @@ package enum CodexPackageInstaller {
             CodexHooksDocument.hooksKey: [
                 [
                     "type": "command",
-                    CodexHooksDocument.commandKey: "\"\(scriptURL.path)\" \(event.rawValue)",
-                    "timeout": hookTimeoutSeconds,
+                    CodexHooksDocument.commandKey: "\"\(scriptURL.path)\" \(event.rawValue)"
+                        + (event == .permissionRequest ? " --permission-policy wait" : ""),
+                    "timeout": event == .permissionRequest
+                        ? CLIPolicy.permissionHookTimeoutSeconds : Double(hookTimeoutSeconds),
                 ]
             ]
         ]
