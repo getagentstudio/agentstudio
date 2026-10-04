@@ -1,4 +1,5 @@
 import AgentStudioCore
+import AgentStudioInfrastructure
 import Foundation
 import Synchronization
 import Testing
@@ -195,6 +196,67 @@ struct BridgeMetadataCoordinatorProducerTaskTests {
         #expect(await reconciler.activeAttempt == nil)
         #expect(await reconciler.currentFailure == nil)
         await coordinator.uninstall(lease: lease)
+    }
+
+    @Test("retained File source reopens after a cancelled bootstrap and resumed stream replay")
+    func retainedFileSourceReopensAfterCancelledBootstrapAndResumedStreamReplay() async throws {
+        let refreshWorkAdmission = await BridgePaneRefreshWorkAdmissionTestContext.foreground()
+        let harness = try await BridgeProductSessionLifecycleHarness.opened()
+        let firstLease = try await harness.admitMetadataFrames(through: 0)
+        let firstPump = BridgeProductSchemeFramePump(
+            session: harness.session,
+            producerLease: firstLease,
+            productAdmission: harness.productAdmission.context,
+            acknowledgeLifecycle: { _ in true }
+        )
+        let source = CoordinatorReplacementBootstrapFileMetadataSource()
+        let coordinator = BridgePaneProductMetadataCoordinator(
+            fileMetadataSource: source,
+            reviewMetadataSource: BridgeUnavailablePaneProductReviewMetadataSource(),
+            refreshWorkAdmissionSource: refreshWorkAdmission.source
+        )
+        await coordinator.install(
+            request: try bridgeProductMetadataStreamRequest(
+                metadataStreamId: "metadata-before-cancel", resumeFromStreamSequence: nil
+            ),
+            lease: firstLease,
+            productAdmission: harness.productAdmission.context,
+            session: harness.session
+        )
+        let openRequest = try bridgeProductLifecycleControlRequest(
+            bridgeProductLifecycleFileSubscriptionOpenObject(requestSequence: 2, epoch: 1)
+        )
+        let token = try #require(producerTaskControlExecutionToken(try await harness.begin(openRequest)))
+        #expect(await harness.session.admitControlProviderExecution(token: token))
+        let response = try BridgeProductControlResponse.subscriptionOpenAccepted(
+            correlating: openRequest, worktreeId: nil)
+        let effect = try await harness.session.completeAdmittedControl(
+            token: token,
+            exactResponseBytes: try JSONEncoder().encode(response)
+        )
+        _ = try await pullProducerTaskMetadataFrame(from: firstPump)
+        await coordinator.apply(effect, productAdmission: harness.productAdmission.context)
+        await source.waitUntilOpenStarted(openOrdinal: 1)
+
+        let resumedLease = BridgeProductProducerLease(id: UUIDv7.generate())
+        await coordinator.install(
+            request: try bridgeProductMetadataStreamRequest(
+                metadataStreamId: "metadata-after-cancel", resumeFromStreamSequence: 0
+            ),
+            lease: resumedLease,
+            productAdmission: harness.productAdmission.context,
+            session: harness.session
+        )
+
+        await coordinator.replaySubscriptionsForInstalledStream()
+        await source.waitUntilOpenStarted(openOrdinal: 2)
+        #expect(await coordinator.fileSurfaceReconciler.activeAttempt != nil)
+        await source.releaseOpen(openOrdinal: 2)
+        await source.waitUntilOpenFinished(openOrdinal: 2)
+        #expect(await coordinator.fileSurfaceReconciler.currentFailure == nil)
+
+        await coordinator.uninstall(lease: resumedLease)
+        #expect(await firstPump.cancel())
     }
 
     @Test("replacement install does not return until cancelled predecessor open drains")

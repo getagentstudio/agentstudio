@@ -374,6 +374,16 @@ extension BridgePaneProductMetadataCoordinator {
             if let fileSurfaceAttemptContext {
                 _ = await fileSurfaceReconciler.builderCancelled(fileSurfaceAttemptContext.attempt)
                 await fileSurfaceReconciler.retirementCompleted(fileSurfaceAttemptContext.attempt)
+                if await fileSurfaceAttemptContext.activeStream.session.subscriptionSnapshot(
+                    subscriptionId: fileSurfaceAttemptContext.subscription.subscriptionId
+                ) != nil {
+                    openedSourceSubscriptionIds.remove(
+                        fileSurfaceAttemptContext.subscription.subscriptionId
+                    )
+                    deferredOpenSubscriptionIds.insert(
+                        fileSurfaceAttemptContext.subscription.subscriptionId
+                    )
+                }
             }
             return
         }
