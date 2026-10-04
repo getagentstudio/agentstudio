@@ -290,7 +290,7 @@ final class BridgePaneRefreshAdmissionCoordinator {
         switch reviewComparison.attempt {
         case .pending, .unavailable:
             nextAttempt = .settled(reviewGeneration: reviewGeneration)
-        case .selectionRequired, .settled:
+        case .noSource, .selectionRequired, .settled:
             nextAttempt = reviewComparison.attempt
         }
         let nextComparison = BridgePaneReviewComparisonPresentation(

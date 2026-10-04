@@ -387,7 +387,13 @@ package final class BridgePaneController {
     private static func initialReviewComparisonPresentation(
         for state: BridgePaneState
     ) -> BridgePaneReviewComparisonPresentation? {
-        guard case .workspace(_, let baseline) = state.source else { return nil }
+        guard case .workspace(_, let baseline) = state.source else {
+            return BridgePaneReviewComparisonPresentation(
+                activeTarget: nil,
+                attempt: .noSource,
+                displayedSnapshot: .absent
+            )
+        }
         guard let baseline else {
             return BridgePaneReviewComparisonPresentation(
                 activeTarget: nil,
