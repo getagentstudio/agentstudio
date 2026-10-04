@@ -11,6 +11,32 @@ import {
 import type { BridgeWorkerReviewDisplayItem } from './bridge-worker-contracts.js';
 
 describe('Bridge main render snapshot store', () => {
+	test('keeps selected Review content loading while worker replacement retires its old copy', () => {
+		const store = createBridgeMainRenderSnapshotStore();
+		const item = makeBridgeMainCodeViewItem('item-selected');
+		store.applySnapshotUpdate({
+			codeViewItemPatches: [{ item, itemId: item.id, operation: 'upsert' }],
+			workerPatches: [
+				{
+					itemId: item.id,
+					operation: 'upsert',
+					payload: { state: 'ready' },
+					slice: 'contentAvailability',
+				},
+			],
+		});
+		store.setLocalSelection({ selectedItemId: item.id, source: 'user' });
+
+		// A replacement retires the render coordinator before the old copy is removed.
+		store.prepareForWorkerReplacement();
+		store.applySnapshotUpdate({
+			codeViewItemPatches: [{ itemId: item.id, operation: 'delete' }],
+		});
+
+		expect(store.getReviewAvailabilitySnapshot(item.id)).toEqual({ state: 'ready' });
+		expect(store.hasPendingReviewPaintRelease(item.id)).toBe(true);
+	});
+
 	test('uses useSyncExternalStore and accepts only local intent plus worker patch writes', () => {
 		const store = createBridgeMainRenderSnapshotStore();
 		const initialSnapshot = store.getSnapshot();

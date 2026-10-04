@@ -355,8 +355,10 @@ export function createBridgeMainRenderSnapshotStore(
 			if (
 				previousSnapshot.codeViewItemsById[itemId] !== undefined &&
 				snapshot.codeViewItemsById[itemId] === undefined
-			)
+			) {
 				releasePaintedCopy(itemId);
+				pendingReviewPaintReleaseItemIds.delete(itemId);
+			}
 		}
 		const selectionChanged = previousSnapshot.selectionSlice !== snapshot.selectionSlice;
 		const availabilityItemIds = publishesKeyedSameSourceChange
@@ -488,6 +490,8 @@ export function createBridgeMainRenderSnapshotStore(
 		},
 		prepareForWorkerReplacement: (): void => {
 			if (isDisposed) return;
+			for (const itemId of Object.keys(snapshot.codeViewItemsById))
+				pendingReviewPaintReleaseItemIds.add(itemId);
 			publishBridgeMainListeners(workerReplacementListeners);
 			discardReviewCandidate();
 			if (reviewCandidateBankOwner.clearFailure()) publishReviewRefreshPresentation();
@@ -732,9 +736,7 @@ export function createBridgeMainRenderSnapshotStore(
 					: [];
 			publish(buildSnapshotFromUpdate(snapshot, update));
 			for (const itemId of Object.keys(previousCodeViewItems)) {
-				if (snapshot.codeViewItemsById[itemId] === undefined) {
-					releasePaintedCopy(itemId);
-				}
+				if (snapshot.codeViewItemsById[itemId] === undefined) releasePaintedCopy(itemId);
 			}
 			publishReviewCodeViewItemPatchListeners({
 				codeViewItemIdsBeforeUpdate,
