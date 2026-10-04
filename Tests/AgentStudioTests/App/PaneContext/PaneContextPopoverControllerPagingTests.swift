@@ -9,6 +9,44 @@ import Testing
 @MainActor
 @Suite(.serialized)
 struct PaneContextPopoverControllerPagingTests {
+    @Test("Dismiss all pages through truncated notice sources without touching asks")
+    func dismissAllNoticesPagesRemainingSources() async throws {
+        let owner = PaneId.generateUUIDv7()
+        let drawer = PaneId.generateUUIDv7()
+        let first = try PaneContextPopoverShapingTests.message(
+            paneId: owner, shape: .notice(.unread), importance: .info, sentAt: 3)
+        let ask = try PaneContextPopoverShapingTests.message(
+            paneId: owner,
+            shape: .ask(.question, .freeText(placeholder: nil), .blocking(deadline: .distantFuture), .open),
+            importance: .attention, sentAt: 2)
+        let second = try PaneContextPopoverShapingTests.message(
+            paneId: owner, shape: .notice(.unread), importance: .done, sentAt: 1)
+        let third = try PaneContextPopoverShapingTests.message(
+            paneId: drawer, shape: .notice(.read), importance: .info, sentAt: 0)
+        let initial = PaneContextPopoverShapingTests.detail(
+            paneId: owner, messages: [first, ask],
+            truncation: .init(
+                omitted: [.init(source: owner, openAsks: 0, unreadNotices: 1, next: .init(rank: 1, position: 12))],
+                remainingLiveSources: 1, nextSourcesAfter: owner))
+        let page = PaneContextPopoverShapingTests.detail(paneId: owner, messages: [second])
+        let sourcePage = PaneContextPopoverShapingTests.detail(
+            paneId: owner, drawers: [.init(sourcePaneId: drawer, messages: [third])])
+        let ports = PaneContextPopoverTestPorts(
+            initial, results: [.detail(initial), .detail(page), .detail(sourcePage), .detail(initial)])
+        let controller = makePopoverController(ports: ports)
+        await controller.open(owner)
+        await controller.dismissAllNotices()
+        #expect(await ports.dismissals.map(\.0) == [first.id, second.id, third.id])
+        #expect(await ports.dismissals.contains { $0.0 == ask.id } == false)
+        #expect(
+            await ports.requests.map(\.page) == [
+                .first, .more(source: owner, after: .init(rank: 1, position: 12)),
+                .moreSources(after: owner), .first,
+            ])
+        controller.close()
+        try await ports.finish()
+    }
+
     @Test
     func messagePagingAndSourcePagingAccumulateWithoutLosingOtherCursors() async throws {
         let owner = PaneId.generateUUIDv7()
