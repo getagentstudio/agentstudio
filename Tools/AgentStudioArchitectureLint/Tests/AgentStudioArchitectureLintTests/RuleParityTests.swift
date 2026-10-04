@@ -49,6 +49,15 @@ struct RuleParityTests {
         #expect(try lintFixtureCorpus("Good").allSatisfy { $0.ruleID != ruleID })
     }
 
+    @Test("process-wide singleton fixtures reject globals and allow values or computed projections")
+    func processSingletonFixturesEnforceProductionScope() throws {
+        let ruleID = "agentstudio_no_new_process_singletons"
+        let failures = try lintFixtureCorpus("Bad").filter { $0.ruleID == ruleID }
+        #expect(failures.count == 5)
+        #expect(failures.allSatisfy { $0.severity == .error })
+        #expect(try lintFixtureCorpus("Good").allSatisfy { $0.ruleID != ruleID })
+    }
+
     @Test("good fixture corpus stays clean")
     func goodFixtureCorpusStaysClean() throws {
         let diagnostics = try lintFixtureCorpus("Good")

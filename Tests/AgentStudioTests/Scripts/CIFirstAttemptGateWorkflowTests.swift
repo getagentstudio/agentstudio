@@ -18,7 +18,7 @@ struct CIFirstAttemptGateWorkflowTests {
         let anchorDefinitions = workflowText.components(separatedBy: "      - &first-attempt-gate\n").count - 1
         let aliasUses = workflowText.components(separatedBy: "      - *first-attempt-gate\n").count - 1
 
-        #expect(jobs.count == 5)
+        #expect(jobs.count == 6)
         #expect(anchorDefinitions == 1)
         #expect(aliasUses == jobs.count - 1)
         #expect(gateStep["name"] as? String == "First-attempt gate")

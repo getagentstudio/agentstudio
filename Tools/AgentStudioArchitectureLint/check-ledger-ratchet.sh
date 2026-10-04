@@ -20,6 +20,7 @@ ledger_paths=(
   "Tools/AgentStudioArchitectureLint/architecture-debt-ledger.tsv"
   "Tools/AgentStudioArchitectureLint/forbidden-test-wait-ledger.tsv"
   "Tools/AgentStudioArchitectureLint/adhoc-continuation-wait-ledger.tsv"
+  "Tools/AgentStudioArchitectureLint/process-singleton-ledger.tsv"
   "BridgeWeb/architecture-debt-ledger.tsv"
 )
 
