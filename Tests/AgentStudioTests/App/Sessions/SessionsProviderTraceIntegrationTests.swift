@@ -357,7 +357,7 @@ struct SessionsProviderTraceIntegrationTests {
     }
 }
 
-private struct RecordedStatusDatabase: Sendable {
+struct RecordedStatusDatabase: Sendable {
     let root: URL
     let databaseURL: URL
 
@@ -407,13 +407,13 @@ private func withRecordedStatusIngestion(
     try await fixture.withIngestion { ingestion, adapter in try await operation(ingestion, adapter, UUIDv7.generate()) }
 }
 
-private func sendRecordedStatus(_ fixtureName: String, adapter: AgentStudioIPCSessionsAdapter, paneId: UUID)
+func sendRecordedStatus(_ fixtureName: String, adapter: AgentStudioIPCSessionsAdapter, paneId: UUID)
     async throws
 {
     try await submitRecordedStatus(data: recordedStatusData(fixtureName), adapter: adapter, paneId: paneId)
 }
 
-private func recordedStatusData(_ fixtureName: String) throws -> Data {
+func recordedStatusData(_ fixtureName: String) throws -> Data {
     let repositoryRoot = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
         .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
     return try Data(
@@ -427,7 +427,7 @@ private func submitRecordedStatus(data: Data, adapter: AgentStudioIPCSessionsAda
     #expect(result.disposition == .admitted)
 }
 
-private func projectRecordedStatus(data: Data, occurrenceId: UUID = UUIDv7.generate()) throws -> IPCSessionEventParams {
+func projectRecordedStatus(data: Data, occurrenceId: UUID = UUIDv7.generate()) throws -> IPCSessionEventParams {
     let payload = try JSONDecoder().decode(ClaudeCodeHookPayload.self, from: data)
     let projection = ClaudeCodeHookProjection.project(
         sourceOccurredAt: Date(timeIntervalSince1970: 1_700_000_000),

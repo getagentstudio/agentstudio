@@ -358,7 +358,7 @@ extension SessionsMutation {
         }
     }
 
-    /// Source time is display evidence only. The mutation owns both time facts
+    /// Source time orders hook evidence. The mutation owns both time facts
     /// and validates them before either operation or evidence persistence.
     var boundedSourceOccurredAt: Date? {
         sourceOccurredAt.flatMap {

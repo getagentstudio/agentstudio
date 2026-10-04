@@ -87,7 +87,7 @@ extension SessionsRepositoryStorage {
             let currentTurnId = SessionsEvidenceReducer.currentTurnId(
                 evidence: context.evidence, bindingGenerationId: binding.bindingGenerationId,
                 activeSourceGenerationIds: activeSources)
-            historicalEvidence = context.evidence.sorted(by: SessionsEvidenceReducer.evidenceOrder).filter {
+            historicalEvidence = SessionsEvidenceReducer.evidenceOrder(context.evidence).filter {
                 $0.conversationId != binding.conversationId
                     || $0.bindingGenerationId != binding.bindingGenerationId
                     || $0.freshness != .live
