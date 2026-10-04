@@ -23,3 +23,17 @@ it("returns from a forced stop only after the browser process has exited", async
   // Assert: the caller may now delete the profile because the process is gone.
   expect(stubbornBrowser.signalCode).toBe("SIGKILL");
 });
+
+it("returns for a browser that never started, so failed launches still clean up", async () => {
+  // Arrange: a missing executable gets no pid and emits "error" then "close", never "exit".
+  const missingBrowser = spawn("/nonexistent/agent-studio-test-browser", [], { stdio: "ignore" });
+  const spawnErrorDelivered = once(missingBrowser, "error");
+
+  // Act: stop before the "error" event arrives, while exitCode is still null.
+  await stopBrowserProcess(missingBrowser, { forcedExitAfterMs: 20 });
+
+  // Assert
+  expect(missingBrowser.pid).toBeUndefined();
+  const [spawnError] = await spawnErrorDelivered;
+  expect(spawnError).toMatchObject({ code: "ENOENT" });
+});

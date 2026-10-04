@@ -37,35 +37,53 @@ export interface StopBrowserProcessOptions {
   readonly forcedExitAfterMs?: number;
 }
 
+/**
+ * Resolves once the browser process has exited, so callers may then delete its
+ * profile. Rejects when the process cannot be signalled, because its liveness is
+ * then unknown and deleting the profile would race a running browser.
+ */
 export async function stopBrowserProcess(
   browserProcess: ReturnType<typeof spawn>,
   { forcedExitAfterMs = 5_000 }: StopBrowserProcessOptions = {},
 ): Promise<void> {
   if (browserProcess.exitCode !== null || browserProcess.signalCode !== null) return;
+  // A spawn that failed has no pid and emits "error" then "close", never "exit";
+  // no browser ever ran, so nothing can be writing to the profile.
+  if (browserProcess.pid === undefined) return;
 
-  await new Promise<void>((resolveExit) => {
+  await new Promise<void>((resolveExit, rejectStop) => {
     let settled = false;
 
-    const finish = (): void => {
+    const settle = (signalFailure?: Error): void => {
       if (settled) return;
 
       settled = true;
       clearTimeout(forcedExitTimeout);
-      browserProcess.off("exit", finish);
-      resolveExit();
+      browserProcess.off("exit", onExit);
+      browserProcess.off("error", onSignalFailure);
+      if (signalFailure === undefined) resolveExit();
+      else rejectStop(signalFailure);
+    };
+    const onExit = (): void => settle();
+    const onSignalFailure = (error: Error): void => settle(error);
+    const sendSignal = (signal: NodeJS.Signals): void => {
+      try {
+        browserProcess.kill(signal);
+      } catch (error: unknown) {
+        settle(error instanceof Error ? error : new Error(String(error)));
+      }
     };
 
     // SIGKILL cannot be ignored, so the exit event still arrives; resolving before it
     // would let callers delete the profile while Chrome is still writing to it.
-    const forcedExitTimeout = setTimeout((): void => {
-      browserProcess.kill("SIGKILL");
-    }, forcedExitAfterMs);
+    const forcedExitTimeout = setTimeout((): void => sendSignal("SIGKILL"), forcedExitAfterMs);
 
-    browserProcess.once("exit", finish);
+    browserProcess.once("exit", onExit);
+    browserProcess.on("error", onSignalFailure);
     if (browserProcess.exitCode !== null || browserProcess.signalCode !== null) {
-      finish();
+      settle();
       return;
     }
-    browserProcess.kill("SIGTERM");
+    sendSignal("SIGTERM");
   });
 }
