@@ -356,6 +356,66 @@ struct ArchitectureLintCommandTests {
         #expect(duplicate.output.contains("duplicate row across ledgers"))
     }
 
+    @Test("process singleton ledger reconciles only its exact production count")
+    func processSingletonLedgerReconcilesExactCount() throws {
+        let ruleID = "agentstudio_no_new_process_singletons"
+        let source = "Sources/AgentStudio/Infrastructure/ProcessSingletonBad.swift"
+        func lint(permitted: Int) throws -> CommandRunResult {
+            let ledger = try writeLedger(
+                rows: ["\(ruleID)\t\(source)\t\(permitted)"], filename: "process-singleton-ledger.tsv")
+            return runCommand(arguments: [source, "--ledger", ledger.path], workspaceRootPath: fixturePath("Bad"))
+        }
+        let exact = try lint(permitted: 5)
+        let increasedDebt = try lint(permitted: 4)
+        let staleLedger = try lint(permitted: 6)
+        #expect(exact.exitCode == 0, Comment(rawValue: exact.output))
+        #expect(increasedDebt.exitCode == 1)
+        #expect(increasedDebt.output.components(separatedBy: "count 5 exceeds 4 permitted").count - 1 == 5)
+        #expect(staleLedger.exitCode == 1)
+        #expect(staleLedger.output.contains("lower the row to 5"))
+    }
+
+    @Test("process singleton rows cannot move to another ledger or admit other rule families")
+    func processSingletonLedgerOwnsOnlyItsRule() throws {
+        let singletonRow = "agentstudio_no_new_process_singletons\tSources/Example.swift\t1"
+        let wrongGeneral = try writeLedger(rows: [singletonRow])
+        let correctSingleton = try writeLedger(rows: [singletonRow], filename: "process-singleton-ledger.tsv")
+        let wrongSingleton = try writeLedger(
+            rows: ["agentstudio_no_forbidden_test_wait\tTests/Waits.swift\t1"], filename: "process-singleton-ledger.tsv"
+        )
+        for ledger in [wrongGeneral, wrongSingleton] {
+            let result = runCommand(arguments: ["--ledger", ledger.path])
+            #expect(result.exitCode == 2)
+            #expect(result.output.contains("belongs in the other Swift debt ledger"))
+        }
+        let duplicate = runCommand(arguments: ["--ledger", wrongGeneral.path, "--ledger", correctSingleton.path])
+        #expect(duplicate.exitCode == 2)
+        #expect(duplicate.output.contains("duplicate row across ledgers"))
+    }
+
+    @Test("process singleton ledger baseline is admitted once and later debt can only shrink")
+    func processSingletonLedgerRatchetsAfterInitialAdmission() throws {
+        let ruleID = "agentstudio_no_new_process_singletons"
+        let row = "\(ruleID)\tSources/Example.swift\t"
+        let base = try writeLedger(rows: [row + "2"], filename: "process-singleton-ledger.tsv")
+        let raised = try writeLedger(rows: [row + "3"], filename: "process-singleton-ledger.tsv")
+        let lowered = try writeLedger(rows: [row + "1"], filename: "process-singleton-ledger.tsv")
+        let added = try writeLedger(
+            rows: [row + "2", "\(ruleID)\tSources/New.swift\t1"], filename: "process-singleton-ledger.tsv")
+        let absent = runCommand(arguments: ["--ledger", base.path, "--check-ledger-ratchet", "/nonexistent/base.tsv"])
+        let unchanged = runCommand(arguments: ["--ledger", base.path, "--check-ledger-ratchet", base.path])
+        let shrinking = runCommand(arguments: ["--ledger", lowered.path, "--check-ledger-ratchet", base.path])
+        #expect(absent.exitCode == 0)
+        #expect(absent.output.contains("no debt ledger at the merge base"))
+        #expect(unchanged.exitCode == 0)
+        #expect(shrinking.exitCode == 0)
+        for ledger in [raised, added] {
+            let result = runCommand(arguments: ["--ledger", ledger.path, "--check-ledger-ratchet", base.path])
+            #expect(result.exitCode == 1)
+            #expect(result.output.contains("[agentstudio_debt_ledger_ratchet]"))
+        }
+    }
+
     @Test("lowering rewrites the ledger to the found count and then passes")
     func loweringRewritesLedgerToFoundCount() throws {
         let fixture = fixturePath("Bad")

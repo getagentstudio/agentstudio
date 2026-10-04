@@ -405,23 +405,45 @@ prune_lane_event_streams() {
   local label_slug="$1"
   local stem_inventory
   local kept_stems
-  local evidence_stem
-  local stem_counts
+  local removal_names
   local evidence_name
 
   [ -d "$LANE_EVENT_STREAM_DIR" ] || return 0
-  stem_inventory="$(lane_evidence_stem_inventory "lane-$label_slug-")"
+  if ! stem_inventory="$(lane_evidence_stem_inventory "lane-$label_slug-")"; then
+    printf '[%s] lane-report evidence_retention=skipped label=%s reason=inventory-failed\n' "${LOG_PREFIX:-test}" "$label_slug" >&2
+    return 0
+  fi
   [ -n "$stem_inventory" ] || return 0
 
-  kept_stems="$(
+  # A partial kept set is not permission to delete evidence. Detect failures
+  # throughout selection even when the caller has not enabled pipefail.
+  if ! kept_stems="$(
+    set -o pipefail
     printf '%s\n' "$stem_inventory" | /usr/bin/awk '$2 == 1 { print $1 }' | sort -ru |
       head -n "$LANE_EVENT_STREAM_KEEP_PER_LABEL"
-  )" || true
-  printf '%s\n' "$stem_inventory" | while read -r evidence_stem stem_counts evidence_name; do
-    if ! printf '%s\n' "$kept_stems" | grep -Fxq -- "$evidence_stem"; then
-      rm -f "$LANE_EVENT_STREAM_DIR/$evidence_name"
-    fi
-  done || true
+  )"; then
+    printf '[%s] lane-report evidence_retention=skipped label=%s reason=selection-failed\n' "${LOG_PREFIX:-test}" "$label_slug" >&2
+    return 0
+  fi
+
+  # Decide the complete removal set once, before deleting any file. A failed
+  # process cannot turn a single kept-stem membership check into a deletion.
+  if ! removal_names="$(SWIFT_TEST_KEPT_EVIDENCE_STEMS="$kept_stems" /usr/bin/awk '
+    BEGIN {
+      stem_count = split(ENVIRON["SWIFT_TEST_KEPT_EVIDENCE_STEMS"], stem_names, "\n")
+      for (stem_index = 1; stem_index <= stem_count; stem_index++) {
+        kept[stem_names[stem_index]] = 1
+      }
+    }
+    !($1 in kept) { print $3 }
+  ' <<< "$stem_inventory")"; then
+    printf '[%s] lane-report evidence_retention=skipped label=%s reason=removal-set-failed\n' "${LOG_PREFIX:-test}" "$label_slug" >&2
+    return 0
+  fi
+  while IFS= read -r evidence_name; do
+    [ -n "$evidence_name" ] || continue
+    rm -f "$LANE_EVENT_STREAM_DIR/$evidence_name"
+  done <<< "$removal_names" || true
 }
 
 # One `<stem> <counts> <file name>` line per evidence file of one label, where

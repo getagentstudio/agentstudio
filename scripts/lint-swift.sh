@@ -40,6 +40,7 @@ run_architecture_lint() {
     --ledger Tools/AgentStudioArchitectureLint/architecture-debt-ledger.tsv \
     --ledger Tools/AgentStudioArchitectureLint/forbidden-test-wait-ledger.tsv \
     --ledger Tools/AgentStudioArchitectureLint/adhoc-continuation-wait-ledger.tsv \
+    --ledger Tools/AgentStudioArchitectureLint/process-singleton-ledger.tsv \
     "$@" 2>&1 || lint_status=$?
   report_stage_time "architecture-lint" "$stage_started_ms"
   if [[ $lint_status -eq 0 ]]; then
@@ -54,8 +55,11 @@ run_architecture_lint() {
 # each path and anchor it references exists. The lint tool's own fixture
 # documents are deliberately broken and are linted by its tests instead.
 agent_documents() {
+  local architecture_doc_fixture_root
+  architecture_doc_fixture_root="$(cat "${repository_root}/scripts/architecture-doc-fixture-root.txt")"
+  [[ -n "$architecture_doc_fixture_root" ]] || { echo "architecture doc fixture root is empty" >&2; return 1; }
   git ls-files -- 'AGENTS.md' '*/AGENTS.md' \
-    ':(exclude)Tools/AgentStudioArchitectureLint/Tests/AgentStudioArchitectureLintTests/Fixtures/**'
+    ":(exclude)${architecture_doc_fixture_root}/**"
 }
 
 run_release_script_checks() {
