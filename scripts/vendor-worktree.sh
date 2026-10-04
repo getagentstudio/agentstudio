@@ -141,7 +141,7 @@ require_primary_compatibility() {
   done
 }
 
-# GhosttyEventRoutingCoverageTests reads <slice>/Headers/ghostty.h out of the
+# GhosttyEventRoutingCoverageTests reads <slice>/Headers/GhosttyKit/ghostty.h out of the
 # XCFramework at runtime, so an otherwise well-formed framework directory that
 # carries no slice header fails the suite with "couldn't be opened" instead of
 # failing preflight.
@@ -149,9 +149,9 @@ require_framework_slice_header() {
   local framework="$1"
   local slice_header
 
-  slice_header="$(find "$framework" -maxdepth 3 -type f -name 'ghostty.h' -print -quit 2>/dev/null || true)"
+  slice_header="$(find "$framework" -maxdepth 4 -type f -path '*/Headers/GhosttyKit/ghostty.h' -print -quit 2>/dev/null || true)"
   [[ -n "$slice_header" ]] ||
-    fail "GhosttyKit XCFramework has no slice header: expected $framework/<slice>/Headers/ghostty.h"
+    fail "GhosttyKit XCFramework has no slice header: expected $framework/<slice>/Headers/GhosttyKit/ghostty.h"
 }
 
 require_prepared_sources() {

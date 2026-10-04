@@ -789,3 +789,7 @@ extension WorkspaceSurfaceCoordinator: TopologyEffectHandler {
         )
     }
 }
+
+// Declared here, not in +RuntimeDispatch.swift: the protocol refines Sendable,
+// and Swift 6.4 requires an implied Sendable conformance in the class's own file.
+extension WorkspaceSurfaceCoordinator: PaneRuntimeCommandDispatching {}

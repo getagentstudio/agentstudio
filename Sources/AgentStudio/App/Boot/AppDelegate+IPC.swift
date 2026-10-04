@@ -591,7 +591,7 @@ extension AppDelegate {
     }
 }
 
-extension AppDelegate: PaneFocusAppControlling {
+extension AppDelegate {
     func focusPane(_ paneId: UUID) async throws {
         guard let controller = mainWindowController, controller.acceptsIPCCommands,
             let focusControl = controller.makePaneFocusAppControl(store: store)

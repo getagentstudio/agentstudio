@@ -730,3 +730,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
     }
 
 }
+
+// Declared here, not in AppDelegate+IPC.swift: the protocol refines Sendable,
+// and Swift 6.4 requires an implied Sendable conformance in the class's own file.
+extension AppDelegate: PaneFocusAppControlling {}

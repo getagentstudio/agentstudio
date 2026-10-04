@@ -43,10 +43,12 @@ bash "${PROJECT_ROOT}/scripts/vendor-worktree.sh" require-producer
 # Give zmx the compat include dir Ghostty injects into its own steps
 # (vendor/ghostty/pkg/apple-sdk/include) through a --libc file. Harmless on older SDKs.
 zmx_libc_args=()
-if [[ "$(uname -s)" == "Darwin" ]]; then
+apple_sdk_compat_include="${PROJECT_ROOT}/vendor/ghostty/pkg/apple-sdk/include"
+# Ghostty drops this dir once Zig's headers catch up; then zmx needs no override.
+if [[ "$(uname -s)" == "Darwin" && -d "$apple_sdk_compat_include" ]]; then
   mkdir -p .zig-cache
   zmx_libc_file="$PWD/.zig-cache/agentstudio-apple-sdk-libc.txt"
-  zig libc | sed "s|^include_dir=.*|include_dir=${PROJECT_ROOT}/vendor/ghostty/pkg/apple-sdk/include|" > "$zmx_libc_file"
+  zig libc | sed "s|^include_dir=.*|include_dir=${apple_sdk_compat_include}|" > "$zmx_libc_file"
   zmx_libc_args=(--libc "$zmx_libc_file")
 fi
 zig build -Doptimize=ReleaseFast ${zmx_libc_args[@]+"${zmx_libc_args[@]}"}

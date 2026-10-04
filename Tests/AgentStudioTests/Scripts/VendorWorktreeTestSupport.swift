@@ -348,7 +348,7 @@ struct VendorWorktreeFixture {
     /// with only the library is not a valid stand-in for a real vendor build.
     static func populateFrameworkSlice(at framework: URL, using fileManager: FileManager) throws {
         let sliceRoot = framework.appending(path: "macos-arm64")
-        let headerDirectory = sliceRoot.appending(path: "Headers")
+        let headerDirectory = sliceRoot.appending(path: "Headers/GhosttyKit")
         try fileManager.createDirectory(at: headerDirectory, withIntermediateDirectories: true)
         try Data("primary ghostty library".utf8)
             .write(to: sliceRoot.appending(path: "libghostty.a"))
