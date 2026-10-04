@@ -64,12 +64,38 @@ struct SessionsEvidenceReducerTests {
         first.admissionSequence = 1
         second.admissionSequence = 2
         #expect(
-            [second, legacy, first].sorted(by: SessionsEvidenceReducer.evidenceOrder).map(\.occurrenceId)
+            SessionsEvidenceReducer.evidenceOrder([second, legacy, first]).map(\.occurrenceId)
                 == [legacy.occurrenceId, first.occurrenceId, second.occurrenceId])
         first.admissionSequence = nil
         second.admissionSequence = nil
-        #expect(SessionsEvidenceReducer.evidenceOrder(second, first))
-        let ordered = [legacy, first, second].sorted(by: SessionsEvidenceReducer.evidenceOrder)
+        #expect(SessionsEvidenceReducer.admissionOrder(second, first))
+        let ordered = SessionsEvidenceReducer.evidenceOrder([legacy, first, second])
         #expect(ordered.map(\.occurrenceId) == [second.occurrenceId, first.occurrenceId, legacy.occurrenceId])
+    }
+
+    @Test("source ordering keeps unstamped admission slots and breaks source ties by admission")
+    func sourceOrderKeepsUnstampedAdmissionAndTies() {
+        let conversation = UUIDv7.generate()
+        let binding = UUIDv7.generate()
+        let source = UUIDv7.generate()
+        func record(_ sequence: Int64, sourceTime: TimeInterval?) -> SessionsEvidenceRecord {
+            var evidence = makeSessionsEvidence(
+                conversationId: conversation, bindingGenerationId: binding, sourceGenerationId: source,
+                kind: .activityStarted, origin: .reported, timestamp: Double(100 - sequence))
+            evidence.admissionSequence = sequence
+            evidence.sourceOccurredAt = sourceTime.map(Date.init(timeIntervalSince1970:))
+            return evidence
+        }
+        let newer = record(1, sourceTime: 10)
+        let unstamped = record(2, sourceTime: nil)
+        let earlier = record(3, sourceTime: 5)
+        let tie = record(4, sourceTime: 10)
+        let secondUnstamped = record(5, sourceTime: nil)
+        let input = [secondUnstamped, tie, earlier, unstamped, newer]
+        let ordered = SessionsEvidenceReducer.evidenceOrder(input)
+        #expect(
+            ordered.map(\.occurrenceId)
+                == [earlier, unstamped, newer, tie, secondUnstamped].map(\.occurrenceId))
+        #expect(SessionsEvidenceReducer.evidenceOrder(ordered) == ordered)
     }
 }

@@ -92,18 +92,21 @@ extension SessionsIngestion: SessionOpenAskInput {
                 let binding = statusRuntime.bindings.values.first(where: { $0.sourceGenerationId == sourceGeneration }),
                 case .bound = statusRuntime.states[binding.bindingGenerationId]?.binding
             else { break }
-            let input: SessionStatusInput?
-            if let signal = evidence.providerSignal {
-                input = signal.statusInput(occurrenceId: evidence.occurrenceId)
+            let record = SessionsEvidenceRecord(
+                occurrenceId: evidence.occurrenceId, conversationId: binding.conversationId,
+                bindingGenerationId: binding.bindingGenerationId, sourceGenerationId: sourceGeneration,
+                turnId: evidence.turnId, subject: evidence.subject, kind: evidence.kind,
+                origin: evidence.origin, freshness: evidence.freshness, occurredAt: evidence.occurredAt,
+                admissionSequence: sequence, sourceOccurredAt: mutation.boundedSourceOccurredAt,
+                providerSignal: evidence.providerSignal)
+            guard let input = SessionsStatusRuntime.statusInput(record) else { break }
+            let isOlderHook = statusRuntime.isOlderHook(record)
+            statusRuntime.noteHook(record, input: input, admittedAt: admittedAt)
+            if isOlderHook {
+                let context = try await repository.statusContext(paneId: binding.paneId)
+                statusRuntime.rereduceBinding(
+                    context, bindingGenerationId: binding.bindingGenerationId, admittedAt: admittedAt)
             } else {
-                input = SessionsStatusRuntime.statusInput(
-                    .init(
-                        occurrenceId: evidence.occurrenceId, conversationId: binding.conversationId,
-                        bindingGenerationId: binding.bindingGenerationId, sourceGenerationId: sourceGeneration,
-                        turnId: evidence.turnId, subject: evidence.subject, kind: evidence.kind,
-                        origin: evidence.origin, freshness: evidence.freshness, occurredAt: evidence.occurredAt))
-            }
-            if let input {
                 updateStatus(
                     generation: binding.bindingGenerationId,
                     event: .init(
