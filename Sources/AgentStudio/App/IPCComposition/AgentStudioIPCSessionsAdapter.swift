@@ -24,9 +24,9 @@ private enum SessionsProviderEventGeneration: Sendable {
     /// A generation of this pane that has already been retired. Evidence
     /// against it is history and an end for it is a duplicate.
     case retired(SessionsBindingRecord)
-    /// The pane has bindings, but never one for this conversation.
+    /// A different conversation is current and this conversation has no retained binding.
     case foreignConversation
-    /// The pane has never bound at all.
+    /// No conversation is current and this conversation has no retained binding.
     case unbound
 }
 
@@ -86,11 +86,20 @@ struct AgentStudioIPCSessionsAdapter: AppIPCSessionsPort {
                     .ipcSessionEvent, duration: spanBegan.duration(to: ContinuousClock.now))
             }
         }
-        let admission = try await providerAdmission(
+        var admission = try await providerAdmission(
             paneId: paneId,
             params: params,
             snapshot: try await paneSnapshot(paneId: paneId)
         )
+        if params.event.name != .sessionStart, case .admitted(.bind(let bind)) = admission {
+            do {
+                _ = try await ingestion.submitWithCommitDisposition(
+                    correlationId: UUIDv7.generate(), mutation: .bind(bind))
+            } catch { throw Self.portError(from: error) }
+            admission = try await providerAdmission(
+                paneId: paneId, params: params, snapshot: try await paneSnapshot(paneId: paneId))
+            if case .admitted(.bind) = admission { throw AppIPCSessionsError(reason: .validationRejected) }
+        }
         guard case .admitted(let mutation) = admission else {
             guard case .rejected(let disposition) = admission else {
                 throw AppIPCSessionsError(reason: .validationRejected)
@@ -158,9 +167,8 @@ extension AgentStudioIPCSessionsAdapter {
         }
     }
 
-    /// A session start binds the pane; every other name records evidence
-    /// against the source generation its own conversation opened. Both routes
-    /// admit only an exactly qualified provider identity.
+    /// A first qualified hook implies its conversation's binding; after that,
+    /// evidence and End address that conversation's own retained generation.
     fileprivate func providerAdmission(
         paneId: UUID,
         params: IPCSessionEventParams,
@@ -183,27 +191,34 @@ extension AgentStudioIPCSessionsAdapter {
         }
         let occurredAt = Date(timeIntervalSince1970: now().timeIntervalSince1970)
         let providerIntentFingerprint = try Self.providerIntentFingerprint(params)
-        guard params.event.name != .sessionStart else {
-            return sessionStartAdmission(
-                paneId: paneId, params: params, provider: provider, snapshot: snapshot, admittedAt: occurredAt,
-                fingerprint: providerIntentFingerprint)
-        }
         let generation = try await eventGeneration(
             paneId: paneId,
             provider: provider,
             conversationId: params.event.conversationId,
             snapshot: snapshot
         )
-        // A session end retires the generation it names rather than recording
-        // evidence against it. It is decided before the binding requirement
-        // below because ending a pane that is already unbound is not a caller
-        // error — there is simply nothing left to retire. An end for a
-        // generation that is already retired is a duplicate: the reduction
-        // recognizes the ended source and changes nothing.
+        if params.event.name == .sessionStart {
+            return sessionStartAdmission(
+                paneId: paneId, params: params, provider: provider, generation: generation, admittedAt: occurredAt,
+                fingerprint: providerIntentFingerprint)
+        }
+        switch generation {
+        case .unbound, .foreignConversation:
+            if params.event.name != .sessionEnd {
+                // Validate its evidence payload before the implied binding writes.
+                _ = try Self.providerSignal(for: params.event, permissionHandling: params.permissionHandling)
+            }
+            return sessionStartAdmission(
+                paneId: paneId, params: params, provider: provider, generation: generation, admittedAt: occurredAt,
+                fingerprint: providerIntentFingerprint)
+        case .live, .retired: break
+        }
+        // After any implied bind, End retires its own generation. Repeated
+        // Ends for a retired generation remain duplicates in the reduction.
         guard params.event.name != .sessionEnd else {
             switch generation {
             case .unbound, .foreignConversation:
-                return .rejected(.unqualified)
+                throw AppIPCSessionsError(reason: .validationRejected)
             case .live(let binding), .retired(let binding):
                 return .admitted(
                     .sourceEnded(
@@ -215,13 +230,8 @@ extension AgentStudioIPCSessionsAdapter {
         let binding: SessionsBindingRecord
         let freshness: SessionsEvidenceFreshness
         switch generation {
-        case .unbound:
-            throw AppIPCSessionsError(reason: .bindingRequired)
-        case .foreignConversation:
-            // Not late evidence about anything this pane ran. Recording it
-            // against the live generation would make one pane's state answer
-            // for a session that was never on it.
-            return .rejected(.unqualified)
+        case .unbound, .foreignConversation:
+            throw AppIPCSessionsError(reason: .validationRejected)
         case .live(let liveBinding):
             binding = liveBinding
             freshness = .live
@@ -262,11 +272,20 @@ extension AgentStudioIPCSessionsAdapter {
 
     private func sessionStartAdmission(
         paneId: UUID, params: IPCSessionEventParams, provider: SessionsProviderIdentity,
-        snapshot: SessionsSnapshot, admittedAt: Date, fingerprint: String
+        generation: SessionsProviderEventGeneration, admittedAt: Date, fingerprint: String
     ) -> SessionsProviderEventAdmissionOutcome {
-        let matchingActiveBinding = snapshot.currentBinding.flatMap { binding in
-            binding.status == .active && binding.providerIdentifier == provider.providerIdentifier
-                && binding.providerConversationId == params.event.conversationId ? binding : nil
+        let existingBinding: SessionsBindingRecord?
+        let freshness: SessionsEvidenceFreshness
+        switch generation {
+        case .live(let binding):
+            existingBinding = binding
+            freshness = .live
+        case .retired(let binding):
+            existingBinding = binding
+            freshness = .historical
+        case .unbound, .foreignConversation:
+            existingBinding = nil
+            freshness = .live
         }
         let admission = SessionsQualifiedSessionStartAdmission(
             provider: provider,
@@ -274,18 +293,21 @@ extension AgentStudioIPCSessionsAdapter {
                 paneId: paneId,
                 providerConversationId: params.event.conversationId,
                 sourceId: params.event.conversationId,
-                sourceGenerationId: matchingActiveBinding?.sourceGenerationId ?? UUIDv7.generate(),
+                sourceGenerationId: existingBinding?.sourceGenerationId ?? UUIDv7.generate(),
                 occurrenceId: params.event.occurrenceId
             ),
-            // A qualified start establishes its binding; lateness applies to retained reports.
-            freshness: .live,
+            // A known retired conversation stays historical; a Start never revives it.
+            freshness: freshness,
             reportedAt: admittedAt
         )
-        guard var bind = providerRegistry.qualifiedSessionStartBind(admission) else {
+        guard
+            var bind = providerRegistry.qualifiedSessionStartBind(
+                admission, qualifyingCapability: Self.capability(for: params.event.name))
+        else {
             return .rejected(.unqualified)
         }
         bind.resumeHint =
-            params.event.providerFields.resumeHint
+            (params.event.name == .sessionStart ? params.event.providerFields.resumeHint : nil)
             ?? Self.resumeHint(provider: params.provider.identifier, conversationId: params.event.conversationId)
         bind.ownerPaneId = ownerPaneLookup(.init(existingUUID: paneId))?.uuid
         bind.providerIntentFingerprint = fingerprint
@@ -306,8 +328,8 @@ extension AgentStudioIPCSessionsAdapter {
         conversationId: String,
         snapshot: SessionsSnapshot
     ) async throws -> SessionsProviderEventGeneration {
-        guard let currentBinding = snapshot.currentBinding else { return .unbound }
-        if currentBinding.providerIdentifier == provider.providerIdentifier,
+        if let currentBinding = snapshot.currentBinding,
+            currentBinding.providerIdentifier == provider.providerIdentifier,
             currentBinding.providerConversationId == conversationId
         {
             return currentBinding.status == .active ? .live(currentBinding) : .retired(currentBinding)
@@ -322,7 +344,7 @@ extension AgentStudioIPCSessionsAdapter {
         } catch {
             throw Self.portError(from: error)
         }
-        guard let earlierBinding else { return .foreignConversation }
+        guard let earlierBinding else { return snapshot.currentBinding == nil ? .unbound : .foreignConversation }
         return .retired(earlierBinding)
     }
 

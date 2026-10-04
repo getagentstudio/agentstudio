@@ -10,6 +10,33 @@ import Testing
 
 @Suite("PaneContext Sessions bridge integration")
 struct PaneContextSessionsBridgeTests {
+    @Test("a failed initial ask read remains retryable on later status demand without any ask mutation")
+    func failedAskHydrationRetriesOnDemand() async throws {
+        try await withPaneContextSessionsBridge { fixture in
+            let binding = try await fixture.bindConversation("hydration")
+            let ask = fixture.ask(writer: try fixture.sender(binding), reason: .approval)
+            let sent = await fixture.service.send(ask)
+            #expect(sent == .created(ask.messageId))
+            await fixture.ingestion.finish()
+            let restarted = fixture.makeIngestion()
+            fixture.bridge.connect(service: fixture.service, ingestion: restarted)
+            do {
+                await fixture.sqliteAccess.rejectNextRead()
+                let first = try await restarted.sessionSummary(paneId: fixture.paneId.uuid)
+                #expect(first?.status == .unknown)
+                let recovered = try await restarted.sessionSummary(paneId: fixture.paneId.uuid)
+                #expect(recovered?.status == .needsYou(.approval))
+                let detail = try await fixture.detail()
+                #expect(detail.session == recovered)
+                #expect(detail.messages.first?.id == ask.messageId)
+                await restarted.finish()
+            } catch {
+                await restarted.finish()
+                throw error
+            }
+        }
+    }
+
     private static let replacementWorkKinds: [AgentStudioCore.AgentLineWork?] = [
         .working(.indeterminate), .working(.step(current: 1, total: 2)), .blockedOnYou(action: "Choose a response"),
         .done, .failed(summary: "A line failure"), nil,
@@ -157,12 +184,12 @@ struct PaneContextSessionsBridgeTests {
             let binding = try await fixture.bindConversation("first")
             let request = fixture.ask(writer: try fixture.sender(binding), reason: .question)
             #expect(await fixture.service.send(request) == .created(request.messageId))
-            let older = try #require(await fixture.service.openAskSummaries().first)
+            let older = try #require(try await fixture.service.openAskSummaries().first)
             #expect(older.question == 1)
             #expect(
                 try await fixture.ingestion.sessionSummary(paneId: fixture.paneId.uuid)?.status == .needsYou(.question))
             #expect(await fixture.service.dismiss(messageId: request.messageId, paneId: fixture.paneId) == .done)
-            let latest = try #require(await fixture.service.openAskSummaries().first)
+            let latest = try #require(try await fixture.service.openAskSummaries().first)
             #expect(latest.sequence > older.sequence)
             #expect(latest.question == 0)
             #expect(try await fixture.ingestion.sessionSummary(paneId: fixture.paneId.uuid)?.status == .unknown)

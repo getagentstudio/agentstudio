@@ -54,8 +54,13 @@ extension SessionsIngestion: SessionOpenAskInput {
             await statusPublicationLane?.start()
         }
         if !didLoadOpenAsks {
-            didLoadOpenAsks = true
-            for update in await openAskSource.openAskSummaries() { await receiveOpenAskSummary(update) }
+            do {
+                let updates = try await openAskSource.openAskSummaries()
+                for update in updates { await receiveOpenAskSummary(update) }
+                didLoadOpenAsks = true
+            } catch {
+                // Keep demand-driven hydration eligible after a transient failure.
+            }
         }
         guard !statusRuntime.restoredPaneIds.contains(paneId) else { return }
         let context = try await repository.statusContext(paneId: paneId)

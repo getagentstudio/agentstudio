@@ -153,7 +153,7 @@ struct PaneContextOrderedWriteTests {
     func askWriterRecheckedAtCommit() async throws {
         try await withPaneContextService { fixture, service in
             let before = try await fixture.detail(service)
-            let summariesBefore = await service.openAskSummaries()
+            let summariesBefore = try await service.openAskSummaries()
             let ask = fixture.ask()
             let replacement = AgentMessageSender.session(
                 provider: try BridgeAgentProviderName("claude-code"),
@@ -170,7 +170,7 @@ struct PaneContextOrderedWriteTests {
             let after = try await fixture.detail(service)
             #expect(after.messages == before.messages)
             #expect(after.revision == before.revision)
-            #expect(await service.openAskSummaries() == summariesBefore)
+            #expect(try await service.openAskSummaries() == summariesBefore)
             #expect(try await requestCountForWriterRace(fixture) == 0)
         }
     }

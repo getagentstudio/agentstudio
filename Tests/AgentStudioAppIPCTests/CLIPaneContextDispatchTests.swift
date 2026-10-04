@@ -1,4 +1,5 @@
 import AgentStudioCore
+import AgentStudioDeadlineTestSupport
 import AgentStudioIPCClientCore
 import AgentStudioIPCTransport
 import AgentStudioInfrastructure
@@ -80,25 +81,41 @@ struct CLIPaneContextDispatchTests {
     func clientClassifiesStalledFrames(replyID: Int) async throws {
         let hold = HeldStep<Data>("S5 real server reply held through the client deadline")
         try await withS5PaneCLIContext(heldReply: (.number(replyID), hold)) { context in
-            let observed = try await valueFromDedicatedThread {
-                let descriptors = try IPCCompiledInvocationResolver().resolve(
-                    arguments: ["pane.context.get"], authenticated: true,
-                    inputs: .init(examples: .init(illustrativeIdentifier: UUIDv7.generate())))
-                let parameters = IPCPaneContextGetParams(handle: "self", page: .first)
-                let bytes = try JSONEncoder().encode(parameters)
-                guard let json = String(bytes: bytes, encoding: .utf8) else { throw S5CLIFixtureError.invalidJSON }
-                let invocation = try IPCDescriptorInvocationParser.parse(
-                    ["pane.context.get", "--json", json], descriptors: descriptors,
-                    correlationIDGenerator: { UUIDv7.generate() })
-                let client = AgentStudioIPCClient(
-                    configuration: .init(
-                        socketPath: context.fixture.paths.socketURL.path,
-                        authToken: context.environment["AGENTSTUDIO_PANE_TOKEN"]),
-                    descriptors: descriptors, deadline: CallDeadline(limit: .seconds(1)))
-                do {
-                    _ = try client.call(invocation)
-                    return Optional<IPCDescriptorClientFailure>.none
-                } catch let error as IPCDescriptorClientFailure { return Optional(error) }
+            let driver = ControlledDeadlineDriver()
+            defer { driver.close() }
+            let timing = driver.timing
+            let call = Task {
+                try await valueFromDedicatedThread {
+                    let descriptors = try IPCCompiledInvocationResolver().resolve(
+                        arguments: ["pane.context.get"], authenticated: true,
+                        inputs: .init(examples: .init(illustrativeIdentifier: UUIDv7.generate())))
+                    let parameters = IPCPaneContextGetParams(handle: "self", page: .first)
+                    let bytes = try JSONEncoder().encode(parameters)
+                    guard let json = String(bytes: bytes, encoding: .utf8) else { throw S5CLIFixtureError.invalidJSON }
+                    let invocation = try IPCDescriptorInvocationParser.parse(
+                        ["pane.context.get", "--json", json], descriptors: descriptors,
+                        correlationIDGenerator: { UUIDv7.generate() })
+                    let client = AgentStudioIPCClient(
+                        configuration: .init(
+                            socketPath: context.fixture.paths.socketURL.path,
+                            authToken: context.environment["AGENTSTUDIO_PANE_TOKEN"]),
+                        descriptors: descriptors, deadline: CallDeadline(limit: .seconds(1), timing: timing))
+                    do {
+                        _ = try client.call(invocation)
+                        return Optional<IPCDescriptorClientFailure>.none
+                    } catch let error as IPCDescriptorClientFailure { return Optional(error) }
+                }
+            }
+            let observed: IPCDescriptorClientFailure?
+            do {
+                _ = try await hold.firstArrival()
+                try await valueFromDedicatedThread { try driver.advance(by: .seconds(1)) }
+                observed = try await call.value
+            } catch {
+                driver.cancel()
+                hold.release()
+                _ = try? await call.value
+                throw error
             }
             let heldBytes = try #require(hold.recordedArrivals.first)
             #expect(!heldBytes.isEmpty)
@@ -116,7 +133,12 @@ struct CLIPaneContextDispatchTests {
     func ordinaryVerbUsesItsAbsoluteDeadline() async throws {
         let hold = HeldStep<Data>("S5 ordinary pane reply before physical send")
         try await withS5PaneCLIContext(heldReply: (.number(2), hold)) { context in
-            let output = try await context.run(["pane"])
+            let driver = ControlledDeadlineDriver()
+            defer { driver.close() }
+            let process = context.launchControlledDeadlineProcess(["pane"], driver: driver)
+            _ = try await hold.firstArrival()
+            try await valueFromDedicatedThread { try driver.advance(by: CLIPolicy.ordinaryCallLimit) }
+            let output = try await process.value
             #expect(output.terminationStatus != 0)
             let failureText = try #require(String(bytes: output.standardError, encoding: .utf8))
             #expect(failureText.contains("outcomeUnknown"))

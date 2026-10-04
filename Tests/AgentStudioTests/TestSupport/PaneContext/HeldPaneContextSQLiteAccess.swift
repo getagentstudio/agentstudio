@@ -8,6 +8,7 @@ package actor HeldPaneContextSQLiteAccess: PaneContextSQLiteAccess {
     private var afterNextWrite: HeldStep<Void>?
     private var operations = 0
     private var readTrace: (@Sendable (Database.TraceEvent) -> Void)?
+    private var rejectsNextRead = false
 
     package init(databasePool: DatabasePool) {
         self.databasePool = databasePool
@@ -15,6 +16,10 @@ package actor HeldPaneContextSQLiteAccess: PaneContextSQLiteAccess {
 
     package func read<Output: Sendable>(_ operation: @Sendable (Database) throws -> Output) async throws -> Output {
         operations += 1
+        if rejectsNextRead {
+            rejectsNextRead = false
+            throw ReadFailure.injected
+        }
         let trace = readTrace
         return try await databasePool.read { database in
             if let trace { database.trace(options: .statement, trace) }
@@ -48,4 +53,8 @@ package actor HeldPaneContextSQLiteAccess: PaneContextSQLiteAccess {
     }
 
     package func operationCount() -> Int { operations }
+
+    package func rejectNextRead() { rejectsNextRead = true }
+
+    private enum ReadFailure: Error { case injected }
 }

@@ -15,7 +15,7 @@ package protocol SessionOpenAskInput: Sendable {
 }
 
 package protocol SessionOpenAskReading: Sendable {
-    func openAskSummaries() async -> [SessionsOpenAskUpdate]
+    func openAskSummaries() async throws -> [SessionsOpenAskUpdate]
 }
 
 /// The named producer boundary until PaneContextService supplies its committed summaries.

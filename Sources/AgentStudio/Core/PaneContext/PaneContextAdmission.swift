@@ -97,11 +97,20 @@ enum PaneContextAdmission {
 
     static func formBytes(_ form: AskForm) -> Int {
         switch form {
-        case .freeText(let placeholder): return placeholder?.utf8.count ?? 0
+        case .freeText(let placeholder):
+            var fields: [String: Any] = ["kind": "freeText"]
+            if let placeholder { fields["placeholder"] = placeholder }
+            return encodedBytes(fields)
         case .choice(let options, let multiple):
-            return options.reduce(multiple.description.utf8.count) { $0 + $1.id.value.utf8.count + $1.label.utf8.count }
+            return encodedBytes([
+                "kind": "choice", "allowsMultiple": multiple,
+                "options": options.map { ["id": $0.id.value, "label": $0.label] },
+            ])
         case .elicitation(let schema):
-            return encodedBytes(["properties": schema.properties.map(propertyFields), "required": schema.required])
+            return encodedBytes([
+                "kind": "elicitation",
+                "schema": ["properties": schema.properties.map(propertyFields), "required": schema.required],
+            ])
         }
     }
 

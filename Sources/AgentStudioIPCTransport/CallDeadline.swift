@@ -19,7 +19,11 @@ public struct CallDeadline: Sendable {
     }
 
     package init(limit: Duration, startedAt: ContinuousClock.Instant) {
-        timing = SystemCallDeadlineTiming()
+        self.init(limit: limit, startedAt: startedAt, timing: SystemCallDeadlineTiming())
+    }
+
+    package init(limit: Duration, startedAt: ContinuousClock.Instant, timing: any CallDeadlineTiming) {
+        self.timing = timing
         expiresAt = startedAt.advanced(by: limit)
     }
 

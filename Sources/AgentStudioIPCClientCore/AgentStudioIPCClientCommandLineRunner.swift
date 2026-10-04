@@ -22,6 +22,7 @@ package struct AgentStudioIPCClientCommandLineRunner {
         package let standardOutputSink: @Sendable (String) -> Void
         package let standardErrorSink: @Sendable (String) -> Void
         package let now: @Sendable () -> Date
+        package let deadlineTiming: (any CallDeadlineTiming)?
 
         package init(
             arguments: [String],
@@ -32,7 +33,8 @@ package struct AgentStudioIPCClientCommandLineRunner {
             identifierGenerator: @escaping @Sendable () -> UUID,
             standardOutputSink: @escaping @Sendable (String) -> Void,
             standardErrorSink: @escaping @Sendable (String) -> Void,
-            now: @escaping @Sendable () -> Date = { Date() }
+            now: @escaping @Sendable () -> Date = { Date() },
+            deadlineTiming: (any CallDeadlineTiming)? = nil
         ) {
             self.arguments = arguments
             self.environment = environment
@@ -43,6 +45,7 @@ package struct AgentStudioIPCClientCommandLineRunner {
             self.standardOutputSink = standardOutputSink
             self.standardErrorSink = standardErrorSink
             self.now = now
+            self.deadlineTiming = deadlineTiming
         }
     }
 
@@ -53,8 +56,13 @@ package struct AgentStudioIPCClientCommandLineRunner {
 
     private let props: Props
 
+    private func makeDeadline(limit: Duration, startedAt: ContinuousClock.Instant) -> CallDeadline {
+        if let timing = props.deadlineTiming { return CallDeadline(limit: limit, startedAt: startedAt, timing: timing) }
+        return CallDeadline(limit: limit, startedAt: startedAt)
+    }
+
     private func dispatchCommandLine() -> Int32 {
-        let startedAt = ContinuousClock.now
+        let startedAt = props.deadlineTiming?.now() ?? ContinuousClock.now
         let wallStartedAt = props.now()
         var endpointCameFromDebugEscrow = false
         do {
@@ -82,11 +90,11 @@ package struct AgentStudioIPCClientCommandLineRunner {
                 return try PaneCLIIntent.parse(global.methodArguments, now: wallStartedAt)
             }
             let limit = intent?.callLimit ?? CLIPolicy.ordinaryCallLimit
-            let deadline = CallDeadline(limit: limit, startedAt: startedAt)
+            let deadline = makeDeadline(limit: limit, startedAt: startedAt)
             if let intent {
                 let networkDeadline: CallDeadline
                 if case .notify = intent {
-                    networkDeadline = CallDeadline(limit: limit - CLIPolicy.noticeQueueReserve, startedAt: startedAt)
+                    networkDeadline = makeDeadline(limit: limit - CLIPolicy.noticeQueueReserve, startedAt: startedAt)
                 } else {
                     networkDeadline = deadline
                 }
