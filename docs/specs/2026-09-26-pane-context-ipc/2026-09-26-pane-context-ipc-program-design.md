@@ -1,6 +1,6 @@
 # Enable pane agents: how it is built
 
-Date: 2026-10-03. **Revision 29** (Lead, 2026-10-03; PR B S5): `notify` reserves `CLIPolicy.noticeQueueReserve` (250 ms) of its 5 s total for the outbox write, so a `notSent` notice always reaches the outbox when the app accepts but never reads. **Revision 28** (Lead, 2026-10-03): three delivery decisions from the fast CLI round-1 review, anchored on `fast-cli-store` at 5a921b816. First, `--reload-catalog` is removed, because the catalog is fixed per runtime and the CLI is the same build. Second, a brand-new CLI store is created atomically under a private name and published with an exclusive rename. Third, opening and migrating the store gets a first-open busy budget of at most 1 s within the call total; notice writes and purges keep 50 ms. Storage contents, ownership and the single-writer rule are unchanged. **Revision 27** (owner, 2026-10-02): choice 4 now leads with agents finding their way through `help` and `--help` (Spec R33). Discovery drops rev 26's catalog digest, because the CLI ships in the app bundle and is always the same build. There's no client re-check and discovery gets 500 ms. The digest, cache and filter wait for the Studio service design. **Revision 26** (owner, 2026-10-02): two changes to choice 4. Discovery is identified by a catalog digest, with a name filter, a one-row CLI-store cache and no client re-validation, and it comes within the 250 ms budget. Every hook verb is silent: no stdout, no stderr in normal operation, exit 0.
+Date: 2026-10-04. **Revision 30** (Lead, 2026-10-04; PR B S6 review round 1): this revision restates rules the code drifted from; it adds no new mechanism. First, session end touches only Agent Lines and unconfirmed receipts: an ended or replaced session's open asks stay open and answerable. Second, permanent retirement is durable: it is processed off-main even before the service's first use, shutdown commits pending retirements, and each commit arms the purge deadline. Third, the render (item 4 of "What PR B adds") ships in PR C, which reads `value(for:)` and `PaneDisplayTitleDerived`, as agreed with Panes. PR B proves line, title, notices and asks through the app's own reads. **Revision 29** (Lead, 2026-10-03; PR B S5): `notify` reserves `CLIPolicy.noticeQueueReserve` (250 ms) of its 5 s total for the outbox write, so a `notSent` notice always reaches the outbox when the app accepts but never reads. **Revision 28** (Lead, 2026-10-03): three delivery decisions from the fast CLI round-1 review, anchored on `fast-cli-store` at 5a921b816. First, `--reload-catalog` is removed, because the catalog is fixed per runtime and the CLI is the same build. Second, a brand-new CLI store is created atomically under a private name and published with an exclusive rename. Third, opening and migrating the store gets a first-open busy budget of at most 1 s within the call total; notice writes and purges keep 50 ms. Storage contents, ownership and the single-writer rule are unchanged. **Revision 27** (owner, 2026-10-02): choice 4 now leads with agents finding their way through `help` and `--help` (Spec R33). Discovery drops rev 26's catalog digest, because the CLI ships in the app bundle and is always the same build. There's no client re-check and discovery gets 500 ms. The digest, cache and filter wait for the Studio service design. **Revision 26** (owner, 2026-10-02): two changes to choice 4. Discovery is identified by a catalog digest, with a name filter, a one-row CLI-store cache and no client re-validation, and it comes within the 250 ms budget. Every hook verb is silent: no stdout, no stderr in normal operation, exit 0.
 
 **Revision 25** (owner, 2026-10-02): link removal ships without agent notification for now (Spec R19 deferred). Gaps item 4 is rewritten: no removal facts are consumed, and the replay request to Bridge is withdrawn.
 
@@ -802,8 +802,12 @@ atom boundaries", item 5).
   another write.
 - **Session end reaches lines.** Sessions sends
   `sessionEnded(bindingGenerationId:)` through the App-composed port; the
-  service marks the Agent Lines written under that binding generation stale
-  and publishes. Keying by binding generation, not by conversation, means a
+  service marks the Agent Lines written under that binding generation stale,
+  turns that generation's `notYetConfirmed` receipts into `unconfirmed`
+  (R11a), and publishes. It never settles an ask: an ended or replaced
+  session's open asks stay open and answerable (Session status, step 2), and a
+  blocking ask still settles only through its own connection (`callerGone`) or
+  `appStopping` (rev 30). Keying by binding generation, not by conversation, means a
   resumed conversation's new binding is never marked stale by its old one's
   end.
 - **Any detail change bumps the revision.** `PaneContextRevision` (per pane)
@@ -1153,7 +1157,7 @@ in Boot.
    - `goToPane` → `PaneFocusAppControl` / `PaneFocusExecutor`;
    - `openPullRequest` → the existing external opener callback.
    The popover then assigns its own local view state.
-4. **Render.** Views read keyed values with `value(for:)`. `PaneDisplayTitleDerived` composes the pane's own title with the agent title as it's read.
+4. **Render (PR C, rev 30).** Views read keyed values with `value(for:)`. `PaneDisplayTitleDerived` composes the pane's own title with the agent title as it's read. PR B publishes both atoms and ships `PaneDisplayTitleDerived`; PR C's pane chrome is their only reader (Panes rebind list: "PR C MUST only read `value(for: paneId)` from the two atoms"). PR B and PR C should merge together, so no release carries values nobody shows.
 5. **Pane viewed (rev 16, F4).** After `paneFocusExecutor.apply(decision)` returns true in `PaneTabViewController`'s focus path (`PaneTabViewController.swift:1031`), and only for **person-initiated** triggers (a click, or a person's keyboard focus including drawer-child selection), one `nonisolated` submit carries `(paneId, viewedAt: ContinuousClock.Instant)`. It's a `Mutex` write with no await.
    - Excluded: restore tail, parked replay, automatic repair, IPC focus, and a failed apply.
    - Sessions applies a view only to a `done` whose admission instant is earlier than `viewedAt`. So a view can never acknowledge a later Stop or a replacement binding.
@@ -1171,7 +1175,7 @@ Nothing else. No PR B handler, write, read, deadline or reduction runs on the ma
 | Pane existence and drawer ownership | ordered membership change | `PaneContextMembershipDirectory`, published inside `WorkspacePaneGraphAtom.commitPaneStates` (owner decision B, Gaps item 6) | one locked read at each point of use: auth, source-in-view, the lane's current-membership fence, `ownerPaneId(for:)` |
 | Pane viewed | an ordered occurrence per pane, coalesced to the latest instant | the person-initiated, successful-apply point in `PaneTabViewController`'s focus path (item 5 above), with `(paneId, viewedAt)` into a `nonisolated` Sessions mailbox | Sessions applies it only to a `done` admitted before `viewedAt` (monotonic, same process) |
 | Ask deadlines and Agent Line expiry | future eligibility deadline | one reschedulable next-deadline task in the service, on its injected clock | no fleet-wide timer |
-| Retirement | ordered fact | `retirePanesPermanently` calls the service's `nonisolated retire(_:)`, which appends to a `Mutex` mailbox without awaiting, as `PaneActivityClock.retire` already does | no await on the main actor |
+| Retirement | ordered fact | `retirePanesPermanently` calls the service's `nonisolated retire(_:)`, which appends to a `Mutex` mailbox without awaiting, as `PaneActivityClock.retire` already does. The mailbox wakes off-main processing even before the service's first use; `stop()` commits pending retirements before closing; each commit refreshes the deadline so the purge fires about a day later (rev 30) | no await on the main actor |
 | Per-pane display (title, line, counts, newest ask, PR summary) | latest-state projection | computed by the service after each commit | the publication lane below |
 | Per-pane session status | latest-state projection | computed by the Sessions reducer after each input | the publication lane below |
 | Pull-request summary | latest-state projection | `PullRequestSummaryFold` in the service, on a Forge fact change | a pure fold; an equal result publishes nothing |
@@ -1345,7 +1349,7 @@ GRDB migrations, additive, never a rebuild):
 | Measured budget (debug app) | `cli.call_total_ms` p95 over 50 calls per verb class against the stated budget |
 | Installer tests and recorded provider traces | R6, R13: permission hooks report-only; each wired event checked against a recorded trace from the installed Claude Code and Codex versions |
 | Skill content check | R24 |
-| Debug app smoke (computer use, focus-safe) | line, title, notify and ask show up; nothing takes focus |
+| Debug app smoke (computer use, focus-safe) | PR B: line, title, notices and asks are proven through the app's own reads (`pane`) in a real pane; nothing takes focus. PR C: they show up on screen (rev 30) |
 
 ## Trace table
 
