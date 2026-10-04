@@ -181,11 +181,15 @@ final class PaneCLIOutboxDrainHarness {
         _ = try await ingestion.prepareForLaunch(at: Date())
     }
 
-    func messageLine(text: String, handle: String = "self", correlationID: UUID = UUIDv7.generate()) throws -> String {
+    func messageLine(
+        text: String, handle: String = "self", correlationID: UUID = UUIDv7.generate(),
+        writer: IPCPaneWriterClaim? = nil
+    ) throws -> String {
         try requestLine(
             method: "pane.message.send",
             parameters: IPCPaneMessageSendParams(
-                handle: handle, messageId: correlationID, sourceOccurredAt: Date(timeIntervalSince1970: 1_700_000_000),
+                handle: handle, messageId: correlationID, writer: writer,
+                sourceOccurredAt: Date(timeIntervalSince1970: 1_700_000_000),
                 importance: .info, body: text, actions: [],
                 shape: .notice, correlationId: correlationID))
     }

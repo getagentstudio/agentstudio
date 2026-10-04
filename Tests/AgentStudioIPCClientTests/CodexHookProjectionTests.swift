@@ -9,6 +9,11 @@ import Testing
 /// retry, the pane row is wrong and no later layer can tell.
 @Suite("Codex hook projection")
 struct CodexHookProjectionTests {
+    @Test("Codex hooks carry their CLI source observation time")
+    func hookCarriesSourceObservationTime() throws {
+        let projected = try projected(.preToolUse)
+        #expect(projected.event.sourceOccurredAt != nil)
+    }
     @Test(
         "each projected Codex event maps to its session event name",
         arguments: [

@@ -23,8 +23,9 @@ extension PaneContextService {
 
     func drainRetirements() async throws {
         if let retirementCommit {
+            let generation = retirementCommitGeneration
             try await retirementCommit.value
-            return
+            if retirementCommitGeneration == generation { self.retirementCommit = nil }
         }
         let panes = retirementMailbox.state.withLock { mailbox in
             let panes = mailbox.pending
@@ -57,6 +58,7 @@ extension PaneContextService {
             throw error
         }
         if retirementCommitGeneration == generation { retirementCommit = nil }
+        await refreshDeadline()
         await presentationLane?.publishPending()
         if retirementMailbox.state.withLock({ !$0.pending.isEmpty }) { try await drainRetirements() }
     }
@@ -150,7 +152,6 @@ extension PaneContextService {
     package func sessionEnded(bindingGenerationId: UUID) async {
         do {
             try await ensureOpen()
-            let now = wallNow
             let commit = try await sqliteAccess.write { database in
                 let before = try PaneContextStorage.presentationRevisions(database)
                 let lines = try Row.fetchAll(
@@ -178,28 +179,10 @@ extension PaneContextService {
                     try PaneContextStorage.bumpRevision(
                         database, paneId: PaneId(existingUUID: PaneContextStorage.uuid(row, "pane_id")))
                 }
-                let asks = try Row.fetchAll(
-                    database,
-                    sql:
-                        "SELECT pane_id, message_id FROM pane_request WHERE sender_binding_generation = ? AND state = 'open'",
-                    arguments: [bindingGenerationId.uuidString])
-                let settlements = try asks.map { row in
-                    let key = PaneContextMessageKey(
-                        paneId: PaneId(existingUUID: try PaneContextStorage.uuid(row, "pane_id")),
-                        messageId: AgentMessageId(existingUUID: try PaneContextStorage.uuid(row, "message_id")))
-                    return (
-                        key,
-                        try PaneContextAskSettlement.commit(
-                            database, paneId: key.paneId, id: key.messageId, cause: .sessionEnded, now: now())
-                    )
-                }
-                return PaneContextLifecycleCommit(
-                    settlements: settlements,
-                    affectedSources: try PaneContextStorage.changedPresentationSources(database, since: before))
+                return try PaneContextStorage.changedPresentationSources(database, since: before)
             }
-            for (key, settlement) in commit.settlements { await acceptSettlement(settlement, key: key) }
             await agentLineSink(nil, bindingGenerationId)
-            await publishAffectedSources(commit.affectedSources)
+            await publishAffectedSources(commit)
             await refreshDeadline()
         } catch {
             // Persistent state is unchanged on a failed transaction.
@@ -209,17 +192,23 @@ extension PaneContextService {
     package func stop() async {
         guard !isStopping else { return }
         isStopping = true
+        let retirementDrain = retirementMailbox.state.withLock { mailbox in
+            mailbox.accepting = false
+            let drain = mailbox.drain
+            mailbox.drain = nil
+            return drain
+        }
         membershipDrain?.cancel()
         membershipReconcile?.cancel()
         await membershipReconcile?.value
         await membershipDrain?.value
         membershipDrain = nil
         await presentationLane?.shutdown()
-        retirementMailbox.state.withLock { $0.accepting = false }
         retirementWake.finish()
         retirementDrain?.cancel()
         await retirementDrain?.value
         try? await retirementCommit?.value
+        try? await drainRetirements()
         _ = try? await opening?.value
         await deadlineScheduler?.shutdown()
         if didOpen {

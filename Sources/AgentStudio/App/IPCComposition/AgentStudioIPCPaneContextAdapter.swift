@@ -39,7 +39,6 @@ struct AgentStudioIPCPaneContextAdapter: AppIPCPaneContextPort {
         switch params.shape {
         case .notice: shape = .notice
         case .ask(let reason, let form, _):
-            if writer.isHistorical { throw AppIPCPaneContextError(reason: .stale, staleness: .writerReplaced) }
             shape = .ask(
                 reason: PaneContextIPCMapping.reason(reason), form: try PaneContextIPCMapping.form(form),
                 waiting: .nonBlocking)
@@ -61,7 +60,6 @@ struct AgentStudioIPCPaneContextAdapter: AppIPCPaneContextPort {
         connectionEndCause: @escaping @Sendable () -> AppIPCConnectionEndCause
     ) async throws -> IPCPaneAskOutcome {
         let writer = try await resolveWriter(params.writer, paneId: paneId)
-        if writer.isHistorical { throw AppIPCPaneContextError(reason: .stale, staleness: .writerReplaced) }
         let shape: PaneMessageSendShape
         switch params.shape {
         case .ask(let reason, let form, let waiting):
@@ -223,10 +221,12 @@ struct AgentStudioIPCPaneContextAdapter: AppIPCPaneContextPort {
         -> PaneContextIPCWriterResolution
     {
         guard let claim else { return .pane(PaneId(existingUUID: paneId)) }
-        guard
-            let record = try await ingestion.bindingForProviderConversation(
-                paneId: paneId, providerIdentifier: claim.provider, providerConversationId: claim.conversationId),
-            record.paneId == paneId
+        let binding: SessionsBindingRecord?
+        do {
+            binding = try await ingestion.bindingForProviderConversation(
+                paneId: paneId, providerIdentifier: claim.provider, providerConversationId: claim.conversationId)
+        } catch { throw AppIPCPaneContextError(reason: .unavailable) }
+        guard let record = binding, record.paneId == paneId
         else { return .bindingRequired }
         let sender: AgentMessageSender
         do {

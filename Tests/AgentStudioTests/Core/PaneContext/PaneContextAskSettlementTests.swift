@@ -9,25 +9,6 @@ import Testing
 
 @Suite("Pane context ask settlement")
 struct PaneContextAskSettlementTests {
-    @Test("Session end stales only asks stamped with that binding incarnation")
-    func sessionEndMatchesBindingIncarnation() async throws {
-        try await withPaneContextService { fixture, service in
-            let ask = fixture.ask()
-            try await fixture.sendCreated(ask, to: service)
-            await service.sessionEnded(bindingGenerationId: UUIDv7.generate())
-            let open = try #require(try await fixture.detail(service).messages.first)
-            if case .ask(_, _, _, let state) = open.shape {
-                #expect(state == .open)
-            } else {
-                Issue.record("Expected ask")
-            }
-            await service.sessionEnded(bindingGenerationId: try fixture.bindingGenerationId)
-            #expect(await service.waitForAskOutcome(messageId: ask.messageId, paneId: fixture.paneId) == .stale)
-            let summaries = await service.openAskSummaries()
-            #expect(summaries.first?.question == 0)
-            #expect(try await fixture.changes(service).entries.isEmpty)
-        }
-    }
     @Test("Only the first person answer commits, with an unconfirmed receipt")
     func answerSettlesOnce() async throws {
         try await withPaneContextService { fixture, service in

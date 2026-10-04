@@ -5,6 +5,7 @@ import AgentStudioIPCTransport
 import AgentStudioInfrastructure
 import AgentStudioProgrammaticControl
 import AgentStudioSessions
+import AgentStudioTestHarness
 import Foundation
 import GRDB
 import Testing
@@ -13,6 +14,61 @@ import Testing
 
 @Suite("Sessions recorded provider trace integration")
 struct SessionsProviderTraceIntegrationTests {
+    @Test("a keyed hook records source time and a later source time replays without a second effect")
+    func keyedHookSourceTimeIsRecordedButNotCanonicalIntent() async throws {
+        let fixture = try RecordedStatusDatabase()
+        defer { try? FileManager.default.removeItem(at: fixture.root) }
+        let paneId = UUIDv7.generate()
+        let projected = try projectRecordedStatus(data: recordedStatusData("AskUserQuestion.PreToolUse"))
+        let event = projected.event
+        let firstTime = Date(timeIntervalSince1970: 1_700_000_000)
+        let laterTime = firstTime.addingTimeInterval(1)
+        func params(at sourceTime: Date) -> IPCSessionEventParams {
+            var fields = event.providerFields
+            fields.sourceOccurredAt = sourceTime
+            return .init(
+                handle: projected.handle, provider: projected.provider,
+                event: .init(
+                    name: event.name, conversationId: event.conversationId, turnId: event.turnId,
+                    requestId: event.requestId, toolId: event.toolId, subagentId: event.subagentId,
+                    occurrenceId: event.occurrenceId, providerFields: fields), correlationId: UUIDv7.generate())
+        }
+        let first = params(at: firstTime)
+        let replay = params(at: laterTime)
+        #expect(first.event.occurrenceId == replay.event.occurrenceId)
+        #expect(first.event.sourceOccurredAt != replay.event.sourceOccurredAt)
+        #expect(first.correlationId != replay.correlationId)
+        try await fixture.withIngestion { ingestion, adapter in
+            try await sendRecordedStatus("AskUserQuestion.SessionStart", adapter: adapter, paneId: paneId)
+            let firstResult = try await adapter.recordProviderEvent(
+                paneId: paneId, params: first, provenance: .matchingPane)
+            #expect(firstResult.disposition == .admitted)
+            let before = try await ingestion.sessionSummary(paneId: paneId)
+            let replayResult = try await adapter.recordProviderEvent(
+                paneId: paneId, params: replay, provenance: .matchingPane)
+            #expect(replayResult.disposition == .admitted)
+            let after = try await ingestion.sessionSummary(paneId: paneId)
+            #expect(after == before)
+        }
+        let databaseURL = fixture.databaseURL
+        let stored = try await valueFromDedicatedThread {
+            var configuration = Configuration()
+            configuration.readonly = true
+            let queue = try DatabaseQueue(path: databaseURL.path, configuration: configuration)
+            defer { try? queue.close() }
+            return try queue.read { database in
+                let count = try Int.fetchOne(
+                    database, sql: "SELECT COUNT(*) FROM sessions_evidence WHERE occurrence_id = ?",
+                    arguments: [event.occurrenceId.uuidString])
+                let sourceTime = try Double.fetchOne(
+                    database, sql: "SELECT source_occurred_at FROM sessions_evidence WHERE occurrence_id = ?",
+                    arguments: [event.occurrenceId.uuidString])
+                return (count, sourceTime)
+            }
+        }
+        #expect(stored.0 == 1)
+        #expect(stored.1 == firstTime.timeIntervalSince1970)
+    }
     @Test(
         "populated supplied and fallback resume hints survive repository reopen and occurrence replay",
         arguments: [true, false])

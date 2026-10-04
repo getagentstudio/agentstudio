@@ -53,6 +53,7 @@ struct PaneCLICommandRunner: Sendable {
             if let timeout = draft.timeout {
                 let parameters = IPCPaneMessageAskParams(
                     handle: "self", messageId: props.identifierGenerator(), writer: writer,
+                    sourceOccurredAt: draft.message.createdAt,
                     importance: draft.message.importance,
                     body: draft.message.body, actions: draft.message.actions,
                     shape: .ask(
@@ -65,6 +66,7 @@ struct PaneCLICommandRunner: Sendable {
             } else {
                 let parameters = IPCPaneMessageSendParams(
                     handle: "self", messageId: props.identifierGenerator(), writer: writer,
+                    sourceOccurredAt: draft.message.createdAt,
                     importance: draft.message.importance,
                     body: draft.message.body, actions: draft.message.actions,
                     shape: .ask(reason: draft.reason, form: draft.form, waiting: .nonBlocking),
@@ -83,16 +85,24 @@ struct PaneCLICommandRunner: Sendable {
             let store = openStore()
             defer { try? store?.close() }
             let key = try? stateKey(.answerPosition, writer: writer)
-            let position = key.flatMap { try? store?.answerPosition($0) } ?? 0
-            let parameters = IPCPaneMessageChangesParams(
-                handle: "self", writer: writer, after: UInt64(position), correlationId: correlationID)
-            let response = try result(
-                client.call(invocation("pane.message.changes", parameters: parameters, descriptors: descriptors)))
-            let changes = try JSONDecoder().decode(IPCPaneMessageChangesResult.self, from: response)
-            if let key, let store, let next = Int64(exactly: changes.nextPosition) {
-                do { try store.advanceAnswerPosition(key, to: next) } catch { CLIDiagnostics.record(.storeUnavailable) }
+            var position = UInt64(key.flatMap { try? store?.answerPosition($0) } ?? 0)
+            var pageCorrelation = correlationID
+            while true {
+                let parameters = IPCPaneMessageChangesParams(
+                    handle: "self", writer: writer, after: position, correlationId: pageCorrelation)
+                let response = try result(
+                    client.call(invocation("pane.message.changes", parameters: parameters, descriptors: descriptors)))
+                let changes = try JSONDecoder().decode(IPCPaneMessageChangesResult.self, from: response)
+                try write(response)
+                if let key, let store, let next = Int64(exactly: changes.nextPosition) {
+                    do { try store.advanceAnswerPosition(key, to: next) } catch {
+                        CLIDiagnostics.record(.storeUnavailable)
+                    }
+                }
+                guard changes.more else { break }
+                position = changes.nextPosition
+                pageCorrelation = props.identifierGenerator()
             }
-            try write(response)
         case .pane:
             try write(
                 try result(

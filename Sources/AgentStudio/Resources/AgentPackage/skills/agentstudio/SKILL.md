@@ -12,6 +12,13 @@ moves focus. It does not identify your caller's pane. Use `handle: "self"`
 for that. If you need to execute in the pane, use its terminal; do not run a
 pane's command from an unrelated shell and borrow its identity.
 
+## When to use them
+
+- Keep the Agent Line and title current as your work changes.
+- Send messages in Agent Studio rather than only printing important updates.
+- Ask in Agent Studio for important decisions that need the person's response.
+- Withdraw resolved messages when their request or notice is no longer needed.
+
 ## Before calling
 
 ```sh

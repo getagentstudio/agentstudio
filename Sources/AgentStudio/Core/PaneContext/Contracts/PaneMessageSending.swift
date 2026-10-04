@@ -81,7 +81,6 @@ package enum AskSettlementCause: Sendable, Equatable {
     case withdraw(writer: AgentMessageSender)
     case callerGone
     case appStopping
-    case sessionEnded
 }
 package enum AskSettlementResult: Sendable, Equatable {
     case stillOpen

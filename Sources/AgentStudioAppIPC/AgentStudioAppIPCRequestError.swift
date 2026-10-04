@@ -120,6 +120,7 @@ extension AgentStudioAppIPCRequestError {
         switch error.reason {
         case .invalidField: code = -32_602
         case .tooLarge: code = -32_008
+        case .notOwnPane: code = -32_002
         case .unavailable: code = -32_005
         case .paneGone, .sourceNotInView: code = -32_004
         case .internalError: code = -32_603

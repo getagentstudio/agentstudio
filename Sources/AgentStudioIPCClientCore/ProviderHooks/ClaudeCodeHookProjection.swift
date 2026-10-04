@@ -101,8 +101,7 @@ package enum ClaudeCodeHookProjectionOutcome: Equatable, Sendable {
 }
 
 /// Translates one Claude Code hook document into one `session.event` call.
-/// Pure: every identifier it cannot derive from the document is supplied by the
-/// caller, so the projection is exercised without a socket or a clock.
+/// Identifiers are supplied by the caller; source time records this CLI observation.
 package enum ClaudeCodeHookProjection {
     /// - Parameters:
     ///   - announcedEvent: the event name the installed hook command passed as
@@ -131,6 +130,7 @@ package enum ClaudeCodeHookProjection {
             event == .preToolUse && payload.toolName == "AskUserQuestion" ? .question : event.projectedEventName
         let requestIdentifier = name == .permission ? payload.toolUseId : nil
         var providerFields = IPCSessionProviderEventFields()
+        providerFields.sourceOccurredAt = Date()
         providerFields.toolName = payload.toolName
         providerFields.questions = payload.toolInput?.questions
         providerFields.failureSummary = event == .stopFailure ? payload.error : nil

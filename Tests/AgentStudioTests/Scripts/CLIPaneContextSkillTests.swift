@@ -47,6 +47,16 @@ struct CLIPaneContextSkillTests {
         #expect(source.lowercased().contains("detail only"))
     }
 
+    @Test("the skill teaches when pane-context updates and decisions belong in Agent Studio")
+    func skillTeachesPaneContextDuties() throws {
+        let source = try skillSource()
+        #expect(source.contains("## When to use them"))
+        #expect(source.contains("Keep the Agent Line and title current"))
+        #expect(source.contains("Send messages in Agent Studio rather than only printing"))
+        #expect(source.contains("Ask in Agent Studio for important decisions"))
+        #expect(source.contains("Withdraw resolved messages"))
+    }
+
     private func skillSource() throws -> String {
         let root = URL(fileURLWithPath: TestPathResolver.projectRoot(from: #filePath))
         return try String(

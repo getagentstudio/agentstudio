@@ -96,9 +96,11 @@ die "Fixture needs canonical pane and window UUIDs\n"
     unless uuid_string($fixture->{paneId}) && uuid_string($fixture->{workspaceWindowId});
 my $pane_environment = $fixture->{environment};
 die "Fixture needs its real pane environment\n" unless ref($pane_environment) eq 'HASH';
-for my $key (qw(AGENTSTUDIO_CLI AGENTSTUDIO_PANE_TOKEN AGENTSTUDIO_IPC_SOCKET AGENTSTUDIO_CLI_STORE)) {
+for my $key (qw(AGENTSTUDIO_CLI AGENTSTUDIO_PANE_ID AGENTSTUDIO_PANE_TOKEN AGENTSTUDIO_IPC_SOCKET AGENTSTUDIO_CLI_STORE)) {
     die "Fixture is missing required pane environment\n" unless nonempty($pane_environment->{$key});
 }
+die "Fixture pane environment does not match paneId\n"
+    unless lc($pane_environment->{AGENTSTUDIO_PANE_ID}) eq lc($fixture->{paneId});
 die "Fixture store must be from the debug channel\n"
     unless ($pane_environment->{AGENTSTUDIO_CLI_STORE_CHANNEL} // '') eq 'debug';
 my $cli = abs_path($pane_environment->{AGENTSTUDIO_CLI});

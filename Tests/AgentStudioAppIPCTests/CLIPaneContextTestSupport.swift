@@ -147,18 +147,40 @@ struct S5PaneCLIContext: Sendable {
                 exitCode: code, standardOutput: output.joined(), standardError: error.joined())
         }
     }
+
+    func runAnswersRecordingBookmarks() async -> (ClientCommandLineOutcome, [Result<Int64?, any Error>]) {
+        let environment = callEnvironment(store: nil, useStore: true)
+        let storeURL = storeURL
+        return await valueFromDedicatedThread {
+            let output = S5AnswerPrintObserver(storeURL: storeURL)
+            let error = S5TextOutputCollector()
+            let code = AgentStudioIPCClientCommandLineRunner.run(
+                props: .init(
+                    arguments: ["answers"], environment: environment, executablePath: executableURL.path,
+                    bundleExecutableURL: nil, standardInput: { Data() },
+                    identifierGenerator: { UUIDv7.generate() }, standardOutputSink: { output.append($0) },
+                    standardErrorSink: { error.append($0) }))
+            return (
+                ClientCommandLineOutcome(
+                    exitCode: code, standardOutput: output.text(), standardError: error.joined()),
+                output.bookmarks()
+            )
+        }
+    }
 }
 
 func withS5PaneCLIContext<Output: Sendable>(
     dropFirstClaimReply: Bool = false, orderedWriteProof: S5OrderedWriteProof? = nil,
     heldReply: (id: JSONRPCIdentifier, step: HeldStep<Data>)? = nil, heldRead: HeldStep<Void>? = nil,
+    changesPageSize: Int? = nil,
     _ body: (S5PaneCLIContext) async throws -> Output
 ) async throws -> Output {
     let executableURL = try cliExecutableURL()
     let output = try await withPaneContextIPCDomain { domain in
         let writer = try await domain.bind()
         let port = S5RecordingPaneContextPort(
-            base: domain.adapter(), dropFirstClaimReply: dropFirstClaimReply, orderedWriteProof: orderedWriteProof)
+            base: domain.adapter(), dropFirstClaimReply: dropFirstClaimReply, orderedWriteProof: orderedWriteProof,
+            changesPageSize: changesPageSize)
         let clients = S5CLIClientOwner()
         return try await withLiveServer(
             makeFixture: {
@@ -248,6 +270,7 @@ final class S5RecordingPaneContextPort: AppIPCPaneContextPort, @unchecked Sendab
     private var claimAttempts: [IPCPaneWriterClaimEpochParams] = []
     private var dropClaimReply: Bool
     private let orderedWriteProof: S5OrderedWriteProof?
+    private let changesPageSize: Int?
     private var nextTitleHold: (UUID, HeldStep<IPCPaneTitleSetParams>)?
     private var holds: [HeldStep<IPCPaneTitleSetParams>] = []
     private var nextChangesHold: (UUID, HeldStep<IPCPaneMessageChangesResult>)?
@@ -259,10 +282,14 @@ final class S5RecordingPaneContextPort: AppIPCPaneContextPort, @unchecked Sendab
             describeScope: { $0.uuidString }, describeFact: { String(describing: $0) },
             isClosing: { _, fact in fact == .clientExited }))
 
-    init(base: any AppIPCPaneContextPort, dropFirstClaimReply: Bool, orderedWriteProof: S5OrderedWriteProof?) {
+    init(
+        base: any AppIPCPaneContextPort, dropFirstClaimReply: Bool, orderedWriteProof: S5OrderedWriteProof?,
+        changesPageSize: Int? = nil
+    ) {
         self.base = base
         dropClaimReply = dropFirstClaimReply
         self.orderedWriteProof = orderedWriteProof
+        self.changesPageSize = changesPageSize
     }
 
     var titles: [S5TitleAttempt] { lock.withLock { titleAttempts } }
@@ -362,6 +389,10 @@ final class S5RecordingPaneContextPort: AppIPCPaneContextPort, @unchecked Sendab
             facts.sink(scope, .changesRead)
             try await step.arrive(result)
         }
+        if let changesPageSize, result.entries.count > changesPageSize {
+            let entries = Array(result.entries.prefix(changesPageSize))
+            return .init(entries: entries, nextPosition: entries.last?.position ?? params.after, more: true)
+        }
         return result
     }
 
@@ -389,4 +420,33 @@ private final class S5TextOutputCollector: @unchecked Sendable {
     private var lines: [String] = []
     func append(_ line: String) { lock.withLock { lines.append(line) } }
     func joined() -> String { lock.withLock { lines.joined(separator: "\n") } }
+}
+
+private final class S5AnswerPrintObserver: @unchecked Sendable {
+    private let lock = NSLock()
+    private let storeURL: URL
+    private var lines: [String] = []
+    private var positions: [Result<Int64?, any Error>] = []
+
+    init(storeURL: URL) { self.storeURL = storeURL }
+
+    func append(_ line: String) {
+        let position = Result<Int64?, any Error> {
+            var configuration = Configuration()
+            configuration.readonly = true
+            let queue = try DatabaseQueue(path: storeURL.path, configuration: configuration)
+            defer { try? queue.close() }
+            return try queue.read { database in
+                try Int64.fetchOne(
+                    database, sql: "SELECT value FROM cli_state WHERE kind = ?", arguments: ["answerPosition"])
+            }
+        }
+        lock.withLock {
+            positions.append(position)
+            lines.append(line)
+        }
+    }
+
+    func text() -> String { lock.withLock { lines.joined(separator: "\n") } }
+    func bookmarks() -> [Result<Int64?, any Error>] { lock.withLock { positions } }
 }

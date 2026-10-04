@@ -27,6 +27,14 @@ private let claudeCodeFixtureIdentifier = UUID(uuidString: "00000000-0000-4000-8
 
 @Suite("Claude Code hook projection")
 struct ClaudeCodeHookProjectionTests {
+    @Test("projected hooks carry the time the CLI observed them")
+    func hookCarriesSourceObservationTime() throws {
+        guard case .projected(let params) = try project("PreToolUse") else {
+            Issue.record("Expected a projected hook")
+            return
+        }
+        #expect(params.event.sourceOccurredAt != nil)
+    }
     private static let stableIdentifier = claudeCodeFixtureIdentifier
 
     private func project(

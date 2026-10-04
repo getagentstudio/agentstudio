@@ -95,6 +95,23 @@ struct SwiftLaneIsolationListGateTests {
         }
     }
 
+    @Test("pane-context CLI deadline suites run one per process outside the large concurrent phase")
+    func paneContextDeadlineSuitesUseLargeProcessIsolation() async throws {
+        let inventoryRows = try await laneInventoryRows()
+        let isolated = try await shellHelperLines("large_process_global_suite_filters")
+        let concurrent = try await shellHelperLines("swift_test_lane_suite_types large concurrent")
+        for suiteName in [
+            "CLIPaneContextOrderingTests", "CLIPaneContextAvailabilityTests",
+            "CLIPaneContextAnswersTests", "CLIPaneContextDispatchTests",
+        ] {
+            let row = try #require(inventoryRows.first { $0.suiteTypePath == suiteName })
+            #expect(row.lane == "large")
+            #expect(row.mode == "process-global")
+            #expect(isolated.contains(suiteName))
+            #expect(!concurrent.contains(suiteName))
+        }
+    }
+
     @Test("every serialized MainActor suite runs in an isolated lane")
     func everySerializedMainActorSuiteRunsInAnIsolatedLane() async throws {
         let inventoryRows = try await laneInventoryRows()

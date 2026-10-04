@@ -15,6 +15,55 @@ struct PaneContextSessionsBridgeTests {
         .done, .failed(summary: "A line failure"), nil,
     ]
 
+    @Test("real session end keeps nonblocking asks answerable and attention active while unconfirming prior answers")
+    func sessionEndPreservesOpenAskAndReceipt() async throws {
+        try await withPaneContextSessionsBridge { fixture in
+            let binding = try await fixture.bindConversation("first")
+            let writer = try fixture.sender(binding)
+            let openAsk = fixture.ask(writer: writer, reason: .question)
+            let priorAnswer = fixture.ask(writer: writer, reason: .question)
+            let firstSent = await fixture.service.send(openAsk)
+            let secondSent = await fixture.service.send(priorAnswer)
+            let answered = await fixture.service.answer(
+                .init(messageId: priorAnswer.messageId, paneId: fixture.paneId, by: .localUser, value: .text("prior")))
+            #expect(firstSent == .created(openAsk.messageId))
+            #expect(secondSent == .created(priorAnswer.messageId))
+            #expect(answered == .answered)
+
+            await fixture.service.sessionEnded(bindingGenerationId: UUIDv7.generate())
+            let unrelatedEnd = try await fixture.detail()
+            #expect(
+                unrelatedEnd.messages.first { $0.id == openAsk.messageId }?.shape
+                    == .ask(.question, .freeText(placeholder: nil), .nonBlocking, .open))
+            _ = try await fixture.ingestion.submit(
+                correlationId: UUIDv7.generate(),
+                mutation: .sourceEnded(
+                    .init(
+                        paneId: fixture.paneId.uuid, sourceGenerationId: binding.sourceGenerationId,
+                        endedAt: fixture.time.now)))
+            let ended = try await fixture.detail()
+            let statusWithAsk = try await fixture.ingestion.sessionSummary(paneId: fixture.paneId.uuid)
+            #expect(
+                ended.messages.first { $0.id == openAsk.messageId }?.shape
+                    == .ask(.question, .freeText(placeholder: nil), .nonBlocking, .open))
+            #expect(
+                ended.messages.first { $0.id == priorAnswer.messageId }?.shape
+                    == .ask(
+                        .question, .freeText(placeholder: nil), .nonBlocking,
+                        .answered(by: .localUser, value: .text("prior"), receipt: .unconfirmed)))
+            #expect(statusWithAsk?.status == .needsYou(.question))
+
+            let lateAnswer = await fixture.service.answer(
+                .init(messageId: openAsk.messageId, paneId: fixture.paneId, by: .localUser, value: .text("still valid"))
+            )
+            let recorded = await fixture.service.waitForAskOutcome(messageId: openAsk.messageId, paneId: fixture.paneId)
+            let statusAfterAnswer = try await fixture.ingestion.sessionSummary(paneId: fixture.paneId.uuid)
+            #expect(lateAnswer == .answered)
+            #expect(recorded == .answered(.text("still valid")))
+            #expect(statusAfterAnswer?.status == .idle(.ended))
+        }
+    }
+
     @Test(
         "a real committed ask summary changes Sessions with its declared reason",
         arguments: [AskReason.approval, .question, .blocked])

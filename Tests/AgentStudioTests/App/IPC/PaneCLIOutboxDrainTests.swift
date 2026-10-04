@@ -189,6 +189,56 @@ struct PaneCLIOutboxDrainTests {
         }
     }
 
+    @Test("a claimed writer's binding read failure keeps the notice queued until the next drain")
+    func bindingReadFailureRetainsClaimedNotice() async throws {
+        try await withPaneCLIOutboxDrainHarness { harness in
+            let paneID = UUIDv7.generate()
+            try await harness.bindPane(paneID: paneID)
+            let snapshot = try await harness.snapshot(paneID: paneID)
+            let binding = try #require(snapshot.currentBinding)
+            let writer = IPCPaneWriterClaim(
+                provider: binding.providerIdentifier, conversationId: binding.providerConversationId)
+            let line = try harness.messageLine(text: "retry the binding read", writer: writer)
+            let entry = try await harness.append(paneID: paneID, line: line)
+            // Cursor reads remain available; only the actual binding query loses its table.
+            try await harness.sqliteAccess.write { database in
+                try database.execute(
+                    sql: "ALTER TABLE sessions_pane_binding RENAME TO test_unavailable_sessions_binding")
+            }
+
+            let failed = await harness.drain()
+            let cursorAfterFailure = try await harness.cursor()
+            let queuedAfterFailure = try await harness.rows()
+            let messagesAfterFailure = try await harness.paneMessages(paneID: paneID)
+            #expect(failed.admittedEntryCount == 0)
+            #expect(failed.retryableEntryCount == 1)
+            #expect(failed.malformedEntryCount == 0)
+            #expect(failed.refusedEntryCount == 0)
+            #expect(cursorAfterFailure == 0)
+            #expect(queuedAfterFailure == [entry])
+            #expect(messagesAfterFailure.isEmpty)
+            #expect(harness.refusalRecorder.reasons.isEmpty)
+
+            try await harness.sqliteAccess.write { database in
+                try database.execute(
+                    sql: "ALTER TABLE test_unavailable_sessions_binding RENAME TO sessions_pane_binding")
+            }
+            let retried = try await harness.restartedDrain()
+            let cursorAfterRetry = try await harness.cursor()
+            let admitted = try await harness.paneMessages(paneID: paneID)
+            let expectedSender = AgentMessageSender.session(
+                provider: try BridgeAgentProviderName(binding.providerIdentifier),
+                sessionRef: try BridgeAgentSessionRef(binding.providerConversationId),
+                bindingGeneration: binding.bindingGenerationId)
+            #expect(retried.admittedEntryCount == 1)
+            #expect(retried.retryableEntryCount == 0)
+            #expect(cursorAfterRetry == entry.id)
+            #expect(admitted.count == 1)
+            #expect(admitted.first?.body == "retry the binding read")
+            #expect(admitted.first?.sender == expectedSender)
+        }
+    }
+
     @Test("an unbound pane's deliberate report is refused and never replayed after binding")
     func unboundDeliberateReportIsRefused() async throws {
         try await withPaneCLIOutboxDrainHarness { harness in

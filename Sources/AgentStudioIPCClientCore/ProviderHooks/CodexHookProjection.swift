@@ -90,7 +90,7 @@ package struct CodexHookProjectedEvent: Equatable, Sendable {
 
 /// Projects a Codex hook payload onto the `session.event` vocabulary.
 ///
-/// The projection is total and side-effect free: an event Agent Studio does not
+/// The projection is total: an event Agent Studio does not
 /// model returns `nil` rather than throwing, because a hook that fails must
 /// never block the provider.
 package enum CodexHookProjection {
@@ -113,6 +113,8 @@ package enum CodexHookProjection {
     ) -> CodexHookProjectedEvent? {
         guard let name = sessionEventName(for: eventName) else { return nil }
         let derivedIdentity = derivedIdentifier(eventName: eventName, payload: payload)
+        var providerFields = IPCSessionProviderEventFields()
+        providerFields.sourceOccurredAt = Date()
         return CodexHookProjectedEvent(
             provider: IPCSessionProviderIdentity(
                 identifier: providerIdentifier,
@@ -126,7 +128,7 @@ package enum CodexHookProjection {
                 requestId: requestId(eventName: eventName, derivedIdentity: derivedIdentity),
                 toolId: toolId(eventName: eventName, payload: payload),
                 subagentId: subagentId(eventName: eventName, payload: payload),
-                occurrenceId: derivedIdentity
+                occurrenceId: derivedIdentity, providerFields: providerFields
             )
         )
     }

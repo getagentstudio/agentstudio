@@ -12,6 +12,41 @@ import Testing
 
 @Suite("Pane context IPC real domain integration")
 struct AgentStudioAppIPCPaneContextIntegrationTests {
+    @Test("a replaced writer can replay its nonblocking ask but cannot create another ask")
+    func historicalWriterReplaysRecordedAsk() async throws {
+        try await withPaneContextIPCDomain { domain in
+            let writer = try await domain.bind(conversationId: "original")
+            let parameters = domain.sendParameters(
+                writer: writer, shape: .ask(reason: .question, form: .freeText(placeholder: nil), waiting: .nonBlocking)
+            )
+            try await withPaneContextWire(domain: domain) { _, client in
+                let created = try await client.send(parameters)
+                #expect(created == .created(id: parameters.messageId))
+                _ = try await domain.bind(conversationId: "replacement")
+
+                let replayed = try await client.send(parameters)
+                #expect(replayed == .existing(id: parameters.messageId))
+                let fresh = domain.sendParameters(
+                    writer: writer,
+                    shape: .ask(reason: .question, form: .freeText(placeholder: nil), waiting: .nonBlocking))
+                let refused = try await client.response(method: "pane.message.send", params: fresh)
+                #expect(paneContextRefusalReason(refused) == "stale")
+                if case .object(let fields)? = refused.error?.data {
+                    #expect(fields["staleness"] == .object(["kind": .string("writerReplaced")]))
+                } else {
+                    Issue.record("Missing historical-writer refusal detail")
+                }
+                let detail = try await client.detail()
+                #expect(detail.messages.map(\.id) == [parameters.messageId])
+                #expect(
+                    detail.messages.first?.shape
+                        == .ask(
+                            reason: .question, form: .freeText(placeholder: nil), waiting: .nonBlocking, state: .open))
+                #expect(detail.session?.conversationId == "replacement")
+            }
+        }
+    }
+
     @Test("More can never read a source outside the credential pane's current view")
     func foreignPageSourceIsRefused() async throws {
         try await withPaneContextIPCDomain { domain in

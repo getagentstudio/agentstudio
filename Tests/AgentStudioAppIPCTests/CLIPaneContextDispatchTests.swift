@@ -9,6 +9,28 @@ import Testing
 
 @Suite("Pane CLI compiled dispatch", .serialized)
 struct CLIPaneContextDispatchTests {
+    @Test("both ask variants retain the CLI's captured source time", arguments: [false, true])
+    func askVariantsRecordSourceTime(blocking: Bool) async throws {
+        try await withS5PaneCLIContext { context in
+            let sourceTime = context.domain.time.now.addingTimeInterval(-60)
+            let arguments =
+                blocking
+                ? ["ask", "Source-time proof", "--wait", "--timeout", "30"]
+                : ["ask", "Source-time proof"]
+            let output = await context.runWithWallClock(arguments, now: sourceTime)
+            #expect(output.exitCode == 0)
+            let requestTime =
+                blocking
+                ? context.port.asks.last?.sourceOccurredAt : context.port.messages.last?.sourceOccurredAt
+            #expect(requestTime == sourceTime)
+            let read = await context.domain.service.readDetail(
+                .init(paneId: PaneId(existingUUID: context.domain.paneId), page: .first))
+            let detail: PaneContextDetail?
+            if case .detail(let value) = read { detail = value } else { detail = nil }
+            let recorded = try #require(detail)
+            #expect(recorded.messages.first?.sourceOccurredAt == sourceTime)
+        }
+    }
     @Test(
         "each pane verb has offline help", arguments: ["notify", "ask", "withdraw", "answers", "line", "title", "pane"])
     func paneVerbHelpIsOffline(verb: String) async throws {
@@ -185,6 +207,7 @@ struct CLIPaneContextDispatchTests {
             let message = try #require(context.port.messages.last)
             #expect(message.writer == context.writer)
             #expect(message.body == "Continue?")
+            #expect(message.sourceOccurredAt != nil)
             guard case .ask(_, _, .nonBlocking) = message.shape else {
                 Issue.record("An ordinary ask must be nonblocking")
                 return
@@ -207,6 +230,7 @@ struct CLIPaneContextDispatchTests {
             #expect(context.port.wire.methods == ["auth.login", "pane.message.ask"])
             let request = try #require(context.port.asks.last)
             #expect(request.writer == context.writer)
+            #expect(request.sourceOccurredAt == creationTime)
             guard case .ask(_, _, .blocking(let deadline)) = request.shape else {
                 Issue.record("--wait must use a blocking ask")
                 return

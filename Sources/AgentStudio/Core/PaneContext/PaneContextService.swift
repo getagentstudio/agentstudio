@@ -12,6 +12,7 @@ struct PaneContextRetirementMailbox: Sendable {
     var accepting = true
     var pending = Set<PaneId>()
     var retired = Set<PaneId>()
+    var drain: Task<Void, Never>?
 }
 
 final class PaneContextRetirementMailboxBox: Sendable {
@@ -37,8 +38,6 @@ package actor PaneContextService: PaneContextDetailReading, PaneContextPersonAct
 
     nonisolated let retirementMailbox = PaneContextRetirementMailboxBox()
     nonisolated let retirementWake: AsyncStream<Void>.Continuation
-    let retirementStream: AsyncStream<Void>
-    var retirementDrain: Task<Void, Never>?
     var retirementCommit: Task<Void, Error>?
     var retirementCommitGeneration: UInt64 = 0
     var opening: Task<PaneContextStartupCommit, Error>?
@@ -77,8 +76,18 @@ package actor PaneContextService: PaneContextDetailReading, PaneContextPersonAct
         self.actionRunner = actionRunner
         self.presentationLane = presentationLane
         let wake = AsyncStream<Void>.makeStream(bufferingPolicy: .bufferingNewest(1))
-        retirementStream = wake.stream
         retirementWake = wake.continuation
+        let retirementMailbox = self.retirementMailbox
+        retirementMailbox.state.withLock { mailbox in
+            mailbox.drain = Task { [weak self, retirementStream = wake.stream] in
+                for await _ in retirementStream {
+                    guard !Task.isCancelled, let self else { return }
+                    do { try await self.ensureOpen() } catch {
+                        // Keep pending retirements for the next demand or shutdown.
+                    }
+                }
+            }
+        }
     }
 
     func ensureOpen() async throws {
@@ -125,16 +134,6 @@ package actor PaneContextService: PaneContextDetailReading, PaneContextPersonAct
             return
         }
         didOpen = true
-        if !isStopping {
-            retirementDrain = Task { [weak self, retirementStream] in
-                for await _ in retirementStream {
-                    guard !Task.isCancelled, let self else { return }
-                    do { try await self.drainRetirements() } catch {
-                        // Keep refusing the retired pane; the next demand retries persistence.
-                    }
-                }
-            }
-        }
         for (key, commit) in startup.settlements { await acceptSettlement(commit, key: key) }
         try await drainRetirements()
         await refreshDeadline()

@@ -72,6 +72,29 @@ struct CLILatencyBenchmarkScriptTests {
         #expect(!FileManager.default.fileExists(atPath: fixture.outputURL.path))
     }
 
+    @Test("missing or mismatched fixture pane identity is refused before any CLI mutation", arguments: [false, true])
+    func refusesInvalidPaneEnvironment(missing: Bool) async throws {
+        let fixture = try BenchmarkScriptFixture()
+        defer { fixture.cleanup() }
+        let fixtureData = try Data(contentsOf: fixture.fixtureURL)
+        var fields = try object(fixtureData)
+        var environment = try #require(fields["environment"] as? [String: String])
+        if missing {
+            environment.removeValue(forKey: "AGENTSTUDIO_PANE_ID")
+        } else {
+            environment["AGENTSTUDIO_PANE_ID"] = UUIDv7.generate().uuidString
+        }
+        fields["environment"] = environment
+        let changedData = try JSONSerialization.data(withJSONObject: fields)
+        try changedData.write(to: fixture.fixtureURL)
+
+        let output = try await runHarness(fixture)
+
+        #expect(output.terminationStatus != 0)
+        #expect(!FileManager.default.fileExists(atPath: fixture.recordsURL.path))
+        #expect(!FileManager.default.fileExists(atPath: fixture.outputURL.path))
+    }
+
     @Test("all families retain 50 full-process samples and cleanup, with credentials excluded from reports")
     func benchmarkRecordsEveryFamilyAndRedacts() async throws {
         let fixture = try BenchmarkScriptFixture()
@@ -273,6 +296,7 @@ private struct BenchmarkScriptFixture {
             "debugEscrowPath": escrowURL.path,
             "environment": [
                 "AGENTSTUDIO_CLI": cliURL.path,
+                "AGENTSTUDIO_PANE_ID": paneId.uuidString,
                 "AGENTSTUDIO_PANE_TOKEN": Self.fakeToken,
                 "AGENTSTUDIO_IPC_SOCKET": Self.fakeSocket,
                 "AGENTSTUDIO_CLI_STORE": root.appendingPathComponent("cli.sqlite").path,

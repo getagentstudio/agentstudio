@@ -50,9 +50,6 @@ enum PaneContextAskSettlement {
                 guard case .blocking = waiting else { return unchanged(.stillOpen) }
                 terminal = .stale
                 changeKind = nil
-            case .sessionEnded:
-                terminal = .stale
-                changeKind = nil
             case .deadline:
                 return unchanged(.stillOpen)
             }

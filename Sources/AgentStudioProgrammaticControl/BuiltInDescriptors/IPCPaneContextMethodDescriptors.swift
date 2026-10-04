@@ -308,10 +308,15 @@ package struct IPCPaneContextMethodDescriptors: Sendable {
 
     private static var errors: [IPCMethodErrorCase] {
         [
-            "unauthorized", "bindingRequired", "conflict", "paneGone", "notSender", "noticeAlreadyRead", "tooLarge",
+            "unauthorized", "notOwnPane", "bindingRequired", "conflict", "paneGone", "notSender", "noticeAlreadyRead",
+            "tooLarge",
             "invalidField", "stale", "sourceNotInView", "unavailable", "internalError", "connectionBusy",
         ].map {
-            IPCMethodErrorCase(reason: $0, description: "Typed pane context refusal: \($0).")
+            IPCMethodErrorCase(
+                reason: $0,
+                description: $0 == "notOwnPane"
+                    ? "Pane agents must use handle: self; another handle is refused without effects."
+                    : "Typed pane context refusal: \($0).")
         }
     }
 

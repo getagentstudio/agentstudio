@@ -115,7 +115,7 @@ struct PaneContextPresentationServiceTests {
         }
     }
 
-    @Test("Session end leaves the line stale and clears that binding's open asks")
+    @Test("Session end stales the line while only caller disconnect settles its blocking ask")
     func sessionEndPublishesStaleLineAndCounts() async throws {
         try await withPaneContextPresentationService { fixture in
             let storage = fixture.storage
@@ -123,13 +123,58 @@ struct PaneContextPresentationServiceTests {
             let epoch = try await storage.epoch(fixture.service, stream: .line)
             try #require(
                 await fixture.service.setLine(storage.line("Monitoring", epoch: epoch, counter: 1)) == .applied)
-            try await storage.sendCreated(storage.ask(blocking: true), to: fixture.service)
+            let ask = storage.ask(blocking: true)
+            try await storage.sendCreated(ask, to: fixture.service)
             await fixture.service.sessionEnded(bindingGenerationId: try storage.bindingGenerationId)
             let display = try await fixture.display()
             #expect(display.agentLine?.summary == "Monitoring")
             #expect(display.agentLine?.stale == true)
-            #expect(display.includingDrawers.needsApprovalCount == 0)
+            #expect(display.includingDrawers.needsApprovalCount == 1)
             #expect(await fixture.latestPublished(storage.paneId) == .set(display))
+            let disconnected = await fixture.service.settleAsk(
+                ask.messageId, paneId: storage.paneId, cause: .callerGone)
+            let afterDisconnect = try await fixture.display()
+            #expect(disconnected == .settled(.withdrawn))
+            #expect(afterDisconnect.includingDrawers.needsApprovalCount == 0)
+        }
+    }
+
+    @Test("answer acknowledgement publishes a new detail revision without a read-triggered recomputation")
+    func receiptConfirmationPublishesRevision() async throws {
+        try await withPaneContextPresentationService { fixture in
+            let storage = fixture.storage
+            _ = try await fixture.display()
+            let ask = storage.ask()
+            try await storage.sendCreated(ask, to: fixture.service)
+            let answer = await fixture.service.answer(
+                .init(messageId: ask.messageId, paneId: storage.paneId, by: .localUser, value: .text("answer")))
+            #expect(answer == .answered)
+            let before = await fixture.latestPublished(storage.paneId)
+            let beforeDisplay: PaneContextDisplay?
+            if case .set(let display)? = before { beforeDisplay = display } else { beforeDisplay = nil }
+            let answeredDisplay = try #require(beforeDisplay)
+            let firstPage = try await storage.changes(fixture.service)
+            let acknowledgement = PaneMessageChangesRequest(
+                paneId: storage.paneId, writer: storage.sender, after: firstPage.nextPosition)
+
+            let acknowledged = await fixture.service.changes(acknowledgement)
+            // This helper drains only the lane's offered values; it does not recompute display.
+            let after = await fixture.latestPublished(storage.paneId)
+            let afterDisplay: PaneContextDisplay?
+            if case .set(let display)? = after { afterDisplay = display } else { afterDisplay = nil }
+            let confirmedDisplay = try #require(afterDisplay)
+            #expect(confirmedDisplay.revision.value > answeredDisplay.revision.value)
+            #expect(confirmedDisplay.own == answeredDisplay.own)
+            #expect(confirmedDisplay.includingDrawers == answeredDisplay.includingDrawers)
+            if case .page(let page) = acknowledged {
+                #expect(page.entries.isEmpty)
+            } else {
+                Issue.record("Receipt acknowledgement did not return a page")
+            }
+            let unchanged = try await fixture.withNoPublication {
+                await fixture.service.changes(acknowledgement)
+            }
+            #expect(unchanged == acknowledged)
         }
     }
 
