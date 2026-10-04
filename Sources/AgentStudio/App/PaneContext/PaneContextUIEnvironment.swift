@@ -7,7 +7,7 @@ private struct PaneContextHostVisibleKey: EnvironmentKey {
     static let defaultValue = true
 }
 private struct PaneContextPopoverAutoOpenStateKey: EnvironmentKey {
-    static let defaultValue = PaneContextPopoverAutoOpenState()
+    static let defaultValue: PaneContextPopoverAutoOpenState? = nil
 }
 extension EnvironmentValues {
     var paneContextUIReaders: PaneContextUIReaders? {
@@ -18,7 +18,7 @@ extension EnvironmentValues {
         get { self[PaneContextHostVisibleKey.self] }
         set { self[PaneContextHostVisibleKey.self] = newValue }
     }
-    var paneContextPopoverAutoOpenState: PaneContextPopoverAutoOpenState {
+    var paneContextPopoverAutoOpenState: PaneContextPopoverAutoOpenState? {
         get { self[PaneContextPopoverAutoOpenStateKey.self] }
         set { self[PaneContextPopoverAutoOpenStateKey.self] = newValue }
     }

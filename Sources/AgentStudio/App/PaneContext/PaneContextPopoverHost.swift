@@ -41,6 +41,7 @@ struct PaneContextPopoverHost: View {
             .task(id: AutoOpenInput(ask: autoOpenAskId, visible: isHostVisible)) {
                 guard
                     let askId = autoOpenAskId,
+                    let autoOpenState,
                     PaneContextPopoverAutoOpenPolicy.shouldOpen(
                         newestAskId: askId,
                         lastPresentedAskId: autoOpenState.lastPresentedAskId(for: paneId),

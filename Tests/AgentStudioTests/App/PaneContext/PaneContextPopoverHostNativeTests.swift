@@ -12,9 +12,51 @@ import Testing
 
 @testable import AgentStudio
 
+private enum AutoOpenOwnerFact: Sendable, Equatable {
+    case ownerPresent(Bool)
+}
+
+private struct AutoOpenOwnerProbe: View {
+    @Environment(\.paneContextPopoverAutoOpenState) private var owner
+    let scope: Int
+    let facts: FactRecorder<Int, AutoOpenOwnerFact>
+
+    var body: some View {
+        Color.clear
+            .frame(width: 10, height: 10)
+            .onAppear { facts.append(scope: scope, fact: .ownerPresent(owner != nil)) }
+    }
+}
+
 @MainActor
 @Suite(.serialized)
 struct PaneContextPopoverHostNativeTests {
+    @Test("Hosts without an injected owner do not share auto-open state")
+    func hostsWithoutInjectedOwnerDoNotShareAutoOpenState() async throws {
+        let facts = FactRecorder<Int, AutoOpenOwnerFact>(
+            vocabulary: .init(
+                describeScope: { "auto-open owner \($0)" }, describeFact: { String(describing: $0) },
+                isClosing: { _, _ in true }))
+        let host = NSHostingView(
+            rootView: HStack {
+                AutoOpenOwnerProbe(scope: 0, facts: facts)
+                AutoOpenOwnerProbe(scope: 1, facts: facts)
+            })
+        host.frame = CGRect(x: 0, y: 0, width: 40, height: 20)
+        let window = NSWindow(contentRect: host.frame, styleMask: [.titled], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        window.contentView = host
+        window.makeKeyAndOrderFront(nil)
+        defer {
+            window.contentView = nil
+            window.close()
+        }
+        host.layoutSubtreeIfNeeded()
+        try await facts.expectNext(in: 0, .ownerPresent(false))
+        try await facts.expectNext(in: 1, .ownerPresent(false))
+        try await facts.finish()
+    }
+
     @Test
     func nativeChipPressResolvesTheCurrentProviderAndReadsOwnerDetail() async throws {
         try await withAsyncTestCoreAtoms { atoms in
@@ -123,7 +165,9 @@ struct PaneContextPopoverHostNativeTests {
                     onOpenCompleted: { value in
                         controller = value
                         completed.append(scope: 0, fact: .released)
-                    }))
+                    }
+                )
+                .environment(\.paneContextPopoverAutoOpenState, PaneContextPopoverAutoOpenState()))
             host.frame = CGRect(x: 0, y: 0, width: 200, height: 60)
             let window = NSWindow(contentRect: host.frame, styleMask: [.titled], backing: .buffered, defer: false)
             window.isReleasedWhenClosed = false
