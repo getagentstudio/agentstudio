@@ -6,7 +6,7 @@ const renderedHomepage = await readFile(renderedHomepagePath, "utf8");
 
 interface ProofVideoPlayer {
   readonly markup: string;
-  readonly sceneId: string;
+  readonly sceneId: string | undefined;
 }
 
 const voidElementNames = new Set([
@@ -26,7 +26,7 @@ const voidElementNames = new Set([
   "wbr",
 ]);
 
-/** Discovery follows element ancestry, independent of the player marker. */
+/** Discover proof-container descendants and explicit markers so neither can hide a broken player. */
 function readProofVideoPlayers(homepage: string): readonly ProofVideoPlayer[] {
   const openElements: {
     readonly elementName: string;
@@ -38,8 +38,12 @@ function readProofVideoPlayers(homepage: string): readonly ProofVideoPlayer[] {
     /<!--[\s\S]*?-->|<(script|style|textarea|title)\b[^>]*>[\s\S]*?<\/\1\s*>|<\/?[a-z][\w:-]*\b(?:[^<>"']|"[^"]*"|'[^']*')*>/giu,
   );
   for (const token of elementTokens) {
-    const [tag] = token;
-    if (tag.startsWith("<!--") || token[1] !== undefined) continue;
+    const [markupToken] = token;
+    if (markupToken.startsWith("<!--")) continue;
+    const tag =
+      token[1] === undefined
+        ? markupToken
+        : (/^<[a-z][\w:-]*\b(?:[^<>"']|"[^"]*"|'[^']*')*>/iu.exec(markupToken)?.[0] ?? markupToken);
     const elementName = /^<\/?([\w:-]+)/u.exec(tag)?.[1]?.toLowerCase();
     if (elementName === undefined) continue;
     if (tag.startsWith("</")) {
@@ -49,11 +53,16 @@ function readProofVideoPlayers(homepage: string): readonly ProofVideoPlayer[] {
       if (openIndex >= 0) openElements.splice(openIndex);
       continue;
     }
+    const hasPlayerMarker = /\sdata-scene-proof-video(?:\s|=|>)/u.test(tag);
+    if (hasPlayerMarker && elementName !== "video") {
+      throw new Error("An element marked data-scene-proof-video must be a video element.");
+    }
+    if (token[1] !== undefined) continue;
     if (elementName === "video") {
       const sceneId = openElements.findLast(
         (element) => element.proofSceneId !== undefined,
       )?.proofSceneId;
-      if (sceneId !== undefined) {
+      if (sceneId !== undefined || hasPlayerMarker) {
         const markup = /^<video\b[^>]*>[\s\S]*?<\/video\s*>/iu.exec(
           homepage.slice(token.index),
         )?.[0];
@@ -109,7 +118,7 @@ for (const { markup: videoMarkup, sceneId } of readProofVideoPlayers(renderedHom
   if (/\s(?:autoplay|data-scroll-autoplay-video)(?:\s|=|>)/u.test(videoTag)) {
     throw new Error(`Rendered proof video ${proofVideoCount} must wait for its scene handoff.`);
   }
-  if (!renderedHomepage.includes(`data-scene-root="${sceneId}"`)) {
+  if (sceneId === undefined || !renderedHomepage.includes(`data-scene-root="${sceneId}"`)) {
     throw new Error(
       `Rendered proof video ${proofVideoCount} must render both its recreation and proof layer.`,
     );

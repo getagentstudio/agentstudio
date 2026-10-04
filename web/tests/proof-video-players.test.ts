@@ -51,6 +51,28 @@ it("rejects an unmarked proof video", async () => {
   expect(result.stderr).toContain("data-scene-proof-video");
 });
 
+it("rejects an orphan marked player whose proof-container attribute is missing", async () => {
+  const result = await runVerifier(validProof.replace('data-scene-proof="test"', ""));
+  expect(result.status).not.toBe(0);
+  expect(result.stderr).toContain("both its recreation and proof layer");
+});
+
+it("rejects a missing proof-container attribute after a valid proof", async () => {
+  const orphanProof = validProof.replace('data-scene-proof="test"', "");
+  const result = await runVerifier(validProof + orphanProof);
+  expect(result.status).not.toBe(0);
+  expect(result.stderr).toContain("both its recreation and proof layer");
+});
+
+it.each(["div", "script", "img"] as const)(
+  "rejects an explicitly marked %s instead of ignoring it",
+  async (elementName) => {
+    const result = await runVerifier(`<${elementName} data-scene-proof-video></${elementName}>`);
+    expect(result.status).not.toBe(0);
+    expect(result.stderr).toContain("must be a video element");
+  },
+);
+
 it("still discovers a proof container whose scene identity is missing", async () => {
   const missingSceneProof = validProof.replace('data-scene-proof="test"', "data-scene-proof");
   const result = await runVerifier(missingSceneProof.replace(" data-scene-proof-video", ""));
