@@ -128,7 +128,7 @@ extension PaneContextService {
         }
         let version = PaneContextDetailVersion(
             sources: sources, membershipRevision: view.revision, sourceRevisions: snapshot.sourceRevisions,
-            session: session)
+            session: session, readTimeVersions: snapshot.readTimeVersions)
         let display = PaneContextDisplay(
             revision: detailRevision(for: paneId, version: version), agentTitle: snapshot.title,
             agentLine: snapshot.line,

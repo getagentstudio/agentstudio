@@ -357,6 +357,10 @@ struct PaneContextDetailPagingTests {
                 #expect(captured.messages.map(\.id) == [live.messageId])
                 #expect(captured.agentLine?.stale == true)
                 #expect(captured.drawerMessages.isEmpty)
+                // Pure capture doesn't persist retention. An explicit write-path
+                // display computation persists its scoped maintenance before these
+                // original storage assertions; the global deadline still owns others.
+                _ = await service.readDisplay(paneId: fixture.paneId)
                 let ownFlags = try await captureRetentionFlags(fixture, ask: ownAsk)
                 let otherFlags = try await captureRetentionFlags(fixture, ask: otherAsk)
                 let retiredFlags = try await captureRetentionFlags(fixture, ask: retiredAsk)
@@ -415,6 +419,7 @@ struct PaneContextDetailPagingTests {
             fixture.time.shiftWallTime(by: AppPolicies.PaneContext.settledMessageLifetime)
             let detail = try await fixture.detail(service)
             #expect(detail.messages.map(\.id) == [live.messageId])
+            await service.deadlineReached()
             let hidden = try await fixture.databasePool.read { database in
                 try Bool.fetchOne(
                     database, sql: "SELECT display_hidden FROM pane_request WHERE pane_id = ? AND message_id = ?",

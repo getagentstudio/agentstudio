@@ -1,3 +1,4 @@
+import AgentStudioInfrastructure
 import Foundation
 
 struct PaneContextRetentionMessage: Sendable {
@@ -38,4 +39,25 @@ extension PaneContextRetentionMessage {
         case .notice: table = .notice
         }
     }
+}
+
+/// The read filter and persistent maintenance share this one visibility decision.
+func hiddenPaneContextSettledKeys(
+    _ rows: [PaneContextRetentionMessage], now: Date
+) -> Set<PaneContextRetentionMessage.Key> {
+    let settled = rows.filter { $0.settledAt != nil && !$0.displayHidden }.sorted { $0.position > $1.position }
+    return Set(
+        settled.enumerated().compactMap { index, message in
+            let aged =
+                message.settledAt.map {
+                    $0.addingTimeInterval(AppPolicies.PaneContext.settledMessageLifetime) <= now
+                } == true
+            return index >= AppPolicies.PaneContext.maximumSettledMessages || aged ? message.key : nil
+        })
+}
+
+/// Time-derived facts participate in the existing in-memory detail revision.
+struct PaneContextReadTimeVersion: Sendable, Equatable {
+    let lineStale: Bool?
+    let visibleSettledIds: Set<PaneContextRetentionMessage.Key>
 }

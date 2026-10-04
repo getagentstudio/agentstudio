@@ -78,67 +78,68 @@ extension PaneContextStorage {
         }
     }
 
-    static func form(_ row: Row, children: PaneContextMessageChildren) throws -> AskForm {
-        let requestId = try uuid(row, "id")
+    static func form(_ row: PaneContextReadRow, children: PaneContextMessageChildren) throws -> AskForm {
+        let requestId = try uuid(row, .id)
         let kind = try formKind(row)
         switch kind {
-        case .freeText: return .freeText(placeholder: try optional(row, "placeholder"))
+        case .freeText: return .freeText(placeholder: try optional(row, .placeholder))
         case .choice:
             let options = try (children.choices[requestId] ?? []).map { choice in
                 do {
                     return AskChoice(
-                        id: try AskChoiceId(required(choice, "choice_id")), label: try required(choice, "label"))
+                        id: try AskChoiceId(required(choice, .choiceId)), label: try required(choice, .label))
                 } catch { throw PaneContextStorageFailure.decode("choice") }
             }
-            return .choice(options: options, allowsMultiple: try flag(row, "allows_multiple"))
+            return .choice(options: options, allowsMultiple: try flag(row, .allowsMultiple))
         case .elicitation:
             let rows = children.properties[requestId] ?? []
             let properties = try rows.map { try property($0, children: children, requestId: requestId) }
-            let requiredNames: [String] = try (children.requiredNames[requestId] ?? []).map { try required($0, "name") }
+            let requiredNames: [String] = try (children.requiredNames[requestId] ?? []).map { try required($0, .name) }
             return .elicitation(ElicitationSchema(properties: properties, required: requiredNames))
         }
     }
 
-    static func formKind(_ row: Row) throws -> PaneContextStoredFormKind {
-        guard let kind = PaneContextStoredFormKind(rawValue: try required(row, "form_kind")) else {
+    static func formKind(_ row: PaneContextReadRow) throws -> PaneContextStoredFormKind {
+        guard let kind = PaneContextStoredFormKind(rawValue: try required(row, .formKind)) else {
             throw PaneContextStorageFailure.decode("form_kind")
         }
         return kind
     }
 
-    private static func property(_ row: Row, children: PaneContextMessageChildren, requestId: UUID) throws
+    private static func property(_ row: PaneContextReadRow, children: PaneContextMessageChildren, requestId: UUID)
+        throws
         -> ElicitationProperty
     {
-        let kind: String = try required(row, "property_kind")
+        let kind: String = try required(row, .propertyKind)
         let type: ElicitationPropertyType
         switch kind {
         case "boolean": type = .boolean
         case "number", "integer":
             let constraints = ElicitationNumberConstraints(
-                minimum: try decimal(row, "minimum"), maximum: try decimal(row, "maximum"))
+                minimum: try decimal(row, .minimum), maximum: try decimal(row, .maximum))
             type = kind == "number" ? .number(constraints) : .integer(constraints)
         case "string":
-            let ordinal: Int = try required(row, "ordinal")
+            let ordinal: Int = try required(row, .ordinal)
             let choices: [String] = try (children.propertyChoices[requestId] ?? []).filter { choice in
-                let storedOrdinal: DatabaseValue = choice["property_ordinal"]
+                let storedOrdinal: DatabaseValue = try choice.value(.propertyOrdinal)
                 return storedOrdinal == ordinal.databaseValue
-            }.map { try required($0, "value") }
-            let format: String? = try optional(row, "format")
+            }.map { try required($0, .value) }
+            let format: String? = try optional(row, .format)
             type = .string(
                 ElicitationStringConstraints(
-                    choices: try flag(row, "enum_present") ? choices : nil, minLength: try optional(row, "min_length"),
-                    maxLength: try optional(row, "max_length"), format: try format.map(parseFormat)))
+                    choices: try flag(row, .enumPresent) ? choices : nil, minLength: try optional(row, .minLength),
+                    maxLength: try optional(row, .maxLength), format: try format.map(parseFormat)))
         default: throw PaneContextStorageFailure.decode("property_kind")
         }
         return ElicitationProperty(
-            name: try required(row, "name"), title: try optional(row, "title"),
-            description: try optional(row, "description"), type: type)
+            name: try required(row, .name), title: try optional(row, .title),
+            description: try optional(row, .description), type: type)
     }
 
-    private static func decimal(_ row: Row, _ field: String) throws -> Double? {
+    private static func decimal(_ row: PaneContextReadRow, _ field: PaneContextReadColumn) throws -> Double? {
         let text: String? = try optional(row, field)
         guard let text else { return nil }
-        guard let value = Double(text), value.isFinite else { throw PaneContextStorageFailure.decode(field) }
+        guard let value = Double(text), value.isFinite else { throw PaneContextStorageFailure.decode(field.sqlName) }
         return value
     }
 

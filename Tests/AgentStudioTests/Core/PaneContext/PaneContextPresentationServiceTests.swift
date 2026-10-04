@@ -437,6 +437,7 @@ private func withMeasuredPaneContextQueries(noticeCount: Int) async throws -> Pa
         _ = await fixture.latestPublished(storage.paneId)
         let recorder = PaneContextChildQueryRecorder()
         try await storage.databasePool.write { database in database.trace(options: .statement) { recorder.record($0) } }
+        await storage.sqliteAccess.traceReads { recorder.record($0) }
         do {
             let request = storage.message(body: "Measured notify")
             let sent = await fixture.service.send(request)
@@ -452,11 +453,13 @@ private func withMeasuredPaneContextQueries(noticeCount: Int) async throws -> Pa
             let desired = fixture.mailbox.desiredDisplay(for: storage.paneId)
             #expect(desired?.own.attentionCount == noticeCount + 1)
             #expect(desired?.agentLine?.summary == "Measured line")
+            await storage.sqliteAccess.traceReads(nil)
             try await storage.databasePool.write { database in database.trace(options: []) }
             observation.withLock {
                 $0 = PaneContextQueryObservation(notify: notifyCounts, detail: detailCounts, line: lineCounts)
             }
         } catch {
+            await storage.sqliteAccess.traceReads(nil)
             try? await storage.databasePool.write { database in database.trace(options: []) }
             throw error
         }

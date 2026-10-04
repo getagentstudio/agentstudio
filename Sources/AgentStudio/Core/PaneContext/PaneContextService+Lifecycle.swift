@@ -259,16 +259,31 @@ extension PaneContextStorage {
             sources.map {
                 " AND pane_id IN (\(Array(repeating: "?", count: $0.count).joined(separator: ",")))"
             } ?? ""
-        var arguments: StatementArguments = [try timestamp(now)]
-        if let sources { arguments += StatementArguments(sources.map(\.uuidString)) }
-        let predicate = """
-            kind = 'agentLine' AND stale = 0 AND expires_at <= ?
-            AND pane_id NOT IN (SELECT pane_id FROM pane_retirement)\(scope)
-            """
-        let rows = try Row.fetchAll(
-            database, sql: "SELECT pane_id FROM pane_state WHERE \(predicate)", arguments: arguments)
-        try database.execute(sql: "UPDATE pane_state SET stale = 1 WHERE \(predicate)", arguments: arguments)
-        for row in rows { try bumpRevision(database, paneId: PaneId(existingUUID: uuid(row, "pane_id"))) }
+        let arguments = StatementArguments(sources?.map(\.uuidString) ?? [])
+        let statement = try database.cachedStatement(
+            sql: """
+                SELECT id, pane_id, expires_at FROM pane_state
+                WHERE kind = 'agentLine' AND stale = 0 AND expires_at IS NOT NULL
+                AND pane_id NOT IN (SELECT pane_id FROM pane_retirement)\(scope)
+                """)
+        let rows = try Row.fetchAll(statement, arguments: arguments)
+        let update = try database.cachedStatement(sql: "UPDATE pane_state SET stale = 1 WHERE id = ?")
+        for row in rows {
+            let rawExpiry: DatabaseValue = row[2]
+            guard let micros = Int64.fromDatabaseValue(rawExpiry) else {
+                throw PaneContextStorageFailure.decode("expires_at")
+            }
+            let expiry = Date(timeIntervalSince1970: Double(micros) / 1_000_000)
+            guard lineIsExpired(expiresAt: expiry, now: now) else { continue }
+            let rawId: DatabaseValue = row[0]
+            let rawPane: DatabaseValue = row[1]
+            guard let rowId = String.fromDatabaseValue(rawId) else { throw PaneContextStorageFailure.decode("id") }
+            guard let paneText = String.fromDatabaseValue(rawPane), let paneUUID = UUID(uuidString: paneText) else {
+                throw PaneContextStorageFailure.decode("pane_id")
+            }
+            try update.execute(arguments: [rowId])
+            try bumpRevision(database, paneId: PaneId(existingUUID: paneUUID))
+        }
     }
 
     static func hideSettled(_ database: Database, now: Date, sources: [PaneId]? = nil) throws {
@@ -297,19 +312,11 @@ extension PaneContextStorage {
     static func hideSettled(
         _ database: Database, paneId: PaneId, rows: [PaneContextRetentionMessage], now: Date
     ) throws -> Set<PaneContextRetentionMessage.Key> {
-        let settled = rows.filter { $0.settledAt != nil && !$0.displayHidden }.sorted { $0.position > $1.position }
-        var hidden = Set<PaneContextRetentionMessage.Key>()
-        for (index, message) in settled.enumerated() {
-            guard
-                index >= AppPolicies.PaneContext.maximumSettledMessages
-                    || message.settledAt.map({
-                        $0.addingTimeInterval(AppPolicies.PaneContext.settledMessageLifetime) <= now
-                    }) == true
-            else { continue }
+        let hidden = hiddenPaneContextSettledKeys(rows, now: now)
+        for message in rows where hidden.contains(message.key) {
             let statement = try database.cachedStatement(
                 sql: "UPDATE \(message.table.name) SET display_hidden = 1 WHERE id = ?")
             try statement.execute(arguments: [message.rowId.uuidString])
-            hidden.insert(message.key)
         }
         if !hidden.isEmpty { try bumpRevision(database, paneId: paneId) }
         return hidden

@@ -48,16 +48,16 @@ extension PaneContextStorage {
         }
     }
 
-    static func answer(_ row: Row, children: PaneContextMessageChildren) throws -> AskAnswerValue {
-        let kind: String = try required(row, "answer_kind")
-        if kind == "text" { return .text(try required(row, "answer_text")) }
-        let rows = children.answers[try uuid(row, "id")] ?? []
+    static func answer(_ row: PaneContextReadRow, children: PaneContextMessageChildren) throws -> AskAnswerValue {
+        let kind: String = try required(row, .answerKind)
+        if kind == "text" { return .text(try required(row, .answerText)) }
+        let rows = children.answers[try uuid(row, .id)] ?? []
         if kind == "choices" {
             let choices = try rows.map { value in
-                guard try required(value, "value_kind") as String == "choice" else {
+                guard try required(value, .valueKind) as String == "choice" else {
                     throw PaneContextStorageFailure.decode("answer_kind")
                 }
-                do { return try AskChoiceId(required(value, "text_value")) } catch {
+                do { return try AskChoiceId(required(value, .textValue)) } catch {
                     throw PaneContextStorageFailure.decode("answer_choice")
                 }
             }
@@ -66,27 +66,27 @@ extension PaneContextStorage {
         guard kind == "form" else { throw PaneContextStorageFailure.decode("answer_kind") }
         var values: [String: ElicitationValue] = [:]
         for value in rows {
-            let name: String = try required(value, "field_name")
+            let name: String = try required(value, .fieldName)
             guard values[name] == nil else { throw PaneContextStorageFailure.decode("answer_field") }
-            let valueKind: String = try required(value, "value_kind")
+            let valueKind: String = try required(value, .valueKind)
             switch valueKind {
-            case "string": values[name] = .string(try required(value, "text_value"))
+            case "string": values[name] = .string(try required(value, .textValue))
             case "number":
-                let text: String = try required(value, "text_value")
+                let text: String = try required(value, .textValue)
                 guard let number = Double(text), number.isFinite else {
                     throw PaneContextStorageFailure.decode("answer_number")
                 }
                 values[name] = .number(number)
-            case "integer": values[name] = .integer(try required(value, "integer_value"))
-            case "boolean": values[name] = .boolean(try flag(value, "integer_value"))
+            case "integer": values[name] = .integer(try required(value, .integerValue))
+            case "boolean": values[name] = .boolean(try flag(value, .integerValue))
             default: throw PaneContextStorageFailure.decode("answer_value_kind")
             }
         }
         return .form(ElicitationValues(properties: values))
     }
 
-    static func askState(_ row: Row, children: PaneContextMessageChildren) throws -> AskState {
-        let state: String = try required(row, "state")
+    static func askState(_ row: PaneContextReadRow, children: PaneContextMessageChildren) throws -> AskState {
+        let state: String = try required(row, .state)
         switch state {
         case "open": return .open
         case "handedBack": return .handedBack
@@ -95,7 +95,7 @@ extension PaneContextStorage {
         case "withdrawn": return .withdrawn
         case "stale": return .stale
         case "answered":
-            guard try required(row, "answered_by") as String == "localUser" else {
+            guard try required(row, .answeredBy) as String == "localUser" else {
                 throw PaneContextStorageFailure.decode("answered_by")
             }
             let receipt = try answerReceipt(row)
@@ -104,11 +104,11 @@ extension PaneContextStorage {
         }
     }
 
-    static func answerReceipt(_ row: Row) throws -> AnswerReceipt {
-        let receiptKind: String = try required(row, "receipt")
+    static func answerReceipt(_ row: PaneContextReadRow) throws -> AnswerReceipt {
+        let receiptKind: String = try required(row, .receipt)
         switch receiptKind {
         case "notYetConfirmed": return .notYetConfirmed
-        case "confirmed": return .confirmed(at: try date(row, "receipt_at"))
+        case "confirmed": return .confirmed(at: try date(row, .receiptAt))
         case "unconfirmed": return .unconfirmed
         default: throw PaneContextStorageFailure.decode("receipt")
         }

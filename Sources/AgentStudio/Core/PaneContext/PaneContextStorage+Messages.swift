@@ -6,32 +6,32 @@ extension PaneContextStorage {
     static func message(_ database: Database, paneId: PaneId, messageId: AgentMessageId) throws
         -> PaneContextStoredMessage?
     {
-        if let row = try Row.fetchOne(
-            database, sql: "SELECT * FROM pane_request WHERE pane_id = ? AND message_id = ?",
+        if let row = try PaneContextReadLayout.request.fetchOne(
+            database, from: "pane_request WHERE pane_id = ? AND message_id = ?",
             arguments: [paneId.uuidString, messageId.uuid.uuidString])
         {
             let children = try PaneContextMessageChildren(
-                database, selection: .message(try uuid(row, "id")), requests: [row], notices: [])
+                database, selection: .message(try uuid(row, .id)), requests: [row], notices: [])
             return try requestMessage(row, children: children)
         }
-        if let row = try Row.fetchOne(
-            database, sql: "SELECT * FROM pane_event WHERE pane_id = ? AND message_id = ? AND kind = 'notice'",
+        if let row = try PaneContextReadLayout.notice.fetchOne(
+            database, from: "pane_event WHERE pane_id = ? AND message_id = ? AND kind = 'notice'",
             arguments: [paneId.uuidString, messageId.uuid.uuidString])
         {
             let children = try PaneContextMessageChildren(
-                database, selection: .message(try uuid(row, "id")), requests: [], notices: [row])
+                database, selection: .message(try uuid(row, .id)), requests: [], notices: [row])
             return try noticeMessage(row, children: children)
         }
         return nil
     }
 
     static func messages(_ database: Database, paneId: PaneId) throws -> [PaneContextStoredMessage] {
-        let requests = try Row.fetchAll(
-            database, sql: "SELECT * FROM pane_request WHERE pane_id = ? AND display_hidden = 0",
+        let requests = try PaneContextReadLayout.request.fetchAll(
+            database, from: "pane_request WHERE pane_id = ? AND display_hidden = 0",
             arguments: [paneId.uuidString]
         )
-        let notices = try Row.fetchAll(
-            database, sql: "SELECT * FROM pane_event WHERE pane_id = ? AND kind = 'notice' AND display_hidden = 0",
+        let notices = try PaneContextReadLayout.notice.fetchAll(
+            database, from: "pane_event WHERE pane_id = ? AND kind = 'notice' AND display_hidden = 0",
             arguments: [paneId.uuidString]
         )
         let children = try PaneContextMessageChildren(
@@ -40,37 +40,41 @@ extension PaneContextStorage {
             + notices.map { try noticeMessage($0, children: children) }
     }
 
-    static func requestMessage(_ row: Row, children: PaneContextMessageChildren) throws -> PaneContextStoredMessage {
-        let rowId = try uuid(row, "id")
+    static func requestMessage(_ row: PaneContextReadRow, children: PaneContextMessageChildren) throws
+        -> PaneContextStoredMessage
+    {
+        let rowId = try uuid(row, .id)
         let waiting = try askWaiting(row)
         return PaneContextStoredMessage(
-            rowId: rowId, position: try unsigned(row, "position"),
+            rowId: rowId, position: try unsigned(row, .position),
             detail: AgentMessageDetail(
-                id: AgentMessageId(existingUUID: try uuid(row, "message_id")),
-                sourcePaneId: PaneId(existingUUID: try uuid(row, "pane_id")), sender: try sender(row, prefix: "sender"),
-                sentAt: try date(row, "sent_at"), sourceOccurredAt: try optionalDate(row, "source_occurred_at"),
-                importance: try importance(row), body: try required(row, "body"), why: try optional(row, "why"),
+                id: AgentMessageId(existingUUID: try uuid(row, .messageId)),
+                sourcePaneId: PaneId(existingUUID: try uuid(row, .paneId)), sender: try sender(row),
+                sentAt: try date(row, .sentAt), sourceOccurredAt: try optionalDate(row, .sourceOccurredAt),
+                importance: try importance(row), body: try required(row, .body), why: try optional(row, .why),
                 actions: try actions(children.requestActions[rowId] ?? []),
                 shape: .ask(
                     try reason(row), try form(row, children: children), waiting, try askState(row, children: children))
             ),
-            settledAt: try optionalDate(row, "settled_at"), displayHidden: try flag(row, "display_hidden")
+            settledAt: try optionalDate(row, .settledAt), displayHidden: try flag(row, .displayHidden)
         )
     }
 
-    static func noticeMessage(_ row: Row, children: PaneContextMessageChildren) throws -> PaneContextStoredMessage {
-        let rowId = try uuid(row, "id")
+    static func noticeMessage(_ row: PaneContextReadRow, children: PaneContextMessageChildren) throws
+        -> PaneContextStoredMessage
+    {
+        let rowId = try uuid(row, .id)
         let state = try noticeState(row)
         return PaneContextStoredMessage(
-            rowId: rowId, position: try unsigned(row, "position"),
+            rowId: rowId, position: try unsigned(row, .position),
             detail: AgentMessageDetail(
-                id: AgentMessageId(existingUUID: try uuid(row, "message_id")),
-                sourcePaneId: PaneId(existingUUID: try uuid(row, "pane_id")), sender: try sender(row, prefix: "sender"),
-                sentAt: try date(row, "sent_at"), sourceOccurredAt: try optionalDate(row, "source_occurred_at"),
-                importance: try importance(row), body: try required(row, "body"), why: try optional(row, "why"),
+                id: AgentMessageId(existingUUID: try uuid(row, .messageId)),
+                sourcePaneId: PaneId(existingUUID: try uuid(row, .paneId)), sender: try sender(row),
+                sentAt: try date(row, .sentAt), sourceOccurredAt: try optionalDate(row, .sourceOccurredAt),
+                importance: try importance(row), body: try required(row, .body), why: try optional(row, .why),
                 actions: try actions(children.noticeActions[rowId] ?? []), shape: .notice(state)
             ),
-            settledAt: try optionalDate(row, "settled_at"), displayHidden: try flag(row, "display_hidden")
+            settledAt: try optionalDate(row, .settledAt), displayHidden: try flag(row, .displayHidden)
         )
     }
 

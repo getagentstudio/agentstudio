@@ -22,15 +22,17 @@ struct PaneContextMessageChildren {
         }
     }
 
-    let requestActions: [UUID: [Row]]
-    let noticeActions: [UUID: [Row]]
-    let choices: [UUID: [Row]]
-    let properties: [UUID: [Row]]
-    let propertyChoices: [UUID: [Row]]
-    let requiredNames: [UUID: [Row]]
-    let answers: [UUID: [Row]]
+    let requestActions: [UUID: [PaneContextReadRow]]
+    let noticeActions: [UUID: [PaneContextReadRow]]
+    let choices: [UUID: [PaneContextReadRow]]
+    let properties: [UUID: [PaneContextReadRow]]
+    let propertyChoices: [UUID: [PaneContextReadRow]]
+    let requiredNames: [UUID: [PaneContextReadRow]]
+    let answers: [UUID: [PaneContextReadRow]]
 
-    init(_ database: Database, selection: Selection, requests: [Row], notices: [Row]) throws {
+    init(_ database: Database, selection: Selection, requests: [PaneContextReadRow], notices: [PaneContextReadRow])
+        throws
+    {
         requestActions =
             requests.isEmpty
             ? [:]
@@ -71,9 +73,9 @@ struct PaneContextMessageChildren {
                 database, selection: selection, table: "pane_request_required", parentColumn: "request_id",
                 parentTable: "pane_request", parentFilter: " AND form_kind = 'elicitation'") : [:]
         let hasAnswers = try requests.contains {
-            let state: String = try PaneContextStorage.required($0, "state")
+            let state: String = try PaneContextStorage.required($0, .state)
             guard state == "answered" else { return false }
-            let kind: String = try PaneContextStorage.required($0, "answer_kind")
+            let kind: String = try PaneContextStorage.required($0, .answerKind)
             return kind != "text"
         }
         answers =
@@ -86,19 +88,29 @@ struct PaneContextMessageChildren {
     private static func fetch(
         _ database: Database, selection: Selection, table: String, parentColumn: String,
         parentTable: String, parentFilter: String = ""
-    ) throws -> [UUID: [Row]] {
+    ) throws -> [UUID: [PaneContextReadRow]] {
         // The subquery binds one pane/id instead of an unbounded list of message IDs.
         // SQL and parameter count stay fixed even for a long persisted backlog.
-        let statement = try database.cachedStatement(
-            sql: """
-                SELECT * FROM \(table) WHERE \(parentColumn) IN (
+        let layout: PaneContextReadLayout
+        switch table {
+        case "pane_request_action", "pane_event_action": layout = .action
+        case "pane_request_choice": layout = .choice
+        case "pane_request_property": layout = .property
+        case "pane_request_property_choice": layout = .propertyChoice
+        case "pane_request_required": layout = .requiredName
+        case "pane_request_answer_value": layout = .answer
+        default: throw PaneContextStorageFailure.decode("child.table")
+        }
+        let rows = try layout.fetchAll(
+            database,
+            from: """
+                \(table) WHERE \(parentColumn) IN (
                     SELECT id FROM \(parentTable) WHERE \(selection.predicate)\(parentFilter)
                 ) ORDER BY ordinal
-                """)
-        let rows = try Row.fetchAll(statement, arguments: selection.arguments)
-        var grouped: [UUID: [Row]] = [:]
+                """, arguments: selection.arguments)
+        var grouped: [UUID: [PaneContextReadRow]] = [:]
         for row in rows {
-            let parentId = try PaneContextStorage.uuid(row, parentColumn)
+            let parentId = try PaneContextStorage.uuid(row, parentColumn == "parent_id" ? .parentId : .requestId)
             grouped[parentId, default: []].append(row)
         }
         return grouped

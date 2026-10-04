@@ -9,6 +9,7 @@ import Testing
 
 final class PaneContextServiceFixture: Sendable {
     let rootDirectory: URL
+    let statements = PaneContextSQLStatementRecorder()
     let databasePool: DatabasePool
     let sqliteAccess: HeldPaneContextSQLiteAccess
     let clock = TestPushClock()
@@ -24,9 +25,9 @@ final class PaneContextServiceFixture: Sendable {
     private init() throws {
         rootDirectory = FileManager.default.temporaryDirectory
             .appending(path: "agentstudio-pane-context-\(UUIDv7.generate())")
-        databasePool = try SQLiteDatabaseFactory.makeFileBackedPool(
+        databasePool = try statements.makePool(
             at: rootDirectory.appending(path: "local.sqlite"),
-            label: "AgentStudio.sqlite.pane-context-tests"
+            configuration: SQLiteDatabaseFactory.makeConfiguration(label: "AgentStudio.sqlite.pane-context-tests")
         )
         try WorkspaceLocalMigrations.migrate(databasePool)
         sqliteAccess = HeldPaneContextSQLiteAccess(databasePool: databasePool)

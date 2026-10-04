@@ -4,40 +4,43 @@ import GRDB
 
 extension PaneContextStorage {
     static func title(_ database: Database, paneId: PaneId) throws -> String? {
-        try String.fetchOne(
-            database, sql: "SELECT title FROM pane_state WHERE pane_id = ? AND kind = 'agentTitle'",
+        let statement = try database.cachedStatement(
+            sql: "SELECT title FROM pane_state WHERE pane_id = ? AND kind = 'agentTitle'")
+        return try String.fetchOne(
+            statement,
             arguments: [paneId.uuidString])
     }
 
-    static func line(_ database: Database, paneId: PaneId) throws -> AgentLineDetail? {
+    static func line(_ database: Database, paneId: PaneId, now: Date) throws -> AgentLineDetail? {
         guard
-            let row = try Row.fetchOne(
+            let row = try PaneContextReadLayout.line.fetchOne(
                 database,
-                sql: "SELECT * FROM pane_state WHERE pane_id = ? AND kind = 'agentLine' AND summary IS NOT NULL",
+                from: "pane_state WHERE pane_id = ? AND kind = 'agentLine' AND summary IS NOT NULL",
                 arguments: [paneId.uuidString])
         else { return nil }
-        let kind: String = try required(row, "work_kind")
+        let kind: String = try required(row, .workKind)
         let work: AgentLineWork
         switch kind {
         case "working":
-            let current: Int? = try optional(row, "step_current")
+            let current: Int? = try optional(row, .stepCurrent)
             if let current {
-                work = .working(.step(current: current, total: try required(row, "step_total")))
+                work = .working(.step(current: current, total: try required(row, .stepTotal)))
             } else {
                 work = .working(.indeterminate)
             }
-        case "monitoring": work = .monitoring(try required(row, "work_text"))
-        case "blockedOnYou": work = .blockedOnYou(action: try required(row, "work_text"))
+        case "monitoring": work = .monitoring(try required(row, .workText))
+        case "blockedOnYou": work = .blockedOnYou(action: try required(row, .workText))
         case "done": work = .done
-        case "failed": work = .failed(summary: try required(row, "work_text"))
+        case "failed": work = .failed(summary: try required(row, .workText))
         default: throw PaneContextStorageFailure.decode("work_kind")
         }
-        let expiry = try optionalDate(row, "expires_at")
+        let expiry = try optionalDate(row, .expiresAt)
         return AgentLineDetail(
-            summary: try required(row, "summary"), work: work, detail: try optional(row, "detail"),
-            refs: try loadActions(database, table: "pane_state_action", parentId: uuid(row, "id")),
-            writer: try sender(row, prefix: "writer"), updatedAt: try date(row, "updated_at"),
-            lifetime: expiry.map { .expires(at: $0) } ?? .untilReplaced, stale: try flag(row, "stale")
+            summary: try required(row, .summary), work: work, detail: try optional(row, .detail),
+            refs: try loadActions(database, table: "pane_state_action", parentId: uuid(row, .id)),
+            writer: try sender(row, writer: true), updatedAt: try date(row, .updatedAt),
+            lifetime: expiry.map { .expires(at: $0) } ?? .untilReplaced,
+            stale: try flag(row, .stale) || lineIsExpired(expiresAt: expiry, now: now)
         )
     }
 
@@ -83,7 +86,7 @@ extension PaneContextStorage {
             }
             if case .expires(let expiry) = line.lifetime {
                 fields["expires_at"] = sqlValue(try timestamp(expiry))
-                fields["stale"] = sqlValue(expiry <= now ? 1 : 0)
+                fields["stale"] = sqlValue(lineIsExpired(expiresAt: expiry, now: now) ? 1 : 0)
             }
         }
         let rowId = try upsertValue(database, paneId: request.paneId, kind: "agentLine", fields: fields)
@@ -185,5 +188,33 @@ extension PaneContextStorage {
             sql: "UPDATE pane_write_order SET last_counter = ? WHERE pane_id = ? AND writer_key = ? AND stream = ?",
             arguments: [String(number.counter), paneId.uuidString, writerKey(writer), streamName(stream)])
         return nil
+    }
+}
+
+extension PaneContextStorage {
+    static func lineIsExpired(expiresAt: Date?, now: Date) -> Bool {
+        expiresAt.map { $0 <= now } == true
+    }
+
+    static func lineStaleness(_ database: Database, paneId: PaneId, now: Date) throws -> Bool? {
+        let statement = try database.cachedStatement(
+            sql: """
+                SELECT stale, expires_at FROM pane_state
+                WHERE pane_id = ? AND kind = 'agentLine' AND summary IS NOT NULL
+                """)
+        guard let row = try Row.fetchOne(statement, arguments: [paneId.uuidString]) else { return nil }
+        let raw: Int? = Int.fromDatabaseValue(row[0])
+        guard let raw, raw == 0 || raw == 1 else { throw PaneContextStorageFailure.decode("stale") }
+        let expiryValue: DatabaseValue = row[1]
+        let expiry: Date?
+        if expiryValue.isNull {
+            expiry = nil
+        } else {
+            guard let micros = Int64.fromDatabaseValue(expiryValue) else {
+                throw PaneContextStorageFailure.decode("expires_at")
+            }
+            expiry = Date(timeIntervalSince1970: Double(micros) / 1_000_000)
+        }
+        return raw == 1 || lineIsExpired(expiresAt: expiry, now: now)
     }
 }

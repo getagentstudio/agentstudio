@@ -45,6 +45,38 @@ struct SessionsPaneContextCompositionFactoryTests {
         }
     }
 
+    @Test("pane.context.get through the real adapter reads without application-local mutations")
+    func adapterContextReadUsesReaderConnection() async throws {
+        try await withCompositionFactory { fixture in
+            let service = fixture.composition.paneContextService
+            _ = try await fixture.composition.prepareForLaunch(at: fixture.now)
+            let binding = try await fixture.bind(paneId: fixture.ownerId, usingLateAdapter: false)
+            let message = PaneMessageSendRequest(
+                paneId: fixture.ownerId, messageId: .generateUUIDv7(), sender: try fixture.sender(binding),
+                sourceOccurredAt: nil, importance: .attention, body: "Read me", why: nil,
+                actions: [.goToPane(fixture.drawerId)], shape: .notice)
+            let sent = await service.send(message)
+            #expect(sent == .created(message.messageId))
+            await fixture.composition.presentationLane.publishPending()
+            _ = await service.readDetail(.init(paneId: fixture.ownerId, page: .first))
+            fixture.statements.begin()
+            let result = try await fixture.composition.paneContextIPCAdapter.readContext(
+                paneId: fixture.ownerId.uuid,
+                params: .init(handle: fixture.ownerId.uuidString, page: .first), replyEnvelopeOverheadBytes: 128)
+            let statements = fixture.statements.end()
+            #expect(result.paneId == fixture.ownerId.uuid)
+            let returnedMessageIds = result.messages.map { $0.id }
+            #expect(returnedMessageIds == [message.messageId.uuid])
+            #expect(!statements.isEmpty)
+            let parentReadObserved = statements.contains { $0.isReader && $0.sql.contains("FROM pane_event") }
+            let noMutations = statements.allSatisfy { !$0.isMutation }
+            let selectsUseReaders = statements.filter { $0.sql.hasPrefix("SELECT ") }.allSatisfy { $0.isReader }
+            #expect(parentReadObserved)
+            #expect(noMutations)
+            #expect(selectsUseReaders)
+        }
+    }
+
     @Test("wire byte accounting matches native JSON for real messages, drawers and changed ask states")
     func replySizingMatchesNativeEncoding() async throws {
         try await withCompositionFactory { fixture in
@@ -237,6 +269,7 @@ private struct CompositionFactoryFixture: Sendable {
     let root: URL
     let corePool: DatabasePool
     let localPool: DatabasePool
+    let statements: PaneContextSQLStatementRecorder
     let composition: SessionsPaneContextComposition
     let directory: PaneContextMembershipDirectory
     let workspaceId: UUID
@@ -246,14 +279,17 @@ private struct CompositionFactoryFixture: Sendable {
     let now: Date
 
     @concurrent static func make() async throws -> Self {
+        let statements = PaneContextSQLStatementRecorder()
         let (root, corePool, localPool) = try await withoutBlockingCooperativePool {
             let root = FileManager.default.temporaryDirectory.appending(path: "as-composition-\(UUIDv7.generate())")
             let corePool = try SQLiteDatabaseFactory.makeFileBackedPool(
                 at: root.appending(path: "core.sqlite"), label: "AgentStudio.sqlite.composition-core")
             let localPool: DatabasePool
             do {
-                localPool = try SQLiteDatabaseFactory.makeFileBackedPool(
-                    at: root.appending(path: "local.sqlite"), label: "AgentStudio.sqlite.composition-local")
+                localPool = try statements.makePool(
+                    at: root.appending(path: "local.sqlite"),
+                    configuration: SQLiteDatabaseFactory.makeConfiguration(
+                        label: "AgentStudio.sqlite.composition-local"))
             } catch {
                 try? corePool.close()
                 try? FileManager.default.removeItem(at: root)
@@ -299,7 +335,8 @@ private struct CompositionFactoryFixture: Sendable {
                 limits: .init(maximumPendingPerPane: 32, maximumPendingGlobal: 128),
                 paneViewedMailbox: .init(), presentationAtom: presentationAtom))
         return Self(
-            root: root, corePool: corePool, localPool: localPool, composition: composition, directory: directory,
+            root: root, corePool: corePool, localPool: localPool, statements: statements, composition: composition,
+            directory: directory,
             workspaceId: workspaceId,
             presentationAtom: presentationAtom,
             ownerId: ownerId,
