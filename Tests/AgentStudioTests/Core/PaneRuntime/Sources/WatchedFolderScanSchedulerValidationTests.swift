@@ -1,4 +1,5 @@
 import AgentStudioInfrastructure
+import AgentStudioTestHarness
 import AgentStudioTestSupport
 import Foundation
 import Testing
@@ -107,9 +108,29 @@ struct WatchedFolderScanSchedulerValidationTests {
         _ = await fixture.scheduler.submit(original)
         let staleCandidate = await fixture.validationClient.nextCandidate()
         _ = await fixture.scheduler.submit(replacement)
+        let resultTask = Task {
+            let lease = try await fixture.nextLease()
+            fixture.validationFacts.end()
+            return lease
+        }
+        let parkedScope: WatchedFolderScanValidationScope
+        do {
+            parkedScope = try await fixture.expectParkedValidation(for: replacement, scanRunGeneration: 2)
+        } catch {
+            await fixture.validationClient.complete(staleCandidate, with: .cancelled)
+            if let lease = try? await resultTask.value { _ = await fixture.transfer(lease) }
+            await fixture.scheduler.shutdown()
+            try await fixture.facts.finish()
+            throw error
+        }
         await fixture.validationClient.complete(
             staleCandidate,
             with: .authoritativeNegative(.exactCandidateIsNotRepository)
+        )
+
+        try await fixture.facts.expectNext(
+            in: parkedScope,
+            .validationResubmitted
         )
 
         let currentCandidate = await fixture.validationClient.nextCandidate()
@@ -118,11 +139,85 @@ struct WatchedFolderScanSchedulerValidationTests {
             currentCandidate,
             with: .authoritativeNegative(.exactCandidateIsNotRepository)
         )
-        let lease = try await fixture.nextLease()
+        let lease = try await resultTask.value
         #expect(lease.result.request.canonicalRoot.registration == replacement.canonicalRoot.registration)
         #expect(lease.result.scanRunGeneration == 2)
+        guard case .completeAuthoritative = lease.result.scannerResult else {
+            Issue.record("replacement must finish authoritatively after the stale physical job drains")
+            _ = await fixture.transfer(lease)
+            await fixture.scheduler.shutdown()
+            try await fixture.facts.finish()
+            return
+        }
         #expect(await fixture.transfer(lease) == .transferred)
         await fixture.scheduler.shutdown()
+        try await fixture.facts.finish()
+    }
+
+    @Test("parked replacement validates a real candidate after stale native return")
+    func parkedReplacementTransfersAuthoritativeRepository() async throws {
+        let fixture = try ValidationSchedulerFixture(
+            maximumConcurrentScans: 1,
+            validationBudget: RepoDiscoveryValidationBudget(
+                logicalDeadline: .seconds(60), maximumPhysicalJobs: 1,
+                maximumQueuedRequests: 4, maximumQueuedRequestsPerRoot: 1
+            )
+        )
+        let original = try fixture.makeRequest(name: "parked", containsGitMarker: true)
+        let replacement = try fixture.makeRequest(
+            name: "parked", containsGitMarker: true, sourceID: original.sourceID,
+            registrationGeneration: 2,
+            rootURL: URL(fileURLWithPath: original.canonicalRoot.aliases.onceResolvedCanonical.path)
+        )
+
+        _ = await fixture.scheduler.submit(original)
+        let staleCandidate = await fixture.validationClient.nextCandidate()
+        _ = await fixture.scheduler.submit(replacement)
+        // A premature partial result closes the source, so the named parked await
+        // fails through the harness instead of leaving a held native job hanging.
+        let resultTask = Task {
+            let lease = try await fixture.nextLease()
+            fixture.validationFacts.end()
+            return lease
+        }
+        let parkedScope: WatchedFolderScanValidationScope
+        do {
+            parkedScope = try await fixture.expectParkedValidation(for: replacement, scanRunGeneration: 2)
+        } catch {
+            await fixture.validationClient.complete(staleCandidate, with: .cancelled)
+            if let lease = try? await resultTask.value { _ = await fixture.transfer(lease) }
+            await fixture.scheduler.shutdown()
+            try await fixture.facts.finish()
+            throw error
+        }
+        await fixture.validationClient.complete(staleCandidate, with: .cancelled)
+        try await fixture.facts.expectNext(
+            in: parkedScope,
+            .validationResubmitted
+        )
+        let currentCandidate = await fixture.validationClient.nextCandidate()
+        #expect(currentCandidate == staleCandidate)
+        await fixture.validationClient.complete(
+            currentCandidate,
+            with: .validated(
+                RepoScanner.ResolvedGitEntry(
+                    path: currentCandidate, kind: .cloneRoot, repositoryKey: "replacement-repository"
+                )
+            )
+        )
+        let lease = try await resultTask.value
+        #expect(lease.result.request.canonicalRoot.registration == replacement.canonicalRoot.registration)
+        #expect(lease.result.scanRunGeneration == 2)
+        if case .completeAuthoritative(let completed) = lease.result.scannerResult {
+            #expect(completed.counts.validationSuccessCount == 1)
+            #expect(completed.counts.validationFailureCount == 0)
+            #expect(completed.verifiedEntries.count == 1)
+        } else {
+            Issue.record("validated replacement repository must be complete and authoritative, never partial")
+        }
+        #expect(await fixture.transfer(lease) == .transferred)
+        await fixture.scheduler.shutdown()
+        try await fixture.facts.finish()
     }
 }
 
@@ -177,12 +272,23 @@ private struct ValidationSchedulerFixture {
     let validationClient = ControlledSchedulerValidationClient()
     let consumer = WatchedFolderScanResultConsumerToken.make()
     let scheduler: WatchedFolderScanScheduler
+    let validationFacts: LocalFactSource<WatchedFolderScanValidationScope, WatchedFolderScanSchedulerFact>
+    let facts: FactRecorder<WatchedFolderScanValidationScope, WatchedFolderScanSchedulerFact>
 
     init(
         maximumConcurrentScans: Int,
         validationBudget: RepoDiscoveryValidationBudget = .productionDefault
     ) throws {
         let validationClient = self.validationClient
+        let validationFacts = LocalFactSource<WatchedFolderScanValidationScope, WatchedFolderScanSchedulerFact>(
+            vocabulary: FactVocabulary(
+                describeScope: { String(describing: $0) },
+                describeFact: { String(describing: $0) },
+                isClosing: { _, _ in false }
+            )
+        )
+        self.validationFacts = validationFacts
+        facts = try validationFacts.attach()
         let executor = try RepoScannerValidationExecutor(
             validationClient: validationClient,
             deadlineScheduler: InertSchedulerValidationDeadline(),
@@ -192,6 +298,7 @@ private struct ValidationSchedulerFixture {
             maximumConcurrentScans: maximumConcurrentScans,
             now: { .zero },
             validationExecutor: executor,
+            factSink: validationFacts.sink,
             sessionFactory: { request, _ in
                 let rootURL = URL(
                     fileURLWithPath: request.canonicalRoot.aliases.onceResolvedCanonical.path,
@@ -209,6 +316,21 @@ private struct ValidationSchedulerFixture {
                 )
             }
         )
+    }
+
+    func expectParkedValidation(
+        for request: WatchedFolderScanRequest, scanRunGeneration: UInt64
+    ) async throws -> WatchedFolderScanValidationScope {
+        let scope = try await facts.expectNextOperation(
+            matching: {
+                $0.registration == request.canonicalRoot.registration
+                    && $0.scanRunGeneration == scanRunGeneration
+            },
+            opening: { $0 == .validationParked },
+            "replacement validation parked waiting for stale physical drain"
+        )
+        try await facts.expectNext(in: scope, .validationParked)
+        return scope
     }
 
     func makeRequest(

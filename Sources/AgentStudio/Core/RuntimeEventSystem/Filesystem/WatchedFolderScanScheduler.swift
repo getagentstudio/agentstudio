@@ -9,6 +9,7 @@ package actor WatchedFolderScanScheduler {
     let now: @Sendable () -> Duration
     private let sessionFactory: SessionFactory
     let validationExecutor: RepoScannerValidationExecutor
+    let factSink: WatchedFolderScanSchedulerFactSink?
 
     var currentRootBySourceID: [FilesystemSourceID: RegisteredRootDescriptor] = [:]
     private var retiredRootBySourceID: [FilesystemSourceID: RegisteredRootDescriptor] = [:]
@@ -33,6 +34,7 @@ package actor WatchedFolderScanScheduler {
         initialDemandGenerations: [FilesystemSourceID: WatchedFolderScanDemandGeneration] = [:],
         now: @escaping @Sendable () -> Duration,
         validationExecutor: RepoScannerValidationExecutor,
+        factSink: WatchedFolderScanSchedulerFactSink? = nil,
         sessionFactory: @escaping SessionFactory
     ) throws {
         guard maximumConcurrentScans > 0 else {
@@ -45,6 +47,7 @@ package actor WatchedFolderScanScheduler {
         self.demandGenerationBySourceID = initialDemandGenerations
         self.now = now
         self.validationExecutor = validationExecutor
+        self.factSink = factSink
         self.sessionFactory = sessionFactory
     }
 
