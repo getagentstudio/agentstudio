@@ -467,6 +467,7 @@ enum BridgePaneReviewDisplayedSnapshot: Codable, Equatable, Sendable {
 }
 
 enum BridgePaneReviewComparisonAttempt: Codable, Equatable, Sendable {
+    case noSource
     case selectionRequired
     case pending(reviewGeneration: Int)
     case settled(reviewGeneration: Int)
@@ -480,6 +481,7 @@ enum BridgePaneReviewComparisonAttempt: Codable, Equatable, Sendable {
     }
 
     private enum Status: String, Codable {
+        case noSource
         case selectionRequired
         case pending
         case settled
@@ -489,6 +491,13 @@ enum BridgePaneReviewComparisonAttempt: Codable, Equatable, Sendable {
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         switch try container.decode(Status.self, forKey: .status) {
+        case .noSource:
+            try BridgeProductContractDecoding.rejectUnknownKeys(
+                from: decoder,
+                allowedKeys: [CodingKeys.status.rawValue],
+                contract: "no-source Review comparison attempt"
+            )
+            self = .noSource
         case .selectionRequired:
             try BridgeProductContractDecoding.rejectUnknownKeys(
                 from: decoder,
@@ -537,6 +546,8 @@ enum BridgePaneReviewComparisonAttempt: Codable, Equatable, Sendable {
     func encode(to encoder: Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
         switch self {
+        case .noSource:
+            try container.encode(Status.noSource, forKey: .status)
         case .selectionRequired:
             try container.encode(Status.selectionRequired, forKey: .status)
         case .pending(let reviewGeneration):

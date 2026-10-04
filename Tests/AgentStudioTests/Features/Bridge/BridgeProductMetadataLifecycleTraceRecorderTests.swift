@@ -6,6 +6,35 @@ import Testing
 
 @Suite("Bridge product metadata lifecycle trace recorder")
 struct BridgeProductMetadataLifecycleTraceRecorderTests {
+    @Test("no-source pane presentation projects allowlisted vocabulary without a Review generation")
+    func noSourcePresentationTelemetryHasNoGeneration() async throws {
+        let sink = BridgeProductMetadataLifecycleTraceSink()
+        let recorder = BridgeProductMetadataLifecycleTraceRecorder(recorder: sink)
+        let event = BridgePanePresentationTraceEvent(
+            snapshot: BridgePaneProductPresentationSnapshot(
+                nativeActivity: .foreground,
+                presentationRevision: 1,
+                refreshingLanes: [],
+                reviewComparison: BridgePaneReviewComparisonPresentation(
+                    activeTarget: nil, attempt: .noSource, displayedSnapshot: .absent)
+            ),
+            stage: .enqueued,
+            result: .success,
+            resultReason: .noReason,
+            hasActiveStream: true,
+            traceContext: nil
+        )
+        await recorder.record(event)
+        let sample = try #require(await sink.recordedSamples().only)
+        #expect(event.comparisonAttempt == .noSource)
+        #expect(event.reviewGeneration == nil)
+        #expect(sample.stringAttributes["agentstudio.bridge.comparison.attempt.status"] == "no_source")
+        #expect(sample.numericAttributes["agentstudio.bridge.review.generation"] == nil)
+        #expect(
+            BridgeTelemetryWireSchema.allowedStringValues(for: "agentstudio.bridge.comparison.attempt.status")?
+                .contains("no_source") == true)
+    }
+
     @Test("Review refresh lifecycle exports only controlled classification aggregates")
     func reviewRefreshLifecycleExportsControlledClassificationAggregates() async throws {
         // Arrange

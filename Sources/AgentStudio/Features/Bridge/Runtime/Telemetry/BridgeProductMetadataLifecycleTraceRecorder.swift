@@ -114,6 +114,7 @@ struct BridgePanePresentationTraceEvent: Equatable, Sendable {
 
     enum ComparisonAttempt: String, Sendable {
         case absent
+        case noSource = "no_source"
         case pending
         case selectionRequired = "selection_required"
         case settled
@@ -165,6 +166,9 @@ struct BridgePanePresentationTraceEvent: Equatable, Sendable {
         switch snapshot.reviewComparison?.attempt {
         case .none:
             comparisonAttempt = .absent
+            reviewGeneration = nil
+        case .noSource:
+            comparisonAttempt = .noSource
             reviewGeneration = nil
         case .pending(let generation):
             comparisonAttempt = .pending

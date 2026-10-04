@@ -120,6 +120,7 @@ extension BridgeTelemetryWireSchema {
         ],
         "agentstudio.bridge.comparison.attempt.status": [
             "absent",
+            "no_source",
             "pending",
             "selection_required",
             "settled",
