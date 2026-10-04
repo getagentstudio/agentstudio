@@ -633,8 +633,8 @@ The IPC methods and the UI both call it.
 
 | Surface | Change |
 |---|---|
-| Contracts (`AgentStudioProgrammaticControl`) | `IPCWorktreeCreateParams`/`Result`, `IPCWorktreeForkParams`/`Result`, `IPCWorktreeRemoveParams`/`Result`, `IPCWorktreePruneParams`/`Result`, `IPCWorktreeListParams`/`Result`; `BuiltInDescriptors/IPCWorktreeMethodDescriptors.swift`; listed in `locallyResolvableDescriptors` |
-| App IPC composition | `App/IPCComposition/Worktrees/` registers `worktree.create/fork/remove/prune/list` and dispatches to the coordinator. Privilege: the existing `appCommandExecute` for mutations and `workspaceRead` for list, since the standalone CLI already performs the same work with no credential. |
+| Contracts (`AgentStudioProgrammaticControl`) | `IPCWorktreeCreateParams`/`Result` (source, materialization), `IPCWorktreeRemoveParams`/`Result`, `IPCWorktreePruneParams`/`Result`, `IPCWorktreeListParams`/`Result`; `BuiltInDescriptors/IPCWorktreeMethodDescriptors.swift`; listed in `locallyResolvableDescriptors` |
+| App IPC composition | `App/IPCComposition/Worktrees/` registers `worktree.create/remove/prune/list` and dispatches to the coordinator. Privilege: the existing `appCommandExecute` for mutations and `workspaceRead` for list, since the standalone CLI already performs the same work with no credential. |
 | `AppCommand` (UI verbs) | New `removeWorktree` and `forkWorktreeChangesOnly` spec entries (label, `CommandIcon`, help, surface policy), with IPC classified in the same change as reachable through the `worktree.*` methods. The existing creation commands keep their interactive role. |
 | UI | Worktree row menu → Remove Worktree…. The command bar opens a removal step (Features/CommandBar) showing the assessment, changes, branch disposition and evidence choice (`NSOpenPanel` for the archive folder). Close Panes and Remove dispatches the existing pane-close action per listed pane, then removes. New Worktree → Fork gains the changes-only row. |
 
@@ -644,12 +644,13 @@ The IPC methods and the UI both call it.
 flowchart TB
   P["leaf: parse args → WorktreeCreateRequest<br/>(option-combination refusals: LR1)"] --> C["leaf: resolve E1, main worktree, source<br/>read E15 from &lt;main&gt;/.agentstudio.config.json<br/>(absent → empty; malformed → configInvalid)"]
   C -->|trackedOnly| T["SDK createWorktree (shipped WR1 + LR27 fill)"]
-  C -->|copyOnWrite / changesOnly| B{"leaf preflight (LR29)"}
+  C -->|changesOnly| CO["SDK forkWorktree(.changesOnly): existing changes-only planner (LR2, LR3), unchanged"]
+  C -->|copyOnWrite| B{"leaf preflight (LR29)"}
   B -->|"source is main: E6 dirty → sourceDirty<br/>branch ≠ E4's branch → sourceNotOnDefaultBranch"| R["refused, nothing changed"]
   B -->|"any source: a busyLocks file has a held lock → sourceBusy"| R
   B -->|ok| F["SDK forkWorktree(request with copyRules)"]
   F --> W["walker (unchanged) → filesystem plan"]
-  W --> X["copy filter (new, SDK): ignored roots from the source's ignore rules,<br/>minus those matching include (self or ancestor);<br/>plus nested linked worktrees whose common dir is E1's<br/>→ excluded subtrees"]
+  W --> X["copy filter (new, SDK), over the walked plan:<br/>each entry classified tracked / untracked / ignored-and-untracked;<br/>maximal subtrees that are entirely ignored-and-untracked and match no include<br/>plus nested linked worktrees whose common dir is E1's<br/>→ excluded subtrees"]
   X --> E["plan.excludingSubtrees(...) (existing F6 seam)<br/>then topology planning, materialization, rehoming, validation (unchanged)"]
   E --> O["created(.copyOnWrite(report + ignoredIncluded,<br/>ignoredExcludedCount, nestedWorktreesSkipped))"]
 ```
@@ -659,7 +660,7 @@ flowchart TB
   - The **leaf** owns the repository's config file, the main-worktree checks and the busy-lock test. Those are product policy, and the config file belongs to Agent Studio, not to Git.
 - **SDK request.** `GitForkWorktreeRequest` gains `copyRules: GitWorktreeCopyRules { ignoredPaths: .copyAll | .copyMatching([GitIgnorePattern]) }`. Excluding nested same-repository worktrees isn't a field: it always applies to copy-on-write forks, because copying another live worktree of the same repository is never wanted, and flattening one into an independent repository silently duplicates someone else's work.
   - The app's own UI fork (New Worktree → Fork) keeps `.copyAll` until app PR 2 decides its UI. That's an explicit, recorded difference, not a second code path: same SDK call, different data.
-- **Ignored roots.** They're computed with the SDK's existing status machinery (the changes-only filter's ignore evaluation): untracked ignored entries without recursing into ignored directories, so an ignored directory is one root. Patterns are matched with gitignore semantics against each root's repository-relative path and its ancestors. A root that matches is kept whole; its contents aren't filtered further. Ignore rules are the source repository's own. Content inside a submodule or an independent nested repository is that repository's business: it's copied whole with it (LR28's "always"), including files that repository ignores, such as `vendor/ghostty`'s build outputs.
+- **Classifying ignored paths.** The filter runs over the walker's plan, not over a Git status list. A non-recursive status misses ignored files inside an ignored directory that also holds tracked content, and the SDK's existing ignored-status mode always recurses (review R20). For each walked entry, it asks whether the path is tracked, using the index captured for the fork. If not, it asks whether it's ignored, using libgit2's per-path ignore check with the source's rules. A directory subtree is excluded as a unit when every entry in it is ignored and untracked, and neither the directory nor any ancestor matches an include pattern. A subtree that holds any tracked or non-ignored entry is descended, and only its ignored-and-untracked leaves (or wholly ignored child subtrees) are excluded. Tracked files are never excluded. A kept ignored subtree is kept whole. Ignore rules are the source repository's own. Content inside a submodule or an independent nested repository is that repository's business: it's copied whole with it (LR28's "always"), including files that repository ignores, such as `vendor/ghostty`'s build outputs.
 - **Nested worktrees of the same repository.** The topology planner already classifies nested Git entries. A nested linked worktree whose common directory resolves to E1's common directory is added to the excluded subtrees **before** topology capture, so it's never flattened or re-homed. Independent nested repositories, submodules, and linked worktrees of *other* repositories keep today's handling.
 - **Exclusion uses the existing seam.** `WorktreeForkFilesystemPlan.excludingSubtrees` (added for F6) removes excluded subtrees from the plan, so the materializer, validator, finalization and clean adoption never see them. Its hard-link rule applies: a hard-link group whose cloned primary is excluded while another path is kept fails typed.
 - **Busy locks.** For each file under the source matching a `busyLocks` pattern (expanded with the same matcher, files only), the leaf opens it read-only and no-follow and tries `flock(LOCK_EX | LOCK_NB)`. `EWOULDBLOCK` means busy; otherwise the lock is released at once. It never creates, writes or deletes the file. agent-studio's config lists `.build*/.slot.lock`, the kernel lock `scripts/swift-build-slot.sh` holds for the length of a build or test.
@@ -750,7 +751,7 @@ No atom, store, observer, timer or bus event is added. The coordinator owns no s
 | L1 | LR15 effects + exit | E10, E12 | leaf over SDK effects | `WorktreeRemovalReport` | `WorktreeRemovalEffects` per entry; exit 2 > 1 > 0 | terminal | failed entries with every effect | leaf failure-table test + aggregate-exit golden |
 | L1, L7 | LR16 activity | E9 | host | `WorktreeActivityProbe`, asked twice (last check just before SDK submit) | leaf port; live app implementation; `closePanes` option | two checks | `openInPane` with options, or failed after archive | leaf scripted double + IPC test |
 | L1, L2 | LR17 prune | E2–E10 | leaf prune runner | `.prune`; `worktree.prune` | `WorktreePruneSummary` → `IPCWorktreePruneResult` | per candidate | per-entry failed → exit 2 | leaf + IPC integration |
-| L1, L7 | LR18 IPC | E12 | app coordinator (PR 2) | `worktree.create/fork/remove/prune/list` | `IPCWorktree<Verb>Params/Result` (ProgrammaticControl) | awaits rescan | same outcomes | IPC registry tests |
+| L1, L7 | LR18 IPC | E12 | app coordinator (PR 2) | `worktree.create/remove/prune/list` | `IPCWorktree<Verb>Params/Result` (ProgrammaticControl) | awaits rescan | same outcomes | IPC registry tests |
 | L1 | LR25 dry run | E10, E12 | leaf removal runner + app coordinator (no pane close in preview) | `dryRun` | `planned` entries in `WorktreeRemovalReport` | only the reported fetch written | same codes and options as a real run; `--remove-stale-lock` reported, not done | CLI golden + snapshot (refs change only by the reported fetch) |
 | L13 | LR26 git locks | E14 | SDK (exact facts, own-lock cleanup evidence) + leaf (age, staleness, removal) | `lockHeld(GitLockFact)`, `lockUnidentified`, `permissionDenied`; `lockResidue` on results and `GitLockedOperationFailure`; `removeStaleLock` | `GitLockFact`, `WorktreeStaleLockAssessment` | per step | removal only for an exact stale fact; residue reported by path | lock integration (competing locks, EACCES, denied own-lock cleanup) |
 | L1 | LR19 standalone | — | CLI dispatch | `WorktreeCommandLine.dispatch` | shipped | — | — | dispatch test |
@@ -772,3 +773,8 @@ No atom, store, observer, timer or bus event is added. The coordinator owns no s
   - the materialization result enum;
   - `GitWorktreeRemovalResult` gains observed effects in place of the `String` partial.
 - **Gap:** no generated UI images for LR23 and LR24; the screens are specified in words.
+- **Lead-authored choices in r26** (not owner decisions; each is reversible and is listed for the owner to override):
+  - **`busyLocks` as the "mid-build" signal.** The owner decided `new` refuses a mid-build source (D9). The mechanism, a declared lock-file pattern tested with a non-blocking `flock`, is the Lead's: agent-studio's build slot is exactly such a lock.
+  - **`--from-branch` requires `--tracked-only`** in this cut. A warm copy needs a source worktree on that branch; `--from <worktree>` is the warm way.
+  - **The app's own Fork button keeps `.copyAll`** until app PR 2 designs its UI (CLI-only scope for D11).
+- **SDK breaking change (r26):** `GitForkWorktreeRequest.copyRules` and three report fields, hard cutover in one pin bump.
