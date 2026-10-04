@@ -127,20 +127,21 @@ extension ClaudeCodePackageInstallation {
         "\(ClaudeCodeProviderIdentity.identifier) \(providerVersion)\n"
     }
 
+    /// Every hook entry runs async so a hook never makes the agent wait (PR B PD rev 32).
+    /// The one exception is PermissionRequest under the "wait" policy: the agent asked to
+    /// wait for the person's answer, so that entry stays synchronous.
     fileprivate func ownedGroup(for event: ClaudeCodeHookEvent) -> JSONValue {
-        .object([
-            "hooks": .array([
-                .object([
-                    "type": .string("command"),
-                    "command": .string(
-                        "\(hookScriptURL.path) \(event.rawValue) \(providerVersion)"
-                            + (event == .permissionRequest ? " --permission-policy wait" : "")),
-                    "timeout": .number(
-                        event == .permissionRequest
-                            ? CLIPolicy.permissionHookTimeoutSeconds : Self.hookTimeoutSeconds),
-                ])
-            ])
-        ])
+        var entry: [String: JSONValue] = [
+            "type": .string("command"),
+            "command": .string(
+                "\(hookScriptURL.path) \(event.rawValue) \(providerVersion)"
+                    + (event == .permissionRequest ? " --permission-policy wait" : "")),
+            "timeout": .number(
+                event == .permissionRequest
+                    ? CLIPolicy.permissionHookTimeoutSeconds : Self.hookTimeoutSeconds),
+        ]
+        if event != .permissionRequest { entry["async"] = .bool(true) }
+        return .object(["hooks": .array([.object(entry)])])
     }
 
     fileprivate func isOwned(_ group: JSONValue) -> Bool {

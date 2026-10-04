@@ -7,53 +7,40 @@ import Testing
 
 @Suite("Sessions remaining S2 contracts")
 struct SessionsRemainingContractTests {
-    @Test("scalar replay ignores later server receipt metadata and returns its original occurrence")
+    @Test("evidence replay ignores later server receipt metadata and returns its original occurrence")
     func scalarReplayUsesCallerIntentFingerprint() async throws {
         let fixture = try SessionsDatabaseFixture()
-        try await withSessionsIngestion(repository: fixture.makeRepository()) { ingestion in
-            let paneId = UUIDv7.generate()
+        let repository = fixture.makeRepository()
+        let paneId = UUIDv7.generate()
+        let source = UUIDv7.generate()
+        let occurrence = UUIDv7.generate()
+        try await withSessionsIngestion(repository: repository) { ingestion in
             _ = try await ingestion.submit(
                 correlationId: UUIDv7.generate(),
                 mutation: .bind(
                     makeQualifiedBindMutation(
-                        paneId: paneId,
-                        providerConversationId: "conversation-scalar-replay",
-                        sourceGenerationId: UUIDv7.generate(),
-                        reportedAt: 1
-                    )
-                )
-            )
-            let correlationId = UUIDv7.generate()
-            let firstOutcome = try await ingestion.submit(
-                correlationId: correlationId,
-                mutation: .message(
-                    SessionsMessageMutation(
-                        context: .currentPaneBinding(paneId: paneId),
-                        text: "same scalar intent",
-                        receivedAt: Date(timeIntervalSince1970: 2)
-                    )
-                )
-            )
-            let replayOutcome = try await ingestion.submit(
-                correlationId: correlationId,
-                mutation: .message(
-                    SessionsMessageMutation(
-                        context: .currentPaneBinding(paneId: paneId),
-                        text: "same scalar intent",
-                        receivedAt: Date(timeIntervalSince1970: 20)
-                    )
-                )
-            )
-
-            #expect(replayOutcome == firstOutcome)
-            guard case .messageSaved(let occurrenceId, .attributed) = firstOutcome else {
-                Issue.record("Expected one attributed saved-message outcome, got \(firstOutcome)")
-                return
-            }
-            let snapshot = try await ingestion.snapshot(makeSessionsSnapshotQuery(paneId: paneId))
-            #expect(snapshot.messages.count == 1)
-            #expect(snapshot.messages.first?.occurrenceId == occurrenceId)
-            #expect(snapshot.messages.first?.text == "same scalar intent")
+                        paneId: paneId, providerConversationId: "scalar-replay", sourceGenerationId: source,
+                        reportedAt: 1)))
+            let correlation = UUIDv7.generate()
+            let first = try await ingestion.submit(
+                correlationId: correlation,
+                mutation: .recordEvidence(
+                    makeSessionsEvidenceMutation(
+                        paneId: paneId, sourceGenerationId: source, kind: .activityStarted, occurrenceId: occurrence,
+                        at: 2)))
+            let replay = try await ingestion.submit(
+                correlationId: correlation,
+                mutation: .recordEvidence(
+                    makeSessionsEvidenceMutation(
+                        paneId: paneId, sourceGenerationId: source, kind: .activityStarted, occurrenceId: occurrence,
+                        at: 20)))
+            #expect(replay == first)
+            #expect(first == .evidenceRecorded(occurrenceId: occurrence))
+            let context = try await repository.statusContext(paneId: paneId)
+            #expect(context.evidence.count == 1)
+            #expect(context.evidence.first?.occurrenceId == occurrence)
+            #expect(context.evidence.first?.kind == .activityStarted)
+            #expect(context.evidence.first?.occurredAt == Date(timeIntervalSince1970: 2))
         }
     }
 
@@ -421,82 +408,38 @@ struct SessionsRemainingContractTests {
         }
     }
 
-    @Test("message pages retain one snapshot revision and reject a stale cursor")
-    func snapshotPaginationAndStaleCursor() async throws {
+    @Test("nonpaged snapshots preserve binding, revision and complete evidence history without writes")
+    func nonpagedSnapshotIsReadOnly() async throws {
         let fixture = try SessionsDatabaseFixture()
-        try await withSessionsIngestion(repository: fixture.makeRepository()) { ingestion in
-            let paneId = UUIDv7.generate()
+        let repository = fixture.makeRepository()
+        let paneId = UUIDv7.generate()
+        let source = UUIDv7.generate()
+        try await withSessionsIngestion(repository: repository) { ingestion in
             _ = try await ingestion.submit(
                 correlationId: UUIDv7.generate(),
                 mutation: .bind(
                     makeQualifiedBindMutation(
-                        paneId: paneId,
-                        providerConversationId: "conversation-pages",
-                        sourceGenerationId: UUIDv7.generate(),
-                        reportedAt: 1
-                    )
-                )
-            )
+                        paneId: paneId, providerConversationId: "snapshot", sourceGenerationId: source, reportedAt: 1)))
+            var occurrences: Set<UUID> = []
             for ordinal in 1...3 {
-                _ = try await ingestion.submit(
-                    correlationId: UUIDv7.generate(),
-                    mutation: .message(
-                        SessionsMessageMutation(
-                            context: .currentPaneBinding(paneId: paneId),
-                            text: "message-\(ordinal)",
-                            freshness: .live,
-                            receivedAt: Date(timeIntervalSince1970: TimeInterval(ordinal + 1))
-                        )
-                    )
-                )
+                let occurrence = UUIDv7.generate()
+                occurrences.insert(occurrence)
+                let mutation = SessionsEvidenceMutation(
+                    context: .sourceGeneration(paneId: paneId, sourceGenerationId: source),
+                    occurrenceId: occurrence, turnId: "turn-snapshot", subject: .root, kind: .activityStarted,
+                    origin: .reported, freshness: .late, occurredAt: Date(timeIntervalSince1970: Double(ordinal + 1)),
+                    sourceCursor: nil)
+                _ = try await ingestion.submit(correlationId: UUIDv7.generate(), mutation: .recordEvidence(mutation))
             }
-            let firstPage = try await ingestion.snapshot(
-                SessionsSnapshotQuery(
-                    paneId: paneId,
-                    page: SessionsSnapshotPage(limit: 2, after: nil)
-                )
-            )
-            let cursor = try #require(firstPage.nextCursor)
-            let secondPage = try await ingestion.snapshot(
-                SessionsSnapshotQuery(
-                    paneId: paneId,
-                    page: SessionsSnapshotPage(limit: 2, after: cursor)
-                )
-            )
-            #expect(firstPage.messages.map(\.text) == ["message-1", "message-2"])
-            #expect(secondPage.messages.map(\.text) == ["message-3"])
-            #expect(secondPage.revision == firstPage.revision)
-
-            _ = try await ingestion.submit(
-                correlationId: UUIDv7.generate(),
-                mutation: .message(
-                    SessionsMessageMutation(
-                        context: .currentPaneBinding(paneId: paneId),
-                        text: "message-4",
-                        freshness: .live,
-                        receivedAt: Date(timeIntervalSince1970: 5)
-                    )
-                )
-            )
-            let currentSnapshot = try await ingestion.snapshot(
-                SessionsSnapshotQuery(
-                    paneId: paneId,
-                    page: SessionsSnapshotPage(limit: 1, after: nil)
-                )
-            )
-            await #expect(
-                throws: SessionsRepositoryError.staleSnapshotCursor(
-                    expectedRevision: firstPage.revision,
-                    actualRevision: currentSnapshot.revision
-                )
-            ) {
-                try await ingestion.snapshot(
-                    SessionsSnapshotQuery(
-                        paneId: paneId,
-                        page: SessionsSnapshotPage(limit: 2, after: cursor)
-                    )
-                )
-            }
+            let before = try await repository.statusContext(paneId: paneId)
+            let first = try await ingestion.snapshot(.pane(paneId))
+            let second = try await ingestion.snapshot(.pane(paneId))
+            let after = try await repository.statusContext(paneId: paneId)
+            #expect(first == second)
+            #expect(first.revision == before.revision)
+            #expect(first.currentBinding == before.currentBinding)
+            #expect(Set(first.historicalOccurrenceIds) == occurrences)
+            #expect(after == before)
         }
     }
 

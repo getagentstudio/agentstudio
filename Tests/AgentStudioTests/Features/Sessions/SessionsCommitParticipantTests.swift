@@ -11,11 +11,11 @@ import Testing
 struct SessionsCommitParticipantTests {
     enum MutationCase: Sendable {
         case bind
-        case message
+        case loss
     }
 
     @Test(
-        "a throwing participant rolls back the operation, effect and cursor", arguments: [MutationCase.bind, .message])
+        "a throwing participant rolls back the operation, effect and cursor", arguments: [MutationCase.bind, .loss])
     func participantFailureRollsBackEveryWrite(mutationCase: MutationCase) async throws {
         let fixture = try await makeParticipantFixture()
         defer { fixture.removeFiles() }
@@ -33,7 +33,7 @@ struct SessionsCommitParticipantTests {
         let state = try await fixture.state()
         #expect(state.operationCount == 0)
         #expect(state.bindingCount == 0)
-        #expect(state.messageCount == 0)
+        #expect(state.lossCount == 0)
         #expect(state.cursor == 0)
     }
 
@@ -135,12 +135,12 @@ struct SessionsCommitParticipantTests {
         let fixture = try await makeParticipantFixture()
         defer { fixture.removeFiles() }
 
-        let inserted = try await fixture.apply(fixture.submission(mutationCase: .message))
+        let inserted = try await fixture.apply(fixture.submission(mutationCase: .loss))
 
         #expect(inserted.disposition == .inserted)
         let state = try await fixture.state()
         #expect(state.operationCount == 1)
-        #expect(state.messageCount == 1)
+        #expect(state.lossCount == 1)
         #expect(state.cursor == 0)
     }
 
@@ -148,7 +148,7 @@ struct SessionsCommitParticipantTests {
     func ingestionPreservesParticipant() async throws {
         let fixture = try await makeParticipantFixture()
         defer { fixture.removeFiles() }
-        let submission = fixture.submission(mutationCase: .message)
+        let submission = fixture.submission(mutationCase: .loss)
         try await withSessionsIngestion(repository: fixture.repository) { ingestion in
             _ = try await ingestion.submit(
                 correlationId: submission.operation.correlationId, mutation: submission.mutation,
@@ -156,7 +156,7 @@ struct SessionsCommitParticipantTests {
         }
 
         let state = try await fixture.state()
-        #expect(state.messageCount == 1)
+        #expect(state.lossCount == 1)
         #expect(state.cursor == 6)
     }
 }
@@ -182,7 +182,7 @@ private struct TestCursorCommitParticipant: SessionsCommitParticipant {
 private struct ParticipantDatabaseState: Sendable {
     let operationCount: Int
     let bindingCount: Int
-    let messageCount: Int
+    let lossCount: Int
     let cursor: Int64
 }
 
@@ -240,14 +240,14 @@ private struct SessionsParticipantFileFixture: Sendable {
                 providerConversationId: "participant-conversation")
             providerOccurrence = .init(kind: .bind, occurrenceId: occurrenceID)
             operationKind = SessionsProviderOccurrenceKind.bind.rawValue
-        case .message:
-            mutation = .message(
-                SessionsMessageMutation(
-                    context: .unattributed(paneId: paneID), text: "participant message", freshness: .live,
-                    receivedAt: Date(timeIntervalSince1970: 1)))
+        case .loss:
+            mutation = .recordLiveLoss(
+                SessionsLiveLossMutation(
+                    paneId: paneID, eventKind: "tool", reason: .paneQueueFull,
+                    occurredAt: Date(timeIntervalSince1970: 1)))
             query = .pane(paneID)
             providerOccurrence = nil
-            operationKind = "message"
+            operationKind = "loss"
         }
         return ParticipantSubmission(
             operation: SessionsRepositoryOperation(
@@ -277,7 +277,7 @@ private struct SessionsParticipantFileFixture: Sendable {
             try ParticipantDatabaseState(
                 operationCount: Int.fetchOne(database, sql: "SELECT COUNT(*) FROM sessions_operation") ?? 0,
                 bindingCount: Int.fetchOne(database, sql: "SELECT COUNT(*) FROM sessions_pane_binding") ?? 0,
-                messageCount: Int.fetchOne(database, sql: "SELECT COUNT(*) FROM sessions_message") ?? 0,
+                lossCount: Int.fetchOne(database, sql: "SELECT COUNT(*) FROM sessions_loss") ?? 0,
                 cursor: Int64.fetchOne(
                     database,
                     sql: "SELECT last_handled_id FROM pane_context_cli_outbox_cursor WHERE store_id = ?",

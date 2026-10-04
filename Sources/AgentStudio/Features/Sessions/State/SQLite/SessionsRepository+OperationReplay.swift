@@ -178,13 +178,6 @@ extension SessionsRepositoryStorage {
                 occurrenceId: nil,
                 bindingGenerationId: binding.bindingGenerationId.uuidString
             )
-        case .messageSaved(let occurrenceId, let attribution):
-            OperationStorage(
-                kind: "messageSaved:\(attribution.rawValue)",
-                entityId: nil,
-                occurrenceId: occurrenceId.uuidString,
-                bindingGenerationId: nil
-            )
         case .evidenceRecorded(let occurrenceId):
             OperationStorage(
                 kind: "evidenceRecorded",
@@ -199,39 +192,11 @@ extension SessionsRepositoryStorage {
                 occurrenceId: occurrenceId.uuidString,
                 bindingGenerationId: nil
             )
-        case .attentionRecorded(let requestId, let occurrenceId):
-            OperationStorage(
-                kind: "attentionRecorded",
-                entityId: requestId,
-                occurrenceId: occurrenceId.uuidString,
-                bindingGenerationId: nil
-            )
-        case .attentionCleared(let requestId):
-            OperationStorage(
-                kind: "attentionCleared",
-                entityId: requestId,
-                occurrenceId: nil,
-                bindingGenerationId: nil
-            )
-        case .resultRecorded(let resultId, let occurrenceId):
-            OperationStorage(
-                kind: "resultRecorded",
-                entityId: resultId.uuidString,
-                occurrenceId: occurrenceId.uuidString,
-                bindingGenerationId: nil
-            )
         case .sourceEnded(let sourceGenerationId):
             OperationStorage(
                 kind: "sourceEnded",
                 entityId: sourceGenerationId.uuidString,
                 occurrenceId: nil,
-                bindingGenerationId: nil
-            )
-        case .messageAcknowledged(let occurrenceId, let changed):
-            OperationStorage(
-                kind: changed ? "messageAcknowledged" : "messageAlreadyAcknowledged",
-                entityId: nil,
-                occurrenceId: occurrenceId.uuidString,
                 bindingGenerationId: nil
             )
         case .lossRecorded(let id):
@@ -271,39 +236,12 @@ extension SessionsRepositoryStorage {
                 endedAt: current.startedAt
             )
             return .binding(.replaced(previous, current))
-        case "messageSaved:attributed":
-            return .messageSaved(
-                occurrenceId: try decodeUuid(required(occurrenceId, kind: kind)),
-                attribution: .attributed
-            )
-        case "messageSaved:unattributed":
-            return .messageSaved(
-                occurrenceId: try decodeUuid(required(occurrenceId, kind: kind)),
-                attribution: .unattributed
-            )
         case "evidenceRecorded":
             return .evidenceRecorded(occurrenceId: try decodeUuid(required(occurrenceId, kind: kind)))
         case "historical":
             return .historical(occurrenceId: try decodeUuid(required(occurrenceId, kind: kind)))
-        case "attentionRecorded":
-            return .attentionRecorded(
-                requestId: try required(entityId, kind: kind),
-                occurrenceId: try decodeUuid(required(occurrenceId, kind: kind))
-            )
-        case "attentionCleared":
-            return .attentionCleared(requestId: try required(entityId, kind: kind))
-        case "resultRecorded":
-            return .resultRecorded(
-                resultId: try decodeUuid(required(entityId, kind: kind)),
-                occurrenceId: try decodeUuid(required(occurrenceId, kind: kind))
-            )
         case "sourceEnded":
             return .sourceEnded(sourceGenerationId: try decodeUuid(required(entityId, kind: kind)))
-        case "messageAcknowledged", "messageAlreadyAcknowledged":
-            return .messageAcknowledged(
-                occurrenceId: try decodeUuid(required(occurrenceId, kind: kind)),
-                changed: kind == "messageAcknowledged"
-            )
         case "lossRecorded":
             return .lossRecorded(id: try decodeUuid(required(entityId, kind: kind)))
         case "launchPrepared":

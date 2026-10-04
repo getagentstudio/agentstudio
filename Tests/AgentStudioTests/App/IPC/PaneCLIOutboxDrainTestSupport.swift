@@ -150,8 +150,16 @@ final class PaneCLIOutboxDrainHarness {
         }
     }
 
+    func sessionSummary(paneID: UUID) async throws -> SessionSummary? {
+        try await ingestion.sessionSummary(paneId: paneID)
+    }
+
+    func attention(paneID: UUID) async throws -> [SessionsStoredAttentionRecord] {
+        try await repository.statusContext(paneId: paneID).attention
+    }
+
     func snapshot(paneID: UUID) async throws -> SessionsSnapshot {
-        try await repository.snapshot(.pane(paneID, page: SessionsSnapshotPage(limit: 100, after: nil)))
+        try await repository.snapshot(.pane(paneID))
     }
 
     func bindPane(paneID: UUID) async throws {

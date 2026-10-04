@@ -276,7 +276,7 @@ struct SessionsVerticalHarness {
     func paneSnapshot(paneId: UUID) async throws -> SessionsSnapshot {
         let composition = try #require(appDelegate.appIPCSessionsPaneContextComposition)
         return try await composition.ingestion.snapshot(
-            .pane(paneId, page: SessionsSnapshotPage(limit: 100, after: nil))
+            .pane(paneId)
         )
     }
 

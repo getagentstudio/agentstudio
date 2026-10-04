@@ -9,7 +9,6 @@ actor RecordingSessionsPort: AppIPCSessionsPort {
     private(set) var eventPaneIds: [UUID] = []
     private(set) var eventProvenances: [IPCSessionEventProvenance] = []
     private(set) var queryPaneIds: [UUID] = []
-    private let occurrenceId = UUIDv7.generate()
 
     func recordProviderEvent(
         paneId: UUID,
@@ -32,11 +31,8 @@ actor RecordingSessionsPort: AppIPCSessionsPort {
         queryPaneIds.append(paneId)
         return IPCSessionQueryResult(
             paneId: paneId,
-            state: .unknown,
-            origin: .unknown,
-            needsYou: nil,
-            messages: [],
-            sourceHealth: .unbound
+            sourceHealth: .unbound,
+            session: nil
         )
     }
 }

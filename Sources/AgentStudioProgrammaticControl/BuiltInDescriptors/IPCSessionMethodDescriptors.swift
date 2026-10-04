@@ -73,7 +73,7 @@ package struct IPCSessionMethodDescriptors: Sendable {
         })
 
     static let sessionQueryEntry = IPCBuiltInMethodEntry<IPCSessionQueryParams, IPCSessionQueryResult>(
-        name: "session.query", summary: "Read the target pane's session state and newest retained messages.",
+        name: "session.query", summary: "Read the target pane's current status-engine session summary.",
         modelCalls: [],
         correlationPolicy: .notAccepted,
         agentEligibility: nil,
@@ -87,23 +87,11 @@ package struct IPCSessionMethodDescriptors: Sendable {
                         description: "Read one pane's current session state",
                         parameters: IPCSessionQueryParams(handle: "self"),
                         result: IPCSessionQueryResult(
-                            paneId: examples.paneId,
-                            state: .needsYou,
-                            origin: .agentReported,
-                            needsYou: IPCSessionAttentionProjection(
-                                requestId: "attention-1",
-                                explanation: "waiting on approval"
-                            ),
-                            messages: [
-                                IPCSessionMessageProjection(
-                                    occurrenceId: examples.commandId,
-                                    text: "the migration finished",
-                                    seen: false,
-                                    receivedAt: Date(timeIntervalSinceReferenceDate: 0)
-                                )
-                            ],
-                            sourceHealth: .live
-                        )
+                            paneId: examples.paneId, sourceHealth: .live,
+                            session: IPCPaneSessionSummary(
+                                id: examples.commandId, provider: "claude-code", conversationId: "example-session",
+                                bindingGeneration: examples.correlationId, status: .needsYou(reason: .approval),
+                                providerPrompts: [], omittedPromptCount: 0))
                     )
                 ],
                 exposure: .allChannels,

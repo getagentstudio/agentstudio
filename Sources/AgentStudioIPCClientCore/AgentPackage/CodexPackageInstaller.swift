@@ -209,17 +209,20 @@ package enum CodexPackageInstaller {
         event: CodexHookEventName,
         scriptURL: URL
     ) -> [String: Any] {
-        [
-            CodexHooksDocument.hooksKey: [
-                [
-                    "type": "command",
-                    CodexHooksDocument.commandKey: "\"\(scriptURL.path)\" \(event.rawValue)"
-                        + (event == .permissionRequest ? " --permission-policy wait" : ""),
-                    "timeout": event == .permissionRequest
-                        ? CLIPolicy.permissionHookTimeoutSeconds : Double(hookTimeoutSeconds),
-                ]
-            ]
+        // SessionEnd is forced synchronous by Codex. Interrupt can run async,
+        // but both lifecycle events use the provider's one-second default.
+        // PermissionRequest under the "wait" policy is the one wait the agent asks for,
+        // so it stays synchronous with the derived permission timeout.
+        var handler: [String: Any] = [
+            "type": "command",
+            CodexHooksDocument.commandKey: "\"\(scriptURL.path)\" \(event.rawValue)"
+                + (event == .permissionRequest ? " --permission-policy wait" : ""),
+            "timeout": event == .permissionRequest
+                ? CLIPolicy.permissionHookTimeoutSeconds as Any
+                : (event == .sessionEnd || event == .interrupt ? 1 : hookTimeoutSeconds) as Any,
         ]
+        if event != .sessionEnd && event != .permissionRequest { handler["async"] = true }
+        return [CodexHooksDocument.hooksKey: [handler]]
     }
 
     private static func requireWritableHome(_ props: Props) throws {

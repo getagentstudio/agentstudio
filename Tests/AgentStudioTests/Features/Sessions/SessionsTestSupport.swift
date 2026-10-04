@@ -9,14 +9,8 @@ enum SessionsTestError: Error {
     case unexpectedOutcome(String)
 }
 
-let sessionsTestSnapshotPage = SessionsSnapshotPage(limit: 100, after: nil)
-
 func makeSessionsSnapshotQuery(paneId: UUID) -> SessionsSnapshotQuery {
-    SessionsSnapshotQuery(paneId: paneId, page: sessionsTestSnapshotPage)
-}
-
-func makeUnattributedSessionsSnapshotQuery() -> SessionsSnapshotQuery {
-    .unattributed(page: sessionsTestSnapshotPage)
+    SessionsSnapshotQuery(paneId: paneId)
 }
 
 struct SessionsDatabaseFixture {
@@ -248,4 +242,14 @@ func makeQualifiedBindMutation(
         freshness: freshness,
         reportedAt: Date(timeIntervalSince1970: reportedAt)
     )
+}
+
+func makeSessionsEvidenceMutation(
+    paneId: UUID, sourceGenerationId: UUID, kind: SessionsEvidenceKind,
+    occurrenceId: UUID = UUIDv7.generate(), at timestamp: TimeInterval
+) -> SessionsEvidenceMutation {
+    SessionsEvidenceMutation(
+        context: .sourceGeneration(paneId: paneId, sourceGenerationId: sourceGenerationId),
+        occurrenceId: occurrenceId, turnId: "turn-test", subject: .root, kind: kind,
+        origin: .reported, freshness: .live, occurredAt: Date(timeIntervalSince1970: timestamp), sourceCursor: nil)
 }

@@ -23,7 +23,7 @@ struct AppIPCSessionMethodRegistrationTests {
             targetResolutionTools: fixture.targetResolutionTools(),
             authorize: { _, _ in }
         )
-        _ = try await fixture.registration(named: "session.query", in: registrations).invoke(
+        let queried = try await fixture.registration(named: "session.query", in: registrations).invoke(
             parameters: try fixture.jsonValue(IPCSessionQueryParams(handle: "self")),
             connectionContext: fixture.connectionContext(principal: principal),
             targetResolutionTools: fixture.targetResolutionTools(),
@@ -32,6 +32,16 @@ struct AppIPCSessionMethodRegistrationTests {
                 #expect(request.dataScope == .sessionState)
             }
         )
+
+        let replyData: Data
+        switch queried {
+        case .value(let value): replyData = try JSONEncoder().encode(value)
+        case .encoded(let data): replyData = data
+        }
+        let result = try JSONDecoder().decode(IPCSessionQueryResult.self, from: replyData)
+        #expect(result.paneId == fixture.paneId)
+        #expect(result.sourceHealth == .unbound)
+        #expect(result.session == nil)
 
         #expect(await port.eventPaneIds == [fixture.paneId])
         #expect(await port.queryPaneIds == [fixture.paneId])

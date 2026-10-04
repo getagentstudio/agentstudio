@@ -294,13 +294,9 @@ extension SessionsMutation {
     var paneId: UUID? {
         switch self {
         case .bind(let mutation): mutation.paneId
-        case .message(let mutation): mutation.context.paneId
         case .recordEvidence(let mutation): mutation.context.paneId
-        case .deliberateNeedsYou(let mutation): mutation.paneId
-        case .clearDeliberateNeedsYou(let mutation): mutation.paneId
-        case .deliberateDone(let mutation): mutation.paneId
         case .sourceEnded(let mutation): mutation.paneId
-        case .acknowledgeMessage, .prepareForLaunch: nil
+        case .prepareForLaunch: nil
         case .recordLiveLoss(let mutation): mutation.paneId
         }
     }
@@ -313,13 +309,6 @@ extension SessionsMutation {
                 providerIdentifier: mutation.providerIdentifier,
                 providerConversationId: mutation.providerConversationId
             )
-        case .message(let mutation):
-            switch mutation.context {
-            case .sourceGeneration(let paneId, let sourceGenerationId):
-                .source(paneId: paneId, sourceGenerationId: sourceGenerationId)
-            case .currentPaneBinding(let paneId), .unattributed(let paneId):
-                .pane(paneId)
-            }
         case .recordEvidence(let mutation):
             switch mutation.context {
             case .sourceGeneration(let paneId, let sourceGenerationId):
@@ -327,12 +316,8 @@ extension SessionsMutation {
             case .currentPaneBinding(let paneId), .unattributed(let paneId):
                 .pane(paneId)
             }
-        case .deliberateNeedsYou(let mutation): .pane(mutation.paneId)
-        case .clearDeliberateNeedsYou(let mutation): .pane(mutation.paneId)
-        case .deliberateDone(let mutation): .pane(mutation.paneId)
         case .sourceEnded(let mutation):
             .source(paneId: mutation.paneId, sourceGenerationId: mutation.sourceGenerationId)
-        case .acknowledgeMessage(let mutation): .message(mutation.occurrenceId)
         case .recordLiveLoss(let mutation): .pane(mutation.paneId)
         case .prepareForLaunch: .allActiveSources
         }
@@ -340,7 +325,6 @@ extension SessionsMutation {
 
     fileprivate var operationScope: String {
         switch self {
-        case .acknowledgeMessage(let mutation): "message:\(mutation.occurrenceId.uuidString)"
         case .prepareForLaunch: "sessions:launch"
         default: "pane:\(paneId?.uuidString ?? "unknown")"
         }
@@ -349,13 +333,8 @@ extension SessionsMutation {
     fileprivate var operationKind: String {
         switch self {
         case .bind: "bind"
-        case .message: "message"
         case .recordEvidence: "evidence"
-        case .deliberateNeedsYou: "deliberateNeedsYou"
-        case .clearDeliberateNeedsYou: "clearDeliberateNeedsYou"
-        case .deliberateDone: "deliberateDone"
         case .sourceEnded: "sourceEnded"
-        case .acknowledgeMessage: "messageAcknowledgment"
         case .recordLiveLoss: "loss"
         case .prepareForLaunch: "prepareForLaunch"
         }
@@ -374,8 +353,7 @@ extension SessionsMutation {
             return mutation.occurrenceId.map {
                 SessionsProviderOccurrenceIdentity(kind: .sourceEnded, occurrenceId: $0)
             }
-        case .message, .deliberateNeedsYou, .clearDeliberateNeedsYou, .deliberateDone,
-            .acknowledgeMessage, .recordLiveLoss, .prepareForLaunch:
+        case .recordLiveLoss, .prepareForLaunch:
             return nil
         }
     }
@@ -400,13 +378,8 @@ extension SessionsMutation {
     fileprivate var occurredAt: Date {
         switch self {
         case .bind(let mutation): mutation.reportedAt
-        case .message(let mutation): mutation.receivedAt
         case .recordEvidence(let mutation): mutation.occurredAt
-        case .deliberateNeedsYou(let mutation): mutation.reportedAt
-        case .clearDeliberateNeedsYou(let mutation): mutation.clearedAt
-        case .deliberateDone(let mutation): mutation.reportedAt
         case .sourceEnded(let mutation): mutation.endedAt
-        case .acknowledgeMessage(let mutation): mutation.acknowledgedAt
         case .recordLiveLoss(let mutation): mutation.occurredAt
         case .prepareForLaunch(let date): date
         }
@@ -425,36 +398,14 @@ extension SessionsMutation {
         case .bind(let mutation):
             if let digest = mutation.providerIntentFingerprint { return .providerIntent(digest) }
             return .bind(SessionsBindSemanticIntent(mutation))
-        case .message(let mutation):
-            return .message(
-                SessionsMessageSemanticIntent(
-                    context: mutation.context,
-                    text: mutation.text
-                )
-            )
         case .recordEvidence(let mutation):
             if let digest = mutation.providerIntentFingerprint { return .providerIntent(digest) }
             return .providerEvidence(SessionsProviderEvidenceSemanticIntent(mutation))
-        case .deliberateNeedsYou(let mutation):
-            return .deliberateNeedsYou(
-                SessionsNeedsYouSemanticIntent(
-                    paneId: mutation.paneId,
-                    explanation: mutation.explanation
-                )
-            )
-        case .clearDeliberateNeedsYou(let mutation):
-            return .clearDeliberateNeedsYou(SessionsPaneSemanticIntent(paneId: mutation.paneId))
-        case .deliberateDone(let mutation):
-            return .deliberateDone(SessionsPaneSemanticIntent(paneId: mutation.paneId))
         case .sourceEnded(let mutation):
             if let digest = mutation.providerIntentFingerprint { return .providerIntent(digest) }
             return .sourceEnded(
                 SessionsSourceEndSemanticIntent(
                     paneId: mutation.paneId, sourceGenerationId: mutation.sourceGenerationId))
-        case .acknowledgeMessage(let mutation):
-            return .acknowledgeMessage(
-                SessionsAcknowledgmentSemanticIntent(occurrenceId: mutation.occurrenceId)
-            )
         case .recordLiveLoss(let mutation): return .recordLiveLoss(mutation)
         case .prepareForLaunch: return .prepareForLaunch
         }
@@ -464,36 +415,13 @@ extension SessionsMutation {
 private enum SessionsMutationSemanticIntent: Encodable {
     case providerIntent(String)
     case bind(SessionsBindSemanticIntent)
-    case message(SessionsMessageSemanticIntent)
     case providerEvidence(SessionsProviderEvidenceSemanticIntent)
-    case deliberateNeedsYou(SessionsNeedsYouSemanticIntent)
-    case clearDeliberateNeedsYou(SessionsPaneSemanticIntent)
-    case deliberateDone(SessionsPaneSemanticIntent)
     case sourceEnded(SessionsSourceEndSemanticIntent)
-    case acknowledgeMessage(SessionsAcknowledgmentSemanticIntent)
     case recordLiveLoss(SessionsLiveLossMutation)
     case prepareForLaunch
-}
-
-private struct SessionsMessageSemanticIntent: Encodable {
-    let context: SessionsReportContext
-    let text: String
 }
 
 private struct SessionsSourceEndSemanticIntent: Encodable {
     let paneId: UUID
     let sourceGenerationId: UUID
-}
-
-private struct SessionsNeedsYouSemanticIntent: Encodable {
-    let paneId: UUID
-    let explanation: String
-}
-
-private struct SessionsPaneSemanticIntent: Encodable {
-    let paneId: UUID
-}
-
-private struct SessionsAcknowledgmentSemanticIntent: Encodable {
-    let occurrenceId: UUID
 }

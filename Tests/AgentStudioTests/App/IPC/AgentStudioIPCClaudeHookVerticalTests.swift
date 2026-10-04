@@ -108,12 +108,12 @@ struct AgentStudioIPCClaudeHookVerticalTests {
         #expect(turnDone.disposition == .admitted)
         #expect(sessionEnd.disposition == .admitted)
         #expect(afterPermission.sourceHealth == .live)
-        #expect(afterPermission.state == .needsYou)
-        #expect(afterPermission.needsYou?.requestId == "toolu_01PermissionFixture")
-        // The permission is still open, so completing the turn does not clear
-        // the pane's demand for the user.
-        #expect(afterStop.state == .needsYou)
-        #expect(afterStop.origin == .reported)
+        #expect(afterPermission.session?.status == .needsYou(reason: .approval))
+        #expect(afterPermission.session?.providerPrompts.count == 1)
+        // Stop clears provider prompts and leaves the completed turn visible.
+        #expect(afterStop.session?.status == .idle(state: .done))
+        #expect(afterStop.sourceHealth == .live)
+        #expect(afterStop.session?.providerPrompts.isEmpty == true)
         // `SessionEnd` retires the source generation itself rather than
         // recording evidence against it, so the pane reports a source that has
         // ended rather than one that is live with nothing arriving on it. The
@@ -149,7 +149,7 @@ struct AgentStudioIPCClaudeHookVerticalTests {
         let decodedReplay = try JSONDecoder().decode(
             IPCSessionEventResult.self, from: JSONEncoder().encode(replayResult))
         #expect(decodedReplay.disposition == .admitted)
-        #expect(try await harness.sessionQuery(paneId: paneId).state == .running)
+        #expect(try await harness.sessionQuery(paneId: paneId).session?.status == .working(state: .active))
     }
 
     @Test("Another Claude Code release is refused rather than admitted as qualified")

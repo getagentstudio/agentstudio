@@ -72,22 +72,6 @@ extension SessionsRepositoryStorage {
         )
     }
 
-    static func decodeMessage(_ row: Row) throws -> SessionsMessageRecord {
-        let isSeen: Int = row["is_seen"]
-        return SessionsMessageRecord(
-            occurrenceId: try decodeUuid(row["occurrence_id"]),
-            paneId: try decodeUuid(row["pane_id"]),
-            conversationId: try decodeOptionalUuid(row["conversation_id"]),
-            bindingGenerationId: try decodeOptionalUuid(row["binding_generation_id"]),
-            sourceGenerationId: try decodeOptionalUuid(row["source_generation_id"]),
-            text: row["exact_text"] ?? "",
-            attribution: try decodeEnum(row["attribution"], as: SessionsMessageAttribution.self),
-            freshness: try decodeEnum(row["freshness"], as: SessionsEvidenceFreshness.self),
-            disposition: isSeen == 0 ? .unseen : .seen,
-            reportedAt: Date(timeIntervalSince1970: row["reported_at"])
-        )
-    }
-
     static func decodeAttention(_ row: Row) throws -> SessionsStoredAttentionRecord {
         SessionsStoredAttentionRecord(
             id: try decodeUuid(row["id"]),

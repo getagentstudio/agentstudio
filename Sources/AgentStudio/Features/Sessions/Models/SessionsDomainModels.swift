@@ -1,12 +1,5 @@
 import Foundation
 
-package enum SessionsAgentState: String, Sendable, Codable, Equatable {
-    case unknown
-    case running
-    case needsYou
-    case done
-}
-
 package enum SessionsEvidenceOrigin: String, Sendable, Codable, Equatable, CaseIterable {
     case estimated
     case agentReported
@@ -91,28 +84,6 @@ package struct SessionsEvidenceRecord: Sendable, Codable, Equatable {
 
 }
 
-package struct SessionsReductionInput: Sendable, Equatable {
-    package let conversationId: UUID
-    package let bindingGenerationId: UUID
-    package let currentTurnId: String?
-    package let evidence: [SessionsEvidenceRecord]
-    package let endedSourceGenerationIds: Set<UUID>
-
-    package init(
-        conversationId: UUID,
-        bindingGenerationId: UUID,
-        currentTurnId: String?,
-        evidence: [SessionsEvidenceRecord],
-        endedSourceGenerationIds: Set<UUID>
-    ) {
-        self.conversationId = conversationId
-        self.bindingGenerationId = bindingGenerationId
-        self.currentTurnId = currentTurnId
-        self.evidence = evidence
-        self.endedSourceGenerationIds = endedSourceGenerationIds
-    }
-}
-
 package enum SessionsAttentionDisposition: String, Sendable, Codable, Equatable {
     case current
     case resolved
@@ -131,24 +102,6 @@ package struct SessionsAttentionProjection: Sendable, Codable, Equatable {
     package let disposition: SessionsAttentionDisposition
     package let openedOccurrenceId: UUID
     package let openedAt: Date
-}
-
-package struct SessionsResultProjection: Sendable, Codable, Equatable {
-    package let id: UUID
-    package let turnId: String
-    package let subject: SessionsEvidenceSubject
-    package let completionOccurrenceId: UUID
-    package let origin: SessionsEvidenceOrigin
-    package let freshness: SessionsEvidenceFreshness
-}
-
-package struct SessionsProjection: Sendable, Equatable {
-    package let state: SessionsAgentState
-    package let stateOrigin: SessionsEvidenceOrigin?
-    package let currentAttention: [SessionsAttentionProjection]
-    package let staleAttention: [SessionsAttentionProjection]
-    package let results: [SessionsResultProjection]
-    package let historicalOccurrenceIds: [UUID]
 }
 
 package enum SessionsBindTransition: Sendable, Codable, Equatable {
@@ -249,25 +202,6 @@ package enum SessionsReportContext: Sendable, Codable, Equatable {
     }
 }
 
-package struct SessionsMessageMutation: Sendable, Codable, Equatable {
-    package let context: SessionsReportContext
-    package let text: String
-    package let freshness: SessionsEvidenceFreshness
-    package let receivedAt: Date
-
-    package init(
-        context: SessionsReportContext,
-        text: String,
-        freshness: SessionsEvidenceFreshness = .live,
-        receivedAt: Date
-    ) {
-        self.context = context
-        self.text = text
-        self.freshness = freshness
-        self.receivedAt = receivedAt
-    }
-}
-
 package struct SessionsEvidenceMutation: Sendable, Codable, Equatable {
     package let context: SessionsReportContext
     package let occurrenceId: UUID
@@ -325,60 +259,6 @@ package struct SessionsEvidenceMutation: Sendable, Codable, Equatable {
     }
 }
 
-/// A deliberate report carries the freshness of the route that admitted it. A
-/// late report is one the CLI spooled while the app was unreachable, so it may
-/// land after the binding it was written against has already ended.
-package struct SessionsDeliberateNeedsYouMutation: Sendable, Codable, Equatable {
-    package let paneId: UUID
-    package let explanation: String
-    package let freshness: SessionsEvidenceFreshness
-    package let reportedAt: Date
-
-    package init(
-        paneId: UUID,
-        explanation: String,
-        freshness: SessionsEvidenceFreshness = .live,
-        reportedAt: Date
-    ) {
-        self.paneId = paneId
-        self.explanation = explanation
-        self.freshness = freshness
-        self.reportedAt = reportedAt
-    }
-}
-
-package struct SessionsClearDeliberateNeedsYouMutation: Sendable, Codable, Equatable {
-    package let paneId: UUID
-    package let freshness: SessionsEvidenceFreshness
-    package let clearedAt: Date
-
-    package init(
-        paneId: UUID,
-        freshness: SessionsEvidenceFreshness = .live,
-        clearedAt: Date
-    ) {
-        self.paneId = paneId
-        self.freshness = freshness
-        self.clearedAt = clearedAt
-    }
-}
-
-package struct SessionsDeliberateDoneMutation: Sendable, Codable, Equatable {
-    package let paneId: UUID
-    package let freshness: SessionsEvidenceFreshness
-    package let reportedAt: Date
-
-    package init(
-        paneId: UUID,
-        freshness: SessionsEvidenceFreshness = .live,
-        reportedAt: Date
-    ) {
-        self.paneId = paneId
-        self.freshness = freshness
-        self.reportedAt = reportedAt
-    }
-}
-
 package struct SessionsSourceEndMutation: Sendable, Codable, Equatable {
     package let paneId: UUID
     package let sourceGenerationId: UUID
@@ -391,16 +271,6 @@ package struct SessionsSourceEndMutation: Sendable, Codable, Equatable {
         self.paneId = paneId
         self.sourceGenerationId = sourceGenerationId
         self.endedAt = endedAt
-    }
-}
-
-package struct SessionsMessageAcknowledgmentMutation: Sendable, Codable, Equatable {
-    package let occurrenceId: UUID
-    package let acknowledgedAt: Date
-
-    package init(occurrenceId: UUID, acknowledgedAt: Date) {
-        self.occurrenceId = occurrenceId
-        self.acknowledgedAt = acknowledgedAt
     }
 }
 
@@ -418,13 +288,8 @@ package struct SessionsLiveLossMutation: Sendable, Codable, Equatable {
 
 package enum SessionsMutation: Sendable, Codable, Equatable {
     case bind(SessionsBindMutation)
-    case message(SessionsMessageMutation)
     case recordEvidence(SessionsEvidenceMutation)
-    case deliberateNeedsYou(SessionsDeliberateNeedsYouMutation)
-    case clearDeliberateNeedsYou(SessionsClearDeliberateNeedsYouMutation)
-    case deliberateDone(SessionsDeliberateDoneMutation)
     case sourceEnded(SessionsSourceEndMutation)
-    case acknowledgeMessage(SessionsMessageAcknowledgmentMutation)
     case recordLiveLoss(SessionsLiveLossMutation)
     case prepareForLaunch(Date)
 }
@@ -456,27 +321,9 @@ package enum SessionsBindingOutcome: Sendable, Codable, Equatable {
     case unchanged(SessionsBindingRecord)
 }
 
-package enum SessionsMessageAttribution: String, Sendable, Codable, Equatable {
-    case attributed
-    case unattributed
-}
-
 package enum SessionsSeenDisposition: String, Sendable, Codable, Equatable {
     case unseen
     case seen
-}
-
-package struct SessionsMessageRecord: Sendable, Codable, Equatable {
-    package let occurrenceId: UUID
-    package let paneId: UUID
-    package let conversationId: UUID?
-    package let bindingGenerationId: UUID?
-    package let sourceGenerationId: UUID?
-    package let text: String
-    package let attribution: SessionsMessageAttribution
-    package let freshness: SessionsEvidenceFreshness
-    package let disposition: SessionsSeenDisposition
-    package let reportedAt: Date
 }
 
 package struct SessionsResultRecord: Sendable, Codable, Equatable {
@@ -497,14 +344,9 @@ package struct SessionsResultRecord: Sendable, Codable, Equatable {
 
 package enum SessionsMutationOutcome: Sendable, Codable, Equatable {
     case binding(SessionsBindingOutcome)
-    case messageSaved(occurrenceId: UUID, attribution: SessionsMessageAttribution)
     case evidenceRecorded(occurrenceId: UUID)
     case historical(occurrenceId: UUID)
-    case attentionRecorded(requestId: String, occurrenceId: UUID)
-    case attentionCleared(requestId: String)
-    case resultRecorded(resultId: UUID, occurrenceId: UUID)
     case sourceEnded(sourceGenerationId: UUID)
-    case messageAcknowledged(occurrenceId: UUID, changed: Bool)
     case lossRecorded(id: UUID)
     case launchPrepared(activeSourcesEnded: Int)
 }
@@ -531,49 +373,13 @@ package struct SessionsLaunchPreparationOutcome: Sendable, Equatable {
     package let activeSourcesEnded: Int
 }
 
-package struct SessionsSnapshotCursor: Sendable, Equatable {
-    package let snapshotRevision: Int64
-    package let commitRevision: Int64
-    package let occurrenceId: UUID
-
-    package init(snapshotRevision: Int64, commitRevision: Int64, occurrenceId: UUID) {
-        self.snapshotRevision = snapshotRevision
-        self.commitRevision = commitRevision
-        self.occurrenceId = occurrenceId
-    }
-}
-
-package struct SessionsSnapshotPage: Sendable, Equatable {
-    package let limit: Int
-    package let after: SessionsSnapshotCursor?
-
-    package init(limit: Int, after: SessionsSnapshotCursor?) {
-        self.limit = limit
-        self.after = after
-    }
-}
-
-package enum SessionsSnapshotQuery: Sendable, Equatable {
-    case pane(UUID, page: SessionsSnapshotPage)
-    case unattributed(page: SessionsSnapshotPage)
-
-    package init(paneId: UUID, page: SessionsSnapshotPage) {
-        self = .pane(paneId, page: page)
-    }
-}
-
 package struct SessionsSnapshot: Sendable, Equatable {
     package let revision: Int64
     package let currentBinding: SessionsBindingRecord?
-    package let state: SessionsAgentState
-    package let stateOrigin: SessionsEvidenceOrigin?
-    package let messages: [SessionsMessageRecord]
-    package let currentAttention: [SessionsAttentionProjection]
     package let staleAttention: [SessionsAttentionProjection]
     package let results: [SessionsResultRecord]
     package let historicalOccurrenceIds: [UUID]
     package let losses: [SessionsLossRecord]
-    package let nextCursor: SessionsSnapshotCursor?
 }
 
 package enum SessionsRepositoryError: Error, Sendable, Equatable {
@@ -581,13 +387,14 @@ package enum SessionsRepositoryError: Error, Sendable, Equatable {
     case bindingConflict(UUID)
     case correlationConflict(UUID)
     case occurrenceConflict(UUID)
-    case messageNotFound(UUID)
     case sourceNotFound(UUID)
-    case attentionNotFound(UUID)
     case invalidStoredValue(String)
-    case invalidPageLimit(Int)
-    case staleSnapshotCursor(expectedRevision: Int64, actualRevision: Int64)
     case ingestionFinished
     case paneQueueFull(UUID)
     case globalQueueFull
+}
+
+package enum SessionsSnapshotQuery: Sendable, Equatable {
+    case pane(UUID)
+    package init(paneId: UUID) { self = .pane(paneId) }
 }

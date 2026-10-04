@@ -251,7 +251,7 @@ struct AgentStudioAppIPCPaneContextIntegrationTests {
     func noticeIdentityAndWithdrawal() async throws {
         try await withPaneContextIPCDomain { domain in
             let unbound = try await domain.ingestion.snapshot(
-                .pane(domain.paneId, page: SessionsSnapshotPage(limit: 20, after: nil)))
+                .pane(domain.paneId))
             #expect(unbound.currentBinding == nil)
             try await withLiveServer(
                 makeFixture: {
@@ -314,7 +314,7 @@ struct AgentStudioAppIPCPaneContextIntegrationTests {
                     #expect(detail.messages.first?.body == sent.body)
                     #expect(detail.messages.first?.shape == .notice(state: .unread))
                     let stillUnbound = try await domain.ingestion.snapshot(
-                        .pane(domain.paneId, page: SessionsSnapshotPage(limit: 20, after: nil)))
+                        .pane(domain.paneId))
                     #expect(stillUnbound.currentBinding == nil)
                     let withdraw = IPCPaneMessageWithdrawParams(
                         handle: "self", messageId: messageId, correlationId: UUIDv7.generate())

@@ -89,18 +89,18 @@ struct SessionsProviderTraceIntegrationTests {
                 requestId: event.requestId, toolId: event.toolId, subagentId: event.subagentId,
                 occurrenceId: event.occurrenceId, providerFields: providerFields),
             correlationId: projected.correlationId)
-        let query = SessionsSnapshotQuery(paneId: paneId, page: .init(limit: 100, after: nil))
+        let query = SessionsSnapshotQuery(paneId: paneId)
         let initial = try await fixture.withIngestion { ingestion, adapter in
             let result = try await adapter.recordProviderEvent(paneId: paneId, params: start, provenance: .matchingPane)
             #expect(result.disposition == .admitted)
             let snapshot = try await ingestion.snapshot(query)
             let binding = try #require(snapshot.currentBinding)
             #expect(binding.resumeHint == expectedHint)
-            return snapshot
+            return (snapshot: snapshot, summary: try await ingestion.sessionSummary(paneId: paneId))
         }
         try await fixture.withIngestion { ingestion, adapter in
             let reopened = try await ingestion.snapshot(query)
-            #expect(reopened.currentBinding == initial.currentBinding)
+            #expect(reopened.currentBinding == initial.snapshot.currentBinding)
             #expect(try #require(reopened.currentBinding).resumeHint == expectedHint)
             let replay = IPCSessionEventParams(
                 handle: start.handle, provider: start.provider, event: start.event, correlationId: UUIDv7.generate())
@@ -109,17 +109,15 @@ struct SessionsProviderTraceIntegrationTests {
                 paneId: paneId, params: replay, provenance: .matchingPane)
             #expect(result.disposition == .admitted)
             let afterReplay = try await ingestion.snapshot(query)
-            #expect(afterReplay.currentBinding == initial.currentBinding)
+            #expect(afterReplay.currentBinding == initial.snapshot.currentBinding)
             #expect(try #require(afterReplay.currentBinding).resumeHint == expectedHint)
+            let replaySummary = try await ingestion.sessionSummary(paneId: paneId)
+            #expect(replaySummary == initial.summary)
             // Correlation aliases advance the operation ledger, not the domain state.
-            #expect(afterReplay.state == initial.state)
-            #expect(afterReplay.stateOrigin == initial.stateOrigin)
-            #expect(afterReplay.messages == initial.messages)
-            #expect(afterReplay.currentAttention == initial.currentAttention)
-            #expect(afterReplay.staleAttention == initial.staleAttention)
-            #expect(afterReplay.results == initial.results)
-            #expect(Set(afterReplay.historicalOccurrenceIds) == Set(initial.historicalOccurrenceIds))
-            #expect(afterReplay.losses == initial.losses)
+            #expect(afterReplay.staleAttention == initial.snapshot.staleAttention)
+            #expect(afterReplay.results == initial.snapshot.results)
+            #expect(Set(afterReplay.historicalOccurrenceIds) == Set(initial.snapshot.historicalOccurrenceIds))
+            #expect(afterReplay.losses == initial.snapshot.losses)
         }
     }
 

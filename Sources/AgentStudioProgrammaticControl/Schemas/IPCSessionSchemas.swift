@@ -1,11 +1,5 @@
 import Foundation
 
-package enum IPCSessionSchemaLimits {
-    /// One query page carries the newest messages only. Paging beyond this page
-    /// belongs to the future Sessions reader, not to the model vocabulary.
-    package static let maximumQueryMessageCount = 20
-}
-
 extension IPCSessionProviderIdentity: IPCSchemaProviding {
     package static func ipcSchema() throws -> IPCJSONSchema {
         .object(fields: [
@@ -104,70 +98,24 @@ extension IPCSessionQueryParams: IPCSchemaProviding {
     }
 }
 
-extension IPCSessionAttentionProjection: IPCSchemaProviding {
-    package static func ipcSchema() throws -> IPCJSONSchema {
-        .object(fields: [
-            .init(
-                name: "requestId", description: "App-derived current attention request identity",
-                schema: .string(minimumLength: 1)),
-            .optional("explanation", description: "Private reason recorded with the assertion", schema: .string()),
-        ])
-    }
-}
+enum IPCSessionSchemaFields {
+    static let pane = IPCObjectField(
+        name: "paneId", description: "Canonical pane UUID that owns the session state", schema: IPCSchemaScalars.uuid
+    )
 
-extension IPCSessionMessageProjection: IPCSchemaProviding {
-    package static func ipcSchema() throws -> IPCJSONSchema {
-        .object(fields: [
-            .init(
-                name: "occurrenceId", description: "Durable message occurrence UUID", schema: IPCSchemaScalars.uuid),
-            .init(name: "text", description: "Exact retained message text", schema: .string()),
-            .init(
-                name: "seen", description: "Durable seen disposition; reads never change it", schema: .boolean),
-            .init(
-                name: "receivedAt",
-                description: "Admission time in seconds since the Foundation reference date",
-                schema: .number()),
-        ])
-    }
 }
 
 extension IPCSessionQueryResult: IPCSchemaProviding {
     package static func ipcSchema() throws -> IPCJSONSchema {
         .object(fields: [
             IPCSessionSchemaFields.pane,
-            try IPCSessionSchemaFields.state(),
-            try IPCSessionSchemaFields.origin(),
-            .optional(
-                "needsYou", description: "Current deliberate or provider attention assertion when one is open",
-                schema: try IPCSessionAttentionProjection.ipcSchema()),
             .init(
-                name: "messages", description: "Newest retained messages for the pane",
-                schema: .array(
-                    items: try IPCSessionMessageProjection.ipcSchema(),
-                    maximumCount: IPCSessionSchemaLimits.maximumQueryMessageCount)),
-            .init(
-                name: "sourceHealth", description: "Liveness of the pane's current binding and source generation",
+                name: "sourceHealth", description: "Health of the current status binding",
                 schema: try IPCSessionSourceHealth.ipcSchema()),
+            .init(
+                name: "session",
+                description: "The same status-engine summary as pane.context.get; null exactly when unbound",
+                schema: .oneOf([.null, try IPCPaneSessionSummary.ipcSchema()])),
         ])
-    }
-}
-
-enum IPCSessionSchemaFields {
-    static let pane = IPCObjectField(
-        name: "paneId", description: "Canonical pane UUID that owns the session state", schema: IPCSchemaScalars.uuid
-    )
-
-    static func state() throws -> IPCObjectField {
-        .init(
-            name: "state", description: "Reduced agent state for the pane's current conversation",
-            schema: try IPCSessionAgentState.ipcSchema()
-        )
-    }
-
-    static func origin() throws -> IPCObjectField {
-        .init(
-            name: "origin", description: "Server-assigned origin of the reported state",
-            schema: try IPCSessionEvidenceOrigin.ipcSchema()
-        )
     }
 }

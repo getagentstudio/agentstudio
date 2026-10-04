@@ -1,6 +1,6 @@
 # Enable pane agents: how it is built
 
-Date: 2026-10-04. **Revision 30** (Lead, 2026-10-04; PR B S6 review round 1): this revision restates rules the code drifted from; it adds no new mechanism. First, session end touches only Agent Lines and unconfirmed receipts: an ended or replaced session's open asks stay open and answerable. Second, permanent retirement is durable: it is processed off-main even before the service's first use, shutdown commits pending retirements, and each commit arms the purge deadline. Third, the render (item 4 of "What PR B adds") ships in PR C, which reads `value(for:)` and `PaneDisplayTitleDerived`, as agreed with Panes. PR B proves line, title, notices and asks through the app's own reads. **Revision 29** (Lead, 2026-10-03; PR B S5): `notify` reserves `CLIPolicy.noticeQueueReserve` (250 ms) of its 5 s total for the outbox write, so a `notSent` notice always reaches the outbox when the app accepts but never reads. **Revision 28** (Lead, 2026-10-03): three delivery decisions from the fast CLI round-1 review, anchored on `fast-cli-store` at 5a921b816. First, `--reload-catalog` is removed, because the catalog is fixed per runtime and the CLI is the same build. Second, a brand-new CLI store is created atomically under a private name and published with an exclusive rename. Third, opening and migrating the store gets a first-open busy budget of at most 1 s within the call total; notice writes and purges keep 50 ms. Storage contents, ownership and the single-writer rule are unchanged. **Revision 27** (owner, 2026-10-02): choice 4 now leads with agents finding their way through `help` and `--help` (Spec R33). Discovery drops rev 26's catalog digest, because the CLI ships in the app bundle and is always the same build. There's no client re-check and discovery gets 500 ms. The digest, cache and filter wait for the Studio service design. **Revision 26** (owner, 2026-10-02): two changes to choice 4. Discovery is identified by a catalog digest, with a name filter, a one-row CLI-store cache and no client re-validation, and it comes within the 250 ms budget. Every hook verb is silent: no stdout, no stderr in normal operation, exit 0.
+Date: 2026-10-04. **Revision 33** (Lead, 2026-10-04, from PR C review finding 1): when PR C turns a permission request into a blocking ask, the hook still reports it, flagged `permissionHandling: blockingAsk`. So the permission keeps counting as activity, and opens no duplicate provider prompt. See "A permission answered by an ask (rev 33)". **Revision 32** (owner rule, 2026-10-02, restated 2026-10-04): hooks never make an agent wait. Every lifecycle and activity hook is registered async. The only waits left are the ones the agent asks for itself: a waiting ask, and the permission ask from PR C. Sessions orders hook facts by the time the hook fired, not by arrival. See "Hooks never make the agent wait (rev 32)". **Revision 31** (owner, 2026-10-04: F2 = A, co-designed with the Panes Lead): `session.query` reads the one status engine. It returns the pane's S2 session summary, in the same wire shape as `pane.context.get`'s `session`, plus `sourceHealth`. Both come from one read of the Sessions status runtime, so they can't disagree. Deleted: the old four-state projection, the reply fields `state`, `origin`, `needsYou` and `messages`, and the five producer-less mutation cases (`message`, `deliberateNeedsYou`, `clearDeliberateNeedsYou`, `deliberateDone`, and `acknowledgeMessage`, which acknowledged the retired messages). Kept: the mutation → evidence/binding reduction, and provider prompts (S13) with the attention rows they use. Rows the retired kinds stored stay inert, with no migration. See "Reading status over IPC (rev 31)". **Revision 30** (Lead, 2026-10-04; PR B S6 review round 1): this revision restates rules the code drifted from; it adds no new mechanism. First, session end touches only Agent Lines and unconfirmed receipts: an ended or replaced session's open asks stay open and answerable. Second, permanent retirement is durable: it is processed off-main even before the service's first use, shutdown commits pending retirements, and each commit arms the purge deadline. Third, the render (item 4 of "What PR B adds") ships in PR C, which reads `value(for:)` and `PaneDisplayTitleDerived`, as agreed with Panes. PR B proves line, title, notices and asks through the app's own reads. **Revision 29** (Lead, 2026-10-03; PR B S5): `notify` reserves `CLIPolicy.noticeQueueReserve` (250 ms) of its 5 s total for the outbox write, so a `notSent` notice always reaches the outbox when the app accepts but never reads. **Revision 28** (Lead, 2026-10-03): three delivery decisions from the fast CLI round-1 review, anchored on `fast-cli-store` at 5a921b816. First, `--reload-catalog` is removed, because the catalog is fixed per runtime and the CLI is the same build. Second, a brand-new CLI store is created atomically under a private name and published with an exclusive rename. Third, opening and migrating the store gets a first-open busy budget of at most 1 s within the call total; notice writes and purges keep 50 ms. Storage contents, ownership and the single-writer rule are unchanged. **Revision 27** (owner, 2026-10-02): choice 4 now leads with agents finding their way through `help` and `--help` (Spec R33). Discovery drops rev 26's catalog digest, because the CLI ships in the app bundle and is always the same build. There's no client re-check and discovery gets 500 ms. The digest, cache and filter wait for the Studio service design. **Revision 26** (owner, 2026-10-02): two changes to choice 4. Discovery is identified by a catalog digest, with a name filter, a one-row CLI-store cache and no client re-validation, and it comes within the 250 ms budget. Every hook verb is silent: no stdout, no stderr in normal operation, exit 0.
 
 **Revision 25** (owner, 2026-10-02): link removal ships without agent notification for now (Spec R19 deferred). Gaps item 4 is rewritten: no removal facts are consumed, and the replay request to Bridge is withdrawn.
 
@@ -101,7 +101,8 @@ Nothing computes on the main thread.
 
 1. **Status stays in Sessions.** It's the owner of hook evidence and already
    reduces it off-main. PR B extends that reducer and adds one input: the
-   session's open asks from the message store. There's no second status engine.
+   session's open asks from the message store. There's no second status engine:
+   `session.query` reads the same value (rev 31).
    *What would reopen it:* a status that needs facts Sessions can't see.
 2. **Messages get their own store, not Sessions'.** Sessions records what the
    agent's lifecycle did; messages are conversations with you and have their
@@ -494,7 +495,7 @@ Rules this sets for the reducer:
 | Entity | Semantic owner | Home (new / modified / existing) | Type home | Shape at boundaries | Kind |
 | --- | --- | --- | --- | --- | --- |
 | S1 Agent session | Sessions | modified `Features/Sessions` binding + resume info | `SessionsBindingRecord` gains `resumeHint`, `ownerPaneId` | existing `session.event` sessionStart params gain an optional resume hint | persisted (Sessions tables) |
-| S2 Session status | Sessions reducer | modified `SessionsEvidenceReducer`; new keyed atom `SessionStatusAtom` (owner-approved) | `AgentSessionStatus = .needsYou(reason) \| .failed(summary) \| .working(active \| monitoring) \| .idle(done \| ready \| interrupted \| ended) \| .unknown` | UI: `AtomFamily<PaneId, AgentSessionStatus>` (the status of the pane's current binding) via the batched publication lane; IPC: in `pane.context.get` | derived |
+| S2 Session status | Sessions reducer | modified `SessionsEvidenceReducer`; new keyed atom `SessionStatusAtom` (owner-approved) | `AgentSessionStatus = .needsYou(reason) \| .failed(summary) \| .working(active \| monitoring) \| .idle(done \| ready \| interrupted \| ended) \| .unknown` | UI: `AtomFamily<PaneId, AgentSessionStatus>` (the status of the pane's current binding) via the batched publication lane; IPC: in `pane.context.get` and `session.query` (rev 31) | derived |
 | S3–S5 AgentMessage | PaneContextService | new `Core/PaneContext/` | `AgentMessageDetail` and its unions ("Contracts PR C consumes") | wire: `IPCPaneMessageSendParams { handle, messageId, writer?, sourceOccurredAt?, importance, body, why?, actions, shape }`, where an ask shape carries its `reason` → `.created(id) \| .existing(id)`; `pane.message.ask` → `AskOutcome = .answered(value) \| .handedBack \| .expired \| .withdrawn \| .stale` (a repeat of a settled ask returns its outcome) | persisted |
 | S6 Message action | PaneContextService (record); owner of each effect | new | `MessageAction = .openFile(path, line?) (B2) \| .openPullRequest(ForgePullRequestIdentity) \| .goToPane(PaneId)` | embedded in S3 | value |
 | S7 Answer position | CLI store + PaneContextService | new | `AnswerPosition(UInt64)` per (session, pane) | wire: `pane.message.changes { handle, writer, after }` → `{ entries, nextPosition, more }`; reporting `after` confirms receipt of answers at or before it | persisted (both sides) |
@@ -790,6 +791,109 @@ applied successfully (`PaneTabViewController`'s focus path, after
 point makes one `nonisolated` submit into Sessions, `(paneId, viewedAt)`. Sessions
 applies it only to a `done` admitted before `viewedAt` (rev 16; see "MainActor and
 atom boundaries", item 5).
+
+### Reading status over IPC (rev 31)
+
+Owner decision F2 = A (2026-10-04). Before this revision, `session.query` still
+served the old Sessions projection, so a pane with an open ask read `needsYou` in
+`pane.context.get` and `running` in `session.query`.
+
+**The reply.** `session.query {handle}` returns `{ paneId, sourceHealth, session }`:
+
+- `session` is the `IPCPaneSessionSummary` that `pane.context.get` already returns. It holds provider, sessionRef, bindingGeneration, the S2 `status`, providerPrompts and omittedPromptCount, and goes through the same mapper (`AgentStudioIPCPaneContextDetailMapping`). One session has one wire shape.
+- `sourceHealth` is `unbound | live | ended`.
+- `session` is null exactly when `sourceHealth` is `unbound`. An ended binding still answers with its last S2 value, `idle(ended)`, so a script can see the end. If the runtime read drops an ended binding, that read is fixed; the reply rule stays.
+- Both fields come from one actor read in `SessionsIngestion`: the status runtime's current binding, its phase and its `SessionSummary`. The handler doesn't call `loadSnapshot` and doesn't hop to the main actor.
+
+**Deleted (hard cutover, no alias):**
+
+- The reply fields `state`, `origin`, `needsYou` and `messages`.
+  - Their contract and schema types go too: `IPCSessionAgentState`, `IPCSessionEvidenceOrigin`, `IPCSessionAttentionProjection`, `IPCSessionMessageProjection` and `maximumQueryMessageCount`.
+  - The descriptor example and help follow from the catalog.
+- The old projection: `SessionsAgentState`, `SessionsProjection`, `SessionsEvidenceReducer.reduce(SessionsReductionInput)` and its helpers.
+  - `SessionsSnapshot` loses `state`, `messages`, `currentAttention` and message paging.
+  - `loadSnapshot` keeps loading bindings for its remaining readers: the provider-event binding checks, and R3's restore readers.
+- The five mutation cases (the four above plus `acknowledgeMessage`, found during implementation with no production constructor) and every branch they own:
+  - the structs and enum cases, and the reducer branches;
+  - the ingestion branches: pane id, context query, operation kind, occurrence, time and semantic intent;
+  - the status no-op, the helpers only they use, and their replay outcome decodes.
+- Tests:
+  - Tests that exist only for these cases are deleted.
+  - Tests that used a retired case to reach something else (commit participant, replay, pagination) switch to a live mutation kind.
+  - Tests of the old state move to S2.
+
+**Kept:**
+
+- The mutation → evidence/binding reduction.
+- Provider prompts (S13), and the attention rows and evidence join they use. PR C's `needsYou(approval)` and its read-only prompt rows depend on them (Panes Lead, 2026-10-04).
+- `evidenceOrder` and `currentTurnId`, which S2 shares.
+
+**Stored data.**
+
+- The migration's `operation_kind` values and the `deliberate` attention kind stay in the schema.
+- Rows written by retired producers are never read again. A stored replay row of a retired kind can't be looked up, because nothing can submit that operation any more.
+- No migration and no data change. Dropping the inert rows is a later cleanup.
+
+**R3 merge note.** `restore-r3` predates the deletion. It still has live producers of the retired cases (`recordDeliberateReport` and `recordAgentMessage`, with commit-participant overloads). Whichever of PR B and R3 merges second drops them. R3's binding-order change in `loadBindings` stays.
+
+### Hooks never make the agent wait (rev 32)
+
+**Owner rule.** It was set 2026-10-02 and restated 2026-10-04: an agent waits on Agent Studio only when it makes a tool call that waits for an answer. That means `agentstudio ask --wait`, and the permission request once PR C turns it into a blocking ask. Lifecycle and activity hooks never make an agent wait, not even when the app is slow or down.
+
+**Why hooks waited before.**
+- Both providers run a command hook synchronously by default, so the agent waits for the hook process to exit.
+- Both support `"async": true`:
+  - Claude Code: hooks reference, `async`. The output is ignored.
+  - Codex: `codex-rs/hooks`, `HookHandlerConfig::Command`, `async`.
+- Our installers never set it, so each hook held the agent for up to the CLI's `hookCallLimit` of 2 s. The 0.0.104 CLI had no limit at all.
+
+**Registration.** Both installers (`AgentPackage/ClaudeCodePackageInstaller`, `CodexPackageInstaller`) write `"async": true` on every hook entry they own, with two exceptions:
+- **Codex `SessionEnd`.** This is a provider rule we can't change: Codex always runs it synchronously, warns if it's marked async, and caps its timeout at 3 s.
+  - The installer writes this entry without `async`, with `timeout` 1, which is Codex's default.
+  - Our hook for it uses a dedicated short limit, `CLIPolicy.synchronousLifecycleHookLimit` of 250 ms, and exits 0 silently when that limit passes.
+  - With R3, the report is recorded in the CLI store first, so intake recovers a missed live send.
+- **The permission request.** In PR B it's report-only, so it's async. PR C (C9) turns it into the blocking ask, and only then writes it synchronously. That's the one wait the agent itself asks for.
+
+Async output is ignored by both providers. Our hooks are silent anyway (rev 26).
+
+**Order of hook facts.**
+- Async hooks can reach the app out of order, because two hook processes can race by milliseconds: for example `PostToolUse`, then `Stop`.
+- Sessions orders hook facts by `sourceOccurredAt`, which the CLI stamps when the hook starts (F8). Facts without one keep admission order, and admission order breaks ties.
+- Live path:
+  - A hook fact newer than the binding's latest applied hook fact applies as today.
+  - An older one makes Sessions re-reduce that binding's `SessionStatusState` from its stored evidence, in this order. That's the path restore already uses.
+  - The re-reduce keeps the separately sequenced inputs: the open-ask summary, the Agent Line work and the pane-viewed mark.
+  - Out-of-order arrival is a millisecond race, so the re-read is rare.
+- **Precondition:** every hook-derived status input must be reproducible from stored evidence. If one isn't, the implementation stops and reports it.
+
+**Not in scope:** Cursor hooks. Logged as a follow-up.
+
+**Installing globally** (owner-settled: `~/.claude`, `~/.codex`, backed up first, diff reported) happens from the first release that carries this. Nothing is installed before then.
+
+### A permission answered by an ask (rev 33)
+
+**Problem.** In PR C (C9), the permission hook becomes the one blocking ask. If it only calls `ask --wait`, two things break:
+- Activity: Panes Spec R1 counts a permission as qualified activity, and the only activity ingress is the first matching `session.event` occurrence in `AgentStudioIPCSessionsAdapter`.
+- Status: a report-only permission would also open an S13 provider prompt beside the ask's NEEDS YOU.
+
+**Contract.**
+- `session.event` params gain an optional `permissionHandling`, either `reportOnly` or `blockingAsk`. It's typed and parsed in Swift, never stored as free text.
+  - It's valid only on a permission-request event. On any other event it's refused as `invalidParams`.
+  - When it's absent, the value is `reportOnly`. Hooks installed by older builds send exactly that, so the field must be explicit; it can't be "every permission is an ask now".
+  - The field is part of the occurrence fingerprint, so the same occurrence sent with a different value is an `occurrenceConflict`.
+- With `blockingAsk`, Sessions:
+  - records the hook evidence as today;
+  - admits activity through the same first-matching-occurrence `PaneActivityClock` ingress;
+  - opens no S13 provider prompt. NEEDS YOU(approval) comes only from the open ask's summary.
+- `reportOnly` is unchanged.
+- `pane.message.ask` itself never counts as activity (Panes R3).
+
+**Hook order (PR C, C9).**
+1. Send the permission `session.event` with `blockingAsk`.
+2. Then run `ask --wait`.
+If the event fails or times out, the ask still runs: activity is best-effort, and the agent's wait never depends on it.
+
+**Split.** The contract field, its validation, the Sessions handling and its tests are in PR B. The hook call is in PR C.
 
 ## Keeping displayed values current
 

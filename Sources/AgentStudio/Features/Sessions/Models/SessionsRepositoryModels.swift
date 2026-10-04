@@ -4,7 +4,6 @@ package enum SessionsRepositoryContextQuery: Sendable, Equatable {
     case bind(paneId: UUID, providerIdentifier: String, providerConversationId: String)
     case pane(UUID)
     case source(paneId: UUID, sourceGenerationId: UUID)
-    case message(UUID)
     case allActiveSources
 }
 
@@ -103,7 +102,6 @@ package struct SessionsRepositoryContext: Sendable, Equatable {
     package let bindings: [SessionsBindingRecord]
     package let sources: [SessionsSourceRecord]
     package let evidence: [SessionsEvidenceRecord]
-    package let messages: [SessionsMessageRecord]
     package let attention: [SessionsStoredAttentionRecord]
     package let results: [SessionsResultRecord]
 
@@ -114,11 +112,6 @@ package struct SessionsRepositoryContext: Sendable, Equatable {
     func source(sourceGenerationId: UUID) -> SessionsSourceRecord? {
         sources.first { $0.sourceGenerationId == sourceGenerationId }
     }
-}
-
-package struct SessionsMessageSeenChange: Sendable, Equatable {
-    package let occurrenceId: UUID
-    package let acknowledgedAt: Date
 }
 
 package struct SessionsLossRecord: Sendable, Equatable {
@@ -138,10 +131,8 @@ package struct SessionsRepositoryReduction: Sendable, Equatable {
     package var bindingChanges: [SessionsBindingRecord] = []
     package var sourceChanges: [SessionsSourceRecord] = []
     package var evidenceChanges: [SessionsEvidenceRecord] = []
-    package var messageChanges: [SessionsMessageRecord] = []
     package var attentionChanges: [SessionsStoredAttentionRecord] = []
     package var resultChanges: [SessionsResultRecord] = []
-    package var messageSeenChanges: [SessionsMessageSeenChange] = []
     package var lossChanges: [SessionsLossRecord] = []
     package let outcome: SessionsMutationOutcome
 }

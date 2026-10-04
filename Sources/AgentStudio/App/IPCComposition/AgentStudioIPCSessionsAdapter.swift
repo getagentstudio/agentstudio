@@ -127,39 +127,25 @@ struct AgentStudioIPCSessionsAdapter: AppIPCSessionsPort {
         paneId: UUID,
         params: IPCSessionQueryParams
     ) async throws -> IPCSessionQueryResult {
-        let snapshot = try await paneSnapshot(paneId: paneId)
-        return IPCSessionQueryResult(
-            paneId: paneId,
-            state: Self.agentState(snapshot.state),
-            origin: Self.evidenceOrigin(snapshot.stateOrigin),
-            needsYou: snapshot.currentAttention.first.map {
-                IPCSessionAttentionProjection(requestId: $0.requestId, explanation: $0.explanation)
-            },
-            messages: snapshot.messages.map {
-                IPCSessionMessageProjection(
-                    occurrenceId: $0.occurrenceId,
-                    text: $0.text,
-                    seen: $0.disposition == .seen,
-                    receivedAt: $0.reportedAt
-                )
-            },
-            sourceHealth: Self.sourceHealth(snapshot.currentBinding)
-        )
+        let read: SessionsStatusReadResult
+        do { read = try await ingestion.readSessionStatus(paneId: paneId) } catch { throw Self.portError(from: error) }
+        switch read {
+        case .unbound:
+            return IPCSessionQueryResult(paneId: paneId, sourceHealth: .unbound, session: nil)
+        case .live(let summary):
+            return IPCSessionQueryResult(
+                paneId: paneId, sourceHealth: .live, session: PaneContextIPCMapping.session(summary))
+        case .ended(let summary):
+            return IPCSessionQueryResult(
+                paneId: paneId, sourceHealth: .ended, session: PaneContextIPCMapping.session(summary))
+        }
     }
 }
 
 extension AgentStudioIPCSessionsAdapter {
     fileprivate func paneSnapshot(paneId: UUID) async throws -> SessionsSnapshot {
         do {
-            return try await ingestion.snapshot(
-                .pane(
-                    paneId,
-                    page: SessionsSnapshotPage(
-                        limit: IPCSessionSchemaLimits.maximumQueryMessageCount,
-                        after: nil
-                    )
-                )
-            )
+            return try await ingestion.snapshot(.pane(paneId))
         } catch {
             throw Self.portError(from: error)
         }
@@ -390,44 +376,16 @@ extension AgentStudioIPCSessionsAdapter {
         }
     }
 
-    fileprivate static func agentState(_ state: SessionsAgentState) -> IPCSessionAgentState {
-        switch state {
-        case .unknown: .unknown
-        case .running: .running
-        case .needsYou: .needsYou
-        case .done: .done
-        }
-    }
-
-    fileprivate static func evidenceOrigin(
-        _ origin: SessionsEvidenceOrigin?
-    ) -> IPCSessionEvidenceOrigin {
-        switch origin {
-        case .none: .unknown
-        case .estimated: .estimated
-        case .agentReported: .agentReported
-        case .reported: .reported
-        }
-    }
-
-    fileprivate static func sourceHealth(
-        _ binding: SessionsBindingRecord?
-    ) -> IPCSessionSourceHealth {
-        guard let binding else { return .unbound }
-        return binding.status == .active ? .live : .ended
-    }
-
     fileprivate static func portError(from error: any Error) -> any Error {
         guard let repositoryError = error as? SessionsRepositoryError else { return error }
         switch repositoryError {
-        case .bindingRequired, .sourceNotFound, .attentionNotFound:
+        case .bindingRequired, .sourceNotFound:
             return AppIPCSessionsError(reason: .bindingRequired)
         case .correlationConflict, .occurrenceConflict:
             return AppIPCSessionsError(reason: .correlationConflict)
         case .ingestionFinished, .paneQueueFull, .globalQueueFull:
             return AppIPCSessionsError(reason: .ingestionUnavailable)
-        case .bindingConflict, .messageNotFound, .invalidStoredValue, .invalidPageLimit,
-            .staleSnapshotCursor:
+        case .bindingConflict, .invalidStoredValue:
             return AppIPCSessionsError(reason: .validationRejected)
         }
     }

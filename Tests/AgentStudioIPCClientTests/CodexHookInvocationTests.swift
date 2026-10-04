@@ -9,6 +9,20 @@ import Testing
 /// word on standard output, never the payload in a log line.
 @Suite("Codex hook invocation")
 struct CodexHookInvocationTests {
+    @Test(
+        "Codex SessionEnd selects the synchronous short limit; every other installed hook keeps the async limit",
+        arguments: CodexHookEventName.installedEvents)
+    func hookDeliverySelectsProviderLimit(event: CodexHookEventName) throws {
+        let payload = try JSONDecoder().decode(CodexHookPayload.self, from: CodexFixtures.data(for: event))
+        let projected = try #require(
+            CodexHookProjection.project(
+                sourceOccurredAt: Date(timeIntervalSince1970: 1_700_000_000), eventName: event, payload: payload))
+        let selected = ProviderHookDelivery.codexCallLimit(for: projected.event.name)
+        let expected: Duration = event == .sessionEnd ? .milliseconds(250) : .seconds(2)
+        #expect(selected == expected)
+        #expect(CLIPolicy.synchronousLifecycleHookLimit == .milliseconds(250))
+    }
+
     @Test("a projected event with a pane credential is delivered once")
     func projectedEventIsDelivered() throws {
         // Arrange

@@ -19,29 +19,14 @@ extension SessionsRepositoryStorage {
         for attention in reduction.attentionChanges {
             try write(attention: attention, commitRevision: commitRevision, database: database)
         }
-        for message in reduction.messageChanges {
-            try write(message: message, commitRevision: commitRevision, database: database)
-        }
+
         for evidence in reduction.evidenceChanges {
             try write(evidence: evidence, commitRevision: commitRevision, database: database)
         }
         for result in reduction.resultChanges {
             try write(result: result, commitRevision: commitRevision, database: database)
         }
-        for acknowledgment in reduction.messageSeenChanges {
-            try database.execute(
-                sql: """
-                    UPDATE sessions_message
-                    SET is_seen = 1, seen_at = ?, committed_revision = ?
-                    WHERE occurrence_id = ? AND is_seen = 0
-                    """,
-                arguments: [
-                    acknowledgment.acknowledgedAt.timeIntervalSince1970,
-                    commitRevision,
-                    acknowledgment.occurrenceId.uuidString,
-                ]
-            )
-        }
+
         for loss in reduction.lossChanges {
             try database.execute(
                 sql: """
@@ -205,37 +190,6 @@ extension SessionsRepositoryStorage {
                 attention.resolutionOccurrenceId?.uuidString,
                 attention.openedAt.timeIntervalSince1970,
                 attention.resolvedAt?.timeIntervalSince1970,
-                commitRevision,
-            ]
-        )
-    }
-
-    fileprivate static func write(
-        message: SessionsMessageRecord,
-        commitRevision: Int64,
-        database: Database
-    ) throws {
-        try database.execute(
-            sql: """
-                INSERT INTO sessions_message(
-                    occurrence_id, pane_id, conversation_id, binding_generation_id,
-                    source_generation_id, notification_kind, exact_text, attribution,
-                    freshness, attention_id, is_seen, seen_at, reported_at, committed_revision
-                ) VALUES (?, ?, ?, ?, ?, 'message', ?, ?, ?, NULL, ?, ?, ?, ?)
-                ON CONFLICT(occurrence_id) DO NOTHING
-                """,
-            arguments: [
-                message.occurrenceId.uuidString,
-                message.paneId.uuidString,
-                message.conversationId?.uuidString,
-                message.bindingGenerationId?.uuidString,
-                message.sourceGenerationId?.uuidString,
-                message.text,
-                message.attribution.rawValue,
-                message.freshness.rawValue,
-                message.disposition == .seen ? 1 : 0,
-                message.disposition == .seen ? message.reportedAt.timeIntervalSince1970 : nil,
-                message.reportedAt.timeIntervalSince1970,
                 commitRevision,
             ]
         )

@@ -296,8 +296,9 @@ my $completed = eval {
     hook('UserPromptSubmit', 'warmup-turn');
     my $after = checked_result(['session.query', '--handle', 'self'], \%pane_env);
     die "Hook binding/activity warmup not established\n" unless lc($after->{paneId} // '') eq lc($fixture->{paneId})
-        && ($after->{sourceHealth} // '') eq 'live' && ($after->{state} // '') eq 'running'
-        && ($after->{origin} // '') eq 'reported';
+        && ($after->{sourceHealth} // '') eq 'live' && ref($after->{session}) eq 'HASH'
+        && ($after->{session}->{status}->{kind} // '') eq 'working'
+        && ($after->{session}->{status}->{state} // '') eq 'active';
     $stage = 'terminalReady';
     my $terminal = checked_result(['terminal.status', '--handle', 'self'], \%pane_env);
     die "Fixture terminal is not warm and ready\n" unless $terminal->{isReady};
