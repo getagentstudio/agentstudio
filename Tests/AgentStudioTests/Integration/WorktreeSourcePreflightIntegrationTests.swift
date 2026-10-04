@@ -1,7 +1,6 @@
 import AgentStudioGit
 import AgentStudioTestSupport
 import AgentStudioWorktreeOperations
-import Darwin
 import Foundation
 import Testing
 
@@ -11,8 +10,8 @@ struct WorktreeSourcePreflightIntegrationTests {
     func copiesMainSourceFromLinkedCheckout() async throws {
         let repository = try await seededRepository(named: "new-main-from-linked")
         defer { FilesystemTestGitRepo.destroy(repository) }
-        try Data("*.lock\n.build-cache/\n".utf8).write(to: repository.appending(path: ".gitignore"))
-        try Data(#"{"worktree":{"include":[".build-cache/"],"busyLocks":["build.lock"]}}"#.utf8)
+        try Data(".build-cache/\n".utf8).write(to: repository.appending(path: ".gitignore"))
+        try Data(#"{"worktree":{"include":[".build-cache/"]}}"#.utf8)
             .write(to: repository.appending(path: ".agentstudio.config.json"))
         try await worktreeCreationGit(at: repository, arguments: ["add", ".gitignore", ".agentstudio.config.json"])
         try await worktreeCreationGit(at: repository, arguments: ["commit", "-m", "declare cache"])
@@ -116,57 +115,6 @@ struct WorktreeSourcePreflightIntegrationTests {
                 == worktreeCreationGit(at: repository, arguments: ["rev-parse", "HEAD"]))
     }
 
-    @Test("declared busy lock refuses real exclusive and shared holder processes", arguments: [false, true])
-    func refusesRealBusyLock(shared: Bool) async throws {
-        let repository = try await seededRepository(named: "new-busy-lock")
-        defer { FilesystemTestGitRepo.destroy(repository) }
-        let config = repository.appending(path: ".agentstudio.config.json")
-        try Data(#"{"worktree":{"busyLocks":["build.lock"]}}"#.utf8).write(to: config)
-        try await worktreeCreationGit(at: repository, arguments: ["add", ".agentstudio.config.json"])
-        try await worktreeCreationGit(at: repository, arguments: ["commit", "-m", "declare lock"])
-        let lock = repository.appending(path: "build.lock")
-        try Data("lock contents".utf8).write(to: lock)
-        let holder = WorktreeSourceLockHolder()
-        try await holder.start(lock: lock, shared: shared)
-        do {
-            let branch = "feature/busy"
-            let destination = try siblingDestination(repository: repository, branch: branch)
-            for source in [WorktreeCreateSource.mainWorktree, .worktree(repository)] {
-                let outcome = await WorktreeOperationRunner().run(
-                    .create(
-                        WorktreeCreateRequest(
-                            start: repository, branch: branch, source: source, materialization: .copyOnWrite)))
-                #expect(outcome == .refused(.creationStopped(.sourceBusy(path: lock.path))))
-                try await expectNoCreation(repository: repository, destination: destination, branch: branch)
-            }
-            #expect(try Data(contentsOf: lock) == Data("lock contents".utf8))
-        } catch {
-            _ = await holder.stop()
-            throw error
-        }
-        #expect(await holder.stop() == 0)
-        #expect(await WorktreeSourceBusyLockProbe.refusal(lockFiles: [lock]) == nil)
-        #expect(try Data(contentsOf: lock) == Data("lock contents".utf8))
-    }
-
-    @Test("missing and free locks stay untouched while no-follow errors carry errno")
-    func testsConcreteLocksWithoutCreatingOrFollowing() async throws {
-        let repository = try await seededRepository(named: "new-lock-probe")
-        defer { FilesystemTestGitRepo.destroy(repository) }
-        let absent = repository.appending(path: "absent.lock")
-        #expect(await WorktreeSourceBusyLockProbe.refusal(lockFiles: [absent]) == nil)
-        #expect(!FileManager.default.fileExists(atPath: absent.path))
-        let real = repository.appending(path: "real.lock")
-        try Data("unchanged".utf8).write(to: real)
-        #expect(await WorktreeSourceBusyLockProbe.refusal(lockFiles: [real]) == nil)
-        let link = repository.appending(path: "linked.lock")
-        try FileManager.default.createSymbolicLink(at: link, withDestinationURL: real)
-        #expect(
-            await WorktreeSourceBusyLockProbe.refusal(lockFiles: [link])
-                == .sourceBusyUnknown(path: link.path, errno: ELOOP))
-        #expect(try Data(contentsOf: real) == Data("unchanged".utf8))
-    }
-
     @Test("malformed config refuses all materializations before mutation")
     func refusesInvalidRepositoryConfig() async throws {
         let repository = try await seededRepository(named: "new-invalid-config")
@@ -196,8 +144,7 @@ struct WorktreeSourcePreflightIntegrationTests {
     private func seededRepository(named name: String) async throws -> URL {
         let repository = try await FilesystemTestGitRepo.create(named: name)
         try Data("tracked\n".utf8).write(to: repository.appending(path: "tracked.txt"))
-        try Data("*.lock\n".utf8).write(to: repository.appending(path: ".gitignore"))
-        try await worktreeCreationGit(at: repository, arguments: ["add", "tracked.txt", ".gitignore"])
+        try await worktreeCreationGit(at: repository, arguments: ["add", "tracked.txt"])
         try await worktreeCreationGit(at: repository, arguments: ["commit", "-m", "base"])
         return repository
     }
@@ -205,48 +152,5 @@ struct WorktreeSourcePreflightIntegrationTests {
     private func expectNoCreation(repository: URL, destination: URL, branch: String) async throws {
         #expect(!FileManager.default.fileExists(atPath: destination.path))
         #expect(try await worktreeCreationGit(at: repository, arguments: ["branch", "--list", branch]).isEmpty)
-    }
-}
-
-private final class WorktreeSourceLockHolder: @unchecked Sendable {
-    private let process = Process()
-    private let readiness = Pipe()
-    private let lifetime = Pipe()
-
-    func start(lock: URL, shared: Bool) async throws {
-        process.executableURL = URL(fileURLWithPath: "/usr/bin/perl")
-        process.arguments = [
-            "-MFcntl=:flock", "-e",
-            """
-            $| = 1;
-            open(my $lock, '<', $ARGV[0]) or die $!;
-            flock($lock, $ARGV[1] eq 'shared' ? LOCK_SH : LOCK_EX) or die $!;
-            print 'R';
-            while (defined(my $line = <STDIN>)) { }
-            """,
-            lock.path,
-            shared ? "shared" : "exclusive",
-        ]
-        process.standardOutput = readiness
-        process.standardInput = lifetime
-        try process.run()
-        try readiness.fileHandleForWriting.close()
-        try lifetime.fileHandleForReading.close()
-        let ready = try await withoutBlockingCooperativePool {
-            try self.readiness.fileHandleForReading.read(upToCount: 1)
-        }
-        guard ready == Data("R".utf8) else {
-            _ = await stop()
-            throw NSError(domain: "WorktreeSourceLockHolder", code: 1)
-        }
-    }
-
-    func stop() async -> Int32 {
-        try? lifetime.fileHandleForWriting.close()
-        return await withoutBlockingCooperativePool {
-            self.process.waitUntilExit()
-            try? self.readiness.fileHandleForReading.close()
-            return self.process.terminationStatus
-        }
     }
 }

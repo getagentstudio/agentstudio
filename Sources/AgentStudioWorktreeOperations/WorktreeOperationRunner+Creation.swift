@@ -16,9 +16,8 @@ extension WorktreeOperationRunner {
         case .outcome(let outcome): return outcome
         case .ready(let value): prepared = value
         }
-        let config: AgentStudioRepositoryConfig
         do {
-            config = try await AgentStudioRepositoryConfigReader.read(mainWorktree: prepared.repositoryPath)
+            _ = try await AgentStudioRepositoryConfigReader.read(mainWorktree: prepared.repositoryPath)
         } catch let stop as WorktreeCreationStop {
             return .refused(.creationStopped(stop))
         } catch {
@@ -46,19 +45,11 @@ extension WorktreeOperationRunner {
         guard source.repositoryPath == prepared.repositoryPath else {
             return .refused(.notInWorktree(sourcePath))
         }
-        if request.materialization == .copyOnWrite {
-            if request.source == .mainWorktree,
-                let outcome = await defaultCopySourceRefusal(
-                    source: source.sourceWorktreePath, repository: prepared.repositoryPath)
-            {
-                return outcome
-            }
-            // Stage A: only literal paths. The pinned SDK has no pattern grammar yet.
-            let lockFiles = config.worktree.busyLocks.filter { !$0.contains(where: { "*?[".contains($0) }) }
-                .map { source.sourceWorktreePath.appending(path: $0) }
-            if let stop = await WorktreeSourceBusyLockProbe.refusal(lockFiles: lockFiles) {
-                return .refused(.creationStopped(stop))
-            }
+        if request.materialization == .copyOnWrite, request.source == .mainWorktree,
+            let outcome = await defaultCopySourceRefusal(
+                source: source.sourceWorktreePath, repository: prepared.repositoryPath)
+        {
+            return outcome
         }
         return await copySource(prepared, source: source.sourceWorktreePath, request: request)
     }

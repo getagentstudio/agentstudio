@@ -24,7 +24,7 @@ struct WorktreeLifecyclePolicyTests {
 struct WorktreeStopCatalogTests {
     private static let creationReasons: Set<WorktreeStopReason> = [
         .fromBranchNeedsTrackedOnly, .changesOnlyNeedsFrom, .trackedOnlyExcludesSource,
-        .sourceDirty, .sourceNotOnDefaultBranch, .sourceBusy, .sourceBusyUnknown, .configInvalid,
+        .sourceDirty, .sourceNotOnDefaultBranch, .configInvalid,
         .sourceIndexUnreadable,
     ]
 
@@ -41,8 +41,6 @@ struct WorktreeStopCatalogTests {
                 .command("switch the main worktree back to the default branch"), .flag("--from <worktree>"),
                 .flag("--tracked-only"),
             ],
-            .sourceBusy: [.command("retry"), .flag("--tracked-only")],
-            .sourceBusyUnknown: [.command("retry"), .flag("--tracked-only")],
             .configInvalid: [.command("fix .agentstudio.config.json and retry")],
             .sourceIndexUnreadable: [.command("retry"), .flag("--tracked-only")],
         ]
@@ -255,7 +253,7 @@ struct WorktreeStopCatalogTests {
     private func details(for reason: WorktreeStopReason) -> WorktreeStopDetails {
         switch reason {
         case .fromBranchNeedsTrackedOnly, .changesOnlyNeedsFrom, .trackedOnlyExcludesSource, .sourceDirty,
-            .sourceNotOnDefaultBranch, .sourceBusy, .sourceBusyUnknown, .configInvalid, .sourceIndexUnreadable:
+            .sourceNotOnDefaultBranch, .configInvalid, .sourceIndexUnreadable:
             .creation(creationDetails(for: reason))
         case .defaultBranch:
             .defaultBranch
@@ -318,8 +316,6 @@ struct WorktreeStopCatalogTests {
                 WorktreeDirtyStopDetails(
                     staged: 1, unstaged: 2, untracked: 3, conflicted: 0, firstPaths: ["dirty.txt"]))
         case .sourceNotOnDefaultBranch: .sourceNotOnDefaultBranch(actual: "feature/topic", expected: "main")
-        case .sourceBusy: .sourceBusy(path: "/repo/build.lock")
-        case .sourceBusyUnknown: .sourceBusyUnknown(path: "/repo/build.lock", errno: 13)
         case .configInvalid: .configInvalid(path: "/repo/.agentstudio.config.json", error: "malformed")
         case .sourceIndexUnreadable: .sourceIndexUnreadable
         case .defaultBranch, .defaultBranchUnverified, .mainWorktree, .gitLockUnidentified, .notFound, .alreadyRemoved,

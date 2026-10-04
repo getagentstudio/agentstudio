@@ -91,7 +91,7 @@ Exit codes:
   `--tracked-only`.
 - `new --from <worktree>` copies that source as it is, including uncommitted
   work. Even explicitly naming the main checkout skips the two default-source
-  checks. A declared held build lock still refuses any copy-on-write source.
+  checks.
 - `new --from <worktree> --changes-only` starts from HEAD and carries tracked
   changes plus eligible untracked files. It excludes ignored build output.
 - `new --tracked-only` creates a tracked-files checkout from the default start
@@ -120,10 +120,10 @@ their reasons; run `git -C <worktree> lfs pull` for them. An incomplete scan is
 also reported with its reason and the same command.
 
 Copy rules are declared in `<main checkout>/.agentstudio.config.json` under
-`worktree.include` and `worktree.busyLocks`. The tool only reads this file;
+`worktree.include`. The tool only reads this file;
 unreadable or malformed JSON refuses `configInvalid` before creation. Stage A
-still copies every ignored file with the pinned SDK and probes literal lock
-paths only. Stage B adds ignored-path filtering and lock-pattern expansion.
+still copies every ignored file with the pinned SDK. Stage B adds ignored-path
+filtering and pattern validation.
 
 ## Rules
 

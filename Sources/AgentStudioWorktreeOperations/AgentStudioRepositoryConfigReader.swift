@@ -18,19 +18,16 @@ package struct AgentStudioRepositoryConfig: Codable, Sendable, Equatable {
 
 package struct WorktreeCopyConfig: Codable, Sendable, Equatable {
     package let include: [String]
-    package let busyLocks: [String]
 
-    package init(include: [String] = [], busyLocks: [String] = []) {
+    package init(include: [String] = []) {
         self.include = include
-        self.busyLocks = busyLocks
     }
 
-    private enum CodingKeys: String, CodingKey { case include, busyLocks }
+    private enum CodingKeys: String, CodingKey { case include }
 
     package init(from decoder: any Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         include = try container.decodeIfPresent([String].self, forKey: .include) ?? []
-        busyLocks = try container.decodeIfPresent([String].self, forKey: .busyLocks) ?? []
     }
 }
 

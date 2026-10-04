@@ -25,8 +25,6 @@ package enum WorktreeStopReason: String, CaseIterable, Codable, Sendable {
     case trackedOnlyExcludesSource
     case sourceDirty
     case sourceNotOnDefaultBranch
-    case sourceBusy
-    case sourceBusyUnknown
     case configInvalid
     case sourceIndexUnreadable
 
@@ -173,7 +171,7 @@ package enum WorktreeStopCatalog {
         case .forkUnavailable:
             "A copy-on-write fork is unavailable."
         case .fromBranchNeedsTrackedOnly, .changesOnlyNeedsFrom, .trackedOnlyExcludesSource, .sourceDirty,
-            .sourceNotOnDefaultBranch, .sourceBusy, .sourceBusyUnknown, .configInvalid, .sourceIndexUnreadable:
+            .sourceNotOnDefaultBranch, .configInvalid, .sourceIndexUnreadable:
             creationMessage(for: reason)
         }
     }
@@ -190,10 +188,6 @@ package enum WorktreeStopCatalog {
             "The default source contains uncommitted changes."
         case .sourceNotOnDefaultBranch:
             "The default source is not on the default branch."
-        case .sourceBusy:
-            "A declared source build lock is held."
-        case .sourceBusyUnknown:
-            "A declared source build lock could not be tested."
         case .configInvalid:
             "The repository copy configuration could not be read."
         case .sourceIndexUnreadable:
@@ -293,12 +287,7 @@ package enum WorktreeStopCatalog {
                 flag("--from <worktree>", effect: "Select the source deliberately."),
                 flag("--tracked-only", effect: "Create a tracked-files checkout."),
             ]
-        case .sourceBusy:
-            return [
-                command("retry", effect: "Wait for the build lock to clear, then retry."),
-                flag("--tracked-only", effect: "Create a tracked-files checkout."),
-            ]
-        case .sourceBusyUnknown, .sourceIndexUnreadable:
+        case .sourceIndexUnreadable:
             return [
                 command("retry", effect: "Retry after the source can be read."),
                 flag("--tracked-only", effect: "Create a tracked-files checkout."),

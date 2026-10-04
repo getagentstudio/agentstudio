@@ -5,7 +5,15 @@ import Testing
 
 @Suite("Worktree repository config")
 struct WorktreeRepositoryConfigTests {
-    @Test("absent config supplies empty include and busy-lock lists")
+    @Test("copy config encodes only its include declaration")
+    func encodesOnlyIncludeDeclaration() throws {
+        let data = try JSONEncoder().encode(WorktreeCopyConfig(include: [".build*/"]))
+        let document = try #require(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        #expect(Set(document.keys) == ["include"])
+        #expect(document["include"] as? [String] == [".build*/"])
+    }
+
+    @Test("absent config supplies an empty include list")
     func readsAbsentConfig() async throws {
         let root = try makeConfigDirectory()
         defer { try? FileManager.default.removeItem(at: root) }
@@ -17,10 +25,9 @@ struct WorktreeRepositoryConfigTests {
         let config = try JSONDecoder().decode(
             AgentStudioRepositoryConfig.self,
             from: Data(
-                #"{"other":{"feature":true},"worktree":{"include":[".build*/","Frameworks/"],"busyLocks":["build.lock"],"future":1}}"#
+                #"{"other":{"feature":true},"worktree":{"include":[".build*/","Frameworks/"],"future":1}}"#
                     .utf8))
         #expect(config.worktree.include == [".build*/", "Frameworks/"])
-        #expect(config.worktree.busyLocks == ["build.lock"])
         for json in [#"{}"#, #"{"worktree":{}}"#, #"{"future":1}"#] {
             #expect(
                 try JSONDecoder().decode(AgentStudioRepositoryConfig.self, from: Data(json.utf8))
