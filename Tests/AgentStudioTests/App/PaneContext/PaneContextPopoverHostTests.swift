@@ -12,6 +12,13 @@ import Testing
 @MainActor
 @Suite(.serialized)
 struct PaneContextPopoverHostTests {
+    @Test("Informational-only messages keep the entry point present")
+    func informationalOnlyMessagesKeepEntryPointPresent() {
+        let chip = PaneMessageChipModel(
+            count: 0, tone: .neutral, countIncludingInformational: 2, toneIncludingInformational: .info)
+        #expect(PaneContextPopoverHost.shouldPresentMessagesButton(chip: chip))
+    }
+
     @Test
     func onlyANewBlockingAskInAVisiblePaneHostAutoOpens() {
         let first = AgentMessageId.generateUUIDv7()

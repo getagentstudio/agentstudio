@@ -27,6 +27,10 @@ struct PaneContextPopoverHost: View {
     @State private var openRequest: UInt64 = 0
     private static let controls = PaneContextPopoverControlProjection.controls()
 
+    static func shouldPresentMessagesButton(chip: PaneMessageChipModel) -> Bool {
+        chip.tone != .neutral || chip.countIncludingInformational != chip.count
+    }
+
     var body: some View {
         button
             .popover(isPresented: $isPresented, arrowEdge: .bottom) { popover }
@@ -64,7 +68,7 @@ struct PaneContextPopoverHost: View {
         switch presentation {
         case .messages(let chip):
             let count = includeInformational ? chip.countIncludingInformational : chip.count
-            if count > 0 {
+            if Self.shouldPresentMessagesButton(chip: chip) {
                 MessagesChip(
                     count: count, tone: includeInformational ? chip.toneIncludingInformational : chip.tone,
                     control: Self.controls.messages, octiconLoader: octiconLoader, onOpen: requestOpen)
