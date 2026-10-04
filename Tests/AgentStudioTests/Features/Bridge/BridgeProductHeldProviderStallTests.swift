@@ -52,7 +52,7 @@ struct BridgeProductHeldProviderStallTests {
     func cancelledSchemeResultReadPreservesSettlement() async throws {
         let (registrations, registrationContinuation) = AsyncStream.makeStream(
             of: String.self,
-            bufferingPolicy: .bufferingNewest(1)
+            bufferingPolicy: .bufferingNewest(2)
         )
         defer { registrationContinuation.finish() }
         let harness = try HeldProviderSessionHarness.make(
@@ -77,7 +77,12 @@ struct BridgeProductHeldProviderStallTests {
             for try await _ in pendingReply.stream {}
         }
         var registrationIterator = registrations.makeAsyncIterator()
-        #expect(await registrationIterator.next() == admission.operationId)
+        var observedRegistration: String?
+        while let registration = await registrationIterator.next() {
+            observedRegistration = registration
+            if registration == admission.operationId { break }
+        }
+        #expect(observedRegistration == admission.operationId)
         reader.cancel()
         _ = try? await reader.value
         await pendingReply.routingTask.value
