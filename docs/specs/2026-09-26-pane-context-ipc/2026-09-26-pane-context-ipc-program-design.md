@@ -908,7 +908,7 @@ The Start that follows binds a live session that has already exited. Source-time
   - An activity hook then records its evidence against that binding.
   - A `SessionEnd` then ends it.
 - A `SessionStart` that arrives later for that conversation:
-  - while the binding is still active, it is absorbed as `unchanged`; a provider-supplied resume hint replaces the fallback;
+  - while the binding is still active, it is absorbed as `unchanged`. Its resume hint isn't written: the implied binding keeps the fallback hint built from provider and conversation id, which is what R3's exact-id resume uses;
   - once the binding has ended, it is historical, under the existing rule that a start for a retired conversation is historical.
 - Conversations this pane has already bound keep today's rules: a retired generation stays historical, and replacement works as before.
 - No new store, column, mutation kind or public contract. The bind mutation and the end mutation already exist.
