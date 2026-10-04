@@ -45,6 +45,51 @@ it("verifies every proof video with arbitrary clip and accessibility names", asy
   ).toBe(0);
 });
 
+it("rejects an unmarked proof video", async () => {
+  const result = await runVerifier(validProof.replace(" data-scene-proof-video", ""));
+  expect(result.status).not.toBe(0);
+  expect(result.stderr).toContain("data-scene-proof-video");
+});
+
+it("still discovers a proof container whose scene identity is missing", async () => {
+  const missingSceneProof = validProof.replace('data-scene-proof="test"', "data-scene-proof");
+  const result = await runVerifier(missingSceneProof.replace(" data-scene-proof-video", ""));
+  expect(result.status).not.toBe(0);
+  expect(result.stderr).toContain("data-scene-proof-video");
+  const markedResult = await runVerifier(missingSceneProof);
+  expect(markedResult.status).not.toBe(0);
+  expect(markedResult.stderr).toContain("both its recreation and proof layer");
+});
+
+it("rejects an unmarked eager player after a valid marked proof video", async () => {
+  const unmarkedEagerProof = validProof
+    .replace(" data-scene-proof-video", "")
+    .replace('data-src="test.mp4"', 'src="test.mp4"')
+    .replace('preload="none"', 'preload="metadata"');
+  const result = await runVerifier(validProof + unmarkedEagerProof);
+  expect(result.status).not.toBe(0);
+  expect(result.stderr).toContain("data-scene-proof-video");
+});
+
+it("discovers players after nested children in any proof-container element", async () => {
+  const nestedProof = validProof
+    .replace(
+      '<div data-scene-proof="test">',
+      '<section data-scene-proof="test"><div>Caption</div><div>',
+    )
+    .replace("</video></div>", "</video></div></section>");
+  expect((await runVerifier(nestedProof)).status).toBe(0);
+  const result = await runVerifier(nestedProof.replace(" data-scene-proof-video", ""));
+  expect(result.status).not.toBe(0);
+  expect(result.stderr).toContain("data-scene-proof-video");
+});
+
+it("allows empty proof containers and keeps the hero video outside proof scope", async () => {
+  const hero = '<video preload="metadata"><source src="hero.mp4"></video>';
+  expect((await runVerifier(hero + '<section data-scene-proof="test"></section>')).status).toBe(0);
+  expect((await runVerifier(hero + validProof)).status).toBe(0);
+});
+
 it.each([
   ['preload="none"', 'preload="metadata"', 'preload="none"'],
   ['data-src="test.mp4"', 'src="test.mp4"', "deferred source"],
