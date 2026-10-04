@@ -355,8 +355,10 @@ export function createBridgeMainRenderSnapshotStore(
 			if (
 				previousSnapshot.codeViewItemsById[itemId] !== undefined &&
 				snapshot.codeViewItemsById[itemId] === undefined
-			)
+			) {
 				releasePaintedCopy(itemId);
+				pendingReviewPaintReleaseItemIds.delete(itemId);
+			}
 		}
 		const selectionChanged = previousSnapshot.selectionSlice !== snapshot.selectionSlice;
 		const availabilityItemIds = publishesKeyedSameSourceChange
@@ -719,12 +721,6 @@ export function createBridgeMainRenderSnapshotStore(
 				if (patch.operation === 'upsert') pendingReviewPaintReleaseItemIds.delete(patch.itemId);
 			}
 			const previousCodeViewItems = snapshot.codeViewItemsById;
-			const successorProvesCodeViewReset =
-				update.codeViewItemPatches?.some((patch): boolean => patch.operation === 'reset') ===
-					true ||
-				update.workerPatches?.some(
-					(patch): boolean => patch.slice === 'rowPaint' && patch.operation === 'reset',
-				) === true;
 			const availabilityItemIdsBeforeReset = update.workerPatches?.some(
 				(patch): boolean => patch.slice === 'contentAvailability' && patch.operation === 'reset',
 			)
@@ -740,10 +736,7 @@ export function createBridgeMainRenderSnapshotStore(
 					: [];
 			publish(buildSnapshotFromUpdate(snapshot, update));
 			for (const itemId of Object.keys(previousCodeViewItems)) {
-				if (snapshot.codeViewItemsById[itemId] === undefined) {
-					if (successorProvesCodeViewReset) pendingReviewPaintReleaseItemIds.delete(itemId);
-					releasePaintedCopy(itemId);
-				}
+				if (snapshot.codeViewItemsById[itemId] === undefined) releasePaintedCopy(itemId);
 			}
 			publishReviewCodeViewItemPatchListeners({
 				codeViewItemIdsBeforeUpdate,

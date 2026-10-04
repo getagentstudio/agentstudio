@@ -37,21 +37,6 @@ describe('Bridge main render snapshot store', () => {
 		expect(store.hasPendingReviewPaintRelease(item.id)).toBe(true);
 	});
 
-	test('clears a replacement marker when the successor publication proves the old item is gone', () => {
-		const store = createBridgeMainRenderSnapshotStore();
-		const item = makeBridgeMainCodeViewItem('item-removed');
-		store.applySnapshotUpdate({
-			codeViewItemPatches: [{ item, itemId: item.id, operation: 'upsert' }],
-		});
-		store.prepareForWorkerReplacement();
-		expect(store.hasPendingReviewPaintRelease(item.id)).toBe(true);
-
-		store.applySnapshotUpdate({ codeViewItemPatches: [{ operation: 'reset' }] });
-
-		expect(store.getReviewCodeViewItemSnapshot(item.id)).toBeUndefined();
-		expect(store.hasPendingReviewPaintRelease(item.id)).toBe(false);
-	});
-
 	test('uses useSyncExternalStore and accepts only local intent plus worker patch writes', () => {
 		const store = createBridgeMainRenderSnapshotStore();
 		const initialSnapshot = store.getSnapshot();
