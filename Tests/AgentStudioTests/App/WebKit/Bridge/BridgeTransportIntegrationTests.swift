@@ -83,11 +83,19 @@ extension WebKitSerializedTests {
                 // Assert
                 #expect(didNavigateToAppURL)
 
-                let emptyShellObserved = try await WebPageEventWaits.waitForDocumentValue(
+                let noSourceObserved = try await WebPageEventWaits.waitForDocumentValue(
                     page,
-                    reader: "return document.querySelector(selector) === null ? null : true;",
+                    reader: """
+                        const regions = ['review-content', 'review-tree'].map((region) =>
+                          document.querySelector(`[data-bridge-region="${region}"]`));
+                        return regions.every((region) => region !== null
+                          && region.getAttribute('data-presentation-state') === 'empty'
+                          && region.getAttribute('data-empty-reason') === 'noSource'
+                          && region.textContent.includes('This pane has no worktree')
+                          && region.querySelector('[data-slot="skeleton"]') === null) ? true : null;
+                        """,
                     arguments: ["selector": "[data-testid=\"bridge-review-empty-shell\"]"],
-                    milestone: "Packaged React app reaches Review no-target shell",
+                    milestone: "Packaged React app settles both Review regions as no-source empty",
                     lastObservation: """
                         return JSON.stringify({
                           title: document.title,
@@ -98,13 +106,15 @@ extension WebKitSerializedTests {
                             .map((region) => ({
                               region: region.getAttribute('data-bridge-region'),
                               presentationState: region.getAttribute('data-presentation-state'),
-                              emptyReason: region.getAttribute('data-empty-reason')
+                              emptyReason: region.getAttribute('data-empty-reason'),
+                              text: region.textContent,
+                              skeletonPresent: region.querySelector('[data-slot="skeleton"]') !== null
                             })),
                           javascriptErrors: window.__bridgeErrorProbe ?? []
                         });
                         """
                 )
-                #expect(emptyShellObserved as? Bool == true)
+                #expect(noSourceObserved as? Bool == true)
                 _ = try await page.callJavaScript("document.title = 'AgentStudio Bridge Visible';")
                 await WebPageEventWaits.waitForTitle(page, equals: "AgentStudio Bridge Visible")
                 let pageErrors = await pageErrorProbeDescription(page)
