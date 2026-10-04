@@ -14,7 +14,17 @@ import {
 
 const totalDurationSeconds = 8.5;
 
+function hasNonWhitespaceDirectText(element: HTMLElement): boolean {
+  return Array.from(element.childNodes).some(
+    (childNode) =>
+      childNode.nodeType === Node.TEXT_NODE && (childNode.textContent ?? "").trim().length > 0,
+  );
+}
+
 interface ContextWithTaskElements {
+  readonly agentTerminal: HTMLElement;
+  readonly drawerTerminal: HTMLElement;
+  readonly terminalOverlapTextElements: readonly HTMLElement[];
   readonly agentLines: readonly HTMLElement[];
   readonly drawer: HTMLElement;
   readonly drawerLines: readonly HTMLElement[];
@@ -26,18 +36,17 @@ interface ContextWithTaskElements {
 }
 
 function resolveContextWithTaskElements(root: HTMLElement): ContextWithTaskElements {
+  const agentTerminal = requireScenePart(root, contextWithTaskParts.agentTerminal);
+  const drawerTerminal = requireScenePart(root, contextWithTaskParts.drawerTerminal);
   return {
-    agentLines: requireTerminalLines(
-      requireScenePart(root, contextWithTaskParts.agentTerminal),
-      contextWithTaskParts.agentTerminal,
-      7,
+    agentTerminal,
+    drawerTerminal,
+    terminalOverlapTextElements: [agentTerminal, drawerTerminal].flatMap((terminal) =>
+      [...terminal.querySelectorAll<HTMLElement>("*")].filter(hasNonWhitespaceDirectText),
     ),
+    agentLines: requireTerminalLines(agentTerminal, contextWithTaskParts.agentTerminal, 7),
     drawer: requireScenePart(root, contextWithTaskParts.drawer),
-    drawerLines: requireTerminalLines(
-      requireScenePart(root, contextWithTaskParts.drawerTerminal),
-      contextWithTaskParts.drawerTerminal,
-      9,
-    ),
+    drawerLines: requireTerminalLines(drawerTerminal, contextWithTaskParts.drawerTerminal, 9),
     footerBadges: requireScenePart(root, contextWithTaskParts.footerBadges),
     sourceView: requireScenePart(root, contextWithTaskParts.sourceView),
     sourceLines: contextWithTaskSource.lines.map((_line, lineIndex) =>
@@ -89,6 +98,35 @@ function buildContextWithTaskScene(
 
   // Beat 3: Files opens the changed source beside the same task.
   builder.label("files", 5.0);
+  // The phone source view takes over the task and drawer through scene end.
+  // Desktop keeps them beside Files; overflowing drawer text is clipped by CSS.
+  if (options.width <= 600) {
+    const sourceOpenAt = 5.05;
+    for (const coveredContainer of [
+      elements.agentTerminal,
+      elements.drawerTerminal,
+      elements.footerBadges,
+    ]) {
+      timeline.set(
+        coveredContainer,
+        {
+          attr: { "data-layout-allow-occlusion": "" },
+          onReverseComplete: () => coveredContainer.removeAttribute("data-layout-allow-occlusion"),
+        },
+        sourceOpenAt,
+      );
+    }
+    for (const terminalTextElement of elements.terminalOverlapTextElements) {
+      timeline.set(
+        terminalTextElement,
+        {
+          attr: { "data-layout-allow-overlap": "" },
+          onReverseComplete: () => terminalTextElement.removeAttribute("data-layout-allow-overlap"),
+        },
+        sourceOpenAt,
+      );
+    }
+  }
   builder.variable(root, {
     name: "--scene-files-reveal",
     from: 0,

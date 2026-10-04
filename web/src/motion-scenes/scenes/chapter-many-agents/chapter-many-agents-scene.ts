@@ -10,7 +10,17 @@ import { manyAgentsParts } from "./chapter-many-agents-fixture";
 
 const totalDurationSeconds = 9;
 
+function hasNonWhitespaceDirectText(element: HTMLElement): boolean {
+  return Array.from(element.childNodes).some(
+    (childNode) =>
+      childNode.nodeType === Node.TEXT_NODE && (childNode.textContent ?? "").trim().length > 0,
+  );
+}
+
 interface ManyAgentsElements {
+  readonly leftTerminal: HTMLElement;
+  readonly leftFooterBadges: HTMLElement;
+  readonly leftOverlapTextElements: readonly HTMLElement[];
   readonly leftLines: readonly HTMLElement[];
   readonly rightLines: readonly HTMLElement[];
   readonly filterPlaceholder: HTMLElement;
@@ -24,12 +34,21 @@ interface ManyAgentsElements {
 // Every element is resolved before the first tween exists, so incomplete
 // markup fails without leaving a half-animated frame behind.
 function resolveManyAgentsElements(root: HTMLElement): ManyAgentsElements {
+  const leftTerminal = requireScenePart(root, manyAgentsParts.leftTerminal);
+  const leftFooterBadges = requireScenePart(
+    root,
+    manyAgentsParts.leftPane,
+  ).querySelector<HTMLElement>(".kit-badges");
+  if (leftFooterBadges === null) {
+    throw new ScenePartMissingError("left pane footer badges");
+  }
   return {
-    leftLines: requireTerminalLines(
-      requireScenePart(root, manyAgentsParts.leftTerminal),
-      manyAgentsParts.leftTerminal,
-      9,
+    leftTerminal,
+    leftFooterBadges,
+    leftOverlapTextElements: [...leftTerminal.querySelectorAll<HTMLElement>("*")].filter(
+      hasNonWhitespaceDirectText,
     ),
+    leftLines: requireTerminalLines(leftTerminal, manyAgentsParts.leftTerminal, 9),
     rightLines: requireTerminalLines(
       requireScenePart(root, manyAgentsParts.rightTerminal),
       manyAgentsParts.rightTerminal,
@@ -79,6 +98,30 @@ function buildManyAgentsScene(
   // Beat 2: the watched folder fills the sidebar with every repo and worktree.
   // The phone crop slides the sidebar over the pane for this beat and the next.
   builder.label("watch-folders", 2.8);
+  // Only the phone sidebar covers the visible left pane, and it stays to the end.
+  if (options.width <= 600) {
+    const sidebarOpenAt = 2.8;
+    for (const coveredContainer of [elements.leftTerminal, elements.leftFooterBadges]) {
+      timeline.set(
+        coveredContainer,
+        {
+          attr: { "data-layout-allow-occlusion": "" },
+          onReverseComplete: () => coveredContainer.removeAttribute("data-layout-allow-occlusion"),
+        },
+        sidebarOpenAt,
+      );
+    }
+    for (const terminalTextElement of elements.leftOverlapTextElements) {
+      timeline.set(
+        terminalTextElement,
+        {
+          attr: { "data-layout-allow-overlap": "" },
+          onReverseComplete: () => terminalTextElement.removeAttribute("data-layout-allow-overlap"),
+        },
+        sidebarOpenAt,
+      );
+    }
+  }
   builder.variable(root, {
     name: "--scene-sidebar-focus",
     from: 0,

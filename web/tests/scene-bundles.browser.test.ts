@@ -537,6 +537,178 @@ describe("scene bundles for HyperFrames", () => {
     },
   );
 
+  it.each([390, 600, 1280])(
+    "scopes context-with-task Files takeover markers and restores them on rewind at %ipx",
+    (stageWidth) => {
+      const bundle = requireBundle("chapter-context-with-task");
+      mountStyle(bundle.sceneCss);
+      const root = mountStage(bundle.sceneHtml, stageWidth, bundle.manifest.stage.height);
+      runClassicScript(bundle.sceneJs);
+      const timeline = gsap.timeline({ paused: true });
+      try {
+        window.AgentStudioScenes?.["chapter-context-with-task"]?.buildScene(root, timeline, {
+          width: stageWidth,
+          height: bundle.manifest.stage.height,
+          seed: bundle.manifest.seed,
+        });
+        const agentTerminal = root.querySelector<HTMLElement>('[data-scene-part="agent-terminal"]');
+        const drawerTerminal = root.querySelector<HTMLElement>(
+          '[data-scene-part="drawer-terminal"]',
+        );
+        const footerBadges = root.querySelector<HTMLElement>(
+          '[data-scene-part="agent-footer-badges"]',
+        );
+        const terminalTextElements = [
+          ...root.querySelectorAll<HTMLElement>(".kit-pane .kit-terminal *"),
+        ].filter(hasNonWhitespaceDirectText);
+        expect(agentTerminal).not.toBeNull();
+        expect(drawerTerminal).not.toBeNull();
+        expect(footerBadges).not.toBeNull();
+        expect(terminalTextElements.length).toBeGreaterThan(0);
+        expect(
+          terminalTextElements.some(
+            (element) => directTextContent(element) === "Reading src/lease.ts",
+          ),
+        ).toBe(true);
+
+        for (const [time, covering] of [
+          [4.9, false],
+          [5.1, true],
+          [5.375, true],
+          [6.139, true],
+          [8.5, true],
+          [4.9, false],
+          [6.139, true],
+          [0, false],
+        ] as const) {
+          timeline.time(time);
+          const phoneCovering = covering && stageWidth <= 600;
+          expect
+            .soft(
+              drawerTerminal?.hasAttribute("data-layout-allow-occlusion"),
+              `drawer at t=${time}`,
+            )
+            .toBe(phoneCovering);
+          expect
+            .soft(agentTerminal?.hasAttribute("data-layout-allow-occlusion"), `agent at t=${time}`)
+            .toBe(phoneCovering);
+          expect
+            .soft(footerBadges?.hasAttribute("data-layout-allow-occlusion"), `footer at t=${time}`)
+            .toBe(phoneCovering);
+          for (const element of terminalTextElements) {
+            expect
+              .soft(
+                element.hasAttribute("data-layout-allow-overlap"),
+                `${directTextContent(element)} at t=${time}`,
+              )
+              .toBe(phoneCovering);
+          }
+        }
+      } finally {
+        timeline.revert();
+        timeline.kill();
+      }
+    },
+  );
+
+  it("clips context-with-task source code and drawer at their edges without allow markers", () => {
+    const bundle = requireBundle("chapter-context-with-task");
+    mountStyle(bundle.sceneCss);
+    const root = mountStage(bundle.sceneHtml, 1280, bundle.manifest.stage.height);
+    const codeArea = root.querySelector<HTMLElement>(".kit-source-view__code");
+    expect(codeArea).not.toBeNull();
+    if (codeArea === null) {
+      throw new Error("Missing source code area");
+    }
+    expect(getComputedStyle(codeArea).overflowX).toBe("clip");
+    expect(getComputedStyle(codeArea).overflowY).toBe("clip");
+    const drawerBody = root.querySelector<HTMLElement>(".kit-drawer__body");
+    expect(drawerBody).not.toBeNull();
+    if (drawerBody === null) {
+      throw new Error("Missing drawer body");
+    }
+    expect(getComputedStyle(drawerBody).overflowX).toBe("clip");
+    expect(getComputedStyle(drawerBody).overflowY).toBe("clip");
+    expect(
+      root.querySelector(
+        ".kit-source-view [data-layout-allow-occlusion], .kit-source-view [data-layout-allow-overlap]",
+      ),
+    ).toBeNull();
+  });
+
+  it.each([390, 600, 1280])(
+    "scopes many-agents sidebar takeover markers and restores them on rewind at %ipx",
+    (stageWidth) => {
+      const bundle = requireBundle("chapter-many-agents");
+      mountStyle(bundle.sceneCss);
+      const root = mountStage(bundle.sceneHtml, stageWidth, bundle.manifest.stage.height);
+      runClassicScript(bundle.sceneJs);
+      const timeline = gsap.timeline({ paused: true });
+      try {
+        window.AgentStudioScenes?.["chapter-many-agents"]?.buildScene(root, timeline, {
+          width: stageWidth,
+          height: bundle.manifest.stage.height,
+          seed: bundle.manifest.seed,
+        });
+        const terminal = root.querySelector<HTMLElement>('[data-scene-part="left-terminal"]');
+        const footerBadges = root.querySelector<HTMLElement>(
+          '[data-scene-part="left-pane"] .kit-badges',
+        );
+        const terminalTextElements = [
+          ...root.querySelectorAll<HTMLElement>('[data-scene-part="left-terminal"] *'),
+        ].filter(hasNonWhitespaceDirectText);
+        expect(terminal).not.toBeNull();
+        expect(footerBadges).not.toBeNull();
+        expect(terminalTextElements.length).toBeGreaterThan(0);
+        expect(
+          terminalTextElements.some(
+            (element) => directTextContent(element) === "Reading the sidebar list model",
+          ),
+        ).toBe(true);
+        for (const [time, covering] of [
+          [2.7, false],
+          [2.9, true],
+          [3.125, true],
+          [4.875, true],
+          [9, true],
+          [2.7, false],
+          [4.875, true],
+          [0, false],
+        ] as const) {
+          timeline.time(time);
+          const phoneCovering = covering && stageWidth <= 600;
+          expect
+            .soft(terminal?.hasAttribute("data-layout-allow-occlusion"), `terminal at t=${time}`)
+            .toBe(phoneCovering);
+          expect
+            .soft(footerBadges?.hasAttribute("data-layout-allow-occlusion"), `footer at t=${time}`)
+            .toBe(phoneCovering);
+          for (const element of terminalTextElements) {
+            expect
+              .soft(
+                element.hasAttribute("data-layout-allow-overlap"),
+                `${directTextContent(element)} at t=${time}`,
+              )
+              .toBe(phoneCovering);
+          }
+          expect
+            .soft(
+              root.querySelector('[data-scene-part="right-terminal"] [data-layout-allow-overlap]'),
+            )
+            .toBeNull();
+        }
+        expect(
+          [...root.querySelectorAll(".kit-sidebar__ellipsis")]
+            .find((element) => element.textContent === "agent-studio.sidebar-grouping")
+            ?.hasAttribute("data-layout-allow-overflow"),
+        ).toBe(true);
+      } finally {
+        timeline.revert();
+        timeline.kill();
+      }
+    },
+  );
+
   it.each([600, 1280])(
     "renders the Review thread inline after line 49 with responsive file tree at %ipx",
     (stageWidth) => {
