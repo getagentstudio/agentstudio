@@ -53,6 +53,16 @@ extension WorktreeCreationFailure {
 
     static func gitFailureDetail(_ error: GitDataPlaneError) -> String {
         switch error {
+        case .lockHeld(let fact):
+            "Git is using the repository lock at \(fact.path.path)."
+        case .lockUnidentified:
+            "Git could not identify the repository lock."
+        case .permissionDenied(let path):
+            if let path {
+                "Git does not have permission to access \(path.path)."
+            } else {
+                "Git does not have permission to access the repository."
+            }
         case .headUnavailable:
             "The source worktree has no commit to branch from."
         case .repositoryNotFound(let path):
@@ -77,6 +87,8 @@ extension WorktreeCreationFailure {
     /// SDK reports residue, which is listed so the user can clean it up.
     static func forkFailureDetail(_ error: GitWorktreeForkError) -> String {
         switch error {
+        case .workingStateUnsupported(let refusal):
+            "Nothing was changed: \(workingStateUnsupportedCause(refusal))"
         case .rejected(let reason):
             "Nothing was changed: \(WorktreeForkRejectionCopy.phrase(for: reason))."
         case .gitFailure(let gitError):
@@ -96,8 +108,15 @@ extension WorktreeCreationFailure {
     }
 
     /// The primary failure of an incomplete rollback, without claiming the rollback finished.
+    private static func workingStateUnsupportedCause(_ refusal: GitWorktreeWorkingStateRefusal) -> String {
+        let location = refusal.relativePath.map { " at \($0)" } ?? ""
+        return "The source has unsupported Git state (\(refusal.reason.rawValue))\(location)."
+    }
+
     private static func forkFailureCause(_ error: GitWorktreeForkError) -> String {
         switch error {
+        case .workingStateUnsupported(let refusal):
+            workingStateUnsupportedCause(refusal)
         case .rejected(let reason):
             "The fork was rejected: \(WorktreeForkRejectionCopy.phrase(for: reason))."
         case .gitFailure(let gitError):
