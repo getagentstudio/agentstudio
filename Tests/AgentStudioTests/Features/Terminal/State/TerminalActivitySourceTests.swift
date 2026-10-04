@@ -43,6 +43,7 @@ struct TerminalActivitySourceTests {
             wallNow: { admittedWallTime },
             activitySink: { occurrence in
                 submitted.withLock { $0.append(occurrence) }
+                unseenDeadlines.recordActivity(occurrence)
             },
             factSink: unseenDeadlines.source.sink
         )
@@ -62,7 +63,7 @@ struct TerminalActivitySourceTests {
             latestState: ScrollbarState(top: 110, bottom: 120, total: 120),
             context: .init(isAttended: true, isAgentClassified: false, outputBurstThreshold: 30)
         )
-        try await unseenDeadlines.fire(paneId: paneId)
+        try await unseenDeadlines.fire(paneId: paneId, admitting: .exactlyOne)
 
         #expect(submitted.withLock { $0.count } == 1)
         #expect(submitted.withLock { $0.first?.paneId } == paneId)
@@ -86,7 +87,10 @@ struct TerminalActivitySourceTests {
         let projector = TerminalActivityProjector(
             unseenQuietDuration: .seconds(1),
             clock: pushClock,
-            activitySink: { occurrence in submitted.withLock { $0.append(occurrence) } },
+            activitySink: { occurrence in
+                submitted.withLock { $0.append(occurrence) }
+                unseenDeadlines.recordActivity(occurrence)
+            },
             factSink: unseenDeadlines.source.sink
         )
         await projector.configure(
@@ -104,7 +108,7 @@ struct TerminalActivitySourceTests {
             latestState: ScrollbarState(top: 110, bottom: 120, total: 120),
             context: .init(isAttended: true, isAgentClassified: false, outputBurstThreshold: 30)
         )
-        try await unseenDeadlines.fire(paneId: paneId)
+        try await unseenDeadlines.fire(paneId: paneId, admitting: .nothing)
         #expect(submitted.withLock { $0.isEmpty })
 
         reader.text = nil
@@ -115,7 +119,7 @@ struct TerminalActivitySourceTests {
             latestState: ScrollbarState(top: 130, bottom: 140, total: 140),
             context: .init(isAttended: true, isAgentClassified: false, outputBurstThreshold: 30)
         )
-        try await unseenDeadlines.fire(paneId: paneId)
+        try await unseenDeadlines.fire(paneId: paneId, admitting: .nothing)
         #expect(submitted.withLock { $0.isEmpty })
 
         let replacementSurfaceId = UUIDv7.generate()
@@ -142,7 +146,10 @@ struct TerminalActivitySourceTests {
         let projector = TerminalActivityProjector(
             unseenQuietDuration: .seconds(1),
             clock: pushClock,
-            activitySink: { occurrence in submitted.withLock { $0.append(occurrence) } },
+            activitySink: { occurrence in
+                submitted.withLock { $0.append(occurrence) }
+                unseenDeadlines.recordActivity(occurrence)
+            },
             factSink: unseenDeadlines.source.sink
         )
         await projector.configure(lastOutputLineReader: { _ in reader.read() }, outcomeSink: { _ in })
@@ -154,8 +161,8 @@ struct TerminalActivitySourceTests {
             unseenDeadlines: unseenDeadlines,
             paneId: paneId,
             surfaceId: firstSurfaceId,
-            firstTotal: 100,
-            latestTotal: 120
+            rows: 100...120,
+            admitting: .nothing
         )
         #expect(submitted.withLock { $0.isEmpty })
 
@@ -165,8 +172,8 @@ struct TerminalActivitySourceTests {
             unseenDeadlines: unseenDeadlines,
             paneId: paneId,
             surfaceId: firstSurfaceId,
-            firstTotal: 120,
-            latestTotal: 140
+            rows: 120...140,
+            admitting: .exactlyOne
         )
         #expect(submitted.withLock { $0.count } == 1)
 
@@ -176,8 +183,8 @@ struct TerminalActivitySourceTests {
             unseenDeadlines: unseenDeadlines,
             paneId: paneId,
             surfaceId: UUIDv7.generate(),
-            firstTotal: 140,
-            latestTotal: 160
+            rows: 140...160,
+            admitting: .nothing
         )
         #expect(submitted.withLock { $0.count } == 1)
         await projector.reset()
@@ -194,7 +201,10 @@ struct TerminalActivitySourceTests {
         let projector = TerminalActivityProjector(
             unseenQuietDuration: .seconds(1),
             clock: pushClock,
-            activitySink: { occurrence in submitted.withLock { $0.append(occurrence) } },
+            activitySink: { occurrence in
+                submitted.withLock { $0.append(occurrence) }
+                unseenDeadlines.recordActivity(occurrence)
+            },
             closeReadDurationSink: { _ in closeReadMeasurements.withLock { $0 += 1 } },
             factSink: unseenDeadlines.source.sink
         )
@@ -215,7 +225,7 @@ struct TerminalActivitySourceTests {
             latestState: ScrollbarState(top: 110, bottom: 120, total: 120),
             context: .init(isAttended: false, isAgentClassified: false, outputBurstThreshold: 30)
         )
-        try await unseenDeadlines.fire(paneId: paneId)
+        try await unseenDeadlines.fire(paneId: paneId, admitting: .exactlyOne)
 
         #expect(reader.readCount == 2)
         #expect(closeReadMeasurements.withLock { $0 } == 1)
@@ -246,17 +256,17 @@ struct TerminalActivitySourceTests {
         unseenDeadlines: UnseenDeadlineDriver,
         paneId: UUID,
         surfaceId: UUID,
-        firstTotal: Int,
-        latestTotal: Int
+        rows: ClosedRange<Int>,
+        admitting: UnseenCloseActivity
     ) async throws {
         await projector.ingest(
             surfaceID: surfaceId,
             paneID: paneId,
-            aggregate: aggregate(firstTotal: firstTotal, latestTotal: latestTotal),
-            latestState: ScrollbarState(top: latestTotal - 10, bottom: latestTotal, total: latestTotal),
+            aggregate: aggregate(firstTotal: rows.lowerBound, latestTotal: rows.upperBound),
+            latestState: ScrollbarState(top: rows.upperBound - 10, bottom: rows.upperBound, total: rows.upperBound),
             context: .init(isAttended: true, isAgentClassified: false, outputBurstThreshold: 30)
         )
-        try await unseenDeadlines.fire(paneId: paneId)
+        try await unseenDeadlines.fire(paneId: paneId, admitting: admitting)
     }
 }
 
@@ -271,6 +281,9 @@ private struct UnseenDeadlineDriver {
     let origin: TestPushClock.Instant
     let source: LocalFactSource<TerminalActivityDeadlineScope, TerminalActivityProjectorFact>
     let deadlines: FactRecorder<TerminalActivityDeadlineScope, TerminalActivityProjectorFact>
+    let activitySource: LocalFactSource<UnseenCloseScope, UnseenCloseObservation>
+    let activities: FactRecorder<UnseenCloseScope, UnseenCloseObservation>
+    let closeCounter = UnseenCloseCounter()
 
     init(clock: TestPushClock) throws {
         self.clock = clock
@@ -286,12 +299,49 @@ private struct UnseenDeadlineDriver {
             )
         )
         deadlines = try source.attach()
+        activitySource = LocalFactSource(
+            vocabulary: FactVocabulary(
+                describeScope: { "pane \($0.paneId) close \($0.closeIndex)" },
+                describeFact: { String(describing: $0) },
+                isClosing: { _, observation in observation == .closed }
+            )
+        )
+        activities = try activitySource.attach()
+    }
+
+    /// Wire into the projector's activity sink so every admission is observable.
+    func recordActivity(_ occurrence: PaneActivityOccurrence) {
+        activitySource.sink(closeCounter.currentScope(for: occurrence.paneId), .activity)
+    }
+
+    /// Fires the next unseen deadline for the pane and proves what its close admitted:
+    /// exactly one activity occurrence, or none, between the opening mark and the close.
+    func fire(paneId: UUID, admitting expected: UnseenCloseActivity) async throws {
+        // Each close is its own recorder operation: one opening, one relayed close.
+        let scope = closeCounter.currentScope(for: paneId)
+        let opening = await activities.mark(scope)
+        try await fireDeadline(paneId: paneId)
+        // `fired` is posted after the close's admission, so relaying it here closes the
+        // observation interval after any activity the close could have admitted.
+        activitySource.sink(scope, .closed)
+        closeCounter.advance(paneId)
+        switch expected {
+        case .exactlyOne:
+            _ = try await activities.expectNext(
+                in: scope, where: { $0 == .activity }, "activity admitted by the unseen close")
+            _ = try await activities.expectNext(
+                in: scope, where: { $0 == .closed }, "unseen close completed")
+        case .nothing:
+            try await activities.expectNone(
+                of: { $0 == .activity }, "activity admitted by the unseen close",
+                from: opening, closedBy: { $0 == .closed })
+        }
     }
 
     /// Advances to the next registered unseen deadline for the pane and
     /// returns once the projector reports that deadline fired.
     @discardableResult
-    func fire(paneId: UUID) async throws -> TerminalActivityProjectorFact {
+    private func fireDeadline(paneId: UUID) async throws -> TerminalActivityProjectorFact {
         let scope = try await deadlines.expectNextOperation(
             matching: { $0.paneID == paneId && $0.kind == .unseen },
             opening: {
@@ -315,5 +365,36 @@ private struct UnseenDeadlineDriver {
             where: { $0 == .deadlineDisposition(.unseen, .fired) },
             "unseen deadline fired after viewport read and activity admission"
         )
+    }
+}
+
+/// What one unseen close is expected to admit to the activity sink.
+private enum UnseenCloseActivity {
+    case exactlyOne
+    case nothing
+}
+
+/// Test-local observation stream: activity the sink admitted, and the relayed close.
+private enum UnseenCloseObservation: Equatable, Sendable {
+    case activity
+    case closed
+}
+
+/// One unseen close on one pane: the recorder's operation for that close.
+private struct UnseenCloseScope: Hashable, Sendable {
+    let paneId: UUID
+    let closeIndex: Int
+}
+
+/// Numbers each pane's unseen closes so activity lands in the close that admitted it.
+private final class UnseenCloseCounter: Sendable {
+    private let indexes = Mutex<[UUID: Int]>([:])
+
+    func currentScope(for paneId: UUID) -> UnseenCloseScope {
+        UnseenCloseScope(paneId: paneId, closeIndex: indexes.withLock { $0[paneId, default: 0] })
+    }
+
+    func advance(_ paneId: UUID) {
+        indexes.withLock { $0[paneId, default: 0] += 1 }
     }
 }
