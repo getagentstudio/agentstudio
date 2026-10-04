@@ -107,17 +107,21 @@ private final class GitHooksPrePushFixture: @unchecked Sendable {
     }
 
     func runHook(refs: String, arguments: [String]) async throws -> GitHookProcessResult {
-        try await withoutBlockingCooperativePool {
+        let hookPath = hookURL.path
+        let binPath = bin.path
+        let lfsArgumentsPath = lfsArgumentsURL.path
+        let lfsStdinPath = lfsStdinURL.path
+        return try await withoutBlockingCooperativePool {
             let standardError = Pipe()
             let standardInput = Pipe()
             let process = Process()
             process.executableURL = URL(fileURLWithPath: "/bin/bash")
-            process.arguments = [hookURL.path] + arguments
+            process.arguments = [hookPath] + arguments
             process.currentDirectoryURL = URL(fileURLWithPath: TestPathResolver.projectRoot(from: #filePath))
             process.environment = [
-                "PATH": "\(bin.path):/usr/bin:/bin",
-                "FAKE_GIT_LFS_ARGUMENTS": lfsArgumentsURL.path,
-                "FAKE_GIT_LFS_STDIN": lfsStdinURL.path,
+                "PATH": "\(binPath):/usr/bin:/bin",
+                "FAKE_GIT_LFS_ARGUMENTS": lfsArgumentsPath,
+                "FAKE_GIT_LFS_STDIN": lfsStdinPath,
             ]
             process.standardInput = standardInput
             process.standardError = standardError
