@@ -24,6 +24,31 @@ it("returns from a forced stop only after the browser process has exited", async
   expect(stubbornBrowser.signalCode).toBe("SIGKILL");
 });
 
+it("rejects when a running browser cannot be signalled, so its profile is not deleted", async () => {
+  // Arrange: a live process whose kill() fails, as with EPERM.
+  const unkillableBrowser = spawn(
+    process.execPath,
+    ["-e", "process.stdout.write('ready'); setInterval(() => {}, 1000);"],
+    { stdio: ["ignore", "pipe", "ignore"] },
+  );
+  await once(unkillableBrowser.stdout, "data");
+  const realKill = unkillableBrowser.kill.bind(unkillableBrowser);
+  unkillableBrowser.kill = (): boolean => {
+    throw new Error("kill EPERM");
+  };
+
+  // Act + Assert: liveness is unknown, so the stop must not report success.
+  await expect(stopBrowserProcess(unkillableBrowser, { forcedExitAfterMs: 20 })).rejects.toThrow(
+    "kill EPERM",
+  );
+  expect(unkillableBrowser.exitCode).toBeNull();
+
+  // Cleanup: stop the real child before the test returns.
+  const exited = once(unkillableBrowser, "exit");
+  realKill("SIGKILL");
+  await exited;
+});
+
 it("returns for a browser that never started, so failed launches still clean up", async () => {
   // Arrange: a missing executable gets no pid and emits "error" then "close", never "exit".
   const missingBrowser = spawn("/nonexistent/agent-studio-test-browser", [], { stdio: "ignore" });

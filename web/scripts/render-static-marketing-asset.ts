@@ -84,6 +84,8 @@ export async function renderStaticMarketingAsset(
     throw new Error(`Invalid render scale for ${props.assetName}.`);
   }
   const temporaryDirectory = await mkdtemp(resolve(tmpdir(), props.temporaryDirectoryPrefix));
+  // True while Chrome may still be writing to the profile inside temporaryDirectory.
+  let browserExitUnconfirmed = false;
 
   try {
     const template = await readFile(props.templatePath, "utf8");
@@ -122,7 +124,9 @@ export async function renderStaticMarketingAsset(
         screenshotPath: rawScreenshotPath,
       });
     } finally {
+      browserExitUnconfirmed = true;
       await stopBrowserProcess(browserProcess);
+      browserExitUnconfirmed = false;
     }
 
     const rawMetadata = await sharp(rawScreenshotPath).metadata();
@@ -140,8 +144,17 @@ export async function renderStaticMarketingAsset(
       .png({ compressionLevel: 9 })
       .toFile(props.outputPath);
   } finally {
-    // The Chrome profile lives inside; its helper processes can still flush files
-    // just after the browser exits, so rm retries on ENOTEMPTY/EBUSY.
-    await rm(temporaryDirectory, { force: true, recursive: true, maxRetries: 10, retryDelay: 100 });
+    // The Chrome profile lives inside. When Chrome's exit could not be confirmed the
+    // folder is left in place rather than deleted under a live browser. Helper
+    // processes can still flush files just after the browser exits, so rm retries
+    // on ENOTEMPTY/EBUSY.
+    if (!browserExitUnconfirmed) {
+      await rm(temporaryDirectory, {
+        force: true,
+        recursive: true,
+        maxRetries: 10,
+        retryDelay: 100,
+      });
+    }
   }
 }
