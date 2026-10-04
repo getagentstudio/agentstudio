@@ -1,5 +1,6 @@
 import AgentStudioCore
 import AgentStudioInfrastructure
+import AgentStudioTestHarness
 import AgentStudioTestSupport
 import Foundation
 import Synchronization
@@ -27,8 +28,9 @@ private final class ActivityViewportReader {
 @Suite("Terminal activity source", .serialized)
 struct TerminalActivitySourceTests {
     @Test("attended changed output reaches the activity source without a notification settle")
-    func attendedChangedOutputCounts() async {
+    func attendedChangedOutputCounts() async throws {
         let pushClock = TestPushClock()
+        let unseenDeadlines = try UnseenDeadlineDriver(clock: pushClock)
         let output = MutableRawViewportTextBox("baseline line")
         let submitted = Mutex<[PaneActivityOccurrence]>([])
         let outcomeRecorder = OutcomeRecorder()
@@ -41,7 +43,8 @@ struct TerminalActivitySourceTests {
             wallNow: { admittedWallTime },
             activitySink: { occurrence in
                 submitted.withLock { $0.append(occurrence) }
-            }
+            },
+            factSink: unseenDeadlines.source.sink
         )
         await projector.configure(
             lastOutputLineReader: { _ in .value(output.read() ?? "") },
@@ -59,9 +62,7 @@ struct TerminalActivitySourceTests {
             latestState: ScrollbarState(top: 110, bottom: 120, total: 120),
             context: .init(isAttended: true, isAgentClassified: false, outputBurstThreshold: 30)
         )
-        await pushClock.waitForPendingSleepCount(exactly: 1)
-        pushClock.advance(by: .seconds(1))
-        await projector.activitySettled()
+        try await unseenDeadlines.fire(paneId: paneId)
 
         #expect(submitted.withLock { $0.count } == 1)
         #expect(submitted.withLock { $0.first?.paneId } == paneId)
@@ -76,15 +77,17 @@ struct TerminalActivitySourceTests {
     }
 
     @Test("repeated or unreadable lines do not count; each attached surface gets its own baseline")
-    func baselineAndNonActivityDispositions() async {
+    func baselineAndNonActivityDispositions() async throws {
         let pushClock = TestPushClock()
+        let unseenDeadlines = try UnseenDeadlineDriver(clock: pushClock)
         let reader = ActivityViewportReader(text: "first line")
         let submitted = Mutex<[PaneActivityOccurrence]>([])
         let outcomes = OutcomeRecorder()
         let projector = TerminalActivityProjector(
             unseenQuietDuration: .seconds(1),
             clock: pushClock,
-            activitySink: { occurrence in submitted.withLock { $0.append(occurrence) } }
+            activitySink: { occurrence in submitted.withLock { $0.append(occurrence) } },
+            factSink: unseenDeadlines.source.sink
         )
         await projector.configure(
             lastOutputLineReader: { _ in reader.read() },
@@ -101,9 +104,7 @@ struct TerminalActivitySourceTests {
             latestState: ScrollbarState(top: 110, bottom: 120, total: 120),
             context: .init(isAttended: true, isAgentClassified: false, outputBurstThreshold: 30)
         )
-        await pushClock.waitForPendingSleepCount(exactly: 1)
-        pushClock.advance(by: .seconds(1))
-        await projector.activitySettled()
+        try await unseenDeadlines.fire(paneId: paneId)
         #expect(submitted.withLock { $0.isEmpty })
 
         reader.text = nil
@@ -114,9 +115,7 @@ struct TerminalActivitySourceTests {
             latestState: ScrollbarState(top: 130, bottom: 140, total: 140),
             context: .init(isAttended: true, isAgentClassified: false, outputBurstThreshold: 30)
         )
-        await pushClock.waitForPendingSleepCount(exactly: 1)
-        pushClock.advance(by: .seconds(1))
-        await projector.activitySettled()
+        try await unseenDeadlines.fire(paneId: paneId)
         #expect(submitted.withLock { $0.isEmpty })
 
         let replacementSurfaceId = UUIDv7.generate()
@@ -135,22 +134,24 @@ struct TerminalActivitySourceTests {
     }
 
     @Test("the first quiet-settled readable line after each surface attach is a baseline")
-    func quietSettlesEstablishEachSurfaceBaseline() async {
+    func quietSettlesEstablishEachSurfaceBaseline() async throws {
         let pushClock = TestPushClock()
+        let unseenDeadlines = try UnseenDeadlineDriver(clock: pushClock)
         let reader = ActivityViewportReader(text: "first surface baseline")
         let submitted = Mutex<[PaneActivityOccurrence]>([])
         let projector = TerminalActivityProjector(
             unseenQuietDuration: .seconds(1),
             clock: pushClock,
-            activitySink: { occurrence in submitted.withLock { $0.append(occurrence) } }
+            activitySink: { occurrence in submitted.withLock { $0.append(occurrence) } },
+            factSink: unseenDeadlines.source.sink
         )
         await projector.configure(lastOutputLineReader: { _ in reader.read() }, outcomeSink: { _ in })
         let paneId = UUIDv7.generate()
         let firstSurfaceId = UUIDv7.generate()
 
-        await settleAttendedBurst(
+        try await settleAttendedBurst(
             projector: projector,
-            clock: pushClock,
+            unseenDeadlines: unseenDeadlines,
             paneId: paneId,
             surfaceId: firstSurfaceId,
             firstTotal: 100,
@@ -159,9 +160,9 @@ struct TerminalActivitySourceTests {
         #expect(submitted.withLock { $0.isEmpty })
 
         reader.text = "first surface changed"
-        await settleAttendedBurst(
+        try await settleAttendedBurst(
             projector: projector,
-            clock: pushClock,
+            unseenDeadlines: unseenDeadlines,
             paneId: paneId,
             surfaceId: firstSurfaceId,
             firstTotal: 120,
@@ -170,9 +171,9 @@ struct TerminalActivitySourceTests {
         #expect(submitted.withLock { $0.count } == 1)
 
         reader.text = "replacement baseline"
-        await settleAttendedBurst(
+        try await settleAttendedBurst(
             projector: projector,
-            clock: pushClock,
+            unseenDeadlines: unseenDeadlines,
             paneId: paneId,
             surfaceId: UUIDv7.generate(),
             firstTotal: 140,
@@ -183,8 +184,9 @@ struct TerminalActivitySourceTests {
     }
 
     @Test("an unattended burst shares one viewport read with its existing notification settle")
-    func unattendedBurstReadsOnce() async {
+    func unattendedBurstReadsOnce() async throws {
         let pushClock = TestPushClock()
+        let unseenDeadlines = try UnseenDeadlineDriver(clock: pushClock)
         let reader = ActivityViewportReader(text: "baseline")
         let closeReadMeasurements = Mutex<Int>(0)
         let submitted = Mutex<[PaneActivityOccurrence]>([])
@@ -193,7 +195,8 @@ struct TerminalActivitySourceTests {
             unseenQuietDuration: .seconds(1),
             clock: pushClock,
             activitySink: { occurrence in submitted.withLock { $0.append(occurrence) } },
-            closeReadDurationSink: { _ in closeReadMeasurements.withLock { $0 += 1 } }
+            closeReadDurationSink: { _ in closeReadMeasurements.withLock { $0 += 1 } },
+            factSink: unseenDeadlines.source.sink
         )
         await projector.configure(
             lastOutputLineReader: { _ in reader.read() },
@@ -212,9 +215,7 @@ struct TerminalActivitySourceTests {
             latestState: ScrollbarState(top: 110, bottom: 120, total: 120),
             context: .init(isAttended: false, isAgentClassified: false, outputBurstThreshold: 30)
         )
-        await pushClock.waitForPendingSleepCount(exactly: 1)
-        pushClock.advance(by: .seconds(1))
-        await projector.activitySettled()
+        try await unseenDeadlines.fire(paneId: paneId)
 
         #expect(reader.readCount == 2)
         #expect(closeReadMeasurements.withLock { $0 } == 1)
@@ -242,12 +243,12 @@ struct TerminalActivitySourceTests {
 
     private func settleAttendedBurst(
         projector: TerminalActivityProjector,
-        clock: TestPushClock,
+        unseenDeadlines: UnseenDeadlineDriver,
         paneId: UUID,
         surfaceId: UUID,
         firstTotal: Int,
         latestTotal: Int
-    ) async {
+    ) async throws {
         await projector.ingest(
             surfaceID: surfaceId,
             paneID: paneId,
@@ -255,8 +256,64 @@ struct TerminalActivitySourceTests {
             latestState: ScrollbarState(top: latestTotal - 10, bottom: latestTotal, total: latestTotal),
             context: .init(isAttended: true, isAgentClassified: false, outputBurstThreshold: 30)
         )
-        await clock.waitForPendingSleepCount(exactly: 1)
-        clock.advance(by: .seconds(1))
-        await projector.activitySettled()
+        try await unseenDeadlines.fire(paneId: paneId)
+    }
+}
+
+/// Drives the projector's unseen-quiet deadline through its typed facts.
+///
+/// `activitySettled()` cannot join a close in progress: `closeUnseenWindow`
+/// drops its own task handle before awaiting the viewport read. The
+/// `.deadlineDisposition(.unseen, .fired)` fact is posted only after that
+/// close returns, so awaiting it joins the read and the activity admission.
+private struct UnseenDeadlineDriver {
+    let clock: TestPushClock
+    let origin: TestPushClock.Instant
+    let source: LocalFactSource<TerminalActivityDeadlineScope, TerminalActivityProjectorFact>
+    let deadlines: FactRecorder<TerminalActivityDeadlineScope, TerminalActivityProjectorFact>
+
+    init(clock: TestPushClock) throws {
+        self.clock = clock
+        origin = clock.now
+        source = LocalFactSource(
+            vocabulary: FactVocabulary(
+                describeScope: { String(describing: $0) },
+                describeFact: { String(describing: $0) },
+                isClosing: { _, fact in
+                    if case .deadlineDisposition = fact { return true }
+                    return false
+                }
+            )
+        )
+        deadlines = try source.attach()
+    }
+
+    /// Advances to the next registered unseen deadline for the pane and
+    /// returns once the projector reports that deadline fired.
+    @discardableResult
+    func fire(paneId: UUID) async throws -> TerminalActivityProjectorFact {
+        let scope = try await deadlines.expectNextOperation(
+            matching: { $0.paneID == paneId && $0.kind == .unseen },
+            opening: {
+                if case .deadlineRegistered(.unseen, _) = $0 { return true }
+                return false
+            },
+            "registered unseen deadline for \(paneId)"
+        )
+        let registration = try await deadlines.expectNext(
+            in: scope,
+            where: {
+                if case .deadlineRegistered(.unseen, _) = $0 { return true }
+                return false
+            },
+            "absolute unseen deadline registration"
+        )
+        guard case .deadlineRegistered(.unseen, let deadline) = registration else { preconditionFailure() }
+        clock.advance(to: origin.advanced(by: deadline))
+        return try await deadlines.expectNext(
+            in: scope,
+            where: { $0 == .deadlineDisposition(.unseen, .fired) },
+            "unseen deadline fired after viewport read and activity admission"
+        )
     }
 }
