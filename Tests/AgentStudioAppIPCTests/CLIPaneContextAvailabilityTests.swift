@@ -132,7 +132,7 @@ struct CLIPaneContextAvailabilityTests {
         arguments: S5NoticeDrainStoreCondition.allCases)
     func offlineNoticeDrainsIntoPaneContext(condition: S5NoticeDrainStoreCondition) async throws {
         try await withS5PaneCLIContext { context in
-            context.fixture.stopAcceptingConnections()
+            await context.fixture.stopAcceptingConnections()
             await context.fixture.server.joinConnectionHandlers()
             let queued = try await context.run(["notify", "notice from the real producer"])
             #expect(queued.terminationStatus == 0)
@@ -203,7 +203,7 @@ struct CLIPaneContextAvailabilityTests {
     @Test("notify queues only its pane.message.send notice envelope when the app was never reached")
     func offlineNoticeUsesTheRealOutbox() async throws {
         try await withS5PaneCLIContext { context in
-            context.fixture.stopAcceptingConnections()
+            await context.fixture.stopAcceptingConnections()
             await context.fixture.server.joinConnectionHandlers()
             let output = try await context.run(["notify", "durable offline notice"])
             #expect(output.terminationStatus == 0)

@@ -140,7 +140,7 @@ struct AgentStudioAppIPCPaneAskLifecycleTests {
                         failRead.withLock { $0 = true }
                         try await sendRequestWithoutBlockingCooperativePool(
                             connection: connection, request: try connectionContractRequest("system.ping", id: 4))
-                    case .stopping: await valueFromDedicatedThread { fixture.stop() }
+                    case .stopping: await fixture.stop()
                     }
                     try await recorder.expectNext(in: domain.paneId, .openAskCount(0))
                     await fixture.server.joinConnectionHandlers()

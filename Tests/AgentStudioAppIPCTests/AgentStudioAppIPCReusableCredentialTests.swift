@@ -215,7 +215,7 @@ struct AgentStudioAppIPCReusableCredentialTests {
                 #expect(barrierPort.registrationCallCount == 1)
 
                 barrierPort.releaseRegistration()
-                serverFixture.stopAcceptingConnections()
+                await serverFixture.stopAcceptingConnections()
                 #expect(await serverFixture.server.drainCredentialPersistence().failedOperationCount == 0)
                 #expect(barrierPort.registrationCallCount == 1)
             })
@@ -265,7 +265,7 @@ struct AgentStudioAppIPCReusableCredentialTests {
                 await barrierPort.waitUntilRegistrationHeld()
                 #expect(barrierPort.registrationCallCount == 1)
 
-                serverFixture.stopAcceptingConnections()
+                await serverFixture.stopAcceptingConnections()
                 // The handler's own task is independent of the credential worker
                 // task the held write is parked in, so joining it does not
                 // itself wait on the held write — this is the production
@@ -483,7 +483,7 @@ private struct ReusableCredentialFixture {
                     credentialRecordID: UUIDv7.generate(),
                     verifierSHA256: Data(SHA256.hash(data: Data(token.rawValue.utf8)))
                 )
-                serverFixture.stopAcceptingConnections()
+                await serverFixture.stopAcceptingConnections()
                 #expect(await serverFixture.server.drainCredentialPersistence().failedOperationCount == 0)
                 #expect(throws: AgentStudioIPCIssuedCredentialRegistrationError.registryShutdown) {
                     try serverFixture.server.principalRegistry.registerIssuedPaneCredential(

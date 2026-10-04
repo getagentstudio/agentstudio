@@ -46,8 +46,8 @@ final class PaneContextPresentationServiceFixture: Sendable {
     let lane: PaneContextPublicationLane
     let service: PaneContextService
 
-    init() throws {
-        let storage = try PaneContextServiceFixture()
+    init() async throws {
+        let storage = try await PaneContextServiceFixture.make()
         self.storage = storage
         let directory = self.directory
         mailbox = PaneContextPublicationMailbox(isPresent: { directory.sources(for: $0) != nil })
@@ -114,14 +114,14 @@ final class PaneContextPresentationServiceFixture: Sendable {
         await lane.shutdown()
         batches.facts.receive(.ended)
         try await batches.facts.finish()
-        try storage.removeFiles()
+        try await storage.removeFiles()
     }
 }
 
 func withPaneContextPresentationService(
     _ operation: @Sendable (PaneContextPresentationServiceFixture) async throws -> Void
 ) async throws {
-    let fixture = try PaneContextPresentationServiceFixture()
+    let fixture = try await PaneContextPresentationServiceFixture()
     do {
         try await operation(fixture)
         try await fixture.close()

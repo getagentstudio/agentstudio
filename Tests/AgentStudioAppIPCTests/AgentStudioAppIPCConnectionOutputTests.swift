@@ -79,7 +79,7 @@ struct AgentStudioAppIPCConnectionOutputTests {
                 #expect(await writer.queuedOutputByteCount == bytes.count)
                 // This client performs no receive. Stop is the real descriptor
                 // shutdown that must release the server's accepted output.
-                await valueFromDedicatedThread { fixture.stop() }
+                await fixture.stop()
                 await fixture.server.joinConnectionHandlers()
                 try await recorder.expectNext(in: "output", .closed)
                 #expect(await writer.queuedOutputByteCount == 0)

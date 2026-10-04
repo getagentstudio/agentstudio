@@ -28,7 +28,7 @@ struct AgentStudioAppIPCShutdownIdempotenceTests {
             body: { fixture in
                 try fixture.server.start()
                 _ = try registerUndurableCredential(in: fixture)
-                await valueFromDedicatedThread { fixture.stopAcceptingConnections() }
+                await fixture.stopAcceptingConnections()
                 #expect(await fixture.server.drainCredentialPersistence().failedOperationCount == 0)
                 #expect(fixture.server.principalRegistry.beginGracefulShutdownAndSnapshotUnsavedCredentials().isEmpty)
             }

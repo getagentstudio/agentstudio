@@ -580,7 +580,7 @@ struct AgentStudioAppIPCServiceTests {
                     reader: &reader
                 )
 
-                fixture.stop()
+                await fixture.stop()
 
                 do {
                     try await sendRequestWithoutBlockingCooperativePool(

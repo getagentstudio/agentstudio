@@ -11,8 +11,8 @@ final class PaneContextMembershipLifetimeFixture {
     let lane: PaneContextPublicationLane
     let service: PaneContextService
 
-    init() throws {
-        let storage = try PaneContextServiceFixture()
+    init() async throws {
+        let storage = try await PaneContextServiceFixture.make()
         self.storage = storage
         let graph = try PaneContextMembershipGraphFixture(
             initialPane: PaneContextMembershipGraphFixture.makePane(
@@ -35,7 +35,7 @@ final class PaneContextMembershipLifetimeFixture {
     func close() async throws {
         await service.stop()
         await lane.shutdown()
-        try storage.removeFiles()
+        try await storage.removeFiles()
     }
 }
 
@@ -43,7 +43,7 @@ final class PaneContextMembershipLifetimeFixture {
 func withPaneContextMembershipLifetime(
     _ operation: (PaneContextMembershipLifetimeFixture) async throws -> Void
 ) async throws {
-    let fixture = try PaneContextMembershipLifetimeFixture()
+    let fixture = try await PaneContextMembershipLifetimeFixture()
     do {
         try await operation(fixture)
         try await fixture.close()

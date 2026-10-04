@@ -101,9 +101,7 @@ struct AgentStudioAppIPCConnectionWaitingTests {
                     connection: connection, request: try connectionContractRequest("fixture.waiting", id: 1))
                 _ = try await hold.firstArrival()
                 try await recorder.expectNext(in: "waiting", .admitted)
-                await valueFromDedicatedThread {
-                    if graceful { fixture.stopAcceptingConnections() } else { fixture.stop() }
-                }
+                if graceful { await fixture.stopAcceptingConnections() } else { await fixture.stop() }
                 try await recorder.expectNext(in: "waiting", .ended(.stopping))
             }
         )
@@ -158,7 +156,7 @@ struct AgentStudioAppIPCConnectionWaitingTests {
                 }
                 connection.close()
                 try await recorder.expectNext(in: "waiting", .ended(.eof))
-                await valueFromDedicatedThread { fixture.stopAcceptingConnections() }
+                await fixture.stopAcceptingConnections()
                 await fixture.server.joinConnectionHandlers()
                 source.sink("ordinary", .ended(.eof))
                 try await recorder.expectNone(

@@ -51,7 +51,7 @@ func runRecordedCLIInvocation(_ request: RecordingCLIInvocationRequest) async th
     let outcome = try await withLiveServer(
         makeFixture: { try makeRecordingCLIFixture(request, commandPort: commandPort) },
         releaseHeldWork: {
-            proxy.stop()
+            await valueFromDedicatedThread { proxy.stop() }
             await pumps.closeAndJoin()
             try? FileManager.default.removeItem(atPath: proxyPath)
         },

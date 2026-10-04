@@ -180,61 +180,64 @@ private struct CompositionFactoryFixture: Sendable {
     let now: Date
 
     @concurrent static func make() async throws -> Self {
-        let root = FileManager.default.temporaryDirectory.appending(path: "as-composition-\(UUIDv7.generate())")
-        let corePool = try SQLiteDatabaseFactory.makeFileBackedPool(
-            at: root.appending(path: "core.sqlite"), label: "AgentStudio.sqlite.composition-core")
-        let localPool: DatabasePool
-        do {
-            localPool = try SQLiteDatabaseFactory.makeFileBackedPool(
-                at: root.appending(path: "local.sqlite"), label: "AgentStudio.sqlite.composition-local")
-        } catch {
-            try? corePool.close()
-            try? FileManager.default.removeItem(at: root)
-            throw error
+        let (root, corePool, localPool) = try await withoutBlockingCooperativePool {
+            let root = FileManager.default.temporaryDirectory.appending(path: "as-composition-\(UUIDv7.generate())")
+            let corePool = try SQLiteDatabaseFactory.makeFileBackedPool(
+                at: root.appending(path: "core.sqlite"), label: "AgentStudio.sqlite.composition-core")
+            let localPool: DatabasePool
+            do {
+                localPool = try SQLiteDatabaseFactory.makeFileBackedPool(
+                    at: root.appending(path: "local.sqlite"), label: "AgentStudio.sqlite.composition-local")
+            } catch {
+                try? corePool.close()
+                try? FileManager.default.removeItem(at: root)
+                throw error
+            }
+            do {
+                try WorkspaceCoreMigrations.migrate(corePool)
+                try WorkspaceLocalMigrations.migrate(localPool)
+                return (root, corePool, localPool)
+            } catch {
+                try? localPool.close()
+                try? corePool.close()
+                try? FileManager.default.removeItem(at: root)
+                throw error
+            }
         }
-        do {
-            try WorkspaceCoreMigrations.migrate(corePool)
-            try WorkspaceLocalMigrations.migrate(localPool)
-            let workspaceId = UUIDv7.generate()
-            let datastore = WorkspaceSQLiteDatastoreActor(
-                preparedCoreRepository: WorkspaceCoreRepository(databaseWriter: corePool),
-                preparationReceipt: .init(core: .uninitialized, local: .available(recovery: nil)),
-                preparedApplicationLocalRepository: WorkspaceLocalRepository(
-                    workspaceId: workspaceId, databaseWriter: localPool))
-            let ownerId = PaneId.generateUUIDv7()
-            let drawerId = PaneId.generateUUIDv7()
-            let directory = PaneContextMembershipDirectory()
-            // Recorded graph installation is a stand-in for S3b's canonical publisher.
-            directory.install(
-                .init(
-                    workspaceId: workspaceId, membershipRevision: 1,
-                    entries: [
-                        .init(paneId: ownerId, placement: .layout, ownedDrawerChildIds: [drawerId]),
-                        .init(
-                            paneId: drawerId, placement: .drawerChild(parentPaneID: ownerId.uuid),
-                            ownedDrawerChildIds: []),
-                    ]))
-            let now = Date(timeIntervalSince1970: 1_800_000_000)
-            let presentationAtom = await PaneContextPresentationAtom()
-            let composition = SessionsPaneContextComposition.make(
-                inputs: .init(
-                    datastore: datastore, directory: directory, workspaceId: workspaceId, clock: TestPushClock(),
-                    wallNow: { now },
-                    providerProfiles: [.claudeCodeCommandLine],
-                    limits: .init(maximumPendingPerPane: 32, maximumPendingGlobal: 128),
-                    paneViewedMailbox: .init(), presentationAtom: presentationAtom))
-            return Self(
-                root: root, corePool: corePool, localPool: localPool, composition: composition, directory: directory,
-                workspaceId: workspaceId,
-                presentationAtom: presentationAtom,
-                ownerId: ownerId,
-                drawerId: drawerId, now: now)
-        } catch {
-            try? localPool.close()
-            try? corePool.close()
-            try? FileManager.default.removeItem(at: root)
-            throw error
-        }
+        let workspaceId = UUIDv7.generate()
+        let datastore = WorkspaceSQLiteDatastoreActor(
+            preparedCoreRepository: WorkspaceCoreRepository(databaseWriter: corePool),
+            preparationReceipt: .init(core: .uninitialized, local: .available(recovery: nil)),
+            preparedApplicationLocalRepository: WorkspaceLocalRepository(
+                workspaceId: workspaceId, databaseWriter: localPool))
+        let ownerId = PaneId.generateUUIDv7()
+        let drawerId = PaneId.generateUUIDv7()
+        let directory = PaneContextMembershipDirectory()
+        // Recorded graph installation is a stand-in for S3b's canonical publisher.
+        directory.install(
+            .init(
+                workspaceId: workspaceId, membershipRevision: 1,
+                entries: [
+                    .init(paneId: ownerId, placement: .layout, ownedDrawerChildIds: [drawerId]),
+                    .init(
+                        paneId: drawerId, placement: .drawerChild(parentPaneID: ownerId.uuid),
+                        ownedDrawerChildIds: []),
+                ]))
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        let presentationAtom = await PaneContextPresentationAtom()
+        let composition = SessionsPaneContextComposition.make(
+            inputs: .init(
+                datastore: datastore, directory: directory, workspaceId: workspaceId, clock: TestPushClock(),
+                wallNow: { now },
+                providerProfiles: [.claudeCodeCommandLine],
+                limits: .init(maximumPendingPerPane: 32, maximumPendingGlobal: 128),
+                paneViewedMailbox: .init(), presentationAtom: presentationAtom))
+        return Self(
+            root: root, corePool: corePool, localPool: localPool, composition: composition, directory: directory,
+            workspaceId: workspaceId,
+            presentationAtom: presentationAtom,
+            ownerId: ownerId,
+            drawerId: drawerId, now: now)
     }
 
     func bind(paneId: PaneId, usingLateAdapter: Bool) async throws -> SessionsBindingRecord {
@@ -273,9 +276,11 @@ private struct CompositionFactoryFixture: Sendable {
 
     @concurrent func close() async throws {
         await composition.shutdown()
-        try localPool.close()
-        try corePool.close()
-        try FileManager.default.removeItem(at: root)
+        try await withoutBlockingCooperativePool { [localPool, corePool, root] in
+            try localPool.close()
+            try corePool.close()
+            try FileManager.default.removeItem(at: root)
+        }
     }
 }
 
