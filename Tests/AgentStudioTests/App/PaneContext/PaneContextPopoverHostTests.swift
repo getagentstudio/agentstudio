@@ -42,6 +42,26 @@ struct PaneContextPopoverHostTests {
             PaneContextPopoverAutoOpenPolicy.shouldOpen(
                 newestAskId: second, lastPresentedAskId: first, isVisible: true, location: .pane))
     }
+
+    @Test("Window presentation facts gate auto-open until the pane is restored")
+    func windowPresentationFactsGateAutoOpen() {
+        let ask = AgentMessageId.generateUUIDv7()
+        let hidden = WindowPresentationFacts(isVisible: false, isMiniaturized: false, isOccluded: true)
+        let minimized = WindowPresentationFacts(isVisible: true, isMiniaturized: true, isOccluded: false)
+        let restored = WindowPresentationFacts(isVisible: true, isMiniaturized: false, isOccluded: false)
+        #expect(!PaneContextPopoverVisibility.hostIsVisible(isActiveTab: true, windowFacts: hidden))
+        #expect(!PaneContextPopoverVisibility.hostIsVisible(isActiveTab: true, windowFacts: minimized))
+        #expect(
+            !PaneContextPopoverAutoOpenPolicy.shouldOpen(
+                newestAskId: ask, lastPresentedAskId: nil,
+                isVisible: PaneContextPopoverVisibility.hostIsVisible(
+                    isActiveTab: true, windowFacts: hidden), location: .pane))
+        #expect(
+            PaneContextPopoverAutoOpenPolicy.shouldOpen(
+                newestAskId: ask, lastPresentedAskId: nil,
+                isVisible: PaneContextPopoverVisibility.hostIsVisible(
+                    isActiveTab: true, windowFacts: restored), location: .pane))
+    }
     @Test
     func disappearanceOfTheProviderClearsControlsButRealStorageFailureStaysVisible() async throws {
         let pane = PaneId.generateUUIDv7()

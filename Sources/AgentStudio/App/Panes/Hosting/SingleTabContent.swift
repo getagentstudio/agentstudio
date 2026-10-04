@@ -21,6 +21,7 @@ struct SingleTabContent: View {
     let paneNotePresentation: PaneNotePresentation?
     let onOpenPaneGitHub: (UUID) -> Void
     let workspaceWindowId: UUID?
+    let windowLifecycleStore: WindowLifecycleAtom?
     let paneSurfaceToolbarPresentation: (UUID) -> PaneSurfaceToolbarPresentation
     let zoomPaneSurfaceToolbarPresentation: (UUID, ZoomViewerPresentation) -> PaneSurfaceToolbarPresentation
     let interactionProbe: AgentStudioInteractionPerformanceProbe?
@@ -43,6 +44,7 @@ struct SingleTabContent: View {
         paneNotePresentation: PaneNotePresentation? = nil,
         onOpenPaneGitHub: @escaping (UUID) -> Void,
         workspaceWindowId: UUID? = nil,
+        windowLifecycleStore: WindowLifecycleAtom? = nil,
         paneSurfaceToolbarPresentation: @escaping (UUID) -> PaneSurfaceToolbarPresentation,
         zoomPaneSurfaceToolbarPresentation:
             @escaping (UUID, ZoomViewerPresentation) -> PaneSurfaceToolbarPresentation,
@@ -65,6 +67,7 @@ struct SingleTabContent: View {
         self.paneNotePresentation = paneNotePresentation
         self.onOpenPaneGitHub = onOpenPaneGitHub
         self.workspaceWindowId = workspaceWindowId
+        self.windowLifecycleStore = windowLifecycleStore
         self.paneSurfaceToolbarPresentation = paneSurfaceToolbarPresentation
         self.zoomPaneSurfaceToolbarPresentation = zoomPaneSurfaceToolbarPresentation
         self.interactionProbe = interactionProbe
@@ -89,7 +92,12 @@ struct SingleTabContent: View {
                 canonicalTabContent()
             }
         }
-        .environment(\.paneContextHostVisible, store.tabLayoutAtom.activeTabId == tabId)
+        .environment(
+            \.paneContextHostVisible,
+            PaneContextPopoverVisibility.hostIsVisible(
+                isActiveTab: store.tabLayoutAtom.activeTabId == tabId,
+                windowFacts: workspaceWindowId.flatMap { windowLifecycleStore?.presentationFacts(for: $0) })
+        )
         .environment(\.agentStudioInteractionPerformanceProbe, interactionProbe)
     }
 

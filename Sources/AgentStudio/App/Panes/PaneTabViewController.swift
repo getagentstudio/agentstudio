@@ -1372,6 +1372,7 @@ class PaneTabViewController: NSViewController, NSPopoverDelegate, WorkspaceComma
                 self?.openGitHubWebview(for: paneId)
             },
             workspaceWindowId: workspaceWindowId,
+            windowLifecycleStore: windowLifecycleStore,
             paneSurfaceToolbarPresentation: { [weak self] paneId in
                 self?.normalPaneSurfaceToolbarPresentation(for: paneId) ?? .hidden
             },
