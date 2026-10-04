@@ -226,6 +226,11 @@ extension WatchedFolderScanScheduler {
         guard let state = stateBySourceID[sourceID],
             awaitingValidation(from: state)?.executorRequest == awaiting.executorRequest
         else { return }
+        guard !isShuttingDown else {
+            stateBySourceID.removeValue(forKey: sourceID)
+            finalizeShutdownIfDrained()
+            return
+        }
         preserveDirtyAfterStaleCompletion(sourceID: sourceID, state: state)
         _ = dispatchReadyQuanta()
         finalizeShutdownIfDrained()
