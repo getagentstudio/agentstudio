@@ -6,7 +6,9 @@ import { commands, page } from "vitest/browser";
 import type { RegisteredSceneBundle } from "../scripts/scene-bundles/scene-bundle-registry.ts";
 import { sceneIds } from "../src/motion-scenes/scene-contract";
 import { resolveSceneModule } from "../src/motion-scenes/scene-registry";
+import { hasNonWhitespaceDirectText } from "../src/motion-scenes/scenes/scene-text-leaves";
 import { kitPhoneAttribute } from "../src/recreation-kit/recreation-kit-dom";
+import { recreationKitPhoneMaxWidthPx } from "../src/recreation-kit/recreation-kit-phone-breakpoint";
 import { observeQuickFindScene } from "./quickfind-scene-observation";
 import type { BuiltSceneBundleFiles } from "./scene-bundle-browser-command.ts";
 
@@ -98,13 +100,6 @@ const roundToQuarter = (value: number): number => Math.round(value * 4) / 4;
 function phoneHiddenWidths(root: HTMLElement): readonly number[] {
   return Array.from(root.querySelectorAll(`[${kitPhoneAttribute}="hidden"]`), (element) =>
     Math.round(element.getBoundingClientRect().width),
-  );
-}
-
-function hasNonWhitespaceDirectText(element: Element): boolean {
-  return Array.from(element.childNodes).some(
-    (childNode) =>
-      childNode.nodeType === Node.TEXT_NODE && (childNode.textContent ?? "").trim().length > 0,
   );
 }
 
@@ -537,7 +532,13 @@ describe("scene bundles for HyperFrames", () => {
     },
   );
 
-  it.each([390, 600, 1280])(
+  it.each(sceneIds)("keeps the %s CSS phone breakpoint aligned with scene logic", (sceneId) => {
+    expect(requireBundle(sceneId).manifest.phoneBreakpoint.maxWidthPx).toBe(
+      recreationKitPhoneMaxWidthPx,
+    );
+  });
+
+  it.each([390, recreationKitPhoneMaxWidthPx, 1280])(
     "scopes context-with-task Files takeover markers and restores them on rewind at %ipx",
     (stageWidth) => {
       const bundle = requireBundle("chapter-context-with-task");
@@ -582,7 +583,7 @@ describe("scene bundles for HyperFrames", () => {
           [0, false],
         ] as const) {
           timeline.time(time);
-          const phoneCovering = covering && stageWidth <= 600;
+          const phoneCovering = covering && stageWidth <= recreationKitPhoneMaxWidthPx;
           expect
             .soft(
               drawerTerminal?.hasAttribute("data-layout-allow-occlusion"),
@@ -636,7 +637,7 @@ describe("scene bundles for HyperFrames", () => {
     ).toBeNull();
   });
 
-  it.each([390, 600, 1280])(
+  it.each([390, recreationKitPhoneMaxWidthPx, 1280])(
     "scopes many-agents sidebar takeover markers and restores them on rewind at %ipx",
     (stageWidth) => {
       const bundle = requireBundle("chapter-many-agents");
@@ -676,7 +677,7 @@ describe("scene bundles for HyperFrames", () => {
           [0, false],
         ] as const) {
           timeline.time(time);
-          const phoneCovering = covering && stageWidth <= 600;
+          const phoneCovering = covering && stageWidth <= recreationKitPhoneMaxWidthPx;
           expect
             .soft(terminal?.hasAttribute("data-layout-allow-occlusion"), `terminal at t=${time}`)
             .toBe(phoneCovering);

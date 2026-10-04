@@ -1,4 +1,5 @@
 import type { SceneBuildOptions, SceneModule, SceneTimeline } from "../../scene-contract";
+import { collectSceneTextLeaves } from "../scene-text-leaves";
 import {
   requireLine,
   requireScenePart,
@@ -12,13 +13,6 @@ import {
 } from "./chapter-find-and-focus-fixture";
 
 const totalDurationSeconds = 8;
-
-function hasNonWhitespaceDirectText(element: HTMLElement): boolean {
-  return Array.from(element.childNodes).some(
-    (childNode) =>
-      childNode.nodeType === Node.TEXT_NODE && (childNode.textContent ?? "").trim().length > 0,
-  );
-}
 
 interface FindAndFocusElements {
   readonly arrangementZoom: HTMLElement;
@@ -57,9 +51,9 @@ function resolveFindAndFocusElements(root: HTMLElement): FindAndFocusElements {
       9,
     ),
     paneTextContainers: [...root.querySelectorAll<HTMLElement>(".kit-pane-grid .kit-terminal")],
-    paneOverlapTextElements: [
-      ...root.querySelectorAll<HTMLElement>(".kit-pane-grid .kit-terminal *"),
-    ].filter((element) => element !== rightPaneCoveredText && hasNonWhitespaceDirectText(element)),
+    paneOverlapTextElements: [...root.querySelectorAll<HTMLElement>(".kit-pane-grid .kit-terminal")]
+      .flatMap(collectSceneTextLeaves)
+      .filter((element) => element !== rightPaneCoveredText),
     rightPaneCoveredText,
     targetFocusRing: requireScenePart(root, findAndFocusParts.targetFocusRing),
     targetZoomedChip: requireScenePart(root, findAndFocusParts.targetZoomedChip),

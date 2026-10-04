@@ -1,4 +1,6 @@
+import { recreationKitPhoneMaxWidthPx } from "../../../recreation-kit/recreation-kit-phone-breakpoint";
 import type { SceneBuildOptions, SceneModule, SceneTimeline } from "../../scene-contract";
+import { collectSceneTextLeaves } from "../scene-text-leaves";
 import {
   requireLine,
   requireScenePart,
@@ -13,13 +15,6 @@ import {
 } from "./chapter-context-with-task-fixture";
 
 const totalDurationSeconds = 8.5;
-
-function hasNonWhitespaceDirectText(element: HTMLElement): boolean {
-  return Array.from(element.childNodes).some(
-    (childNode) =>
-      childNode.nodeType === Node.TEXT_NODE && (childNode.textContent ?? "").trim().length > 0,
-  );
-}
 
 interface ContextWithTaskElements {
   readonly agentTerminal: HTMLElement;
@@ -41,9 +36,7 @@ function resolveContextWithTaskElements(root: HTMLElement): ContextWithTaskEleme
   return {
     agentTerminal,
     drawerTerminal,
-    terminalOverlapTextElements: [agentTerminal, drawerTerminal].flatMap((terminal) =>
-      [...terminal.querySelectorAll<HTMLElement>("*")].filter(hasNonWhitespaceDirectText),
-    ),
+    terminalOverlapTextElements: [agentTerminal, drawerTerminal].flatMap(collectSceneTextLeaves),
     agentLines: requireTerminalLines(agentTerminal, contextWithTaskParts.agentTerminal, 7),
     drawer: requireScenePart(root, contextWithTaskParts.drawer),
     drawerLines: requireTerminalLines(drawerTerminal, contextWithTaskParts.drawerTerminal, 9),
@@ -100,7 +93,7 @@ function buildContextWithTaskScene(
   builder.label("files", 5.0);
   // The phone source view takes over the task and drawer through scene end.
   // Desktop keeps them beside Files; overflowing drawer text is clipped by CSS.
-  if (options.width <= 600) {
+  if (options.width <= recreationKitPhoneMaxWidthPx) {
     const sourceOpenAt = 5.05;
     for (const coveredContainer of [
       elements.agentTerminal,

@@ -1,4 +1,6 @@
+import { recreationKitPhoneMaxWidthPx } from "../../../recreation-kit/recreation-kit-phone-breakpoint";
 import type { SceneBuildOptions, SceneModule, SceneTimeline } from "../../scene-contract";
+import { collectSceneTextLeaves } from "../scene-text-leaves";
 import {
   requireLine,
   requireScenePart,
@@ -9,13 +11,6 @@ import {
 import { manyAgentsParts } from "./chapter-many-agents-fixture";
 
 const totalDurationSeconds = 9;
-
-function hasNonWhitespaceDirectText(element: HTMLElement): boolean {
-  return Array.from(element.childNodes).some(
-    (childNode) =>
-      childNode.nodeType === Node.TEXT_NODE && (childNode.textContent ?? "").trim().length > 0,
-  );
-}
 
 interface ManyAgentsElements {
   readonly leftTerminal: HTMLElement;
@@ -45,9 +40,7 @@ function resolveManyAgentsElements(root: HTMLElement): ManyAgentsElements {
   return {
     leftTerminal,
     leftFooterBadges,
-    leftOverlapTextElements: [...leftTerminal.querySelectorAll<HTMLElement>("*")].filter(
-      hasNonWhitespaceDirectText,
-    ),
+    leftOverlapTextElements: collectSceneTextLeaves(leftTerminal),
     leftLines: requireTerminalLines(leftTerminal, manyAgentsParts.leftTerminal, 9),
     rightLines: requireTerminalLines(
       requireScenePart(root, manyAgentsParts.rightTerminal),
@@ -99,7 +92,7 @@ function buildManyAgentsScene(
   // The phone crop slides the sidebar over the pane for this beat and the next.
   builder.label("watch-folders", 2.8);
   // Only the phone sidebar covers the visible left pane, and it stays to the end.
-  if (options.width <= 600) {
+  if (options.width <= recreationKitPhoneMaxWidthPx) {
     const sidebarOpenAt = 2.8;
     for (const coveredContainer of [elements.leftTerminal, elements.leftFooterBadges]) {
       timeline.set(
