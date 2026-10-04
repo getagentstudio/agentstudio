@@ -62,6 +62,26 @@ struct PaneContextPopoverHostTests {
                 isVisible: PaneContextPopoverVisibility.hostIsVisible(
                     isActiveTab: true, windowFacts: restored), location: .pane))
     }
+
+    @Test("Per-pane auto-open state survives host replacement")
+    func perPaneAutoOpenStateSurvivesHostReplacement() {
+        let pane = PaneId.generateUUIDv7()
+        let ask = AgentMessageId.generateUUIDv7()
+        let state = PaneContextPopoverAutoOpenState()
+        #expect(
+            PaneContextPopoverAutoOpenPolicy.shouldOpen(
+                newestAskId: ask, lastPresentedAskId: state.lastPresentedAskId(for: pane),
+                isVisible: true, location: .pane))
+        state.rememberPresentedAsk(ask, for: pane)
+        #expect(
+            !PaneContextPopoverAutoOpenPolicy.shouldOpen(
+                newestAskId: ask, lastPresentedAskId: state.lastPresentedAskId(for: pane),
+                isVisible: true, location: .pane))
+        #expect(
+            PaneContextPopoverAutoOpenPolicy.shouldOpen(
+                newestAskId: .generateUUIDv7(), lastPresentedAskId: state.lastPresentedAskId(for: pane),
+                isVisible: true, location: .pane))
+    }
     @Test
     func disappearanceOfTheProviderClearsControlsButRealStorageFailureStaysVisible() async throws {
         let pane = PaneId.generateUUIDv7()

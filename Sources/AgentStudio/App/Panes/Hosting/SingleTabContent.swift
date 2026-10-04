@@ -25,6 +25,7 @@ struct SingleTabContent: View {
     let paneSurfaceToolbarPresentation: (UUID) -> PaneSurfaceToolbarPresentation
     let zoomPaneSurfaceToolbarPresentation: (UUID, ZoomViewerPresentation) -> PaneSurfaceToolbarPresentation
     let interactionProbe: AgentStudioInteractionPerformanceProbe?
+    @State private var paneContextPopoverAutoOpenState = PaneContextPopoverAutoOpenState()
 
     init(
         tabId: UUID,
@@ -98,6 +99,7 @@ struct SingleTabContent: View {
                 isActiveTab: store.tabLayoutAtom.activeTabId == tabId,
                 windowFacts: workspaceWindowId.flatMap { windowLifecycleStore?.presentationFacts(for: $0) })
         )
+        .environment(\.paneContextPopoverAutoOpenState, paneContextPopoverAutoOpenState)
         .environment(\.agentStudioInteractionPerformanceProbe, interactionProbe)
     }
 

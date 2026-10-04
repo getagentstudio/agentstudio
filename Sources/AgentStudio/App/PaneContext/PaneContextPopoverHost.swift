@@ -23,7 +23,7 @@ struct PaneContextPopoverHost: View {
     @State private var isPresented = false
     @State private var unavailableNote: String?
     @State private var includeInformational = false
-    @State private var lastPresentedAskId: AgentMessageId?
+    @Environment(\.paneContextPopoverAutoOpenState) private var autoOpenState
     @State private var openRequest: UInt64 = 0
     private static let controls = PaneContextPopoverControlProjection.controls()
 
@@ -40,11 +40,13 @@ struct PaneContextPopoverHost: View {
             }
             .task(id: AutoOpenInput(ask: autoOpenAskId, visible: isHostVisible)) {
                 guard
+                    let askId = autoOpenAskId,
                     PaneContextPopoverAutoOpenPolicy.shouldOpen(
-                        newestAskId: autoOpenAskId, lastPresentedAskId: lastPresentedAskId,
+                        newestAskId: askId,
+                        lastPresentedAskId: autoOpenState.lastPresentedAskId(for: paneId),
                         isVisible: isHostVisible, location: location)
                 else { return }
-                lastPresentedAskId = autoOpenAskId
+                autoOpenState.rememberPresentedAsk(askId, for: paneId)
                 await openPopover()
             }
             .task(id: readers.contextDisplayForPane(paneId)?.revision) {
