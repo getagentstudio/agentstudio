@@ -22,7 +22,7 @@ extension WatchedFolderScanScheduler {
     private func ensureValidationPhysicalDrainStarted() {
         guard validationPhysicalDrainTask == nil, !parkedValidationByRequestID.isEmpty else { return }
         validationPhysicalDrainTask = Task {
-            await validationExecutor.waitUntilPhysicalJobCount(0)
+            await validationExecutor.waitUntilPhysicalJobSlotAvailable()
             await resubmitParkedValidations()
         }
     }

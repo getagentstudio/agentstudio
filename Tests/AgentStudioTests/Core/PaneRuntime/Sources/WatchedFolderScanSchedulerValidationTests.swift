@@ -222,6 +222,64 @@ struct WatchedFolderScanSchedulerValidationTests {
         try await fixture.facts.finish()
     }
 
+    @Test("replacement resumes after one of two draining physical jobs returns")
+    func replacementNeedsOnlyOnePhysicalSlot() async throws {
+        let fixture = try ValidationSchedulerFixture(
+            maximumConcurrentScans: 2,
+            validationBudget: RepoDiscoveryValidationBudget(
+                logicalDeadline: .seconds(60), maximumPhysicalJobs: 2,
+                maximumQueuedRequests: 4, maximumQueuedRequestsPerRoot: 1
+            )
+        )
+        let original = try fixture.makeRequest(name: "one-free-slot", containsGitMarker: true)
+        let otherRoot = try fixture.makeRequest(name: "still-draining", containsGitMarker: true)
+        let replacement = try fixture.makeRequest(
+            name: "one-free-slot", containsGitMarker: true, sourceID: original.sourceID,
+            registrationGeneration: 2,
+            rootURL: URL(fileURLWithPath: original.canonicalRoot.aliases.onceResolvedCanonical.path)
+        )
+
+        _ = await fixture.scheduler.submit(original)
+        let staleCandidate = await fixture.validationClient.nextCandidate()
+        _ = await fixture.scheduler.submit(otherRoot)
+        let otherStaleCandidate = await fixture.validationClient.nextCandidate()
+        #expect(
+            await fixture.scheduler.retireRegistration(otherRoot.canonicalRoot)
+                == .retired(.awaitingValidationInvalidated)
+        )
+        _ = await fixture.scheduler.submit(replacement)
+        let parkedScope = try await fixture.expectParkedValidation(for: replacement, scanRunGeneration: 2)
+
+        // Return one stale job. The second remains held until after the replacement transfers.
+        await fixture.validationClient.complete(staleCandidate, with: .cancelled)
+        try await fixture.facts.expectNext(in: parkedScope, .validationResubmitted)
+        let currentCandidate = await fixture.validationClient.nextCandidate()
+        #expect(currentCandidate == staleCandidate)
+        await fixture.validationClient.complete(
+            currentCandidate,
+            with: .validated(
+                RepoScanner.ResolvedGitEntry(
+                    path: currentCandidate, kind: .cloneRoot, repositoryKey: "one-free-slot-repository"
+                )
+            )
+        )
+        let lease = try await fixture.nextLease()
+        #expect(lease.result.request.canonicalRoot.registration == replacement.canonicalRoot.registration)
+        #expect(lease.result.scanRunGeneration == 2)
+        if case .completeAuthoritative(let completed) = lease.result.scannerResult {
+            #expect(completed.counts.validationSuccessCount == 1)
+            #expect(completed.verifiedEntries.count == 1)
+        } else {
+            Issue.record("one free physical slot must let the replacement finish authoritatively")
+        }
+        #expect(await fixture.transfer(lease) == .transferred)
+        #expect(await fixture.validationClient.pendingValidationCount == 1)
+
+        await fixture.validationClient.complete(otherStaleCandidate, with: .cancelled)
+        await fixture.scheduler.shutdown()
+        try await fixture.facts.finish()
+    }
+
     @Test("shutdown cancels parked replacement custody before the stale physical return")
     func shutdownCancelsParkedReplacement() async throws {
         let completions = LocalFactSource<FSEventRegistrationToken, GitRepositoryDiscoveryOutcome>(
