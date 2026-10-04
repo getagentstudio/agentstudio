@@ -1,6 +1,7 @@
 import type { BridgeMainReviewFailureKind } from '../core/comm-worker/bridge-main-review-comparison-presentation.js';
 
 export const bridgeReviewRegionDisplaySpec = {
+	noSource: 'This pane has no worktree',
 	certifiedContent: 'Nothing to review',
 	certifiedTree: 'No changed files',
 	noSelection: 'Choose a comparison target',

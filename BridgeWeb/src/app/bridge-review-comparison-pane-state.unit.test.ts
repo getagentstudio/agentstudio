@@ -7,12 +7,26 @@ import {
 import type { BridgeWorkerPanelChromePatchPayload } from '../core/comm-worker/bridge-worker-contracts.js';
 import { makeBridgeReviewPackage } from '../foundation/review-package/bridge-review-package-test-support.js';
 import type { BridgeReviewPackage } from '../foundation/review-package/bridge-review-package.js';
+import noSourceAttempt from '../test-fixtures/bridge-contract-fixtures/valid/bridge-product-review-comparison-attempt-no-source.json' with { type: 'json' };
 import {
 	bridgeReviewComparisonPackageMatch,
 	bridgeReviewComparisonPaneState,
 } from './bridge-review-comparison-pane-state.js';
 
 describe('bridgeReviewComparisonPaneState', () => {
+	test('no-source has no pending target or comparison work', (): void => {
+		expect(
+			bridgeReviewComparisonPaneState({
+				comparisonPresentation: bridgeMainReviewComparisonPresentationSchema.parse({
+					activeTarget: null,
+					attempt: noSourceAttempt,
+					displayedSnapshot: { status: 'none' },
+					repositoryDefaultTarget: null,
+				}),
+				displayedReviewPackage: null,
+			}),
+		).toEqual({ kind: 'settled' });
+	});
 	test('distinguishes a pending replacement from an initial comparison load', () => {
 		const previousPackage = comparisonPackage('package-previous', 'origin/main');
 

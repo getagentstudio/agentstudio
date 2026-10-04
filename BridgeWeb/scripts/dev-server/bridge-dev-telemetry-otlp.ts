@@ -177,7 +177,7 @@ const bridgeDevRestrictedStringAttributeValuesByKey = new Map<string, ReadonlySe
 	['agentstudio.bridge.activation.from_viewer', new Set(['file', 'review'])],
 	[
 		'agentstudio.bridge.comparison.attempt.status',
-		new Set(['absent', 'pending', 'selection_required', 'settled', 'unavailable']),
+		new Set(['absent', 'no_source', 'pending', 'selection_required', 'settled', 'unavailable']),
 	],
 	[
 		'agentstudio.bridge.comparison.package_match',

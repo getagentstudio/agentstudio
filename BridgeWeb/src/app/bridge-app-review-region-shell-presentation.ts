@@ -81,6 +81,8 @@ export function bridgeReviewRegionShellPresentation(props: {
 	readonly onHoveredItemIdChange: (itemId: string | null) => void;
 	readonly onOpenFile?: (path: string) => void;
 }): BridgeReviewViewerPresentationState {
+	if (props.panelChromeSlice.reviewComparison?.attempt.status === 'noSource')
+		return { status: 'noSource' };
 	if (props.panelChromeSlice.reviewComparison?.attempt.status === 'selectionRequired')
 		return { status: 'noTarget' };
 	if (props.reviewSourceSlice === null) return { status: 'metadataLoading' };

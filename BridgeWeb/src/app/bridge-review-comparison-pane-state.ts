@@ -64,6 +64,7 @@ export function bridgeReviewComparisonPaneState(props: {
 		}) === 'matched';
 
 	switch (comparisonPresentation.attempt.status) {
+		case 'noSource':
 		case 'selectionRequired':
 			return { kind: 'settled' };
 		case 'pending':

@@ -17,6 +17,7 @@ const LazyReviewViewerShell = lazy(async () => {
 export type BridgeReviewViewerPresentationState =
 	| {
 			readonly status:
+				| 'noSource'
 				| 'noTarget'
 				| 'readyEmpty'
 				| 'metadataLoading'
@@ -110,6 +111,8 @@ function bridgeReviewFallbackStatus(
 	status: BridgeReviewViewerPresentationState['status'],
 ): Parameters<typeof bridgeReviewFallbackRegionPresentation>[0]['status'] {
 	switch (status) {
+		case 'noSource':
+			return 'noSource';
 		case 'noTarget':
 			return 'noSelection';
 		case 'readyEmpty':
