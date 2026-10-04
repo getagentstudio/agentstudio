@@ -188,6 +188,47 @@ struct PaneCLIOutboxDrainTests {
         }
     }
 
+    @Test("a one-shot admission write failure retains the pending prefix and retries each notice exactly once")
+    func transientAdmissionFailureRetainsPendingPrefix() async throws {
+        try await withPaneCLIOutboxDrainHarness { harness in
+            let paneID = UUIDv7.generate()
+            let failedEntry = try await harness.append(paneID: paneID, line: harness.messageLine(text: "retry once"))
+            let laterEntry = try await harness.append(paneID: paneID, line: harness.messageLine(text: "later notice"))
+            await harness.sqliteAccess.failNextWrite()
+
+            // The injected failure clears on its first write, so the old
+            // malformed path could incorrectly commit the cursor in this drain.
+            let failed = await harness.drain()
+
+            #expect(failed.retryableEntryCount == 1)
+            #expect(failed.admittedEntryCount == 0)
+            #expect(failed.malformedEntryCount == 0)
+            #expect(failed.refusedEntryCount == 0)
+            #expect(harness.refusalRecorder.reasons.isEmpty)
+            #expect(try await harness.cursor() == 0)
+            #expect(try await harness.rows() == [failedEntry, laterEntry])
+            #expect(try await harness.snapshot(paneID: paneID).messages.isEmpty)
+
+            let retried = await harness.drain()
+
+            #expect(retried.admittedEntryCount == 2)
+            #expect(retried.retryableEntryCount == 0)
+            #expect(retried.malformedEntryCount == 0)
+            #expect(retried.refusedEntryCount == 0)
+            #expect(try await harness.cursor() == laterEntry.id)
+            #expect(try await harness.rows() == [failedEntry, laterEntry])
+            let messages = try await harness.snapshot(paneID: paneID).messages.map(\.text)
+            #expect(messages.count == 2)
+            #expect(Set(messages) == Set(["retry once", "later notice"]))
+
+            let restarted = try await harness.restartedDrain()
+            #expect(restarted.admittedEntryCount == 0)
+            #expect(restarted.retryableEntryCount == 0)
+            #expect(try await harness.cursor() == laterEntry.id)
+            #expect(try await harness.snapshot(paneID: paneID).messages.count == 2)
+        }
+    }
+
     @Test("an unbound pane's deliberate report is refused and never replayed after binding")
     func unboundDeliberateReportIsRefused() async throws {
         try await withPaneCLIOutboxDrainHarness { harness in

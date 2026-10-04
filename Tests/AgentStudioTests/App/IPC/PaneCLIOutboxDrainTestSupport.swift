@@ -218,11 +218,13 @@ final class OutboxRefusalRecorder: Sendable {
 actor FailableOutboxSessionsSQLiteAccess: SessionsSQLiteAccess {
     private let base: WorkspaceSessionsSQLiteAccess
     private var rejectsWrites = false
+    private var rejectsNextWrite = false
     private var rejectsCursorCommit = false
 
     init(base: WorkspaceSessionsSQLiteAccess) { self.base = base }
 
     func setRejectsWrites(_ rejects: Bool) { rejectsWrites = rejects }
+    func failNextWrite() { rejectsNextWrite = true }
     func failCursorCommit() { rejectsCursorCommit = true }
 
     func read<Output: Sendable>(_ operation: @Sendable (Database) throws -> Output) async throws -> Output {
@@ -231,6 +233,10 @@ actor FailableOutboxSessionsSQLiteAccess: SessionsSQLiteAccess {
 
     func write<Output: Sendable>(_ operation: @Sendable (Database) throws -> Output) async throws -> Output {
         guard !rejectsWrites else { throw OutboxStorageFailure() }
+        if rejectsNextWrite {
+            rejectsNextWrite = false
+            throw OutboxStorageFailure()
+        }
         let failCursorCommit = rejectsCursorCommit
         return try await base.write { database in
             let output = try operation(database)

@@ -173,7 +173,9 @@ actor PaneCLIOutboxDrain {
         do {
             switch request.method {
             case "session.message":
-                let params = try JSONDecoder().decode(IPCSessionMessageParams.self, from: normalized.data)
+                guard let params = try? JSONDecoder().decode(IPCSessionMessageParams.self, from: normalized.data) else {
+                    return .malformed(.malformedEnvelope)
+                }
                 guard isEligible(.message, descriptor: descriptor) else { return .malformed(.ineligibleVariant) }
                 guard matchesPane(params.handle, paneID: paneID) else { return .malformed(.foreignPane) }
                 guard messageID == nil || messageID == params.correlationId else {
@@ -182,7 +184,9 @@ actor PaneCLIOutboxDrain {
                 _ = try await admission.recordAgentMessage(
                     paneId: paneID, params: params, commitParticipant: participant)
             case "session.report":
-                let params = try JSONDecoder().decode(IPCSessionReportParams.self, from: normalized.data)
+                guard let params = try? JSONDecoder().decode(IPCSessionReportParams.self, from: normalized.data) else {
+                    return .malformed(.malformedEnvelope)
+                }
                 let variant: IPCModelCallVariant
                 switch params.kind {
                 case .needsYou: variant = .needsYou
@@ -205,7 +209,11 @@ actor PaneCLIOutboxDrain {
             case .targetNotFound, .validationRejected, .bindingRequired: return .refused
             case .ingestionUnavailable: return .retryable
             }
-        } catch { return .malformed(.malformedEnvelope) }
+        } catch {
+            // Admission can fail before its effect/cursor transaction commits.
+            // Preserve the prefix for the next drain instead of consuming it.
+            return .retryable
+        }
     }
 
     private func isEligible(_ variant: IPCModelCallVariant, descriptor: IPCAnyMethodDescriptor) -> Bool {
