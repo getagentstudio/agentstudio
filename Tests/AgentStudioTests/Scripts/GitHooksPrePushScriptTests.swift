@@ -57,6 +57,30 @@ struct GitHooksPrePushScriptTests {
             result.stderr.contains(
                 "This repository is configured for Git LFS but 'git-lfs' was not found on your path."))
     }
+
+    @Test("a successful Git LFS that skips reading stdin does not fail a large push")
+    func successfulGitLFSSkipReadingDoesNotFailLargePush() async throws {
+        // Arrange
+        let fixture = try GitHooksPrePushFixture(includeGitLFS: true)
+        defer { fixture.remove() }
+        let localSHA = String(repeating: "1", count: 40)
+        let remoteSHA = String(repeating: "0", count: 40)
+        let refs =
+            (0..<4000).map { index in
+                let branch = "b\(index)"
+                return "refs/heads/\(branch) \(localSHA) refs/heads/\(branch) \(remoteSHA)"
+            }.joined(separator: "\n") + "\n"
+
+        // Act
+        let result = try await fixture.runHook(
+            refs: refs,
+            arguments: ["origin", "https://example.test/repo.git"],
+            lfsMode: "exit-without-reading")
+
+        // Assert
+        #expect(result.exitCode == 0, Comment(rawValue: result.stderr))
+        #expect(try fixture.lfsArguments() == ["pre-push", "origin", "https://example.test/repo.git"])
+    }
 }
 
 private struct GitHookProcessResult: Sendable {
@@ -100,13 +124,20 @@ private final class GitHooksPrePushFixture: @unchecked Sendable {
                     for argument in "$@"; do
                       printf '%s\\n' "$argument" >> "$FAKE_GIT_LFS_ARGUMENTS"
                     done
+                    if [ "$FAKE_GIT_LFS_MODE" = "exit-without-reading" ]; then
+                      exit 0
+                    fi
                     cat > "$FAKE_GIT_LFS_STDIN"
                     """
             )
         }
     }
 
-    func runHook(refs: String, arguments: [String]) async throws -> GitHookProcessResult {
+    func runHook(
+        refs: String,
+        arguments: [String],
+        lfsMode: String = "record"
+    ) async throws -> GitHookProcessResult {
         let hookPath = hookURL.path
         let binPath = bin.path
         let lfsArgumentsPath = lfsArgumentsURL.path
@@ -122,6 +153,7 @@ private final class GitHooksPrePushFixture: @unchecked Sendable {
                 "PATH": "\(binPath):/usr/bin:/bin",
                 "FAKE_GIT_LFS_ARGUMENTS": lfsArgumentsPath,
                 "FAKE_GIT_LFS_STDIN": lfsStdinPath,
+                "FAKE_GIT_LFS_MODE": lfsMode,
             ]
             process.standardInput = standardInput
             process.standardError = standardError
