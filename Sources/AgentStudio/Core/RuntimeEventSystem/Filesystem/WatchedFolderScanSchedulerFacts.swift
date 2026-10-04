@@ -18,6 +18,8 @@ package enum WatchedFolderScanSchedulerFact: Equatable, Sendable {
     case validationParked
     case validationResubmitted
     case validationSettled(WatchedFolderScanValidationSettlement)
+    case shutdownAwaitingAdmission
+    case validationDiscardedDuringShutdown
 }
 
 package typealias WatchedFolderScanSchedulerFactSink =

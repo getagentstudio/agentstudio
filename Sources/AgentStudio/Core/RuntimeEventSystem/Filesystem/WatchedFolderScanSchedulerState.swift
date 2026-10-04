@@ -82,6 +82,7 @@ extension WatchedFolderScanScheduler {
     }
 
     struct InFlightValidationAdmission: Sendable {
+        let scope: WatchedFolderScanValidationScope
         let task: Task<Void, Never>
         var disposition: ValidationAdmissionDisposition
     }

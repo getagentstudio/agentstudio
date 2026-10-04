@@ -16,7 +16,7 @@ extension WatchedFolderScanScheduler {
         precondition(validationAdmissionsByRequestID[requestID] == nil, "validation admission must have one owner")
         let task = Task { await settleValidationAdmission(awaiting) }
         validationAdmissionsByRequestID[requestID] = InFlightValidationAdmission(
-            task: task, disposition: .submitting
+            scope: awaiting.validationScope, task: task, disposition: .submitting
         )
         await task.value
     }

@@ -471,8 +471,12 @@ extension WatchedFolderScanScheduler {
         let tasks = Array(quantumTasksBySourceID.values)
         for task in tasks { task.cancel() }
         for task in tasks { await task.value }
-        let admissionTasks = validationAdmissionsByRequestID.values.map(\.task)
-        for task in admissionTasks { await task.value }
+        let admissions = Array(validationAdmissionsByRequestID.values)
+        for admission in admissions {
+            // Traversal cancellation/join is complete before admission settlement resumes.
+            factSink?(admission.scope, .shutdownAwaitingAdmission)
+            await admission.task.value
+        }
         if let validationCompletionDrainTask {
             await validationCompletionDrainTask.value
         }
@@ -498,6 +502,16 @@ extension WatchedFolderScanScheduler {
             activeDemandCoverageBySourceID.removeValue(forKey: completion.sourceID)
             stateBySourceID.removeValue(forKey: completion.sourceID)
             finalizeShutdownIfDrained()
+            if let factSink, case .validationRequired(let scannerRequest) = completion.outcome {
+                factSink(
+                    WatchedFolderScanValidationScope(
+                        registration: completion.registration,
+                        scanRunGeneration: completion.scanRunGeneration,
+                        requestID: RepoDiscoveryValidationRequestID(rawValue: scannerRequest.requestID.rawValue)
+                    ),
+                    .validationDiscardedDuringShutdown
+                )
+            }
             return
         }
         guard currentRootBySourceID[completion.sourceID]?.registration == completion.registration else {

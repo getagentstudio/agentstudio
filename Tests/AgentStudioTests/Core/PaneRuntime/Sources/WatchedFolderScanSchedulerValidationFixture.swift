@@ -29,7 +29,9 @@ struct ValidationSchedulerFixture {
             @Sendable (RepoScannerValidationExecutor, RepoDiscoveryValidationRequest) async ->
                 RepoDiscoveryValidationAdmissionResult
         )? = nil,
-        validationCompletionSink: (@Sendable (FSEventRegistrationToken, GitRepositoryDiscoveryOutcome) -> Void)? = nil
+        validationCompletionSink: (@Sendable (FSEventRegistrationToken, GitRepositoryDiscoveryOutcome) -> Void)? = nil,
+        schedulerFactObserver: WatchedFolderScanSchedulerFactSink? = nil,
+        sessionFactoryObservation: (@Sendable (WatchedFolderScanRequest, UInt64) async -> Void)? = nil
     ) throws {
         let validationClient = self.validationClient
         let validationFacts = LocalFactSource<WatchedFolderScanValidationScope, WatchedFolderScanSchedulerFact>(
@@ -53,14 +55,24 @@ struct ValidationSchedulerFixture {
             maximumConcurrentScans: maximumConcurrentScans,
             now: { .zero },
             validationExecutor: executor,
-            factSink: validationFacts.sink,
+            factSink: { scope, fact in
+                schedulerFactObserver?(scope, fact)
+                // Lifecycle observations have their own shutdown operation in tests.
+                switch fact {
+                case .validationParked, .validationResubmitted, .validationSettled:
+                    validationFacts.sink(scope, fact)
+                case .shutdownAwaitingAdmission, .validationDiscardedDuringShutdown:
+                    break
+                }
+            },
             validationAdmissionSubmitter: { request in
                 if let validationAdmissionAdapter {
                     return await validationAdmissionAdapter(executor, request)
                 }
                 return await executor.submit(request)
             },
-            sessionFactory: { request, _ in
+            sessionFactory: { request, scanRunGeneration in
+                await sessionFactoryObservation?(request, scanRunGeneration)
                 let rootURL = URL(
                     fileURLWithPath: request.canonicalRoot.aliases.onceResolvedCanonical.path,
                     isDirectory: true
