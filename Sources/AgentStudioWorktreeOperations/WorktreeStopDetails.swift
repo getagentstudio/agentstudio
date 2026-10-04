@@ -50,6 +50,7 @@ package struct WorktreeDirtyStopDetails: Codable, Sendable, Equatable {
 }
 
 package enum WorktreeStopDetails: Codable, Sendable, Equatable {
+    case creation(WorktreeCreationStop)
     case defaultBranch
     case defaultBranchUnverified
     case mainWorktree
@@ -71,6 +72,7 @@ package enum WorktreeStopDetails: Codable, Sendable, Equatable {
     case forkUnavailable(GitWorktreeForkRejectionReason)
 
     private enum CodingKeys: String, CodingKey {
+        case creation
         case defaultBranch
         case defaultBranchUnverified
         case mainWorktree
@@ -156,6 +158,8 @@ package enum WorktreeStopDetails: Codable, Sendable, Equatable {
                 ))
         }
         switch key {
+        case .creation:
+            self = .creation(try container.decode(WorktreeCreationStop.self, forKey: key))
         case .defaultBranch:
             _ = try container.decode(EmptyPayload.self, forKey: key)
             self = .defaultBranch
@@ -209,6 +213,8 @@ package enum WorktreeStopDetails: Codable, Sendable, Equatable {
     package func encode(to encoder: any Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
         switch self {
+        case .creation(let stop):
+            try container.encode(stop, forKey: .creation)
         case .defaultBranch:
             try container.encode(EmptyPayload(), forKey: .defaultBranch)
         case .defaultBranchUnverified:
@@ -255,6 +261,8 @@ package enum WorktreeStopDetails: Codable, Sendable, Equatable {
 
     package var reason: WorktreeStopReason {
         switch self {
+        case .creation(let stop):
+            stop.reason
         case .defaultBranch:
             .defaultBranch
         case .defaultBranchUnverified:

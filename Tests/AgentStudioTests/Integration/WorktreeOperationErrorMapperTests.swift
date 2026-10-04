@@ -142,7 +142,7 @@ struct WorktreeOperationErrorMapperTests {
                 .branchCheckedOut,
                 .fileProviderManagedLocation,
                 .datalessContent:
-                expectedRefusal = .forkUnavailable(reason)
+                expectedRefusal = .forkUnavailable(reason, source: .mainWorktree)
             }
 
             #expect(

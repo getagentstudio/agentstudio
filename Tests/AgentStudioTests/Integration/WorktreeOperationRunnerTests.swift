@@ -27,7 +27,11 @@ struct WorktreeOperationRunnerTests {
         defer { try? FileManager.default.removeItem(at: destination) }
 
         let runner = WorktreeOperationRunner()
-        let outcome = await runner.run(.createFromDefault(start: nestedStart, branch: branch))
+        let outcome = await runner.run(
+            .create(
+                WorktreeCreateRequest(
+                    start: nestedStart, branch: branch, source: .mainWorktree,
+                    materialization: .trackedOnly(startBranch: nil))))
 
         guard case .created(let created) = outcome else {
             Issue.record("expected created outcome, received \(outcome)")
@@ -37,7 +41,7 @@ struct WorktreeOperationRunnerTests {
         #expect(created.branch == branch)
         #expect(canonicalPath(created.path) == canonicalPath(destination))
         #expect(canonicalPath(created.repository) == canonicalPath(repository))
-        #expect(created.materialization == nil)
+        #expect(created.materialization.largeFiles != nil)
         #expect(try await git(at: destination, "rev-parse", "--abbrev-ref", "HEAD") == branch)
         let destinationHead = try await git(at: destination, "rev-parse", "HEAD")
         let defaultBranchHead = try await git(at: repository, "rev-parse", "refs/heads/main")
@@ -101,17 +105,19 @@ struct WorktreeOperationRunnerTests {
         defer { try? FileManager.default.removeItem(at: destination) }
 
         let outcome = await WorktreeOperationRunner(client: client).run(
-            .fork(start: nestedStart, branch: branch, materialization: .copyOnWrite))
+            .create(
+                WorktreeCreateRequest(
+                    start: nestedStart, branch: branch, source: .worktree(nestedStart), materialization: .copyOnWrite)))
 
         switch outcome {
         case .created(let created):
-            #expect(created.operation == .fork)
+            #expect(created.operation == .new)
             #expect(canonicalPath(created.path) == canonicalPath(destination))
             #expect(canonicalPath(created.repository) == canonicalPath(repository))
             switch created.materialization {
             case .copyOnWrite:
                 #expect(true)
-            case .changesOnly, .none:
+            case .changesOnly, .trackedOnly:
                 Issue.record("expected the existing fork command to select copy-on-write materialization")
             }
             #expect(
@@ -139,7 +145,7 @@ struct WorktreeOperationRunnerTests {
                 listing.worktrees.contains {
                     canonicalPath($0.path) == canonicalPath(destination) && $0.branch == branch && !$0.isMain
                 })
-        case .refused(.forkUnavailable(let reason)):
+        case .refused(.forkUnavailable(let reason, _)):
             #expect(Self.isEnvironmentForkUnavailable(reason))
         default:
             Issue.record("expected a successful fork or an environment capability refusal, received \(outcome)")
@@ -166,7 +172,10 @@ struct WorktreeOperationRunnerTests {
         )
         #expect(
             await runner.run(
-                .fork(start: outsideRepository, branch: "feature/outside", materialization: .copyOnWrite)
+                .create(
+                    WorktreeCreateRequest(
+                        start: outsideRepository, branch: "feature/outside", source: .worktree(outsideRepository),
+                        materialization: .copyOnWrite))
             )
                 == .refused(.notInWorktree(outsideRepository)))
     }
@@ -178,10 +187,18 @@ struct WorktreeOperationRunnerTests {
         let runner = WorktreeOperationRunner()
 
         #expect(
-            await runner.run(.createFromDefault(start: repository, branch: "feature/invalid..name"))
+            await runner.run(
+                .create(
+                    WorktreeCreateRequest(
+                        start: repository, branch: "feature/invalid..name", source: .mainWorktree,
+                        materialization: .trackedOnly(startBranch: nil))))
                 == .refused(.invalidBranchName(.local(.containsForbiddenSequence("..")))))
         #expect(
-            await runner.run(.createFromDefault(start: repository, branch: "東京"))
+            await runner.run(
+                .create(
+                    WorktreeCreateRequest(
+                        start: repository, branch: "東京", source: .mainWorktree,
+                        materialization: .trackedOnly(startBranch: nil))))
                 == .refused(.emptyBranchSlug))
     }
 
@@ -204,7 +221,11 @@ struct WorktreeOperationRunnerTests {
         defer { try? FileManager.default.removeItem(at: destination) }
 
         #expect(
-            await WorktreeOperationRunner().run(.createFromDefault(start: repository, branch: branch))
+            await WorktreeOperationRunner().run(
+                .create(
+                    WorktreeCreateRequest(
+                        start: repository, branch: branch, source: .mainWorktree,
+                        materialization: .trackedOnly(startBranch: nil))))
                 == .refused(.destinationExists(destination)))
     }
 
@@ -217,7 +238,11 @@ struct WorktreeOperationRunnerTests {
         try await FilesystemTestGitRepo.runGit(at: repository, args: ["branch", branch])
 
         #expect(
-            await WorktreeOperationRunner().run(.createFromDefault(start: repository, branch: branch))
+            await WorktreeOperationRunner().run(
+                .create(
+                    WorktreeCreateRequest(
+                        start: repository, branch: branch, source: .mainWorktree,
+                        materialization: .trackedOnly(startBranch: nil))))
                 == .refused(.branchAlreadyExists(branch)))
     }
 
@@ -227,7 +252,11 @@ struct WorktreeOperationRunnerTests {
         defer { FilesystemTestGitRepo.destroy(repository) }
 
         #expect(
-            await WorktreeOperationRunner().run(.createFromDefault(start: repository, branch: "feature/no-default"))
+            await WorktreeOperationRunner().run(
+                .create(
+                    WorktreeCreateRequest(
+                        start: repository, branch: "feature/no-default", source: .mainWorktree,
+                        materialization: .trackedOnly(startBranch: nil))))
                 == .refused(.noDefaultBranch))
     }
 
@@ -245,9 +274,16 @@ struct WorktreeOperationRunnerTests {
         #expect(try await git(at: repository, "rev-parse", "--show-toplevel") == repository.path)
 
         let runner = WorktreeOperationRunner()
-        let newOutcome = await runner.run(.createFromDefault(start: repository, branch: "feature/unsupported-layout"))
+        let newOutcome = await runner.run(
+            .create(
+                WorktreeCreateRequest(
+                    start: repository, branch: "feature/unsupported-layout", source: .mainWorktree,
+                    materialization: .trackedOnly(startBranch: nil))))
         let forkOutcome = await runner.run(
-            .fork(start: repository, branch: "fork/unsupported-layout", materialization: .copyOnWrite)
+            .create(
+                WorktreeCreateRequest(
+                    start: repository, branch: "fork/unsupported-layout", source: .worktree(repository),
+                    materialization: .copyOnWrite))
         )
         expectUnsupportedLayout(newOutcome, repository: repository)
         expectUnsupportedLayout(forkOutcome, repository: repository)
@@ -282,7 +318,11 @@ struct WorktreeOperationRunnerTests {
             defaultStartPointResolver: WorktreeOperationStartPointStub(.noDefaultBranch)
         )
 
-        let outcome = await runner.run(.createFromDefault(start: start, branch: "feature/missing-parent"))
+        let outcome = await runner.run(
+            .create(
+                WorktreeCreateRequest(
+                    start: start, branch: "feature/missing-parent", source: .mainWorktree,
+                    materialization: .trackedOnly(startBranch: nil))))
         guard case .refused(.destinationParentMissing(let missingParent)) = outcome else {
             Issue.record("expected missing destination parent refusal, received \(outcome)")
             return

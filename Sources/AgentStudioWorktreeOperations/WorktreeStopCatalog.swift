@@ -20,6 +20,15 @@ package enum WorktreeStopReason: String, CaseIterable, Codable, Sendable {
     case archiveDestinationExists
     case archiveDestinationInsideWorktree
     case forkUnavailable
+    case fromBranchNeedsTrackedOnly
+    case changesOnlyNeedsFrom
+    case trackedOnlyExcludesSource
+    case sourceDirty
+    case sourceNotOnDefaultBranch
+    case sourceBusy
+    case sourceBusyUnknown
+    case configInvalid
+    case sourceIndexUnreadable
 
     package static let lr11Order: [Self] = [
         .mainWorktree,
@@ -123,7 +132,7 @@ package enum WorktreeStopCatalog {
         )
     }
 
-    private static func message(for reason: WorktreeStopReason) -> String {
+    static func message(for reason: WorktreeStopReason) -> String {
         switch reason {
         case .defaultBranch:
             "The default branch cannot be deleted."
@@ -163,10 +172,41 @@ package enum WorktreeStopCatalog {
             "The archive destination is inside the worktree being removed."
         case .forkUnavailable:
             "A copy-on-write fork is unavailable."
+        case .fromBranchNeedsTrackedOnly, .changesOnlyNeedsFrom, .trackedOnlyExcludesSource, .sourceDirty,
+            .sourceNotOnDefaultBranch, .sourceBusy, .sourceBusyUnknown, .configInvalid, .sourceIndexUnreadable:
+            creationMessage(for: reason)
         }
     }
 
-    private static func options(
+    private static func creationMessage(for reason: WorktreeStopReason) -> String {
+        switch reason {
+        case .fromBranchNeedsTrackedOnly:
+            "--from-branch requires --tracked-only."
+        case .changesOnlyNeedsFrom:
+            "--changes-only requires --from."
+        case .trackedOnlyExcludesSource:
+            "--tracked-only excludes --from and --changes-only."
+        case .sourceDirty:
+            "The default source contains uncommitted changes."
+        case .sourceNotOnDefaultBranch:
+            "The default source is not on the default branch."
+        case .sourceBusy:
+            "A declared source build lock is held."
+        case .sourceBusyUnknown:
+            "A declared source build lock could not be tested."
+        case .configInvalid:
+            "The repository copy configuration could not be read."
+        case .sourceIndexUnreadable:
+            "The source index could not be read."
+        case .defaultBranch, .defaultBranchUnverified, .mainWorktree, .gitLockUnidentified, .notFound, .alreadyRemoved,
+            .startBranchNotFound, .unsupportedWorkingState, .targetIsCurrent, .worktreeLocked, .dirty, .changesUnknown,
+            .evidenceInTmp, .evidenceUnknown, .openInPane, .gitLockHeld, .archiveDestinationExists,
+            .archiveDestinationInsideWorktree, .forkUnavailable:
+            preconditionFailure("Expected a creation stop reason.")
+        }
+    }
+
+    static func options(
         for reason: WorktreeStopReason,
         offersStaleLockRemoval: Bool
     ) -> [WorktreeStopOption] {
@@ -192,7 +232,7 @@ package enum WorktreeStopCatalog {
                 flag("-f", effect: "Remove the worktree and discard its uncommitted changes."),
                 command("commit the changes first", effect: "Keep the changes in the repository history."),
                 command(
-                    "agentstudio worktree fork <branch> --changes-only --from <path>",
+                    "agentstudio worktree new <branch> --changes-only --from <path>",
                     effect: "Copy the worktree's changes before removing it."
                 ),
             ]
@@ -228,9 +268,57 @@ package enum WorktreeStopCatalog {
             return options
         case .archiveDestinationExists, .archiveDestinationInsideWorktree:
             return [flag("--archive-to <other-folder>", effect: "Choose an unused folder outside the worktree.")]
+        case .fromBranchNeedsTrackedOnly:
+            return [
+                flag("--tracked-only", effect: "Check out tracked files from the named branch."),
+                flag("--from <a worktree on that branch>", effect: "Copy a worktree on the selected branch."),
+            ]
+        case .changesOnlyNeedsFrom:
+            return [flag("--from <worktree>", effect: "Select the worktree whose changes should be copied.")]
+        case .trackedOnlyExcludesSource:
+            return [
+                command("omit --from and --changes-only", effect: "Create a tracked-files checkout."),
+                command("omit --tracked-only", effect: "Copy the selected worktree."),
+            ]
+        case .sourceDirty:
+            return [
+                command("commit or stash the changes first", effect: "Make the default source clean."),
+                flag("--from <worktree>", effect: "Copy uncommitted work deliberately."),
+                flag("--tracked-only", effect: "Create a tracked-files checkout."),
+            ]
+        case .sourceNotOnDefaultBranch:
+            return [
+                command(
+                    "switch the main worktree back to the default branch", effect: "Restore the default source branch."),
+                flag("--from <worktree>", effect: "Select the source deliberately."),
+                flag("--tracked-only", effect: "Create a tracked-files checkout."),
+            ]
+        case .sourceBusy:
+            return [
+                command("retry", effect: "Wait for the build lock to clear, then retry."),
+                flag("--tracked-only", effect: "Create a tracked-files checkout."),
+            ]
+        case .sourceBusyUnknown, .sourceIndexUnreadable:
+            return [
+                command("retry", effect: "Retry after the source can be read."),
+                flag("--tracked-only", effect: "Create a tracked-files checkout."),
+            ]
+        case .configInvalid:
+            return [
+                command("fix .agentstudio.config.json and retry", effect: "Correct the repository copy declaration.")
+            ]
         case .forkUnavailable:
-            return [flag("--changes-only", effect: "Create a clean checkout and copy the source worktree's changes.")]
+            return [flag("--tracked-only", effect: "Create a tracked-files checkout.")]
         }
+    }
+
+    static func forkOptions(source: WorktreeCreateSource) -> [WorktreeStopOption] {
+        var options = options(for: .forkUnavailable, offersStaleLockRemoval: false)
+        if case .worktree = source {
+            options.append(
+                flag("--changes-only", effect: "Create a clean checkout and copy the source worktree's changes."))
+        }
+        return options
     }
 
     private static func flag(_ value: String, effect: String) -> WorktreeStopOption {

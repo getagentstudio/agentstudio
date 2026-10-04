@@ -26,7 +26,7 @@ enum WorktreeCreationCommandLineDocuments {
         let reason: String
         let path: String?
         let detail: String?
-        let alternative: String?
+        let alternatives: [String]?
         let options: [WorktreeStopOption]?
     }
 }

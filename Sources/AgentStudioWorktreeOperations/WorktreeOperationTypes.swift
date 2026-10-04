@@ -2,9 +2,7 @@ import AgentStudioGit
 import Foundation
 
 package enum WorktreeOperationRequest: Sendable, Equatable {
-    case createFromDefault(start: URL, branch: String)
-    case createFromBranch(start: URL, branch: String, startBranch: String)
-    case fork(start: URL, branch: String, materialization: WorktreeForkMaterialization)
+    case create(WorktreeCreateRequest)
     case list(
         start: URL,
         callerDirectory: URL?,
@@ -15,11 +13,6 @@ package enum WorktreeOperationRequest: Sendable, Equatable {
     case prune(WorktreePruneRequest)
 }
 
-package enum WorktreeForkMaterialization: String, Sendable, Equatable {
-    case copyOnWrite
-    case changesOnly
-}
-
 package enum WorktreeBranchNameProblem: Sendable, Equatable {
     case local(WorktreeBranchNameRejection)
     case rejectedByGit
@@ -27,7 +20,6 @@ package enum WorktreeBranchNameProblem: Sendable, Equatable {
 
 package enum WorktreeOperationKind: String, Sendable, Equatable {
     case new
-    case fork
 }
 
 package enum WorktreeOperationOutcome: Sendable, Equatable {
@@ -45,27 +37,27 @@ package struct WorktreeCreatedSummary: Sendable, Equatable {
     package let branch: String
     package let path: URL
     package let repository: URL
-    package let materialization: GitWorktreeMaterializationResult?
-    package let largeFiles: GitLargeFileFill?
+    package let materialization: WorktreeCreatedMaterialization
+
+    package var largeFiles: GitLargeFileFill? { materialization.largeFiles }
 
     package init(
         operation: WorktreeOperationKind,
         branch: String,
         path: URL,
         repository: URL,
-        materialization: GitWorktreeMaterializationResult?,
-        largeFiles: GitLargeFileFill? = nil
+        materialization: WorktreeCreatedMaterialization
     ) {
         self.operation = operation
         self.branch = branch
         self.path = path
         self.repository = repository
         self.materialization = materialization
-        self.largeFiles = largeFiles
     }
 }
 
 package enum WorktreeOperationRefusal: Sendable, Equatable {
+    case creationStopped(WorktreeCreationStop)
     case notInRepository(URL)
     case notInWorktree(URL)
     case noDefaultBranch
@@ -76,7 +68,7 @@ package enum WorktreeOperationRefusal: Sendable, Equatable {
     case destinationExists(URL)
     case destinationParentMissing(URL)
     case unsupportedRepositoryLayout(URL)
-    case forkUnavailable(GitWorktreeForkRejectionReason)
+    case forkUnavailable(GitWorktreeForkRejectionReason, source: WorktreeCreateSource)
     case unsupportedWorkingState(GitWorktreeWorkingStateRefusal)
 }
 

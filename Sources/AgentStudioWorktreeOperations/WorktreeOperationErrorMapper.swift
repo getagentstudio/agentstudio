@@ -115,7 +115,7 @@ package enum WorktreeOperationErrorMapper {
             .branchCheckedOut,
             .fileProviderManagedLocation,
             .datalessContent:
-            .forkUnavailable(reason)
+            .forkUnavailable(reason, source: .mainWorktree)
         }
     }
 

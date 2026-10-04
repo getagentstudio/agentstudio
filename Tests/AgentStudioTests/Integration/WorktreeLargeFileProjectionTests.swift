@@ -18,13 +18,13 @@ struct WorktreeLargeFileProjectionTests {
             branch: "feature/lfs",
             path: worktree,
             repository: repository,
-            materialization: nil,
-            largeFiles: GitLargeFileFill(
-                materializedCount: 1,
-                missing: missing,
-                residuePaths: ["assets/.agentstudio-lfs-fill-orphan"],
-                scan: .complete
-            )
+            materialization: .trackedOnly(
+                GitLargeFileFill(
+                    materializedCount: 1,
+                    missing: missing,
+                    residuePaths: ["assets/.agentstudio-lfs-fill-orphan"],
+                    scan: .complete
+                ))
         )
 
         let response = try WorktreeCommandLineFormatter.format(outcome: .created(summary), usesJSONOutput: true)
@@ -61,13 +61,13 @@ struct WorktreeLargeFileProjectionTests {
             branch: "feature/lfs-residue-only",
             path: worktree,
             repository: repository,
-            materialization: nil,
-            largeFiles: GitLargeFileFill(
-                materializedCount: 0,
-                missing: [],
-                residuePaths: ["assets/.agentstudio-lfs-fill-orphan"],
-                scan: .complete
-            )
+            materialization: .trackedOnly(
+                GitLargeFileFill(
+                    materializedCount: 0,
+                    missing: [],
+                    residuePaths: ["assets/.agentstudio-lfs-fill-orphan"],
+                    scan: .complete
+                ))
         )
 
         let response = try WorktreeCommandLineFormatter.format(outcome: .created(summary), usesJSONOutput: true)
@@ -96,13 +96,13 @@ struct WorktreeLargeFileProjectionTests {
             branch: "feature/lfs",
             path: worktree,
             repository: repository,
-            materialization: nil,
-            largeFiles: GitLargeFileFill(
-                materializedCount: 1,
-                missing: [],
-                residuePaths: [],
-                scan: .complete
-            )
+            materialization: .trackedOnly(
+                GitLargeFileFill(
+                    materializedCount: 1,
+                    missing: [],
+                    residuePaths: [],
+                    scan: .complete
+                ))
         )
 
         let response = try WorktreeCommandLineFormatter.format(outcome: .created(summary), usesJSONOutput: true)
@@ -127,13 +127,12 @@ struct WorktreeLargeFileProjectionTests {
             scan: .complete
         )
         let summary = WorktreeCreatedSummary(
-            operation: .fork,
+            operation: .new,
             branch: "feature/changes-only",
             path: worktree,
             repository: repository,
             materialization: .changesOnly(
-                GitChangesOnlyMaterializationReport(trackedChanges: 1, untrackedFiles: 1, largeFiles: fill)),
-            largeFiles: fill
+                GitChangesOnlyMaterializationReport(trackedChanges: 1, untrackedFiles: 1, largeFiles: fill))
         )
 
         let response = try WorktreeCommandLineFormatter.format(outcome: .created(summary), usesJSONOutput: true)

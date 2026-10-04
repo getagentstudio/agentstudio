@@ -166,6 +166,8 @@ extension WorktreeCommandLineFormatter {
 
     private static func stopDetailsHumanLine(_ details: WorktreeStopDetails) -> String {
         switch details {
+        case .creation(let stop):
+            [stop.path, stop.humanDetail].compactMap { $0 }.joined(separator: " ")
         case .defaultBranch, .defaultBranchUnverified, .mainWorktree, .changesUnknown:
             ""
         case .gitLockUnidentified(let resource):

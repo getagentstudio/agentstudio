@@ -4,9 +4,11 @@ import Foundation
 extension WorktreeCommandLineFormatter {
     package static func refusedHumanLine(_ refusal: WorktreeOperationRefusal) -> String {
         let details = refusalDetails(for: refusal)
-        let suffix = [details.path, details.detail, details.alternative?.commandLineFlag]
-            .compactMap { $0 }
-            .joined(separator: " ")
+        let suffix = [
+            details.path, details.detail, details.alternatives?.map(\.commandLineFlag).joined(separator: " "),
+        ]
+        .compactMap { $0 }
+        .joined(separator: " ")
         let refusalLine = suffix.isEmpty ? "refused: \(details.reason)" : "refused: \(details.reason) \(suffix)"
         guard !details.options.isEmpty else { return refusalLine }
         let options = details.options.map(humanOption).joined(separator: "; ")
@@ -20,45 +22,56 @@ extension WorktreeCommandLineFormatter {
                 reason: details.reason,
                 path: details.path,
                 detail: details.detail,
-                alternative: details.alternative?.rawValue,
-                options: details.options.isEmpty ? nil : details.options
+                alternatives: details.alternatives?.map(\.rawValue),
+                options: details.options.isEmpty ? nil : details.options,
+                message: details.message,
+                details: details.creationDetails
             )
         )
     }
 
     private static func refusalDetails(for refusal: WorktreeOperationRefusal) -> WorktreeRefusalDetails {
         switch refusal {
+        case .creationStopped(let stop):
+            let entry = WorktreeStopCatalog.entry(for: .creation(stop))
+            return WorktreeRefusalDetails(
+                reason: entry.reason.rawValue, path: stop.path, detail: stop.humanDetail,
+                options: entry.options, message: entry.message, creationDetails: stop
+            )
         case .notInRepository(let path):
-            WorktreeRefusalDetails(reason: "notInRepository", path: absolutePath(path), detail: nil)
+            return WorktreeRefusalDetails(reason: "notInRepository", path: absolutePath(path), detail: nil)
         case .notInWorktree(let path):
-            WorktreeRefusalDetails(reason: "notInWorktree", path: absolutePath(path), detail: nil)
+            return WorktreeRefusalDetails(reason: "notInWorktree", path: absolutePath(path), detail: nil)
         case .noDefaultBranch:
-            WorktreeRefusalDetails(reason: "noDefaultBranch", path: nil, detail: nil)
+            return WorktreeRefusalDetails(reason: "noDefaultBranch", path: nil, detail: nil)
         case .startBranchNotFound(let branch):
-            WorktreeRefusalDetails(reason: "startBranchNotFound", path: nil, detail: branch)
+            return WorktreeRefusalDetails(reason: "startBranchNotFound", path: nil, detail: branch)
         case .invalidBranchName(.local(let rejection)):
-            WorktreeRefusalDetails(reason: "invalidBranchName", path: nil, detail: branchRejectionDetail(rejection))
+            return WorktreeRefusalDetails(
+                reason: "invalidBranchName", path: nil, detail: branchRejectionDetail(rejection))
         case .invalidBranchName(.rejectedByGit):
-            WorktreeRefusalDetails(reason: "invalidBranchName", path: nil, detail: "Git rejected the branch name")
+            return WorktreeRefusalDetails(
+                reason: "invalidBranchName", path: nil, detail: "Git rejected the branch name")
         case .emptyBranchSlug:
-            WorktreeRefusalDetails(reason: "emptyBranchSlug", path: nil, detail: nil)
+            return WorktreeRefusalDetails(reason: "emptyBranchSlug", path: nil, detail: nil)
         case .branchAlreadyExists(let branch):
-            WorktreeRefusalDetails(reason: "branchAlreadyExists", path: nil, detail: branch)
+            return WorktreeRefusalDetails(reason: "branchAlreadyExists", path: nil, detail: branch)
         case .destinationExists(let path):
-            WorktreeRefusalDetails(reason: "destinationExists", path: absolutePath(path), detail: nil)
+            return WorktreeRefusalDetails(reason: "destinationExists", path: absolutePath(path), detail: nil)
         case .destinationParentMissing(let path):
-            WorktreeRefusalDetails(reason: "destinationParentMissing", path: absolutePath(path), detail: nil)
+            return WorktreeRefusalDetails(reason: "destinationParentMissing", path: absolutePath(path), detail: nil)
         case .unsupportedRepositoryLayout(let path):
-            WorktreeRefusalDetails(reason: "unsupportedRepositoryLayout", path: absolutePath(path), detail: nil)
-        case .forkUnavailable(let reason):
-            WorktreeRefusalDetails(
+            return WorktreeRefusalDetails(reason: "unsupportedRepositoryLayout", path: absolutePath(path), detail: nil)
+        case .forkUnavailable(let reason, let source):
+            return WorktreeRefusalDetails(
                 reason: "forkUnavailable",
                 path: nil,
                 detail: reason.rawValue,
-                alternative: .changesOnly
+                alternatives: source == .mainWorktree ? [.trackedOnly] : [.trackedOnly, .changesOnly],
+                options: WorktreeStopCatalog.forkOptions(source: source)
             )
         case .unsupportedWorkingState(let refusal):
-            WorktreeRefusalDetails(
+            return WorktreeRefusalDetails(
                 reason: "unsupportedWorkingState",
                 path: refusal.relativePath,
                 detail: refusal.reason.rawValue,
@@ -81,7 +94,7 @@ extension WorktreeCommandLineFormatter {
                 effect: "Stash the changed attributes, then retry --changes-only."
             ),
             WorktreeStopOption(
-                action: .command("agentstudio worktree fork <branch> --from <source>"),
+                action: .command("agentstudio worktree new <branch> --from <source>"),
                 effect: "Use the APFS copy-on-write fork without --changes-only."
             ),
         ]
@@ -118,29 +131,38 @@ private struct WorktreeRefusalDetails {
     let reason: String
     let path: String?
     let detail: String?
-    let alternative: WorktreeRefusalAlternative?
+    let alternatives: [WorktreeRefusalAlternative]?
     let options: [WorktreeStopOption]
+    let message: String?
+    let creationDetails: WorktreeCreationStop?
 
     init(
         reason: String,
         path: String?,
         detail: String?,
-        alternative: WorktreeRefusalAlternative? = nil,
-        options: [WorktreeStopOption] = []
+        alternatives: [WorktreeRefusalAlternative]? = nil,
+        options: [WorktreeStopOption] = [],
+        message: String? = nil,
+        creationDetails: WorktreeCreationStop? = nil
     ) {
         self.reason = reason
         self.path = path
         self.detail = detail
-        self.alternative = alternative
+        self.alternatives = alternatives
         self.options = options
+        self.message = message
+        self.creationDetails = creationDetails
     }
 }
 
 private enum WorktreeRefusalAlternative: String {
+    case trackedOnly
     case changesOnly
 
     var commandLineFlag: String {
         switch self {
+        case .trackedOnly:
+            "--tracked-only"
         case .changesOnly:
             "--changes-only"
         }
@@ -152,6 +174,8 @@ private struct WorktreeRefusedCommandLineJSON: Encodable {
     let reason: String
     let path: String?
     let detail: String?
-    let alternative: String?
+    let alternatives: [String]?
     let options: [WorktreeStopOption]?
+    let message: String?
+    let details: WorktreeCreationStop?
 }

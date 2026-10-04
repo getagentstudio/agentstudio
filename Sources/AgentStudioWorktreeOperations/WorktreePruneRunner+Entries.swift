@@ -344,7 +344,7 @@ extension WorktreePruneRunner {
     ) -> [String] {
         let retry = removeCommand(repositoryPath, worktreePath)
         switch details {
-        case .defaultBranch, .mainWorktree, .notFound, .alreadyRemoved,
+        case .creation, .defaultBranch, .mainWorktree, .notFound, .alreadyRemoved,
             .startBranchNotFound, .unsupportedWorkingState, .forkUnavailable:
             return []
         case .gitLockUnidentified:

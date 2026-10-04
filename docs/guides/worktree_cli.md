@@ -8,15 +8,15 @@ additions that arrive after app PR 1 merges.
 Production Agent Studio **0.0.105** ships `new`, `fork`, and the earlier
 `list` output, and its `fork` works on real Agent Studio checkouts
 (agentstudio-git deac01f). Removal, pruning, list state and blockers,
-`new --from-branch`, `fork --changes-only`, and `remove --force` arrive in the
+the warm `new` surface below, and `remove --force` arrive in the
 first release built after app PR 1 merges. Until then, archive `tmp/` and push
 before removing a worktree with `wt remove <branch>`.
 
 ## Why use it
 
-- `fork` makes an APFS copy-on-write clone of a worktree, including uncommitted
-  and ignored files such as `.build`, `node_modules`, and `tmp/`. The first
-  build in a fork may be partly or fully cold. Whether an incremental build
+- After app PR 1, `new` makes an APFS copy-on-write clone of the main worktree
+  by default. `new --from <worktree>` deliberately carries that worktree's
+  uncommitted work. The first build in a copy may be partly or fully cold. Whether an incremental build
   reuses the copied output has not been measured. SwiftPM `.build` and cargo
   `target/` can embed absolute paths.
 - The helper calls Git through agentstudio-git. It does not shell out to `git`
@@ -44,16 +44,20 @@ later.
 
 | Command | Behavior | Options |
 |---|---|---|
-| `"$ASW" worktree new <branch>` | Creates a new branch and worktree from the default start point (`origin/HEAD`, else `main`, else `master`). | `--repo <path>` (defaults to the current directory), `--from-branch <local-branch>`, `--json` |
-| `"$ASW" worktree fork <branch>` | Copies the current worktree by default, including uncommitted and ignored files, onto a new branch. | `--from <worktree path>` (defaults to the current directory), `--changes-only`, `--json` |
+| `"$ASW" worktree new <branch>` | Creates a new branch at the source HEAD and copies the main worktree by default, or the worktree named by `--from`. | `--repo <path>`, `--from <worktree>`, `--changes-only`, `--tracked-only`, `--from-branch <local-branch>`, `--json` |
 | `"$ASW" worktree list [target...]` | Lists worktrees with branch, path, current/locked state, working changes, integration, `tmp/` evidence, blockers, and removal readiness. Targets limit the rows. | `--repo <path>`, `--no-fetch`, `--json` |
 | `"$ASW" worktree remove <target...>` | Removes worktrees or branch-only targets. Processes each target and reports its result. | `--repo <path>`, `--no-fetch`, `-f` / `--force`, `-D`, `--no-delete-branch`, `--archive-to-main`, `--archive-to <path>`, `--discard-tmp`, `--remove-stale-lock`, `--dry-run`, `--json` |
 | `"$ASW" worktree prune` | Previews eligible linked worktrees. Skipped rows include the reason and available remove commands. | `--repo <path>`, `--no-fetch`, `--archive-to-main`, `--archive-to <path>`, `--apply`, `--json` |
 
-`new --from-branch <local-branch>` creates the new branch at the named local
-branch tip. `fork --changes-only` carries tracked changes and eligible
+The table describes commands after app PR 1. `fork` is removed then; it
+returns exit 64 with a stderr line naming `new --from`, including with `--json`.
+
+`new --tracked-only --from-branch <local-branch>` creates the branch at the
+named local branch tip. `--from-branch` requires `--tracked-only`.
+`new --from <worktree> --changes-only` carries tracked changes and eligible
 untracked files, excludes ignored files, and leaves the destination index at
-HEAD. Use the default `fork` when you need the source worktree's full state.
+HEAD. `--changes-only` requires `--from`; `--tracked-only` excludes both.
+Invalid combinations refuse with exit 1 and options that continue.
 
 `list`, `remove`, and `prune` fetch the integration target branch before
 assessing it. `--no-fetch` skips that fetch. `remove --dry-run` reports the
@@ -73,7 +77,7 @@ Exit codes:
 
 - `0`: creation or listing succeeded; remove has no refused or failed entries;
   prune has no failed entries. Prune skips still return `0`.
-- `1`: creation or fork was refused, or remove includes a refused entry and no
+- `1`: creation was refused, or remove includes a refused entry and no
   entry failed. A dry-run target that cannot be resolved also returns `1`.
 - `2`: the command failed, a remove entry failed, or a prune entry failed.
 - `64`: arguments are malformed. One usage line is written to stderr and
@@ -81,37 +85,45 @@ Exit codes:
 
 ## Which one
 
-- `fork` preserves the exact current state, including uncommitted work and
-  build output. It is useful when a second checkout needs the same working
-  files.
-- `fork --changes-only` starts from HEAD and carries tracked changes plus
-  eligible untracked files. It excludes ignored files and build output.
-- `new` creates a clean branch from the default start point or from the local
-  branch named by `--from-branch`. It checks out **tracked files only**:
-  submodules stay empty and ignored build output doesn't exist. In
-  agent-studio that means `vendor/ghostty` and `vendor/zmx` are empty and
-  there's no `Frameworks/`, so run `mise run setup` (as AGENTS.md says) before
-  building or reading vendored headers. Expect a cold first build.
-- **agent-studio default: `fork --from <main checkout>`** (the main checkout
-  on its default branch, clean; production 0.0.105 or later). That APFS-clones
-  the populated submodules, `Frameworks/` and build output, so no setup is
-  needed and nothing is downloaded. Forking the agent-studio main checkout takes
-  about 20 seconds. Use `new` + `mise run setup` only when the main checkout
-  isn't clean or isn't on the default branch.
+- `new` copies the main checkout at its HEAD. Its default source must be
+  clean and on the repository's default branch. A dirty or off-branch source
+  is refused with options to commit/stash, select `--from`, or use
+  `--tracked-only`.
+- `new --from <worktree>` copies that source as it is, including uncommitted
+  work. Even explicitly naming the main checkout skips the two default-source
+  checks. A declared held build lock still refuses any copy-on-write source.
+- `new --from <worktree> --changes-only` starts from HEAD and carries tracked
+  changes plus eligible untracked files. It excludes ignored build output.
+- `new --tracked-only` creates a tracked-files checkout from the default start
+  point (`origin/HEAD`, else `main`, else `master`), or the local branch named
+  by `--from-branch`. Submodules stay empty and ignored build output is absent.
+  In agent-studio, run `mise run setup` before building or reading vendored
+  headers. Expect a cold first build.
+- Production 0.0.105 still uses `fork --from <main checkout>` for a warm copy
+  and `new` for a tracked-files checkout. That production fork copies ignored
+  files too, including build output and `tmp/`; it takes about 20 seconds for
+  the agent-studio main checkout. These production verbs remain until the
+  release after app PR 1.
 - To recreate a worktree on an existing branch, use
-  `git worktree add <repo>.<branch> <branch>` and then `mise run setup`; neither
-  `new` nor `fork` checks out an existing branch.
+  `git worktree add <repo>.<branch> <branch>` and then `mise run setup`; `new`
+  creates a new branch.
 - Reuse an existing checkout when you can.
 
-The default copy-on-write `fork` refuses when the source or destination is not
+The copy-on-write `new` refuses when the source or destination is not
 on APFS, crosses volumes, is not a worktree root, or the destination already
 exists.
 
-**Git LFS:** `new` and `fork --changes-only` fill LFS pointers from the
-repository's local object store when those objects are available. They do not
+**Git LFS:** `new --tracked-only` and `new --from … --changes-only` fill LFS
+pointers from the repository's local object store when those objects are available. They do not
 download objects. The created result lists files that could not be filled with
 their reasons; run `git -C <worktree> lfs pull` for them. An incomplete scan is
 also reported with its reason and the same command.
+
+Copy rules are declared in `<main checkout>/.agentstudio.config.json` under
+`worktree.include` and `worktree.busyLocks`. The tool only reads this file;
+unreadable or malformed JSON refuses `configInvalid` before creation. Stage A
+still copies every ignored file with the pinned SDK and probes literal lock
+paths only. Stage B adds ignored-path filtering and lock-pattern expansion.
 
 ## Rules
 

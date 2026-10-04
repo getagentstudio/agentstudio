@@ -26,11 +26,11 @@ package enum WorktreeCommandLineArgumentError: Error, Equatable, Sendable {
     package var message: String {
         switch self {
         case .missingSubcommand:
-            "usage: agentstudio worktree new|fork|list|remove|prune [target...]"
+            "usage: agentstudio worktree new|list|remove|prune [target...]"
         case .unknownSubcommand:
-            "unknown worktree subcommand; expected new, fork, list, remove, or prune"
+            "unknown worktree subcommand; expected new, list, remove, or prune; use new --from <worktree> to copy a source"
         case .missingBranch:
-            "a branch name is required for worktree new and fork"
+            "a branch name is required for worktree new"
         case .missingTarget:
             "at least one target is required for worktree remove"
         case .unexpectedArgument:
@@ -68,13 +68,10 @@ package enum WorktreeCommandLineArgumentParser {
         let allowedValueOptions: Set<String>
         switch subcommand {
         case "new":
-            allowedPathOptions = ["--repo"]
+            allowedPathOptions = ["--repo", "--from"]
             allowedValueOptions = ["--from-branch"]
         case "list":
             allowedPathOptions = ["--repo"]
-            allowedValueOptions = []
-        case "fork":
-            allowedPathOptions = ["--from"]
             allowedValueOptions = []
         case "remove", "prune":
             allowedPathOptions = ["--repo", "--archive-to"]
@@ -152,9 +149,8 @@ package enum WorktreeCommandLineArgumentParser {
         let archivePath = parsedArguments.archivePath
         let request: WorktreeOperationRequest
         switch subcommand {
-        case "new", "fork":
+        case "new":
             request = try makeCreationRequest(
-                subcommand: subcommand,
                 callerDirectory: callerDirectory,
                 parsedArguments: parsedArguments
             )
@@ -229,7 +225,6 @@ package enum WorktreeCommandLineArgumentParser {
     }
 
     private static func makeCreationRequest(
-        subcommand: String,
         callerDirectory: URL,
         parsedArguments: ParsedArguments
     ) throws -> WorktreeOperationRequest {
@@ -240,22 +235,30 @@ package enum WorktreeCommandLineArgumentParser {
             throw WorktreeCommandLineArgumentError.unexpectedArgument
         }
 
-        switch subcommand {
-        case "new":
-            let start = parsedArguments.repositoryPath ?? callerDirectory
-            if let startBranch = parsedArguments.startBranch {
-                return .createFromBranch(start: start, branch: branch, startBranch: startBranch)
-            }
-            return .createFromDefault(start: start, branch: branch)
-        case "fork":
-            return .fork(
-                start: parsedArguments.sourcePath ?? callerDirectory,
-                branch: branch,
-                materialization: parsedArguments.changesOnly ? .changesOnly : .copyOnWrite
-            )
-        default:
-            throw WorktreeCommandLineArgumentError.unknownSubcommand
+        if parsedArguments.trackedOnly,
+            parsedArguments.sourcePath != nil || parsedArguments.changesOnly
+        {
+            throw WorktreeCreationStop.trackedOnlyExcludesSource
         }
+        if parsedArguments.startBranch != nil, !parsedArguments.trackedOnly {
+            throw WorktreeCreationStop.fromBranchNeedsTrackedOnly
+        }
+        if parsedArguments.changesOnly, parsedArguments.sourcePath == nil {
+            throw WorktreeCreationStop.changesOnlyNeedsFrom
+        }
+        let materialization: WorktreeCreateMaterialization
+        if parsedArguments.trackedOnly {
+            materialization = .trackedOnly(startBranch: parsedArguments.startBranch)
+        } else {
+            materialization = parsedArguments.changesOnly ? .changesOnly : .copyOnWrite
+        }
+        return .create(
+            WorktreeCreateRequest(
+                start: parsedArguments.repositoryPath ?? callerDirectory,
+                branch: branch,
+                source: parsedArguments.sourcePath.map(WorktreeCreateSource.worktree) ?? .mainWorktree,
+                materialization: materialization
+            ))
     }
 }
 
@@ -267,6 +270,7 @@ private struct ParsedArguments {
     let usesJSONOutput: Bool
     let fetchPolicy: WorktreeFetchPolicy
     let startBranch: String?
+    let trackedOnly: Bool
     let changesOnly: Bool
     let discardWorkingChanges: Bool
     let deleteAtObservedCommit: Bool
@@ -286,6 +290,7 @@ private struct ParsedArgumentAccumulator {
     var startBranch: String?
     var usesJSONOutput = false
     var fetchPolicy = WorktreeFetchPolicy.defaultBranch
+    var trackedOnly = false
     var changesOnly = false
     var discardWorkingChanges = false
     var deleteAtObservedCommit = false
@@ -301,17 +306,20 @@ private struct ParsedArgumentAccumulator {
 
     mutating func consumeFlag(_ argument: String, subcommand: String) throws -> Bool {
         if argument == "--json" {
+            guard seenFlags.insert(argument).inserted else {
+                throw WorktreeCommandLineArgumentError.duplicateOption(argument)
+            }
             usesJSONOutput = true
             return true
         }
-        if argument == "--changes-only" {
-            guard subcommand == "fork" else {
+        if argument == "--changes-only" || argument == "--tracked-only" {
+            guard subcommand == "new" else {
                 throw WorktreeCommandLineArgumentError.unsupportedOption
             }
             guard seenFlags.insert(argument).inserted else {
                 throw WorktreeCommandLineArgumentError.duplicateOption(argument)
             }
-            changesOnly = true
+            if argument == "--tracked-only" { trackedOnly = true } else { changesOnly = true }
             return true
         }
         if argument == "--no-fetch" {
@@ -448,6 +456,7 @@ private struct ParsedArgumentAccumulator {
             usesJSONOutput: usesJSONOutput,
             fetchPolicy: fetchPolicy,
             startBranch: startBranch,
+            trackedOnly: trackedOnly,
             changesOnly: changesOnly,
             discardWorkingChanges: discardWorkingChanges,
             deleteAtObservedCommit: deleteAtObservedCommit,

@@ -23,7 +23,8 @@ extension WorktreeCommandLineFormatter {
                 branch: summary.branch,
                 path: absolutePath(summary.path),
                 repository: absolutePath(summary.repository),
-                materialization: summary.materialization.map(WorktreeCreatedMaterializationDocument.init),
+                materialization: WorktreeCreatedMaterializationDocument(
+                    summary.materialization, worktreePath: summary.path),
                 largeFiles: WorktreeLargeFilesProjector.document(
                     for: summary.largeFiles,
                     worktreePath: summary.path
@@ -53,10 +54,12 @@ extension WorktreeCommandLineFormatter {
 
 package enum WorktreeCreatedMaterializationDocument: Encodable, Sendable {
     case copyOnWrite(GitWorktreeMaterializationReport)
+    case trackedOnly(WorktreeLargeFilesDocument)
     case changesOnly(trackedChanges: Int, untrackedFiles: Int, ignoredExcluded: Bool)
 
     private enum CodingKeys: String, CodingKey {
         case kind
+        case largeFiles
         case clonedRegularFileCount
         case createdDirectoryCount
         case recreatedSymbolicLinkCount
@@ -71,8 +74,10 @@ package enum WorktreeCreatedMaterializationDocument: Encodable, Sendable {
         case ignoredExcluded
     }
 
-    package init(_ materialization: GitWorktreeMaterializationResult) {
+    package init(_ materialization: WorktreeCreatedMaterialization, worktreePath: URL) {
         switch materialization {
+        case .trackedOnly(let fill):
+            self = .trackedOnly(WorktreeLargeFilesDocument(fill: fill, worktreePath: worktreePath))
         case .copyOnWrite(let report):
             self = .copyOnWrite(report)
         case .changesOnly(let report):
@@ -87,6 +92,9 @@ package enum WorktreeCreatedMaterializationDocument: Encodable, Sendable {
     package func encode(to encoder: any Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
         switch self {
+        case .trackedOnly(let largeFiles):
+            try container.encode("trackedOnly", forKey: .kind)
+            try container.encode(largeFiles, forKey: .largeFiles)
         case .copyOnWrite(let report):
             try container.encode("copyOnWrite", forKey: .kind)
             try container.encode(report.clonedRegularFileCount, forKey: .clonedRegularFileCount)
@@ -113,7 +121,7 @@ private struct WorktreeCreatedCommandLineJSON: Encodable {
     let branch: String
     let path: String
     let repository: String
-    let materialization: WorktreeCreatedMaterializationDocument?
+    let materialization: WorktreeCreatedMaterializationDocument
     let largeFiles: WorktreeLargeFilesDocument?
     let leftovers: WorktreeCleanupLeftoversDocument?
 }
