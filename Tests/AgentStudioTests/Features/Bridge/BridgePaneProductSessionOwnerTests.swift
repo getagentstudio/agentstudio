@@ -565,6 +565,12 @@ struct BridgePaneProductSessionOwnerTests {
             ),
             encoding: .utf8
         )
+        let bootstrapCompositionSource = try String(
+            contentsOf: projectRoot.appending(
+                path: "Sources/AgentStudio/Features/Bridge/Runtime/BridgePaneController+BootstrapComposition.swift"
+            ),
+            encoding: .utf8
+        )
         let schemeHandlerSource = try String(
             contentsOf: projectRoot.appending(
                 path: "Sources/AgentStudio/Features/Bridge/Transport/BridgeSchemeHandler.swift"
@@ -575,12 +581,13 @@ struct BridgePaneProductSessionOwnerTests {
         // Act / Assert
         #expect(bootstrapSource.contains("BridgePaneProductSessionOwner"))
         #expect(bootstrapModelsSource.contains("BridgeProductSchemeSessionRouter"))
-        #expect(bootstrapSource.contains("productSessionRouter: input.productSessionRouter"))
+        #expect(bootstrapCompositionSource.contains("productSessionRouter: input.productSessionRouter"))
         #expect(schemeHandlerSource.contains("BridgeProductSchemeSessionRouter"))
         #expect(schemeHandlerSource.contains("BridgeProductWireContract.commandRoute"))
         #expect(schemeHandlerSource.contains("BridgeProductWireContract.streamRoute"))
         #expect(schemeHandlerSource.contains("BridgeProductWireContract.contentRoute"))
         #expect(!bootstrapSource.contains("rpcDispatcher: input.rpcDispatcher"))
+        #expect(!bootstrapCompositionSource.contains("rpcDispatcher: input.rpcDispatcher"))
         #expect(!schemeHandlerSource.contains("case rpcCommand"))
     }
 }
