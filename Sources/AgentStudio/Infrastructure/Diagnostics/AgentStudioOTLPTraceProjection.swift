@@ -428,6 +428,8 @@ package enum AgentStudioOTLPTraceProjection {
         "agentstudio.performance.commandbar.result_worktree_row.count",
         "agentstudio.performance.commandbar.worktree.count",
         "agentstudio.performance.elapsed_ms",
+        "agentstudio.performance.ipc.pane_context_read.detail_elapsed_ms",
+        "agentstudio.performance.ipc.pane_context_read.reply_bytes",
         "agentstudio.performance.repository_lifecycle.repository.count",
         "agentstudio.performance.repository_lifecycle.observation.count",
         "agentstudio.performance.repository_lifecycle.changed_family.count",

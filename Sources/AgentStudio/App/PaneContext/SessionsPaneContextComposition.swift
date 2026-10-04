@@ -59,11 +59,13 @@ struct SessionsPaneContextComposition: Sendable {
             ingestion: ingestion, paneContextService: service,
             liveSessionsAdapter: AgentStudioIPCSessionsAdapter(
                 ingestion: ingestion, providerRegistry: registry, admissionFreshness: .live, now: inputs.wallNow,
-                activityClock: inputs.activityClock, ownerPaneLookup: ownerPaneLookup),
+                activityClock: inputs.activityClock, ownerPaneLookup: ownerPaneLookup,
+                performanceTraceRecorder: inputs.performanceTraceRecorder),
             lateSessionsAdapter: AgentStudioIPCSessionsAdapter(
                 ingestion: ingestion, providerRegistry: registry, admissionFreshness: .late, now: inputs.wallNow,
                 ownerPaneLookup: ownerPaneLookup),
-            paneContextIPCAdapter: AgentStudioIPCPaneContextAdapter(service: service, ingestion: ingestion),
+            paneContextIPCAdapter: AgentStudioIPCPaneContextAdapter(
+                service: service, ingestion: ingestion, performanceTraceRecorder: inputs.performanceTraceRecorder),
             presentationLane: presentationLane, bridge: bridge)
         composition.connect()
         return composition

@@ -34,6 +34,7 @@ private enum SessionsProviderEventGeneration: Sendable {
 /// wire-to-domain mapping: ordering, replay and reduction stay in Sessions, and
 /// nothing here touches MainActor.
 struct AgentStudioIPCSessionsAdapter: AppIPCSessionsPort {
+    private let performanceTraceRecorder: AgentStudioPerformanceTraceRecorder?
     private let ingestion: SessionsIngestion
     private let providerRegistry: SessionsProviderAdapterRegistry
     private let admissionFreshness: SessionsEvidenceFreshness
@@ -52,8 +53,10 @@ struct AgentStudioIPCSessionsAdapter: AppIPCSessionsPort {
         now: @escaping @Sendable () -> Date = { Date() },
         continuousNow: @escaping @Sendable () -> ContinuousClock.Instant = { ContinuousClock.now },
         activityClock: PaneActivityClock? = nil,
-        ownerPaneLookup: @escaping @Sendable (PaneId) -> PaneId? = { _ in nil }
+        ownerPaneLookup: @escaping @Sendable (PaneId) -> PaneId? = { _ in nil },
+        performanceTraceRecorder: AgentStudioPerformanceTraceRecorder? = nil
     ) {
+        self.performanceTraceRecorder = performanceTraceRecorder
         self.ingestion = ingestion
         self.providerRegistry = providerRegistry
         self.admissionFreshness = admissionFreshness
@@ -68,6 +71,14 @@ struct AgentStudioIPCSessionsAdapter: AppIPCSessionsPort {
         params: IPCSessionEventParams,
         provenance: IPCSessionEventProvenance
     ) async throws -> IPCSessionEventResult {
+        let spanBegan: ContinuousClock.Instant? =
+            performanceTraceRecorder?.isEnabled == true ? ContinuousClock.now : nil
+        defer {
+            if let spanBegan {
+                performanceTraceRecorder?.recordDuration(
+                    .ipcSessionEvent, duration: spanBegan.duration(to: ContinuousClock.now))
+            }
+        }
         let admission = try await providerAdmission(
             paneId: paneId,
             params: params,

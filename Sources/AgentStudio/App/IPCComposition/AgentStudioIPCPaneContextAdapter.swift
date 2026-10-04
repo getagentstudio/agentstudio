@@ -9,6 +9,7 @@ import Foundation
 /// App owns wire-to-domain composition. Credential target admission belongs to
 /// AppIPC; binding resolution and all service work stay off MainActor.
 struct AgentStudioIPCPaneContextAdapter: AppIPCPaneContextPort {
+    private let performanceTraceRecorder: AgentStudioPerformanceTraceRecorder?
     private let service: PaneContextService
     private let ingestion: SessionsIngestion
     private let maximumEncodedReplyBytes: Int
@@ -17,8 +18,10 @@ struct AgentStudioIPCPaneContextAdapter: AppIPCPaneContextPort {
     init(
         service: PaneContextService, ingestion: SessionsIngestion,
         maximumEncodedReplyBytes: Int = min(
-            IPCFramePolicy.maximumResponseFrameBytes, AppPolicies.IPC.maximumQueuedOutputBytes - 1)
+            IPCFramePolicy.maximumResponseFrameBytes, AppPolicies.IPC.maximumQueuedOutputBytes - 1),
+        performanceTraceRecorder: AgentStudioPerformanceTraceRecorder? = nil
     ) {
+        self.performanceTraceRecorder = performanceTraceRecorder
         self.service = service
         self.ingestion = ingestion
         self.maximumEncodedReplyBytes = min(
@@ -176,6 +179,21 @@ struct AgentStudioIPCPaneContextAdapter: AppIPCPaneContextPort {
     func readContext(paneId: UUID, params: IPCPaneContextGetParams, replyEnvelopeOverheadBytes: Int) async throws
         -> IPCPaneContextGetResult
     {
+        let spanBegan: ContinuousClock.Instant? =
+            performanceTraceRecorder?.isEnabled == true ? ContinuousClock.now : nil
+        var detailDuration = Duration.zero
+        var replyBytes = 0
+        defer {
+            if let spanBegan {
+                performanceTraceRecorder?.recordDuration(
+                    .ipcPaneContextRead, duration: spanBegan.duration(to: ContinuousClock.now),
+                    attributes: [
+                        "agentstudio.performance.ipc.pane_context_read.detail_elapsed_ms": .double(
+                            AgentStudioPerformanceTraceRecorder.milliseconds(from: detailDuration)),
+                        "agentstudio.performance.ipc.pane_context_read.reply_bytes": .int(replyBytes),
+                    ])
+            }
+        }
         let productionCap = min(IPCFramePolicy.maximumResponseFrameBytes, AppPolicies.IPC.maximumQueuedOutputBytes - 1)
         guard replyEnvelopeOverheadBytes >= 0, replyEnvelopeOverheadBytes < productionCap else {
             throw AppIPCPaneContextError(reason: .tooLarge, field: "context")
@@ -185,27 +203,42 @@ struct AgentStudioIPCPaneContextAdapter: AppIPCPaneContextPort {
         let request = PaneContextReadRequest(
             paneId: PaneId(existingUUID: paneId), page: PaneContextIPCMapping.page(params.page))
         var sizing = PaneContextIPCReplySizing()
-        let full = try PaneContextIPCMapping.detail(
-            await service.readDetail(request, maximumDetailBytes: AppPolicies.PaneContext.maximumDetailBytes))
-        if try sizing.encodedSize(full) <= cap { return full }
+        let fullReadBegan = spanBegan.map { _ in ContinuousClock.now }
+        let fullRead = await service.readDetail(request, maximumDetailBytes: AppPolicies.PaneContext.maximumDetailBytes)
+        if let fullReadBegan { detailDuration += fullReadBegan.duration(to: ContinuousClock.now) }
+        let full = try PaneContextIPCMapping.detail(fullRead)
+        let fullBytes = try sizing.encodedSize(full)
+        if fullBytes <= cap {
+            replyBytes = fullBytes
+            return full
+        }
         var fittingBudget = AppPolicies.PaneContext.minimumDetailBytes
         var oversizedBudget = AppPolicies.PaneContext.maximumDetailBytes
-        var best = try PaneContextIPCMapping.detail(
-            await service.readDetail(request, maximumDetailBytes: fittingBudget))
-        guard try sizing.encodedSize(best) <= cap else {
+        let minimumReadBegan = spanBegan.map { _ in ContinuousClock.now }
+        let minimumRead = await service.readDetail(request, maximumDetailBytes: fittingBudget)
+        if let minimumReadBegan { detailDuration += minimumReadBegan.duration(to: ContinuousClock.now) }
+        var best = try PaneContextIPCMapping.detail(minimumRead)
+        var bestBytes = try sizing.encodedSize(best)
+        guard bestBytes <= cap else {
             throw AppIPCPaneContextError(reason: .tooLarge, field: "context")
         }
         // Each read halves the interval: at most ceil(log2(full budget - floor)) search reads.
         while oversizedBudget - fittingBudget > 1 {
             let budget = fittingBudget + (oversizedBudget - fittingBudget) / 2
-            let result = try PaneContextIPCMapping.detail(await service.readDetail(request, maximumDetailBytes: budget))
-            if try sizing.encodedSize(result) <= cap {
+            let candidateReadBegan = spanBegan.map { _ in ContinuousClock.now }
+            let candidateRead = await service.readDetail(request, maximumDetailBytes: budget)
+            if let candidateReadBegan { detailDuration += candidateReadBegan.duration(to: ContinuousClock.now) }
+            let result = try PaneContextIPCMapping.detail(candidateRead)
+            let candidateBytes = try sizing.encodedSize(result)
+            if candidateBytes <= cap {
                 fittingBudget = budget
                 best = result
+                bestBytes = candidateBytes
             } else {
                 oversizedBudget = budget
             }
         }
+        replyBytes = bestBytes
         return best
     }
 

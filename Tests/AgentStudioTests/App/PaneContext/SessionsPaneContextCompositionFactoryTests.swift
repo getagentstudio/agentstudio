@@ -6,6 +6,7 @@ import AgentStudioTestHarness
 import AgentStudioTestSupport
 import Foundation
 import GRDB
+import Synchronization
 import Testing
 
 @testable import AgentStudio
@@ -43,6 +44,65 @@ struct SessionsPaneContextCompositionFactoryTests {
             await composition.presentationLane.publishPending()
             #expect(await fixture.presentationAtom.value(for: fixture.ownerId)?.own.needsReplyCount == 1)
         }
+    }
+
+    @Test("the real pane context adapter emits one numeric duration and exact reply-size event")
+    func paneContextReadRecordsNumericTelemetry() async throws {
+        let replySize = Mutex<Int?>(nil)
+        let records = try await withIPCCallTelemetry(event: .ipcPaneContextRead) { fixture in
+            _ = try await fixture.composition.prepareForLaunch(at: fixture.now)
+            let binding = try await fixture.bind(paneId: fixture.ownerId, usingLateAdapter: false)
+            let message = PaneMessageSendRequest(
+                paneId: fixture.ownerId, messageId: .generateUUIDv7(), sender: try fixture.sender(binding),
+                sourceOccurredAt: nil, importance: .attention, body: "PRIVATE-MESSAGE-CONTENT", why: nil,
+                actions: [.openFile(path: "/private/telemetry-canary", line: 2)], shape: .notice)
+            let sent = await fixture.composition.paneContextService.send(message)
+            #expect(sent == .created(message.messageId))
+            let result = try await fixture.composition.paneContextIPCAdapter.readContext(
+                paneId: fixture.ownerId.uuid,
+                params: .init(handle: fixture.ownerId.uuidString, page: .first), replyEnvelopeOverheadBytes: 128)
+            #expect(result.messages.first?.body == message.body)
+            let size = try JSONEncoder().encode(result).count
+            replySize.withLock { $0 = size }
+        }
+        #expect(records.count == 1)
+        let record = try #require(records.first)
+        let expectedSize = try #require(replySize.withLock { $0 })
+        let numericKeys = Set(record.numeric.keys)
+        let expectedKeys: Set<String> = [
+            "agentstudio.performance.elapsed_ms",
+            "agentstudio.performance.ipc.pane_context_read.detail_elapsed_ms",
+            "agentstudio.performance.ipc.pane_context_read.reply_bytes",
+        ]
+        let expectedKeysPresent = numericKeys.isSuperset(of: expectedKeys)
+        let onlyKnownNumericKeys = numericKeys.allSatisfy {
+            expectedKeys.contains($0) || $0.hasPrefix("agentstudio.performance.trace_queue.")
+        }
+        #expect(expectedKeysPresent)
+        #expect(onlyKnownNumericKeys)
+        #expect(record.numeric["agentstudio.performance.ipc.pane_context_read.reply_bytes"] == Double(expectedSize))
+        #expect(record.strings == ["agentstudio.trace.tag": "performance"])
+        #expect(record.otherKeys.isEmpty)
+    }
+
+    @Test("the real session event adapter emits one duration without event or binding identity")
+    func sessionEventRecordsNumericTelemetry() async throws {
+        let records = try await withIPCCallTelemetry(event: .ipcSessionEvent) { fixture in
+            _ = try await fixture.composition.prepareForLaunch(at: fixture.now)
+            _ = try await fixture.bind(paneId: fixture.ownerId, usingLateAdapter: false)
+        }
+        #expect(records.count == 1)
+        let record = try #require(records.first)
+        let numericKeys = Set(record.numeric.keys)
+        let expectedKeys: Set<String> = ["agentstudio.performance.elapsed_ms"]
+        let expectedKeysPresent = numericKeys.isSuperset(of: expectedKeys)
+        let onlyKnownNumericKeys = numericKeys.allSatisfy {
+            expectedKeys.contains($0) || $0.hasPrefix("agentstudio.performance.trace_queue.")
+        }
+        #expect(expectedKeysPresent)
+        #expect(onlyKnownNumericKeys)
+        #expect(record.strings == ["agentstudio.trace.tag": "performance"])
+        #expect(record.otherKeys.isEmpty)
     }
 
     @Test("pane.context.get through the real adapter reads without application-local mutations")
@@ -278,7 +338,9 @@ private struct CompositionFactoryFixture: Sendable {
     let drawerId: PaneId
     let now: Date
 
-    @concurrent static func make() async throws -> Self {
+    @concurrent static func make(
+        performanceTraceRecorder: AgentStudioPerformanceTraceRecorder? = nil
+    ) async throws -> Self {
         let statements = PaneContextSQLStatementRecorder()
         let (root, corePool, localPool) = try await withoutBlockingCooperativePool {
             let root = FileManager.default.temporaryDirectory.appending(path: "as-composition-\(UUIDv7.generate())")
@@ -333,7 +395,8 @@ private struct CompositionFactoryFixture: Sendable {
                 wallNow: { now },
                 providerProfiles: [.claudeCodeCommandLine],
                 limits: .init(maximumPendingPerPane: 32, maximumPendingGlobal: 128),
-                paneViewedMailbox: .init(), presentationAtom: presentationAtom))
+                paneViewedMailbox: .init(), presentationAtom: presentationAtom,
+                performanceTraceRecorder: performanceTraceRecorder))
         return Self(
             root: root, corePool: corePool, localPool: localPool, statements: statements, composition: composition,
             directory: directory,
@@ -388,14 +451,69 @@ private struct CompositionFactoryFixture: Sendable {
 }
 
 @MainActor
-private func withCompositionFactory(operation: @Sendable (CompositionFactoryFixture) async throws -> Void) async throws
-{
-    let fixture = try await CompositionFactoryFixture.make()
+private func withCompositionFactory(
+    performanceTraceRecorder: AgentStudioPerformanceTraceRecorder? = nil,
+    operation: @Sendable (CompositionFactoryFixture) async throws -> Void
+) async throws {
+    let fixture = try await CompositionFactoryFixture.make(performanceTraceRecorder: performanceTraceRecorder)
     do {
         try await operation(fixture)
         try await fixture.close()
     } catch {
         try? await fixture.close()
+        throw error
+    }
+}
+
+private struct IPCCallTraceObservation: Sendable {
+    let numeric: [String: Double]
+    let strings: [String: String]
+    let otherKeys: Set<String>
+}
+
+@MainActor
+private func withIPCCallTelemetry(
+    event: AgentStudioPerformanceTraceRecorder.Event,
+    operation: @Sendable (CompositionFactoryFixture) async throws -> Void
+) async throws -> [IPCCallTraceObservation] {
+    let directory = FileManager.default.temporaryDirectory.appending(path: "ipc-call-trace-\(UUIDv7.generate())")
+    let runtime = AgentStudioTraceRuntime(
+        configuration: AgentStudioTraceConfiguration.from(environment: [
+            "AGENTSTUDIO_TRACE_BACKEND": "jsonl", "AGENTSTUDIO_TRACE_DIR": directory.path,
+            "AGENTSTUDIO_TRACE_NAME": "ipc-call-duration", "AGENTSTUDIO_TRACE_TAGS": "performance",
+        ]), processIdentifier: 909, timeUnixNano: { 117 })
+    let recorder = AgentStudioPerformanceTraceRecorder(traceRuntime: runtime)
+    do {
+        try await withCompositionFactory(performanceTraceRecorder: recorder, operation: operation)
+        try await recorder.drain()
+        let file = try #require(runtime.outputFileURL)
+        let observations = try await valueFromDedicatedThread {
+            let contents = try String(contentsOf: file, encoding: .utf8)
+            return try contents.split(separator: "\n").compactMap { line -> IPCCallTraceObservation? in
+                let raw = try JSONSerialization.jsonObject(with: Data(line.utf8))
+                guard let record = raw as? [String: Any], record["body"] as? String == event.rawValue,
+                    let attributes = record["attributes"] as? [String: Any]
+                else { return nil }
+                var numeric: [String: Double] = [:]
+                var strings: [String: String] = [:]
+                var otherKeys = Set<String>()
+                for (key, value) in attributes {
+                    if let number = value as? NSNumber {
+                        numeric[key] = number.doubleValue
+                    } else if let text = value as? String {
+                        strings[key] = text
+                    } else {
+                        otherKeys.insert(key)
+                    }
+                }
+                return IPCCallTraceObservation(numeric: numeric, strings: strings, otherKeys: otherKeys)
+            }
+        }
+        try await valueFromDedicatedThread { try FileManager.default.removeItem(at: directory) }
+        return observations
+    } catch {
+        try? await recorder.drain()
+        try? await valueFromDedicatedThread { try FileManager.default.removeItem(at: directory) }
         throw error
     }
 }
