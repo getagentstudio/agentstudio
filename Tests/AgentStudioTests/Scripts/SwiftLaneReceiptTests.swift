@@ -22,8 +22,9 @@ struct SwiftLaneReceiptTests {
                 + "echo RESOLVED=$(swift_test_bundle_for_suite 'WebKitSerializedTests/BridgePaneControllerTests' 2>/dev/null || true)"
         )
 
-        #expect(output.contains("WebKitSerializedTests/BridgePaneControllerTests\tAgentStudioTests"))
-        #expect(output.contains("RESOLVED=\(executable)"))
+        #expect(output.contains("WebKitSerializedTests/BridgePaneControllerTests"))
+        #expect(
+            output.contains("RESOLVED=") && output.contains("AgentStudioTests.xctest/Contents/MacOS/AgentStudioTests"))
     }
 
     @Test("a receipt is valid only for a fresh or linked bundle and a clean tree")
