@@ -16,6 +16,11 @@ package enum SessionsProviderOccurrenceKind: String, Sendable, Equatable {
 package struct SessionsProviderOccurrenceIdentity: Sendable, Equatable {
     package let kind: SessionsProviderOccurrenceKind
     package let occurrenceId: UUID
+
+    package init(kind: SessionsProviderOccurrenceKind, occurrenceId: UUID) {
+        self.kind = kind
+        self.occurrenceId = occurrenceId
+    }
 }
 
 package struct SessionsRepositoryOperation: Sendable, Equatable {
@@ -135,4 +140,14 @@ package struct SessionsRepositoryReduction: Sendable, Equatable {
     package var resultChanges: [SessionsResultRecord] = []
     package var lossChanges: [SessionsLossRecord] = []
     package let outcome: SessionsMutationOutcome
+}
+
+struct SessionsCommittedMutation: Sendable {
+    let mutation: SessionsMutation
+    let result: SessionsSubmissionResult
+}
+
+struct SessionsQualifiedHookCommitResult: Sendable {
+    let result: SessionsSubmissionResult
+    let committedMutations: [SessionsCommittedMutation]
 }

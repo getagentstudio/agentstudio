@@ -14,39 +14,42 @@ package struct SessionsRepository: Sendable {
         reducing: @Sendable (SessionsRepositoryContext) throws -> SessionsRepositoryReduction
     ) async throws -> SessionsSubmissionResult {
         try await sqliteAccess.write { database in
-            if let replay = try SessionsRepositoryStorage.loadOperationReplay(
-                database: database,
-                operation: operation
-            ) {
-                try commitParticipant?.commit(in: database)
-                return SessionsSubmissionResult(outcome: replay, disposition: .replayed)
-            }
-            if let replay = try SessionsRepositoryStorage.loadOccurrenceReplay(
-                database: database,
-                operation: operation
-            ) {
-                try commitParticipant?.commit(in: database)
-                return SessionsSubmissionResult(outcome: replay, disposition: .replayed)
-            }
-            let context = try SessionsRepositoryStorage.loadContext(
-                database: database,
-                query: operation.contextQuery
-            )
-            let reduction = try reducing(context)
-            let commitRevision = try SessionsRepositoryStorage.insertOperation(
-                database: database,
-                operation: operation,
-                outcome: reduction.outcome
-            )
-            try SessionsRepositoryStorage.apply(
-                reduction: reduction,
-                commitRevision: commitRevision,
-                database: database
-            )
+            let result = try Self.applyInTransaction(database: database, operation: operation, reducing: reducing)
             try commitParticipant?.commit(in: database)
-            return SessionsSubmissionResult(
-                outcome: reduction.outcome, disposition: .inserted, commitRevision: commitRevision)
+            return result
         }
+    }
+
+    static func loadReplay(
+        database: Database, operation: SessionsRepositoryOperation
+    ) throws -> SessionsSubmissionResult? {
+        if let outcome = try SessionsRepositoryStorage.loadOperationReplay(database: database, operation: operation) {
+            return .init(outcome: outcome, disposition: .replayed)
+        }
+        if let outcome = try SessionsRepositoryStorage.loadOccurrenceReplay(database: database, operation: operation) {
+            return .init(outcome: outcome, disposition: .replayed)
+        }
+        return nil
+    }
+
+    static func applyInTransaction(
+        database: Database, operation: SessionsRepositoryOperation,
+        reducing: @Sendable (SessionsRepositoryContext) throws -> SessionsRepositoryReduction
+    ) throws -> SessionsSubmissionResult {
+        if let replay = try loadReplay(database: database, operation: operation) { return replay }
+        return try applyNewOperation(database: database, operation: operation, reducing: reducing)
+    }
+
+    static func applyNewOperation(
+        database: Database, operation: SessionsRepositoryOperation,
+        reducing: @Sendable (SessionsRepositoryContext) throws -> SessionsRepositoryReduction
+    ) throws -> SessionsSubmissionResult {
+        let context = try SessionsRepositoryStorage.loadContext(database: database, query: operation.contextQuery)
+        let reduction = try reducing(context)
+        let revision = try SessionsRepositoryStorage.insertOperation(
+            database: database, operation: operation, outcome: reduction.outcome)
+        try SessionsRepositoryStorage.apply(reduction: reduction, commitRevision: revision, database: database)
+        return .init(outcome: reduction.outcome, disposition: .inserted, commitRevision: revision)
     }
 
     package func snapshot(_ query: SessionsSnapshotQuery) async throws -> SessionsSnapshot {
