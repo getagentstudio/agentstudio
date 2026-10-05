@@ -27,6 +27,7 @@ package enum WorktreeStopReason: String, CaseIterable, Codable, Sendable {
     case sourceNotOnDefaultBranch
     case configInvalid
     case sourceIndexUnreadable
+    case sourceIndexUnsupported
 
     package static let lr11Order: [Self] = [
         .mainWorktree,
@@ -171,7 +172,7 @@ package enum WorktreeStopCatalog {
         case .forkUnavailable:
             "A copy-on-write fork is unavailable."
         case .fromBranchNeedsTrackedOnly, .changesOnlyNeedsFrom, .trackedOnlyExcludesSource, .sourceDirty,
-            .sourceNotOnDefaultBranch, .configInvalid, .sourceIndexUnreadable:
+            .sourceNotOnDefaultBranch, .configInvalid, .sourceIndexUnreadable, .sourceIndexUnsupported:
             creationMessage(for: reason)
         }
     }
@@ -192,6 +193,8 @@ package enum WorktreeStopCatalog {
             "The repository copy configuration could not be read."
         case .sourceIndexUnreadable:
             "The source index could not be read."
+        case .sourceIndexUnsupported:
+            "The source index format is not supported."
         case .defaultBranch, .defaultBranchUnverified, .mainWorktree, .gitLockUnidentified, .notFound, .alreadyRemoved,
             .startBranchNotFound, .unsupportedWorkingState, .targetIsCurrent, .worktreeLocked, .dirty, .changesUnknown,
             .evidenceInTmp, .evidenceUnknown, .openInPane, .gitLockHeld, .archiveDestinationExists,
@@ -292,6 +295,8 @@ package enum WorktreeStopCatalog {
                 command("retry", effect: "Retry after the source can be read."),
                 flag("--tracked-only", effect: "Create a tracked-files checkout."),
             ]
+        case .sourceIndexUnsupported:
+            return [flag("--tracked-only", effect: "Create a tracked-files checkout.")]
         case .configInvalid:
             return [
                 command("fix .agentstudio.config.json and retry", effect: "Correct the repository copy declaration.")

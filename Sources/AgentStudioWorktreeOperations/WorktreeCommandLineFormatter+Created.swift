@@ -4,6 +4,11 @@ import Foundation
 extension WorktreeCommandLineFormatter {
     package static func createdHumanLine(_ summary: WorktreeCreatedSummary) -> String {
         var lines = ["created \(summary.branch) at \(absolutePath(summary.path))"]
+        if case .copyOnWrite(let report) = summary.materialization {
+            lines.append(
+                "copyOnWrite: ignoredIncludedPatterns=[\(report.ignoredIncludedPatterns.joined(separator: ", "))] ignoredExcludedCount=\(report.ignoredExcludedCount) nestedWorktreesSkipped=[\(report.nestedWorktreesSkipped.joined(separator: ", "))]"
+            )
+        }
         if let largeFiles = WorktreeLargeFilesProjector.document(
             for: summary.largeFiles,
             worktreePath: summary.path
@@ -69,6 +74,9 @@ package enum WorktreeCreatedMaterializationDocument: Encodable, Sendable {
         case logicalRegularFileBytes
         case skippedEntries
         case normalizedEntries
+        case ignoredIncludedPatterns
+        case ignoredExcludedCount
+        case nestedWorktreesSkipped
         case trackedChanges
         case untrackedFiles
         case ignoredExcluded
@@ -106,6 +114,9 @@ package enum WorktreeCreatedMaterializationDocument: Encodable, Sendable {
             try container.encode(report.logicalRegularFileBytes, forKey: .logicalRegularFileBytes)
             try container.encode(report.skippedEntries, forKey: .skippedEntries)
             try container.encode(report.normalizedEntries, forKey: .normalizedEntries)
+            try container.encode(report.ignoredIncludedPatterns, forKey: .ignoredIncludedPatterns)
+            try container.encode(report.ignoredExcludedCount, forKey: .ignoredExcludedCount)
+            try container.encode(report.nestedWorktreesSkipped, forKey: .nestedWorktreesSkipped)
         case .changesOnly(let trackedChanges, let untrackedFiles, let ignoredExcluded):
             try container.encode("changesOnly", forKey: .kind)
             try container.encode(trackedChanges, forKey: .trackedChanges)

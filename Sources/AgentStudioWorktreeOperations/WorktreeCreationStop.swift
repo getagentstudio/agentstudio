@@ -8,6 +8,7 @@ package enum WorktreeCreationStop: Error, Codable, Sendable, Equatable {
     case sourceNotOnDefaultBranch(actual: String?, expected: String)
     case configInvalid(path: String, error: String)
     case sourceIndexUnreadable
+    case sourceIndexUnsupported
 
     package var reason: WorktreeStopReason {
         switch self {
@@ -18,6 +19,7 @@ package enum WorktreeCreationStop: Error, Codable, Sendable, Equatable {
         case .sourceNotOnDefaultBranch: .sourceNotOnDefaultBranch
         case .configInvalid: .configInvalid
         case .sourceIndexUnreadable: .sourceIndexUnreadable
+        case .sourceIndexUnsupported: .sourceIndexUnsupported
         }
     }
 

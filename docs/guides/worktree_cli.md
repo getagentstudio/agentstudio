@@ -119,11 +119,29 @@ download objects. The created result lists files that could not be filled with
 their reasons; run `git -C <worktree> lfs pull` for them. An incomplete scan is
 also reported with its reason and the same command.
 
-Copy rules are declared in `<main checkout>/.agentstudio.config.json` under
-`worktree.include`. The tool only reads this file;
-unreadable or malformed JSON refuses `configInvalid` before creation. Stage A
-still copies every ignored file with the pinned SDK. Stage B adds ignored-path
-filtering and pattern validation.
+Copy rules are declared in `<main checkout>/.agentstudio.config.json`:
+
+```json
+{ "worktree": { "include": [".build*/", "Frameworks/"] } }
+```
+
+`worktree.include` uses positive gitignore patterns: `*`, `?`, `**`, a leading
+`/` for a repository-root anchor, and a trailing `/` for directories. Leading
+`!` negation and `#` comments are invalid entries. The tool reads the main
+checkout's file and never writes it. Unknown keys are ignored. No file or no
+include key means no ignored files are copied. Tracked and untracked
+non-ignored files are copied; included ignored directories carry their contents.
+
+Unreadable or malformed JSON, or an invalid pattern, refuses `configInvalid`
+before creation; the output names the file, offending entry when applicable,
+and error. An unreadable existing source index refuses `sourceIndexUnreadable`
+with retry or `--tracked-only`; an unsupported index format (sparse or split)
+refuses `sourceIndexUnsupported` with `--tracked-only`. A missing index counts
+as empty. The created copy-on-write report prints `ignoredIncludedPatterns`,
+`ignoredExcludedCount` (excluded paths), and `nestedWorktreesSkipped`.
+
+The app UI Fork continues to copy all ignored files. These repository include
+rules apply to the CLI `new` copy-on-write path, including `new --from`.
 
 ## Rules
 

@@ -117,6 +117,10 @@ struct WorktreeOperationErrorMapperTests {
         for reason in GitWorktreeForkRejectionReason.allCases {
             let expectedRefusal: WorktreeOperationRefusal
             switch reason {
+            case .sourceIndexUnreadable:
+                expectedRefusal = .creationStopped(.sourceIndexUnreadable)
+            case .sourceIndexUnsupported:
+                expectedRefusal = .creationStopped(.sourceIndexUnsupported)
             case .destinationExists:
                 expectedRefusal = .destinationExists(destination)
             case .destinationParentMissing:

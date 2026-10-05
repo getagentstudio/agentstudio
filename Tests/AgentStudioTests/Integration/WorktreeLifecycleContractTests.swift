@@ -25,7 +25,7 @@ struct WorktreeStopCatalogTests {
     private static let creationReasons: Set<WorktreeStopReason> = [
         .fromBranchNeedsTrackedOnly, .changesOnlyNeedsFrom, .trackedOnlyExcludesSource,
         .sourceDirty, .sourceNotOnDefaultBranch, .configInvalid,
-        .sourceIndexUnreadable,
+        .sourceIndexUnreadable, .sourceIndexUnsupported,
     ]
 
     @Test("creation stops carry exact continuing options in human and JSON output")
@@ -43,6 +43,7 @@ struct WorktreeStopCatalogTests {
             ],
             .configInvalid: [.command("fix .agentstudio.config.json and retry")],
             .sourceIndexUnreadable: [.command("retry"), .flag("--tracked-only")],
+            .sourceIndexUnsupported: [.flag("--tracked-only")],
         ]
         #expect(Set(expectedActions.keys) == Self.creationReasons)
         for (reason, actions) in expectedActions {
@@ -253,7 +254,7 @@ struct WorktreeStopCatalogTests {
     private func details(for reason: WorktreeStopReason) -> WorktreeStopDetails {
         switch reason {
         case .fromBranchNeedsTrackedOnly, .changesOnlyNeedsFrom, .trackedOnlyExcludesSource, .sourceDirty,
-            .sourceNotOnDefaultBranch, .configInvalid, .sourceIndexUnreadable:
+            .sourceNotOnDefaultBranch, .configInvalid, .sourceIndexUnreadable, .sourceIndexUnsupported:
             .creation(creationDetails(for: reason))
         case .defaultBranch:
             .defaultBranch
@@ -318,6 +319,7 @@ struct WorktreeStopCatalogTests {
         case .sourceNotOnDefaultBranch: .sourceNotOnDefaultBranch(actual: "feature/topic", expected: "main")
         case .configInvalid: .configInvalid(path: "/repo/.agentstudio.config.json", error: "malformed")
         case .sourceIndexUnreadable: .sourceIndexUnreadable
+        case .sourceIndexUnsupported: .sourceIndexUnsupported
         case .defaultBranch, .defaultBranchUnverified, .mainWorktree, .gitLockUnidentified, .notFound, .alreadyRemoved,
             .startBranchNotFound, .unsupportedWorkingState, .targetIsCurrent, .worktreeLocked, .dirty, .changesUnknown,
             .evidenceInTmp, .evidenceUnknown, .openInPane, .gitLockHeld, .archiveDestinationExists,

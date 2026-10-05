@@ -16,8 +16,11 @@ extension WorktreeOperationRunner {
         case .outcome(let outcome): return outcome
         case .ready(let value): prepared = value
         }
+        let includePatterns: [GitPathPattern]
         do {
-            _ = try await AgentStudioRepositoryConfigReader.read(mainWorktree: prepared.repositoryPath)
+            let config = try await AgentStudioRepositoryConfigReader.read(mainWorktree: prepared.repositoryPath)
+            includePatterns = try config.worktree.compiledIncludePatterns(
+                configurationPath: prepared.repositoryPath.appending(path: ".agentstudio.config.json"))
         } catch let stop as WorktreeCreationStop {
             return .refused(.creationStopped(stop))
         } catch {
@@ -51,7 +54,8 @@ extension WorktreeOperationRunner {
         {
             return outcome
         }
-        return await copySource(prepared, source: source.sourceWorktreePath, request: request)
+        return await copySource(
+            prepared, source: source.sourceWorktreePath, request: request, includePatterns: includePatterns)
     }
 
     private func defaultCopySourceRefusal(source: URL, repository: URL) async -> WorktreeOperationOutcome? {
@@ -133,7 +137,8 @@ extension WorktreeOperationRunner {
     }
 
     private func copySource(
-        _ prepared: PreparedWorktreeCreation, source: URL, request: WorktreeCreateRequest
+        _ prepared: PreparedWorktreeCreation, source: URL, request: WorktreeCreateRequest,
+        includePatterns: [GitPathPattern]
     ) async -> WorktreeOperationOutcome {
         let sdkMaterialization: GitWorktreeForkMaterialization
         switch request.materialization {
@@ -145,7 +150,8 @@ extension WorktreeOperationRunner {
             let fork = try await client.forkWorktree(
                 GitForkWorktreeRequest(
                     sourceWorktreePath: source, destinationPath: prepared.destinationPath,
-                    mode: .newBranch(name: prepared.branchName.rawValue), materialization: sdkMaterialization
+                    mode: .newBranch(name: prepared.branchName.rawValue), materialization: sdkMaterialization,
+                    copyRules: GitWorktreeCopyRules(ignoredPaths: .copyMatching(includePatterns))
                 ))
             return .created(
                 WorktreeCreatedSummary(

@@ -354,13 +354,15 @@ struct WorktreeCommandLineTests {
                                 recreatedFIFOCount: 0,
                                 logicalRegularFileBytes: 0,
                                 skippedEntries: [],
-                                normalizedEntries: []
+                                normalizedEntries: [],
+                                ignoredIncludedPatterns: [], ignoredExcludedCount: 0, nestedWorktreesSkipped: []
                             ))
                     )
                 ),
-                humanText: "created feature/cow at /tmp/worktree-output/repository.feature-cli",
+                humanText:
+                    "created feature/cow at /tmp/worktree-output/repository.feature-cli\ncopyOnWrite: ignoredIncludedPatterns=[] ignoredExcludedCount=0 nestedWorktreesSkipped=[]",
                 jsonText:
-                    "{\"branch\":\"feature/cow\",\"materialization\":{\"clonedRegularFileCount\":0,\"createdDirectoryCount\":0,\"kind\":\"copyOnWrite\",\"logicalRegularFileBytes\":0,\"normalizedEntries\":[],\"preservedGitRepositoryCount\":0,\"preservedHardLinkCount\":0,\"recreatedFIFOCount\":0,\"recreatedSymbolicLinkCount\":0,\"skippedEntries\":[]},\"operation\":\"new\",\"outcome\":\"created\",\"path\":\"/tmp/worktree-output/repository.feature-cli\",\"repository\":\"/tmp/worktree-output/repository\"}",
+                    "{\"branch\":\"feature/cow\",\"materialization\":{\"clonedRegularFileCount\":0,\"createdDirectoryCount\":0,\"ignoredExcludedCount\":0,\"ignoredIncludedPatterns\":[],\"kind\":\"copyOnWrite\",\"logicalRegularFileBytes\":0,\"nestedWorktreesSkipped\":[],\"normalizedEntries\":[],\"preservedGitRepositoryCount\":0,\"preservedHardLinkCount\":0,\"recreatedFIFOCount\":0,\"recreatedSymbolicLinkCount\":0,\"skippedEntries\":[]},\"operation\":\"new\",\"outcome\":\"created\",\"path\":\"/tmp/worktree-output/repository.feature-cli\",\"repository\":\"/tmp/worktree-output/repository\"}",
                 exitCode: 0
             ),
         ]

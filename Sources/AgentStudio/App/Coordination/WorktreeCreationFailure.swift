@@ -147,6 +147,8 @@ enum WorktreeForkRejectionCopy {
         case .crossDevice: "the destination is on a different volume than the source"
         case .cloneCapabilityUnavailable: "the volume cannot clone files"
         case .administrativeStoreOnDifferentDevice: "the repository's Git data is on a different volume"
+        case .sourceIndexUnreadable: "the source index cannot be read"
+        case .sourceIndexUnsupported: "the source index format is not supported"
         case .sourceNotWorktreeRoot: "the source is not the root of a worktree"
         case .sourceHeadUnavailable: "the source worktree has no commit to fork from"
         case .invalidDestinationPath: "the destination path is not valid"

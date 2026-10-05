@@ -90,6 +90,10 @@ package enum WorktreeOperationErrorMapper {
         branchName: String
     ) -> WorktreeOperationRefusal {
         switch reason {
+        case .sourceIndexUnreadable:
+            .creationStopped(.sourceIndexUnreadable)
+        case .sourceIndexUnsupported:
+            .creationStopped(.sourceIndexUnsupported)
         case .destinationExists:
             .destinationExists(destinationPath)
         case .destinationParentMissing:

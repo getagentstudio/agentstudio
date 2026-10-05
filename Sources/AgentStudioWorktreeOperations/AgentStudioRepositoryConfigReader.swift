@@ -1,3 +1,4 @@
+import AgentStudioGit
 import Darwin
 import Foundation
 
@@ -21,6 +22,22 @@ package struct WorktreeCopyConfig: Codable, Sendable, Equatable {
 
     package init(include: [String] = []) {
         self.include = include
+    }
+
+    package func compiledIncludePatterns(configurationPath: URL) throws(WorktreeCreationStop) -> [GitPathPattern] {
+        var patterns: [GitPathPattern] = []
+        patterns.reserveCapacity(include.count)
+        for entry in include {
+            do {
+                patterns.append(try GitPathPattern(entry))
+            } catch {
+                throw .configInvalid(
+                    path: configurationPath.path,
+                    error: "include entry \(String(reflecting: entry)): \(error)"
+                )
+            }
+        }
+        return patterns
     }
 
     private enum CodingKeys: String, CodingKey { case include }
