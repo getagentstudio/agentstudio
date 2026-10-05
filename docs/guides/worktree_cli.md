@@ -132,13 +132,27 @@ checkout's file and never writes it. Unknown keys are ignored. No file or no
 include key means no ignored files are copied. Tracked and untracked
 non-ignored files are copied; included ignored directories carry their contents.
 
-Unreadable or malformed JSON, or an invalid pattern, refuses `configInvalid`
-before creation; the output names the file, offending entry when applicable,
-and error. An unreadable existing source index refuses `sourceIndexUnreadable`
-with retry or `--tracked-only`; an unsupported index format (sparse or split)
-refuses `sourceIndexUnsupported` with `--tracked-only`. A missing index counts
-as empty. The created copy-on-write report prints `ignoredIncludedPatterns`,
-`ignoredExcludedCount` (excluded paths), and `nestedWorktreesSkipped`.
+The config is read only for a copy-on-write `new` (the default and
+`new --from`). Unreadable or malformed JSON, or an invalid pattern, refuses
+`configInvalid` before creation. The output names the file, the offending entry
+when applicable, and the error, with the options to fix the file or use
+`--tracked-only`. `--tracked-only` and `--changes-only` never read the config,
+so a broken config never blocks them.
+
+Source index problems:
+
+- **Default `new`** first checks that the main checkout is clean. If its working
+  changes can't be read, for example because the index is unreadable or in a
+  sparse or split format, it refuses `changesUnknown` (options: retry,
+  `--tracked-only`, or `--from <main checkout>`), because a clean source can't
+  be proved.
+- **`new --from <worktree>`** copies the source as it is. An unreadable source
+  index refuses `sourceIndexUnreadable` (retry or `--tracked-only`), and a
+  sparse or split index refuses `sourceIndexUnsupported` (`--tracked-only`).
+- A missing index counts as empty.
+
+The created copy-on-write report prints `ignoredIncludedPatterns`,
+`ignoredExcludedCount` (excluded paths) and `nestedWorktreesSkipped`.
 
 The app UI Fork continues to copy all ignored files. These repository include
 rules apply to the CLI `new` copy-on-write path, including `new --from`.
