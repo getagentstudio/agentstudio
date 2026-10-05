@@ -191,6 +191,9 @@ export function registerBridgeCommWorkerRuntimePortProtocol(
 		activeFileWorkerDerivationEpoch: () => activeFileWorkerDerivationEpoch,
 		activeReviewWorkerDerivationEpoch: () => activeReviewWorkerDerivationEpoch,
 		activeViewerMode: () => activeViewerMode,
+		currentReviewWorkerDerivationEpoch: () =>
+			productTransport?.workerDerivationEpoch('review') ?? null,
+		readReviewDisplayPublisher: () => reviewDisplayLifecyclePublisher,
 		createSequence,
 		publish: (message): void => port.postMessage(message),
 		telemetryClient: props.telemetryClient,

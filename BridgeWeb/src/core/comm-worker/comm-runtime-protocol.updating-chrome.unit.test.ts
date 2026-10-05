@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'vitest';
 
 import type { BridgeTelemetrySample } from '../../foundation/telemetry/bridge-telemetry-event.js';
+import noSourceAttempt from '../../test-fixtures/bridge-contract-fixtures/valid/bridge-product-review-comparison-attempt-no-source.json' with { type: 'json' };
 import { makeReviewPublicationIdentity } from './bridge-comm-worker-entry.test-support.js';
 import {
 	encodeBridgeWorkerActiveViewerModeUpdateCommand,
@@ -15,10 +16,12 @@ import {
 	type FileMetadataSubscription,
 } from './bridge-comm-worker-runtime-protocol.test-support.js';
 import { publishBridgeCommWorkerUpdatingChrome } from './bridge-comm-worker-updating-chrome.js';
+import { createBridgeMainRenderSnapshotStore } from './bridge-main-render-snapshot-store.js';
 import { BridgeProductBoundedAsyncQueue } from './bridge-product-async-queue.js';
 import type { BridgeProductBatchFrameSinks } from './bridge-product-batch-frame-router.js';
 import type { BridgeProductReviewComparisonTargetsContentDescriptor } from './bridge-product-content-contracts.js';
 import type { BridgeProductMetadataApplicationProtocolIdentity } from './bridge-product-metadata-application-protocol.js';
+import { bridgeProductReviewComparisonPresentationSchema } from './bridge-product-review-comparison-presentation-contracts.js';
 import type { BridgeProductContentStream } from './bridge-product-transport-contract.js';
 import type {
 	BridgeProductPanePresentationFrame,
@@ -36,9 +39,53 @@ import {
 } from './comm-runtime-protocol.file-product.test-support.js';
 
 describe('Bridge comm worker updating panel chrome', () => {
+	test('certified no-source reaches panel chrome before a Review epoch or publication exists', () => {
+		const store = createBridgeMainRenderSnapshotStore();
+		const comparison = bridgeProductReviewComparisonPresentationSchema.parse({
+			activeTarget: null,
+			attempt: noSourceAttempt,
+			displayedSnapshot: { status: 'none' },
+			repositoryDefaultTarget: null,
+		});
+		publishBridgeCommWorkerUpdatingChrome({
+			activeFileWorkerDerivationEpoch: null,
+			activeReviewSourceIdentity: null,
+			activeReviewWorkerDerivationEpoch: null,
+			activeReviewPublicationIdentity: null,
+			activeViewerMode: null,
+			createSequence: (): number => 1,
+			previousPublicationIdentity: undefined,
+			previousReviewComparison: null,
+			presentation: {
+				fileRefreshFailure: null,
+				nativeActivity: 'foreground',
+				presentationRevision: 1,
+				refreshingLanes: [],
+				reviewComparison: comparison,
+				workAdmissionGeneration: 1,
+			},
+			publish: (): void => {
+				throw new Error('No-source must not manufacture a package publication');
+			},
+			publishCertifiedNoSourceComparison: (certifiedComparison): void => {
+				store.applyWorkerPatch({
+					slice: 'panelChrome',
+					operation: 'upsert',
+					payload: { reviewComparison: certifiedComparison },
+				});
+			},
+			surface: 'review',
+			telemetryClient: undefined,
+		});
+		expect(store.getSnapshot().panelChromeSlice.reviewComparison).toEqual(comparison);
+	});
+
 	test('publishes Review chrome only when it can carry exact publication lineage', () => {
 		const published: BridgeWorkerServerToMainWireMessage[] = [];
 		const common = {
+			publishCertifiedNoSourceComparison: (): void => {
+				throw new Error('Non-noSource state must retain its publication gate');
+			},
 			activeFileWorkerDerivationEpoch: null,
 			activeReviewSourceIdentity: null,
 			activeReviewWorkerDerivationEpoch: 7,
@@ -85,6 +132,9 @@ describe('Bridge comm worker updating panel chrome', () => {
 
 		// Act
 		publishBridgeCommWorkerUpdatingChrome({
+			publishCertifiedNoSourceComparison: (): void => {
+				throw new Error('File state must not use the Review no-source path');
+			},
 			activeFileWorkerDerivationEpoch: 7,
 			activeReviewPublicationIdentity: null,
 			activeReviewSourceIdentity: null,

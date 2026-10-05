@@ -1,5 +1,6 @@
 import type { BridgeCommWorkerPanePresentationSnapshot } from './bridge-comm-worker-pane-presentation.js';
 import type { BridgeCommWorkerReviewSourceIdentity } from './bridge-comm-worker-review-display-projection.js';
+import type { BridgeCommWorkerReviewDisplayLifecyclePublisher } from './bridge-comm-worker-review-operation-lifecycle.js';
 import type { BridgeCommWorkerTelemetryRecorder } from './bridge-comm-worker-telemetry.js';
 import { publishBridgeCommWorkerUpdatingChrome } from './bridge-comm-worker-updating-chrome.js';
 import type {
@@ -25,6 +26,11 @@ export function createBridgeCommWorkerReviewRenderPublicationAuthority(props: {
 	readonly activeReviewWorkerDerivationEpoch: () => number | null;
 	readonly activeViewerMode: () => 'file' | 'review' | null;
 	readonly createSequence: () => number;
+	readonly currentReviewWorkerDerivationEpoch: () => number | null;
+	readonly readReviewDisplayPublisher: () => Pick<
+		BridgeCommWorkerReviewDisplayLifecyclePublisher,
+		'post'
+	>;
 	readonly publish: (message: BridgeWorkerServerToMainWireMessage) => void;
 	readonly telemetryClient: BridgeCommWorkerTelemetryRecorder | undefined;
 }): BridgeCommWorkerReviewRenderPublicationAuthority {
@@ -48,6 +54,18 @@ export function createBridgeCommWorkerReviewRenderPublicationAuthority(props: {
 					previousReviewComparison: publishedReviewComparison,
 					presentation,
 					publish: props.publish,
+					publishCertifiedNoSourceComparison: (comparison): void => {
+						const workerDerivationEpoch = props.currentReviewWorkerDerivationEpoch();
+						if (workerDerivationEpoch === null)
+							throw new Error(
+								'Certified pane comparison requires the current product transport epoch.',
+							);
+						props.readReviewDisplayPublisher().post({
+							patches: [{ operation: 'replace', slice: 'reviewComparison', payload: comparison }],
+							reviewPublicationIdentity: null,
+							workerDerivationEpoch,
+						});
+					},
 					surface,
 					telemetryClient: props.telemetryClient,
 				});
