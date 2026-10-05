@@ -97,6 +97,7 @@ actor BridgeProductSchemeProviderSpy: BridgeProductSchemeProvider {
         let controlRequests: [BridgeProductControlRequest]
         let metadataRequestCount: Int
         let producerFailureCount: Int
+        let producerFailureReasons: [String]
     }
 
     private let contentOperationGate = HeldStep<BridgeProductProducerLease>("contentOperationGate")
@@ -266,7 +267,8 @@ actor BridgeProductSchemeProviderSpy: BridgeProductSchemeProvider {
             controlCompletionCount: controlCompletionCount,
             controlRequests: controlRequests,
             metadataRequestCount: metadataRequestCount,
-            producerFailureCount: producerFailures.count
+            producerFailureCount: producerFailures.count,
+            producerFailureReasons: producerFailures
         )
     }
 

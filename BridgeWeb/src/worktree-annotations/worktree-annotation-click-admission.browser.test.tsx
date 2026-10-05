@@ -77,6 +77,39 @@ async function nextAnimationFrame(): Promise<void> {
 	});
 }
 
+async function waitForSinglePierreUtility(): Promise<HTMLElement> {
+	return await new Promise<HTMLElement>((resolve): void => {
+		const observedRoots = new Set<Node>();
+
+		function observeOpenShadowRoots(): void {
+			const roots: ParentNode[] = [document];
+			while (roots.length > 0) {
+				const root = roots.shift();
+				if (root === undefined) break;
+				if (!observedRoots.has(root)) {
+					observedRoots.add(root);
+					observer.observe(root, { childList: true, subtree: true });
+				}
+				for (const candidate of root.querySelectorAll('*')) {
+					if (candidate.shadowRoot !== null) roots.push(candidate.shadowRoot);
+				}
+			}
+		}
+
+		function resolveWhenUtilityAppears(): void {
+			observeOpenShadowRoots();
+			const utilities = queryPierreElements('[data-utility-button]');
+			const utility = utilities[0];
+			if (utilities.length !== 1 || !(utility instanceof HTMLElement)) return;
+			observer.disconnect();
+			resolve(utility);
+		}
+
+		const observer = new MutationObserver(resolveWhenUtilityAppears);
+		resolveWhenUtilityAppears();
+	});
+}
+
 async function settleBrowserCondition(
 	predicate: () => boolean,
 	failureMessage: string,
@@ -349,8 +382,8 @@ async function hoverAndClickUtility(row: HTMLElement, pointerId: number): Promis
 	const bounds = row.getBoundingClientRect();
 	await act(async (): Promise<void> => {
 		dispatchPointer(row, 'pointermove', pointerAt(bounds, pointerId));
-		await nextAnimationFrame();
 	});
+	await waitForSinglePierreUtility();
 	await clickCurrentUtility(pointerId + 1);
 }
 

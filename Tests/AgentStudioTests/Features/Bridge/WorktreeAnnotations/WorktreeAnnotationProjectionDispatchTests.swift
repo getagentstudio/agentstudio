@@ -1,4 +1,5 @@
 import AgentStudioTestHarness
+import AgentStudioTestSupport
 import Foundation
 import Testing
 
@@ -13,7 +14,8 @@ struct WorktreeAnnotationProjectionDispatchTests {
         let provider = await makeProjectionDispatchProvider(source: harness.source, recorder: recorder)
         let owner = try BridgePaneProductSessionOwner(
             paneSessionId: "pane-session-1", provider: provider,
-            productAdmissionGate: BridgeProductAdmissionGate())
+            productAdmissionGate: BridgeProductAdmissionGate(),
+            operationDeadlineClock: TestPushClock())
         let client = try await ProjectionDispatchClient.open(in: owner, provider: provider)
         let queryA = try projectionQuery(
             sessionID: harness.detail.session.id, sourceGeneration: harness.sourceGeneration, surface: .file)
@@ -49,7 +51,8 @@ struct WorktreeAnnotationProjectionDispatchTests {
         let provider = await makeProjectionDispatchProvider(source: harness.source, recorder: recorder)
         let owner = try BridgePaneProductSessionOwner(
             paneSessionId: "pane-session-1", provider: provider,
-            productAdmissionGate: BridgeProductAdmissionGate())
+            productAdmissionGate: BridgeProductAdmissionGate(),
+            operationDeadlineClock: TestPushClock())
         let clientA = try await ProjectionDispatchClient.open(in: owner, provider: provider)
         let queryA = try projectionQuery(
             sessionID: harness.detail.session.id, sourceGeneration: harness.sourceGeneration, surface: .file)
@@ -91,7 +94,8 @@ struct WorktreeAnnotationProjectionDispatchTests {
         let provider = await makeProjectionDispatchProvider(source: harness.source, recorder: recorder)
         let owner = try BridgePaneProductSessionOwner(
             paneSessionId: "pane-session-1", provider: provider,
-            productAdmissionGate: BridgeProductAdmissionGate())
+            productAdmissionGate: BridgeProductAdmissionGate(),
+            operationDeadlineClock: TestPushClock())
         let clientA = try await ProjectionDispatchClient.open(in: owner, provider: provider)
         let queryA = try projectionQuery(
             sessionID: harness.detail.session.id, sourceGeneration: harness.sourceGeneration, surface: .file)
