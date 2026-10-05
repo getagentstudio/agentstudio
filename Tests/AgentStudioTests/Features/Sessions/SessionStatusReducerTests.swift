@@ -160,10 +160,11 @@ struct SessionStatusReducerTests {
         #expect(fixture.status == .needsYou(.question))
         fixture.send(.stop)
         #expect(fixture.state.providerPrompts.isEmpty)
-        fixture.send(.elicitation(id: "form-1", occurrenceId: UUIDv7.generate(), summary: "Choose a color"))
-        fixture.send(.elicitationResult(id: "form-2"))
+        fixture.send(
+            .elicitation(id: "form-1", occurrenceId: UUIDv7.generate(), summary: "Choose a color"), turnId: "next-turn")
+        fixture.send(.elicitationResult(id: "form-2"), turnId: "next-turn")
         #expect(fixture.status == .needsYou(.question))
-        fixture.send(.elicitationResult(id: "form-1"))
+        fixture.send(.elicitationResult(id: "form-1"), turnId: "next-turn")
         #expect(fixture.state.providerPrompts.isEmpty)
     }
 
@@ -223,7 +224,10 @@ struct SessionStatusReducerTests {
         fixture.send(.stopFailure(.init(category: "failed")))
         fixture.send(.agentLine(.monitoring))
         #expect(fixture.status == .failed(.init(category: "failed")))
-        fixture.send(.stop)
+        fixture.send(.toolActivity, turnId: "next-turn")
+        #expect(fixture.status == .working(.monitoring))
+        fixture.send(.stop, turnId: "next-turn")
+        fixture.send(.agentLine(.monitoring))
         #expect(fixture.status == .idle(.done))
     }
 
@@ -236,7 +240,7 @@ struct SessionStatusReducerTests {
         #expect(fixture.status == .idle(.done))
         fixture.send(.paneViewed(fixture.instant.advanced(by: .seconds(1))))
         #expect(fixture.status == .idle(.ready))
-        fixture.send(.stop)
+        fixture.send(.stop, turnId: "next-turn")
         #expect(fixture.status == .idle(.done))
         fixture.send(.bindingReplaced(by: UUIDv7.generate()))
         fixture.send(.paneViewed(fixture.instant.advanced(by: .seconds(1))))
