@@ -89,15 +89,14 @@ package struct CodexHookProjectedEvent: Equatable, Sendable {
 }
 
 /// Purely projects a Codex hook payload onto the `session.event` vocabulary.
-/// Observation time is supplied by the caller.
+/// Sessions assigns admission time when the projected hook is accepted.
 ///
 /// The projection is total: an event Agent Studio does not
 /// model returns `nil` rather than throwing, because a hook that fails must
 /// never block the provider.
 package enum CodexHookProjection {
-    /// The provider identity every Codex projection carries. `defaultVersion`
-    /// is the exact version this package was verified against and is the
-    /// version the registry profile qualifies.
+    /// The provider identity every Codex projection carries. The default version
+    /// is the release this projection was verified against, a descriptive label.
     package static let providerIdentifier = "codex"
     package static let defaultProviderVersion = "0.154.0"
     package static let providerMode = "cli"
@@ -109,14 +108,12 @@ package enum CodexHookProjection {
     }
 
     package static func project(
-        sourceOccurredAt: Date,
         eventName: CodexHookEventName,
         payload: CodexHookPayload
     ) -> CodexHookProjectedEvent? {
         guard let name = sessionEventName(for: eventName) else { return nil }
         let derivedIdentity = derivedIdentifier(eventName: eventName, payload: payload)
-        var providerFields = IPCSessionProviderEventFields()
-        providerFields.sourceOccurredAt = sourceOccurredAt
+        let providerFields = IPCSessionProviderEventFields()
         return CodexHookProjectedEvent(
             provider: IPCSessionProviderIdentity(
                 identifier: providerIdentifier,
@@ -179,10 +176,8 @@ package enum CodexHookProjection {
     }
 
     /// Codex 0.154.0's `PermissionRequest` payload carries no request or tool
-    /// identifier (`codex-rs/hooks/src/schema.rs:301-322`), but Sessions
-    /// requires one to open and later resolve the needs-you. The derived
-    /// identity is reused so the same permission request retried by Codex
-    /// resolves to the same attention record.
+    /// identifier (`codex-rs/hooks/src/schema.rs:301-322`). This derived wire
+    /// request label does not deduplicate the fresh records Sessions admits.
     private static func requestId(eventName: CodexHookEventName, derivedIdentity: UUID) -> String? {
         switch eventName {
         case .permissionRequest: derivedIdentity.uuidString

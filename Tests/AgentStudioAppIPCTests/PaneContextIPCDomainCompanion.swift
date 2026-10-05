@@ -122,17 +122,13 @@ final class PaneContextIPCDomainCompanion: Sendable {
     }
 
     func bind(conversationId: String = "current", to targetPaneId: UUID? = nil) async throws -> IPCPaneWriterClaim {
-        let provider = SessionsProviderIdentity(
-            providerIdentifier: "claude-code", exactVersion: "2.1.286", operatingMode: "interactive")
-        let source = SessionsBindingSourceIdentity(
-            paneId: targetPaneId ?? paneId, providerConversationId: conversationId, sourceId: "ipc-pane-tests",
-            sourceGenerationId: UUIDv7.generate(), occurrenceId: UUIDv7.generate())
-        _ = try await ingestion.submit(
-            correlationId: UUIDv7.generate(),
-            mutation: .bind(
-                .explicitModelBind(
-                    SessionsExplicitModelBindInput(provider: provider, source: source, reportedAt: time.now))))
-        return IPCPaneWriterClaim(provider: provider.providerIdentifier, conversationId: conversationId)
+        _ = try await ingestion.submitHook(
+            .init(
+                paneId: targetPaneId ?? paneId,
+                providerIdentifier: "claude-code", providerVersion: "2.1.289", sessionId: conversationId,
+                eventName: .sessionStart, turnId: nil, signal: .sessionStart,
+                recordId: UUIDv7.generate(), admittedAt: time.now))
+        return IPCPaneWriterClaim(provider: "claude-code", conversationId: conversationId)
     }
 
     func sendParameters(

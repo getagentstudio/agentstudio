@@ -14,7 +14,7 @@ struct AppIPCTypedRegistryTests {
         let registry = try makeTestAppIPCMethodRegistry(
             registrations: registrations, recognizedCommands: [], channel: .debug)
         let names = registry.capabilities.methods.map(\.name)
-        #expect(names.count == 54)
+        #expect(names.count == 55)
         #expect(names == names.sorted())
         #expect(Set(names).count == names.count)
         #expect(names.filter { $0 == "system.capabilities" }.count == 1)
@@ -36,9 +36,14 @@ struct AppIPCTypedRegistryTests {
         let fixture = BuiltInMethodRegistrationsFixture()
         let registry = try makeTestAppIPCMethodRegistry(
             registrations: fixture.registrations(), recognizedCommands: [], channel: channel)
-        // 23 retained methods plus the eight credential-pane context methods
-        // reach pane agents on both production channels.
-        #expect(registry.capabilities.methods.count == 31)
+        // 23 retained methods, eight credential-pane context methods, and the
+        // hook-refusal method reach pane agents on both production channels.
+        #expect(registry.capabilities.methods.count == 32)
+        let refusal = try #require(registry.registration(named: "session.refusal"))
+        #expect(refusal.descriptor.metadata.exposure == .allChannels)
+        #expect(refusal.descriptor.metadata.requiredPrivileges == [.sessionReportWrite])
+        #expect(refusal.descriptor.metadata.agentEligibility == nil)
+        #expect(registry.paneAgentRoutingRefusal(methodName: "session.refusal", parameters: nil) == nil)
         #expect(registry.registration(named: "session.message") == nil)
         #expect(registry.registration(named: "session.report") == nil)
         #expect(registry.capabilities.methods.allSatisfy { $0.exposure == .allChannels })

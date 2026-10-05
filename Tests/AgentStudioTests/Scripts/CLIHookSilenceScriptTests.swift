@@ -13,7 +13,7 @@ import Testing
 struct CLIHookSilenceScriptTests {
     @Test(
         "a held or trickling real input pipe exhausts one hook total and exits silently without submission",
-        arguments: ["claude", "cursor", "codex"], [false, true])
+        arguments: ["claude", "codex"], [false, true])
     func heldStandardInputExhaustsHookTotal(provider: String, hasPartialInput: Bool) async throws {
         let observed = try await valueFromDedicatedThread {
             let fixture = try HookSilenceProcessFixture(condition: .up)
@@ -31,7 +31,7 @@ struct CLIHookSilenceScriptTests {
             let timing = HookInputDeadlineTiming(inputDescriptor: descriptor, readsPartialInput: hasPartialInput)
             let streams = Mutex<[String]>([])
             let ordinaryInputReads = Mutex(0)
-            let event = provider == "cursor" ? "sessionStart" : "SessionStart"
+            let event = "SessionStart"
             let status = AgentStudioIPCClientCommandLineRunner.run(
                 props: .init(
                     arguments: ["hook", provider, event],
@@ -63,7 +63,7 @@ struct CLIHookSilenceScriptTests {
         #expect(observed.inputWaitEvents.allSatisfy { $0 == Int16(POLLIN) })
     }
 
-    @Test("outside-pane hooks leave even a held input pipe unread", arguments: ["claude", "cursor", "codex"])
+    @Test("outside-pane hooks leave even a held input pipe unread", arguments: ["claude", "codex"])
     func outsidePaneNeverWaitsForInput(provider: String) async throws {
         let observed = await valueFromDedicatedThread {
             let pipe = Pipe()
@@ -77,7 +77,7 @@ struct CLIHookSilenceScriptTests {
             let ordinaryInputReads = Mutex(0)
             let status = AgentStudioIPCClientCommandLineRunner.run(
                 props: .init(
-                    arguments: ["hook", provider, provider == "cursor" ? "sessionStart" : "SessionStart"],
+                    arguments: ["hook", provider, "SessionStart"],
                     environment: [:], executablePath: "/fixture/agentstudio-cli", bundleExecutableURL: nil,
                     standardInput: {
                         ordinaryInputReads.withLock { $0 += 1 }
@@ -102,7 +102,7 @@ struct CLIHookSilenceScriptTests {
 
     @Test(
         "input and authentication share the ingress total and leave exhausted cleanup untouched",
-        arguments: ["claude", "cursor", "codex"])
+        arguments: ["claude", "codex"])
     func inputAndNetworkShareOneHookTotal(provider: String) async throws {
         let fixture = try HookSilenceProcessFixture(condition: .slow)
         defer { fixture.removeFiles() }
@@ -112,7 +112,7 @@ struct CLIHookSilenceScriptTests {
                 try fixture.start()
                 let pipe = Pipe()
                 defer { try? pipe.fileHandleForReading.close() }
-                let event = provider == "cursor" ? "sessionStart" : "SessionStart"
+                let event = "SessionStart"
                 let payload = try JSONSerialization.data(withJSONObject: [
                     "session_id": UUIDv7.generate().uuidString,
                     "conversation_id": UUIDv7.generate().uuidString,

@@ -101,7 +101,7 @@ package enum ClaudeCodeHookProjectionOutcome: Equatable, Sendable {
 }
 
 /// Purely translates one Claude Code hook document into one `session.event` call.
-/// Identifiers and observation time are supplied by the caller.
+/// Wire identifiers are supplied by the caller; Sessions assigns admission time.
 package enum ClaudeCodeHookProjection {
     /// - Parameters:
     ///   - announcedEvent: the event name the installed hook command passed as
@@ -112,7 +112,6 @@ package enum ClaudeCodeHookProjection {
     ///   - freshOccurrenceIdentifier: used only when the document carries no
     ///     `tool_use_id`, where no stable natural key exists.
     package static func project(
-        sourceOccurredAt: Date,
         announcedEvent: String,
         payload: ClaudeCodeHookPayload,
         providerVersion: String,
@@ -131,7 +130,6 @@ package enum ClaudeCodeHookProjection {
             event == .preToolUse && payload.toolName == "AskUserQuestion" ? .question : event.projectedEventName
         let requestIdentifier = name == .permission ? payload.toolUseId : nil
         var providerFields = IPCSessionProviderEventFields()
-        providerFields.sourceOccurredAt = sourceOccurredAt
         providerFields.toolName = payload.toolName
         providerFields.questions = payload.toolInput?.questions
         providerFields.failureSummary = event == .stopFailure ? payload.error : nil
@@ -150,9 +148,8 @@ package enum ClaudeCodeHookProjection {
                     conversationId: payload.sessionId,
                     // `prompt_id` is Claude Code's own per-turn correlation: it
                     // is absent on SessionStart and identical across every
-                    // later event of the same turn. Sessions drops completion
-                    // evidence that carries no turn, so reporting it is what
-                    // makes turn-done land at all.
+                    // later event of the same turn. The status turn guard uses
+                    // this identity to distinguish current-turn reports.
                     turnId: payload.promptId,
                     requestId: requestIdentifier,
                     toolId: [.toolActivity, .question, .toolCompleted, .toolFailed].contains(name)
@@ -180,9 +177,9 @@ package struct ClaudeCodeToolInput: Decodable, Equatable, Sendable {
 ///
 /// A `tool_use_id` is Claude Code's own stable key for the work the event
 /// describes, so the same event retried by the same session derives the same
-/// identifier and the app coalesces it. Without one there is no natural key,
-/// and a fresh identifier is honest about that: deduplication then rests on
-/// correlation alone.
+/// wire identifier. Without one there is no natural key, so it is fresh.
+/// Sessions assigns each accepted invocation a new record identity; neither
+/// this wire identity nor correlation deduplicates hook facts.
 package enum ClaudeCodeHookOccurrenceIdentity {
     package static func occurrenceIdentifier(
         sessionId: String,

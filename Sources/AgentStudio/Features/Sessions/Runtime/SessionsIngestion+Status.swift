@@ -69,75 +69,36 @@ extension SessionsIngestion: SessionOpenAskInput {
         publishStatus(paneId: paneId)
     }
 
-    func applyCommittedStatus(
-        mutation: SessionsMutation, result: SessionsSubmissionResult, admittedAt: ContinuousClock.Instant
-    ) async throws {
-        if case .historical = result.outcome { return }
-        let sequence = result.commitRevision ?? 0
-        switch mutation {
-        case .bind:
-            switch result.outcome {
-            case .binding(.established(let binding)):
-                installStatusBinding(binding)
-            case .binding(.replaced(let previous, let current)):
-                updateStatus(
-                    generation: previous.bindingGenerationId,
-                    event: .init(
-                        input: .bindingReplaced(by: current.bindingGenerationId), sequence: sequence,
-                        occurredAt: current.startedAt, admittedAt: admittedAt, turnId: nil))
-                statusRuntime.bindings[previous.bindingGenerationId] = previous
-                installStatusBinding(current)
-                await sessionEnded(previous.bindingGenerationId)
-            case .binding(.unchanged): break
-            default: break
-            }
-        case .recordEvidence(let evidence):
-            guard evidence.origin == .reported,
-                case .sourceGeneration(_, let sourceGeneration) = evidence.context,
-                let binding = statusRuntime.bindings.values.first(where: { $0.sourceGenerationId == sourceGeneration }),
-                case .bound = statusRuntime.states[binding.bindingGenerationId]?.binding
-            else { break }
-            let record = SessionsEvidenceRecord(
-                occurrenceId: evidence.occurrenceId, conversationId: binding.conversationId,
-                bindingGenerationId: binding.bindingGenerationId, sourceGenerationId: sourceGeneration,
-                turnId: evidence.turnId, subject: evidence.subject, kind: evidence.kind,
-                origin: evidence.origin, freshness: evidence.freshness, occurredAt: evidence.occurredAt,
-                admissionSequence: sequence, sourceOccurredAt: mutation.boundedSourceOccurredAt,
-                providerSignal: evidence.providerSignal)
-            guard let input = SessionsStatusRuntime.statusInput(record) else { break }
-            let isOlderHook = statusRuntime.isOlderHook(record)
-            statusRuntime.noteHook(record, input: input, admittedAt: admittedAt)
-            if isOlderHook {
-                let context = try await repository.statusContext(paneId: binding.paneId)
-                statusRuntime.rereduceBinding(
-                    context, bindingGenerationId: binding.bindingGenerationId, admittedAt: admittedAt)
-            } else {
-                updateStatus(
-                    generation: binding.bindingGenerationId,
-                    event: .init(
-                        input: input, sequence: sequence, occurredAt: evidence.occurredAt, admittedAt: admittedAt,
-                        turnId: evidence.turnId))
-            }
-        case .sourceEnded(let end):
-            if let binding = statusRuntime.bindings.values.first(where: {
-                $0.sourceGenerationId == end.sourceGenerationId
-            }),
-                case .bound = statusRuntime.states[binding.bindingGenerationId]?.binding
-            {
-                updateStatus(
-                    generation: binding.bindingGenerationId,
-                    event: .init(
-                        input: .sessionEnd, sequence: sequence, occurredAt: end.endedAt, admittedAt: admittedAt,
-                        turnId: nil))
-                await sessionEnded(binding.bindingGenerationId)
-            }
-        case .prepareForLaunch:
-            for paneId in try await repository.statusPaneIds() { try await restoreStatusIfNeeded(paneId: paneId) }
-        case .recordLiveLoss:
-            break
+    func applyCommittedHook(_ committed: SessionsHookCommit, admittedAt: ContinuousClock.Instant) async throws {
+        guard committed.disposition != .recordedOnly else { return }
+        for previous in committed.endedBindings {
+            try await restoreStatusIfNeeded(paneId: previous.paneId)
+            updateStatus(
+                generation: previous.bindingGenerationId,
+                event: .init(
+                    input: .bindingReplaced(by: committed.binding.bindingGenerationId),
+                    sequence: committed.revision, occurredAt: committed.evidence.occurredAt,
+                    admittedAt: admittedAt, turnId: nil))
+            statusRuntime.bindings[previous.bindingGenerationId] = previous
+        }
+        let binding = committed.binding
+        if committed.disposition == .bound { installStatusBinding(binding) }
+        statusRuntime.bindings[binding.bindingGenerationId] = binding
+        let input = SessionsStatusRuntime.statusInput(committed.evidence)
+        if let input {
+            updateStatus(
+                generation: binding.bindingGenerationId,
+                event: .init(
+                    input: input, sequence: committed.revision, occurredAt: committed.evidence.occurredAt,
+                    admittedAt: admittedAt, turnId: committed.evidence.turnId))
         }
         consumePaneViewedBatch()
-        if let paneId = mutation.paneId { publishStatus(paneId: paneId) }
+        for previous in committed.endedBindings { publishStatus(paneId: previous.paneId) }
+        publishStatus(paneId: binding.paneId)
+        // Publish the committed replacement before awaiting downstream cleanup.
+        // Readers must see the new current session even while that callback is held.
+        for previous in committed.endedBindings { await sessionEnded(previous.bindingGenerationId) }
+        if case .sessionEnd? = input { await sessionEnded(binding.bindingGenerationId) }
     }
 
     private func installStatusBinding(_ binding: SessionsBindingRecord) {

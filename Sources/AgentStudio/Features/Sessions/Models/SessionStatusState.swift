@@ -84,7 +84,7 @@ package enum SessionStatusInput: Sendable, Equatable {
     case userPromptSubmit
     case toolActivity
     case subagentActivity
-    case permission(toolName: String?, questions: [SessionQuestion]?, handling: SessionPermissionHandling)
+    case permission(toolName: String?, questions: [SessionQuestion]?)
     case question(toolCallId: String, questions: [SessionQuestion])
     case toolCompleted(toolCallId: String)
     case toolFailed(toolCallId: String)
@@ -114,7 +114,11 @@ package enum SessionStatusReducer {
     package static func apply(_ event: SessionStatusEvent, to state: inout SessionStatusState) {
         switch event.input {
         case .sessionStart(let generation):
+            let asks = state.openAsks
+            let lineWork = state.lineWork
             state = SessionStatusState(binding: .bound(generation))
+            state.openAsks = asks
+            state.lineWork = lineWork
         case .userPromptSubmit:
             state.providerPrompts.removeAll()
             state.turn = .working
@@ -123,10 +127,8 @@ package enum SessionStatusReducer {
         case .question(let toolCallId, let questions):
             state.turn = .working
             openPrompt(.toolCall(toolCallId), reason: .question, questions: questions, event: event, state: &state)
-        case .permission(let toolName, let questions, let handling):
-            if handling == .reportOnly {
-                applyPermission(toolName: toolName, questions: questions, event: event, state: &state)
-            }
+        case .permission(let toolName, let questions):
+            applyPermission(toolName: toolName, questions: questions, event: event, state: &state)
         case .toolCompleted(let toolCallId), .toolFailed(let toolCallId):
             state.providerPrompts.removeValue(forKey: .toolCall(toolCallId))
         case .elicitation(let identifier, let occurrenceId, let summary):

@@ -126,6 +126,7 @@ extension SessionsRepositoryStorage {
                 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(id) DO UPDATE SET
                     status = excluded.status,
+                    provider_version = excluded.provider_version,
                     last_cursor = excluded.last_cursor,
                     ended_at = excluded.ended_at,
                     committed_revision = excluded.committed_revision
@@ -183,7 +184,7 @@ extension SessionsRepositoryStorage {
                 attention.requestId,
                 attention.attentionKind,
                 attention.origin.rawValue,
-                attention.freshness.rawValue,
+                attention.freshness,
                 attention.explanation,
                 attention.disposition.rawValue,
                 attention.openedOccurrenceId.uuidString,
@@ -235,14 +236,13 @@ extension SessionsRepositoryStorage {
                     occurrence_id, conversation_id, binding_generation_id, source_id,
                     source_generation_id, turn_id, subject_kind, subject_identifier,
                     evidence_kind, attention_id, origin, freshness, occurred_at,
-                    committed_revision, admission_sequence, source_occurred_at,
+                    committed_revision, admission_sequence,
                     provider_event, tool_name, tool_call_id, failure_summary,
-                    elicitation_id, prompt_summary, has_questions, permission_handling
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                ON CONFLICT(occurrence_id) DO NOTHING
+                    elicitation_id, prompt_summary, has_questions
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
             arguments: [
-                evidence.occurrenceId.uuidString,
+                evidence.recordId.uuidString,
                 evidence.conversationId.uuidString,
                 evidence.bindingGenerationId.uuidString,
                 sourceId,
@@ -253,11 +253,10 @@ extension SessionsRepositoryStorage {
                 evidence.kind.storageKind,
                 attentionId,
                 evidence.origin.rawValue,
-                evidence.freshness.rawValue,
+                evidence.statusEffect == .applied ? "live" : "historical",
                 evidence.occurredAt.timeIntervalSince1970,
                 commitRevision,
                 commitRevision,
-                evidence.sourceOccurredAt?.timeIntervalSince1970,
                 evidence.providerSignal?.name.rawValue,
                 evidence.providerSignal?.toolName,
                 evidence.providerSignal?.toolCallId,
@@ -265,7 +264,6 @@ extension SessionsRepositoryStorage {
                 evidence.providerSignal?.elicitationId,
                 evidence.providerSignal?.summary,
                 evidence.providerSignal?.questions == nil ? 0 : 1,
-                evidence.providerSignal?.permissionHandling?.rawValue,
             ]
         )
         try writeProviderQuestions(evidence: evidence, database: database)
@@ -306,7 +304,7 @@ extension SessionsRepositoryStorage {
                 result.subject.storageKey,
                 result.completionOccurrenceId.uuidString,
                 result.origin.rawValue,
-                result.freshness.rawValue,
+                result.freshness,
                 result.disposition == .seen ? 1 : 0,
                 result.seenAt?.timeIntervalSince1970,
                 result.createdAt.timeIntervalSince1970,

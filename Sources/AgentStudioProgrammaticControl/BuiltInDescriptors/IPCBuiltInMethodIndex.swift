@@ -71,6 +71,7 @@ package struct IPCBuiltInMethodIndex: Sendable {
             IPCWorkspaceQueryMethodDescriptors.paneSnapshotEntry.erased,
             IPCLayoutMethodDescriptors.paneSplitEntry.erased,
             IPCSessionMethodDescriptors.sessionEventEntry.erased,
+            IPCSessionMethodDescriptors.sessionRefusalEntry.erased,
             IPCSessionMethodDescriptors.sessionQueryEntry.erased,
             IPCPresentationAndSidebarMethodDescriptors.sidebarGroupingGetEntry.erased,
             IPCPresentationAndSidebarMethodDescriptors.sidebarSurfaceGetEntry.erased,

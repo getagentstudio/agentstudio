@@ -7,33 +7,6 @@ package enum SessionsRepositoryContextQuery: Sendable, Equatable {
     case allActiveSources
 }
 
-package enum SessionsProviderOccurrenceKind: String, Sendable, Equatable {
-    case bind
-    case evidence
-    case sourceEnded
-}
-
-package struct SessionsProviderOccurrenceIdentity: Sendable, Equatable {
-    package let kind: SessionsProviderOccurrenceKind
-    package let occurrenceId: UUID
-
-    package init(kind: SessionsProviderOccurrenceKind, occurrenceId: UUID) {
-        self.kind = kind
-        self.occurrenceId = occurrenceId
-    }
-}
-
-package struct SessionsRepositoryOperation: Sendable, Equatable {
-    package let correlationId: UUID
-    package let operationScope: String
-    package let operationKind: String
-    package let semanticFingerprint: String
-    package let providerOccurrence: SessionsProviderOccurrenceIdentity?
-    package let contextQuery: SessionsRepositoryContextQuery
-    package let createdAt: Date
-    package var sourceOccurredAt: Date?
-}
-
 package struct SessionsConversationRecord: Sendable, Equatable {
     package let id: UUID
     package let providerIdentifier: String
@@ -75,7 +48,7 @@ package struct SessionsStoredAttentionRecord: Sendable, Equatable {
     package let requestId: String
     package let attentionKind: String
     package let origin: SessionsEvidenceOrigin
-    package let freshness: SessionsEvidenceFreshness
+    package let freshness: String
     package let explanation: String?
     package let disposition: SessionsAttentionDisposition
     package let openedOccurrenceId: UUID
@@ -110,13 +83,6 @@ package struct SessionsRepositoryContext: Sendable, Equatable {
     package let attention: [SessionsStoredAttentionRecord]
     package let results: [SessionsResultRecord]
 
-    func binding(sourceGenerationId: UUID) -> SessionsBindingRecord? {
-        bindings.first { $0.sourceGenerationId == sourceGenerationId }
-    }
-
-    func source(sourceGenerationId: UUID) -> SessionsSourceRecord? {
-        sources.first { $0.sourceGenerationId == sourceGenerationId }
-    }
 }
 
 package struct SessionsLossRecord: Sendable, Equatable {
@@ -139,15 +105,5 @@ package struct SessionsRepositoryReduction: Sendable, Equatable {
     package var attentionChanges: [SessionsStoredAttentionRecord] = []
     package var resultChanges: [SessionsResultRecord] = []
     package var lossChanges: [SessionsLossRecord] = []
-    package let outcome: SessionsMutationOutcome
-}
-
-struct SessionsCommittedMutation: Sendable {
-    let mutation: SessionsMutation
-    let result: SessionsSubmissionResult
-}
-
-struct SessionsQualifiedHookCommitResult: Sendable {
-    let result: SessionsSubmissionResult
-    let committedMutations: [SessionsCommittedMutation]
+    package let outcome: SessionsHookDisposition
 }

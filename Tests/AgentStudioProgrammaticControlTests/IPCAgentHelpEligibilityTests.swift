@@ -57,6 +57,7 @@ struct IPCAgentHelpEligibilityTests {
         "pane.writer.claimEpoch": .ownPane,
         "session.event": .legacy,
         "session.query": .legacy,
+        "session.refusal": .legacy,
         "sidebar.grouping.get": .notYetAllowed,
         "sidebar.surface.get": .notYetAllowed,
         "system.identify": .anyTarget,

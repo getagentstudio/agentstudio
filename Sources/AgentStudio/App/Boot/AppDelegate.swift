@@ -104,12 +104,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
     var paneIPCIdentityOwner: PaneIPCIdentityOwner!
     var appIPCSessionsPaneContextComposition: SessionsPaneContextComposition?
     var paneCLIOutboxDrainTask: Task<Void, Never>?
-    /// Exact provider profiles are composition input. Only the releases listed
-    /// here grant provider-reported authority; every other provider, version or
-    /// mode reports as unqualified. Composition happens here because the
-    /// Claude Code profile is App-owned and the shipped list is Feature-owned.
-    var appIPCSessionsProviderProfiles: [SessionsProviderProfile] =
-        SessionsProviderProfile.shippedProfiles + [.claudeCodeCommandLine, .cursorCommandLine]
     var appLifecycleStore: AppLifecycleAtom!
     var windowLifecycleStore: WindowLifecycleAtom!
     var applicationLifecycleMonitor: ApplicationLifecycleMonitor!

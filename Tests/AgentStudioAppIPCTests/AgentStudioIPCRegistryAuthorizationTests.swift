@@ -17,15 +17,15 @@ struct AgentStudioIPCRegistryAuthorizationTests {
         #expect(canonical.dataScope == .sidebarState)
     }
 
-    @Test("debug registry exposes the 53 typed bindings and computed capabilities only")
+    @Test("debug registry exposes the 55 typed bindings and computed capabilities only")
     func debugRegistryHasTypedCatalogAndComputedCapabilities() throws {
         let fixture = BuiltInMethodRegistrationsFixture()
         let registry = try makeTestAppIPCMethodRegistry(
             registrations: fixture.registrations(), recognizedCommands: [], channel: .debug)
         let names = registry.capabilities.methods.map(\.name)
 
-        #expect(names.count == 54)
-        #expect(Set(names).count == 54)
+        #expect(names.count == 55)
+        #expect(Set(names).count == 55)
         #expect(registry.registration(named: "system.capabilities") != nil)
         #expect(registry.registration(named: "pane.snapshot") != nil)
         #expect(registry.registration(named: "permission.request") == nil)
@@ -46,7 +46,7 @@ struct AgentStudioIPCRegistryAuthorizationTests {
             names
                 == Set([
                     "auth.login", "auth.status", "events.subscribe", "events.unsubscribe",
-                    "session.event", "session.query",
+                    "session.event", "session.query", "session.refusal",
                     "system.capabilities", "system.identify", "system.ping", "system.version",
                     "drawer.addPane", "pane.close", "pane.current", "pane.list", "pane.snapshot",
                     "pane.message.send", "pane.message.ask", "pane.message.withdraw", "pane.message.changes",

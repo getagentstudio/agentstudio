@@ -194,12 +194,14 @@ struct AgentStudioOTLPPerformanceTraceProjectionTests {
                 ))
         }
 
-        let sessions = project(reason: "sessions_ingestion_failed")
+        let optionalSchema = project(reason: "optional_schema_unavailable")
+        let removedPreparation = project(reason: "sessions_ingestion_failed")
         let initializationCancelled = project(reason: "initialization_cancelled")
         let unexpected = project(reason: "/Users/example/.agentstudio/ipc")
 
-        #expect(sessions.attributes["agentstudio.app.ipc.start.reason"] == .string("sessions_ingestion_failed"))
-        #expect(sessions.attributes["agentstudio.app.startup.outcome"] == .string("unavailable"))
+        #expect(optionalSchema.attributes["agentstudio.app.ipc.start.reason"] == .string("optional_schema_unavailable"))
+        #expect(optionalSchema.attributes["agentstudio.app.startup.outcome"] == .string("unavailable"))
+        #expect(removedPreparation.attributes["agentstudio.app.ipc.start.reason"] == nil)
         #expect(
             initializationCancelled.attributes["agentstudio.app.ipc.start.reason"]
                 == .string("initialization_cancelled"))

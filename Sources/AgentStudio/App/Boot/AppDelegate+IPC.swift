@@ -17,7 +17,6 @@ enum AppIPCStartUnavailability: String, Equatable, Sendable {
     case initializationCancelled = "initialization_cancelled"
     case localStoreUnavailable = "local_store_unavailable"
     case optionalSchemaUnavailable = "optional_schema_unavailable"
-    case sessionsIngestionFailed = "sessions_ingestion_failed"
     case noActiveWindow = "no_active_window"
     case ipcPathUntrusted = "ipc_path_untrusted"
     case socketInUse = "socket_in_use"
@@ -186,10 +185,6 @@ extension AppDelegate {
         guard appIPCServer == nil else { return nil }
         guard let sessionsComposition = await prepareAppIPCSessionsPaneContext(datastore: workspaceSQLiteDatastore)
         else {
-            if !Task.isCancelled {
-                recordAppIPCStart(unavailable: .sessionsIngestionFailed)
-                return .sessionsIngestionFailed
-            }
             return .initializationCancelled
         }
 
@@ -302,8 +297,7 @@ extension AppDelegate {
     }
 
     /// The owner composition is built with the IPC server, not on the first-frame
-    /// or terminal paths. Launch preparation ends the previous run's active
-    /// sources before any live report can reach them.
+    /// or terminal paths. Existing bindings remain available for lazy restoration.
     private func prepareAppIPCSessionsPaneContext(
         datastore: WorkspaceSQLiteDatastoreActor
     ) async -> SessionsPaneContextComposition? {
@@ -318,7 +312,6 @@ extension AppDelegate {
                 directory: atomStore.core.workspacePaneGraph.paneContextMembershipDirectory,
                 workspaceId: store.identityAtom.workspaceId,
                 clock: ContinuousClock(), wallNow: { Date() },
-                providerProfiles: appIPCSessionsProviderProfiles,
                 limits: .init(
                     maximumPendingPerPane: AppPolicies.Sessions.maximumPendingIngestionPerPane,
                     maximumPendingGlobal: AppPolicies.Sessions.maximumPendingIngestionGlobal
@@ -350,17 +343,6 @@ extension AppDelegate {
                         ])
                 }, activityClock: paneActivityClock)
         )
-        do {
-            _ = try await composition.prepareForLaunch(at: Date())
-        } catch {
-            appLogger.warning(
-                """
-                Sessions ingestion skipped: launch preparation failed: \
-                \(error.localizedDescription, privacy: .private)
-                """
-            )
-            return nil
-        }
         guard !Task.isCancelled else {
             await composition.shutdown()
             return nil

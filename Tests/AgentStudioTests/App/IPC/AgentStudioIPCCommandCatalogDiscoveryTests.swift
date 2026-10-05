@@ -14,7 +14,7 @@ import Testing
 /// compiled independently and the app owns their interpretation and admission.
 @MainActor
 @Suite(
-    "App IPC command catalog discovery", .serialized, SessionsVerticalHarnessTrait(providerProfiles: .defaultProfiles))
+    "App IPC command catalog discovery", .serialized, SessionsVerticalHarnessTrait())
 struct AgentStudioIPCCommandCatalogDiscoveryTests {
     @Test("the live debug catalog supplies metadata while raw command framing uses the compiled envelope")
     func liveDebugCatalogDecodes() async throws {

@@ -9,11 +9,6 @@ import Testing
 /// retry, the pane row is wrong and no later layer can tell.
 @Suite("Codex hook projection")
 struct CodexHookProjectionTests {
-    @Test("Codex hooks carry their CLI source observation time")
-    func hookCarriesSourceObservationTime() throws {
-        let projected = try projected(.preToolUse)
-        #expect(projected.event.sourceOccurredAt == Date(timeIntervalSince1970: 1_700_000_000))
-    }
     @Test(
         "each projected Codex event maps to its session event name",
         arguments: [
@@ -36,8 +31,7 @@ struct CodexHookProjectionTests {
 
         // Act
         let projected = try #require(
-            CodexHookProjection.project(
-                sourceOccurredAt: Date(timeIntervalSince1970: 1_700_000_000), eventName: eventName, payload: payload))
+            CodexHookProjection.project(eventName: eventName, payload: payload))
 
         // Assert
         #expect(projected.event.name == expected)
@@ -97,11 +91,9 @@ struct CodexHookProjectionTests {
 
         // Act
         let first = try #require(
-            CodexHookProjection.project(
-                sourceOccurredAt: Date(timeIntervalSince1970: 1_700_000_000), eventName: .preToolUse, payload: payload))
+            CodexHookProjection.project(eventName: .preToolUse, payload: payload))
         let second = try #require(
-            CodexHookProjection.project(
-                sourceOccurredAt: Date(timeIntervalSince1970: 1_700_000_000), eventName: .preToolUse, payload: payload))
+            CodexHookProjection.project(eventName: .preToolUse, payload: payload))
 
         // Assert
         #expect(first.event.occurrenceId == second.event.occurrenceId)
@@ -126,11 +118,11 @@ struct CodexHookProjectionTests {
         // Act
         let first = try #require(
             CodexHookProjection.project(
-                sourceOccurredAt: Date(timeIntervalSince1970: 1_700_000_000), eventName: .permissionRequest,
+                eventName: .permissionRequest,
                 payload: shell))
         let second = try #require(
             CodexHookProjection.project(
-                sourceOccurredAt: Date(timeIntervalSince1970: 1_700_000_000), eventName: .permissionRequest,
+                eventName: .permissionRequest,
                 payload: applyPatch))
 
         // Assert
@@ -153,11 +145,11 @@ struct CodexHookProjectionTests {
         // Act
         let first = try #require(
             CodexHookProjection.project(
-                sourceOccurredAt: Date(timeIntervalSince1970: 1_700_000_000), eventName: .permissionRequest,
+                eventName: .permissionRequest,
                 payload: payload))
         let second = try #require(
             CodexHookProjection.project(
-                sourceOccurredAt: Date(timeIntervalSince1970: 1_700_000_000), eventName: .permissionRequest,
+                eventName: .permissionRequest,
                 payload: payload))
 
         // Assert
@@ -176,11 +168,9 @@ struct CodexHookProjectionTests {
 
         // Act
         let first = try #require(
-            CodexHookProjection.project(
-                sourceOccurredAt: Date(timeIntervalSince1970: 1_700_000_000), eventName: eventName, payload: reviewer))
+            CodexHookProjection.project(eventName: eventName, payload: reviewer))
         let second = try #require(
-            CodexHookProjection.project(
-                sourceOccurredAt: Date(timeIntervalSince1970: 1_700_000_000), eventName: eventName, payload: researcher)
+            CodexHookProjection.project(eventName: eventName, payload: researcher)
         )
 
         // Assert
@@ -204,11 +194,11 @@ struct CodexHookProjectionTests {
         // Act
         let start = try #require(
             CodexHookProjection.project(
-                sourceOccurredAt: Date(timeIntervalSince1970: 1_700_000_000), eventName: .subagentStart,
+                eventName: .subagentStart,
                 payload: payload))
         let stop = try #require(
             CodexHookProjection.project(
-                sourceOccurredAt: Date(timeIntervalSince1970: 1_700_000_000), eventName: .subagentStop, payload: payload
+                eventName: .subagentStop, payload: payload
             ))
 
         // Assert
@@ -257,8 +247,7 @@ struct CodexHookProjectionTests {
         // Act / Assert
         #expect(CodexHookProjection.isProjected(eventName) == false)
         #expect(
-            CodexHookProjection.project(
-                sourceOccurredAt: Date(timeIntervalSince1970: 1_700_000_000), eventName: eventName, payload: payload)
+            CodexHookProjection.project(eventName: eventName, payload: payload)
                 == nil)
     }
 
@@ -268,8 +257,7 @@ struct CodexHookProjectionTests {
         let payload = CodexHookPayload(sessionId: "s", codexVersion: "0.155.1")
 
         // Act
-        let projected = CodexHookProjection.project(
-            sourceOccurredAt: Date(timeIntervalSince1970: 1_700_000_000), eventName: .sessionStart, payload: payload)
+        let projected = CodexHookProjection.project(eventName: .sessionStart, payload: payload)
 
         // Assert
         #expect(projected?.provider.version == "0.155.1")
@@ -288,7 +276,6 @@ struct CodexHookProjectionTests {
     private func projected(_ eventName: CodexHookEventName) throws -> CodexHookProjectedEvent {
         try #require(
             CodexHookProjection.project(
-                sourceOccurredAt: Date(timeIntervalSince1970: 1_700_000_000),
                 eventName: eventName, payload: try CodexFixtures.payload(for: eventName)))
     }
 }

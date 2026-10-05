@@ -128,7 +128,6 @@ enum RecordedClaudeStatusTrace {
     static func project(_ fixture: String) throws -> IPCSessionEventParams {
         let decoded = try payload(fixture)
         let result = ClaudeCodeHookProjection.project(
-            sourceOccurredAt: Date(timeIntervalSince1970: 1_700_000_000),
             announcedEvent: decoded.hookEventName, payload: decoded, providerVersion: "2.1.286",
             correlationIdentifier: UUIDv7.generate(), freshOccurrenceIdentifier: { UUIDv7.generate() })
         guard case .projected(let params) = result else {

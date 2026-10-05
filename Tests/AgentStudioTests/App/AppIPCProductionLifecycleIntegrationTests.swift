@@ -159,7 +159,12 @@ struct AppIPCProductionLifecycleIntegrationTests {
             #expect(harness.appDelegate.appIPCSessionsPaneContextComposition == nil)
             #expect(harness.coordinator.paneContextService == nil)
             await #expect(throws: SessionsRepositoryError.ingestionFinished) {
-                _ = try await composition.ingestion.prepareForLaunch(at: Date())
+                _ = try await composition.ingestion.submitHook(
+                    .init(
+                        paneId: shutdownOnlyPane.id,
+                        providerIdentifier: "claude-code", providerVersion: "9.9.9", sessionId: "closed",
+                        eventName: .sessionStart, turnId: nil, signal: .sessionStart,
+                        recordId: UUIDv7.generate(), admittedAt: Date()))
             }
             let closed = await composition.paneContextService.readDetail(
                 .init(paneId: PaneId(existingUUID: shutdownOnlyPane.id), page: .first))

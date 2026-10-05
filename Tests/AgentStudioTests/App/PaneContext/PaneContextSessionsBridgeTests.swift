@@ -68,12 +68,7 @@ struct PaneContextSessionsBridgeTests {
             #expect(
                 unrelatedEnd.messages.first { $0.id == openAsk.messageId }?.shape
                     == .ask(.question, .freeText(placeholder: nil), .nonBlocking, .open))
-            _ = try await fixture.ingestion.submit(
-                correlationId: UUIDv7.generate(),
-                mutation: .sourceEnded(
-                    .init(
-                        paneId: fixture.paneId.uuid, sourceGenerationId: binding.sourceGenerationId,
-                        endedAt: fixture.time.now)))
+            try await fixture.applyHook(binding, eventName: .sessionEnd, signal: .sessionEnd)
             let liveGenerationAfterEnd = try await fixture.sqliteAccess.read {
                 try PaneContextSessionsBridge.currentBindingGeneration(paneId: fixture.paneId, in: $0)
             }
@@ -222,13 +217,7 @@ struct PaneContextSessionsBridgeTests {
         try await withPaneContextSessionsBridge { fixture in
             let binding = try await fixture.bindConversation("first")
             let writer = try fixture.sender(binding)
-            _ = try await fixture.ingestion.submit(
-                correlationId: UUIDv7.generate(),
-                mutation: .recordEvidence(
-                    .init(
-                        admittedContext: try fixture.activityContext(binding), occurrenceId: UUIDv7.generate(),
-                        turnId: "turn", subject: .root, kind: .activityStarted, occurredAt: fixture.time.now,
-                        sourceCursor: nil)))
+            try await fixture.applyHook(binding, eventName: .toolActivity, signal: .toolActivity(toolName: "Read"))
             let epoch = try await fixture.epoch(writer: writer, stream: .line)
             #expect(
                 await fixture.service.setLine(
@@ -241,12 +230,7 @@ struct PaneContextSessionsBridgeTests {
                 try await fixture.ingestion.sessionSummary(paneId: fixture.paneId.uuid)?.status == .working(.monitoring)
             )
             #expect(try await fixture.detail().agentLine?.stale == false)
-            _ = try await fixture.ingestion.submit(
-                correlationId: UUIDv7.generate(),
-                mutation: .sourceEnded(
-                    .init(
-                        paneId: fixture.paneId.uuid, sourceGenerationId: binding.sourceGenerationId,
-                        endedAt: fixture.time.now)))
+            try await fixture.applyHook(binding, eventName: .sessionEnd, signal: .sessionEnd)
             #expect(try await fixture.detail().agentLine?.stale == true)
             #expect(try await fixture.ingestion.sessionSummary(paneId: fixture.paneId.uuid)?.status == .idle(.ended))
         }
@@ -259,13 +243,7 @@ struct PaneContextSessionsBridgeTests {
         try await withPaneContextSessionsBridge { fixture in
             let binding = try await fixture.bindConversation("first")
             let writer = try fixture.sender(binding)
-            _ = try await fixture.ingestion.submit(
-                correlationId: UUIDv7.generate(),
-                mutation: .recordEvidence(
-                    .init(
-                        admittedContext: try fixture.activityContext(binding), occurrenceId: UUIDv7.generate(),
-                        turnId: "turn", subject: .root, kind: .activityStarted, occurredAt: fixture.time.now,
-                        sourceCursor: nil)))
+            try await fixture.applyHook(binding, eventName: .toolActivity, signal: .toolActivity(toolName: "Read"))
             let epoch = try await fixture.epoch(writer: writer, stream: .line)
             #expect(
                 await fixture.service.setLine(

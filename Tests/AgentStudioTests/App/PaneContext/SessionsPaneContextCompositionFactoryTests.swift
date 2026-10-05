@@ -19,8 +19,8 @@ struct SessionsPaneContextCompositionFactoryTests {
     func factoryConnectsOwnerPorts() async throws {
         try await withCompositionFactory { fixture in
             let composition = fixture.composition
-            _ = try await composition.prepareForLaunch(at: fixture.now)
-            let binding = try await fixture.bind(paneId: fixture.ownerId, usingLateAdapter: false)
+
+            let binding = try await fixture.bind(paneId: fixture.ownerId)
             let messageId = UUIDv7.generate()
             let sent = try await composition.paneContextIPCAdapter.sendMessage(
                 paneId: fixture.ownerId.uuid,
@@ -50,8 +50,8 @@ struct SessionsPaneContextCompositionFactoryTests {
     func paneContextReadRecordsNumericTelemetry() async throws {
         let replySize = Mutex<Int?>(nil)
         let records = try await withIPCCallTelemetry(event: .ipcPaneContextRead) { fixture in
-            _ = try await fixture.composition.prepareForLaunch(at: fixture.now)
-            let binding = try await fixture.bind(paneId: fixture.ownerId, usingLateAdapter: false)
+
+            let binding = try await fixture.bind(paneId: fixture.ownerId)
             let message = PaneMessageSendRequest(
                 paneId: fixture.ownerId, messageId: .generateUUIDv7(), sender: try fixture.sender(binding),
                 sourceOccurredAt: nil, importance: .attention, body: "PRIVATE-MESSAGE-CONTENT", why: nil,
@@ -88,8 +88,8 @@ struct SessionsPaneContextCompositionFactoryTests {
     @Test("the real session event adapter emits one duration without event or binding identity")
     func sessionEventRecordsNumericTelemetry() async throws {
         let records = try await withIPCCallTelemetry(event: .ipcSessionEvent) { fixture in
-            _ = try await fixture.composition.prepareForLaunch(at: fixture.now)
-            _ = try await fixture.bind(paneId: fixture.ownerId, usingLateAdapter: false)
+
+            _ = try await fixture.bind(paneId: fixture.ownerId)
         }
         #expect(records.count == 1)
         let record = try #require(records.first)
@@ -109,8 +109,8 @@ struct SessionsPaneContextCompositionFactoryTests {
     func adapterContextReadUsesReaderConnection() async throws {
         try await withCompositionFactory { fixture in
             let service = fixture.composition.paneContextService
-            _ = try await fixture.composition.prepareForLaunch(at: fixture.now)
-            let binding = try await fixture.bind(paneId: fixture.ownerId, usingLateAdapter: false)
+
+            let binding = try await fixture.bind(paneId: fixture.ownerId)
             let message = PaneMessageSendRequest(
                 paneId: fixture.ownerId, messageId: .generateUUIDv7(), sender: try fixture.sender(binding),
                 sourceOccurredAt: nil, importance: .attention, body: "Read me", why: nil,
@@ -141,8 +141,8 @@ struct SessionsPaneContextCompositionFactoryTests {
     func replySizingMatchesNativeEncoding() async throws {
         try await withCompositionFactory { fixture in
             let service = fixture.composition.paneContextService
-            _ = try await fixture.composition.prepareForLaunch(at: fixture.now)
-            let binding = try await fixture.bind(paneId: fixture.ownerId, usingLateAdapter: false)
+
+            let binding = try await fixture.bind(paneId: fixture.ownerId)
             let writer = try fixture.sender(binding)
             let choiceId = try AskChoiceId("allow")
             let openAsk = PaneMessageSendRequest(
@@ -202,10 +202,10 @@ struct SessionsPaneContextCompositionFactoryTests {
         }
     }
 
-    @Test("both adapters resolve drawer ownership through the supplied directory", arguments: [false, true])
-    func factoryInjectsOwnerLookup(usingLateAdapter: Bool) async throws {
+    @Test("the adapter resolves drawer ownership through the supplied directory")
+    func factoryInjectsOwnerLookup() async throws {
         try await withCompositionFactory { fixture in
-            let binding = try await fixture.bind(paneId: fixture.drawerId, usingLateAdapter: usingLateAdapter)
+            let binding = try await fixture.bind(paneId: fixture.drawerId)
             #expect(binding.ownerPaneId == fixture.ownerId.uuid)
             #expect(binding.paneId == fixture.drawerId.uuid)
             #expect(binding.status == .active)
@@ -253,7 +253,7 @@ struct SessionsPaneContextCompositionFactoryTests {
     @Test("shutdown delivers blocking-ask settlement while Sessions still accepts the bridge update")
     func shutdownSettlesBeforeClosingSessions() async throws {
         try await withCompositionFactory { fixture in
-            let binding = try await fixture.bind(paneId: fixture.ownerId, usingLateAdapter: false)
+            let binding = try await fixture.bind(paneId: fixture.ownerId)
             let askId = AgentMessageId.generateUUIDv7()
             #expect(
                 await fixture.composition.paneContextService.send(
@@ -275,54 +275,17 @@ struct SessionsPaneContextCompositionFactoryTests {
                 try await fixture.composition.ingestion.sessionSummary(paneId: fixture.ownerId.uuid)?.status == .unknown
             )
             await #expect(throws: SessionsRepositoryError.ingestionFinished) {
-                _ = try await fixture.composition.ingestion.prepareForLaunch(at: fixture.now)
+                _ = try await fixture.composition.ingestion.submitHook(
+                    .init(
+                        paneId: fixture.ownerId.uuid,
+                        providerIdentifier: "claude-code", providerVersion: "9.9.9", sessionId: "closed",
+                        eventName: .sessionStart, turnId: nil, signal: .sessionStart,
+                        recordId: UUIDv7.generate(), admittedAt: fixture.now))
             }
             await fixture.composition.shutdown()
         }
     }
 
-    @Test("a failed prepare closes both assembled owners")
-    func failedPrepareCleansUpAssembly() async throws {
-        try await withCompositionFactory { fixture in
-            try await fixture.localPool.write { database in
-                try database.execute(
-                    sql: """
-                        CREATE TRIGGER reject_composition_prepare BEFORE INSERT ON sessions_operation
-                        WHEN NEW.operation_kind = 'prepareForLaunch'
-                        BEGIN SELECT RAISE(ABORT, 'forced composition preparation failure'); END
-                        """)
-            }
-            await #expect(throws: (any Error).self) {
-                _ = try await fixture.composition.prepareForLaunch(at: fixture.now)
-            }
-            let closed = await fixture.requireClosedOwners()
-            #expect(closed == .unavailable(.decodeFailed("serviceStopped")))
-        }
-    }
-
-    @Test("a cancelled prepare closes both owners without attempting launch preparation")
-    func cancelledPrepareCleansUpAssembly() async throws {
-        try await withCompositionFactory { fixture in
-            let held = HeldStep<Void>("cancel before composition preparation", cancellation: .holdThroughCancellation)
-            let pending = Task {
-                try await held.arrive(())
-                _ = try await fixture.composition.prepareForLaunch(at: fixture.now)
-            }
-            do {
-                try await held.firstArrival()
-                pending.cancel()
-                held.release()
-                await #expect(throws: CancellationError.self) { try await pending.value }
-            } catch {
-                held.retire()
-                pending.cancel()
-                _ = try? await pending.value
-                throw error
-            }
-            let closed = await fixture.requireClosedOwners()
-            #expect(closed == .unavailable(.decodeFailed("serviceStopped")))
-        }
-    }
 }
 
 struct CompositionFactoryFixture: Sendable {
@@ -348,7 +311,7 @@ struct CompositionFactoryFixture: Sendable {
         return SessionsPaneContextComposition.make(
             inputs: .init(
                 datastore: datastore, directory: directory, workspaceId: workspaceId, clock: TestPushClock(),
-                wallNow: { now }, providerProfiles: [.claudeCodeCommandLine],
+                wallNow: { now },
                 limits: .init(maximumPendingPerPane: 32, maximumPendingGlobal: 128),
                 paneViewedMailbox: .init(), presentationAtom: presentationAtom))
     }
@@ -408,7 +371,6 @@ struct CompositionFactoryFixture: Sendable {
             inputs: .init(
                 datastore: datastore, directory: directory, workspaceId: workspaceId, clock: TestPushClock(),
                 wallNow: { now },
-                providerProfiles: [.claudeCodeCommandLine],
                 limits: .init(maximumPendingPerPane: 32, maximumPendingGlobal: 128),
                 paneViewedMailbox: .init(), presentationAtom: presentationAtom,
                 performanceTraceRecorder: performanceTraceRecorder))
@@ -421,8 +383,8 @@ struct CompositionFactoryFixture: Sendable {
             drawerId: drawerId, now: now)
     }
 
-    func bind(paneId: PaneId, usingLateAdapter: Bool) async throws -> SessionsBindingRecord {
-        let adapter = usingLateAdapter ? composition.lateSessionsAdapter : composition.liveSessionsAdapter
+    func bind(paneId: PaneId) async throws -> SessionsBindingRecord {
+        let adapter = composition.liveSessionsAdapter
         let result = try await adapter.recordProviderEvent(
             paneId: paneId.uuid,
             params: .init(
@@ -446,13 +408,6 @@ struct CompositionFactoryFixture: Sendable {
             provider: try BridgeAgentProviderName(binding.providerIdentifier),
             sessionRef: try BridgeAgentSessionRef(binding.providerConversationId),
             bindingGeneration: binding.bindingGenerationId)
-    }
-
-    func requireClosedOwners() async -> PaneContextReadResult {
-        await #expect(throws: SessionsRepositoryError.ingestionFinished) {
-            _ = try await composition.ingestion.prepareForLaunch(at: now)
-        }
-        return await composition.paneContextService.readDetail(.init(paneId: ownerId, page: .first))
     }
 
     @concurrent func close() async throws {

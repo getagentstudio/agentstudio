@@ -378,13 +378,12 @@ struct PaneCLIOutboxDrainTests {
         }
     }
 
-    @Test("legacy status reports after relaunch are refused without creating history")
-    func deliberateReportsSurviveRelaunch() async throws {
+    @Test("legacy status reports are refused without changing a bound pane or creating history")
+    func legacyStatusReportsPreserveBoundPane() async throws {
         try await withPaneCLIOutboxDrainHarness { harness in
             let paneID = UUIDv7.generate()
             try await harness.bindPane(paneID: paneID)
-            try await harness.simulateRelaunch()
-            let stateAfterRelaunch = try await harness.sessionSummary(paneID: paneID)
+            let stateBeforeReports = try await harness.sessionSummary(paneID: paneID)
             _ = try await harness.append(
                 paneID: paneID, line: harness.reportLine(kind: "needsYou", explanation: "approve the plan"))
             let last = try await harness.append(
@@ -396,7 +395,7 @@ struct PaneCLIOutboxDrainTests {
             #expect(report.malformedEntryCount == 2)
             #expect(try await harness.cursor() == last.id)
             let snapshot = try await harness.snapshot(paneID: paneID)
-            #expect(try await harness.sessionSummary(paneID: paneID) == stateAfterRelaunch)
+            #expect(try await harness.sessionSummary(paneID: paneID) == stateBeforeReports)
             #expect(try await harness.attention(paneID: paneID).isEmpty)
             #expect(snapshot.results.isEmpty)
             #expect(snapshot.historicalOccurrenceIds.isEmpty)
@@ -546,7 +545,7 @@ struct PaneCLIOutboxDrainTests {
             let request = PaneMessageSendRequest(
                 paneId: PaneId(existingUUID: paneID), messageId: AgentMessageId(existingUUID: messageID),
                 sender: .session(
-                    provider: try BridgeAgentProviderName(PaneCLIOutboxDrainHarness.qualifiedProvider.identifier),
+                    provider: try BridgeAgentProviderName(PaneCLIOutboxDrainHarness.testProvider.identifier),
                     sessionRef: try BridgeAgentSessionRef("conversation-\(paneID)"),
                     bindingGeneration: generation),
                 sourceOccurredAt: nil, importance: .attention, body: "keep attention", why: nil, actions: [],

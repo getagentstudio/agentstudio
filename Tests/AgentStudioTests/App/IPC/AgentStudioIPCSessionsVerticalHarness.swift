@@ -2,7 +2,6 @@ import AgentStudioAppIPC
 import AgentStudioIPCTransport
 import AgentStudioInfrastructure
 import AgentStudioProgrammaticControl
-import AgentStudioSessions
 import CryptoKit
 import Foundation
 import Testing
@@ -19,9 +18,10 @@ struct SessionsVerticalHarness {
     enum Authentication {
         case diagnostic
         case boundPane
+        case pane(UUID)
     }
 
-    static let qualifiedProvider = IPCSessionProviderIdentity(
+    static let testProvider = IPCSessionProviderIdentity(
         identifier: "vertical-agent",
         version: "1.2.3",
         mode: "interactive"
@@ -38,21 +38,11 @@ struct SessionsVerticalHarness {
     /// The one registered window, which command arguments must name.
     let workspaceWindowId: UUID
 
-    /// The profile the default provider identity qualifies against.
-    static let qualifiedProviderProfile = SessionsProviderProfile(
-        providerIdentifier: qualifiedProvider.identifier,
-        exactVersion: qualifiedProvider.version,
-        operatingMode: qualifiedProvider.mode,
-        qualifiedCapabilities: [.sessionStart, .sessionEnd, .turnStart, .turnDone]
-    )
-
     /// Supplying an escrow path exercises the real debug handover: the app mints
     /// the credential, installs its verifier in memory and writes the file the
     /// launcher named. Without one the harness installs a verifier directly,
     /// which is all a session-method test needs.
     static func make(
-        providerProfiles: [SessionsProviderProfile] = [qualifiedProviderProfile],
-        additionalProviderProfiles: [SessionsProviderProfile] = [],
         debugCredentialEscrowURL: URL? = nil,
         installActivityClock: Bool = false,
         activitySubmissionObserver: @escaping @Sendable (PaneActivityOccurrence) -> Void = { _ in },
@@ -85,7 +75,6 @@ struct SessionsVerticalHarness {
             let mainWindowController = SessionsVerticalMainWindowController(window: nil)
             mainWindowController.registeredWorkspaceWindowId = workspaceWindowId
             appDelegate.mainWindowController = mainWindowController
-            appDelegate.appIPCSessionsProviderProfiles = providerProfiles + additionalProviderProfiles
             appDelegate.installAppIPCIdentityAuthority(datastore: datastore)
             var boundPaneToken: AgentStudioIPCSubjectToken?
             if installActivityClock {
@@ -96,15 +85,15 @@ struct SessionsVerticalHarness {
                 }
                 appDelegate.paneActivityClock = clock
                 await clock.start()
-                let paneToken = AgentStudioIPCSubjectToken(rawValue: "pane-activity-\(UUIDv7.generate().uuidString)")
-                try appDelegate.appIPCPrincipalRegistry.registerIssuedPaneCredential(
-                    paneID: boundPane.id,
-                    workspaceID: commandHarness.store.identityAtom.workspaceId,
-                    credentialRecordID: UUIDv7.generate(),
-                    verifierSHA256: await credentialVerifier(for: paneToken.rawValue)
-                )
-                boundPaneToken = paneToken
             }
+            let paneToken = AgentStudioIPCSubjectToken(rawValue: "pane-activity-\(UUIDv7.generate().uuidString)")
+            try appDelegate.appIPCPrincipalRegistry.registerIssuedPaneCredential(
+                paneID: boundPane.id,
+                workspaceID: commandHarness.store.identityAtom.workspaceId,
+                credentialRecordID: UUIDv7.generate(),
+                verifierSHA256: await credentialVerifier(for: paneToken.rawValue)
+            )
+            boundPaneToken = paneToken
 
             // The tail of the identifier, not its head: a UUIDv7 begins with a
             // millisecond timestamp, so two harnesses built in the same millisecond
@@ -231,17 +220,7 @@ struct SessionsVerticalHarness {
         )
     }
 
-    func bindBoundPane() async throws -> IPCSessionEventResult {
-        try await sessionEvent(
-            paneId: boundPaneId,
-            provider: Self.qualifiedProvider,
-            name: "sessionStart",
-            conversationId: "conversation-\(boundPaneId.uuidString)"
-        )
-    }
-
-    /// `occurrenceId` is a parameter so a case can name the occurrence it
-    /// expects to find again in the pane's history rather than counting rows.
+    /// Wire identifiers may be reused to prove hook admission never deduplicates them.
     func sessionEvent(
         paneId: UUID,
         provider: IPCSessionProviderIdentity,
@@ -249,7 +228,7 @@ struct SessionsVerticalHarness {
         conversationId: String,
         occurrenceId: UUID = UUIDv7.generate(),
         correlationId: UUID = UUIDv7.generate(),
-        authentication: Authentication = .diagnostic
+        authentication: Authentication? = nil
     ) async throws -> IPCSessionEventResult {
         try await decoded(
             method: "session.event",
@@ -267,16 +246,7 @@ struct SessionsVerticalHarness {
                 ]),
                 "correlationId": .string(correlationId.uuidString),
             ]),
-            authentication: authentication
-        )
-    }
-
-    /// The pane's durable Sessions row, for a case that has to see history the
-    /// `session.query` projection deliberately does not carry over the wire.
-    func paneSnapshot(paneId: UUID) async throws -> SessionsSnapshot {
-        let composition = try #require(appDelegate.appIPCSessionsPaneContextComposition)
-        return try await composition.ingestion.snapshot(
-            .pane(paneId)
+            authentication: authentication ?? .pane(paneId)
         )
     }
 
@@ -285,7 +255,8 @@ struct SessionsVerticalHarness {
     func sessionEvent(params: IPCSessionEventParams) async throws -> IPCSessionEventResult {
         try await decoded(
             method: "session.event",
-            params: try JSONDecoder().decode(JSONValue.self, from: try JSONEncoder().encode(params))
+            params: try JSONDecoder().decode(JSONValue.self, from: try JSONEncoder().encode(params)),
+            authentication: .pane(UUID(uuidString: params.handle) ?? boundPaneId)
         )
     }
 
@@ -360,6 +331,13 @@ struct SessionsVerticalHarness {
         switch authentication {
         case .diagnostic:
             authenticationToken = token
+        case .pane(let paneId):
+            let credential = AgentStudioIPCSubjectToken(rawValue: "hook-\(UUIDv7.generate().uuidString)")
+            try appDelegate.appIPCPrincipalRegistry.registerIssuedPaneCredential(
+                paneID: paneId,
+                workspaceID: commandHarness.store.identityAtom.workspaceId, credentialRecordID: UUIDv7.generate(),
+                verifierSHA256: await Self.credentialVerifier(for: credential.rawValue))
+            authenticationToken = credential
         case .boundPane:
             guard let boundPaneToken else {
                 throw SessionsVerticalHarnessError.boundPaneCredentialUnavailable
@@ -400,13 +378,6 @@ struct SessionsVerticalHarness {
 /// Task-local inheritance gives every case the same live server; freshPanePair
 /// keeps their persisted state independent. A filtered suite still tears down.
 struct SessionsVerticalHarnessTrait: SuiteTrait, TestScoping {
-    enum ProviderProfiles: Sendable {
-        case defaultProfiles
-        case shipped
-        case claudeCode
-    }
-
-    let providerProfiles: ProviderProfiles
     var isRecursive: Bool { false }
 
     func provideScope(
@@ -415,7 +386,6 @@ struct SessionsVerticalHarnessTrait: SuiteTrait, TestScoping {
         performing function: @Sendable () async throws -> Void
     ) async throws {
         try await SessionsVerticalHarnessBox.withScope(
-            providerProfiles: providerProfiles,
             performing: function
         )
     }
@@ -433,27 +403,16 @@ final class SessionsVerticalHarnessBox {
         self.harness = harness
     }
 
-    static func make(providerProfiles: SessionsVerticalHarnessTrait.ProviderProfiles) async throws -> Self {
+    static func make() async throws -> Self {
         installTestCoreAtomsIfNeeded()
-        let harness: SessionsVerticalHarness
-        switch providerProfiles {
-        case .defaultProfiles:
-            harness = try await SessionsVerticalHarness.make()
-        case .shipped:
-            harness = try await SessionsVerticalHarness.make(
-                providerProfiles: SessionsProviderProfile.shippedProfiles)
-        case .claudeCode:
-            harness = try await SessionsVerticalHarness.make(
-                additionalProviderProfiles: [.claudeCodeCommandLine])
-        }
+        let harness = try await SessionsVerticalHarness.make()
         return Self(harness: harness)
     }
 
     static func withScope(
-        providerProfiles: SessionsVerticalHarnessTrait.ProviderProfiles,
         performing function: @Sendable () async throws -> Void
     ) async throws {
-        let fixture = try await make(providerProfiles: providerProfiles)
+        let fixture = try await make()
         do {
             try await SessionsVerticalHarnessContext.$current.withValue(fixture) {
                 try await function()

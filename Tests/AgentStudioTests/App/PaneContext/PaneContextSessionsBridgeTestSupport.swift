@@ -1,3 +1,4 @@
+import AgentStudioAppIPC
 import AgentStudioCore
 import AgentStudioInfrastructure
 import AgentStudioProgrammaticControl
@@ -39,11 +40,9 @@ final class PaneContextSessionsBridgeFixture: Sendable {
     let bridge: PaneContextSessionsBridge
     let ingestion: SessionsIngestion
     let service: PaneContextService
-    let registry = SessionsProviderAdapterRegistry(profiles: [.claudeCodeCommandLine])
-    let provider = SessionsProviderIdentity(
-        providerIdentifier: ClaudeCodeProviderIdentity.identifier,
-        exactVersion: ClaudeCodeProviderIdentity.supportedExactVersion,
-        operatingMode: ClaudeCodeProviderIdentity.operatingMode)
+    let provider = IPCSessionProviderIdentity(
+        identifier: ClaudeCodeProviderIdentity.identifier,
+        version: "2.1.289", mode: ClaudeCodeProviderIdentity.operatingMode)
 
     init(ingestionProbe: @escaping SessionsIngestionProbe = { _ in }) throws {
         root = FileManager.default.temporaryDirectory.appending(
@@ -94,22 +93,22 @@ final class PaneContextSessionsBridgeFixture: Sendable {
     }
 
     func bindConversation(_ conversation: String) async throws -> SessionsBindingRecord {
-        let bind = try #require(
-            registry.qualifiedSessionStartBind(
-                .init(
-                    provider: provider,
-                    source: .init(
-                        paneId: paneId.uuid, providerConversationId: conversation, sourceId: conversation,
-                        sourceGenerationId: UUIDv7.generate(), occurrenceId: UUIDv7.generate()),
-                    freshness: .live,
-                    reportedAt: time.now)))
-        let result = try await ingestion.submit(correlationId: UUIDv7.generate(), mutation: .bind(bind))
-        let binding: SessionsBindingRecord?
-        switch result {
-        case .binding(.established(let value)), .binding(.replaced(_, let value)): binding = value
-        default: binding = nil
-        }
-        return try #require(binding, "Expected bridge fixture binding, got \(result)")
+        let committed = try await ingestion.submitHook(
+            .init(
+                paneId: paneId.uuid, providerIdentifier: provider.identifier, providerVersion: provider.version,
+                sessionId: conversation, eventName: .sessionStart, turnId: nil, signal: .sessionStart,
+                recordId: UUIDv7.generate(), admittedAt: time.now))
+        return committed.binding
+    }
+
+    func applyHook(
+        _ binding: SessionsBindingRecord, eventName: SessionProviderSignalName, signal: SessionProviderSignal
+    ) async throws {
+        _ = try await ingestion.submitHook(
+            .init(
+                paneId: paneId.uuid, providerIdentifier: provider.identifier,
+                providerVersion: provider.version, sessionId: binding.providerConversationId, eventName: eventName,
+                turnId: "turn", signal: signal, recordId: UUIDv7.generate(), admittedAt: time.now))
     }
 
     func sender(_ binding: SessionsBindingRecord) throws -> AgentMessageSender {
@@ -117,14 +116,6 @@ final class PaneContextSessionsBridgeFixture: Sendable {
             provider: try BridgeAgentProviderName(binding.providerIdentifier),
             sessionRef: try BridgeAgentSessionRef(binding.providerConversationId),
             bindingGeneration: binding.bindingGenerationId)
-    }
-
-    func activityContext(_ binding: SessionsBindingRecord) throws -> SessionsAdmittedEvidenceContext {
-        try #require(
-            registry.admitProviderEvidence(
-                .init(
-                    provider: provider, capability: .toolActivity, paneId: paneId.uuid,
-                    sourceGenerationId: binding.sourceGenerationId, freshness: .live)))
     }
 
     func ask(writer: AgentMessageSender, reason: AskReason) -> PaneMessageSendRequest {

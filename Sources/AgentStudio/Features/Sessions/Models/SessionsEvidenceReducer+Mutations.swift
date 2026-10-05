@@ -2,187 +2,118 @@ import AgentStudioInfrastructure
 import Foundation
 
 extension SessionsEvidenceReducer {
-    static func reduceBind(
-        _ mutation: SessionsBindMutation,
-        context: SessionsRepositoryContext
-    ) throws -> SessionsRepositoryReduction {
-        if let currentBinding = context.currentBinding,
-            currentBinding.status == .active,
-            currentBinding.providerIdentifier == mutation.providerIdentifier,
-            currentBinding.providerConversationId == mutation.providerConversationId,
-            currentBinding.sourceGenerationId == mutation.sourceGenerationId
+    struct BindingDecision: Sendable {
+        let binding: SessionsBindingRecord
+        let replaced: [SessionsBindingRecord]
+        let disposition: SessionsHookDisposition
+    }
+
+    /// Rev 36's rows are evaluated in precedence order, inside the FIFO commit.
+    static func decideBinding(for hook: SessionsHookAdmission, context: SessionsRepositoryContext) -> BindingDecision {
+        let matching = context.bindings.filter {
+            $0.providerIdentifier == hook.providerIdentifier && $0.providerConversationId == hook.sessionId
+        }
+        let ownActive = matching.first { $0.paneId == hook.paneId && $0.status == .active }
+        let elsewhereActive = matching.first { $0.paneId != hook.paneId && $0.status == .active }
+        let ownOther = context.bindings.filter {
+            $0.paneId == hook.paneId && $0.status == .active && $0.bindingGenerationId != ownActive?.bindingGenerationId
+        }
+        if hook.eventName == .sessionStart {
+            if let ownActive {
+                return .init(binding: ownActive, replaced: [], disposition: .applied)
+            }
+            return .init(
+                binding: makeBinding(
+                    hook, conversationId: context.matchingConversation?.id,
+                    retained: matching.first { $0.paneId == hook.paneId }),
+                replaced: ownOther + (elsewhereActive.map { [$0] } ?? []), disposition: .bound)
+        }
+        if let ownActive {
+            return .init(binding: ownActive, replaced: [], disposition: .applied)
+        }
+        if matching.isEmpty {
+            return .init(
+                binding: makeBinding(hook, conversationId: context.matchingConversation?.id),
+                replaced: ownOther, disposition: .bound)
+        }
+        // A delayed fact may refer to the active binding on another pane or to
+        // an ended binding. Neither decision can mutate a pane's status.
+        let retained = elsewhereActive ?? matching[0]
+        return .init(binding: retained, replaced: [], disposition: .recordedOnly)
+    }
+
+    static func reduceHook(_ hook: SessionsHookAdmission, context: SessionsRepositoryContext)
+        -> (SessionsRepositoryReduction, BindingDecision)
+    {
+        let decision = decideBinding(for: hook, context: context)
+        let effect: SessionsEvidenceStatusEffect = decision.disposition == .recordedOnly ? .recordedOnly : .applied
+        var bindings = decision.replaced.map { replacing($0, status: .ended, endedAt: hook.admittedAt) }
+        var sources = context.sources.filter { source in
+            decision.replaced.contains { $0.bindingGenerationId == source.bindingGenerationId }
+        }.map { replacing($0, status: .ended, endedAt: hook.admittedAt) }
+        let binding = decision.binding
+        var conversations: [SessionsConversationRecord] = []
+        if decision.disposition == .bound {
+            conversations = [
+                .init(
+                    id: binding.conversationId, providerIdentifier: hook.providerIdentifier,
+                    providerConversationId: hook.sessionId,
+                    createdAt: context.matchingConversation?.createdAt ?? hook.admittedAt,
+                    lastReportedAt: hook.admittedAt)
+            ]
+            bindings.append(binding)
+            if let retainedSource = context.sources.first(where: {
+                $0.bindingGenerationId == binding.bindingGenerationId
+            }) {
+                sources.append(
+                    replacing(retainedSource, status: .active, endedAt: nil, providerVersion: hook.providerVersion))
+            } else {
+                sources.append(
+                    .init(
+                        id: binding.bindingGenerationId, bindingGenerationId: binding.bindingGenerationId,
+                        sourceIdentifier: hook.sessionId, sourceGenerationId: binding.sourceGenerationId,
+                        providerIdentifier: hook.providerIdentifier, providerVersion: hook.providerVersion,
+                        providerMode: "", qualification: "qualified", status: .active, lastCursor: nil,
+                        startedAt: hook.admittedAt, endedAt: nil))
+            }
+        }
+        if decision.disposition != .bound,
+            let retainedSource = context.sources.first(where: { $0.bindingGenerationId == binding.bindingGenerationId })
         {
-            return SessionsRepositoryReduction(outcome: .binding(.unchanged(currentBinding)))
+            sources.append(
+                replacing(
+                    retainedSource, status: retainedSource.status,
+                    endedAt: retainedSource.endedAt, providerVersion: hook.providerVersion))
         }
-        if let historicalReduction = historicalBindReduction(mutation, context: context) {
-            return historicalReduction
+        if hook.eventName == .sessionEnd, effect == .applied {
+            bindings.append(replacing(binding, status: .ended, endedAt: hook.admittedAt))
+            if let source = sources.last(where: { $0.bindingGenerationId == binding.bindingGenerationId })
+                ?? context.sources.first(where: { $0.bindingGenerationId == binding.bindingGenerationId })
+            {
+                sources.append(replacing(source, status: .ended, endedAt: hook.admittedAt))
+            }
         }
-        guard let admittedOrigin = mutation.transition.admittedOrigin else {
-            throw SessionsRepositoryError.bindingConflict(mutation.paneId)
-        }
-
-        let existingConversation = context.matchingConversation
-        let conversationId = existingConversation?.id ?? UUIDv7.generate()
-        let conversation = SessionsConversationRecord(
-            id: conversationId,
-            providerIdentifier: mutation.providerIdentifier,
-            providerConversationId: mutation.providerConversationId,
-            createdAt: existingConversation?.createdAt ?? mutation.reportedAt,
-            lastReportedAt: mutation.reportedAt
-        )
-        let newBinding = SessionsBindingRecord(
-            bindingGenerationId: UUIDv7.generate(),
-            paneId: mutation.paneId,
-            conversationId: conversationId,
-            providerIdentifier: mutation.providerIdentifier,
-            providerConversationId: mutation.providerConversationId,
-            sourceGenerationId: mutation.sourceGenerationId,
-            transitionOccurrenceId: mutation.transition.occurrenceId,
-            origin: admittedOrigin,
-            status: .active,
-            startedAt: mutation.reportedAt,
-            endedAt: nil,
-            resumeHint: mutation.resumeHint,
-            ownerPaneId: mutation.ownerPaneId
-        )
-        let newSource = SessionsSourceRecord(
-            id: UUIDv7.generate(),
-            bindingGenerationId: newBinding.bindingGenerationId,
-            sourceIdentifier: mutation.sourceId,
-            sourceGenerationId: mutation.sourceGenerationId,
-            providerIdentifier: mutation.providerIdentifier,
-            providerVersion: mutation.providerVersion,
-            providerMode: mutation.providerMode,
-            qualification: "qualified",
-            status: .active,
-            lastCursor: nil,
-            startedAt: mutation.reportedAt,
-            endedAt: nil
-        )
-        var bindingChanges = [newBinding]
-        var sourceChanges = [newSource]
-        let outcome: SessionsMutationOutcome
-        if let currentBinding = context.currentBinding, currentBinding.status == .active {
-            let endedBinding = replacing(currentBinding, status: .ended, endedAt: mutation.reportedAt)
-            bindingChanges.insert(endedBinding, at: 0)
-            sourceChanges.insert(
-                contentsOf: context.sources.filter { $0.bindingGenerationId == currentBinding.bindingGenerationId }
-                    .map { source in
-                        SessionsSourceRecord(
-                            id: source.id,
-                            bindingGenerationId: source.bindingGenerationId,
-                            sourceIdentifier: source.sourceIdentifier,
-                            sourceGenerationId: source.sourceGenerationId,
-                            providerIdentifier: source.providerIdentifier,
-                            providerVersion: source.providerVersion,
-                            providerMode: source.providerMode,
-                            qualification: source.qualification,
-                            status: .ended,
-                            lastCursor: source.lastCursor,
-                            startedAt: source.startedAt,
-                            endedAt: mutation.reportedAt
-                        )
-                    },
-                at: 0
-            )
-            outcome = .binding(.replaced(endedBinding, newBinding))
-        } else {
-            outcome = .binding(.established(newBinding))
-        }
-        return SessionsRepositoryReduction(
-            conversationChanges: [conversation],
-            bindingChanges: bindingChanges,
-            sourceChanges: sourceChanges,
-            outcome: outcome
-        )
-    }
-
-    private static func historicalBindReduction(
-        _ mutation: SessionsBindMutation,
-        context: SessionsRepositoryContext
-    ) -> SessionsRepositoryReduction? {
-        let isNonLiveProviderBind: Bool
-        if case .qualifiedSessionStart = mutation.transition {
-            isNonLiveProviderBind = mutation.freshness != .live
-        } else {
-            isNonLiveProviderBind = false
-        }
-        let isKnownGeneration = context.sources.contains {
-            $0.sourceGenerationId == mutation.sourceGenerationId
-        }
-        guard isNonLiveProviderBind || isKnownGeneration else { return nil }
-        return SessionsRepositoryReduction(outcome: .historical(occurrenceId: mutation.transition.occurrenceId))
-    }
-
-    static func reduceEvidence(
-        _ mutation: SessionsEvidenceMutation,
-        context: SessionsRepositoryContext
-    ) throws -> SessionsRepositoryReduction {
-        guard case .sourceGeneration(let paneId, let sourceGenerationId) = mutation.context,
-            let binding = context.binding(sourceGenerationId: sourceGenerationId),
-            binding.paneId == paneId
-        else {
-            throw SessionsRepositoryError.sourceNotFound(mutation.context.sourceGenerationIdForError)
-        }
-        let source = context.source(sourceGenerationId: sourceGenerationId)
-        let isCurrent =
-            binding.status == .active && source?.status == .active
-            && context.currentBinding?.bindingGenerationId == binding.bindingGenerationId
-            && mutation.freshness == .live
-        let freshness: SessionsEvidenceFreshness = isCurrent ? .live : .historical
         let evidence = SessionsEvidenceRecord(
-            occurrenceId: mutation.occurrenceId,
-            conversationId: binding.conversationId,
-            bindingGenerationId: binding.bindingGenerationId,
-            sourceGenerationId: sourceGenerationId,
-            turnId: mutation.turnId,
-            subject: mutation.subject,
-            kind: mutation.kind,
-            origin: mutation.origin,
-            freshness: freshness,
-            occurredAt: mutation.occurredAt,
-            sourceOccurredAt: SessionsMutation.recordEvidence(mutation).boundedSourceOccurredAt,
-            providerSignal: mutation.providerSignal
+            recordId: hook.recordId, conversationId: binding.conversationId,
+            bindingGenerationId: binding.bindingGenerationId, sourceGenerationId: binding.sourceGenerationId,
+            turnId: hook.turnId, subject: hook.subject, kind: hook.kind, origin: .reported, statusEffect: effect,
+            occurredAt: hook.admittedAt, providerSignal: hook.signal)
+        return (
+            .init(
+                conversationChanges: conversations, bindingChanges: bindings, sourceChanges: sources,
+                evidenceChanges: [evidence], outcome: decision.disposition), decision
         )
-        let sourceChanges =
-            source.flatMap { source in
-                mutation.sourceCursor.map { cursor in
-                    SessionsSourceRecord(
-                        id: source.id,
-                        bindingGenerationId: source.bindingGenerationId,
-                        sourceIdentifier: source.sourceIdentifier,
-                        sourceGenerationId: source.sourceGenerationId,
-                        providerIdentifier: source.providerIdentifier,
-                        providerVersion: source.providerVersion,
-                        providerMode: source.providerMode,
-                        qualification: source.qualification,
-                        status: source.status,
-                        lastCursor: cursor,
-                        startedAt: source.startedAt,
-                        endedAt: source.endedAt
-                    )
-                }
-            }.map { [$0] } ?? []
-        guard isCurrent else {
-            return SessionsRepositoryReduction(
-                sourceChanges: sourceChanges,
-                evidenceChanges: [evidence],
-                outcome: .historical(occurrenceId: mutation.occurrenceId)
-            )
-        }
-        var reduction = SessionsRepositoryReduction(
-            sourceChanges: sourceChanges,
-            evidenceChanges: [evidence],
-            outcome: .evidenceRecorded(occurrenceId: mutation.occurrenceId)
-        )
-        applyEvidenceProjection(evidence, source: source, context: context, reduction: &reduction)
-        return reduction
     }
-}
 
-extension SessionsReportContext {
-    fileprivate var sourceGenerationIdForError: UUID {
-        if case .sourceGeneration(_, let sourceGenerationId) = self { return sourceGenerationId }
-        return paneId
+    private static func makeBinding(
+        _ hook: SessionsHookAdmission, conversationId: UUID?, retained: SessionsBindingRecord? = nil
+    ) -> SessionsBindingRecord {
+        if let retained { return replacing(retained, status: .active, endedAt: nil) }
+        let identity = UUIDv7.generate()
+        return .init(
+            bindingGenerationId: identity, paneId: hook.paneId, conversationId: conversationId ?? UUIDv7.generate(),
+            providerIdentifier: hook.providerIdentifier, providerConversationId: hook.sessionId,
+            sourceGenerationId: identity, transitionOccurrenceId: hook.recordId, origin: .reported, status: .active,
+            startedAt: hook.admittedAt, endedAt: nil, resumeHint: hook.resumeHint, ownerPaneId: hook.ownerPaneId)
     }
 }

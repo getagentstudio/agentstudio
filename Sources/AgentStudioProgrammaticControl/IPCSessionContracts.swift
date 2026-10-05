@@ -8,7 +8,7 @@ package enum IPCSessionFailureReason {
     package static let correlationConflict = "correlationConflict"
 }
 
-/// Lifecycle capability a provider hook claims for one projected event.
+/// Typed lifecycle fact reported by a provider hook.
 package enum IPCSessionEventName: String, Codable, CaseIterable, Equatable, Sendable, IPCSchemaProviding {
     case sessionStart
     case sessionEnd
@@ -26,12 +26,9 @@ package enum IPCSessionEventName: String, Codable, CaseIterable, Equatable, Send
     case subagentActivity
 }
 
-/// Admission disposition for one projected provider event. Only an exactly
-/// qualified provider/version/mode/capability is admitted.
+/// The pane-authenticated hook was recorded. Version is descriptive only.
 package enum IPCSessionEventDisposition: String, Codable, CaseIterable, Equatable, Sendable, IPCSchemaProviding {
     case admitted
-    case unknownCapability
-    case unqualified
 }
 
 /// Liveness of the pane's current binding and source generation.
@@ -67,7 +64,6 @@ package struct IPCSessionEventIdentity: Codable, Equatable, Sendable {
     package var questions: [IPCSessionQuestion]? { providerFields.questions }
     package var failureSummary: String? { providerFields.failureSummary }
     package var elicitationId: String? { providerFields.elicitationId }
-    package var sourceOccurredAt: Date? { providerFields.sourceOccurredAt }
 
     package init(
         name: IPCSessionEventName,
@@ -92,7 +88,7 @@ package struct IPCSessionEventIdentity: Codable, Equatable, Sendable {
     private enum CodingKeys: String, CodingKey, CaseIterable {
         case name, conversationId, turnId, requestId, toolId, subagentId, occurrenceId
         case toolName, questions, failureSummary, elicitationId, message
-        case sourceOccurredAt, resumeHint
+        case resumeHint
     }
 
     package init(from decoder: Decoder) throws {
@@ -126,7 +122,6 @@ package struct IPCSessionProviderEventFields: Codable, Equatable, Sendable {
     package var failureSummary: String?
     package var elicitationId: String?
     package var message: String?
-    package var sourceOccurredAt: Date?
     package var resumeHint: String?
 
     package init() {}
@@ -144,29 +139,22 @@ package struct IPCSessionQuestionOption: Codable, Equatable, Sendable {
     package let description: String
 }
 
-package enum IPCSessionPermissionHandling: String, Codable, CaseIterable, Equatable, Sendable, IPCSchemaProviding {
-    case reportOnly, blockingAsk
-}
-
 package struct IPCSessionEventParams: Codable, Equatable, Sendable {
     package let handle: String
     package let provider: IPCSessionProviderIdentity
     package let event: IPCSessionEventIdentity
     package let correlationId: UUID
-    package let permissionHandling: IPCSessionPermissionHandling?
 
     package init(
         handle: String,
         provider: IPCSessionProviderIdentity,
         event: IPCSessionEventIdentity,
-        correlationId: UUID,
-        permissionHandling: IPCSessionPermissionHandling? = nil
+        correlationId: UUID
     ) {
         self.handle = handle
         self.provider = provider
         self.event = event
         self.correlationId = correlationId
-        self.permissionHandling = permissionHandling
     }
 }
 
@@ -219,5 +207,30 @@ package struct IPCSessionQueryResult: Codable, Equatable, Sendable {
         try container.encode(paneId, forKey: .paneId)
         try container.encode(sourceHealth, forKey: .sourceHealth)
         try container.encode(session, forKey: .session)
+    }
+}
+
+package enum IPCSessionRefusalReason: String, Codable, CaseIterable, Equatable, Sendable, IPCSchemaProviding {
+    case noSessionId, undecodablePayload
+}
+
+package struct IPCSessionRefusalParams: Codable, Equatable, Sendable {
+    package let handle: String
+    package let reason: IPCSessionRefusalReason
+    package let event: String?
+    package let correlationId: UUID
+    package init(handle: String, reason: IPCSessionRefusalReason, event: String? = nil, correlationId: UUID) {
+        self.handle = handle
+        self.reason = reason
+        self.event = event
+        self.correlationId = correlationId
+    }
+}
+
+package struct IPCSessionRefusalResult: Codable, Equatable, Sendable, IPCSchemaProviding {
+    package let paneId: UUID
+    package init(paneId: UUID) { self.paneId = paneId }
+    package static func ipcSchema() throws -> IPCJSONSchema {
+        .object(fields: [IPCSessionSchemaFields.pane])
     }
 }

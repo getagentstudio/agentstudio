@@ -32,7 +32,16 @@ extension SessionsRepositoryStorage {
         let revision = try Int64.fetchOne(database, sql: "SELECT MAX(commit_revision) FROM sessions_operation") ?? 0
         switch query {
         case .bind(let paneId, let providerIdentifier, let providerConversationId):
-            let bindings = try loadBindings(database: database, paneId: paneId)
+            let bindings = try Row.fetchAll(
+                database,
+                sql: """
+                    SELECT binding.*, conversation.provider_identifier, conversation.provider_conversation_id
+                    FROM sessions_pane_binding binding JOIN sessions_conversation conversation ON conversation.id = binding.conversation_id
+                    WHERE binding.pane_id = ? OR (conversation.provider_identifier = ? AND conversation.provider_conversation_id = ?)
+                    ORDER BY CASE binding.status WHEN 'active' THEN 0 ELSE 1 END, binding.committed_revision DESC
+                    """, arguments: [paneId.uuidString, providerIdentifier, providerConversationId]
+            ).map(decodeBinding)
+            let sources = try Set(bindings.map(\.paneId)).flatMap { try loadSources(database: database, paneId: $0) }
             return SessionsRepositoryContext(
                 revision: revision,
                 matchingConversation: try loadConversation(
@@ -40,9 +49,9 @@ extension SessionsRepositoryStorage {
                     providerIdentifier: providerIdentifier,
                     providerConversationId: providerConversationId
                 ),
-                currentBinding: bindings.first,
+                currentBinding: bindings.first { $0.paneId == paneId },
                 bindings: bindings,
-                sources: try loadSources(database: database, paneId: paneId),
+                sources: sources,
                 evidence: try loadEvidence(database: database, paneId: paneId),
                 attention: try loadAttention(database: database, paneId: paneId),
                 results: try loadResults(database: database, paneId: paneId)
@@ -87,15 +96,15 @@ extension SessionsRepositoryStorage {
             let currentTurnId = SessionsEvidenceReducer.currentTurnId(
                 evidence: context.evidence, bindingGenerationId: binding.bindingGenerationId,
                 activeSourceGenerationIds: activeSources)
-            historicalEvidence = SessionsEvidenceReducer.evidenceOrder(context.evidence).filter {
+            historicalEvidence = context.evidence.sorted(by: SessionsEvidenceReducer.admissionOrder).filter {
                 $0.conversationId != binding.conversationId
                     || $0.bindingGenerationId != binding.bindingGenerationId
-                    || $0.freshness != .live
+                    || $0.statusEffect != .applied
                     || endedSources.contains($0.sourceGenerationId)
                     || (currentTurnId != nil && $0.turnId != currentTurnId)
             }
         } else {
-            historicalEvidence = context.evidence.filter { $0.freshness != .live }
+            historicalEvidence = context.evidence.filter { $0.statusEffect != .applied }
         }
         return SessionsSnapshot(
             revision: context.revision, currentBinding: context.currentBinding,
@@ -108,7 +117,7 @@ extension SessionsRepositoryStorage {
                     openedAt: attention.openedAt)
             },
             results: context.results,
-            historicalOccurrenceIds: historicalEvidence.map(\.occurrenceId),
+            historicalOccurrenceIds: historicalEvidence.map(\.recordId),
             losses: try loadLosses(database: database, paneId: paneId))
     }
 
@@ -121,10 +130,12 @@ extension SessionsRepositoryStorage {
             sql: """
                 SELECT binding.*, conversation.provider_identifier, conversation.provider_conversation_id
                 FROM sessions_pane_binding AS binding
+                JOIN sessions_operation AS operation ON operation.commit_revision = binding.committed_revision
                 JOIN sessions_conversation AS conversation ON conversation.id = binding.conversation_id
                 WHERE binding.pane_id = ?
                 ORDER BY CASE binding.status WHEN 'active' THEN 0 ELSE 1 END,
                          binding.committed_revision DESC,
+                         CASE WHEN binding.binding_generation_id = operation.binding_generation_id THEN 0 ELSE 1 END,
                          binding.binding_generation_id ASC
                 """,
             arguments: [paneId.uuidString]
@@ -149,12 +160,14 @@ extension SessionsRepositoryStorage {
             sql: """
                 SELECT binding.*, conversation.provider_identifier, conversation.provider_conversation_id
                 FROM sessions_pane_binding AS binding
+                JOIN sessions_operation AS operation ON operation.commit_revision = binding.committed_revision
                 JOIN sessions_conversation AS conversation ON conversation.id = binding.conversation_id
                 WHERE binding.pane_id = ?
                   AND conversation.provider_identifier = ?
                   AND conversation.provider_conversation_id = ?
                 ORDER BY CASE binding.status WHEN 'active' THEN 0 ELSE 1 END,
                          binding.committed_revision DESC,
+                         CASE WHEN binding.binding_generation_id = operation.binding_generation_id THEN 0 ELSE 1 END,
                          binding.binding_generation_id ASC
                 LIMIT 1
                 """,
@@ -168,6 +181,7 @@ extension SessionsRepositoryStorage {
             sql: """
                 SELECT binding.*, conversation.provider_identifier, conversation.provider_conversation_id
                 FROM sessions_pane_binding AS binding
+                JOIN sessions_operation AS operation ON operation.commit_revision = binding.committed_revision
                 JOIN sessions_conversation AS conversation ON conversation.id = binding.conversation_id
                 WHERE binding.status = 'active'
                 ORDER BY binding.pane_id, binding.started_at

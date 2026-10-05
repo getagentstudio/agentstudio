@@ -83,7 +83,6 @@ package enum ProviderHookInvocation {
 
     package struct Props: Sendable {
         package let eventName: String
-        package let sourceOccurredAt: Date
         package let environment: [String: String]
         package let standardInput: @Sendable () throws -> Data
         package let correlationIdProvider: @Sendable () -> UUID
@@ -92,7 +91,6 @@ package enum ProviderHookInvocation {
         package let deadline: CallDeadline?
 
         package init(
-            sourceOccurredAt: Date,
             eventName: String,
             environment: [String: String],
             standardInput: @escaping @Sendable () throws -> Data,
@@ -102,7 +100,6 @@ package enum ProviderHookInvocation {
             deadline: CallDeadline? = nil
         ) {
             self.eventName = eventName
-            self.sourceOccurredAt = sourceOccurredAt
             self.environment = environment
             self.standardInput = standardInput
             self.correlationIdProvider = correlationIdProvider
@@ -133,8 +130,7 @@ package enum ProviderHookInvocation {
             return 0
         }
         guard
-            let projected = CodexHookProjection.project(
-                sourceOccurredAt: props.sourceOccurredAt, eventName: eventName, payload: payload)
+            let projected = CodexHookProjection.project(eventName: eventName, payload: payload)
         else {
             return 0
         }

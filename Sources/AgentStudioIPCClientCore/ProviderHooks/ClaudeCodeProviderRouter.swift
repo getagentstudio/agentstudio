@@ -9,7 +9,6 @@ package enum ClaudeCodeProviderRouter {
     /// - Returns: the process exit code when the arguments address a Claude Code
     ///   provider command, and `nil` when they belong to the descriptor CLI.
     package static func exitCode(
-        sourceOccurredAt: Date,
         arguments: [String],
         environment: [String: String],
         executablePath: String,
@@ -21,7 +20,6 @@ package enum ClaudeCodeProviderRouter {
     ) -> Int32? {
         if let code = ClaudeCodeHookInvocation.handle(
             ClaudeCodeHookInvocationInputs(
-                sourceOccurredAt: sourceOccurredAt,
                 arguments: arguments,
                 environment: environment,
                 standardInput: standardInput,

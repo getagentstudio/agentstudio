@@ -101,7 +101,6 @@ extension AgentStudioAppIPCPaneContextIntegrationTests {
                 ClaudeCodeHookPayload.self, from: JSONEncoder().encode(JSONValue.object(fields)))
         }
         let projection = ClaudeCodeHookProjection.project(
-            sourceOccurredAt: Date(timeIntervalSince1970: 1_700_000_000),
             announcedEvent: hookName, payload: payload,
             providerVersion: ClaudeCodeProviderIdentity.supportedExactVersion,
             correlationIdentifier: UUIDv7.generate(), freshOccurrenceIdentifier: { UUIDv7.generate() })
@@ -112,6 +111,6 @@ extension AgentStudioAppIPCPaneContextIntegrationTests {
     private static func sessionAdapter(_ domain: PaneContextIPCDomainCompanion) -> AgentStudioIPCSessionsAdapter {
         AgentStudioIPCSessionsAdapter(
             ingestion: domain.ingestion,
-            providerRegistry: .init(profiles: [.claudeCodeCommandLine]), now: { domain.time.now })
+            now: { domain.time.now })
     }
 }

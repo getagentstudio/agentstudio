@@ -12,7 +12,7 @@ import Testing
 @MainActor
 @Suite(
     "Sessions and PaneContext production composition", .serialized,
-    SessionsVerticalHarnessTrait(providerProfiles: .defaultProfiles))
+    SessionsVerticalHarnessTrait())
 struct SessionsPaneContextCompositionTests {
     @Test("Boot connects real ask, line and session-end owners before admitting provider events")
     func bootCompositionConnectsSessionsAndPaneContext() async throws {
@@ -25,12 +25,12 @@ struct SessionsPaneContextCompositionTests {
         let conversationId = UUIDv7.generate().uuidString
         #expect(
             try await harness.sessionEvent(
-                paneId: paneId.uuid, provider: SessionsVerticalHarness.qualifiedProvider, name: "sessionStart",
+                paneId: paneId.uuid, provider: SessionsVerticalHarness.testProvider, name: "sessionStart",
                 conversationId: conversationId
             ).disposition == .admitted)
         #expect(
             try await harness.sessionEvent(
-                paneId: paneId.uuid, provider: SessionsVerticalHarness.qualifiedProvider, name: "turnStart",
+                paneId: paneId.uuid, provider: SessionsVerticalHarness.testProvider, name: "turnStart",
                 conversationId: conversationId
             ).disposition == .admitted)
         let binding = try #require(
@@ -65,7 +65,7 @@ struct SessionsPaneContextCompositionTests {
         #expect(try await composition.ingestion.sessionSummary(paneId: paneId.uuid)?.status == .working(.monitoring))
         #expect(
             try await harness.sessionEvent(
-                paneId: paneId.uuid, provider: SessionsVerticalHarness.qualifiedProvider, name: "sessionEnd",
+                paneId: paneId.uuid, provider: SessionsVerticalHarness.testProvider, name: "sessionEnd",
                 conversationId: conversationId
             ).disposition == .admitted)
         let read = await composition.paneContextService.readDetail(.init(paneId: paneId, page: .first))
@@ -85,7 +85,7 @@ struct SessionsPaneContextCompositionTests {
         let parentId = harness.boundPaneId
         let drawer = try #require(harness.commandHarness.store.addDrawerPane(to: parentId))
         let params = IPCSessionEventParams(
-            handle: drawer.id.uuidString, provider: SessionsVerticalHarness.qualifiedProvider,
+            handle: drawer.id.uuidString, provider: SessionsVerticalHarness.testProvider,
             event: .init(
                 name: .sessionStart, conversationId: UUIDv7.generate().uuidString, turnId: nil,
                 requestId: nil, toolId: nil, subagentId: nil, occurrenceId: UUIDv7.generate()),

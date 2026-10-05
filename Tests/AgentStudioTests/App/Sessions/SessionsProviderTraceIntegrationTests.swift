@@ -14,127 +14,11 @@ import Testing
 
 @Suite("Sessions recorded provider trace integration")
 struct SessionsProviderTraceIntegrationTests {
-    @Test("permission handling survives a real database reopen and restore", arguments: [false, true])
-    func permissionHandlingPersistsAcrossRestore(blocking: Bool) async throws {
-        let fixture = try RecordedStatusDatabase()
-        defer { try? FileManager.default.removeItem(at: fixture.root) }
-        let paneId = UUIDv7.generate()
-        let projected = try projectRecordedStatus(data: recordedStatusData("AskUserQuestion.PermissionRequest"))
-        let handling: IPCSessionPermissionHandling = blocking ? .blockingAsk : .reportOnly
-        let params = IPCSessionEventParams(
-            handle: projected.handle, provider: projected.provider, event: projected.event,
-            correlationId: projected.correlationId, permissionHandling: handling)
-        let initial = try await fixture.withIngestion { ingestion, adapter in
-            try await sendRecordedStatus("AskUserQuestion.SessionStart", adapter: adapter, paneId: paneId)
-            let result = try await adapter.recordProviderEvent(
-                paneId: paneId, params: params, provenance: .matchingPane)
-            #expect(result.disposition == .admitted)
-            let summary = try #require(try await ingestion.sessionSummary(paneId: paneId))
-            #expect(summary.providerPrompts.count == (blocking ? 0 : 1))
-            #expect(summary.status == (blocking ? .unknown : .needsYou(.question)))
-            return summary
-        }
-        let reopened = try await fixture.withIngestion { ingestion, _ in
-            try await ingestion.sessionSummary(paneId: paneId)
-        }
-        #expect(reopened == initial)
-        let stored = try await valueFromDedicatedThread {
-            let queue = try DatabaseQueue(path: fixture.databaseURL.path)
-            defer { try? queue.close() }
-            return try queue.read { database in
-                try String.fetchOne(
-                    database, sql: "SELECT permission_handling FROM sessions_evidence WHERE occurrence_id = ?",
-                    arguments: [params.event.occurrenceId.uuidString])
-            }
-        }
-        #expect(stored == handling.rawValue)
-    }
 
-    @Test("unknown persisted permission handling fails closed with its field tag")
-    func unknownPermissionHandlingRejectsRestore() async throws {
-        let fixture = try RecordedStatusDatabase()
-        defer { try? FileManager.default.removeItem(at: fixture.root) }
-        let paneId = UUIDv7.generate()
-        try await fixture.withIngestion { _, adapter in
-            try await sendRecordedStatus("AskUserQuestion.SessionStart", adapter: adapter, paneId: paneId)
-            try await sendRecordedStatus("AskUserQuestion.PermissionRequest", adapter: adapter, paneId: paneId)
-        }
-        try await valueFromDedicatedThread {
-            let queue = try DatabaseQueue(path: fixture.databaseURL.path)
-            defer { try? queue.close() }
-            try queue.write {
-                try $0.execute(
-                    sql:
-                        "UPDATE sessions_evidence SET permission_handling = 'unknown' WHERE provider_event = 'permission'"
-                )
-            }
-        }
-        await #expect(throws: SessionsRepositoryError.invalidStoredValue("permission_handling")) {
-            try await fixture.withIngestion { ingestion, _ in
-                try await ingestion.sessionSummary(paneId: paneId)
-            }
-        }
-    }
-
-    @Test("a keyed hook records source time and a later source time replays without a second effect")
-    func keyedHookSourceTimeIsRecordedButNotCanonicalIntent() async throws {
-        let fixture = try RecordedStatusDatabase()
-        defer { try? FileManager.default.removeItem(at: fixture.root) }
-        let paneId = UUIDv7.generate()
-        let projected = try projectRecordedStatus(data: recordedStatusData("AskUserQuestion.PreToolUse"))
-        let event = projected.event
-        let firstTime = Date(timeIntervalSince1970: 1_700_000_000)
-        let laterTime = firstTime.addingTimeInterval(1)
-        func params(at sourceTime: Date) -> IPCSessionEventParams {
-            var fields = event.providerFields
-            fields.sourceOccurredAt = sourceTime
-            return .init(
-                handle: projected.handle, provider: projected.provider,
-                event: .init(
-                    name: event.name, conversationId: event.conversationId, turnId: event.turnId,
-                    requestId: event.requestId, toolId: event.toolId, subagentId: event.subagentId,
-                    occurrenceId: event.occurrenceId, providerFields: fields), correlationId: UUIDv7.generate())
-        }
-        let first = params(at: firstTime)
-        let replay = params(at: laterTime)
-        #expect(first.event.occurrenceId == replay.event.occurrenceId)
-        #expect(first.event.sourceOccurredAt != replay.event.sourceOccurredAt)
-        #expect(first.correlationId != replay.correlationId)
-        try await fixture.withIngestion { ingestion, adapter in
-            try await sendRecordedStatus("AskUserQuestion.SessionStart", adapter: adapter, paneId: paneId)
-            let firstResult = try await adapter.recordProviderEvent(
-                paneId: paneId, params: first, provenance: .matchingPane)
-            #expect(firstResult.disposition == .admitted)
-            let before = try await ingestion.sessionSummary(paneId: paneId)
-            let replayResult = try await adapter.recordProviderEvent(
-                paneId: paneId, params: replay, provenance: .matchingPane)
-            #expect(replayResult.disposition == .admitted)
-            let after = try await ingestion.sessionSummary(paneId: paneId)
-            #expect(after == before)
-        }
-        let databaseURL = fixture.databaseURL
-        let stored = try await valueFromDedicatedThread {
-            var configuration = Configuration()
-            configuration.readonly = true
-            let queue = try DatabaseQueue(path: databaseURL.path, configuration: configuration)
-            defer { try? queue.close() }
-            return try queue.read { database in
-                let count = try Int.fetchOne(
-                    database, sql: "SELECT COUNT(*) FROM sessions_evidence WHERE occurrence_id = ?",
-                    arguments: [event.occurrenceId.uuidString])
-                let sourceTime = try Double.fetchOne(
-                    database, sql: "SELECT source_occurred_at FROM sessions_evidence WHERE occurrence_id = ?",
-                    arguments: [event.occurrenceId.uuidString])
-                return (count, sourceTime)
-            }
-        }
-        #expect(stored.0 == 1)
-        #expect(stored.1 == firstTime.timeIntervalSince1970)
-    }
     @Test(
-        "populated supplied and fallback resume hints survive repository reopen and occurrence replay",
+        "supplied and fallback resume hints survive repository reopen and later SessionStart",
         arguments: [true, false])
-    func resumeHintPersistsAcrossReopenAndReplay(useSuppliedHint: Bool) async throws {
+    func resumeHintPersistsAcrossReopenAndStart(useSuppliedHint: Bool) async throws {
         let fixture = try RecordedStatusDatabase()
         defer { try? FileManager.default.removeItem(at: fixture.root) }
         let paneId = UUIDv7.generate()
@@ -175,103 +59,11 @@ struct SessionsProviderTraceIntegrationTests {
             #expect(try #require(afterReplay.currentBinding).resumeHint == expectedHint)
             let replaySummary = try await ingestion.sessionSummary(paneId: paneId)
             #expect(replaySummary == initial.summary)
-            // Correlation aliases advance the operation ledger, not the domain state.
+            // Another invocation records a new fact while preserving the active binding.
             #expect(afterReplay.staleAttention == initial.snapshot.staleAttention)
             #expect(afterReplay.results == initial.snapshot.results)
             #expect(Set(afterReplay.historicalOccurrenceIds) == Set(initial.snapshot.historicalOccurrenceIds))
             #expect(afterReplay.losses == initial.snapshot.losses)
-        }
-    }
-
-    @Test(
-        "discarded provider schema, answer and server metadata do not change canonical replay",
-        arguments: ["Elicitation", "ElicitationResult"])
-    func discardedElicitationMetadataReplays(fixtureName: String) async throws {
-        try await withRecordedStatusIngestion { ingestion, adapter, paneId in
-            try await sendRecordedStatus("Elicitation.SessionStart", adapter: adapter, paneId: paneId)
-            let occurrenceId = UUIDv7.generate()
-            let captured = try recordedStatusData(fixtureName)
-            let first = try projectRecordedStatus(data: captured, occurrenceId: occurrenceId)
-            _ = try await adapter.recordProviderEvent(paneId: paneId, params: first, provenance: .matchingPane)
-            let before = try await ingestion.sessionSummary(paneId: paneId)
-            guard case .object(var changed) = try JSONDecoder().decode(JSONValue.self, from: captured) else {
-                throw ClaudeCodeHookInvocationError.reportRejected
-            }
-            changed["mcp_server_name"] = .string("different-discarded-server")
-            if fixtureName == "Elicitation" {
-                changed["requested_schema"] = .object([
-                    "type": .string("object"), "title": .string("A different discarded form"),
-                ])
-            } else {
-                changed["content"] = .object(["color": .string("a different discarded answer")])
-                changed["action"] = .string("cancel")
-            }
-            let replay = try projectRecordedStatus(
-                data: JSONEncoder().encode(JSONValue.object(changed)), occurrenceId: occurrenceId)
-            _ = try await adapter.recordProviderEvent(paneId: paneId, params: replay, provenance: .matchingPane)
-            #expect(try await ingestion.sessionSummary(paneId: paneId) == before)
-        }
-    }
-
-    @Test("a lifecycle occurrence replays across correlations and rejects changed canonical intent")
-    func sessionEndReplaysBySuppliedOccurrence() async throws {
-        try await withRecordedStatusIngestion { ingestion, adapter, paneId in
-            try await sendRecordedStatus("Elicitation.SessionStart", adapter: adapter, paneId: paneId)
-            let occurrenceId = UUIDv7.generate()
-            let capturedEnd = try recordedStatusData("Elicitation.SessionEnd")
-            let end = try projectRecordedStatus(data: capturedEnd, occurrenceId: occurrenceId)
-            _ = try await adapter.recordProviderEvent(paneId: paneId, params: end, provenance: .matchingPane)
-            let ended = try await ingestion.sessionSummary(paneId: paneId)
-            #expect(ended?.status == .idle(.ended))
-            let replay = IPCSessionEventParams(
-                handle: end.handle, provider: end.provider, event: end.event, correlationId: UUIDv7.generate())
-            _ = try await adapter.recordProviderEvent(paneId: paneId, params: replay, provenance: .matchingPane)
-            #expect(try await ingestion.sessionSummary(paneId: paneId) == ended)
-            guard case .object(var changed) = try JSONDecoder().decode(JSONValue.self, from: capturedEnd) else {
-                throw ClaudeCodeHookInvocationError.reportRejected
-            }
-            changed["prompt_id"] = .string("different-recorded-turn")
-            let changedEnd = try projectRecordedStatus(
-                data: JSONEncoder().encode(JSONValue.object(changed)), occurrenceId: occurrenceId)
-            await #expect(throws: AppIPCSessionsError(reason: .correlationConflict)) {
-                _ = try await adapter.recordProviderEvent(paneId: paneId, params: changedEnd, provenance: .matchingPane)
-            }
-            #expect(try await ingestion.sessionSummary(paneId: paneId) == ended)
-        }
-    }
-
-    @Test("a changed projected question conflicts, while changed discarded duration replays")
-    func replayUsesRecordedCanonicalContent() async throws {
-        try await withRecordedStatusIngestion { ingestion, adapter, paneId in
-            try await sendRecordedStatus("AskUserQuestion.SessionStart", adapter: adapter, paneId: paneId)
-            try await sendRecordedStatus("AskUserQuestion.PreToolUse", adapter: adapter, paneId: paneId)
-            let before = try await ingestion.sessionSummary(paneId: paneId)
-            let original = try recordedStatusData("AskUserQuestion.PreToolUse")
-            guard case .object(var changed) = try JSONDecoder().decode(JSONValue.self, from: original),
-                case .object(var input)? = changed["tool_input"], case .array(var questions)? = input["questions"],
-                case .object(var firstQuestion)? = questions.first
-            else { throw ClaudeCodeHookInvocationError.reportRejected }
-            firstQuestion["question"] = .string("A different projected question.")
-            questions[0] = .object(firstQuestion)
-            input["questions"] = .array(questions)
-            changed["tool_input"] = .object(input)
-            let changedData = try JSONEncoder().encode(JSONValue.object(changed))
-            await #expect(throws: AppIPCSessionsError(reason: .correlationConflict)) {
-                try await submitRecordedStatus(data: changedData, adapter: adapter, paneId: paneId)
-            }
-            #expect(try await ingestion.sessionSummary(paneId: paneId) == before)
-            try await sendRecordedStatus("AskUserQuestion.PostToolUse", adapter: adapter, paneId: paneId)
-            let completed = try await ingestion.sessionSummary(paneId: paneId)
-            guard
-                case .object(var discardedChange) = try JSONDecoder().decode(
-                    JSONValue.self, from: recordedStatusData("AskUserQuestion.PostToolUse"))
-            else {
-                throw ClaudeCodeHookInvocationError.reportRejected
-            }
-            discardedChange["duration_ms"] = .number(777)
-            try await submitRecordedStatus(
-                data: JSONEncoder().encode(JSONValue.object(discardedChange)), adapter: adapter, paneId: paneId)
-            #expect(try await ingestion.sessionSummary(paneId: paneId) == completed)
         }
     }
 
@@ -377,7 +169,7 @@ struct RecordedStatusDatabase: Sendable {
             repository: .init(sqliteAccess: RecordedStatusSQLiteAccess(queue: queue)),
             limits: .init(maximumPendingPerPane: 32, maximumPendingGlobal: 128), probe: { _ in })
         let adapter = AgentStudioIPCSessionsAdapter(
-            ingestion: ingestion, providerRegistry: .init(profiles: [.claudeCodeCommandLine]))
+            ingestion: ingestion)
         do {
             let result = try await operation(ingestion, adapter)
             await ingestion.finish()
@@ -430,7 +222,6 @@ private func submitRecordedStatus(data: Data, adapter: AgentStudioIPCSessionsAda
 func projectRecordedStatus(data: Data, occurrenceId: UUID = UUIDv7.generate()) throws -> IPCSessionEventParams {
     let payload = try JSONDecoder().decode(ClaudeCodeHookPayload.self, from: data)
     let projection = ClaudeCodeHookProjection.project(
-        sourceOccurredAt: Date(timeIntervalSince1970: 1_700_000_000),
         announcedEvent: payload.hookEventName, payload: payload, providerVersion: "2.1.286",
         correlationIdentifier: UUIDv7.generate(), freshOccurrenceIdentifier: { occurrenceId })
     guard case .projected(let params) = projection else { throw ClaudeCodeHookInvocationError.reportRejected }

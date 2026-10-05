@@ -56,7 +56,7 @@ extension SessionsRepositoryStorage {
             throw SessionsRepositoryError.invalidStoredValue(evidenceKind)
         }
         return SessionsEvidenceRecord(
-            occurrenceId: try decodeUuid(row["occurrence_id"]),
+            recordId: try decodeUuid(row["occurrence_id"]),
             conversationId: try decodeUuid(row["conversation_id"]),
             bindingGenerationId: try decodeUuid(row["binding_generation_id"]),
             sourceGenerationId: try decodeUuid(row["source_generation_id"]),
@@ -64,10 +64,9 @@ extension SessionsRepositoryStorage {
             subject: try decodeSubject(kind: row["subject_kind"], identifier: row["subject_identifier"]),
             kind: kind,
             origin: try decodeEnum(row["origin"], as: SessionsEvidenceOrigin.self),
-            freshness: try decodeEnum(row["freshness"], as: SessionsEvidenceFreshness.self),
+            statusEffect: (row["freshness"] as String) == "live" ? .applied : .recordedOnly,
             occurredAt: Date(timeIntervalSince1970: row["occurred_at"]),
             admissionSequence: row["admission_sequence"],
-            sourceOccurredAt: decodeDate(row["source_occurred_at"]),
             providerSignal: try decodeProviderSignal(row, database: database)
         )
     }
@@ -85,7 +84,7 @@ extension SessionsRepositoryStorage {
             requestId: row["request_id"],
             attentionKind: row["attention_kind"],
             origin: try decodeEnum(row["origin"], as: SessionsEvidenceOrigin.self),
-            freshness: try decodeEnum(row["freshness"], as: SessionsEvidenceFreshness.self),
+            freshness: row["freshness"],
             explanation: row["explanation_text"],
             disposition: try decodeEnum(row["disposition"], as: SessionsAttentionDisposition.self),
             openedOccurrenceId: try decodeUuid(row["opened_occurrence_id"]),
@@ -106,7 +105,7 @@ extension SessionsRepositoryStorage {
             subject: try decodeSubjectKey(row["subject_key"]),
             completionOccurrenceId: try decodeUuid(row["completion_occurrence_id"]),
             origin: try decodeEnum(row["origin"], as: SessionsEvidenceOrigin.self),
-            freshness: try decodeEnum(row["freshness"], as: SessionsEvidenceFreshness.self),
+            freshness: row["freshness"],
             disposition: isSeen == 0 ? .unseen : .seen,
             seenAt: decodeDate(row["seen_at"]),
             createdAt: Date(timeIntervalSince1970: row["created_at"]),

@@ -15,8 +15,7 @@ struct CodexHookInvocationTests {
     func hookDeliverySelectsProviderLimit(event: CodexHookEventName) throws {
         let payload = try JSONDecoder().decode(CodexHookPayload.self, from: CodexFixtures.data(for: event))
         let projected = try #require(
-            CodexHookProjection.project(
-                sourceOccurredAt: Date(timeIntervalSince1970: 1_700_000_000), eventName: event, payload: payload))
+            CodexHookProjection.project(eventName: event, payload: payload))
         let selected = ProviderHookDelivery.codexCallLimit(for: projected.event.name)
         let expected: Duration = event == .sessionEnd ? .milliseconds(250) : .seconds(2)
         #expect(selected == expected)
@@ -39,7 +38,7 @@ struct CodexHookInvocationTests {
         #expect(recorder.delivered.count == 1)
         #expect(delivered.params.handle == "self")
         #expect(delivered.params.event.name == .turnStart)
-        #expect(delivered.params.event.sourceOccurredAt == Date(timeIntervalSince1970: 1_700_000_000))
+
         #expect(delivered.configuration.socketPath == "/tmp/agentstudio-test.sock")
         #expect(delivered.configuration.authToken == "pane-token")
         #expect(recorder.errorLines.isEmpty)
@@ -93,7 +92,6 @@ struct CodexHookInvocationTests {
         let recorder = DeliveryRecorder()
         let secret = "{not json - user prompt about the acme merger}"
         let props = ProviderHookInvocation.Props(
-            sourceOccurredAt: Date(timeIntervalSince1970: 1_700_000_000),
             eventName: "Stop",
             environment: Self.paneEnvironment,
             standardInput: { Data(secret.utf8) },
@@ -193,7 +191,6 @@ struct CodexHookInvocationTests {
             try? CodexFixtures.data(for: $0)
         }
         return ProviderHookInvocation.Props(
-            sourceOccurredAt: Date(timeIntervalSince1970: 1_700_000_000),
             eventName: eventName,
             environment: environment,
             standardInput: {

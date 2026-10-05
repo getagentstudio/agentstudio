@@ -3,76 +3,49 @@ import GRDB
 
 package struct SessionsRepository: Sendable {
     let sqliteAccess: any SessionsSQLiteAccess
+    package init(sqliteAccess: any SessionsSQLiteAccess) { self.sqliteAccess = sqliteAccess }
 
-    package init(sqliteAccess: any SessionsSQLiteAccess) {
-        self.sqliteAccess = sqliteAccess
-    }
-
-    package func apply(
-        operation: SessionsRepositoryOperation,
-        commitParticipant: (any SessionsCommitParticipant)? = nil,
-        reducing: @Sendable (SessionsRepositoryContext) throws -> SessionsRepositoryReduction
-    ) async throws -> SessionsSubmissionResult {
+    package func applyHook(_ hook: SessionsHookAdmission, commitParticipant: (any SessionsCommitParticipant)? = nil)
+        async throws -> SessionsHookCommit
+    {
         try await sqliteAccess.write { database in
-            let result = try Self.applyInTransaction(database: database, operation: operation, reducing: reducing)
+            let context = try SessionsRepositoryStorage.loadContext(
+                database: database,
+                query: .bind(
+                    paneId: hook.paneId, providerIdentifier: hook.providerIdentifier,
+                    providerConversationId: hook.sessionId))
+            let (reduction, decision) = SessionsEvidenceReducer.reduceHook(hook, context: context)
+            let revision = try SessionsRepositoryStorage.insertHookOperation(
+                database: database, hook: hook,
+                disposition: decision.disposition, binding: decision.binding)
+            try SessionsRepositoryStorage.apply(reduction: reduction, commitRevision: revision, database: database)
             try commitParticipant?.commit(in: database)
-            return result
+            var evidence = reduction.evidenceChanges[0]
+            evidence.admissionSequence = revision
+            let binding =
+                reduction.bindingChanges.last(where: { $0.bindingGenerationId == decision.binding.bindingGenerationId })
+                ?? decision.binding
+            return .init(
+                disposition: decision.disposition, binding: binding,
+                endedBindings: reduction.bindingChanges.filter {
+                    $0.status == .ended && $0.bindingGenerationId != binding.bindingGenerationId
+                }, evidence: evidence, revision: revision)
         }
-    }
-
-    static func loadReplay(
-        database: Database, operation: SessionsRepositoryOperation
-    ) throws -> SessionsSubmissionResult? {
-        if let outcome = try SessionsRepositoryStorage.loadOperationReplay(database: database, operation: operation) {
-            return .init(outcome: outcome, disposition: .replayed)
-        }
-        if let outcome = try SessionsRepositoryStorage.loadOccurrenceReplay(database: database, operation: operation) {
-            return .init(outcome: outcome, disposition: .replayed)
-        }
-        return nil
-    }
-
-    static func applyInTransaction(
-        database: Database, operation: SessionsRepositoryOperation,
-        reducing: @Sendable (SessionsRepositoryContext) throws -> SessionsRepositoryReduction
-    ) throws -> SessionsSubmissionResult {
-        if let replay = try loadReplay(database: database, operation: operation) { return replay }
-        return try applyNewOperation(database: database, operation: operation, reducing: reducing)
-    }
-
-    static func applyNewOperation(
-        database: Database, operation: SessionsRepositoryOperation,
-        reducing: @Sendable (SessionsRepositoryContext) throws -> SessionsRepositoryReduction
-    ) throws -> SessionsSubmissionResult {
-        let context = try SessionsRepositoryStorage.loadContext(database: database, query: operation.contextQuery)
-        let reduction = try reducing(context)
-        let revision = try SessionsRepositoryStorage.insertOperation(
-            database: database, operation: operation, outcome: reduction.outcome)
-        try SessionsRepositoryStorage.apply(reduction: reduction, commitRevision: revision, database: database)
-        return .init(outcome: reduction.outcome, disposition: .inserted, commitRevision: revision)
     }
 
     package func snapshot(_ query: SessionsSnapshotQuery) async throws -> SessionsSnapshot {
-        try await sqliteAccess.read { database in
-            try SessionsRepositoryStorage.loadSnapshot(database: database, query: query)
-        }
+        try await sqliteAccess.read { try SessionsRepositoryStorage.loadSnapshot(database: $0, query: query) }
     }
 
-    /// One pane binding addressed by the conversation that opened it, which a
-    /// snapshot cannot answer: it carries the current generation only, and a
-    /// delayed provider event names the generation it was written against.
     package func bindingForProviderConversation(
-        paneId: UUID,
-        providerIdentifier: String,
-        providerConversationId: String
-    ) async throws -> SessionsBindingRecord? {
-        try await sqliteAccess.read { database in
+        paneId: UUID, providerIdentifier: String, providerConversationId: String
+    )
+        async throws -> SessionsBindingRecord?
+    {
+        try await sqliteAccess.read {
             try SessionsRepositoryStorage.loadBindingForProviderConversation(
-                database: database,
-                paneId: paneId,
-                providerIdentifier: providerIdentifier,
-                providerConversationId: providerConversationId
-            )
+                database: $0, paneId: paneId,
+                providerIdentifier: providerIdentifier, providerConversationId: providerConversationId)
         }
     }
 }

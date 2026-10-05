@@ -27,12 +27,7 @@ extension SessionsIngestionTests {
                 facts.sink(scope, .cleanupCompleted(generation))
             })
         do {
-            _ = try await ingestion.submit(
-                correlationId: UUIDv7.generate(),
-                mutation: .bind(
-                    makeQualifiedBindMutation(
-                        paneId: paneId, providerConversationId: "A",
-                        sourceGenerationId: UUIDv7.generate(), reportedAt: 1)))
+            _ = try await ingestion.submitHook(makeHookAdmission(paneId: paneId, sessionId: "A"))
             let firstRead = try await ingestion.readSessionStatus(paneId: paneId)
             guard case .live(let first) = firstRead else {
                 Issue.record("First binding must be live")
@@ -43,12 +38,7 @@ extension SessionsIngestionTests {
             }
             let replacement = Task {
                 defer { facts.sink(scope, .submissionJoined) }
-                return try await ingestion.submit(
-                    correlationId: scope,
-                    mutation: .bind(
-                        makeQualifiedBindMutation(
-                            paneId: paneId, providerConversationId: "B",
-                            sourceGenerationId: UUIDv7.generate(), reportedAt: 2)))
+                return try await ingestion.submitHook(makeHookAdmission(paneId: paneId, sessionId: "B"))
             }
             do {
                 try await recorder.expectNext(in: scope, .cleanupEntered(first.bindingGeneration))
