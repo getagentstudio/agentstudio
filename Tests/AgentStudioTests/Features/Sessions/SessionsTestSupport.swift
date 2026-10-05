@@ -89,11 +89,15 @@ func withSessionsIngestion<Output: Sendable>(
 func makeHookAdmission(
     paneId: UUID, sessionId: String = "session-A", eventName: SessionProviderSignalName = .sessionStart,
     signal: SessionProviderSignal? = .sessionStart, recordId: UUID = UUIDv7.generate(),
-    providerVersion: String = "9.9.9", turnId: String? = "turn-A"
+    providerVersion: String = "9.9.9", turnId: String? = "turn-A",
+    providerIdentifier: String = "codex", kind: SessionsEvidenceKind = .activityStarted
 ) -> SessionsHookAdmission {
-    .init(
-        paneId: paneId, providerIdentifier: "codex", providerVersion: providerVersion,
-        sessionId: sessionId, eventName: eventName, turnId: turnId,
+    let resumeHint =
+        providerIdentifier == "claude-code"
+        ? "claude --resume \(sessionId)" : "codex resume \(sessionId)"
+    return .init(
+        paneId: paneId, providerIdentifier: providerIdentifier, providerVersion: providerVersion,
+        sessionId: sessionId, eventName: eventName, turnId: turnId, kind: kind,
         signal: signal, recordId: recordId, admittedAt: Date(timeIntervalSince1970: 1_800_000_000),
-        resumeHint: "codex resume \(sessionId)")
+        resumeHint: resumeHint)
 }

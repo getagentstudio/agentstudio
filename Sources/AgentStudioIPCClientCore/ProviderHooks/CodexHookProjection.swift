@@ -1,3 +1,4 @@
+import AgentStudioPrimitives
 import AgentStudioProgrammaticControl
 import Foundation
 
@@ -109,10 +110,10 @@ package enum CodexHookProjection {
 
     package static func project(
         eventName: CodexHookEventName,
-        payload: CodexHookPayload
+        payload: CodexHookPayload,
+        freshOccurrenceIdentifier: () -> UUID = { UUIDv7.generate() }
     ) -> CodexHookProjectedEvent? {
         guard let name = sessionEventName(for: eventName) else { return nil }
-        let derivedIdentity = derivedIdentifier(eventName: eventName, payload: payload)
         let providerFields = IPCSessionProviderEventFields()
         return CodexHookProjectedEvent(
             provider: IPCSessionProviderIdentity(
@@ -124,41 +125,12 @@ package enum CodexHookProjection {
                 name: name,
                 conversationId: payload.sessionId,
                 turnId: payload.turnId,
-                requestId: requestId(eventName: eventName, derivedIdentity: derivedIdentity),
+                requestId: nil,
                 toolId: toolId(eventName: eventName, payload: payload),
                 subagentId: subagentId(eventName: eventName, payload: payload),
-                occurrenceId: derivedIdentity, providerFields: providerFields
+                occurrenceId: freshOccurrenceIdentifier(), providerFields: providerFields
             )
         )
-    }
-
-    /// `UUIDv5("codex|<session>|<turn>|<hook event>|<qualifier>…")`. Absent
-    /// parts contribute an empty segment, so the field count is fixed per event
-    /// and two payloads can never accidentally derive one identity by shifting.
-    ///
-    /// The qualifier is whatever distinguishes two of the same event inside one
-    /// turn. `tool_use_id` does that for tool events, but Codex sends none with
-    /// `PermissionRequest` (`codex-rs/hooks/src/schema.rs:301-322`) and none
-    /// with the subagent events, so those name the thing being asked about
-    /// instead: the tool, or the subagent.
-    package static func derivedIdentifier(
-        eventName: CodexHookEventName,
-        payload: CodexHookPayload
-    ) -> UUID {
-        let prefix = [providerIdentifier, payload.sessionId, payload.turnId ?? "", eventName.rawValue]
-        let qualifiers: [String]
-        switch eventName {
-        case .permissionRequest:
-            // `tool_use_id` is carried in case a later Codex starts sending one;
-            // today it is always empty and `tool_name` does the separating.
-            qualifiers = [payload.toolName ?? "", payload.toolUseId ?? ""]
-        case .subagentStart, .subagentStop:
-            qualifiers = [payload.toolUseId ?? "", payload.agentId ?? ""]
-        default:
-            qualifiers = [payload.toolUseId ?? ""]
-        }
-        return DeterministicUUIDv5.providerHookIdentifier(
-            name: (prefix + qualifiers).joined(separator: "|"))
     }
 
     private static func sessionEventName(for eventName: CodexHookEventName) -> IPCSessionEventName? {
@@ -172,16 +144,6 @@ package enum CodexHookProjection {
         case .preToolUse: .toolActivity
         case .subagentStart, .subagentStop: .subagentActivity
         case .postToolUse, .preCompact, .postCompact: nil
-        }
-    }
-
-    /// Codex 0.154.0's `PermissionRequest` payload carries no request or tool
-    /// identifier (`codex-rs/hooks/src/schema.rs:301-322`). This derived wire
-    /// request label does not deduplicate the fresh records Sessions admits.
-    private static func requestId(eventName: CodexHookEventName, derivedIdentity: UUID) -> String? {
-        switch eventName {
-        case .permissionRequest: derivedIdentity.uuidString
-        default: nil
         }
     }
 

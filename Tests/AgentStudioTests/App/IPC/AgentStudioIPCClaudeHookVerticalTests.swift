@@ -3,7 +3,9 @@ import AgentStudioIPCTransport
 import AgentStudioInfrastructure
 import AgentStudioProgrammaticControl
 import AgentStudioSessions
+import AgentStudioTestHarness
 import Foundation
+import Synchronization
 import Testing
 
 @testable import AgentStudio
@@ -34,8 +36,8 @@ struct AgentStudioIPCClaudeHookVerticalTests {
             ClaudeCodeHookPayload.self, from: try Data(contentsOf: fixtureURL(event))
         )
         // Real hook invocations carry a new session ID for each session. Give
-        // each suite case its own ID so deterministic tool occurrences do not
-        // replay against another case's durable row in the shared database.
+        // each suite case its own ID so the shared database has an isolated
+        // provider conversation and status history.
         let payload =
             sessionId.map {
                 ClaudeCodeHookPayload(
@@ -47,7 +49,6 @@ struct AgentStudioIPCClaudeHookVerticalTests {
                 )
             } ?? recordedPayload
         let outcome = ClaudeCodeHookProjection.project(
-            announcedEvent: event,
             payload: payload,
             providerVersion: ClaudeCodeProviderIdentity.supportedExactVersion,
             correlationIdentifier: UUIDv7.generate(),
@@ -116,6 +117,40 @@ struct AgentStudioIPCClaudeHookVerticalTests {
         // SessionEnd is stored as typed evidence and ends the binding through
         // the same serialized table used by every provider.
         #expect(afterSessionEnd.sourceHealth == .ended)
+    }
+
+    @Test("the Claude CLI submits the recognized payload event despite a different argv event")
+    func payloadEventWinsThroughCLIAndAdapter() async throws {
+        let harness = try await #require(SessionsVerticalHarnessContext.current).freshPanePair()
+        let paneId = harness.boundPaneId
+        let sessionStart = try await send("SessionStart", paneId: paneId, harness: harness)
+        #expect(sessionStart.disposition == .admitted)
+
+        let payload = try Data(contentsOf: Self.fixtureURL("Stop"))
+        let paneToken = try #require(harness.boundPaneToken)
+        let paneTokenValue = paneToken.rawValue
+        let socketPath = harness.socketPath
+        let diagnostics = Mutex<[String]>([])
+        let exitCode = await valueFromDedicatedThread {
+            ClaudeCodeHookInvocation.handle(
+                .init(
+                    arguments: ["hook", "claude", "SessionEnd", "--provider-version", "2.1.274"],
+                    environment: [
+                        "AGENTSTUDIO_PANE_TOKEN": paneTokenValue,
+                        "AGENTSTUDIO_IPC_SOCKET": socketPath,
+                    ],
+                    standardInput: { payload },
+                    identifierGenerator: { UUIDv7.generate() },
+                    diagnosticSink: { line in diagnostics.withLock { $0.append(line) } }
+                )
+            )
+        }
+        let afterStop = try await harness.sessionQuery(paneId: paneId)
+
+        #expect(exitCode == 0)
+        #expect(diagnostics.withLock { $0 }.isEmpty)
+        #expect(afterStop.sourceHealth == .live)
+        #expect(afterStop.session?.status == .idle(state: .done))
     }
 
     @Test("Another Claude Code release is recorded as a label and admitted")

@@ -1,4 +1,5 @@
 import AgentStudioIPCTransport
+import AgentStudioPrimitives
 import AgentStudioProgrammaticControl
 import Foundation
 import Synchronization
@@ -51,20 +52,18 @@ struct CodexHookInvocationTests {
         "Codex SessionEnd selects the synchronous short limit; every other installed hook keeps the async limit",
         arguments: CodexHookEventName.installedEvents)
     func hookDeliverySelectsProviderLimit(event: CodexHookEventName) throws {
-        let payload = try JSONDecoder().decode(CodexHookPayload.self, from: CodexFixtures.data(for: event))
-        let projected = try #require(
-            CodexHookProjection.project(eventName: event, payload: payload))
-        let selected = ProviderHookDelivery.codexCallLimit(for: projected.event.name)
+        let selected = ProviderHookDelivery.codexCallLimit(for: event)
         let expected: Duration = event == .sessionEnd ? .milliseconds(250) : .seconds(2)
         #expect(selected == expected)
         #expect(CLIPolicy.synchronousLifecycleHookLimit == .milliseconds(250))
     }
 
     @Test(
-        "real Codex invocation caps SessionEnd and Stop by the remaining ingress budget",
-        arguments: [CodexHookEventName.sessionEnd, .stop],
-        [Duration.zero, .seconds(2) - .milliseconds(200), .seconds(2) + .milliseconds(100)])
-    func invocationDeliversCappedDeadline(event: CodexHookEventName, inputCost: Duration) throws {
+        "the selected event total includes input before delivery",
+        arguments: CodexInvocationDeadlineCase.matrix)
+    private func invocationDeliversCappedDeadline(testCase: CodexInvocationDeadlineCase) throws {
+        let event = testCase.event
+        let inputCost = testCase.inputCost
         let payload = try CodexFixtures.data(for: event)
         let timing = HookInvocationDeadlineTiming()
         let ingress = CallDeadline(limit: CLIPolicy.hookCallLimit, timing: timing)
@@ -84,19 +83,92 @@ struct CodexHookInvocationTests {
         #expect(status == 0)
         #expect(recorder.errorLines.isEmpty)
         #expect(recorder.refusals.isEmpty)
-        let remaining = max(Duration.zero, CLIPolicy.hookCallLimit - inputCost)
+        let eventLimit = ProviderHookDelivery.codexCallLimit(for: event)
+        let remaining = max(Duration.zero, eventLimit - inputCost)
         if remaining == .zero {
             #expect(recorder.delivered.isEmpty)
             return
         }
         let delivered = try #require(recorder.delivered.first)
         #expect(recorder.delivered.count == 1)
-        let eventLimit: Duration = event == .sessionEnd ? .milliseconds(250) : CLIPolicy.hookCallLimit
-        #expect(delivered.deadline.remainingBudget == min(remaining, eventLimit))
-        if event == .sessionEnd { #expect(delivered.deadline.remainingBudget <= .milliseconds(250)) }
+        #expect(delivered.deadline.remainingBudget == remaining)
         // The delivery value keeps the injected ingress clock and its absolute expiration.
         timing.advance(by: .milliseconds(100))
-        #expect(delivered.deadline.remainingBudget == max(.zero, min(remaining, eventLimit) - .milliseconds(100)))
+        #expect(delivered.deadline.remainingBudget == max(.zero, remaining - .milliseconds(100)))
+    }
+
+    @Test("a tighter supplied SessionEnd ingress deadline remains authoritative")
+    func tighterIngressDeadlineIsPreserved() throws {
+        let timing = HookInvocationDeadlineTiming()
+        let ingress = CallDeadline(limit: .milliseconds(100), timing: timing)
+        let recorder = DeliveryRecorder()
+        let payload = try CodexFixtures.data(for: .sessionEnd)
+
+        let status = ProviderHookInvocation.runCodexHook(
+            .init(
+                eventName: CodexHookEventName.sessionEnd.rawValue,
+                environment: Self.paneEnvironment,
+                standardInput: {
+                    timing.advance(by: .milliseconds(20))
+                    return payload
+                },
+                correlationIdProvider: { Self.correlationId },
+                delivery: recorder.delivery,
+                standardErrorSink: recorder.recordError,
+                deadline: ingress))
+
+        #expect(status == 0)
+        #expect(try #require(recorder.delivered.first).deadline.remainingBudget == .milliseconds(80))
+    }
+
+    @Test("SessionEnd refusal shares the short total after consuming input")
+    func refusalSharesSessionEndTotalAfterInput() {
+        let timing = HookInvocationDeadlineTiming()
+        let ingress = CallDeadline(limit: CLIPolicy.hookCallLimit, timing: timing)
+        let recorder = DeliveryRecorder(timing: timing, refusalCost: .milliseconds(50))
+
+        let status = ProviderHookInvocation.runCodexHook(
+            .init(
+                eventName: CodexHookEventName.sessionEnd.rawValue,
+                environment: Self.paneEnvironment,
+                standardInput: {
+                    timing.advance(by: .milliseconds(200))
+                    return Data(#"{"session_id":""}"#.utf8)
+                },
+                correlationIdProvider: { Self.correlationId },
+                delivery: recorder.delivery,
+                standardErrorSink: recorder.recordError,
+                deadline: ingress))
+
+        #expect(status == 0)
+        #expect(recorder.refusals.count == 1)
+        #expect(recorder.refusals.first?.reason == .noSessionId)
+        #expect(recorder.refusalBudgetsAtCall == [.milliseconds(50)])
+        #expect(recorder.refusalDeadlines.first?.remainingBudget == .zero)
+        #expect(timing.elapsed == .milliseconds(250))
+    }
+
+    @Test("the occurrence identifier uses the existing correlation identifier seam")
+    func occurrenceIdentifierUsesCorrelationGenerator() throws {
+        let occurrenceIdentifier = UUIDv7.generate()
+        let correlationIdentifier = UUIDv7.generate()
+        let identifiers = Mutex([occurrenceIdentifier, correlationIdentifier])
+        let recorder = DeliveryRecorder()
+        let payload = try CodexFixtures.data(for: .preToolUse)
+        let props = ProviderHookInvocation.Props(
+            eventName: CodexHookEventName.preToolUse.rawValue,
+            environment: Self.paneEnvironment,
+            standardInput: { payload },
+            correlationIdProvider: { identifiers.withLock { $0.removeFirst() } },
+            delivery: recorder.delivery,
+            standardErrorSink: recorder.recordError)
+
+        let status = ProviderHookInvocation.runCodexHook(props)
+
+        #expect(status == 0)
+        let delivered = try #require(recorder.delivered.first)
+        #expect(delivered.params.event.occurrenceId == occurrenceIdentifier)
+        #expect(delivered.params.correlationId == correlationIdentifier)
     }
 
     @Test("a projected event with a pane credential is delivered once")
@@ -281,6 +353,20 @@ struct CodexHookInvocationTests {
     }
 }
 
+private struct CodexInvocationDeadlineCase: Sendable {
+    let event: CodexHookEventName
+    let inputCost: Duration
+
+    static let matrix = [
+        Self(event: .sessionEnd, inputCost: .zero),
+        Self(event: .sessionEnd, inputCost: .milliseconds(200)),
+        Self(event: .sessionEnd, inputCost: .milliseconds(250)),
+        Self(event: .stop, inputCost: .zero),
+        Self(event: .stop, inputCost: .milliseconds(1800)),
+        Self(event: .stop, inputCost: .milliseconds(2100)),
+    ]
+}
+
 /// Collects what the runner tried to do. A class because the runner takes
 /// escaping closures and the test reads the results after they ran, all on the
 /// one thread the runner uses.
@@ -293,12 +379,22 @@ private final class DeliveryRecorder: @unchecked Sendable {
 
     private(set) var delivered: [Delivered] = []
     private(set) var refusals: [IPCSessionRefusalParams] = []
+    private(set) var refusalDeadlines: [CallDeadline] = []
+    private(set) var refusalBudgetsAtCall: [Duration] = []
     private(set) var errorLines: [String] = []
     private(set) var standardInputReads = 0
     private let failure: ProviderHookFailure?
+    private let timing: HookInvocationDeadlineTiming?
+    private let refusalCost: Duration
 
-    init(failure: ProviderHookFailure? = nil) {
+    init(
+        failure: ProviderHookFailure? = nil,
+        timing: HookInvocationDeadlineTiming? = nil,
+        refusalCost: Duration = .zero
+    ) {
         self.failure = failure
+        self.timing = timing
+        self.refusalCost = refusalCost
     }
 
     var delivery: ProviderHookDelivery {
@@ -307,8 +403,11 @@ private final class DeliveryRecorder: @unchecked Sendable {
                 if let failure { throw failure }
                 delivered.append(Delivered(params: params, configuration: configuration, deadline: deadline))
             },
-            recordRefusal: { [self] params, _, _ in
+            recordRefusal: { [self] params, _, deadline in
                 refusals.append(params)
+                refusalDeadlines.append(deadline)
+                refusalBudgetsAtCall.append(deadline.remainingBudget)
+                timing?.advance(by: refusalCost)
             })
     }
 
@@ -322,9 +421,17 @@ private final class DeliveryRecorder: @unchecked Sendable {
 }
 
 private final class HookInvocationDeadlineTiming: CallDeadlineTiming, Sendable {
-    private let instant = Mutex(ContinuousClock.now)
+    private let origin: ContinuousClock.Instant
+    private let instant: Mutex<ContinuousClock.Instant>
+
+    init() {
+        let now = ContinuousClock.now
+        origin = now
+        instant = Mutex(now)
+    }
 
     func now() -> ContinuousClock.Instant { instant.withLock { $0 } }
+    var elapsed: Duration { origin.duration(to: instant.withLock { $0 }) }
     func advance(by duration: Duration) { instant.withLock { $0 = $0.advanced(by: duration) } }
     func waitForReadiness(fileDescriptor: Int32, events: Int16, timeout: Duration) -> CallDeadlineReadiness {
         Issue.record("Recording delivery must not perform socket I/O")

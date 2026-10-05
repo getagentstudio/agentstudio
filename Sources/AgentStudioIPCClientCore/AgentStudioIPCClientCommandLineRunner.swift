@@ -56,10 +56,19 @@ package struct AgentStudioIPCClientCommandLineRunner: Sendable {
     package static func run(props: Props) -> Int32 {
         let hookDeadline: CallDeadline?
         if props.arguments.first == "hook" {
-            if let timing = props.deadlineTiming {
-                hookDeadline = CallDeadline(limit: CLIPolicy.hookCallLimit, timing: timing)
+            let ingressLimit: Duration
+            if case .hook(let provider, let eventName)? = AgentPackageSubcommand.parse(props.arguments),
+                provider == CodexHookProjection.providerIdentifier,
+                let codexEvent = CodexHookEventName(rawValue: eventName)
+            {
+                ingressLimit = ProviderHookDelivery.codexCallLimit(for: codexEvent)
             } else {
-                hookDeadline = CallDeadline(limit: CLIPolicy.hookCallLimit)
+                ingressLimit = CLIPolicy.hookCallLimit
+            }
+            if let timing = props.deadlineTiming {
+                hookDeadline = CallDeadline(limit: ingressLimit, timing: timing)
+            } else {
+                hookDeadline = CallDeadline(limit: ingressLimit)
             }
         } else {
             hookDeadline = nil

@@ -13,58 +13,6 @@ import Testing
 @Suite("Real CLI hook silence", .serialized)
 struct CLIHookSilenceScriptTests {
 
-    @Test(
-        "a held or trickling real input pipe exhausts one hook total and exits silently without submission",
-        arguments: ["claude", "codex"], [false, true])
-    func heldStandardInputExhaustsHookTotal(provider: String, hasPartialInput: Bool) async throws {
-        let observed = try await valueFromDedicatedThread {
-            let fixture = try HookSilenceProcessFixture(condition: .up)
-            defer { fixture.removeFiles() }
-            let pipe = Pipe()
-            defer {
-                try? pipe.fileHandleForReading.close()
-                try? pipe.fileHandleForWriting.close()
-            }
-            if hasPartialInput {
-                try pipe.fileHandleForWriting.write(contentsOf: Data("{\"session_id\":\"unfinished".utf8))
-            }
-            let descriptor = pipe.fileHandleForReading.fileDescriptor
-            let flagsBefore = Darwin.fcntl(descriptor, F_GETFL)
-            let timing = HookInputDeadlineTiming(inputDescriptor: descriptor, readsPartialInput: hasPartialInput)
-            let streams = Mutex<[String]>([])
-            let ordinaryInputReads = Mutex(0)
-            let event = "SessionStart"
-            let status = AgentStudioIPCClientCommandLineRunner.run(
-                props: .init(
-                    arguments: ["hook", provider, event],
-                    environment: fixture.environment(
-                        executable: URL(fileURLWithPath: "/fixture/agentstudio-cli"), storeSetting: .fresh),
-                    executablePath: "/fixture/agentstudio-cli", bundleExecutableURL: nil,
-                    standardInput: {
-                        ordinaryInputReads.withLock { $0 += 1 }
-                        return Data()
-                    },
-                    identifierGenerator: { UUIDv7.generate() },
-                    standardOutputSink: { line in streams.withLock { $0.append(line) } },
-                    standardErrorSink: { line in streams.withLock { $0.append(line) } },
-                    standardInputFileDescriptor: descriptor, deadlineTiming: timing))
-            return HookInputObservation(
-                exitCode: status, streamLines: streams.withLock { $0 }, waitBudgets: timing.waits,
-                controlledElapsed: timing.elapsed, inputFlagsRestored: Darwin.fcntl(descriptor, F_GETFL) == flagsBefore,
-                storeOutcome: try fixture.storeOutcome(), ordinaryInputReadCount: ordinaryInputReads.withLock { $0 },
-                inputWaitEvents: timing.inputWaitEvents)
-        }
-        #expect(observed.exitCode == 0)
-        #expect(observed.streamLines.isEmpty)
-        #expect(observed.controlledElapsed == CLIPolicy.hookCallLimit)
-        #expect(observed.waitBudgets == (hasPartialInput ? [.seconds(2), .seconds(1)] : [.seconds(2)]))
-        #expect(observed.inputFlagsRestored)
-        #expect(!observed.storeOutcome.exists)
-        #expect(observed.storeOutcome.creatorFiles.isEmpty)
-        #expect(observed.ordinaryInputReadCount == 0)
-        #expect(observed.inputWaitEvents.allSatisfy { $0 == Int16(POLLIN) })
-    }
-
     @Test("outside-pane hooks leave even a held input pipe unread", arguments: ["claude", "codex"])
     func outsidePaneNeverWaitsForInput(provider: String) async throws {
         let observed = await valueFromDedicatedThread {
@@ -322,6 +270,8 @@ final class HookSilenceProcessFixture: @unchecked Sendable {
     private var workers: [DedicatedThreadCompletion] = []
     private var isClosing = false
     private var advertisedReadThrough: IPCCLIStoreReadThrough?
+    private let authenticationResponseSent = HeldStep<Void>("auth.login response sent")
+    private let refusalResponseSent = HeldStep<Void>("session.refusal response sent")
 
     init(condition: HookSilenceCondition) throws {
         self.condition = condition
@@ -332,6 +282,14 @@ final class HookSilenceProcessFixture: @unchecked Sendable {
     }
 
     var requests: [JSONRPCRequest] { lock.withLock { observedRequests } }
+
+    func waitForNetworkResponse(_ index: Int) throws {
+        switch index {
+        case 0: try authenticationResponseSent.arriveBlocking(())
+        case 1: try refusalResponseSent.arriveBlocking(())
+        default: return
+        }
+    }
 
     func writePayload(_ payload: String) throws -> URL {
         let url = rootURL.appending(path: "hook-input.json")
@@ -380,6 +338,10 @@ final class HookSilenceProcessFixture: @unchecked Sendable {
                 Thread.detachNewThread { [self] in
                     defer { completion.finish() }
                     defer { connection.close() }
+                    defer {
+                        authenticationResponseSent.retire()
+                        refusalResponseSent.retire()
+                    }
                     do {
                         var decoder = NDJSONFrameDecoder(maxFrameBytes: IPCFramePolicy.maximumRequestFrameBytes)
                         while true {
@@ -411,6 +373,11 @@ final class HookSilenceProcessFixture: @unchecked Sendable {
                                         paneId: paneID, disposition: .admitted, correlationId: event.correlationId)
                                     response = .success(
                                         id: request.id, result: try JSONRPCCodec.encodeJSONValue(result))
+                                } else if request.method == "session.refusal" {
+                                    response = .success(
+                                        id: request.id,
+                                        result: try JSONRPCCodec.encodeJSONValue(
+                                            IPCSessionRefusalResult(paneId: paneID)))
                                 } else {
                                     response = .failure(
                                         id: request.id,
@@ -422,9 +389,14 @@ final class HookSilenceProcessFixture: @unchecked Sendable {
                                     NDJSONFrameEncoder.encode(
                                         JSONRPCCodec.encodeResponse(response),
                                         maxFrameBytes: IPCFramePolicy.maximumResponseFrameBytes))
+                                if request.method == "auth.login" { authenticationResponseSent.release() }
+                                if request.method == "session.refusal" { refusalResponseSent.release() }
                             }
                         }
-                    } catch {}
+                    } catch {
+                        authenticationResponseSent.fail(error)
+                        refusalResponseSent.fail(error)
+                    }
                 }
             }
         }
@@ -451,13 +423,14 @@ private enum HookSilenceFixtureError: Error {
 
 /// A controlled readiness dependency advances only when the real reader waits.
 /// The pipe writer stays open; no task, sleeper or detached read needs joining.
-private final class HookInputDeadlineTiming: CallDeadlineTiming, Sendable {
+final class HookInputDeadlineTiming: CallDeadlineTiming, Sendable {
     private struct State: Sendable {
         let origin = ContinuousClock.now
         var elapsed: Duration = .zero
         var waits: [Duration] = []
         var inputReadCount = 0
         var networkWaits: [Duration] = []
+        var successfulNetworkReads = 0
         var inputWaitEvents: [Int16] = []
     }
 
@@ -465,11 +438,27 @@ private final class HookInputDeadlineTiming: CallDeadlineTiming, Sendable {
     private let readsPartialInput: Bool
     private let inputDescriptor: Int32
     private let completedInput: Bool
+    private let partialInputCost: Duration
+    private let networkReadyCount: Int
+    private let networkTimeoutReadIndex: Int?
+    private let networkReadinessWait: @Sendable (Int) throws -> Void
 
-    init(inputDescriptor: Int32, readsPartialInput: Bool, completedInput: Bool = false) {
+    init(
+        inputDescriptor: Int32,
+        readsPartialInput: Bool,
+        completedInput: Bool = false,
+        partialInputCost: Duration = .seconds(1),
+        networkReadyCount: Int = 0,
+        networkTimeoutReadIndex: Int? = nil,
+        networkReadinessWait: @escaping @Sendable (Int) throws -> Void = { _ in }
+    ) {
         self.inputDescriptor = inputDescriptor
         self.readsPartialInput = readsPartialInput
         self.completedInput = completedInput
+        self.partialInputCost = partialInputCost
+        self.networkReadyCount = networkReadyCount
+        self.networkTimeoutReadIndex = networkTimeoutReadIndex
+        self.networkReadinessWait = networkReadinessWait
     }
 
     var waits: [Duration] { state.withLock { $0.waits } }
@@ -480,20 +469,31 @@ private final class HookInputDeadlineTiming: CallDeadlineTiming, Sendable {
     func now() -> ContinuousClock.Instant { state.withLock { $0.origin.advanced(by: $0.elapsed) } }
 
     func waitForReadiness(fileDescriptor: Int32, events: Int16, timeout: Duration) throws -> CallDeadlineReadiness {
-        state.withLock { observation in
+        try state.withLock { observation in
             observation.waits.append(timeout)
             if fileDescriptor != inputDescriptor {
                 observation.networkWaits.append(timeout)
                 if events == Int16(POLLOUT) { return .ready(events) }
+                if observation.successfulNetworkReads < networkReadyCount {
+                    let readIndex = observation.successfulNetworkReads
+                    try networkReadinessWait(readIndex)
+                    observation.successfulNetworkReads += 1
+                    if networkTimeoutReadIndex == readIndex {
+                        observation.elapsed += timeout
+                        return .timedOut
+                    }
+                    return .ready(events)
+                }
                 observation.elapsed += timeout
                 return .timedOut
             }
             observation.inputWaitEvents.append(events)
             observation.inputReadCount += 1
             if readsPartialInput && observation.inputReadCount == 1 {
-                // Known written bytes are ready. One second belongs to input;
-                // the next readiness wait must receive only the remaining second.
-                observation.elapsed += .seconds(1)
+                // Known written bytes are ready. Input consumes only the
+                // configured portion of the deadline; the next wait receives
+                // the remainder, including the short Codex SessionEnd total.
+                observation.elapsed += min(timeout, partialInputCost)
                 return .ready(Int16(POLLIN))
             }
             if completedInput { return .ready(Int16(POLLIN)) }
@@ -503,7 +503,7 @@ private final class HookInputDeadlineTiming: CallDeadlineTiming, Sendable {
     }
 }
 
-private struct HookTotalObservation: Sendable {
+struct HookTotalObservation: Sendable {
     let exitCode: Int32
     let streamLines: [String]
     let controlledElapsed: Duration
@@ -512,7 +512,7 @@ private struct HookTotalObservation: Sendable {
     let inputWaitEvents: [Int16]
 }
 
-private struct HookInputObservation: Sendable {
+struct HookInputObservation: Sendable {
     let exitCode: Int32
     let streamLines: [String]
     let waitBudgets: [Duration]

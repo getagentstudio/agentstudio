@@ -89,7 +89,6 @@ package enum ClaudeCodeHookInvocation {
         do {
             guard deadline.remainingBudget > .zero else { return }
             let outcome = ClaudeCodeHookProjection.project(
-                announcedEvent: announcedEvent,
                 payload: payload,
                 providerVersion: providerVersion,
                 correlationIdentifier: inputs.identifierGenerator(),

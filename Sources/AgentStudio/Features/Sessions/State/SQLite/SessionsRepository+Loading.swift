@@ -52,7 +52,8 @@ extension SessionsRepositoryStorage {
                 currentBinding: bindings.first { $0.paneId == paneId },
                 bindings: bindings,
                 sources: sources,
-                evidence: try loadEvidence(database: database, paneId: paneId)
+                // Hook decisions use bindings; `.pane` owns lazy status-history hydration.
+                evidence: []
             )
         case .pane(let paneId):
             let bindings = try loadBindings(database: database, paneId: paneId)

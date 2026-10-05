@@ -62,7 +62,7 @@ package struct ProviderHookDelivery: Sendable {
 
     /// Only Codex SessionEnd is provider-forced synchronous. Interrupt stays
     /// async despite sharing the provider's lifecycle timeout cap.
-    package static func codexCallLimit(for event: IPCSessionEventName) -> Duration {
+    package static func codexCallLimit(for event: CodexHookEventName) -> Duration {
         event == .sessionEnd ? CLIPolicy.synchronousLifecycleHookLimit : CLIPolicy.hookCallLimit
     }
 }
@@ -117,11 +117,13 @@ package enum ProviderHookInvocation {
 
     @discardableResult
     package static func runCodexHook(_ props: Props) -> Int32 {
-        let deadline = props.deadline ?? CallDeadline(limit: CLIPolicy.hookCallLimit)
         guard let eventName = CodexHookEventName(rawValue: props.eventName) else {
             props.standardErrorSink("agentstudio hook codex: unknown event \(props.eventName)")
             return 0
         }
+        let eventLimit = ProviderHookDelivery.codexCallLimit(for: eventName)
+        let ingressDeadline = props.deadline ?? CallDeadline(limit: eventLimit)
+        let deadline = ingressDeadline.capped(to: eventLimit)
         // No pane credential means this Codex process was not started by an
         // Agent Studio pane. That is ordinary, not a failure, so it stays silent.
         guard let configuration = paneConfiguration(environment: props.environment) else { return 0 }
@@ -143,12 +145,12 @@ package enum ProviderHookInvocation {
             return 0
         }
         guard
-            let projected = CodexHookProjection.project(eventName: eventName, payload: payload)
+            let projected = CodexHookProjection.project(
+                eventName: eventName, payload: payload, freshOccurrenceIdentifier: props.correlationIdProvider)
         else {
             return 0
         }
-        let deliveryDeadline = deadline.capped(to: ProviderHookDelivery.codexCallLimit(for: projected.event.name))
-        guard deliveryDeadline.remainingBudget > .zero else { return 0 }
+        guard deadline.remainingBudget > .zero else { return 0 }
         do {
             try props.delivery.deliver(
                 IPCSessionEventParams(
@@ -158,7 +160,7 @@ package enum ProviderHookInvocation {
                     correlationId: props.correlationIdProvider()
                 ),
                 configuration,
-                deliveryDeadline
+                deadline
             )
         } catch let failure as ProviderHookFailure {
             props.standardErrorSink(

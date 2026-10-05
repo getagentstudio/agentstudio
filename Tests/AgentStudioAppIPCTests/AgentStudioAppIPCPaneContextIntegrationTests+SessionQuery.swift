@@ -102,7 +102,7 @@ extension AgentStudioAppIPCPaneContextIntegrationTests {
                 ClaudeCodeHookPayload.self, from: JSONEncoder().encode(JSONValue.object(fields)))
         }
         let projection = ClaudeCodeHookProjection.project(
-            announcedEvent: hookName, payload: payload,
+            payload: payload,
             providerVersion: ClaudeCodeProviderIdentity.supportedExactVersion,
             correlationIdentifier: UUIDv7.generate(), freshOccurrenceIdentifier: { UUIDv7.generate() })
         guard case .projected(let params) = projection else { throw ClaudeCodeHookInvocationError.reportRejected }

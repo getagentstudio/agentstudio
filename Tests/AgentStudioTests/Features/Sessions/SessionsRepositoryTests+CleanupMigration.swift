@@ -79,6 +79,143 @@ extension SessionsRepositoryTests {
             try await repository.statusContext(paneId: fixture.launchPane)
         }
     }
+
+    @Test(
+        "SessionStart ends every pre-cut active binding for its session and old-pane prompts stay record-only after reload",
+        arguments: DuplicateSessionStartPlacement.allCases)
+    private func sessionStartEndsEveryPreCutSessionBinding(placement: DuplicateSessionStartPlacement) async throws {
+        let scenario = try makeDuplicateSessionStartScenario(placement: placement)
+        let fixture = scenario.fixture
+        let repository = SessionsRepository(sqliteAccess: fixture.access)
+        let destinationPane = scenario.destinationPane
+        let oldPanes = scenario.oldPanes
+        let expectedDisposition = scenario.expectedDisposition
+
+        let preCutActivePanes = try await fixture.access.read { database in
+            try String.fetchAll(
+                database,
+                sql: """
+                    SELECT binding.pane_id
+                    FROM sessions_pane_binding AS binding
+                    JOIN sessions_conversation AS conversation ON conversation.id = binding.conversation_id
+                    WHERE conversation.provider_identifier = 'claude-code'
+                      AND conversation.provider_conversation_id = ?
+                      AND binding.status = 'active'
+                    ORDER BY binding.pane_id
+                    """,
+                arguments: [fixture.duplicateSessionId])
+        }
+        #expect(
+            Set(preCutActivePanes) == Set([fixture.duplicatePaneOne.uuidString, fixture.duplicatePaneTwo.uuidString]))
+
+        let delayedPromptRecordIds = try await withSessionsIngestion(repository: repository) { ingestion in
+            for pane in [fixture.duplicatePaneOne, fixture.duplicatePaneTwo] {
+                let status = try await ingestion.readSessionStatus(paneId: pane)
+                if case .live = status {} else { Issue.record("Both duplicate pre-cut bindings must start live") }
+            }
+
+            let start = try await ingestion.submitHook(
+                makeHookAdmission(
+                    paneId: destinationPane, sessionId: fixture.duplicateSessionId,
+                    eventName: .sessionStart, signal: .sessionStart, providerIdentifier: "claude-code"))
+            #expect(start.disposition == expectedDisposition)
+            #expect(Set(start.endedBindings.map(\.paneId)) == Set(oldPanes))
+
+            let activePanes = try await fixture.access.read { database in
+                try String.fetchAll(
+                    database,
+                    sql: """
+                        SELECT binding.pane_id
+                        FROM sessions_pane_binding AS binding
+                        JOIN sessions_conversation AS conversation ON conversation.id = binding.conversation_id
+                        WHERE conversation.provider_identifier = 'claude-code'
+                          AND conversation.provider_conversation_id = ?
+                          AND binding.status = 'active'
+                        ORDER BY binding.pane_id
+                        """,
+                    arguments: [fixture.duplicateSessionId])
+            }
+            #expect(activePanes == [destinationPane.uuidString])
+
+            for pane in oldPanes {
+                let status = try await ingestion.readSessionStatus(paneId: pane)
+                if case .ended = status {
+                } else {
+                    Issue.record("Every old pane must be ended before its delayed prompt")
+                }
+            }
+
+            var recordIds: [UUID] = []
+            let questions = [
+                SessionQuestion(question: "Allow this?", header: "Permission", options: [], multiSelect: false)
+            ]
+            for pane in oldPanes {
+                let prompt = makeHookAdmission(
+                    paneId: pane, sessionId: fixture.duplicateSessionId,
+                    eventName: .question,
+                    signal: .question(toolCallId: "late-question-\(pane.uuidString)", questions: questions),
+                    providerIdentifier: "claude-code", kind: .needsYouOpened)
+                recordIds.append(prompt.recordId)
+                let committedPrompt = try await ingestion.submitHook(prompt)
+                #expect(committedPrompt.disposition == .recordedOnly)
+                #expect(committedPrompt.evidence.statusEffect == .recordedOnly)
+                #expect(committedPrompt.evidence.providerSignal?.name == .question)
+
+                let summary = try await ingestion.sessionSummary(paneId: pane)
+                #expect(summary?.status == .idle(.ended))
+                #expect(summary?.providerPrompts.isEmpty == true)
+
+                let destinationSummary = try await ingestion.sessionSummary(paneId: destinationPane)
+                #expect(destinationSummary?.providerPrompts.isEmpty == true)
+            }
+            return recordIds
+        }
+
+        try await withSessionsIngestion(repository: repository) { restored in
+            for pane in oldPanes {
+                let summary = try await restored.sessionSummary(paneId: pane)
+                #expect(summary?.status == .idle(.ended))
+                #expect(summary?.providerPrompts.isEmpty == true)
+            }
+            let destinationSummary = try await restored.sessionSummary(paneId: destinationPane)
+            #expect(destinationSummary?.providerPrompts.isEmpty == true)
+
+            let destinationContext = try await repository.statusContext(paneId: destinationPane)
+            let delayedPrompts = destinationContext.evidence.filter { delayedPromptRecordIds.contains($0.recordId) }
+            #expect(delayedPrompts.count == delayedPromptRecordIds.count)
+            #expect(delayedPrompts.allSatisfy { $0.statusEffect == .recordedOnly })
+            #expect(delayedPrompts.allSatisfy { $0.providerSignal?.name == .question })
+        }
+    }
+}
+
+private struct DuplicateSessionStartScenario: Sendable {
+    let fixture: SessionsCleanupUpgradeFixture
+    let destinationPane: UUID
+    let oldPanes: [UUID]
+    let expectedDisposition: SessionsHookDisposition
+}
+
+private func makeDuplicateSessionStartScenario(placement: DuplicateSessionStartPlacement) throws
+    -> DuplicateSessionStartScenario
+{
+    let fixture = try SessionsCleanupUpgradeFixture()
+    try WorkspaceLocalMigrations.migrate(fixture.queue)
+    switch placement {
+    case .ownActivePane:
+        return .init(
+            fixture: fixture, destinationPane: fixture.duplicatePaneOne,
+            oldPanes: [fixture.duplicatePaneTwo], expectedDisposition: .applied)
+    case .newThirdPane:
+        return .init(
+            fixture: fixture, destinationPane: UUIDv7.generate(),
+            oldPanes: [fixture.duplicatePaneOne, fixture.duplicatePaneTwo], expectedDisposition: .bound)
+    }
+}
+
+private enum DuplicateSessionStartPlacement: CaseIterable, Equatable, Sendable {
+    case ownActivePane
+    case newThirdPane
 }
 
 private struct SessionsCleanupUpgradeFixture: Sendable {
@@ -90,6 +227,12 @@ private struct SessionsCleanupUpgradeFixture: Sendable {
     let launchBinding = UUIDv7.generate()
     let oldBinding = UUIDv7.generate()
     let newBinding = UUIDv7.generate()
+    let duplicatePaneOne = UUIDv7.generate()
+    let duplicatePaneTwo = UUIDv7.generate()
+    let duplicateBindingOne = UUIDv7.generate()
+    let duplicateBindingTwo = UUIDv7.generate()
+    let duplicateConversation = UUIDv7.generate()
+    let duplicateSessionId = "pre-cut-shared-session"
     let questionRecord = UUIDv7.generate()
     let questions = [
         SessionQuestion(
@@ -112,6 +255,7 @@ private struct SessionsCleanupUpgradeFixture: Sendable {
             for (revision, kind) in [
                 (9, "evidence"), (10, "prepareForLaunch"), (11, "evidence"),
                 (12, "evidence"), (20, "sourceEnded"), (30, "prepareForLaunch"), (31, "bind"),
+                (40, "bind"), (41, "bind"),
             ] {
                 try database.execute(
                     sql: """
@@ -124,6 +268,14 @@ private struct SessionsCleanupUpgradeFixture: Sendable {
             try seedBinding(database, pane: endedPane, binding: UUIDv7.generate(), revision: 20, ended: true)
             try seedBinding(database, pane: replacedPane, binding: oldBinding, revision: 30, ended: true)
             try seedBinding(database, pane: replacedPane, binding: newBinding, revision: 31, ended: false)
+            try seedBinding(
+                database, pane: duplicatePaneOne, binding: duplicateBindingOne, revision: 40, ended: false,
+                conversationId: duplicateConversation, providerIdentifier: "claude-code",
+                providerConversationId: duplicateSessionId)
+            try seedBinding(
+                database, pane: duplicatePaneTwo, binding: duplicateBindingTwo, revision: 41, ended: false,
+                conversationId: duplicateConversation, providerIdentifier: "claude-code",
+                providerConversationId: duplicateSessionId, insertConversation: false)
             let attention = UUIDv7.generate().uuidString
             try database.execute(
                 sql: """
@@ -203,11 +355,28 @@ private struct SessionsCleanupUpgradeFixture: Sendable {
         return "SELECT \(columns) FROM sessions_evidence ORDER BY occurrence_id"
     }
 
-    private func seedBinding(_ database: Database, pane: UUID, binding: UUID, revision: Int, ended: Bool) throws {
-        try database.execute(
-            sql: """
-                INSERT INTO sessions_conversation VALUES (?, 'claude-code', ?, 1, 99.5)
-                """, arguments: [binding.uuidString, "session-\(binding.uuidString)"])
+    func seedBinding(
+        _ database: Database,
+        pane: UUID,
+        binding: UUID,
+        revision: Int,
+        ended: Bool,
+        conversationId: UUID? = nil,
+        providerIdentifier: String = "claude-code",
+        providerConversationId: String? = nil,
+        insertConversation: Bool = true
+    ) throws {
+        let conversationId = conversationId ?? binding
+        if insertConversation {
+            try database.execute(
+                sql: """
+                    INSERT INTO sessions_conversation VALUES (?, ?, ?, 1, 99.5)
+                    """,
+                arguments: [
+                    conversationId.uuidString, providerIdentifier,
+                    providerConversationId ?? "session-\(binding.uuidString)",
+                ])
+        }
         try database.execute(
             sql: """
                 INSERT INTO sessions_pane_binding(binding_generation_id, pane_id, conversation_id, source_generation_id,
@@ -215,7 +384,7 @@ private struct SessionsCleanupUpgradeFixture: Sendable {
                 VALUES (?, ?, ?, ?, 'reported', ?, ?, 1, ?, ?, 'claude --resume retained', NULL)
                 """,
             arguments: [
-                binding.uuidString, pane.uuidString, binding.uuidString, binding.uuidString,
+                binding.uuidString, pane.uuidString, conversationId.uuidString, binding.uuidString,
                 ended ? "ended" : "active", UUIDv7.generate().uuidString, ended ? 100.0 : nil, revision,
             ])
         try database.execute(
@@ -223,10 +392,11 @@ private struct SessionsCleanupUpgradeFixture: Sendable {
                 INSERT INTO sessions_source(id, binding_generation_id, source_identifier, source_generation_id,
                     provider_identifier, provider_version, provider_mode, qualification, status, last_cursor,
                     started_at, ended_at, committed_revision)
-                VALUES (?, ?, ?, ?, 'claude-code', '2.1.289', 'interactive', 'qualified', ?, 'retained-cursor', 1, ?, ?)
+                VALUES (?, ?, ?, ?, ?, '2.1.289', 'interactive', 'qualified', ?, 'retained-cursor', 1, ?, ?)
                 """,
             arguments: [
                 binding.uuidString, binding.uuidString, "source-\(binding.uuidString)", binding.uuidString,
+                providerIdentifier,
                 ended ? "ended" : "active", ended ? 100.0 : nil, revision,
             ])
     }

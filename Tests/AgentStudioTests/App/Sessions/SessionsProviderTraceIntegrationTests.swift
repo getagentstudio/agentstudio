@@ -216,11 +216,11 @@ private func submitRecordedStatus(data: Data, adapter: AgentStudioIPCSessionsAda
     #expect(result.disposition == .admitted)
 }
 
-func projectRecordedStatus(data: Data, occurrenceId: UUID = UUIDv7.generate()) throws -> IPCSessionEventParams {
+func projectRecordedStatus(data: Data) throws -> IPCSessionEventParams {
     let payload = try JSONDecoder().decode(ClaudeCodeHookPayload.self, from: data)
     let projection = ClaudeCodeHookProjection.project(
-        announcedEvent: payload.hookEventName, payload: payload, providerVersion: "2.1.286",
-        correlationIdentifier: UUIDv7.generate(), freshOccurrenceIdentifier: { occurrenceId })
+        payload: payload, providerVersion: "2.1.286",
+        correlationIdentifier: UUIDv7.generate(), freshOccurrenceIdentifier: { UUIDv7.generate() })
     guard case .projected(let params) = projection else { throw ClaudeCodeHookInvocationError.reportRejected }
     return params
 }

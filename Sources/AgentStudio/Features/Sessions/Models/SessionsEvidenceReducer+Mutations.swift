@@ -19,14 +19,15 @@ extension SessionsEvidenceReducer {
             $0.paneId == hook.paneId && $0.status == .active && $0.bindingGenerationId != ownActive?.bindingGenerationId
         }
         if hook.eventName == .sessionStart {
+            let elsewhereActiveBindings = matching.filter { $0.paneId != hook.paneId && $0.status == .active }
             if let ownActive {
-                return .init(binding: ownActive, replaced: [], disposition: .applied)
+                return .init(binding: ownActive, replaced: elsewhereActiveBindings, disposition: .applied)
             }
             return .init(
                 binding: makeBinding(
                     hook, conversationId: context.matchingConversation?.id,
                     retained: matching.first { $0.paneId == hook.paneId }),
-                replaced: ownOther + (elsewhereActive.map { [$0] } ?? []), disposition: .bound)
+                replaced: ownOther + elsewhereActiveBindings, disposition: .bound)
         }
         if let ownActive {
             return .init(binding: ownActive, replaced: [], disposition: .applied)
