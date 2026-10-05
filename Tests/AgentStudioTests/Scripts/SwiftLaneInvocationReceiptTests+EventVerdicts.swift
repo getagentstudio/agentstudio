@@ -1,0 +1,174 @@
+import AgentStudioTestSupport
+import Foundation
+import Testing
+
+extension SwiftLaneInvocationReceiptTests {
+    @Test(
+        "captured known issues and warnings independently pass through the wrapper",
+        arguments: ["recordsKnownIssue()", "recordsWarning()"])
+    func capturedNonFailingIssuesPass(testName: String) async throws {
+        let fixture = try InvocationReceiptFixture()
+        defer { fixture.remove() }
+        try writeCapturedInvocation(fixture, selecting: testName)
+        let result = try await fixture.runEventFixture(as: "swift test", expectedRuns: 1, exitStatus: 0)
+        #expect(result.output.contains("STATUS=0"), Comment(rawValue: result.output))
+        #expect(result.output.contains("stream=complete"), Comment(rawValue: result.output))
+        #expect(!result.output.contains("failing_test="), Comment(rawValue: result.output))
+    }
+
+    @Test(
+        "invalid event records fail closed while surviving issues stay named",
+        arguments: ["invalid-json\n", "{}\n", "{\"kind\":\"event\",\"payload\":{}}\n", "\u{00ff}\n"])
+    func unreadableStreamKeepsFailureNames(invalidRecord: String) async throws {
+        let fixture = try InvocationReceiptFixture()
+        defer { fixture.remove() }
+        try writeCapturedInvocation(fixture, selecting: "recordsFailure()")
+        let handle = try FileHandle(forWritingTo: fixture.events)
+        try handle.seekToEnd()
+        try handle.write(contentsOf: invalidRecord == "\u{00ff}\n" ? Data([0xff, 0x0a]) : Data(invalidRecord.utf8))
+        try handle.close()
+        let result = try await fixture.runEventFixture(as: "swift test", expectedRuns: 1, exitStatus: 0)
+        #expect(result.output.contains("STATUS=1"), Comment(rawValue: result.output))
+        #expect(result.output.contains("stream=unreadable"), Comment(rawValue: result.output))
+        #expect(
+            result.output.contains(
+                "failing_test=AgentStudioTests.Xcode27EventStreamEvidenceScratchTests/recordsFailure()"),
+            Comment(rawValue: result.output))
+    }
+
+    @Test("zero matches and unmatched run endings cannot pass or be called a crash", arguments: [false, true])
+    func invalidRunCannotPass(unmatchedEnd: Bool) async throws {
+        let fixture = try InvocationReceiptFixture()
+        defer { fixture.remove() }
+        try fixture.writeEvents([
+            ["kind": "event", "payload": ["kind": unmatchedEnd ? "runEnded" : "runStarted"]],
+            ["kind": "event", "payload": ["kind": unmatchedEnd ? "runStarted" : "runEnded"]],
+        ])
+        let result = try await fixture.runEventFixture(as: "swift test", expectedRuns: 1, exitStatus: 0)
+        #expect(result.output.contains("STATUS=1"), Comment(rawValue: result.output))
+        #expect(
+            result.output.contains(unmatchedEnd ? "reason=event_stream_incomplete" : "reason=no_matching_tests"),
+            Comment(rawValue: result.output))
+        #expect(!result.output.contains("crashed"), Comment(rawValue: result.output))
+    }
+
+    @Test("an early issue survives a large stream and retains exactly one failing-test line")
+    func earlyFailureSurvivesLargeStream() async throws {
+        let fixture = try InvocationReceiptFixture()
+        defer { fixture.remove() }
+        try writeCapturedInvocation(fixture, selecting: "recordsFailure()", repeatIssue: true, extraRecords: 20_000)
+        let result = try await fixture.runEventFixture(as: "swift test", expectedRuns: 1, exitStatus: 0)
+        #expect(result.output.contains("STATUS=1"), Comment(rawValue: result.output))
+        #expect(
+            result.output.components(separatedBy: "lane-report failing_test=").count - 1 == 1,
+            Comment(rawValue: result.output))
+        let facts = try await runCommandToExit(
+            command: "/usr/bin/perl",
+            arguments: ["scripts/swift-test-invocation-receipts.pl", "facts", fixture.events.path, "1"])
+        #expect(facts.stdout.contains("peak_announced_tests=1"))
+    }
+
+    @Test("real 6.3 case records without case IDs contribute to concurrency peaks")
+    func parameterizedCasesWithoutIDsHavePeaks() async throws {
+        let fixture = try InvocationReceiptFixture()
+        defer { fixture.remove() }
+        try fixture.writeEvents([
+            ["kind": "event", "payload": ["kind": "runStarted"]],
+            ["kind": "test", "payload": ["id": "Fixture.Suite/cases()", "kind": "function", "isParameterized": true]],
+            ["kind": "event", "payload": ["kind": "testStarted", "testID": "Fixture.Suite/cases()"]],
+            ["kind": "event", "payload": ["kind": "testCaseStarted", "testID": "Fixture.Suite/cases()"]],
+            ["kind": "event", "payload": ["kind": "testCaseStarted", "testID": "Fixture.Suite/cases()"]],
+            ["kind": "event", "payload": ["kind": "testCaseEnded", "testID": "Fixture.Suite/cases()"]],
+            ["kind": "event", "payload": ["kind": "testCaseEnded", "testID": "Fixture.Suite/cases()"]],
+            ["kind": "event", "payload": ["kind": "testEnded", "testID": "Fixture.Suite/cases()"]],
+            ["kind": "event", "payload": ["kind": "runEnded"]],
+        ])
+        let result = try await fixture.runEventFixture(as: "swift test", expectedRuns: 1, exitStatus: 0)
+        #expect(result.output.contains("STATUS=0"), Comment(rawValue: result.output))
+        let facts = try await runCommandToExit(
+            command: "/usr/bin/perl",
+            arguments: ["scripts/swift-test-invocation-receipts.pl", "facts", fixture.events.path, "1"])
+        #expect(facts.stdout.contains("peak_announced_tests=1"), Comment(rawValue: facts.stdout))
+        #expect(facts.stdout.contains("peak_running_parameterized_cases=2"), Comment(rawValue: facts.stdout))
+    }
+
+    @Test("a crash after an issue preserves the original status and recorded failure")
+    func crashAfterIssueKeepsBothFacts() async throws {
+        let fixture = try InvocationReceiptFixture()
+        defer { fixture.remove() }
+        try writeCapturedInvocation(fixture, selecting: "recordsFailure()", closingRun: false)
+        let result = try await fixture.runEventFixture(as: "swift test", expectedRuns: 1, exitStatus: 139)
+        #expect(result.output.contains("STATUS=139"), Comment(rawValue: result.output))
+        #expect(result.output.contains("stream=truncated"), Comment(rawValue: result.output))
+        #expect(
+            result.output.contains(
+                "failing_test=AgentStudioTests.Xcode27EventStreamEvidenceScratchTests/recordsFailure()"),
+            Comment(rawValue: result.output))
+        #expect(!result.output.contains("lane-report crashed"), Comment(rawValue: result.output))
+    }
+
+    @Test("a parked invocation preserves its stream before reporting a failing issue on timeout")
+    func hangAfterIssueKeepsFailureEvidence() async throws {
+        let fixture = try InvocationReceiptFixture()
+        defer { fixture.remove() }
+        try writeCapturedInvocation(fixture, selecting: "recordsFailure()", closingRun: false)
+        let armedPath = fixture.root.appending(path: "armed").path
+        let releasePath = fixture.root.appending(path: "release.fifo").path
+        let result = try await fixture.run(
+            "/bin/bash -c 'cp \"$1\" \"${@: -1}\"; : > \"$2\"; read line < \"$3\"' fixture '\(fixture.events.path)' '\(armedPath)' '\(releasePath)' swiftpm-testing-helper",
+            eventStream: true,
+            setup:
+                "mkfifo '\(releasePath)'; LANE_WATCHDOG_ARM_PATH='\(armedPath)'; swift_test_watchdog_timeout_status() { return 1; }; "
+        )
+        #expect(result.output.contains("STATUS=124"), Comment(rawValue: result.output))
+        #expect(
+            result.output.contains(
+                "failing_test=AgentStudioTests.Xcode27EventStreamEvidenceScratchTests/recordsFailure()"),
+            Comment(rawValue: result.output))
+        #expect(result.output.contains("stream=truncated"), Comment(rawValue: result.output))
+        let files = try FileManager.default.contentsOfDirectory(
+            at: fixture.root.appending(path: "evidence"), includingPropertiesForKeys: nil)
+        let retained = try #require(files.first { $0.path.hasSuffix(".events.jsonl") })
+        #expect(try Data(contentsOf: retained) == Data(contentsOf: fixture.events))
+    }
+
+    @Test(
+        "missing facts readers fail closed only for real event invocations",
+        arguments: ["swift-test-invocation-receipts.sh", "swift-test-invocation-receipts.pl"], [0, 7])
+    func unavailableReaderCannotPass(missingReader: String, status: Int) async throws {
+        let fixture = try InvocationReceiptFixture()
+        defer { fixture.remove() }
+        let helper = try fixture.copyRunnerSupport(omitting: missingReader)
+        let result = try await fixture.run(
+            "/bin/bash -c 'exit \(status)' swiftpm-testing-helper", eventStream: true, helper: helper)
+        #expect(result.output.contains("STATUS=\(status == 0 ? 1 : status)"), Comment(rawValue: result.output))
+        #expect(result.output.contains("reason=facts_reader_unavailable"), Comment(rawValue: result.output))
+    }
+}
+
+func writeCapturedInvocation(
+    _ fixture: InvocationReceiptFixture, selecting testName: String, closingRun: Bool = true,
+    repeatIssue: Bool = false, extraRecords: Int = 0
+) throws {
+    let source = try String(
+        contentsOfFile: "Tests/AgentStudioTests/Scripts/Fixtures/xcode27-event-stream-v6.3.jsonl", encoding: .utf8)
+    let rows = try source.split(separator: "\n").map { line -> [String: Any] in
+        try #require(JSONSerialization.jsonObject(with: Data(line.utf8)) as? [String: Any])
+    }
+    let runStart = try #require(rows.first { ($0["payload"] as? [String: Any])?["kind"] as? String == "runStarted" })
+    let runEnd = try #require(rows.first { ($0["payload"] as? [String: Any])?["kind"] as? String == "runEnded" })
+    let selected = rows.filter {
+        let payload = $0["payload"] as? [String: Any]
+        return (payload?["testID"] as? String ?? payload?["id"] as? String ?? "").contains(testName)
+    }
+    var records = [runStart] + selected
+    if repeatIssue,
+        let issue = selected.first(where: { ($0["payload"] as? [String: Any])?["kind"] as? String == "issueRecorded" })
+    {
+        records.append(issue)
+    }
+    records.append(
+        contentsOf: Array(repeating: ["kind": "event", "payload": ["kind": "planStepStarted"]], count: extraRecords))
+    if closingRun { records.append(runEnd) }
+    try fixture.writeEvents(records)
+}

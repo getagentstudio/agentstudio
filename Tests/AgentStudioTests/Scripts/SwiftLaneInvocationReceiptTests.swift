@@ -61,7 +61,7 @@ struct SwiftLaneInvocationReceiptTests {
     }
 
     @Test(
-        "missing receipt support is visible and fails closed when judging an event stream",
+        "missing observation support stays fail-open for non-test commands",
         arguments: ["swift-test-invocation-receipts.sh", "swift-test-invocation-receipts.pl"], [0, 7])
     func missingReceiptSupportIsFailOpen(missingHelper: String, status: Int) async throws {
         let fixture = try InvocationReceiptFixture()
@@ -70,6 +70,7 @@ struct SwiftLaneInvocationReceiptTests {
         let result = try await fixture.run("/bin/bash -c 'exit \(status)'", helper: helper)
 
         #expect(result.record["command_status"] as? Int == status)
+        #expect(result.output.contains("STATUS=\(status)"), Comment(rawValue: result.output))
         #expect(result.output.contains("invocation_observation=unavailable"), Comment(rawValue: result.output))
         #expect(result.output.contains("receipt support could not be loaded"), Comment(rawValue: result.output))
         #expect(!result.output.contains("command not found"), Comment(rawValue: result.output))
@@ -320,7 +321,7 @@ struct SwiftLaneResourceWrapperTests {
     }
 }
 
-private struct InvocationReceiptFixture {
+struct InvocationReceiptFixture {
     let root: URL
     var events: URL { root.appending(path: "fixture.events") }
     var held: URL { root.appending(path: "fixture.held") }
@@ -394,7 +395,8 @@ private struct InvocationReceiptFixture {
         try await run(
             "/bin/bash -c 'cp \"$1\" \"${@: -1}\"; exit \(exitStatus)' fixture '\(events.path)' \(kind)",
             eventStream: true,
-            setup: "swift_test_expected_event_runs() { printf '%s' \(expectedRuns); }; "
+            setup:
+                "BUILD_PATH='\(root.path)'; printf 'bundle_count=\(expectedRuns)\\n' > \"$BUILD_PATH/agentstudio-test-build-receipt\"; "
         )
     }
 

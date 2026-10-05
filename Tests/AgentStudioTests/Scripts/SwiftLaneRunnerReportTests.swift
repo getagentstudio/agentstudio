@@ -342,7 +342,8 @@ struct SwiftLaneRunnerReportTests {
             "lane-report head_sha=",
             "lane-report tree_dirty=",
             "lane-report bundle_state=",
-            "lane-report bundle_identity=",
+            "lane-report bundle_set=",
+            "lane-report bundle_count=",
             "lane-report build_receipt_head_sha=",
         ] {
             #expect(closingReport.contains(closingLabel))
@@ -358,21 +359,21 @@ struct SwiftLaneRunnerReportTests {
                 // its verdict evidence at all.
                 "build_receipt_head_sha",
                 "bundle_count",
-                "bundle_identity",
                 "bundle_set",
                 "bundle_state",
                 "cpu_count",
                 "cpu_seconds",
                 "cpu_utilization",
+                "crashed",
                 // Where a wedged run's event-stream ledger was kept, and whether
                 // the lane's own child group was actually reaped on the way out.
                 "event_stream",
                 "evidence_retention",
                 "exit_status",
-                "failing_test",
                 "fact_expected",
                 "failed_isolated_suite",
                 "failed_isolated_suites",
+                "failing_test",
                 "head_sha",
                 // The harness steps a hung lane was still waiting on.
                 "held_step_unarrived",
@@ -382,8 +383,8 @@ struct SwiftLaneRunnerReportTests {
                 // Tests whose start was posted: announced, never "started".
                 "peak_announced_tests",
                 "peak_running_parameterized_cases",
-                "receipt_valid",
                 "reason",
+                "receipt_valid",
                 "running_parameterized_cases_at_timeout",
                 "runs",
                 "stack_sample",
@@ -823,7 +824,7 @@ struct SwiftLaneRunnerReportTests {
         #expect(timeoutRunner.contains("--event-stream-version 6.3 --event-stream-output-path"))
         #expect(timeoutRunner.contains("swift_test_command_accepts_event_stream"))
         // `swift build` rejects the flags, so the prebuild must be excluded.
-        #expect(acceptsEventStream.contains("\"$argument\" = \"build\""))
+        #expect(acceptsEventStream.contains("build|list) return 1"))
         #expect(
             try await runBashStatus(
                 "source scripts/swift-test-helpers.sh; "

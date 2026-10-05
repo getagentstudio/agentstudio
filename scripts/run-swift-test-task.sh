@@ -92,7 +92,6 @@ print_closing_lane_report() {
   local wall_seconds=$((SECONDS - LANE_START_SECONDS))
   local cpu_seconds
   local closing_tree_dirty
-  local bundle_identity
   local bundle_set bundle_count
   local bundle_link_reason=""
 
@@ -133,16 +132,14 @@ print_closing_lane_report() {
 
   echo "[$LOG_PREFIX] lane-report head_sha=$LANE_RECEIPT_HEAD_SHA"
   echo "[$LOG_PREFIX] lane-report tree_dirty=$closing_tree_dirty"
-  bundle_identity="$(lane_receipt_bundle_identity)"
-  if [ "$LANE_BUNDLE_STATE" = "reused" ]; then
+  bundle_set="$(swift_test_bundle_set)"
+  bundle_count="$(swift_test_bundle_count)"
+  if [ "$LANE_BUNDLE_STATE" = "reused" ] || [ "$LANE_BUNDLE_STATE" = "fresh" ]; then
     bundle_link_reason="$(
-      lane_build_receipt_link_reason "$(lane_build_receipt_path)" "$LANE_RECEIPT_HEAD_SHA" "$bundle_identity"
+      lane_build_receipt_link_reason "$(lane_build_receipt_path)" "$LANE_RECEIPT_HEAD_SHA" "$bundle_set"
     )"
   fi
   echo "[$LOG_PREFIX] lane-report bundle_state=$LANE_BUNDLE_STATE"
-  echo "[$LOG_PREFIX] lane-report bundle_identity=$bundle_identity"
-  bundle_set="$(lane_build_receipt_field "$(lane_build_receipt_path)" bundle_set || echo missing)"
-  bundle_count="$(lane_build_receipt_field "$(lane_build_receipt_path)" bundle_count || echo 0)"
   echo "[$LOG_PREFIX] lane-report bundle_set=$bundle_set"
   echo "[$LOG_PREFIX] lane-report bundle_count=$bundle_count"
   # The linkage: which commit the build receipt beside this bundle says it built.
@@ -249,15 +246,15 @@ run_width_comparison_half() {
 # run; the comparison fails if either half failed. Neither result changes the
 # default width, which stays unset.
 run_width_comparison() {
-  local bundle_identity
+  local bundle_set
   local comparison_directory
   local comparison_status=0
 
-  bundle_identity="$(lane_receipt_bundle_identity)"
+  bundle_set="$(swift_test_bundle_set)"
   comparison_directory="${LANE_EVENT_STREAM_DIR}/width-comparison/$(
     printf '%s' "$LANE_RECEIPT_HEAD_SHA" | cut -c1-12
-  )-bundle-${bundle_identity##*@}"
-  echo "[$LOG_PREFIX] width comparison on bundle_identity=$bundle_identity"
+  )-bundle-${bundle_set}"
+  echo "[$LOG_PREFIX] width comparison on bundle_set=$bundle_set"
   echo "[$LOG_PREFIX] width comparison ledgers: $comparison_directory"
 
   run_width_comparison_half 3 "$comparison_directory/width-3"
@@ -288,7 +285,24 @@ if [ "$mode" = "test-prebuild" ]; then
   exit 0
 fi
 
-if ! swift_test_suite_map_preflight; then
+mandatory_selectors=()
+mandatory_selector_output=""
+# Requested SwiftPM filters do not execute the lane's isolated inventories.
+# The whole map still gets linkage and duplicate checks for those invocations.
+if [ "$#" -eq 0 ]; then
+  mandatory_selector_output="$(swift_test_lane_mandatory_selectors "$mode")" || exit 1
+fi
+while IFS= read -r mandatory_selector; do
+  [ -n "$mandatory_selector" ] || continue
+  mandatory_selectors+=("$mandatory_selector")
+done <<<"$mandatory_selector_output"
+suite_map_preflight_status=0
+if [ "${#mandatory_selectors[@]}" -eq 0 ]; then
+  swift_test_suite_map_preflight || suite_map_preflight_status=$?
+else
+  swift_test_suite_map_preflight "${mandatory_selectors[@]}" || suite_map_preflight_status=$?
+fi
+if [ "$suite_map_preflight_status" -ne 0 ]; then
   echo "[$LOG_PREFIX] suite map preflight failed" >&2
   exit 1
 fi

@@ -581,7 +581,7 @@ struct CIFastLaneWorkflowTests {
 
         #expect(
             helperScript.contains(
-                "xcbeautify \"${extra_args[@]}\" | /usr/bin/iconv -f UTF-8 -t UTF-8 -c"
+                "xcbeautify --preserve-unbeautified --disable-logging \"${extra_args[@]}\" | /usr/bin/iconv -f UTF-8 -t UTF-8 -c"
             )
         )
         #expect(filteredOutput == "raw input\n")

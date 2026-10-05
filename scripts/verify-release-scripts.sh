@@ -284,10 +284,12 @@ for xcb_extra_args in "" "--renderer github-actions"; do
     printf "release build output\n" | _xcb_pipe
   ' _ "$ROOT_DIR")"
   assert_contains "$xcb_output" "release build output"
+  assert_contains "$xcb_output" "argument=--preserve-unbeautified"
+  assert_contains "$xcb_output" "argument=--disable-logging"
   if [[ -z "$xcb_extra_args" ]]; then
-    assert_contains "$xcb_output" "argument-count=0"
-  else
     assert_contains "$xcb_output" "argument-count=2"
+  else
+    assert_contains "$xcb_output" "argument-count=4"
     assert_contains "$xcb_output" "argument=--renderer"
     assert_contains "$xcb_output" "argument=github-actions"
   fi

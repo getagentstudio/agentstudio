@@ -190,55 +190,69 @@ if ($mode eq 'collect') {
     print encode_utf8($_), "\n" for @reports;
 } elsif ($mode eq 'facts') {
     my ($events_path, $expected_runs) = @ARGV;
-    $expected_runs = numeric($expected_runs) ? int($expected_runs) : 1;
-    my ($run_started, $run_ended, $open_runs, $tests_run, $unreadable_records) = (0, 0, 0, 0, 0);
-    my ($announced, $peak_announced, $peak_cases) = (0, 0, 0);
-    my (%definitions, %active_tests, %active_cases, @failing_tests);
+    $expected_runs = numeric($expected_runs) ? int($expected_runs) : 0;
+    my ($run_started, $run_ended, $open_runs, $unbalanced_runs, $tests_run, $unreadable_records) = (0, 0, 0, 0, 0, 0);
+    my ($peak_announced, $running_cases, $peak_cases) = (0, 0, 0);
+    my (%definitions, %active_tests, %case_counts, %failed_tests, @failing_tests);
     my $events_available = open(my $events, '<:raw', $events_path // '');
     if ($events_available) {
         while (my $line = <$events>) {
             if ($line !~ /\n\z/) { $unreadable_records++; next }
             my $raw = eval { $json->decode($line) };
-            if (ref($raw) ne 'HASH') { $unreadable_records++; next }
-            my $event = ref($raw->{payload}) eq 'HASH' ? $raw->{payload} : $raw;
+            if (ref($raw) ne 'HASH' || ref($raw->{payload}) ne 'HASH') { $unreadable_records++; next }
+            my $event = $raw->{payload};
             my $kind = $event->{kind} // '';
             if (($raw->{kind} // '') eq 'test') {
-                $definitions{$event->{id}} = $event if defined $event->{id};
+                if (!defined($event->{id}) || ($kind ne 'suite' && $kind ne 'function')) { $unreadable_records++; next }
+                $definitions{$event->{id}} = $event;
                 next;
             }
-            if ($kind eq 'runStarted') { $run_started++; $open_runs++; next }
-            if ($kind eq 'runEnded') { $run_ended++; $open_runs-- if $open_runs > 0; next }
+            if (($raw->{kind} // '') ne 'event' || !length($kind)) { $unreadable_records++; next }
+            if ($kind eq 'runStarted') {
+                $unbalanced_runs++ if $open_runs;
+                $run_started++; $open_runs++;
+                next;
+            }
+            if ($kind eq 'runEnded') {
+                $unbalanced_runs++ if !$open_runs;
+                $run_ended++; $open_runs-- if $open_runs;
+                next;
+            }
             my $id = $event->{testID};
             my $is_function = defined($id) && (($definitions{$id}{kind} // '') eq 'function');
+            if (($kind eq 'testStarted' || $kind eq 'testEnded') && (!defined($id) || !defined($definitions{$id}))) {
+                $unreadable_records++;
+                next;
+            }
             if ($kind eq 'testStarted' && $is_function) {
                 $active_tests{$id} = 1;
-                $announced++;
+                my $announced = scalar(keys %active_tests);
                 $peak_announced = $announced if $announced > $peak_announced;
             } elsif ($kind eq 'testEnded' && $is_function) {
                 $tests_run++;
                 delete $active_tests{$id};
-                $announced-- if $announced > 0;
-            } elsif ($kind eq 'testCaseStarted') {
-                my $case_id = ref($event->{_testCase}) eq 'HASH' ? $event->{_testCase}{id} : undef;
-                if (defined($id) && defined($case_id)) {
-                    $active_cases{"$id\0$case_id"} = 1;
-                    my $running = scalar(keys %active_cases);
-                    $peak_cases = $running if $running > $peak_cases;
-                }
-            } elsif ($kind eq 'testCaseEnded') {
-                my $case_id = ref($event->{_testCase}) eq 'HASH' ? $event->{_testCase}{id} : undef;
-                delete $active_cases{"$id\0$case_id"} if defined($id) && defined($case_id);
+            } elsif ($kind eq 'testCaseStarted' && defined($id)) {
+                # ABI 6.3 has no case id. Paired starts/ends preserve the count.
+                $case_counts{$id}++;
+                $running_cases++;
+                $peak_cases = $running_cases if $running_cases > $peak_cases;
+            } elsif ($kind eq 'testCaseEnded' && defined($id)) {
+                if ($case_counts{$id}) { $case_counts{$id}--; $running_cases-- }
             } elsif ($kind eq 'issueRecorded') {
-                my $issue = ref($event->{issue}) eq 'HASH' ? $event->{issue} : {};
-                my $failure = exists($issue->{isFailure}) ? $issue->{isFailure} : !($issue->{isKnown} // 0);
-                push @failing_tests, $id if $failure && defined $id;
+                my $issue = $event->{issue};
+                if (ref($issue) ne 'HASH' || (!exists($issue->{isFailure}) && !exists($issue->{isKnown}))) {
+                    $unreadable_records++;
+                    next;
+                }
+                my $failure = exists($issue->{isFailure}) ? $issue->{isFailure} : !$issue->{isKnown};
+                if ($failure && defined($id) && !$failed_tests{$id}++) { push @failing_tests, $id }
             }
         }
         close $events;
     }
     my $stream = !$events_available ? 'missing'
         : $unreadable_records ? 'unreadable'
-        : ($run_started != $expected_runs || $run_ended != $expected_runs || $open_runs != 0) ? 'truncated'
+        : ($expected_runs < 1 || $unbalanced_runs || $run_started != $expected_runs || $run_ended != $expected_runs || $open_runs != 0) ? 'truncated'
         : 'complete';
     print "stream=$stream\n";
     print "unreadable_records=$unreadable_records\n";
