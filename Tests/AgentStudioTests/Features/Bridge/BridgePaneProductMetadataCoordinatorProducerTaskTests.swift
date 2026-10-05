@@ -261,6 +261,62 @@ struct BridgeMetadataCoordinatorProducerTaskTests {
         #expect(await firstPump.cancel())
     }
 
+    @Test("File outcome admission refusal defers the accepted subscription for foreground resume")
+    @MainActor
+    func fileOutcomeAdmissionRefusalDefersUntilForegroundResume() async throws {
+        let refresh = BridgePaneRefreshAdmissionCoordinator(initialActivity: .foreground)
+        let harness = try await BridgeProductSessionLifecycleHarness.opened()
+        let lease = try await harness.admitMetadataFrames(through: 0)
+        let pump = BridgeProductSchemeFramePump(
+            session: harness.session, producerLease: lease,
+            productAdmission: harness.productAdmission.context, acknowledgeLifecycle: { _ in true }
+        )
+        let source = CoordinatorReplacementBootstrapFileMetadataSource()
+        let coordinator = BridgePaneProductMetadataCoordinator(
+            fileMetadataSource: source, reviewMetadataSource: BridgeUnavailablePaneProductReviewMetadataSource(),
+            refreshWorkAdmissionSource: refresh.workAdmissionSource
+        )
+        await coordinator.install(
+            request: try producerTaskMetadataStreamRequest(), lease: lease,
+            productAdmission: harness.productAdmission.context, session: harness.session
+        )
+        let request = try bridgeProductLifecycleControlRequest(
+            bridgeProductLifecycleFileSubscriptionOpenObject(requestSequence: 2, epoch: 1)
+        )
+        let token = try #require(producerTaskControlExecutionToken(try await harness.begin(request)))
+        #expect(await harness.session.admitControlProviderExecution(token: token))
+        let response = try BridgeProductControlResponse.subscriptionOpenAccepted(correlating: request, worktreeId: nil)
+        let effect = try await harness.session.completeAdmittedControl(
+            token: token, exactResponseBytes: try JSONEncoder().encode(response)
+        )
+        _ = try await pullProducerTaskMetadataFrame(from: pump)
+        await harness.session.settleControlProviderDispatch(token: token)
+        guard case .subscriptionOpened(let subscription) = effect else {
+            Issue.record("Expected admitted File subscription")
+            return
+        }
+        let stream = try #require(await coordinator.activeStream)
+        let capturedForegroundWork = try #require(refresh.acquireForegroundWork())
+        refresh.applyActivity(.loadedHidden)
+        await coordinator.startSubscriptionOpen(
+            subscription, activeStream: stream, productAdmission: harness.productAdmission.context,
+            foregroundWorkAdmission: capturedForegroundWork
+        )
+        let wasDeferred = await coordinator.deferredOpenSubscriptionIds.contains(subscription.subscriptionId)
+        #expect(wasDeferred)
+        #expect(!(await coordinator.openedSourceSubscriptionIds.contains(subscription.subscriptionId)))
+        #expect(!(await source.didStartOpen(openOrdinal: 1)))
+        if wasDeferred {
+            refresh.applyActivity(.foreground)
+            await coordinator.resumeForegroundWork()
+            await source.waitUntilOpenStarted(openOrdinal: 1)
+            await source.releaseOpen(openOrdinal: 1)
+            await source.waitUntilOpenFinished(openOrdinal: 1)
+        }
+        await coordinator.closeAndDrain()
+        #expect(await pump.cancel())
+    }
+
     @Test("replacement install does not return until cancelled predecessor open drains")
     func replacementInstallWaitsForCancelledPredecessorOpenToDrain() async throws {
         // Arrange
