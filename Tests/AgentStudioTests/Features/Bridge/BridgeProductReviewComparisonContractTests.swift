@@ -1,4 +1,5 @@
 import AgentStudioCore
+import AgentStudioTestSupport
 import Foundation
 import Testing
 
@@ -11,10 +12,12 @@ struct BridgeProductReviewComparisonContractTests {
         // Arrange
         let capabilityBytes = (0..<BridgeProductWireContract.capabilityByteLength).map(UInt8.init)
         let capabilityHeader = try BridgeProductCapabilityHeaderEncoding.encode(capabilityBytes)
+        let deadlineClock = TestPushClock()
         let session = try BridgeProductSession(
             paneSessionId: bridgeProductTestPaneSessionId,
             workerInstanceId: bridgeProductTestWorkerInstanceId,
-            capabilityBytes: capabilityBytes
+            capabilityBytes: capabilityBytes,
+            deadlineClock: deadlineClock
         )
         let recorder = await MainActor.run { BridgeProductComparisonTargetRecorder() }
         let refreshWorkAdmission = await BridgePaneRefreshWorkAdmissionTestContext.foreground()
@@ -79,7 +82,8 @@ struct BridgeProductReviewComparisonContractTests {
         let session = try BridgeProductSession(
             paneSessionId: bridgeProductTestPaneSessionId,
             workerInstanceId: bridgeProductTestWorkerInstanceId,
-            capabilityBytes: capabilityBytes
+            capabilityBytes: capabilityBytes,
+            deadlineClock: TestPushClock()
         )
         let refreshWorkAdmission = await BridgePaneRefreshWorkAdmissionTestContext.foreground()
         let productAdmissionGate = BridgeProductAdmissionGate()

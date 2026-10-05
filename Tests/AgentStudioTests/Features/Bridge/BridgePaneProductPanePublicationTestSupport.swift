@@ -1,6 +1,7 @@
 import AgentStudioCore
 import AgentStudioInfrastructure
 import AgentStudioTestHarness
+import AgentStudioTestSupport
 import Foundation
 import Testing
 
@@ -24,7 +25,8 @@ struct PanePublicationFixture {
     let trace: PanePublicationBootstrapTrace
 
     static func make() async throws -> Self {
-        let original = try await BridgeProductSessionLifecycleHarness.opened()
+        let original = try await BridgeProductSessionLifecycleHarness.opened(
+            deadlineClock: TestPushClock())
         let installationGate = BridgeProductAdmissionGate()
         let composed = try #require(original.productAdmission.context.withInstallation(installationGate))
         let harness = BridgeProductSessionLifecycleHarness(

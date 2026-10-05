@@ -1,5 +1,6 @@
 import AgentStudioInfrastructure
 import AgentStudioTestHarness
+import AgentStudioTestSupport
 import Foundation
 import Testing
 
@@ -12,7 +13,7 @@ struct BridgeProductSessionLifecycleHarness {
 
     static func opened(
         maximumMutationWatches: Int = AppPolicies.Bridge.maximumProductMutationWatches,
-        deadlineClock: (any Clock<Duration> & Sendable)? = nil,
+        deadlineClock: (any Clock<Duration> & Sendable)? = TestPushClock(),
         producerQueueLimits: BridgeProductProducerQueueLimits = .productContract,
         viewEmissionWaiterRegistrationObserver:
             BridgeProductSession.ViewEmissionWaiterRegistrationObserver? = nil,

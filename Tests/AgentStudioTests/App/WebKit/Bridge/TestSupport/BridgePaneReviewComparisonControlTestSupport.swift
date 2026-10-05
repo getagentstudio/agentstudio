@@ -1,4 +1,5 @@
 import AgentStudioTestHarness
+import AgentStudioTestSupport
 import Foundation
 import Testing
 
@@ -252,7 +253,8 @@ func makeBridgeReviewComparisonControlFixture(
     let session = try BridgeProductSession(
         paneSessionId: paneSessionId,
         workerInstanceId: workerInstanceId,
-        capabilityBytes: capabilityBytes
+        capabilityBytes: capabilityBytes,
+        deadlineClock: TestPushClock()
     )
     let dispatcher = BridgeProductSchemeControlDispatcher(
         session: session,
