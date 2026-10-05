@@ -41,7 +41,7 @@ struct WorktreeStopCatalogTests {
                 .command("switch the main worktree back to the default branch"), .flag("--from <worktree>"),
                 .flag("--tracked-only"),
             ],
-            .configInvalid: [.command("fix .agentstudio.config.json and retry")],
+            .configInvalid: [.command("fix .agentstudio.config.json and retry"), .flag("--tracked-only")],
             .sourceIndexUnreadable: [.command("retry"), .flag("--tracked-only")],
             .sourceIndexUnsupported: [.flag("--tracked-only")],
         ]

@@ -16,23 +16,28 @@ extension WorktreeOperationRunner {
         case .outcome(let outcome): return outcome
         case .ready(let value): prepared = value
         }
-        let includePatterns: [GitPathPattern]
-        do {
-            let config = try await AgentStudioRepositoryConfigReader.read(mainWorktree: prepared.repositoryPath)
-            includePatterns = try config.worktree.compiledIncludePatterns(
-                configurationPath: prepared.repositoryPath.appending(path: ".agentstudio.config.json"))
-        } catch let stop as WorktreeCreationStop {
-            return .refused(.creationStopped(stop))
-        } catch {
-            return .refused(
-                .creationStopped(
-                    .configInvalid(
-                        path: prepared.repositoryPath.appending(path: ".agentstudio.config.json").path,
-                        error: String(describing: error)
-                    )))
-        }
-        if case .trackedOnly(let startBranch) = request.materialization {
+        let copyRules: GitWorktreeCopyRules
+        switch request.materialization {
+        case .trackedOnly(let startBranch):
             return await createTrackedOnly(prepared, startBranch: startBranch)
+        case .changesOnly:
+            copyRules = GitWorktreeCopyRules(ignoredPaths: .copyAll)
+        case .copyOnWrite:
+            do {
+                let config = try await AgentStudioRepositoryConfigReader.read(mainWorktree: prepared.repositoryPath)
+                let includePatterns = try config.worktree.compiledIncludePatterns(
+                    configurationPath: prepared.repositoryPath.appending(path: ".agentstudio.config.json"))
+                copyRules = GitWorktreeCopyRules(ignoredPaths: .copyMatching(includePatterns))
+            } catch let stop as WorktreeCreationStop {
+                return .refused(.creationStopped(stop))
+            } catch {
+                return .refused(
+                    .creationStopped(
+                        .configInvalid(
+                            path: prepared.repositoryPath.appending(path: ".agentstudio.config.json").path,
+                            error: String(describing: error)
+                        )))
+            }
         }
         let source: WorktreeDiscovery
         let sourcePath: URL
@@ -55,7 +60,7 @@ extension WorktreeOperationRunner {
             return outcome
         }
         return await copySource(
-            prepared, source: source.sourceWorktreePath, request: request, includePatterns: includePatterns)
+            prepared, source: source.sourceWorktreePath, request: request, copyRules: copyRules)
     }
 
     private func defaultCopySourceRefusal(source: URL, repository: URL) async -> WorktreeOperationOutcome? {
@@ -139,7 +144,7 @@ extension WorktreeOperationRunner {
 
     private func copySource(
         _ prepared: PreparedWorktreeCreation, source: URL, request: WorktreeCreateRequest,
-        includePatterns: [GitPathPattern]
+        copyRules: GitWorktreeCopyRules
     ) async -> WorktreeOperationOutcome {
         let sdkMaterialization: GitWorktreeForkMaterialization
         switch request.materialization {
@@ -152,7 +157,7 @@ extension WorktreeOperationRunner {
                 GitForkWorktreeRequest(
                     sourceWorktreePath: source, destinationPath: prepared.destinationPath,
                     mode: .newBranch(name: prepared.branchName.rawValue), materialization: sdkMaterialization,
-                    copyRules: GitWorktreeCopyRules(ignoredPaths: .copyMatching(includePatterns))
+                    copyRules: copyRules
                 ))
             return .created(
                 WorktreeCreatedSummary(

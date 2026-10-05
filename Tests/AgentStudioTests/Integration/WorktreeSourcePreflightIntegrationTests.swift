@@ -115,30 +115,46 @@ struct WorktreeSourcePreflightIntegrationTests {
                 == worktreeCreationGit(at: repository, arguments: ["rev-parse", "HEAD"]))
     }
 
-    @Test("malformed config refuses all materializations before mutation")
-    func refusesInvalidRepositoryConfig() async throws {
+    @Test(
+        "malformed config refuses only copy-on-write and offers tracked-only",
+        arguments: [WorktreeCreateMaterialization.copyOnWrite, .changesOnly, .trackedOnly(startBranch: nil)])
+    func readsConfigOnlyForCopyOnWrite(materialization: WorktreeCreateMaterialization) async throws {
         let repository = try await seededRepository(named: "new-invalid-config")
         defer { FilesystemTestGitRepo.destroy(repository) }
         try Data("{".utf8).write(to: repository.appending(path: ".agentstudio.config.json"))
-        for materialization in [
-            WorktreeCreateMaterialization.copyOnWrite, .changesOnly, .trackedOnly(startBranch: nil),
-        ] {
-            let branch = "feature/invalid-config"
-            let destination = try siblingDestination(repository: repository, branch: branch)
-            let source: WorktreeCreateSource =
-                materialization == .trackedOnly(startBranch: nil) ? .mainWorktree : .worktree(repository)
-            let outcome = await WorktreeOperationRunner().run(
-                .create(
-                    WorktreeCreateRequest(
-                        start: repository, branch: branch, source: source, materialization: materialization)))
-            guard case .refused(.creationStopped(.configInvalid(let path, let error))) = outcome else {
-                Issue.record("expected configInvalid, received \(outcome)")
-                continue
-            }
-            #expect(path == repository.appending(path: ".agentstudio.config.json").path)
-            #expect(!error.isEmpty)
-            try await expectNoCreation(repository: repository, destination: destination, branch: branch)
+        let branch = "feature/invalid-config"
+        let destination = try siblingDestination(repository: repository, branch: branch)
+        defer { try? FileManager.default.removeItem(at: destination) }
+        let options: [String]
+        switch materialization {
+        case .copyOnWrite: options = ["--from", repository.path]
+        case .changesOnly: options = ["--from", repository.path, "--changes-only"]
+        case .trackedOnly: options = ["--tracked-only"]
         }
+        let beforeHead = try await worktreeCreationGit(at: repository, arguments: ["rev-parse", "HEAD"])
+        let beforeStatus = try await worktreeCreationGit(at: repository, arguments: ["status", "--porcelain=v1"])
+        let probe = WorktreeCreationCommandLineProbe()
+        let exit = await WorktreeCommandLine.run(
+            arguments: ["new", branch, "--repo", repository.path, "--json"] + options,
+            currentDirectory: repository,
+            output: { probe.appendOutput($0) }, errorOutput: { probe.appendError($0) })
+        #expect(probe.errorSnapshot().isEmpty)
+        let output = try #require(probe.outputSnapshot().first)
+        if materialization == .copyOnWrite {
+            #expect(exit == 1)
+            #expect(output.contains("configInvalid"))
+            #expect(output.contains(".agentstudio.config.json"))
+            #expect(output.contains("--tracked-only"))
+            try await expectNoCreation(repository: repository, destination: destination, branch: branch)
+        } else {
+            #expect(exit == 0)
+            #expect(output.contains("created"))
+            #expect(try Data(contentsOf: destination.appending(path: "tracked.txt")) == Data("tracked\n".utf8))
+            #expect(
+                try await worktreeCreationGit(at: repository, arguments: ["branch", "--list", branch]).isEmpty == false)
+        }
+        #expect(try await worktreeCreationGit(at: repository, arguments: ["rev-parse", "HEAD"]) == beforeHead)
+        #expect(try await worktreeCreationGit(at: repository, arguments: ["status", "--porcelain=v1"]) == beforeStatus)
     }
 
     private func seededRepository(named name: String) async throws -> URL {

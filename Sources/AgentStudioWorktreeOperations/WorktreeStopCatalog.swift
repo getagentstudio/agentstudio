@@ -299,7 +299,8 @@ package enum WorktreeStopCatalog {
             return [flag("--tracked-only", effect: "Create a tracked-files checkout.")]
         case .configInvalid:
             return [
-                command("fix .agentstudio.config.json and retry", effect: "Correct the repository copy declaration.")
+                command("fix .agentstudio.config.json and retry", effect: "Correct the repository copy declaration."),
+                flag("--tracked-only", effect: "Create a tracked-files checkout."),
             ]
         case .forkUnavailable:
             return [flag("--tracked-only", effect: "Create a tracked-files checkout.")]
