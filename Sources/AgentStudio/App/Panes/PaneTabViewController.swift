@@ -877,7 +877,7 @@ class PaneTabViewController: NSViewController, NSPopoverDelegate, WorkspaceComma
     }
 
     private func preferredVisibleFocusPaneId() -> UUID? {
-        switch normalizedWorkspaceNavigationScopeState() {
+        switch normalizedVisibleFocusOwner() {
         case .drawerPane(_, let drawerPaneId):
             return drawerPaneId
         case .emptyDrawer:
@@ -885,6 +885,46 @@ class PaneTabViewController: NSViewController, NSPopoverDelegate, WorkspaceComma
         case .mainPane(let paneId):
             return paneId
         }
+    }
+
+    /// Returns the focus owner that is visible above the durable arrangement.
+    /// Pane Zoom keeps the durable active pane unchanged, so refocus must use
+    /// its source while the presentation is active. A source-owned expanded
+    /// drawer keeps its active child in the visible focus scope.
+    private func normalizedVisibleFocusOwner() -> WorkspaceFocusOwner {
+        let context = visibleFocusOwnerContext()
+        if let zoomSourcePaneId = zoomSourcePaneIdForActiveTab(),
+            store.paneAtom.pane(zoomSourcePaneId)?.drawer?.isExpanded == true,
+            let activeDrawerPaneId = visibleActiveDrawerPaneId(for: zoomSourcePaneId)
+        {
+            return .drawerPane(parentPaneId: zoomSourcePaneId, paneId: activeDrawerPaneId)
+        }
+        return WorkspaceFocusOwnerNormalizer.normalize(
+            requested: atom(\.workspaceFocusOwner).owner,
+            context: context
+        )
+    }
+
+    private func visibleFocusOwnerContext() -> WorkspaceFocusOwnerNormalizer.Context {
+        let visibleMainPaneId = visibleFocusMainPaneId()
+        let drawer = visibleMainPaneId.flatMap { store.paneAtom.pane($0)?.drawer }
+        let drawerView = visibleMainPaneId.flatMap { arrangementView.drawerView(forParent: $0) }
+        return .init(
+            activeMainPaneId: visibleMainPaneId,
+            expandedDrawerParentPaneId: drawer?.isExpanded == true ? visibleMainPaneId : nil,
+            paneIds: drawer?.paneIds ?? [],
+            activeDrawerPaneId: drawerView?.activeChildId,
+            minimizedDrawerPaneIds: drawerView?.minimizedPaneIds ?? []
+        )
+    }
+
+    private func zoomSourcePaneIdForActiveTab() -> UUID? {
+        guard let activeTabId = store.tabLayoutAtom.activeTabId else { return nil }
+        return store.panePresentationAtom.zoomPresentation(forTab: activeTabId)?.sourcePaneId
+    }
+
+    private func visibleFocusMainPaneId() -> UUID? {
+        zoomSourcePaneIdForActiveTab() ?? activeMainPaneId()
     }
 
     private func scheduleSelectionDrivenRefocus() {
@@ -1094,7 +1134,7 @@ class PaneTabViewController: NSViewController, NSPopoverDelegate, WorkspaceComma
             targetPaneId
             .flatMap { viewRegistry.view(for: $0)?.mountedContentStateForPaneFocus }
             ?? .unmounted
-        let activeDrawerParentPaneId = activeMainPaneId()
+        let activeDrawerParentPaneId = visibleFocusMainPaneId()
 
         return PaneFocusContext(
             activeTabId: activeTabId,
@@ -1207,7 +1247,7 @@ class PaneTabViewController: NSViewController, NSPopoverDelegate, WorkspaceComma
         case .drawer(let trigger):
             switch trigger {
             case .selectPane(_, let drawerPaneId):
-                return activeMainPaneId().flatMap { visibleActiveDrawerPaneId(for: $0) } == drawerPaneId
+                return visibleFocusMainPaneId().flatMap { visibleActiveDrawerPaneId(for: $0) } == drawerPaneId
             case .toggle(let parentPaneId):
                 return activePaneId == parentPaneId
             }
