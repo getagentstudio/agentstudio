@@ -13,6 +13,11 @@ func packagedProductNativeReadback(_ controller: BridgePaneController) async -> 
     }
     let session = await installation.session.diagnosticSnapshot
     let subscriptions = await installation.session.subscriptionSnapshots()
+    var scopes: [String] = []
+    for subscription in subscriptions {
+        let scope = await installation.session.acceptedViewScope(subscriptionId: subscription.subscriptionId)
+        scopes.append("\(subscription.subscriptionKind.rawValue):\(String(describing: scope))")
+    }
     guard let provider = controller.productSchemeProvider else {
         return "provider=absent; session=\(session); subscriptions=\(subscriptions)"
     }
@@ -23,7 +28,7 @@ func packagedProductNativeReadback(_ controller: BridgePaneController) async -> 
     let deferred = await coordinator.deferredOpenSubscriptionIds
     return "installedStream=\(String(describing: stream?.lease)); "
         + "streamAdmissionLive=\(stream?.productAdmission.withValidAdmission({ true }) == true); "
-        + "session=\(session); subscriptions=\(subscriptions); "
+        + "session=\(session); subscriptions=\(subscriptions); acceptedViewScopes=\(scopes); "
         + "requestedSubscriptions=\(requested); openedSubscriptions=\(opened); deferredSubscriptions=\(deferred); "
         + "nativeComparison=\(String(describing: controller.refreshAdmissionCoordinator.productPresentationSnapshot.reviewComparison)); "
         + "foreground=\(controller.refreshAdmissionCoordinator.diagnosticSnapshot)"

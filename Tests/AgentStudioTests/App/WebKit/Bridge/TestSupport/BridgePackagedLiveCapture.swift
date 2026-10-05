@@ -93,6 +93,7 @@ final class BridgePackagedLiveCapture {
           function installWorkerCommandObservation() {
             const originalFetch = self.fetch;
             const operations = new Map();
+            const subscriptions = new Map();
             const report = observation => {
               try { self.postMessage({
                 direction: 'serverWorkerToMain', kind: 'health', status: 'ready',
@@ -117,23 +118,24 @@ final class BridgePackagedLiveCapture {
               if (url.includes('/command') && request === undefined)
                 report({kind: 'commandProbe', phase: 'unparsedRequest', bodyType: Object.prototype.toString.call(init?.body)});
               const correlation = request?.kind === 'subscription.open'
-                ? {requestId: request.requestId, subscriptionId: request.subscriptionId,
+                ? {openRequestId: request.requestId, subscriptionId: request.subscriptionId,
                    subscriptionKind: request.subscription?.subscriptionKind,
                    workerDerivationEpoch: request.workerDerivationEpoch}
-                : operations.get(request?.operationId);
+                : operations.get(request?.operationId) ?? subscriptions.get(request?.subscriptionId);
+              if (request?.kind === 'subscription.open') subscriptions.set(request.subscriptionId, correlation);
               if (correlation !== undefined)
-                report({kind: 'command', phase: 'sent', requestKind: request.kind,
+                report({kind: 'command', phase: 'sent', requestKind: request.kind, requestId: request.requestId ?? null,
                         operationId: request.operationId ?? null, ...correlation});
               let response;
               try { response = await Reflect.apply(originalFetch, self, arguments_); }
               catch (error) {
                 if (correlation !== undefined)
-                  report({kind: 'command', phase: 'fetchRejected', requestKind: request.kind,
+                  report({kind: 'command', phase: 'fetchRejected', requestKind: request.kind, requestId: request.requestId ?? null,
                           error: String(error), ...correlation});
                 throw error;
               }
               if (correlation === undefined) return response;
-              report({kind: 'command', phase: 'response', requestKind: request.kind,
+              report({kind: 'command', phase: 'response', requestKind: request.kind, requestId: request.requestId ?? null,
                       status: response.status, ...correlation});
               const body = response.body;
               if (body === null) return response;
@@ -166,17 +168,17 @@ final class BridgePackagedLiveCapture {
                           for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.length; }
                           payload = JSON.parse(new TextDecoder().decode(bytes));
                         } catch {}
-                        if (request.kind === 'subscription.open' && payload?.operationId)
-                          operations.set(payload.operationId, correlation);
-                        report({kind: 'command', phase: 'bodyConsumed', requestKind: request.kind,
+                        if (payload?.kind === 'operation.admitted' && payload.operationId)
+                          operations.set(payload.operationId, {...correlation, commandKind: request.kind, commandRequestId: request.requestId});
+                        report({kind: 'command', phase: 'bodyConsumed', requestKind: request.kind, requestId: request.requestId ?? null,
                           status: response.status, responseKind: payload?.kind ?? null,
-                          responseCode: payload?.code ?? payload?.error?.code ?? null,
-                          resultStatus: payload?.status ?? null,
+                          responseCode: payload?.failureCode ?? payload?.code ?? payload?.error?.code ?? null,
+                          resultStatus: payload?.outcome ?? payload?.status ?? null,
                           result: payload?.result ?? payload?.value ?? null,
                           operationId: payload?.operationId ?? request.operationId ?? null,
                           ...correlation});
-                        if (request.kind === 'operation.result' && payload?.status !== 'pending')
-                          operations.delete(request.operationId);
+                        if (request.kind === 'operation.resultAcknowledgement') operations.delete(request.operationId);
+                        if (request.kind === 'subscription.cancel') subscriptions.delete(request.subscriptionId);
                       }
                       return result;
                     };
