@@ -4,6 +4,7 @@ import { areFileViewContentRequestsEquivalent } from './bridge-comm-worker-file-
 interface BridgeCommWorkerActiveFileContentPreparation {
 	readonly request: BridgeCommWorkerFileViewContentRequest;
 	readonly abortController: AbortController;
+	readonly demandEpoch: number;
 }
 
 interface BridgeCommWorkerFileContentCancellation {
@@ -14,10 +15,12 @@ interface BridgeCommWorkerFileContentCancellation {
 	readonly retainOrSupersede: (
 		itemId: string,
 		latestRequest: BridgeCommWorkerFileViewContentRequest | undefined,
+		demandEpoch: number,
 	) => boolean;
 	readonly trackSettlement: (props: {
 		readonly abortController: AbortController;
 		readonly completion: Promise<void>;
+		readonly demandEpoch: number;
 		readonly itemId: string;
 		readonly request: BridgeCommWorkerFileViewContentRequest;
 		readonly onSupersessionSettled: () => void;
@@ -46,13 +49,14 @@ export function createBridgeCommWorkerFileContentCancellation(): BridgeCommWorke
 				abortControllersByItemId,
 				generationByItemId,
 			}),
-		retainOrSupersede: (itemId, latestRequest): boolean => {
+		retainOrSupersede: (itemId, latestRequest, demandEpoch): boolean => {
 			const active = activePreparationsByItemId.get(itemId);
 			if (active === undefined) return false;
 			// Keep the read owner until completion, even after an abort has been requested.
 			if (
 				!active.abortController.signal.aborted &&
-				!areFileViewContentRequestsEquivalent(active.request, latestRequest ?? null)
+				(active.demandEpoch !== demandEpoch ||
+					!areFileViewContentRequestsEquivalent(active.request, latestRequest ?? null))
 			)
 				abort(itemId);
 			return true;
@@ -61,6 +65,7 @@ export function createBridgeCommWorkerFileContentCancellation(): BridgeCommWorke
 			activePreparationsByItemId.set(props.itemId, {
 				request: props.request,
 				abortController: props.abortController,
+				demandEpoch: props.demandEpoch,
 			});
 			return props.completion.finally((): void => {
 				if (activePreparationsByItemId.get(props.itemId)?.abortController !== props.abortController)

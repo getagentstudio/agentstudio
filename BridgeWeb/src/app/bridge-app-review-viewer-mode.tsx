@@ -239,6 +239,7 @@ function BridgeReviewViewerModeContent(props: BridgeReviewViewerModeProps): Reac
 	const [treeSelectionRevealRequest, setTreeSelectionRevealRequest] =
 		useState<BridgeReviewTreeSelectionRevealRequest | null>(null);
 	const treeSelectionRevealRevisionRef = useRef(0);
+	const notifyNavigationUserSelectionRef = useRef<(() => void) | null>(null);
 	const codeViewControlHandleRef = useRef<BridgeCodeViewControlHandle | null>(null);
 	const controlProbeSequenceRef = useRef(0);
 	const isActiveRef = useRef(isActive);
@@ -491,7 +492,11 @@ function BridgeReviewViewerModeContent(props: BridgeReviewViewerModeProps): Reac
 				annotationNavigation.request.requestId !== annotationRequestId
 			)
 				annotationNavigation.finish(annotationNavigation.request.requestId);
-			return commitReviewSelection(itemId, selectedSource);
+			const accepted = commitReviewSelection(itemId, selectedSource);
+			if (accepted && selectedSource !== 'programmatic') {
+				notifyNavigationUserSelectionRef.current?.();
+			}
+			return accepted;
 		},
 		[annotationNavigation, commitReviewSelection],
 	);
@@ -618,7 +623,7 @@ function BridgeReviewViewerModeContent(props: BridgeReviewViewerModeProps): Reac
 		showBinary,
 		showLarge,
 	});
-	useBridgeReviewNavigationController({
+	const navigationController = useBridgeReviewNavigationController({
 		catalogRevision: catalogSnapshot.revision,
 		clearReviewSelection,
 		getReviewItem: displayStore.getReviewItemSnapshot,
@@ -632,6 +637,7 @@ function BridgeReviewViewerModeContent(props: BridgeReviewViewerModeProps): Reac
 			annotationNavigation?.request != null ? false : selectReviewItem(itemId, selectedSource),
 		selectReviewItem: selectReviewItemAndRevealTree,
 	});
+	notifyNavigationUserSelectionRef.current = navigationController.notifyUserSelection;
 	const presentationState = bridgeReviewRegionShellPresentation({
 		paneReloadPort: props.paneReloadPort,
 		railVisible: props.railVisible,

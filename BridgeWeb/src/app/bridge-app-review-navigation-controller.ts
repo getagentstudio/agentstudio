@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useCallback, useEffect, useRef } from 'react';
 
 import type { BridgeProductNavigationCommand } from '../core/comm-worker/bridge-product-session-contracts.js';
 import type {
@@ -55,9 +55,13 @@ export interface UseBridgeReviewNavigationControllerProps {
 	) => boolean | void;
 }
 
+export interface BridgeReviewNavigationController {
+	readonly notifyUserSelection: () => void;
+}
+
 export function useBridgeReviewNavigationController(
 	props: UseBridgeReviewNavigationControllerProps,
-): void {
+): BridgeReviewNavigationController {
 	const {
 		catalogRevision,
 		clearReviewSelection,
@@ -71,7 +75,8 @@ export function useBridgeReviewNavigationController(
 		selectInitialReviewItem,
 		selectReviewItem,
 	} = props;
-	const appliedNavigationApplicationKeyRef = useRef<string | null>(null);
+	const consumedNavigationCommandIdsRef = useRef(new Set<string>());
+	const retainedNavigationCommandIdRef = useRef<string | null>(null);
 	const pendingLocalSelectionItemIdRef = useRef<string | null>(null);
 	const projectionExclusionClearedSelectionRef = useRef(false);
 
@@ -80,8 +85,7 @@ export function useBridgeReviewNavigationController(
 			!isActive ||
 			navigationCommand === undefined ||
 			!isNavigationCommandStillEligible(navigationCommand) ||
-			appliedNavigationApplicationKeyRef.current ===
-				bridgeReviewNavigationApplicationKey(navigationCommand)
+			consumedNavigationCommandIdsRef.current.has(navigationCommand.commandId)
 		) {
 			return;
 		}
@@ -94,12 +98,14 @@ export function useBridgeReviewNavigationController(
 			return;
 		}
 		if (resolution.status === 'outsideAcceptedProjection') {
+			retainedNavigationCommandIdRef.current = navigationCommand.commandId;
 			onTargetOutsideAcceptedProjection(resolution.target);
 			return;
 		}
 		if (selectReviewItem(resolution.itemId, 'programmatic') !== false) {
-			appliedNavigationApplicationKeyRef.current =
-				bridgeReviewNavigationApplicationKey(navigationCommand);
+			// Binding/source changes authorize transport replay, not a second navigation.
+			consumedNavigationCommandIdsRef.current.add(navigationCommand.commandId);
+			retainedNavigationCommandIdRef.current = null;
 			pendingLocalSelectionItemIdRef.current = resolution.itemId;
 		}
 	}, [
@@ -138,8 +144,7 @@ export function useBridgeReviewNavigationController(
 		}
 		if (
 			navigationCommand !== undefined &&
-			appliedNavigationApplicationKeyRef.current !==
-				bridgeReviewNavigationApplicationKey(navigationCommand) &&
+			!consumedNavigationCommandIdsRef.current.has(navigationCommand.commandId) &&
 			bridgeReviewNavigationTargetForCommand(navigationCommand) !== null
 		) {
 			return;
@@ -166,6 +171,18 @@ export function useBridgeReviewNavigationController(
 		selectedItemId,
 		selectInitialReviewItem,
 	]);
+	const notifyUserSelection = useCallback((): void => {
+		// User intent wins even when clicking the current item produces no state change.
+		if (navigationCommand !== undefined) {
+			consumedNavigationCommandIdsRef.current.add(navigationCommand.commandId);
+		}
+		if (retainedNavigationCommandIdRef.current !== null) {
+			consumedNavigationCommandIdsRef.current.add(retainedNavigationCommandIdRef.current);
+		}
+		retainedNavigationCommandIdRef.current = null;
+		pendingLocalSelectionItemIdRef.current = null;
+	}, [navigationCommand]);
+	return { notifyUserSelection };
 }
 
 export function resolveBridgeReviewNavigationTarget(props: {

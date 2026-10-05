@@ -17,10 +17,12 @@ import type {
 	BridgeProductContentTerminal,
 	BridgeProductFileContentDescriptor,
 } from './bridge-product-content-contracts.js';
+import { BRIDGE_PRODUCT_MAXIMUM_CONTENT_BYTES } from './bridge-product-contract-primitives.js';
 import { bridgeProductFileBatchRowSchema } from './bridge-product-file-batch-row-contracts.js';
 import { bridgeProductFileMemberStatusRecordSchema } from './bridge-product-file-member-status-contracts.js';
 import type { BridgeProductPanePresentationFrame } from './bridge-product-transport.js';
 import type { BridgeProductViewInstallation } from './bridge-product-view-batch-receiver.js';
+import { createWorkerContentPreparationPump } from './bridge-worker-content-preparation-pump.js';
 import type { BridgeWorkerServerToMainMessage } from './bridge-worker-contracts.js';
 import {
 	fileViewProductTestBudget,
@@ -30,6 +32,117 @@ import {
 } from './comm-runtime-protocol.file-product.test-support.js';
 
 describe('Bridge File selected-read supersession', () => {
+	test('prepares identical complete content at the successor worker epoch after a source rebind', async (): Promise<void> => {
+		const scenario = await createSelectedReadScenario();
+		try {
+			scenario.select();
+			const firstOpen = await scenario.firstOpen.promise;
+			expect(scenario.advanceFileWorkerEpoch()).toBe(2);
+			const base = makeFileBatchInstallation(scenario.subscriptionId, { revision: 2 });
+			await scenario.install({
+				...base,
+				records: base.records.map((record) => {
+					if (record.key !== 'member-status') return record;
+					const status = bridgeProductFileMemberStatusRecordSchema.parse(record.value);
+					return {
+						...record,
+						value: {
+							...status,
+							source: { ...status.source, rootRevisionToken: 'rebound-root-revision' },
+						},
+					};
+				}),
+			});
+			scenario.firstTerminal.resolve(completedFileContent(firstOpen.descriptor));
+			await scenario.firstPreparationSettled;
+			expect(
+				scenario.openedDescriptors.length === 2 ||
+					scenario
+						.pendingPreparationWorkIds()
+						.some((workId) => workId.startsWith('file-view-content-ready:file-1:')),
+			).toBe(true);
+			const successor = await scenario.secondOpen.promise;
+			expect(successor.descriptor).toEqual(firstOpen.descriptor);
+			const terminal = await scenario.waitForMessage(
+				(message) =>
+					message.kind === 'fileRenderPatch' &&
+					message.workerDerivationEpoch === 2 &&
+					message.patches.some(
+						(patch) =>
+							patch.slice === 'contentAvailability' &&
+							patch.operation === 'upsert' &&
+							['ready', 'failed', 'unavailable'].includes(patch.payload.state),
+					),
+			);
+			expect(terminal).toMatchObject({
+				patches: expect.arrayContaining([
+					expect.objectContaining({
+						slice: 'contentAvailability',
+						payload: expect.objectContaining({ state: 'ready' }),
+					}),
+				]),
+			});
+			await scenario.waitForMessage(
+				(message) => message.kind === 'filePierreRenderJob' && message.workerDerivationEpoch === 2,
+			);
+		} finally {
+			await scenario.close();
+		}
+	});
+
+	test('resumes a newer demand epoch after metadata enrichment with an identical content request', async (): Promise<void> => {
+		const scenario = await createSelectedReadScenario({ initialUnknownLineCount: true });
+		try {
+			// Arrange: the same bytes are authorized while their total line count is unknown.
+			scenario.select();
+			const firstOpen = await scenario.firstOpen.promise;
+			expect(scenario.advanceFileWorkerEpoch()).toBe(2);
+
+			// Act: a successor source epoch enriches metadata without replacing the read descriptor.
+			await scenario.install(makeFileLineCountInstallation(scenario.subscriptionId, 2, true));
+			scenario.firstTerminal.resolve({
+				...completedFileContent(firstOpen.descriptor),
+				endOfSource: false,
+			});
+			await scenario.firstPreparationSettled;
+
+			// The old preparation's closing fact must leave the latest demand queued or started.
+			// Both states count, so the assertion does not depend on the pump's slice budget.
+			expect(
+				scenario.openedDescriptors.length === 2 ||
+					scenario
+						.pendingPreparationWorkIds()
+						.some((workId) => workId.startsWith('file-view-content-ready:file-1:2:')),
+			).toBe(true);
+			const successor = await scenario.secondOpen.promise;
+			expect(successor.descriptor).toEqual(firstOpen.descriptor);
+			const unavailable = await scenario.waitForMessage(
+				(message) =>
+					message.kind === 'fileRenderPatch' &&
+					message.workerDerivationEpoch === 2 &&
+					message.patches.some(
+						(patch) =>
+							patch.slice === 'contentAvailability' &&
+							patch.operation === 'upsert' &&
+							['ready', 'failed', 'unavailable'].includes(patch.payload.state),
+					),
+			);
+			expect(unavailable).toMatchObject({
+				patches: expect.arrayContaining([
+					expect.objectContaining({
+						slice: 'contentAvailability',
+						payload: expect.objectContaining({
+							state: 'unavailable',
+							reason: 'descriptor_rejected',
+						}),
+					}),
+				]),
+			});
+		} finally {
+			await scenario.close();
+		}
+	});
+
 	test.each(['descriptor', 'request'] as const)(
 		'replaces an in-flight read after a healthy same-source %s change and fulfills paint',
 		async (changeKind) => {
@@ -148,6 +261,9 @@ type SelectedReadObservation = {
 };
 
 type SelectedReadScenario = ReturnType<typeof createRecordingBridgeCommWorkerPort> & {
+	readonly advanceFileWorkerEpoch: () => number;
+	readonly firstPreparationSettled: Promise<void>;
+	readonly pendingPreparationWorkIds: () => readonly string[];
 	readonly firstOpen: ReturnType<typeof createBridgeProductDeferred<SelectedReadObservation>>;
 	readonly secondOpen: ReturnType<typeof createBridgeProductDeferred<SelectedReadObservation>>;
 	readonly firstTerminal: ReturnType<
@@ -162,7 +278,10 @@ type SelectedReadScenario = ReturnType<typeof createRecordingBridgeCommWorkerPor
 };
 
 async function createSelectedReadScenario(
-	props: { readonly failSubsequentReads?: boolean } = {},
+	props: {
+		readonly failSubsequentReads?: boolean;
+		readonly initialUnknownLineCount?: boolean;
+	} = {},
 ): Promise<SelectedReadScenario> {
 	const subscriptionId = 'file-subscription-supersession';
 	const metadataEvents = new BridgeProductBoundedAsyncQueue<never>(64);
@@ -182,25 +301,30 @@ async function createSelectedReadScenario(
 	const openedDescriptors: BridgeProductFileContentDescriptor[] = [];
 	const drainCompletions: Promise<unknown>[] = [];
 	const port = createRecordingBridgeCommWorkerPort();
+	const pump = createWorkerContentPreparationPump({ maxSliceMs: 8 });
+	const firstPreparationSettled = createBridgeProductDeferred<void>();
+	let firstPreparationSettlementBound = false;
+	const productTransport = makeFileProductTestTransport({
+		onBatchFrameSinks: (sinks): void =>
+			installed.resolve(async (view): Promise<void> => {
+				await sinks.install(view);
+			}),
+		onDiscoverSource: (): void => {},
+		onOpenDescriptor: (): void => {},
+		onPanePresentationSink: (sink): void => presentationSink.resolve(sink),
+		subscription: {
+			cancel: async (): Promise<void> => metadataEvents.close(true),
+			events: metadataEvents,
+			subscriptionId,
+			subscriptionKind: 'file.metadata',
+		},
+	});
 	registerBridgeCommWorkerRuntimePortProtocol(port.dispatch.port, {
 		bridgeDemandRank: { lane: 'selected', priority: 0 },
 		budget: fileViewProductTestBudget,
 		fileViewBudget: fileViewProductTestBudget,
-		productTransport: makeFileProductTestTransport({
-			onBatchFrameSinks: (sinks): void =>
-				installed.resolve(async (view): Promise<void> => {
-					await sinks.install(view);
-				}),
-			onDiscoverSource: (): void => {},
-			onOpenDescriptor: (): void => {},
-			onPanePresentationSink: (sink): void => presentationSink.resolve(sink),
-			subscription: {
-				cancel: async (): Promise<void> => metadataEvents.close(true),
-				events: metadataEvents,
-				subscriptionId,
-				subscriptionKind: 'file.metadata',
-			},
-		}),
+		productTransport,
+		pump,
 		openFileViewContent: (descriptor, signal) => {
 			openedDescriptors.push(descriptor);
 			const first = openedDescriptors.length === 1;
@@ -217,13 +341,24 @@ async function createSelectedReadScenario(
 					? firstTerminal.promise
 					: props.failSubsequentReads === true
 						? Promise.reject(new Error('Persistent content failure.'))
-						: Promise.resolve(completedFileContent(descriptor)),
+						: Promise.resolve({
+								...completedFileContent(descriptor),
+								endOfSource: props.initialUnknownLineCount !== true,
+							}),
 			};
 		},
 		// Drive each requested drain once; completion is announced by the owner, never polled.
 		schedulePreparationDrain: (drain): void => {
 			queueMicrotask((): void => {
-				drainCompletions.push(drain());
+				const completion = drain();
+				drainCompletions.push(completion);
+				if (!firstPreparationSettlementBound && openedDescriptors.length === 1) {
+					firstPreparationSettlementBound = true;
+					void completion.then(
+						(): void => firstPreparationSettled.resolve(),
+						(error: unknown): void => firstPreparationSettled.reject(error),
+					);
+				}
 			});
 		},
 		scheduleRenderFulfillmentWake: () => (): void => {},
@@ -234,10 +369,17 @@ async function createSelectedReadScenario(
 			message.kind === 'health' && message.requestId === 'request-file-mode-supersession',
 	);
 	const install = await installed.promise;
-	await install(makeFileBatchInstallation(subscriptionId, { revision: 1 }));
+	await install(
+		props.initialUnknownLineCount === true
+			? makeFileLineCountInstallation(subscriptionId, 1, false)
+			: makeFileBatchInstallation(subscriptionId, { revision: 1 }),
+	);
 	const present = await presentationSink.promise;
 	return {
 		...port,
+		advanceFileWorkerEpoch: (): number => productTransport.advanceWorkerDerivationEpoch('file'),
+		firstPreparationSettled: firstPreparationSettled.promise,
+		pendingPreparationWorkIds: (): readonly string[] => pump.getPendingWorkIds(),
 		firstOpen,
 		firstTerminal,
 		install,
@@ -269,6 +411,38 @@ async function createSelectedReadScenario(
 			metadataEvents.close(true);
 			await Promise.all(drainCompletions);
 		},
+	};
+}
+
+function makeFileLineCountInstallation(
+	subscriptionId: string,
+	revision: number,
+	knownLineCount: boolean,
+): BridgeProductViewInstallation {
+	const base = makeFileBatchInstallation(subscriptionId, { revision });
+	return {
+		...base,
+		records: base.records.map((record) => {
+			if (record.key === 'member-status') return record;
+			const row = bridgeProductFileBatchRowSchema.parse(record.value);
+			if (row.descriptorOutcome === null) return record;
+			return {
+				...record,
+				value: {
+					...row,
+					lineCount: knownLineCount ? 1 : null,
+					sizeBytes: BRIDGE_PRODUCT_MAXIMUM_CONTENT_BYTES + 1,
+					descriptorOutcome: {
+						...row.descriptorOutcome,
+						totalLineCount: knownLineCount ? 1 : null,
+						sizeBytes: BRIDGE_PRODUCT_MAXIMUM_CONTENT_BYTES + 1,
+						truncationKind: 'byteLimit',
+						endsMidLine: true,
+						virtualizedExtentKind: 'previewBounded',
+					},
+				},
+			};
+		}),
 	};
 }
 
@@ -316,7 +490,7 @@ function makeSuccessorInstallation(
 
 function completedFileContent(
 	descriptor: BridgeProductFileContentDescriptor,
-): BridgeProductContentTerminal<'file.content'> {
+): Extract<BridgeProductContentTerminal<'file.content'>, { readonly kind: 'complete' }> {
 	return {
 		bytes: new TextEncoder().encode('abc').buffer,
 		contentKind: 'file.content',
