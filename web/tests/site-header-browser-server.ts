@@ -21,6 +21,10 @@ const server = await dev({
             pattern: "/__test/proof-video",
             entrypoint: path.join(websiteRoot, "tests/fixtures/proof-video-stage.astro"),
           });
+          injectRoute({
+            pattern: "/__test/proof-chapter",
+            entrypoint: path.join(websiteRoot, "tests/fixtures/proof-chapter.astro"),
+          });
         },
       },
     },
