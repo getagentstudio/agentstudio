@@ -124,7 +124,7 @@ extension BridgePaneProductMetadataCoordinator {
     ) async {
         let fileOutcomeAdmission: BridgePaneRefreshWorkAdmission?
         if subscription.subscriptionKind == .fileMetadata {
-            guard let admission = refreshWorkAdmissionSource.acquireFileSurfaceOutcome() else { return }
+            guard let admission = acquireFileOutcomeOrDefer(subscription) else { return }
             fileOutcomeAdmission = admission
         } else {
             fileOutcomeAdmission = nil
@@ -309,6 +309,17 @@ extension BridgePaneProductMetadataCoordinator {
         await annotationSource.releaseProducerBatchScope(handle: view.handle, producerID: producerID)
     }
 
+    private func acquireFileOutcomeOrDefer(
+        _ subscription: BridgeProductSubscriptionSnapshot
+    ) -> BridgePaneRefreshWorkAdmission? {
+        guard let admission = refreshWorkAdmissionSource.acquireFileSurfaceOutcome() else {
+            openedSourceSubscriptionIds.remove(subscription.subscriptionId)
+            deferredOpenSubscriptionIds.insert(subscription.subscriptionId)
+            return nil
+        }
+        return admission
+    }
+
     private func makeFileSurfaceAttemptContext(
         attempt: BridgeFileSurfaceReconciler.Attempt?,
         subscription: BridgeProductSubscriptionSnapshot,
@@ -479,19 +490,17 @@ extension BridgePaneProductMetadataCoordinator {
         activeStream: ActiveStream,
         productAdmission: BridgeProductAdmissionContext,
         foregroundWorkAdmission: BridgePaneRefreshWorkAdmission,
-        fileOutcomeAdmission: BridgePaneRefreshWorkAdmission? = nil,
+        fileOutcomeAdmission: BridgePaneRefreshWorkAdmission,
         retiringAttemptFinished: Bool = false
     ) async {
         switch action {
         case .completed(let attempt):
-            guard let fileOutcomeAdmission else { return }
             await recordCurrentFileRefreshFailure(
                 .init(
                     failure: nil, attempt: attempt, fileAuthorityAdmission: fileOutcomeAdmission,
                     currency: fileSurfaceReconciler.outcomeCurrency
                 ))
         case .failed(let failure, let attempt):
-            guard let fileOutcomeAdmission else { return }
             await recordCurrentFileRefreshFailure(
                 .init(
                     failure: failure.refreshFailure, attempt: attempt,
