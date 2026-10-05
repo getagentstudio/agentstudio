@@ -10,38 +10,34 @@ import Testing
 @testable import AgentStudioCore
 @testable import AgentStudioTestSupport
 
-/// The CLI recomposes `command.list` and `command.execute` from the catalog the
-/// server advertised and requires the result to match it exactly. Only a real
-/// debug-channel catalog exercises that: a fixture catalog is composed by the
-/// same process that checks it, so it cannot show a difference the wire
-/// introduces.
+/// Real app catalogs are read as served metadata; raw command requests are
+/// compiled independently and the app owns their interpretation and admission.
 @MainActor
 @Suite(
     "App IPC command catalog discovery", .serialized, SessionsVerticalHarnessTrait(providerProfiles: .defaultProfiles))
 struct AgentStudioIPCCommandCatalogDiscoveryTests {
-    @Test("the live debug catalog decodes into an invocable command catalog")
+    @Test("the live debug catalog supplies metadata while raw command framing uses the compiled envelope")
     func liveDebugCatalogDecodes() async throws {
         let harness = try await #require(SessionsVerticalHarnessContext.current).freshPanePair()
-
-        let methodCatalog = try await harness.methodCatalog()
-        let discovery = try IPCCommandDiscovery(methodCatalog: methodCatalog)
-        let commandListResult = try await harness.resultData(
-            method: "command.list", params: .object([:]))
-
-        let discovered = try discovery.decodeCommandCatalog(from: commandListResult)
-
-        #expect(discovered.executeDescriptor.metadata.name == "command.execute")
-        let invocation = try discovered.makeInvocation(
-            commandId: IPCCommandIdentifier(rawValue: "showReposSidebar"),
-            correlationId: UUIDv7.generate(),
-            arguments: .workspaceWindow(
-                IPCWorkspaceWindowCommandArguments(workspaceWindowId: harness.workspaceWindowId))
-        )
+        let bytes = try await harness.resultData(method: "command.list", params: .object([:]))
+        let catalog = try JSONDecoder().decode(IPCCommandCatalogResult.self, from: bytes)
+        #expect(catalog.commands.contains { $0.id.rawValue == "showReposSidebar" })
+        let correlation = UUIDv7.generate()
+        let descriptor = try IPCAnyMethodDescriptor(erasing: IPCCommandMethodComposition.compiledExecute())
+        let request = IPCRawCommandExecutionRequest(
+            commandId: .init(rawValue: "showReposSidebar"), correlationId: correlation,
+            arguments: ["kind": "workspaceWindow", "workspaceWindowId": harness.workspaceWindowId.uuidString])
+        let invocation = try IPCDescriptorInvocation(
+            descriptor: descriptor,
+            normalizedParameters: descriptor.normalizeParameters(JSONEncoder().encode(request)), presentation: .tooling)
         #expect(invocation.descriptor.metadata.name == "command.execute")
+        let framed = try JSONDecoder().decode(
+            IPCRawCommandExecutionRequest.self, from: invocation.normalizedParameters.data)
+        #expect(framed == request)
     }
 
-    @Test("every advertised command survives the client's descriptor round trip")
-    func everyAdvertisedCommandSurvivesTheRoundTrip() async throws {
+    @Test("the App's advertised command descriptors preserve their validated composition")
+    func appCommandDescriptorsPreserveTheirComposition() async throws {
         let harness = try await #require(SessionsVerticalHarnessContext.current).freshPanePair()
 
         let methodCatalog = try await harness.methodCatalog()
@@ -103,8 +99,8 @@ struct AgentStudioIPCCommandCatalogDiscoveryTests {
             environment: environment)
 
         // Only the app's command owner produces `stateUnavailable` on
-        // `$.commandId`, so this answer proves the CLI composed the invocation
-        // from the live catalog and the frame reached the server. Applying a
+        // `$.commandId`, so this answer proves the CLI sent its compiled raw envelope
+        // and the frame reached the server. Applying a
         // sidebar command needs a real window this headless harness does not
         // build; the decode path it exercises is what round 2 could not reach.
         #expect(execution.standardError.contains("\"reason\":\"stateUnavailable\""))

@@ -217,10 +217,10 @@ struct IPCCommandDescriptorTests {
         )
 
         let decoded = try composition.execute.decodeParameters(
-            from: JSONEncoder().encode(unknownRequest)
+            from: JSONEncoder().encode(IPCRawCommandExecutionRequest(typedRequest: unknownRequest))
         )
 
-        #expect(decoded == unknownRequest)
+        #expect(try decoded == IPCRawCommandExecutionRequest(typedRequest: unknownRequest))
         #expect(decoded.commandId.rawValue == "command.from.a.newer.app")
     }
 

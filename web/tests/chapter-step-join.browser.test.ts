@@ -47,7 +47,7 @@ describe("chapter step-line joins", () => {
           false,
         );
         if (join.anchorId === "review" || join.anchorId === "come-back") {
-          expect(join.stepDotCount, join.anchorId).toBe(1);
+          expect(join.stepDotCount, join.anchorId).toBe(2);
           expect(join.activeLabelText, join.anchorId).toBe(join.selectedStepLabel);
           expect(join.activeLabelText.trim(), join.anchorId).not.toBe("");
         }
