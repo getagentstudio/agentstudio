@@ -73,6 +73,35 @@ struct BridgePaneWorktreeRefreshDriverTests {
         productAdmission.close()
     }
 
+    @Test("terminal current File failure is recorded by the driver")
+    func terminalCurrentFileFailureIsRecorded() async throws {
+        let productAdmission = try BridgeProductAdmissionTestContext.make()
+        let coordinator = BridgePaneRefreshAdmissionCoordinator(initialActivity: .foreground)
+        let probe = BridgePaneWorktreeRefreshDriverProbe(
+            dispositions: [.failed(.init(failureKind: .fileRefreshFailed))]
+        )
+        let driver = makeRefreshDriver(
+            coordinator: coordinator,
+            productAdmission: productAdmission,
+            probe: probe
+        )
+
+        _ = driver.recordInvalidation(
+            fileChangeset: makeRefreshDriverChangeset(batchSequence: 72),
+            latestFileStatus: nil,
+            requiresReviewRefresh: false
+        )
+        await probe.waitForChangesetAttemptCount(1)
+        try await waitForRefreshDriverFileIdle(driver)
+
+        #expect(
+            coordinator.productPresentationSnapshot.fileRefreshFailure?.failureKind
+                == .fileRefreshFailed
+        )
+        await driver.closeAndDrain()
+        productAdmission.close()
+    }
+
     @Test("queue reset waits for a newer matching File source before replaying once")
     func queueResetWaitsForNewerMatchingSource() async throws {
         // Arrange

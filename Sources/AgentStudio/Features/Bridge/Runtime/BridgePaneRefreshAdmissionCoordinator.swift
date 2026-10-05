@@ -488,14 +488,6 @@ final class BridgePaneRefreshAdmissionCoordinator {
         presentationRevision += 1
     }
 
-    func recordCurrentFileRefreshFailure(
-        _ failure: BridgePaneProductFileRefreshFailure,
-        for reservation: BridgePaneRefreshCatchUpReservation
-    ) {
-        guard isRefreshPassCurrent(reservation) else { return }
-        recordCurrentFileRefreshFailure(failure)
-    }
-
     var hasPendingFileRefreshWork: Bool {
         dirtyFactByLane[.file] != nil
     }
