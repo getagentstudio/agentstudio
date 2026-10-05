@@ -8,6 +8,7 @@ import {
 } from './bridge-comm-worker-entry.js';
 import type { BridgeCommWorkerSelectedFileLifecycleTelemetry } from './bridge-comm-worker-operation-lifecycle.js';
 import type { BridgeCommWorkerSelectedFileContentOperationController } from './bridge-comm-worker-selected-file-content-operation.js';
+import { readSelectedContentDemandEpoch } from './bridge-comm-worker-selection-demand.js';
 import type { BridgeCommWorkerStore } from './bridge-comm-worker-store.js';
 import {
 	bridgeWorkerFileRenderPatchesFromSlicePatchEvent,
@@ -34,9 +35,14 @@ export function advanceBridgeCommWorkerFileRenderFulfillmentLifecycle(props: {
 	];
 	if (exhaustedItemIds.length > 0) props.onExhausted?.(exhaustedItemIds, props.store);
 	const releasedItemIds = registry.releaseReadyRetries(props.atMilliseconds);
-	if (state.selectedId !== null && releasedItemIds.includes(state.selectedId)) {
+	const selectedDemandEpoch = readSelectedContentDemandEpoch(state);
+	if (
+		state.selectedId !== null &&
+		selectedDemandEpoch !== null &&
+		releasedItemIds.includes(state.selectedId)
+	) {
 		props.scheduleSelectedPreparation({
-			epoch: state.selectedEpoch,
+			epoch: selectedDemandEpoch,
 			itemId: state.selectedId,
 			store: props.store,
 		});
@@ -50,9 +56,14 @@ export function retryBridgeCommWorkerExhaustedFileRender(props: {
 }): void {
 	const itemIds = props.store.renderFulfillmentRegistry.retryExhaustedPublications();
 	const state = props.store.getState();
-	if (state.selectedId !== null && itemIds.includes(state.selectedId)) {
+	const selectedDemandEpoch = readSelectedContentDemandEpoch(state);
+	if (
+		state.selectedId !== null &&
+		selectedDemandEpoch !== null &&
+		itemIds.includes(state.selectedId)
+	) {
 		props.scheduleSelectedPreparation({
-			epoch: state.selectedEpoch,
+			epoch: selectedDemandEpoch,
 			itemId: state.selectedId,
 			store: props.store,
 		});

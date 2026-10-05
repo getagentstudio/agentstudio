@@ -46,7 +46,7 @@ export function isSelectedContentReadyPreparationCurrent(props: {
 	);
 }
 
-export function readSelectedReviewDemandEpoch(state: BridgeCommWorkerStoreState): number | null {
+export function readSelectedContentDemandEpoch(state: BridgeCommWorkerStoreState): number | null {
 	if (!state.selectedDemandEnabled || state.selectedId === null) return null;
 	const selectedDemandKey = state.demandByKey.get(state.selectedId);
 	const selectedDemandEpochMatch = /^selected:(\d+)$/u.exec(selectedDemandKey ?? '');

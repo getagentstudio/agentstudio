@@ -49,7 +49,7 @@ import {
 import type { BridgeCommWorkerReviewRuntimeSource } from './bridge-comm-worker-review-source-diff.js';
 import {
 	isSelectedContentReadyPreparationCurrent,
-	readSelectedReviewDemandEpoch,
+	readSelectedContentDemandEpoch,
 	scheduleSelectedFileViewContentReadyPreparationForCurrentDemand,
 } from './bridge-comm-worker-selection-demand.js';
 import {
@@ -324,7 +324,7 @@ export function createBridgeCommWorkerCommandHandler(
 			if (releasedItemIds.length > 0) {
 				const releasedItemIdSet = new Set(releasedItemIds);
 				const reviewState = reviewStore.getState();
-				const selectedDemandEpoch = readSelectedReviewDemandEpoch(reviewState);
+				const selectedDemandEpoch = readSelectedContentDemandEpoch(reviewState);
 				if (
 					selectedDemandEpoch !== null &&
 					reviewState.selectedId !== null &&
