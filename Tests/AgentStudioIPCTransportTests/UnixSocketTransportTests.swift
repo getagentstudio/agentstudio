@@ -6,6 +6,58 @@ import Testing
 
 @Suite("Unix socket transport")
 struct UnixSocketTransportTests {
+    @Test("deadline input reads a closed real pipe to EOF and restores its descriptor flags")
+    func deadlineInputReadsClosedPipe() async throws {
+        #if canImport(Darwin)
+            let observed = try await valueFromDedicatedThread {
+                let pipe = Pipe()
+                defer { try? pipe.fileHandleForReading.close() }
+                let input = Data("{\"session_id\":\"complete\"}".utf8)
+                try pipe.fileHandleForWriting.write(contentsOf: input)
+                try pipe.fileHandleForWriting.close()
+                let descriptor = pipe.fileHandleForReading.fileDescriptor
+                let flagsBefore = fcntl(descriptor, F_GETFL)
+                let output = try CallDeadline(limit: .seconds(2)).readInputToEnd(fileDescriptor: descriptor)
+                return (input: input, output: output, flagsRestored: fcntl(descriptor, F_GETFL) == flagsBefore)
+            }
+            #expect(observed.output == observed.input)
+            #expect(observed.flagsRestored)
+        #endif
+    }
+
+    @Test("an expired absolute deadline rejects connect, send and receive before I/O")
+    func expiredDeadlineRejectsSocketOperations() async throws {
+        #if canImport(Darwin)
+            let deadline = CallDeadline(limit: .zero)
+            let expected = UnixSocketTransportError(reason: .deadlineExceeded, errnoCode: ETIMEDOUT)
+            await #expect(throws: expected) {
+                _ = try await valueFromDedicatedThread {
+                    try UnixSocketClient.connect(
+                        endpoint: .init(path: "/tmp/expired-cli-deadline.sock"), deadline: deadline)
+                }
+            }
+            var descriptors: [Int32] = [0, 0]
+            guard socketpair(AF_UNIX, SOCK_STREAM, 0, &descriptors) == 0 else {
+                throw UnixSocketTransportError(reason: .socketCreationFailed, errnoCode: errno)
+            }
+            let connection = UnixSocketConnection(fileDescriptor: descriptors[0], deadline: deadline)
+            let peer = UnixSocketConnection(fileDescriptor: descriptors[1])
+            defer {
+                connection.close()
+                peer.close()
+            }
+            await #expect(throws: expected) {
+                try await valueFromDedicatedThread { try connection.send(Data("must not be sent".utf8)) }
+            }
+            await #expect(throws: expected) {
+                _ = try await valueFromDedicatedThread { try connection.receive(maxBytes: 64) }
+            }
+            connection.close()
+            let received = try await valueFromDedicatedThread { try peer.receive(maxBytes: 64) }
+            #expect(received.isEmpty)
+        #endif
+    }
+
     @Test("connects, sends, reads, and closes against a temp Unix socket")
     func connectsSendsReadsAndCloses() async throws {
         let fixture = try UnixSocketFixture()

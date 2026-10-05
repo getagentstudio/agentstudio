@@ -1,0 +1,67 @@
+{
+  "version": 1,
+  "notMeasured": ["line", "title", "notify"],
+  "families": [
+    {
+      "name": "hook",
+      "argv": ["hook", "claude", "PreToolUse"],
+      "stdin": {"session_id": "${conversationId}", "hook_event_name": "PreToolUse", "tool_use_id": "${sampleId}", "prompt_id": "benchmark-turn"},
+      "budgetClass": "hookOrNotice",
+      "fixtureRequirement": "ownedPane"
+    },
+    {
+      "name": "message",
+      "argv": ["session.message", "--handle", "self", "--text", "benchmark notice ${sampleId}"],
+      "budgetClass": "hookOrNotice",
+      "fixtureRequirement": "ownedPane"
+    },
+    {
+      "name": "done",
+      "argv": ["session.report", "--handle", "self", "--kind", "done"],
+      "budgetClass": "hookOrNotice",
+      "fixtureRequirement": "ownedPane"
+    },
+    {
+      "name": "session",
+      "argv": ["session.query", "--handle", "self"],
+      "budgetClass": "other",
+      "fixtureRequirement": "ownedPane"
+    },
+    {
+      "name": "terminal",
+      "argv": ["terminal.status", "--handle", "self"],
+      "budgetClass": "other",
+      "fixtureRequirement": "ownedPane"
+    },
+    {
+      "name": "pane",
+      "argv": ["pane.snapshot", "--handle", "self"],
+      "budgetClass": "other",
+      "fixtureRequirement": "ownedPane"
+    },
+    {
+      "name": "system",
+      "argv": ["system.identify"],
+      "budgetClass": "other",
+      "fixtureRequirement": "debugRuntime"
+    },
+    {
+      "name": "command",
+      "argv": ["command.execute", "--command-id", "scrollToBottom", "--arg", "workspaceWindowId=${workspaceWindowId}", "--arg", "paneSelector=${paneId}"],
+      "budgetClass": "other",
+      "fixtureRequirement": "debugRuntime"
+    },
+    {
+      "name": "discovery.capabilities",
+      "argv": ["system.capabilities"],
+      "budgetClass": "other",
+      "fixtureRequirement": "debugRuntime"
+    },
+    {
+      "name": "discovery.commands",
+      "argv": ["command.list"],
+      "budgetClass": "other",
+      "fixtureRequirement": "debugRuntime"
+    }
+  ]
+}

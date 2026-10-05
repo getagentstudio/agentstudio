@@ -1,34 +1,36 @@
+import AgentStudioIPCTransport
 import AgentStudioProgrammaticControl
 import Foundation
 
 /// Delivers one projected provider event to the running app.
 ///
 /// The live value is the ordinary authenticated client path: discover the
-/// method catalog, then call `session.event` with the pane credential the pane
+/// selected compiled contract, then call `session.event` with the pane credential the pane
 /// environment already carries. It is a value rather than a direct call so the
 /// hook runner can be proven without a socket.
 package struct ProviderHookDelivery: Sendable {
-    package let deliver: @Sendable (IPCSessionEventParams, AgentStudioIPCClientConfiguration) throws -> Void
+    package let deliver:
+        @Sendable (IPCSessionEventParams, AgentStudioIPCClientConfiguration, CallDeadline) throws -> Void
 
     package init(
         deliver:
-            @escaping @Sendable (IPCSessionEventParams, AgentStudioIPCClientConfiguration) throws
+            @escaping @Sendable (IPCSessionEventParams, AgentStudioIPCClientConfiguration, CallDeadline) throws
             -> Void
     ) {
         self.deliver = deliver
     }
 
     package static func liveIPC(
-        exampleIdentifierProvider: @escaping @Sendable () -> UUID
+        exampleIdentifierProvider: @escaping @Sendable () -> UUID,
+        environment: [String: String]
     ) -> Self {
-        Self { params, configuration in
+        Self { params, configuration, deadline in
             let examples = IPCBuiltInMethodExampleContext(
                 illustrativeIdentifier: exampleIdentifierProvider()
             )
-            // A hook fires several times a turn under a short provider timeout,
-            // so it resolves session.event from its own compiled contract rather
-            // than fetching the whole catalog first.
-            let descriptors = try IPCBuiltInMethodCatalog.locallyResolvableDescriptors(examples: examples)
+            let descriptors = try IPCCompiledInvocationResolver().resolve(
+                arguments: ["session.event"], authenticated: configuration.authToken != nil,
+                inputs: .init(examples: examples))
             guard let descriptor = descriptors.first(where: { $0.metadata.name == "session.event" })
             else {
                 throw ProviderHookFailure.methodUnavailable
@@ -38,7 +40,11 @@ package struct ProviderHookDelivery: Sendable {
                 normalizedParameters: descriptor.normalizeParameters(JSONEncoder().encode(params)),
                 presentation: .tooling
             )
-            let client = AgentStudioIPCClient(configuration: configuration, descriptors: descriptors)
+            let cleanup = CLIStoreCleanupHandler(
+                environment: environment, migrationLockWaitBudget: { deadline.remainingBudget })
+            let client = AgentStudioIPCClient(
+                configuration: configuration, descriptors: descriptors, deadline: deadline,
+                onCallCompletion: { cleanup.handle(readThrough: $0) })
             switch try client.call(invocation) {
             case .success:
                 return
@@ -64,8 +70,7 @@ package enum ProviderHookFailure: Error, Equatable, Sendable {
 /// Runs one provider hook end to end: guard, read, project, deliver.
 ///
 /// Every path returns `0`. A hook that fails must never block the provider, so
-/// a failure is one line on standard error naming the stage and the reason —
-/// never the payload, which carries the user's prompts and tool arguments.
+/// diagnostics go only to the CLI's private log, never the provider's streams.
 package enum ProviderHookInvocation {
     package static let paneTokenVariable = "AGENTSTUDIO_PANE_TOKEN"
     package static let socketVariable = "AGENTSTUDIO_IPC_SOCKET"
@@ -77,6 +82,7 @@ package enum ProviderHookInvocation {
         package let correlationIdProvider: @Sendable () -> UUID
         package let delivery: ProviderHookDelivery
         package let standardErrorSink: @Sendable (String) -> Void
+        package let deadline: CallDeadline?
 
         package init(
             eventName: String,
@@ -84,7 +90,8 @@ package enum ProviderHookInvocation {
             standardInput: @escaping @Sendable () throws -> Data,
             correlationIdProvider: @escaping @Sendable () -> UUID,
             delivery: ProviderHookDelivery,
-            standardErrorSink: @escaping @Sendable (String) -> Void
+            standardErrorSink: @escaping @Sendable (String) -> Void,
+            deadline: CallDeadline? = nil
         ) {
             self.eventName = eventName
             self.environment = environment
@@ -92,11 +99,13 @@ package enum ProviderHookInvocation {
             self.correlationIdProvider = correlationIdProvider
             self.delivery = delivery
             self.standardErrorSink = standardErrorSink
+            self.deadline = deadline
         }
     }
 
     @discardableResult
     package static func runCodexHook(_ props: Props) -> Int32 {
+        let deadline = props.deadline ?? CallDeadline(limit: CLIPolicy.hookCallLimit)
         guard let eventName = CodexHookEventName(rawValue: props.eventName) else {
             props.standardErrorSink("agentstudio hook codex: unknown event \(props.eventName)")
             return 0
@@ -117,6 +126,7 @@ package enum ProviderHookInvocation {
         guard let projected = CodexHookProjection.project(eventName: eventName, payload: payload) else {
             return 0
         }
+        guard deadline.remainingBudget > .zero else { return 0 }
         do {
             try props.delivery.deliver(
                 IPCSessionEventParams(
@@ -125,7 +135,8 @@ package enum ProviderHookInvocation {
                     event: projected.event,
                     correlationId: props.correlationIdProvider()
                 ),
-                configuration
+                configuration,
+                deadline
             )
         } catch let failure as ProviderHookFailure {
             props.standardErrorSink(

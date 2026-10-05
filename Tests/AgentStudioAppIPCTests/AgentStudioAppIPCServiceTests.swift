@@ -299,14 +299,17 @@ struct AgentStudioAppIPCServiceTests {
                 #expect(response.error == nil)
                 #expect(runtimePort.lastAfterSequence == 41)
                 #expect(runtimePort.lastHandle == IPCHandle(kind: .pane, reference: .canonicalUUID(paneId)))
-                let result = try decodeResponseResult(IPCTerminalWaitResult.self, from: response)
+                let receipt = try decodeResponseResult(IPCTerminalWaitResponse.self, from: response)
+                let result = receipt.observation
+                #expect(receipt.timeoutSeconds == 1)
+                #expect(receipt.wasClamped == false)
                 #expect(result.paneId == paneId)
                 #expect(result.condition == .commandFinished)
             })
     }
 
-    @Test("terminal wait rejects out-of-range timeout before runtime dispatch")
-    func terminalWaitRejectsOutOfRangeTimeoutBeforeRuntimeDispatch() async throws {
+    @Test("terminal wait rejects negative timeout before runtime dispatch")
+    func terminalWaitRejectsNegativeTimeoutBeforeRuntimeDispatch() async throws {
         let paneId = UUID()
         let runtimePort = RecordingWaitRuntimePort(successfulPaneId: paneId)
         try await withLiveServer(
@@ -329,7 +332,7 @@ struct AgentStudioAppIPCServiceTests {
                         params: .object([
                             "handle": .string("pane:1"),
                             "condition": .string(IPCTerminalWaitCondition.commandFinished.rawValue),
-                            "timeoutSeconds": .number(86_400.001),
+                            "timeoutSeconds": .number(-1),
                         ])
                     )
                 )
@@ -730,10 +733,10 @@ private final class PreparedCommandRecordingPort: AppIPCCommandPort, @unchecked 
     }
 
     func prepareCommand(
-        _ params: IPCCommandExecutionRequest,
+        _ params: IPCRawCommandExecutionRequest,
         principal: IPCPrincipal,
         tools: AppIPCTargetResolutionTools
-    ) async throws -> AppIPCPreparedCommand {
+    ) async throws(AgentStudioAppIPCRequestError) -> AppIPCPreparedCommand {
         let prepared = try await underlying.prepareCommand(params, principal: principal, tools: tools)
         lock.withLock { preparedRequestsStorage.append(prepared.request) }
         return prepared

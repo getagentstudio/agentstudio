@@ -5,8 +5,8 @@ import Testing
 
 /// The `agentstudio-cli` helper is shipped inside the app bundle as
 /// `Contents/Helpers/agentstudio`. Worktree verbs intentionally link libgit2
-/// through `AgentStudioWorktreeOperations`; the helper must stay off
-/// `AgentStudioInfrastructure` and its GRDB/OTel base.
+/// through `AgentStudioWorktreeOperations`; the CLI store intentionally links
+/// GRDB. The helper must stay off `AgentStudioInfrastructure` and its OTel base.
 ///
 /// These tests pin the allowed module imports of the CLI-side targets, the
 /// worktree-operation leaf, and the test targets that cover the CLI so a direct
@@ -24,7 +24,10 @@ struct CommandLineClientLeafTargetArchitectureTests {
         "Security",
         "System",
         "Darwin",
+        // Provider-silent CLI diagnostics go to the unified log.
+        "os",
         "AgentStudioIPCClientCore",
+        "AgentStudioCLIStore",
         "AgentStudioIPCTransport",
         "AgentStudioPrimitives",
         "AgentStudioProgrammaticControl",
@@ -58,6 +61,48 @@ struct CommandLineClientLeafTargetArchitectureTests {
         "Tests/AgentStudioIPCClientTests",
         "Tests/AgentStudioProgrammaticControlTests",
     ]
+
+    @Test("the raw CLI hard cutover leaves no eager or typed-command admission API")
+    func retiredClientAdmissionPathsAreRemoved() throws {
+        let root = URL(fileURLWithPath: TestPathResolver.projectRoot(from: #filePath))
+        let forbidden: [String: [String]] = [
+            "Sources/AgentStudioProgrammaticControl/BuiltInDescriptors/IPCBuiltInMethodCatalog+Discovery.swift": [
+                "func bootstrapDescriptors", "func locallyResolvableDescriptors", "func resolvesLocally",
+                "func matchingDiscoveredMethods",
+            ],
+            "Sources/AgentStudioIPCClientCore/IPCCommandDiscovery.swift": [
+                "func makeInvocation", "func decodeResult", "requestEnvelopeDescriptor",
+            ],
+            "Sources/AgentStudioProgrammaticControl/IPCCommandCatalogResult.swift": [
+                "func normalizeDiscoveryResult"
+            ],
+            "Sources/AgentStudioIPCClientCore/IPCDescriptorClientResponse.swift": [
+                "case protocolRejected", "case unsupportedVersion",
+            ],
+            "Sources/AgentStudioIPCClientCore/AgentStudioIPCClientCommandLineRunner.swift": [
+                "init(unsupportedVersion"
+            ],
+        ]
+        for (path, declarations) in forbidden {
+            let url = root.appending(path: path)
+            guard FileManager.default.fileExists(atPath: url.path) else { continue }
+            let source = try String(contentsOf: url, encoding: .utf8)
+            for declaration in declarations {
+                #expect(!source.contains(declaration), "retired declaration: \(path): \(declaration)")
+            }
+        }
+    }
+
+    @Test("CLI diagnostics persist controlled public reasons instead of free-form debug messages")
+    func diagnosticsKeepPayloadFreePersistedReasons() throws {
+        let root = URL(fileURLWithPath: TestPathResolver.projectRoot(from: #filePath))
+        let source = try String(
+            contentsOf: root.appending(path: "Sources/AgentStudioIPCClientCore/CLIDiagnostics.swift"), encoding: .utf8)
+        #expect(source.contains("logger.notice(") || source.contains("logger.error("))
+        #expect(source.contains("privacy: .public"))
+        #expect(!source.contains("record(_ message: String)"))
+        #expect(!source.contains("logger.debug("))
+    }
 
     @Test("CLI-side targets import only their approved low-level modules")
     func commandLineClientTargetsImportOnlyApprovedModules() throws {
