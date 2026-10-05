@@ -920,7 +920,14 @@ The Start that follows binds a live session that has already exited. Source-time
 **Retained records, and reload after a restart.**
 - `sessions_conversation`, `sessions_pane_binding` (including `owner_pane_id`, which N2 requires for a drawer session), `sessions_evidence`, and the provider question tables are retained. `sessions_evidence` keeps the typed status input, its turn id, its admission sequence (arrival order) and its record identity.
 - On the first read or mutation of a pane after launch, Sessions loads that pane's bindings and evidence once, in admission order, and reduces status in memory through the same reducer and turn guard (step 5). This happens once per pane per launch; nothing re-derives after that. This is the existing lazy restore, with its loader cut over to read only the retained tables. Open-ask summaries are hydrated through the existing sequenced path.
-- The cleanup migration drops `sessions_attention`, `sessions_result`, `sessions_loss`, `sessions_message`, the hook replay columns, `source_occurred_at`, and migration 026's column. It runs only after the loader no longer reads them.
+- `sessions_operation` and `sessions_source` stay as tables, because every Sessions row's `committed_revision` and every evidence row's `source_id` reference them.
+  - `sessions_operation` keeps one row per commit as the revision log. Nothing looks it up for replay any more.
+  - `sessions_source` keeps one row per binding. No freshness or generation decision reads it.
+- The cleanup migration runs only after the loader no longer reads the dropped data. In order:
+  1. the one-time upgrade repair (below), which reads `sessions_operation.operation_kind`;
+  2. it rebuilds `sessions_evidence` without `attention_id`, `source_occurred_at` and migration 026's `permission_handling`, copying every retained column and keeping its primary key, so the provider question tables' foreign keys still resolve;
+  3. it drops `sessions_message`, `sessions_result`, `sessions_loss` and then `sessions_attention`.
+  Replay-only columns on `sessions_operation` are left in place, unused. Rebuilding that parent table is a later cleanup.
 - A populated pre-cut database must upgrade with an open provider question intact, and still show NEEDS YOU before any new hook.
 
 **Removed, with the reason none of it earns its place:**
