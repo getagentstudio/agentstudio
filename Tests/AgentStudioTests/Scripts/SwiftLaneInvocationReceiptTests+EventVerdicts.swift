@@ -36,6 +36,22 @@ extension SwiftLaneInvocationReceiptTests {
             Comment(rawValue: result.output))
     }
 
+    @Test("invalid console bytes preserve a pass derived from a valid captured event stream")
+    func invalidConsoleBytesDoNotOverridePassingEventFacts() async throws {
+        let fixture = try InvocationReceiptFixture()
+        defer { fixture.remove() }
+        try writeCapturedInvocation(fixture, selecting: "recordsPass()")
+        let result = try await fixture.run(
+            #"""
+            /bin/bash -c 'printf "PASS_CONSOLE_BEFORE\n"; printf "\377"; cp "$1" "${@: -1}"; printf "PASS_CONSOLE_AFTER\n"' fixture '\#(fixture.events.path)' swiftpm-testing-helper
+            """#)
+        #expect(result.output.contains("STATUS=0"), Comment(rawValue: result.output))
+        #expect(result.output.contains("stream=complete"), Comment(rawValue: result.output))
+        #expect(result.output.contains("PASS_CONSOLE_BEFORE"), Comment(rawValue: result.output))
+        #expect(result.output.contains("PASS_CONSOLE_AFTER"), Comment(rawValue: result.output))
+        #expect(!result.output.contains("failing_test="), Comment(rawValue: result.output))
+    }
+
     @Test("zero matches and unmatched run endings cannot pass or be called a crash", arguments: [false, true])
     func invalidRunCannotPass(unmatchedEnd: Bool) async throws {
         let fixture = try InvocationReceiptFixture()

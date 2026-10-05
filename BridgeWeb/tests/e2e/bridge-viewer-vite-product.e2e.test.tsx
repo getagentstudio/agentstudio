@@ -220,11 +220,13 @@ describe('Bridge Viewer dedicated Vite product E2E', () => {
 		let page: Page | null = null;
 		let server: BridgeViewerOwnedViteProductServer | null = null;
 		let primaryFailure: { readonly error: unknown } | null = null;
+		let expectedFileContent = oracle.fileContent;
+		let contentRequests: readonly ProductContentRequestObservation[] = [];
 		try {
 			server = await startBridgeViewerOwnedViteProductServer(oracle);
 			browser = await launchBridgeViewerE2EChromium();
 			page = await browser.newPage({ viewport: { height: 980, width: 1728 } });
-			const contentRequests = observeProductContentRequests(page);
+			contentRequests = observeProductContentRequests(page);
 			const workerUrls: string[] = [];
 			page.on('worker', (worker): void => {
 				workerUrls.push(worker.url());
@@ -299,6 +301,7 @@ describe('Bridge Viewer dedicated Vite product E2E', () => {
 			);
 
 			const mutatedContent = await fixture.mutateLargeFile();
+			expectedFileContent = mutatedContent;
 			await page.reload({
 				timeout: productJourneyTimeoutMilliseconds,
 				waitUntil: 'domcontentloaded',
@@ -342,6 +345,44 @@ describe('Bridge Viewer dedicated Vite product E2E', () => {
 			);
 		} catch (error: unknown) {
 			primaryFailure = { error };
+			try {
+				const observed = await page?.evaluate((): Readonly<Record<string, string | null>> => {
+					const canvas = document.querySelector('[data-testid="bridge-file-viewer-code-canvas"]');
+					const painted = canvas?.querySelector(
+						'diffs-container[data-bridge-painted-source-correlations]',
+					);
+					return {
+						state: canvas?.getAttribute('data-worktree-open-file-state') ?? null,
+						selectedPath: canvas?.getAttribute('data-worktree-open-file-path') ?? null,
+						renderedPath: canvas?.getAttribute('data-worktree-rendered-file-path') ?? null,
+						lineCount: canvas?.getAttribute('data-worktree-rendered-line-count') ?? null,
+						paintedCorrelations:
+							painted?.getAttribute('data-bridge-painted-source-correlations') ?? null,
+					};
+				});
+				console.error(
+					'[ci-lead-file-reload-diagnostic]',
+					JSON.stringify({
+						expected: {
+							lineCount: expectedFileContent.lineCount,
+							sha256: expectedFileContent.sha256,
+							path: oracle.largeFilePath,
+						},
+						observed,
+						requests: contentRequests.map(
+							(request): Readonly<Record<string, unknown>> => ({
+								kind: request.contentKind,
+								requestId: request.contentRequestId,
+								status: request.responseStatus,
+								byteLength: request.descriptor['declaredByteLength'],
+								sha256: request.descriptor['expectedSha256'],
+							}),
+						),
+					}),
+				);
+			} catch (diagnosticError: unknown) {
+				console.error('[ci-lead-file-reload-diagnostic-unavailable]', diagnosticError);
+			}
 		} finally {
 			await runAllOwnedCleanupOperations({
 				operations: [
