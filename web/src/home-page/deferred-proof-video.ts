@@ -4,13 +4,18 @@ export interface DeferredProofVideo {
 }
 
 /** Prime below-fold proof one viewport early; the scene also primes at handoff. */
-export function createDeferredProofVideo(video: HTMLVideoElement | null): DeferredProofVideo {
+export function createDeferredProofVideo(
+  video: HTMLVideoElement | null,
+  observeNearViewport: boolean = true,
+): DeferredProofVideo {
   const deferredSource = video?.querySelector<HTMLSourceElement>("source[data-src]");
   let observer: IntersectionObserver | undefined;
   const lifecycle = new AbortController();
   const prime = (): void => {
     if (video === null || deferredSource === null || deferredSource === undefined) return;
-    const sourceUrl = deferredSource.dataset["src"];
+    const sourceUrl = window.matchMedia("(width < 38.75rem)").matches
+      ? (deferredSource.dataset["phoneSrc"] ?? deferredSource.dataset["src"])
+      : deferredSource.dataset["src"];
     if (sourceUrl === undefined || deferredSource.hasAttribute("src")) return;
     deferredSource.src = sourceUrl;
     video.preload = "auto";
@@ -18,13 +23,15 @@ export function createDeferredProofVideo(video: HTMLVideoElement | null): Deferr
     observer?.disconnect();
   };
   if (video !== null && deferredSource !== null && deferredSource !== undefined) {
-    observer = new IntersectionObserver(
-      (entries): void => {
-        if (entries.some((entry) => entry.isIntersecting)) prime();
-      },
-      { rootMargin: `${window.innerHeight}px 0px` },
-    );
-    observer.observe(video.closest(".chapter-scene-stage") ?? video);
+    if (observeNearViewport) {
+      observer = new IntersectionObserver(
+        (entries): void => {
+          if (entries.some((entry) => entry.isIntersecting)) prime();
+        },
+        { rootMargin: `${window.innerHeight}px 0px` },
+      );
+      observer.observe(video.closest(".chapter-scene-stage") ?? video);
+    }
     video.addEventListener("pointerdown", prime, { signal: lifecycle.signal });
     video.addEventListener("keydown", prime, { signal: lifecycle.signal });
   }

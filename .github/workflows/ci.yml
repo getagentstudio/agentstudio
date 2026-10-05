@@ -439,6 +439,9 @@ jobs:
 
       - name: Upload BridgeWeb Swift cache receipt
         if: always()
+        # Evidence upload only: a transport failure must not turn a passing
+        # verdict red. The failed step stays visible as a warning.
+        continue-on-error: true
         uses: actions/upload-artifact@v4
         with:
           name: bridge-swift-cache-${{ github.run_id }}
@@ -734,6 +737,9 @@ jobs:
 
       - name: Upload test results
         if: always()
+        # Evidence upload only: a transport failure must not turn a passing
+        # verdict red. The failed step stays visible as a warning.
+        continue-on-error: true
         uses: actions/upload-artifact@v4
         with:
           name: test-results
@@ -742,6 +748,9 @@ jobs:
 
       - name: Upload crash reports
         if: failure()
+        # Evidence upload only: a transport failure must not turn a passing
+        # verdict red. The failed step stays visible as a warning.
+        continue-on-error: true
         uses: actions/upload-artifact@v4
         with:
           name: swift-crash-reports-${{ github.run_id }}
@@ -775,6 +784,9 @@ jobs:
 
       - name: Upload CI timing ledger
         if: always()
+        # Evidence upload only: a transport failure must not turn a passing
+        # verdict red. The failed step stays visible as a warning.
+        continue-on-error: true
         uses: actions/upload-artifact@v4
         with:
           name: ci-timing-${{ github.run_id }}-swift
@@ -788,6 +800,9 @@ jobs:
 
       - name: Upload wedged-lane event-stream ledgers
         if: failure()
+        # Evidence upload only: a transport failure must not turn a passing
+        # verdict red. The failed step stays visible as a warning.
+        continue-on-error: true
         uses: actions/upload-artifact@v4
         with:
           name: swift-lane-event-streams-${{ github.run_id }}

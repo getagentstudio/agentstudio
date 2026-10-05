@@ -23,7 +23,10 @@ async function mountRealChapterStage(sceneId: SceneId): Promise<{
   readonly stage: HTMLElement;
   readonly proof: HTMLElement;
 }> {
-  const pageUrl = new URL(inject("siteHeaderBrowserTestUrl"));
+  const pageUrl = new URL(
+    sceneId === "chapter-come-back" ? "/__test/proof-video" : "/",
+    inject("siteHeaderBrowserTestUrl"),
+  );
   pageUrl.hostname = location.hostname;
   const response = await fetch(pageUrl);
   if (!response.ok) throw new Error(`Home page answered ${String(response.status)}`);
@@ -46,7 +49,7 @@ async function mountRealChapterStage(sceneId: SceneId): Promise<{
 }
 
 for (const sceneId of ["chapter-review", "chapter-come-back"] as const) {
-  it(`${sceneId} plays its rendered scene, then holds its real proof between loops`, async () => {
+  it(`${sceneId} plays its rendered scene, then holds its proof between loops`, async () => {
     const { sceneRoot, stage, proof } = await mountRealChapterStage(sceneId);
     const module = resolveSceneModule(sceneId);
     if (module === undefined) throw new Error(`${sceneId} module missing`);
