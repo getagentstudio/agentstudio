@@ -674,8 +674,15 @@ find "$APP_DIR/Resources/AgentPackage" -name '*.sh' -exec chmod 755 {} +
 # Do NOT embed the xcframework; it's only needed at build time for SwiftPM.
 
 # SwiftPM resource bundle — Bundle.appResources looks in Contents/Resources/
-RESOURCE_BUNDLE="$(find "$BUILD_PATH" -path '*/release/AgentStudio_AgentStudio.bundle' -type d | head -1)"
-[ -n "$RESOURCE_BUNDLE" ] && cp -R "$RESOURCE_BUNDLE" "$APP_DIR/Resources/"
+# $BUILD_PATH/release is the engine's own symlink (native: arm64-apple-macosx/release;
+# Swift Build: out/Products/Release); find does not follow it. A missing bundle
+# would ship an app that crashes at launch, so fail here instead.
+RESOURCE_BUNDLE="$BUILD_PATH/release/AgentStudio_AgentStudio.bundle"
+if [ ! -d "$RESOURCE_BUNDLE" ]; then
+  echo "create-app-bundle: missing SwiftPM resource bundle: $RESOURCE_BUNDLE" >&2
+  exit 1
+fi
+cp -R "$RESOURCE_BUNDLE" "$APP_DIR/Resources/"
 
 # Sign — uses Developer ID if SIGNING_IDENTITY is set, else ad-hoc
 ENTITLEMENTS="Sources/AgentStudio/Resources/AgentStudio.entitlements"
