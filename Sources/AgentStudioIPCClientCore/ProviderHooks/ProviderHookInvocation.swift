@@ -27,8 +27,7 @@ package struct ProviderHookDelivery: Sendable {
     }
 
     package static func liveIPC(
-        exampleIdentifierProvider: @escaping @Sendable () -> UUID,
-        environment: [String: String]
+        exampleIdentifierProvider: @escaping @Sendable () -> UUID
     ) -> Self {
         Self(
             deliver: { params, configuration, deadline in
@@ -47,11 +46,8 @@ package struct ProviderHookDelivery: Sendable {
                     normalizedParameters: descriptor.normalizeParameters(JSONEncoder().encode(params)),
                     presentation: .tooling
                 )
-                let cleanup = CLIStoreCleanupHandler(
-                    environment: environment, migrationLockWaitBudget: { deadline.remainingBudget })
                 let client = AgentStudioIPCClient(
-                    configuration: configuration, descriptors: descriptors, deadline: deadline,
-                    onCallCompletion: { cleanup.handle(readThrough: $0) })
+                    configuration: configuration, descriptors: descriptors, deadline: deadline)
                 switch try client.call(invocation) {
                 case .success:
                     return
@@ -151,7 +147,8 @@ package enum ProviderHookInvocation {
         else {
             return 0
         }
-        guard deadline.remainingBudget > .zero else { return 0 }
+        let deliveryDeadline = deadline.capped(to: ProviderHookDelivery.codexCallLimit(for: projected.event.name))
+        guard deliveryDeadline.remainingBudget > .zero else { return 0 }
         do {
             try props.delivery.deliver(
                 IPCSessionEventParams(
@@ -161,7 +158,7 @@ package enum ProviderHookInvocation {
                     correlationId: props.correlationIdProvider()
                 ),
                 configuration,
-                deadline
+                deliveryDeadline
             )
         } catch let failure as ProviderHookFailure {
             props.standardErrorSink(

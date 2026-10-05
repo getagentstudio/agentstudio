@@ -103,7 +103,7 @@ struct CLIHookSilenceScriptTests {
     }
 
     @Test(
-        "input and authentication share the ingress total and leave exhausted cleanup untouched",
+        "input and authentication share the ingress total without touching a CLI store",
         arguments: ["claude", "codex"])
     func inputAndNetworkShareOneHookTotal(provider: String) async throws {
         let fixture = try HookSilenceProcessFixture(condition: .slow)
@@ -189,6 +189,7 @@ struct CLIHookSilenceScriptTests {
         if invocation.storeSetting == .fresh {
             let initialStore = try await valueFromDedicatedThread { try fixture.storeOutcome() }
             #expect(!initialStore.exists)
+            #expect(!initialStore.directoryExists)
             #expect(initialStore.creatorFiles.isEmpty)
         }
         let environment = fixture.environment(executable: executable, storeSetting: invocation.storeSetting)
@@ -211,7 +212,8 @@ struct CLIHookSilenceScriptTests {
         #expect(output.standardOutput.isEmpty)
         #expect(output.standardError.isEmpty)
         if invocation.storeSetting == .fresh {
-            #expect(storeOutcome.exists == invocation.expectsPublishedStore)
+            #expect(!storeOutcome.exists)
+            #expect(!storeOutcome.directoryExists)
             #expect(storeOutcome.creatorFiles.isEmpty)
         }
         if invocation.condition == .outsidePane {
@@ -275,14 +277,6 @@ struct HookSilenceInvocation: Sendable {
         return CodexHookProjection.isProjected(name)
     }
 
-    var expectsPublishedStore: Bool {
-        guard isProjected else { return false }
-        switch condition {
-        case .up, .refusing: return true
-        case .down, .slow, .outsidePane: return false
-        }
-    }
-
     func payload() throws -> String {
         let session = UUIDv7.generate().uuidString
         let document: [String: String] = [
@@ -314,7 +308,7 @@ func hookSilenceExecutableURL() throws -> URL {
 /// CLI owns projection, deadline, streams and exit behavior. The slow peer never
 /// replies: only the CLI closing its connection releases that worker. Thus the
 /// test waits for the product's bound, never a test sleep or timing budget.
-private final class HookSilenceProcessFixture: @unchecked Sendable {
+final class HookSilenceProcessFixture: @unchecked Sendable {
     private let condition: HookSilenceCondition
     private let rootURL: URL
     private let socketPath: String
@@ -327,6 +321,7 @@ private final class HookSilenceProcessFixture: @unchecked Sendable {
     private var connections: [UnixSocketConnection] = []
     private var workers: [DedicatedThreadCompletion] = []
     private var isClosing = false
+    private var advertisedReadThrough: IPCCLIStoreReadThrough?
 
     init(condition: HookSilenceCondition) throws {
         self.condition = condition
@@ -344,7 +339,7 @@ private final class HookSilenceProcessFixture: @unchecked Sendable {
         return url
     }
 
-    private var storeURL: URL { rootURL.appending(path: "store/cli.sqlite") }
+    var storeURL: URL { rootURL.appending(path: "store/cli.sqlite") }
 
     func environment(executable: URL, storeSetting: HookSilenceStoreSetting) -> [String: String] {
         var result = ["AGENTSTUDIO_CLI": executable.path, "AGENTSTUDIO_IPC_SOCKET": socketPath]
@@ -358,12 +353,17 @@ private final class HookSilenceProcessFixture: @unchecked Sendable {
 
     func storeOutcome() throws -> HookSilenceStoreOutcome {
         let directoryURL = storeURL.deletingLastPathComponent()
+        let directoryExists = FileManager.default.fileExists(atPath: directoryURL.path)
         let files =
-            FileManager.default.fileExists(atPath: directoryURL.path)
+            directoryExists
             ? try FileManager.default.contentsOfDirectory(atPath: directoryURL.path) : []
         return HookSilenceStoreOutcome(
-            exists: FileManager.default.fileExists(atPath: storeURL.path),
+            exists: FileManager.default.fileExists(atPath: storeURL.path), directoryExists: directoryExists,
             creatorFiles: files.filter { $0.contains(".creating-") })
+    }
+
+    func advertiseReadThrough(_ mark: IPCCLIStoreReadThrough) {
+        lock.withLock { advertisedReadThrough = mark }
     }
 
     func start() throws {
@@ -396,7 +396,8 @@ private final class HookSilenceProcessFixture: @unchecked Sendable {
                                 if request.method == "auth.login" {
                                     let status = IPCAuthStatusResult.authenticated(
                                         principalId: principalID, runtimeId: runtimeID,
-                                        accessMode: .automationSameUser)
+                                        accessMode: .automationSameUser,
+                                        cliStoreReadThrough: lock.withLock { advertisedReadThrough })
                                     response = .success(
                                         id: request.id, result: try JSONRPCCodec.encodeJSONValue(status))
                                 } else if request.method == "session.event", condition != .refusing {
@@ -531,7 +532,8 @@ private struct OutsidePaneInputObservation: Sendable {
     let inputWaitEvents: [Int16]
 }
 
-private struct HookSilenceStoreOutcome: Sendable {
+struct HookSilenceStoreOutcome: Sendable {
     let exists: Bool
+    let directoryExists: Bool
     let creatorFiles: [String]
 }

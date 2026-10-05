@@ -100,7 +100,7 @@ package struct AgentPackageCommandRunner: Sendable {
                     standardInput: props.standardInput,
                     correlationIdProvider: props.correlationIdProvider,
                     delivery: .liveIPC(
-                        exampleIdentifierProvider: props.exampleIdentifierProvider, environment: props.environment),
+                        exampleIdentifierProvider: props.exampleIdentifierProvider),
                     standardErrorSink: props.standardErrorSink,
                     deadline: props.deadline
                 )

@@ -1,6 +1,7 @@
 import AgentStudioIPCTransport
 import AgentStudioProgrammaticControl
 import Foundation
+import Synchronization
 import Testing
 
 @testable import AgentStudioIPCClientCore
@@ -57,6 +58,45 @@ struct CodexHookInvocationTests {
         let expected: Duration = event == .sessionEnd ? .milliseconds(250) : .seconds(2)
         #expect(selected == expected)
         #expect(CLIPolicy.synchronousLifecycleHookLimit == .milliseconds(250))
+    }
+
+    @Test(
+        "real Codex invocation caps SessionEnd and Stop by the remaining ingress budget",
+        arguments: [CodexHookEventName.sessionEnd, .stop],
+        [Duration.zero, .seconds(2) - .milliseconds(200), .seconds(2) + .milliseconds(100)])
+    func invocationDeliversCappedDeadline(event: CodexHookEventName, inputCost: Duration) throws {
+        let payload = try CodexFixtures.data(for: event)
+        let timing = HookInvocationDeadlineTiming()
+        let ingress = CallDeadline(limit: CLIPolicy.hookCallLimit, timing: timing)
+        let recorder = DeliveryRecorder()
+        let status = ProviderHookInvocation.runCodexHook(
+            .init(
+                eventName: event.rawValue,
+                environment: Self.paneEnvironment,
+                standardInput: {
+                    timing.advance(by: inputCost)
+                    return payload
+                },
+                correlationIdProvider: { Self.correlationId },
+                delivery: recorder.delivery,
+                standardErrorSink: recorder.recordError,
+                deadline: ingress))
+        #expect(status == 0)
+        #expect(recorder.errorLines.isEmpty)
+        #expect(recorder.refusals.isEmpty)
+        let remaining = max(Duration.zero, CLIPolicy.hookCallLimit - inputCost)
+        if remaining == .zero {
+            #expect(recorder.delivered.isEmpty)
+            return
+        }
+        let delivered = try #require(recorder.delivered.first)
+        #expect(recorder.delivered.count == 1)
+        let eventLimit: Duration = event == .sessionEnd ? .milliseconds(250) : CLIPolicy.hookCallLimit
+        #expect(delivered.deadline.remainingBudget == min(remaining, eventLimit))
+        if event == .sessionEnd { #expect(delivered.deadline.remainingBudget <= .milliseconds(250)) }
+        // The delivery value keeps the injected ingress clock and its absolute expiration.
+        timing.advance(by: .milliseconds(100))
+        #expect(delivered.deadline.remainingBudget == max(.zero, min(remaining, eventLimit) - .milliseconds(100)))
     }
 
     @Test("a projected event with a pane credential is delivered once")
@@ -248,6 +288,7 @@ private final class DeliveryRecorder: @unchecked Sendable {
     struct Delivered {
         let params: IPCSessionEventParams
         let configuration: AgentStudioIPCClientConfiguration
+        let deadline: CallDeadline
     }
 
     private(set) var delivered: [Delivered] = []
@@ -262,9 +303,9 @@ private final class DeliveryRecorder: @unchecked Sendable {
 
     var delivery: ProviderHookDelivery {
         ProviderHookDelivery(
-            deliver: { [self] params, configuration, _ in
+            deliver: { [self] params, configuration, deadline in
                 if let failure { throw failure }
-                delivered.append(Delivered(params: params, configuration: configuration))
+                delivered.append(Delivered(params: params, configuration: configuration, deadline: deadline))
             },
             recordRefusal: { [self] params, _, _ in
                 refusals.append(params)
@@ -277,5 +318,16 @@ private final class DeliveryRecorder: @unchecked Sendable {
 
     func recordStandardInputRead() {
         standardInputReads += 1
+    }
+}
+
+private final class HookInvocationDeadlineTiming: CallDeadlineTiming, Sendable {
+    private let instant = Mutex(ContinuousClock.now)
+
+    func now() -> ContinuousClock.Instant { instant.withLock { $0 } }
+    func advance(by duration: Duration) { instant.withLock { $0 = $0.advanced(by: duration) } }
+    func waitForReadiness(fileDescriptor: Int32, events: Int16, timeout: Duration) -> CallDeadlineReadiness {
+        Issue.record("Recording delivery must not perform socket I/O")
+        return .timedOut
     }
 }
