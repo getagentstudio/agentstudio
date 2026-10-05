@@ -79,10 +79,9 @@ async function nextAnimationFrame(): Promise<void> {
 
 async function waitForSinglePierreUtility(): Promise<HTMLElement> {
 	return await new Promise<HTMLElement>((resolve): void => {
-		let observer: MutationObserver;
 		const observedRoots = new Set<Node>();
 
-		const observeOpenShadowRoots = (): void => {
+		function observeOpenShadowRoots(): void {
 			const roots: ParentNode[] = [document];
 			while (roots.length > 0) {
 				const root = roots.shift();
@@ -95,18 +94,18 @@ async function waitForSinglePierreUtility(): Promise<HTMLElement> {
 					if (candidate.shadowRoot !== null) roots.push(candidate.shadowRoot);
 				}
 			}
-		};
+		}
 
-		const resolveWhenUtilityAppears = (): void => {
+		function resolveWhenUtilityAppears(): void {
 			observeOpenShadowRoots();
 			const utilities = queryPierreElements('[data-utility-button]');
 			const utility = utilities[0];
 			if (utilities.length !== 1 || !(utility instanceof HTMLElement)) return;
 			observer.disconnect();
 			resolve(utility);
-		};
+		}
 
-		observer = new MutationObserver(resolveWhenUtilityAppears);
+		const observer = new MutationObserver(resolveWhenUtilityAppears);
 		resolveWhenUtilityAppears();
 	});
 }
