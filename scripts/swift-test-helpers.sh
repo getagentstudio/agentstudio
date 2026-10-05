@@ -2579,8 +2579,8 @@ swift_test_output_has_failures() {
   (
     set -o pipefail
     /usr/bin/iconv -f UTF-8 -t UTF-8 -c <"$output_file" |
-      grep -Eq \
-        '(^|[[:space:]])(✘|✖)[[:space:]]|recorded an issue|failed after [0-9.]+ seconds with [0-9]+ issue\(s\)|Test run with .* failed after|No matching test cases were run'
+      grep -E \
+        '(^|[[:space:]])(✘|✖)[[:space:]]|recorded an issue|failed after [0-9.]+ seconds with [0-9]+ issue\(s\)|Test run with .* failed after|No matching test cases were run' >/dev/null
   )
 }
 
