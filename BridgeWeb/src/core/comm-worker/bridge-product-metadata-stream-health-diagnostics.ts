@@ -101,3 +101,27 @@ export function isolatedBridgeProductMetadataStreamHealthSink(
 		}
 	};
 }
+
+interface BridgeProductMetadataStreamHealthCapture {
+	readonly current: BridgeProductMetadataStreamHealthDiagnostics;
+	readonly decoder: BridgeProductMetadataStreamDecoderDiagnostics;
+	readonly chunkByteCount: number;
+	readonly recordPush: boolean;
+}
+
+export function captureBridgeProductMetadataStreamHealth(
+	props: BridgeProductMetadataStreamHealthCapture,
+): BridgeProductMetadataStreamHealthDiagnostics {
+	return {
+		...props.current,
+		decoderState: props.decoder.state,
+		expectedNextStreamSequence: props.decoder.expectedNextStreamSequence,
+		failureCode: props.decoder.failureCode,
+		identityMismatchField: props.decoder.identityMismatchField,
+		lastChunkByteCount: props.chunkByteCount,
+		peakRetainedByteCount: props.decoder.peakRetainedByteCount,
+		pushCount: props.current.pushCount + (props.recordPush ? 1 : 0),
+		receivedByteCount: props.current.receivedByteCount + props.chunkByteCount,
+		retainedByteCount: props.decoder.retainedByteCount,
+	};
+}

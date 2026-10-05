@@ -48,6 +48,7 @@ import {
 } from './bridge-product-metadata-route-failure.js';
 import { BridgeProductMetadataStreamDecoder } from './bridge-product-metadata-stream-decoder.js';
 import {
+	captureBridgeProductMetadataStreamHealth,
 	createBridgeProductMetadataStreamHealthDiagnostics,
 	isolatedBridgeProductMetadataStreamHealthSink,
 	type BridgeProductMetadataStreamHealthSink,
@@ -867,19 +868,12 @@ class BridgeProductTransportSessionImpl implements BridgeProductTransportSession
 		chunkByteCount: number,
 		recordPush = true,
 	): void {
-		const diagnostics = decoder.diagnostics;
-		this.#metadataStreamHealthDiagnostics = {
-			...this.#metadataStreamHealthDiagnostics,
-			decoderState: diagnostics.state,
-			expectedNextStreamSequence: diagnostics.expectedNextStreamSequence,
-			failureCode: diagnostics.failureCode,
-			identityMismatchField: diagnostics.identityMismatchField,
-			lastChunkByteCount: chunkByteCount,
-			peakRetainedByteCount: diagnostics.peakRetainedByteCount,
-			pushCount: this.#metadataStreamHealthDiagnostics.pushCount + (recordPush ? 1 : 0),
-			receivedByteCount: this.#metadataStreamHealthDiagnostics.receivedByteCount + chunkByteCount,
-			retainedByteCount: diagnostics.retainedByteCount,
-		};
+		this.#metadataStreamHealthDiagnostics = captureBridgeProductMetadataStreamHealth({
+			current: this.#metadataStreamHealthDiagnostics,
+			decoder: decoder.diagnostics,
+			chunkByteCount,
+			recordPush,
+		});
 	}
 
 	#routeMetadataFrame(frame: BridgeProductMetadataFrame): void {
