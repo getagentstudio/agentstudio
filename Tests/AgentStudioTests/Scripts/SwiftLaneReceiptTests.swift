@@ -4,6 +4,28 @@ import Testing
 
 @Suite("Swift lane receipts and hang evidence")
 struct SwiftLaneReceiptTests {
+    @Test("real Xcode 27 listing produces nested suite map and resolves the test bundle")
+    func realListingProducesNestedSuiteMapAndResolvesBundle() async throws {
+        let buildDirectory = NSTemporaryDirectory() + "agentstudio-suite-map-\(UUIDv7.generate())"
+        defer { try? FileManager.default.removeItem(atPath: buildDirectory) }
+        let listing =
+            FileManager.default.currentDirectoryPath
+            + "/Tests/AgentStudioTests/Scripts/Fixtures/xcode27-swift-test-list.txt"
+        let map = buildDirectory + "/agentstudio-test-suite-map"
+        let executable = buildDirectory + "/debug/AgentStudioTests.xctest/Contents/MacOS/AgentStudioTests"
+
+        let output = try await laneBashAllowingFailure(
+            "source scripts/swift-test-helpers.sh; BUILD_PATH='\(buildDirectory)'; "
+                + "mkdir -p '$(dirname \"\(executable)\")'; : > '\(executable)'; chmod +x '\(executable)'; "
+                + "swift_test_suite_map_build_from_listing '\(listing)' '\(map)'; "
+                + "echo MAP; cat '\(map)'; "
+                + "echo RESOLVED=$(swift_test_bundle_for_suite 'WebKitSerializedTests/BridgePaneControllerTests' 2>/dev/null || true)"
+        )
+
+        #expect(output.contains("WebKitSerializedTests/BridgePaneControllerTests\tAgentStudioTests"))
+        #expect(output.contains("RESOLVED=\(executable)"))
+    }
+
     @Test("a receipt is valid only for a fresh or linked bundle and a clean tree")
     func receiptIsValidOnlyForFreshOrLinkedBundleAndCleanTree() async throws {
         let reasons = try await laneBash(
@@ -312,7 +334,7 @@ struct SwiftLaneReceiptTests {
                 + "LOG_PREFIX=webkit; TIMEOUT_SECONDS=60; BUILD_PATH=.build-agent-1; "
                 + "export LANE_EVENT_STREAM_DIR='\(workDirectory)/ci-runs'; "
                 + "source scripts/swift-test-helpers.sh; set +e; "
-                + "swift_testing_bundle_path() { echo '\(workDirectory)/fake-bundle'; }; "
+                + "swift_test_bundle_for_suite() { echo '\(workDirectory)/fake-bundle'; }; "
                 + "swift_testing_helper_path() { echo '\(workDirectory)/bin/fake-helper'; }; "
                 + "swift_testing_framework_path() { echo '\(workDirectory)'; }; "
                 + "webkit_suite_filters() { printf 'WebKitSerializedTests/CrashingSuite\\n"

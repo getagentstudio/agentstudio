@@ -567,12 +567,11 @@ lane_receipt_tree_dirty_since() {
 # epoch seconds>`, or `missing`. Two receipts that print the same identity tested
 # the same built executable.
 lane_receipt_bundle_identity() {
-  local test_bundle
-  local size_and_modification
-
-  test_bundle="$(swift_testing_bundle_path 2>/dev/null)" || { echo missing; return 0; }
-  size_and_modification="$(stat -f '%z@%m' "$test_bundle" 2>/dev/null)" || { echo missing; return 0; }
-  echo "$test_bundle@$size_and_modification"
+  local bundle_set bundle_count
+  bundle_set="$(swift_test_bundle_set 2>/dev/null || true)"
+  bundle_count="$(swift_test_bundle_count 2>/dev/null || true)"
+  [ -n "$bundle_set" ] && [ "$bundle_count" -gt 0 ] 2>/dev/null || { echo missing; return 0; }
+  echo "$bundle_set@$bundle_count"
 }
 
 # Where the prebuild publishes its build receipt: beside the bundle, in the
@@ -590,19 +589,60 @@ prebuild_swift_tests_with_build_receipt() {
   local build_receipt
   local build_head_sha
   local build_tree_dirty
-  local staged_receipt
+  local staged_receipt listing_raw staged_listing staged_map
 
   build_receipt="$(lane_build_receipt_path)"
   rm -f "$build_receipt"
+  rm -f "$BUILD_PATH/agentstudio-test-list" "$BUILD_PATH/agentstudio-test-suite-map"
   build_head_sha="$(lane_receipt_head_sha)"
   build_tree_dirty="$(lane_receipt_tree_dirty)"
 
   prebuild_swift_tests || return $?
 
+  staged_listing="$(mktemp "$BUILD_PATH/agentstudio-test-list.XXXXXX")" || return 1
+  if ! swift test list $(swift_package_sandbox_arguments) --skip-build --build-path "$BUILD_PATH" >"$staged_listing"; then
+    rm -f "$staged_listing"
+    return 1
+  fi
+  /usr/bin/awk '/^[A-Za-z_][A-Za-z0-9_]*\./ { print }' "$staged_listing" >"$staged_listing.filtered"
+  mv -f "$staged_listing.filtered" "$staged_listing"
+  [ -s "$staged_listing" ] || { rm -f "$staged_listing"; return 1; }
+  mv -f "$staged_listing" "$BUILD_PATH/agentstudio-test-list"
+  staged_map="$(mktemp "$BUILD_PATH/agentstudio-test-suite-map.XXXXXX")" || return 1
+  rm -f "$staged_map"
+  swift_test_suite_map_build_from_listing "$BUILD_PATH/agentstudio-test-list" "$BUILD_PATH/agentstudio-test-suite-map" || return 1
+
   staged_receipt="$(mktemp "$build_receipt.XXXXXX")"
-  printf 'bundle_identity=%s\nhead_sha=%s\ntree_dirty=%s\n' \
-    "$(lane_receipt_bundle_identity)" "$build_head_sha" "$build_tree_dirty" >"$staged_receipt"
+  {
+    swift_test_bundle_receipt_lines
+    printf 'bundle_set=%s\nbundle_count=%s\nsuite_map_digest=%s\nhead_sha=%s\ntree_dirty=%s\n' \
+      "$(swift_test_bundle_set)" \
+      "$(swift_test_bundle_count)" \
+      "$(swift_test_suite_map_digest "$BUILD_PATH/agentstudio-test-suite-map" "$BUILD_PATH/agentstudio-test-list")" \
+      "$build_head_sha" "$build_tree_dirty"
+  } >"$staged_receipt"
   mv -f "$staged_receipt" "$build_receipt"
+}
+
+swift_test_bundle_receipt_lines() {
+  local bundle_directory="${BUILD_PATH}/out/Products/Debug"
+  local bundle_path target executable size modification
+  find "$bundle_directory" -maxdepth 1 -type d -name '*.xctest' -print 2>/dev/null | LC_ALL=C sort | while IFS= read -r bundle_path; do
+    [ -n "$bundle_path" ] || continue
+    target="$(basename "$bundle_path" .xctest)"
+    executable="$bundle_path/Contents/MacOS/$target"
+    size_modification="$(stat -f '%z@%m' "$executable" 2>/dev/null || true)"
+    [ -n "$size_modification" ] || continue
+    printf 'bundle=%s@%s\n' "$target" "$size_modification"
+  done
+}
+
+swift_test_bundle_set() {
+  swift_test_bundle_receipt_lines | /usr/bin/shasum -a 256 | /usr/bin/awk '{print substr($1, 1, 16)}'
+}
+
+swift_test_bundle_count() {
+  swift_test_bundle_receipt_lines | /usr/bin/awk 'BEGIN { count = 0 } /^bundle=/ { count++ } END { print count }'
 }
 
 # One field of a build receipt, or a non-zero status when the receipt or the
@@ -632,11 +672,11 @@ lane_build_receipt_link_reason() {
   local current_head_sha="$2"
   local current_bundle_identity="$3"
   local recorded_bundle_identity
+  local recorded_bundle_set
   local recorded_head_sha
   local recorded_tree_dirty
 
-  if ! recorded_bundle_identity="$(lane_build_receipt_field "$build_receipt" bundle_identity)" ||
-    ! recorded_head_sha="$(lane_build_receipt_field "$build_receipt" head_sha)" ||
+  if ! recorded_head_sha="$(lane_build_receipt_field "$build_receipt" head_sha)" ||
     ! recorded_tree_dirty="$(lane_build_receipt_field "$build_receipt" tree_dirty)"
   then
     echo reused_bundle_unlinked
@@ -657,7 +697,12 @@ lane_build_receipt_link_reason() {
     echo bundle_head_mismatch
     return 0
   fi
-  if [ "$current_bundle_identity" = "missing" ] || [ "$recorded_bundle_identity" != "$current_bundle_identity" ]; then
+  recorded_bundle_set="$(lane_build_receipt_field "$build_receipt" bundle_set 2>/dev/null || true)"
+  if [ -z "$recorded_bundle_set" ]; then
+    recorded_bundle_identity="$(lane_build_receipt_field "$build_receipt" bundle_identity 2>/dev/null || true)"
+    recorded_bundle_set="${recorded_bundle_identity%@*}"
+  fi
+  if [ "$current_bundle_identity" = "missing" ] || [ "$recorded_bundle_set" != "${current_bundle_identity%@*}" ]; then
     echo reused_bundle_unlinked
   fi
 }
@@ -715,8 +760,10 @@ print_lane_receipt_verdict() {
 # other run_swift_with_timeout caller is a test invocation that accepts them.
 swift_test_command_accepts_event_stream() {
   local argument previous=""
+  [ "${LANE_EVENT_STREAM_RETAIN_ALWAYS:-0}" = 1 ] && return 0
   for argument in "$@"; do
     [ "$argument" = "build" ] && return 1
+    [ "$argument" = "list" ] && return 1
     case "$argument" in
       */swiftpm-testing-helper|swiftpm-testing-helper) return 0 ;;
     esac
@@ -1533,9 +1580,7 @@ swift_test_isolated_suite_skip_pattern() {
 }
 
 run_fast_serial_process_swift_tests() {
-  local swift_test_bundle
-  swift_test_bundle="$(swift_testing_bundle_path)"
-  local swift_testing_helper
+  local swift_test_bundle swift_testing_helper
   swift_testing_helper="$(swift_testing_helper_path)"
   local testing_framework_path
   testing_framework_path="$(swift_testing_framework_path)"
@@ -1563,6 +1608,9 @@ run_fast_serial_process_swift_tests() {
   timing_eligible_ms="$(lane_timing_now_ms 2>/dev/null || true)"
 
   for fast_process_global_suite_filter in "${fast_process_global_suite_filters[@]}"; do
+    swift_test_bundle="$(swift_test_bundle_for_suite "$fast_process_global_suite_filter")" || return 1
+    swift_testing_helper="$(swift_testing_helper_path)"
+    testing_framework_path="$(swift_testing_framework_path)"
     timing_batch=$((timing_batch + 1))
     LANE_TIMING_PHASE=fast-process-global LANE_TIMING_FILTER="$fast_process_global_suite_filter" \
       LANE_TIMING_BATCH="$timing_batch" LANE_TIMING_SLOT=1 \
@@ -1570,7 +1618,7 @@ run_fast_serial_process_swift_tests() {
       "isolated fast process-global suite: $fast_process_global_suite_filter" \
       "$TIMEOUT_SECONDS" \
       env AGENT_STUDIO_BENCHMARK_MODE=off AGENTSTUDIO_TRACE_BACKEND="${SWIFT_TEST_TRACE_BACKEND:-jsonl}" $(swift_test_parallelization_env_word) \
-      DYLD_FRAMEWORK_PATH="$testing_framework_path" \
+      $(swift_testing_helper_environment "$testing_framework_path") \
       "$swift_testing_helper" --test-bundle-path "$swift_test_bundle" \
       --filter "$(swift_test_isolated_suite_filter_pattern "$fast_process_global_suite_filter")" \
       "$swift_test_bundle" --testing-library swift-testing
@@ -1625,14 +1673,79 @@ run_large_process_global_swift_tests() {
   dispatch_isolated_suites large "${large_process_global_suite_filters[@]}"
 }
 
-swift_testing_bundle_path() {
-  local test_bundle
-  test_bundle="$(find "$BUILD_PATH" -type f -path '*/debug/AgentStudioPackageTests.xctest/Contents/MacOS/AgentStudioPackageTests' -print -quit)"
-  if [ -z "$test_bundle" ]; then
-    echo "Swift Testing bundle not found under $BUILD_PATH" >&2
+swift_test_suite_map_build_from_listing() {
+  local listing_path="$1" map_path="$2"
+  local staged_map
+  staged_map="$(mktemp "$map_path.XXXXXX")" || return 1
+  /usr/bin/awk '
+    function emit_prefixes(path, target,    count, parts, prefix, idx) {
+      count = split(path, parts, "/")
+      prefix = ""
+      for (idx = 1; idx < count; idx++) {
+        prefix = prefix (prefix == "" ? "" : "/") parts[idx]
+        print prefix "\t" target
+      }
+    }
+    /^[A-Za-z_][A-Za-z0-9_]*\./ {
+      identifier = $0
+      sub(/\r$/, "", identifier)
+      dot = index(identifier, ".")
+      target = substr(identifier, 1, dot - 1)
+      path = substr(identifier, length(target) + 2)
+      sub(/\([^)]*\)$/, "", path)
+      emit_prefixes(path, target)
+    }
+  ' "$listing_path" | LC_ALL=C sort -u >"$staged_map" || { rm -f "$staged_map"; return 1; }
+  mv -f "$staged_map" "$map_path"
+}
+
+swift_test_suite_map_digest() {
+  local map_path="$1" listing_path="$2"
+  { cat "$map_path"; cat "$listing_path"; } | /usr/bin/shasum -a 256 | /usr/bin/awk '{print substr($1, 1, 16)}'
+}
+
+swift_test_bundle_for_suite() {
+  local suite_selector="$1" map_path="${BUILD_PATH}/agentstudio-test-suite-map"
+  local target executable targets
+  targets="$(/usr/bin/awk -F '\t' -v selector="$suite_selector" '$1 == selector { print $2 }' "$map_path" 2>/dev/null | LC_ALL=C sort -u)"
+  if [ -z "$targets" ]; then
+    printf '[test] suite not in any bundle: %s\n' "$suite_selector" >&2
     return 1
   fi
-  printf '%s\n' "$test_bundle"
+  if [ "$(printf '%s\n' "$targets" | sed '/^$/d' | wc -l | tr -d '[:space:]')" -ne 1 ]; then
+    printf '[test] suite appears in duplicate bundles: %s (%s)\n' "$suite_selector" "$(printf '%s' "$targets" | tr '\n' ',')" >&2
+    return 1
+  fi
+  target="$(printf '%s\n' "$targets" | sed -n '1p')"
+  executable="${BUILD_PATH}/out/Products/Debug/${target}.xctest/Contents/MacOS/${target}"
+  [ -x "$executable" ] || { printf '[test] bundle missing: %s\n' "$target" >&2; return 1; }
+  printf '%s\n' "$executable"
+}
+
+swift_test_suite_map_preflight() {
+  local map_path="${BUILD_PATH}/agentstudio-test-suite-map"
+  local listing_path="${BUILD_PATH}/agentstudio-test-list"
+  local receipt_path="$(lane_build_receipt_path)"
+  local expected_digest actual_digest selector
+  [ -r "$map_path" ] && [ -r "$listing_path" ] || { echo 'suite_map_unlinked' >&2; return 1; }
+  expected_digest="$(lane_build_receipt_field "$receipt_path" suite_map_digest 2>/dev/null || true)"
+  actual_digest="$(swift_test_suite_map_digest "$map_path" "$listing_path")"
+  [ -n "$expected_digest" ] && [ "$expected_digest" = "$actual_digest" ] || { echo 'suite_map_unlinked' >&2; return 1; }
+  if /usr/bin/awk -F '\t' '{ counts[$1]++ } END { for (suite in counts) if (counts[suite] > 1) { print suite; failed = 1 } exit failed }' "$map_path" | grep -q .; then
+    echo 'duplicate_suite_bundles' >&2
+    return 1
+  fi
+  if [ "$#" -gt 0 ]; then
+    for selector in "$@"; do
+      swift_test_bundle_for_suite "$selector" >/dev/null || return 1
+    done
+  fi
+}
+
+swift_testing_helper_environment() {
+  local framework_path="$1"
+  local platform_path="${framework_path%/Developer/Library/Frameworks}"
+  printf 'DYLD_FRAMEWORK_PATH=%s DYLD_LIBRARY_PATH=%s' "$framework_path" "$platform_path/Developer/usr/lib"
 }
 
 swift_testing_helper_path() {
@@ -1654,10 +1767,11 @@ swift_test_record_failed_isolated_suite() {
   local suite_filter="$1"
   local status="$2"
   local signal_name="${3:-$(swift_test_signal_name "$status")}"
+  local reason="${4:-crashed}"
 
   [ -n "${SWIFT_TEST_FAILED_ISOLATED_SUITES_FILE:-}" ] || return 0
-  printf '%s\t%s\t%s\n' \
-    "$suite_filter" "$status" "$signal_name" \
+  printf '%s\t%s\t%s\t%s\n' \
+    "$suite_filter" "$status" "$signal_name" "$reason" \
     >>"$SWIFT_TEST_FAILED_ISOLATED_SUITES_FILE" 2>/dev/null || true
 }
 
@@ -1770,7 +1884,7 @@ dispatch_isolated_suites() {
       if [ "$lane_kind" != webkit ] || [ "$completed_reason" != completed ]; then
         echo "[$LOG_PREFIX] isolated suite failed: $suite_filter" \
           "status=$completed_status signal=$(swift_test_signal_name "$completed_status") reason=$completed_reason" >&2
-        swift_test_record_failed_isolated_suite "$suite_filter" "$completed_status"
+        swift_test_record_failed_isolated_suite "$suite_filter" "$completed_status" "$(swift_test_signal_name "$completed_status")" "$completed_reason"
       fi
     fi
   done
@@ -1798,14 +1912,14 @@ run_selected_isolated_suite() {
   if [ "$lane_kind" = large ]; then
     label="isolated large process-global suite: $suite_filter"
   fi
-  swift_test_bundle="$(swift_testing_bundle_path)"
+  swift_test_bundle="$(swift_test_bundle_for_suite "$suite_filter")"
   swift_testing_helper="$(swift_testing_helper_path)"
   testing_framework_path="$(swift_testing_framework_path)"
   run_swift_with_timeout \
     "$label" \
     "$TIMEOUT_SECONDS" \
     env AGENT_STUDIO_BENCHMARK_MODE=off AGENTSTUDIO_TRACE_BACKEND="${SWIFT_TEST_TRACE_BACKEND:-jsonl}" $(swift_test_parallelization_env_word) \
-    DYLD_FRAMEWORK_PATH="$testing_framework_path" \
+    $(swift_testing_helper_environment "$testing_framework_path") \
     "$swift_testing_helper" --test-bundle-path "$swift_test_bundle" \
     --filter "$(swift_test_isolated_suite_filter_pattern "$suite_filter")" \
     "$swift_test_bundle" --testing-library swift-testing
@@ -2884,7 +2998,7 @@ run_webkit_suite() {
   local output
   local command_status=0
   local swift_test_bundle swift_testing_helper testing_framework_path
-  swift_test_bundle="$(swift_testing_bundle_path)"
+  swift_test_bundle="$(swift_test_bundle_for_suite "$filter")"
   swift_testing_helper="$(swift_testing_helper_path)"
   testing_framework_path="$(swift_testing_framework_path)"
 
@@ -2905,7 +3019,7 @@ run_webkit_suite() {
   else
     output=$(run_swift_with_timeout "$filter" "$TIMEOUT_SECONDS" \
       env AGENT_STUDIO_BENCHMARK_MODE=off AGENTSTUDIO_TRACE_BACKEND="${SWIFT_TEST_TRACE_BACKEND:-jsonl}" $(swift_test_parallelization_env_word) \
-      DYLD_FRAMEWORK_PATH="$testing_framework_path" \
+      $(swift_testing_helper_environment "$testing_framework_path") \
       "$swift_testing_helper" --test-bundle-path "$swift_test_bundle" \
       --filter "$filter" "$swift_test_bundle" --testing-library swift-testing \
       2>&1) || command_status=$?
@@ -2917,7 +3031,7 @@ run_webkit_suite() {
     local signal_name
     signal_name="$(swift_test_crash_signal_name "$command_status" "$output")"
     echo "[$LOG_PREFIX] WebKit suite failed: $filter status=$command_status signal=$signal_name" >&2
-    swift_test_record_failed_isolated_suite "$filter" "$command_status" "$signal_name"
+    swift_test_record_failed_isolated_suite "$filter" "$command_status" "$signal_name" crashed
   fi
   return "$command_status"
 }

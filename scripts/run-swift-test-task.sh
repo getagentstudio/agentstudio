@@ -93,6 +93,7 @@ print_closing_lane_report() {
   local cpu_seconds
   local closing_tree_dirty
   local bundle_identity
+  local bundle_set bundle_count
   local bundle_link_reason=""
 
   times >"$LANE_TIMES_FILE" 2>/dev/null || true
@@ -123,10 +124,10 @@ print_closing_lane_report() {
   # which. A crashed process no longer hides the suites that ran after it.
   echo "[$LOG_PREFIX] lane-report failed_isolated_suites=$(swift_test_failed_isolated_suite_count)"
   if [ -s "${SWIFT_TEST_FAILED_ISOLATED_SUITES_FILE:-}" ]; then
-    while IFS=$'\t' read -r failed_suite_filter failed_suite_status failed_suite_signal; do
+    while IFS=$'\t' read -r failed_suite_filter failed_suite_status failed_suite_signal failed_suite_reason; do
       [ -n "$failed_suite_filter" ] || continue
       echo "[$LOG_PREFIX] lane-report failed_isolated_suite=$failed_suite_filter" \
-        "status=$failed_suite_status signal=$failed_suite_signal"
+        "status=$failed_suite_status signal=$failed_suite_signal reason=${failed_suite_reason:-crashed}"
     done <"$SWIFT_TEST_FAILED_ISOLATED_SUITES_FILE"
   fi
 
@@ -140,6 +141,10 @@ print_closing_lane_report() {
   fi
   echo "[$LOG_PREFIX] lane-report bundle_state=$LANE_BUNDLE_STATE"
   echo "[$LOG_PREFIX] lane-report bundle_identity=$bundle_identity"
+  bundle_set="$(lane_build_receipt_field "$(lane_build_receipt_path)" bundle_set || echo missing)"
+  bundle_count="$(lane_build_receipt_field "$(lane_build_receipt_path)" bundle_count || echo 0)"
+  echo "[$LOG_PREFIX] lane-report bundle_set=$bundle_set"
+  echo "[$LOG_PREFIX] lane-report bundle_count=$bundle_count"
   # The linkage: which commit the build receipt beside this bundle says it built.
   echo "[$LOG_PREFIX] lane-report build_receipt_head_sha=$(
     lane_build_receipt_field "$(lane_build_receipt_path)" head_sha || echo none
@@ -281,6 +286,11 @@ fi
 
 if [ "$mode" = "test-prebuild" ]; then
   exit 0
+fi
+
+if ! swift_test_suite_map_preflight; then
+  echo "[$LOG_PREFIX] suite map preflight failed" >&2
+  exit 1
 fi
 
 if [ "$#" -gt 0 ]; then
