@@ -1,4 +1,5 @@
 import AgentStudioTestHarness
+import AgentStudioTestSupport
 import Foundation
 import Testing
 
@@ -14,7 +15,7 @@ struct BridgeProductSchemeControlCompletionEffectsTests {
         let session = try BridgeProductSession(
             paneSessionId: bridgeProductTestPaneSessionId,
             workerInstanceId: bridgeProductTestWorkerInstanceId,
-            capabilityBytes: capabilityBytes
+            capabilityBytes: capabilityBytes, deadlineClock: TestPushClock()
         )
         let recorder = await MainActor.run { BridgeProductCallMutationRecorder() }
         let refreshWorkAdmission = await BridgePaneRefreshWorkAdmissionTestContext.foreground()
@@ -99,7 +100,7 @@ struct BridgeProductSchemeControlCompletionEffectsTests {
         let session = try BridgeProductSession(
             paneSessionId: bridgeProductTestPaneSessionId,
             workerInstanceId: bridgeProductTestWorkerInstanceId,
-            capabilityBytes: capabilityBytes
+            capabilityBytes: capabilityBytes, deadlineClock: TestPushClock()
         )
         let recorder = await MainActor.run { BridgeProductCallMutationRecorder() }
         let refreshWorkAdmission = await BridgePaneRefreshWorkAdmissionTestContext.foreground()
@@ -166,7 +167,7 @@ struct BridgeProductSchemeControlCompletionEffectsTests {
         let session = try BridgeProductSession(
             paneSessionId: bridgeProductTestPaneSessionId,
             workerInstanceId: bridgeProductTestWorkerInstanceId,
-            capabilityBytes: capabilityBytes
+            capabilityBytes: capabilityBytes, deadlineClock: TestPushClock()
         )
         let recorder = await MainActor.run { BridgeProductCallMutationRecorder() }
         let refreshWorkAdmission = await BridgePaneRefreshWorkAdmissionTestContext.foreground()
@@ -236,7 +237,7 @@ struct BridgeProductSchemeControlCompletionEffectsTests {
         let session = try BridgeProductSession(
             paneSessionId: bridgeProductTestPaneSessionId,
             workerInstanceId: bridgeProductTestWorkerInstanceId,
-            capabilityBytes: capabilityBytes
+            capabilityBytes: capabilityBytes, deadlineClock: TestPushClock()
         )
         let recorder = await MainActor.run { BridgeProductCallMutationRecorder() }
         let refreshWorkAdmission = await BridgePaneRefreshWorkAdmissionTestContext.foreground()
@@ -321,7 +322,7 @@ struct BridgeProductSchemeControlCompletionEffectsTests {
         let session = try BridgeProductSession(
             paneSessionId: bridgeProductTestPaneSessionId,
             workerInstanceId: bridgeProductTestWorkerInstanceId,
-            capabilityBytes: capabilityBytes
+            capabilityBytes: capabilityBytes, deadlineClock: TestPushClock()
         )
         let provider = BridgeProductCompletionEffectsRecordingProvider(session: session)
         let productAdmission = try BridgeProductAdmissionTestContext.make().context
@@ -379,7 +380,7 @@ struct BridgeProductSchemeControlCompletionEffectsTests {
         let session = try BridgeProductSession(
             paneSessionId: bridgeProductTestPaneSessionId,
             workerInstanceId: bridgeProductTestWorkerInstanceId,
-            capabilityBytes: capabilityBytes
+            capabilityBytes: capabilityBytes, deadlineClock: TestPushClock()
         )
         let provider = BridgeProductCompletionEffectsRecordingProvider(
             session: session,
@@ -429,7 +430,7 @@ struct BridgeProductSchemeControlCompletionEffectsTests {
         let session = try BridgeProductSession(
             paneSessionId: bridgeProductTestPaneSessionId,
             workerInstanceId: bridgeProductTestWorkerInstanceId,
-            capabilityBytes: capabilityBytes
+            capabilityBytes: capabilityBytes, deadlineClock: TestPushClock()
         )
         let refreshWorkAdmission = await BridgePaneRefreshWorkAdmissionTestContext.foreground()
         let provider = BridgePaneProductSchemeProvider(
@@ -479,7 +480,7 @@ struct BridgeProductSchemeControlCompletionEffectsTests {
         let session = try BridgeProductSession(
             paneSessionId: bridgeProductTestPaneSessionId,
             workerInstanceId: bridgeProductTestWorkerInstanceId,
-            capabilityBytes: capabilityBytes
+            capabilityBytes: capabilityBytes, deadlineClock: TestPushClock()
         )
         let provider = BridgeProductCompletionEffectsRecordingProvider(session: session)
         let productAdmission = try BridgeProductAdmissionTestContext.make().context
@@ -537,7 +538,7 @@ struct BridgeProductSchemeControlCompletionEffectsTests {
         let session = try BridgeProductSession(
             paneSessionId: bridgeProductTestPaneSessionId,
             workerInstanceId: bridgeProductTestWorkerInstanceId,
-            capabilityBytes: capabilityBytes
+            capabilityBytes: capabilityBytes, deadlineClock: TestPushClock()
         )
         let committedEffectsGate = BridgeProductCommittedEffectsGate()
         let provider = BridgeProductCompletionEffectsRecordingProvider(
@@ -607,7 +608,7 @@ struct BridgeProductSchemeControlCompletionEffectsTests {
         let session = try BridgeProductSession(
             paneSessionId: bridgeProductTestPaneSessionId,
             workerInstanceId: bridgeProductTestWorkerInstanceId,
-            capabilityBytes: capabilityBytes
+            capabilityBytes: capabilityBytes, deadlineClock: TestPushClock()
         )
         let productAdmission = try BridgeProductAdmissionTestContext.make()
         let admission = await productAdmission.beginControl(

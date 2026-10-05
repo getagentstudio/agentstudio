@@ -490,7 +490,8 @@ extension BridgeComparisonTargetContentLifecycleTests {
         let owner = try BridgePaneProductSessionOwner(
             paneSessionId: bridgeProductTestPaneSessionId,
             provider: provider,
-            productAdmissionGate: productAdmissionGate
+            productAdmissionGate: productAdmissionGate,
+            operationDeadlineClock: TestPushClock()
         )
         let productAdmission = try #require(productAdmissionGate.acquire())
         let oldInstallation = try await owner.prepareCandidate(productAdmission: productAdmission)
@@ -644,7 +645,8 @@ extension BridgeComparisonTargetContentLifecycleTests {
         let owner = try BridgePaneProductSessionOwner(
             paneSessionId: bridgeProductTestPaneSessionId,
             provider: provider,
-            productAdmissionGate: productAdmissionGate
+            productAdmissionGate: productAdmissionGate,
+            operationDeadlineClock: TestPushClock()
         )
         let productAdmission = try #require(productAdmissionGate.acquire())
         let oldInstallation = try await owner.prepareCandidate(
