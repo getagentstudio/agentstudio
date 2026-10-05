@@ -87,11 +87,11 @@ extension AgentStudioIPCSessionsAdapter {
     }
 
     static func sourceEndMutation(
-        binding: SessionsBindingRecord, params: IPCSessionEventParams,
+        paneId: UUID, sourceGenerationId: UUID, params: IPCSessionEventParams,
         admittedAt: Date, fingerprint: String
     ) -> SessionsSourceEndMutation {
         var end = SessionsSourceEndMutation(
-            paneId: binding.paneId, sourceGenerationId: binding.sourceGenerationId, endedAt: admittedAt)
+            paneId: paneId, sourceGenerationId: sourceGenerationId, endedAt: admittedAt)
         end.occurrenceId = params.event.occurrenceId
         end.providerIntentFingerprint = fingerprint
         end.sourceOccurredAt = params.event.sourceOccurredAt

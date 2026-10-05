@@ -29,9 +29,35 @@ package struct SessionsIngestionStatistics: Sendable, Equatable {
 package typealias SessionsIngestionProbe = @Sendable (SessionsIngestionStatistics) -> Void
 
 package actor SessionsIngestion {
+    private enum PendingInput: Sendable {
+        case mutation(SessionsMutation)
+        case qualifiedHook(SessionsQualifiedHookSubmission)
+
+        var paneId: UUID? {
+            switch self {
+            case .mutation(let mutation): mutation.paneId
+            case .qualifiedHook(let hook): hook.paneId
+            }
+        }
+
+        func capacityLoss(reason: SessionsLossReason) -> SessionsLiveLossMutation? {
+            switch self {
+            case .mutation(.recordEvidence(let evidence)):
+                .init(
+                    paneId: evidence.context.paneId, eventKind: evidence.kind.storageKind,
+                    reason: reason, occurredAt: evidence.occurredAt)
+            case .qualifiedHook(let hook):
+                hook.evidenceKind.map {
+                    .init(paneId: hook.paneId, eventKind: $0.storageKind, reason: reason, occurredAt: hook.occurredAt)
+                }
+            default: nil
+            }
+        }
+    }
+
     private struct PendingMutation {
         let correlationId: UUID
-        let mutation: SessionsMutation
+        let input: PendingInput
         let paneId: UUID?
         let errorAfterCommit: SessionsRepositoryError?
         let admittedAt: ContinuousClock.Instant
@@ -98,11 +124,27 @@ package actor SessionsIngestion {
         mutation: SessionsMutation,
         commitParticipant: (any SessionsCommitParticipant)? = nil
     ) async throws -> SessionsSubmissionResult {
+        try await submitInput(
+            correlationId: correlationId, input: .mutation(mutation), commitParticipant: commitParticipant)
+    }
+
+    package func submitQualifiedHook(
+        correlationId: UUID, submission: SessionsQualifiedHookSubmission,
+        commitParticipant: (any SessionsCommitParticipant)? = nil
+    ) async throws -> SessionsSubmissionResult {
+        try await submitInput(
+            correlationId: correlationId, input: .qualifiedHook(submission), commitParticipant: commitParticipant)
+    }
+
+    private func submitInput(
+        correlationId: UUID, input: PendingInput,
+        commitParticipant: (any SessionsCommitParticipant)? = nil
+    ) async throws -> SessionsSubmissionResult {
         guard acceptsSubmissions else { throw SessionsRepositoryError.ingestionFinished }
-        let paneId = mutation.paneId
+        let paneId = input.paneId
         if let capacityError = currentCapacityError(for: paneId) {
-            guard case .recordEvidence(let evidenceMutation) = mutation else { throw capacityError }
             let reason = lossReason(for: capacityError)
+            guard let loss = input.capacityLoss(reason: reason) else { throw capacityError }
             emitStatistics(for: paneId, event: .capacityRejected(reason))
             while currentCapacityError(for: paneId) != nil {
                 let taskHoldingCapacity = consumerTask
@@ -111,20 +153,13 @@ package actor SessionsIngestion {
             }
             return try await enqueue(
                 correlationId: UUIDv7.generate(),
-                mutation: .recordLiveLoss(
-                    SessionsLiveLossMutation(
-                        paneId: evidenceMutation.context.paneId,
-                        eventKind: evidenceMutation.kind.storageKind,
-                        reason: reason,
-                        occurredAt: evidenceMutation.occurredAt
-                    )
-                ),
+                input: .mutation(.recordLiveLoss(loss)),
                 errorAfterCommit: capacityError
             )
         }
         return try await enqueue(
             correlationId: correlationId,
-            mutation: mutation,
+            input: input,
             errorAfterCommit: nil,
             commitParticipant: commitParticipant
         )
@@ -132,16 +167,16 @@ package actor SessionsIngestion {
 
     private func enqueue(
         correlationId: UUID,
-        mutation: SessionsMutation,
+        input: PendingInput,
         errorAfterCommit: SessionsRepositoryError?,
         commitParticipant: (any SessionsCommitParticipant)? = nil
     ) async throws -> SessionsSubmissionResult {
-        let paneId = mutation.paneId
+        let paneId = input.paneId
         return try await withCheckedThrowingContinuation { continuation in
             pendingMutations.append(
                 PendingMutation(
                     correlationId: correlationId,
-                    mutation: mutation,
+                    input: input,
                     paneId: paneId,
                     errorAfterCommit: errorAfterCommit,
                     admittedAt: ContinuousClock.now,
@@ -226,19 +261,28 @@ extension SessionsIngestion {
             let pending = pendingMutations.removeFirst()
             do {
                 if let paneId = pending.paneId { try await restoreStatusIfNeeded(paneId: paneId) }
-                let operation = try makeRepositoryOperation(
-                    correlationId: pending.correlationId,
-                    mutation: pending.mutation
-                )
-                let outcome = try await repository.apply(
-                    operation: operation,
-                    commitParticipant: pending.commitParticipant
-                ) { context in
-                    try SessionsEvidenceReducer.reduce(mutation: pending.mutation, against: context)
-                }
-                if outcome.disposition == .inserted {
-                    try await applyCommittedStatus(
-                        mutation: pending.mutation, result: outcome, admittedAt: pending.admittedAt)
+                let outcome: SessionsSubmissionResult
+                switch pending.input {
+                case .mutation(let mutation):
+                    let operation = try mutation.repositoryOperation(correlationId: pending.correlationId)
+                    outcome = try await repository.apply(
+                        operation: operation, commitParticipant: pending.commitParticipant
+                    ) { context in
+                        try SessionsEvidenceReducer.reduce(mutation: mutation, against: context)
+                    }
+                    if outcome.disposition == .inserted {
+                        try await applyCommittedStatus(
+                            mutation: mutation, result: outcome, admittedAt: pending.admittedAt)
+                    }
+                case .qualifiedHook(let submission):
+                    let commit = try await repository.applyQualifiedHook(
+                        correlationId: pending.correlationId, submission: submission,
+                        commitParticipant: pending.commitParticipant)
+                    outcome = commit.result
+                    for committed in commit.committedMutations where committed.result.disposition == .inserted {
+                        try await applyCommittedStatus(
+                            mutation: committed.mutation, result: committed.result, admittedAt: pending.admittedAt)
+                    }
                 }
                 if let errorAfterCommit = pending.errorAfterCommit {
                     pending.continuation.resume(throwing: errorAfterCommit)
@@ -262,22 +306,6 @@ extension SessionsIngestion {
         consumerTask = nil
     }
 
-    fileprivate func makeRepositoryOperation(
-        correlationId: UUID,
-        mutation: SessionsMutation
-    ) throws -> SessionsRepositoryOperation {
-        SessionsRepositoryOperation(
-            correlationId: correlationId,
-            operationScope: mutation.operationScope,
-            operationKind: mutation.operationKind,
-            semanticFingerprint: try mutation.semanticFingerprint(),
-            providerOccurrence: mutation.providerOccurrence,
-            contextQuery: mutation.contextQuery,
-            createdAt: mutation.occurredAt,
-            sourceOccurredAt: mutation.boundedSourceOccurredAt
-        )
-    }
-
     fileprivate func emitStatistics(for paneId: UUID?, event: SessionsIngestionStatistics.Event) {
         probe(
             SessionsIngestionStatistics(
@@ -291,6 +319,13 @@ extension SessionsIngestion {
 }
 
 extension SessionsMutation {
+    func repositoryOperation(correlationId: UUID) throws -> SessionsRepositoryOperation {
+        SessionsRepositoryOperation(
+            correlationId: correlationId, operationScope: operationScope, operationKind: operationKind,
+            semanticFingerprint: try semanticFingerprint(), providerOccurrence: providerOccurrence,
+            contextQuery: contextQuery, createdAt: occurredAt, sourceOccurredAt: boundedSourceOccurredAt)
+    }
+
     var paneId: UUID? {
         switch self {
         case .bind(let mutation): mutation.paneId
@@ -386,10 +421,18 @@ extension SessionsMutation {
     }
 
     fileprivate func semanticFingerprint() throws -> String {
+        try Self.fingerprint(semanticIntent)
+    }
+
+    static func providerSemanticFingerprint(_ providerIntent: String) throws -> String {
+        try fingerprint(.providerIntent(providerIntent))
+    }
+
+    private static func fingerprint(_ intent: SessionsMutationSemanticIntent) throws -> String {
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
         encoder.dateEncodingStrategy = .secondsSince1970
-        let digest = SHA256.hash(data: try encoder.encode(semanticIntent))
+        let digest = SHA256.hash(data: try encoder.encode(intent))
         return digest.map { String(format: "%02x", $0) }.joined()
     }
 

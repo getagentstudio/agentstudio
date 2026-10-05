@@ -5,31 +5,6 @@ import AgentStudioProgrammaticControl
 import AgentStudioSessions
 import Foundation
 
-/// Whether one projected provider event earned a Sessions mutation, and the
-/// reported reason when it did not.
-private enum SessionsProviderEventAdmissionOutcome: Sendable {
-    case admitted(SessionsMutation)
-    case rejected(IPCSessionEventDisposition)
-}
-
-/// Which of the pane's source generations one provider event names.
-///
-/// A provider that has not noticed it was replaced keeps reporting, and what it
-/// reports is about its own conversation. Resolving the generation from the
-/// event's conversation rather than from the pane's current binding is what
-/// keeps a delayed event off whatever replaced it.
-private enum SessionsProviderEventGeneration: Sendable {
-    /// The pane's live binding, which this event's conversation still owns.
-    case live(SessionsBindingRecord)
-    /// A generation of this pane that has already been retired. Evidence
-    /// against it is history and an end for it is a duplicate.
-    case retired(SessionsBindingRecord)
-    /// A different conversation is current and this conversation has no retained binding.
-    case foreignConversation
-    /// No conversation is current and this conversation has no retained binding.
-    case unbound
-}
-
 /// Bridges the IPC session methods to Sessions ingestion. It owns only the
 /// wire-to-domain mapping: ordering, replay and reduction stay in Sessions, and
 /// nothing here touches MainActor.
@@ -86,47 +61,28 @@ struct AgentStudioIPCSessionsAdapter: AppIPCSessionsPort {
                     .ipcSessionEvent, duration: spanBegan.duration(to: ContinuousClock.now))
             }
         }
-        var admission = try await providerAdmission(
-            paneId: paneId,
-            params: params,
-            snapshot: try await paneSnapshot(paneId: paneId)
-        )
-        if params.event.name != .sessionStart, case .admitted(.bind(let bind)) = admission {
-            do {
-                _ = try await ingestion.submitWithCommitDisposition(
-                    correlationId: UUIDv7.generate(), mutation: .bind(bind))
-            } catch { throw Self.portError(from: error) }
-            admission = try await providerAdmission(
-                paneId: paneId, params: params, snapshot: try await paneSnapshot(paneId: paneId))
-            if case .admitted(.bind) = admission { throw AppIPCSessionsError(reason: .validationRejected) }
-        }
-        guard case .admitted(let mutation) = admission else {
-            guard case .rejected(let disposition) = admission else {
-                throw AppIPCSessionsError(reason: .validationRejected)
-            }
+        let provider = SessionsProviderIdentity(
+            providerIdentifier: params.provider.identifier, exactVersion: params.provider.version,
+            operatingMode: params.provider.mode)
+        let capability = Self.capability(for: params.event.name)
+        let qualification = providerRegistry.qualification(
+            providerIdentifier: provider.providerIdentifier, exactVersion: provider.exactVersion,
+            operatingMode: provider.operatingMode, capability: capability)
+        guard case .qualified = qualification else {
             return IPCSessionEventResult(
-                paneId: paneId,
-                disposition: disposition,
-                correlationId: params.correlationId
-            )
+                paneId: paneId, disposition: Self.rejectedDisposition(qualification),
+                correlationId: params.correlationId)
         }
+        let submission = try qualifiedHookSubmission(paneId: paneId, params: params, provider: provider)
         let activityOccurrence: PaneActivityOccurrence? =
-            if provenance == .matchingPane, case .recordEvidence = mutation {
+            if provenance == .matchingPane, submission.evidenceKind != nil {
                 PaneActivityOccurrence(
-                    paneId: paneId,
-                    source: .hook,
-                    orderingInstant: continuousNow(),
-                    wallTime: now()
-                )
-            } else {
-                nil
-            }
+                    paneId: paneId, source: .hook, orderingInstant: continuousNow(), wallTime: now())
+            } else { nil }
         do {
-            let submission = try await ingestion.submitWithCommitDisposition(
-                correlationId: params.correlationId,
-                mutation: mutation
-            )
-            if submission.disposition == .inserted, let activityOccurrence {
+            let result = try await ingestion.submitQualifiedHook(
+                correlationId: params.correlationId, submission: submission)
+            if result.disposition == .inserted, let activityOccurrence {
                 activityClock?.submit(activityOccurrence)
             }
         } catch {
@@ -158,194 +114,84 @@ struct AgentStudioIPCSessionsAdapter: AppIPCSessionsPort {
     }
 }
 
+private typealias QualifiedSessionBindBuilder =
+    @Sendable (UUID, SessionsEvidenceFreshness) throws -> SessionsBindMutation
+
 extension AgentStudioIPCSessionsAdapter {
-    fileprivate func paneSnapshot(paneId: UUID) async throws -> SessionsSnapshot {
-        do {
-            return try await ingestion.snapshot(.pane(paneId))
-        } catch {
-            throw Self.portError(from: error)
-        }
-    }
-
-    /// A first qualified hook implies its conversation's binding; after that,
-    /// evidence and End address that conversation's own retained generation.
-    fileprivate func providerAdmission(
-        paneId: UUID,
-        params: IPCSessionEventParams,
-        snapshot: SessionsSnapshot
-    ) async throws -> SessionsProviderEventAdmissionOutcome {
-        let provider = SessionsProviderIdentity(
-            providerIdentifier: params.provider.identifier,
-            exactVersion: params.provider.version,
-            operatingMode: params.provider.mode
-        )
+    private func qualifiedHookSubmission(
+        paneId: UUID, params: IPCSessionEventParams, provider: SessionsProviderIdentity
+    ) throws -> SessionsQualifiedHookSubmission {
+        // Live prompt times must have the same epoch precision as SQLite restore.
+        let admittedAt = Date(timeIntervalSince1970: now().timeIntervalSince1970)
+        let fingerprint = try Self.providerIntentFingerprint(params)
         let capability = Self.capability(for: params.event.name)
-        let qualification = providerRegistry.qualification(
-            providerIdentifier: provider.providerIdentifier,
-            exactVersion: provider.exactVersion,
-            operatingMode: provider.operatingMode,
-            capability: capability
-        )
-        guard case .qualified = qualification else {
-            return .rejected(Self.rejectedDisposition(qualification))
+        let kind: SessionsEvidenceKind?
+        let signal: SessionProviderSignal?
+        let occurrenceKind: SessionsProviderOccurrenceKind
+        switch params.event.name {
+        case .sessionStart:
+            kind = nil
+            signal = nil
+            occurrenceKind = .bind
+        case .sessionEnd:
+            kind = nil
+            signal = nil
+            occurrenceKind = .sourceEnded
+        default:
+            kind = try Self.evidenceKind(for: params.event)
+            signal = try Self.providerSignal(for: params.event, permissionHandling: params.permissionHandling)
+            occurrenceKind = .evidence
         }
-        let occurredAt = Date(timeIntervalSince1970: now().timeIntervalSince1970)
-        let providerIntentFingerprint = try Self.providerIntentFingerprint(params)
-        let generation = try await eventGeneration(
-            paneId: paneId,
-            provider: provider,
-            conversationId: params.event.conversationId,
-            snapshot: snapshot
-        )
-        if params.event.name == .sessionStart {
-            return sessionStartAdmission(
-                paneId: paneId, params: params, provider: provider, generation: generation, admittedAt: occurredAt,
-                fingerprint: providerIntentFingerprint)
-        }
-        switch generation {
-        case .unbound, .foreignConversation:
-            if params.event.name != .sessionEnd {
-                // Validate its evidence payload before the implied binding writes.
-                _ = try Self.providerSignal(for: params.event, permissionHandling: params.permissionHandling)
-            }
-            return sessionStartAdmission(
-                paneId: paneId, params: params, provider: provider, generation: generation, admittedAt: occurredAt,
-                fingerprint: providerIntentFingerprint)
-        case .live, .retired: break
-        }
-        // After any implied bind, End retires its own generation. Repeated
-        // Ends for a retired generation remain duplicates in the reduction.
-        guard params.event.name != .sessionEnd else {
-            switch generation {
-            case .unbound, .foreignConversation:
+        let registry = providerRegistry
+        let ownerPaneId = ownerPaneLookup(.init(existingUUID: paneId))?.uuid
+        let makeBind: QualifiedSessionBindBuilder = { generation, freshness in
+            let admission = SessionsQualifiedSessionStartAdmission(
+                provider: provider,
+                source: .init(
+                    paneId: paneId, providerConversationId: params.event.conversationId,
+                    sourceId: params.event.conversationId, sourceGenerationId: generation,
+                    occurrenceId: params.event.occurrenceId),
+                freshness: freshness, reportedAt: admittedAt)
+            guard var bind = registry.qualifiedSessionStartBind(admission, qualifyingCapability: capability) else {
                 throw AppIPCSessionsError(reason: .validationRejected)
-            case .live(let binding), .retired(let binding):
-                return .admitted(
-                    .sourceEnded(
-                        Self.sourceEndMutation(
-                            binding: binding, params: params, admittedAt: occurredAt,
-                            fingerprint: providerIntentFingerprint)))
             }
+            bind.resumeHint =
+                (params.event.name == .sessionStart ? params.event.providerFields.resumeHint : nil)
+                ?? Self.resumeHint(provider: params.provider.identifier, conversationId: params.event.conversationId)
+            bind.ownerPaneId = ownerPaneId
+            bind.providerIntentFingerprint = fingerprint
+            bind.sourceOccurredAt = params.event.sourceOccurredAt
+            return bind
         }
-        let binding: SessionsBindingRecord
-        let freshness: SessionsEvidenceFreshness
-        switch generation {
-        case .unbound, .foreignConversation:
-            throw AppIPCSessionsError(reason: .validationRejected)
-        case .live(let liveBinding):
-            binding = liveBinding
-            freshness = .live
-        case .retired(let retiredBinding):
-            // The reduction stores this against its own generation as history
-            // and projects nothing onto whatever replaced it.
-            binding = retiredBinding
-            freshness = .historical
-        }
-        guard
-            let admitted = providerRegistry.admitProviderEvidence(
-                SessionsProviderEvidenceAdmission(
-                    provider: provider,
-                    capability: capability,
-                    paneId: paneId,
-                    sourceGenerationId: binding.sourceGenerationId,
-                    freshness: freshness
-                )
-            )
-        else {
-            return .rejected(.unqualified)
-        }
-        var evidence = SessionsEvidenceMutation(
-            admittedContext: admitted,
-            occurrenceId: params.event.occurrenceId,
-            turnId: params.event.turnId,
-            subject: Self.subject(for: params.event),
-            kind: try Self.evidenceKind(for: params.event),
-            occurredAt: occurredAt,
-            sourceCursor: nil
-        )
-        evidence.sourceOccurredAt = params.event.sourceOccurredAt
-        evidence.providerSignal = try Self.providerSignal(
-            for: params.event, permissionHandling: params.permissionHandling)
-        evidence.providerIntentFingerprint = providerIntentFingerprint
-        return .admitted(.recordEvidence(evidence))
-    }
-
-    private func sessionStartAdmission(
-        paneId: UUID, params: IPCSessionEventParams, provider: SessionsProviderIdentity,
-        generation: SessionsProviderEventGeneration, admittedAt: Date, fingerprint: String
-    ) -> SessionsProviderEventAdmissionOutcome {
-        let existingBinding: SessionsBindingRecord?
-        let freshness: SessionsEvidenceFreshness
-        switch generation {
-        case .live(let binding):
-            existingBinding = binding
-            freshness = .live
-        case .retired(let binding):
-            existingBinding = binding
-            freshness = .historical
-        case .unbound, .foreignConversation:
-            existingBinding = nil
-            freshness = .live
-        }
-        let admission = SessionsQualifiedSessionStartAdmission(
-            provider: provider,
-            source: SessionsBindingSourceIdentity(
-                paneId: paneId,
-                providerConversationId: params.event.conversationId,
-                sourceId: params.event.conversationId,
-                sourceGenerationId: existingBinding?.sourceGenerationId ?? UUIDv7.generate(),
-                occurrenceId: params.event.occurrenceId
-            ),
-            // A known retired conversation stays historical; a Start never revives it.
-            freshness: freshness,
-            reportedAt: admittedAt
-        )
-        guard
-            var bind = providerRegistry.qualifiedSessionStartBind(
-                admission, qualifyingCapability: Self.capability(for: params.event.name))
-        else {
-            return .rejected(.unqualified)
-        }
-        bind.resumeHint =
-            (params.event.name == .sessionStart ? params.event.providerFields.resumeHint : nil)
-            ?? Self.resumeHint(provider: params.provider.identifier, conversationId: params.event.conversationId)
-        bind.ownerPaneId = ownerPaneLookup(.init(existingUUID: paneId))?.uuid
-        bind.providerIntentFingerprint = fingerprint
-        bind.sourceOccurredAt = params.event.sourceOccurredAt
-        return .admitted(.bind(bind))
-    }
-
-    /// Resolves the generation an event belongs to from the conversation it
-    /// names.
-    ///
-    /// The current binding answers the common case for free, so only a
-    /// conversation the pane is not bound to right now costs a read. A pane has
-    /// at most one active binding and the snapshot already names it, so any
-    /// binding this read finds belongs to a generation that has been retired.
-    fileprivate func eventGeneration(
-        paneId: UUID,
-        provider: SessionsProviderIdentity,
-        conversationId: String,
-        snapshot: SessionsSnapshot
-    ) async throws -> SessionsProviderEventGeneration {
-        if let currentBinding = snapshot.currentBinding,
-            currentBinding.providerIdentifier == provider.providerIdentifier,
-            currentBinding.providerConversationId == conversationId
-        {
-            return currentBinding.status == .active ? .live(currentBinding) : .retired(currentBinding)
-        }
-        let earlierBinding: SessionsBindingRecord?
-        do {
-            earlierBinding = try await ingestion.bindingForProviderConversation(
-                paneId: paneId,
-                providerIdentifier: provider.providerIdentifier,
-                providerConversationId: conversationId
-            )
-        } catch {
-            throw Self.portError(from: error)
-        }
-        guard let earlierBinding else { return snapshot.currentBinding == nil ? .unbound : .foreignConversation }
-        return .retired(earlierBinding)
+        return SessionsQualifiedHookSubmission(
+            paneId: paneId, providerIdentifier: provider.providerIdentifier,
+            providerConversationId: params.event.conversationId,
+            occurrence: .init(kind: occurrenceKind, occurrenceId: params.event.occurrenceId),
+            providerIntentFingerprint: fingerprint, occurredAt: admittedAt,
+            sourceOccurredAt: params.event.sourceOccurredAt, evidenceKind: kind,
+            makeBind: makeBind,
+            makeMutation: { generation, freshness in
+                if params.event.name == .sessionStart { return .bind(try makeBind(generation, freshness)) }
+                if params.event.name == .sessionEnd {
+                    return .sourceEnded(
+                        Self.sourceEndMutation(
+                            paneId: paneId, sourceGenerationId: generation, params: params,
+                            admittedAt: admittedAt, fingerprint: fingerprint))
+                }
+                guard let kind,
+                    let context = registry.admitProviderEvidence(
+                        .init(
+                            provider: provider, capability: capability, paneId: paneId,
+                            sourceGenerationId: generation, freshness: freshness))
+                else { throw AppIPCSessionsError(reason: .validationRejected) }
+                var evidence = SessionsEvidenceMutation(
+                    admittedContext: context, occurrenceId: params.event.occurrenceId, turnId: params.event.turnId,
+                    subject: Self.subject(for: params.event), kind: kind, occurredAt: admittedAt, sourceCursor: nil)
+                evidence.sourceOccurredAt = params.event.sourceOccurredAt
+                evidence.providerSignal = signal
+                evidence.providerIntentFingerprint = fingerprint
+                return .recordEvidence(evidence)
+            })
     }
 
     /// An absent profile means no capability of this provider is known at all;
@@ -401,7 +247,7 @@ extension AgentStudioIPCSessionsAdapter {
             return .needsYouOpened(requestId: requestId, explanation: nil)
         case .sessionStart, .sessionEnd:
             // Neither is evidence: one opens a source generation and the other
-            // retires it. `providerAdmission` routes both before reaching here.
+            // retires it. `qualifiedHookSubmission` routes both before reaching here.
             throw AppIPCSessionsError(reason: .validationRejected)
         }
     }

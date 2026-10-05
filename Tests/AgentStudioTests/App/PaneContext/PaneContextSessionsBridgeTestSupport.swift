@@ -45,7 +45,7 @@ final class PaneContextSessionsBridgeFixture: Sendable {
         exactVersion: ClaudeCodeProviderIdentity.supportedExactVersion,
         operatingMode: ClaudeCodeProviderIdentity.operatingMode)
 
-    init() throws {
+    init(ingestionProbe: @escaping SessionsIngestionProbe = { _ in }) throws {
         root = FileManager.default.temporaryDirectory.appending(
             path: "agentstudio-context-sessions-\(UUIDv7.generate())")
         pool = try SQLiteDatabaseFactory.makeFileBackedPool(
@@ -63,7 +63,7 @@ final class PaneContextSessionsBridgeFixture: Sendable {
         membership.addPane(paneId)
         let bridge = PaneContextSessionsBridge()
         self.bridge = bridge
-        let ingestion = Self.makeSessionsIngestion(access: access, bridge: bridge)
+        let ingestion = Self.makeSessionsIngestion(access: access, bridge: bridge, probe: ingestionProbe)
         self.ingestion = ingestion
         service = PaneContextService(
             sqliteAccess: access, clock: clock, wallNow: { time.now }, membership: membership,
@@ -81,12 +81,15 @@ final class PaneContextSessionsBridgeFixture: Sendable {
 
     func makeIngestion() -> SessionsIngestion { Self.makeSessionsIngestion(access: sqliteAccess, bridge: bridge) }
 
-    private static func makeSessionsIngestion(access: HeldPaneContextSQLiteAccess, bridge: PaneContextSessionsBridge)
+    private static func makeSessionsIngestion(
+        access: HeldPaneContextSQLiteAccess, bridge: PaneContextSessionsBridge,
+        probe: @escaping SessionsIngestionProbe = { _ in }
+    )
         -> SessionsIngestion
     {
         SessionsIngestion(
             repository: .init(sqliteAccess: BridgeSessionsSQLiteAccess(access: access)),
-            limits: .init(maximumPendingPerPane: 32, maximumPendingGlobal: 128), probe: { _ in }, openAskSource: bridge,
+            limits: .init(maximumPendingPerPane: 32, maximumPendingGlobal: 128), probe: probe, openAskSource: bridge,
             sessionEnded: { generation in await bridge.sessionEnded(bindingGenerationId: generation) })
     }
 
@@ -156,10 +159,15 @@ final class PaneContextSessionsBridgeFixture: Sendable {
     }
 }
 
-func withPaneContextSessionsBridge(operation: @Sendable (PaneContextSessionsBridgeFixture) async throws -> Void)
+func withPaneContextSessionsBridge(
+    ingestionProbe: @escaping SessionsIngestionProbe = { _ in },
+    operation: @Sendable (PaneContextSessionsBridgeFixture) async throws -> Void
+)
     async throws
 {
-    let fixture = try await withoutBlockingCooperativePool { try PaneContextSessionsBridgeFixture() }
+    let fixture = try await withoutBlockingCooperativePool {
+        try PaneContextSessionsBridgeFixture(ingestionProbe: ingestionProbe)
+    }
     do {
         try await operation(fixture)
         try await fixture.close()

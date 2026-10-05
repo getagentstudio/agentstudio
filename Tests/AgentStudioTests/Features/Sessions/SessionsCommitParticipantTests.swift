@@ -14,6 +14,61 @@ struct SessionsCommitParticipantTests {
         case loss
     }
 
+    @Test("a qualified hook commits its bind then End and invokes the participant once per delivery")
+    func qualifiedHookParticipantRunsOnce() async throws {
+        let fixture = try await makeParticipantFixture()
+        defer { fixture.removeFiles() }
+        let occurrence = UUIDv7.generate()
+        let correlation = UUIDv7.generate()
+        let hook = fixture.qualifiedEndHook(occurrence: occurrence)
+        let participant = CountingHookCommitParticipant(storeID: fixture.storeID)
+        try await withSessionsIngestion(repository: fixture.repository) { ingestion in
+            let inserted = try await ingestion.submitQualifiedHook(
+                correlationId: correlation, submission: hook, commitParticipant: participant)
+            #expect(inserted.disposition == .inserted)
+            let first = try await fixture.state()
+            #expect(first.operationCount == 2)
+            #expect(first.bindingCount == 1)
+            #expect(first.cursor == 1)
+            let binding = try #require(try await ingestion.snapshot(.pane(fixture.paneID)).currentBinding)
+            #expect(binding.status == .ended)
+            let replay = try await ingestion.submitQualifiedHook(
+                correlationId: correlation, submission: hook, commitParticipant: participant)
+            #expect(replay.disposition == .replayed)
+            let second = try await fixture.state()
+            #expect(second.operationCount == 2)
+            #expect(second.cursor == 2)
+            let alias = try await ingestion.submitQualifiedHook(
+                correlationId: UUIDv7.generate(), submission: hook, commitParticipant: participant)
+            #expect(alias.disposition == .replayed)
+            let third = try await fixture.state()
+            #expect(third.operationCount == 3)
+            #expect(third.bindingCount == 1)
+            #expect(third.cursor == 3)
+            #expect(try await ingestion.snapshot(.pane(fixture.paneID)).currentBinding == binding)
+        }
+    }
+
+    @Test("participant failure rolls back both ordered hook operations and their effects")
+    func qualifiedHookParticipantFailureRollsBackPair() async throws {
+        let fixture = try await makeParticipantFixture()
+        defer { fixture.removeFiles() }
+        let hook = fixture.qualifiedEndHook(occurrence: UUIDv7.generate())
+        await #expect(throws: TestParticipantFailure.self) {
+            _ = try await fixture.repository.applyQualifiedHook(
+                correlationId: UUIDv7.generate(), submission: hook,
+                commitParticipant: CountingHookCommitParticipant(storeID: fixture.storeID, failsAfterWrite: true))
+        }
+        let state = try await fixture.state()
+        #expect(state.operationCount == 0)
+        #expect(state.bindingCount == 0)
+        #expect(state.cursor == 0)
+        let sourceCount = try await fixture.sqliteAccess.read {
+            try Int.fetchOne($0, sql: "SELECT COUNT(*) FROM sessions_source")
+        }
+        #expect(sourceCount == 0)
+    }
+
     @Test(
         "a throwing participant rolls back the operation, effect and cursor", arguments: [MutationCase.bind, .loss])
     func participantFailureRollsBackEveryWrite(mutationCase: MutationCase) async throws {
@@ -163,6 +218,21 @@ struct SessionsCommitParticipantTests {
 
 private struct TestParticipantFailure: Error {}
 
+private struct CountingHookCommitParticipant: SessionsCommitParticipant {
+    let storeID: UUID
+    var failsAfterWrite = false
+
+    func commit(in database: Database) throws {
+        try database.execute(
+            sql: """
+                INSERT INTO pane_context_cli_outbox_cursor(store_id, last_handled_id) VALUES (?, 1)
+                ON CONFLICT(store_id) DO UPDATE SET last_handled_id = last_handled_id + 1
+                """,
+            arguments: [storeID.uuidString])
+        if failsAfterWrite { throw TestParticipantFailure() }
+    }
+}
+
 private struct TestCursorCommitParticipant: SessionsCommitParticipant {
     let storeID: UUID
     let position: Int64
@@ -221,6 +291,32 @@ private struct SessionsParticipantFileFixture: Sendable {
         }
         sqliteAccess = TestSessionsSQLiteAccess(databaseQueue: databaseQueue)
         repository = SessionsRepository(sqliteAccess: sqliteAccess)
+    }
+
+    func qualifiedEndHook(occurrence: UUID) -> SessionsQualifiedHookSubmission {
+        let paneID = paneID
+        let fingerprint = "qualified-participant-end"
+        return SessionsQualifiedHookSubmission(
+            paneId: paneID, providerIdentifier: "qualified-test-provider",
+            providerConversationId: "qualified-participant",
+            occurrence: .init(kind: .sourceEnded, occurrenceId: occurrence),
+            providerIntentFingerprint: fingerprint, occurredAt: Date(timeIntervalSince1970: 1), sourceOccurredAt: nil,
+            evidenceKind: nil,
+            makeBind: { generation, freshness in
+                var bind = makeQualifiedBindMutation(
+                    paneId: paneID, providerConversationId: "qualified-participant", sourceGenerationId: generation,
+                    occurrenceId: occurrence, freshness: freshness, reportedAt: 1)
+                bind.providerIntentFingerprint = fingerprint
+                return bind
+            },
+            makeMutation: { generation, _ in
+                var end = SessionsSourceEndMutation(
+                    paneId: paneID, sourceGenerationId: generation,
+                    endedAt: Date(timeIntervalSince1970: 1))
+                end.occurrenceId = occurrence
+                end.providerIntentFingerprint = fingerprint
+                return .sourceEnded(end)
+            })
     }
 
     func submission(mutationCase: SessionsCommitParticipantTests.MutationCase) -> ParticipantSubmission {
