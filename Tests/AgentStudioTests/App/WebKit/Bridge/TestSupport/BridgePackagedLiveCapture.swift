@@ -12,7 +12,6 @@ import WebKit
 final class BridgePackagedLiveCapture {
     private let controller: BridgePaneController
     private let contentController: WKUserContentController
-    private let recorder: WebKitScriptMessageRecorder
     private struct CaptureState {
         var isClosed = false
         var tasks: [Task<Void, Never>] = []
@@ -27,9 +26,8 @@ final class BridgePackagedLiveCapture {
             Mirror(reflecting: controller).children.first { $0.label == "userContentController" }?.value
                 as? WKUserContentController
         )
-        let tasks = snapshotTasks
-        recorder = WebKitScriptMessageRecorder { observation in
-            tasks.withLock { state in
+        let recorder = WebKitScriptMessageRecorder { [weak self] observation in
+            self?.snapshotTasks.withLock { state in
                 guard !state.isClosed else { return }
                 TestEventLogWriter.append(
                     "packaged_observation\t\(observation)\n", path: HeldStepEventLog.environment.path)
