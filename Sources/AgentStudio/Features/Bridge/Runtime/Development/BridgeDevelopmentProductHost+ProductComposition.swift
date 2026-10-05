@@ -299,7 +299,7 @@ extension BridgeDevelopmentProductHost {
             applyReviewComparisonUpdate: dependencies.applyReviewComparisonUpdate,
             applyFileRefreshRetry: dependencies.applyFileRefreshRetry,
             recordCurrentFileRefreshFailure: { failure in
-                dependencies.refreshAdmissionCoordinator.recordCurrentFileRefreshFailure(failure)
+                failure.apply { dependencies.refreshAdmissionCoordinator.recordCurrentFileRefreshFailure($0) }
             },
             applyWorktreeAnnotationCommand: dependencies.applyWorktreeAnnotationCommand,
             authorizeReviewComparisonTargets:

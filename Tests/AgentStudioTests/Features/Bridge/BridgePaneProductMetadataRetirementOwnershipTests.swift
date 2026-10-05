@@ -39,7 +39,9 @@ struct BridgeMetadataRetirementOwnershipTests {
             reviewMetadataSource: BridgeUnavailablePaneProductReviewMetadataSource(),
             refreshWorkAdmissionSource: refreshWorkAdmission.source,
             recordCurrentFileRefreshFailure: { failure in
-                publishedFileFailures.withLock { $0.append(failure) }
+                failure.apply { appliedFailure in
+                    publishedFileFailures.withLock { $0.append(appliedFailure) }
+                }
             },
             lifecycleTraceRecorder: probe,
             nativeApplicationRegistry: registry
@@ -266,7 +268,7 @@ private struct RetirementOwnershipReplacementScenario {
             reviewMetadataSource: BridgeUnavailablePaneProductReviewMetadataSource(),
             refreshWorkAdmissionSource: refreshWorkAdmission.source,
             recordCurrentFileRefreshFailure: { failure in
-                publishedFileFailures.append(failure)
+                failure.apply { publishedFileFailures.append($0) }
             },
             lifecycleTraceRecorder: probe,
             nativeApplicationRegistry: registry

@@ -235,7 +235,7 @@ package final class BridgePaneController {
                     reviewPublicationCoordinator: resolvedReviewPublicationCoordinator,
                     refreshWorkAdmissionSource: resolvedRefreshAdmissionCoordinator.workAdmissionSource,
                     recordCurrentFileRefreshFailure: { failure in
-                        resolvedRefreshAdmissionCoordinator.recordCurrentFileRefreshFailure(failure)
+                        failure.apply { resolvedRefreshAdmissionCoordinator.recordCurrentFileRefreshFailure($0) }
                     },
                     initialProductPresentation: resolvedRefreshAdmissionCoordinator.productPresentationSnapshot,
                     telemetryRecorder: telemetryDependencies.recorder,

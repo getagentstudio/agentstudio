@@ -42,7 +42,8 @@ struct BridgeFileSurfaceReconcilerTests {
                         disposition: .retryable,
                         phase: .build,
                         cause: .repeatedSupersession
-                    )
+                    ),
+                    attempt: reopenedAttempt
                 )
         )
     }
@@ -133,7 +134,7 @@ struct BridgeFileSurfaceReconcilerTests {
                 phase: .delivery,
                 cause: .interruptedRepeatedly
             )
-            #expect(interruptionAction == .failed(repeatedInterruptionFailure))
+            #expect(interruptionAction == .failed(repeatedInterruptionFailure, attempt: currentAttempt))
             #expect(await reconciler.currentFailure == repeatedInterruptionFailure)
             #expect(repeatedInterruptionFailure.refreshFailure.retryable)
             #expect(publishedFailures == 1)
@@ -334,7 +335,7 @@ struct BridgeFileSurfaceReconcilerTests {
             return
         }
         guard
-            case .failed(let repeatedSupersessionFailure) = await reconciler.builderFinished(
+            case .failed(let repeatedSupersessionFailure, _) = await reconciler.builderFinished(
                 unchangedInputRetry,
                 outcome: .superseded(newerInputBasis: inputBasis)
             )
@@ -383,7 +384,7 @@ struct BridgeFileSurfaceReconcilerTests {
             await reconciler.builderFinished(
                 currentAttempt,
                 outcome: .failed(newerFailure)
-            ) == .failed(newerFailure)
+            ) == .failed(newerFailure, attempt: currentAttempt)
         )
 
         #expect(await reconciler.builderFinished(initialAttempt, outcome: .built) == .rest)
@@ -408,7 +409,7 @@ struct BridgeFileSurfaceReconcilerTests {
             outcome: .failed(progressFailure)
         )
 
-        #expect(action == .failed(progressFailure))
+        #expect(action == .failed(progressFailure, attempt: attempt))
         #expect(await reconciler.currentFailure == progressFailure)
         #expect(progressFailure.refreshFailure.failureKind == .fileSourceUnavailable)
         #expect(progressFailure.refreshFailure.retryable)

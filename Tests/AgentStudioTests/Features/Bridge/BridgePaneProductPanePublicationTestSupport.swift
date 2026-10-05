@@ -57,7 +57,7 @@ struct PanePublicationFixture {
                 await fileRefreshDriver.retryUnavailableFileRefreshAndWait(ifAdmittedBy: admission)
             },
             recordCurrentFileRefreshFailure: { failure in
-                refresh.recordCurrentFileRefreshFailure(failure)
+                failure.apply { refresh.recordCurrentFileRefreshFailure($0) }
             },
             refreshWorkAdmissionSource: refresh.workAdmissionSource,
             lifecycleTraceRecorder: trace)

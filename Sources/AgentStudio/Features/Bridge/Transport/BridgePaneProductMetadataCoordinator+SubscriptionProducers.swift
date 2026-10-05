@@ -15,6 +15,7 @@ private struct BridgeFileSurfaceAttemptBootstrapContext: Sendable {
     let activeStream: BridgePaneProductMetadataCoordinator.ActiveStream
     let productAdmission: BridgeProductAdmissionContext
     let foregroundWorkAdmission: BridgePaneRefreshWorkAdmission
+    let fileOutcomeAdmission: BridgePaneRefreshWorkAdmission
 }
 
 struct BridgePaneProductMetadataNativeAdapter: Sendable {
@@ -121,6 +122,13 @@ extension BridgePaneProductMetadataCoordinator {
         foregroundWorkAdmission: BridgePaneRefreshWorkAdmission,
         fileSurfaceAttempt suppliedFileSurfaceAttempt: BridgeFileSurfaceReconciler.Attempt? = nil
     ) async {
+        let fileOutcomeAdmission: BridgePaneRefreshWorkAdmission?
+        if subscription.subscriptionKind == .fileMetadata {
+            guard let admission = refreshWorkAdmissionSource.acquireFileSurfaceOutcome() else { return }
+            fileOutcomeAdmission = admission
+        } else {
+            fileOutcomeAdmission = nil
+        }
         var fileSurfaceAttempt = suppliedFileSurfaceAttempt
         if subscription.subscriptionKind == .fileMetadata, fileSurfaceAttempt == nil,
             let inputBasis = await fileSurfaceInputBasis(
@@ -142,15 +150,11 @@ extension BridgePaneProductMetadataCoordinator {
             }
         }
         let selectedFileSurfaceAttempt = fileSurfaceAttempt
-        let fileSurfaceAttemptContext = selectedFileSurfaceAttempt.map {
-            BridgeFileSurfaceAttemptBootstrapContext(
-                attempt: $0,
-                subscription: subscription,
-                activeStream: activeStream,
-                productAdmission: productAdmission,
-                foregroundWorkAdmission: foregroundWorkAdmission
-            )
-        }
+        let fileSurfaceAttemptContext = makeFileSurfaceAttemptContext(
+            attempt: selectedFileSurfaceAttempt, subscription: subscription, activeStream: activeStream,
+            productAdmission: productAdmission,
+            workAdmissions: (foregroundWorkAdmission, fileOutcomeAdmission)
+        )
         openedSourceSubscriptionIds.remove(subscription.subscriptionId)
         producerTaskLifecycle.startBootstrapTask(
             subscriptionId: subscription.subscriptionId,
@@ -305,6 +309,21 @@ extension BridgePaneProductMetadataCoordinator {
         await annotationSource.releaseProducerBatchScope(handle: view.handle, producerID: producerID)
     }
 
+    private func makeFileSurfaceAttemptContext(
+        attempt: BridgeFileSurfaceReconciler.Attempt?,
+        subscription: BridgeProductSubscriptionSnapshot,
+        activeStream: ActiveStream,
+        productAdmission: BridgeProductAdmissionContext,
+        workAdmissions: (foreground: BridgePaneRefreshWorkAdmission, outcome: BridgePaneRefreshWorkAdmission?)
+    ) -> BridgeFileSurfaceAttemptBootstrapContext? {
+        guard let attempt, let outcomeAdmission = workAdmissions.outcome else { return nil }
+        return .init(
+            attempt: attempt, subscription: subscription, activeStream: activeStream,
+            productAdmission: productAdmission,
+            foregroundWorkAdmission: workAdmissions.foreground, fileOutcomeAdmission: outcomeAdmission
+        )
+    }
+
     private func openFileMetadataSubscription(
         _ subscription: BridgeProductSubscriptionSnapshot,
         activeStream: ActiveStream,
@@ -402,7 +421,8 @@ extension BridgePaneProductMetadataCoordinator {
                     subscription: fileSurfaceAttemptContext.subscription,
                     activeStream: fileSurfaceAttemptContext.activeStream,
                     productAdmission: fileSurfaceAttemptContext.productAdmission,
-                    foregroundWorkAdmission: fileSurfaceAttemptContext.foregroundWorkAdmission
+                    foregroundWorkAdmission: fileSurfaceAttemptContext.foregroundWorkAdmission,
+                    fileOutcomeAdmission: fileSurfaceAttemptContext.fileOutcomeAdmission
                 )
             } else {
                 let action: BridgeFileSurfaceReconciler.Action
@@ -436,6 +456,7 @@ extension BridgePaneProductMetadataCoordinator {
                     activeStream: fileSurfaceAttemptContext.activeStream,
                     productAdmission: fileSurfaceAttemptContext.productAdmission,
                     foregroundWorkAdmission: fileSurfaceAttemptContext.foregroundWorkAdmission,
+                    fileOutcomeAdmission: fileSurfaceAttemptContext.fileOutcomeAdmission,
                     retiringAttemptFinished: true
                 )
             }
@@ -458,13 +479,24 @@ extension BridgePaneProductMetadataCoordinator {
         activeStream: ActiveStream,
         productAdmission: BridgeProductAdmissionContext,
         foregroundWorkAdmission: BridgePaneRefreshWorkAdmission,
+        fileOutcomeAdmission: BridgePaneRefreshWorkAdmission? = nil,
         retiringAttemptFinished: Bool = false
     ) async {
         switch action {
-        case .completed:
-            await recordCurrentFileRefreshFailure(nil)
-        case .failed(let failure):
-            await recordCurrentFileRefreshFailure(failure.refreshFailure)
+        case .completed(let attempt):
+            guard let fileOutcomeAdmission else { return }
+            await recordCurrentFileRefreshFailure(
+                .init(
+                    failure: nil, attempt: attempt, fileAuthorityAdmission: fileOutcomeAdmission,
+                    currency: fileSurfaceReconciler.outcomeCurrency
+                ))
+        case .failed(let failure, let attempt):
+            guard let fileOutcomeAdmission else { return }
+            await recordCurrentFileRefreshFailure(
+                .init(
+                    failure: failure.refreshFailure, attempt: attempt,
+                    fileAuthorityAdmission: fileOutcomeAdmission, currency: fileSurfaceReconciler.outcomeCurrency
+                ))
         case .start(let attempt):
             await startSubscriptionOpen(
                 subscription,

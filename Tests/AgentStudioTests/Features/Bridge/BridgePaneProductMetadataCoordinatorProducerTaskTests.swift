@@ -28,7 +28,9 @@ struct BridgeMetadataCoordinatorProducerTaskTests {
             reviewMetadataSource: BridgeUnavailablePaneProductReviewMetadataSource(),
             refreshWorkAdmissionSource: refreshWorkAdmission.source,
             recordCurrentFileRefreshFailure: { failure in
-                publishedFileFailures.withLock { $0.append(failure) }
+                failure.apply { appliedFailure in
+                    publishedFileFailures.withLock { $0.append(appliedFailure) }
+                }
             },
             lifecycleTraceRecorder: traceRecorder
         )

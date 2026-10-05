@@ -91,6 +91,10 @@ struct BridgePaneRefreshWorkAdmissionSource: Sendable {
         gate.acquire(validity: .foregroundOnly)
     }
 
+    func acquireFileSurfaceOutcome() -> BridgePaneRefreshWorkAdmission? {
+        gate.acquire(validity: .foregroundOnly, authorityLane: .file)
+    }
+
     func acquireReviewContentContinuation() -> BridgePaneRefreshWorkAdmission? {
         gate.acquire(validity: .foregroundOrLoadedHidden)
     }
@@ -838,10 +842,16 @@ private final class BridgePaneRefreshWorkAdmissionGate: @unchecked Sendable {
 
     func acquire(
         validity: Validity,
-        authorityFence: AuthorityFence? = nil
+        authorityFence: AuthorityFence? = nil,
+        authorityLane: BridgePaneRefreshLane? = nil
     ) -> BridgePaneRefreshWorkAdmission? {
         lock.withLock {
             guard activity == .foreground else { return nil }
+            let authorityFence =
+                authorityFence
+                ?? authorityLane.map {
+                    AuthorityFence(lane: $0, generation: authorityGenerationByLane[$0, default: 0])
+                }
             if let authorityFence {
                 guard
                     authorityGenerationByLane[authorityFence.lane, default: 0]

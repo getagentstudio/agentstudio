@@ -26,8 +26,10 @@ struct BridgePaneProductMetadataCoordinatorTests {
             reviewMetadataSource: BridgeUnavailablePaneProductReviewMetadataSource(),
             refreshWorkAdmissionSource: refreshWorkAdmission.source,
             recordCurrentFileRefreshFailure: { failure in
-                guard let failure else { return }
-                Task { try? await currentFileFailure.arrive(failure) }
+                failure.apply { appliedFailure in
+                    guard let appliedFailure else { return }
+                    Task { try? await currentFileFailure.arrive(appliedFailure) }
+                }
             }
         )
         await coordinator.install(

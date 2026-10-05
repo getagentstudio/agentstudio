@@ -43,7 +43,7 @@ actor BridgePaneProductMetadataCoordinator {
     let reviewPublicationReplay:
         @MainActor @Sendable (BridgeProductAdmissionContext) -> BridgeReviewCommittedPublication?
     let reviewMetadataSource: any BridgePaneProductReviewMetadataProducing
-    let recordCurrentFileRefreshFailure: @MainActor @Sendable (BridgePaneProductFileRefreshFailure?) -> Void
+    let recordCurrentFileRefreshFailure: @MainActor @Sendable (BridgeFileSurfaceOutcomeApplication) async -> Void
     private var latestPanePresentation: BridgePaneProductPresentationSnapshot?
     private var latestPaneSurfaceSelectionRequest: BridgePaneSurfaceSelectionRequest?
     private(set) var activeStream: ActiveStream?
@@ -71,7 +71,7 @@ actor BridgePaneProductMetadataCoordinator {
         initialPanePresentation: BridgePaneProductPresentationSnapshot? = nil,
         refreshWorkAdmissionSource: BridgePaneRefreshWorkAdmissionSource,
         recordCurrentFileRefreshFailure:
-            @escaping @MainActor @Sendable (BridgePaneProductFileRefreshFailure?) -> Void = { _ in },
+            @escaping @MainActor @Sendable (BridgeFileSurfaceOutcomeApplication) async -> Void = { _ in },
         lifecycleTraceRecorder: (any BridgeProductMetadataLifecycleTraceRecording)? = nil,
         nativeApplicationRegistry: BridgePaneProductMetadataNativeApplicationRegistry = .product
     ) {
@@ -690,6 +690,7 @@ extension BridgePaneProductMetadataCoordinator {
     }
 
     private func cancelEverySubscription() async {
+        fileSurfaceReconciler.outcomeCurrency.retire()
         let subscriptions = subscriptionKindById
         subscriptionKindById.removeAll(keepingCapacity: false)
         deferredOpenSubscriptionIds.removeAll(keepingCapacity: false)

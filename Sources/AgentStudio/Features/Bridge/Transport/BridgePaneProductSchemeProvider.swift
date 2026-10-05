@@ -123,7 +123,7 @@ actor BridgePaneProductSchemeProvider: BridgeProductSchemeProvider {
         applyFileRefreshRetry:
             @escaping @MainActor @Sendable (BridgeProductAdmissionContext) async -> Void = { _ in },
         recordCurrentFileRefreshFailure:
-            @escaping @MainActor @Sendable (BridgePaneProductFileRefreshFailure?) -> Void = { _ in },
+            @escaping @MainActor @Sendable (BridgeFileSurfaceOutcomeApplication) async -> Void = { _ in },
         applyWorktreeAnnotationCommand:
             @escaping @MainActor @Sendable (
                 BridgeProductWorktreeAnnotationCommandRequest,

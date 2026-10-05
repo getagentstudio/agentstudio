@@ -38,7 +38,7 @@ struct BridgeProductSessionDependencyInput {
     let reviewContentLoaderCache: BridgeReviewContentLoaderCache
     let reviewPublicationCoordinator: BridgeReviewPublicationCoordinator
     let refreshWorkAdmissionSource: BridgePaneRefreshWorkAdmissionSource
-    let recordCurrentFileRefreshFailure: @MainActor @Sendable (BridgePaneProductFileRefreshFailure?) -> Void
+    let recordCurrentFileRefreshFailure: @MainActor @Sendable (BridgeFileSurfaceOutcomeApplication) async -> Void
     let initialProductPresentation: BridgePaneProductPresentationSnapshot
     let telemetryRecorder: (any BridgePerformanceTraceRecording)?
     let reviewSourceProvider: any BridgeReviewSourceProvider

@@ -153,7 +153,8 @@ extension BridgePaneProductMetadataCoordinator {
             ),
             let source = subscription.subscription.fileMetadataSource,
             let state = try? BridgeProductViewScopeContract.fileDemand(from: current.scope),
-            let foregroundWorkAdmission = refreshWorkAdmissionSource.acquire()
+            let foregroundWorkAdmission = refreshWorkAdmissionSource.acquire(),
+            let fileOutcomeAdmission = refreshWorkAdmissionSource.acquireFileSurfaceOutcome()
         else { return }
         let inputBasis = BridgeFileSurfaceInputBasis.admitted(source: source, scope: current.scope)
         if await fileSurfaceReconciler.currentInputBasis != inputBasis {
@@ -163,7 +164,8 @@ extension BridgePaneProductMetadataCoordinator {
                 subscription: subscription,
                 activeStream: activeStream,
                 productAdmission: productAdmission,
-                foregroundWorkAdmission: foregroundWorkAdmission
+                foregroundWorkAdmission: foregroundWorkAdmission,
+                fileOutcomeAdmission: fileOutcomeAdmission
             )
             return
         }
@@ -215,7 +217,8 @@ extension BridgePaneProductMetadataCoordinator {
                     subscription: subscription,
                     activeStream: activeStream,
                     productAdmission: productAdmission,
-                    foregroundWorkAdmission: foregroundWorkAdmission
+                    foregroundWorkAdmission: foregroundWorkAdmission,
+                    fileOutcomeAdmission: fileOutcomeAdmission
                 )
             }
         } catch {
@@ -225,7 +228,7 @@ extension BridgePaneProductMetadataCoordinator {
                 subscription: subscription,
                 activeStream: activeStream,
                 productAdmission: productAdmission,
-                foregroundWorkAdmission: foregroundWorkAdmission
+                workAdmissions: (foregroundWorkAdmission, fileOutcomeAdmission)
             )
         }
     }
@@ -236,8 +239,10 @@ extension BridgePaneProductMetadataCoordinator {
         subscription: BridgeProductSubscriptionSnapshot,
         activeStream: ActiveStream,
         productAdmission: BridgeProductAdmissionContext,
-        foregroundWorkAdmission: BridgePaneRefreshWorkAdmission
+        workAdmissions: (foreground: BridgePaneRefreshWorkAdmission, outcome: BridgePaneRefreshWorkAdmission)
     ) async {
+        let foregroundWorkAdmission = workAdmissions.foreground
+        let fileOutcomeAdmission = workAdmissions.outcome
         guard let surfaceAttempt else { return }
         if Task.isCancelled || Self.isForegroundWorkInvalidation(error) {
             let isAutomaticRestartEligible =
@@ -255,7 +260,8 @@ extension BridgePaneProductMetadataCoordinator {
                 subscription: subscription,
                 activeStream: activeStream,
                 productAdmission: productAdmission,
-                foregroundWorkAdmission: foregroundWorkAdmission
+                foregroundWorkAdmission: foregroundWorkAdmission,
+                fileOutcomeAdmission: fileOutcomeAdmission
             )
             return
         }
@@ -279,7 +285,8 @@ extension BridgePaneProductMetadataCoordinator {
             subscription: subscription,
             activeStream: activeStream,
             productAdmission: productAdmission,
-            foregroundWorkAdmission: foregroundWorkAdmission
+            foregroundWorkAdmission: foregroundWorkAdmission,
+            fileOutcomeAdmission: fileOutcomeAdmission
         )
     }
 

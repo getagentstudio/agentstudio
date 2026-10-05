@@ -129,8 +129,10 @@ actor BridgeFileSurfaceReconciler {
         case restart(retiring: Attempt, starting: Attempt)
         case completed(Attempt)
         case rest
-        case failed(Failure)
+        case failed(Failure, attempt: Attempt)
     }
+
+    nonisolated let outcomeCurrency = BridgeFileSurfaceOutcomeCurrency()
 
     private(set) var currentInputGeneration: UInt64?
     private(set) var currentInputBasis: BridgeFileSurfaceInputBasis?
@@ -176,6 +178,7 @@ actor BridgeFileSurfaceReconciler {
         retiringAttempt = activeAttempt
         let successor = makeAttempt(inputGeneration: currentInputGeneration ?? 1)
         self.activeAttempt = successor
+        outcomeCurrency.replace(with: successor)
         return .restart(retiring: activeAttempt, starting: successor)
     }
 
@@ -208,13 +211,13 @@ actor BridgeFileSurfaceReconciler {
                     cause: .repeatedSupersession
                 )
                 currentFailure = failure
-                return .failed(failure)
+                return .failed(failure, attempt: attempt)
             }
             return startAttempt(inputGeneration: currentInputGeneration)
         case .failed(let failure):
             activeAttempt = nil
             currentFailure = failure
-            return .failed(failure)
+            return .failed(failure, attempt: attempt)
         }
     }
 
@@ -242,9 +245,13 @@ actor BridgeFileSurfaceReconciler {
         phase: FailurePhase = .delivery,
         isAutomaticRestartEligible: Bool = false
     ) -> Action {
-        guard activeAttempt == attempt else { return .rest }
+        guard activeAttempt == attempt else {
+            outcomeCurrency.retire(ifCurrent: attempt)
+            return .rest
+        }
         activeAttempt = nil
         retiringAttempt = attempt
+        outcomeCurrency.retire()
         guard isAutomaticRestartEligible else { return .rest }
 
         consecutiveInterruptionCount += 1
@@ -255,7 +262,8 @@ actor BridgeFileSurfaceReconciler {
             cause: .interruptedRepeatedly
         )
         currentFailure = failure
-        return .failed(failure)
+        outcomeCurrency.replace(with: attempt)
+        return .failed(failure, attempt: attempt)
     }
 
     func retry() -> Action {
@@ -277,6 +285,7 @@ actor BridgeFileSurfaceReconciler {
     private func startAttempt(inputGeneration: UInt64) -> Action {
         let attempt = makeAttempt(inputGeneration: inputGeneration)
         activeAttempt = attempt
+        outcomeCurrency.replace(with: attempt)
         return .start(attempt)
     }
 
