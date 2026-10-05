@@ -127,7 +127,8 @@ final class BridgeSchemeHandlerRPCTests {
         let installation = try BridgeProductSessionInstallation.make(
             paneSessionId: paneSessionId,
             provider: provider,
-            productAdmissionGate: productAdmissionGate
+            productAdmissionGate: productAdmissionGate,
+            deadlineClock: TestPushClock()
         )
         let router = BridgeProductSchemeSessionRouter(
             activeInstallation: installation,
@@ -230,7 +231,8 @@ final class BridgeSchemeHandlerRPCTests {
         let installation = try BridgeProductSessionInstallation.make(
             paneSessionId: paneSessionId,
             provider: provider,
-            productAdmissionGate: productAdmissionGate
+            productAdmissionGate: productAdmissionGate,
+            deadlineClock: TestPushClock()
         )
         let router = BridgeProductSchemeSessionRouter(
             activeInstallation: installation,
