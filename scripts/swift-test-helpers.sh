@@ -2504,6 +2504,9 @@ swift_test_run_with_timeout_body() {
     esac
     : >"$held_step_log"
     facts_file="$evidence_stem.facts"
+  else
+    _XCB_BYPASS=1
+    export _XCB_BYPASS
   fi
 
   # The nested Bash sources this helper to run the existing pipeline supervisor.

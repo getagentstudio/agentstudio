@@ -364,6 +364,7 @@ struct SwiftLaneRunnerReportTests {
                 "cpu_count",
                 "cpu_seconds",
                 "cpu_utilization",
+                "crashed",
                 // Where a wedged run's event-stream ledger was kept, and whether
                 // the lane's own child group was actually reaped on the way out.
                 "event_stream",
