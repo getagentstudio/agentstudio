@@ -438,10 +438,11 @@ extension WebKitSerializedTests.BridgePaneControllerTests {
         )
         let paneId = UUIDv7.generate()
         let productAdmissionGate = BridgeProductAdmissionGate()
-        let installation = BridgePaneController.makeInitialProductSessionInstallation(
+        let installation = try BridgeProductSessionInstallation.make(
             paneSessionId: paneId.uuidString,
             provider: productProvider,
-            productAdmissionGate: productAdmissionGate
+            productAdmissionGate: productAdmissionGate,
+            deadlineClock: TestPushClock()
         )
         let controller = BridgePaneController(
             paneId: paneId,

@@ -1,5 +1,6 @@
 import AgentStudioInfrastructure
 import AgentStudioTestHarness
+import AgentStudioTestSupport
 import Foundation
 import Testing
 
@@ -186,7 +187,8 @@ struct BridgeProductSessionSurfaceFloorRetirementTests {
         let session = try BridgeProductSession(
             paneSessionId: bridgeProductTestPaneSessionId,
             workerInstanceId: bridgeProductTestWorkerInstanceId,
-            capabilityBytes: capabilityBytes
+            capabilityBytes: capabilityBytes,
+            deadlineClock: TestPushClock()
         )
         let provider = FloorRetirementRecordingProvider()
         let productAdmission = try BridgeProductAdmissionTestContext.make().context
