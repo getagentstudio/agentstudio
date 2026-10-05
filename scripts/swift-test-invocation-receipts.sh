@@ -4,7 +4,7 @@
 swift_test_f2_begin_receipt() {
   local stem="$1"
   rm -f "$stem.invocation.json" "$stem.invocation-report.txt" "$stem.pending-waits.txt" \
-    "$stem.resources.txt" "$stem.resource-mode" 2>/dev/null || true
+    "$stem.resources.txt" "$stem.resource-mode" "$stem.facts" 2>/dev/null || true
 }
 
 swift_test_f2_launch_command_group() {
@@ -41,6 +41,17 @@ swift_test_f2_collect_events() {
   LOG_PREFIX="${LOG_PREFIX:-test}" /usr/bin/perl "$analyzer" collect \
     "$stem" "$output" "$events" "$held" "$snapshot" 2>/dev/null || \
     echo "[${LOG_PREFIX:-test}] lane-report invocation_observation=unavailable" >&2
+  return 0
+}
+
+swift_test_f2_read_facts() {
+  local events="$1" expected_runs="$2" output="$3"
+  local analyzer="${BASH_SOURCE[0]%/*}/swift-test-invocation-receipts.pl"
+  rm -f "$output" 2>/dev/null || true
+  if ! /usr/bin/perl "$analyzer" facts "$events" "$expected_runs" >"$output" 2>/dev/null; then
+    printf 'reason=facts_reader_unavailable\n' >"$output"
+    return 1
+  fi
   return 0
 }
 

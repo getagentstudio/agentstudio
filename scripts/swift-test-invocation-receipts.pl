@@ -188,6 +188,65 @@ if ($mode eq 'collect') {
     save_json("$stem.invocation.json", $record);
     write_lines("$stem.pending-waits.txt", \@pending_reports);
     print encode_utf8($_), "\n" for @reports;
+} elsif ($mode eq 'facts') {
+    my ($events_path, $expected_runs) = @ARGV;
+    $expected_runs = numeric($expected_runs) ? int($expected_runs) : 1;
+    my ($run_started, $run_ended, $open_runs, $tests_run, $unreadable_records) = (0, 0, 0, 0, 0);
+    my ($announced, $peak_announced, $peak_cases) = (0, 0, 0);
+    my (%definitions, %active_tests, %active_cases, @failing_tests);
+    my $events_available = open(my $events, '<:raw', $events_path // '');
+    if ($events_available) {
+        while (my $line = <$events>) {
+            if ($line !~ /\n\z/) { $unreadable_records++; next }
+            my $raw = eval { $json->decode($line) };
+            if (ref($raw) ne 'HASH') { $unreadable_records++; next }
+            my $event = ref($raw->{payload}) eq 'HASH' ? $raw->{payload} : $raw;
+            my $kind = $event->{kind} // '';
+            if (($raw->{kind} // '') eq 'test') {
+                $definitions{$event->{id}} = $event if defined $event->{id};
+                next;
+            }
+            if ($kind eq 'runStarted') { $run_started++; $open_runs++; next }
+            if ($kind eq 'runEnded') { $run_ended++; $open_runs-- if $open_runs > 0; next }
+            my $id = $event->{testID};
+            my $is_function = defined($id) && (($definitions{$id}{kind} // '') eq 'function');
+            if ($kind eq 'testStarted' && $is_function) {
+                $active_tests{$id} = 1;
+                $announced++;
+                $peak_announced = $announced if $announced > $peak_announced;
+            } elsif ($kind eq 'testEnded' && $is_function) {
+                $tests_run++;
+                delete $active_tests{$id};
+                $announced-- if $announced > 0;
+            } elsif ($kind eq 'testCaseStarted') {
+                my $case_id = ref($event->{_testCase}) eq 'HASH' ? $event->{_testCase}{id} : undef;
+                if (defined($id) && defined($case_id)) {
+                    $active_cases{"$id\0$case_id"} = 1;
+                    my $running = scalar(keys %active_cases);
+                    $peak_cases = $running if $running > $peak_cases;
+                }
+            } elsif ($kind eq 'testCaseEnded') {
+                my $case_id = ref($event->{_testCase}) eq 'HASH' ? $event->{_testCase}{id} : undef;
+                delete $active_cases{"$id\0$case_id"} if defined($id) && defined($case_id);
+            } elsif ($kind eq 'issueRecorded') {
+                my $issue = ref($event->{issue}) eq 'HASH' ? $event->{issue} : {};
+                my $failure = exists($issue->{isFailure}) ? $issue->{isFailure} : !($issue->{isKnown} // 0);
+                push @failing_tests, $id if $failure && defined $id;
+            }
+        }
+        close $events;
+    }
+    my $stream = !$events_available ? 'missing'
+        : $unreadable_records ? 'unreadable'
+        : ($run_started != $expected_runs || $run_ended != $expected_runs || $open_runs != 0) ? 'truncated'
+        : 'complete';
+    print "stream=$stream\n";
+    print "unreadable_records=$unreadable_records\n";
+    print "runs=$run_ended\n";
+    print "tests_run=$tests_run\n";
+    print "peak_announced_tests=$peak_announced\n";
+    print "peak_running_parameterized_cases=$peak_cases\n";
+    print "failing_test=$_\n" for @failing_tests;
 } elsif ($mode eq 'resources') {
     my ($stem, $child, $dispatch, $complete, $timed_out) = @ARGV;
     my $record = load_json("$stem.invocation.json");

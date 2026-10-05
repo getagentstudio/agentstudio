@@ -11,6 +11,8 @@
 #   EXTRA_SWIFT_TEST_ARGS - Additional swift test flags (e.g. "--enable-code-coverage")
 #   XCB_EXTRA_ARGS        - Extra xcbeautify flags (e.g. "--renderer github-actions")
 
+SWIFT_TEST_HELPERS_SOURCE_PATH="${BASH_SOURCE[0]:-}"
+
 # Give SwiftPM time to cancel and reap its separate helper process group after SIGINT.
 # SwiftPM 6.3.3 uses a 30-second cancellation deadline, then AsyncProcess escalates
 # its child group to SIGKILL and waits: Cancellator.swift:147-189 and
@@ -32,6 +34,7 @@ else
   echo "[${LOG_PREFIX:-test}] warning: invocation_observation=unavailable receipt support could not be loaded" >&2
   swift_test_f2_begin_receipt() { :; }
   swift_test_f2_collect_events() { :; }
+  swift_test_f2_read_facts() { printf 'reason=facts_reader_unavailable\n' >"${3:-/dev/null}"; return 1; }
   swift_test_f2_finalize_resources() { :; }
   swift_test_f2_attach_receipt() { :; }
   swift_test_f2_begin_lane_accounting() { :; }
@@ -123,35 +126,6 @@ SWIFT_TEST_WEBKIT_PROCESS_CONCURRENCY=1
 
 swift_test_webkit_process_concurrency() {
   echo "$SWIFT_TEST_WEBKIT_PROCESS_CONCURRENCY"
-}
-
-# Largest number of tests whose START EVENT had been posted but whose result had
-# not, as an ordinal count over one captured console stream. These tests were
-# ANNOUNCED, not started or running, and the lane report labels them that way.
-#
-# This does NOT reflect the parallelization cap. Swift Testing posts .testStarted
-# in _runStep BEFORE the test acquires the parallelization serializer, so a test
-# counted here may be suspended in a continuation rather than running, and this
-# number stays near the total test count even when the cap is working. It is kept
-# because it is cheap and shows admission backlog; peak_running_parameterized_cases is the
-# number that reflects the cap.
-swift_test_peak_announced_from_output() {
-  local output_file="$1"
-
-  /usr/bin/iconv -f UTF-8 -t UTF-8 -c <"$output_file" | /usr/bin/awk '
-    { line = $0; sub(/^\[[^]]*\] /, "", line) }
-    line ~ /^◇ Test / && line ~ /started\.$/ && line !~ /^◇ Test (run|case) / {
-      in_flight++
-      if (in_flight > peak) { peak = in_flight }
-      next
-    }
-    line ~ /^[✔✘] Test / && line !~ /^[✔✘] Test (run|case) / &&
-      (line ~ / passed after / || line ~ / failed after /) {
-      if (in_flight > 0) { in_flight-- }
-      next
-    }
-    END { print peak + 0 }
-  '
 }
 
 # Largest number of test cases RUNNING at once, from Swift Testing's JSON event
@@ -513,16 +487,17 @@ print_running_parameterized_cases_at_timeout() {
 # reports the maximum. Appending (rather than read-modify-write) keeps the
 # isolated phase's concurrent subshells from racing each other.
 swift_test_record_lane_peaks() {
-  local output_file="$1"
-  local event_stream_file="${2:-}"
+  local facts_file="${3:-}"
 
-  if [ -n "${SWIFT_TEST_PEAK_ANNOUNCED_FILE:-}" ]; then
-    swift_test_peak_announced_from_output "$output_file" \
-      >>"$SWIFT_TEST_PEAK_ANNOUNCED_FILE" 2>/dev/null || true
-  fi
-  if [ -n "${SWIFT_TEST_PEAK_RUNNING_FILE:-}" ] && [ -n "$event_stream_file" ]; then
-    swift_test_peak_running_cases_from_events "$event_stream_file" \
-      >>"$SWIFT_TEST_PEAK_RUNNING_FILE" 2>/dev/null || true
+  if [ -r "$facts_file" ]; then
+    if [ -n "${SWIFT_TEST_PEAK_ANNOUNCED_FILE:-}" ]; then
+      sed -n 's/^peak_announced_tests=//p' "$facts_file" \
+        >>"$SWIFT_TEST_PEAK_ANNOUNCED_FILE" 2>/dev/null || true
+    fi
+    if [ -n "${SWIFT_TEST_PEAK_RUNNING_FILE:-}" ]; then
+      sed -n 's/^peak_running_parameterized_cases=//p' "$facts_file" \
+        >>"$SWIFT_TEST_PEAK_RUNNING_FILE" 2>/dev/null || true
+    fi
   fi
 }
 
@@ -739,14 +714,125 @@ print_lane_receipt_verdict() {
 # swift build (the prebuild) rejects the Swift Testing event-stream flags; every
 # other run_swift_with_timeout caller is a test invocation that accepts them.
 swift_test_command_accepts_event_stream() {
-  local argument
-
+  local argument previous=""
   for argument in "$@"; do
-    if [ "$argument" = "build" ]; then
-      return 1
-    fi
+    [ "$argument" = "build" ] && return 1
+    case "$argument" in
+      */swiftpm-testing-helper|swiftpm-testing-helper) return 0 ;;
+    esac
+    if [ "$previous" = "swift" ] && [ "$argument" = "test" ]; then return 0; fi
+    previous="$argument"
   done
-  return 0
+  return 1
+}
+
+swift_test_invocation_expected_runs() {
+  if declare -F swift_test_expected_event_runs >/dev/null 2>&1; then
+    swift_test_expected_event_runs
+    return 0
+  fi
+
+  local previous=""
+  local argument
+  for argument in "$@"; do
+    case "$argument" in
+      */swiftpm-testing-helper|swiftpm-testing-helper)
+        echo 1
+        return 0
+        ;;
+    esac
+    if [ "$previous" = "swift" ] && [ "$argument" = "test" ]; then
+      local bundle_count=""
+      if [ -n "${BUILD_PATH:-}" ]; then
+        bundle_count="$(lane_build_receipt_field "$(lane_build_receipt_path)" bundle_count 2>/dev/null || true)"
+      fi
+      if [[ "$bundle_count" =~ ^[1-9][0-9]*$ ]]; then
+        echo "$bundle_count"
+      else
+        local bundle_directory="${BUILD_PATH:-}/debug"
+        if [ ! -d "$bundle_directory" ]; then
+          bundle_directory="${BUILD_PATH:-}/out/Products/Debug"
+        fi
+        bundle_count="$(find "$bundle_directory" -maxdepth 1 -type d -name '*.xctest' -print 2>/dev/null | wc -l | tr -d '[:space:]')"
+        if [ "$bundle_count" = 0 ] && [ "$bundle_directory" != "${BUILD_PATH:-}/out/Products/Debug" ]; then
+          bundle_directory="${BUILD_PATH:-}/out/Products/Debug"
+          bundle_count="$(find "$bundle_directory" -maxdepth 1 -type d -name '*.xctest' -print 2>/dev/null | wc -l | tr -d '[:space:]')"
+        fi
+        [[ "$bundle_count" =~ ^[1-9][0-9]*$ ]] && echo "$bundle_count" || echo 1
+      fi
+      return 0
+    fi
+    previous="$argument"
+  done
+  echo 1
+}
+
+swift_test_read_invocation_facts() {
+  local evidence_stem="$1" event_stream_file="$2" expected_runs="$3"
+  local facts_file="$evidence_stem.facts"
+  SWIFT_TEST_FACTS_FILE="$facts_file"
+  SWIFT_TEST_FACTS_READER_UNAVAILABLE=0
+  if ! swift_test_f2_read_facts "$event_stream_file" "$expected_runs" "$facts_file"; then
+    SWIFT_TEST_FACTS_READER_UNAVAILABLE=1
+  fi
+
+  SWIFT_TEST_FACTS_STREAM=missing
+  SWIFT_TEST_FACTS_UNREADABLE_RECORDS=0
+  SWIFT_TEST_FACTS_RUNS=0
+  SWIFT_TEST_FACTS_TESTS_RUN=0
+  SWIFT_TEST_FACTS_PEAK_ANNOUNCED=0
+  SWIFT_TEST_FACTS_PEAK_CASES=0
+  SWIFT_TEST_FACTS_FAILURE_COUNT=0
+  if [ -r "$facts_file" ]; then
+    while IFS='=' read -r fact_key fact_value; do
+      case "$fact_key" in
+        stream) SWIFT_TEST_FACTS_STREAM="$fact_value" ;;
+        unreadable_records) SWIFT_TEST_FACTS_UNREADABLE_RECORDS="$fact_value" ;;
+        runs) SWIFT_TEST_FACTS_RUNS="$fact_value" ;;
+        tests_run) SWIFT_TEST_FACTS_TESTS_RUN="$fact_value" ;;
+        peak_announced_tests) SWIFT_TEST_FACTS_PEAK_ANNOUNCED="$fact_value" ;;
+        peak_running_parameterized_cases) SWIFT_TEST_FACTS_PEAK_CASES="$fact_value" ;;
+        failing_test) SWIFT_TEST_FACTS_FAILURE_COUNT=$((SWIFT_TEST_FACTS_FAILURE_COUNT + 1)) ;;
+      esac
+    done <"$facts_file"
+  fi
+}
+
+swift_test_report_invocation_facts() {
+  local expected_runs="$1"
+  echo "[$LOG_PREFIX] lane-report stream=$SWIFT_TEST_FACTS_STREAM"
+  echo "[$LOG_PREFIX] lane-report runs=$SWIFT_TEST_FACTS_RUNS/$expected_runs"
+  echo "[$LOG_PREFIX] lane-report tests_run=$SWIFT_TEST_FACTS_TESTS_RUN"
+  echo "[$LOG_PREFIX] lane-report unreadable_records=$SWIFT_TEST_FACTS_UNREADABLE_RECORDS"
+  while IFS= read -r failing_test; do
+    [ -n "$failing_test" ] || continue
+    echo "[$LOG_PREFIX] lane-report failing_test=$failing_test"
+  done < <(sed -n 's/^failing_test=//p' "$SWIFT_TEST_FACTS_FILE" 2>/dev/null || true)
+}
+
+swift_test_facts_have_failures() {
+  [ "${SWIFT_TEST_FACTS_FAILURE_COUNT:-0}" -gt 0 ]
+}
+
+swift_test_judge_invocation_status() {
+  local command_status="$1" expected_runs="$2"
+  if [ "$SWIFT_TEST_FACTS_READER_UNAVAILABLE" -eq 1 ]; then
+    echo "[$LOG_PREFIX] lane-report reason=facts_reader_unavailable"
+    [ "$command_status" -eq 0 ] && command_status=1
+  elif [ "$command_status" -eq 0 ]; then
+    if swift_test_facts_have_failures; then
+      command_status=1
+    elif [ "$SWIFT_TEST_FACTS_STREAM" != complete ]; then
+      echo "[$LOG_PREFIX] lane-report reason=event_stream_incomplete stream=$SWIFT_TEST_FACTS_STREAM runs=$SWIFT_TEST_FACTS_RUNS/$expected_runs unreadable_records=$SWIFT_TEST_FACTS_UNREADABLE_RECORDS"
+      command_status=1
+    elif [ "$SWIFT_TEST_FACTS_TESTS_RUN" -eq 0 ]; then
+      echo "[$LOG_PREFIX] lane-report reason=no_matching_tests"
+      command_status=1
+    fi
+  elif ! swift_test_facts_have_failures; then
+    echo "[$LOG_PREFIX] lane-report crashed status=$command_status signal=$(swift_test_signal_name "$command_status")"
+  fi
+  SWIFT_TEST_JUDGED_STATUS="$command_status"
 }
 
 swift_test_suite_lane_inventory() {
@@ -2094,7 +2180,7 @@ swift_test_output_relay_prepare_paths() {
     return 0
   fi
 
-  script_directory="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)" || return 1
+  script_directory="$(cd "$(dirname "${SWIFT_TEST_HELPERS_SOURCE_PATH:-${BASH_SOURCE[0]:-}}")" && pwd -P)" || return 1
   SWIFT_TEST_OUTPUT_RELAY_SCRIPT_PATH="$script_directory/swift-test-output-relay.pl"
 
   if [ -n "${BUILD_PATH:-}" ]; then
@@ -2279,6 +2365,9 @@ swift_test_run_with_timeout_body() {
   # Both `swift test` and swiftpm-testing-helper accept these trailing flags on
   # Swift 6.3.3 (neither advertises them in --help).
   local event_stream_file=""
+  local expected_runs=1
+  local facts_file=""
+  SWIFT_TEST_FACTS_FAILURE_COUNT=0
   local evidence_stem
   evidence_stem="$(lane_evidence_stem "$label")"
   mkdir -p "$LANE_EVENT_STREAM_DIR" 2>/dev/null || true
@@ -2289,8 +2378,9 @@ swift_test_run_with_timeout_body() {
   # is not this script's to promise.
   local held_step_log=""
   if swift_test_command_accepts_event_stream "$@"; then
+    expected_runs="$(swift_test_invocation_expected_runs "$@")"
     event_stream_file="$(mktemp "${TMPDIR:-/tmp}/agentstudio-swift-test-events.XXXXXX")"
-    set -- "$@" --event-stream-version 0 --event-stream-output-path "$event_stream_file"
+    set -- "$@" --event-stream-version 6.3 --event-stream-output-path "$event_stream_file"
     mkdir -p "$LANE_EVENT_STREAM_DIR"
     held_step_log="$evidence_stem.held-steps.log"
     case "$held_step_log" in
@@ -2298,12 +2388,13 @@ swift_test_run_with_timeout_body() {
       *) held_step_log="$PWD/$held_step_log" ;;
     esac
     : >"$held_step_log"
+    facts_file="$evidence_stem.facts"
   fi
 
   # The nested Bash sources this helper to run the existing pipeline supervisor.
   # The Perl shim creates the process group before exec, and its PID remains the
   # tracked command PID after both execs.
-  SWIFT_TEST_HELPERS_PATH="${BASH_SOURCE[0]}"
+  SWIFT_TEST_HELPERS_PATH="${SWIFT_TEST_HELPERS_SOURCE_PATH:-${BASH_SOURCE[0]:-}}"
   export SWIFT_TEST_HELPERS_PATH
   if ! swift_test_f2_launch_command_group "$evidence_stem" \
     /bin/bash -c \
@@ -2312,6 +2403,10 @@ swift_test_run_with_timeout_body() {
   then
     echo "[$LOG_PREFIX] failed to launch command process group for '$label'" >&2
     swift_test_f2_collect_events "$evidence_stem" "$output_file" "$event_stream_file" "$held_step_log" launch_error || true
+    if [ -n "$event_stream_file" ]; then
+      swift_test_read_invocation_facts "$evidence_stem" "$event_stream_file" "$expected_runs"
+      swift_test_report_invocation_facts "$expected_runs"
+    fi
     swift_test_f2_finalize_resources "$evidence_stem" "$child_timing_file" "$timing_dispatch_ms" \
       "$(lane_timing_now_ms 2>/dev/null || true)" "$timed_out" || true
     write_lane_timing_sidecar "$evidence_stem.timing.json" "$label" "$child_timing_file" \
@@ -2342,8 +2437,12 @@ swift_test_run_with_timeout_body() {
       kill_lane_processes_by_run_token "$event_stream_file"
       wait "$command_pid" 2>/dev/null || true
       swift_test_unregister_active_command_group "$command_pid"
-      swift_test_record_lane_peaks "$output_file" "$event_stream_file"
       swift_test_f2_collect_events "$evidence_stem" "$output_file" "$event_stream_file" "$held_step_log" watchdog_error || true
+      if [ -n "$event_stream_file" ]; then
+        swift_test_read_invocation_facts "$evidence_stem" "$event_stream_file" "$expected_runs"
+        swift_test_report_invocation_facts "$expected_runs"
+      fi
+      swift_test_record_lane_peaks "$output_file" "$event_stream_file" "$facts_file"
       swift_test_f2_finalize_resources "$evidence_stem" "$child_timing_file" "$timing_dispatch_ms" \
         "$(lane_timing_now_ms 2>/dev/null || true)" "$timed_out" || true
       discard_empty_held_step_log "$held_step_log"
@@ -2384,6 +2483,10 @@ swift_test_run_with_timeout_body() {
     # executing at the timeout, not what survived the kill.
     print_running_parameterized_cases_at_timeout "$event_stream_file"
     swift_test_f2_collect_events "$evidence_stem" "$output_file" "$event_stream_file" "$held_step_log" before_reap || true
+    if [ -n "$event_stream_file" ]; then
+      swift_test_read_invocation_facts "$evidence_stem" "$event_stream_file" "$expected_runs"
+      swift_test_report_invocation_facts "$expected_runs"
+    fi
     swift_test_f2_print_pending_waits "$evidence_stem" "$held_step_log" "$output_file" || true
     print_timeout_process_diagnostics "$label" "$command_pid" "$evidence_stem"
     echo "[$LOG_PREFIX] raw output tail for '$label':"
@@ -2399,7 +2502,7 @@ swift_test_run_with_timeout_body() {
     swift_test_signal_command_group INT "$command_pid"
     if swift_test_wait_for_command_group_exit "$command_pid"; then
       wait "$command_pid" 2>/dev/null || true
-      swift_test_record_lane_peaks "$output_file" "$event_stream_file"
+      swift_test_record_lane_peaks "$output_file" "$event_stream_file" "$facts_file"
       timeout_reap_stage=sigint_cancelled
     else
       # SwiftPM's SIGINT handler owns helper-group cancellation. Only take over
@@ -2408,7 +2511,7 @@ swift_test_run_with_timeout_body() {
       terminate_lane_child_tree TERM "$command_pid"
       # Writing the report IS the TERM grace period. It is work the lane must do
       # anyway, so a child that honours TERM exits while it happens.
-      swift_test_record_lane_peaks "$output_file" "$event_stream_file"
+      swift_test_record_lane_peaks "$output_file" "$event_stream_file" "$facts_file"
 
       if lane_run_has_survivors "$command_pid" "$event_stream_file"; then
         swift_test_signal_command_group KILL "$command_pid"
@@ -2448,25 +2551,21 @@ swift_test_run_with_timeout_body() {
   swift_test_unregister_active_command_group "$command_pid"
   local should_preserve_event_stream=0
 
-  if [ "$command_status" -eq 0 ] && swift_test_output_has_failures "$output_file"; then
-    echo "[$LOG_PREFIX] ERROR: '$label' emitted Swift Testing failure output despite exit 0" >&2
-    command_status=1
-  elif [ "$command_status" -ne 0 ] && ! swift_test_output_has_failures "$output_file"; then
-    # A child that died without recording a Swift Testing failure — a signal, or a
-    # runtime abort after its tests passed. Without this the lane printed only
-    # "ERROR task failed" and bash's job-table line, and the reason was gone with
-    # the output file.
+  swift_test_f2_collect_events "$evidence_stem" "$output_file" "$event_stream_file" "$held_step_log" command_exit || true
+  if [ -n "$event_stream_file" ]; then
+    swift_test_read_invocation_facts "$evidence_stem" "$event_stream_file" "$expected_runs"
+    swift_test_report_invocation_facts "$expected_runs"
+    swift_test_judge_invocation_status "$command_status" "$expected_runs"
+    command_status="$SWIFT_TEST_JUDGED_STATUS"
+  fi
+  if [ "$command_status" -ne 0 ] && ! swift_test_facts_have_failures; then
     print_failed_child_diagnostics "$label" "$command_status" "$output_file"
-    # Same reason as the timeout path: a child that died without recording a
-    # Swift Testing failure leaves the event stream as the only record of what
-    # had actually started, and console output cannot reconstruct it.
     should_preserve_event_stream=1
   fi
 
-  swift_test_f2_collect_events "$evidence_stem" "$output_file" "$event_stream_file" "$held_step_log" command_exit || true
   swift_test_f2_finalize_resources "$evidence_stem" "$child_timing_file" "$timing_dispatch_ms" \
     "$(lane_timing_now_ms 2>/dev/null || true)" "$timed_out" || true
-  swift_test_record_lane_peaks "$output_file" "$event_stream_file"
+  swift_test_record_lane_peaks "$output_file" "$event_stream_file" "$facts_file"
   # A width comparison compares what ran, so it keeps every ledger, passing or not.
   if [ "$should_preserve_event_stream" -eq 1 ] || [ "${LANE_EVENT_STREAM_RETAIN_ALWAYS:-0}" = "1" ]; then
     # Discarded first, so retention never sees this run's empty held-step log.
@@ -2570,17 +2669,6 @@ print_failed_child_diagnostics() {
 print_swift_test_output_tail() {
   local output_file="$1"
   tail -n 120 "$output_file" | /usr/bin/iconv -f UTF-8 -t UTF-8 -c
-}
-
-swift_test_output_has_failures() {
-  local output_file="$1"
-
-  (
-    set -o pipefail
-    /usr/bin/iconv -f UTF-8 -t UTF-8 -c <"$output_file" |
-      grep -Eq \
-        '(^|[[:space:]])(✘|✖)[[:space:]]|recorded an issue|failed after [0-9.]+ seconds with [0-9]+ issue\(s\)|Test run with .* failed after|No matching test cases were run'
-  )
 }
 
 print_timeout_process_diagnostics() {
