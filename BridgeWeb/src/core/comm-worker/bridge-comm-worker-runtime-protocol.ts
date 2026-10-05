@@ -11,10 +11,7 @@ import {
 } from './bridge-comm-worker-command-handler.js';
 import type { BridgeCommWorkerPort } from './bridge-comm-worker-entry.js';
 import { ensureBridgeCommWorkerFileMetadataInBackground } from './bridge-comm-worker-file-background-warmup.js';
-import {
-	abortAllBridgeCommWorkerFileContentPreparations,
-	abortBridgeCommWorkerFileContentPreparation,
-} from './bridge-comm-worker-file-content-cancellation.js';
+import { createBridgeCommWorkerFileContentCancellation } from './bridge-comm-worker-file-content-cancellation.js';
 import { BridgeCommWorkerFileDisplayEventAuthority } from './bridge-comm-worker-file-display-event-authority.js';
 import {
 	applyBridgeCommWorkerFileQueryUpdateCommand,
@@ -148,12 +145,9 @@ export function registerBridgeCommWorkerRuntimePortProtocol(
 	});
 	let fileViewRuntimeSource: BridgeCommWorkerFileViewRuntimeSource =
 		createEmptyBridgeCommWorkerFileViewRuntimeSource();
-	const fileContentAbortControllersByItemId = new Map<string, AbortController>();
-	const fileContentPreparationGenerationByItemId = new Map<string, number>();
-	const fileContentCancellation = {
-		abortControllersByItemId: fileContentAbortControllersByItemId,
-		generationByItemId: fileContentPreparationGenerationByItemId,
-	};
+	const fileContentCancellation = createBridgeCommWorkerFileContentCancellation();
+	const fileContentAbortControllersByItemId = fileContentCancellation.abortControllersByItemId;
+	const fileContentPreparationGenerationByItemId = fileContentCancellation.generationByItemId;
 	let latestSelectedFilePreparationRequest: BridgeCommWorkerSelectedFileViewContentReadyPreparationRequest | null =
 		null;
 	const runtimeTelemetryClient = props.telemetryClient;
@@ -182,10 +176,8 @@ export function registerBridgeCommWorkerRuntimePortProtocol(
 	};
 	const retriedSelectedFilePreparationRequests =
 		new WeakSet<BridgeCommWorkerSelectedFileViewContentReadyPreparationRequest>();
-	const abortFileContentPreparation = (itemId: string): void =>
-		abortBridgeCommWorkerFileContentPreparation({ ...fileContentCancellation, itemId });
-	const abortAllFileContentPreparations = (): void =>
-		abortAllBridgeCommWorkerFileContentPreparations(fileContentCancellation);
+	const abortFileContentPreparation = fileContentCancellation.abort;
+	const abortAllFileContentPreparations = fileContentCancellation.abortAll;
 	let activeFileWorkerDerivationEpoch: number | null = null;
 	let hasAcceptedFileSource = false;
 	let activeReviewWorkerDerivationEpoch: number | null = null;
@@ -379,16 +371,12 @@ export function registerBridgeCommWorkerRuntimePortProtocol(
 			workerDerivationEpoch,
 		});
 		if (sourceBoundOperation === null) return;
-		// A duplicate same-source wake must not replace an active read. Explicit
-		// descriptor replacement and receipt retry first release that read owner.
-		if (fileContentAbortControllersByItemId.has(request.itemId)) {
-			return;
-		}
+		const contentRequest = fileViewRuntimeSource.contentRequestsByItemId?.get(request.itemId);
+		if (fileContentCancellation.retainOrSupersede(request.itemId, contentRequest)) return;
 		if (sourceBoundOperation.generation !== selectedOperation.generation) {
 			abortAllFileContentPreparations();
 		}
 		const metadata = selectedState.contentMetadataByItemId.get(request.itemId) ?? null;
-		const contentRequest = fileViewRuntimeSource.contentRequestsByItemId?.get(request.itemId);
 		if (!isBridgeWorkerFileViewContentMetadata(metadata) || contentRequest === undefined) return;
 		selectedFileLifecycleTelemetry.descriptorReady(sourceBoundOperation);
 		selectedFileContentOperationController.advance(
@@ -432,10 +420,20 @@ export function registerBridgeCommWorkerRuntimePortProtocol(
 			workerDerivationEpoch,
 		});
 		if (ticket.enqueued) {
+			const cancellationCompletion = fileContentCancellation.trackSettlement({
+				request: contentRequest,
+				abortController,
+				completion: ticket.completion,
+				itemId: request.itemId,
+				onSupersessionSettled: (): void => {
+					resumeLatestSelectedFileViewContentReadyPreparation();
+					requestPreparationDrain();
+				},
+			});
 			const trackedCompletion = trackSelectedFilePreparationCompletion({
 				abortController,
 				abortControllerByItemId: fileContentAbortControllersByItemId,
-				completion: ticket.completion,
+				completion: cancellationCompletion,
 				isPaneWorkAdmitted: (): boolean => panePresentationAuthority.admitsWork,
 				isRequestLatest: (): boolean => latestSelectedFilePreparationRequest === request,
 				onClearLatest: (): void => {
