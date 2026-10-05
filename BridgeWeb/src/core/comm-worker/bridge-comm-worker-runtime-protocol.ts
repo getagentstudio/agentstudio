@@ -371,11 +371,12 @@ export function registerBridgeCommWorkerRuntimePortProtocol(
 			workerDerivationEpoch,
 		});
 		if (sourceBoundOperation === null) return;
-		const contentRequest = fileViewRuntimeSource.contentRequestsByItemId?.get(request.itemId);
-		if (fileContentCancellation.retainOrSupersede(request.itemId, contentRequest)) return;
 		if (sourceBoundOperation.generation !== selectedOperation.generation) {
 			abortAllFileContentPreparations();
 		}
+		const contentRequest = fileViewRuntimeSource.contentRequestsByItemId?.get(request.itemId);
+		if (fileContentCancellation.retainOrSupersede(request.itemId, contentRequest, request.epoch))
+			return;
 		const metadata = selectedState.contentMetadataByItemId.get(request.itemId) ?? null;
 		if (!isBridgeWorkerFileViewContentMetadata(metadata) || contentRequest === undefined) return;
 		selectedFileLifecycleTelemetry.descriptorReady(sourceBoundOperation);
@@ -424,6 +425,7 @@ export function registerBridgeCommWorkerRuntimePortProtocol(
 				request: contentRequest,
 				abortController,
 				completion: ticket.completion,
+				demandEpoch: request.epoch,
 				itemId: request.itemId,
 				onSupersessionSettled: (): void => {
 					resumeLatestSelectedFileViewContentReadyPreparation();
