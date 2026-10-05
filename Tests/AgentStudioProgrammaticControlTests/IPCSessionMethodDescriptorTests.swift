@@ -88,23 +88,30 @@ struct IPCSessionMethodDescriptorTests {
         #expect(query.handle == "self")
     }
 
-    @Test("query exposes exactly the shared status summary and a required nullable session")
+    @Test("query exposes the shared status summary and required nullable session and refusal")
     func queryHasOneSummaryShape() throws {
         let sessions = try makeCatalog().sessions
         let decoded = try JSONSerialization.jsonObject(
             with: sessions.sessionQuery.contract.resultSchema.jsonSchemaData())
         let document = try #require(decoded as? [String: Any])
         let properties = try #require(document["properties"] as? [String: [String: Any]])
-        #expect(Set(properties.keys) == ["paneId", "sourceHealth", "session"])
+        #expect(Set(properties.keys) == ["paneId", "sourceHealth", "session", "lastRefusal"])
         let required = try #require(document["required"] as? [String])
-        #expect(Set(required) == ["paneId", "sourceHealth", "session"])
+        #expect(Set(required) == ["paneId", "sourceHealth", "session", "lastRefusal"])
         let result = IPCSessionQueryResult(paneId: UUIDv7.generate(), sourceHealth: .unbound, session: nil)
         let encoded = try JSONEncoder().encode(result)
         let object = try JSONSerialization.jsonObject(with: encoded)
         let fields = try #require(object as? [String: Any])
         #expect(fields["session"] is NSNull)
+        #expect(fields["lastRefusal"] is NSNull)
         let roundtrip = try JSONDecoder().decode(IPCSessionQueryResult.self, from: encoded)
         #expect(roundtrip == result)
+        var missingRefusal = fields
+        missingRefusal.removeValue(forKey: "lastRefusal")
+        let missingRefusalData = try JSONSerialization.data(withJSONObject: missingRefusal)
+        #expect(throws: DecodingError.self) {
+            try JSONDecoder().decode(IPCSessionQueryResult.self, from: missingRefusalData)
+        }
         var missing = fields
         missing.removeValue(forKey: "session")
         let missingData = try JSONSerialization.data(withJSONObject: missing)
@@ -117,6 +124,20 @@ struct IPCSessionMethodDescriptorTests {
         #expect(throws: DecodingError.self) {
             try JSONDecoder().decode(IPCSessionQueryResult.self, from: contradictoryData)
         }
+    }
+
+    @Test("an unbound query retains every closed refusal reason")
+    func unboundRefusalRoundTrips() throws {
+        let descriptor = try makeCatalog().sessions.sessionQuery
+        for reason in IPCSessionLastRefusalReason.allCases {
+            let result = IPCSessionQueryResult(
+                paneId: UUIDv7.generate(), sourceHealth: .unbound, session: nil,
+                lastRefusal: .init(reason: reason, event: "SessionStart", at: Date(timeIntervalSince1970: 1000)))
+            let encoded = try descriptor.encodeResult(result)
+            let decoded = try JSONDecoder().decode(IPCSessionQueryResult.self, from: encoded)
+            #expect(decoded == result)
+        }
+        #expect(IPCSessionRefusalReason.allCases == [.noSessionId, .undecodablePayload])
     }
 
     @Test("a retired report cannot be looked up as a compiled method")

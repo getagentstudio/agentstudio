@@ -115,6 +115,9 @@ extension IPCSessionQueryResult: IPCSchemaProviding {
                 name: "session",
                 description: "The same status-engine summary as pane.context.get; null exactly when unbound",
                 schema: .oneOf([.null, try IPCPaneSessionSummary.ipcSchema()])),
+            .init(
+                name: "lastRefusal", description: "Last in-memory hook refusal, including on an unbound pane",
+                schema: .oneOf([.null, try IPCSessionLastRefusal.ipcSchema()])),
         ])
     }
 }

@@ -44,15 +44,7 @@ extension SessionsIngestion: SessionOpenAskInput {
 
     func restoreStatusIfNeeded(paneId: UUID) async throws {
         guard !statusRuntime.retiredPaneIds.contains(paneId) else { return }
-        if statusIngressTask == nil {
-            statusIngressTask = Task { [weak self, paneViewedMailbox] in
-                for await _ in paneViewedMailbox.wakes {
-                    guard let self else { break }
-                    await self.consumePaneViewedBatch()
-                }
-            }
-            await statusPublicationLane?.start()
-        }
+        await startPaneViewedIngressIfNeeded()
         if !didLoadOpenAsks {
             do {
                 let updates = try await openAskSource.openAskSummaries()
@@ -67,6 +59,18 @@ extension SessionsIngestion: SessionOpenAskInput {
         statusRuntime.restore(context, paneId: paneId, admittedAt: ContinuousClock.now)
         consumePaneViewedBatch()
         publishStatus(paneId: paneId)
+    }
+
+    func startPaneViewedIngressIfNeeded() async {
+        if statusIngressTask == nil {
+            statusIngressTask = Task { [weak self, paneViewedMailbox] in
+                for await _ in paneViewedMailbox.wakes {
+                    guard let self else { break }
+                    await self.consumePaneViewedBatch()
+                }
+            }
+            await statusPublicationLane?.start()
+        }
     }
 
     func applyCommittedHook(_ committed: SessionsHookCommit, admittedAt: ContinuousClock.Instant) async throws {
@@ -128,6 +132,7 @@ extension SessionsIngestion: SessionOpenAskInput {
         let batch = paneViewedMailbox.takeBatch()
         for paneId in batch.retiredPaneIds {
             guard statusRuntime.retiredPaneIds.insert(paneId).inserted else { continue }
+            clearRefusal(paneId: paneId)
             statusRuntime.currentBindingByPane.removeValue(forKey: paneId)
             statusRuntime.latestViewedAt.removeValue(forKey: paneId)
             statusPublicationMailbox.retire(.init(existingUUID: paneId))

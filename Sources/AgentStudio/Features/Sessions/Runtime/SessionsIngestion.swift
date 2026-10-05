@@ -51,6 +51,23 @@ package actor SessionsIngestion {
     var statusIngressTask: Task<Void, Never>?
     var didLoadOpenAsks = false
     var isStatusClosed = false
+    private var lastRefusalByPane: [UUID: SessionsHookRefusal] = [:]
+
+    package func recordRefusal(paneId: UUID, refusal: SessionsHookRefusal) async {
+        guard !isStatusClosed else { return }
+        await startPaneViewedIngressIfNeeded()
+        guard !isStatusClosed, !statusRuntime.retiredPaneIds.contains(paneId) else { return }
+        lastRefusalByPane[paneId] = refusal
+    }
+
+    package func lastRefusal(paneId: UUID) -> SessionsHookRefusal? {
+        consumePaneViewedBatch()
+        return lastRefusalByPane[paneId]
+    }
+
+    func clearRefusal(paneId: UUID) {
+        lastRefusalByPane.removeValue(forKey: paneId)
+    }
 
     package init(
         repository: SessionsRepository,
@@ -137,6 +154,7 @@ package actor SessionsIngestion {
         let task = consumerTask
         await task?.value
         isStatusClosed = true
+        lastRefusalByPane.removeAll()
         paneViewedMailbox.close()
         statusIngressTask?.cancel()
         await statusIngressTask?.value

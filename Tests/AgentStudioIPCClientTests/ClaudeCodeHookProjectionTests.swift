@@ -1,3 +1,4 @@
+import AgentStudioIPCTransport
 import Foundation
 import Testing
 
@@ -246,7 +247,7 @@ struct ClaudeCodeHookInvocationTests {
         var diagnostics: [String] = []
         let guarded = inputs(
             arguments: ["hook", "claude", "SessionStart"],
-            environment: ["AGENTSTUDIO_PANE_TOKEN": "token"],
+            environment: ["AGENTSTUDIO_CLI": "/tmp/agentstudio"],
             standardInput: {
                 standardInputReads += 1
                 return try ClaudeCodeHookFixture.data("SessionStart")
@@ -261,6 +262,22 @@ struct ClaudeCodeHookInvocationTests {
         #expect(outcome == 0)
         #expect(standardInputReads == 0)
         #expect(diagnostics.isEmpty)
+    }
+
+    @Test("a pane token admits input without an executable-path gate, and a spent deadline skips refusal")
+    func tokenAloneAdmitsInput() {
+        var reads = 0
+        let outcome = ClaudeCodeHookInvocation.handle(
+            .init(
+                arguments: ["hook", "claude", "SessionStart"], environment: ["AGENTSTUDIO_PANE_TOKEN": "token"],
+                standardInput: {
+                    reads += 1
+                    return Data("{}".utf8)
+                },
+                identifierGenerator: { claudeCodeFixtureIdentifier }, diagnosticSink: { _ in },
+                deadline: CallDeadline(limit: .zero)))
+        #expect(outcome == 0)
+        #expect(reads == 1)
     }
 
     @Test("A pane without a credential exits silently")

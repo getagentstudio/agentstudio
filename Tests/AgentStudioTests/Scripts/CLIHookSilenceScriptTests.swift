@@ -9,8 +9,10 @@ import Foundation
 import Synchronization
 import Testing
 
+@MainActor
 @Suite("Real CLI hook silence", .serialized)
 struct CLIHookSilenceScriptTests {
+
     @Test(
         "a held or trickling real input pipe exhausts one hook total and exits silently without submission",
         arguments: ["claude", "codex"], [false, true])
@@ -297,7 +299,7 @@ struct HookSilenceInvocation: Sendable {
     }
 }
 
-private func hookSilenceExecutableURL() throws -> URL {
+func hookSilenceExecutableURL() throws -> URL {
     guard let buildDirectory = ProcessInfo.processInfo.environment["SWIFT_BUILD_DIR"] else {
         throw HookSilenceFixtureError.missingBuildDirectory
     }

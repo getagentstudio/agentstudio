@@ -73,8 +73,9 @@ extension AgentStudioAppIPCPaneContextIntegrationTests {
                 #expect(query.sourceHealth == .unbound)
                 #expect(query.session == nil)
                 if case .object(let fields)? = response.result {
-                    #expect(Set(fields.keys) == ["paneId", "sourceHealth", "session"])
+                    #expect(Set(fields.keys) == ["paneId", "sourceHealth", "session", "lastRefusal"])
                     #expect(fields["session"] == .null)
+                    #expect(fields["lastRefusal"] == .null)
                 } else {
                     Issue.record("Expected session query result object")
                 }

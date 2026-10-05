@@ -182,17 +182,23 @@ package struct IPCSessionQueryResult: Codable, Equatable, Sendable {
     package let paneId: UUID
     package let sourceHealth: IPCSessionSourceHealth
     package let session: IPCPaneSessionSummary?
-    package init(paneId: UUID, sourceHealth: IPCSessionSourceHealth, session: IPCPaneSessionSummary?) {
+    package let lastRefusal: IPCSessionLastRefusal?
+    package init(
+        paneId: UUID, sourceHealth: IPCSessionSourceHealth, session: IPCPaneSessionSummary?,
+        lastRefusal: IPCSessionLastRefusal? = nil
+    ) {
         self.paneId = paneId
         self.sourceHealth = sourceHealth
         self.session = session
+        self.lastRefusal = lastRefusal
     }
-    private enum CodingKeys: String, CodingKey { case paneId, sourceHealth, session }
+    private enum CodingKeys: String, CodingKey { case paneId, sourceHealth, session, lastRefusal }
     package init(from decoder: any Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         paneId = try container.decode(UUID.self, forKey: .paneId)
         sourceHealth = try container.decode(IPCSessionSourceHealth.self, forKey: .sourceHealth)
         session = try container.decode(IPCPaneSessionSummary?.self, forKey: .session)
+        lastRefusal = try container.decode(IPCSessionLastRefusal?.self, forKey: .lastRefusal)
         guard (sourceHealth == .unbound) == (session == nil) else {
             throw DecodingError.dataCorruptedError(
                 forKey: .session, in: container, debugDescription: "Session is null exactly when unbound")
@@ -207,6 +213,7 @@ package struct IPCSessionQueryResult: Codable, Equatable, Sendable {
         try container.encode(paneId, forKey: .paneId)
         try container.encode(sourceHealth, forKey: .sourceHealth)
         try container.encode(session, forKey: .session)
+        try container.encode(lastRefusal, forKey: .lastRefusal)
     }
 }
 

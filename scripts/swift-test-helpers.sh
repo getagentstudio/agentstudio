@@ -766,7 +766,7 @@ large|AgentStudioAppIPCPaneMessageCapacityTests|concurrent
 large|AgentStudioGitDependencyTests|concurrent
 large|AgentStudioIPCPhaseASmokeScriptTests|concurrent
 large|CLILatencyBenchmarkScriptTests|concurrent
-large|CLIHookSilenceScriptTests|concurrent
+large|CLIHookSilenceScriptTests|process-global
 large|CLIAgentHelpScriptTests|concurrent
 large|CLIPaneContextOrderingTests|process-global
 large|CLIPaneContextAvailabilityTests|process-global

@@ -54,8 +54,7 @@ package enum ClaudeCodeHookInvocation {
         }
         let providerVersion =
             parsedProviderVersion(Array(remainder.dropFirst())) ?? ClaudeCodeProviderIdentity.supportedExactVersion
-        guard let executablePath = inputs.environment["AGENTSTUDIO_CLI"], !executablePath.isEmpty,
-            inputs.environment["AGENTSTUDIO_PANE_TOKEN"].map({ !$0.isEmpty }) == true
+        guard inputs.environment["AGENTSTUDIO_PANE_TOKEN"].map({ !$0.isEmpty }) == true
         else {
             return 0
         }
@@ -69,10 +68,25 @@ package enum ClaudeCodeHookInvocation {
         inputs: ClaudeCodeHookInvocationInputs,
         deadline: CallDeadline
     ) {
+        let payload: ClaudeCodeHookPayload
         do {
-            let payload = try JSONDecoder().decode(
+            payload = try JSONDecoder().decode(
                 ClaudeCodeHookPayload.self, from: try inputs.standardInput()
             )
+        } catch {
+            ProviderHookRefusalInvocation.report(
+                reason: ProviderHookRefusalInvocation.reason(for: error), event: announcedEvent,
+                environment: inputs.environment, identifierGenerator: inputs.identifierGenerator, deadline: deadline)
+            inputs.diagnosticSink("agentstudio hook claude: \(announcedEvent) not reported")
+            return
+        }
+        guard !payload.sessionId.isEmpty else {
+            ProviderHookRefusalInvocation.report(
+                reason: .noSessionId, event: announcedEvent, environment: inputs.environment,
+                identifierGenerator: inputs.identifierGenerator, deadline: deadline)
+            return
+        }
+        do {
             guard deadline.remainingBudget > .zero else { return }
             let outcome = ClaudeCodeHookProjection.project(
                 announcedEvent: announcedEvent,

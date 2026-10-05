@@ -62,16 +62,33 @@ struct AgentStudioIPCSessionsAdapter: AppIPCSessionsPort {
                         paneId: paneId, source: .hook,
                         orderingInstant: continuousNow(), wallTime: now()))
             }
-        } catch { throw Self.portError(from: error) }
+        } catch {
+            if let capacityError = error as? SessionsRepositoryError {
+                switch capacityError {
+                case .paneQueueFull, .globalQueueFull:
+                    await ingestion.recordRefusal(
+                        paneId: paneId,
+                        refusal: .init(reason: .queueFull, event: params.event.name.rawValue, at: now()))
+                default: break
+                }
+            }
+            throw Self.portError(from: error)
+        }
         return .init(paneId: paneId, disposition: .admitted, correlationId: params.correlationId)
     }
 
-    // Unit 3 fills the explicitly commissioned refusal slot.
     func recordRefusal(
-        paneId: UUID, params _: IPCSessionRefusalParams,
+        paneId: UUID, params: IPCSessionRefusalParams,
         provenance: IPCSessionEventProvenance
     ) async throws -> IPCSessionRefusalResult {
         guard provenance == .matchingPane else { throw AppIPCSessionsError(reason: .validationRejected) }
+        let reason: SessionsHookRefusalReason
+        switch params.reason {
+        case .noSessionId: reason = .noSessionId
+        case .undecodablePayload: reason = .undecodablePayload
+        }
+        await ingestion.recordRefusal(
+            paneId: paneId, refusal: .init(reason: reason, event: params.event, at: now()))
         return .init(paneId: paneId)
     }
 
@@ -81,15 +98,26 @@ struct AgentStudioIPCSessionsAdapter: AppIPCSessionsPort {
     ) async throws -> IPCSessionQueryResult {
         let read: SessionsStatusReadResult
         do { read = try await ingestion.readSessionStatus(paneId: paneId) } catch { throw Self.portError(from: error) }
+        let refusal = await ingestion.lastRefusal(paneId: paneId).map { value in
+            let reason: IPCSessionLastRefusalReason
+            switch value.reason {
+            case .noSessionId: reason = .noSessionId
+            case .undecodablePayload: reason = .undecodablePayload
+            case .queueFull: reason = .queueFull
+            }
+            return IPCSessionLastRefusal(reason: reason, event: value.event, at: value.at)
+        }
         switch read {
         case .unbound:
-            return IPCSessionQueryResult(paneId: paneId, sourceHealth: .unbound, session: nil)
+            return IPCSessionQueryResult(paneId: paneId, sourceHealth: .unbound, session: nil, lastRefusal: refusal)
         case .live(let summary):
             return IPCSessionQueryResult(
-                paneId: paneId, sourceHealth: .live, session: PaneContextIPCMapping.session(summary))
+                paneId: paneId, sourceHealth: .live, session: PaneContextIPCMapping.session(summary),
+                lastRefusal: refusal)
         case .ended(let summary):
             return IPCSessionQueryResult(
-                paneId: paneId, sourceHealth: .ended, session: PaneContextIPCMapping.session(summary))
+                paneId: paneId, sourceHealth: .ended, session: PaneContextIPCMapping.session(summary),
+                lastRefusal: refusal)
         }
     }
     private static func portError(from error: any Error) -> any Error {

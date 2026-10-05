@@ -1,3 +1,4 @@
+import AgentStudioIPCTransport
 import AgentStudioProgrammaticControl
 import Foundation
 import Testing
@@ -9,6 +10,42 @@ import Testing
 /// word on standard output, never the payload in a log line.
 @Suite("Codex hook invocation")
 struct CodexHookInvocationTests {
+    @Test(
+        "invalid payloads report only their refusal, never a session event",
+        arguments: [
+            (#"{"hook_event_name":"SessionStart"}"#, IPCSessionRefusalReason.noSessionId),
+            (#"{"session_id":null}"#, .noSessionId),
+            (#"{"session_id":""}"#, .noSessionId),
+            ("not json", .undecodablePayload),
+        ])
+    func payloadRefusalIsTyped(payload: String, reason: IPCSessionRefusalReason) {
+        let recorder = DeliveryRecorder()
+        let status = ProviderHookInvocation.runCodexHook(
+            .init(
+                eventName: "SessionStart", environment: Self.paneEnvironment,
+                standardInput: { Data(payload.utf8) }, correlationIdProvider: { Self.correlationId },
+                delivery: recorder.delivery, standardErrorSink: recorder.recordError))
+        #expect(status == 0)
+        #expect(recorder.delivered.isEmpty)
+        #expect(recorder.refusals.count == 1)
+        #expect(recorder.refusals.first?.reason == reason)
+        #expect(recorder.refusals.first?.correlationId == Self.correlationId)
+    }
+
+    @Test("a spent hook deadline never starts a refusal call")
+    func spentDeadlineSkipsRefusal() {
+        let recorder = DeliveryRecorder()
+        let status = ProviderHookInvocation.runCodexHook(
+            .init(
+                eventName: "SessionStart", environment: Self.paneEnvironment,
+                standardInput: { Data("{}".utf8) }, correlationIdProvider: { Self.correlationId },
+                delivery: recorder.delivery, standardErrorSink: recorder.recordError,
+                deadline: CallDeadline(limit: .zero)))
+        #expect(status == 0)
+        #expect(recorder.delivered.isEmpty)
+        #expect(recorder.refusals.isEmpty)
+    }
+
     @Test(
         "Codex SessionEnd selects the synchronous short limit; every other installed hook keeps the async limit",
         arguments: CodexHookEventName.installedEvents)
@@ -214,6 +251,7 @@ private final class DeliveryRecorder: @unchecked Sendable {
     }
 
     private(set) var delivered: [Delivered] = []
+    private(set) var refusals: [IPCSessionRefusalParams] = []
     private(set) var errorLines: [String] = []
     private(set) var standardInputReads = 0
     private let failure: ProviderHookFailure?
@@ -223,10 +261,14 @@ private final class DeliveryRecorder: @unchecked Sendable {
     }
 
     var delivery: ProviderHookDelivery {
-        ProviderHookDelivery { [self] params, configuration, _ in
-            if let failure { throw failure }
-            delivered.append(Delivered(params: params, configuration: configuration))
-        }
+        ProviderHookDelivery(
+            deliver: { [self] params, configuration, _ in
+                if let failure { throw failure }
+                delivered.append(Delivered(params: params, configuration: configuration))
+            },
+            recordRefusal: { [self] params, _, _ in
+                refusals.append(params)
+            })
     }
 
     func recordError(_ line: String) {
