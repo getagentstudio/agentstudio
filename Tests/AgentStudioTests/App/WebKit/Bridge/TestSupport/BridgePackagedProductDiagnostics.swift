@@ -2,11 +2,12 @@ import Foundation
 
 @testable import AgentStudioBridge
 @testable import AgentStudioCore
+@testable import AgentStudioInfrastructure
 
 /// Captures existing owner state at the boundary where the packaged DOM wait opens.
 @MainActor
 func packagedProductNativeReadback(_ controller: BridgePaneController) async -> String {
-    guard let installation = controller.productSessionOwner.activeInstallation else {
+    guard let installation = await controller.productSessionOwner.activeInstallation else {
         return "installation=absent"
     }
     let session = await installation.session.diagnosticSnapshot
@@ -14,7 +15,7 @@ func packagedProductNativeReadback(_ controller: BridgePaneController) async -> 
     guard let provider = controller.productSchemeProvider else {
         return "provider=absent; session=\(session); subscriptions=\(subscriptions)"
     }
-    let coordinator = provider.metadataCoordinator
+    let coordinator = await provider.metadataCoordinator
     let stream = await coordinator.activeStream
     let requested = await coordinator.subscriptionKindById
     let opened = await coordinator.openedSourceSubscriptionIds
