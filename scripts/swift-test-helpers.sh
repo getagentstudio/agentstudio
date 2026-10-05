@@ -2861,7 +2861,7 @@ sample_stuck_swift_test_processes() {
     local process_command
     process_command="$(ps -p "$process_pid" -o command= 2>/dev/null || true)"
     case "$process_command" in
-      *AgentStudioPackageTests* | *.xctest* | *"swift test"*)
+      *.xctest* | *"swift test"*)
         sample_stuck_swift_test_process "$label" "$process_pid"
         dump_stuck_swift_test_process_tasks "$label" "$process_pid" "$evidence_stem"
         sampled_count=$((sampled_count + 1))

@@ -358,6 +358,8 @@ struct SwiftLaneRunnerReportTests {
                 // its verdict evidence at all.
                 "build_receipt_head_sha",
                 "bundle_identity",
+                "bundle_set",
+                "bundle_count",
                 "bundle_state",
                 "cpu_count",
                 "cpu_seconds",
@@ -367,6 +369,7 @@ struct SwiftLaneRunnerReportTests {
                 "event_stream",
                 "evidence_retention",
                 "exit_status",
+                "failing_test",
                 "fact_expected",
                 "failed_isolated_suite",
                 "failed_isolated_suites",
@@ -380,12 +383,17 @@ struct SwiftLaneRunnerReportTests {
                 "peak_announced_tests",
                 "peak_running_parameterized_cases",
                 "receipt_valid",
+                "reason",
                 "running_parameterized_cases_at_timeout",
+                "runs",
                 "stack_sample",
+                "stream",
                 "swift",
                 "task_dump",
+                "tests_run",
                 "timeout_reap",
                 "tree_dirty",
+                "unreadable_records",
                 "verdict",
                 "wall_seconds",
                 "xcode",
@@ -776,17 +784,11 @@ struct SwiftLaneRunnerReportTests {
         // a and b overlap (peak 2), a closes, then c opens (2 again). The
         // run-level and suite-level events are not tests.
         let observedPeak = try await runBash(
-            "source scripts/swift-test-helpers.sh; swift_test_peak_announced_from_output "
-                + "<(printf '◇ Test run started.\\n"
-                + "◇ Suite \"S\" started.\\n"
-                + "◇ Test \"a\" started.\\n"
-                + "◇ Test \"b\" started.\\n"
-                + "✔ Test \"a\" passed after 0.1 seconds.\\n"
-                + "◇ Test \"c\" started.\\n"
-                + "✔ Test run with 3 tests in 1 suite passed after 0.5 seconds.\\n')"
+            "/usr/bin/perl scripts/swift-test-invocation-receipts.pl facts "
+                + "Tests/AgentStudioTests/Scripts/Fixtures/xcode27-event-stream-v6.3.jsonl 19"
         )
 
-        #expect(observedPeak.trimmingCharacters(in: .whitespacesAndNewlines) == "2")
+        #expect(observedPeak.contains("peak_announced_tests=4"))
     }
 
     @Test("running-test-case counter reads the post-serializer event stream")
@@ -818,7 +820,7 @@ struct SwiftLaneRunnerReportTests {
             in: helperScript
         )
 
-        #expect(timeoutRunner.contains("--event-stream-version 0 --event-stream-output-path"))
+        #expect(timeoutRunner.contains("--event-stream-version 6.3 --event-stream-output-path"))
         #expect(timeoutRunner.contains("swift_test_command_accepts_event_stream"))
         // `swift build` rejects the flags, so the prebuild must be excluded.
         #expect(acceptsEventStream.contains("\"$argument\" = \"build\""))

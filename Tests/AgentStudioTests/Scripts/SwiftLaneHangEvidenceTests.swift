@@ -77,7 +77,7 @@ struct SwiftLaneHangEvidenceTests {
                 + "export LANE_EVENT_STREAM_DIR='\(workDirectory)/ci-runs'; "
                 + "source scripts/swift-test-helpers.sh; set +e; "
                 + "run_swift_with_timeout 'dump probe' 0 /bin/bash -c "
-                + "'while true; do sleep 1; done' AgentStudioPackageTests "
+                + "'while true; do sleep 1; done' AgentStudioTests.xctest "
                 + "|| returned=$?; echo \"RETURNED=${returned:-0}\""
         )
         let dumpRange = try #require(laneOutput.range(of: "lane-report task_dump="))
@@ -126,7 +126,7 @@ struct SwiftLaneHangEvidenceTests {
                 + "export PATH='\(workDirectory)/bin':$PATH; "
                 + "source scripts/swift-test-helpers.sh; set +e; "
                 + "run_swift_with_timeout 'evidence probe' 0 /bin/bash '\(workDirectory)/wedged-test.sh' "
-                + "AgentStudioPackageTests || returned=$?; echo \"RETURNED=${returned:-0}\""
+                + "AgentStudioTests.xctest || returned=$?; echo \"RETURNED=${returned:-0}\""
         )
         let evidenceFiles = try FileManager.default.contentsOfDirectory(atPath: evidenceDirectory).sorted()
         let ledger = try #require(evidenceFiles.first { $0.hasSuffix(".events.jsonl") })
@@ -253,7 +253,7 @@ struct SwiftLaneHangEvidenceTests {
                 + "export LANE_WATCHDOG_ARM_PATH='\(workDirectory)/armed'; "
                 + "source scripts/swift-test-helpers.sh; set +e; "
                 + "run_swift_with_timeout 'unavailable probe' 0 /bin/bash '\(workDirectory)/wedged-test.sh' "
-                + "AgentStudioPackageTests || returned=$?; echo \"RETURNED=${returned:-0}\""
+                + "AgentStudioTests.xctest || returned=$?; echo \"RETURNED=${returned:-0}\""
         )
         let unavailableRange = try #require(report.range(of: "lane-report held_step_log_unavailable"))
         let reapRange = try #require(report.range(of: "lane-report timeout_reap="))
@@ -287,7 +287,7 @@ struct SwiftLaneHangEvidenceTests {
                 + "export PATH='\(workDirectory)/\(inspectorDirectory)':$PATH; "
                 + "source scripts/swift-test-helpers.sh; set +e; "
                 + "run_swift_with_timeout 'no sample probe' 0 /bin/bash -c 'while true; do sleep 1; done' "
-                + "AgentStudioPackageTests || returned=$?; echo \"RETURNED=${returned:-0}\"; "
+                + "AgentStudioTests.xctest || returned=$?; echo \"RETURNED=${returned:-0}\"; "
                 + "echo \"DUMPS=$(ls -1 '\(workDirectory)/\(inspectorDirectory)-runs' | grep -c task-dump || true)\""
         }
 

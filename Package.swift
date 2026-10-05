@@ -652,6 +652,8 @@ let package = Package(
             exclude: [
                 "Fixtures/AtomLibCompileFailures",
                 "Fixtures/SwiftLintLegacyCustomRules",
+                "Scripts/Fixtures/xcode27-event-stream-v6.3.jsonl",
+                "Scripts/Fixtures/xcode27-swift-test-list.txt",
             ],
             sources: [
                 "App",

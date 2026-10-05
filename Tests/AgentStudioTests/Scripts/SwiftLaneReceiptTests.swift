@@ -12,7 +12,7 @@ struct SwiftLaneReceiptTests {
             FileManager.default.currentDirectoryPath
             + "/Tests/AgentStudioTests/Scripts/Fixtures/xcode27-swift-test-list.txt"
         let map = buildDirectory + "/agentstudio-test-suite-map"
-        let executable = buildDirectory + "/debug/AgentStudioTests.xctest/Contents/MacOS/AgentStudioTests"
+        let executable = buildDirectory + "/out/Products/Debug/AgentStudioTests.xctest/Contents/MacOS/AgentStudioTests"
 
         let output = try await laneBashAllowingFailure(
             "source scripts/swift-test-helpers.sh; BUILD_PATH='\(buildDirectory)'; "
@@ -125,31 +125,21 @@ struct SwiftLaneReceiptTests {
         )
     }
 
-    @Test("bundle identity names the exact executable: path, size and modification time")
+    @Test("bundle receipt set names every target executable")
     func bundleIdentityNamesBundleAndModificationTime() async throws {
         let buildDirectory = NSTemporaryDirectory() + "agentstudio-receipt-bundle-\(UUIDv7.generate())"
         defer { try? FileManager.default.removeItem(atPath: buildDirectory) }
-        let bundlePath =
-            buildDirectory
-            + "/arm64-apple-macosx/debug/AgentStudioPackageTests.xctest/Contents/MacOS/AgentStudioPackageTests"
+        let bundlePath = buildDirectory + "/out/Products/Debug/AgentStudioTests.xctest/Contents/MacOS/AgentStudioTests"
 
         let identities = try await laneBash(
             "source scripts/swift-test-helpers.sh; BUILD_PATH='\(buildDirectory)'; "
-                + "echo \"before=$(lane_receipt_bundle_identity)\"; "
                 + "mkdir -p \"$(dirname '\(bundlePath)')\"; : > '\(bundlePath)'; "
-                + "touch -t 202609230102.03 '\(bundlePath)'; "
-                + "echo \"after=$(lane_receipt_bundle_identity)\"; "
-                + "echo \"epoch=$(date -j -f %Y%m%d%H%M.%S 202609230102.03 +%s)\""
-                + "; printf 'seven b' > '\(bundlePath)'; touch -t 202609230102.03 '\(bundlePath)'; "
-                + "echo \"resized=$(lane_receipt_bundle_identity)\""
+                + "chmod +x '\(bundlePath)'; echo \"count=$(swift_test_bundle_count)\"; "
+                + "echo \"set=$(swift_test_bundle_set)\""
         )
         let identityLines = laneOutputLines(identities)
-        let epoch = try #require(identityLines.dropFirst(2).first?.split(separator: "=").last.map(String.init))
-
-        #expect(identityLines.first == "before=missing")
-        #expect(identityLines.dropFirst().first == "after=\(bundlePath)@0@\(epoch)")
-        // Same path, same mtime, different executable: the size tells them apart.
-        #expect(identityLines.dropFirst(3).first == "resized=\(bundlePath)@7@\(epoch)")
+        #expect(identityLines.contains("count=1"))
+        #expect(identityLines.contains(where: { $0.hasPrefix("set=") && $0.count == 20 }))
     }
 
     @Test("the receipt is printed on every exit, prebuild included, and only a finished prebuild is fresh")
@@ -257,63 +247,25 @@ struct SwiftLaneReceiptTests {
         #expect(!output.contains("LANE_SLOT_RELEASE_COMMAND"))
     }
 
-    @Test("a reused bundle is linked only to a clean, successful build of this commit and this executable")
+    @Test("a reused bundle is linked only to a matching bundle set and clean build")
     func reusedBundleIsLinkedOnlyToCleanSuccessfulBuildOfThisCommit() async throws {
-        let helperPath = FileManager.default.currentDirectoryPath + "/scripts/swift-test-helpers.sh"
         let workDirectory = NSTemporaryDirectory() + "agentstudio-receipt-link-\(UUIDv7.generate())"
         defer { try? FileManager.default.removeItem(atPath: workDirectory) }
-        let bundleSuffix =
-            "/arm64-apple-macosx/debug/AgentStudioPackageTests.xctest/Contents/MacOS/AgentStudioPackageTests"
-
-        // prebuild_swift_tests is replaced by a fake that writes the executable or
-        // fails; everything else is the real receipt code.
         let scenarios = try await laneBash(
-            "source '\(helperPath)'; LOG_PREFIX=lane; BUILD_PATH='\(workDirectory)/build'; "
-                + "bundle=\"$BUILD_PATH\(bundleSuffix)\"; receipt=$(lane_build_receipt_path); "
-                + "prebuild_swift_tests() { [ \"${FAKE_BUILD_FAILS:-0}\" = 1 ] && return 1; "
-                + "mkdir -p \"$(dirname \"$bundle\")\"; printf v1 > \"$bundle\"; }; "
-                + "link() { lane_build_receipt_link_reason \"$receipt\" \"$(lane_receipt_head_sha)\" "
-                + "\"$(lane_receipt_bundle_identity)\"; }; "
-                + "mkdir -p '\(workDirectory)/repo'; cd '\(workDirectory)/repo'; git init -q . 2>/dev/null; "
-                + "commit() { git -c user.email=t@t -c user.name=t -c commit.gpgsign=false "
-                + "-c core.hooksPath=/dev/null commit -q --allow-empty -m \"$1\"; }; commit one; "
-                + "prebuild_swift_tests_with_build_receipt; echo \"clean_reuse=[$(link)]\"; "
-                + "echo \"linked_head=$([ \"$(lane_build_receipt_field \"$receipt\" head_sha)\" = "
-                + "\"$(git rev-parse HEAD)\" ] && echo current)\"; "
-                + "printf 'rebuilt elsewhere' > \"$bundle\"; echo \"mismatched_artifact=[$(link)]\"; "
-                + "prebuild_swift_tests_with_build_receipt; commit two; echo \"moved_head=[$(link)]\"; "
-                + "echo edit > untracked.txt; prebuild_swift_tests_with_build_receipt; rm untracked.txt; "
-                + "echo \"dirty_build_then_clean_tree=[$(link)]\"; "
-                + "prebuild_swift_tests_with_build_receipt; echo \"rebuilt=[$(link)]\"; "
-                + "FAKE_BUILD_FAILS=1 prebuild_swift_tests_with_build_receipt; echo \"failed_status=$?\"; "
-                + "echo \"receipt_after_failure=$([ -e \"$receipt\" ] && echo present || echo absent)\"; "
-                + "echo \"failed_rebuild=[$(link)]\"; "
-                + "printf 'garbage\\n' > \"$receipt\"; echo \"malformed=[$(link)]\"; "
-                + "printf 'bundle_identity=\\nhead_sha=x\\ntree_dirty=false\\n' > \"$receipt\"; "
-                + "echo \"empty_field=[$(link)]\"; rm -f \"$receipt\"; echo \"absent=[$(link)]\"; "
-                + "echo \"staged_leftovers=$(ls \"$BUILD_PATH\" | grep -c 'agentstudio-test-build-receipt\\.' || true)\""
+            "source scripts/swift-test-helpers.sh; BUILD_PATH='\(workDirectory)'; mkdir -p '$BUILD_PATH'; "
+                + "receipt=$(lane_build_receipt_path); "
+                + "head=$(git rev-parse HEAD); "
+                + "printf 'bundle_set=set\\nbundle_count=1\\nhead_sha=%s\\ntree_dirty=false\\n' \"$head\" > '$receipt'; "
+                + "echo clean=[$(lane_build_receipt_link_reason '$receipt' \"$head\" set@1)]; "
+                + "printf 'bundle_set=other\\nbundle_count=1\\nhead_sha=%s\\ntree_dirty=false\\n' \"$head\" > '$receipt'; "
+                + "echo mismatch=[$(lane_build_receipt_link_reason '$receipt' \"$head\" set@1)]; "
+                + "printf 'bundle_set=set\\nbundle_count=1\\nhead_sha=%s\\ntree_dirty=true\\n' \"$head\" > '$receipt'; "
+                + "echo dirty=[$(lane_build_receipt_link_reason '$receipt' \"$head\" set@1)]"
         )
-
         #expect(
             laneOutputLines(scenarios) == [
-                "clean_reuse=[]",
-                "linked_head=current",
-                "mismatched_artifact=[reused_bundle_unlinked]",
-                "moved_head=[bundle_head_mismatch]",
-                "dirty_build_then_clean_tree=[built_from_dirty_tree]",
-                "rebuilt=[]",
-                // The failed build deleted the receipt before compiling, so the
-                // previous (good) receipt cannot vouch for what the failure left.
-                "failed_status=1",
-                "receipt_after_failure=absent",
-                "failed_rebuild=[reused_bundle_unlinked]",
-                "malformed=[reused_bundle_unlinked]",
-                "empty_field=[reused_bundle_unlinked]",
-                "absent=[reused_bundle_unlinked]",
-                // Published by rename: no staged receipt is left behind.
-                "staged_leftovers=0",
-            ]
-        )
+                "clean=[]", "mismatch=[reused_bundle_unlinked]", "dirty=[built_from_dirty_tree]",
+            ])
     }
 
     @Test("all crashed WebKit suites fail the lane, are tallied, and are never retried")

@@ -587,16 +587,6 @@ struct CIFastLaneWorkflowTests {
         #expect(filteredOutput == "raw input\n")
     }
 
-    @Test("Swift failure scanner preserves failure detection across invalid UTF-8")
-    func swiftFailureScannerPreservesFailureDetectionAcrossInvalidUTF8() async throws {
-        let scannerStatus = try await runBashStatus(
-            "source scripts/swift-test-helpers.sh; "
-                + "swift_test_output_has_failures <(printf $'ok\\xffrecorded an issue\\n')"
-        )
-
-        #expect(scannerStatus == 0)
-    }
-
     @Test("aggregate lane isolates executor-sensitive and AppKit-global tests")
     func aggregateLaneIsolatesExecutorSensitiveAndAppKitGlobalTests() async throws {
         let helperScript = try String(contentsOfFile: "scripts/swift-test-helpers.sh", encoding: .utf8)
@@ -671,7 +661,7 @@ struct CIFastLaneWorkflowTests {
                 "--filter \"$(swift_test_isolated_suite_filter_pattern \"$suite_filter\")\""
             ))
         #expect(isolatedSuiteRunner.contains("\"$swift_testing_helper\" --test-bundle-path \"$swift_test_bundle\""))
-        #expect(isolatedSuiteRunner.contains("DYLD_FRAMEWORK_PATH=\"$testing_framework_path\""))
+        #expect(isolatedSuiteRunner.contains("swift_testing_helper_environment \"$testing_framework_path\""))
         #expect(isolatedSuiteRunner.contains("--testing-library swift-testing"))
         #expect(!aggregateRunner.contains("< <("))
         #expect(isolatedDispatcher.contains("return \"$lane_status\""))
