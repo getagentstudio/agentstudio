@@ -208,7 +208,10 @@ final class BridgePaneWorktreeRefreshDriver {
                 } else {
                     reservation = nil
                     if outcome == .failed, let failure {
-                        coordinator.recordCurrentFileRefreshFailure(failure)
+                        coordinator.recordCurrentFileRefreshFailure(
+                            failure,
+                            for: currentReservation
+                        )
                     }
                 }
                 // fire-and-forget: publication joins the presentation tail; closeAndDrain awaits it

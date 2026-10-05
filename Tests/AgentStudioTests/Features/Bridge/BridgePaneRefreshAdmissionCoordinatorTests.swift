@@ -617,6 +617,31 @@ struct BridgePaneRefreshAdmissionCoordinatorTests {
         #expect(coordinator.diagnosticSnapshot.dirtyFact == nil)
     }
 
+    @Test("a superseded File failure cannot overwrite a newer refresh")
+    func supersededFileFailureCannotOverwriteNewerRefresh() throws {
+        let coordinator = BridgePaneRefreshAdmissionCoordinator(initialActivity: .foreground)
+        coordinator.recordInvalidation(
+            fileChangeset: makeFileChangeset(paths: ["Sources/App/old.swift"], batchSequence: 70),
+            requiresReviewRefresh: false
+        )
+        let predecessor = try #require(coordinator.reserveForegroundRefreshPass(for: .file))
+
+        coordinator.recordInvalidation(
+            fileChangeset: makeFileChangeset(paths: ["Sources/App/new.swift"], batchSequence: 71),
+            requiresReviewRefresh: false
+        )
+        let successor = try #require(coordinator.reserveForegroundRefreshPass(for: .file))
+        coordinator.completeRefreshPass(successor, outcome: .succeeded)
+
+        coordinator.recordCurrentFileRefreshFailure(
+            .init(failureKind: .fileSourceUnavailable),
+            for: predecessor
+        )
+
+        #expect(!coordinator.isRefreshPassCurrent(predecessor))
+        #expect(coordinator.productPresentationSnapshot.fileRefreshFailure == nil)
+    }
+
     @Test("loaded-hidden coalescing retains only the latest File status snapshot")
     func loadedHiddenCoalescingRetainsLatestFileStatusSnapshot() throws {
         // Arrange
