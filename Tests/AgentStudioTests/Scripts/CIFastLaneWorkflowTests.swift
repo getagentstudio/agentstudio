@@ -83,7 +83,7 @@ struct CIFastLaneWorkflowTests {
         #expect(triggers == "on:\n  workflow_dispatch:\n")
         // It runs on the same 3-core runner and build directory as the gated lanes,
         // through the same mise task a developer runs locally.
-        #expect(comparisonJob.contains("runs-on: macos-26"))
+        #expect(comparisonJob.contains("runs-on: xcode-27"))
         #expect(comparisonJob.contains("SWIFT_BUILD_DIR: .build-ci"))
         #expect(runStep.contains("run: mise run --skip-deps --raw test:swift:width-comparison"))
         #expect(!runStep.contains("SWIFT_TEST_PARALLELIZATION_WIDTH"))

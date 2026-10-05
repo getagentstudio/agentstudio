@@ -136,7 +136,7 @@ struct ObservabilityLaunchScriptsTests {
         ] {
             #expect(!testHelperScript.contains(staleWebKitFilter))
         }
-        #expect(testHelperScript.contains("No matching test cases were run"))
+        #expect(testHelperScript.contains("reason=no_matching_tests"))
         #expect(!testHelperScript.contains("WebKitSerializedTests/WorkspaceSurfaceBridgeFilesystemRefreshTests"))
         #expect(testHelperScript.contains("WorkspaceSurfaceCoordinatorFilesystemSourceTests"))
         #expect(testHelperScript.contains("WebKitSerializedTests/BridgePaneControllerIPCProjectionTests"))

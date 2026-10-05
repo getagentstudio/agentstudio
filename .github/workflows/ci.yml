@@ -221,7 +221,7 @@ jobs:
     name: BridgeWeb
     needs: changes
     if: ${{ !cancelled() && github.event_name != 'push' && (github.event_name != 'pull_request' || needs.changes.outputs.docs_only != 'true') }}
-    runs-on: macos-26
+    runs-on: xcode-27
     env:
       SWIFT_BUILD_DIR: .build-ci
       SWIFT_BUILD_STATS_DIR: ${{ github.workspace }}/tmp/plan-workflows/ci-runs/compiler-stats
@@ -239,7 +239,7 @@ jobs:
         id: select-xcode
         uses: maxim-lobanov/setup-xcode@v1
         with:
-          xcode-version: "26.6"
+          xcode-version: "27.0"
 
       - name: Setup mise
         uses: jdx/mise-action@v3
@@ -461,7 +461,7 @@ jobs:
     name: Swift test suite
     needs: changes
     if: ${{ !cancelled() && (github.event_name != 'pull_request' || needs.changes.outputs.docs_only != 'true') }}
-    runs-on: macos-26
+    runs-on: xcode-27
     permissions:
       contents: read
       issues: read
@@ -489,7 +489,7 @@ jobs:
         id: select-xcode
         uses: maxim-lobanov/setup-xcode@v1
         with:
-          xcode-version: "26.6"
+          xcode-version: "27.0"
 
       - name: Setup mise
         uses: jdx/mise-action@v3
