@@ -1,4 +1,5 @@
 import AgentStudioCore
+import AgentStudioIPCTransport
 import AgentStudioInfrastructure
 import AgentStudioProgrammaticControl
 import AgentStudioSessions
@@ -52,6 +53,25 @@ struct PaneCLIOutboxDrainTests {
         #expect(!text.contains(marker))
         #expect(!text.contains("pane_id"))
         #expect(!text.contains("store_id"))
+        let records = try text.split(separator: "\n").map {
+            try JSONDecoder().decode(JSONValue.self, from: Data($0.utf8))
+        }
+        let refusalRecords = records.filter {
+            guard case .object(let record) = $0 else { return false }
+            return record["body"] == .string("performance.ipc.outbox_refusal")
+        }
+        #expect(refusalRecords.count == 1)
+        let refusal = try #require(refusalRecords.first)
+        guard case .object(let record) = refusal,
+            case .object(let attributes)? = record["attributes"]
+        else {
+            Issue.record("The refusal trace has no structured attributes")
+            return
+        }
+        #expect(attributes["agentstudio.performance.elapsed_ms"] == nil)
+        #expect(
+            attributes["agentstudio.performance.ipc.outbox_refusal.reason"]
+                == .string(PaneCLIOutboxDrain.RefusalReason.malformedEnvelope.rawValue))
     }
 
     @Test("a never-bound pane cannot wedge a later bound pane's notice")
@@ -236,6 +256,53 @@ struct PaneCLIOutboxDrainTests {
             #expect(admitted.count == 1)
             #expect(admitted.first?.body == "retry the binding read")
             #expect(admitted.first?.sender == expectedSender)
+        }
+    }
+
+    @Test("a one-shot admission write failure retains the pending prefix and retries each notice exactly once")
+    func transientAdmissionFailureRetainsPendingPrefix() async throws {
+        try await withPaneCLIOutboxDrainHarness { harness in
+            let paneID = UUIDv7.generate()
+            let firstMessageID = UUIDv7.generate()
+            let laterMessageID = UUIDv7.generate()
+            let failedEntry = try await harness.append(
+                paneID: paneID, line: harness.messageLine(text: "retry once", correlationID: firstMessageID))
+            let laterEntry = try await harness.append(
+                paneID: paneID, line: harness.messageLine(text: "later notice", correlationID: laterMessageID))
+            await harness.sqliteAccess.failNextWrite()
+
+            // The injected failure clears on its first write, so the old
+            // malformed path could incorrectly commit the cursor in this drain.
+            let failed = await harness.drain()
+
+            #expect(failed.retryableEntryCount == 1)
+            #expect(failed.admittedEntryCount == 0)
+            #expect(failed.malformedEntryCount == 0)
+            #expect(failed.refusedEntryCount == 0)
+            #expect(harness.refusalRecorder.reasons.isEmpty)
+            #expect(try await harness.cursor() == 0)
+            #expect(try await harness.rows() == [failedEntry, laterEntry])
+            #expect(try await harness.paneMessages(paneID: paneID).isEmpty)
+
+            let retried = await harness.drain()
+
+            #expect(retried.admittedEntryCount == 2)
+            #expect(retried.retryableEntryCount == 0)
+            #expect(retried.malformedEntryCount == 0)
+            #expect(retried.refusedEntryCount == 0)
+            #expect(try await harness.cursor() == laterEntry.id)
+            #expect(try await harness.rows() == [failedEntry, laterEntry])
+            let effects = try await harness.paneMessages(paneID: paneID)
+            let messages = effects.map(\.body)
+            #expect(messages.count == 2)
+            #expect(Set(messages) == Set(["retry once", "later notice"]))
+            #expect(Set(effects.map { $0.id.uuid }) == Set([firstMessageID, laterMessageID]))
+
+            let restarted = try await harness.restartedDrain()
+            #expect(restarted.admittedEntryCount == 0)
+            #expect(restarted.retryableEntryCount == 0)
+            #expect(try await harness.cursor() == laterEntry.id)
+            #expect(try await harness.paneMessages(paneID: paneID).count == 2)
         }
     }
 

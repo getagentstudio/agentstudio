@@ -10,19 +10,22 @@ package struct CursorHookInvocationInputs {
     package let standardInput: () throws -> Data
     package let identifierGenerator: () -> UUID
     package let diagnosticSink: (String) -> Void
+    package let deadline: CallDeadline?
 
     package init(
         arguments: [String],
         environment: [String: String],
         standardInput: @escaping () throws -> Data,
         identifierGenerator: @escaping () -> UUID,
-        diagnosticSink: @escaping (String) -> Void
+        diagnosticSink: @escaping (String) -> Void,
+        deadline: CallDeadline? = nil
     ) {
         self.arguments = arguments
         self.environment = environment
         self.standardInput = standardInput
         self.identifierGenerator = identifierGenerator
         self.diagnosticSink = diagnosticSink
+        self.deadline = deadline
     }
 }
 
@@ -45,6 +48,7 @@ package enum CursorHookInvocation {
         guard Array(inputs.arguments.prefix(commandPrefix.count)) == commandPrefix else {
             return nil
         }
+        let deadline = inputs.deadline ?? CallDeadline(limit: CLIPolicy.hookCallLimit)
         let remainder = Array(inputs.arguments.dropFirst(commandPrefix.count))
         guard let announcedEvent = remainder.first, !announcedEvent.hasPrefix("--") else {
             inputs.diagnosticSink("agentstudio hook cursor: missing hook event name")
@@ -57,19 +61,21 @@ package enum CursorHookInvocation {
         else {
             return 0
         }
-        submit(announcedEvent: announcedEvent, providerVersion: providerVersion, inputs: inputs)
+        submit(announcedEvent: announcedEvent, providerVersion: providerVersion, inputs: inputs, deadline: deadline)
         return 0
     }
 
     private static func submit(
         announcedEvent: String,
         providerVersion: String,
-        inputs: CursorHookInvocationInputs
+        inputs: CursorHookInvocationInputs,
+        deadline: CallDeadline
     ) {
         do {
             let payload = try JSONDecoder().decode(
                 CursorHookPayload.self, from: try inputs.standardInput()
             )
+            guard deadline.remainingBudget > .zero else { return }
             let outcome = CursorHookProjection.project(
                 announcedEvent: announcedEvent,
                 payload: payload,
@@ -78,14 +84,16 @@ package enum CursorHookInvocation {
                 freshOccurrenceIdentifier: inputs.identifierGenerator
             )
             guard case .projected(let params) = outcome else { return }
-            try send(params: params, environment: inputs.environment)
+            guard deadline.remainingBudget > .zero else { return }
+            try send(params: params, environment: inputs.environment, deadline: deadline)
         } catch {
             inputs.diagnosticSink("agentstudio hook cursor: \(announcedEvent) not reported")
         }
     }
 
-    private static func send(params: IPCSessionEventParams, environment: [String: String]) throws {
-        let deadline = CallDeadline(limit: CLIPolicy.hookCallLimit)
+    private static func send(params: IPCSessionEventParams, environment: [String: String], deadline: CallDeadline)
+        throws
+    {
         let configuration = AgentStudioIPCClientConfiguration(
             socketPath: try AgentStudioIPCClientDiscovery.socketPath(
                 explicitSocketPath: nil, environment: environment, metadataURL: nil

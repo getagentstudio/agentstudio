@@ -126,29 +126,6 @@ extension CLIStore {
         try budgetedWriteTransaction(stage: .append, operation)
     }
 
-    /// Each write retains the ordinary short wait while clipping it to the
-    /// original call's remaining budget, including notice append and cleanup.
-    func budgetedWriteTransaction<Output: Sendable>(
-        stage: CLIStoreFailure.Stage, _ operation: @Sendable (Database) throws -> Output
-    ) throws -> Output {
-        guard !databaseQueue.configuration.readonly else { throw CLIStoreFailure.readOnly }
-        return try databaseQueue.writeWithoutTransaction { database in
-            if let remaining = callBudget() {
-                guard remaining > .zero else { throw CLIStoreFailure.busy(extendedResultCode: nil, stage: stage) }
-                let milliseconds = Int(
-                    min(CLIStorePolicy.busyTimeout * 1000, (remaining / .milliseconds(1)).rounded(.down)))
-                try database.execute(sql: "PRAGMA busy_timeout = \(milliseconds)")
-            }
-            var result: Output?
-            try database.inTransaction(.immediate) {
-                result = try operation(database)
-                return .commit
-            }
-            guard let result else { throw CLIStoreFailure.unavailable }
-            return result
-        }
-    }
-
     private static func ensureStateRow(_ key: CLIStateKey, in database: Database) throws {
         guard !key.sessionRef.isEmpty else { throw CLIStoreFailure.unavailable }
         try database.execute(

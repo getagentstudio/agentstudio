@@ -1,3 +1,4 @@
+import AgentStudioIPCTransport
 import Foundation
 
 /// Routes the two Claude Code provider commands — the hook projection and the
@@ -15,7 +16,8 @@ package enum ClaudeCodeProviderRouter {
         standardInput: @escaping () throws -> Data,
         identifierGenerator: @escaping () -> UUID,
         noticeSink: @escaping (String) -> Void = { print($0) },
-        diagnosticSink: @escaping (String) -> Void = { _ in CLIDiagnostics.record(.providerCommandFailed) }
+        diagnosticSink: @escaping (String) -> Void = { _ in CLIDiagnostics.record(.providerCommandFailed) },
+        deadline: CallDeadline? = nil
     ) -> Int32? {
         if let code = ClaudeCodeHookInvocation.handle(
             ClaudeCodeHookInvocationInputs(
@@ -24,7 +26,8 @@ package enum ClaudeCodeProviderRouter {
                 environment: environment,
                 standardInput: standardInput,
                 identifierGenerator: identifierGenerator,
-                diagnosticSink: diagnosticSink
+                diagnosticSink: diagnosticSink,
+                deadline: deadline
             )
         ) {
             return code

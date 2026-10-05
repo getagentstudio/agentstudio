@@ -4,11 +4,165 @@ import AgentStudioInfrastructure
 import AgentStudioProgrammaticControl
 import AgentStudioTestHarness
 import AgentStudioTestSupport
+import Darwin
 import Foundation
+import Synchronization
 import Testing
 
 @Suite("Real CLI hook silence", .serialized)
 struct CLIHookSilenceScriptTests {
+    @Test(
+        "a held or trickling real input pipe exhausts one hook total and exits silently without submission",
+        arguments: ["claude", "cursor", "codex"], [false, true])
+    func heldStandardInputExhaustsHookTotal(provider: String, hasPartialInput: Bool) async throws {
+        let observed = try await valueFromDedicatedThread {
+            let fixture = try HookSilenceProcessFixture(condition: .up)
+            defer { fixture.removeFiles() }
+            let pipe = Pipe()
+            defer {
+                try? pipe.fileHandleForReading.close()
+                try? pipe.fileHandleForWriting.close()
+            }
+            if hasPartialInput {
+                try pipe.fileHandleForWriting.write(contentsOf: Data("{\"session_id\":\"unfinished".utf8))
+            }
+            let descriptor = pipe.fileHandleForReading.fileDescriptor
+            let flagsBefore = Darwin.fcntl(descriptor, F_GETFL)
+            let timing = HookInputDeadlineTiming(inputDescriptor: descriptor, readsPartialInput: hasPartialInput)
+            let streams = Mutex<[String]>([])
+            let ordinaryInputReads = Mutex(0)
+            let event = provider == "cursor" ? "sessionStart" : "SessionStart"
+            let status = AgentStudioIPCClientCommandLineRunner.run(
+                props: .init(
+                    arguments: ["hook", provider, event],
+                    environment: fixture.environment(
+                        executable: URL(fileURLWithPath: "/fixture/agentstudio-cli"), storeSetting: .fresh),
+                    executablePath: "/fixture/agentstudio-cli", bundleExecutableURL: nil,
+                    standardInput: {
+                        ordinaryInputReads.withLock { $0 += 1 }
+                        return Data()
+                    },
+                    identifierGenerator: { UUIDv7.generate() },
+                    standardOutputSink: { line in streams.withLock { $0.append(line) } },
+                    standardErrorSink: { line in streams.withLock { $0.append(line) } },
+                    standardInputFileDescriptor: descriptor, deadlineTiming: timing))
+            return HookInputObservation(
+                exitCode: status, streamLines: streams.withLock { $0 }, waitBudgets: timing.waits,
+                controlledElapsed: timing.elapsed, inputFlagsRestored: Darwin.fcntl(descriptor, F_GETFL) == flagsBefore,
+                storeOutcome: try fixture.storeOutcome(), ordinaryInputReadCount: ordinaryInputReads.withLock { $0 },
+                inputWaitEvents: timing.inputWaitEvents)
+        }
+        #expect(observed.exitCode == 0)
+        #expect(observed.streamLines.isEmpty)
+        #expect(observed.controlledElapsed == CLIPolicy.hookCallLimit)
+        #expect(observed.waitBudgets == (hasPartialInput ? [.seconds(2), .seconds(1)] : [.seconds(2)]))
+        #expect(observed.inputFlagsRestored)
+        #expect(!observed.storeOutcome.exists)
+        #expect(observed.storeOutcome.creatorFiles.isEmpty)
+        #expect(observed.ordinaryInputReadCount == 0)
+        #expect(observed.inputWaitEvents.allSatisfy { $0 == Int16(POLLIN) })
+    }
+
+    @Test("outside-pane hooks leave even a held input pipe unread", arguments: ["claude", "cursor", "codex"])
+    func outsidePaneNeverWaitsForInput(provider: String) async throws {
+        let observed = await valueFromDedicatedThread {
+            let pipe = Pipe()
+            defer {
+                try? pipe.fileHandleForReading.close()
+                try? pipe.fileHandleForWriting.close()
+            }
+            let timing = HookInputDeadlineTiming(
+                inputDescriptor: pipe.fileHandleForReading.fileDescriptor, readsPartialInput: false)
+            let streams = Mutex<[String]>([])
+            let ordinaryInputReads = Mutex(0)
+            let status = AgentStudioIPCClientCommandLineRunner.run(
+                props: .init(
+                    arguments: ["hook", provider, provider == "cursor" ? "sessionStart" : "SessionStart"],
+                    environment: [:], executablePath: "/fixture/agentstudio-cli", bundleExecutableURL: nil,
+                    standardInput: {
+                        ordinaryInputReads.withLock { $0 += 1 }
+                        return Data()
+                    },
+                    identifierGenerator: { UUIDv7.generate() },
+                    standardOutputSink: { line in streams.withLock { $0.append(line) } },
+                    standardErrorSink: { line in streams.withLock { $0.append(line) } },
+                    standardInputFileDescriptor: pipe.fileHandleForReading.fileDescriptor, deadlineTiming: timing))
+            return OutsidePaneInputObservation(
+                exitCode: status, streamLines: streams.withLock { $0 }, waitBudgets: timing.waits,
+                controlledElapsed: timing.elapsed, ordinaryInputReadCount: ordinaryInputReads.withLock { $0 },
+                inputWaitEvents: timing.inputWaitEvents)
+        }
+        #expect(observed.exitCode == 0)
+        #expect(observed.streamLines.isEmpty)
+        #expect(observed.waitBudgets.isEmpty)
+        #expect(observed.controlledElapsed == .zero)
+        #expect(observed.ordinaryInputReadCount == 0)
+        #expect(observed.inputWaitEvents.isEmpty)
+    }
+
+    @Test(
+        "input and authentication share the ingress total and leave exhausted cleanup untouched",
+        arguments: ["claude", "cursor", "codex"])
+    func inputAndNetworkShareOneHookTotal(provider: String) async throws {
+        let fixture = try HookSilenceProcessFixture(condition: .slow)
+        defer { fixture.removeFiles() }
+        let observed: HookTotalObservation
+        do {
+            observed = try await valueFromDedicatedThread {
+                try fixture.start()
+                let pipe = Pipe()
+                defer { try? pipe.fileHandleForReading.close() }
+                let event = provider == "cursor" ? "sessionStart" : "SessionStart"
+                let payload = try JSONSerialization.data(withJSONObject: [
+                    "session_id": UUIDv7.generate().uuidString,
+                    "conversation_id": UUIDv7.generate().uuidString,
+                    "generation_id": UUIDv7.generate().uuidString,
+                    "hook_event_name": event,
+                ])
+                try pipe.fileHandleForWriting.write(contentsOf: payload)
+                try pipe.fileHandleForWriting.close()
+                let timing = HookInputDeadlineTiming(
+                    inputDescriptor: pipe.fileHandleForReading.fileDescriptor,
+                    readsPartialInput: true, completedInput: true)
+                let streams = Mutex<[String]>([])
+                let ordinaryInputReads = Mutex(0)
+                let status = AgentStudioIPCClientCommandLineRunner.run(
+                    props: .init(
+                        arguments: ["hook", provider, event],
+                        environment: fixture.environment(
+                            executable: URL(fileURLWithPath: "/fixture/agentstudio-cli"), storeSetting: .fresh),
+                        executablePath: "/fixture/agentstudio-cli", bundleExecutableURL: nil,
+                        standardInput: {
+                            ordinaryInputReads.withLock { $0 += 1 }
+                            return Data()
+                        },
+                        identifierGenerator: { UUIDv7.generate() },
+                        standardOutputSink: { line in streams.withLock { $0.append(line) } },
+                        standardErrorSink: { line in streams.withLock { $0.append(line) } },
+                        standardInputFileDescriptor: pipe.fileHandleForReading.fileDescriptor, deadlineTiming: timing))
+                return HookTotalObservation(
+                    exitCode: status, streamLines: streams.withLock { $0 }, controlledElapsed: timing.elapsed,
+                    networkWaitBudgets: timing.networkWaits, ordinaryInputReadCount: ordinaryInputReads.withLock { $0 },
+                    inputWaitEvents: timing.inputWaitEvents)
+            }
+        } catch {
+            await fixture.shutdown()
+            throw error
+        }
+        await fixture.shutdown()
+        let store = try await valueFromDedicatedThread { try fixture.storeOutcome() }
+        #expect(observed.exitCode == 0)
+        #expect(observed.streamLines.isEmpty)
+        #expect(observed.controlledElapsed == CLIPolicy.hookCallLimit)
+        #expect(!observed.networkWaitBudgets.isEmpty)
+        #expect(observed.networkWaitBudgets.allSatisfy { $0 == .seconds(1) })
+        #expect(observed.ordinaryInputReadCount == 0)
+        #expect(observed.inputWaitEvents.allSatisfy { $0 == Int16(POLLIN) })
+        #expect(!fixture.requests.contains { $0.method == "session.event" })
+        #expect(!store.exists)
+        #expect(store.creatorFiles.isEmpty)
+    }
+
     @Test(
         "every provider hook exits zero with empty process streams",
         arguments: HookSilenceInvocation.matrix.filter { $0.condition != .slow })
@@ -290,6 +444,89 @@ private enum HookSilenceFixtureError: Error {
     case missingBuildDirectory
     case invalidPayload
     case missingEvent
+}
+
+/// A controlled readiness dependency advances only when the real reader waits.
+/// The pipe writer stays open; no task, sleeper or detached read needs joining.
+private final class HookInputDeadlineTiming: CallDeadlineTiming, Sendable {
+    private struct State: Sendable {
+        let origin = ContinuousClock.now
+        var elapsed: Duration = .zero
+        var waits: [Duration] = []
+        var inputReadCount = 0
+        var networkWaits: [Duration] = []
+        var inputWaitEvents: [Int16] = []
+    }
+
+    private let state = Mutex(State())
+    private let readsPartialInput: Bool
+    private let inputDescriptor: Int32
+    private let completedInput: Bool
+
+    init(inputDescriptor: Int32, readsPartialInput: Bool, completedInput: Bool = false) {
+        self.inputDescriptor = inputDescriptor
+        self.readsPartialInput = readsPartialInput
+        self.completedInput = completedInput
+    }
+
+    var waits: [Duration] { state.withLock { $0.waits } }
+    var elapsed: Duration { state.withLock { $0.elapsed } }
+    var networkWaits: [Duration] { state.withLock { $0.networkWaits } }
+    var inputWaitEvents: [Int16] { state.withLock { $0.inputWaitEvents } }
+
+    func now() -> ContinuousClock.Instant { state.withLock { $0.origin.advanced(by: $0.elapsed) } }
+
+    func waitForReadiness(fileDescriptor: Int32, events: Int16, timeout: Duration) throws -> CallDeadlineReadiness {
+        state.withLock { observation in
+            observation.waits.append(timeout)
+            if fileDescriptor != inputDescriptor {
+                observation.networkWaits.append(timeout)
+                if events == Int16(POLLOUT) { return .ready(events) }
+                observation.elapsed += timeout
+                return .timedOut
+            }
+            observation.inputWaitEvents.append(events)
+            observation.inputReadCount += 1
+            if readsPartialInput && observation.inputReadCount == 1 {
+                // Known written bytes are ready. One second belongs to input;
+                // the next readiness wait must receive only the remaining second.
+                observation.elapsed += .seconds(1)
+                return .ready(Int16(POLLIN))
+            }
+            if completedInput { return .ready(Int16(POLLIN)) }
+            observation.elapsed += timeout
+            return .timedOut
+        }
+    }
+}
+
+private struct HookTotalObservation: Sendable {
+    let exitCode: Int32
+    let streamLines: [String]
+    let controlledElapsed: Duration
+    let networkWaitBudgets: [Duration]
+    let ordinaryInputReadCount: Int
+    let inputWaitEvents: [Int16]
+}
+
+private struct HookInputObservation: Sendable {
+    let exitCode: Int32
+    let streamLines: [String]
+    let waitBudgets: [Duration]
+    let controlledElapsed: Duration
+    let inputFlagsRestored: Bool
+    let storeOutcome: HookSilenceStoreOutcome
+    let ordinaryInputReadCount: Int
+    let inputWaitEvents: [Int16]
+}
+
+private struct OutsidePaneInputObservation: Sendable {
+    let exitCode: Int32
+    let streamLines: [String]
+    let waitBudgets: [Duration]
+    let controlledElapsed: Duration
+    let ordinaryInputReadCount: Int
+    let inputWaitEvents: [Int16]
 }
 
 private struct HookSilenceStoreOutcome: Sendable {

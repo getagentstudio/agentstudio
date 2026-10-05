@@ -1,3 +1,4 @@
+import AgentStudioIPCTransport
 import Foundation
 
 /// The two provider-package subcommands of the bundled CLI.
@@ -52,6 +53,7 @@ package struct AgentPackageCommandRunner: Sendable {
         package let exampleIdentifierProvider: @Sendable () -> UUID
         package let standardOutputSink: @Sendable (String) -> Void
         package let standardErrorSink: @Sendable (String) -> Void
+        package let deadline: CallDeadline?
 
         package init(
             sourceOccurredAt: Date,
@@ -61,7 +63,8 @@ package struct AgentPackageCommandRunner: Sendable {
             correlationIdProvider: @escaping @Sendable () -> UUID,
             exampleIdentifierProvider: @escaping @Sendable () -> UUID,
             standardOutputSink: @escaping @Sendable (String) -> Void,
-            standardErrorSink: @escaping @Sendable (String) -> Void
+            standardErrorSink: @escaping @Sendable (String) -> Void,
+            deadline: CallDeadline? = nil
         ) {
             self.sourceOccurredAt = sourceOccurredAt
             self.environment = environment
@@ -71,6 +74,7 @@ package struct AgentPackageCommandRunner: Sendable {
             self.exampleIdentifierProvider = exampleIdentifierProvider
             self.standardOutputSink = standardOutputSink
             self.standardErrorSink = standardErrorSink
+            self.deadline = deadline
         }
     }
 
@@ -101,7 +105,8 @@ package struct AgentPackageCommandRunner: Sendable {
                     correlationIdProvider: props.correlationIdProvider,
                     delivery: .liveIPC(
                         exampleIdentifierProvider: props.exampleIdentifierProvider, environment: props.environment),
-                    standardErrorSink: props.standardErrorSink
+                    standardErrorSink: props.standardErrorSink,
+                    deadline: props.deadline
                 )
             )
         default:

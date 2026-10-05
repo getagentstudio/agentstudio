@@ -7,6 +7,25 @@ import Testing
 
 @Suite("Unix socket transport")
 struct UnixSocketTransportTests {
+    @Test("deadline input reads a closed real pipe to EOF and restores its descriptor flags")
+    func deadlineInputReadsClosedPipe() async throws {
+        #if canImport(Darwin)
+            let observed = try await valueFromDedicatedThread {
+                let pipe = Pipe()
+                defer { try? pipe.fileHandleForReading.close() }
+                let input = Data("{\"session_id\":\"complete\"}".utf8)
+                try pipe.fileHandleForWriting.write(contentsOf: input)
+                try pipe.fileHandleForWriting.close()
+                let descriptor = pipe.fileHandleForReading.fileDescriptor
+                let flagsBefore = fcntl(descriptor, F_GETFL)
+                let output = try CallDeadline(limit: .seconds(2)).readInputToEnd(fileDescriptor: descriptor)
+                return (input: input, output: output, flagsRestored: fcntl(descriptor, F_GETFL) == flagsBefore)
+            }
+            #expect(observed.output == observed.input)
+            #expect(observed.flagsRestored)
+        #endif
+    }
+
     @Test("a real accepted peer that never replies ends at the absolute deadline")
     func stalledPeerEndsAtAbsoluteDeadline() async throws {
         let fixture = try UnixSocketFixture()

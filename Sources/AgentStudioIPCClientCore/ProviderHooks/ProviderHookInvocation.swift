@@ -9,11 +9,12 @@ import Foundation
 /// environment already carries. It is a value rather than a direct call so the
 /// hook runner can be proven without a socket.
 package struct ProviderHookDelivery: Sendable {
-    package let deliver: @Sendable (IPCSessionEventParams, AgentStudioIPCClientConfiguration) throws -> Void
+    package let deliver:
+        @Sendable (IPCSessionEventParams, AgentStudioIPCClientConfiguration, CallDeadline) throws -> Void
 
     package init(
         deliver:
-            @escaping @Sendable (IPCSessionEventParams, AgentStudioIPCClientConfiguration) throws
+            @escaping @Sendable (IPCSessionEventParams, AgentStudioIPCClientConfiguration, CallDeadline) throws
             -> Void
     ) {
         self.deliver = deliver
@@ -23,8 +24,7 @@ package struct ProviderHookDelivery: Sendable {
         exampleIdentifierProvider: @escaping @Sendable () -> UUID,
         environment: [String: String]
     ) -> Self {
-        Self { params, configuration in
-            let deadline = CallDeadline(limit: Self.codexCallLimit(for: params.event.name))
+        Self { params, configuration, deadline in
             let examples = IPCBuiltInMethodExampleContext(
                 illustrativeIdentifier: exampleIdentifierProvider()
             )
@@ -89,6 +89,7 @@ package enum ProviderHookInvocation {
         package let correlationIdProvider: @Sendable () -> UUID
         package let delivery: ProviderHookDelivery
         package let standardErrorSink: @Sendable (String) -> Void
+        package let deadline: CallDeadline?
 
         package init(
             sourceOccurredAt: Date,
@@ -97,7 +98,8 @@ package enum ProviderHookInvocation {
             standardInput: @escaping @Sendable () throws -> Data,
             correlationIdProvider: @escaping @Sendable () -> UUID,
             delivery: ProviderHookDelivery,
-            standardErrorSink: @escaping @Sendable (String) -> Void
+            standardErrorSink: @escaping @Sendable (String) -> Void,
+            deadline: CallDeadline? = nil
         ) {
             self.eventName = eventName
             self.sourceOccurredAt = sourceOccurredAt
@@ -106,11 +108,13 @@ package enum ProviderHookInvocation {
             self.correlationIdProvider = correlationIdProvider
             self.delivery = delivery
             self.standardErrorSink = standardErrorSink
+            self.deadline = deadline
         }
     }
 
     @discardableResult
     package static func runCodexHook(_ props: Props) -> Int32 {
+        let deadline = props.deadline ?? CallDeadline(limit: CLIPolicy.hookCallLimit)
         guard let eventName = CodexHookEventName(rawValue: props.eventName) else {
             props.standardErrorSink("agentstudio hook codex: unknown event \(props.eventName)")
             return 0
@@ -134,6 +138,7 @@ package enum ProviderHookInvocation {
         else {
             return 0
         }
+        guard deadline.remainingBudget > .zero else { return 0 }
         do {
             try props.delivery.deliver(
                 IPCSessionEventParams(
@@ -142,7 +147,8 @@ package enum ProviderHookInvocation {
                     event: projected.event,
                     correlationId: props.correlationIdProvider()
                 ),
-                configuration
+                configuration,
+                deadline
             )
         } catch let failure as ProviderHookFailure {
             props.standardErrorSink(
