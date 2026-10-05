@@ -766,6 +766,7 @@ swift_test_command_accepts_event_stream() {
     [ "$argument" = "list" ] && return 1
     case "$argument" in
       */swiftpm-testing-helper|swiftpm-testing-helper) return 0 ;;
+      *.xctest) return 0 ;;
     esac
     if [ "$previous" = "swift" ] && [ "$argument" = "test" ]; then return 0; fi
     previous="$argument"

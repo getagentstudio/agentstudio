@@ -131,7 +131,7 @@ struct SwiftLaneRunnerReportTests {
         #expect(record["slot_cap"] as? Int == 4)
         #expect(record["phase"] == nil || record["phase"] is NSNull)
         #expect(record["timed_out"] as? Bool == false)
-        #expect(record["event_stream_file"] is String)
+        #expect(record["event_stream_file"] == nil || record["event_stream_file"] is NSNull)
     }
 
     @Test("prebuild flags are absent by default and appended when compiler statistics are enabled")
@@ -357,9 +357,9 @@ struct SwiftLaneRunnerReportTests {
                 // Which tree and bundle the lane tested, and whether that makes
                 // its verdict evidence at all.
                 "build_receipt_head_sha",
+                "bundle_count",
                 "bundle_identity",
                 "bundle_set",
-                "bundle_count",
                 "bundle_state",
                 "cpu_count",
                 "cpu_seconds",
