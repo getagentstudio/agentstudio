@@ -849,7 +849,7 @@ The Start that follows binds a live session that has already exited. Source-time
   - `source`: `hook` or `terminal`.
   It reads `PaneActivityTime` from `PaneActivityTimeAtom`, and it's `null` when the pane has no activity yet.
 - Read-only.
-- It follows the existing eligibility of those methods. An agent reads its own pane; the diagnostic debug principal reads any pane.
+- **Who sees it.** An agent reads activity only for its own pane: the pane its credential is bound to, and that pane's drawer children. The diagnostic debug principal reads any pane's. `pane.list` and `pane.current` are global reads (`.anyTarget`), and their eligibility doesn't change: they still list every pane, but `activity` is `null` on panes the caller doesn't own. It's filled at the response boundary from the authenticated principal. No new privilege.
 - `AgentStudioIPCQueryAdapter` is already `@MainActor` for its workspace reads. The atom read is one keyed lookup in that same pass, with no new hop and no derivation.
 - No store, no atom, no bus case. It's additive, so older readers ignore it.
 
