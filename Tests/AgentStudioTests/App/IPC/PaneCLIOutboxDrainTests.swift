@@ -1,3 +1,4 @@
+import AgentStudioIPCTransport
 import AgentStudioInfrastructure
 import AgentStudioProgrammaticControl
 import AgentStudioSessions
@@ -51,6 +52,25 @@ struct PaneCLIOutboxDrainTests {
         #expect(!text.contains(marker))
         #expect(!text.contains("pane_id"))
         #expect(!text.contains("store_id"))
+        let records = try text.split(separator: "\n").map {
+            try JSONDecoder().decode(JSONValue.self, from: Data($0.utf8))
+        }
+        let refusalRecords = records.filter {
+            guard case .object(let record) = $0 else { return false }
+            return record["body"] == .string("performance.ipc.outbox_refusal")
+        }
+        #expect(refusalRecords.count == 1)
+        let refusal = try #require(refusalRecords.first)
+        guard case .object(let record) = refusal,
+            case .object(let attributes)? = record["attributes"]
+        else {
+            Issue.record("The refusal trace has no structured attributes")
+            return
+        }
+        #expect(attributes["agentstudio.performance.elapsed_ms"] == nil)
+        #expect(
+            attributes["agentstudio.performance.ipc.outbox_refusal.reason"]
+                == .string(PaneCLIOutboxDrain.RefusalReason.malformedEnvelope.rawValue))
     }
 
     @Test("a never-bound pane cannot wedge a later bound pane's notice")

@@ -10,19 +10,22 @@ package struct ClaudeCodeHookInvocationInputs {
     package let standardInput: () throws -> Data
     package let identifierGenerator: () -> UUID
     package let diagnosticSink: (String) -> Void
+    package let deadline: CallDeadline?
 
     package init(
         arguments: [String],
         environment: [String: String],
         standardInput: @escaping () throws -> Data,
         identifierGenerator: @escaping () -> UUID,
-        diagnosticSink: @escaping (String) -> Void
+        diagnosticSink: @escaping (String) -> Void,
+        deadline: CallDeadline? = nil
     ) {
         self.arguments = arguments
         self.environment = environment
         self.standardInput = standardInput
         self.identifierGenerator = identifierGenerator
         self.diagnosticSink = diagnosticSink
+        self.deadline = deadline
     }
 }
 
@@ -43,6 +46,7 @@ package enum ClaudeCodeHookInvocation {
         guard Array(inputs.arguments.prefix(commandPrefix.count)) == commandPrefix else {
             return nil
         }
+        let deadline = inputs.deadline ?? CallDeadline(limit: CLIPolicy.hookCallLimit)
         let remainder = Array(inputs.arguments.dropFirst(commandPrefix.count))
         guard let announcedEvent = remainder.first, !announcedEvent.hasPrefix("--") else {
             inputs.diagnosticSink("agentstudio hook claude: missing hook event name")
@@ -55,19 +59,21 @@ package enum ClaudeCodeHookInvocation {
         else {
             return 0
         }
-        submit(announcedEvent: announcedEvent, providerVersion: providerVersion, inputs: inputs)
+        submit(announcedEvent: announcedEvent, providerVersion: providerVersion, inputs: inputs, deadline: deadline)
         return 0
     }
 
     private static func submit(
         announcedEvent: String,
         providerVersion: String,
-        inputs: ClaudeCodeHookInvocationInputs
+        inputs: ClaudeCodeHookInvocationInputs,
+        deadline: CallDeadline
     ) {
         do {
             let payload = try JSONDecoder().decode(
                 ClaudeCodeHookPayload.self, from: try inputs.standardInput()
             )
+            guard deadline.remainingBudget > .zero else { return }
             let outcome = ClaudeCodeHookProjection.project(
                 announcedEvent: announcedEvent,
                 payload: payload,
@@ -76,14 +82,16 @@ package enum ClaudeCodeHookInvocation {
                 freshOccurrenceIdentifier: inputs.identifierGenerator
             )
             guard case .projected(let params) = outcome else { return }
-            try send(params: params, environment: inputs.environment)
+            guard deadline.remainingBudget > .zero else { return }
+            try send(params: params, environment: inputs.environment, deadline: deadline)
         } catch {
             inputs.diagnosticSink("agentstudio hook claude: \(announcedEvent) not reported")
         }
     }
 
-    private static func send(params: IPCSessionEventParams, environment: [String: String]) throws {
-        let deadline = CallDeadline(limit: CLIPolicy.hookCallLimit)
+    private static func send(params: IPCSessionEventParams, environment: [String: String], deadline: CallDeadline)
+        throws
+    {
         let configuration = AgentStudioIPCClientConfiguration(
             socketPath: try AgentStudioIPCClientDiscovery.socketPath(
                 explicitSocketPath: nil, environment: environment, metadataURL: nil

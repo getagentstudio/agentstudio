@@ -8,7 +8,7 @@ import Testing
 
 extension CLIStoreTests {
     @Test(
-        "writer open retains its bounded timeout through verification and restores 50 ms before notice writes",
+        "writer open refreshes its remaining timeout through verification and caps notice writes at 50 ms",
         arguments: WriterBudgetSchema.allCases, WriterCallBudget.allCases
     )
     func writerBudgetCoversOpenAndMigration(
@@ -72,9 +72,7 @@ extension CLIStoreTests {
             let timeoutMutations = statements.enumerated().filter { _, sql in
                 sql.lowercased().hasPrefix("pragma busy_timeout =")
             }
-            #expect(timeoutMutations.count == 1)
-            let restoration = try #require(timeoutMutations.first)
-            #expect(restoration.element == "PRAGMA busy_timeout = 50")
+            let restoration = try #require(timeoutMutations.first { $0.element == "PRAGMA busy_timeout = 50" })
             let identityVerification = try #require(
                 statements.lastIndex(of: "SELECT store_id, channel FROM cli_store_identity LIMIT 2"))
             let schemaVerification = try #require(
@@ -87,6 +85,11 @@ extension CLIStoreTests {
             switch initialSchema {
             case .missing, .identityOnly: migrates = index == 0
             case .current: migrates = false
+            }
+            let checkpointsPrivateStore = initialSchema == .missing && index == 0
+            #expect(timeoutMutations.count == 4 + (migrates ? 1 : 0) + (checkpointsPrivateStore ? 1 : 0))
+            for mutation in timeoutMutations where mutation.offset != restoration.offset {
+                #expect(mutation.element == "PRAGMA busy_timeout = \(callBudget.expectedMilliseconds)")
             }
             if migrates {
                 let creation = try #require(outboxCreation)
@@ -103,7 +106,9 @@ extension CLIStoreTests {
         #expect(observed.beforeNotice == 50)
         #expect(observed.afterNotice == 50)
         #expect(observed.afterOpenStatements.contains { $0.hasPrefix("INSERT INTO cli_outbox") })
-        #expect(!observed.afterOpenStatements.contains { $0.lowercased().hasPrefix("pragma busy_timeout =") })
+        #expect(
+            observed.afterOpenStatements.filter { $0.lowercased().hasPrefix("pragma busy_timeout =") }
+                == ["PRAGMA busy_timeout = 50"])
         switch observed.notice {
         case .notice(let notice):
             #expect(notice.id > 0)

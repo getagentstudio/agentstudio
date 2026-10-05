@@ -3,12 +3,163 @@ import AgentStudioTestHarness
 import AgentStudioTestSupport
 import Foundation
 import GRDB
+import Synchronization
 import Testing
 
 @testable import AgentStudioCLIStore
 
 @Suite("CLI store cleanup")
 struct CLIStoreCleanupTests {
+    @Test("an exhausted total after writer open returns busy without purge SQL or mutation")
+    func exhaustedBudgetAfterOpenPreservesHandledRows() async throws {
+        let observed = try await valueFromDedicatedThread {
+            let fixture = try CLIStoreCleanupFixture()
+            defer { fixture.removeFiles() }
+            let budget = Mutex<Duration>(.seconds(1))
+            let writer = try CLIStore.openWriter(
+                url: fixture.storeURL, channel: .debug,
+                migrationLockWaitBudget: { budget.withLock { $0 } }
+            ).get()
+            let entry = try fixture.append(to: writer)
+            fixture.clock.advance(by: .seconds(86_401))
+            let statements = Mutex<[String]>([])
+            writer.databaseQueue.writeWithoutTransaction { database in
+                database.trace { event in
+                    guard case .statement(let statement) = event else { return }
+                    statements.withLock { $0.append(statement.sql) }
+                }
+            }
+            budget.withLock { $0 = .zero }
+
+            let result = writer.purgeHandledOutbox(
+                expectedStoreID: writer.identity.storeID, through: entry.id, now: fixture.now)
+
+            let purgeStatements = statements.withLock { $0 }
+            writer.databaseQueue.writeWithoutTransaction { $0.trace(options: []) }
+            let retainedRows = try writer.readOutbox(after: 0).get().entries
+            budget.withLock { $0 = .seconds(1) }
+            let recoveredRemovalCount = try writer.purgeHandledOutbox(
+                expectedStoreID: writer.identity.storeID, through: entry.id, now: fixture.now
+            ).get()
+            return RollbackReuseObservation(
+                failureResult: result, purgeStatements: purgeStatements, retainedRows: retainedRows,
+                retainedEntry: entry, recoveredRemovalCount: recoveredRemovalCount,
+                remainingRows: try writer.readOutbox(after: 0).get().entries)
+        }
+        #expect(observed.failureResult == .failure(.busy(extendedResultCode: nil, stage: .purge)))
+        #expect(observed.purgeStatements.isEmpty)
+        #expect(observed.retainedRows == [observed.retainedEntry])
+        #expect(observed.recoveredRemovalCount == 1)
+        #expect(observed.remainingRows.isEmpty)
+    }
+
+    @Test("purge rolls back without deletion if identity verification exhausts the total")
+    func budgetExhaustionBeforeDeleteRollsBack() async throws {
+        let observed = try await valueFromDedicatedThread {
+            let fixture = try CLIStoreCleanupFixture()
+            defer { fixture.removeFiles() }
+            let budget = Mutex<Duration>(.seconds(1))
+            let writer = try CLIStore.openWriter(
+                url: fixture.storeURL, channel: .debug,
+                migrationLockWaitBudget: { budget.withLock { $0 } }
+            ).get()
+            let entry = try fixture.append(to: writer)
+            fixture.clock.advance(by: .seconds(86_401))
+            let statements = Mutex<[String]>([])
+            writer.databaseQueue.writeWithoutTransaction { database in
+                database.trace { event in
+                    guard case .statement(let statement) = event else { return }
+                    statements.withLock { $0.append(statement.sql) }
+                    if statement.sql == "SELECT store_id, channel FROM cli_store_identity LIMIT 2" {
+                        budget.withLock { $0 = .zero }
+                    }
+                }
+            }
+
+            let result = writer.purgeHandledOutbox(
+                expectedStoreID: writer.identity.storeID, through: entry.id, now: fixture.now)
+
+            let purgeStatements = statements.withLock { $0 }
+            writer.databaseQueue.writeWithoutTransaction { $0.trace(options: []) }
+            let retainedRows = try writer.readOutbox(after: 0).get().entries
+            budget.withLock { $0 = .seconds(1) }
+            let recoveredRemovalCount = try writer.purgeHandledOutbox(
+                expectedStoreID: writer.identity.storeID, through: entry.id, now: fixture.now
+            ).get()
+            return RollbackReuseObservation(
+                failureResult: result, purgeStatements: purgeStatements, retainedRows: retainedRows,
+                retainedEntry: entry, recoveredRemovalCount: recoveredRemovalCount,
+                remainingRows: try writer.readOutbox(after: 0).get().entries)
+        }
+        #expect(observed.failureResult == .failure(.busy(extendedResultCode: nil, stage: .purge)))
+        #expect(observed.purgeStatements.contains("BEGIN IMMEDIATE TRANSACTION"))
+        #expect(observed.purgeStatements.contains { $0.hasPrefix("ROLLBACK") })
+        #expect(!observed.purgeStatements.contains { $0.hasPrefix("DELETE FROM cli_outbox") })
+        #expect(observed.retainedRows == [observed.retainedEntry])
+        #expect(observed.recoveredRemovalCount == 1)
+        #expect(observed.remainingRows.isEmpty)
+    }
+
+    @Test("purge refreshes its SQLite wait to the remaining total below 50 ms")
+    func purgeWaitUsesRemainingBudget() async throws {
+        let observed = try await valueFromDedicatedThread {
+            let fixture = try CLIStoreCleanupFixture()
+            defer { fixture.removeFiles() }
+            let budget = Mutex<Duration>(.seconds(1))
+            let writer = try CLIStore.openWriter(
+                url: fixture.storeURL, channel: .debug,
+                migrationLockWaitBudget: { budget.withLock { $0 } }
+            ).get()
+            let entry = try fixture.append(to: writer)
+            fixture.clock.advance(by: .seconds(86_401))
+            budget.withLock { $0 = .milliseconds(17) }
+
+            let removed = try writer.purgeHandledOutbox(
+                expectedStoreID: writer.identity.storeID, through: entry.id, now: fixture.now
+            ).get()
+
+            let milliseconds = try writer.databaseQueue.read { try Int.fetchOne($0, sql: "PRAGMA busy_timeout") }
+            return (removed: removed, milliseconds: milliseconds, rows: try writer.readOutbox(after: 0).get().entries)
+        }
+        #expect(observed.removed == 1)
+        #expect(observed.milliseconds == 17)
+        #expect(observed.rows.isEmpty)
+    }
+
+    @Test("a held sibling writer cannot spend a new wait when less than one SQLite millisecond remains")
+    func heldWriterPurgeFloorsRemainingWait() async throws {
+        let observed = try await valueFromDedicatedThread {
+            let fixture = try CLIStoreCleanupFixture()
+            defer { fixture.removeFiles() }
+            let budget = Mutex<Duration>(.seconds(1))
+            let writer = try CLIStore.openWriter(
+                url: fixture.storeURL, channel: .debug,
+                migrationLockWaitBudget: { budget.withLock { $0 } }
+            ).get()
+            let entry = try fixture.append(to: writer)
+            fixture.clock.advance(by: .seconds(86_401))
+            let sibling = try fixture.openWriter()
+            var purgeResult: Result<Int, CLIStoreFailure>?
+            // Keep both lock acquisition and rollback inside one GRDB access.
+            // The other database queue may attempt purge while this lock is held.
+            try sibling.databaseQueue.inTransaction(.immediate) { _ in
+                budget.withLock { $0 = .microseconds(500) }
+                purgeResult = writer.purgeHandledOutbox(
+                    expectedStoreID: writer.identity.storeID, through: entry.id, now: fixture.now)
+                return .rollback
+            }
+            let milliseconds = try writer.databaseQueue.read { try Int.fetchOne($0, sql: "PRAGMA busy_timeout") }
+            return (
+                result: purgeResult, milliseconds: milliseconds, rows: try writer.readOutbox(after: 0).get().entries,
+                entry: entry
+            )
+        }
+        let result = try #require(observed.result)
+        #expect(result == .failure(.busy(extendedResultCode: 5, stage: .purge)))
+        #expect(observed.milliseconds == 0)
+        #expect(observed.rows == [observed.entry])
+    }
+
     @Test("only old handled rows are purged; unread rows survive any age")
     func cleanupKeepsRecentAndUnreadRows() async throws {
         let observed = try await valueFromDedicatedThread {
@@ -158,6 +309,15 @@ struct CLIStoreCleanupTests {
         #expect(sqlError.resultCode == .SQLITE_READONLY)
         #expect(observed.rows == [observed.entry])
     }
+}
+
+private struct RollbackReuseObservation: Sendable {
+    let failureResult: Result<Int, CLIStoreFailure>
+    let purgeStatements: [String]
+    let retainedRows: [CLIOutboxEntry]
+    let retainedEntry: CLIOutboxEntry
+    let recoveredRemovalCount: Int
+    let remainingRows: [CLIOutboxEntry]
 }
 
 private struct CLIStoreCleanupFixture: Sendable {

@@ -79,15 +79,18 @@ package final class CLIStore: Sendable {
     let databaseQueue: DatabaseQueue
     package let identity: CLIStoreIdentity
     private let logDecodeIssue: @Sendable (CLIStoreDecodeIssue) -> Void
+    private let remainingCallBudget: @Sendable () -> Duration?
 
     private init(
         databaseQueue: DatabaseQueue,
         identity: CLIStoreIdentity,
-        logDecodeIssue: @escaping @Sendable (CLIStoreDecodeIssue) -> Void
+        logDecodeIssue: @escaping @Sendable (CLIStoreDecodeIssue) -> Void,
+        remainingCallBudget: @escaping @Sendable () -> Duration? = { nil }
     ) {
         self.databaseQueue = databaseQueue
         self.identity = identity
         self.logDecodeIssue = logDecodeIssue
+        self.remainingCallBudget = remainingCallBudget
     }
 
     package static func openWriter(
@@ -99,6 +102,7 @@ package final class CLIStore: Sendable {
     ) -> Result<CLIStore, CLIStoreFailure> {
         do {
             guard url.isFileURL else { throw CLIStoreFailure.unavailable }
+            _ = try firstOpenBusyTimeout(lockWaitBudget: migrationLockWaitBudget())
             try FileManager.default.createDirectory(
                 at: url.deletingLastPathComponent(), withIntermediateDirectories: true,
                 attributes: [.posixPermissions: 0o700])
@@ -118,7 +122,7 @@ package final class CLIStore: Sendable {
     private static func openDatabaseWriter(
         url: URL,
         channel: CLIStoreChannel,
-        migrationLockWaitBudget: @Sendable () -> Duration?,
+        migrationLockWaitBudget: @escaping @Sendable () -> Duration?,
         prepareConnection: (@Sendable (Database) throws -> Void)?,
         logDecodeIssue: @escaping @Sendable (CLIStoreDecodeIssue) -> Void
     ) -> Result<CLIStore, CLIStoreFailure> {
@@ -138,6 +142,9 @@ package final class CLIStore: Sendable {
             let migrator = CLIStoreMigrator.makeMigrator(channel: channel)
             stage = .admission
             let needsMigration = try databaseQueue.read { database in
+                try refreshBusyTimeout(
+                    database, cap: CLIStorePolicy.firstOpenMigrationLockWaitCap,
+                    remainingBudget: migrationLockWaitBudget(), stage: .admission)
                 let applied = try migrator.appliedIdentifiers(database)
                 // Same unregistered-id rule as hasBeenSuperseded, using one
                 // migration-table read for both supersession and upgrade.
@@ -151,6 +158,9 @@ package final class CLIStore: Sendable {
             }
             stage = .journalMode
             try databaseQueue.writeWithoutTransaction { database in
+                try refreshBusyTimeout(
+                    database, cap: CLIStorePolicy.firstOpenMigrationLockWaitCap,
+                    remainingBudget: migrationLockWaitBudget(), stage: .journalMode)
                 if try String.fetchOne(database, sql: "PRAGMA journal_mode") != "wal" {
                     guard try String.fetchOne(database, sql: "PRAGMA journal_mode = WAL") == "wal" else {
                         throw CLIStoreFailure.unavailable
@@ -161,11 +171,17 @@ package final class CLIStore: Sendable {
             if needsMigration {
                 stage = .migration
                 try databaseQueue.writeWithoutTransaction { database in
+                    try refreshBusyTimeout(
+                        database, cap: CLIStorePolicy.firstOpenMigrationLockWaitCap,
+                        remainingBudget: migrationLockWaitBudget(), stage: .migration)
                     try migrateWriterSchema(database, channel: channel)
                 }
             }
             stage = .identity
             let identity = try databaseQueue.read { database in
+                try refreshBusyTimeout(
+                    database, cap: CLIStorePolicy.firstOpenMigrationLockWaitCap,
+                    remainingBudget: migrationLockWaitBudget(), stage: .identity)
                 guard try migrator.appliedIdentifiers(database) == CLIStoreMigrator.knownMigrations else {
                     throw CLIStoreFailure.superseded
                 }
@@ -173,12 +189,14 @@ package final class CLIStore: Sendable {
             }
             // Only a verified writer escapes with the ordinary notice-write policy.
             try databaseQueue.writeWithoutTransaction { database in
-                let milliseconds = Int(CLIStorePolicy.busyTimeout * CLIStorePolicy.millisecondsPerSecond)
-                try database.execute(sql: "PRAGMA busy_timeout = \(milliseconds)")
+                try refreshBusyTimeout(
+                    database, cap: ordinaryWriteWaitCap,
+                    remainingBudget: migrationLockWaitBudget(), stage: .identity)
             }
             return .success(
                 CLIStore(
-                    databaseQueue: databaseQueue, identity: identity, logDecodeIssue: logDecodeIssue))
+                    databaseQueue: databaseQueue, identity: identity, logDecodeIssue: logDecodeIssue,
+                    remainingCallBudget: migrationLockWaitBudget))
         } catch {
             return .failure(classifyFailure(error, stage: stage))
         }
@@ -224,7 +242,14 @@ package final class CLIStore: Sendable {
                 exactly: (createdAt.timeIntervalSince1970 * CLIStorePolicy.millisecondsPerSecond).rounded())
         else { return .failure(.unavailable) }
         do {
+            try databaseQueue.writeWithoutTransaction { database in
+                try Self.refreshBusyTimeout(
+                    database, cap: Self.ordinaryWriteWaitCap,
+                    remainingBudget: remainingCallBudget(), stage: .append)
+            }
             let entry = try databaseQueue.write { database in
+                _ = try Self.busyTimeout(
+                    cap: Self.ordinaryWriteWaitCap, remainingBudget: remainingCallBudget(), stage: .append)
                 // Returning the original entry makes repeats idempotent while
                 // preserving its immutable payload and time.
                 if let existing = try CLIOutboxRecord.fetchOne(
@@ -306,23 +331,58 @@ package final class CLIStore: Sendable {
                 exactly: (cutoff.timeIntervalSince1970 * CLIStorePolicy.millisecondsPerSecond).rounded(.up))
         else { return .failure(.unavailable) }
         do {
-            let removed = try databaseQueue.write { database in
-                let currentIdentity = try Self.readIdentity(database, expectedChannel: identity.channel)
-                guard currentIdentity.storeID == expectedStoreID else { return 0 }
-                try database.execute(
-                    sql: "DELETE FROM cli_outbox WHERE id <= ? AND created_at < ?",
-                    arguments: [lastHandledID, cutoffMilliseconds])
-                return database.changesCount
+            // Exhaustion after open must not start another SQLite wait or transaction.
+            _ = try Self.busyTimeout(
+                cap: Self.ordinaryWriteWaitCap, remainingBudget: remainingCallBudget(), stage: .purge)
+            let removed = try databaseQueue.writeWithoutTransaction { database in
+                try Self.refreshBusyTimeout(
+                    database, cap: Self.ordinaryWriteWaitCap,
+                    remainingBudget: remainingCallBudget(), stage: .purge)
+                var removedCount = 0
+                try database.inTransaction(.immediate) {
+                    _ = try Self.busyTimeout(
+                        cap: Self.ordinaryWriteWaitCap, remainingBudget: remainingCallBudget(), stage: .purge)
+                    let currentIdentity = try Self.readIdentity(database, expectedChannel: identity.channel)
+                    guard currentIdentity.storeID == expectedStoreID else { return .commit }
+                    try Self.refreshBusyTimeout(
+                        database, cap: Self.ordinaryWriteWaitCap,
+                        remainingBudget: remainingCallBudget(), stage: .purge)
+                    try database.execute(
+                        sql: "DELETE FROM cli_outbox WHERE id <= ? AND created_at < ?",
+                        arguments: [lastHandledID, cutoffMilliseconds])
+                    removedCount = database.changesCount
+                    return .commit
+                }
+                return removedCount
             }
             return .success(removed)
         } catch { return .failure(Self.classifyFailure(error, stage: .purge)) }
     }
 
     private static func firstOpenBusyTimeout(lockWaitBudget: Duration?) throws -> TimeInterval {
-        let cap = CLIStorePolicy.firstOpenMigrationLockWaitCap
-        let lockWait = min(cap, lockWaitBudget ?? cap)
+        try busyTimeout(
+            cap: CLIStorePolicy.firstOpenMigrationLockWaitCap,
+            remainingBudget: lockWaitBudget, stage: .connectionSetup)
+    }
+
+    private static var ordinaryWriteWaitCap: Duration {
+        .milliseconds(Int64(CLIStorePolicy.busyTimeout * CLIStorePolicy.millisecondsPerSecond))
+    }
+
+    private static func refreshBusyTimeout(
+        _ database: Database, cap: Duration, remainingBudget: Duration?, stage: CLIStoreFailure.Stage
+    ) throws {
+        let timeout = try busyTimeout(cap: cap, remainingBudget: remainingBudget, stage: stage)
+        let milliseconds = Int((timeout * CLIStorePolicy.millisecondsPerSecond).rounded())
+        try database.execute(sql: "PRAGMA busy_timeout = \(milliseconds)")
+    }
+
+    private static func busyTimeout(
+        cap: Duration, remainingBudget: Duration?, stage: CLIStoreFailure.Stage
+    ) throws -> TimeInterval {
+        let lockWait = min(cap, remainingBudget ?? cap)
         guard lockWait > .zero else {
-            throw CLIStoreFailure.busy(extendedResultCode: nil, stage: .connectionSetup)
+            throw CLIStoreFailure.busy(extendedResultCode: nil, stage: stage)
         }
         // Round down so SQLite never receives a wait larger than the remaining budget.
         let milliseconds = (lockWait / .milliseconds(1)).rounded(.down)
@@ -365,7 +425,7 @@ package final class CLIStore: Sendable {
     private static func publishNewStore(
         at url: URL,
         channel: CLIStoreChannel,
-        migrationLockWaitBudget: @Sendable () -> Duration?,
+        migrationLockWaitBudget: @escaping @Sendable () -> Duration?,
         prepareConnection: (@Sendable (Database) throws -> Void)?
     ) throws {
         let temporaryURL = url.deletingLastPathComponent().appending(
@@ -407,6 +467,9 @@ package final class CLIStore: Sendable {
         }
         do {
             try writer.databaseQueue.writeWithoutTransaction { database in
+                try refreshBusyTimeout(
+                    database, cap: CLIStorePolicy.firstOpenMigrationLockWaitCap,
+                    remainingBudget: migrationLockWaitBudget(), stage: .migration)
                 // Apple's default retains WAL/SHM for read-only clients. This
                 // private inode alone must be self-contained before publication.
                 var flag: CInt = 0
@@ -424,6 +487,7 @@ package final class CLIStore: Sendable {
         guard !FileManager.default.fileExists(atPath: temporaryURL.path + "-wal"),
             !FileManager.default.fileExists(atPath: temporaryURL.path + "-shm")
         else { throw CLIStoreFailure.unavailable }
+        _ = try firstOpenBusyTimeout(lockWaitBudget: migrationLockWaitBudget())
         // No shared file is visible until WAL setup, schema, identity and
         // checkpoint are complete. Never replace a sibling creator's store.
         if Darwin.renamex_np(temporaryURL.path, url.path, UInt32(RENAME_EXCL)) != 0 {

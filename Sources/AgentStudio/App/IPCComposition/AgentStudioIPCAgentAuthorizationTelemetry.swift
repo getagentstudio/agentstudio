@@ -9,8 +9,8 @@ struct AgentStudioIPCAgentAuthorizationTelemetry: AppIPCAgentAuthorizationTeleme
     let performanceTraceRecorder: AgentStudioPerformanceTraceRecorder?
 
     func recordOfflineNoticeRefusal(reason: PaneCLIOutboxDrain.RefusalReason) {
-        performanceTraceRecorder?.recordDuration(
-            .ipcOutboxRefusal, duration: .zero,
+        performanceTraceRecorder?.record(
+            .ipcOutboxRefusal,
             attributes: ["agentstudio.performance.ipc.outbox_refusal.reason": .string(reason.rawValue)]
         )
     }
