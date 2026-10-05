@@ -12,6 +12,10 @@ import {
 	useWorktreeAnnotationEditorInstallationPreparation,
 	useWorktreeAnnotationEditSurfaceToken,
 } from '../../worktree-annotations/worktree-annotation-surface-provider.js';
+import {
+	createDeferred,
+	waitForWorktreeAnnotationBrowserDomState,
+} from '../../worktree-annotations/worktree-annotation-thread.browser.test-support.js';
 import { markdownCanvas } from './bridge-markdown-annotation-test-support.js';
 
 // oxlint-disable-next-line import/no-unassigned-import -- Exercise the real renderer and host geometry.
@@ -96,7 +100,12 @@ test('keeps saved thread coordinates with the painted document while another edi
 		await screen.getByRole('button', { name: 'Revert annotation draft' }).click();
 	});
 	await expect.element(screen.getByText('New target', { exact: true })).toBeVisible();
-	await expect.poll(precedingTarget).toBe('Commented target');
+	expect(
+		await waitForWorktreeAnnotationBrowserDomState({
+			readState: precedingTarget,
+			isExpected: (target): boolean => target === 'Commented target',
+		}),
+	).toBe('Commented target');
 });
 
 test('updates saved comment text while retaining its displayed source coordinates', async (): Promise<void> => {
@@ -134,6 +143,15 @@ test('updates saved comment text while retaining its displayed source coordinate
 
 test('offers a neutral floating update action without moving the document', async (): Promise<void> => {
 	const harness = createWorktreeAnnotationBrowserProviderHarness('fileView');
+	const rootCreateSent = createDeferred<void>();
+	const sendCommand = harness.surface.client.send;
+	vi.spyOn(harness.surface.client, 'send').mockImplementation((command): string => {
+		const requestId = sendCommand(command);
+		if (command.command === 'annotationCommand' && command.operation.kind === 'root.create') {
+			rootCreateSent.resolve(undefined);
+		}
+		return requestId;
+	});
 	const screen = await render(
 		harness.wrap(await markdownCanvas('First target\n\nCommented target')),
 	);
@@ -150,11 +168,10 @@ test('offers a neutral floating update action without moving the document', asyn
 			.getByPlaceholder('Write an annotation in Markdown')
 			.fill('Draft kept before loading the latest file');
 	});
-	await expect
-		.poll((): boolean =>
-			harness.surface.sentOperations.some((operation) => operation.kind === 'root.create'),
-		)
-		.toBe(true);
+	await act(async (): Promise<void> => rootCreateSent.promise);
+	expect(harness.surface.sentOperations.some((operation) => operation.kind === 'root.create')).toBe(
+		true,
+	);
 	const documentTopBefore = screen
 		.getByTestId('bridge-markdown-canvas')
 		.element()
