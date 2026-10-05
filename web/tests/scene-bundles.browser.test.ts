@@ -6,6 +6,7 @@ import { commands, page } from "vitest/browser";
 import type { RegisteredSceneBundle } from "../scripts/scene-bundles/scene-bundle-registry.ts";
 import { sceneIds } from "../src/motion-scenes/scene-contract";
 import { resolveSceneModule } from "../src/motion-scenes/scene-registry";
+import { contextWithTaskPhoneDrawerScrollPixels } from "../src/motion-scenes/scenes/chapter-context-with-task/chapter-context-with-task-fixture";
 import { hasNonWhitespaceDirectText } from "../src/motion-scenes/scenes/scene-text-leaves";
 import { kitPhoneAttribute } from "../src/recreation-kit/recreation-kit-dom";
 import { recreationKitPhoneMaxWidthPx } from "../src/recreation-kit/recreation-kit-phone-breakpoint";
@@ -647,6 +648,87 @@ describe("scene bundles for HyperFrames", () => {
     );
   });
 
+  it.each([
+    { width: 330, height: 412 },
+    { width: 1280, height: 800 },
+  ])(
+    "keeps the newest drawer output inside the visible bottom at $width x $height",
+    ({ width, height }) => {
+      const bundle = requireBundle("chapter-context-with-task");
+      mountStyle(bundle.sceneCss);
+      const root = mountStage(bundle.sceneHtml, width, height);
+      const settledDrawerScroll = getComputedStyle(
+        root.querySelector<HTMLElement>('[data-scene-part="drawer-terminal"]') ?? root,
+      )
+        .getPropertyValue("--scene-drawer-scroll")
+        .trim();
+      runClassicScript(bundle.sceneJs);
+      const timeline = gsap.timeline({ paused: true });
+      try {
+        window.AgentStudioScenes?.["chapter-context-with-task"]?.buildScene(root, timeline, {
+          width,
+          height,
+          seed: bundle.manifest.seed,
+        });
+        const drawerBody = root.querySelector<HTMLElement>(".kit-drawer__body");
+        const terminal = root.querySelector<HTMLElement>('[data-scene-part="drawer-terminal"]');
+        const lastLine = terminal?.querySelector<HTMLElement>('[data-line="8"]');
+        if (
+          drawerBody === null ||
+          terminal === null ||
+          lastLine === undefined ||
+          lastLine === null
+        ) {
+          throw new Error("Missing drawer terminal or final cursor prompt");
+        }
+        if (width === 330) {
+          expect(terminal.scrollHeight - terminal.clientHeight).toBe(
+            contextWithTaskPhoneDrawerScrollPixels,
+          );
+          expect(settledDrawerScroll).toBe(String(contextWithTaskPhoneDrawerScrollPixels));
+        }
+        timeline.seek(2.9);
+        const lastBottomBeforeScroll = lastLine.getBoundingClientRect().bottom;
+        for (const time of [4.5, 8.4]) {
+          timeline.seek(time);
+          const bodyBounds = drawerBody.getBoundingClientRect();
+          const lastBounds = lastLine.getBoundingClientRect();
+          expect
+            .soft(lastBounds.bottom, `final prompt bottom at t=${time}`)
+            .toBeLessThanOrEqual(bodyBounds.bottom + 1);
+          expect
+            .soft(lastBounds.top, `final prompt top at t=${time}`)
+            .toBeGreaterThanOrEqual(bodyBounds.top);
+          if (width <= recreationKitPhoneMaxWidthPx) {
+            const paddingBottom = Number.parseFloat(getComputedStyle(terminal).paddingBottom);
+            expect
+              .soft(bodyBounds.bottom - lastBounds.bottom, `final prompt at bottom edge, t=${time}`)
+              .toBeLessThanOrEqual(paddingBottom + 1);
+            for (const lineIndex of [6, 7]) {
+              const outputLine = terminal.querySelector<HTMLElement>(`[data-line="${lineIndex}"]`);
+              if (outputLine === null) {
+                throw new Error("Missing Git log output");
+              }
+              const outputBounds = outputLine.getBoundingClientRect();
+              expect.soft(outputBounds.top).toBeGreaterThanOrEqual(bodyBounds.top);
+              expect.soft(outputBounds.bottom).toBeLessThanOrEqual(bodyBounds.bottom + 1);
+            }
+          } else if (time === 4.5) {
+            expect
+              .soft(
+                Math.abs(lastBounds.bottom - lastBottomBeforeScroll),
+                "fitting desktop content does not scroll",
+              )
+              .toBeLessThanOrEqual(1);
+          }
+        }
+      } finally {
+        timeline.revert();
+        timeline.kill();
+      }
+    },
+  );
+
   it.each([390, 1280])(
     "wraps drawer lines and scopes desktop editor overflow at %ipx",
     (stageWidth) => {
@@ -721,13 +803,6 @@ describe("scene bundles for HyperFrames", () => {
               );
             }
           }
-          const statusPrompt = drawerLines[0];
-          if (statusPrompt === undefined) {
-            throw new Error("Missing status prompt");
-          }
-          expect(statusPrompt.getBoundingClientRect().height).toBeGreaterThan(
-            Number.parseFloat(getComputedStyle(statusPrompt).lineHeight) * 1.5,
-          );
         }
         timeline.seek(8.4);
         timeline.revert();

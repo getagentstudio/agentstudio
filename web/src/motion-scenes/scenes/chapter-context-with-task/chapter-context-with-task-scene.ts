@@ -12,7 +12,6 @@ import {
 import {
   contextWithTaskFileTree,
   contextWithTaskParts,
-  contextWithTaskPhoneDrawerScrollLines,
   contextWithTaskSource,
 } from "./chapter-context-with-task-fixture";
 
@@ -67,6 +66,12 @@ function buildContextWithTaskScene(
   options: SceneBuildOptions,
 ): void {
   const elements = resolveContextWithTaskElements(root);
+  // Measure the settled content before entrance transforms or typing clips render.
+  // The phone crop keeps newest output at the bottom; desktop retains its static layout.
+  const drawerOverflowPixels =
+    options.width <= recreationKitPhoneMaxWidthPx
+      ? Math.max(0, elements.drawerTerminal.scrollHeight - elements.drawerTerminal.clientHeight)
+      : 0;
   const builder = new SceneTimelineBuilder(timeline, options.seed);
   const agent = (lineIndex: number): HTMLElement => requireLine(elements.agentLines, lineIndex);
   const drawer = (lineIndex: number): HTMLElement => requireLine(elements.drawerLines, lineIndex);
@@ -89,7 +94,7 @@ function buildContextWithTaskScene(
   builder.variable(root, {
     name: "--scene-drawer-scroll",
     from: 0,
-    to: contextWithTaskPhoneDrawerScrollLines,
+    to: drawerOverflowPixels,
     at: 3.0,
     duration: 0.35,
   });
