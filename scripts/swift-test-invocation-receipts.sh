@@ -77,7 +77,7 @@ swift_test_f2_attach_receipt() {
   local sidecar="$1" stem="${1%.timing.json}"
   local analyzer="${BASH_SOURCE[0]%/*}/swift-test-invocation-receipts.pl"
   /usr/bin/perl "$analyzer" attach "$stem" "$sidecar" 2>/dev/null || true
-  rm -f "$stem.invocation.json" "$stem.invocation-report.txt" "$stem.pending-waits.txt" || true
+  rm -f "$stem.invocation.json" "$stem.invocation-report.txt" "$stem.pending-waits.txt" "$stem.facts" || true
   return 0
 }
 
