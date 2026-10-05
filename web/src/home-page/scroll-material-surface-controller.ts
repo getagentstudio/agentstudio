@@ -1,3 +1,4 @@
+import { createChapterClipPlayback } from "../chapters/chapter-clip-playback";
 import { playbackStageAttribute } from "../chapters/chapter-dom-contract";
 import { createChapterActivityCoordinator } from "./chapter-activity-coordinator";
 import { createSurfaceScenePlayback } from "./scene-playback";
@@ -127,6 +128,7 @@ export function initializeScrollMaterialSurfaces(): void {
     };
     const surfacePlayback = combineSurfacePlaybacks([
       createScrollAutoplayVideoController(surface),
+      createChapterClipPlayback(surface, chapterId === undefined ? undefined : claimManualPlay),
       createSurfaceScenePlayback(surface, chapterId === undefined ? undefined : claimManualPlay),
     ]);
     playbackBySurface.set(surface, surfacePlayback);
@@ -148,9 +150,12 @@ export function initializeScrollMaterialSurfaces(): void {
     const activity = chapterActivity.read();
     if (
       activity.changed ||
-      manualOwnerSurface?.querySelector<HTMLElement>("[data-scene-root]")?.dataset[
+      (manualOwnerSurface?.querySelector<HTMLElement>("[data-scene-root]")?.dataset[
         "scenePlaybackState"
-      ] !== "playing"
+      ] ??
+        manualOwnerSurface?.querySelector<HTMLElement>("[data-chapter-clips]")?.dataset[
+          "clipPlaybackState"
+        ]) !== "playing"
     ) {
       manualOwnerSurface = undefined;
     }

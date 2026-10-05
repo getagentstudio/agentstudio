@@ -13,7 +13,7 @@ import { kitIconNames } from "../src/recreation-kit/kit-icon-names";
 
 describe("chapter catalog", () => {
   it("splits review and come-back into two ordered steps without exceeding three per chapter", () => {
-    expect(chapterCatalog.map((chapter) => chapter.steps.length)).toEqual([3, 3, 2, 2, 2]);
+    expect(chapterCatalog.map((chapter) => chapter.steps.length)).toEqual([3, 3, 3, 2, 2, 2]);
     expect(
       chapterCatalog.find((chapter) => chapter.id === "review")?.steps.map((step) => step.id),
     ).toEqual(["review-diff", "review-comment"]);
@@ -32,7 +32,7 @@ describe("chapter catalog", () => {
     });
   });
 
-  it("tells the five chapters in narrative order with unique ids", () => {
+  it("tells the chapter inventory in narrative order with unique ids", () => {
     // Arrange / Act
     const catalogChapterIds = chapterCatalog.map((chapter) => chapter.id);
 
@@ -74,6 +74,7 @@ describe("chapter catalog", () => {
           `${chapter.title.beforeAccent}${chapter.title.accent}${chapter.title.afterAccent}`,
       ),
     ).toEqual([
+      "See Agent Studio running.",
       "Many agents, one map.",
       "Context stays with the task.",
       "Find it, focus it.",
@@ -82,7 +83,7 @@ describe("chapter catalog", () => {
     ]);
   });
 
-  it("stages every chapter as a scene, with proof when available", () => {
+  it("stages Proof as clips and the remaining chapters as scenes", () => {
     // Arrange / Act
     const stageKinds = chapterCatalog.map((chapter) => chapter.stage.kind);
     const stagedSceneIds = chapterCatalog.flatMap((chapter) =>
@@ -90,7 +91,7 @@ describe("chapter catalog", () => {
     );
 
     // Assert
-    expect(stageKinds).toEqual(["scene", "scene", "scene", "scene", "scene"]);
+    expect(stageKinds).toEqual(["clips", "scene", "scene", "scene", "scene", "scene"]);
     expect(stagedSceneIds).toEqual([...sceneIds]);
     const review = chapterCatalog.find((chapter) => chapter.id === "review");
     const comeBack = chapterCatalog.find((chapter) => chapter.id === "come-back");

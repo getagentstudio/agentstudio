@@ -14,6 +14,21 @@ export const marketingCopy = {
       "Agent Studio is a native macOS IDE for parallel coding agents, with your repositories and worktrees within reach. Your agents run in Ghostty terminals with files and diffs right beside them.",
   },
   stories: {
+    proofRun: {
+      label: "Agents side by side",
+      description: "Two agents work in separate worktrees. A drawer shows one worktree's changes.",
+      phoneDescription: "Two agents work in separate worktrees in one window.",
+    },
+    proofReview: {
+      label: "Review and comment",
+      description: "Read an agent's changes and leave a comment on a line.",
+      phoneDescription: "Comment on a line you review.",
+    },
+    proofPanes: {
+      label: "Panes by activity",
+      description: "Panes are grouped by recent activity, with the latest activity in Just Now.",
+      phoneDescription: "Panes grouped by recent activity.",
+    },
     parallelWork: {
       label: "Parallel agents",
       description: "See which repo, worktree, branch, and directory each of your agents is using.",
@@ -100,6 +115,9 @@ export const marketingCopy = {
     ],
   },
   chapters: {
+    proof: {
+      title: { beforeAccent: "See Agent Studio ", accent: "running", afterAccent: "." },
+    },
     manyAgents: {
       title: { beforeAccent: "Many agents, ", accent: "one map", afterAccent: "." },
     },
