@@ -208,7 +208,9 @@ export async function openHeadlessChromePage(purpose: string): Promise<HeadlessC
   const close = async (socket?: WebSocket): Promise<void> => {
     socket?.close();
     await stopBrowserProcess(chromeProcess);
-    await rm(profileDirectory, { force: true, recursive: true });
+    // Chrome's helper processes (network service, GPU) can still flush files into
+    // Default/ just after the browser process exits; rm retries on ENOTEMPTY/EBUSY.
+    await rm(profileDirectory, { force: true, recursive: true, maxRetries: 10, retryDelay: 100 });
   };
 
   let socket: WebSocket;

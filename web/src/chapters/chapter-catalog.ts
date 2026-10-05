@@ -10,8 +10,6 @@ import reviewPhoneImage from "../assets/captures/review-phone.png";
 import reviewImage from "../assets/captures/review.png";
 import taskDrawerToolsPhoneImage from "../assets/captures/task-drawer-tools-phone.png";
 import taskDrawerToolsImage from "../assets/captures/task-drawer-tools.png";
-import sessionRestorePoster from "../assets/media/session-restore-poster.jpg";
-import sessionRestoreVideoUrl from "../assets/media/session-restore.mp4?url";
 import { marketingCopy } from "../marketing-copy";
 import type { SceneId } from "../motion-scenes/scene-contract";
 import type { KitIconName } from "../recreation-kit/kit-icon-names";
@@ -29,6 +27,7 @@ export type ChapterStage = {
   readonly kind: "scene";
   readonly sceneId: SceneId;
 } & (
+  | { readonly proofKind: "none" }
   | {
       readonly proofKind: "image";
       readonly proofImage: ImageMetadata;
@@ -197,6 +196,11 @@ export const chapterCatalog: readonly Chapter[] = [
         description: stories.review.description,
         phoneDescription: stories.review.phoneDescription,
       },
+      {
+        id: "review-comment",
+        captionIcon: "review",
+        ...stories.reviewComment,
+      },
     ],
     stage: {
       kind: "scene",
@@ -212,6 +216,11 @@ export const chapterCatalog: readonly Chapter[] = [
     title: chapters.comeBack.title,
     steps: [
       {
+        id: "quit-in-flight",
+        captionIcon: "clock",
+        ...stories.quitInFlight,
+      },
+      {
         id: "persistence",
         captionIcon: "clock",
         label: stories.persistence.label,
@@ -222,10 +231,7 @@ export const chapterCatalog: readonly Chapter[] = [
     stage: {
       kind: "scene",
       sceneId: "chapter-come-back",
-      proofKind: "video",
-      proofVideo: sessionRestoreVideoUrl,
-      proofPoster: sessionRestorePoster,
-      proofLabel: chapters.comeBack.sessionRestoreVideoLabel,
+      proofKind: "none",
     },
   },
 ];

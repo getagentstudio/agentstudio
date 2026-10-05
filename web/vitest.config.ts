@@ -16,7 +16,7 @@ import {
 import { verifyStepLineJoins } from "./tests/chapter-step-join-browser-command.ts";
 import {
   verifyChapterStepRow,
-  verifySingleStepChapter,
+  verifyChapterLayout,
   verifyChapterTitleAnchors,
   verifyCaptionTextLayout,
 } from "./tests/chapter-surface-browser-command.ts";
@@ -111,7 +111,7 @@ export default defineConfig({
               verifyInstallCommandLayout,
               verifyChapterStepRow,
               verifyCaptionTextLayout,
-              verifySingleStepChapter,
+              verifyChapterLayout,
               verifyChapterTitleAnchors,
               verifySiteFooterResponsiveLayout,
               verifyFooterEndRoom,
