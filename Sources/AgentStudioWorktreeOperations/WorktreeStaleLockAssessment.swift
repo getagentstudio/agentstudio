@@ -7,8 +7,13 @@ package enum WorktreeGitProcessProbeResult: Sendable, Equatable {
     case unavailable
 }
 
+package enum WorktreeGitProcessProbePurpose: Sendable {
+    case assessment
+    case removalIdentityRecheck
+}
+
 package protocol WorktreeGitProcessProbing: Sendable {
-    func probe() -> WorktreeGitProcessProbeResult
+    func probe(for purpose: WorktreeGitProcessProbePurpose) -> WorktreeGitProcessProbeResult
 }
 
 package struct WorktreeStaleLockAssessmentResult: Sendable {
@@ -35,7 +40,7 @@ package struct WorktreeStaleLockAssessment: Sendable {
     ) -> WorktreeStaleLockAssessmentResult {
         let lockPath = fact.path.standardizedFileURL
         let identity = Self.fileIdentity(at: lockPath)
-        let processResult = processProbe.probe()
+        let processResult = processProbe.probe(for: .assessment)
         let ageSeconds = identity.map { Self.ageSeconds(since: $0.modificationDate, now: now) } ?? 0
         let looksStale =
             identity != nil
@@ -60,7 +65,7 @@ package struct WorktreeStaleLockAssessment: Sendable {
     ) -> Bool {
         guard assessment.observation.looksStale,
             let expectedIdentity = assessment.fileIdentity,
-            processProbe.probe() == .notFound,
+            processProbe.probe(for: .removalIdentityRecheck) == .notFound,
             let currentIdentity = Self.fileIdentity(at: lockPath.standardizedFileURL),
             currentIdentity == expectedIdentity,
             Duration.seconds(Self.ageSeconds(since: currentIdentity.modificationDate, now: now))
@@ -99,7 +104,7 @@ package struct WorktreeStaleLockAssessment: Sendable {
 }
 
 private struct SystemWorktreeGitProcessProbe: WorktreeGitProcessProbing {
-    func probe() -> WorktreeGitProcessProbeResult {
+    func probe(for purpose: WorktreeGitProcessProbePurpose) -> WorktreeGitProcessProbeResult {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/usr/bin/pgrep")
         process.arguments = ["-x", "git"]

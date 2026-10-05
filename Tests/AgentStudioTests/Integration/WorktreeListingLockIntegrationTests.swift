@@ -136,7 +136,7 @@ struct WorktreeListingLockIntegrationTests {
 private struct ListingFixedGitProcessProbe: WorktreeGitProcessProbing {
     let result: WorktreeGitProcessProbeResult
 
-    func probe() -> WorktreeGitProcessProbeResult {
+    func probe(for purpose: WorktreeGitProcessProbePurpose) -> WorktreeGitProcessProbeResult {
         result
     }
 }

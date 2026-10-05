@@ -55,7 +55,7 @@ private struct FixedGitProcessProbe: WorktreeGitProcessProbing {
         self.result = result
     }
 
-    func probe() -> WorktreeGitProcessProbeResult {
+    func probe(for purpose: WorktreeGitProcessProbePurpose) -> WorktreeGitProcessProbeResult {
         result
     }
 }

@@ -367,7 +367,7 @@ struct WorktreeRemovalSafetyIntegrationTests {
 private struct RemovalFixedGitProcessProbe: WorktreeGitProcessProbing {
     let result: WorktreeGitProcessProbeResult
 
-    func probe() -> WorktreeGitProcessProbeResult {
+    func probe(for purpose: WorktreeGitProcessProbePurpose) -> WorktreeGitProcessProbeResult {
         result
     }
 }
@@ -377,7 +377,6 @@ private final class ReplacingLockDuringFinalProcessProbe: WorktreeGitProcessProb
     private let lockPath: URL
     private let replacementBytes: Data
     private let modificationDate: Date
-    private var probeCount = 0
     private var replacementOccurred = false
 
     init(lockPath: URL, replacementBytes: Data, modificationDate: Date) {
@@ -392,10 +391,9 @@ private final class ReplacingLockDuringFinalProcessProbe: WorktreeGitProcessProb
         return replacementOccurred
     }
 
-    func probe() -> WorktreeGitProcessProbeResult {
+    func probe(for purpose: WorktreeGitProcessProbePurpose) -> WorktreeGitProcessProbeResult {
         stateLock.lock()
-        probeCount += 1
-        let shouldReplace = probeCount == 2
+        let shouldReplace = purpose == .removalIdentityRecheck && !replacementOccurred
         stateLock.unlock()
         guard shouldReplace else { return .notFound }
 
