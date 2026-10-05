@@ -77,7 +77,7 @@ struct BridgeProductSchemeAdapterReplyCompletionTests {
             workerDerivationEpoch: 2
         )
         let responseGate = HeldStep<Void>("olderContentResponseDispatch")
-        let dataGate = HeldStep<Void>("olderContentDataDispatch")
+        let postResponseGate = HeldStep<PostResponseOutcome>("olderContentPostResponseOutcome")
         let olderReply = bridgeProductSchemeReplyWithRoutingTask(
             adapter: harness.adapter,
             request: bridgeProductSchemeRequest(
@@ -90,11 +90,26 @@ struct BridgeProductSchemeAdapterReplyCompletionTests {
         await consumer.start(
             stream: olderReply.stream,
             beforeFirstDispatch: responseGate,
-            beforeFirstDataDispatch: dataGate
+            beforeFirstPostResponseOutcome: postResponseGate
         )
         _ = try await responseGate.firstArrival()
         responseGate.release()
-        _ = try await dataGate.firstArrival()
+        let postResponseOutcome = try await postResponseGate.firstArrival()
+        guard case .data = postResponseOutcome else {
+            let responseStatus = await consumer.responseStatusCode
+            let responseStatusDescription = responseStatus.map(String.init) ?? "unknown"
+            let producerFailureReasons = (await harness.provider.snapshot).producerFailureReasons
+            let issueMessage =
+                "Expected older content's first post-response outcome to be data; "
+                + "got \(postResponseOutcome) with HTTP status \(responseStatusDescription) "
+                + "and producer failures \(producerFailureReasons)"
+            Issue.record("\(issueMessage)")
+            postResponseGate.release()
+            await consumer.joinConsumerTask()
+            await olderReply.routingTask.value
+            return
+        }
+        #expect(await consumer.responseStatusCode == 200)
 
         let newerReply = bridgeProductSchemeReplyWithRoutingTask(
             adapter: harness.adapter,
@@ -110,7 +125,7 @@ struct BridgeProductSchemeAdapterReplyCompletionTests {
             return
         }
         await olderReply.routingTask.value
-        dataGate.release()
+        postResponseGate.release()
         await consumer.joinConsumerTask()
         newerReply.routingTask.cancel()
         await newerReply.routingTask.value
@@ -159,7 +174,7 @@ struct BridgeProductSchemeAdapterReplyCompletionTests {
             workerDerivationEpoch: 1
         )
         let responseGate = HeldStep<Void>("containedAfterResponseDispatch")
-        let dataGate = HeldStep<Void>("containedAfterResponseDataDispatch")
+        let postResponseGate = HeldStep<PostResponseOutcome>("containedAfterResponsePostResponseOutcome")
         let routedReply = bridgeProductSchemeReplyWithRoutingTask(
             adapter: harness.adapter,
             request: bridgeProductSchemeRequest(
@@ -172,11 +187,26 @@ struct BridgeProductSchemeAdapterReplyCompletionTests {
         await consumer.start(
             stream: routedReply.stream,
             beforeFirstDispatch: responseGate,
-            beforeFirstDataDispatch: dataGate
+            beforeFirstPostResponseOutcome: postResponseGate
         )
         _ = try await responseGate.firstArrival()
         responseGate.release()
-        _ = try await dataGate.firstArrival()
+        let postResponseOutcome = try await postResponseGate.firstArrival()
+        guard case .data = postResponseOutcome else {
+            let responseStatus = await consumer.responseStatusCode
+            let responseStatusDescription = responseStatus.map(String.init) ?? "unknown"
+            let producerFailureReasons = (await harness.provider.snapshot).producerFailureReasons
+            let issueMessage =
+                "Expected contained content's first post-response outcome to be data; "
+                + "got \(postResponseOutcome) with HTTP status \(responseStatusDescription) "
+                + "and producer failures \(producerFailureReasons)"
+            Issue.record("\(issueMessage)")
+            postResponseGate.release()
+            await consumer.joinConsumerTask()
+            await routedReply.routingTask.value
+            return
+        }
+        #expect(await consumer.responseStatusCode == 200)
 
         await routedReply.routingTask.value
 
@@ -191,7 +221,7 @@ struct BridgeProductSchemeAdapterReplyCompletionTests {
                 )
             )
         )
-        dataGate.release()
+        postResponseGate.release()
         await consumer.joinConsumerTask()
 
         #expect(acknowledgement.response?.statusCode == 404)
@@ -234,23 +264,60 @@ struct BridgeProductSchemeAdapterReplyCompletionTests {
 
 /// Mirrors WebKit's guarded response/data/finish calls and its unguarded
 /// generic-error callback, so a late non-cancellation error is observable.
+private enum PostResponseOutcome: Sendable, CustomStringConvertible {
+    case data
+    case finish
+    case error(type: String, message: String)
+    case cancelled
+
+    var description: String {
+        switch self {
+        case .data: "data"
+        case .finish: "finish"
+        case .error(let type, let message): "error(type: \(type), message: \(message))"
+        case .cancelled: "cancelled"
+        }
+    }
+
+    init?(streamResult: Result<URLSchemeTaskResult?, any Error>) {
+        switch streamResult {
+        case .success(.some(.response)):
+            return nil
+        case .success(.some(.data)):
+            self = .data
+        case .success(.none):
+            self = .finish
+        case .failure(let error) where error is CancellationError:
+            self = .cancelled
+        case .failure(let error):
+            self = .error(
+                type: String(reflecting: type(of: error)),
+                message: String(describing: error)
+            )
+        @unknown default:
+            self = .error(type: "URLSchemeTaskResult", message: "unknown result")
+        }
+    }
+}
+
 private actor WebKitFaithfulProductReplyConsumer {
     private var task: Task<Void, Never>?
     private var stopped = false
     private(set) var firstOutcomeKind: String?
     private(set) var contractViolations: [String] = []
+    private(set) var responseStatusCode: Int?
     private var receivedResponse = false
 
     func start(
         stream: AsyncThrowingStream<URLSchemeTaskResult, any Error>,
         beforeFirstDispatch: HeldStep<Void>,
-        beforeFirstDataDispatch: HeldStep<Void>? = nil
+        beforeFirstPostResponseOutcome: HeldStep<PostResponseOutcome>? = nil
     ) {
         task = Task {
             await consume(
                 stream: stream,
                 beforeFirstDispatch: beforeFirstDispatch,
-                beforeFirstDataDispatch: beforeFirstDataDispatch
+                beforeFirstPostResponseOutcome: beforeFirstPostResponseOutcome
             )
         }
     }
@@ -265,11 +332,11 @@ private actor WebKitFaithfulProductReplyConsumer {
     private func consume(
         stream: AsyncThrowingStream<URLSchemeTaskResult, any Error>,
         beforeFirstDispatch: HeldStep<Void>,
-        beforeFirstDataDispatch: HeldStep<Void>?
+        beforeFirstPostResponseOutcome: HeldStep<PostResponseOutcome>?
     ) async {
         var iterator = stream.makeAsyncIterator()
         var isFirst = true
-        var isFirstData = true
+        var didRecordPostResponseOutcome = false
         while true {
             let outcome: Result<URLSchemeTaskResult?, any Error>
             do {
@@ -288,16 +355,19 @@ private actor WebKitFaithfulProductReplyConsumer {
                 isFirst = false
                 _ = try? await beforeFirstDispatch.arrive(())
             }
-            if case .success(.some(.data)) = outcome, isFirstData {
-                isFirstData = false
-                if let beforeFirstDataDispatch {
-                    _ = try? await beforeFirstDataDispatch.arrive(())
+            if receivedResponse, !didRecordPostResponseOutcome,
+                let postResponseOutcome = PostResponseOutcome(streamResult: outcome)
+            {
+                didRecordPostResponseOutcome = true
+                if let beforeFirstPostResponseOutcome {
+                    _ = try? await beforeFirstPostResponseOutcome.arrive(postResponseOutcome)
                 }
             }
             switch outcome {
-            case .success(.some(.response)):
+            case .success(.some(.response(let response))):
                 do { try Task.checkCancellation() } catch { return }
                 if stopped || receivedResponse { contractViolations.append("response after stop or duplicate") }
+                responseStatusCode = (response as? HTTPURLResponse)?.statusCode
                 receivedResponse = true
             case .success(.some(.data)):
                 do { try Task.checkCancellation() } catch { return }
