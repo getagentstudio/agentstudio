@@ -120,9 +120,25 @@ struct BridgeProductSchemeAdapterReplyCompletionTests {
             )
         )
         var newerIterator = newerReply.stream.makeAsyncIterator()
-        guard case .response = try #require(await newerIterator.next()) else {
-            Issue.record("A newer content response did not advance the File floor")
-            return
+        do {
+            guard case .response = try #require(await newerIterator.next()) else {
+                Issue.record("A newer content response did not advance the File floor")
+                await tearDownOlderContentReply(
+                    postResponseGate: postResponseGate,
+                    consumer: consumer,
+                    olderReply: olderReply,
+                    newerReply: newerReply
+                )
+                return
+            }
+        } catch {
+            await tearDownOlderContentReply(
+                postResponseGate: postResponseGate,
+                consumer: consumer,
+                olderReply: olderReply,
+                newerReply: newerReply
+            )
+            throw error
         }
         await olderReply.routingTask.value
         postResponseGate.release()
@@ -260,6 +276,19 @@ struct BridgeProductSchemeAdapterReplyCompletionTests {
         #expect(throwingCallCount > 0)
     }
 
+}
+
+private func tearDownOlderContentReply(
+    postResponseGate: HeldStep<PostResponseOutcome>,
+    consumer: WebKitFaithfulProductReplyConsumer,
+    olderReply: BridgeProductSchemeReplyWithRoutingTask,
+    newerReply: BridgeProductSchemeReplyWithRoutingTask
+) async {
+    postResponseGate.release()
+    await consumer.joinConsumerTask()
+    await olderReply.routingTask.value
+    newerReply.routingTask.cancel()
+    await newerReply.routingTask.value
 }
 
 /// Mirrors WebKit's guarded response/data/finish calls and its unguarded
