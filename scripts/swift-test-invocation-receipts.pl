@@ -191,7 +191,7 @@ if ($mode eq 'collect') {
 } elsif ($mode eq 'facts') {
     my ($events_path, $expected_runs) = @ARGV;
     $expected_runs = numeric($expected_runs) ? int($expected_runs) : 0;
-    my ($run_started, $run_ended, $open_runs, $unbalanced_runs, $tests_run, $unreadable_records) = (0, 0, 0, 0, 0, 0);
+    my ($run_started, $run_ended, $open_runs, $unbalanced_runs, $tests_run, $tests_skipped, $unreadable_records) = (0, 0, 0, 0, 0, 0, 0);
     my ($peak_announced, $running_cases, $peak_cases) = (0, 0, 0);
     my (%definitions, %active_tests, %case_counts, %failed_tests, @failing_tests);
     my $events_available = open(my $events, '<:raw', $events_path // '');
@@ -219,8 +219,10 @@ if ($mode eq 'collect') {
                 next;
             }
             my $id = $event->{testID};
-            my $is_function = defined($id) && (($definitions{$id}{kind} // '') eq 'function');
-            if (($kind eq 'testStarted' || $kind eq 'testEnded') && (!defined($id) || !defined($definitions{$id}))) {
+            my $test_definition = defined($id) ? $definitions{$id} : undef;
+            my $is_function = defined($test_definition) && (($test_definition->{kind} // '') eq 'function');
+            if (($kind eq 'testStarted' || $kind eq 'testEnded' || $kind eq 'testSkipped')
+                && !defined($test_definition)) {
                 $unreadable_records++;
                 next;
             }
@@ -231,6 +233,9 @@ if ($mode eq 'collect') {
             } elsif ($kind eq 'testEnded' && $is_function) {
                 $tests_run++;
                 delete $active_tests{$id};
+            } elsif ($kind eq 'testSkipped' && $is_function) {
+                # ABI 6.3 emits skips for suite containers as well as functions.
+                $tests_skipped++;
             } elsif ($kind eq 'testCaseStarted' && defined($id)) {
                 # ABI 6.3 has no case id. Paired starts/ends preserve the count.
                 $case_counts{$id}++;
@@ -258,6 +263,7 @@ if ($mode eq 'collect') {
     print "unreadable_records=$unreadable_records\n";
     print "runs=$run_ended\n";
     print "tests_run=$tests_run\n";
+    print "tests_skipped=$tests_skipped\n";
     print "peak_announced_tests=$peak_announced\n";
     print "peak_running_parameterized_cases=$peak_cases\n";
     print "failing_test=$_\n" for @failing_tests;

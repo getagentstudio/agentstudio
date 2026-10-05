@@ -4,6 +4,79 @@ import Testing
 
 extension SwiftLaneInvocationReceiptTests {
     @Test(
+        "the wrapper distinguishes captured condition-skipped tests from a filter matching nothing",
+        arguments: ["swift test", "swiftpm-testing-helper"], [false, true])
+    func wrapperDistinguishesSkippedTestsFromNoMatch(invocationKind: String, matchesSkippedTests: Bool) async throws {
+        let fixture = try InvocationReceiptFixture()
+        defer { fixture.remove() }
+        let source = try Data(
+            contentsOf: URL(
+                fileURLWithPath: "Tests/AgentStudioTests/Scripts/Fixtures/xcode27-skipped-tests-v6.3.jsonl"))
+        if matchesSkippedTests {
+            try source.write(to: fixture.events)
+        } else {
+            let sourceText = try #require(String(bytes: source, encoding: .utf8))
+            let records = try sourceText.split(separator: "\n").map {
+                try #require(JSONSerialization.jsonObject(with: Data($0.utf8)) as? [String: Any])
+            }
+            try fixture.writeEvents(
+                records.filter {
+                    let kind = ($0["payload"] as? [String: Any])?["kind"] as? String
+                    return kind == "runStarted" || kind == "runEnded"
+                })
+        }
+
+        let result = try await fixture.runEventFixture(as: invocationKind, expectedRuns: 1, exitStatus: 0)
+
+        #expect(result.output.contains("STATUS=\(matchesSkippedTests ? 0 : 1)"), Comment(rawValue: result.output))
+        #expect(result.output.contains("stream=complete"), Comment(rawValue: result.output))
+        #expect(result.output.contains("tests_run=0"), Comment(rawValue: result.output))
+        #expect(
+            result.output.contains("tests_skipped=\(matchesSkippedTests ? 2 : 0)"), Comment(rawValue: result.output))
+        #expect(
+            result.output.contains("reason=no_matching_tests") == !matchesSkippedTests, Comment(rawValue: result.output)
+        )
+        #expect(!result.output.contains("crashed"), Comment(rawValue: result.output))
+    }
+
+    @Test("skipping only a suite container does not count as matching a test")
+    func skippedSuiteContainerDoesNotMatchTest() async throws {
+        let fixture = try InvocationReceiptFixture()
+        defer { fixture.remove() }
+        try fixture.writeEvents([
+            ["kind": "test", "payload": ["id": "Fixture.EmptySuite", "kind": "suite"]],
+            ["kind": "event", "payload": ["kind": "runStarted"]],
+            ["kind": "event", "payload": ["kind": "testSkipped", "testID": "Fixture.EmptySuite"]],
+            ["kind": "event", "payload": ["kind": "runEnded"]],
+        ])
+
+        let result = try await fixture.runEventFixture(as: "swiftpm-testing-helper", expectedRuns: 1, exitStatus: 0)
+
+        #expect(result.output.contains("STATUS=1"), Comment(rawValue: result.output))
+        #expect(result.output.contains("tests_skipped=0"), Comment(rawValue: result.output))
+        #expect(result.output.contains("reason=no_matching_tests"), Comment(rawValue: result.output))
+    }
+
+    @Test("a skipped event without a known test identity fails closed", arguments: [false, true])
+    func unclassifiedSkippedEventFailsClosed(hasIdentity: Bool) async throws {
+        let fixture = try InvocationReceiptFixture()
+        defer { fixture.remove() }
+        var skippedEvent: [String: Any] = ["kind": "testSkipped"]
+        if hasIdentity { skippedEvent["testID"] = "Fixture.Unknown/test()" }
+        try fixture.writeEvents([
+            ["kind": "event", "payload": ["kind": "runStarted"]],
+            ["kind": "event", "payload": skippedEvent],
+            ["kind": "event", "payload": ["kind": "runEnded"]],
+        ])
+
+        let result = try await fixture.runEventFixture(as: "swiftpm-testing-helper", expectedRuns: 1, exitStatus: 0)
+
+        #expect(result.output.contains("STATUS=1"), Comment(rawValue: result.output))
+        #expect(result.output.contains("stream=unreadable"), Comment(rawValue: result.output))
+        #expect(result.output.contains("reason=event_stream_incomplete"), Comment(rawValue: result.output))
+    }
+
+    @Test(
         "captured known issues and warnings independently pass through the wrapper",
         arguments: ["recordsKnownIssue()", "recordsWarning()"])
     func capturedNonFailingIssuesPass(testName: String) async throws {

@@ -653,6 +653,7 @@ let package = Package(
                 "Fixtures/AtomLibCompileFailures",
                 "Fixtures/SwiftLintLegacyCustomRules",
                 "Scripts/Fixtures/xcode27-event-stream-v6.3.jsonl",
+                "Scripts/Fixtures/xcode27-skipped-tests-v6.3.jsonl",
                 "Scripts/Fixtures/xcode27-swift-test-list.txt",
             ],
             sources: [

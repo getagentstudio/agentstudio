@@ -392,6 +392,7 @@ struct SwiftLaneRunnerReportTests {
                 "swift",
                 "task_dump",
                 "tests_run",
+                "tests_skipped",
                 "timeout_reap",
                 "tree_dirty",
                 "unreadable_records",
