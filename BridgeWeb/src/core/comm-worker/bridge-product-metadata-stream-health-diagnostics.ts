@@ -45,3 +45,59 @@ export type BridgeProductMetadataStreamFailureStage =
 	| 'unexpectedEof';
 
 export type BridgeProductMetadataStreamLifecycleState = 'failed' | 'idle' | 'opening' | 'reading';
+
+export interface BridgeProductMetadataStreamLifecycleObservation {
+	readonly transition:
+		| 'fetchStarted'
+		| 'responseReceived'
+		| 'firstByteRead'
+		| 'acceptedRouted'
+		| 'failed'
+		| 'restartScheduled';
+	readonly responseStatus: number | null;
+	readonly diagnostics: BridgeProductMetadataStreamHealthDiagnostics;
+}
+
+export function createBridgeProductMetadataStreamHealthDiagnostics(): BridgeProductMetadataStreamHealthDiagnostics {
+	return {
+		lastSubscriptionTermination: null,
+		routeFailureSubscriptionId: null,
+		activeSubscriptionCount: 0,
+		committedFrameCount: 0,
+		decoderState: 'open',
+		expectedNextStreamSequence: 0,
+		failureStage: null,
+		failureCode: null,
+		identityMismatchField: null,
+		lastChunkByteCount: 0,
+		lastCommittedFrameKind: null,
+		lastRoutedFrameKind: null,
+		lifecycleState: 'idle',
+		peakRetainedByteCount: 0,
+		pushCount: 0,
+		readFulfilledCount: 0,
+		readPending: false,
+		readRequestCount: 0,
+		receivedByteCount: 0,
+		retainedByteCount: 0,
+		routeFailureCode: null,
+		routedFrameCount: 0,
+		streamOpenCount: 0,
+	};
+}
+
+export type BridgeProductMetadataStreamHealthSink = (
+	observation: BridgeProductMetadataStreamLifecycleObservation,
+) => void;
+
+export function isolatedBridgeProductMetadataStreamHealthSink(
+	sink: BridgeProductMetadataStreamHealthSink,
+): BridgeProductMetadataStreamHealthSink {
+	return (observation): void => {
+		try {
+			sink(observation);
+		} catch {
+			// Diagnostic observers cannot change the stream's admission or recovery.
+		}
+	};
+}

@@ -47,9 +47,13 @@ import {
 	type BridgeProductMetadataRouteFailureCode,
 } from './bridge-product-metadata-route-failure.js';
 import { BridgeProductMetadataStreamDecoder } from './bridge-product-metadata-stream-decoder.js';
-import type {
-	BridgeProductMetadataStreamHealthDiagnostics,
-	BridgeProductMetadataStreamFailureStage,
+import {
+	createBridgeProductMetadataStreamHealthDiagnostics,
+	isolatedBridgeProductMetadataStreamHealthSink,
+	type BridgeProductMetadataStreamHealthSink,
+	type BridgeProductMetadataStreamHealthDiagnostics,
+	type BridgeProductMetadataStreamLifecycleObservation,
+	type BridgeProductMetadataStreamFailureStage,
 } from './bridge-product-metadata-stream-health-diagnostics.js';
 import { BridgeProductReadAhead } from './bridge-product-read-ahead.js';
 import { encodeBridgeProductRequestBody } from './bridge-product-request-body.js';
@@ -159,6 +163,7 @@ export interface BridgeProductTransportSession extends BridgeProductTransport {
 	 */
 	advanceWorkerDerivationEpoch(surface: BridgeProductSurface): number;
 	metadataStreamDiagnostics?(): BridgeProductMetadataStreamHealthDiagnostics;
+	setMetadataStreamHealthSink?(sink: BridgeProductMetadataStreamHealthSink): void;
 	setPanePresentationFrameSink?(sink: (frame: BridgeProductPanePresentationFrame) => void): void;
 	setPaneSurfaceSelectionFrameSink?(
 		sink: (frame: BridgeProductPaneSurfaceSelectionFrame) => void,
@@ -204,36 +209,14 @@ class BridgeProductTransportSessionImpl implements BridgeProductTransportSession
 	readonly #deadlineClock: BridgeProductDeadlineClock;
 	readonly #metadataApplicationRegistry: BridgeProductMetadataApplicationRegistry;
 	readonly #frameAcknowledgementTimeoutMilliseconds: number;
+	#metadataStreamHealthSink: BridgeProductMetadataStreamHealthSink | null = null;
+	#metadataResponseStatus: number | null = null;
 	#metadataReady: BridgeProductDeferred<void> | null = null;
 	#physicalMetadataReady: BridgeProductDeferred<void> | null = null;
 	#metadataRecoveryInFlight = false;
 	#lastRoutedStreamSequence: number | null = null;
 	#metadataRecoveryAttemptedSinceProgress = false;
-	#metadataStreamHealthDiagnostics: BridgeProductMetadataStreamHealthDiagnostics = {
-		lastSubscriptionTermination: null,
-		routeFailureSubscriptionId: null,
-		activeSubscriptionCount: 0,
-		committedFrameCount: 0,
-		decoderState: 'open',
-		expectedNextStreamSequence: 0,
-		failureStage: null,
-		failureCode: null,
-		identityMismatchField: null,
-		lastChunkByteCount: 0,
-		lastCommittedFrameKind: null,
-		lastRoutedFrameKind: null,
-		lifecycleState: 'idle',
-		peakRetainedByteCount: 0,
-		pushCount: 0,
-		readFulfilledCount: 0,
-		readPending: false,
-		readRequestCount: 0,
-		receivedByteCount: 0,
-		retainedByteCount: 0,
-		routeFailureCode: null,
-		routedFrameCount: 0,
-		streamOpenCount: 0,
-	};
+	#metadataStreamHealthDiagnostics = createBridgeProductMetadataStreamHealthDiagnostics();
 	readonly #subscriptions = new Map<string, BridgeProductSubscriptionFrameSink>();
 	readonly #batchFrameRouter: BridgeProductBatchFrameRouter;
 	#viewReceiptAcknowledger: BridgeProductViewReceiptAcknowledger | null = null;
@@ -304,6 +287,20 @@ class BridgeProductTransportSessionImpl implements BridgeProductTransportSession
 		return Object.freeze({
 			...this.#metadataStreamHealthDiagnostics,
 			activeSubscriptionCount: this.#subscriptions.size,
+		});
+	}
+
+	setMetadataStreamHealthSink(sink: BridgeProductMetadataStreamHealthSink): void {
+		this.#metadataStreamHealthSink = isolatedBridgeProductMetadataStreamHealthSink(sink);
+	}
+
+	#publishMetadataStreamTransition(
+		transition: BridgeProductMetadataStreamLifecycleObservation['transition'],
+	): void {
+		this.#metadataStreamHealthSink?.({
+			transition,
+			responseStatus: this.#metadataResponseStatus,
+			diagnostics: this.metadataStreamDiagnostics(),
 		});
 	}
 
@@ -597,6 +594,7 @@ class BridgeProductTransportSessionImpl implements BridgeProductTransportSession
 		if (lastRoutedStreamSequence === null) {
 			throw new Error('Metadata reconciliation requires a received stream cursor.');
 		}
+		this.#publishMetadataStreamTransition('restartScheduled');
 		this.#metadataRecoveryInFlight = true;
 		const recoveryReady = createBridgeProductDeferred<void>();
 		void recoveryReady.promise.catch((): void => {});
@@ -674,6 +672,8 @@ class BridgeProductTransportSessionImpl implements BridgeProductTransportSession
 			this.#recordMetadataStreamFailure('authority');
 			throw error;
 		}
+		this.#metadataResponseStatus = null;
+		this.#publishMetadataStreamTransition('fetchStarted');
 		let response: Response;
 		const readAbortController = new AbortController();
 		let activeReader: ReadableStreamDefaultReader<Uint8Array> | null = null;
@@ -701,7 +701,9 @@ class BridgeProductTransportSessionImpl implements BridgeProductTransportSession
 			this.#recordMetadataStreamFailure('fetch');
 			throw error;
 		}
+		this.#metadataResponseStatus = response.status;
 		if (!response.ok || response.body === null) {
+			this.#publishMetadataStreamTransition('responseReceived');
 			this.#recordMetadataStreamFailure('fetch');
 			throw new Error(`Bridge product metadata stream failed with status ${response.status}.`);
 		}
@@ -714,6 +716,8 @@ class BridgeProductTransportSessionImpl implements BridgeProductTransportSession
 		activeReader = reader;
 		const readAhead = new BridgeProductReadAhead(reader);
 		const decoder = new BridgeProductMetadataStreamDecoder(request);
+		let responsePublished = false;
+		let firstBytePublished = false;
 		try {
 			while (true) {
 				this.#metadataStreamHealthDiagnostics = {
@@ -721,6 +725,10 @@ class BridgeProductTransportSessionImpl implements BridgeProductTransportSession
 					readPending: true,
 					readRequestCount: this.#metadataStreamHealthDiagnostics.readRequestCount + 1,
 				};
+				if (!responsePublished) {
+					responsePublished = true;
+					this.#publishMetadataStreamTransition('responseReceived');
+				}
 				let chunk: ReadableStreamReadResult<Uint8Array>;
 				try {
 					// eslint-disable-next-line no-await-in-loop -- Stream chunks are ordered.
@@ -759,6 +767,10 @@ class BridgeProductTransportSessionImpl implements BridgeProductTransportSession
 					throw error;
 				} finally {
 					this.#captureMetadataStreamDiagnostics(decoder, chunk.value.byteLength);
+					if (!firstBytePublished && chunk.value.byteLength > 0) {
+						firstBytePublished = true;
+						this.#publishMetadataStreamTransition('firstByteRead');
+					}
 				}
 				this.#metadataStreamHealthDiagnostics = {
 					...this.#metadataStreamHealthDiagnostics,
@@ -796,6 +808,8 @@ class BridgeProductTransportSessionImpl implements BridgeProductTransportSession
 						routedFrameCount: this.#metadataStreamHealthDiagnostics.routedFrameCount + 1,
 					};
 					this.#lastRoutedStreamSequence = frame.streamSequence;
+					if (frame.kind === 'metadataStream.accepted')
+						this.#publishMetadataStreamTransition('acceptedRouted');
 				}
 			}
 		} catch (error) {
@@ -845,6 +859,7 @@ class BridgeProductTransportSessionImpl implements BridgeProductTransportSession
 			readPending: false,
 			routeFailureCode: this.#metadataStreamHealthDiagnostics.routeFailureCode ?? routeFailureCode,
 		};
+		this.#publishMetadataStreamTransition('failed');
 	}
 
 	#captureMetadataStreamDiagnostics(

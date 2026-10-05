@@ -1,3 +1,4 @@
+import { publishBridgeProductMetadataStreamDiagnostic } from '../../foundation/diagnostics/bridge-product-metadata-stream-diagnostic.js';
 import {
 	recordBridgePaneCommWorkerSessionDiagnosticSnapshot,
 	recordBridgePaneRuntimeDiagnosticSnapshot,
@@ -246,6 +247,7 @@ export function createBridgePaneRuntime(
 	const dispatcher = session.createDispatcher({
 		publishWorkerMessages: (messages): void => {
 			for (const message of messages) {
+				if (message.kind === 'health') publishBridgeProductMetadataStreamDiagnostic(message);
 				if (message.kind === 'viewRecoveryStatus') {
 					publishViewRecoveryStatus(message);
 					continue;

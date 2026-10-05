@@ -115,6 +115,7 @@ extension WebKitSerializedTests {
                               text: region.textContent,
                               skeletonPresent: region.querySelector('[data-slot="skeleton"]') !== null
                             })),
+                          metadataStreamDiagnostic: window.__bridgeProductMetadataStreamDiagnostic ?? null,
                           productResources: performance.getEntriesByType('resource')
                             .filter((entry) => entry.name.includes('agentstudio://rpc/'))
                             .map((entry) => ({name: entry.name, responseStatus: entry.responseStatus ?? null})),
@@ -217,6 +218,7 @@ extension WebKitSerializedTests {
                         return JSON.stringify({
                           reviewShellPresent: shell !== null,
                           activeViewerMode: activeViewerModeHost?.getAttribute('data-bridge-viewer-mode-host') ?? null,
+                          metadataStreamDiagnostic: window.__bridgeProductMetadataStreamDiagnostic ?? null,
                           productResources: performance.getEntriesByType('resource')
                             .filter((entry) => entry.name.includes('agentstudio://rpc/'))
                             .map((entry) => ({name: entry.name, responseStatus: entry.responseStatus ?? null})),

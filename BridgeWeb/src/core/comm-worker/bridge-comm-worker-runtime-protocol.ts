@@ -92,6 +92,7 @@ import {
 	recordBridgeCommWorkerTaskTelemetry,
 } from './bridge-comm-worker-telemetry.js';
 import { retryBridgeCommWorkerViewDependencies } from './bridge-comm-worker-view-recovery-retry.js';
+import { bridgeProductStreamHealthEvent } from './bridge-product-stream-health-event.js';
 import { recordBridgeWorkerOutstandingPublicationTelemetry } from './bridge-render-disposition-telemetry.js';
 import {
 	isBridgeWorkerFileViewContentMetadata,
@@ -663,6 +664,9 @@ export function registerBridgeCommWorkerRuntimePortProtocol(
 	advanceRenderFulfillmentLifecycle = (surface): void =>
 		renderFulfillmentLifecycleDriver.advance(surface);
 	if (productTransport !== undefined) {
+		productTransport.setMetadataStreamHealthSink?.((observation): void => {
+			port.postMessage(bridgeProductStreamHealthEvent(observation));
+		});
 		productTransport.setPaneSurfaceSelectionFrameSink?.((frame): void => {
 			port.postMessage(bridgeWorkerNativeSurfaceSelectionRequestFromMetadataFrame(frame));
 		});

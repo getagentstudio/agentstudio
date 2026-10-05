@@ -29,7 +29,6 @@ import type { BridgePaneSurfaceClient } from '../core/comm-worker/bridge-pane-ru
 import type {
 	BridgeWorkerContentAvailabilityPatchPayload,
 	BridgeWorkerFileRenderPatch,
-	BridgeWorkerHealthEvent,
 	BridgeWorkerServerToMainMessage,
 } from '../core/comm-worker/bridge-worker-contracts.js';
 import type { BridgeWorkerFileQuery } from '../core/comm-worker/bridge-worker-file-query-contracts.js';
@@ -434,7 +433,6 @@ export function applyBridgeWorkerMessagesToFileViewerRenderSnapshotStore(props: 
 				break;
 			}
 			case 'health':
-				publishBridgeProductMetadataStreamDiagnostic(message.diagnostic);
 				break;
 			case 'annotationCommandAccepted':
 			case 'annotationCatalogStaging':
@@ -535,20 +533,6 @@ function fileDisplayPatchInvalidatesSelection(
 					patch.itemId === selection.fileId &&
 					patch.payload.displayPath !== selection.path)),
 	);
-}
-
-type BridgeProductMetadataStreamHealthDiagnostic = NonNullable<
-	BridgeWorkerHealthEvent['diagnostic']
->;
-
-function publishBridgeProductMetadataStreamDiagnostic(
-	diagnostic: BridgeWorkerHealthEvent['diagnostic'],
-): void {
-	if (diagnostic?.kind !== 'productMetadataStream') return;
-	const diagnosticGlobal = globalThis as typeof globalThis & {
-		__bridgeProductMetadataStreamDiagnostic?: BridgeProductMetadataStreamHealthDiagnostic;
-	};
-	diagnosticGlobal.__bridgeProductMetadataStreamDiagnostic = Object.freeze({ ...diagnostic });
 }
 
 function bridgeFileDisplayEventIsAccepted(
