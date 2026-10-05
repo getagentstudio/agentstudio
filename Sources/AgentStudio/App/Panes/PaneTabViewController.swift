@@ -894,10 +894,12 @@ class PaneTabViewController: NSViewController, NSPopoverDelegate, WorkspaceComma
     private func normalizedVisibleFocusOwner() -> WorkspaceFocusOwner {
         let context = visibleFocusOwnerContext()
         if let zoomSourcePaneId = zoomSourcePaneIdForActiveTab(),
-            store.paneAtom.pane(zoomSourcePaneId)?.drawer?.isExpanded == true,
-            let activeDrawerPaneId = visibleActiveDrawerPaneId(for: zoomSourcePaneId)
+            store.paneAtom.pane(zoomSourcePaneId)?.drawer?.isExpanded == true
         {
-            return .drawerPane(parentPaneId: zoomSourcePaneId, paneId: activeDrawerPaneId)
+            if let activeDrawerPaneId = visibleActiveDrawerPaneId(for: zoomSourcePaneId) {
+                return .drawerPane(parentPaneId: zoomSourcePaneId, paneId: activeDrawerPaneId)
+            }
+            return .emptyDrawer(parentPaneId: zoomSourcePaneId)
         }
         return WorkspaceFocusOwnerNormalizer.normalize(
             requested: atom(\.workspaceFocusOwner).owner,
@@ -1112,7 +1114,22 @@ class PaneTabViewController: NSViewController, NSPopoverDelegate, WorkspaceComma
     }
 
     func requestPaneRefocus(_ reason: PaneRefocusRequestTrigger.Reason = .explicit) {
+        if let emptyDrawerParentPaneId = zoomVisibleEmptyDrawerParentPaneId() {
+            _ = clearFirstResponderToWindowContentForDrawer(parentPaneId: emptyDrawerParentPaneId)
+            return
+        }
         handlePaneFocusTrigger(.refocusRequest(PaneRefocusRequestTrigger(reason: reason)))
+    }
+
+    private func zoomVisibleEmptyDrawerParentPaneId() -> UUID? {
+        guard
+            let zoomSourcePaneId = zoomSourcePaneIdForActiveTab(),
+            case .emptyDrawer(let parentPaneId) = normalizedVisibleFocusOwner(),
+            parentPaneId == zoomSourcePaneId
+        else {
+            return nil
+        }
+        return parentPaneId
     }
 
     private func makePaneFocusContext(for trigger: PaneFocusTrigger) -> PaneFocusContext? {
