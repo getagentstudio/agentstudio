@@ -306,6 +306,19 @@ package enum WorktreeStopCatalog {
         }
     }
 
+    static func creationChangesUnknownEntry(mainWorktree: URL) -> WorktreeStopEntry {
+        let stopEntry = entry(for: .changesUnknown)
+        let sourcePath = WorktreeListingProjector.shellArgument(mainWorktree.standardizedFileURL.path)
+        return WorktreeStopEntry(
+            reason: stopEntry.reason, message: stopEntry.message, details: stopEntry.details,
+            options: [
+                command("retry", effect: "Retry after the worktree status can be read."),
+                flag("--tracked-only", effect: "Create a tracked-files checkout."),
+                flag(
+                    "--from \(sourcePath)", effect: "Copy the main worktree as it is; source index checks still apply."),
+            ])
+    }
+
     static func forkOptions(source: WorktreeCreateSource) -> [WorktreeStopOption] {
         var options = options(for: .forkUnavailable, offersStaleLockRemoval: false)
         if case .worktree = source {

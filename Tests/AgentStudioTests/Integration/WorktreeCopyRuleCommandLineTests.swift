@@ -56,8 +56,8 @@ struct WorktreeCopyRuleCommandLineTests {
         try await expectAbsent(repository: repository, destination: destination, branch: branch)
     }
 
-    @Test("unreadable source index refuses with retry and tracked-only options without effects")
-    func refusesUnreadableSourceIndex() async throws {
+    @Test("unreadable source index fails closed on default and explicit sources", arguments: [false, true])
+    func refusesUnreadableSourceIndex(usesExplicitSource: Bool) async throws {
         let repository = try await makeRepository(named: "cli-unreadable-index", include: [])
         defer { FilesystemTestGitRepo.destroy(repository) }
         let index = repository.appending(path: ".git/index")
@@ -68,17 +68,18 @@ struct WorktreeCopyRuleCommandLineTests {
         defer { try? FileManager.default.removeItem(at: destination) }
         for json in [false, true] {
             let (exit, text) = try await runNew(
-                repository: repository, branch: branch, json: json, explicitSource: true)
+                repository: repository, branch: branch, json: json, explicitSource: usesExplicitSource)
             #expect(exit == 1)
-            #expect(text.contains("sourceIndexUnreadable"))
+            #expect(text.contains(usesExplicitSource ? "sourceIndexUnreadable" : "changesUnknown"))
+            #expect(text.contains("--from") == !usesExplicitSource)
             #expect(text.contains("retry"))
             #expect(text.contains("--tracked-only"))
         }
         try await expectAbsent(repository: repository, destination: destination, branch: branch)
     }
 
-    @Test("unsupported split index refuses with tracked-only and no retry option")
-    func refusesUnsupportedSourceIndex() async throws {
+    @Test("unsupported split index fails closed on default and explicit sources", arguments: [false, true])
+    func refusesUnsupportedSourceIndex(usesExplicitSource: Bool) async throws {
         let repository = try await makeRepository(named: "cli-split-index", include: [])
         defer { FilesystemTestGitRepo.destroy(repository) }
         try await worktreeCreationGit(at: repository, arguments: ["update-index", "--split-index"])
@@ -87,11 +88,12 @@ struct WorktreeCopyRuleCommandLineTests {
         defer { try? FileManager.default.removeItem(at: destination) }
         for json in [false, true] {
             let (exit, text) = try await runNew(
-                repository: repository, branch: branch, json: json, explicitSource: true)
+                repository: repository, branch: branch, json: json, explicitSource: usesExplicitSource)
             #expect(exit == 1)
-            #expect(text.contains("sourceIndexUnsupported"))
+            #expect(text.contains(usesExplicitSource ? "sourceIndexUnsupported" : "changesUnknown"))
+            #expect(text.contains("--from") == !usesExplicitSource)
             #expect(text.contains("--tracked-only"))
-            #expect(!text.contains("retry"))
+            #expect(text.contains("retry") == !usesExplicitSource)
         }
         try await expectAbsent(repository: repository, destination: destination, branch: branch)
     }

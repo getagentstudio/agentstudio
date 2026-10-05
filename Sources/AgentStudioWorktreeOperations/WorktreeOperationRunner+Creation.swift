@@ -59,44 +59,45 @@ extension WorktreeOperationRunner {
     }
 
     private func defaultCopySourceRefusal(source: URL, repository: URL) async -> WorktreeOperationOutcome? {
+        let status: GitStatusFactsRead
         do {
-            let status = try await client.statusFacts(
+            status = try await client.statusFacts(
                 for: source, options: GitStatusOptions(includeIgnored: false, includeUntracked: true),
-                observationPlan: nil
-            )
-            let facts = status.facts
-            let conflicts = facts.entries.filter { $0.indexState == .unmerged || $0.worktreeState == .unmerged }.count
-            if facts.summary.changedFileCount > 0 || facts.summary.stagedFileCount > 0
-                || facts.summary.unstagedFileCount > 0 || facts.summary.untrackedFileCount > 0 || conflicts > 0
-            {
+                observationPlan: nil)
+        } catch {
+            return .refused(.changesUnknown(mainWorktree: source))
+        }
+        let facts = status.facts
+        let conflicts = facts.entries.filter { $0.indexState == .unmerged || $0.worktreeState == .unmerged }.count
+        if facts.summary.changedFileCount > 0 || facts.summary.stagedFileCount > 0
+            || facts.summary.unstagedFileCount > 0 || facts.summary.untrackedFileCount > 0 || conflicts > 0
+        {
+            return .refused(
+                .creationStopped(
+                    .sourceDirty(
+                        WorktreeDirtyStopDetails(
+                            staged: facts.summary.stagedFileCount, unstaged: facts.summary.unstagedFileCount,
+                            untracked: facts.summary.untrackedFileCount, conflicted: conflicts,
+                            firstPaths: Array(
+                                facts.entries.filter { !$0.ignored }.map(\.path).prefix(
+                                    WorktreeLifecyclePolicy.firstPathsLimit))
+                        ))))
+        }
+        let resolution = await WorktreeIntegrationTargetResolver(client: client).resolve(repositoryPath: repository)
+        switch resolution {
+        case .absent: return .refused(.noDefaultBranch)
+        case .unreadable(_, let cause): return .failed(WorktreeOperationErrorMapper.readFailure(cause))
+        case .resolved(let target):
+            guard facts.head.kind == .branch, facts.head.shortName == target.branchName else {
                 return .refused(
                     .creationStopped(
-                        .sourceDirty(
-                            WorktreeDirtyStopDetails(
-                                staged: facts.summary.stagedFileCount, unstaged: facts.summary.unstagedFileCount,
-                                untracked: facts.summary.untrackedFileCount, conflicted: conflicts,
-                                firstPaths: Array(
-                                    facts.entries.filter { !$0.ignored }.map(\.path).prefix(
-                                        WorktreeLifecyclePolicy.firstPathsLimit))
-                            ))))
+                        .sourceNotOnDefaultBranch(
+                            actual: facts.head.shortName, expected: target.branchName
+                        )))
             }
-            let resolution = await WorktreeIntegrationTargetResolver(client: client).resolve(repositoryPath: repository)
-            switch resolution {
-            case .absent: return .refused(.noDefaultBranch)
-            case .unreadable(_, let cause): return .failed(WorktreeOperationErrorMapper.readFailure(cause))
-            case .resolved(let target):
-                guard facts.head.kind == .branch, facts.head.shortName == target.branchName else {
-                    return .refused(
-                        .creationStopped(
-                            .sourceNotOnDefaultBranch(
-                                actual: facts.head.shortName, expected: target.branchName
-                            )))
-                }
-            }
-            return nil
-        } catch {
-            return .failed(WorktreeOperationErrorMapper.readFailure(error))
         }
+        return nil
+
     }
 
     private func createTrackedOnly(_ prepared: PreparedWorktreeCreation, startBranch: String?) async
