@@ -10,7 +10,7 @@ extension PaneCLIOutboxDrainTests {
         try await withPaneCLIOutboxDrainHarness { harness in
             let paneID = UUIDv7.generate()
             try await harness.bindPane(paneID: paneID)
-            let before = try await harness.snapshot(paneID: paneID)
+            let before = try await harness.sessionContext(paneID: paneID)
             let payloads = try [
                 harness.legacyMessageLine(text: "legacy message must not become a new notice"),
                 harness.reportLine(kind: "needsYou", explanation: "legacy attention must not become an ask"),
@@ -24,7 +24,7 @@ extension PaneCLIOutboxDrainTests {
             }
             let initialRows = try await harness.rows()
             let report = await harness.drain()
-            let after = try await harness.snapshot(paneID: paneID)
+            let after = try await harness.sessionContext(paneID: paneID)
             let cursor = try await harness.cursor()
             let rows = try await harness.rows()
             #expect(report.admittedEntryCount == 0)

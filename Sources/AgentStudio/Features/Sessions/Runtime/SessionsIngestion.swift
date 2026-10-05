@@ -129,10 +129,6 @@ package actor SessionsIngestion {
         error == .globalQueueFull ? .globalQueueFull : .paneQueueFull
     }
 
-    package func snapshot(_ query: SessionsSnapshotQuery) async throws -> SessionsSnapshot {
-        try await repository.snapshot(query)
-    }
-
     /// Reads past the current binding, for a caller that has to attribute an
     /// event to the generation its conversation opened rather than to whatever
     /// the pane is bound to now. It reads only; nothing here enters the FIFO.

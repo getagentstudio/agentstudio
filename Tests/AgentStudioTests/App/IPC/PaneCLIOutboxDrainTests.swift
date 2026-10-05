@@ -94,7 +94,7 @@ struct PaneCLIOutboxDrainTests {
             #expect(harness.refusalRecorder.reasons == [.ineligibleMethod])
             #expect(try await harness.cursor() == admitted.id)
             #expect(try await harness.rows() == [refused, admitted])
-            #expect(try await harness.snapshot(paneID: unboundPane).currentBinding == nil)
+            #expect(try await harness.sessionContext(paneID: unboundPane).currentBinding == nil)
             #expect(try await harness.paneMessages(paneID: boundPane).map(\.body) == ["other pane survives"])
         }
     }
@@ -167,7 +167,7 @@ struct PaneCLIOutboxDrainTests {
             #expect(report.admittedEntryCount == 0)
             #expect(harness.refusalRecorder.reasons == [.ineligibleMethod])
             #expect(try await harness.cursor() == entry.id)
-            #expect(try await harness.snapshot(paneID: paneID).currentBinding == nil)
+            #expect(try await harness.sessionContext(paneID: paneID).currentBinding == nil)
         }
     }
 
@@ -214,7 +214,7 @@ struct PaneCLIOutboxDrainTests {
         try await withPaneCLIOutboxDrainHarness { harness in
             let paneID = UUIDv7.generate()
             try await harness.bindPane(paneID: paneID)
-            let snapshot = try await harness.snapshot(paneID: paneID)
+            let snapshot = try await harness.sessionContext(paneID: paneID)
             let binding = try #require(snapshot.currentBinding)
             let writer = IPCPaneWriterClaim(
                 provider: binding.providerIdentifier, conversationId: binding.providerConversationId)
@@ -326,7 +326,7 @@ struct PaneCLIOutboxDrainTests {
             #expect(afterBinding.admittedEntryCount == 0)
             #expect(afterBinding.retryableEntryCount == 0)
             #expect(try await harness.cursor() == entry.id)
-            #expect(try await harness.attention(paneID: paneID).isEmpty)
+            #expect(try await harness.sessionSummary(paneID: paneID)?.providerPrompts.isEmpty == true)
         }
     }
 
@@ -394,11 +394,11 @@ struct PaneCLIOutboxDrainTests {
             #expect(report.admittedEntryCount == 0)
             #expect(report.malformedEntryCount == 2)
             #expect(try await harness.cursor() == last.id)
-            let snapshot = try await harness.snapshot(paneID: paneID)
+            let snapshot = try await harness.sessionContext(paneID: paneID)
             #expect(try await harness.sessionSummary(paneID: paneID) == stateBeforeReports)
-            #expect(try await harness.attention(paneID: paneID).isEmpty)
-            #expect(snapshot.results.isEmpty)
-            #expect(snapshot.historicalOccurrenceIds.isEmpty)
+            #expect(try await harness.sessionSummary(paneID: paneID)?.providerPrompts.isEmpty == true)
+            #expect(snapshot.evidence.count == 1)
+            #expect(snapshot.evidence.allSatisfy { $0.providerSignal == .sessionStart })
             #expect(harness.refusalRecorder.reasons == [.ineligibleMethod, .ineligibleMethod])
         }
     }
@@ -540,7 +540,7 @@ struct PaneCLIOutboxDrainTests {
             let paneID = UUIDv7.generate()
             try await harness.bindPane(paneID: paneID)
             let messageID = UUIDv7.generate()
-            let snapshot = try await harness.snapshot(paneID: paneID)
+            let snapshot = try await harness.sessionContext(paneID: paneID)
             let generation = try #require(snapshot.currentBinding?.bindingGenerationId)
             let request = PaneMessageSendRequest(
                 paneId: PaneId(existingUUID: paneID), messageId: AgentMessageId(existingUUID: messageID),
@@ -582,7 +582,7 @@ struct PaneCLIOutboxDrainTests {
             let retried = try await harness.restartedDrain()
             #expect(retried.importedLegacyLineCount == 0)
             #expect(!FileManager.default.fileExists(atPath: harness.legacyFileURL(paneID: paneID).path))
-            #expect(try await harness.attention(paneID: paneID).isEmpty)
+            #expect(try await harness.sessionSummary(paneID: paneID)?.providerPrompts.isEmpty == true)
         }
     }
 }

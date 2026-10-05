@@ -147,12 +147,8 @@ final class PaneCLIOutboxDrainHarness {
         try await ingestion.sessionSummary(paneId: paneID)
     }
 
-    func attention(paneID: UUID) async throws -> [SessionsStoredAttentionRecord] {
-        try await repository.statusContext(paneId: paneID).attention
-    }
-
-    func snapshot(paneID: UUID) async throws -> SessionsSnapshot {
-        try await repository.snapshot(.pane(paneID))
+    func sessionContext(paneID: UUID) async throws -> SessionsRepositoryContext {
+        try await repository.statusContext(paneId: paneID)
     }
 
     func bindPane(paneID: UUID) async throws {
@@ -166,7 +162,7 @@ final class PaneCLIOutboxDrainHarness {
                     turnId: nil, requestId: nil, toolId: nil, subagentId: nil, occurrenceId: UUIDv7.generate()),
                 correlationId: UUIDv7.generate()), provenance: .matchingPane)
         #expect(result.disposition == .admitted)
-        let currentSnapshot = try await snapshot(paneID: paneID)
+        let currentSnapshot = try await sessionContext(paneID: paneID)
         let binding = try #require(currentSnapshot.currentBinding)
         #expect(binding.status == .active)
         #expect(binding.paneId == paneID)

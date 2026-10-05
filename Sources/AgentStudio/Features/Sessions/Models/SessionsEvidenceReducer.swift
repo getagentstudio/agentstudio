@@ -12,14 +12,4 @@ package enum SessionsEvidenceReducer {
         if left.occurredAt != right.occurredAt { return left.occurredAt < right.occurredAt }
         return left.recordId.uuidString < right.recordId.uuidString
     }
-
-    package static func currentTurnId(
-        evidence: [SessionsEvidenceRecord], bindingGenerationId: UUID, activeSourceGenerationIds: Set<UUID>
-    ) -> String? {
-        evidence.filter {
-            $0.bindingGenerationId == bindingGenerationId && $0.statusEffect == .applied
-                && $0.subject == .root && activeSourceGenerationIds.contains($0.sourceGenerationId)
-                && $0.turnId != nil
-        }.max(by: admissionOrder)?.turnId
-    }
 }

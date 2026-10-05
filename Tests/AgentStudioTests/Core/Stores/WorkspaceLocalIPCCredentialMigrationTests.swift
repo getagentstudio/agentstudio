@@ -23,7 +23,7 @@ struct WorkspaceLocalIPCCredentialMigrationTests {
 
         try database.read { connection in
             let completedMigrations = try WorkspaceLocalMigrations.migrator.completedMigrations(connection)
-            #expect(completedMigrations.last == "026_sessions_permission_handling")
+            #expect(completedMigrations.last == "027_sessions_hook_admission_cleanup")
             for identifier in [
                 "012_create_ipc_credential_schema",
                 "013_create_opaque_pane_credential_records",

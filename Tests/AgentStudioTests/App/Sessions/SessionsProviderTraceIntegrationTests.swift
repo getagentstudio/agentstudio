@@ -4,13 +4,13 @@ import AgentStudioIPCClientCore
 import AgentStudioIPCTransport
 import AgentStudioInfrastructure
 import AgentStudioProgrammaticControl
-import AgentStudioSessions
 import AgentStudioTestHarness
 import Foundation
 import GRDB
 import Testing
 
 @testable import AgentStudio
+@testable import AgentStudioSessions
 
 @Suite("Sessions recorded provider trace integration")
 struct SessionsProviderTraceIntegrationTests {
@@ -35,17 +35,16 @@ struct SessionsProviderTraceIntegrationTests {
                 requestId: event.requestId, toolId: event.toolId, subagentId: event.subagentId,
                 occurrenceId: event.occurrenceId, providerFields: providerFields),
             correlationId: projected.correlationId)
-        let query = SessionsSnapshotQuery(paneId: paneId)
         let initial = try await fixture.withIngestion { ingestion, adapter in
             let result = try await adapter.recordProviderEvent(paneId: paneId, params: start, provenance: .matchingPane)
             #expect(result.disposition == .admitted)
-            let snapshot = try await ingestion.snapshot(query)
+            let snapshot = try await ingestion.repository.statusContext(paneId: paneId)
             let binding = try #require(snapshot.currentBinding)
             #expect(binding.resumeHint == expectedHint)
             return (snapshot: snapshot, summary: try await ingestion.sessionSummary(paneId: paneId))
         }
         try await fixture.withIngestion { ingestion, adapter in
-            let reopened = try await ingestion.snapshot(query)
+            let reopened = try await ingestion.repository.statusContext(paneId: paneId)
             #expect(reopened.currentBinding == initial.snapshot.currentBinding)
             #expect(try #require(reopened.currentBinding).resumeHint == expectedHint)
             let replay = IPCSessionEventParams(
@@ -54,16 +53,14 @@ struct SessionsProviderTraceIntegrationTests {
             let result = try await adapter.recordProviderEvent(
                 paneId: paneId, params: replay, provenance: .matchingPane)
             #expect(result.disposition == .admitted)
-            let afterReplay = try await ingestion.snapshot(query)
+            let afterReplay = try await ingestion.repository.statusContext(paneId: paneId)
             #expect(afterReplay.currentBinding == initial.snapshot.currentBinding)
             #expect(try #require(afterReplay.currentBinding).resumeHint == expectedHint)
             let replaySummary = try await ingestion.sessionSummary(paneId: paneId)
             #expect(replaySummary == initial.summary)
             // Another invocation records a new fact while preserving the active binding.
-            #expect(afterReplay.staleAttention == initial.snapshot.staleAttention)
-            #expect(afterReplay.results == initial.snapshot.results)
-            #expect(Set(afterReplay.historicalOccurrenceIds) == Set(initial.snapshot.historicalOccurrenceIds))
-            #expect(afterReplay.losses == initial.snapshot.losses)
+            #expect(afterReplay.evidence.count == initial.snapshot.evidence.count + 1)
+            #expect(Set(afterReplay.evidence.map(\.recordId)).count == afterReplay.evidence.count)
         }
     }
 

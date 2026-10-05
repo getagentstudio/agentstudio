@@ -1,7 +1,6 @@
 import AgentStudioAppIPC
 import AgentStudioInfrastructure
 import AgentStudioProgrammaticControl
-import AgentStudioSessions
 import AgentStudioTestHarness
 import AgentStudioTestSupport
 import Foundation
@@ -11,6 +10,7 @@ import Testing
 
 @testable import AgentStudio
 @testable import AgentStudioCore
+@testable import AgentStudioSessions
 
 @MainActor
 @Suite("Sessions and PaneContext assembly factory", .serialized)
@@ -399,7 +399,7 @@ struct CompositionFactoryFixture: Sendable {
                 correlationId: UUIDv7.generate()), provenance: .matchingPane)
         #expect(result.disposition == .admitted)
         return try #require(
-            try await composition.ingestion.snapshot(.pane(paneId.uuid))
+            try await composition.ingestion.repository.statusContext(paneId: paneId.uuid)
                 .currentBinding)
     }
 

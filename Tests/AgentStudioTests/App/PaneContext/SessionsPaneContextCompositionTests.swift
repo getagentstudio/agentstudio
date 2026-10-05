@@ -3,11 +3,11 @@ import AgentStudioCore
 import AgentStudioIPCTransport
 import AgentStudioInfrastructure
 import AgentStudioProgrammaticControl
-import AgentStudioSessions
 import Foundation
 import Testing
 
 @testable import AgentStudio
+@testable import AgentStudioSessions
 
 @MainActor
 @Suite(
@@ -34,7 +34,7 @@ struct SessionsPaneContextCompositionTests {
                 conversationId: conversationId
             ).disposition == .admitted)
         let binding = try #require(
-            try await composition.ingestion.snapshot(.pane(paneId.uuid))
+            try await composition.ingestion.repository.statusContext(paneId: paneId.uuid)
                 .currentBinding)
         let writer = AgentMessageSender.session(
             provider: try BridgeAgentProviderName(binding.providerIdentifier),
@@ -95,7 +95,7 @@ struct SessionsPaneContextCompositionTests {
                 paneId: drawer.id, params: params, provenance: .matchingPane
             ).disposition == .admitted)
         let binding = try #require(
-            try await composition.ingestion.snapshot(.pane(drawer.id))
+            try await composition.ingestion.repository.statusContext(paneId: drawer.id)
                 .currentBinding)
         #expect(binding.ownerPaneId == parentId)
         #expect(binding.paneId == drawer.id)

@@ -33,10 +33,6 @@ package struct SessionsRepository: Sendable {
         }
     }
 
-    package func snapshot(_ query: SessionsSnapshotQuery) async throws -> SessionsSnapshot {
-        try await sqliteAccess.read { try SessionsRepositoryStorage.loadSnapshot(database: $0, query: query) }
-    }
-
     package func bindingForProviderConversation(
         paneId: UUID, providerIdentifier: String, providerConversationId: String
     )

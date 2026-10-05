@@ -31,15 +31,14 @@ struct SessionsIngestionTests {
             }
             held.release()
             let result = await first.value
-            #expect(try result.get().disposition == .bound)
+            let commit = try result.get()
+            #expect(commit.disposition == .bound)
             let count = try await fixture.sqliteAccess.read {
                 try Int.fetchOne($0, sql: "SELECT COUNT(*) FROM sessions_evidence")
             }
-            let losses = try await fixture.sqliteAccess.read {
-                try Int.fetchOne($0, sql: "SELECT COUNT(*) FROM sessions_loss")
-            }
+            let context = try await ingestion.repository.statusContext(paneId: pane)
             #expect(count == 1)
-            #expect(losses == 0)
+            #expect(context.evidence.map(\.recordId) == [commit.evidence.recordId])
             await ingestion.finish()
         } catch {
             held.release()
