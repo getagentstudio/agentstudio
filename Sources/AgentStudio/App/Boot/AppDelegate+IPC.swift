@@ -441,6 +441,7 @@ extension AppDelegate {
                 accessMode: accessMode,
                 appVersion: Self.appIPCAppVersion(),
                 workspaceStore: store,
+                paneActivityTime: atomStore.core.paneActivityTime,
                 windowLifecycleReader: windowLifecycleReader
             ),
             layoutPort: AgentStudioIPCLayoutAdapter(

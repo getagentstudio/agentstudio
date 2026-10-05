@@ -46,7 +46,7 @@ struct SessionsVerticalHarness {
         debugCredentialEscrowURL: URL? = nil,
         installActivityClock: Bool = false,
         activitySubmissionObserver: @escaping @Sendable (PaneActivityOccurrence) -> Void = { _ in },
-        activityPublicationObserver: @escaping @MainActor @Sendable () -> Void = {}
+        activityPublicationObserver: @escaping @MainActor @Sendable ([PaneActivityTimeMutation]) -> Void = { _ in }
     ) async throws -> Self {
         let (commandHarness, datastore) = try await makeCanonicalIPCWorkspaceCommandHarness()
         let appDelegate = AppDelegate()
@@ -81,7 +81,7 @@ struct SessionsVerticalHarness {
                 let activityAtom = appDelegate.atomStore.core.paneActivityTime
                 let clock = PaneActivityClock(submissionObserver: activitySubmissionObserver) { batch in
                     activityAtom.apply(batch)
-                    activityPublicationObserver()
+                    activityPublicationObserver(batch)
                 }
                 appDelegate.paneActivityClock = clock
                 await clock.start()
