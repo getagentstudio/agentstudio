@@ -192,7 +192,7 @@ final class BridgePaneWorktreeRefreshDriver {
                         surface: .file
                     )
                 )
-                coordinator.completeRefreshPass(
+                let didCompleteRefreshPass = coordinator.completeRefreshPass(
                     currentReservation,
                     outcome: outcome
                 )
@@ -207,7 +207,7 @@ final class BridgePaneWorktreeRefreshDriver {
                     reservation = coordinator.reserveForegroundRefreshPass(for: .file)
                 } else {
                     reservation = nil
-                    if outcome == .failed, let failure {
+                    if didCompleteRefreshPass, outcome == .failed, let failure {
                         coordinator.recordCurrentFileRefreshFailure(
                             failure,
                             for: currentReservation

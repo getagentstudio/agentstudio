@@ -427,19 +427,20 @@ final class BridgePaneRefreshAdmissionCoordinator {
         return nextAuthorityGeneration
     }
 
+    @discardableResult
     func completeRefreshPass(
         _ reservation: BridgePaneRefreshCatchUpReservation,
         outcome: BridgePaneRefreshCatchUpOutcome
-    ) {
+    ) -> Bool {
         // Leaving foreground already restores and clears the active reservation.
         // Its later cancelled/stale completion must not merge the same fact twice.
         guard reservation.lanes.count == 1,
             let lane = reservation.lanes.first,
             activeRefreshPassByLane[lane]?.id == reservation.id
-        else { return }
+        else { return false }
         let previousPresentation = productPresentationSnapshot
         activeRefreshPassByLane[lane] = nil
-        guard activity != .closed else { return }
+        guard activity != .closed else { return false }
         switch outcome {
         case .succeeded:
             if lane == .file { fileRefreshFailure = nil }
@@ -453,6 +454,7 @@ final class BridgePaneRefreshAdmissionCoordinator {
             )
         }
         advancePresentationRevisionIfNeeded(from: previousPresentation)
+        return true
     }
 
     func reserveForegroundRefreshPass() -> BridgePaneRefreshCatchUpReservation? {

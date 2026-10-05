@@ -283,7 +283,7 @@ extension BridgeDevelopmentProductHost {
                 stageAttempt: reservation.operationStageAttempt,
                 surface: .review
             )
-            await MainActor.run {
+            _ = await MainActor.run {
                 self.refreshAdmissionCoordinator.completeRefreshPass(
                     reservation,
                     outcome: outcome

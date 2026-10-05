@@ -633,13 +633,36 @@ struct BridgePaneRefreshAdmissionCoordinatorTests {
         let successor = try #require(coordinator.reserveForegroundRefreshPass(for: .file))
         coordinator.completeRefreshPass(successor, outcome: .succeeded)
 
-        coordinator.recordCurrentFileRefreshFailure(
-            .init(failureKind: .fileSourceUnavailable),
-            for: predecessor
-        )
+        let didCompletePredecessor = coordinator.completeRefreshPass(predecessor, outcome: .failed)
+        if didCompletePredecessor {
+            coordinator.recordCurrentFileRefreshFailure(
+                .init(failureKind: .fileSourceUnavailable)
+            )
+        }
 
         #expect(!coordinator.isRefreshPassCurrent(predecessor))
         #expect(coordinator.productPresentationSnapshot.fileRefreshFailure == nil)
+    }
+
+    @Test("a current terminal File failure is recorded after its pass completes")
+    func currentTerminalFileFailureIsRecorded() throws {
+        let coordinator = BridgePaneRefreshAdmissionCoordinator(initialActivity: .foreground)
+        coordinator.recordInvalidation(
+            fileChangeset: makeFileChangeset(paths: ["Sources/App/current.swift"], batchSequence: 72),
+            requiresReviewRefresh: false
+        )
+        let current = try #require(coordinator.reserveForegroundRefreshPass(for: .file))
+        let didComplete = coordinator.completeRefreshPass(current, outcome: .failed)
+        if didComplete {
+            coordinator.recordCurrentFileRefreshFailure(
+                .init(failureKind: .fileRefreshFailed)
+            )
+        }
+        #expect(didComplete)
+        #expect(
+            coordinator.productPresentationSnapshot.fileRefreshFailure?.failureKind
+                == .fileRefreshFailed
+        )
     }
 
     @Test("loaded-hidden coalescing retains only the latest File status snapshot")
