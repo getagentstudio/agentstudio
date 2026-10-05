@@ -344,14 +344,18 @@ package final class CLIStore: Sendable {
                     _ = try Self.busyTimeout(
                         cap: Self.ordinaryWriteWaitCap, remainingBudget: remainingCallBudget(), stage: .purge)
                     let currentIdentity = try Self.readIdentity(database, expectedChannel: identity.channel)
-                    guard currentIdentity.storeID == expectedStoreID else { return .commit }
-                    try Self.refreshBusyTimeout(
-                        database, cap: Self.ordinaryWriteWaitCap,
-                        remainingBudget: remainingCallBudget(), stage: .purge)
-                    try database.execute(
-                        sql: "DELETE FROM cli_outbox WHERE id <= ? AND created_at < ?",
-                        arguments: [lastHandledID, cutoffMilliseconds])
-                    removedCount = database.changesCount
+                    if currentIdentity.storeID == expectedStoreID {
+                        try Self.refreshBusyTimeout(
+                            database, cap: Self.ordinaryWriteWaitCap,
+                            remainingBudget: remainingCallBudget(), stage: .purge)
+                        try database.execute(
+                            sql: "DELETE FROM cli_outbox WHERE id <= ? AND created_at < ?",
+                            arguments: [lastHandledID, cutoffMilliseconds])
+                        removedCount = database.changesCount
+                    }
+                    // Both the identity refusal and DELETE share one guarded commit exit.
+                    _ = try Self.busyTimeout(
+                        cap: Self.ordinaryWriteWaitCap, remainingBudget: remainingCallBudget(), stage: .purge)
                     return .commit
                 }
                 return removedCount

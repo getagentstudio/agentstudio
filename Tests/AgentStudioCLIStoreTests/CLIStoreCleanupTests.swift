@@ -53,8 +53,10 @@ struct CLIStoreCleanupTests {
         #expect(observed.remainingRows.isEmpty)
     }
 
-    @Test("purge rolls back without deletion if identity verification exhausts the total")
-    func budgetExhaustionBeforeDeleteRollsBack() async throws {
+    @Test(
+        "purge rolls back if identity verification or DELETE exhausts the total before commit",
+        arguments: PurgeBudgetExhaustionPoint.allCases)
+    func purgeBudgetExhaustionBeforeCommitRollsBack(point: PurgeBudgetExhaustionPoint) async throws {
         let observed = try await valueFromDedicatedThread {
             let fixture = try CLIStoreCleanupFixture()
             defer { fixture.removeFiles() }
@@ -66,11 +68,13 @@ struct CLIStoreCleanupTests {
             let entry = try fixture.append(to: writer)
             fixture.clock.advance(by: .seconds(86_401))
             let statements = Mutex<[String]>([])
+            let reachedExhaustion = Mutex(false)
             writer.databaseQueue.writeWithoutTransaction { database in
                 database.trace { event in
                     guard case .statement(let statement) = event else { return }
                     statements.withLock { $0.append(statement.sql) }
-                    if statement.sql == "SELECT store_id, channel FROM cli_store_identity LIMIT 2" {
+                    if point.matches(statement.sql) {
+                        reachedExhaustion.withLock { $0 = true }
                         budget.withLock { $0 = .zero }
                     }
                 }
@@ -86,18 +90,28 @@ struct CLIStoreCleanupTests {
             let recoveredRemovalCount = try writer.purgeHandledOutbox(
                 expectedStoreID: writer.identity.storeID, through: entry.id, now: fixture.now
             ).get()
-            return RollbackReuseObservation(
-                failureResult: result, purgeStatements: purgeStatements, retainedRows: retainedRows,
-                retainedEntry: entry, recoveredRemovalCount: recoveredRemovalCount,
-                remainingRows: try writer.readOutbox(after: 0).get().entries)
+            return (
+                rollback: RollbackReuseObservation(
+                    failureResult: result, purgeStatements: purgeStatements, retainedRows: retainedRows,
+                    retainedEntry: entry, recoveredRemovalCount: recoveredRemovalCount,
+                    remainingRows: try writer.readOutbox(after: 0).get().entries),
+                reachedExhaustion: reachedExhaustion.withLock { $0 }
+            )
         }
-        #expect(observed.failureResult == .failure(.busy(extendedResultCode: nil, stage: .purge)))
-        #expect(observed.purgeStatements.contains("BEGIN IMMEDIATE TRANSACTION"))
-        #expect(observed.purgeStatements.contains { $0.hasPrefix("ROLLBACK") })
-        #expect(!observed.purgeStatements.contains { $0.hasPrefix("DELETE FROM cli_outbox") })
-        #expect(observed.retainedRows == [observed.retainedEntry])
-        #expect(observed.recoveredRemovalCount == 1)
-        #expect(observed.remainingRows.isEmpty)
+        #expect(observed.reachedExhaustion)
+        #expect(observed.rollback.failureResult == .failure(.busy(extendedResultCode: nil, stage: .purge)))
+        #expect(observed.rollback.purgeStatements.contains("BEGIN IMMEDIATE TRANSACTION"))
+        #expect(observed.rollback.purgeStatements.contains { $0.hasPrefix("ROLLBACK") })
+        #expect(!observed.rollback.purgeStatements.contains { $0.hasPrefix("COMMIT") })
+        switch point {
+        case .identityRead:
+            #expect(!observed.rollback.purgeStatements.contains { $0.hasPrefix("DELETE FROM cli_outbox") })
+        case .deleteWrite:
+            #expect(observed.rollback.purgeStatements.contains { $0.hasPrefix("DELETE FROM cli_outbox") })
+        }
+        #expect(observed.rollback.retainedRows == [observed.rollback.retainedEntry])
+        #expect(observed.rollback.recoveredRemovalCount == 1)
+        #expect(observed.rollback.remainingRows.isEmpty)
     }
 
     @Test("purge refreshes its SQLite wait to the remaining total below 50 ms")
@@ -308,6 +322,18 @@ struct CLIStoreCleanupTests {
         let sqlError = try #require(observed.sqlError)
         #expect(sqlError.resultCode == .SQLITE_READONLY)
         #expect(observed.rows == [observed.entry])
+    }
+}
+
+enum PurgeBudgetExhaustionPoint: CaseIterable, Sendable {
+    case identityRead
+    case deleteWrite
+
+    func matches(_ sql: String) -> Bool {
+        switch self {
+        case .identityRead: sql == "SELECT store_id, channel FROM cli_store_identity LIMIT 2"
+        case .deleteWrite: sql.hasPrefix("DELETE FROM cli_outbox")
+        }
     }
 }
 
