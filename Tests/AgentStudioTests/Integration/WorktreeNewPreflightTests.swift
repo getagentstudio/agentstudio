@@ -65,4 +65,60 @@ struct WorktreeNewPreflightTests {
         #expect(!FileManager.default.fileExists(atPath: destination.path))
         #expect(try await worktreeCreationGit(at: repository, arguments: ["branch", "--list", branch]).isEmpty)
     }
+
+    @Test("default new refuses untracked-only dirt and reports its count and path")
+    func refusesUntrackedOnlyDefaultSource() async throws {
+        let repository = try await FilesystemTestGitRepo.create(named: "new-untracked-only-default")
+        defer { FilesystemTestGitRepo.destroy(repository) }
+        try Data("tracked seed\n".utf8).write(to: repository.appending(path: "tracked.txt"))
+        try await worktreeCreationGit(at: repository, arguments: ["add", "tracked.txt"])
+        try await worktreeCreationGit(at: repository, arguments: ["commit", "-m", "clean seed"])
+        #expect(try await worktreeCreationGit(at: repository, arguments: ["status", "--porcelain=v1"]).isEmpty)
+        let untrackedPath = "untracked-only.txt"
+        let untrackedBytes = Data("only untracked dirt\n".utf8)
+        try untrackedBytes.write(to: repository.appending(path: untrackedPath))
+        let beforeHead = try await worktreeCreationGit(at: repository, arguments: ["rev-parse", "HEAD"])
+        let beforeStatus = try await worktreeCreationGit(at: repository, arguments: ["status", "--porcelain=v1"])
+        #expect(beforeStatus.split(separator: "\n").map(String.init) == ["?? \(untrackedPath)"])
+        let branch = "feature/refused-untracked-only"
+        let destination = try siblingDestination(repository: repository, branch: branch)
+        defer { try? FileManager.default.removeItem(at: destination) }
+
+        for json in [false, true] {
+            let probe = WorktreeCreationCommandLineProbe()
+            let exit = await WorktreeCommandLine.run(
+                arguments: ["new", branch, "--repo", repository.path] + (json ? ["--json"] : []),
+                currentDirectory: repository,
+                output: { probe.appendOutput($0) }, errorOutput: { probe.appendError($0) })
+            #expect(exit == 1)
+            #expect(probe.errorSnapshot().isEmpty)
+            let output = try #require(probe.outputSnapshot().first)
+            if json {
+                let document = try #require(JSONSerialization.jsonObject(with: Data(output.utf8)) as? [String: Any])
+                #expect(document["reason"] as? String == "sourceDirty")
+                let details = try #require(document["details"] as? [String: Any])
+                let stop = try JSONDecoder().decode(
+                    WorktreeCreationStop.self, from: JSONSerialization.data(withJSONObject: details))
+                guard case .sourceDirty(let changes) = stop else {
+                    Issue.record("expected sourceDirty, received \(stop)")
+                    return
+                }
+                #expect(changes.staged == 0)
+                #expect(changes.unstaged == 0)
+                #expect(changes.conflicted == 0)
+                #expect(changes.untracked == 1)
+                #expect(changes.firstPaths == [untrackedPath])
+            } else {
+                #expect(output.contains("sourceDirty"))
+                #expect(output.contains("untracked=1"))
+                #expect(output.contains("paths=[\(untrackedPath)]"))
+            }
+            #expect(!FileManager.default.fileExists(atPath: destination.path))
+            #expect(try await worktreeCreationGit(at: repository, arguments: ["branch", "--list", branch]).isEmpty)
+            #expect(try await worktreeCreationGit(at: repository, arguments: ["rev-parse", "HEAD"]) == beforeHead)
+            #expect(
+                try await worktreeCreationGit(at: repository, arguments: ["status", "--porcelain=v1"]) == beforeStatus)
+            #expect(try Data(contentsOf: repository.appending(path: untrackedPath)) == untrackedBytes)
+        }
+    }
 }
