@@ -100,14 +100,22 @@ final class BridgePackagedLiveCapture {
                 message: 'packaged-subscription:' + JSON.stringify(observation)
               }); } catch {}
             };
+            report({kind: 'commandProbe', phase: 'workerInstalled'});
             self.fetch = async (...arguments_) => {
               const [input, init] = arguments_;
               const url = typeof input === 'string' ? input : input?.url ?? String(input);
               let request;
               try {
-                if (url.endsWith('/command') && init?.body instanceof ArrayBuffer)
-                  request = JSON.parse(new TextDecoder().decode(init.body));
+                if (url.includes('/command') && init?.body !== undefined) {
+                  const body = init.body;
+                  const text = typeof body === 'string' ? body :
+                    (ArrayBuffer.isView(body) || Object.prototype.toString.call(body) === '[object ArrayBuffer]')
+                    ? new TextDecoder().decode(body) : null;
+                  if (text !== null) request = JSON.parse(text);
+                }
               } catch {}
+              if (url.includes('/command') && request === undefined)
+                report({kind: 'commandProbe', phase: 'unparsedRequest', bodyType: Object.prototype.toString.call(init?.body)});
               const correlation = request?.kind === 'subscription.open'
                 ? {requestId: request.requestId, subscriptionId: request.subscriptionId,
                    subscriptionKind: request.subscription?.subscriptionKind,
@@ -182,6 +190,8 @@ final class BridgePackagedLiveCapture {
           window.Blob = new Proxy(OriginalBlob, {
             construct(target, arguments_) {
               const [parts, options] = arguments_;
+              if (options?.type?.includes('javascript'))
+                forward({kind: 'workerSourceProbe', parts: parts?.length ?? null, matched: parts?.some(part => typeof part === 'string' && part.includes('metadataStream.open')) ?? false});
               if (Array.isArray(parts) && parts.some(part =>
                   typeof part === 'string' && part.includes('metadataStream.open'))) {
                 const prefix = '(' + installWorkerCommandObservation.toString() + ')();\n';
@@ -194,6 +204,7 @@ final class BridgePackagedLiveCapture {
           window.Worker = new Proxy(OriginalWorker, {
             construct(target, arguments_) {
               const worker = Reflect.construct(target, arguments_);
+              forward({kind: 'workerConstructed', urlScheme: String(arguments_[0]).split(':')[0]});
               worker.addEventListener('message', event => {
                 const message = event.data?.message;
                 if (event.data?.kind === 'health' && typeof message === 'string' &&
