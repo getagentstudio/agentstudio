@@ -64,10 +64,12 @@ extension WebKitSerializedTests {
         @Test
         func test_schemeHandler_servesPackagedReactApp() async throws {
             // Arrange
+            let diagnostics = BridgePackagedProductDiagnosticRecorder()
             let controller = BridgePaneController(
                 paneId: UUIDv7.generate(),
                 state: BridgePaneState(panelKind: .diffViewer, source: nil),
                 appRootURL: testBridgeAppRootURL(),
+                telemetryRecorder: diagnostics,
                 initialPaneActivity: .foreground
             )
 
@@ -83,6 +85,8 @@ extension WebKitSerializedTests {
                 // Assert
                 #expect(didNavigateToAppURL)
 
+                let nativeReadback = await packagedProductNativeReadback(controller)
+                print("[packaged-product-diagnostic] no-source boundary: \(nativeReadback)")
                 let noSourceObserved = try await WebPageEventWaits.waitForDocumentValue(
                     page,
                     reader: """
@@ -95,7 +99,8 @@ extension WebKitSerializedTests {
                           && region.querySelector('[data-slot="skeleton"]') === null) ? true : null;
                         """,
                     arguments: ["selector": "[data-testid=\"bridge-review-empty-shell\"]"],
-                    milestone: "Packaged React app settles both Review regions as no-source empty",
+                    milestone:
+                        "Packaged React app settles both Review regions as no-source empty; native=\(nativeReadback)",
                     lastObservation: """
                         return JSON.stringify({
                           title: document.title,
@@ -110,6 +115,9 @@ extension WebKitSerializedTests {
                               text: region.textContent,
                               skeletonPresent: region.querySelector('[data-slot="skeleton"]') !== null
                             })),
+                          productResources: performance.getEntriesByType('resource')
+                            .filter((entry) => entry.name.includes('agentstudio://rpc/'))
+                            .map((entry) => ({name: entry.name, responseStatus: entry.responseStatus ?? null})),
                           javascriptErrors: window.__bridgeErrorProbe ?? []
                         });
                         """
@@ -129,11 +137,13 @@ extension WebKitSerializedTests {
             // Arrange
             let paneId = UUIDv7.generate()
             let reviewBuildFacts = BridgeSmokeReviewBuildFacts()
+            let diagnostics = BridgePackagedProductDiagnosticRecorder()
             let controller = BridgePaneController(
                 paneId: paneId,
                 state: BridgePaneState(panelKind: .diffViewer, source: nil),
                 appRootURL: testBridgeAppRootURL(),
                 reviewSourceProvider: BridgeObservabilitySmokeReviewSourceProvider(),
+                telemetryRecorder: diagnostics,
                 initialPaneActivity: .foreground,
                 reviewBuildAdmissionFactSink: reviewBuildFacts.sink
             )
@@ -168,6 +178,8 @@ extension WebKitSerializedTests {
                 )
 
                 // Assert
+                let nativeReadback = await packagedProductNativeReadback(controller)
+                print("[packaged-product-diagnostic] explicit delivery boundary: \(nativeReadback)")
                 let diagnosticFacts = reviewBuildFacts.describe(
                     controller: controller,
                     commandId: commandId,
@@ -196,7 +208,7 @@ extension WebKitSerializedTests {
                     page,
                     reader: "return document.querySelector(selector) === null ? null : true;",
                     arguments: ["selector": bridgeReviewShellSelector],
-                    milestone: "Bridge Review shell; \(diagnosticFacts)",
+                    milestone: "Bridge Review shell; \(diagnosticFacts); native=\(nativeReadback)",
                     lastObservation: """
                         const shell = document.querySelector(selector);
                         const activeViewerModeHost = document.querySelector(
@@ -205,6 +217,9 @@ extension WebKitSerializedTests {
                         return JSON.stringify({
                           reviewShellPresent: shell !== null,
                           activeViewerMode: activeViewerModeHost?.getAttribute('data-bridge-viewer-mode-host') ?? null,
+                          productResources: performance.getEntriesByType('resource')
+                            .filter((entry) => entry.name.includes('agentstudio://rpc/'))
+                            .map((entry) => ({name: entry.name, responseStatus: entry.responseStatus ?? null})),
                           javascriptErrors: window.__bridgeErrorProbe ?? []
                         });
                         """
