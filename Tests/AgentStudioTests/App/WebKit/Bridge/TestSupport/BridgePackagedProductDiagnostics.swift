@@ -1,3 +1,4 @@
+import AgentStudioTestHarness
 import Foundation
 
 @testable import AgentStudioBridge
@@ -34,7 +35,9 @@ actor BridgePackagedProductDiagnosticRecorder: BridgePerformanceTraceRecording {
         let encoder = JSONEncoder()
         encoder.outputFormatting = .sortedKeys
         if let data = try? encoder.encode(sample), let description = String(data: data, encoding: .utf8) {
-            print("[packaged-product-diagnostic] receivedAt=\(receivedAtUnixNano) sample=\(description)")
+            TestEventLogWriter.append(
+                "packaged_telemetry\treceivedAt=\(receivedAtUnixNano) sample=\(description)\n",
+                path: HeldStepEventLog.environment.path)
         }
     }
 
@@ -44,9 +47,9 @@ actor BridgePackagedProductDiagnosticRecorder: BridgePerformanceTraceRecording {
         firstRejectedEventName: String?,
         receivedAtUnixNano: UInt64
     ) async {
-        print(
-            "[packaged-product-diagnostic] drop=\(reason) count=\(droppedCount) first=\(firstRejectedEventName ?? "none") receivedAt=\(receivedAtUnixNano)"
-        )
+        TestEventLogWriter.append(
+            "packaged_telemetry_drop\treason=\(reason) count=\(droppedCount) first=\(firstRejectedEventName ?? "none") receivedAt=\(receivedAtUnixNano)\n",
+            path: HeldStepEventLog.environment.path)
     }
 
     func drain() async throws {}

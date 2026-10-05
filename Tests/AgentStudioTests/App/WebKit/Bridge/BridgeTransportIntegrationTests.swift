@@ -73,7 +73,8 @@ extension WebKitSerializedTests {
                 initialPaneActivity: .foreground
             )
 
-            try await WebPageTestHarness.withManagedPage(controller.page) { page in
+            let liveCapture = try BridgePackagedLiveCapture(controller: controller)
+            try await liveCapture.withManagedPage { page in
                 // Act
                 controller.loadApp()
                 await WebPageEventWaits.waitForNavigationToFinish(page)
@@ -150,7 +151,8 @@ extension WebKitSerializedTests {
             )
             defer { _ = controller.beginTeardown() }  // fire-and-forget: defer cannot await; cleanup only
 
-            try await WebPageTestHarness.withManagedPage(controller.page) { page in
+            let liveCapture = try BridgePackagedLiveCapture(controller: controller)
+            try await liveCapture.withManagedPage { page in
                 controller.loadApp()
                 await WebPageEventWaits.waitForNavigationToFinish(page)
                 await WebPageEventWaits.waitForBridgeReady(controller)
