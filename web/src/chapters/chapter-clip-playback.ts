@@ -69,6 +69,18 @@ export function createChapterClipPlayback(
     automaticPauses.add(video);
     video.pause();
   };
+  const holdFailedPlayback = (video: HTMLVideoElement): void => {
+    automaticPlays.delete(video);
+    if (
+      lifecycle.signal.aborted ||
+      video !== videos[selectedIndex] ||
+      playbackIntent === "manual-pause"
+    )
+      return;
+    playbackIntent = "manual-pause";
+    pauseVideo(video);
+    publishTiming();
+  };
   const primeActiveVideo = (): void => deferredVideos[selectedIndex]?.prime();
   const playActiveVideo = (): void => {
     const video = videos[selectedIndex];
@@ -90,8 +102,7 @@ export function createChapterClipPlayback(
       return;
     automaticPlays.add(video);
     void video.play().catch((): void => {
-      automaticPlays.delete(video);
-      publishTiming();
+      holdFailedPlayback(video);
     });
   };
   const selectClip = (stepIndex: number): void => {
@@ -172,10 +183,7 @@ export function createChapterClipPlayback(
     video.addEventListener(
       "error",
       (): void => {
-        if (index !== selectedIndex) return;
-        playbackIntent = "manual-pause";
-        pauseVideo(video);
-        publishTiming();
+        holdFailedPlayback(video);
       },
       { signal: lifecycle.signal },
     );

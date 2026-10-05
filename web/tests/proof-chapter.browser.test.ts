@@ -1,7 +1,8 @@
-import { expect, inject, it } from "vitest";
+import { expect, inject, it, vi } from "vitest";
 import { commands } from "vitest/browser";
 
 import { createChapterClipPlayback } from "../src/chapters/chapter-clip-playback";
+import { readSceneStepTiming, sceneStepTimingEventName } from "../src/chapters/chapter-step-events";
 import type { StepLineJoinObservation } from "./chapter-step-join-browser-command";
 import type {
   ProofChapterObservation,
@@ -67,6 +68,77 @@ it("honors native manual play when autoplay is disabled and pauses on disposal",
     root.remove();
   }
 });
+
+it.each(["NotAllowedError", "NotSupportedError"])(
+  "holds a rejected %s automatic play without retries and permits explicit native play",
+  async (rejectionName) => {
+    const fixtureUrl = new URL("/__test/proof-chapter", inject("siteHeaderBrowserTestUrl"));
+    fixtureUrl.hostname = location.hostname;
+    const response = await fetch(fixtureUrl);
+    const parsed = new DOMParser().parseFromString(await response.text(), "text/html");
+    const originalRoot = parsed.querySelector('[data-chapter-steps-root="proof"]');
+    if (originalRoot === null) throw new Error("Proof fixture missing");
+    const root = document.importNode(originalRoot, true);
+    document.body.append(root);
+    const surface = root.querySelector<HTMLElement>('[data-rail-surface-target="proof"]');
+    const stage = root.querySelector<HTMLElement>("[data-chapter-clips]");
+    const video = root.querySelector<HTMLVideoElement>('video[data-chapter-clip-step="proof-run"]');
+    if (surface === null || stage === null || video === null)
+      throw new Error("Proof fixture surface missing");
+    const playback = createChapterClipPlayback(surface);
+    const playAttempt = vi
+      .spyOn(video, "play")
+      .mockRejectedValue(new DOMException("Fixture automatic play rejected", rejectionName));
+    try {
+      const loaded = new Promise<void>((resolve, reject): void => {
+        video.addEventListener("canplay", () => resolve(), { once: true });
+        video.addEventListener(
+          "error",
+          () => reject(new Error("Rejection fixture failed to load")),
+          { once: true },
+        );
+      });
+      video.dispatchEvent(new Event("pointerdown"));
+      await loaded;
+      const heldTime = video.currentTime;
+      const firstFailureTiming = new Promise<boolean>((resolve): void => {
+        stage.addEventListener(
+          sceneStepTimingEventName,
+          (event): void => {
+            const timing = readSceneStepTiming(event);
+            if (timing !== undefined) resolve(timing.manualPause);
+          },
+          { once: true },
+        );
+      });
+      playback.synchronize(1, true);
+      const manualHoldReported = await firstFailureTiming;
+      for (const progressSample of [1, 0.96, 1, 0.95]) playback.synchronize(progressSample, true);
+      await Promise.allSettled(
+        playAttempt.mock.results.flatMap((result): readonly Promise<void>[] =>
+          result.type === "return" ? [result.value] : [],
+        ),
+      );
+
+      expect(playAttempt).toHaveBeenCalledTimes(1);
+      expect(manualHoldReported).toBe(true);
+      expect(stage.dataset["activeClipStep"]).toBe("proof-run");
+      expect(stage.dataset["clipPlaybackState"]).toBe("paused");
+      expect(video.currentTime).toBe(heldTime);
+      expect(video.poster).not.toBe("");
+      expect(video.controls).toBe(true);
+      expect(video.error).toBeNull();
+      playAttempt.mockRestore();
+      await video.play();
+      expect(video.paused).toBe(false);
+      expect(stage.dataset["clipPlaybackState"]).toBe("playing");
+    } finally {
+      playAttempt.mockRestore();
+      playback.dispose();
+      root.remove();
+    }
+  },
+);
 
 it("advances all three real fixture clips on native media completion and holds the last frame", async () => {
   const observed = await commands.verifyProofClipMedia(
