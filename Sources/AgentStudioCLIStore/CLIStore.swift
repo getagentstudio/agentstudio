@@ -174,7 +174,8 @@ package final class CLIStore: Sendable {
                     try refreshBusyTimeout(
                         database, cap: CLIStorePolicy.firstOpenMigrationLockWaitCap,
                         remainingBudget: migrationLockWaitBudget(), stage: .migration)
-                    try migrateWriterSchema(database, channel: channel)
+                    try migrateWriterSchema(
+                        database, channel: channel, remainingCallBudget: migrationLockWaitBudget)
                 }
             }
             stage = .identity
@@ -389,12 +390,18 @@ package final class CLIStore: Sendable {
         return milliseconds / CLIStorePolicy.millisecondsPerSecond
     }
 
-    private static func migrateWriterSchema(_ database: Database, channel: CLIStoreChannel) throws {
+    private static func migrateWriterSchema(
+        _ database: Database, channel: CLIStoreChannel,
+        remainingCallBudget: @escaping @Sendable () -> Duration?
+    ) throws {
         try database.inTransaction(.immediate) {
+            try CLIStoreMigrator.checkMigrationBudget(remainingCallBudget())
             if try database.tableExists("cli_store_identity") {
                 _ = try readIdentity(database, expectedChannel: channel)
             }
-            try CLIStoreMigrator.migrateLocked(database, channel: channel)
+            try CLIStoreMigrator.migrateLocked(
+                database, channel: channel, remainingCallBudget: remainingCallBudget)
+            try CLIStoreMigrator.checkMigrationBudget(remainingCallBudget())
             return .commit
         }
     }
