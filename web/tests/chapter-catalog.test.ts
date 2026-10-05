@@ -12,6 +12,26 @@ import { resolveSceneModule } from "../src/motion-scenes/scene-registry";
 import { kitIconNames } from "../src/recreation-kit/kit-icon-names";
 
 describe("chapter catalog", () => {
+  it("splits review and come-back into two ordered steps without exceeding three per chapter", () => {
+    expect(chapterCatalog.map((chapter) => chapter.steps.length)).toEqual([3, 3, 2, 2, 2]);
+    expect(
+      chapterCatalog.find((chapter) => chapter.id === "review")?.steps.map((step) => step.id),
+    ).toEqual(["review-diff", "review-comment"]);
+    expect(
+      chapterCatalog.find((chapter) => chapter.id === "come-back")?.steps.map((step) => step.id),
+    ).toEqual(["quit-in-flight", "persistence"]);
+    expect(isChapterStepId("review-comment")).toBe(true);
+    expect(isChapterStepId("quit-in-flight")).toBe(true);
+  });
+
+  it("keeps come-back scene-only until real proof arrives", () => {
+    expect(chapterCatalog.find((chapter) => chapter.id === "come-back")?.stage).toEqual({
+      kind: "scene",
+      sceneId: "chapter-come-back",
+      proofKind: "none",
+    });
+  });
+
   it("tells the five chapters in narrative order with unique ids", () => {
     // Arrange / Act
     const catalogChapterIds = chapterCatalog.map((chapter) => chapter.id);
@@ -62,7 +82,7 @@ describe("chapter catalog", () => {
     ]);
   });
 
-  it("stages all five chapters as a scene followed by its real proof", () => {
+  it("stages every chapter as a scene, with proof when available", () => {
     // Arrange / Act
     const stageKinds = chapterCatalog.map((chapter) => chapter.stage.kind);
     const stagedSceneIds = chapterCatalog.flatMap((chapter) =>
@@ -82,7 +102,7 @@ describe("chapter catalog", () => {
     expect(comeBack?.stage).toMatchObject({
       kind: "scene",
       sceneId: "chapter-come-back",
-      proofKind: "video",
+      proofKind: "none",
     });
   });
 

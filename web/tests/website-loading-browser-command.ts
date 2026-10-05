@@ -144,14 +144,14 @@ export const verifyDeferredProofVideo = defineBrowserCommand(
           }
         });
       });
-      await page.route("**/*session-restore*.mp4*", async (route): Promise<void> => {
+      await page.route("**/*proof-video*.mp4*", async (route): Promise<void> => {
         videoRequests += 1;
         await videoAdmission;
         await route.continue();
       });
       await page.goto(pageUrl, { waitUntil: "domcontentloaded" });
-      // The intro's closing fact bounds the initial no-scroll observation.
-      await page.waitForSelector('[data-hero-intro-state="settled"]');
+      // Fixture initialization bounds the initial no-scroll observation.
+      await page.waitForSelector('[data-proof-fixture-ready="true"]');
       const initial = await page.evaluate(() => {
         const video = document.querySelector<HTMLVideoElement>("[data-scene-proof-video]");
         if (video === null) throw new Error("Proof video missing");
@@ -161,7 +161,7 @@ export const verifyDeferredProofVideo = defineBrowserCommand(
             video.querySelector("source")?.getAttribute("src") ?? video.getAttribute("src"),
           initialBytes: performance
             .getEntriesByType("resource")
-            .filter((entry) => /session-restore.*\.mp4/u.test(entry.name))
+            .filter((entry) => /proof-video.*\.mp4/u.test(entry.name))
             .reduce(
               (bytes, entry) =>
                 bytes + (entry instanceof PerformanceResourceTiming ? entry.transferSize : 0),
@@ -179,7 +179,7 @@ export const verifyDeferredProofVideo = defineBrowserCommand(
           playedAfterReady: false,
         };
 
-      const nearRequest = page.waitForRequest("**/*session-restore*.mp4*");
+      const nearRequest = page.waitForRequest("**/*proof-video*.mp4*");
       await page.evaluate((): void => {
         const stage = document.querySelector("#come-back .chapter-scene-stage");
         if (stage === null) throw new Error("Come-back stage missing");

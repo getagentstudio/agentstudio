@@ -22,6 +22,8 @@ export const chapterStepIds = [
   "quick-find",
   "pane-zoom",
   "review-diff",
+  "review-comment",
+  "quit-in-flight",
   "persistence",
 ] as const;
 
