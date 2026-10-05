@@ -50,13 +50,24 @@ extension BridgePaneProductMetadataCoordinator {
         subscriptionId: String,
         productAdmission: BridgeProductAdmissionContext
     ) async throws -> Bool {
-        guard let stream = activeStream,
-            stream.productAdmission.matches(productAdmission),
-            subscriptionKindById[subscriptionId] == .reviewMetadata,
-            let acceptedScope = await stream.session.acceptedViewScope(subscriptionId: subscriptionId),
-            acceptedScope.revision > 0,
-            let demand = try? BridgeProductViewScopeContract.reviewDemand(from: acceptedScope.scope),
-            let publication = await reviewPublicationReplay(productAdmission),
+        guard let stream = activeStream else { return await deferReviewViewSnapshot(.noActiveStream) }
+        guard stream.productAdmission.matches(productAdmission) else {
+            return await deferReviewViewSnapshot(.streamAdmissionMismatch)
+        }
+        guard subscriptionKindById[subscriptionId] == .reviewMetadata else {
+            return await deferReviewViewSnapshot(.notReviewMetadata)
+        }
+        guard let acceptedScope = await stream.session.acceptedViewScope(subscriptionId: subscriptionId) else {
+            return await deferReviewViewSnapshot(.noAcceptedScope)
+        }
+        guard acceptedScope.revision > 0 else { return await deferReviewViewSnapshot(.uninitializedScope) }
+        guard let demand = try? BridgeProductViewScopeContract.reviewDemand(from: acceptedScope.scope) else {
+            return await deferReviewViewSnapshot(.invalidScope)
+        }
+        guard let publication = await reviewPublicationReplay(productAdmission) else {
+            return await deferReviewViewSnapshot(.noPublication)
+        }
+        guard
             let capture = try await reviewMetadataSource.applyViewDemand(
                 .init(
                     subscriptionId: subscriptionId,
@@ -66,18 +77,27 @@ extension BridgePaneProductMetadataCoordinator {
                     demand: demand,
                     expectedPublicationId: publication.publicationId,
                     productAdmission: productAdmission
-                )),
-            capture.handle == acceptedScope.handle,
+                ))
+        else { return await deferReviewViewSnapshot(.noCapture) }
+        guard capture.handle == acceptedScope.handle,
             capture.scopeRevision == acceptedScope.revision,
-            capture.publicationId == publication.publicationId,
-            await stream.session.acceptedViewScope(subscriptionId: subscriptionId)?.revision == acceptedScope.revision,
-            activeStream?.lease == stream.lease
-        else { return false }
-        return try await stream.session.sealReviewSnapshot(
+            capture.publicationId == publication.publicationId
+        else { return await deferReviewViewSnapshot(.captureMismatch) }
+        guard await stream.session.acceptedViewScope(subscriptionId: subscriptionId)?.revision == acceptedScope.revision
+        else { return await deferReviewViewSnapshot(.scopeSuperseded) }
+        guard activeStream?.lease == stream.lease else { return await deferReviewViewSnapshot(.streamReplaced) }
+        let sealed = try await stream.session.sealReviewSnapshot(
             subscriptionId: subscriptionId,
             snapshot: capture.snapshot,
             productAdmission: productAdmission
         )
+        guard sealed else { return await deferReviewViewSnapshot(.sealRefused) }
+        return true
+    }
+
+    private func deferReviewViewSnapshot(_ reason: BridgeReviewViewSnapshotDeferralReason) async -> Bool {
+        await lifecycleTraceRecorder?.record(.viewCaptureDeferred(reason))
+        return false
     }
 
     func acceptViewScope(

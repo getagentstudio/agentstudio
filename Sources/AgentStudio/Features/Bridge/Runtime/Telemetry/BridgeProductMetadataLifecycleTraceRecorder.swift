@@ -215,6 +215,22 @@ enum BridgeProductReviewMetadataPublicationTraceEvent: Equatable, Sendable {
         retainedSubscriptions: Int,
         traceContext: BridgeTraceContext?
     )
+    case viewCaptureDeferred(BridgeReviewViewSnapshotDeferralReason)
+}
+
+enum BridgeReviewViewSnapshotDeferralReason: String, Equatable, Sendable {
+    case noActiveStream = "no_active_stream"
+    case streamAdmissionMismatch = "stream_admission_mismatch"
+    case notReviewMetadata = "not_review_metadata"
+    case noAcceptedScope = "no_accepted_scope"
+    case uninitializedScope = "scope_revision_not_positive"
+    case invalidScope = "invalid_scope"
+    case noPublication = "no_publication"
+    case noCapture = "no_capture"
+    case captureMismatch = "capture_mismatch"
+    case scopeSuperseded = "scope_superseded"
+    case streamReplaced = "stream_replaced"
+    case sealRefused = "seal_refused"
 }
 
 enum BridgeProductMetadataProducerFailureReason: Equatable, Sendable {
@@ -488,6 +504,11 @@ struct BridgeProductMetadataLifecycleTraceRecorder: BridgeProductMetadataLifecyc
             traceContext = eventTraceContext
             numericAttributes["agentstudio.bridge.review.publication.retained"] =
                 Double(retainedSubscriptions)
+        case .viewCaptureDeferred(let reason):
+            phase = "review_metadata_view_capture_deferred"
+            result = "skipped"
+            resultReason = reason.rawValue
+            traceContext = nil
         }
 
         await recorder.record(
