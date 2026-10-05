@@ -1,20 +1,18 @@
 # Agent Studio worktree CLI: agent manual
 
-This guide covers the production helper's current commands and the lifecycle
-additions that arrive after app PR 1 merges.
+This guide covers the worktree commands in Agent Studio 0.0.106 and later.
 
 ## Availability
 
-Production Agent Studio **0.0.105** ships `new`, `fork`, and the earlier
-`list` output, and its `fork` works on real Agent Studio checkouts
-(agentstudio-git deac01f). Removal, pruning, list state and blockers,
-the warm `new` surface below, and `remove --force` arrive in the
-first release built after app PR 1 merges. Until then, archive `tmp/` and push
-before removing a worktree with `wt remove <branch>`.
+Production Agent Studio **0.0.106** (released 2026-10-05) ships the full
+lifecycle: a warm `new` (copy-on-write by default), `list` with state,
+`remove`, and `prune`. `fork` is gone; use `new --from <worktree>`. Upgrade with
+`brew upgrade --cask agent-studio`. On 0.0.105, `fork` fails on checkouts whose
+build caches hold broken nested Git checkouts (see Rules).
 
 ## Why use it
 
-- After app PR 1, `new` makes an APFS copy-on-write clone of the main worktree
+- `new` makes an APFS copy-on-write clone of the main worktree
   by default. `new --from <worktree>` deliberately carries that worktree's
   uncommitted work. The first build in a copy may be partly or fully cold. Whether an incremental build
   reuses the copied output has not been measured. SwiftPM `.build` and cargo
@@ -35,12 +33,12 @@ to the GUI app binary and starts a second app. Always use the full, quoted
 Helpers path:
 
 ```bash
-ASW="/Applications/AgentStudio.app/Contents/Helpers/agentstudio"   # production 0.0.105+
+ASW="/Applications/AgentStudio.app/Contents/Helpers/agentstudio"   # production 0.0.106+
 ```
 
 The Beta helper at `/Applications/AgentStudio Beta.app/Contents/Helpers/agentstudio`
-has the same verbs, but its fork needs a Beta built on agentstudio-git deac01f or
-later.
+has the same verbs once your Beta includes 0.0.106's changes. Prefer the
+production helper.
 
 | Command | Behavior | Options |
 |---|---|---|
@@ -49,8 +47,7 @@ later.
 | `"$ASW" worktree remove <target...>` | Removes worktrees or branch-only targets. Processes each target and reports its result. | `--repo <path>`, `--no-fetch`, `-f` / `--force`, `-D`, `--no-delete-branch`, `--archive-to-main`, `--archive-to <path>`, `--discard-tmp`, `--remove-stale-lock`, `--dry-run`, `--json` |
 | `"$ASW" worktree prune` | Previews eligible linked worktrees. Skipped rows include the reason and available remove commands. | `--repo <path>`, `--no-fetch`, `--archive-to-main`, `--archive-to <path>`, `--apply`, `--json` |
 
-The table describes commands after app PR 1. `fork` is removed then; it
-returns exit 64 with a stderr line naming `new --from`, including with `--json`.
+`fork` is removed: it returns exit 64 with a stderr line naming `new --from`, including with `--json`.
 
 `new --tracked-only --from-branch <local-branch>` creates the branch at the
 named local branch tip. `--from-branch` requires `--tracked-only`.
@@ -99,11 +96,6 @@ Exit codes:
   by `--from-branch`. Submodules stay empty and ignored build output is absent.
   In agent-studio, run `mise run setup` before building or reading vendored
   headers. Expect a cold first build.
-- Production 0.0.105 still uses `fork --from <main checkout>` for a warm copy
-  and `new` for a tracked-files checkout. That production fork copies ignored
-  files too, including build output and `tmp/`; it takes about 20 seconds for
-  the agent-studio main checkout. These production verbs remain until the
-  release after app PR 1.
 - To recreate a worktree on an existing branch, use
   `git worktree add <repo>.<branch> <branch>` and then `mise run setup`; `new`
   creates a new branch.
@@ -161,9 +153,12 @@ rules apply to the CLI `new` copy-on-write path, including `new --from`.
 
 - Never put development worktrees in `~/dev/worktrees`,
   `~/dev/agent-studio-worktrees`, or `/private/tmp`.
-- Until the first release built after app PR 1 merges is available, archive
-  `tmp/`, push, then remove the worktree with `wt remove <branch>`.
-- After that release is available, remove a worktree with
-  `"$ASW" worktree remove --repo <repo> <branch-or-path>`.
+- Remove a worktree with `"$ASW" worktree remove --repo <repo> <branch-or-path>`
+  (add `--archive-to-main` to keep its `tmp/` evidence).
+- If a warm `new` fails with `libgit2Failure`, a nested Git checkout inside the
+  source's copied build output is broken. After the 2026-10-04 move, SwiftPM
+  checkouts under `.build*/` kept `objects/info/alternates` paths into
+  `~/Documents`. Delete that `.build*` folder and rebuild, or rewrite the stale
+  paths, then retry.
 - Problems or gaps go to the Worktrees Lead: claude-local
   `9304749a-6517-41da-952d-243201c32337`.
