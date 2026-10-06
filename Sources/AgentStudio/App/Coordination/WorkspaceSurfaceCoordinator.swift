@@ -693,6 +693,16 @@ final class WorkspaceSurfaceCoordinator {
                 "Ghostty structural runtime event dropped by coordinator for pane \(sourcePaneUUID.uuidString, privacy: .public) event=\(String(describing: event), privacy: .public)"
             )
             return
+        case .commandFinished(let exitCode, _):
+            do {
+                _ = try await sessionsIngestion?.submitCommandFinished(paneId: sourcePaneUUID, reportedAt: reportedAt)
+            } catch {
+                Self.logger.warning("Sessions command-finished admission failed")
+            }
+            Self.logger.debug(
+                "Terminal commandFinished event received for pane \(sourcePaneUUID.uuidString, privacy: .public) exitCode=\(exitCode, privacy: .public)"
+            )
+            return
         default:
             break
         }
@@ -706,8 +716,8 @@ final class WorkspaceSurfaceCoordinator {
 
         switch event {
         case .newTab, .newSplit, .gotoSplit, .resizeSplit, .equalizeSplits, .toggleSplitZoom,
-            .closeTab, .gotoTab, .moveTab:
-            // Structural events return through the explicit drop above.
+            .closeTab, .gotoTab, .moveTab, .commandFinished:
+            // Structural events and command exits were handled above.
             return
         case .titleChanged(let title):
             store.paneAtom.updatePaneTitle(sourcePaneUUID, title: title)
@@ -718,15 +728,6 @@ final class WorkspaceSurfaceCoordinator {
             // normalize here so both runtime and surface facts converge in the
             // shared pane identity update path below.
             updatePaneCWDAndResolvedContext(paneId: sourcePaneUUID, cwd: CWDNormalizer.normalize(cwdPath))
-        case .commandFinished(let exitCode, _):
-            do {
-                _ = try await sessionsIngestion?.submitCommandFinished(paneId: sourcePaneUUID, reportedAt: reportedAt)
-            } catch {
-                Self.logger.warning("Sessions command-finished admission failed")
-            }
-            Self.logger.debug(
-                "Terminal commandFinished event received for pane \(sourcePaneUUID.uuidString, privacy: .public) exitCode=\(exitCode, privacy: .public)"
-            )
         case .bellRang:
             AppEventBus.post(.worktreeBellRang(paneId: sourcePaneUUID))
             Self.logger.debug(
