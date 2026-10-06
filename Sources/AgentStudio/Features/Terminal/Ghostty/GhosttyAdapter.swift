@@ -26,6 +26,7 @@ final class GhosttyAdapter: Sendable {
         .gotoWindow,
         .presentTerminal,
         .resetWindowSize,
+        .resizeWindow,
         .inspector,
         .showGtkInspector,
         .renderInspector,

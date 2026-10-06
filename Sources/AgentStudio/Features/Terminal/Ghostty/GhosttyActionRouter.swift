@@ -101,6 +101,7 @@ extension Ghostty {
             .gotoWindow,
             .presentTerminal,
             .resetWindowSize,
+            .resizeWindow,
             .inspector,
             .showGtkInspector,
             .renderInspector,
