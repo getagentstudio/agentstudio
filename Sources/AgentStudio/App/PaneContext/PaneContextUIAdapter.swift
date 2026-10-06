@@ -15,6 +15,9 @@ struct PaneContextUIAdapter: PaneContextDetailReading, PaneContextPersonActing {
     func dismiss(messageId: AgentMessageId, paneId: PaneId) async -> DismissResult {
         await service.dismiss(messageId: messageId, paneId: paneId)
     }
+    func dismissAllNotices(paneId: PaneId, includingDrawers: Bool) async -> DismissAllNoticesResult {
+        await service.dismissAllNotices(paneId: paneId, includingDrawers: includingDrawers)
+    }
     func markRead(messageId: AgentMessageId, paneId: PaneId) async -> MarkReadResult {
         await service.markRead(messageId: messageId, paneId: paneId)
     }

@@ -60,6 +60,24 @@ struct PaneContextUIAdapterTests {
         }
     }
 
+    @Test("Dismiss-all delegates through the person seam and returns its typed count")
+    func dismissAllSeamUsesRealService() async throws {
+        try await withPaneContextSessionsBridge { fixture in
+            let notice = PaneMessageSendRequest(
+                paneId: fixture.paneId, messageId: .generateUUIDv7(), sender: .pane(fixture.paneId),
+                sourceOccurredAt: nil, importance: .attention, body: "Notice", why: nil, actions: [], shape: .notice)
+            let created = await fixture.service.send(notice)
+            #expect(created == .created(notice.messageId))
+            let person: any PaneContextPersonActing = PaneContextUIAdapter(service: fixture.service)
+            let dismissed = await person.dismissAllNotices(paneId: fixture.paneId, includingDrawers: false)
+            #expect(dismissed == .dismissed(count: 1))
+            let detail = try await fixture.detail()
+            #expect(detail.messages.first { $0.id == notice.messageId }?.shape == .notice(.dismissed))
+            let repeated = await person.dismissAllNotices(paneId: fixture.paneId, includingDrawers: true)
+            #expect(repeated == .dismissed(count: 0))
+        }
+    }
+
     @Test("Mark-read reaches the notice record and preserves idempotent results")
     func readSeamCommitsNoticeState() async throws {
         try await withPaneContextSessionsBridge { fixture in

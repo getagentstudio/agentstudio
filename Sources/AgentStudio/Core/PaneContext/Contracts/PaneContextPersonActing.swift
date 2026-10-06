@@ -38,6 +38,7 @@ package struct MessageActionRequest: Sendable, Equatable {
 package protocol PaneContextPersonActing: Sendable {
     func answer(_ request: AnswerAskRequest) async -> AnswerAskResult
     func dismiss(messageId: AgentMessageId, paneId: PaneId) async -> DismissResult
+    func dismissAllNotices(paneId: PaneId, includingDrawers: Bool) async -> DismissAllNoticesResult
     func markRead(messageId: AgentMessageId, paneId: PaneId) async -> MarkReadResult
     func runAction(_ request: MessageActionRequest) async -> MessageActionResult
 }
@@ -70,6 +71,10 @@ package enum DismissResult: Sendable, Equatable {
     case done
     case alreadySettled(AskOrNoticeTerminal)
     case notFound
+    case unavailable(StorageFailureSummary)
+}
+package enum DismissAllNoticesResult: Sendable, Equatable {
+    case dismissed(count: Int)
     case unavailable(StorageFailureSummary)
 }
 package enum AskOrNoticeTerminal: Sendable, Equatable {
