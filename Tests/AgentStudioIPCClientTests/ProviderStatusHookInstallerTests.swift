@@ -7,7 +7,7 @@ import Testing
 
 @Suite("Provider status hook installer")
 struct ProviderStatusHookInstallerTests {
-    @Test("installation wires captured status events and selects waiting permission policy")
+    @Test("installation wires every captured Claude status event to report-only hook commands")
     func installedEventsDecodeTheirRecordedPayloads() throws {
         let root = FileManager.default.temporaryDirectory.appending(
             path: "agentstudio-status-install-\(UUIDv7.generate())")
@@ -44,30 +44,18 @@ struct ProviderStatusHookInstallerTests {
                 Issue.record("Captured status event \(event) is not installed")
                 continue
             }
-            let permission = event == "PermissionRequest"
-            let suffix = " \(event) 2.1.286" + (permission ? " --permission-policy wait" : "")
-            #expect(command.hasSuffix(suffix))
-            #expect(
-                entry["timeout"]
-                    == .number(
-                        permission
-                            ? CLIPolicy.permissionHookTimeoutSeconds : ClaudeCodePackageInstallation.hookTimeoutSeconds)
-            )
+            #expect(command.hasSuffix(" \(event) 2.1.286"))
             #expect(!command.contains("ask --wait"))
-            if permission {
-                #expect(entry["async"] == nil)
-            } else {
-                #expect(entry["async"] == .bool(true))
-            }
+            #expect(entry["async"] == .bool(true))
         }
         #expect(hooks["Notification"] == nil)
-        // The shell preserves the installer-selected permission policy for the CLI.
+        // PR B deliberately keeps permissions as session.event reports.
         let script = try String(
             contentsOf: packageRoot.appending(path: "providers/claude/hooks/agentstudio-claude-hook.sh"),
             encoding: .utf8)
         #expect(script.contains("hook claude"))
         #expect(!script.contains("pane.message.ask"))
-        #expect(script.contains("\"$@\""))
+        #expect(!script.contains("--wait"))
     }
 
     @Test("Codex retains its installed vocabulary; no unreported failure or question capability is invented")

@@ -89,11 +89,6 @@ package struct AgentStudioIPCClientCommandLineRunner: Sendable {
         let wallStartedAt = props.now()
         var endpointCameFromDebugEscrow = false
         do {
-            if let code = ProviderPermissionHookInvocation.handle(
-                props: props, sourceOccurredAt: wallStartedAt, startedAt: startedAt)
-            {
-                return code
-            }
             let readInput = props.standardInput
             if let code = providerCommandExit(readInput: readInput) {
                 return code

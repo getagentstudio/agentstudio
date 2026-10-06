@@ -757,8 +757,6 @@ fast|PaneContextPopoverActionViewTests|process-global
 fast|PaneContextPopoverControllerNativeTests|process-global
 fast|RepoExplorerPaneContextAnchorTests|process-global
 fast|PaneContextPopoverHostNativeTests|process-global
-fast|ProviderPermissionHookIntegrationTests|process-global
-fast|AgentStudioIPCCursorHookProjectionTests|concurrent
 large|AgentStudioAppIPCConnectionAdmissionTests|concurrent
 large|AgentStudioAppIPCConnectionWaitingTests|concurrent
 large|AgentStudioAppIPCConnectionOutputTests|concurrent
@@ -775,7 +773,6 @@ large|AgentStudioIPCPhaseASmokeScriptTests|concurrent
 large|CLILatencyBenchmarkScriptTests|concurrent
 large|CLIHookSilenceScriptTests|process-global
 large|CLIAgentHelpScriptTests|concurrent
-large|ProviderPermissionHookScriptTests|concurrent
 large|CLIPaneContextOrderingTests|process-global
 large|CLIPaneContextAvailabilityTests|process-global
 large|CLIPaneContextAnswersTests|process-global

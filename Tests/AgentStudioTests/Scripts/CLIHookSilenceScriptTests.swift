@@ -164,7 +164,7 @@ struct CLIHookSilenceScriptTests {
             #expect(!storeOutcome.directoryExists)
             #expect(storeOutcome.creatorFiles.isEmpty)
         }
-        if invocation.condition == .outsidePane || !invocation.isProjected {
+        if invocation.condition == .outsidePane {
             #expect(fixture.requests.isEmpty)
         } else if invocation.isProjected, invocation.condition != .down {
             #expect(fixture.requests.first?.method == "auth.login")
@@ -220,9 +220,6 @@ struct HookSilenceInvocation: Sendable {
     }
 
     var isProjected: Bool {
-        // Unflagged permission commands from stale installations no longer report approvals.
-        // The wait policy and decision stdout are proven in ProviderPermissionHookIntegrationTests.
-        if event == "PermissionRequest" { return false }
         if provider == "claude" { return true }
         guard let name = CodexHookEventName(rawValue: event) else { return false }
         return CodexHookProjection.isProjected(name)
