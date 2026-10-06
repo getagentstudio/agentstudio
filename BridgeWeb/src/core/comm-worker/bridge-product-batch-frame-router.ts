@@ -1,3 +1,8 @@
+import {
+	bridgeProductBatchDiagnostic,
+	recordBridgeProductBatchDiagnostic,
+	type BridgeProductBatchDiagnostic,
+} from './bridge-product-batch-diagnostics.js';
 import type { BridgeProductBatchFrame } from './bridge-product-batch-wire-contracts.js';
 import type { BridgeProductDeadlineClock } from './bridge-product-deadline-clock.js';
 import {
@@ -7,6 +12,7 @@ import {
 import type { BridgeProductViewAcknowledgementRequest } from './bridge-product-view-control-wire-contracts.js';
 
 export interface BridgeProductBatchFrameSinks {
+	readonly diagnostic?: (sample: BridgeProductBatchDiagnostic) => void;
 	readonly subscriptionRetired?: (subscriptionId: string) => void;
 	readonly verify?: (installation: BridgeProductViewInstallation) => void;
 	readonly install: (installation: BridgeProductViewInstallation) => Promise<void> | void;
@@ -145,12 +151,40 @@ export class BridgeProductBatchFrameRouter {
 			state.receiver.admitDomain(frame.domain, frame.incarnation);
 		}
 		if (state === undefined) {
+			recordBridgeProductBatchDiagnostic(
+				sinks.diagnostic,
+				bridgeProductBatchDiagnostic({
+					frame,
+					step: 'receiverRejection',
+					rejection: 'missingReceiver',
+				}),
+			);
 			sinks.resnapshot(frame);
 			return;
 		}
 		const alreadyStaged =
 			frame.kind === 'subscription.batchPart' && state.receiver.hasStagedPart(frame);
-		const acceptance = state.receiver.accept(frame, sinks.verify);
+		const verify = sinks.verify;
+		const acceptance = state.receiver.accept(
+			frame,
+			verify === undefined
+				? undefined
+				: (installation): void => {
+						try {
+							verify(installation);
+						} catch (error) {
+							recordBridgeProductBatchDiagnostic(
+								sinks.diagnostic,
+								bridgeProductBatchDiagnostic({
+									frame: installation.begin,
+									step: 'payloadVerification',
+									error,
+								}),
+							);
+							throw error;
+						}
+					},
+		);
 		if (frame.kind === 'subscription.batchBegin' && acceptance.kind === 'staged') {
 			state.lastBeginByDomain.set(frame.domain, frame);
 		}
@@ -181,7 +215,17 @@ export class BridgeProductBatchFrameRouter {
 			)
 				this.#clearDomainProgress(frame.subscriptionId, frame.domain);
 		}
-		if (acceptance.kind === 'resnapshot') sinks.resnapshot(frame);
+		if (acceptance.kind === 'resnapshot') {
+			recordBridgeProductBatchDiagnostic(
+				sinks.diagnostic,
+				bridgeProductBatchDiagnostic({
+					frame,
+					step: 'receiverRejection',
+					rejection: acceptance.rejection,
+				}),
+			);
+			sinks.resnapshot(frame);
+		}
 		if (
 			frame.kind === 'subscription.batchPart' &&
 			acceptance.kind === 'staged' &&
@@ -192,11 +236,27 @@ export class BridgeProductBatchFrameRouter {
 			try {
 				const installed = sinks.install(installation);
 				if (installed !== undefined) {
-					void installed.catch((): void => {
+					void installed.catch((error: unknown): void => {
+						recordBridgeProductBatchDiagnostic(
+							sinks.diagnostic,
+							bridgeProductBatchDiagnostic({
+								frame: installation.begin,
+								step: 'applicationInstall',
+								error,
+							}),
+						);
 						sinks.resnapshot(installation.begin);
 					});
 				}
-			} catch {
+			} catch (error) {
+				recordBridgeProductBatchDiagnostic(
+					sinks.diagnostic,
+					bridgeProductBatchDiagnostic({
+						frame: installation.begin,
+						step: 'applicationInstall',
+						error,
+					}),
+				);
 				// A typed application rejected this domain's certified bank. Keep
 				// siblings flowing and ask native for this domain again.
 				sinks.resnapshot(installation.begin);

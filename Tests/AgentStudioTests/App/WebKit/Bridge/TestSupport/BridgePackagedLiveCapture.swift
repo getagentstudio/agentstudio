@@ -140,7 +140,11 @@ final class BridgePackagedLiveCapture {
               const port = channel.port2;
               const listener = event => {
                 const incoming = event.data;
-                if (incoming?.kind === 'viewRecoveryStatus') {
+                if (incoming?.kind === 'health' && typeof incoming.message === 'string' &&
+                    incoming.message.startsWith('productBatchDiagnostic:')) {
+                  forward({kind: 'productBatchDiagnostic', diagnostic:
+                    JSON.parse(incoming.message.slice('productBatchDiagnostic:'.length))});
+                } else if (incoming?.kind === 'viewRecoveryStatus') {
                   forward({kind: 'productViewRecoveryStatus', message: incoming});
                 } else if (incoming?.kind === 'reviewCandidateStarted' ||
                            incoming?.kind === 'reviewCandidateReady' ||

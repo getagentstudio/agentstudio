@@ -1,3 +1,4 @@
+import type { BridgeProductBatchRejectionReason } from './bridge-product-batch-diagnostics.js';
 import type { BridgeProductBatchFrame } from './bridge-product-batch-wire-contracts.js';
 
 type BatchBegin = Extract<BridgeProductBatchFrame, { readonly kind: 'subscription.batchBegin' }>;
@@ -57,7 +58,11 @@ export type BridgeProductBatchAcceptance =
 			readonly replacementSnapshotStarted?: boolean;
 	  }
 	| { readonly kind: 'installed'; readonly domain: string; readonly targetRevision: number }
-	| { readonly kind: 'resnapshot'; readonly domain: string };
+	| {
+			readonly kind: 'resnapshot';
+			readonly domain: string;
+			readonly rejection: BridgeProductBatchRejectionReason;
+	  };
 
 /** W4's side bank. The live transport calls this owner only after the N3 cutover. */
 export class BridgeProductViewBatchReceiver {
@@ -234,7 +239,7 @@ export class BridgeProductViewBatchReceiver {
 		if (frame.streamSequence <= domainState.lastInstalledCompleteStreamSequence)
 			return { kind: 'ignored' };
 		if (!domainState.hasCertifiedSnapshot && frame.mode === 'change')
-			return { kind: 'resnapshot', domain: frame.domain };
+			return { kind: 'resnapshot', domain: frame.domain, rejection: 'changeBeforeSnapshot' };
 		if (frame.targetRevision < domainState.cursor) return { kind: 'ignored' };
 		const initialCumulativeCoverage =
 			!domainState.hasCertifiedSnapshot && frame.mode === 'coverage' && frame.baseRevision === 0;
@@ -246,7 +251,7 @@ export class BridgeProductViewBatchReceiver {
 			return { kind: 'ignored' };
 		if (frame.mode !== 'snapshot' && frame.baseRevision > domainState.cursor) {
 			domainState.stage = null;
-			return { kind: 'resnapshot', domain: frame.domain };
+			return { kind: 'resnapshot', domain: frame.domain, rejection: 'revisionGap' };
 		}
 		if (!sameViewFilter(frame.scope, this.#scope)) {
 			domainState.stage = null;
@@ -257,11 +262,11 @@ export class BridgeProductViewBatchReceiver {
 		if (priorStage?.begin.batchId === frame.batchId) {
 			if (sameJSON(priorStage.begin, frame)) return { kind: 'staged' };
 			domainState.stage = null;
-			return { kind: 'resnapshot', domain: frame.domain };
+			return { kind: 'resnapshot', domain: frame.domain, rejection: 'conflictingBegin' };
 		}
 		if (priorStage !== null && frame.mode !== 'snapshot') {
 			domainState.stage = null;
-			return { kind: 'resnapshot', domain: frame.domain };
+			return { kind: 'resnapshot', domain: frame.domain, rejection: 'overlappingChange' };
 		}
 		domainState.stage = { begin: frame, complete: null, partsByIndex: new Map() };
 		domainState.expiredBatchId = null;
@@ -287,19 +292,19 @@ export class BridgeProductViewBatchReceiver {
 		)
 			return { kind: 'ignored' };
 		if (stage === null || stage.begin.batchId !== frame.batchId)
-			return { kind: 'resnapshot', domain: frame.domain };
+			return { kind: 'resnapshot', domain: frame.domain, rejection: 'missingStage' };
 		if (frame.part.operation !== 'evict' && frame.part.revision > stage.begin.targetRevision) {
 			domainState.stage = null;
-			return { kind: 'resnapshot', domain: frame.domain };
+			return { kind: 'resnapshot', domain: frame.domain, rejection: 'partRevisionAhead' };
 		}
 		if (frame.partIndex >= stage.begin.partCount) {
 			domainState.stage = null;
-			return { kind: 'resnapshot', domain: frame.domain };
+			return { kind: 'resnapshot', domain: frame.domain, rejection: 'partIndexOutsideBatch' };
 		}
 		const existing = stage.partsByIndex.get(frame.partIndex);
 		if (existing !== undefined && !sameJSON(existing.part, frame.part)) {
 			domainState.stage = null;
-			return { kind: 'resnapshot', domain: frame.domain };
+			return { kind: 'resnapshot', domain: frame.domain, rejection: 'conflictingPart' };
 		}
 		stage.partsByIndex.set(frame.partIndex, frame);
 		if (domainState.receiptBaselinePending) {
@@ -309,7 +314,7 @@ export class BridgeProductViewBatchReceiver {
 			const baseline = frame.deliverySequence - frame.partIndex - 1;
 			if (baseline < domainState.receivedThroughDeliverySequence) {
 				domainState.stage = null;
-				return { kind: 'resnapshot', domain: frame.domain };
+				return { kind: 'resnapshot', domain: frame.domain, rejection: 'receiptBaselineRegressed' };
 			}
 			domainState.receivedPartSequences.clear();
 			domainState.receivedThroughDeliverySequence = baseline;
@@ -349,14 +354,14 @@ export class BridgeProductViewBatchReceiver {
 		)
 			return { kind: 'ignored' };
 		if (stage === null || stage.begin.batchId !== frame.batchId)
-			return { kind: 'resnapshot', domain: frame.domain };
+			return { kind: 'resnapshot', domain: frame.domain, rejection: 'missingStage' };
 		if (stage.begin.scope.kind !== frame.coveredScope.kind) {
 			domainState.stage = null;
-			return { kind: 'resnapshot', domain: frame.domain };
+			return { kind: 'resnapshot', domain: frame.domain, rejection: 'coveredScopeMismatch' };
 		}
 		if (stage.partsByIndex.size !== stage.begin.partCount) {
 			domainState.stage = null;
-			return { kind: 'resnapshot', domain: frame.domain };
+			return { kind: 'resnapshot', domain: frame.domain, rejection: 'incompleteBatch' };
 		}
 		stage.complete = frame;
 		if (
@@ -397,7 +402,7 @@ export class BridgeProductViewBatchReceiver {
 		const includedKeys = new Set<string>();
 		for (let index = 0; index < stage.begin.partCount; index += 1) {
 			const part = stage.partsByIndex.get(index)?.part;
-			if (part === undefined) return { kind: 'resnapshot', domain };
+			if (part === undefined) return { kind: 'resnapshot', domain, rejection: 'missingPart' };
 			includedKeys.add(part.key);
 			if (part.operation === 'evict') {
 				nextRecords.delete(part.key);
@@ -454,7 +459,7 @@ export class BridgeProductViewBatchReceiver {
 			verifyInstallation?.(installation);
 		} catch {
 			state.stage = null;
-			return { kind: 'resnapshot', domain };
+			return { kind: 'resnapshot', domain, rejection: 'payloadVerificationFailed' };
 		}
 		if (stage.begin.mode === 'snapshot') {
 			const coveredScope = stage.complete?.coveredScope ?? stage.begin.scope;

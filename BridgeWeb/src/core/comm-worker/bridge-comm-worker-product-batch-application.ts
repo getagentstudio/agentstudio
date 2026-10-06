@@ -15,6 +15,11 @@ import type {
 	BridgeCommWorkerReviewSuccessorReExposureSettlement,
 } from './bridge-comm-worker-review-publication-types.js';
 import { reviewCandidateStartDispositionFromRefreshImpact } from './bridge-comm-worker-review-refresh-impact.js';
+import {
+	bridgeProductBatchDiagnostic,
+	bridgeProductBatchDiagnosticHealthMessage,
+	recordBridgeProductBatchDiagnostic,
+} from './bridge-product-batch-diagnostics.js';
 import type { BridgeProductBatchFrameSinks } from './bridge-product-batch-frame-router.js';
 import type { BridgeProductBatchFrame } from './bridge-product-batch-wire-contracts.js';
 import { installBridgeProductCommentBatch } from './bridge-product-comment-batch-installer.js';
@@ -165,6 +170,8 @@ export class BridgeCommWorkerProductBatchApplication {
 
 	sinks(): BridgeProductBatchFrameSinks {
 		return {
+			diagnostic: (sample): void =>
+				this.#props.publishMessage(bridgeProductBatchDiagnosticHealthMessage(sample)),
 			verify: (installation): void => this.#verify(installation),
 			install: (installation): Promise<void> | void => this.#install(installation),
 			receipt: (): void => {},
@@ -250,6 +257,15 @@ export class BridgeCommWorkerProductBatchApplication {
 									this.#publishCandidateReady(readyFacts, workerDerivationEpoch);
 								}
 							} catch (error) {
+								recordBridgeProductBatchDiagnostic(
+									(sample): void =>
+										this.#props.publishMessage(bridgeProductBatchDiagnosticHealthMessage(sample)),
+									bridgeProductBatchDiagnostic({
+										frame: begin,
+										step: 'reviewPresentationApply',
+										error,
+									}),
+								);
 								if (readyFacts !== null)
 									this.#publishCandidateFailed(readyFacts.identity, workerDerivationEpoch);
 								throw error;

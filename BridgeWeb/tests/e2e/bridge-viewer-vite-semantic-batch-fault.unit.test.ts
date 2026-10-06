@@ -135,7 +135,11 @@ describe('semantic metadata batch fault transform', () => {
 				return [];
 			return [receiver.accept(frame)];
 		});
-		expect(acceptances.at(-2)).toEqual({ kind: 'resnapshot', domain: 'default' });
+		expect(acceptances.at(-2)).toEqual({
+			kind: 'resnapshot',
+			domain: 'default',
+			rejection: 'incompleteBatch',
+		});
 		expect(acceptances.at(-1)?.kind).not.toBe('installed');
 		expect(receiver.takeInstallations()).toEqual([]);
 	});
