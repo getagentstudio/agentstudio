@@ -1,4 +1,3 @@
-import AgentStudioCore
 import AgentStudioInfrastructure
 import AgentStudioProgrammaticControl
 import AgentStudioTestHarness
@@ -8,15 +7,20 @@ import Synchronization
 import Testing
 
 @testable import AgentStudio
+@testable import AgentStudioCore
 @testable import AgentStudioSessions
 
 extension AgentStudioIPCSessionsVerticalTests {
-    @Test("the real commandFinished bus fact forwards into Sessions FIFO and late SessionEnd stays recorded-only")
-    func terminalCommandFinishedEndsMainSession() async throws {
+    @Test("the real commandFinished bus fact ends tab-hosted and canonical no-tab mains", arguments: [true, false])
+    func terminalCommandFinishedEndsMainSession(tabHosted: Bool) async throws {
         let harness = try await SessionsVerticalHarness.make()
         let database = try RecordedStatusDatabase()
         defer { try? FileManager.default.removeItem(at: database.root) }
-        let paneId = harness.boundPaneId
+        let paneId = tabHosted ? harness.boundPaneId : harness.commandHarness.store.createPane(title: "No tab").id
+        let graph = harness.commandHarness.store.paneAtom.graphAtom
+        if !tabHosted { graph.setResidency(.backgrounded, for: paneId) }
+        #expect(graph.paneState(paneId) != nil)
+        #expect((harness.commandHarness.store.tabLayoutAtom.tabID(containingPane: paneId) != nil) == tabHosted)
         let boundAt = ContinuousClock.now
         let bus = harness.commandHarness.coordinator.paneEventBus
         let ended = FactRecorder<UUID, UUID>(

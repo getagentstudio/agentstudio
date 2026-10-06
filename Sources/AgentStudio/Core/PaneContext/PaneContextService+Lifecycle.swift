@@ -312,13 +312,21 @@ extension PaneContextStorage {
     static func hideSettled(
         _ database: Database, paneId: PaneId, rows: [PaneContextRetentionMessage], now: Date
     ) throws -> Set<PaneContextRetentionMessage.Key> {
+        let hidden = try hideSettledRows(database, rows: rows, now: now)
+        if !hidden.isEmpty { try bumpRevision(database, paneId: paneId) }
+        return hidden
+    }
+
+    @discardableResult
+    static func hideSettledRows(
+        _ database: Database, rows: [PaneContextRetentionMessage], now: Date
+    ) throws -> Set<PaneContextRetentionMessage.Key> {
         let hidden = hiddenPaneContextSettledKeys(rows, now: now)
         for message in rows where hidden.contains(message.key) {
             let statement = try database.cachedStatement(
                 sql: "UPDATE \(message.table.name) SET display_hidden = 1 WHERE id = ?")
             try statement.execute(arguments: [message.rowId.uuidString])
         }
-        if !hidden.isEmpty { try bumpRevision(database, paneId: paneId) }
         return hidden
     }
 

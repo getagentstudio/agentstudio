@@ -171,6 +171,57 @@ struct PaneContextDismissAllNoticesTests {
             #expect(published == .set(display))
         }
     }
+    @Test("dismissal above the settled cap retains once at the mutation boundary before real publication")
+    func retentionAndPublicationShareOneRevision() async throws {
+        try await withPaneContextPresentationService { fixture in
+            let storage = fixture.storage
+            let pane = storage.paneId
+            let notices = (0...AppPolicies.PaneContext.maximumSettledMessages).map { _ in storage.message() }
+            let ask = storage.ask()
+            for notice in notices { try await storage.sendCreated(notice, to: fixture.service) }
+            try await storage.sendCreated(ask, to: fixture.service)
+            _ = await fixture.latestPublished(pane)
+            let beforeRevision = try await storage.databasePool.read { database in
+                try PaneContextStorage.revision(database, paneId: pane).value
+            }
+            let beforeDisplay = fixture.mailbox.counts()
+            let beforeAsk = try await askStorageSnapshots(storage, asks: [ask])
+            let frozenNow = storage.time.now
+            let result = await fixture.service.dismissAllNotices(paneId: pane, includingDrawers: false)
+            #expect(result == .dismissed(count: notices.count))
+            let afterRevision = try await storage.databasePool.read { database in
+                try PaneContextStorage.revision(database, paneId: pane).value
+            }
+            #expect(afterRevision == beforeRevision + 1)
+            let afterDisplay = fixture.mailbox.counts()
+            #expect(afterDisplay.computed == beforeDisplay.computed + 1)
+            let hiddenCount = try await storage.databasePool.read { database in
+                try Int.fetchOne(
+                    database,
+                    sql:
+                        "SELECT COUNT(*) FROM pane_event WHERE pane_id = ? AND kind = 'notice' AND display_hidden = 1",
+                    arguments: [pane.uuidString])
+            }
+            #expect(hiddenCount == 1)
+            let afterAsk = try await askStorageSnapshots(storage, asks: [ask])
+            #expect(afterAsk == beforeAsk)
+            let changes = try await storage.changes(fixture.service)
+            #expect(Set(changes.entries.map(\.messageId)) == Set(notices.map(\.messageId)))
+            #expect(changes.entries.allSatisfy { $0.kind == .dismissal })
+            let display = try #require(fixture.mailbox.desiredDisplay(for: pane))
+            let published = await fixture.latestPublished(pane)
+            #expect(published == .set(display))
+            #expect(display.own.attentionCount == 0)
+            let projectedAgain = await fixture.service.readDisplay(paneId: pane)
+            #expect(projectedAgain == display)
+            let afterRepeatedProjection = try await storage.databasePool.read { database in
+                try PaneContextStorage.revision(database, paneId: pane).value
+            }
+            #expect(afterRepeatedProjection == afterRevision)
+            #expect(storage.time.now == frozenNow)
+        }
+    }
+
 }
 
 private struct DismissAllSeed: Sendable {

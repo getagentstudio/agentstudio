@@ -40,6 +40,9 @@ extension PaneContextService {
                         count += 1
                     }
                     if !messageIds.isEmpty {
+                        let retentionRows = try PaneContextStorage.messages(database, paneId: source)
+                            .map(PaneContextRetentionMessage.init)
+                        try PaneContextStorage.hideSettledRows(database, rows: retentionRows, now: instant)
                         try PaneContextStorage.bumpRevision(database, paneId: source)
                         affectedSources.insert(source)
                     }
