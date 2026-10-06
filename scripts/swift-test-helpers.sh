@@ -1780,6 +1780,12 @@ swift_test_preflight_lane() {
 swift_test_lane_mandatory_selectors() {
   local lane_mode="$1"
   case "$lane_mode" in
+    e2e|zmx|benchmark)
+      swift_test_lane_suite_types "$lane_mode"
+      return $?
+      ;;
+  esac
+  case "$lane_mode" in
     test|test-fast|test-width-comparison)
       swift_test_lane_suite_types fast || return $?
       aggregate_serial_non_webkit_suite_filters || return $?

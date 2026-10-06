@@ -497,11 +497,17 @@ swift_build_slot_acquire test "mise run test:swift:e2e"
 trap swift_build_slot_release EXIT
 source "${PROJECT_ROOT}/scripts/swift-test-helpers.sh"
 BUILD_PATH="$SWIFT_BUILD_DIR"
-xcb_pipe=$(_xcb_pipe_cmd)
-swift build $(swift_package_sandbox_arguments) --build-tests --build-path "$BUILD_PATH" 2>&1 | $xcb_pipe
-AGENT_STUDIO_BENCHMARK_MODE=off swift test $(swift_package_sandbox_arguments) --skip-build \
+LOG_PREFIX="test-e2e"
+TIMEOUT_SECONDS="${SWIFT_TEST_TIMEOUT_SECONDS:-600}"
+PREBUILD_TIMEOUT_SECONDS="${SWIFT_TEST_PREBUILD_TIMEOUT_SECONDS:-1200}"
+if [ "${SWIFT_TEST_SKIP_PREBUILD:-0}" != "1" ]; then
+  prebuild_swift_tests_with_build_receipt
+fi
+swift_test_preflight_lane e2e
+run_swift_with_timeout "E2ESerializedTests" "$TIMEOUT_SECONDS" \
+env AGENT_STUDIO_BENCHMARK_MODE=off swift test $(swift_package_sandbox_arguments) --skip-build \
   --filter "$(swift_test_lane_filter_pattern e2e)" \
-  --skip "$(swift_test_lane_filter_pattern zmx)" --build-path "$BUILD_PATH" 2>&1 | $xcb_pipe
+  --skip "$(swift_test_lane_filter_pattern zmx)" --build-path "$BUILD_PATH"
 """
 
 [tasks."test:swift:zmx-e2e"]
@@ -517,10 +523,16 @@ swift_build_slot_acquire test "mise run test:swift:zmx-e2e"
 trap swift_build_slot_release EXIT
 source "${PROJECT_ROOT}/scripts/swift-test-helpers.sh"
 BUILD_PATH="$SWIFT_BUILD_DIR"
-xcb_pipe=$(_xcb_pipe_cmd)
-swift build $(swift_package_sandbox_arguments) --build-tests --build-path "$BUILD_PATH" 2>&1 | $xcb_pipe
-AGENT_STUDIO_BENCHMARK_MODE=off swift test $(swift_package_sandbox_arguments) --skip-build \
-  --filter "$(swift_test_lane_filter_pattern zmx)" --build-path "$BUILD_PATH" 2>&1 | $xcb_pipe
+LOG_PREFIX="test-zmx-e2e"
+TIMEOUT_SECONDS="${SWIFT_TEST_TIMEOUT_SECONDS:-600}"
+PREBUILD_TIMEOUT_SECONDS="${SWIFT_TEST_PREBUILD_TIMEOUT_SECONDS:-1200}"
+if [ "${SWIFT_TEST_SKIP_PREBUILD:-0}" != "1" ]; then
+  prebuild_swift_tests_with_build_receipt
+fi
+swift_test_preflight_lane zmx
+run_swift_with_timeout "ZmxE2ETests" "$TIMEOUT_SECONDS" \
+env AGENT_STUDIO_BENCHMARK_MODE=off swift test $(swift_package_sandbox_arguments) --skip-build \
+  --filter "$(swift_test_lane_filter_pattern zmx)" --build-path "$BUILD_PATH"
 """
 
 [tasks."test:swift:benchmark"]
@@ -536,10 +548,17 @@ swift_build_slot_acquire test "mise run test:swift:benchmark"
 trap swift_build_slot_release EXIT
 source "${PROJECT_ROOT}/scripts/swift-test-helpers.sh"
 BUILD_PATH="$SWIFT_BUILD_DIR"
+LOG_PREFIX="test-benchmark"
+TIMEOUT_SECONDS="${SWIFT_TEST_TIMEOUT_SECONDS:-600}"
+PREBUILD_TIMEOUT_SECONDS="${SWIFT_TEST_PREBUILD_TIMEOUT_SECONDS:-1200}"
 export AGENT_STUDIO_BENCHMARK_MODE=benchmark
 export _XCB_BYPASS=1
-xcb_pipe=$(_xcb_pipe_cmd)
-swift test $(swift_package_sandbox_arguments) --build-path "$BUILD_PATH" --filter "$(swift_test_lane_filter_pattern benchmark)" 2>&1 | $xcb_pipe
+if [ "${SWIFT_TEST_SKIP_PREBUILD:-0}" != "1" ]; then
+  prebuild_swift_tests_with_build_receipt
+fi
+swift_test_preflight_lane benchmark
+run_swift_with_timeout "benchmark suites" "$TIMEOUT_SECONDS" \
+swift test $(swift_package_sandbox_arguments) --skip-build --build-path "$BUILD_PATH" --filter "$(swift_test_lane_filter_pattern benchmark)"
 """
 
 [tasks.clean-artifacts]
