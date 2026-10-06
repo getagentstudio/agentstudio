@@ -57,6 +57,7 @@ import {
 	type BridgeFileViewerSelectedCodeViewItem,
 } from './bridge-file-viewer-code-view-items.js';
 import { bridgeFileViewerCodeViewOptions } from './bridge-file-viewer-code-view-options.js';
+import { BridgeFileViewerPresentationVersions } from './bridge-file-viewer-presentation-versions.js';
 
 export type { BridgeFileViewerCodePanelState, BridgeFileViewerSelectedCodeViewItem };
 
@@ -192,6 +193,7 @@ export function BridgeFileViewerCodePanel(props: BridgeFileViewerCodePanelProps)
 		// Retain the committed presentation reference, never a second copy of source bytes.
 		lastDisplayedItemRef.current = displayedCodeViewItem;
 	});
+	const presentationVersionsRef = useRef(new BridgeFileViewerPresentationVersions());
 	const codeViewItems = useMemo(() => {
 		const items = bridgeFileViewerCodeViewItemsForPanelState({
 			openFileState: props.openFileState,
@@ -220,22 +222,25 @@ export function BridgeFileViewerCodePanel(props: BridgeFileViewerCodePanelProps)
 				annotationProjection.commandConfirmedThreads.length === 0 &&
 				pendingComposerAnnotation === null
 			) {
-				return item;
+				return presentationVersionsRef.current.preparePresentationItem(item);
 			}
-			return bridgeCodeViewPresentationItemWithExactSource({
-				presentationItem: Object.assign({}, item, {
-					annotations:
-						pendingComposerAnnotation === null
-							? annotations
-							: [...annotations, pendingComposerAnnotation],
-					version: annotationPresentationVersion(
-						item.version,
-						activeEditTokens.size === 0 ? annotationProjection.presentationRevision : null,
-						composerPresentationRevision,
-					),
+			return presentationVersionsRef.current.preparePresentationItem(
+				bridgeCodeViewPresentationItemWithExactSource({
+					presentationItem: Object.assign({}, item, {
+						annotations:
+							pendingComposerAnnotation === null
+								? annotations
+								: [...annotations, pendingComposerAnnotation],
+						version: annotationPresentationVersion(
+							item.version,
+							activeEditTokens.size === 0 ? annotationProjection.presentationRevision : null,
+							composerPresentationRevision,
+						),
+					}),
+					sourceItem: item,
 				}),
-				sourceItem: item,
-			});
+				item,
+			);
 		});
 	}, [
 		activeEditTokens.size,
