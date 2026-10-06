@@ -89,6 +89,7 @@ func withSessionsIngestion<Output: Sendable>(
 func makeHookAdmission(
     paneId: UUID, sessionId: String = "session-A", eventName: SessionProviderSignalName = .sessionStart,
     signal: SessionProviderSignal? = .sessionStart, recordId: UUID = UUIDv7.generate(),
+    admissionInstant: ContinuousClock.Instant = ContinuousClock.now,
     providerVersion: String = "9.9.9", turnId: String? = "turn-A",
     providerIdentifier: String = "codex", kind: SessionsEvidenceKind = .activityStarted
 ) -> SessionsHookAdmission {
@@ -98,6 +99,12 @@ func makeHookAdmission(
     return .init(
         paneId: paneId, providerIdentifier: providerIdentifier, providerVersion: providerVersion,
         sessionId: sessionId, eventName: eventName, turnId: turnId, kind: kind,
-        signal: signal, recordId: recordId, admittedAt: Date(timeIntervalSince1970: 1_800_000_000),
+        signal: signal, recordId: recordId, admissionInstant: admissionInstant,
+        admittedAt: Date(timeIntervalSince1970: 1_800_000_000),
         resumeHint: resumeHint)
+}
+
+func committedHookCommit(from outcome: SessionsHookOutcome) -> SessionsHookCommit? {
+    guard case .committed(let commit) = outcome else { return nil }
+    return commit
 }

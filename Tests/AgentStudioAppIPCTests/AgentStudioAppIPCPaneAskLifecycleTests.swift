@@ -55,6 +55,7 @@ struct AgentStudioAppIPCPaneAskLifecycleTests {
                     let initial = try paneContextWireResult(IPCPaneAskOutcome.self, from: initialReply)
                     #expect(initialReply.id == .number(2))
                     #expect(initial == .answered(value: .text(value: "recorded")))
+                    try await domain.endMain(writer)
                     _ = try await domain.bind(conversationId: "replacement")
 
                     // Each CLI-style retry has its own connection; finishing the previous

@@ -81,118 +81,119 @@ extension SessionsRepositoryTests {
     }
 
     @Test(
-        "SessionStart ends every pre-cut active binding for its session and old-pane prompts stay record-only after reload",
+        "pre-cut duplicate conversations keep independent live bindings and prompts per pane",
         arguments: DuplicateSessionStartPlacement.allCases)
-    private func sessionStartEndsEveryPreCutSessionBinding(placement: DuplicateSessionStartPlacement) async throws {
+    private func duplicateConversationBindingsStayPerPane(placement: DuplicateSessionStartPlacement) async throws {
         let scenario = try makeDuplicateSessionStartScenario(placement: placement)
         let fixture = scenario.fixture
         let repository = SessionsRepository(sqliteAccess: fixture.access)
         let destinationPane = scenario.destinationPane
-        let oldPanes = scenario.oldPanes
+        let existingPanes = [fixture.duplicatePaneOne, fixture.duplicatePaneTwo]
         let expectedDisposition = scenario.expectedDisposition
 
-        let preCutActivePanes = try await fixture.access.read { database in
-            try String.fetchAll(
-                database,
-                sql: """
-                    SELECT binding.pane_id
-                    FROM sessions_pane_binding AS binding
-                    JOIN sessions_conversation AS conversation ON conversation.id = binding.conversation_id
-                    WHERE conversation.provider_identifier = 'claude-code'
-                      AND conversation.provider_conversation_id = ?
-                      AND binding.status = 'active'
-                    ORDER BY binding.pane_id
-                    """,
-                arguments: [fixture.duplicateSessionId])
-        }
+        let preCutActivePanes = try await activeSessionPanes(
+            sessionId: fixture.duplicateSessionId, access: fixture.access)
         #expect(
             Set(preCutActivePanes) == Set([fixture.duplicatePaneOne.uuidString, fixture.duplicatePaneTwo.uuidString]))
 
-        let delayedPromptRecordIds = try await withSessionsIngestion(repository: repository) { ingestion in
-            for pane in [fixture.duplicatePaneOne, fixture.duplicatePaneTwo] {
+        let promptRecordIds = try await withSessionsIngestion(repository: repository) { ingestion in
+            for pane in existingPanes {
                 let status = try await ingestion.readSessionStatus(paneId: pane)
-                if case .live = status {} else { Issue.record("Both duplicate pre-cut bindings must start live") }
+                if case .live = status {} else { Issue.record("Both duplicate pre-cut pane bindings must be live") }
             }
 
-            let start = try await ingestion.submitHook(
+            let startOutcome = try await ingestion.submitHook(
                 makeHookAdmission(
                     paneId: destinationPane, sessionId: fixture.duplicateSessionId,
                     eventName: .sessionStart, signal: .sessionStart, providerIdentifier: "claude-code"))
+            let start = try #require(committedHookCommit(from: startOutcome))
             #expect(start.disposition == expectedDisposition)
-            #expect(Set(start.endedBindings.map(\.paneId)) == Set(oldPanes))
-
-            let activePanes = try await fixture.access.read { database in
-                try String.fetchAll(
-                    database,
-                    sql: """
-                        SELECT binding.pane_id
-                        FROM sessions_pane_binding AS binding
-                        JOIN sessions_conversation AS conversation ON conversation.id = binding.conversation_id
-                        WHERE conversation.provider_identifier = 'claude-code'
-                          AND conversation.provider_conversation_id = ?
-                          AND binding.status = 'active'
-                        ORDER BY binding.pane_id
-                        """,
-                    arguments: [fixture.duplicateSessionId])
+            if placement == .ownActivePane {
+                #expect(start.binding.bindingGenerationId == fixture.duplicateBindingOne)
+            } else {
+                #expect(start.binding.bindingGenerationId != fixture.duplicateBindingOne)
+                #expect(start.binding.bindingGenerationId != fixture.duplicateBindingTwo)
             }
-            #expect(activePanes == [destinationPane.uuidString])
 
-            for pane in oldPanes {
-                let status = try await ingestion.readSessionStatus(paneId: pane)
-                if case .ended = status {
-                } else {
-                    Issue.record("Every old pane must be ended before its delayed prompt")
-                }
-            }
+            let activePanes = try await activeSessionPanes(
+                sessionId: fixture.duplicateSessionId, access: fixture.access)
+            var expectedActivePanes = existingPanes.map(\.uuidString).sorted()
+            if placement == .newThirdPane { expectedActivePanes.append(destinationPane.uuidString) }
+            #expect(activePanes == expectedActivePanes.sorted())
 
             var recordIds: [UUID] = []
             let questions = [
                 SessionQuestion(question: "Allow this?", header: "Permission", options: [], multiSelect: false)
             ]
-            for pane in oldPanes {
+            for pane in existingPanes {
                 let prompt = makeHookAdmission(
                     paneId: pane, sessionId: fixture.duplicateSessionId,
                     eventName: .question,
                     signal: .question(toolCallId: "late-question-\(pane.uuidString)", questions: questions),
                     providerIdentifier: "claude-code", kind: .needsYouOpened)
                 recordIds.append(prompt.recordId)
-                let committedPrompt = try await ingestion.submitHook(prompt)
-                #expect(committedPrompt.disposition == .recordedOnly)
-                #expect(committedPrompt.evidence.statusEffect == .recordedOnly)
+                let promptOutcome = try await ingestion.submitHook(prompt)
+                let committedPrompt = try #require(committedHookCommit(from: promptOutcome))
+                #expect(committedPrompt.disposition == .applied)
+                #expect(committedPrompt.evidence.statusEffect == .applied)
                 #expect(committedPrompt.evidence.providerSignal?.name == .question)
 
                 let summary = try await ingestion.sessionSummary(paneId: pane)
-                #expect(summary?.status == .idle(.ended))
-                #expect(summary?.providerPrompts.isEmpty == true)
-
-                let destinationSummary = try await ingestion.sessionSummary(paneId: destinationPane)
-                #expect(destinationSummary?.providerPrompts.isEmpty == true)
+                #expect(summary?.bindingGeneration == committedPrompt.binding.bindingGenerationId)
+                #expect(summary?.status == .needsYou(.question))
+                #expect(summary?.providerPrompts.count == 1)
             }
             return recordIds
         }
 
         try await withSessionsIngestion(repository: repository) { restored in
-            for pane in oldPanes {
+            for pane in existingPanes {
                 let summary = try await restored.sessionSummary(paneId: pane)
-                #expect(summary?.status == .idle(.ended))
-                #expect(summary?.providerPrompts.isEmpty == true)
+                #expect(summary?.status == .needsYou(.question))
+                #expect(summary?.providerPrompts.count == 1)
             }
             let destinationSummary = try await restored.sessionSummary(paneId: destinationPane)
-            #expect(destinationSummary?.providerPrompts.isEmpty == true)
-
             let destinationContext = try await repository.statusContext(paneId: destinationPane)
-            let delayedPrompts = destinationContext.evidence.filter { delayedPromptRecordIds.contains($0.recordId) }
-            #expect(delayedPrompts.count == delayedPromptRecordIds.count)
-            #expect(delayedPrompts.allSatisfy { $0.statusEffect == .recordedOnly })
-            #expect(delayedPrompts.allSatisfy { $0.providerSignal?.name == .question })
+            #expect(destinationSummary?.bindingGeneration == destinationContext.currentBinding?.bindingGenerationId)
+            if placement == .ownActivePane {
+                #expect(destinationSummary?.status == .needsYou(.question))
+            } else {
+                #expect(destinationSummary?.status == .unknown)
+            }
+            for pane in existingPanes {
+                let context = try await repository.statusContext(paneId: pane)
+                let retainedPrompts = context.evidence.filter { promptRecordIds.contains($0.recordId) }
+                #expect(retainedPrompts.count == 1)
+                #expect(retainedPrompts.allSatisfy { $0.statusEffect == .applied })
+                #expect(retainedPrompts.allSatisfy { $0.providerSignal?.name == .question })
+            }
         }
+    }
+}
+
+private func activeSessionPanes(
+    sessionId: String,
+    access: TestSessionsSQLiteAccess
+) async throws -> [String] {
+    try await access.read { database in
+        try String.fetchAll(
+            database,
+            sql: """
+                SELECT binding.pane_id
+                FROM sessions_pane_binding AS binding
+                JOIN sessions_conversation AS conversation ON conversation.id = binding.conversation_id
+                WHERE conversation.provider_identifier = 'claude-code'
+                  AND conversation.provider_conversation_id = ?
+                  AND binding.status = 'active'
+                ORDER BY binding.pane_id
+                """,
+            arguments: [sessionId])
     }
 }
 
 private struct DuplicateSessionStartScenario: Sendable {
     let fixture: SessionsCleanupUpgradeFixture
     let destinationPane: UUID
-    let oldPanes: [UUID]
     let expectedDisposition: SessionsHookDisposition
 }
 
@@ -204,12 +205,10 @@ private func makeDuplicateSessionStartScenario(placement: DuplicateSessionStartP
     switch placement {
     case .ownActivePane:
         return .init(
-            fixture: fixture, destinationPane: fixture.duplicatePaneOne,
-            oldPanes: [fixture.duplicatePaneTwo], expectedDisposition: .applied)
+            fixture: fixture, destinationPane: fixture.duplicatePaneOne, expectedDisposition: .applied)
     case .newThirdPane:
         return .init(
-            fixture: fixture, destinationPane: UUIDv7.generate(),
-            oldPanes: [fixture.duplicatePaneOne, fixture.duplicatePaneTwo], expectedDisposition: .bound)
+            fixture: fixture, destinationPane: UUIDv7.generate(), expectedDisposition: .bound)
     }
 }
 

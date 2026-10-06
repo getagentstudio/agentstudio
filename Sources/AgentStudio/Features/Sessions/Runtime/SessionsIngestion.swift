@@ -31,14 +31,32 @@ package actor SessionsIngestion {
         let hook: SessionsHookAdmission
         let admittedAt: ContinuousClock.Instant
         let commitParticipant: (any SessionsCommitParticipant)?
-        let continuation: CheckedContinuation<SessionsHookCommit, any Error>
+        let continuation: CheckedContinuation<SessionsHookOutcome, any Error>
+    }
+
+    private struct PendingCommandFinished {
+        let paneId: UUID
+        let reportedAt: ContinuousClock.Instant
+        let continuation: CheckedContinuation<SessionsBindingEndCommit?, any Error>
+    }
+
+    private enum PendingMutation {
+        case hook(PendingHook)
+        case commandFinished(PendingCommandFinished)
+
+        var paneId: UUID {
+            switch self {
+            case .hook(let pending): return pending.hook.paneId
+            case .commandFinished(let pending): return pending.paneId
+            }
+        }
     }
 
     let repository: SessionsRepository
     private let limits: SessionsIngestionLimits
     private let probe: SessionsIngestionProbe
     private var acceptsSubmissions = true
-    private var pendingHooks: [PendingHook] = []
+    private var pendingMutations: [PendingMutation] = []
     private var pendingCountByPane: [UUID: Int] = [:]
     private var outstandingCount = 0
     private var consumerTask: Task<Void, Never>?
@@ -97,20 +115,36 @@ package actor SessionsIngestion {
     package func submitHook(
         _ hook: SessionsHookAdmission,
         commitParticipant: (any SessionsCommitParticipant)? = nil
-    ) async throws -> SessionsHookCommit {
+    ) async throws -> SessionsHookOutcome {
         guard acceptsSubmissions else { throw SessionsRepositoryError.ingestionFinished }
         if let error = currentCapacityError(for: hook.paneId) {
             emitStatistics(for: hook.paneId, event: .capacityRejected(lossReason(for: error)))
             throw error
         }
         return try await withCheckedThrowingContinuation { continuation in
-            pendingHooks.append(
-                .init(
-                    hook: hook, admittedAt: ContinuousClock.now,
-                    commitParticipant: commitParticipant, continuation: continuation))
+            pendingMutations.append(
+                .hook(
+                    .init(
+                        hook: hook, admittedAt: hook.admissionInstant,
+                        commitParticipant: commitParticipant, continuation: continuation)))
             pendingCountByPane[hook.paneId, default: 0] += 1
             outstandingCount += 1
             emitStatistics(for: hook.paneId, event: .depthChanged)
+            startConsumerIfNeeded()
+        }
+    }
+
+    package func submitCommandFinished(
+        paneId: UUID, reportedAt: ContinuousClock.Instant
+    ) async throws -> SessionsBindingEndCommit? {
+        guard acceptsSubmissions else { throw SessionsRepositoryError.ingestionFinished }
+        // A terminal exit is authoritative, so preserve it in the FIFO even at hook capacity.
+        return try await withCheckedThrowingContinuation { continuation in
+            pendingMutations.append(
+                .commandFinished(.init(paneId: paneId, reportedAt: reportedAt, continuation: continuation)))
+            pendingCountByPane[paneId, default: 0] += 1
+            outstandingCount += 1
+            emitStatistics(for: paneId, event: .depthChanged)
             startConsumerIfNeeded()
         }
     }
@@ -167,16 +201,30 @@ extension SessionsIngestion {
     }
 
     fileprivate func consumePendingMutations() async {
-        while !pendingHooks.isEmpty {
-            let pending = pendingHooks.removeFirst()
-            let paneId = pending.hook.paneId
+        while !pendingMutations.isEmpty {
+            let pending = pendingMutations.removeFirst()
+            let paneId = pending.paneId
             do {
-                try await restoreStatusIfNeeded(paneId: paneId)
-                let committed = try await repository.applyHook(
-                    pending.hook, commitParticipant: pending.commitParticipant)
-                try await applyCommittedHook(committed, admittedAt: pending.admittedAt)
-                pending.continuation.resume(returning: committed)
-            } catch { pending.continuation.resume(throwing: error) }
+                switch pending {
+                case .hook(let hook):
+                    try await restoreStatusIfNeeded(paneId: paneId)
+                    let outcome = try await repository.applyHook(
+                        hook.hook, commitParticipant: hook.commitParticipant)
+                    if case .committed(let committed) = outcome {
+                        try await applyCommittedHook(committed, admittedAt: hook.admittedAt)
+                    }
+                    hook.continuation.resume(returning: outcome)
+                case .commandFinished(let commandFinished):
+                    let committed = try await closeLiveBindingForCommandExit(
+                        paneId: paneId, reportedAt: commandFinished.reportedAt)
+                    commandFinished.continuation.resume(returning: committed)
+                }
+            } catch {
+                switch pending {
+                case .hook(let hook): hook.continuation.resume(throwing: error)
+                case .commandFinished(let commandFinished): commandFinished.continuation.resume(throwing: error)
+                }
+            }
             let remaining = pendingCountByPane[paneId, default: 1] - 1
             if remaining == 0 {
                 pendingCountByPane.removeValue(forKey: paneId)

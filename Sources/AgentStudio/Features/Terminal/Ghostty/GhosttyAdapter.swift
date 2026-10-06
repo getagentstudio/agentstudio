@@ -47,7 +47,7 @@ final class GhosttyAdapter: Sendable {
         case noPayload
         case titleChanged(String)
         case cwdChanged(String)
-        case commandFinished(exitCode: Int, duration: UInt64)
+        case commandFinished(exitCode: Int, duration: UInt64, sourceInstant: ContinuousClock.Instant)
         case tabTitleChanged(String)
         case closeTab(modeRawValue: UInt32)
         case gotoTab(targetRawValue: Int32)
@@ -120,12 +120,18 @@ final class GhosttyAdapter: Sendable {
         to runtime: TerminalRuntime
     ) {
         let event = translate(actionTag: actionTag, payload: payload)
+        let commandFinishedSourceInstant: ContinuousClock.Instant?
+        if case .commandFinished(_, _, let sourceInstant) = payload {
+            commandFinishedSourceInstant = sourceInstant
+        } else {
+            commandFinishedSourceInstant = nil
+        }
         if case .unhandled(let unhandledTag) = event {
             ghosttyAdapterLogger.warning(
                 "Unhandled Ghostty action tag \(unhandledTag) payload=\(String(describing: payload), privacy: .public)"
             )
         }
-        runtime.handleGhosttyEvent(event)
+        runtime.handleGhosttyEvent(event, commandFinishedSourceInstant: commandFinishedSourceInstant)
     }
 
     private func translateSetTitle(payload: ActionPayload, actionTag: GhosttyActionTag) -> GhosttyEvent {
@@ -162,11 +168,12 @@ final class GhosttyAdapter: Sendable {
     }
 
     private func translateCommandFinished(payload: ActionPayload, actionTag: GhosttyActionTag) -> GhosttyEvent {
-        guard case .commandFinished(let exitCode, let duration) = payload else {
+        guard case .commandFinished(let exitCode, let duration, _) = payload else {
             return payloadMismatch(
                 actionTag: actionTag,
                 payload: payload,
-                expectedPayload: ".commandFinished(exitCode: Int, duration: UInt64)"
+                expectedPayload:
+                    ".commandFinished(exitCode: Int, duration: UInt64, sourceInstant: ContinuousClock.Instant)"
             )
         }
         return .commandFinished(exitCode: exitCode, duration: duration)

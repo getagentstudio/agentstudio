@@ -61,6 +61,7 @@ final class WorkspaceSurfaceCoordinator {
     let store: WorkspaceStore
     var paneActivityClock: PaneActivityClock?
     var sessionsPaneViewedMailbox: SessionsPaneViewedMailbox?
+    var sessionsIngestion: SessionsIngestion?
     weak var paneContextService: PaneContextService?
     let undoClock: @Sendable () async throws -> WorkspaceUndoJournalTime
     let undoDelay: AsyncDelay
@@ -647,7 +648,7 @@ final class WorkspaceSurfaceCoordinator {
             let sourcePaneId = paneEnvelope.paneId
             switch paneEnvelope.event {
             case .terminal(let event):
-                handleTerminalRuntimeEvent(event, sourcePaneId: sourcePaneId)
+                await handleTerminalRuntimeEvent(event, sourcePaneId: sourcePaneId, reportedAt: paneEnvelope.timestamp)
             case .error(let errorEvent):
                 Self.logger.warning(
                     "Runtime error event received from pane \(sourcePaneId.uuid.uuidString, privacy: .public): \(String(describing: errorEvent), privacy: .public)"
@@ -681,7 +682,9 @@ final class WorkspaceSurfaceCoordinator {
         )
     }
 
-    private func handleTerminalRuntimeEvent(_ event: GhosttyEvent, sourcePaneId: PaneId) {
+    private func handleTerminalRuntimeEvent(
+        _ event: GhosttyEvent, sourcePaneId: PaneId, reportedAt: ContinuousClock.Instant
+    ) async {
         let sourcePaneUUID = sourcePaneId.uuid
         switch event {
         case .newTab, .newSplit, .gotoSplit, .resizeSplit, .equalizeSplits, .toggleSplitZoom,
@@ -716,6 +719,11 @@ final class WorkspaceSurfaceCoordinator {
             // shared pane identity update path below.
             updatePaneCWDAndResolvedContext(paneId: sourcePaneUUID, cwd: CWDNormalizer.normalize(cwdPath))
         case .commandFinished(let exitCode, _):
+            do {
+                _ = try await sessionsIngestion?.submitCommandFinished(paneId: sourcePaneUUID, reportedAt: reportedAt)
+            } catch {
+                Self.logger.warning("Sessions command-finished admission failed")
+            }
             Self.logger.debug(
                 "Terminal commandFinished event received for pane \(sourcePaneUUID.uuidString, privacy: .public) exitCode=\(exitCode, privacy: .public)"
             )

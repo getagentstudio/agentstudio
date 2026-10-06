@@ -10,7 +10,7 @@ import Testing
 
 extension PaneContextSessionsBridgeTests {
     @Test(
-        "each binding decision row passes through the real adapter and SQLite owner",
+        "each per-pane main-session decision row passes through the real adapter and SQLite owner",
         arguments: AdapterBindingRow.allCases)
     func adapterBindingTable(row: AdapterBindingRow) async throws {
         try await withPaneContextSessionsBridge { fixture in
@@ -20,10 +20,17 @@ extension PaneContextSessionsBridgeTests {
             fixture.membership.addPane(otherPane)
             switch row {
             case .startEmpty, .activityEmpty: break
-            case .startReplaces, .unseenReplaces:
+            case .otherLiveStart, .otherLiveActivity:
                 _ = try await sendBindingHook(
-                    adapter, pane: paneId, session: "other", name: .sessionStart)
-            case .startMoves, .activeElsewhere:
+                    adapter, pane: paneId, session: "main", name: .sessionStart)
+            case .endedSessionStartWhileOtherLive, .endedSessionActivityWhileOtherLive:
+                _ = try await sendBindingHook(
+                    adapter, pane: paneId, session: "session-A", name: .sessionStart)
+                _ = try await sendBindingHook(
+                    adapter, pane: paneId, session: "session-A", name: .sessionEnd)
+                _ = try await sendBindingHook(
+                    adapter, pane: paneId, session: "main", name: .sessionStart)
+            case .sameSessionOtherPane:
                 _ = try await sendBindingHook(
                     adapter, pane: otherPane.uuid, session: "session-A", name: .sessionStart)
             case .active, .ended, .startRevives:
@@ -34,30 +41,46 @@ extension PaneContextSessionsBridgeTests {
                 _ = try await sendBindingHook(
                     adapter, pane: paneId, session: "session-A", name: .sessionEnd)
             }
-            let start = [AdapterBindingRow.startEmpty, .startReplaces, .startMoves, .startRevives].contains(row)
+            let start = [
+                AdapterBindingRow.startEmpty, .otherLiveStart, .endedSessionStartWhileOtherLive,
+                .sameSessionOtherPane, .startRevives,
+            ].contains(row)
+            let before = try await fixture.ingestion.repository.statusContext(paneId: paneId)
             let admitted = try await sendBindingHook(
                 adapter, pane: paneId, session: "session-A",
                 name: start ? .sessionStart : .toolActivity)
             #expect(admitted.disposition == .admitted)
+            let context = try await fixture.ingestion.repository.statusContext(paneId: paneId)
             let read = try await adapter.readSessionState(paneId: paneId, params: .init(handle: "self"))
             switch row {
-            case .activeElsewhere:
-                #expect(read.sourceHealth == .unbound)
-                let other = try await adapter.readSessionState(paneId: otherPane.uuid, params: .init(handle: "self"))
-                #expect(other.sourceHealth == .live)
-                #expect(other.session?.status == .unknown)
+            case .otherLiveStart, .otherLiveActivity, .endedSessionStartWhileOtherLive:
+                #expect(read.sourceHealth == .live)
+                #expect(read.session?.conversationId == "main")
+                #expect(read.session?.status == .unknown)
+                #expect(context.currentBinding?.providerConversationId == "main")
+                #expect(context.evidence.map(\.recordId) == before.evidence.map(\.recordId))
+            case .endedSessionActivityWhileOtherLive:
+                #expect(read.sourceHealth == .live)
+                #expect(read.session?.conversationId == "main")
+                #expect(read.session?.status == .unknown)
+                #expect(context.currentBinding?.providerConversationId == "main")
+                #expect(context.evidence.count == before.evidence.count + 1)
+                #expect(context.evidence.last?.statusEffect == .recordedOnly)
             case .ended:
                 #expect(read.sourceHealth == .ended)
                 #expect(read.session?.status == .idle(state: .ended))
+                #expect(context.currentBinding?.providerConversationId == "session-A")
+                #expect(context.evidence.count == 3)
             default:
                 #expect(read.sourceHealth == .live)
                 #expect(read.session?.conversationId == "session-A")
                 #expect(read.session?.status == (start ? .unknown : .working(state: .active)))
             }
-            if row == .startMoves {
-                #expect(
-                    try await adapter.readSessionState(paneId: otherPane.uuid, params: .init(handle: "self"))
-                        .sourceHealth == .ended)
+            if row == .sameSessionOtherPane {
+                let other = try await adapter.readSessionState(paneId: otherPane.uuid, params: .init(handle: "self"))
+                #expect(other.sourceHealth == .live)
+                #expect(other.session?.conversationId == "session-A")
+                #expect(other.session?.status == .unknown)
             }
         }
     }
@@ -117,10 +140,10 @@ extension PaneContextSessionsBridgeTests {
         try await withPaneContextSessionsBridge { fixture in
             let adapter = AgentStudioIPCSessionsAdapter(ingestion: fixture.ingestion)
             let first = hookParameters(name: .toolActivity, session: "first")
-            for session in ["first", "first", "replacement"] {
+            for toolId in ["same-tool", "same-tool", "different-tool"] {
                 let event = IPCSessionEventIdentity(
-                    name: .toolActivity, conversationId: session, turnId: "same-turn",
-                    requestId: nil, toolId: "same-tool", subagentId: nil, occurrenceId: first.event.occurrenceId)
+                    name: .toolActivity, conversationId: "first", turnId: "same-turn",
+                    requestId: nil, toolId: toolId, subagentId: nil, occurrenceId: first.event.occurrenceId)
                 _ = try await adapter.recordProviderEvent(
                     paneId: fixture.paneId.uuid,
                     params: .init(
@@ -130,14 +153,14 @@ extension PaneContextSessionsBridgeTests {
             let context = try await fixture.ingestion.repository.statusContext(paneId: fixture.paneId.uuid)
             #expect(context.evidence.count == 3)
             #expect(Set(context.evidence.map(\.recordId)).count == 3)
-            #expect(context.currentBinding?.providerConversationId == "replacement")
+            #expect(context.currentBinding?.providerConversationId == "first")
         }
     }
 }
 
 enum AdapterBindingRow: CaseIterable, Equatable, Sendable {
-    case startEmpty, activityEmpty, active, startReplaces, unseenReplaces, startMoves, activeElsewhere, ended,
-        startRevives
+    case startEmpty, activityEmpty, active, otherLiveStart, otherLiveActivity,
+        endedSessionStartWhileOtherLive, endedSessionActivityWhileOtherLive, sameSessionOtherPane, ended, startRevives
 }
 
 private func sendBindingHook(

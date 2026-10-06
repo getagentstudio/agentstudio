@@ -32,16 +32,16 @@ extension SessionsRepositoryStorage {
         let revision = try Int64.fetchOne(database, sql: "SELECT MAX(commit_revision) FROM sessions_operation") ?? 0
         switch query {
         case .bind(let paneId, let providerIdentifier, let providerConversationId):
+            // Binding decisions are pane-local; the conversation lookup below supplies only its shared FK identity.
             let bindings = try Row.fetchAll(
                 database,
                 sql: """
                     SELECT binding.*, conversation.provider_identifier, conversation.provider_conversation_id
                     FROM sessions_pane_binding binding JOIN sessions_conversation conversation ON conversation.id = binding.conversation_id
-                    WHERE binding.pane_id = ? OR (conversation.provider_identifier = ? AND conversation.provider_conversation_id = ?)
+                    WHERE binding.pane_id = ?
                     ORDER BY CASE binding.status WHEN 'active' THEN 0 ELSE 1 END, binding.committed_revision DESC
-                    """, arguments: [paneId.uuidString, providerIdentifier, providerConversationId]
+                    """, arguments: [paneId.uuidString]
             ).map(decodeBinding)
-            let sources = try Set(bindings.map(\.paneId)).flatMap { try loadSources(database: database, paneId: $0) }
             return SessionsRepositoryContext(
                 revision: revision,
                 matchingConversation: try loadConversation(
@@ -49,9 +49,9 @@ extension SessionsRepositoryStorage {
                     providerIdentifier: providerIdentifier,
                     providerConversationId: providerConversationId
                 ),
-                currentBinding: bindings.first { $0.paneId == paneId },
+                currentBinding: bindings.first,
                 bindings: bindings,
-                sources: sources,
+                sources: try loadSources(database: database, paneId: paneId),
                 // Hook decisions use bindings; `.pane` owns lazy status-history hydration.
                 evidence: []
             )

@@ -22,6 +22,7 @@ struct AgentStudioAppIPCPaneContextIntegrationTests {
             try await withPaneContextWire(domain: domain) { _, client in
                 let created = try await client.send(parameters)
                 #expect(created == .created(id: parameters.messageId))
+                try await domain.endMain(writer)
                 _ = try await domain.bind(conversationId: "replacement")
 
                 let replayed = try await client.send(parameters)
@@ -128,6 +129,7 @@ struct AgentStudioAppIPCPaneContextIntegrationTests {
                             id: .number(2), method: "pane.message.send", params: JSONRPCCodec.encodeJSONValue(params)))
                     try await recorder.expectNext(in: params.correlationId, .writeAdmissionReached)
                     try await beforeCommit.firstArrival()
+                    try await domain.endMain(writer)
                     _ = try await domain.bind(conversationId: "replacement")
                     beforeCommit.release()
                     let response = try await reader.receiveResponseWithoutBlockingMainActor(connection: connection)
@@ -452,6 +454,7 @@ struct AgentStudioAppIPCPaneContextIntegrationTests {
                 await domain.ingestion.bindingForProviderConversation(
                     paneId: domain.paneId, providerIdentifier: historical.provider,
                     providerConversationId: historical.conversationId))
+            try await domain.endMain(historical)
             _ = try await domain.bind(conversationId: "current")
             try await withLiveServer(
                 makeFixture: {

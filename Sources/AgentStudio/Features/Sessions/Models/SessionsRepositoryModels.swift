@@ -50,3 +50,9 @@ package struct SessionsRepositoryReduction: Sendable, Equatable {
     package var evidenceChanges: [SessionsEvidenceRecord] = []
     package let outcome: SessionsHookDisposition
 }
+
+package struct SessionsBindingEndCommit: Sendable, Equatable {
+    package let binding: SessionsBindingRecord
+    package let revision: Int64
+    package let endedAt: Date
+}

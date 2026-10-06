@@ -16,6 +16,7 @@ package struct SessionsHookAdmission: Sendable {
     package let kind: SessionsEvidenceKind
     package let signal: SessionProviderSignal?
     package let recordId: UUID
+    package let admissionInstant: ContinuousClock.Instant
     package let admittedAt: Date
     package let ownerPaneId: UUID?
     package let resumeHint: String?
@@ -24,7 +25,8 @@ package struct SessionsHookAdmission: Sendable {
         paneId: UUID, providerIdentifier: String, providerVersion: String, sessionId: String,
         eventName: SessionProviderSignalName, turnId: String?, subject: SessionsEvidenceSubject = .root,
         kind: SessionsEvidenceKind = .activityStarted, signal: SessionProviderSignal? = nil,
-        recordId: UUID, admittedAt: Date, ownerPaneId: UUID? = nil, resumeHint: String? = nil
+        recordId: UUID, admissionInstant: ContinuousClock.Instant = ContinuousClock.now,
+        admittedAt: Date, ownerPaneId: UUID? = nil, resumeHint: String? = nil
     ) {
         self.paneId = paneId
         self.providerIdentifier = providerIdentifier
@@ -36,6 +38,7 @@ package struct SessionsHookAdmission: Sendable {
         self.kind = kind
         self.signal = signal
         self.recordId = recordId
+        self.admissionInstant = admissionInstant
         self.admittedAt = admittedAt
         self.ownerPaneId = ownerPaneId
         self.resumeHint = resumeHint
@@ -46,10 +49,14 @@ package enum SessionsHookDisposition: String, Sendable, Equatable {
     case bound, applied, recordedOnly
 }
 
-package struct SessionsHookCommit: Sendable {
+package enum SessionsHookOutcome: Sendable, Equatable {
+    case ignored
+    case committed(SessionsHookCommit)
+}
+
+package struct SessionsHookCommit: Sendable, Equatable {
     package let disposition: SessionsHookDisposition
     package let binding: SessionsBindingRecord
-    package let endedBindings: [SessionsBindingRecord]
     package let evidence: SessionsEvidenceRecord
     package let revision: Int64
 }

@@ -92,23 +92,35 @@ final class PaneContextSessionsBridgeFixture: Sendable {
             sessionEnded: { generation in await bridge.sessionEnded(bindingGenerationId: generation) })
     }
 
+    /// Ends are explicit at callers: a successive main must follow a committed SessionEnd.
     func bindConversation(_ conversation: String) async throws -> SessionsBindingRecord {
-        let committed = try await ingestion.submitHook(
+        let outcome = try await ingestion.submitHook(
             .init(
                 paneId: paneId.uuid, providerIdentifier: provider.identifier, providerVersion: provider.version,
                 sessionId: conversation, eventName: .sessionStart, turnId: nil, signal: .sessionStart,
                 recordId: UUIDv7.generate(), admittedAt: time.now))
-        return committed.binding
+        let committed: SessionsHookCommit?
+        if case .committed(let value) = outcome { committed = value } else { committed = nil }
+        let hookCommit = try #require(committed, "Expected session start to commit, got \(outcome)")
+        return hookCommit.binding
     }
 
     func applyHook(
         _ binding: SessionsBindingRecord, eventName: SessionProviderSignalName, signal: SessionProviderSignal
     ) async throws {
-        _ = try await ingestion.submitHook(
+        let turnId: String?
+        switch eventName {
+        case .sessionEnd: turnId = nil
+        default: turnId = "turn"
+        }
+        let outcome = try await ingestion.submitHook(
             .init(
                 paneId: paneId.uuid, providerIdentifier: provider.identifier,
                 providerVersion: provider.version, sessionId: binding.providerConversationId, eventName: eventName,
-                turnId: "turn", signal: signal, recordId: UUIDv7.generate(), admittedAt: time.now))
+                turnId: turnId, signal: signal, recordId: UUIDv7.generate(), admittedAt: time.now))
+        let committed: SessionsHookCommit?
+        if case .committed(let value) = outcome { committed = value } else { committed = nil }
+        _ = try #require(committed, "Expected \(eventName) to commit for the current main, got \(outcome)")
     }
 
     func sender(_ binding: SessionsBindingRecord) throws -> AgentMessageSender {

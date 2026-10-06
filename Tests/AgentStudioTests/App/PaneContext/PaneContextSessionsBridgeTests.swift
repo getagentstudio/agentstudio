@@ -113,6 +113,7 @@ struct PaneContextSessionsBridgeTests {
             let oldAsk = fixture.ask(writer: firstWriter, reason: .question)
             let oldSent = await fixture.service.send(oldAsk)
             #expect(oldSent == .created(oldAsk.messageId))
+            try await fixture.applyHook(firstBinding, eventName: .sessionEnd, signal: .sessionEnd)
             let replacement = try await fixture.bindConversation("second")
             let replacementWriter = try fixture.sender(replacement)
             let currentGeneration = try await fixture.sqliteAccess.read {
@@ -299,6 +300,7 @@ struct PaneContextSessionsBridgeTests {
             }
             do {
                 try await held.firstArrival()
+                try await fixture.applyHook(binding, eventName: .sessionEnd, signal: .sessionEnd)
                 let replacement = try await fixture.bindConversation("second")
                 #expect(replacement.bindingGenerationId != binding.bindingGenerationId)
                 held.release()
@@ -344,6 +346,7 @@ struct PaneContextSessionsBridgeTests {
             }
             do {
                 try await held.firstArrival()
+                try await fixture.applyHook(bindingA, eventName: .sessionEnd, signal: .sessionEnd)
                 let bindingB = try await fixture.bindConversation("title-race-B")
                 try #require(bindingB.bindingGenerationId != bindingA.bindingGenerationId)
                 let writerB = try fixture.sender(bindingB)
