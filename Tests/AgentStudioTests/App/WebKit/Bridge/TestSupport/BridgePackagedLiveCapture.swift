@@ -127,7 +127,49 @@ final class BridgePackagedLiveCapture {
           const reviewDOMObserver = new MutationObserver(observeReviewDOM);
           reviewDOMObserver.observe(document, {subtree: true, childList: true, attributes: true,
             attributeFilter: ['data-bridge-viewer-mode', 'data-presentation-state', 'data-empty-reason']});
-          window.__bridgePackagedLiveCaptureStop = () => reviewDOMObserver.disconnect();
+          const portObservers = [];
+          window.__bridgePackagedLiveCaptureStop = () => {
+            reviewDOMObserver.disconnect();
+            for (const {port, listener} of portObservers) port.removeEventListener('message', listener);
+            portObservers.length = 0;
+          };
+          const OriginalMessageChannel = window.MessageChannel;
+          window.MessageChannel = new Proxy(OriginalMessageChannel, {
+            construct(target, arguments_) {
+              const channel = Reflect.construct(target, arguments_);
+              const port = channel.port2;
+              const listener = event => {
+                const incoming = event.data;
+                if (incoming?.kind === 'viewRecoveryStatus') {
+                  forward({kind: 'productViewRecoveryStatus', message: incoming});
+                } else if (incoming?.kind === 'reviewCandidateStarted' ||
+                           incoming?.kind === 'reviewCandidateReady' ||
+                           incoming?.kind === 'reviewCandidateFailed' ||
+                           incoming?.kind === 'reviewDisplayPatch') {
+                  const source = incoming.patches?.find(patch => patch.slice === 'reviewSource')?.payload;
+                  forward({kind: 'productReviewPublicationMessage', messageKind: incoming.kind,
+                    identity: incoming.reviewPublicationIdentity ?? null,
+                    publicationId: incoming.publicationId ?? null, packageId: incoming.packageId ?? null,
+                    epoch: incoming.epoch ?? null, revision: incoming.revision ?? null,
+                    sourceStatus: source?.status ?? null,
+                    comparison: incoming.patches?.find(patch => patch.slice === 'reviewComparison')?.payload ?? null});
+                }
+              };
+              port.addEventListener('message', listener);
+              portObservers.push({port, listener});
+              const originalPost = port.postMessage.bind(port);
+              port.postMessage = (...postArguments) => {
+                const message = postArguments[0];
+                if (message?.command === 'renderDisposition')
+                  forward({kind: 'productReviewPublicationReceipts', receipts:
+                    message.receipts.filter(receipt => receipt.surface === 'review')});
+                return originalPost(...postArguments);
+              };
+              // Its owner calls start and close. This observer creates no channel
+              // of its own and never advances, suppresses, or repeats a message.
+              return channel;
+            }
+          });
 
           // The packaged worker is a Blob made from its fetched module source.
           // Prefix that same source; do not add an import of a URL its owner revokes.
@@ -248,22 +290,7 @@ final class BridgePackagedLiveCapture {
             construct(target, arguments_) {
               const worker = Reflect.construct(target, arguments_);
               forward({kind: 'workerConstructed', urlScheme: String(arguments_[0]).split(':')[0]});
-              const originalPost = worker.postMessage.bind(worker);
-              worker.postMessage = (...postArguments) => {
-                const message = postArguments[0];
-                if (message?.command === 'renderDisposition')
-                  forward({kind: 'reviewPublicationReceipts', receipts:
-                    message.receipts.filter(receipt => receipt.surface === 'review')});
-                return originalPost(...postArguments);
-              };
               worker.addEventListener('message', event => {
-                const incoming = event.data;
-                if (incoming?.kind === 'reviewCandidateStarted' || incoming?.kind === 'reviewDisplayPatch')
-                  forward({kind: 'reviewPublicationMessage', messageKind: incoming.kind,
-                    identity: incoming.reviewPublicationIdentity ?? null,
-                    publicationId: incoming.publicationId ?? null,
-                    source: incoming.patches?.find(patch => patch.slice === 'reviewSource')?.payload ?? null,
-                    comparison: incoming.patches?.find(patch => patch.slice === 'reviewComparison')?.payload ?? null});
                 const message = event.data?.message;
                 if (event.data?.kind === 'health' && typeof message === 'string' &&
                     message.startsWith('packaged-subscription:')) {
