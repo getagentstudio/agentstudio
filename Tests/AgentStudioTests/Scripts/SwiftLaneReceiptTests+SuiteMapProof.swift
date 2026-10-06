@@ -48,6 +48,7 @@ extension SwiftLaneReceiptTests {
             echo TASK_STATUS=$?
             """
         )
+        #expect(!output.contains("PARENT_ENV_INHERITED="), Comment(rawValue: output))
         if scenario == "fresh" {
             #expect(output.contains("TASK_STATUS=0"), Comment(rawValue: output))
             for phase in ["FAST_PHASE", "LARGE_PHASE", "WEBKIT_PHASE"] {
@@ -242,6 +243,7 @@ private struct SuiteMapProofFixture {
     func run(_ commands: String) async throws -> String {
         try await laneBashAllowingFailure(
             """
+            \(swiftTaskParentEnvironmentProbe)
             source scripts/swift-test-helpers.sh
             BUILD_PATH='\(root)'
             FIXTURE_LIST="$PWD/Tests/AgentStudioTests/Scripts/Fixtures/xcode27-swift-test-list.txt"
@@ -271,7 +273,7 @@ private struct SuiteMapProofFixture {
             }
             set +e
             \(commands)
-            """
+            """, environment: swiftTaskFixtureEnvironment()
         )
     }
 }

@@ -17,7 +17,8 @@ extension SwiftLaneReceiptTests {
         let body = String(task[bodyStart.upperBound...]).components(separatedBy: "\n\"\"\"")[0]
         let inventoryLane = lane == "zmx-e2e" ? "zmx" : lane
         let inventory = try await laneBash(
-            "source scripts/swift-test-helpers.sh; swift_test_lane_suite_types '\(inventoryLane)'")
+            "source scripts/swift-test-helpers.sh; swift_test_lane_suite_types '\(inventoryLane)'",
+            environment: swiftTaskFixtureEnvironment())
         let selectors = laneOutputLines(inventory)
         let missingSelector = try #require(selectors.last)
         let listedSelectors = scenario == "missing-suite" ? selectors.dropLast() : selectors[...]
@@ -47,6 +48,7 @@ extension SwiftLaneReceiptTests {
 
         let result = try await runLaneScriptBash(
             """
+            \(swiftTaskParentEnvironmentProbe)
             source scripts/swift-test-helpers.sh
             BUILD_PATH='\(fixture.root.path)'; SWIFT_BUILD_DIR="$BUILD_PATH"
             LOG_PREFIX=standalone; TIMEOUT_SECONDS=60; PREBUILD_TIMEOUT_SECONDS=60
@@ -69,9 +71,10 @@ extension SwiftLaneReceiptTests {
               exit 99
             fi
             exit "$task_status"
-            """
+            """, environment: swiftTaskFixtureEnvironment()
         )
         #expect(result.exitCode == (scenario == "pass" ? 0 : 1), Comment(rawValue: result.output))
+        #expect(!result.output.contains("PARENT_ENV_INHERITED="), Comment(rawValue: result.output))
         #expect(!result.output.contains("PARENT_LEDGER_MODIFIED"), Comment(rawValue: result.output))
         if scenario == "missing-suite" {
             #expect(
