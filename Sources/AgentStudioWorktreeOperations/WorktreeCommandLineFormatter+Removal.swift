@@ -5,7 +5,9 @@ extension WorktreeCommandLineFormatter {
     package static func removalHumanLine(_ entry: WorktreeRemovalEntry) -> String {
         switch entry {
         case .removed(let details):
-            return "removed \(details.target); \(removalEffectsHumanLine(details.effects))"
+            return
+                "removed \(details.target); \(removalEffectsHumanLine(details.effects))"
+                + skippedSpecialFilesHumanSuffix(details.effects)
         case .alreadyRemoved(let details):
             return "alreadyRemoved \(details.target)"
         case .refused(let details):
@@ -14,6 +16,7 @@ extension WorktreeCommandLineFormatter {
             let stop = details.failure.stop.map { "; \(stopHumanLine($0))" } ?? ""
             return
                 "failed \(details.target): \(removalFailureName(details.failure.kind)); \(removalEffectsHumanLine(details.failure.effects))\(stop)"
+                + skippedSpecialFilesHumanSuffix(details.failure.effects)
         case .planned(let details):
             let steps = details.plan.steps.map { step in
                 let detail = step.detail.map { " (\($0))" } ?? ""
@@ -101,7 +104,7 @@ extension WorktreeCommandLineFormatter {
 
     private static func evidenceHumanLine(_ evidence: WorktreeEvidenceDispositionDocument) -> String {
         switch evidence {
-        case .archived(let path, let files):
+        case .archived(let path, let files, _):
             "archived path=\(path) files=\(files)"
         case .partialCopy(let path):
             "partialCopy path=\(path)"
@@ -110,6 +113,17 @@ extension WorktreeCommandLineFormatter {
         case .noEvidence:
             "none"
         }
+    }
+
+    private static func skippedSpecialFilesHumanSuffix(_ effects: WorktreeRemovalEffectsDocument) -> String {
+        guard case .archived(_, _, let skippedSpecialFiles) = effects.evidence,
+            !skippedSpecialFiles.isEmpty
+        else {
+            return ""
+        }
+        let fileLabel = skippedSpecialFiles.count == 1 ? "file" : "files"
+        let paths = skippedSpecialFiles.map { "tmp/\($0)" }.joined(separator: ", ")
+        return "\nskipped \(skippedSpecialFiles.count) special \(fileLabel) (not copyable): \(paths)"
     }
 
     package static func assessmentHumanLine(_ assessment: WorktreeIntegrationAssessmentDocument?) -> String {

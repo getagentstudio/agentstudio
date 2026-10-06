@@ -1,5 +1,6 @@
 import AgentStudioInfrastructure
 import AgentStudioWorktreeOperations
+import Darwin
 import Foundation
 import Testing
 
@@ -25,12 +26,50 @@ struct WorktreeEvidenceArchiverTests {
 
         let result = WorktreeEvidenceArchiver().archive(source: source, destination: destination)
 
-        #expect(result == .archived(path: destination, fileCount: 2))
+        #expect(result == .archived(path: destination, fileCount: 2, skippedSpecialFiles: []))
         #expect(try Data(contentsOf: destination.appending(path: "nested/note.txt")) == Data("preserve this".utf8))
         #expect(
             try FileManager.default.destinationOfSymbolicLink(atPath: destination.appending(path: "external-link").path)
                 == externalFile.path)
         #expect(FileManager.default.fileExists(atPath: destination.appending(path: "outside.txt").path) == false)
+    }
+
+    @Test("archives copyable evidence and reports a FIFO without creating it")
+    func archivesCopyableEvidenceAndSkipsFIFO() throws {
+        let fixture = try ArchiveFixture.make()
+        defer { fixture.destroy() }
+        let source = fixture.worktree.appending(path: "tmp", directoryHint: .isDirectory)
+        let nestedSource = source.appending(path: "nested", directoryHint: .isDirectory)
+        let destination = fixture.archiveRoot.appending(path: "repo.feature", directoryHint: .isDirectory)
+        let sourceFile = nestedSource.appending(path: "note.txt")
+        let externalFile = fixture.externalRoot.appending(path: "outside.txt")
+        let fifo = nestedSource.appending(path: "completions")
+
+        try FileManager.default.createDirectory(at: nestedSource, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: fixture.archiveRoot, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: fixture.externalRoot, withIntermediateDirectories: true)
+        try Data("preserve this".utf8).write(to: sourceFile)
+        try Data("outside".utf8).write(to: externalFile)
+        let sourceLink = source.appending(path: "external-link")
+        try FileManager.default.createSymbolicLink(at: sourceLink, withDestinationURL: externalFile)
+        #expect(fifo.path.withCString { Darwin.mkfifo($0, 0o600) } == 0)
+
+        let result = WorktreeEvidenceArchiver().archive(source: source, destination: destination)
+
+        #expect(
+            result
+                == .archived(
+                    path: destination,
+                    fileCount: 2,
+                    skippedSpecialFiles: ["nested/completions"]
+                )
+        )
+        #expect(try Data(contentsOf: destination.appending(path: "nested/note.txt")) == Data("preserve this".utf8))
+        #expect(
+            try FileManager.default.destinationOfSymbolicLink(atPath: destination.appending(path: "external-link").path)
+                == externalFile.path
+        )
+        #expect(FileManager.default.fileExists(atPath: destination.appending(path: "nested/completions").path) == false)
     }
 
     @Test("a destination that appears before copy is left untouched")

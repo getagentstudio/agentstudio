@@ -1,6 +1,7 @@
 import AgentStudioGit
 import AgentStudioInfrastructure
 import AgentStudioWorktreeOperations
+import Darwin
 import Foundation
 import Testing
 
@@ -36,7 +37,7 @@ struct WorktreeRemovalEffectsIntegrationTests {
         #expect(entry.effects.branch?.disposition == .retained)
         #expect(entry.effects.branch?.reason == .branchPolicyKeep)
         #expect(entry.effects.branch?.options.isEmpty == true)
-        #expect(entry.effects.evidence == .archived(path: archiveDestination.path, files: 1))
+        #expect(entry.effects.evidence == .archived(path: archiveDestination.path, files: 1, skippedSpecialFiles: []))
         #expect(entry.effects.lockResidue.isEmpty)
         #expect(!FileManager.default.fileExists(atPath: worktree.path))
         #expect(try Data(contentsOf: archiveDestination.appending(path: "evidence.txt")) == Data("archive me".utf8))
@@ -44,7 +45,7 @@ struct WorktreeRemovalEffectsIntegrationTests {
 
         let response = try WorktreeCommandLineFormatter.format(outcome: outcome, usesJSONOutput: true)
         let expected =
-            #"{"entries":[{"details":{"effects":{"activity":{"status":"notChecked"},"administration":"removed","assessment":{"grade":"integrated","proof":{"proof":"sameCommit"}},"branch":{"cleanupWarnings":[],"commit":"\#(branchCommit)","disposition":"retained","name":"feature/archive","options":[],"reason":{"kind":"branchPolicyKeep"}},"directory":"removed","evidence":{"files":1,"path":"\#(archiveDestination.path)","status":"archived"},"lockResidue":[]},"inputs":["\#(worktree.path)"],"target":"\#(worktree.path)"},"status":"removed"}],"fetch":{"reason":"noFetchFlag","status":"skipped"},"outcome":"removal"}"#
+            #"{"entries":[{"details":{"effects":{"activity":{"status":"notChecked"},"administration":"removed","assessment":{"grade":"integrated","proof":{"proof":"sameCommit"}},"branch":{"cleanupWarnings":[],"commit":"\#(branchCommit)","disposition":"retained","name":"feature/archive","options":[],"reason":{"kind":"branchPolicyKeep"}},"directory":"removed","evidence":{"files":1,"path":"\#(archiveDestination.path)","skippedSpecialFiles":[],"status":"archived"},"lockResidue":[]},"inputs":["\#(worktree.path)"],"target":"\#(worktree.path)"},"status":"removed"}],"fetch":{"reason":"noFetchFlag","status":"skipped"},"outcome":"removal"}"#
         #expect(response.exitCode == 0)
         #expect(response.text == expected)
     }
@@ -71,8 +72,65 @@ struct WorktreeRemovalEffectsIntegrationTests {
             Issue.record("expected archive-to-main removal, got \(report)")
             return
         }
-        #expect(entry.effects.evidence == .archived(path: destination.path, files: 1))
+        #expect(entry.effects.evidence == .archived(path: destination.path, files: 1, skippedSpecialFiles: []))
         #expect(try Data(contentsOf: destination.appending(path: "evidence.txt")) == Data("main archive".utf8))
+    }
+
+    @Test("archive-to-main removes a linked worktree while reporting skipped FIFO evidence")
+    func archivesToMainWithSkippedFIFO() async throws {
+        var fixture = try await WorktreeRemovalRepository.create(named: "worktree-remove-archive-main-fifo")
+        defer { fixture.destroy() }
+        let worktree = try await fixture.addWorktree(branch: "feature/archive-main-fifo")
+        _ = try addEvidence("main archive", to: worktree)
+        let fifo = worktree.appending(path: "tmp/plan-workflows/ci-runs/completions")
+        try FileManager.default.createDirectory(at: fifo.deletingLastPathComponent(), withIntermediateDirectories: true)
+        #expect(fifo.path.withCString { Darwin.mkfifo($0, 0o600) } == 0)
+        let mainTmp = fixture.path.appending(path: "tmp", directoryHint: .isDirectory)
+        let destination = mainTmp.appending(path: worktree.lastPathComponent, directoryHint: .isDirectory)
+
+        let report = await WorktreeRemovalRunner(client: fixture.client).run(
+            worktreeRemovalRequest(
+                repository: fixture.path,
+                targets: [worktree.path],
+                callerDirectory: fixture.path,
+                branchPolicy: .keep,
+                evidencePolicy: .archiveToMain
+            )
+        )
+
+        guard case .removed(let entry)? = report.entries.first else {
+            Issue.record("expected archive-to-main removal, got \(report)")
+            return
+        }
+        #expect(
+            entry.effects.evidence
+                == .archived(
+                    path: destination.path,
+                    files: 1,
+                    skippedSpecialFiles: ["plan-workflows/ci-runs/completions"]
+                )
+        )
+        #expect(!FileManager.default.fileExists(atPath: worktree.path))
+        #expect(try Data(contentsOf: destination.appending(path: "evidence.txt")) == Data("main archive".utf8))
+        #expect(
+            FileManager.default.fileExists(
+                atPath: destination.appending(path: "plan-workflows/ci-runs/completions").path) == false)
+
+        let jsonResponse = try WorktreeCommandLineFormatter.format(
+            removalReport: report,
+            usesJSONOutput: true
+        )
+        #expect(jsonResponse.exitCode == 0)
+        #expect(jsonResponse.text.contains(#""skippedSpecialFiles":["plan-workflows/ci-runs/completions"]"#))
+
+        let humanResponse = try WorktreeCommandLineFormatter.format(
+            removalReport: report,
+            usesJSONOutput: false
+        )
+        #expect(humanResponse.exitCode == 0)
+        #expect(
+            humanResponse.text.contains("skipped 1 special file (not copyable): tmp/plan-workflows/ci-runs/completions")
+        )
     }
 
     @Test("a pre-existing index lock refuses before archive-to-main")
@@ -340,7 +398,9 @@ struct WorktreeRemovalEffectsIntegrationTests {
         #expect(report.exitCode == 2)
         #expect(entry.failure.effects.directory == .retained)
         #expect(entry.failure.effects.administration == .retained)
-        #expect(entry.failure.effects.evidence == .archived(path: archiveDestination.path, files: 1))
+        #expect(
+            entry.failure.effects.evidence
+                == .archived(path: archiveDestination.path, files: 1, skippedSpecialFiles: []))
         #expect(observation.path == lockPath.standardizedFileURL.path)
         #expect(FileManager.default.fileExists(atPath: lockPath.path))
         guard case .index(let observedWorktreePath) = observation.resource else {
