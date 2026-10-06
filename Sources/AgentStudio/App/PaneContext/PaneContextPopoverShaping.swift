@@ -10,8 +10,6 @@ struct PaneContextPopoverShape: Sendable, Equatable {
     let messages: MessagesPopoverModel
     let agentLine: AgentLinePopoverModel?
     let providerPrompts: ProviderPromptsModel?
-    let pullRequests: GitPRSummaryPopoverModel?
-    let pullRequestSummaryChip: GitPRSummaryChipModel?
 }
 
 /// Only immutable snapshots cross this boundary. The controller assigns its result.
@@ -39,7 +37,6 @@ enum PaneContextPopoverShaping {
             } ?? [],
             remainingLiveSources: detail.truncation?.remainingLiveSources ?? 0,
             nextSourcesAfter: detail.truncation?.nextSourcesAfter?.uuid)
-        let summaryChip = RepoExplorerPanePullRequestProjection.make(detail.pullRequests)
         return PaneContextPopoverShape(
             paneId: detail.paneId, revision: detail.revision, agentTitle: detail.agentTitle, messages: messages,
             agentLine: detail.agentLine.map(line),
@@ -49,8 +46,7 @@ enum PaneContextPopoverShaping {
                         ProviderPromptRowModel(
                             reason: reason($0.reason), observedAt: $0.observedAt, summary: $0.summary)
                     }, omittedPromptCount: $0.omittedPromptCount)
-            },
-            pullRequests: summaryChip?.model, pullRequestSummaryChip: summaryChip)
+            })
     }
 
     private nonisolated static func message(_ detail: AgentMessageDetail, label: String) -> MessageRowModel {

@@ -288,9 +288,6 @@ extension RepoExplorerProjection {
             )
         }
         var pinnedRow = row
-        pinnedRow.pullRequestSummaryChip = facts?.contextDisplay.flatMap {
-            RepoExplorerPanePullRequestProjection.make($0.pullRequests)
-        }
         pinnedRow.messageChip = facts?.contextDisplay.map {
             RepoExplorerPaneMessageCountProjection.make(display: $0, isDrawer: row.isDrawerPane)
         }
@@ -307,8 +304,7 @@ extension RepoExplorerProjection {
             isActive: row.isActive,
             agentLine: facts?.contextDisplay?.agentLine,
             sessionStatus: facts?.sessionStatus,
-            messageCount: pinnedRow.messageChip?.count ?? 0,
-            hasPullRequestSummary: pinnedRow.pullRequestSummaryChip != nil
+            messageCount: pinnedRow.messageChip?.count ?? 0
         )
         return pinnedRow
     }

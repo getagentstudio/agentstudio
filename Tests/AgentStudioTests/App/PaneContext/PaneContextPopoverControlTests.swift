@@ -20,17 +20,4 @@ struct PaneContextPopoverControlTests {
             controls.filters.map(\.attentionType) == [nil, .needsApproval, .needsReply, .attention, .informational])
     }
 
-    @Test
-    func pullRequestPresentationKeepsCompactCopyAndNeutralUnknownState() {
-        let attention = PaneContextPopoverControlProjection.pullRequestPresentation(
-            .init(state: .needsAttention(count: 1), members: [.unknown(worktreeId: UUIDv7.generate())]))
-        #expect(attention.header == "Needs attention (1)")
-        #expect(attention.chipText == "1 ✗")
-        #expect(attention.tone == .danger)
-        let neutral = PaneContextPopoverControlProjection.pullRequestPresentation(
-            .init(state: .noInfo, members: [.noPullRequest(worktreeId: UUIDv7.generate())]))
-        #expect(neutral.chipText == "1")
-        #expect(neutral.glyph == nil)
-        #expect(neutral.tone == .neutral)
-    }
 }

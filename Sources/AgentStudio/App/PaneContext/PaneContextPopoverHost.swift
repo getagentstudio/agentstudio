@@ -76,10 +76,6 @@ struct PaneContextPopoverHost: View {
                     count: count, tone: includeInformational ? chip.toneIncludingInformational : chip.tone,
                     control: Self.controls.messages, octiconLoader: octiconLoader, onOpen: requestOpen)
             }
-        case .pullRequests(let chip):
-            GitPRSummaryChip(
-                presentation: chip.presentation, control: chip.control, octiconLoader: octiconLoader,
-                onOpen: requestOpen)
         case .agentLine(let line):
             Button(action: requestOpen) {
                 RepoExplorerPaneContextLineView(line: line, isAgentLine: true, octiconLoader: octiconLoader)
@@ -108,15 +104,6 @@ struct PaneContextPopoverHost: View {
                     includesInformational: $includeInformational,
                     actions: PaneContextPopoverHostActions.messages(
                         controller: controller, readers: readers, onGoToPane: onGoToPane))
-                if let note = controller.unavailableNote { Text(note).foregroundStyle(.secondary) }
-            case .pullRequests:
-                if let chip = state.pullRequestSummaryChip {
-                    GitPRSummaryPopover(
-                        model: chip.model, presentation: chip.presentation, controls: Self.controls,
-                        onGoToPane: { onGoToPane(paneId.uuid) })
-                } else {
-                    PopoverPanel { Text(LocalActionSpec.panePullRequestSummaryStatus(.noInfo).actionSpec.label) }
-                }
                 if let note = controller.unavailableNote { Text(note).foregroundStyle(.secondary) }
             case .agentLine:
                 if let line = state.agentLine {

@@ -101,18 +101,3 @@ package enum PaneContextChipTone: Sendable, Equatable {
     case warning
     case danger
 }
-
-package struct GitPRSummaryPresentationModel: Sendable, Equatable {
-    package let header: String
-    package let glyph: String?
-    package let tone: PaneContextChipTone
-    package let memberCount: Int
-    package let chipText: String
-    package init(header: String, glyph: String?, tone: PaneContextChipTone, memberCount: Int, chipText: String) {
-        self.header = header
-        self.glyph = glyph
-        self.tone = tone
-        self.memberCount = memberCount
-        self.chipText = chipText
-    }
-}

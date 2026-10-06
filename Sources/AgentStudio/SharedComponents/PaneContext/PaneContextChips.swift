@@ -53,35 +53,3 @@ package struct MessagesChip: View {
         }
     }
 }
-
-package struct GitPRSummaryChip: View {
-    private let presentation: GitPRSummaryPresentationModel
-    private let control: PaneContextControlModel
-    private let octiconLoader: OcticonLoader
-    private let onOpen: @MainActor () -> Void
-    package init(
-        presentation: GitPRSummaryPresentationModel, control: PaneContextControlModel,
-        octiconLoader: OcticonLoader, onOpen: @escaping @MainActor () -> Void
-    ) {
-        self.presentation = presentation
-        self.control = control
-        self.octiconLoader = octiconLoader
-        self.onOpen = onOpen
-    }
-    package var body: some View {
-        Button(action: onOpen) {
-            SidebarChip(
-                icon: control.icon.chipIcon, octiconLoader: octiconLoader,
-                text: presentation.chipText,
-                style: presentation.tone.style)
-        }
-        .buttonStyle(.plain)
-        .controlHelp(control.tooltip)
-        .accessibilityHidden(true)
-        .background {
-            AccessibilityPressBridge(
-                identifier: control.identifier, label: control.label,
-                help: control.tooltip.text, action: onOpen)
-        }
-    }
-}

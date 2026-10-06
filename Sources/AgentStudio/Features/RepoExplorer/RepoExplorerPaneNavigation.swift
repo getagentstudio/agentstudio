@@ -50,7 +50,6 @@ struct RepoExplorerPaneRow: View {
                 drawerRail: row.drawerRail,
                 showsChipLine: row.displayVariant == .expanded
                     ? row.variants?.expanded.showsChipLine ?? true : row.variants?.compact.showsChipLine ?? true,
-                pullRequestSummaryChip: row.pullRequestSummaryChip,
                 messageChip: row.messageChip,
                 paneId: PaneId(existingUUID: row.destination.paneId),
                 paneContextControl: paneContextControl,
@@ -104,7 +103,6 @@ struct RepoExplorerPaneRowContent: View {
     var showsExpandedChips = false
     var drawerRail: RepoExplorerDrawerRail = .none
     var showsChipLine = true
-    var pullRequestSummaryChip: GitPRSummaryChipModel?
     var messageChip: PaneMessageChipModel?
     var paneId: PaneId?
     var paneContextControl: RepoExplorerPaneContextControlFactory = { _, _ in nil }
@@ -205,15 +203,11 @@ struct RepoExplorerPaneRowContent: View {
                             style: .neutral
                         )
                     }
-                    if let pullRequestSummaryChip, let paneId {
-                        paneContextControl(paneId, .pullRequests(pullRequestSummaryChip))
-                    }
                     if let branchStatus,
                         SidebarGitStatusChips.hasContent(
                             branchStatus: branchStatus,
                             usesPanesLoadingChip: true,
-                            showsDetailedGitChips: showsExpandedChips,
-                            showsPullRequestChip: pullRequestSummaryChip == nil
+                            showsDetailedGitChips: showsExpandedChips
                         )
                     {
                         SidebarGitStatusChips(
@@ -222,8 +216,7 @@ struct RepoExplorerPaneRowContent: View {
                             usesPanesLoadingChip: true,
                             showsDetailedGitChips: showsExpandedChips,
                             showsDiffChip: detailLevel.showsChanges,
-                            showsSyncChip: detailLevel.showsSync,
-                            showsPullRequestChip: pullRequestSummaryChip == nil
+                            showsSyncChip: detailLevel.showsSync
                         )
                     }
                     if let messageChip, let paneId {

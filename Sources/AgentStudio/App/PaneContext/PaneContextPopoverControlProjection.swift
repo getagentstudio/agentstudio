@@ -48,9 +48,4 @@ enum PaneContextPopoverControlProjection {
             tooltip: spec.controlTooltipRenderValue(provenance: .localAction(rawValue: spec.label)))
     }
 
-    nonisolated static func pullRequestPresentation(
-        _ model: GitPRSummaryPopoverModel
-    ) -> GitPRSummaryPresentationModel {
-        RepoExplorerPanePullRequestProjection.presentation(model)
-    }
 }

@@ -151,36 +151,6 @@ struct PaneContextPopoverActionViewTests {
         }
     }
 
-    @Test
-    func pullRequestButtonsDriveOpenAndNavigation() throws {
-        let worktreeId = UUIDv7.generate()
-        let model = GitPRSummaryPopoverModel(
-            state: .allGood,
-            members: [
-                .pullRequest(worktreeId: worktreeId, number: 7, checks: .passed, review: .approved),
-                .unknown(worktreeId: UUIDv7.generate()),
-            ])
-        let controls = PaneContextPopoverControlProjection.controls()
-        var opened: UUID?
-        var focused = false
-        try Self.withMounted(
-            GitPRSummaryPopover(
-                model: model, presentation: PaneContextPopoverControlProjection.pullRequestPresentation(model),
-                controls: controls, onGoToPane: { focused = true },
-                onOpenPullRequest: { id, number in
-                    #expect(number == 7)
-                    opened = id
-                })
-        ) { host in
-            try Self.press(
-                host, controls.openPullRequest.identifier(in: worktreeId.uuidString),
-                label: controls.openPullRequest.label)
-            #expect(opened == worktreeId)
-            try Self.press(host, controls.goToPane.identifier, label: controls.goToPane.label)
-            #expect(focused)
-        }
-    }
-
     private static func withMounted<Content: View>(
         _ content: Content, assertions: (NSHostingView<Content>) throws -> Void
     ) throws {

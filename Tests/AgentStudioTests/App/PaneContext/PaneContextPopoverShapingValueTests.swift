@@ -13,15 +13,6 @@ struct PaneContextPopoverShapingValueTests {
         let answer: AskAnswerValue
         let expectedAnswer: AskAnswerModel
     }
-    struct PullRequestScenario {
-        let state: PullRequestSummaryState
-        let expectedState: PullRequestSummaryStateModel
-        let checks: PullRequestCheckStatus
-        let expectedChecks: PullRequestChecksModel
-        let review: PullRequestReviewStatus
-        let expectedReview: PullRequestReviewModel
-    }
-
     @Test
     func formsKeepTheirControlsConstraintsAndAnswerReceipts() async throws {
         let paneId = PaneId.generateUUIDv7()
@@ -161,50 +152,4 @@ struct PaneContextPopoverShapingValueTests {
         }
     }
 
-    @Test
-    func pullRequestStatesAndMembersAreRenderedWithoutAnotherFold() async {
-        let worktree = UUIDv7.generate()
-        let noPR = UUIDv7.generate()
-        let unknown = UUIDv7.generate()
-        let cases: [PullRequestScenario] = [
-            .init(
-                state: .needsAttention(count: 1), expectedState: .needsAttention(count: 1), checks: .failed,
-                expectedChecks: .failed, review: .changesRequested, expectedReview: .changesRequested),
-            .init(
-                state: .running, expectedState: .running, checks: .running, expectedChecks: .running,
-                review: .reviewRequired, expectedReview: .reviewRequired),
-            .init(
-                state: .allGood, expectedState: .allGood, checks: .passed, expectedChecks: .passed, review: .approved,
-                expectedReview: .approved),
-            .init(
-                state: .noInfo, expectedState: .noInfo, checks: .unknown, expectedChecks: .unknown, review: .unknown,
-                expectedReview: .unknown),
-        ]
-        for scenario in cases {
-            let shape = await PaneContextPopoverShaping.shape(
-                PaneContextPopoverShapingTests.detail(
-                    paneId: .generateUUIDv7(),
-                    pullRequests: .summary(
-                        .init(
-                            state: scenario.state,
-                            members: [
-                                .noPullRequest(worktreeId: noPR), .unknown(worktreeId: unknown),
-                                .pullRequest(
-                                    worktreeId: worktree, number: 7, checks: scenario.checks, review: scenario.review),
-                            ]))), sourceTitles: [:])
-            #expect(
-                shape.pullRequests
-                    == .init(
-                        state: scenario.expectedState,
-                        members: [
-                            .noPullRequest(worktreeId: noPR), .unknown(worktreeId: unknown),
-                            .pullRequest(
-                                worktreeId: worktree, number: 7, checks: scenario.expectedChecks,
-                                review: scenario.expectedReview),
-                        ]))
-        }
-        let notApplicable = await PaneContextPopoverShaping.shape(
-            PaneContextPopoverShapingTests.detail(paneId: .generateUUIDv7()), sourceTitles: [:])
-        #expect(notApplicable.pullRequests == nil)
-    }
 }
