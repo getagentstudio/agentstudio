@@ -12,6 +12,23 @@ const server = await dev({
   logLevel: "silent",
   root: websiteRoot,
   server: { host: "127.0.0.1", port },
+  integrations: [
+    {
+      name: "proof-video-test-fixture",
+      hooks: {
+        "astro:config:setup": ({ injectRoute }): void => {
+          injectRoute({
+            pattern: "/__test/proof-video",
+            entrypoint: path.join(websiteRoot, "tests/fixtures/proof-video-stage.astro"),
+          });
+          injectRoute({
+            pattern: "/__test/proof-chapter",
+            entrypoint: path.join(websiteRoot, "tests/fixtures/proof-chapter.astro"),
+          });
+        },
+      },
+    },
+  ],
   vite: {
     cacheDir: path.join(websiteRoot, "node_modules", ".vite-hero-browser-tests"),
     // All browser files share this dev server. Prebundle the hero's dependency

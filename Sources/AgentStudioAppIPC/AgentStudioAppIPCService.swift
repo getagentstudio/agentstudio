@@ -184,8 +184,8 @@ package struct AppIPCPreparedCommand: Sendable {
 @MainActor
 package protocol AppIPCCommandPort: Sendable {
     func prepareCommand(
-        _ params: IPCCommandExecutionRequest, principal: IPCPrincipal, tools: AppIPCTargetResolutionTools
-    ) async throws -> AppIPCPreparedCommand
+        _ params: IPCRawCommandExecutionRequest, principal: IPCPrincipal, tools: AppIPCTargetResolutionTools
+    ) async throws(AgentStudioAppIPCRequestError) -> AppIPCPreparedCommand
     func executeCommand(
         _ params: IPCCommandExecutionRequest, ownPaneAssertion: AppIPCOwnPaneAssertion?
     ) async throws -> IPCCommandExecutionResult

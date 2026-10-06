@@ -337,6 +337,14 @@ describe("scene bundles for HyperFrames", () => {
     delete window.AgentStudioScenes;
   });
 
+  it.each([
+    ["chapter-review", { "review-diff": 0, "review-comment": 1.65 }],
+    ["chapter-come-back", { "quit-in-flight": 0, persistence: 2.15 }],
+  ] as const)("publishes the split %s labels at unchanged animation times", (sceneId, labels) => {
+    expect(requireBundle(sceneId).manifest.labels).toEqual(labels);
+    expect(requireBundle(sceneId).manifest.durationSeconds).toBe(8);
+  });
+
   it.each([600, 1280])(
     "shows the selected pane search result before quick-find jumps at %ipx",
     async (stageWidth) => {

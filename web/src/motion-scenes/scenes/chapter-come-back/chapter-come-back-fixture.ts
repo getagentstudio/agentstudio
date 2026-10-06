@@ -12,6 +12,7 @@ export const comeBackParts = {
 } as const;
 
 export const chapterComeBackStepKeyParts = {
+  "quit-in-flight": comeBackParts.processCounter,
   persistence: comeBackParts.processCounter,
 } as const satisfies Partial<Record<ChapterStepId, string>>;
 

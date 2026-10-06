@@ -103,7 +103,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
     var appIPCServerChannel: AgentStudioIPCChannel = AppDelegate.compiledAppIPCChannel()
     var paneIPCIdentityOwner: PaneIPCIdentityOwner!
     var appIPCSessionsIngestion: SessionsIngestion?
-    var paneReportSpoolDrainTask: Task<Void, Never>?
+    var paneCLIOutboxDrainTask: Task<Void, Never>?
     /// Exact provider profiles are composition input. Only the releases listed
     /// here grant provider-reported authority; every other provider, version or
     /// mode reports as unqualified. Composition happens here because the

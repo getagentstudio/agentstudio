@@ -32,6 +32,7 @@ function buildReviewScene(
     { boxShadow: "inset 0 0 0 1px rgb(137 180 250 / 80%)", duration: 0.35, ease: "power2.out" },
     1.1,
   );
+  builder.label("review-comment", 1.65);
   builder.expand(annotationSlot, 1.65, 0.4);
   builder.reveal(commentThread, 1.65, { duration: 0.4, ease: "power2.out" });
   builder.holdUntil(totalDurationSeconds);
@@ -39,6 +40,9 @@ function buildReviewScene(
 
 export const chapterReviewScene: SceneModule = {
   sceneId: "chapter-review",
-  steps: [{ stepId: "review-diff", timelineLabel: "review-diff" }],
+  steps: [
+    { stepId: "review-diff", timelineLabel: "review-diff" },
+    { stepId: "review-comment", timelineLabel: "review-comment" },
+  ],
   buildScene: buildReviewScene,
 };

@@ -19,6 +19,12 @@ package struct IPCMethodExampleDocument: Codable, Equatable, Sendable {
         self.parameters = try JSONDecoder().decode(IPCSchemaValue.self, from: parameters)
         self.result = try JSONDecoder().decode(IPCSchemaValue.self, from: result)
     }
+
+    package func encodedParameters() throws -> Data {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys]
+        return try encoder.encode(parameters)
+    }
 }
 
 package struct IPCMethodCatalogEntry: Codable, Equatable, Sendable {

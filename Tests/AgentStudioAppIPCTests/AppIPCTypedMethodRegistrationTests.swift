@@ -20,7 +20,7 @@ struct AppIPCTypedMethodRegistrationTests {
         let registration = try makeRegistration(recorder: recorder)
         let erasedRegistration = try registration.erase()
 
-        let result = try await erasedRegistration.invoke(
+        let transportResult = try await erasedRegistration.invoke(
             parameters: fixture.parameters(handle: "pane:1", correlationId: correlationId),
             connectionContext: fixture.connectionContext,
             targetResolutionTools: .init(canonicalizePaneHandle: { rawHandle in
@@ -38,6 +38,7 @@ struct AppIPCTypedMethodRegistrationTests {
             }
         )
 
+        let result = try decodeJSONValue(JSONValue.self, from: transportResult)
         #expect(
             result
                 == .object([
@@ -239,7 +240,7 @@ struct AppIPCTypedMethodRegistrationTests {
         )
         let erasedRegistration = try registration.erase()
 
-        let result = try await erasedRegistration.invoke(
+        let transportResult = try await erasedRegistration.invoke(
             parameters: fixture.parameters(handle: "repo:1", correlationId: correlationId),
             connectionContext: fixture.connectionContext,
             targetResolutionTools: fixture.unusedTargetResolutionTools,
@@ -249,6 +250,7 @@ struct AppIPCTypedMethodRegistrationTests {
             }
         )
 
+        let result = try decodeJSONValue(JSONValue.self, from: transportResult)
         #expect(
             result
                 == .object([
