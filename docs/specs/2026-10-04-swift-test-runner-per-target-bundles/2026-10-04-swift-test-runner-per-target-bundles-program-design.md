@@ -67,7 +67,7 @@ already has; this design moves it into one function.
 | E4 Isolation list | inventory rows, exception rows, `.serialized` discovery | existing, **unchanged** | unchanged | in repository and source | unchanged |
 | E5 Invocation | `run_swift_with_timeout` | **modified** | in: label, timeout, command. The kind comes from the command: *direct* when it runs `swiftpm-testing-helper`, *SwiftPM* when it runs `swift test`, *build* for `swift build` / `swift test list` (no stream). Out: exit status `0 / 1 / 124 / 128+n` and the invocation facts | — | extends `swift_test_command_accepts_event_stream` |
 | E6 Event stream | Swift Testing | existing file per invocation, now `--event-stream-version 6.3` | JSON lines; the reader consumes `runStarted`, `runEnded`, `test{kind}`, `testStarted`, `testEnded`, `testCaseStarted`, `testCaseEnded`, `issueRecorded{isKnown,isFailure}` | retained per the existing rules | existing `.events.jsonl` |
-| E6′ Invocation facts | **new** `facts` mode of `swift-test-invocation-receipts.pl` | modified file | stdout `key=value` lines: `stream=complete\|truncated\|missing\|unreadable`, `unreadable_records=N`, `runs=N`, `tests_run=N`, `peak_announced_tests=N`, `peak_running_parameterized_cases=N`, and one `failing_test=<testID>` per test with a failing issue | derived from E6 | the reader's existing `key=value` lines |
+| E6′ Invocation facts | **new** `facts` mode of `swift-test-invocation-receipts.pl` | modified file | stdout `key=value` lines: `stream=complete\|truncated\|missing\|unreadable`, `unreadable_records=N`, `runs=N`, `tests_run=N`, `tests_skipped=N`, `peak_announced_tests=N`, `peak_running_parameterized_cases=N`, one `failing_test=<testID>` per test with a failing issue, and `failing_issue=unattributed` (counted) for a failing issue that carries no test ID | derived from E6 | the reader's existing `key=value` lines |
 | E7 Build receipt | `prebuild_swift_tests_with_build_receipt` | **modified** `$BUILD_PATH/agentstudio-test-build-receipt` | `bundle=<Target>@<size>@<mtime>` (one per bundle, sorted), `bundle_set=<16 hex sha256 of the sorted bundle lines>`, `bundle_count=N`, `suite_map_digest=<first 16 hex of sha256 over the map's bytes followed by the listing's bytes>` (one canonical digest; `swift_test_suite_map_digest` computes it for both writer and reader), `head_sha=`, `tree_dirty=` | persisted; published last | existing `key=value` receipt |
 | E8 Lane report | `print_closing_lane_report` | **modified** | `bundle_identity=` becomes `bundle_set=` and `bundle_count=`; new `failing_test=` lines per invocation; `failed_isolated_suite=` gains `reason=`; peak labels keep today's names | printed | existing `lane-report key=value` |
 
@@ -172,9 +172,10 @@ The facts are read on **every** terminal path. On the hang path they are read af
 | 124 (hang bound) | any | 124 | today's hang evidence + every `failing_test=` + `stream=` |
 | non-zero, not 124 | failing tests | the child's status | every `failing_test=` + `stream=` |
 | non-zero, not 124 | no failing tests | the child's status | `crashed status=<n> signal=<name>` + `stream=` |
-| 0 | failing tests | 1 | every `failing_test=` (R7) |
+| 0 | failing tests, or a failing issue with no test ID | 1 | every `failing_test=` and `failing_issue=unattributed` (R7) |
 | 0 | stream not complete (truncated, missing or unreadable) | 1 | `reason=event_stream_incomplete stream=<state> runs=<n>/<expected> unreadable_records=<n>` (R10) |
-| 0 | `tests_run` = 0 | 1 | `reason=no_matching_tests` |
+| 0 | `tests_run` = 0 and `tests_skipped` = 0 (the filter matched nothing) | 1 | `reason=no_matching_tests` |
+| 0 | `tests_run` = 0 and `tests_skipped` > 0 (matched tests are condition-skipped, e.g. an env-gated harness suite) | 0 | `tests_skipped=<n>` |
 | 0 | complete, tests ran, no failing issue | 0 | — |
 | any | reader unavailable | the child's status if non-zero, else 1 | `reason=facts_reader_unavailable` |
 
