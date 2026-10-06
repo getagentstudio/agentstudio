@@ -53,12 +53,26 @@ extension SwiftLaneReceiptTests {
             export PATH='\(toolDirectory.path)':"$PATH"
             export LANE_TASK_FIXTURE_ROOT="$BUILD_PATH"
             export LANE_EVENT_STREAM_DIR="$BUILD_PATH/evidence"
+            export SWIFT_TEST_FAILED_ISOLATED_SUITES_FILE="$BUILD_PATH/parent-failed-suites"
             \(lane == "benchmark" ? "export AGENT_STUDIO_BENCHMARK_MODE=benchmark" : "")
-            set -e
-            \(body)
+            (
+              export SWIFT_TEST_FAILED_ISOLATED_SUITES_FILE="$BUILD_PATH/failed-suites"
+              export SWIFT_TEST_PEAK_ANNOUNCED_FILE="$BUILD_PATH/announced-peaks"
+              export SWIFT_TEST_PEAK_RUNNING_FILE="$BUILD_PATH/running-peaks"
+              export SWIFT_TEST_SKIP_PREBUILD=0
+              set -e
+              \(body)
+            )
+            task_status=$?
+            if [ -e "$BUILD_PATH/parent-failed-suites" ]; then
+              echo PARENT_LEDGER_MODIFIED
+              exit 99
+            fi
+            exit "$task_status"
             """
         )
         #expect(result.exitCode == (scenario == "pass" ? 0 : 1), Comment(rawValue: result.output))
+        #expect(!result.output.contains("PARENT_LEDGER_MODIFIED"), Comment(rawValue: result.output))
         if scenario == "missing-suite" {
             #expect(
                 result.output.contains("selector=\(missingSelector) reason=not_in_any_bundle"),

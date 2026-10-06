@@ -5,8 +5,8 @@ import Testing
 extension SwiftLaneReceiptTests {
     @Test(
         "coverage publishes fresh metadata and rejects changed reused maps before dispatch",
-        arguments: ["fresh", "map", "listing"])
-    func coverageTaskChecksItsBuildContract(scenario: String) async throws {
+        arguments: ["fresh", "map", "listing"], [false, true])
+    func coverageTaskChecksItsBuildContract(scenario: String, includeE2E: Bool) async throws {
         let fixture = try SuiteMapProofFixture()
         defer { fixture.remove() }
         let configuration = try String(contentsOfFile: ".mise.toml", encoding: .utf8)
@@ -26,6 +26,8 @@ extension SwiftLaneReceiptTests {
             """
             TIMEOUT_SECONDS=60; PREBUILD_TIMEOUT_SECONDS=1200
             EXTRA_SWIFT_TEST_ARGS=--enable-code-coverage
+            export SWIFT_TEST_INCLUDE_E2E=\(includeE2E ? "1" : "0")
+            export SWIFT_TEST_SKIP_PREBUILD=0
             swift_test_lane_mandatory_selectors() { printf '%s\\n' WebKitSerializedTests/BridgePaneControllerTests; }
             run_fast_non_webkit_swift_tests() {
               echo FAST_PHASE
@@ -34,7 +36,13 @@ extension SwiftLaneReceiptTests {
             }
             run_large_non_webkit_swift_tests() { echo LARGE_PHASE; }
             run_webkit_suites() { echo WEBKIT_PHASE; }
-            run_swift_with_timeout() { : > "$CODECOV_TMPFILE"; }
+            run_swift_with_timeout() {
+              if [ "$1" = show-codecov-path ]; then
+                : > "$CODECOV_TMPFILE"
+              else
+                echo E2E_PHASE
+              fi
+            }
             \(reusedSetup)
             (set -e; \(body))
             echo TASK_STATUS=$?
@@ -45,10 +53,12 @@ extension SwiftLaneReceiptTests {
             for phase in ["FAST_PHASE", "LARGE_PHASE", "WEBKIT_PHASE"] {
                 #expect(output.contains(phase), Comment(rawValue: output))
             }
+            #expect(output.contains("E2E_PHASE") == includeE2E, Comment(rawValue: output))
         } else {
             #expect(output.contains("TASK_STATUS=1"), Comment(rawValue: output))
             #expect(output.contains("reason=suite_map_unlinked"), Comment(rawValue: output))
             #expect(!output.contains("FAST_PHASE"), Comment(rawValue: output))
+            #expect(!output.contains("E2E_PHASE"), Comment(rawValue: output))
         }
         #expect(task.contains("EXTRA_SWIFT_TEST_ARGS=\"--enable-code-coverage\""))
         #expect(task.contains("SWIFT_TEST_TIMEOUT_SECONDS:-60"))
