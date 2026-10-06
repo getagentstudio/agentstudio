@@ -235,11 +235,17 @@ extension PaneContextStorage {
     static func setNoticeState(
         _ database: Database, message: PaneContextStoredMessage, state: String, change: String?, now: Date
     ) throws {
+        try transitionNoticeState(database, message: message, state: state, change: change, now: now)
+        try bumpRevision(database, paneId: message.detail.sourcePaneId)
+    }
+
+    static func transitionNoticeState(
+        _ database: Database, message: PaneContextStoredMessage, state: String, change: String?, now: Date
+    ) throws {
         if let change { _ = try appendChange(database, message: message, kind: change, now: now) }
         let position = try nextPosition(database, paneId: message.detail.sourcePaneId)
         try database.execute(
             sql: "UPDATE pane_event SET notice_state = ?, settled_at = ?, position = ? WHERE id = ?",
             arguments: [state, try timestamp(now), try integer(position, field: "position"), message.rowId.uuidString])
-        try bumpRevision(database, paneId: message.detail.sourcePaneId)
     }
 }
