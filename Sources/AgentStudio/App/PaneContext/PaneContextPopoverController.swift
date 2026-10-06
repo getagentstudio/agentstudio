@@ -12,6 +12,7 @@ final class PaneContextPopoverController {
     private(set) var unavailableNote: String?
     private(set) var actionFeedback: String?
     let location: PaneContextPopoverLocation
+    let includingDrawers: Bool
     private var reader: any PaneContextDetailReading
     private var person: any PaneContextPersonActing
     private let titleForPane: @MainActor (PaneId) -> String?
@@ -21,12 +22,14 @@ final class PaneContextPopoverController {
 
     init(
         reader: any PaneContextDetailReading, person: any PaneContextPersonActing,
-        location: PaneContextPopoverLocation, titleForPane: @escaping @MainActor (PaneId) -> String?,
+        location: PaneContextPopoverLocation, includingDrawers: Bool = true,
+        titleForPane: @escaping @MainActor (PaneId) -> String?,
         revisionForPane: @escaping @MainActor (PaneId) -> PaneContextRevision?
     ) {
         self.reader = reader
         self.person = person
         self.location = location
+        self.includingDrawers = includingDrawers
         self.titleForPane = titleForPane
         self.revisionForPane = revisionForPane
     }
@@ -199,94 +202,10 @@ final class PaneContextPopoverController {
 
     func dismissAllNotices() async {
         guard let owner = paneId else { return }
-        generation &+= 1
-        let requestGeneration = generation
-        guard var snapshot = detail else {
-            actionFeedback = "No notices"
-            await refresh()
-            return
-        }
-
-        var feedback: [String] = []
-        var dismissedNoticeIDs: Set<AgentMessageId> = []
-        let initialDismissal = await PaneContextPopoverAnswerParsing.dismissNotices(
-            detail: snapshot, excluding: dismissedNoticeIDs, person: person)
-        appendNoticeFeedback(initialDismissal, to: &feedback, dismissedNoticeIDs: &dismissedNoticeIDs)
-
-        while let truncation = snapshot.truncation {
-            let page: PaneContextReadPage
-            if let omitted = truncation.omitted.first {
-                page = .more(source: omitted.source, after: omitted.next)
-            } else if truncation.remainingLiveSources > 0, let after = truncation.nextSourcesAfter {
-                page = .moreSources(after: after)
-            } else {
-                break
-            }
-
-            guard
-                let pageRead = await readDismissalPage(
-                    owner, page: page, previous: snapshot, generation: requestGeneration)
-            else { return }
-            snapshot = pageRead.snapshot
-            if let newPage = pageRead.newPage {
-                let pageDismissal = await PaneContextPopoverAnswerParsing.dismissNotices(
-                    detail: newPage, excluding: dismissedNoticeIDs, person: person)
-                appendNoticeFeedback(pageDismissal, to: &feedback, dismissedNoticeIDs: &dismissedNoticeIDs)
-            }
-        }
-
-        guard paneId == owner, requestGeneration == generation else { return }
-        actionFeedback = feedback.isEmpty ? "No notices" : feedback.joined(separator: "; ")
+        let result = await person.dismissAllNotices(paneId: owner, includingDrawers: includingDrawers)
+        guard paneId == owner else { return }
+        actionFeedback = await PaneContextPopoverFeedback.dismissAll(result)
         await refresh()
-    }
-
-    private func appendNoticeFeedback(
-        _ result: PaneContextPopoverNoticeDismissal, to feedback: inout [String],
-        dismissedNoticeIDs: inout Set<AgentMessageId>
-    ) {
-        dismissedNoticeIDs.formUnion(result.noticeIDs)
-        guard result.feedback != "No notices" else { return }
-        feedback.append(result.feedback)
-    }
-
-    private struct DismissalPageRead: Sendable {
-        let snapshot: PaneContextDetail
-        let newPage: PaneContextDetail?
-    }
-
-    private func readDismissalPage(
-        _ pane: PaneId, page: PaneContextReadPage, previous: PaneContextDetail,
-        generation requestGeneration: UInt64
-    ) async -> DismissalPageRead? {
-        let result = await reader.readDetail(.init(paneId: pane, page: page))
-        guard requestGeneration == generation, paneId == pane else { return nil }
-        switch result {
-        case .paneGone:
-            close()
-            return nil
-        case .unavailable(let failure):
-            let note = await PaneContextPopoverFeedback.unavailable(failure)
-            guard requestGeneration == generation else { return nil }
-            unavailableNote = "Context unavailable: \(note)"
-            return nil
-        case .sourceNotInView:
-            let dropped = await PaneContextPopoverPaging.dropSource(from: previous, page: page)
-            guard requestGeneration == generation else { return nil }
-            guard let dropped else { return .init(snapshot: previous, newPage: nil) }
-            await assign(dropped, generation: requestGeneration)
-            return .init(snapshot: dropped, newPage: nil)
-        case .detail(let next):
-            let update = await PaneContextPopoverPaging.merge(previous: previous, next: next, page: page)
-            guard requestGeneration == generation else { return nil }
-            switch update {
-            case .restartFirst:
-                return await readDismissalPage(
-                    pane, page: .first, previous: previous, generation: requestGeneration)
-            case .detail(let snapshot):
-                await assign(snapshot, generation: requestGeneration)
-                return .init(snapshot: snapshot, newPage: next)
-            }
-        }
     }
 
 }

@@ -32,11 +32,13 @@ actor PaneContextPopoverTestPorts: PaneContextDetailReading, PaneContextPersonAc
     private(set) var dismissals: [(AgentMessageId, PaneId)] = []
     private(set) var readsMarked: [(AgentMessageId, PaneId)] = []
     private(set) var actions: [MessageActionRequest] = []
+    private(set) var dismissAllCalls: [(PaneId, Bool)] = []
     private var answerResults: [AnswerAskResult] = []
     var answerResult: AnswerAskResult = .answered
     var dismissResult: DismissResult = .done
     var markReadResult: MarkReadResult = .done
     var actionResult: MessageActionResult = .notFound
+    var dismissAllResult: DismissAllNoticesResult = .dismissed(count: 0)
     init(_ detail: PaneContextDetail, results: [PaneContextReadResult] = [], heldReads: Set<Int> = []) {
         fallback = detail
         self.results = results
@@ -49,6 +51,7 @@ actor PaneContextPopoverTestPorts: PaneContextDetailReading, PaneContextPersonAc
     func configureDismiss(_ result: DismissResult) { dismissResult = result }
     func configureMarkRead(_ result: MarkReadResult) { markReadResult = result }
     func configureAction(_ result: MessageActionResult) { actionResult = result }
+    func configureDismissAll(_ result: DismissAllNoticesResult) { dismissAllResult = result }
     func release(_ number: Int) { releases.append(scope: number, fact: .released) }
 
     func readDetail(_ request: PaneContextReadRequest) async -> PaneContextReadResult {
@@ -82,6 +85,10 @@ actor PaneContextPopoverTestPorts: PaneContextDetailReading, PaneContextPersonAc
         actions.append(request)
         return actionResult
     }
+    func dismissAllNotices(paneId: PaneId, includingDrawers: Bool) async -> DismissAllNoticesResult {
+        dismissAllCalls.append((paneId, includingDrawers))
+        return dismissAllResult
+    }
     func finish() async throws {
         try await reads.finish()
         try await releases.finish()
@@ -91,10 +98,11 @@ actor PaneContextPopoverTestPorts: PaneContextDetailReading, PaneContextPersonAc
 @MainActor
 func makePopoverController(
     ports: PaneContextPopoverTestPorts, location: PaneContextPopoverLocation = .pane,
+    includingDrawers: Bool = true,
     titleForPane: @escaping @MainActor (PaneId) -> String? = { _ in nil },
     revisionForPane: @escaping @MainActor (PaneId) -> PaneContextRevision? = { _ in nil }
 ) -> PaneContextPopoverController {
     PaneContextPopoverController(
-        reader: ports, person: ports, location: location,
+        reader: ports, person: ports, location: location, includingDrawers: includingDrawers,
         titleForPane: titleForPane, revisionForPane: revisionForPane)
 }

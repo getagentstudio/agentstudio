@@ -9,40 +9,63 @@ import Testing
 @MainActor
 @Suite(.serialized)
 struct PaneContextPopoverControllerPagingTests {
-    @Test("Dismiss all pages through truncated notice sources without touching asks")
-    func dismissAllNoticesPagesRemainingSources() async throws {
+    @Test("Dismiss all delegates one current-membership call and leaves asks untouched")
+    func dismissAllNoticesUsesOneServiceCall() async throws {
         let owner = PaneId.generateUUIDv7()
-        let drawer = PaneId.generateUUIDv7()
         let first = try PaneContextPopoverShapingTests.message(
             paneId: owner, shape: .notice(.unread), importance: .info, sentAt: 3)
         let ask = try PaneContextPopoverShapingTests.message(
             paneId: owner,
             shape: .ask(.question, .freeText(placeholder: nil), .blocking(deadline: .distantFuture), .open),
             importance: .attention, sentAt: 2)
-        let second = try PaneContextPopoverShapingTests.message(
-            paneId: owner, shape: .notice(.unread), importance: .done, sentAt: 1)
-        let third = try PaneContextPopoverShapingTests.message(
-            paneId: drawer, shape: .notice(.read), importance: .info, sentAt: 0)
-        let initial = PaneContextPopoverShapingTests.detail(
-            paneId: owner, messages: [first, ask],
-            truncation: .init(
-                omitted: [.init(source: owner, openAsks: 0, unreadNotices: 1, next: .init(rank: 1, position: 12))],
-                remainingLiveSources: 1, nextSourcesAfter: owner))
-        let page = PaneContextPopoverShapingTests.detail(paneId: owner, messages: [second])
-        let sourcePage = PaneContextPopoverShapingTests.detail(
-            paneId: owner, drawers: [.init(sourcePaneId: drawer, messages: [third])])
-        let ports = PaneContextPopoverTestPorts(
-            initial, results: [.detail(initial), .detail(page), .detail(sourcePage), .detail(initial)])
+        let initial = PaneContextPopoverShapingTests.detail(paneId: owner, messages: [first, ask])
+        let ports = PaneContextPopoverTestPorts(initial)
+        await ports.configureDismissAll(.dismissed(count: 1))
         let controller = makePopoverController(ports: ports)
         await controller.open(owner)
         await controller.dismissAllNotices()
-        #expect(await ports.dismissals.map(\.0) == [first.id, second.id, third.id])
-        #expect(await ports.dismissals.contains { $0.0 == ask.id } == false)
-        #expect(
-            await ports.requests.map(\.page) == [
-                .first, .more(source: owner, after: .init(rank: 1, position: 12)),
-                .moreSources(after: owner), .first,
-            ])
+        #expect(await ports.dismissAllCalls.count == 1)
+        #expect(await ports.dismissAllCalls.first?.0 == owner)
+        #expect(await ports.dismissAllCalls.first?.1 == true)
+        #expect(await ports.dismissals.isEmpty)
+        #expect(await ports.answers.isEmpty)
+        #expect(controller.actionFeedback == "Dismissed 1 notices")
+        #expect(await ports.requests.map(\.page) == [.first, .first])
+        controller.close()
+        try await ports.finish()
+    }
+
+    @Test("Dismiss all surfaces typed storage failure without dismissing messages")
+    func dismissAllNoticesSurfacesUnavailable() async throws {
+        let owner = PaneId.generateUUIDv7()
+        let ask = try PaneContextPopoverShapingTests.message(
+            paneId: owner,
+            shape: .ask(.question, .freeText(placeholder: nil), .blocking(deadline: .distantFuture), .open),
+            importance: .attention)
+        let ports = PaneContextPopoverTestPorts(PaneContextPopoverShapingTests.detail(paneId: owner, messages: [ask]))
+        await ports.configureDismissAll(.unavailable(.databaseUnavailable))
+        let controller = makePopoverController(ports: ports)
+        await controller.open(owner)
+        await controller.dismissAllNotices()
+        #expect(await ports.dismissAllCalls.count == 1)
+        #expect(await ports.dismissAllCalls.first?.0 == owner)
+        #expect(await ports.dismissAllCalls.first?.1 == true)
+        #expect(await ports.dismissals.isEmpty)
+        #expect(controller.actionFeedback == "Dismiss unavailable: database unavailable")
+        controller.close()
+        try await ports.finish()
+    }
+
+    @Test("Drawer host dismiss-all uses its own membership scope")
+    func dismissAllNoticesUsesOwnScopeForDrawerHost() async throws {
+        let drawer = PaneId.generateUUIDv7()
+        let ports = PaneContextPopoverTestPorts(PaneContextPopoverShapingTests.detail(paneId: drawer))
+        let controller = makePopoverController(ports: ports, includingDrawers: false)
+        await controller.open(drawer)
+        await controller.dismissAllNotices()
+        #expect(await ports.dismissAllCalls.count == 1)
+        #expect(await ports.dismissAllCalls.first?.0 == drawer)
+        #expect(await ports.dismissAllCalls.first?.1 == false)
         controller.close()
         try await ports.finish()
     }

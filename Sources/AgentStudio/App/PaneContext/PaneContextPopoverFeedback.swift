@@ -70,6 +70,12 @@ enum PaneContextPopoverFeedback {
         case .unavailable(let failure): "Mark read unavailable: \(storage(failure))"
         }
     }
+    @concurrent nonisolated static func dismissAll(_ result: DismissAllNoticesResult) async -> String {
+        switch result {
+        case .dismissed(let count): "Dismissed \(count) notices"
+        case .unavailable(let failure): "Dismiss unavailable: \(storage(failure))"
+        }
+    }
     @concurrent nonisolated static func action(_ result: MessageActionResult) async -> String {
         switch result {
         case .openFile(.opened): "File opened"

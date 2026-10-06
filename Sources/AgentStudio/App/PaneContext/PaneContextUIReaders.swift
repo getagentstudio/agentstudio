@@ -29,11 +29,11 @@ struct PaneContextUIReaders {
 
     func makePopoverController(
         reader: any PaneContextDetailReading, person: any PaneContextPersonActing,
-        location: PaneContextPopoverLocation
+        location: PaneContextPopoverLocation, includingDrawers: Bool = true
     ) -> PaneContextPopoverController {
         PaneContextPopoverController(
             reader: reader, person: person,
-            location: location, titleForPane: titleForPane,
+            location: location, includingDrawers: includingDrawers, titleForPane: titleForPane,
             revisionForPane: { contextDisplayForPane($0)?.revision })
     }
 }

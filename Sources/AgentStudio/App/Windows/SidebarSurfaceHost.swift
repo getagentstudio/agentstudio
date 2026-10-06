@@ -142,7 +142,7 @@ struct SidebarSurfaceHost: View {
                             octiconLoader: octiconLoader,
                             onGoToPane: { target in
                                 AppCommandDispatcher.shared.dispatch(.focusPane, target: target, targetType: .pane)
-                            }))
+                            }, includingDrawers: !paneContextReaders.isDrawerPane(pane)))
                 },
                 latestPaneMessageSnapshot: { paneId in
                     paneActivityStatusAtom.status(for: paneId)

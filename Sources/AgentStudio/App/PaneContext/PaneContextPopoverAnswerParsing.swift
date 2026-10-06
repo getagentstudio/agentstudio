@@ -5,10 +5,6 @@ enum PaneContextPopoverParsedAnswer: Sendable {
     case success(AskAnswerValue)
     case failure(AnswerRefusal)
 }
-struct PaneContextPopoverNoticeDismissal: Sendable {
-    let feedback: String
-    let noticeIDs: Set<AgentMessageId>
-}
 enum PaneContextPopoverAnswerParsing {
     nonisolated static func message(_ id: AgentMessageId, detail: PaneContextDetail?) -> AgentMessageDetail? {
         guard let detail else { return nil }
@@ -65,27 +61,4 @@ enum PaneContextPopoverAnswerParsing {
         return false
     }
 
-    @concurrent nonisolated static func dismissAllNotices(
-        detail: PaneContextDetail?, person: any PaneContextPersonActing
-    ) async -> String {
-        await dismissNotices(detail: detail, excluding: [], person: person).feedback
-    }
-
-    @concurrent nonisolated static func dismissNotices(
-        detail: PaneContextDetail?, excluding: Set<AgentMessageId>, person: any PaneContextPersonActing
-    ) async -> PaneContextPopoverNoticeDismissal {
-        guard let detail else { return .init(feedback: "No notices", noticeIDs: []) }
-        let messages = detail.messages + detail.drawerMessages.flatMap(\.messages)
-        var feedback: [String] = []
-        var noticeIDs: Set<AgentMessageId> = []
-        for message in messages {
-            guard case .notice(let state) = message.shape, state == .unread || state == .read else { continue }
-            guard !excluding.contains(message.id) else { continue }
-            noticeIDs.insert(message.id)
-            let result = await person.dismiss(messageId: message.id, paneId: message.sourcePaneId)
-            feedback.append(await PaneContextPopoverFeedback.dismiss(result, messageId: message.id, detail: detail))
-        }
-        return .init(
-            feedback: feedback.isEmpty ? "No notices" : feedback.joined(separator: "; "), noticeIDs: noticeIDs)
-    }
 }

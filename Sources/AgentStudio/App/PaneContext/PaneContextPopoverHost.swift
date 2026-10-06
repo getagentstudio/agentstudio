@@ -12,6 +12,7 @@ struct PaneContextPopoverHost: View {
     let readers: PaneContextUIReaders
     let octiconLoader: OcticonLoader
     let onGoToPane: @MainActor (UUID) -> Void
+    var includingDrawers = true
     var onOpenCompleted: @MainActor (PaneContextPopoverController?) -> Void = { _ in }
     @State private var controller: PaneContextPopoverController?
     @State private var isPresented = false
@@ -117,7 +118,7 @@ struct PaneContextPopoverHost: View {
             controller
             ?? readers.makePopoverController(
                 reader: adapter, person: adapter,
-                location: location)
+                location: location, includingDrawers: includingDrawers)
         controller = active
         _ = active.useCurrentService(adapter)
         await active.open(paneId)

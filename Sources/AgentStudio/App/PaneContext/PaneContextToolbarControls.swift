@@ -22,7 +22,7 @@ struct PaneContextToolbarControls: View {
             if display != nil, let messageChip {
                 PaneContextPopoverHost(
                     paneId: paneId, presentation: .messages(messageChip), location: .pane, readers: readers,
-                    octiconLoader: octiconLoader, onGoToPane: onGoToPane)
+                    octiconLoader: octiconLoader, onGoToPane: onGoToPane, includingDrawers: !input.isDrawer)
             }
         }
         .task(id: input) {
