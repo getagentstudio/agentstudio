@@ -1,4 +1,3 @@
-import Darwin
 import Foundation
 
 package enum WorktreeEvidenceArchiveResult: Sendable, Equatable {
@@ -108,24 +107,11 @@ package struct WorktreeEvidenceArchiver: Sendable {
                 guard let size = (attributes[.size] as? NSNumber)?.int64Value, size >= 0 else { return false }
                 let kind: EntryKind = type == .typeRegular ? .regularFile : .symbolicLink
                 result.append(Entry(relativePath: relativePath, kind: kind, size: size))
-            } else if Self.isSpecialFile(atPath: child.path) {
-                result.append(Entry(relativePath: relativePath, kind: .specialFile, size: 0))
             } else {
-                return false
+                result.append(Entry(relativePath: relativePath, kind: .specialFile, size: 0))
             }
         }
         return true
-    }
-
-    private static func isSpecialFile(atPath path: String) -> Bool {
-        var fileStatus = stat()
-        guard lstat(path, &fileStatus) == 0 else { return false }
-        switch fileStatus.st_mode & S_IFMT {
-        case S_IFIFO, S_IFSOCK, S_IFCHR, S_IFBLK:
-            return true
-        default:
-            return false
-        }
     }
 
     private func itemType(at path: URL) -> FileAttributeType? {
