@@ -6,24 +6,17 @@ import SwiftUI
 
 /// Local presentation state; providers resolve effects only when the person opens or acts.
 struct PaneContextPopoverHost: View {
-    struct AutoOpenInput: Equatable {
-        let ask: AgentMessageId?
-        let visible: Bool
-    }
     let paneId: PaneId
     let presentation: RepoExplorerPaneContextControlPresentation
     let location: PaneContextPopoverLocation
     let readers: PaneContextUIReaders
     let octiconLoader: OcticonLoader
     let onGoToPane: @MainActor (UUID) -> Void
-    var autoOpenAskId: AgentMessageId?
-    var isHostVisible = true
     var onOpenCompleted: @MainActor (PaneContextPopoverController?) -> Void = { _ in }
     @State private var controller: PaneContextPopoverController?
     @State private var isPresented = false
     @State private var unavailableNote: String?
     @State private var includeInformational = false
-    @Environment(\.paneContextPopoverAutoOpenState) private var autoOpenState
     @State private var openRequest: UInt64 = 0
     private static let controls = PaneContextPopoverControlProjection.controls()
 
@@ -38,18 +31,6 @@ struct PaneContextPopoverHost: View {
                 guard openRequest > 0 else { return }
                 await openPopover()
             }
-            .task(id: AutoOpenInput(ask: autoOpenAskId, visible: isHostVisible)) {
-                guard
-                    let askId = autoOpenAskId,
-                    let autoOpenState,
-                    PaneContextPopoverAutoOpenPolicy.shouldOpen(
-                        newestAskId: askId,
-                        lastPresentedAskId: autoOpenState.lastPresentedAskId(for: paneId),
-                        isVisible: isHostVisible, location: location)
-                else { return }
-                autoOpenState.rememberPresentedAsk(askId, for: paneId)
-                await openPopover()
-            }
             .task(id: readers.contextDisplayForPane(paneId)?.revision) {
                 guard isPresented, let controller else { return }
                 guard controller.useCurrentService(readers.serviceProvider()) else { return }
@@ -60,9 +41,6 @@ struct PaneContextPopoverHost: View {
             }
             .onChange(of: isPresented) { _, presented in
                 if !presented { controller?.close() }
-            }
-            .onChange(of: isHostVisible) { _, visible in
-                if !visible { isPresented = false }
             }
             .onDisappear { controller?.close() }
     }

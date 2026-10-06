@@ -8,26 +8,21 @@ struct PaneContextToolbarControls: View {
     struct RefreshInput: Equatable {
         let display: PaneContextDisplay?
         let isDrawer: Bool
-        let isVisible: Bool
     }
     let paneId: PaneId
     let readers: PaneContextUIReaders
     let octiconLoader: OcticonLoader
     let onGoToPane: @MainActor (UUID) -> Void
-    @Environment(\.paneContextHostVisible) private var isHostVisible
     @State private var messageChip: PaneMessageChipModel?
 
     var body: some View {
         let display = readers.contextDisplayForPane(paneId)
-        let input = RefreshInput(display: display, isDrawer: readers.isDrawerPane(paneId), isVisible: isHostVisible)
+        let input = RefreshInput(display: display, isDrawer: readers.isDrawerPane(paneId))
         Group {
-            if let display, let messageChip {
+            if display != nil, let messageChip {
                 PaneContextPopoverHost(
                     paneId: paneId, presentation: .messages(messageChip), location: .pane, readers: readers,
-                    octiconLoader: octiconLoader, onGoToPane: onGoToPane,
-                    autoOpenAskId: input.isDrawer
-                        ? display.own.newestOpenBlockingAskId : display.includingDrawers.newestOpenBlockingAskId,
-                    isHostVisible: isHostVisible)
+                    octiconLoader: octiconLoader, onGoToPane: onGoToPane)
             }
         }
         .task(id: input) {
