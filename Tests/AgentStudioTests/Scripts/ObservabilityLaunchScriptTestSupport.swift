@@ -61,6 +61,9 @@ struct LauncherScriptFixture {
         let buildPath = url("debug-build")
         let debugPath = buildPath.appending(path: "debug")
         try FileManager.default.createDirectory(at: debugPath, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(
+            at: debugPath.appending(path: "AgentStudio_AgentStudio.bundle"),
+            withIntermediateDirectories: true)
         let binaryURL = debugPath.appending(path: "AgentStudio")
         try contents.write(to: binaryURL, atomically: true, encoding: .utf8)
         chmod(binaryURL.path, 0o755)
