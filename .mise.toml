@@ -439,6 +439,7 @@ swift_build_slot_acquire test "mise run test:swift:coverage"
 trap swift_build_slot_release EXIT
 BUILD_PATH="$SWIFT_BUILD_DIR"
 TIMEOUT_SECONDS="${SWIFT_TEST_TIMEOUT_SECONDS:-60}"
+PREBUILD_TIMEOUT_SECONDS="${SWIFT_TEST_PREBUILD_TIMEOUT_SECONDS:-$TIMEOUT_SECONDS}"
 echo "[test-coverage] BUILD_PATH=$BUILD_PATH"
 echo "[test-coverage] TIMEOUT_SECONDS=$TIMEOUT_SECONDS"
 
@@ -446,7 +447,10 @@ LOG_PREFIX="test-coverage"
 EXTRA_SWIFT_TEST_ARGS="--enable-code-coverage"
 source scripts/swift-test-helpers.sh
 
-prebuild_swift_tests
+if [ "${SWIFT_TEST_SKIP_PREBUILD:-0}" != "1" ]; then
+  prebuild_swift_tests_with_build_receipt
+fi
+swift_test_preflight_lane test
 
 run_fast_non_webkit_swift_tests
 run_large_non_webkit_swift_tests

@@ -1762,6 +1762,21 @@ swift_test_suite_map_preflight() {
 }
 
 # Reuse existing membership authorities without introducing a second inventory.
+swift_test_preflight_lane() {
+  local lane_mode="$1" selector selector_output
+  local -a mandatory_selectors=()
+  selector_output="$(swift_test_lane_mandatory_selectors "$lane_mode")" || return 1
+  while IFS= read -r selector; do
+    [ -n "$selector" ] || continue
+    mandatory_selectors+=("$selector")
+  done <<<"$selector_output"
+  if [ "${#mandatory_selectors[@]}" -eq 0 ]; then
+    swift_test_suite_map_preflight
+  else
+    swift_test_suite_map_preflight "${mandatory_selectors[@]}"
+  fi
+}
+
 swift_test_lane_mandatory_selectors() {
   local lane_mode="$1"
   case "$lane_mode" in

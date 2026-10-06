@@ -3,6 +3,57 @@ import Foundation
 import Testing
 
 extension SwiftLaneReceiptTests {
+    @Test(
+        "coverage publishes fresh metadata and rejects changed reused maps before dispatch",
+        arguments: ["fresh", "map", "listing"])
+    func coverageTaskChecksItsBuildContract(scenario: String) async throws {
+        let fixture = try SuiteMapProofFixture()
+        defer { fixture.remove() }
+        let configuration = try String(contentsOfFile: ".mise.toml", encoding: .utf8)
+        let task = try laneScriptNamedBlock(
+            startingWith: "[tasks.\"test:swift:coverage\"]", endingBefore: "\n[tasks.", in: configuration)
+        let bodyStart = try #require(task.range(of: "source scripts/swift-test-helpers.sh\n"))
+        let body = String(task[bodyStart.upperBound...]).components(separatedBy: "\n\"\"\"")[0]
+        let reusedSetup =
+            scenario == "fresh"
+            ? ""
+            : """
+            prebuild_swift_tests_with_build_receipt || exit 1
+            export SWIFT_TEST_SKIP_PREBUILD=1
+            printf 'changed\\n' >> "$BUILD_PATH/agentstudio-test-\(scenario == "map" ? "suite-map" : "list")"
+            """
+        let output = try await fixture.run(
+            """
+            TIMEOUT_SECONDS=60; PREBUILD_TIMEOUT_SECONDS=1200
+            EXTRA_SWIFT_TEST_ARGS=--enable-code-coverage
+            swift_test_lane_mandatory_selectors() { printf '%s\\n' WebKitSerializedTests/BridgePaneControllerTests; }
+            run_fast_non_webkit_swift_tests() {
+              echo FAST_PHASE
+              swift_test_bundle_for_suite WebKitSerializedTests/BridgePaneControllerTests || return 1
+              [ "$(swift_test_invocation_expected_runs swift test)" = 2 ] || return 1
+            }
+            run_large_non_webkit_swift_tests() { echo LARGE_PHASE; }
+            run_webkit_suites() { echo WEBKIT_PHASE; }
+            run_swift_with_timeout() { : > "$CODECOV_TMPFILE"; }
+            \(reusedSetup)
+            (set -e; \(body))
+            echo TASK_STATUS=$?
+            """
+        )
+        if scenario == "fresh" {
+            #expect(output.contains("TASK_STATUS=0"), Comment(rawValue: output))
+            for phase in ["FAST_PHASE", "LARGE_PHASE", "WEBKIT_PHASE"] {
+                #expect(output.contains(phase), Comment(rawValue: output))
+            }
+        } else {
+            #expect(output.contains("TASK_STATUS=1"), Comment(rawValue: output))
+            #expect(output.contains("reason=suite_map_unlinked"), Comment(rawValue: output))
+            #expect(!output.contains("FAST_PHASE"), Comment(rawValue: output))
+        }
+        #expect(task.contains("EXTRA_SWIFT_TEST_ARGS=\"--enable-code-coverage\""))
+        #expect(task.contains("SWIFT_TEST_TIMEOUT_SECONDS:-60"))
+    }
+
     @Test("exact selectors, sealed maps, and bundle membership fail with named reasons")
     func suiteMapPreflightRejectsBrokenBuildContracts() async throws {
         let fixture = try SuiteMapProofFixture()
