@@ -44,7 +44,7 @@ package enum AppPolicies {
         package static let maximumChangeBytes = 262_144
         package static let changeRetentionLifetime: TimeInterval = 86_400
         package static let panePurgeLifetime: TimeInterval = 86_400
-        /// Matches Sessions.maximumSourceFutureSkew for the R7a source-time allowance.
+        /// Source-time allowance for pane messages.
         package static let maximumSourceFutureSkew: TimeInterval = 300
     }
 
@@ -69,8 +69,6 @@ package enum AppPolicies {
         package static let maximumPromptSummaryBytes = 1024
         package static let maximumListedOpenPrompts = 16
         package static let maximumFailureSummaryBytes = 2048
-        /// Matches PaneContext.maximumSourceFutureSkew; Sessions owns its own validation policy.
-        package static let maximumSourceFutureSkew: TimeInterval = 300
         /// Live ingress bounds. Exceeding either bound discloses the loss on
         /// the request instead of silently dropping the fact.
         package static let maximumPendingIngestionPerPane = 256

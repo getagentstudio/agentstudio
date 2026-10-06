@@ -72,15 +72,6 @@ struct ClaudeCodeStatusTraceTests {
         #expect(openFields.message == "Choose a fixture color.")
     }
 
-    @Test("new keyed completion hooks retain occurrence identity on re-invocation")
-    func completionOccurrenceIsStable() throws {
-        for event in ["PostToolUse", "PostToolUseFailure", "AskUserQuestion.PostToolUse"] {
-            let first = try RecordedClaudeStatusTrace.project(event)
-            let repeatEvent = try RecordedClaudeStatusTrace.project(event)
-            #expect(first.event.occurrenceId == repeatEvent.event.occurrenceId)
-        }
-    }
-
     @Test(
         "recorded provider forms and answers stay off the status wire and pass real schema admission",
         arguments: ["Elicitation", "ElicitationResult"])
@@ -128,8 +119,7 @@ enum RecordedClaudeStatusTrace {
     static func project(_ fixture: String) throws -> IPCSessionEventParams {
         let decoded = try payload(fixture)
         let result = ClaudeCodeHookProjection.project(
-            sourceOccurredAt: Date(timeIntervalSince1970: 1_700_000_000),
-            announcedEvent: decoded.hookEventName, payload: decoded, providerVersion: "2.1.286",
+            payload: decoded, providerVersion: "2.1.286",
             correlationIdentifier: UUIDv7.generate(), freshOccurrenceIdentifier: { UUIDv7.generate() })
         guard case .projected(let params) = result else {
             Issue.record("Recorded \(fixture) was refused: \(result)")

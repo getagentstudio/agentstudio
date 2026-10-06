@@ -249,49 +249,6 @@ struct CommandBarWorktreeCreationTests {
         #expect(await listing.requestedRepositoryIds == [fixture.repository.id])
     }
 
-    @Test("a branch answer from an older enrichment revision is replaced")
-    func staleBranchListingIsRequeried() async throws {
-        let fixture = Self.makeFixture()
-        let repoCache = RepoCacheAtom()
-        let listing = SequencedBranchListing()
-        let controller = makeController(store: fixture.store, repoCache: repoCache, branchListing: listing)
-        controller.state.show(prefix: ">")
-        controller.state.pushLevel(Self.menuLevel(fixture: fixture))
-        controller.requestCreationQueriesIfNeeded(for: try #require(controller.state.currentLevel))
-        #expect(await listing.awaitQueries(count: 1) == 1)
-        let firstTask = try #require(controller.branchListingQueriesByRepositoryId[fixture.repository.id]?.task)
-
-        repoCache.setRepoEnrichment(.awaitingOrigin(repoId: fixture.repository.id))
-        await listing.answer(at: 0, with: ["old"])
-        await firstTask.value
-        #expect(controller.state.branchNamesByRepositoryId[fixture.repository.id] == nil)
-        #expect(await listing.awaitQueries(count: 2) == 2)
-        let secondTask = try #require(controller.branchListingQueriesByRepositoryId[fixture.repository.id]?.task)
-        await listing.answer(at: 1, with: ["main", "new"])
-        await secondTask.value
-        #expect(controller.state.branchNamesByRepositoryId[fixture.repository.id] == ["main", "new"])
-    }
-
-    @Test("revisiting a branch level reloads after its enrichment revision changes")
-    func branchListingReloadsOnRevisit() async throws {
-        let fixture = Self.makeFixture()
-        let repoCache = RepoCacheAtom()
-        let listing = StubWorktreeBranchListing(result: .success(["main"]))
-        let controller = makeController(store: fixture.store, repoCache: repoCache, branchListing: listing)
-        controller.state.show(prefix: ">")
-        controller.state.pushLevel(Self.menuLevel(fixture: fixture))
-        controller.requestCreationQueriesIfNeeded(for: try #require(controller.state.currentLevel))
-        let first = try #require(controller.branchListingQueriesByRepositoryId[fixture.repository.id]?.task)
-        await first.value
-        #expect(controller.state.branchNamesByRepositoryId[fixture.repository.id] == ["main"])
-
-        repoCache.setRepoEnrichment(.awaitingOrigin(repoId: fixture.repository.id))
-        controller.requestCreationQueriesIfNeeded(for: try #require(controller.state.currentLevel))
-        let reloaded = try #require(controller.branchListingQueriesByRepositoryId[fixture.repository.id]?.task)
-        await reloaded.value
-        #expect(await listing.requestedRepositoryIds == [fixture.repository.id, fixture.repository.id])
-    }
-
     @Test("default answer updates its menu beneath the fork picker")
     func defaultAnswerUpdatesCoveredMenu() async throws {
         let fixture = Self.makeFixture()

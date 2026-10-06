@@ -6,53 +6,21 @@ import Testing
 
 @Suite("Sessions commit disposition")
 struct SessionsIngestionCommitDispositionTests {
-    @Test("a first committed provider occurrence is inserted; correlation and occurrence replays are not")
-    func firstCommitAndReplays() async throws {
+    @Test("status effect is decided at admission and persisted for reload")
+    func recordOnlyIsNotALiveFact() async throws {
         let fixture = try SessionsDatabaseFixture()
+        let pane = UUIDv7.generate()
         try await withSessionsIngestion(repository: fixture.makeRepository()) { ingestion in
-            let paneId = UUIDv7.generate()
-            let sourceGenerationId = UUIDv7.generate()
-            _ = try await ingestion.submit(
-                correlationId: UUIDv7.generate(),
-                mutation: .bind(
-                    makeQualifiedBindMutation(
-                        paneId: paneId,
-                        providerConversationId: "activity-conversation",
-                        sourceGenerationId: sourceGenerationId,
-                        reportedAt: 1
-                    )
-                )
-            )
-            let mutation = SessionsMutation.recordEvidence(
-                SessionsEvidenceMutation(
-                    context: .sourceGeneration(paneId: paneId, sourceGenerationId: sourceGenerationId),
-                    occurrenceId: UUIDv7.generate(),
-                    turnId: "activity-turn",
-                    subject: .root,
-                    kind: .activityStarted,
-                    origin: .reported,
-                    freshness: .live,
-                    occurredAt: Date(timeIntervalSince1970: 2),
-                    sourceCursor: nil
-                )
-            )
-            let correlationId = UUIDv7.generate()
-
-            let first = try await ingestion.submitWithCommitDisposition(
-                correlationId: correlationId, mutation: mutation
-            )
-            let replay = try await ingestion.submitWithCommitDisposition(
-                correlationId: correlationId, mutation: mutation
-            )
-            let alias = try await ingestion.submitWithCommitDisposition(
-                correlationId: UUIDv7.generate(), mutation: mutation
-            )
-
-            #expect(first.disposition == .inserted)
-            #expect(replay.disposition == .replayed)
-            #expect(alias.disposition == .replayed)
-            #expect(first.outcome == replay.outcome)
-            #expect(first.outcome == alias.outcome)
+            let bound = try await ingestion.submitHook(makeHookAdmission(paneId: pane))
+            #expect(bound.disposition == .bound)
+            _ = try await ingestion.submitHook(
+                makeHookAdmission(paneId: pane, eventName: .sessionEnd, signal: .sessionEnd))
+            let recorded = try await ingestion.submitHook(
+                makeHookAdmission(paneId: pane, eventName: .toolActivity, signal: .toolActivity(toolName: "Read")))
+            #expect(recorded.disposition == .recordedOnly)
+            #expect(recorded.evidence.statusEffect == .recordedOnly)
+            #expect(recorded.evidence.recordId != bound.evidence.recordId)
+            #expect(try await ingestion.sessionSummary(paneId: pane)?.status == .idle(.ended))
         }
     }
 }

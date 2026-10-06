@@ -9,54 +9,60 @@ import Foundation
 /// environment already carries. It is a value rather than a direct call so the
 /// hook runner can be proven without a socket.
 package struct ProviderHookDelivery: Sendable {
-    package let deliver: @Sendable (IPCSessionEventParams, AgentStudioIPCClientConfiguration) throws -> Void
+    package let deliver:
+        @Sendable (IPCSessionEventParams, AgentStudioIPCClientConfiguration, CallDeadline) throws -> Void
+    package let recordRefusal:
+        @Sendable (IPCSessionRefusalParams, AgentStudioIPCClientConfiguration, CallDeadline) throws -> Void
 
     package init(
         deliver:
-            @escaping @Sendable (IPCSessionEventParams, AgentStudioIPCClientConfiguration) throws
-            -> Void
+            @escaping @Sendable (IPCSessionEventParams, AgentStudioIPCClientConfiguration, CallDeadline) throws
+            -> Void,
+        recordRefusal:
+            @escaping @Sendable (IPCSessionRefusalParams, AgentStudioIPCClientConfiguration, CallDeadline) throws ->
+            Void
     ) {
         self.deliver = deliver
+        self.recordRefusal = recordRefusal
     }
 
     package static func liveIPC(
-        exampleIdentifierProvider: @escaping @Sendable () -> UUID,
-        environment: [String: String]
+        exampleIdentifierProvider: @escaping @Sendable () -> UUID
     ) -> Self {
-        Self { params, configuration in
-            let deadline = CallDeadline(limit: Self.codexCallLimit(for: params.event.name))
-            let examples = IPCBuiltInMethodExampleContext(
-                illustrativeIdentifier: exampleIdentifierProvider()
-            )
-            let descriptors = try IPCCompiledInvocationResolver().resolve(
-                arguments: ["session.event"], authenticated: configuration.authToken != nil,
-                inputs: .init(examples: examples))
-            guard let descriptor = descriptors.first(where: { $0.metadata.name == "session.event" })
-            else {
-                throw ProviderHookFailure.methodUnavailable
-            }
-            let invocation = try IPCDescriptorInvocation(
-                descriptor: descriptor,
-                normalizedParameters: descriptor.normalizeParameters(JSONEncoder().encode(params)),
-                presentation: .tooling
-            )
-            let cleanup = CLIStoreCleanupHandler(
-                environment: environment, migrationLockWaitBudget: { deadline.remainingBudget })
-            let client = AgentStudioIPCClient(
-                configuration: configuration, descriptors: descriptors, deadline: deadline,
-                onCallCompletion: { cleanup.handle(readThrough: $0) })
-            switch try client.call(invocation) {
-            case .success:
-                return
-            case .remoteFailure(let failure):
-                throw ProviderHookFailure.rejected(failure.documentedReason ?? "requestRejected")
-            }
-        }
+        Self(
+            deliver: { params, configuration, deadline in
+                let examples = IPCBuiltInMethodExampleContext(
+                    illustrativeIdentifier: exampleIdentifierProvider()
+                )
+                let descriptors = try IPCCompiledInvocationResolver().resolve(
+                    arguments: ["session.event"], authenticated: configuration.authToken != nil,
+                    inputs: .init(examples: examples))
+                guard let descriptor = descriptors.first(where: { $0.metadata.name == "session.event" })
+                else {
+                    throw ProviderHookFailure.methodUnavailable
+                }
+                let invocation = try IPCDescriptorInvocation(
+                    descriptor: descriptor,
+                    normalizedParameters: descriptor.normalizeParameters(JSONEncoder().encode(params)),
+                    presentation: .tooling
+                )
+                let client = AgentStudioIPCClient(
+                    configuration: configuration, descriptors: descriptors, deadline: deadline)
+                switch try client.call(invocation) {
+                case .success:
+                    return
+                case .remoteFailure(let failure):
+                    throw ProviderHookFailure.rejected(failure.documentedReason ?? "requestRejected")
+                }
+            },
+            recordRefusal: { params, configuration, deadline in
+                try ProviderHookRefusalInvocation.send(params: params, configuration: configuration, deadline: deadline)
+            })
     }
 
     /// Only Codex SessionEnd is provider-forced synchronous. Interrupt stays
     /// async despite sharing the provider's lifecycle timeout cap.
-    package static func codexCallLimit(for event: IPCSessionEventName) -> Duration {
+    package static func codexCallLimit(for event: CodexHookEventName) -> Duration {
         event == .sessionEnd ? CLIPolicy.synchronousLifecycleHookLimit : CLIPolicy.hookCallLimit
     }
 }
@@ -83,29 +89,29 @@ package enum ProviderHookInvocation {
 
     package struct Props: Sendable {
         package let eventName: String
-        package let sourceOccurredAt: Date
         package let environment: [String: String]
         package let standardInput: @Sendable () throws -> Data
         package let correlationIdProvider: @Sendable () -> UUID
         package let delivery: ProviderHookDelivery
         package let standardErrorSink: @Sendable (String) -> Void
+        package let deadline: CallDeadline?
 
         package init(
-            sourceOccurredAt: Date,
             eventName: String,
             environment: [String: String],
             standardInput: @escaping @Sendable () throws -> Data,
             correlationIdProvider: @escaping @Sendable () -> UUID,
             delivery: ProviderHookDelivery,
-            standardErrorSink: @escaping @Sendable (String) -> Void
+            standardErrorSink: @escaping @Sendable (String) -> Void,
+            deadline: CallDeadline? = nil
         ) {
             self.eventName = eventName
-            self.sourceOccurredAt = sourceOccurredAt
             self.environment = environment
             self.standardInput = standardInput
             self.correlationIdProvider = correlationIdProvider
             self.delivery = delivery
             self.standardErrorSink = standardErrorSink
+            self.deadline = deadline
         }
     }
 
@@ -115,6 +121,9 @@ package enum ProviderHookInvocation {
             props.standardErrorSink("agentstudio hook codex: unknown event \(props.eventName)")
             return 0
         }
+        let eventLimit = ProviderHookDelivery.codexCallLimit(for: eventName)
+        let ingressDeadline = props.deadline ?? CallDeadline(limit: eventLimit)
+        let deadline = ingressDeadline.capped(to: eventLimit)
         // No pane credential means this Codex process was not started by an
         // Agent Studio pane. That is ordinary, not a failure, so it stays silent.
         guard let configuration = paneConfiguration(environment: props.environment) else { return 0 }
@@ -124,16 +133,24 @@ package enum ProviderHookInvocation {
         do {
             payload = try JSONDecoder().decode(CodexHookPayload.self, from: try props.standardInput())
         } catch {
+            recordPayloadRefusal(
+                ProviderHookRefusalInvocation.reason(for: error), props: props, configuration: configuration,
+                deadline: deadline)
             props.standardErrorSink(
                 "agentstudio hook codex \(eventName.rawValue): unreadable hook payload")
             return 0
         }
+        guard !payload.sessionId.isEmpty else {
+            recordPayloadRefusal(.noSessionId, props: props, configuration: configuration, deadline: deadline)
+            return 0
+        }
         guard
             let projected = CodexHookProjection.project(
-                sourceOccurredAt: props.sourceOccurredAt, eventName: eventName, payload: payload)
+                eventName: eventName, payload: payload, freshOccurrenceIdentifier: props.correlationIdProvider)
         else {
             return 0
         }
+        guard deadline.remainingBudget > .zero else { return 0 }
         do {
             try props.delivery.deliver(
                 IPCSessionEventParams(
@@ -142,7 +159,8 @@ package enum ProviderHookInvocation {
                     event: projected.event,
                     correlationId: props.correlationIdProvider()
                 ),
-                configuration
+                configuration,
+                deadline
             )
         } catch let failure as ProviderHookFailure {
             props.standardErrorSink(
@@ -151,6 +169,16 @@ package enum ProviderHookInvocation {
             props.standardErrorSink("agentstudio hook codex \(eventName.rawValue): not delivered")
         }
         return 0
+    }
+
+    private static func recordPayloadRefusal(
+        _ reason: IPCSessionRefusalReason, props: Props,
+        configuration: AgentStudioIPCClientConfiguration, deadline: CallDeadline
+    ) {
+        guard deadline.remainingBudget > .zero else { return }
+        try? props.delivery.recordRefusal(
+            .init(handle: "self", reason: reason, event: props.eventName, correlationId: props.correlationIdProvider()),
+            configuration, deadline)
     }
 
     private static func paneConfiguration(

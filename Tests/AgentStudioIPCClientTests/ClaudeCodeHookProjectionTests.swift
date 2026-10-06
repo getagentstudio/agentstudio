@@ -1,3 +1,5 @@
+import AgentStudioIPCTransport
+import AgentStudioPrimitives
 import Foundation
 import Testing
 
@@ -22,28 +24,18 @@ enum ClaudeCodeHookFixture {
     }
 }
 
-/// One fixed identifier, so a projection difference is never a fresh UUID.
+/// Fixed correlation identity for fixtures; occurrence identities come from the fresh seam.
 private let claudeCodeFixtureIdentifier = UUID(uuidString: "00000000-0000-4000-8000-000000000001")!
 
 @Suite("Claude Code hook projection")
 struct ClaudeCodeHookProjectionTests {
-    @Test("projected hooks carry the time the CLI observed them")
-    func hookCarriesSourceObservationTime() throws {
-        guard case .projected(let params) = try project("PreToolUse") else {
-            Issue.record("Expected a projected hook")
-            return
-        }
-        #expect(params.event.sourceOccurredAt == Date(timeIntervalSince1970: 1_700_000_000))
-    }
     private static let stableIdentifier = claudeCodeFixtureIdentifier
 
     private func project(
         _ event: String,
-        freshOccurrenceIdentifier: () -> UUID = { claudeCodeFixtureIdentifier }
+        freshOccurrenceIdentifier: () -> UUID = { UUIDv7.generate() }
     ) throws -> ClaudeCodeHookProjectionOutcome {
         ClaudeCodeHookProjection.project(
-            sourceOccurredAt: Date(timeIntervalSince1970: 1_700_000_000),
-            announcedEvent: event,
             payload: try ClaudeCodeHookFixture.payload(event),
             providerVersion: "2.1.274",
             correlationIdentifier: Self.stableIdentifier,
@@ -116,13 +108,14 @@ struct ClaudeCodeHookProjectionTests {
         #expect(subagent.event.toolId == nil)
     }
 
-    @Test("A tool invocation identifier makes the occurrence identity deterministic")
-    func occurrenceIsDeterministicWithToolUseIdentifier() throws {
+    @Test("each invocation takes a fresh occurrence identity from the supplied seam")
+    func occurrenceIdentityUsesFreshIdentifierSeam() throws {
         // Arrange
-        var freshCallCount = 0
+        let firstIdentifier = UUIDv7.generate()
+        let secondIdentifier = UUIDv7.generate()
+        var issued = [firstIdentifier, secondIdentifier]
         let fresh: () -> UUID = {
-            freshCallCount += 1
-            return UUID()
+            issued.removeFirst()
         }
 
         // Act
@@ -134,33 +127,9 @@ struct ClaudeCodeHookProjectionTests {
         }
 
         // Assert
-        #expect(first.event.occurrenceId == second.event.occurrenceId)
-        #expect(freshCallCount == 0)
-        // RFC 4122 version 5: version nibble 5, variant bits 10.
-        #expect(first.event.occurrenceId.uuidString.split(separator: "-")[2].first == "5")
-    }
-
-    @Test("Without a tool invocation identifier each occurrence is freshly generated")
-    func occurrenceIsFreshWithoutToolUseIdentifier() throws {
-        // Arrange
-        var issued: [UUID] = []
-        let fresh: () -> UUID = {
-            let identifier = UUID()
-            issued.append(identifier)
-            return identifier
-        }
-
-        // Act
-        guard case .projected(let first) = try project("Stop", freshOccurrenceIdentifier: fresh),
-            case .projected(let second) = try project("Stop", freshOccurrenceIdentifier: fresh)
-        else {
-            Issue.record("Stop did not project")
-            return
-        }
-
-        // Assert
+        #expect(first.event.occurrenceId == firstIdentifier)
+        #expect(second.event.occurrenceId == secondIdentifier)
         #expect(first.event.occurrenceId != second.event.occurrenceId)
-        #expect(issued == [first.event.occurrenceId, second.event.occurrenceId])
     }
 
     @Test("Unprojected Claude Code events produce no call")
@@ -172,23 +141,25 @@ struct ClaudeCodeHookProjectionTests {
         #expect(notification == .refused(.unprojectedEvent("Notification")))
     }
 
-    @Test("A hook document disagreeing with its announced event is refused")
-    func announcedEventMismatchIsRefused() throws {
+    @Test("the recognized payload event is projected without an announcement gate")
+    func payloadEventWinsOverAnnouncedEvent() throws {
         // Arrange
         let payload = try ClaudeCodeHookFixture.payload("Stop")
 
         // Act
         let outcome = ClaudeCodeHookProjection.project(
-            sourceOccurredAt: Date(timeIntervalSince1970: 1_700_000_000),
-            announcedEvent: "SessionEnd",
             payload: payload,
             providerVersion: "2.1.274",
             correlationIdentifier: Self.stableIdentifier,
-            freshOccurrenceIdentifier: { Self.stableIdentifier }
+            freshOccurrenceIdentifier: { UUIDv7.generate() }
         )
 
         // Assert
-        #expect(outcome == .refused(.announcedEventMismatch(announced: "SessionEnd", reported: "Stop")))
+        guard case .projected(let params) = outcome else {
+            Issue.record("A recognized payload event must project")
+            return
+        }
+        #expect(params.event.name == .turnDone)
     }
 
     @Test("A report-only permission without a call id still projects conservatively")
@@ -204,12 +175,10 @@ struct ClaudeCodeHookProjectionTests {
 
         // Act
         let outcome = ClaudeCodeHookProjection.project(
-            sourceOccurredAt: Date(timeIntervalSince1970: 1_700_000_000),
-            announcedEvent: "PermissionRequest",
             payload: payload,
             providerVersion: "2.1.274",
             correlationIdentifier: Self.stableIdentifier,
-            freshOccurrenceIdentifier: { Self.stableIdentifier }
+            freshOccurrenceIdentifier: { UUIDv7.generate() }
         )
 
         // Assert
@@ -231,11 +200,10 @@ struct ClaudeCodeHookInvocationTests {
         diagnostics: @escaping (String) -> Void = { _ in }
     ) -> ClaudeCodeHookInvocationInputs {
         ClaudeCodeHookInvocationInputs(
-            sourceOccurredAt: Date(timeIntervalSince1970: 1_700_000_000),
             arguments: arguments,
             environment: environment,
             standardInput: standardInput,
-            identifierGenerator: { UUID() },
+            identifierGenerator: { UUIDv7.generate() },
             diagnosticSink: diagnostics
         )
     }
@@ -258,7 +226,7 @@ struct ClaudeCodeHookInvocationTests {
         var diagnostics: [String] = []
         let guarded = inputs(
             arguments: ["hook", "claude", "SessionStart"],
-            environment: ["AGENTSTUDIO_PANE_TOKEN": "token"],
+            environment: ["AGENTSTUDIO_CLI": "/tmp/agentstudio"],
             standardInput: {
                 standardInputReads += 1
                 return try ClaudeCodeHookFixture.data("SessionStart")
@@ -273,6 +241,22 @@ struct ClaudeCodeHookInvocationTests {
         #expect(outcome == 0)
         #expect(standardInputReads == 0)
         #expect(diagnostics.isEmpty)
+    }
+
+    @Test("a pane token admits input without an executable-path gate, and a spent deadline skips refusal")
+    func tokenAloneAdmitsInput() {
+        var reads = 0
+        let outcome = ClaudeCodeHookInvocation.handle(
+            .init(
+                arguments: ["hook", "claude", "SessionStart"], environment: ["AGENTSTUDIO_PANE_TOKEN": "token"],
+                standardInput: {
+                    reads += 1
+                    return Data("{}".utf8)
+                },
+                identifierGenerator: { claudeCodeFixtureIdentifier }, diagnosticSink: { _ in },
+                deadline: CallDeadline(limit: .zero)))
+        #expect(outcome == 0)
+        #expect(reads == 1)
     }
 
     @Test("A pane without a credential exits silently")

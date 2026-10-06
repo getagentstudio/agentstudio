@@ -3,7 +3,9 @@ import AgentStudioIPCTransport
 import AgentStudioInfrastructure
 import AgentStudioProgrammaticControl
 import AgentStudioSessions
+import AgentStudioTestHarness
 import Foundation
+import Synchronization
 import Testing
 
 @testable import AgentStudio
@@ -15,7 +17,7 @@ import Testing
 /// `session.event` body: whatever the installed hook would send is what the app
 /// admits, so a projection change that the app refuses fails here.
 @MainActor
-@Suite("Claude Code hook vertical", .serialized, SessionsVerticalHarnessTrait(providerProfiles: .claudeCode))
+@Suite("Claude Code hook vertical", .serialized, SessionsVerticalHarnessTrait())
 struct AgentStudioIPCClaudeHookVerticalTests {
     /// `Tests/AgentStudioTests/App/IPC` -> repository root -> the CLI suite's
     /// recorded Claude Code documents.
@@ -34,8 +36,8 @@ struct AgentStudioIPCClaudeHookVerticalTests {
             ClaudeCodeHookPayload.self, from: try Data(contentsOf: fixtureURL(event))
         )
         // Real hook invocations carry a new session ID for each session. Give
-        // each suite case its own ID so deterministic tool occurrences do not
-        // replay against another case's durable row in the shared database.
+        // each suite case its own ID so the shared database has an isolated
+        // provider conversation and status history.
         let payload =
             sessionId.map {
                 ClaudeCodeHookPayload(
@@ -47,8 +49,6 @@ struct AgentStudioIPCClaudeHookVerticalTests {
                 )
             } ?? recordedPayload
         let outcome = ClaudeCodeHookProjection.project(
-            sourceOccurredAt: Date(timeIntervalSince1970: 1_700_000_000),
-            announcedEvent: event,
             payload: payload,
             providerVersion: ClaudeCodeProviderIdentity.supportedExactVersion,
             correlationIdentifier: UUIDv7.generate(),
@@ -81,7 +81,7 @@ struct AgentStudioIPCClaudeHookVerticalTests {
             method: "session.event",
             params: try JSONDecoder().decode(
                 JSONValue.self, from: try JSONEncoder().encode(Self.addressed(event, to: paneId))
-            )
+            ), authentication: .pane(paneId)
         )
     }
 
@@ -114,46 +114,47 @@ struct AgentStudioIPCClaudeHookVerticalTests {
         #expect(afterStop.session?.status == .idle(state: .done))
         #expect(afterStop.sourceHealth == .live)
         #expect(afterStop.session?.providerPrompts.isEmpty == true)
-        // `SessionEnd` retires the source generation itself rather than
-        // recording evidence against it, so the pane reports a source that has
-        // ended rather than one that is live with nothing arriving on it. The
-        // adapter decides this before the provider registry, so Claude Code and
-        // Codex end a session through the same path.
+        // SessionEnd is stored as typed evidence and ends the binding through
+        // the same serialized table used by every provider.
         #expect(afterSessionEnd.sourceHealth == .ended)
     }
 
-    @Test("A replayed tool-use hook returns the recorded outcome without a second effect")
-    func replayedToolHookReturnsRecordedOutcome() async throws {
-        // Arrange: the hook derives one occurrence identity per tool invocation
-        // but mints a fresh correlation per process, so a Claude Code retry of
-        // the same hook arrives as the same occurrence under a new correlation.
+    @Test("the Claude CLI submits the recognized payload event despite a different argv event")
+    func payloadEventWinsThroughCLIAndAdapter() async throws {
         let harness = try await #require(SessionsVerticalHarnessContext.current).freshPanePair()
         let paneId = harness.boundPaneId
-        _ = try await send("SessionStart", paneId: paneId, harness: harness)
-        _ = try await send("UserPromptSubmit", paneId: paneId, harness: harness)
-        let first = try await send("PreToolUse", paneId: paneId, harness: harness)
+        let sessionStart = try await send("SessionStart", paneId: paneId, harness: harness)
+        #expect(sessionStart.disposition == .admitted)
 
-        // Act
-        let replay = try await harness.response(
-            method: "session.event",
-            params: try JSONDecoder().decode(
-                JSONValue.self,
-                from: try JSONEncoder().encode(Self.addressed("PreToolUse", to: paneId))
+        let payload = try Data(contentsOf: Self.fixtureURL("Stop"))
+        let paneToken = try #require(harness.boundPaneToken)
+        let paneTokenValue = paneToken.rawValue
+        let socketPath = harness.socketPath
+        let diagnostics = Mutex<[String]>([])
+        let exitCode = await valueFromDedicatedThread {
+            ClaudeCodeHookInvocation.handle(
+                .init(
+                    arguments: ["hook", "claude", "SessionEnd", "--provider-version", "2.1.274"],
+                    environment: [
+                        "AGENTSTUDIO_PANE_TOKEN": paneTokenValue,
+                        "AGENTSTUDIO_IPC_SOCKET": socketPath,
+                    ],
+                    standardInput: { payload },
+                    identifierGenerator: { UUIDv7.generate() },
+                    diagnosticSink: { line in diagnostics.withLock { $0.append(line) } }
+                )
             )
-        )
+        }
+        let afterStop = try await harness.sessionQuery(paneId: paneId)
 
-        // Assert
-        #expect(first.disposition == .admitted)
-        #expect(replay.error == nil)
-        let replayResult = try #require(replay.result)
-        let decodedReplay = try JSONDecoder().decode(
-            IPCSessionEventResult.self, from: JSONEncoder().encode(replayResult))
-        #expect(decodedReplay.disposition == .admitted)
-        #expect(try await harness.sessionQuery(paneId: paneId).session?.status == .working(state: .active))
+        #expect(exitCode == 0)
+        #expect(diagnostics.withLock { $0 }.isEmpty)
+        #expect(afterStop.sourceHealth == .live)
+        #expect(afterStop.session?.status == .idle(state: .done))
     }
 
-    @Test("Another Claude Code release is refused rather than admitted as qualified")
-    func unknownReleaseIsRefused() async throws {
+    @Test("Another Claude Code release is recorded as a label and admitted")
+    func arbitraryReleaseIsRecorded() async throws {
         // Arrange
         let harness = try await #require(SessionsVerticalHarnessContext.current).freshPanePair()
         let projected = try Self.projectedParams("SessionStart")
@@ -171,31 +172,15 @@ struct AgentStudioIPCClaudeHookVerticalTests {
         // Act
         let result: IPCSessionEventResult = try await harness.decoded(
             method: "session.event",
-            params: try JSONDecoder().decode(JSONValue.self, from: try JSONEncoder().encode(upgraded))
+            params: try JSONDecoder().decode(JSONValue.self, from: try JSONEncoder().encode(upgraded)),
+            authentication: .pane(harness.sparePaneId)
         )
 
         // Assert
-        #expect(result.disposition == .unknownCapability)
-        #expect(try await harness.sessionQuery(paneId: harness.sparePaneId).sourceHealth == .unbound)
+        #expect(result.disposition == .admitted)
+        #expect(try await harness.sessionQuery(paneId: harness.sparePaneId).sourceHealth == .live)
     }
 
-    @Test("The app's provider profile and the hook's reported identity agree")
-    func profileAndHookIdentityAgree() throws {
-        // Arrange
-        let profile = SessionsProviderProfile.claudeCodeCommandLine
-
-        // Act
-        let projected = try Self.projectedParams("SessionStart")
-
-        // Assert
-        #expect(profile.providerIdentifier == projected.provider.identifier)
-        #expect(profile.exactVersion == projected.provider.version)
-        #expect(profile.operatingMode == projected.provider.mode)
-        #expect(
-            Set(profile.qualifiedCapabilities.map(\.rawValue))
-                == Set(ClaudeCodeProviderIdentity.projectedEventNames.map(\.rawValue))
-        )
-    }
 }
 
 private enum ClaudeCodeHookVerticalError: Error {

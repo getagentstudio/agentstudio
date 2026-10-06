@@ -19,9 +19,20 @@ actor RecordingSessionsPort: AppIPCSessionsPort {
         eventProvenances.append(provenance)
         return IPCSessionEventResult(
             paneId: paneId,
-            disposition: .unknownCapability,
+            disposition: .admitted,
             correlationId: params.correlationId
         )
+    }
+
+    private(set) var refusalPaneIds: [UUID] = []
+    private(set) var refusalCorrelationIds: [UUID] = []
+    func recordRefusal(
+        paneId: UUID, params: IPCSessionRefusalParams,
+        provenance _: IPCSessionEventProvenance
+    ) async throws -> IPCSessionRefusalResult {
+        refusalPaneIds.append(paneId)
+        refusalCorrelationIds.append(params.correlationId)
+        return .init(paneId: paneId)
     }
 
     func readSessionState(

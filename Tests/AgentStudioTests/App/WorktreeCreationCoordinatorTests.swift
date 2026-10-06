@@ -174,7 +174,9 @@ struct WorktreeCreationCoordinatorTests {
                     GitForkWorktreeRequest(
                         sourceWorktreePath: fixture.worktree.path,
                         destinationPath: destination,
-                        mode: .newBranch(name: "fork/ledger")
+                        mode: .newBranch(name: "fork/ledger"),
+                        materialization: .copyOnWrite,
+                        copyRules: GitWorktreeCopyRules(ignoredPaths: .copyAll)
                     )),
                 .release,
                 .refresh(fixture.watchedPath.id),
@@ -319,10 +321,13 @@ private struct FakeWorktreeCreationGitClient: WorktreeCreationGitClient {
     let createError: GitDataPlaneError?
     let forkError: GitWorktreeForkError?
 
-    func createWorktree(_ request: GitCreateWorktreeRequest) async throws(GitDataPlaneError) -> GitWorktreeSnapshot {
+    func createWorktree(_ request: GitCreateWorktreeRequest) async throws(GitDataPlaneError) -> GitWorktreeCreation {
         await ledger.record(.create(request))
         if let createError { throw createError }
-        return Self.snapshot(destination: request.destinationPath, repositoryPath: request.repositoryPath)
+        return GitWorktreeCreation(
+            worktree: Self.snapshot(destination: request.destinationPath, repositoryPath: request.repositoryPath),
+            largeFiles: GitLargeFileFill(materializedCount: 0, missing: [], residuePaths: [], scan: .complete)
+        )
     }
 
     func forkWorktree(_ request: GitForkWorktreeRequest) async throws(GitWorktreeForkError) -> GitForkWorktreeResult {
@@ -330,17 +335,19 @@ private struct FakeWorktreeCreationGitClient: WorktreeCreationGitClient {
         if let forkError { throw forkError }
         return GitForkWorktreeResult(
             worktree: Self.snapshot(destination: request.destinationPath, repositoryPath: request.sourceWorktreePath),
-            materialization: GitWorktreeMaterializationReport(
-                clonedRegularFileCount: 1,
-                createdDirectoryCount: 1,
-                recreatedSymbolicLinkCount: 0,
-                preservedHardLinkCount: 0,
-                preservedGitRepositoryCount: 0,
-                recreatedFIFOCount: 0,
-                logicalRegularFileBytes: 1,
-                skippedEntries: [],
-                normalizedEntries: []
-            )
+            materialization: .copyOnWrite(
+                GitWorktreeMaterializationReport(
+                    clonedRegularFileCount: 1,
+                    createdDirectoryCount: 1,
+                    recreatedSymbolicLinkCount: 0,
+                    preservedHardLinkCount: 0,
+                    preservedGitRepositoryCount: 0,
+                    recreatedFIFOCount: 0,
+                    logicalRegularFileBytes: 1,
+                    skippedEntries: [],
+                    normalizedEntries: [],
+                    ignoredIncludedPatterns: [], ignoredExcludedCount: 0, nestedWorktreesSkipped: []
+                ))
         )
     }
 

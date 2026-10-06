@@ -6,6 +6,25 @@ import Testing
 
 @Suite("Descriptor-driven IPC CLI invocation")
 struct IPCDescriptorInvocationTests {
+    @Test("refusal CLI parsing generates its required correlation once per invocation")
+    func refusalCorrelationIsGeneratedPerInvocation() throws {
+        let descriptors = try IPCCompiledInvocationResolver().resolve(
+            arguments: ["session.refusal"], authenticated: true,
+            inputs: .init(examples: .init(illustrativeIdentifier: UUIDv7.generate())))
+        for correlationId in [UUIDv7.generate(), UUIDv7.generate()] {
+            let generator = IPCDescriptorInvocationCorrelationGenerator(correlationId)
+            let invocation = try IPCDescriptorInvocationParser.parse(
+                ["session.refusal", "--reason", "noSessionId"],
+                descriptors: descriptors, correlationIDGenerator: generator.generate)
+            let params = try JSONDecoder().decode(
+                IPCSessionRefusalParams.self, from: invocation.normalizedParameters.data)
+            #expect(params.handle == "self")
+            #expect(params.reason == .noSessionId)
+            #expect(params.correlationId == correlationId)
+            #expect(generator.invocationCount == 1)
+        }
+    }
+
     @Test("plain method options derive names and scalar types from the descriptor schema")
     func plainMethodOptionsDeriveNamesAndScalarTypes() throws {
         let generatedCorrelation = UUIDv7.generate()

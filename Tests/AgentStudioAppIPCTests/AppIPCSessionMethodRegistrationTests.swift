@@ -12,7 +12,11 @@ struct AppIPCSessionMethodRegistrationTests {
         let fixture = BuiltInMethodRegistrationsFixture()
         let port = RecordingSessionsPort()
         let registrations = try fixture.registrations(sessionsPort: port)
-        let principal = fixture.diagnosticPrincipal
+        let principal = IPCPrincipal(
+            principalId: UUIDv7.generate(), runtimeId: fixture.runtimeId,
+            accessMode: .agentStudioOnly,
+            kind: .spawnedPaneAgent(boundPaneId: fixture.paneId.uuidString, boundWorkspaceId: fixture.workspaceId),
+            approvalAuthority: .noApprovalAuthority)
         let correlationId = UUIDv7.generate()
 
         _ = try await fixture.registration(named: "session.event", in: registrations).invoke(
@@ -130,6 +134,39 @@ struct AppIPCSessionMethodRegistrationTests {
         }
         let eventPaneIds = await port.eventPaneIds
         #expect(eventPaneIds.isEmpty)
+    }
+
+    @Test("refusal authenticates its pane and repeated correlation still reaches its typed port")
+    func refusalRegistrationIsPaneBound() async throws {
+        let fixture = BuiltInMethodRegistrationsFixture()
+        let port = RecordingSessionsPort()
+        let registrations = try fixture.registrations(sessionsPort: port)
+        let principal = IPCPrincipal(
+            principalId: UUIDv7.generate(), runtimeId: fixture.runtimeId,
+            accessMode: .agentStudioOnly,
+            kind: .spawnedPaneAgent(boundPaneId: fixture.paneId.uuidString, boundWorkspaceId: fixture.workspaceId),
+            approvalAuthority: .noApprovalAuthority)
+        let registration = try fixture.registration(named: "session.refusal", in: registrations)
+        let correlationId = UUIDv7.generate()
+        for reason in [IPCSessionRefusalReason.noSessionId, .undecodablePayload] {
+            _ = try await registration.invoke(
+                parameters: try fixture.jsonValue(
+                    IPCSessionRefusalParams(handle: "self", reason: reason, correlationId: correlationId)),
+                connectionContext: fixture.connectionContext(principal: principal),
+                targetResolutionTools: fixture.targetResolutionTools(), authorize: { _, _ in })
+        }
+        #expect(await port.refusalPaneIds == [fixture.paneId, fixture.paneId])
+        #expect(await port.refusalCorrelationIds == [correlationId, correlationId])
+        #expect(await port.eventPaneIds.isEmpty)
+        await #expect(throws: AppIPCSessionsError.self) {
+            _ = try await registration.invoke(
+                parameters: try fixture.jsonValue(
+                    IPCSessionRefusalParams(handle: "self", reason: .undecodablePayload, correlationId: correlationId)),
+                connectionContext: fixture.connectionContext(principal: fixture.diagnosticPrincipal),
+                targetResolutionTools: fixture.targetResolutionTools(), authorize: { _, _ in })
+        }
+        #expect(await port.refusalPaneIds == [fixture.paneId, fixture.paneId])
+        #expect(await port.refusalCorrelationIds == [correlationId, correlationId])
     }
 
     private static func authorizationService(

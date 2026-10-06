@@ -308,10 +308,11 @@ struct AgentStudioIPCCommandAdapterTests {
             illustrativeDescriptor: ping
         )
 
-        // 55 compiled methods minus the retired session.message and session.report.
-        #expect(builtIns.erasedDescriptors.count == 53)
+        // Static built-ins include session.refusal; composition adds the two
+        // command descriptors and system.capabilities.
+        #expect(builtIns.erasedDescriptors.count == 54)
         #expect(commandCatalog.commands.count == 24)
-        #expect(capabilities.result.methods.count == 56)
+        #expect(capabilities.result.methods.count == 57)
 
         let encodedCatalog = try capabilities.descriptor.encodeResult(capabilities.result)
         let decodedCatalog = try IPCMethodCatalogDecoder.decode(encodedCatalog)
@@ -326,7 +327,7 @@ struct AgentStudioIPCCommandAdapterTests {
         let frameByteCount = responsePayload.utf8.count + 1
         #expect(
             frameByteCount <= frameByteLimit,
-            "Complete 43 built-in + 15 command capabilities frame is \(frameByteCount) bytes"
+            "Complete capabilities frame is \(frameByteCount) bytes"
         )
         let frame = try NDJSONFrameEncoder.encode(
             responsePayload,

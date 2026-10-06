@@ -178,7 +178,11 @@ actor PaneCLIOutboxDrain {
             case .unavailable: return .retryable
             default: return .refused
             }
-        } catch { return .malformed(.malformedEnvelope) }
+        } catch {
+            // Admission can fail before its effect/cursor transaction commits.
+            // Preserve the prefix for the next drain instead of consuming it.
+            return .retryable
+        }
     }
 
     private func matchesPane(_ handle: String, paneID: UUID) -> Bool { handle == "self" || handle == paneID.uuidString }

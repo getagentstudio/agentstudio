@@ -25,7 +25,7 @@ struct IPCCompiledInvocationResolverTests {
     func indexMetadataDoesNotConstructDescriptors() throws {
         let observation = ResolverFactoryObservation()
         let index = recordingIndex(observation)
-        #expect(index.entries.count == 53)
+        #expect(index.entries.count == 54)
         #expect(index.entry(named: "session.event")?.name == "session.event")
         #expect(observation.descriptorNames.isEmpty)
         #expect(observation.helpSchemaNames.isEmpty)
@@ -93,7 +93,11 @@ struct IPCCompiledInvocationResolverTests {
         let rendered = try resolver.localHelp(arguments: ["--help"], inputs: inputs)
         let help = try #require(rendered)
         #expect(help.contains("session.event"))
-        #expect(help.contains("Project one provider lifecycle event into Sessions for the target pane."))
+        #expect(
+            help.contains(
+                "Record a hook from its authenticated pane and provider session. Permission events are report-only."))
+        #expect(help.contains("session.refusal"))
+        #expect(help.contains("Record a hook payload refusal for its authenticated pane."))
         #expect(observation.descriptorNames.isEmpty)
         #expect(observation.helpSchemaNames.isEmpty)
     }

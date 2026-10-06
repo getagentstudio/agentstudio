@@ -28,7 +28,6 @@ final class PaneContextIPCDomainCompanion: Sendable {
     let ingestion: SessionsIngestion
     let sessionsSQLiteAccess: WorkspaceSessionsSQLiteAccess
     let sessionsBridge = PaneContextSessionsBridge()
-    let activityClock: PaneActivityClock
     let facts: LocalFactSource<UUID, PaneContextIPCDomainFact>
 
     init() throws {
@@ -70,16 +69,12 @@ final class PaneContextIPCDomainCompanion: Sendable {
                 isClosing: { _, fact in
                     switch fact {
                     case .joined, .requestRefused: true
-                    case .openAskCount, .activityPublished, .writeAdmissionReached, .clientExited: false
+                    case .openAskCount, .writeAdmissionReached: false
                     }
                 }))
+        membership.addPane(PaneId(existingUUID: paneId))
         let facts = facts
         let paneId = paneId
-        activityClock = PaneActivityClock(publishInterval: .zero) { batch in
-            guard !batch.isEmpty else { return }
-            facts.sink(paneId, .activityPublished)
-        }
-        membership.addPane(PaneId(existingUUID: paneId))
         let sessionsBridge = sessionsBridge
         service = PaneContextService(
             sqliteAccess: access, clock: clock, wallNow: { [time] in time.now }, membership: membership,
@@ -126,20 +121,14 @@ final class PaneContextIPCDomainCompanion: Sendable {
         )
     }
 
-    func bind(
-        conversationId: String = "current", to targetPaneId: UUID? = nil,
-        provider: SessionsProviderIdentity = .init(
-            providerIdentifier: "claude-code", exactVersion: "2.1.286", operatingMode: "interactive")
-    ) async throws -> IPCPaneWriterClaim {
-        let source = SessionsBindingSourceIdentity(
-            paneId: targetPaneId ?? paneId, providerConversationId: conversationId, sourceId: "ipc-pane-tests",
-            sourceGenerationId: UUIDv7.generate(), occurrenceId: UUIDv7.generate())
-        _ = try await ingestion.submit(
-            correlationId: UUIDv7.generate(),
-            mutation: .bind(
-                .explicitModelBind(
-                    SessionsExplicitModelBindInput(provider: provider, source: source, reportedAt: time.now))))
-        return IPCPaneWriterClaim(provider: provider.providerIdentifier, conversationId: conversationId)
+    func bind(conversationId: String = "current", to targetPaneId: UUID? = nil) async throws -> IPCPaneWriterClaim {
+        _ = try await ingestion.submitHook(
+            .init(
+                paneId: targetPaneId ?? paneId,
+                providerIdentifier: "claude-code", providerVersion: "2.1.289", sessionId: conversationId,
+                eventName: .sessionStart, turnId: nil, signal: .sessionStart,
+                recordId: UUIDv7.generate(), admittedAt: time.now))
+        return IPCPaneWriterClaim(provider: "claude-code", conversationId: conversationId)
     }
 
     func sendParameters(
@@ -207,7 +196,6 @@ final class PaneContextIPCDomainCompanion: Sendable {
         access.releaseHeldWork()
         await service.stop()
         await ingestion.finish()
-        await activityClock.shutdown()
         try await withoutBlockingCooperativePool { [corePool, localPool, rootURL] in
             try corePool.close()
             try localPool.close()
@@ -232,9 +220,7 @@ func withPaneContextIPCDomain<Output>(
 
 enum PaneContextIPCDomainFact: Equatable, Sendable {
     case openAskCount(Int)
-    case activityPublished
     case writeAdmissionReached
-    case clientExited
     case requestRefused(requestId: JSONRPCIdentifier, reason: String?)
     case joined
 }

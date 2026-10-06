@@ -5,13 +5,13 @@ import Testing
 
 @Suite("IPC built-in typed method catalog")
 struct IPCBuiltInMethodCatalogTests {
-    @Test("catalog exposes exactly 53 unique static methods in name order")
+    @Test("catalog exposes exactly 54 unique static methods in name order")
     func catalogHasExactStaticSurface() throws {
         let catalog = try makeCatalog(waitMaximum: 9)
         let names = catalog.erasedDescriptors.map(\.metadata.name)
 
         #expect(names == expectedStaticMethodNames)
-        #expect(Set(names).count == 53)
+        #expect(Set(names).count == 54)
         #expect(names == names.sorted())
     }
 
@@ -266,7 +266,7 @@ struct IPCBuiltInMethodCatalogTests {
         #expect(catalog.presentationAndSidebar.uiCommandBarOpen.commandRelationship == .noInteractiveIdentity)
     }
 
-    @Test("every mutating descriptor requires correlation in metadata and its example body")
+    @Test("mutating descriptors enforce their declared correlation contract")
     func mutationsRequireDeclaredCorrelation() throws {
         let catalog = try makeCatalog(waitMaximum: 9)
         let mutatingDescriptors = catalog.erasedDescriptors.filter(\.metadata.isMutating)
@@ -343,6 +343,7 @@ struct IPCBuiltInMethodCatalogTests {
             "pane.writer.claimEpoch",
             "session.event",
             "session.query",
+            "session.refusal",
             "system.identify",
             "system.ping",
             "system.version",
@@ -372,7 +373,7 @@ struct IPCBuiltInMethodCatalogTests {
         ]
         let established: [String] = [
             "auth.login", "auth.status", "events.subscribe", "events.unsubscribe",
-            "session.event", "session.query",
+            "session.event", "session.query", "session.refusal",
         ]
         var inventory: [String: IPCAgentEligibility?] = [:]
         for name in expectedStaticMethodNames { inventory[name] = .some(.notYetAllowed) }
@@ -411,6 +412,7 @@ struct IPCBuiltInMethodCatalogTests {
             "pane.title.set",
             "pane.writer.claimEpoch",
             "session.event",
+            "session.refusal",
             "terminal.send",
             "ui.arrangements.open",
             "ui.commandBar.open",
@@ -457,6 +459,7 @@ struct IPCBuiltInMethodCatalogTests {
             "pane.writer.claimEpoch",
             "session.event",
             "session.query",
+            "session.refusal",
             "sidebar.grouping.get",
             "sidebar.surface.get",
             "system.identify",

@@ -10,19 +10,9 @@ import Testing
 @testable import AgentStudioCore
 @testable import AgentStudioTestSupport
 
-/// Codex hook payloads driven through the real projection, the real socket, the
-/// real admission registry and the real Sessions reduction.
-///
-/// The projection is the only place that decides what a Codex event means, and
-/// the shipped provider profile is the only thing that lets it in. Proving them
-/// apart proves nothing: a profile that omits a capability silently drops the
-/// evidence, and the pane row just stays wrong.
-///
-/// One substitution: the harness authenticates with a diagnostic credential
-/// rather than a pane token, so it addresses the pane by its canonical handle
-/// where a real hook sends `self`.
+/// Codex hooks use the real projection, pane credential, socket and SQLite owner.
 @MainActor
-@Suite("App IPC Codex hook vertical", .serialized, SessionsVerticalHarnessTrait(providerProfiles: .shipped))
+@Suite("App IPC Codex hook vertical", .serialized, SessionsVerticalHarnessTrait())
 struct AgentStudioIPCCodexHookVerticalTests {
     @Test("a Codex session start, prompt and permission request reach the query as needs-you")
     func codexHooksDriveThePaneToNeedsYou() async throws {
@@ -68,11 +58,7 @@ struct AgentStudioIPCCodexHookVerticalTests {
             params: try CodexHookVerticalFixtures.params(
                 event: .sessionEnd, paneId: harness.boundPaneId, identity: identity))
 
-        // Assert — the source generation is retired, not merely recorded
-        // against. `AgentStudioIPCSessionsAdapter` maps a session end to
-        // `SessionsMutation.sourceEnded` using the binding's own source
-        // generation, so the pane reports a source that has ended rather than
-        // one that is still live with nothing arriving on it.
+        // Assert — SessionEnd is a stored fact and ends its session.
         #expect(ended.disposition == .admitted)
         #expect(try await harness.sessionQuery(paneId: harness.boundPaneId).sourceHealth == .ended)
     }
@@ -141,10 +127,8 @@ struct AgentStudioIPCCodexHookVerticalTests {
         #expect(subagent.disposition == .admitted)
     }
 
-    /// The version in the profile is exact on purpose. A Codex that reported a
-    /// different one would be a provider whose payload shape nobody verified.
-    @Test("a Codex version the profile does not name is refused")
-    func unqualifiedCodexVersionIsRefused() async throws {
+    @Test("a Codex version label does not gate a pane-authenticated session start")
+    func arbitraryCodexVersionIsAdmitted() async throws {
         // Arrange
         let harness = try await #require(SessionsVerticalHarnessContext.current).freshPanePair()
         let identity = CodexHookScenarioIdentity()
@@ -152,11 +136,13 @@ struct AgentStudioIPCCodexHookVerticalTests {
             event: .sessionStart, paneId: harness.boundPaneId, reportedVersion: "0.153.0", identity: identity)
 
         // Act
-        let refused = try await harness.sessionEvent(params: params)
+        let admitted = try await harness.sessionEvent(params: params)
 
         // Assert
-        #expect(refused.disposition == .unknownCapability)
-        #expect(try await harness.sessionQuery(paneId: harness.boundPaneId).sourceHealth == .unbound)
+        #expect(admitted.disposition == .admitted)
+        let query = try await harness.sessionQuery(paneId: harness.boundPaneId)
+        #expect(query.sourceHealth == .live)
+        #expect(query.session?.conversationId == params.event.conversationId)
     }
 }
 
@@ -183,8 +169,7 @@ enum CodexHookVerticalFixtures {
             codexVersion: reportedVersion
         )
         guard
-            let projected = CodexHookProjection.project(
-                sourceOccurredAt: Date(timeIntervalSince1970: 1_700_000_000), eventName: event, payload: payload)
+            let projected = CodexHookProjection.project(eventName: event, payload: payload)
         else {
             throw FixtureError.notProjected(event)
         }

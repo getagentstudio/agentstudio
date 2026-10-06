@@ -73,8 +73,9 @@ extension AgentStudioAppIPCPaneContextIntegrationTests {
                 #expect(query.sourceHealth == .unbound)
                 #expect(query.session == nil)
                 if case .object(let fields)? = response.result {
-                    #expect(Set(fields.keys) == ["paneId", "sourceHealth", "session"])
+                    #expect(Set(fields.keys) == ["paneId", "sourceHealth", "session", "lastRefusal"])
                     #expect(fields["session"] == .null)
+                    #expect(fields["lastRefusal"] == .null)
                 } else {
                     Issue.record("Expected session query result object")
                 }
@@ -101,8 +102,7 @@ extension AgentStudioAppIPCPaneContextIntegrationTests {
                 ClaudeCodeHookPayload.self, from: JSONEncoder().encode(JSONValue.object(fields)))
         }
         let projection = ClaudeCodeHookProjection.project(
-            sourceOccurredAt: Date(timeIntervalSince1970: 1_700_000_000),
-            announcedEvent: hookName, payload: payload,
+            payload: payload,
             providerVersion: ClaudeCodeProviderIdentity.supportedExactVersion,
             correlationIdentifier: UUIDv7.generate(), freshOccurrenceIdentifier: { UUIDv7.generate() })
         guard case .projected(let params) = projection else { throw ClaudeCodeHookInvocationError.reportRejected }
@@ -112,6 +112,6 @@ extension AgentStudioAppIPCPaneContextIntegrationTests {
     private static func sessionAdapter(_ domain: PaneContextIPCDomainCompanion) -> AgentStudioIPCSessionsAdapter {
         AgentStudioIPCSessionsAdapter(
             ingestion: domain.ingestion,
-            providerRegistry: .init(profiles: [.claudeCodeCommandLine]), now: { domain.time.now })
+            now: { domain.time.now })
     }
 }

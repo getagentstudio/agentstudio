@@ -1,4 +1,6 @@
 import AgentStudioIPCTransport
+import AgentStudioPrimitives
+import AgentStudioTestHarness
 import Foundation
 import Testing
 
@@ -11,12 +13,14 @@ private struct ClaudeCodePackageFixture {
     let configurationDirectory: URL
     let packageRoot: URL
 
-    static func make(file: String = #filePath) throws -> Self {
+    static func make(file: String = #filePath, packageDirectoryName: String = "AgentPackage") throws -> Self {
         let root = FileManager.default.temporaryDirectory
-            .appending(path: "agentstudio-claude-package-\(UUID().uuidString)")
+            .appending(path: "agentstudio-claude-package-\(UUIDv7.generate().uuidString)")
         let configurationDirectory = root.appending(path: "config")
-        let packageRoot = root.appending(path: "AgentPackage")
+        let packageRoot = root.appending(path: packageDirectoryName)
         try FileManager.default.createDirectory(at: configurationDirectory, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(
+            at: packageRoot.deletingLastPathComponent(), withIntermediateDirectories: true)
         try FileManager.default.copyItem(at: shippedPackageRoot(file: file), to: packageRoot)
         return Self(root: root, configurationDirectory: configurationDirectory, packageRoot: packageRoot)
     }
@@ -95,10 +99,7 @@ struct ClaudeCodePackageInstallerTests {
         for event in ClaudeCodeHookEvent.allCases {
             let commands = ownedCommands(try fixture.hookGroups(for: event.rawValue))
             #expect(commands.count == 1)
-            let suffix =
-                " \(event.rawValue) 2.1.274"
-                + (event == .permissionRequest ? " --permission-policy wait" : "")
-            #expect(commands.first?.hasSuffix(suffix) == true)
+            #expect(commands.first?.hasSuffix(" \(event.rawValue) 2.1.274") == true)
         }
         let skill = fixture.configurationDirectory.appending(path: "skills/agentstudio/SKILL.md")
         let marker = fixture.configurationDirectory.appending(path: "skills/agentstudio/.agentstudio-package")
@@ -106,7 +107,36 @@ struct ClaudeCodePackageInstallerTests {
         #expect(FileManager.default.isReadableFile(atPath: marker.path))
     }
 
-    @Test("Claude permission waits synchronously while every other owned hook is async")
+    @Test("every generated Claude command executes the shipped app script from a path containing spaces")
+    func generatedCommandsExecuteFromSpacedBundlePath() async throws {
+        let fixture = try ClaudeCodePackageFixture.make(
+            packageDirectoryName: "Agent Studio Beta.app/Contents/Resources/AgentPackage")
+        defer { fixture.tearDown() }
+        try fixture.installation.install(notice: { _ in })
+        let cli = fixture.root.appending(path: "record cli.sh")
+        let capture = fixture.root.appending(path: "hook-arguments.txt")
+        try Data("#!/bin/sh\nprintf '%s\\n' \"$@\" > \"$HOOK_CAPTURE_FILE\"\nexit 0\n".utf8).write(to: cli)
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: cli.path)
+        try FileManager.default.setAttributes(
+            [.posixPermissions: 0o755], ofItemAtPath: fixture.installation.hookScriptURL.path)
+        let sink = try FileHandle(forWritingTo: URL(fileURLWithPath: "/dev/null"))
+        defer { try? sink.close() }
+        for event in ClaudeCodeHookEvent.allCases {
+            let command = try #require(ownedCommands(try fixture.hookGroups(for: event.rawValue)).first)
+            let process = Process()
+            process.executableURL = URL(fileURLWithPath: "/bin/sh")
+            process.arguments = ["-c", command]
+            process.environment = ["AGENTSTUDIO_CLI": cli.path, "HOOK_CAPTURE_FILE": capture.path]
+            process.standardOutput = sink
+            process.standardError = sink
+            let status = try await awaitProcessExit(process)
+            #expect(status == 0)
+            let received = try String(contentsOf: capture, encoding: .utf8).split(separator: "\n").map(String.init)
+            #expect(received == ["hook", "claude", event.rawValue, "--provider-version", "2.1.274"])
+        }
+    }
+
+    @Test("every installed Claude lifecycle and report-only permission hook is async with its existing timeout")
     func ownedHooksAreAsync() throws {
         let fixture = try ClaudeCodePackageFixture.make()
         defer { fixture.tearDown() }
@@ -114,19 +144,15 @@ struct ClaudeCodePackageInstallerTests {
         for event in ClaudeCodeHookEvent.allCases {
             let groups = try fixture.hookGroups(for: event.rawValue)
             let fields = try #require(Self.ownedHandler(groups))
-            if event == .permissionRequest {
-                #expect(fields["async"] == nil)
-                #expect(fields["timeout"] == .number(CLIPolicy.permissionHookTimeoutSeconds))
-            } else {
-                #expect(fields["async"] == .bool(true))
-                #expect(fields["timeout"] == .number(ClaudeCodePackageInstallation.hookTimeoutSeconds))
-            }
+            #expect(fields["async"] == .bool(true))
+            #expect(fields["timeout"] == .number(ClaudeCodePackageInstallation.hookTimeoutSeconds))
         }
     }
 
-    @Test("reinstall upgrades old synchronous owned Claude hooks and leaves the user's own entries untouched")
+    @Test("reinstall replaces legacy unquoted synchronous Claude hooks and preserves user entries")
     func reinstallUpgradesOwnedHooksToAsync() throws {
-        let fixture = try ClaudeCodePackageFixture.make()
+        let fixture = try ClaudeCodePackageFixture.make(
+            packageDirectoryName: "Agent Studio Beta.app/Contents/Resources/AgentPackage")
         defer { fixture.tearDown() }
         let userHook = JSONValue.object([
             "matcher": .string("Bash"),
@@ -165,15 +191,10 @@ struct ClaudeCodePackageInstallerTests {
             #expect(groups.count == 2)
             #expect(groups.first == userHook)
             let commands = ownedCommands(groups)
-            #expect(commands.count == 1)
+            #expect(commands == ["\"\(fixture.installation.hookScriptURL.path)\" \(event.rawValue) 2.1.274"])
             let handler = try #require(Self.ownedHandler(groups))
-            if event == .permissionRequest {
-                #expect(handler["async"] == nil)
-                #expect(handler["timeout"] == .number(CLIPolicy.permissionHookTimeoutSeconds))
-            } else {
-                #expect(handler["async"] == .bool(true))
-                #expect(handler["timeout"] == .number(ClaudeCodePackageInstallation.hookTimeoutSeconds))
-            }
+            #expect(handler["async"] == .bool(true))
+            #expect(handler["timeout"] == .number(ClaudeCodePackageInstallation.hookTimeoutSeconds))
         }
         let fields = try fixture.settingsFields()
         #expect(fields["model"] == .string("user-model"))

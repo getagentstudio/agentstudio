@@ -7,10 +7,10 @@ extension IPCSessionProviderIdentity: IPCSchemaProviding {
                 name: "identifier", description: "Provider identifier such as the agent CLI name",
                 schema: .string(minimumLength: 1)),
             .init(
-                name: "version", description: "Exact provider version; a nearby version grants no authority",
+                name: "version", description: "Reported provider version; descriptive only",
                 schema: .string(minimumLength: 1)),
             .init(
-                name: "mode", description: "Provider operating mode qualified for this capability",
+                name: "mode", description: "Reported provider operating mode",
                 schema: .string(minimumLength: 1)),
         ])
     }
@@ -20,7 +20,7 @@ extension IPCSessionEventIdentity: IPCSchemaProviding {
     package static func ipcSchema() throws -> IPCJSONSchema {
         .object(fields: [
             .init(
-                name: "name", description: "Lifecycle capability this event claims",
+                name: "name", description: "Lifecycle fact reported by this event",
                 schema: try IPCSessionEventName.ipcSchema()),
             .init(
                 name: "conversationId", description: "Provider conversation identity for the reporting source",
@@ -38,13 +38,10 @@ extension IPCSessionEventIdentity: IPCSchemaProviding {
             .optional("failureSummary", description: "Provider turn failure category", schema: .string()),
             .optional("elicitationId", description: "Provider elicitation identity when present", schema: .string()),
             .optional("message", description: "Provider prompt summary", schema: .string()),
-            .optional(
-                "sourceOccurredAt", description: "Hook source UTC time; admission order resolves ties or missing time",
-                schema: .number()),
             .optional("resumeHint", description: "Provider resume command hint", schema: .string()),
             .init(
                 name: "occurrenceId",
-                description: "Provider occurrence UUID; equivalent reuse returns the retained outcome",
+                description: "Provider invocation identity; never used to de-duplicate hook records",
                 schema: IPCSchemaScalars.uuid),
         ])
     }
@@ -72,16 +69,11 @@ extension IPCSessionEventParams: IPCSchemaProviding {
         .object(fields: [
             try IPCRequestSchemaFields.paneDefaultingToSelf(),
             .init(
-                name: "provider", description: "Exact provider identity claiming this capability",
+                name: "provider", description: "Reported provider identity; version and mode are labels",
                 schema: try IPCSessionProviderIdentity.ipcSchema()),
             .init(
                 name: "event", description: "Projected provider lifecycle event",
                 schema: try IPCSessionEventIdentity.ipcSchema()),
-            .optional(
-                "permissionHandling",
-                description:
-                    "Permission events only: reportOnly opens a provider prompt (the default); blockingAsk leaves attention to the ask",
-                schema: try IPCSessionPermissionHandling.ipcSchema()),
             IPCRequestSchemaFields.correlation,
         ])
     }
@@ -92,7 +84,7 @@ extension IPCSessionEventResult: IPCSchemaProviding {
         .object(fields: [
             IPCSessionSchemaFields.pane,
             .init(
-                name: "disposition", description: "Whether the exact provider capability was admitted",
+                name: "disposition", description: "Whether the pane-authenticated hook was recorded",
                 schema: try IPCSessionEventDisposition.ipcSchema()),
             IPCRequestSchemaFields.correlation,
         ])
@@ -123,6 +115,22 @@ extension IPCSessionQueryResult: IPCSchemaProviding {
                 name: "session",
                 description: "The same status-engine summary as pane.context.get; null exactly when unbound",
                 schema: .oneOf([.null, try IPCPaneSessionSummary.ipcSchema()])),
+            .init(
+                name: "lastRefusal", description: "Last in-memory hook refusal, including on an unbound pane",
+                schema: .oneOf([.null, try IPCSessionLastRefusal.ipcSchema()])),
+        ])
+    }
+}
+
+extension IPCSessionRefusalParams: IPCSchemaProviding {
+    package static func ipcSchema() throws -> IPCJSONSchema {
+        .object(fields: [
+            try IPCRequestSchemaFields.paneDefaultingToSelf(),
+            .init(
+                name: "reason", description: "Why the hook payload could not be recorded",
+                schema: try IPCSessionRefusalReason.ipcSchema()),
+            .optional("event", description: "The hook event name when known", schema: .string(maximumLength: 128)),
+            IPCRequestSchemaFields.correlation,
         ])
     }
 }

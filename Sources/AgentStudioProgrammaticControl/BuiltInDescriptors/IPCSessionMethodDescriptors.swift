@@ -4,10 +4,13 @@ import Foundation
 /// and asks have their own typed descriptors and service.
 package struct IPCSessionMethodDescriptors: Sendable {
     package let sessionEvent: IPCMethodDescriptor<IPCSessionEventParams, IPCSessionEventResult>
+    package let sessionRefusal: IPCMethodDescriptor<IPCSessionRefusalParams, IPCSessionRefusalResult>
     package let sessionQuery: IPCMethodDescriptor<IPCSessionQueryParams, IPCSessionQueryResult>
 
     init(examples: IPCBuiltInMethodExampleContext) throws {
         sessionEvent = try Self.sessionEventEntry.makeDescriptor(
+            inputs: IPCBuiltInMethodCatalogInputs(examples: examples))
+        sessionRefusal = try Self.sessionRefusalEntry.makeDescriptor(
             inputs: IPCBuiltInMethodCatalogInputs(examples: examples))
         sessionQuery = try Self.sessionQueryEntry.makeDescriptor(
             inputs: IPCBuiltInMethodCatalogInputs(examples: examples))
@@ -15,13 +18,14 @@ package struct IPCSessionMethodDescriptors: Sendable {
 
     init(representations: [String: any IPCMethodDescriptorRepresentation]) throws {
         sessionEvent = try Self.sessionEventEntry.typedDescriptor(in: representations)
+        sessionRefusal = try Self.sessionRefusalEntry.typedDescriptor(in: representations)
         sessionQuery = try Self.sessionQueryEntry.typedDescriptor(in: representations)
     }
 
     static let sessionEventEntry = IPCBuiltInMethodEntry<IPCSessionEventParams, IPCSessionEventResult>(
         name: "session.event",
         summary:
-            "Project one provider lifecycle event into Sessions for the target pane. Permission events may set permissionHandling to blockingAsk when an ask supplies attention; absent or reportOnly opens a provider prompt.",
+            "Record a hook from its authenticated pane and provider session. Permission events are report-only.",
         modelCalls: [],
         correlationPolicy: .required,
         agentEligibility: nil,
@@ -32,7 +36,7 @@ package struct IPCSessionMethodDescriptors: Sendable {
                 description: entrySummary,
                 examples: [
                     .init(
-                        description: "Project a qualified provider session start",
+                        description: "Record a provider session start",
                         parameters: IPCSessionEventParams(
                             handle: "self",
                             provider: IPCSessionProviderIdentity(
@@ -72,6 +76,26 @@ package struct IPCSessionMethodDescriptors: Sendable {
                 offlineEligibility: .never,
                 agentEligibility: entryEligibility
             )
+        })
+
+    static let sessionRefusalEntry = IPCBuiltInMethodEntry<IPCSessionRefusalParams, IPCSessionRefusalResult>(
+        name: "session.refusal", summary: "Record a hook payload refusal for its authenticated pane.",
+        modelCalls: [], correlationPolicy: .required, agentEligibility: nil,
+        makeDescriptor: { name, summary, _, eligibility, inputs in
+            try IPCMethodDescriptor(
+                name: name, description: summary,
+                examples: [
+                    .init(
+                        description: "Report a missing session identity",
+                        parameters: IPCSessionRefusalParams(
+                            handle: "self", reason: .noSessionId, correlationId: inputs.examples.correlationId),
+                        result: IPCSessionRefusalResult(paneId: inputs.examples.paneId))
+                ],
+                exposure: .allChannels, requiredPrivileges: [.sessionReportWrite], dataScope: .sessionReport,
+                allowedTargetKinds: [.pane], commandRelationship: .noInteractiveIdentity,
+                executionOwner: .sessionsIngest, principalAvailability: .authenticated, resultSemantics: .accepted,
+                documentedErrors: Self.sessionErrors, isMutating: true, correlationPolicy: .required,
+                offlineEligibility: .never, agentEligibility: eligibility)
         })
 
     static let sessionQueryEntry = IPCBuiltInMethodEntry<IPCSessionQueryParams, IPCSessionQueryResult>(
@@ -132,6 +156,7 @@ package struct IPCSessionMethodDescriptors: Sendable {
             let representations: [any IPCMethodDescriptorRepresentation] = try [
                 IPCMethodDescriptorRepresentations(typedDescriptor: sessionEvent),
                 IPCMethodDescriptorRepresentations(typedDescriptor: sessionQuery),
+                IPCMethodDescriptorRepresentations(typedDescriptor: sessionRefusal),
             ]
             return representations
         }

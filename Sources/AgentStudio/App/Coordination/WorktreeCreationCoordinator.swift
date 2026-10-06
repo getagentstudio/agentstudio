@@ -191,12 +191,20 @@ final class WorktreeCreationCoordinator {
                 GitForkWorktreeRequest(
                     sourceWorktreePath: source.worktree.path,
                     destinationPath: destination,
-                    mode: .newBranch(name: branchName.rawValue)
+                    mode: .newBranch(name: branchName.rawValue),
+                    materialization: .copyOnWrite,
+                    copyRules: GitWorktreeCopyRules(ignoredPaths: .copyAll)
                 ))
-            let report = result.materialization
-            Self.logger.info(
-                "Worktree fork materialized: cloned=\(report.clonedRegularFileCount) skipped=\(report.skippedEntries.count) normalized=\(report.normalizedEntries.count)"
-            )
+            switch result.materialization {
+            case .copyOnWrite(let report):
+                Self.logger.info(
+                    "Worktree fork materialized: kind=copyOnWrite cloned=\(report.clonedRegularFileCount) skipped=\(report.skippedEntries.count) normalized=\(report.normalizedEntries.count)"
+                )
+            case .changesOnly(let report):
+                Self.logger.info(
+                    "Worktree fork materialized: kind=changesOnly tracked=\(report.trackedChanges) untracked=\(report.untrackedFiles) ignoredExcluded=\(report.ignoredExcluded)"
+                )
+            }
             return nil
         } catch {
             return .forkFailure(error)

@@ -2,13 +2,13 @@ import AgentStudioAppIPC
 import AgentStudioIPCTransport
 import AgentStudioInfrastructure
 import AgentStudioProgrammaticControl
-import AgentStudioSessions
 import AgentStudioTestHarness
 import AgentStudioTestSupport
 import Foundation
 import Testing
 
 @testable import AgentStudioCore
+@testable import AgentStudioSessions
 
 @Suite("Pane context IPC real domain integration")
 struct AgentStudioAppIPCPaneContextIntegrationTests {
@@ -250,8 +250,7 @@ struct AgentStudioAppIPCPaneContextIntegrationTests {
     @Test("Notice send replay, conflict, attribution and withdrawal use the production path")
     func noticeIdentityAndWithdrawal() async throws {
         try await withPaneContextIPCDomain { domain in
-            let unbound = try await domain.ingestion.snapshot(
-                .pane(domain.paneId))
+            let unbound = try await domain.ingestion.repository.statusContext(paneId: domain.paneId)
             #expect(unbound.currentBinding == nil)
             try await withLiveServer(
                 makeFixture: {
@@ -313,8 +312,7 @@ struct AgentStudioAppIPCPaneContextIntegrationTests {
                     #expect(detail.messages.first?.sender == .pane(paneId: domain.paneId))
                     #expect(detail.messages.first?.body == sent.body)
                     #expect(detail.messages.first?.shape == .notice(state: .unread))
-                    let stillUnbound = try await domain.ingestion.snapshot(
-                        .pane(domain.paneId))
+                    let stillUnbound = try await domain.ingestion.repository.statusContext(paneId: domain.paneId)
                     #expect(stillUnbound.currentBinding == nil)
                     let withdraw = IPCPaneMessageWithdrawParams(
                         handle: "self", messageId: messageId, correlationId: UUIDv7.generate())

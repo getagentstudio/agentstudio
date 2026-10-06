@@ -11,7 +11,7 @@ import Foundation
 /// matters beyond convenience: a test that waits on a CLI subprocess blocks a
 /// cooperative thread, and the in-process IPC server needs that same pool to
 /// answer the request, so on a small machine the two starve each other.
-package struct AgentStudioIPCClientCommandLineRunner {
+package struct AgentStudioIPCClientCommandLineRunner: Sendable {
     package struct Props: Sendable {
         package let arguments: [String]
         package let environment: [String: String]
@@ -22,6 +22,7 @@ package struct AgentStudioIPCClientCommandLineRunner {
         package let standardOutputSink: @Sendable (String) -> Void
         package let standardErrorSink: @Sendable (String) -> Void
         package let now: @Sendable () -> Date
+        package let standardInputFileDescriptor: Int32
         package let deadlineTiming: (any CallDeadlineTiming)?
 
         package init(
@@ -34,6 +35,7 @@ package struct AgentStudioIPCClientCommandLineRunner {
             standardOutputSink: @escaping @Sendable (String) -> Void,
             standardErrorSink: @escaping @Sendable (String) -> Void,
             now: @escaping @Sendable () -> Date = { Date() },
+            standardInputFileDescriptor: Int32 = FileHandle.standardInput.fileDescriptor,
             deadlineTiming: (any CallDeadlineTiming)? = nil
         ) {
             self.arguments = arguments
@@ -45,16 +47,37 @@ package struct AgentStudioIPCClientCommandLineRunner {
             self.standardOutputSink = standardOutputSink
             self.standardErrorSink = standardErrorSink
             self.now = now
+            self.standardInputFileDescriptor = standardInputFileDescriptor
             self.deadlineTiming = deadlineTiming
         }
     }
 
     /// - Returns: the exit code the process should end with.
     package static func run(props: Props) -> Int32 {
-        Self(props: props).dispatchCommandLine()
+        let hookDeadline: CallDeadline?
+        if props.arguments.first == "hook" {
+            let ingressLimit: Duration
+            if case .hook(let provider, let eventName)? = AgentPackageSubcommand.parse(props.arguments),
+                provider == CodexHookProjection.providerIdentifier,
+                let codexEvent = CodexHookEventName(rawValue: eventName)
+            {
+                ingressLimit = ProviderHookDelivery.codexCallLimit(for: codexEvent)
+            } else {
+                ingressLimit = CLIPolicy.hookCallLimit
+            }
+            if let timing = props.deadlineTiming {
+                hookDeadline = CallDeadline(limit: ingressLimit, timing: timing)
+            } else {
+                hookDeadline = CallDeadline(limit: ingressLimit)
+            }
+        } else {
+            hookDeadline = nil
+        }
+        return Self(props: props, hookDeadline: hookDeadline).dispatchCommandLine()
     }
 
     private let props: Props
+    private let hookDeadline: CallDeadline?
 
     private func makeDeadline(limit: Duration, startedAt: ContinuousClock.Instant) -> CallDeadline {
         if let timing = props.deadlineTiming { return CallDeadline(limit: limit, startedAt: startedAt, timing: timing) }
@@ -72,7 +95,7 @@ package struct AgentStudioIPCClientCommandLineRunner {
                 return code
             }
             let readInput = props.standardInput
-            if let code = providerCommandExit(readInput: readInput, sourceOccurredAt: wallStartedAt) {
+            if let code = providerCommandExit(readInput: readInput) {
                 return code
             }
             let resolver = IPCCompiledInvocationResolver()
@@ -290,9 +313,15 @@ package struct AgentStudioIPCClientCommandLineRunner {
     /// - Returns: the process exit code when the arguments address a provider
     ///   command, and `nil` when they belong to the descriptor CLI.
     private func providerCommandExit(
-        readInput: @escaping @Sendable () -> Data, sourceOccurredAt: Date
+        readInput: @escaping @Sendable () -> Data
     ) -> Int32? {
         let isHook: Bool = props.arguments.first == "hook"
+        let readHookInput: @Sendable () throws -> Data = {
+            if let hookDeadline {
+                return try hookDeadline.readInputToEnd(fileDescriptor: props.standardInputFileDescriptor)
+            }
+            return readInput()
+        }
         let providerDiagnostics: @Sendable (String) -> Void
         if isHook {
             providerDiagnostics = { _ in CLIDiagnostics.record(.providerHookFailed) }
@@ -300,29 +329,21 @@ package struct AgentStudioIPCClientCommandLineRunner {
             providerDiagnostics = props.standardErrorSink
         }
         if let code = ClaudeCodeProviderRouter.exitCode(
-            sourceOccurredAt: sourceOccurredAt,
             arguments: props.arguments, environment: props.environment,
-            executablePath: props.executablePath, standardInput: readInput,
+            executablePath: props.executablePath, standardInput: readHookInput,
             identifierGenerator: props.identifierGenerator,
-            noticeSink: props.standardOutputSink, diagnosticSink: providerDiagnostics
-        ) {
-            return code
-        }
-        if let code = CursorProviderRouter.exitCode(
-            arguments: props.arguments, environment: props.environment,
-            executablePath: props.executablePath, standardInput: readInput,
-            identifierGenerator: props.identifierGenerator,
-            noticeSink: props.standardOutputSink, diagnosticSink: providerDiagnostics
+            noticeSink: props.standardOutputSink, diagnosticSink: providerDiagnostics,
+            deadline: hookDeadline
         ) {
             return code
         }
         guard let subcommand = AgentPackageSubcommand.parse(props.arguments) else { return nil }
         return AgentPackageCommandRunner.run(
-            subcommand, props: agentPackageProps(readInput: readInput, sourceOccurredAt: sourceOccurredAt))
+            subcommand, props: agentPackageProps(readInput: readInput))
     }
 
     private func agentPackageProps(
-        readInput: @escaping @Sendable () -> Data, sourceOccurredAt: Date
+        readInput: @escaping @Sendable () -> Data
     ) -> AgentPackageCommandRunner.Props {
         let isHook: Bool = props.arguments.first == "hook"
         let packageDiagnostics: @Sendable (String) -> Void
@@ -331,16 +352,21 @@ package struct AgentStudioIPCClientCommandLineRunner {
         } else {
             packageDiagnostics = props.standardErrorSink
         }
-        let packageInput: @Sendable () throws -> Data = { readInput() }
+        let packageInput: @Sendable () throws -> Data = {
+            if let hookDeadline {
+                return try hookDeadline.readInputToEnd(fileDescriptor: props.standardInputFileDescriptor)
+            }
+            return readInput()
+        }
         let packageProps = AgentPackageCommandRunner.Props(
-            sourceOccurredAt: sourceOccurredAt,
             environment: props.environment,
             executableURL: props.bundleExecutableURL,
             standardInput: packageInput,
             correlationIdProvider: props.identifierGenerator,
             exampleIdentifierProvider: props.identifierGenerator,
             standardOutputSink: props.standardOutputSink,
-            standardErrorSink: packageDiagnostics
+            standardErrorSink: packageDiagnostics,
+            deadline: hookDeadline
         )
         return packageProps
     }

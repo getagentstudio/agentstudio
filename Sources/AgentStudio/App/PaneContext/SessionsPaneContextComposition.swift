@@ -11,7 +11,6 @@ struct SessionsPaneContextComposition: Sendable {
         let workspaceId: UUID
         let clock: any Clock<Duration> & Sendable
         let wallNow: @Sendable () -> Date
-        let providerProfiles: [SessionsProviderProfile]
         let limits: SessionsIngestionLimits
         let paneViewedMailbox: SessionsPaneViewedMailbox
         let presentationAtom: PaneContextPresentationAtom
@@ -28,7 +27,6 @@ struct SessionsPaneContextComposition: Sendable {
     let ingestion: SessionsIngestion
     let paneContextService: PaneContextService
     let liveSessionsAdapter: AgentStudioIPCSessionsAdapter
-    let lateSessionsAdapter: AgentStudioIPCSessionsAdapter
     let paneContextIPCAdapter: AgentStudioIPCPaneContextAdapter
     let presentationLane: PaneContextPublicationLane
     private let bridge: PaneContextSessionsBridge
@@ -53,17 +51,13 @@ struct SessionsPaneContextComposition: Sendable {
                 await bridge.receiveAgentLine(work: work, bindingGenerationId: generation)
             },
             presentationLane: presentationLane)
-        let registry = SessionsProviderAdapterRegistry(profiles: inputs.providerProfiles)
         let ownerPaneLookup: @Sendable (PaneId) -> PaneId? = { directory.ownerPaneId(for: $0) }
         let composition = Self(
             ingestion: ingestion, paneContextService: service,
             liveSessionsAdapter: AgentStudioIPCSessionsAdapter(
-                ingestion: ingestion, providerRegistry: registry, admissionFreshness: .live, now: inputs.wallNow,
+                ingestion: ingestion, now: inputs.wallNow,
                 activityClock: inputs.activityClock, ownerPaneLookup: ownerPaneLookup,
                 performanceTraceRecorder: inputs.performanceTraceRecorder),
-            lateSessionsAdapter: AgentStudioIPCSessionsAdapter(
-                ingestion: ingestion, providerRegistry: registry, admissionFreshness: .late, now: inputs.wallNow,
-                ownerPaneLookup: ownerPaneLookup),
             paneContextIPCAdapter: AgentStudioIPCPaneContextAdapter(
                 service: service, ingestion: ingestion, performanceTraceRecorder: inputs.performanceTraceRecorder),
             presentationLane: presentationLane, bridge: bridge)
@@ -105,19 +99,6 @@ struct SessionsPaneContextComposition: Sendable {
                     ])
                 inputs.presentationApplyProbe(snapshot)
             })
-    }
-
-    /// Boot calls this before listening. A failed or cancelled attempt releases both owners.
-    func prepareForLaunch(at launchDate: Date) async throws -> SessionsLaunchPreparationOutcome {
-        do {
-            try Task.checkCancellation()
-            let outcome = try await ingestion.prepareForLaunch(at: launchDate)
-            try Task.checkCancellation()
-            return outcome
-        } catch {
-            await shutdown()
-            throw error
-        }
     }
 
     /// The caller joins spool and socket handlers before stopping this assembly.

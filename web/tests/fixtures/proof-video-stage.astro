@@ -1,0 +1,39 @@
+---
+import ChapterStage from "../../src/chapters/ChapterStage.astro";
+import { chapterCatalog, type Chapter } from "../../src/chapters/chapter-catalog";
+import reviewPoster from "../../src/assets/captures/review.png";
+import testVideoUrl from "./proof-video.mp4?url";
+import "../../src/styles/global.css";
+
+const chapter = chapterCatalog.find((candidate) => candidate.id === "come-back");
+if (chapter === undefined) throw new Error("Come-back fixture chapter missing");
+const videoChapter: Chapter = {
+  ...chapter,
+  stage: {
+    kind: "scene",
+    sceneId: "chapter-come-back",
+    proofKind: "video",
+    proofVideo: testVideoUrl,
+    proofPoster: reviewPoster,
+    proofLabel: "Test proof video",
+  },
+};
+---
+<!doctype html>
+<html lang="en">
+  <head><meta charset="utf-8" /><title>ChapterStage proof fixture</title></head>
+  <body>
+    <div style="height:3000px" aria-hidden="true"></div>
+    <article id="come-back" style="width:800px;margin-inline:auto">
+      <div data-scroll-material-surface>
+        <div data-scroll-playback-stage><ChapterStage chapter={videoChapter} /></div>
+      </div>
+    </article>
+    <div style="height:2000px" aria-hidden="true"></div>
+    <script>
+      import { initializeScrollMaterialSurfaces } from "../../src/home-page/scroll-material-surface-controller";
+      initializeScrollMaterialSurfaces();
+      document.documentElement.dataset["proofFixtureReady"] = "true";
+    </script>
+  </body>
+</html>

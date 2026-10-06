@@ -34,10 +34,13 @@ struct WorkspaceLocalSessionsMigrationTests {
             #expect(retainedKeys == ["retained-repository"])
             for table in [
                 "sessions_conversation", "sessions_pane_binding", "sessions_source",
-                "sessions_evidence", "sessions_message", "sessions_attention",
-                "sessions_result", "sessions_operation", "sessions_loss",
+                "sessions_evidence", "sessions_provider_question", "sessions_provider_question_option",
+                "sessions_operation",
             ] {
                 #expect(try connection.tableExists(table))
+            }
+            for removed in ["sessions_message", "sessions_result", "sessions_loss", "sessions_attention"] {
+                #expect(try !connection.tableExists(removed))
             }
             #expect(try String.fetchAll(connection, sql: "PRAGMA foreign_key_check").isEmpty)
         }

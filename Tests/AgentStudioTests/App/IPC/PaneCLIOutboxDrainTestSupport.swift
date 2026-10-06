@@ -49,7 +49,7 @@ final class PaneCLIOutboxDrainHarness {
     private let drainOwner: PaneCLIOutboxDrain
     private let additionalRefusalProbe: @Sendable (PaneCLIOutboxDrain.RefusalReason) -> Void
 
-    static let qualifiedProvider = IPCSessionProviderIdentity(
+    static let testProvider = IPCSessionProviderIdentity(
         identifier: "outbox-drain-provider", version: "1.0.0", mode: "interactive")
 
     init(refusalProbe: @escaping @Sendable (PaneCLIOutboxDrain.RefusalReason) -> Void) async throws {
@@ -72,14 +72,7 @@ final class PaneCLIOutboxDrainHarness {
             repository: repository,
             limits: SessionsIngestionLimits(maximumPendingPerPane: 32, maximumPendingGlobal: 128), probe: { _ in })
         self.ingestion = ingestion
-        let admission = AgentStudioIPCSessionsAdapter(
-            ingestion: ingestion,
-            providerRegistry: SessionsProviderAdapterRegistry(profiles: [
-                SessionsProviderProfile(
-                    providerIdentifier: Self.qualifiedProvider.identifier,
-                    exactVersion: Self.qualifiedProvider.version, operatingMode: Self.qualifiedProvider.mode,
-                    qualifiedCapabilities: [.sessionStart, .sessionEnd])
-            ]), admissionFreshness: .late)
+        let admission = AgentStudioIPCSessionsAdapter(ingestion: ingestion)
         sessionAdmission = admission
         paneService = PaneContextService(
             sqliteAccess: sqliteAccess, clock: clock, wallNow: { Date(timeIntervalSince1970: 1_700_000_000) },
@@ -154,12 +147,8 @@ final class PaneCLIOutboxDrainHarness {
         try await ingestion.sessionSummary(paneId: paneID)
     }
 
-    func attention(paneID: UUID) async throws -> [SessionsStoredAttentionRecord] {
-        try await repository.statusContext(paneId: paneID).attention
-    }
-
-    func snapshot(paneID: UUID) async throws -> SessionsSnapshot {
-        try await repository.snapshot(.pane(paneID))
+    func sessionContext(paneID: UUID) async throws -> SessionsRepositoryContext {
+        try await repository.statusContext(paneId: paneID)
     }
 
     func bindPane(paneID: UUID) async throws {
@@ -167,13 +156,13 @@ final class PaneCLIOutboxDrainHarness {
         let result = try await sessionAdmission.recordProviderEvent(
             paneId: paneID,
             params: IPCSessionEventParams(
-                handle: paneID.uuidString, provider: Self.qualifiedProvider,
+                handle: paneID.uuidString, provider: Self.testProvider,
                 event: IPCSessionEventIdentity(
                     name: .sessionStart, conversationId: "conversation-\(paneID)",
                     turnId: nil, requestId: nil, toolId: nil, subagentId: nil, occurrenceId: UUIDv7.generate()),
-                correlationId: UUIDv7.generate()), provenance: .other)
+                correlationId: UUIDv7.generate()), provenance: .matchingPane)
         #expect(result.disposition == .admitted)
-        let currentSnapshot = try await snapshot(paneID: paneID)
+        let currentSnapshot = try await sessionContext(paneID: paneID)
         let binding = try #require(currentSnapshot.currentBinding)
         #expect(binding.status == .active)
         #expect(binding.paneId == paneID)
@@ -183,10 +172,6 @@ final class PaneCLIOutboxDrainHarness {
         let result = await paneService.readDetail(.init(paneId: PaneId(existingUUID: paneID), page: .first))
         guard case .detail(let detail) = result else { throw OutboxStorageFailure() }
         return detail.messages
-    }
-
-    func simulateRelaunch() async throws {
-        _ = try await ingestion.prepareForLaunch(at: Date())
     }
 
     func messageLine(
@@ -225,7 +210,7 @@ final class PaneCLIOutboxDrainHarness {
         try requestLine(
             method: "session.event",
             parameters: IPCSessionEventParams(
-                handle: "self", provider: Self.qualifiedProvider,
+                handle: "self", provider: Self.testProvider,
                 event: IPCSessionEventIdentity(
                     name: .sessionStart, conversationId: "forged-outbox-event",
                     turnId: nil, requestId: nil, toolId: nil, subagentId: nil, occurrenceId: UUIDv7.generate()),
@@ -269,11 +254,13 @@ final class OutboxRefusalRecorder: Sendable {
 actor FailableOutboxSessionsSQLiteAccess: SessionsSQLiteAccess, PaneContextSQLiteAccess {
     private let base: WorkspaceSessionsSQLiteAccess
     private var rejectsWrites = false
+    private var rejectsNextWrite = false
     private var rejectsCursorCommit = false
 
     init(base: WorkspaceSessionsSQLiteAccess) { self.base = base }
 
     func setRejectsWrites(_ rejects: Bool) { rejectsWrites = rejects }
+    func failNextWrite() { rejectsNextWrite = true }
     func failCursorCommit() { rejectsCursorCommit = true }
 
     func read<Output: Sendable>(_ operation: @Sendable (Database) throws -> Output) async throws -> Output {
@@ -282,6 +269,10 @@ actor FailableOutboxSessionsSQLiteAccess: SessionsSQLiteAccess, PaneContextSQLit
 
     func write<Output: Sendable>(_ operation: @Sendable (Database) throws -> Output) async throws -> Output {
         guard !rejectsWrites else { throw OutboxStorageFailure() }
+        if rejectsNextWrite {
+            rejectsNextWrite = false
+            throw OutboxStorageFailure()
+        }
         let failCursorCommit = rejectsCursorCommit
         return try await base.write { database in
             let output = try operation(database)

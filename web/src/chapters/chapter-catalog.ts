@@ -10,12 +10,11 @@ import reviewPhoneImage from "../assets/captures/review-phone.png";
 import reviewImage from "../assets/captures/review.png";
 import taskDrawerToolsPhoneImage from "../assets/captures/task-drawer-tools-phone.png";
 import taskDrawerToolsImage from "../assets/captures/task-drawer-tools.png";
-import sessionRestorePoster from "../assets/media/session-restore-poster.jpg";
-import sessionRestoreVideoUrl from "../assets/media/session-restore.mp4?url";
 import { marketingCopy } from "../marketing-copy";
 import type { SceneId } from "../motion-scenes/scene-contract";
 import type { KitIconName } from "../recreation-kit/kit-icon-names";
 import type { ChapterId, ChapterStepId } from "./chapter-ids";
+import { hasCompleteProofClips, proofClips, type ProofClipManifest } from "./proof-clips";
 
 export {
   chapterIds,
@@ -25,10 +24,11 @@ export {
   type ChapterStepId,
 } from "./chapter-ids";
 
-export type ChapterStage = {
+type SceneChapterStage = {
   readonly kind: "scene";
   readonly sceneId: SceneId;
 } & (
+  | { readonly proofKind: "none" }
   | {
       readonly proofKind: "image";
       readonly proofImage: ImageMetadata;
@@ -43,6 +43,13 @@ export type ChapterStage = {
       readonly proofLabel: string;
     }
 );
+
+export type ChapterStage =
+  | SceneChapterStage
+  | {
+      readonly kind: "clips";
+      readonly clips: ProofClipManifest;
+    };
 
 export interface ChapterStep {
   readonly id: ChapterStepId;
@@ -88,6 +95,16 @@ const { stories, chapters } = marketingCopy;
 // Step copy reuses approved story and feature-detail strings. Feature details
 // carry no phone-length variant, so those steps repeat their description.
 export const chapterCatalog: readonly Chapter[] = [
+  {
+    id: "proof",
+    title: chapters.proof.title,
+    steps: [
+      { id: "proof-run", captionIcon: "stack", ...stories.proofRun },
+      { id: "proof-review", captionIcon: "review", ...stories.proofReview },
+      { id: "proof-panes", captionIcon: "clock", ...stories.proofPanes },
+    ],
+    stage: { kind: "clips", clips: proofClips },
+  },
   {
     id: "many-agents",
     title: chapters.manyAgents.title,
@@ -197,6 +214,11 @@ export const chapterCatalog: readonly Chapter[] = [
         description: stories.review.description,
         phoneDescription: stories.review.phoneDescription,
       },
+      {
+        id: "review-comment",
+        captionIcon: "review",
+        ...stories.reviewComment,
+      },
     ],
     stage: {
       kind: "scene",
@@ -212,6 +234,11 @@ export const chapterCatalog: readonly Chapter[] = [
     title: chapters.comeBack.title,
     steps: [
       {
+        id: "quit-in-flight",
+        captionIcon: "clock",
+        ...stories.quitInFlight,
+      },
+      {
         id: "persistence",
         captionIcon: "clock",
         label: stories.persistence.label,
@@ -222,10 +249,21 @@ export const chapterCatalog: readonly Chapter[] = [
     stage: {
       kind: "scene",
       sceneId: "chapter-come-back",
-      proofKind: "video",
-      proofVideo: sessionRestoreVideoUrl,
-      proofPoster: sessionRestorePoster,
-      proofLabel: chapters.comeBack.sessionRestoreVideoLabel,
+      proofKind: "none",
     },
   },
 ];
+
+/** The home page never exposes partial recordings or an empty Proof glass. */
+export function getHomeChapters(clips: ProofClipManifest = proofClips): readonly Chapter[] {
+  return chapterCatalog.flatMap((chapter): readonly Chapter[] => {
+    switch (chapter.stage.kind) {
+      case "scene":
+        return [chapter];
+      case "clips":
+        return hasCompleteProofClips(clips)
+          ? [{ ...chapter, stage: { kind: "clips", clips } }]
+          : [];
+    }
+  });
+}

@@ -38,6 +38,12 @@ package enum WorktreeCommandLine {
             )
             output(response.text)
             return response.exitCode
+        } catch let stop as WorktreeCreationStop {
+            let response = try? WorktreeCommandLineFormatter.format(
+                outcome: .refused(.creationStopped(stop)), usesJSONOutput: arguments.contains("--json")
+            )
+            output(response?.text ?? "failed: outputEncodingFailed")
+            return response?.exitCode ?? 2
         } catch let error as WorktreeCommandLineArgumentError {
             errorOutput(error.message)
             return 64

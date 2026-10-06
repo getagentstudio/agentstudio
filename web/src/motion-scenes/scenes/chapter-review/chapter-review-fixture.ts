@@ -14,6 +14,7 @@ export const reviewParts = {
 
 export const chapterReviewStepKeyParts = {
   "review-diff": reviewParts.changedLine,
+  "review-comment": reviewParts.commentThread,
 } as const satisfies Partial<Record<ChapterStepId, string>>;
 
 export const reviewAccessibleLabel =

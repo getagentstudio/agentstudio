@@ -73,6 +73,8 @@ package enum AgentLineWork: Sendable, Equatable {
 package struct SessionStatusState: Sendable, Equatable {
     package var binding: SessionBindingPhase
     package var turn: SessionTurnPhase = .notStarted
+    package var openTurnId: String?
+    package var lastClosedTurnId: String?
     package var providerPrompts: [ProviderPromptKey: ProviderPrompt] = [:]
     package var openAsks = OpenAskSummary(sequence: 0, approval: 0, question: 0, blocked: 0)
     package var lineWork: AgentLineWork?
@@ -84,7 +86,7 @@ package enum SessionStatusInput: Sendable, Equatable {
     case userPromptSubmit
     case toolActivity
     case subagentActivity
-    case permission(toolName: String?, questions: [SessionQuestion]?, handling: SessionPermissionHandling)
+    case permission(toolName: String?, questions: [SessionQuestion]?)
     case question(toolCallId: String, questions: [SessionQuestion])
     case toolCompleted(toolCallId: String)
     case toolFailed(toolCallId: String)
@@ -111,10 +113,15 @@ package struct SessionStatusEvent: Sendable, Equatable {
 /// Reduces ordered Sessions facts and the independently sequenced ask summary.
 /// Nothing here reads an atom or schedules a publication.
 package enum SessionStatusReducer {
-    package static func apply(_ event: SessionStatusEvent, to state: inout SessionStatusState) {
+    package static func apply(_ incomingEvent: SessionStatusEvent, to state: inout SessionStatusState) {
+        guard let event = guardedStatusEvent(incomingEvent, state: &state) else { return }
         switch event.input {
         case .sessionStart(let generation):
+            let asks = state.openAsks
+            let lineWork = state.lineWork
             state = SessionStatusState(binding: .bound(generation))
+            state.openAsks = asks
+            state.lineWork = lineWork
         case .userPromptSubmit:
             state.providerPrompts.removeAll()
             state.turn = .working
@@ -123,10 +130,8 @@ package enum SessionStatusReducer {
         case .question(let toolCallId, let questions):
             state.turn = .working
             openPrompt(.toolCall(toolCallId), reason: .question, questions: questions, event: event, state: &state)
-        case .permission(let toolName, let questions, let handling):
-            if handling == .reportOnly {
-                applyPermission(toolName: toolName, questions: questions, event: event, state: &state)
-            }
+        case .permission(let toolName, let questions):
+            applyPermission(toolName: toolName, questions: questions, event: event, state: &state)
         case .toolCompleted(let toolCallId), .toolFailed(let toolCallId):
             state.providerPrompts.removeValue(forKey: .toolCall(toolCallId))
         case .elicitation(let identifier, let occurrenceId, let summary):
@@ -160,6 +165,30 @@ package enum SessionStatusReducer {
             {
                 state.seenAfterDone = true
             }
+        }
+    }
+
+    private static func guardedStatusEvent(
+        _ event: SessionStatusEvent, state: inout SessionStatusState
+    ) -> SessionStatusEvent? {
+        switch event.input {
+        case .sessionStart, .sessionEnd, .bindingReplaced, .openAsks, .agentLine, .paneViewed:
+            return event
+        case .userPromptSubmit, .toolActivity, .subagentActivity, .permission, .question,
+            .toolCompleted, .toolFailed, .elicitation, .elicitationResult, .stop, .stopFailure, .interrupt:
+            let turnId = event.turnId ?? state.openTurnId
+            if let turnId, turnId == state.lastClosedTurnId { return nil }
+            state.openTurnId = turnId
+            switch event.input {
+            case .stop, .stopFailure:
+                state.lastClosedTurnId = turnId
+                state.openTurnId = nil
+            default: break
+            }
+            // An unnamed hook names the open turn for prompt correlation too.
+            return .init(
+                input: event.input, sequence: event.sequence,
+                occurredAt: event.occurredAt, admittedAt: event.admittedAt, turnId: turnId)
         }
     }
 
