@@ -15,13 +15,14 @@ const reviewNavigationCommandIsAlwaysEligible = (): boolean => true;
 
 export function ReviewNavigationControllerProbe(props: {
 	readonly events: string[];
+	readonly initialNavigationCommand?: BridgeReviewTargetNavigationCommand;
 	readonly isNavigationCommandStillEligible?: () => boolean;
 	readonly initialTargetPending?: boolean;
 	readonly initialSelectedItemId?: string;
 }): ReactElement {
 	const [catalogRevision, setCatalogRevision] = useState(1);
 	const [navigationCommand, setNavigationCommand] = useState<BridgeReviewTargetNavigationCommand>(
-		() => reviewNavigationCommand('command-one', 'item-one'),
+		() => props.initialNavigationCommand ?? reviewNavigationCommand('command-two', 'item-two'),
 	);
 	const [selectedItemId, setSelectedItemId] = useState<string | null>(
 		props.initialSelectedItemId ?? null,

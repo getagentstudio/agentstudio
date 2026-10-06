@@ -2,7 +2,12 @@ import { act, type ReactElement } from 'react';
 import { afterEach, describe, expect, test } from 'vitest';
 import { cleanup, render, type RenderResult } from 'vitest-browser-react';
 
-import { ReviewNavigationControllerProbe } from './bridge-review-navigation-controller.browser.test-support.js';
+import {
+	reviewNavigationCommand,
+	ReviewNavigationControllerProbe,
+} from './bridge-review-navigation-controller.browser.test-support.js';
+
+const initialNavigationCommand = reviewNavigationCommand('command-one', 'item-one');
 
 describe('Bridge Review navigation controller', () => {
 	afterEach(async (): Promise<void> => {
@@ -14,7 +19,12 @@ describe('Bridge Review navigation controller', () => {
 		async (replayAction): Promise<void> => {
 			// Arrange: the original explicit target has already been applied.
 			const events: string[] = [];
-			const rendered = await renderInsideAct(<ReviewNavigationControllerProbe events={events} />);
+			const rendered = await renderInsideAct(
+				<ReviewNavigationControllerProbe
+					events={events}
+					initialNavigationCommand={initialNavigationCommand}
+				/>,
+			);
 			await expect
 				.element(rendered.getByTestId('review-navigation-selection'))
 				.toHaveTextContent('item-one');
@@ -42,7 +52,12 @@ describe('Bridge Review navigation controller', () => {
 
 	test('does not reactivate an earlier consumed command after a newer command', async (): Promise<void> => {
 		const events: string[] = [];
-		const rendered = await renderInsideAct(<ReviewNavigationControllerProbe events={events} />);
+		const rendered = await renderInsideAct(
+			<ReviewNavigationControllerProbe
+				events={events}
+				initialNavigationCommand={initialNavigationCommand}
+			/>,
+		);
 		await clickInsideAct(rendered, 'Navigate with new command');
 		await clickInsideAct(rendered, 'Select item-two as user');
 		const beforeReplay = events.length;
@@ -57,7 +72,11 @@ describe('Bridge Review navigation controller', () => {
 	test('user selection supersedes a retained target before it enters the projection', async (): Promise<void> => {
 		const events: string[] = [];
 		const rendered = await renderInsideAct(
-			<ReviewNavigationControllerProbe events={events} initialTargetPending />,
+			<ReviewNavigationControllerProbe
+				events={events}
+				initialNavigationCommand={initialNavigationCommand}
+				initialTargetPending
+			/>,
 		);
 		await expect
 			.element(rendered.getByTestId('review-navigation-selection'))
@@ -82,6 +101,7 @@ describe('Bridge Review navigation controller', () => {
 			<ReviewNavigationControllerProbe
 				events={events}
 				initialTargetPending
+				initialNavigationCommand={initialNavigationCommand}
 				initialSelectedItemId="item-two"
 			/>,
 		);
@@ -100,7 +120,11 @@ describe('Bridge Review navigation controller', () => {
 	test('a retained target still applies when it becomes available without a user selection', async (): Promise<void> => {
 		const events: string[] = [];
 		const rendered = await renderInsideAct(
-			<ReviewNavigationControllerProbe events={events} initialTargetPending />,
+			<ReviewNavigationControllerProbe
+				events={events}
+				initialNavigationCommand={initialNavigationCommand}
+				initialTargetPending
+			/>,
 		);
 		await expect
 			.element(rendered.getByTestId('review-navigation-selection'))
@@ -121,6 +145,7 @@ describe('Bridge Review navigation controller', () => {
 		const rendered = await renderInsideAct(
 			<ReviewNavigationControllerProbe
 				events={events}
+				initialNavigationCommand={initialNavigationCommand}
 				isNavigationCommandStillEligible={(): boolean => false}
 			/>,
 		);
