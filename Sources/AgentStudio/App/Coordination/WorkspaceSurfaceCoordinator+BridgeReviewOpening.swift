@@ -162,14 +162,8 @@ extension WorkspaceSurfaceCoordinator {
         /// Open a deterministic Bridge review pane for local observability proof.
         @discardableResult
         func openBridgeReviewObservabilitySmoke() -> Pane? {
+            let state = BridgePaneState(panelKind: .diffViewer, source: nil)
             let smokeDirectory = FileManager.default.temporaryDirectory
-            let state = BridgePaneState(
-                panelKind: .diffViewer,
-                source: .workspace(
-                    rootPath: smokeDirectory.path,
-                    baseline: .originDefaultBranch(remoteName: "origin", branchName: "main")
-                )
-            )
             guard
                 let pane = store.paneAtom.createPane(
                     content: .bridgePanel(state),
@@ -177,11 +171,7 @@ extension WorkspaceSurfaceCoordinator {
                         contentType: .diff,
                         launchDirectory: smokeDirectory,
                         title: "Bridge Observability Smoke",
-                        facets: PaneContextFacets(
-                            repoId: BridgeObservabilitySmokeReviewSourceProvider.repoId,
-                            worktreeId: BridgeObservabilitySmokeReviewSourceProvider.worktreeId,
-                            cwd: smokeDirectory
-                        )
+                        facets: PaneContextFacets(cwd: smokeDirectory)
                     )
                 )
             else {

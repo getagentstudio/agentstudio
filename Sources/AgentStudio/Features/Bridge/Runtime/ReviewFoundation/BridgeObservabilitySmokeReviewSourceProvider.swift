@@ -4,7 +4,7 @@ import Foundation
 #if DEBUG
     package actor BridgeObservabilitySmokeReviewSourceProvider: BridgeReviewSourceProvider {
         package static let diffId = UUID(uuidString: "33733733-7337-4337-9337-337337337337")!
-        package static let repoId = UUID(uuidString: "11111111-3370-4337-9337-337337337337")!
+        static let repoId = UUID(uuidString: "11111111-3370-4337-9337-337337337337")!
         package static let worktreeId = UUID(uuidString: "22222222-3370-4337-9337-337337337337")!
 
         package init() {}
