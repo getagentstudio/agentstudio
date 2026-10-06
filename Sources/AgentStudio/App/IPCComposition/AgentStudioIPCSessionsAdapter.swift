@@ -45,22 +45,26 @@ struct AgentStudioIPCSessionsAdapter: AppIPCSessionsPort {
         }
         let signal = try Self.providerSignal(for: params.event)
         let recordId = UUIDv7.generate()
+        let admissionInstant = continuousNow()
         let hook = SessionsHookAdmission(
             paneId: paneId, providerIdentifier: params.provider.identifier,
             providerVersion: params.provider.version, sessionId: params.event.conversationId,
             eventName: signal.name, turnId: params.event.turnId,
             subject: params.event.toolId.map { .tool($0) } ?? params.event.subagentId.map { .subagent($0) } ?? .root,
-            signal: signal, recordId: recordId, admittedAt: Date(timeIntervalSince1970: now().timeIntervalSince1970),
+            signal: signal, recordId: recordId, admissionInstant: admissionInstant,
+            admittedAt: Date(timeIntervalSince1970: now().timeIntervalSince1970),
             ownerPaneId: ownerPaneLookup(.init(existingUUID: paneId))?.uuid,
             resumeHint: params.event.providerFields.resumeHint
                 ?? Self.resumeHint(provider: params.provider.identifier, conversationId: params.event.conversationId))
         do {
-            let committed = try await ingestion.submitHook(hook)
-            if committed.disposition == .bound || committed.disposition == .applied {
+            let outcome = try await ingestion.submitHook(hook)
+            if case .committed(let committed) = outcome,
+                committed.disposition == .bound || committed.disposition == .applied
+            {
                 activityClock?.submit(
                     .init(
                         paneId: paneId, source: .hook,
-                        orderingInstant: continuousNow(), wallTime: now()))
+                        orderingInstant: admissionInstant, wallTime: now()))
             }
         } catch {
             if let capacityError = error as? SessionsRepositoryError {

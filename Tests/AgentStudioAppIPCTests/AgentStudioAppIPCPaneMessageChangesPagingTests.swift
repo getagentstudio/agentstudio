@@ -17,6 +17,7 @@ struct AgentStudioAppIPCPaneMessageChangesPagingTests {
                 for _ in 0..<(AppPolicies.PaneContext.maximumChangeEntries + 5) {
                     expected.append(try await answeredMessage(domain: domain, writer: firstWriter, client: &client))
                 }
+                try await domain.endMain(firstWriter)
                 let secondWriter = try await domain.bind(conversationId: "second-writer")
                 var otherExpected: [UUID] = []
                 for _ in 0..<3 {

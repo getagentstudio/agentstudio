@@ -348,6 +348,7 @@ extension AppDelegate {
             return nil
         }
         workspaceSurfaceCoordinator?.sessionsPaneViewedMailbox = viewedMailbox
+        workspaceSurfaceCoordinator?.sessionsIngestion = composition.ingestion
         workspaceSurfaceCoordinator?.paneContextService = composition.paneContextService
         appIPCPaneContextUIAdapter = PaneContextUIAdapter(service: composition.paneContextService)
         appIPCSessionsPaneContextComposition = composition
@@ -357,6 +358,7 @@ extension AppDelegate {
     private func finishAppIPCSessionsPaneContext() async {
         guard let composition = appIPCSessionsPaneContextComposition else { return }
         appIPCSessionsPaneContextComposition = nil
+        workspaceSurfaceCoordinator?.sessionsIngestion = nil
         workspaceSurfaceCoordinator?.paneContextService = nil
         appIPCPaneContextUIAdapter = nil
         await composition.shutdown()

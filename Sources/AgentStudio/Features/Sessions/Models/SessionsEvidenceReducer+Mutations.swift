@@ -2,59 +2,47 @@ import AgentStudioInfrastructure
 import Foundation
 
 extension SessionsEvidenceReducer {
-    struct BindingDecision: Sendable {
-        let binding: SessionsBindingRecord
-        let replaced: [SessionsBindingRecord]
-        let disposition: SessionsHookDisposition
+    enum BindingDecision: Sendable {
+        case ignored
+        case accepted(binding: SessionsBindingRecord, disposition: SessionsHookDisposition)
     }
 
     /// Rev 36's rows are evaluated in precedence order, inside the FIFO commit.
     static func decideBinding(for hook: SessionsHookAdmission, context: SessionsRepositoryContext) -> BindingDecision {
-        let matching = context.bindings.filter {
+        let ownBindings = context.bindings.filter { $0.paneId == hook.paneId }
+        let ownMatching = ownBindings.first {
             $0.providerIdentifier == hook.providerIdentifier && $0.providerConversationId == hook.sessionId
         }
-        let ownActive = matching.first { $0.paneId == hook.paneId && $0.status == .active }
-        let elsewhereActive = matching.first { $0.paneId != hook.paneId && $0.status == .active }
-        let ownOther = context.bindings.filter {
-            $0.paneId == hook.paneId && $0.status == .active && $0.bindingGenerationId != ownActive?.bindingGenerationId
+        let liveMain = ownBindings.first { $0.status == .active }
+
+        if let liveMain, liveMain.bindingGenerationId == ownMatching?.bindingGenerationId {
+            return .accepted(binding: liveMain, disposition: .applied)
         }
-        if hook.eventName == .sessionStart {
-            let elsewhereActiveBindings = matching.filter { $0.paneId != hook.paneId && $0.status == .active }
-            if let ownActive {
-                return .init(binding: ownActive, replaced: elsewhereActiveBindings, disposition: .applied)
-            }
-            return .init(
-                binding: makeBinding(
-                    hook, conversationId: context.matchingConversation?.id,
-                    retained: matching.first { $0.paneId == hook.paneId }),
-                replaced: ownOther + elsewhereActiveBindings, disposition: .bound)
+        if let ownMatching, ownMatching.status == .ended, hook.eventName != .sessionStart {
+            return .accepted(binding: ownMatching, disposition: .recordedOnly)
         }
-        if let ownActive {
-            return .init(binding: ownActive, replaced: [], disposition: .applied)
+        if let ownMatching, ownMatching.status == .ended, hook.eventName == .sessionStart, liveMain == nil {
+            return .accepted(
+                binding: makeBinding(hook, conversationId: ownMatching.conversationId, retained: ownMatching),
+                disposition: .bound)
         }
-        if matching.isEmpty {
-            return .init(
-                binding: makeBinding(hook, conversationId: context.matchingConversation?.id),
-                replaced: ownOther, disposition: .bound)
+        if liveMain != nil {
+            return .ignored
         }
-        // A delayed fact may refer to the active binding on another pane or to
-        // an ended binding. Neither decision can mutate a pane's status.
-        let retained = elsewhereActive ?? matching[0]
-        return .init(binding: retained, replaced: [], disposition: .recordedOnly)
+        return .accepted(
+            binding: makeBinding(hook, conversationId: context.matchingConversation?.id), disposition: .bound)
     }
 
     static func reduceHook(_ hook: SessionsHookAdmission, context: SessionsRepositoryContext)
-        -> (SessionsRepositoryReduction, BindingDecision)
+        -> (SessionsRepositoryReduction?, BindingDecision)
     {
         let decision = decideBinding(for: hook, context: context)
-        let effect: SessionsEvidenceStatusEffect = decision.disposition == .recordedOnly ? .recordedOnly : .applied
-        var bindings = decision.replaced.map { replacing($0, status: .ended, endedAt: hook.admittedAt) }
-        var sources = context.sources.filter { source in
-            decision.replaced.contains { $0.bindingGenerationId == source.bindingGenerationId }
-        }.map { replacing($0, status: .ended, endedAt: hook.admittedAt) }
-        let binding = decision.binding
+        guard case .accepted(let binding, let disposition) = decision else { return (nil, decision) }
+        let effect: SessionsEvidenceStatusEffect = disposition == .recordedOnly ? .recordedOnly : .applied
+        var committedBinding = binding
         var conversations: [SessionsConversationRecord] = []
-        if decision.disposition == .bound {
+        var bindingChanges: [SessionsBindingRecord] = []
+        if disposition == .bound {
             conversations = [
                 .init(
                     id: binding.conversationId, providerIdentifier: hook.providerIdentifier,
@@ -62,36 +50,33 @@ extension SessionsEvidenceReducer {
                     createdAt: context.matchingConversation?.createdAt ?? hook.admittedAt,
                     lastReportedAt: hook.admittedAt)
             ]
-            bindings.append(binding)
-            if let retainedSource = context.sources.first(where: {
-                $0.bindingGenerationId == binding.bindingGenerationId
-            }) {
-                sources.append(
-                    replacing(retainedSource, status: .active, endedAt: nil, providerVersion: hook.providerVersion))
-            } else {
-                sources.append(
-                    .init(
-                        id: binding.bindingGenerationId, bindingGenerationId: binding.bindingGenerationId,
-                        sourceIdentifier: hook.sessionId, sourceGenerationId: binding.sourceGenerationId,
-                        providerIdentifier: hook.providerIdentifier, providerVersion: hook.providerVersion,
-                        providerMode: "", qualification: "qualified", status: .active, lastCursor: nil,
-                        startedAt: hook.admittedAt, endedAt: nil))
-            }
+            bindingChanges.append(binding)
         }
-        if decision.disposition != .bound,
-            let retainedSource = context.sources.first(where: { $0.bindingGenerationId == binding.bindingGenerationId })
-        {
-            sources.append(
-                replacing(
-                    retainedSource, status: retainedSource.status,
-                    endedAt: retainedSource.endedAt, providerVersion: hook.providerVersion))
+
+        var source = context.sources.first(where: {
+            $0.bindingGenerationId == binding.bindingGenerationId
+        })
+        if disposition == .bound {
+            if let retainedSource = source {
+                source = replacing(retainedSource, status: .active, endedAt: nil, providerVersion: hook.providerVersion)
+            } else {
+                source = .init(
+                    id: binding.bindingGenerationId, bindingGenerationId: binding.bindingGenerationId,
+                    sourceIdentifier: hook.sessionId, sourceGenerationId: binding.sourceGenerationId,
+                    providerIdentifier: hook.providerIdentifier, providerVersion: hook.providerVersion,
+                    providerMode: "", qualification: "qualified", status: .active, lastCursor: nil,
+                    startedAt: hook.admittedAt, endedAt: nil)
+            }
+        } else if let retainedSource = source {
+            source = replacing(
+                retainedSource, status: retainedSource.status,
+                endedAt: retainedSource.endedAt, providerVersion: hook.providerVersion)
         }
         if hook.eventName == .sessionEnd, effect == .applied {
-            bindings.append(replacing(binding, status: .ended, endedAt: hook.admittedAt))
-            if let source = sources.last(where: { $0.bindingGenerationId == binding.bindingGenerationId })
-                ?? context.sources.first(where: { $0.bindingGenerationId == binding.bindingGenerationId })
-            {
-                sources.append(replacing(source, status: .ended, endedAt: hook.admittedAt))
+            committedBinding = replacing(binding, status: .ended, endedAt: hook.admittedAt)
+            bindingChanges = [committedBinding]
+            if let activeSource = source {
+                source = replacing(activeSource, status: .ended, endedAt: hook.admittedAt)
             }
         }
         let evidence = SessionsEvidenceRecord(
@@ -101,8 +86,9 @@ extension SessionsEvidenceReducer {
             occurredAt: hook.admittedAt, providerSignal: hook.signal)
         return (
             .init(
-                conversationChanges: conversations, bindingChanges: bindings, sourceChanges: sources,
-                evidenceChanges: [evidence], outcome: decision.disposition), decision
+                conversationChanges: conversations, bindingChanges: bindingChanges,
+                sourceChanges: source.map { [$0] } ?? [], evidenceChanges: [evidence], outcome: disposition),
+            decision
         )
     }
 

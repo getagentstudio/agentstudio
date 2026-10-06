@@ -145,14 +145,15 @@ package final class PaneRuntimeEventChannel {
         commandId: UUID? = nil,
         correlationId: UUID? = nil,
         event: PaneRuntimeEvent,
-        persistForReplay: Bool = true
+        persistForReplay: Bool = true,
+        timestamp: ContinuousClock.Instant? = nil
     ) {
         sequence += 1
         let envelope = RuntimeEnvelope.pane(
             PaneEnvelope(
                 source: .pane(paneId),
                 seq: sequence,
-                timestamp: clock.now,
+                timestamp: timestamp ?? clock.now,
                 correlationId: correlationId,
                 commandId: commandId,
                 paneId: paneId,

@@ -121,14 +121,30 @@ final class PaneContextIPCDomainCompanion: Sendable {
         )
     }
 
+    /// Records SessionStart only; callers explicitly end a live main before binding its successor.
     func bind(conversationId: String = "current", to targetPaneId: UUID? = nil) async throws -> IPCPaneWriterClaim {
-        _ = try await ingestion.submitHook(
+        let outcome = try await ingestion.submitHook(
             .init(
                 paneId: targetPaneId ?? paneId,
                 providerIdentifier: "claude-code", providerVersion: "2.1.289", sessionId: conversationId,
                 eventName: .sessionStart, turnId: nil, signal: .sessionStart,
                 recordId: UUIDv7.generate(), admittedAt: time.now))
+        let didCommit: Bool
+        if case .committed = outcome { didCommit = true } else { didCommit = false }
+        try #require(didCommit, "Expected session start to commit, got \(outcome)")
         return IPCPaneWriterClaim(provider: "claude-code", conversationId: conversationId)
+    }
+
+    /// Sends the real SessionEnd hook for this pane's live main session.
+    func endMain(_ writer: IPCPaneWriterClaim) async throws {
+        let outcome = try await ingestion.submitHook(
+            .init(
+                paneId: paneId, providerIdentifier: writer.provider, providerVersion: "2.1.289",
+                sessionId: writer.conversationId, eventName: .sessionEnd, turnId: nil, signal: .sessionEnd,
+                recordId: UUIDv7.generate(), admittedAt: time.now))
+        let didCommit: Bool
+        if case .committed = outcome { didCommit = true } else { didCommit = false }
+        try #require(didCommit, "Expected SessionEnd to commit for the live main, got \(outcome)")
     }
 
     func sendParameters(

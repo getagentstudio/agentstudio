@@ -123,8 +123,6 @@ struct AgentStudioIPCClaudeHookVerticalTests {
     func payloadEventWinsThroughCLIAndAdapter() async throws {
         let harness = try await #require(SessionsVerticalHarnessContext.current).freshPanePair()
         let paneId = harness.boundPaneId
-        let sessionStart = try await send("SessionStart", paneId: paneId, harness: harness)
-        #expect(sessionStart.disposition == .admitted)
 
         let payload = try Data(contentsOf: Self.fixtureURL("Stop"))
         let paneToken = try #require(harness.boundPaneToken)

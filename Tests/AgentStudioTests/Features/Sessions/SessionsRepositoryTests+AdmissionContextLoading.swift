@@ -12,8 +12,9 @@ extension SessionsRepositoryTests {
         let fixture = try SessionsDatabaseFixture()
         let pane = UUIDv7.generate()
         let baseRepository = fixture.makeRepository()
-        _ = try await baseRepository.applyHook(makeHookAdmission(paneId: pane))
-        _ = try await baseRepository.applyHook(
+        let initialOutcome = try await baseRepository.applyHook(makeHookAdmission(paneId: pane))
+        _ = try #require(committedHookCommit(from: initialOutcome))
+        let questionOutcome = try await baseRepository.applyHook(
             makeHookAdmission(
                 paneId: pane, eventName: .question,
                 signal: .question(
@@ -23,6 +24,7 @@ extension SessionsRepositoryTests {
                             question: "Continue?", header: "Approval", options: [], multiSelect: false)
                     ]),
                 kind: .needsYouOpened))
+        _ = try #require(committedHookCommit(from: questionOutcome))
 
         let recorder = SessionsRepositorySQLStatementRecorder()
         let tracedAccess = TracingSessionsSQLiteAccess(base: fixture.sqliteAccess, recorder: recorder)
@@ -43,9 +45,10 @@ extension SessionsRepositoryTests {
             #expect(selectedHistoryTables(in: recorder.statements()) == sessionsHistoryTableNames)
 
             recorder.reset()
-            let nextHook = try await ingestion.submitHook(
+            let nextOutcome = try await ingestion.submitHook(
                 makeHookAdmission(
                     paneId: pane, eventName: .toolActivity, signal: .toolActivity(toolName: "Read")))
+            let nextHook = try #require(committedHookCommit(from: nextOutcome))
             #expect(nextHook.disposition == .applied)
             #expect(selectsFromHistoryTables(in: recorder.statements()).isEmpty)
         }
