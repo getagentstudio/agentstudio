@@ -447,8 +447,13 @@ LOG_PREFIX="test-coverage"
 EXTRA_SWIFT_TEST_ARGS="--enable-code-coverage"
 source scripts/swift-test-helpers.sh
 
+source scripts/swift-test-lane-report.sh
+swift_test_begin_receipted_lane
 if [ "${SWIFT_TEST_SKIP_PREBUILD:-0}" != "1" ]; then
   prebuild_swift_tests_with_build_receipt
+  LANE_BUNDLE_STATE=fresh
+else
+  LANE_BUNDLE_STATE=reused
 fi
 swift_test_preflight_lane test
 
@@ -500,8 +505,13 @@ BUILD_PATH="$SWIFT_BUILD_DIR"
 LOG_PREFIX="test-e2e"
 TIMEOUT_SECONDS="${SWIFT_TEST_TIMEOUT_SECONDS:-600}"
 PREBUILD_TIMEOUT_SECONDS="${SWIFT_TEST_PREBUILD_TIMEOUT_SECONDS:-1200}"
+source scripts/swift-test-lane-report.sh
+swift_test_begin_receipted_lane
 if [ "${SWIFT_TEST_SKIP_PREBUILD:-0}" != "1" ]; then
   prebuild_swift_tests_with_build_receipt
+  LANE_BUNDLE_STATE=fresh
+else
+  LANE_BUNDLE_STATE=reused
 fi
 swift_test_preflight_lane e2e
 run_swift_with_timeout "E2ESerializedTests" "$TIMEOUT_SECONDS" \
@@ -526,8 +536,13 @@ BUILD_PATH="$SWIFT_BUILD_DIR"
 LOG_PREFIX="test-zmx-e2e"
 TIMEOUT_SECONDS="${SWIFT_TEST_TIMEOUT_SECONDS:-600}"
 PREBUILD_TIMEOUT_SECONDS="${SWIFT_TEST_PREBUILD_TIMEOUT_SECONDS:-1200}"
+source scripts/swift-test-lane-report.sh
+swift_test_begin_receipted_lane
 if [ "${SWIFT_TEST_SKIP_PREBUILD:-0}" != "1" ]; then
   prebuild_swift_tests_with_build_receipt
+  LANE_BUNDLE_STATE=fresh
+else
+  LANE_BUNDLE_STATE=reused
 fi
 swift_test_preflight_lane zmx
 run_swift_with_timeout "ZmxE2ETests" "$TIMEOUT_SECONDS" \
@@ -553,8 +568,13 @@ TIMEOUT_SECONDS="${SWIFT_TEST_TIMEOUT_SECONDS:-600}"
 PREBUILD_TIMEOUT_SECONDS="${SWIFT_TEST_PREBUILD_TIMEOUT_SECONDS:-1200}"
 export AGENT_STUDIO_BENCHMARK_MODE=benchmark
 export _XCB_BYPASS=1
+source scripts/swift-test-lane-report.sh
+swift_test_begin_receipted_lane
 if [ "${SWIFT_TEST_SKIP_PREBUILD:-0}" != "1" ]; then
   prebuild_swift_tests_with_build_receipt
+  LANE_BUNDLE_STATE=fresh
+else
+  LANE_BUNDLE_STATE=reused
 fi
 swift_test_preflight_lane benchmark
 run_swift_with_timeout "benchmark suites" "$TIMEOUT_SECONDS" \

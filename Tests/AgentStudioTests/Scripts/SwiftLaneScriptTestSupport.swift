@@ -20,13 +20,18 @@ let swiftTaskParentEnvironmentProbe = """
     """
 
 func swiftTaskFixtureEnvironment() -> [String: String] {
-    var environment = ["PATH": "/usr/bin:/bin:/usr/sbin:/sbin"]
+    var environment = ["PATH": ProcessInfo.processInfo.environment["PATH"] ?? "/usr/bin:/bin:/usr/sbin:/sbin"]
     for name in ["TMPDIR", "DEVELOPER_DIR"] {
         if let value = ProcessInfo.processInfo.environment[name] {
             environment[name] = value
         }
     }
     return environment
+}
+
+func loadSwiftLaneRunnerReportingSource() throws -> String {
+    try String(contentsOfFile: "scripts/run-swift-test-task.sh", encoding: .utf8)
+        + "\n" + String(contentsOfFile: "scripts/swift-test-lane-report.sh", encoding: .utf8)
 }
 
 /// Runs one bash command from the repository root with stdout and stderr merged.

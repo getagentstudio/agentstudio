@@ -249,7 +249,7 @@ struct SwiftLaneRunnerReportTests {
     @Test("every Swift test invocation takes its parallelization width from the one helper")
     func everySwiftTestInvocationTakesItsWidthFromTheOneHelper() throws {
         let helperScript = try String(contentsOfFile: "scripts/swift-test-helpers.sh", encoding: .utf8)
-        let laneRunnerScript = try String(contentsOfFile: "scripts/run-swift-test-task.sh", encoding: .utf8)
+        let laneRunnerScript = try loadSwiftLaneRunnerReportingSource()
         let widthFunction = try shellFunction(named: "swift_test_parallelization_width", in: helperScript)
         let invocationLines = (helperScript + "\n" + laneRunnerScript)
             .split(separator: "\n", omittingEmptySubsequences: false)
@@ -316,7 +316,7 @@ struct SwiftLaneRunnerReportTests {
     @Test("lane runner reports machine load before and after every lane")
     func laneRunnerReportsMachineLoadBeforeAndAfterEveryLane() throws {
         let helperScript = try String(contentsOfFile: "scripts/swift-test-helpers.sh", encoding: .utf8)
-        let laneRunnerScript = try String(contentsOfFile: "scripts/run-swift-test-task.sh", encoding: .utf8)
+        let laneRunnerScript = try loadSwiftLaneRunnerReportingSource()
         let closingReport = try shellFunction(named: "print_closing_lane_report", in: laneRunnerScript)
 
         for preflightLabel in [
@@ -475,7 +475,7 @@ struct SwiftLaneRunnerReportTests {
     @Test("lane stdout sources use one persistent line relay per stream")
     func laneStdoutSourcesUseOnePersistentLineRelayPerStream() throws {
         let helperScript = try String(contentsOfFile: "scripts/swift-test-helpers.sh", encoding: .utf8)
-        let laneTaskScript = try String(contentsOfFile: "scripts/run-swift-test-task.sh", encoding: .utf8)
+        let laneTaskScript = try loadSwiftLaneRunnerReportingSource()
         let outputRelayScript = try String(contentsOfFile: "scripts/swift-test-output-relay.pl", encoding: .utf8)
         let outputRelayBegin = try shellFunction(named: "swift_test_output_relay_begin_command", in: helperScript)
         let outputRelayFinish = try shellFunction(named: "swift_test_output_relay_finish_command", in: helperScript)
@@ -730,7 +730,7 @@ struct SwiftLaneRunnerReportTests {
 
     @Test("lane runner hang bounds default to the budgets CI already sets")
     func laneRunnerHangBoundsDefaultToBudgetsCIAlreadySets() throws {
-        let laneRunnerScript = try String(contentsOfFile: "scripts/run-swift-test-task.sh", encoding: .utf8)
+        let laneRunnerScript = try loadSwiftLaneRunnerReportingSource()
         let ciWorkflow = try String(contentsOfFile: ".github/workflows/ci.yml", encoding: .utf8)
         let prebuildStep = try workflowStep(named: "Prebuild Swift test bundles", in: ciWorkflow)
 

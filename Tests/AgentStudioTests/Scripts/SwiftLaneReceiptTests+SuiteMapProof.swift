@@ -26,6 +26,7 @@ extension SwiftLaneReceiptTests {
             """
             TIMEOUT_SECONDS=60; PREBUILD_TIMEOUT_SECONDS=1200
             EXTRA_SWIFT_TEST_ARGS=--enable-code-coverage
+            swift_build_slot_release() { :; }
             export SWIFT_TEST_INCLUDE_E2E=\(includeE2E ? "1" : "0")
             export SWIFT_TEST_SKIP_PREBUILD=0
             swift_test_lane_mandatory_selectors() { printf '%s\\n' WebKitSerializedTests/BridgePaneControllerTests; }
@@ -229,7 +230,7 @@ extension SwiftLaneReceiptTests {
     }
 }
 
-private struct SuiteMapProofFixture {
+struct SuiteMapProofFixture {
     let root: String
     var executable: String { root + "/out/Products/Debug/AgentStudioTests.xctest/Contents/MacOS/AgentStudioTests" }
 
@@ -260,6 +261,7 @@ private struct SuiteMapProofFixture {
               create_bundle OtherTests
             }
             swift() {
+              if [ "$1" = --version ]; then echo 'Swift task fixture'; return 0; fi
               [ ! -e "$(lane_build_receipt_path)" ] || return 9
               cat "$FIXTURE_LIST"
             }

@@ -148,7 +148,7 @@ struct SwiftLaneReceiptTests {
 
     @Test("the receipt is printed on every exit, prebuild included, and only a finished prebuild is fresh")
     func receiptIsPrintedOnEveryExitAndOnlyFinishedPrebuildIsFresh() throws {
-        let laneRunnerScript = try String(contentsOfFile: "scripts/run-swift-test-task.sh", encoding: .utf8)
+        let laneRunnerScript = try loadSwiftLaneRunnerReportingSource()
         let trapRange = try #require(laneRunnerScript.range(of: "trap finish_lane_invocation EXIT"))
         let prebuildCallRange = try #require(
             laneRunnerScript.range(of: "  prebuild_swift_tests_with_build_receipt\n  LANE_BUNDLE_STATE=fresh\n")
@@ -183,7 +183,7 @@ struct SwiftLaneReceiptTests {
         // Observed in a real `mise run test`: the lane was SIGTERMed mid-phase and
         // its receipt said exit_status=0 verdict=pass, because bash runs the EXIT
         // trap with `$?` from the last completed command.
-        let laneRunnerScript = try String(contentsOfFile: "scripts/run-swift-test-task.sh", encoding: .utf8)
+        let laneRunnerScript = try loadSwiftLaneRunnerReportingSource()
         let terminationTraps = try laneScriptShellFunction(
             named: "trap_lane_termination_signals",
             in: laneRunnerScript
@@ -222,7 +222,7 @@ struct SwiftLaneReceiptTests {
 
     @Test("a lane's build-slot claim is released when the lane exits")
     func laneBuildSlotClaimIsReleasedWhenTheLaneExits() async throws {
-        let laneRunnerScript = try String(contentsOfFile: "scripts/run-swift-test-task.sh", encoding: .utf8)
+        let laneRunnerScript = try loadSwiftLaneRunnerReportingSource()
         let invocationExit = try laneScriptShellFunction(named: "finish_lane_invocation", in: laneRunnerScript)
         let repositoryRoot = FileManager.default.currentDirectoryPath
         let slotRoot = NSTemporaryDirectory() + "agentstudio-receipt-slot-\(UUIDv7.generate())"
@@ -331,7 +331,7 @@ struct SwiftLaneReceiptTests {
 
     @Test("the width comparison runs both halves on one bundle and keeps every ledger")
     func widthComparisonRunsBothHalvesOnOneBundleAndKeepsEveryLedger() async throws {
-        let laneRunnerScript = try String(contentsOfFile: "scripts/run-swift-test-task.sh", encoding: .utf8)
+        let laneRunnerScript = try loadSwiftLaneRunnerReportingSource()
         let miseConfig = try String(contentsOfFile: ".mise.toml", encoding: .utf8)
         let comparison = try laneScriptShellFunction(named: "run_width_comparison", in: laneRunnerScript)
         let half = try laneScriptShellFunction(named: "run_width_comparison_half", in: laneRunnerScript)

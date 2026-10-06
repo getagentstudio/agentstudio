@@ -111,6 +111,10 @@ private func writeStandaloneTaskSwiftTool(in toolDirectory: URL) throws {
     try """
     #!/bin/bash
     set -eu
+    if [ "$1" = --version ]; then
+      echo 'Swift task fixture'
+      exit 0
+    fi
     if [ "$1" = build ]; then
       bundle="$LANE_TASK_FIXTURE_ROOT/out/Products/Debug/AgentStudioTests.xctest/Contents/MacOS"
       mkdir -p "$bundle"
