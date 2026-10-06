@@ -149,6 +149,28 @@ describe('Bridge comm worker selected File preparation cancellation', () => {
 		expect(persistentFailureHarness.attempts).toHaveLength(2);
 	});
 
+	test('keeps a completed selected File replacement ready after a contentChanged invalidation', async () => {
+		const harness = await createPendingFilePreparationHarness();
+
+		await completeAttempt(harness, 0, 'descriptor-file-1');
+		expect(fileAvailabilityPatches(harness.postedMessages)).toContainEqual(
+			expect.objectContaining({ payload: expect.objectContaining({ state: 'ready' }) }),
+		);
+
+		await harness.installFileBatch({
+			descriptorId: 'descriptor-file-1-replacement',
+			expectedSha256: 'b'.repeat(64),
+			revision: 5,
+		});
+		await drainUntilAttemptCount(harness, 2);
+		await completeAttempt(harness, 1, 'descriptor-file-1-replacement');
+
+		expect(harness.abortCount()).toBe(0);
+		expect(fileAvailabilityPatches(harness.postedMessages)).toContainEqual(
+			expect.objectContaining({ payload: expect.objectContaining({ state: 'ready' }) }),
+		);
+	});
+
 	test('cancels once and reopens when the selected descriptor is replaced', async () => {
 		const harness = await createPendingFilePreparationHarness();
 
