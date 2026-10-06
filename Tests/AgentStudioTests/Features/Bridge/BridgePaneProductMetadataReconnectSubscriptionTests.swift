@@ -82,6 +82,7 @@ struct BridgeMetadataReconnectTests {
     func restoresReconciledSubscriptionsWhenMetadataReattaches() async throws {
         // Arrange
         let context = try await makeReconnectSubscriptionContext()
+        let before = await context.fileSource.diagnostics
         #expect(await context.firstStream.pump.cancel())
         let response = try await dispatchReconnectControl(
             reconnectResyncRequest(
@@ -117,6 +118,7 @@ struct BridgeMetadataReconnectTests {
             disposition == .applied
             ? try await pullPostReconnectPublication(from: replacement.pump)
             : nil
+        await context.fileSource.waitForUpdateCallCount(before.updateCallCount + 1)
         let sourceDiagnostics = await context.fileSource.diagnostics
         #expect(await replacement.pump.cancel())
         await context.provider.closeAndDrain()
@@ -301,6 +303,16 @@ struct BridgeMetadataReconnectTests {
     func reconciledFileSubscriptionDeliversAfterMetadataStreamReplacement() async throws {
         // Arrange
         let context = try await makeReconnectSubscriptionContext()
+        let before = await context.fileSource.diagnostics
+        let openCompletionStep = HeldStep<Void>(
+            "replacement File source opens before scope reapplication",
+            cancellation: .holdThroughCancellation
+        )
+        defer { openCompletionStep.release() }
+        await context.fileSource.holdOpenCompletion(
+            ordinal: before.openCallCount + 1,
+            at: openCompletionStep
+        )
         #expect(await context.firstStream.pump.cancel())
         let retiredSnapshot = await context.harness.session.producerSnapshot()
         let resyncRequest = try reconnectResyncRequest(
@@ -328,6 +340,11 @@ struct BridgeMetadataReconnectTests {
             harness: context.harness
         )
         await waitForReconnectSourceActivity(context.fileSource)
+        _ = try await openCompletionStep.firstArrival()
+        let heldDiagnostics = await context.fileSource.diagnostics
+        #expect(heldDiagnostics.updateCallCount == before.updateCallCount)
+        #expect(heldDiagnostics.viewHandle == nil)
+        #expect(heldDiagnostics.scopeRevision == nil)
         let publicationDisposition = await context.provider.publishFileChangeset(
             try reconnectFileChangeset(),
             productAdmission: context.harness.productAdmission.context,
@@ -339,6 +356,8 @@ struct BridgeMetadataReconnectTests {
             publicationDisposition == .applied
             ? try await pullPostReconnectPublication(from: secondStream.pump)
             : nil
+        openCompletionStep.release()
+        await context.fileSource.waitForUpdateCallCount(before.updateCallCount + 1)
         let sourceDiagnostics = await context.fileSource.diagnostics
         #expect(await secondStream.pump.cancel())
         await context.provider.closeAndDrain()
