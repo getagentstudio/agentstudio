@@ -433,6 +433,22 @@ struct BridgeProductTransportV2ContractTests {
         }
     }
 
+    @Test("contribution publications round-trip a required null reviewed branch")
+    func contributionPublicationWithNullBranchRoundTrips() throws {
+        let recordObject = try fixtureJSONObject(
+            relativePath: "Tests/BridgeContractFixtures/valid/bridge-product-review-contribution-null-branch.json"
+        )
+        let records = try decodeAndVerifyRoundTrips(BridgeProductReviewBatchRecord.self, from: [recordObject])
+        guard case .publication(let publication) = try #require(records.first),
+            let displayed = publication.displayed,
+            case .contribution(let origin) = displayed.comparisonOrigin
+        else {
+            Issue.record("Expected a displayed contribution publication")
+            return
+        }
+        #expect(origin.reviewedSubjectBranchName == nil)
+    }
+
     @Test("Review batch records retain item order and explicit role capability")
     func reviewBatchRecordsRoundTrip() throws {
         let corpus = try fixtureJSONObject(

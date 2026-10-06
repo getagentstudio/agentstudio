@@ -111,6 +111,7 @@ describe('Bridge product Review metadata contracts', () => {
 				kind: 'contribution',
 				resolvedTargetOID: 'resolved-target-oid',
 				reviewedHeadOID: 'reviewed-head-oid',
+				reviewedSubjectBranchName: null,
 				symbolicTarget: { basis: 'commonCommit', kind: 'branch', name: 'integration' },
 			},
 			contentSources: [reviewContentSource],

@@ -710,6 +710,7 @@ const reviewComparisonOrigin = {
 	kind: 'contribution',
 	resolvedTargetOID: 'resolved-target-oid',
 	reviewedHeadOID: 'reviewed-head-oid',
+	reviewedSubjectBranchName: null,
 	symbolicTarget: { basis: 'commonCommit', kind: 'branch', name: 'integration' },
 } as const;
 

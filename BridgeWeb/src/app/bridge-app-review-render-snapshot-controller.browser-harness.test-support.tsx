@@ -473,6 +473,7 @@ export function reviewDisplayEventWithContribution(
 								kind: 'contribution',
 								resolvedTargetOID: 'mmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmm',
 								reviewedHeadOID: 'hhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhh',
+								reviewedSubjectBranchName: null,
 								symbolicTarget: {
 									basis: 'commonCommit',
 									branchName: 'master',

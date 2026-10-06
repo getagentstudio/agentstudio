@@ -228,6 +228,7 @@ function comparisonPackage(
 			kind: 'contribution',
 			resolvedTargetOID: 'b'.repeat(40),
 			reviewedHeadOID: 'c'.repeat(40),
+			reviewedSubjectBranchName: null,
 			symbolicTarget: { basis: 'commonCommit', kind: 'ref', name: targetName },
 		},
 		packageId,

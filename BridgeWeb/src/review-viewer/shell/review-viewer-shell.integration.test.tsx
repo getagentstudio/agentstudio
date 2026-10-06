@@ -177,6 +177,7 @@ describe('review viewer shell', () => {
 				kind: 'contribution' as const,
 				resolvedTargetOID: 'mmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmm',
 				reviewedHeadOID: 'hhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhh',
+				reviewedSubjectBranchName: null,
 				symbolicTarget: {
 					basis: 'commonCommit' as const,
 					branchName: 'master',

@@ -968,6 +968,7 @@ function contributionPackage(props: {
 			kind: 'contribution',
 			resolvedTargetOID: props.resolvedTargetOID,
 			reviewedHeadOID: 'hhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhh',
+			reviewedSubjectBranchName: null,
 			symbolicTarget: props.symbolicTarget ?? {
 				basis: 'commonCommit',
 				branchName: 'master',

@@ -235,6 +235,7 @@ test('a failed refresh keeps its healthy comparison labelled stale', async (): P
 			comparedRole: 'capturedWorkingTree',
 			resolvedTargetOID: 'b'.repeat(40),
 			reviewedHeadOID: 'c'.repeat(40),
+			reviewedSubjectBranchName: null,
 			symbolicTarget: { basis: 'commonCommit', branchName: 'master', kind: 'localDefaultBranch' },
 		},
 	} satisfies BridgeReviewPackage;
