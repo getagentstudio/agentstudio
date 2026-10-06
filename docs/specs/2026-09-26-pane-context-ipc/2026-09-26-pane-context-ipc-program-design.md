@@ -1105,8 +1105,13 @@ enum AskAnswerValue: Sendable, Equatable {
 protocol PaneContextPersonActing: Sendable {
     func answer(_ request: AnswerAskRequest) async -> AnswerAskResult
     func dismiss(messageId: AgentMessageId, paneId: PaneId) async -> DismissResult
+    func dismissAllNotices(paneId: PaneId, includingDrawers: Bool) async -> DismissAllNoticesResult
     func markRead(messageId: AgentMessageId, paneId: PaneId) async -> MarkReadResult
     func runAction(_ request: MessageActionRequest) async -> MessageActionResult
+}
+enum DismissAllNoticesResult: Sendable, Equatable {
+    case dismissed(count: Int)            // 0 when there was nothing to dismiss
+    case unavailable(StorageFailureSummary)
 }
 enum AnswerAskResult: Sendable, Equatable {
     case answered
@@ -1189,11 +1194,19 @@ Rules the implementations keep:
 - **Terminal records answer honestly.** A `dismiss` or `answer` on a settled
   message returns its terminal state; a purged id returns `notFound`; a
   withdrawn notice reads back as `.notice(.withdrawn)` after a restart.
+- **Dismiss all notices (rev 36, PR C request).** One write that replaces PR C's client-side paging drain, whose two bugs existed only because the drain did: a re-read loop when a drawer leaves mid-drain, and a self-cancelling revision.
+  - **Scope.** It covers the pane's **current** membership at commit time: the pane, plus its current drawer children when `includingDrawers`. It reads the existing membership directory inside the transaction.
+  - **What changes.** Every open notice (unread or read) is dismissed. Asks are untouched.
+  - **One transaction.** Each dismissed notice gets its dismissal row (a `pane_event` `dismissal`, so its sender sees it through `pane.message.changes` as R14 requires). Each affected pane's revision bumps once.
+  - **Publication.** It publishes once after commit, the same as single `dismiss`.
+  - **No new mechanism.** No queue or retry. A storage failure returns `.unavailable` and changes nothing.
 - **The outer channel is bounded.** `StorageFailureSummary` is a closed enum
   (`.databaseUnavailable | .commitFailed | .decodeFailed(field)`) with no
   payload text.
 
 ### The pull-request summary (Spec R32, S14; closeout A6)
+
+> **Rev 36: deferred to B2.** The fold below had no production consumer: `pane.context.get` and the presentation return `pullRequests: .notApplicable` until B2 links exist, and PR C cut its chip. `PullRequestSummaryFold` and its exclusive tests are removed. The `pullRequests` wire field stays, reading `notApplicable`. B2 brings the fold back with its first consumer. The text below is the B2 design, not current code.
 
 - **What it is:** a pure fold, `PullRequestSummaryFold.summarize(members:) -> PullRequestSummaryDetail`, in `Core/PaneContext/`. It takes values and does no I/O.
 - **Members:** the pane's linked worktrees (B2 links, in link order). Each member's row comes from Forge's existing cached facts (`RepoBranchPullRequestFacts`, keyed by repository and branch).
