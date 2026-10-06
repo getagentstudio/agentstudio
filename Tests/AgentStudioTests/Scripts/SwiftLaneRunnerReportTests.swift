@@ -373,6 +373,8 @@ struct SwiftLaneRunnerReportTests {
                 "fact_expected",
                 "failed_isolated_suite",
                 "failed_isolated_suites",
+                "failing_issue",
+                "failing_issues",
                 "failing_test",
                 "head_sha",
                 // The harness steps a hung lane was still waiting on.
@@ -783,8 +785,8 @@ struct SwiftLaneRunnerReportTests {
 
     @Test("announced-test counter tracks posted start events, not the cap")
     func announcedTestCounterTracksPostedStartEvents() async throws {
-        // a and b overlap (peak 2), a closes, then c opens (2 again). The
-        // run-level and suite-level events are not tests.
+        // The capture starts four functions before the first function ends.
+        // Run-level and suite-level events do not contribute to the peak.
         let observedPeak = try await runBash(
             "/usr/bin/perl scripts/swift-test-invocation-receipts.pl facts "
                 + "Tests/AgentStudioTests/Scripts/Fixtures/xcode27-event-stream-v6.3.jsonl 19"
