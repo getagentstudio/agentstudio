@@ -1,5 +1,10 @@
 import AgentStudioAppIPC
+import AgentStudioCLIStore
+import AgentStudioIPCClientCore
+import AgentStudioIPCTransport
 import AgentStudioInfrastructure
+import AgentStudioProgrammaticControl
+import AgentStudioTestHarness
 import CryptoKit
 import Foundation
 import Testing
@@ -48,11 +53,15 @@ struct PaneIPCIdentityOwnerTests {
         // The credential record ID is persistence identity, not pane authority,
         // so it is deliberately absent from the pane's environment.
         #expect(first.environmentVariables["AGENTSTUDIO_IPC_CREDENTIAL_RECORD_ID"] == nil)
-        #expect(first.environmentVariables["AGENTSTUDIO_IPC_SPOOL_DIR"] == fixture.spoolDirectory.path)
+        #expect(
+            first.environmentVariables["AGENTSTUDIO_CLI_STORE"]
+                == fixture.rootDirectory.appending(path: "ipc/cli.sqlite").path)
+        #expect(first.environmentVariables["AGENTSTUDIO_CLI_STORE_CHANNEL"] == "debug")
+        #expect(first.environmentVariables["AGENTSTUDIO_IPC_SPOOL_DIR"] == nil)
         #expect(first.environmentVariables["AGENTSTUDIO_CLI"] == fixture.cliExecutableURL.path)
         #expect(
             first.environmentVariables["PATH"]
-                == "\(fixture.cliExecutableURL.deletingLastPathComponent().path):/usr/bin:/bin"
+                == "/usr/bin:/bin:\(fixture.cliExecutableURL.deletingLastPathComponent().path)"
         )
 
         let firstContext = try await registry.authenticate(
@@ -104,7 +113,8 @@ struct PaneIPCIdentityOwnerTests {
             "AGENTSTUDIO_WORKSPACE_ID": "outer-workspace",
             "AGENTSTUDIO_IPC_SOCKET": "/tmp/outer.sock",
             "AGENTSTUDIO_PANE_TOKEN": "outer-token",
-            "AGENTSTUDIO_IPC_SPOOL_DIR": "/tmp/outer-spool",
+            "AGENTSTUDIO_CLI_STORE": "/tmp/outer-cli.sqlite",
+            "AGENTSTUDIO_CLI_STORE_CHANNEL": "beta",
             "AGENTSTUDIO_CLI": "/tmp/outer-agentstudio",
         ]
         let registry = makeRegistry(
@@ -124,11 +134,57 @@ struct PaneIPCIdentityOwnerTests {
             workspaceID: UUIDv7.generate()
         )
 
-        #expect(environment["PATH"] == "/usr/bin:/bin")
+        #expect(environment["PATH"] == "/usr/bin:/bin:\(fixture.cliExecutableURL.deletingLastPathComponent().path)")
         for key in inheritedEnvironment.keys where key.hasPrefix("AGENTSTUDIO_") {
             #expect(environment[key]?.isEmpty == true)
         }
         #expect(registry.issuedCredentialCandidates().isEmpty)
+    }
+
+    @Test("the exported pane store environment reaches the real CLI offline writer")
+    func paneEnvironmentFeedsTheCLIOfflineWriter() async throws {
+        let fixture = try PaneIPCIdentityOwnerFixture()
+        defer { fixture.removeFiles() }
+        let paneID = UUIDv7.generate()
+        let workspaceID = UUIDv7.generate()
+        let registry = makeRegistry(
+            durableResolver: UnexpectedDurableCredentialResolver(), membership: { _, _ in true })
+        let owner = makeIdentityOwner(
+            principalRegistry: registry, membership: { _, _ in true },
+            randomBytes: { Data(repeating: 0xA5, count: 32) }, fixture: fixture)
+        let environment = try owner.environment(paneID: paneID, workspaceID: workspaceID).environmentVariables
+        let storeURL = fixture.rootDirectory.appending(path: "ipc/cli.sqlite")
+        let legacyDirectory = fixture.spoolDirectory
+
+        let observed = try await valueFromDedicatedThread {
+            let descriptors = try IPCBuiltInMethodCatalog.offlineNotificationDescriptors(
+                examples: .init(illustrativeIdentifier: UUIDv7.generate()))
+            let invocation = try IPCDescriptorInvocationParser.parse(
+                ["message", "from pane environment"],
+                descriptors: descriptors, correlationIDGenerator: { UUIDv7.generate() })
+            let client = AgentStudioIPCClient(
+                configuration: .init(socketPath: environment["AGENTSTUDIO_IPC_SOCKET"] ?? ""),
+                descriptors: descriptors)
+            let handler = PaneNotificationOfflineHandler(environment: environment)
+
+            let outcome = try handler.handleUnreachableApp(invocation: invocation) {
+                try client.requestFrame(invocation)
+            }
+
+            let rows = try CLIStore.openReader(url: storeURL, expectedChannel: .debug).get().readOutbox(after: 0).get()
+                .entries
+            return (
+                outcome: outcome, rows: rows,
+                legacyFileExists: FileManager.default.fileExists(
+                    atPath: legacyDirectory.appending(path: "\(paneID.uuidString).notifications.ndjson").path)
+            )
+        }
+        #expect(observed.outcome == .queued(reply: "message queued"))
+        #expect(observed.rows.count == 1)
+        if let entry = observed.rows.first, case .notice(let notice) = entry {
+            #expect(notice.paneID == paneID)
+        }
+        #expect(!observed.legacyFileExists)
     }
 
     private func makeIdentityOwner(
@@ -141,7 +197,8 @@ struct PaneIPCIdentityOwnerTests {
         PaneIPCIdentityOwner(
             principalRegistry: principalRegistry,
             socketURL: fixture.socketURL,
-            spoolDirectory: fixture.spoolDirectory,
+            cliStoreURL: fixture.rootDirectory.appending(path: "ipc/cli.sqlite"),
+            cliStoreChannel: .debug,
             cliExecutableURL: fixture.cliExecutableURL,
             inheritedEnvironment: inheritedEnvironment,
             canonicalPaneMembership: membership,

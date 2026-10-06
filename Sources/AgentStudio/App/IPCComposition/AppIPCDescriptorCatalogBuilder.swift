@@ -111,7 +111,7 @@ package enum AppIPCDescriptorCatalogBuilder {
         )
     }
 
-    nonisolated private static func makeCommandComposition(
+    nonisolated package static func makeCommandComposition(
         inputs: AppIPCCommandCatalogProjectionInputs
     ) throws -> IPCCommandMethodComposition {
         let commands = try inputs.commandDescriptorInputs.map {

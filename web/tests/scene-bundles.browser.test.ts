@@ -136,7 +136,7 @@ function mountStage(markup: string, width: number, height: number): HTMLElement 
   const stage = document.createElement("div");
   stage.style.width = `${String(width)}px`;
   stage.style.height = `${String(height)}px`;
-  stage.style.container = "recreation-kit / size";
+  stage.style.container = "recreation-kit / inline-size";
   stage.innerHTML = markup;
   document.body.append(stage);
   mountedElements.push(stage);
@@ -442,6 +442,14 @@ describe("scene bundles for HyperFrames", () => {
       }
     },
   );
+
+  it.each([
+    ["chapter-review", { "review-diff": 0, "review-comment": 1.65 }],
+    ["chapter-come-back", { "quit-in-flight": 0, persistence: 2.15 }],
+  ] as const)("publishes the split %s labels at unchanged animation times", (sceneId, labels) => {
+    expect(requireBundle(sceneId).manifest.labels).toEqual(labels);
+    expect(requireBundle(sceneId).manifest.durationSeconds).toBe(8);
+  });
 
   it.each([600, 1280])(
     "shows the selected pane search result before quick-find jumps at %ipx",

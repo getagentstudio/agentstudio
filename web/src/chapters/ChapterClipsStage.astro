@@ -1,0 +1,37 @@
+---
+import ScrollAutoplayVideo from "@/home-page/ScrollAutoplayVideo.astro";
+import type { Chapter } from "./chapter-catalog";
+import { sceneProofAttribute } from "./chapter-dom-contract";
+import { hasCompleteProofClips, proofClipStepIds } from "./proof-clips";
+
+interface Props { readonly chapter: Chapter; }
+const { chapter } = Astro.props;
+const clips = chapter.stage.kind === "clips" ? chapter.stage.clips : undefined;
+---
+
+{clips !== undefined && hasCompleteProofClips(clips) && <div
+  class="chapter-clips-stage relative aspect-[4/5] w-full overflow-clip rounded-control bg-product-ground phone:aspect-[16/10]"
+  data-chapter-clips={chapter.id}
+  {...{ [sceneProofAttribute]: chapter.id }}
+>
+  {proofClipStepIds.map((stepId, stepIndex) => {
+    const clip = clips[stepId];
+    return <ScrollAutoplayVideo
+      autoplayOnScroll={false}
+      deferSource
+      data-scene-proof-video
+      data-chapter-clip-step={stepId}
+      hidden={stepIndex !== 0}
+      aria-hidden={stepIndex !== 0 ? "true" : undefined}
+      accessibilityLabel={clip.accessibleLabel}
+      poster={clip.poster}
+      source={clip.desktopVideo}
+      phoneSource={clip.phoneVideo}
+      class="absolute inset-0 block h-full w-full object-contain"
+    />;
+  })}
+</div>}
+
+<style>
+  .chapter-clips-stage :global(video[hidden]) { display: none; }
+</style>

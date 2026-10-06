@@ -55,30 +55,7 @@ extension WatchedFolderScanScheduler {
         // before crossing into the bounded executor actor.
         _ = dispatchReadyQuanta()
         ensureValidationCompletionDrainStarted()
-        switch await validationExecutor.submit(executorRequest) {
-        case .accepted:
-            return
-        case .rejected(.logicalCapacityReached):
-            consumeSyntheticValidationOutcome(
-                .failure(.serviceFailed(detail: "validation logical capacity reached")),
-                awaiting: awaiting
-            )
-        case .rejected(.allPhysicalJobsDraining(let count)):
-            consumeSyntheticValidationOutcome(
-                .failure(
-                    .serviceFailed(
-                        detail: "all \(count) validation physical jobs are draining"
-                    )
-                ),
-                awaiting: awaiting
-            )
-        case .rejected(.shutdown):
-            consumeSyntheticValidationOutcome(.cancelled, awaiting: awaiting)
-        case .rejected(.duplicateRequest),
-            .rejected(.scannerSessionAlreadyOutstanding),
-            .rejected(.sourceAlreadyOutstanding):
-            rejectCorrelatedValidationCustody(awaiting)
-        }
+        await submitValidationRequest(awaiting)
     }
 
     func ensureValidationCompletionDrainStarted() {
@@ -87,6 +64,17 @@ extension WatchedFolderScanScheduler {
     }
 
     func cancelAwaitingValidation(_ awaiting: AwaitingValidation) async {
+        let requestID = awaiting.executorRequest.requestID
+        if validationAdmissionsByRequestID[requestID] != nil {
+            validationAdmissionsByRequestID[requestID]?.disposition = .cancellationRequested
+            _ = awaiting.logicalScan.session.cancel()
+            return
+        }
+        if parkedValidationByRequestID.removeValue(forKey: awaiting.executorRequest.requestID) != nil {
+            consumeSyntheticValidationOutcome(.cancelled, awaiting: awaiting)
+            _ = awaiting.logicalScan.session.cancel()
+            return
+        }
         _ = awaiting.logicalScan.session.cancel()
         _ = await validationExecutor.cancel(requestID: awaiting.executorRequest.requestID)
     }
@@ -112,7 +100,7 @@ extension WatchedFolderScanScheduler {
         }
     }
 
-    private func receiveValidationCompletion(
+    func receiveValidationCompletion(
         _ executorCompletion: RepoDiscoveryValidationCompletion
     ) {
         let executorRequest = executorCompletion.schedulerRequest
@@ -124,6 +112,19 @@ extension WatchedFolderScanScheduler {
         guard let awaiting = awaitingValidation(from: state) else {
             recordStaleScanRunDrop(sourceID: sourceID)
             return
+        }
+        guard awaiting.executorRequest.requestID == executorRequest.requestID else {
+            recordStaleScanRunDrop(sourceID: sourceID)
+            return
+        }
+        if awaiting.executorRequest == executorRequest {
+            let settlement: WatchedFolderScanValidationSettlement
+            switch executorCompletion {
+            case .finished: settlement = .finished
+            case .timedOut: settlement = .timedOut
+            case .cancelled: settlement = .cancelled
+            }
+            factSink?(awaiting.validationScope, .validationSettled(settlement))
         }
         guard awaiting.executorRequest == executorRequest,
             awaiting.scannerRequest.requestID.rawValue == executorRequest.requestID.rawValue,
@@ -169,7 +170,7 @@ extension WatchedFolderScanScheduler {
         )
     }
 
-    private func consumeSyntheticValidationOutcome(
+    func consumeSyntheticValidationOutcome(
         _ outcome: GitRepositoryDiscoveryOutcome,
         awaiting: AwaitingValidation
     ) {
@@ -219,18 +220,23 @@ extension WatchedFolderScanScheduler {
         }
     }
 
-    private func rejectCorrelatedValidationCustody(_ awaiting: AwaitingValidation) {
+    func rejectCorrelatedValidationCustody(_ awaiting: AwaitingValidation) {
         let sourceID = awaiting.logicalScan.request.sourceID
-        let state = stateBySourceID[sourceID]
         _ = awaiting.logicalScan.session.cancel()
-        if let state {
-            preserveDirtyAfterStaleCompletion(sourceID: sourceID, state: state)
+        guard let state = stateBySourceID[sourceID],
+            awaitingValidation(from: state)?.executorRequest == awaiting.executorRequest
+        else { return }
+        guard !isShuttingDown else {
+            stateBySourceID.removeValue(forKey: sourceID)
+            finalizeShutdownIfDrained()
+            return
         }
+        preserveDirtyAfterStaleCompletion(sourceID: sourceID, state: state)
         _ = dispatchReadyQuanta()
         finalizeShutdownIfDrained()
     }
 
-    private func awaitingValidation(from state: RootSchedulingState) -> AwaitingValidation? {
+    func awaitingValidation(from state: RootSchedulingState) -> AwaitingValidation? {
         switch state {
         case .awaitingValidation(let awaiting),
             .awaitingValidationAndDirty(let awaiting, _):

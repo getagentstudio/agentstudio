@@ -203,15 +203,7 @@ public struct JSONRPCResponseMessage: Codable, Equatable, Sendable {
         result = try container.decodeIfPresent(JSONValue.self, forKey: .result)
         error = try container.decodeIfPresent(JSONRPCErrorPayload.self, forKey: .error)
 
-        guard jsonrpc == "2.0" else {
-            throw JSONRPCError(reason: .invalidJSONRPCVersion, message: "JSON-RPC response version must be 2.0")
-        }
-        guard (result == nil) != (error == nil) else {
-            throw JSONRPCError(
-                reason: .invalidResponse,
-                message: "JSON-RPC response must include exactly one of result or error"
-            )
-        }
+        try JSONRPCCodec.validateResponse(version: jsonrpc, hasResult: result != nil, hasError: error != nil)
     }
 
     private enum CodingKeys: String, CodingKey {

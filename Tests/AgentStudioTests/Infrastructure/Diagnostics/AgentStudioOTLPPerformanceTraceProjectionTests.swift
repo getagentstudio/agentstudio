@@ -5,6 +5,34 @@ import Testing
 
 @Suite
 struct AgentStudioOTLPPerformanceTraceProjectionTests {
+    @Test("outbox telemetry exports controlled refusal classes and drops private identifiers and payloads")
+    func outboxRefusalKeepsOnlyControlledReason() {
+        func project(reason: String) -> AgentStudioOTLPProjectedLogRecord {
+            AgentStudioOTLPTraceProjection.project(
+                AgentStudioTraceRecord(
+                    timeUnixNano: 123, severityText: .info, body: "performance.ipc.outbox_refusal",
+                    traceID: nil, spanID: nil, parentSpanID: nil, resource: [:],
+                    scope: .init(name: "agentstudio.performance", version: "0.1.0"),
+                    attributes: [
+                        "agentstudio.performance.ipc.outbox_refusal.reason": .string(reason),
+                        "pane_id": .string("PRIVATE-PANE"), "store_id": .string("PRIVATE-STORE"),
+                        "payload": .string("PRIVATE-NOTICE"),
+                    ]))
+        }
+        let key = "agentstudio.performance.ipc.outbox_refusal.reason"
+        for reason in [
+            "malformedEnvelope", "ineligibleMethod", "ineligibleVariant", "foreignPane",
+            "unknownKind", "invalidStoredRow", "qualificationRejected", "foreignStore",
+        ] {
+            let record = project(reason: reason)
+            #expect(record.attributes[key] == .string(reason))
+            #expect(record.attributes["pane_id"] == nil)
+            #expect(record.attributes["store_id"] == nil)
+            #expect(record.attributes["payload"] == nil)
+        }
+        #expect(project(reason: "PRIVATE-NOTICE").attributes[key] == nil)
+    }
+
     @Test("focus responder change keeps controlled reason and rejects arbitrary values")
     func focusResponderChangeKeepsOnlyControlledReason() {
         let controlled = focusResponderChangeRecord(reason: "parked_cleared")

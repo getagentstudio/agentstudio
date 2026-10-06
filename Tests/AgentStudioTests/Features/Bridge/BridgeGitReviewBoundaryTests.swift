@@ -197,4 +197,34 @@ struct BridgeGitReviewBoundaryTests {
         }
         #expect(message == "gitDataPlane:unsupported")
     }
+
+    @Test("AgentStudioGit maps new lock and permission failures without exposing paths")
+    func agentStudioGitMapsLockAndPermissionFailuresWithoutExposingPaths() async {
+        let repositoryPath = URL(fileURLWithPath: "/tmp/agentstudio-lock-failure-test")
+        let adapter = AgentStudioGitBridgeReviewDataClient(
+            repositoryPath: repositoryPath,
+            client: AgentStudioGitLocalClientFake(),
+            gitReadContext: makeBridgeGitReadContext(rootURL: repositoryPath),
+            statusPhysicalGate: makeBridgeStatusPhysicalGate()
+        )
+        let lockPath = URL(fileURLWithPath: "/Users/example/private/repository/.git/index.lock")
+        let failures: [(GitDataPlaneError, String)] = [
+            (
+                .lockHeld(GitLockFact(path: lockPath, resource: .index(worktreePath: repositoryPath))),
+                "gitDataPlane:locked"
+            ),
+            (.lockUnidentified(.packedRefs), "gitDataPlane:locked"),
+            (.permissionDenied(path: lockPath), "gitDataPlane:permissionDenied"),
+        ]
+
+        for (error, expectedMessage) in failures {
+            let failure = await adapter.bridgeFailure(for: error)
+            guard case .providerFailed(let message) = failure else {
+                Issue.record("Expected providerFailed for \(error)")
+                continue
+            }
+            #expect(message == expectedMessage)
+            #expect(!message.contains(lockPath.path))
+        }
+    }
 }

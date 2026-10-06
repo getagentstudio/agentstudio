@@ -11,6 +11,7 @@ interface Props extends Omit<HTMLAttributes<"video">, "class" | "poster" | "src"
   readonly poster?: ImageMetadata | string;
   readonly replayDelayMs?: number;
   readonly source: string;
+  readonly phoneSource?: string;
   readonly sourceType?: string;
   readonly startProgress?: number;
   readonly stopProgress?: number;
@@ -25,6 +26,7 @@ const {
   poster,
   replayDelayMs = 3000,
   source,
+  phoneSource,
   sourceType = "video/mp4",
   startProgress = 0.95,
   stopProgress = 0.9,
@@ -48,6 +50,6 @@ const posterUrl = typeof poster === "string" ? poster : poster?.src;
   data-scroll-autoplay-stop-progress={autoplayOnScroll ? stopProgress : undefined}
   data-scroll-autoplay-replay-delay-ms={autoplayOnScroll ? replayDelayMs : undefined}
 >
-  <source src={deferSource ? undefined : source} data-src={deferSource ? source : undefined} type={sourceType} />
+  <source src={deferSource ? undefined : source} data-src={deferSource ? source : undefined} data-phone-src={phoneSource} type={sourceType} />
   <span>{fallbackText}</span>
 </video>

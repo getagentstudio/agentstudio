@@ -105,7 +105,7 @@ interface ChapterStepRowRequest {
   readonly chapterId: string;
 }
 
-export interface SingleStepChapterObservation {
+export interface ChapterLayoutObservation {
   readonly pillCount: number;
   readonly descriptionCount: number;
   readonly titleBottom: number;
@@ -198,8 +198,8 @@ export const verifyCaptionTextLayout = defineBrowserCommand(
   },
 );
 
-export const verifySingleStepChapter = defineBrowserCommand(
-  async ({ context }, request: ChapterStepRowRequest): Promise<SingleStepChapterObservation> => {
+export const verifyChapterLayout = defineBrowserCommand(
+  async ({ context }, request: ChapterStepRowRequest): Promise<ChapterLayoutObservation> => {
     const applicationPage = await context.newPage();
     try {
       await openChapter(applicationPage, request);
@@ -208,7 +208,7 @@ export const verifySingleStepChapter = defineBrowserCommand(
         `[data-route-kind="attach"][data-route-anchor="${request.chapterId}"]`,
         { state: "attached" },
       );
-      return await applicationPage.evaluate((chapterId): SingleStepChapterObservation => {
+      return await applicationPage.evaluate((chapterId): ChapterLayoutObservation => {
         const article = document.getElementById(chapterId);
         const title = article?.querySelector("[data-rail-anchor]");
         const glass = article?.querySelector("[data-rail-surface-target]");
@@ -227,7 +227,7 @@ export const verifySingleStepChapter = defineBrowserCommand(
           glass === undefined ||
           caption === undefined
         ) {
-          throw new Error(`Single-step chapter ${chapterId} is incomplete`);
+          throw new Error(`Chapter layout ${chapterId} is incomplete`);
         }
         const titleRect = title.getBoundingClientRect();
         const glassRect = glass.getBoundingClientRect();
