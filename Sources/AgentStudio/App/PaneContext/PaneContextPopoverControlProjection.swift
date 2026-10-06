@@ -14,7 +14,6 @@ enum PaneContextPopoverControlProjection {
             goToPane: control(.goToMessagePane, identifier: "pane-context.go-to-pane"),
             openFile: control(.openPaneMessageFile, identifier: "pane-context.open-file"),
             openPullRequest: control(.openPaneMessagePullRequest, identifier: "pane-context.open-pull-request"),
-            removeLink: control(.removePaneLink, identifier: "pane-context.remove-link"),
             moreMessages: control(.loadMorePaneMessages, identifier: "pane-context.more-messages"),
             moreSources: control(.loadMoreMessageSources, identifier: "pane-context.more-sources"),
             filters: [

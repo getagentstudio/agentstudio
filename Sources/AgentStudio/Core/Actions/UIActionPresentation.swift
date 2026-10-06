@@ -88,7 +88,6 @@ package enum LocalActionSpec {
     case markPaneMessageRead
     case openPaneMessageFile
     case openPaneMessagePullRequest
-    case removePaneLink
     case loadMorePaneMessages
     case loadMoreMessageSources
     case showAllPaneMessages
@@ -187,8 +186,6 @@ package enum LocalActionSpec {
         case .openPaneMessagePullRequest:
             return ActionSpec(
                 label: "Open pull request", helpText: "Open this pull request", icon: .octicon(.gitPullRequest))
-        case .removePaneLink:
-            return ActionSpec(label: "Remove link", helpText: "Remove this pane's link", icon: .system(.minusCircle))
         case .loadMorePaneMessages:
             return ActionSpec(
                 label: "More messages", helpText: "Load more messages from this pane", icon: .system(.chevronDown))

@@ -113,8 +113,7 @@ struct PaneContextPopoverHost: View {
                 if let chip = state.pullRequestSummaryChip {
                     GitPRSummaryPopover(
                         model: chip.model, presentation: chip.presentation, controls: Self.controls,
-                        feedback: controller.linkFeedback, onGoToPane: { onGoToPane(paneId.uuid) },
-                        onRemoveMember: removeMemberAction(controller))
+                        onGoToPane: { onGoToPane(paneId.uuid) })
                 } else {
                     PopoverPanel { Text(LocalActionSpec.panePullRequestSummaryStatus(.noInfo).actionSpec.label) }
                 }
@@ -135,16 +134,6 @@ struct PaneContextPopoverHost: View {
             PopoverPanel { Text("Loading…").foregroundStyle(.secondary) }
         }
     }
-    private func removeMemberAction(_ controller: PaneContextPopoverController) -> (@MainActor (UUID) -> Void)? {
-        guard readers.membershipProvider() != nil else { return nil }
-        return { worktree in
-            Task {
-                guard controller.useCurrentService(readers.serviceProvider()) else { return }
-                controller.useCurrentMembership(readers.membershipProvider())
-                await controller.removeMember(worktree)
-            }
-        }
-    }
     private func requestOpen() {
         isPresented = true
         openRequest &+= 1
@@ -162,7 +151,7 @@ struct PaneContextPopoverHost: View {
         let active =
             controller
             ?? readers.makePopoverController(
-                reader: adapter, person: adapter, membership: readers.membershipProvider(), contributor: .person,
+                reader: adapter, person: adapter,
                 location: location)
         controller = active
         _ = active.useCurrentService(adapter)

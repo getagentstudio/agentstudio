@@ -152,7 +152,7 @@ struct PaneContextPopoverActionViewTests {
     }
 
     @Test
-    func pullRequestButtonsDriveOpenRemovalAndNavigation() throws {
+    func pullRequestButtonsDriveOpenAndNavigation() throws {
         let worktreeId = UUIDv7.generate()
         let model = GitPRSummaryPopoverModel(
             state: .allGood,
@@ -162,7 +162,6 @@ struct PaneContextPopoverActionViewTests {
             ])
         let controls = PaneContextPopoverControlProjection.controls()
         var opened: UUID?
-        var removed: UUID?
         var focused = false
         try Self.withMounted(
             GitPRSummaryPopover(
@@ -171,15 +170,12 @@ struct PaneContextPopoverActionViewTests {
                 onOpenPullRequest: { id, number in
                     #expect(number == 7)
                     opened = id
-                }, onRemoveMember: { removed = $0 })
+                })
         ) { host in
             try Self.press(
                 host, controls.openPullRequest.identifier(in: worktreeId.uuidString),
                 label: controls.openPullRequest.label)
             #expect(opened == worktreeId)
-            try Self.press(
-                host, controls.removeLink.identifier(in: worktreeId.uuidString), label: controls.removeLink.label)
-            #expect(removed == worktreeId)
             try Self.press(host, controls.goToPane.identifier, label: controls.goToPane.label)
             #expect(focused)
         }

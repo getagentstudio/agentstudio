@@ -41,7 +41,6 @@ package struct PaneContextPopoverControls: Sendable, Equatable {
     package let goToPane: PaneContextControlModel
     package let openFile: PaneContextControlModel
     package let openPullRequest: PaneContextControlModel
-    package let removeLink: PaneContextControlModel
     package let moreMessages: PaneContextControlModel
     package let moreSources: PaneContextControlModel
     package let filters: [MessageFilterControlModel]
@@ -50,7 +49,7 @@ package struct PaneContextPopoverControls: Sendable, Equatable {
         dismiss: PaneContextControlModel, dismissAllNotices: PaneContextControlModel,
         markRead: PaneContextControlModel, goToPane: PaneContextControlModel,
         openFile: PaneContextControlModel, openPullRequest: PaneContextControlModel,
-        removeLink: PaneContextControlModel, moreMessages: PaneContextControlModel,
+        moreMessages: PaneContextControlModel,
         moreSources: PaneContextControlModel, filters: [MessageFilterControlModel]
     ) {
         self.messages = messages
@@ -62,7 +61,6 @@ package struct PaneContextPopoverControls: Sendable, Equatable {
         self.goToPane = goToPane
         self.openFile = openFile
         self.openPullRequest = openPullRequest
-        self.removeLink = removeLink
         self.moreMessages = moreMessages
         self.moreSources = moreSources
         self.filters = filters

@@ -86,48 +86,4 @@ enum PaneContextPopoverFeedback {
         case .unavailable(let failure): "Action unavailable: \(storage(failure))"
         }
     }
-    @concurrent nonisolated static func member(_ result: BridgeMemberRemoveResult) async -> String {
-        switch result {
-        case .removed: "Link removed"
-        case .alreadyAbsent: "Link already absent"
-        case .refusedProtectedCurrentDirectory: "Cannot remove the current-directory worktree"
-        case .refusedNotAuthor: "Link removal refused: not author"
-        case .staleOwner: "Link removal refused: stale owner"
-        case .staleReceiver: "Link removal refused: stale receiver"
-        case .pendingDraftSettlement: "Pending draft settlement"
-        }
-    }
-    @concurrent nonisolated static func settlement(_ result: BridgePendingMemberRemovalSettlement) async -> String {
-        switch result {
-        case .removed: "Link removed"
-        case .alreadyAbsent: "Link already absent"
-        case .refusedProtectedCurrentDirectory: "Cannot remove the current-directory worktree"
-        case .refusedNotAuthor: "Link removal refused: not author"
-        case .staleOwner: "Link removal refused: stale owner"
-        case .staleReceiver: "Link removal refused: stale receiver"
-        case .draftKept(let reason):
-            switch reason {
-            case .refused: "Draft kept: refused"
-            case .saveFailed: "Draft kept: save failed"
-            case .saveOutcomeUnknown: "Draft kept: save outcome unknown"
-            }
-        case .membershipOutcomeUnknown: "Membership outcome unknown"
-        }
-    }
-    @concurrent nonisolated static func reference(_ result: BridgePullRequestReferenceRemoveResult) async -> String {
-        switch result {
-        case .removed: "Pull request reference removed"
-        case .alreadyAbsent: "Pull request reference already absent"
-        case .refusedNotAuthor: "Reference removal refused: not author"
-        case .staleOwner: "Reference removal refused: stale owner"
-        case .staleReceiver: "Reference removal refused: stale receiver"
-        }
-    }
-    @concurrent nonisolated static func linkFailure(_ error: any Error) async -> String {
-        switch error as? BridgeLinkPortFailure {
-        case .unavailable: "Link removal unavailable"
-        case .outcomeUnknown: "Link removal outcome unknown"
-        case nil: "Link removal failed"
-        }
-    }
 }

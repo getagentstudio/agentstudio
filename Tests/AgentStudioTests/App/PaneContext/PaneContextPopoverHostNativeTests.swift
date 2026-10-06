@@ -247,30 +247,6 @@ struct PaneContextPopoverHostNativeTests {
             #expect(await ports.requests == [.init(paneId: paneId, page: .first)])
             #expect(controller?.state?.pullRequestSummaryChip?.presentation.header == "Needs attention (1)")
             #expect(controller?.state?.pullRequestSummaryChip?.presentation.chipText == "2 ✗")
-            #expect(readers.membershipProvider() == nil)
-            var goToPanePresent = false
-            var removalPresent = false
-            let controls = PaneContextPopoverControlProjection.controls()
-            for candidate in NSApp.windows {
-                guard let content = candidate.contentView else { continue }
-                content.layoutSubtreeIfNeeded()
-                var visited = Set<ObjectIdentifier>()
-                if Self.find(content, identifier: controls.goToPane.identifier, visited: &visited) != nil {
-                    goToPanePresent = true
-                }
-                for worktree in [firstWorktree, secondWorktree] {
-                    visited.removeAll()
-                    if Self.find(
-                        content, identifier: controls.removeLink.identifier(in: worktree.uuidString), visited: &visited)
-                        != nil
-                    {
-                        removalPresent = true
-                    }
-                }
-            }
-            #expect(goToPanePresent, "The shared popover must be rendered before asserting an absent removal control")
-            #expect(!removalPresent)
-
             controller?.close()
             try await completed.finish()
             try await ports.finish()

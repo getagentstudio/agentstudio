@@ -61,7 +61,7 @@ struct PaneContextUIReadersTests {
             let ports = PaneContextPopoverTestPorts(
                 PaneContextPopoverShapingTests.detail(paneId: paneId, messages: [message]))
             let controller = readers.makePopoverController(
-                reader: ports, person: ports, membership: ports, contributor: .person, location: .pane)
+                reader: ports, person: ports, location: .pane)
             await controller.open(paneId)
             #expect(controller.state?.messages.partitions.all.first?.sourceLabel == "Agent title")
             controller.close()
