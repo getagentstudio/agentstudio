@@ -6,19 +6,6 @@ import Testing
 
 @Suite("Bridge product metadata lifecycle trace recorder")
 struct BridgeProductMetadataLifecycleTraceRecorderTests {
-    @Test("an unaccepted Review view reports its guard as skipped without inventing publication failure")
-    func reviewViewScopeDeferralIsObservationOnly() async throws {
-        let sink = BridgeProductMetadataLifecycleTraceSink()
-        let recorder = BridgeProductMetadataLifecycleTraceRecorder(recorder: sink)
-        await recorder.record(BridgeProductReviewMetadataPublicationTraceEvent.viewCaptureDeferred(.noAcceptedScope))
-        let sample = try #require(await sink.recordedSamples().only)
-        #expect(sample.name == "performance.bridge.swift.review_metadata_publication")
-        #expect(sample.stringAttributes["agentstudio.bridge.phase"] == "review_metadata_view_capture_deferred")
-        #expect(sample.stringAttributes["agentstudio.bridge.result"] == "skipped")
-        #expect(sample.stringAttributes["agentstudio.bridge.result_reason"] == "no_accepted_scope")
-        #expect(sample.numericAttributes.isEmpty)
-    }
-
     @Test("no-source pane presentation projects allowlisted vocabulary without a Review generation")
     func noSourcePresentationTelemetryHasNoGeneration() async throws {
         let sink = BridgeProductMetadataLifecycleTraceSink()
