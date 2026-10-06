@@ -62,6 +62,7 @@ final class BridgePackagedLiveCapture {
     }
 
     private func close() async {
+        _ = try? await controller.page.callJavaScript("window.__bridgePackagedLiveCaptureStop?.();")
         contentController.removeScriptMessageHandler(forName: "pageProbe", contentWorld: .page)
         let tasks = snapshotTasks.withLock { state -> [Task<Void, Never>] in
             state.isClosed = true
@@ -87,6 +88,46 @@ final class BridgePackagedLiveCapture {
             }
           });
           if (current !== undefined) forward({kind: 'streamHealth', diagnostic: current});
+
+          let reviewDiagnostic = window.__bridgeReviewSelectionDiagnostic;
+          const observeReviewDiagnostic = value => value === undefined ? undefined : new Proxy(value, {
+            set(target, property, next) {
+              const before = JSON.stringify(target[property]);
+              const changed = Reflect.set(target, property, next);
+              if (before !== JSON.stringify(next)) forward({
+                kind: 'reviewOwnerDiagnostic', changedField: String(property), diagnostic: target
+              });
+              return changed;
+            }
+          });
+          reviewDiagnostic = observeReviewDiagnostic(reviewDiagnostic);
+          Object.defineProperty(window, '__bridgeReviewSelectionDiagnostic', {
+            configurable: true, get: () => reviewDiagnostic,
+            set: value => {
+              reviewDiagnostic = observeReviewDiagnostic(value);
+              forward({kind: 'reviewOwnerDiagnostic', changedField: 'installed', diagnostic: value});
+            }
+          });
+          let lastReviewDOM = '';
+          const observeReviewDOM = () => {
+            const snapshot = {
+              activeViewerMode: document.querySelector('[data-testid="bridge-app-root"]')
+                ?.getAttribute('data-bridge-viewer-mode') ?? null,
+              shellPresent: document.querySelector('[data-testid="review-viewer-shell"]') !== null,
+              regions: Array.from(document.querySelectorAll('[data-bridge-region^="review-"]'))
+                .map(region => ({region: region.getAttribute('data-bridge-region'),
+                  state: region.getAttribute('data-presentation-state'),
+                  emptyReason: region.getAttribute('data-empty-reason')}))
+            };
+            const encoded = JSON.stringify(snapshot);
+            if (encoded === lastReviewDOM) return;
+            lastReviewDOM = encoded;
+            forward({kind: 'reviewDOM', ...snapshot});
+          };
+          const reviewDOMObserver = new MutationObserver(observeReviewDOM);
+          reviewDOMObserver.observe(document, {subtree: true, childList: true, attributes: true,
+            attributeFilter: ['data-bridge-viewer-mode', 'data-presentation-state', 'data-empty-reason']});
+          window.__bridgePackagedLiveCaptureStop = () => reviewDOMObserver.disconnect();
 
           // The packaged worker is a Blob made from its fetched module source.
           // Prefix that same source; do not add an import of a URL its owner revokes.
@@ -207,7 +248,22 @@ final class BridgePackagedLiveCapture {
             construct(target, arguments_) {
               const worker = Reflect.construct(target, arguments_);
               forward({kind: 'workerConstructed', urlScheme: String(arguments_[0]).split(':')[0]});
+              const originalPost = worker.postMessage.bind(worker);
+              worker.postMessage = (...postArguments) => {
+                const message = postArguments[0];
+                if (message?.command === 'renderDisposition')
+                  forward({kind: 'reviewPublicationReceipts', receipts:
+                    message.receipts.filter(receipt => receipt.surface === 'review')});
+                return originalPost(...postArguments);
+              };
               worker.addEventListener('message', event => {
+                const incoming = event.data;
+                if (incoming?.kind === 'reviewCandidateStarted' || incoming?.kind === 'reviewDisplayPatch')
+                  forward({kind: 'reviewPublicationMessage', messageKind: incoming.kind,
+                    identity: incoming.reviewPublicationIdentity ?? null,
+                    publicationId: incoming.publicationId ?? null,
+                    source: incoming.patches?.find(patch => patch.slice === 'reviewSource')?.payload ?? null,
+                    comparison: incoming.patches?.find(patch => patch.slice === 'reviewComparison')?.payload ?? null});
                 const message = event.data?.message;
                 if (event.data?.kind === 'health' && typeof message === 'string' &&
                     message.startsWith('packaged-subscription:')) {

@@ -1,6 +1,7 @@
 import type { BridgeWorkerReplacementReason } from './bridge-worker-replacement-reason.js';
 
 export interface BridgeReviewSelectionDiagnostic {
+	reviewPresentation?: BridgeReviewPresentationDiagnostic;
 	reviewInstallationGate?: BridgeReviewInstallationGateDiagnostic;
 	reviewCandidateSource?: BridgeReviewCandidateSourceDiagnostic | null;
 	lastReviewDisplayPatch?: BridgeReviewDisplayPatchDiagnostic;
@@ -32,6 +33,13 @@ export interface BridgeReviewSelectionDiagnostic {
 	selectionSubmittedCount: number;
 	selectionDroppedCount: number;
 	sessionState?: BridgePaneCommWorkerSessionDiagnosticState;
+}
+
+export interface BridgeReviewPresentationDiagnostic {
+	readonly status: string;
+	readonly sourceStatus: string | null;
+	readonly comparisonAttemptStatus: string | null;
+	readonly projectionPresent: boolean;
 }
 
 export interface BridgeReviewCandidateSourceDiagnostic {
@@ -314,6 +322,14 @@ export function recordBridgeReviewDisplayPatchDiagnostic(
 	const diagnostic = ensureBridgeReviewSelectionDiagnostic();
 	if (diagnostic === null) return;
 	diagnostic.lastReviewDisplayPatch = snapshot;
+}
+
+export function recordBridgeReviewPresentationDiagnostic(
+	snapshot: BridgeReviewPresentationDiagnostic,
+): void {
+	const diagnostic = ensureBridgeReviewSelectionDiagnostic();
+	if (diagnostic === null) return;
+	diagnostic.reviewPresentation = snapshot;
 }
 
 export function readBridgeReviewSelectionDiagnostic(): BridgeReviewSelectionDiagnostic | null {

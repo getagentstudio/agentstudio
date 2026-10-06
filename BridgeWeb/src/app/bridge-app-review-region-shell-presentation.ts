@@ -1,5 +1,6 @@
 import type { BridgePaneSurfaceClient } from '../core/comm-worker/bridge-pane-runtime.js';
 import { bridgeReviewSelectedContentReadFailure } from '../features/review/bridge-review-region-presentation.js';
+import { recordBridgeReviewPresentationDiagnostic } from '../foundation/diagnostics/bridge-review-selection-diagnostic.js';
 import type { BridgeFileChangeKind } from '../foundation/review-package/bridge-review-package.js';
 import type { BridgeTelemetryRecorder } from '../foundation/telemetry/bridge-telemetry-recorder.js';
 import type { deriveBridgeReviewCodeViewOptions } from '../review-viewer/code-view/bridge-code-view-options.js';
@@ -23,7 +24,21 @@ type BridgeReviewFilterCandidate = Extract<
 	BridgeFileTreeFilterCandidate,
 	{ readonly surface: 'review' }
 >;
-export function bridgeReviewRegionShellPresentation(props: {
+export function bridgeReviewRegionShellPresentation(
+	props: Parameters<typeof resolveBridgeReviewRegionShellPresentation>[0],
+): BridgeReviewViewerPresentationState {
+	const presentation = resolveBridgeReviewRegionShellPresentation(props);
+	const source = props.reviewSourceSlice;
+	recordBridgeReviewPresentationDiagnostic({
+		status: presentation.status,
+		sourceStatus: source?.status ?? null,
+		comparisonAttemptStatus: props.panelChromeSlice.reviewComparison?.attempt.status ?? null,
+		projectionPresent: props.presentationSnapshot !== null,
+	});
+	return presentation;
+}
+
+function resolveBridgeReviewRegionShellPresentation(props: {
 	readonly paneReloadPort?: BridgePaneReloadPort | undefined;
 	readonly railVisible?: boolean | undefined;
 	readonly onRetryRead?: (() => void) | undefined;
