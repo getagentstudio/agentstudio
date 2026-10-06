@@ -4,6 +4,42 @@ import Testing
 
 extension SwiftLaneInvocationReceiptTests {
     @Test(
+        "unattributed issues retain their verdict without inventing a test identity",
+        arguments: ["failure", "known", "warning"], [0, 7])
+    func unattributedIssuesKeepTheirVerdict(issueKind: String, childStatus: Int) async throws {
+        let fixture = try InvocationReceiptFixture()
+        defer { fixture.remove() }
+        try writeCapturedInvocation(fixture, selecting: "recordsPass()")
+        var records = try String(contentsOf: fixture.events, encoding: .utf8).split(separator: "\n").map {
+            try #require(JSONSerialization.jsonObject(with: Data($0.utf8)) as? [String: Any])
+        }
+        records.insert(
+            [
+                "kind": "event", "version": "6.3.0",
+                "payload": [
+                    "kind": "issueRecorded",
+                    "issue": [
+                        "isFailure": issueKind == "failure", "isKnown": issueKind == "known",
+                        "severity": issueKind == "warning" ? "warning" : "error",
+                    ],
+                ],
+            ], at: records.count - 1)
+        try fixture.writeEvents(records)
+
+        let result = try await fixture.runEventFixture(as: "swift test", expectedRuns: 1, exitStatus: childStatus)
+        let hasFailure = issueKind == "failure"
+        let expectedStatus = hasFailure && childStatus == 0 ? 1 : childStatus
+        #expect(result.output.contains("STATUS=\(expectedStatus)"), Comment(rawValue: result.output))
+        #expect(result.output.contains("stream=complete"), Comment(rawValue: result.output))
+        #expect(result.output.contains("failing_issues=\(hasFailure ? 1 : 0)"), Comment(rawValue: result.output))
+        #expect(result.output.contains("failing_issue=unattributed") == hasFailure, Comment(rawValue: result.output))
+        #expect(!result.output.contains("failing_test="), Comment(rawValue: result.output))
+        #expect(
+            result.output.contains("lane-report crashed") == (!hasFailure && childStatus != 0),
+            Comment(rawValue: result.output))
+    }
+
+    @Test(
         "the wrapper distinguishes captured condition-skipped tests from a filter matching nothing",
         arguments: ["swift test", "swiftpm-testing-helper"], [false, true])
     func wrapperDistinguishesSkippedTestsFromNoMatch(invocationKind: String, matchesSkippedTests: Bool) async throws {

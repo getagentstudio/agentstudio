@@ -193,6 +193,7 @@ if ($mode eq 'collect') {
     $expected_runs = numeric($expected_runs) ? int($expected_runs) : 0;
     my ($run_started, $run_ended, $open_runs, $unbalanced_runs, $tests_run, $tests_skipped, $unreadable_records) = (0, 0, 0, 0, 0, 0, 0);
     my ($peak_announced, $running_cases, $peak_cases) = (0, 0, 0);
+    my ($failing_issues, $unattributed_issues) = (0, 0);
     my (%definitions, %active_tests, %case_counts, %failed_tests, @failing_tests);
     my $events_available = open(my $events, '<:raw', $events_path // '');
     if ($events_available) {
@@ -250,7 +251,11 @@ if ($mode eq 'collect') {
                     next;
                 }
                 my $failure = exists($issue->{isFailure}) ? $issue->{isFailure} : !$issue->{isKnown};
-                if ($failure && defined($id) && !$failed_tests{$id}++) { push @failing_tests, $id }
+                if ($failure) {
+                    $failing_issues++;
+                    if (!defined($id)) { $unattributed_issues++ }
+                    elsif (!$failed_tests{$id}++) { push @failing_tests, $id }
+                }
             }
         }
         close $events;
@@ -266,7 +271,9 @@ if ($mode eq 'collect') {
     print "tests_skipped=$tests_skipped\n";
     print "peak_announced_tests=$peak_announced\n";
     print "peak_running_parameterized_cases=$peak_cases\n";
+    print "failing_issues=$failing_issues\n";
     print "failing_test=$_\n" for @failing_tests;
+    print "failing_issue=unattributed\n" for 1 .. $unattributed_issues;
 } elsif ($mode eq 'resources') {
     my ($stem, $child, $dispatch, $complete, $timed_out) = @ARGV;
     my $record = load_json("$stem.invocation.json");

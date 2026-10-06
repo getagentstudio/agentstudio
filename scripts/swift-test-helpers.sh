@@ -808,7 +808,7 @@ swift_test_read_invocation_facts() {
         tests_skipped) SWIFT_TEST_FACTS_TESTS_SKIPPED="$fact_value" ;;
         peak_announced_tests) SWIFT_TEST_FACTS_PEAK_ANNOUNCED="$fact_value" ;;
         peak_running_parameterized_cases) SWIFT_TEST_FACTS_PEAK_CASES="$fact_value" ;;
-        failing_test) SWIFT_TEST_FACTS_FAILURE_COUNT=$((SWIFT_TEST_FACTS_FAILURE_COUNT + 1)) ;;
+        failing_issues) SWIFT_TEST_FACTS_FAILURE_COUNT="$fact_value" ;;
       esac
     done <"$facts_file"
   fi
@@ -822,10 +822,15 @@ swift_test_report_invocation_facts() {
   echo "[$LOG_PREFIX] lane-report tests_run=$SWIFT_TEST_FACTS_TESTS_RUN"
   echo "[$LOG_PREFIX] lane-report tests_skipped=$SWIFT_TEST_FACTS_TESTS_SKIPPED"
   echo "[$LOG_PREFIX] lane-report unreadable_records=$SWIFT_TEST_FACTS_UNREADABLE_RECORDS"
+  echo "[$LOG_PREFIX] lane-report failing_issues=$SWIFT_TEST_FACTS_FAILURE_COUNT"
   while IFS= read -r failing_test; do
     [ -n "$failing_test" ] || continue
     echo "[$LOG_PREFIX] lane-report failing_test=$failing_test"
   done < <(sed -n 's/^failing_test=//p' "$SWIFT_TEST_FACTS_FILE" 2>/dev/null || true)
+  while IFS= read -r failing_issue; do
+    [ -n "$failing_issue" ] || continue
+    echo "[$LOG_PREFIX] lane-report failing_issue=$failing_issue"
+  done < <(sed -n 's/^failing_issue=//p' "$SWIFT_TEST_FACTS_FILE" 2>/dev/null || true)
 }
 
 swift_test_facts_have_failures() {
