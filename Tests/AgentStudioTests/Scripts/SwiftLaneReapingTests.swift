@@ -167,7 +167,7 @@ struct SwiftLaneReapingTests {
     func laneINTTrapReachesAnActiveCommandGroup() async throws {
         let workDirectory = NSTemporaryDirectory() + "agentstudio-lane-int-group-\(UUIDv7.generate())"
         defer { try? FileManager.default.removeItem(atPath: workDirectory) }
-        let laneRunnerScript = try String(contentsOfFile: "scripts/run-swift-test-task.sh", encoding: .utf8)
+        let laneRunnerScript = try loadSwiftLaneRunnerReportingSource()
         let signalTrap = try shellFunction(named: "trap_lane_termination_signals", in: laneRunnerScript)
         let command = #"""
             set -euo pipefail
@@ -228,7 +228,7 @@ struct SwiftLaneReapingTests {
         defer { try? FileManager.default.removeItem(atPath: workDirectory) }
         try FileManager.default.createDirectory(atPath: workDirectory, withIntermediateDirectories: true)
 
-        let laneRunnerScript = try String(contentsOfFile: "scripts/run-swift-test-task.sh", encoding: .utf8)
+        let laneRunnerScript = try loadSwiftLaneRunnerReportingSource()
         let signalTrap = try shellFunction(named: "trap_lane_termination_signals", in: laneRunnerScript)
         let childScriptPath = workDirectory + "/signal-child.sh"
         let childScript = """
