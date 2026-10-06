@@ -89,7 +89,6 @@ struct BridgeProductReviewAvailabilityTests {
         #expect(
             await traceRecorder.publicationEvents == [
                 .started(retainedSubscriptions: 1, traceContext: traceContext),
-                .viewCaptureDeferred(.noAcceptedScope),
                 .completed(
                     receipt: BridgeReviewMetadataPublicationReceipt(
                         retained: 1, publishedSubscriptions: 1, emittedEvents: 0,
@@ -122,7 +121,6 @@ struct BridgeProductReviewAvailabilityTests {
         #expect(
             result.traceEvents == [
                 .started(retainedSubscriptions: 1, traceContext: traceContext),
-                .viewCaptureDeferred(.noAcceptedScope),
                 .failed(
                     failure: .producerRejection,
                     retainedSubscriptions: 1,
