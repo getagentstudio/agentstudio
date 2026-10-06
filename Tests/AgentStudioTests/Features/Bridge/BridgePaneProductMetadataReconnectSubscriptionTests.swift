@@ -166,6 +166,7 @@ struct BridgeMetadataReconnectTests {
     @Test("retained reconciliation resnapshots the accepted File view on the replacement stream")
     func retainedReconciliationResnapshotsAcceptedFileView() async throws {
         let context = try await makeReconnectSubscriptionContext()
+        let before = await context.fileSource.diagnostics
         #expect(await context.firstStream.pump.cancel())
         let response = try await dispatchReconnectControl(
             reconnectResyncRequest(
@@ -195,6 +196,7 @@ struct BridgeMetadataReconnectTests {
             capabilityHeader: context.harness.capabilityHeader
         )
         let completed = try await pullPostReconnectPublication(from: replacement.pump)
+        await context.fileSource.waitForUpdateCallCount(before.updateCallCount + 1)
         let diagnostics = await context.fileSource.diagnostics
         #expect(await replacement.pump.cancel())
         await context.provider.closeAndDrain()
