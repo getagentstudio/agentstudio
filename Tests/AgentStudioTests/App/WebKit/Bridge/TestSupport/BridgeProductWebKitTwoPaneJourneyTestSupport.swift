@@ -808,7 +808,23 @@ enum BridgeProductWebKitTwoPaneJourneyTestSupport {
             snapshot.activeRefreshPass == nil,
             snapshot.dirtyFact == nil,
             controller.activeReviewRefreshTask == nil
-        else { throw JourneyError.conditionFailed("foreground catch-up did not settle") }
+        else {
+            let activePass =
+                snapshot.activeRefreshPass.map {
+                    "lanes=\($0.lanes.map(\.rawValue).sorted()),id=\($0.id.uuidString)"
+                } ?? "nil"
+            let dirtyFact =
+                snapshot.dirtyFact.map {
+                    "fileLane=\($0.fileChangeset != nil || $0.latestFileStatus != nil),"
+                        + "reviewLane=\($0.requiresReviewRefresh),batch=\($0.latestBatchSequence),"
+                        + "generation=\($0.generation)"
+                } ?? "nil"
+            throw JourneyError.conditionFailed(
+                "foreground catch-up did not settle (activity=\(snapshot.activity),"
+                    + "activeRefreshPass=\(activePass),dirtyFact=\(dirtyFact),"
+                    + "activeReviewRefreshTaskPresent=\(controller.activeReviewRefreshTask != nil))"
+            )
+        }
     }
 
     /// Arms the W6 region observation before File catch-up can publish Updating.
