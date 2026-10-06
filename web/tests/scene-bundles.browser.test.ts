@@ -136,6 +136,7 @@ function mountStage(markup: string, width: number, height: number): HTMLElement 
   const stage = document.createElement("div");
   stage.style.width = `${String(width)}px`;
   stage.style.height = `${String(height)}px`;
+  stage.style.container = "recreation-kit / size";
   stage.innerHTML = markup;
   document.body.append(stage);
   mountedElements.push(stage);
@@ -650,6 +651,7 @@ describe("scene bundles for HyperFrames", () => {
 
   it.each([
     { width: 330, height: 412 },
+    { width: 1100, height: 688 },
     { width: 1280, height: 800 },
   ])(
     "keeps the newest drawer output inside the visible bottom at $width x $height",
@@ -687,6 +689,28 @@ describe("scene bundles for HyperFrames", () => {
           );
           expect(settledDrawerScroll).toBe(String(contextWithTaskPhoneDrawerScrollPixels));
         }
+        const statusLine = terminal.querySelector<HTMLElement>('[data-line="0"]');
+        if (statusLine === null) {
+          throw new Error("Missing initial Git status prompt");
+        }
+        timeline.seek(2.9);
+        const preBeatBodyBounds = drawerBody.getBoundingClientRect();
+        const preBeatStatusBounds = statusLine.getBoundingClientRect();
+        expect(preBeatStatusBounds.top).toBeGreaterThanOrEqual(preBeatBodyBounds.top);
+        expect(preBeatStatusBounds.bottom).toBeLessThanOrEqual(preBeatBodyBounds.bottom + 1);
+        expect(getComputedStyle(statusLine).translate).toMatch(/0px(?: 0px)?|none/);
+        timeline.seek(3.4);
+        const scrollTranslation = getComputedStyle(statusLine).translate;
+        if (width === 330) {
+          expect(scrollTranslation).toContain("-88px");
+        } else {
+          expect(scrollTranslation).toMatch(/0px(?: 0px)?|none/);
+        }
+        timeline.seek(2.9);
+        expect(getComputedStyle(statusLine).translate).toMatch(/0px(?: 0px)?|none/);
+        timeline.restart();
+        timeline.pause();
+        expect(getComputedStyle(statusLine).translate).toMatch(/0px(?: 0px)?|none/);
         timeline.seek(2.9);
         const lastBottomBeforeScroll = lastLine.getBoundingClientRect().bottom;
         for (const time of [4.5, 8.4]) {
