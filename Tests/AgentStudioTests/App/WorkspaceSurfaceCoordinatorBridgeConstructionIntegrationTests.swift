@@ -14,6 +14,26 @@ extension WebKitSerializedTests {
             installTestCoreAtomsIfNeeded()
         }
 
+        @Test("debug Review smoke constructs the provider's matching worktree context")
+        func debugReviewSmokeUsesMatchingWorktreeContext() async throws {
+            let harness = makeBridgePaneActivityTestHarness()
+            let pane = try #require(harness.coordinator.openBridgeReviewObservabilitySmoke())
+            guard case .bridgePanel(let smokeState) = pane.content else {
+                Issue.record("Expected a Bridge smoke pane")
+                await harness.finish()
+                return
+            }
+            #expect(pane.metadata.facets.worktreeId == BridgeObservabilitySmokeReviewSourceProvider.worktreeId)
+            #expect(pane.metadata.facets.repoId == BridgeObservabilitySmokeReviewSourceProvider.repoId)
+            guard case .workspace(_, let baseline) = smokeState.source else {
+                Issue.record("The explicit-diff diagnostic requires a workspace source")
+                await harness.finish()
+                return
+            }
+            #expect(baseline?.contributionTarget == .originDefaultBranch(remoteName: "origin", branchName: "main"))
+            await harness.finish()
+        }
+
         @Test("actual Bridge view factory gives two panes File authority from one application coordinator")
         func bridgeViewFactoryInjectsOneApplicationCoordinator() async throws {
             // Arrange

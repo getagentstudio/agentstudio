@@ -140,14 +140,10 @@ extension WebKitSerializedTests {
             let paneId = UUIDv7.generate()
             let reviewBuildFacts = BridgeSmokeReviewBuildFacts()
             let diagnostics = BridgePackagedProductDiagnosticRecorder()
-            let controller = BridgePaneController(
+            let controller = makeExplicitDiffSmokeController(
                 paneId: paneId,
-                state: BridgePaneState(panelKind: .diffViewer, source: nil),
-                appRootURL: testBridgeAppRootURL(),
-                reviewSourceProvider: BridgeObservabilitySmokeReviewSourceProvider(),
-                telemetryRecorder: diagnostics,
-                initialPaneActivity: .foreground,
-                reviewBuildAdmissionFactSink: reviewBuildFacts.sink
+                diagnostics: diagnostics,
+                reviewBuildFacts: reviewBuildFacts
             )
             defer { _ = controller.beginTeardown() }  // fire-and-forget: defer cannot await; cleanup only
 
@@ -287,6 +283,40 @@ extension WebKitSerializedTests {
             }
         }
     }
+}
+
+@MainActor
+private func makeExplicitDiffSmokeController(
+    paneId: UUID,
+    diagnostics: BridgePackagedProductDiagnosticRecorder,
+    reviewBuildFacts: BridgeSmokeReviewBuildFacts
+) -> BridgePaneController {
+    BridgePaneController(
+        paneId: paneId,
+        state: BridgePaneState(
+            panelKind: .diffViewer,
+            source: .workspace(
+                rootPath: "/tmp/worktree",
+                baseline: .originDefaultBranch(remoteName: "origin", branchName: "main")
+            )
+        ),
+        appRootURL: testBridgeAppRootURL(),
+        metadata: PaneMetadata(
+            paneId: PaneId(existingUUID: paneId),
+            contentType: .diff,
+            launchDirectory: URL(fileURLWithPath: "/tmp/worktree"),
+            title: "Bridge Review",
+            facets: PaneContextFacets(
+                repoId: BridgeObservabilitySmokeReviewSourceProvider.repoId,
+                worktreeId: BridgeObservabilitySmokeReviewSourceProvider.worktreeId,
+                cwd: URL(fileURLWithPath: "/tmp/worktree")
+            )
+        ),
+        reviewSourceProvider: BridgeObservabilitySmokeReviewSourceProvider(),
+        telemetryRecorder: diagnostics,
+        initialPaneActivity: .foreground,
+        reviewBuildAdmissionFactSink: reviewBuildFacts.sink
+    )
 }
 
 private final class BridgeSmokeReviewBuildFacts: Sendable {
