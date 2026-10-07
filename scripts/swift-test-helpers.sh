@@ -988,6 +988,7 @@ large|PaneContextMembershipStartupRaceTests|process-global
 large|PaneContextRepositoryRemovalTests|process-global
 large|PaneActivityBootIntegrationTests|process-global
 large|PaneActivityDatastoreIntegrationTests|process-global
+large|PaneActivitySaveIntegrationTests|process-global
 large|PrimarySidebarPipelineIntegrationTests|concurrent
 large|ProcessExecutorTests|concurrent
 large|RendererPopulationScriptTests|concurrent
