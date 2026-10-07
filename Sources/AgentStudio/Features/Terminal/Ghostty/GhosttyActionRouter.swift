@@ -101,6 +101,7 @@ extension Ghostty {
             .gotoWindow,
             .presentTerminal,
             .resetWindowSize,
+            .resizeWindow,
             .inspector,
             .showGtkInspector,
             .renderInspector,
@@ -246,7 +247,8 @@ extension Ghostty {
                 rawActionTag: rawActionTag,
                 target: target,
                 action: action,
-                routingLookupProvider: routingLookupProvider
+                routingLookupProvider: routingLookupProvider,
+                metadataActionRouter: metadataActionRouter
             ) {
                 return tabAction
             }
@@ -357,7 +359,8 @@ extension Ghostty {
             rawActionTag: UInt32,
             target: ghostty_target_s,
             action: ghostty_action_s,
-            routingLookupProvider: @escaping GhosttyActionRoutingLookupProvider
+            routingLookupProvider: @escaping GhosttyActionRoutingLookupProvider,
+            metadataActionRouter: @escaping GhosttyMetadataActionRouter
         ) -> Bool? {
             switch actionTag {
             case .newTab, .ringBell:
@@ -393,15 +396,16 @@ extension Ghostty {
                     handledResult: true
                 )
             case .commandFinished:
-                return routeActionToTerminalRuntime(
-                    actionTag: rawActionTag,
-                    payload: .commandFinished(
+                let sourceInstant = ContinuousClock.now
+                return metadataActionRouter(
+                    rawActionTag,
+                    .commandFinished(
                         exitCode: Int(action.action.command_finished.exit_code),
-                        duration: action.action.command_finished.duration
+                        duration: action.action.command_finished.duration,
+                        sourceInstant: sourceInstant
                     ),
-                    target: target,
-                    routingLookupProvider: routingLookupProvider,
-                    handledResult: true
+                    target,
+                    true
                 )
             default:
                 return nil

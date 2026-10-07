@@ -47,6 +47,7 @@ package actor PaneActivityClock {
     private let delay: AsyncDelay
     private let monotonicNow: @Sendable () -> ContinuousClock.Instant
     private let sink: @MainActor @Sendable ([PaneActivityTimeMutation]) async -> Void
+    nonisolated private let submissionObserver: @Sendable (PaneActivityOccurrence) -> Void
 
     private var drainTask: Task<Void, Never>?
     private var deadlineTask: Task<Void, Never>?
@@ -64,6 +65,7 @@ package actor PaneActivityClock {
         publishInterval: Duration = AppPolicies.Panes.activityTimePublishInterval,
         clock: (any Clock<Duration> & Sendable)? = nil,
         monotonicNow: @escaping @Sendable () -> ContinuousClock.Instant = { ContinuousClock.now },
+        submissionObserver: @escaping @Sendable (PaneActivityOccurrence) -> Void = { _ in },
         sink: @escaping @MainActor @Sendable ([PaneActivityTimeMutation]) async -> Void
     ) {
         let wake = AsyncStream<Void>.makeStream(bufferingPolicy: .bufferingNewest(1))
@@ -73,10 +75,12 @@ package actor PaneActivityClock {
         delay = clock.map(AsyncDelay.clock) ?? .taskSleep
         self.monotonicNow = monotonicNow
         self.sink = sink
+        self.submissionObserver = submissionObserver
     }
 
     /// The caller never awaits the clock actor or a MainActor sink.
     nonisolated package func submit(_ occurrence: PaneActivityOccurrence) {
+        submissionObserver(occurrence)
         let accepted = mailbox.withLock { state in
             guard state.accepting else { return false }
             if let existing = state.occurrences[occurrence.paneId],

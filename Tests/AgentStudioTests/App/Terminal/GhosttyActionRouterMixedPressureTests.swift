@@ -133,9 +133,11 @@ struct GhosttyActionRouterMixedPressureTests {
     }
 
     private func routeExactCommandFinishedFact(_ factIndex: Int, fixture: MixedAdmissionFixture) {
+        let sourceInstant = ContinuousClock.now
         let exactPayload = GhosttyAdapter.ActionPayload.commandFinished(
             exitCode: factIndex,
-            duration: UInt64(factIndex + 1)
+            duration: UInt64(factIndex + 1),
+            sourceInstant: sourceInstant
         )
         let exactActionTag = UInt32(GHOSTTY_ACTION_COMMAND_FINISHED.rawValue)
         let translatedEvent = GhosttyAdapter.shared.translate(

@@ -1,5 +1,6 @@
 import AgentStudioAppIPC
 import AgentStudioInfrastructure
+import AgentStudioSessions
 import Foundation
 import Testing
 
@@ -15,20 +16,15 @@ struct AppIPCProductionLifecycleIntegrationTests {
 
     @Test("App lifecycle denies a closed pane, restores the same token on Undo, and final-fences expiry")
     func appCompositionRoutesCoordinatorCloseUndoAndExpiryThroughSharedRegistry() async throws {
-        let workspaceID = UUIDv7.generate()
-        let fixture = try makeWorkspaceSQLiteBridgeFixture(workspaceId: workspaceID)
-        let datastore = try preparedWorkspaceSQLiteDatastore(from: fixture.backend)
-        let store = WorkspaceStore(
-            identityAtom: WorkspaceIdentityAtom(workspaceId: workspaceID),
-            sqliteDatastore: datastore,
-            startsObserving: false
-        )
+        let (core, store, datastore) = try await makeCanonicalIPCWorkspaceOwners()
+        let workspaceID = core.workspaceIdentity.workspaceId
         let pane = store.createPane()
         let tab = Tab(paneId: pane.id)
         store.appendTab(tab)
         #expect(await store.flushAsync() == .persisted)
         let appDelegate = AppDelegate()
         appDelegate.store = store
+        appDelegate.atomStore = AtomRegistry(core: core)
         appDelegate.installAppIPCIdentityAuthority(datastore: datastore)
         let lifecycle = appDelegate.appIPCWorkspaceSurfaceLifecycle()
         let surfaceManager = HarnessSurfaceManager()
@@ -87,21 +83,16 @@ struct AppIPCProductionLifecycleIntegrationTests {
 
     @Test("shutdown without a published server stops RAM admission without persisting an issued verifier")
     func shutdownWithoutServerStopsAdmissionWithoutDurableDrain() async throws {
-        let workspaceID = UUIDv7.generate()
-        let fixture = try makeWorkspaceSQLiteBridgeFixture(workspaceId: workspaceID)
-        let datastore = try preparedWorkspaceSQLiteDatastore(from: fixture.backend)
+        let (core, store, datastore) = try await makeCanonicalIPCWorkspaceOwners()
+        let workspaceID = core.workspaceIdentity.workspaceId
         guard case .ready = await datastore.prepareOptionalApplicationLocalSchema() else {
             Issue.record("Expected optional local schema readiness")
             return
         }
-        let store = WorkspaceStore(
-            identityAtom: WorkspaceIdentityAtom(workspaceId: workspaceID),
-            sqliteDatastore: datastore,
-            startsObserving: false
-        )
         let pane = store.createPane()
         let appDelegate = AppDelegate()
         appDelegate.store = store
+        appDelegate.atomStore = AtomRegistry(core: core)
         appDelegate.installAppIPCIdentityAuthority(datastore: datastore)
         let environment = appDelegate.appIPCWorkspaceSurfaceLifecycle().environment(pane.id, workspaceID)
         let token = AgentStudioIPCSubjectToken(
@@ -121,16 +112,10 @@ struct AppIPCProductionLifecycleIntegrationTests {
 
     @Test("no local datastore starts neither the IPC server nor the offline notification drain")
     func missingLocalDatastoreStartsNoServerAndNoSpoolDrain() async throws {
-        let workspaceID = UUIDv7.generate()
-        let fixture = try makeWorkspaceSQLiteBridgeFixture(workspaceId: workspaceID)
-        let datastore = try preparedWorkspaceSQLiteDatastore(from: fixture.backend)
-        let store = WorkspaceStore(
-            identityAtom: WorkspaceIdentityAtom(workspaceId: workspaceID),
-            sqliteDatastore: datastore,
-            startsObserving: false
-        )
+        let (core, store, datastore) = try await makeCanonicalIPCWorkspaceOwners()
         let appDelegate = AppDelegate()
         appDelegate.store = store
+        appDelegate.atomStore = AtomRegistry(core: core)
         appDelegate.installAppIPCIdentityAuthority(datastore: datastore)
         appDelegate.workspaceSQLiteDatastore = nil
 
@@ -138,12 +123,12 @@ struct AppIPCProductionLifecycleIntegrationTests {
 
         #expect(appDelegate.appIPCServer == nil)
         #expect(appDelegate.paneCLIOutboxDrainTask == nil)
-        #expect(appDelegate.appIPCSessionsIngestion == nil)
+        #expect(appDelegate.appIPCSessionsPaneContextComposition == nil)
     }
 
     @Test("production App start reuses the early registry and shutdown persists a later unused token")
     func productionStartAndShutdownReuseEarlyRegistryAndPersistUnusedToken() async throws {
-        let harness = try makeServerCapableAppIPCTestHarness()
+        let harness = try await makeServerCapableAppIPCTestHarness()
         do {
             let readinessPane = harness.store.createPane()
             let readinessRecordID = try #require(
@@ -153,6 +138,7 @@ struct AppIPCProductionLifecycleIntegrationTests {
 
             await harness.appDelegate.startAppIPCServer()
             let server = try #require(harness.appDelegate.appIPCServer)
+            let composition = try #require(harness.appDelegate.appIPCSessionsPaneContextComposition)
             #expect(server.principalRegistry === earlyRegistry)
 
             let shutdownOnlyPane = harness.store.createPane()
@@ -170,6 +156,19 @@ struct AppIPCProductionLifecycleIntegrationTests {
             await harness.appDelegate.drainAppIPCCredentialPersistence()
 
             #expect(harness.appDelegate.appIPCServer == nil)
+            #expect(harness.appDelegate.appIPCSessionsPaneContextComposition == nil)
+            #expect(harness.coordinator.paneContextService == nil)
+            await #expect(throws: SessionsRepositoryError.ingestionFinished) {
+                _ = try await composition.ingestion.submitHook(
+                    .init(
+                        paneId: shutdownOnlyPane.id,
+                        providerIdentifier: "claude-code", providerVersion: "9.9.9", sessionId: "closed",
+                        eventName: .sessionStart, turnId: nil, signal: .sessionStart,
+                        recordId: UUIDv7.generate(), admittedAt: Date()))
+            }
+            let closed = await composition.paneContextService.readDetail(
+                .init(paneId: PaneId(existingUUID: shutdownOnlyPane.id), page: .first))
+            #expect(closed == .unavailable(.decodeFailed("serviceStopped")))
             #expect(
                 try await harness.appDelegate.appIPCContinuityRepository.paneCredential(
                     paneID: readinessPane.id,
@@ -209,20 +208,14 @@ struct ServerCapableAppIPCTestHarness {
 @MainActor
 func makeServerCapableAppIPCTestHarness(
     windowLifecycleStore: WindowLifecycleAtom = WindowLifecycleAtom()
-) throws -> ServerCapableAppIPCTestHarness {
-    let workspaceID = UUIDv7.generate()
-    let sqliteFixture = try makeWorkspaceSQLiteBridgeFixture(workspaceId: workspaceID)
-    let datastore = try preparedWorkspaceSQLiteDatastore(from: sqliteFixture.backend)
-    let store = WorkspaceStore(
-        identityAtom: WorkspaceIdentityAtom(workspaceId: workspaceID),
-        sqliteDatastore: datastore,
-        startsObserving: false
-    )
+) async throws -> ServerCapableAppIPCTestHarness {
+    let (core, store, datastore) = try await makeCanonicalIPCWorkspaceOwners()
+    let workspaceID = core.workspaceIdentity.workspaceId
     let appDelegate = AppDelegate()
     appDelegate.store = store
     appDelegate.workspaceSQLiteDatastore = datastore
     appDelegate.windowLifecycleStore = windowLifecycleStore
-    appDelegate.atomStore = makeTestAtomRegistry()
+    appDelegate.atomStore = AtomRegistry(core: core)
     appDelegate.viewRegistry = ViewRegistry()
     appDelegate.installAppIPCIdentityAuthority(datastore: datastore)
 
@@ -238,14 +231,15 @@ func makeServerCapableAppIPCTestHarness(
         socketDirectory: nil
     )
     appDelegate.appIPCPaths = paths
+    let membershipDirectory = store.paneAtom.graphAtom.paneContextMembershipDirectory
     appDelegate.paneIPCIdentityOwner = PaneIPCIdentityOwner(
         principalRegistry: appDelegate.appIPCPrincipalRegistry,
         socketURL: paths.socketURL,
         cliStoreURL: paths.cliStoreURL,
         cliStoreChannel: .debug,
         cliExecutableURL: Bundle.main.bundleURL.appending(path: "Contents/Helpers/agentstudio"),
-        canonicalPaneMembership: { [store] paneID, candidateWorkspaceID in
-            store.identityAtom.workspaceId == candidateWorkspaceID && store.paneAtom.pane(paneID) != nil
+        canonicalPaneMembership: { paneID, candidateWorkspaceID in
+            membershipDirectory.contains(paneID: paneID, inWorkspace: candidateWorkspaceID)
         }
     )
     let coordinator = WorkspaceSurfaceCoordinator(

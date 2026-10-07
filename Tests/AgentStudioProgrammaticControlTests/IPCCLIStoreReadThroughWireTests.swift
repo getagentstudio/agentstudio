@@ -17,10 +17,9 @@ struct IPCCLIStoreReadThroughWireTests {
         _ = try IPCAuthStatusResult.ipcSchema().normalize(data)
     }
 
-    @Test("store-bound marks round trip with optional lifecycle prefix", arguments: [false, true])
-    func authenticatedMarkRoundTrips(withLifecycle: Bool) throws {
-        let mark = IPCCLIStoreReadThrough(
-            storeId: UUIDv7.generate(), outbox: 42, lifecycleReport: withLifecycle ? 17 : nil)
+    @Test("store-bound marks round trip with only the outbox prefix")
+    func authenticatedMarkRoundTrips() throws {
+        let mark = IPCCLIStoreReadThrough(storeId: UUIDv7.generate(), outbox: 42)
         let status = IPCAuthStatusResult.authenticated(
             principalId: UUIDv7.generate(), runtimeId: UUIDv7.generate(), accessMode: .agentStudioOnly,
             cliStoreReadThrough: mark)
@@ -29,9 +28,7 @@ struct IPCCLIStoreReadThroughWireTests {
         _ = try IPCAuthStatusResult.ipcSchema().normalize(data)
         let object = try #require(JSONSerialization.jsonObject(with: data) as? [String: NSObject])
         let storedMark = try #require(object["cliStoreReadThrough"] as? [String: NSObject])
-        let expectedKeys: Set<String> =
-            withLifecycle ? ["storeId", "outbox", "lifecycleReport"] : ["storeId", "outbox"]
-        #expect(Set(storedMark.keys) == expectedKeys)
+        #expect(Set(storedMark.keys) == ["storeId", "outbox"])
         #expect(storedMark["storeId"] as? String == mark.storeId.uuidString)
         #expect((storedMark["outbox"] as? NSNumber)?.int64Value == mark.outbox)
     }
@@ -43,11 +40,11 @@ struct IPCCLIStoreReadThroughWireTests {
         #expect(throws: IPCSchemaValidationError.self) { try IPCAuthStatusResult.ipcSchema().normalize(data) }
     }
 
-    @Test("read-through objects are closed even when decoded without a schema")
-    func unknownKeysAreRejected() throws {
+    @Test("undeclared and retired read-through fields are rejected", arguments: ["futureField", "lifecycleReport"])
+    func unknownKeysAreRejected(field: String) throws {
         let mark = IPCCLIStoreReadThrough(storeId: UUIDv7.generate(), outbox: 2)
         var object = try #require(JSONSerialization.jsonObject(with: JSONEncoder().encode(mark)) as? [String: NSObject])
-        object["futureField"] = NSNumber(value: 1)
+        object[field] = NSNumber(value: 1)
         let data = try JSONSerialization.data(withJSONObject: object)
         #expect(throws: DecodingError.self) { try JSONDecoder().decode(IPCCLIStoreReadThrough.self, from: data) }
         #expect(throws: IPCSchemaValidationError.self) { try IPCCLIStoreReadThrough.ipcSchema().normalize(data) }
@@ -60,16 +57,12 @@ struct IPCCLIStoreReadThroughWireTests {
         "read-through counters encode only exact nonnegative JSON integers",
         arguments: [Int64(-1), IPCSchemaScalars.maximumExactInteger + 1, Int64.max])
     func unsafeCountersCannotBeEncoded(counter: Int64) throws {
-        for mark in [
-            IPCCLIStoreReadThrough(storeId: UUIDv7.generate(), outbox: counter),
-            IPCCLIStoreReadThrough(storeId: UUIDv7.generate(), outbox: 0, lifecycleReport: counter),
-        ] {
-            #expect(throws: EncodingError.self) { try JSONEncoder().encode(mark) }
-            let status = IPCAuthStatusResult.authenticated(
-                principalId: UUIDv7.generate(), runtimeId: UUIDv7.generate(), accessMode: .agentStudioOnly,
-                cliStoreReadThrough: mark)
-            #expect(throws: EncodingError.self) { try JSONEncoder().encode(status) }
-        }
+        let mark = IPCCLIStoreReadThrough(storeId: UUIDv7.generate(), outbox: counter)
+        #expect(throws: EncodingError.self) { try JSONEncoder().encode(mark) }
+        let status = IPCAuthStatusResult.authenticated(
+            principalId: UUIDv7.generate(), runtimeId: UUIDv7.generate(), accessMode: .agentStudioOnly,
+            cliStoreReadThrough: mark)
+        #expect(throws: EncodingError.self) { try JSONEncoder().encode(status) }
     }
 
     @Test(
@@ -77,22 +70,16 @@ struct IPCCLIStoreReadThroughWireTests {
         arguments: ["-1", "9007199254740992", "9223372036854775807", "0.5"])
     func unsafeCountersCannotBeDecoded(counter: String) throws {
         let storeId = UUIDv7.generate()
-        for field in ["outbox", "lifecycleReport"] {
-            let payload =
-                field == "outbox"
-                ? "{\"storeId\":\"\(storeId)\",\"outbox\":\(counter)}"
-                : "{\"storeId\":\"\(storeId)\",\"outbox\":0,\"lifecycleReport\":\(counter)}"
-            let data = Data(payload.utf8)
-            #expect(throws: DecodingError.self) { try JSONDecoder().decode(IPCCLIStoreReadThrough.self, from: data) }
-            #expect(throws: IPCSchemaValidationError.self) { try IPCCLIStoreReadThrough.ipcSchema().normalize(data) }
-        }
+        let data = Data("{\"storeId\":\"\(storeId)\",\"outbox\":\(counter)}".utf8)
+        #expect(throws: DecodingError.self) { try JSONDecoder().decode(IPCCLIStoreReadThrough.self, from: data) }
+        #expect(throws: IPCSchemaValidationError.self) { try IPCCLIStoreReadThrough.ipcSchema().normalize(data) }
     }
 
     @Test(
         "zero and the largest exact integer retain their values",
         arguments: [Int64(0), IPCSchemaScalars.maximumExactInteger])
     func exactBoundaryCountersRoundTrip(counter: Int64) throws {
-        let mark = IPCCLIStoreReadThrough(storeId: UUIDv7.generate(), outbox: counter, lifecycleReport: counter)
+        let mark = IPCCLIStoreReadThrough(storeId: UUIDv7.generate(), outbox: counter)
         let data = try JSONEncoder().encode(mark)
         #expect(try JSONDecoder().decode(IPCCLIStoreReadThrough.self, from: data) == mark)
         _ = try IPCCLIStoreReadThrough.ipcSchema().normalize(data)

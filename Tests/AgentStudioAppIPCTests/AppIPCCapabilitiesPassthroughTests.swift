@@ -89,27 +89,30 @@ private final class CapabilitiesBytePeer: @unchecked Sendable {
                     return
                 }
                 connections.append(connection)
-                tasks.append(Task { await self.serve(connection) })
+                let completion = DedicatedThreadCompletion()
+                tasks.append(Task { await completion.wait() })
+                Thread.detachNewThread { [self] in
+                    defer { completion.finish() }
+                    serve(connection)
+                }
             }
         }
     }
 
-    private func serve(_ connection: UnixSocketConnection) async {
-        await valueFromDedicatedThread { [self] in
-            defer { connection.close() }
-            do {
-                var decoder = NDJSONFrameDecoder(maxFrameBytes: IPCFramePolicy.maximumRequestFrameBytes)
-                let request = try receiveListenerHandlerRequest(connection: connection, decoder: &decoder)
-                lock.withLock { methods.append(request.method) }
-                guard request.method == "system.capabilities" else {
-                    throw CapabilitiesByteFixtureError.unexpectedMethod
-                }
-                try connection.send(
-                    JSONRPCCodec.encodeResponseBytes(
-                        id: request.id ?? .null, encodedResult: servedBytes,
-                        maxFrameBytes: IPCFramePolicy.maximumResponseFrameBytes))
-            } catch {}
-        }
+    private func serve(_ connection: UnixSocketConnection) {
+        defer { connection.close() }
+        do {
+            var decoder = NDJSONFrameDecoder(maxFrameBytes: IPCFramePolicy.maximumRequestFrameBytes)
+            let request = try receiveListenerHandlerRequest(connection: connection, decoder: &decoder)
+            lock.withLock { methods.append(request.method) }
+            guard request.method == "system.capabilities" else {
+                throw CapabilitiesByteFixtureError.unexpectedMethod
+            }
+            try connection.send(
+                JSONRPCCodec.encodeResponseBytes(
+                    id: request.id ?? .null, encodedResult: servedBytes,
+                    maxFrameBytes: IPCFramePolicy.maximumResponseFrameBytes))
+        } catch {}
     }
 
     func shutdown() async {

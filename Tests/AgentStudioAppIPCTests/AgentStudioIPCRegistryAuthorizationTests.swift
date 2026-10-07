@@ -17,15 +17,15 @@ struct AgentStudioIPCRegistryAuthorizationTests {
         #expect(canonical.dataScope == .sidebarState)
     }
 
-    @Test("debug registry exposes the 47 typed bindings and computed capabilities only")
+    @Test("debug registry exposes the 55 typed bindings and computed capabilities only")
     func debugRegistryHasTypedCatalogAndComputedCapabilities() throws {
         let fixture = BuiltInMethodRegistrationsFixture()
         let registry = try makeTestAppIPCMethodRegistry(
             registrations: fixture.registrations(), recognizedCommands: [], channel: .debug)
         let names = registry.capabilities.methods.map(\.name)
 
-        #expect(names.count == 48)
-        #expect(Set(names).count == 48)
+        #expect(names.count == 55)
+        #expect(Set(names).count == 55)
         #expect(registry.registration(named: "system.capabilities") != nil)
         #expect(registry.registration(named: "pane.snapshot") != nil)
         #expect(registry.registration(named: "permission.request") == nil)
@@ -33,20 +33,24 @@ struct AgentStudioIPCRegistryAuthorizationTests {
         #expect(registry.registration(named: "command.execute") == nil)
     }
 
-    @Test("stable registry omits debug-testing methods and keeps agent-eligible methods")
-    func stableRegistryOmitsDebugTestingMethods() throws {
+    @Test(
+        "stable and beta registries omit debug-testing methods and keep agent-eligible methods",
+        arguments: [AgentStudioIPCChannel.stable, .beta])
+    func stableRegistryOmitsDebugTestingMethods(channel: AgentStudioIPCChannel) throws {
         let fixture = BuiltInMethodRegistrationsFixture()
         let registry = try makeTestAppIPCMethodRegistry(
-            registrations: fixture.registrations(), recognizedCommands: [], channel: .stable)
+            registrations: fixture.registrations(), recognizedCommands: [], channel: channel)
         let names = Set(registry.capabilities.methods.map(\.name))
 
         #expect(
             names
                 == Set([
                     "auth.login", "auth.status", "events.subscribe", "events.unsubscribe",
-                    "session.event", "session.message", "session.query", "session.report",
+                    "session.event", "session.query", "session.refusal",
                     "system.capabilities", "system.identify", "system.ping", "system.version",
                     "drawer.addPane", "pane.close", "pane.current", "pane.list", "pane.snapshot",
+                    "pane.message.send", "pane.message.ask", "pane.message.withdraw", "pane.message.changes",
+                    "pane.line.set", "pane.title.set", "pane.writer.claimEpoch", "pane.context.get",
                     "terminal.send", "terminal.snapshot", "terminal.status", "terminal.wait",
                     "window.current", "window.list", "workspace.current", "workspace.list",
                 ])

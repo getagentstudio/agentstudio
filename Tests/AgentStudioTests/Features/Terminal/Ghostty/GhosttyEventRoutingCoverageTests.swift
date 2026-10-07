@@ -39,6 +39,31 @@ struct GhosttyEventRoutingCoverageTests {
         #expect(mappedNames.count == entries.count)
     }
 
+    @Test("upstream window resize is consumed without forwarding host geometry")
+    func upstreamWindowResizeIsIntercepted() throws {
+        let rawTag = UInt32(GHOSTTY_ACTION_RESIZE_WINDOW.rawValue)
+        let tag = try #require(GhosttyActionTag(rawValue: rawTag))
+        #expect(Ghostty.ActionRouter.interceptedTags.contains(tag))
+        #expect(!Ghostty.ActionRouter.unsupportedTags.contains(tag))
+        #expect(Ghostty.ActionRouter.signalClass(for: tag) == .deferred)
+        #expect(GhosttyAdapter.shared.translate(actionTag: rawTag) == .unhandled(tag: rawTag))
+        let appHandle = try #require(UnsafeMutableRawPointer(bitPattern: 1))
+        let handled = Ghostty.ActionRouter.handleAction(
+            appHandle,
+            target: ghostty_target_s(tag: GHOSTTY_TARGET_APP, target: ghostty_target_u(surface: nil)),
+            action: ghostty_action_s(tag: GHOSTTY_ACTION_RESIZE_WINDOW, action: ghostty_action_u()),
+            routingLookupProvider: {
+                Issue.record("Window resize must not resolve terminal geometry")
+                return SurfaceManager.shared
+            },
+            metadataActionRouter: { _, _, _, _ in
+                Issue.record("Window resize must not publish metadata")
+                return true
+            }
+        )
+        #expect(handled)
+    }
+
     @Test("header resolution accepts a universal macOS library")
     func headerResolutionAcceptsUniversalMacOSLibrary() throws {
         let frameworkURL = URL(filePath: "/fixture/GhosttyKit.xcframework", directoryHint: .isDirectory)
@@ -57,7 +82,8 @@ struct GhosttyEventRoutingCoverageTests {
 
         #expect(
             headerURL
-                == frameworkURL.appending(path: "macos-arm64_x86_64/Headers/ghostty.h", directoryHint: .notDirectory))
+                == frameworkURL.appending(
+                    path: "macos-arm64_x86_64/Headers/GhosttyKit/ghostty.h", directoryHint: .notDirectory))
     }
 
     @Test("header resolution accepts a native macOS library")
@@ -78,7 +104,8 @@ struct GhosttyEventRoutingCoverageTests {
 
         #expect(
             headerURL
-                == frameworkURL.appending(path: "macos-arm64/Headers/ghostty.h", directoryHint: .notDirectory))
+                == frameworkURL.appending(
+                    path: "macos-arm64/Headers/GhosttyKit/ghostty.h", directoryHint: .notDirectory))
     }
 
     @Test("header resolution rejects a manifest without a matching host library")
@@ -192,6 +219,7 @@ private enum GhosttyXCFrameworkHeaderResolver {
             frameworkURL
             .appending(path: matchingLibrary.libraryIdentifier, directoryHint: .isDirectory)
             .appending(path: matchingLibrary.headersPath, directoryHint: .isDirectory)
+            .appending(path: "GhosttyKit", directoryHint: .isDirectory)
             .appending(path: "ghostty.h", directoryHint: .notDirectory)
     }
 }

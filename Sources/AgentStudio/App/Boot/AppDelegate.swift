@@ -102,14 +102,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
     /// registry and exposure rules.
     var appIPCServerChannel: AgentStudioIPCChannel = AppDelegate.compiledAppIPCChannel()
     var paneIPCIdentityOwner: PaneIPCIdentityOwner!
-    var appIPCSessionsIngestion: SessionsIngestion?
+    var appIPCSessionsPaneContextComposition: SessionsPaneContextComposition?
     var paneCLIOutboxDrainTask: Task<Void, Never>?
-    /// Exact provider profiles are composition input. Only the releases listed
-    /// here grant provider-reported authority; every other provider, version or
-    /// mode reports as unqualified. Composition happens here because the
-    /// Claude Code profile is App-owned and the shipped list is Feature-owned.
-    var appIPCSessionsProviderProfiles: [SessionsProviderProfile] =
-        SessionsProviderProfile.shippedProfiles + [.claudeCodeCommandLine, .cursorCommandLine]
     var appLifecycleStore: AppLifecycleAtom!
     var windowLifecycleStore: WindowLifecycleAtom!
     var applicationLifecycleMonitor: ApplicationLifecycleMonitor!
@@ -730,3 +724,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
     }
 
 }
+
+// Declared here, not in AppDelegate+IPC.swift: the protocol refines Sendable,
+// and Swift 6.4 requires an implied Sendable conformance in the class's own file.
+extension AppDelegate: PaneFocusAppControlling {}

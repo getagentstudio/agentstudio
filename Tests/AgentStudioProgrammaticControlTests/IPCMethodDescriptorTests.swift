@@ -221,14 +221,14 @@ struct IPCMethodDescriptorTests {
         let correlationId = UUIDv7.generate()
         let descriptor = try makeDescriptor(
             correlationId: correlationId,
-            offlineEligibility: .modelCallVariants([.needsYou, .done]),
+            offlineEligibility: .never,
             modelCalls: reportModelCalls
         )
 
-        #expect(descriptor.modelCalls.map(\.variant) == [.needsYou, .needsYouClear, .done])
+        #expect(descriptor.modelCalls.map(\.variant) == [.ask, .withdraw, .line])
         #expect(descriptor.modelCalls[0].selectors == [.init(parameterField: "operation", equals: "needsYou")])
         #expect(descriptor.modelCalls[0].scalarArguments.first?.parameterField == "explanation")
-        #expect(descriptor.offlineEligibility == .modelCallVariants([.needsYou, .done]))
+        #expect(descriptor.offlineEligibility == .never)
         #expect(throws: IPCSchemaValidationError.self) {
             try descriptor.decodeParameters(
                 from: Data(
@@ -239,19 +239,15 @@ struct IPCMethodDescriptorTests {
         }
     }
 
-    @Test("offline eligibility excludes clear and variants absent from model projections")
+    @Test("only the real pane send recipe declares notice-only offline eligibility")
     func offlineEligibilityRejectsIneligibleVariants() throws {
-        for invalidEligibility in [
-            IPCMethodOfflineEligibility.modelCallVariants([.needsYouClear]),
-            .modelCallVariants([.message]),
-        ] {
-            #expect(throws: IPCMethodDescriptorError.self) {
-                try makeDescriptor(
-                    correlationId: UUIDv7.generate(),
-                    offlineEligibility: invalidEligibility,
-                    modelCalls: reportModelCalls
-                )
-            }
+        let catalog = try IPCBuiltInMethodCatalog(
+            inputs: .init(examples: .init(illustrativeIdentifier: UUIDv7.generate())))
+        let eligible = catalog.erasedDescriptors.filter { $0.metadata.offlineEligibility == .noticeOnly }
+        #expect(eligible.map { $0.metadata.name } == ["pane.message.send"])
+        #expect(throws: IPCMethodDescriptorError.self) {
+            try makeDescriptor(
+                correlationId: UUIDv7.generate(), offlineEligibility: .noticeOnly, modelCalls: reportModelCalls)
         }
     }
 
@@ -259,7 +255,7 @@ struct IPCMethodDescriptorTests {
     func modelProjectionFieldsMustExist() throws {
         var invalidCalls = reportModelCalls
         invalidCalls[0] = IPCModelCallProjection(
-            variant: .needsYou,
+            variant: .ask,
             selectors: [.init(parameterField: "missingSelector", equals: "needsYou")],
             scalarArguments: [
                 .init(
@@ -280,11 +276,11 @@ struct IPCMethodDescriptorTests {
         }
     }
 
-    @Test("the model-call vocabulary is closed to the four settled invocations")
+    @Test("the model-call vocabulary is closed to the seven settled pane invocations")
     func modelCallVocabularyIsClosed() {
         #expect(
             IPCModelCallVariant.allCases.map(\.rawValue) == [
-                "message", "needs-you", "needs-you --clear", "done",
+                "notify", "ask", "withdraw", "answers", "line", "title", "pane",
             ]
         )
     }
@@ -299,7 +295,7 @@ struct IPCMethodDescriptorTests {
     private var reportModelCalls: [IPCModelCallProjection] {
         [
             .init(
-                variant: .needsYou,
+                variant: .ask,
                 selectors: [.init(parameterField: "operation", equals: "needsYou")],
                 scalarArguments: [
                     .init(
@@ -312,14 +308,14 @@ struct IPCMethodDescriptorTests {
                 queuedReply: "Report queued."
             ),
             .init(
-                variant: .needsYouClear,
+                variant: .withdraw,
                 selectors: [.init(parameterField: "operation", equals: "clear")],
                 scalarArguments: [],
                 successReply: "Needs you cleared.",
                 queuedReply: nil
             ),
             .init(
-                variant: .done,
+                variant: .line,
                 selectors: [.init(parameterField: "operation", equals: "done")],
                 scalarArguments: [],
                 successReply: "Done recorded.",

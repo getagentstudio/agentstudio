@@ -159,9 +159,15 @@ struct PaneIPCIdentityOwnerTests {
         let observed = try await valueFromDedicatedThread {
             let descriptors = try IPCBuiltInMethodCatalog.offlineNotificationDescriptors(
                 examples: .init(illustrativeIdentifier: UUIDv7.generate()))
-            let invocation = try IPCDescriptorInvocationParser.parse(
-                ["message", "from pane environment"],
-                descriptors: descriptors, correlationIDGenerator: { UUIDv7.generate() })
+            let parameters = IPCPaneMessageSendParams(
+                handle: "self", messageId: UUIDv7.generate(), importance: .info, body: "from pane environment",
+                actions: [],
+                shape: .notice, correlationId: UUIDv7.generate())
+            guard let descriptor = descriptors.first else { throw AgentStudioIPCClientError(reason: .invalidArguments) }
+            let invocation = try IPCDescriptorInvocation(
+                descriptor: descriptor,
+                normalizedParameters: descriptor.normalizeParameters(JSONEncoder().encode(parameters)),
+                presentation: .tooling)
             let client = AgentStudioIPCClient(
                 configuration: .init(socketPath: environment["AGENTSTUDIO_IPC_SOCKET"] ?? ""),
                 descriptors: descriptors)
@@ -179,7 +185,7 @@ struct PaneIPCIdentityOwnerTests {
                     atPath: legacyDirectory.appending(path: "\(paneID.uuidString).notifications.ndjson").path)
             )
         }
-        #expect(observed.outcome == .queued(reply: "message queued"))
+        #expect(observed.outcome == .queued(reply: "notify queued"))
         #expect(observed.rows.count == 1)
         if let entry = observed.rows.first, case .notice(let notice) = entry {
             #expect(notice.paneID == paneID)
@@ -189,7 +195,7 @@ struct PaneIPCIdentityOwnerTests {
 
     private func makeIdentityOwner(
         principalRegistry: AgentStudioIPCPrincipalRegistry,
-        membership: @escaping @MainActor @Sendable (UUID, UUID) -> Bool,
+        membership: @escaping @Sendable (UUID, UUID) -> Bool,
         randomBytes: @escaping @Sendable () throws -> Data,
         inheritedEnvironment: [String: String] = ["PATH": "/usr/bin:/bin"],
         fixture: PaneIPCIdentityOwnerFixture
@@ -208,7 +214,7 @@ struct PaneIPCIdentityOwnerTests {
 
     private func makeRegistry(
         durableResolver: any AgentStudioIPCCredentialResolving,
-        membership: @escaping @MainActor @Sendable (UUID, UUID) -> Bool
+        membership: @escaping @Sendable (UUID, UUID) -> Bool
     ) -> AgentStudioIPCPrincipalRegistry {
         AgentStudioIPCPrincipalRegistry(
             runtimeId: UUIDv7.generate(),

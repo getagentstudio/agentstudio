@@ -35,7 +35,7 @@ struct AppCommandIPCSpec: Sendable {
         switch privilege {
         case .systemRead, .workspaceRead, .appCommandExecute, .debugUnsafe:
             .unspecified
-        case .paneContextRead, .layoutMutate:
+        case .paneContextRead, .paneContextWrite, .layoutMutate:
             .paneContext
         case .bridgeRead, .bridgeControl:
             .bridgeReviewPackage

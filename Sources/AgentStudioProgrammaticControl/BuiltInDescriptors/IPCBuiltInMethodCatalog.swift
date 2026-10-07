@@ -9,6 +9,7 @@ package struct IPCBuiltInMethodCatalog: Sendable {
     package let presentationAndSidebar: IPCPresentationAndSidebarMethodDescriptors
     package let events: IPCEventMethodDescriptors
     package let sessions: IPCSessionMethodDescriptors
+    package let paneContext: IPCPaneContextMethodDescriptors
     package let descriptorRepresentations: [any IPCMethodDescriptorRepresentation]
     package let erasedDescriptors: [IPCAnyMethodDescriptor]
 
@@ -23,6 +24,7 @@ package struct IPCBuiltInMethodCatalog: Sendable {
         presentationAndSidebar = try IPCPresentationAndSidebarMethodDescriptors(representations: byName)
         events = try IPCEventMethodDescriptors(representations: byName)
         sessions = try IPCSessionMethodDescriptors(representations: byName)
+        paneContext = try IPCPaneContextMethodDescriptors(representations: byName)
         self.descriptorRepresentations = descriptorRepresentations
         erasedDescriptors = descriptorRepresentations.map(\.erasedDescriptor)
     }

@@ -1,5 +1,6 @@
 import AgentStudioCore
 import AppKit
+import Foundation
 import GhosttyKit
 import Testing
 
@@ -80,7 +81,7 @@ struct GhosttyAdapterTests {
         #expect(
             adapter.translate(
                 actionTag: UInt32(GHOSTTY_ACTION_COMMAND_FINISHED.rawValue),
-                payload: .commandFinished(exitCode: 0, duration: 42)
+                payload: .commandFinished(exitCode: 0, duration: 42, sourceInstant: ContinuousClock.now)
             ) == .commandFinished(exitCode: 0, duration: 42)
         )
     }

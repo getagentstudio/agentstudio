@@ -21,6 +21,8 @@ let package = Package(
             name: "agentstudio-cli-store-process-fixture",
             targets: ["AgentStudioCLIStoreProcessFixture"]
         ),
+        .executable(
+            name: "agentstudio-cli-deadline-process-fixture", targets: ["AgentStudioCLIDeadlineProcessFixture"]),
     ],
     dependencies: [
         .package(url: "https://github.com/apple/swift-async-algorithms", from: "1.0.0"),
@@ -365,6 +367,7 @@ let package = Package(
             dependencies: [
                 "AgentStudioCore",
                 "AgentStudioTestHarness",
+                .product(name: "GRDB", package: "GRDB.swift"),
             ],
             path: "Tests/AgentStudioTests/TestSupport",
             swiftSettings: [
@@ -377,6 +380,13 @@ let package = Package(
             path: "Tests/AgentStudioCLIStoreProcessFixture",
             swiftSettings: [.swiftLanguageMode(.v6)]
         ),
+        .target(
+            name: "AgentStudioDeadlineTestSupport", dependencies: ["AgentStudioIPCTransport"],
+            path: "Tests/AgentStudioDeadlineTestSupport", swiftSettings: [.swiftLanguageMode(.v6)]),
+        .executableTarget(
+            name: "AgentStudioCLIDeadlineProcessFixture",
+            dependencies: ["AgentStudioDeadlineTestSupport", "AgentStudioIPCClientCore", "AgentStudioPrimitives"],
+            path: "Tests/AgentStudioCLIDeadlineProcessFixture", swiftSettings: [.swiftLanguageMode(.v6)]),
         .testTarget(
             name: "AgentStudioCLIStoreTests",
             dependencies: [
@@ -586,6 +596,7 @@ let package = Package(
         .testTarget(
             name: "AgentStudioIPCTransportTests",
             dependencies: [
+                "AgentStudioDeadlineTestSupport",
                 "AgentStudioIPCTransport",
                 "AgentStudioTestHarness",
             ],
@@ -608,6 +619,8 @@ let package = Package(
         .testTarget(
             name: "AgentStudioAppIPCTests",
             dependencies: [
+                "AgentStudioCLIDeadlineProcessFixture",
+                "AgentStudioDeadlineTestSupport",
                 "AgentStudio",
                 "AgentStudioAppIPC",
                 "AgentStudioCLIStore",
@@ -692,6 +705,9 @@ let package = Package(
             exclude: [
                 "Fixtures/AtomLibCompileFailures",
                 "Fixtures/SwiftLintLegacyCustomRules",
+                "Scripts/Fixtures/xcode27-event-stream-v6.3.jsonl",
+                "Scripts/Fixtures/xcode27-skipped-tests-v6.3.jsonl",
+                "Scripts/Fixtures/xcode27-swift-test-list.txt",
             ],
             sources: [
                 "App",

@@ -63,7 +63,7 @@ struct AgentStudioIPCCatalogFrameTransportTests {
                 IPCMethodCatalogResult.self, from: try JSONEncoder().encode(result)
             )
             #expect(catalog.methods.contains { $0.name == "system.capabilities" })
-            #expect(catalog.methods.contains { $0.name == "session.message" })
+            #expect(catalog.methods.contains { $0.name == "pane.message.send" })
         } catch {
             await harness.tearDown()
             throw error

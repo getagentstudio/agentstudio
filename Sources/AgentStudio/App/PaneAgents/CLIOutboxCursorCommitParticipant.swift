@@ -1,9 +1,10 @@
+import AgentStudioCore
 import AgentStudioSessions
 import Foundation
 import GRDB
 
 /// App owns cursor SQL; Sessions supplies the same transaction as the effect.
-struct CLIOutboxCursorCommitParticipant: SessionsCommitParticipant {
+struct CLIOutboxCursorCommitParticipant: SessionsCommitParticipant, PaneContextCommitParticipant {
     let storeID: UUID
     let lastHandledID: Int64
 

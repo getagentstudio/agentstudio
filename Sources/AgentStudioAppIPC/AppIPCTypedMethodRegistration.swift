@@ -2,6 +2,11 @@ import AgentStudioIPCTransport
 import AgentStudioProgrammaticControl
 import Foundation
 
+package enum AppIPCMethodExecution: Equatable, Sendable {
+    case inline
+    case waitsBesideReader
+}
+
 package enum AppIPCTypedMethodRegistrationError: Error, Equatable, Sendable {
     case authenticationRequired
     case methodNotExposed
@@ -101,6 +106,7 @@ package struct AppIPCTypedMethodRegistration<
 >: Sendable {
     private let descriptor: IPCMethodDescriptor<Parameters, Result>
     private let validatedErasedDescriptor: IPCAnyMethodDescriptor
+    private let execution: AppIPCMethodExecution
     private let correlation: AppIPCCorrelation<Parameters>
     private let cachedTransportResult: AppIPCCachedTransportResult?
     private let prepareAndHandle:
@@ -117,13 +123,14 @@ package struct AppIPCTypedMethodRegistration<
             AppIPCTargetResolution<Parameters>,
         connectionHandler:
             @escaping @Sendable (Parameters, AppIPCConnectionContext, IPCTargetScope) async throws -> Result,
-        cachedTransportResult: AppIPCCachedTransportResult? = nil
+        cachedTransportResult: AppIPCCachedTransportResult? = nil,
+        execution: AppIPCMethodExecution = .inline
     ) {
         self.init(
             descriptorRepresentations: descriptorRepresentations, correlation: correlation,
             preparedCorrelation: correlation, prepare: { parameters, _, _ in parameters },
             resolveTarget: resolveTarget, connectionHandler: connectionHandler,
-            cachedTransportResult: cachedTransportResult)
+            cachedTransportResult: cachedTransportResult, execution: execution)
     }
 
     /// Wire parameters become a typed prepared value without introducing a
@@ -140,13 +147,15 @@ package struct AppIPCTypedMethodRegistration<
             -> AppIPCTargetResolution<PreparedParameters>,
         connectionHandler:
             @escaping @Sendable (PreparedParameters, AppIPCConnectionContext, IPCTargetScope) async throws -> Result,
-        cachedTransportResult: AppIPCCachedTransportResult? = nil
+        cachedTransportResult: AppIPCCachedTransportResult? = nil,
+        execution: AppIPCMethodExecution = .inline
     ) {
         let descriptor = descriptorRepresentations.typedDescriptor
         self.descriptor = descriptor
         validatedErasedDescriptor = descriptorRepresentations.erasedDescriptor
         self.correlation = correlation
         self.cachedTransportResult = cachedTransportResult
+        self.execution = execution
         prepareAndHandle = { parameters, wireCorrelation, context, tools, authorization in
             switch (descriptor.correlationPolicy, preparedCorrelation) {
             case (.required, .required), (.optional, .notRequired), (.notAccepted, .notRequired): break
@@ -184,6 +193,7 @@ package struct AppIPCTypedMethodRegistration<
         try validateCorrelationPolicy()
         return AnyAppIPCMethodRegistration(
             descriptor: validatedErasedDescriptor,
+            execution: execution,
             cachedTransportResult: cachedTransportResult,
             invocation: { parameters, context, tools, authorization in
                 try validateConnectionAccess(context)
@@ -280,6 +290,7 @@ package struct AppIPCTypedMethodRegistration<
 
 package struct AnyAppIPCMethodRegistration: Sendable {
     package let descriptor: IPCAnyMethodDescriptor
+    package let execution: AppIPCMethodExecution
     package let cachedTransportResult: AppIPCCachedTransportResult?
     private let invocation:
         @Sendable (
@@ -291,6 +302,7 @@ package struct AnyAppIPCMethodRegistration: Sendable {
 
     fileprivate init(
         descriptor: IPCAnyMethodDescriptor,
+        execution: AppIPCMethodExecution,
         cachedTransportResult: AppIPCCachedTransportResult?,
         invocation:
             @escaping @Sendable (
@@ -301,6 +313,7 @@ package struct AnyAppIPCMethodRegistration: Sendable {
             ) async throws -> AppIPCInvocationResult
     ) {
         self.descriptor = descriptor
+        self.execution = execution
         self.cachedTransportResult = cachedTransportResult
         self.invocation = invocation
     }
