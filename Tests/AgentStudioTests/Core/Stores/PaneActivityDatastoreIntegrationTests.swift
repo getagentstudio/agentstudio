@@ -82,7 +82,7 @@ struct PaneActivityDatastoreIntegrationTests {
         let time = PaneActivityTime(
             orderingInstant: ContinuousClock.now, wallTime: Date(timeIntervalSince1970: 100), source: .hook)
         try await datastore.commitPaneActivity(.init(mutations: [.set(paneID, time)]))
-        try fixture.coreRepository.databaseWriter.write { database in
+        try await fixture.coreRepository.databaseWriter.write { database in
             try database.execute(sql: "DROP TABLE workspace_undo_close_member")
         }
         #expect(await datastore.loadPaneActivity(workspaceId: workspaceID).isEmpty)
