@@ -18,6 +18,7 @@ struct PaneActivitySaveIntegrationTests {
         let recorder = PaneActivityHeldCommitRecorder()
         let sink = delegate.makePaneActivitySink { commit in try await recorder.commit(commit) }
         let clock = PaneActivityClock(sink: sink)
+        await clock.start()
         let firstID = UUIDv7.generate()
         let secondID = UUIDv7.generate()
         let instant = ContinuousClock.now
