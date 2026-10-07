@@ -21,7 +21,7 @@
     "lint": "oxlint --type-aware src scripts tests",
     "normalize:captures": "node --experimental-strip-types scripts/stamp-srgb-color-profile.ts",
     "preview": "ASTRO_TELEMETRY_DISABLED=1 astro preview --host 127.0.0.1",
-    "test:browser": "vitest run --project browser",
+    "test:browser": "vitest run --project browser --project browser-heavy",
     "test:unit": "vitest run --project unit",
     "typecheck": "ASTRO_TELEMETRY_DISABLED=1 astro check",
     "verify:cloudflare-discovery": "node --experimental-strip-types scripts/verify-cloudflare-discovery-assets.ts",

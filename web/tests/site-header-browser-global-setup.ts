@@ -60,6 +60,11 @@ async function stopOwnedServer(childProcess: ChildProcess): Promise<void> {
 export default async function setupSiteHeaderBrowserServer(
   project: TestProject,
 ): Promise<() => Promise<void>> {
+  // This setup runs once at the root so both browser projects share one server. A run that
+  // selects no browser project (for example `--project unit`) needs no server.
+  if (!project.vitest.projects.some((testProject) => testProject.config.browser.enabled)) {
+    return async (): Promise<void> => {};
+  }
   const rootCandidates = [project.config.root, path.join(project.config.root, "web")];
   const websiteRoot = rootCandidates.find((candidateRoot): boolean =>
     existsSync(path.join(candidateRoot, "src", "pages", "index.astro")),
