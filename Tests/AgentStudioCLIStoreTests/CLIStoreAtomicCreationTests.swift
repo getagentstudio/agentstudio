@@ -15,18 +15,19 @@ extension CLIStoreTests {
         let observed = try await valueFromDedicatedThread {
             let fixture = try CLIStoreFileFixture()
             defer { fixture.remove() }
-            let probe = Mutex((remainingBudget: Duration.seconds(1), reachedExhaustionPoint: false))
+            let probe = Mutex(
+                (remainingBudget: Duration.seconds(1), activatedWAL: false, reachedExhaustionPoint: false))
             let attempted = CLIStore.openWriter(
                 url: fixture.databaseURL, channel: .debug,
                 migrationLockWaitBudget: { probe.withLock { $0.remainingBudget } },
                 prepareConnection: { database in
                     database.trace { event in
-                        guard case .statement(let statement) = event,
-                            point.matches(statement.sql)
-                        else { return }
-                        // Exhaust the next admission at a real SQLite operation,
-                        // including committed private WAL data, without elapsed time.
+                        guard case .statement(let statement) = event else { return }
                         probe.withLock {
+                            if statement.sql == "PRAGMA synchronous = FULL" { $0.activatedWAL = true }
+                            // Admission reads commit before WAL activation. Only
+                            // a later commit can belong to the private WAL schema.
+                            guard $0.activatedWAL, point.matches(statement.sql) else { return }
                             $0.reachedExhaustionPoint = true
                             $0.remainingBudget = .zero
                         }
