@@ -30,10 +30,15 @@ struct VendorConsumerWiringScriptTests {
         let scripts = root.appending(path: "scripts")
         let framework = root.appending(path: "Frameworks/GhosttyKit.xcframework")
         let library = framework.appending(path: "macos-arm64")
+        let headers = library.appending(path: "Headers")
         let fakeBin = root.appending(path: "bin")
-        for directory in [scripts, library, fakeBin] {
+        for directory in [scripts, library, headers, fakeBin] {
             try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         }
+        try Data("module GhosttyKit { header \"ghostty.h\" export * }\n".utf8)
+            .write(to: headers.appending(path: "module.modulemap"))
+        try Data("/* Copied fixture header. */\n".utf8)
+            .write(to: headers.appending(path: "ghostty.h"))
         let helper = scripts.appending(path: "normalize-ghostty-xcframework.py")
         try FileManager.default.copyItem(
             at: URL(fileURLWithPath: "scripts/normalize-ghostty-xcframework.py"), to: helper

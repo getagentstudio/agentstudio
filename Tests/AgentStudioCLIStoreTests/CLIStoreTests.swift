@@ -35,7 +35,10 @@ struct CLIStoreTests {
         #expect(observed.first.channel == .debug)
         #expect(observed.identityCount == 1)
         #expect(observed.hasOutbox)
-        #expect(observed.migrations == [CLIStoreMigrator.identityMigration, CLIStoreMigrator.outboxMigration])
+        #expect(
+            observed.migrations == [
+                CLIStoreMigrator.identityMigration, CLIStoreMigrator.outboxMigration, CLIStoreMigrator.stateMigration,
+            ])
     }
 
     @Test("the schema uses only TEXT and INTEGER with no enum CHECK, triggers or foreign keys")
@@ -46,7 +49,7 @@ struct CLIStoreTests {
             let store = try CLIStore.openWriter(url: fixture.databaseURL, channel: .debug).get()
 
             return try store.databaseQueue.read { database in
-                let tables = try ["cli_store_identity", "cli_outbox"].map { table in
+                let tables = try ["cli_store_identity", "cli_outbox", "cli_state"].map { table in
                     let types = try String.fetchAll(
                         database, sql: "SELECT type FROM pragma_table_info(?)", arguments: [table])
                     let storedSchema = try String.fetchOne(

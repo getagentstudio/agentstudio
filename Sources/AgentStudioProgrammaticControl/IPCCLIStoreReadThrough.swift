@@ -4,12 +4,10 @@ import Foundation
 package struct IPCCLIStoreReadThrough: Codable, Equatable, Sendable, IPCSchemaProviding {
     package let storeId: UUID
     package let outbox: Int64
-    package let lifecycleReport: Int64?
 
-    package init(storeId: UUID, outbox: Int64, lifecycleReport: Int64? = nil) {
+    package init(storeId: UUID, outbox: Int64) {
         self.storeId = storeId
         self.outbox = outbox
-        self.lifecycleReport = lifecycleReport
     }
 
     package init(from decoder: any Decoder) throws {
@@ -24,10 +22,7 @@ package struct IPCCLIStoreReadThrough: Codable, Equatable, Sendable, IPCSchemaPr
         }
         storeId = try container.decode(UUID.self, forKey: .storeId)
         outbox = try container.decode(Int64.self, forKey: .outbox)
-        lifecycleReport =
-            container.contains(.lifecycleReport)
-            ? try container.decode(Int64.self, forKey: .lifecycleReport) : nil
-        guard Self.isExactCounter(outbox), lifecycleReport.map(Self.isExactCounter) ?? true else {
+        guard Self.isExactCounter(outbox) else {
             throw DecodingError.dataCorrupted(
                 .init(
                     codingPath: decoder.codingPath,
@@ -36,7 +31,7 @@ package struct IPCCLIStoreReadThrough: Codable, Equatable, Sendable, IPCSchemaPr
     }
 
     package func encode(to encoder: any Encoder) throws {
-        guard Self.isExactCounter(outbox), lifecycleReport.map(Self.isExactCounter) ?? true else {
+        guard Self.isExactCounter(outbox) else {
             throw EncodingError.invalidValue(
                 self,
                 .init(
@@ -46,7 +41,6 @@ package struct IPCCLIStoreReadThrough: Codable, Equatable, Sendable, IPCSchemaPr
         var container = encoder.container(keyedBy: CodingKeys.self)
         try container.encode(storeId, forKey: .storeId)
         try container.encode(outbox, forKey: .outbox)
-        try container.encodeIfPresent(lifecycleReport, forKey: .lifecycleReport)
     }
 
     package static func ipcSchema() throws -> IPCJSONSchema {
@@ -57,9 +51,6 @@ package struct IPCCLIStoreReadThrough: Codable, Equatable, Sendable, IPCSchemaPr
             .init(
                 name: "outbox", description: "Highest outbox row handled by the app",
                 schema: IPCSchemaScalars.unsignedInteger),
-            .init(
-                name: "lifecycleReport", description: "Highest lifecycle report handled by the app",
-                schema: IPCSchemaScalars.unsignedInteger, presence: .optional),
         ])
     }
 
@@ -68,7 +59,7 @@ package struct IPCCLIStoreReadThrough: Codable, Equatable, Sendable, IPCSchemaPr
     }
 
     private enum CodingKeys: String, CodingKey, CaseIterable {
-        case storeId, outbox, lifecycleReport
+        case storeId, outbox
     }
 }
 

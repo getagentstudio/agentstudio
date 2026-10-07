@@ -279,17 +279,9 @@ private func currentTestExecutableURL() throws -> URL {
     let buildDirectory = try #require(ProcessInfo.processInfo.environment["SWIFT_BUILD_DIR"])
     let buildRoot = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
         .appending(path: buildDirectory, directoryHint: .isDirectory)
-    let platformDirectory = try #require(
-        FileManager.default.contentsOfDirectory(
-            at: buildRoot,
-            includingPropertiesForKeys: [.isDirectoryKey]
-        ).first { candidate in
-            candidate.lastPathComponent.hasSuffix("-apple-macosx")
-        }
-    )
     let executableURL =
-        platformDirectory
-        .appending(path: "debug/AgentStudioPackageTests.xctest/Contents/MacOS/AgentStudioPackageTests")
+        buildRoot
+        .appending(path: "debug/AgentStudioIPCTransportTests.xctest/Contents/MacOS/AgentStudioIPCTransportTests")
     guard FileManager.default.isExecutableFile(atPath: executableURL.path) else {
         throw JSONRPCCodecChildProcessError.testExecutableUnavailable
     }

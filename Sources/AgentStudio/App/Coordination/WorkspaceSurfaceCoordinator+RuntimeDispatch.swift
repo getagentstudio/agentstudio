@@ -69,5 +69,3 @@ extension WorkspaceSurfaceCoordinator {
         return result
     }
 }
-
-extension WorkspaceSurfaceCoordinator: PaneRuntimeCommandDispatching {}

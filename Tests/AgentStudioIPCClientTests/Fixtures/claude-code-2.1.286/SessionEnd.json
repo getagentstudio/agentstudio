@@ -1,0 +1,8 @@
+{
+  "session_id": "44b09bbe-0574-4e85-ab34-81daabd2d920",
+  "transcript_path": "/recorded/transcript_path",
+  "cwd": "/recorded/cwd",
+  "scratchpad_dir": "/recorded/scratchpad_dir",
+  "hook_event_name": "SessionEnd",
+  "reason": "other"
+}

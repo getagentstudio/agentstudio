@@ -317,9 +317,9 @@ struct VendorWorktreeFixture {
             contents: """
                 #!/bin/bash
                 set -euo pipefail
-                mkdir -p Frameworks/GhosttyKit.xcframework/macos-arm64/Headers
+                mkdir -p Frameworks/GhosttyKit.xcframework/macos-arm64/Headers/GhosttyKit
                 printf 'local framework\\n' > Frameworks/GhosttyKit.xcframework/macos-arm64/libghostty.a
-                printf '// local ghostty header\\n' > Frameworks/GhosttyKit.xcframework/macos-arm64/Headers/ghostty.h
+                printf '// local ghostty header\\n' > Frameworks/GhosttyKit.xcframework/macos-arm64/Headers/GhosttyKit/ghostty.h
                 mkdir -p vendor/zmx/zig-out/bin
                 printf '#!/bin/bash\\necho local-zmx\\n' > vendor/zmx/zig-out/bin/zmx
                 chmod 700 vendor/zmx/zig-out/bin/zmx
@@ -348,7 +348,7 @@ struct VendorWorktreeFixture {
     /// with only the library is not a valid stand-in for a real vendor build.
     static func populateFrameworkSlice(at framework: URL, using fileManager: FileManager) throws {
         let sliceRoot = framework.appending(path: "macos-arm64")
-        let headerDirectory = sliceRoot.appending(path: "Headers")
+        let headerDirectory = sliceRoot.appending(path: "Headers/GhosttyKit")
         try fileManager.createDirectory(at: headerDirectory, withIntermediateDirectories: true)
         try Data("primary ghostty library".utf8)
             .write(to: sliceRoot.appending(path: "libghostty.a"))

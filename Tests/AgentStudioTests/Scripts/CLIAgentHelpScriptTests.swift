@@ -118,18 +118,20 @@ struct CLIAgentHelpScriptTests {
         #expect(suggestions.count <= 3)
     }
 
-    @Test("the bundled skill teaches help and method help after the four calls")
+    @Test("the bundled skill teaches offline help before the seven pane verbs")
     func bundledSkillNamesTheDiscoveryEntryPoints() throws {
         let source = Self.repositoryRoot.appending(
             path: "Sources/AgentStudio/Resources/AgentPackage/skills/agentstudio/SKILL.md")
         let text = try String(contentsOf: source, encoding: .utf8)
-        #expect(text.contains("## Everything else"))
+        #expect(text.contains("## Help"))
         #expect(text.contains("\"$AGENTSTUDIO_CLI\" help"))
         #expect(text.contains("\"$AGENTSTUDIO_CLI\" <method> --help"))
-        #expect(text.contains("not yet allowed"))
-        let fourCalls = try #require(text.range(of: "## The four calls"))
-        if let everythingElse = text.range(of: "## Everything else") {
-            #expect(fourCalls.lowerBound < everythingElse.lowerBound)
+        #expect(!text.contains("## The four calls"))
+        let help = try #require(text.range(of: "## Help"))
+        let paneVerbs = try #require(text.range(of: "## The pane-context verbs"))
+        #expect(help.lowerBound < paneVerbs.lowerBound)
+        for verb in ["notify", "ask", "withdraw", "answers", "line", "title", "pane"] {
+            #expect(text.contains("\"$AGENTSTUDIO_CLI\" \(verb)"))
         }
     }
 

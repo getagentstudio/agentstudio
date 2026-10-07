@@ -1,4 +1,7 @@
+import { recreationKitPhoneMaxWidthPx } from "../../../recreation-kit/recreation-kit-phone-breakpoint";
 import type { SceneBuildOptions, SceneModule, SceneTimeline } from "../../scene-contract";
+import { scheduleLayoutWaiver } from "../layout-waivers";
+import { collectSceneTextLeaves } from "../scene-text-leaves";
 import {
   requireLine,
   requireScenePart,
@@ -11,6 +14,9 @@ import { manyAgentsParts } from "./chapter-many-agents-fixture";
 const totalDurationSeconds = 9;
 
 interface ManyAgentsElements {
+  readonly leftTerminal: HTMLElement;
+  readonly leftFooterBadges: HTMLElement;
+  readonly leftOverlapTextElements: readonly HTMLElement[];
   readonly leftLines: readonly HTMLElement[];
   readonly rightLines: readonly HTMLElement[];
   readonly filterPlaceholder: HTMLElement;
@@ -24,12 +30,19 @@ interface ManyAgentsElements {
 // Every element is resolved before the first tween exists, so incomplete
 // markup fails without leaving a half-animated frame behind.
 function resolveManyAgentsElements(root: HTMLElement): ManyAgentsElements {
+  const leftTerminal = requireScenePart(root, manyAgentsParts.leftTerminal);
+  const leftFooterBadges = requireScenePart(
+    root,
+    manyAgentsParts.leftPane,
+  ).querySelector<HTMLElement>(".kit-badges");
+  if (leftFooterBadges === null) {
+    throw new ScenePartMissingError("left pane footer badges");
+  }
   return {
-    leftLines: requireTerminalLines(
-      requireScenePart(root, manyAgentsParts.leftTerminal),
-      manyAgentsParts.leftTerminal,
-      9,
-    ),
+    leftTerminal,
+    leftFooterBadges,
+    leftOverlapTextElements: collectSceneTextLeaves(leftTerminal),
+    leftLines: requireTerminalLines(leftTerminal, manyAgentsParts.leftTerminal, 9),
     rightLines: requireTerminalLines(
       requireScenePart(root, manyAgentsParts.rightTerminal),
       manyAgentsParts.rightTerminal,
@@ -79,6 +92,22 @@ function buildManyAgentsScene(
   // Beat 2: the watched folder fills the sidebar with every repo and worktree.
   // The phone crop slides the sidebar over the pane for this beat and the next.
   builder.label("watch-folders", 2.8);
+  // Only the phone sidebar covers the visible left pane, and it stays to the end.
+  if (options.width <= recreationKitPhoneMaxWidthPx) {
+    const sidebarOpenAt = 2.8;
+    scheduleLayoutWaiver({
+      timeline,
+      elements: [elements.leftTerminal, elements.leftFooterBadges],
+      attribute: "data-layout-allow-occlusion",
+      fromSeconds: sidebarOpenAt,
+    });
+    scheduleLayoutWaiver({
+      timeline,
+      elements: elements.leftOverlapTextElements,
+      attribute: "data-layout-allow-overlap",
+      fromSeconds: sidebarOpenAt,
+    });
+  }
   builder.variable(root, {
     name: "--scene-sidebar-focus",
     from: 0,

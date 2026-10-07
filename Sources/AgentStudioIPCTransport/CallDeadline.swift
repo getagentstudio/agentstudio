@@ -32,6 +32,13 @@ public struct CallDeadline: Sendable {
         max(.zero, timing.now().duration(to: expiresAt))
     }
 
+    /// Shortens a downstream call without extending ingress expiration or replacing its clock.
+    package func capped(to limit: Duration) -> Self {
+        let startedAt = timing.now()
+        let remainingLimit = min(limit, max(.zero, startedAt.duration(to: expiresAt)))
+        return Self(limit: remainingLimit, startedAt: startedAt, timing: timing)
+    }
+
     #if canImport(Darwin)
         func checkExpiration() throws {
             guard timing.now() < expiresAt else {

@@ -482,7 +482,6 @@ private enum ScalarKind: Hashable {
 
 extension IPCMethodOfflineEligibility {
     fileprivate func includes(_ variant: IPCModelCallVariant) -> Bool {
-        guard case .modelCallVariants(let variants) = self else { return false }
-        return variants.contains(variant)
+        self == .noticeOnly && variant == .notify
     }
 }

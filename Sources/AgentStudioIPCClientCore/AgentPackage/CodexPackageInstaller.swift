@@ -209,15 +209,15 @@ package enum CodexPackageInstaller {
         event: CodexHookEventName,
         scriptURL: URL
     ) -> [String: Any] {
-        [
-            CodexHooksDocument.hooksKey: [
-                [
-                    "type": "command",
-                    CodexHooksDocument.commandKey: "\"\(scriptURL.path)\" \(event.rawValue)",
-                    "timeout": hookTimeoutSeconds,
-                ]
-            ]
+        // SessionEnd is forced synchronous by Codex. Interrupt can run async,
+        // but both lifecycle events use the provider's one-second default.
+        var handler: [String: Any] = [
+            "type": "command",
+            CodexHooksDocument.commandKey: "\"\(scriptURL.path)\" \(event.rawValue)",
+            "timeout": event == .sessionEnd || event == .interrupt ? 1 : hookTimeoutSeconds,
         ]
+        if event != .sessionEnd { handler["async"] = true }
+        return [CodexHooksDocument.hooksKey: [handler]]
     }
 
     private static func requireWritableHome(_ props: Props) throws {

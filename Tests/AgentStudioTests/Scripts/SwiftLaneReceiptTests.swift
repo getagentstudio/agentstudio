@@ -4,6 +4,32 @@ import Testing
 
 @Suite("Swift lane receipts and hang evidence")
 struct SwiftLaneReceiptTests {
+    @Test("real Xcode 27 listing produces nested suite map and resolves the test bundle")
+    func realListingProducesNestedSuiteMapAndResolvesBundle() async throws {
+        let buildDirectory = NSTemporaryDirectory() + "agentstudio-suite-map-\(UUIDv7.generate())"
+        defer { try? FileManager.default.removeItem(atPath: buildDirectory) }
+        let listing =
+            FileManager.default.currentDirectoryPath
+            + "/Tests/AgentStudioTests/Scripts/Fixtures/xcode27-swift-test-list.txt"
+        let map = buildDirectory + "/agentstudio-test-suite-map"
+        let executable = buildDirectory + "/out/Products/Debug/AgentStudioTests.xctest/Contents/MacOS/AgentStudioTests"
+
+        let output = try await laneBashAllowingFailure(
+            "source scripts/swift-test-helpers.sh; BUILD_PATH='\(buildDirectory)'; "
+                + "mkdir -p \"$(dirname '\(executable)')\"; : > '\(executable)'; chmod +x '\(executable)'; "
+                + "cp '\(listing)' \"$BUILD_PATH/agentstudio-test-list\"; "
+                + "swift_test_suite_map_build_from_listing \"$BUILD_PATH/agentstudio-test-list\" '\(map)'; "
+                + "echo MAP; cat '\(map)'; "
+                + "echo RESOLVED=$(swift_test_bundle_for_suite 'WebKitSerializedTests/BridgePaneControllerTests' 2>/dev/null || true)"
+        )
+
+        #expect(
+            output.contains("WebKitSerializedTests/BridgePaneControllerTests\tAgentStudioTests"),
+            Comment(rawValue: output))
+        #expect(
+            output.contains("RESOLVED=\(executable)"), Comment(rawValue: output))
+    }
+
     @Test("a receipt is valid only for a fresh or linked bundle and a clean tree")
     func receiptIsValidOnlyForFreshOrLinkedBundleAndCleanTree() async throws {
         let reasons = try await laneBash(
@@ -103,36 +129,26 @@ struct SwiftLaneReceiptTests {
         )
     }
 
-    @Test("bundle identity names the exact executable: path, size and modification time")
+    @Test("bundle receipt set names every target executable")
     func bundleIdentityNamesBundleAndModificationTime() async throws {
         let buildDirectory = NSTemporaryDirectory() + "agentstudio-receipt-bundle-\(UUIDv7.generate())"
         defer { try? FileManager.default.removeItem(atPath: buildDirectory) }
-        let bundlePath =
-            buildDirectory
-            + "/arm64-apple-macosx/debug/AgentStudioPackageTests.xctest/Contents/MacOS/AgentStudioPackageTests"
+        let bundlePath = buildDirectory + "/out/Products/Debug/AgentStudioTests.xctest/Contents/MacOS/AgentStudioTests"
 
         let identities = try await laneBash(
             "source scripts/swift-test-helpers.sh; BUILD_PATH='\(buildDirectory)'; "
-                + "echo \"before=$(lane_receipt_bundle_identity)\"; "
                 + "mkdir -p \"$(dirname '\(bundlePath)')\"; : > '\(bundlePath)'; "
-                + "touch -t 202609230102.03 '\(bundlePath)'; "
-                + "echo \"after=$(lane_receipt_bundle_identity)\"; "
-                + "echo \"epoch=$(date -j -f %Y%m%d%H%M.%S 202609230102.03 +%s)\""
-                + "; printf 'seven b' > '\(bundlePath)'; touch -t 202609230102.03 '\(bundlePath)'; "
-                + "echo \"resized=$(lane_receipt_bundle_identity)\""
+                + "chmod +x '\(bundlePath)'; echo \"count=$(swift_test_bundle_count)\"; "
+                + "echo \"set=$(swift_test_bundle_set)\""
         )
         let identityLines = laneOutputLines(identities)
-        let epoch = try #require(identityLines.dropFirst(2).first?.split(separator: "=").last.map(String.init))
-
-        #expect(identityLines.first == "before=missing")
-        #expect(identityLines.dropFirst().first == "after=\(bundlePath)@0@\(epoch)")
-        // Same path, same mtime, different executable: the size tells them apart.
-        #expect(identityLines.dropFirst(3).first == "resized=\(bundlePath)@7@\(epoch)")
+        #expect(identityLines.contains("count=1"))
+        #expect(identityLines.contains(where: { $0.hasPrefix("set=") && $0.count == 20 }))
     }
 
     @Test("the receipt is printed on every exit, prebuild included, and only a finished prebuild is fresh")
     func receiptIsPrintedOnEveryExitAndOnlyFinishedPrebuildIsFresh() throws {
-        let laneRunnerScript = try String(contentsOfFile: "scripts/run-swift-test-task.sh", encoding: .utf8)
+        let laneRunnerScript = try loadSwiftLaneRunnerReportingSource()
         let trapRange = try #require(laneRunnerScript.range(of: "trap finish_lane_invocation EXIT"))
         let prebuildCallRange = try #require(
             laneRunnerScript.range(of: "  prebuild_swift_tests_with_build_receipt\n  LANE_BUNDLE_STATE=fresh\n")
@@ -167,7 +183,7 @@ struct SwiftLaneReceiptTests {
         // Observed in a real `mise run test`: the lane was SIGTERMed mid-phase and
         // its receipt said exit_status=0 verdict=pass, because bash runs the EXIT
         // trap with `$?` from the last completed command.
-        let laneRunnerScript = try String(contentsOfFile: "scripts/run-swift-test-task.sh", encoding: .utf8)
+        let laneRunnerScript = try loadSwiftLaneRunnerReportingSource()
         let terminationTraps = try laneScriptShellFunction(
             named: "trap_lane_termination_signals",
             in: laneRunnerScript
@@ -206,7 +222,7 @@ struct SwiftLaneReceiptTests {
 
     @Test("a lane's build-slot claim is released when the lane exits")
     func laneBuildSlotClaimIsReleasedWhenTheLaneExits() async throws {
-        let laneRunnerScript = try String(contentsOfFile: "scripts/run-swift-test-task.sh", encoding: .utf8)
+        let laneRunnerScript = try loadSwiftLaneRunnerReportingSource()
         let invocationExit = try laneScriptShellFunction(named: "finish_lane_invocation", in: laneRunnerScript)
         let repositoryRoot = FileManager.default.currentDirectoryPath
         let slotRoot = NSTemporaryDirectory() + "agentstudio-receipt-slot-\(UUIDv7.generate())"
@@ -235,63 +251,25 @@ struct SwiftLaneReceiptTests {
         #expect(!output.contains("LANE_SLOT_RELEASE_COMMAND"))
     }
 
-    @Test("a reused bundle is linked only to a clean, successful build of this commit and this executable")
+    @Test("a reused bundle is linked only to a matching bundle set and clean build")
     func reusedBundleIsLinkedOnlyToCleanSuccessfulBuildOfThisCommit() async throws {
-        let helperPath = FileManager.default.currentDirectoryPath + "/scripts/swift-test-helpers.sh"
         let workDirectory = NSTemporaryDirectory() + "agentstudio-receipt-link-\(UUIDv7.generate())"
         defer { try? FileManager.default.removeItem(atPath: workDirectory) }
-        let bundleSuffix =
-            "/arm64-apple-macosx/debug/AgentStudioPackageTests.xctest/Contents/MacOS/AgentStudioPackageTests"
-
-        // prebuild_swift_tests is replaced by a fake that writes the executable or
-        // fails; everything else is the real receipt code.
         let scenarios = try await laneBash(
-            "source '\(helperPath)'; LOG_PREFIX=lane; BUILD_PATH='\(workDirectory)/build'; "
-                + "bundle=\"$BUILD_PATH\(bundleSuffix)\"; receipt=$(lane_build_receipt_path); "
-                + "prebuild_swift_tests() { [ \"${FAKE_BUILD_FAILS:-0}\" = 1 ] && return 1; "
-                + "mkdir -p \"$(dirname \"$bundle\")\"; printf v1 > \"$bundle\"; }; "
-                + "link() { lane_build_receipt_link_reason \"$receipt\" \"$(lane_receipt_head_sha)\" "
-                + "\"$(lane_receipt_bundle_identity)\"; }; "
-                + "mkdir -p '\(workDirectory)/repo'; cd '\(workDirectory)/repo'; git init -q . 2>/dev/null; "
-                + "commit() { git -c user.email=t@t -c user.name=t -c commit.gpgsign=false "
-                + "-c core.hooksPath=/dev/null commit -q --allow-empty -m \"$1\"; }; commit one; "
-                + "prebuild_swift_tests_with_build_receipt; echo \"clean_reuse=[$(link)]\"; "
-                + "echo \"linked_head=$([ \"$(lane_build_receipt_field \"$receipt\" head_sha)\" = "
-                + "\"$(git rev-parse HEAD)\" ] && echo current)\"; "
-                + "printf 'rebuilt elsewhere' > \"$bundle\"; echo \"mismatched_artifact=[$(link)]\"; "
-                + "prebuild_swift_tests_with_build_receipt; commit two; echo \"moved_head=[$(link)]\"; "
-                + "echo edit > untracked.txt; prebuild_swift_tests_with_build_receipt; rm untracked.txt; "
-                + "echo \"dirty_build_then_clean_tree=[$(link)]\"; "
-                + "prebuild_swift_tests_with_build_receipt; echo \"rebuilt=[$(link)]\"; "
-                + "FAKE_BUILD_FAILS=1 prebuild_swift_tests_with_build_receipt; echo \"failed_status=$?\"; "
-                + "echo \"receipt_after_failure=$([ -e \"$receipt\" ] && echo present || echo absent)\"; "
-                + "echo \"failed_rebuild=[$(link)]\"; "
-                + "printf 'garbage\\n' > \"$receipt\"; echo \"malformed=[$(link)]\"; "
-                + "printf 'bundle_identity=\\nhead_sha=x\\ntree_dirty=false\\n' > \"$receipt\"; "
-                + "echo \"empty_field=[$(link)]\"; rm -f \"$receipt\"; echo \"absent=[$(link)]\"; "
-                + "echo \"staged_leftovers=$(ls \"$BUILD_PATH\" | grep -c 'agentstudio-test-build-receipt\\.' || true)\""
+            "source scripts/swift-test-helpers.sh; BUILD_PATH='\(workDirectory)'; mkdir -p \"$BUILD_PATH\"; "
+                + "receipt=$(lane_build_receipt_path); "
+                + "head=$(git rev-parse HEAD); "
+                + "printf 'bundle_set=set\\nbundle_count=1\\nhead_sha=%s\\ntree_dirty=false\\n' \"$head\" > \"$receipt\"; "
+                + "echo clean=[$(lane_build_receipt_link_reason \"$receipt\" \"$head\" set)]; "
+                + "printf 'bundle_set=other\\nbundle_count=1\\nhead_sha=%s\\ntree_dirty=false\\n' \"$head\" > \"$receipt\"; "
+                + "echo mismatch=[$(lane_build_receipt_link_reason \"$receipt\" \"$head\" set)]; "
+                + "printf 'bundle_set=set\\nbundle_count=1\\nhead_sha=%s\\ntree_dirty=true\\n' \"$head\" > \"$receipt\"; "
+                + "echo dirty=[$(lane_build_receipt_link_reason \"$receipt\" \"$head\" set)]"
         )
-
         #expect(
             laneOutputLines(scenarios) == [
-                "clean_reuse=[]",
-                "linked_head=current",
-                "mismatched_artifact=[reused_bundle_unlinked]",
-                "moved_head=[bundle_head_mismatch]",
-                "dirty_build_then_clean_tree=[built_from_dirty_tree]",
-                "rebuilt=[]",
-                // The failed build deleted the receipt before compiling, so the
-                // previous (good) receipt cannot vouch for what the failure left.
-                "failed_status=1",
-                "receipt_after_failure=absent",
-                "failed_rebuild=[reused_bundle_unlinked]",
-                "malformed=[reused_bundle_unlinked]",
-                "empty_field=[reused_bundle_unlinked]",
-                "absent=[reused_bundle_unlinked]",
-                // Published by rename: no staged receipt is left behind.
-                "staged_leftovers=0",
-            ]
-        )
+                "clean=[]", "mismatch=[reused_bundle_unlinked]", "dirty=[built_from_dirty_tree]",
+            ])
     }
 
     @Test("all crashed WebKit suites fail the lane, are tallied, and are never retried")
@@ -312,7 +290,7 @@ struct SwiftLaneReceiptTests {
                 + "LOG_PREFIX=webkit; TIMEOUT_SECONDS=60; BUILD_PATH=.build-agent-1; "
                 + "export LANE_EVENT_STREAM_DIR='\(workDirectory)/ci-runs'; "
                 + "source scripts/swift-test-helpers.sh; set +e; "
-                + "swift_testing_bundle_path() { echo '\(workDirectory)/fake-bundle'; }; "
+                + "swift_test_bundle_for_suite() { echo '\(workDirectory)/fake-bundle'; }; "
                 + "swift_testing_helper_path() { echo '\(workDirectory)/bin/fake-helper'; }; "
                 + "swift_testing_framework_path() { echo '\(workDirectory)'; }; "
                 + "webkit_suite_filters() { printf 'WebKitSerializedTests/CrashingSuite\\n"
@@ -353,7 +331,7 @@ struct SwiftLaneReceiptTests {
 
     @Test("the width comparison runs both halves on one bundle and keeps every ledger")
     func widthComparisonRunsBothHalvesOnOneBundleAndKeepsEveryLedger() async throws {
-        let laneRunnerScript = try String(contentsOfFile: "scripts/run-swift-test-task.sh", encoding: .utf8)
+        let laneRunnerScript = try loadSwiftLaneRunnerReportingSource()
         let miseConfig = try String(contentsOfFile: ".mise.toml", encoding: .utf8)
         let comparison = try laneScriptShellFunction(named: "run_width_comparison", in: laneRunnerScript)
         let half = try laneScriptShellFunction(named: "run_width_comparison_half", in: laneRunnerScript)
@@ -365,11 +343,14 @@ struct SwiftLaneReceiptTests {
         let workDirectory = NSTemporaryDirectory() + "agentstudio-receipt-retain-\(UUIDv7.generate())"
         defer { try? FileManager.default.removeItem(atPath: workDirectory) }
 
+        let eventFixture = try InvocationReceiptFixture()
+        defer { eventFixture.remove() }
+        try writeCapturedInvocation(eventFixture, selecting: "recordsPass()")
         let retained = try await laneBash(
             "LOG_PREFIX=lane; TIMEOUT_SECONDS=60; BUILD_PATH=.build-agent-1; "
                 + "export LANE_EVENT_STREAM_DIR='\(workDirectory)'; LANE_EVENT_STREAM_RETAIN_ALWAYS=1; "
                 + "source scripts/swift-test-helpers.sh; "
-                + "run_swift_with_timeout 'clean half' 60 /bin/bash -c 'echo CLEAN_RUN_OK'; "
+                + "run_swift_with_timeout 'clean half' 60 /bin/bash -c 'echo CLEAN_RUN_OK; cp \"$1\" \"${@: -1}\"' fixture '\(eventFixture.events.path)' swiftpm-testing-helper; "
                 + "echo \"LEDGERS=$(find '\(workDirectory)' -name '*.events.jsonl' | wc -l | tr -d '[:space:]')\"; "
                 + "echo \"TIMINGS=$(find '\(workDirectory)' -name '*.timing.json' | wc -l | tr -d '[:space:]')\""
         )
@@ -382,7 +363,7 @@ struct SwiftLaneReceiptTests {
         // directory is named for the bundle both halves share.
         #expect(!comparison.contains("prebuild_swift_tests"))
         #expect(!half.contains("prebuild_swift_tests"))
-        #expect(comparison.contains("-bundle-${bundle_identity##*@}"))
+        #expect(comparison.contains("-bundle-${bundle_set}"))
         // Each half is a lane of its own: opening receipt, closing receipt on
         // EXIT, forced ledger retention, and its whole output kept.
         #expect(

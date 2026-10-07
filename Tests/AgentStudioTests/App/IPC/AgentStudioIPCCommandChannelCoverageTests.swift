@@ -14,6 +14,24 @@ import Testing
 @MainActor
 @Suite("AgentStudio IPC command channel coverage", .serialized)
 struct AgentStudioIPCCommandChannelCoverageTests {
+    @Test("Pane context write privilege is classified by the command IPC projection")
+    func paneContextMetadataRemainsClassified() throws {
+        let base = AppCommand.newWindow.ipcSpec
+        let spec = AppCommandIPCSpec(
+            exposure: base.exposure, executionMode: base.executionMode,
+            argumentVariants: base.argumentVariants, requiredPrivilege: .paneContextWrite,
+            allowedTargetKinds: base.allowedTargetKinds, resultVariants: base.resultVariants,
+            agentEligibility: base.agentEligibility)
+        let input = spec.descriptorInput(definition: AppCommand.newWindow.definition, examples: [])
+        #expect(input.dataScope == .paneContext)
+        #expect(input.requiredPrivileges.contains(.paneContextWrite))
+        #expect(IPCExecutionOwner.allCases.contains(.paneContextService))
+        #expect(
+            try JSONDecoder().decode(
+                IPCExecutionOwner.self,
+                from: JSONEncoder().encode(IPCExecutionOwner.paneContextService)) == .paneContextService)
+    }
+
     /// The two example helpers split the variants between them. They are both
     /// exhaustive so a new variant is a build failure, and this pins the runtime
     /// half of that claim: no variant reaches a rejection instead of an example.

@@ -21,7 +21,14 @@ package struct DrawerOverlay: View {
         let buttonTitle: String?
         let inboxPopoverPresented: Binding<Bool>
         let inboxPopoverContent: AnyView?
+        package var paneContextContent: AnyView?
         let inboxUnreadBadge: PaneInboxUnreadBadge?
+
+        package func withPaneContextContent(_ content: AnyView?) -> Self {
+            var actions = self
+            actions.paneContextContent = content
+            return actions
+        }
 
         package init(
             editPaneNoteAction: TargetedCommandControlAction? = nil,

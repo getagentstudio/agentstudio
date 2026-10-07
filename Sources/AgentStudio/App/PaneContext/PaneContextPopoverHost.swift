@@ -1,0 +1,128 @@
+import AgentStudioCore
+import AgentStudioInfrastructure
+import AgentStudioRepoExplorer
+import AgentStudioSharedComponents
+import SwiftUI
+
+/// Local presentation state; providers resolve effects only when the person opens or acts.
+struct PaneContextPopoverHost: View {
+    let paneId: PaneId
+    let presentation: RepoExplorerPaneContextControlPresentation
+    let location: PaneContextPopoverLocation
+    let readers: PaneContextUIReaders
+    let octiconLoader: OcticonLoader
+    let onGoToPane: @MainActor (UUID) -> Void
+    var includingDrawers = true
+    var onOpenCompleted: @MainActor (PaneContextPopoverController?) -> Void = { _ in }
+    @State private var controller: PaneContextPopoverController?
+    @State private var isPresented = false
+    @State private var unavailableNote: String?
+    @State private var includeInformational = false
+    @State private var openRequest: UInt64 = 0
+    private static let controls = PaneContextPopoverControlProjection.controls()
+
+    static func shouldPresentMessagesButton(chip: PaneMessageChipModel) -> Bool {
+        chip.tone != .neutral || chip.countIncludingInformational != chip.count
+    }
+
+    var body: some View {
+        button
+            .popover(isPresented: $isPresented, arrowEdge: .bottom) { popover }
+            .task(id: openRequest) {
+                guard openRequest > 0 else { return }
+                await openPopover()
+            }
+            .task(id: readers.contextDisplayForPane(paneId)?.revision) {
+                guard isPresented, let controller else { return }
+                guard controller.useCurrentService(readers.serviceProvider()) else { return }
+                await controller.refreshIfRevisionChanged()
+            }
+            .onChange(of: controller?.paneId) { _, pane in
+                if pane == nil, unavailableNote == nil, controller?.unavailableNote == nil { isPresented = false }
+            }
+            .onChange(of: isPresented) { _, presented in
+                if !presented { controller?.close() }
+            }
+            .onDisappear { controller?.close() }
+    }
+
+    @ViewBuilder private var button: some View {
+        switch presentation {
+        case .messages(let chip):
+            let count = includeInformational ? chip.countIncludingInformational : chip.count
+            if Self.shouldPresentMessagesButton(chip: chip) {
+                MessagesChip(
+                    count: count, tone: includeInformational ? chip.toneIncludingInformational : chip.tone,
+                    control: Self.controls.messages, octiconLoader: octiconLoader, onOpen: requestOpen)
+            }
+        case .agentLine(let line):
+            Button(action: requestOpen) {
+                RepoExplorerPaneContextLineView(line: line, isAgentLine: true, octiconLoader: octiconLoader)
+            }
+            .buttonStyle(.plain)
+            .accessibilityHidden(true)
+            .background {
+                AccessibilityPressBridge(
+                    identifier: "pane-context.agent-line",
+                    label: LocalActionSpec.showPaneAgentLine(.done).actionSpec.label, help: line.tooltip.text,
+                    action: requestOpen)
+            }
+        }
+    }
+    @ViewBuilder private var popover: some View {
+        if let unavailableNote {
+            PopoverPanel { Text(unavailableNote).foregroundStyle(.secondary) }
+        } else if let controller, let state = controller.state {
+            switch presentation {
+            case .messages:
+                MessagesPopover(
+                    paneId: paneId.uuid, model: state.messages, controls: Self.controls, location: location,
+                    providerPrompts: state.providerPrompts, feedback: controller.actionFeedback,
+                    informationalToggle: PaneContextPopoverControlProjection.control(
+                        .countInformationalPaneMessages, identifier: "pane-context.count-informational"),
+                    includesInformational: $includeInformational,
+                    actions: PaneContextPopoverHostActions.messages(
+                        controller: controller, readers: readers, onGoToPane: onGoToPane))
+                if let note = controller.unavailableNote { Text(note).foregroundStyle(.secondary) }
+            case .agentLine:
+                if let line = state.agentLine {
+                    AgentLinePopover(
+                        model: line, providerPrompts: state.providerPrompts, goToPaneControl: Self.controls.goToPane
+                    ) {
+                        onGoToPane(paneId.uuid)
+                    }
+                }
+                if let note = controller.unavailableNote { Text(note).foregroundStyle(.secondary) }
+            }
+        } else if let note = controller?.unavailableNote {
+            PopoverPanel { Text(note).foregroundStyle(.secondary) }
+        } else {
+            PopoverPanel { Text("Loading…").foregroundStyle(.secondary) }
+        }
+    }
+    private func requestOpen() {
+        isPresented = true
+        openRequest &+= 1
+    }
+    private func openPopover() async {
+        isPresented = true
+        unavailableNote = nil
+        guard let adapter = readers.serviceProvider() else {
+            controller?.close()
+            controller = nil
+            unavailableNote = "Not available right now"
+            onOpenCompleted(nil)
+            return
+        }
+        let active =
+            controller
+            ?? readers.makePopoverController(
+                reader: adapter, person: adapter,
+                location: location, includingDrawers: includingDrawers)
+        controller = active
+        _ = active.useCurrentService(adapter)
+        await active.open(paneId)
+        guard !Task.isCancelled else { return }
+        onOpenCompleted(active)
+    }
+}

@@ -10,7 +10,7 @@ struct CITopologyWorkflowTests {
         let swiftJob = try topologyJob(named: "swift-test-suite", in: workflow)
         #expect(workflow.contains("  schedule:\n    - cron: \"0 9 * * *\""))
         #expect(workflow.contains("  workflow_dispatch:"))
-        #expect(workflow.components(separatedBy: "runs-on: macos-26").count == 3)
+        #expect(workflow.components(separatedBy: "runs-on: xcode-27").count == 3)
         let bridgeHeader = try topologyBlock(startingWith: "  bridge-web:\n", endingBefore: "    steps:", in: bridgeJob)
         let swiftHeader = try topologyBlock(
             startingWith: "  swift-test-suite:\n", endingBefore: "    steps:", in: swiftJob)
@@ -229,11 +229,11 @@ struct CITopologyWorkflowTests {
         #expect(qualityJob.contains("name: Verify lint tools on PATH"))
         #expect(qualityJob.contains("shell: bash"))
         #expect(marketingJob.contains("runs-on: ubuntu-24.04"))
-        #expect(bridgeWebJob.contains("runs-on: macos-26"))
+        #expect(bridgeWebJob.contains("runs-on: xcode-27"))
         #expect(bridgeWebJob.contains("      - parallel:\n          - name: Install BridgeWeb dependencies"))
         #expect(bridgeWebJob.contains("      - parallel:\n          - name: BridgeWeb packaged build"))
         #expect(bridgeWebJob.contains("      - parallel:\n          - name: Copy XCFramework"))
-        #expect(swiftJob.contains("runs-on: macos-26"))
+        #expect(swiftJob.contains("runs-on: xcode-27"))
         #expect(qualityJob.contains("run: mise run lint:portable"))
         #expect(qualityJob.contains("run: mise run test:architecture"))
         // Lint installs only its pinned tools; a blanket `mise install` pulled zig from a rate-limited mirror.
