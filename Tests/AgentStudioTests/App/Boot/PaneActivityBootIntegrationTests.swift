@@ -78,7 +78,7 @@ struct PaneActivityBootIntegrationTests {
     }
     @Test(
         "invalid retained SQLite activity is skipped and App boot restore continues",
-        arguments: ["-1e300", "1e300", "-1e999", "1e999", "-9.223372036854776e18"]
+        arguments: ["-1e300", "1e300", "-1e999", "1e999", "'NaN'", "'-Infinity'", "-9.223372036854776e18"]
     )
     func invalidSQLiteActivityDoesNotStopBoot(invalidTimestampSQL: String) async throws {
         let delegate = AppDelegate()
@@ -118,6 +118,42 @@ struct PaneActivityBootIntegrationTests {
         #expect(delegate.atomStore.core.paneActivityTime.value(for: malformedPane.id) == nil)
         #expect(delegate.atomStore.core.paneActivityTime.value(for: validPane.id)?.wallTime == validTime.wallTime)
         #expect(delegate.atomStore.core.paneActivityTime.value(for: validPane.id)?.source == .terminal)
+    }
+
+    @Test(
+        "restore also rejects non-finite records before conversion",
+        arguments: [Double.nan, .infinity, -.infinity, -1e300, 1e300])
+    func invalidInMemoryTimeIsSkipped(timestamp: Double) {
+        let delegate = AppDelegate()
+        delegate.atomStore = makeTestAtomRegistry()
+        let paneID = UUIDv7.generate()
+        delegate.applyRestoredPaneActivity(
+            [.init(paneId: paneID, wallTime: Date(timeIntervalSince1970: timestamp), source: .hook)],
+            referenceInstant: ContinuousClock.now,
+            wallNow: Date(timeIntervalSince1970: 1000)
+        )
+        #expect(delegate.atomStore.core.paneActivityTime.value(for: paneID) == nil)
+    }
+
+    @Test("restore uses the Duration component representation bound rather than an age horizon")
+    func restoreRepresentationBoundary() throws {
+        let paneID = UUIDv7.generate()
+        let record = PaneActivityRecord(paneId: paneID, wallTime: Date(timeIntervalSince1970: 0), source: .hook)
+        let referenceInstant = ContinuousClock.now
+        let representableSeconds = Double(Int64.max).nextDown
+        let restored = try #require(
+            record.restoredActivityTime(
+                referenceInstant: referenceInstant,
+                wallNow: Date(timeIntervalSince1970: representableSeconds)
+            ))
+        #expect(
+            restored.orderingInstant.duration(to: referenceInstant).components.seconds
+                == Int64(exactly: representableSeconds))
+        #expect(
+            record.restoredActivityTime(
+                referenceInstant: referenceInstant,
+                wallNow: Date(timeIntervalSince1970: Double(Int64.max))
+            ) == nil)
     }
 
 }

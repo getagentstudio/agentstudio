@@ -34,19 +34,31 @@ extension WorkspaceLocalRepository {
                 database, sql: "SELECT pane_id, activity_at, source FROM local_pane_activity ORDER BY pane_id"
             )
             .compactMap { row in
-                let storedPaneId: String = row["pane_id"]
-                let storedSource: String = row["source"]
-                guard let paneId = UUID(uuidString: storedPaneId),
-                    let source = PaneActivitySource(rawValue: storedSource)
-                else {
-                    paneActivityPersistenceLogger.warning("Skipping invalid persisted pane activity identity or source")
+                do {
+                    let storedPaneId: String = try row.decode(forColumn: "pane_id")
+                    let storedSource: String = try row.decode(forColumn: "source")
+                    let storedTimestamp: DatabaseValue = try row.decode(forColumn: "activity_at")
+                    guard let paneId = UUID(uuidString: storedPaneId),
+                        let source = PaneActivitySource(rawValue: storedSource),
+                        let timestamp = Double.fromDatabaseValue(storedTimestamp), timestamp.isFinite
+                    else {
+                        paneActivityPersistenceLogger.warning("Skipping invalid persisted pane activity fields")
+                        return nil
+                    }
+                    let record = PaneActivityRecord(
+                        paneId: paneId,
+                        wallTime: Date(timeIntervalSince1970: timestamp),
+                        source: source
+                    )
+                    guard record.canRestore(relativeTo: Date.now) else {
+                        paneActivityPersistenceLogger.warning("Skipping unrepresentable persisted pane activity time")
+                        return nil
+                    }
+                    return record
+                } catch {
+                    paneActivityPersistenceLogger.warning("Skipping malformed persisted pane activity fields")
                     return nil
                 }
-                return PaneActivityRecord(
-                    paneId: paneId,
-                    wallTime: Date(timeIntervalSince1970: row["activity_at"] as Double),
-                    source: source
-                )
             }
         }
     }

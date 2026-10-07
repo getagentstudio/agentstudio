@@ -16,8 +16,12 @@ extension AppDelegate {
         let activityAtom = atomStore.core.paneActivityTime
         let mutations: [PaneActivityTimeMutation] = records.compactMap { record in
             guard activityAtom.value(for: record.paneId) == nil else { return nil }
-            return .set(
-                record.paneId, record.restoredActivityTime(referenceInstant: referenceInstant, wallNow: wallNow))
+            guard let activityTime = record.restoredActivityTime(referenceInstant: referenceInstant, wallNow: wallNow)
+            else {
+                appLogger.warning("Skipping pane activity with an unrepresentable restore age")
+                return nil
+            }
+            return .set(record.paneId, activityTime)
         }
         activityAtom.apply(mutations)
     }

@@ -68,13 +68,26 @@ package struct PaneActivityRecord: Sendable, Equatable {
     package func restoredActivityTime(
         referenceInstant: ContinuousClock.Instant,
         wallNow: Date
-    ) -> PaneActivityTime {
+    ) -> PaneActivityTime? {
+        guard canRestore(relativeTo: wallNow) else { return nil }
         let age = max(0, wallNow.timeIntervalSince(wallTime))
         return PaneActivityTime(
             orderingInstant: referenceInstant.advanced(by: .seconds(-age)),
             wallTime: wallTime,
             source: source
         )
+    }
+
+    package func canRestore(relativeTo wallNow: Date) -> Bool {
+        let timestamp = wallTime.timeIntervalSince1970
+        let elapsedSeconds = wallNow.timeIntervalSince(wallTime)
+        guard timestamp.isFinite, elapsedSeconds.isFinite else { return false }
+        // Duration.seconds(Double) scales whole seconds into signed 128-bit
+        // attoseconds; the sidebar's Duration.components converts back to Int64
+        // seconds. Exact Int64 conversion is the narrower representable bound
+        // and also guarantees that scaling by 1e18 cannot overflow Int128.
+        return Int64(exactly: timestamp.rounded(.towardZero)) != nil
+            && Int64(exactly: max(0, elapsedSeconds).rounded(.towardZero)) != nil
     }
 }
 
