@@ -8,7 +8,7 @@ Production Agent Studio **0.0.106** (released 2026-10-05) ships the full
 lifecycle: `new` (a copy-on-write fork by default), `list` with state,
 `remove`, and `prune`. `fork` is gone; use `new --from <worktree>`. Upgrade with
 `brew upgrade --cask agent-studio`. On 0.0.105, `fork` fails on checkouts whose
-build caches hold broken nested Git checkouts (see Rules). Older helpers behave differently. On 0.0.106, default
+build caches hold broken nested Git checkouts. Older helpers behave differently. On 0.0.106, default
 `new` still refuses a dirty or off-branch main checkout and `--from-branch`
 still requires `--tracked-only`; pass `--from <main checkout>` there to fork the
 main checkout as it is. 0.0.106 also fails `new` with `libgit2Failure` when the
