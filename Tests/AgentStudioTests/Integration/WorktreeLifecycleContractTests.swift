@@ -23,34 +23,38 @@ struct WorktreeLifecyclePolicyTests {
 @Suite("Worktree stop catalog")
 struct WorktreeStopCatalogTests {
     private static let creationReasons: Set<WorktreeStopReason> = [
-        .fromBranchNeedsTrackedOnly, .changesOnlyNeedsFrom, .trackedOnlyExcludesSource,
-        .sourceDirty, .sourceNotOnDefaultBranch, .configInvalid,
-        .sourceIndexUnreadable, .sourceIndexUnsupported,
+        .changesOnlyNeedsFrom, .trackedOnlyExcludesSource, .configInvalid, .sourceIndexUnreadable,
+        .sourceIndexUnsupported,
     ]
+    private static let coldTrackedOnlyEffect =
+        "Create a cold tracked-files checkout: no build outputs, no untracked or ignored files."
 
     @Test("creation stops carry exact continuing options in human and JSON output")
     func creationStopsOfferSpecifiedOptions() throws {
-        let expectedActions: [WorktreeStopReason: [WorktreeStopAction]] = [
-            .fromBranchNeedsTrackedOnly: [.flag("--tracked-only"), .flag("--from <a worktree on that branch>")],
-            .changesOnlyNeedsFrom: [.flag("--from <worktree>")],
-            .trackedOnlyExcludesSource: [.command("omit --from and --changes-only"), .command("omit --tracked-only")],
-            .sourceDirty: [
-                .command("commit or stash the changes first"), .flag("--from <worktree>"), .flag("--tracked-only"),
+        let expectedOptions: [WorktreeStopReason: [WorktreeStopOption]] = [
+            .changesOnlyNeedsFrom: [
+                flag("--from <worktree>", effect: "Select the worktree whose changes should be copied.")
             ],
-            .sourceNotOnDefaultBranch: [
-                .command("switch the main worktree back to the default branch"), .flag("--from <worktree>"),
-                .flag("--tracked-only"),
+            .trackedOnlyExcludesSource: [
+                command("omit --from and --changes-only", effect: "Create a tracked-files checkout."),
+                command("omit --tracked-only", effect: "Copy the selected worktree."),
             ],
-            .configInvalid: [.command("fix .agentstudio.config.json and retry"), .flag("--tracked-only")],
-            .sourceIndexUnreadable: [.command("retry"), .flag("--tracked-only")],
-            .sourceIndexUnsupported: [.flag("--tracked-only")],
+            .configInvalid: [
+                command("fix .agentstudio.config.json and retry", effect: "Correct the repository copy declaration."),
+                flag("--tracked-only", effect: Self.coldTrackedOnlyEffect),
+            ],
+            .sourceIndexUnreadable: [
+                command("retry", effect: "Retry after the source can be read."),
+                flag("--tracked-only", effect: Self.coldTrackedOnlyEffect),
+            ],
+            .sourceIndexUnsupported: [flag("--tracked-only", effect: Self.coldTrackedOnlyEffect)],
         ]
-        #expect(Set(expectedActions.keys) == Self.creationReasons)
-        for (reason, actions) in expectedActions {
+        #expect(Set(expectedOptions.keys) == Self.creationReasons)
+        for (reason, options) in expectedOptions {
             let details = details(for: reason)
             let entry = WorktreeStopCatalog.entry(for: details)
             #expect(entry.reason == reason)
-            #expect(entry.options.map(\.action) == actions)
+            #expect(entry.options == options)
             #expect(!entry.message.isEmpty)
             guard case .creation(let stop) = details else {
                 Issue.record("expected creation details")
@@ -178,12 +182,7 @@ struct WorktreeStopCatalogTests {
             ExpectedEntry(
                 reason: .forkUnavailable,
                 message: "A copy-on-write fork is unavailable.",
-                options: [
-                    flag(
-                        "--tracked-only",
-                        effect: "Create a tracked-files checkout."
-                    )
-                ]
+                options: [flag("--tracked-only", effect: Self.coldTrackedOnlyEffect)]
             ),
         ]
     }
@@ -253,8 +252,8 @@ struct WorktreeStopCatalogTests {
 
     private func details(for reason: WorktreeStopReason) -> WorktreeStopDetails {
         switch reason {
-        case .fromBranchNeedsTrackedOnly, .changesOnlyNeedsFrom, .trackedOnlyExcludesSource, .sourceDirty,
-            .sourceNotOnDefaultBranch, .configInvalid, .sourceIndexUnreadable, .sourceIndexUnsupported:
+        case .changesOnlyNeedsFrom, .trackedOnlyExcludesSource, .configInvalid, .sourceIndexUnreadable,
+            .sourceIndexUnsupported:
             .creation(creationDetails(for: reason))
         case .defaultBranch:
             .defaultBranch
@@ -308,15 +307,8 @@ struct WorktreeStopCatalogTests {
 
     private func creationDetails(for reason: WorktreeStopReason) -> WorktreeCreationStop {
         switch reason {
-        case .fromBranchNeedsTrackedOnly: .fromBranchNeedsTrackedOnly
         case .changesOnlyNeedsFrom: .changesOnlyNeedsFrom
         case .trackedOnlyExcludesSource: .trackedOnlyExcludesSource
-        case .sourceDirty:
-
-            .sourceDirty(
-                WorktreeDirtyStopDetails(
-                    staged: 1, unstaged: 2, untracked: 3, conflicted: 0, firstPaths: ["dirty.txt"]))
-        case .sourceNotOnDefaultBranch: .sourceNotOnDefaultBranch(actual: "feature/topic", expected: "main")
         case .configInvalid: .configInvalid(path: "/repo/.agentstudio.config.json", error: "malformed")
         case .sourceIndexUnreadable: .sourceIndexUnreadable
         case .sourceIndexUnsupported: .sourceIndexUnsupported

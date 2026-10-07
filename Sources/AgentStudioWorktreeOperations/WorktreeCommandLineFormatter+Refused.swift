@@ -32,11 +32,6 @@ extension WorktreeCommandLineFormatter {
 
     private static func refusalDetails(for refusal: WorktreeOperationRefusal) -> WorktreeRefusalDetails {
         switch refusal {
-        case .changesUnknown(let mainWorktree):
-            let stopEntry = WorktreeStopCatalog.creationChangesUnknownEntry(mainWorktree: mainWorktree)
-            return WorktreeRefusalDetails(
-                reason: stopEntry.reason.rawValue, path: absolutePath(mainWorktree), detail: nil,
-                options: stopEntry.options, message: stopEntry.message)
         case .creationStopped(let stop):
             let entry = WorktreeStopCatalog.entry(for: .creation(stop))
             return WorktreeRefusalDetails(
