@@ -808,7 +808,8 @@ enum BridgeProductWebKitTwoPaneJourneyTestSupport {
         _ controller: BridgePaneController,
         terminalExpectation: BridgeProductWebKitCatchUpTerminalExpectation
     ) async throws {
-        try await terminalExpectation.wait()
+        let terminalObservations = try await terminalExpectation.wait()
+        #expect(terminalObservations.allSatisfy { $0.result == "success" })
         while let activeReviewTask = controller.activeReviewRefreshTask {
             await activeReviewTask.value
         }
@@ -819,7 +820,12 @@ enum BridgeProductWebKitTwoPaneJourneyTestSupport {
             snapshot.dirtyFact == nil,
             controller.activeReviewRefreshTask == nil
         else {
-            throw JourneyError.conditionFailed(terminalExpectation.describeUnsettledCatchUp(controller))
+            throw JourneyError.conditionFailed(
+                terminalExpectation.describeUnsettledCatchUp(
+                    snapshot: snapshot,
+                    reviewTaskPresent: controller.activeReviewRefreshTask != nil
+                )
+            )
         }
     }
 

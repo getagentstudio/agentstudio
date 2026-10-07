@@ -13,6 +13,11 @@ enum BridgeProductWebKitCatchUpFact: Sendable {
     case terminal(result: String)
 }
 
+struct BridgeProductWebKitCatchUpTerminalObservation: Sendable {
+    let operation: BridgeProductWebKitCatchUpOperation
+    let result: String
+}
+
 struct BridgeProductWebKitCatchUpTerminalExpectation: Sendable {
     let batchSequence: UInt64
     let lanes: Set<BridgePaneRefreshLane>
@@ -33,7 +38,8 @@ struct BridgeProductWebKitCatchUpTerminalExpectation: Sendable {
         )
     }
 
-    func wait() async throws {
+    func wait() async throws -> [BridgeProductWebKitCatchUpTerminalObservation] {
+        var terminals: [BridgeProductWebKitCatchUpTerminalObservation] = []
         for lane in lanes.sorted(by: { $0.rawValue < $1.rawValue }) {
             let operation = try await recorder.expectNextOperation(
                 matching: { $0.lane == lane },
@@ -44,16 +50,21 @@ struct BridgeProductWebKitCatchUpTerminalExpectation: Sendable {
                 in: operation, where: { if case .reserved = $0 { true } else { false } },
                 "correlated \(lane.rawValue) catch-up reservation"
             )
-            _ = try await recorder.expectNext(
+            let terminal = try await recorder.expectNext(
                 in: operation, where: { if case .terminal = $0 { true } else { false } },
                 "correlated \(lane.rawValue) catch-up terminal for dirty batch \(batchSequence)"
             )
+            if case .terminal(let result) = terminal {
+                terminals.append(.init(operation: operation, result: result))
+            }
         }
+        return terminals
     }
 
-    @MainActor
-    func describeUnsettledCatchUp(_ controller: BridgePaneController) -> String {
-        let snapshot = controller.refreshAdmissionCoordinator.diagnosticSnapshot
+    func describeUnsettledCatchUp(
+        snapshot: BridgePaneRefreshAdmissionSnapshot,
+        reviewTaskPresent: Bool
+    ) -> String {
         let activePass =
             snapshot.activeRefreshPass.map {
                 "lanes=\($0.lanes.map(\.rawValue).sorted()),id=\($0.id.uuidString)"
@@ -66,6 +77,6 @@ struct BridgeProductWebKitCatchUpTerminalExpectation: Sendable {
             } ?? "nil"
         return "foreground catch-up did not settle (activity=\(snapshot.activity),"
             + "activeRefreshPass=\(activePass),dirtyFact=\(dirtyFact),"
-            + "activeReviewRefreshTaskPresent=\(controller.activeReviewRefreshTask != nil))"
+            + "activeReviewRefreshTaskPresent=\(reviewTaskPresent))"
     }
 }
