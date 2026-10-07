@@ -26,25 +26,32 @@ struct PaneActivitySaveIntegrationTests {
             paneId: firstID, source: .hook, orderingInstant: instant, wallTime: Date(timeIntervalSince1970: 100))
         let second = PaneActivityOccurrence(
             paneId: secondID, source: .terminal, orderingInstant: instant, wallTime: Date(timeIntervalSince1970: 200))
-        clock.submit(first)
-        let firstCommit = try await recorder.firstCommit.firstArrival()
-        #expect(firstCommit.mutations == [.set(firstID, first.activityTime)])
-        #expect(delegate.atomStore.core.paneActivityTime.value(for: firstID) == first.activityTime)
-        #expect(await recorder.completed.isEmpty)
-        // This ingress returns while the save is held, without awaiting SQLite.
-        clock.submit(second)
-        if firstCommitFails {
-            recorder.firstCommit.fail(PaneActivityInjectedCommitFailure.failed)
-        } else {
-            recorder.firstCommit.release()
+        do {
+            clock.submit(first)
+            let firstCommit = try await recorder.firstCommit.firstArrival()
+            #expect(firstCommit.mutations == [.set(firstID, first.activityTime)])
+            #expect(delegate.atomStore.core.paneActivityTime.value(for: firstID) == first.activityTime)
+            #expect(await recorder.completed.isEmpty)
+            // This ingress returns while the save is held, without awaiting SQLite.
+            clock.submit(second)
+            if firstCommitFails {
+                recorder.firstCommit.fail(PaneActivityInjectedCommitFailure.failed)
+            } else {
+                recorder.firstCommit.release()
+            }
+            let secondCommit = try await recorder.secondCommit.firstArrival()
+            #expect(secondCommit.mutations == [.set(secondID, second.activityTime)])
+            #expect(delegate.atomStore.core.paneActivityTime.value(for: secondID) == second.activityTime)
+            recorder.secondCommit.release()
+            #expect(try await clock.settled() == .quiescent)
+            #expect(await recorder.attempted == [firstCommit, secondCommit])
+            #expect(await recorder.completed == (firstCommitFails ? [secondCommit] : [firstCommit, secondCommit]))
+        } catch {
+            recorder.firstCommit.retire()
+            recorder.secondCommit.retire()
+            await clock.shutdown()
+            throw error
         }
-        let secondCommit = try await recorder.secondCommit.firstArrival()
-        #expect(secondCommit.mutations == [.set(secondID, second.activityTime)])
-        #expect(delegate.atomStore.core.paneActivityTime.value(for: secondID) == second.activityTime)
-        recorder.secondCommit.release()
-        #expect(try await clock.settled() == .quiescent)
-        #expect(await recorder.attempted == [firstCommit, secondCommit])
-        #expect(await recorder.completed == (firstCommitFails ? [secondCommit] : [firstCommit, secondCommit]))
         await clock.shutdown()
     }
 
