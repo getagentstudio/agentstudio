@@ -82,12 +82,14 @@ package struct PaneActivityRecord: Sendable, Equatable {
         let timestamp = wallTime.timeIntervalSince1970
         let elapsedSeconds = wallNow.timeIntervalSince(wallTime)
         guard timestamp.isFinite, elapsedSeconds.isFinite else { return false }
-        // Duration.seconds(Double) scales whole seconds into signed 128-bit
-        // attoseconds; the sidebar's Duration.components converts back to Int64
-        // seconds. Exact Int64 conversion is the narrower representable bound
-        // and also guarantees that scaling by 1e18 cannot overflow Int128.
-        return Int64(exactly: timestamp.rounded(.towardZero)) != nil
-            && Int64(exactly: max(0, elapsedSeconds).rounded(.towardZero)) != nil
+        // This is a representability margin, not an activity horizon policy:
+        // leave half the Int64-seconds component range for later monotonic aging.
+        // Direct Double conversion rounds Int64.max / 2 upward, so nextDown is
+        // the greatest representable value within that integer bound. This also
+        // keeps Duration.seconds' Int128 attosecond scaling safely in range.
+        let maximumMagnitudeSeconds = Double(Int64.max / 2).nextDown
+        return abs(timestamp) <= maximumMagnitudeSeconds
+            && abs(elapsedSeconds) <= maximumMagnitudeSeconds
     }
 }
 
