@@ -10,6 +10,7 @@ import Testing
 @MainActor
 @Suite("App pane activity save integration", .serialized)
 struct PaneActivitySaveIntegrationTests {
+    init() { installTestCoreAtomsIfNeeded() }
     @Test("App publishes before a held commit and subsequent batches stay ordered", arguments: [false, true])
     func publicationPrecedesCommitAndFailureContinues(firstCommitFails: Bool) async throws {
         let delegate = AppDelegate()
@@ -51,7 +52,7 @@ struct PaneActivitySaveIntegrationTests {
         let delegate = AppDelegate()
         delegate.atomStore = makeTestAtomRegistry()
         let fixture = try makeWorkspaceSQLiteBridgeFixture(workspaceId: UUIDv7.generate())
-        let datastore = try await preparedWorkspaceSQLiteDatastore(from: fixture.backend)
+        let datastore = try preparedWorkspaceSQLiteDatastore(from: fixture.backend)
         let sink = delegate.makePaneActivitySink { commit in try await datastore.commitPaneActivity(commit) }
         let paneID = UUIDv7.generate()
         let time = PaneActivityTime(

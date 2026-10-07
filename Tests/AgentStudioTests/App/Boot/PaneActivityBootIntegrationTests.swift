@@ -10,6 +10,7 @@ import Testing
 @MainActor
 @Suite("Pane activity boot integration", .serialized)
 struct PaneActivityBootIntegrationTests {
+    init() { installTestCoreAtomsIfNeeded() }
     @Test("restored wall age gives the same ordering, bucket, chip and source", arguments: [30.0, 120.0, 14_400.0])
     func restoredAgePresentation(age: Double) {
         let delegate = AppDelegate()
@@ -59,7 +60,7 @@ struct PaneActivityBootIntegrationTests {
         delegate.atomStore = makeTestAtomRegistry()
         let workspaceID = delegate.atomStore.core.workspaceIdentity.workspaceId
         let fixture = try makeWorkspaceSQLiteBridgeFixture(workspaceId: workspaceID)
-        let datastore = try await preparedWorkspaceSQLiteDatastore(from: fixture.backend)
+        let datastore = try preparedWorkspaceSQLiteDatastore(from: fixture.backend)
         let pane = makePane(id: UUIDv7.generate())
         let tab = Tab(paneId: pane.id)
         try await datastore.saveWorkspaceSnapshotBundle(
