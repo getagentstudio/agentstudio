@@ -7,9 +7,9 @@ import Testing
 @testable import AgentStudio
 @testable import AgentStudioCore
 
-@MainActor
 @Suite("App IPC issuance persistence", .serialized)
 struct AgentStudioAppIPCIssuancePersistenceTests {
+    @MainActor
     @Test("an unused token issued after readiness authenticates after reopen without a graceful snapshot")
     func unusedTokenIssuedAfterReadinessAuthenticatesAfterReopen() async throws {
         let fixture = try ReusableCredentialFixture()
@@ -76,6 +76,7 @@ struct AgentStudioAppIPCIssuancePersistenceTests {
         )
     }
 
+    @MainActor
     @Test("a held continuity write does not block environment and final revoke precedes the issued write")
     func heldContinuityDoesNotBlockEnvironmentAndFinalRevokeDominates() async throws {
         let fixture = try ReusableCredentialFixture()
@@ -131,6 +132,7 @@ struct AgentStudioAppIPCIssuancePersistenceTests {
         )
     }
 
+    @MainActor
     @Test("a failing continuity port leaves the pane environment usable and the verifier eligible")
     func failingContinuityDoesNotBlockEnvironment() async throws {
         let fixture = try ReusableCredentialFixture()
@@ -175,6 +177,7 @@ struct AgentStudioAppIPCIssuancePersistenceTests {
         )
     }
 
+    @MainActor
     private func makeIdentityOwner(serverFixture: LiveServerFixture) -> PaneIPCIdentityOwner {
         let paneID = serverFixture.boundPaneId
         let workspaceID = serverFixture.workspaceId
