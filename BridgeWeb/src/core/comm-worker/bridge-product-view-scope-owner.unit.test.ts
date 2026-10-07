@@ -646,11 +646,15 @@ describe('W2 desired view scope owner', () => {
 		expect(owner.recoveryState('file-subscription-1')?.consecutiveResnapshots).toBe(2);
 	});
 
-	test('counts native replacement once and resets only after a certified install', async () => {
+	test('native replacement consumes no resnapshot budget (R13); only requested resnapshots count, and a certified install resets', async () => {
+		const resnapshotRequests: ViewResnapshotAdmissionProps[] = [];
 		const owner = createTestViewScopeOwner({
 			controlMux: {
 				setViewScope: async (props) => acceptedScope(props),
-				resnapshotView: async (props) => acceptedResnapshot(props),
+				resnapshotView: async (props) => {
+					resnapshotRequests.push(props);
+					return acceptedResnapshot(props);
+				},
 			},
 			createIdentifier: (): string => 'view-identity',
 			maximumConsecutiveResnapshots: 2,
@@ -660,26 +664,25 @@ describe('W2 desired view scope owner', () => {
 			subscriptionId: 'file-subscription-1',
 			subscriptionKind: 'file.metadata',
 		});
-		owner.observeReplacementSnapshot({
+		const viewIdentity = {
 			handle: 'view-identity',
 			incarnation: 'view-identity',
 			scopeRevision: 0,
 			subscriptionId: 'file-subscription-1',
+		};
+		owner.observeReplacementSnapshot(viewIdentity);
+		owner.observeReplacementSnapshot(viewIdentity);
+		owner.observeReplacementSnapshot(viewIdentity);
+		expect(owner.recoveryState('file-subscription-1')?.consecutiveResnapshots).toBe(0);
+		await owner.resnapshot('file-subscription-1');
+		expect(resnapshotRequests).toHaveLength(1);
+		expect(owner.recoveryState('file-subscription-1')).toEqual({
+			consecutiveResnapshots: 1,
+			status: 'recovering',
 		});
+		owner.recordCertifiedInstall({ ...viewIdentity, handle: 'stale-handle' });
 		expect(owner.recoveryState('file-subscription-1')?.consecutiveResnapshots).toBe(1);
-		owner.recordCertifiedInstall({
-			handle: 'stale-handle',
-			incarnation: 'view-identity',
-			scopeRevision: 0,
-			subscriptionId: 'file-subscription-1',
-		});
-		expect(owner.recoveryState('file-subscription-1')?.consecutiveResnapshots).toBe(1);
-		owner.recordCertifiedInstall({
-			handle: 'view-identity',
-			incarnation: 'view-identity',
-			scopeRevision: 0,
-			subscriptionId: 'file-subscription-1',
-		});
+		owner.recordCertifiedInstall(viewIdentity);
 		expect(owner.recoveryState('file-subscription-1')).toEqual({
 			consecutiveResnapshots: 0,
 			status: 'ready',
