@@ -112,7 +112,13 @@ extension SessionsEvidenceReducer {
         }
         if hook.eventName == .sessionEnd, effect == .applied {
             committedBinding = replacing(binding, status: .ended, endedAt: hook.admittedAt)
-            bindingChanges = [committedBinding]
+            if let incomingIndex = bindingChanges.firstIndex(where: {
+                $0.bindingGenerationId == binding.bindingGenerationId
+            }) {
+                bindingChanges[incomingIndex] = committedBinding
+            } else {
+                bindingChanges.append(committedBinding)
+            }
             if let activeSource = source {
                 source = replacing(activeSource, status: .ended, endedAt: hook.admittedAt)
             }
