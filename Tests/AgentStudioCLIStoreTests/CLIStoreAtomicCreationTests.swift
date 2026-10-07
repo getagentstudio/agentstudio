@@ -8,6 +8,48 @@ import Testing
 @testable import AgentStudioCLIStore
 
 extension CLIStoreTests {
+    @Test("fresh creation exhausting its budget after WAL activation leaves no private creator files")
+    func exhaustedFreshCreatorRemovesOwnedFiles() async throws {
+        let observed = try await valueFromDedicatedThread {
+            let fixture = try CLIStoreFileFixture()
+            defer { fixture.remove() }
+            let probe = Mutex((remainingBudget: Duration.seconds(1), reachedWAL: false))
+            let attempted = CLIStore.openWriter(
+                url: fixture.databaseURL, channel: .debug,
+                migrationLockWaitBudget: { probe.withLock { $0.remainingBudget } },
+                prepareConnection: { database in
+                    database.trace { event in
+                        guard case .statement(let statement) = event,
+                            statement.sql == "PRAGMA synchronous = FULL"
+                        else { return }
+                        // The real writer has switched its private inode to WAL.
+                        // Exhaust the next migration admission without elapsed time.
+                        probe.withLock {
+                            $0.reachedWAL = true
+                            $0.remainingBudget = .zero
+                        }
+                    }
+                })
+            let failure: CLIStoreFailure?
+            switch attempted {
+            case .failure(let value): failure = value
+            case .success(let writer):
+                failure = nil
+                try writer.databaseQueue.close()
+            }
+            return (
+                failure: failure, reachedWAL: probe.withLock { $0.reachedWAL },
+                published: FileManager.default.fileExists(atPath: fixture.databaseURL.path),
+                creatorFiles: try FileManager.default.contentsOfDirectory(atPath: fixture.rootURL.path)
+                    .filter { $0.contains(".creating-") }
+            )
+        }
+        #expect(observed.reachedWAL)
+        #expect(observed.failure == .busy(extendedResultCode: nil, stage: .migration))
+        #expect(!observed.published)
+        #expect(observed.creatorFiles.isEmpty)
+    }
+
     @Test("a crashed creator's private file is ignored without deleting its bytes")
     func staleCreatorDoesNotBlockPublication() async throws {
         let observed = try await valueFromDedicatedThread {
