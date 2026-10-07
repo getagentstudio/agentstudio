@@ -5,18 +5,19 @@ This guide covers the worktree commands in Agent Studio 0.0.106 and later.
 ## Availability
 
 Production Agent Studio **0.0.106** (released 2026-10-05) ships the full
-lifecycle: a warm `new` (copy-on-write by default), `list` with state,
+lifecycle: `new` (a copy-on-write fork by default), `list` with state,
 `remove`, and `prune`. `fork` is gone; use `new --from <worktree>`. Upgrade with
 `brew upgrade --cask agent-studio`. On 0.0.105, `fork` fails on checkouts whose
-build caches hold broken nested Git checkouts (see Rules).
+build caches hold broken nested Git checkouts (see Rules). On 0.0.106, default
+`new` still refuses a dirty or off-branch main checkout and `--from-branch`
+still requires `--tracked-only`; pass `--from <main checkout>` there to fork the
+main checkout as it is.
 
 ## Why use it
 
-- `new` makes an APFS copy-on-write clone of the main worktree
-  by default. `new --from <worktree>` deliberately carries that worktree's
-  uncommitted work. The first build in a copy may be partly or fully cold. Whether an incremental build
-  reuses the copied output has not been measured. SwiftPM `.build` and cargo
-  `target/` can embed absolute paths.
+- `new` makes an APFS copy-on-write fork of the main checkout as it is,
+  uncommitted and untracked files included. `new --from <worktree>` forks that
+  worktree as it is.
 - The helper calls Git through agentstudio-git. It does not shell out to `git`
   and does not need the app or IPC.
 - `--json` returns machine-readable results. Exit codes report the overall
@@ -42,15 +43,17 @@ production helper.
 
 | Command | Behavior | Options |
 |---|---|---|
-| `"$ASW" worktree new <branch>` | Creates a new branch at the source HEAD and copies the main worktree by default, or the worktree named by `--from`. | `--repo <path>`, `--from <worktree>`, `--changes-only`, `--tracked-only`, `--from-branch <local-branch>`, `--json` |
+| `"$ASW" worktree new <branch>` | Creates a new branch at the source HEAD and forks the main worktree as it is by default, or the worktree named by `--from`. | `--repo <path>`, `--from <worktree>`, `--changes-only`, `--tracked-only`, `--from-branch <local-branch>`, `--json` |
 | `"$ASW" worktree list [target...]` | Lists worktrees with branch, path, current/locked state, working changes, integration, `tmp/` evidence, blockers, and removal readiness. Targets limit the rows. | `--repo <path>`, `--no-fetch`, `--json` |
 | `"$ASW" worktree remove <target...>` | Removes worktrees or branch-only targets. Processes each target and reports its result. | `--repo <path>`, `--no-fetch`, `-f` / `--force`, `-D`, `--no-delete-branch`, `--archive-to-main`, `--archive-to <path>`, `--discard-tmp`, `--remove-stale-lock`, `--dry-run`, `--json` |
 | `"$ASW" worktree prune` | Previews eligible linked worktrees. Skipped rows include the reason and available remove commands. | `--repo <path>`, `--no-fetch`, `--archive-to-main`, `--archive-to <path>`, `--apply`, `--json` |
 
 `fork` is removed: it returns exit 64 with a stderr line naming `new --from`, including with `--json`.
 
-`new --tracked-only --from-branch <local-branch>` creates the branch at the
-named local branch tip. `--from-branch` requires `--tracked-only`.
+`new --from-branch <local-branch>` creates the branch at the named local
+branch tip as a tracked-files checkout; adding `--tracked-only` changes
+nothing. `--from` and `--from-branch` each select a source: passing both is a
+usage error (exit 64) that asks you to choose one source.
 `new --from <worktree> --changes-only` carries tracked changes and eligible
 untracked files, excludes ignored files, and leaves the destination index at
 HEAD. `--changes-only` requires `--from`; `--tracked-only` excludes both.
@@ -82,18 +85,16 @@ Exit codes:
 
 ## Which one
 
-- `new` copies the main checkout at its HEAD. Its default source must be
-  clean and on the repository's default branch. A dirty or off-branch source
-  is refused with options to commit/stash, select `--from`, or use
-  `--tracked-only`.
-- `new --from <worktree>` copies that source as it is, including uncommitted
-  work. Even explicitly naming the main checkout skips the two default-source
-  checks.
+- `new` forks the main checkout as it is: uncommitted and untracked files come
+  along, whichever branch it has checked out. The new branch starts at the main
+  checkout's current HEAD commit.
+- `new --from <worktree>` forks that worktree as it is, the same way.
 - `new --from <worktree> --changes-only` starts from HEAD and carries tracked
   changes plus eligible untracked files. It excludes ignored build output.
-- `new --tracked-only` creates a tracked-files checkout from the default start
-  point (`origin/HEAD`, else `main`, else `master`), or the local branch named
-  by `--from-branch`. Submodules stay empty and ignored build output is absent.
+- `new --tracked-only` is a cold checkout, used only when you explicitly want
+  one: tracked files from the default start point (`origin/HEAD`, else `main`,
+  else `master`), or from the local branch named by `--from-branch`, which
+  implies it. Submodules stay empty and ignored build output is absent.
   In agent-studio, run `mise run setup` before building or reading vendored
   headers. Expect a cold first build.
 - To recreate a worktree on an existing branch, use
@@ -131,16 +132,11 @@ when applicable, and the error, with the options to fix the file or use
 `--tracked-only`. `--tracked-only` and `--changes-only` never read the config,
 so a broken config never blocks them.
 
-Source index problems:
+Source index problems, the same for default `new` and `new --from`:
 
-- **Default `new`** first checks that the main checkout is clean. If its working
-  changes can't be read, for example because the index is unreadable or in a
-  sparse or split format, it refuses `changesUnknown` (options: retry,
-  `--tracked-only`, or `--from <main checkout>`), because a clean source can't
-  be proved.
-- **`new --from <worktree>`** copies the source as it is. An unreadable source
-  index refuses `sourceIndexUnreadable` (retry or `--tracked-only`), and a
-  sparse or split index refuses `sourceIndexUnsupported` (`--tracked-only`).
+- An unreadable source index refuses `sourceIndexUnreadable` (retry or
+  `--tracked-only`), and a sparse or split index refuses
+  `sourceIndexUnsupported` (`--tracked-only`).
 - A missing index counts as empty.
 
 The created copy-on-write report prints `ignoredIncludedPatterns`,
@@ -155,7 +151,7 @@ rules apply to the CLI `new` copy-on-write path, including `new --from`.
   `~/dev/agent-studio-worktrees`, or `/private/tmp`.
 - Remove a worktree with `"$ASW" worktree remove --repo <repo> <branch-or-path>`
   (add `--archive-to-main` to keep its `tmp/` evidence).
-- If a warm `new` fails with `libgit2Failure`, a nested Git checkout inside the
+- If `new` fails with `libgit2Failure`, a nested Git checkout inside the
   source's copied build output is broken. After the 2026-10-04 move, SwiftPM
   checkouts under `.build*/` kept `objects/info/alternates` paths into
   `~/Documents`. Delete that `.build*` folder and rebuild, or rewrite the stale
