@@ -262,3 +262,84 @@ Document gate required escalation solely for Git LFS metadata cache access after
 main's media changes; git diff --check exit0. No main source authored/modified
 by DI, no app tests/builds/installs, no proof gate weakened. The queued-review
 packet will bind the exact final docs commit and merged source, not old f0e446706.
+
+### Review delivery checkpoint
+
+Published composition-root-di head856abf391e2d0b4f89ad736057f4c14e27da5afd;
+git push exit0 with hooks intact and git ls-remote confirms the same head.
+Packet at tmp/composition-root-di/review-packet.md includes the three distinct
+artifacts, verbatim owner confirmations, limits and coverage-bound return shape.
+Request di-three-artifact-review-2026-10-07-001 saved in existing Advisor outbox;
+liaison notification delivered/steered. This proves submission, not reviewer
+launch or acceptance. Fresh Claude reviewer address/launch receipt and findings
+remain pending. No independent verdict or ready-for-planning claimed.
+
+Saved one 45-minute follow-up to this same Lead for the existing file-return
+route; it is not a recurring proxy, board listener or review completion. Exact
+private wake/receipt IDs are retained in the ignored relay. Process a real
+launch/report when it arrives; reconcile before any retry. No duplicate reviewer,
+new goal question, implementation or application proof. Rendered preview remains
+unverified as explicitly directed; no renderer installation. The separate fixture
+and native runtime proof gates are unrun, with no stand-in counted as evidence.
+
+## 2026-10-07 — independent review findings accepted; bounded correction pass
+
+Read the newest complete-review return and full report; local report SHA matches
+the declared verbatim transfer. The actual review used a fresh native Claude
+Opus subagent after the remote Router route failed with unknown effects. No
+author/Advisor history was supplied. Reviewer effort is unknown, not verified
+xhigh; retain that limitation. Same reviewer name is retained through Advisor
+for correction verification. No duplicate reviewer or broad rerun commissioned.
+The old one-time launch-follow-up wake was cancelled before firing because the
+report arrived. A delayed Chief delivery receipt predates the actual report;
+process it as provenance, never replace the newer review with launch-only state.
+
+The review reported needs-revision: five important and three minor accepted
+findings, no mental-model break. Required visual coverage is still partial;
+needs-revision is the semantic correction route, not a complete ready verdict.
+Checked decisive current source before accepting all eight findings. Rejected
+R1–R5 are not work; dispatcher observation change is an unverified proof concern.
+Use one spec-design → program-design correction pass, then the same reviewer
+verifies the corrected anchors. Author verification never closes the findings.
+
+| Finding | Source-grounded disposition and correction |
+| --- | --- |
+| DI3A-01 | Accepted: lookup detach/close and activity ordered controls call static handling; config/lifecycle reach engine globals. Name fixed weak reverse closures, non-recursive forcing order, native-view handler supply and retired control result. |
+| DI3A-02 | Accepted: shell router appears at WorkspaceBoot shell-install, not delegate construction. Gate the fixed accessor on that existing readiness transition and preserve absent-owner behavior. |
+| DI3A-03 | Accepted: current termination stops activity before static trace drain; engine global is never freed at quit. Choose the review's deletion-first default: no new quit-time native free. Callback close/invalidate/join/drain moves before activity stop in the existing bounded stage; native free order is a conditional release invariant. This preserves D1/U7 and needs no owner decision. |
+| DI3A-04 | Accepted: accumulator may call scheduler while locked; scheduler enqueues after unlock. State total order including task-owner/trace-store, no reverse acquisition, task admission/snapshot under task-owner alone, and invalidation/join/drain after release. |
+| DI3A-05 | Accepted: aggregate facts count whole invocation. Per-suite proof uses retained concurrent-invocation function/test-case events joined to suite IDs; no new runner/receipt format assumed. CI owner retains any extractor/inventory work. |
+| DI3A-06 | Accepted: direct pwd/size/cache/close currently use weak view liveness; undo views remain native-live but are absent from surface(for:). Preserve direct-view effects across active/hidden/undo with UUID/object/native-lifetime guard and no pane requirement; exact/drain checks stay as today. |
+| DI3A-07 | Accepted: R4's unqualified startup-only construction conflicts with fixtures. Clarify production-only construction in Requirements/Spec; admit test handling with fake engine boundaries, not real engine construction; list lint homes in Program Design. |
+| DI3A-08 | Accepted: architecture readers still sanction removed globals. Name the affected hosting/surface/component clauses for same-cutover reconciliation; no permanent architecture rewrite before implementation. |
+
+No authorized outcome is removed, and no new domain owner, container, atom,
+store, coordinator, bus case, retry, timer policy or native-engine test is added.
+All real runtime gates remain unrun. The owner's follow-up question was answered
+by the Advisor in the previously inspected confirmation note; supply that source
+excerpt to the same reviewer to resolve the reported missing-answer provenance.
+
+### Correction pass author check
+
+Spec/Requirements construction rule now distinguishes production startup from
+fake-engine test handling. Program Design fills inbound/reference kinds and
+forcing order, shell readiness, disposition-specific native-live guards,
+termination/deinit separation, total lock order and per-suite event proof. The
+adapter's lookup operations are fixed weak references so view→handling→adapter
+cannot retain lookup back; root retains lookup. This is the DI3A-01 cycle fix,
+not a new scope lane. Bounded termination keeps its current stage name/deadline
+and overrun behavior; no new quit-time native free or cancellation policy.
+
+All nine obligation trace rows and E1–E9 bindings remain. Local links resolve,
+fences balance, public design-doc pattern scan is clear, and git diff --check
+exits0. Only the three design docs and trace changed; no Sources/Tests/config or
+permanent architecture edits. The sanctioned-reader cutover list is a design
+obligation for later implementation, not a documentation rewrite now.
+
+Semantic change is confined to the accepted corrections; source timestamp,
+source admission, equality/barriers, IPC/catalog, native behavior outside the
+already-confirmed unavailable-access exception and all proof gates remain.
+Rendered preview, concrete compile/runtime proof and reviewer effort remain
+unverified. No stand-in establishes proof. Request same-reviewer verification
+against DI3A-01..08 after publishing the corrected head; do not close findings
+from this author check or commission another broad review.
