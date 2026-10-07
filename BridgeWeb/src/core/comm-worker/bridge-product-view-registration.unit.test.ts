@@ -139,3 +139,30 @@ test.each(['pending', 'registered'] as const)(
 		);
 	},
 );
+
+test('retirement stays final for a waiting scope admission when the same view registers late', async (): Promise<void> => {
+	const owner = createTestViewScopeOwner({
+		controlMux: {
+			setViewScope: async (): Promise<never> => {
+				throw new Error('Retired views must not send scope controls.');
+			},
+			resnapshotView: async (): Promise<never> => {
+				throw new Error('Retired views must not request replacements.');
+			},
+		},
+		createIdentifier: (): string => 'late-registration-view',
+		maximumConsecutiveResnapshots: 2,
+	});
+	const subscriptionId = 'late-registration-subscription';
+	const scope = { kind: 'review', interests: [] } as const;
+	owner.allocatePendingRegistration(subscriptionId);
+	const admission = owner.setScope({ scope, subscriptionId });
+	const rejected = expect(admission).rejects.toThrow('Metadata view scope has no registered E3.');
+	owner.retire(subscriptionId);
+	owner.register({ scope, subscriptionId, subscriptionKind: 'review.metadata' });
+	try {
+		await rejected;
+	} finally {
+		owner.retire(subscriptionId);
+	}
+});

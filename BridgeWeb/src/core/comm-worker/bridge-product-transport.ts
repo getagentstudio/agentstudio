@@ -478,7 +478,7 @@ class BridgeProductTransportSessionImpl implements BridgeProductTransportSession
 			if (previous !== undefined && previous.status !== 'ready')
 				this.#publishViewRecoveryStatus(allocated);
 		}
-		state.start();
+		void state.start();
 		return state.publicSubscription;
 	}
 

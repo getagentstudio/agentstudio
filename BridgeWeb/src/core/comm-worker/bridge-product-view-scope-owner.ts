@@ -11,6 +11,7 @@ import { bridgeWorkerViewRecoveryKindSchema } from './bridge-worker-view-recover
 
 type ViewScope = BridgeProductViewScopeRequest['scope'];
 type ViewKind = BridgeWorkerViewRecoveryStatusEvent['view']['kind'];
+type ViewRegistrationOutcome = 'registered' | 'retired';
 
 interface DesiredView {
 	consecutiveResnapshots: number;
@@ -54,7 +55,10 @@ export class BridgeProductViewScopeOwner {
 		| ((status: Pick<BridgeWorkerViewRecoveryStatusEvent, 'status' | 'view'>) => void)
 		| undefined;
 	readonly #views = new Map<string, DesiredView>();
-	readonly #pendingRegistrations = new Map<string, BridgeProductDeferred<void>>();
+	readonly #pendingRegistrations = new Map<
+		string,
+		BridgeProductDeferred<ViewRegistrationOutcome>
+	>();
 
 	constructor(props: {
 		readonly controlMux: Pick<BridgeProductControlMux, 'resnapshotView' | 'setViewScope'>;
@@ -91,7 +95,10 @@ export class BridgeProductViewScopeOwner {
 		if (this.#views.has(subscriptionId) || this.#pendingRegistrations.has(subscriptionId)) {
 			throw new Error('A metadata view is already allocated for this subscription.');
 		}
-		this.#pendingRegistrations.set(subscriptionId, createBridgeProductDeferred<void>());
+		this.#pendingRegistrations.set(
+			subscriptionId,
+			createBridgeProductDeferred<ViewRegistrationOutcome>(),
+		);
 	}
 
 	register(props: {
@@ -121,7 +128,7 @@ export class BridgeProductViewScopeOwner {
 		});
 		const view = this.#views.get(props.subscriptionId);
 		if (view !== undefined) this.#emitRecoveryStatus(view, 'recovering');
-		this.#settlePendingRegistration(props.subscriptionId);
+		this.#settlePendingRegistration(props.subscriptionId, 'registered');
 	}
 
 	async setScope(props: {
@@ -130,7 +137,9 @@ export class BridgeProductViewScopeOwner {
 		readonly subscriptionId: string;
 	}): Promise<BridgeProductViewScopeSettlement> {
 		const pendingRegistration = this.#pendingRegistrations.get(props.subscriptionId);
-		if (pendingRegistration !== undefined) await pendingRegistration.promise;
+		if (pendingRegistration !== undefined && (await pendingRegistration.promise) === 'retired') {
+			throw new Error('Metadata view scope has no registered E3.');
+		}
 		const view = this.#views.get(props.subscriptionId);
 		if (view === undefined) throw new Error('Metadata view scope has no registered E3.');
 		if (!scopeMatchesKind(view.subscriptionKind, props.scope.kind)) {
@@ -362,14 +371,14 @@ export class BridgeProductViewScopeOwner {
 		view?.currentAdmission?.abort();
 		if (view !== undefined) this.#clearReplacementBeginDeadline(view);
 		this.#views.delete(subscriptionId);
-		// Released waiters re-check the view and fail: retirement cannot admit content.
-		this.#settlePendingRegistration(subscriptionId);
+		// Released waiters observe retirement and fail, even if the same id registers later.
+		this.#settlePendingRegistration(subscriptionId, 'retired');
 	}
 
-	#settlePendingRegistration(subscriptionId: string): void {
+	#settlePendingRegistration(subscriptionId: string, outcome: ViewRegistrationOutcome): void {
 		const pendingRegistration = this.#pendingRegistrations.get(subscriptionId);
 		this.#pendingRegistrations.delete(subscriptionId);
-		pendingRegistration?.resolve();
+		pendingRegistration?.resolve(outcome);
 	}
 }
 

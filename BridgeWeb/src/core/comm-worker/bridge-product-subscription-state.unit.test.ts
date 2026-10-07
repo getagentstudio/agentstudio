@@ -58,7 +58,7 @@ describe('Bridge product subscription state', () => {
 			readWorkerDerivationEpochAtAdmission: (): number => 0,
 			subscriptionId: 'held-metadata-subscription',
 		});
-		state.start();
+		void state.start();
 		const nextEvent = state.publicSubscription.events[Symbol.asyncIterator]().next();
 		try {
 			await state.cancel();
@@ -93,7 +93,7 @@ describe('Bridge product subscription state', () => {
 			readWorkerDerivationEpochAtAdmission: (): number => 0,
 			subscriptionId: 'held-open-result-subscription',
 		});
-		state.start();
+		void state.start();
 		const nextEvent = state.publicSubscription.events[Symbol.asyncIterator]().next();
 		await openRequested.promise;
 		try {
@@ -113,6 +113,46 @@ describe('Bridge product subscription state', () => {
 			});
 			state.fail(new Error('Held open result test cleanup.'));
 		}
+	});
+
+	test('a subscription that fails while its open result is held never opens its view', async (): Promise<void> => {
+		const openRequested = createBridgeProductDeferred<void>();
+		const openReply = createBridgeProductDeferred<BridgeProductSubscriptionOpenAccepted>();
+		const openedSubscriptionIds: string[] = [];
+		const subscriptionId = 'failed-during-open-subscription';
+		const state = new BridgeProductSubscriptionState({
+			controlMux: {
+				cancelSubscription: async (): Promise<void> => {},
+				openSubscription: (): Promise<BridgeProductSubscriptionOpenAccepted> => {
+					openRequested.resolve();
+					return openReply.promise;
+				},
+			},
+			ensureMetadataStream: async (): Promise<void> => {},
+			initialOptions: {},
+			onOpened: async (openedSubscriptionId): Promise<void> => {
+				openedSubscriptionIds.push(openedSubscriptionId);
+			},
+			onTerminal: (): void => {},
+			protocol: bridgeProductReviewMetadataApplicationProtocol,
+			readWorkerDerivationEpochAtAdmission: (): number => 0,
+			subscriptionId,
+		});
+		const initialization = state.start();
+		await openRequested.promise;
+		state.fail(new Error('Metadata session poisoned.'));
+		openReply.resolve({
+			kind: 'subscription.openAccepted',
+			paneSessionId: 'pane-session-review',
+			requestId: 'held-open-result',
+			requestSequence: 1,
+			subscriptionId,
+			subscriptionKind: 'review.metadata',
+			wireVersion: 2,
+			workerInstanceId: 'worker-instance-review',
+		});
+		await initialization;
+		expect(openedSubscriptionIds).toEqual([]);
 	});
 
 	test('cancellation releases a subscription while its initial view scope reply is held', async () => {
@@ -155,7 +195,7 @@ describe('Bridge product subscription state', () => {
 			readWorkerDerivationEpochAtAdmission: (): number => 0,
 			subscriptionId: 'held-scope-subscription',
 		});
-		state.start();
+		void state.start();
 		await scopeStarted.promise;
 
 		const cancellation = state.cancel();
@@ -178,7 +218,7 @@ describe('Bridge product subscription state', () => {
 			readWorkerDerivationEpochAtAdmission: (): number => surfaceEpoch,
 			subscriptionId: 'older-annotation-subscription',
 		});
-		state.start();
+		void state.start();
 		const admittedOpen = await harness.capturedOpen;
 
 		try {
@@ -228,7 +268,7 @@ describe('Bridge product subscription state', () => {
 			readWorkerDerivationEpochAtAdmission: (): number => 1,
 			subscriptionId: 'missing-annotation-subscription',
 		});
-		state.start();
+		void state.start();
 		await harness.capturedOpen;
 		const terminal = state.publicSubscription.events[Symbol.asyncIterator]().next();
 		void terminal.catch((): void => {});
@@ -264,7 +304,7 @@ describe('Bridge product subscription state', () => {
 			readWorkerDerivationEpochAtAdmission: (): number => surfaceEpoch,
 			subscriptionId: 'floor-retired-subscription',
 		});
-		state.start();
+		void state.start();
 		const open = await harness.capturedOpen;
 		const terminal = state.publicSubscription.events[Symbol.asyncIterator]().next();
 		void terminal.catch((): void => {});
@@ -325,7 +365,7 @@ describe('Bridge product subscription state', () => {
 			readWorkerDerivationEpochAtAdmission: (): number => 0,
 			subscriptionId: 'active-cancel-refusal-subscription',
 		});
-		state.start();
+		void state.start();
 		await harness.capturedOpen;
 
 		// Act
@@ -363,7 +403,7 @@ describe('Bridge product subscription state', () => {
 			readWorkerDerivationEpochAtAdmission: (): number => 1,
 			subscriptionId: 'stale-cancel-subscription',
 		});
-		state.start();
+		void state.start();
 		const open = await harness.capturedOpen;
 		const correlation = {
 			subscriptionId: open.subscriptionId,
@@ -424,7 +464,7 @@ describe('Bridge product subscription state', () => {
 			readWorkerDerivationEpochAtAdmission: (): number => authority.current('review'),
 			subscriptionId: 'held-native-cancel-subscription',
 		});
-		state.start();
+		void state.start();
 		await harness.capturedOpen;
 		try {
 			authority.advance('review', (nextEpoch) => [
@@ -464,7 +504,7 @@ describe('Bridge product subscription state', () => {
 			readWorkerDerivationEpochAtAdmission: (): number => 1,
 			subscriptionId: 'admitted-retire-subscription',
 		});
-		admitted.start();
+		void admitted.start();
 		await harness.capturedOpen;
 		const unadmitted = new BridgeProductSubscriptionState({
 			controlMux,
@@ -475,7 +515,7 @@ describe('Bridge product subscription state', () => {
 			readWorkerDerivationEpochAtAdmission: (): number => 2,
 			subscriptionId: 'unadmitted-retire-subscription',
 		});
-		unadmitted.start();
+		void unadmitted.start();
 		const retirement = new BridgeProductSubscriptionEpochRetiredError({
 			nextWorkerDerivationEpoch: 2,
 			surface: 'review',
@@ -516,7 +556,7 @@ describe('Bridge product subscription state', () => {
 				readWorkerDerivationEpochAtAdmission: (): number => 1,
 				subscriptionId: 'reset-reason-subscription',
 			});
-			state.start();
+			void state.start();
 			const open = await controlHarness.capturedOpen;
 			const correlation = {
 				subscriptionId: open.subscriptionId,

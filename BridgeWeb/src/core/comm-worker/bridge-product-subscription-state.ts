@@ -194,12 +194,11 @@ export class BridgeProductSubscriptionState<
 		};
 	}
 
-	start(): void {
-		const initialization = this.#initialize().catch((error: unknown): never => {
+	/** Settles once the initial open has finished: opened, released, or failed. */
+	start(): Promise<void> {
+		return this.#initialize().catch((error: unknown): void => {
 			this.fail(error);
-			throw error;
 		});
-		void initialization.catch((): void => {});
 	}
 
 	get surface(): BridgeProductSurface {
@@ -396,7 +395,8 @@ export class BridgeProductSubscriptionState<
 			if (error instanceof BridgeProductControlRequestError) this.#openRefusedByNative = true;
 			throw error;
 		}
-		if (this.#released) return;
+		// A subscription that ended while its open was in flight must not open a view.
+		if (this.#released || this.#terminal) return;
 		if (this.#onOpened !== undefined) {
 			await this.#onOpened(
 				this.subscriptionId,
