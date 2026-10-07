@@ -175,7 +175,8 @@ struct WorktreeCreationCoordinatorTests {
                         sourceWorktreePath: fixture.worktree.path,
                         destinationPath: destination,
                         mode: .newBranch(name: "fork/ledger"),
-                        materialization: .copyOnWrite
+                        materialization: .copyOnWrite,
+                        copyRules: GitWorktreeCopyRules(ignoredPaths: .copyAll)
                     )),
                 .release,
                 .refresh(fixture.watchedPath.id),
@@ -344,7 +345,8 @@ private struct FakeWorktreeCreationGitClient: WorktreeCreationGitClient {
                     recreatedFIFOCount: 0,
                     logicalRegularFileBytes: 1,
                     skippedEntries: [],
-                    normalizedEntries: []
+                    normalizedEntries: [],
+                    ignoredIncludedPatterns: [], ignoredExcludedCount: 0, nestedWorktreesSkipped: []
                 ))
         )
     }

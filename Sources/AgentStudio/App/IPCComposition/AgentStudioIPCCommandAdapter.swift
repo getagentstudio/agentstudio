@@ -44,11 +44,35 @@ struct AgentStudioIPCCommandAdapter: AppIPCCommandPort, @unchecked Sendable {
     }
 
     func prepareCommand(
-        _ request: IPCCommandExecutionRequest,
+        _ rawRequest: IPCRawCommandExecutionRequest,
         principal _: IPCPrincipal,
         tools: AppIPCTargetResolutionTools
-    ) async throws -> AppIPCPreparedCommand {
-        let command = try activeCommand(for: request)
+    ) async throws(AgentStudioAppIPCRequestError) -> AppIPCPreparedCommand {
+        do {
+            return try await prepareRawCommand(rawRequest, tools: tools)
+        } catch { throw AgentStudioAppIPCRequestError(error) }
+    }
+
+    private func prepareRawCommand(_ rawRequest: IPCRawCommandExecutionRequest, tools: AppIPCTargetResolutionTools)
+        async throws -> AppIPCPreparedCommand
+    {
+        guard let command = AppCommand(rawValue: rawRequest.commandId.rawValue) else {
+            throw AgentStudioAppIPCRequestError.unknownCommand(
+                commandId: rawRequest.commandId.rawValue,
+                closestMatches: AppCommandClosestMatches.find(
+                    for: rawRequest.commandId.rawValue,
+                    visibleNames: AgentStudioIPCCommandCatalogProjection.admittedCommands(on: channel).map(\.rawValue)))
+        }
+        guard AgentStudioIPCCommandCatalogProjection.admitsCommand(command, on: channel) else {
+            throw AppIPCCommandError(reason: .unsupportedCommand)
+        }
+        let arguments: IPCCommandArguments
+        do {
+            arguments = try AppCommandRawArgumentParser.parse(
+                arguments: rawRequest.arguments, allowedVariants: command.ipcSpec.argumentVariants)
+        } catch { throw AgentStudioAppIPCRequestError.invalidCommandArguments(error) }
+        let request = IPCCommandExecutionRequest(
+            commandId: rawRequest.commandId, correlationId: rawRequest.correlationId, arguments: arguments)
         let resolved = try await targetResolver.resolve(request.arguments, tools: tools)
         let privilege = command.ipcSpec.requiredPrivilege
         return AppIPCPreparedCommand(

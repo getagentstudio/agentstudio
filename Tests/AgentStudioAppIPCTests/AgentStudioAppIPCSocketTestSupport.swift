@@ -237,3 +237,17 @@ func receiveListenerHandlerRequest(
         }
     }
 }
+
+/// Direct registration tests inspect the same result the production writer frames.
+func decodeJSONValue<T: Decodable>(_ type: T.Type, from result: AppIPCInvocationResult) throws -> T {
+    try JSONDecoder().decode(type, from: encodedAppIPCInvocationResult(result))
+}
+
+func encodedAppIPCInvocationResult(_ result: AppIPCInvocationResult) throws -> Data {
+    let bytes: Data
+    switch result {
+    case .value(let value): bytes = try JSONEncoder().encode(value)
+    case .encoded(let encoded): bytes = encoded
+    }
+    return bytes
+}

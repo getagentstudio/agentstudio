@@ -192,7 +192,8 @@ final class WorktreeCreationCoordinator {
                     sourceWorktreePath: source.worktree.path,
                     destinationPath: destination,
                     mode: .newBranch(name: branchName.rawValue),
-                    materialization: .copyOnWrite
+                    materialization: .copyOnWrite,
+                    copyRules: GitWorktreeCopyRules(ignoredPaths: .copyAll)
                 ))
             switch result.materialization {
             case .copyOnWrite(let report):

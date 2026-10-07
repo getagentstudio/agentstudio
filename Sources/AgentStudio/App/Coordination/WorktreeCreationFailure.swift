@@ -53,6 +53,14 @@ extension WorktreeCreationFailure {
 
     static func gitFailureDetail(_ error: GitDataPlaneError) -> String {
         switch error {
+        case .headUnavailable:
+            "The source worktree has no commit to branch from."
+        case .repositoryNotFound(let path):
+            "No Git repository was found at \(path.path)."
+        case .revisionUnavailable(let target):
+            "The start commit \(target.name) could not be resolved."
+        case .locked(let message):
+            "The repository is locked: \(message)"
         case .lockHeld(let fact):
             "Git is using the repository lock at \(fact.path.path)."
         case .lockUnidentified:
@@ -63,14 +71,6 @@ extension WorktreeCreationFailure {
             } else {
                 "Git does not have permission to access the repository."
             }
-        case .headUnavailable:
-            "The source worktree has no commit to branch from."
-        case .repositoryNotFound(let path):
-            "No Git repository was found at \(path.path)."
-        case .revisionUnavailable(let target):
-            "The start commit \(target.name) could not be resolved."
-        case .locked(let message):
-            "The repository is locked: \(message)"
         case .libgit2Failure(_, _, let message):
             "Git reported: \(message)"
         case .unsupported(let message):
@@ -87,10 +87,10 @@ extension WorktreeCreationFailure {
     /// SDK reports residue, which is listed so the user can clean it up.
     static func forkFailureDetail(_ error: GitWorktreeForkError) -> String {
         switch error {
-        case .workingStateUnsupported(let refusal):
-            "Nothing was changed: \(workingStateUnsupportedCause(refusal))"
         case .rejected(let reason):
             "Nothing was changed: \(WorktreeForkRejectionCopy.phrase(for: reason))."
+        case .workingStateUnsupported(let refusal):
+            "Nothing was changed: \(workingStateUnsupportedCause(refusal))"
         case .gitFailure(let gitError):
             "\(gitFailureDetail(gitError)) The fork was rolled back."
         case .sourceChanged(let relativePath, _):
@@ -108,17 +108,12 @@ extension WorktreeCreationFailure {
     }
 
     /// The primary failure of an incomplete rollback, without claiming the rollback finished.
-    private static func workingStateUnsupportedCause(_ refusal: GitWorktreeWorkingStateRefusal) -> String {
-        let location = refusal.relativePath.map { " at \($0)" } ?? ""
-        return "The source has unsupported Git state (\(refusal.reason.rawValue))\(location)."
-    }
-
     private static func forkFailureCause(_ error: GitWorktreeForkError) -> String {
         switch error {
-        case .workingStateUnsupported(let refusal):
-            workingStateUnsupportedCause(refusal)
         case .rejected(let reason):
             "The fork was rejected: \(WorktreeForkRejectionCopy.phrase(for: reason))."
+        case .workingStateUnsupported(let refusal):
+            workingStateUnsupportedCause(refusal)
         case .gitFailure(let gitError):
             gitFailureDetail(gitError)
         case .sourceChanged(let relativePath, _):
@@ -132,6 +127,11 @@ extension WorktreeCreationFailure {
         case .cleanupIncomplete(let primary, _):
             forkFailureCause(primary)
         }
+    }
+
+    private static func workingStateUnsupportedCause(_ refusal: GitWorktreeWorkingStateRefusal) -> String {
+        let location = refusal.relativePath.map { " at \($0)" } ?? ""
+        return "The source has unsupported Git state (\(refusal.reason.rawValue))\(location)."
     }
 }
 
@@ -147,6 +147,8 @@ enum WorktreeForkRejectionCopy {
         case .crossDevice: "the destination is on a different volume than the source"
         case .cloneCapabilityUnavailable: "the volume cannot clone files"
         case .administrativeStoreOnDifferentDevice: "the repository's Git data is on a different volume"
+        case .sourceIndexUnreadable: "the source index cannot be read"
+        case .sourceIndexUnsupported: "the source index format is not supported"
         case .sourceNotWorktreeRoot: "the source is not the root of a worktree"
         case .sourceHeadUnavailable: "the source worktree has no commit to fork from"
         case .invalidDestinationPath: "the destination path is not valid"

@@ -134,3 +134,56 @@ it("rejects a proof video without its paired recreation", async () => {
   expect(result.status).not.toBe(0);
   expect(result.stderr).toContain("both its recreation and proof layer");
 });
+
+const clipStepIds = ["proof-run", "proof-review", "proof-panes"] as const;
+const validClips = `<div data-chapter-steps-root="proof">${clipStepIds
+  .map((stepId) => `<button data-chapter-step="${stepId}"></button>`)
+  .join("")}<div data-scene-proof="proof" data-chapter-clips="proof">${clipStepIds
+  .map(
+    (stepId) =>
+      `<video data-chapter-clip-step="${stepId}" controls muted playsinline preload="none" poster="test.jpg" aria-label="Test clip" data-scene-proof-video><source data-src="test.mp4" type="video/mp4"></video>`,
+  )
+  .join("")}</div></div>`;
+
+it("admits three step-paired deferred clips without an HTML recreation", async () => {
+  expect((await runVerifier(validClips)).status).toBe(0);
+});
+
+it("rejects an incomplete clips glass", async () => {
+  const result = await runVerifier(
+    validClips.replace(/<video[^>]*data-chapter-clip-step="proof-panes"[\s\S]*?<\/video>/u, ""),
+  );
+  expect(result.status).not.toBe(0);
+  expect(result.stderr).toContain("three step-paired clips");
+});
+
+it("rejects an unmarked clip", async () => {
+  const result = await runVerifier(validClips.replace(" data-scene-proof-video", ""));
+  expect(result.status).not.toBe(0);
+  expect(result.stderr).toContain("data-scene-proof-video");
+});
+
+it("rejects an eager clip source", async () => {
+  const result = await runVerifier(validClips.replace('data-src="test.mp4"', 'src="test.mp4"'));
+  expect(result.status).not.toBe(0);
+  expect(result.stderr).toContain("deferred source");
+});
+
+it("rejects a clip paired to the wrong step", async () => {
+  const result = await runVerifier(
+    validClips.replace(
+      'data-chapter-clip-step="proof-review"',
+      'data-chapter-clip-step="review-diff"',
+    ),
+  );
+  expect(result.status).not.toBe(0);
+  expect(result.stderr).toContain("three step-paired clips");
+});
+
+it("rejects a clips container belonging to the wrong chapter", async () => {
+  const result = await runVerifier(
+    validClips.replace('data-chapter-clips="proof"', 'data-chapter-clips="review"'),
+  );
+  expect(result.status).not.toBe(0);
+  expect(result.stderr).toContain("three step-paired clips");
+});

@@ -52,8 +52,7 @@ package struct AppIPCMethodRegistry: Sendable {
         let capabilityResult = composition.result
         let encodedCapabilityResult = composition.encodedResult
         let capabilitiesTransportResultCache = AppIPCCachedTransportResult {
-            try JSONDecoder().decode(
-                JSONValue.self, from: encodedCapabilityResult)
+            encodedCapabilityResult
         }
         let capabilityRegistration = try AppIPCTypedMethodRegistration(
             descriptorRepresentations: composition.descriptorRepresentations,

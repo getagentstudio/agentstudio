@@ -152,7 +152,6 @@ struct IPCSessionMethodDescriptorTests {
     private func makeCatalog() throws -> IPCBuiltInMethodCatalog {
         try IPCBuiltInMethodCatalog(
             inputs: .init(
-                terminalWaitMaximumSeconds: 9,
                 relationships: .init(
                     paneFocus: .noInteractiveIdentity,
                     paneClose: .noInteractiveIdentity,

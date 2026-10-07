@@ -28,6 +28,8 @@ public struct UnixSocketTransportError: Error, Equatable, Sendable {
         case connectionClosed
         case descriptorDuplicationFailed
         case peerCredentialsUnavailable
+        case deadlineExceeded
+        case readinessFailed
     }
 
     public let reason: Reason
@@ -74,9 +76,11 @@ public struct DarwinPeerCredentialProvider: PeerCredentialProviding {
 public final class UnixSocketConnection: @unchecked Sendable {
     private let stateLock = NSLock()
     private var fileDescriptor: Int32?
+    private let deadline: CallDeadline?
 
-    public init(fileDescriptor: Int32) {
+    public init(fileDescriptor: Int32, deadline: CallDeadline? = nil) {
         self.fileDescriptor = fileDescriptor
+        self.deadline = deadline
     }
 
     deinit {
@@ -93,6 +97,7 @@ public final class UnixSocketConnection: @unchecked Sendable {
 
                     var writtenByteCount = 0
                     while writtenByteCount < rawBuffer.count {
+                        try deadline?.wait(fileDescriptor: operationDescriptor, events: Int16(POLLOUT))
                         let result = Darwin.write(
                             operationDescriptor,
                             baseAddress.advanced(by: writtenByteCount),
@@ -100,10 +105,14 @@ public final class UnixSocketConnection: @unchecked Sendable {
                         )
 
                         if result < 0 {
-                            if errno == EINTR {
+                            if errno == EINTR || (deadline != nil && (errno == EAGAIN || errno == EWOULDBLOCK)) {
                                 continue
                             }
                             throw UnixSocketTransportError(reason: .writeFailed, errnoCode: errno)
+                        }
+
+                        guard result > 0 else {
+                            throw UnixSocketTransportError(reason: .writeFailed, errnoCode: EPIPE)
                         }
 
                         writtenByteCount += result
@@ -123,10 +132,11 @@ public final class UnixSocketConnection: @unchecked Sendable {
                 var buffer = [UInt8](repeating: 0, count: maxBytes)
                 let readByteCount: Int
                 while true {
+                    try deadline?.wait(fileDescriptor: operationDescriptor, events: Int16(POLLIN))
                     let result = buffer.withUnsafeMutableBytes { rawBuffer in
                         Darwin.read(operationDescriptor, rawBuffer.baseAddress, rawBuffer.count)
                     }
-                    if result < 0, errno == EINTR {
+                    if result < 0, errno == EINTR || (deadline != nil && (errno == EAGAIN || errno == EWOULDBLOCK)) {
                         continue
                     }
                     readByteCount = result
@@ -191,7 +201,9 @@ public final class UnixSocketConnection: @unchecked Sendable {
 }
 
 public enum UnixSocketClient {
-    public static func connect(endpoint: UnixSocketEndpoint) throws -> UnixSocketConnection {
+    public static func connect(endpoint: UnixSocketEndpoint, deadline: CallDeadline? = nil) throws
+        -> UnixSocketConnection
+    {
         #if canImport(Darwin)
             let fileDescriptor = Darwin.socket(AF_UNIX, SOCK_STREAM, 0)
             guard fileDescriptor >= 0 else {
@@ -200,12 +212,35 @@ public enum UnixSocketClient {
 
             do {
                 try UnixSocketOptions.disableSigPipe(fileDescriptor: fileDescriptor)
-                try SocketAddress.withUnixAddress(path: endpoint.path) { address, length in
-                    guard Darwin.connect(fileDescriptor, address, length) == 0 else {
-                        throw UnixSocketTransportError(reason: .connectFailed, errnoCode: errno)
+                if deadline != nil {
+                    let flags = Darwin.fcntl(fileDescriptor, F_GETFL)
+                    guard flags >= 0, Darwin.fcntl(fileDescriptor, F_SETFL, flags | O_NONBLOCK) == 0 else {
+                        throw UnixSocketTransportError(reason: .socketCreationFailed, errnoCode: errno)
                     }
                 }
-                return UnixSocketConnection(fileDescriptor: fileDescriptor)
+                try SocketAddress.withUnixAddress(path: endpoint.path) { address, length in
+                    // An unconnected stream socket is not write-ready on
+                    // Darwin. Initiate nonblocking connect before awaiting it.
+                    try deadline?.checkExpiration()
+                    let result = Darwin.connect(fileDescriptor, address, length)
+                    if result == 0 { return }
+                    let connectError = errno
+                    guard let deadline, connectError == EINPROGRESS || connectError == EINTR || connectError == EALREADY
+                    else {
+                        throw UnixSocketTransportError(reason: .connectFailed, errnoCode: errno)
+                    }
+                    try deadline.wait(fileDescriptor: fileDescriptor, events: Int16(POLLOUT))
+                    var pendingError: Int32 = 0
+                    var optionLength = socklen_t(MemoryLayout<Int32>.size)
+                    guard Darwin.getsockopt(fileDescriptor, SOL_SOCKET, SO_ERROR, &pendingError, &optionLength) == 0
+                    else {
+                        throw UnixSocketTransportError(reason: .connectFailed, errnoCode: errno)
+                    }
+                    guard pendingError == 0 else {
+                        throw UnixSocketTransportError(reason: .connectFailed, errnoCode: pendingError)
+                    }
+                }
+                return UnixSocketConnection(fileDescriptor: fileDescriptor, deadline: deadline)
             } catch {
                 _ = Darwin.close(fileDescriptor)
                 throw error

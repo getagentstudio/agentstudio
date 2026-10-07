@@ -209,7 +209,7 @@ private final class DeliveryRecorder: @unchecked Sendable {
     }
 
     var delivery: ProviderHookDelivery {
-        ProviderHookDelivery { [self] params, configuration in
+        ProviderHookDelivery { [self] params, configuration, _ in
             if let failure { throw failure }
             delivered.append(Delivered(params: params, configuration: configuration))
         }

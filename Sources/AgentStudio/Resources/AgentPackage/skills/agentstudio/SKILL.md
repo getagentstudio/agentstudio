@@ -35,6 +35,12 @@ call anything and do not mention it again.
 - `needs-you --clear` — you are unblocked and working again.
 - `done` — the work you were asked to do is finished.
 
+## Everything else
+
+`"$AGENTSTUDIO_CLI" help` lists what you can call from this pane.
+`"$AGENTSTUDIO_CLI" <method> --help` shows the arguments and an example.
+Act on your own pane only. Anything marked "not yet allowed" will be refused.
+
 ## What to expect back
 
 Each call prints one short line, such as `needs-you recorded` or `done

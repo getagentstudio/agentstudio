@@ -34,6 +34,7 @@ import { verifyHeroIntroFinale } from "./tests/hero-intro-finale-browser-command
 import { verifyHeroWorkspace } from "./tests/hero-workspace-browser-command.ts";
 import { verifyInstallCommandLayout } from "./tests/install-command-layout-browser-command.ts";
 import { buildMediaCalloutForBrowserTest } from "./tests/media-callout-browser-command.ts";
+import { verifyProofChapter, verifyProofClipMedia } from "./tests/proof-chapter-browser-command.ts";
 import { verifyRailViewportBands } from "./tests/rail-band-browser-command.ts";
 import { buildSceneBundlesForBrowserTest } from "./tests/scene-bundle-browser-command.ts";
 import {
@@ -82,6 +83,8 @@ export default defineConfig({
           include: ["tests/**/*.browser.test.ts"],
           browser: {
             commands: {
+              verifyProofChapter,
+              verifyProofClipMedia,
               verifySkipToContent,
               verifyDeferredProofVideo,
               verifyHeroProofImage,

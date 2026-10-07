@@ -33,6 +33,7 @@ package actor SessionsIngestion {
         let mutation: SessionsMutation
         let paneId: UUID?
         let errorAfterCommit: SessionsRepositoryError?
+        let commitParticipant: (any SessionsCommitParticipant)?
         let continuation: CheckedContinuation<SessionsSubmissionResult, any Error>
     }
 
@@ -57,14 +58,19 @@ package actor SessionsIngestion {
 
     package func submit(
         correlationId: UUID,
-        mutation: SessionsMutation
+        mutation: SessionsMutation,
+        commitParticipant: (any SessionsCommitParticipant)? = nil
     ) async throws -> SessionsMutationOutcome {
-        try await submitWithCommitDisposition(correlationId: correlationId, mutation: mutation).outcome
+        try await submitWithCommitDisposition(
+            correlationId: correlationId, mutation: mutation,
+            commitParticipant: commitParticipant
+        ).outcome
     }
 
     package func submitWithCommitDisposition(
         correlationId: UUID,
-        mutation: SessionsMutation
+        mutation: SessionsMutation,
+        commitParticipant: (any SessionsCommitParticipant)? = nil
     ) async throws -> SessionsSubmissionResult {
         guard acceptsSubmissions else { throw SessionsRepositoryError.ingestionFinished }
         let paneId = mutation.paneId
@@ -93,14 +99,16 @@ package actor SessionsIngestion {
         return try await enqueue(
             correlationId: correlationId,
             mutation: mutation,
-            errorAfterCommit: nil
+            errorAfterCommit: nil,
+            commitParticipant: commitParticipant
         )
     }
 
     private func enqueue(
         correlationId: UUID,
         mutation: SessionsMutation,
-        errorAfterCommit: SessionsRepositoryError?
+        errorAfterCommit: SessionsRepositoryError?,
+        commitParticipant: (any SessionsCommitParticipant)? = nil
     ) async throws -> SessionsSubmissionResult {
         let paneId = mutation.paneId
         return try await withCheckedThrowingContinuation { continuation in
@@ -110,6 +118,7 @@ package actor SessionsIngestion {
                     mutation: mutation,
                     paneId: paneId,
                     errorAfterCommit: errorAfterCommit,
+                    commitParticipant: commitParticipant,
                     continuation: continuation
                 )
             )
@@ -186,7 +195,10 @@ extension SessionsIngestion {
                     correlationId: pending.correlationId,
                     mutation: pending.mutation
                 )
-                let outcome = try await repository.apply(operation: operation) { context in
+                let outcome = try await repository.apply(
+                    operation: operation,
+                    commitParticipant: pending.commitParticipant
+                ) { context in
                     try SessionsEvidenceReducer.reduce(mutation: pending.mutation, against: context)
                 }
                 if let errorAfterCommit = pending.errorAfterCommit {
