@@ -137,7 +137,6 @@ struct BridgeDevelopmentReviewRefreshSupersessionTests {
                 #expect(try await predecessorCapture.requireCancellationObserved())
                 _ = try await successorCapture.requireCaptureStarted()
                 predecessorCapture.release()
-                await retiredTask.value
                 #expect(try await predecessorCapture.requireOperationFinished() == .operationFinished)
 
                 // Assert — stale failure cannot mutate current presentation or publication.
@@ -152,7 +151,6 @@ struct BridgeDevelopmentReviewRefreshSupersessionTests {
                 #expect(requests.reviewAttemptAuthorityGenerations[2] > requests.reviewAttemptAuthorityGenerations[1])
 
                 successorCapture.release()
-                await successorTask.value
                 #expect(try await successorCapture.requireOperationFinished() == .operationFinished)
                 let successor = try #require(await host.diagnosticCommittedReviewPublication())
                 #expect(successor.package.reviewGeneration == predecessor.package.reviewGeneration)
