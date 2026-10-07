@@ -104,6 +104,10 @@ number of freed suites or CI duration is promised.
 
 **C4 — Commands, terminals and lifetime (R6, R7).** Existing interactive and
 IPC callers keep the same catalog, targeting, validation and dispatch results.
+Direct engine access before initialization changes from a crash to a typed
+unavailable result; no fallback engine is selected. This exception to preserving
+current failure behavior leaves initialization milestones/outcomes and existing
+surface-creation failure results unchanged.
 For terminals, exact facts and controls keep their established relative
 ordering; local latest-state samples retain contraction instead of introducing
 one MainActor or bus wake per raw sample. Duplicate/equal values keep existing

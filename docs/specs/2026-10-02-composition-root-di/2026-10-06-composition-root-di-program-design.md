@@ -121,6 +121,13 @@ delegate creation, under the existing startup milestones. All surface creation,
 including undo restore, uses that same access closure and retains existing
 bounded creation retries and errors.
 
+**Deliberate behavior change — engine access:** the direct global accessor's
+`fatalError("Ghostty not initialized")` becomes typed `unavailable`. Access
+before native engine availability does not crash or select a fallback engine.
+Engine creation still records the existing startup milestone/outcome, and
+surface creation retains its existing not-initialized result. This changes the
+global accessor's failure behavior, not healthy terminal behavior.
+
 Callback handling receives an immutable MainActor routing adapter. The adapter
 has fixed registry, lookup and recorder references. Its activity operations are
 fixed closures to the existing boot-owned activity router. Before that router
@@ -263,7 +270,7 @@ sequenceDiagram
 | --- | --- | --- |
 | Startup and tracing — R1, R4, R8 | `main.swift:10` creates recorder → `AppDelegate.swift:176–177` binds global trace state → `main.swift:80` initializes global engine | **Changed:** startup creates instance callback state and engine; **removed:** static recorder/queue setters and engine access; **unchanged:** recorder before delegate/native engine, existing milestone order and error outcomes. |
 | Command — R1, R2, R4, R6 | Menu/keyboard/IPC host → singleton dispatcher (`AppCommandDispatcher.swift:14`) → mutable weak shell/pane handlers (`PaneTabViewController.swift:565`, `AppDelegate+WorkspaceBoot.swift:513`) → existing owner policy/result | **Changed:** constructor dispatcher and fixed typed owner access; **removed:** singleton, mutable setup fields and test swap actor; **unchanged:** catalog, validation, shell-first dispatch, workspace fallback within the same composition, typed results. |
-| Surface/engine — R1, R4, R6, R7 | `SurfaceManager.swift:205–247` → global initialized check/app → surface constructor; focus/config reads also reach globals | **Changed:** injected engine availability and weak lookup operations; **removed:** global engine and lookup defaults; **unchanged:** surface ID generation, bounded retries, configuration, focus and native free owner. |
+| Surface/engine — R1, R4, R6, R7 | `SurfaceManager.swift:205–247` → global initialized check/app → surface constructor; `Ghostty.swift:20` traps on direct access before initialization | **Changed:** injected engine availability and weak lookup operations; direct accessor crash becomes typed unavailable; **removed:** global engine and lookup defaults; **unchanged:** surface ID generation, bounded retries, configuration, focus, initialization milestone/outcome and native free owner. |
 | Callback — R1, R5–R8 | `GhosttyCallbackRouter.swift:17–22` → static action handler → `GhosttyActionRouter.swift:703–801` source admission and scheduler → global lookup/registry/translator fallback (`GhosttyActionRouter+RuntimeRouting.swift:60–85`) | **Changed:** userdata-owned handler, checked queues and injected adapter; **removed:** static store/default/fallback reads; **unchanged:** disposition, contraction, exact barriers, synchronous Bool, current lifetime check, runtime and trace effects. |
 | Activity — R2, R7, R9 | `TerminalActivityRouter.swift:148,183` binds/unbinds file-level object (`GhosttyActionRouter+TerminalActivityInput.swift:10`) → global sink/context | **Changed:** fixed constructor operations reference boot-owned router readiness; **removed:** global binding/ID arbitration; **unchanged:** activity router/projector lifecycle, inputs, semantic output and bus policy. |
 | Wakeup and close — R5, R7 | Wakeup captures pointer bits for later reconstruction (`GhosttyCallbackRouter.swift:38–48`); close reconstructs view then schedules weak apply (`:180–197`) | **Changed:** reconstruct context/identity synchronously; deferred tick resolves weak live engine, close re-resolves live attachment; **removed:** delayed native pointer dereference; **unchanged:** tick/close effect and weak lifetime rejection. |
@@ -316,7 +323,8 @@ apply and after any await whose intervening retirement could make an effect
 stale. Close may preserve its sealed final activity input while prohibiting
 later mutation of the retired terminal, as current local-close behavior does.
 
-Callback handling owns every Task it creates for exact/direct-host actions,
+**NEW lifecycle behavior — handler-wide retirement and join (R2, R7):**
+callback handling owns every Task it creates for exact/direct-host actions,
 wakeup/close application and scheduler drains. There are no fire-and-forget
 Tasks outside that owner. A private mutex state contains accepting/retiring
 phase and the in-flight `Task<Void, Never>` handles keyed by owner-local task
@@ -334,7 +342,9 @@ before the activity router is stopped; other stale work fails the adapter's
 lifetime check. Retirement runs from root shutdown or fixture teardown, never
 inside a task it would join. Deadline closures retain only a weak owner and
 token; a callback firing after cancellation cannot create a new tracked task.
-This bookkeeping belongs to the callback owner, serves R7, and is not a new
+This bookkeeping belongs to the callback owner, serves fixture-owned teardown
+(R2), retirement safety (R7), and the repository's requirement that tests fully
+shut down owned tasks without test-only production hooks. It is not a new
 task registry service, persistence store, cache or coordinator.
 
 ## State, failures and resource release

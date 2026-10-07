@@ -198,3 +198,43 @@ for structural-realization confirmation. Goal boundary is already confirmed and
 must not be re-asked. Independent review, planning and implementation not begun.
 Prepared brief: tmp/composition-root-di/structural-realization-brief.md. Existing
 Advisor outbox carries checkpoint and same owner brief; no new proxy or wake.
+
+### Delayed old pause reconciled after restart
+
+A retained pause notification arrived after the design-draft checkpoint. Its
+Router creation time and owning relay request are dated 2026-10-04, before the
+explicit owner restart and confirmed boundary of 2026-10-06. Read both sources;
+the restart supersedes that old pause. Delayed delivery does not create a new
+owner instruction. Returned provenance to liaison and Advisor outbox. Current
+state remains the same sole structural-realization question, not a goal-boundary
+re-ask. No review, implementation, build, test, install or new proxy wake.
+
+## 2026-10-07 — structural realization confirmed; review preparation
+
+Read the exact Advisor confirmation note. Owner answer via question tool:
+"confirm did anything change since we talked about it?" The note states the
+owner saw the same components/path in terminal equivalents and confirms this
+Program Design; no re-ask. Goal and structure are now confirmed; review and
+implementation acceptance remain separate. Rendered Mermaid preview remains
+unverified; remote installation is prohibited. Terminal redraw seen by owner
+is confirmation evidence, not a claimed Mermaid-rendering pass.
+
+Applied the requested labels: handler-wide retire/join is NEW and serves R2/R7
+and full fixture teardown; direct pre-initialization engine accessor failure
+changes from fatalError to typed unavailability, preserving existing startup
+milestones and surface creation results. Updated C4 to make that narrow failure
+exception explicit, not silently describe it as unchanged behavior. These
+clarifications are authorized by the confirmation note, not new inferred scope.
+
+GitHub verifies #470 merged at c49cda78529bae674585e92cb820b838462fe568.
+Fetched main; save scoped docs/trace edits then merge that main before review.
+Only upstream merge changes application source; no DI source/test work authored.
+Selected fresh non-OpenAI reviewer is Claude Opus/xhigh on the existing remote
+Advisor launch route, with no author or Advisor history. Horizon Task, Complete
+direction, cross-domain review; check is complete three-artifact coverage-bound
+assessment. No reviewer is launched or review verdict claimed yet.
+
+Explicit review-delivery instruction authorizes a docs-only branch push while
+application builds/tests/installs remain prohibited. Use document/link/trace and
+whitespace gates; do not represent them as mise aggregate or branch readiness.
+No PR creation, merge of this branch into main, or force push authorized.
