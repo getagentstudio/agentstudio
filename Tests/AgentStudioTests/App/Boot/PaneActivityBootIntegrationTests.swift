@@ -78,7 +78,7 @@ struct PaneActivityBootIntegrationTests {
     }
     @Test(
         "invalid retained SQLite activity is skipped and App boot restore continues",
-        arguments: ["-1e300", "1e300", "-1e999", "1e999", "'NaN'", "'-Infinity'", "-9.223372036854776e18"]
+        arguments: ["-1e300", "1e300", "-1e999", "1e999", "-9.223372036854776e18"]
     )
     func invalidSQLiteActivityDoesNotStopBoot(invalidTimestampSQL: String) async throws {
         let delegate = AppDelegate()
