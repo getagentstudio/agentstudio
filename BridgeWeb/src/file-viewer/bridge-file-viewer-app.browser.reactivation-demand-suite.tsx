@@ -4,6 +4,7 @@ import { render } from 'vitest-browser-react';
 
 // oxlint-disable-next-line import/no-unassigned-import -- Browser Mode must load the app CSS.
 import '../app/bridge-app.css';
+import { createBridgeProductDeferred } from '../core/comm-worker/bridge-product-async-queue.js';
 import {
 	findBridgeViewerTreeItemButton,
 	requireBridgeViewerHTMLElement,
@@ -478,6 +479,7 @@ describe('BridgeFileViewerApp Browser Mode', () => {
 		const metadataInterestUpdates: BrowserFileViewScope[] = [];
 		const openedDescriptorIds: string[] = [];
 		const workerCommandNames: string[] = [];
+		const viewportCommandObserved = createBridgeProductDeferred<void>();
 
 		await render(
 			<div style={{ height: '720px', overflow: 'hidden', width: '1280px' }}>
@@ -487,6 +489,7 @@ describe('BridgeFileViewerApp Browser Mode', () => {
 					fileProductSession={{
 						onWorkerCommand: (message) => {
 							workerCommandNames.push(message.command);
+							if (message.command === 'viewport') viewportCommandObserved.resolve();
 						},
 						readContent: async (props) => {
 							openedDescriptorIds.push(props.descriptor.descriptorId);
@@ -503,6 +506,7 @@ describe('BridgeFileViewerApp Browser Mode', () => {
 		await waitForBridgeFileViewerWorkerMessageDrain();
 
 		await waitForBridgeViewerTreeItemButton('Sources/AgentStudio/App/AppDelegate.swift');
+		await viewportCommandObserved.promise;
 		expect(workerCommandNames).toContain('viewport');
 		await waitForMetadataInterestUpdateCount({
 			expectedCount: 1,
