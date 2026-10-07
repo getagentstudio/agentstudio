@@ -249,6 +249,40 @@ describe("motion scenes on their real markup", () => {
     }
   });
 
+  it.each([
+    ["chapter-review", { "review-diff": 0, "review-comment": 1.65 }],
+    ["chapter-come-back", { "quit-in-flight": 0, persistence: 2.15 }],
+  ] as const)(
+    "splits %s at its existing animation boundary without retiming",
+    (sceneId, labels) => {
+      const root = mountScene(sceneId, desktopStage);
+      const timeline = buildMountedScene(sceneId, root, 1);
+      try {
+        expect(timeline.labels).toEqual(labels);
+        expect(timeline.duration()).toBe(8);
+        for (const labelTime of Object.values(labels)) timeline.time(labelTime);
+        expect(timeline.time()).toBe(Object.values(labels).at(-1));
+      } finally {
+        timeline.revert();
+        timeline.kill();
+      }
+    },
+  );
+
+  it("renders come-back as a full stage with no empty proof frame", async () => {
+    const pageUrl = new URL(sceneMarkupPagePath, inject("siteHeaderBrowserTestUrl"));
+    pageUrl.hostname = location.hostname;
+    const response = await fetch(pageUrl);
+    const page = new DOMParser().parseFromString(await response.text(), "text/html");
+    const stage = page.querySelector("#come-back .chapter-scene-stage");
+    expect(stage).not.toBeNull();
+    expect(stage?.querySelector('[data-scene-root="chapter-come-back"]')).not.toBeNull();
+    expect(stage?.querySelector("[data-scene-proof], .chapter-scene-proof, video")).toBeNull();
+    const root = mountScene("chapter-come-back", desktopStage);
+    expect(root.getBoundingClientRect().width).toBeCloseTo(desktopStage.width, 0);
+    expect(root.getBoundingClientRect().height).toBeCloseTo(desktopStage.height, 0);
+  });
+
   for (const sceneId of sceneIds) {
     describe(sceneId, () => {
       it("labels its timeline with the chapter's steps and lasts 8 to 14 seconds", () => {

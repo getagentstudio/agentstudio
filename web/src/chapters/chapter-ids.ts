@@ -3,6 +3,7 @@
 // pulling the chapter catalog into the browser bundle.
 
 export const chapterIds = [
+  "proof",
   "many-agents",
   "context-with-task",
   "find-and-focus",
@@ -13,6 +14,9 @@ export const chapterIds = [
 export type ChapterId = (typeof chapterIds)[number];
 
 export const chapterStepIds = [
+  "proof-run",
+  "proof-review",
+  "proof-panes",
   "parallel-agents",
   "watch-folders",
   "navigation",
@@ -22,6 +26,8 @@ export const chapterStepIds = [
   "quick-find",
   "pane-zoom",
   "review-diff",
+  "review-comment",
+  "quit-in-flight",
   "persistence",
 ] as const;
 

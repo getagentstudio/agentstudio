@@ -14,124 +14,241 @@ package struct IPCBridgeControlMethodDescriptors: Sendable {
         IPCMethodDescriptor<IPCBridgeFileViewShowMarkdownPreviewParams, IPCBridgePageControlResult>
 
     init(examples: IPCBuiltInMethodExampleContext) throws {
-        let itemId = "Sources/App.swift"
-        bridgeDiffScrollToFile = try Self.pageControl(
-            name: "bridge.diff.scrollToFile",
-            description: "Scroll one Bridge review item into view.",
-            parameters: IPCBridgeDiffScrollToFileParams(
-                handle: "self", itemId: itemId, correlationId: examples.correlationId),
-            example: examples,
-            itemId: itemId
-        )
-        bridgeDiffExpandFile = try Self.pageControl(
-            name: "bridge.diff.expandFile",
-            description: "Expand one Bridge review item.",
-            parameters: IPCBridgeDiffExpandFileParams(
-                handle: "self", itemId: itemId, correlationId: examples.correlationId),
-            example: examples,
-            itemId: itemId
-        )
-        bridgeDiffCollapseFile = try Self.pageControl(
-            name: "bridge.diff.collapseFile",
-            description: "Collapse one Bridge review item.",
-            parameters: IPCBridgeDiffCollapseFileParams(
-                handle: "self", itemId: itemId, correlationId: examples.correlationId),
-            example: examples,
-            itemId: itemId
-        )
-        bridgeFileTreeSearch = try Self.pageControl(
-            name: "bridge.fileTree.search",
-            description: "Set exact text or regular-expression search on one Bridge file tree.",
-            parameters: IPCBridgeFileTreeSearchParams(
-                handle: "self",
-                searchText: "App",
-                correlationId: examples.correlationId
-            ),
-            example: examples
-        )
-        bridgeFileTreeSetFilter = try Self.pageControl(
-            name: "bridge.fileTree.setFilter",
-            description: "Replace the complete filter for one Bridge file-tree surface.",
-            parameters: IPCBridgeFileTreeSetFilterParams(
-                handle: "self",
-                candidate: .review(
-                    gitStatusFilter: .modified,
-                    categoryFilter: .source,
-                    showBinary: false,
-                    showLarge: false
-                ),
-                correlationId: examples.correlationId
-            ),
-            example: examples
-        )
-        bridgeFileTreeRevealPath = try Self.pageControl(
-            name: "bridge.fileTree.revealPath",
-            description: "Reveal one explicit path in a Bridge file tree.",
-            parameters: IPCBridgeFileTreeRevealPathParams(
-                handle: "self",
-                path: "Sources/App.swift",
-                correlationId: examples.correlationId
-            ),
-            example: examples,
-            path: "Sources/App.swift"
-        )
-        bridgeFileViewGetContent = try Self.makeContentDescriptor(
-            itemId: itemId,
-            examples: examples
-        )
-        bridgeFileViewShowMarkdownPreview = try Self.pageControl(
-            name: "bridge.fileView.showMarkdownPreview",
-            description: "Show Markdown preview for an explicit or selected item.",
-            parameters: IPCBridgeFileViewShowMarkdownPreviewParams(
-                handle: "self",
-                itemId: itemId,
-                correlationId: examples.correlationId
-            ),
-            example: examples,
-            itemId: itemId,
-            status: "rejected",
-            reason: "unsupported_surface"
-        )
+        bridgeDiffScrollToFile = try Self.bridgeDiffScrollToFileEntry.makeDescriptor(
+            inputs: IPCBuiltInMethodCatalogInputs(examples: examples))
+        bridgeDiffExpandFile = try Self.bridgeDiffExpandFileEntry.makeDescriptor(
+            inputs: IPCBuiltInMethodCatalogInputs(examples: examples))
+        bridgeDiffCollapseFile = try Self.bridgeDiffCollapseFileEntry.makeDescriptor(
+            inputs: IPCBuiltInMethodCatalogInputs(examples: examples))
+        bridgeFileTreeSearch = try Self.bridgeFileTreeSearchEntry.makeDescriptor(
+            inputs: IPCBuiltInMethodCatalogInputs(examples: examples))
+        bridgeFileTreeSetFilter = try Self.bridgeFileTreeSetFilterEntry.makeDescriptor(
+            inputs: IPCBuiltInMethodCatalogInputs(examples: examples))
+        bridgeFileTreeRevealPath = try Self.bridgeFileTreeRevealPathEntry.makeDescriptor(
+            inputs: IPCBuiltInMethodCatalogInputs(examples: examples))
+        bridgeFileViewGetContent = try Self.bridgeFileViewGetContentEntry.makeDescriptor(
+            inputs: IPCBuiltInMethodCatalogInputs(examples: examples))
+        bridgeFileViewShowMarkdownPreview = try Self.bridgeFileViewShowMarkdownPreviewEntry.makeDescriptor(
+            inputs: IPCBuiltInMethodCatalogInputs(examples: examples))
     }
 
-    private static func makeContentDescriptor(
-        itemId: String,
-        examples: IPCBuiltInMethodExampleContext
-    ) throws -> IPCMethodDescriptor<IPCBridgeContentGetParams, IPCBridgeContentGetResult> {
-        let contentHandle = IPCBridgeContentHandleSummary(
-            identity: IPCBridgeContentHandleIdentity(
-                handleId: "example-content",
-                itemId: itemId,
-                role: "workingTree",
-                reviewGeneration: 1
-            ),
-            presentation: IPCBridgeContentHandlePresentation(
-                mimeType: "text/plain",
-                language: "swift"
-            ),
-            size: IPCBridgeContentHandleSize(sizeBytes: 12, isBinary: false)
-        )
-        return try IPCBuiltInDescriptorSupport.read(
-            name: "bridge.fileView.getContent",
-            description: "Read content metadata for a handle in one Bridge pane.",
-            parameters: IPCBridgeContentGetParams(
-                handle: "self",
-                contentHandleId: contentHandle.handleId,
-                reviewGeneration: contentHandle.reviewGeneration
-            ),
-            result: IPCBridgeContentGetResult(
-                paneId: examples.paneId,
-                handle: contentHandle,
-                mimeType: contentHandle.mimeType
-            ),
-            privilege: .bridgeContentRead,
-            dataScope: .bridgeContent,
-            targetKinds: [.pane],
-            owner: .bridgeCapability,
-            errors: Self.bridgeErrors,
-            agentEligibility: .notYetAllowed
-        )
+    init(representations: [String: any IPCMethodDescriptorRepresentation]) throws {
+        bridgeDiffScrollToFile = try Self.bridgeDiffScrollToFileEntry.typedDescriptor(in: representations)
+        bridgeDiffExpandFile = try Self.bridgeDiffExpandFileEntry.typedDescriptor(in: representations)
+        bridgeDiffCollapseFile = try Self.bridgeDiffCollapseFileEntry.typedDescriptor(in: representations)
+        bridgeFileTreeSearch = try Self.bridgeFileTreeSearchEntry.typedDescriptor(in: representations)
+        bridgeFileTreeSetFilter = try Self.bridgeFileTreeSetFilterEntry.typedDescriptor(in: representations)
+        bridgeFileTreeRevealPath = try Self.bridgeFileTreeRevealPathEntry.typedDescriptor(in: representations)
+        bridgeFileViewGetContent = try Self.bridgeFileViewGetContentEntry.typedDescriptor(in: representations)
+        bridgeFileViewShowMarkdownPreview = try Self.bridgeFileViewShowMarkdownPreviewEntry.typedDescriptor(
+            in: representations)
     }
+
+    static let bridgeDiffScrollToFileEntry = IPCBuiltInMethodEntry<
+        IPCBridgeDiffScrollToFileParams, IPCBridgePageControlResult
+    >(
+        name: "bridge.diff.scrollToFile", summary: "Scroll one Bridge review item into view.",
+        modelCalls: [],
+        correlationPolicy: .required,
+        agentEligibility: .notYetAllowed,
+        makeDescriptor: { entryName, entrySummary, _, entryEligibility, inputs in
+            let examples = inputs.examples
+            let itemId = "Sources/App.swift"
+            return try Self.pageControl(
+                name: entryName,
+                description: entrySummary,
+                agentEligibility: entryEligibility,
+                parameters: IPCBridgeDiffScrollToFileParams(
+                    handle: "self", itemId: itemId, correlationId: examples.correlationId),
+                example: examples,
+                itemId: itemId
+            )
+        })
+
+    static let bridgeDiffExpandFileEntry = IPCBuiltInMethodEntry<
+        IPCBridgeDiffExpandFileParams, IPCBridgePageControlResult
+    >(
+        name: "bridge.diff.expandFile", summary: "Expand one Bridge review item.",
+        modelCalls: [],
+        correlationPolicy: .required,
+        agentEligibility: .notYetAllowed,
+        makeDescriptor: { entryName, entrySummary, _, entryEligibility, inputs in
+            let examples = inputs.examples
+            let itemId = "Sources/App.swift"
+            return try Self.pageControl(
+                name: entryName,
+                description: entrySummary,
+                agentEligibility: entryEligibility,
+                parameters: IPCBridgeDiffExpandFileParams(
+                    handle: "self", itemId: itemId, correlationId: examples.correlationId),
+                example: examples,
+                itemId: itemId
+            )
+        })
+
+    static let bridgeDiffCollapseFileEntry = IPCBuiltInMethodEntry<
+        IPCBridgeDiffCollapseFileParams, IPCBridgePageControlResult
+    >(
+        name: "bridge.diff.collapseFile", summary: "Collapse one Bridge review item.",
+        modelCalls: [],
+        correlationPolicy: .required,
+        agentEligibility: .notYetAllowed,
+        makeDescriptor: { entryName, entrySummary, _, entryEligibility, inputs in
+            let examples = inputs.examples
+            let itemId = "Sources/App.swift"
+            return try Self.pageControl(
+                name: entryName,
+                description: entrySummary,
+                agentEligibility: entryEligibility,
+                parameters: IPCBridgeDiffCollapseFileParams(
+                    handle: "self", itemId: itemId, correlationId: examples.correlationId),
+                example: examples,
+                itemId: itemId
+            )
+        })
+
+    static let bridgeFileTreeSearchEntry = IPCBuiltInMethodEntry<
+        IPCBridgeFileTreeSearchParams, IPCBridgePageControlResult
+    >(
+        name: "bridge.fileTree.search", summary: "Set exact text or regular-expression search on one Bridge file tree.",
+        modelCalls: [],
+        correlationPolicy: .required,
+        agentEligibility: .notYetAllowed,
+        makeDescriptor: { entryName, entrySummary, _, entryEligibility, inputs in
+            let examples = inputs.examples
+            return try Self.pageControl(
+                name: entryName,
+                description: entrySummary,
+                agentEligibility: entryEligibility,
+                parameters: IPCBridgeFileTreeSearchParams(
+                    handle: "self",
+                    searchText: "App",
+                    correlationId: examples.correlationId
+                ),
+                example: examples
+            )
+        })
+
+    static let bridgeFileTreeSetFilterEntry = IPCBuiltInMethodEntry<
+        IPCBridgeFileTreeSetFilterParams, IPCBridgePageControlResult
+    >(
+        name: "bridge.fileTree.setFilter", summary: "Replace the complete filter for one Bridge file-tree surface.",
+        modelCalls: [],
+        correlationPolicy: .required,
+        agentEligibility: .notYetAllowed,
+        makeDescriptor: { entryName, entrySummary, _, entryEligibility, inputs in
+            let examples = inputs.examples
+            return try Self.pageControl(
+                name: entryName,
+                description: entrySummary,
+                agentEligibility: entryEligibility,
+                parameters: IPCBridgeFileTreeSetFilterParams(
+                    handle: "self",
+                    candidate: .review(
+                        gitStatusFilter: .modified,
+                        categoryFilter: .source,
+                        showBinary: false,
+                        showLarge: false
+                    ),
+                    correlationId: examples.correlationId
+                ),
+                example: examples
+            )
+        })
+
+    static let bridgeFileTreeRevealPathEntry = IPCBuiltInMethodEntry<
+        IPCBridgeFileTreeRevealPathParams, IPCBridgePageControlResult
+    >(
+        name: "bridge.fileTree.revealPath", summary: "Reveal one explicit path in a Bridge file tree.",
+        modelCalls: [],
+        correlationPolicy: .required,
+        agentEligibility: .notYetAllowed,
+        makeDescriptor: { entryName, entrySummary, _, entryEligibility, inputs in
+            let examples = inputs.examples
+            return try Self.pageControl(
+                name: entryName,
+                description: entrySummary,
+                agentEligibility: entryEligibility,
+                parameters: IPCBridgeFileTreeRevealPathParams(
+                    handle: "self",
+                    path: "Sources/App.swift",
+                    correlationId: examples.correlationId
+                ),
+                example: examples,
+                path: "Sources/App.swift"
+            )
+        })
+
+    static let bridgeFileViewGetContentEntry = IPCBuiltInMethodEntry<
+        IPCBridgeContentGetParams, IPCBridgeContentGetResult
+    >(
+        name: "bridge.fileView.getContent", summary: "Read content metadata for a handle in one Bridge pane.",
+        modelCalls: [],
+        correlationPolicy: .notAccepted,
+        agentEligibility: .notYetAllowed,
+        makeDescriptor: { entryName, entrySummary, _, entryEligibility, inputs in
+            let examples = inputs.examples
+            let itemId = "Sources/App.swift"
+            let contentHandle = IPCBridgeContentHandleSummary(
+                identity: IPCBridgeContentHandleIdentity(
+                    handleId: "example-content",
+                    itemId: itemId,
+                    role: "workingTree",
+                    reviewGeneration: 1
+                ),
+                presentation: IPCBridgeContentHandlePresentation(
+                    mimeType: "text/plain",
+                    language: "swift"
+                ),
+                size: IPCBridgeContentHandleSize(sizeBytes: 12, isBinary: false)
+            )
+            return try IPCBuiltInDescriptorSupport.read(
+                name: entryName,
+                description: entrySummary,
+                parameters: IPCBridgeContentGetParams(
+                    handle: "self",
+                    contentHandleId: contentHandle.handleId,
+                    reviewGeneration: contentHandle.reviewGeneration
+                ),
+                result: IPCBridgeContentGetResult(
+                    paneId: examples.paneId,
+                    handle: contentHandle,
+                    mimeType: contentHandle.mimeType
+                ),
+                privilege: .bridgeContentRead,
+                dataScope: .bridgeContent,
+                targetKinds: [.pane],
+                owner: .bridgeCapability,
+                errors: Self.bridgeErrors,
+                agentEligibility: entryEligibility
+            )
+        })
+
+    static let bridgeFileViewShowMarkdownPreviewEntry = IPCBuiltInMethodEntry<
+        IPCBridgeFileViewShowMarkdownPreviewParams, IPCBridgePageControlResult
+    >(
+        name: "bridge.fileView.showMarkdownPreview", summary: "Show Markdown preview for an explicit or selected item.",
+        modelCalls: [],
+        correlationPolicy: .required,
+        agentEligibility: .notYetAllowed,
+        makeDescriptor: { entryName, entrySummary, _, entryEligibility, inputs in
+            let examples = inputs.examples
+            let itemId = "Sources/App.swift"
+            return try Self.pageControl(
+                name: entryName,
+                description: entrySummary,
+                agentEligibility: entryEligibility,
+                parameters: IPCBridgeFileViewShowMarkdownPreviewParams(
+                    handle: "self",
+                    itemId: itemId,
+                    correlationId: examples.correlationId
+                ),
+                example: examples,
+                itemId: itemId,
+                status: "rejected",
+                reason: "unsupported_surface"
+            )
+        })
 
     private static let bridgeErrors = [
         IPCBuiltInDescriptorSupport.invalidParams,
@@ -142,6 +259,7 @@ package struct IPCBridgeControlMethodDescriptors: Sendable {
     private static func pageControl<Parameters: IPCSchemaProviding>(
         name: String,
         description: String,
+        agentEligibility: IPCAgentEligibility?,
         parameters: Parameters,
         example: IPCBuiltInMethodExampleContext,
         itemId: String? = nil,
@@ -177,7 +295,7 @@ package struct IPCBridgeControlMethodDescriptors: Sendable {
                 owner: .bridgeCapability,
                 semantics: .accepted,
                 errors: Self.bridgeErrors,
-                agentEligibility: .notYetAllowed)
+                agentEligibility: agentEligibility)
         )
     }
 

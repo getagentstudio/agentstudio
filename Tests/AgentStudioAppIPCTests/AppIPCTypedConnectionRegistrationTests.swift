@@ -31,7 +31,7 @@ struct AppIPCTypedConnectionRegistrationTests {
             }
         )
 
-        let result = try await registration.erase().invoke(
+        let transportResult = try await registration.erase().invoke(
             parameters: .object([:]),
             connectionContext: fixture.context(channel: .stable, principal: nil),
             targetResolutionTools: fixture.unusedTargetResolutionTools,
@@ -41,6 +41,7 @@ struct AppIPCTypedConnectionRegistrationTests {
             }
         )
 
+        let result = try decodeJSONValue(JSONValue.self, from: transportResult)
         #expect(
             result
                 == .object([
@@ -215,7 +216,7 @@ struct AppIPCTypedConnectionRegistrationTests {
             exposure: .debugTesting
         )
 
-        let result = try await registration.erase().invoke(
+        let transportResult = try await registration.erase().invoke(
             parameters: parameters(correlationId: correlationId),
             connectionContext: fixture.context(channel: .debug, principal: principal),
             targetResolutionTools: fixture.canonicalPaneTargetResolutionTools(recorder: recorder),
@@ -224,6 +225,7 @@ struct AppIPCTypedConnectionRegistrationTests {
             }
         )
 
+        let result = try decodeJSONValue(JSONValue.self, from: transportResult)
         #expect(result == .object(["canonicalHandle": .string("pane:\(fixture.paneId.uuidString)")]))
         #expect(
             await recorder.snapshot().last
@@ -278,7 +280,7 @@ struct AppIPCTypedConnectionRegistrationTests {
             exposure: .debugTesting
         )
 
-        let result = try await registration.erase().invoke(
+        let transportResult = try await registration.erase().invoke(
             parameters: parameters(correlationId: correlationId),
             connectionContext: fixture.context(channel: .debug, principal: principal),
             targetResolutionTools: fixture.canonicalPaneTargetResolutionTools(recorder: recorder),
@@ -291,6 +293,7 @@ struct AppIPCTypedConnectionRegistrationTests {
             }
         )
 
+        let result = try decodeJSONValue(JSONValue.self, from: transportResult)
         #expect(result == .object(["canonicalHandle": .string("pane:\(fixture.paneId.uuidString)")]))
         #expect(
             await recorder.snapshot()
@@ -332,7 +335,7 @@ struct AppIPCTypedConnectionRegistrationTests {
             }
         )
 
-        let result = try await registration.erase().invoke(
+        let transportResult = try await registration.erase().invoke(
             parameters: .object([:]),
             connectionContext: fixture.context(
                 channel: .stable,
@@ -346,6 +349,7 @@ struct AppIPCTypedConnectionRegistrationTests {
             }
         )
 
+        let result = try decodeJSONValue(JSONValue.self, from: transportResult)
         #expect(result == .object(["delivered": .bool(true)]))
         #expect(await subscriber.snapshot() == ["fixture-event"])
     }

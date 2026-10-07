@@ -5,7 +5,7 @@ import type {
   CaptionTextObservation,
   ChapterStepRowObservation,
   ChapterTitleAnchorObservation,
-  SingleStepChapterObservation,
+  ChapterLayoutObservation,
 } from "./chapter-surface-browser-command.ts";
 
 declare module "vitest/browser" {
@@ -20,12 +20,12 @@ declare module "vitest/browser" {
       readonly height?: number;
       readonly chapterId: string;
     }): Promise<ChapterStepRowObservation>;
-    verifySingleStepChapter(request: {
+    verifyChapterLayout(request: {
       readonly pageUrl: string;
       readonly width: number;
       readonly height: number;
       readonly chapterId: string;
-    }): Promise<SingleStepChapterObservation>;
+    }): Promise<ChapterLayoutObservation>;
     verifyCaptionTextLayout(
       pageUrl: string,
       widths: readonly number[],
@@ -62,15 +62,15 @@ describe("chapter surfaces on the home page", () => {
     expect(observation.glassLayout.stepLineBackdrop).toBe("none");
   });
   for (const width of [390, 1600]) {
-    it(`keeps a single-step chapter aligned with its step line at ${width}px`, async () => {
-      const chapter = await commands.verifySingleStepChapter({
+    it(`keeps the two-step review chapter aligned with its step line at ${width}px`, async () => {
+      const chapter = await commands.verifyChapterLayout({
         pageUrl: inject("siteHeaderBrowserTestUrl"),
         width,
         height: width === 390 ? 844 : 1000,
         chapterId: "review",
       });
       expect(chapter.pillCount).toBe(1);
-      expect(chapter.descriptionCount).toBe(1);
+      expect(chapter.descriptionCount).toBe(2);
       expect(chapter.titleBottom).toBeLessThan(chapter.glassTop);
       expect(chapter.glassBottom).toBeLessThan(chapter.captionTop);
       expect(Math.abs(chapter.titleLeft - chapter.glassLeft)).toBeLessThanOrEqual(1);

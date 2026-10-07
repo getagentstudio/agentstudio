@@ -48,6 +48,27 @@ struct WorktreeCreationFailureMessageTests {
             ),
             MessageCase(
                 failure: .gitFailure(
+                    .lockHeld(
+                        GitLockFact(
+                            path: URL(filePath: "/repo/.git/index.lock"),
+                            resource: .index(worktreePath: URL(filePath: "/repo"))
+                        ))),
+                detail: "Git is using the repository lock at /repo/.git/index.lock."
+            ),
+            MessageCase(
+                failure: .gitFailure(.lockUnidentified(.packedRefs)),
+                detail: "Git could not identify the repository lock."
+            ),
+            MessageCase(
+                failure: .gitFailure(.permissionDenied(path: nil)),
+                detail: "Git does not have permission to access the repository."
+            ),
+            MessageCase(
+                failure: .gitFailure(.permissionDenied(path: URL(filePath: "/repo/.git/index"))),
+                detail: "Git does not have permission to access /repo/.git/index."
+            ),
+            MessageCase(
+                failure: .gitFailure(
                     .libgit2Failure(code: -4, klass: 7, message: "a reference with that name already exists")),
                 detail: "Git reported: a reference with that name already exists"
             ),
@@ -65,6 +86,17 @@ struct WorktreeCreationFailureMessageTests {
 
         #expect(message.title == "Worktree Fork not created")
         #expect(message.detail == "Nothing was changed: the destination is on a different volume than the source.")
+    }
+
+    @Test("working-state refusals name the source state and relative path")
+    func workingStateRefusalNamesStateAndPath() {
+        let refusal = GitWorktreeWorkingStateRefusal(reason: .attributesChanged, relativePath: ".gitattributes")
+        let message = WorktreeCreationFailure.forkFailure(.workingStateUnsupported(refusal)).message
+
+        #expect(message.title == "Worktree Fork not created")
+        #expect(
+            message.detail
+                == "Nothing was changed: The source has unsupported Git state (attributesChanged) at .gitattributes.")
     }
 
     @Test("an incomplete fork cleanup lists what was left behind")

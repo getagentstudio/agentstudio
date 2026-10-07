@@ -25,7 +25,8 @@ struct AgentStudioIPCClientMain {
                         standardInput: { FileHandle.standardInput.readDataToEndOfFile() },
                         identifierGenerator: { UUIDv7.generate() },
                         standardOutputSink: { print($0) },
-                        standardErrorSink: { fputs("\($0)\n", stderr) }
+                        standardErrorSink: { fputs("\($0)\n", stderr) },
+                        standardInputFileDescriptor: FileHandle.standardInput.fileDescriptor
                     )
                 )
             }

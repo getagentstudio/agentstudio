@@ -755,6 +755,9 @@ fast|AgentStudioFileViewStartupDiagnosticTests|concurrent
 fast|AgentStudioIPCCursorHookProjectionTests|concurrent
 large|AgentStudioGitDependencyTests|concurrent
 large|AgentStudioIPCPhaseASmokeScriptTests|concurrent
+large|CLILatencyBenchmarkScriptTests|concurrent
+large|CLIHookSilenceScriptTests|concurrent
+large|CLIAgentHelpScriptTests|concurrent
 large|AgentStudioOTLPBootstrapSmokeTests|process-global
 fast|AgentStudioStartupDiagnosticActionParsingTests|concurrent
 fast|AgentStudioStartupDiagnosticActionTests|concurrent
@@ -814,6 +817,7 @@ fast|FilesystemGitRemoteReferenceTests|process-global
 large|FilesystemPipelineScopeOrderingTests|process-global
 large|FilesystemToPrimarySidebarIntegrationTests|process-global
 large|GitEnrichmentEventPipelineIntegrationTests|process-global
+large|GitHooksPrePushScriptTests|concurrent
 large|GitRefreshPerformanceComparatorScriptTests|concurrent
 large|GitRefreshPerformanceWorkloadScriptTests|serial
 large|GitRefreshPerformanceWorkloadSettlementScriptTests|concurrent
@@ -875,6 +879,7 @@ large|SwiftLaneReapingTests|concurrent
 large|SwiftLaneOutputRelayTests|concurrent
 large|SwiftLaneRunnerReportTests|concurrent
 large|SwiftPackageSandboxScriptTests|concurrent
+large|SwiftTestFailureScannerScriptTests|concurrent
 large|TerminalActivityAgentSettledHeuristicTests|process-global
 large|TitlePanePerformanceWorkloadScriptTests|concurrent
 large|TopologyEventPipelineIntegrationTests|process-global
@@ -891,7 +896,29 @@ webkit|WebKitSerializedTests/BridgeWebKitSpikeTests|serial
 webkit|WebKitSerializedTests/WorkspaceBridgeConstructionIntegrationTests|serial
 webkit|WebKitSerializedTests/WorkspaceBridgePaneActivityIntegrationTests|serial
 webkit|WebKitSerializedTests/WorkspaceBridgePaneRefreshIntegrationTests|serial
+fast|WorktreeBranchListingOpeningIntegrationTests|serial
+fast|WorktreeCopyConfigCompilationTests|concurrent
+large|WorktreeCopyRuleCommandLineTests|concurrent
+large|WorktreeCreationCommandLineIntegrationTests|concurrent
+large|WorktreeCreationLargeFileCommandLineTests|concurrent
 large|WorktreeDefaultStartPointResolverIntegrationTests|concurrent
+large|WorktreeFetchStepIntegrationTests|concurrent
+large|WorktreeListingIntegrationTests|concurrent
+large|WorktreeListingLockIntegrationTests|concurrent
+large|WorktreeListingURLRemoteIntegrationTests|concurrent
+large|WorktreeNewPreflightTests|concurrent
+fast|WorktreeOutcomeDocumentsTests|concurrent
+large|WorktreePruneCommandLineIntegrationTests|concurrent
+large|WorktreePruneFetchingReadFailureIntegrationTests|concurrent
+large|WorktreePrunePolicyIntegrationTests|concurrent
+large|WorktreeRemovalBranchIntegrationTests|concurrent
+large|WorktreeRemovalCommandLineIntegrationTests|concurrent
+large|WorktreeRemovalDiscoveryIntegrationTests|process-global
+large|WorktreeRemovalEffectsIntegrationTests|concurrent
+large|WorktreeRemovalPreviewIntegrationTests|concurrent
+large|WorktreeRemovalSafetyIntegrationTests|concurrent
+fast|WorktreeRepositoryConfigTests|concurrent
+large|WorktreeSourcePreflightIntegrationTests|concurrent
 large|WorkspaceCacheCoordinatorIntegrationTests|process-global
 large|WorkspaceDrawerRestoreIntegrationTests|process-global
 large|WorkspaceGeometryReevaluationIntegrationTests|process-global
@@ -2582,8 +2609,8 @@ swift_test_output_has_failures() {
   (
     set -o pipefail
     /usr/bin/iconv -f UTF-8 -t UTF-8 -c <"$output_file" |
-      grep -Eq \
-        '(^|[[:space:]])(✘|✖)[[:space:]]|recorded an issue|failed after [0-9.]+ seconds with [0-9]+ issue\(s\)|Test run with .* failed after|No matching test cases were run'
+      grep -E \
+        '(^|[[:space:]])(✘|✖)[[:space:]]|recorded an issue|failed after [0-9.]+ seconds with [0-9]+ issue\(s\)|Test run with .* failed after|No matching test cases were run' >/dev/null
   )
 }
 

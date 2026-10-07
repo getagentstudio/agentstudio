@@ -1,3 +1,4 @@
+import AgentStudio
 import AgentStudioAppIPC
 import AgentStudioIPCTransport
 import AgentStudioInfrastructure
@@ -544,13 +545,32 @@ final class FakeCommandPort: AppIPCCommandPort, @unchecked Sendable {
     }
 
     func prepareCommand(
-        _ request: IPCCommandExecutionRequest,
+        _ rawRequest: IPCRawCommandExecutionRequest,
         principal _: IPCPrincipal,
         tools: AppIPCTargetResolutionTools
-    ) async throws -> AppIPCPreparedCommand {
-        guard let command = commands.first(where: { $0.id == request.commandId }) else {
-            throw AppIPCCommandError(reason: .unknownCommand)
+    ) async throws(AgentStudioAppIPCRequestError) -> AppIPCPreparedCommand {
+        do { return try await prepareRaw(rawRequest, tools: tools) } catch {
+            throw AgentStudioAppIPCRequestError(error)
         }
+    }
+
+    private func prepareRaw(_ rawRequest: IPCRawCommandExecutionRequest, tools: AppIPCTargetResolutionTools)
+        async throws -> AppIPCPreparedCommand
+    {
+        guard let command = commands.first(where: { $0.id == rawRequest.commandId }) else {
+            let visibleNames: [String] = commands.map { $0.id.rawValue }
+            let orderedNames: [String] = visibleNames.sorted()
+            let suggestions: [String] = Array(orderedNames.prefix(5))
+            throw AgentStudioAppIPCRequestError.unknownCommand(
+                commandId: rawRequest.commandId.rawValue, closestMatches: suggestions)
+        }
+        let arguments: IPCCommandArguments
+        do {
+            arguments = try AppCommandRawArgumentParser.parse(
+                arguments: rawRequest.arguments, allowedVariants: command.argumentVariants)
+        } catch { throw AgentStudioAppIPCRequestError.invalidCommandArguments(error) }
+        let request = IPCCommandExecutionRequest(
+            commandId: rawRequest.commandId, correlationId: rawRequest.correlationId, arguments: arguments)
         guard command.argumentVariants.contains(request.arguments.variant) else {
             throw IPCSchemaValidationError(
                 fieldPath: "$.arguments.kind",

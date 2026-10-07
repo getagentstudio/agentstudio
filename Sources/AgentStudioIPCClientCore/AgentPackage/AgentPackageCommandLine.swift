@@ -1,3 +1,4 @@
+import AgentStudioIPCTransport
 import Foundation
 
 /// The two provider-package subcommands of the bundled CLI.
@@ -51,6 +52,7 @@ package struct AgentPackageCommandRunner: Sendable {
         package let exampleIdentifierProvider: @Sendable () -> UUID
         package let standardOutputSink: @Sendable (String) -> Void
         package let standardErrorSink: @Sendable (String) -> Void
+        package let deadline: CallDeadline?
 
         package init(
             environment: [String: String],
@@ -59,7 +61,8 @@ package struct AgentPackageCommandRunner: Sendable {
             correlationIdProvider: @escaping @Sendable () -> UUID,
             exampleIdentifierProvider: @escaping @Sendable () -> UUID,
             standardOutputSink: @escaping @Sendable (String) -> Void,
-            standardErrorSink: @escaping @Sendable (String) -> Void
+            standardErrorSink: @escaping @Sendable (String) -> Void,
+            deadline: CallDeadline? = nil
         ) {
             self.environment = environment
             self.executableURL = executableURL
@@ -68,6 +71,7 @@ package struct AgentPackageCommandRunner: Sendable {
             self.exampleIdentifierProvider = exampleIdentifierProvider
             self.standardOutputSink = standardOutputSink
             self.standardErrorSink = standardErrorSink
+            self.deadline = deadline
         }
     }
 
@@ -95,8 +99,10 @@ package struct AgentPackageCommandRunner: Sendable {
                     environment: props.environment,
                     standardInput: props.standardInput,
                     correlationIdProvider: props.correlationIdProvider,
-                    delivery: .liveIPC(exampleIdentifierProvider: props.exampleIdentifierProvider),
-                    standardErrorSink: props.standardErrorSink
+                    delivery: .liveIPC(
+                        exampleIdentifierProvider: props.exampleIdentifierProvider, environment: props.environment),
+                    standardErrorSink: props.standardErrorSink,
+                    deadline: props.deadline
                 )
             )
         default:

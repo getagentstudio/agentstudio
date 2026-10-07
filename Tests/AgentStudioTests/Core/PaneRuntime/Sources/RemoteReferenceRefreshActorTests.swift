@@ -798,9 +798,10 @@ struct RemoteReferenceRefreshActorTests {
     }
 
     @Test("automatic refresh becomes eligible exactly at the freshness deadline")
-    func automaticRefreshUsesFreshnessDeadline() async {
+    func automaticRefreshUsesFreshnessDeadline() async throws {
         let fixture = RemoteReferenceRefreshFixture()
         let clock = TestPushClock()
+        let clockOrigin = clock.now
         let monotonicNow = RemoteReferenceMonotonicNow()
         let actor = RemoteReferenceRefreshActor(
             provider: fixture.provider,
@@ -817,19 +818,27 @@ struct RemoteReferenceRefreshActorTests {
             expectedOrigin: fixture.originA
         )
         await actor.setDemand(repositoryIds: [fixture.repoId])
-        await actor.waitUntilIdle()
+        await clock.waitForPendingSleepCount(exactly: 1)
+        let freshnessSleepGeneration = try #require(clock.pendingSleepGenerations.first)
+        let freshnessDeadline = clockOrigin.advanced(by: .seconds(180))
+        #expect(clock.pendingSleepDeadlines == [freshnessDeadline])
         #expect(await fixture.provider.stageCount == 1)
 
         monotonicNow.advance(by: .seconds(179))
         clock.advance(by: .seconds(179))
-        #expect(await fixture.provider.stageCount == 1)
+        await clock.waitForPendingSleepCount(exactly: 1)
+        await clock.waitForPendingSleepGeneration(freshnessSleepGeneration)
+        // The same sleeper remains registered one second before eligibility.
+        #expect(clock.pendingSleepDeadlines == [freshnessDeadline])
+        #expect(clock.now.duration(to: freshnessDeadline) == .seconds(1))
 
         monotonicNow.advance(by: .seconds(1))
         clock.advance(by: .seconds(1))
         await fixture.provider.waitForStageCount(2)
-        await actor.waitUntilIdle()
+        await clock.waitForPendingSleepCount(atLeast: 1, fromGeneration: freshnessSleepGeneration + 1)
         #expect(await fixture.provider.stageCount == 2)
         await actor.shutdown()
+        await clock.waitForPendingSleepCount(exactly: 0)
     }
 
     @Test("process capacity one defers a second demanded repository without a second start")

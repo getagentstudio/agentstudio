@@ -27,7 +27,7 @@ function buildComeBackScene(
   const processCounter = requireScenePart(root, comeBackParts.processCounter);
   const builder = new SceneTimelineBuilder(timeline, options.seed);
 
-  builder.label("persistence", 0);
+  builder.label("quit-in-flight", 0);
   builder.reveal(requireLine(leftLines, 4), 0.15, { duration: 0.2 });
   builder.reveal(requireLine(rightLines, 4), 0.3, { duration: 0.2 });
 
@@ -52,12 +52,16 @@ function buildComeBackScene(
     { scale: 0.86, opacity: 0, duration: 0.45, ease: "power2.in" },
     1.35,
   );
+  builder.label("persistence", 2.15);
   timeline.to(root, { scale: 1, opacity: 1, duration: 0.5, ease: "back.out(1.4)" }, 2.15);
   builder.holdUntil(totalDurationSeconds);
 }
 
 export const chapterComeBackScene: SceneModule = {
   sceneId: "chapter-come-back",
-  steps: [{ stepId: "persistence", timelineLabel: "persistence" }],
+  steps: [
+    { stepId: "quit-in-flight", timelineLabel: "quit-in-flight" },
+    { stepId: "persistence", timelineLabel: "persistence" },
+  ],
   buildScene: buildComeBackScene,
 };

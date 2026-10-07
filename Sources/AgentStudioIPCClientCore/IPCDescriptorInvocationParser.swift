@@ -38,15 +38,8 @@ package enum IPCDescriptorInvocationParser {
         correlationIDGenerator: @Sendable () -> UUID,
         standardInput: Data?
     ) throws -> IPCDescriptorInvocation {
-        let parameterData: Data
-        if arguments.first == "--json" || arguments.first == "--stdin" {
-            parameterData = try toolingPayload(arguments: arguments, standardInput: standardInput)
-        } else {
-            parameterData = try scalarToolingPayload(
-                arguments: arguments,
-                schema: descriptor.metadata.parameterSchema
-            )
-        }
+        let parameterData = try toolingParameterData(
+            arguments: arguments, schema: descriptor.metadata.parameterSchema, standardInput: standardInput)
         let normalizedParameters = try normalize(
             parameterData,
             descriptor: descriptor,
@@ -57,6 +50,15 @@ package enum IPCDescriptorInvocationParser {
             normalizedParameters: normalizedParameters,
             presentation: .tooling
         )
+    }
+
+    static func toolingParameterData(
+        arguments: [String], schema: IPCJSONSchema, standardInput: Data?
+    ) throws -> Data {
+        if arguments.first == "--json" || arguments.first == "--stdin" {
+            return try toolingPayload(arguments: arguments, standardInput: standardInput)
+        }
+        return try scalarToolingPayload(arguments: arguments, schema: schema)
     }
 
     private static func toolingPayload(
@@ -118,7 +120,7 @@ package enum IPCDescriptorInvocationParser {
         let fields = try rootFields(in: schema)
         var fieldsByOption: [String: IPCObjectField] = [:]
         for field in fields {
-            let option = "--\(kebabCase(field.name))"
+            let option = toolingOptionName(for: field.name)
             if let existingField = fieldsByOption[option], existingField.name != field.name {
                 throw failure(
                     .ambiguousInvocation,
@@ -418,6 +420,10 @@ package enum IPCDescriptorInvocationParser {
                 expected: "a JSON object containing declared fields"
             )
         }
+    }
+
+    static func toolingOptionName(for fieldName: String) -> String {
+        "--\(kebabCase(fieldName))"
     }
 
     private static func kebabCase(_ camelCase: String) -> String {

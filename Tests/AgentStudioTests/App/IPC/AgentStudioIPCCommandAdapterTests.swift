@@ -119,7 +119,7 @@ struct AgentStudioIPCCommandAdapterTests {
         }
 
         let prepared = try await harness.adapter.prepareCommand(
-            request,
+            IPCRawCommandExecutionRequest(typedRequest: request),
             principal: commandAdapterTestPrincipal(),
             tools: tools
         )
@@ -208,7 +208,7 @@ struct AgentStudioIPCCommandAdapterTests {
             arguments: .workspaceWindow(.init(workspaceWindowId: firstWindowId))
         )
         let prepared = try await harness.adapter.prepareCommand(
-            request,
+            IPCRawCommandExecutionRequest(typedRequest: request),
             principal: commandAdapterTestPrincipal(),
             tools: AppIPCTargetResolutionTools { _ in
                 throw AppIPCCommandError(reason: .validationRejected)
@@ -283,7 +283,6 @@ struct AgentStudioIPCCommandAdapterTests {
         let commandCatalog = commandComposition.catalogResult
         let builtIns = try IPCBuiltInMethodCatalog(
             inputs: IPCBuiltInMethodCatalogInputs(
-                terminalWaitMaximumSeconds: AppPolicies.IPC.maximumTerminalWaitSeconds,
                 relationships: IPCBuiltInMethodRelationshipInputs(
                     paneFocus: .appCommand(identifier: AppCommand.focusPane.rawValue),
                     paneClose: .appCommand(identifier: AppCommand.closePane.rawValue),

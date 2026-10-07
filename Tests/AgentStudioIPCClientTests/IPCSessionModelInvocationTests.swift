@@ -101,7 +101,6 @@ struct IPCSessionModelInvocationTests {
             arguments,
             descriptors: try IPCBuiltInMethodCatalog(
                 inputs: .init(
-                    terminalWaitMaximumSeconds: 9,
                     relationships: .init(
                         paneFocus: .noInteractiveIdentity,
                         paneClose: .noInteractiveIdentity,

@@ -277,7 +277,10 @@ struct AppIPCBuiltInMethodRegistrationsTests {
                 #expect(request.dataScope == .terminalWait)
             }
         )
-        let result = try decodeJSONValue(IPCTerminalWaitResult.self, from: resultValue)
+        let receipt = try decodeJSONValue(IPCTerminalWaitResponse.self, from: resultValue)
+        let result = receipt.observation
+        #expect(receipt.timeoutSeconds == 1.25)
+        #expect(receipt.wasClamped == false)
         let invocation = await MainActor.run { runtimePort.invocation }
 
         #expect(result.paneId == fixture.paneId)
