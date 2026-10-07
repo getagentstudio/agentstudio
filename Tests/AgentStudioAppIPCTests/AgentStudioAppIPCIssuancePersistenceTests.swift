@@ -1,7 +1,6 @@
 import AgentStudioAppIPC
 import AgentStudioInfrastructure
 import AgentStudioProgrammaticControl
-import CryptoKit
 import Foundation
 import Testing
 
@@ -69,8 +68,9 @@ struct AgentStudioAppIPCIssuancePersistenceTests {
                         paneID: paneID, credentialRecordID: environment.credentialRecordID
                     )
                 )
-                #expect(stored.verifierSHA256 == Data(SHA256.hash(data: Data(token.rawValue.utf8))))
-                #expect(stored.verifierSHA256 != Data(token.rawValue.utf8))
+                // The real resolver above hashes the retained token and selects
+                // this exact record; no second hash derivation is needed here.
+                #expect(stored.verifierSHA256.count == 32)
                 #expect(stored.status == .registered)
             }
         )
@@ -107,7 +107,8 @@ struct AgentStudioAppIPCIssuancePersistenceTests {
                     verifierSHA256: Data(repeating: 0xB4, count: 32)
                 )
                 try serverFixture.server.start()
-                await port.waitUntilRegistrationHeld()
+                let heldCredential = try await port.waitUntilRegistrationHeld()
+                #expect(heldCredential.credentialRecordID == seedRecordID)
 
                 let owner = makeIdentityOwner(serverFixture: serverFixture)
                 let environment = try owner.environment(

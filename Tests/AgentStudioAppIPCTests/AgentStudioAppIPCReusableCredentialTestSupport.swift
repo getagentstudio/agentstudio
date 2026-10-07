@@ -2,6 +2,7 @@ import AgentStudioAppIPC
 import AgentStudioIPCTransport
 import AgentStudioInfrastructure
 import AgentStudioProgrammaticControl
+import AgentStudioTestHarness
 import CryptoKit
 import Foundation
 import Testing
@@ -153,9 +154,9 @@ final class HeldCredentialContinuityPort: AgentStudioIPCCredentialContinuityPort
 {
     private let repository: IPCContinuityRepository
     private let lock = NSLock()
-    private var heldContinuation: CheckedContinuation<Void, Never>?
-    private var releaseContinuation: CheckedContinuation<Void, Never>?
-    private var didHold = false
+    private let registrationStep = HeldStep<AgentStudioIPCIssuedPaneCredential>(
+        "pane verifier registration before repository write"
+    )
     private var didRelease = false
     private var storedRegistrationCallCount = 0
 
@@ -170,7 +171,8 @@ final class HeldCredentialContinuityPort: AgentStudioIPCCredentialContinuityPort
         _ credential: AgentStudioIPCIssuedPaneCredential,
         if remainsEligible: @escaping @Sendable () -> Bool
     ) async throws -> Bool {
-        await holdRegistration()
+        lock.withLock { storedRegistrationCallCount += 1 }
+        try await registrationStep.arrive(credential)
         return try await repository.registerIssuedPaneCredential(credential, if: remainsEligible)
     }
 
@@ -178,38 +180,13 @@ final class HeldCredentialContinuityPort: AgentStudioIPCCredentialContinuityPort
         try await repository.revokeAllPaneCredentials(paneID: paneID)
     }
 
-    func waitUntilRegistrationHeld() async {
-        await withCheckedContinuation { continuation in
-            let resumeNow = lock.withLock {
-                guard !didHold else { return true }
-                heldContinuation = continuation
-                return false
-            }
-            if resumeNow { continuation.resume() }
-        }
+    func waitUntilRegistrationHeld() async throws -> AgentStudioIPCIssuedPaneCredential {
+        try await registrationStep.firstArrival()
     }
 
     func releaseRegistration() {
-        lock.withLock {
-            didRelease = true
-            releaseContinuation?.resume()
-            releaseContinuation = nil
-        }
-    }
-
-    private func holdRegistration() async {
-        await withCheckedContinuation { continuation in
-            let resumeNow = lock.withLock {
-                storedRegistrationCallCount += 1
-                didHold = true
-                heldContinuation?.resume()
-                heldContinuation = nil
-                guard !didRelease else { return true }
-                releaseContinuation = continuation
-                return false
-            }
-            if resumeNow { continuation.resume() }
-        }
+        lock.withLock { didRelease = true }
+        registrationStep.release()
     }
 }
 

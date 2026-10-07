@@ -211,7 +211,8 @@ struct AgentStudioAppIPCReusableCredentialTests {
                 let second = try await fixture.loginResponse(fixture: serverFixture, token: token, requestID: 61)
                 #expect(try decodeResponseResult(IPCAuthStatusResult.self, from: first).isAuthenticated)
                 #expect(try decodeResponseResult(IPCAuthStatusResult.self, from: second).isAuthenticated)
-                await barrierPort.waitUntilRegistrationHeld()
+                let heldCredential = try await barrierPort.waitUntilRegistrationHeld()
+                #expect(heldCredential.paneID == serverFixture.boundPaneId)
                 #expect(barrierPort.registrationCallCount == 1)
 
                 barrierPort.releaseRegistration()
@@ -262,7 +263,8 @@ struct AgentStudioAppIPCReusableCredentialTests {
                 #expect(try decodeResponseResult(IPCAuthStatusResult.self, from: response).isAuthenticated)
                 // Event-driven: the worker has genuinely started the held write,
                 // not merely been enqueued and left pending.
-                await barrierPort.waitUntilRegistrationHeld()
+                let heldCredential = try await barrierPort.waitUntilRegistrationHeld()
+                #expect(heldCredential.paneID == serverFixture.boundPaneId)
                 #expect(barrierPort.registrationCallCount == 1)
 
                 await serverFixture.stopAcceptingConnections()
@@ -310,7 +312,8 @@ struct AgentStudioAppIPCReusableCredentialTests {
                     )
                     let response = try await fixture.loginResponse(fixture: serverFixture, token: token, requestID: 91)
                     #expect(try decodeResponseResult(IPCAuthStatusResult.self, from: response).isAuthenticated)
-                    await barrierPort.waitUntilRegistrationHeld()
+                    let heldCredential = try await barrierPort.waitUntilRegistrationHeld()
+                    #expect(heldCredential.paneID == serverFixture.boundPaneId)
                     #expect(barrierPort.registrationCallCount == 1)
 
                     // Deliberate, test-local failure: stands in for the
