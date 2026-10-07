@@ -6,6 +6,8 @@ import '../app/bridge-app.css';
 import { createBridgeMermaidRenderer } from '../app/markdown/bridge-mermaid-renderer.js';
 import {
 	createBridgeMarkdownRenderWorkerClient,
+	type BridgeMarkdownRenderWorkerClient,
+	type BridgeMarkdownRenderWorkerTask,
 	type BridgeMarkdownRenderWorkerTransport,
 } from '../app/markdown/worker/bridge-markdown-render-worker-client.js';
 import {
@@ -16,6 +18,7 @@ import {
 	createBridgeMarkdownRenderModuleWorkerFactory,
 	createBridgeMarkdownRenderWebWorkerClient,
 } from '../app/markdown/worker/bridge-markdown-render-worker-transport.js';
+import { createBridgeProductDeferred } from '../core/comm-worker/bridge-product-async-queue.js';
 import type {
 	BridgeWorkerMainToServerMessage,
 	BridgeWorkerServerToMainMessage,
@@ -324,6 +327,10 @@ describe('BridgeFileViewerApp Markdown Browser Mode', () => {
 
 	test('a File surface failure over Markdown retries File recovery and retains its document', async (): Promise<void> => {
 		const markdownContent = '# Retained File Markdown\n';
+		const markdownRenderStarted = createBridgeProductDeferred<BridgeMarkdownRenderWorkerTask>();
+		const markdownWorkerCompleted = createBridgeProductDeferred<void>();
+		const releaseMarkdownCompletion = createBridgeProductDeferred<void>();
+		const initialDocumentPainted = createBridgeProductDeferred<void>();
 		const descriptor = await makeBrowserFileDescriptorOutcomeForContent({
 			content: markdownContent,
 			path: 'docs/retained.md',
@@ -332,10 +339,26 @@ describe('BridgeFileViewerApp Markdown Browser Mode', () => {
 		const workerPublication: {
 			publish: ((messages: readonly BridgeWorkerServerToMainMessage[]) => void) | null;
 		} = { publish: null };
-		const markdownWorkerClient = createBridgeMarkdownRenderWebWorkerClient({
+		const realMarkdownWorkerClient = createBridgeMarkdownRenderWebWorkerClient({
 			workerFactory: createBridgeMarkdownRenderModuleWorkerFactory(),
 		});
-		if (markdownWorkerClient === null) throw new Error('Expected the Markdown worker.');
+		if (realMarkdownWorkerClient === null) throw new Error('Expected the Markdown worker.');
+		const markdownWorkerClient: BridgeMarkdownRenderWorkerClient = {
+			...realMarkdownWorkerClient,
+			startRender: (props): BridgeMarkdownRenderWorkerTask => {
+				const task = realMarkdownWorkerClient.startRender(props);
+				const heldTask: BridgeMarkdownRenderWorkerTask = {
+					...task,
+					completed: task.completed.then(async (completion) => {
+						markdownWorkerCompleted.resolve();
+						await releaseMarkdownCompletion.promise;
+						return completion;
+					}),
+				};
+				markdownRenderStarted.resolve(heldTask);
+				return heldTask;
+			},
+		};
 		try {
 			const rendered = await render(
 				<BridgeFileViewerApp
@@ -347,6 +370,14 @@ describe('BridgeFileViewerApp Markdown Browser Mode', () => {
 						readContent: async (): Promise<string> => markdownContent,
 						onWorkerCommand: (command): void => {
 							commands.push(command);
+							if (
+								command.command === 'renderDisposition' &&
+								command.receipts.some(
+									(receipt) =>
+										receipt.kind === 'render.disposition' && receipt.disposition === 'painted',
+								)
+							)
+								initialDocumentPainted.resolve();
 						},
 						onWorkerMessagesPublisher: (publish): void => {
 							workerPublication.publish = publish;
@@ -354,6 +385,15 @@ describe('BridgeFileViewerApp Markdown Browser Mode', () => {
 					}}
 				/>,
 			);
+			const markdownRender = await markdownRenderStarted.promise;
+			await markdownWorkerCompleted.promise;
+			await actUpdate(async (): Promise<void> => {
+				releaseMarkdownCompletion.resolve();
+				expect((await markdownRender.completed).status).toBe('success');
+			});
+			// useBridgeMarkdownAnnotationLayout queues one measurement rAF when annotation targets mount.
+			await actFrame();
+			await initialDocumentPainted.promise;
 			await waitForMarkdownOpenFileState('ready');
 			await waitForMarkdownSelector('[data-testid="bridge-markdown-canvas"] h1');
 			await expect
@@ -393,6 +433,7 @@ describe('BridgeFileViewerApp Markdown Browser Mode', () => {
 				.element(rendered.getByRole('heading', { name: 'Retained File Markdown' }))
 				.toBeVisible();
 		} finally {
+			releaseMarkdownCompletion.resolve();
 			markdownWorkerClient.dispose();
 		}
 	});
