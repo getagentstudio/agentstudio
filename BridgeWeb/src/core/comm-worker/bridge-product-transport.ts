@@ -467,6 +467,7 @@ class BridgeProductTransportSessionImpl implements BridgeProductTransportSession
 		this.#subscriptions.set(state.subscriptionId, state);
 		const recoveryKind = bridgeWorkerViewRecoveryKindSchema.safeParse(protocol.kind);
 		if (recoveryKind.success) {
+			this.#viewScopeOwner.allocatePendingRegistration(state.subscriptionId);
 			const previous = this.#viewRecoveryStatusByKind.get(protocol.kind);
 			const allocated: ViewRecoveryStatus = {
 				status: 'recovering',
