@@ -53,7 +53,8 @@ struct TestPushClockTests {
                 .registrationSettled(deadline: matchingDeadline, resumedWaiterDeadlines: [matchingDeadline])
             )
         }
-        await waiterTask.value
+        let observedDeadline = await waiterTask.value
+        #expect(observedDeadline == matchingDeadline)
         #expect(clock.pendingSleepDeadlines == [matchingDeadline, differentDeadline])
         clock.advance(to: differentDeadline)
         try await matchingSleepTask.value
@@ -71,8 +72,9 @@ struct TestPushClockTests {
         }
         await clock.waitForPendingSleepCount(exactly: 1)
 
-        await clock.waitForPendingSleep(deadline: deadline)
+        let observedDeadline = await clock.waitForPendingSleep(deadline: deadline)
 
+        #expect(observedDeadline == deadline)
         #expect(clock.pendingSleepDeadlines.contains(deadline))
         clock.advance(to: deadline)
         try await sleepTask.value

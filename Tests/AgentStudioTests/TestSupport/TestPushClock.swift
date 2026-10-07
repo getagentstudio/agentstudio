@@ -88,7 +88,18 @@ package struct TestPushClock: Clock {
 
     struct PendingSleepWaiter {
         let condition: PendingSleepWaiterCondition
-        let continuation: UnsafeContinuation<Void, Never>
+        let continuation: UnsafeContinuation<Set<Instant>, Never>
+    }
+
+    struct ResolvedPendingSleepWaiter {
+        let pendingWaiter: PendingSleepWaiter
+        let observedDeadlines: Set<Instant>
+
+        var deadline: Instant? { pendingWaiter.condition.deadline }
+
+        func resume() {
+            pendingWaiter.continuation.resume(returning: observedDeadlines)
+        }
     }
 
     struct State {
@@ -123,7 +134,7 @@ package struct TestPushClock: Clock {
         let _: Void = try await withTaskCancellationHandler(
             operation: {
                 try await withUnsafeThrowingContinuation { (continuation: UnsafeContinuation<Void, Error>) in
-                    var resumedWaiters: [PendingSleepWaiter] = []
+                    var resumedWaiters: [ResolvedPendingSleepWaiter] = []
                     var shouldThrowCancellation = false
                     let shouldResume = state.withCriticalRegion { st in
                         if Task.isCancelled {
@@ -144,12 +155,12 @@ package struct TestPushClock: Clock {
                         pendingSleepFactSink?(
                             .registrationSettled(
                                 deadline: deadline,
-                                resumedWaiterDeadlines: Set(resumedWaiters.compactMap { $0.condition.deadline })
+                                resumedWaiterDeadlines: Set(resumedWaiters.compactMap(\.deadline))
                             ))
                         return false
                     }
                     for waiter in resumedWaiters {
-                        waiter.continuation.resume()
+                        waiter.resume()
                     }
                     if shouldResume {
                         if shouldThrowCancellation {
@@ -173,7 +184,7 @@ package struct TestPushClock: Clock {
 
     package func advance(to instant: Instant) {
         var ready: [UnsafeContinuation<Void, Error>] = []
-        var resumedWaiters: [PendingSleepWaiter] = []
+        var resumedWaiters: [ResolvedPendingSleepWaiter] = []
         state.withCriticalRegion { st in
             let nextNow = max(st.now, instant.nanoseconds)
             st.now = nextNow
@@ -188,14 +199,14 @@ package struct TestPushClock: Clock {
             continuation.resume()
         }
         for waiter in resumedWaiters {
-            waiter.continuation.resume()
+            waiter.resume()
         }
     }
 
     @discardableResult
     package func advanceToNextPendingSleep() -> Bool {
         var ready: [UnsafeContinuation<Void, Error>] = []
-        var resumedWaiters: [PendingSleepWaiter] = []
+        var resumedWaiters: [ResolvedPendingSleepWaiter] = []
         let advanced = state.withCriticalRegion { st in
             guard let nextDeadline = st.pending.map(\.deadline).min() else {
                 return false
@@ -212,7 +223,7 @@ package struct TestPushClock: Clock {
             continuation.resume()
         }
         for waiter in resumedWaiters {
-            waiter.continuation.resume()
+            waiter.resume()
         }
         return advanced
     }
@@ -251,22 +262,32 @@ package struct TestPushClock: Clock {
         await waitForPendingSleepCount(matching: .atLeastFromGeneration(count: count, generation: generation))
     }
 
-    package func waitForPendingSleep(deadline: Instant) async {
-        await waitForPendingSleepCount(matching: .deadline(deadline))
+    @discardableResult
+    package func waitForPendingSleep(deadline: Instant) async -> Instant {
+        let observedDeadlines = await waitForPendingSleeps(matching: .deadline(deadline))
+        guard let observedDeadline = observedDeadlines.first(where: { $0 == deadline }) else {
+            preconditionFailure("A deadline waiter must capture its matching pending sleep")
+        }
+        return observedDeadline
     }
 
     private func waitForPendingSleepCount(matching condition: PendingSleepWaiterCondition) async {
-        let shouldResumeImmediately = state.withCriticalRegion { st in
-            condition.isSatisfied(by: st)
+        _ = await waitForPendingSleeps(matching: condition)
+    }
+
+    private func waitForPendingSleeps(matching condition: PendingSleepWaiterCondition) async -> Set<Instant> {
+        let immediateObservation = state.withCriticalRegion { st -> Set<Instant>? in
+            guard condition.isSatisfied(by: st) else { return nil }
+            return Set(st.pending.map { Instant(nanoseconds: $0.deadline) })
         }
-        if shouldResumeImmediately {
-            return
+        if let immediateObservation {
+            return immediateObservation
         }
 
-        await withUnsafeContinuation { (continuation: UnsafeContinuation<Void, Never>) in
-            let shouldResume = state.withCriticalRegion { st in
+        return await withUnsafeContinuation { (continuation: UnsafeContinuation<Set<Instant>, Never>) in
+            let observation = state.withCriticalRegion { st -> Set<Instant>? in
                 if condition.isSatisfied(by: st) {
-                    return true
+                    return Set(st.pending.map { Instant(nanoseconds: $0.deadline) })
                 }
 
                 st.pendingSleepWaiters.append(
@@ -275,17 +296,17 @@ package struct TestPushClock: Clock {
                 if let deadline = condition.deadline {
                     pendingSleepFactSink?(.waiterRegistered(deadline: deadline))
                 }
-                return false
+                return nil
             }
 
-            if shouldResume {
-                continuation.resume()
+            if let observation {
+                continuation.resume(returning: observation)
             }
         }
     }
 
     private func cancel(_ generation: Int) {
-        var resumedWaiters: [PendingSleepWaiter] = []
+        var resumedWaiters: [ResolvedPendingSleepWaiter] = []
         let continuation = state.withCriticalRegion { st -> UnsafeContinuation<Void, Error>? in
             guard let index = st.pending.firstIndex(where: { $0.generation == generation }) else {
                 return nil
@@ -296,21 +317,26 @@ package struct TestPushClock: Clock {
         }
         continuation?.resume(throwing: CancellationError())
         for waiter in resumedWaiters {
-            waiter.continuation.resume()
+            waiter.resume()
         }
     }
 
     private static func dequeueSatisfiedPendingSleepWaiters(
         state: inout State
-    ) -> [PendingSleepWaiter] {
+    ) -> [ResolvedPendingSleepWaiter] {
         guard !state.pendingSleepWaiters.isEmpty else { return [] }
 
         var remainingWaiters: [PendingSleepWaiter] = []
-        var resumedWaiters: [PendingSleepWaiter] = []
+        var resumedWaiters: [ResolvedPendingSleepWaiter] = []
+        let observedDeadlines = Set(state.pending.map { Instant(nanoseconds: $0.deadline) })
 
         for waiter in state.pendingSleepWaiters {
             if waiter.condition.isSatisfied(by: state) {
-                resumedWaiters.append(waiter)
+                resumedWaiters.append(
+                    ResolvedPendingSleepWaiter(
+                        pendingWaiter: waiter,
+                        observedDeadlines: observedDeadlines
+                    ))
             } else {
                 remainingWaiters.append(waiter)
             }
