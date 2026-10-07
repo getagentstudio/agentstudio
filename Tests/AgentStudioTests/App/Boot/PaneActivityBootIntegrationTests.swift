@@ -1,6 +1,7 @@
 import AgentStudioInfrastructure
 import AgentStudioTestSupport
 import Foundation
+import GRDB
 import Testing
 
 @testable import AgentStudio
@@ -75,4 +76,48 @@ struct PaneActivityBootIntegrationTests {
         #expect(delegate.atomStore.core.paneActivityTime.value(for: pane.id)?.wallTime == time.wallTime)
         #expect(delegate.atomStore.core.paneActivityTime.value(for: pane.id)?.source == .terminal)
     }
+    @Test(
+        "invalid retained SQLite activity is skipped and App boot restore continues",
+        arguments: ["-1e300", "1e300", "-1e999", "1e999", "'NaN'", "'-Infinity'", "-9.223372036854776e18"]
+    )
+    func invalidSQLiteActivityDoesNotStopBoot(invalidTimestampSQL: String) async throws {
+        let delegate = AppDelegate()
+        delegate.atomStore = makeTestAtomRegistry()
+        let workspaceID = delegate.atomStore.core.workspaceIdentity.workspaceId
+        let fixture = try makeWorkspaceSQLiteBridgeFixture(workspaceId: workspaceID)
+        let datastore = try preparedWorkspaceSQLiteDatastore(from: fixture.backend)
+        let malformedPane = makePane(id: UUIDv7.generate())
+        let validPane = makePane(id: UUIDv7.generate())
+        let tab = Tab(paneId: malformedPane.id)
+        let validTab = Tab(paneId: validPane.id)
+        try await datastore.saveWorkspaceSnapshotBundle(
+            .emptyTopologyFixture(
+                workspace: .init(
+                    id: workspaceID, panes: [malformedPane, validPane], tabs: [tab, validTab], activeTabId: validTab.id
+                )))
+        let validTime = PaneActivityTime(
+            orderingInstant: ContinuousClock.now, wallTime: Date(timeIntervalSince1970: 100), source: .terminal
+        )
+        try await datastore.commitPaneActivity(.init(mutations: [.set(validPane.id, validTime)]))
+        try await fixture.localQueue.write { database in
+            try database.execute(
+                sql:
+                    "INSERT INTO local_pane_activity(pane_id, activity_at, source) VALUES (?, \(invalidTimestampSQL), 'hook')",
+                arguments: [malformedPane.id.uuidString]
+            )
+        }
+        let records = try fixture.localRepository.fetchPaneActivity()
+        #expect(records.map(\.paneId) == [validPane.id])
+        // The red proves decoder rejection without running the unsafe old conversion.
+        guard !records.contains(where: { $0.paneId == malformedPane.id }) else { return }
+        delegate.store = WorkspaceStore(
+            identityAtom: delegate.atomStore.core.workspaceIdentity, sqliteDatastore: datastore, startsObserving: false
+        )
+        delegate.workspaceSQLiteDatastore = datastore
+        await delegate.bootRestorePaneActivity()
+        #expect(delegate.atomStore.core.paneActivityTime.value(for: malformedPane.id) == nil)
+        #expect(delegate.atomStore.core.paneActivityTime.value(for: validPane.id)?.wallTime == validTime.wallTime)
+        #expect(delegate.atomStore.core.paneActivityTime.value(for: validPane.id)?.source == .terminal)
+    }
+
 }
