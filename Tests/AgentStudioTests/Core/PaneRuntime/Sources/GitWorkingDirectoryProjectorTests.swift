@@ -1182,8 +1182,8 @@ struct GitWorkingDirectoryProjectorTests {
             in: .deadline(worktreeId: worktreeId, kind: .coalescingWindow, generation: 2),
             .deadlineRegistered(.coalescingWindow)
         )
-        await clock.waitForPendingSleep(deadline: coalescingDeadline)
-        #expect(clock.pendingSleepDeadlines.contains(coalescingDeadline))
+        let observedCoalescingDeadline = await clock.waitForPendingSleep(deadline: coalescingDeadline)
+        #expect(observedCoalescingDeadline == coalescingDeadline)
         await bus.post(
             makeFilesChangedEnvelope(
                 seq: 3,
