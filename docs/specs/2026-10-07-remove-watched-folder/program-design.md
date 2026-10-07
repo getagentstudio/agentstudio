@@ -15,7 +15,7 @@ Two pieces are missing:
 - **An entry point.** `removeWatchedPath` (WorkspaceMutationCoordinator+RepositoryTopology.swift:197) has no caller, and there is no command. Persistence observes `watchedPaths` (RepositoryTopologyStore.swift:101-114), but nothing refreshes the watched-folder pipeline when the list shrinks. The add flow refreshes it explicitly (AppDelegate.swift:659).
 - **Two readers that ignore "hidden".** The IPC repository projection (WorkspaceStore+ProgrammaticControlSnapshot.swift:98-113, used by `workspace.list` / `workspace.current` in AgentStudioIPCQueryAdapter.swift:147-169) and the command bar's targeted repo and worktree rows (CommandBarDataSource.swift:533-563) list every stored repo. The sidebar already excludes unavailable repos (RepoExplorerProjectionInputCapture.swift:606-615).
 
-Selected: wire one command into the existing chain, and filter the two readers. Rejected: a provenance table. It is new persisted state no requirement needs.
+Selected: wire one command into the existing chain, and filter the two listing readers. Identity authorization is left alone. Rejected: a provenance table. It is new persisted state no requirement needs.
 
 ## Entity bindings
 | Entity | Owner and home | Role |
@@ -75,7 +75,12 @@ No new atom, store, table, migration, bus event or coordinator responsibility is
   - targeted rows for `.watchedFolder` list `repositoryTopologyAtom.watchedPaths` (title is the folder name, subtitle the path) as `.dispatchTargeted(.removeWatchedFolder, target: watchedPath.id, targetType: .watchedFolder)`;
   - `isSearchItemAvailable` checks that the id is still listed;
   - the existing targeted repo and worktree rows (CommandBarDataSource.swift:533-563) skip repos that `isRepoUnavailable` marks, matching the async search filter already in CommandBarPanelController+Search.swift:150-173 (F1).
-- **IPC repository projection (Core persistence snapshot).** `programmaticControlSnapshot()` maps only repos that are not unavailable (F1). Pane snapshots are unchanged. This removes every hidden repo from `workspace.list` / `workspace.current`, including repos hidden for other reasons: a visible IPC output change, called out in the PR.
+- **IPC query projection, not the shared snapshot.**
+  - `programmaticControlSnapshot()` also feeds IPC durable-target authorization: `WorkspaceDurableTargetAuthorizationPort.containsRepository` (:13) checks every `.repository` argument of `updateRepositoryFacts`, `removeRepo`, `pinRepo` and `unpinRepo`. So the snapshot keeps every repo.
+  - `ProgrammaticControlRepositorySnapshot` gains an internal `isUnavailable` value. It is a Core value type, not a wire field.
+  - Only `AgentStudioIPCQueryAdapter.repositorySummaries` (:163-172, used by `workspace.list` / `workspace.current`) skips those repos.
+  - Hidden repos therefore leave the listings but stay targetable by id over IPC, so `removeRepo` can still delete a stale row. Pane snapshots are unchanged.
+  - This listing change applies to every hidden repo, whatever hid it. It is a visible IPC output change, called out in the PR. Source: the IPC Lead finding, independently confirmed.
 - **Execution owner (App/Boot):**
   - `handleRemoveWatchedFolderRequested(_ watchedPathID: UUID) async`, mirroring `handleWatchFolderRequested`:
     1. `await workspaceCacheCoordinator.waitForRetentionCommit()`;
