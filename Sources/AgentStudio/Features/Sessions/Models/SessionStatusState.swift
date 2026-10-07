@@ -119,7 +119,9 @@ package enum SessionStatusReducer {
         case .sessionStart(let generation):
             let namesTurnOnCurrentBinding: Bool
             if case .bound(let currentGeneration) = state.binding {
-                namesTurnOnCurrentBinding = event.turnId != nil && currentGeneration == generation
+                namesTurnOnCurrentBinding =
+                    event.turnId != nil && currentGeneration == generation
+                    && state.turn != .notStarted
             } else {
                 namesTurnOnCurrentBinding = false
             }

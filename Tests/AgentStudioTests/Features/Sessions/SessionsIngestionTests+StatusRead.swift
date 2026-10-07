@@ -123,6 +123,12 @@ extension SessionsIngestionTests {
             }
         } else {
             try await withSessionsIngestion(repository: fixture.makeRepository()) { ingestion in
+                try await sendCompactEvent(
+                    .turnStart, session: "compact-session", turnId: "prior-turn",
+                    paneId: pane, ingestion: ingestion)
+                try await sendCompactEvent(
+                    .turnDone, session: "compact-session", turnId: "prior-turn",
+                    paneId: pane, ingestion: ingestion)
                 try await sendCompactEvents(order, promptId: promptId, paneId: pane, ingestion: ingestion)
                 #expect(try await ingestion.sessionSummary(paneId: pane)?.status == .idle(.done))
             }
