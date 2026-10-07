@@ -233,6 +233,7 @@ export function measureSceneTimelineInPage(
   const stage = document.createElement("div");
   stage.style.width = `${String(input.stage.width)}px`;
   stage.style.height = `${String(input.stage.height)}px`;
+  stage.style.container = "recreation-kit / inline-size";
   stage.innerHTML = input.sceneMarkup;
   document.body.append(stage);
   try {

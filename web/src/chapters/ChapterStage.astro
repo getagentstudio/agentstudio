@@ -46,7 +46,10 @@ const proofLayerAttributes = {
 
 <!-- The scene, real proof and controls occupy one reserved stage box. -->
 {stage.kind === "clips" ? <ChapterClipsStage chapter={chapter} /> : SceneMarkup !== undefined &&
-<div class="chapter-scene-stage relative w-full self-stretch overflow-clip rounded-control">
+<div
+  class="chapter-scene-stage relative w-full self-stretch overflow-clip rounded-control"
+  style="container: recreation-kit / inline-size"
+>
   <div class="invisible aspect-[4/5] w-full phone:aspect-[16/10]" aria-hidden="true" />
   <div class="absolute inset-0">
     <SceneMarkup />

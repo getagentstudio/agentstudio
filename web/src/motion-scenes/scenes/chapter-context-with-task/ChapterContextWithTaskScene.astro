@@ -16,7 +16,6 @@ import {
   contextWithTaskDrawerTerminal,
   contextWithTaskFileTree,
   contextWithTaskParts,
-  contextWithTaskPhoneDrawerScrollLines,
   contextWithTaskSource,
   contextWithTaskToolbar,
 } from "./chapter-context-with-task-fixture";
@@ -29,7 +28,6 @@ const filesStepAttributes = { [sceneStepTargetAttribute]: "files" };
 <AppWindow
   {...sceneRootAttributes}
   class="scene-context-with-task"
-  style={`--scene-drawer-scroll: ${String(contextWithTaskPhoneDrawerScrollLines)}`}
   role="img"
   aria-label={contextWithTaskAccessibleLabel}
   toolbar={contextWithTaskToolbar}
@@ -75,14 +73,19 @@ const filesStepAttributes = { [sceneStepTargetAttribute]: "files" };
   /*
    * Scene-level progress values. The module tweens them on the scene root; the
    * rules below map one value to the desktop layout and the phone crop. The
-   * declared values are the settled frame.
+   * Files defaults to its settled frame; drawer overflow is measured at build time.
    */
   .scene-context-with-task {
+    --scene-drawer-scroll: 0;
     --scene-files-reveal: 1;
   }
 
   .scene-context-with-task .scene-context-with-task__grid {
     position: relative;
+  }
+
+  .scene-context-with-task [data-scene-part="drawer-terminal"] > [data-line] {
+    translate: 0 calc(var(--scene-drawer-scroll) * -1px);
   }
 
   /* Desktop: Files grows in beside the task, cancelling the pane gap while closed. */
@@ -97,6 +100,10 @@ const filesStepAttributes = { [sceneStepTargetAttribute]: "files" };
   }
 
   @container recreation-kit (max-width: 600px) {
+    .scene-context-with-task {
+      --scene-drawer-scroll: 88;
+    }
+
     /* Phone: the task pane and its drawer fill the crop; Files slides over it. */
     .scene-context-with-task .scene-context-with-task__files {
       position: absolute;
@@ -113,10 +120,6 @@ const filesStepAttributes = { [sceneStepTargetAttribute]: "files" };
     .scene-context-with-task [data-scene-part="drawer-terminal"] {
       padding-block: 0.4em;
       clip-path: inset(0.4em 0 0 0);
-    }
-
-    .scene-context-with-task [data-scene-part="drawer-terminal"] > [data-line] {
-      translate: 0 calc(var(--scene-drawer-scroll) * -1.55em);
     }
   }
 </style>
