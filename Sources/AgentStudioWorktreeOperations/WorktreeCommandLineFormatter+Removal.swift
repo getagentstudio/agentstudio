@@ -101,8 +101,9 @@ extension WorktreeCommandLineFormatter {
 
     private static func evidenceHumanLine(_ evidence: WorktreeEvidenceDispositionDocument) -> String {
         switch evidence {
-        case .archived(let path, let files):
+        case .archived(let path, let files, let skippedSpecialFiles):
             "archived path=\(path) files=\(files)"
+                + skippedSpecialFilesHumanSuffix(skippedSpecialFiles)
         case .partialCopy(let path):
             "partialCopy path=\(path)"
         case .discarded:
@@ -110,6 +111,13 @@ extension WorktreeCommandLineFormatter {
         case .noEvidence:
             "none"
         }
+    }
+
+    private static func skippedSpecialFilesHumanSuffix(_ skippedSpecialFiles: [String]) -> String {
+        guard !skippedSpecialFiles.isEmpty else { return "" }
+        let fileLabel = skippedSpecialFiles.count == 1 ? "file" : "files"
+        let paths = skippedSpecialFiles.joined(separator: ", ")
+        return " skipped \(skippedSpecialFiles.count) special \(fileLabel) (not copyable): \(paths)"
     }
 
     package static func assessmentHumanLine(_ assessment: WorktreeIntegrationAssessmentDocument?) -> String {

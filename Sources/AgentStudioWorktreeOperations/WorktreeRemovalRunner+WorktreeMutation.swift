@@ -233,9 +233,13 @@ extension WorktreeRemovalRunner {
             source: context.snapshot.canonicalPath.appending(path: "tmp", directoryHint: .isDirectory),
             destination: destination
         ) {
-        case .archived(let path, let fileCount):
+        case .archived(let path, let fileCount, let skippedSpecialFiles):
             return WorktreeEvidenceArchiveOutcome(
-                evidence: .archived(path: path.standardizedFileURL.path, files: fileCount),
+                evidence: .archived(
+                    path: path.standardizedFileURL.path,
+                    files: fileCount,
+                    skippedSpecialFiles: skippedSpecialFiles
+                ),
                 archiveWritten: true,
                 failure: nil
             )
