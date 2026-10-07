@@ -160,6 +160,54 @@ struct TerminalActivityRouterTests {
         await router.stop()
     }
 
+    /// A6 (advisor review 2026-10-01; PD rev 21 item 5, Lead decision: push,
+    /// not pull): proves the new `onFirstRender` callback actually fires
+    /// from a real `.firstRender` outcome -- the same raw fact
+    /// `consumeAggregateState` already computes and `consumeProjectionOutcome`'s
+    /// existing `.firstRender` arm already forwards to `startupTraceRecorder`.
+    /// No new event type or bus case: `.firstRender` never posts to the
+    /// bus, so this asserts the callback directly instead of waiting on a
+    /// `RecordingSubscriber` envelope.
+    @Test("a real first-render outcome notifies the injected onFirstRender callback")
+    func realFirstRenderOutcomeNotifiesOnFirstRenderCallback() async {
+        let bus = EventBus<RuntimeEnvelope>()
+        let atom = TerminalActivityAtom(outputBurstThreshold: 30)
+        final class FirstRenderCallbackRecorder: @unchecked Sendable {
+            private let lock = NSLock()
+            private(set) var notifiedPaneIDs: [UUID] = []
+
+            func record(_ paneID: UUID) {
+                lock.lock()
+                notifiedPaneIDs.append(paneID)
+                lock.unlock()
+            }
+        }
+        let recorder = FirstRenderCallbackRecorder()
+        let router = TerminalActivityRouter(
+            bus: bus,
+            activityAtom: atom,
+            onFirstRender: { paneID in recorder.record(paneID) },
+            surfaceIDForPaneID: { $0 }
+        )
+        let paneId = PaneId.generateUUIDv7()
+
+        await router.start()
+        // `consumeTerminalActivityInput` -> `projector.ingest` -> `emit` ->
+        // `outcomeSink` -> `consumeProjectionOutcomes` is one unbroken
+        // `await` chain, no detached task in between -- `onFirstRender` has
+        // already been called, synchronously, by the time this returns.
+        await ingestActivity(
+            paneId: paneId,
+            totals: [10],
+            context: TerminalActivityProjectionContext(
+                isAttended: false, isAgentClassified: false, outputBurstThreshold: 30),
+            through: router
+        )
+
+        #expect(recorder.notifiedPaneIDs == [paneId.uuid])
+        await router.stop()
+    }
+
     @Test("records terminal activity trace records when runtime tracing is enabled")
     func recordsTerminalActivityTraceRecordsWhenRuntimeTracingIsEnabled() async throws {
         let bus = EventBus<RuntimeEnvelope>()

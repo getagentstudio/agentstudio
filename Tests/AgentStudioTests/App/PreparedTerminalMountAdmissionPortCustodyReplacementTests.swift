@@ -146,7 +146,7 @@ private final class RecordingCustodyReplacementMountHandler: PreparedTerminalMou
         admission: TerminalActivationAdmission,
         initialFrame: NSRect?,
         authority: TerminalSurfaceCreationAuthority
-    ) -> TerminalActivationAttemptResult {
+    ) async -> TerminalActivationAttemptResult {
         admissions.append(admission)
         return results.removeFirst()
     }

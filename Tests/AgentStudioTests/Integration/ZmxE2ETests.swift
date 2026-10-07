@@ -6,6 +6,7 @@ import Testing
 
 @testable import AgentStudio
 @testable import AgentStudioCore
+@testable import AgentStudioTerminal
 
 /// End-to-end tests that exercise the full zmx daemon lifecycle against a real zmx binary.
 ///
@@ -24,7 +25,7 @@ extension E2ESerializedTests {
                 let sessionID = ZmxSessionID.generateUUIDv7()
                 let zmxPath = try #require(harness.zmxPath)
                 let databaseURL = URL(fileURLWithPath: harness.zmxDir).appendingPathComponent("proof.sqlite")
-                _ = try harness.spawnZmxSession(
+                _ = try await harness.spawnZmxSession(
                     zmxPath: zmxPath, sessionId: sessionID.rawValue, commandArgs: ["/bin/sleep", "300"])
                 try #require(await harness.waitForSessionSocket(sessionId: sessionID.rawValue, exists: true))
                 let evidence = try await waitForObservedSessionIdentity(sessionID, backend: backend)
@@ -56,7 +57,7 @@ extension E2ESerializedTests {
                 #expect(recoveredEvidence == evidence)
                 var replacementEvidence: Data?
                 if withReplacement {
-                    _ = try harness.spawnZmxSession(
+                    _ = try await harness.spawnZmxSession(
                         zmxPath: zmxPath, sessionId: sessionID.rawValue, commandArgs: ["/bin/sleep", "300"])
                     try #require(await harness.waitForSessionSocket(sessionId: sessionID.rawValue, exists: true))
                     replacementEvidence = try await waitForObservedSessionIdentity(sessionID, backend: backend)
@@ -92,7 +93,7 @@ extension E2ESerializedTests {
             try await withRealBackend { harness, backend in
                 let sessionID = ZmxSessionID.generateUUIDv7()
                 let zmxPath = try #require(harness.zmxPath)
-                _ = try harness.spawnZmxSession(
+                _ = try await harness.spawnZmxSession(
                     zmxPath: zmxPath, sessionId: sessionID.rawValue, commandArgs: ["/bin/sleep", "300"])
                 try #require(await harness.waitForSessionSocket(sessionId: sessionID.rawValue, exists: true))
                 let evidence = try await waitForObservedSessionIdentity(sessionID, backend: backend)
@@ -157,6 +158,11 @@ extension E2ESerializedTests {
                     if let identity = try await backend.observeSessionIdentity(sessionID) { return identity }
                 } catch ZmxSessionControlFailure.unavailable {
                     // Socket creation precedes the daemon accepting control requests.
+                } catch ZmxSessionControlFailure.connectionRefused {
+                    // Amended 2026-09-30: zmx binds the socket's path
+                    // before it calls listen, so a connect landing in that
+                    // gap is refused the same way an unavailable endpoint
+                    // is here.
                 } catch ZmxSessionControlFailure.processUnverifiable {
                     // The daemon/terminal fork may still be settling.
                 } catch ZmxSessionControlFailure.timeout {
@@ -167,6 +173,11 @@ extension E2ESerializedTests {
             throw ZmxSessionControlFailure.timeout
         }
 
+        /// The fallback `TerminalColdRestorePlan` S4b ("option A") now
+        /// carries on every `.warm`/`.unverified` restore kind
+        /// (`TerminalRestoreKindResolver.buildColdPlan`'s shape), built
+        /// directly here since these E2E tests spawn a real session outside
+        /// the resolver's own classification flow.
         private func makeStaleCleanupSocket(at path: String) throws -> StaleCleanupSocketIdentity {
             let descriptor = socket(AF_UNIX, SOCK_STREAM, 0)
             guard descriptor >= 0 else { throw POSIXError(.EIO) }
@@ -250,7 +261,7 @@ extension E2ESerializedTests {
             try await withRealBackend { harness, backend in
                 let sessionID = ZmxSessionID.generateUUIDv7()
                 if wasRunning {
-                    _ = try harness.spawnZmxSession(
+                    _ = try await harness.spawnZmxSession(
                         zmxPath: try #require(harness.zmxPath), sessionId: sessionID.rawValue,
                         commandArgs: ["/bin/sleep", "300"])
                     try #require(await harness.waitForSessionSocket(sessionId: sessionID.rawValue, exists: true))
@@ -266,7 +277,7 @@ extension E2ESerializedTests {
         func observedIdentityProtectsTheRunningSession() async throws {
             try await withRealBackend { harness, backend in
                 let sessionID = ZmxSessionID.generateUUIDv7()
-                _ = try harness.spawnZmxSession(
+                _ = try await harness.spawnZmxSession(
                     zmxPath: try #require(harness.zmxPath), sessionId: sessionID.rawValue,
                     commandArgs: ["/bin/sleep", "300"])
                 try #require(await harness.waitForSessionSocket(sessionId: sessionID.rawValue, exists: true))
@@ -290,7 +301,7 @@ extension E2ESerializedTests {
         func verifiedCleanupEndsTheOriginalSession() async throws {
             try await withRealBackend { harness, backend in
                 let sessionID = ZmxSessionID.generateUUIDv7()
-                _ = try harness.spawnZmxSession(
+                _ = try await harness.spawnZmxSession(
                     zmxPath: try #require(harness.zmxPath), sessionId: sessionID.rawValue,
                     commandArgs: ["/bin/sleep", "300"])
                 try #require(await harness.waitForSessionSocket(sessionId: sessionID.rawValue, exists: true))
@@ -311,6 +322,10 @@ extension E2ESerializedTests {
                         // Kernel inspection can race final process reaping.
                     } catch ZmxSessionControlFailure.unavailable {
                         // The endpoint can disappear between inspection and connection.
+                    } catch ZmxSessionControlFailure.connectionRefused {
+                        // Amended 2026-09-30: a replacement daemon's socket
+                        // can bind before it listens, refusing a connect
+                        // landing in that gap the same way.
                     }
                     await Task.yield()
                 }
@@ -325,13 +340,13 @@ extension E2ESerializedTests {
                 let handle = try await backend.createPaneSession(sessionID: .generateUUIDv7())
                 let zmxPath = try #require(harness.zmxPath, "Expected zmx path to be available")
 
-                _ = try harness.spawnZmxSession(
+                _ = try await harness.spawnZmxSession(
                     zmxPath: zmxPath,
                     sessionId: handle.id.rawValue,
                     commandArgs: ["/bin/sleep", "300"]
                 )
 
-                let appeared = await harness.waitForSessionSocket(
+                let appeared = try await harness.waitForSessionSocket(
                     sessionId: handle.id.rawValue,
                     exists: true
                 )
@@ -360,10 +375,9 @@ extension E2ESerializedTests {
                 // Act 2 — kill the session
                 try await backend.destroyPaneSession(handle)
 
-                let disappeared = await harness.waitForSessionSocket(
+                let disappeared = try await harness.waitForSessionSocket(
                     sessionId: handle.id.rawValue,
-                    exists: false,
-                    timeout: .seconds(5)
+                    exists: false
                 )
                 #expect(disappeared, "Session should disappear from zmx list after kill")
 
@@ -385,23 +399,23 @@ extension E2ESerializedTests {
 
                 let handle1 = try await backend.createPaneSession(sessionID: .generateUUIDv7())
                 let handle2 = try await backend.createPaneSession(sessionID: .generateUUIDv7())
-                _ = try harness.spawnZmxSession(
+                _ = try await harness.spawnZmxSession(
                     zmxPath: zmxPath,
                     sessionId: handle1.id.rawValue,
                     commandArgs: ["/bin/sleep", "300"]
                 )
-                _ = try harness.spawnZmxSession(
+                _ = try await harness.spawnZmxSession(
                     zmxPath: zmxPath,
                     sessionId: handle2.id.rawValue,
                     commandArgs: ["/bin/sleep", "300"]
                 )
 
                 // Wait for both daemons
-                let appeared1 = await harness.waitForSessionSocket(
+                let appeared1 = try await harness.waitForSessionSocket(
                     sessionId: handle1.id.rawValue,
                     exists: true
                 )
-                let appeared2 = await harness.waitForSessionSocket(
+                let appeared2 = try await harness.waitForSessionSocket(
                     sessionId: handle2.id.rawValue,
                     exists: true
                 )
@@ -426,13 +440,13 @@ extension E2ESerializedTests {
                 let handle = try await backend.createPaneSession(sessionID: .generateUUIDv7())
                 let zmxPath = try #require(harness.zmxPath, "Expected zmx path to be available")
 
-                _ = try harness.spawnZmxSession(
+                _ = try await harness.spawnZmxSession(
                     zmxPath: zmxPath,
                     sessionId: handle.id.rawValue,
                     commandArgs: ["/bin/sleep", "300"]
                 )
 
-                let appeared = await harness.waitForSessionSocket(
+                let appeared = try await harness.waitForSessionSocket(
                     sessionId: handle.id.rawValue,
                     exists: true
                 )
@@ -442,10 +456,9 @@ extension E2ESerializedTests {
                 try await backend.destroySessionByID(handle.id)
 
                 // Assert
-                let gone = await harness.waitForSessionSocket(
+                let gone = try await harness.waitForSessionSocket(
                     sessionId: handle.id.rawValue,
-                    exists: false,
-                    timeout: .seconds(5)
+                    exists: false
                 )
                 #expect(gone, "Session should be gone after destroySessionById")
             }
@@ -460,13 +473,13 @@ extension E2ESerializedTests {
                 let handle = try await backend.createPaneSession(sessionID: .generateUUIDv7())
                 let zmxPath = try #require(harness.zmxPath, "Expected zmx path to be available")
 
-                _ = try harness.spawnZmxSession(
+                _ = try await harness.spawnZmxSession(
                     zmxPath: zmxPath,
                     sessionId: handle.id.rawValue,
                     commandArgs: ["/bin/sleep", "300"]
                 )
 
-                let appeared = await harness.waitForSessionSocket(
+                let appeared = try await harness.waitForSessionSocket(
                     sessionId: handle.id.rawValue,
                     exists: true
                 )
@@ -485,19 +498,280 @@ extension E2ESerializedTests {
                 )
 
                 try await recreatedBackend.destroySessionByID(handle.id)
-                let gone = await harness.waitForSessionSocket(
+                let gone = try await harness.waitForSessionSocket(
                     sessionId: handle.id.rawValue,
-                    exists: false,
-                    timeout: .seconds(5)
+                    exists: false
                 )
                 #expect(gone, "Session should be gone after kill from recreated backend")
+            }
+        }
+
+        /// S3 (Program Design item 3, revision 11's argument-vector witness):
+        /// a real cold-restore attach command -- built by the exact
+        /// production path, `ZmxBackend.buildColdRestoreCommand` -- hands
+        /// off once its script's only in-process exec replaces it. Driven
+        /// end to end through the real `ColdStartObserver`, so this doesn't
+        /// hand-roll a second, potentially racy argument-vector read
+        /// alongside the observer's own register-then-check logic --
+        /// `.handedOff` is only reachable when the observer itself saw the
+        /// token gone from a live leader whose pid and start time still
+        /// match what stage 1 discovered.
+        ///
+        /// Asserts `.handedOff` strictly (amended 2026-09-30, twice). Two
+        /// real races were found and fixed against this exact test, both by
+        /// diagnosing against real zmx first, never by loosening this
+        /// assertion:
+        /// - `.unobservable(.processArgsUnreadable)`: `DarwinColdStartObserverSyscalls`'
+        ///   two-`sysctl`-call TOCTOU, fixed by a single sized read with an
+        ///   immediate retry budget (`AppPolicies.Restore
+        ///   .processArgumentsReadAttempts`) -- see `ColdStartObserverSyscalls.swift`.
+        /// - `.unobservable(.identityUnverifiable)`: zmx binds the session
+        ///   socket's filesystem path before it calls `listen`
+        ///   (socket.zig:113-114), so a stage-1 connect landing in that gap
+        ///   was refused and settled unobservable immediately. Fixed by
+        ///   `ZmxSessionControlFailure.connectionRefused` retrying on
+        ///   `AppPolicies.Restore.discoveryConnectRetryDelays`'s backoff,
+        ///   staying discovering rather than settling on the timing alone
+        ///   -- see `ColdStartObserver.attemptDiscoveryConnect`.
+        ///
+        /// Spawns before observing, deliberately: `async let` gives no
+        /// guarantee stage 1's directory watch actually registers before
+        /// the next line runs (an early draft raced there and flaked under
+        /// load). A cold-restore session stays alive once its script execs
+        /// into the final shell -- the daemon and socket persist -- so
+        /// stage 1's register-then-check logic finds the already-existing
+        /// socket regardless of exactly when it runs; production still
+        /// registers before creating the surface for the *fast-exit* case,
+        /// which is a separate proof (S3's zmx-e2e list), not this one.
+        @Test("a real cold-restore attach hands off once its script execs into the final shell")
+        func coldRestoreAttachHandsOffOnceItsScriptExecsIntoTheFinalShell() async throws {
+            try await withRealBackend { harness, _ in
+                let zmxPath = try #require(harness.zmxPath)
+                let sessionID = ZmxSessionID.generateUUIDv7()
+                let attemptID = ColdRestoreAttemptID.generate()
+                let plan = TerminalColdRestorePlan(
+                    zmxExecutable: URL(fileURLWithPath: zmxPath),
+                    zmxDirectory: URL(fileURLWithPath: harness.zmxDir),
+                    sessionID: sessionID,
+                    // coldRestoreScript unconditionally appends "-i -l" to
+                    // whatever loginShell is given -- those are interactive-
+                    // login flags a real shell understands, not generic
+                    // arguments (/bin/cat rejected them as illegal options
+                    // and exited immediately, which was this test's first,
+                    // flaky draft). /bin/bash -i -l blocks reading stdin at
+                    // an interactive prompt, exactly like a real restore.
+                    loginShell: URL(fileURLWithPath: "/bin/bash"),
+                    folderCandidates: [URL(fileURLWithPath: "/tmp")],
+                    notice: ColdRestoreNotice(linesByCandidateIndex: ["Restored after restart"]),
+                    replayFile: nil,
+                    resume: nil,
+                    attemptID: attemptID
+                )
+                let bootID = try await WorkspaceUndoJournalClock.current().bootID
+                let socketPath = "\(harness.zmxDir)/\(sessionID.rawValue)"
+                let observer = ColdStartObserver()
+
+                _ = try await harness.spawnColdRestoreSession(plan: plan)
+                let settledOutcome = await observer.observeColdStart(
+                    zmxDirectory: URL(fileURLWithPath: harness.zmxDir),
+                    socketPath: socketPath,
+                    bootID: bootID,
+                    attemptID: attemptID
+                )
+                #expect(settledOutcome == .handedOff)
+            }
+        }
+
+        /// S3 zmx-e2e list: a socket that's never created because the
+        /// attach client itself never reaches zmx (`zmxExecutable` points
+        /// nowhere real, so `/bin/sh` fails with "command not found" before
+        /// ever invoking zmx) settles `.failed` on the client's own real
+        /// exit -- discovery never even gets a socket to watch for.
+        @Test("a socket never created and the attach client exiting settles failed")
+        func aSocketNeverCreatedAndTheAttachClientExitingSettlesFailed() async throws {
+            try await withRealBackend { harness, _ in
+                let sessionID = ZmxSessionID.generateUUIDv7()
+                let attemptID = ColdRestoreAttemptID.generate()
+                let plan = TerminalColdRestorePlan(
+                    zmxExecutable: URL(fileURLWithPath: "/does/not/exist/zmx"),
+                    zmxDirectory: URL(fileURLWithPath: harness.zmxDir),
+                    sessionID: sessionID,
+                    loginShell: URL(fileURLWithPath: "/bin/bash"),
+                    folderCandidates: [URL(fileURLWithPath: "/tmp")],
+                    notice: ColdRestoreNotice(linesByCandidateIndex: ["Restored after restart"]),
+                    replayFile: nil,
+                    resume: nil,
+                    attemptID: attemptID
+                )
+                let bootID = try await WorkspaceUndoJournalClock.current().bootID
+                let socketPath = "\(harness.zmxDir)/\(sessionID.rawValue)"
+                let observer = ColdStartObserver()
+
+                // The bogus zmxExecutable means no socket, and no setsid,
+                // ever exists to wait for -- the default, settlement-waiting
+                // spawnColdRestoreSession would just time out on the socket
+                // wait instead of exercising this test's own intent.
+                let (process, _) = try harness.spawnColdRestoreSessionWithoutWaitingForSettlement(plan: plan)
+                _ = try await awaitAlreadyRunningProcessExit(process)
+                #expect(process.terminationStatus != 0, "the missing zmxExecutable must genuinely fail to run")
+                await observer.reportAttachClientExited()
+
+                let outcome = await observer.observeColdStart(
+                    zmxDirectory: URL(fileURLWithPath: harness.zmxDir),
+                    socketPath: socketPath,
+                    bootID: bootID,
+                    attemptID: attemptID
+                )
+
+                #expect(outcome == .failed(.exitedBeforeHandoff(exitStatus: nil)))
+            }
+        }
+
+        /// S3 zmx-e2e list: the script's only in-process exec targets a
+        /// non-executable `loginShell` -- coldRestoreScript's `exec
+        /// '<loginShell>' -i -l` fails, and a POSIX shell whose last
+        /// statement is a failed `exec` terminates rather than continuing,
+        /// so the real leader genuinely exits. Proves NOTE_EXIT explains an
+        /// otherwise-unreadable argv correctly (`handoffChecked`'s
+        /// `.unreadable` branch), not `.unobservable`.
+        ///
+        /// Gate 5 fix (Lead 2026-10-02): the waiting `spawnColdRestoreSession`
+        /// cannot be used here -- it settles through this same
+        /// `ColdStartObserver` discovery/setsid/handoff chain internally
+        /// (`waitUntilSessionSettled` -> `resolveSettledDiscovery`), and
+        /// this test's own leader is designed to die before that chain ever
+        /// reaches a stable identity to settle on; F7's removed retry used
+        /// to paper over that precondition failure. Spawns without waiting
+        /// instead (the same `spawnColdRestoreSessionWithoutWaitingForSettlement`
+        /// the test above this one uses) and lets `observeColdStart` itself
+        /// observe from before the socket exists -- the real production
+        /// path. No created-line wait needed first: unlike the test above
+        /// (no real zmx session at all, so nothing internal to the observer
+        /// would ever learn of that attach client's exit without the
+        /// explicit `reportAttachClientExited()` signal it uses), zmx here
+        /// is real, so discovery's own direct `observeSession` call can
+        /// read `.terminalLeaderGone` and settle `.failed` immediately
+        /// (`attemptDiscoveryConnect`'s own case, ColdStartObserver.swift:324-331),
+        /// or read `.pendingSetsid` and have the subsequent setsid watch's
+        /// own `NOTE_EXIT` settle the same way (`checkForSetsidAndAdvance`'s
+        /// `exitFired` branch) -- confirmed by reading both directly. Every
+        /// timing of the real exec failure relative to this call converges
+        /// on the same outcome through the observer's own watches, with
+        /// nothing external to wait for first.
+        @Test("a non-executable final shell settles failed, not unobservable")
+        func aNonExecutableFinalShellSettlesFailed() async throws {
+            try await withRealBackend { harness, _ in
+                let zmxPath = try #require(harness.zmxPath)
+                let sessionID = ZmxSessionID.generateUUIDv7()
+                let attemptID = ColdRestoreAttemptID.generate()
+                // A real, non-executable file: exec must fail with ENOEXEC/EACCES,
+                // not "no such file" -- proving the script actually attempted
+                // the final exec rather than failing earlier at resolution.
+                let nonExecutablePath = FileManager.default.temporaryDirectory
+                    .appending(path: "non-executable-login-shell-\(UUIDv7.generate().uuidString)")
+                try "not a script".write(to: nonExecutablePath, atomically: true, encoding: .utf8)
+                defer { try? FileManager.default.removeItem(at: nonExecutablePath) }
+                let plan = TerminalColdRestorePlan(
+                    zmxExecutable: URL(fileURLWithPath: zmxPath),
+                    zmxDirectory: URL(fileURLWithPath: harness.zmxDir),
+                    sessionID: sessionID,
+                    loginShell: nonExecutablePath,
+                    folderCandidates: [URL(fileURLWithPath: "/tmp")],
+                    notice: ColdRestoreNotice(linesByCandidateIndex: ["Restored after restart"]),
+                    replayFile: nil,
+                    resume: nil,
+                    attemptID: attemptID
+                )
+                let bootID = try await WorkspaceUndoJournalClock.current().bootID
+                let socketPath = "\(harness.zmxDir)/\(sessionID.rawValue)"
+                let observer = ColdStartObserver()
+
+                _ = try harness.spawnColdRestoreSessionWithoutWaitingForSettlement(plan: plan)
+                let outcome = await observer.observeColdStart(
+                    zmxDirectory: URL(fileURLWithPath: harness.zmxDir),
+                    socketPath: socketPath,
+                    bootID: bootID,
+                    attemptID: attemptID
+                )
+
+                #expect(outcome == .failed(.exitedBeforeHandoff(exitStatus: nil)))
+            }
+        }
+
+        /// S4 (Program Design item 5): the post-attach recreation check's
+        /// three outcomes against a real daemon -- `PaneRecreationChecker`
+        /// itself is pure and already unit-tested; this proves the real
+        /// `observeSessionIdentity` calls it's compared against actually
+        /// behave the way S4's proof list assumes.
+        @Test("a warm daemon replaced under the same name between check and attach compares as recreated")
+        func warmDaemonReplacedUnderTheSameNameComparesAsRecreated() async throws {
+            try await withRealBackend { harness, backend in
+                let sessionID = ZmxSessionID.generateUUIDv7()
+                let zmxPath = try #require(harness.zmxPath)
+                _ = try await harness.spawnZmxSession(
+                    zmxPath: zmxPath, sessionId: sessionID.rawValue, commandArgs: ["/bin/sleep", "300"])
+                try #require(await harness.waitForSessionSocket(sessionId: sessionID.rawValue, exists: true))
+                let baselineIdentity = try await awaitSessionIdentityOnRealEvent(
+                    sessionID, harness: harness, backend: backend, zmxDirectory: harness.zmxDir)
+
+                // Simulate app restart replacing the daemon under the exact
+                // same session id, including within the same second.
+                try await backend.destroySessionByID(sessionID)
+                try #require(await harness.waitForSessionSocket(sessionId: sessionID.rawValue, exists: false))
+                _ = try await harness.spawnZmxSession(
+                    zmxPath: zmxPath, sessionId: sessionID.rawValue, commandArgs: ["/bin/sleep", "300"])
+                try #require(await harness.waitForSessionSocket(sessionId: sessionID.rawValue, exists: true))
+                let replacementIdentity = try await awaitSessionIdentityOnRealEvent(
+                    sessionID, harness: harness, backend: backend, zmxDirectory: harness.zmxDir)
+
+                #expect(replacementIdentity != baselineIdentity)
+                let result = PaneRecreationChecker.checkForRecreation(
+                    baselineIdentity: baselineIdentity, observedIdentity: replacementIdentity)
+                #expect(result == .recreated)
+            }
+        }
+
+        @Test("observing a session with no socket reports couldNotCheck, never recreated on a mere absence of proof")
+        func observingASessionWithNoSocketReportsCouldNotCheck() async throws {
+            try await withRealBackend { _, backend in
+                let sessionID = ZmxSessionID.generateUUIDv7()
+                let baselineIdentity = Data([1, 2, 3])
+                let observedIdentity = try await backend.observeSessionIdentity(sessionID)
+
+                #expect(observedIdentity == nil)
+                let result = PaneRecreationChecker.checkForRecreation(
+                    baselineIdentity: baselineIdentity, observedIdentity: observedIdentity)
+                #expect(result == .couldNotCheck)
+            }
+        }
+
+        @Test("a live, unchanged session compares as unchanged")
+        func aLiveUnchangedSessionComparesAsUnchanged() async throws {
+            try await withRealBackend { harness, backend in
+                let sessionID = ZmxSessionID.generateUUIDv7()
+                let zmxPath = try #require(harness.zmxPath)
+                _ = try await harness.spawnZmxSession(
+                    zmxPath: zmxPath, sessionId: sessionID.rawValue, commandArgs: ["/bin/sleep", "300"])
+                try #require(await harness.waitForSessionSocket(sessionId: sessionID.rawValue, exists: true))
+                let baselineIdentity = try await awaitSessionIdentityOnRealEvent(
+                    sessionID, harness: harness, backend: backend, zmxDirectory: harness.zmxDir)
+
+                // The same still-live daemon, observed again after the
+                // attach settles -- no replacement in between.
+                let postAttachIdentity = try await backend.observeSessionIdentity(sessionID)
+
+                let result = PaneRecreationChecker.checkForRecreation(
+                    baselineIdentity: baselineIdentity, observedIdentity: postAttachIdentity)
+                #expect(result == .unchanged)
             }
         }
 
         // MARK: - Helpers
 
         /// Run backend setup and guaranteed cleanup for each zmx E2E case.
-        private func withRealBackend(
+        /// Not `private`: shared with `ZmxE2ETests+ForcedTiming.swift`, an
+        /// extension of this same struct in a separate file.
+        func withRealBackend(
             _ test: @escaping @Sendable (ZmxTestHarness, ZmxBackend) async throws -> Void
         ) async throws {
             let harness = await ZmxTestHarness()

@@ -294,6 +294,50 @@ package enum AppPolicies {
         package static let restoreMaximumConcurrentAdmissions: Int = 1
     }
 
+    /// Session-restore-after-reboot policy (R1: SR1-SR6b). S3's observer
+    /// deadlines are added by that slice, alongside these.
+    package enum Restore {
+        /// Bounds the one `zmx list` inventory probe `mount()` runs, off-main,
+        /// before the terminal lane activates (SR1, SR4; Program Design item
+        /// 1). The probe never retries: a probe that exceeds this becomes
+        /// `.unavailable(.timedOut)`, which makes every pane `.unverified`
+        /// rather than delaying the first window.
+        package static let inventoryProbeDeadline: Duration = .seconds(2)
+        /// Bounds the warm baseline's off-main fan-out (Program Design
+        /// choice 1): how many `.alive` sessions' `observeSessionIdentity`
+        /// calls `TerminalRestoreKindResolver` runs concurrently in one
+        /// mount, so a large pane count never opens unbounded sockets at
+        /// once. Matches this file's other small per-turn bounds (compare
+        /// `NonterminalContentMount.maximumMountsPerMainActorTurn`).
+        package static let maximumConcurrentIdentityObservations: Int = 4
+        /// `DarwinColdStartObserverSyscalls.readProcessArgumentsBuffer`'s
+        /// bound on immediate, no-backoff retries after `sysctl
+        /// (KERN_PROCARGS2)` returns `EIO` (Program Design item 3, stage 2,
+        /// amended 2026-09-30): a single read landing mid-exec races the
+        /// leader's own argument-space replacement, not a genuinely unread-
+        /// able process -- confirmed empirically against real zmx (30/30
+        /// EIO occurrences, 30/30 recovered on the very next read, `proc_pidinfo`
+        /// live throughout). Only exhausting every attempt counts as
+        /// `.processArgsUnreadable`.
+        package static let processArgumentsReadAttempts: Int = 3
+        /// `ColdStartObserver`'s discovery-stage backoff, in milliseconds,
+        /// after `ZmxSessionControl.observe` throws `.connectionRefused`
+        /// (Program Design item 3, stage 1, amended 2026-09-30): zmx binds
+        /// the session socket's filesystem path before it calls `listen`
+        /// (socket.zig:113-114), so a connect landing in that narrow gap is
+        /// refused rather than queued, and no further kqueue directory
+        /// event follows `listen` to re-trigger discovery. Retried
+        /// immediately, this many times, on this backoff, via
+        /// `Task.sleep(nanoseconds:)` with an explicit millisecond-to-
+        /// nanosecond conversion -- the one justified sleep in this actor,
+        /// since the kernel offers no event to wait on instead. Exhausting
+        /// every attempt still refused leaves the window discovering, not
+        /// unobservable: it settles only on a real fact afterward (the
+        /// attach client's own exit, or a later, non-refused `observe`
+        /// failure once the socket itself is gone).
+        package static let discoveryConnectRetryDelays: [Int] = [1, 2, 4, 8, 16, 32]
+    }
+
     package enum TerminalNavigation {
         package static let pageFraction: Double = 0.9
         package static let smallStepFraction: Double = 0.33

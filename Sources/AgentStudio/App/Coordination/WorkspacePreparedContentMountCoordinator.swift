@@ -63,13 +63,22 @@ final class WorkspacePreparedContentMountCoordinator {
     /// coordinator keep compiling unchanged; production wiring is assigned
     /// at construction in `AppDelegate+WorkspaceBoot.swift`.
     private let placeholderTransitionHandler: (Pane, TerminalStatusPlaceholderMode) -> Void
+    /// SR1: decides every zmx-provider pane's restore kind (Program Design
+    /// item 1), awaited inside `mount()` before the terminal lane activates.
+    /// Defaults to an empty map so existing fakes and harnesses that
+    /// construct this coordinator without restore wiring keep compiling
+    /// unchanged; production wiring is assigned at construction in
+    /// `AppDelegate+WorkspaceBoot.swift`.
+    private let resolveTerminalRestoreKinds: ([TerminalActivationDescriptor]) async -> [PaneId: TerminalRestoreKind]
 
     init(
         cohort: WorkspacePreparedContentMountCohort,
         viewRegistry: ViewRegistry,
         terminalAdmissionPort: any TerminalActivationAdmissionPort,
         nonterminalAdmissionPort: any NonterminalContentMountAdmissionPort,
-        placeholderTransitionHandler: @escaping (Pane, TerminalStatusPlaceholderMode) -> Void = { _, _ in }
+        placeholderTransitionHandler: @escaping (Pane, TerminalStatusPlaceholderMode) -> Void = { _, _ in },
+        resolveTerminalRestoreKinds: @escaping ([TerminalActivationDescriptor]) async -> [PaneId: TerminalRestoreKind] =
+            WorkspacePreparedContentMountCoordinator.noRestoreKindsResolved
     ) {
         // Hidden nonterminal panes stay outside the startup ledger so later
         // demand falls through to the existing steady-state content mount
@@ -86,6 +95,7 @@ final class WorkspacePreparedContentMountCoordinator {
         self.viewRegistry = viewRegistry
         self.terminalAdmissionPort = terminalAdmissionPort
         self.placeholderTransitionHandler = placeholderTransitionHandler
+        self.resolveTerminalRestoreKinds = resolveTerminalRestoreKinds
         terminalDescriptorsByPaneID = Dictionary(
             uniqueKeysWithValues: startupCohort.terminalActivationInput.entries.map { ($0.paneID, $0) }
         )
@@ -173,6 +183,15 @@ final class WorkspacePreparedContentMountCoordinator {
         case .idle:
             lifecycle = .mounting
         }
+
+        // SR1: decided before the terminal lane activates, never after
+        // (`terminalScheduler.activate()` below is what actually attaches).
+        // This costs no extra wall-clock time in practice: that lane already
+        // blocks on the launch-owned release gate until the first
+        // interactive frame is published, so the probe runs inside a window
+        // that was otherwise idle-waiting regardless.
+        let restoreKindsByPaneID = await resolveTerminalRestoreKinds(cohort.terminalActivationInput.entries)
+        terminalAdmissionPort.installRestoreKinds(restoreKindsByPaneID)
 
         async let terminalSettlement = terminalScheduler.activate()
 
@@ -406,5 +425,16 @@ final class WorkspacePreparedContentMountCoordinator {
     private static func isDrawerPlacement(_ placement: TerminalHostPlacementIdentity) -> Bool {
         if case .drawer = placement { return true }
         return false
+    }
+
+    /// Default for `resolveTerminalRestoreKinds`: no computed restore kind
+    /// for any pane, so `TerminalRestoreRuntime.startupCommand` falls back to
+    /// today's plain attach everywhere — existing fakes and harnesses that
+    /// construct this coordinator without restore wiring keep compiling
+    /// unchanged.
+    private static func noRestoreKindsResolved(
+        for descriptors: [TerminalActivationDescriptor]
+    ) async -> [PaneId: TerminalRestoreKind] {
+        [:]
     }
 }

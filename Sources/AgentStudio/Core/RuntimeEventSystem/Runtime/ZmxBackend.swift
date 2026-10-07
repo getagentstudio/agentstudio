@@ -6,7 +6,10 @@ private let zmxLogger = Logger(subsystem: "com.agentstudio", category: "ZmxBacke
 
 // MARK: - Backend Types
 
-struct ZmxCommandRetryPolicy: Sendable {
+/// `package`: it appears as a defaulted parameter type on the now-`package`
+/// designated `ZmxBackend.init`, so a caller outside this module must be
+/// able to see the type even though it only ever uses the default.
+package struct ZmxCommandRetryPolicy: Sendable {
     let maxAttempts: Int
     let backoffs: [Duration]
 
@@ -110,7 +113,7 @@ struct ZmxSessionInventorySnapshot: Equatable, Sendable {
 /// on first `zmx attach`. This means `createPaneSession` only builds a handle
 /// (zero CLI calls), and the actual process starts when the Ghostty surface
 /// executes the attach command.
-package final class ZmxBackend: SessionBackend, ZmxSessionControlling {
+package final class ZmxBackend: SessionBackend, ZmxSessionControlling, ZmxSessionRestoreProbing {
     /// Default zmx directory for socket/state isolation.
     static let defaultZmxDir: String = {
         AppDataPaths.zmxDirectory().path
@@ -148,7 +151,11 @@ package final class ZmxBackend: SessionBackend, ZmxSessionControlling {
     private let retryPolicy: ZmxCommandRetryPolicy
     private let retrySleep: @Sendable (Duration) async -> Void
 
-    init(
+    /// `package`: the restore probe (`AppDelegate+WorkspaceBoot.swift`) needs
+    /// a `ZmxBackend` timed by `AppPolicies.Restore.inventoryProbeDeadline`
+    /// rather than the `configuration:` convenience init's fixed 1.5s
+    /// health-check default, and that boot code lives outside this module.
+    package init(
         executor: ProcessExecutor? = nil,
         zmxPath: String,
         zmxDir: String = ZmxBackend.defaultZmxDir,
@@ -214,6 +221,86 @@ package final class ZmxBackend: SessionBackend, ZmxSessionControlling {
         let escapedId = shellEscape(sessionID.rawValue)
         let escapedShell = shellEscape(shell)
         return "\(escapedPath) attach \(escapedId) \(escapedShell) -i -l"
+    }
+
+    /// Build the cold-restore command (SR3, SR6a, SR10, SR11; Program Design
+    /// revision 11, choice 2): `zmx attach <id> /bin/sh -c '<script>'
+    /// <startupToken>`, where the script
+    ///
+    ///   1. unsets every inherited `CLAUDE_CODE_*` marker;
+    ///   2. `cd`s to the first existing folder in `plan.folderCandidates`,
+    ///      printing that candidate's notice line as it lands (R1 never
+    ///      leaves this unresolved: the last candidate is always attempted
+    ///      even if every `cd` above it failed);
+    ///   3. replays `plan.replayFile` and prints a marker, when present (R2;
+    ///      always nil in R1);
+    ///   4. runs `plan.resume`'s argv before the final interactive shell,
+    ///      when present (R3; always nil in R1), then `exec`s it -- the
+    ///      script's only in-process `exec`, which is what makes the
+    ///      trailing `<startupToken>` argument (`plan.attemptID
+    ///      .startupToken`, the S3 observer's handoff witness) disappear
+    ///      from the leader's arguments exactly at handoff.
+    ///
+    /// Every value comes from `plan`; this reads nothing ambient. Each
+    /// argument is quoted once by `shellEscape`.
+    package static func buildColdRestoreCommand(_ plan: TerminalColdRestorePlan) -> String {
+        let script = coldRestoreScript(for: plan)
+        // The trailing argument becomes the script's $0 -- the startup token
+        // (Program Design rev 11, item 3). It rides in the terminal leader's
+        // argument vector until the script's only in-process exec replaces
+        // them, which is exactly what the startup observer watches for.
+        return
+            "\(shellEscape(plan.zmxExecutable.path)) attach \(shellEscape(plan.sessionID.rawValue)) "
+            + "/bin/sh -c \(shellEscape(script)) \(shellEscape(plan.attemptID.startupToken))"
+    }
+
+    private static func coldRestoreScript(for plan: TerminalColdRestorePlan) -> String {
+        precondition(!plan.folderCandidates.isEmpty, "a cold restore plan must carry at least one folder candidate")
+        precondition(
+            plan.notice.linesByCandidateIndex.count == plan.folderCandidates.count,
+            "a cold restore notice must carry exactly one line per folder candidate"
+        )
+
+        var lines: [String] = [
+            // The rest of the script never depends on which of these existed;
+            // a prefix match is deliberate (choice 2: "unsets ... markers").
+            "for _agentstudio_restore_var in $(env | awk -F= '/^CLAUDE_CODE_/{print $1}'); do "
+                + "unset \"$_agentstudio_restore_var\"; done"
+        ]
+        lines.append(contentsOf: folderFallbackLines(plan: plan))
+        if let replayFile = plan.replayFile {
+            // R2 finalizes this marker's exact copy; R1 never populates
+            // replayFile, so this branch never runs today.
+            lines.append("cat \(shellEscape(replayFile.path)) 2>/dev/null")
+            lines.append("echo \(shellEscape("--- restored after restart ---"))")
+        }
+        let loginShellInvocation = "\(shellEscape(plan.loginShell.path)) -i -l"
+        if let resume = plan.resume {
+            // R3 finalizes the exact resume invocation shape; R1 never
+            // populates it, so this branch never runs today.
+            let resumeArgv = resume.argv.map(shellEscape).joined(separator: " ")
+            lines.append("\(resumeArgv); exec \(loginShellInvocation)")
+        } else {
+            lines.append("exec \(loginShellInvocation)")
+        }
+        return lines.joined(separator: "\n")
+    }
+
+    private static func folderFallbackLines(plan: TerminalColdRestorePlan) -> [String] {
+        var lines: [String] = []
+        for (index, candidate) in plan.folderCandidates.enumerated() {
+            let branchKeyword = index == 0 ? "if" : "elif"
+            lines.append("\(branchKeyword) cd \(shellEscape(candidate.path)) 2>/dev/null; then")
+            lines.append("  echo \(shellEscape(plan.notice.linesByCandidateIndex[index]))")
+        }
+        // The home folder (the last candidate) is assumed to always exist;
+        // this `else` is reached only if even that `cd` failed, in which case
+        // the script stays wherever it already is rather than aborting.
+        let finalNoticeLine = plan.notice.linesByCandidateIndex[plan.notice.linesByCandidateIndex.count - 1]
+        lines.append("else")
+        lines.append("  echo \(shellEscape(finalNoticeLine))")
+        lines.append("fi")
+        return lines
     }
 
     /// Encode one opaque argument for POSIX shell parsing.
@@ -291,6 +378,41 @@ package final class ZmxBackend: SessionBackend, ZmxSessionControlling {
         }
     }
 
+    /// SR1, SR2; Program Design item 1: one bounded, single-attempt `zmx list`
+    /// probe classifying every session (alive/refused/unresponsive), not just
+    /// alive ids. Distinct from `discoverAgentStudioSessions()` above, which
+    /// serves the existing orphan-cleanup use and stays unchanged.
+    ///
+    /// Deliberately bypasses `executeWithRetry`: the restore decision runs
+    /// this exactly once (no retries stack extra time onto the deadline
+    /// already enforced by this instance's executor timeout), and needs to
+    /// tell a timeout apart from every other failure, which
+    /// `executeWithRetry`'s generic `SessionBackendError.operationFailed`
+    /// wrapping would erase.
+    @concurrent nonisolated package func discoverSessionInventory() async -> ZmxSessionInventory {
+        do {
+            let result = try await executor.execute(
+                command: zmxPath,
+                args: ["list"],
+                cwd: nil,
+                environment: ["ZMX_DIR": zmxDir]
+            )
+            guard result.succeeded else {
+                return .unavailable(.exitedNonZero(Int32(result.exitCode)))
+            }
+            return ZmxSessionInventoryParser.parse(stdout: result.stdout)
+        } catch is ProcessError {
+            return .unavailable(.timedOut)
+        } catch {
+            // Not a timeout (caught above) and not a nonzero exit (the
+            // process ran to completion above, or this catch would not be
+            // reached): a launch failure with no exit code to report. -1 is
+            // a sentinel, never a real POSIX exit status.
+            zmxLogger.warning("zmx list failed to launch for session restore inventory: \(error.localizedDescription)")
+            return .unavailable(.exitedNonZero(-1))
+        }
+    }
+
     /// Discover zmx sessions that are not tracked by the store.
     func discoverOrphanSessions(excluding knownSessionIDs: Set<ZmxSessionID>) async -> [ZmxSessionID] {
         let inventory = await discoverAgentStudioSessions()
@@ -326,9 +448,13 @@ package final class ZmxBackend: SessionBackend, ZmxSessionControlling {
         let time = try await WorkspaceUndoJournalClock.current()
         do {
             return try ZmxSessionControl.observe(path: path, bootID: time.bootID).encoded()
-        } catch ZmxSessionControlFailure.unavailable {
+        } catch let failure as ZmxSessionControlFailure where failure == .unavailable || failure == .connectionRefused {
+            // .connectionRefused (amended 2026-09-30): zmx binds the
+            // socket's path before it calls listen, so a connect landing
+            // in that gap is refused the same way an otherwise-unavailable
+            // endpoint is -- treated identically here.
             if try ZmxSessionControl.endpointIsAbsent(path: path) { return nil }
-            throw ZmxSessionControlFailure.unavailable
+            throw failure
         }
     }
 

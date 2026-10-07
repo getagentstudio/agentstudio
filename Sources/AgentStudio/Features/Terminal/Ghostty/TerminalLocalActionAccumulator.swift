@@ -2,215 +2,6 @@ import AgentStudioCore
 import AgentStudioInfrastructure
 import Foundation
 
-enum TerminalLocalAccumulatorAction: Sendable, Equatable {
-    case scrollbar(ScrollbarState, observedAtMilliseconds: Int64)
-    case mouseShape(TerminalMouseShape)
-    case mouseVisibility(Bool)
-    case searchStarted(query: String?)
-    case searchEnded
-    case searchMatches(Int?)
-    case searchSelection(Int?)
-    case titleChanged(String)
-    case tabTitleChanged(String)
-}
-
-enum TerminalSearchLifecycleState: Sendable, Equatable {
-    case active(query: String?, epoch: UInt64)
-    case inactive(lastEndedEpoch: UInt64)
-
-    var epoch: UInt64 {
-        switch self {
-        case .active(_, let epoch):
-            epoch
-        case .inactive(let lastEndedEpoch):
-            lastEndedEpoch
-        }
-    }
-
-    var isActive: Bool {
-        if case .active = self {
-            return true
-        }
-        return false
-    }
-}
-
-struct TerminalSearchLifecycleSummary: Sendable, Equatable {
-    let firstEpoch: UInt64
-    private(set) var latestEpoch: UInt64
-    private(set) var transitionCount: UInt64
-    private(set) var state: TerminalSearchLifecycleState
-
-    init(query: String?, epoch: UInt64) {
-        firstEpoch = epoch
-        latestEpoch = epoch
-        transitionCount = 1
-        state = .active(query: query, epoch: epoch)
-    }
-
-    init(endedEpoch: UInt64) {
-        firstEpoch = endedEpoch
-        latestEpoch = endedEpoch
-        transitionCount = 1
-        state = .inactive(lastEndedEpoch: endedEpoch)
-    }
-
-    mutating func recordStarted(query: String?, epoch: UInt64) {
-        latestEpoch = epoch
-        transitionCount += 1
-        state = .active(query: query, epoch: epoch)
-    }
-
-    mutating func recordEnded(epoch: UInt64) {
-        latestEpoch = epoch
-        transitionCount += 1
-        state = .inactive(lastEndedEpoch: epoch)
-    }
-}
-
-struct TerminalSearchPresentationUpdate: Sendable, Equatable {
-    let epoch: UInt64
-    var hasTotalMatchesUpdate: Bool
-    var totalMatches: Int?
-    var hasSelectionUpdate: Bool
-    var selectedMatchIndex: Int?
-}
-
-struct TerminalLocalPresentationBatch: Sendable, Equatable {
-    var scrollbarState: ScrollbarState?
-    var mouseShape: TerminalMouseShape?
-    var mouseVisibility: Bool?
-    var searchUpdate: TerminalSearchPresentationUpdate?
-}
-
-struct TerminalTitleMetadataBatch: Sendable, Equatable {
-    var runtimeTitle: TerminalLatestSemanticMetadataAction
-    var surfaceTitle: String?
-}
-
-struct TerminalPrecedingTitleBarrier: Sendable, Equatable {
-    let metadata: TerminalTitleMetadataBatch
-    let metrics: TerminalLocalAccumulatorMetrics
-    let firstOfferedAtNanoseconds: UInt64
-}
-
-struct TerminalScrollbarActivityAggregate: Sendable, Equatable {
-    let firstObservedAtMilliseconds: Int64
-    private(set) var latestObservedAtMilliseconds: Int64
-    let firstTotalRows: Int
-    private(set) var latestTotalRows: Int
-    private(set) var cumulativePositiveRowGrowth: Int
-    private(set) var sampleCount: Int
-    let firstIsPinnedToBottom: Bool
-    private(set) var latestIsPinnedToBottom: Bool
-    private(set) var didEnterPinnedToBottom: Bool
-    private(set) var didExitPinnedToBottom: Bool
-
-    init(state: ScrollbarState, observedAtMilliseconds: Int64) {
-        firstObservedAtMilliseconds = observedAtMilliseconds
-        latestObservedAtMilliseconds = observedAtMilliseconds
-        firstTotalRows = state.total
-        latestTotalRows = state.total
-        cumulativePositiveRowGrowth = 0
-        sampleCount = 1
-        firstIsPinnedToBottom = state.isPinnedToBottom
-        latestIsPinnedToBottom = state.isPinnedToBottom
-        didEnterPinnedToBottom = false
-        didExitPinnedToBottom = false
-    }
-
-    mutating func merge(state: ScrollbarState, observedAtMilliseconds: Int64) {
-        cumulativePositiveRowGrowth += max(0, state.total - latestTotalRows)
-        if state.isPinnedToBottom != latestIsPinnedToBottom {
-            if state.isPinnedToBottom {
-                didEnterPinnedToBottom = true
-            } else {
-                didExitPinnedToBottom = true
-            }
-        }
-        latestObservedAtMilliseconds = observedAtMilliseconds
-        latestTotalRows = state.total
-        latestIsPinnedToBottom = state.isPinnedToBottom
-        sampleCount += 1
-    }
-}
-
-struct TerminalLocalAccumulatorMetrics: Sendable, Equatable {
-    var offeredCount: UInt64 = 0
-    var replacedCount: UInt64 = 0
-    var equalSuppressedCount: UInt64 = 0
-    var scheduledDrainCount: UInt64 = 0
-    var followUpDrainCount: UInt64 = 0
-    var outputAdvancementCount: UInt64 = 0
-
-    func subtracting(_ subset: Self) -> Self? {
-        guard
-            offeredCount >= subset.offeredCount,
-            replacedCount >= subset.replacedCount,
-            equalSuppressedCount >= subset.equalSuppressedCount,
-            scheduledDrainCount >= subset.scheduledDrainCount,
-            followUpDrainCount >= subset.followUpDrainCount,
-            outputAdvancementCount >= subset.outputAdvancementCount
-        else { return nil }
-
-        return Self(
-            offeredCount: offeredCount - subset.offeredCount,
-            replacedCount: replacedCount - subset.replacedCount,
-            equalSuppressedCount: equalSuppressedCount - subset.equalSuppressedCount,
-            scheduledDrainCount: scheduledDrainCount - subset.scheduledDrainCount,
-            followUpDrainCount: followUpDrainCount - subset.followUpDrainCount,
-            outputAdvancementCount: outputAdvancementCount - subset.outputAdvancementCount
-        )
-    }
-}
-
-struct TerminalLocalActionBatch: Sendable, Equatable {
-    let surfaceID: UUID
-    let presentation: TerminalLocalPresentationBatch
-    let activity: TerminalScrollbarActivityAggregate?
-    let activityContext: TerminalActivityProjectionContext?
-    let searchLifecycle: TerminalSearchLifecycleSummary?
-    let titleMetadata: TerminalTitleMetadataBatch?
-    let metrics: TerminalLocalAccumulatorMetrics
-    let firstOfferedAtNanoseconds: UInt64
-
-    var retainedEntryCount: Int {
-        var count = searchLifecycle == nil ? 0 : 1
-        if presentation.scrollbarState != nil { count += 1 }
-        if presentation.mouseShape != nil { count += 1 }
-        if presentation.mouseVisibility != nil { count += 1 }
-        if presentation.searchUpdate != nil { count += 1 }
-        if activity != nil { count += 1 }
-        if titleMetadata != nil {
-            count += 1
-            if titleMetadata?.surfaceTitle != nil { count += 1 }
-        }
-        return count
-    }
-}
-
-enum TerminalLocalAccumulatorOfferResult: Sendable, Equatable {
-    case scheduled
-    case coalesced
-    case equalSuppressed
-    case rejectedInactiveSearch
-}
-
-enum TerminalLocalAccumulatorDrainCompletion: Sendable, Equatable {
-    case idle
-    case followUpScheduled
-}
-
-enum TerminalLocalActionLane: Hashable, Sendable {
-    case immediate
-    case title
-}
-
-struct TerminalLocalDrainRequest: Equatable, Sendable {
-    let lane: TerminalLocalActionLane
-    let absoluteDeadlineNanoseconds: UInt64?
-}
-
 /// Terminal-owned fixed-key contraction point for high-rate local Ghostty signals.
 /// It retains no view, runtime, borrowed pointer, or globally replayable event.
 final class TerminalLocalActionAccumulator: @unchecked Sendable {
@@ -289,7 +80,6 @@ final class TerminalLocalActionAccumulator: @unchecked Sendable {
                 || searchLifecycle != nil
                 || titleMetadata != nil
         }
-
     }
 
     private struct SurfaceState {
@@ -305,6 +95,8 @@ final class TerminalLocalActionAccumulator: @unchecked Sendable {
         var cwdRetryRequired = false
         var publicationRetryAwaitingDemand: Set<TerminalLocalActionLane> = []
         var latestObservedScrollbarTotalRows: Int?
+        /// SR6b: immediate-lane only; `beginDrain` pulls it independently.
+        var pendingRestorePhaseEnd: TerminalLocalRestorePhaseEnd?
 
         func phase(for lane: TerminalLocalActionLane) -> DrainPhase {
             phases[lane] ?? .idle
@@ -329,7 +121,7 @@ final class TerminalLocalActionAccumulator: @unchecked Sendable {
         }
 
         var hasAnyPendingWork: Bool {
-            pending.hasWork || titlePending.hasWork
+            pending.hasWork || titlePending.hasWork || pendingRestorePhaseEnd != nil
         }
 
         var hasPublicationState: Bool {
@@ -502,7 +294,9 @@ final class TerminalLocalActionAccumulator: @unchecked Sendable {
         lock.withLock {
             guard var state = statesBySurfaceID[surfaceID] else { return nil }
             guard case .scheduled = state.phase(for: lane) else { return nil }
-            guard state.pending(for: lane).hasWork else {
+            // SR6b: not part of `pending.hasWork` — pulled independently.
+            let restorePhaseEnd = lane == .immediate ? state.pendingRestorePhaseEnd : nil
+            guard state.pending(for: lane).hasWork || restorePhaseEnd != nil else {
                 state.setPhase(.idle, for: lane)
                 if lane == .title {
                     cancelScheduledTitleDrain(surfaceID)
@@ -514,6 +308,7 @@ final class TerminalLocalActionAccumulator: @unchecked Sendable {
             let detached = state.pending(for: lane)
             state.setPending(PendingBatch(), for: lane)
             if lane == .title { state.titleDeadlineNanoseconds = nil }
+            if lane == .immediate { state.pendingRestorePhaseEnd = nil }
             statesBySurfaceID[surfaceID] = state
             return TerminalLocalActionBatch(
                 surfaceID: surfaceID,
@@ -526,8 +321,37 @@ final class TerminalLocalActionAccumulator: @unchecked Sendable {
                 titleMetadata: detached.titleMetadata,
                 metrics: detached.metrics,
                 firstOfferedAtNanoseconds: detached.firstOfferedAtNanoseconds
-                    ?? DispatchTime.now().uptimeNanoseconds
+                    ?? DispatchTime.now().uptimeNanoseconds,
+                restorePhaseEnd: restorePhaseEnd
             )
+        }
+    }
+
+    /// SR6b: the cold latch calls this synchronously, splitting pending
+    /// activity ahead of the control. A later call before the drain is a no-op.
+    func markRestorePhaseEnded(
+        surfaceID: UUID, generation: RestoreGeneration, contextBeforeControl: TerminalActivityProjectionContext?
+    ) {
+        lock.withLock {
+            let watermark = searchEpochWatermarksBySurfaceID[surfaceID] ?? 0
+            var state = statesBySurfaceID[surfaceID] ?? SurfaceState(search: SearchLifecycleState(epoch: watermark))
+            guard state.pendingRestorePhaseEnd == nil else { return }
+            var precedingAggregate: TerminalActivityAggregateInput?
+            if let aggregate = state.pending.activity,
+                let latestState = state.pending.presentation.scrollbarState,
+                let context = state.pending.activityContext ?? state.activityContext ?? contextBeforeControl
+            {
+                precedingAggregate = TerminalActivityAggregateInput(
+                    aggregate: aggregate, latestState: latestState, context: context)
+                state.pending.activity = nil
+                state.pending.activityContext = nil
+            }
+            state.pendingRestorePhaseEnd = TerminalLocalRestorePhaseEnd(
+                precedingAggregate: precedingAggregate, generation: generation)
+            let wasIdle = state.phase(for: .immediate) == .idle
+            if wasIdle { state.setPhase(.scheduled, for: .immediate) }
+            statesBySurfaceID[surfaceID] = state
+            if wasIdle { scheduleDrain(surfaceID, drainRequest(for: .immediate, state: state)) }
         }
     }
 
@@ -677,6 +501,24 @@ final class TerminalLocalActionAccumulator: @unchecked Sendable {
     ) -> TerminalLocalAccumulatorDrainCompletion {
         lock.withLock { () -> TerminalLocalAccumulatorDrainCompletion in
             guard var state = statesBySurfaceID[surfaceID], state.phase(for: lane) == .draining else { return .idle }
+            // F2 (review round 1): a control landing mid-drain was never
+            // part of the batch `beginDrain` already detached (`markRestorePhaseEnded`
+            // schedules nothing while this lane is draining) -- only a
+            // follow-up from here can ever deliver it. Its presence alone
+            // demands one, unconditionally, ahead of and independent of the
+            // publication-retry-awaiting-demand branch just below: that
+            // branch exists for a REJECTED publication waiting on new
+            // demand, a different concern from an un-sent control that must
+            // never be dropped.
+            if lane == .immediate, state.pendingRestorePhaseEnd != nil {
+                state.setPhase(.scheduled, for: lane)
+                var pending = state.pending(for: lane)
+                pending.metrics.followUpDrainCount += 1
+                state.setPending(pending, for: lane)
+                statesBySurfaceID[surfaceID] = state
+                scheduleFollowUpDrain(surfaceID, drainRequest(for: lane, state: state))
+                return .followUpScheduled
+            }
             if state.pending(for: lane).hasWork {
                 if state.publicationRetryAwaitingDemand.contains(lane) {
                     state.setPhase(.idle, for: lane)

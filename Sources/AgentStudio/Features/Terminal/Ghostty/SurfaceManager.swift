@@ -195,6 +195,17 @@ package final class SurfaceManager {
 
     // MARK: - Surface Creation
 
+    /// F9 (review round 1): a restore command's trailing argument is the
+    /// startup attempt token (PD rev 21:162, "the token never reaches logs,
+    /// telemetry or OTLP"). Logs presence and length only -- never the
+    /// command text itself, which would leak it into this local diagnostic
+    /// trace. Extracted as a pure function so its redaction is a behavioral
+    /// unit-test assertion, not a source-text match that a differently
+    /// spelled regression could still pass.
+    nonisolated static func createSurfaceTraceMessage(metadata: SurfaceMetadata) -> String {
+        "SurfaceManager.createSurface begin pane=\(metadata.paneId?.uuidString ?? "nil") title=\(metadata.title) cwd=\(metadata.cwd?.path ?? "nil") cmdPresent=\(metadata.command != nil) cmdLength=\(metadata.command?.count ?? 0)"
+    }
+
     /// Create a new surface with configuration
     /// - Parameters:
     ///   - config: Ghostty surface configuration
@@ -208,9 +219,7 @@ package final class SurfaceManager {
             preconditionFailure("SurfaceManager requires an App command dispatcher before creating surfaces")
         }
 
-        RestoreTrace.log(
-            "SurfaceManager.createSurface begin pane=\(metadata.paneId?.uuidString ?? "nil") title=\(metadata.title) cwd=\(metadata.cwd?.path ?? "nil") cmd=\(metadata.command ?? "nil")"
-        )
+        RestoreTrace.log(Self.createSurfaceTraceMessage(metadata: metadata))
         var mutableConfig = config
 
         // Allow delegate to modify config
@@ -602,6 +611,16 @@ package final class SurfaceManager {
         surfaceHealth[id] ?? .dead
     }
 
+    /// SR5; Program Design item 3 (`WorkspaceSurfaceManaging`'s doc comment
+    /// carries the full rationale). A no-op if the pane retired before this
+    /// observation settled, or if the pane's surface is already showing a
+    /// terminal health state the periodic reconciliation itself would not
+    /// downgrade (`checkSurfaceHealth`'s widened guard covers this one back).
+    func reportColdRestoreFailure(paneID: UUID, failure: ColdStartFailure) {
+        guard let surfaceId = surfaceId(forPaneId: paneID) else { return }
+        updateHealth(surfaceId, .unhealthy(reason: .coldRestoreFailed(failure)))
+    }
+
     /// Get current working directory for a surface
     func cwd(for id: UUID) -> URL? {
         metadata(for: id)?.cwd
@@ -804,9 +823,15 @@ extension SurfaceManager {
 
         // Check if process exited
         if ghostty_surface_process_exited(surface) {
-            if case .processExited = surfaceHealth[id] {
-                // Already in exited state
-            } else {
+            switch surfaceHealth[id] {
+            case .processExited:
+                break  // Already in exited state.
+            case .unhealthy(reason: .coldRestoreFailed):
+                // The specific restore-start reason already explains this
+                // exit; the generic "Process Exited" copy would only
+                // overwrite it on this poll's next tick.
+                break
+            default:
                 updateHealth(id, .processExited(exitCode: nil))
             }
             return

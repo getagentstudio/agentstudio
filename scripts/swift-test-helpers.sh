@@ -802,7 +802,9 @@ large|DerivedTerminalActivityNotificationRegressionTests|process-global
 large|DrawerCommandIntegrationTests|process-global
 large|DrawerZoomFrameCurrencyIntegrationTests|process-global
 e2e|E2ESerializedTests|serial
+zmx|E2ESerializedTests/ColdRestoreRestorePhaseIntersectionTests|serial
 e2e|E2ESerializedTests/FilesystemSourceE2ETests|serial
+zmx|E2ESerializedTests/TerminalRestoreZmxIntegrationTests|serial
 e2e|E2ESerializedTests/ZmxBackendIntegrationTests|serial
 zmx|E2ESerializedTests/ZmxE2ETests|serial
 large|ExpectationLogTests|process-global

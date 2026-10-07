@@ -345,6 +345,12 @@ extension Ghostty.ActionRouter {
             equalWriteSuppressedCount = 0
         }
         let compactApplyServiceTime = compactApplyStartedAt.duration(to: clock.now)
+        // SR6b: the restore-phase-ended control (with the aggregate that
+        // preceded the person's first input) goes out ahead of whatever
+        // activity accumulated after the latch fired — "the pre-input
+        // aggregate, the control, then later activity, in that order"
+        // (Program Design item 13).
+        await submitRestorePhaseEndIfNeeded(batch, surfaceID: surfaceID, paneUUID: paneUUID, dependencies: dependencies)
         let activityProjectionRoundTrip = await publishActivityProjectionIfNeeded(
             batch,
             paneUUID: paneUUID,
@@ -368,6 +374,31 @@ extension Ghostty.ActionRouter {
                 currentUptimeNanoseconds: currentUptimeNanoseconds
             ),
             applyOutcome: batch.titleMetadata == nil ? nil : (didChangeTitle ? .changed : .equal)
+        )
+    }
+
+    /// SR6b (Program Design item 13): submits the ordered control the latch
+    /// (`TerminalLocalActionAccumulator.markRestorePhaseEnded`) already
+    /// detached the preceding aggregate for. Submits `.orderedControl`
+    /// directly rather than through `applyOrderedActivityControl`, which
+    /// would re-detach and find nothing — the split already happened at the
+    /// latch instant, under the same lock, ahead of any later activity this
+    /// same batch may also carry.
+    @MainActor
+    private static func submitRestorePhaseEndIfNeeded(
+        _ batch: TerminalLocalActionBatch,
+        surfaceID: UUID,
+        paneUUID: UUID,
+        dependencies: TerminalLocalActionDrainDependencies
+    ) async {
+        guard let restorePhaseEnd = batch.restorePhaseEnd, !Task.isCancelled else { return }
+        await dependencies.submitActivityInput(
+            .orderedControl(
+                surfaceID: surfaceID,
+                paneID: paneUUID,
+                precedingAggregate: restorePhaseEnd.precedingAggregate,
+                control: .restorePhaseEnded(restorePhaseEnd.generation)
+            )
         )
     }
 

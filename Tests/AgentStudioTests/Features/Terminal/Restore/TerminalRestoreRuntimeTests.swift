@@ -68,6 +68,74 @@ struct TerminalRestoreRuntimeTests {
         #expect(runtime.zmxAttachDiagnostics(for: pane) == nil)
     }
 
+    @Test("no computed kind (nil) reuses today's plain attach command")
+    func noKindReusesTodaysAttachCommand() throws {
+        let storedText = "as-nil-kind-plain-attach"
+        let storedSessionID = try makeRestoredZmxSessionID(storedText)
+        let pane = makeTerminalPane(sessionID: storedSessionID)
+        let runtime = TerminalRestoreRuntime(sessionConfiguration: enabledConfiguration)
+        let plainAttachCommand = try #require(runtime.zmxAttachCommand(for: pane))
+
+        #expect(runtime.startupCommand(for: pane, kind: nil) == plainAttachCommand)
+    }
+
+    @Test("a cold kind builds the cold-restore command, not the plain attach command")
+    func coldKindBuildsColdRestoreCommand() throws {
+        let storedText = "as-cold-startup-command"
+        let storedSessionID = try makeRestoredZmxSessionID(storedText)
+        let pane = makeTerminalPane(sessionID: storedSessionID)
+        let runtime = TerminalRestoreRuntime(sessionConfiguration: enabledConfiguration)
+        let plan = try makeFallbackPlan(pane: pane, sessionID: storedSessionID)
+
+        let coldCommand = try #require(runtime.startupCommand(for: pane, kind: .cold(plan)))
+
+        #expect(coldCommand == ZmxBackend.buildColdRestoreCommand(plan))
+        #expect(coldCommand.contains(storedText))
+        #expect(coldCommand != runtime.zmxAttachCommand(for: pane))
+    }
+
+    /// Amended 2026-09-30 ("option A"; S4b): `.warm` no longer reuses the
+    /// plain attach command -- it sends its own fallback cold-restore
+    /// script, because a real zmx daemon ignores that script for a session
+    /// it finds alive (`vendor/zmx/src/loop.zig`'s `ensureSession`), so
+    /// sending it changes nothing for a genuinely warm session while
+    /// recreating one that died between the liveness check and the
+    /// reconnect.
+    @Test("a warm kind builds its fallback cold-restore command, not the plain attach command")
+    func warmKindBuildsItsFallbackColdRestoreCommand() throws {
+        let storedText = "as-warm-startup-command"
+        let storedSessionID = try makeRestoredZmxSessionID(storedText)
+        let pane = makeTerminalPane(sessionID: storedSessionID)
+        let runtime = TerminalRestoreRuntime(sessionConfiguration: enabledConfiguration)
+        let plan = try makeFallbackPlan(pane: pane, sessionID: storedSessionID)
+
+        let warmCommand = try #require(
+            runtime.startupCommand(for: pane, kind: .warm(identity: Data([1, 2, 3]), fallback: plan))
+        )
+
+        #expect(warmCommand == ZmxBackend.buildColdRestoreCommand(plan))
+        #expect(warmCommand != runtime.zmxAttachCommand(for: pane))
+    }
+
+    /// Amended 2026-09-30 ("option A"; S4b): same rationale as the warm
+    /// case -- an unverified pane also sends its fallback script rather
+    /// than attaching plain.
+    @Test("an unverified kind builds its fallback cold-restore command, not the plain attach command")
+    func unverifiedKindBuildsItsFallbackColdRestoreCommand() throws {
+        let storedText = "as-unverified-startup-command"
+        let storedSessionID = try makeRestoredZmxSessionID(storedText)
+        let pane = makeTerminalPane(sessionID: storedSessionID)
+        let runtime = TerminalRestoreRuntime(sessionConfiguration: enabledConfiguration)
+        let plan = try makeFallbackPlan(pane: pane, sessionID: storedSessionID)
+
+        let unverifiedCommand = try #require(
+            runtime.startupCommand(for: pane, kind: .unverified(.sessionUnresponsive, fallback: plan))
+        )
+
+        #expect(unverifiedCommand == ZmxBackend.buildColdRestoreCommand(plan))
+        #expect(unverifiedCommand != runtime.zmxAttachCommand(for: pane))
+    }
+
     @Test("disabled session restoration does not build an attach command")
     func disabledSessionRestorationDoesNotBuildAttachCommand() {
         let pane = makeTerminalPane(sessionID: .generateUUIDv7())
@@ -107,6 +175,17 @@ struct TerminalRestoreRuntimeTests {
                 title: "Terminal",
                 facets: facets
             )
+        )
+    }
+
+    private func makeFallbackPlan(pane: Pane, sessionID: ZmxSessionID) throws -> TerminalColdRestorePlan {
+        TerminalColdRestorePlanBuilder.buildPlan(
+            pane: pane,
+            sessionID: sessionID,
+            zmxExecutablePath: try #require(enabledConfiguration.zmxPath),
+            zmxDirectoryPath: enabledConfiguration.zmxDir,
+            loginShellPath: "/bin/zsh",
+            repositoryMainFolder: nil
         )
     }
 }

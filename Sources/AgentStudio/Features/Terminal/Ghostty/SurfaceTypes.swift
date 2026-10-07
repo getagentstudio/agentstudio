@@ -16,6 +16,14 @@ enum SurfaceHealth: Equatable {
         case rendererUnhealthy
         case initializationFailed
         case unknown
+        /// SR5; Program Design item 3: a cold restore's attach process ended
+        /// before handoff was confirmed (`ColdStartOutcome.failed`). Reaches
+        /// this overlay only on the death path -- the surface's process has
+        /// genuinely exited -- so it is never a toast; it replaces the
+        /// generic "Process Exited" copy with the specific restore-start
+        /// reason. `.unobservable` outcomes never reach here: those go to
+        /// telemetry only, since the shell may still be running fine.
+        case coldRestoreFailed(ColdStartFailure)
     }
 
     var isHealthy: Bool {

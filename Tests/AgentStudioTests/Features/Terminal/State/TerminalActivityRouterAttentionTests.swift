@@ -213,7 +213,9 @@ struct TerminalActivityRouterAttentionTests {
 
         // Act
         fixture.selectPane(at: 1)
-        await assertEventuallyMain("B attendance cancels its unseen window") { fixture.clock.pendingSleepCount == 0 }
+        await assertEventuallyMain("B attendance cancels its unseen window") {
+            fixture.clock.pendingSleepCount == 0
+        }
 
         // Assert
         #expect(fixture.clock.pendingSleepCount == 0)

@@ -50,6 +50,10 @@ extension Ghostty.ActionRouter {
                 surfaceID: surfaceID,
                 actionName: actionName
             )
+            // SR5; Program Design item 3: a no-op for a pane with no pending
+            // cold-start window (ColdStartAttachExitBinding.reportAttachClientExited
+            // is a no-op when unregistered).
+            reportColdStartAttachClientExited(paneID: paneID)
         }
     }
 

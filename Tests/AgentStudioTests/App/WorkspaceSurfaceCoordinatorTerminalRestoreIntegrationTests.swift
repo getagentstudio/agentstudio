@@ -248,7 +248,7 @@ struct WorkspaceSurfaceTerminalRestoreIntegrationTests {
             let admission = try makePreparedTerminalAdmission(pane: pane)
 
             // Act
-            let result = harness.coordinator.mountPreparedTerminalContent(
+            let result = await harness.coordinator.mountPreparedTerminalContent(
                 admission: admission,
                 initialFrame: nil,
                 authority: .released(admission.descriptor.paneID)
@@ -316,7 +316,7 @@ struct WorkspaceSurfaceTerminalRestoreIntegrationTests {
             let frozenFrame = NSRect(x: 12, y: 18, width: 880, height: 540)
 
             // Act
-            let result = harness.coordinator.mountPreparedTerminalContent(
+            let result = await harness.coordinator.mountPreparedTerminalContent(
                 admission: admission,
                 initialFrame: frozenFrame,
                 authority: .released(admission.descriptor.paneID)

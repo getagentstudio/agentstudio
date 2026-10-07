@@ -343,6 +343,10 @@ extension Ghostty {
 
         /// Any error during surface initialization
         private(set) var error: Error?
+        /// SR6b: non-nil only for a cold-restored surface, during its
+        /// restore phase. Set after a successful cold arm; cleared by the
+        /// input latch (`GhosttySurfaceView+Input.swift`).
+        package var restorePhaseLatch: RestoreGeneration?
         weak var terminalRuntime: TerminalRuntime?
         weak var performanceTraceRecorder: AgentStudioPerformanceTraceRecorder?
         let appCommandDispatcher: any AppCommandDispatching

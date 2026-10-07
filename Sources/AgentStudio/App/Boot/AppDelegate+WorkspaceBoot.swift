@@ -593,6 +593,14 @@ extension AppDelegate {
                 uniqueKeysWithValues: contentMountCohort.terminalActivationInput.entries.map { ($0.paneID, $0) }
             )
         )
+        // A1 (test technique amendment, Lead 2026-10-01): resolveRestoreKinds
+        // gained a second, default-valued parameter
+        // (observeDerivationExecutionContext), so the unapplied method
+        // reference `.resolveRestoreKinds(for:)` no longer resolves --
+        // Swift doesn't apply default arguments to an unapplied reference.
+        // Forward explicitly instead.
+        let terminalRestoreKindResolver = makeTerminalRestoreKindResolver(
+            sessionConfiguration: coordinator.sessionConfig)
         let contentMountCoordinator = WorkspacePreparedContentMountCoordinator(
             cohort: contentMountCohort,
             viewRegistry: viewRegistry,
@@ -603,6 +611,9 @@ extension AppDelegate {
             ),
             placeholderTransitionHandler: { [weak coordinator] pane, mode in
                 coordinator?.registerTerminalPlaceholderIfNeeded(for: pane, mode: mode)
+            },
+            resolveTerminalRestoreKinds: { descriptors in
+                await terminalRestoreKindResolver.resolveRestoreKinds(for: descriptors)
             }
         )
         installWorkspacePreparedContentMountOwners(
@@ -622,6 +633,35 @@ extension AppDelegate {
             guard !acceptedPaneIDs.isEmpty else { return }
             await preparedMountOwners.coordinator.acceptTerminalGeometry(acceptedPaneIDs)
         }
+    }
+
+    /// One probe-dedicated `ZmxBackend`, timed by `AppPolicies.Restore
+    /// .inventoryProbeDeadline` rather than the 1.5s default meant for
+    /// health-checks and attach diagnostics (`ZmxBackend(configuration:)`
+    /// above): the restore decision is a named, bounded policy, not an
+    /// accidental reuse of an unrelated constant.
+    private func makeTerminalRestoreKindResolver(
+        sessionConfiguration: SessionConfiguration
+    ) -> TerminalRestoreKindResolver {
+        let deadline = AppPolicies.Restore.inventoryProbeDeadline.components
+        let deadlineSeconds = Double(deadline.seconds) + Double(deadline.attoseconds) / 1e18
+        var probe: (any ZmxSessionRestoreProbing)?
+        if let zmxPath = sessionConfiguration.zmxPath {
+            let probeBackend = ZmxBackend(
+                zmxPath: zmxPath,
+                zmxDir: sessionConfiguration.zmxDir,
+                commandTimeoutSeconds: deadlineSeconds
+            )
+            probe = probeBackend
+        }
+        return TerminalRestoreKindResolver(
+            sessionConfiguration: sessionConfiguration,
+            probe: probe,
+            repositoryMainFolder: { [weak self] pane in
+                guard let repoId = pane.repoId else { return nil }
+                return self?.store.repositoryTopologyAtom.repo(repoId)?.repoPath
+            }
+        )
     }
 
     private func bootChainPipelineStep(
