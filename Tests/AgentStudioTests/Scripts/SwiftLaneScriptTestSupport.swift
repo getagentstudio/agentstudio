@@ -9,11 +9,36 @@ struct LaneScriptBashResult: Sendable {
     let output: String
 }
 
+let swiftTaskParentEnvironmentProbe = """
+    for inherited_variable in $(compgen -e); do
+      case "$inherited_variable" in
+        LANE_*|SWIFT_TEST_*|SWIFT_BUILD_*|AGENTSTUDIO_HELD_STEP_LOG)
+          echo "PARENT_ENV_INHERITED=$inherited_variable"
+          ;;
+      esac
+    done
+    """
+
+func swiftTaskFixtureEnvironment() -> [String: String] {
+    var environment = ["PATH": ProcessInfo.processInfo.environment["PATH"] ?? "/usr/bin:/bin:/usr/sbin:/sbin"]
+    for name in ["TMPDIR", "DEVELOPER_DIR"] {
+        if let value = ProcessInfo.processInfo.environment[name] {
+            environment[name] = value
+        }
+    }
+    return environment
+}
+
+func loadSwiftLaneRunnerReportingSource() throws -> String {
+    try String(contentsOfFile: "scripts/run-swift-test-task.sh", encoding: .utf8)
+        + "\n" + String(contentsOfFile: "scripts/swift-test-lane-report.sh", encoding: .utf8)
+}
+
 /// Runs one bash command from the repository root with stdout and stderr merged.
 ///
 /// The child is awaited off the cooperative pool: on a 3-core CI runner a
 /// blocking wait here would starve every other suite's tasks.
-func runLaneScriptBash(_ command: String) async throws -> LaneScriptBashResult {
+func runLaneScriptBash(_ command: String, environment: [String: String]? = nil) async throws -> LaneScriptBashResult {
     try await withoutBlockingCooperativePool {
         let outputURL = FileManager.default.temporaryDirectory
             .appending(path: "swift-lane-runner-output-\(UUIDv7.generate().uuidString).log")
@@ -27,6 +52,9 @@ func runLaneScriptBash(_ command: String) async throws -> LaneScriptBashResult {
         process.executableURL = URL(fileURLWithPath: "/bin/bash")
         process.arguments = ["-c", command]
         process.currentDirectoryURL = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
+        if let environment {
+            process.environment = environment
+        }
         process.standardOutput = outputHandle
         process.standardError = outputHandle
         try process.run()
@@ -69,14 +97,14 @@ func laneOutputLines(_ output: String) -> [String] {
 }
 
 /// Runs a lane script command that must succeed, and returns its output.
-func laneBash(_ command: String) async throws -> String {
-    let result = try await runLaneScriptBash(command)
+func laneBash(_ command: String, environment: [String: String]? = nil) async throws -> String {
+    let result = try await runLaneScriptBash(command, environment: environment)
     #expect(result.exitCode == 0, Comment(rawValue: result.output))
     return result.output
 }
 
 /// For scripts that deliberately fail: these tests drive crashing and hung
 /// children, so a non-zero status is the expected outcome.
-func laneBashAllowingFailure(_ command: String) async throws -> String {
-    (try await runLaneScriptBash(command)).output
+func laneBashAllowingFailure(_ command: String, environment: [String: String]? = nil) async throws -> String {
+    (try await runLaneScriptBash(command, environment: environment)).output
 }

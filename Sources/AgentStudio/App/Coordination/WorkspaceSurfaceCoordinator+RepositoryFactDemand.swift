@@ -32,8 +32,8 @@ extension WorkspaceSurfaceCoordinator {
     private func observeRepositoryFactDemand(generation: UInt64) {
         let input = withObservationTracking {
             captureRepositoryFactDemandInput()
-        } onChange: {
-            Task { @MainActor [weak self] in
+        } onChange: { [weak self] in
+            Task { @MainActor in
                 guard let self,
                     self.repositoryFactDemandObservationGeneration == generation
                 else { return }

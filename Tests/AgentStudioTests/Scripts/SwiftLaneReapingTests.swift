@@ -124,7 +124,7 @@ struct SwiftLaneReapingTests {
                 + #"while [ "$#" -gt 0 ]; do if [ "$1" = "--event-stream-output-path" ]; "#
                 + #"then printf "%s\\n" LEDGER_RECORD_ONE LEDGER_RECORD_TWO > "$2"; fi; shift; done; "#
                 + #"read -r release < "$0.release"' "#
-                + "'\(ledgerWorkerPIDFile)' "
+                + "'\(ledgerWorkerPIDFile)' swiftpm-testing-helper "
                 + "|| returned=$?; echo \"RETURNED=${returned:-0}\"; "
                 + "for ledger in '\(ledgerDirectory)'/*.events.jsonl; do "
                 + "echo \"LEDGER_AT=$ledger\"; cat \"$ledger\"; done; "
@@ -142,12 +142,18 @@ struct SwiftLaneReapingTests {
         #expect(wedgedOutput.contains("LEDGER_RECORD_TWO"))
         #expect(wedgedOutput.contains("LEDGER_WORKER_ALIVE=no"))
 
+        let passingEvents = try InvocationReceiptFixture()
+        defer { passingEvents.remove() }
+        try writeCapturedInvocation(passingEvents, selecting: "recordsPass()")
         let cleanDirectory = workDirectory + "/clean-runs"
         let cleanOutput = try await runBash(
             "LOG_PREFIX=lane; TIMEOUT_SECONDS=60; BUILD_PATH=.build-agent-1; "
                 + "export LANE_EVENT_STREAM_DIR='\(cleanDirectory)' LANE_EVENT_STREAM_RETAIN_ALWAYS=0; "
                 + "source scripts/swift-test-helpers.sh; "
-                + "run_swift_with_timeout 'clean probe' 60 /bin/bash -c 'echo CLEAN_RUN_OK'; "
+                + "run_swift_with_timeout 'clean probe' 60 /bin/bash -c "
+                + #"'while [ "$#" -gt 0 ]; do if [ "$1" = "--event-stream-output-path" ]; "#
+                + #"then cp "$0" "$2"; fi; shift; done; echo CLEAN_RUN_OK' "#
+                + "'\(passingEvents.events.path)' swiftpm-testing-helper; "
                 + "echo \"LEDGERS=$(find '\(cleanDirectory)' -name '*.events.jsonl' | wc -l | tr -d '[:space:]')\"; "
                 + "echo \"TIMINGS=$(find '\(cleanDirectory)' -name '*.timing.json' | wc -l | tr -d '[:space:]')\""
         )
@@ -161,7 +167,7 @@ struct SwiftLaneReapingTests {
     func laneINTTrapReachesAnActiveCommandGroup() async throws {
         let workDirectory = NSTemporaryDirectory() + "agentstudio-lane-int-group-\(UUIDv7.generate())"
         defer { try? FileManager.default.removeItem(atPath: workDirectory) }
-        let laneRunnerScript = try String(contentsOfFile: "scripts/run-swift-test-task.sh", encoding: .utf8)
+        let laneRunnerScript = try loadSwiftLaneRunnerReportingSource()
         let signalTrap = try shellFunction(named: "trap_lane_termination_signals", in: laneRunnerScript)
         let command = #"""
             set -euo pipefail
@@ -222,7 +228,7 @@ struct SwiftLaneReapingTests {
         defer { try? FileManager.default.removeItem(atPath: workDirectory) }
         try FileManager.default.createDirectory(atPath: workDirectory, withIntermediateDirectories: true)
 
-        let laneRunnerScript = try String(contentsOfFile: "scripts/run-swift-test-task.sh", encoding: .utf8)
+        let laneRunnerScript = try loadSwiftLaneRunnerReportingSource()
         let signalTrap = try shellFunction(named: "trap_lane_termination_signals", in: laneRunnerScript)
         let childScriptPath = workDirectory + "/signal-child.sh"
         let childScript = """
