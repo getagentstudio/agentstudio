@@ -120,7 +120,9 @@ enum TestOutputEffectFailure: Error {
 ) {
     let owner = try BridgePaneProductSessionOwner(
         paneSessionId: UUIDv7.generate().uuidString,
-        provider: BridgePaneProductSessionProviderGate(), productAdmissionGate: BridgeProductAdmissionGate())
+        provider: BridgePaneProductSessionProviderGate(), productAdmissionGate: BridgeProductAdmissionGate(),
+        retirementClock: TestPushClock()
+    )
     let pane = try #require(owner.productAdmissionGate.acquire())
     let installation = try await owner.prepareCandidate(productAdmission: pane)
     #expect(await owner.activatePreparedCandidate(installation, productAdmission: pane) == .activated)

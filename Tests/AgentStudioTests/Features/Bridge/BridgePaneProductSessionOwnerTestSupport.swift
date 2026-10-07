@@ -91,7 +91,8 @@ func makeBridgePaneProductSessionOwnerFrameWaiterFixture() throws
         paneSessionId: paneSessionId,
         provider: provider,
         productAdmissionGate: productAdmissionGate,
-        activeInstallation: installation
+        activeInstallation: installation,
+        retirementClock: TestPushClock()
     )
     return .init(
         firstFrameWaiterRegistration: firstFrameWaiterRegistration,

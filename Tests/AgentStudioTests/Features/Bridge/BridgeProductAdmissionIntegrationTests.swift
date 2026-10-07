@@ -1,3 +1,4 @@
+import AgentStudioTestHarness
 import AgentStudioTestSupport
 import Foundation
 import Testing
@@ -300,7 +301,8 @@ private struct BridgeProductAdmissionIntegrationHarness {
         let owner = try BridgePaneProductSessionOwner(
             paneSessionId: bridgeProductTestPaneSessionId,
             provider: provider,
-            productAdmissionGate: BridgeProductAdmissionGate()
+            productAdmissionGate: BridgeProductAdmissionGate(),
+            retirementClock: TestPushClock()
         )
         let productAdmission = try #require(owner.productAdmissionGate.acquire())
         let installation = try await owner.prepareCandidate(productAdmission: productAdmission)

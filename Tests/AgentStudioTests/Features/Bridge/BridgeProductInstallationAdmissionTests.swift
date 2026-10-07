@@ -153,7 +153,9 @@ struct BridgeProductInstallationAdmissionTests {
     func staleTransitionKeepsSuccessorAdmission() async throws {
         let owner = try BridgePaneProductSessionOwner(
             paneSessionId: bridgeProductTestPaneSessionId,
-            provider: BridgePaneProductSessionProviderGate(), productAdmissionGate: BridgeProductAdmissionGate())
+            provider: BridgePaneProductSessionProviderGate(), productAdmissionGate: BridgeProductAdmissionGate(),
+            retirementClock: TestPushClock()
+        )
         let first = try await installFirstCandidate(in: owner)
         let predecessor = owner.installationFenceProjection.snapshot
         let pane = try #require(owner.productAdmissionGate.acquire())
@@ -175,7 +177,9 @@ struct BridgeProductInstallationAdmissionTests {
     func takeoverRejectsStaleAuthorizationAndReopenedMetadata() async throws {
         let owner = try BridgePaneProductSessionOwner(
             paneSessionId: bridgeProductTestPaneSessionId,
-            provider: BridgePaneProductSessionProviderGate(), productAdmissionGate: BridgeProductAdmissionGate())
+            provider: BridgePaneProductSessionProviderGate(), productAdmissionGate: BridgeProductAdmissionGate(),
+            retirementClock: TestPushClock()
+        )
         let installation = try await installFirstCandidate(in: owner)
         let projection = BridgeDevelopmentBootstrapAuthorizationProjection(
             paneSessionId: bridgeProductTestPaneSessionId)
@@ -276,7 +280,8 @@ struct BridgeProductInstallationAdmissionTests {
         let owner = try BridgePaneProductSessionOwner(
             paneSessionId: bridgeProductTestPaneSessionId,
             provider: provider,
-            productAdmissionGate: BridgeProductAdmissionGate()
+            productAdmissionGate: BridgeProductAdmissionGate(),
+            retirementClock: TestPushClock()
         )
         let first = try await installFirstCandidate(in: owner)
         guard

@@ -1,4 +1,5 @@
 import AgentStudioInfrastructure
+import AgentStudioTestHarness
 import Foundation
 import Testing
 
@@ -146,7 +147,9 @@ struct BridgeReviewInstallationAdmissionTests {
         let pane = try #require(paneGate.acquire())
         let owner = try BridgePaneProductSessionOwner(
             paneSessionId: bridgeProductTestPaneSessionId,
-            provider: BridgePaneProductSessionProviderGate(), productAdmissionGate: paneGate)
+            provider: BridgePaneProductSessionProviderGate(), productAdmissionGate: paneGate,
+            retirementClock: TestPushClock()
+        )
         let first = try await installFirstCandidate(in: owner)
         let firstAdmission = try #require(first.productAdapter.acquireAdmission())
         let coordinator = BridgeReviewPublicationCoordinator()

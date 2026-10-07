@@ -301,7 +301,8 @@ struct BridgePaneProductSessionOwnerTests {
         let owner = try BridgePaneProductSessionOwner(
             paneSessionId: bridgeProductTestPaneSessionId,
             provider: provider,
-            productAdmissionGate: BridgeProductAdmissionGate()
+            productAdmissionGate: BridgeProductAdmissionGate(),
+            retirementClock: TestPushClock()
         )
         let oldInstallation = try await installFirstCandidate(in: owner)
         try await openBridgePaneProductSession(oldInstallation)
@@ -437,7 +438,8 @@ struct BridgePaneProductSessionOwnerTests {
         let owner = try BridgePaneProductSessionOwner(
             paneSessionId: bridgeProductTestPaneSessionId,
             provider: provider,
-            productAdmissionGate: BridgeProductAdmissionGate()
+            productAdmissionGate: BridgeProductAdmissionGate(),
+            retirementClock: TestPushClock()
         )
         let installation = try await installFirstCandidate(in: owner)
         try await openBridgePaneProductSession(installation)
