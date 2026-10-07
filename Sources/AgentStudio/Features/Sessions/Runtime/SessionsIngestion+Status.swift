@@ -101,11 +101,14 @@ extension SessionsIngestion: SessionOpenAskInput {
         statusRuntime.bindings[binding.bindingGenerationId] = binding
         let input = SessionsStatusRuntime.statusInput(committed.evidence)
         if let input {
+            let turnId: String? =
+                committed.disposition == .bound && committed.evidence.providerSignal == .sessionStart
+                ? nil : committed.evidence.turnId
             updateStatus(
                 generation: binding.bindingGenerationId,
                 event: .init(
                     input: input, sequence: committed.revision, occurredAt: committed.evidence.occurredAt,
-                    admittedAt: admittedAt, turnId: committed.evidence.turnId))
+                    admittedAt: admittedAt, turnId: turnId))
         }
         consumePaneViewedBatch()
         publishStatus(paneId: binding.paneId)
