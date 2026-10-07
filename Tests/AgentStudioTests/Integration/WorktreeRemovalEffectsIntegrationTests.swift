@@ -107,7 +107,7 @@ struct WorktreeRemovalEffectsIntegrationTests {
                 == .archived(
                     path: destination.path,
                     files: 1,
-                    skippedSpecialFiles: ["plan-workflows/ci-runs/completions"]
+                    skippedSpecialFiles: ["tmp/plan-workflows/ci-runs/completions"]
                 )
         )
         #expect(!FileManager.default.fileExists(atPath: worktree.path))
@@ -121,7 +121,7 @@ struct WorktreeRemovalEffectsIntegrationTests {
             usesJSONOutput: true
         )
         #expect(jsonResponse.exitCode == 0)
-        #expect(jsonResponse.text.contains(#""skippedSpecialFiles":["plan-workflows/ci-runs/completions"]"#))
+        #expect(jsonResponse.text.contains(#""skippedSpecialFiles":["tmp/plan-workflows/ci-runs/completions"]"#))
 
         let humanResponse = try WorktreeCommandLineFormatter.format(
             removalReport: report,
@@ -131,6 +131,15 @@ struct WorktreeRemovalEffectsIntegrationTests {
         #expect(
             humanResponse.text.contains("skipped 1 special file (not copyable): tmp/plan-workflows/ci-runs/completions")
         )
+        let multipleEntries = WorktreeRemovalReport(
+            entries: [.removed(entry), .alreadyRemoved(WorktreeAlreadyRemovedEntryDocument(target: "second-target"))],
+            fetch: report.fetch
+        )
+        let humanLines = WorktreeCommandLineFormatter.removalHumanLines(multipleEntries).split(separator: "\n")
+        #expect(humanLines.count == 3)
+        #expect(humanLines[1].hasPrefix("removed \(worktree.path);"))
+        #expect(humanLines[1].contains("skipped 1 special file (not copyable): tmp/plan-workflows/ci-runs/completions"))
+        #expect(humanLines.last == "alreadyRemoved second-target")
     }
 
     @Test("a pre-existing index lock refuses before archive-to-main")
@@ -335,6 +344,49 @@ struct WorktreeRemovalEffectsIntegrationTests {
         #expect(entry.failure.effects.administration == .retained)
         #expect(FileManager.default.fileExists(atPath: worktree.path))
         #expect(try Data(contentsOf: worktree.appending(path: "tmp/evidence.txt")) == Data("preserve source".utf8))
+    }
+
+    @Test("a mid-copy archive failure retains the worktree, administration, and branch")
+    func retainsWorktreeAfterPartialArchiveCopy() async throws {
+        var fixture = try await WorktreeRemovalRepository.create(named: "worktree-remove-mid-copy-failure")
+        defer { fixture.destroy() }
+        let branchName = "feature/mid-copy-failure"
+        let worktree = try await fixture.addWorktree(branch: branchName)
+        let evidence = try addEvidence("copied before failure", to: worktree)
+        let unreadableFile = worktree.appending(path: "tmp/z-unreadable.txt")
+        try Data("retain unreadable source".utf8).write(to: unreadableFile)
+        defer { try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: unreadableFile.path) }
+        try FileManager.default.setAttributes([.posixPermissions: 0o000], ofItemAtPath: unreadableFile.path)
+        let beforeRemoval = try await removalRepositorySnapshot(fixture.path)
+        let archiveRoot = fixture.path.appending(path: "archives", directoryHint: .isDirectory)
+        let destination = archiveRoot.appending(path: worktree.lastPathComponent, directoryHint: .isDirectory)
+
+        let report = await WorktreeRemovalRunner(client: fixture.client).run(
+            worktreeRemovalRequest(
+                repository: fixture.path,
+                targets: [worktree.path],
+                callerDirectory: fixture.path,
+                evidencePolicy: .archive(to: archiveRoot)
+            )
+        )
+
+        guard case .failed(let entry)? = report.entries.first else {
+            Issue.record("expected archive failure after partial copy, got \(report)")
+            return
+        }
+        #expect(entry.failure.kind == .archiveFailed)
+        #expect(entry.failure.effects.evidence == .partialCopy(path: destination.path))
+        #expect(report.exitCode == 2)
+        #expect(entry.failure.effects.directory == .retained)
+        #expect(entry.failure.effects.administration == .retained)
+        #expect(entry.failure.effects.branch?.disposition == .retained)
+        #expect(FileManager.default.fileExists(atPath: worktree.path))
+        #expect(try Data(contentsOf: evidence) == Data("copied before failure".utf8))
+        #expect(try Data(contentsOf: destination.appending(path: "evidence.txt")) == Data("copied before failure".utf8))
+        #expect(!FileManager.default.fileExists(atPath: destination.appending(path: "z-unreadable.txt").path))
+        let afterRemoval = try await removalRepositorySnapshot(fixture.path)
+        #expect(afterRemoval.worktrees == beforeRemoval.worktrees)
+        #expect(afterRemoval.branches == beforeRemoval.branches)
     }
 
     @Test("a lock after a completed archive is a failed entry carrying the full stop")

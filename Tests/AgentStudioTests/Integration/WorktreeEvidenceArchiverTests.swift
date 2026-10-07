@@ -61,7 +61,7 @@ struct WorktreeEvidenceArchiverTests {
                 == .archived(
                     path: destination,
                     fileCount: 2,
-                    skippedSpecialFiles: ["nested/completions"]
+                    skippedSpecialFiles: ["tmp/nested/completions"]
                 )
         )
         #expect(try Data(contentsOf: destination.appending(path: "nested/note.txt")) == Data("preserve this".utf8))
@@ -70,6 +70,31 @@ struct WorktreeEvidenceArchiverTests {
                 == externalFile.path
         )
         #expect(FileManager.default.fileExists(atPath: destination.appending(path: "nested/completions").path) == false)
+    }
+
+    @Test("a symlink to a directory inside tmp is recreated without following it")
+    func preservesDirectorySymlink() throws {
+        let fixture = try ArchiveFixture.make()
+        defer { fixture.destroy() }
+        let source = fixture.worktree.appending(path: "tmp", directoryHint: .isDirectory)
+        let nestedSource = source.appending(path: "nested", directoryHint: .isDirectory)
+        let destination = fixture.archiveRoot.appending(path: "repo.feature", directoryHint: .isDirectory)
+        try FileManager.default.createDirectory(at: nestedSource, withIntermediateDirectories: true)
+        try Data("directory evidence".utf8).write(to: nestedSource.appending(path: "note.txt"))
+        try FileManager.default.createSymbolicLink(
+            atPath: source.appending(path: "directory-link").path,
+            withDestinationPath: "nested"
+        )
+
+        let result = WorktreeEvidenceArchiver().archive(source: source, destination: destination)
+
+        #expect(result == .archived(path: destination, fileCount: 2, skippedSpecialFiles: []))
+        let archivedLink = destination.appending(path: "directory-link")
+        #expect(
+            try FileManager.default.attributesOfItem(atPath: archivedLink.path)[.type] as? FileAttributeType
+                == .typeSymbolicLink)
+        #expect(try FileManager.default.destinationOfSymbolicLink(atPath: archivedLink.path) == "nested")
+        #expect(try Data(contentsOf: destination.appending(path: "nested/note.txt")) == Data("directory evidence".utf8))
     }
 
     @Test("a destination that appears before copy is left untouched")

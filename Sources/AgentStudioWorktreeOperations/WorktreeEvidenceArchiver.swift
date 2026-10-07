@@ -69,7 +69,7 @@ package struct WorktreeEvidenceArchiver: Sendable {
                 skippedSpecialFiles:
                     sourceEntries
                     .filter { $0.kind == .specialFile }
-                    .map(\.relativePath)
+                    .map { "tmp/\($0.relativePath)" }
             )
         } catch {
             return .partialCopy(path: normalizedDestination)
