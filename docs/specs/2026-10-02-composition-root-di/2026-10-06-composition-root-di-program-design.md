@@ -365,17 +365,17 @@ sequenceDiagram
     participant Runtime as Terminal runtime/activity
     Native->>Ingress: CHANGED app userdata context + borrowed title/action
     Ingress->>Ingress: UNCHANGED copy strings and surface lifetime
-    Ingress->>State: CHANGED instance-owned admission; UNCHANGED title contraction
+    Ingress->>State: CHANGED instance-owned admission, UNCHANGED title contraction
     Ingress-->>Native: UNCHANGED synchronous action-specific handled Bool
-    State->>Host: CHANGED injected adapter; owned compact drain
+    State->>Host: CHANGED injected adapter, owned compact drain
     Host->>Lookup: UNCHANGED check UUID + view identity + pane association
     alt same live lifetime
         Lookup-->>Host: current attachment
         Host->>Runtime: UNCHANGED changed title / ordered activity input
-        Runtime-->>Host: applied or unchanged; existing proof marker
+        Runtime-->>Host: applied or unchanged, existing proof marker
     else retired or replaced
         Lookup-->>Host: absent or different lifetime
-        Host-->>State: dropped stale work; no host/runtime mutation
+        Host-->>State: dropped stale work, no host/runtime mutation
     end
 ```
 
