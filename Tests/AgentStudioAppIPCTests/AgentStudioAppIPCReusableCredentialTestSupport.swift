@@ -154,14 +154,19 @@ final class HeldCredentialContinuityPort: AgentStudioIPCCredentialContinuityPort
 {
     private let repository: IPCContinuityRepository
     private let lock = NSLock()
+    private let firstRegistrationStep: HeldStep<AgentStudioIPCIssuedPaneCredential>?
     private let registrationStep = HeldStep<AgentStudioIPCIssuedPaneCredential>(
         "pane verifier registration before repository write"
     )
     private var didRelease = false
     private var storedRegistrationCallCount = 0
 
-    init(repository: IPCContinuityRepository) {
+    init(
+        repository: IPCContinuityRepository,
+        firstRegistrationStep: HeldStep<AgentStudioIPCIssuedPaneCredential>? = nil
+    ) {
         self.repository = repository
+        self.firstRegistrationStep = firstRegistrationStep
     }
 
     var registrationCallCount: Int { lock.withLock { storedRegistrationCallCount } }
@@ -171,8 +176,11 @@ final class HeldCredentialContinuityPort: AgentStudioIPCCredentialContinuityPort
         _ credential: AgentStudioIPCIssuedPaneCredential,
         if remainsEligible: @escaping @Sendable () -> Bool
     ) async throws -> Bool {
-        lock.withLock { storedRegistrationCallCount += 1 }
-        try await registrationStep.arrive(credential)
+        let step = lock.withLock {
+            storedRegistrationCallCount += 1
+            return storedRegistrationCallCount == 1 ? firstRegistrationStep ?? registrationStep : registrationStep
+        }
+        try await step.arrive(credential)
         return try await repository.registerIssuedPaneCredential(credential, if: remainsEligible)
     }
 
@@ -186,6 +194,7 @@ final class HeldCredentialContinuityPort: AgentStudioIPCCredentialContinuityPort
 
     func releaseRegistration() {
         lock.withLock { didRelease = true }
+        firstRegistrationStep?.release()
         registrationStep.release()
     }
 }
@@ -210,6 +219,7 @@ struct ReusableCredentialLoginResult: Equatable {
 enum ReusableCredentialTestError: Error {
     case unauthenticated
     case databasePreparationFailed
+    case deliberateRegistrationFailure
     /// Stands in for a transport/decode failure staged after a credential
     /// write is held, so the failure-cleanup path can be exercised without a
     /// production hook.

@@ -2,6 +2,7 @@ import AgentStudioAppIPC
 import AgentStudioIPCTransport
 import AgentStudioInfrastructure
 import AgentStudioProgrammaticControl
+import AgentStudioTestHarness
 import CryptoKit
 import Foundation
 import Testing
@@ -241,31 +242,58 @@ struct AgentStudioAppIPCReusableCredentialTests {
             return
         }
         let repository = IPCContinuityRepository(datastore: datastore)
-        let barrierPort = HeldCredentialContinuityPort(repository: repository)
+        let issuanceStep = HeldStep<AgentStudioIPCIssuedPaneCredential>(
+            "issuance registration fails before authenticated admission"
+        )
+        let barrierPort = HeldCredentialContinuityPort(repository: repository, firstRegistrationStep: issuanceStep)
         try await fixture.withServer(
             credentialResolver: IPCContinuityCredentialResolver(repository: repository),
             credentialContinuityPort: barrierPort, releaseHeldWork: { barrierPort.releaseRegistration() },
             body: { serverFixture in
+                let paneID = serverFixture.boundPaneId
+                let workspaceID = serverFixture.workspaceId
+                let credentialRecordID = UUIDv7.generate()
+                try await datastore.saveWorkspaceSnapshotBundle(
+                    WorkspaceSQLiteSaveBundle(
+                        workspace: .init(id: workspaceID, name: "IPC handler retry continuity")
+                    )
+                )
                 try serverFixture.server.start()
                 let token = AgentStudioIPCSubjectToken(rawValue: "join-before-drain-token")
                 try serverFixture.server.principalRegistry.registerIssuedPaneCredential(
-                    paneID: serverFixture.boundPaneId,
-                    workspaceID: serverFixture.workspaceId,
-                    credentialRecordID: UUIDv7.generate(),
+                    paneID: paneID,
+                    workspaceID: workspaceID,
+                    credentialRecordID: credentialRecordID,
                     verifierSHA256: Data(SHA256.hash(data: Data(token.rawValue.utf8)))
+                )
+
+                // Issuance must fail and fully leave the lane before login can
+                // retry it. Otherwise login's enqueue merely coalesces with the
+                // issuance write and this proves nothing about the handler.
+                let issuedCredential = try await issuanceStep.firstArrival()
+                #expect(issuedCredential.credentialRecordID == credentialRecordID)
+                issuanceStep.fail(ReusableCredentialTestError.deliberateRegistrationFailure)
+                let issuanceDrain = await serverFixture.server.drainCredentialPersistence()
+                #expect(issuanceDrain.failedOperationCount == 1)
+                #expect(barrierPort.registrationCallCount == 1)
+                #expect(try await repository.paneCredentials(paneID: paneID).isEmpty)
+                #expect(
+                    serverFixture.server.principalRegistry.issuedCredentialCandidates().map(\.credentialRecordID)
+                        == [credentialRecordID]
                 )
 
                 // The handler's own task: it enqueues synchronously (inside
                 // auth.login's authenticate closure) before returning the
-                // response, so the login round trip already proves the enqueue
-                // happened.
+                // response. With issuance settled, this second held attempt
+                // must come from login, before any shutdown snapshot can retry.
                 let response = try await fixture.loginResponse(fixture: serverFixture, token: token, requestID: 90)
                 #expect(try decodeResponseResult(IPCAuthStatusResult.self, from: response).isAuthenticated)
                 // Event-driven: the worker has genuinely started the held write,
                 // not merely been enqueued and left pending.
                 let heldCredential = try await barrierPort.waitUntilRegistrationHeld()
-                #expect(heldCredential.paneID == serverFixture.boundPaneId)
-                #expect(barrierPort.registrationCallCount == 1)
+                #expect(heldCredential == issuedCredential)
+                #expect(barrierPort.registrationCallCount == 2)
+                #expect(try await repository.paneCredentials(paneID: paneID).isEmpty)
 
                 await serverFixture.stopAcceptingConnections()
                 // The handler's own task is independent of the credential worker
@@ -273,11 +301,36 @@ struct AgentStudioAppIPCReusableCredentialTests {
                 // itself wait on the held write — this is the production
                 // ordering, not an incidental step.
                 await serverFixture.server.joinConnectionHandlers()
+                #expect(serverFixture.server.trackedConnectionHandlerCount == 0)
 
                 barrierPort.releaseRegistration()
                 let result = await serverFixture.server.drainCredentialPersistence()
                 #expect(result.failedOperationCount == 0)
-                #expect(barrierPort.registrationCallCount == 1)
+                #expect(barrierPort.registrationCallCount == 2)
+                let storedCredential = try #require(
+                    try await repository.paneCredential(paneID: paneID, credentialRecordID: credentialRecordID)
+                )
+                #expect(storedCredential.workspaceID == workspaceID)
+                #expect(storedCredential.verifierSHA256 == issuedCredential.verifierSHA256)
+                #expect(storedCredential.status == .registered)
+
+                let reopenedDatastore = fixture.makeDatastore()
+                try #require(await fixture.prepareDatastoreForIPC(reopenedDatastore))
+                let reopenedRepository = IPCContinuityRepository(datastore: reopenedDatastore)
+                let reopenedRegistry = AgentStudioIPCPrincipalRegistry(
+                    runtimeId: UUIDv7.generate(),
+                    credentialResolver: IPCContinuityCredentialResolver(repository: reopenedRepository),
+                    canonicalPaneMembership: { candidatePaneID, candidateWorkspaceID in
+                        candidatePaneID == paneID && candidateWorkspaceID == workspaceID
+                    }
+                )
+                defer { reopenedRegistry.shutdown() }
+                let context = try await reopenedRegistry.authenticate(subjectToken: token)
+                #expect(context.credentialIdentity == .pane(recordID: credentialRecordID))
+                #expect(
+                    context.principal.kind
+                        == .spawnedPaneAgent(boundPaneId: paneID.uuidString, boundWorkspaceId: workspaceID)
+                )
             })
     }
 
