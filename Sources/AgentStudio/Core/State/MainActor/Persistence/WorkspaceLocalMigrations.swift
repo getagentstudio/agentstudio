@@ -10,6 +10,7 @@ package enum WorkspaceLocalMigrations {
         registerPerScreenSidebarOrganizationMigration(in: &migrator)
         registerPanesDrawerVisibilityMigration(in: &migrator)
         registerDrawerPresentationSchema(in: &migrator)
+        registerPaneActivitySchema(in: &migrator)
         return migrator
     }
 
