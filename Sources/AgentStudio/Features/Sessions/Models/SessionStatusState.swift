@@ -117,11 +117,25 @@ package enum SessionStatusReducer {
         guard let event = guardedStatusEvent(incomingEvent, state: &state) else { return }
         switch event.input {
         case .sessionStart(let generation):
-            let asks = state.openAsks
-            let lineWork = state.lineWork
-            state = SessionStatusState(binding: .bound(generation))
-            state.openAsks = asks
-            state.lineWork = lineWork
+            let namesTurnOnCurrentBinding: Bool
+            if case .bound(let currentGeneration) = state.binding {
+                namesTurnOnCurrentBinding = event.turnId != nil && currentGeneration == generation
+            } else {
+                namesTurnOnCurrentBinding = false
+            }
+            if namesTurnOnCurrentBinding, let turnId = event.turnId {
+                state.providerPrompts.removeAll()
+                state.turn = .done(at: event.occurredAt, admittedAt: event.admittedAt)
+                state.openTurnId = nil
+                state.lastClosedTurnId = turnId
+                state.seenAfterDone = false
+            } else {
+                let asks = state.openAsks
+                let lineWork = state.lineWork
+                state = SessionStatusState(binding: .bound(generation))
+                state.openAsks = asks
+                state.lineWork = lineWork
+            }
         case .userPromptSubmit:
             state.providerPrompts.removeAll()
             state.turn = .working
