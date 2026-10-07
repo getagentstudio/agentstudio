@@ -341,10 +341,13 @@ enum BridgeProductWebKitTwoPaneJourneyTestSupport {
         _ input: JourneyInput
     ) async throws -> BridgeProductWebKitTwoPaneJourneyProof {
         do {
-            return try await exercisePreparedJourney(input)
+            let proof = try await exercisePreparedJourney(input)
+            try await input.paneOneTrace.finishForegroundCatchUp()
+            return proof
         } catch {
             await input.paneOneReviewProvider.releaseBlockedComparisons()
             await input.paneOneGitStatusProvider.releaseBlockedStatusRead()
+            try await input.paneOneTrace.finishForegroundCatchUp()
             throw error
         }
     }
@@ -383,9 +386,12 @@ enum BridgeProductWebKitTwoPaneJourneyTestSupport {
         await input.paneOneReviewProvider.releaseBlockedComparisons()
         try await requireHiddenRefreshSettled(input.paneOne)
         let hiddenTraceAfterLateRelease = await input.paneOneTrace.scrubbedTrace()
+        let catchUpTerminal = await input.paneOneTrace.prepareForegroundCatchUp(
+            dirtyFact: input.paneOne.refreshAdmissionCoordinator.diagnosticSnapshot.dirtyFact
+        )
         let paneOneForegroundTransition = input.paneOne.applyBridgePaneActivity(.foreground)
         await paneOneForegroundTransition?.value
-        try await requireRefreshIdle(input.paneOne)
+        try await requireRefreshIdle(input.paneOne, terminalExpectation: catchUpTerminal)
         try await requireReadyReview(
             input.paneOne,
             paneLabel: "pane one after foreground return",
@@ -798,7 +804,11 @@ enum BridgeProductWebKitTwoPaneJourneyTestSupport {
         await presentationBarrier?.value
     }
 
-    private static func requireRefreshIdle(_ controller: BridgePaneController) async throws {
+    private static func requireRefreshIdle(
+        _ controller: BridgePaneController,
+        terminalExpectation: BridgeProductWebKitCatchUpTerminalExpectation
+    ) async throws {
+        try await terminalExpectation.wait()
         while let activeReviewTask = controller.activeReviewRefreshTask {
             await activeReviewTask.value
         }
@@ -809,21 +819,7 @@ enum BridgeProductWebKitTwoPaneJourneyTestSupport {
             snapshot.dirtyFact == nil,
             controller.activeReviewRefreshTask == nil
         else {
-            let activePass =
-                snapshot.activeRefreshPass.map {
-                    "lanes=\($0.lanes.map(\.rawValue).sorted()),id=\($0.id.uuidString)"
-                } ?? "nil"
-            let dirtyFact =
-                snapshot.dirtyFact.map {
-                    "fileLane=\($0.fileChangeset != nil || $0.latestFileStatus != nil),"
-                        + "reviewLane=\($0.requiresReviewRefresh),batch=\($0.latestBatchSequence),"
-                        + "generation=\($0.generation)"
-                } ?? "nil"
-            throw JourneyError.conditionFailed(
-                "foreground catch-up did not settle (activity=\(snapshot.activity),"
-                    + "activeRefreshPass=\(activePass),dirtyFact=\(dirtyFact),"
-                    + "activeReviewRefreshTaskPresent=\(controller.activeReviewRefreshTask != nil))"
-            )
+            throw JourneyError.conditionFailed(terminalExpectation.describeUnsettledCatchUp(controller))
         }
     }
 

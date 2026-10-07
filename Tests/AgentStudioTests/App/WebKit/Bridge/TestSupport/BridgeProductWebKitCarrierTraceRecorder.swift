@@ -20,6 +20,8 @@ actor BridgeProductWebKitCarrierTraceRecorder: BridgePerformanceTraceRecording {
     }
 
     private var samples: [BridgeTelemetrySample] = []
+    private var foregroundCatchUp: BridgeProductWebKitCatchUpTerminalExpectation?
+    private var foregroundCatchUpOperations: Set<BridgeProductWebKitCatchUpOperation> = []
     private let firstApplication: BridgeProductWebKitFirstApplicationRecorder?
     private let traces = FactRecorder<String, BridgeProductWebKitCarrierTrace>(
         vocabulary: .init(describeScope: { $0 }, describeFact: { String(describing: $0) }, isClosing: { _, _ in false })
@@ -31,10 +33,48 @@ actor BridgeProductWebKitCarrierTraceRecorder: BridgePerformanceTraceRecording {
 
     func record(sample: BridgeTelemetrySample, receivedAtUnixNano _: UInt64) {
         samples.append(sample)
+        recordForegroundCatchUp(sample)
         firstApplication?.observe(sample)
         let trace = scrubbedTrace()
         for condition in [TraceCondition.reviewPublication, .canonicalSubscriptionsAndReviewPublication] {
             if condition.isSatisfied(by: trace) { traces.append(scope: String(describing: condition), fact: trace) }
+        }
+    }
+
+    func prepareForegroundCatchUp(
+        dirtyFact: BridgePaneRefreshDirtyFact?
+    ) -> BridgeProductWebKitCatchUpTerminalExpectation {
+        precondition(foregroundCatchUp == nil)
+        let expectation = BridgeProductWebKitCatchUpTerminalExpectation(dirtyFact: dirtyFact)
+        foregroundCatchUp = expectation
+        return expectation
+    }
+
+    func finishForegroundCatchUp() async throws {
+        let expectation = foregroundCatchUp
+        foregroundCatchUp = nil
+        foregroundCatchUpOperations.removeAll()
+        expectation?.recorder.receive(.ended)
+        try await expectation?.recorder.finish()
+    }
+
+    private func recordForegroundCatchUp(_ sample: BridgeTelemetrySample) {
+        guard let foregroundCatchUp,
+            sample.name == "performance.bridge.swift.operation_lifecycle",
+            let laneValue = sample.stringAttributes["agentstudio.bridge.viewer"],
+            let lane = BridgePaneRefreshLane(rawValue: laneValue),
+            foregroundCatchUp.lanes.contains(lane),
+            let operationId = sample.stringAttributes["agentstudio.bridge.operation.id"],
+            let phase = sample.stringAttributes["agentstudio.bridge.phase"]
+        else { return }
+        let operation = BridgeProductWebKitCatchUpOperation(lane: lane, operationId: operationId)
+        if phase == "refresh_reserved" {
+            foregroundCatchUpOperations.insert(operation)
+            foregroundCatchUp.recorder.append(scope: operation, fact: .reserved)
+        } else if phase == "refresh_operation_terminal", foregroundCatchUpOperations.contains(operation),
+            let result = sample.stringAttributes["agentstudio.bridge.result"]
+        {
+            foregroundCatchUp.recorder.append(scope: operation, fact: .terminal(result: result))
         }
     }
 
