@@ -2,6 +2,7 @@ import AgentStudioInfrastructure
 import AgentStudioTestHarness
 import AgentStudioTestSupport
 import Foundation
+import Synchronization
 import Testing
 
 @testable import AgentStudio
@@ -41,6 +42,7 @@ struct PaneActivitySaveIntegrationTests {
             }
             let secondCommit = try await recorder.secondCommit.firstArrival()
             #expect(secondCommit.mutations == [.set(secondID, second.activityTime)])
+            #expect(recorder.firstOutcome() == (firstCommitFails ? .failed : .committed))
             #expect(delegate.atomStore.core.paneActivityTime.value(for: secondID) == second.activityTime)
             recorder.secondCommit.release()
             let completedCommit = try await recorder.secondCommitCompletion.firstArrival()
@@ -55,6 +57,33 @@ struct PaneActivitySaveIntegrationTests {
             throw error
         }
         await clock.shutdown()
+    }
+
+    @Test("App sink return depends on the held commit outcome")
+    func sinkReturnDependsOnCommit() async throws {
+        try await proveReplyDependsOnStep(
+            makeScenario: {
+                let delegate = AppDelegate()
+                delegate.atomStore = makeTestAtomRegistry()
+                let recorder = PaneActivityHeldCommitRecorder()
+                let paneID = UUIDv7.generate()
+                let time = PaneActivityTime(
+                    orderingInstant: ContinuousClock.now, wallTime: Date(timeIntervalSince1970: 100), source: .hook
+                )
+                let sink = delegate.makePaneActivitySink { commit in try await recorder.commit(commit) }
+                return HeldReplyScenario(
+                    context: recorder,
+                    step: recorder.firstCommit,
+                    produceReply: { @MainActor [delegate] in
+                        await sink([.set(paneID, time)])
+                        #expect(delegate.atomStore.core.paneActivityTime.value(for: paneID) == time)
+                        return recorder.firstOutcome()
+                    }
+                )
+            },
+            replyReportsFailure: { reply, _ in reply == .failed },
+            assertCommitted: { reply, _ in #expect(reply == .committed) }
+        )
     }
 
     @Test("App sink commits real SQLite sets and final removals")
@@ -81,19 +110,43 @@ struct PaneActivitySaveIntegrationTests {
 
 private enum PaneActivityInjectedCommitFailure: Error { case failed }
 
+private enum PaneActivityCommitOutcome: Sendable { case pending, committed, failed }
+
 private actor PaneActivityHeldCommitRecorder {
     nonisolated let firstCommit = HeldStep<PaneActivityCommit>("first pane activity commit")
     nonisolated let secondCommit = HeldStep<PaneActivityCommit>("second pane activity commit")
+    nonisolated let secondCommitCompletion = HeldStep<PaneActivityCommit>("second pane activity commit completed")
+    nonisolated private let firstCommitOutcome = Mutex(PaneActivityCommitOutcome.pending)
     private(set) var attempted: [PaneActivityCommit] = []
     private(set) var completed: [PaneActivityCommit] = []
 
+    init() {
+        // This is a completion witness, not another hold on the operation.
+        secondCommitCompletion.release()
+    }
+
+    nonisolated func firstOutcome() -> PaneActivityCommitOutcome {
+        firstCommitOutcome.withLock { $0 }
+    }
+
     func commit(_ commit: PaneActivityCommit) async throws {
         attempted.append(commit)
-        if attempted.count == 1 {
-            try await firstCommit.arrive(commit)
-        } else {
-            try await secondCommit.arrive(commit)
+        let isFirstCommit = attempted.count == 1
+        do {
+            if isFirstCommit {
+                try await firstCommit.arrive(commit)
+            } else {
+                try await secondCommit.arrive(commit)
+            }
+        } catch {
+            if isFirstCommit { firstCommitOutcome.withLock { $0 = .failed } }
+            throw error
         }
         completed.append(commit)
+        if isFirstCommit {
+            firstCommitOutcome.withLock { $0 = .committed }
+        } else {
+            try await secondCommitCompletion.arrive(commit)
+        }
     }
 }
