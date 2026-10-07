@@ -1,9 +1,9 @@
 # Composition-Root Dependency Injection — Requirements
 
-Date: 2026-10-02 (decisions through 2026-10-04)
+Date: 2026-10-02 (decisions through 2026-10-06)
 Artifact: `Requirements` (problem statement). The Specification and Program
 Design are separate, later artifacts.
-Status: **draft — goal boundary awaiting owner confirmation** (see
+Status: **goal boundary owner-confirmed 2026-10-06** (see
 [Goal boundary](#goal-boundary)).
 
 ## Identity and authority
@@ -25,6 +25,9 @@ Authority is the owner's direction and answers:
 - Owner answers 2026-10-04: D3–D6 below, and the scope cut recorded in D2.
 - Owner direction 2026-10-04: the work runs on sunclaw, led by a sunclaw Lead,
   with the Sunbook Lead as its Advisor.
+- Owner answers 2026-10-06: "no wait for 27" to restarting design, and
+  "Confirm as written" to the goal boundary. Design restarts now; implementation
+  remains subject to reviewed design, a plan, and explicit implementation go.
 
 Implementation sources cited here are observational evidence about today's
 behavior, not authority for the desired behavior.
@@ -72,6 +75,28 @@ Out-of-scope classes: hosts other than the GUI app. A headless daemon runs in it
 own process, per owner direction 2026-09-26, and is not built here.
 
 ## Current observable problem
+
+Test authors need independently constructed fixtures instead of shared swaps
+(U2); developers need visible construction and ownership (U1, U4). This view
+shows their different jobs and where the current globals impose a cost:
+
+```mermaid
+flowchart LR
+    subgraph authors["Test authors — U2"]
+        scenario[Define a scenario] --> swap[Acquire shared lock and swap fields]
+        swap --> restore[Run scenario and restore global fields]
+        scenario --> own[Construct fixture-owned collaborators]
+        own --> independent[Run without global swaps]
+    end
+    subgraph developers["Developers — U1 and U4"]
+        change[Change a consumer] --> hidden[Find collaborators through static access]
+        change --> explicit[Read collaborators in its constructor]
+    end
+```
+
+The upper current path is evidenced by the dispatcher isolation helper; the
+static consumer path is evidenced below. The lower alternatives are desired
+outcomes. No user-visible screen or control changes are requested.
 
 P1 — Three objects are globals, reachable from anywhere. Their owners plug in
 collaborators at launch:
@@ -133,16 +158,21 @@ P4 — Nothing in the code forces these globals:
 ## Dependencies and location
 
 - Owner 2026-10-04: implementation and proof run on sunclaw.
-- sunclaw has only Xcode 27 / Swift 6.4, and `main` does not build there without
-  the Swift 6.4 fixes on the `ci-xcode-27-swift-6-4` migration branch. The
-  owner requires a fully tested app on sunclaw for this work, so implementation
-  waits for that migration or bases on it.
+- Owner direction 2026-10-06: design restarts now without waiting for the
+  Xcode 27 migration. Implementation targets `main` on Xcode 27 after the
+  migration lands; Xcode 26.x will no longer run its Swift test lanes.
+- Implementation and proof run on sunclaw with Xcode 27.0. No Xcode 26.6
+  install is needed. Starting implementation before the migration lands requires
+  deliberate toolchain coordination with the CI owner; no workaround is implied.
+- The per-target runner preserves the process-isolation contract. Removing a
+  global does not remove unrelated isolation requirements. Delete any serialized
+  suite shell emptied by this work; a zero-test isolated suite fails preflight.
 - The Ghostty callback code and terminal hosting belong to the Panes Lead's
   area; startup and the dispatcher touch the IPC Lead's area.
 
 ## Goal boundary
 
-Status: **proposed by the Lead, not yet confirmed by the owner.**
+Status: **owner-confirmed as written on 2026-10-06.**
 
 - **Goal:** the dispatcher, runtime registry, startup recorder, terminal
   lookup, and Ghostty engine are created by startup code and passed in. Once
