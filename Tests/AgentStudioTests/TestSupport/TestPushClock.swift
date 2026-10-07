@@ -51,6 +51,12 @@ package struct TestPushClock: Clock {
         case exactly(Int)
         case generation(Int)
         case atLeastFromGeneration(count: Int, generation: Int)
+        case deadline(Instant)
+
+        var deadline: Instant? {
+            guard case .deadline(let deadline) = self else { return nil }
+            return deadline
+        }
 
         func isSatisfied(by state: State) -> Bool {
             switch self {
@@ -62,6 +68,20 @@ package struct TestPushClock: Clock {
                 state.pending.contains { $0.generation == expectedGeneration }
             case .atLeastFromGeneration(let count, let generation):
                 state.pending.filter { $0.generation >= generation }.count >= count
+            case .deadline(let deadline):
+                state.pending.contains { $0.deadline == deadline.nanoseconds }
+            }
+        }
+    }
+
+    package enum PendingSleepFact: Sendable, Equatable {
+        case waiterRegistered(deadline: Instant)
+        case registrationSettled(deadline: Instant, resumedWaiterDeadlines: Set<Instant>)
+
+        package var deadline: Instant {
+            switch self {
+            case .waiterRegistered(let deadline), .registrationSettled(let deadline, _):
+                deadline
             }
         }
     }
@@ -79,8 +99,12 @@ package struct TestPushClock: Clock {
     }
 
     private let state = StateBox()
+    private let pendingSleepFactSink: (@Sendable (PendingSleepFact) -> Void)?
 
-    package init() {}
+    /// The sink records synchronously under the clock lock; it must not reenter the clock.
+    package init(pendingSleepFactSink: (@Sendable (PendingSleepFact) -> Void)? = nil) {
+        self.pendingSleepFactSink = pendingSleepFactSink
+    }
 
     package var now: Instant {
         Instant(nanoseconds: state.withCriticalRegion { $0.now })
@@ -99,7 +123,7 @@ package struct TestPushClock: Clock {
         let _: Void = try await withTaskCancellationHandler(
             operation: {
                 try await withUnsafeThrowingContinuation { (continuation: UnsafeContinuation<Void, Error>) in
-                    var resumedWaiters: [UnsafeContinuation<Void, Never>] = []
+                    var resumedWaiters: [PendingSleepWaiter] = []
                     var shouldThrowCancellation = false
                     let shouldResume = state.withCriticalRegion { st in
                         if Task.isCancelled {
@@ -117,10 +141,15 @@ package struct TestPushClock: Clock {
                                 continuation: continuation
                             ))
                         resumedWaiters = Self.dequeueSatisfiedPendingSleepWaiters(state: &st)
+                        pendingSleepFactSink?(
+                            .registrationSettled(
+                                deadline: deadline,
+                                resumedWaiterDeadlines: Set(resumedWaiters.compactMap { $0.condition.deadline })
+                            ))
                         return false
                     }
                     for waiter in resumedWaiters {
-                        waiter.resume()
+                        waiter.continuation.resume()
                     }
                     if shouldResume {
                         if shouldThrowCancellation {
@@ -144,7 +173,7 @@ package struct TestPushClock: Clock {
 
     package func advance(to instant: Instant) {
         var ready: [UnsafeContinuation<Void, Error>] = []
-        var resumedWaiters: [UnsafeContinuation<Void, Never>] = []
+        var resumedWaiters: [PendingSleepWaiter] = []
         state.withCriticalRegion { st in
             let nextNow = max(st.now, instant.nanoseconds)
             st.now = nextNow
@@ -159,14 +188,14 @@ package struct TestPushClock: Clock {
             continuation.resume()
         }
         for waiter in resumedWaiters {
-            waiter.resume()
+            waiter.continuation.resume()
         }
     }
 
     @discardableResult
     package func advanceToNextPendingSleep() -> Bool {
         var ready: [UnsafeContinuation<Void, Error>] = []
-        var resumedWaiters: [UnsafeContinuation<Void, Never>] = []
+        var resumedWaiters: [PendingSleepWaiter] = []
         let advanced = state.withCriticalRegion { st in
             guard let nextDeadline = st.pending.map(\.deadline).min() else {
                 return false
@@ -183,7 +212,7 @@ package struct TestPushClock: Clock {
             continuation.resume()
         }
         for waiter in resumedWaiters {
-            waiter.resume()
+            waiter.continuation.resume()
         }
         return advanced
     }
@@ -222,6 +251,10 @@ package struct TestPushClock: Clock {
         await waitForPendingSleepCount(matching: .atLeastFromGeneration(count: count, generation: generation))
     }
 
+    package func waitForPendingSleep(deadline: Instant) async {
+        await waitForPendingSleepCount(matching: .deadline(deadline))
+    }
+
     private func waitForPendingSleepCount(matching condition: PendingSleepWaiterCondition) async {
         let shouldResumeImmediately = state.withCriticalRegion { st in
             condition.isSatisfied(by: st)
@@ -239,6 +272,9 @@ package struct TestPushClock: Clock {
                 st.pendingSleepWaiters.append(
                     PendingSleepWaiter(condition: condition, continuation: continuation)
                 )
+                if let deadline = condition.deadline {
+                    pendingSleepFactSink?(.waiterRegistered(deadline: deadline))
+                }
                 return false
             }
 
@@ -249,7 +285,7 @@ package struct TestPushClock: Clock {
     }
 
     private func cancel(_ generation: Int) {
-        var resumedWaiters: [UnsafeContinuation<Void, Never>] = []
+        var resumedWaiters: [PendingSleepWaiter] = []
         let continuation = state.withCriticalRegion { st -> UnsafeContinuation<Void, Error>? in
             guard let index = st.pending.firstIndex(where: { $0.generation == generation }) else {
                 return nil
@@ -260,21 +296,21 @@ package struct TestPushClock: Clock {
         }
         continuation?.resume(throwing: CancellationError())
         for waiter in resumedWaiters {
-            waiter.resume()
+            waiter.continuation.resume()
         }
     }
 
     private static func dequeueSatisfiedPendingSleepWaiters(
         state: inout State
-    ) -> [UnsafeContinuation<Void, Never>] {
+    ) -> [PendingSleepWaiter] {
         guard !state.pendingSleepWaiters.isEmpty else { return [] }
 
         var remainingWaiters: [PendingSleepWaiter] = []
-        var resumedWaiters: [UnsafeContinuation<Void, Never>] = []
+        var resumedWaiters: [PendingSleepWaiter] = []
 
         for waiter in state.pendingSleepWaiters {
             if waiter.condition.isSatisfied(by: state) {
-                resumedWaiters.append(waiter.continuation)
+                resumedWaiters.append(waiter)
             } else {
                 remainingWaiters.append(waiter)
             }
