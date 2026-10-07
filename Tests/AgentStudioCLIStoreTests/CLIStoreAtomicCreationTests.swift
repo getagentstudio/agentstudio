@@ -8,24 +8,26 @@ import Testing
 @testable import AgentStudioCLIStore
 
 extension CLIStoreTests {
-    @Test("fresh creation exhausting its budget after WAL activation leaves no private creator files")
-    func exhaustedFreshCreatorRemovesOwnedFiles() async throws {
+    @Test(
+        "fresh creation exhausting its budget leaves no published store or private creator files",
+        arguments: FreshCreatorBudgetExhaustionPoint.allCases)
+    func exhaustedFreshCreatorRemovesOwnedFiles(point: FreshCreatorBudgetExhaustionPoint) async throws {
         let observed = try await valueFromDedicatedThread {
             let fixture = try CLIStoreFileFixture()
             defer { fixture.remove() }
-            let probe = Mutex((remainingBudget: Duration.seconds(1), reachedWAL: false))
+            let probe = Mutex((remainingBudget: Duration.seconds(1), reachedExhaustionPoint: false))
             let attempted = CLIStore.openWriter(
                 url: fixture.databaseURL, channel: .debug,
                 migrationLockWaitBudget: { probe.withLock { $0.remainingBudget } },
                 prepareConnection: { database in
                     database.trace { event in
                         guard case .statement(let statement) = event,
-                            statement.sql == "PRAGMA synchronous = FULL"
+                            point.matches(statement.sql)
                         else { return }
-                        // The real writer has switched its private inode to WAL.
-                        // Exhaust the next migration admission without elapsed time.
+                        // Exhaust the next admission at a real SQLite operation,
+                        // including committed private WAL data, without elapsed time.
                         probe.withLock {
-                            $0.reachedWAL = true
+                            $0.reachedExhaustionPoint = true
                             $0.remainingBudget = .zero
                         }
                     }
@@ -38,14 +40,14 @@ extension CLIStoreTests {
                 try writer.databaseQueue.close()
             }
             return (
-                failure: failure, reachedWAL: probe.withLock { $0.reachedWAL },
+                failure: failure, reachedExhaustionPoint: probe.withLock { $0.reachedExhaustionPoint },
                 published: FileManager.default.fileExists(atPath: fixture.databaseURL.path),
                 creatorFiles: try FileManager.default.contentsOfDirectory(atPath: fixture.rootURL.path)
                     .filter { $0.contains(".creating-") }
             )
         }
-        #expect(observed.reachedWAL)
-        #expect(observed.failure == .busy(extendedResultCode: nil, stage: .migration))
+        #expect(observed.reachedExhaustionPoint)
+        #expect(observed.failure == .busy(extendedResultCode: nil, stage: point.failureStage))
         #expect(!observed.published)
         #expect(observed.creatorFiles.isEmpty)
     }
@@ -159,6 +161,25 @@ extension CLIStoreTests {
         #expect(
             observed.afterWriterOpen == .published(observed.identity, CLIStoreMigrator.knownMigrations, true))
         #expect(!observed.files.contains { $0.contains(".creating-") })
+    }
+}
+
+enum FreshCreatorBudgetExhaustionPoint: CaseIterable, Sendable {
+    case walActivation
+    case schemaCommit
+
+    var failureStage: CLIStoreFailure.Stage {
+        switch self {
+        case .walActivation: .migration
+        case .schemaCommit: .identity
+        }
+    }
+
+    func matches(_ sql: String) -> Bool {
+        switch self {
+        case .walActivation: sql == "PRAGMA synchronous = FULL"
+        case .schemaCommit: sql.hasPrefix("COMMIT")
+        }
     }
 }
 
