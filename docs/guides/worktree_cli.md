@@ -8,10 +8,13 @@ Production Agent Studio **0.0.106** (released 2026-10-05) ships the full
 lifecycle: `new` (a copy-on-write fork by default), `list` with state,
 `remove`, and `prune`. `fork` is gone; use `new --from <worktree>`. Upgrade with
 `brew upgrade --cask agent-studio`. On 0.0.105, `fork` fails on checkouts whose
-build caches hold broken nested Git checkouts (see Rules). On 0.0.106, default
+build caches hold broken nested Git checkouts (see Rules). Older helpers behave differently. On 0.0.106, default
 `new` still refuses a dirty or off-branch main checkout and `--from-branch`
 still requires `--tracked-only`; pass `--from <main checkout>` there to fork the
-main checkout as it is.
+main checkout as it is. 0.0.106 also fails `new` with `libgit2Failure` when the
+source's copied build output holds a nested Git checkout whose
+`objects/info/alternates` path is gone (SwiftPM caches after the 2026-10-04
+move); delete that `.build*` folder and rebuild, then retry.
 
 ## Why use it
 
@@ -151,10 +154,5 @@ rules apply to the CLI `new` copy-on-write path, including `new --from`.
   `~/dev/agent-studio-worktrees`, or `/private/tmp`.
 - Remove a worktree with `"$ASW" worktree remove --repo <repo> <branch-or-path>`
   (add `--archive-to-main` to keep its `tmp/` evidence).
-- If `new` fails with `libgit2Failure`, a nested Git checkout inside the
-  source's copied build output is broken. After the 2026-10-04 move, SwiftPM
-  checkouts under `.build*/` kept `objects/info/alternates` paths into
-  `~/Documents`. Delete that `.build*` folder and rebuild, or rewrite the stale
-  paths, then retry.
 - Problems or gaps go to the Worktrees Lead: claude-local
   `9304749a-6517-41da-952d-243201c32337`.
