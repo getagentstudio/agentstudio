@@ -263,7 +263,10 @@ export class BridgeProductViewScopeOwner {
 			view.resnapshotRequested = false;
 			return;
 		}
-		// A native supersession is newer input, not an unsuccessful resnapshot: it consumes no W2 budget (R13).
+		view.consecutiveResnapshots = Math.min(
+			this.#maximumConsecutiveResnapshots,
+			view.consecutiveResnapshots + 1,
+		);
 		this.#emitRecoveryStatus(view, 'recovering');
 	}
 

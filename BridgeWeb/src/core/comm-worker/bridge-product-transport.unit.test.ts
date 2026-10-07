@@ -260,12 +260,12 @@ describe('Bridge product transport', () => {
 		expect(harness.server.metadataReaderCancelCount).toBe(1);
 	});
 
-	test('native W4 replacements consume no W2 budget and a certified install rearms the same E3', async () => {
+	test('W4 replacement snapshots exhaust W2 budget and a certified install rearms the same E3', async () => {
 		const harness = createTransportHarness();
 		let replacementCount = 0;
-		let notifyReplacementsObserved: (() => void) | undefined;
-		const replacementsObserved = new Promise<void>((resolve) => {
-			notifyReplacementsObserved = resolve;
+		let notifyBudgetReached: (() => void) | undefined;
+		const budgetReached = new Promise<void>((resolve) => {
+			notifyBudgetReached = resolve;
 		});
 		let notifyInstalled: (() => void) | undefined;
 		const installed = new Promise<void>((resolve) => {
@@ -276,7 +276,7 @@ describe('Bridge product transport', () => {
 			receipt: (): void => {},
 			replacementSnapshot: (): void => {
 				replacementCount += 1;
-				if (replacementCount === 3) notifyReplacementsObserved?.();
+				if (replacementCount === 3) notifyBudgetReached?.();
 			},
 			certifiedInstallCompleted: (): void => notifyInstalled?.(),
 			resnapshot: (): void => {},
@@ -327,7 +327,7 @@ describe('Bridge product transport', () => {
 					}),
 				);
 			}
-			await replacementsObserved;
+			await budgetReached;
 			await harness.transport.resnapshotView?.({
 				domain: frameIdentity.domain,
 				handle: frameIdentity.handle,
@@ -340,7 +340,7 @@ describe('Bridge product transport', () => {
 				harness.server.controlRequests.filter(
 					(request) => request.kind === 'subscription.resnapshot',
 				),
-			).toHaveLength(1);
+			).toHaveLength(0);
 			harness.server.emitMetadata(
 				bridgeProductBatchFrameSchema.parse({
 					...frameIdentity,
@@ -359,7 +359,7 @@ describe('Bridge product transport', () => {
 				subscriptionId: frameIdentity.subscriptionId,
 				subscriptionKind: frameIdentity.subscriptionKind,
 			});
-			const retry = await harness.server.waitForControlRequest('subscription.resnapshot', 2);
+			const retry = await harness.server.waitForControlRequest('subscription.resnapshot');
 			expect(retry).toMatchObject({
 				handle: frameIdentity.handle,
 				incarnation: frameIdentity.incarnation,
