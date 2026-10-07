@@ -137,3 +137,64 @@ review; prepare the actual views/tables before that owner decision.
 Presentation: Requirements journey diagram separates test authors from
 application developers; no changed end-user screen, so Image Gen does not apply.
 Mermaid source chosen; local renderer not yet found, visual verification pending.
+
+### 2026-10-06 — drafted observable contract and structural realization
+
+Requirements commit: 01d0a437a. Two configured 1Password signing attempts failed
+and were ended; used repository-authorized unsigned fallback, preserving hooks.
+Git metadata needed exact sandbox escalation for this linked worktree; no
+primary working files were edited. No push performed under the no-test hold.
+
+Authored distinct sibling Specification and Program Design artifacts dated
+2026-10-06. Fixed upstream identity is REQ-2026-10-02-COMPOSITION-ROOT-DI;
+new identities SPEC-2026-10-06-COMPOSITION-ROOT-DI and
+DESIGN-2026-10-06-COMPOSITION-ROOT-DI. U1–U4/U7 map to R1–R9;
+E1–E9 each have a binding; all nine obligations have individual trace rows.
+D2/U5/U6 remain superseded. No container, new atom/store/coordinator/bus case,
+vendor or IPC contract change. No Sources/Tests edits, builds, tests or installs.
+
+Decisions made without asking: retain the existing root and typed immutable weak
+access closures to break construction cycles; source-owned checked mutex state;
+replace exported DispatchWorkItem with a Sendable callback under the same deadline
+and token policy; own/join callback Task handles in the callback owner. These are
+proposed structural choices for the forthcoming owner confirmation, not accepted
+owner decisions. Rejected an extra experimental-lifetime implementation: a plain
+non-Sendable wrapper is not complete C lifetime proof. Use the private synchronous
+unsafe decoder and owned-only actor APIs, leaving raw trampoline inspection explicit.
+
+Sources read: dispatcher/host/boot and SurfaceManager/engine cycles, all relevant
+callback extensions and activity binding, installed SDK Mutex and Dispatch
+interfaces, and official Ghostty files at exact current native pin. Pinned
+surface teardown stops/joins renderer and IO workers; no launched proof inferred.
+
+Author checks: local artifact targets all resolve; R1–R9 exactly match nine
+Program Design trace rows; no private path/session/account pattern in design
+docs; git diff --check exit0. Semantic self-check preserves goal, entity meanings,
+owner/module direction, closed work/results, contraction/order, failure and
+proof boundaries. Compile acceptance, full source-consumer inventory and native
+runtime proof remain unverified. No open stand-in supplies proof.
+
+Visual check: embedded Mermaid is the chosen medium, no UI image needed because
+there is no changed screen. Remote renderer returned403; cached local CLI failed
+on missing commander, no cached browser found. No tool installed. Rendered views
+remain unverified; cannot claim visual pass. All diagrams stay in the artifacts.
+
+Specification local review classification: review-required / forced and
+matched-risk, general-domain; no prior review. Follow the owner's explicit
+Spec → Program Design → independent review order by drafting the structural
+artifact while review remains pending. Neither phase is locally-ready. Fresh
+three-artifact review will cover both, after structural-realization confirmation;
+non-OpenAI reviewer selected: Claude Opus/xhigh in a fresh own session, through
+Advisor's remote route. Local Claude endpoint is unavailable; no service changes.
+
+Final GitHub check: migration PR #470 remains OPEN with no merge commit/time.
+No merge/rebase performed; after landing, merge main and re-anchor affected
+sources before implementation. Toolchain target remains main/Xcode27 on this
+host; no 26.6 install or native build-system workaround.
+
+Current phase result: decision-needed. Show actual components, representative
+entry-to-effect path, binding and trace tables and tradeoffs to owner; ask once
+for structural-realization confirmation. Goal boundary is already confirmed and
+must not be re-asked. Independent review, planning and implementation not begun.
+Prepared brief: tmp/composition-root-di/structural-realization-brief.md. Existing
+Advisor outbox carries checkpoint and same owner brief; no new proxy or wake.
