@@ -1,20 +1,27 @@
 # Agent Studio worktree CLI: agent manual
 
-This guide covers the worktree commands in Agent Studio 0.0.106 and later.
+This guide covers the worktree commands in Agent Studio 0.0.107 and later.
 
 ## Availability
 
-Production Agent Studio **0.0.106** (released 2026-10-05) ships the full
-lifecycle: `new` (a copy-on-write fork by default), `list` with state,
-`remove`, and `prune`. `fork` is gone; use `new --from <worktree>`. Upgrade with
-`brew upgrade --cask agent-studio`. On 0.0.105, `fork` fails on checkouts whose
-build caches hold broken nested Git checkouts. Older helpers behave differently. On 0.0.106, default
-`new` still refuses a dirty or off-branch main checkout and `--from-branch`
-still requires `--tracked-only`; pass `--from <main checkout>` there to fork the
-main checkout as it is. 0.0.106 also fails `new` with `libgit2Failure` when the
-source's copied build output holds a nested Git checkout whose
-`objects/info/alternates` path is gone (SwiftPM caches after the 2026-10-04
-move); delete that `.build*` folder and rebuild, then retry.
+Production Agent Studio **0.0.107** ships the full lifecycle: `new` (a
+copy-on-write fork of the checkout as it is), `list` with state, `remove`, and
+`prune`. `fork` is gone; use `new --from <worktree>`. Upgrade with
+`brew upgrade --cask agent-studio`.
+
+### Older helpers (0.0.106 and earlier)
+
+These versions behave differently from the rest of this guide:
+
+- 0.0.106 refuses default `new` on a dirty or off-branch main checkout
+  (`sourceDirty`, `sourceNotOnDefaultBranch`); pass `--from <main checkout>` to
+  fork it as it is.
+- 0.0.106 requires `--tracked-only` together with `--from-branch`.
+- 0.0.106 fails `new` with `libgit2Failure` when the source's copied build
+  output holds a nested Git checkout whose `objects/info/alternates` path is
+  gone; delete that `.build*` folder and rebuild, then retry.
+- 0.0.105's `fork` fails on checkouts whose build caches hold broken nested Git
+  checkouts.
 
 ## Why use it
 
