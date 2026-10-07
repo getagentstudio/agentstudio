@@ -46,7 +46,8 @@ export const contextWithTaskToolbar: KitToolbarModel = {
   tabCount: 3,
 };
 
-const toolPortalWorktree = "agent-vm.tool-portal";
+// Keep the drawer prompt compact at every stage; the branch label identifies the shell context.
+const toolPortalWorktree = "";
 const toolPortalBranch = "tool-portal";
 
 export const contextWithTaskAgentTerminal: readonly KitTerminalLine[] = [
@@ -133,8 +134,8 @@ export const contextWithTaskDrawerTerminal: readonly KitTerminalLine[] = [
   { kind: "shell-prompt", worktreeName: toolPortalWorktree, branchName: toolPortalBranch },
 ];
 
-/** Drawer lines scrolled out of view in the phone crop once the log prints. */
-export const contextWithTaskPhoneDrawerScrollLines = 1;
+/** Measured 330x412 settled overflow for the current wrapped drawer content. */
+export const contextWithTaskPhoneDrawerScrollPixels = 88;
 
 export const contextWithTaskAgentFooter: KitPaneFooterModel = {
   badges: [
