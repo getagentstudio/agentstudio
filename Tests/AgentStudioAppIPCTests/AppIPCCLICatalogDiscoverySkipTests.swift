@@ -22,10 +22,10 @@ import Testing
 struct AppIPCCLICatalogDiscoverySkipTests {
     @Test("a session verb reaches the server without fetching the catalog")
     func sessionVerbSkipsCatalogDiscovery() async throws {
-        let observed = try await runClientThroughRecordingProxy(arguments: ["message", "hi"])
+        let observed = try await runClientThroughRecordingProxy(arguments: ["notify", "hi"])
 
         #expect(!observed.contains("system.capabilities"))
-        #expect(observed.contains("session.message"))
+        #expect(observed.contains("pane.message.send"))
     }
 
     @Test("a session method named outright also skips the catalog")

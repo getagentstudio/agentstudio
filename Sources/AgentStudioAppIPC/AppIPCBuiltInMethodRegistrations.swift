@@ -36,7 +36,8 @@ package enum AppIPCBuiltInMethodRegistrations {
             + layoutAndTerminalRegistrations(inputs: inputs)
             + bridgeRegistrations(inputs: inputs)
             + presentationAndEventRegistrations(inputs: inputs)
-            + sessionRegistrations(inputs: inputs)).sorted {
+            + sessionRegistrations(inputs: inputs)
+            + paneContextRegistrations(inputs: inputs)).sorted {
                 $0.descriptor.metadata.name < $1.descriptor.metadata.name
             }
     }

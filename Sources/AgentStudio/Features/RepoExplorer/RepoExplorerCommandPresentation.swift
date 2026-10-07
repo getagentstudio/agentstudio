@@ -127,6 +127,7 @@ struct RepoExplorerTableInteractions {
     let onCommandRequest: (RepoExplorerCommandPresentationRequest) -> Void
     let onToggleGroup: (String) -> Void
     let onFocusPane: (UUID) -> Void
+    var paneContextControl: RepoExplorerPaneContextControlFactory = { _, _ in nil }
     var onSetGroupExpanded: (String, Bool) -> Void = { _, _ in }
     var onOpenPaneInEditor: (UUID, EditorTargetId) -> Void = { _, _ in }
 }

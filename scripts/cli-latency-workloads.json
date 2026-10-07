@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "notMeasured": ["line", "title", "notify"],
+  "notMeasured": ["ask", "withdraw"],
   "families": [
     {
       "name": "hook",
@@ -10,15 +10,33 @@
       "fixtureRequirement": "ownedPane"
     },
     {
-      "name": "message",
-      "argv": ["session.message", "--handle", "self", "--text", "benchmark notice ${sampleId}"],
+      "name": "notify",
+      "argv": ["notify", "benchmark notice ${sampleId}"],
       "budgetClass": "hookOrNotice",
       "fixtureRequirement": "ownedPane"
     },
     {
-      "name": "done",
-      "argv": ["session.report", "--handle", "self", "--kind", "done"],
+      "name": "line",
+      "argv": ["line", "benchmark line ${sampleId}", "--working", "--step", "1/2"],
       "budgetClass": "hookOrNotice",
+      "fixtureRequirement": "ownedPane"
+    },
+    {
+      "name": "title",
+      "argv": ["title", "bench ${sampleId}"],
+      "budgetClass": "hookOrNotice",
+      "fixtureRequirement": "ownedPane"
+    },
+    {
+      "name": "context",
+      "argv": ["pane"],
+      "budgetClass": "other",
+      "fixtureRequirement": "ownedPane"
+    },
+    {
+      "name": "answers",
+      "argv": ["answers"],
+      "budgetClass": "other",
       "fixtureRequirement": "ownedPane"
     },
     {

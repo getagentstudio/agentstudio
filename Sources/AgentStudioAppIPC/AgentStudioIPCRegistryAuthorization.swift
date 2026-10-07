@@ -310,7 +310,7 @@ public struct PermissionScopeCanonicalizer: Sendable {
         switch privilege {
         case .systemRead, .workspaceRead:
             .unspecified
-        case .paneContextRead, .layoutMutate:
+        case .paneContextRead, .paneContextWrite, .layoutMutate:
             .paneContext
         case .bridgeRead, .bridgeControl:
             .bridgeReviewPackage

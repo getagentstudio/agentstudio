@@ -24,7 +24,7 @@ struct RepoExplorerTableRowBinding: Equatable {
 final class RepoExplorerTableRowSlot {
     private(set) var binding: RepoExplorerTableRowBinding?
     private(set) var keyboardPresentation = RepoExplorerRowKeyboardPresentation.inactive
-    private let interactions: RepoExplorerTableInteractions
+    let interactions: RepoExplorerTableInteractions
 
     init(interactions: RepoExplorerTableInteractions) {
         self.interactions = interactions
@@ -83,6 +83,7 @@ struct RepoExplorerTableRowHostingRoot: View {
                     row: binding.row,
                     commandPresentationSnapshot: binding.commandPresentationSnapshot,
                     octiconLoader: octiconLoader,
+                    paneContextControl: slot.interactions.paneContextControl,
                     keyboardPresentation: slot.keyboardPresentation,
                     onCommandRequest: { request in
                         slot.performCommand(

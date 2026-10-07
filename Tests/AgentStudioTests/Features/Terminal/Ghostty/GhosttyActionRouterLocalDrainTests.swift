@@ -115,7 +115,7 @@ extension GhosttyActionRouterTests {
         let routed = await Ghostty.ActionRouter.routeExactFactOrControlOnMainActor(
             precedingTitle: nil,
             actionTag: UInt32(GHOSTTY_ACTION_COMMAND_FINISHED.rawValue),
-            payload: .commandFinished(exitCode: 0, duration: 42),
+            payload: .commandFinished(exitCode: 0, duration: 42, sourceInstant: ContinuousClock.now),
             surfaceViewObjectID: surfaceViewObjectID,
             expectedSurfaceID: surfaceID,
             routingLookup: routingLookup,

@@ -89,6 +89,7 @@ final class WorkspacePreparedCompositionApplier {
             windowFrame: prepared.windowMemory.windowFrame
         )
         owners.workspacePaneGraphAtom.replacePaneStates(prepared.paneGraph.replacement)
+        owners.workspacePaneGraphAtom.paneContextMembershipDirectory.install(prepared.paneContextMembership)
         owners.workspaceDrawerCursorAtom.replaceExpandedDrawer(prepared.expandedDrawerID)
         owners.workspaceDrawerCursorAtom.replacePresentationPreferences(prepared.drawerPresentationPreferences)
         owners.workspaceTabShellAtom.replaceTabShells(prepared.tabShells.shells)

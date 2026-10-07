@@ -38,7 +38,20 @@ run = """
 #!/usr/bin/env bash
 set -euo pipefail
 bash "${PROJECT_ROOT}/scripts/vendor-worktree.sh" require-producer
-zig build -Doptimize=ReleaseFast
+# Xcode 27 SDK headers ask Clang's float.h for INFINITY/NAN (__need_infinity_nan),
+# which Zig 0.16's bundled headers predate, so Zig's bundled libc++ fails to build.
+# Give zmx the compat include dir Ghostty injects into its own steps
+# (vendor/ghostty/pkg/apple-sdk/include) through a --libc file. Harmless on older SDKs.
+zmx_libc_args=()
+apple_sdk_compat_include="${PROJECT_ROOT}/vendor/ghostty/pkg/apple-sdk/include"
+# Ghostty drops this dir once Zig's headers catch up; then zmx needs no override.
+if [[ "$(uname -s)" == "Darwin" && -d "$apple_sdk_compat_include" ]]; then
+  mkdir -p .zig-cache
+  zmx_libc_file="$PWD/.zig-cache/agentstudio-apple-sdk-libc.txt"
+  zig libc | sed "s|^include_dir=.*|include_dir=${apple_sdk_compat_include}|" > "$zmx_libc_file"
+  zmx_libc_args=(--libc "$zmx_libc_file")
+fi
+zig build -Doptimize=ReleaseFast ${zmx_libc_args[@]+"${zmx_libc_args[@]}"}
 """
 dir = "vendor/zmx"
 
@@ -426,6 +439,7 @@ swift_build_slot_acquire test "mise run test:swift:coverage"
 trap swift_build_slot_release EXIT
 BUILD_PATH="$SWIFT_BUILD_DIR"
 TIMEOUT_SECONDS="${SWIFT_TEST_TIMEOUT_SECONDS:-60}"
+PREBUILD_TIMEOUT_SECONDS="${SWIFT_TEST_PREBUILD_TIMEOUT_SECONDS:-$TIMEOUT_SECONDS}"
 echo "[test-coverage] BUILD_PATH=$BUILD_PATH"
 echo "[test-coverage] TIMEOUT_SECONDS=$TIMEOUT_SECONDS"
 
@@ -433,7 +447,15 @@ LOG_PREFIX="test-coverage"
 EXTRA_SWIFT_TEST_ARGS="--enable-code-coverage"
 source scripts/swift-test-helpers.sh
 
-prebuild_swift_tests
+source scripts/swift-test-lane-report.sh
+swift_test_begin_receipted_lane
+if [ "${SWIFT_TEST_SKIP_PREBUILD:-0}" != "1" ]; then
+  prebuild_swift_tests_with_build_receipt
+  LANE_BUNDLE_STATE=fresh
+else
+  LANE_BUNDLE_STATE=reused
+fi
+swift_test_preflight_lane test
 
 run_fast_non_webkit_swift_tests
 run_large_non_webkit_swift_tests
@@ -480,11 +502,22 @@ swift_build_slot_acquire test "mise run test:swift:e2e"
 trap swift_build_slot_release EXIT
 source "${PROJECT_ROOT}/scripts/swift-test-helpers.sh"
 BUILD_PATH="$SWIFT_BUILD_DIR"
-xcb_pipe=$(_xcb_pipe_cmd)
-swift build $(swift_package_sandbox_arguments) --build-tests --build-path "$BUILD_PATH" 2>&1 | $xcb_pipe
-AGENT_STUDIO_BENCHMARK_MODE=off swift test $(swift_package_sandbox_arguments) --skip-build \
+LOG_PREFIX="test-e2e"
+TIMEOUT_SECONDS="${SWIFT_TEST_TIMEOUT_SECONDS:-600}"
+PREBUILD_TIMEOUT_SECONDS="${SWIFT_TEST_PREBUILD_TIMEOUT_SECONDS:-1200}"
+source scripts/swift-test-lane-report.sh
+swift_test_begin_receipted_lane
+if [ "${SWIFT_TEST_SKIP_PREBUILD:-0}" != "1" ]; then
+  prebuild_swift_tests_with_build_receipt
+  LANE_BUNDLE_STATE=fresh
+else
+  LANE_BUNDLE_STATE=reused
+fi
+swift_test_preflight_lane e2e
+run_swift_with_timeout "E2ESerializedTests" "$TIMEOUT_SECONDS" \
+env AGENT_STUDIO_BENCHMARK_MODE=off swift test $(swift_package_sandbox_arguments) --skip-build \
   --filter "$(swift_test_lane_filter_pattern e2e)" \
-  --skip "$(swift_test_lane_filter_pattern zmx)" --build-path "$BUILD_PATH" 2>&1 | $xcb_pipe
+  --skip "$(swift_test_lane_filter_pattern zmx)" --build-path "$BUILD_PATH"
 """
 
 [tasks."test:swift:zmx-e2e"]
@@ -500,10 +533,21 @@ swift_build_slot_acquire test "mise run test:swift:zmx-e2e"
 trap swift_build_slot_release EXIT
 source "${PROJECT_ROOT}/scripts/swift-test-helpers.sh"
 BUILD_PATH="$SWIFT_BUILD_DIR"
-xcb_pipe=$(_xcb_pipe_cmd)
-swift build $(swift_package_sandbox_arguments) --build-tests --build-path "$BUILD_PATH" 2>&1 | $xcb_pipe
-AGENT_STUDIO_BENCHMARK_MODE=off swift test $(swift_package_sandbox_arguments) --skip-build \
-  --filter "$(swift_test_lane_filter_pattern zmx)" --build-path "$BUILD_PATH" 2>&1 | $xcb_pipe
+LOG_PREFIX="test-zmx-e2e"
+TIMEOUT_SECONDS="${SWIFT_TEST_TIMEOUT_SECONDS:-600}"
+PREBUILD_TIMEOUT_SECONDS="${SWIFT_TEST_PREBUILD_TIMEOUT_SECONDS:-1200}"
+source scripts/swift-test-lane-report.sh
+swift_test_begin_receipted_lane
+if [ "${SWIFT_TEST_SKIP_PREBUILD:-0}" != "1" ]; then
+  prebuild_swift_tests_with_build_receipt
+  LANE_BUNDLE_STATE=fresh
+else
+  LANE_BUNDLE_STATE=reused
+fi
+swift_test_preflight_lane zmx
+run_swift_with_timeout "ZmxE2ETests" "$TIMEOUT_SECONDS" \
+env AGENT_STUDIO_BENCHMARK_MODE=off swift test $(swift_package_sandbox_arguments) --skip-build \
+  --filter "$(swift_test_lane_filter_pattern zmx)" --build-path "$BUILD_PATH"
 """
 
 [tasks."test:swift:benchmark"]
@@ -519,10 +563,22 @@ swift_build_slot_acquire test "mise run test:swift:benchmark"
 trap swift_build_slot_release EXIT
 source "${PROJECT_ROOT}/scripts/swift-test-helpers.sh"
 BUILD_PATH="$SWIFT_BUILD_DIR"
+LOG_PREFIX="test-benchmark"
+TIMEOUT_SECONDS="${SWIFT_TEST_TIMEOUT_SECONDS:-600}"
+PREBUILD_TIMEOUT_SECONDS="${SWIFT_TEST_PREBUILD_TIMEOUT_SECONDS:-1200}"
 export AGENT_STUDIO_BENCHMARK_MODE=benchmark
 export _XCB_BYPASS=1
-xcb_pipe=$(_xcb_pipe_cmd)
-swift test $(swift_package_sandbox_arguments) --build-path "$BUILD_PATH" --filter "$(swift_test_lane_filter_pattern benchmark)" 2>&1 | $xcb_pipe
+source scripts/swift-test-lane-report.sh
+swift_test_begin_receipted_lane
+if [ "${SWIFT_TEST_SKIP_PREBUILD:-0}" != "1" ]; then
+  prebuild_swift_tests_with_build_receipt
+  LANE_BUNDLE_STATE=fresh
+else
+  LANE_BUNDLE_STATE=reused
+fi
+swift_test_preflight_lane benchmark
+run_swift_with_timeout "benchmark suites" "$TIMEOUT_SECONDS" \
+swift test $(swift_package_sandbox_arguments) --skip-build --build-path "$BUILD_PATH" --filter "$(swift_test_lane_filter_pattern benchmark)"
 """
 
 [tasks.clean-artifacts]
@@ -661,8 +717,15 @@ find "$APP_DIR/Resources/AgentPackage" -name '*.sh' -exec chmod 755 {} +
 # Do NOT embed the xcframework; it's only needed at build time for SwiftPM.
 
 # SwiftPM resource bundle — Bundle.appResources looks in Contents/Resources/
-RESOURCE_BUNDLE="$(find "$BUILD_PATH" -path '*/release/AgentStudio_AgentStudio.bundle' -type d | head -1)"
-[ -n "$RESOURCE_BUNDLE" ] && cp -R "$RESOURCE_BUNDLE" "$APP_DIR/Resources/"
+# $BUILD_PATH/release is the engine's own symlink (native: arm64-apple-macosx/release;
+# Swift Build: out/Products/Release); find does not follow it. A missing bundle
+# would ship an app that crashes at launch, so fail here instead.
+RESOURCE_BUNDLE="$BUILD_PATH/release/AgentStudio_AgentStudio.bundle"
+if [ ! -d "$RESOURCE_BUNDLE" ]; then
+  echo "create-app-bundle: missing SwiftPM resource bundle: $RESOURCE_BUNDLE" >&2
+  exit 1
+fi
+cp -R "$RESOURCE_BUNDLE" "$APP_DIR/Resources/"
 
 # Sign — uses Developer ID if SIGNING_IDENTITY is set, else ad-hoc
 ENTITLEMENTS="Sources/AgentStudio/Resources/AgentStudio.entitlements"

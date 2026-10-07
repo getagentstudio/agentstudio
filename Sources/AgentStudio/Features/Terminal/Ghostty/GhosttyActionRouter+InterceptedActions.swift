@@ -28,7 +28,8 @@ extension Ghostty.ActionRouter {
             return true
         case .closeAllWindows, .toggleMaximize, .toggleFullscreen, .toggleTabOverview,
             .toggleWindowDecorations, .toggleQuickTerminal, .toggleCommandPalette, .toggleVisibility,
-            .toggleBackgroundOpacity, .gotoWindow, .presentTerminal, .resetWindowSize, .inspector, .render,
+            .toggleBackgroundOpacity, .gotoWindow, .presentTerminal, .resetWindowSize, .resizeWindow, .inspector,
+            .render,
             .showGtkInspector, .renderInspector, .openConfig, .quitTimer, .floatWindow, .closeWindow,
             .checkForUpdates, .showOnScreenKeyboard:
             return true

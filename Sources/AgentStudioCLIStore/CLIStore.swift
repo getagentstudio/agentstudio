@@ -79,7 +79,7 @@ package final class CLIStore: Sendable {
     let databaseQueue: DatabaseQueue
     package let identity: CLIStoreIdentity
     private let logDecodeIssue: @Sendable (CLIStoreDecodeIssue) -> Void
-    private let remainingCallBudget: @Sendable () -> Duration?
+    let remainingCallBudget: @Sendable () -> Duration?
 
     private init(
         databaseQueue: DatabaseQueue,
@@ -243,14 +243,7 @@ package final class CLIStore: Sendable {
                 exactly: (createdAt.timeIntervalSince1970 * CLIStorePolicy.millisecondsPerSecond).rounded())
         else { return .failure(.unavailable) }
         do {
-            try databaseQueue.writeWithoutTransaction { database in
-                try Self.refreshBusyTimeout(
-                    database, cap: Self.ordinaryWriteWaitCap,
-                    remainingBudget: remainingCallBudget(), stage: .append)
-            }
-            let entry = try databaseQueue.write { database in
-                _ = try Self.busyTimeout(
-                    cap: Self.ordinaryWriteWaitCap, remainingBudget: remainingCallBudget(), stage: .append)
+            let entry = try budgetedWriteTransaction(stage: .append) { database in
                 // Returning the original entry makes repeats idempotent while
                 // preserving its immutable payload and time.
                 if let existing = try CLIOutboxRecord.fetchOne(
@@ -332,36 +325,48 @@ package final class CLIStore: Sendable {
                 exactly: (cutoff.timeIntervalSince1970 * CLIStorePolicy.millisecondsPerSecond).rounded(.up))
         else { return .failure(.unavailable) }
         do {
-            // Exhaustion after open must not start another SQLite wait or transaction.
-            _ = try Self.busyTimeout(
-                cap: Self.ordinaryWriteWaitCap, remainingBudget: remainingCallBudget(), stage: .purge)
-            let removed = try databaseQueue.writeWithoutTransaction { database in
-                try Self.refreshBusyTimeout(
-                    database, cap: Self.ordinaryWriteWaitCap,
-                    remainingBudget: remainingCallBudget(), stage: .purge)
-                var removedCount = 0
-                try database.inTransaction(.immediate) {
-                    _ = try Self.busyTimeout(
-                        cap: Self.ordinaryWriteWaitCap, remainingBudget: remainingCallBudget(), stage: .purge)
-                    let currentIdentity = try Self.readIdentity(database, expectedChannel: identity.channel)
-                    if currentIdentity.storeID == expectedStoreID {
-                        try Self.refreshBusyTimeout(
-                            database, cap: Self.ordinaryWriteWaitCap,
-                            remainingBudget: remainingCallBudget(), stage: .purge)
-                        try database.execute(
-                            sql: "DELETE FROM cli_outbox WHERE id <= ? AND created_at < ?",
-                            arguments: [lastHandledID, cutoffMilliseconds])
-                        removedCount = database.changesCount
-                    }
-                    // Both the identity refusal and DELETE share one guarded commit exit.
-                    _ = try Self.busyTimeout(
-                        cap: Self.ordinaryWriteWaitCap, remainingBudget: remainingCallBudget(), stage: .purge)
-                    return .commit
-                }
-                return removedCount
+            let removed = try budgetedWriteTransaction(stage: .purge) { database in
+                let currentIdentity = try Self.readIdentity(database, expectedChannel: identity.channel)
+                guard currentIdentity.storeID == expectedStoreID else { return 0 }
+                // Identity reads can consume the total budget. Check before
+                // DELETE without installing a second busy handler.
+                _ = try Self.busyTimeout(
+                    cap: Self.ordinaryWriteWaitCap, remainingBudget: remainingCallBudget(), stage: .purge)
+                try database.execute(
+                    sql: "DELETE FROM cli_outbox WHERE id <= ? AND created_at < ?",
+                    arguments: [lastHandledID, cutoffMilliseconds])
+                return database.changesCount
             }
             return .success(removed)
         } catch { return .failure(Self.classifyFailure(error, stage: .purge)) }
+    }
+
+    /// One budget owner for outbox and ordered-state writes. Keep the configured
+    /// cap without a deadline; otherwise install one clipped wait per operation.
+    /// Throwing after the body rolls back before GRDB reaches the commit exit.
+    func budgetedWriteTransaction<Output: Sendable>(
+        stage: CLIStoreFailure.Stage, _ operation: @Sendable (Database) throws -> Output
+    ) throws -> Output {
+        guard !databaseQueue.configuration.readonly else { throw CLIStoreFailure.readOnly }
+        _ = try Self.busyTimeout(
+            cap: Self.ordinaryWriteWaitCap, remainingBudget: remainingCallBudget(), stage: stage)
+        return try databaseQueue.writeWithoutTransaction { database in
+            if let remaining = remainingCallBudget() {
+                try Self.refreshBusyTimeout(
+                    database, cap: Self.ordinaryWriteWaitCap, remainingBudget: remaining, stage: stage)
+            }
+            var result: Output?
+            try database.inTransaction(.immediate) {
+                _ = try Self.busyTimeout(
+                    cap: Self.ordinaryWriteWaitCap, remainingBudget: remainingCallBudget(), stage: stage)
+                result = try operation(database)
+                _ = try Self.busyTimeout(
+                    cap: Self.ordinaryWriteWaitCap, remainingBudget: remainingCallBudget(), stage: stage)
+                return .commit
+            }
+            guard let result else { throw CLIStoreFailure.unavailable }
+            return result
+        }
     }
 
     private static func firstOpenBusyTimeout(lockWaitBudget: Duration?) throws -> TimeInterval {

@@ -3,6 +3,7 @@ import AgentStudioCore
 import AgentStudioEditorChooser
 import AgentStudioInfrastructure
 import AgentStudioRepoExplorer
+import AgentStudioSessions
 import AgentStudioSharedComponents
 import AppKit
 import Observation
@@ -29,6 +30,7 @@ class MainWindowController: NSWindowController, NSWindowDelegate {
         workspaceWindowId: UUID = UUID(),
         store: WorkspaceStore,
         octiconLoader: OcticonLoader,
+        paneContextReaders: PaneContextUIReaders? = nil,
         workspaceActionExecutor: WorkspaceActionExecutor,
         runtimeCommandDispatcher: any PaneRuntimeCommandDispatching,
         applicationLifecycleMonitor: ApplicationLifecycleMonitor,
@@ -37,6 +39,7 @@ class MainWindowController: NSWindowController, NSWindowDelegate {
         viewRegistry: ViewRegistry,
         bridgePaneAttendance: BridgePaneAttendanceAtom,
         editorChooser: EditorChooserState,
+        sessionsPaneViewedMailbox: SessionsPaneViewedMailbox? = nil,
         repoExplorerSidebarPrefs: RepoExplorerSidebarPrefsAtom,
         bridgeAttendanceSnapshot: @escaping BridgeAttendanceSnapshot,
         performanceTraceRecorder: AgentStudioPerformanceTraceRecorder? = nil,
@@ -97,6 +100,7 @@ class MainWindowController: NSWindowController, NSWindowDelegate {
         let splitVC = MainSplitViewController(
             store: store,
             octiconLoader: octiconLoader,
+            paneContextReaders: paneContextReaders,
             workspaceWindowId: windowId,
             workspaceActionExecutor: workspaceActionExecutor,
             runtimeCommandDispatcher: runtimeCommandDispatcher,
@@ -108,6 +112,7 @@ class MainWindowController: NSWindowController, NSWindowDelegate {
             bridgeAttendanceSnapshot: bridgeAttendanceSnapshot,
             bridgePaneAttendance: bridgePaneAttendance,
             editorChooser: editorChooser,
+            sessionsPaneViewedMailbox: sessionsPaneViewedMailbox,
             performanceTraceRecorder: performanceTraceRecorder,
             onSidebarVisibleWorktreesChanged: onSidebarVisibleWorktreesChanged,
             onPerformanceProofReadback: onPerformanceProofReadback,

@@ -590,8 +590,8 @@ actor BridgePaneProductSchemeProvider: BridgeProductSchemeProvider {
             return
         }
         guard
-            let invalidationHandlerId = foregroundWorkAdmission.registerInvalidationHandler({
-                Task { [weak self] in
+            let invalidationHandlerId = foregroundWorkAdmission.registerInvalidationHandler({ [weak self] in
+                Task {
                     guard let self else { return }
                     let retirement = await self.beginActivityInvalidatedProducerRetirement(
                         lease: lease,

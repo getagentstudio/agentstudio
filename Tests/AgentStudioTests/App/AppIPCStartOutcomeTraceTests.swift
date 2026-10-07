@@ -203,7 +203,7 @@ struct AppIPCStartOutcomeTraceTests {
         let trace = StartupTraceCapture()
         let windowLifecycleStore = WindowLifecycleAtom()
         windowLifecycleStore.recordFirstInteractiveFramePublished(source: .presented)
-        let harness = try makeServerCapableAppIPCTestHarness(windowLifecycleStore: windowLifecycleStore)
+        let harness = try await makeServerCapableAppIPCTestHarness(windowLifecycleStore: windowLifecycleStore)
         try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: harness.rootDirectory.path)
         harness.appDelegate.startupTraceRecorder = trace.recorder
         do {

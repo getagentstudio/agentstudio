@@ -37,7 +37,7 @@ final class PaneIPCIdentityOwner {
     private let cliStoreChannel: CLIStoreChannel
     private let cliExecutableURL: URL
     private let inheritedEnvironment: [String: String]
-    private let canonicalPaneMembership: @MainActor @Sendable (UUID, UUID) -> Bool
+    private let canonicalPaneMembership: @Sendable (UUID, UUID) -> Bool
     private let randomBytes: @Sendable () throws -> Data
     private var environmentsByPaneID: [UUID: PaneIPCEnvironment] = [:]
 
@@ -48,7 +48,7 @@ final class PaneIPCIdentityOwner {
         cliStoreChannel: CLIStoreChannel,
         cliExecutableURL: URL,
         inheritedEnvironment: [String: String] = ProcessInfo.processInfo.environment,
-        canonicalPaneMembership: @escaping @MainActor @Sendable (UUID, UUID) -> Bool,
+        canonicalPaneMembership: @escaping @Sendable (UUID, UUID) -> Bool,
         randomBytes: @escaping @Sendable () throws -> Data = secureRandomBytes
     ) {
         self.principalRegistry = principalRegistry

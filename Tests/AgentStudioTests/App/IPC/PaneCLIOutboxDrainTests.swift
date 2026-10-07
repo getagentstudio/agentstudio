@@ -1,3 +1,4 @@
+import AgentStudioCore
 import AgentStudioIPCTransport
 import AgentStudioInfrastructure
 import AgentStudioProgrammaticControl
@@ -80,21 +81,21 @@ struct PaneCLIOutboxDrainTests {
             let boundPane = UUIDv7.generate()
             try await harness.bindPane(paneID: boundPane)
             let refused = try await harness.append(
-                paneID: unboundPane, line: harness.reportLine(kind: .done, explanation: nil))
+                paneID: unboundPane, line: harness.reportLine(kind: "done", explanation: nil))
             let admitted = try await harness.append(
                 paneID: boundPane, line: harness.messageLine(text: "other pane survives"))
 
             let report = await harness.drain()
 
             #expect(refused.id < admitted.id)
-            #expect(report.refusedEntryCount == 1)
+            #expect(report.malformedEntryCount == 1)
             #expect(report.admittedEntryCount == 1)
             #expect(report.retryableEntryCount == 0)
-            #expect(harness.refusalRecorder.reasons == [.qualificationRejected])
+            #expect(harness.refusalRecorder.reasons == [.ineligibleMethod])
             #expect(try await harness.cursor() == admitted.id)
             #expect(try await harness.rows() == [refused, admitted])
-            #expect(try await harness.snapshot(paneID: unboundPane).currentBinding == nil)
-            #expect(try await harness.snapshot(paneID: boundPane).messages.map(\.text) == ["other pane survives"])
+            #expect(try await harness.sessionContext(paneID: unboundPane).currentBinding == nil)
+            #expect(try await harness.paneMessages(paneID: boundPane).map(\.body) == ["other pane survives"])
         }
     }
 
@@ -110,11 +111,11 @@ struct PaneCLIOutboxDrainTests {
             #expect(report.retryableEntryCount == 0)
             #expect(try await harness.cursor() == entry.id)
             #expect(try await harness.rows() == [entry])
-            let snapshot = try await harness.snapshot(paneID: paneID)
-            #expect(snapshot.messages.count == 1)
-            #expect(snapshot.messages.first?.text == "deploy finished")
-            #expect(snapshot.messages.first?.freshness == .late)
-            #expect(snapshot.messages.first?.attribution == .unattributed)
+            let messages = try await harness.paneMessages(paneID: paneID)
+            #expect(messages.count == 1)
+            #expect(messages.first?.body == "deploy finished")
+            #expect(messages.first?.sender == .pane(PaneId(existingUUID: paneID)))
+            #expect(messages.first?.sourcePaneId == PaneId(existingUUID: paneID))
         }
     }
 
@@ -133,7 +134,7 @@ struct PaneCLIOutboxDrainTests {
             #expect(report.admittedEntryCount == 1)
             #expect(restarted.admittedEntryCount == 0)
             #expect(try await harness.cursor() == first.id)
-            #expect(try await harness.snapshot(paneID: paneID).messages.count == 1)
+            #expect(try await harness.paneMessages(paneID: paneID).count == 1)
         }
     }
 
@@ -150,7 +151,7 @@ struct PaneCLIOutboxDrainTests {
             #expect(report.admittedEntryCount == 1)
             #expect(try await harness.cursor() == survivor.id)
             #expect(try await harness.rows().count == 2)
-            #expect(try await harness.snapshot(paneID: paneID).messages.map(\.text) == ["survivor"])
+            #expect(try await harness.paneMessages(paneID: paneID).map(\.body) == ["survivor"])
         }
     }
 
@@ -166,7 +167,7 @@ struct PaneCLIOutboxDrainTests {
             #expect(report.admittedEntryCount == 0)
             #expect(harness.refusalRecorder.reasons == [.ineligibleMethod])
             #expect(try await harness.cursor() == entry.id)
-            #expect(try await harness.snapshot(paneID: paneID).currentBinding == nil)
+            #expect(try await harness.sessionContext(paneID: paneID).currentBinding == nil)
         }
     }
 
@@ -183,7 +184,7 @@ struct PaneCLIOutboxDrainTests {
             #expect(report.malformedEntryCount == 1)
             #expect(harness.refusalRecorder.reasons == [.foreignPane])
             #expect(try await harness.cursor() == entry.id)
-            #expect(try await harness.snapshot(paneID: paneID).messages.isEmpty)
+            #expect(try await harness.paneMessages(paneID: paneID).isEmpty)
         }
     }
 
@@ -204,7 +205,57 @@ struct PaneCLIOutboxDrainTests {
             let retried = try await harness.restartedDrain()
             #expect(retried.admittedEntryCount == 1)
             #expect(try await harness.cursor() == entry.id)
-            #expect(try await harness.snapshot(paneID: paneID).messages.count == 1)
+            #expect(try await harness.paneMessages(paneID: paneID).count == 1)
+        }
+    }
+
+    @Test("a claimed writer's binding read failure keeps the notice queued until the next drain")
+    func bindingReadFailureRetainsClaimedNotice() async throws {
+        try await withPaneCLIOutboxDrainHarness { harness in
+            let paneID = UUIDv7.generate()
+            try await harness.bindPane(paneID: paneID)
+            let snapshot = try await harness.sessionContext(paneID: paneID)
+            let binding = try #require(snapshot.currentBinding)
+            let writer = IPCPaneWriterClaim(
+                provider: binding.providerIdentifier, conversationId: binding.providerConversationId)
+            let line = try harness.messageLine(text: "retry the binding read", writer: writer)
+            let entry = try await harness.append(paneID: paneID, line: line)
+            // Cursor reads remain available; only the actual binding query loses its table.
+            try await harness.sqliteAccess.write { database in
+                try database.execute(
+                    sql: "ALTER TABLE sessions_pane_binding RENAME TO test_unavailable_sessions_binding")
+            }
+
+            let failed = await harness.drain()
+            let cursorAfterFailure = try await harness.cursor()
+            let queuedAfterFailure = try await harness.rows()
+            let messagesAfterFailure = try await harness.paneMessages(paneID: paneID)
+            #expect(failed.admittedEntryCount == 0)
+            #expect(failed.retryableEntryCount == 1)
+            #expect(failed.malformedEntryCount == 0)
+            #expect(failed.refusedEntryCount == 0)
+            #expect(cursorAfterFailure == 0)
+            #expect(queuedAfterFailure == [entry])
+            #expect(messagesAfterFailure.isEmpty)
+            #expect(harness.refusalRecorder.reasons.isEmpty)
+
+            try await harness.sqliteAccess.write { database in
+                try database.execute(
+                    sql: "ALTER TABLE test_unavailable_sessions_binding RENAME TO sessions_pane_binding")
+            }
+            let retried = try await harness.restartedDrain()
+            let cursorAfterRetry = try await harness.cursor()
+            let admitted = try await harness.paneMessages(paneID: paneID)
+            let expectedSender = AgentMessageSender.session(
+                provider: try BridgeAgentProviderName(binding.providerIdentifier),
+                sessionRef: try BridgeAgentSessionRef(binding.providerConversationId),
+                bindingGeneration: binding.bindingGenerationId)
+            #expect(retried.admittedEntryCount == 1)
+            #expect(retried.retryableEntryCount == 0)
+            #expect(cursorAfterRetry == entry.id)
+            #expect(admitted.count == 1)
+            #expect(admitted.first?.body == "retry the binding read")
+            #expect(admitted.first?.sender == expectedSender)
         }
     }
 
@@ -212,8 +263,12 @@ struct PaneCLIOutboxDrainTests {
     func transientAdmissionFailureRetainsPendingPrefix() async throws {
         try await withPaneCLIOutboxDrainHarness { harness in
             let paneID = UUIDv7.generate()
-            let failedEntry = try await harness.append(paneID: paneID, line: harness.messageLine(text: "retry once"))
-            let laterEntry = try await harness.append(paneID: paneID, line: harness.messageLine(text: "later notice"))
+            let firstMessageID = UUIDv7.generate()
+            let laterMessageID = UUIDv7.generate()
+            let failedEntry = try await harness.append(
+                paneID: paneID, line: harness.messageLine(text: "retry once", correlationID: firstMessageID))
+            let laterEntry = try await harness.append(
+                paneID: paneID, line: harness.messageLine(text: "later notice", correlationID: laterMessageID))
             await harness.sqliteAccess.failNextWrite()
 
             // The injected failure clears on its first write, so the old
@@ -227,7 +282,7 @@ struct PaneCLIOutboxDrainTests {
             #expect(harness.refusalRecorder.reasons.isEmpty)
             #expect(try await harness.cursor() == 0)
             #expect(try await harness.rows() == [failedEntry, laterEntry])
-            #expect(try await harness.snapshot(paneID: paneID).messages.isEmpty)
+            #expect(try await harness.paneMessages(paneID: paneID).isEmpty)
 
             let retried = await harness.drain()
 
@@ -237,15 +292,17 @@ struct PaneCLIOutboxDrainTests {
             #expect(retried.refusedEntryCount == 0)
             #expect(try await harness.cursor() == laterEntry.id)
             #expect(try await harness.rows() == [failedEntry, laterEntry])
-            let messages = try await harness.snapshot(paneID: paneID).messages.map(\.text)
+            let effects = try await harness.paneMessages(paneID: paneID)
+            let messages = effects.map(\.body)
             #expect(messages.count == 2)
             #expect(Set(messages) == Set(["retry once", "later notice"]))
+            #expect(Set(effects.map { $0.id.uuid }) == Set([firstMessageID, laterMessageID]))
 
             let restarted = try await harness.restartedDrain()
             #expect(restarted.admittedEntryCount == 0)
             #expect(restarted.retryableEntryCount == 0)
             #expect(try await harness.cursor() == laterEntry.id)
-            #expect(try await harness.snapshot(paneID: paneID).messages.count == 2)
+            #expect(try await harness.paneMessages(paneID: paneID).count == 2)
         }
     }
 
@@ -255,13 +312,13 @@ struct PaneCLIOutboxDrainTests {
             let paneID = UUIDv7.generate()
             let entry = try await harness.append(
                 paneID: paneID,
-                line: harness.reportLine(kind: .needsYou, explanation: "approve the plan"))
+                line: harness.reportLine(kind: "needsYou", explanation: "approve the plan"))
 
             let beforeBinding = await harness.drain()
 
             #expect(beforeBinding.retryableEntryCount == 0)
-            #expect(beforeBinding.refusedEntryCount == 1)
-            #expect(harness.refusalRecorder.reasons == [.qualificationRejected])
+            #expect(beforeBinding.malformedEntryCount == 1)
+            #expect(harness.refusalRecorder.reasons == [.ineligibleMethod])
             #expect(try await harness.cursor() == entry.id)
             #expect(try await harness.rows() == [entry])
             try await harness.bindPane(paneID: paneID)
@@ -269,7 +326,7 @@ struct PaneCLIOutboxDrainTests {
             #expect(afterBinding.admittedEntryCount == 0)
             #expect(afterBinding.retryableEntryCount == 0)
             #expect(try await harness.cursor() == entry.id)
-            #expect(try await harness.snapshot(paneID: paneID).currentAttention.isEmpty)
+            #expect(try await harness.sessionSummary(paneID: paneID)?.providerPrompts.isEmpty == true)
         }
     }
 
@@ -289,7 +346,7 @@ struct PaneCLIOutboxDrainTests {
             #expect(report.admittedEntryCount == 1)
             #expect(try await harness.cursor() == survivor.id)
             #expect(try await harness.rows().count == 2)
-            #expect(try await harness.snapshot(paneID: paneID).messages.map(\.text) == ["survivor"])
+            #expect(try await harness.paneMessages(paneID: paneID).map(\.body) == ["survivor"])
         }
     }
 
@@ -321,28 +378,28 @@ struct PaneCLIOutboxDrainTests {
         }
     }
 
-    @Test("queued needs-you and done from before relaunch become history")
-    func deliberateReportsSurviveRelaunch() async throws {
+    @Test("legacy status reports are refused without changing a bound pane or creating history")
+    func legacyStatusReportsPreserveBoundPane() async throws {
         try await withPaneCLIOutboxDrainHarness { harness in
             let paneID = UUIDv7.generate()
             try await harness.bindPane(paneID: paneID)
-            try await harness.simulateRelaunch()
-            let stateAfterRelaunch = try await harness.snapshot(paneID: paneID).state
+            let stateBeforeReports = try await harness.sessionSummary(paneID: paneID)
             _ = try await harness.append(
-                paneID: paneID, line: harness.reportLine(kind: .needsYou, explanation: "approve the plan"))
-            let last = try await harness.append(paneID: paneID, line: harness.reportLine(kind: .done, explanation: nil))
+                paneID: paneID, line: harness.reportLine(kind: "needsYou", explanation: "approve the plan"))
+            let last = try await harness.append(
+                paneID: paneID, line: harness.reportLine(kind: "done", explanation: nil))
 
             let report = await harness.drain()
 
-            #expect(report.admittedEntryCount == 2)
-            #expect(report.refusedEntryCount == 0)
+            #expect(report.admittedEntryCount == 0)
+            #expect(report.malformedEntryCount == 2)
             #expect(try await harness.cursor() == last.id)
-            let snapshot = try await harness.snapshot(paneID: paneID)
-            #expect(snapshot.state == stateAfterRelaunch)
-            #expect(snapshot.currentAttention.isEmpty)
-            #expect(snapshot.results.count == 1)
-            #expect(snapshot.results.first?.freshness == .late)
-            #expect(snapshot.historicalOccurrenceIds.count == 2)
+            let snapshot = try await harness.sessionContext(paneID: paneID)
+            #expect(try await harness.sessionSummary(paneID: paneID) == stateBeforeReports)
+            #expect(try await harness.sessionSummary(paneID: paneID)?.providerPrompts.isEmpty == true)
+            #expect(snapshot.evidence.count == 1)
+            #expect(snapshot.evidence.allSatisfy { $0.providerSignal == .sessionStart })
+            #expect(harness.refusalRecorder.reasons == [.ineligibleMethod, .ineligibleMethod])
         }
     }
 
@@ -352,18 +409,18 @@ struct PaneCLIOutboxDrainTests {
             let paneID = UUIDv7.generate()
             let handled = try await harness.append(paneID: paneID, line: harness.messageLine(text: "first"))
             let refused = try await harness.append(
-                paneID: paneID, line: harness.reportLine(kind: .needsYou, explanation: "bind first"))
+                paneID: paneID, line: harness.reportLine(kind: "needsYou", explanation: "bind first"))
             let later = try await harness.append(
                 paneID: paneID, line: harness.messageLine(text: "survives permanent refusal"))
 
             let report = await harness.drain()
 
             #expect(report.admittedEntryCount == 2)
-            #expect(report.refusedEntryCount == 1)
+            #expect(report.malformedEntryCount == 1)
             #expect(report.retryableEntryCount == 0)
             #expect(try await harness.cursor() == later.id)
             #expect(try await harness.rows() == [handled, refused, later])
-            let messages = try await harness.snapshot(paneID: paneID).messages.map(\.text)
+            let messages = try await harness.paneMessages(paneID: paneID).map(\.body)
             #expect(Set(messages) == Set(["first", "survives permanent refusal"]))
             #expect(messages.count == 2)
         }
@@ -375,8 +432,8 @@ struct PaneCLIOutboxDrainTests {
             let paneID = UUIDv7.generate()
             let handled = try await harness.append(paneID: paneID, line: harness.messageLine(text: "first"))
             let refused = try await harness.append(
-                paneID: paneID, line: harness.reportLine(kind: .needsYou, explanation: "bind first"))
-            let appendedLine = try harness.reportLine(kind: .needsYou, explanation: "second approval")
+                paneID: paneID, line: harness.reportLine(kind: "needsYou", explanation: "bind first"))
+            let appendedLine = try harness.reportLine(kind: "needsYou", explanation: "second approval")
 
             async let drained = harness.drain()
             async let appended = harness.append(paneID: paneID, line: appendedLine)
@@ -384,11 +441,11 @@ struct PaneCLIOutboxDrainTests {
 
             #expect(report.admittedEntryCount == 1)
             #expect(report.retryableEntryCount == 0)
-            #expect(report.refusedEntryCount >= 1)
+            #expect(report.malformedEntryCount >= 1)
             #expect(try await harness.cursor() >= refused.id)
             let completed = try await harness.restartedDrain()
             #expect(completed.retryableEntryCount == 0)
-            #expect(report.refusedEntryCount + completed.refusedEntryCount == 2)
+            #expect(report.malformedEntryCount + completed.malformedEntryCount == 2)
             #expect(try await harness.cursor() == last.id)
             #expect(try await harness.rows() == [handled, refused, last])
         }
@@ -406,7 +463,7 @@ struct PaneCLIOutboxDrainTests {
             #expect(report.admittedEntryCount == 0)
             #expect(report.retryableEntryCount == 1)
             #expect(try await harness.cursor() == 0)
-            #expect(try await harness.snapshot(paneID: paneID).messages.isEmpty)
+            #expect(try await harness.paneMessages(paneID: paneID).isEmpty)
             #expect(try await harness.rows() == [entry])
         }
     }
@@ -445,7 +502,7 @@ struct PaneCLIOutboxDrainTests {
             #expect(first.importedLegacyLineCount == 1)
             #expect(restarted.importedLegacyLineCount == 0)
             #expect(!FileManager.default.fileExists(atPath: harness.legacyFileURL(paneID: paneID).path))
-            #expect(try await harness.snapshot(paneID: paneID).messages.map(\.text) == ["legacy notice"])
+            #expect(try await harness.paneMessages(paneID: paneID).map(\.body) == ["legacy notice"])
             // The app must not insert the imported envelope into the CLI file.
             #expect(try await harness.rows().isEmpty)
         }
@@ -469,7 +526,7 @@ struct PaneCLIOutboxDrainTests {
             #expect(report.malformedEntryCount == 1)
             #expect(harness.refusalRecorder.reasons == [.unknownKind])
             #expect(try await harness.cursor() == entry.id)
-            #expect(try await harness.snapshot(paneID: paneID).messages.isEmpty)
+            #expect(try await harness.paneMessages(paneID: paneID).isEmpty)
             let storedCount = try await valueFromDedicatedThread {
                 try writer.databaseQueue.read { try Int.fetchOne($0, sql: "SELECT COUNT(*) FROM cli_outbox") }
             }
@@ -482,22 +539,30 @@ struct PaneCLIOutboxDrainTests {
         try await withPaneCLIOutboxDrainHarness { harness in
             let paneID = UUIDv7.generate()
             try await harness.bindPane(paneID: paneID)
-            _ = try await harness.admission.recordDeliberateReport(
-                paneId: paneID,
-                params: IPCSessionReportParams(
-                    handle: "self", kind: .needsYou, explanation: "keep attention",
-                    correlationId: UUIDv7.generate()))
-            let attention = try await harness.snapshot(paneID: paneID).currentAttention
+            let messageID = UUIDv7.generate()
+            let snapshot = try await harness.sessionContext(paneID: paneID)
+            let generation = try #require(snapshot.currentBinding?.bindingGenerationId)
+            let request = PaneMessageSendRequest(
+                paneId: PaneId(existingUUID: paneID), messageId: AgentMessageId(existingUUID: messageID),
+                sender: .session(
+                    provider: try BridgeAgentProviderName(PaneCLIOutboxDrainHarness.testProvider.identifier),
+                    sessionRef: try BridgeAgentSessionRef("conversation-\(paneID)"),
+                    bindingGeneration: generation),
+                sourceOccurredAt: nil, importance: .attention, body: "keep attention", why: nil, actions: [],
+                shape: .ask(reason: .blocked, form: .freeText(placeholder: nil), waiting: .nonBlocking))
+            let opened = await harness.paneService.send(request)
+            #expect(opened == .created(AgentMessageId(existingUUID: messageID)))
+            let attention = try await harness.paneMessages(paneID: paneID)
             #expect(attention.count == 1)
             let entry = try await harness.append(
-                paneID: paneID, line: harness.reportLine(kind: .clearNeedsYou, explanation: nil))
+                paneID: paneID, line: harness.reportLine(kind: "clearNeedsYou", explanation: nil))
 
             let report = await harness.drain()
 
             #expect(report.malformedEntryCount == 1)
-            #expect(harness.refusalRecorder.reasons == [.ineligibleVariant])
+            #expect(harness.refusalRecorder.reasons == [.ineligibleMethod])
             #expect(try await harness.cursor() == entry.id)
-            #expect(try await harness.snapshot(paneID: paneID).currentAttention == attention)
+            #expect(try await harness.paneMessages(paneID: paneID) == attention)
         }
     }
 
@@ -506,18 +571,18 @@ struct PaneCLIOutboxDrainTests {
         try await withPaneCLIOutboxDrainHarness { harness in
             let paneID = UUIDv7.generate()
             try harness.writeLegacyFile(
-                paneID: paneID, lines: [harness.reportLine(kind: .needsYou, explanation: "legacy approval")])
+                paneID: paneID, lines: [harness.reportLine(kind: "needsYou", explanation: "legacy approval")])
 
             let refused = await harness.drain()
 
-            #expect(refused.refusedEntryCount == 1)
+            #expect(refused.malformedEntryCount == 1)
             #expect(refused.retryableEntryCount == 0)
             #expect(!FileManager.default.fileExists(atPath: harness.legacyFileURL(paneID: paneID).path))
             try await harness.bindPane(paneID: paneID)
             let retried = try await harness.restartedDrain()
             #expect(retried.importedLegacyLineCount == 0)
             #expect(!FileManager.default.fileExists(atPath: harness.legacyFileURL(paneID: paneID).path))
-            #expect(try await harness.snapshot(paneID: paneID).currentAttention.isEmpty)
+            #expect(try await harness.sessionSummary(paneID: paneID)?.providerPrompts.isEmpty == true)
         }
     }
 }

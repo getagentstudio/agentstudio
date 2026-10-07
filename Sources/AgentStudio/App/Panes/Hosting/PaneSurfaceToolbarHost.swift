@@ -82,6 +82,7 @@ struct DrawerToolbarCommandPresentation {
 
 @MainActor
 struct PaneSurfaceToolbarHost: View {
+    @Environment(\.paneContextUIReaders) private var paneContextReaders
     let anchorPaneId: UUID
     let locationTargetPaneId: UUID
     let toolbarSurface: AppCommandToolbarSurface
@@ -241,7 +242,7 @@ struct PaneSurfaceToolbarHost: View {
             toggleDrawerAction: commandPresentation.toggleDrawer,
             addDrawerPaneAction: commandPresentation.addDrawerPane,
             pinPaneAction: commandPresentation.pinPane,
-            trailingActions: hostedActions,
+            trailingActions: hostedActions.withPaneContextContent(paneContextContent),
             paneSurfaceActions: leadingToolbarActions,
             paneContextActions: contextToolbarActions
         )
@@ -267,6 +268,14 @@ struct PaneSurfaceToolbarHost: View {
         .onChange(of: paneNotePresentation?.pendingRequest()?.id) { _, _ in
             consumePendingPaneNoteRequest()
         }
+    }
+
+    private var paneContextContent: AnyView? {
+        guard let paneContextReaders else { return nil }
+        return AnyView(
+            PaneContextToolbarControls(
+                paneId: PaneId(existingUUID: anchorPaneId), readers: paneContextReaders, octiconLoader: octiconLoader,
+                onGoToPane: { AppCommandDispatcher.shared.dispatch(.focusPane, target: $0, targetType: .pane) }))
     }
 
     private func consumePendingPaneInboxRequest(in scope: PaneInboxScope) {

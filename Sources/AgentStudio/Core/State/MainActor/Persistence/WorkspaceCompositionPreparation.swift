@@ -113,6 +113,7 @@ struct PreparedWorkspaceComposition: Equatable, Sendable {
     let tabs: [Tab]
     let activeTabID: UUID?
     let paneGraph: PreparedWorkspacePaneGraph
+    let paneContextMembership: PaneContextMembershipInstallation
     let expandedDrawerID: UUID?
     let drawerPresentationPreferences: [UUID: DrawerPresentationPreference]
     let tabShells: PreparedWorkspaceTabShells
@@ -142,6 +143,14 @@ struct PreparedWorkspaceComposition: Equatable, Sendable {
         self.tabs = tabs
         self.activeTabID = activeTabID
         self.paneGraph = paneGraph
+        self.paneContextMembership = PaneContextMembershipInstallation(
+            workspaceId: identity.workspaceID, membershipRevision: 1,
+            entries: panes.map { pane in
+                let facts = PaneStructuralFacts(state: PaneGraphState(pane: pane))
+                return PaneContextMembershipEntry(
+                    paneId: PaneId(existingUUID: facts.paneID), placement: facts.placement,
+                    ownedDrawerChildIds: facts.ownedDrawerPaneIDs.map { PaneId(existingUUID: $0) })
+            })
         self.expandedDrawerID = expandedDrawerID
         self.drawerPresentationPreferences = drawerPresentationPreferences
         self.tabShells = tabShells

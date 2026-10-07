@@ -29,7 +29,7 @@ struct PaneAgentControlHarness {
 
     static func make(channel: AgentStudioIPCChannel) async throws -> Self {
         let workspaceWindowId = UUIDv7.generate()
-        let (commandHarness, datastore) = try makeCanonicalIPCWorkspaceCommandHarness(
+        let (commandHarness, datastore) = try await makeCanonicalIPCWorkspaceCommandHarness(
             workspaceWindowId: workspaceWindowId
         )
         let appDelegate = AppDelegate()

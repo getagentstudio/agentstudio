@@ -56,10 +56,19 @@ package struct AgentStudioIPCClientCommandLineRunner: Sendable {
     package static func run(props: Props) -> Int32 {
         let hookDeadline: CallDeadline?
         if props.arguments.first == "hook" {
-            if let timing = props.deadlineTiming {
-                hookDeadline = CallDeadline(limit: CLIPolicy.hookCallLimit, timing: timing)
+            let ingressLimit: Duration
+            if case .hook(let provider, let eventName)? = AgentPackageSubcommand.parse(props.arguments),
+                provider == CodexHookProjection.providerIdentifier,
+                let codexEvent = CodexHookEventName(rawValue: eventName)
+            {
+                ingressLimit = ProviderHookDelivery.codexCallLimit(for: codexEvent)
             } else {
-                hookDeadline = CallDeadline(limit: CLIPolicy.hookCallLimit)
+                ingressLimit = CLIPolicy.hookCallLimit
+            }
+            if let timing = props.deadlineTiming {
+                hookDeadline = CallDeadline(limit: ingressLimit, timing: timing)
+            } else {
+                hookDeadline = CallDeadline(limit: ingressLimit)
             }
         } else {
             hookDeadline = nil
@@ -70,7 +79,14 @@ package struct AgentStudioIPCClientCommandLineRunner: Sendable {
     private let props: Props
     private let hookDeadline: CallDeadline?
 
+    private func makeDeadline(limit: Duration, startedAt: ContinuousClock.Instant) -> CallDeadline {
+        if let timing = props.deadlineTiming { return CallDeadline(limit: limit, startedAt: startedAt, timing: timing) }
+        return CallDeadline(limit: limit, startedAt: startedAt)
+    }
+
     private func dispatchCommandLine() -> Int32 {
+        let startedAt = props.deadlineTiming?.now() ?? ContinuousClock.now
+        let wallStartedAt = props.now()
         var endpointCameFromDebugEscrow = false
         do {
             let readInput = props.standardInput
@@ -87,10 +103,31 @@ package struct AgentStudioIPCClientCommandLineRunner: Sendable {
                 standardInputProvider: readInput
             )
             endpointCameFromDebugEscrow = global.endpointCameFromDebugEscrow
+            let intent = try global.methodArguments.first.flatMap { name -> PaneCLIIntent? in
+                guard PaneCLIVerb(rawValue: name) != nil else { return nil }
+                return try PaneCLIIntent.parse(global.methodArguments, now: wallStartedAt)
+            }
+            let limit = intent?.callLimit ?? CLIPolicy.ordinaryCallLimit
+            let deadline = makeDeadline(limit: limit, startedAt: startedAt)
+            if let intent {
+                let networkDeadline: CallDeadline
+                if case .notify = intent {
+                    networkDeadline = makeDeadline(limit: limit - CLIPolicy.noticeQueueReserve, startedAt: startedAt)
+                } else {
+                    networkDeadline = deadline
+                }
+                try PaneCLICommandRunner(
+                    props: props, global: global, deadline: networkDeadline, totalDeadline: deadline
+                ).run(intent)
+                return 0
+            }
             let examples = IPCBuiltInMethodExampleContext(illustrativeIdentifier: props.identifierGenerator())
             let inputs = IPCBuiltInMethodCatalogInputs(examples: examples)
-            let offlineHandler = PaneNotificationOfflineHandler(environment: props.environment)
-            if try writeExplicitDiscovery(global: global, resolver: resolver, inputs: inputs, readInput: readInput) {
+            let offlineHandler = PaneNotificationOfflineHandler(
+                environment: props.environment, now: props.now, migrationLockWaitBudget: { deadline.remainingBudget })
+            if try writeExplicitDiscovery(
+                global: global, resolver: resolver, inputs: inputs, readInput: readInput, deadline: deadline)
+            {
                 return 0
             }
             let invocation: IPCDescriptorInvocation
@@ -113,7 +150,7 @@ package struct AgentStudioIPCClientCommandLineRunner: Sendable {
             try deliver(
                 invocation: invocation,
                 client: makeClient(
-                    configuration: global.configuration, descriptors: descriptors),
+                    configuration: global.configuration, descriptors: descriptors, deadline: deadline),
                 offlineHandler: offlineHandler
             )
             return 0
@@ -124,7 +161,7 @@ package struct AgentStudioIPCClientCommandLineRunner: Sendable {
 
     private func writeExplicitDiscovery(
         global: IPCClientGlobalArguments, resolver: IPCCompiledInvocationResolver,
-        inputs: IPCBuiltInMethodCatalogInputs, readInput: () -> Data
+        inputs: IPCBuiltInMethodCatalogInputs, readInput: () -> Data, deadline: CallDeadline
     ) throws -> Bool {
         guard
             global.methodArguments.first == "system.capabilities"
@@ -132,7 +169,8 @@ package struct AgentStudioIPCClientCommandLineRunner: Sendable {
                 || global.methodArguments.first == "command.list"
         else { return false }
         let authentication = try resolver.resolve(arguments: ["auth.login"], authenticated: false, inputs: inputs)
-        let discoveryClient = makeClient(configuration: global.configuration, descriptors: authentication)
+        let discoveryClient = makeClient(
+            configuration: global.configuration, descriptors: authentication, deadline: deadline)
         if global.methodArguments.first == "system.capabilities" {
             try validateCapabilitiesParameters(global: global, readInput: readInput)
             try write(discoveryClient.discoverCatalogBytes())
@@ -241,19 +279,20 @@ package struct AgentStudioIPCClientCommandLineRunner: Sendable {
         switch try handler.handleUnreachableApp(invocation: invocation, requestLine: requestLine) {
         case .queued(let reply):
             props.standardOutputSink(reply)
-        case .clearUnavailableWhileOffline:
-            throw CLIExit.message("Can't clear while Agent Studio is offline.")
         case .notQueued:
             throw unreachable
         }
     }
 
-    private func makeClient(configuration: AgentStudioIPCClientConfiguration, descriptors: [IPCAnyMethodDescriptor])
+    private func makeClient(
+        configuration: AgentStudioIPCClientConfiguration, descriptors: [IPCAnyMethodDescriptor], deadline: CallDeadline
+    )
         -> AgentStudioIPCClient
     {
-        let cleanup = CLIStoreCleanupHandler(environment: props.environment, now: props.now)
+        let cleanup = CLIStoreCleanupHandler(
+            environment: props.environment, now: props.now, migrationLockWaitBudget: { deadline.remainingBudget })
         return AgentStudioIPCClient(
-            configuration: configuration, descriptors: descriptors,
+            configuration: configuration, descriptors: descriptors, deadline: deadline,
             onCallCompletion: { cleanup.handle(readThrough: $0) })
     }
 
@@ -268,7 +307,9 @@ package struct AgentStudioIPCClientCommandLineRunner: Sendable {
     ///
     /// - Returns: the process exit code when the arguments address a provider
     ///   command, and `nil` when they belong to the descriptor CLI.
-    private func providerCommandExit(readInput: @escaping @Sendable () -> Data) -> Int32? {
+    private func providerCommandExit(
+        readInput: @escaping @Sendable () -> Data
+    ) -> Int32? {
         let isHook: Bool = props.arguments.first == "hook"
         let readHookInput: @Sendable () throws -> Data = {
             if let hookDeadline {
@@ -291,17 +332,9 @@ package struct AgentStudioIPCClientCommandLineRunner: Sendable {
         ) {
             return code
         }
-        if let code = CursorProviderRouter.exitCode(
-            arguments: props.arguments, environment: props.environment,
-            executablePath: props.executablePath, standardInput: readHookInput,
-            identifierGenerator: props.identifierGenerator,
-            noticeSink: props.standardOutputSink, diagnosticSink: providerDiagnostics,
-            deadline: hookDeadline
-        ) {
-            return code
-        }
         guard let subcommand = AgentPackageSubcommand.parse(props.arguments) else { return nil }
-        return AgentPackageCommandRunner.run(subcommand, props: agentPackageProps(readInput: readInput))
+        return AgentPackageCommandRunner.run(
+            subcommand, props: agentPackageProps(readInput: readInput))
     }
 
     private func agentPackageProps(
@@ -353,8 +386,12 @@ package struct AgentStudioIPCClientCommandLineRunner: Sendable {
             // The escrow named this socket; nothing answering there means the
             // debug app that wrote the file is gone.
             props.standardErrorSink("Debug app not running; start it with the debug launcher.")
+        case let failure as PaneCLICommandFailure:
+            props.standardErrorSink(failure.description)
         case let failure as IPCDescriptorClientFailure where failure.disposition == .deliveryUncertain:
-            props.standardErrorSink("Delivery uncertain.")
+            props.standardErrorSink("outcomeUnknown")
+        case let failure as IPCDescriptorClientFailure where failure.disposition == .notSubmitted:
+            props.standardErrorSink("notSent(\(String(describing: failure.reason)))")
         case is IPCDescriptorClientFailure:
             writeUnavailableError()
         case let error as CLIExit:

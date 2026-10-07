@@ -9,6 +9,7 @@ struct AgentStudioIPCQueryAdapter: AppIPCQueryPort, @unchecked Sendable {
     private let accessMode: IPCAccessMode
     private let appVersion: String
     private let workspaceStore: WorkspaceStore
+    private let paneActivityTime: PaneActivityTimeAtom
     private let windowLifecycleReader: any WorkspaceWindowLifecycleReading
 
     init(
@@ -16,12 +17,14 @@ struct AgentStudioIPCQueryAdapter: AppIPCQueryPort, @unchecked Sendable {
         accessMode: IPCAccessMode,
         appVersion: String,
         workspaceStore: WorkspaceStore,
+        paneActivityTime: PaneActivityTimeAtom,
         windowLifecycleReader: any WorkspaceWindowLifecycleReading
     ) {
         self.runtimeId = runtimeId
         self.accessMode = accessMode
         self.appVersion = appVersion
         self.workspaceStore = workspaceStore
+        self.paneActivityTime = paneActivityTime
         self.windowLifecycleReader = windowLifecycleReader
     }
 
@@ -118,7 +121,15 @@ struct AgentStudioIPCQueryAdapter: AppIPCQueryPort, @unchecked Sendable {
 
     private func paneSummaries(in workspace: ProgrammaticControlWorkspaceSnapshot) -> [IPCPaneSummary] {
         workspace.panes.enumerated().map { index, pane in
-            IPCPaneSummary(
+            let activity = paneActivityTime.value(for: pane.id).map { time in
+                let source: IPCPaneActivitySource
+                switch time.source {
+                case .hook: source = .hook
+                case .terminal: source = .terminal
+                }
+                return IPCPaneActivity(at: time.wallTime, source: source)
+            }
+            return IPCPaneSummary(
                 id: pane.id,
                 ordinal: index + 1,
                 contentKind: IPCPaneContentKind(pane.contentKind),
@@ -127,7 +138,8 @@ struct AgentStudioIPCQueryAdapter: AppIPCQueryPort, @unchecked Sendable {
                 repoId: pane.repoId,
                 worktreeId: pane.worktreeId,
                 isActive: pane.isActive,
-                isDrawerChild: pane.isDrawerChild
+                isDrawerChild: pane.isDrawerChild,
+                activity: activity
             )
         }
     }

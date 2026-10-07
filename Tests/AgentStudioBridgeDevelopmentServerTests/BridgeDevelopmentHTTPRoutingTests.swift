@@ -539,7 +539,7 @@ struct BridgeDevelopmentHTTPRoutingTests {
         // Act
         let response = try await BridgeDevelopmentHTTPProductResponse.make(from: results)
         let bodyRecorder = BridgeDevelopmentHTTPBodyRecorder()
-        try await response.body.write(bodyRecorder)
+        try await response.body.write(ForwardingResponseBodyWriter(sink: bodyRecorder))
 
         // Assert
         #expect(await bodyRecorder.bytes == Array(0..<UInt8(chunkCount)))
@@ -657,7 +657,7 @@ private func withDevelopmentHost<Result>(
     }
 }
 
-private actor BridgeDevelopmentHTTPBodyRecorder: ResponseBodyWriter {
+private actor BridgeDevelopmentHTTPBodyRecorder: RecordingResponseBodySink {
     private(set) var bytes: [UInt8] = []
     private(set) var didFinish = false
 

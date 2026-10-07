@@ -162,7 +162,7 @@ private func openHTTPAnnotationProjectionContent(
 
     let recorder = try HTTPContentFrameRecorder()
     let responseBody = response.body
-    let drain = Task { try await responseBody.write(recorder) }
+    let drain = Task { try await responseBody.write(ForwardingResponseBodyWriter(sink: recorder)) }
     var pageData = Data()
     var reachedTerminal = false
     while !reachedTerminal {
@@ -297,7 +297,7 @@ private func sha256Hex(_ data: Data) -> String {
     SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
 }
 
-actor HTTPContentFrameRecorder: ResponseBodyWriter {
+actor HTTPContentFrameRecorder: RecordingResponseBodySink {
     private let decoder: BridgeProductContentFrameDecoder
     private var frames: [BridgeProductContentFrame] = []
     private var nextReadIndex = 0

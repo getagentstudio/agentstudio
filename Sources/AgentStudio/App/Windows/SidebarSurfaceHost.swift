@@ -44,6 +44,7 @@ struct SidebarSurfaceHost: View {
 
     let store: WorkspaceStore
     let octiconLoader: OcticonLoader
+    let paneContextReaders: PaneContextUIReaders?
     let paneActivityStatusAtom: PaneActivityStatusAtom
     let applicationLifecycleMonitor: ApplicationLifecycleMonitor
     let sidebarTimeInvalidationConsumerID: UUID
@@ -65,6 +66,7 @@ struct SidebarSurfaceHost: View {
         store: WorkspaceStore,
         octiconLoader: OcticonLoader,
         paneActivityStatusAtom: PaneActivityStatusAtom,
+        paneContextReaders: PaneContextUIReaders? = nil,
         applicationLifecycleMonitor: ApplicationLifecycleMonitor,
         sidebarTimeInvalidationConsumerID: UUID,
         sidebarState: WorkspaceSidebarState,
@@ -84,6 +86,7 @@ struct SidebarSurfaceHost: View {
         onRepositoryFactUpdateProgressPresented:
             @escaping @MainActor @Sendable (UUID, UUID) -> Void
     ) {
+        self.paneContextReaders = paneContextReaders
         self.store = store
         self.octiconLoader = octiconLoader
         self.paneActivityStatusAtom = paneActivityStatusAtom
@@ -131,9 +134,21 @@ struct SidebarSurfaceHost: View {
                     }
                 },
                 onPerformanceProofReadback: onPerformanceProofReadback,
+                paneContextControl: { pane, presentation in
+                    guard let paneContextReaders else { return nil }
+                    return AnyView(
+                        PaneContextPopoverHost(
+                            paneId: pane, presentation: presentation, location: .sidebar, readers: paneContextReaders,
+                            octiconLoader: octiconLoader,
+                            onGoToPane: { target in
+                                AppCommandDispatcher.shared.dispatch(.focusPane, target: target, targetType: .pane)
+                            }, includingDrawers: !paneContextReaders.isDrawerPane(pane)))
+                },
                 latestPaneMessageSnapshot: { paneId in
                     paneActivityStatusAtom.status(for: paneId)
                 },
+                sessionStatusForPane: { paneContextReaders?.sessionStatusForPane($0) },
+                contextDisplayForPane: { paneContextReaders?.contextDisplayForPane($0) },
                 performanceTraceRecorder: performanceTraceRecorder,
                 initialProjectionTrigger: "data_refresh",
                 installSystemTimeInvalidationHandler: { handler in

@@ -239,20 +239,10 @@ extension IPCCommandRelationship: IPCSchemaProviding {
 
 extension IPCMethodOfflineEligibility: IPCSchemaProviding {
     package static func ipcSchema() throws -> IPCJSONSchema {
-        .oneOf([
-            .object(fields: [
-                .init(
-                    name: "kind", description: "No offline collection",
-                    schema: .string(allowedValues: ["never"]))
-            ]),
-            .object(fields: [
-                .init(
-                    name: "kind", description: "Selected model-call variants may collect offline",
-                    schema: .string(allowedValues: ["modelCallVariants"])),
-                .init(
-                    name: "variants", description: "Offline-eligible model-call variants",
-                    schema: .array(items: try IPCModelCallVariant.ipcSchema(), minimumCount: 1)),
-            ]),
+        .object(fields: [
+            .init(
+                name: "kind", description: "Only the notice shape may queue; asks never queue",
+                schema: .string(allowedValues: ["never", "noticeOnly"]))
         ])
     }
 }
