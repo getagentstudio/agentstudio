@@ -27,7 +27,7 @@ struct PaneActivityBootIntegrationTests {
             time: restored, referenceInstant: referenceInstant, wallNow: wallNow, calendar: .current)
         let expected = RepoExplorerPaneActivityProjection.make(
             time: original, referenceInstant: referenceInstant, wallNow: wallNow, calendar: .current)
-        #expect(projected.age == age)
+        #expect(projected.age == .seconds(age))
         #expect(projected.clockText == expected.clockText)
         #expect(projected.unpinnedBucket == expected.unpinnedBucket)
         #expect(projected.pinnedBucket == expected.pinnedBucket)
@@ -67,7 +67,8 @@ struct PaneActivityBootIntegrationTests {
         let time = PaneActivityTime(
             orderingInstant: ContinuousClock.now, wallTime: Date(timeIntervalSince1970: 100), source: .terminal)
         try await datastore.commitPaneActivity(.init(mutations: [.set(pane.id, time)]))
-        delegate.store = WorkspaceStore(sqliteDatastore: datastore, startsObserving: false)
+        delegate.store = WorkspaceStore(
+            identityAtom: delegate.atomStore.core.workspaceIdentity, sqliteDatastore: datastore, startsObserving: false)
         delegate.workspaceSQLiteDatastore = datastore
         await delegate.bootRestorePaneActivity()
         #expect(delegate.atomStore.core.paneActivityTime.value(for: pane.id)?.wallTime == time.wallTime)

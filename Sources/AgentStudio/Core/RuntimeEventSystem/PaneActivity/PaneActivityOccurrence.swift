@@ -64,6 +64,18 @@ package struct PaneActivityRecord: Sendable, Equatable {
         self.wallTime = wallTime
         self.source = source
     }
+
+    package func restoredActivityTime(
+        referenceInstant: ContinuousClock.Instant,
+        wallNow: Date
+    ) -> PaneActivityTime {
+        let age = max(0, wallNow.timeIntervalSince(wallTime))
+        return PaneActivityTime(
+            orderingInstant: referenceInstant.advanced(by: .seconds(-age)),
+            wallTime: wallTime,
+            source: source
+        )
+    }
 }
 
 package struct PaneActivityCommit: Sendable, Equatable {
