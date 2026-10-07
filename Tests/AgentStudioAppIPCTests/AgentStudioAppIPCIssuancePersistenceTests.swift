@@ -120,6 +120,7 @@ struct AgentStudioAppIPCIssuancePersistenceTests {
 
                 port.releaseRegistration()
                 #expect(await serverFixture.server.drainCredentialPersistence().failedOperationCount == 0)
+                #expect(port.registrationCallCount == 2)
                 #expect(try await repository.paneCredentials(paneID: serverFixture.boundPaneId).isEmpty)
                 #expect(
                     try await repository.paneCredential(paneID: seedPaneID, credentialRecordID: seedRecordID)?.status
@@ -157,6 +158,8 @@ struct AgentStudioAppIPCIssuancePersistenceTests {
                 )
                 #expect(!environment.environmentVariables["AGENTSTUDIO_PANE_TOKEN", default: ""].isEmpty)
                 let result = await serverFixture.server.drainCredentialPersistence()
+                #expect(port.registrationCallCount == 2)
+                #expect(result.failedOperationCount == 1)
                 #expect(result.failedOperationCount == port.registrationCallCount - 1)
                 #expect(
                     Set(serverFixture.server.principalRegistry.issuedCredentialCandidates().map(\.credentialRecordID))
