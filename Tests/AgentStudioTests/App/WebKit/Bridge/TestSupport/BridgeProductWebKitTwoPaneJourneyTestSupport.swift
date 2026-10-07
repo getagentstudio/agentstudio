@@ -264,9 +264,6 @@ enum BridgeProductWebKitTwoPaneJourneyTestSupport {
                 worktreeProductConstructionCoordinator: worktreeProductConstructionCoordinator
             )
         )
-        await paneOneTrace.installRefreshCapture { [weak paneOne] in
-            paneOne.map { BridgeProductWebKitRefreshCapture.snapshot($0) } ?? "retired"
-        }
 
         return try await withHostedControllers([paneOne, paneTwo]) {
             try await exerciseJourney(
@@ -360,7 +357,6 @@ enum BridgeProductWebKitTwoPaneJourneyTestSupport {
 
         let hiddenTransition = input.paneOne.applyBridgePaneActivity(.loadedHidden)
         await hiddenTransition?.value
-        BridgeProductWebKitRefreshCapture.checkpoint("hidden-transition", controller: input.paneOne)
         try await requireHiddenFileRetirementBoundary(input.paneOne)
         let hiddenStatus = try await requireNoUpdatingStatus(input.paneOne.page)
         let staleForegroundAdmissionWasRejected =
@@ -388,9 +384,7 @@ enum BridgeProductWebKitTwoPaneJourneyTestSupport {
         try await requireHiddenRefreshSettled(input.paneOne)
         let hiddenTraceAfterLateRelease = await input.paneOneTrace.scrubbedTrace()
         let paneOneForegroundTransition = input.paneOne.applyBridgePaneActivity(.foreground)
-        BridgeProductWebKitRefreshCapture.checkpoint("foreground-applied", controller: input.paneOne)
         await paneOneForegroundTransition?.value
-        BridgeProductWebKitRefreshCapture.checkpoint("foreground-transition-ended", controller: input.paneOne)
         try await requireRefreshIdle(input.paneOne)
         try await requireReadyReview(
             input.paneOne,
@@ -456,8 +450,6 @@ enum BridgeProductWebKitTwoPaneJourneyTestSupport {
 
     private static func publishHiddenFileStorm(_ controller: BridgePaneController) async throws {
         for batchSequence in [UInt64(702), 703] {
-            BridgeProductWebKitRefreshCapture.checkpoint(
-                "invalidation-before-batch-\(batchSequence)-file-review", controller: controller)
             await controller.handleWorktreeProductInvalidation(
                 .filesChanged(
                     try makeChangeset(
@@ -467,8 +459,6 @@ enum BridgeProductWebKitTwoPaneJourneyTestSupport {
                     )
                 )
             )
-            BridgeProductWebKitRefreshCapture.checkpoint(
-                "invalidation-after-batch-\(batchSequence)-file-review", controller: controller)
         }
     }
 
@@ -622,10 +612,7 @@ enum BridgeProductWebKitTwoPaneJourneyTestSupport {
             telemetryRuntimePolicy: .live,
             telemetryScopeGate: BridgeTelemetryScopeGate(enabledScopes: []),
             telemetryRecorder: input.traceRecorder,
-            initialPaneActivity: input.initialActivity,
-            reviewBuildAdmissionFactSink: { scope, fact in
-                BridgeProductWebKitRefreshCapture.emit("review-fact-scope=\(scope)-fact=\(fact)")
-            }
+            initialPaneActivity: input.initialActivity
         )
     }
 
@@ -812,21 +799,30 @@ enum BridgeProductWebKitTwoPaneJourneyTestSupport {
     }
 
     private static func requireRefreshIdle(_ controller: BridgePaneController) async throws {
-        BridgeProductWebKitRefreshCapture.checkpoint("review-drain-before", controller: controller)
         while let activeReviewTask = controller.activeReviewRefreshTask {
             await activeReviewTask.value
         }
-        BridgeProductWebKitRefreshCapture.checkpoint("review-drain-after-file-drain-before", controller: controller)
         await controller.worktreeRefreshDriver.awaitActiveFileOperations()
-        BridgeProductWebKitRefreshCapture.checkpoint("file-drain-after", controller: controller)
         let snapshot = controller.refreshAdmissionCoordinator.diagnosticSnapshot
         guard snapshot.activity == .foreground,
             snapshot.activeRefreshPass == nil,
             snapshot.dirtyFact == nil,
             controller.activeReviewRefreshTask == nil
         else {
+            let activePass =
+                snapshot.activeRefreshPass.map {
+                    "lanes=\($0.lanes.map(\.rawValue).sorted()),id=\($0.id.uuidString)"
+                } ?? "nil"
+            let dirtyFact =
+                snapshot.dirtyFact.map {
+                    "fileLane=\($0.fileChangeset != nil || $0.latestFileStatus != nil),"
+                        + "reviewLane=\($0.requiresReviewRefresh),batch=\($0.latestBatchSequence),"
+                        + "generation=\($0.generation)"
+                } ?? "nil"
             throw JourneyError.conditionFailed(
-                "foreground catch-up did not settle (\(BridgeProductWebKitRefreshCapture.snapshot(controller)))"
+                "foreground catch-up did not settle (activity=\(snapshot.activity),"
+                    + "activeRefreshPass=\(activePass),dirtyFact=\(dirtyFact),"
+                    + "activeReviewRefreshTaskPresent=\(controller.activeReviewRefreshTask != nil))"
             )
         }
     }

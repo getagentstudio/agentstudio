@@ -20,7 +20,6 @@ actor BridgeProductWebKitCarrierTraceRecorder: BridgePerformanceTraceRecording {
     }
 
     private var samples: [BridgeTelemetrySample] = []
-    private var refreshCaptureSnapshot: (@MainActor @Sendable () -> String)?
     private let firstApplication: BridgeProductWebKitFirstApplicationRecorder?
     private let traces = FactRecorder<String, BridgeProductWebKitCarrierTrace>(
         vocabulary: .init(describeScope: { $0 }, describeFact: { String(describing: $0) }, isClosing: { _, _ in false })
@@ -30,27 +29,12 @@ actor BridgeProductWebKitCarrierTraceRecorder: BridgePerformanceTraceRecording {
         self.firstApplication = firstApplication
     }
 
-    func installRefreshCapture(_ snapshot: @escaping @MainActor @Sendable () -> String) {
-        refreshCaptureSnapshot = snapshot
-    }
-
-    func record(sample: BridgeTelemetrySample, receivedAtUnixNano _: UInt64) async {
+    func record(sample: BridgeTelemetrySample, receivedAtUnixNano _: UInt64) {
         samples.append(sample)
         firstApplication?.observe(sample)
         let trace = scrubbedTrace()
         for condition in [TraceCondition.reviewPublication, .canonicalSubscriptionsAndReviewPublication] {
             if condition.isSatisfied(by: trace) { traces.append(scope: String(describing: condition), fact: trace) }
-        }
-        if let refreshCaptureSnapshot,
-            let phase = sample.stringAttributes["agentstudio.bridge.phase"],
-            phase.contains("refresh_") || phase.contains("pane_presentation") || phase.contains("prepare_terminal")
-        {
-            let attributes = sample.stringAttributes
-            let name =
-                "phase=\(phase),result=\(attributes["agentstudio.bridge.result"] ?? "none"),"
-                + "surface=\(attributes["agentstudio.bridge.surface"] ?? "none"),"
-                + "operation=\(attributes["agentstudio.bridge.operation.id"] ?? "none")"
-            BridgeProductWebKitRefreshCapture.emit(name, snapshot: await refreshCaptureSnapshot())
         }
     }
 
