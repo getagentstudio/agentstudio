@@ -1,6 +1,6 @@
 # Agent IPC v2 and Agent Package — Program Design
 
-Date: 2026-09-16. Source baseline: `ipc-improvements@d93f2755`.
+Date: 2026-09-16. Source baseline: `ipc-improvements@d93f2755`. **Amended 2026-10-07** (owner, finding #6; stopgap until a daemon owns pane tokens): issuance after IPC readiness schedules the verifier's persistence (verifier continuity below).
 Requirements: [user-requirements.md](user-requirements.md).
 Specification: [specification.md](specification.md).
 Decisions: [decision-record.md](decision-record.md).
@@ -360,7 +360,9 @@ from canonical membership and the existing lease gate, not a new durable state.
 The existing IPC service owns persistence scheduling through an injected
 continuity port. After post-frame IPC readiness it snapshots issued in-memory
 verifiers and schedules their writes; successful authentication/admission schedules
-a write for a newly used in-memory verifier; normal IPC shutdown snapshots and
+a write for a newly used in-memory verifier; a verifier issued after readiness is
+scheduled at issuance through the registry's issuance sink (amended 2026-10-07);
+normal IPC shutdown snapshots and
 schedules every still-unsaved issued RAM verifier before draining accepted writes.
 These are IPC-owned boundaries, not pane, mount or terminal callbacks. They add
 no timer, polling worker or coordinator.
@@ -396,6 +398,7 @@ VERIFIER CONTINUITY
 current-runtime token -> exact in-memory verifier
 older durable token -> exact durable verifier
 post-frame IPC readiness -> snapshot issued RAM verifiers -> schedule persistence
+verifier issued after readiness -> registry issuance sink -> schedule persistence (2026-10-07)
 newly used RAM verifier -> authenticated admission -> schedule persistence
 normal IPC shutdown -> snapshot unsaved RAM verifiers -> schedule + drain accepted writes
 IPC continuity port -> Core local writer: hash + opaque credential record ID
@@ -561,8 +564,17 @@ After service readiness, the IPC service snapshots already issued RAM verifiers
 and schedules their persistence through the injected port. Later authenticated
 admission schedules any newly used in-memory verifier. Normal IPC shutdown first
 snapshots and schedules every still-unsaved issued RAM verifier, including one
-never used for IPC, then drains accepted writes. Environment requests never enter
-this sequence.
+never used for IPC, then drains accepted writes.
+**Issuance (amended 2026-10-07, owner).** A verifier issued after readiness is
+scheduled at issuance, so an abrupt end (crash, force quit, SIGTERM) can't lose a
+token that was never used. The IPC service installs an issuance sink on the shared
+principal registry when it starts, before its readiness snapshot. After admitting
+a new verifier, `registerIssuedPaneCredential` hands the record to that sink, outside
+its lock. The sink only enqueues onto the existing persistence lane, so the
+environment request never waits on storage. If the sink and the snapshot both see
+a record, the write is idempotent by credential record ID. Final revocation still
+dominates, and a write that fails stays eligible at the next boundary, as before.
+This is the only way an environment request reaches this sequence.
 
 This split is compatible with databases on either side of the cut. GRDB 7.10.0 at revision
 `36e30a6f1ef10e4194f6af0cff90888526f0c115` selects the last registered target for full migration
