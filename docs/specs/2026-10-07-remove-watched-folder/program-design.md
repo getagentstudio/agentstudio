@@ -34,8 +34,13 @@ sequenceDiagram
     participant M as WorkspaceMutationCoordinator
     participant P as FilesystemGitPipeline / FilesystemActor
     participant C as WorkspaceCacheCoordinator
-    U->>D: removeWatchedFolder (watched folder id, or IPC window + directoryPath)
-    D->>H: canExecute (id still in list) then execute
+    alt command bar (interactive)
+        U->>D: dispatch(removeWatchedFolder, target: watched folder id, .watchedFolder)
+        D->>H: targeted canExecute (id still in list), then execute
+    else IPC (window + directoryPath)
+        U->>D: command.execute, authorized by the IPC owner path (AppCommandDispatcher.swift:123-158)
+        D->>H: headless directory branch: path key matches a watched entry, else noApplicableTarget
+    end
     H->>H: await waitForRetentionCommit()
     H->>M: removeWatchedPath(id)  [store persists watched_path]
     H->>P: refreshWatchedFolders(remaining list)
@@ -77,7 +82,7 @@ No new atom, store, table, migration, bus event or coordinator responsibility is
     2. `store.mutationCoordinator.removeWatchedPath(id)`, promoted from internal to `package`;
     3. `await watchedFolderCommands.refreshWatchedFolders(store.repositoryTopologyAtom.watchedPaths)`.
   - Interactive path: the shell's targeted `canExecute(_:target:targetType:)` (AppDelegate+ShellCommandHandling.swift:247-261) returns true for `.removeWatchedFolder` only with `targetType == .watchedFolder` and an id in the current list (no contextual fallback). Targeted `execute` starts the handler.
-  - IPC path: the headless directory handler routes `.removeWatchedFolder` to a remove branch. It finds the watched entry by `StableKey.fromPath(directoryPath)`. With no match it returns `.unavailable(.noApplicableTarget)`. Otherwise it starts the handler and returns `.accepted(operationId: nil)`. Unlike Watch Folder there is no on-disk existence check, so a folder deleted from disk can still be removed. IPC authorization stays separate from interactive enablement (AppCommandDispatcher.swift:123-158).
+  - IPC path: the headless directory handler routes `.removeWatchedFolder` to a remove branch. It converts the path with the same `URL(fileURLWithPath: directoryPath).standardizedFileURL` conversion `executeWatchFolderCommand` uses, and finds the watched entry whose `stableKey` equals `StableKey.fromPath` of that URL. With no match it returns `.unavailable(.noApplicableTarget)`. Otherwise it starts the handler and returns `.accepted(operationId: nil)`. Unlike Watch Folder there is no on-disk existence check, so a folder deleted from disk can still be removed. IPC authorization stays separate from interactive enablement (AppCommandDispatcher.swift:123-158).
 
 ## Obligation realization
 | Obligation | Owner and interface | State | Failure | Proof |
