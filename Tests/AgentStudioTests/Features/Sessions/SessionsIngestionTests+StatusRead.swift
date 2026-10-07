@@ -184,6 +184,8 @@ private func sendCompactEvent(
     let signal: SessionProviderSignal
     switch signalName {
     case .sessionStart: signal = .sessionStart
+    case .turnStart: signal = .turnStart
+    case .turnDone: signal = .turnDone
     case .subagentActivity: signal = .subagentActivity
     case .toolActivity: signal = .toolActivity(toolName: nil)
     default: throw SessionsRepositoryError.invalidStoredValue("compact test signal")
