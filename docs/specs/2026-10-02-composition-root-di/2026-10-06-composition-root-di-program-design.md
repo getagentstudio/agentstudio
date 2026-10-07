@@ -496,8 +496,8 @@ stateDiagram-v2
     [*] --> Accepting: constructor selects dependencies
     Accepting --> Accepting: admit/contract/apply same live lifetime
     Accepting --> Retiring: existing shutdown or fixture teardown
-    Retiring --> Retired: invalidate claims; join owned work; drain trace
-    Retired --> Retired: drop late work and controls; idempotent cleanup
+    Retiring --> Retired: invalidate claims, join owned work, drain trace
+    Retired --> Retired: drop late work and controls, idempotent cleanup
     Retired --> [*]: handling owner released
 ```
 
