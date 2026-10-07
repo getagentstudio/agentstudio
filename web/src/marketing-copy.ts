@@ -14,6 +14,21 @@ export const marketingCopy = {
       "Agent Studio is a native macOS IDE for parallel coding agents, with your repositories and worktrees within reach. Your agents run in Ghostty terminals with files and diffs right beside them.",
   },
   stories: {
+    proofRun: {
+      label: "Agents side by side",
+      description: "Two agents work in separate worktrees. A drawer shows one worktree's changes.",
+      phoneDescription: "Two agents work in separate worktrees in one window.",
+    },
+    proofReview: {
+      label: "Review and comment",
+      description: "Read an agent's changes and leave a comment on a line.",
+      phoneDescription: "Comment on a line you review.",
+    },
+    proofPanes: {
+      label: "Panes by activity",
+      description: "Panes are grouped by recent activity, with the latest activity in Just Now.",
+      phoneDescription: "Panes grouped by recent activity.",
+    },
     parallelWork: {
       label: "Parallel agents",
       description: "See which repo, worktree, branch, and directory each of your agents is using.",
@@ -52,10 +67,22 @@ export const marketingCopy = {
       imageDescription:
         "Agent Studio Review showing an AGENTS.md diff and its Changed Files tree, with the global sidebar hidden.",
     },
+    reviewComment: {
+      label: "Comment on a line",
+      description:
+        "Leave a Markdown comment on any changed line. The thread opens right in the diff.",
+      phoneDescription: "Comment on a line in the diff.",
+    },
     gitContext: {
       label: "Git and PR context",
       description: "See the branch, changes, and pull request beside the work.",
       phoneDescription: "See a PR beside its branch and worktree.",
+    },
+    quitInFlight: {
+      label: "Quit with work in flight",
+      description:
+        "Quit with agents mid-task. Their terminal sessions keep running while the app is closed.",
+      phoneDescription: "Quit mid-task; terminals keep running.",
     },
     persistence: {
       label: "Persistent terminal sessions",
@@ -88,6 +115,9 @@ export const marketingCopy = {
     ],
   },
   chapters: {
+    proof: {
+      title: { beforeAccent: "See Agent Studio ", accent: "running", afterAccent: "." },
+    },
     manyAgents: {
       title: { beforeAccent: "Many agents, ", accent: "one map", afterAccent: "." },
     },
@@ -106,7 +136,6 @@ export const marketingCopy = {
     },
     comeBack: {
       title: { beforeAccent: "Close the app. ", accent: "Agents keep running", afterAccent: "." },
-      sessionRestoreVideoLabel: "Agent Studio persistent session restore demonstration",
       sessionRestoreVideoFallback: "This browser cannot play the session restore video.",
     },
   },

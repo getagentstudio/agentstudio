@@ -5,13 +5,13 @@ import Testing
 
 @Suite("IPC built-in typed method catalog")
 struct IPCBuiltInMethodCatalogTests {
-    @Test("catalog exposes exactly 47 unique static methods in name order")
+    @Test("catalog exposes exactly 54 unique static methods in name order")
     func catalogHasExactStaticSurface() throws {
         let catalog = try makeCatalog(waitMaximum: 9)
         let names = catalog.erasedDescriptors.map(\.metadata.name)
 
         #expect(names == expectedStaticMethodNames)
-        #expect(Set(names).count == 47)
+        #expect(Set(names).count == 54)
         #expect(names == names.sorted())
     }
 
@@ -72,19 +72,48 @@ struct IPCBuiltInMethodCatalogTests {
         )
     }
 
+    @Test("The eight pane-context methods declare their exact read and write privileges and service owner")
+    func paneContextMethodsDeclareExactOwnership() throws {
+        let catalog = try makeCatalog(waitMaximum: 9)
+        let descriptors = catalog.erasedDescriptors.map(\.metadata)
+            .filter { $0.executionOwner == .paneContextService }
+        let expectedPrivileges: [String: [IPCPrivilegeClass]] = [
+            "pane.context.get": [.paneContextRead],
+            "pane.line.set": [.paneContextWrite],
+            "pane.message.ask": [.paneContextWrite],
+            "pane.message.changes": [.paneContextWrite],
+            "pane.message.send": [.paneContextWrite],
+            "pane.message.withdraw": [.paneContextWrite],
+            "pane.title.set": [.paneContextWrite],
+            "pane.writer.claimEpoch": [.paneContextWrite],
+        ]
+        let actualPrivileges = Dictionary(uniqueKeysWithValues: descriptors.map { ($0.name, $0.requiredPrivileges) })
+        #expect(actualPrivileges == expectedPrivileges)
+        for descriptor in descriptors {
+            #expect(descriptor.agentEligibility == .ownPane)
+            #expect(descriptor.exposure == .allChannels)
+            #expect(descriptor.allowedTargetKinds == [.pane])
+            #expect(descriptor.dataScope == .paneContext)
+            #expect(descriptor.principalAvailability == .authenticated)
+            let mutates = descriptor.name != "pane.context.get"
+            #expect(descriptor.isMutating == mutates)
+            #expect(descriptor.correlationPolicy == (mutates ? .required : .notAccepted))
+        }
+    }
+
     @Test("discovery reports eligibility and omits it for established v2 methods")
     func discoveryEncodesEligibility() throws {
         let catalog = try makeCatalog(waitMaximum: 9)
         let byName = Dictionary(uniqueKeysWithValues: catalog.erasedDescriptors.map { ($0.metadata.name, $0) })
         let drawerAddPane = try #require(byName["drawer.addPane"])
-        let sessionReport = try #require(byName["session.report"])
+        let sessionEvent = try #require(byName["session.event"])
 
         let eligibleFields = try encodedFields(drawerAddPane.metadata)
-        let establishedFields = try encodedFields(sessionReport.metadata)
+        let establishedFields = try encodedFields(sessionEvent.metadata)
 
         #expect(eligibleFields["agentEligibility"] as? String == "ownPane")
         #expect(establishedFields["agentEligibility"] == nil)
-        for descriptor in [drawerAddPane, sessionReport] {
+        for descriptor in [drawerAddPane, sessionEvent] {
             let decoded = try descriptor.catalogEntrySchema.decode(
                 IPCMethodCatalogEntry.self, from: JSONEncoder().encode(descriptor.metadata))
             #expect(decoded.agentEligibility == descriptor.metadata.agentEligibility)
@@ -116,32 +145,70 @@ struct IPCBuiltInMethodCatalogTests {
         #expect(names.isDisjoint(with: excludedNames))
     }
 
-    @Test("terminal wait uses the caller-supplied maximum in discovery and decoding")
-    func terminalWaitUsesInjectedMaximum() throws {
-        let suppliedMaximum = 2.5
-        let catalog = try makeCatalog(waitMaximum: suppliedMaximum)
-        let descriptor = catalog.terminal.terminalWait
-        let valid = try descriptor.decodeParameters(
-            from: Data(
-                #"{"handle":"self","condition":"titleChanged","timeoutSeconds":2.5}"#.utf8
-            )
-        )
-        #expect(valid.timeoutSeconds == suppliedMaximum)
+    @Test("the advertised wait intake admits finite nonnegative values without an upper bound")
+    func terminalWaitLeavesLimitToServer() throws {
+        let descriptor = try makeCatalog(waitMaximum: 9).terminal.terminalWait
+        let decoded = try descriptor.decodeParameters(
+            from: Data(#"{"handle":"self","condition":"titleChanged","timeoutSeconds":10}"#.utf8))
+        #expect(decoded.timeoutSeconds == 10)
         #expect(throws: IPCSchemaValidationError.self) {
             try descriptor.decodeParameters(
-                from: Data(
-                    #"{"handle":"self","condition":"titleChanged","timeoutSeconds":2.5001}"#.utf8
-                )
-            )
+                from: Data(#"{"handle":"self","condition":"titleChanged","timeoutSeconds":-1}"#.utf8))
         }
+    }
 
-        let document = try #require(
-            JSONSerialization.jsonObject(
-                with: descriptor.contract.parameterSchema.jsonSchemaData()
-            ) as? [String: Any]
-        )
-        let properties = try #require(document["properties"] as? [String: [String: Any]])
-        #expect(properties["timeoutSeconds"]?["maximum"] as? Double == suppliedMaximum)
+    @Test("the advertised wait schema pins the S5 clamp and report contract")
+    func advertisedWaitSchemaPinsClampContract() throws {
+        let descriptor = try makeCatalog(waitMaximum: 9).terminal.terminalWait
+        guard case .object(let selectorFields) = try IPCPaneSelectorParams.ipcSchema() else {
+            Issue.record("pane selector contract must be an object")
+            return
+        }
+        let paneField = try #require(selectorFields.first { $0.name == "handle" })
+        let schema = IPCJSONSchema.object(fields: [
+            paneField,
+            .init(
+                name: "condition", description: "Terminal condition to observe",
+                schema: try IPCTerminalWaitCondition.ipcSchema()),
+            .init(
+                name: "timeoutSeconds",
+                description:
+                    "Finite nonnegative wait duration in seconds; the server clamps to its policy maximum and reports the effective timeout",
+                schema: .number(minimum: 0)),
+            .optional(
+                "afterSequence", description: "Observe only events after this terminal sequence",
+                schema: IPCSchemaScalars.unsignedInteger),
+        ])
+        #expect(try descriptor.contract.parameterSchema.jsonSchemaData() == schema.jsonSchemaData())
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys]
+        #expect(try encoder.encode(descriptor.contract.parameterSchema) == encoder.encode(schema))
+        guard case .object(let resultFields) = descriptor.contract.resultSchema else {
+            Issue.record("wait response must be a flat object")
+            return
+        }
+        #expect(resultFields.first { $0.name == "timeoutSeconds" }?.schema == .number(minimum: 0))
+        #expect(resultFields.first { $0.name == "timeoutSeconds" }?.presence == .required)
+        #expect(resultFields.first { $0.name == "wasClamped" }?.schema == .boolean)
+        #expect(resultFields.first { $0.name == "wasClamped" }?.presence == .required)
+    }
+
+    @Test("local wait validation matches the advertised finite nonnegative intake")
+    func localWaitValidationMatchesAdvertisedIntake() throws {
+        let entry = try #require(IPCBuiltInMethodIndex().entry(named: "terminal.wait"))
+        let local = try entry.makeRepresentation(inputs: .init(examples: fixtureContext)).erasedDescriptor
+        let abovePolicy = Data(#"{"handle":"self","condition":"titleChanged","timeoutSeconds":10}"#.utf8)
+        _ = try local.normalizeParameters(abovePolicy)
+        _ = try makeCatalog(waitMaximum: 9).terminal.terminalWait.decodeParameters(from: abovePolicy)
+        #expect(throws: IPCSchemaValidationError.self) {
+            try local.normalizeParameters(
+                Data(#"{"handle":"self","condition":"titleChanged","timeoutSeconds":-1}"#.utf8))
+        }
+        guard case .object(let fields) = local.metadata.parameterSchema else {
+            Issue.record("local wait parameters must be an object")
+            return
+        }
+        #expect(fields.first { $0.name == "timeoutSeconds" }?.schema == .number(minimum: 0))
     }
 
     @Test("terminal wait documents timeout and replay-gap runtime failures")
@@ -199,7 +266,7 @@ struct IPCBuiltInMethodCatalogTests {
         #expect(catalog.presentationAndSidebar.uiCommandBarOpen.commandRelationship == .noInteractiveIdentity)
     }
 
-    @Test("every mutating descriptor requires correlation in metadata and its example body")
+    @Test("mutating descriptors enforce their declared correlation contract")
     func mutationsRequireDeclaredCorrelation() throws {
         let catalog = try makeCatalog(waitMaximum: 9)
         let mutatingDescriptors = catalog.erasedDescriptors.filter(\.metadata.isMutating)
@@ -238,39 +305,15 @@ struct IPCBuiltInMethodCatalogTests {
     }
 
     private var relationships: IPCBuiltInMethodRelationshipInputs {
-        .init(
-            paneFocus: .appCommand(identifier: "fixture.pane-focus"),
-            paneClose: .appCommand(identifier: "fixture.pane-close"),
-            drawerToggle: .appCommand(identifier: "fixture.drawer-toggle"),
-            drawerAddPane: .appCommand(identifier: "fixture.drawer-add"),
-            bridgeDiffLoad: .appCommand(identifier: "fixture.bridge-review-open"),
-            bridgeFileViewOpen: .appCommand(identifier: "fixture.bridge-files-open")
-        )
+        IPCBuiltInMethodCatalogTestFixture.relationships
     }
 
     private var fixtureContext: IPCBuiltInMethodExampleContext {
-        .init(
-            runtimeId: UUIDv7.generate(),
-            windowId: UUIDv7.generate(),
-            workspaceId: UUIDv7.generate(),
-            repositoryId: UUIDv7.generate(),
-            worktreeId: UUIDv7.generate(),
-            tabId: UUIDv7.generate(),
-            paneId: UUIDv7.generate(),
-            commandId: UUIDv7.generate(),
-            correlationId: UUIDv7.generate(),
-            subscriptionId: UUIDv7.generate()
-        )
+        IPCBuiltInMethodCatalogTestFixture.makeExampleContext()
     }
 
     private func makeCatalog(waitMaximum: Double) throws -> IPCBuiltInMethodCatalog {
-        try IPCBuiltInMethodCatalog(
-            inputs: .init(
-                terminalWaitMaximumSeconds: waitMaximum,
-                relationships: relationships,
-                examples: fixtureContext
-            )
-        )
+        try IPCBuiltInMethodCatalog(inputs: IPCBuiltInMethodCatalogTestFixture.makeInputs())
     }
 
     private func encodedObject(_ value: [String: Any]) throws -> Data {
@@ -287,13 +330,20 @@ struct IPCBuiltInMethodCatalogTests {
             "events.subscribe",
             "events.unsubscribe",
             "pane.close",
+            "pane.context.get",
             "pane.current",
+            "pane.line.set",
             "pane.list",
+            "pane.message.ask",
+            "pane.message.changes",
+            "pane.message.send",
+            "pane.message.withdraw",
             "pane.snapshot",
+            "pane.title.set",
+            "pane.writer.claimEpoch",
             "session.event",
-            "session.message",
             "session.query",
-            "session.report",
+            "session.refusal",
             "system.identify",
             "system.ping",
             "system.version",
@@ -313,6 +363,8 @@ struct IPCBuiltInMethodCatalogTests {
     private var expectedAgentEligibility: [String: IPCAgentEligibility?] {
         let ownPane: [String] = [
             "drawer.addPane", "pane.close", "pane.snapshot",
+            "pane.context.get", "pane.line.set", "pane.message.ask", "pane.message.changes",
+            "pane.message.send", "pane.message.withdraw", "pane.title.set", "pane.writer.claimEpoch",
             "terminal.send", "terminal.snapshot", "terminal.status", "terminal.wait",
         ]
         let anyTarget: [String] = [
@@ -321,7 +373,7 @@ struct IPCBuiltInMethodCatalogTests {
         ]
         let established: [String] = [
             "auth.login", "auth.status", "events.subscribe", "events.unsubscribe",
-            "session.event", "session.message", "session.query", "session.report",
+            "session.event", "session.query", "session.refusal",
         ]
         var inventory: [String: IPCAgentEligibility?] = [:]
         for name in expectedStaticMethodNames { inventory[name] = .some(.notYetAllowed) }
@@ -351,10 +403,16 @@ struct IPCBuiltInMethodCatalogTests {
             "events.unsubscribe",
             "pane.close",
             "pane.focus",
+            "pane.line.set",
+            "pane.message.ask",
+            "pane.message.changes",
+            "pane.message.send",
+            "pane.message.withdraw",
             "pane.split",
+            "pane.title.set",
+            "pane.writer.claimEpoch",
             "session.event",
-            "session.message",
-            "session.report",
+            "session.refusal",
             "terminal.send",
             "ui.arrangements.open",
             "ui.commandBar.open",
@@ -386,15 +444,22 @@ struct IPCBuiltInMethodCatalogTests {
             "events.subscribe",
             "events.unsubscribe",
             "pane.close",
+            "pane.context.get",
             "pane.current",
             "pane.focus",
+            "pane.line.set",
             "pane.list",
+            "pane.message.ask",
+            "pane.message.changes",
+            "pane.message.send",
+            "pane.message.withdraw",
             "pane.snapshot",
             "pane.split",
+            "pane.title.set",
+            "pane.writer.claimEpoch",
             "session.event",
-            "session.message",
             "session.query",
-            "session.report",
+            "session.refusal",
             "sidebar.grouping.get",
             "sidebar.surface.get",
             "system.identify",

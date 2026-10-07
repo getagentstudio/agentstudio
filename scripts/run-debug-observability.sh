@@ -760,9 +760,16 @@ copy_debug_bundle() {
     find "$app_dir/Resources/AgentPackage" -name '*.sh' -exec chmod 755 {} +
   fi
 
-  local resource_bundle
-  resource_bundle="$(find "$build_root" -path '*/debug/AgentStudio_AgentStudio.bundle' -type d | head -1)"
-  [ -n "$resource_bundle" ] && "$DITTO_BIN" "$resource_bundle" "$app_dir/Resources/AgentStudio_AgentStudio.bundle"
+  # SwiftPM resource bundle. $build_root/debug is the engine's own symlink
+  # (native: arm64-apple-macosx/debug; Swift Build: out/Products/Debug), and find
+  # does not follow it. Swift Build's Bundle.module has no absolute build-path
+  # fallback, so a missing copy crashes the app at launch: fail the build instead.
+  local resource_bundle="$build_root/debug/AgentStudio_AgentStudio.bundle"
+  if [ ! -d "$resource_bundle" ]; then
+    echo "missing SwiftPM resource bundle: $resource_bundle" >&2
+    return 1
+  fi
+  "$DITTO_BIN" "$resource_bundle" "$app_dir/Resources/AgentStudio_AgentStudio.bundle"
 
   signing_identity="$(debug_signing_identity)"
   if [ -n "$signing_identity" ]; then

@@ -330,6 +330,9 @@ export function createScenePlayback(props: ScenePlaybackProps): SurfacePlayback 
           duration: timeline.duration(),
           pause: (): void => {
             timeline.pause();
+            // Publish the hold at this control boundary; a later scroll frame
+            // must not be required to reconcile the phase and step countdown.
+            if (state.phase === "playing") renderPhase("paused");
           },
           seek: (seconds: number): void => {
             timeline.pause().time(seconds);

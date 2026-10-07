@@ -3,76 +3,40 @@ import AgentStudioIPCClientCore
 import AgentStudioIPCTransport
 import AgentStudioInfrastructure
 import AgentStudioProgrammaticControl
+import AgentStudioTestHarness
 import Dispatch
 import Foundation
 import Testing
 
 @Suite("Live dynamic command ClientCore integration", .serialized)
 struct AppIPCDynamicCommandClientTests {
-    @Test("ClientCore discovers lists and executes one live typed command")
-    func clientDiscoversListsAndExecutesTypedCommand() async throws {
+    @Test("ClientCore lists served bytes and executes the raw envelope without a discovered invocation builder")
+    func clientListsAndExecutesRawCommand() async throws {
         try await DynamicCommandScenario.withScope(body: { scenario in
             try scenario.fixture.server.start()
+            let descriptors = try IPCCompiledInvocationResolver().resolve(
+                arguments: ["command.execute"], authenticated: false,
+                inputs: .init(examples: .init(illustrativeIdentifier: scenario.correlationId)))
             let client = AgentStudioIPCClient(
-                configuration: AgentStudioIPCClientConfiguration(socketPath: scenario.fixture.paths.socketURL.path),
-                descriptors: []
-            )
-
-            let methodCatalog = try await client.discoverCatalogWithoutBlockingCooperativePool(requestID: 10)
-            let discovery = try IPCCommandDiscovery(methodCatalog: methodCatalog)
-            let listResponse = try requireSuccess(
-                try await client.callWithoutBlockingCooperativePool(
-                    discovery.commandListInvocation, requestID: 20))
-            let commandCatalog = try discovery.decodeCommandCatalog(from: listResponse.normalizedResult)
-            let invocation = try commandCatalog.makeInvocation(
-                commandId: scenario.commandId,
-                correlationId: scenario.correlationId,
-                arguments: .noArguments
-            )
-            let executeResponse = try requireSuccess(
+                configuration: .init(socketPath: scenario.fixture.paths.socketURL.path), descriptors: descriptors)
+            let bytes = try await valueFromDedicatedThread { try client.discoverCommandBytes(requestID: 20) }
+            let commands = try JSONDecoder().decode(IPCCommandCatalogResult.self, from: bytes)
+            #expect(commands.commands.contains { $0.id == scenario.commandId })
+            let descriptor = try #require(descriptors.first { $0.metadata.name == "command.execute" })
+            let request = IPCRawCommandExecutionRequest(
+                commandId: scenario.commandId, correlationId: scenario.correlationId, arguments: [:])
+            let invocation = try IPCDescriptorInvocation(
+                descriptor: descriptor,
+                normalizedParameters: descriptor.normalizeParameters(JSONEncoder().encode(request)),
+                presentation: .tooling)
+            let response = try requireSuccess(
                 try await client.callWithoutBlockingCooperativePool(invocation, requestID: 30))
-            let result = try commandCatalog.decodeResult(executeResponse.normalizedResult, for: invocation)
-
-            #expect(methodCatalog.methods.contains { $0.name == "command.list" })
-            #expect(methodCatalog.methods.contains { $0.name == "command.execute" })
+            let result = try JSONDecoder().decode(IPCCommandExecutionResult.self, from: response.normalizedResult.data)
             #expect(result.commandId == scenario.commandId)
             #expect(result.correlationId == scenario.correlationId)
             #expect(scenario.commandPort.receivedExecutionRequests.count == 1)
             #expect(scenario.commandPort.receivedExecutionRequests.first?.commandId == scenario.commandId)
             #expect(scenario.commandPort.receivedExecutionRequests.first?.correlationId == scenario.correlationId)
-        })
-    }
-
-    @Test("unknown identity and wrong variant are refused before the command port")
-    func discoveryRefusesUnknownIdentityAndWrongVariantBeforePort() async throws {
-        try await DynamicCommandScenario.withScope(body: { scenario in
-            try scenario.fixture.server.start()
-            let client = AgentStudioIPCClient(
-                configuration: AgentStudioIPCClientConfiguration(socketPath: scenario.fixture.paths.socketURL.path),
-                descriptors: []
-            )
-            let discovery = try IPCCommandDiscovery(
-                methodCatalog: try await client.discoverCatalogWithoutBlockingCooperativePool())
-            let listResponse = try requireSuccess(
-                try await client.callWithoutBlockingCooperativePool(
-                    discovery.commandListInvocation, requestID: 10))
-            let commandCatalog = try discovery.decodeCommandCatalog(from: listResponse.normalizedResult)
-
-            #expect(throws: IPCCommandDiscoveryError.self) {
-                _ = try commandCatalog.makeInvocation(
-                    commandId: IPCCommandIdentifier(rawValue: "futureCommand"),
-                    correlationId: UUIDv7.generate(),
-                    arguments: .noArguments
-                )
-            }
-            #expect(throws: IPCCommandDiscoveryError.self) {
-                _ = try commandCatalog.makeInvocation(
-                    commandId: scenario.commandId,
-                    correlationId: UUIDv7.generate(),
-                    arguments: .repository(IPCRepositoryCommandArguments(repoId: UUIDv7.generate()))
-                )
-            }
-            #expect(scenario.commandPort.receivedExecutionRequests.isEmpty)
         })
     }
 
@@ -86,16 +50,13 @@ struct AppIPCDynamicCommandClientTests {
                     configuration: AgentStudioIPCClientConfiguration(socketPath: scenario.fixture.paths.socketURL.path),
                     descriptors: []
                 )
-                let discovery = try IPCCommandDiscovery(
-                    methodCatalog: try await client.discoverCatalogWithoutBlockingCooperativePool())
-                let listResponse = try requireSuccess(
-                    try await client.callWithoutBlockingCooperativePool(discovery.commandListInvocation))
-                let commandCatalog = try discovery.decodeCommandCatalog(from: listResponse.normalizedResult)
-                let invocation = try commandCatalog.makeInvocation(
-                    commandId: scenario.commandId,
-                    correlationId: scenario.correlationId,
-                    arguments: .noArguments
-                )
+                let descriptor = try IPCAnyMethodDescriptor(erasing: IPCCommandMethodComposition.compiledExecute())
+                let request = IPCRawCommandExecutionRequest(
+                    commandId: scenario.commandId, correlationId: scenario.correlationId, arguments: [:])
+                let invocation = try IPCDescriptorInvocation(
+                    descriptor: descriptor,
+                    normalizedParameters: descriptor.normalizeParameters(JSONEncoder().encode(request)),
+                    presentation: .tooling)
 
                 switch try await client.callWithoutBlockingCooperativePool(invocation, requestID: 40) {
                 case .success:
@@ -147,7 +108,7 @@ struct AppIPCDynamicCommandClientTests {
                 )
             )
             #expect(wrongVariantResponse.error?.code == -32_602)
-            #expect(wrongVariantResponse.error?.message == "invalid params")
+            #expect(wrongVariantResponse.error?.message == "invalid arguments")
             #expect(scenario.commandPort.receivedExecutionRequests.isEmpty)
         })
     }
@@ -268,7 +229,7 @@ struct AppIPCDynamicCommandClientTests {
             })
     }
 
-    @Test("built CLI renders an unknown dynamic command correction without reflecting its identifier")
+    @Test("built CLI preserves the app unknown-command identifier and visible suggestions")
     func builtCLIRendersUnknownDynamicCommandCorrection() async throws {
         try await DynamicCommandScenario.withScope(body: { scenario in
             try scenario.fixture.server.start()
@@ -290,11 +251,12 @@ struct AppIPCDynamicCommandClientTests {
             )
             let unknownError = try requireStructuredCLIError(unknown)
             #expect(unknownError.reason == "unknownCommand")
-            #expect(unknownError.fieldPath == "$.commandId")
-            #expect(unknownError.catalogMethod == "command.list")
-            #expect(unknownError.expected == "an identifier advertised by command.list")
+            #expect(unknownError.fieldPath == nil)
+            #expect(unknownError.catalogMethod == nil)
+            #expect(unknownError.commandId == privateMarker)
+            #expect(unknownError.closestMatches == [scenario.commandId.rawValue])
             let standardError = try #require(String(data: unknown.standardError, encoding: .utf8))
-            #expect(!standardError.contains(privateMarker))
+            #expect(standardError.contains(privateMarker))
         })
     }
 
@@ -319,10 +281,10 @@ struct AppIPCDynamicCommandClientTests {
                     environment: makeCLIEnvironment(for: scenario)
                 )
                 let wrongVariantError = try requireStructuredCLIError(wrongVariant)
-                #expect(wrongVariantError.reason == "invalidParams")
+                #expect(wrongVariantError.reason == "invalidArguments")
                 #expect(wrongVariantError.fieldPath == "$.arguments.kind")
-                #expect(wrongVariantError.expected == "an argument variant advertised for the selected command")
-                #expect(wrongVariantError.catalogMethod == "command.list")
+                #expect(wrongVariantError.expected == "one admitted argument kind: noArguments")
+                #expect(wrongVariantError.catalogMethod == nil)
                 let standardError = try #require(String(data: wrongVariant.standardError, encoding: .utf8))
                 #expect(!standardError.contains(privateRepositoryIdentifier.uuidString))
             })
@@ -353,42 +315,6 @@ struct AppIPCDynamicCommandClientTests {
                 #expect(unavailableError.expected == nil)
                 #expect(unavailableError.catalogMethod == nil)
             })
-    }
-
-    @Test("built CLI renders foreign capabilities as unsupported version")
-    func builtCLIRendersUnsupportedVersionFromLiveSocket() async throws {
-        let endpoint = UnixSocketEndpoint(path: temporaryDynamicCommandSocketPath())
-        let listener = UnixSocketListener(endpoint: endpoint)
-        let privateCompatibilityMarker = "PRIVATE-FOREIGN-CATALOG-MUST-NOT-REFLECT"
-        let foreignCatalog = IPCMethodCatalogResult(
-            compatibility: IPCProtocolCatalogCompatibility(
-                wireProtocolIdentifier: "foreign-wire-\(privateCompatibilityMarker)",
-                catalogIdentifier: "foreign-catalog-\(privateCompatibilityMarker)"
-            ),
-            methods: []
-        )
-        try listener.start { connection in
-            defer { connection.close() }
-            var decoder = NDJSONFrameDecoder(maxFrameBytes: 1_048_576)
-            let request = try receiveListenerHandlerRequest(connection: connection, decoder: &decoder)
-            #expect(request.method == "system.capabilities")
-            try connection.send(
-                dynamicCommandResponseFrame(id: request.id, result: foreignCatalog)
-            )
-        }
-        defer { listener.stop() }
-
-        let result = try await runCLI(
-            executableURL: cliExecutableURL(),
-            arguments: ["system.capabilities"],
-            environment: makeCLIEnvironment(socketPath: endpoint.path)
-        )
-        let structuredError = try requireStructuredCLIError(result)
-        #expect(structuredError.reason == "unsupportedVersion")
-        #expect(structuredError.fieldPath == "$.compatibility")
-        #expect(structuredError.expected?.isEmpty == false)
-        let standardError = try #require(String(data: result.standardError, encoding: .utf8))
-        #expect(!standardError.contains(privateCompatibilityMarker))
     }
 
     @Test("built CLI renders a missing required method parameter as invalid params")
@@ -491,8 +417,20 @@ struct AppIPCDynamicCommandClientTests {
             let structuredError = try requireStructuredCLIError(result)
             #expect(structuredError.reason == "unknownMethod")
             #expect(structuredError.fieldPath == "$.method")
-            #expect(structuredError.catalogMethod == "system.capabilities")
+            #expect(structuredError.catalogMethod == nil)
+            // PD choice 4 ranks entry names; it specifies no eligibility filter.
+            let suggestedMethods: [String] = [
+                "bridge.telemetry.flush", "bridge.telemetry.snapshot", "pane.title.set",
+            ]
+            let expectedCorrection: String =
+                "a compiled method or model invocation; see agentstudio help; closest methods: "
+                + suggestedMethods.joined(separator: ", ")
+            #expect(structuredError.expected == expectedCorrection)
+            let index = IPCBuiltInMethodIndex()
+            #expect(suggestedMethods.allSatisfy { index.entry(named: $0) != nil })
+            let standardOutput = try #require(String(data: result.standardOutput, encoding: .utf8))
             let standardError = try #require(String(data: result.standardError, encoding: .utf8))
+            #expect(!standardOutput.contains(privateMethodMarker))
             #expect(!standardError.contains(privateMethodMarker))
         })
     }
@@ -670,6 +608,8 @@ private struct StructuredCLIError: Decodable {
     let catalogMethod: String?
     let requiredScope: IPCPermissionScope?
     let refusedName: String?
+    let commandId: String?
+    let closestMatches: [String]?
 }
 
 private func makeCLIEnvironment(for scenario: DynamicCommandScenario) -> [String: String] {
@@ -700,20 +640,4 @@ private func requireStructuredCLIError(_ result: CLIProcessResult) throws -> Str
     #expect(result.exitCode != 0)
     #expect(result.standardOutput.isEmpty)
     return try JSONDecoder().decode(StructuredCLIError.self, from: result.standardError)
-}
-
-private func temporaryDynamicCommandSocketPath() -> String {
-    "/tmp/asipc-cli-errors-\(UUIDv7.generate().uuidString).sock"
-}
-
-private func dynamicCommandResponseFrame<Result: Encodable>(
-    id: JSONRPCIdentifier?,
-    result: Result
-) throws -> Data {
-    try NDJSONFrameEncoder.encode(
-        JSONRPCCodec.encodeResponse(
-            .success(id: id, result: try JSONRPCCodec.encodeJSONValue(result))
-        ),
-        maxFrameBytes: 1_048_576
-    )
 }

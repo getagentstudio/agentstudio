@@ -434,6 +434,10 @@ extension AgentStudioGitBridgeReviewDataClient {
             return .providerFailed(message: "gitDataPlane:unsupported")
         case .locked:
             return .providerFailed(message: "gitDataPlane:locked")
+        case .lockHeld, .lockUnidentified:
+            return .providerFailed(message: "gitDataPlane:locked")
+        case .permissionDenied:
+            return .providerFailed(message: "gitDataPlane:permissionDenied")
         case .worktreeNotFound:
             return .providerFailed(message: "gitDataPlane:worktreeNotFound")
         case .worktreeNotPrunable:

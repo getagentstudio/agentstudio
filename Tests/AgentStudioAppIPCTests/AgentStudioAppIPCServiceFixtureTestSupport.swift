@@ -2,6 +2,7 @@ import AgentStudioAppIPC
 import AgentStudioIPCTransport
 import AgentStudioInfrastructure
 import AgentStudioProgrammaticControl
+import AgentStudioTestHarness
 import CryptoKit
 import Foundation
 import Synchronization
@@ -83,7 +84,7 @@ nonisolated(nonsending) private func tearDownLiveServer(
     releaseHeldWork: @Sendable () async -> Void
 ) async {
     await releaseHeldWork()
-    fixture.stopAcceptingConnections()
+    await fixture.stopAcceptingConnections()
     await fixture.server.joinConnectionHandlers()
     let result = await fixture.server.drainCredentialPersistence()
     if result.failedOperationCount > 0 {
@@ -116,11 +117,19 @@ struct LiveServerFixture: Sendable {
         uiPresentationPort: any AppIPCUIPresentationPort = FakeUIPresentationPort(),
         sidebarPort: any AppIPCSidebarPort = FakeSidebarPort(),
         sessionsPort: any AppIPCSessionsPort = RecordingSessionsPort(),
+        paneContextPort: any AppIPCPaneContextPort = UnavailableAppIPCPaneContextPort(),
         commandComposition: IPCCommandMethodComposition? = nil,
         credentialResolver: (any AgentStudioIPCCredentialResolving)? = nil,
         credentialContinuityPort: any AgentStudioIPCCredentialContinuityPort = TestCredentialContinuityPort(),
-        canonicalPaneMembership: (@MainActor @Sendable (UUID, UUID) -> Bool)? = nil,
-        ownPaneScopes: [AppIPCOwnPaneScope] = []
+        canonicalPaneMembership: (@Sendable (UUID, UUID) -> Bool)? = nil,
+        ownPaneScopes: [AppIPCOwnPaneScope] = [],
+        cliStoreReadThroughPort: (any AppIPCCLIStoreReadThroughPort)? = nil,
+        additionalRegistrations: [AnyAppIPCMethodRegistration] = [],
+        eventBroker: IPCEventBroker = IPCEventBroker(),
+        makeConnectionIO: @escaping @Sendable (UnixSocketConnection) -> AppIPCConnectionIO = AppIPCConnectionIO.live,
+        makeConnectionWriter: @escaping @Sendable (AppIPCConnectionIO, Int) -> AgentStudioAppIPCConnectionWriter = {
+            AgentStudioAppIPCConnectionWriter(io: $0, maxFrameBytes: $1)
+        }
     ) throws {
         let resolvedCredentialResolver = credentialResolver ?? IPCFixtureCredentialResolver()
         testCredentialResolver = resolvedCredentialResolver as? IPCFixtureCredentialResolver
@@ -150,9 +159,9 @@ struct LiveServerFixture: Sendable {
                 // Unless a test names scopes, every bound pane is a main-layout
                 // terminal with an empty drawer, so its own pane is itself.
                 ownPaneScopePort: StaticOwnPaneScopePort(scopes: ownPaneScopes),
-                agentAuthorizationTelemetry: RecordingAgentAuthorizationTelemetry()
+                agentAuthorizationTelemetry: RecordingAgentAuthorizationTelemetry(),
+                paneContextPort: paneContextPort
             )
-            let eventBroker = IPCEventBroker()
             let catalog = try makeLiveServerBuiltInCatalog(
                 runtimeId: runtimeId,
                 paneId: panes.first?.id ?? boundPaneId
@@ -171,6 +180,7 @@ struct LiveServerFixture: Sendable {
                     port: commandPort
                 )
             }
+            registrations += additionalRegistrations
             let methodRegistry = try makeTestAppIPCMethodRegistry(
                 registrations: registrations,
                 recognizedCommands: (commandComposition?.commands ?? []).map {
@@ -207,7 +217,10 @@ struct LiveServerFixture: Sendable {
                     paths: paths,
                     channel: channel,
                     principalRegistry: principalRegistry,
-                    credentialContinuityPort: credentialContinuityPort
+                    credentialContinuityPort: credentialContinuityPort,
+                    cliStoreReadThroughPort: cliStoreReadThroughPort,
+                    makeConnectionIO: makeConnectionIO,
+                    makeConnectionWriter: makeConnectionWriter
                 )
             )
         } catch {
@@ -233,12 +246,12 @@ struct LiveServerFixture: Sendable {
         return token
     }
 
-    func stop() {
-        server.stop()
+    func stop() async {
+        await server.stop()
     }
 
-    func stopAcceptingConnections() {
-        server.stopAcceptingConnections()
+    func stopAcceptingConnections() async {
+        await server.stopAcceptingConnections()
     }
 
     @MainActor
@@ -271,19 +284,23 @@ final class LiveServerFixtureServer: Sendable {
         }
     }
 
-    func stop() {
-        hasStopped.withLock { stopped in
-            guard !stopped else { return }
-            stopped = true
-            owner.stop()
+    func stop() async {
+        await valueFromDedicatedThread { [self] in
+            hasStopped.withLock { stopped in
+                guard !stopped else { return }
+                stopped = true
+                owner.stop()
+            }
         }
     }
 
-    func stopAcceptingConnections() {
-        hasStopped.withLock { stopped in
-            guard !stopped else { return }
-            stopped = true
-            owner.stopAcceptingConnections()
+    func stopAcceptingConnections() async {
+        await valueFromDedicatedThread { [self] in
+            hasStopped.withLock { stopped in
+                guard !stopped else { return }
+                stopped = true
+                owner.stopAcceptingConnections()
+            }
         }
     }
 
@@ -406,7 +423,6 @@ private func makeLiveServerBuiltInCatalog(
     let illustrativeId = UUIDv7.generate()
     return try IPCBuiltInMethodCatalog(
         inputs: IPCBuiltInMethodCatalogInputs(
-            terminalWaitMaximumSeconds: 86_400,
             relationships: IPCBuiltInMethodRelationshipInputs(
                 paneFocus: .noInteractiveIdentity,
                 paneClose: .noInteractiveIdentity,

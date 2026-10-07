@@ -1,0 +1,12 @@
+{
+  "worktree": {
+    "include": [
+      ".build*/",
+      "Frameworks/",
+      "node_modules/",
+      "Sources/AgentStudio/Resources/ghostty/",
+      "Sources/AgentStudio/Resources/terminfo/",
+      "Sources/AgentStudio/Resources/BridgeWeb/app/"
+    ]
+  }
+}

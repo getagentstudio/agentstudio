@@ -14,7 +14,7 @@ struct AppIPCTypedRegistryTests {
         let registry = try makeTestAppIPCMethodRegistry(
             registrations: registrations, recognizedCommands: [], channel: .debug)
         let names = registry.capabilities.methods.map(\.name)
-        #expect(names.count == 48)
+        #expect(names.count == 55)
         #expect(names == names.sorted())
         #expect(Set(names).count == names.count)
         #expect(names.filter { $0 == "system.capabilities" }.count == 1)
@@ -36,11 +36,26 @@ struct AppIPCTypedRegistryTests {
         let fixture = BuiltInMethodRegistrationsFixture()
         let registry = try makeTestAppIPCMethodRegistry(
             registrations: fixture.registrations(), recognizedCommands: [], channel: channel)
-        // 12 established all-channel methods plus the 13 methods pane agents
-        // may run in A1, which reach agents on every channel.
-        #expect(registry.capabilities.methods.count == 25)
+        // 23 retained methods, eight credential-pane context methods, and the
+        // hook-refusal method reach pane agents on both production channels.
+        #expect(registry.capabilities.methods.count == 32)
+        let refusal = try #require(registry.registration(named: "session.refusal"))
+        #expect(refusal.descriptor.metadata.exposure == .allChannels)
+        #expect(refusal.descriptor.metadata.requiredPrivileges == [.sessionReportWrite])
+        #expect(refusal.descriptor.metadata.agentEligibility == nil)
+        #expect(registry.paneAgentRoutingRefusal(methodName: "session.refusal", parameters: nil) == nil)
+        #expect(registry.registration(named: "session.message") == nil)
+        #expect(registry.registration(named: "session.report") == nil)
         #expect(registry.capabilities.methods.allSatisfy { $0.exposure == .allChannels })
-        #expect(registry.registration(named: "session.report") != nil)
+        let paneContextMethods = registry.capabilities.methods.filter { $0.executionOwner == .paneContextService }
+        #expect(
+            Set(paneContextMethods.map(\.name))
+                == Set([
+                    "pane.message.send", "pane.message.ask", "pane.message.withdraw", "pane.message.changes",
+                    "pane.line.set", "pane.title.set", "pane.writer.claimEpoch", "pane.context.get",
+                ]))
+        #expect(paneContextMethods.allSatisfy { $0.agentEligibility == .ownPane })
+        #expect(registry.registration(named: "pane.message.send") != nil)
         #expect(registry.registration(named: "session.query") != nil)
         #expect(registry.registration(named: "terminal.send") != nil)
         #expect(registry.registration(named: "pane.snapshot") != nil)
@@ -152,7 +167,7 @@ struct AppIPCTypedRegistryTests {
                 #expect(request.target == .app)
             }
         )
-        let decoded = try IPCMethodCatalogDecoder.decode(JSONEncoder().encode(result))
+        let decoded = try IPCMethodCatalogDecoder.decode(encodedAppIPCInvocationResult(result))
         #expect(decoded == registry.capabilities)
     }
 }

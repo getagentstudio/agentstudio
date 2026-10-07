@@ -125,6 +125,7 @@ public enum IPCPrivilegeClass: String, Codable, CaseIterable, Hashable, Sendable
     case systemRead
     case workspaceRead
     case paneContextRead
+    case paneContextWrite
     case layoutMutate
     case bridgeRead
     case bridgeContentRead
@@ -159,6 +160,7 @@ public enum IPCExecutionOwner: String, CaseIterable, Codable, Equatable, Sendabl
     case eventReader
     case permissionBroker
     case sessionsIngest
+    case paneContextService
 }
 
 public enum IPCResultSemantics: String, CaseIterable, Codable, Equatable, Sendable {

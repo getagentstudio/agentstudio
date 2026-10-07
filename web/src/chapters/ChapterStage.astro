@@ -13,6 +13,7 @@ import ChapterManyAgentsScene from "@/motion-scenes/scenes/chapter-many-agents/C
 import ChapterReviewScene from "@/motion-scenes/scenes/chapter-review/ChapterReviewScene.astro";
 
 import type { Chapter } from "./chapter-catalog";
+import ChapterClipsStage from "./ChapterClipsStage.astro";
 import {
   sceneProofAttribute,
   sceneProofStateAttribute,
@@ -33,25 +34,27 @@ const sceneMarkupById = {
 
 const { chapter } = Astro.props;
 const { stage } = chapter;
-const phoneCaptureSources = stage.proofKind === "image"
+const phoneCaptureSources = stage.kind === "scene" && stage.proofKind === "image"
   ? await createPhoneCaptureSources(stage.proofPhoneImage) : undefined;
-const SceneMarkup = sceneMarkupById[stage.sceneId];
+const SceneMarkup = stage.kind === "scene" ? sceneMarkupById[stage.sceneId] : undefined;
 const proofLayerAttributes = {
-  [sceneProofAttribute]: stage.sceneId,
+  [sceneProofAttribute]: stage.kind === "scene" ? stage.sceneId : chapter.id,
   [sceneProofStateAttribute]: "hidden",
   [sceneProofTransitionAttribute]: "instant",
 };
-const sessionRestoreVideoAttributes =
-  chapter.id === "come-back" ? { "data-session-restore-video": "" } : {};
 ---
 
 <!-- The scene, real proof and controls occupy one reserved stage box. -->
-<div class="chapter-scene-stage relative w-full self-stretch overflow-clip rounded-control">
+{stage.kind === "clips" ? <ChapterClipsStage chapter={chapter} /> : SceneMarkup !== undefined &&
+<div
+  class="chapter-scene-stage relative w-full self-stretch overflow-clip rounded-control"
+  style="container: recreation-kit / inline-size"
+>
   <div class="invisible aspect-[4/5] w-full phone:aspect-[16/10]" aria-hidden="true" />
   <div class="absolute inset-0">
     <SceneMarkup />
   </div>
-  <div
+  {stage.proofKind !== "none" && <div
     {...proofLayerAttributes}
     class="chapter-scene-proof absolute inset-0 bg-product-ground"
     aria-hidden="true"
@@ -80,7 +83,6 @@ const sessionRestoreVideoAttributes =
         </picture>
       ) : (
         <ScrollAutoplayVideo
-          {...sessionRestoreVideoAttributes}
           autoplayOnScroll={false}
           deferSource
           data-scene-proof-video
@@ -92,7 +94,7 @@ const sessionRestoreVideoAttributes =
         />
       )
     }
-  </div>
+  </div>}
   <MotionPlaybackToggle
     controlAttribute="data-scene-playback-toggle"
     pauseLabel={marketingCopy.motionControls.pauseAnimation}
@@ -100,6 +102,7 @@ const sessionRestoreVideoAttributes =
     class="absolute right-3 bottom-3 z-[3]"
   />
 </div>
+}
 
 <style>
   .chapter-scene-proof {

@@ -18,10 +18,17 @@ struct AgentStudioAppIPCServiceCommandTests {
 
         do {
             _ = try await port.prepareCommand(
-                request, principal: diagnosticCommandPrincipal(), tools: unusedCommandTargetTools())
+                IPCRawCommandExecutionRequest(typedRequest: request), principal: diagnosticCommandPrincipal(),
+                tools: unusedCommandTargetTools())
             Issue.record("Expected the unknown command identity to be rejected")
-        } catch let error as AppIPCCommandError {
-            #expect(error.reason == .unknownCommand)
+        } catch let error as AgentStudioAppIPCRequestError {
+            #expect(error.code == -32_003)
+            #expect(
+                error.data
+                    == .object([
+                        "reason": .string("unknownCommand"), "commandId": .string("futureCommand"),
+                        "closestMatches": .array([]),
+                    ]))
         }
         #expect(port.receivedExecutionRequests.isEmpty)
     }
@@ -53,12 +60,18 @@ struct AgentStudioAppIPCServiceCommandTests {
 
         do {
             _ = try await port.prepareCommand(
-                request, principal: diagnosticCommandPrincipal(), tools: unusedCommandTargetTools())
+                IPCRawCommandExecutionRequest(typedRequest: request), principal: diagnosticCommandPrincipal(),
+                tools: unusedCommandTargetTools())
             Issue.record("Expected the typed command variant to be rejected")
-        } catch let error as IPCSchemaValidationError {
-            #expect(error.fieldPath == "$.arguments.kind")
-            #expect(error.reason == .invalidValue)
-            #expect(error.expected == "one argument variant declared by the selected command")
+        } catch let error as AgentStudioAppIPCRequestError {
+            #expect(error.code == -32_602)
+            guard case .object(let fields) = error.data else {
+                Issue.record("Expected raw argument correction")
+                return
+            }
+            #expect(fields["fieldPath"] == .string("$.arguments.kind"))
+            #expect(fields["reason"] == .string("invalidArguments"))
+            #expect(fields["expected"] == .string("one admitted argument kind: noArguments"))
         }
         #expect(port.receivedExecutionRequests.isEmpty)
     }
@@ -96,7 +109,7 @@ struct AgentStudioAppIPCServiceCommandTests {
         )
 
         let prepared = try await port.prepareCommand(
-            request,
+            IPCRawCommandExecutionRequest(typedRequest: request),
             principal: diagnosticCommandPrincipal(),
             tools: unusedCommandTargetTools()
         )

@@ -1,0 +1,19 @@
+{
+  "session_id": "ad7b0f4c-4aeb-4817-869a-50df02870849",
+  "transcript_path": "/recorded/transcript_path",
+  "cwd": "/recorded/cwd",
+  "prompt_id": "433d7bfc-2bd9-4375-bb06-bf1e9487ce9a",
+  "permission_mode": "auto",
+  "effort": {
+    "level": "medium"
+  },
+  "hook_event_name": "PostToolUseFailure",
+  "tool_name": "Read",
+  "tool_input": {
+    "file_path": "/recorded/file_path"
+  },
+  "tool_use_id": "toolu_01Qx4CArdhoymdPSu18Zwsd2",
+  "error": "Fixture tool failed.",
+  "is_interrupt": false,
+  "duration_ms": 22
+}

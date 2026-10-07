@@ -184,8 +184,8 @@ package struct AppIPCPreparedCommand: Sendable {
 @MainActor
 package protocol AppIPCCommandPort: Sendable {
     func prepareCommand(
-        _ params: IPCCommandExecutionRequest, principal: IPCPrincipal, tools: AppIPCTargetResolutionTools
-    ) async throws -> AppIPCPreparedCommand
+        _ params: IPCRawCommandExecutionRequest, principal: IPCPrincipal, tools: AppIPCTargetResolutionTools
+    ) async throws(AgentStudioAppIPCRequestError) -> AppIPCPreparedCommand
     func executeCommand(
         _ params: IPCCommandExecutionRequest, ownPaneAssertion: AppIPCOwnPaneAssertion?
     ) async throws -> IPCCommandExecutionResult
@@ -230,6 +230,7 @@ package struct AgentStudioAppIPCPorts: Sendable {
     package let uiPresentationPort: any AppIPCUIPresentationPort
     package let sidebarPort: any AppIPCSidebarPort
     package let sessionsPort: any AppIPCSessionsPort
+    package let paneContextPort: any AppIPCPaneContextPort
     package let permissionApprovalPort: any AppIPCPermissionApprovalPort
     package let ownPaneScopePort: any AppIPCOwnPaneScopePort
     package let agentAuthorizationTelemetry: any AppIPCAgentAuthorizationTelemetry
@@ -245,7 +246,8 @@ package struct AgentStudioAppIPCPorts: Sendable {
         sessionsPort: any AppIPCSessionsPort,
         permissionApprovalPort: any AppIPCPermissionApprovalPort,
         ownPaneScopePort: any AppIPCOwnPaneScopePort,
-        agentAuthorizationTelemetry: any AppIPCAgentAuthorizationTelemetry
+        agentAuthorizationTelemetry: any AppIPCAgentAuthorizationTelemetry,
+        paneContextPort: any AppIPCPaneContextPort = UnavailableAppIPCPaneContextPort()
     ) {
         self.queryPort = queryPort
         self.layoutPort = layoutPort
@@ -255,6 +257,7 @@ package struct AgentStudioAppIPCPorts: Sendable {
         self.uiPresentationPort = uiPresentationPort
         self.sidebarPort = sidebarPort
         self.sessionsPort = sessionsPort
+        self.paneContextPort = paneContextPort
         self.permissionApprovalPort = permissionApprovalPort
         self.ownPaneScopePort = ownPaneScopePort
         self.agentAuthorizationTelemetry = agentAuthorizationTelemetry

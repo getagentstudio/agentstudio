@@ -131,12 +131,26 @@ struct WorkspaceLocalMigrationTests {
             "sessions_pane_binding",
             "sessions_source",
             "sessions_evidence",
-            "sessions_message",
-            "sessions_attention",
-            "sessions_result",
             "sessions_operation",
-            "sessions_loss",
             "local_ipc_credential",
+            "pane_context_cli_outbox_cursor",
+            "pane_answer_position",
+            "pane_epoch_claim",
+            "pane_event",
+            "pane_event_action",
+            "pane_request",
+            "pane_request_action",
+            "pane_request_answer_value",
+            "pane_request_choice",
+            "pane_request_property",
+            "pane_request_property_choice",
+            "pane_request_required",
+            "pane_retirement",
+            "pane_state",
+            "pane_state_action",
+            "pane_write_order",
+            "sessions_provider_question",
+            "sessions_provider_question_option",
             "local_drawer_presentation",
         ]
 
@@ -771,32 +785,6 @@ struct WorkspaceLocalMigrationTests {
         }
     }
 }
-
-private let expectedBootRequiredLocalMigrationIdentifiers = [
-    "001_create_application_local_schema",
-    "002_replace_recent_targets_with_entity_recency",
-    "003_invert_sidebar_group_memory",
-    "004_remove_persisted_pull_request_counts",
-    "005_move_repo_grouping_to_window_sidebar_memory",
-    "006_add_repository_local_activity_facts",
-    "006_create_worktree_annotation_schema",
-    "007_add_worktree_annotation_message_handled",
-    "008_add_worktree_annotation_message_viewed_revision",
-    "009_add_worktree_annotation_reviewed_subject_evidence",
-    "010_remove_worktree_annotation_workspace_provenance",
-    "007_add_per_screen_sidebar_organization",
-    "015_add_panes_drawer_visibility",
-    "015_create_local_drawer_presentation",
-]
-
-private let expectedFullLocalMigrationIdentifiers =
-    expectedBootRequiredLocalMigrationIdentifiers
-    + [
-        "011_create_sessions_ingestion_schema",
-        "012_create_ipc_credential_schema",
-        "013_create_opaque_pane_credential_records",
-        "014_ipc_credentials_pane_only",
-    ]
 
 private struct Migration007Scenario: Sendable {
     let legacyMode: String

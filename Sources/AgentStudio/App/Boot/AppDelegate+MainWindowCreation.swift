@@ -3,6 +3,7 @@ import AgentStudioCore
 import AgentStudioEditorChooser
 import AgentStudioInfrastructure
 import AgentStudioRepoExplorer
+import AgentStudioSessions
 import AppKit
 
 struct AppDelegateMainWindowCreationDependencies {
@@ -19,6 +20,7 @@ struct AppDelegateMainWindowCreationDependencies {
     let repoExplorerSidebarPrefs: RepoExplorerSidebarPrefsAtom
     let performanceTraceRecorder: AgentStudioPerformanceTraceRecorder
     let closeTransitionCoordinator: PaneCloseTransitionCoordinator
+    var sessionsPaneViewedMailbox: SessionsPaneViewedMailbox?
 }
 
 @MainActor
@@ -82,7 +84,8 @@ extension AppDelegate {
             editorChooser: atomStore.editorChooser,
             repoExplorerSidebarPrefs: atomStore.repoExplorerSidebarPrefs,
             performanceTraceRecorder: performanceTraceRecorder,
-            closeTransitionCoordinator: closeTransitionCoordinator
+            closeTransitionCoordinator: closeTransitionCoordinator,
+            sessionsPaneViewedMailbox: atomStore.sessionsPaneViewedMailbox
         )
     }
 
@@ -106,6 +109,7 @@ extension AppDelegate {
             viewRegistry: dependencies.viewRegistry,
             bridgePaneAttendance: dependencies.bridgePaneAttendance,
             editorChooser: dependencies.editorChooser,
+            sessionsPaneViewedMailbox: dependencies.sessionsPaneViewedMailbox,
             repoExplorerSidebarPrefs: dependencies.repoExplorerSidebarPrefs,
             bridgeAttendanceSnapshot: { paneId in
                 dependencies.bridgePaneAttendance.ordinal(for: paneId)

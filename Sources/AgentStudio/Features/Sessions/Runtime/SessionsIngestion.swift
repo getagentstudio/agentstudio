@@ -1,5 +1,4 @@
-import AgentStudioInfrastructure
-import CryptoKit
+import AgentStudioCore
 import Foundation
 
 package struct SessionsIngestionLimits: Sendable, Equatable {
@@ -28,15 +27,32 @@ package struct SessionsIngestionStatistics: Sendable, Equatable {
 package typealias SessionsIngestionProbe = @Sendable (SessionsIngestionStatistics) -> Void
 
 package actor SessionsIngestion {
-    private struct PendingMutation {
-        let correlationId: UUID
-        let mutation: SessionsMutation
-        let paneId: UUID?
-        let errorAfterCommit: SessionsRepositoryError?
-        let continuation: CheckedContinuation<SessionsSubmissionResult, any Error>
+    private struct PendingHook {
+        let hook: SessionsHookAdmission
+        let admittedAt: ContinuousClock.Instant
+        let commitParticipant: (any SessionsCommitParticipant)?
+        let continuation: CheckedContinuation<SessionsHookOutcome, any Error>
     }
 
-    private let repository: SessionsRepository
+    private struct PendingCommandFinished {
+        let paneId: UUID
+        let reportedAt: ContinuousClock.Instant
+        let continuation: CheckedContinuation<SessionsBindingEndCommit?, any Error>
+    }
+
+    private enum PendingMutation {
+        case hook(PendingHook)
+        case commandFinished(PendingCommandFinished)
+
+        var paneId: UUID {
+            switch self {
+            case .hook(let pending): return pending.hook.paneId
+            case .commandFinished(let pending): return pending.paneId
+            }
+        }
+    }
+
+    let repository: SessionsRepository
     private let limits: SessionsIngestionLimits
     private let probe: SessionsIngestionProbe
     private var acceptsSubmissions = true
@@ -44,76 +60,89 @@ package actor SessionsIngestion {
     private var pendingCountByPane: [UUID: Int] = [:]
     private var outstandingCount = 0
     private var consumerTask: Task<Void, Never>?
+    package nonisolated let paneViewedMailbox: SessionsPaneViewedMailbox
+    let statusPublicationMailbox: SessionStatusPublicationMailbox
+    let statusPublicationLane: SessionStatusPublicationLane?
+    let openAskSource: any SessionOpenAskReading
+    let sessionEnded: @Sendable (UUID) async -> Void
+    var statusRuntime = SessionsStatusRuntime()
+    var statusIngressTask: Task<Void, Never>?
+    var didLoadOpenAsks = false
+    var isStatusClosed = false
+    private var lastRefusalByPane: [UUID: SessionsHookRefusal] = [:]
+
+    package func recordRefusal(paneId: UUID, refusal: SessionsHookRefusal) async {
+        guard !isStatusClosed else { return }
+        await startPaneViewedIngressIfNeeded()
+        guard !isStatusClosed, !statusRuntime.retiredPaneIds.contains(paneId) else { return }
+        lastRefusalByPane[paneId] = refusal
+    }
+
+    package func lastRefusal(paneId: UUID) -> SessionsHookRefusal? {
+        consumePaneViewedBatch()
+        return lastRefusalByPane[paneId]
+    }
+
+    func clearRefusal(paneId: UUID) {
+        lastRefusalByPane.removeValue(forKey: paneId)
+    }
 
     package init(
         repository: SessionsRepository,
         limits: SessionsIngestionLimits,
-        probe: @escaping SessionsIngestionProbe
+        probe: @escaping SessionsIngestionProbe,
+        paneViewedMailbox: SessionsPaneViewedMailbox = .init(),
+        statusSink: (@MainActor @Sendable ([PaneId: SessionStatusPublication]) async -> Void)? = nil,
+        openAskSource: any SessionOpenAskReading = EmptySessionOpenAskSource(),
+        sessionEnded: @escaping @Sendable (UUID) async -> Void = { _ in },
+        statusApplyMeasurement: SessionStatusApplyMeasurement = .init(),
+        statusApplyProbe: @escaping @Sendable (SessionStatusApplySnapshot) -> Void = { _ in }
     ) {
         self.repository = repository
         self.limits = limits
         self.probe = probe
-    }
-
-    package func submit(
-        correlationId: UUID,
-        mutation: SessionsMutation
-    ) async throws -> SessionsMutationOutcome {
-        try await submitWithCommitDisposition(correlationId: correlationId, mutation: mutation).outcome
-    }
-
-    package func submitWithCommitDisposition(
-        correlationId: UUID,
-        mutation: SessionsMutation
-    ) async throws -> SessionsSubmissionResult {
-        guard acceptsSubmissions else { throw SessionsRepositoryError.ingestionFinished }
-        let paneId = mutation.paneId
-        if let capacityError = currentCapacityError(for: paneId) {
-            guard case .recordEvidence(let evidenceMutation) = mutation else { throw capacityError }
-            let reason = lossReason(for: capacityError)
-            emitStatistics(for: paneId, event: .capacityRejected(reason))
-            while currentCapacityError(for: paneId) != nil {
-                let taskHoldingCapacity = consumerTask
-                await taskHoldingCapacity?.value
-                guard acceptsSubmissions else { throw SessionsRepositoryError.ingestionFinished }
-            }
-            return try await enqueue(
-                correlationId: UUIDv7.generate(),
-                mutation: .recordLiveLoss(
-                    SessionsLiveLossMutation(
-                        paneId: evidenceMutation.context.paneId,
-                        eventKind: evidenceMutation.kind.storageKind,
-                        reason: reason,
-                        occurredAt: evidenceMutation.occurredAt
-                    )
-                ),
-                errorAfterCommit: capacityError
-            )
+        self.paneViewedMailbox = paneViewedMailbox
+        let mailbox = SessionStatusPublicationMailbox()
+        statusPublicationMailbox = mailbox
+        statusPublicationLane = statusSink.map {
+            SessionStatusPublicationLane(
+                mailbox: mailbox, sink: $0, measurement: statusApplyMeasurement, probe: statusApplyProbe)
         }
-        return try await enqueue(
-            correlationId: correlationId,
-            mutation: mutation,
-            errorAfterCommit: nil
-        )
+        self.openAskSource = openAskSource
+        self.sessionEnded = sessionEnded
     }
 
-    private func enqueue(
-        correlationId: UUID,
-        mutation: SessionsMutation,
-        errorAfterCommit: SessionsRepositoryError?
-    ) async throws -> SessionsSubmissionResult {
-        let paneId = mutation.paneId
+    package func submitHook(
+        _ hook: SessionsHookAdmission,
+        commitParticipant: (any SessionsCommitParticipant)? = nil
+    ) async throws -> SessionsHookOutcome {
+        guard acceptsSubmissions else { throw SessionsRepositoryError.ingestionFinished }
+        if let error = currentCapacityError(for: hook.paneId) {
+            emitStatistics(for: hook.paneId, event: .capacityRejected(lossReason(for: error)))
+            throw error
+        }
         return try await withCheckedThrowingContinuation { continuation in
             pendingMutations.append(
-                PendingMutation(
-                    correlationId: correlationId,
-                    mutation: mutation,
-                    paneId: paneId,
-                    errorAfterCommit: errorAfterCommit,
-                    continuation: continuation
-                )
-            )
-            if let paneId { pendingCountByPane[paneId, default: 0] += 1 }
+                .hook(
+                    .init(
+                        hook: hook, admittedAt: hook.admissionInstant,
+                        commitParticipant: commitParticipant, continuation: continuation)))
+            pendingCountByPane[hook.paneId, default: 0] += 1
+            outstandingCount += 1
+            emitStatistics(for: hook.paneId, event: .depthChanged)
+            startConsumerIfNeeded()
+        }
+    }
+
+    package func submitCommandFinished(
+        paneId: UUID, reportedAt: ContinuousClock.Instant
+    ) async throws -> SessionsBindingEndCommit? {
+        guard acceptsSubmissions else { throw SessionsRepositoryError.ingestionFinished }
+        // A terminal exit is authoritative, so preserve it in the FIFO even at hook capacity.
+        return try await withCheckedThrowingContinuation { continuation in
+            pendingMutations.append(
+                .commandFinished(.init(paneId: paneId, reportedAt: reportedAt, continuation: continuation)))
+            pendingCountByPane[paneId, default: 0] += 1
             outstandingCount += 1
             emitStatistics(for: paneId, event: .depthChanged)
             startConsumerIfNeeded()
@@ -134,10 +163,6 @@ package actor SessionsIngestion {
         error == .globalQueueFull ? .globalQueueFull : .paneQueueFull
     }
 
-    package func snapshot(_ query: SessionsSnapshotQuery) async throws -> SessionsSnapshot {
-        try await repository.snapshot(query)
-    }
-
     /// Reads past the current binding, for a caller that has to attribute an
     /// event to the generation its conversation opened rather than to whatever
     /// the pane is bound to now. It reads only; nothing here enters the FIFO.
@@ -153,22 +178,19 @@ package actor SessionsIngestion {
         )
     }
 
-    package func prepareForLaunch(at launchDate: Date) async throws -> SessionsLaunchPreparationOutcome {
-        let outcome = try await submit(
-            correlationId: UUIDv7.generate(),
-            mutation: .prepareForLaunch(launchDate)
-        )
-        guard case .launchPrepared(let activeSourcesEnded) = outcome else {
-            throw SessionsRepositoryError.invalidStoredValue("prepareForLaunch outcome")
-        }
-        return SessionsLaunchPreparationOutcome(activeSourcesEnded: activeSourcesEnded)
-    }
-
     package func finish() async {
         acceptsSubmissions = false
         emitStatistics(for: nil, event: .finishing)
         let task = consumerTask
         await task?.value
+        isStatusClosed = true
+        lastRefusalByPane.removeAll()
+        paneViewedMailbox.close()
+        statusIngressTask?.cancel()
+        await statusIngressTask?.value
+        statusIngressTask = nil
+        await statusPublicationLane?.shutdown()
+        statusPublicationMailbox.close()
     }
 }
 
@@ -181,49 +203,38 @@ extension SessionsIngestion {
     fileprivate func consumePendingMutations() async {
         while !pendingMutations.isEmpty {
             let pending = pendingMutations.removeFirst()
+            let paneId = pending.paneId
             do {
-                let operation = try makeRepositoryOperation(
-                    correlationId: pending.correlationId,
-                    mutation: pending.mutation
-                )
-                let outcome = try await repository.apply(operation: operation) { context in
-                    try SessionsEvidenceReducer.reduce(mutation: pending.mutation, against: context)
-                }
-                if let errorAfterCommit = pending.errorAfterCommit {
-                    pending.continuation.resume(throwing: errorAfterCommit)
-                } else {
-                    pending.continuation.resume(returning: outcome)
+                switch pending {
+                case .hook(let hook):
+                    try await restoreStatusIfNeeded(paneId: paneId)
+                    let outcome = try await repository.applyHook(
+                        hook.hook, commitParticipant: hook.commitParticipant)
+                    if case .committed(let committed) = outcome {
+                        try await applyCommittedHook(committed, admittedAt: hook.admittedAt)
+                    }
+                    hook.continuation.resume(returning: outcome)
+                case .commandFinished(let commandFinished):
+                    let committed = try await closeLiveBindingForCommandExit(
+                        paneId: paneId, reportedAt: commandFinished.reportedAt)
+                    commandFinished.continuation.resume(returning: committed)
                 }
             } catch {
-                pending.continuation.resume(throwing: error)
-            }
-            if let paneId = pending.paneId {
-                let nextCount = pendingCountByPane[paneId, default: 1] - 1
-                if nextCount == 0 {
-                    pendingCountByPane.removeValue(forKey: paneId)
-                } else {
-                    pendingCountByPane[paneId] = nextCount
+                switch pending {
+                case .hook(let hook): hook.continuation.resume(throwing: error)
+                case .commandFinished(let commandFinished): commandFinished.continuation.resume(throwing: error)
                 }
             }
+            let remaining = pendingCountByPane[paneId, default: 1] - 1
+            if remaining == 0 {
+                pendingCountByPane.removeValue(forKey: paneId)
+            } else {
+                pendingCountByPane[paneId] = remaining
+            }
             outstandingCount -= 1
-            emitStatistics(for: pending.paneId, event: .depthChanged)
+            emitStatistics(for: paneId, event: .depthChanged)
         }
         consumerTask = nil
-    }
-
-    fileprivate func makeRepositoryOperation(
-        correlationId: UUID,
-        mutation: SessionsMutation
-    ) throws -> SessionsRepositoryOperation {
-        SessionsRepositoryOperation(
-            correlationId: correlationId,
-            operationScope: mutation.operationScope,
-            operationKind: mutation.operationKind,
-            semanticFingerprint: try mutation.semanticFingerprint(),
-            providerOccurrence: mutation.providerOccurrence,
-            contextQuery: mutation.contextQuery,
-            createdAt: mutation.occurredAt
-        )
     }
 
     fileprivate func emitStatistics(for paneId: UUID?, event: SessionsIngestionStatistics.Event) {
@@ -236,179 +247,4 @@ extension SessionsIngestion {
             )
         )
     }
-}
-
-extension SessionsMutation {
-    fileprivate var paneId: UUID? {
-        switch self {
-        case .bind(let mutation): mutation.paneId
-        case .message(let mutation): mutation.context.paneId
-        case .recordEvidence(let mutation): mutation.context.paneId
-        case .deliberateNeedsYou(let mutation): mutation.paneId
-        case .clearDeliberateNeedsYou(let mutation): mutation.paneId
-        case .deliberateDone(let mutation): mutation.paneId
-        case .sourceEnded(let mutation): mutation.paneId
-        case .acknowledgeMessage, .prepareForLaunch: nil
-        case .recordLiveLoss(let mutation): mutation.paneId
-        }
-    }
-
-    fileprivate var contextQuery: SessionsRepositoryContextQuery {
-        switch self {
-        case .bind(let mutation):
-            .bind(
-                paneId: mutation.paneId,
-                providerIdentifier: mutation.providerIdentifier,
-                providerConversationId: mutation.providerConversationId
-            )
-        case .message(let mutation):
-            switch mutation.context {
-            case .sourceGeneration(let paneId, let sourceGenerationId):
-                .source(paneId: paneId, sourceGenerationId: sourceGenerationId)
-            case .currentPaneBinding(let paneId), .unattributed(let paneId):
-                .pane(paneId)
-            }
-        case .recordEvidence(let mutation):
-            switch mutation.context {
-            case .sourceGeneration(let paneId, let sourceGenerationId):
-                .source(paneId: paneId, sourceGenerationId: sourceGenerationId)
-            case .currentPaneBinding(let paneId), .unattributed(let paneId):
-                .pane(paneId)
-            }
-        case .deliberateNeedsYou(let mutation): .pane(mutation.paneId)
-        case .clearDeliberateNeedsYou(let mutation): .pane(mutation.paneId)
-        case .deliberateDone(let mutation): .pane(mutation.paneId)
-        case .sourceEnded(let mutation):
-            .source(paneId: mutation.paneId, sourceGenerationId: mutation.sourceGenerationId)
-        case .acknowledgeMessage(let mutation): .message(mutation.occurrenceId)
-        case .recordLiveLoss(let mutation): .pane(mutation.paneId)
-        case .prepareForLaunch: .allActiveSources
-        }
-    }
-
-    fileprivate var operationScope: String {
-        switch self {
-        case .acknowledgeMessage(let mutation): "message:\(mutation.occurrenceId.uuidString)"
-        case .prepareForLaunch: "sessions:launch"
-        default: "pane:\(paneId?.uuidString ?? "unknown")"
-        }
-    }
-
-    fileprivate var operationKind: String {
-        switch self {
-        case .bind: "bind"
-        case .message: "message"
-        case .recordEvidence: "evidence"
-        case .deliberateNeedsYou: "deliberateNeedsYou"
-        case .clearDeliberateNeedsYou: "clearDeliberateNeedsYou"
-        case .deliberateDone: "deliberateDone"
-        case .sourceEnded: "sourceEnded"
-        case .acknowledgeMessage: "messageAcknowledgment"
-        case .recordLiveLoss: "loss"
-        case .prepareForLaunch: "prepareForLaunch"
-        }
-    }
-
-    fileprivate var providerOccurrence: SessionsProviderOccurrenceIdentity? {
-        switch self {
-        case .bind(let mutation):
-            guard case .qualifiedSessionStart(let occurrenceId) = mutation.transition else {
-                return nil
-            }
-            return SessionsProviderOccurrenceIdentity(kind: .bind, occurrenceId: occurrenceId)
-        case .recordEvidence(let mutation):
-            return SessionsProviderOccurrenceIdentity(kind: .evidence, occurrenceId: mutation.occurrenceId)
-        case .message, .deliberateNeedsYou, .clearDeliberateNeedsYou, .deliberateDone,
-            .sourceEnded, .acknowledgeMessage, .recordLiveLoss, .prepareForLaunch:
-            return nil
-        }
-    }
-
-    fileprivate var occurredAt: Date {
-        switch self {
-        case .bind(let mutation): mutation.reportedAt
-        case .message(let mutation): mutation.receivedAt
-        case .recordEvidence(let mutation): mutation.occurredAt
-        case .deliberateNeedsYou(let mutation): mutation.reportedAt
-        case .clearDeliberateNeedsYou(let mutation): mutation.clearedAt
-        case .deliberateDone(let mutation): mutation.reportedAt
-        case .sourceEnded(let mutation): mutation.endedAt
-        case .acknowledgeMessage(let mutation): mutation.acknowledgedAt
-        case .recordLiveLoss(let mutation): mutation.occurredAt
-        case .prepareForLaunch(let date): date
-        }
-    }
-
-    fileprivate func semanticFingerprint() throws -> String {
-        let encoder = JSONEncoder()
-        encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
-        encoder.dateEncodingStrategy = .secondsSince1970
-        let digest = SHA256.hash(data: try encoder.encode(semanticIntent))
-        return digest.map { String(format: "%02x", $0) }.joined()
-    }
-
-    private var semanticIntent: SessionsMutationSemanticIntent {
-        switch self {
-        case .bind(let mutation): .bind(mutation)
-        case .message(let mutation):
-            .message(
-                SessionsMessageSemanticIntent(
-                    context: mutation.context,
-                    text: mutation.text,
-                    freshness: mutation.freshness
-                )
-            )
-        case .recordEvidence(let mutation): .providerEvidence(mutation)
-        case .deliberateNeedsYou(let mutation):
-            .deliberateNeedsYou(
-                SessionsNeedsYouSemanticIntent(
-                    paneId: mutation.paneId,
-                    explanation: mutation.explanation
-                )
-            )
-        case .clearDeliberateNeedsYou(let mutation):
-            .clearDeliberateNeedsYou(SessionsPaneSemanticIntent(paneId: mutation.paneId))
-        case .deliberateDone(let mutation):
-            .deliberateDone(SessionsPaneSemanticIntent(paneId: mutation.paneId))
-        case .sourceEnded(let mutation): .sourceEnded(mutation)
-        case .acknowledgeMessage(let mutation):
-            .acknowledgeMessage(
-                SessionsAcknowledgmentSemanticIntent(occurrenceId: mutation.occurrenceId)
-            )
-        case .recordLiveLoss(let mutation): .recordLiveLoss(mutation)
-        case .prepareForLaunch: .prepareForLaunch
-        }
-    }
-}
-
-private enum SessionsMutationSemanticIntent: Encodable {
-    case bind(SessionsBindMutation)
-    case message(SessionsMessageSemanticIntent)
-    case providerEvidence(SessionsEvidenceMutation)
-    case deliberateNeedsYou(SessionsNeedsYouSemanticIntent)
-    case clearDeliberateNeedsYou(SessionsPaneSemanticIntent)
-    case deliberateDone(SessionsPaneSemanticIntent)
-    case sourceEnded(SessionsSourceEndMutation)
-    case acknowledgeMessage(SessionsAcknowledgmentSemanticIntent)
-    case recordLiveLoss(SessionsLiveLossMutation)
-    case prepareForLaunch
-}
-
-private struct SessionsMessageSemanticIntent: Encodable {
-    let context: SessionsReportContext
-    let text: String
-    let freshness: SessionsEvidenceFreshness
-}
-
-private struct SessionsNeedsYouSemanticIntent: Encodable {
-    let paneId: UUID
-    let explanation: String
-}
-
-private struct SessionsPaneSemanticIntent: Encodable {
-    let paneId: UUID
-}
-
-private struct SessionsAcknowledgmentSemanticIntent: Encodable {
-    let occurrenceId: UUID
 }

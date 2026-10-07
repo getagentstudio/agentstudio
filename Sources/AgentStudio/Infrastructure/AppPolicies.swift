@@ -2,16 +2,63 @@ import CoreGraphics
 import Foundation
 
 package enum AppPolicies {
+    package enum PaneContext {
+        package static let maximumBodyBytes = 4096
+        package static let maximumWhyBytes = 1024
+        package static let maximumChoices = 12
+        package static let maximumChoiceLabelBytes = 200
+        package static let maximumFormProperties = 16
+        package static let maximumFormBytes = 8192
+        package static let maximumAnswerBytes = 8192
+        package static let maximumActions = 4
+        package static let maximumActionBytes = 1024
+        package static let maximumLineSummaryBytes = 200
+        package static let maximumLineDetailBytes = 2048
+        package static let maximumLineWorkBytes = 200
+        package static let maximumLineStep = 10_000
+        package static let maximumLineRefs = 8
+        package static let maximumLineRefBytes = 512
+        package static let maximumTitleBytes = 256
+        package static let maximumOpenAsks = 32
+        package static let maximumUnreadNotices = 200
+        package static let maximumPendingAffectedOwners = 256
+        package static let maximumSettledMessages = 20
+        package static let settledMessageLifetime: TimeInterval = 1800
+        package static let maximumDetailBytes = 1_048_576
+        package static var maximumMessageDetailBytes: Int {
+            maximumBodyBytes + maximumWhyBytes + maximumFormBytes + maximumAnswerBytes
+                + maximumActions * maximumActionBytes + maximumActions * maximumActionBytes
+        }
+        /// Holds bounded owner metadata, one maximal message, a drawer header,
+        /// one source continuation and the source-list continuation header.
+        package static var minimumDetailBytes: Int {
+            maximumMessageDetailBytes
+                + maximumTitleBytes + maximumLineSummaryBytes + maximumLineDetailBytes
+                + maximumLineWorkBytes + maximumLineRefs * maximumLineRefBytes
+                + maximumActions * maximumActionBytes
+                + Sessions.maximumListedOpenPrompts * (Sessions.maximumPromptSummaryBytes + maximumChoiceLabelBytes)
+                + Sessions.maximumFailureSummaryBytes + maximumActionBytes
+                + maximumActionBytes * 3
+        }
+        package static let maximumChangeEntries = 200
+        package static let maximumChangeBytes = 262_144
+        package static let changeRetentionLifetime: TimeInterval = 86_400
+        package static let panePurgeLifetime: TimeInterval = 86_400
+        /// Source-time allowance for pane messages.
+        package static let maximumSourceFutureSkew: TimeInterval = 300
+    }
+
     package enum Panes {
         package static let activityTimePublishInterval: Duration = .seconds(10)
     }
 
     package enum IPC {
+        /// Includes the active partial write and every frame waiting behind it.
+        package static let maximumQueuedOutputBytes: Int = 4 * 1_048_576
         package static let maximumTerminalWaitSeconds: Double = 86_400
-        /// One spooled notification is one wire frame, so the drainer accepts
-        /// exactly what the IPC server would have accepted live. A longer line
-        /// could never have been submitted and is malformed by construction.
-        package static let spoolDrainMaximumLineBytes: Int = 1_048_576
+        /// An offline notice is the live wire envelope, with the same inbound
+        /// bound. Larger payloads cannot reach live admission either.
+        package static let offlineNoticeMaximumPayloadBytes: Int = 1_048_576
         /// Deadline on the whole application termination drain. AppKit's
         /// `.terminateLater` has one exit, the reply, so an unbounded await in
         /// the drain does not delay quit — it cancels it.
@@ -19,6 +66,9 @@ package enum AppPolicies {
     }
 
     package enum Sessions {
+        package static let maximumPromptSummaryBytes = 1024
+        package static let maximumListedOpenPrompts = 16
+        package static let maximumFailureSummaryBytes = 2048
         /// Live ingress bounds. Exceeding either bound discloses the loss on
         /// the request instead of silently dropping the fact.
         package static let maximumPendingIngestionPerPane = 256

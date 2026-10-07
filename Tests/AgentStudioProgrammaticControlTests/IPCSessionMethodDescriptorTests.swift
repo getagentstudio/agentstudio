@@ -5,7 +5,7 @@ import Testing
 
 @Suite("IPC session method descriptors")
 struct IPCSessionMethodDescriptorTests {
-    @Test("the four session methods reach every channel with pane targeting")
+    @Test("the three session methods reach every channel with pane targeting")
     func sessionMethodsAreExposedOnEveryChannel() throws {
         let catalog = try makeCatalog()
         let sessions = catalog.sessions
@@ -13,7 +13,7 @@ struct IPCSessionMethodDescriptorTests {
 
         #expect(
             descriptors.map(\.metadata.name)
-                == ["session.event", "session.message", "session.query", "session.report"]
+                == ["session.event", "session.query", "session.refusal"]
         )
         for descriptor in descriptors {
             #expect(descriptor.metadata.exposure == .allChannels)
@@ -21,11 +21,9 @@ struct IPCSessionMethodDescriptorTests {
             #expect(descriptor.metadata.executionOwner == .sessionsIngest)
             #expect(descriptor.metadata.principalAvailability == .authenticated)
         }
-        #expect(sessions.sessionReport.requiredPrivileges == [.sessionReportWrite])
-        #expect(sessions.sessionMessage.requiredPrivileges == [.sessionReportWrite])
         #expect(sessions.sessionEvent.requiredPrivileges == [.sessionReportWrite])
+        #expect(sessions.sessionRefusal.requiredPrivileges == [.sessionReportWrite])
         #expect(sessions.sessionQuery.requiredPrivileges == [.sessionStateRead])
-        #expect(sessions.sessionReport.dataScope == .sessionReport)
         #expect(sessions.sessionQuery.dataScope == .sessionState)
     }
 
@@ -33,13 +31,11 @@ struct IPCSessionMethodDescriptorTests {
     func correlationPolicyMatchesMutationBoundary() throws {
         let sessions = try makeCatalog().sessions
 
-        #expect(sessions.sessionReport.isMutating)
-        #expect(sessions.sessionMessage.isMutating)
         #expect(sessions.sessionEvent.isMutating)
+        #expect(sessions.sessionRefusal.isMutating)
         #expect(!sessions.sessionQuery.isMutating)
-        #expect(sessions.sessionReport.correlationPolicy == .required)
-        #expect(sessions.sessionMessage.correlationPolicy == .required)
         #expect(sessions.sessionEvent.correlationPolicy == .required)
+        #expect(sessions.sessionRefusal.correlationPolicy == .required)
         #expect(sessions.sessionQuery.correlationPolicy == .notAccepted)
     }
 
@@ -54,46 +50,33 @@ struct IPCSessionMethodDescriptorTests {
         }
     }
 
-    @Test("only the deliberate verbs and message project model calls")
+    @Test("session descriptors expose no deliberate scalar projections or retired methods")
     func modelCallsCoverTheDeliberateVocabulary() throws {
-        let sessions = try makeCatalog().sessions
-
+        let catalog = try makeCatalog()
+        #expect(catalog.sessions.sessionEvent.modelCalls.isEmpty)
+        #expect(catalog.sessions.sessionQuery.modelCalls.isEmpty)
         #expect(
-            sessions.sessionReport.modelCalls.map(\.variant) == [.needsYou, .needsYouClear, .done]
-        )
-        #expect(sessions.sessionMessage.modelCalls.map(\.variant) == [.message])
-        #expect(sessions.sessionEvent.modelCalls.isEmpty)
-        #expect(sessions.sessionQuery.modelCalls.isEmpty)
-
-        let replies = Dictionary(
-            uniqueKeysWithValues: sessions.sessionReport.modelCalls.map { ($0.variant, $0.successReply) }
-        )
-        #expect(replies[.needsYou] == "needs-you recorded")
-        #expect(replies[.needsYouClear] == "needs-you cleared")
-        #expect(replies[.done] == "done recorded")
-        #expect(sessions.sessionMessage.modelCalls.first?.successReply == "message sent")
+            !catalog.erasedDescriptors.contains {
+                $0.metadata.name == "session.message" || $0.metadata.name == "session.report"
+            })
     }
 
-    @Test("model scalar arguments stay optional for needs-you and required for message text")
+    @Test("the replacement notice carries a required exact body and optional writer")
     func modelScalarArgumentsMatchTheVocabulary() throws {
-        let sessions = try makeCatalog().sessions
-        let needsYou = try #require(sessions.sessionReport.modelCalls.first { $0.variant == .needsYou })
-        let clear = try #require(sessions.sessionReport.modelCalls.first { $0.variant == .needsYouClear })
-        let message = try #require(sessions.sessionMessage.modelCalls.first)
-
-        #expect(needsYou.scalarArguments.map(\.parameterField) == ["explanation"])
-        #expect(needsYou.scalarArguments.first?.isRequired == false)
-        #expect(clear.scalarArguments.isEmpty)
-        #expect(message.scalarArguments.map(\.parameterField) == ["text"])
-        #expect(message.scalarArguments.first?.isRequired == true)
+        let catalog = try makeCatalog()
+        let descriptor = try #require(catalog.erasedDescriptors.first { $0.metadata.name == "pane.message.send" })
+        guard case .object(let fields) = descriptor.metadata.parameterSchema else {
+            Issue.record("Expected message fields")
+            return
+        }
+        #expect(fields.first { $0.name == "body" }?.presence == .required)
+        #expect(fields.first { $0.name == "writer" }?.presence == .optional)
     }
 
-    @Test("offline eligibility covers needs-you done and message but never a clear or a hook event")
+    @Test("retained hook and query methods never queue")
     func offlineEligibilityMatchesSettledScope() throws {
         let sessions = try makeCatalog().sessions
 
-        #expect(sessions.sessionReport.offlineEligibility == .modelCallVariants([.needsYou, .done]))
-        #expect(sessions.sessionMessage.offlineEligibility == .modelCallVariants([.message]))
         #expect(sessions.sessionEvent.offlineEligibility == .never)
         #expect(sessions.sessionQuery.offlineEligibility == .never)
     }
@@ -101,46 +84,120 @@ struct IPCSessionMethodDescriptorTests {
     @Test("an omitted handle defaults to the authenticated self pane")
     func handleDefaultsToSelf() throws {
         let sessions = try makeCatalog().sessions
-        let correlationId = UUIDv7.generate()
-
-        let report = try sessions.sessionReport.decodeParameters(
-            from: encodedObject(["kind": "done", "correlationId": correlationId.uuidString])
-        )
-        #expect(report.handle == "self")
-        #expect(report.kind == .done)
-        #expect(report.explanation == nil)
-
         let query = try sessions.sessionQuery.decodeParameters(from: encodedObject([:]))
         #expect(query.handle == "self")
     }
 
-    @Test("a query page never advertises more than the newest twenty messages")
-    func queryPageStaysBounded() throws {
+    @Test("query exposes the shared status summary and required nullable session and refusal")
+    func queryHasOneSummaryShape() throws {
         let sessions = try makeCatalog().sessions
-        let document = try #require(
-            JSONSerialization.jsonObject(
-                with: sessions.sessionQuery.contract.resultSchema.jsonSchemaData()
-            ) as? [String: Any]
-        )
+        let decoded = try JSONSerialization.jsonObject(
+            with: sessions.sessionQuery.contract.resultSchema.jsonSchemaData())
+        let document = try #require(decoded as? [String: Any])
         let properties = try #require(document["properties"] as? [String: [String: Any]])
-
-        #expect(properties["messages"]?["maxItems"] as? Int == 20)
-        #expect(IPCSessionSchemaLimits.maximumQueryMessageCount == 20)
+        #expect(Set(properties.keys) == ["paneId", "sourceHealth", "session", "lastRefusal"])
+        let required = try #require(document["required"] as? [String])
+        #expect(Set(required) == ["paneId", "sourceHealth", "session", "lastRefusal"])
+        let result = IPCSessionQueryResult(paneId: UUIDv7.generate(), sourceHealth: .unbound, session: nil)
+        let encoded = try JSONEncoder().encode(result)
+        let object = try JSONSerialization.jsonObject(with: encoded)
+        let fields = try #require(object as? [String: Any])
+        #expect(fields["session"] is NSNull)
+        #expect(fields["lastRefusal"] is NSNull)
+        let roundtrip = try JSONDecoder().decode(IPCSessionQueryResult.self, from: encoded)
+        #expect(roundtrip == result)
+        var missingRefusal = fields
+        missingRefusal.removeValue(forKey: "lastRefusal")
+        let missingRefusalData = try JSONSerialization.data(withJSONObject: missingRefusal)
+        #expect(throws: DecodingError.self) {
+            try JSONDecoder().decode(IPCSessionQueryResult.self, from: missingRefusalData)
+        }
+        var missing = fields
+        missing.removeValue(forKey: "session")
+        let missingData = try JSONSerialization.data(withJSONObject: missing)
+        #expect(throws: DecodingError.self) {
+            try JSONDecoder().decode(IPCSessionQueryResult.self, from: missingData)
+        }
+        var contradictory = fields
+        contradictory["sourceHealth"] = "live"
+        let contradictoryData = try JSONSerialization.data(withJSONObject: contradictory)
+        #expect(throws: DecodingError.self) {
+            try JSONDecoder().decode(IPCSessionQueryResult.self, from: contradictoryData)
+        }
     }
 
-    @Test("an unknown report kind is rejected before any owner sees it")
-    func unknownReportKindIsRejected() throws {
-        let sessions = try makeCatalog().sessions
-
-        #expect(throws: IPCSchemaValidationError.self) {
-            try sessions.sessionReport.decodeParameters(
-                from: encodedObject([
-                    "handle": "self",
-                    "kind": "shipIt",
-                    "correlationId": UUIDv7.generate().uuidString,
-                ])
-            )
+    @Test("an unbound query retains every closed refusal reason")
+    func unboundRefusalRoundTrips() throws {
+        let descriptor = try makeCatalog().sessions.sessionQuery
+        for reason in IPCSessionLastRefusalReason.allCases {
+            let result = IPCSessionQueryResult(
+                paneId: UUIDv7.generate(), sourceHealth: .unbound, session: nil,
+                lastRefusal: .init(reason: reason, event: "SessionStart", at: Date(timeIntervalSince1970: 1000)))
+            let encoded = try descriptor.encodeResult(result)
+            let decoded = try JSONDecoder().decode(IPCSessionQueryResult.self, from: encoded)
+            #expect(decoded == result)
         }
+        #expect(IPCSessionRefusalReason.allCases == [.noSessionId, .undecodablePayload])
+    }
+
+    @Test("a retired report cannot be looked up as a compiled method")
+    func unknownReportKindIsRejected() throws {
+        #expect(IPCBuiltInMethodIndex().entry(named: "session.report") == nil)
+        #expect(IPCBuiltInMethodIndex().entry(named: "session.message") == nil)
+    }
+
+    @Test("refusal wire round trips with pane authentication metadata and never queues")
+    func refusalContractRoundTrips() throws {
+        let descriptor = try makeCatalog().sessions.sessionRefusal
+        let params = IPCSessionRefusalParams(
+            handle: "self", reason: .noSessionId, event: "PreToolUse", correlationId: UUIDv7.generate())
+        #expect(try descriptor.decodeParameters(from: JSONEncoder().encode(params)) == params)
+        let result = IPCSessionRefusalResult(paneId: UUIDv7.generate())
+        #expect(try JSONDecoder().decode(IPCSessionRefusalResult.self, from: JSONEncoder().encode(result)) == result)
+        #expect(descriptor.isMutating)
+        #expect(descriptor.correlationPolicy == .required)
+        #expect(descriptor.offlineEligibility == .never)
+        #expect(IPCBuiltInMethodIndex().entry(named: "session.refusal") != nil)
+    }
+
+    @Test("refusal requires a valid UUID correlation field")
+    func refusalRequiresCorrelationField() throws {
+        let descriptor = try makeCatalog().sessions.sessionRefusal
+        let params = IPCSessionRefusalParams(handle: "self", reason: .noSessionId, correlationId: UUIDv7.generate())
+        var fields = try #require(
+            JSONSerialization.jsonObject(with: JSONEncoder().encode(params)) as? [String: Any])
+        fields.removeValue(forKey: "correlationId")
+        #expect(throws: IPCSchemaValidationError.self) {
+            try descriptor.decodeParameters(from: JSONSerialization.data(withJSONObject: fields))
+        }
+        fields["correlationId"] = "not-a-uuid"
+        #expect(throws: IPCSchemaValidationError.self) {
+            try descriptor.decodeParameters(from: JSONSerialization.data(withJSONObject: fields))
+        }
+    }
+
+    @Test("hook events round trip and reject removed permissionHandling and sourceOccurredAt")
+    func removedHookFieldsAreStrictlyRefused() throws {
+        let descriptor = try makeCatalog().sessions.sessionEvent
+        let params = IPCSessionEventParams(
+            handle: "self",
+            provider: .init(identifier: "claude-code", version: "9.9.9", mode: "cli"),
+            event: .init(
+                name: .permission, conversationId: "running-session", turnId: "turn-A",
+                requestId: nil, toolId: nil, subagentId: nil, occurrenceId: UUIDv7.generate()),
+            correlationId: UUIDv7.generate())
+        let encoded = try JSONEncoder().encode(params)
+        #expect(try descriptor.decodeParameters(from: encoded) == params)
+        var document = try #require(try JSONSerialization.jsonObject(with: encoded) as? [String: Any])
+        document["permissionHandling"] = "blockingAsk"
+        let oldPermission = try JSONSerialization.data(withJSONObject: document)
+        #expect(throws: (any Error).self) { try descriptor.decodeParameters(from: oldPermission) }
+        document.removeValue(forKey: "permissionHandling")
+        var event = try #require(document["event"] as? [String: Any])
+        event["sourceOccurredAt"] = 1_700_000_000
+        document["event"] = event
+        let oldTimestamp = try JSONSerialization.data(withJSONObject: document)
+        #expect(throws: (any Error).self) { try descriptor.decodeParameters(from: oldTimestamp) }
     }
 
     private static func sessionDescriptors(
@@ -152,7 +209,6 @@ struct IPCSessionMethodDescriptorTests {
     private func makeCatalog() throws -> IPCBuiltInMethodCatalog {
         try IPCBuiltInMethodCatalog(
             inputs: .init(
-                terminalWaitMaximumSeconds: 9,
                 relationships: .init(
                     paneFocus: .noInteractiveIdentity,
                     paneClose: .noInteractiveIdentity,

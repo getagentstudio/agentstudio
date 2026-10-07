@@ -1,4 +1,5 @@
 import AgentStudioGit
+import AgentStudioTestHarness
 import CoreServices
 import Darwin
 import Foundation
@@ -43,7 +44,25 @@ struct DarwinCompositeFSEventContinuityTests {
 
     @Test("unchanged shared ancestor ambiguity resolves without full Git fallback")
     func unchangedAncestorAmbiguityResolvesWithoutFallback() async throws {
-        let fixture = try CompositeContinuityFixture()
+        let activitySource = LocalFactSource<UUID, FSEventActivityObservationBatch>(
+            vocabulary: FactVocabulary(
+                describeScope: { "worktree \($0)" },
+                describeFact: { "shared activity through event \($0.processedThroughEventID)" },
+                isClosing: { _, _ in false }
+            )
+        )
+        let activityRecorder = try activitySource.attach()
+        let fixture = try CompositeContinuityFixture(
+            activityObservationSink: { batch in
+                for worktreeId in batch.participantWorktreeIds {
+                    activitySource.sink(worktreeId, batch)
+                }
+            }
+        )
+        defer {
+            fixture.client.shutdown()
+            activitySource.end()
+        }
         let authority = try #require(await fixture.prepareAuthority())
 
         fixture.streamFactory.send(
@@ -52,14 +71,18 @@ struct DarwinCompositeFSEventContinuityTests {
             flags: FSEventStreamEventFlags(kFSEventStreamEventFlagMustScanSubDirs)
         )
 
-        let renewedAuthority = await waitForRenewedAuthority(
-            client: fixture.client,
-            authority: authority
+        let renewedAuthority = try await waitForRenewedAuthority(
+            fixture: fixture,
+            authority: authority,
+            activityRecorder: activityRecorder
         )
         let performance = fixture.client.snapshotAndResetIngressPerformance()
 
         #expect(renewedAuthority?.resolvedAncestorAmbiguityEpoch == 1)
         #expect(performance.sharedFullRefreshEmissionCount == 0)
+        await fixture.shutdown()
+        activitySource.end()
+        try await activityRecorder.finish()
     }
 
     @Test("shared activity cursor waits for MustScan ancestor verification")
@@ -338,16 +361,28 @@ struct DarwinCompositeFSEventContinuityTests {
 }
 
 private func waitForRenewedAuthority(
-    client: DarwinFSEventStreamClient,
-    authority: GitCleanContinuityAuthority
-) async -> GitCleanContinuityAuthority? {
-    for _ in 0..<1000 {
-        if case .authoritative(let renewedAuthority) = await client.renew(authority) {
-            return renewedAuthority
-        }
-        await Task.yield()
-    }
-    return nil
+    fixture: CompositeContinuityFixture,
+    authority: GitCleanContinuityAuthority,
+    activityRecorder: FactRecorder<UUID, FSEventActivityObservationBatch>
+) async throws -> GitCleanContinuityAuthority? {
+    // Receive emits an initial batch before the asynchronous fingerprint recheck.
+    // The second batch for this event follows resolution of the ambiguity epoch.
+    let initialBatch = try await activityRecorder.expectNext(
+        in: fixture.worktreeId,
+        where: {
+            $0.participant.scopeKey.hasPrefix("shared:")
+                && $0.processedThroughEventID == 280
+                && $0.qualifyingWorktreeIds.isEmpty
+                && $0.coverageLostWorktreeIds.isEmpty
+        },
+        "initial shared ancestor ingestion for event 280"
+    )
+    _ = try await activityRecorder.expectNext(
+        in: fixture.worktreeId,
+        where: { $0 == initialBatch },
+        "completed shared ancestor recheck for event 280"
+    )
+    return await fixture.client.renew(authority).authority
 }
 
 private func waitForSharedActivitySettlement(
@@ -405,7 +440,8 @@ private final class CompositeContinuityFixture: @unchecked Sendable {
         blockedFlushNumber: Int = .max,
         sharedItemName: String = "configuration",
         additionalSharedItemNames: [String] = [],
-        regularFileOpened: @escaping CompositeRegularFileOpened = { _ in }
+        regularFileOpened: @escaping CompositeRegularFileOpened = { _ in },
+        activityObservationSink: @escaping @Sendable (FSEventActivityObservationBatch) -> Void = { _ in }
     ) throws {
         (fullRefreshEvents, fullRefreshContinuation) = AsyncStream.makeStream(
             of: FSEventBatch.self,
@@ -470,6 +506,7 @@ private final class CompositeContinuityFixture: @unchecked Sendable {
                     self?.activityObservationLock.withLock {
                         self?.recordedActivityObservationBatches.append(batch)
                     }
+                    activityObservationSink(batch)
                 case .activityProcessingFence(let fenceID):
                     client.acknowledgeActivityProcessingFence(fenceID)
                 case .batch(let batch):

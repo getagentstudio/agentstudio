@@ -5,10 +5,15 @@ package actor WatchedFolderScanScheduler {
     typealias SessionFactory =
         @Sendable (WatchedFolderScanRequest, UInt64) async -> WatchedFolderScannerSessionPort
 
+    package typealias ValidationAdmissionSubmitter =
+        @Sendable (RepoDiscoveryValidationRequest) async -> RepoDiscoveryValidationAdmissionResult
+
+    let validationAdmissionSubmitter: ValidationAdmissionSubmitter
     private let maximumConcurrentScans: Int
     let now: @Sendable () -> Duration
     private let sessionFactory: SessionFactory
     let validationExecutor: RepoScannerValidationExecutor
+    let factSink: WatchedFolderScanSchedulerFactSink?
 
     var currentRootBySourceID: [FilesystemSourceID: RegisteredRootDescriptor] = [:]
     private var retiredRootBySourceID: [FilesystemSourceID: RegisteredRootDescriptor] = [:]
@@ -26,6 +31,9 @@ package actor WatchedFolderScanScheduler {
     var isShuttingDown = false
     private var isShutDown = false
     var validationCompletionDrainTask: Task<Void, Never>?
+    var validationPhysicalDrainTask: Task<Void, Never>?
+    var parkedValidationByRequestID: [RepoDiscoveryValidationRequestID: AwaitingValidation] = [:]
+    var validationAdmissionsByRequestID: [RepoDiscoveryValidationRequestID: InFlightValidationAdmission] = [:]
 
     init(
         maximumConcurrentScans: Int,
@@ -33,6 +41,8 @@ package actor WatchedFolderScanScheduler {
         initialDemandGenerations: [FilesystemSourceID: WatchedFolderScanDemandGeneration] = [:],
         now: @escaping @Sendable () -> Duration,
         validationExecutor: RepoScannerValidationExecutor,
+        factSink: WatchedFolderScanSchedulerFactSink? = nil,
+        validationAdmissionSubmitter: ValidationAdmissionSubmitter? = nil,
         sessionFactory: @escaping SessionFactory
     ) throws {
         guard maximumConcurrentScans > 0 else {
@@ -45,6 +55,11 @@ package actor WatchedFolderScanScheduler {
         self.demandGenerationBySourceID = initialDemandGenerations
         self.now = now
         self.validationExecutor = validationExecutor
+        self.factSink = factSink
+        self.validationAdmissionSubmitter =
+            validationAdmissionSubmitter ?? { request in
+                await validationExecutor.submit(request)
+            }
         self.sessionFactory = sessionFactory
     }
 
@@ -442,10 +457,7 @@ extension WatchedFolderScanScheduler {
                 cancelRunningQuantum(sourceID: sourceID, running: running)
             case .awaitingValidation(let awaiting),
                 .awaitingValidationAndDirty(let awaiting, _):
-                _ = awaiting.logicalScan.session.cancel()
-                _ = await validationExecutor.cancel(
-                    requestID: awaiting.executorRequest.requestID
-                )
+                await cancelAwaitingValidation(awaiting)
             case .pendingResult:
                 break
             case .pendingResultAndDirty(let pending, _):
@@ -459,8 +471,17 @@ extension WatchedFolderScanScheduler {
         let tasks = Array(quantumTasksBySourceID.values)
         for task in tasks { task.cancel() }
         for task in tasks { await task.value }
+        let admissions = Array(validationAdmissionsByRequestID.values)
+        for admission in admissions {
+            // Traversal cancellation/join is complete before admission settlement resumes.
+            factSink?(admission.scope, .shutdownAwaitingAdmission)
+            await admission.task.value
+        }
         if let validationCompletionDrainTask {
             await validationCompletionDrainTask.value
+        }
+        if let validationPhysicalDrainTask {
+            await validationPhysicalDrainTask.value
         }
         finalizeShutdownIfDrained()
     }
@@ -481,6 +502,16 @@ extension WatchedFolderScanScheduler {
             activeDemandCoverageBySourceID.removeValue(forKey: completion.sourceID)
             stateBySourceID.removeValue(forKey: completion.sourceID)
             finalizeShutdownIfDrained()
+            if let factSink, case .validationRequired(let scannerRequest) = completion.outcome {
+                factSink(
+                    WatchedFolderScanValidationScope(
+                        registration: completion.registration,
+                        scanRunGeneration: completion.scanRunGeneration,
+                        requestID: RepoDiscoveryValidationRequestID(rawValue: scannerRequest.requestID.rawValue)
+                    ),
+                    .validationDiscardedDuringShutdown
+                )
+            }
             return
         }
         guard currentRootBySourceID[completion.sourceID]?.registration == completion.registration else {
@@ -828,7 +859,9 @@ extension WatchedFolderScanScheduler {
     func finalizeShutdownIfDrained() {
         guard isShuttingDown, occupiedCreditCount == 0,
             stateCounts.awaitingValidation == 0,
+            validationAdmissionsByRequestID.isEmpty,
             validationCompletionDrainTask == nil
+                && validationPhysicalDrainTask == nil
         else { return }
         isShutDown = true
         isShuttingDown = false

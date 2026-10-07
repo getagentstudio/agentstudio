@@ -15,7 +15,7 @@ struct AgentStudioIPCPathResolverTests {
         #expect(paths.socketDirectory == paths.ipcDirectory)
         #expect(paths.metadataURL == root.appendingPathComponent("ipc/runtime.json"))
         #expect(paths.socketURL == root.appendingPathComponent("ipc/agentstudio.sock"))
-        #expect(paths.spoolDirectory == root.appendingPathComponent("ipc/spool/v2", isDirectory: true))
+        #expect(paths.cliStoreURL == root.appendingPathComponent("ipc/cli.sqlite"))
     }
 
     @Test("can keep metadata under root while binding socket in a separate trusted directory")
