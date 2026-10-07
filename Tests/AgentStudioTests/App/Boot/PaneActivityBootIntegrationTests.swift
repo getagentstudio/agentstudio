@@ -163,7 +163,10 @@ struct PaneActivityBootIntegrationTests {
     @Test("timestamp magnitude uses the same representability margin", arguments: [-1.0, 1.0])
     func timestampRepresentationMargin(sign: Double) {
         let marginSeconds = Double(Int64.max / 2).nextDown
-        let boundDate = Date(timeIntervalSince1970: sign * marginSeconds)
+        // Date's Unix-to-reference epoch conversion rounds the negative edge
+        // outward; take the nearest representable Date inside that same bound.
+        let boundTimestamp = sign > 0 ? marginSeconds : -marginSeconds.nextDown
+        let boundDate = Date(timeIntervalSince1970: boundTimestamp)
         let atBound = PaneActivityRecord(paneId: UUIDv7.generate(), wallTime: boundDate, source: .hook)
         #expect(atBound.restoredActivityTime(referenceInstant: ContinuousClock.now, wallNow: boundDate) != nil)
         let pastBoundDate = Date(timeIntervalSince1970: sign * marginSeconds.nextUp)
