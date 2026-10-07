@@ -10,6 +10,7 @@ private let concurrentChildStreamsLineRelayFixture = #"""
     TIMEOUT_SECONDS=60
     fixture_directory='__FIXTURE_DIRECTORY__'
     BUILD_PATH="$fixture_directory/build"
+    unset SWIFT_TEST_OUTPUT_RELAY_LOCK_PATH SWIFT_TEST_OUTPUT_RELAY_SCRIPT_PATH
     LANE_EVENT_STREAM_DIR="$fixture_directory/events"
     SWIFT_TEST_OUTPUT_RELAY_START_DIRECTORY="$fixture_directory/relay-starts"
     _XCB_BYPASS=1

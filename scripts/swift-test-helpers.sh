@@ -2946,6 +2946,9 @@ print_timeout_process_diagnostics() {
   local root_pid="$2"
   local evidence_stem="${3:-$(lane_evidence_stem "$label")}"
 
+  if ! swift_test_process_id_has_survivors "$root_pid"; then
+    echo "[$LOG_PREFIX] lane-report timeout_root=exited_before_diagnostics"
+  fi
   if ! swift_test_process_listing_available; then
     echo "[$LOG_PREFIX] process listing unavailable in this environment; reaping by process group"
     return 0
