@@ -55,6 +55,8 @@ enum RepoExplorerPaneSecondaryLine: Equatable, Sendable {
 
 struct RepoExplorerPaneRowFacts: Equatable, Sendable {
     let terminalTitle: String
+    let sessionStatus: AgentSessionStatus?
+    let contextDisplay: PaneContextDisplay?
     let activityAt: Date?
     let paneActivityTime: PaneActivityTime?
     let isPinned: Bool
@@ -70,6 +72,8 @@ struct RepoExplorerPaneRowFacts: Equatable, Sendable {
 
     init(
         terminalTitle: String,
+        sessionStatus: AgentSessionStatus? = nil,
+        contextDisplay: PaneContextDisplay? = nil,
         activityAt: Date? = nil,
         paneActivityTime: PaneActivityTime? = nil,
         isPinned: Bool = false,
@@ -84,6 +88,8 @@ struct RepoExplorerPaneRowFacts: Equatable, Sendable {
         drawerOwnerPaneID: UUID? = nil
     ) {
         self.terminalTitle = terminalTitle
+        self.sessionStatus = sessionStatus
+        self.contextDisplay = contextDisplay
         self.activityAt = activityAt
         self.paneActivityTime = paneActivityTime
         self.isPinned = isPinned
@@ -103,7 +109,7 @@ struct RepoExplorerPaneRowFacts: Equatable, Sendable {
     }
 
     var sidebarTerminalTitle: String {
-        terminalTitle
+        contextDisplay?.agentTitle ?? terminalTitle
     }
 
     private func normalizedSecondaryText(_ text: String?) -> String? {

@@ -860,6 +860,11 @@ swift_test_judge_invocation_status() {
 swift_test_suite_lane_inventory() {
   cat <<'EOF'
 fast|AgentStudioFileViewStartupDiagnosticTests|concurrent
+fast|PaneContextPopoverViewTests|process-global
+fast|PaneContextPopoverActionViewTests|process-global
+fast|PaneContextPopoverControllerNativeTests|process-global
+fast|RepoExplorerPaneContextAnchorTests|process-global
+fast|PaneContextPopoverHostNativeTests|process-global
 large|AgentStudioAppIPCConnectionAdmissionTests|concurrent
 large|AgentStudioAppIPCConnectionWaitingTests|concurrent
 large|AgentStudioAppIPCConnectionOutputTests|concurrent

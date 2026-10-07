@@ -329,6 +329,9 @@ struct DrawerIconBar: View {
                                         }
                                     }
 
+                                    if let paneContextContent = trailingActions.paneContextContent {
+                                        paneContextContent
+                                    }
                                     if !paneContextActions.isEmpty {
                                         if hasPrimaryTrailingActions(trailingActions) {
                                             trailingActionDivider

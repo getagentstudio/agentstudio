@@ -288,6 +288,9 @@ extension RepoExplorerProjection {
             )
         }
         var pinnedRow = row
+        pinnedRow.messageChip = facts?.contextDisplay.map {
+            RepoExplorerPaneMessageCountProjection.make(display: $0, isDrawer: row.isDrawerPane)
+        }
         pinnedRow.isPinned = facts?.isPinned ?? false
         pinnedRow.drawerOwnerPaneID = facts?.drawerOwnerPaneID
         let note: String? =
@@ -298,7 +301,10 @@ extension RepoExplorerProjection {
             note: note,
             isDrawer: row.isDrawerPane,
             branchStatus: row.branchStatus,
-            isActive: row.isActive
+            isActive: row.isActive,
+            agentLine: facts?.contextDisplay?.agentLine,
+            sessionStatus: facts?.sessionStatus,
+            messageCount: pinnedRow.messageChip?.count ?? 0
         )
         return pinnedRow
     }

@@ -114,6 +114,7 @@ class PaneTabViewController: NSViewController, NSPopoverDelegate, WorkspaceComma
     private let bridgePaneAttendance: BridgePaneAttendanceAtom
     private let editorChooser: EditorChooserState
     private let sessionsPaneViewedMailbox: SessionsPaneViewedMailbox?
+    private let paneContextReaders: PaneContextUIReaders?
     private let paneInboxPresentation: PaneInboxPresentation?
     private let closeTransitionCoordinator: PaneCloseTransitionCoordinator
     private let performanceTraceRecorder: AgentStudioPerformanceTraceRecorder?
@@ -255,6 +256,7 @@ class PaneTabViewController: NSViewController, NSPopoverDelegate, WorkspaceComma
         bridgePaneAttendance: BridgePaneAttendanceAtom,
         editorChooser: EditorChooserState,
         sessionsPaneViewedMailbox: SessionsPaneViewedMailbox? = nil,
+        paneContextReaders: PaneContextUIReaders? = nil,
         paneInboxPresentation: PaneInboxPresentation? = nil,
         pinnedPanePreferences: RepoExplorerSidebarPrefsAtom? = nil,
         installedEditorTargetsProvider: @escaping @MainActor () -> [ExternalEditorTarget] = {
@@ -312,6 +314,7 @@ class PaneTabViewController: NSViewController, NSPopoverDelegate, WorkspaceComma
         self.bridgePaneAttendance = bridgePaneAttendance
         self.editorChooser = editorChooser
         self.sessionsPaneViewedMailbox = sessionsPaneViewedMailbox
+        self.paneContextReaders = paneContextReaders
         self.paneInboxPresentation = paneInboxPresentation
         self.installedEditorTargetsProvider = installedEditorTargetsProvider
         self.openEditorHandler = openEditorHandler
@@ -1381,7 +1384,7 @@ class PaneTabViewController: NSViewController, NSPopoverDelegate, WorkspaceComma
             interactionProbe: interactionProbe
         )
 
-        return PersistentTabHostView(tabId: tabId, rootView: contentView)
+        return PersistentTabHostView(tabId: tabId, rootView: contentView, paneContextReaders: paneContextReaders)
     }
 
     func normalPaneSurfaceToolbarPresentation(

@@ -30,6 +30,7 @@ class MainWindowController: NSWindowController, NSWindowDelegate {
         workspaceWindowId: UUID = UUID(),
         store: WorkspaceStore,
         octiconLoader: OcticonLoader,
+        paneContextReaders: PaneContextUIReaders? = nil,
         workspaceActionExecutor: WorkspaceActionExecutor,
         runtimeCommandDispatcher: any PaneRuntimeCommandDispatching,
         applicationLifecycleMonitor: ApplicationLifecycleMonitor,
@@ -99,6 +100,7 @@ class MainWindowController: NSWindowController, NSWindowDelegate {
         let splitVC = MainSplitViewController(
             store: store,
             octiconLoader: octiconLoader,
+            paneContextReaders: paneContextReaders,
             workspaceWindowId: windowId,
             workspaceActionExecutor: workspaceActionExecutor,
             runtimeCommandDispatcher: runtimeCommandDispatcher,
