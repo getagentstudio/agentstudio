@@ -18,6 +18,7 @@ import { makeBridgeReviewPackage } from '../foundation/review-package/bridge-rev
 import { BridgeCodeViewPanel } from '../review-viewer/code-view/bridge-code-view-panel.js';
 import { buildBridgeReviewProjection } from '../review-viewer/navigation/review-projection.js';
 import { RecordingAnnotationBrowserSurface } from './worktree-annotation-browser-test-support.js';
+import { PierreInteractionSetupFacts } from './worktree-annotation-click-admission-setup.browser.test-support.js';
 import { WorktreeAnnotationSurfaceProvider } from './worktree-annotation-surface-provider.js';
 
 const composerSelector = '[aria-label="Write an annotation in Markdown"]';
@@ -212,7 +213,7 @@ describe('worktree annotation click admission through Pierre pointers', () => {
 				'[data-additions] [data-column-number="2"][data-line-type="change-addition"]',
 				'Expected a right-side addition gutter row.',
 			);
-			await hoverAndClickUtility(additionRow, 401);
+			await harness.hoverAndClickUtility(additionRow, 401);
 			expect(document.querySelector(composerSelector)).not.toBeNull();
 
 			await clickCurrentUtility(402);
@@ -228,7 +229,7 @@ describe('worktree annotation click admission through Pierre pointers', () => {
 				'[data-additions] [data-column-number="3"][data-line-type="context"]',
 				'Expected a later right-side context gutter row.',
 			);
-			await hoverAndClickUtility(contextRow, 403);
+			await harness.hoverAndClickUtility(contextRow, 403);
 
 			expect(harness.gutterAdmissions).toEqual([
 				{ range: { end: 2, side: 'additions', start: 2 } },
@@ -240,16 +241,54 @@ describe('worktree annotation click admission through Pierre pointers', () => {
 			harness.dispose();
 		}
 	});
+
+	test('awaits interaction setup before its first hover on already-rendered rows', async () => {
+		const harness = await renderReviewHarness(true);
+		const row = requirePierreElement(
+			'[data-additions] [data-column-number="2"][data-line-type="change-addition"]',
+			'Expected rendered rows while interaction setup is held.',
+		);
+		const hover = harness.hoverAndClickUtility(row, 501);
+		const firstAction = await harness.interactionSetup.firstHoverAction;
+		try {
+			expect(
+				firstAction,
+				'The hover must await its owner setup fact before dispatching a pointer.',
+			).toBe('awaitingInteractionSetup');
+			harness.interactionSetup.releaseSetup();
+			await hover;
+			expect(harness.gutterAdmissions).toEqual([
+				{ range: { end: 2, side: 'additions', start: 2 } },
+			]);
+			expect(document.querySelector(composerSelector)).not.toBeNull();
+		} finally {
+			harness.interactionSetup.releaseSetup();
+			// Join the old helper on the red path after proving its first pointer was lost.
+			if (firstAction === 'pointerMoveBeforeSetup') {
+				await act(async (): Promise<void> => {
+					dispatchPointer(row, 'pointermove', pointerAt(row.getBoundingClientRect(), 501));
+				});
+			}
+			try {
+				await hover;
+			} finally {
+				harness.dispose();
+			}
+		}
+	});
 });
 
-async function renderReviewHarness(): Promise<{
+async function renderReviewHarness(holdInteractionSetup = false): Promise<{
 	readonly codeView: CodeView;
 	readonly dispose: () => void;
 	readonly gutterAdmissions: RecordedGutterAdmission[];
 	readonly interactionLifecycle: string[];
+	readonly interactionSetup: PierreInteractionSetupFacts;
+	readonly hoverAndClickUtility: (row: HTMLElement, pointerId: number) => Promise<void>;
 }> {
 	const gutterAdmissions: RecordedGutterAdmission[] = [];
 	const interactionLifecycle: string[] = [];
+	const interactionSetup = new PierreInteractionSetupFacts(holdInteractionSetup);
 	// oxlint-disable-next-line unbound-method -- Restored below; invoked with its original receiver.
 	const originalSetOptions = CodeView.prototype.setOptions;
 	// oxlint-disable-next-line unbound-method -- Restored below; invoked with its original receiver.
@@ -269,10 +308,13 @@ async function renderReviewHarness(): Promise<{
 		originalCodeViewSetup.call(this, root);
 	};
 	InteractionManager.prototype.setup = function recordInteractionSetup(pre: HTMLPreElement): void {
-		interactionLifecycle.push('setup');
-		originalInteractionSetup.call(this, pre);
+		interactionSetup.install(this, pre, (): void => {
+			originalInteractionSetup.call(this, pre);
+			interactionLifecycle.push('setup');
+		});
 	};
 	InteractionManager.prototype.cleanUp = function recordInteractionCleanup(): void {
+		interactionSetup.retire(this);
 		interactionLifecycle.push('cleanup');
 		originalInteractionCleanup.call(this);
 	};
@@ -319,9 +361,17 @@ async function renderReviewHarness(): Promise<{
 			InteractionManager.prototype.setup = originalInteractionSetup;
 			InteractionManager.prototype.cleanUp = originalInteractionCleanup;
 			coordinator.dispose();
+			interactionSetup.dispose();
 		},
 		gutterAdmissions,
 		interactionLifecycle,
+		interactionSetup,
+		hoverAndClickUtility: async (row: HTMLElement, pointerId: number): Promise<void> => {
+			await interactionSetup.waitForSetup(row);
+			await hoverAndClickUtility(row, pointerId, (): void => {
+				interactionSetup.recordCompletedHover(row);
+			});
+		},
 	};
 }
 
@@ -378,11 +428,16 @@ async function dragRangeAndClickFirstUtility(
 	};
 }
 
-async function hoverAndClickUtility(row: HTMLElement, pointerId: number): Promise<void> {
+async function hoverAndClickUtility(
+	row: HTMLElement,
+	pointerId: number,
+	onHoverDispatched: () => void,
+): Promise<void> {
 	const bounds = row.getBoundingClientRect();
 	await act(async (): Promise<void> => {
 		dispatchPointer(row, 'pointermove', pointerAt(bounds, pointerId));
 	});
+	onHoverDispatched();
 	await waitForSinglePierreUtility();
 	await clickCurrentUtility(pointerId + 1);
 }
