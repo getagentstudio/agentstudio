@@ -63,9 +63,11 @@ struct SessionsRestoredMainTests {
         try await withSessionsIngestion(repository: fixture.makeRepository()) { ingestion in
             let restored = try await ingestion.sessionSummary(paneId: pane)
             switch scenario {
-            case .restoredSessionStartTakeover, .restoredUserPromptTakeover,
-                .childFirstAfterRestore, .restoredEndedSessionResume:
-                #expect(restored?.sessionRef.value == "S2" || restored?.sessionRef.value == "S3")
+            case .restoredSessionStartTakeover, .restoredUserPromptTakeover, .restoredEndedSessionResume:
+                #expect(restored?.sessionRef.value == "S2")
+                #expect(restored?.status != .idle(.ended))
+            case .childFirstAfterRestore:
+                #expect(restored?.sessionRef.value == "S3")
                 #expect(restored?.status != .idle(.ended))
             case .restoredParentConfirmsThenChildIgnored:
                 #expect(restored?.sessionRef.value == "S1")

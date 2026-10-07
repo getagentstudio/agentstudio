@@ -4,11 +4,19 @@ import Foundation
 extension SessionsEvidenceReducer {
     enum BindingDecision: Sendable {
         case ignored
-        case accepted(binding: SessionsBindingRecord, disposition: SessionsHookDisposition)
+        case accepted(
+            binding: SessionsBindingRecord,
+            disposition: SessionsHookDisposition,
+            supersededBinding: SessionsBindingRecord?
+        )
     }
 
     /// Rev 36's rows are evaluated in precedence order, inside the FIFO commit.
-    static func decideBinding(for hook: SessionsHookAdmission, context: SessionsRepositoryContext) -> BindingDecision {
+    static func decideBinding(
+        for hook: SessionsHookAdmission,
+        context: SessionsRepositoryContext,
+        confirmedLiveMain: Bool
+    ) -> BindingDecision {
         let ownBindings = context.bindings.filter { $0.paneId == hook.paneId }
         let ownMatching = ownBindings.first {
             $0.providerIdentifier == hook.providerIdentifier && $0.providerConversationId == hook.sessionId
@@ -16,32 +24,59 @@ extension SessionsEvidenceReducer {
         let liveMain = ownBindings.first { $0.status == .active }
 
         if let liveMain, liveMain.bindingGenerationId == ownMatching?.bindingGenerationId {
-            return .accepted(binding: liveMain, disposition: .applied)
+            return .accepted(binding: liveMain, disposition: .applied, supersededBinding: nil)
         }
         if let ownMatching, ownMatching.status == .ended, hook.eventName != .sessionStart {
-            return .accepted(binding: ownMatching, disposition: .recordedOnly)
+            return .accepted(binding: ownMatching, disposition: .recordedOnly, supersededBinding: nil)
         }
-        if let ownMatching, ownMatching.status == .ended, hook.eventName == .sessionStart, liveMain == nil {
+        if hook.eventName == .sessionStart, liveMain == nil || !confirmedLiveMain {
             return .accepted(
-                binding: makeBinding(hook, conversationId: ownMatching.conversationId, retained: ownMatching),
-                disposition: .bound)
+                binding: makeBinding(hook, conversationId: ownMatching?.conversationId, retained: ownMatching),
+                disposition: .bound,
+                supersededBinding: liveMain)
+        }
+        if let liveMain, !confirmedLiveMain {
+            return .accepted(
+                binding: makeBinding(hook, conversationId: context.matchingConversation?.id),
+                disposition: .bound,
+                supersededBinding: liveMain)
         }
         if liveMain != nil {
             return .ignored
         }
         return .accepted(
-            binding: makeBinding(hook, conversationId: context.matchingConversation?.id), disposition: .bound)
+            binding: makeBinding(hook, conversationId: context.matchingConversation?.id),
+            disposition: .bound,
+            supersededBinding: nil)
     }
 
     static func reduceHook(_ hook: SessionsHookAdmission, context: SessionsRepositoryContext)
         -> (SessionsRepositoryReduction?, BindingDecision)
     {
-        let decision = decideBinding(for: hook, context: context)
-        guard case .accepted(let binding, let disposition) = decision else { return (nil, decision) }
+        reduceHook(hook, context: context, confirmedLiveMain: true)
+    }
+
+    static func reduceHook(
+        _ hook: SessionsHookAdmission,
+        context: SessionsRepositoryContext,
+        confirmedLiveMain: Bool
+    ) -> (SessionsRepositoryReduction?, BindingDecision) {
+        let decision = decideBinding(for: hook, context: context, confirmedLiveMain: confirmedLiveMain)
+        guard case .accepted(let binding, let disposition, let supersededBinding) = decision
+        else { return (nil, decision) }
         let effect: SessionsEvidenceStatusEffect = disposition == .recordedOnly ? .recordedOnly : .applied
         var committedBinding = binding
         var conversations: [SessionsConversationRecord] = []
         var bindingChanges: [SessionsBindingRecord] = []
+        var sourceChanges: [SessionsSourceRecord] = []
+        if let supersededBinding {
+            bindingChanges.append(replacing(supersededBinding, status: .ended, endedAt: hook.admittedAt))
+            if let supersededSource = context.sources.first(where: {
+                $0.bindingGenerationId == supersededBinding.bindingGenerationId
+            }) {
+                sourceChanges.append(replacing(supersededSource, status: .ended, endedAt: hook.admittedAt))
+            }
+        }
         if disposition == .bound {
             conversations = [
                 .init(
@@ -84,10 +119,11 @@ extension SessionsEvidenceReducer {
             bindingGenerationId: binding.bindingGenerationId, sourceGenerationId: binding.sourceGenerationId,
             turnId: hook.turnId, subject: hook.subject, kind: hook.kind, origin: .reported, statusEffect: effect,
             occurredAt: hook.admittedAt, providerSignal: hook.signal)
+        if let source { sourceChanges.append(source) }
         return (
             .init(
                 conversationChanges: conversations, bindingChanges: bindingChanges,
-                sourceChanges: source.map { [$0] } ?? [], evidenceChanges: [evidence], outcome: disposition),
+                sourceChanges: sourceChanges, evidenceChanges: [evidence], outcome: disposition),
             decision
         )
     }

@@ -8,6 +8,7 @@ struct SessionsStatusRuntime {
     var currentBindingByPane: [UUID: UUID] = [:]
     // Restored bindings intentionally have no instant and predate this process's observations.
     var liveBindingBoundAt: [UUID: ContinuousClock.Instant] = [:]
+    var confirmedLiveBindingIds: Set<UUID> = []
     var pendingAsks: [UUID: OpenAskSummary] = [:]
     var latestViewedAt: [UUID: ContinuousClock.Instant] = [:]
     var retiredPaneIds: Set<UUID> = []
