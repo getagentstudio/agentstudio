@@ -6,7 +6,11 @@ import {
   chapterStepRequestedEventName,
   readChapterStepEventStepId,
 } from "../src/chapters/chapter-step-events";
-import { createScenePlayback } from "../src/home-page/scene-playback";
+import {
+  createScenePlayback,
+  scenePlaybackReadyEventName,
+  type ScenePlaybackControl,
+} from "../src/home-page/scene-playback";
 import type { SceneModule } from "../src/motion-scenes/scene-contract";
 
 const fixtures: HTMLElement[] = [];
@@ -86,6 +90,58 @@ afterEach(() => {
 });
 
 describe("chapter step tabs", () => {
+  it.each([390, 820])(
+    "publishes an automatic hold when readiness pauses before a scroll frame at %spx",
+    async (width) => {
+      // Arrange: the same ready-event pause as the full-page step-hop command.
+      await page.viewport(width, width === 390 ? 844 : 1000);
+      const root = createChapterStepsFixture();
+      const surface = requiredHtmlElement(root, "[data-rail-surface-target]");
+      const sceneRoot = requiredHtmlElement(surface, "[data-scene-root]");
+      const controller = initializeChapterSteps(root);
+      const sceneModule: SceneModule = {
+        sceneId: "chapter-context-with-task",
+        steps: [{ stepId: "task-drawers", timelineLabel: "task-drawers" }],
+        buildScene: (scene, timeline): void => {
+          timeline.addLabel("task-drawers", 0).to(scene, { opacity: 0.9, duration: 4 });
+        },
+      };
+      const playback = createScenePlayback({
+        resolveModule: () => sceneModule,
+        sceneRoot,
+        surface,
+      });
+      sceneRoot.addEventListener(
+        scenePlaybackReadyEventName,
+        (event: Event): void => {
+          if (!(event instanceof CustomEvent)) throw new Error("Playback control missing");
+          const control: ScenePlaybackControl = event.detail;
+          control.pause();
+        },
+        { once: true },
+      );
+
+      try {
+        // Act: no scroll synchronization/frame follows the readiness callback.
+        playback.synchronize(1, true);
+
+        // Assert: the phase and countdown reflect the paused timeline now,
+        // rather than making the step-hop held wait depend on a later frame.
+        expect(sceneRoot.dataset["scenePlaybackState"]).toBe("paused");
+        expect(requiredHtmlElement(root, "[data-chapter-step-line]").dataset["stepPlayback"]).toBe(
+          "held",
+        );
+        expect(requiredHtmlElement(root, "[data-chapter-step-pause-glyph]").hidden).toBe(true);
+        expect(
+          root.querySelector("[data-chapter-step-ring-progress]")?.getAnimations()[0]?.playState,
+        ).toBe("paused");
+      } finally {
+        playback.dispose();
+        controller.destroy();
+      }
+    },
+  );
+
   it("enhances the static steps into a horizontal tablist with synchronized panels", async () => {
     await page.viewport(1280, 800);
     const root = createChapterStepsFixture();
