@@ -156,7 +156,8 @@ package final class TerminalRuntime: BusPostingPaneRuntime, TerminalRuntimeSnaps
     func handleGhosttyEvent(
         _ event: GhosttyEvent,
         commandId: UUID? = nil,
-        correlationId: UUID? = nil
+        correlationId: UUID? = nil,
+        commandFinishedSourceInstant: ContinuousClock.Instant? = nil
     ) {
         guard lifecycle != .terminated else {
             Self.logger.debug(
@@ -165,7 +166,14 @@ package final class TerminalRuntime: BusPostingPaneRuntime, TerminalRuntimeSnaps
             return
         }
 
-        if handleGhosttyStructuralEvent(event, commandId: commandId, correlationId: correlationId) { return }
+        if handleGhosttyStructuralEvent(
+            event,
+            commandId: commandId,
+            correlationId: correlationId,
+            commandFinishedSourceInstant: commandFinishedSourceInstant
+        ) {
+            return
+        }
         if handleGhosttyStateEvent(event, commandId: commandId, correlationId: correlationId) { return }
         if handleGhosttyConfigurationEvent(event, commandId: commandId, correlationId: correlationId) { return }
         if handleGhosttySearchEvent(event, commandId: commandId, correlationId: correlationId) { return }
@@ -252,7 +260,8 @@ package final class TerminalRuntime: BusPostingPaneRuntime, TerminalRuntimeSnaps
     private func handleGhosttyStructuralEvent(
         _ event: GhosttyEvent,
         commandId: UUID?,
-        correlationId: UUID?
+        correlationId: UUID?,
+        commandFinishedSourceInstant: ContinuousClock.Instant?
     ) -> Bool {
         switch event {
         case .newTab, .closeTab, .gotoTab, .moveTab, .newSplit, .gotoSplit, .resizeSplit, .equalizeSplits,
@@ -270,7 +279,16 @@ package final class TerminalRuntime: BusPostingPaneRuntime, TerminalRuntimeSnaps
             metadata.updateCWD(cwd)
             emit(event, commandId: commandId, correlationId: correlationId, persistForReplay: true)
             return true
-        case .commandFinished, .bellRang, .unhandled:
+        case .commandFinished:
+            emit(
+                event,
+                commandId: commandId,
+                correlationId: correlationId,
+                persistForReplay: true,
+                timestamp: commandFinishedSourceInstant
+            )
+            return true
+        case .bellRang, .unhandled:
             emit(event, commandId: commandId, correlationId: correlationId, persistForReplay: true)
             return true
         default:
@@ -436,7 +454,8 @@ package final class TerminalRuntime: BusPostingPaneRuntime, TerminalRuntimeSnaps
         _ event: GhosttyEvent,
         commandId: UUID?,
         correlationId: UUID?,
-        persistForReplay: Bool
+        persistForReplay: Bool,
+        timestamp: ContinuousClock.Instant? = nil
     ) {
         eventChannel.emit(
             paneId: paneId,
@@ -445,7 +464,8 @@ package final class TerminalRuntime: BusPostingPaneRuntime, TerminalRuntimeSnaps
             commandId: commandId,
             correlationId: correlationId,
             event: .terminal(event),
-            persistForReplay: persistForReplay
+            persistForReplay: persistForReplay,
+            timestamp: timestamp
         )
     }
 

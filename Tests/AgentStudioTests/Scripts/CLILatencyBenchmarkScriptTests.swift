@@ -10,17 +10,18 @@ struct CLILatencyBenchmarkScriptTests {
             .deletingLastPathComponent().deletingLastPathComponent()
     }
 
-    @Test("both notice families measure the owned-pane cleanup path under the hook-or-notice budget")
+    @Test("the replacement notice family measures the owned-pane cleanup path under the hook-or-notice budget")
     func noticeFamiliesAreMeasured() throws {
         let manifest = try object(Data(contentsOf: projectRoot.appending(path: "scripts/cli-latency-workloads.json")))
         let families = try #require(manifest["families"] as? [[String: Any]])
-        for name in ["message", "done"] {
+        #expect(!families.contains { $0["name"] as? String == "done" })
+        for name in ["notify"] {
             let family = try #require(
                 families.first { $0["name"] as? String == name }, "missing notice family: \(name)")
             #expect(family["budgetClass"] as? String == "hookOrNotice")
             #expect(family["fixtureRequirement"] as? String == "ownedPane")
             let arguments = try #require(family["argv"] as? [String])
-            let toolingMethod = name == "message" ? "session.message" : "session.report"
+            let toolingMethod = "pane.message.send"
             #expect(arguments.first == name || arguments.first == toolingMethod)
         }
     }
@@ -71,6 +72,29 @@ struct CLILatencyBenchmarkScriptTests {
         #expect(!FileManager.default.fileExists(atPath: fixture.outputURL.path))
     }
 
+    @Test("missing or mismatched fixture pane identity is refused before any CLI mutation", arguments: [false, true])
+    func refusesInvalidPaneEnvironment(missing: Bool) async throws {
+        let fixture = try BenchmarkScriptFixture()
+        defer { fixture.cleanup() }
+        let fixtureData = try Data(contentsOf: fixture.fixtureURL)
+        var fields = try object(fixtureData)
+        var environment = try #require(fields["environment"] as? [String: String])
+        if missing {
+            environment.removeValue(forKey: "AGENTSTUDIO_PANE_ID")
+        } else {
+            environment["AGENTSTUDIO_PANE_ID"] = UUIDv7.generate().uuidString
+        }
+        fields["environment"] = environment
+        let changedData = try JSONSerialization.data(withJSONObject: fields)
+        try changedData.write(to: fixture.fixtureURL)
+
+        let output = try await runHarness(fixture)
+
+        #expect(output.terminationStatus != 0)
+        #expect(!FileManager.default.fileExists(atPath: fixture.recordsURL.path))
+        #expect(!FileManager.default.fileExists(atPath: fixture.outputURL.path))
+    }
+
     @Test("all families retain 50 full-process samples and cleanup, with credentials excluded from reports")
     func benchmarkRecordsEveryFamilyAndRedacts() async throws {
         let fixture = try BenchmarkScriptFixture()
@@ -78,7 +102,7 @@ struct CLILatencyBenchmarkScriptTests {
         let output = try await runHarness(fixture)
         let report = try object(Data(contentsOf: fixture.outputURL.appendingPathComponent("report.json")))
         let families = try #require(report["families"] as? [[String: Any]])
-        #expect(families.count == 11)
+        #expect(families.count == 14)
         #expect(families.allSatisfy { $0["sampleCount"] as? Int == 50 })
         #expect(families.allSatisfy { $0["failedCalls"] as? Int == 0 })
         #expect(report["cleanup"] as? String == "closedOwnedPane")
@@ -88,11 +112,11 @@ struct CLILatencyBenchmarkScriptTests {
         #expect(report["verdict"] as? String == (allFamiliesPassed ? "PASS" : "FAIL"))
         #expect(output.terminationStatus == (allFamiliesPassed ? 0 : 1))
         let unmeasured = try #require(report["notMeasured"] as? [[String: Any]])
-        #expect(unmeasured.map { $0["family"] as? String } == ["line", "title", "notify"])
+        #expect(unmeasured.map { $0["family"] as? String } == ["ask", "withdraw"])
         #expect(unmeasured.allSatisfy { $0["verdict"] as? String == "NOT MEASURED" })
         let samples = try String(
             contentsOf: fixture.outputURL.appendingPathComponent("samples.jsonl"), encoding: .utf8)
-        #expect(samples.split(separator: "\n").count == 550)
+        #expect(samples.split(separator: "\n").count == 700)
         let saved = try String(contentsOf: fixture.outputURL.appendingPathComponent("report.json"), encoding: .utf8)
         let standardOutput = try #require(String(data: output.standardOutput, encoding: .utf8))
         for text in [saved, samples, standardOutput] {
@@ -105,7 +129,9 @@ struct CLILatencyBenchmarkScriptTests {
         #expect(calls.contains("hook SessionStart"))
         #expect(calls.contains("hook UserPromptSubmit"))
         #expect(calls.contains("pane.close"))
-        #expect(calls.split(separator: "\n").filter { $0 == "notice store=set" }.count == 102)
+        #expect(calls.split(separator: "\n").filter { $0 == "notice store=set" }.count == 51)
+        let identityProofs = Set(calls.split(separator: "\n").filter { $0.hasPrefix("identity ") }.map(String.init))
+        #expect(identityProofs == ["identity pane=bound codex=absent", "identity debug=absent"])
     }
 
     @Test("zero-exit fail-open hooks with diagnostics fail measurement and still close the owned pane")
@@ -168,6 +194,8 @@ struct CLILatencyBenchmarkScriptTests {
     private func runHarness(_ fixture: BenchmarkScriptFixture) async throws -> ExitedProcessOutput {
         var environment = ProcessInfo.processInfo.environment
         environment["AGENTSTUDIO_CLI_BENCHMARK_OUTPUT"] = fixture.outputURL.path
+        environment["CLAUDE_CODE_SESSION_ID"] = "parent-claude-sentinel"
+        environment["CODEX_THREAD_ID"] = "parent-codex-sentinel"
         return try await runProcessToExit(
             executableURL: URL(fileURLWithPath: "/bin/bash"),
             arguments: [
@@ -201,25 +229,52 @@ private struct BenchmarkScriptFixture {
             my $method = $ARGV[0] // '';
             open my $calls, '>>', $ENV{BENCHMARK_TEST_RECORDS} or die "fixture records";
             print {$calls} $method eq 'hook' ? "hook $ARGV[2]\n" : "$method\n";
-            if ($method eq 'message' || $method eq 'done' || $method eq 'session.message' || $method eq 'session.report') {
+            if ($method eq 'notify' || $method eq 'pane.message.send') {
                 print {$calls} 'notice store=' . ($ENV{AGENTSTUDIO_CLI_STORE} ? 'set':'absent') . "\n";
             }
-            close $calls;
             my $json = JSON::PP->new;
             my $pane = $ENV{BENCHMARK_TEST_PANE};
             my $runtime = $ENV{BENCHMARK_TEST_RUNTIME};
             my $state = "$ENV{BENCHMARK_TEST_RECORDS}.state";
+            my $binding = "$ENV{BENCHMARK_TEST_RECORDS}.binding";
             if ($method eq 'hook') {
+                local $/;
+                my $payload = $json->decode(<STDIN>);
+                if ($ARGV[2] eq 'SessionStart') {
+                    open my $out, '>', $binding or die "fixture binding";
+                    print {$out} $payload->{session_id};
+                    close $out;
+                }
                 if ($ARGV[2] eq 'UserPromptSubmit') { open my $out, '>', $state; print {$out} 'live'; close $out; }
                 if ($ARGV[2] eq 'PreToolUse' && $ENV{BENCHMARK_TEST_FAIL_HOOK}) { print STDERR "not delivered\n"; }
+                close $calls;
                 exit 0;
             }
+            if ($method =~ /^(?:notify|line|title|pane|answers)$/) {
+                open my $bound, '<', $binding or die "fixture binding";
+                local $/;
+                my $conversation = <$bound>;
+                close $bound;
+                my $identity = ($ENV{CLAUDE_CODE_SESSION_ID} // '') eq $conversation ? 'bound' : 'invalid';
+                my $codex = exists $ENV{CODEX_THREAD_ID} ? 'present' : 'absent';
+                print {$calls} "identity pane=$identity codex=$codex\n";
+            }
+            if ($method =~ /^(?:help|system\.identify|command\.execute|system\.capabilities|command\.list|pane\.close)$/) {
+                my $identity = exists $ENV{CLAUDE_CODE_SESSION_ID} || exists $ENV{CODEX_THREAD_ID} ? 'present' : 'absent';
+                print {$calls} "identity debug=$identity\n";
+            }
+            close $calls;
             my $result = {};
             if ($method eq 'help') { print "local help\n"; exit 0; }
             if ($method eq 'system.identify') { $result = {runtimeId=>$runtime, accessMode=>'agentStudioOnly'}; }
             if ($method eq 'auth.status') { $result = {authenticated=>JSON::PP::true, runtimeId=>$runtime, accessMode=>'agentStudioOnly'}; }
             if ($method eq 'pane.snapshot') { $result = {pane=>{id=>$pane}}; }
-            if ($method eq 'session.query') { $result = {paneId=>$pane, sourceHealth=>(-e $state ? 'live':'unbound'), state=>'running', origin=>'reported'}; }
+            if ($method eq 'line' || $method eq 'title') { $result = {kind=>'applied'}; }
+            if ($method eq 'pane') {
+                $result = {paneId=>$pane, revision=>0, messages=>[], drawerMessages=>[], links=>'unknown', pullRequests=>{kind=>'notApplicable'}};
+            }
+            if ($method eq 'answers') { $result = {entries=>[], nextPosition=>0, more=>JSON::PP::false}; }
+            if ($method eq 'session.query') { $result = {paneId=>$pane, sourceHealth=>(-e $state ? 'live':'unbound'), session=>(-e $state ? {status=>{kind=>'working',state=>'active'}} : undef)}; }
             if ($method eq 'terminal.status') { $result = {isReady=>JSON::PP::true, paneId=>$pane}; }
             if ($method eq 'command.execute') {
                 if ($ENV{BENCHMARK_TEST_FAIL_COMMAND} || ($ARGV[1] // '') ne '--command-id' || ($ARGV[2] // '') ne 'scrollToBottom') {
@@ -241,6 +296,7 @@ private struct BenchmarkScriptFixture {
             "debugEscrowPath": escrowURL.path,
             "environment": [
                 "AGENTSTUDIO_CLI": cliURL.path,
+                "AGENTSTUDIO_PANE_ID": paneId.uuidString,
                 "AGENTSTUDIO_PANE_TOKEN": Self.fakeToken,
                 "AGENTSTUDIO_IPC_SOCKET": Self.fakeSocket,
                 "AGENTSTUDIO_CLI_STORE": root.appendingPathComponent("cli.sqlite").path,

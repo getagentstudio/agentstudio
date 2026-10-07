@@ -1,4 +1,5 @@
 import AgentStudioProgrammaticControl
+import AgentStudioSessions
 import AppKit
 import Foundation
 import GhosttyKit
@@ -104,7 +105,8 @@ func makeHarness(
     bridgeViewerOpenTelemetryAnchorFactory: @escaping @MainActor () -> BridgeViewerOpenTelemetryAnchor = {
         .live()
     },
-    interactionProbe: AgentStudioInteractionPerformanceProbe? = nil
+    interactionProbe: AgentStudioInteractionPerformanceProbe? = nil,
+    sessionsPaneViewedMailbox: SessionsPaneViewedMailbox? = nil
 ) -> Harness {
     makePaneTabViewControllerCommandHarness(
         store: injectedStore,
@@ -118,7 +120,8 @@ func makeHarness(
         traceRuntime: traceRuntime,
         bridgeViewerSurfaceRequestHandler: bridgeViewerSurfaceRequestHandler,
         bridgeViewerOpenTelemetryAnchorFactory: bridgeViewerOpenTelemetryAnchorFactory,
-        interactionProbe: interactionProbe
+        interactionProbe: interactionProbe,
+        sessionsPaneViewedMailbox: sessionsPaneViewedMailbox
     )
 }
 
@@ -137,7 +140,8 @@ func makePaneTabViewControllerCommandHarness(
     bridgeViewerOpenTelemetryAnchorFactory: @escaping @MainActor () -> BridgeViewerOpenTelemetryAnchor = {
         .live()
     },
-    interactionProbe: AgentStudioInteractionPerformanceProbe? = nil
+    interactionProbe: AgentStudioInteractionPerformanceProbe? = nil,
+    sessionsPaneViewedMailbox: SessionsPaneViewedMailbox? = nil
 ) -> PaneTabViewControllerCommandHarness {
     // Command execution still reads the app-global management-layer atom for
     // visibility and shortcut policy. Reset it so parallel suites cannot leak
@@ -192,6 +196,7 @@ func makePaneTabViewControllerCommandHarness(
         viewRegistry: viewRegistry,
         bridgePaneAttendance: atomRegistry.bridgePaneAttendance,
         editorChooser: atomRegistry.editorChooser,
+        sessionsPaneViewedMailbox: sessionsPaneViewedMailbox,
         paneInboxPresentation: nil,
         pinnedPanePreferences: RepoExplorerSidebarPrefsAtom(sidebarState: CoreAtomScope.store.workspaceSidebarState),
         installedEditorTargetsProvider: { [.cursor, .vscode] },

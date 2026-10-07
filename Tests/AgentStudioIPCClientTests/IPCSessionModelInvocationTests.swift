@@ -1,133 +1,63 @@
-import AgentStudioIPCClientCore
 import AgentStudioPrimitives
 import AgentStudioProgrammaticControl
 import Foundation
 import Testing
 
-@Suite("Session model invocations from the built-in catalog")
+@testable import AgentStudioIPCClientCore
+
+@Suite("IPC pane CLI invocations")
 struct IPCSessionModelInvocationTests {
-    @Test("the four model verbs resolve to their session descriptors and one-line replies")
-    func modelVerbsResolveToSessionDescriptors() throws {
-        let expectations = [
-            ModelVerbExpectation(
-                arguments: ["needs-you", "waiting on approval"],
-                method: "session.report",
-                variant: .needsYou,
-                reply: "needs-you recorded",
-                isOfflineEligible: true
-            ),
-            ModelVerbExpectation(
-                arguments: ["needs-you", "--clear"],
-                method: "session.report",
-                variant: .needsYouClear,
-                reply: "needs-you cleared",
-                isOfflineEligible: false
-            ),
-            ModelVerbExpectation(
-                arguments: ["done"],
-                method: "session.report",
-                variant: .done,
-                reply: "done recorded",
-                isOfflineEligible: true
-            ),
-            ModelVerbExpectation(
-                arguments: ["message", "hello"],
-                method: "session.message",
-                variant: .message,
-                reply: "message sent",
-                isOfflineEligible: true
-            ),
-        ]
-
-        for expectation in expectations {
-            let invocation = try parse(expectation.arguments)
-            #expect(invocation.descriptor.metadata.name == expectation.method)
-            guard case .model(let presentation) = invocation.presentation else {
-                Issue.record("\(expectation.arguments) did not resolve to a model invocation")
-                continue
-            }
-            #expect(presentation.variant == expectation.variant)
-            #expect(presentation.successReply == expectation.reply)
-            #expect(presentation.isOfflineEligible == expectation.isOfflineEligible)
-            #expect(presentation.showsDetail == false)
-        }
+    @Test("the seven pane verbs select compiled owners without discovery", arguments: IPCModelCallVariant.allCases)
+    func modelVerbsResolveToTheirDescriptors(verb: IPCModelCallVariant) throws {
+        let inputs = IPCBuiltInMethodCatalogInputs(examples: .init(illustrativeIdentifier: UUIDv7.generate()))
+        let descriptors = try IPCCompiledInvocationResolver().resolve(
+            arguments: [verb.rawValue], authenticated: true, inputs: inputs)
+        let expected =
+            verb.ordered ? ["auth.login", "pane.writer.claimEpoch", verb.methodName] : ["auth.login", verb.methodName]
+        #expect(descriptors.map { $0.metadata.name } == expected)
     }
 
-    @Test("a model verb carries its selector, scalar text and a generated correlation without a handle")
-    func modelVerbsCarryScalarArgumentsAndGeneratedCorrelation() throws {
-        let generated = UUIDv7.generate()
-        let invocation = try parse(["needs-you", "waiting on approval"], correlationId: generated)
-        let parameters = try JSONDecoder().decode(
-            SessionReportInvocationEnvelope.self, from: invocation.normalizedParameters.data
-        )
-
-        #expect(parameters.kind == "needsYou")
-        #expect(parameters.explanation == "waiting on approval")
-        #expect(parameters.handle == "self")
-        #expect(parameters.correlationId == generated)
-    }
-
-    @Test("an omitted needs-you explanation stays absent and message text stays required")
-    func optionalAndRequiredScalarArgumentsAreEnforced() throws {
-        let parameters = try JSONDecoder().decode(
-            SessionReportInvocationEnvelope.self,
-            from: try parse(["needs-you"]).normalizedParameters.data
-        )
-        #expect(parameters.explanation == nil)
-        #expect(parameters.kind == "needsYou")
-
-        #expect(throws: IPCDescriptorInvocationError.self) {
-            _ = try parse(["message"])
-        }
-    }
-
-    @Test("--detail requests the typed result without changing the resolved descriptor")
-    func detailRequestsTypedResult() throws {
-        let invocation = try parse(["done", "--detail"])
-
-        guard case .model(let presentation) = invocation.presentation else {
-            Issue.record("done did not resolve to a model invocation")
+    @Test("typed notice and ask drafts preserve exact text and distinguish their reason and form")
+    func modelVerbCarriesItsDeclaredPayload() throws {
+        let text = "exact 🧭 notice\nsecond line"
+        let notice = try PaneCLIIntent.parse(["notify", text], now: Date(timeIntervalSince1970: 1))
+        let ask = try PaneCLIIntent.parse(
+            ["ask", text, "--reason", "blocked", "--choice", "allow,deny"], now: Date(timeIntervalSince1970: 1))
+        guard case .notify(let draft) = notice, case .ask(let question) = ask else {
+            Issue.record("Expected typed drafts")
             return
         }
-        #expect(presentation.showsDetail)
-        #expect(invocation.descriptor.metadata.name == "session.report")
+        #expect(draft.body == text)
+        #expect(question.message.body == text)
+        #expect(question.reason == .blocked)
+        #expect(
+            question.form
+                == .choice(
+                    options: [.init(id: "allow", label: "allow"), .init(id: "deny", label: "deny")],
+                    allowsMultiple: false))
+        #expect(question.timeout == nil)
     }
 
-    private func parse(
-        _ arguments: [String],
-        correlationId: UUID = UUIDv7.generate()
-    ) throws -> IPCDescriptorInvocation {
-        try IPCDescriptorInvocationParser.parse(
-            arguments,
-            descriptors: try IPCBuiltInMethodCatalog(
-                inputs: .init(
-                    relationships: .init(
-                        paneFocus: .noInteractiveIdentity,
-                        paneClose: .noInteractiveIdentity,
-                        drawerToggle: .noInteractiveIdentity,
-                        drawerAddPane: .noInteractiveIdentity,
-                        bridgeDiffLoad: .noInteractiveIdentity,
-                        bridgeFileViewOpen: .noInteractiveIdentity
-                    ),
-                    examples: .init(illustrativeIdentifier: UUIDv7.generate())
-                )
-            ).erasedDescriptors,
-            correlationIDGenerator: { correlationId }
-        )
+    @Test("missing text, a timeout without wait and conflicting work declarations are refused")
+    func omittedRequiredArgumentsAreRefused() {
+        for arguments in [
+            ["notify"], ["ask", "Q", "--timeout", "30"], ["line", "X", "--done", "--working"],
+            ["title", "X", "--reset"],
+        ] {
+            #expect(throws: AgentStudioIPCClientError.self) {
+                try PaneCLIIntent.parse(arguments, now: Date(timeIntervalSince1970: 1))
+            }
+        }
     }
-}
 
-private struct ModelVerbExpectation {
-    let arguments: [String]
-    let method: String
-    let variant: IPCModelCallVariant
-    let reply: String
-    let isOfflineEligible: Bool
-}
-
-private struct SessionReportInvocationEnvelope: Decodable {
-    let handle: String
-    let kind: String
-    let explanation: String?
-    let correlationId: UUID
+    @Test("waiting changes the compiled owner and shares the timeout plus reply margin")
+    func blockingAskUsesItsDeclaredLifetime() throws {
+        let inputs = IPCBuiltInMethodCatalogInputs(examples: .init(illustrativeIdentifier: UUIDv7.generate()))
+        let arguments = ["ask", "Proceed?", "--wait", "--timeout", "30"]
+        let descriptors = try IPCCompiledInvocationResolver().resolve(
+            arguments: arguments, authenticated: true, inputs: inputs)
+        let intent = try PaneCLIIntent.parse(arguments, now: Date(timeIntervalSince1970: 1))
+        #expect(descriptors.map { $0.metadata.name } == ["auth.login", "pane.message.ask"])
+        #expect(intent.callLimit == .seconds(32))
+    }
 }

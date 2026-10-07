@@ -1,6 +1,7 @@
 import AgentStudioBridge
 import AgentStudioCore
 import AgentStudioInfrastructure
+import AgentStudioSessions
 import AgentStudioTerminal
 import AppKit
 import Foundation
@@ -59,6 +60,9 @@ final class WorkspaceSurfaceCoordinator {
 
     let store: WorkspaceStore
     var paneActivityClock: PaneActivityClock?
+    var sessionsPaneViewedMailbox: SessionsPaneViewedMailbox?
+    var sessionsIngestion: SessionsIngestion?
+    weak var paneContextService: PaneContextService?
     let undoClock: @Sendable () async throws -> WorkspaceUndoJournalTime
     let undoDelay: AsyncDelay
     let undoDeadlineWakeups = AsyncStream<Void>.makeStream(bufferingPolicy: .bufferingNewest(1))
@@ -451,7 +455,10 @@ final class WorkspaceSurfaceCoordinator {
 
     /// Shared final-retirement edge for undo expiry and committed direct discards.
     func retirePanesPermanently(_ paneIDs: Set<UUID>) {
-        paneActivityClock?.retire(Array(paneIDs))
+        let retiredPaneIDs = Array(paneIDs)
+        paneActivityClock?.retire(retiredPaneIDs)
+        sessionsPaneViewedMailbox?.retire(retiredPaneIDs)
+        paneContextService?.retire(retiredPaneIDs.map { PaneId(existingUUID: $0) })
     }
 
     private func updatePaneCWDAndResolvedContext(paneId: UUID, cwd: URL?) {
@@ -641,7 +648,7 @@ final class WorkspaceSurfaceCoordinator {
             let sourcePaneId = paneEnvelope.paneId
             switch paneEnvelope.event {
             case .terminal(let event):
-                handleTerminalRuntimeEvent(event, sourcePaneId: sourcePaneId)
+                await handleTerminalRuntimeEvent(event, sourcePaneId: sourcePaneId, reportedAt: paneEnvelope.timestamp)
             case .error(let errorEvent):
                 Self.logger.warning(
                     "Runtime error event received from pane \(sourcePaneId.uuid.uuidString, privacy: .public): \(String(describing: errorEvent), privacy: .public)"
@@ -675,13 +682,25 @@ final class WorkspaceSurfaceCoordinator {
         )
     }
 
-    private func handleTerminalRuntimeEvent(_ event: GhosttyEvent, sourcePaneId: PaneId) {
+    private func handleTerminalRuntimeEvent(
+        _ event: GhosttyEvent, sourcePaneId: PaneId, reportedAt: ContinuousClock.Instant
+    ) async {
         let sourcePaneUUID = sourcePaneId.uuid
         switch event {
         case .newTab, .newSplit, .gotoSplit, .resizeSplit, .equalizeSplits, .toggleSplitZoom,
             .closeTab, .gotoTab, .moveTab:
             Self.logger.debug(
                 "Ghostty structural runtime event dropped by coordinator for pane \(sourcePaneUUID.uuidString, privacy: .public) event=\(String(describing: event), privacy: .public)"
+            )
+            return
+        case .commandFinished(let exitCode, _):
+            do {
+                _ = try await sessionsIngestion?.submitCommandFinished(paneId: sourcePaneUUID, reportedAt: reportedAt)
+            } catch {
+                Self.logger.warning("Sessions command-finished admission failed")
+            }
+            Self.logger.debug(
+                "Terminal commandFinished event received for pane \(sourcePaneUUID.uuidString, privacy: .public) exitCode=\(exitCode, privacy: .public)"
             )
             return
         default:
@@ -697,8 +716,8 @@ final class WorkspaceSurfaceCoordinator {
 
         switch event {
         case .newTab, .newSplit, .gotoSplit, .resizeSplit, .equalizeSplits, .toggleSplitZoom,
-            .closeTab, .gotoTab, .moveTab:
-            // Structural events return through the explicit drop above.
+            .closeTab, .gotoTab, .moveTab, .commandFinished:
+            // Structural events and command exits were handled above.
             return
         case .titleChanged(let title):
             store.paneAtom.updatePaneTitle(sourcePaneUUID, title: title)
@@ -709,10 +728,6 @@ final class WorkspaceSurfaceCoordinator {
             // normalize here so both runtime and surface facts converge in the
             // shared pane identity update path below.
             updatePaneCWDAndResolvedContext(paneId: sourcePaneUUID, cwd: CWDNormalizer.normalize(cwdPath))
-        case .commandFinished(let exitCode, _):
-            Self.logger.debug(
-                "Terminal commandFinished event received for pane \(sourcePaneUUID.uuidString, privacy: .public) exitCode=\(exitCode, privacy: .public)"
-            )
         case .bellRang:
             AppEventBus.post(.worktreeBellRang(paneId: sourcePaneUUID))
             Self.logger.debug(

@@ -4,7 +4,8 @@ import GRDB
 enum CLIStoreMigrator {
     static let identityMigration = "001_cli_store_identity"
     static let outboxMigration = "002_cli_outbox"
-    static let knownMigrations: Set<String> = [identityMigration, outboxMigration]
+    static let stateMigration = "003_cli_state"
+    static let knownMigrations: Set<String> = [identityMigration, outboxMigration, stateMigration]
 
     private typealias Migration = (identifier: String, apply: @Sendable (Database) throws -> Void)
 
@@ -83,6 +84,24 @@ enum CLIStoreMigrator {
                                 message_id TEXT NOT NULL UNIQUE,
                                 payload_json TEXT NOT NULL,
                                 created_at INTEGER NOT NULL
+                            )
+                            """)
+                }
+            ),
+            (
+                stateMigration,
+                { database in
+                    try database.execute(
+                        sql: """
+                            CREATE TABLE cli_state (
+                                id TEXT PRIMARY KEY NOT NULL,
+                                kind TEXT NOT NULL,
+                                pane_id TEXT NOT NULL,
+                                session_ref TEXT NOT NULL,
+                                epoch INTEGER,
+                                claim_id TEXT,
+                                value INTEGER NOT NULL,
+                                UNIQUE(kind, pane_id, session_ref)
                             )
                             """)
                 }

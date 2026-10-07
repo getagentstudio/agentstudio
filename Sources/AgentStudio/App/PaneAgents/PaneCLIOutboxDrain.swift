@@ -1,5 +1,6 @@
 import AgentStudioAppIPC
 import AgentStudioCLIStore
+import AgentStudioCore
 import AgentStudioIPCTransport
 import AgentStudioInfrastructure
 import AgentStudioProgrammaticControl
@@ -8,7 +9,7 @@ import Foundation
 import Synchronization
 
 /// The app reads the CLI's immutable outbox. Its own local.sqlite cursor joins
-/// the existing Sessions transaction; a retry holds the rest of the prefix.
+/// the existing pane-context transaction; a retry holds the rest of the prefix.
 actor PaneCLIOutboxDrain {
     enum RefusalReason: String, Sendable {
         case malformedEnvelope
@@ -35,7 +36,7 @@ actor PaneCLIOutboxDrain {
         }
     }
 
-    private let admission: AgentStudioIPCSessionsAdapter
+    private let admission: AgentStudioIPCPaneContextAdapter
     private let sqliteAccess: any SessionsSQLiteAccess
     private let expectedChannel: CLIStoreChannel
     private let maximumPayloadBytes: Int
@@ -43,7 +44,7 @@ actor PaneCLIOutboxDrain {
     private let descriptors: [String: IPCAnyMethodDescriptor]
 
     init(
-        admission: AgentStudioIPCSessionsAdapter,
+        admission: AgentStudioIPCPaneContextAdapter,
         sqliteAccess: any SessionsSQLiteAccess,
         expectedChannel: CLIStoreChannel,
         maximumPayloadBytes: Int = AppPolicies.IPC.offlineNoticeMaximumPayloadBytes,
@@ -119,14 +120,6 @@ actor PaneCLIOutboxDrain {
             case .admitted:
                 // Participant already committed beside the notice effect.
                 report.admittedEntryCount += 1
-            case .duplicate:
-                // A correlation conflict already has a durable effect. No new
-                // Sessions mutation is being committed on this refusal path.
-                guard await commitCursor(participant) else {
-                    report.retryableEntryCount += 1
-                    return report
-                }
-                report.admittedEntryCount += 1
             case .malformed(let reason):
                 guard await commitCursor(participant) else {
                     report.retryableEntryCount += 1
@@ -160,65 +153,36 @@ actor PaneCLIOutboxDrain {
         payload: String,
         paneID: UUID,
         messageID: UUID?,
-        participant: (any SessionsCommitParticipant)?
+        participant: (any PaneContextCommitParticipant)?
     ) async -> NoticeDisposition {
         guard let request = try? JSONRPCCodec.decodeRequest(payload, maxBytes: maximumPayloadBytes) else {
             return .malformed(.malformedEnvelope)
         }
-        guard let descriptor = descriptors[request.method] else { return .malformed(.ineligibleMethod) }
+        guard let descriptor = descriptors[request.method], descriptor.metadata.offlineEligibility == .noticeOnly else {
+            return .malformed(.ineligibleMethod)
+        }
         guard let parameters = request.params,
             let bytes = try? JSONEncoder().encode(parameters),
             let normalized = try? descriptor.normalizeParameters(bytes)
         else { return .malformed(.malformedEnvelope) }
         do {
-            switch request.method {
-            case "session.message":
-                guard let params = try? JSONDecoder().decode(IPCSessionMessageParams.self, from: normalized.data) else {
-                    return .malformed(.malformedEnvelope)
-                }
-                guard isEligible(.message, descriptor: descriptor) else { return .malformed(.ineligibleVariant) }
-                guard matchesPane(params.handle, paneID: paneID) else { return .malformed(.foreignPane) }
-                guard messageID == nil || messageID == params.correlationId else {
-                    return .malformed(.malformedEnvelope)
-                }
-                _ = try await admission.recordAgentMessage(
-                    paneId: paneID, params: params, commitParticipant: participant)
-            case "session.report":
-                guard let params = try? JSONDecoder().decode(IPCSessionReportParams.self, from: normalized.data) else {
-                    return .malformed(.malformedEnvelope)
-                }
-                let variant: IPCModelCallVariant
-                switch params.kind {
-                case .needsYou: variant = .needsYou
-                case .clearNeedsYou: variant = .needsYouClear
-                case .done: variant = .done
-                }
-                guard isEligible(variant, descriptor: descriptor) else { return .malformed(.ineligibleVariant) }
-                guard matchesPane(params.handle, paneID: paneID) else { return .malformed(.foreignPane) }
-                guard messageID == nil || messageID == params.correlationId else {
-                    return .malformed(.malformedEnvelope)
-                }
-                _ = try await admission.recordDeliberateReport(
-                    paneId: paneID, params: params, commitParticipant: participant)
-            default: return .malformed(.ineligibleMethod)
-            }
+            guard request.method == "pane.message.send" else { return .malformed(.ineligibleMethod) }
+            let params = try JSONDecoder().decode(IPCPaneMessageSendParams.self, from: normalized.data)
+            guard case .notice = params.shape else { return .malformed(.ineligibleVariant) }
+            guard matchesPane(params.handle, paneID: paneID) else { return .malformed(.foreignPane) }
+            guard messageID == nil || messageID == params.messageId else { return .malformed(.malformedEnvelope) }
+            _ = try await admission.sendMessage(paneId: paneID, params: params, commitParticipant: participant)
             return .admitted
-        } catch let error as AppIPCSessionsError {
+        } catch let error as AppIPCPaneContextError {
             switch error.reason {
-            case .correlationConflict: return .duplicate
-            case .targetNotFound, .validationRejected, .bindingRequired: return .refused
-            case .ingestionUnavailable: return .retryable
+            case .unavailable: return .retryable
+            default: return .refused
             }
         } catch {
             // Admission can fail before its effect/cursor transaction commits.
             // Preserve the prefix for the next drain instead of consuming it.
             return .retryable
         }
-    }
-
-    private func isEligible(_ variant: IPCModelCallVariant, descriptor: IPCAnyMethodDescriptor) -> Bool {
-        guard case .modelCallVariants(let variants) = descriptor.metadata.offlineEligibility else { return false }
-        return variants.contains(variant)
     }
 
     private func matchesPane(_ handle: String, paneID: UUID) -> Bool { handle == "self" || handle == paneID.uuidString }
@@ -251,7 +215,7 @@ actor PaneCLIOutboxDrain {
             for payload in file.payloads {
                 guard !Task.isCancelled else { return report }
                 switch await admit(payload: payload, paneID: file.paneID, messageID: nil, participant: nil) {
-                case .admitted, .duplicate: report.importedLegacyLineCount += 1
+                case .admitted: report.importedLegacyLineCount += 1
                 case .malformed(let reason):
                     report.malformedEntryCount += 1
                     refusalProbe(reason)
@@ -271,7 +235,7 @@ actor PaneCLIOutboxDrain {
 }
 
 private enum NoticeDisposition {
-    case admitted, duplicate
+    case admitted
     case malformed(PaneCLIOutboxDrain.RefusalReason)
     case refused, retryable
 }

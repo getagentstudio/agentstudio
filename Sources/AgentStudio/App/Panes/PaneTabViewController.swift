@@ -5,6 +5,7 @@ import AgentStudioEditorChooser
 import AgentStudioInboxNotification
 import AgentStudioInfrastructure
 import AgentStudioRepoExplorer
+import AgentStudioSessions
 import AgentStudioTerminal
 import AppKit
 import GhosttyKit
@@ -112,6 +113,7 @@ class PaneTabViewController: NSViewController, NSPopoverDelegate, WorkspaceComma
     private let viewRegistry: ViewRegistry
     private let bridgePaneAttendance: BridgePaneAttendanceAtom
     private let editorChooser: EditorChooserState
+    private let sessionsPaneViewedMailbox: SessionsPaneViewedMailbox?
     private let paneInboxPresentation: PaneInboxPresentation?
     private let closeTransitionCoordinator: PaneCloseTransitionCoordinator
     private let performanceTraceRecorder: AgentStudioPerformanceTraceRecorder?
@@ -252,6 +254,7 @@ class PaneTabViewController: NSViewController, NSPopoverDelegate, WorkspaceComma
         viewRegistry: ViewRegistry,
         bridgePaneAttendance: BridgePaneAttendanceAtom,
         editorChooser: EditorChooserState,
+        sessionsPaneViewedMailbox: SessionsPaneViewedMailbox? = nil,
         paneInboxPresentation: PaneInboxPresentation? = nil,
         pinnedPanePreferences: RepoExplorerSidebarPrefsAtom? = nil,
         installedEditorTargetsProvider: @escaping @MainActor () -> [ExternalEditorTarget] = {
@@ -308,6 +311,7 @@ class PaneTabViewController: NSViewController, NSPopoverDelegate, WorkspaceComma
         self.viewRegistry = viewRegistry
         self.bridgePaneAttendance = bridgePaneAttendance
         self.editorChooser = editorChooser
+        self.sessionsPaneViewedMailbox = sessionsPaneViewedMailbox
         self.paneInboxPresentation = paneInboxPresentation
         self.installedEditorTargetsProvider = installedEditorTargetsProvider
         self.openEditorHandler = openEditorHandler
@@ -1033,6 +1037,11 @@ class PaneTabViewController: NSViewController, NSPopoverDelegate, WorkspaceComma
             Self.logger.warning(
                 "Pane focus apply returned false for trigger \(String(describing: trigger), privacy: .public)")
             return false
+        }
+        if SessionsPaneViewedPolicy.isPersonFocus(trigger),
+            let paneId = context.targetPaneId ?? store.tabLayoutAtom.activeTab?.activePaneId
+        {
+            sessionsPaneViewedMailbox?.noteViewed(paneId, viewedAt: ContinuousClock.now)
         }
         if trigger.isUserFocusInteraction {
             performanceTraceRecorder?.recordFocusResponderChange(reason: .userClick)

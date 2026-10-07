@@ -1,3 +1,4 @@
+import AgentStudioDeadlineTestSupport
 import AgentStudioTestHarness
 import Foundation
 import Testing
@@ -23,6 +24,51 @@ struct UnixSocketTransportTests {
             #expect(observed.output == observed.input)
             #expect(observed.flagsRestored)
         #endif
+    }
+
+    @Test("a real accepted peer that never replies ends at the absolute deadline")
+    func stalledPeerEndsAtAbsoluteDeadline() async throws {
+        let fixture = try UnixSocketFixture()
+        defer { fixture.cleanup() }
+        let peer = HeldStep<Void>("stalled peer accepts without replying")
+        let listener = UnixSocketListener(endpoint: fixture.endpoint)
+        let driver = ControlledDeadlineDriver()
+        let timing = driver.timing
+        try listener.start { connection in
+            defer { connection.close() }
+            try peer.arriveBlocking(())
+        }
+        defer {
+            peer.release()
+            listener.stop()
+            driver.close()
+        }
+        let operation = Task {
+            try await valueFromDedicatedThread {
+                do {
+                    let connection = try UnixSocketClient.connect(
+                        endpoint: fixture.endpoint, deadline: CallDeadline(limit: .seconds(1), timing: timing))
+                    defer { connection.close() }
+                    _ = try connection.receive(maxBytes: 1)
+                    return (Optional<UnixSocketTransportError>.none, peer.recordedArrivals.count)
+                } catch let error as UnixSocketTransportError {
+                    return (Optional(error), peer.recordedArrivals.count)
+                }
+            }
+        }
+        let observed: (UnixSocketTransportError?, Int)
+        do {
+            _ = try await peer.firstArrival()
+            try await valueFromDedicatedThread { try driver.advance(by: .seconds(1)) }
+            observed = try await operation.value
+        } catch {
+            driver.cancel()
+            peer.release()
+            _ = try? await operation.value
+            throw error
+        }
+        #expect(observed.0 == UnixSocketTransportError(reason: .deadlineExceeded, errnoCode: ETIMEDOUT))
+        #expect(observed.1 == 1)
     }
 
     @Test("an expired absolute deadline rejects connect, send and receive before I/O")

@@ -752,12 +752,26 @@ swift_test_command_accepts_event_stream() {
 swift_test_suite_lane_inventory() {
   cat <<'EOF'
 fast|AgentStudioFileViewStartupDiagnosticTests|concurrent
-fast|AgentStudioIPCCursorHookProjectionTests|concurrent
+large|AgentStudioAppIPCConnectionAdmissionTests|concurrent
+large|AgentStudioAppIPCConnectionWaitingTests|concurrent
+large|AgentStudioAppIPCConnectionOutputTests|concurrent
+large|AgentStudioAppIPCShutdownIdempotenceTests|concurrent
+large|AgentStudioAppIPCPaneContextAdmissionTests|concurrent
+large|AgentStudioAppIPCPaneContextIntegrationTests|concurrent
+large|AgentStudioAppIPCPaneAskLifecycleTests|concurrent
+large|AgentStudioAppIPCPaneContextEncodingTests|concurrent
+large|AgentStudioAppIPCPaneContextDetailTraversalTests|concurrent
+large|AgentStudioAppIPCPaneMessageChangesPagingTests|concurrent
+large|AgentStudioAppIPCPaneMessageCapacityTests|concurrent
 large|AgentStudioGitDependencyTests|concurrent
 large|AgentStudioIPCPhaseASmokeScriptTests|concurrent
 large|CLILatencyBenchmarkScriptTests|concurrent
-large|CLIHookSilenceScriptTests|concurrent
+large|CLIHookSilenceScriptTests|process-global
 large|CLIAgentHelpScriptTests|concurrent
+large|CLIPaneContextOrderingTests|process-global
+large|CLIPaneContextAvailabilityTests|process-global
+large|CLIPaneContextAnswersTests|process-global
+large|CLIPaneContextDispatchTests|process-global
 large|AgentStudioOTLPBootstrapSmokeTests|process-global
 fast|AgentStudioStartupDiagnosticActionParsingTests|concurrent
 fast|AgentStudioStartupDiagnosticActionTests|concurrent
@@ -790,7 +804,6 @@ large|CISwiftBuildCachePublishScriptTests|concurrent
 large|CISwiftBuildInputsScriptTests|concurrent
 benchmark|CommandBarSearchBenchmarkTests|process-global
 large|CrossTabMoveRendererIntegrationTests|process-global
-large|CursorPackageInstallerTests|concurrent
 large|DarwinCompositeFSEventContinuityTests|process-global
 large|DarwinFSEventStreamClientTests|process-global
 large|DarwinSharedExactItemObserverTests|process-global
@@ -846,6 +859,20 @@ large|ObservabilityTCCProbeReportScriptTests|concurrent
 large|ObservabilityTCCProtectedDataVerifierScriptTests|concurrent
 large|ObservabilityTCCReplacementExperimentScriptTests|concurrent
 large|PerformanceReportScriptTests|concurrent
+large|PaneContextAnswerPositionTests|concurrent
+large|PaneContextAskSettlementTests|concurrent
+large|PaneContextBoundsTests|concurrent
+large|PaneContextDetailPagingTests|concurrent
+large|PaneContextMessageTests|concurrent
+large|PaneContextOrderedWriteTests|concurrent
+large|PaneContextRetirementTests|concurrent
+large|PaneContextPresentationServiceTests|concurrent
+large|PaneContextPublicationLaneTests|concurrent
+large|PaneContextUIAdapterTests|concurrent
+large|PaneContextSessionsBridgeTests|concurrent
+large|BridgeDevelopmentMembershipCompositionTests|process-global
+large|PaneContextMembershipStartupRaceTests|process-global
+large|PaneContextRepositoryRemovalTests|process-global
 large|PrimarySidebarPipelineIntegrationTests|concurrent
 large|ProcessExecutorTests|concurrent
 large|RendererPopulationScriptTests|concurrent
@@ -863,6 +890,9 @@ large|RepositoryRetentionPublicationAdmissionTests|process-global
 large|RepositoryRetentionReparentedFamilyTests|process-global
 large|RepositoryRetentionSourceAdmissionTests|process-global
 fast|SQLiteDatabaseFactoryProcessTests|process-global
+large|ProviderStatusHookInstallerTests|concurrent
+large|SessionStatusPublicationTests|concurrent
+large|SessionsProviderTraceIntegrationTests|concurrent
 large|SidebarPerformanceContinuityControlScriptTests|concurrent
 large|SidebarPerformanceFixtureParserScriptTests|concurrent
 large|SidebarPerformancePolicyParserScriptTests|concurrent
@@ -1338,6 +1368,25 @@ aggregate_serial_non_webkit_suite_filters() {
     printf '%s:%s\n' \
       'Tests/AgentStudioAppIPCTests/AppIPCDynamicCommandClientTests.swift' \
       'AppIPCDynamicCommandClientTests'
+    # Real CLI/runner deadlines depend on the in-process AppIPC cooperative pool; isolate each suite.
+    printf '%s:%s\n' \
+      'Tests/AgentStudioAppIPCTests/AppIPCCLILocalResolutionTests.swift' \
+      'AppIPCCLILocalResolutionTests'
+    printf '%s:%s\n' \
+      'Tests/AgentStudioAppIPCTests/AppIPCCLIRawCommandTests.swift' \
+      'AppIPCCLIRawCommandTests'
+    printf '%s:%s\n' \
+      'Tests/AgentStudioAppIPCTests/AppIPCTerminalWaitClampTests.swift' \
+      'AppIPCTerminalWaitClampTests'
+    printf '%s:%s\n' \
+      'Tests/AgentStudioAppIPCTests/AppIPCCLIHelpAndExitTests.swift' \
+      'AppIPCCLIHelpAndExitTests'
+    printf '%s:%s\n' \
+      'Tests/AgentStudioAppIPCTests/AppIPCCLICatalogDiscoverySkipTests.swift' \
+      'AppIPCCLICatalogDiscoverySkipTests'
+    printf '%s:%s\n' \
+      'Tests/AgentStudioAppIPCTests/AppIPCCLIStoreReadThroughTests.swift' \
+      'AppIPCCLIStoreReadThroughTests'
     printf '%s:%s\n' \
       'Tests/AgentStudioAppIPCTests/AppIPCErrorCorrectionTests.swift' \
       'AppIPCErrorCorrectionTests'

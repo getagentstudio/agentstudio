@@ -45,6 +45,8 @@ package protocol AppIPCOwnPaneScopePort: Sendable {
 package enum AppIPCAgentArgumentRule: Equatable, Sendable {
     /// Admission depends on the target identities alone.
     case targetOnly
+    /// The exact credential pane; does not include drawers or linked panes.
+    case credentialPaneOnly
     /// Closes this pane. An agent never closes its own pane.
     case closesPane(UUID)
     /// Adds a drawer child under this parent. Only an agent in a main-layout
