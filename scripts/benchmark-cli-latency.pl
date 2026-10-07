@@ -96,9 +96,11 @@ die "Fixture needs canonical pane and window UUIDs\n"
     unless uuid_string($fixture->{paneId}) && uuid_string($fixture->{workspaceWindowId});
 my $pane_environment = $fixture->{environment};
 die "Fixture needs its real pane environment\n" unless ref($pane_environment) eq 'HASH';
-for my $key (qw(AGENTSTUDIO_CLI AGENTSTUDIO_PANE_TOKEN AGENTSTUDIO_IPC_SOCKET AGENTSTUDIO_CLI_STORE)) {
+for my $key (qw(AGENTSTUDIO_CLI AGENTSTUDIO_PANE_ID AGENTSTUDIO_PANE_TOKEN AGENTSTUDIO_IPC_SOCKET AGENTSTUDIO_CLI_STORE)) {
     die "Fixture is missing required pane environment\n" unless nonempty($pane_environment->{$key});
 }
+die "Fixture pane environment does not match paneId\n"
+    unless lc($pane_environment->{AGENTSTUDIO_PANE_ID}) eq lc($fixture->{paneId});
 die "Fixture store must be from the debug channel\n"
     unless ($pane_environment->{AGENTSTUDIO_CLI_STORE_CHANNEL} // '') eq 'debug';
 my $cli = abs_path($pane_environment->{AGENTSTUDIO_CLI});
@@ -108,11 +110,15 @@ private_file($fixture->{debugEscrowPath}, 0);
 my $escrow = read_json($fixture->{debugEscrowPath});
 die "Invalid debug escrow\n" unless uuid_string($escrow->{runtimeId}) && nonempty($escrow->{token})
     && ($escrow->{socketPath} // '') eq $pane_environment->{AGENTSTUDIO_IPC_SOCKET};
+my $conversation = "cli-latency-$$-" . strftime('%Y%m%dT%H%M%SZ', gmtime);
 my %clean_environment = %ENV;
 delete $clean_environment{$_} for grep { /^AGENTSTUDIO_/ } keys %clean_environment;
+delete @clean_environment{qw(CLAUDE_CODE_SESSION_ID CODEX_THREAD_ID)};
 my %pane_env = (%clean_environment, %$pane_environment);
+delete $pane_env{CODEX_THREAD_ID};
+$pane_env{CLAUDE_CODE_SESSION_ID} = $conversation;
 my %debug_env = %pane_env;
-delete @debug_env{qw(AGENTSTUDIO_PANE_TOKEN AGENTSTUDIO_IPC_SOCKET)};
+delete @debug_env{qw(AGENTSTUDIO_PANE_TOKEN AGENTSTUDIO_IPC_SOCKET CLAUDE_CODE_SESSION_ID CODEX_THREAD_ID)};
 $debug_env{AGENTSTUDIO_IPC_DEBUG_TOKEN_ESCROW} = $fixture->{debugEscrowPath};
 
 my $manifest_path = $ENV{AGENTSTUDIO_CLI_BENCHMARK_WORKLOADS} // "$FindBin::Bin/cli-latency-workloads.json";
@@ -128,14 +134,13 @@ for my $family (@{$manifest->{families}}) {
     die "Invalid workload policy\n" unless exists $CLILatencyReport::budgets{$family->{budgetClass} // ''}
         && ($family->{fixtureRequirement} // '') =~ /^(ownedPane|debugRuntime)$/;
 }
-for my $name (qw(hook session terminal pane system command discovery.capabilities discovery.commands)) {
+for my $name (qw(hook notify line title context answers session terminal pane system command discovery.capabilities discovery.commands)) {
     die "Required method family is not represented\n" unless $family_names{$name};
 }
 for my $name (@{$manifest->{notMeasured}}) {
     die "Invalid unmeasured family\n" unless nonempty($name) && $name =~ /^[a-z][a-z.]*$/
         && !$family_names{$name};
 }
-my $conversation = "cli-latency-$$-" . strftime('%Y%m%dT%H%M%SZ', gmtime);
 my %substitutions = (
     paneId => $fixture->{paneId}, workspaceWindowId => $fixture->{workspaceWindowId},
     conversationId => $conversation, sampleId => '',
@@ -169,7 +174,7 @@ my $report = {
     fixture => 'redacted dedicated disposable pane, handed off exclusively by the Lead',
     verdictScope => 'measured current-branch families only; NOT MEASURED families do not pass',
     launchProvenance => 'Lead must record warm debug launch provenance alongside this report; wire does not advertise channel',
-    bindingProof => 'unbound -> harness SessionStart -> UserPromptSubmit -> live/running/reported; query does not echo conversation identity',
+    bindingProof => 'unbound -> harness SessionStart -> UserPromptSubmit -> live/running/reported; pane writer claim is the bound conversation; parent provider claims are removed; query does not echo conversation identity',
     families => [], notMeasured => [map { {family => $_, verdict => 'NOT MEASURED'} } @{$manifest->{notMeasured}}],
     cleanup => 'notStarted', verdict => 'FAIL',
 };
@@ -220,6 +225,8 @@ sub call_failure_class {
         return $result->{exitCode} ? 'unclassifiedCLIExit' : 'diagnosticOutput';
     }
     return undef if $family_name eq 'hook' || $family_name eq 'startup';
+    # Every result-bearing family, including line/title/context/answers, must
+    # retain exit 0, no diagnostic output, and a decodable JSON object.
     my $decoded = eval { $json->decode($result->{stdout}) };
     return 'invalidJSONResult' if $@;
     return 'invalidResultShape' unless ref($decoded) eq 'HASH';
@@ -289,8 +296,9 @@ my $completed = eval {
     hook('UserPromptSubmit', 'warmup-turn');
     my $after = checked_result(['session.query', '--handle', 'self'], \%pane_env);
     die "Hook binding/activity warmup not established\n" unless lc($after->{paneId} // '') eq lc($fixture->{paneId})
-        && ($after->{sourceHealth} // '') eq 'live' && ($after->{state} // '') eq 'running'
-        && ($after->{origin} // '') eq 'reported';
+        && ($after->{sourceHealth} // '') eq 'live' && ref($after->{session}) eq 'HASH'
+        && ($after->{session}->{status}->{kind} // '') eq 'working'
+        && ($after->{session}->{status}->{state} // '') eq 'active';
     $stage = 'terminalReady';
     my $terminal = checked_result(['terminal.status', '--handle', 'self'], \%pane_env);
     die "Fixture terminal is not warm and ready\n" unless $terminal->{isReady};
@@ -333,5 +341,5 @@ if ($failure) {
     print "failure stage=$report->{failureStage} phase=$report->{failurePhase} class=$report->{failureClass}\n";
 }
 print "cleanup=$report->{cleanup}\ncli.call_total_ms boundary: $report->{boundary}\n";
-print "startup is a linked-binary local-help proxy; line/title/notify remain NOT MEASURED\n";
+print "startup is a linked-binary local-help proxy; ask/withdraw remain NOT MEASURED\n";
 exit($report->{verdict} eq 'PASS' ? 0 : 1);

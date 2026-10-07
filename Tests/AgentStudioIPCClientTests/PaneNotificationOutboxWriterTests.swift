@@ -19,21 +19,21 @@ struct PaneNotificationOutboxWriterTests {
         let observed = try await valueFromDedicatedThread {
             let fixture = try PaneNotificationOutboxFixture()
             defer { fixture.remove() }
-            let invocation = try fixture.invocation(["message", "deploy finished"])
+            let invocation = try fixture.invocation(["notify", "deploy finished"])
             let expectedLine = try fixture.client.requestFrame(invocation)
             let parameters = try JSONDecoder().decode(
-                IPCSessionMessageParams.self, from: invocation.normalizedParameters.data)
+                IPCPaneMessageSendParams.self, from: invocation.normalizedParameters.data)
 
             let outcome = try fixture.handler.handleUnreachableApp(invocation: invocation) { expectedLine }
 
             let entries = try fixture.entries()
             return QueuedEnvelopeObservation(
                 outcome: outcome, entries: entries, expectedLine: expectedLine,
-                correlationID: parameters.correlationId, paneID: fixture.paneID,
+                correlationID: parameters.messageId, paneID: fixture.paneID,
                 fileMode: try fixture.storeFileMode(), lineContainsToken: expectedLine.contains(fixture.paneToken),
                 legacyDirectoryExists: FileManager.default.fileExists(atPath: fixture.legacyDirectory.path))
         }
-        #expect(observed.outcome == .queued(reply: "message queued"))
+        #expect(observed.outcome == .queued(reply: "notify queued"))
         #expect(observed.entries.count == 1)
         if let entry = observed.entries.first, case .notice(let notice) = entry {
             #expect(notice.payloadJSON == observed.expectedLine)
@@ -45,23 +45,23 @@ struct PaneNotificationOutboxWriterTests {
         #expect(!observed.legacyDirectoryExists)
     }
 
-    @Test("needs-you and done queue their own replies while clear refuses offline")
+    @Test("only notices queue; asks and withdrawal refuse offline")
     func deliberateVariantsFollowDescriptorEligibility() async throws {
         let observed = try await valueFromDedicatedThread {
             let fixture = try PaneNotificationOutboxFixture()
             defer { fixture.remove() }
 
-            let needsYou = try fixture.queue(["needs-you", "approval please"])
-            let done = try fixture.queue(["done"])
-            let clear = try fixture.queue(["needs-you", "--clear"])
+            let needsYou = try fixture.queue(["ask", "approval please"])
+            let done = try fixture.queue(["notify", "completed notice"])
+            let clear = try fixture.queue(["withdraw", UUIDv7.generate().uuidString])
 
             return QueuedVariantsObservation(
                 needsYou: needsYou, done: done, clear: clear, entryCount: try fixture.entries().count)
         }
-        #expect(observed.needsYou == .queued(reply: "needs-you queued"))
-        #expect(observed.done == .queued(reply: "done queued"))
-        #expect(observed.clear == .clearUnavailableWhileOffline)
-        #expect(observed.entryCount == 2)
+        #expect(observed.needsYou == .notQueued)
+        #expect(observed.done == .queued(reply: "notify queued"))
+        #expect(observed.clear == .notQueued)
+        #expect(observed.entryCount == 1)
     }
 
     @Test("a pane without store environment keeps the ordinary unreachable failure")
@@ -70,7 +70,7 @@ struct PaneNotificationOutboxWriterTests {
             let fixture = try PaneNotificationOutboxFixture()
             defer { fixture.remove() }
             let handler = PaneNotificationOfflineHandler(environment: [:])
-            let invocation = try fixture.invocation(["message", "unaddressed"])
+            let invocation = try fixture.invocation(["notify", "unaddressed"])
 
             let outcome = try handler.handleUnreachableApp(invocation: invocation) {
                 try fixture.client.requestFrame(invocation)
@@ -90,7 +90,7 @@ struct PaneNotificationOutboxWriterTests {
             var environment = fixture.environment
             environment["AGENTSTUDIO_CLI_STORE_CHANNEL"] = channel.isEmpty ? nil : channel
             let handler = PaneNotificationOfflineHandler(environment: environment)
-            let invocation = try fixture.invocation(["message", "channel unavailable"])
+            let invocation = try fixture.invocation(["notify", "channel unavailable"])
 
             let outcome = try handler.handleUnreachableApp(invocation: invocation) {
                 try fixture.client.requestFrame(invocation)
@@ -109,7 +109,7 @@ struct PaneNotificationOutboxWriterTests {
             defer { fixture.remove() }
             try fixture.makeStoreDirectoryReadOnly()
             defer { fixture.restorePermissions() }
-            let invocation = try fixture.invocation(["message", "unwritable"])
+            let invocation = try fixture.invocation(["notify", "unwritable"])
 
             let attempt = Result<PaneNotificationOfflineOutcome, any Error> {
                 try fixture.handler.handleUnreachableApp(invocation: invocation) {
@@ -127,8 +127,8 @@ struct PaneNotificationOutboxWriterTests {
         let fixture = try await valueFromDedicatedThread { try PaneNotificationOutboxFixture() }
         defer { fixture.remove() }
         _ = try await valueFromDedicatedThread { try CLIStore.openWriter(url: fixture.storeURL, channel: .debug).get() }
-        let first = try fixture.invocation(["message", String(repeating: "a", count: 4096)])
-        let second = try fixture.invocation(["message", String(repeating: "b", count: 4096)])
+        let first = try fixture.invocation(["notify", String(repeating: "a", count: 4096)])
+        let second = try fixture.invocation(["notify", String(repeating: "b", count: 4096)])
         let firstLine = try fixture.client.requestFrame(first)
         let secondLine = try fixture.client.requestFrame(second)
 
@@ -173,7 +173,7 @@ struct PaneNotificationOutboxWriterTests {
         let observed = try await valueFromDedicatedThread {
             let fixture = try PaneNotificationOutboxFixture()
             defer { fixture.remove() }
-            let invocation = try fixture.invocation(["message", "unreachable"])
+            let invocation = try fixture.invocation(["notify", "unreachable"])
             let refusedClient = AgentStudioIPCClient(
                 configuration: .init(socketPath: refusedPath), descriptors: fixture.descriptors)
             let missingClient = AgentStudioIPCClient(
@@ -208,7 +208,7 @@ struct PaneNotificationOutboxWriterTests {
                         id: request.id, result: IPCAuthStatusResult.unauthenticated))
             }
             defer { listener.stop() }
-            let invocation = try fixture.invocation(["message", "rejected"])
+            let invocation = try fixture.invocation(["notify", "rejected"])
             let client = AgentStudioIPCClient(
                 configuration: .init(
                     socketPath: endpoint.path, authToken: fixture.paneToken, maxRequestFrameBytes: 65_536),
@@ -322,8 +322,37 @@ private struct PaneNotificationOutboxFixture: Sendable {
     }
 
     func invocation(_ arguments: [String]) throws -> IPCDescriptorInvocation {
-        try IPCDescriptorInvocationParser.parse(
-            arguments, descriptors: descriptors, correlationIDGenerator: { UUIDv7.generate() })
+        guard arguments.count == 2 else { throw AgentStudioIPCClientError(reason: .invalidArguments) }
+        let name: String
+        let bytes: Data
+        switch arguments[0] {
+        case "notify", "ask":
+            name = "pane.message.send"
+            let shape: IPCPaneMessageSendShape =
+                arguments[0] == "notify"
+                ? .notice
+                : .ask(
+                    reason: .question, form: .freeText(placeholder: nil), waiting: .nonBlocking)
+            bytes = try JSONEncoder().encode(
+                IPCPaneMessageSendParams(
+                    handle: "self", messageId: UUIDv7.generate(), importance: .info, body: arguments[1], actions: [],
+                    shape: shape, correlationId: UUIDv7.generate()))
+        case "withdraw":
+            name = "pane.message.withdraw"
+            guard let id = UUID(uuidString: arguments[1]) else {
+                throw AgentStudioIPCClientError(reason: .invalidArguments)
+            }
+            bytes = try JSONEncoder().encode(
+                IPCPaneMessageWithdrawParams(
+                    handle: "self", messageId: id, correlationId: UUIDv7.generate()))
+        default: throw AgentStudioIPCClientError(reason: .invalidArguments)
+        }
+        let selected = try IPCCompiledInvocationResolver().resolve(
+            arguments: [name], authenticated: false,
+            inputs: .init(examples: .init(illustrativeIdentifier: UUIDv7.generate())))
+        guard let descriptor = selected.first else { throw AgentStudioIPCClientError(reason: .invalidArguments) }
+        return try IPCDescriptorInvocation(
+            descriptor: descriptor, normalizedParameters: descriptor.normalizeParameters(bytes), presentation: .tooling)
     }
 
     func queue(_ arguments: [String]) throws -> PaneNotificationOfflineOutcome {

@@ -1,66 +1,5 @@
 import Foundation
 
-package enum IPCSessionSchemaLimits {
-    /// One query page carries the newest messages only. Paging beyond this page
-    /// belongs to the future Sessions reader, not to the model vocabulary.
-    package static let maximumQueryMessageCount = 20
-}
-
-extension IPCSessionReportParams: IPCSchemaProviding {
-    package static func ipcSchema() throws -> IPCJSONSchema {
-        .object(fields: [
-            try IPCRequestSchemaFields.paneDefaultingToSelf(),
-            .init(
-                name: "kind", description: "Deliberate report the agent is making",
-                schema: try IPCSessionReportKind.ipcSchema()),
-            .optional(
-                "explanation",
-                description: "Private reason shown with a needs-you assertion; never exported to telemetry",
-                schema: .string()),
-            IPCRequestSchemaFields.correlation,
-        ])
-    }
-}
-
-extension IPCSessionReportResult: IPCSchemaProviding {
-    package static func ipcSchema() throws -> IPCJSONSchema {
-        .object(fields: [
-            IPCSessionSchemaFields.pane,
-            try IPCSessionSchemaFields.state(),
-            try IPCSessionSchemaFields.origin(),
-            .optional(
-                "requestId", description: "App-derived attention request identity for a current needs-you assertion",
-                schema: .string(minimumLength: 1)),
-            IPCRequestSchemaFields.correlation,
-        ])
-    }
-}
-
-extension IPCSessionMessageParams: IPCSchemaProviding {
-    package static func ipcSchema() throws -> IPCJSONSchema {
-        .object(fields: [
-            try IPCRequestSchemaFields.paneDefaultingToSelf(),
-            .init(
-                name: "text", description: "Exact agent message text retained without reduction", schema: .string()),
-            IPCRequestSchemaFields.correlation,
-        ])
-    }
-}
-
-extension IPCSessionMessageResult: IPCSchemaProviding {
-    package static func ipcSchema() throws -> IPCJSONSchema {
-        .object(fields: [
-            IPCSessionSchemaFields.pane,
-            .init(
-                name: "occurrenceId", description: "Durable message occurrence UUID", schema: IPCSchemaScalars.uuid),
-            .init(
-                name: "attributed", description: "Whether the message resolved to a live conversation binding",
-                schema: .boolean),
-            IPCRequestSchemaFields.correlation,
-        ])
-    }
-}
-
 extension IPCSessionProviderIdentity: IPCSchemaProviding {
     package static func ipcSchema() throws -> IPCJSONSchema {
         .object(fields: [
@@ -68,10 +7,10 @@ extension IPCSessionProviderIdentity: IPCSchemaProviding {
                 name: "identifier", description: "Provider identifier such as the agent CLI name",
                 schema: .string(minimumLength: 1)),
             .init(
-                name: "version", description: "Exact provider version; a nearby version grants no authority",
+                name: "version", description: "Reported provider version; descriptive only",
                 schema: .string(minimumLength: 1)),
             .init(
-                name: "mode", description: "Provider operating mode qualified for this capability",
+                name: "mode", description: "Reported provider operating mode",
                 schema: .string(minimumLength: 1)),
         ])
     }
@@ -81,7 +20,7 @@ extension IPCSessionEventIdentity: IPCSchemaProviding {
     package static func ipcSchema() throws -> IPCJSONSchema {
         .object(fields: [
             .init(
-                name: "name", description: "Lifecycle capability this event claims",
+                name: "name", description: "Lifecycle fact reported by this event",
                 schema: try IPCSessionEventName.ipcSchema()),
             .init(
                 name: "conversationId", description: "Provider conversation identity for the reporting source",
@@ -92,10 +31,35 @@ extension IPCSessionEventIdentity: IPCSchemaProviding {
                 schema: .string()),
             .optional("toolId", description: "Provider tool identity for tool activity", schema: .string()),
             .optional("subagentId", description: "Provider subagent identity for subagent activity", schema: .string()),
+            .optional("toolName", description: "Recorded provider tool name", schema: .string()),
+            .optional(
+                "questions", description: "Recorded AskUserQuestion questions",
+                schema: .array(items: try IPCSessionQuestion.ipcSchema())),
+            .optional("failureSummary", description: "Provider turn failure category", schema: .string()),
+            .optional("elicitationId", description: "Provider elicitation identity when present", schema: .string()),
+            .optional("message", description: "Provider prompt summary", schema: .string()),
+            .optional("resumeHint", description: "Provider resume command hint", schema: .string()),
             .init(
                 name: "occurrenceId",
-                description: "Provider occurrence UUID; equivalent reuse returns the retained outcome",
+                description: "Provider invocation identity; never used to de-duplicate hook records",
                 schema: IPCSchemaScalars.uuid),
+        ])
+    }
+}
+
+extension IPCSessionQuestion: IPCSchemaProviding {
+    package static func ipcSchema() throws -> IPCJSONSchema {
+        .object(fields: [
+            .init(name: "question", description: "Question text", schema: .string()),
+            .init(name: "header", description: "Question header", schema: .string()),
+            .init(
+                name: "options", description: "Provider choices",
+                schema: .array(
+                    items: .object(fields: [
+                        .init(name: "label", description: "Choice label", schema: .string()),
+                        .init(name: "description", description: "Choice description", schema: .string()),
+                    ]))),
+            .init(name: "multiSelect", description: "Whether multiple choices may be selected", schema: .boolean),
         ])
     }
 }
@@ -105,7 +69,7 @@ extension IPCSessionEventParams: IPCSchemaProviding {
         .object(fields: [
             try IPCRequestSchemaFields.paneDefaultingToSelf(),
             .init(
-                name: "provider", description: "Exact provider identity claiming this capability",
+                name: "provider", description: "Reported provider identity; version and mode are labels",
                 schema: try IPCSessionProviderIdentity.ipcSchema()),
             .init(
                 name: "event", description: "Projected provider lifecycle event",
@@ -120,7 +84,7 @@ extension IPCSessionEventResult: IPCSchemaProviding {
         .object(fields: [
             IPCSessionSchemaFields.pane,
             .init(
-                name: "disposition", description: "Whether the exact provider capability was admitted",
+                name: "disposition", description: "Whether the pane-authenticated hook was recorded",
                 schema: try IPCSessionEventDisposition.ipcSchema()),
             IPCRequestSchemaFields.correlation,
         ])
@@ -133,70 +97,40 @@ extension IPCSessionQueryParams: IPCSchemaProviding {
     }
 }
 
-extension IPCSessionAttentionProjection: IPCSchemaProviding {
-    package static func ipcSchema() throws -> IPCJSONSchema {
-        .object(fields: [
-            .init(
-                name: "requestId", description: "App-derived current attention request identity",
-                schema: .string(minimumLength: 1)),
-            .optional("explanation", description: "Private reason recorded with the assertion", schema: .string()),
-        ])
-    }
-}
+enum IPCSessionSchemaFields {
+    static let pane = IPCObjectField(
+        name: "paneId", description: "Canonical pane UUID that owns the session state", schema: IPCSchemaScalars.uuid
+    )
 
-extension IPCSessionMessageProjection: IPCSchemaProviding {
-    package static func ipcSchema() throws -> IPCJSONSchema {
-        .object(fields: [
-            .init(
-                name: "occurrenceId", description: "Durable message occurrence UUID", schema: IPCSchemaScalars.uuid),
-            .init(name: "text", description: "Exact retained message text", schema: .string()),
-            .init(
-                name: "seen", description: "Durable seen disposition; reads never change it", schema: .boolean),
-            .init(
-                name: "receivedAt",
-                description: "Admission time in seconds since the Foundation reference date",
-                schema: .number()),
-        ])
-    }
 }
 
 extension IPCSessionQueryResult: IPCSchemaProviding {
     package static func ipcSchema() throws -> IPCJSONSchema {
         .object(fields: [
             IPCSessionSchemaFields.pane,
-            try IPCSessionSchemaFields.state(),
-            try IPCSessionSchemaFields.origin(),
-            .optional(
-                "needsYou", description: "Current deliberate or provider attention assertion when one is open",
-                schema: try IPCSessionAttentionProjection.ipcSchema()),
             .init(
-                name: "messages", description: "Newest retained messages for the pane",
-                schema: .array(
-                    items: try IPCSessionMessageProjection.ipcSchema(),
-                    maximumCount: IPCSessionSchemaLimits.maximumQueryMessageCount)),
-            .init(
-                name: "sourceHealth", description: "Liveness of the pane's current binding and source generation",
+                name: "sourceHealth", description: "Health of the current status binding",
                 schema: try IPCSessionSourceHealth.ipcSchema()),
+            .init(
+                name: "session",
+                description: "The same status-engine summary as pane.context.get; null exactly when unbound",
+                schema: .oneOf([.null, try IPCPaneSessionSummary.ipcSchema()])),
+            .init(
+                name: "lastRefusal", description: "Last in-memory hook refusal, including on an unbound pane",
+                schema: .oneOf([.null, try IPCSessionLastRefusal.ipcSchema()])),
         ])
     }
 }
 
-enum IPCSessionSchemaFields {
-    static let pane = IPCObjectField(
-        name: "paneId", description: "Canonical pane UUID that owns the session state", schema: IPCSchemaScalars.uuid
-    )
-
-    static func state() throws -> IPCObjectField {
-        .init(
-            name: "state", description: "Reduced agent state for the pane's current conversation",
-            schema: try IPCSessionAgentState.ipcSchema()
-        )
-    }
-
-    static func origin() throws -> IPCObjectField {
-        .init(
-            name: "origin", description: "Server-assigned origin of the reported state",
-            schema: try IPCSessionEvidenceOrigin.ipcSchema()
-        )
+extension IPCSessionRefusalParams: IPCSchemaProviding {
+    package static func ipcSchema() throws -> IPCJSONSchema {
+        .object(fields: [
+            try IPCRequestSchemaFields.paneDefaultingToSelf(),
+            .init(
+                name: "reason", description: "Why the hook payload could not be recorded",
+                schema: try IPCSessionRefusalReason.ipcSchema()),
+            .optional("event", description: "The hook event name when known", schema: .string(maximumLength: 128)),
+            IPCRequestSchemaFields.correlation,
+        ])
     }
 }

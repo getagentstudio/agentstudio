@@ -1,5 +1,4 @@
 import AgentStudioProgrammaticControl
-import CryptoKit
 import Foundation
 
 /// The Claude Code hook events this package installs. Every other event Claude
@@ -9,10 +8,15 @@ package enum ClaudeCodeHookEvent: String, CaseIterable, Equatable, Sendable {
     case sessionStart = "SessionStart"
     case userPromptSubmit = "UserPromptSubmit"
     case preToolUse = "PreToolUse"
+    case postToolUse = "PostToolUse"
+    case postToolUseFailure = "PostToolUseFailure"
     case permissionRequest = "PermissionRequest"
     case subagentStart = "SubagentStart"
     case subagentStop = "SubagentStop"
     case stop = "Stop"
+    case stopFailure = "StopFailure"
+    case elicitation = "Elicitation"
+    case elicitationResult = "ElicitationResult"
     case sessionEnd = "SessionEnd"
 
     /// The Sessions lifecycle capability this hook event reports.
@@ -21,9 +25,14 @@ package enum ClaudeCodeHookEvent: String, CaseIterable, Equatable, Sendable {
         case .sessionStart: .sessionStart
         case .userPromptSubmit: .turnStart
         case .preToolUse: .toolActivity
+        case .postToolUse: .toolCompleted
+        case .postToolUseFailure: .toolFailed
         case .permissionRequest: .permission
         case .subagentStart, .subagentStop: .subagentActivity
         case .stop: .turnDone
+        case .stopFailure: .turnFailed
+        case .elicitation: .elicitation
+        case .elicitationResult: .elicitationResult
         case .sessionEnd: .sessionEnd
         }
     }
@@ -38,6 +47,11 @@ package struct ClaudeCodeHookPayload: Decodable, Equatable, Sendable {
     package let promptId: String?
     package let toolUseId: String?
     package let agentId: String?
+    package let toolName: String?
+    package let toolInput: ClaudeCodeToolInput?
+    package let error: String?
+    package let elicitationId: String?
+    package let message: String?
 
     package init(
         sessionId: String,
@@ -51,6 +65,11 @@ package struct ClaudeCodeHookPayload: Decodable, Equatable, Sendable {
         self.promptId = promptId
         self.toolUseId = toolUseId
         self.agentId = agentId
+        toolName = nil
+        toolInput = nil
+        error = nil
+        elicitationId = nil
+        message = nil
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -59,6 +78,11 @@ package struct ClaudeCodeHookPayload: Decodable, Equatable, Sendable {
         case promptId = "prompt_id"
         case toolUseId = "tool_use_id"
         case agentId = "agent_id"
+        case toolName = "tool_name"
+        case toolInput = "tool_input"
+        case error
+        case elicitationId = "elicitation_id"
+        case message
     }
 }
 
@@ -67,8 +91,6 @@ package struct ClaudeCodeHookPayload: Decodable, Equatable, Sendable {
 /// a failure because Agent Studio declined an event.
 package enum ClaudeCodeHookProjectionRefusal: Equatable, Sendable {
     case unprojectedEvent(String)
-    case announcedEventMismatch(announced: String, reported: String)
-    case missingRequestIdentifier
 }
 
 package enum ClaudeCodeHookProjectionOutcome: Equatable, Sendable {
@@ -76,38 +98,32 @@ package enum ClaudeCodeHookProjectionOutcome: Equatable, Sendable {
     case refused(ClaudeCodeHookProjectionRefusal)
 }
 
-/// Translates one Claude Code hook document into one `session.event` call.
-/// Pure: every identifier it cannot derive from the document is supplied by the
-/// caller, so the projection is exercised without a socket or a clock.
+/// Purely translates one Claude Code hook document into one `session.event` call.
+/// Wire identifiers are supplied by the caller; Sessions assigns admission time.
 package enum ClaudeCodeHookProjection {
     /// - Parameters:
-    ///   - announcedEvent: the event name the installed hook command passed as
-    ///     its argument. It must agree with the document's `hook_event_name`;
-    ///     a disagreement is refused rather than resolved by preference.
     ///   - providerVersion: the Claude Code release recorded when the hooks
     ///     were installed.
-    ///   - freshOccurrenceIdentifier: used only when the document carries no
-    ///     `tool_use_id`, where no stable natural key exists.
+    ///   - freshOccurrenceIdentifier: assigns a distinct identity to this
+    ///     projected hook invocation.
     package static func project(
-        announcedEvent: String,
         payload: ClaudeCodeHookPayload,
         providerVersion: String,
         correlationIdentifier: UUID,
         freshOccurrenceIdentifier: () -> UUID
     ) -> ClaudeCodeHookProjectionOutcome {
-        guard payload.hookEventName == announcedEvent else {
-            return .refused(
-                .announcedEventMismatch(announced: announcedEvent, reported: payload.hookEventName)
-            )
-        }
         guard let event = ClaudeCodeHookEvent(rawValue: payload.hookEventName) else {
             return .refused(.unprojectedEvent(payload.hookEventName))
         }
-        let name = event.projectedEventName
+        let name: IPCSessionEventName =
+            event == .preToolUse && payload.toolName == "AskUserQuestion" ? .question : event.projectedEventName
         let requestIdentifier = name == .permission ? payload.toolUseId : nil
-        if name == .permission, requestIdentifier == nil {
-            return .refused(.missingRequestIdentifier)
-        }
+        var providerFields = IPCSessionProviderEventFields()
+        providerFields.toolName = payload.toolName
+        providerFields.questions = payload.toolInput?.questions
+        providerFields.failureSummary = event == .stopFailure ? payload.error : nil
+        providerFields.elicitationId = payload.elicitationId
+        providerFields.message = payload.message
         return .projected(
             IPCSessionEventParams(
                 handle: "self",
@@ -121,19 +137,15 @@ package enum ClaudeCodeHookProjection {
                     conversationId: payload.sessionId,
                     // `prompt_id` is Claude Code's own per-turn correlation: it
                     // is absent on SessionStart and identical across every
-                    // later event of the same turn. Sessions drops completion
-                    // evidence that carries no turn, so reporting it is what
-                    // makes turn-done land at all.
+                    // later event of the same turn. The status turn guard uses
+                    // this identity to distinguish current-turn reports.
                     turnId: payload.promptId,
                     requestId: requestIdentifier,
-                    toolId: name == .toolActivity ? payload.toolUseId : nil,
+                    toolId: [.toolActivity, .question, .toolCompleted, .toolFailed].contains(name)
+                        ? payload.toolUseId : nil,
                     subagentId: name == .subagentActivity ? payload.agentId : nil,
-                    occurrenceId: ClaudeCodeHookOccurrenceIdentity.occurrenceIdentifier(
-                        sessionId: payload.sessionId,
-                        hookEventName: payload.hookEventName,
-                        toolUseId: payload.toolUseId,
-                        freshIdentifier: freshOccurrenceIdentifier
-                    )
+                    occurrenceId: freshOccurrenceIdentifier(),
+                    providerFields: providerFields
                 ),
                 correlationId: correlationIdentifier
             )
@@ -141,44 +153,6 @@ package enum ClaudeCodeHookProjection {
     }
 }
 
-/// Derives the occurrence identity for one projected Claude Code hook event.
-///
-/// A `tool_use_id` is Claude Code's own stable key for the work the event
-/// describes, so the same event retried by the same session derives the same
-/// identifier and the app coalesces it. Without one there is no natural key,
-/// and a fresh identifier is honest about that: deduplication then rests on
-/// correlation alone.
-package enum ClaudeCodeHookOccurrenceIdentity {
-    package static func occurrenceIdentifier(
-        sessionId: String,
-        hookEventName: String,
-        toolUseId: String?,
-        freshIdentifier: () -> UUID
-    ) -> UUID {
-        guard let toolUseId, !toolUseId.isEmpty else { return freshIdentifier() }
-        return nameBasedIdentifier(name: "claude|\(sessionId)|\(hookEventName)|\(toolUseId)")
-    }
-
-    /// Namespace for Agent Studio provider hook occurrence names. Fixed for the
-    /// life of the wire contract: changing it re-identifies every event.
-    private static let namespace = UUID(uuidString: "9F2F4D3C-6B1A-4F5E-8C7D-2A1B3C4D5E6F")
-
-    /// RFC 4122 section 4.3 name-based identifier, SHA-1 variant. The digest is
-    /// an identity derivation, never an integrity or authentication claim.
-    private static func nameBasedIdentifier(name: String) -> UUID {
-        var input = Data()
-        if let namespace { withUnsafeBytes(of: namespace.uuid) { input.append(contentsOf: $0) } }
-        input.append(contentsOf: Array(name.utf8))
-        var digest = Array(Insecure.SHA1.hash(data: input).prefix(16))
-        digest[6] = (digest[6] & 0x0F) | 0x50
-        digest[8] = (digest[8] & 0x3F) | 0x80
-        return UUID(
-            uuid: (
-                digest[0], digest[1], digest[2], digest[3],
-                digest[4], digest[5], digest[6], digest[7],
-                digest[8], digest[9], digest[10], digest[11],
-                digest[12], digest[13], digest[14], digest[15]
-            )
-        )
-    }
+package struct ClaudeCodeToolInput: Decodable, Equatable, Sendable {
+    package let questions: [IPCSessionQuestion]?
 }

@@ -17,6 +17,8 @@ final class RepoExplorerProjectionInputCapture {
     let coreAtoms: CoreAtoms
     let bridgeAttendanceSnapshot: BridgeAttendanceSnapshot
     let latestPaneMessageSnapshot: LatestPaneMessageSnapshot
+    let sessionStatusForPane: RepoExplorerSessionStatusReader
+    let contextDisplayForPane: RepoExplorerContextDisplayReader
     let continuousNow: @Sendable () -> ContinuousClock.Instant
     let wallNow: @Sendable () -> Date
 
@@ -39,6 +41,8 @@ final class RepoExplorerProjectionInputCapture {
         coreAtoms: CoreAtoms,
         bridgeAttendanceSnapshot: @escaping BridgeAttendanceSnapshot,
         latestPaneMessageSnapshot: @escaping LatestPaneMessageSnapshot,
+        sessionStatusForPane: @escaping RepoExplorerSessionStatusReader = { _ in nil },
+        contextDisplayForPane: @escaping RepoExplorerContextDisplayReader = { _ in nil },
         continuousNow: @escaping @Sendable () -> ContinuousClock.Instant = { ContinuousClock.now },
         wallNow: @escaping @Sendable () -> Date = Date.init
     ) {
@@ -50,6 +54,8 @@ final class RepoExplorerProjectionInputCapture {
         self.coreAtoms = coreAtoms
         self.bridgeAttendanceSnapshot = bridgeAttendanceSnapshot
         self.latestPaneMessageSnapshot = latestPaneMessageSnapshot
+        self.sessionStatusForPane = sessionStatusForPane
+        self.contextDisplayForPane = contextDisplayForPane
         self.continuousNow = continuousNow
         self.wallNow = wallNow
     }
@@ -778,6 +784,8 @@ final class RepoExplorerProjectionInputCapture {
         )
         return RepoExplorerPaneRowFacts(
             terminalTitle: terminalTitle,
+            sessionStatus: sessionStatusForPane(PaneId(existingUUID: paneID)),
+            contextDisplay: contextDisplayForPane(PaneId(existingUUID: paneID)),
             activityAt: nil,
             paneActivityTime: coreAtoms.paneActivityTime.value(for: paneID),
             isPinned: pane.metadata.isPinned,

@@ -105,9 +105,9 @@ struct ObservabilityLaunchScriptsTests {
             )
         )
         #expect(testHelperScript.contains("\"prebuild test bundles\" \\\n    \"$PREBUILD_TIMEOUT_SECONDS\""))
-        #expect(testHelperScript.contains("swift_test_output_has_failures()"))
-        #expect(testHelperScript.contains("emitted Swift Testing failure output despite exit 0"))
-        #expect(testHelperScript.contains("recorded an issue"))
+        #expect(testHelperScript.contains("swift_test_f2_read_facts"))
+        #expect(testHelperScript.contains("failing_test="))
+        #expect(testHelperScript.contains("reason=no_matching_tests"))
         #expect(testHelperScript.contains("grep -Eq \"unexpected signal code [0-9]+\" <<<\"$output\""))
         #expect(!testHelperScript.contains("echo \"$output\" | grep -Eq \"unexpected signal code [0-9]+\""))
         for liveBridgeTransportTest in [
@@ -136,7 +136,7 @@ struct ObservabilityLaunchScriptsTests {
         ] {
             #expect(!testHelperScript.contains(staleWebKitFilter))
         }
-        #expect(testHelperScript.contains("No matching test cases were run"))
+        #expect(testHelperScript.contains("reason=no_matching_tests"))
         #expect(!testHelperScript.contains("WebKitSerializedTests/WorkspaceSurfaceBridgeFilesystemRefreshTests"))
         #expect(testHelperScript.contains("WorkspaceSurfaceCoordinatorFilesystemSourceTests"))
         #expect(testHelperScript.contains("WebKitSerializedTests/BridgePaneControllerIPCProjectionTests"))

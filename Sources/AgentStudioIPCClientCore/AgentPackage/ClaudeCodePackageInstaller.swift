@@ -132,8 +132,9 @@ extension ClaudeCodePackageInstallation {
             "hooks": .array([
                 .object([
                     "type": .string("command"),
-                    "command": .string("\(hookScriptURL.path) \(event.rawValue) \(providerVersion)"),
+                    "command": .string("\"\(hookScriptURL.path)\" \(event.rawValue) \(providerVersion)"),
                     "timeout": .number(Self.hookTimeoutSeconds),
+                    "async": .bool(true),
                 ])
             ])
         ])

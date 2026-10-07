@@ -14,14 +14,23 @@ let expectedBootRequiredLocalMigrationIdentifiers = [
     "007_add_per_screen_sidebar_organization",
     "015_add_panes_drawer_visibility",
     "015_create_local_drawer_presentation",
+    "028_add_local_pane_activity",
 ]
 
 let expectedFullLocalMigrationIdentifiers =
     expectedBootRequiredLocalMigrationIdentifiers
     + [
         "011_create_sessions_ingestion_schema",
+        "020_sessions_status_and_replay",
+        "021_pane_context_current_values",
+        "022_pane_context_messages",
+        "023_pane_context_write_order",
+        "024_pane_context_answer_positions",
+        "025_pane_context_retirement",
         "012_create_ipc_credential_schema",
         "013_create_opaque_pane_credential_records",
         "014_ipc_credentials_pane_only",
         "019_create_pane_context_cli_outbox_cursor",
+        "026_sessions_permission_handling",
+        "027_sessions_hook_admission_cleanup",
     ]

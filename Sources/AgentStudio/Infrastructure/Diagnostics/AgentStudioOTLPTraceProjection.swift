@@ -242,6 +242,18 @@ package enum AgentStudioOTLPTraceProjection {
         .union(BridgeProductStreamProjectionKeys.stringKeys).union(BridgeProductPaintProjectionKeys.stringKeys)
         .union(RendererLifecycleOTLPProjectionKeys.stringAttributeKeys)
     private static let allowedNumericAttributeKeys: Set<String> = Set([
+        "agentstudio.sessions.computed_count",
+        "agentstudio.sessions.equal_suppressed_count",
+        "agentstudio.sessions.coalesced_count",
+        "agentstudio.sessions.batch_size",
+        "agentstudio.sessions.main_actor_total_ms",
+        "agentstudio.sessions.main_actor_max_ms",
+        "agentstudio.pane_context.computed_count",
+        "agentstudio.pane_context.equal_suppressed_count",
+        "agentstudio.pane_context.coalesced_count",
+        "agentstudio.pane_context.batch_size",
+        "agentstudio.pane_context.main_actor_total_ms",
+        "agentstudio.pane_context.main_actor_max_ms",
         "agentstudio.sqlite.result_code",
         "agentstudio.bridge.activation.sequence",
         "agentstudio.bridge.active_viewer.sequence",
@@ -416,6 +428,8 @@ package enum AgentStudioOTLPTraceProjection {
         "agentstudio.performance.commandbar.result_worktree_row.count",
         "agentstudio.performance.commandbar.worktree.count",
         "agentstudio.performance.elapsed_ms",
+        "agentstudio.performance.ipc.pane_context_read.detail_elapsed_ms",
+        "agentstudio.performance.ipc.pane_context_read.reply_bytes",
         "agentstudio.performance.repository_lifecycle.repository.count",
         "agentstudio.performance.repository_lifecycle.observation.count",
         "agentstudio.performance.repository_lifecycle.changed_family.count",

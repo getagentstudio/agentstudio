@@ -18,6 +18,10 @@ extension IPCBuiltInMethodCatalog {
     package static func offlineNotificationDescriptors(
         examples: IPCBuiltInMethodExampleContext
     ) throws -> [IPCAnyMethodDescriptor] {
-        try IPCSessionMethodDescriptors(examples: examples).erased
+        let inputs = IPCBuiltInMethodCatalogInputs(examples: examples)
+        return [
+            try IPCPaneContextMethodDescriptors.messageSendEntry.erased.makeRepresentation(inputs: inputs)
+                .erasedDescriptor
+        ]
     }
 }

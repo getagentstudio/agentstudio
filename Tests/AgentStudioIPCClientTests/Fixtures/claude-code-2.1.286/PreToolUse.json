@@ -1,0 +1,17 @@
+{
+  "session_id": "d3408f81-1f20-4d84-96b4-59aadcbb29ec",
+  "transcript_path": "/recorded/transcript_path",
+  "cwd": "/recorded/cwd",
+  "prompt_id": "ea6efaa1-1ed2-4159-8dd8-7482c421ddca",
+  "permission_mode": "auto",
+  "effort": {
+    "level": "medium"
+  },
+  "hook_event_name": "PreToolUse",
+  "tool_name": "Bash",
+  "tool_input": {
+    "command": "printf fixture-output",
+    "description": "Fixture text."
+  },
+  "tool_use_id": "toolu_01HZRLLDXhZ9WtvhLvYLkdzt"
+}

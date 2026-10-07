@@ -40,10 +40,21 @@ package struct AgentStudioIPCClient: Sendable {
     package func call(_ invocation: IPCDescriptorInvocation, requestID: Int = 1) throws
         -> IPCDescriptorClientCallResult
     {
+        try withAuthenticatedExchange(first: invocation, requestID: requestID) { exchange in
+            try exchange.call(invocation)
+        }
+    }
+
+    /// One connection, login and original deadline serve every dependent step.
+    /// The connection closes when this synchronous scope ends.
+    package func withAuthenticatedExchange<Output>(
+        first invocation: IPCDescriptorInvocation, requestID: Int = 1,
+        _ body: (inout IPCAuthenticatedExchange) throws -> Output
+    ) throws -> Output {
         guard invocation.descriptor.metadata.responseDelivery == .single else {
             throw failure(.notSubmitted, .localRequestEncoding)
         }
-        let exchange = try prepareExchange(invocation, requestID: requestID)
+        let prepared = try prepareExchange(invocation, requestID: requestID)
         let connection = try connect()
         var readThrough: IPCCLIStoreReadThrough?
         defer {
@@ -51,16 +62,13 @@ package struct AgentStudioIPCClient: Sendable {
             onCallCompletion(readThrough)
         }
         var reader = AgentStudioIPCClientFrameReader(maxFrameBytes: configuration.maxResponseFrameBytes)
-        readThrough = try authenticateIfNeeded(exchange, connection: connection, reader: &reader)
-        try submit(exchange.commandFrame, connection: connection)
-        let response = try receiveResponse(id: exchange.commandRequestID, connection: connection, reader: &reader)
-        let result = try normalizedResponse(
-            response, descriptor: invocation.descriptor, requestID: exchange.commandRequestID)
-        if invocation.descriptor.metadata.name == "auth.login", case .success(let success) = result {
-            let status = try JSONDecoder().decode(IPCAuthStatusResult.self, from: success.normalizedResult.data)
-            if case .authenticated(_, _, _, let mark) = status { readThrough = mark }
-        }
-        return result
+        readThrough = try authenticateIfNeeded(prepared, connection: connection, reader: &reader)
+        var exchange = IPCAuthenticatedExchange(
+            owner: self, connection: connection, reader: reader,
+            requestID: prepared.commandRequestID, firstInvocation: invocation, firstFrame: prepared.commandFrame,
+            readThrough: readThrough)
+        defer { readThrough = exchange.readThrough }
+        return try body(&exchange)
     }
 
     package func stream(
@@ -236,7 +244,7 @@ package struct AgentStudioIPCClient: Sendable {
         return readThrough
     }
 
-    private func normalizedResponse(
+    fileprivate func normalizedResponse(
         _ response: JSONRPCResponseMessage, descriptor: IPCAnyMethodDescriptor, requestID: Int
     ) throws -> IPCDescriptorClientCallResult {
         if let error = response.error {
@@ -263,14 +271,16 @@ package struct AgentStudioIPCClient: Sendable {
                 endpoint: UnixSocketEndpoint(path: configuration.socketPath), deadline: deadline)
         } catch let error as UnixSocketTransportError where error.reason == .connectFailed {
             throw failure(.endpointUnavailableBeforeSubmission, .endpointConnectFailed(errnoCode: error.errnoCode))
+        } catch let error as UnixSocketTransportError {
+            throw failure(.notSubmitted, .endpointConnectFailed(errnoCode: error.errnoCode))
         } catch { throw failure(.notSubmitted, .localRequestEncoding) }
     }
 
-    private func submit(_ frame: Data, connection: UnixSocketConnection) throws {
-        do { try connection.send(frame) } catch { throw failure(.deliveryUncertain, .commandWrite) }
+    fileprivate func submit(_ frame: Data, connection: UnixSocketConnection) throws {
+        do { try connection.send(frame) } catch { throw failure(.notSubmitted, .commandWrite) }
     }
 
-    private func receiveResponse(
+    fileprivate func receiveResponse(
         id: Int, connection: UnixSocketConnection, reader: inout AgentStudioIPCClientFrameReader
     ) throws -> JSONRPCResponseMessage {
         let frame: String
@@ -323,5 +333,56 @@ private struct AgentStudioIPCClientFrameReader {
             queuedFrames.append(contentsOf: try decoder.append(data))
         }
         return queuedFrames.removeFirst()
+    }
+}
+
+/// A scoped sequential exchange over the client's existing framing and validation.
+package struct IPCAuthenticatedExchange {
+    private let owner: AgentStudioIPCClient
+    private let connection: UnixSocketConnection
+    private var reader: AgentStudioIPCClientFrameReader
+    private var nextRequestID: Int
+    private var firstRequest: (invocation: IPCDescriptorInvocation, frame: Data)?
+    fileprivate var readThrough: IPCCLIStoreReadThrough?
+
+    fileprivate init(
+        owner: AgentStudioIPCClient, connection: UnixSocketConnection, reader: AgentStudioIPCClientFrameReader,
+        requestID: Int, firstInvocation: IPCDescriptorInvocation, firstFrame: Data,
+        readThrough: IPCCLIStoreReadThrough?
+    ) {
+        self.owner = owner
+        self.connection = connection
+        self.reader = reader
+        nextRequestID = requestID
+        firstRequest = (firstInvocation, firstFrame)
+        self.readThrough = readThrough
+    }
+
+    package mutating func call(_ invocation: IPCDescriptorInvocation) throws -> IPCDescriptorClientCallResult {
+        guard invocation.descriptor.metadata.responseDelivery == .single,
+            nextRequestID > 0, nextRequestID < Int.max
+        else { throw IPCDescriptorClientFailure(disposition: .notSubmitted, reason: .localRequestEncoding) }
+        let requestID = nextRequestID
+        nextRequestID += 1
+        let frame: Data
+        if let first = firstRequest {
+            guard first.invocation.descriptor.metadata.name == invocation.descriptor.metadata.name,
+                first.invocation.normalizedParameters.data == invocation.normalizedParameters.data
+            else { throw IPCDescriptorClientFailure(disposition: .notSubmitted, reason: .localRequestEncoding) }
+            frame = first.frame
+            firstRequest = nil
+        } else {
+            frame = try NDJSONFrameEncoder.encode(
+                owner.requestFrame(invocation, requestID: requestID),
+                maxFrameBytes: owner.configuration.maxRequestFrameBytes)
+        }
+        try owner.submit(frame, connection: connection)
+        let response = try owner.receiveResponse(id: requestID, connection: connection, reader: &reader)
+        let result = try owner.normalizedResponse(response, descriptor: invocation.descriptor, requestID: requestID)
+        if invocation.descriptor.metadata.name == "auth.login", case .success(let success) = result {
+            let status = try JSONDecoder().decode(IPCAuthStatusResult.self, from: success.normalizedResult.data)
+            if case .authenticated(_, _, _, let mark) = status { readThrough = mark }
+        }
+        return result
     }
 }

@@ -247,7 +247,7 @@ struct SwiftBuildSlotScriptTests {
     @Test("the test runner receipt handler releases the slot and preserves failure status")
     func runnerExitHandlerEmitsReceiptAndReleasesAfterFailure() async throws {
         let fixture = try SwiftBuildSlotFixture()
-        let runnerSource = try String(contentsOfFile: "scripts/run-swift-test-task.sh", encoding: .utf8)
+        let runnerSource = try loadSwiftLaneRunnerReportingSource()
         let exitHandler = try swiftBuildSlotShellFunction(named: "finish_lane_invocation", in: runnerSource)
         let result = try await fixture.run(
             "source scripts/swift-build-slot.sh\n"

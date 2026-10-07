@@ -420,7 +420,7 @@ struct AppIPCDynamicCommandClientTests {
             #expect(structuredError.catalogMethod == nil)
             // PD choice 4 ranks entry names; it specifies no eligibility filter.
             let suggestedMethods: [String] = [
-                "bridge.telemetry.flush", "bridge.telemetry.snapshot", "bridge.diff.scrollToFile",
+                "bridge.telemetry.flush", "bridge.telemetry.snapshot", "pane.title.set",
             ]
             let expectedCorrection: String =
                 "a compiled method or model invocation; see agentstudio help; closest methods: "

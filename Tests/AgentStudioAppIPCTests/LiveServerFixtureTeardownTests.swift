@@ -54,7 +54,7 @@ struct LiveServerFixtureTeardownTests {
             body: { fixture in
                 try fixture.server.start()
                 try registerFixtureCredential(in: fixture)
-                fixture.stopAcceptingConnections()
+                await fixture.stopAcceptingConnections()
                 let credential = try await registration.firstArrival()
                 #expect(credential.paneID == fixture.boundPaneId)
                 registration.fail(FixtureTeardownProofError.writeFailed)
@@ -63,9 +63,9 @@ struct LiveServerFixtureTeardownTests {
 
                 // The facade is deliberately used here: it cannot bypass the
                 // fixture checkpoint and enqueue that unsaved credential again.
-                fixture.server.stopAcceptingConnections()
-                fixture.stopAcceptingConnections()
-                fixture.stop()
+                await fixture.server.stopAcceptingConnections()
+                await fixture.stopAcceptingConnections()
+                await fixture.stop()
             }
         )
 

@@ -377,7 +377,7 @@ func startHTTPMetadataStream(
     let recorder = try HTTPMetadataFrameRecorder()
     let responseBody = response.body
     let drain = Task {
-        try await responseBody.write(recorder)
+        try await responseBody.write(ForwardingResponseBodyWriter(sink: recorder))
     }
     return .init(recorder: recorder, drain: drain)
 }
@@ -731,7 +731,7 @@ private func metadataFrameIdentity(
     }
 }
 
-actor HTTPMetadataFrameRecorder: ResponseBodyWriter {
+actor HTTPMetadataFrameRecorder: RecordingResponseBodySink {
     private let decoder: BridgeProductMetadataFrameDecoder
     private var frames: [BridgeProductMetadataFrame] = []
     private var nextReadIndex = 0

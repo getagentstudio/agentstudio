@@ -106,7 +106,7 @@ public final class AgentStudioIPCPrincipalRegistry: @unchecked Sendable {
 
     private let lock = NSLock()
     private let credentialResolver: any AgentStudioIPCCredentialResolving
-    private let canonicalPaneMembership: @MainActor @Sendable (UUID, UUID) -> Bool
+    private let canonicalPaneMembership: @Sendable (UUID, UUID) -> Bool
     package let grantLedger: GrantLedger
     private var lifetimeEpoch: UInt64 = 0
     private var invalidationSequence: UInt64 = 0
@@ -123,7 +123,7 @@ public final class AgentStudioIPCPrincipalRegistry: @unchecked Sendable {
     package init(
         runtimeId: UUID,
         credentialResolver: any AgentStudioIPCCredentialResolving,
-        canonicalPaneMembership: @escaping @MainActor @Sendable (UUID, UUID) -> Bool,
+        canonicalPaneMembership: @escaping @Sendable (UUID, UUID) -> Bool,
         grantLedger: GrantLedger = GrantLedger()
     ) {
         self.runtimeId = runtimeId
@@ -231,6 +231,7 @@ public final class AgentStudioIPCPrincipalRegistry: @unchecked Sendable {
             () -> (
                 [AgentStudioIPCIssuedPaneCredential], Set<UUID>
             ) in
+            guard !isShutdown else { return ([], []) }
             isShutdown = true
             lifetimeEpoch &+= 1
             let principalIDs = Set(activeLeases.values.joined())
@@ -381,7 +382,7 @@ public final class AgentStudioIPCPrincipalRegistry: @unchecked Sendable {
             guard
                 let paneUUID = UUID(uuidString: paneID),
                 let workspaceID,
-                await canonicalPaneMembership(paneUUID, workspaceID)
+                canonicalPaneMembership(paneUUID, workspaceID)
             else { return false }
         }
         guard let namespace = namespace(for: context.principal) else { return false }
@@ -445,7 +446,7 @@ public final class AgentStudioIPCPrincipalRegistry: @unchecked Sendable {
     ) async throws -> AgentStudioIPCAuthenticatedContext {
         switch resolution {
         case .pane(let paneID, let workspaceID, let credentialRecordID, .registered):
-            guard await canonicalPaneMembership(paneID, workspaceID) else {
+            guard canonicalPaneMembership(paneID, workspaceID) else {
                 throw AgentStudioIPCAuthenticationError(reason: .unauthenticated)
             }
             return AgentStudioIPCAuthenticatedContext(

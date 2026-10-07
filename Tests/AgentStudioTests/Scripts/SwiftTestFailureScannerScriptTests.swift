@@ -1,46 +1,29 @@
-import AgentStudioInfrastructure
-import AgentStudioTestSupport
 import Foundation
 import Testing
 
 @Suite("Swift test failure scanner scripts")
 struct SwiftTestFailureScannerScriptTests {
-    @Test("Swift failure scanner handles large output with and without an early failure", arguments: [true, false])
-    func swiftFailureScannerHandlesLargeOutput(hasEarlyFailure: Bool) async throws {
+    @Test("facts verdict retains an early issue through a large event stream", arguments: [true, false])
+    func earlyIssueSurvivesLargeEventStream(hasEarlyFailure: Bool) async throws {
         // Arrange
-        let outputURL = FileManager.default.temporaryDirectory
-            .appending(path: "ci-failure-scanner-\(UUIDv7.generate().uuidString).log")
-        defer { try? FileManager.default.removeItem(at: outputURL) }
-        let failureLine =
-            hasEarlyFailure
-            ? "✘ Test \"x\" recorded an issue at A.swift:1:1: Expectation failed\n" : ""
-        let benignOutput = String(
-            repeating: "✔ Test \"ok\" passed after 0.001 seconds.\n",
-            count: 200_000
-        )
-        try (failureLine + benignOutput).write(to: outputURL, atomically: true, encoding: .utf8)
-        let quotedOutputPath = "'" + outputURL.path.replacingOccurrences(of: "'", with: "'\\''") + "'"
+        let fixture = try InvocationReceiptFixture()
+        defer { fixture.remove() }
+        try writeCapturedInvocation(
+            fixture, selecting: hasEarlyFailure ? "recordsFailure()" : "recordsPass()",
+            extraRecords: 200_000)
 
         // Act
-        let scannerStatus = try await runBashStatus(
-            "source scripts/swift-test-helpers.sh; "
-                + "swift_test_output_has_failures \(quotedOutputPath)"
-        )
+        let result = try await fixture.runEventFixture(as: "swift test", expectedRuns: 1, exitStatus: 0)
 
         // Assert
-        let expectedStatus: Int32 = hasEarlyFailure ? 0 : 1
-        #expect(scannerStatus == expectedStatus)
-    }
-}
-
-private func runBashStatus(_ command: String) async throws -> Int32 {
-    try await withoutBlockingCooperativePool {
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/bin/bash")
-        process.arguments = ["-c", command]
-        process.currentDirectoryURL = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
-        try process.run()
-        process.waitUntilExit()
-        return process.terminationStatus
+        #expect(result.record["command_status"] as? Int == 0)
+        #expect(result.output.contains("STATUS=\(hasEarlyFailure ? 1 : 0)"), Comment(rawValue: result.output))
+        #expect(result.output.contains("stream=complete"), Comment(rawValue: result.output))
+        #expect(result.output.contains("unreadable_records=0"), Comment(rawValue: result.output))
+        #expect(result.output.contains("failing_issues=\(hasEarlyFailure ? 1 : 0)"), Comment(rawValue: result.output))
+        let failingName = "failing_test=AgentStudioTests.Xcode27EventStreamEvidenceScratchTests/recordsFailure()"
+        #expect(result.output.contains(failingName) == hasEarlyFailure, Comment(rawValue: result.output))
+        #expect(
+            result.output.components(separatedBy: "lane-report failing_test=").count - 1 == (hasEarlyFailure ? 1 : 0))
     }
 }
