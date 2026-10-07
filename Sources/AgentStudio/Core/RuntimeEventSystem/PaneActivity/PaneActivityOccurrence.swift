@@ -1,6 +1,6 @@
 import Foundation
 
-package enum PaneActivitySource: Sendable, Equatable {
+package enum PaneActivitySource: String, Sendable, Equatable {
     case terminal
     case hook
 }
@@ -51,4 +51,25 @@ package struct PaneActivityTime: Sendable, Equatable {
 package enum PaneActivityTimeMutation: Sendable, Equatable {
     case set(UUID, PaneActivityTime)
     case remove(UUID)
+}
+
+/// Durable wall-time projection; the process-local ordering instant is never stored.
+package struct PaneActivityRecord: Sendable, Equatable {
+    package let paneId: UUID
+    package let wallTime: Date
+    package let source: PaneActivitySource
+
+    package init(paneId: UUID, wallTime: Date, source: PaneActivitySource) {
+        self.paneId = paneId
+        self.wallTime = wallTime
+        self.source = source
+    }
+}
+
+package struct PaneActivityCommit: Sendable, Equatable {
+    package let mutations: [PaneActivityTimeMutation]
+
+    package init(mutations: [PaneActivityTimeMutation]) {
+        self.mutations = mutations
+    }
 }
