@@ -103,13 +103,13 @@ collaborators at launch:
 
 - the main window's tab controller and `AppDelegate` set the dispatcher's
   handlers
-  ([PaneTabViewController.swift:565](../../../Sources/AgentStudio/App/Panes/PaneTabViewController.swift#L565),
+  ([PaneTabViewController.swift:569](../../../Sources/AgentStudio/App/Panes/PaneTabViewController.swift#L569),
   [AppDelegate+WorkspaceBoot.swift:513](../../../Sources/AgentStudio/App/Boot/AppDelegate+WorkspaceBoot.swift#L513));
 - `WorkspaceSurfaceCoordinator` overwrites the callback code's registry each
   time it is constructed
-  ([WorkspaceSurfaceCoordinator.swift:305](../../../Sources/AgentStudio/App/Coordination/WorkspaceSurfaceCoordinator.swift#L305));
+  ([WorkspaceSurfaceCoordinator.swift:309](../../../Sources/AgentStudio/App/Coordination/WorkspaceSurfaceCoordinator.swift#L309));
 - `AppDelegate` copies the startup recorder into a static
-  ([AppDelegate.swift:176-177](../../../Sources/AgentStudio/App/Boot/AppDelegate.swift#L176)).
+  ([AppDelegate.swift:170-171](../../../Sources/AgentStudio/App/Boot/AppDelegate.swift#L170)).
 
 P2 — On each terminal callback, the callback code reaches several globals:
 

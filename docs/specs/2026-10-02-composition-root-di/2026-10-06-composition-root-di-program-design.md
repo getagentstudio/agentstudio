@@ -232,7 +232,11 @@ code still needs source scrutiny. This design does not add experimental lifetime
 compiler features or claim to make arbitrary native pointer misuse impossible.
 
 The stateless translator object is deleted. Its mapping, payload sum and
-malformed-payload classification remain pure functions/types. A pure static
+malformed-payload classification remain pure functions/types. In particular,
+command-finished payloads retain `sourceInstant: ContinuousClock.Instant`,
+captured in the native callback. The adapter/runtime forwarding must preserve
+that original instant into the runtime envelope and Sessions ingestion rather
+than substitute the later MainActor delivery time. A pure static
 function is not replacement global mutable state; tests exercise the same
 mapping as callback ingress and delivery.
 
@@ -268,12 +272,13 @@ sequenceDiagram
 
 | Path / obligation | Current anchored path | Proposed delta and preserved edges |
 | --- | --- | --- |
-| Startup and tracing — R1, R4, R8 | `main.swift:10` creates recorder → `AppDelegate.swift:176–177` binds global trace state → `main.swift:80` initializes global engine | **Changed:** startup creates instance callback state and engine; **removed:** static recorder/queue setters and engine access; **unchanged:** recorder before delegate/native engine, existing milestone order and error outcomes. |
-| Command — R1, R2, R4, R6 | Menu/keyboard/IPC host → singleton dispatcher (`AppCommandDispatcher.swift:14`) → mutable weak shell/pane handlers (`PaneTabViewController.swift:565`, `AppDelegate+WorkspaceBoot.swift:513`) → existing owner policy/result | **Changed:** constructor dispatcher and fixed typed owner access; **removed:** singleton, mutable setup fields and test swap actor; **unchanged:** catalog, validation, shell-first dispatch, workspace fallback within the same composition, typed results. |
+| Startup and tracing — R1, R4, R8 | `main.swift:10` creates recorder → `AppDelegate.swift:170–171` binds global trace state → `main.swift:76` initializes global engine | **Changed:** startup creates instance callback state and engine; **removed:** static recorder/queue setters and engine access; **unchanged:** recorder before delegate/native engine, existing milestone order and error outcomes. |
+| Command — R1, R2, R4, R6 | Menu/keyboard/IPC host → singleton dispatcher (`AppCommandDispatcher.swift:14`) → mutable weak shell/pane handlers (`PaneTabViewController.swift:569`, `AppDelegate+WorkspaceBoot.swift:513`) → existing owner policy/result | **Changed:** constructor dispatcher and fixed typed owner access; **removed:** singleton, mutable setup fields and test swap actor; **unchanged:** catalog, validation, shell-first dispatch, workspace fallback within the same composition, typed results. |
 | Surface/engine — R1, R4, R6, R7 | `SurfaceManager.swift:205–247` → global initialized check/app → surface constructor; `Ghostty.swift:20` traps on direct access before initialization | **Changed:** injected engine availability and weak lookup operations; direct accessor crash becomes typed unavailable; **removed:** global engine and lookup defaults; **unchanged:** surface ID generation, bounded retries, configuration, focus, initialization milestone/outcome and native free owner. |
-| Callback — R1, R5–R8 | `GhosttyCallbackRouter.swift:17–22` → static action handler → `GhosttyActionRouter.swift:703–801` source admission and scheduler → global lookup/registry/translator fallback (`GhosttyActionRouter+RuntimeRouting.swift:60–85`) | **Changed:** userdata-owned handler, checked queues and injected adapter; **removed:** static store/default/fallback reads; **unchanged:** disposition, contraction, exact barriers, synchronous Bool, current lifetime check, runtime and trace effects. |
+| Callback — R1, R5–R8 | `GhosttyCallbackRouter.swift:17–22` → static action handler → `GhosttyActionRouter.swift:707–805` source admission and scheduler → global lookup/registry/translator fallback (`GhosttyActionRouter+RuntimeRouting.swift:60–85`) | **Changed:** userdata-owned handler, checked queues and injected adapter; **removed:** static store/default/fallback reads; **unchanged:** disposition, contraction, exact barriers, synchronous Bool, current lifetime check, runtime and trace effects. |
 | Activity — R2, R7, R9 | `TerminalActivityRouter.swift:148,183` binds/unbinds file-level object (`GhosttyActionRouter+TerminalActivityInput.swift:10`) → global sink/context | **Changed:** fixed constructor operations reference boot-owned router readiness; **removed:** global binding/ID arbitration; **unchanged:** activity router/projector lifecycle, inputs, semantic output and bus policy. |
 | Wakeup and close — R5, R7 | Wakeup captures pointer bits for later reconstruction (`GhosttyCallbackRouter.swift:38–48`); close reconstructs view then schedules weak apply (`:180–197`) | **Changed:** reconstruct context/identity synchronously; deferred tick resolves weak live engine, close re-resolves live attachment; **removed:** delayed native pointer dereference; **unchanged:** tick/close effect and weak lifetime rejection. |
+| Command-finished timing — R5, R6 | `GhosttyActionRouter.swift:399–410` captures `ContinuousClock.now` in `.commandFinished`; `GhosttyAdapter.swift:124–135` forwards it; `TerminalRuntime.swift:288` stamps the envelope; `WorkspaceSurfaceCoordinator.swift:698` forwards `reportedAt` to Sessions ingestion | **Intentionally unchanged:** original source timestamp survives copied payload, admitted work, translation and envelope publication; replacing the translator cannot resample time at delivery. Existing Sessions ingestion is a consumer to preserve, not a new DI-owned responsibility. |
 
 Ordinary consumers obtain the selected references through existing window,
 pane, mount and runtime constructors. SwiftUI views receive specific values or
@@ -492,8 +497,8 @@ and [command owner contracts](../../architecture/commands/command_specs.md#choos
 remain authoritative. Callback rules come from [Contract 7](../../architecture/runtime/pane_runtime_architecture.md#contract-7-typed-ghostty-source-admission-and-contraction)
 and [admission/hop shape](../../architecture/runtime/pane_runtime_eventbus_design.md#admission-and-hop-shape).
 The current native pin is `ghostty-org/ghostty` revision
-`82232ecde55405559dec29c5466cb9e39938cb41`; its
-[userdata and free entrypoints](https://github.com/ghostty-org/ghostty/blob/82232ecde55405559dec29c5466cb9e39938cb41/src/apprt/embedded.zig#L1699)
+`2fb0c9cacb3fc75dbc8aedee9b7ed4321f091d33`; its
+[userdata and free entrypoints](https://github.com/ghostty-org/ghostty/blob/2fb0c9cacb3fc75dbc8aedee9b7ed4321f091d33/src/apprt/embedded.zig#L1699)
 establish the C ownership boundary. Installed Swift SDK Mutex and Dispatch
 interfaces establish the checked lock/Sendable constraints.
 

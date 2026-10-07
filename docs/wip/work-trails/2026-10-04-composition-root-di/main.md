@@ -238,3 +238,27 @@ Explicit review-delivery instruction authorizes a docs-only branch push while
 application builds/tests/installs remain prohibited. Use document/link/trace and
 whitespace gates; do not represent them as mise aggregate or branch readiness.
 No PR creation, merge of this branch into main, or force push authorized.
+
+### 2026-10-07 — merged baseline re-anchor
+
+Merged origin/main at c49cda785 with no conflicts; merge commit6082fc14d.
+Relative to that main, only the three DI artifacts and this trace differ.
+Inspected the affected AppDelegate/coordinator/pane-host/callback/translator
+source changes and new per-target runner. Sendable-implying conformances are
+already in their owning files on main; retain them there, do not duplicate moves.
+Current source preserves the same singleton injection problem, with shifted
+anchors. Updated those anchors in Requirements/Program Design.
+
+Native pin changed to2fb0c9cacb3fc75dbc8aedee9b7ed4321f091d33. Retrieved its
+exact official embedded/App/Surface source to ignored scratch without vendor
+hydration; userdata/free entrypoints and surface renderer/IO joins still support
+the selected lifetime order. Updated public source pointer to the new pin.
+Current commandFinished payload also retains the monotonic sourceInstant captured
+in the native call, forwarded by adapter/runtime into the envelope and Sessions
+consumer. Added that preservation-critical existing edge to the call-path table;
+this does not give DI a new Sessions responsibility or change observed behavior.
+
+Document gate required escalation solely for Git LFS metadata cache access after
+main's media changes; git diff --check exit0. No main source authored/modified
+by DI, no app tests/builds/installs, no proof gate weakened. The queued-review
+packet will bind the exact final docs commit and merged source, not old f0e446706.
