@@ -110,6 +110,7 @@ struct WorkspaceLocalMigrationTests {
             "local_entity_recency",
             "local_workspace_entity_recency",
             "local_repository_activity",
+            "local_pane_activity",
             "local_repository_activity_cursor",
             "local_notification_inbox_collapsed_group",
             "local_notification_inbox_item",

@@ -650,6 +650,7 @@ actor BridgeDevelopmentSharedConstructionReviewProvider:
         reviewGenerationValues.append(request.reviewGenerationValue)
         reviewAttemptAuthorityGenerations.append(request.reviewAttemptAuthorityGeneration)
         gitRefreshScopes.append(request.gitRefreshScope)
+        try await contributionCaptureHold?(request)
         await comparisonGate?.waitUntilReleased()
         let baseEndpoint = resolvedEndpoint(request.baseEndpoint)
         return BridgeContributionComparisonCapture(
@@ -667,6 +668,7 @@ actor BridgeDevelopmentSharedConstructionReviewProvider:
     }
 
     private var comparisonGate: BridgeComparisonGate?
+    private var contributionCaptureHold: (@Sendable (BridgeContributionComparisonRequest) async throws -> Void)?
     private var contributionCaptureCount = 0
     private var contributionTargets: [WorkspaceReviewContributionTarget] = []
     private var regularComparisonCount = 0
@@ -695,6 +697,12 @@ actor BridgeDevelopmentSharedConstructionReviewProvider:
 
     func setComparisonGate(_ comparisonGate: BridgeComparisonGate?) {
         self.comparisonGate = comparisonGate
+    }
+
+    func setContributionCaptureHold(
+        _ contributionCaptureHold: (@Sendable (BridgeContributionComparisonRequest) async throws -> Void)?
+    ) {
+        self.contributionCaptureHold = contributionCaptureHold
     }
 
     func setRepositoryDefaultTarget(
