@@ -1,5 +1,6 @@
 import AgentStudioInfrastructure
 import Foundation
+import GRDB
 import Testing
 
 @testable import AgentStudioSessions
@@ -68,5 +69,89 @@ struct SessionsRemainingContractTests {
             #expect(firstSummary?.status == .unknown)
             #expect(secondSummary?.status == .working(.active))
         }
+    }
+
+    @Test("a second pane's first SessionStart reuses the known provider conversation")
+    func sameConversationSessionStartReusesConversationIdentity() async throws {
+        let fixture = try SessionsFileDatabaseFixture()
+        defer { fixture.removeFiles() }
+        let firstPane = UUIDv7.generate()
+        let secondPane = UUIDv7.generate()
+        try await withSessionsIngestion(repository: fixture.makeRepository()) { ingestion in
+            let firstOutcome = try await ingestion.submitHook(
+                makeHookAdmission(
+                    paneId: firstPane, sessionId: "shared", eventName: .sessionStart,
+                    signal: .sessionStart, turnId: nil))
+            let first = try #require(committedHookCommit(from: firstOutcome))
+            let secondOutcome = try await ingestion.submitHook(
+                makeHookAdmission(
+                    paneId: secondPane, sessionId: "shared", eventName: .sessionStart,
+                    signal: .sessionStart, turnId: nil))
+            let second = try #require(committedHookCommit(from: secondOutcome))
+            #expect(second.binding.conversationId == first.binding.conversationId)
+            #expect(second.binding.bindingGenerationId != first.binding.bindingGenerationId)
+        }
+        let queue = try DatabaseQueue(path: fixture.databaseURL.path)
+        let conversationCount = try await queue.read { database in
+            try Int.fetchOne(
+                database,
+                sql: """
+                    SELECT COUNT(*) FROM sessions_conversation
+                    WHERE provider_identifier = 'codex' AND provider_conversation_id = 'shared'
+                    """)
+        }
+        #expect(conversationCount == 1)
+        try await withSessionsIngestion(repository: fixture.makeRepository()) { ingestion in
+            let first = try #require(try await ingestion.sessionSummary(paneId: firstPane))
+            let second = try #require(try await ingestion.sessionSummary(paneId: secondPane))
+            #expect(first.bindingGeneration != second.bindingGeneration)
+            #expect(first.sessionRef.value == "shared")
+            #expect(second.sessionRef.value == "shared")
+        }
+    }
+
+    @Test("an unconfirmed takeover reuses a provider conversation known on another pane")
+    func unconfirmedTakeoverReusesConversationIdentity() async throws {
+        let fixture = try SessionsFileDatabaseFixture()
+        defer { fixture.removeFiles() }
+        let knownPane = UUIDv7.generate()
+        let takeoverPane = UUIDv7.generate()
+        let knownConversationId = try await withSessionsIngestion(repository: fixture.makeRepository()) { ingestion in
+            let knownOutcome = try await ingestion.submitHook(
+                makeHookAdmission(
+                    paneId: knownPane, sessionId: "shared", eventName: .sessionStart,
+                    signal: .sessionStart, turnId: nil))
+            let known = try #require(committedHookCommit(from: knownOutcome))
+            _ = try await ingestion.submitHook(
+                makeHookAdmission(
+                    paneId: takeoverPane, sessionId: "old", eventName: .toolActivity,
+                    signal: .toolActivity(toolName: "Read")))
+            return known.binding.conversationId
+        }
+        let takeoverConversationId = try await withSessionsIngestion(
+            repository: fixture.makeRepository(),
+            operation: { ingestion in
+                _ = try await ingestion.sessionSummary(paneId: takeoverPane)
+                let outcome = try await ingestion.submitHook(
+                    makeHookAdmission(
+                        paneId: takeoverPane, sessionId: "shared", eventName: .sessionStart,
+                        signal: .sessionStart, turnId: nil))
+                let takeover = try #require(committedHookCommit(from: outcome))
+                let context = try await ingestion.repository.statusContext(paneId: takeoverPane)
+                #expect(takeover.binding.conversationId == knownConversationId)
+                #expect(context.bindings.contains { $0.providerConversationId == "old" && $0.status == .ended })
+                return takeover.binding.conversationId
+            })
+        #expect(takeoverConversationId == knownConversationId)
+        let queue = try DatabaseQueue(path: fixture.databaseURL.path)
+        let conversationCount = try await queue.read { database in
+            try Int.fetchOne(
+                database,
+                sql: """
+                    SELECT COUNT(*) FROM sessions_conversation
+                    WHERE provider_identifier = 'codex' AND provider_conversation_id = 'shared'
+                    """)
+        }
+        #expect(conversationCount == 1)
     }
 }

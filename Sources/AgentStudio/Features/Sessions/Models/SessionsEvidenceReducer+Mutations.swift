@@ -31,7 +31,10 @@ extension SessionsEvidenceReducer {
         }
         if hook.eventName == .sessionStart, liveMain == nil || !confirmedLiveMain {
             return .accepted(
-                binding: makeBinding(hook, conversationId: ownMatching?.conversationId, retained: ownMatching),
+                binding: makeBinding(
+                    hook,
+                    conversationId: ownMatching?.conversationId ?? context.matchingConversation?.id,
+                    retained: ownMatching),
                 disposition: .bound,
                 supersededBinding: liveMain)
         }
