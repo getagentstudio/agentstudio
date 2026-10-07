@@ -43,12 +43,14 @@ struct PaneActivitySaveIntegrationTests {
             #expect(secondCommit.mutations == [.set(secondID, second.activityTime)])
             #expect(delegate.atomStore.core.paneActivityTime.value(for: secondID) == second.activityTime)
             recorder.secondCommit.release()
-            #expect(try await clock.settled() == .quiescent)
+            let completedCommit = try await recorder.secondCommitCompletion.firstArrival()
+            #expect(completedCommit == secondCommit)
             #expect(await recorder.attempted == [firstCommit, secondCommit])
             #expect(await recorder.completed == (firstCommitFails ? [secondCommit] : [firstCommit, secondCommit]))
         } catch {
             recorder.firstCommit.retire()
             recorder.secondCommit.retire()
+            recorder.secondCommitCompletion.retire()
             await clock.shutdown()
             throw error
         }
