@@ -135,25 +135,40 @@ struct PaneActivityBootIntegrationTests {
         #expect(delegate.atomStore.core.paneActivityTime.value(for: paneID) == nil)
     }
 
-    @Test("restore uses the Duration component representation bound rather than an age horizon")
+    @Test("restore keeps a representability margin for later projection without an age horizon")
     func restoreRepresentationBoundary() throws {
         let paneID = UUIDv7.generate()
         let record = PaneActivityRecord(paneId: paneID, wallTime: Date(timeIntervalSince1970: 0), source: .hook)
         let referenceInstant = ContinuousClock.now
-        let representableSeconds = Double(Int64.max).nextDown
-        let restored = try #require(
+        // Int64.max / 2 is between adjacent Doubles: use the greatest one below it.
+        let marginSeconds = Double(Int64.max / 2).nextDown
+        let wallNow = Date(timeIntervalSince1970: marginSeconds)
+        let restored = try #require(record.restoredActivityTime(referenceInstant: referenceInstant, wallNow: wallNow))
+        let laterReference = referenceInstant.advanced(by: .seconds(10_000_000_000))
+        let projected = RepoExplorerPaneActivityProjection.make(
+            time: restored,
+            referenceInstant: laterReference,
+            wallNow: wallNow.addingTimeInterval(10_000_000_000),
+            calendar: .current
+        )
+        #expect(projected.age == .seconds(marginSeconds) + .seconds(10_000_000_000))
+        #expect(projected.age?.components.seconds != nil)
+        #expect(
             record.restoredActivityTime(
                 referenceInstant: referenceInstant,
-                wallNow: Date(timeIntervalSince1970: representableSeconds)
-            ))
-        #expect(
-            restored.orderingInstant.duration(to: referenceInstant).components.seconds
-                == Int64(exactly: representableSeconds))
-        #expect(
-            record.restoredActivityTime(
-                referenceInstant: referenceInstant,
-                wallNow: Date(timeIntervalSince1970: Double(Int64.max))
+                wallNow: Date(timeIntervalSince1970: marginSeconds.nextUp)
             ) == nil)
+    }
+
+    @Test("timestamp magnitude uses the same representability margin", arguments: [-1.0, 1.0])
+    func timestampRepresentationMargin(sign: Double) {
+        let marginSeconds = Double(Int64.max / 2).nextDown
+        let boundDate = Date(timeIntervalSince1970: sign * marginSeconds)
+        let atBound = PaneActivityRecord(paneId: UUIDv7.generate(), wallTime: boundDate, source: .hook)
+        #expect(atBound.restoredActivityTime(referenceInstant: ContinuousClock.now, wallNow: boundDate) != nil)
+        let pastBoundDate = Date(timeIntervalSince1970: sign * marginSeconds.nextUp)
+        let pastBound = PaneActivityRecord(paneId: UUIDv7.generate(), wallTime: pastBoundDate, source: .hook)
+        #expect(pastBound.restoredActivityTime(referenceInstant: ContinuousClock.now, wallNow: pastBoundDate) == nil)
     }
 
 }
