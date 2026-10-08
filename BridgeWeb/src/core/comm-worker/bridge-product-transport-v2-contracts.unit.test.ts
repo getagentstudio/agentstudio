@@ -76,7 +76,7 @@ describe('Bridge product v2 kind-agnostic wire envelopes', () => {
 				expect(schema.parse(value)).toEqual(value);
 			}
 		}
-		expect(transport.batchFrames).toHaveLength(9);
+		expect(transport.batchFrames).toHaveLength(12);
 		expect(transport.viewScopeAcceptedResponses[0]).toMatchObject({
 			kind: 'subscription.scopeAccepted',
 			scopeRevision: transport.viewScopeRequests[0]?.scopeRevision,
