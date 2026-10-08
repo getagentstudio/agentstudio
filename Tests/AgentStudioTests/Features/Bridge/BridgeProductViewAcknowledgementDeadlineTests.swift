@@ -125,7 +125,7 @@ struct BridgeProductViewAcknowledgementDeadlineTests {
                 ),
                 mode: .snapshot,
                 productAdmission: harness.productAdmission.context
-            )
+            ) == .completed
         )
         #expect(try await nextDeadlineTestViewFrame(harness: harness, lease: lease).kind == "subscription.batchBegin")
         #expect(try await nextDeadlineTestViewFrame(harness: harness, lease: lease).kind == "subscription.batchPart")
@@ -140,6 +140,7 @@ struct BridgeProductViewAcknowledgementDeadlineTests {
         await clock.waitForPendingSleepCount(exactly: 0)
 
         let sender = await harness.session.viewSenderState
+        #expect(sender.pending(for: view.viewDomain) == .snapshotRequired(.recovery))
         #expect(sender.outstandingPartCount(for: view.viewDomain) == 0)
         #expect(await harness.session.subscriptionSnapshot(subscriptionId: "initial-comment-view") != nil)
         #expect(await harness.session.acceptedViewScope(subscriptionId: "initial-comment-view")?.revision == 0)

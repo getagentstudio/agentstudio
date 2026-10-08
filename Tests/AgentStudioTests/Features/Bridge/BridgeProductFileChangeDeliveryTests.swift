@@ -60,6 +60,9 @@ struct BridgeProductFileChangeDeliveryTests {
         // Pumping the certificate, rather than finishing coverage, releases the waiter.
         let frames = try await fixture.consumeBatch(partCount: 10)
         #expect(frames.first?.kind == "subscription.batchBegin")
+        if case .batch(.begin(let begin)) = frames.first {
+            #expect(begin.snapshotCause == .open)
+        }
         #expect(await waiting.value == .completed)
         #expect(await harness.session.pendingFileSnapshotByViewDomain[fixture.domain] == nil)
         registrations.end()
@@ -124,7 +127,7 @@ struct BridgeProductFileChangeDeliveryTests {
                 await harness.session.acceptViewResnapshot(
                     request, productAdmission: harness.productAdmission.context) == nil)
         }
-        try await fixture.seal(fixture.snapshot(target: 2, complete: true))
+        try await fixture.seal(fixture.snapshot(target: 2, complete: true, changedRowRevision: 2))
         let frames = try await fixture.consumeBatch(partCount: 10)
         guard case .batch(.begin(let begin)) = frames.first else {
             Issue.record("Expected full File replacement batch")
@@ -132,6 +135,7 @@ struct BridgeProductFileChangeDeliveryTests {
             return
         }
         #expect(begin.mode == .snapshot)
+        #expect(begin.snapshotCause == (changeFilter ? .open : .requested))
         #expect(begin.baseRevision == 0)
         #expect(begin.partCount == 10)
         try await harness.closeProducer(fixture.lease)

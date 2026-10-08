@@ -317,6 +317,7 @@
         "scopeRevision": 2,
         "batchId": "review-batch-1",
         "mode": "snapshot",
+        "snapshotCause": "open",
         "scope": {
           "kind": "review",
           "interests": []
@@ -471,6 +472,7 @@
         "scopeRevision": 4,
         "batchId": "member-a-batch-1",
         "mode": "snapshot",
+        "snapshotCause": "newerInput",
         "scope": {
           "kind": "file",
           "changeFilter": {
@@ -506,7 +508,10 @@
           "interests": [],
           "pathScope": []
         }
-      }
+      },
+      {"kind": "subscription.batchComplete", "wireVersion": 2, "paneSessionId": "pane-session-1", "workerInstanceId": "worker-instance-1", "metadataStreamId": "metadata-stream-1", "streamSequence": 30, "subscriptionId": "review-subscription-1", "subscriptionKind": "review.metadata", "domain": "default", "handle": "review-handle-1", "incarnation": "review-incarnation-1", "scopeRevision": 3, "batchId": "file-recovery-batch-1", "coveredScope": {"kind": "review", "interests": []}},
+      {"kind": "subscription.batchBegin", "wireVersion": 2, "paneSessionId": "pane-session-1", "workerInstanceId": "worker-instance-1", "metadataStreamId": "metadata-stream-1", "streamSequence": 31, "subscriptionId": "file-subscription-1", "subscriptionKind": "file.metadata", "domain": "member-a", "handle": "file-handle-1", "incarnation": "member-a-incarnation-1", "scopeRevision": 4, "batchId": "file-recovery-batch-1", "mode": "snapshot", "snapshotCause": "recovery", "scope": {"kind": "file", "changeFilter": {"kind": "none"}, "interests": [], "pathScope": []}, "baseRevision": 0, "targetRevision": 5, "partCount": 0, "requiresCollection": 3},
+      {"kind": "subscription.batchComplete", "wireVersion": 2, "paneSessionId": "pane-session-1", "workerInstanceId": "worker-instance-1", "metadataStreamId": "metadata-stream-1", "streamSequence": 32, "subscriptionId": "file-subscription-1", "subscriptionKind": "file.metadata", "domain": "member-a", "handle": "file-handle-1", "incarnation": "member-a-incarnation-1", "scopeRevision": 4, "batchId": "file-recovery-batch-1", "coveredScope": {"kind": "file", "changeFilter": {"kind": "none"}, "interests": [], "pathScope": []}}
     ]
   },
   "bootstrap": {

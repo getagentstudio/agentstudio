@@ -18,9 +18,12 @@ struct WorktreeAnnotationNotificationSourceTests {
         )
         let openTask = Task {
             defer { continuation.finish() }
-            try await harness.source.openBatch(handle: handle, producerID: producerID) { batch, mode in
-                continuation.yield(.init(batch: batch, mode: mode))
-            }
+            try await harness.source.openBatch(
+                handle: handle, producerID: producerID, snapshotRequired: { false },
+                deliver: { batch, mode in
+                    continuation.yield(.init(batch: batch, mode: mode))
+                    return .completed
+                })
         }
         await harness.source.waitUntilFirstBatchScopeIsNeeded(handle: handle)
         #expect(await harness.service.catalogInvalidationObserverCount() == 0)
@@ -47,9 +50,12 @@ struct WorktreeAnnotationNotificationSourceTests {
         let handle = "comment-view-retired-before-scope"
         let producerID = UUIDv7.generate()
         let openTask = Task {
-            try await harness.source.openBatch(handle: handle, producerID: producerID) { _, _ in
-                Issue.record("A retired Comment handle must not capture a catalog")
-            }
+            try await harness.source.openBatch(
+                handle: handle, producerID: producerID, snapshotRequired: { false },
+                deliver: { _, _ in
+                    Issue.record("A retired Comment handle must not capture a catalog")
+                    return .completed
+                })
         }
         await harness.source.waitUntilFirstBatchScopeIsNeeded(handle: handle)
         await harness.source.retireBatchView(handle: handle)
@@ -65,9 +71,12 @@ struct WorktreeAnnotationNotificationSourceTests {
         let handle = "comment-view-cancelled-before-scope"
         let producerID = UUIDv7.generate()
         let openTask = Task {
-            try await harness.source.openBatch(handle: handle, producerID: producerID) { _, _ in
-                Issue.record("A cancelled Comment opening must not capture a catalog")
-            }
+            try await harness.source.openBatch(
+                handle: handle, producerID: producerID, snapshotRequired: { false },
+                deliver: { _, _ in
+                    Issue.record("A cancelled Comment opening must not capture a catalog")
+                    return .completed
+                })
         }
         await harness.source.waitUntilFirstBatchScopeIsNeeded(handle: handle)
         openTask.cancel()
@@ -92,9 +101,12 @@ struct WorktreeAnnotationNotificationSourceTests {
             bufferingPolicy: .bufferingOldest(2)
         )
         let firstProducer = Task {
-            try await harness.source.openBatch(handle: handle, producerID: firstProducerID) { batch, mode in
-                continuation.yield(.init(batch: batch, mode: mode))
-            }
+            try await harness.source.openBatch(
+                handle: handle, producerID: firstProducerID, snapshotRequired: { false },
+                deliver: { batch, mode in
+                    continuation.yield(.init(batch: batch, mode: mode))
+                    return .completed
+                })
         }
         var iterator = batches.makeAsyncIterator()
         #expect(try #require(await iterator.next()).mode == .snapshot)
@@ -110,9 +122,12 @@ struct WorktreeAnnotationNotificationSourceTests {
         )
         let successorProducerID = UUIDv7.generate()
         let successor = Task {
-            try await harness.source.openBatch(handle: handle, producerID: successorProducerID) { batch, mode in
-                continuation.yield(.init(batch: batch, mode: mode))
-            }
+            try await harness.source.openBatch(
+                handle: handle, producerID: successorProducerID, snapshotRequired: { false },
+                deliver: { batch, mode in
+                    continuation.yield(.init(batch: batch, mode: mode))
+                    return .completed
+                })
         }
         #expect(try #require(await iterator.next()).mode == .snapshot)
         successor.cancel()
@@ -155,9 +170,12 @@ struct WorktreeAnnotationNotificationSourceTests {
         )
         let openTask = Task {
             defer { continuation.finish() }
-            try await harness.source.openBatch(handle: "comment-view-1", producerID: UUIDv7.generate()) { batch, mode in
-                continuation.yield(.init(batch: batch, mode: mode))
-            }
+            try await harness.source.openBatch(
+                handle: "comment-view-1", producerID: UUIDv7.generate(), snapshotRequired: { false },
+                deliver: { batch, mode in
+                    continuation.yield(.init(batch: batch, mode: mode))
+                    return .completed
+                })
         }
         var iterator = batches.makeAsyncIterator()
         guard let initial = await iterator.next() else {
@@ -218,9 +236,12 @@ struct WorktreeAnnotationNotificationSourceTests {
         )
         let openTask = Task {
             defer { continuation.finish() }
-            try await harness.source.openBatch(handle: handle, producerID: UUIDv7.generate()) { batch, mode in
-                continuation.yield(.init(batch: batch, mode: mode))
-            }
+            try await harness.source.openBatch(
+                handle: handle, producerID: UUIDv7.generate(), snapshotRequired: { false },
+                deliver: { batch, mode in
+                    continuation.yield(.init(batch: batch, mode: mode))
+                    return .completed
+                })
         }
         var iterator = batches.makeAsyncIterator()
         let initial = try #require(await iterator.next())
@@ -274,10 +295,13 @@ struct WorktreeAnnotationNotificationSourceTests {
         )
         let openTask = Task {
             defer { continuation.finish() }
-            try await harness.source.openBatch(handle: handle, producerID: UUIDv7.generate()) { batch, mode in
-                continuation.yield(.init(batch: batch, mode: mode))
-                if batch.baseRevision == 0 { try await initialDelivery.arrive(()) }
-            }
+            try await harness.source.openBatch(
+                handle: handle, producerID: UUIDv7.generate(), snapshotRequired: { false },
+                deliver: { batch, mode in
+                    continuation.yield(.init(batch: batch, mode: mode))
+                    if batch.baseRevision == 0 { try await initialDelivery.arrive(()) }
+                    return .completed
+                })
         }
         var iterator = batches.makeAsyncIterator()
         let initial = try #require(await iterator.next())
@@ -334,9 +358,12 @@ struct WorktreeAnnotationNotificationSourceTests {
         )
         let openTask = Task {
             defer { continuation.finish() }
-            try await harness.source.openBatch(handle: handle, producerID: UUIDv7.generate()) { batch, mode in
-                continuation.yield(.init(batch: batch, mode: mode))
-            }
+            try await harness.source.openBatch(
+                handle: handle, producerID: UUIDv7.generate(), snapshotRequired: { false },
+                deliver: { batch, mode in
+                    continuation.yield(.init(batch: batch, mode: mode))
+                    return .completed
+                })
         }
         var iterator = deliveries.makeAsyncIterator()
         let initial = try #require(await iterator.next())
@@ -384,10 +411,13 @@ struct WorktreeAnnotationNotificationSourceTests {
         )
         let openTask = Task {
             defer { continuation.finish() }
-            try await harness.source.openBatch(handle: handle, producerID: UUIDv7.generate()) { batch, _ in
-                if batch.baseRevision > 0 { throw NotificationDeliveryFailure.injected }
-                continuation.yield(batch)
-            }
+            try await harness.source.openBatch(
+                handle: handle, producerID: UUIDv7.generate(), snapshotRequired: { false },
+                deliver: { batch, _ in
+                    if batch.baseRevision > 0 { throw NotificationDeliveryFailure.injected }
+                    continuation.yield(batch)
+                    return .completed
+                })
         }
         var iterator = initialDeliveries.makeAsyncIterator()
         _ = try #require(await iterator.next())

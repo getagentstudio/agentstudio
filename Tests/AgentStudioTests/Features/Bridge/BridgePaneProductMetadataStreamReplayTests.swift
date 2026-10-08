@@ -41,6 +41,22 @@ private func openOutgoingReviewSubscription(
 
 @Suite("Bridge product metadata stream subscription replay")
 struct BridgePaneProductMetadataStreamReplayTests {
+    @Test("resuming a retained File view owes recovery rather than a new open")
+    func retainedFileResumeCarriesRecovery() async throws {
+        let harness = try await BridgeProductSessionLifecycleHarness.opened()
+        let fixture = try await FileChangeDeliveryFixture.open(harness: harness)
+        try await fixture.seal(fixture.snapshot(target: 1, complete: true))
+        _ = try await fixture.consumeBatch(partCount: 10)
+        try await harness.closeProducer(fixture.lease)
+        let coordinator = try await installMetadataStream(
+            on: harness, metadataStreamId: "metadata-stream-recovery-cause", resumeFromStreamSequence: 1
+        )
+        await coordinator.replaySubscriptionsForInstalledStream()
+        let pending = await harness.session.viewSenderState.pending(for: fixture.domain)
+        #expect(pending == .snapshotRequired(.recovery))
+        await coordinator.closeAndDrain()
+    }
+
     /// A fresh open means the worker poisoned its metadata session (or is a new
     /// worker) and holds NO subscription ids. Replaying the pane session's earlier
     /// ids would reach a client that cannot name them, and the client treats an

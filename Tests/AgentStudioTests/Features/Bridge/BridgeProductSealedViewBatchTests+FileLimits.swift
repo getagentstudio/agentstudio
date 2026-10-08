@@ -16,7 +16,7 @@ extension BridgeProductSealedViewBatchTests {
         let small = try fileLimitsBatch(scope: scope, value: .string("bounded"))
         #expect(
             try BridgeProductMetadataFrameCodec.encode(
-                small.frame(atOrdinal: 1, stream: stream, streamSequence: 1)
+                small.frame(atOrdinal: 1, stream: stream, streamSequence: 1, snapshotCause: nil)
             ).count
                 <= BridgeProductWireContract.maximumMetadataFrameBytes + 4)
         let oversized = try fileLimitsBatch(
@@ -24,7 +24,7 @@ extension BridgeProductSealedViewBatchTests {
             value: .string(String(repeating: "x", count: BridgeProductWireContract.maximumMetadataFrameBytes)))
         #expect(throws: BridgeProductFrameCodecError.self) {
             _ = try BridgeProductMetadataFrameCodec.encode(
-                oversized.frame(atOrdinal: 1, stream: stream, streamSequence: 1))
+                oversized.frame(atOrdinal: 1, stream: stream, streamSequence: 1, snapshotCause: nil))
         }
     }
 }

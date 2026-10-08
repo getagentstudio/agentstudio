@@ -4,7 +4,9 @@
       "kind": "operation.result",
       "operationId": "operation-1",
       "outcome": "cancelled",
-      "result": { "applied": true },
+      "result": {
+        "applied": true
+      },
       "failureCode": null
     },
     {
@@ -29,10 +31,13 @@
       "scopeRevision": 0,
       "batchId": "batch-invalid-count",
       "mode": "snapshot",
-      "scope": { "kind": "review" },
+      "scope": {
+        "kind": "review"
+      },
       "baseRevision": 0,
       "targetRevision": 1,
-      "partCount": -1
+      "partCount": -1,
+      "snapshotCause": "open"
     },
     {
       "kind": "subscription.batchPart",
@@ -48,7 +53,84 @@
       "batchId": "batch-invalid-part",
       "deliverySequence": 0,
       "partIndex": 0,
-      "part": { "operation": "evict", "key": "item/a" }
+      "part": {
+        "operation": "evict",
+        "key": "item/a"
+      }
+    },
+    {
+      "kind": "subscription.batchBegin",
+      "wireVersion": 2,
+      "paneSessionId": "pane-session-1",
+      "workerInstanceId": "worker-instance-1",
+      "metadataStreamId": "metadata-stream-1",
+      "streamSequence": 21,
+      "subscriptionId": "review-subscription-1",
+      "subscriptionKind": "review.metadata",
+      "domain": "default",
+      "handle": "review-handle-1",
+      "incarnation": "review-incarnation-1",
+      "scopeRevision": 2,
+      "batchId": "batch-invalid-cause-missing",
+      "mode": "snapshot",
+      "scope": {
+        "kind": "review",
+        "interests": []
+      },
+      "baseRevision": 0,
+      "targetRevision": 4,
+      "partCount": 3,
+      "publicationId": "00000000-0000-7000-8000-000000000011"
+    },
+    {
+      "kind": "subscription.batchBegin",
+      "wireVersion": 2,
+      "paneSessionId": "pane-session-1",
+      "workerInstanceId": "worker-instance-1",
+      "metadataStreamId": "metadata-stream-1",
+      "streamSequence": 21,
+      "subscriptionId": "review-subscription-1",
+      "subscriptionKind": "review.metadata",
+      "domain": "default",
+      "handle": "review-handle-1",
+      "incarnation": "review-incarnation-1",
+      "scopeRevision": 2,
+      "batchId": "batch-invalid-cause-change",
+      "mode": "change",
+      "snapshotCause": "requested",
+      "scope": {
+        "kind": "review",
+        "interests": []
+      },
+      "baseRevision": 0,
+      "targetRevision": 4,
+      "partCount": 3,
+      "publicationId": "00000000-0000-7000-8000-000000000011"
+    },
+    {
+      "kind": "subscription.batchBegin",
+      "wireVersion": 2,
+      "paneSessionId": "pane-session-1",
+      "workerInstanceId": "worker-instance-1",
+      "metadataStreamId": "metadata-stream-1",
+      "streamSequence": 21,
+      "subscriptionId": "review-subscription-1",
+      "subscriptionKind": "review.metadata",
+      "domain": "default",
+      "handle": "review-handle-1",
+      "incarnation": "review-incarnation-1",
+      "scopeRevision": 2,
+      "batchId": "batch-invalid-cause-unknown",
+      "mode": "snapshot",
+      "snapshotCause": "unknown",
+      "scope": {
+        "kind": "review",
+        "interests": []
+      },
+      "baseRevision": 0,
+      "targetRevision": 4,
+      "partCount": 3,
+      "publicationId": "00000000-0000-7000-8000-000000000011"
     }
   ],
   "viewAcknowledgements": [

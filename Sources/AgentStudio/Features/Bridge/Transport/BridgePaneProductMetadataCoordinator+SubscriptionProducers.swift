@@ -278,30 +278,32 @@ extension BridgePaneProductMetadataCoordinator {
         let productAdmission = request.productAdmission
         let foregroundWorkAdmission = request.foregroundWorkAdmission
         do {
-            try await annotationSource.openBatch(handle: view.handle, producerID: producerID) { catalogBatch, mode in
-                guard foregroundWorkAdmission.withValidAdmission({ true }) == true else {
-                    throw BridgePaneProductMetadataCoordinatorError.foregroundWorkInvalidated
-                }
-                guard
-                    try await session.sealCommentCatalogBatch(
+            try await annotationSource.openBatch(
+                handle: view.handle, producerID: producerID,
+                snapshotRequired: { await session.viewSnapshotRequired(subscriptionId: subscriptionID) },
+                deliver: { catalogBatch, mode in
+                    guard foregroundWorkAdmission.withValidAdmission({ true }) == true else {
+                        throw BridgePaneProductMetadataCoordinatorError.foregroundWorkInvalidated
+                    }
+                    let sealOutcome = try await session.sealCommentCatalogBatch(
                         subscriptionId: subscriptionID,
                         catalogBatch: catalogBatch,
                         mode: mode,
                         productAdmission: productAdmission
                     )
-                else { throw WorktreeAnnotationServiceError.staleSourceEpoch }
-                await annotationSource.recordSealedCommentCatalogBatch(
-                    handle: view.handle,
-                    producerID: producerID,
-                    batch: catalogBatch
-                )
-                switch await session.awaitViewEmissionCompletion(for: view.viewDomain, handle: view.handle) {
-                case .completed, .resnapshotRequired:
-                    return
-                case .retired:
-                    throw WorktreeAnnotationServiceError.staleSourceEpoch
-                }
-            }
+                    guard sealOutcome == .completed else { return sealOutcome }
+                    await annotationSource.recordSealedCommentCatalogBatch(
+                        handle: view.handle,
+                        producerID: producerID,
+                        batch: catalogBatch
+                    )
+                    switch await session.awaitViewEmissionCompletion(for: view.viewDomain, handle: view.handle) {
+                    case .completed, .resnapshotRequired:
+                        return .completed
+                    case .retired:
+                        throw WorktreeAnnotationServiceError.staleSourceEpoch
+                    }
+                })
         } catch {
             await annotationSource.releaseProducerBatchScope(handle: view.handle, producerID: producerID)
             throw error

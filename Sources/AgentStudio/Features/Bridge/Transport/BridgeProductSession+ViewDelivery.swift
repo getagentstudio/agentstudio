@@ -117,8 +117,9 @@ extension BridgeProductSession {
         catalogBatch: BridgeProductCommentCatalogBatch,
         mode: BridgeProductBatchMode,
         productAdmission: BridgeProductAdmissionContext
-    ) throws -> Bool {
-        guard let subscription = subscriptionState.snapshot(subscriptionId: subscriptionId),
+    ) throws -> BridgeProductViewEmissionOutcome {
+        guard lifecycle == .active, productAdmission.withValidAdmission({ true }) == true,
+            let subscription = subscriptionState.snapshot(subscriptionId: subscriptionId),
             subscription.subscriptionKind == .fileAnnotations
                 || subscription.subscriptionKind == .reviewAnnotations,
             let viewDomain = viewScopeByDomain.keys.first(where: {
@@ -127,7 +128,10 @@ extension BridgeProductSession {
             let current = viewScopeByDomain[viewDomain],
             current.handle == catalogBatch.handle,
             current.revision >= catalogBatch.scopeRevision
-        else { return false }
+        else { return .retired }
+        if mode == .change, case .snapshotRequired = viewSenderState.pending(for: viewDomain) {
+            return .resnapshotRequired
+        }
         let sealedBatch = try BridgeProductCommentViewBatchFactory.seal(
             .init(
                 viewDomain: viewDomain,
@@ -139,7 +143,7 @@ extension BridgeProductSession {
                 subscriptionKind: subscription.subscriptionKind
             )
         )
-        return try sealViewBatch(sealedBatch, productAdmission: productAdmission)
+        return try sealViewBatch(sealedBatch, productAdmission: productAdmission) ? .completed : .retired
     }
 
     /// N10 may capture its next range only after this domain has emitted the
@@ -240,7 +244,7 @@ extension BridgeProductSession {
             rescheduleViewAcknowledgementDeadline()
             return
         }
-        viewSenderState.resnapshot(oldest.viewDomain)
+        viewSenderState.resnapshot(oldest.viewDomain, cause: .recovery)
         pendingFileSnapshotByViewDomain.removeValue(forKey: oldest.viewDomain)
         lastSealedFileTargetByViewDomain.removeValue(forKey: oldest.viewDomain)
         pendingReviewSnapshotByViewDomain.removeValue(forKey: oldest.viewDomain)
@@ -525,7 +529,7 @@ extension BridgeProductSession {
             current.handle == request.handle,
             current.revision == request.scopeRevision
         else { return .superseded }
-        viewSenderState.resnapshot(viewDomain)
+        viewSenderState.resnapshot(viewDomain, cause: .requested)
         rescheduleViewAcknowledgementDeadline()
         finishViewEmissionWaiter(for: viewDomain, outcome: .resnapshotRequired)
         pendingFileSnapshotByViewDomain.removeValue(forKey: viewDomain)

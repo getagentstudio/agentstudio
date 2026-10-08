@@ -46,7 +46,7 @@ extension BridgeProductSealedViewBatchTests {
             try await harness.session.sealCommentCatalogBatch(
                 subscriptionId: "comment-demand-seal", catalogBatch: captured, mode: .snapshot,
                 productAdmission: harness.productAdmission.context
-            ))
+            ) == .completed)
         let wrongWorktreeBytes = try JSONSerialization.data(
             withJSONObject: [
                 "kind": "subscription.setScope", "wireVersion": 2,

@@ -372,6 +372,7 @@ actor BridgePaneProductMetadataCoordinator {
             if openedSourceSubscriptionIds.contains(subscriptionId),
                 await activeStream.session.acceptedViewScope(subscriptionId: subscriptionId) != nil
             {
+                await activeStream.session.requireViewRecoverySnapshot(subscriptionId: subscriptionId)
                 if subscription.subscriptionKind == .fileMetadata {
                     await startSubscriptionOpen(
                         subscription,
@@ -424,6 +425,7 @@ actor BridgePaneProductMetadataCoordinator {
         let subscriptions = await installedStream.session.subscriptionSnapshots()
         guard activeStream?.lease == installedStream.lease else { return }
         for subscription in subscriptions where subscriptionKindById[subscription.subscriptionId] == nil {
+            await installedStream.session.requireViewRecoverySnapshot(subscriptionId: subscription.subscriptionId)
             deferSubscriptionOpen(subscription, productAdmission: installedStream.productAdmission)
         }
         await resumeForegroundWork()

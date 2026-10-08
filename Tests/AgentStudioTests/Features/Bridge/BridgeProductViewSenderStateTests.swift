@@ -48,7 +48,7 @@ struct BridgeProductViewSenderStateTests {
         try sender.seal(batch(firstDeliverySequence: 1, partCount: 3))
         let firstBegin = try sender.nextFrame(stream: stream, streamSequence: 1)
         #expect(firstBegin?.kind == "subscription.batchBegin")
-        sender.resnapshot(view)
+        sender.resnapshot(view, cause: .requested)
         try sender.seal(batch(firstDeliverySequence: 4, partCount: 1))
         let replacementBegin = try sender.nextFrame(stream: stream, streamSequence: 2)
         #expect(replacementBegin?.kind == "subscription.batchBegin")
@@ -219,9 +219,9 @@ struct BridgeProductViewSenderStateTests {
         _ = sender.takePending(for: sibling)
         let staleInput = sender.recordChange(for: first, scanGeneration: 1, recordKey: "old", revision: 1)
         let siblingInput = sender.recordChange(for: sibling, scanGeneration: 1, recordKey: "new", revision: 2)
-        sender.resnapshot(first)
+        sender.resnapshot(first, cause: .requested)
         #expect(!staleInput && siblingInput)
-        #expect(sender.pending(for: first) == .snapshotRequired)
+        #expect(sender.pending(for: first) == .snapshotRequired(.requested))
         #expect(sender.pending(for: sibling) == .keys(["new": 2]))
     }
 }

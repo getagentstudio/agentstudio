@@ -136,7 +136,15 @@ actor BridgeProductCommentCatalogPublisher {
         guard !isRetired, let captureID = beginCapture() else { return nil }
         defer { endCapture(captureID) }
         let capturedHandle = handle
-        let rows = try await readCurrent(.worktree)
+        let capturedDirtyRanges = dirtyRanges
+        dirtyRanges.removeAll()
+        let rows: [WorktreeAnnotationCatalogKey: WorktreeAnnotationCatalogEntry]
+        do {
+            rows = try await readCurrent(.worktree)
+        } catch {
+            if handle == capturedHandle { dirtyRanges.formUnion(capturedDirtyRanges) }
+            throw error
+        }
         guard !isRetired, handle == capturedHandle else {
             return nil
         }
