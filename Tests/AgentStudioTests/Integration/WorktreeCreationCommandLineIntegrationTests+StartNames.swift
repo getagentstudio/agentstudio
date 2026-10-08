@@ -109,6 +109,22 @@ extension WorktreeCreationCommandLineIntegrationTests {
         #expect(try await WorktreeCreationRemoteFixture.git(destination, "rev-parse", "HEAD") == sideTip)
     }
 
+    @Test("--from-branch origin/<name> starts from a remote branch with a dot-ended inner component")
+    func startsFromRemoteBranchWithInnerDotEndedComponent() async throws {
+        let fixture = try await WorktreeCreationRemoteFixture.create(named: "new-dotted-remote-start")
+        defer { fixture.destroy() }
+        let originTip = try await fixture.advance("release/a./b", file: "dotted.txt")
+
+        let created = await fixture.runNew("feature/dotted", ["--from-branch", "origin/release/a./b"], json: true)
+
+        #expect(created.exit == 0, "\(created.output)")
+        #expect(
+            try created.created().start
+                == .init(
+                    commit: originTip, from: "remoteBranch", ref: "refs/remotes/origin/release/a./b",
+                    localOnlyCommits: nil))
+    }
+
     /// Whether `git check-ref-format <refname>` accepts it. A refusal is the answer here, not a failed
     /// launch, so it is not reported as one.
     private static func gitAcceptsReferenceName(_ refname: String) async throws -> Bool {

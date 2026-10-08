@@ -74,6 +74,24 @@ struct WorktreeDestinationPolicyTests {
         #expect(WorktreeDestinationNaming.folderSlug(for: branchName) == testCase.slug)
     }
 
+    @Test(
+        "any typed text maps to one sibling folder beside the repository",
+        arguments: [
+            SlugCase(branch: "HEAD", slug: "HEAD"),
+            SlugCase(branch: "../../escape", slug: "escape"),
+            SlugCase(branch: "a/../b", slug: "a-..-b"),
+            SlugCase(branch: "..", slug: nil),
+            SlugCase(branch: "/", slug: nil),
+        ]
+    )
+    func rawTextSiblingFolders(_ testCase: SlugCase) {
+        let sibling = WorktreeDestinationNaming.siblingPath(
+            repositoryPath: Self.repositoryPath, rawName: testCase.branch)
+
+        #expect(WorktreeDestinationNaming.folderSlug(forRawName: testCase.branch) == testCase.slug)
+        #expect(sibling?.path == testCase.slug.map { "/Users/dev/project-dev/agent-studio.\($0)" })
+    }
+
     @Test("the destination is a sibling of the main checkout inside the watched folder that discovers it")
     func destinationIsSiblingInsideWatchedFolder() throws {
         let watchedPath = WatchedPath(path: Self.watchedRoot)
