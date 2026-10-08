@@ -586,7 +586,7 @@ function makePreparationFileBatchInstallation(
 	subscriptionId: string,
 	options: PreparationFileBatchOptions,
 ): BridgeProductViewInstallation {
-	const installation = makeFileBatchInstallation(subscriptionId, {
+	const installation = makeFileBatchInstallation('open', subscriptionId, {
 		revision: options.revision,
 		...(options.includeDescriptor === undefined
 			? {}

@@ -76,10 +76,14 @@ describe('Bridge comm worker Review product source projection', () => {
 		});
 		activateBridgeCommWorkerReviewViewerMode(dispatch, 'successor-re-exposure');
 		await reviewBatches.install(
-			makeReviewTestBatch({ subscriptionId: reviewSubscription.subscriptionId }),
+			makeReviewTestBatch({
+				snapshotCause: 'open',
+				subscriptionId: reviewSubscription.subscriptionId,
+			}),
 		);
 		await reviewBatches.install(
 			makeReviewTestBatch({
+				snapshotCause: 'open',
 				subscriptionId: reviewSubscription.subscriptionId,
 				generation: 8,
 				packageId: 'package-2',
@@ -157,10 +161,14 @@ describe('Bridge comm worker Review product source projection', () => {
 		});
 		activateBridgeCommWorkerReviewViewerMode(dispatch, 'successor-admission-failure');
 		await reviewBatches.install(
-			makeReviewTestBatch({ subscriptionId: reviewSubscription.subscriptionId }),
+			makeReviewTestBatch({
+				snapshotCause: 'open',
+				subscriptionId: reviewSubscription.subscriptionId,
+			}),
 		);
 		await reviewBatches.install(
 			makeReviewTestBatch({
+				snapshotCause: 'open',
 				subscriptionId: reviewSubscription.subscriptionId,
 				generation: 8,
 				packageId: 'package-2',
@@ -253,7 +261,10 @@ describe('Bridge comm worker Review product source projection', () => {
 			makeEmptyReviewAnnotationBatch(reviewAnnotationSubscription.subscriptionId),
 		);
 		await reviewBatches.install(
-			makeReviewTestBatch({ subscriptionId: reviewMetadataSubscription.subscriptionId }),
+			makeReviewTestBatch({
+				snapshotCause: 'open',
+				subscriptionId: reviewMetadataSubscription.subscriptionId,
+			}),
 		);
 		await flushBridgeWorkerRuntimeContinuations();
 		expect(reviewProjectionSourceGenerations).toEqual([]);
@@ -324,7 +335,10 @@ describe('Bridge comm worker Review product source projection', () => {
 		await flushBridgeWorkerRuntimeContinuations();
 		expect(subscribedKinds).toEqual(['file.annotations', 'review.annotations', 'review.metadata']);
 		await reviewBatches.install(
-			makeReviewTestBatch({ subscriptionId: reviewSubscription.subscriptionId }),
+			makeReviewTestBatch({
+				snapshotCause: 'open',
+				subscriptionId: reviewSubscription.subscriptionId,
+			}),
 		);
 		await flushBridgeWorkerRuntimeContinuations();
 
@@ -414,6 +428,7 @@ describe('Bridge comm worker Review product source projection', () => {
 		await flushBridgeWorkerRuntimeContinuations();
 		await reviewBatches.install(
 			makeReviewTestBatch({
+				snapshotCause: 'open',
 				subscriptionId: reviewSubscription.subscriptionId,
 				generation: 1,
 				packageId: 'review-product-test-package',

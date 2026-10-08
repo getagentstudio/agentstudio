@@ -185,6 +185,7 @@ function emitReceiptBatch(
 			baseRevision: 0,
 			kind: 'subscription.batchBegin',
 			mode: 'snapshot',
+			snapshotCause: 'open',
 			partCount,
 			scope: scope.scope,
 			streamSequence,

@@ -77,7 +77,7 @@ describe('Bridge File viewer render snapshot controller Browser Mode', () => {
 		const rendered = await render(
 			<BridgeFileViewerBrowserHarnessApp
 				autoOpenInitialFile
-				initialFileBatch={makeBrowserFileBatchWithDescriptors(descriptor)}
+				initialFileBatch={makeBrowserFileBatchWithDescriptors('open', descriptor)}
 				fileProductSession={{
 					readContent: async (): Promise<string> => existingFileContent,
 					onWorkerCommand: (message): void => {

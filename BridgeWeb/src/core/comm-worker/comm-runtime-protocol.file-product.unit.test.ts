@@ -82,7 +82,9 @@ describe('Bridge comm worker File product runtime', () => {
 			}),
 		);
 		if (batchSinks.current === null) throw new Error('File batch sinks were not installed.');
-		await batchSinks.current.install(makeFileBatchInstallation(subscription.subscriptionId));
+		await batchSinks.current.install(
+			makeFileBatchInstallation('open', subscription.subscriptionId),
+		);
 		await flushBridgeWorkerRuntimeContinuations();
 		dispatch.message(
 			encodeBridgeWorkerSelectCommand({
@@ -161,7 +163,9 @@ describe('Bridge comm worker File product runtime', () => {
 		});
 		await activateBridgeCommWorkerFileViewerModeAndFlush(dispatch, 'default-scheduler');
 		if (batchSinks.current === null) throw new Error('File batch sinks were not installed.');
-		await batchSinks.current.install(makeFileBatchInstallation(subscription.subscriptionId));
+		await batchSinks.current.install(
+			makeFileBatchInstallation('open', subscription.subscriptionId),
+		);
 		await flushBridgeWorkerRuntimeContinuations();
 		expect(openedDescriptorIds).toEqual([]);
 
@@ -228,10 +232,12 @@ describe('Bridge comm worker File product runtime', () => {
 		await flushBridgeWorkerRuntimeContinuations();
 		activateBridgeCommWorkerFileViewerMode(dispatch, 'cross-surface-store-isolation');
 		if (batchSinks.current === null) throw new Error('Product batch sinks were not installed.');
-		await batchSinks.current.install(makeFileBatchInstallation(fileSubscription.subscriptionId));
+		await batchSinks.current.install(
+			makeFileBatchInstallation('open', fileSubscription.subscriptionId),
+		);
 		await flushBridgeWorkerRuntimeContinuations();
 		await batchSinks.current.install(
-			makeReviewBatchInstallation('review-subscription-for-file-runtime-test'),
+			makeReviewBatchInstallation('open', 'review-subscription-for-file-runtime-test'),
 		);
 		await flushBridgeWorkerRuntimeContinuations();
 		expect(scheduledDrains).toHaveLength(0);
@@ -330,7 +336,9 @@ describe('Bridge comm worker File product runtime', () => {
 		);
 		await flushBridgeWorkerRuntimeContinuations();
 		if (batchSinks.current === null) throw new Error('File batch sinks were not installed.');
-		await batchSinks.current.install(makeFileBatchInstallation(subscription.subscriptionId));
+		await batchSinks.current.install(
+			makeFileBatchInstallation('open', subscription.subscriptionId),
+		);
 		await flushBridgeWorkerRuntimeContinuations();
 		const firstDrain = scheduledDrains.shift();
 		if (firstDrain === undefined) throw new Error('Expected selected File preparation drain.');
@@ -555,7 +563,7 @@ describe('Bridge comm worker File product runtime', () => {
 		// Act / Assert
 		if (batchSinks.current === null) throw new Error('File batch sinks were not installed.');
 		await batchSinks.current.install(
-			makeFileBatchInstallation('file-subscription-review-warmup', {
+			makeFileBatchInstallation('open', 'file-subscription-review-warmup', {
 				revision: 1,
 				withDescriptor: false,
 			}),
@@ -564,13 +572,13 @@ describe('Bridge comm worker File product runtime', () => {
 		expect(reviewWarmupCount).toBe(0);
 
 		await batchSinks.current.install(
-			makeFileBatchInstallation('file-subscription-review-warmup', { revision: 2 }),
+			makeFileBatchInstallation('open', 'file-subscription-review-warmup', { revision: 2 }),
 		);
 		await flushBridgeWorkerRuntimeContinuations();
 		expect(reviewWarmupCount).toBe(1);
 
 		await batchSinks.current.install(
-			makeFileBatchInstallation('file-subscription-review-warmup', { revision: 3 }),
+			makeFileBatchInstallation('open', 'file-subscription-review-warmup', { revision: 3 }),
 		);
 		await flushBridgeWorkerRuntimeContinuations();
 		expect(reviewWarmupCount).toBe(1);
@@ -607,7 +615,9 @@ describe('Bridge comm worker File product runtime', () => {
 		// Act
 		if (batchSinks.current === null) throw new Error('File batch sinks were not installed.');
 		await batchSinks.current.install(
-			makeFileBatchInstallation('file-subscription-empty-review-warmup', { emptyTree: true }),
+			makeFileBatchInstallation('open', 'file-subscription-empty-review-warmup', {
+				emptyTree: true,
+			}),
 		);
 		await flushBridgeWorkerRuntimeContinuations();
 
@@ -654,7 +664,7 @@ describe('Bridge comm worker File product runtime', () => {
 		await flushBridgeWorkerRuntimeContinuations();
 		if (batchSinks.current === null) throw new Error('File batch sinks were not installed.');
 		await batchSinks.current.install(
-			makeFileBatchInstallation('file-subscription-completed-foreground-return'),
+			makeFileBatchInstallation('open', 'file-subscription-completed-foreground-return'),
 		);
 		await flushBridgeWorkerRuntimeContinuations();
 		dispatch.message(
@@ -788,7 +798,7 @@ describe('Bridge comm worker File product runtime', () => {
 		await activateBridgeCommWorkerFileViewerModeAndFlush(dispatch, 'metadata-failure');
 		if (batchSinks.current === null) throw new Error('File batch sinks were not installed.');
 		await batchSinks.current.install(
-			makeFileBatchInstallation('file-subscription-runtime-failure'),
+			makeFileBatchInstallation('open', 'file-subscription-runtime-failure'),
 		);
 		await flushBridgeWorkerRuntimeContinuations();
 
@@ -854,7 +864,7 @@ describe('Bridge comm worker File product runtime', () => {
 		await activateBridgeCommWorkerFileViewerModeAndFlush(dispatch, 'recovered-delta');
 		if (batchSinks.current === null) throw new Error('File batch sinks were not installed.');
 		await batchSinks.current.install(
-			makeFileBatchInstallation(subscription.subscriptionId, {
+			makeFileBatchInstallation('open', subscription.subscriptionId, {
 				revision: 1,
 				withDescriptor: false,
 			}),
@@ -873,7 +883,7 @@ describe('Bridge comm worker File product runtime', () => {
 		await flushBridgeWorkerRuntimeContinuations();
 
 		await batchSinks.current.install(
-			makeFileBatchInstallation(subscription.subscriptionId, { revision: 2 }),
+			makeFileBatchInstallation('open', subscription.subscriptionId, { revision: 2 }),
 		);
 		await drainFilePreparationUntilIdle(scheduledDrains);
 

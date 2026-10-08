@@ -193,6 +193,9 @@ describe('File progressive coverage transport obligations', () => {
 			let sequence = 1;
 			const emitEmptyBatch = (
 				mode: 'snapshot' | 'coverage',
+				snapshotCause:
+					| import('./bridge-product-batch-wire-contracts.js').BridgeProductSnapshotCause
+					| undefined,
 				base: number,
 				target: number,
 			): void => {
@@ -217,6 +220,7 @@ describe('File progressive coverage transport obligations', () => {
 						baseRevision: base,
 						targetRevision: target,
 						mode,
+						...(snapshotCause === undefined ? {} : { snapshotCause }),
 						partCount: 0,
 						scope: acceptedScope.scope,
 					}),
@@ -230,12 +234,12 @@ describe('File progressive coverage transport obligations', () => {
 					}),
 				);
 			};
-			emitEmptyBatch('snapshot', 0, 1);
+			emitEmptyBatch('snapshot', 'open', 0, 1);
 			await firstCertified.promise;
 			harness.transport.failFileRender?.();
 			expect(timeline.at(-1)).toBe('status:failedRetryable');
-			emitEmptyBatch('coverage', 1, 2);
-			emitEmptyBatch('snapshot', 0, 3);
+			emitEmptyBatch('coverage', undefined, 1, 2);
+			emitEmptyBatch('snapshot', 'newerInput', 0, 3);
 			await finalCertified.promise;
 
 			expect(certifiedModes).toEqual(['snapshot', 'snapshot']);

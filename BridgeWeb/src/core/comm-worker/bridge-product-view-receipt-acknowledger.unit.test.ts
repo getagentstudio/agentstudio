@@ -77,6 +77,7 @@ describe('Bridge product view receipt acknowledgement owner', () => {
 				baseRevision: 0,
 				kind: 'subscription.batchBegin',
 				mode: 'snapshot',
+				snapshotCause: 'open',
 				partCount: 1,
 				scope: { kind: 'file', changeFilter: { kind: 'none' }, interests: [], pathScope: [] },
 				streamSequence: 1,

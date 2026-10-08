@@ -1,5 +1,8 @@
 import type { BridgeProductBatchRejectionReason } from './bridge-product-batch-diagnostics.js';
-import type { BridgeProductBatchFrame } from './bridge-product-batch-wire-contracts.js';
+import type {
+	BridgeProductBatchFrame,
+	BridgeProductSnapshotCause,
+} from './bridge-product-batch-wire-contracts.js';
 
 type BatchBegin = Extract<BridgeProductBatchFrame, { readonly kind: 'subscription.batchBegin' }>;
 type BatchPart = Extract<BridgeProductBatchFrame, { readonly kind: 'subscription.batchPart' }>;
@@ -48,14 +51,19 @@ interface DomainState {
 		}
 	>;
 	stage: StagedBatch | null;
+	containedBegin: BatchBegin | null;
 }
 
 export type BridgeProductBatchAcceptance =
-	| { readonly kind: 'ignored' }
+	| {
+			readonly kind: 'ignored';
+			readonly receivedThroughDeliverySequence?: number;
+			readonly snapshotContained?: true;
+	  }
 	| {
 			readonly kind: 'staged';
 			readonly receivedThroughDeliverySequence?: number;
-			readonly replacementSnapshotStarted?: boolean;
+			readonly snapshotCause?: BridgeProductSnapshotCause;
 	  }
 	| { readonly kind: 'installed'; readonly domain: string; readonly targetRevision: number }
 	| {
@@ -114,6 +122,7 @@ export class BridgeProductViewBatchReceiver {
 			incarnation,
 			recordsByKey: new Map(),
 			stage: null,
+			containedBegin: null,
 			tombstoneRevisionByKey: new Map(),
 		});
 	}
@@ -131,6 +140,7 @@ export class BridgeProductViewBatchReceiver {
 				state.recordsByKey.clear();
 			}
 			state.stage = null;
+			state.containedBegin = null;
 			state.expiredBatchId = null;
 			state.receivedPartSequences.clear();
 			state.receivedThroughDeliverySequence = 0;
@@ -164,6 +174,7 @@ export class BridgeProductViewBatchReceiver {
 	accept(
 		frame: BridgeProductBatchFrame,
 		verifyInstallation?: (installation: BridgeProductViewInstallation) => void,
+		admitSnapshot?: (begin: BatchBegin) => boolean,
 	): BridgeProductBatchAcceptance {
 		const domainState = this.#domains.get(frame.domain);
 		if (
@@ -178,7 +189,7 @@ export class BridgeProductViewBatchReceiver {
 			return { kind: 'ignored' };
 		switch (frame.kind) {
 			case 'subscription.batchBegin':
-				return this.#begin(domainState, frame);
+				return this.#begin(domainState, frame, admitSnapshot);
 			case 'subscription.batchPart':
 				return this.#part(domainState, frame);
 			case 'subscription.batchComplete':
@@ -233,7 +244,15 @@ export class BridgeProductViewBatchReceiver {
 		return this.#completedInstallations.splice(0);
 	}
 
-	#begin(domainState: DomainState, frame: BatchBegin): BridgeProductBatchAcceptance {
+	#begin(
+		domainState: DomainState,
+		frame: BatchBegin,
+		admitSnapshot?: (begin: BatchBegin) => boolean,
+	): BridgeProductBatchAcceptance {
+		if (domainState.containedBegin?.batchId === frame.batchId) return { kind: 'ignored' };
+		const currentBegin = domainState.stage?.begin ?? domainState.containedBegin;
+		if (currentBegin !== null && frame.streamSequence < currentBegin.streamSequence)
+			return { kind: 'ignored' };
 		if (domainState.expiredBatchId === frame.batchId) return { kind: 'ignored' };
 		if (domainState.lastInstalledBatchId === frame.batchId) return { kind: 'ignored' };
 		if (frame.streamSequence <= domainState.lastInstalledCompleteStreamSequence)
@@ -258,7 +277,6 @@ export class BridgeProductViewBatchReceiver {
 			return { kind: 'ignored' };
 		}
 		const priorStage = domainState.stage;
-		const replacesExpiredStage = domainState.expiredBatchId !== null;
 		if (priorStage?.begin.batchId === frame.batchId) {
 			if (sameJSON(priorStage.begin, frame)) return { kind: 'staged' };
 			domainState.stage = null;
@@ -268,16 +286,38 @@ export class BridgeProductViewBatchReceiver {
 			domainState.stage = null;
 			return { kind: 'resnapshot', domain: frame.domain, rejection: 'overlappingChange' };
 		}
+		if (frame.mode === 'snapshot' && frame.snapshotCause === undefined)
+			throw new Error('Snapshot cause is required.');
+		if (frame.mode === 'snapshot' && admitSnapshot?.(frame) === false) {
+			// Keep receipt identity only: contained parts return credits without entering the side bank.
+			domainState.stage = null;
+			domainState.containedBegin = frame;
+			domainState.receiptBaselinePending = true;
+			return { kind: 'ignored', snapshotContained: true };
+		}
 		domainState.stage = { begin: frame, complete: null, partsByIndex: new Map() };
+		domainState.containedBegin = null;
 		domainState.expiredBatchId = null;
 		if (frame.mode === 'snapshot') domainState.receiptBaselinePending = true;
 		return {
 			kind: 'staged',
-			...(priorStage === null && !replacesExpiredStage ? {} : { replacementSnapshotStarted: true }),
+			...(frame.mode === 'snapshot' && frame.snapshotCause !== undefined
+				? { snapshotCause: frame.snapshotCause }
+				: {}),
 		};
 	}
 
 	#part(domainState: DomainState, frame: BatchPart): BridgeProductBatchAcceptance {
+		const contained = domainState.containedBegin;
+		if (contained !== null && contained.batchId === frame.batchId) {
+			if (
+				frame.partIndex >= contained.partCount ||
+				(frame.part.operation !== 'evict' && frame.part.revision > contained.targetRevision)
+			) {
+				return { kind: 'ignored' };
+			}
+			return { kind: 'ignored', ...this.#receivePart(domainState, frame) };
+		}
 		const stage = domainState.stage;
 		if (
 			stage !== null &&
@@ -307,6 +347,20 @@ export class BridgeProductViewBatchReceiver {
 			return { kind: 'resnapshot', domain: frame.domain, rejection: 'conflictingPart' };
 		}
 		stage.partsByIndex.set(frame.partIndex, frame);
+		if (
+			domainState.receiptBaselinePending &&
+			frame.deliverySequence - frame.partIndex - 1 < domainState.receivedThroughDeliverySequence
+		) {
+			domainState.stage = null;
+			return { kind: 'resnapshot', domain: frame.domain, rejection: 'receiptBaselineRegressed' };
+		}
+		return { kind: 'staged', ...this.#receivePart(domainState, frame) };
+	}
+
+	#receivePart(
+		domainState: DomainState,
+		frame: BatchPart,
+	): { readonly receivedThroughDeliverySequence?: number } {
 		if (domainState.receiptBaselinePending) {
 			// A resnapshot abandons native's older in-transit credits. The first
 			// received part establishes its sealed batch's sequence base even if
@@ -314,7 +368,7 @@ export class BridgeProductViewBatchReceiver {
 			const baseline = frame.deliverySequence - frame.partIndex - 1;
 			if (baseline < domainState.receivedThroughDeliverySequence) {
 				domainState.stage = null;
-				return { kind: 'resnapshot', domain: frame.domain, rejection: 'receiptBaselineRegressed' };
+				return {};
 			}
 			domainState.receivedPartSequences.clear();
 			domainState.receivedThroughDeliverySequence = baseline;
@@ -327,12 +381,9 @@ export class BridgeProductViewBatchReceiver {
 		) {
 			domainState.receivedThroughDeliverySequence += 1;
 		}
-		return {
-			kind: 'staged',
-			...(domainState.receivedThroughDeliverySequence === priorReceivedThrough
-				? {}
-				: { receivedThroughDeliverySequence: domainState.receivedThroughDeliverySequence }),
-		};
+		return domainState.receivedThroughDeliverySequence === priorReceivedThrough
+			? {}
+			: { receivedThroughDeliverySequence: domainState.receivedThroughDeliverySequence };
 	}
 
 	#complete(
@@ -340,6 +391,7 @@ export class BridgeProductViewBatchReceiver {
 		frame: BatchComplete,
 		verifyInstallation?: (installation: BridgeProductViewInstallation) => void,
 	): BridgeProductBatchAcceptance {
+		if (domainState.containedBegin?.batchId === frame.batchId) return { kind: 'ignored' };
 		const stage = domainState.stage;
 		if (
 			stage !== null &&

@@ -68,7 +68,7 @@ describe('BridgeFileViewerApp query and content lifecycle Browser Mode', () => {
 					},
 					readContent: (): Promise<string> => deferredContent.promise,
 				}}
-				initialFileBatch={makeBrowserFileBatchWithDescriptors(descriptor)}
+				initialFileBatch={makeBrowserFileBatchWithDescriptors('open', descriptor)}
 			/>,
 		);
 		await waitForMetadataTreeRowCount(2);
@@ -535,6 +535,7 @@ function makeTreeRowsOnlyBatch(): ReturnType<typeof makeBrowserFileBatch> {
 		'Sources/AgentStudio/Features/Bridge',
 	] as const;
 	return makeBrowserFileBatch({
+		snapshotCause: 'open',
 		rows: paths.map((path) =>
 			makeBrowserFileRow({ path, kind: path.endsWith('.swift') ? 'file' : 'directory' }),
 		),
@@ -558,6 +559,7 @@ function makeMixedFileClassBatch(): ReturnType<typeof makeBrowserFileBatch> {
 		['Vendor/Library.js', 'vendor'],
 	] as const;
 	return makeBrowserFileBatch({
+		snapshotCause: 'open',
 		rows: [
 			makeBrowserFileRow({ path: 'Sources', kind: 'directory' }),
 			makeBrowserFileRow({ path: 'Sources/App', kind: 'directory' }),

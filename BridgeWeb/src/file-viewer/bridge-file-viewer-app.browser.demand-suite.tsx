@@ -43,7 +43,11 @@ describe('BridgeFileViewerApp Browser Mode', () => {
 
 		await render(
 			<BridgeFileViewerApp
-				initialFileBatch={makeBrowserFileBatchWithDescriptors(firstDescriptor, secondDescriptor)}
+				initialFileBatch={makeBrowserFileBatchWithDescriptors(
+					'open',
+					firstDescriptor,
+					secondDescriptor,
+				)}
 				fileProductSession={{
 					readContent: async (props) => {
 						openedDescriptorIds.push(props.descriptor.descriptorId);
@@ -95,7 +99,11 @@ describe('BridgeFileViewerApp Browser Mode', () => {
 							viewportCommands.record(message);
 						},
 					}}
-					initialFileBatch={makeBrowserFileBatchWithDescriptors(firstDescriptor, secondDescriptor)}
+					initialFileBatch={makeBrowserFileBatchWithDescriptors(
+						'open',
+						firstDescriptor,
+						secondDescriptor,
+					)}
 				/>
 			</div>,
 		);
@@ -150,7 +158,7 @@ describe('BridgeFileViewerApp Browser Mode', () => {
 							viewportCommands.record(message);
 						},
 					}}
-					initialFileBatch={makeBrowserFileBatchWithDescriptors(...descriptors)}
+					initialFileBatch={makeBrowserFileBatchWithDescriptors('open', ...descriptors)}
 				/>
 			</div>,
 		);
@@ -187,7 +195,7 @@ describe('BridgeFileViewerApp Browser Mode', () => {
 
 		await render(
 			<BridgeFileViewerApp
-				initialFileBatch={makeBrowserFileBatchWithDescriptors(descriptor)}
+				initialFileBatch={makeBrowserFileBatchWithDescriptors('open', descriptor)}
 				fileProductSession={{
 					readContent: async () => makeFileContent('export const globalFetchIsolation = true;\n'),
 				}}
@@ -221,6 +229,7 @@ describe('BridgeFileViewerApp Browser Mode', () => {
 		await render(
 			<BridgeFileViewerApp
 				initialFileBatch={makeBrowserFileBatchWithDescriptors(
+					'open',
 					textDescriptor,
 					binaryDescriptor,
 					unavailableDescriptor,
@@ -257,7 +266,7 @@ describe('BridgeFileViewerApp Browser Mode', () => {
 
 		await render(
 			<BridgeFileViewerApp
-				initialFileBatch={makeBrowserFileBatchWithDescriptors(visibleDescriptor)}
+				initialFileBatch={makeBrowserFileBatchWithDescriptors('open', visibleDescriptor)}
 				isActive={false}
 				fileProductSession={{
 					readContent: async (props) => {

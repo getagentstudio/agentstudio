@@ -36,7 +36,9 @@ test.each(['lease backstop', 'exhausted Retry'] as const)(
 			receiptLeaseDurationMilliseconds: 100,
 			retryBackoffMilliseconds: 25,
 		});
-		const view = installBridgeProductFileBatch(makeFileBatchInstallation('file-demand-retry'));
+		const view = installBridgeProductFileBatch(
+			makeFileBatchInstallation('open', 'file-demand-retry'),
+		);
 		const store = createBridgeCommWorkerStore({
 			contentItems: view.contentItems,
 			renderFulfillmentRegistry: registry,

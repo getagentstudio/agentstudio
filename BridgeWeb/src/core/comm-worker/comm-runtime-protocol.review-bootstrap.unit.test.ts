@@ -79,7 +79,11 @@ describe('Bridge comm worker Review product bootstrap', () => {
 		expect(calledMethods).not.toContain('file.source.current');
 
 		await reviewBatches.install(
-			makeReviewTestBatch({ subscriptionId: reviewSubscription.subscriptionId, withContent: true }),
+			makeReviewTestBatch({
+				snapshotCause: 'open',
+				subscriptionId: reviewSubscription.subscriptionId,
+				withContent: true,
+			}),
 		);
 		await flushBridgeWorkerRuntimeContinuations();
 		expect(calledMethods.filter((method) => method === 'file.source.current')).toHaveLength(1);

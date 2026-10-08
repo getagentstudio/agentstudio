@@ -40,6 +40,7 @@ export function registerBridgeFileViewerSourceSnapshotDemandTest(): void {
 			<BridgeFileViewerApp
 				codeViewWorkerPoolEnabled={false}
 				initialFileBatch={makeBrowserFileBatch({
+					snapshotCause: 'open',
 					rows: [makeBrowserFileRow({ path, fileId: 'file-source-snapshot-demand' })],
 				})}
 				navigationCommand={fileNavigationCommandForPath(path)}
@@ -58,6 +59,7 @@ export function registerBridgeFileViewerSourceSnapshotDemandTest(): void {
 		await actUpdate(() => {
 			publishRequiredFileBatch(
 				makeBrowserFileBatch({
+					snapshotCause: 'open',
 					rows: [makeBrowserFileRow({ path, descriptorOutcome: replacementDescriptor })],
 					revision: 2,
 					source: replacementSource,

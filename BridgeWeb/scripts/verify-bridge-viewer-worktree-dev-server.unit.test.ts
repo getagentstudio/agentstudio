@@ -52,7 +52,7 @@ describe('worktree dev-server verifier Review interaction contract', () => {
 	});
 
 	test('reads Worktree/File rows from a certified keyed batch', () => {
-		const installation = makeFileBatchInstallation('file-subscription-worktree-verifier');
+		const installation = makeFileBatchInstallation('open', 'file-subscription-worktree-verifier');
 		expect(worktreeFileTreeRows([installation]).map((row) => row.path)).toEqual([
 			'src',
 			'src/a.ts',

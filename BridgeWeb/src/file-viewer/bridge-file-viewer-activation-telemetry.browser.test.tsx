@@ -59,6 +59,7 @@ describe('Bridge File activation telemetry', () => {
 		await actUpdate(() => {
 			publishFileBatch(
 				makeBrowserFileBatchWithDescriptors(
+					'open',
 					makeBrowserFileDescriptorOutcome({
 						descriptorId: 'delayed-ttfi-content',
 						fileId: 'delayed-ttfi-file',
@@ -93,7 +94,7 @@ describe('Bridge File activation telemetry', () => {
 				activationSequence={17}
 				activationStartedAtPerfNow={performance.now()}
 				isActive={true}
-				initialFileBatch={makeBrowserFileBatchWithDescriptors(descriptor)}
+				initialFileBatch={makeBrowserFileBatchWithDescriptors('open', descriptor)}
 				openPathCommand={{
 					activationStartedAtPerfNow: performance.now(),
 					commandId: 17,
@@ -139,7 +140,7 @@ describe('Bridge File activation telemetry', () => {
 		});
 		const telemetryRecorder = makeTestTelemetryRecorder(telemetrySamples);
 		const fileProductSession = { readContent: async (): Promise<string> => content };
-		const initialFileBatch = makeBrowserFileBatchWithDescriptors(descriptor);
+		const initialFileBatch = makeBrowserFileBatchWithDescriptors('open', descriptor);
 		const { rerender } = await render(
 			<BridgeFileViewerApp
 				autoOpenInitialFile={true}

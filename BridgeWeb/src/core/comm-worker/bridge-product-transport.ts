@@ -69,6 +69,7 @@ import {
 	type BridgeProductMetadataFrame,
 	type BridgeProductMetadataStreamRequest,
 } from './bridge-product-session-contracts.js';
+import { admitBridgeProductSnapshotBegin } from './bridge-product-snapshot-begin-admission.js';
 import {
 	BridgeProductSubscriptionFrameFailure,
 	bridgeProductSubscriptionOperationFailureCode,
@@ -329,10 +330,12 @@ class BridgeProductTransportSessionImpl implements BridgeProductTransportSession
 					this.#metadataRecoveryAttemptedSinceProgress = false;
 					sinks.certifiedInstallCompleted?.(installation.begin);
 				},
-				replacementSnapshot: (frame): void => {
-					this.#viewScopeOwner.observeReplacementSnapshot(frame);
-					sinks.replacementSnapshot?.(frame);
-				},
+				snapshotBeginAccepted: (frame): boolean =>
+					admitBridgeProductSnapshotBegin({
+						frame,
+						owner: this.#viewScopeOwner,
+						notify: sinks.snapshotBeginAccepted,
+					}),
 			},
 		});
 	}

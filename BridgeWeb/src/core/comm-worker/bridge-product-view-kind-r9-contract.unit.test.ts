@@ -42,7 +42,9 @@ describe('four-kind worker R9 contract through the real metadata codec', () => {
 			): ReturnType<BridgeProductViewBatchReceiver['accept']> =>
 				state.accept(wire.roundTrip(frame));
 
-			accept(wire.begin({ batchId: 'initial', targetRevision: 1, partCount: 1 }));
+			accept(
+				wire.begin({ snapshotCause: 'open', batchId: 'initial', targetRevision: 1, partCount: 1 }),
+			);
 			accept(
 				wire.part({
 					batchId: 'initial',
@@ -57,6 +59,7 @@ describe('four-kind worker R9 contract through the real metadata codec', () => {
 
 			accept(
 				wire.begin({
+					snapshotCause: undefined,
 					batchId: 'missing',
 					baseRevision: 1,
 					targetRevision: 3,
@@ -75,7 +78,14 @@ describe('four-kind worker R9 contract through the real metadata codec', () => {
 			expect(state.records(wire.domain)).toEqual(lastGood);
 			expect(state.takeInstallations()).toEqual([]);
 
-			accept(wire.begin({ batchId: 'replacement', targetRevision: 5, partCount: 2 }));
+			accept(
+				wire.begin({
+					snapshotCause: 'open',
+					batchId: 'replacement',
+					targetRevision: 5,
+					partCount: 2,
+				}),
+			);
 			// Demand expansion does not discard a still-valid in-flight batch.
 			state.setScope(wire.expandedScope, 1);
 			const secondPart = wire.part({
@@ -109,6 +119,7 @@ describe('four-kind worker R9 contract through the real metadata codec', () => {
 			// An entering key's current revision may be below the domain cursor.
 			accept(
 				wire.begin({
+					snapshotCause: undefined,
 					batchId: 'expanded',
 					baseRevision: 5,
 					targetRevision: 5,
@@ -136,6 +147,7 @@ describe('four-kind worker R9 contract through the real metadata codec', () => {
 			expect(state.takeInstallations()[0]?.certified).toBe(false);
 			accept(
 				wire.begin({
+					snapshotCause: undefined,
 					batchId: 'empty-coverage',
 					baseRevision: 5,
 					targetRevision: 5,
@@ -150,6 +162,7 @@ describe('four-kind worker R9 contract through the real metadata codec', () => {
 
 			accept(
 				wire.begin({
+					snapshotCause: undefined,
 					batchId: 'eviction',
 					baseRevision: 5,
 					targetRevision: 5,
@@ -170,6 +183,7 @@ describe('four-kind worker R9 contract through the real metadata codec', () => {
 			expect(state.records(wire.domain)).toHaveLength(2);
 			accept(
 				wire.begin({
+					snapshotCause: undefined,
 					batchId: 'reenter',
 					baseRevision: 5,
 					targetRevision: 5,
@@ -192,6 +206,7 @@ describe('four-kind worker R9 contract through the real metadata codec', () => {
 			// Only the declared region is certified absent; its delayed rows cannot resurrect.
 			accept(
 				wire.begin({
+					snapshotCause: 'open',
 					batchId: 'empty-src',
 					targetRevision: 6,
 					partCount: 0,
@@ -205,6 +220,7 @@ describe('four-kind worker R9 contract through the real metadata codec', () => {
 			]);
 			accept(
 				wire.begin({
+					snapshotCause: undefined,
 					batchId: 'stale-absence',
 					baseRevision: 6,
 					targetRevision: 7,
@@ -227,6 +243,7 @@ describe('four-kind worker R9 contract through the real metadata codec', () => {
 			]);
 			accept(
 				wire.begin({
+					snapshotCause: undefined,
 					batchId: 'delete',
 					baseRevision: 7,
 					targetRevision: 8,
@@ -247,6 +264,7 @@ describe('four-kind worker R9 contract through the real metadata codec', () => {
 			expect(state.records(wire.domain)).toEqual([]);
 			accept(
 				wire.begin({
+					snapshotCause: undefined,
 					batchId: 'recreate',
 					baseRevision: 8,
 					targetRevision: 9,
@@ -267,6 +285,7 @@ describe('four-kind worker R9 contract through the real metadata codec', () => {
 			const recreated = [{ key: 'docs/new', revision: 9, value: 'recreated' }];
 			accept(
 				wire.begin({
+					snapshotCause: undefined,
 					batchId: 'stale-key',
 					baseRevision: 9,
 					targetRevision: 10,
@@ -288,6 +307,7 @@ describe('four-kind worker R9 contract through the real metadata codec', () => {
 			// A newer snapshot carrying an older value cannot overwrite this key.
 			accept(
 				wire.begin({
+					snapshotCause: 'open',
 					batchId: 'overlap',
 					targetRevision: 12,
 					partCount: 1,
@@ -307,6 +327,7 @@ describe('four-kind worker R9 contract through the real metadata codec', () => {
 			expect(
 				accept(
 					wire.begin({
+						snapshotCause: undefined,
 						batchId: 'old-base',
 						baseRevision: 1,
 						targetRevision: 13,
@@ -320,6 +341,7 @@ describe('four-kind worker R9 contract through the real metadata codec', () => {
 
 			accept(
 				wire.begin({
+					snapshotCause: 'open',
 					batchId: 'conflict',
 					targetRevision: 14,
 					partCount: 1,
@@ -347,7 +369,14 @@ describe('four-kind worker R9 contract through the real metadata codec', () => {
 			state.replaceHandle('replacement-handle', wire.expandedScope, 2);
 			state.admitDomain(wire.domain, 'replacement-incarnation');
 			expect(
-				accept(wire.begin({ batchId: 'retired', targetRevision: 15, partCount: 0 })).kind,
+				accept(
+					wire.begin({
+						snapshotCause: 'open',
+						batchId: 'retired',
+						targetRevision: 15,
+						partCount: 0,
+					}),
+				).kind,
 			).toBe('ignored');
 			expect(state.staleRecords(wire.domain)).toEqual(recreated);
 			wire.finish();
@@ -388,7 +417,14 @@ async function proveSlowConsumptionAndScopedReplacement(kind: DataKind): Promise
 	});
 	const accept = (frame: BridgeProductBatchFrame): void => router.accept(wire.roundTrip(frame));
 	try {
-		accept(wire.begin({ batchId: 'slow-current', targetRevision: 1, partCount: 1 }));
+		accept(
+			wire.begin({
+				snapshotCause: 'open',
+				batchId: 'slow-current',
+				targetRevision: 1,
+				partCount: 1,
+			}),
+		);
 		accept(
 			wire.part({
 				batchId: 'slow-current',
@@ -401,6 +437,7 @@ async function proveSlowConsumptionAndScopedReplacement(kind: DataKind): Promise
 		const oldBank = visible.get(wire.subscriptionId);
 		accept(
 			wire.begin({
+				snapshotCause: undefined,
 				batchId: 'many-keys',
 				baseRevision: 1,
 				targetRevision: 10,
@@ -424,7 +461,14 @@ async function proveSlowConsumptionAndScopedReplacement(kind: DataKind): Promise
 		const abandonedComplete = wire.complete('many-keys');
 		expect(visible.get(wire.subscriptionId)).toEqual(oldBank);
 		// N3 owns the pending-key budget. W4 consumes its replacement, not a fake worker budget.
-		accept(wire.begin({ batchId: 'budget-replacement', targetRevision: 11, partCount: 2 }));
+		accept(
+			wire.begin({
+				snapshotCause: 'open',
+				batchId: 'budget-replacement',
+				targetRevision: 11,
+				partCount: 2,
+			}),
+		);
 		accept(
 			wire.part({
 				batchId: 'budget-replacement',
@@ -450,7 +494,7 @@ async function proveSlowConsumptionAndScopedReplacement(kind: DataKind): Promise
 		]);
 		const sibling = 'healthy-sibling';
 		for (const frame of [
-			wire.begin({ batchId: 'sibling', targetRevision: 1, partCount: 1 }),
+			wire.begin({ snapshotCause: 'open', batchId: 'sibling', targetRevision: 1, partCount: 1 }),
 			wire.part({
 				batchId: 'sibling',
 				deliverySequence: 1,

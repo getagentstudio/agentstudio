@@ -89,7 +89,7 @@ describe('retained File E3 revision continuity', () => {
 		};
 
 		const subscriptionId = 'retained-file-e3';
-		send(makeFileBatchInstallation(subscriptionId, { revision: 4 }));
+		send(makeFileBatchInstallation('open', subscriptionId, { revision: 4 }));
 		const first = requireInstalledFileView(state);
 		const store = createBridgeCommWorkerStore({
 			contentItems: first.contentItems,
@@ -118,7 +118,7 @@ function rebuiltFileInstallation(
 	subscriptionId: string,
 	revision: number,
 ): BridgeProductViewInstallation {
-	const base = makeFileBatchInstallation(subscriptionId, { revision });
+	const base = makeFileBatchInstallation('open', subscriptionId, { revision });
 	const firstFileRecord = base.records.find((record) => record.key === '/workspace/src/a.ts');
 	if (firstFileRecord === undefined) throw new Error('File batch fixture has no selected row.');
 	const row = bridgeProductFileBatchRowSchema.parse(firstFileRecord.value);

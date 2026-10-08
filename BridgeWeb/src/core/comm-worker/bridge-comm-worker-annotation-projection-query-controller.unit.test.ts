@@ -210,6 +210,7 @@ describe('Bridge comm worker annotation projection query controller', () => {
 
 			const changedWorktree = installBridgeProductCommentBatch(
 				makeCommentCatalogInstallation({
+					snapshotCause: 'open',
 					entries: [{ kind: 'session', semanticRevision: 1, sessionId }],
 					revision: 9,
 					subscriptionId: firstNotifications.subscription.subscriptionId,

@@ -19,7 +19,7 @@ describe('W4 installation certification carried to the File runtime', () => {
 	test.each(['snapshot', 'coverage', 'change'] as const)(
 		'%s carries its certification through the typed application and runtime callback',
 		async (mode) => {
-			const fixture = makeFileBatchInstallation('certification-subscription');
+			const fixture = makeFileBatchInstallation('open', 'certification-subscription');
 			const receiver = new BridgeProductViewBatchReceiver({
 				handle: fixture.begin.handle,
 				scope: fixture.begin.scope,
@@ -112,7 +112,12 @@ describe('W4 installation certification carried to the File runtime', () => {
 				if (installation === undefined) throw new Error('W4 installation missing.');
 				await sinks.install(installation);
 			};
-			await install({ ...fixture.begin, mode: 'snapshot', partCount: fixture.records.length });
+			await install({
+				...fixture.begin,
+				mode: 'snapshot',
+				snapshotCause: 'open',
+				partCount: fixture.records.length,
+			});
 			await install({
 				...fixture.begin,
 				baseRevision: fixture.begin.targetRevision,

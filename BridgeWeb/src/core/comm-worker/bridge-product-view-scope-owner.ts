@@ -2,6 +2,7 @@ import {
 	createBridgeProductDeferred,
 	type BridgeProductDeferred,
 } from './bridge-product-async-queue.js';
+import type { BridgeProductSnapshotCause } from './bridge-product-batch-wire-contracts.js';
 import type { BridgeProductDeadlineClock } from './bridge-product-deadline-clock.js';
 import type { BridgeProductControlMux } from './bridge-product-session-authority.js';
 import type { ViewResnapshotAdmissionProps } from './bridge-product-view-control-admission.js';
@@ -254,20 +255,30 @@ export class BridgeProductViewScopeOwner {
 		}
 	}
 
-	observeReplacementSnapshot(identity: ViewIdentity): void {
+	observeSnapshotBegin(
+		identity: ViewIdentity & { readonly snapshotCause: BridgeProductSnapshotCause },
+	): boolean {
 		const view = this.#matchingView(identity);
-		if (view === undefined) return;
+		if (view === undefined) return true;
+		const cause = identity.snapshotCause;
+		const failed = view.recoveryStatus === 'failedRetryable';
+		if (failed && (cause === 'recovery' || cause === 'requested')) return false;
+		if (cause === 'newerInput') return true;
+		if (cause === 'open') view.consecutiveResnapshots = 0;
 		this.#clearReplacementBeginDeadline(view);
 		view.awaitingBegin = false;
-		if (view.resnapshotRequested) {
-			view.resnapshotRequested = false;
-			return;
+		if (cause === 'recovery' && !view.resnapshotRequested) {
+			if (view.consecutiveResnapshots >= this.#maximumConsecutiveResnapshots) {
+				this.#emitRecoveryStatus(view, 'failedRetryable');
+				return false;
+			}
+			view.consecutiveResnapshots += 1;
 		}
-		view.consecutiveResnapshots = Math.min(
-			this.#maximumConsecutiveResnapshots,
-			view.consecutiveResnapshots + 1,
-		);
-		this.#emitRecoveryStatus(view, 'recovering');
+		if (cause === 'open' || cause === 'requested' || view.resnapshotRequested) {
+			view.resnapshotRequested = false;
+		}
+		this.#emitRecoveryStatus(view, 'recovering', cause === 'open');
+		return true;
 	}
 
 	recordCertifiedInstall(identity: ViewIdentity): void {
@@ -315,7 +326,7 @@ export class BridgeProductViewScopeOwner {
 		view.awaitingBegin = false;
 		view.consecutiveResnapshots = 0;
 		view.resnapshotRequested = false;
-		this.#emitRecoveryStatus(view, 'recovering');
+		this.#emitRecoveryStatus(view, 'recovering', true);
 		await this.resnapshot(subscriptionId);
 	}
 
@@ -348,7 +359,10 @@ export class BridgeProductViewScopeOwner {
 	#emitRecoveryStatus(
 		view: DesiredView,
 		status: BridgeWorkerViewRecoveryStatusEvent['status'],
+		allowFailedRestart = false,
 	): void {
+		if (view.recoveryStatus === 'failedRetryable' && status === 'recovering' && !allowFailedRestart)
+			return;
 		if (view.recoveryStatus === status) return;
 		view.recoveryStatus = status;
 		this.#onViewRecoveryStatus?.({

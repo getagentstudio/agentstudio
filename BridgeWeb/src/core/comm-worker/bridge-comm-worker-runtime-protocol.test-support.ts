@@ -334,6 +334,7 @@ export function createBridgeCommWorkerReviewProductTestSource(
 		if (batchSinks === null) throw new Error('Review batch sinks were not installed.');
 		const nextRevision = Math.max(currentRevision + 1, revision ?? currentRevision + 1);
 		const batch = reviewProductBatchFromRuntimeSource(
+			'open',
 			source,
 			nextRevision,
 			subscription.subscriptionId,
@@ -357,6 +358,7 @@ export function createBridgeCommWorkerReviewProductTestSource(
 }
 
 function reviewProductBatchFromRuntimeSource(
+	snapshotCause: import('./bridge-product-batch-wire-contracts.js').BridgeProductSnapshotCause,
 	source: BridgeCommWorkerReviewProductTestSourceInput,
 	revision: number,
 	subscriptionId: string,
@@ -536,6 +538,7 @@ function reviewProductBatchFromRuntimeSource(
 	}
 	const begin = bridgeProductBatchFrameSchema.parse({
 		...sessionCorpus.transportV2.batchFrames[0],
+		snapshotCause,
 		batchId: uuidv7(),
 		publicationId,
 		scope: { kind: 'review', interests: [] },

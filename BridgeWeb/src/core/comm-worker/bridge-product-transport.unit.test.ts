@@ -260,7 +260,7 @@ describe('Bridge product transport', () => {
 		expect(harness.server.metadataReaderCancelCount).toBe(1);
 	});
 
-	test('W4 replacement snapshots exhaust W2 budget and a certified install rearms the same E3', async () => {
+	test('native recovery exhausts W2 attempts; a newer-input certified install rearms the same E3', async () => {
 		const harness = createTransportHarness();
 		let replacementCount = 0;
 		let notifyBudgetReached: (() => void) | undefined;
@@ -274,7 +274,7 @@ describe('Bridge product transport', () => {
 		harness.transport.setBatchFrameSinks?.({
 			install: (): void => {},
 			receipt: (): void => {},
-			replacementSnapshot: (): void => {
+			snapshotBeginAccepted: (): void => {
 				replacementCount += 1;
 				if (replacementCount === 3) notifyBudgetReached?.();
 			},
@@ -320,6 +320,7 @@ describe('Bridge product transport', () => {
 						batchId: `transport-recovery-${index}`,
 						kind: 'subscription.batchBegin',
 						mode: 'snapshot',
+						snapshotCause: 'recovery',
 						partCount: 0,
 						scope: scopeRequest.scope,
 						streamSequence: index + 2,
@@ -344,10 +345,24 @@ describe('Bridge product transport', () => {
 			harness.server.emitMetadata(
 				bridgeProductBatchFrameSchema.parse({
 					...frameIdentity,
-					batchId: 'transport-recovery-3',
+					batchId: 'transport-newer-input',
+					baseRevision: 0,
+					kind: 'subscription.batchBegin',
+					mode: 'snapshot',
+					snapshotCause: 'newerInput',
+					partCount: 0,
+					scope: scopeRequest.scope,
+					streamSequence: 6,
+					targetRevision: 1,
+				}),
+			);
+			harness.server.emitMetadata(
+				bridgeProductBatchFrameSchema.parse({
+					...frameIdentity,
+					batchId: 'transport-newer-input',
 					coveredScope: scopeRequest.scope,
 					kind: 'subscription.batchComplete',
-					streamSequence: 6,
+					streamSequence: 7,
 				}),
 			);
 			await installed;
@@ -448,6 +463,7 @@ describe('Bridge product transport', () => {
 		harness.server.emitMetadata(
 			bridgeProductMetadataFrameSchema.parse({
 				...batchBegin,
+				snapshotCause: 'open',
 				...batchIdentity,
 				partCount: 0,
 				streamSequence: 2,

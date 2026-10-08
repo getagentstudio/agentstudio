@@ -215,7 +215,7 @@ async function createFileBackpressureHarness(
 	});
 	await activateBridgeCommWorkerFileViewerModeAndFlush(dispatch, 'existing-owner-backpressure');
 	if (batchSinks.current === null) throw new Error('File batch sinks were not installed.');
-	await batchSinks.current.install(makeFileBatchInstallation(subscription.subscriptionId));
+	await batchSinks.current.install(makeFileBatchInstallation('open', subscription.subscriptionId));
 	await flushBridgeWorkerRuntimeContinuations();
 	const harness = { batchSinks: batchSinks.current, dispatch, postedMessages, scheduledDrains };
 	selectFile(harness, 1, 'selection-a');
@@ -225,9 +225,13 @@ async function createFileBackpressureHarness(
 }
 
 async function pushReplacementFileSource(harness: FileBackpressureHarness): Promise<void> {
-	const installation = makeFileBatchInstallation('file-subscription-existing-owner-backpressure', {
-		revision: 5,
-	});
+	const installation = makeFileBatchInstallation(
+		'open',
+		'file-subscription-existing-owner-backpressure',
+		{
+			revision: 5,
+		},
+	);
 	const replacementSource = {
 		...bridgeProductFileMemberStatusRecordSchema.parse(
 			installation.records.find((record) => record.key === BRIDGE_PRODUCT_FILE_MEMBER_STATUS_KEY)

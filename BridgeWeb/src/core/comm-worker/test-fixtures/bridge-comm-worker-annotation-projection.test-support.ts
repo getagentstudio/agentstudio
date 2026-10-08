@@ -254,6 +254,7 @@ export function createNotificationQueue(
 		installCatalog: (revision, semanticRevision = 1): void => {
 			if (catalogReceiver === null) throw new Error('Comment catalog receiver was not installed.');
 			const installation = makeCommentCatalogInstallation({
+				snapshotCause: 'open',
 				entries: [{ kind: 'session', semanticRevision, sessionId }],
 				revision,
 				subscriptionId: subscription.subscriptionId,
@@ -436,6 +437,7 @@ export function installSessionCatalog(
 }
 
 export function makeCommentCatalogInstallation(props: {
+	readonly snapshotCause: import('../bridge-product-batch-wire-contracts.js').BridgeProductSnapshotCause;
 	readonly entries: readonly BridgeProductWorktreeAnnotationCatalogEntry[];
 	readonly revision: number;
 	readonly subscriptionId: string;
@@ -444,6 +446,7 @@ export function makeCommentCatalogInstallation(props: {
 }): BridgeProductViewInstallation {
 	const begin = bridgeProductBatchFrameSchema.parse({
 		...sessionCorpus.transportV2.batchFrames[0],
+		snapshotCause: props.snapshotCause,
 		batchId: generateUuidv7(),
 		publicationId: undefined,
 		scope: { kind: 'comment', sessionIds: [], worktreeId: props.worktreeId },

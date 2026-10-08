@@ -595,7 +595,7 @@ function createAnnotationBatchPublisher(): {
 			const sinks = state.sinks;
 			if (sinks === null) throw new Error('Expected File batch sinks.');
 			await sinks.install(
-				makeFileBatchInstallation('file.metadata-subscription', { emptyTree: true }),
+				makeFileBatchInstallation('open', 'file.metadata-subscription', { emptyTree: true }),
 			);
 		},
 		installCatalog: async (revision, subscriptionKind): Promise<void> => {
@@ -604,6 +604,7 @@ function createAnnotationBatchPublisher(): {
 			if (sinks === null) throw new Error('Expected Comment batch sinks.');
 			await sinks.install(
 				makeCommentCatalogInstallation({
+					snapshotCause: 'open',
 					entries: [
 						{
 							kind: 'session',

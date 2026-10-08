@@ -114,6 +114,7 @@ describe('Bridge comm worker annotation source reconciliation', () => {
 			// This is a real W4 catalog installation; the query is held at the E4 boundary.
 			installBridgeProductCommentBatch(
 				makeCommentCatalogInstallation({
+					snapshotCause: 'open',
 					entries: [{ kind: 'session', semanticRevision: 1, sessionId }],
 					revision: 1,
 					subscriptionId: 'file-annotations',

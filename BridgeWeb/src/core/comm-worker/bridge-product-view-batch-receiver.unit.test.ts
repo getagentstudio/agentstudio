@@ -3,14 +3,19 @@ import { describe, expect, it } from 'vitest';
 import commentCorpus from '../../test-fixtures/bridge-contract-fixtures/valid/bridge-product-comment-catalog-record-corpus.json' with { type: 'json' };
 import fileCorpus from '../../test-fixtures/bridge-contract-fixtures/valid/bridge-product-file-batch-row-corpus.json' with { type: 'json' };
 import { BridgeProductBatchFrameRouter } from './bridge-product-batch-frame-router.js';
-import {
-	bridgeProductBatchFrameSchema,
-	type BridgeProductBatchFrame,
-} from './bridge-product-batch-wire-contracts.js';
+import { bridgeProductBatchFrameSchema } from './bridge-product-batch-wire-contracts.js';
 import type { BridgeProductDeadlineClock } from './bridge-product-deadline-clock.js';
 import type { BridgeProductControlMux } from './bridge-product-session-authority.js';
 import { parseBridgeProductStrictJSON } from './bridge-product-strict-json.js';
 import { BridgeProductViewBatchReceiver } from './bridge-product-view-batch-receiver.js';
+import {
+	ControlledBatchDeadlineClock,
+	identity,
+	begin,
+	part,
+	deletion,
+	complete,
+} from './bridge-product-view-batch-receiver.test-support.js';
 import { createTestViewScopeOwner } from './bridge-product-view-scope-owner.test-support.js';
 
 const noDeadlineClock: BridgeProductDeadlineClock = { schedule: () => (): void => {} };
@@ -20,58 +25,6 @@ function createRouter(): BridgeProductBatchFrameRouter {
 		deadlineClock: noDeadlineClock,
 		progressDeadlineMilliseconds: 5_000,
 	});
-}
-
-class ControlledBatchDeadlineClock implements BridgeProductDeadlineClock {
-	readonly deadlines: Array<{ active: boolean; fire: () => void }> = [];
-	peakActiveDeadlineCount = 0;
-
-	schedule(_delayMilliseconds: number, onDeadline: () => void): () => void {
-		const deadline = {
-			active: true,
-			fire: (): void => {
-				if (!deadline.active) throw new Error('Expected an armed batch deadline.');
-				deadline.active = false;
-				onDeadline();
-			},
-		};
-		this.deadlines.push(deadline);
-		this.peakActiveDeadlineCount = Math.max(
-			this.peakActiveDeadlineCount,
-			this.deadlines.filter((candidate) => candidate.active).length,
-		);
-		return (): void => {
-			deadline.active = false;
-		};
-	}
-
-	activeDeadline(): (typeof this.deadlines)[number] {
-		const deadline = this.deadlines.find((entry) => entry.active);
-		if (deadline === undefined) throw new Error('Expected an armed batch deadline.');
-		return deadline;
-	}
-}
-
-const identity = {
-	batchId: 'batch-1',
-	domain: 'default',
-	handle: 'handle-1',
-	incarnation: 'incarnation-1',
-	metadataStreamId: 'stream-1',
-	paneSessionId: 'pane-1',
-	scopeRevision: 0,
-	streamSequence: 1,
-	subscriptionId: 'subscription-1',
-	subscriptionKind: 'review.metadata',
-	wireVersion: 2,
-	workerInstanceId: 'worker-1',
-} as const;
-
-let nextFixtureStreamSequence = 0;
-
-function fixtureStreamSequence(): number {
-	nextFixtureStreamSequence += 1;
-	return nextFixtureStreamSequence;
 }
 
 function receiver(
@@ -87,109 +40,13 @@ function receiver(
 	});
 }
 
-function begin(props: {
-	readonly batchId?: string;
-	readonly base?: number;
-	readonly domain?: string;
-	readonly handle?: string;
-	readonly incarnation?: string;
-	readonly mode?: 'snapshot' | 'change' | 'coverage';
-	readonly partCount: number;
-	readonly requiresCollection?: number;
-	readonly scope?: Readonly<Record<string, unknown>>;
-	readonly scopeRevision?: number;
-	readonly target: number;
-}): BridgeProductBatchFrame {
-	return bridgeProductBatchFrameSchema.parse({
-		...identity,
-		streamSequence: fixtureStreamSequence(),
-		batchId: props.batchId ?? identity.batchId,
-		baseRevision: props.base ?? 0,
-		domain: props.domain ?? identity.domain,
-		handle: props.handle ?? identity.handle,
-		incarnation: props.incarnation ?? identity.incarnation,
-		kind: 'subscription.batchBegin',
-		mode: props.mode ?? 'snapshot',
-		partCount: props.partCount,
-		publicationId: '00000000-0000-7000-8000-000000000011',
-		...(props.requiresCollection === undefined
-			? {}
-			: { requiresCollection: props.requiresCollection }),
-		scope: props.scope ?? { kind: 'review', interests: [] },
-		scopeRevision: props.scopeRevision ?? 0,
-		targetRevision: props.target,
-	});
-}
-
-function part(props: {
-	readonly batchId?: string;
-	readonly deliverySequence?: number;
-	readonly domain?: string;
-	readonly handle?: string;
-	readonly incarnation?: string;
-	readonly key: string;
-	readonly partIndex?: number;
-	readonly revision: number;
-	readonly scopeRevision?: number;
-	readonly value: string;
-}): BridgeProductBatchFrame {
-	return bridgeProductBatchFrameSchema.parse({
-		...identity,
-		streamSequence: fixtureStreamSequence(),
-		batchId: props.batchId ?? identity.batchId,
-		deliverySequence: props.deliverySequence ?? props.revision,
-		domain: props.domain ?? identity.domain,
-		handle: props.handle ?? identity.handle,
-		incarnation: props.incarnation ?? identity.incarnation,
-		kind: 'subscription.batchPart',
-		part: { key: props.key, operation: 'put', revision: props.revision, value: props.value },
-		partIndex: props.partIndex ?? 0,
-		scopeRevision: props.scopeRevision ?? 0,
-	});
-}
-
-function deletion(props: {
-	readonly batchId: string;
-	readonly key: string;
-	readonly revision: number;
-}): BridgeProductBatchFrame {
-	return bridgeProductBatchFrameSchema.parse({
-		...identity,
-		streamSequence: fixtureStreamSequence(),
-		batchId: props.batchId,
-		deliverySequence: props.revision,
-		kind: 'subscription.batchPart',
-		part: { key: props.key, operation: 'delete', revision: props.revision },
-		partIndex: 0,
-	});
-}
-
-function complete(props: {
-	readonly batchId?: string;
-	readonly coveredScope?: Readonly<Record<string, unknown>>;
-	readonly domain?: string;
-	readonly handle?: string;
-	readonly incarnation?: string;
-	readonly scopeRevision?: number;
-}): BridgeProductBatchFrame {
-	return bridgeProductBatchFrameSchema.parse({
-		...identity,
-		streamSequence: fixtureStreamSequence(),
-		batchId: props.batchId ?? identity.batchId,
-		coveredScope: props.coveredScope ?? { kind: 'review', interests: [] },
-		domain: props.domain ?? identity.domain,
-		handle: props.handle ?? identity.handle,
-		incarnation: props.incarnation ?? identity.incarnation,
-		kind: 'subscription.batchComplete',
-		scopeRevision: props.scopeRevision ?? 0,
-	});
-}
-
 describe('Bridge product W4 per-domain batch receiver', () => {
 	it('installs an in-flight Review batch after demand advances to a newer scope revision', () => {
 		const state = receiver();
 		state.admitDomain('default', 'incarnation-1');
-		expect(state.accept(begin({ partCount: 1, target: 1 })).kind).toBe('staged');
+		expect(state.accept(begin({ snapshotCause: 'open', partCount: 1, target: 1 })).kind).toBe(
+			'staged',
+		);
 		state.setScope({ kind: 'review', interests: [{ lane: 'visible', itemIds: ['a'] }] }, 1);
 		expect(state.accept(part({ key: 'a', revision: 1, value: 'A' })).kind).toBe('staged');
 		expect(state.accept(complete({})).kind).toBe('installed');
@@ -248,7 +105,10 @@ describe('Bridge product W4 per-domain batch receiver', () => {
 			},
 			receipt: (): void => {},
 			resnapshot: (): void => {},
-			replacementSnapshot: (frame): void => owner.observeReplacementSnapshot(frame),
+			snapshotBeginAccepted: (frame): boolean => {
+				if (frame.snapshotCause === undefined) throw new Error('Expected snapshot cause.');
+				return owner.observeSnapshotBegin({ ...frame, snapshotCause: frame.snapshotCause });
+			},
 			resnapshotLatest: (subscriptionId, domain): void => {
 				admissions.push(owner.resnapshot(subscriptionId, domain));
 			},
@@ -259,7 +119,7 @@ describe('Bridge product W4 per-domain batch receiver', () => {
 			['third', 3],
 			['fourth', 4],
 		] as const) {
-			router.accept(begin({ batchId, partCount: 1, target }));
+			router.accept(begin({ snapshotCause: 'requested', batchId, partCount: 1, target }));
 			router.accept(part({ batchId, key: batchId, revision: target, value: batchId }));
 			clock.activeDeadline().fire();
 			await Promise.all(admissions.splice(0));
@@ -272,7 +132,7 @@ describe('Bridge product W4 per-domain batch receiver', () => {
 		expect(installations).toEqual([]);
 		await owner.retryView(identity.subscriptionId);
 		expect(requests).toHaveLength(4);
-		router.accept(begin({ batchId: 'retry', partCount: 1, target: 5 }));
+		router.accept(begin({ snapshotCause: 'open', batchId: 'retry', partCount: 1, target: 5 }));
 		router.accept(part({ batchId: 'retry', key: 'retry', revision: 5, value: 'ready' }));
 		router.accept(complete({ batchId: 'retry' }));
 		expect(installations).toEqual(['retry']);
@@ -300,19 +160,26 @@ describe('Bridge product W4 per-domain batch receiver', () => {
 				latestScopeResnapshots.push(subscriptionId);
 			},
 		});
-		router.accept(begin({ batchId: 'last-good', partCount: 1, target: 1 }));
+		router.accept(begin({ snapshotCause: 'open', batchId: 'last-good', partCount: 1, target: 1 }));
 		router.accept(part({ batchId: 'last-good', key: 'a', revision: 1, value: 'A' }));
 		router.accept(complete({ batchId: 'last-good' }));
 		expect(clock.deadlines.every((deadline) => !deadline.active)).toBe(true);
 		router.accept(
-			begin({ batchId: 'incomplete', base: 1, mode: 'change', partCount: 1, target: 2 }),
+			begin({
+				snapshotCause: undefined,
+				batchId: 'incomplete',
+				base: 1,
+				mode: 'change',
+				partCount: 1,
+				target: 2,
+			}),
 		);
 		router.accept(part({ batchId: 'incomplete', key: 'b', revision: 2, value: 'B' }));
 		clock.activeDeadline().fire();
 		router.accept(complete({ batchId: 'incomplete' }));
 		const siblingSubscriptionId = 'sibling-subscription';
 		for (const frame of [
-			begin({ batchId: 'sibling', partCount: 1, target: 1 }),
+			begin({ snapshotCause: 'open', batchId: 'sibling', partCount: 1, target: 1 }),
 			part({ batchId: 'sibling', key: 'sibling', revision: 1, value: 'S' }),
 			complete({ batchId: 'sibling' }),
 		]) {
@@ -339,7 +206,7 @@ describe('Bridge product W4 per-domain batch receiver', () => {
 				resnapshots.push(subscriptionId);
 			},
 		});
-		const firstBegin = begin({ batchId: 'first', partCount: 1, target: 1 });
+		const firstBegin = begin({ snapshotCause: 'open', batchId: 'first', partCount: 1, target: 1 });
 		router.accept(firstBegin);
 		const first = clock.activeDeadline();
 		router.accept(firstBegin);
@@ -351,12 +218,22 @@ describe('Bridge product W4 per-domain batch receiver', () => {
 		expect(clock.activeDeadline()).toBe(afterPart);
 		router.accept(complete({ batchId: 'first' }));
 		expect(afterPart.active).toBe(false);
-		router.accept(begin({ batchId: 'second', partCount: 1, target: 2 }));
+		router.accept(begin({ snapshotCause: 'open', batchId: 'second', partCount: 1, target: 2 }));
 		const beforeReplacement = clock.activeDeadline();
-		router.accept(begin({ batchId: 'replacement', partCount: 1, target: 3 }));
+		router.accept(
+			begin({ snapshotCause: 'open', batchId: 'replacement', partCount: 1, target: 3 }),
+		);
 		expect(beforeReplacement.active).toBe(false);
 		const beforeHandleReplacement = clock.activeDeadline();
-		router.accept(begin({ batchId: 'new-handle', handle: 'handle-2', partCount: 1, target: 4 }));
+		router.accept(
+			begin({
+				snapshotCause: 'open',
+				batchId: 'new-handle',
+				handle: 'handle-2',
+				partCount: 1,
+				target: 4,
+			}),
+		);
 		expect(beforeHandleReplacement.active).toBe(false);
 		const beforeRetirement = clock.activeDeadline();
 		router.retireSubscription(identity.subscriptionId);
@@ -373,7 +250,7 @@ describe('Bridge product W4 per-domain batch receiver', () => {
 				installations.push(installation.begin.batchId);
 			},
 			receipt: (): void => {},
-			replacementSnapshot: (frame): void => {
+			snapshotBeginAccepted: (frame): void => {
 				replacements.push(frame.batchId);
 			},
 			resnapshot: (frame): void => {
@@ -381,7 +258,7 @@ describe('Bridge product W4 per-domain batch receiver', () => {
 			},
 			resnapshotLatest: (): void => {},
 		});
-		router.accept(begin({ batchId: 'abandoned', partCount: 2, target: 2 }));
+		router.accept(begin({ snapshotCause: 'open', batchId: 'abandoned', partCount: 2, target: 2 }));
 		router.accept(part({ batchId: 'abandoned', key: 'a', revision: 1, value: 'old' }));
 		const latePart = part({
 			batchId: 'abandoned',
@@ -392,13 +269,23 @@ describe('Bridge product W4 per-domain batch receiver', () => {
 		});
 		const lateComplete = complete({ batchId: 'abandoned' });
 		for (let index = 0; index < 12; index += 1) {
-			router.accept(begin({ batchId: `replacement-${index}`, partCount: 1, target: 3 + index }));
+			router.accept(
+				begin({
+					snapshotCause: 'open',
+					batchId: `replacement-${index}`,
+					partCount: 1,
+					target: 3 + index,
+				}),
+			);
 		}
 		router.accept(latePart);
 		router.accept(lateComplete);
 		router.accept(part({ batchId: 'replacement-11', key: 'a', revision: 14, value: 'current' }));
 		router.accept(complete({ batchId: 'replacement-11' }));
-		expect(replacements).toEqual(Array.from({ length: 12 }, (_, index) => `replacement-${index}`));
+		expect(replacements).toEqual([
+			'abandoned',
+			...Array.from({ length: 12 }, (_, index) => `replacement-${index}`),
+		]);
 		expect(resnapshots).toEqual([]);
 		expect(installations).toEqual(['replacement-11']);
 	});
@@ -417,7 +304,7 @@ describe('Bridge product W4 per-domain batch receiver', () => {
 			},
 			resnapshotLatest: (): void => {},
 		});
-		router.accept(begin({ partCount: 1, target: 1 }));
+		router.accept(begin({ snapshotCause: 'open', partCount: 1, target: 1 }));
 		router.accept(part({ key: 'a', revision: 1, value: 'A' }));
 		expect(events).toEqual(['received:1']);
 		router.accept(complete({}));
@@ -427,7 +314,7 @@ describe('Bridge product W4 per-domain batch receiver', () => {
 	it('keeps the bank unchanged when typed verification rejects, then accepts a same-revision recovery snapshot', () => {
 		const state = receiver();
 		state.admitDomain('default', 'incarnation-1');
-		state.accept(begin({ batchId: 'corrupt', partCount: 1, target: 2 }));
+		state.accept(begin({ snapshotCause: 'open', batchId: 'corrupt', partCount: 1, target: 2 }));
 		state.accept(part({ batchId: 'corrupt', key: 'item/a', revision: 2, value: 'corrupt' }));
 		expect(
 			state.accept(complete({ batchId: 'corrupt' }), (installation): void => {
@@ -438,7 +325,7 @@ describe('Bridge product W4 per-domain batch receiver', () => {
 		expect(state.records('default')).toEqual([]);
 		expect(state.takeInstallations()).toEqual([]);
 
-		state.accept(begin({ batchId: 'recovery', partCount: 1, target: 2 }));
+		state.accept(begin({ snapshotCause: 'open', batchId: 'recovery', partCount: 1, target: 2 }));
 		state.accept(
 			part({
 				batchId: 'recovery',
@@ -452,7 +339,7 @@ describe('Bridge product W4 per-domain batch receiver', () => {
 		expect(state.records('default')).toEqual([{ key: 'item/a', revision: 2, value: 'valid' }]);
 		expect(state.takeInstallations()).toHaveLength(1);
 
-		state.accept(begin({ batchId: 'stale', partCount: 1, target: 2 }));
+		state.accept(begin({ snapshotCause: 'open', batchId: 'stale', partCount: 1, target: 2 }));
 		state.accept(
 			part({ batchId: 'stale', deliverySequence: 4, key: 'item/a', revision: 2, value: 'stale' }),
 		);
@@ -477,13 +364,13 @@ describe('Bridge product W4 per-domain batch receiver', () => {
 			},
 			resnapshotLatest: (): void => {},
 		});
-		router.accept(begin({ partCount: 1, target: 1 }));
+		router.accept(begin({ snapshotCause: 'open', partCount: 1, target: 1 }));
 		router.accept(part({ key: 'a', revision: 1, value: 'A' }));
 		router.accept(complete({}));
 		const siblingSubscriptionId = 'sibling-subscription';
 		router.accept(
 			bridgeProductBatchFrameSchema.parse({
-				...begin({ batchId: 'sibling-batch', partCount: 1, target: 1 }),
+				...begin({ snapshotCause: 'open', batchId: 'sibling-batch', partCount: 1, target: 1 }),
 				subscriptionId: siblingSubscriptionId,
 			}),
 		);
@@ -520,7 +407,7 @@ describe('Bridge product W4 per-domain batch receiver', () => {
 			},
 			resnapshotLatest: (): void => {},
 		});
-		router.accept(begin({ partCount: 1, target: 1 }));
+		router.accept(begin({ snapshotCause: 'open', partCount: 1, target: 1 }));
 		router.accept(part({ key: 'a', revision: 1, value: 'A' }));
 		router.accept(complete({}));
 		expect(events).toEqual(['receipt']);
@@ -574,6 +461,7 @@ describe('Bridge product W4 per-domain batch receiver', () => {
 					scope: entry.scope,
 					baseRevision: 0,
 					mode: 'snapshot',
+					snapshotCause: 'open',
 					partCount: 1,
 					...(entry.kind === 'review.metadata'
 						? { publicationId: '00000000-0000-7000-8000-000000000011' }
@@ -612,13 +500,15 @@ describe('Bridge product W4 per-domain batch receiver', () => {
 	it('keeps installed rows until every declared part completes, then swaps atomically', () => {
 		const state = receiver();
 		state.admitDomain('default', 'incarnation-1');
-		expect(state.accept(begin({ partCount: 2, target: 2 })).kind).toBe('staged');
+		expect(state.accept(begin({ snapshotCause: 'open', partCount: 2, target: 2 })).kind).toBe(
+			'staged',
+		);
 		expect(state.accept(part({ key: 'a', revision: 1, value: 'A' })).kind).toBe('staged');
 		expect(state.records('default')).toEqual([]);
 		expect(state.accept(complete({})).kind).toBe('resnapshot');
 		expect(state.records('default')).toEqual([]);
 
-		state.accept(begin({ batchId: 'batch-2', partCount: 1, target: 3 }));
+		state.accept(begin({ snapshotCause: 'open', batchId: 'batch-2', partCount: 1, target: 3 }));
 		state.accept(part({ batchId: 'batch-2', key: 'a', revision: 3, value: 'new' }));
 		expect(state.accept(complete({ batchId: 'batch-2' })).kind).toBe('installed');
 		expect(state.records('default')).toEqual([{ key: 'a', revision: 3, value: 'new' }]);
@@ -627,11 +517,18 @@ describe('Bridge product W4 per-domain batch receiver', () => {
 	it('a zero-part coverage batch changes the cursor without pruning existing rows', () => {
 		const state = receiver();
 		state.admitDomain('default', 'incarnation-1');
-		state.accept(begin({ partCount: 1, target: 1 }));
+		state.accept(begin({ snapshotCause: 'open', partCount: 1, target: 1 }));
 		state.accept(part({ key: 'a', revision: 1, value: 'A' }));
 		state.accept(complete({}));
 		state.accept(
-			begin({ batchId: 'coverage-2', base: 1, mode: 'coverage', partCount: 0, target: 2 }),
+			begin({
+				snapshotCause: undefined,
+				batchId: 'coverage-2',
+				base: 1,
+				mode: 'coverage',
+				partCount: 0,
+				target: 2,
+			}),
 		);
 		expect(state.accept(complete({ batchId: 'coverage-2' })).kind).toBe('installed');
 		expect(state.records('default')).toEqual([{ key: 'a', revision: 1, value: 'A' }]);
@@ -644,6 +541,7 @@ describe('Bridge product W4 per-domain batch receiver', () => {
 		state.admitDomain('member-a', 'member-1');
 		state.accept(
 			begin({
+				snapshotCause: 'open',
 				domain: 'member-a',
 				incarnation: 'member-1',
 				partCount: 1,
@@ -660,6 +558,7 @@ describe('Bridge product W4 per-domain batch receiver', () => {
 		expect(state.records('member-a')).toEqual([]);
 		state.accept(
 			begin({
+				snapshotCause: 'open',
 				batchId: 'collection-2',
 				domain: 'collection',
 				incarnation: 'collection-1',
@@ -683,25 +582,45 @@ describe('Bridge product W4 per-domain batch receiver', () => {
 	it('a deletion tombstone rejects a delayed write and an old incarnation', () => {
 		const state = receiver();
 		state.admitDomain('default', 'incarnation-1');
-		state.accept(begin({ partCount: 1, target: 1 }));
+		state.accept(begin({ snapshotCause: 'open', partCount: 1, target: 1 }));
 		state.accept(part({ key: 'a', revision: 1, value: 'A' }));
 		state.accept(complete({}));
-		state.accept(begin({ batchId: 'delete-2', base: 1, mode: 'change', partCount: 1, target: 2 }));
+		state.accept(
+			begin({
+				snapshotCause: undefined,
+				batchId: 'delete-2',
+				base: 1,
+				mode: 'change',
+				partCount: 1,
+				target: 2,
+			}),
+		);
 		state.accept(deletion({ batchId: 'delete-2', key: 'a', revision: 2 }));
 		expect(state.accept(complete({ batchId: 'delete-2' })).kind).toBe('installed');
-		state.accept(begin({ batchId: 'stale-3', base: 2, mode: 'change', partCount: 1, target: 3 }));
+		state.accept(
+			begin({
+				snapshotCause: undefined,
+				batchId: 'stale-3',
+				base: 2,
+				mode: 'change',
+				partCount: 1,
+				target: 3,
+			}),
+		);
 		state.accept(part({ batchId: 'stale-3', key: 'a', revision: 1, value: 'stale' }));
 		state.accept(complete({ batchId: 'stale-3' }));
 		expect(state.records('default')).toEqual([]);
-		expect(state.accept(begin({ incarnation: 'retired', partCount: 1, target: 4 })).kind).toBe(
-			'ignored',
-		);
+		expect(
+			state.accept(
+				begin({ snapshotCause: 'open', incarnation: 'retired', partCount: 1, target: 4 }),
+			).kind,
+		).toBe('ignored');
 	});
 
 	it('a conflicting duplicate invalidates staging without installing its earlier part', () => {
 		const state = receiver();
 		state.admitDomain('default', 'incarnation-1');
-		state.accept(begin({ partCount: 1, target: 1 }));
+		state.accept(begin({ snapshotCause: 'open', partCount: 1, target: 1 }));
 		state.accept(part({ key: 'a', revision: 1, value: 'A' }));
 		expect(state.accept(part({ key: 'a', revision: 1, value: 'different' })).kind).toBe(
 			'resnapshot',
@@ -715,11 +634,19 @@ describe('Bridge product W4 per-domain batch receiver', () => {
 			typeof scope['prefix'] === 'string' ? key.startsWith(scope['prefix']) : true,
 		);
 		state.admitDomain('default', 'incarnation-1');
-		state.accept(begin({ partCount: 2, target: 2 }));
+		state.accept(begin({ snapshotCause: 'open', partCount: 2, target: 2 }));
 		state.accept(part({ key: 'src/a', revision: 1, value: 'A' }));
 		state.accept(part({ key: 'docs/b', partIndex: 1, revision: 2, value: 'B' }));
 		state.accept(complete({}));
-		state.accept(begin({ batchId: 'src-empty-3', mode: 'snapshot', partCount: 0, target: 3 }));
+		state.accept(
+			begin({
+				batchId: 'src-empty-3',
+				mode: 'snapshot',
+				snapshotCause: 'open',
+				partCount: 0,
+				target: 3,
+			}),
+		);
 		expect(
 			state.accept(
 				complete({
@@ -728,7 +655,16 @@ describe('Bridge product W4 per-domain batch receiver', () => {
 				}),
 			).kind,
 		).toBe('installed');
-		state.accept(begin({ batchId: 'late-4', base: 3, mode: 'change', partCount: 1, target: 4 }));
+		state.accept(
+			begin({
+				snapshotCause: undefined,
+				batchId: 'late-4',
+				base: 3,
+				mode: 'change',
+				partCount: 1,
+				target: 4,
+			}),
+		);
 		state.accept(part({ batchId: 'late-4', key: 'src/new', revision: 2, value: 'stale' }));
 		state.accept(complete({ batchId: 'late-4' }));
 		expect(state.records('default')).toEqual([{ key: 'docs/b', revision: 2, value: 'B' }]);
@@ -737,16 +673,25 @@ describe('Bridge product W4 per-domain batch receiver', () => {
 	it('ignores a late change against the cursor replaced by a complete snapshot', () => {
 		const state = receiver();
 		state.admitDomain('default', 'incarnation-1');
-		state.accept(begin({ batchId: 'initial', partCount: 1, target: 1 }));
+		state.accept(begin({ snapshotCause: 'open', batchId: 'initial', partCount: 1, target: 1 }));
 		state.accept(part({ batchId: 'initial', key: 'a', revision: 1, value: 'old' }));
 		state.accept(complete({ batchId: 'initial' }));
-		state.accept(begin({ batchId: 'recovered', base: 1, partCount: 1, target: 3 }));
+		state.accept(
+			begin({ snapshotCause: 'open', batchId: 'recovered', base: 1, partCount: 1, target: 3 }),
+		);
 		state.accept(part({ batchId: 'recovered', key: 'a', revision: 3, value: 'current' }));
 		expect(state.accept(complete({ batchId: 'recovered' })).kind).toBe('installed');
 
 		expect(
 			state.accept(
-				begin({ batchId: 'late-change', base: 1, mode: 'change', partCount: 1, target: 4 }),
+				begin({
+					snapshotCause: undefined,
+					batchId: 'late-change',
+					base: 1,
+					mode: 'change',
+					partCount: 1,
+					target: 4,
+				}),
 			).kind,
 		).toBe('ignored');
 		expect(state.cursor('default')).toBe(3);
@@ -765,6 +710,7 @@ describe('Bridge product W4 per-domain batch receiver', () => {
 		expect(
 			state.accept(
 				begin({
+					snapshotCause: 'open',
 					partCount: 0,
 					scope: { interests: [{ itemIds: ['first', 'second'], lane: 'active' }], kind: 'review' },
 					target: 1,
@@ -777,7 +723,7 @@ describe('Bridge product W4 per-domain batch receiver', () => {
 	it('credits advance on received contiguous parts before installation', () => {
 		const state = receiver();
 		state.admitDomain('default', 'incarnation-1');
-		state.accept(begin({ partCount: 3, target: 3 }));
+		state.accept(begin({ snapshotCause: 'open', partCount: 3, target: 3 }));
 		expect(state.accept(part({ key: 'c', partIndex: 2, revision: 3, value: 'C' }))).toEqual({
 			kind: 'staged',
 		});
@@ -799,6 +745,7 @@ describe('Bridge product W4 per-domain batch receiver', () => {
 		state.admitDomain('member-b', 'incarnation-b');
 		state.accept(
 			begin({
+				snapshotCause: 'open',
 				batchId: 'batch-a',
 				domain: 'member-a',
 				incarnation: 'incarnation-a',
@@ -808,6 +755,7 @@ describe('Bridge product W4 per-domain batch receiver', () => {
 		);
 		state.accept(
 			begin({
+				snapshotCause: 'open',
 				batchId: 'batch-b',
 				domain: 'member-b',
 				incarnation: 'incarnation-b',
@@ -872,12 +820,12 @@ describe('Bridge product W4 per-domain batch receiver', () => {
 	it('a resnapshot establishes a new receipt base without acknowledging its missing first part', () => {
 		const state = receiver();
 		state.admitDomain('default', 'incarnation-1');
-		state.accept(begin({ batchId: 'old', partCount: 2, target: 2 }));
+		state.accept(begin({ snapshotCause: 'open', batchId: 'old', partCount: 2, target: 2 }));
 		expect(
 			state.accept(part({ batchId: 'old', key: 'old-2', partIndex: 1, revision: 2, value: 'O2' })),
 		).toEqual({ kind: 'staged' });
 		expect(state.accept(complete({ batchId: 'old' })).kind).toBe('resnapshot');
-		state.accept(begin({ batchId: 'replacement', partCount: 2, target: 4 }));
+		state.accept(begin({ snapshotCause: 'open', batchId: 'replacement', partCount: 2, target: 4 }));
 		expect(
 			state.accept(
 				part({ batchId: 'replacement', key: 'new-4', partIndex: 1, revision: 4, value: 'N4' }),
@@ -893,11 +841,11 @@ describe('Bridge product W4 per-domain batch receiver', () => {
 	it('keeps the installed view readable and ignores an old change after a replacement snapshot', () => {
 		const state = receiver();
 		state.admitDomain('default', identity.incarnation);
-		state.accept(begin({ batchId: 'initial', partCount: 1, target: 1 }));
+		state.accept(begin({ snapshotCause: 'open', batchId: 'initial', partCount: 1, target: 1 }));
 		state.accept(part({ batchId: 'initial', key: 'item/a', revision: 1, value: 'A' }));
 		expect(state.accept(complete({ batchId: 'initial' })).kind).toBe('installed');
 
-		state.accept(begin({ batchId: 'replacement', partCount: 1, target: 3 }));
+		state.accept(begin({ snapshotCause: 'open', batchId: 'replacement', partCount: 1, target: 3 }));
 		expect(state.records('default')).toEqual([{ key: 'item/a', revision: 1, value: 'A' }]);
 		state.accept(part({ batchId: 'replacement', key: 'item/a', revision: 3, value: 'C' }));
 		expect(state.accept(complete({ batchId: 'replacement' })).kind).toBe('installed');
@@ -905,7 +853,14 @@ describe('Bridge product W4 per-domain batch receiver', () => {
 
 		expect(
 			state.accept(
-				begin({ batchId: 'old-change', base: 1, mode: 'change', partCount: 1, target: 2 }),
+				begin({
+					snapshotCause: undefined,
+					batchId: 'old-change',
+					base: 1,
+					mode: 'change',
+					partCount: 1,
+					target: 2,
+				}),
 			),
 		).toEqual({ kind: 'ignored' });
 		expect(state.records('default')).toEqual([{ key: 'item/a', revision: 3, value: 'C' }]);
@@ -914,7 +869,7 @@ describe('Bridge product W4 per-domain batch receiver', () => {
 	it('a new handle retains stale rows until its range is certified', () => {
 		const state = receiver();
 		state.admitDomain('default', 'incarnation-1');
-		state.accept(begin({ partCount: 1, target: 1 }));
+		state.accept(begin({ snapshotCause: 'open', partCount: 1, target: 1 }));
 		state.accept(part({ key: 'a', revision: 1, value: 'A' }));
 		state.accept(complete({}));
 		state.replaceHandle('handle-2', { kind: 'review', interests: [] }, 0);
@@ -922,7 +877,13 @@ describe('Bridge product W4 per-domain batch receiver', () => {
 		expect(state.staleRecords('default')).toEqual([{ key: 'a', revision: 1, value: 'A' }]);
 		state.admitDomain('default', 'incarnation-2');
 		state.accept(
-			begin({ handle: 'handle-2', incarnation: 'incarnation-2', partCount: 1, target: 1 }),
+			begin({
+				snapshotCause: 'open',
+				handle: 'handle-2',
+				incarnation: 'incarnation-2',
+				partCount: 1,
+				target: 1,
+			}),
 		);
 		expect(state.accept(complete({ handle: 'handle-2', incarnation: 'incarnation-2' })).kind).toBe(
 			'resnapshot',
@@ -930,6 +891,7 @@ describe('Bridge product W4 per-domain batch receiver', () => {
 		expect(state.staleRecords('default')).toHaveLength(1);
 		state.accept(
 			begin({
+				snapshotCause: 'open',
 				batchId: 'replacement',
 				handle: 'handle-2',
 				incarnation: 'incarnation-2',
@@ -948,23 +910,33 @@ describe('Bridge product W4 per-domain batch receiver', () => {
 	it('a delayed complete or lower-target snapshot cannot replace a newer row', () => {
 		const state = receiver();
 		state.admitDomain('default', 'incarnation-1');
-		state.accept(begin({ partCount: 1, target: 1 }));
+		state.accept(begin({ snapshotCause: 'open', partCount: 1, target: 1 }));
 		state.accept(part({ key: 'a', revision: 1, value: 'A' }));
 		state.accept(complete({}));
-		state.accept(begin({ batchId: 'change-2', base: 1, mode: 'change', partCount: 1, target: 2 }));
+		state.accept(
+			begin({
+				snapshotCause: undefined,
+				batchId: 'change-2',
+				base: 1,
+				mode: 'change',
+				partCount: 1,
+				target: 2,
+			}),
+		);
 		state.accept(part({ batchId: 'change-2', key: 'a', revision: 2, value: 'new' }));
 		state.accept(complete({ batchId: 'change-2' }));
 		expect(state.accept(complete({ batchId: 'change-2' })).kind).toBe('ignored');
-		expect(state.accept(begin({ batchId: 'delayed', partCount: 0, target: 1 })).kind).toBe(
-			'ignored',
-		);
+		expect(
+			state.accept(begin({ snapshotCause: 'open', batchId: 'delayed', partCount: 0, target: 1 }))
+				.kind,
+		).toBe('ignored');
 		expect(state.records('default')).toEqual([{ key: 'a', revision: 2, value: 'new' }]);
 	});
 
 	it('a failed replacement incarnation keeps its last good rows stale until certification', () => {
 		const state = receiver();
 		state.admitDomain('default', 'incarnation-1');
-		state.accept(begin({ partCount: 1, target: 1 }));
+		state.accept(begin({ snapshotCause: 'open', partCount: 1, target: 1 }));
 		state.accept(part({ key: 'a', revision: 1, value: 'A' }));
 		state.accept(complete({}));
 		state.admitDomain('default', 'incarnation-2');
@@ -973,6 +945,7 @@ describe('Bridge product W4 per-domain batch receiver', () => {
 		expect(
 			state.accept(
 				begin({
+					snapshotCause: undefined,
 					batchId: 'new-change',
 					incarnation: 'incarnation-2',
 					mode: 'change',
@@ -983,7 +956,13 @@ describe('Bridge product W4 per-domain batch receiver', () => {
 		).toBe('resnapshot');
 		expect(state.staleRecords('default')).toHaveLength(1);
 		state.accept(
-			begin({ batchId: 'new-snapshot', incarnation: 'incarnation-2', partCount: 0, target: 2 }),
+			begin({
+				snapshotCause: 'open',
+				batchId: 'new-snapshot',
+				incarnation: 'incarnation-2',
+				partCount: 0,
+				target: 2,
+			}),
 		);
 		expect(
 			state.accept(complete({ batchId: 'new-snapshot', incarnation: 'incarnation-2' })).kind,

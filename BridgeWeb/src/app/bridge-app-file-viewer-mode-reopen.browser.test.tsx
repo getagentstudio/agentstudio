@@ -57,7 +57,7 @@ describe('Bridge file viewer mode re-open on switch', () => {
 				sourceDiscoveryCount += 1;
 				return availableFileSource();
 			},
-			initialFileBatch: makeBrowserMetadataOnlyFileBatch(),
+			initialFileBatch: makeBrowserMetadataOnlyFileBatch('open'),
 			onMetadataSubscriptionOpen: (
 				_options: BridgeProductSubscriptionOptions<'file.metadata'>,
 			): void => {
@@ -93,7 +93,7 @@ describe('Bridge file viewer mode re-open on switch', () => {
 		const handshake = installBridgeReadyHandshake();
 		await renderFileProductApp('worktree-file', {
 			currentSource: availableFileSource,
-			initialFileBatch: makeBrowserMetadataOnlyFileBatch(),
+			initialFileBatch: makeBrowserMetadataOnlyFileBatch('open'),
 		});
 		expect(await pollWithinActUntilEqual(activeViewerMode, 'file')).toBe('file');
 		const outgoingReviewButton = activeContextButton('file', 'review');
@@ -131,7 +131,7 @@ describe('Bridge file viewer mode re-open on switch', () => {
 				sourceDiscoveryCount += 1;
 				return availableFileSource();
 			},
-			initialFileBatch: makeBrowserMetadataOnlyFileBatch(),
+			initialFileBatch: makeBrowserMetadataOnlyFileBatch('open'),
 			onMetadataSubscriptionOpen: (): void => {
 				metadataSubscriptionOpenCount += 1;
 			},
@@ -165,7 +165,7 @@ describe('Bridge file viewer mode re-open on switch', () => {
 					sourceDiscoveryCount += 1;
 					return availableFileSource();
 				},
-				initialFileBatch: makeBrowserMetadataOnlyFileBatch(),
+				initialFileBatch: makeBrowserMetadataOnlyFileBatch('open'),
 				onMetadataSubscriptionOpen: (): void => {
 					metadataSubscriptionOpenCount += 1;
 				},

@@ -244,6 +244,7 @@ function makeThreePartBatch(
 			baseRevision: 0,
 			kind: 'subscription.batchBegin',
 			mode: 'snapshot',
+			snapshotCause: 'open',
 			partCount: 3,
 			...(subscriptionKind === 'review.metadata'
 				? { publicationId: '00000000-0000-7000-8000-000000000011' }

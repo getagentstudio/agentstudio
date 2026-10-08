@@ -66,7 +66,11 @@ describe('Bridge comm worker Review product pane activity lifecycle', () => {
 		activateBridgeCommWorkerReviewViewerMode(dispatch, 'pane-suppression');
 		await flushBridgeWorkerRuntimeContinuations();
 		await reviewBatches.install(
-			makeReviewTestBatch({ subscriptionId: reviewSubscription.subscriptionId, withContent: true }),
+			makeReviewTestBatch({
+				snapshotCause: 'open',
+				subscriptionId: reviewSubscription.subscriptionId,
+				withContent: true,
+			}),
 		);
 		await flushBridgeWorkerRuntimeContinuations();
 		await startBridgeCommWorkerPreparationDrains(
@@ -178,7 +182,11 @@ describe('Bridge comm worker Review product pane activity lifecycle', () => {
 		activateBridgeCommWorkerReviewViewerMode(dispatch, 'rapid-pane-resume');
 		await flushBridgeWorkerRuntimeContinuations();
 		await reviewBatches.install(
-			makeReviewTestBatch({ subscriptionId: reviewSubscription.subscriptionId, withContent: true }),
+			makeReviewTestBatch({
+				snapshotCause: 'open',
+				subscriptionId: reviewSubscription.subscriptionId,
+				withContent: true,
+			}),
 		);
 		await flushBridgeWorkerRuntimeContinuations();
 		await startBridgeCommWorkerPreparationDrains(

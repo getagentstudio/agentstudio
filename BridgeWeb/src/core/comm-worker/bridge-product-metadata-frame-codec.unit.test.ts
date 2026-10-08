@@ -123,6 +123,7 @@ describe('Bridge product metadata frame decoder', () => {
 						handle: `${subscriptionKind}-handle`,
 						incarnation: `${subscriptionKind}-incarnation`,
 						mode: 'snapshot',
+						snapshotCause: 'open',
 						publicationId: undefined,
 						scope,
 						streamSequence: index * 2 + 1,

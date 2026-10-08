@@ -34,7 +34,9 @@ afterEach(async (): Promise<void> => {
 
 test('certified zero-row inventory is Empty while no selection has different copy', async () => {
 	await render(
-		<BridgeFileViewerBrowserHarnessApp initialFileBatch={makeBrowserFileBatch({ rows: [] })} />,
+		<BridgeFileViewerBrowserHarnessApp
+			initialFileBatch={makeBrowserFileBatch({ snapshotCause: 'open', rows: [] })}
+		/>,
 	);
 	await act(async (): Promise<void> => {
 		await waitForBridgeFileViewerWorkerMessageDrain();
@@ -57,7 +59,11 @@ test('certified zero-row inventory is Empty while no selection has different cop
 test('first loading member is Loading, never stale or certified Empty', async () => {
 	await render(
 		<BridgeFileViewerBrowserHarnessApp
-			initialFileBatch={makeBrowserFileBatch({ rows: [], status: { status: 'loading' } })}
+			initialFileBatch={makeBrowserFileBatch({
+				snapshotCause: 'open',
+				rows: [],
+				status: { status: 'loading' },
+			})}
 		/>,
 	);
 	await act(async (): Promise<void> => {
@@ -84,7 +90,11 @@ test('first loading member is Loading, never stale or certified Empty', async ()
 test('failed member is Failed rather than a ready-empty fallback', async () => {
 	await render(
 		<BridgeFileViewerBrowserHarnessApp
-			initialFileBatch={makeBrowserFileBatch({ rows: [], status: { status: 'failed' } })}
+			initialFileBatch={makeBrowserFileBatch({
+				snapshotCause: 'open',
+				rows: [],
+				status: { status: 'failed' },
+			})}
 		/>,
 	);
 	await act(async (): Promise<void> => {
@@ -162,6 +172,7 @@ test('surface Retry rejoins File source discovery when the failed attempt never 
 		<div style={{ height: 640, width: 960 }}>
 			<BridgeFileViewerBrowserHarnessApp
 				initialFileBatch={makeBrowserFileBatch({
+					snapshotCause: 'open',
 					rows: [makeBrowserFileRow({ path: 'after-retry.ts' })],
 				})}
 				fileProductSession={{
