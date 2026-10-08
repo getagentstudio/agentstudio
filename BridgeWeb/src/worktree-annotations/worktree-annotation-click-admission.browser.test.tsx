@@ -2,12 +2,12 @@ import {
 	CodeView,
 	InteractionManager,
 	parseDiffFromFile,
+	type CodeViewCoordinator,
 	type CodeViewLineSelection,
 	type CodeViewOptions,
 	type SelectedLineRange,
 } from '@pierre/diffs';
-import { act } from 'react';
-import { afterEach, describe, expect, test } from 'vitest';
+import { afterEach, describe, expect, test, vi, type MockInstance } from 'vitest';
 import { cleanup, render } from 'vitest-browser-react';
 
 // oxlint-disable-next-line import/no-unassigned-import -- Browser Mode must load production app CSS.
@@ -18,8 +18,54 @@ import { makeBridgeReviewPackage } from '../foundation/review-package/bridge-rev
 import { BridgeCodeViewPanel } from '../review-viewer/code-view/bridge-code-view-panel.js';
 import { buildBridgeReviewProjection } from '../review-viewer/navigation/review-projection.js';
 import { RecordingAnnotationBrowserSurface } from './worktree-annotation-browser-test-support.js';
+import {
+	dispatchPointer,
+	pointerAt,
+	pointerHitProbe,
+	type PointerHitProbe,
+} from './worktree-annotation-click-admission-pointer.browser.test-support.js';
+import {
+	PierreSlotPublicationFacts,
+	actEvent,
+	observeTestFrameWait,
+	proveHeldProductFrameIsolation,
+	queryPierreElements,
+	waitForPierreCondition,
+} from './worktree-annotation-click-admission-render.browser.test-support.js';
 import { PierreInteractionSetupFacts } from './worktree-annotation-click-admission-setup.browser.test-support.js';
 import { WorktreeAnnotationSurfaceProvider } from './worktree-annotation-surface-provider.js';
+
+const metadataPublicationOwner = vi.hoisted(() => ({
+	publish: undefined as ((callback: () => void) => void) | undefined,
+}));
+
+vi.mock(
+	import('../review-viewer/code-view/bridge-code-view-metadata-apply.js'),
+	async (importOriginal) => {
+		const metadataOwner = await importOriginal();
+		function wrapCompletion(callback: () => void): () => void {
+			return (): void => {
+				if (metadataPublicationOwner.publish === undefined) callback();
+				else metadataPublicationOwner.publish(callback);
+			};
+		}
+		return {
+			...metadataOwner,
+			runBridgeCodeViewMetadataReconciliationInChunks: (props): void => {
+				metadataOwner.runBridgeCodeViewMetadataReconciliationInChunks({
+					...props,
+					onComplete: wrapCompletion(props.onComplete),
+				});
+			},
+			runBridgeCodeViewMetadataApplyInChunks: (props): void => {
+				metadataOwner.runBridgeCodeViewMetadataApplyInChunks({
+					...props,
+					onComplete: wrapCompletion(props.onComplete),
+				});
+			},
+		} satisfies typeof metadataOwner;
+	},
+);
 
 const composerSelector = '[aria-label="Write an annotation in Markdown"]';
 
@@ -42,85 +88,17 @@ function recordGutterAdmissions(
 	};
 }
 
-function queryPierreElements(selector: string): Element[] {
-	const elements: Element[] = [];
-	const pendingRoots: ParentNode[] = [document];
-	while (pendingRoots.length > 0) {
-		const root = pendingRoots.shift();
-		if (root === undefined) break;
-		elements.push(...root.querySelectorAll(selector));
-		for (const candidate of root.querySelectorAll('*')) {
-			if (candidate.shadowRoot !== null) pendingRoots.push(candidate.shadowRoot);
-		}
-	}
-	return elements;
-}
-
 function requirePierreElement(selector: string, message: string): HTMLElement {
 	const element = queryPierreElements(selector)[0];
 	if (!(element instanceof HTMLElement)) throw new Error(message);
 	return element;
 }
 
-function dispatchPointer(
-	target: EventTarget,
-	type: 'pointerdown' | 'pointermove' | 'pointerup',
-	init: PointerEventInit,
-): void {
-	target.dispatchEvent(
-		new PointerEvent(type, { bubbles: true, cancelable: true, composed: true, ...init }),
-	);
-}
-
-async function nextAnimationFrame(): Promise<void> {
-	await new Promise<void>((resolve): void => {
-		requestAnimationFrame((): void => resolve());
-	});
-}
-
 async function waitForSinglePierreUtility(): Promise<HTMLElement> {
-	return await new Promise<HTMLElement>((resolve): void => {
-		const observedRoots = new Set<Node>();
-
-		function observeOpenShadowRoots(): void {
-			const roots: ParentNode[] = [document];
-			while (roots.length > 0) {
-				const root = roots.shift();
-				if (root === undefined) break;
-				if (!observedRoots.has(root)) {
-					observedRoots.add(root);
-					observer.observe(root, { childList: true, subtree: true });
-				}
-				for (const candidate of root.querySelectorAll('*')) {
-					if (candidate.shadowRoot !== null) roots.push(candidate.shadowRoot);
-				}
-			}
-		}
-
-		function resolveWhenUtilityAppears(): void {
-			observeOpenShadowRoots();
-			const utilities = queryPierreElements('[data-utility-button]');
-			const utility = utilities[0];
-			if (utilities.length !== 1 || !(utility instanceof HTMLElement)) return;
-			observer.disconnect();
-			resolve(utility);
-		}
-
-		const observer = new MutationObserver(resolveWhenUtilityAppears);
-		resolveWhenUtilityAppears();
-	});
-}
-
-async function settleBrowserCondition(
-	predicate: () => boolean,
-	failureMessage: string,
-	remainingFrames = 60,
-): Promise<void> {
-	for (let remaining = remainingFrames; remaining > 0; remaining -= 1) {
-		if (predicate()) return;
-		await nextAnimationFrame();
-	}
-	throw new Error(failureMessage);
+	await waitForPierreCondition(
+		(): boolean => queryPierreElements('[data-utility-button]').length === 1,
+	);
+	return requirePierreElement('[data-utility-button]', 'Expected one Pierre utility.');
 }
 
 describe('worktree annotation click admission through Pierre pointers', () => {
@@ -132,7 +110,7 @@ describe('worktree annotation click admission through Pierre pointers', () => {
 		const harness = await renderReviewHarness();
 		try {
 			// Selection reveal/programmatic scroll must not black out the next pointer gesture.
-			await act(async (): Promise<void> => {
+			await actEvent((): void => {
 				harness.codeView.scrollTo({ type: 'position', position: 0, behavior: 'instant' });
 			});
 			const gesture = await dragRangeAndClickFirstUtility(
@@ -160,9 +138,10 @@ describe('worktree annotation click admission through Pierre pointers', () => {
 			expect(harness.gutterAdmissions).toEqual([
 				{ range: { end: 2, side: 'additions', start: 1 } },
 			]);
+			await harness.waitForComposer(true);
 			expect(document.querySelector(composerSelector)).not.toBeNull();
 		} finally {
-			harness.dispose();
+			await harness.dispose();
 		}
 	});
 
@@ -180,9 +159,10 @@ describe('worktree annotation click admission through Pierre pointers', () => {
 			expect(harness.gutterAdmissions).toEqual([
 				{ range: { end: 2, side: 'deletions', start: 1 } },
 			]);
+			await harness.waitForComposer(true);
 			expect(document.querySelector(composerSelector)).not.toBeNull();
 		} finally {
-			harness.dispose();
+			await harness.dispose();
 		}
 	});
 
@@ -200,9 +180,10 @@ describe('worktree annotation click admission through Pierre pointers', () => {
 			expect(harness.gutterAdmissions).toEqual([
 				{ range: { end: 2, side: 'additions', start: 1 } },
 			]);
+			await harness.waitForComposer(true);
 			expect(document.querySelector(composerSelector)).not.toBeNull();
 		} finally {
-			harness.dispose();
+			await harness.dispose();
 		}
 	});
 
@@ -214,15 +195,15 @@ describe('worktree annotation click admission through Pierre pointers', () => {
 				'Expected a right-side addition gutter row.',
 			);
 			await harness.hoverAndClickUtility(additionRow, 401);
+			await harness.waitForComposer(true);
 			expect(document.querySelector(composerSelector)).not.toBeNull();
 
 			await clickCurrentUtility(402);
+			await harness.waitForComposer(true);
 			expect(document.querySelectorAll(composerSelector)).toHaveLength(1);
 
-			await act(async (): Promise<void> => {
-				document.dispatchEvent(new KeyboardEvent('keydown', { bubbles: true, key: 'Escape' }));
-				await nextAnimationFrame();
-			});
+			await dismissComposer();
+			await harness.waitForComposer(false);
 			expect(document.querySelector(composerSelector)).toBeNull();
 
 			const contextRow = requirePierreElement(
@@ -236,10 +217,87 @@ describe('worktree annotation click admission through Pierre pointers', () => {
 				{ range: { end: 2, side: 'additions', start: 2 } },
 				{ range: { end: 3, side: 'additions', start: 3 } },
 			]);
+			await harness.waitForComposer(true);
 			expect(document.querySelector(composerSelector)).not.toBeNull();
 		} finally {
-			harness.dispose();
+			await harness.dispose();
 		}
+	});
+
+	test('joins Escape dismissal without waiting for frame delivery', async () => {
+		const harness = await renderReviewHarness();
+		const heldFrames: FrameRequestCallback[] = [];
+		let announceFrame: (() => void) | undefined;
+		const frameRequested = new Promise<'frameRequested'>((resolve): void => {
+			announceFrame = (): void => resolve('frameRequested');
+		});
+		let holdingTestFrame = false;
+		const requestFrame = globalThis.requestAnimationFrame.bind(globalThis);
+		let dismissal: Promise<void> | undefined;
+		let frameSpy: MockInstance<typeof requestAnimationFrame> | undefined;
+		try {
+			const row = requirePierreElement(
+				'[data-additions] [data-column-number="2"][data-line-type="change-addition"]',
+				'Expected an addition row before testing dismissal.',
+			);
+			await harness.hoverAndClickUtility(row, 601);
+			await harness.waitForComposer(true);
+			expect(document.querySelector(composerSelector)).not.toBeNull();
+			frameSpy = vi
+				.spyOn(globalThis, 'requestAnimationFrame')
+				.mockImplementation((callback: FrameRequestCallback): number => {
+					if (!holdingTestFrame) return requestFrame(callback);
+					holdingTestFrame = false;
+					heldFrames.push(callback);
+					return heldFrames.length;
+				});
+			observeTestFrameWait((): void => {
+				holdingTestFrame = true;
+				announceFrame?.();
+			});
+			dismissal = dismissComposer();
+			const outcome = await Promise.race([
+				dismissal.then((): 'dismissed' => 'dismissed'),
+				frameRequested,
+			]);
+			expect(outcome, 'Escape publication must complete without an unrelated frame.').toBe(
+				'dismissed',
+			);
+			await harness.waitForComposer(false);
+			expect(document.querySelector(composerSelector)).toBeNull();
+		} finally {
+			// Release and join the held act even when the regression assertion is red.
+			frameSpy?.mockRestore();
+			observeTestFrameWait(undefined);
+			for (const callback of heldFrames.splice(0)) callback(0);
+			await dismissal;
+			await actEvent((): void => {
+				for (const callback of heldFrames.splice(0)) callback(0);
+			});
+			await harness.dispose();
+		}
+	});
+
+	test('disposes its outcome wait with product frames held and leaves later acts admissible', async () => {
+		const harness = await renderReviewHarness();
+		await proveHeldProductFrameIsolation({
+			prepareUtility: async (): Promise<void> => {
+				const row = requirePierreElement(
+					'[data-additions] [data-column-number="2"][data-line-type="change-addition"]',
+					'Expected an addition row for the held product frame proof.',
+				);
+				await harness.interactionSetup.waitForSetup(row);
+				await actEvent((): void =>
+					dispatchPointer(row, 'pointermove', pointerAt(row.getBoundingClientRect(), 701)),
+				);
+				await waitForSinglePierreUtility();
+			},
+			clickUtility: async (): Promise<void> => {
+				await clickCurrentUtility(702);
+			},
+			waitForComposer: (): Promise<void> => harness.waitForComposer(true),
+			dispose: (): Promise<void> => harness.dispose(),
+		});
 	});
 
 	test('awaits interaction setup before its first hover on already-rendered rows', async () => {
@@ -260,19 +318,20 @@ describe('worktree annotation click admission through Pierre pointers', () => {
 			expect(harness.gutterAdmissions).toEqual([
 				{ range: { end: 2, side: 'additions', start: 2 } },
 			]);
+			await harness.waitForComposer(true);
 			expect(document.querySelector(composerSelector)).not.toBeNull();
 		} finally {
 			harness.interactionSetup.releaseSetup();
 			// Join the old helper on the red path after proving its first pointer was lost.
 			if (firstAction === 'pointerMoveBeforeSetup') {
-				await act(async (): Promise<void> => {
+				await actEvent((): void => {
 					dispatchPointer(row, 'pointermove', pointerAt(row.getBoundingClientRect(), 501));
 				});
 			}
 			try {
 				await hover;
 			} finally {
-				harness.dispose();
+				await harness.dispose();
 			}
 		}
 	});
@@ -280,15 +339,27 @@ describe('worktree annotation click admission through Pierre pointers', () => {
 
 async function renderReviewHarness(holdInteractionSetup = false): Promise<{
 	readonly codeView: CodeView;
-	readonly dispose: () => void;
+	readonly dispose: () => Promise<void>;
 	readonly gutterAdmissions: RecordedGutterAdmission[];
 	readonly interactionLifecycle: string[];
 	readonly interactionSetup: PierreInteractionSetupFacts;
+	readonly waitForComposer: (present: boolean) => Promise<void>;
 	readonly hoverAndClickUtility: (row: HTMLElement, pointerId: number) => Promise<void>;
 }> {
 	const gutterAdmissions: RecordedGutterAdmission[] = [];
 	const interactionLifecycle: string[] = [];
 	const interactionSetup = new PierreInteractionSetupFacts(holdInteractionSetup);
+	const slotPublications = new PierreSlotPublicationFacts<
+		Parameters<CodeViewCoordinator<undefined>['onSnapshotChange']>[0]
+	>();
+	metadataPublicationOwner.publish = (callback: () => void): void =>
+		slotPublications.publish(callback);
+	const outcomeController = new AbortController();
+	// oxlint-disable-next-line unbound-method -- Restored below; invoked with its original receiver.
+	const originalSetSlotCoordinator = CodeView.prototype.setSlotCoordinator;
+	CodeView.prototype.setSlotCoordinator = function wrapSlotPublication(coordinator): boolean {
+		return originalSetSlotCoordinator.call(this, slotPublications.wrap(coordinator));
+	};
 	// oxlint-disable-next-line unbound-method -- Restored below; invoked with its original receiver.
 	const originalSetOptions = CodeView.prototype.setOptions;
 	// oxlint-disable-next-line unbound-method -- Restored below; invoked with its original receiver.
@@ -344,24 +415,35 @@ async function renderReviewHarness(holdInteractionSetup = false): Promise<{
 			</div>
 		</WorktreeAnnotationSurfaceProvider>,
 	);
-	await settleBrowserCondition(
+	await waitForPierreCondition(
 		(): boolean =>
 			codeViews.length === 1 &&
 			queryPierreElements('[data-deletions] [data-column-number]').length >= 3 &&
 			queryPierreElements('[data-additions] [data-column-number]').length >= 3,
-		'Expected Pierre split Review rows.',
 	);
+	await slotPublications.join();
 	const codeView = codeViews[0];
 	if (codeView === undefined) throw new Error('Expected one mounted Pierre CodeView.');
 	return {
 		codeView,
-		dispose: (): void => {
+		dispose: async (): Promise<void> => {
+			outcomeController.abort();
+			metadataPublicationOwner.publish = undefined;
+			await slotPublications.join();
+			CodeView.prototype.setSlotCoordinator = originalSetSlotCoordinator;
 			CodeView.prototype.setOptions = originalSetOptions;
 			CodeView.prototype.setup = originalCodeViewSetup;
 			InteractionManager.prototype.setup = originalInteractionSetup;
 			InteractionManager.prototype.cleanUp = originalInteractionCleanup;
 			coordinator.dispose();
 			interactionSetup.dispose();
+		},
+		waitForComposer: async (present: boolean): Promise<void> => {
+			await waitForPierreCondition(
+				(): boolean => (document.querySelector(composerSelector) !== null) === present,
+				outcomeController.signal,
+			);
+			await slotPublications.join();
 		},
 		gutterAdmissions,
 		interactionLifecycle,
@@ -392,9 +474,8 @@ async function dragRangeAndClickFirstUtility(
 	const startRow = requirePierreElement(startSelector, 'Expected the drag anchor gutter row.');
 	const startBounds = startRow.getBoundingClientRect();
 	const lifecycleCountBeforeAnchor = interactionLifecycle.length;
-	await act(async (): Promise<void> => {
+	await actEvent((): void => {
 		dispatchPointer(startRow, 'pointerdown', pointerAt(startBounds, pointerId));
-		await nextAnimationFrame();
 	});
 	const afterAnchorPublication = interactionLifecycle.slice(lifecycleCountBeforeAnchor);
 	const endRowAfterAnchorPublication = requirePierreElement(
@@ -403,9 +484,8 @@ async function dragRangeAndClickFirstUtility(
 	);
 	const endBounds = endRowAfterAnchorPublication.getBoundingClientRect();
 	const movePointerHit = pointerHitProbe(endRowAfterAnchorPublication, endBounds);
-	await act(async (): Promise<void> => {
+	await actEvent((): void => {
 		dispatchPointer(endRowAfterAnchorPublication, 'pointermove', pointerAt(endBounds, pointerId));
-		await nextAnimationFrame();
 	});
 	const selectionAfterMove = getSelectedLines();
 	const endRowAfterRangePublication = requirePierreElement(
@@ -413,9 +493,8 @@ async function dragRangeAndClickFirstUtility(
 		'Expected the drag endpoint after range publication.',
 	);
 	const finalEndBounds = endRowAfterRangePublication.getBoundingClientRect();
-	await act(async (): Promise<void> => {
+	await actEvent((): void => {
 		dispatchPointer(endRowAfterRangePublication, 'pointerup', pointerAt(finalEndBounds, pointerId));
-		await nextAnimationFrame();
 	});
 	const selectionAfterPointerUp = getSelectedLines();
 	const utilityGesture = await clickCurrentUtility(pointerId + 1);
@@ -434,12 +513,18 @@ async function hoverAndClickUtility(
 	onHoverDispatched: () => void,
 ): Promise<void> {
 	const bounds = row.getBoundingClientRect();
-	await act(async (): Promise<void> => {
+	await actEvent((): void => {
 		dispatchPointer(row, 'pointermove', pointerAt(bounds, pointerId));
 	});
 	onHoverDispatched();
 	await waitForSinglePierreUtility();
 	await clickCurrentUtility(pointerId + 1);
+}
+
+async function dismissComposer(): Promise<void> {
+	await actEvent((): void => {
+		document.dispatchEvent(new KeyboardEvent('keydown', { bubbles: true, key: 'Escape' }));
+	});
 }
 
 async function clickCurrentUtility(pointerId: number): Promise<{
@@ -452,9 +537,8 @@ async function clickCurrentUtility(pointerId: number): Promise<{
 	);
 	const bounds = utility.getBoundingClientRect();
 	const utilityPointerDownHit = pointerHitProbe(utility, bounds);
-	await act(async (): Promise<void> => {
+	await actEvent((): void => {
 		dispatchPointer(utility, 'pointerdown', pointerAt(bounds, pointerId));
-		await nextAnimationFrame();
 	});
 	const utilityAfterPointerDownPublication = requirePierreElement(
 		'[data-utility-button]',
@@ -462,48 +546,14 @@ async function clickCurrentUtility(pointerId: number): Promise<{
 	);
 	const finalBounds = utilityAfterPointerDownPublication.getBoundingClientRect();
 	const utilityPointerUpHit = pointerHitProbe(utilityAfterPointerDownPublication, finalBounds);
-	await act(async (): Promise<void> => {
+	await actEvent((): void => {
 		dispatchPointer(
 			utilityAfterPointerDownPublication,
 			'pointerup',
 			pointerAt(finalBounds, pointerId),
 		);
-		await nextAnimationFrame();
 	});
 	return { utilityPointerDownHit, utilityPointerUpHit };
-}
-
-interface PointerHitProbe {
-	readonly bounds: string;
-	readonly hitUtilityButton: boolean;
-	readonly lineNumber: string | null;
-	readonly targetTagName: string | null;
-	readonly targetDescription: string | null;
-}
-
-function pointerHitProbe(utility: HTMLElement, bounds: DOMRect): PointerHitProbe {
-	const point = pointerAt(bounds, 0);
-	const root = utility.getRootNode();
-	const target =
-		root instanceof ShadowRoot
-			? root.elementFromPoint(point.clientX ?? 0, point.clientY ?? 0)
-			: document.elementFromPoint(point.clientX ?? 0, point.clientY ?? 0);
-	return {
-		bounds: `${bounds.left},${bounds.top} ${bounds.width}x${bounds.height}`,
-		hitUtilityButton: target !== null && target.closest('[data-utility-button]') !== null,
-		lineNumber: target?.closest('[data-column-number]')?.getAttribute('data-column-number') ?? null,
-		targetTagName: target?.tagName ?? null,
-		targetDescription: target?.outerHTML.slice(0, 450) ?? null,
-	};
-}
-
-function pointerAt(bounds: DOMRect, pointerId: number): PointerEventInit {
-	return {
-		clientX: bounds.left + bounds.width / 2,
-		clientY: bounds.top + bounds.height / 2,
-		pointerId,
-		pointerType: 'mouse',
-	};
 }
 
 function makeReviewItem(): BridgeMainCodeViewItem {
