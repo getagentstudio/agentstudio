@@ -81,13 +81,16 @@ extension WorktreeCreationCommandLineIntegrationTests {
             "HEAD", "a b", "a\tb", "a\u{7F}b", "a~b", "a^b", "a:b", "a?b", "a*b", "a[b", "a\\b", "a\u{00A0}b",
             "\u{1F469}\u{200D}\u{1F4BB}", "x@y", "@a", "a@", "a.", "a./b", "a.lock", "@{-1}",
             // A combining mark after a forbidden byte doesn't hide it from git.
-            "a~\u{301}b", ".\u{301}a", "a..\u{301}b", "/\u{301}a", "a.lock/\u{301}b", "a/\u{301}b", "a.\u{301}/b",
+            "a~\u{301}b", ".\u{301}a", "a..\u{301}b", "/\u{301}a", "a.lock/\u{301}b", "-\u{301}bad",
+            "a/\u{301}b", "a.\u{301}/b", "a.\u{301}",
         ]
         for name in names {
             // The plain refname form: `--branch` would expand `@` and `@{-N}`. `git branch` also refuses a
-            // leading `-` and `HEAD`, which the refname rules allow.
+            // leading `-` and `HEAD`, which the refname rules allow. Both are decided on bytes, as git decides
+            // them: `hasPrefix("-")` compares graphemes and would miss `-` under a combining mark.
             let gitAccepts = try await Self.gitAcceptsReferenceName("refs/heads/\(name)")
-            let expected = !name.hasPrefix("-") && name != "HEAD" && gitAccepts
+            let refusedByBranch = name.utf8.first == UInt8(ascii: "-") || name.utf8.elementsEqual("HEAD".utf8)
+            let expected = !refusedByBranch && gitAccepts
             #expect(WorktreeBranchName.isWellFormedExistingName(name) == expected, "\(name.debugDescription)")
         }
     }
