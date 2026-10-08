@@ -116,14 +116,12 @@ export interface FinaleObservation {
     readonly pageBefore: number;
     readonly pageAfter: number;
   }[];
-  readonly samples: readonly FinaleAllSample[];
   readonly directSeekSpinnerVisible: boolean;
   readonly scrollProbe: {
     readonly overflow: number;
     readonly scrollTop: number;
     readonly resultVisible: boolean;
   };
-  readonly staircase: ReturnType<typeof planHeroRailStaircase>;
   readonly resizeRailClip: string;
   readonly resizeRailStyle: string | null;
   readonly resizeSceneInlineStyles: number;
@@ -178,7 +176,7 @@ function observeHeroFinaleSample(
       firstPayoff: opacity("[data-hero-intro-payoff-first]"),
       secondPayoff: opacity("[data-hero-intro-payoff-second]"),
       payoffOverflow: payoff.scrollWidth - payoff.clientWidth,
-    });
+    } satisfies FinaleFieldGroups["copy"]);
   }
   if (groups.includes("claude")) {
     const install = target("[data-hero-intro-install]");
@@ -235,7 +233,7 @@ function observeHeroFinaleSample(
         .filter((row) => getComputedStyle(row).display !== "none")
         .map((row) => Number(getComputedStyle(row).opacity)),
       copyOpacity: Number(getComputedStyle(target("[data-install-copy]")).opacity),
-    });
+    } satisfies FinaleFieldGroups["claude"]);
   }
   if (groups.includes("tokens")) {
     const install = target("[data-hero-intro-install]");
@@ -322,7 +320,7 @@ function observeHeroFinaleSample(
         tokenLayerForInstall?.getBoundingClientRect().left ?? 0,
         tokenLayerForInstall?.getBoundingClientRect().top ?? 0,
       ),
-    });
+    } satisfies FinaleFieldGroups["tokens"]);
   }
   if (groups.includes("codex")) {
     Object.assign(sample, {
@@ -336,7 +334,7 @@ function observeHeroFinaleSample(
         getComputedStyle(root.querySelector<HTMLElement>("[data-hero-codex-working]") ?? root)
           .opacity,
       ),
-    });
+    } satisfies FinaleFieldGroups["codex"]);
   }
   if (groups.includes("worktree")) {
     const activeTranscript = root.querySelector<HTMLElement>(
@@ -406,7 +404,7 @@ function observeHeroFinaleSample(
       ]
         .filter((row) => getComputedStyle(row).display !== "none")
         .map((row) => Number(getComputedStyle(row).opacity)),
-    });
+    } satisfies FinaleFieldGroups["worktree"]);
   }
   if (groups.includes("rail")) {
     const railClip = getComputedStyle(rail).clipPath;
@@ -494,7 +492,7 @@ function observeHeroFinaleSample(
           ? Number.POSITIVE_INFINITY
           : rail.getBoundingClientRect().top +
             rail.getBoundingClientRect().height * (1 - Number(bottomInset[1]) / 100),
-    });
+    } satisfies FinaleFieldGroups["rail"]);
   }
   if (groups.includes("layout")) {
     const install = target("[data-hero-intro-install]");
@@ -571,7 +569,7 @@ function observeHeroFinaleSample(
       appTop: app.getBoundingClientRect().top,
       windowHeight: windowNode.getBoundingClientRect().height,
       chapterNodeY: rail.getBoundingClientRect().top + Number(chapterNode.getAttribute("cy")),
-    });
+    } satisfies FinaleFieldGroups["layout"]);
   }
   return sample;
 }

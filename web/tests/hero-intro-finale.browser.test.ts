@@ -12,6 +12,7 @@ import type {
 
 declare module "vitest/browser" {
   interface BrowserCommands {
+    // Wire samples are Partial; every read must go through sampleAccessor/guardFinaleSample.
     observeHeroFinaleTimes<TGroup extends FinaleFieldGroup>(
       pageUrl: string,
       width: number,

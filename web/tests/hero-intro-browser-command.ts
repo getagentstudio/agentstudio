@@ -593,6 +593,10 @@ async function openHeroPlaybackPage(
   context: BrowserCommandContext["context"],
 ): Promise<Awaited<ReturnType<BrowserCommandContext["context"]["newPage"]>>> {
   const applicationPage = await context.newPage();
+  applicationPage.on("response", (response) => {
+    if (response.status() >= 400)
+      process.stdout.write(`intro ${response.status()} ${new URL(response.url()).pathname}\n`);
+  });
   try {
     await applicationPage.addInitScript(() => {
       Object.defineProperty(document, "hidden", { configurable: true, get: () => false });
