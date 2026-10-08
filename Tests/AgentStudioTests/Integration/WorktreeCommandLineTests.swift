@@ -257,7 +257,7 @@ struct WorktreeCommandLineTests {
                     exitCode: 1
                 ),
                 FormatterGolden(
-                    outcome: .refused(.forkUnavailable(.sourceFilesystemNotAPFS, source: .mainWorktree)),
+                    outcome: .refused(.forkUnavailable(.sourceFilesystemNotAPFS, offersChangesOnly: false)),
                     humanText:
                         "refused: forkUnavailable sourceFilesystemNotAPFS --no-fork; options: [--no-fork: A plain checkout of tracked files at the same commit; no ignored files or build outputs.]",
                     jsonText:

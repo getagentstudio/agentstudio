@@ -120,7 +120,8 @@ package enum WorktreeOperationErrorMapper {
             .invalidBranchName(.rejectedByGit)
         case .branchAlreadyExists:
             .creationStopped(.branchAlreadyExists(branch: branchName))
-        case .branchMoved:
+        // `branchNotFound` comes only from an existing-branch fork: the branch resolved moments ago is gone.
+        case .branchMoved, .branchNotFound:
             .creationStopped(.branchMoved)
         case .clientCapabilityUnavailable,
             .unsupportedOperatingSystem,
@@ -134,13 +135,12 @@ package enum WorktreeOperationErrorMapper {
             .invalidDestinationPath,
             .overlappingRoots,
             .linkedWorktreeNameInUse,
-            .branchNotFound,
             .invalidStart,
             .fastForwardNotDescendant,
             .invalidUpstream,
             .fileProviderManagedLocation,
             .datalessContent:
-            .forkUnavailable(reason, source: .mainWorktree)
+            .forkUnavailable(reason, offersChangesOnly: false)
         }
     }
 

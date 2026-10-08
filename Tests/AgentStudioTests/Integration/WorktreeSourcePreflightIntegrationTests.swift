@@ -48,37 +48,62 @@ struct WorktreeSourcePreflightIntegrationTests {
                 == worktreeCreationGit(at: repository, arguments: ["rev-parse", "HEAD"]))
     }
 
-    @Test("copy capability refusal offers only alternatives valid for the selected source")
-    func reportsSourceSpecificCopyAlternatives() async throws {
+    @Test("copy capability refusal offers --changes-only only where it is a valid continuation")
+    func reportsValidCopyAlternatives() async throws {
+        struct AlternativesCase {
+            let source: WorktreeCreateSource
+            let branch: String
+            let startBranch: String?
+            let offersChangesOnly: Bool
+        }
         let repository = try await seededRepository(named: "new-copy-alternatives")
         defer { FilesystemTestGitRepo.destroy(repository) }
+        try await worktreeCreationGit(at: repository, arguments: ["branch", "feature/existing"])
         let realClient = LibGit2AgentStudioGitLocalClient()
         let snapshot = try #require(await realClient.worktrees(for: repository).first)
         let identity = try await realClient.repositoryIdentity(for: repository)
         let canonicalRepository = try #require(identity.mainWorktreePath).standardizedFileURL
         let client = WorktreeOperationClientStub(
             startPath: canonicalRepository, snapshot: snapshot, identity: identity, baseClient: realClient)
-        for source in [WorktreeCreateSource.mainWorktree, .worktree(canonicalRepository)] {
+        let cases = [
+            // The main worktree as the source: --changes-only needs --from.
+            AlternativesCase(
+                source: .mainWorktree, branch: "feature/unavailable", startBranch: nil, offersChangesOnly: false),
+            // --from creating a new branch at the source's HEAD: --changes-only would do it without a fork.
+            AlternativesCase(
+                source: .worktree(canonicalRepository), branch: "feature/unavailable", startBranch: nil,
+                offersChangesOnly: true),
+            // --from with --from-branch: --changes-only excludes --from-branch.
+            AlternativesCase(
+                source: .worktree(canonicalRepository), branch: "feature/unavailable", startBranch: "main",
+                offersChangesOnly: false),
+            // --from opening an existing branch: --changes-only only creates.
+            AlternativesCase(
+                source: .worktree(canonicalRepository), branch: "feature/existing", startBranch: nil,
+                offersChangesOnly: false),
+        ]
+        for testCase in cases {
             let outcome = await WorktreeOperationRunner(client: client).run(
                 .create(
                     WorktreeCreateRequest(
-                        start: canonicalRepository, branch: "feature/unavailable", source: source, startBranch: nil,
-                        materialization: .copyOnWrite, fetchPolicy: .skip)
+                        start: canonicalRepository, branch: testCase.branch, source: testCase.source,
+                        startBranch: testCase.startBranch, materialization: .copyOnWrite, fetchPolicy: .skip)
                 ))
             #expect(
                 outcome
                     == .refused(
-                        .forkUnavailable(.clientCapabilityUnavailable, source: source),
-                        creationFetch: .skipped(.noFetchFlag)))
+                        .forkUnavailable(.clientCapabilityUnavailable, offersChangesOnly: testCase.offersChangesOnly),
+                        creationFetch: .skipped(.noFetchFlag)),
+                "\(testCase.branch) \(testCase.startBranch ?? "-")")
             let response = try WorktreeCommandLineFormatter.format(outcome: outcome, usesJSONOutput: true)
             let document = try #require(JSONSerialization.jsonObject(with: Data(response.text.utf8)) as? [String: Any])
             #expect(document["alternative"] == nil)
             #expect(
                 document["alternatives"] as? [String]
-                    == (source == .mainWorktree ? ["checkout"] : ["checkout", "changesOnly"]))
+                    == (testCase.offersChangesOnly ? ["checkout", "changesOnly"] : ["checkout"]))
             let human = try WorktreeCommandLineFormatter.format(outcome: outcome, usesJSONOutput: false)
             #expect(human.text.contains("--no-fork"))
-            #expect(human.text.contains("--changes-only") == (source != .mainWorktree))
+            #expect(human.text.contains("--changes-only") == testCase.offersChangesOnly)
         }
     }
 

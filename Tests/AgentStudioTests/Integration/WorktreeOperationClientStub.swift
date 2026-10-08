@@ -215,9 +215,10 @@ struct WorktreeOperationClientStub: AgentStudioGitLocalClient {
         throw .unsupported(message: "unexpected remote name lookup")
     }
 
+    /// Preflight reads branch use before the destination checks; without a real client the branch is free.
     func branchUse(_ request: GitBranchUseRequest) async throws(GitDataPlaneError) -> GitBranchUse {
         if let baseClient { return try await baseClient.branchUse(request) }
-        throw .unsupported(message: "unexpected branch use lookup")
+        return .free
     }
 
     func aheadBehind(_ request: GitAheadBehindRequest) async throws(GitDataPlaneError) -> GitAheadBehind {

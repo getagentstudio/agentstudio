@@ -323,6 +323,50 @@ extension WorktreeCreationCommandLineIntegrationTests {
         #expect(document.materialization?.kind == "changesOnly")
     }
 
+    @Test("re-running new for a branch already at its own sibling destination says where it is")
+    func refusesBranchHeldAtItsOwnDestination() async throws {
+        let fixture = try await WorktreeCreationRemoteFixture.create(named: "new-held-at-destination")
+        defer { fixture.destroy() }
+        let destination = try fixture.destination(for: "feature/again")
+        try await fixture.git("worktree", "add", "-b", "feature/again", destination.path)
+
+        let run = await fixture.runNew("feature/again", json: true)
+        #expect(run.exit == 1)
+        let refusal = try run.refused()
+        #expect(refusal.reason == "branchCheckedOut")
+        #expect(refusal.path.map(Self.realPath) == Self.realPath(destination.path))
+        #expect(refusal.options?.first?.action == .command("cd <path>"))
+        #expect(refusal.fetch == nil)
+    }
+
+    @Test("a remote prefix wins over a same-named local branch, and a same-name start opens the existing branch")
+    func remotePrefixAndSameNameStarts() async throws {
+        let fixture = try await WorktreeCreationRemoteFixture.create(named: "new-prefix-and-same-name")
+        defer { fixture.destroy() }
+        let originTip = try await fixture.advance("release/origin", file: "origin.txt")
+        try await fixture.git("branch", "origin/release/origin", "main")
+        #expect(try await fixture.git("rev-parse", "refs/heads/origin/release/origin") != originTip)
+
+        let prefixedDestination = try fixture.destination(for: "feature/prefixed")
+        let prefixed = await fixture.runNew(
+            "feature/prefixed", ["--from-branch", "origin/release/origin"], json: false)
+        #expect(
+            prefixed.line
+                == "created feature/prefixed at \(prefixedDestination.path) (copy-on-write; from origin/release/origin)"
+        )
+        #expect(try await WorktreeCreationRemoteFixture.git(prefixedDestination, "rev-parse", "HEAD") == originTip)
+
+        try await fixture.git("branch", "feature/shared", "main")
+        let sharedTip = try await fixture.advance("feature/shared", file: "shared.txt")
+        let sharedDestination = try fixture.destination(for: "feature/shared")
+        let shared = await fixture.runNew("feature/shared", ["--from-branch", "feature/shared"], json: false)
+        #expect(
+            shared.line
+                == "created feature/shared at \(sharedDestination.path) "
+                + "(copy-on-write; existing branch; fast-forwarded to origin/feature/shared)")
+        #expect(try await fixture.git("rev-parse", "refs/heads/feature/shared") == sharedTip)
+    }
+
     static func realPath(_ path: String) -> String {
         URL(fileURLWithPath: path).resolvingSymlinksInPath().standardizedFileURL.path
     }

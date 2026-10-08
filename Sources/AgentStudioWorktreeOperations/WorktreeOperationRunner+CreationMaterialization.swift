@@ -75,10 +75,18 @@ extension WorktreeOperationRunner {
             let outcome = WorktreeOperationErrorMapper.forkOutcome(
                 error, destinationPath: prepared.destinationPath, branchName: branchName)
             if case .refused(.forkUnavailable(let reason, _), _) = outcome {
-                return .refused(.forkUnavailable(reason, source: request.source))
+                return .refused(
+                    .forkUnavailable(reason, offersChangesOnly: Self.offersChangesOnly(request, plan: branch.plan)))
             }
             return outcome
         }
+    }
+
+    /// `--changes-only` continues an unavailable fork only where it is valid: a copy-on-write `--from`
+    /// fork creating a new branch at the source's HEAD (no `--from-branch`, `<branch>` not existing).
+    private static func offersChangesOnly(_ request: WorktreeCreateRequest, plan: WorktreeBranchPlan) -> Bool {
+        guard request.materialization == .copyOnWrite, case .worktree = request.source else { return false }
+        return plan.target == .newBranch(start: .sourceHead, upstream: nil)
     }
 
     /// `--no-fork` starts where the fork would: at the source checkout's HEAD commit. An unborn HEAD

@@ -129,7 +129,8 @@ struct WorktreeOperationErrorMapperTests {
                 expectedRefusal = .invalidBranchName(.rejectedByGit)
             case .branchAlreadyExists:
                 expectedRefusal = .creationStopped(.branchAlreadyExists(branch: branch))
-            case .branchMoved:
+            case .branchMoved, .branchNotFound:
+                // `branchNotFound` comes only from an existing-branch fork whose branch vanished after resolution.
                 expectedRefusal = .creationStopped(.branchMoved)
             case .clientCapabilityUnavailable,
                 .unsupportedOperatingSystem,
@@ -143,13 +144,12 @@ struct WorktreeOperationErrorMapperTests {
                 .invalidDestinationPath,
                 .overlappingRoots,
                 .linkedWorktreeNameInUse,
-                .branchNotFound,
                 .invalidStart,
                 .fastForwardNotDescendant,
                 .invalidUpstream,
                 .fileProviderManagedLocation,
                 .datalessContent:
-                expectedRefusal = .forkUnavailable(reason, source: .mainWorktree)
+                expectedRefusal = .forkUnavailable(reason, offersChangesOnly: false)
             }
 
             #expect(

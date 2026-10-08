@@ -64,13 +64,13 @@ extension WorktreeCommandLineFormatter {
             return WorktreeRefusalDetails(reason: "destinationParentMissing", path: absolutePath(path), detail: nil)
         case .unsupportedRepositoryLayout(let path):
             return WorktreeRefusalDetails(reason: "unsupportedRepositoryLayout", path: absolutePath(path), detail: nil)
-        case .forkUnavailable(let reason, let source):
+        case .forkUnavailable(let reason, let offersChangesOnly):
             return WorktreeRefusalDetails(
                 reason: "forkUnavailable",
                 path: nil,
                 detail: reason.rawValue,
-                alternatives: source == .mainWorktree ? [.checkout] : [.checkout, .changesOnly],
-                options: WorktreeStopCatalog.forkOptions(source: source)
+                alternatives: offersChangesOnly ? [.checkout, .changesOnly] : [.checkout],
+                options: WorktreeStopCatalog.forkOptions(offersChangesOnly: offersChangesOnly)
             )
         case .unsupportedWorkingState(let refusal):
             return WorktreeRefusalDetails(

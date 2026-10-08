@@ -83,7 +83,9 @@ excludes `--no-fork` and `--from-branch` (usage error, exit 64).
 
 1. If `<branch>` is checked out in any worktree, or being rebased or bisected
    there, `new` refuses `branchCheckedOut` with that worktree's path before
-   anything else, fetch included. Work there instead (`cd <path>`).
+   any fetch, and before checking the destination, so running `new feat` again
+   for an existing `<repo>.feat` points you there. Work there instead
+   (`cd <path>`).
 2. `new` asks origin whether it has `<branch>` and fetches that one branch
    (no tags, no pruning). A branch origin doesn't have counts as absent, even
    if an old `origin/<branch>` ref is still on disk. `--no-fetch` skips this and
@@ -137,6 +139,10 @@ Everything else is in `--json`: `branch` (`name`, `status`: `created`,
 `sourceHead`, `localBranch` or `remoteBranch`, `ref`, `localOnlyCommits`),
 `fetch` (`remote`, `branch`, `status`: `fetched`, `notOnRemote`, `skipped` or
 `failed`), and the copy report under `materialization`.
+
+A refusal or failure that comes after the fetch still reports it: `--json`
+carries the same `fetch` object, and the human output adds a `fetch:` line
+after the refusal.
 
 `list`, `remove`, and `prune` fetch the integration target branch before
 assessing it. `--no-fetch` skips that fetch. `remove --dry-run` reports the
@@ -220,6 +226,10 @@ Source index problems, the same for default `new` and `new --from`:
   `--no-fork`), and a sparse or split index refuses
   `sourceIndexUnsupported` (`--no-fork`).
 - A missing index counts as empty.
+- A copy reset to another commit reads only the source's HEAD commit, not its
+  index, so these two refusals apply only when the branch starts at the
+  source's HEAD.
+  `new <existing-or-origin-branch>` and `--from-branch` still fork warm.
 
 The copy-on-write report in `--json` carries `ignoredIncludedPatterns`,
 `ignoredExcludedCount` (excluded paths), `nestedWorktreesSkipped`,

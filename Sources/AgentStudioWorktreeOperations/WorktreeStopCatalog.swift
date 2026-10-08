@@ -296,9 +296,9 @@ package enum WorktreeStopCatalog {
         effect: "A plain checkout of tracked files at the same commit; no ignored files or build outputs."
     )
 
-    static func forkOptions(source: WorktreeCreateSource) -> [WorktreeStopOption] {
+    static func forkOptions(offersChangesOnly: Bool) -> [WorktreeStopOption] {
         var options = options(for: .forkUnavailable, offersStaleLockRemoval: false)
-        if case .worktree = source {
+        if offersChangesOnly {
             options.append(
                 flag("--changes-only", effect: "Create a clean checkout and copy the source worktree's changes."))
         }

@@ -87,7 +87,9 @@ package enum WorktreeOperationRefusal: Sendable, Equatable {
     case destinationExists(URL)
     case destinationParentMissing(URL)
     case unsupportedRepositoryLayout(URL)
-    case forkUnavailable(GitWorktreeForkRejectionReason, source: WorktreeCreateSource)
+    /// `offersChangesOnly` only when `--changes-only` would be a valid continuation: `--from`, no
+    /// `--from-branch`, and a new branch at the source's HEAD.
+    case forkUnavailable(GitWorktreeForkRejectionReason, offersChangesOnly: Bool)
     case unsupportedWorkingState(GitWorktreeWorkingStateRefusal)
 }
 

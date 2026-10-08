@@ -106,7 +106,7 @@ extension WorktreeOperationRunner {
         }
     }
 
-    /// LR1 step (1) before any network, then LR30's fetch, then the branch resolution.
+    /// LR30's fetch, then the branch resolution. LR1 step (1) already ran in preflight.
     private func decideBranch(
         _ branchRequest: WorktreeCreationBranchRequest,
         prepared: PreparedWorktreeCreation,
@@ -115,12 +115,6 @@ extension WorktreeOperationRunner {
         let resolver = WorktreeCreationBranchResolver(client: client)
         let remoteNames: [String]
         do throws(GitDataPlaneError) {
-            if let holder = try await resolver.branchHolder(
-                repositoryPath: prepared.repositoryPath, branch: branchRequest.branch)
-            {
-                return .outcome(
-                    .refused(.creationStopped(.branchCheckedOut(path: holder.standardizedFileURL.path))))
-            }
             if branchRequest.changesOnly {
                 remoteNames = []
             } else {

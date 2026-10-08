@@ -48,6 +48,7 @@ extension WorktreeCreationCommandLineIntegrationTests {
         let originTip = try await fixture.advance("release/origin", file: "origin.txt")
         try await fixture.git("branch", "feature/behind", "main")
         let behindTip = try await fixture.advance("feature/behind", file: "behind.txt")
+        let plainOriginTip = try await fixture.advance("feature/plain-origin", file: "plain-origin.txt")
 
         let cases = [
             WorktreeCreationLineCase("feature/plain", ["--no-fork"], mainSourceHead, "checkout"),
@@ -59,6 +60,8 @@ extension WorktreeCreationCommandLineIntegrationTests {
             WorktreeCreationLineCase(
                 "feature/behind", ["--no-fork"], behindTip,
                 "checkout; existing branch; fast-forwarded to origin/feature/behind"),
+            WorktreeCreationLineCase(
+                "feature/plain-origin", ["--no-fork"], plainOriginTip, "checkout; from origin/feature/plain-origin"),
         ]
         for testCase in cases {
             let destination = try fixture.destination(for: testCase.branch)
@@ -70,6 +73,10 @@ extension WorktreeCreationCommandLineIntegrationTests {
                 try await WorktreeCreationRemoteFixture.git(destination, "rev-parse", "--abbrev-ref", "HEAD")
                     == testCase.branch)
         }
+        // Step 3 on the checkout path writes the same upstream as the fork (D20).
+        #expect(try await fixture.git("config", "branch.feature/plain-origin.remote") == "origin")
+        #expect(
+            try await fixture.git("config", "branch.feature/plain-origin.merge") == "refs/heads/feature/plain-origin")
     }
 
     @Test("--no-fetch reads the remote-tracking refs already on disk")

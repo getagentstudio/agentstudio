@@ -1,4 +1,5 @@
 import AgentStudioGit
+import AgentStudioInfrastructure
 import AgentStudioWorktreeOperations
 import Foundation
 import Testing
@@ -16,7 +17,7 @@ struct WorktreeCreationRemoteFixture {
 
     static func create(named name: String) async throws -> Self {
         let folder = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
-            .appending(path: "tmp/filesystem-git-tests/\(name)-\(UUID().uuidString)")
+            .appending(path: "tmp/filesystem-git-tests/\(name)-\(UUIDv7.generate().uuidString)")
         let repository = folder.appending(path: "repo")
         let origin = folder.appending(path: "origin.git")
         let upstream = folder.appending(path: "upstream.git")
