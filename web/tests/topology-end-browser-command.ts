@@ -121,7 +121,8 @@ type UnionToIntersection<TValue> = (
   : never;
 export type FinaleMainSample<TGroup extends FinaleMainFieldGroup> = UnionToIntersection<
   FinaleMainFieldGroups[TGroup]
->;
+> &
+  object;
 type FinaleMainAllSample = FinaleMainSample<FinaleMainFieldGroup>;
 export type FinaleMainWireSample = Partial<FinaleMainAllSample>;
 export interface FinaleReducedMotionObservation {

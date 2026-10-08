@@ -91,7 +91,7 @@ function guardFinaleMainSample<TGroup extends FinaleMainFieldGroup>(
   sample: FinaleMainSample<TGroup>,
   groups: readonly TGroup[],
 ): FinaleMainSample<TGroup> {
-  return new Proxy(sample as object, {
+  return new Proxy(sample, {
     get(target, field, receiver): unknown {
       if (typeof field !== "string") return Reflect.get(target, field, receiver);
       const group = finaleGroupByField.get(field);
@@ -103,7 +103,7 @@ function guardFinaleMainSample<TGroup extends FinaleMainFieldGroup>(
       }
       return Reflect.get(target, field, receiver);
     },
-  }) as FinaleMainSample<TGroup>;
+  });
 }
 
 describe("where the rail ends on the home page", () => {
