@@ -33,7 +33,7 @@ export interface StepHopObservation {
 }
 
 interface StepHopBookkeeping {
-  lastChapterActivity: { readonly chapterId: string; readonly atMs: number } | null;
+  lastChapterActivity: { readonly chapterId: string | null; readonly atMs: number } | null;
   scrollEventCount: number;
 }
 
@@ -47,6 +47,17 @@ function installStepHopStateReader(): void {
   const tracker = window["__pendingWaitTracker"];
   if (tracker === undefined) throw new Error("Pending wait tracker is missing");
   tracker.readCommandState = (): Record<string, unknown> => {
+    const chapterTitleTops = Object.fromEntries(
+      [...document.querySelectorAll<HTMLElement>("[data-chapter-steps-root]")].map(
+        (chapterRoot) => [
+          chapterRoot.dataset["chapterStepsRoot"] ?? "unknown",
+          chapterRoot.querySelector<HTMLElement>(".chapter-title")?.getBoundingClientRect().top ??
+            null,
+        ],
+      ),
+    );
+    const readingLineY = window.innerHeight * 0.45;
+    const bookkeeping = window["__stepHopBookkeeping"];
     const root = document.querySelector<HTMLElement>('[data-chapter-steps-root="many-agents"]');
     const scene = root?.querySelector<HTMLElement>('[data-scene-root="chapter-many-agents"]');
     const ring = root?.querySelector<SVGSVGElement>("[data-chapter-step-ring]");
@@ -59,6 +70,7 @@ function installStepHopStateReader(): void {
       ring === undefined
     )
       return {
+        stepHopParts: "missing",
         stepPlayback: null,
         scenePlaybackState: null,
         ringAnimations: [],
@@ -67,13 +79,13 @@ function installStepHopStateReader(): void {
         innerHeight: window.innerHeight,
         stageTop: null,
         stageHeight: null,
-        chapterTitleTops: {},
-        readingLineY: window.innerHeight * 0.45,
+        chapterTitleTops,
+        readingLineY,
         lastChapterActivity: window["__stepHopBookkeeping"]?.lastChapterActivity ?? null,
-        scrollEventCount: window["__stepHopBookkeeping"]?.scrollEventCount ?? 0,
+        scrollEventCount: bookkeeping?.scrollEventCount ?? null,
       };
-    const bookkeeping = window["__stepHopBookkeeping"];
     return {
+      stepHopParts: "found",
       stepPlayback:
         root.querySelector<HTMLElement>("[data-chapter-step-line]")?.dataset["stepPlayback"] ??
         null,
@@ -99,18 +111,10 @@ function installStepHopStateReader(): void {
           .closest<HTMLElement>('[data-chapter="many-agents"]')
           ?.querySelector<HTMLElement>("[data-scroll-playback-stage]")
           ?.getBoundingClientRect().height ?? null,
-      chapterTitleTops: Object.fromEntries(
-        [...document.querySelectorAll<HTMLElement>("[data-chapter-steps-root]")].map(
-          (chapterRoot) => [
-            chapterRoot.dataset["chapterStepsRoot"] ?? "unknown",
-            chapterRoot.querySelector<HTMLElement>(".chapter-title")?.getBoundingClientRect().top ??
-              null,
-          ],
-        ),
-      ),
-      readingLineY: window.innerHeight * 0.45,
+      chapterTitleTops,
+      readingLineY,
       lastChapterActivity: bookkeeping?.lastChapterActivity ?? null,
-      scrollEventCount: bookkeeping?.scrollEventCount ?? 0,
+      scrollEventCount: bookkeeping?.scrollEventCount ?? null,
     };
   };
 }
@@ -122,9 +126,9 @@ function installStepHopBookkeeping(): void {
     if (!(event instanceof CustomEvent)) return;
     const detail: unknown = event.detail;
     if (typeof detail !== "object" || detail === null || Array.isArray(detail)) return;
-    const chapterId = Reflect.get(detail, "chapterId");
-    if (typeof chapterId === "string")
-      bookkeeping.lastChapterActivity = { chapterId, atMs: performance.now() };
+    const chapterId: unknown = Reflect.get(detail, "chapterId");
+    if (chapterId === undefined || typeof chapterId === "string")
+      bookkeeping.lastChapterActivity = { chapterId: chapterId ?? null, atMs: performance.now() };
   });
   window.addEventListener(
     "scroll",
