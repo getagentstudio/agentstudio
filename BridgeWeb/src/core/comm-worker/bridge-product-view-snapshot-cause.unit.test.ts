@@ -211,13 +211,36 @@ test('stale open cannot satisfy a current outstanding request', async (): Promis
 	}
 });
 
-test('a current open clears an outstanding request without renewing its budget', async (): Promise<void> => {
+test('a current open after Failed renews the budget so the next stall sends one request', async (): Promise<void> => {
+	const { owner, requests } = harness(2);
+	try {
+		owner.observeSnapshotBegin({ ...viewIdentity, snapshotCause: 'recovery' });
+		owner.observeSnapshotBegin({ ...viewIdentity, snapshotCause: 'recovery' });
+		owner.observeSnapshotBegin({ ...viewIdentity, snapshotCause: 'recovery' });
+		expect(owner.recoveryState(viewIdentity.subscriptionId)).toEqual({
+			consecutiveResnapshots: 2,
+			status: 'failedRetryable',
+		});
+		owner.observeSnapshotBegin({ ...viewIdentity, snapshotCause: 'open' });
+		await owner.resnapshot(viewIdentity.subscriptionId);
+		expect(requests).toHaveLength(1);
+		expect(owner.recoveryState(viewIdentity.subscriptionId)).toEqual({
+			consecutiveResnapshots: 1,
+			status: 'recovering',
+		});
+	} finally {
+		owner.retire(viewIdentity.subscriptionId);
+	}
+});
+
+test('a current open renews its budget and clears the outstanding request', async (): Promise<void> => {
 	const { owner } = harness(3);
 	try {
 		await owner.resnapshot(viewIdentity.subscriptionId);
 		owner.observeSnapshotBegin({ ...viewIdentity, snapshotCause: 'open' });
+		expect(owner.recoveryState(viewIdentity.subscriptionId)?.consecutiveResnapshots).toBe(0);
 		owner.observeSnapshotBegin({ ...viewIdentity, snapshotCause: 'recovery' });
-		expect(owner.recoveryState(viewIdentity.subscriptionId)?.consecutiveResnapshots).toBe(2);
+		expect(owner.recoveryState(viewIdentity.subscriptionId)?.consecutiveResnapshots).toBe(1);
 	} finally {
 		owner.retire(viewIdentity.subscriptionId);
 	}

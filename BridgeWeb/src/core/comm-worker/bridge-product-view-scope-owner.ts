@@ -264,6 +264,7 @@ export class BridgeProductViewScopeOwner {
 		const failed = view.recoveryStatus === 'failedRetryable';
 		if (failed && (cause === 'recovery' || cause === 'requested')) return false;
 		if (cause === 'newerInput') return true;
+		if (cause === 'open') view.consecutiveResnapshots = 0;
 		this.#clearReplacementBeginDeadline(view);
 		view.awaitingBegin = false;
 		if (cause === 'recovery' && !view.resnapshotRequested) {
