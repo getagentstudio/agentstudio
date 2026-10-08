@@ -430,6 +430,33 @@ extension WorktreeCreationCommandLineIntegrationTests {
         #expect(headRefusal.fetch == nil)
     }
 
+    @Test("--from-branch starts from existing branches whose Git-legal names a new branch may not use")
+    func startsFromGitLegalUnicodeBranchNames() async throws {
+        let fixture = try await WorktreeCreationRemoteFixture.create(named: "new-unicode-start")
+        defer { fixture.destroy() }
+        // `git check-ref-format --branch` accepts a no-break space and a zero-width joiner; of whitespace and
+        // control characters it refuses only the ASCII control characters, DEL and the space.
+        let startsAndBranches = [
+            ("release/a\u{00A0}b", "feature/no-break-space"),
+            ("release/\u{1F469}\u{200D}\u{1F4BB}", "feature/zero-width-joiner"),
+        ]
+        for (start, branch) in startsAndBranches {
+            try await fixture.git("branch", start, "main")
+            let created = await fixture.runNew(branch, ["--from-branch", start], json: true)
+            #expect(created.exit == 0, "\(start): \(created.output)")
+            #expect(
+                try created.created().start
+                    == .init(
+                        commit: fixture.mainCommit, from: "localBranch", ref: "refs/heads/\(start)",
+                        localOnlyCommits: nil),
+                "\(start)")
+        }
+
+        let spaced = await fixture.runNew("feature/ascii-space", ["--from-branch", "release/a b"], json: true)
+        #expect(spaced.exit == 1)
+        #expect(try spaced.refused().reason == "startBranchNotFound")
+    }
+
     @Test("a branch taken by another worktree at the attach, after the fetch, still reports the fetch")
     func lateBranchCheckedOutKeepsFetch() async throws {
         let fixture = try await WorktreeCreationRemoteFixture.create(named: "new-late-held")

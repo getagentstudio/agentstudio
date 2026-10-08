@@ -34,6 +34,10 @@ struct WorktreeDestinationPolicyTests {
             BranchNameCase(text: "name.lock", expected: .failure(.invalidComponentBoundary)),
             BranchNameCase(text: "@", expected: .failure(.invalidComponentBoundary)),
             BranchNameCase(text: "HEAD", expected: .failure(.invalidComponentBoundary)),
+            // Git accepts these for an existing branch; a branch the app creates may not use them.
+            BranchNameCase(text: "release/a\u{00A0}b", expected: .failure(.containsWhitespaceOrControlCharacter)),
+            BranchNameCase(
+                text: "release/\u{1F469}\u{200D}\u{1F4BB}", expected: .failure(.containsWhitespaceOrControlCharacter)),
         ]
     )
     func branchNameValidation(_ testCase: BranchNameCase) {
