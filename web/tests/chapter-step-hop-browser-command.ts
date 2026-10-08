@@ -49,13 +49,13 @@ function installStepHopStateReader(): void {
     )
       return { stepPlayback: "missing", scenePlaybackState: "missing", ringAnimations: [] };
     return {
-      stepPlayback: root.querySelector<HTMLElement>("[data-chapter-step-line]")?.dataset[
-        "stepPlayback"
-      ],
-      scenePlaybackState: scene.dataset["scenePlaybackState"],
+      stepPlayback:
+        root.querySelector<HTMLElement>("[data-chapter-step-line]")?.dataset["stepPlayback"] ??
+        null,
+      scenePlaybackState: scene.dataset["scenePlaybackState"] ?? null,
       ringAnimations: ring.getAnimations().map((animation) => ({
         playState: animation.playState,
-        currentTime: animation.currentTime,
+        currentTime: animation.currentTime ?? null,
         duration: animation.effect?.getTiming().duration ?? null,
       })),
     };
