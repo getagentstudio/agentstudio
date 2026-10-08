@@ -53,7 +53,6 @@ extension BridgeProductSession {
 
     private func recordSealedFileBatch(_ batch: BridgeProductSealedViewBatch) {
         lastSealedFileTargetByViewDomain[batch.viewDomain] = batch.targetRevision
-        if batch.mode == .snapshot { _ = viewSenderState.takePending(for: batch.viewDomain) }
     }
 
     func sealPendingFileSnapshotIfReady() throws {

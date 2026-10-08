@@ -200,7 +200,10 @@ actor BridgePaneAnnotationNotificationSource {
     func openBatch(
         handle: String,
         producerID: UUID,
-        deliver: @Sendable (BridgeProductCommentCatalogBatch, BridgeProductBatchMode) async throws -> Void
+        snapshotRequired: @escaping @Sendable () async -> Bool,
+        deliver:
+            @Sendable (BridgeProductCommentCatalogBatch, BridgeProductBatchMode) async throws ->
+            BridgeProductViewEmissionOutcome
     ) async throws {
         guard let service else {
             throw WorktreeAnnotationServiceError.unavailable
@@ -277,6 +280,7 @@ actor BridgePaneAnnotationNotificationSource {
                 try await deliverSnapshotAndInvalidationBatches(
                     notifications,
                     publisher: publisher,
+                    snapshotRequired: snapshotRequired,
                     deliver: deliver
                 )
                 finishBatchNotification(handle: handle, producerID: producerID)
@@ -305,27 +309,62 @@ actor BridgePaneAnnotationNotificationSource {
     private func deliverSnapshotAndInvalidationBatches(
         _ notifications: AsyncStream<BridgePaneCommentBatchNotification>,
         publisher: BridgeProductCommentCatalogPublisher,
-        deliver: @Sendable (BridgeProductCommentCatalogBatch, BridgeProductBatchMode) async throws -> Void
+        snapshotRequired: @Sendable () async -> Bool,
+        deliver:
+            @Sendable (BridgeProductCommentCatalogBatch, BridgeProductBatchMode) async throws ->
+            BridgeProductViewEmissionOutcome
     ) async throws {
         if let snapshot = try await publisher.captureSnapshot() {
-            try await deliver(snapshot, .snapshot)
+            try await deliverCurrentBatch(snapshot, mode: .snapshot, publisher: publisher, deliver: deliver)
         }
         for await notification in notifications {
             try Task.checkCancellation()
             switch notification {
             case .resnapshot:
                 guard let snapshot = try await publisher.captureSnapshot() else { continue }
-                try await deliver(snapshot, .snapshot)
+                try await deliverCurrentBatch(snapshot, mode: .snapshot, publisher: publisher, deliver: deliver)
             case .invalidation(let ranges):
                 for range in ranges { await publisher.invalidate(range) }
                 while await publisher.pendingDirtyRangeCount() > 0 {
+                    if await snapshotRequired() {
+                        guard let snapshot = try await publisher.captureSnapshot() else {
+                            throw WorktreeAnnotationServiceError.staleSourceEpoch
+                        }
+                        try await deliverCurrentBatch(snapshot, mode: .snapshot, publisher: publisher, deliver: deliver)
+                        continue
+                    }
                     guard let batch = try await publisher.captureDirty() else {
                         throw WorktreeAnnotationServiceError.staleSourceEpoch
                     }
-                    try await deliver(batch, .change)
+                    try await deliverCurrentBatch(batch, mode: .change, publisher: publisher, deliver: deliver)
                 }
             case .unavailable:
                 throw WorktreeAnnotationServiceError.unavailable
+            }
+        }
+    }
+
+    private func deliverCurrentBatch(
+        _ capturedBatch: BridgeProductCommentCatalogBatch,
+        mode capturedMode: BridgeProductBatchMode,
+        publisher: BridgeProductCommentCatalogPublisher,
+        deliver:
+            @Sendable (BridgeProductCommentCatalogBatch, BridgeProductBatchMode) async throws ->
+            BridgeProductViewEmissionOutcome
+    ) async throws {
+        var batch = capturedBatch
+        var mode = capturedMode
+        while true {
+            try Task.checkCancellation()
+            switch try await deliver(batch, mode) {
+            case .completed: return
+            case .retired: throw WorktreeAnnotationServiceError.staleSourceEpoch
+            case .resnapshotRequired:
+                guard let snapshot = try await publisher.captureSnapshot() else {
+                    throw WorktreeAnnotationServiceError.staleSourceEpoch
+                }
+                batch = snapshot
+                mode = .snapshot
             }
         }
     }

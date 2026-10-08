@@ -6,6 +6,22 @@ enum BridgeProductBatchMode: String, Codable, Equatable, Sendable {
     case coverage
 }
 
+enum BridgeProductSnapshotCause: String, Codable, Equatable, Sendable {
+    case open
+    case requested
+    case recovery
+    case newerInput
+
+    func merging(_ other: Self) -> Self {
+        switch (self, other) {
+        case (.open, _), (_, .open): .open
+        case (.requested, _), (_, .requested): .requested
+        case (.recovery, _), (_, .recovery): .recovery
+        case (.newerInput, .newerInput): .newerInput
+        }
+    }
+}
+
 struct BridgeProductBatchFrameIdentity: Codable, Equatable, Sendable {
     private enum CodingKeys: String, CodingKey, CaseIterable {
         case batchId
@@ -184,6 +200,7 @@ struct BridgeProductBatchBeginFrame: Codable, Equatable, Sendable {
         case publicationId
         case requiresCollection
         case scope
+        case snapshotCause
         case targetRevision
     }
 
@@ -194,6 +211,7 @@ struct BridgeProductBatchBeginFrame: Codable, Equatable, Sendable {
     let publicationId: UUID?
     let requiresCollection: Int?
     let scope: BridgeProductJSONValue
+    let snapshotCause: BridgeProductSnapshotCause?
     let targetRevision: Int
 
     init(
@@ -204,8 +222,12 @@ struct BridgeProductBatchBeginFrame: Codable, Equatable, Sendable {
         publicationId: UUID? = nil,
         requiresCollection: Int?,
         scope: BridgeProductJSONValue,
+        snapshotCause: BridgeProductSnapshotCause?,
         targetRevision: Int
     ) throws {
+        guard (mode == .snapshot) == (snapshotCause != nil) else {
+            throw BridgeProductContractDecoding.invalidValue("Snapshot mode requires exactly one cause", codingPath: [])
+        }
         try BridgeProductContractDecoding.validateNonnegative(baseRevision, name: "baseRevision", codingPath: [])
         try BridgeProductContractDecoding.validateNonnegative(partCount, name: "partCount", codingPath: [])
         try BridgeProductContractDecoding.validateNonnegative(targetRevision, name: "targetRevision", codingPath: [])
@@ -230,6 +252,7 @@ struct BridgeProductBatchBeginFrame: Codable, Equatable, Sendable {
         self.publicationId = publicationId
         self.requiresCollection = requiresCollection
         self.scope = scope
+        self.snapshotCause = snapshotCause
         self.targetRevision = targetRevision
     }
 
@@ -251,6 +274,12 @@ struct BridgeProductBatchBeginFrame: Codable, Equatable, Sendable {
         identity = try BridgeProductBatchFrameIdentity(from: decoder)
         baseRevision = try container.decode(Int.self, forKey: .baseRevision)
         mode = try container.decode(BridgeProductBatchMode.self, forKey: .mode)
+        snapshotCause = try container.decodeIfPresent(BridgeProductSnapshotCause.self, forKey: .snapshotCause)
+        guard mode == .snapshot ? snapshotCause != nil : !container.contains(.snapshotCause) else {
+            throw BridgeProductContractDecoding.invalidValue(
+                "Snapshot mode requires exactly one cause", codingPath: decoder.codingPath
+            )
+        }
         partCount = try container.decode(Int.self, forKey: .partCount)
         publicationId = try container.decodeIfPresent(String.self, forKey: .publicationId).map {
             try BridgeProductReviewPublicationIdContract.decode($0, codingPath: decoder.codingPath)
@@ -305,6 +334,7 @@ struct BridgeProductBatchBeginFrame: Codable, Equatable, Sendable {
         try container.encode(baseRevision, forKey: .baseRevision)
         try container.encode("subscription.batchBegin", forKey: .kind)
         try container.encode(mode, forKey: .mode)
+        try container.encodeIfPresent(snapshotCause, forKey: .snapshotCause)
         try container.encode(partCount, forKey: .partCount)
         try container.encodeIfPresent(
             publicationId.map(BridgeProductReviewPublicationIdContract.encode), forKey: .publicationId)

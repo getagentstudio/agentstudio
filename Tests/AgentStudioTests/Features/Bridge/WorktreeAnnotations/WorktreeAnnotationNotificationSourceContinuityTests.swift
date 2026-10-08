@@ -36,12 +36,9 @@ struct WorktreeAnnotationCommentContinuityTests {
             of: RecordedCommentBatchDelivery.self,
             bufferingPolicy: .bufferingOldest(2)
         )
-        let firstProducer = Task {
-            try await harness.source.openBatch(handle: handle, producerID: firstProducerID) { batch, mode in
-                try await recordCommentBatchSeal(batch, in: harness.source, producerID: firstProducerID)
-                continuation.yield(.init(batch: batch, mode: mode))
-            }
-        }
+        let firstProducer = startRecordedCommentProducer(
+            source: harness.source, handle: handle, producerID: firstProducerID, deliveries: continuation
+        )
         var iterator = batches.makeAsyncIterator()
         let installed = try #require(await iterator.next())
         #expect(installed.mode == .snapshot)
@@ -90,12 +87,9 @@ struct WorktreeAnnotationCommentContinuityTests {
             scopeRevision: 1
         )
         let successorProducerID = UUIDv7.generate()
-        let successor = Task {
-            try await harness.source.openBatch(handle: handle, producerID: successorProducerID) { batch, mode in
-                try await recordCommentBatchSeal(batch, in: harness.source, producerID: successorProducerID)
-                continuation.yield(.init(batch: batch, mode: mode))
-            }
-        }
+        let successor = startRecordedCommentProducer(
+            source: harness.source, handle: handle, producerID: successorProducerID, deliveries: continuation
+        )
         let resumed = try #require(await iterator.next())
         try expectResumedBatchContinuesView(
             resumed,
@@ -156,10 +150,13 @@ struct WorktreeAnnotationCommentContinuityTests {
         )
         let firstProducerID = UUIDv7.generate()
         let firstProducer = Task {
-            try await source.openBatch(handle: handle, producerID: firstProducerID) { batch, mode in
-                try await recordCommentBatchSeal(batch, in: source, producerID: firstProducerID)
-                continuation.yield(.init(batch: batch, mode: mode))
-            }
+            try await source.openBatch(
+                handle: handle, producerID: firstProducerID, snapshotRequired: { false },
+                deliver: { batch, mode in
+                    try await recordCommentBatchSeal(batch, in: source, producerID: firstProducerID)
+                    continuation.yield(.init(batch: batch, mode: mode))
+                    return .completed
+                })
         }
         var iterator = batches.makeAsyncIterator()
         let installed = try #require(await iterator.next())
@@ -229,15 +226,18 @@ struct WorktreeAnnotationCommentContinuityTests {
         let recordDeliveryFact = deliveryFactSource.sink
         let successor = Task {
             do {
-                try await source.openBatch(handle: handle, producerID: successorProducerID) { batch, mode in
-                    try await recordCommentBatchSeal(batch, in: source, producerID: successorProducerID)
-                    let delivery = RecordedCommentBatchDelivery(
-                        batch: batch,
-                        mode: mode,
-                        producerID: successorProducerID
-                    )
-                    recordDeliveryFact(successorProducerID, .delivered(delivery))
-                }
+                try await source.openBatch(
+                    handle: handle, producerID: successorProducerID, snapshotRequired: { false },
+                    deliver: { batch, mode in
+                        try await recordCommentBatchSeal(batch, in: source, producerID: successorProducerID)
+                        let delivery = RecordedCommentBatchDelivery(
+                            batch: batch,
+                            mode: mode,
+                            producerID: successorProducerID
+                        )
+                        recordDeliveryFact(successorProducerID, .delivered(delivery))
+                        return .completed
+                    })
             } catch {
                 recordDeliveryFact(successorProducerID, .finished)
                 throw error
@@ -410,10 +410,13 @@ struct WorktreeAnnotationCommentContinuityTests {
             bufferingPolicy: .bufferingOldest(2)
         )
         let endedProducer = Task {
-            try await harness.source.openBatch(handle: handle, producerID: endedProducerID) { batch, mode in
-                try await recordCommentBatchSeal(batch, in: harness.source, producerID: endedProducerID)
-                continuation.yield(.init(batch: batch, mode: mode))
-            }
+            try await harness.source.openBatch(
+                handle: handle, producerID: endedProducerID, snapshotRequired: { false },
+                deliver: { batch, mode in
+                    try await recordCommentBatchSeal(batch, in: harness.source, producerID: endedProducerID)
+                    continuation.yield(.init(batch: batch, mode: mode))
+                    return .completed
+                })
         }
         var iterator = batches.makeAsyncIterator()
         let priorIncarnation = try #require(await iterator.next())
@@ -436,9 +439,12 @@ struct WorktreeAnnotationCommentContinuityTests {
             scopeRevision: 1
         )
         let replacementProducer = Task {
-            try await harness.source.openBatch(handle: newHandle, producerID: UUIDv7.generate()) { batch, mode in
-                continuation.yield(.init(batch: batch, mode: mode))
-            }
+            try await harness.source.openBatch(
+                handle: newHandle, producerID: UUIDv7.generate(), snapshotRequired: { false },
+                deliver: { batch, mode in
+                    continuation.yield(.init(batch: batch, mode: mode))
+                    return .completed
+                })
         }
         let newIncarnation = try #require(await iterator.next())
         #expect(newIncarnation.batch.handle == newHandle)
@@ -510,4 +516,20 @@ private func recordCommentBatchSeal(
     await source.recordSealedCommentCatalogBatch(
         handle: batch.handle, producerID: producerID, batch: batch
     )
+}
+
+private func startRecordedCommentProducer(
+    source: BridgePaneAnnotationNotificationSource, handle: String, producerID: UUID,
+    deliveries: AsyncStream<RecordedCommentBatchDelivery>.Continuation
+) -> Task<Void, any Error> {
+    Task {
+        try await source.openBatch(
+            handle: handle, producerID: producerID, snapshotRequired: { false },
+            deliver: { batch, mode in
+                try await recordCommentBatchSeal(batch, in: source, producerID: producerID)
+                deliveries.yield(.init(batch: batch, mode: mode))
+                return .completed
+            }
+        )
+    }
 }

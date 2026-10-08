@@ -58,7 +58,7 @@ struct BridgeProductViewDirtyKeyAccumulatorTests {
         _ = accumulator.recordChange(for: overflowing, scanGeneration: 1, recordKey: "c", revision: 3)
         _ = accumulator.recordChange(for: sibling, scanGeneration: 1, recordKey: "x", revision: 4)
 
-        #expect(accumulator.pending(for: overflowing) == .snapshotRequired)
+        #expect(accumulator.pending(for: overflowing) == .snapshotRequired(.newerInput))
         #expect(accumulator.pending(for: sibling) == .keys(["x": 4]))
     }
 

@@ -17,6 +17,7 @@ private struct BridgeProductLogicalViewDomain: Hashable {
 struct BridgeProductViewSenderState {
     private struct Emission {
         let batch: BridgeProductSealedViewBatch
+        let snapshotCause: BridgeProductSnapshotCause?
         var nextOrdinal = 0
     }
 
@@ -54,7 +55,7 @@ struct BridgeProductViewSenderState {
 
     mutating func advanceScanGeneration(for viewDomain: BridgeProductViewDomainKey, to generation: Int) -> Bool {
         guard dirtyKeys.advanceScanGeneration(for: viewDomain, to: generation) else { return false }
-        resnapshot(viewDomain)
+        resnapshot(viewDomain, cause: .newerInput)
         return true
     }
 
@@ -93,7 +94,18 @@ struct BridgeProductViewSenderState {
         guard emissionByViewDomain[batch.viewDomain] == nil else {
             throw BridgeProductViewSenderError.batchAlreadyActive
         }
-        emissionByViewDomain[batch.viewDomain] = .init(batch: batch)
+        let snapshotCause: BridgeProductSnapshotCause?
+        if batch.mode == .snapshot {
+            let pending = dirtyKeys.takePending(for: batch.viewDomain)
+            if case .snapshotRequired(let owedCause) = pending {
+                snapshotCause = owedCause
+            } else {
+                snapshotCause = .newerInput
+            }
+        } else {
+            snapshotCause = nil
+        }
+        emissionByViewDomain[batch.viewDomain] = .init(batch: batch, snapshotCause: snapshotCause)
         schedulingOrder.append(batch.viewDomain)
     }
 
@@ -124,7 +136,8 @@ struct BridgeProductViewSenderState {
             let frame = try emission.batch.frame(
                 atOrdinal: emission.nextOrdinal,
                 stream: stream,
-                streamSequence: streamSequence
+                streamSequence: streamSequence,
+                snapshotCause: emission.snapshotCause
             )
             if case .batch(.part(let partFrame)) = frame {
                 let byteCount = try BridgeProductMetadataFrameCodec.encode(frame).count
@@ -174,9 +187,9 @@ struct BridgeProductViewSenderState {
         credits.wasAlreadySatisfied(for: .view(viewDomain), handle: handle, through: deliverySequence)
     }
 
-    mutating func resnapshot(_ viewDomain: BridgeProductViewDomainKey) {
+    mutating func resnapshot(_ viewDomain: BridgeProductViewDomainKey, cause: BridgeProductSnapshotCause) {
         guard dirtyKeys.hasActiveIncarnation(viewDomain) else { return }
-        dirtyKeys.requireSnapshot(for: viewDomain)
+        dirtyKeys.requireSnapshot(for: viewDomain, cause: cause)
         let reservedThroughSequence = emissionByViewDomain[viewDomain].map { emission in
             emission.batch.firstDeliverySequence + emission.batch.parts.count - 1
         }

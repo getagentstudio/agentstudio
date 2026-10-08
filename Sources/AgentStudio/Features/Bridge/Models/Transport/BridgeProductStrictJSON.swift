@@ -24,6 +24,7 @@ enum BridgeProductStrictJSON {
     private static let productMemberVocabulary = BridgeProductStrictJSONMemberVocabulary(
         Set([
             "activeSubscriptions",
+            "snapshotCause",
             "activeSource",
             "activeTarget",
             "addedLineCount",

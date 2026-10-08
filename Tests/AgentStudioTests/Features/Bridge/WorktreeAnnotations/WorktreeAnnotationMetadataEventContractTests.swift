@@ -59,7 +59,8 @@ struct WorktreeAnnotationMetadataEventContractTests {
         )
         let decoder = try BridgeProductMetadataFrameDecoder()
         let frames = try (0..<sealed.frameCount).map { ordinal in
-            try sealed.frame(atOrdinal: ordinal, stream: stream, streamSequence: ordinal + 1)
+            try sealed.frame(
+                atOrdinal: ordinal, stream: stream, streamSequence: ordinal + 1, snapshotCause: .newerInput)
         }
         for frame in frames {
             #expect(try decoder.append(BridgeProductMetadataFrameCodec.encode(frame)) == [frame])

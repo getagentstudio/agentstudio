@@ -100,7 +100,8 @@ struct BridgeProductSealedViewBatch: Sendable {
     func frame(
         atOrdinal ordinal: Int,
         stream: BridgeProductMetadataStreamCorrelation,
-        streamSequence: Int
+        streamSequence: Int,
+        snapshotCause: BridgeProductSnapshotCause?
     ) throws -> BridgeProductMetadataFrame {
         guard (0..<frameCount).contains(ordinal) else {
             throw BridgeProductSealedViewBatchError.invalidFrameOrdinal
@@ -126,6 +127,7 @@ struct BridgeProductSealedViewBatch: Sendable {
                         publicationId: publicationId,
                         requiresCollection: requiresCollection,
                         scope: scope,
+                        snapshotCause: snapshotCause,
                         targetRevision: targetRevision
                     )))
         }

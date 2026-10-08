@@ -33,7 +33,7 @@ private struct BridgeProductViewDomainIdentity: Hashable {
 
 enum BridgeProductViewPendingChange: Equatable, Sendable {
     case keys([String: Int])
-    case snapshotRequired
+    case snapshotRequired(BridgeProductSnapshotCause)
 }
 
 /// Holds only the newest revision of each dirty key. Captures are taken before
@@ -73,7 +73,7 @@ struct BridgeProductViewDirtyKeyAccumulator {
             )
         }
         activeByViewDomain[identity] = (viewDomain.incarnation, scanGeneration)
-        pendingByViewDomain[viewDomain] = .snapshotRequired
+        pendingByViewDomain[viewDomain] = .snapshotRequired(.open)
     }
 
     mutating func advanceScanGeneration(for viewDomain: BridgeProductViewDomainKey, to scanGeneration: Int) -> Bool {
@@ -83,7 +83,7 @@ struct BridgeProductViewDirtyKeyAccumulator {
             scanGeneration > active.scanGeneration
         else { return false }
         activeByViewDomain[identity] = (viewDomain.incarnation, scanGeneration)
-        pendingByViewDomain[viewDomain] = .snapshotRequired
+        merge(.snapshotRequired(.newerInput), for: viewDomain)
         return true
     }
 
@@ -111,9 +111,9 @@ struct BridgeProductViewDirtyKeyAccumulator {
         return true
     }
 
-    mutating func requireSnapshot(for viewDomain: BridgeProductViewDomainKey) {
+    mutating func requireSnapshot(for viewDomain: BridgeProductViewDomainKey, cause: BridgeProductSnapshotCause) {
         guard hasActiveIncarnation(viewDomain) else { return }
-        pendingByViewDomain[viewDomain] = .snapshotRequired
+        merge(.snapshotRequired(cause), for: viewDomain)
     }
 
     mutating func takePending(
@@ -143,15 +143,17 @@ struct BridgeProductViewDirtyKeyAccumulator {
         for viewDomain: BridgeProductViewDomainKey
     ) {
         switch (pending(for: viewDomain), incoming) {
-        case (.snapshotRequired, _), (_, .snapshotRequired):
-            pendingByViewDomain[viewDomain] = .snapshotRequired
+        case (.snapshotRequired(let current), .snapshotRequired(let additional)):
+            pendingByViewDomain[viewDomain] = .snapshotRequired(current.merging(additional))
+        case (.snapshotRequired, .keys): break
+        case (.keys, .snapshotRequired): pendingByViewDomain[viewDomain] = incoming
         case (.keys(var current), .keys(let additional)):
             for (recordKey, revision) in additional {
                 current[recordKey] = max(current[recordKey] ?? revision, revision)
             }
             pendingByViewDomain[viewDomain] =
                 current.count > maximumDirtyKeysPerViewDomain
-                ? .snapshotRequired
+                ? .snapshotRequired(.newerInput)
                 : .keys(current)
         }
     }

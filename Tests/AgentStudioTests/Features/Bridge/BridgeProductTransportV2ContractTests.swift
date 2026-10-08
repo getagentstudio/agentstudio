@@ -6,6 +6,33 @@ import Testing
 
 @Suite("Bridge product v2 wire contracts")
 struct BridgeProductTransportV2ContractTests {
+    @Test("snapshot cause is required only on snapshot begins", arguments: ["missing", "change", "unknown"])
+    func snapshotCauseRejectsInvalidEnvelope(variant: String) throws {
+        let corpus = try fixtureJSONObject(
+            relativePath: "Tests/BridgeContractFixtures/valid/bridge-product-session-corpus.json"
+        )
+        let transport = try #require(corpus["transportV2"] as? [String: Any])
+        var frame = try #require(try fixtureArray(named: "batchFrames", in: transport).first)
+        frame["snapshotCause"] = "requested"
+        switch variant {
+        case "missing": frame.removeValue(forKey: "snapshotCause")
+        case "change": frame["mode"] = "change"
+        default: frame["snapshotCause"] = "not-a-cause"
+        }
+        #expect(decodingFails(BridgeProductBatchFrame.self, object: frame))
+    }
+
+    @Test("snapshot begins round-trip each native cause", arguments: ["open", "requested", "recovery", "newerInput"])
+    func snapshotCausesRoundTrip(cause: String) throws {
+        let corpus = try fixtureJSONObject(
+            relativePath: "Tests/BridgeContractFixtures/valid/bridge-product-session-corpus.json"
+        )
+        let transport = try #require(corpus["transportV2"] as? [String: Any])
+        var frame = try #require(try fixtureArray(named: "batchFrames", in: transport).first)
+        frame["snapshotCause"] = cause
+        _ = try decodeAndVerifyRoundTrips(BridgeProductBatchFrame.self, from: [frame])
+    }
+
     @Test("content acknowledgement carries a cumulative per-read sequence")
     func contentAcknowledgementCarriesCumulativeSequence() throws {
         let acknowledgement: [String: Any] = [
@@ -134,7 +161,7 @@ struct BridgeProductTransportV2ContractTests {
             BridgeProductBatchFrame.self,
             from: try fixtureArray(named: "batchFrames", in: transport)
         )
-        #expect(batches.count == 9)
+        #expect(batches.count == 12)
     }
 
     @Test("shared v2 invalid envelopes fail at the same structural boundary")
