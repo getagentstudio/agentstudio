@@ -289,7 +289,7 @@ package enum WorktreeActivityDocument: Codable, Sendable, Equatable {
 }
 
 package enum WorktreeEvidenceDispositionDocument: Codable, Sendable, Equatable {
-    case archived(path: String, files: Int)
+    case archived(path: String, files: Int, skippedSpecialFiles: [String])
     case partialCopy(path: String)
     case discarded
     case noEvidence
@@ -298,6 +298,7 @@ package enum WorktreeEvidenceDispositionDocument: Codable, Sendable, Equatable {
         case status
         case path
         case files
+        case skippedSpecialFiles
     }
 
     private enum Status: String, Codable {
@@ -313,7 +314,8 @@ package enum WorktreeEvidenceDispositionDocument: Codable, Sendable, Equatable {
         case .archived:
             self = .archived(
                 path: try container.decode(String.self, forKey: .path),
-                files: try container.decode(Int.self, forKey: .files)
+                files: try container.decode(Int.self, forKey: .files),
+                skippedSpecialFiles: try container.decode([String].self, forKey: .skippedSpecialFiles)
             )
         case .partialCopy:
             self = .partialCopy(path: try container.decode(String.self, forKey: .path))
@@ -327,10 +329,11 @@ package enum WorktreeEvidenceDispositionDocument: Codable, Sendable, Equatable {
     package func encode(to encoder: any Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
         switch self {
-        case .archived(let path, let files):
+        case .archived(let path, let files, let skippedSpecialFiles):
             try container.encode(Status.archived, forKey: .status)
             try container.encode(path, forKey: .path)
             try container.encode(files, forKey: .files)
+            try container.encode(skippedSpecialFiles, forKey: .skippedSpecialFiles)
         case .partialCopy(let path):
             try container.encode(Status.partialCopy, forKey: .status)
             try container.encode(path, forKey: .path)
