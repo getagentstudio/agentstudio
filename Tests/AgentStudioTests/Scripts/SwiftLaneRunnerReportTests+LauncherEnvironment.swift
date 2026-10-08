@@ -47,8 +47,10 @@ extension SwiftLaneRunnerReportTests {
             result = LaneScriptBashResult(exitCode: Int32(output.exitCode), output: output.stdout + output.stderr)
         }
         #expect(result.exitCode == 0, Comment(rawValue: result.output))
-        let expectedLock = fixtureDirectory.appending(path: "build/.swift-test-output.lock").resolvingSymlinksInPath()
-            .path
+        // realpath(3), like the script's `pwd -P`; resolvingSymlinksInPath strips /private from /private/var.
+        let buildDirectory = try #require(realpath(fixtureDirectory.appending(path: "build").path, nil))
+        defer { free(buildDirectory) }
+        let expectedLock = String(cString: buildDirectory) + "/.swift-test-output.lock"
         #expect(result.output.contains("LOCAL_LOCK=\(expectedLock)"))
         #expect(!result.output.contains("PARENT_LOCK_INHERITED"))
         #expect(!result.output.contains("PARENT_SCRIPT_INHERITED"))

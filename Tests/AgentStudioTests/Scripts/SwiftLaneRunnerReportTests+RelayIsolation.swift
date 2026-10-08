@@ -80,6 +80,10 @@ private let sharedRelayLockSchedulingFixture = #"""
     run_swift_with_timeout() {
       local watchdog_sample=progress watchdog_epoch=0 status=0
       if [ "$1" = 'failed invalid-byte probe' ]; then
+        # Open the handshake FIFOs read-write now: a FIFO opened O_RDWR returns
+        # at once, so no later blocking open() can fail with EINTR when a child
+        # exits under load. bash retries read(2) on EINTR, not a redirect open.
+        exec 7<>"$TQ14_ROOT/locked" 8<>"$TQ14_ROOT/released"
         /usr/bin/perl -MFcntl=:flock -e '
           my ($lock_path, $ready_path, $release_path, $released_path) = @ARGV;
           open my $lock, ">>", $lock_path or die $!;
@@ -94,7 +98,7 @@ private let sharedRelayLockSchedulingFixture = #"""
         ' "$TQ14_ROOT/live/.build-agent-1/.swift-test-output.lock" \
           "$TQ14_ROOT/locked" "$TQ14_ROOT/release" "$TQ14_ROOT/released" </dev/null >/dev/null 2>&1 &
         holder_pid=$!
-        IFS= read -r lock_state <"$TQ14_ROOT/locked"
+        IFS= read -r lock_state <&7
         [ "$lock_state" = LOCK_HELD ] || return 91
         printf 'ENCLOSING_LOCK_HELD\n' >&2
       fi
@@ -102,7 +106,7 @@ private let sharedRelayLockSchedulingFixture = #"""
       if [ -n "$holder_pid" ]; then
         printf 'PROBE_CLOSED=%s\n' "$status"
         if [ "$status" -eq 7 ]; then
-          IFS= read -r lock_state <"$TQ14_ROOT/released"
+          IFS= read -r lock_state <&8
           [ "$lock_state" = LOCK_RELEASED ] || return 92
         fi
         if [ "$status" -ne 7 ] && [ "$status" -ne 124 ]; then
@@ -142,7 +146,7 @@ private let sharedRelayLockSchedulingFixture = #"""
     }
     print_timeout_process_diagnostics() {
       local released_state leader_status=0
-      IFS= read -r released_state <"$TQ14_ROOT/released"
+      IFS= read -r released_state <&8
       [ "$released_state" = LOCK_RELEASED ] || return 95
       wait "$command_pid" || leader_status=$?
       printf 'LEADER_EXIT_BEFORE_DIAGNOSTICS=%s\n' "$leader_status" >&2
