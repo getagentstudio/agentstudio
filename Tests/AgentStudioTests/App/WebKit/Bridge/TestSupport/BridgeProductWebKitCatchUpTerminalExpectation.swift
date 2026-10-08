@@ -24,11 +24,15 @@ struct BridgeProductWebKitCatchUpTerminalExpectation: Sendable {
     let recorder: FactRecorder<BridgeProductWebKitCatchUpOperation, BridgeProductWebKitCatchUpFact>
 
     init(dirtyFact: BridgePaneRefreshDirtyFact?) {
-        batchSequence = dirtyFact?.latestBatchSequence ?? 0
         var dirtyLanes: Set<BridgePaneRefreshLane> = []
         if dirtyFact?.fileChangeset != nil || dirtyFact?.latestFileStatus != nil { dirtyLanes.insert(.file) }
         if dirtyFact?.requiresReviewRefresh == true { dirtyLanes.insert(.review) }
-        lanes = dirtyLanes
+        self.init(lanes: dirtyLanes, batchSequence: dirtyFact?.latestBatchSequence ?? 0)
+    }
+
+    init(lanes: Set<BridgePaneRefreshLane>, batchSequence: UInt64) {
+        self.batchSequence = batchSequence
+        self.lanes = lanes
         recorder = FactRecorder(
             vocabulary: .init(
                 describeScope: { "\($0.lane.rawValue) catch-up \($0.operationId)" },
@@ -63,7 +67,8 @@ struct BridgeProductWebKitCatchUpTerminalExpectation: Sendable {
 
     func describeUnsettledCatchUp(
         snapshot: BridgePaneRefreshAdmissionSnapshot,
-        reviewTaskPresent: Bool
+        reviewTaskPresent: Bool,
+        terminalResultsDescription: String
     ) -> String {
         let activePass =
             snapshot.activeRefreshPass.map {
@@ -77,6 +82,21 @@ struct BridgeProductWebKitCatchUpTerminalExpectation: Sendable {
             } ?? "nil"
         return "foreground catch-up did not settle (activity=\(snapshot.activity),"
             + "activeRefreshPass=\(activePass),dirtyFact=\(dirtyFact),"
-            + "activeReviewRefreshTaskPresent=\(reviewTaskPresent))"
+            + "activeReviewRefreshTaskPresent=\(reviewTaskPresent),terminals=[\(terminalResultsDescription)])"
+    }
+
+    func describeTerminalResults(
+        _ observations: [BridgeProductWebKitCatchUpTerminalObservation],
+        snapshot: BridgePaneRefreshAdmissionSnapshot,
+        reviewAttemptDescription: String
+    ) -> String {
+        observations.map { observation in
+            let nativeReason =
+                observation.operation.lane == .file
+                ? snapshot.fileRefreshFailure?.failureKind.rawValue ?? "none"
+                : reviewAttemptDescription
+            return "lane=\(observation.operation.lane.rawValue),operationId=\(observation.operation.operationId),"
+                + "result=\(observation.result),terminalReason=not-recorded,currentNativeReason=\(nativeReason)"
+        }.joined(separator: "; ")
     }
 }

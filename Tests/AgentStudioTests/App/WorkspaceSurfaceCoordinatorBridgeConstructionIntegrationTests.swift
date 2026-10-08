@@ -422,14 +422,21 @@ extension WebKitSerializedTests {
         @Test("one worktree freshness advance precedes invalidation fan-out to both panes")
         func freshnessAdvancesOnceBeforePaneFanOut() async throws {
             // Arrange
+            let terminalExpectation = BridgeProductWebKitCatchUpTerminalExpectation(
+                lanes: [.file, .review], batchSequence: 1)
+            let traceSink = BridgeNativeCatchUpTraceSink(expectation: terminalExpectation)
             let eventProbe = BridgeWorktreeProductConstructionEventProbe()
             let constructionCoordinator = BridgeWorktreeProductConstructionCoordinator(
                 eventSink: eventProbe.eventSink
             )
             let harness = makeBridgePaneActivityTestHarness(
+                traceRuntime: traceSink.makeRuntime(),
                 worktreeProductConstructionCoordinator: constructionCoordinator
             )
             let setup = try makeTwoPaneWorktreeSetup(in: harness)
+            // The real factory selects a Git Review provider; a directory alone
+            // fails that provider after reservation and leaves the dirty fact.
+            try await initializeBridgeReviewGitFixture(at: setup.worktree.path)
             enterForegroundNativeEnvironment(harness)
             let firstView = harness.coordinator.createBridgePaneView(
                 for: setup.firstPane,
@@ -486,6 +493,17 @@ extension WebKitSerializedTests {
             await gate.waitUntilStarted(count: 2)
             await gate.release(invocation: 2)
             let currentLease = try await currentAcquisition.value
+            let terminalObservations = try await terminalExpectation.wait()
+            await waitForActiveReviewRefreshTaskToFinish(secondView.controller)
+            await secondView.controller.worktreeRefreshDriver.awaitActiveFileOperations()
+            let allTerminalsSucceeded = terminalObservations.allSatisfy { $0.result == "success" }
+            let terminalResultsDescription = terminalExpectation.describeTerminalResults(
+                terminalObservations, snapshot: secondView.controller.refreshAdmissionCoordinator.diagnosticSnapshot,
+                reviewAttemptDescription: String(
+                    describing: secondView.controller.refreshAdmissionCoordinator.productPresentationSnapshot
+                        .reviewComparison?.attempt))
+            print("Bridge freshness fan-out terminals: \(terminalResultsDescription)")
+            #expect(allTerminalsSucceeded, Comment(rawValue: terminalResultsDescription))
 
             // Assert
             guard case .failure(let oldError) = oldResult else {
@@ -506,6 +524,8 @@ extension WebKitSerializedTests {
 
             await constructionCoordinator.release(currentLease)
             await harness.finish()
+            try await secondView.controller.telemetryRecorder?.drain()
+            try await traceSink.finish()
         }
 
         @Test("workspace shutdown closes and physically drains shared construction")
