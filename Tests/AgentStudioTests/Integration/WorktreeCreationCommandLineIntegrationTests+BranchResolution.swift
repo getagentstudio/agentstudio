@@ -414,13 +414,17 @@ extension WorktreeCreationCommandLineIntegrationTests {
         #expect(fromRemote.exit == 0, "\(fromRemote.output)")
         #expect(try fromRemote.created().start.commit == remoteTip)
 
-        // A malformed start is still refused, and a new branch still has the length cap.
+        // A malformed start is still refused, and a new branch name still gets the full check before the
+        // branch-use read: the length cap, and HEAD, which `git check-ref-format --branch` rejects.
         let malformed = await fixture.runNew("feature/short-bad", ["--from-branch", "release..bad"], json: true)
         #expect(malformed.exit == 1)
         #expect(try malformed.refused().reason == "startBranchNotFound")
         let tooLong = await fixture.runNew(localStart + "-new", json: true)
         #expect(tooLong.exit == 1)
         #expect(try tooLong.refused().reason == "invalidBranchName")
+        let head = await fixture.runNew("HEAD", json: true)
+        #expect(head.exit == 1)
+        #expect(try head.refused().reason == "invalidBranchName")
     }
 
     @Test("a branch taken by another worktree at the attach, after the fetch, still reports the fetch")

@@ -43,7 +43,8 @@ package struct WorktreeBranchName: Equatable, Hashable, Sendable {
         if let sequence = forbiddenSequences.first(where: text.contains) {
             return .containsForbiddenSequence(sequence)
         }
-        guard text != "@", !text.hasPrefix("-") else { return .invalidComponentBoundary }
+        // `--branch` rejects `HEAD` itself, though a lower-level ref may contain it.
+        guard text != "@", text != "HEAD", !text.hasPrefix("-") else { return .invalidComponentBoundary }
         let components = text.split(separator: "/", omittingEmptySubsequences: false)
         let hasInvalidComponent = components.contains { component in
             component.isEmpty || component.hasPrefix(".") || component.hasSuffix(".")

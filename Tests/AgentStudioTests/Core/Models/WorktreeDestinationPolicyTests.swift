@@ -33,6 +33,7 @@ struct WorktreeDestinationPolicyTests {
             BranchNameCase(text: "feat/.hidden", expected: .failure(.invalidComponentBoundary)),
             BranchNameCase(text: "name.lock", expected: .failure(.invalidComponentBoundary)),
             BranchNameCase(text: "@", expected: .failure(.invalidComponentBoundary)),
+            BranchNameCase(text: "HEAD", expected: .failure(.invalidComponentBoundary)),
         ]
     )
     func branchNameValidation(_ testCase: BranchNameCase) {
