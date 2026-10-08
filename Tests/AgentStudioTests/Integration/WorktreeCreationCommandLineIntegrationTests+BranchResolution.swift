@@ -330,6 +330,9 @@ extension WorktreeCreationCommandLineIntegrationTests {
         defer { fixture.destroy() }
         let destination = try fixture.destination(for: "feature/again")
         try await fixture.git("worktree", "add", "-b", "feature/again", destination.path)
+        // Origin has the branch too, so a fetch would leave refs/remotes/origin/feature/again behind.
+        try await fixture.advance("feature/again", file: "again.txt")
+        let before = try await fixture.observedState()
 
         let run = await fixture.runNew("feature/again", json: true)
         #expect(run.exit == 1)
@@ -338,6 +341,25 @@ extension WorktreeCreationCommandLineIntegrationTests {
         #expect(refusal.path.map(Self.realPath) == Self.realPath(destination.path))
         #expect(refusal.options?.first?.action == .command("cd <path>"))
         #expect(refusal.fetch == nil)
+        #expect(try await fixture.observedState() == before)
+        #expect(try await fixture.git("for-each-ref", "refs/remotes/origin/feature/again").isEmpty)
+    }
+
+    @Test("re-running new --no-fork for a branch already at its own sibling destination says where it is")
+    func refusesCheckoutOfBranchHeldAtItsOwnDestination() async throws {
+        let fixture = try await WorktreeCreationRemoteFixture.create(named: "new-checkout-held-at-destination")
+        defer { fixture.destroy() }
+        let destination = try fixture.destination(for: "feature/again")
+        try await fixture.git("worktree", "add", "-b", "feature/again", destination.path)
+        try await fixture.advance("feature/again", file: "again.txt")
+        let before = try await fixture.observedState()
+
+        let run = await fixture.runNew("feature/again", ["--no-fork"], json: false)
+
+        #expect(run.exit == 1)
+        #expect(run.line?.hasPrefix("refused: branchCheckedOut \(Self.realPath(destination.path))") == true)
+        #expect(try await fixture.observedState() == before)
+        #expect(try await fixture.git("for-each-ref", "refs/remotes/origin/feature/again").isEmpty)
     }
 
     @Test("a remote prefix wins over a same-named local branch, and a same-name start opens the existing branch")
@@ -406,23 +428,11 @@ extension WorktreeCreationCommandLineIntegrationTests {
         let fixture = try await WorktreeCreationRemoteFixture.create(named: "new-late-held")
         defer { fixture.destroy() }
         let tip = try await fixture.advance("feature/late", file: "late.txt")
-        let realClient = LibGit2AgentStudioGitLocalClient()
-        let snapshot = try #require(await realClient.worktrees(for: fixture.repository).first)
-        let identity = try await realClient.repositoryIdentity(for: fixture.repository)
-        let repository = try #require(identity.mainWorktreePath).standardizedFileURL
         let racer = fixture.folder.appending(path: "racer")
         // The SDK refuses at the attach when another worktree took the branch after resolution.
-        let client = WorktreeOperationClientStub(
-            startPath: repository, snapshot: snapshot, identity: identity, baseClient: realClient,
-            forkFailure: .branchCheckedOut(worktreePath: racer))
-        let runner = WorktreeOperationRunner(
-            client: client, remoteClient: SystemGitRemoteClient(configuration: .init(allowedProtocols: [.file])))
+        let client = try await fixture.stubClient(forkFailure: .branchCheckedOut(worktreePath: racer))
 
-        let outcome = await runner.run(
-            .create(
-                WorktreeCreateRequest(
-                    start: repository, branch: "feature/late", source: .mainWorktree, startBranch: nil,
-                    materialization: .copyOnWrite, fetchPolicy: .fetch)))
+        let outcome = await fixture.runCreate("feature/late", client: client)
 
         #expect(
             outcome
@@ -452,6 +462,67 @@ extension WorktreeCreationCommandLineIntegrationTests {
         let free = await fixture.runNew("feature/free", json: true)
         #expect(free.exit == 1)
         #expect(try free.refused().reason == "configInvalid")
+    }
+
+    @Test("a branch-use read that fails stops new before the fetch, with nothing changed")
+    func branchUseReadFailureFailsClosed() async throws {
+        let fixture = try await WorktreeCreationRemoteFixture.create(named: "new-branch-use-unreadable")
+        defer { fixture.destroy() }
+        // Origin has the branch, so a fetch would leave refs/remotes/origin/feature/unreadable behind.
+        try await fixture.advance("feature/unreadable", file: "unreadable.txt")
+        // Stands in for the SDK's non-ENOENT read of a worktree's administration (no search permission, an
+        // I/O error), which throws rather than report the branch free.
+        let client = try await fixture.stubClient(
+            branchUseFailure: .unsupported(message: "worktree administration is unreadable"))
+        let before = try await fixture.observedState()
+
+        let outcome = await fixture.runCreate("feature/unreadable", client: client)
+
+        // The failure carries no creation fetch: none ran.
+        #expect(outcome == .failed(WorktreeOperationFailure(failure: .readFailed(.unsupported), leftovers: .notNeeded)))
+        #expect(!FileManager.default.fileExists(atPath: try fixture.destination(for: "feature/unreadable").path))
+        #expect(try await fixture.observedState() == before)
+    }
+
+    @Test("a branch deleted between resolution and the fork refuses branchMoved through the real SDK")
+    func branchDeletedBeforeTheForkRefusesBranchMoved() async throws {
+        let fixture = try await WorktreeCreationRemoteFixture.create(named: "new-branch-gone")
+        defer { fixture.destroy() }
+        try await fixture.git("branch", "feature/gone", "main")
+        let repository = fixture.repository
+        let realClient = LibGit2AgentStudioGitLocalClient()
+        // Another process deletes the branch after `new` resolved it as existing, just before the SDK forks.
+        let client = try await fixture.stubClient(forkHandler: { request in
+            do {
+                try await WorktreeCreationRemoteFixture.git(repository, "branch", "-D", "feature/gone")
+            } catch {
+                Issue.record("deleting feature/gone before the fork failed: \(error)")
+            }
+            do throws(GitWorktreeForkError) {
+                return .success(try await realClient.forkWorktree(request))
+            } catch {
+                return .failure(error)
+            }
+        })
+        let before = try await fixture.observedState()
+
+        let outcome = await fixture.runCreate("feature/gone", client: client)
+
+        #expect(
+            outcome
+                == .refused(
+                    .creationStopped(.branchMoved),
+                    creationFetch: .notOnRemote(remoteName: "origin", branchName: "feature/gone")))
+        let json = try WorktreeCommandLineFormatter.format(outcome: outcome, usesJSONOutput: true)
+        let refusal = try JSONDecoder().decode(
+            WorktreeCreationCommandLineDocuments.RefusedDocument.self, from: Data(json.text.utf8))
+        #expect(refusal.reason == "branchMoved")
+        #expect(refusal.options?.first?.action == .command("retry"))
+        let human = try WorktreeCommandLineFormatter.format(outcome: outcome, usesJSONOutput: false)
+        #expect(human.text.hasSuffix("\nfetch: notOnRemote origin/feature/gone"))
+        #expect(!FileManager.default.fileExists(atPath: try fixture.destination(for: "feature/gone").path))
+        #expect(try await fixture.observedState().folderEntries == before.folderEntries)
+        #expect(try await fixture.git("for-each-ref", "refs/heads/feature/gone").isEmpty)
     }
 
     static func realPath(_ path: String) -> String {

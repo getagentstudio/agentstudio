@@ -102,6 +102,43 @@ struct WorktreeCreationRemoteFixture {
         return WorktreeCreationRun(exit: exit, output: probe.outputSnapshot(), errors: probe.errorSnapshot())
     }
 
+    /// A client stub over the real SDK client for the repository, replacing only what a test passes: a
+    /// branch-use read error, the error every fork throws, or the fork itself.
+    func stubClient(
+        branchUseFailure: GitDataPlaneError? = nil,
+        forkFailure: GitWorktreeForkError = .rejected(reason: .clientCapabilityUnavailable),
+        forkHandler: (
+            @Sendable (GitForkWorktreeRequest) async -> Result<GitForkWorktreeResult, GitWorktreeForkError>
+        )? = nil
+    ) async throws -> WorktreeOperationClientStub {
+        let realClient = LibGit2AgentStudioGitLocalClient()
+        let snapshot = try #require(await realClient.worktrees(for: repository).first)
+        let identity = try await realClient.repositoryIdentity(for: repository)
+        let mainWorktree = try #require(identity.mainWorktreePath).standardizedFileURL
+        return WorktreeOperationClientStub(
+            startPath: mainWorktree, snapshot: snapshot, identity: identity, baseClient: realClient,
+            forkFailure: forkFailure, branchUseFailure: branchUseFailure, forkHandler: forkHandler)
+    }
+
+    /// `new <branch>` from the main worktree through the runner instead of the command line, so the client
+    /// can be a stub. The fetch runs, over the `file` transport as in `runNew`.
+    func runCreate(_ branch: String, client: WorktreeOperationClientStub) async -> WorktreeOperationOutcome {
+        let runner = WorktreeOperationRunner(
+            client: client, remoteClient: SystemGitRemoteClient(configuration: .init(allowedProtocols: [.file])))
+        return await runner.run(
+            .create(
+                WorktreeCreateRequest(
+                    start: client.startPath, branch: branch, source: .mainWorktree, startBranch: nil,
+                    materialization: .copyOnWrite, fetchPolicy: .fetch)))
+    }
+
+    /// Every ref with its target, and the folder's entries, where any created destination would appear.
+    func observedState() async throws -> WorktreeCreationFixtureState {
+        WorktreeCreationFixtureState(
+            references: try await git("for-each-ref", "--format=%(refname) %(objectname)"),
+            folderEntries: try FileManager.default.contentsOfDirectory(atPath: folder.path).sorted())
+    }
+
     @discardableResult
     func git(_ arguments: String...) async throws -> String {
         try await worktreeCreationGit(at: repository, arguments: arguments)
@@ -122,6 +159,12 @@ struct WorktreeCreationRemoteFixture {
         try await git(directory, "config", "commit.gpgsign", "false")
         try await git(directory, "config", "tag.gpgsign", "false")
     }
+}
+
+/// What a refused or failed `new` must leave exactly as it found it.
+struct WorktreeCreationFixtureState: Equatable {
+    let references: String
+    let folderEntries: [String]
 }
 
 /// One `new` run through the real command line.
