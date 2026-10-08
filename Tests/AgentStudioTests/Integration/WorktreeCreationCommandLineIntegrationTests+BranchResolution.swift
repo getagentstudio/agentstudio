@@ -270,6 +270,21 @@ extension WorktreeCreationCommandLineIntegrationTests {
         #expect(
             refusal.fetch
                 == .init(remote: "origin", branch: "release/local", status: "notOnRemote", commit: nil, reason: nil))
+
+        // The fetch succeeded before the refusal, so the refusal reports the fetched commit (LR30).
+        try await fixture.git("branch", "feature/taken-fetched")
+        let takenAfterFetch = await fixture.runNew(
+            "feature/taken-fetched", ["--from-branch", "release/origin"], json: true)
+        #expect(takenAfterFetch.exit == 1)
+        let fetchedRefusal = try takenAfterFetch.refused()
+        #expect(fetchedRefusal.reason == "branchAlreadyExists")
+        #expect(
+            fetchedRefusal.fetch
+                == .init(
+                    remote: "origin", branch: "release/origin", status: "fetched", commit: originOnlyTip, reason: nil))
+        let fetchedHuman = await fixture.runNew(
+            "feature/taken-fetched", ["--from-branch", "release/origin"], json: false)
+        #expect(fetchedHuman.line?.hasSuffix("\nfetch: fetched origin/release/origin \(originOnlyTip)") == true)
     }
 
     @Test("a same-name --from-branch takes the existing-branch steps with that start's remote")
