@@ -612,8 +612,11 @@ if [ -d "$slot_directory" ]; then
   find "$slot_directory" -mindepth 1 -maxdepth 1 ! -name .slot.lock ! -name .slot.holder \
     ! -name '.slot.ready.*' ! -name '.slot.hold.*' -exec rm -rf {} +
 fi
+# .build-ci belongs to CI, which builds there without this worktree's slot
+# (scripts/swift-build-slot.sh), so the slot cannot protect it from this delete.
 for build_directory in .build .build-*; do
   [ "$build_directory" = "$slot_directory" ] && continue
+  [ "$build_directory" = .build-ci ] && continue
   rm -rf "$build_directory"
 done
 rm -rf AgentStudio.app

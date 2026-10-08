@@ -318,12 +318,17 @@ struct SwiftBuildSlotScriptTests {
             FileManager.default.fileExists(atPath: fixture.rootURL.appending(path: ".build-agent-1/.slot.lock").path))
     }
 
-    @Test("clean-artifacts refuses a held slot, and holds a free slot for its delete while keeping its lock")
+    @Test("clean-artifacts refuses a held slot, cleans a free one under its kept lock, and leaves .build-ci")
     func cleanArtifactsRefusesHeldSlot() async throws {
         let fixture = try SwiftBuildSlotFixture()
         let slotBuildDatabase = fixture.rootURL.appending(path: ".build-agent-1/build.db")
         let indexBuildDirectory = fixture.rootURL.appending(path: ".build/index-build")
         try FileManager.default.createDirectory(at: indexBuildDirectory, withIntermediateDirectories: true)
+        // CI builds in .build-ci without the local slot, so a clean must leave it alone.
+        let continuousIntegrationBuildDatabase = fixture.rootURL.appending(path: ".build-ci/build.db")
+        try FileManager.default.createDirectory(
+            at: continuousIntegrationBuildDatabase.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try Data().write(to: continuousIntegrationBuildDatabase)
         try FileManager.default.createDirectory(
             at: slotBuildDatabase.deletingLastPathComponent(), withIntermediateDirectories: true)
         try Data().write(to: slotBuildDatabase)
@@ -376,6 +381,7 @@ struct SwiftBuildSlotScriptTests {
         #expect(!FileManager.default.fileExists(atPath: slotBuildDatabase.path))
         #expect(FileManager.default.fileExists(atPath: startingBuildHoldChannel.path))
         #expect(!FileManager.default.fileExists(atPath: fixture.rootURL.appending(path: ".build").path))
+        #expect(FileManager.default.fileExists(atPath: continuousIntegrationBuildDatabase.path))
     }
 
     @Test("a holder killed with SIGKILL frees its slot through the kernel")
