@@ -1,3 +1,9 @@
+import {
+	actEvent,
+	queryPierreElements,
+	waitForPierreCondition,
+} from './worktree-annotation-click-admission-render.browser.test-support.js';
+
 export function dispatchPointer(
 	target: EventTarget,
 	type: 'pointerdown' | 'pointermove' | 'pointerup',
@@ -39,4 +45,90 @@ export function pointerAt(bounds: DOMRect, pointerId: number): PointerEventInit 
 		pointerId,
 		pointerType: 'mouse',
 	};
+}
+export function requirePierreElement(selector: string, message: string): HTMLElement {
+	const element = queryPierreElements(selector)[0];
+	if (!(element instanceof HTMLElement)) throw new Error(message);
+	return element;
+}
+
+export async function waitForSinglePierreUtility(signal?: AbortSignal): Promise<HTMLElement> {
+	await waitForPierreCondition(
+		(): boolean => queryPierreElements('[data-utility-button]').length === 1,
+		signal,
+	);
+	return requirePierreElement('[data-utility-button]', 'Expected one Pierre utility.');
+}
+
+export function pierreRowSelector(row: HTMLElement): string {
+	const lineNumber = row.getAttribute('data-column-number');
+	const lineType = row.getAttribute('data-line-type');
+	const side = row.closest('[data-additions]') !== null ? 'additions' : 'deletions';
+	if (lineNumber === null || lineType === null) throw new Error('Expected a Pierre row identity.');
+	return `[data-${side}] [data-column-number="${CSS.escape(lineNumber)}"][data-line-type="${CSS.escape(lineType)}"]`;
+}
+
+export async function hoverAndClickUtility(props: {
+	readonly resolveRow: () => HTMLElement;
+	readonly isRowReady: (row: HTMLElement) => boolean;
+	readonly pointerId: number;
+	readonly onHoverDispatched: (row: HTMLElement) => void;
+	readonly signal?: AbortSignal;
+	readonly reportWait?: (kind: string) => void;
+}): Promise<void> {
+	props.reportWait?.('hover pointermove act');
+	await actEvent((): void => {
+		// Reconciliation may retire the pre across any preceding await. Resolve and
+		// validate the current pointer target without yielding before dispatch.
+		const currentRow = props.resolveRow();
+		if (!currentRow.isConnected || !props.isRowReady(currentRow)) {
+			throw new Error(
+				`Pierre hover ${props.pointerId} target is detached or its current setup is not ready.`,
+			);
+		}
+		dispatchPointer(
+			currentRow,
+			'pointermove',
+			pointerAt(currentRow.getBoundingClientRect(), props.pointerId),
+		);
+		props.onHoverDispatched(currentRow);
+	});
+	props.reportWait?.('gutter utility appearance');
+	await waitForSinglePierreUtility(props.signal);
+	await clickCurrentUtility(props.pointerId + 1, props.reportWait);
+	props.reportWait?.('idle');
+}
+
+export async function clickCurrentUtility(
+	pointerId: number,
+	reportWait?: (kind: string) => void,
+): Promise<{
+	readonly utilityPointerDownHit: PointerHitProbe;
+	readonly utilityPointerUpHit: PointerHitProbe;
+}> {
+	const utility = requirePierreElement(
+		'[data-utility-button]',
+		'Expected Pierre to expose one gutter utility.',
+	);
+	const bounds = utility.getBoundingClientRect();
+	const utilityPointerDownHit = pointerHitProbe(utility, bounds);
+	reportWait?.('utility pointerdown act');
+	await actEvent((): void => {
+		dispatchPointer(utility, 'pointerdown', pointerAt(bounds, pointerId));
+	});
+	const utilityAfterPointerDownPublication = requirePierreElement(
+		'[data-utility-button]',
+		'Expected Pierre to retain its gutter utility after pointerdown publication.',
+	);
+	const finalBounds = utilityAfterPointerDownPublication.getBoundingClientRect();
+	const utilityPointerUpHit = pointerHitProbe(utilityAfterPointerDownPublication, finalBounds);
+	reportWait?.('utility pointerup act');
+	await actEvent((): void => {
+		dispatchPointer(
+			utilityAfterPointerDownPublication,
+			'pointerup',
+			pointerAt(finalBounds, pointerId),
+		);
+	});
+	return { utilityPointerDownHit, utilityPointerUpHit };
 }

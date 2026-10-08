@@ -1,39 +1,32 @@
+import { CodeView, InteractionManager, type CodeViewLineSelection } from '@pierre/diffs';
+import { afterEach, describe, expect, onTestFailed, test, vi, type MockInstance } from 'vitest';
+import { cleanup } from 'vitest-browser-react';
+
 import {
-	CodeView,
-	InteractionManager,
-	parseDiffFromFile,
-	type CodeViewCoordinator,
-	type CodeViewLineSelection,
-	type CodeViewOptions,
-	type SelectedLineRange,
-} from '@pierre/diffs';
-import { afterEach, describe, expect, test, vi, type MockInstance } from 'vitest';
-import { cleanup, render } from 'vitest-browser-react';
+	createClickAdmissionReviewHarness,
+	type ClickAdmissionReviewHarness,
+} from '../review-viewer/code-view/worktree-annotation-click-admission.browser.test-support.js';
+import {
+	completeCleanup,
+	runWithOwnedCleanup,
+} from './worktree-annotation-click-admission-cleanup.browser.test-support.js';
 
 // oxlint-disable-next-line import/no-unassigned-import -- Browser Mode must load production app CSS.
 import '../app/bridge-app.css';
-import { createBridgeMainRenderFulfillmentCoordinator } from '../core/comm-worker/bridge-main-render-fulfillment-coordinator.js';
-import type { BridgeMainCodeViewItem } from '../core/comm-worker/bridge-main-render-snapshot-store.js';
-import { makeBridgeReviewPackage } from '../foundation/review-package/bridge-review-package-test-support.js';
-import { BridgeCodeViewPanel } from '../review-viewer/code-view/bridge-code-view-panel.js';
-import { buildBridgeReviewProjection } from '../review-viewer/navigation/review-projection.js';
-import { RecordingAnnotationBrowserSurface } from './worktree-annotation-browser-test-support.js';
 import {
 	dispatchPointer,
+	requirePierreElement,
+	waitForSinglePierreUtility,
+	clickCurrentUtility,
 	pointerAt,
 	pointerHitProbe,
 	type PointerHitProbe,
 } from './worktree-annotation-click-admission-pointer.browser.test-support.js';
 import {
-	PierreSlotPublicationFacts,
 	actEvent,
 	observeTestFrameWait,
 	proveHeldProductFrameIsolation,
-	queryPierreElements,
-	waitForPierreCondition,
 } from './worktree-annotation-click-admission-render.browser.test-support.js';
-import { PierreInteractionSetupFacts } from './worktree-annotation-click-admission-setup.browser.test-support.js';
-import { WorktreeAnnotationSurfaceProvider } from './worktree-annotation-surface-provider.js';
 
 const metadataPublicationOwner = vi.hoisted(() => ({
 	publish: undefined as ((callback: () => void) => void) | undefined,
@@ -67,48 +60,182 @@ vi.mock(
 	},
 );
 
-const composerSelector = '[aria-label="Write an annotation in Markdown"]';
+const ownedHarnessDisposers = new Set<() => Promise<void>>();
 
-interface RecordedGutterAdmission {
-	readonly range: SelectedLineRange;
-}
-
-function recordGutterAdmissions(
-	options: CodeViewOptions<undefined>,
-	recordings: RecordedGutterAdmission[],
-): CodeViewOptions<undefined> {
-	const onGutterUtilityClick = options.onGutterUtilityClick;
-	return {
-		...options,
-		onGutterUtilityClick: (range, context): void => {
-			recordings.push({ range: { ...range } });
-			if (context.type === 'file') onGutterUtilityClick?.(range, context);
-			else onGutterUtilityClick?.(range, context);
+async function renderReviewHarness(
+	holdInteractionSetup = false,
+	beforeRender?: () => void,
+	afterSetupBeforeHover?: (codeView: CodeView) => void,
+): Promise<ClickAdmissionReviewHarness> {
+	return await createClickAdmissionReviewHarness({
+		holdInteractionSetup,
+		beforeRender,
+		afterSetupBeforeHover,
+		metadataPublicationOwner,
+		registerFailureDiagnostic: (readSnapshot): void => {
+			onTestFailed((context): void => {
+				console.info(`GO17 pending-owner snapshot: ${context.task.name}`, readSnapshot());
+			});
 		},
-	};
+		registerCleanup: (dispose): (() => void) => {
+			ownedHarnessDisposers.add(dispose);
+			return (): void => {
+				ownedHarnessDisposers.delete(dispose);
+			};
+		},
+	});
 }
 
-function requirePierreElement(selector: string, message: string): HTMLElement {
-	const element = queryPierreElements(selector)[0];
-	if (!(element instanceof HTMLElement)) throw new Error(message);
-	return element;
-}
-
-async function waitForSinglePierreUtility(): Promise<HTMLElement> {
-	await waitForPierreCondition(
-		(): boolean => queryPierreElements('[data-utility-button]').length === 1,
-	);
-	return requirePierreElement('[data-utility-button]', 'Expected one Pierre utility.');
-}
+const composerSelector = '[aria-label="Write an annotation in Markdown"]';
 
 describe('worktree annotation click admission through Pierre pointers', () => {
 	afterEach(async (): Promise<void> => {
-		await cleanup();
+		await completeCleanup([...ownedHarnessDisposers, cleanup]);
+	});
+
+	test('dispatches a context hover on the current row after setup-boundary replacement', async () => {
+		let retiredRow: HTMLElement | undefined;
+		const harness = await renderReviewHarness(false, undefined, (codeView): void => {
+			const item = codeView.getItem('item-source');
+			if (item === undefined) throw new Error('Expected the real Review item before replacement.');
+			codeView.setItems([]);
+			codeView.setItems([item]);
+			codeView.render(true);
+			expect(retiredRow?.isConnected).toBe(false);
+		});
+		let hoverSettlement: Promise<void> | undefined;
+		await runWithOwnedCleanup(
+			async (): Promise<void> => {
+				retiredRow = requirePierreElement(
+					'[data-additions] [data-column-number="3"][data-line-type="context"]',
+					'Expected the context row before replacement.',
+				);
+				const hover = harness.hoverAndClickUtility(retiredRow, 403);
+				hoverSettlement = hover.catch((): void => {});
+				const firstHoverAction = await Promise.race([
+					harness.interactionSetup.hoverDispatched,
+					hover.then((): never => {
+						throw new Error('Hover completed without its owner fact.');
+					}),
+				]);
+				expect(firstHoverAction).toBe('pointerMoveAfterSetup');
+				await hover;
+				await harness.waitForComposer(true);
+				expect(harness.gutterAdmissions).toEqual([
+					{ range: { start: 3, end: 3, side: 'additions' } },
+				]);
+				expect(document.querySelector(composerSelector)).not.toBeNull();
+			},
+			async (): Promise<void> => {
+				await completeCleanup([
+					harness.dispose,
+					async (): Promise<void> => {
+						await hoverSettlement;
+					},
+				]);
+			},
+		);
+	});
+
+	test('restores harness patches after setup rejects and a later harness admits', async () => {
+		const originals = captureHarnessOriginals();
+		const setupFailure = new Error('Controlled click-admission setup failure.');
+		await runWithOwnedCleanup(
+			async (): Promise<void> => {
+				await expect(
+					renderReviewHarness(false, (): void => {
+						throw setupFailure;
+					}),
+				).rejects.toBe(setupFailure);
+				originals.assertRestored();
+			},
+			async (): Promise<void> => {
+				// Contain the pre-fix red; the assertions above still require owner restoration.
+				try {
+					await cleanup();
+				} finally {
+					originals.restore();
+				}
+			},
+		);
+		await proveLaterHarnessAdmission();
+	});
+
+	test('preserves body and publication failures while restoring prototypes and frame spies', async () => {
+		const originals = captureHarnessOriginals();
+		const bodyFailure = new Error('Controlled click-admission body failure.');
+		const publicationFailure = new Error('Controlled click-admission publication failure.');
+		const harness = await renderReviewHarness();
+		await runWithOwnedCleanup(
+			async (): Promise<void> => {
+				let caughtFailure: unknown;
+				try {
+					await proveHeldProductFrameIsolation({
+						prepareUtility: async (): Promise<void> => {},
+						clickUtility: async (): Promise<void> => {
+							throw bodyFailure;
+						},
+						waitForComposer: (): Promise<void> => harness.waitForComposer(true),
+						dispose: async (): Promise<void> => {
+							harness.publishForProof((): void => {
+								throw publicationFailure;
+							});
+							await harness.dispose();
+						},
+					});
+				} catch (error) {
+					caughtFailure = error;
+				}
+				expect.soft(caughtFailure).toBeInstanceOf(AggregateError);
+				if (caughtFailure instanceof AggregateError) {
+					expect.soft(caughtFailure.errors).toContain(bodyFailure);
+					expect.soft(caughtFailure.errors).toContain(publicationFailure);
+				}
+				originals.assertRestored();
+			},
+			async (): Promise<void> => {
+				try {
+					await cleanup();
+				} finally {
+					originals.restore();
+				}
+			},
+		);
+		await proveLaterHarnessAdmission();
+	});
+
+	test('owns preparation failure cleanup before installing the held-frame spies', async () => {
+		const originals = captureHarnessOriginals();
+		const preparationFailure = new Error('Controlled click-admission preparation failure.');
+		const harness = await renderReviewHarness();
+		await runWithOwnedCleanup(
+			async (): Promise<void> => {
+				await expect(
+					proveHeldProductFrameIsolation({
+						prepareUtility: async (): Promise<void> => {
+							throw preparationFailure;
+						},
+						clickUtility: async (): Promise<void> => {},
+						waitForComposer: (): Promise<void> => harness.waitForComposer(true),
+						dispose: (): Promise<void> => harness.dispose(),
+					}),
+				).rejects.toBe(preparationFailure);
+				originals.assertRestored();
+			},
+			async (): Promise<void> => {
+				try {
+					await cleanup();
+				} finally {
+					originals.restore();
+				}
+			},
+		);
+		await proveLaterHarnessAdmission();
 	});
 
 	test('admits a right-side context-to-addition range on the first plus pointer cycle', async () => {
 		const harness = await renderReviewHarness();
-		try {
+		await runWithOwnedCleanup(async (): Promise<void> => {
 			// Selection reveal/programmatic scroll must not black out the next pointer gesture.
 			await actEvent((): void => {
 				harness.codeView.scrollTo({ type: 'position', position: 0, behavior: 'instant' });
@@ -140,14 +267,12 @@ describe('worktree annotation click admission through Pierre pointers', () => {
 			]);
 			await harness.waitForComposer(true);
 			expect(document.querySelector(composerSelector)).not.toBeNull();
-		} finally {
-			await harness.dispose();
-		}
+		}, harness.dispose);
 	});
 
 	test('admits a left-side context-to-deletion range on the first plus pointer cycle', async () => {
 		const harness = await renderReviewHarness();
-		try {
+		await runWithOwnedCleanup(async (): Promise<void> => {
 			await dragRangeAndClickFirstUtility(
 				'[data-deletions] [data-column-number="1"][data-line-type="context"]',
 				'[data-deletions] [data-column-number="2"][data-line-type="change-deletion"]',
@@ -161,14 +286,12 @@ describe('worktree annotation click admission through Pierre pointers', () => {
 			]);
 			await harness.waitForComposer(true);
 			expect(document.querySelector(composerSelector)).not.toBeNull();
-		} finally {
-			await harness.dispose();
-		}
+		}, harness.dispose);
 	});
 
 	test('admits a backward right-side addition-to-context range on the first plus pointer cycle', async () => {
 		const harness = await renderReviewHarness();
-		try {
+		await runWithOwnedCleanup(async (): Promise<void> => {
 			await dragRangeAndClickFirstUtility(
 				'[data-additions] [data-column-number="2"][data-line-type="change-addition"]',
 				'[data-additions] [data-column-number="1"][data-line-type="context"]',
@@ -182,14 +305,12 @@ describe('worktree annotation click admission through Pierre pointers', () => {
 			]);
 			await harness.waitForComposer(true);
 			expect(document.querySelector(composerSelector)).not.toBeNull();
-		} finally {
-			await harness.dispose();
-		}
+		}, harness.dispose);
 	});
 
 	test('keeps repeated same-range and later new-range plus clicks admissible', async () => {
 		const harness = await renderReviewHarness();
-		try {
+		await runWithOwnedCleanup(async (): Promise<void> => {
 			const additionRow = requirePierreElement(
 				'[data-additions] [data-column-number="2"][data-line-type="change-addition"]',
 				'Expected a right-side addition gutter row.',
@@ -198,10 +319,11 @@ describe('worktree annotation click admission through Pierre pointers', () => {
 			await harness.waitForComposer(true);
 			expect(document.querySelector(composerSelector)).not.toBeNull();
 
-			await clickCurrentUtility(402);
+			await clickCurrentUtility(402, harness.recordPendingWait);
 			await harness.waitForComposer(true);
 			expect(document.querySelectorAll(composerSelector)).toHaveLength(1);
 
+			harness.recordPendingWait('Escape dispatch');
 			await dismissComposer();
 			await harness.waitForComposer(false);
 			expect(document.querySelector(composerSelector)).toBeNull();
@@ -219,9 +341,7 @@ describe('worktree annotation click admission through Pierre pointers', () => {
 			]);
 			await harness.waitForComposer(true);
 			expect(document.querySelector(composerSelector)).not.toBeNull();
-		} finally {
-			await harness.dispose();
-		}
+		}, harness.dispose);
 	});
 
 	test('joins Escape dismissal without waiting for frame delivery', async () => {
@@ -235,47 +355,58 @@ describe('worktree annotation click admission through Pierre pointers', () => {
 		const requestFrame = globalThis.requestAnimationFrame.bind(globalThis);
 		let dismissal: Promise<void> | undefined;
 		let frameSpy: MockInstance<typeof requestAnimationFrame> | undefined;
-		try {
-			const row = requirePierreElement(
-				'[data-additions] [data-column-number="2"][data-line-type="change-addition"]',
-				'Expected an addition row before testing dismissal.',
-			);
-			await harness.hoverAndClickUtility(row, 601);
-			await harness.waitForComposer(true);
-			expect(document.querySelector(composerSelector)).not.toBeNull();
-			frameSpy = vi
-				.spyOn(globalThis, 'requestAnimationFrame')
-				.mockImplementation((callback: FrameRequestCallback): number => {
-					if (!holdingTestFrame) return requestFrame(callback);
-					holdingTestFrame = false;
-					heldFrames.push(callback);
-					return heldFrames.length;
+		await runWithOwnedCleanup(
+			async (): Promise<void> => {
+				const row = requirePierreElement(
+					'[data-additions] [data-column-number="2"][data-line-type="change-addition"]',
+					'Expected an addition row before testing dismissal.',
+				);
+				await harness.hoverAndClickUtility(row, 601);
+				await harness.waitForComposer(true);
+				expect(document.querySelector(composerSelector)).not.toBeNull();
+				frameSpy = vi
+					.spyOn(globalThis, 'requestAnimationFrame')
+					.mockImplementation((callback: FrameRequestCallback): number => {
+						if (!holdingTestFrame) return requestFrame(callback);
+						holdingTestFrame = false;
+						heldFrames.push(callback);
+						return heldFrames.length;
+					});
+				observeTestFrameWait((): void => {
+					holdingTestFrame = true;
+					announceFrame?.();
 				});
-			observeTestFrameWait((): void => {
-				holdingTestFrame = true;
-				announceFrame?.();
-			});
-			dismissal = dismissComposer();
-			const outcome = await Promise.race([
-				dismissal.then((): 'dismissed' => 'dismissed'),
-				frameRequested,
-			]);
-			expect(outcome, 'Escape publication must complete without an unrelated frame.').toBe(
-				'dismissed',
-			);
-			await harness.waitForComposer(false);
-			expect(document.querySelector(composerSelector)).toBeNull();
-		} finally {
-			// Release and join the held act even when the regression assertion is red.
-			frameSpy?.mockRestore();
-			observeTestFrameWait(undefined);
-			for (const callback of heldFrames.splice(0)) callback(0);
-			await dismissal;
-			await actEvent((): void => {
-				for (const callback of heldFrames.splice(0)) callback(0);
-			});
-			await harness.dispose();
-		}
+				dismissal = dismissComposer();
+				const outcome = await Promise.race([
+					dismissal.then((): 'dismissed' => 'dismissed'),
+					frameRequested,
+				]);
+				expect(outcome, 'Escape publication must complete without an unrelated frame.').toBe(
+					'dismissed',
+				);
+				await harness.waitForComposer(false);
+				expect(document.querySelector(composerSelector)).toBeNull();
+			},
+			async (): Promise<void> => {
+				await completeCleanup([
+					(): void => {
+						frameSpy?.mockRestore();
+					},
+					(): void => observeTestFrameWait(undefined),
+					(): void => {
+						for (const callback of heldFrames.splice(0)) callback(0);
+					},
+					async (): Promise<void> => {
+						await dismissal;
+					},
+					(): Promise<void> =>
+						actEvent((): void => {
+							for (const callback of heldFrames.splice(0)) callback(0);
+						}),
+					harness.dispose,
+				]);
+			},
+		);
 	});
 
 	test('disposes its outcome wait with product frames held and leaves later acts admissible', async () => {
@@ -308,153 +439,98 @@ describe('worktree annotation click admission through Pierre pointers', () => {
 		);
 		const hover = harness.hoverAndClickUtility(row, 501);
 		const firstAction = await harness.interactionSetup.firstHoverAction;
-		try {
-			expect(
-				firstAction,
-				'The hover must await its owner setup fact before dispatching a pointer.',
-			).toBe('awaitingInteractionSetup');
-			harness.interactionSetup.releaseSetup();
-			await hover;
-			expect(harness.gutterAdmissions).toEqual([
-				{ range: { end: 2, side: 'additions', start: 2 } },
-			]);
-			await harness.waitForComposer(true);
-			expect(document.querySelector(composerSelector)).not.toBeNull();
-		} finally {
-			harness.interactionSetup.releaseSetup();
-			// Join the old helper on the red path after proving its first pointer was lost.
-			if (firstAction === 'pointerMoveBeforeSetup') {
-				await actEvent((): void => {
-					dispatchPointer(row, 'pointermove', pointerAt(row.getBoundingClientRect(), 501));
-				});
-			}
-			try {
+		await runWithOwnedCleanup(
+			async (): Promise<void> => {
+				expect(
+					firstAction,
+					'The hover must await its owner setup fact before dispatching a pointer.',
+				).toBe('awaitingInteractionSetup');
+				harness.interactionSetup.releaseSetup();
 				await hover;
-			} finally {
-				await harness.dispose();
-			}
-		}
+				expect(harness.gutterAdmissions).toEqual([
+					{ range: { end: 2, side: 'additions', start: 2 } },
+				]);
+				await harness.waitForComposer(true);
+				expect(document.querySelector(composerSelector)).not.toBeNull();
+			},
+			async (): Promise<void> => {
+				await completeCleanup([
+					(): void => harness.interactionSetup.releaseSetup(),
+					async (): Promise<void> => {
+						if (firstAction === 'pointerMoveBeforeSetup') {
+							await actEvent((): void =>
+								dispatchPointer(row, 'pointermove', pointerAt(row.getBoundingClientRect(), 501)),
+							);
+						}
+					},
+					(): Promise<void> => hover,
+					harness.dispose,
+				]);
+			},
+		);
 	});
 });
 
-async function renderReviewHarness(holdInteractionSetup = false): Promise<{
-	readonly codeView: CodeView;
-	readonly dispose: () => Promise<void>;
-	readonly gutterAdmissions: RecordedGutterAdmission[];
-	readonly interactionLifecycle: string[];
-	readonly interactionSetup: PierreInteractionSetupFacts;
-	readonly waitForComposer: (present: boolean) => Promise<void>;
-	readonly hoverAndClickUtility: (row: HTMLElement, pointerId: number) => Promise<void>;
-}> {
-	const gutterAdmissions: RecordedGutterAdmission[] = [];
-	const interactionLifecycle: string[] = [];
-	const interactionSetup = new PierreInteractionSetupFacts(holdInteractionSetup);
-	const slotPublications = new PierreSlotPublicationFacts<
-		Parameters<CodeViewCoordinator<undefined>['onSnapshotChange']>[0]
-	>();
-	metadataPublicationOwner.publish = (callback: () => void): void =>
-		slotPublications.publish(callback);
-	const outcomeController = new AbortController();
-	// oxlint-disable-next-line unbound-method -- Restored below; invoked with its original receiver.
-	const originalSetSlotCoordinator = CodeView.prototype.setSlotCoordinator;
-	CodeView.prototype.setSlotCoordinator = function wrapSlotPublication(coordinator): boolean {
-		return originalSetSlotCoordinator.call(this, slotPublications.wrap(coordinator));
-	};
-	// oxlint-disable-next-line unbound-method -- Restored below; invoked with its original receiver.
-	const originalSetOptions = CodeView.prototype.setOptions;
-	// oxlint-disable-next-line unbound-method -- Restored below; invoked with its original receiver.
-	const originalCodeViewSetup = CodeView.prototype.setup;
-	// oxlint-disable-next-line unbound-method -- Restored below; invoked with its original receiver.
-	const originalInteractionSetup = InteractionManager.prototype.setup;
-	// oxlint-disable-next-line unbound-method -- Restored below; invoked with its original receiver.
-	const originalInteractionCleanup = InteractionManager.prototype.cleanUp;
-	CodeView.prototype.setOptions = function captureGutterAdmission(
-		options: CodeViewOptions<undefined>,
-	): void {
-		originalSetOptions.call(this, recordGutterAdmissions(options, gutterAdmissions));
-	};
-	const codeViews: CodeView[] = [];
-	CodeView.prototype.setup = function captureCodeView(root: HTMLElement): void {
-		codeViews.push(this);
-		originalCodeViewSetup.call(this, root);
-	};
-	InteractionManager.prototype.setup = function recordInteractionSetup(pre: HTMLPreElement): void {
-		interactionSetup.install(this, pre, (): void => {
-			originalInteractionSetup.call(this, pre);
-			interactionLifecycle.push('setup');
-		});
-	};
-	InteractionManager.prototype.cleanUp = function recordInteractionCleanup(): void {
-		interactionSetup.retire(this);
-		interactionLifecycle.push('cleanup');
-		originalInteractionCleanup.call(this);
-	};
-	const surface = new RecordingAnnotationBrowserSurface('review');
-	const reviewPackage = makeBridgeReviewPackage();
-	const projection = buildBridgeReviewProjection({
-		reviewPackage,
-		request: { facets: [], mode: { kind: 'normalReview' } },
-	});
-	const coordinator = createBridgeMainRenderFulfillmentCoordinator({
-		sendDisposition: (): void => {},
-	});
-	const reviewItem = makeReviewItem();
-	await render(
-		<WorktreeAnnotationSurfaceProvider surfaceClient={surface.client}>
-			<div style={{ height: 600, width: 1200 }}>
-				<BridgeCodeViewPanel
-					presentationPositionKey="annotation-click-admission"
-					projection={projection}
-					renderFulfillmentCoordinator={coordinator}
-					reviewPackage={reviewPackage}
-					selectedCodeViewItem={reviewItem}
-					selectedItemId="item-source"
-					visibleCodeViewItems={[reviewItem]}
-					workerPoolEnabled={false}
-				/>
-			</div>
-		</WorktreeAnnotationSurfaceProvider>,
-	);
-	await waitForPierreCondition(
-		(): boolean =>
-			codeViews.length === 1 &&
-			queryPierreElements('[data-deletions] [data-column-number]').length >= 3 &&
-			queryPierreElements('[data-additions] [data-column-number]').length >= 3,
-	);
-	await slotPublications.join();
-	const codeView = codeViews[0];
-	if (codeView === undefined) throw new Error('Expected one mounted Pierre CodeView.');
+function captureHarnessOriginals(): {
+	readonly assertRestored: () => void;
+	readonly restore: () => void;
+} {
+	// oxlint-disable-next-line unbound-method -- Identity receipt; never invoked unbound.
+	const setSlotCoordinator = CodeView.prototype.setSlotCoordinator;
+	// oxlint-disable-next-line unbound-method -- Identity receipt; never invoked unbound.
+	const setOptions = CodeView.prototype.setOptions;
+	// oxlint-disable-next-line unbound-method -- Identity receipt; never invoked unbound.
+	const codeViewSetup = CodeView.prototype.setup;
+	// oxlint-disable-next-line unbound-method -- Identity receipt; never invoked unbound.
+	const interactionSetup = InteractionManager.prototype.setup;
+	// oxlint-disable-next-line unbound-method -- Identity receipt; never invoked unbound.
+	const interactionCleanup = InteractionManager.prototype.cleanUp;
+	const metadataPublication = metadataPublicationOwner.publish;
+	const requestFrame = globalThis.requestAnimationFrame;
+	const cancelFrame = globalThis.cancelAnimationFrame;
 	return {
-		codeView,
-		dispose: async (): Promise<void> => {
-			outcomeController.abort();
-			metadataPublicationOwner.publish = undefined;
-			await slotPublications.join();
-			CodeView.prototype.setSlotCoordinator = originalSetSlotCoordinator;
-			CodeView.prototype.setOptions = originalSetOptions;
-			CodeView.prototype.setup = originalCodeViewSetup;
-			InteractionManager.prototype.setup = originalInteractionSetup;
-			InteractionManager.prototype.cleanUp = originalInteractionCleanup;
-			coordinator.dispose();
-			interactionSetup.dispose();
+		assertRestored: (): void => {
+			// oxlint-disable-next-line unbound-method -- Compares method identity; never invoked.
+			expect.soft(CodeView.prototype.setSlotCoordinator).toBe(setSlotCoordinator);
+			// oxlint-disable-next-line unbound-method -- Compares method identity; never invoked.
+			expect.soft(CodeView.prototype.setOptions).toBe(setOptions);
+			// oxlint-disable-next-line unbound-method -- Compares method identity; never invoked.
+			expect.soft(CodeView.prototype.setup).toBe(codeViewSetup);
+			// oxlint-disable-next-line unbound-method -- Compares method identity; never invoked.
+			expect.soft(InteractionManager.prototype.setup).toBe(interactionSetup);
+			// oxlint-disable-next-line unbound-method -- Compares method identity; never invoked.
+			expect.soft(InteractionManager.prototype.cleanUp).toBe(interactionCleanup);
+			expect.soft(metadataPublicationOwner.publish).toBe(metadataPublication);
+			expect.soft(globalThis.requestAnimationFrame).toBe(requestFrame);
+			expect.soft(globalThis.cancelAnimationFrame).toBe(cancelFrame);
 		},
-		waitForComposer: async (present: boolean): Promise<void> => {
-			await waitForPierreCondition(
-				(): boolean => (document.querySelector(composerSelector) !== null) === present,
-				outcomeController.signal,
-			);
-			await slotPublications.join();
-		},
-		gutterAdmissions,
-		interactionLifecycle,
-		interactionSetup,
-		hoverAndClickUtility: async (row: HTMLElement, pointerId: number): Promise<void> => {
-			await interactionSetup.waitForSetup(row);
-			await hoverAndClickUtility(row, pointerId, (): void => {
-				interactionSetup.recordCompletedHover(row);
-			});
+		restore: (): void => {
+			CodeView.prototype.setSlotCoordinator = setSlotCoordinator;
+			CodeView.prototype.setOptions = setOptions;
+			CodeView.prototype.setup = codeViewSetup;
+			InteractionManager.prototype.setup = interactionSetup;
+			InteractionManager.prototype.cleanUp = interactionCleanup;
+			metadataPublicationOwner.publish = metadataPublication;
+			globalThis.requestAnimationFrame = requestFrame;
+			globalThis.cancelAnimationFrame = cancelFrame;
 		},
 	};
+}
+
+async function proveLaterHarnessAdmission(): Promise<void> {
+	const laterHarness = await renderReviewHarness();
+	await runWithOwnedCleanup(async (): Promise<void> => {
+		const row = requirePierreElement(
+			'[data-additions] [data-column-number="2"][data-line-type="change-addition"]',
+			'Expected a later harness addition row.',
+		);
+		await laterHarness.hoverAndClickUtility(row, 801);
+		await laterHarness.waitForComposer(true);
+		expect(laterHarness.gutterAdmissions).toEqual([
+			{ range: { start: 2, end: 2, side: 'additions' } },
+		]);
+		expect(document.querySelector(composerSelector)).not.toBeNull();
+	}, laterHarness.dispose);
 }
 
 async function dragRangeAndClickFirstUtility(
@@ -507,79 +583,8 @@ async function dragRangeAndClickFirstUtility(
 	};
 }
 
-async function hoverAndClickUtility(
-	row: HTMLElement,
-	pointerId: number,
-	onHoverDispatched: () => void,
-): Promise<void> {
-	const bounds = row.getBoundingClientRect();
-	await actEvent((): void => {
-		dispatchPointer(row, 'pointermove', pointerAt(bounds, pointerId));
-	});
-	onHoverDispatched();
-	await waitForSinglePierreUtility();
-	await clickCurrentUtility(pointerId + 1);
-}
-
 async function dismissComposer(): Promise<void> {
 	await actEvent((): void => {
 		document.dispatchEvent(new KeyboardEvent('keydown', { bubbles: true, key: 'Escape' }));
 	});
-}
-
-async function clickCurrentUtility(pointerId: number): Promise<{
-	readonly utilityPointerDownHit: PointerHitProbe;
-	readonly utilityPointerUpHit: PointerHitProbe;
-}> {
-	const utility = requirePierreElement(
-		'[data-utility-button]',
-		'Expected Pierre to expose one gutter utility.',
-	);
-	const bounds = utility.getBoundingClientRect();
-	const utilityPointerDownHit = pointerHitProbe(utility, bounds);
-	await actEvent((): void => {
-		dispatchPointer(utility, 'pointerdown', pointerAt(bounds, pointerId));
-	});
-	const utilityAfterPointerDownPublication = requirePierreElement(
-		'[data-utility-button]',
-		'Expected Pierre to retain its gutter utility after pointerdown publication.',
-	);
-	const finalBounds = utilityAfterPointerDownPublication.getBoundingClientRect();
-	const utilityPointerUpHit = pointerHitProbe(utilityAfterPointerDownPublication, finalBounds);
-	await actEvent((): void => {
-		dispatchPointer(
-			utilityAfterPointerDownPublication,
-			'pointerup',
-			pointerAt(finalBounds, pointerId),
-		);
-	});
-	return { utilityPointerDownHit, utilityPointerUpHit };
-}
-
-function makeReviewItem(): BridgeMainCodeViewItem {
-	const baseContents = ['let stable = 1', 'let reviewed = "before"', 'let tail = 3'].join('\n');
-	const headContents = ['let stable = 1', 'let reviewed = "after"', 'let tail = 3'].join('\n');
-	return {
-		bridgeMetadata: {
-			cacheKey: 'review-base|review-head',
-			contentRoles: ['base', 'head'],
-			contentState: 'hydrated',
-			displayPath: 'Sources/App/View.swift',
-			itemId: 'item-source',
-			lineCount: 3,
-			sourceDescriptorIdsByRole: {
-				base: 'handle-item-source-base',
-				diff: null,
-				file: null,
-				head: 'handle-item-source-head',
-			},
-		},
-		fileDiff: parseDiffFromFile(
-			{ cacheKey: 'review-base', contents: baseContents, name: 'Sources/App/View.swift' },
-			{ cacheKey: 'review-head', contents: headContents, name: 'Sources/App/View.swift' },
-		),
-		id: 'item-source',
-		type: 'diff',
-		version: 1,
-	};
 }
