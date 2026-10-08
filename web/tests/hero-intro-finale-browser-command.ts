@@ -142,6 +142,7 @@ function observeHeroFinaleSample(
   time: FinaleTime,
   groups: readonly FinaleFieldGroup[],
 ): Partial<FinaleAllSample> {
+  const sampleTime = typeof time === "number" ? `${time}s` : time;
   const root = document.querySelector<HTMLElement>("[data-hero-intro-root]");
   const rail = document.querySelector<SVGSVGElement>("[data-full-page-topology]");
   const app = document.querySelector<HTMLElement>("[data-hero-app-frame]");
@@ -158,15 +159,66 @@ function observeHeroFinaleSample(
     chapterNode === null ||
     chapterNode === undefined
   )
-    throw new Error("Finale geometry missing");
+    throw new Error(`Finale geometry missing at ${sampleTime}`);
   const target = (selector: string): HTMLElement => {
     const element = root.querySelector<HTMLElement>(selector);
-    if (element === null) throw new Error(`Finale target missing: ${selector}`);
+    if (element === null) throw new Error(`Finale target missing: ${selector} at ${sampleTime}`);
     return element;
   };
   const opacity = (selector: string): number => Number(getComputedStyle(target(selector)).opacity);
   const pane = innerWidth < 1024 ? "claude" : "codex";
   const sample: Partial<FinaleAllSample> = { time };
+  if (groups.includes("layout")) {
+    // Keep the old all-frame existence guards without observing other groups' values.
+    const requiredTargets = [
+      "[data-hero-intro-install]",
+      "[data-hero-intro-payoff-first]",
+      "[data-hero-intro-headline-first]",
+      "[data-hero-intro-headline-second]",
+      "[data-hero-intro-payoff-second]",
+      "[data-hero-intro-ready]",
+      "[data-install-copy]",
+    ];
+    for (const selector of requiredTargets) target(selector);
+    const install = target("[data-hero-intro-install]");
+    const payoff = target("[data-hero-intro-payoff-first]").parentElement;
+    if (payoff === null) throw new Error(`Payoff wrapper missing at ${sampleTime}`);
+    const bashRows = [
+      ...root.querySelectorAll<HTMLElement>(
+        ".hero-terminal-pane--claude .hero-transcript-row--tool-call",
+      ),
+    ].filter((row) => row.querySelector("[data-hero-bash-dot]") !== null);
+    if (bashRows.length === 0 || install.querySelector(".install-command__line") === null)
+      throw new Error(`Install burst anchors missing at ${sampleTime}`);
+    for (const bashRow of bashRows) {
+      const textWalker = document.createTreeWalker(bashRow, NodeFilter.SHOW_TEXT);
+      let hasBashText = false;
+      while (textWalker.nextNode()) {
+        const textNode = textWalker.currentNode;
+        if (textNode instanceof Text && textNode.textContent?.trim()) {
+          hasBashText = true;
+          break;
+        }
+      }
+      if (!hasBashText) throw new Error(`Bash row has no text at ${sampleTime}`);
+    }
+    for (const node of rail.querySelectorAll<SVGGElement>("[data-topology-node-progress]")) {
+      const circle = node.querySelector("circle");
+      const parent = node.parentElement;
+      if (circle === null || !(parent instanceof SVGGraphicsElement))
+        throw new Error(`Intro dot circle or parent missing at ${sampleTime}`);
+      // SVG ancestry is the existence-only counterpart; matrix measurement stays in rail.
+      if (node.closest("svg") === null || parent.closest("svg") === null)
+        throw new Error(`Intro dot matrix missing (SVG ancestor) at ${sampleTime}`);
+    }
+    for (const terminalPane of root.querySelectorAll<HTMLElement>(".hero-terminal-pane")) {
+      if (
+        terminalPane.querySelector(".hero-terminal-transcript") === null ||
+        terminalPane.querySelector(".hero-claude-footer, .hero-codex-footer") === null
+      )
+        throw new Error(`Pinned transcript structure is missing at ${sampleTime}`);
+    }
+  }
   if (groups.includes("copy")) {
     const payoff = target("[data-hero-intro-payoff-first]").parentElement;
     if (payoff === null) throw new Error("Payoff wrapper missing");
