@@ -25,6 +25,7 @@ function installFixtureStateReader(): void {
 
 export interface PendingWaitFixtureOptions {
   readonly freezeTimeline: boolean;
+  readonly awaitFrames?: boolean;
   readonly withReader?: boolean;
   readonly readerThrows?: boolean;
 }
@@ -32,9 +33,16 @@ export interface PendingWaitFixtureOptions {
 export const startPendingWaitFixture = defineBrowserCommand(
   async (
     { context, sessionId }: BrowserCommandContext,
-    { freezeTimeline, withReader = true, readerThrows = false }: PendingWaitFixtureOptions,
+    {
+      freezeTimeline,
+      awaitFrames = false,
+      withReader = true,
+      readerThrows = false,
+    }: PendingWaitFixtureOptions,
   ): Promise<{ readonly started: true }> => {
     const page = await context.newPage();
+    const registration: CommandPageRegistration = { page };
+    const unregister = registerCommandPageForDiagnostics(sessionId, registration);
     try {
       await page.addInitScript(installPendingWaitTracker);
       if (withReader) {
@@ -68,24 +76,24 @@ export const startPendingWaitFixture = defineBrowserCommand(
           value: release,
         });
       });
-      await page.evaluate(async (): Promise<void> => {
-        const visibilityState = Object.getOwnPropertyDescriptor(
-          Document.prototype,
-          "visibilityState",
-        )?.get?.call(document);
-        if (visibilityState !== "visible")
-          throw new Error(
-            "Pending-wait fixture page is hidden; requestAnimationFrame would not fire",
+      if (awaitFrames)
+        await page.evaluate(async (): Promise<void> => {
+          const visibilityState = Object.getOwnPropertyDescriptor(
+            Document.prototype,
+            "visibilityState",
+          )?.get?.call(document);
+          if (visibilityState !== "visible")
+            throw new Error(
+              "Pending-wait fixture page is hidden; requestAnimationFrame would not fire",
+            );
+          await new Promise<void>((resolve) =>
+            requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
           );
-        await new Promise<void>((resolve) =>
-          requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
-        );
-      });
-      const registration: CommandPageRegistration = { page };
-      const unregister = registerCommandPageForDiagnostics(sessionId, registration);
+        });
       fixturePages.set(sessionId, { page, unregister });
       return { started: true };
     } catch (error: unknown) {
+      unregister();
       await page.close();
       throw error;
     }
