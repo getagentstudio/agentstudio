@@ -14,6 +14,55 @@ extension WebKitSerializedTests {
             case replayBlocked
         }
 
+        private enum CaptureProbeError: Error, Equatable {
+            case firstCaptureFailed
+            case unexpectedReplayGate
+        }
+
+        @Test("a refused or failed source demand releases its corruption claim", arguments: [false, true])
+        func refusedDemandDoesNotConsumeCorruptionClaim(firstCaptureThrows: Bool) async throws {
+            let source = BridgeWebKitFailingReviewMetadataSource(
+                captureReturnedObserver: { request in
+                    if firstCaptureThrows && request.scopeRevision == 1 { throw CaptureProbeError.firstCaptureFailed }
+                },
+                replayBlockedObserver: { _ in throw CaptureProbeError.unexpectedReplayGate })
+            let admissionGate = BridgeProductAdmissionGate()
+            let admission = try #require(admissionGate.acquire())
+            let predecessorId = UUIDv7.generate()
+            let successorId = UUIDv7.generate()
+            let package = makeSuccessorPackage()
+            try await source.open(subscription: successorSubscription(), productAdmission: admission)
+            await source.armFailure(after: predecessorId)
+            let reservation = try await source.reserve(
+                package: package, publicationId: successorId, productAdmission: admission)
+            _ = try await source.deliver(
+                publication: BridgeReviewCommittedPublication(
+                    publicationId: successorId, package: package, delta: nil, contentHandles: [],
+                    comparisonPresentationRevision: 1, reviewComparison: nil, operationCorrelationID: nil,
+                    classifiedRefreshImpact: nil),
+                reservation: reservation, productAdmission: admission)
+            do {
+                let refusedCapture = try await captureSuccessor(
+                    source: source, scopeRevision: 1, publicationId: successorId, productAdmission: admission,
+                    subscriptionId: firstCaptureThrows ? successorSubscription().subscriptionId : "unknown-review-view")
+                #expect(!firstCaptureThrows)
+                #expect(refusedCapture == nil)
+            } catch {
+                #expect(firstCaptureThrows)
+                #expect(error as? CaptureProbeError == .firstCaptureFailed)
+            }
+            do {
+                let firstValidCapture = try #require(
+                    try await captureSuccessor(
+                        source: source, scopeRevision: 2, publicationId: successorId, productAdmission: admission))
+                #expect(contentSourceIdentities(firstValidCapture) == ["wrong-publication-source"])
+            } catch {
+                Issue.record("A refused source demand consumed the corruption claim: \(error)")
+            }
+            await source.cancel(subscriptionId: successorSubscription().subscriptionId)
+            admissionGate.close()
+        }
+
         @Test("overlapping successor captures cannot escape the held Review replay")
         func overlappingSuccessorCapturesRespectReplayGate() async throws {
             let firstCapture = HeldStep<Void>("first successor capture before corruption")
