@@ -32,36 +32,34 @@ export interface StepHopObservation {
   readonly resumedState: string | undefined;
 }
 
-function readStepHopState(): Record<string, unknown> {
-  const root = document.querySelector<HTMLElement>('[data-chapter-steps-root="many-agents"]');
-  const scene = root?.querySelector<HTMLElement>('[data-scene-root="chapter-many-agents"]');
-  const ring = root?.querySelector<SVGSVGElement>("[data-chapter-step-ring]");
-  if (
-    root === null ||
-    root === undefined ||
-    scene === null ||
-    scene === undefined ||
-    ring === null ||
-    ring === undefined
-  )
-    return { stepPlayback: "missing", scenePlaybackState: "missing", ringAnimations: [] };
-  return {
-    stepPlayback: root.querySelector<HTMLElement>("[data-chapter-step-line]")?.dataset[
-      "stepPlayback"
-    ],
-    scenePlaybackState: scene.dataset["scenePlaybackState"],
-    ringAnimations: ring.getAnimations().map((animation) => ({
-      playState: animation.playState,
-      currentTime: animation.currentTime,
-      duration: animation.effect?.getTiming().duration ?? null,
-    })),
-  };
-}
-
 function installStepHopStateReader(): void {
   const tracker = window["__pendingWaitTracker"];
   if (tracker === undefined) throw new Error("Pending wait tracker is missing");
-  tracker.readCommandState = readStepHopState;
+  tracker.readCommandState = (): Record<string, unknown> => {
+    const root = document.querySelector<HTMLElement>('[data-chapter-steps-root="many-agents"]');
+    const scene = root?.querySelector<HTMLElement>('[data-scene-root="chapter-many-agents"]');
+    const ring = root?.querySelector<SVGSVGElement>("[data-chapter-step-ring]");
+    if (
+      root === null ||
+      root === undefined ||
+      scene === null ||
+      scene === undefined ||
+      ring === null ||
+      ring === undefined
+    )
+      return { stepPlayback: "missing", scenePlaybackState: "missing", ringAnimations: [] };
+    return {
+      stepPlayback: root.querySelector<HTMLElement>("[data-chapter-step-line]")?.dataset[
+        "stepPlayback"
+      ],
+      scenePlaybackState: scene.dataset["scenePlaybackState"],
+      ringAnimations: ring.getAnimations().map((animation) => ({
+        playState: animation.playState,
+        currentTime: animation.currentTime,
+        duration: animation.effect?.getTiming().duration ?? null,
+      })),
+    };
+  };
 }
 
 export const verifyChapterStepHop = defineBrowserCommand(
@@ -107,6 +105,11 @@ export const verifyChapterStepHop = defineBrowserCommand(
       await page.addInitScript(installPendingWaitTracker);
       await page.addInitScript(installStepHopStateReader);
       await page.goto(`${pageUrl}#many-agents`, { waitUntil: "load" });
+      await page.evaluate((): void => {
+        const tracker = window["__pendingWaitTracker"];
+        if (tracker === undefined || typeof tracker.readCommandState !== "function")
+          throw new Error("Pending-wait diagnostics are not installed on the step-hop page");
+      });
       await page.evaluate((): void => {
         document
           .querySelector('[data-chapter="many-agents"] [data-scroll-playback-stage]')

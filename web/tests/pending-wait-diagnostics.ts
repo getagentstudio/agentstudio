@@ -76,6 +76,7 @@ export type PendingWaitDiagnosticResult =
       readonly wallElapsedMs: number | null;
       readonly visibilityState: string;
       readonly hidden: boolean;
+      readonly stateReader: "installed" | "missing";
       readonly state: Record<string, unknown>;
     }
   | { readonly kind: "no-active-command-page" }
@@ -115,6 +116,7 @@ export const capturePendingWaitDiagnostics = async ({
           wallElapsedMs: pending === null ? null : wallNow - pending.beganAtMs,
           visibilityState,
           hidden,
+          stateReader: typeof tracker?.readCommandState === "function" ? "installed" : "missing",
           state,
         };
       } catch (error: unknown) {

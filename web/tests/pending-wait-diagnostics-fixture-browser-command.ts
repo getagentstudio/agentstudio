@@ -15,25 +15,28 @@ interface FixtureRegistration {
 
 const fixturePages = new Map<string, FixtureRegistration>();
 
-function readFixtureState(): Record<string, unknown> {
-  return { fixtureState: document.body.dataset["fixtureState"] ?? "missing" };
-}
-
 function installFixtureStateReader(): void {
   const tracker = window["__pendingWaitTracker"];
   if (tracker === undefined) throw new Error("Pending wait tracker is missing");
-  tracker.readCommandState = readFixtureState;
+  tracker.readCommandState = (): Record<string, unknown> => ({
+    fixtureState: document.body.dataset["fixtureState"] ?? "missing",
+  });
+}
+
+export interface PendingWaitFixtureOptions {
+  readonly freezeTimeline: boolean;
+  readonly withReader?: boolean;
 }
 
 export const startPendingWaitFixture = defineBrowserCommand(
   async (
     { context, sessionId }: BrowserCommandContext,
-    freezeTimeline: boolean,
+    { freezeTimeline, withReader = true }: PendingWaitFixtureOptions,
   ): Promise<{ readonly started: true }> => {
     const page = await context.newPage();
     try {
       await page.addInitScript(installPendingWaitTracker);
-      await page.addInitScript(installFixtureStateReader);
+      if (withReader) await page.addInitScript(installFixtureStateReader);
       await page.goto("about:blank");
       if (freezeTimeline) {
         const cdp = await page.context().newCDPSession(page);

@@ -6,6 +6,7 @@ import {
   reportPendingWaitDiagnostic,
   type PendingWaitDiagnosticResult,
 } from "./pending-wait-diagnostics";
+import type { PendingWaitFixtureOptions } from "./pending-wait-diagnostics-fixture-browser-command";
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -13,13 +14,15 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 declare module "vitest/browser" {
   interface BrowserCommands {
-    startPendingWaitFixture(freezeTimeline: boolean): Promise<{ readonly started: true }>;
+    startPendingWaitFixture(
+      options: PendingWaitFixtureOptions,
+    ): Promise<{ readonly started: true }>;
     releasePendingWaitFixture(): Promise<{ readonly released: true }>;
   }
 }
 
 async function captureFixture(freezeTimeline: boolean): Promise<PendingWaitDiagnosticResult> {
-  await commands.startPendingWaitFixture(freezeTimeline);
+  await commands.startPendingWaitFixture({ freezeTimeline });
   try {
     return await commands.capturePendingWaitDiagnostics();
   } finally {
@@ -35,6 +38,7 @@ it("captures a pending wait with a running document timeline", async () => {
   expect(result.timelineAdvancedMs).toBeGreaterThanOrEqual(0);
   expect(result.wallElapsedMs).toBeGreaterThan(0);
   expect(typeof result.visibilityState).toBe("string");
+  expect(result.stateReader).toBe("installed");
   expect(result.state).toEqual({ fixtureState: "pending" });
 });
 
@@ -56,7 +60,7 @@ it("reports the absence of a registered command page", async () => {
 it("prints the captured diagnostic line without changing the failure handler", async () => {
   const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
   try {
-    await commands.startPendingWaitFixture(false);
+    await commands.startPendingWaitFixture({ freezeTimeline: false });
     await reportPendingWaitDiagnostic(
       { task: { name: "fixture diagnostic test" } },
       () => commands.capturePendingWaitDiagnostics(),
@@ -69,6 +73,7 @@ it("prints the captured diagnostic line without changing the failure handler", a
     if (!isRecord(parsed)) throw new Error("Diagnostic payload is not an object");
     expect(parsed["test"]).toBe("fixture diagnostic test");
     expect(parsed["wait"]).toBe("fixture-wait");
+    expect(parsed["stateReader"]).toBe("installed");
     expect(parsed["state"]).toEqual({ fixtureState: "pending" });
   } finally {
     await commands.releasePendingWaitFixture();
@@ -88,5 +93,18 @@ it("prints an unavailable line when no command page is registered", async () => 
     );
   } finally {
     errorSpy.mockRestore();
+  }
+});
+
+it("identifies a missing command state reader", async () => {
+  await commands.startPendingWaitFixture({ freezeTimeline: false, withReader: false });
+  try {
+    const result = await commands.capturePendingWaitDiagnostics();
+    expect(result.kind).toBe("captured");
+    if (result.kind !== "captured") throw new Error("Missing-reader fixture capture failed");
+    expect(result.stateReader).toBe("missing");
+    expect(result.state).toEqual({});
+  } finally {
+    await commands.releasePendingWaitFixture();
   }
 });
