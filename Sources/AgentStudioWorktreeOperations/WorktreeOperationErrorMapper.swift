@@ -101,7 +101,7 @@ package enum WorktreeOperationErrorMapper {
         case .invalidBranchName:
             .invalidBranchName(.rejectedByGit)
         case .branchAlreadyExists:
-            .branchAlreadyExists(branchName)
+            .creationStopped(.branchAlreadyExists(branch: branchName))
         case .clientCapabilityUnavailable,
             .unsupportedOperatingSystem,
             .sourceFilesystemNotAPFS,

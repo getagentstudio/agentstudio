@@ -52,7 +52,7 @@ extension WorktreeOperationRunner {
         do {
             branches = try await client.branches(for: discovery.repositoryPath)
             guard !branches.contains(where: { $0.name == branchName.rawValue }) else {
-                return .outcome(.refused(.branchAlreadyExists(branchName.rawValue)))
+                return .outcome(.refused(.creationStopped(.branchAlreadyExists(branch: branchName.rawValue))))
             }
         } catch {
             return .outcome(.failed(WorktreeOperationErrorMapper.readFailure(error)))

@@ -23,7 +23,7 @@ struct WorktreeCreationLargeFileCommandLineTests {
 
         let createProbe = WorktreeCreationCommandLineProbe()
         let createExitCode = await WorktreeCommandLine.run(
-            arguments: ["new", branch, "--tracked-only", "--repo", fixture.repository.path, "--json"],
+            arguments: ["new", branch, "--no-fork", "--repo", fixture.repository.path, "--json"],
             currentDirectory: fixture.repository,
             output: { createProbe.appendOutput($0) },
             errorOutput: { createProbe.appendError($0) }
@@ -83,7 +83,7 @@ struct WorktreeCreationLargeFileCommandLineTests {
         let probe = WorktreeCreationCommandLineProbe()
 
         let exitCode = await WorktreeCommandLine.run(
-            arguments: ["new", branch, "--tracked-only", "--repo", fixture.repository.path],
+            arguments: ["new", branch, "--no-fork", "--repo", fixture.repository.path],
             currentDirectory: fixture.repository,
             output: { probe.appendOutput($0) },
             errorOutput: { probe.appendError($0) }
@@ -104,7 +104,7 @@ struct WorktreeCreationLargeFileCommandLineTests {
         let jsonDestination = try siblingDestination(repository: fixture.repository, branch: jsonBranch)
         defer { try? FileManager.default.removeItem(at: jsonDestination) }
         let jsonExitCode = await WorktreeCommandLine.run(
-            arguments: ["new", jsonBranch, "--tracked-only", "--repo", fixture.repository.path, "--json"],
+            arguments: ["new", jsonBranch, "--no-fork", "--repo", fixture.repository.path, "--json"],
             currentDirectory: fixture.repository,
             output: { jsonProbe.appendOutput($0) },
             errorOutput: { jsonProbe.appendError($0) }
@@ -219,7 +219,7 @@ struct WorktreeCreationLargeFileCommandLineTests {
             .create(
                 WorktreeCreateRequest(
                     start: repository, branch: branch, source: .mainWorktree,
-                    materialization: .trackedOnly(startBranch: nil)))
+                    startBranch: nil, materialization: .checkout, fetchPolicy: .skip))
         )
         guard case .created = outcome else {
             Issue.record("expected worktree creation to succeed with an incomplete LFS scan, received \(outcome)")
@@ -274,7 +274,7 @@ struct WorktreeCreationLargeFileCommandLineTests {
             .create(
                 WorktreeCreateRequest(
                     start: repository, branch: branch, source: .mainWorktree,
-                    materialization: .trackedOnly(startBranch: nil)))
+                    startBranch: nil, materialization: .checkout, fetchPolicy: .skip))
         )
         guard case .created = outcome else {
             Issue.record("expected worktree creation to succeed with an incomplete Git scan, received \(outcome)")
@@ -331,7 +331,7 @@ struct WorktreeCreationLargeFileCommandLineTests {
             .create(
                 WorktreeCreateRequest(
                     start: repository, branch: branch, source: .mainWorktree,
-                    materialization: .trackedOnly(startBranch: nil)))
+                    startBranch: nil, materialization: .checkout, fetchPolicy: .skip))
         )
         guard case .created = outcome else {
             Issue.record("expected creation to report its retained LFS residue, got \(outcome)")

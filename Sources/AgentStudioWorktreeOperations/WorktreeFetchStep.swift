@@ -2,7 +2,7 @@ import AgentStudioGit
 import Foundation
 
 package enum WorktreeFetchPolicy: Sendable, Equatable {
-    case defaultBranch
+    case fetch
     case skip
 }
 
@@ -41,7 +41,7 @@ package struct WorktreeFetchStep: Sendable {
         guard case .resolved(let target) = resolution else {
             return WorktreeFetchStepResult(resolution: resolution, status: .skipped(reason: .noTarget))
         }
-        guard policy == .defaultBranch else {
+        guard policy == .fetch else {
             return WorktreeFetchStepResult(resolution: resolution, status: .skipped(reason: .noFetchFlag))
         }
 

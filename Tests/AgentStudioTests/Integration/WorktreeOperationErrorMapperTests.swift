@@ -128,7 +128,7 @@ struct WorktreeOperationErrorMapperTests {
             case .invalidBranchName:
                 expectedRefusal = .invalidBranchName(.rejectedByGit)
             case .branchAlreadyExists:
-                expectedRefusal = .branchAlreadyExists(branch)
+                expectedRefusal = .creationStopped(.branchAlreadyExists(branch: branch))
             case .clientCapabilityUnavailable,
                 .unsupportedOperatingSystem,
                 .sourceFilesystemNotAPFS,

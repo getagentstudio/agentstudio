@@ -33,7 +33,7 @@ struct WorktreeListingURLRemoteIntegrationTests {
         )
 
         let outcome = await WorktreeOperationRunner(client: client).run(
-            .list(start: repository, callerDirectory: nil, targets: [], fetchPolicy: .defaultBranch)
+            .list(start: repository, callerDirectory: nil, targets: [], fetchPolicy: .fetch)
         )
 
         guard case .listed(let listing) = outcome else {

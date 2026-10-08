@@ -59,7 +59,7 @@ extension WorktreeCommandLineFormatter {
 
 package enum WorktreeCreatedMaterializationDocument: Encodable, Sendable {
     case copyOnWrite(GitWorktreeMaterializationReport)
-    case trackedOnly(WorktreeLargeFilesDocument)
+    case checkout(WorktreeLargeFilesDocument)
     case changesOnly(trackedChanges: Int, untrackedFiles: Int, ignoredExcluded: Bool)
 
     private enum CodingKeys: String, CodingKey {
@@ -84,8 +84,8 @@ package enum WorktreeCreatedMaterializationDocument: Encodable, Sendable {
 
     package init(_ materialization: WorktreeCreatedMaterialization, worktreePath: URL) {
         switch materialization {
-        case .trackedOnly(let fill):
-            self = .trackedOnly(WorktreeLargeFilesDocument(fill: fill, worktreePath: worktreePath))
+        case .checkout(let fill):
+            self = .checkout(WorktreeLargeFilesDocument(fill: fill, worktreePath: worktreePath))
         case .copyOnWrite(let report):
             self = .copyOnWrite(report)
         case .changesOnly(let report):
@@ -100,8 +100,8 @@ package enum WorktreeCreatedMaterializationDocument: Encodable, Sendable {
     package func encode(to encoder: any Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
         switch self {
-        case .trackedOnly(let largeFiles):
-            try container.encode("trackedOnly", forKey: .kind)
+        case .checkout(let largeFiles):
+            try container.encode("checkout", forKey: .kind)
             try container.encode(largeFiles, forKey: .largeFiles)
         case .copyOnWrite(let report):
             try container.encode("copyOnWrite", forKey: .kind)

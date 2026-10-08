@@ -54,8 +54,8 @@ extension WorktreeCommandLineFormatter {
                 reason: "invalidBranchName", path: nil, detail: "Git rejected the branch name")
         case .emptyBranchSlug:
             return WorktreeRefusalDetails(reason: "emptyBranchSlug", path: nil, detail: nil)
-        case .branchAlreadyExists(let branch):
-            return WorktreeRefusalDetails(reason: "branchAlreadyExists", path: nil, detail: branch)
+        case .creationFormUnsupported(let form):
+            return WorktreeRefusalDetails(reason: "creationFormUnsupported", path: nil, detail: form)
         case .destinationExists(let path):
             return WorktreeRefusalDetails(reason: "destinationExists", path: absolutePath(path), detail: nil)
         case .destinationParentMissing(let path):
@@ -67,7 +67,7 @@ extension WorktreeCommandLineFormatter {
                 reason: "forkUnavailable",
                 path: nil,
                 detail: reason.rawValue,
-                alternatives: source == .mainWorktree ? [.trackedOnly] : [.trackedOnly, .changesOnly],
+                alternatives: source == .mainWorktree ? [.checkout] : [.checkout, .changesOnly],
                 options: WorktreeStopCatalog.forkOptions(source: source)
             )
         case .unsupportedWorkingState(let refusal):
@@ -156,13 +156,13 @@ private struct WorktreeRefusalDetails {
 }
 
 private enum WorktreeRefusalAlternative: String {
-    case trackedOnly
+    case checkout
     case changesOnly
 
     var commandLineFlag: String {
         switch self {
-        case .trackedOnly:
-            "--tracked-only"
+        case .checkout:
+            "--no-fork"
         case .changesOnly:
             "--changes-only"
         }

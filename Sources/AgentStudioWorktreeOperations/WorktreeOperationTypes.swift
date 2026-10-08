@@ -63,8 +63,10 @@ package enum WorktreeOperationRefusal: Sendable, Equatable {
     case noDefaultBranch
     case invalidBranchName(WorktreeBranchNameProblem)
     case emptyBranchSlug
-    case branchAlreadyExists(String)
     case startBranchNotFound(String)
+    /// Interim until the branch resolver and the reset fork land: a request form the runner
+    /// can't build yet, named by its flags, refused instead of creating the wrong worktree.
+    case creationFormUnsupported(String)
     case destinationExists(URL)
     case destinationParentMissing(URL)
     case unsupportedRepositoryLayout(URL)

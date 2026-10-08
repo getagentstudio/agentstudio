@@ -5,15 +5,25 @@ package struct WorktreeCreateRequest: Sendable, Equatable {
     package let start: URL
     package let branch: String
     package let source: WorktreeCreateSource
+    /// `--from-branch <start>` as typed: a local branch, `<remote>/<name>`, or origin's branch.
+    package let startBranch: String?
     package let materialization: WorktreeCreateMaterialization
+    package let fetchPolicy: WorktreeFetchPolicy
 
     package init(
-        start: URL, branch: String, source: WorktreeCreateSource, materialization: WorktreeCreateMaterialization
+        start: URL,
+        branch: String,
+        source: WorktreeCreateSource,
+        startBranch: String?,
+        materialization: WorktreeCreateMaterialization,
+        fetchPolicy: WorktreeFetchPolicy
     ) {
         self.start = start
         self.branch = branch
         self.source = source
+        self.startBranch = startBranch
         self.materialization = materialization
+        self.fetchPolicy = fetchPolicy
     }
 }
 
@@ -24,14 +34,15 @@ package enum WorktreeCreateSource: Sendable, Equatable {
 
 package enum WorktreeCreateMaterialization: Sendable, Equatable {
     case copyOnWrite
+    /// `--no-fork`: a plain checkout of tracked files at the same start commit.
+    case checkout
     case changesOnly
-    case trackedOnly(startBranch: String?)
 }
 
 package enum WorktreeCreatedMaterialization: Sendable, Equatable {
     case copyOnWrite(GitWorktreeMaterializationReport)
     case changesOnly(GitChangesOnlyMaterializationReport)
-    case trackedOnly(GitLargeFileFill)
+    case checkout(GitLargeFileFill)
 
     init(_ result: GitWorktreeMaterializationResult) {
         switch result {
@@ -44,7 +55,7 @@ package enum WorktreeCreatedMaterialization: Sendable, Equatable {
         switch self {
         case .copyOnWrite: nil
         case .changesOnly(let report): report.largeFiles
-        case .trackedOnly(let fill): fill
+        case .checkout(let fill): fill
         }
     }
 }

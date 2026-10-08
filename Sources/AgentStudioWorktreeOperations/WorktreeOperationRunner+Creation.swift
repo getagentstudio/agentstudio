@@ -6,8 +6,8 @@ extension WorktreeOperationRunner {
         if request.materialization == .changesOnly, request.source == .mainWorktree {
             return .refused(.creationStopped(.changesOnlyNeedsFrom))
         }
-        if case .trackedOnly = request.materialization, case .worktree = request.source {
-            return .refused(.creationStopped(.trackedOnlyExcludesSource))
+        if let form = Self.formAwaitingBranchResolution(request) {
+            return .refused(.creationFormUnsupported(form))
         }
         let prepared: PreparedWorktreeCreation
         switch await preflightCreation(
@@ -18,8 +18,11 @@ extension WorktreeOperationRunner {
         }
         let copyRules: GitWorktreeCopyRules
         switch request.materialization {
-        case .trackedOnly(let startBranch):
-            return await createTrackedOnly(prepared, startBranch: startBranch)
+        case .checkout:
+            return await createCheckout(prepared, startBranch: request.startBranch)
+        case .copyOnWrite where request.startBranch != nil:
+            // Interim: a start branch keeps today's checkout until the SDK's reset fork lands.
+            return await createCheckout(prepared, startBranch: request.startBranch)
         case .changesOnly:
             copyRules = GitWorktreeCopyRules(ignoredPaths: .copyAll)
         case .copyOnWrite:
@@ -57,7 +60,18 @@ extension WorktreeOperationRunner {
             prepared, source: source.sourceWorktreePath, request: request, copyRules: copyRules)
     }
 
-    private func createTrackedOnly(_ prepared: PreparedWorktreeCreation, startBranch: String?) async
+    /// Interim: request forms whose start the runner can't honor until the branch resolver and
+    /// the SDK's reset fork land. Refusing them beats creating a worktree at the wrong commit.
+    private static func formAwaitingBranchResolution(_ request: WorktreeCreateRequest) -> String? {
+        switch (request.materialization, request.source, request.startBranch) {
+        case (.checkout, .worktree, _): "--no-fork with --from"
+        case (.copyOnWrite, .worktree, .some): "--from with --from-branch"
+        case (.changesOnly, _, .some): "--changes-only with --from-branch"
+        default: nil
+        }
+    }
+
+    private func createCheckout(_ prepared: PreparedWorktreeCreation, startBranch: String?) async
         -> WorktreeOperationOutcome
     {
         let startPoint: String
@@ -87,7 +101,7 @@ extension WorktreeOperationRunner {
             return .created(
                 WorktreeCreatedSummary(
                     operation: .new, branch: prepared.branchName.rawValue, path: creation.worktree.canonicalPath,
-                    repository: prepared.repositoryPath, materialization: .trackedOnly(creation.largeFiles)
+                    repository: prepared.repositoryPath, materialization: .checkout(creation.largeFiles)
                 ))
         } catch {
             return .failed(WorktreeOperationErrorMapper.createFailure(error))
@@ -102,7 +116,7 @@ extension WorktreeOperationRunner {
         switch request.materialization {
         case .copyOnWrite: sdkMaterialization = .copyOnWrite
         case .changesOnly: sdkMaterialization = .changesOnly
-        case .trackedOnly: preconditionFailure("Tracked-only creation must use createWorktree.")
+        case .checkout: preconditionFailure("A checkout must use createWorktree.")
         }
         do throws(GitWorktreeForkError) {
             let fork = try await client.forkWorktree(

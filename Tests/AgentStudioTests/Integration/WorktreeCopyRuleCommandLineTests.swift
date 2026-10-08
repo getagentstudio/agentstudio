@@ -75,7 +75,7 @@ struct WorktreeCopyRuleCommandLineTests {
             #expect(text.contains("sourceIndexUnreadable"))
             #expect(!text.contains("changesUnknown"))
             #expect(text.contains("retry"))
-            #expect(text.contains("--tracked-only"))
+            #expect(text.contains("--no-fork"))
         }
         try await expectAbsent(repository: repository, destination: destination, branch: branch)
     }
@@ -94,7 +94,7 @@ struct WorktreeCopyRuleCommandLineTests {
             #expect(exit == 1)
             #expect(text.contains("sourceIndexUnsupported"))
             #expect(!text.contains("changesUnknown"))
-            #expect(text.contains("--tracked-only"))
+            #expect(text.contains("--no-fork"))
             #expect(!text.contains("retry"))
         }
         try await expectAbsent(repository: repository, destination: destination, branch: branch)

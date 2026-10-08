@@ -62,8 +62,8 @@ struct WorktreeSourcePreflightIntegrationTests {
             let outcome = await WorktreeOperationRunner(client: client).run(
                 .create(
                     WorktreeCreateRequest(
-                        start: canonicalRepository, branch: "feature/unavailable", source: source,
-                        materialization: .copyOnWrite)
+                        start: canonicalRepository, branch: "feature/unavailable", source: source, startBranch: nil,
+                        materialization: .copyOnWrite, fetchPolicy: .skip)
                 ))
             #expect(outcome == .refused(.forkUnavailable(.clientCapabilityUnavailable, source: source)))
             let response = try WorktreeCommandLineFormatter.format(outcome: outcome, usesJSONOutput: true)
@@ -71,9 +71,9 @@ struct WorktreeSourcePreflightIntegrationTests {
             #expect(document["alternative"] == nil)
             #expect(
                 document["alternatives"] as? [String]
-                    == (source == .mainWorktree ? ["trackedOnly"] : ["trackedOnly", "changesOnly"]))
+                    == (source == .mainWorktree ? ["checkout"] : ["checkout", "changesOnly"]))
             let human = try WorktreeCommandLineFormatter.format(outcome: outcome, usesJSONOutput: false)
-            #expect(human.text.contains("--tracked-only"))
+            #expect(human.text.contains("--no-fork"))
             #expect(human.text.contains("--changes-only") == (source != .mainWorktree))
         }
     }
@@ -154,8 +154,8 @@ struct WorktreeSourcePreflightIntegrationTests {
     }
 
     @Test(
-        "malformed config refuses only copy-on-write and offers tracked-only",
-        arguments: [WorktreeCreateMaterialization.copyOnWrite, .changesOnly, .trackedOnly(startBranch: nil)])
+        "malformed config refuses only copy-on-write and offers --no-fork",
+        arguments: [WorktreeCreateMaterialization.copyOnWrite, .changesOnly, .checkout])
     func readsConfigOnlyForCopyOnWrite(materialization: WorktreeCreateMaterialization) async throws {
         let repository = try await seededRepository(named: "new-invalid-config")
         defer { FilesystemTestGitRepo.destroy(repository) }
@@ -167,7 +167,7 @@ struct WorktreeSourcePreflightIntegrationTests {
         switch materialization {
         case .copyOnWrite: options = ["--from", repository.path]
         case .changesOnly: options = ["--from", repository.path, "--changes-only"]
-        case .trackedOnly: options = ["--tracked-only"]
+        case .checkout: options = ["--no-fork"]
         }
         let beforeHead = try await worktreeCreationGit(at: repository, arguments: ["rev-parse", "HEAD"])
         let beforeStatus = try await worktreeCreationGit(at: repository, arguments: ["status", "--porcelain=v1"])
@@ -182,7 +182,7 @@ struct WorktreeSourcePreflightIntegrationTests {
             #expect(exit == 1)
             #expect(output.contains("configInvalid"))
             #expect(output.contains(".agentstudio.config.json"))
-            #expect(output.contains("--tracked-only"))
+            #expect(output.contains("--no-fork"))
             try await expectNoCreation(repository: repository, destination: destination, branch: branch)
         } else {
             #expect(exit == 0)

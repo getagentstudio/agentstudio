@@ -18,7 +18,7 @@ struct WorktreeLargeFileProjectionTests {
             branch: "feature/lfs",
             path: worktree,
             repository: repository,
-            materialization: .trackedOnly(
+            materialization: .checkout(
                 GitLargeFileFill(
                     materializedCount: 1,
                     missing: missing,
@@ -61,7 +61,7 @@ struct WorktreeLargeFileProjectionTests {
             branch: "feature/lfs-residue-only",
             path: worktree,
             repository: repository,
-            materialization: .trackedOnly(
+            materialization: .checkout(
                 GitLargeFileFill(
                     materializedCount: 0,
                     missing: [],
@@ -96,7 +96,7 @@ struct WorktreeLargeFileProjectionTests {
             branch: "feature/lfs",
             path: worktree,
             repository: repository,
-            materialization: .trackedOnly(
+            materialization: .checkout(
                 GitLargeFileFill(
                     materializedCount: 1,
                     missing: [],

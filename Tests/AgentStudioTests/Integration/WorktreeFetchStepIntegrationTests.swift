@@ -38,7 +38,7 @@ struct WorktreeFetchStepIntegrationTests {
         let fetched = await step.run(
             repositoryPath: fixture.repository,
             resolution: initialResolution,
-            policy: .defaultBranch
+            policy: .fetch
         )
         #expect(fetched.status == .fetched(commit: fixture.remoteCommit))
         #expect(fetched.target?.referenceName == "refs/remotes/origin/main")
@@ -62,7 +62,7 @@ struct WorktreeFetchStepIntegrationTests {
 
         #expect(target.referenceName == "refs/heads/main")
         #expect(target.fetchSource == .noRemote)
-        let result = await step.run(repositoryPath: repository, resolution: resolution, policy: .defaultBranch)
+        let result = await step.run(repositoryPath: repository, resolution: resolution, policy: .fetch)
         #expect(result.status == .skipped(reason: .noRemote))
         #expect(result.target == target)
     }
@@ -80,7 +80,7 @@ struct WorktreeFetchStepIntegrationTests {
             Issue.record("expected a legitimately absent E4, got \(resolution)")
             return
         }
-        let fetching = await step.run(repositoryPath: repository, resolution: resolution, policy: .defaultBranch)
+        let fetching = await step.run(repositoryPath: repository, resolution: resolution, policy: .fetch)
         let skipping = await step.run(repositoryPath: repository, resolution: resolution, policy: .skip)
         #expect(fetching.target == nil)
         #expect(fetching.status == .skipped(reason: .noTarget))
@@ -98,7 +98,7 @@ struct WorktreeFetchStepIntegrationTests {
         let remoteClient = fetchResidueRemoteClient(fixture: fixture, residuePath: residuePath)
         let outcome = await WorktreeOperationRunner(client: client, remoteClient: remoteClient).run(
             .list(
-                start: fixture.repository, callerDirectory: fixture.repository, targets: [], fetchPolicy: .defaultBranch
+                start: fixture.repository, callerDirectory: fixture.repository, targets: [], fetchPolicy: .fetch
             )
         )
         try expectFetchResidue(outcome, expected: expectedFetch, path: residuePath)
@@ -119,7 +119,7 @@ struct WorktreeFetchStepIntegrationTests {
             remoteClient: remoteClient
         ).run(
             .list(
-                start: fixture.repository, callerDirectory: fixture.repository, targets: [], fetchPolicy: .defaultBranch
+                start: fixture.repository, callerDirectory: fixture.repository, targets: [], fetchPolicy: .fetch
             )
         )
         try expectFetchResidue(readFailureOutcome, expected: expectedFetch, path: residuePath)
@@ -167,7 +167,7 @@ struct WorktreeFetchStepIntegrationTests {
                     targets: [previewPath.path],
                     callerDirectory: fixture.repository,
                     branchPolicy: .keep,
-                    fetchPolicy: .defaultBranch,
+                    fetchPolicy: .fetch,
                     dryRun: true
                 ))
         )
@@ -180,7 +180,7 @@ struct WorktreeFetchStepIntegrationTests {
                     targets: [removalPath.path],
                     callerDirectory: fixture.repository,
                     branchPolicy: .keep,
-                    fetchPolicy: .defaultBranch
+                    fetchPolicy: .fetch
                 ))
         )
         try expectFetchResidue(removalOutcome, expected: expectedFetch, path: residuePath)
@@ -192,7 +192,7 @@ struct WorktreeFetchStepIntegrationTests {
                     callerDirectory: fixture.repository,
                     apply: false,
                     evidencePolicy: .requireEmpty,
-                    fetchPolicy: .defaultBranch
+                    fetchPolicy: .fetch
                 ))
         )
         try expectFetchResidue(pruneOutcome, expected: expectedFetch, path: residuePath)
@@ -230,7 +230,7 @@ struct WorktreeFetchStepIntegrationTests {
         #expect(target.branchName == "main")
         #expect(target.commit == targetCommit)
         #expect(target.fetchSource == .upstreamNotOrigin)
-        let result = await step.run(repositoryPath: repository, resolution: resolution, policy: .defaultBranch)
+        let result = await step.run(repositoryPath: repository, resolution: resolution, policy: .fetch)
         #expect(result.status == .failed(reason: .upstreamNotOrigin))
         #expect(result.target == target)
         #expect(try await reference("refs/remotes/company/main", in: repository) == targetCommit)
@@ -254,7 +254,7 @@ struct WorktreeFetchStepIntegrationTests {
         let target = try #require(resolution.target)
         #expect(target.commit == fixture.initialCommit)
 
-        let result = await step.run(repositoryPath: fixture.repository, resolution: resolution, policy: .defaultBranch)
+        let result = await step.run(repositoryPath: fixture.repository, resolution: resolution, policy: .fetch)
         #expect(result.target == target)
         guard case .failed(let reason, let lock, let lockResidue) = result.status else {
             Issue.record("expected a fail-soft fetch status, received \(result.status)")
@@ -285,7 +285,7 @@ struct WorktreeFetchStepIntegrationTests {
         )
         let resolution = await resolver.resolve(repositoryPath: fixture.repository)
         let target = try #require(resolution.target)
-        let result = await step.run(repositoryPath: fixture.repository, resolution: resolution, policy: .defaultBranch)
+        let result = await step.run(repositoryPath: fixture.repository, resolution: resolution, policy: .fetch)
 
         #expect(
             result.status
@@ -343,7 +343,7 @@ struct WorktreeFetchStepIntegrationTests {
                 targets: [linkedWorktreePath.path],
                 callerDirectory: fixture.repository,
                 branchPolicy: .deleteAtObservedCommit,
-                fetchPolicy: .defaultBranch
+                fetchPolicy: .fetch
             )
         )
 

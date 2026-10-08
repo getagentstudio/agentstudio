@@ -49,8 +49,6 @@ package enum WorktreeCommandLineArgumentError: Error, Equatable, Sendable {
             "\(option) path must not be empty"
         case .duplicateOption(let option):
             "\(option) may be specified only once"
-        case .conflictingOptions("--from", "--from-branch"):
-            "--from and --from-branch each select a source; choose one source"
         case .conflictingOptions(let first, let second):
             "\(first) and \(second) cannot be used together"
         }
@@ -237,30 +235,30 @@ package enum WorktreeCommandLineArgumentParser {
             throw WorktreeCommandLineArgumentError.unexpectedArgument
         }
 
-        if parsedArguments.sourcePath != nil, parsedArguments.startBranch != nil {
-            throw WorktreeCommandLineArgumentError.conflictingOptions("--from", "--from-branch")
-        }
-        if parsedArguments.trackedOnly,
-            parsedArguments.sourcePath != nil || parsedArguments.changesOnly
-        {
-            throw WorktreeCreationStop.trackedOnlyExcludesSource
-        }
-        if parsedArguments.changesOnly, parsedArguments.sourcePath == nil {
-            throw WorktreeCreationStop.changesOnlyNeedsFrom
-        }
         let materialization: WorktreeCreateMaterialization
-        // A start branch has no worktree to fork, so it always checks out tracked files.
-        if parsedArguments.trackedOnly || parsedArguments.startBranch != nil {
-            materialization = .trackedOnly(startBranch: parsedArguments.startBranch)
+        if parsedArguments.changesOnly {
+            // A changes-only copy is a new branch at the source's HEAD commit, never a plain checkout.
+            if parsedArguments.noFork {
+                throw WorktreeCommandLineArgumentError.conflictingOptions("--changes-only", "--no-fork")
+            }
+            if parsedArguments.startBranch != nil {
+                throw WorktreeCommandLineArgumentError.conflictingOptions("--changes-only", "--from-branch")
+            }
+            if parsedArguments.sourcePath == nil {
+                throw WorktreeCreationStop.changesOnlyNeedsFrom
+            }
+            materialization = .changesOnly
         } else {
-            materialization = parsedArguments.changesOnly ? .changesOnly : .copyOnWrite
+            materialization = parsedArguments.noFork ? .checkout : .copyOnWrite
         }
         return .create(
             WorktreeCreateRequest(
                 start: parsedArguments.repositoryPath ?? callerDirectory,
                 branch: branch,
                 source: parsedArguments.sourcePath.map(WorktreeCreateSource.worktree) ?? .mainWorktree,
-                materialization: materialization
+                startBranch: parsedArguments.startBranch,
+                materialization: materialization,
+                fetchPolicy: parsedArguments.fetchPolicy
             ))
     }
 }
@@ -273,7 +271,7 @@ private struct ParsedArguments {
     let usesJSONOutput: Bool
     let fetchPolicy: WorktreeFetchPolicy
     let startBranch: String?
-    let trackedOnly: Bool
+    let noFork: Bool
     let changesOnly: Bool
     let discardWorkingChanges: Bool
     let deleteAtObservedCommit: Bool
@@ -292,8 +290,8 @@ private struct ParsedArgumentAccumulator {
     var archivePath: URL?
     var startBranch: String?
     var usesJSONOutput = false
-    var fetchPolicy = WorktreeFetchPolicy.defaultBranch
-    var trackedOnly = false
+    var fetchPolicy = WorktreeFetchPolicy.fetch
+    var noFork = false
     var changesOnly = false
     var discardWorkingChanges = false
     var deleteAtObservedCommit = false
@@ -315,20 +313,17 @@ private struct ParsedArgumentAccumulator {
             usesJSONOutput = true
             return true
         }
-        if argument == "--changes-only" || argument == "--tracked-only" {
+        if argument == "--changes-only" || argument == "--no-fork" {
             guard subcommand == "new" else {
                 throw WorktreeCommandLineArgumentError.unsupportedOption
             }
             guard seenFlags.insert(argument).inserted else {
                 throw WorktreeCommandLineArgumentError.duplicateOption(argument)
             }
-            if argument == "--tracked-only" { trackedOnly = true } else { changesOnly = true }
+            if argument == "--no-fork" { noFork = true } else { changesOnly = true }
             return true
         }
         if argument == "--no-fetch" {
-            guard subcommand == "list" || subcommand == "remove" || subcommand == "prune" else {
-                throw WorktreeCommandLineArgumentError.unsupportedOption
-            }
             guard !noFetchSpecified else {
                 throw WorktreeCommandLineArgumentError.duplicateOption(argument)
             }
@@ -459,7 +454,7 @@ private struct ParsedArgumentAccumulator {
             usesJSONOutput: usesJSONOutput,
             fetchPolicy: fetchPolicy,
             startBranch: startBranch,
-            trackedOnly: trackedOnly,
+            noFork: noFork,
             changesOnly: changesOnly,
             discardWorkingChanges: discardWorkingChanges,
             deleteAtObservedCommit: deleteAtObservedCommit,

@@ -42,7 +42,7 @@ struct WorktreeCreationCommandLineIntegrationTests {
         let probe = WorktreeCreationCommandLineProbe()
         let exitCode = await WorktreeCommandLine.run(
             arguments: [
-                "new", branch, "--tracked-only", "--from-branch", startBranch, "--repo", repository.path, "--json",
+                "new", branch, "--no-fork", "--from-branch", startBranch, "--repo", repository.path, "--json",
             ],
             currentDirectory: repository,
             output: { probe.appendOutput($0) },
@@ -58,7 +58,7 @@ struct WorktreeCreationCommandLineIntegrationTests {
         #expect(document.branch == branch)
         #expect(document.path == destination.path)
         #expect(document.repository == repository.path)
-        #expect(document.materialization?.kind == "trackedOnly")
+        #expect(document.materialization?.kind == "checkout")
         #expect(document.largeFiles == nil)
         #expect(try await git(at: destination, "rev-parse", "--abbrev-ref", "HEAD") == branch)
         #expect(try await git(at: destination, "rev-parse", "HEAD") == expectedTip)
@@ -66,7 +66,7 @@ struct WorktreeCreationCommandLineIntegrationTests {
     }
 
     @Test("new --from-branch without another flag creates its new branch at that local branch tip")
-    func createsFromBranchWithoutTrackedOnly() async throws {
+    func createsFromBranchWithoutNoFork() async throws {
         let repository = try await FilesystemTestGitRepo.create(named: "cli-from-branch-alone")
         defer { FilesystemTestGitRepo.destroy(repository) }
         try "base\n".write(to: repository.appending(path: "README.md"), atomically: true, encoding: .utf8)
@@ -97,7 +97,7 @@ struct WorktreeCreationCommandLineIntegrationTests {
         #expect(document.outcome == "created")
         #expect(document.branch == "feat")
         #expect(document.path == destination.path)
-        #expect(document.materialization?.kind == "trackedOnly")
+        #expect(document.materialization?.kind == "checkout")
         #expect(try await git(at: repository, "rev-parse", "refs/heads/feat") == releaseTip)
         #expect(try await git(at: destination, "rev-parse", "HEAD") == releaseTip)
     }
@@ -125,7 +125,7 @@ struct WorktreeCreationCommandLineIntegrationTests {
         let probe = WorktreeCreationCommandLineProbe()
         let exitCode = await WorktreeCommandLine.run(
             arguments: [
-                "new", branch, "--tracked-only", "--repo", repository.path, "--from-branch", "feature/missing",
+                "new", branch, "--no-fork", "--repo", repository.path, "--from-branch", "feature/missing",
                 "--json",
             ],
             currentDirectory: repository,
