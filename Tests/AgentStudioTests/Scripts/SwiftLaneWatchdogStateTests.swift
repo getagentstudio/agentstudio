@@ -20,6 +20,7 @@ struct SwiftLaneWatchdogStateTests {
             mkfifo '__FIFO__'
             mkfifo '__STARTUP_FIFO__'
             LOG_PREFIX=watchdog-state
+            BUILD_PATH='__EVIDENCE__/build'
             LANE_EVENT_STREAM_DIR='__EVIDENCE__'
             export LANE_WATCHDOG_ARM_PATH='__ARM__'
             source scripts/swift-test-helpers.sh
@@ -66,7 +67,7 @@ struct SwiftLaneWatchdogStateTests {
             .replacingOccurrences(of: "__STARTUP_READY__", with: startupReady)
             .replacingOccurrences(of: "__ARM__", with: watchdogArm)
             .replacingOccurrences(of: "__HOLD__", with: holdBeforeIdentity ? "1" : "0")
-        let result = try await runLaneScriptBash(command)
+        let result = try await runLaneScriptBash(command, innerWatchdog: .armed)
         #expect(result.exitCode == 0, Comment(rawValue: result.output))
         #expect(result.output.contains("STATUS=1"))
         #expect(result.output.contains("CHILD_REAPED"))
