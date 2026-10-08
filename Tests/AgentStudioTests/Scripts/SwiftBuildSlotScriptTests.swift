@@ -318,6 +318,55 @@ struct SwiftBuildSlotScriptTests {
             FileManager.default.fileExists(atPath: fixture.rootURL.appending(path: ".build-agent-1/.slot.lock").path))
     }
 
+    @Test("clean-artifacts refuses while the slot is held and removes the build directories once it is free")
+    func cleanArtifactsRefusesHeldSlot() async throws {
+        let fixture = try SwiftBuildSlotFixture()
+        let slotBuildDatabase = fixture.rootURL.appending(path: ".build-agent-1/build.db")
+        let indexBuildDirectory = fixture.rootURL.appending(path: ".build/index-build")
+        try FileManager.default.createDirectory(at: indexBuildDirectory, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(
+            at: slotBuildDatabase.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try Data().write(to: slotBuildDatabase)
+
+        let miseConfig = try String(contentsOfFile: ".mise.toml", encoding: .utf8)
+        let cleanerBody = try miseTaskBody(named: "clean-artifacts", in: miseConfig)
+        let result = try await fixture.withOwnedProcesses { fixture in
+            let owner = fixture.makeProcess(
+                "source scripts/swift-build-slot.sh\n"
+                    + "trap swift_build_slot_release EXIT\n"
+                    + "swift_build_slot_acquire build \"held-owner\"\n"
+                    + "printf 'OWNER_READY\\n'\n"
+                    + "IFS= read -r _ || exit 0\n"
+            )
+            owner.start()
+            _ = try await owner.readOutput(until: "OWNER_READY")
+            let heldCleaner = fixture.makeProcess(cleanerBody, environment: ["PROJECT_ROOT": fixture.rootURL.path])
+            heldCleaner.start()
+            let heldOutput = try await heldCleaner.readOutputToEnd()
+            let heldStatus = try await heldCleaner.waitForExit()
+            let buildSurvivedWhileHeld =
+                FileManager.default.fileExists(atPath: slotBuildDatabase.path)
+                && FileManager.default.fileExists(atPath: indexBuildDirectory.path)
+
+            try writeLine("release\n", to: owner.standardInput)
+            _ = try await owner.readOutputToEnd()
+            _ = try await owner.waitForExit()
+
+            let freeCleaner = fixture.makeProcess(cleanerBody, environment: ["PROJECT_ROOT": fixture.rootURL.path])
+            freeCleaner.start()
+            _ = try await freeCleaner.readOutputToEnd()
+            let freeStatus = try await freeCleaner.waitForExit()
+            return (heldStatus, heldOutput, buildSurvivedWhileHeld, freeStatus)
+        }
+
+        #expect(result.0 == 1)
+        #expect(result.1.contains("refused: the build slot is held (holder_task=held-owner"))
+        #expect(result.2)
+        #expect(result.3 == 0)
+        #expect(!FileManager.default.fileExists(atPath: fixture.rootURL.appending(path: ".build-agent-1").path))
+        #expect(!FileManager.default.fileExists(atPath: fixture.rootURL.appending(path: ".build").path))
+    }
+
     @Test("a holder killed with SIGKILL frees its slot through the kernel")
     func killedHolderFreesSlot() async throws {
         let fixture = try SwiftBuildSlotFixture()

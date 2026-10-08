@@ -582,10 +582,19 @@ swift test $(swift_package_sandbox_arguments) --skip-build --build-path "$BUILD_
 """
 
 [tasks.clean-artifacts]
-description = "Clean swift build dirs and app bundle (vendor and vendor-derived files preserved)"
+description = "Clean swift build dirs and app bundle (vendor and vendor-derived files preserved; refuses while the build slot is held)"
 run = """
 #!/usr/bin/env bash
 set -euo pipefail
+source "${PROJECT_ROOT}/scripts/swift-build-slot.sh"
+# A held slot means a build or test is running in this worktree right now.
+# Deleting its directory would remove the lock and build database under it.
+slot_directory="${PROJECT_ROOT}/$(swift_build_slot_resolve_directory build)"
+if [ -d "$slot_directory" ] && ! swift_build_slot_lock_is_free "$slot_directory"; then
+  holder="$(cat "$slot_directory/.slot.holder" 2>/dev/null || echo "holder_task=unknown")"
+  echo "[clean-artifacts] refused: the build slot is held ($holder); nothing removed" >&2
+  exit 1
+fi
 rm -rf "${PROJECT_ROOT}/.build" "${PROJECT_ROOT}"/.build-*
 rm -rf "${PROJECT_ROOT}/AgentStudio.app"
 echo "Cleaned swift build dirs and app bundle in ${PROJECT_ROOT}"
