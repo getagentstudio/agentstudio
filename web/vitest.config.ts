@@ -49,6 +49,11 @@ import {
 import { verifyHeroWorkspace } from "./tests/hero-workspace-browser-command.ts";
 import { verifyInstallCommandLayout } from "./tests/install-command-layout-browser-command.ts";
 import { buildMediaCalloutForBrowserTest } from "./tests/media-callout-browser-command.ts";
+import {
+  releasePendingWaitFixture,
+  startPendingWaitFixture,
+} from "./tests/pending-wait-diagnostics-fixture-browser-command.ts";
+import { capturePendingWaitDiagnostics } from "./tests/pending-wait-diagnostics.ts";
 import { verifyProofChapter, verifyProofClipMedia } from "./tests/proof-chapter-browser-command.ts";
 import { verifyRailViewportBands } from "./tests/rail-band-browser-command.ts";
 import { buildSceneBundlesForBrowserTest } from "./tests/scene-bundle-browser-command.ts";
@@ -120,6 +125,9 @@ export default defineConfig({
               verifyManualChapterClaim,
               verifyChapterScrollGeometry,
               verifyChapterStepHop,
+              capturePendingWaitDiagnostics,
+              startPendingWaitFixture,
+              releasePendingWaitFixture,
               verifyReducedMotionStepLine,
               verifyHeroIntroLayout,
               verifyHeroNoScriptWidth,
