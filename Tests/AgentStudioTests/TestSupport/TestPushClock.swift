@@ -262,7 +262,8 @@ package struct TestPushClock: Clock {
         await waitForPendingSleepCount(matching: .atLeastFromGeneration(count: count, generation: generation))
     }
 
-    @discardableResult
+    /// Matches any pending sleep at this exact deadline, regardless of owner or generation.
+    /// A sleep already due, or cancelled before registration, never satisfies this wait.
     package func waitForPendingSleep(deadline: Instant) async -> Instant {
         let observedDeadlines = await waitForPendingSleeps(matching: .deadline(deadline))
         guard let observedDeadline = observedDeadlines.first(where: { $0 == deadline }) else {

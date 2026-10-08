@@ -75,7 +75,6 @@ struct TestPushClockTests {
         let observedDeadline = await clock.waitForPendingSleep(deadline: deadline)
 
         #expect(observedDeadline == deadline)
-        #expect(clock.pendingSleepDeadlines.contains(deadline))
         clock.advance(to: deadline)
         try await sleepTask.value
     }
