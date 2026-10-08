@@ -79,7 +79,7 @@ describe('W2 render-Failed request containment', () => {
 					await settlement;
 					expect.soft(deadlines.every((deadline) => !deadline.active)).toBe(true);
 					// A timer callback already queued before cancellation must also be inert.
-					for (const deadline of [...deadlines]) deadline.fire();
+					for (const deadline of deadlines.slice()) deadline.fire();
 					await owner.resnapshot('affected');
 					expect.soft(requests).toHaveLength(sentBeforeFailure);
 					expect.soft(owner.recoveryState('affected')).toEqual({
