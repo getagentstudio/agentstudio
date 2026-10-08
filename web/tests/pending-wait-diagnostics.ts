@@ -78,7 +78,7 @@ export type PendingWaitDiagnosticResult =
       readonly visibilityState: string;
       readonly hidden: boolean;
       readonly stateReader: "installed" | "missing" | "failed";
-      readonly stateError?: string;
+      readonly stateError: string | null;
       readonly state: Record<string, unknown>;
     }
   | { readonly kind: "no-active-command-page" }
@@ -107,7 +107,7 @@ export const capturePendingWaitDiagnostics = async ({
         const wallNow = performance.now();
         let state: Record<string, unknown> = {};
         let stateReader: "installed" | "missing" | "failed" = "missing";
-        let stateError: string | undefined;
+        let stateError: string | null = null;
         if (typeof tracker?.readCommandState === "function") {
           stateReader = "installed";
           try {
@@ -131,7 +131,7 @@ export const capturePendingWaitDiagnostics = async ({
           visibilityState,
           hidden,
           stateReader,
-          ...(stateError === undefined ? {} : { stateError }),
+          stateError,
           state,
         };
       } catch (error: unknown) {
@@ -179,6 +179,6 @@ export async function reportPendingWaitDiagnostic(
       if (timeoutHandle !== undefined) clearTimeout(timeoutHandle);
     }
   } catch {
-    console.error("PENDING_WAIT_DIAGNOSTIC unavailable reason=handler-error");
+    console.error(`PENDING_WAIT_DIAGNOSTIC unavailable reason=${JSON.stringify("handler-error")}`);
   }
 }

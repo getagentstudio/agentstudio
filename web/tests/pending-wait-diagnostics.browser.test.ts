@@ -40,6 +40,7 @@ it("captures a pending wait with a running document timeline", async () => {
   expect(result.wallElapsedMs).toBeGreaterThan(0);
   expect(typeof result.visibilityState).toBe("string");
   expect(result.stateReader).toBe("installed");
+  expect(result.stateError).toBeNull();
   expect(result.state).toEqual({ fixtureState: "pending" });
 });
 
@@ -76,6 +77,7 @@ it("prints the captured diagnostic line without changing the failure handler", a
     expect(parsed["test"]).toBe("fixture diagnostic test");
     expect(parsed["wait"]).toBe("fixture-wait");
     expect(parsed["stateReader"]).toBe("installed");
+    expect(parsed["stateError"]).toBeNull();
     expect(parsed["state"]).toEqual({ fixtureState: "pending" });
   } finally {
     await commands.releasePendingWaitFixture();
@@ -92,6 +94,23 @@ it("prints an unavailable line when no command page is registered", async () => 
     );
     expect(errorSpy).toHaveBeenCalledWith(
       'PENDING_WAIT_DIAGNOSTIC unavailable reason="no-active-command-page"',
+    );
+  } finally {
+    errorSpy.mockRestore();
+  }
+});
+
+it("quotes the handler-error reason", async () => {
+  const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
+  try {
+    await reportPendingWaitDiagnostic(
+      { task: { name: "handler error diagnostic test" } },
+      async () => {
+        throw new Error("capture exploded");
+      },
+    );
+    expect(errorSpy).toHaveBeenCalledWith(
+      'PENDING_WAIT_DIAGNOSTIC unavailable reason="handler-error"',
     );
   } finally {
     errorSpy.mockRestore();
@@ -122,6 +141,7 @@ it("identifies a missing command state reader", async () => {
     expect(result.kind).toBe("captured");
     if (result.kind !== "captured") throw new Error("Missing-reader fixture capture failed");
     expect(result.stateReader).toBe("missing");
+    expect(result.stateError).toBeNull();
     expect(result.state).toEqual({});
   } finally {
     await commands.releasePendingWaitFixture();
