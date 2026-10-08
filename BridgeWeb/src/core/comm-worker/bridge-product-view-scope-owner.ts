@@ -211,7 +211,7 @@ export class BridgeProductViewScopeOwner {
 
 	requestResnapshot(request: ViewResnapshotAdmissionProps): Promise<void> {
 		const view = this.#matchingView(request);
-		if (view === undefined) return Promise.resolve();
+		if (view === undefined || view.recoveryStatus === 'failedRetryable') return Promise.resolve();
 		if (view.consecutiveResnapshots >= this.#maximumConsecutiveResnapshots) {
 			this.#clearReplacementBeginDeadline(view);
 			view.awaitingBegin = false;
@@ -320,7 +320,10 @@ export class BridgeProductViewScopeOwner {
 	failRenderView(subscriptionId: string): void {
 		// Render failure uses the existing Failed presentation without spending delivery recovery.
 		const view = this.#views.get(subscriptionId);
-		if (view !== undefined) this.#emitRecoveryStatus(view, 'failedRetryable');
+		if (view === undefined) return;
+		this.#clearReplacementBeginDeadline(view);
+		view.awaitingBegin = false;
+		this.#emitRecoveryStatus(view, 'failedRetryable');
 	}
 
 	async retryView(subscriptionId: string): Promise<void> {
@@ -338,6 +341,10 @@ export class BridgeProductViewScopeOwner {
 
 	#armReplacementBeginDeadline(view: DesiredView, domain: string): void {
 		this.#clearReplacementBeginDeadline(view);
+		if (view.recoveryStatus === 'failedRetryable') {
+			view.awaitingBegin = false;
+			return;
+		}
 		const generation = view.replacementBeginDeadlineGeneration;
 		view.clearReplacementBeginDeadline = this.#deadlineClock.schedule(
 			this.#progressDeadlineMilliseconds,
