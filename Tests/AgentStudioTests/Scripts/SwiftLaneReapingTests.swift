@@ -66,7 +66,8 @@ struct SwiftLaneReapingTests {
                 + #"'open(my $lock, ">>", shift) or die $!; flock($lock, LOCK_EX|LOCK_NB) or exit 7; print "LOCK_ACQUIRED\n";' "#
                 + "'\(childLockPath)'; then echo LOCK_AVAILABLE=yes; "
                 + "else echo LOCK_AVAILABLE=no; fi; "
-                + "if [ \"$child_alive\" = yes ]; then kill -9 \"$child_pid\" 2>/dev/null || true; fi"
+                + "if [ \"$child_alive\" = yes ]; then kill -9 \"$child_pid\" 2>/dev/null || true; fi",
+            innerWatchdog: .armed
         )
 
         #expect(!laneOutput.contains("CHILD_PID=0"))
@@ -99,7 +100,8 @@ struct SwiftLaneReapingTests {
                 + "echo \"ORPHAN_PID=${orphan_pid:-0}\"; "
                 + "if [ \"${orphan_pid:-0}\" -gt 0 ] && kill -0 \"$orphan_pid\" 2>/dev/null; then "
                 + "echo ORPHAN_ALIVE=yes; kill -9 \"$orphan_pid\" 2>/dev/null; "
-                + "else echo ORPHAN_ALIVE=no; fi"
+                + "else echo ORPHAN_ALIVE=no; fi",
+            innerWatchdog: .armed
         )
 
         #expect(!laneOutput.contains("ORPHAN_PID=0"))
@@ -132,7 +134,8 @@ struct SwiftLaneReapingTests {
                 + "echo \"LEDGER_WORKER_PID=${ledger_worker_pid:-0}\"; "
                 + "if [ \"${ledger_worker_pid:-0}\" -gt 0 ] && kill -0 \"$ledger_worker_pid\" 2>/dev/null; then "
                 + "echo LEDGER_WORKER_ALIVE=yes; kill -KILL \"$ledger_worker_pid\" 2>/dev/null; "
-                + "else echo LEDGER_WORKER_ALIVE=no; fi"
+                + "else echo LEDGER_WORKER_ALIVE=no; fi",
+            innerWatchdog: .armed
         )
 
         #expect(!wedgedOutput.contains("LEDGER_WORKER_PID=0"))
@@ -330,8 +333,10 @@ private func runBash(_ command: String) async throws -> String {
     return result.output
 }
 
-private func runBashAllowingFailure(_ command: String) async throws -> String {
-    (try await runLaneScriptBash(command)).output
+private func runBashAllowingFailure(
+    _ command: String, innerWatchdog: LaneFixtureInnerWatchdog = .unarmed
+) async throws -> String {
+    (try await runLaneScriptBash(command, innerWatchdog: innerWatchdog)).output
 }
 
 private enum SwiftLaneReapingTestError: Error {

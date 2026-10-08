@@ -98,7 +98,8 @@ struct SwiftLaneOutputRelayTests {
             let outputPipe = Pipe()
             let process = Process()
             process.executableURL = URL(fileURLWithPath: "/bin/bash")
-            process.arguments = ["-c", command]
+            // The lane launchers' default: this proves relayed lines, not inactivity.
+            process.arguments = ["-c", LaneFixtureInnerWatchdog.unarmed.shellPreamble + command]
             process.environment = testProcessEnvironmentWithoutRelayPaths()
             process.currentDirectoryURL = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
             process.standardOutput = outputPipe

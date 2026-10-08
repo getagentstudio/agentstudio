@@ -309,7 +309,8 @@ struct SwiftLaneResourceWrapperTests {
                 + "close(\u{0024}armed); print qq{PARKED\\n}; open(my \u{0024}release,q{<},shift) or die \u{0024}!; <\u{0024}release>;' "
                 + "'\(arm.path)' '\(release.path)'",
             setup: "SWIFT_TEST_RESOURCE_TIMER='\(timer.path)'; LANE_WATCHDOG_ARM_PATH='\(arm.path)'; "
-                + "mkfifo '\(release.path)'; swift_test_watchdog_timeout_status() { return 1; }; ")
+                + "mkfifo '\(release.path)'; swift_test_watchdog_timeout_status() { return 1; }; ",
+            innerWatchdog: .armed)
         #expect(result.output.contains("STATUS=124"))
         #expect(result.record["timed_out"] as? Bool == true)
         let timerPID = try String(contentsOf: fixture.root.appending(path: "timer.pid"), encoding: .utf8)
@@ -401,18 +402,18 @@ struct InvocationReceiptFixture {
         )
     }
 
-    /// Runs `command` under the real lane runner. These fixtures prove receipts and
-    /// verdicts, not inactivity, so the inner watchdog stays unarmed and only the
-    /// outer lane owns a hang bound; a timeout proof arms it in `setup`.
-    func run(_ command: String, eventStream: Bool = false, setup: String = "", helper: URL? = nil) async throws -> (
-        output: String, record: [String: Any]
-    ) {
+    /// Runs `command` under the real lane runner, with the lane launchers' inner
+    /// watchdog default; a timeout proof passes `.armed`.
+    func run(
+        _ command: String, eventStream: Bool = false, setup: String = "", helper: URL? = nil,
+        innerWatchdog: LaneFixtureInnerWatchdog = .unarmed
+    ) async throws -> (output: String, record: [String: Any]) {
         let result = try await runCommandToExit(
             command: "/bin/bash",
             arguments: [
                 "-c",
-                "LOG_PREFIX=f2; BUILD_PATH='\(root.path)/build'; export LANE_EVENT_STREAM_DIR='\(root.path)/evidence'; "
-                    + "LANE_WATCHDOG_ARM_PATH='\(root.path)/unarmed-watchdog'; "
+                innerWatchdog.shellPreamble
+                    + "LOG_PREFIX=f2; BUILD_PATH='\(root.path)/build'; export LANE_EVENT_STREAM_DIR='\(root.path)/evidence'; "
                     + "source '\(helper?.path ?? "scripts/swift-test-helpers.sh")'; "
                     + (eventStream ? "swift_test_command_accepts_event_stream() { return 0; }; " : "")
                     + setup

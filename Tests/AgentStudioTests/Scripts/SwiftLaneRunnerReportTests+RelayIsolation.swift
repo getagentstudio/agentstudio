@@ -12,10 +12,6 @@ private let invalidChildBytesLaneFixture = #"""
     unset SWIFT_TEST_OUTPUT_RELAY_LOCK_PATH SWIFT_TEST_OUTPUT_RELAY_SCRIPT_PATH
     mkdir -p "$fixture_directory/events"
     export LANE_EVENT_STREAM_DIR="$fixture_directory/events"
-    # This fixture proves byte handling, not inactivity. Keep the inner watchdog
-    # unarmed; only the outer lane owns a hang bound, however slowly a loaded
-    # host starts the probe or drains its output.
-    LANE_WATCHDOG_ARM_PATH="$fixture_directory/unarmed-watchdog"
     swift_test_begin_active_command_groups
     trap swift_test_cleanup_active_command_groups_directory EXIT
 
@@ -40,9 +36,6 @@ private let invalidChildBytesLaneFixture = #"""
 // releases the enclosing writer after reading the actual timeout error (red) or
 // completed probe (green), so output ordering does not depend on machine speed.
 private let sharedRelayLockSchedulingFixture = #"""
-    # This proof drives the watchdog through its own clock and sampling below,
-    # so it re-arms the watchdog the byte fixture keeps unarmed.
-    unset LANE_WATCHDOG_ARM_PATH
     # Observe the real fixture's lock while a second writer owns the enclosing lane's.
     eval "$(declare -f run_swift_with_timeout | sed '1s/run_swift_with_timeout/tq14_original_run/')"
     eval "$(declare -f swift_test_output_relay_begin_command | sed '1s/swift_test_output_relay_begin_command/tq14_original_begin/')"
@@ -254,7 +247,9 @@ extension SwiftLaneRunnerReportTests {
             .replacingOccurrences(of: "__RELAY_SCRIPT__", with: repositoryRoot + "/scripts/swift-test-output-relay.pl")
             .replacingOccurrences(of: "__PROBE_COMMAND__", with: probeCommand)
 
-        let result = try await runLaneScriptBash(command)
+        // Armed by name: this proof drives the watchdog through its own clock. The
+        // nested worker inherits no LANE_WATCHDOG_ARM_PATH, so its watchdog is armed.
+        let result = try await runLaneScriptBash(command, innerWatchdog: .armed)
         // The driver has exited: no legitimate writer can still own this lock.
         let releasedLock = try await runCommandToExit(
             command: "/usr/bin/perl",

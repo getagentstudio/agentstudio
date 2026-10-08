@@ -60,7 +60,7 @@ struct SwiftLaneHelperCancellationTests {
               echo HELPER_GROUP_ALIVE=no
             fi
             """
-        let result = try await runLaneScriptBash(shellCommand)
+        let result = try await runLaneScriptBash(shellCommand, innerWatchdog: .armed)
         let laneOutput = result.output
 
         let helperPIDReceipt =
@@ -144,7 +144,7 @@ struct SwiftLaneHelperCancellationTests {
               echo COMMAND_ALIVE=no
             fi
             """
-        let result = try await runLaneScriptBash(shellCommand)
+        let result = try await runLaneScriptBash(shellCommand, innerWatchdog: .armed)
         let laneOutput = result.output
 
         let commandPIDReceipt =

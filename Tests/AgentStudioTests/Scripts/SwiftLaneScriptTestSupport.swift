@@ -9,6 +9,31 @@ struct LaneScriptBashResult: Sendable {
     let output: String
 }
 
+/// Whether a lane fixture's own `run_swift_with_timeout` watchdog may fire.
+///
+/// The outer lane owns the hang bound for every test. A fixture whose subject is
+/// not inactivity runs unarmed, so a loaded host that starves the runner's own
+/// work cannot turn a command that already exited into a timeout (TQ14). A test
+/// whose subject is the watchdog, an inactivity timeout, a timeout reap or a
+/// heartbeat passes `.armed` at its call site.
+enum LaneFixtureInnerWatchdog: Sendable {
+    case unarmed
+    case armed
+
+    /// Shell run before the fixture command. It reaches runner calls in the
+    /// launched shell and its subshells; it is not exported, so a fixture that
+    /// starts the runner in a separate bash process sets that process itself.
+    var shellPreamble: String {
+        switch self {
+        case .unarmed:
+            // An arm path that never exists: no process can add entries to /var/empty.
+            "LANE_WATCHDOG_ARM_PATH=/var/empty/agentstudio-lane-fixture-watchdog-unarmed\n"
+        case .armed:
+            "unset LANE_WATCHDOG_ARM_PATH\n"
+        }
+    }
+}
+
 let swiftTaskParentEnvironmentProbe = """
     for inherited_variable in $(compgen -e); do
       case "$inherited_variable" in
@@ -38,7 +63,9 @@ func loadSwiftLaneRunnerReportingSource() throws -> String {
 ///
 /// The child is awaited off the cooperative pool: on a 3-core CI runner a
 /// blocking wait here would starve every other suite's tasks.
-func runLaneScriptBash(_ command: String, environment: [String: String]? = nil) async throws -> LaneScriptBashResult {
+func runLaneScriptBash(
+    _ command: String, environment: [String: String]? = nil, innerWatchdog: LaneFixtureInnerWatchdog = .unarmed
+) async throws -> LaneScriptBashResult {
     try await withoutBlockingCooperativePool {
         let outputURL = FileManager.default.temporaryDirectory
             .appending(path: "swift-lane-runner-output-\(UUIDv7.generate().uuidString).log")
@@ -50,7 +77,7 @@ func runLaneScriptBash(_ command: String, environment: [String: String]? = nil) 
         }
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/bin/bash")
-        process.arguments = ["-c", command]
+        process.arguments = ["-c", innerWatchdog.shellPreamble + command]
         process.currentDirectoryURL = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
         process.environment = testProcessEnvironmentWithoutRelayPaths(environment)
         process.standardOutput = outputHandle
@@ -73,8 +100,8 @@ func runLaneScriptBash(_ command: String, environment: [String: String]? = nil) 
 /// group open, and that sample reports the whole inactivity bound as elapsed.
 /// A loaded host produced this ordering (TQ14): only runner-owned processes were
 /// left in the group, so an armed inner watchdog read an exited command as a
-/// timeout. A fixture whose subject is not inactivity keeps its inner watchdog
-/// unarmed and keeps its verdict here. The next sample releases the drain.
+/// timeout. Under the launchers' `.unarmed` default the verdict holds; an
+/// `.armed` fixture reports the timeout. The next sample releases the drain.
 func laneRunnerStarvedDrainHook(fifoDirectory: String) -> String {
     #"""
     mkfifo '\#(fifoDirectory)/starved-drain-held' '\#(fifoDirectory)/starved-drain-release'
@@ -134,14 +161,18 @@ func laneOutputLines(_ output: String) -> [String] {
 }
 
 /// Runs a lane script command that must succeed, and returns its output.
-func laneBash(_ command: String, environment: [String: String]? = nil) async throws -> String {
-    let result = try await runLaneScriptBash(command, environment: environment)
+func laneBash(
+    _ command: String, environment: [String: String]? = nil, innerWatchdog: LaneFixtureInnerWatchdog = .unarmed
+) async throws -> String {
+    let result = try await runLaneScriptBash(command, environment: environment, innerWatchdog: innerWatchdog)
     #expect(result.exitCode == 0, Comment(rawValue: result.output))
     return result.output
 }
 
 /// For scripts that deliberately fail: these tests drive crashing and hung
 /// children, so a non-zero status is the expected outcome.
-func laneBashAllowingFailure(_ command: String, environment: [String: String]? = nil) async throws -> String {
-    (try await runLaneScriptBash(command, environment: environment)).output
+func laneBashAllowingFailure(
+    _ command: String, environment: [String: String]? = nil, innerWatchdog: LaneFixtureInnerWatchdog = .unarmed
+) async throws -> String {
+    (try await runLaneScriptBash(command, environment: environment, innerWatchdog: innerWatchdog)).output
 }

@@ -78,7 +78,8 @@ struct SwiftLaneHangEvidenceTests {
                 + "source scripts/swift-test-helpers.sh; set +e; "
                 + "run_swift_with_timeout 'dump probe' 0 /bin/bash -c "
                 + "'while true; do sleep 1; done' swiftpm-testing-helper AgentStudioTests.xctest "
-                + "|| returned=$?; echo \"RETURNED=${returned:-0}\""
+                + "|| returned=$?; echo \"RETURNED=${returned:-0}\"",
+            innerWatchdog: .armed
         )
         let dumpRange = try #require(laneOutput.range(of: "lane-report task_dump="))
         let reapRange = try #require(laneOutput.range(of: "lane-report timeout_reap="))
@@ -126,7 +127,8 @@ struct SwiftLaneHangEvidenceTests {
                 + "export PATH='\(workDirectory)/bin':$PATH; "
                 + "source scripts/swift-test-helpers.sh; set +e; "
                 + "run_swift_with_timeout 'evidence probe' 0 /bin/bash '\(workDirectory)/wedged-test.sh' "
-                + "swiftpm-testing-helper AgentStudioTests.xctest || returned=$?; echo \"RETURNED=${returned:-0}\""
+                + "swiftpm-testing-helper AgentStudioTests.xctest || returned=$?; echo \"RETURNED=${returned:-0}\"",
+            innerWatchdog: .armed
         )
         let evidenceFiles = try FileManager.default.contentsOfDirectory(atPath: evidenceDirectory).sorted()
         let ledger = try #require(evidenceFiles.first { $0.hasSuffix(".events.jsonl") })
@@ -253,7 +255,8 @@ struct SwiftLaneHangEvidenceTests {
                 + "export LANE_WATCHDOG_ARM_PATH='\(workDirectory)/armed'; "
                 + "source scripts/swift-test-helpers.sh; set +e; "
                 + "run_swift_with_timeout 'unavailable probe' 0 /bin/bash '\(workDirectory)/wedged-test.sh' "
-                + "swiftpm-testing-helper AgentStudioTests.xctest || returned=$?; echo \"RETURNED=${returned:-0}\""
+                + "swiftpm-testing-helper AgentStudioTests.xctest || returned=$?; echo \"RETURNED=${returned:-0}\"",
+            innerWatchdog: .armed
         )
         let unavailableRange = try #require(report.range(of: "lane-report held_step_log_unavailable"))
         let reapRange = try #require(report.range(of: "lane-report timeout_reap="))
@@ -291,8 +294,10 @@ struct SwiftLaneHangEvidenceTests {
                 + "echo \"DUMPS=$(ls -1 '\(workDirectory)/\(inspectorDirectory)-runs' | grep -c task-dump || true)\""
         }
 
-        let samplerMissing = try await laneBashAllowingFailure(wedgedLane(inspectorDirectory: "attaching"))
-        let bothMissing = try await laneBashAllowingFailure(wedgedLane(inspectorDirectory: "refusing"))
+        let samplerMissing = try await laneBashAllowingFailure(
+            wedgedLane(inspectorDirectory: "attaching"), innerWatchdog: .armed)
+        let bothMissing = try await laneBashAllowingFailure(
+            wedgedLane(inspectorDirectory: "refusing"), innerWatchdog: .armed)
 
         for laneOutput in [samplerMissing, bothMissing] {
             #expect(laneOutput.contains("RETURNED=124"))

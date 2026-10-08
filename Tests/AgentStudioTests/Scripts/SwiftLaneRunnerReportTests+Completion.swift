@@ -73,6 +73,24 @@ private let childExitDuringWatchdogSampleFixture = #"""
     [ "$status" -eq "$TQ14_EXPECTED_STATUS" ]
     """#
 
+// A command that exits at once, run while the runner's own drain outlasts the
+// inner bound (see laneRunnerStarvedDrainHook).
+private let exitedCommandUnderStarvedRunnerFixture = #"""
+    set -euo pipefail
+    source scripts/swift-test-helpers.sh
+    fixture_directory='__FIXTURE_DIRECTORY__'
+    mkdir -p "$fixture_directory/build" "$fixture_directory/events"
+    LOG_PREFIX=starved-runner
+    BUILD_PATH="$fixture_directory/build"
+    export LANE_EVENT_STREAM_DIR="$fixture_directory/events"
+    swift_test_begin_active_command_groups
+    trap swift_test_cleanup_active_command_groups_directory EXIT
+    __STARVED_DRAIN_HOOK__
+    status=0
+    run_swift_with_timeout 'exited command' 20 /bin/bash -c 'exit 0' || status=$?
+    printf 'EXITED_COMMAND_STATUS=%s\n' "$status"
+    """#
+
 extension SwiftLaneRunnerReportTests {
     @Test(
         "child completion wins over an expired watchdog sample after output EOF",
@@ -86,11 +104,40 @@ extension SwiftLaneRunnerReportTests {
             .replacingOccurrences(of: "__FIXTURE_DIRECTORY__", with: fixtureDirectory)
             .replacingOccurrences(of: "__EXIT_STATUS__", with: String(exitStatus))
 
-        let result = try await runLaneScriptBash(command)
+        let result = try await runLaneScriptBash(command, innerWatchdog: .armed)
         #expect(result.exitCode == 0, Comment(rawValue: result.output))
         #expect(result.output.contains("LEADER_EXIT_OBSERVED=\(exitStatus)"))
         #expect(result.output.contains("FAIL_CHILD_STATUS=\(exitStatus)"))
         #expect(!result.output.contains("ERROR: no output progress"))
         #expect(!result.output.contains("timeout_reap="))
+    }
+
+    @Test(
+        "an exited command keeps its status under a starved runner unless its fixture arms the watchdog",
+        arguments: [LaneFixtureInnerWatchdog.unarmed, .armed]
+    )
+    func exitedCommandUnderStarvedRunner(innerWatchdog: LaneFixtureInnerWatchdog) async throws {
+        let fixtureDirectory = NSTemporaryDirectory() + "agentstudio-starved-runner-\(UUIDv7.generate())"
+        defer { try? FileManager.default.removeItem(atPath: fixtureDirectory) }
+        let command =
+            exitedCommandUnderStarvedRunnerFixture
+            .replacingOccurrences(of: "__FIXTURE_DIRECTORY__", with: fixtureDirectory)
+            .replacingOccurrences(
+                of: "__STARVED_DRAIN_HOOK__", with: laneRunnerStarvedDrainHook(fifoDirectory: fixtureDirectory))
+
+        let result = try await runLaneScriptBash(command, innerWatchdog: innerWatchdog)
+
+        let lines = laneOutputLines(result.output)
+        #expect(result.exitCode == 0, Comment(rawValue: result.output))
+        switch innerWatchdog {
+        case .unarmed:
+            #expect(lines.contains("EXITED_COMMAND_STATUS=0"), Comment(rawValue: result.output))
+            #expect(!result.output.contains("ERROR: no output progress"), Comment(rawValue: result.output))
+        case .armed:
+            #expect(lines.contains("EXITED_COMMAND_STATUS=124"), Comment(rawValue: result.output))
+            #expect(
+                result.output.contains("ERROR: no output progress from 'exited command' for 20s"),
+                Comment(rawValue: result.output))
+        }
     }
 }
