@@ -1,4 +1,5 @@
 import AgentStudioInfrastructure
+import AgentStudioTestSupport
 import Foundation
 import Testing
 
@@ -8,7 +9,8 @@ import Testing
 struct BridgeProductSnapshotCauseSessionTests {
     @Test("a Review snapshot held behind coverage consumes the owed open cause")
     func heldReviewSnapshotCarriesOpen() async throws {
-        let harness = try await BridgeProductSessionLifecycleHarness.opened()
+        let clock = TestPushClock()
+        let harness = try await BridgeProductSessionLifecycleHarness.opened(deadlineClock: clock)
         let lease = try await harness.admitMetadataFrames(through: 0)
         try await harness.openSubscription(
             bridgeProductLifecycleReviewSubscriptionOpenObject(requestSequence: 2, epoch: 1))
@@ -56,6 +58,8 @@ struct BridgeProductSnapshotCauseSessionTests {
         }
         guard case .batch(.begin(let first)) = frames[0], case .batch(.begin(let held)) = frames[2] else {
             Issue.record("Expected coverage then the held Review snapshot")
+            await harness.session.closeViewDomains(subscriptionId: request.subscriptionId)
+            await clock.waitForPendingSleepCount(exactly: 0)
             try await harness.closeProducer(lease)
             return
         }
@@ -65,6 +69,8 @@ struct BridgeProductSnapshotCauseSessionTests {
         #expect(held.snapshotCause == .open)
         #expect(await harness.session.pendingReviewSnapshotByViewDomain[domain] == nil)
         #expect(await harness.session.viewSnapshotRequired(subscriptionId: request.subscriptionId) == false)
+        await harness.session.closeViewDomains(subscriptionId: request.subscriptionId)
+        await clock.waitForPendingSleepCount(exactly: 0)
         try await harness.closeProducer(lease)
     }
 }
