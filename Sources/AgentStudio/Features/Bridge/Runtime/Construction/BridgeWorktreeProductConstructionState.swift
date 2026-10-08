@@ -47,5 +47,6 @@ struct BridgeConstructionEntry {
     var preparedFileLeaseNonces: Set<UInt64>
     var progressiveFileState: BridgeProgressiveFileConstructionState?
     var progressiveBuildTask: Task<Void, Never>?
+    var terminalFileBuildError: (any Error)?
     var completedReviewPhases: Set<BridgeReviewConstructionPhase> = []
 }

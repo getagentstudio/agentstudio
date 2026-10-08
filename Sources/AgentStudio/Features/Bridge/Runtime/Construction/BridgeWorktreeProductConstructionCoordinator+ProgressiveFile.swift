@@ -176,6 +176,10 @@ extension BridgeWorktreeProductConstructionCoordinator {
             )
             return
         }
+        if let error = entry.terminalFileBuildError {
+            continuation.resume(throwing: error)
+            return
+        }
         guard entry.preparedFileLeaseNonces.contains(lease.leaseNonce) else {
             continuation.resume(
                 throwing: BridgeWorktreeProductConstructionError.filePreparationReadRequired
@@ -227,6 +231,10 @@ extension BridgeWorktreeProductConstructionCoordinator {
                     throwing: BridgeWorktreeProductConstructionError.invalidFileConsumerLease
                 )
             }
+            return
+        }
+        if let error = entry.terminalFileBuildError {
+            continuation.resume(throwing: error)
             return
         }
         switch entry.phase {
@@ -288,10 +296,7 @@ extension BridgeWorktreeProductConstructionCoordinator {
 
         switch result {
         case .failure(let error):
-            failFileReadWaiters(in: &entry, with: error)
-            entry.activeLeaseNonces.removeAll(keepingCapacity: false)
-            emit(.buildFailed, entry: entry)
-            removeEntry(entry)
+            retainFileBuildFailure(error, in: &entry)
         case .success(let completion):
             guard var state = entry.progressiveFileState else {
                 failFileReadWaiters(
@@ -305,10 +310,7 @@ extension BridgeWorktreeProductConstructionCoordinator {
             do {
                 snapshot = try state.makeCompletedSnapshot(completion: completion)
             } catch {
-                failFileReadWaiters(in: &entry, with: error)
-                entry.activeLeaseNonces.removeAll(keepingCapacity: false)
-                emit(.buildFailed, entry: entry)
-                removeEntry(entry)
+                retainFileBuildFailure(error, in: &entry)
                 return
             }
             entry.progressiveFileState = nil
@@ -322,6 +324,22 @@ extension BridgeWorktreeProductConstructionCoordinator {
             emit(.buildReady, entry: entry)
             state.finishPendingReads(with: snapshot)
         }
+    }
+
+    private func retainFileBuildFailure(_ error: any Error, in entry: inout BridgeConstructionEntry) {
+        failFileReadWaiters(in: &entry, with: error)
+        if currentEntryNonceByIdentity[entry.identity] == entry.nonce {
+            currentEntryNonceByIdentity.removeValue(forKey: entry.identity)
+        }
+        // An issued lease retains its build outcome, even between reads. New
+        // acquisitions rebuild; release and shutdown retire this existing record.
+        entry.progressiveFileState = nil
+        entry.preparedFileLeaseNonces.removeAll(keepingCapacity: false)
+        entry.progressiveBuildTask = nil
+        entry.terminalFileBuildError = error
+        entry.phase = .tombstone
+        entriesByNonce[entry.nonce] = entry
+        emit(.buildFailed, entry: entry)
     }
 
     func cancelFileReadWaiter(leaseNonce: UInt64) {
