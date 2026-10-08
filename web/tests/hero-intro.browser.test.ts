@@ -5,7 +5,9 @@ import type { HeroEyebrowSettleObservation } from "./hero-eyebrow-settle-browser
 import type {
   HeroLayoutObservation,
   HeroPlaybackObservation,
-  HeroRefreshObservation,
+  HeroReloadObservation,
+  HeroScrollAndWheelObservation,
+  HeroHashLinkObservation,
   HeroShiftObservation,
   HeroScrollCueObservation,
   HeroPhoneFlowObservation,
@@ -67,7 +69,9 @@ declare module "vitest/browser" {
         "afterSecondResizeWindow" | "freshWideWindow" | "afterSecondResizeInlineStyles"
       >
     >;
-    verifyHeroIntroRefresh(pageUrl: string): Promise<HeroRefreshObservation>;
+    observeHeroReload(pageUrl: string): Promise<HeroReloadObservation>;
+    observeHeroScrollAndWheel(pageUrl: string): Promise<HeroScrollAndWheelObservation>;
+    observeHeroHashLink(pageUrl: string): Promise<HeroHashLinkObservation>;
     verifyHeroIntroShift(
       pageUrl: string,
       width: number,
@@ -174,12 +178,20 @@ describe("hero intro", () => {
       }
     },
   );
-  it("replays from the top on reload, settles for anchors, and skips on wheel", async () => {
-    const observation = await commands.verifyHeroIntroRefresh(inject("siteHeaderBrowserTestUrl"));
+  it("replays from the top after a reload", async () => {
+    const observation = await commands.observeHeroReload(inject("siteHeaderBrowserTestUrl"));
     expect(observation.reloadState).toBe("playing");
     expect(observation.reloadScrollY).toBe(0);
+  });
+  it("keeps playing on programmatic scroll and settles on wheel", async () => {
+    const observation = await commands.observeHeroScrollAndWheel(
+      inject("siteHeaderBrowserTestUrl"),
+    );
     expect(observation.programmaticScrollState).toBe("playing");
     expect(observation.wheelState).toBe("settled");
+  });
+  it("settles a #many-agents deep link without creating a timeline", async () => {
+    const observation = await commands.observeHeroHashLink(inject("siteHeaderBrowserTestUrl"));
     expect(observation.hashState).toBe("settled");
     expect(observation.hashCreatedTimeline).toBe(false);
   });
