@@ -241,8 +241,11 @@ jobs:
           # in the app bundle; it's only needed at build time for SwiftPM.
 
           # SwiftPM resource bundle — Bundle.appResources looks in Contents/Resources/
-          RESOURCE_BUNDLE="$(find .build-ci -path '*/release/AgentStudio_AgentStudio.bundle' -type d | head -1)"
-          if [ -n "$RESOURCE_BUNDLE" ]; then
+          # Xcode 27's build system makes .build-ci/release a symlink into
+          # out/Products/Release, which `find` does not descend without -L, so
+          # read the bundle through the same direct path as the binaries above.
+          RESOURCE_BUNDLE=".build-ci/release/AgentStudio_AgentStudio.bundle"
+          if [ -d "$RESOURCE_BUNDLE" ]; then
             cp -R "$RESOURCE_BUNDLE" "$APP_DIR/Resources/"
           else
             echo "::error::SwiftPM resource bundle not found"
