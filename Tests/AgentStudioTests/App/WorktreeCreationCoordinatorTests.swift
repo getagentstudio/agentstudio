@@ -65,7 +65,7 @@ struct WorktreeCreationCoordinatorTests {
         #expect(
             await ledger.events.contains { event in
                 if case .create(let request) = event,
-                    case .newBranch(_, let startPoint) = request.mode
+                    case .newBranch(_, let startPoint, _) = request.mode
                 {
                     return startPoint == .named("refs/heads/main")
                 }

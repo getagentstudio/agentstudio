@@ -1,3 +1,4 @@
+import AgentStudioGit
 import AgentStudioWorktreeOperations
 import Foundation
 import Testing
@@ -84,14 +85,18 @@ struct WorktreeCreationRemoteFixture {
         try siblingDestination(repository: repository, branch: branch)
     }
 
-    /// Runs `agentstudio worktree new <branch> --repo <repository>` through the real command line.
+    /// Runs `agentstudio worktree new <branch> --repo <repository>` through the real command line. The
+    /// remotes are local paths, Git's `file` transport, which the production remote client refuses, so
+    /// the runner allows it as the other local-remote tests do.
     func runNew(_ branch: String, _ options: [String] = [], json: Bool) async -> WorktreeCreationRun {
         let probe = WorktreeCreationCommandLineProbe()
         let exit = await WorktreeCommandLine.run(
             arguments: ["new", branch, "--repo", repository.path] + options + (json ? ["--json"] : []),
             currentDirectory: repository,
             output: { probe.appendOutput($0) },
-            errorOutput: { probe.appendError($0) }
+            errorOutput: { probe.appendError($0) },
+            runner: WorktreeOperationRunner(
+                remoteClient: SystemGitRemoteClient(configuration: .init(allowedProtocols: [.file])))
         )
         return WorktreeCreationRun(exit: exit, output: probe.outputSnapshot(), errors: probe.errorSnapshot())
     }
