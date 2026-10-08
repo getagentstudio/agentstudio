@@ -32,6 +32,17 @@ export interface StepHopObservation {
   readonly resumedState: string | undefined;
 }
 
+interface StepHopBookkeeping {
+  lastChapterActivity: { readonly chapterId: string; readonly atMs: number } | null;
+  scrollEventCount: number;
+}
+
+declare global {
+  interface Window {
+    __stepHopBookkeeping?: StepHopBookkeeping;
+  }
+}
+
 function installStepHopStateReader(): void {
   const tracker = window["__pendingWaitTracker"];
   if (tracker === undefined) throw new Error("Pending wait tracker is missing");
@@ -47,7 +58,21 @@ function installStepHopStateReader(): void {
       ring === null ||
       ring === undefined
     )
-      return { stepPlayback: "missing", scenePlaybackState: "missing", ringAnimations: [] };
+      return {
+        stepPlayback: null,
+        scenePlaybackState: null,
+        ringAnimations: [],
+        proofLayerState: null,
+        scrollY: window.scrollY,
+        innerHeight: window.innerHeight,
+        stageTop: null,
+        stageHeight: null,
+        chapterTitleTops: {},
+        readingLineY: window.innerHeight * 0.45,
+        lastChapterActivity: window["__stepHopBookkeeping"]?.lastChapterActivity ?? null,
+        scrollEventCount: window["__stepHopBookkeeping"]?.scrollEventCount ?? 0,
+      };
+    const bookkeeping = window["__stepHopBookkeeping"];
     return {
       stepPlayback:
         root.querySelector<HTMLElement>("[data-chapter-step-line]")?.dataset["stepPlayback"] ??
@@ -58,8 +83,56 @@ function installStepHopStateReader(): void {
         currentTime: animation.currentTime ?? null,
         duration: animation.effect?.getTiming().duration ?? null,
       })),
+      proofLayerState:
+        root
+          .querySelector<HTMLElement>('[data-scene-proof="chapter-many-agents"]')
+          ?.getAttribute("data-scene-proof-state") ?? null,
+      scrollY: window.scrollY,
+      innerHeight: window.innerHeight,
+      stageTop:
+        root
+          .closest<HTMLElement>('[data-chapter="many-agents"]')
+          ?.querySelector<HTMLElement>("[data-scroll-playback-stage]")
+          ?.getBoundingClientRect().top ?? null,
+      stageHeight:
+        root
+          .closest<HTMLElement>('[data-chapter="many-agents"]')
+          ?.querySelector<HTMLElement>("[data-scroll-playback-stage]")
+          ?.getBoundingClientRect().height ?? null,
+      chapterTitleTops: Object.fromEntries(
+        [...document.querySelectorAll<HTMLElement>("[data-chapter-steps-root]")].map(
+          (chapterRoot) => [
+            chapterRoot.dataset["chapterStepsRoot"] ?? "unknown",
+            chapterRoot.querySelector<HTMLElement>(".chapter-title")?.getBoundingClientRect().top ??
+              null,
+          ],
+        ),
+      ),
+      readingLineY: window.innerHeight * 0.45,
+      lastChapterActivity: bookkeeping?.lastChapterActivity ?? null,
+      scrollEventCount: bookkeeping?.scrollEventCount ?? 0,
     };
   };
+}
+
+function installStepHopBookkeeping(): void {
+  const bookkeeping: StepHopBookkeeping = { lastChapterActivity: null, scrollEventCount: 0 };
+  window["__stepHopBookkeeping"] = bookkeeping;
+  document.addEventListener("chapter-activity-changed", (event: Event): void => {
+    if (!(event instanceof CustomEvent)) return;
+    const detail: unknown = event.detail;
+    if (typeof detail !== "object" || detail === null || Array.isArray(detail)) return;
+    const chapterId = Reflect.get(detail, "chapterId");
+    if (typeof chapterId === "string")
+      bookkeeping.lastChapterActivity = { chapterId, atMs: performance.now() };
+  });
+  window.addEventListener(
+    "scroll",
+    (): void => {
+      bookkeeping.scrollEventCount += 1;
+    },
+    { passive: true },
+  );
 }
 
 export const verifyChapterStepHop = defineBrowserCommand(
@@ -103,11 +176,17 @@ export const verifyChapterStepHop = defineBrowserCommand(
         );
       });
       await page.addInitScript(installPendingWaitTracker);
+      await page.addInitScript(installStepHopBookkeeping);
       await page.addInitScript(installStepHopStateReader);
       await page.goto(`${pageUrl}#many-agents`, { waitUntil: "load" });
       await page.evaluate((): void => {
         const tracker = window["__pendingWaitTracker"];
-        if (tracker === undefined || typeof tracker.readCommandState !== "function")
+        const bookkeeping = window["__stepHopBookkeeping"];
+        if (
+          tracker === undefined ||
+          typeof tracker.readCommandState !== "function" ||
+          bookkeeping === undefined
+        )
           throw new Error("Pending-wait diagnostics are not installed on the step-hop page");
       });
       await page.evaluate((): void => {
