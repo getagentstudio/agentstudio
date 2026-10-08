@@ -1,11 +1,144 @@
 import { describe, expect, test } from 'vitest';
 
 import { makeReviewTestBatch } from './bridge-comm-worker-runtime-protocol.review-product-transport.test-support.js';
+import { bridgeProductFileBatchRowSchema } from './bridge-product-file-batch-row-contracts.js';
 import { bridgeProductReviewBatchRecordSchema } from './bridge-product-review-batch-record-contracts.js';
 import { createRenderStallRecoveryHarness } from './bridge-render-stall-recovery.test-support.js';
 import { makeFileBatchInstallation } from './comm-runtime-protocol.file-product.test-support.js';
 
 describe('Main and Comm bounded render stall recovery', () => {
+	test.each(['review', 'file'] as const)(
+		'%s queued render exhaustion preserves its delivery budget and sibling view',
+		async (surface) => {
+			const harness = await createRenderStallRecoveryHarness(surface);
+			try {
+				if (surface === 'file') await harness.select('file-1');
+				await harness.setVisible([surface === 'file' ? 'file-1' : 'item-1']);
+				const before = harness.viewRecoveryState(harness.subscriptionId);
+				const siblingBefore = harness.viewRecoveryState(harness.siblingSubscriptionId);
+				expect(before?.consecutiveResnapshots).toBe(0);
+				expect(siblingBefore).toEqual({ consecutiveResnapshots: 0, status: 'ready' });
+				harness.acceptLatestRender();
+				await harness.advanceRenderWake();
+				await harness.advanceRenderWake();
+				harness.acceptLatestRender();
+				await harness.advanceRenderWake();
+				expect(harness.nextRenderWakeAt()).toBeNull();
+				expect.soft(harness.viewRecoveryState(harness.subscriptionId)).toEqual({
+					consecutiveResnapshots: before?.consecutiveResnapshots,
+					status: 'failedRetryable',
+				});
+				expect
+					.soft(harness.viewRecoveryState(harness.siblingSubscriptionId))
+					.toEqual(siblingBefore);
+			} finally {
+				await harness.close();
+			}
+		},
+	);
+
+	test.each(['review', 'file'] as const)(
+		'%s certified newer-input install heals exhausted render without Retry',
+		async (surface) => {
+			const harness = await createRenderStallRecoveryHarness(surface);
+			try {
+				if (surface === 'file') await harness.select('file-1');
+				await harness.setVisible([surface === 'file' ? 'file-1' : 'item-1']);
+				harness.acceptLatestRender();
+				await harness.advanceRenderWake();
+				await harness.advanceRenderWake();
+				const exhausted = harness.acceptLatestRender();
+				await harness.advanceRenderWake();
+				expect(harness.viewRecoveryState(harness.subscriptionId)).toEqual({
+					consecutiveResnapshots: 0,
+					status: 'failedRetryable',
+				});
+				const bank =
+					surface === 'review'
+						? makeReviewTestBatch({
+								snapshotCause: 'newerInput',
+								subscriptionId: harness.subscriptionId,
+								revision: 12,
+								withContent: true,
+							})
+						: makeFileBatchInstallation('newerInput', harness.subscriptionId, { revision: 5 });
+				await harness.install({
+					...bank,
+					records: bank.records.map((entry) => {
+						if (surface === 'review') {
+							const record = bridgeProductReviewBatchRecordSchema.parse(entry.value);
+							if (record.recordKind !== 'item') return entry;
+							return {
+								...entry,
+								value: {
+									...record,
+									contentByRole: Object.fromEntries(
+										Object.entries(record.contentByRole).map(([role, content]) => [
+											role,
+											content.state === 'available'
+												? {
+														...content,
+														source: {
+															...content.source,
+															contentDigest: {
+																...content.source.contentDigest,
+																value: 'd'.repeat(64),
+															},
+														},
+													}
+												: content,
+										]),
+									),
+								},
+							};
+						}
+						const parsed = bridgeProductFileBatchRowSchema.safeParse(entry.value);
+						if (!parsed.success || parsed.data.readDescriptor === null) return entry;
+						const row = parsed.data;
+						const descriptor = {
+							...parsed.data.readDescriptor,
+							descriptorId: 'file-descriptor-successor',
+							source: {
+								...parsed.data.readDescriptor.source,
+								sourceCursor: 'successor-source-cursor',
+							},
+						};
+						if (row.descriptorOutcome?.availability.availabilityKind !== 'available') return entry;
+						return {
+							...entry,
+							value: bridgeProductFileBatchRowSchema.parse({
+								...row,
+								readDescriptor: descriptor,
+								descriptorOutcome: {
+									...row.descriptorOutcome,
+									source: descriptor.source,
+									availability: {
+										...row.descriptorOutcome.availability,
+										contentDescriptor: descriptor,
+									},
+								},
+							}),
+						};
+					}),
+				});
+				expect(harness.viewRecoveryState(harness.subscriptionId)).toEqual({
+					consecutiveResnapshots: 0,
+					status: 'ready',
+				});
+				expect(harness.publications()).toHaveLength(3);
+				const successor = harness.acceptLatestRender();
+				expect(successor.renderReceiptIdentity.windowKey).not.toBe(
+					exhausted.renderReceiptIdentity.windowKey,
+				);
+				harness.paint(successor);
+				expect(harness.receipts.at(-1)?.disposition).toBe('painted');
+				expect(harness.resnapshotCount()).toBe(0);
+			} finally {
+				await harness.close();
+			}
+		},
+	);
+
 	test.each([true, false])(
 		'BH2: queued selected File render exhausts and unchanged-input Retry paints (visible: %s)',
 		async (visible) => {
@@ -51,6 +184,7 @@ describe('Main and Comm bounded render stall recovery', () => {
 				await harness.whenIdle();
 				expect(harness.publications()).toHaveLength(2);
 				await harness.retry();
+				expect(harness.viewRecoveryState(harness.subscriptionId)?.status).toBe('recovering');
 				expect(harness.resnapshotCount()).toBe(1);
 				await harness.install(
 					makeFileBatchInstallation('open', harness.subscriptionId, { revision: 5 }),

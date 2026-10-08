@@ -236,7 +236,7 @@ describe('File progressive coverage transport obligations', () => {
 			};
 			emitEmptyBatch('snapshot', 'open', 0, 1);
 			await firstCertified.promise;
-			harness.transport.failFileRender?.();
+			harness.transport.failFileRender?.(subscription.subscriptionId);
 			expect(timeline.at(-1)).toBe('status:failedRetryable');
 			emitEmptyBatch('coverage', undefined, 1, 2);
 			emitEmptyBatch('snapshot', 'newerInput', 0, 3);

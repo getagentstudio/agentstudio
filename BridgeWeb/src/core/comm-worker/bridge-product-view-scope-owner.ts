@@ -317,6 +317,12 @@ export class BridgeProductViewScopeOwner {
 		}
 	}
 
+	failRenderView(subscriptionId: string): void {
+		// Render failure uses the existing Failed presentation without spending delivery recovery.
+		const view = this.#views.get(subscriptionId);
+		if (view !== undefined) this.#emitRecoveryStatus(view, 'failedRetryable');
+	}
+
 	async retryView(subscriptionId: string): Promise<void> {
 		const view = this.#views.get(subscriptionId);
 		if (view === undefined) return;

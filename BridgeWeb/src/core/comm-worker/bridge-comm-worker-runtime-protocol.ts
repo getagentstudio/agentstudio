@@ -475,7 +475,8 @@ export function registerBridgeCommWorkerRuntimePortProtocol(
 			: { renderFulfillmentContext: props.renderFulfillmentContext }),
 		...(props.telemetryClient === undefined ? {} : { telemetryClient: props.telemetryClient }),
 		onReviewMetadataPostCommitFailure: publishReviewMetadataPostCommitFailure,
-		onReviewVisibleRenderExhausted: (): void => productTransport?.failReviewRender?.(),
+		onReviewVisibleRenderExhausted: (): void =>
+			productController?.failCurrentMetadataRender('review'),
 		onFileVisibleRenderExhausted: (itemIds, store): void => {
 			if (
 				settleBridgeCommWorkerExhaustedFileRender({
@@ -488,7 +489,7 @@ export function registerBridgeCommWorkerRuntimePortProtocol(
 				})
 			)
 				selectedFileContentOperationStore = null;
-			productTransport?.failFileRender?.();
+			productController?.failCurrentMetadataRender('file');
 		},
 		scheduleSelectedReviewContentReadyPreparation:
 			reviewDemandScheduling.scheduleSelectedContentReadyPreparation,

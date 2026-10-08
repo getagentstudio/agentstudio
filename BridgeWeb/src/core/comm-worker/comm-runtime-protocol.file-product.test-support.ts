@@ -168,7 +168,9 @@ export function makeFileProductTestTransport(props: {
 		},
 		openContent: (descriptor): never => {
 			props.onOpenDescriptor(descriptor.descriptorId);
-			const isBatchFixtureDescriptor = descriptor.descriptorId === 'file-descriptor-1';
+			const isBatchFixtureDescriptor =
+				descriptor.descriptorId === 'file-descriptor-1' ||
+				descriptor.descriptorId === 'file-descriptor-successor';
 			const bytes = new TextEncoder().encode(
 				isBatchFixtureDescriptor ? 'abc' : 'file body\n',
 			).buffer;

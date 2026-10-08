@@ -331,6 +331,13 @@ export class BridgeCommWorkerProductController {
 		this.#annotationProjectionBySurface.file.refreshPlacementForInstalledFileView();
 	}
 
+	failCurrentMetadataRender(surface: 'file' | 'review'): void {
+		const subscription = surface === 'file' ? this.#fileSubscription : this.#reviewSubscription;
+		if (subscription === null) return;
+		if (surface === 'file') this.#productTransport.failFileRender?.(subscription.subscriptionId);
+		else this.#productTransport.failReviewRender?.(subscription.subscriptionId);
+	}
+
 	acceptInstalledReviewBatch(props: {
 		readonly subscriptionId: string;
 		readonly workerDerivationEpoch: number;

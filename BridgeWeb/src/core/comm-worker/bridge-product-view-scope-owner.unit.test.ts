@@ -61,6 +61,53 @@ class ControlledReplacementBeginClock implements BridgeProductDeadlineClock {
 }
 
 describe('W2 desired view scope owner', () => {
+	test.each(['file.metadata', 'review.metadata'] as const)(
+		'%s render failure preserves nonzero delivery budget and a healthy sibling',
+		async (kind) => {
+			const scope =
+				kind === 'file.metadata' ? emptyFileScope : ({ kind: 'review', interests: [] } as const);
+			const owner = createTestViewScopeOwner({
+				controlMux: {
+					setViewScope: async (request) => acceptedScope(request),
+					resnapshotView: async (request) => acceptedResnapshot(request),
+				},
+				createIdentifier: (): string => 'render-identity',
+				maximumConsecutiveResnapshots: 2,
+			});
+			owner.register({ scope, subscriptionId: 'affected', subscriptionKind: kind });
+			owner.register({ scope, subscriptionId: 'sibling', subscriptionKind: kind });
+			owner.recordCertifiedInstall({
+				subscriptionId: 'sibling',
+				handle: 'render-identity',
+				incarnation: 'render-identity',
+				scopeRevision: 0,
+			});
+			await owner.resnapshot('affected');
+			expect(owner.recoveryState('affected')?.consecutiveResnapshots).toBe(1);
+			owner.failRenderView('affected');
+			expect(owner.recoveryState('affected')).toEqual({
+				consecutiveResnapshots: 1,
+				status: 'failedRetryable',
+			});
+			expect(owner.recoveryState('sibling')).toEqual({
+				consecutiveResnapshots: 0,
+				status: 'ready',
+			});
+			owner.recordCertifiedInstall({
+				subscriptionId: 'affected',
+				handle: 'render-identity',
+				incarnation: 'render-identity',
+				scopeRevision: 0,
+			});
+			expect(owner.recoveryState('affected')).toEqual({
+				consecutiveResnapshots: 0,
+				status: 'ready',
+			});
+			owner.retire('affected');
+			owner.retire('sibling');
+		},
+	);
+
 	test.each([
 		'file.metadata',
 		'review.metadata',

@@ -61,6 +61,10 @@ type RecordedRuntimeMessage = ReturnType<
 type RecordedTelemetrySample = Parameters<BridgeCommWorkerTelemetryRecorder['record']>[0];
 
 export interface RenderStallRecoveryHarness {
+	readonly siblingSubscriptionId: string;
+	readonly viewRecoveryState: (
+		subscriptionId: string,
+	) => ReturnType<BridgeProductViewScopeOwner['recoveryState']>;
 	readonly acceptLatestRender: () => BridgeMainRenderPublication;
 	readonly advanceRenderWake: () => Promise<void>;
 	readonly close: () => Promise<void>;
@@ -174,6 +178,21 @@ export async function createRenderStallRecoveryHarness(
 				? { kind: 'file', changeFilter: { kind: 'none' }, interests: [], pathScope: [] }
 				: { kind: 'review', interests: [] },
 	});
+	const siblingSubscriptionId = `${subscriptionId}-sibling`;
+	viewOwner.register({
+		subscriptionId: siblingSubscriptionId,
+		subscriptionKind: surface === 'file' ? 'file.metadata' : 'review.metadata',
+		scope:
+			surface === 'file'
+				? { kind: 'file', changeFilter: { kind: 'none' }, interests: [], pathScope: [] }
+				: { kind: 'review', interests: [] },
+	});
+	viewOwner.recordCertifiedInstall({
+		subscriptionId: siblingSubscriptionId,
+		handle: 'render-view-3',
+		incarnation: 'render-view-4',
+		scopeRevision: 0,
+	});
 	const baseTransport =
 		surface === 'file'
 			? makeFileProductTestTransport({
@@ -194,8 +213,8 @@ export async function createRenderStallRecoveryHarness(
 				});
 	const transport = {
 		...baseTransport,
-		failFileRender: (): void => viewOwner.failViewsOfKind('file.metadata'),
-		failReviewRender: (): void => viewOwner.failViewsOfKind('review.metadata'),
+		failFileRender: (id: string): void => viewOwner.failRenderView(id),
+		failReviewRender: (id: string): void => viewOwner.failRenderView(id),
 		retryView: (id: string): Promise<void> => {
 			const task = viewOwner.retryView(id);
 			track(task);
@@ -280,6 +299,8 @@ export async function createRenderStallRecoveryHarness(
 				: [],
 		);
 	return {
+		siblingSubscriptionId,
+		viewRecoveryState: (id) => viewOwner.recoveryState(id),
 		acceptLatestRender: (): BridgeMainRenderPublication => {
 			const publication = publications().at(-1);
 			if (publication === undefined) throw new Error('Expected demanded Comm render publication.');

@@ -139,7 +139,7 @@ describe('Bridge product transport', () => {
 			});
 			if (harness.transport.failFileRender === undefined)
 				throw new Error('Expected the File render failure facade.');
-			harness.transport.failFileRender();
+			harness.transport.failFileRender(subscription.subscriptionId);
 			expect(statuses.at(-1)).toBe('file.metadata:failedRetryable');
 			await harness.transport.retryView?.(subscription.subscriptionId);
 			expect(statuses.at(-1)).toBe('file.metadata:recovering');
