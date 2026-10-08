@@ -215,7 +215,8 @@ function observeHeroFinaleSample(
     for (const [nodeIndex, node] of rail
       .querySelectorAll<SVGGElement>("[data-topology-node-progress]")
       .entries()) {
-      const dotIdentity = node.getAttribute("data-node-signature") ?? `index ${nodeIndex}`;
+      const signature = node.getAttribute("data-node-signature");
+      const dotIdentity = signature ? `${signature} (index ${nodeIndex})` : `index ${nodeIndex}`;
       const circle = node.querySelector("circle");
       const parent = node.parentElement;
       if (circle === null)
@@ -225,10 +226,13 @@ function observeHeroFinaleSample(
           `Intro dot SVGGraphicsElement parent missing: ${dotIdentity} at ${sampleTime}`,
         );
     }
-    for (const terminalPane of root.querySelectorAll<HTMLElement>(".hero-terminal-pane")) {
-      const paneName = terminalPane.classList.contains("hero-terminal-pane--claude")
-        ? "claude"
-        : "codex";
+    for (const [paneIndex, terminalPane] of root
+      .querySelectorAll<HTMLElement>(".hero-terminal-pane")
+      .entries()) {
+      const paneName =
+        [...terminalPane.classList]
+          .find((className) => className.startsWith("hero-terminal-pane--"))
+          ?.slice("hero-terminal-pane--".length) || `pane ${paneIndex}`;
       if (terminalPane.querySelector(".hero-terminal-transcript") === null)
         throw new Error(
           `Pinned transcript structure is missing: ${paneName} transcript at ${sampleTime}`,
