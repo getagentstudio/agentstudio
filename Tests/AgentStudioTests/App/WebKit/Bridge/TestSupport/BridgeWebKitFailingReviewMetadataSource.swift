@@ -15,8 +15,7 @@ actor BridgeWebKitFailingReviewMetadataSource:
     private var armedPredecessorPublicationId: UUID?
     private var cancelledSubscriptionIds: [String] = []
     private var corruptedPublicationId: UUID?
-    private var corruptionCaptureClaimed = false
-    private let corruptedCaptureReady = HeldStep<Void>("Review corrupted successor capture ready")
+    private var pendingCorruptionCaptureAttempt: HeldStep<Void>?
     private var didCorruptViewCapture = false
     private var deliveryAttempts: [BridgeProductWebKitCarrierReviewDeliveryAttempt] = []
     private var firstViewCapture: BridgePaneProductReviewViewCapture?
@@ -56,14 +55,33 @@ actor BridgeWebKitFailingReviewMetadataSource:
     func applyViewDemand(_ request: BridgePaneProductReviewViewDemandRequest) async throws
         -> BridgePaneProductReviewViewCapture?
     {
-        // Claim the one corrupted capture before crossing the source actor.
-        // Overlapping demands must not become valid B captures while replay is held.
-        let ownsCorruption = request.expectedPublicationId == corruptedPublicationId && !corruptionCaptureClaimed
-        if ownsCorruption {
-            corruptionCaptureClaimed = true
-        } else if request.expectedPublicationId == corruptedPublicationId && corruptionCaptureClaimed {
-            try await replayBlockedObserver(request)
-            try await corruptedCaptureReady.arrive(())
+        // A failed or refused capture releases its claim; a successful one
+        // establishes the corruption before any later demand reaches replay.
+        let targetsCorruptedPublication = request.expectedPublicationId == corruptedPublicationId
+        var ownedCaptureAttempt: HeldStep<Void>?
+        var observedReplayGate = false
+        while targetsCorruptedPublication && !didCorruptViewCapture {
+            if let pendingCorruptionCaptureAttempt {
+                if !observedReplayGate {
+                    try await replayBlockedObserver(request)
+                    observedReplayGate = true
+                }
+                try await pendingCorruptionCaptureAttempt.arrive(())
+            } else {
+                let captureAttempt = HeldStep<Void>("Review successor corruption capture attempt completion")
+                pendingCorruptionCaptureAttempt = captureAttempt
+                ownedCaptureAttempt = captureAttempt
+                break
+            }
+        }
+        defer {
+            if let ownedCaptureAttempt {
+                pendingCorruptionCaptureAttempt = nil
+                ownedCaptureAttempt.release()
+            }
+        }
+        if targetsCorruptedPublication && ownedCaptureAttempt == nil {
+            if !observedReplayGate { try await replayBlockedObserver(request) }
             if !replayIsBlocked {
                 replayIsBlocked = true
                 successorEventKinds.append("recoveryCapture")
@@ -76,7 +94,7 @@ actor BridgeWebKitFailingReviewMetadataSource:
         else { return nil }
         try await captureReturnedObserver(request)
         if firstViewCapture == nil { firstViewCapture = capture }
-        guard ownsCorruption,
+        guard ownedCaptureAttempt != nil,
             let itemIndex = capture.snapshot.items.firstIndex(where: { item in
                 let roles = item.record.contentByRole
                 return [roles.base, roles.diff, roles.file, roles.head].contains {
@@ -111,7 +129,6 @@ actor BridgeWebKitFailingReviewMetadataSource:
         )
         didCorruptViewCapture = true
         successorEventKinds.append("corruptedCapture")
-        corruptedCaptureReady.release()
         releaseReplayFailureStateIfReady()
         return BridgePaneProductReviewViewCapture(
             handle: capture.handle,
