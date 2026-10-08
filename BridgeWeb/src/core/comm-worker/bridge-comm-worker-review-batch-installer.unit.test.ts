@@ -43,10 +43,14 @@ const fixtureEmptyPublication: ReviewBatchPublication = emptyPublication;
 const fixtureFailedPublication: ReviewBatchPublication = failedPublication;
 
 function begin(publicationId: string, targetRevision: number, mode = 'snapshot'): ReviewBatchBegin {
-	const fixture = sessionCorpus.transportV2.batchFrames[0];
+	const fixtureFrame: Readonly<Record<string, unknown>> | undefined =
+		sessionCorpus.transportV2.batchFrames[0];
+	const { snapshotCause, ...fixture } = fixtureFrame ?? {};
 	const parsed = bridgeProductBatchFrameSchema.parse({
 		...fixture,
 		mode,
+		// Only a snapshot begin carries a cause; the strict contract rejects one on change.
+		...(mode === 'snapshot' ? { snapshotCause } : {}),
 		publicationId,
 		targetRevision,
 	});
