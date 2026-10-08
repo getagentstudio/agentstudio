@@ -22,27 +22,30 @@ package struct WorktreeBranchName: Equatable, Hashable, Sendable {
         guard !text.isEmpty else { return .failure(.empty) }
         let maximumLength = WorktreeCreationPolicy.maximumBranchNameLength
         guard text.count <= maximumLength else { return .failure(.tooLong(maximumLength: maximumLength)) }
-        if let rejection = syntaxRejection(text, whitespaceAndControl: .newBranch) { return .failure(rejection) }
+        if let rejection = syntaxRejection(text, rules: .newBranch) { return .failure(rejection) }
         return .success(Self(rawValue: text))
     }
 
-    /// Whether `text` could name a branch that already exists: `validated`'s rules without the length cap,
-    /// which only a new branch's ref and destination slug need, and refusing only the whitespace and control
-    /// characters Git itself refuses, so a Git-legal name with other Unicode spacing can still be a start.
+    /// Whether `text` could name a branch that already exists, by git's rule for a branch name: what
+    /// `git check-ref-format refs/heads/<text>` accepts, less a leading `-` and `HEAD`, which `git branch`
+    /// refuses. There is no length cap; only a new branch's ref and destination slug need one.
     package static func isWellFormedExistingName(_ text: String) -> Bool {
-        !text.isEmpty && syntaxRejection(text, whitespaceAndControl: .existingBranch) == nil
+        !text.isEmpty && syntaxRejection(text, rules: .existingBranch) == nil
     }
 
-    /// Which whitespace and control characters make a name unusable.
-    private enum WhitespaceAndControlRule {
-        /// A branch the app creates: any Unicode whitespace, newline, control or format character, which
-        /// also keeps its destination slug clean.
+    /// The rules a name is checked by. Both refuse git's forbidden characters and sequences, a leading `-`,
+    /// `HEAD`, an empty component, a component starting with `.` or ending in `.lock`, and a name ending in `.`.
+    private enum BranchNameRules {
+        /// A branch the app creates, by the app's stricter policy, which also keeps its destination slug
+        /// clean: any Unicode whitespace, newline, control or format character, a lone `@`, and every
+        /// component ending in `.` are refused too.
         case newBranch
-        /// A branch that may already exist: only what `git check-ref-format` refuses, the ASCII control
-        /// characters, DEL and the space.
+        /// A branch that may already exist, by git's rule: of whitespace and control characters only the
+        /// ASCII control characters, DEL and the space are refused; `@` alone is a branch name, because git's
+        /// single-`@` rule applies to the whole refname; and only the whole name may not end in `.`.
         case existingBranch
 
-        func rejects(_ scalar: Unicode.Scalar) -> Bool {
+        func rejectsAsWhitespaceOrControl(_ scalar: Unicode.Scalar) -> Bool {
             switch self {
             case .newBranch:
                 CharacterSet.whitespacesAndNewlines.contains(scalar) || CharacterSet.controlCharacters.contains(scalar)
@@ -52,11 +55,8 @@ package struct WorktreeBranchName: Equatable, Hashable, Sendable {
         }
     }
 
-    private static func syntaxRejection(
-        _ text: String,
-        whitespaceAndControl: WhitespaceAndControlRule
-    ) -> WorktreeBranchNameRejection? {
-        guard !text.unicodeScalars.contains(where: whitespaceAndControl.rejects) else {
+    private static func syntaxRejection(_ text: String, rules: BranchNameRules) -> WorktreeBranchNameRejection? {
+        guard !text.unicodeScalars.contains(where: rules.rejectsAsWhitespaceOrControl) else {
             return .containsWhitespaceOrControlCharacter
         }
         if let forbidden = text.first(where: forbiddenCharacters.contains) {
@@ -65,14 +65,16 @@ package struct WorktreeBranchName: Equatable, Hashable, Sendable {
         if let sequence = forbiddenSequences.first(where: text.contains) {
             return .containsForbiddenSequence(sequence)
         }
-        // `--branch` rejects `HEAD` itself, though a lower-level ref may contain it.
-        guard text != "@", text != "HEAD", !text.hasPrefix("-") else { return .invalidComponentBoundary }
+        // `git branch` refuses `HEAD` itself and a leading `-`, though a lower-level ref may have either.
+        guard text != "HEAD", !text.hasPrefix("-"), rules == .existingBranch || text != "@" else {
+            return .invalidComponentBoundary
+        }
         let components = text.split(separator: "/", omittingEmptySubsequences: false)
         let hasInvalidComponent = components.contains { component in
-            component.isEmpty || component.hasPrefix(".") || component.hasSuffix(".")
-                || component.hasSuffix(".lock")
+            component.isEmpty || component.hasPrefix(".") || component.hasSuffix(".lock")
+                || (rules == .newBranch && component.hasSuffix("."))
         }
-        guard !hasInvalidComponent else { return .invalidComponentBoundary }
+        guard !hasInvalidComponent, !text.hasSuffix(".") else { return .invalidComponentBoundary }
         return nil
     }
 

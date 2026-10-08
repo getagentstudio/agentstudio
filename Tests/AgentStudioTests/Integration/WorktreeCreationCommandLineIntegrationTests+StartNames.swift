@@ -1,0 +1,127 @@
+import AgentStudioTestHarness
+import AgentStudioTestSupport
+import AgentStudioWorktreeOperations
+import Foundation
+import Testing
+
+/// D15: which existing branches `--from-branch` can start from. A start follows git's rule for a branch
+/// name, not the app's stricter policy for a branch it creates.
+extension WorktreeCreationCommandLineIntegrationTests {
+    @Test("--from-branch starts from an existing branch whose name is longer than a new branch's may be")
+    func startsFromLongExistingBranchNames() async throws {
+        let fixture = try await WorktreeCreationRemoteFixture.create(named: "new-long-start")
+        defer { fixture.destroy() }
+        let segment = String(repeating: "s", count: 60)
+        let localStart = "release/\(segment)/\(segment)/\(segment)/\(segment)/local"
+        let remoteStart = "release/\(segment)/\(segment)/\(segment)/\(segment)/remote"
+        #expect(localStart.count > WorktreeCreationPolicy.maximumBranchNameLength)
+        try await fixture.git("branch", localStart, "main")
+        let remoteTip = try await fixture.advance(remoteStart, file: "long.txt")
+
+        let fromLocal = await fixture.runNew("feature/short-local", ["--from-branch", localStart], json: true)
+        #expect(fromLocal.exit == 0, "\(fromLocal.output)")
+        #expect(
+            try fromLocal.created().start
+                == .init(
+                    commit: fixture.mainCommit, from: "localBranch", ref: "refs/heads/\(localStart)",
+                    localOnlyCommits: nil))
+
+        let fromRemote = await fixture.runNew(
+            "feature/short-remote", ["--from-branch", "origin/\(remoteStart)"], json: true)
+        #expect(fromRemote.exit == 0, "\(fromRemote.output)")
+        #expect(try fromRemote.created().start.commit == remoteTip)
+
+        // A malformed start is still refused, and a new branch name still gets the full check before the
+        // branch-use read: the length cap, and HEAD, which `git check-ref-format --branch` rejects.
+        let malformed = await fixture.runNew("feature/short-bad", ["--from-branch", "release..bad"], json: true)
+        #expect(malformed.exit == 1)
+        #expect(try malformed.refused().reason == "startBranchNotFound")
+        let tooLong = await fixture.runNew(localStart + "-new", json: true)
+        #expect(tooLong.exit == 1)
+        #expect(try tooLong.refused().reason == "invalidBranchName")
+        let head = await fixture.runNew("HEAD", json: true)
+        #expect(head.exit == 1)
+        let headRefusal = try head.refused()
+        #expect(headRefusal.reason == "invalidBranchName")
+        // Refused by the name check itself, not later by Git: nothing was fetched.
+        #expect(headRefusal.fetch == nil)
+    }
+
+    @Test("--from-branch starts from existing branches whose Git-legal names a new branch may not use")
+    func startsFromGitLegalUnicodeBranchNames() async throws {
+        let fixture = try await WorktreeCreationRemoteFixture.create(named: "new-unicode-start")
+        defer { fixture.destroy() }
+        // `git check-ref-format --branch` accepts a no-break space and a zero-width joiner; of whitespace and
+        // control characters it refuses only the ASCII control characters, DEL and the space.
+        let startsAndBranches = [
+            ("release/a\u{00A0}b", "feature/no-break-space"),
+            ("release/\u{1F469}\u{200D}\u{1F4BB}", "feature/zero-width-joiner"),
+        ]
+        for (start, branch) in startsAndBranches {
+            try await fixture.git("branch", start, "main")
+            let created = await fixture.runNew(branch, ["--from-branch", start], json: true)
+            #expect(created.exit == 0, "\(start): \(created.output)")
+            #expect(
+                try created.created().start
+                    == .init(
+                        commit: fixture.mainCommit, from: "localBranch", ref: "refs/heads/\(start)",
+                        localOnlyCommits: nil),
+                "\(start)")
+        }
+
+        let spaced = await fixture.runNew("feature/ascii-space", ["--from-branch", "release/a b"], json: true)
+        #expect(spaced.exit == 1)
+        #expect(try spaced.refused().reason == "startBranchNotFound")
+    }
+
+    @Test("an existing start name is accepted exactly when git accepts it as a branch name")
+    func existingStartNamesFollowGit() async throws {
+        let names = [
+            "@", "release/a./b", "release/a.", "a.lock/b", ".a", "a/.b", "a..b", "a@{b", "a//b", "/a", "a/", "-a",
+            "HEAD", "a b", "a\tb", "a\u{7F}b", "a~b", "a^b", "a:b", "a?b", "a*b", "a[b", "a\\b", "a\u{00A0}b",
+            "\u{1F469}\u{200D}\u{1F4BB}", "x@y", "@a", "a@", "a.", "a./b", "a.lock", "@{-1}",
+        ]
+        for name in names {
+            // The plain refname form: `--branch` would expand `@` and `@{-N}`. `git branch` also refuses a
+            // leading `-` and `HEAD`, which the refname rules allow.
+            let gitAccepts = try await Self.gitAcceptsReferenceName("refs/heads/\(name)")
+            let expected = !name.hasPrefix("-") && name != "HEAD" && gitAccepts
+            #expect(WorktreeBranchName.isWellFormedExistingName(name) == expected, "\(name.debugDescription)")
+        }
+    }
+
+    @Test("--from-branch @ starts from a branch literally named @, not from HEAD")
+    func startsFromBranchNamedAt() async throws {
+        let fixture = try await WorktreeCreationRemoteFixture.create(named: "new-at-start")
+        defer { fixture.destroy() }
+        try await fixture.git("branch", "side", "main")
+        let sideTip = try await fixture.commitLocally("side", file: "side.txt")
+        try await fixture.git("update-ref", "refs/heads/@", sideTip)
+        #expect(sideTip != fixture.mainCommit)
+
+        let created = await fixture.runNew("feature/at", ["--from-branch", "@"], json: true)
+
+        #expect(created.exit == 0, "\(created.output)")
+        #expect(
+            try created.created().start
+                == .init(commit: sideTip, from: "localBranch", ref: "refs/heads/@", localOnlyCommits: nil))
+        let destination = try fixture.destination(for: "feature/at")
+        #expect(try await WorktreeCreationRemoteFixture.git(destination, "rev-parse", "HEAD") == sideTip)
+    }
+
+    /// Whether `git check-ref-format <refname>` accepts it. A refusal is the answer here, not a failed
+    /// launch, so it is not reported as one.
+    private static func gitAcceptsReferenceName(_ refname: String) async throws -> Bool {
+        let git = try await TestToolResolver.resolved().git
+        return try await withoutBlockingCooperativePool {
+            let process = Process()
+            process.executableURL = git
+            process.arguments = ["check-ref-format", refname]
+            process.standardOutput = FileHandle.nullDevice
+            process.standardError = FileHandle.nullDevice
+            try TestToolResolver.launch(process)
+            process.waitUntilExit()
+            return process.terminationStatus == 0
+        }
+    }
+}
