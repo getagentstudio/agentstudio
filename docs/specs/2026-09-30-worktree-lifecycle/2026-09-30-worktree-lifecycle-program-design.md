@@ -1,6 +1,6 @@
 # Worktree lifecycle: how it is built
 
-Date: 2026-10-07, revision 32 (LR1 `--from-branch` alone; nested repositories copied as content by the SDK). Revision 31 (LR29: the leaf's default-source refusal is removed; `new` copies its source as it is). Revision 30 (2026-10-05, app PR 1 review: the config file is read only for copy-on-write, so `--tracked-only` stays the escape from a bad config; a default-source status failure refuses `changesUnknown`; stale busy-lock text removed). Revision 29 (SDK review: one compiled matcher and a pruned single pass; submodules kept; independent repositories follow their location's rule; hard-link groups re-elect a kept primary; tracked set from every index entry). Revision 28 (D9 narrowed: busy locks removed; no build detection). Revision 27 (design review R20 F1–F5: tracked = HEAD or index, included descendants keep their ancestors, unreadable index refuses; default-source guard; declared busy locks over the whole build; one create contract; E15 binding, the shared path-pattern type, three-way creation result, LR1/LR28/LR29 trace). Revision 26 (owner D8–D12: one warm `new`; SDK copy filter for ignored paths and nested same-repository worktrees; leaf reads `.agentstudio.config.json` and checks the main worktree's state and busy locks; `fork` verb removed). Revision 25 (app PR 1 review: three-way E4 result; name-keyed default protection; pre-effect lock preflight; fetched lockResidue; prune gate on fresh assessment; stale-lock identity last). Revision 24 (Advisor R17-A1: GitLargeFileFill.scan complete | incomplete). Revision 23 (reviewer LFS-F1/F2/F5/F7: owned-temp residue, fork fallback on the fork's own descriptor, no false objectAbsent for source-restored paths). Revision 22 (Advisor LFS-A1–A6/D1: no index stat rewrite; removal safety uses the LFS cleanliness check; temp ownership; fill only non-carried paths; empty lfs.storage = default; destination-ownership assumption). Revision 21 (LR27 result: typed per-path misses and index-update status; fill problems never throw). Revision 20 (LR27: LFS fill from the local store in the SDK; LFS-aware status). Revision 19 (B7 stop: one fetching-read-failure document shared by list, remove and prune). Revision 18 (B6 batch: branch-retention options; failed entries carry the blocking lock's stop document). Revision 17 (B4 stop: `changesUnknown` / `evidenceUnknown` stop reasons; unknown never counts as clean). Revision 16 (batched carrier audit: typed stop details, lock observation, removal lock residue, branch dispositions, prune skips). Revision 15 (B4 stop: the list request carries `callerDirectory` like removal and prune, so `isCurrent` survives `--repo`). Revision 14 (B3b stop: `WorktreeFetchSkipReason.noTarget` when E4 is none). Revision 13 (B3b stop: `WorktreeFetchStatus.failed` carries an optional lock fact and lock residue). Revision 12 (B3b stop: the upstream is the SDK's exact `GitBranchSnapshot.upstreamName` ref; only an `origin` upstream is fetched, matching the shipped origin-only rule). Revision 11 (B3b stop: the E4 resolver for integration takes the fallback branch's upstream; `new`'s start point is unchanged). Revision 10 (S6 stop: refuse a source whose `.gitattributes` differs from HEAD, so the standard attribute lookup equals HEAD's). Revision 9 (S6 stop: verified LFS content for paths that aren't carried; other custom filter drivers refused). Revision 8 (S5: the fetch's lockResidue is optional; nil = not observed, for the legacy whole-remote fetch). Revision 7 (S4 implementation stop: removeWorktree returns partial and failed outcomes instead of throwing, so observed effects reach the caller). Revision 6 (owner decisions: open panes warn with options incl. `removeWithOpenPanes`; D1/D4/D6/D7 recorded). Revision 5 (review round 3: F12-V own-lock residue on every failure path; F15 dry-run gates pane closing).
+Date: 2026-10-08, revision 33 (owner decisions D13–D20: the SDK fork takes a start and resets the copy when the start isn't the source's HEAD; existing-branch forks and checkouts can fast-forward under a journaled ref move; the one-branch fetch reports a branch the remote lacks; the leaf gains a branch resolver and `--no-fork` replaces `--tracked-only`; `new` prints one line. See [How `new` picks its branch](#how-new-picks-its-branch-lr1-lr30-lr31)). Revision 32 (2026-10-07, LR1 `--from-branch` alone; nested repositories copied as content by the SDK). Revision 31 (LR29: the leaf's default-source refusal is removed; `new` copies its source as it is). Revision 30 (2026-10-05, app PR 1 review: the config file is read only for copy-on-write, so `--tracked-only` stays the escape from a bad config; a default-source status failure refuses `changesUnknown`; stale busy-lock text removed). Revision 29 (SDK review: one compiled matcher and a pruned single pass; submodules kept; independent repositories follow their location's rule; hard-link groups re-elect a kept primary; tracked set from every index entry). Revision 28 (D9 narrowed: busy locks removed; no build detection). Revision 27 (design review R20 F1–F5: tracked = HEAD or index, included descendants keep their ancestors, unreadable index refuses; default-source guard; declared busy locks over the whole build; one create contract; E15 binding, the shared path-pattern type, three-way creation result, LR1/LR28/LR29 trace). Revision 26 (owner D8–D12: one warm `new`; SDK copy filter for ignored paths and nested same-repository worktrees; leaf reads `.agentstudio.config.json` and checks the main worktree's state and busy locks; `fork` verb removed). Revision 25 (app PR 1 review: three-way E4 result; name-keyed default protection; pre-effect lock preflight; fetched lockResidue; prune gate on fresh assessment; stale-lock identity last). Revision 24 (Advisor R17-A1: GitLargeFileFill.scan complete | incomplete). Revision 23 (reviewer LFS-F1/F2/F5/F7: owned-temp residue, fork fallback on the fork's own descriptor, no false objectAbsent for source-restored paths). Revision 22 (Advisor LFS-A1–A6/D1: no index stat rewrite; removal safety uses the LFS cleanliness check; temp ownership; fill only non-carried paths; empty lfs.storage = default; destination-ownership assumption). Revision 21 (LR27 result: typed per-path misses and index-update status; fill problems never throw). Revision 20 (LR27: LFS fill from the local store in the SDK; LFS-aware status). Revision 19 (B7 stop: one fetching-read-failure document shared by list, remove and prune). Revision 18 (B6 batch: branch-retention options; failed entries carry the blocking lock's stop document). Revision 17 (B4 stop: `changesUnknown` / `evidenceUnknown` stop reasons; unknown never counts as clean). Revision 16 (batched carrier audit: typed stop details, lock observation, removal lock residue, branch dispositions, prune skips). Revision 15 (B4 stop: the list request carries `callerDirectory` like removal and prune, so `isCurrent` survives `--repo`). Revision 14 (B3b stop: `WorktreeFetchSkipReason.noTarget` when E4 is none). Revision 13 (B3b stop: `WorktreeFetchStatus.failed` carries an optional lock fact and lock residue). Revision 12 (B3b stop: the upstream is the SDK's exact `GitBranchSnapshot.upstreamName` ref; only an `origin` upstream is fetched, matching the shipped origin-only rule). Revision 11 (B3b stop: the E4 resolver for integration takes the fallback branch's upstream; `new`'s start point is unchanged). Revision 10 (S6 stop: refuse a source whose `.gitattributes` differs from HEAD, so the standard attribute lookup equals HEAD's). Revision 9 (S6 stop: verified LFS content for paths that aren't carried; other custom filter drivers refused). Revision 8 (S5: the fetch's lockResidue is optional; nil = not observed, for the legacy whole-remote fetch). Revision 7 (S4 implementation stop: removeWorktree returns partial and failed outcomes instead of throwing, so observed effects reach the caller). Revision 6 (owner decisions: open panes warn with options incl. `removeWithOpenPanes`; D1/D4/D6/D7 recorded). Revision 5 (review round 3: F12-V own-lock residue on every failure path; F15 dry-run gates pane closing).
 
 Revision 4 history:
 - Revision 4 corrects review round 2 and the Advisor's revision-3 notes:
@@ -37,7 +37,8 @@ flowchart TB
     APPX["App: WorktreeLifecycleCoordinator<br/>(new, PR 2; IPC + UI)"]
   end
   subgraph Leaf["AgentStudioWorktreeOperations (existing leaf, grows)"]
-    RUN["WorktreeOperationRunner<br/>create (new, --from, --from-branch) / list (modified)"]
+    RUN["WorktreeOperationRunner<br/>create (new, --from, --from-branch, --no-fork) / list (modified)"]
+    BRR["WorktreeCreationBranchResolver (new)<br/>LR1 branch steps after LR30's fetch"]
     REM["WorktreeRemovalRunner (new)<br/>refusal order, archive, remove, branch"]
     PRU["WorktreePruneRunner (new)"]
     ARC["WorktreeEvidenceArchiver (new)"]
@@ -54,14 +55,15 @@ flowchart TB
   APPX -. "live pane-association probe" .-> ACT
   REM --> ARC & ACT & INT & RMV & DEL
   PRU --> REM
-  RUN --> INT & FRK
+  RUN --> INT & FRK & BRR
   BL["App: WorktreeBranchListingCache<br/>(modified, PR 1: keyed per list opening)"]
 ```
 
 | Unit | Owns | Depends on |
 |---|---|---|
 | **agentstudio-git PR (first slice)** | Git truth: integration assessment, expected-commit branch deletion, typed removal effects, the changes-only fork; then the copy-rules filter (LR28) as a second SDK PR | nothing new |
-| **App PR 1: agent CLI + branch-list currentness** | CLI `new` (copy-on-write by default; `--from`, `--changes-only`, `--tracked-only`, `--from-branch`), `list` with state, `remove`, `prune`; the leaf's removal/prune/archive policy; the branch list read fresh per opening (LR22); one pin bump to the merged SDK | merged SDK commit |
+| **Creation follow-up (D13–D20): one SDK PR, then one app PR** | SDK: fork start + reset copy, existing-branch fast-forward, upstream, `absentOnRemote`, `remoteNames`. App: the branch resolver, `--no-fork`, `--no-fetch` on `new`, the one-line output, the pin bump | the merged SDK PR |
+| **App PR 1: agent CLI + branch-list currentness** | CLI `new` (copy-on-write by default; `--from`, `--changes-only`, `--no-fork`, `--from-branch`), `list` with state, `remove`, `prune`; the leaf's removal/prune/archive policy; the branch list read fresh per opening (LR22); one pin bump to the merged SDK | merged SDK commit |
 | **App PR 2: app-executed lifecycle (IPC + UI)** | the app executor; the `worktree.*` IPC methods compiled into the CLI; Remove Worktree… and the changes-only fork in the UI; the open-pane refusal; waiting for the sidebar | PR 1, and the IPC team's fast-CLI + store PR |
 
 **The SDK slice is one PR, built in three commit groups that are reviewed separately:**
@@ -148,7 +150,7 @@ flowchart LR
     - Hard stops (`mainWorktree`, `defaultBranch`) carry no options.
 11. **Fetch is automatic, one branch, fail-soft, always reported.**
     - The leaf resolves E4, then calls agentstudio-git's remote client with a new optional `branchName` on `GitFetchRequest`. For a non-nil branch, the SDK validates the branch and remote names and runs system git with an explicit refspec `+refs/heads/<branch>:refs/remotes/<remote>/<branch>`. It passes `--no-tags --no-prune --no-prune-tags --no-recurse-submodules --refmap=` so nothing else is fetched. A nil branch keeps today's whole-remote fetch.
-    - E4 comes from a leaf **integration-target resolver**, separate from the shipped start-point resolver that `new` keeps using. It takes `origin/HEAD` when present. Otherwise it takes local `main`, else `master`; when that branch has an upstream (SDK `GitBranchSnapshot.upstreamName`, the full ref from `git_branch_upstream_name`, e.g. `refs/remotes/origin/main`), E4 is that ref, used as-is with no parsing. The fetch needs a remote and a branch, so it is attempted only when the ref starts with `refs/remotes/origin/`: remote `origin`, branch = the remainder (the shipped resolver already trusts only `origin`). Any other upstream is assessed as-is, unrefreshed, and the fetch reports `failed(upstreamNotOrigin)`; no remote-name boundary is ever guessed. With no upstream, E4 is the local branch and the fetch reports `skipped(noRemote)`. With no E4 at all, the fetch reports `skipped(noTarget)`, ahead of `noFetchFlag`.
+    - E4 comes from a leaf **integration-target resolver**, separate from the shipped start-point resolver (which `new` no longer uses since r33; the app UI's "From Default" does). It takes `origin/HEAD` when present. Otherwise it takes local `main`, else `master`; when that branch has an upstream (SDK `GitBranchSnapshot.upstreamName`, the full ref from `git_branch_upstream_name`, e.g. `refs/remotes/origin/main`), E4 is that ref, used as-is with no parsing. The fetch needs a remote and a branch, so it is attempted only when the ref starts with `refs/remotes/origin/`: remote `origin`, branch = the remainder (the shipped resolver already trusts only `origin`). Any other upstream is assessed as-is, unrefreshed, and the fetch reports `failed(upstreamNotOrigin)`; no remote-name boundary is ever guessed. With no upstream, E4 is the local branch and the fetch reports `skipped(noRemote)`. With no E4 at all, the fetch reports `skipped(noTarget)`, ahead of `noFetchFlag`.
     - After a successful fetch, the leaf re-resolves E4 and assesses against the new commit. E4's branch (for `defaultBranch` protection) is the branch name in every case.
     - **E4 resolution has three outcomes**, never collapsed by `try?`: `resolved(branchName, ref, commit)`, `absent` (legitimately none), and `unreadable(branchName?, cause)`. The branch name comes from the resolver's pure plan (origin/HEAD, or main/master). It is known whenever the plan succeeded, even if the commit read failed. A refresh failure after a successful fetch is `unreadable(branchName, cause)` with the fetch status kept as `fetched(commit)`.
     - **Protection** uses `branchName` from `resolved` or `unreadable`. With `unreadable(nil, _)`, the removal runner deletes no branch in that call (`defaultBranchUnverified`: a branch-only target refuses, a worktree target's branch is retained). `-D` doesn't override it.
@@ -185,14 +187,15 @@ flowchart LR
 | Entity | Semantic owner | Home | Status |
 |---|---|---|---|
 | E1 Repository, E2 Worktree | SDK (identity), leaf (discovery rules) | `GitWorktreeSnapshot`; leaf discovery (shipped) | existing |
-| E3 Local branch | SDK | `GitBranchSnapshot`; `deleteLocalBranch` | modified |
-| E4 Integration target | leaf | integration-target resolver (origin/HEAD, else main/master's upstream, else the local branch); the resolved commit is passed to the SDK as the target. `new` keeps the shipped start-point resolver | new |
+| E3 Local branch | SDK | `GitBranchSnapshot`; `deleteLocalBranch`; the fork's and checkout's `existingBranch(expectedTip, fastForwardTo)` and `newBranch(upstream)` | modified |
+| E4 Integration target | leaf | integration-target resolver (origin/HEAD, else main/master's upstream, else the local branch); the resolved commit is passed to the SDK as the target. `new` doesn't use E4: its start is E16 | new |
 | E5 Assessment | SDK | `GitBranchIntegrationAssessment` (`AgentStudioGitContracts`) | new |
 | E6 Working changes | SDK | `statusFacts` counts; removal safety | existing |
 | E7 Evidence folder, E8 Archive | leaf | `WorktreeEvidenceArchiver` (in-memory verification, no files written) | new |
 | E9 Pane activity | host | `WorktreeActivityProbe` (leaf port); app implementation over pane `worktreeId` | new |
 | E10 Removal | leaf over SDK effects | `WorktreeRemovalRunner`; `GitWorktreeRemovalEffects` (SDK) | new |
-| E11 Materialization | SDK (fork kinds); leaf (creation result) | SDK: `GitWorktreeForkMaterialization`, `GitWorktreeMaterializationResult` (copyOnWrite report gains `ignoredIncludedPatterns`, `ignoredExcludedCount`, `nestedWorktreesSkipped`). Leaf: `WorktreeCreatedMaterialization = .copyOnWrite(report) \| .changesOnly(report) \| .trackedOnly(GitLargeFileFill)`, the one shape the CLI and IPC print | modified |
+| E11 Materialization | SDK (fork kinds); leaf (creation result) | SDK: `GitWorktreeForkMaterialization`, `GitWorktreeMaterializationResult` (copyOnWrite report gains `ignoredIncludedPatterns`, `ignoredExcludedCount`, `nestedWorktreesSkipped`). Leaf: `WorktreeCreatedMaterialization = .copyOnWrite(report) \| .changesOnly(report) \| .checkout(GitLargeFileFill)`, the one shape the CLI and IPC print. The copyOnWrite report gains `sourceState` (`asIs \| reset`), `submodulesNotAtStart` and, for a reset, `largeFiles` | modified |
+| E16 Creation start | leaf (resolution); SDK (the as-is-or-reset rule) | leaf: `WorktreeCreationBranchResolver` → `WorktreeBranchPlan { target, start, branch, fetch }`. SDK: `GitForkStart = .sourceHead \| .commit(oid)`, compared with the captured HEAD inside the fork | new |
 | E12 Outcome | leaf; wire shape in `ProgrammaticControl` | `WorktreeOperationOutcome` (leaf) → `IPCWorktree<Verb>Result` (contracts) | modified |
 | E13 Branch list | App | `WorktreeBranchListingCache` keyed by listing-opening token | modified |
 | E14 Git lock file | SDK (exact facts, own-lock cleanup evidence); leaf (age, staleness, explicit removal) | `GitLockFact`, `GitLockResource`, `lockResidue` (SDK); `WorktreeStaleLockAssessment` (leaf) | new |
@@ -326,6 +329,59 @@ enum GitWorktreeMaterializationResult {
 
 The leaf maps each SDK error through its existing total mapper, extended case by case. No raw libgit2 text reaches output.
 
+**Creation follow-up (D13–D20), one SDK PR, breaking, hard cutover in one pin bump.** The fork stops being "always at the captured HEAD". Its old doc comment rejected a start point because a different base "would turn the copied filesystem into an ambiguous overlay". The reset below defines that overlay exactly, so the reason no longer holds.
+
+```swift
+// ── Fork start and branch target (LR1, LR29).
+public enum GitForkWorktreeMode {
+    /// A new local branch at `start`. `upstream` writes branch.<name>.remote and .merge.
+    case newBranch(name: String, start: GitForkStart, upstream: GitBranchUpstream?)
+    /// An existing local branch that no worktree has checked out and whose tip, read under its native
+    /// ref lock, is `expectedTip` (else `branchMoved`). With `fastForwardTo`, the ref first moves from
+    /// `expectedTip` to that commit, which must descend from it; the move is journaled and undone if
+    /// the fork fails. The start is the resulting tip.
+    case existingBranch(name: String, expectedTip: String, fastForwardTo: String?)
+    case detached(start: GitForkStart)
+}
+public enum GitForkStart { case sourceHead; case commit(String) }   // OID, validated as a commit
+public struct GitBranchUpstream { let remoteName: String; let branchName: String }
+// The as-is-or-reset rule lives here, next to the captured HEAD: a start equal to the captured HEAD
+// keeps today's as-is copy (sourceState .asIs); any other start resets the copy (sourceState .reset).
+// .changesOnly accepts only a start equal to the captured HEAD; anything else is an invalid request.
+// GitWorktreeMaterializationReport gains: sourceState: .asIs | .reset; submodulesNotAtStart: [String];
+// largeFiles: GitLargeFileFill? (present for .reset only).
+
+// ── The plain checkout (`--no-fork`) takes the same branch shapes.
+public enum GitWorktreeCreateMode {
+    case newBranch(name: String, startPoint: GitRevisionTarget, upstream: GitBranchUpstream?)
+    case existingBranch(name: String, expectedTip: String, fastForwardTo: String?)
+    case detached(startPoint: GitRevisionTarget)
+}
+
+// ── The one-branch fetch says when the remote has no such branch (LR5, LR30).
+public enum GitFetchedBranch { case fetched(commit: String); case absentOnRemote }
+public struct GitFetchResult {
+    let fetchedRemoteName: String
+    let branch: GitFetchedBranch?   // nil for a whole-remote fetch; replaces `fetchedCommit: String?`
+    let lockResidue: [URL]?
+}
+// For a named branch, the remote client first runs `git ls-remote --exit-code <remote> refs/heads/<b>`.
+// Exit status 2 is git's documented "no matching refs", returned as .absentOnRemote with no fetch and
+// no stderr parsing. Otherwise it fetches exactly as today.
+
+// ── Configured remote names, for `--from-branch <remote>/<name>` (read executor, git_remote_list).
+func remoteNames(for repositoryPath: URL) async throws(GitDataPlaneError) -> [String]
+```
+
+- **The reset copy** (copyOnWrite, start ≠ captured HEAD) runs inside the fork's journaled transaction, before finalization, so any failure rolls the whole fork back:
+  1. The copy filter also excludes untracked entries that aren't ignored. They are the source's work in progress and never reach the destination. Tracked entries and included ignored entries are copied as today.
+  2. After materialization, rehoming and the index rebuild from the captured HEAD, the SDK checks out E16's tree into the destination with that index as the baseline, forced. Files whose content differs from E16 get E16's content. Files tracked in the baseline and absent at E16 are removed. Untracked files (the included ignored ones) are left alone, except where E16 tracks the same path. Files equal to E16 aren't rewritten, so they keep their copied timestamps. The index becomes E16's tree, and HEAD becomes the branch (or detached) at E16.
+  3. LR27's fill runs over E16's LFS paths whose file is a pointer, through the fork's own destination descriptor.
+  4. Each submodule's checked-out commit is compared with E16's gitlink; a difference is listed in `submodulesNotAtStart`. Submodule checkouts are not changed.
+- **The fast-forward** (`existingBranch` with `fastForwardTo`) is a compare-and-swap under the native ref lock, the same primitive branch deletion uses. It is recorded in the rollback journal with its old tip and undone the same way if a later phase fails. `createWorktree` uses the same ref step before its checkout, under its existing rollback.
+- **Upstream** is written only when the request names one; the leaf names it only for a branch created from the same-named remote branch.
+- **Callers.** The app's UI fork and its two UI `createWorktree` calls pass `.newBranch(name, start: .sourceHead, upstream: nil)` and `upstream: nil`. Their behavior doesn't change.
+
 ## Leaf interfaces (app PR 1)
 
 `AgentStudioWorktreeOperations` owns requests, policy and outcomes; the wire shape of each outcome is the `IPCWorktree<Verb>Result` type in `ProgrammaticControl` (PR 2), which the CLI's `--json` also prints.
@@ -341,7 +397,9 @@ struct WorktreeCreateRequest: Sendable, Equatable {
     let start: URL                               // --repo or current directory: finds E1 and its main worktree
     let branch: String
     let source: WorktreeCreateSource             // .mainWorktree (default) | .worktree(URL) (--from)
-    let materialization: WorktreeCreateMaterialization // .copyOnWrite (default) | .changesOnly | .trackedOnly(startBranch: String?)
+    let startBranch: String?                     // --from-branch <start>, as typed (local, `<remote>/<name>`, or origin's)
+    let materialization: WorktreeCreateMaterialization // .copyOnWrite (default) | .checkout (--no-fork) | .changesOnly
+    let fetchPolicy: WorktreeFetchPolicy         // .fetch (default) | .skip (--no-fetch); `.defaultBranch` is renamed `.fetch`
 }
 struct WorktreeRemovalRequest: Sendable, Equatable {
     let start: URL                               // --repo or current directory
@@ -386,6 +444,8 @@ enum WorktreeLifecyclePolicy {
     static func archiveToMainDestination(mainWorktree: URL, worktreeFolder: String) -> URL  // <main>/tmp/<folder>/
 }
 ```
+
+Follow-up stop reasons (D13–D20): `branchCheckedOut(path)` (option: `cd <path>`, work in the existing worktree), `branchMoved` (option: run again), and `branchAlreadyExists` gains its options (`new <branch>` without `--from-branch`; another name). `trackedOnlyExcludesSource` is deleted. The shared option that named `--tracked-only` names `--no-fork`: "a plain checkout of tracked files at the same commit; no ignored files or build outputs".
 
 New stop reasons: `defaultBranch` (hard, branch-only targets only), `mainWorktree` (hard), `gitLockUnidentified` (retry only), `notFound`, `alreadyRemoved`, `startBranchNotFound`, `unsupportedWorkingState`, `targetIsCurrent`, `worktreeLocked`, `dirty`, `evidenceInTmp`, `openInPane`, `gitLockHeld`, `archiveDestinationExists`, `archiveDestinationInsideWorktree`. `forkUnavailable` gains the `changesOnly` option.
 
@@ -582,7 +642,7 @@ flowchart TB
 
 ## How Git LFS files are filled (LR27)
 
-- **Owner and placement.** The SDK owns it, inside the worktree writer lane, right after checkout for `createWorktree` (`new`, `new --from-branch`). The changes-only fork's existing LFS materializer gains the same store as a fallback. The leaf only reports.
+- **Owner and placement.** The SDK owns it, inside the worktree writer lane, right after checkout for `createWorktree` (`new --no-fork`) and right after a reset copy's checkout inside the fork (LR29). The changes-only fork's existing LFS materializer gains the same store as a fallback. The leaf only reports.
 - **Store.** `lfs.storage` from the repository config if set (relative to the common git dir), else `<common git dir>/lfs/objects/<oid[0:2]>/<oid[2:4]>/<oid>`. It is read-only and local; no `git-lfs` binary, no network.
 - **Per path** (HEAD attributes `filter=lfs`, checked-out file equals the HEAD blob's pointer, pointer parsed by the existing `LargeFilePointer`):
   1. open the store object no-follow; require a regular file whose size equals the pointer's size;
@@ -639,16 +699,56 @@ The IPC methods and the UI both call it.
 | `AppCommand` (UI verbs) | New `removeWorktree` and `forkWorktreeChangesOnly` spec entries (label, `CommandIcon`, help, surface policy), with IPC classified in the same change as reachable through the `worktree.*` methods. The existing creation commands keep their interactive role. |
 | UI | Worktree row menu → Remove Worktree…. The command bar opens a removal step (Features/CommandBar) showing the assessment, changes, branch disposition and evidence choice (`NSOpenPanel` for the archive folder). Close Panes and Remove dispatches the existing pane-close action per listed pane, then removes. New Worktree → Fork gains the changes-only row. |
 
+## How `new` picks its branch (LR1, LR30, LR31)
+
+```mermaid
+flowchart TB
+  A["parse → WorktreeCreateRequest<br/>usage (64): --changes-only with --no-fork or --from-branch;<br/>--tracked-only is unknown"] --> B["preflight: E1, main worktree, name, destination<br/>(an existing branch no longer refuses here)"]
+  B --> C{"--changes-only?"}
+  C -->|yes| CO["no fetch (skipped notNeeded)<br/>checked out → branchCheckedOut<br/>local exists → branchAlreadyExists<br/>else newBranch at sourceHead"]
+  C -->|no| F["LR30 fetch: one branch from one remote<br/>fetched / notOnRemote / skipped / failed"]
+  F --> K{"&lt;branch&gt; checked out<br/>in any worktree?"}
+  K -->|yes| R1["refused branchCheckedOut(path)"]
+  K -->|no| S{"--from-branch naming<br/>another branch?"}
+  S -->|"no (absent, or the same branch)"| L{"local &lt;branch&gt;?"}
+  L -->|yes| X["existingBranch(expectedTip,<br/>fastForwardTo when strictly behind)"]
+  L -->|"no; remote has it"| Y["newBranch at the remote tip,<br/>upstream remote/&lt;branch&gt; (D20)"]
+  L -->|neither| Z["newBranch at sourceHead"]
+  S -->|yes| E{"local &lt;branch&gt;?"}
+  E -->|yes| R2["refused branchAlreadyExists"]
+  E -->|no| T2["resolve &lt;start&gt;: local, else &lt;remote&gt;/&lt;name&gt;, else origin/&lt;start&gt;<br/>newest of local and remote; none → startBranchNotFound"]
+  T2 --> N["newBranch at that commit, no upstream"]
+  X & Y & Z & N & CO --> M["materialize with the plan's SDK mode:<br/>forkWorktree (copyOnWrite, changesOnly) or createWorktree (checkout)"]
+  M --> O["created → LR31 line; details in --json"]
+```
+
+- **Owners.** The leaf owns resolution, because choosing which branch an agent meant is product policy over Git facts. The SDK stays policy-free. It receives an exact mode with OIDs and enforces it under its locks, including the as-is-or-reset rule, which needs the captured HEAD.
+- **Reads.** `worktrees(for:)` (HEAD short names, for the checked-out check), `branches(for:)`, `remoteNames(for:)`, `resolveRevision` for `refs/heads/<n>` and `refs/remotes/<r>/<n>`, and `countCommitRange` in both directions. All of them run on the SDK read executor, off-main.
+- **One newest-of helper** serves step (2) and a local `--from-branch` start. Given the local tip L and the remote tip R:
+  - equal → L;
+  - L has no commits R lacks (`exact(0)`) and R has some → R;
+  - otherwise (including `unrelated`) → L, with `localOnlyCommits`.
+
+  Step (2) turns R into `fastForwardTo: R`. A `--from-branch` start only uses R's OID and never moves the local ref.
+- **Pinning.** Every resolved ref becomes an OID before the SDK call, and an existing branch carries `expectedTip`. A ref that moves between resolution and creation refuses `branchMoved`; it never creates from a commit the resolver didn't see.
+- **`--no-fork` at `sourceHead`** passes the source worktree's HEAD OID (from `worktrees(for:)`) as the checkout's start point. An unborn source HEAD refuses as today's checkout does.
+- **Fetch.** A new `WorktreeCreationFetchStep` sits beside `WorktreeFetchStep` and shares `WorktreeFetchFailureMapper`. `WorktreeFetchStatus` gains `.notOnRemote`, which LR5's E4 step also reports now that the SDK distinguishes it. The fetched branch is chosen like this:
+  - `<branch>` from the `--from-branch` remote, else from origin, when the call takes steps (1)–(4);
+  - `<start>`'s name from its remote, or from origin for a local or bare start, when `--from-branch` names another branch.
+  - No `origin` → `skipped(noRemote)`; `--no-fetch` → `skipped(noFetchFlag)`; `--changes-only` → `skipped(notNeeded)`.
+- **Output (LR31).** `WorktreeCommandLineFormatter+Created` renders one line: the materialization, then notes in a fixed order (existing branch, fast-forwarded, kept local, from remote, fetch failed, large files left as pointers). Every other report field is in `--json` only. The created document gains `branch`, `start` and `fetch`, each one Codable type shared by the CLI and IPC.
+- **Parser and dead code.** `--tracked-only` is removed: an unknown option, exit 64, with no alias. `--no-fork` maps to `.checkout`, `new` accepts `--no-fetch`, and `--from` with `--from-branch` is accepted. `trackedOnlyExcludesSource` is deleted, and so is the runner's use of the default start-point resolver for creation (the app UI's "From Default" keeps its own).
+
 ## How `new` copies (LR28, LR29)
 
 ```mermaid
 flowchart TB
-  P["leaf: parse args → WorktreeCreateRequest<br/>(option-combination refusals: LR1)"] --> C["leaf: resolve E1, main worktree, source<br/>(absent → empty; malformed → configInvalid)"]
-  C -->|trackedOnly| T["SDK createWorktree (shipped WR1 + LR27 fill)"]
+  P["leaf: parse args → WorktreeCreateRequest<br/>(option-combination refusals: LR1)"] --> C["leaf: resolve E1, main worktree, source, and the branch plan<br/>(see How new picks its branch)"]
+  C -->|"checkout (--no-fork)"| T["SDK createWorktree with the plan's mode (WR1 checkout + LR27 fill)"]
   C -->|changesOnly| CO["SDK forkWorktree(.changesOnly): existing changes-only planner (LR2, LR3), unchanged"]
   C -->|copyOnWrite| B{"read E15 from &lt;main&gt;/.agentstudio.config.json<br/>(absent → empty; malformed → configInvalid)<br/>the source is copied as it is (LR29)"}
   B -->|"malformed config → configInvalid"| R["refused, nothing changed"]
-  B -->|ok| F["SDK forkWorktree(request with copyRules)"]
+  B -->|ok| F["SDK forkWorktree(request with copyRules and the plan's mode)<br/>start = captured HEAD → as is; else → reset (SDK interfaces)"]
   F --> W["walker (unchanged) → filesystem plan"]
   W --> X["copy filter (new, SDK), over the walked plan:<br/>each entry classified tracked / untracked / ignored-and-untracked;<br/>maximal subtrees that are entirely ignored-and-untracked and match no include<br/>plus nested linked worktrees whose common dir is E1's<br/>→ excluded subtrees"]
   X --> E["plan.excludingSubtrees(...) (existing F6 seam)<br/>then topology planning, materialization, rehoming, validation (unchanged)"]
@@ -726,7 +826,9 @@ No atom, store, observer, timer or bus event is added. The coordinator owns no s
 | SDK branch deletion | real repositories; a second native Git client moves the tip or checks out the branch at a named barrier seam | loose and packed refs; moved after lookup (ref, config and reflog untouched); checked out in main or linked; unreadable linked administration; lock contention; cleanup success, failure and recreated-meanwhile; tags and remotes untouched |
 | SDK removal effects | real repositories with permission faults on the owning prune path | partial administration; partial directory; unreadable observation → `unknown`; `removeWorkingDirectory: false` → `notRequested` |
 | SDK changes-only | real repositories; the existing named fault and cancellation seams | the LR2 payload cases; LR3 refusals; content-changed-with-same-status, HEAD move, symlink swap → `sourceChanged`; failure or cancellation after every phase → rollback or exact residue; the APFS clone path is never invoked; injected non-APFS host facts prove the gate is bypassed (not real non-APFS proof) |
-| Fetch | a local bare repository as the remote (no network) | E4 advances after the fetch, both with `origin/HEAD` and with only an upstream on local `main`; `--no-fetch`; a failed fetch and a held ref lock fall back with their status |
+| Fetch | a local bare repository as the remote (no network) | E4 advances after the fetch, both with `origin/HEAD` and with only an upstream on local `main`; `--no-fetch`; a failed fetch and a held ref lock fall back with their status; a branch the remote lacks → `absentOnRemote` (SDK) / `notOnRemote` (leaf) with no fetch run |
+| SDK fork start | real repositories; the existing named fault seams | a dirty source forked onto another commit: E16's tracked files and index, no untracked non-ignored files, included ignored files with the source's timestamps, a path E16 tracks over an included ignored file, `submodulesNotAtStart`, the LFS fill; a start equal to the captured HEAD stays as is; `existingBranch` with a moved tip → `branchMoved`, nothing changed; a fast-forward undone after an injected failure in each later phase; `.changesOnly` with another start rejected |
+| Leaf creation resolution | real SDK and repositories with a local bare `origin` and a second bare remote | each LR1 step and `--from-branch` form (Spec proof row LR1–LR4); `--no-fork` at the same start as the fork; the LR31 line and `--json` for each; `--tracked-only` → exit 64 |
 | Git locks | real repositories with planted index, ref, packed-refs and config locks, fresh and older than the stale age, with and without a running git process; an `EACCES` directory; a worktree lock; a denied unlink of a command-owned lock (named fault seam) | each blocker reported by its actual path and resource; EACCES → `permissionDenied`, not a lock; `lockUnidentified` offers retry only; `--remove-stale-lock` removes exactly that file after its identity re-check; own-lock leftovers appear in `lockResidue` on success and on failure (a checkout read failing after the ref lock is taken, then a denied release; a failed fetch; an uncertain delete), next to the original failure; foreign locks survive refusals |
 | Leaf removal/prune | real SDK and repositories; the activity probe is a scripted double that answers per call (a host fact) | refusal order; `failed` (not `refused`) after the archive; effects projection; branch step skipped on partial effects |
 | CLI | real top-level dispatch with injected output | goldens for every outcome, exit codes, no IPC client or credential read |
@@ -738,9 +840,11 @@ No atom, store, observer, timer or bus event is added. The coordinator owns no s
 
 | U | R | E | Owner | Interface | Shape and home | State | Failure | Proof |
 |---|---|---|---|---|---|---|---|---|
-| L3, L14 | LR1 one `new` verb | E2, E3, E11 | leaf parser + runner | `create(WorktreeCreateRequest)` | `WorktreeCreateSource`, `WorktreeCreateMaterialization` | — | `startBranchNotFound`, `changesOnlyNeedsFrom`, `--from` with `--from-branch` → usage (64), `fork` → usage (64) | leaf parser + integration |
+| L3, L14 | LR1 copy, then set the branch | E2, E3, E11, E16 | leaf parser + runner + `WorktreeCreationBranchResolver` | `create(WorktreeCreateRequest)` | `WorktreeBranchPlan` → SDK fork/create mode | — | `branchCheckedOut`, `branchAlreadyExists`, `startBranchNotFound`, `branchMoved`, `changesOnlyNeedsFrom`; usage (64): `--changes-only` with `--no-fork`/`--from-branch`, `--tracked-only`, `fork` | leaf parser + resolution integration |
 | L14 | LR28 copy rules | E11, E15 | SDK copy filter over the walked plan | `forkWorktree(.copyOnWrite, copyRules)` → `excludingSubtrees` | `GitWorktreeCopyRules`, `GitPathPattern`, report fields | before topology capture | `sourceIndexUnreadable`, `configInvalid` (leaf) | SDK filter integration; real-checkout `new` |
-| L14 | LR29 as-is copy | E2, E6 | leaf | no default-source check: the source is copied as it is | none | — | none | leaf integration on temporary repositories: dirty and off-branch main copied as they are |
+| L14 | LR29 as-is or reset copy | E2, E6, E16 | SDK fork (the rule compares the start with the captured HEAD) | `GitForkStart`; reset inside the journaled fork | `sourceState`, `submodulesNotAtStart`, `largeFiles` | journaled, before finalization | rollback on any failure | SDK fork-start tests; leaf integration (dirty and off-branch main as is; reset onto another branch) |
+| L3 | LR30 fetch first | E3, E16 | leaf `WorktreeCreationFetchStep` + SDK remote client | `fetch(GitFetchRequest.branchName)` → `GitFetchedBranch` | `{remote, branch, status}` in the created document | — | fail-soft: continues with refs on disk | fetch from local bare remotes |
+| L14 | LR31 one line | E12 | leaf formatter | `WorktreeCommandLineFormatter+Created` | line + `--json` (`branch`, `start`, `fetch`) | — | refusals unchanged | CLI goldens |
 | L4 | LR2 overlay payload | E11 | SDK changes-only materializer | `forkWorktree(.changesOnly)` | `GitWorktreeMaterializationResult` (SDK) | journaled fork | `sourceChanged(contentChanged, repositoryStateChanged, …)`, `cleanupIncomplete` | SDK fork tests |
 | L4 | LR3 refusals | E6, E11 | SDK changes-only planner | `workingStateUnsupported` | `GitWorktreeWorkingStateRefusal` (SDK) | preflight | `refused unsupportedWorkingState` | SDK fork tests |
 | L4 | LR4 no fallback | E11, E12 | leaf formatter | outcome shape | `forkUnavailable` + alternative | — | — | CLI golden |
@@ -780,6 +884,17 @@ No atom, store, observer, timer or bus event is added. The coordinator owns no s
   - `GitWorktreeRemovalResult` gains observed effects in place of the `String` partial.
 - **Gap:** no generated UI images for LR23 and LR24; the screens are specified in words.
 - **Lead-authored choices in r26** (not owner decisions; each is reversible and is listed for the owner to override):
-  - **`--from-branch <x>` stands alone:** it creates a tracked-files checkout of local branch `x`. `--from` and `--from-branch` together are a usage error, because each selects a source.
+  - ~~**`--from-branch <x>` stands alone:** it creates a tracked-files checkout of local branch `x`. `--from` and `--from-branch` together are a usage error, because each selects a source.~~ Superseded in r33 by D13 and D15: `--from-branch` forks and takes any branch, and it combines with `--from`.
   - **The app's own Fork button keeps `.copyAll`** until app PR 2 designs its UI (CLI-only scope for D11).
 - **SDK breaking change (r26):** `GitForkWorktreeRequest.copyRules` and three report fields, hard cutover in one pin bump.
+- **SDK breaking changes (r33)**, hard cutover in one pin bump: `GitForkWorktreeMode` (start, upstream, `expectedTip`/`fastForwardTo`), `GitWorktreeCreateMode` (the same), `GitFetchResult.branch` in place of `fetchedCommit`, three report fields, and the new read `remoteNames(for:)`.
+- **Lead-authored choices in r33** (not owner decisions; each is reversible and listed for the owner to override):
+  - `--from` and `--from-branch` combine (copy that worktree, then set the branch), because in the new model one picks the files and the other the branch.
+  - A local `--from-branch` start that is strictly behind origin starts at origin's commit without moving the local branch; a diverged one starts at the local tip, with a note.
+  - An upstream is written only for a branch created from the same-named remote branch (D20), so `git push` with `push.default=simple` keeps working.
+  - `<remote>/<name>` reaches non-origin remotes through `remoteNames(for:)`.
+  - Submodules are reported in `submodulesNotAtStart`, not moved.
+  - `--changes-only` doesn't fetch.
+  - LR5's fetch reports `notOnRemote` too, instead of a generic process failure.
+  - Absence is detected with `ls-remote --exit-code` (one extra round trip) rather than by parsing fetch's stderr.
+  - LR31's notes stay on the one line.
