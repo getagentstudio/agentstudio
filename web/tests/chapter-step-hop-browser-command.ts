@@ -169,19 +169,30 @@ function installStepHopBookkeeping(): void {
     },
     { passive: true },
   );
-  const documentRoot = document.documentElement;
-  if (documentRoot !== null && typeof ResizeObserver !== "undefined") {
+  const startLayoutObserver = (root: HTMLElement): void => {
+    if (typeof ResizeObserver === "undefined") return;
     const observer = new ResizeObserver((): void => {
       bookkeeping.layoutHistory.push({
         atMs: performance.now(),
-        documentHeight: documentRoot.scrollHeight,
+        documentHeight: document.documentElement.scrollHeight,
       });
       if (bookkeeping.layoutHistory.length > historyCapacity) {
         bookkeeping.layoutHistory.shift();
         bookkeeping.historyDropped.layout += 1;
       }
     });
-    observer.observe(documentRoot);
+    observer.observe(root);
+  };
+  const documentRoot = document.documentElement;
+  if (documentRoot !== null) startLayoutObserver(documentRoot);
+  else {
+    const rootObserver = new MutationObserver((): void => {
+      const root = document.documentElement;
+      if (root === null) return;
+      startLayoutObserver(root);
+      rootObserver.disconnect();
+    });
+    rootObserver.observe(document, { childList: true });
   }
 }
 
