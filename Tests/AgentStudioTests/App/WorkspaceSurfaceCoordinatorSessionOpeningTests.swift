@@ -4,6 +4,7 @@ import Foundation
 import Testing
 
 @testable import AgentStudioBridge
+@testable import AgentStudioTestSupport
 
 private enum WorkspaceSessionOpeningFact: Equatable, Sendable {
     case resultWaitRegistered
@@ -28,8 +29,10 @@ extension WebKitSerializedTests.WorkspaceSurfaceCoordinatorViewFactoryTests {
         let paneSessionId = UUIDv7.generate().uuidString
         let workerInstanceId = UUIDv7.generate().uuidString
         let capabilityBytes = (0..<BridgeProductWireContract.capabilityByteLength).map(UInt8.init)
+        let deadlineClock = TestPushClock()
         let session = try BridgeProductSession(
             paneSessionId: paneSessionId, workerInstanceId: workerInstanceId, capabilityBytes: capabilityBytes,
+            deadlineClock: deadlineClock,
             resultWaiterRegistrationObserver: { _ in sink("opening", .resultWaitRegistered) })
         let adapter = BridgeProductSchemeAdapter(
             session: session, provider: provider, productAdmissionGate: productGate,
@@ -48,6 +51,7 @@ extension WebKitSerializedTests.WorkspaceSurfaceCoordinatorViewFactoryTests {
         #expect(
             first == .resultWaitRegistered, "An admission reply cannot establish the active session needed by metadata")
         let deadlineTasks = await session.operationTable.entriesById.values.compactMap(\.deadlineTask)
+        await deadlineClock.waitForPendingSleepCount(exactly: 1)
         #expect(deadlineTasks.count == 1)
         #expect(await session.operationTable.executionTasksById.count == 1)
         #expect(deadlineTasks.allSatisfy { !$0.isCancelled })
@@ -71,6 +75,7 @@ extension WebKitSerializedTests.WorkspaceSurfaceCoordinatorViewFactoryTests {
         await session.waitForOutstandingOperationExecutions()
         #expect(await session.lifecycle == .active)
         for deadline in deadlineTasks { await deadline.value }
+        await deadlineClock.waitForPendingSleepCount(exactly: 0)
         let deadlinesWereCancelled = deadlineTasks.allSatisfy(\.isCancelled)
         #expect(deadlinesWereCancelled)
         sink("opening", .deadlineFinished)

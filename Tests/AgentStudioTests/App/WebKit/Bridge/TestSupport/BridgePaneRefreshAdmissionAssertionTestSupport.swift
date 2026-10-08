@@ -33,30 +33,20 @@ func waitForRefreshAdmissionQueuedMetadataFrame(
 
 func waitForStartedComparisonCount(
     _ expectedCount: Int,
-    gate: BridgeComparisonGate,
-    maxTurns: Int = 2000
+    gate: BridgeComparisonGate
 ) async -> Bool {
-    for _ in 0..<maxTurns {
-        if await gate.hasStartedComparisonCount(expectedCount) {
-            return true
-        }
-        await Task.yield()
-    }
-    return false
+    await gate.waitForStartedComparisonCount(expectedCount)
+    return await gate.hasStartedComparisonCount(expectedCount)
 }
 
 @MainActor
 func waitForRetiringReviewRefreshTasksToDrain(
-    _ controller: BridgePaneController,
-    maxTurns: Int = 2000
+    _ controller: BridgePaneController
 ) async -> Bool {
-    for _ in 0..<maxTurns {
-        if controller.retiringReviewRefreshTaskById.isEmpty {
-            return true
-        }
-        await Task.yield()
+    while let task = controller.retiringReviewRefreshTaskById.values.first {
+        await task.value
     }
-    return false
+    return controller.retiringReviewRefreshTaskById.isEmpty
 }
 
 @MainActor
@@ -68,63 +58,60 @@ func waitForRetiringFileRefreshTasksToDrain(
 }
 
 @MainActor
+@discardableResult
 func waitForRefreshAdmissionIdle(
-    _ controller: BridgePaneController,
-    maxTurns: Int = 2000
-) async {
-    for _ in 0..<maxTurns {
-        let snapshot = controller.refreshAdmissionCoordinator.diagnosticSnapshot
-        if snapshot.activeRefreshPass == nil, snapshot.dirtyFact == nil {
-            return
-        }
-        await Task.yield()
+    _ controller: BridgePaneController
+) async -> BridgePaneRefreshAdmissionSnapshot {
+    while controller.activeReviewRefreshTask != nil || controller.worktreeRefreshDriver.hasActiveFileOperation {
+        await waitForActiveReviewRefreshTaskToFinish(controller)
+        await controller.worktreeRefreshDriver.awaitActiveFileOperations()
     }
-    Issue.record("Expected foreground Bridge refresh admission to become idle")
+    _ = await waitForRetiringReviewRefreshTasksToDrain(controller)
+    let snapshot = controller.refreshAdmissionCoordinator.diagnosticSnapshot
+    #expect(snapshot.activeRefreshPass == nil)
+    #expect(snapshot.dirtyFact == nil)
+    return snapshot
 }
 
 @MainActor
+@discardableResult
 func waitForActiveReviewRefreshTaskToFinish(
-    _ controller: BridgePaneController,
-    maxTurns: Int = 2000
-) async {
-    for _ in 0..<maxTurns {
-        if controller.activeReviewRefreshTask == nil {
-            return
-        }
-        await Task.yield()
+    _ controller: BridgePaneController
+) async -> Bool {
+    while let task = controller.activeReviewRefreshTask {
+        await task.value
     }
-    Issue.record("Expected active Bridge Review refresh task to finish")
+    let didFinish = controller.activeReviewRefreshTask == nil
+    #expect(didFinish)
+    return didFinish
 }
 
 @MainActor
+@discardableResult
 func waitForActiveFileRefreshTaskToFinish(
-    _ controller: BridgePaneController,
-    maxTurns: Int = 2000
-) async {
-    for _ in 0..<maxTurns {
-        if !controller.worktreeRefreshDriver.hasActiveFileOperation { return }
-        await Task.yield()
-    }
-    Issue.record("Expected active Bridge File refresh task to finish")
+    _ controller: BridgePaneController
+) async -> Bool {
+    await controller.worktreeRefreshDriver.awaitActiveFileOperations()
+    let didFinish = !controller.worktreeRefreshDriver.hasActiveFileOperation
+    #expect(didFinish)
+    return didFinish
 }
 
 @MainActor
+@discardableResult
 func waitForRefreshAdmissionSettledWhileHidden(
-    _ controller: BridgePaneController,
-    maxTurns: Int = 2000
-) async {
-    for _ in 0..<maxTurns {
-        let snapshot = controller.refreshAdmissionCoordinator.diagnosticSnapshot
-        if snapshot.activity == .loadedHidden,
-            snapshot.activeRefreshPass == nil,
-            snapshot.dirtyFact != nil,
-            controller.activeReviewRefreshTask == nil
-        {
-            return
-        }
-        await Task.yield()
-    }
-    Issue.record("Expected loaded-hidden Bridge refresh admission to retain one dirty fact")
+    _ controller: BridgePaneController
+) async -> BridgePaneRefreshAdmissionSnapshot {
+    _ = await waitForRetiringReviewRefreshTasksToDrain(controller)
+    await controller.worktreeRefreshDriver.awaitRetiringFileOperations()
+    await waitForActiveReviewRefreshTaskToFinish(controller)
+    await controller.worktreeRefreshDriver.awaitActiveFileOperations()
+    let snapshot = controller.refreshAdmissionCoordinator.diagnosticSnapshot
+    #expect(snapshot.activity == .loadedHidden)
+    #expect(snapshot.activeRefreshPass == nil)
+    #expect(snapshot.dirtyFact != nil)
+    #expect(controller.activeReviewRefreshTask == nil)
+    return snapshot
 }
 
 func makeRefreshAdmissionStatus(
