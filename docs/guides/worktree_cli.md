@@ -1,17 +1,29 @@
 # Agent Studio worktree CLI: agent manual
 
-This guide covers the worktree commands in Agent Studio 0.0.107 and later.
+This guide covers the worktree commands in Agent Studio 0.0.109 and later.
 
 ## Availability
 
-Production Agent Studio **0.0.107** ships the full lifecycle: `new` (a
-copy-on-write fork of the checkout as it is), `list` with state, `remove`, and
-`prune`. `fork` is gone; use `new --from <worktree>`. Upgrade with
+Agent Studio **0.0.109** ships the full lifecycle: `new`, `list` with state,
+`remove`, and `prune`. `new` copies a source checkout, then puts the copy on
+the branch you named. It fetches that branch first, opens a branch that
+already exists, and takes `--from-branch` from any local or remote branch.
+`fork` is gone; use `new --from <worktree>`. Upgrade with
 `brew upgrade --cask agent-studio`.
+
+### Older helpers (0.0.107 and 0.0.108)
+
+- `--tracked-only` is the plain checkout; 0.0.109 calls it `--no-fork` and
+  treats `--tracked-only` as an unknown option (exit 64).
+- `--from-branch` takes only a local branch and makes a tracked-files checkout.
+  `--from` with `--from-branch` is a usage error.
+- `new` refuses a branch that already exists (`branchAlreadyExists`) and
+  never fetches.
+- `new` prints the copy report on extra lines after `created …`.
 
 ### Older helpers (0.0.106 and earlier)
 
-These versions behave differently from the rest of this guide:
+These versions also behave differently:
 
 - 0.0.106 refuses default `new` on a dirty or off-branch main checkout
   (`sourceDirty`, `sourceNotOnDefaultBranch`); pass `--from <main checkout>` to
@@ -53,21 +65,78 @@ production helper.
 
 | Command | Behavior | Options |
 |---|---|---|
-| `"$ASW" worktree new <branch>` | Creates a new branch at the source HEAD and forks the main worktree as it is by default, or the worktree named by `--from`. | `--repo <path>`, `--from <worktree>`, `--changes-only`, `--tracked-only`, `--from-branch <local-branch>`, `--json` |
+| `"$ASW" worktree new <branch>` | Copies the main worktree, or the worktree named by `--from`, and puts the copy on `<branch>`: an existing branch, origin's branch, or a new one (see [How `new` picks its branch](#how-new-picks-its-branch)). | `--repo <path>`, `--from <worktree>`, `--from-branch <branch>`, `--no-fork`, `--changes-only`, `--no-fetch`, `--json` |
 | `"$ASW" worktree list [target...]` | Lists worktrees with branch, path, current/locked state, working changes, integration, `tmp/` evidence, blockers, and removal readiness. Targets limit the rows. | `--repo <path>`, `--no-fetch`, `--json` |
 | `"$ASW" worktree remove <target...>` | Removes worktrees or branch-only targets. Processes each target and reports its result. | `--repo <path>`, `--no-fetch`, `-f` / `--force`, `-D`, `--no-delete-branch`, `--archive-to-main`, `--archive-to <path>`, `--discard-tmp`, `--remove-stale-lock`, `--dry-run`, `--json` |
 | `"$ASW" worktree prune` | Previews eligible linked worktrees. Skipped rows include the reason and available remove commands. | `--repo <path>`, `--no-fetch`, `--archive-to-main`, `--archive-to <path>`, `--apply`, `--json` |
 
 `fork` is removed: it returns exit 64 with a stderr line naming `new --from`, including with `--json`.
 
-`new --from-branch <local-branch>` creates the branch at the named local
-branch tip as a tracked-files checkout; adding `--tracked-only` changes
-nothing. `--from` and `--from-branch` each select a source: passing both is a
-usage error (exit 64) that asks you to choose one source.
 `new --from <worktree> --changes-only` carries tracked changes and eligible
 untracked files, excludes ignored files, and leaves the destination index at
-HEAD. `--changes-only` requires `--from`; `--tracked-only` excludes both.
-Invalid combinations refuse with exit 1 and options that continue.
+HEAD. `--changes-only` requires `--from` (refused, exit 1, with options), and
+excludes `--no-fork` and `--from-branch` (usage error, exit 64).
+`--tracked-only` no longer exists: it is an unknown option (exit 64); use
+`--no-fork`.
+
+## How `new` picks its branch
+
+1. If `<branch>` is checked out in any worktree, or being rebased or bisected
+   there, `new` refuses `branchCheckedOut` with that worktree's path before
+   anything else, fetch included. Work there instead (`cd <path>`).
+2. `new` asks origin whether it has `<branch>` and fetches that one branch
+   (no tags, no pruning). A branch origin doesn't have counts as absent, even
+   if an old `origin/<branch>` ref is still on disk. `--no-fetch` skips this and
+   reads the refs already on disk. A failed question or fetch never stops
+   `new`: it continues with the refs on disk and says so.
+3. If local `<branch>` exists, the worktree is on it. When `origin/<branch>`
+   is strictly ahead, the local branch is first fast-forwarded to it. When the
+   local branch has commits origin lacks, it is kept as it is, and the output
+   counts them.
+4. If only `origin/<branch>` exists, local `<branch>` is created at it and
+   tracks it, so `git push` works.
+5. Otherwise a new `<branch>` starts at the source's HEAD commit.
+
+`--from-branch <start>` instead starts a new `<branch>` at another branch:
+
+- `<start>` beginning with a configured remote's name (`origin/x`,
+  `upstream/x`) means that remote's branch, fetched from it. Otherwise it is
+  the local branch `<start>`, else `origin/<start>`.
+- A local `<start>` strictly behind `origin/<start>` starts at origin's commit
+  and leaves the local branch where it is. A diverged one starts at the local
+  tip, and the output counts the commits origin lacks.
+- A start that isn't found refuses `startBranchNotFound`.
+- When `<start>` is `<branch>` itself (`new feat --from-branch origin/feat`),
+  `new` takes steps 3 and 4 with that start's remote, and refuses
+  `startBranchNotFound` when neither applies.
+- When `<branch>` already exists, `new` refuses `branchAlreadyExists`; run
+  `new <branch>` without `--from-branch` to open it, or pick another name.
+
+`--from <worktree>` and `--from-branch` combine: the named worktree is copied,
+then the copy is reset to the start. `--changes-only` only creates a new branch
+at the source's HEAD and never fetches, so an existing `<branch>` refuses
+`branchAlreadyExists`. A branch that moves between this resolution and the
+attach refuses `branchMoved` with nothing changed; run `new` again.
+
+## What `new` prints
+
+One line: `created <branch> at <path> (<how>)`, where `<how>` is
+`copy-on-write`, `checkout`, or `changes-only`, followed by notes that apply,
+separated by `; `:
+
+- `existing branch`, and `fast-forwarded to origin/<branch>` when it moved up;
+- `kept local <name>: <n> commits not on <remote>` for a kept diverged branch
+  or start;
+- `from <remote>/<name>` for a branch created from a remote branch;
+- `fetch failed: <reason>; used local refs`;
+- `<n> large files left as pointers`.
+
+For example: `created feat at /code/app.feat (copy-on-write; existing branch; fast-forwarded to origin/feat)`.
+Everything else is in `--json`: `branch` (`name`, `status`: `created`,
+`existing` or `fastForwarded`, `upstream`), `start` (`commit`, `from`:
+`sourceHead`, `localBranch` or `remoteBranch`, `ref`, `localOnlyCommits`),
+`fetch` (`remote`, `branch`, `status`: `fetched`, `notOnRemote`, `skipped` or
+`failed`), and the copy report under `materialization`.
 
 `list`, `remove`, and `prune` fetch the integration target branch before
 assessing it. `--no-fetch` skips that fetch. `remove --dry-run` reports the
@@ -95,32 +164,35 @@ Exit codes:
 
 ## Which one
 
-- `new` forks the main checkout as it is: uncommitted and untracked files come
-  along, whichever branch it has checked out. The new branch starts at the main
-  checkout's current HEAD commit.
-- `new --from <worktree>` forks that worktree as it is, the same way.
+- `new` forks the main checkout. When the branch starts at the main checkout's
+  HEAD commit, the copy keeps it as it is: uncommitted and untracked files come
+  along, whichever branch it has checked out.
+- When the branch starts at another commit (an existing branch, origin's
+  branch, or `--from-branch`), the copy is reset to that commit: tracked files
+  and the index are that commit's, and the source's work in progress is left
+  out. Included ignored folders, such as build caches, stay as copied.
+  Submodules that commit has at another revision are listed in
+  `submodulesNotAtStart` (`git -C <worktree> submodule update --init <path>`).
+- `new --from <worktree>` copies that worktree the same way.
 - `new --from <worktree> --changes-only` starts from HEAD and carries tracked
   changes plus eligible untracked files. It excludes ignored build output.
-- `new --tracked-only` is a cold checkout, used only when you explicitly want
-  one: tracked files from the default start point (`origin/HEAD`, else `main`,
-  else `master`), or from the local branch named by `--from-branch`, which
-  implies it. Submodules stay empty and ignored build output is absent.
-  In agent-studio, run `mise run setup` before building or reading vendored
-  headers. Expect a cold first build.
-- To recreate a worktree on an existing branch, use
-  `git worktree add <repo>.<branch> <branch>` and then `mise run setup`; `new`
-  creates a new branch.
+- `new --no-fork` is a plain checkout of tracked files at the same commit the
+  fork would use; no ignored files or build outputs. It combines with every
+  source and branch form. Submodules stay empty. In agent-studio, run
+  `mise run setup` before building or reading vendored headers. Expect a cold
+  first build.
 - Reuse an existing checkout when you can.
 
 The copy-on-write `new` refuses when the source or destination is not
 on APFS, crosses volumes, is not a worktree root, or the destination already
 exists.
 
-**Git LFS:** `new --tracked-only` and `new --from … --changes-only` fill LFS
-pointers from the repository's local object store when those objects are available. They do not
-download objects. The created result lists files that could not be filled with
-their reasons; run `git -C <worktree> lfs pull` for them. An incomplete scan is
-also reported with its reason and the same command.
+**Git LFS:** `new --no-fork`, a reset copy, and `new --from … --changes-only`
+fill LFS pointers from the repository's local object store when those objects
+are available. They do not download objects. The line counts files left as
+pointers; `--json` lists each with its reason and the
+`git -C <worktree> lfs pull` option. An incomplete scan is reported in `--json`
+with its reason and the same command.
 
 Copy rules are declared in `<main checkout>/.agentstudio.config.json`:
 
@@ -139,18 +211,20 @@ The config is read only for a copy-on-write `new` (the default and
 `new --from`). Unreadable or malformed JSON, or an invalid pattern, refuses
 `configInvalid` before creation. The output names the file, the offending entry
 when applicable, and the error, with the options to fix the file or use
-`--tracked-only`. `--tracked-only` and `--changes-only` never read the config,
-so a broken config never blocks them.
+`--no-fork`. `--no-fork` and `--changes-only` never read the config, so a
+broken config never blocks them.
 
 Source index problems, the same for default `new` and `new --from`:
 
 - An unreadable source index refuses `sourceIndexUnreadable` (retry or
-  `--tracked-only`), and a sparse or split index refuses
-  `sourceIndexUnsupported` (`--tracked-only`).
+  `--no-fork`), and a sparse or split index refuses
+  `sourceIndexUnsupported` (`--no-fork`).
 - A missing index counts as empty.
 
-The created copy-on-write report prints `ignoredIncludedPatterns`,
-`ignoredExcludedCount` (excluded paths) and `nestedWorktreesSkipped`.
+The copy-on-write report in `--json` carries `ignoredIncludedPatterns`,
+`ignoredExcludedCount` (excluded paths), `nestedWorktreesSkipped`,
+`sourceState` (`asIs` or `reset`), `submodulesNotAtStart`, and, for a reset
+copy, `largeFiles`.
 
 The app UI Fork continues to copy all ignored files. These repository include
 rules apply to the CLI `new` copy-on-write path, including `new --from`.
