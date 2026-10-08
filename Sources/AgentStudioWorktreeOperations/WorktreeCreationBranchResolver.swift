@@ -50,9 +50,12 @@ package enum WorktreeStartReference: Sendable, Equatable {
     package static let defaultRemoteName = "origin"
 
     package static func parse(_ start: String, remoteNames: [String]) -> Self {
-        if let separator = start.firstIndex(of: "/") {
-            let remoteName = String(start[..<separator])
-            let branchName = String(start[start.index(after: separator)...])
+        // Split at the first `/` scalar, as git reads the name. A `Character` search would miss a `/` that a
+        // combining mark joins into one grapheme: `origin/<U+0301>x` is origin's branch `<U+0301>x`.
+        let scalars = start.unicodeScalars
+        if let separator = scalars.firstIndex(of: "/") {
+            let remoteName = String(scalars[..<separator])
+            let branchName = String(scalars[scalars.index(after: separator)...])
             if !branchName.isEmpty, remoteNames.contains(remoteName) {
                 return .remote(remoteName: remoteName, branchName: branchName)
             }

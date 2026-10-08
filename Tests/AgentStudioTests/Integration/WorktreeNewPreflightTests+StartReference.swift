@@ -22,6 +22,10 @@ extension WorktreeNewPreflightTests {
                 == .unqualified(branchName: "nosuch/release"))
         #expect(
             WorktreeStartReference.parse("origin/", remoteNames: remoteNames) == .unqualified(branchName: "origin/"))
+        // The `/` splits even when a combining mark joins it into one grapheme with the next scalar.
+        #expect(
+            WorktreeStartReference.parse("origin/\u{301}x", remoteNames: remoteNames)
+                == .remote(remoteName: "origin", branchName: "\u{301}x"))
         #expect(WorktreeStartReference.unqualified(branchName: "release").remoteName == "origin")
     }
 

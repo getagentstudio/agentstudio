@@ -130,6 +130,23 @@ extension WorktreeCreationCommandLineIntegrationTests {
                     localOnlyCommits: nil))
     }
 
+    @Test("--from-branch origin/<name> starts from a remote branch whose name begins with a combining mark")
+    func startsFromRemoteBranchBeginningWithCombiningMark() async throws {
+        let fixture = try await WorktreeCreationRemoteFixture.create(named: "new-combining-remote-start")
+        defer { fixture.destroy() }
+        // `/` and U+0301 form one grapheme, but git reads `origin/<U+0301>x` as origin's branch `<U+0301>x`.
+        let originTip = try await fixture.advance("\u{301}x", file: "mark.txt")
+
+        let created = await fixture.runNew("feature/mark", ["--from-branch", "origin/\u{301}x"], json: true)
+
+        #expect(created.exit == 0, "\(created.output)")
+        #expect(
+            try created.created().start
+                == .init(
+                    commit: originTip, from: "remoteBranch", ref: "refs/remotes/origin/\u{301}x", localOnlyCommits: nil)
+        )
+    }
+
     /// Whether `git check-ref-format <refname>` accepts it. A refusal is the answer here, not a failed
     /// launch, so it is not reported as one.
     private static func gitAcceptsReferenceName(_ refname: String) async throws -> Bool {
