@@ -42,6 +42,10 @@ package enum WorktreeBranchResolution: Sendable, Equatable {
 
 /// `--from-branch <start>` read against the configured remotes: a first segment naming a remote
 /// means that remote's branch, even over a local branch literally named `origin/x`.
+///
+/// Names are matched with canonical `==` on purpose, for the remote here and for the same-name rule:
+/// git on macOS precomposes typed names (`core.precomposeunicode`), so a spelling in another Unicode
+/// normalization names the same remote or branch. Only syntax validity is decided on bytes.
 package enum WorktreeStartReference: Sendable, Equatable {
     case remote(remoteName: String, branchName: String)
     /// A local branch, else `origin/<name>`.
@@ -151,6 +155,7 @@ package struct WorktreeCreationBranchResolver: Sendable {
             return .unqualified(branchName: request.branch)
         }
         let start = WorktreeStartReference.parse(startBranch, remoteNames: remoteNames)
+        // Canonical `==` on purpose, here and in `resolve`: git on macOS precomposes typed names.
         guard start.branchName == request.branch else { return start }
         return .remote(remoteName: start.remoteName, branchName: request.branch)
     }

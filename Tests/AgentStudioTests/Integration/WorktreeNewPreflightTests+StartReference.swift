@@ -55,6 +55,29 @@ extension WorktreeNewPreflightTests {
                 == .branch(remoteName: "origin", branchName: "upstream/feat"))
     }
 
+    @Test("a start matches <branch> and a remote canonically, as git on macOS precomposes typed names")
+    func startNamesMatchCanonically() {
+        let decomposed = "release/e\u{301}"
+        let precomposed = "release/\u{e9}"
+
+        // The same-name form: the compared branch is <branch> itself, not the start's own spelling.
+        // String-payload `==` can't tell the two apart, so the decisive check is on UTF-8 bytes.
+        guard
+            case .branch(let remoteName, let branchName) = Self.fetchTarget(
+                precomposed, start: decomposed, remoteNames: ["origin"])
+        else {
+            Issue.record("expected a one-branch fetch target")
+            return
+        }
+        #expect(remoteName == "origin")
+        #expect(Array(branchName.utf8) == Array(precomposed.utf8))
+
+        // A first segment canonically equal to a configured remote names that remote.
+        #expect(
+            WorktreeStartReference.parse("cafe\u{301}/release", remoteNames: ["origin", "caf\u{e9}"])
+                == .remote(remoteName: "caf\u{e9}", branchName: "release"))
+    }
+
     @Test("a skipped refresh says why: notNeeded before noFetchFlag before noRemote")
     func ordersFetchSkipReasons() {
         #expect(
