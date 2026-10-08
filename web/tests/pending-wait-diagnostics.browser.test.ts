@@ -89,10 +89,27 @@ it("prints an unavailable line when no command page is registered", async () => 
       async () => ({ kind: "no-active-command-page" }),
     );
     expect(errorSpy).toHaveBeenCalledWith(
-      "PENDING_WAIT_DIAGNOSTIC unavailable reason=no-active-command-page",
+      'PENDING_WAIT_DIAGNOSTIC unavailable reason="no-active-command-page"',
     );
   } finally {
     errorSpy.mockRestore();
+  }
+});
+
+it("keeps primary fields when the command state reader throws", async () => {
+  await commands.startPendingWaitFixture({ freezeTimeline: false, readerThrows: true });
+  try {
+    const result = await commands.capturePendingWaitDiagnostics();
+    expect(result.kind).toBe("captured");
+    if (result.kind !== "captured") throw new Error("Throwing-reader fixture capture failed");
+    expect(result.wait).toBe("fixture-wait");
+    expect(result.visibilityState).toEqual(expect.any(String));
+    expect(result.wallElapsedMs).toBeGreaterThan(0);
+    expect(result.stateReader).toBe("failed");
+    expect(result.stateError).toBe("fixture reader failed");
+    expect(result.state).toEqual({});
+  } finally {
+    await commands.releasePendingWaitFixture();
   }
 });
 

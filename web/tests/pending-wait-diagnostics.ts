@@ -61,6 +61,7 @@ export function registerCommandPageForDiagnostics(
   sessionId: string,
   registration: CommandPageRegistration,
 ): () => void {
+  // A command still hung from an earlier test may remain registered; every multi-step adopter should register its own page.
   commandPageRegistry.set(sessionId, registration);
   return (): void => {
     if (commandPageRegistry.get(sessionId)?.page === registration.page)
@@ -76,7 +77,8 @@ export type PendingWaitDiagnosticResult =
       readonly wallElapsedMs: number | null;
       readonly visibilityState: string;
       readonly hidden: boolean;
-      readonly stateReader: "installed" | "missing";
+      readonly stateReader: "installed" | "missing" | "failed";
+      readonly stateError?: string;
       readonly state: Record<string, unknown>;
     }
   | { readonly kind: "no-active-command-page" }
@@ -103,9 +105,21 @@ export const capturePendingWaitDiagnostics = async ({
         const timelineNow =
           typeof document.timeline.currentTime === "number" ? document.timeline.currentTime : null;
         const wallNow = performance.now();
-        const state = tracker?.readCommandState?.() ?? {};
-        if (typeof state !== "object" || state === null || Array.isArray(state))
-          throw new Error("Command state reader did not return a plain object");
+        let state: Record<string, unknown> = {};
+        let stateReader: "installed" | "missing" | "failed" = "missing";
+        let stateError: string | undefined;
+        if (typeof tracker?.readCommandState === "function") {
+          stateReader = "installed";
+          try {
+            const candidate: unknown = tracker.readCommandState();
+            if (typeof candidate !== "object" || candidate === null || Array.isArray(candidate))
+              throw new Error("Command state reader did not return a plain object");
+            state = Object.fromEntries(Object.entries(candidate));
+          } catch (error: unknown) {
+            stateReader = "failed";
+            stateError = error instanceof Error ? error.message : String(error);
+          }
+        }
         return {
           kind: "captured",
           wait: pending?.waitName ?? null,
@@ -116,7 +130,8 @@ export const capturePendingWaitDiagnostics = async ({
           wallElapsedMs: pending === null ? null : wallNow - pending.beganAtMs,
           visibilityState,
           hidden,
-          stateReader: typeof tracker?.readCommandState === "function" ? "installed" : "missing",
+          stateReader,
+          ...(stateError === undefined ? {} : { stateError }),
           state,
         };
       } catch (error: unknown) {
@@ -145,21 +160,24 @@ export async function reportPendingWaitDiagnostic(
 ): Promise<void> {
   try {
     let timeoutHandle: ReturnType<typeof setTimeout> | undefined;
-    const capturePromise = capture();
-    const timeout = new Promise<PendingWaitDiagnosticResult>((resolve) => {
-      timeoutHandle = setTimeout(
-        () => resolve({ kind: "capture-failed", reason: "capture-timeout" }),
-        timeoutMilliseconds - pendingWaitDiagnosticMarginMilliseconds,
-      );
-    });
-    const result = await Promise.race([capturePromise, timeout]);
-    if (timeoutHandle !== undefined) clearTimeout(timeoutHandle);
-    if (result.kind === "captured")
-      console.error(`PENDING_WAIT_DIAGNOSTIC ${JSON.stringify({ test: task.name, ...result })}`);
-    else
-      console.error(
-        `PENDING_WAIT_DIAGNOSTIC unavailable reason=${result.kind === "capture-failed" ? result.reason : result.kind}`,
-      );
+    try {
+      const capturePromise = capture();
+      const timeout = new Promise<PendingWaitDiagnosticResult>((resolve) => {
+        timeoutHandle = setTimeout(
+          () => resolve({ kind: "capture-failed", reason: "capture-timeout" }),
+          timeoutMilliseconds - pendingWaitDiagnosticMarginMilliseconds,
+        );
+      });
+      const result = await Promise.race([capturePromise, timeout]);
+      if (result.kind === "captured")
+        console.error(`PENDING_WAIT_DIAGNOSTIC ${JSON.stringify({ test: task.name, ...result })}`);
+      else {
+        const reason = result.kind === "capture-failed" ? result.reason : result.kind;
+        console.error(`PENDING_WAIT_DIAGNOSTIC unavailable reason=${JSON.stringify(reason)}`);
+      }
+    } finally {
+      if (timeoutHandle !== undefined) clearTimeout(timeoutHandle);
+    }
   } catch {
     console.error("PENDING_WAIT_DIAGNOSTIC unavailable reason=handler-error");
   }

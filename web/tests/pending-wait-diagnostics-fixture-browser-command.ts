@@ -26,17 +26,28 @@ function installFixtureStateReader(): void {
 export interface PendingWaitFixtureOptions {
   readonly freezeTimeline: boolean;
   readonly withReader?: boolean;
+  readonly readerThrows?: boolean;
 }
 
 export const startPendingWaitFixture = defineBrowserCommand(
   async (
     { context, sessionId }: BrowserCommandContext,
-    { freezeTimeline, withReader = true }: PendingWaitFixtureOptions,
+    { freezeTimeline, withReader = true, readerThrows = false }: PendingWaitFixtureOptions,
   ): Promise<{ readonly started: true }> => {
     const page = await context.newPage();
     try {
       await page.addInitScript(installPendingWaitTracker);
-      if (withReader) await page.addInitScript(installFixtureStateReader);
+      if (withReader) {
+        if (readerThrows)
+          await page.addInitScript(() => {
+            const tracker = window["__pendingWaitTracker"];
+            if (tracker === undefined) throw new Error("Pending wait tracker is missing");
+            tracker.readCommandState = (): Record<string, unknown> => {
+              throw new Error("fixture reader failed");
+            };
+          });
+        else await page.addInitScript(installFixtureStateReader);
+      }
       await page.goto("about:blank");
       if (freezeTimeline) {
         const cdp = await page.context().newCDPSession(page);
