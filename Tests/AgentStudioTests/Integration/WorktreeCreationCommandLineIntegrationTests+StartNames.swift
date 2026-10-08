@@ -80,6 +80,8 @@ extension WorktreeCreationCommandLineIntegrationTests {
             "@", "release/a./b", "release/a.", "a.lock/b", ".a", "a/.b", "a..b", "a@{b", "a//b", "/a", "a/", "-a",
             "HEAD", "a b", "a\tb", "a\u{7F}b", "a~b", "a^b", "a:b", "a?b", "a*b", "a[b", "a\\b", "a\u{00A0}b",
             "\u{1F469}\u{200D}\u{1F4BB}", "x@y", "@a", "a@", "a.", "a./b", "a.lock", "@{-1}",
+            // A combining mark after a forbidden byte doesn't hide it from git.
+            "a~\u{301}b", ".\u{301}a", "a..\u{301}b", "/\u{301}a", "a.lock/\u{301}b", "a/\u{301}b", "a.\u{301}/b",
         ]
         for name in names {
             // The plain refname form: `--branch` would expand `@` and `@{-N}`. `git branch` also refuses a

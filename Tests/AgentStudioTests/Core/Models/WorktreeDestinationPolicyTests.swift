@@ -34,6 +34,8 @@ struct WorktreeDestinationPolicyTests {
             BranchNameCase(text: "name.lock", expected: .failure(.invalidComponentBoundary)),
             BranchNameCase(text: "@", expected: .failure(.invalidComponentBoundary)),
             BranchNameCase(text: "HEAD", expected: .failure(.invalidComponentBoundary)),
+            // Git sees the `~` under the combining mark.
+            BranchNameCase(text: "a~\u{301}b", expected: .failure(.containsForbiddenCharacter("~"))),
             // Git accepts these for an existing branch; a branch the app creates may not use them.
             BranchNameCase(text: "release/a\u{00A0}b", expected: .failure(.containsWhitespaceOrControlCharacter)),
             BranchNameCase(

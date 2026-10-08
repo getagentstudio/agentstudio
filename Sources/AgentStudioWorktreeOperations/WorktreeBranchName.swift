@@ -15,8 +15,12 @@ package enum WorktreeBranchNameRejection: Error, Equatable, Sendable {
 package struct WorktreeBranchName: Equatable, Hashable, Sendable {
     package let rawValue: String
 
-    private static let forbiddenCharacters: Set<Character> = ["~", "^", ":", "?", "*", "[", "\\"]
+    /// Git's forbidden characters, sequences and component rules are ASCII, and git applies them to the
+    /// name's bytes, so they are matched on UTF-8 bytes here too. Comparing `Character`s would let a
+    /// combining mark hide one: `a~\u{301}b` holds `~` as git sees it, but not as a `Character`.
+    private static let forbiddenBytes: [UInt8] = Array("~^:?*[\\".utf8)
     private static let forbiddenSequences = ["..", "@{", "//"]
+    private static let lockSuffix: [UInt8] = Array(".lock".utf8)
 
     package static func validated(_ text: String) -> Result<Self, WorktreeBranchNameRejection> {
         guard !text.isEmpty else { return .failure(.empty) }
@@ -59,23 +63,34 @@ package struct WorktreeBranchName: Equatable, Hashable, Sendable {
         guard !text.unicodeScalars.contains(where: rules.rejectsAsWhitespaceOrControl) else {
             return .containsWhitespaceOrControlCharacter
         }
-        if let forbidden = text.first(where: forbiddenCharacters.contains) {
-            return .containsForbiddenCharacter(forbidden)
+        let bytes = Array(text.utf8)
+        if let forbidden = bytes.first(where: forbiddenBytes.contains) {
+            return .containsForbiddenCharacter(Character(Unicode.Scalar(forbidden)))
         }
-        if let sequence = forbiddenSequences.first(where: text.contains) {
+        if let sequence = forbiddenSequences.first(where: { containsRun(Array($0.utf8), in: bytes) }) {
             return .containsForbiddenSequence(sequence)
         }
         // `git branch` refuses `HEAD` itself and a leading `-`, though a lower-level ref may have either.
-        guard text != "HEAD", !text.hasPrefix("-"), rules == .existingBranch || text != "@" else {
+        guard !bytes.elementsEqual("HEAD".utf8), bytes.first != UInt8(ascii: "-"),
+            rules == .existingBranch || !bytes.elementsEqual("@".utf8)
+        else {
             return .invalidComponentBoundary
         }
-        let components = text.split(separator: "/", omittingEmptySubsequences: false)
+        let components = bytes.split(separator: UInt8(ascii: "/"), omittingEmptySubsequences: false)
         let hasInvalidComponent = components.contains { component in
-            component.isEmpty || component.hasPrefix(".") || component.hasSuffix(".lock")
-                || (rules == .newBranch && component.hasSuffix("."))
+            component.isEmpty || component.first == UInt8(ascii: ".")
+                || component.suffix(lockSuffix.count).elementsEqual(lockSuffix)
+                || (rules == .newBranch && component.last == UInt8(ascii: "."))
         }
-        guard !hasInvalidComponent, !text.hasSuffix(".") else { return .invalidComponentBoundary }
+        guard !hasInvalidComponent, bytes.last != UInt8(ascii: ".") else { return .invalidComponentBoundary }
         return nil
+    }
+
+    private static func containsRun(_ run: [UInt8], in bytes: [UInt8]) -> Bool {
+        guard !run.isEmpty, bytes.count >= run.count else { return false }
+        return (0...(bytes.count - run.count)).contains { start in
+            bytes[start..<(start + run.count)].elementsEqual(run)
+        }
     }
 
     private init(rawValue: String) {
