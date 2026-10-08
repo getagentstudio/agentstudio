@@ -56,7 +56,8 @@ package enum WorktreeStartReference: Sendable, Equatable {
         if let separator = scalars.firstIndex(of: "/") {
             let remoteName = String(scalars[..<separator])
             let branchName = String(scalars[scalars.index(after: separator)...])
-            if !branchName.isEmpty, remoteNames.contains(remoteName) {
+            // Byte for byte, as git names remotes: `==` would also take a canonically equal spelling.
+            if !branchName.isEmpty, remoteNames.contains(where: { $0.utf8.elementsEqual(remoteName.utf8) }) {
                 return .remote(remoteName: remoteName, branchName: branchName)
             }
         }
@@ -67,6 +68,12 @@ package enum WorktreeStartReference: Sendable, Equatable {
         switch self {
         case .remote(_, let branchName), .unqualified(let branchName): branchName
         }
+    }
+
+    /// Whether this start names `branch` itself, byte for byte as git compares ref names. Swift's `==`
+    /// would also match a canonically equal spelling (`e` + U+0301 for `é`), which git treats as another branch.
+    package func names(branch: String) -> Bool {
+        branchName.utf8.elementsEqual(branch.utf8)
     }
 
     /// The remote this start is compared with and refreshed from.
@@ -133,7 +140,7 @@ package struct WorktreeCreationBranchResolver: Sendable {
                     reads: reads)
             }
             let start = WorktreeStartReference.parse(startBranch, remoteNames: remoteNames)
-            if start.branchName == request.branch {
+            if start.names(branch: request.branch) {
                 return try await resolveOwnBranch(
                     request.branch, remoteName: start.remoteName, sameNameStart: startBranch, reads: reads)
             }
@@ -151,7 +158,7 @@ package struct WorktreeCreationBranchResolver: Sendable {
             return .unqualified(branchName: request.branch)
         }
         let start = WorktreeStartReference.parse(startBranch, remoteNames: remoteNames)
-        guard start.branchName == request.branch else { return start }
+        guard start.names(branch: request.branch) else { return start }
         return .remote(remoteName: start.remoteName, branchName: request.branch)
     }
 
