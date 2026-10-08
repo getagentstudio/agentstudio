@@ -407,10 +407,7 @@ struct InvocationReceiptFixture {
             command: "/bin/bash",
             arguments: [
                 "-c",
-                "LOG_PREFIX=f2; export LANE_EVENT_STREAM_DIR='\(root.path)/evidence'; "
-                    + (helper == nil
-                        ? ""
-                        : "unset SWIFT_TEST_OUTPUT_RELAY_LOCK_PATH SWIFT_TEST_OUTPUT_RELAY_SCRIPT_PATH; ")
+                "LOG_PREFIX=f2; BUILD_PATH='\(root.path)/build'; export LANE_EVENT_STREAM_DIR='\(root.path)/evidence'; "
                     + "source '\(helper?.path ?? "scripts/swift-test-helpers.sh")'; "
                     + (eventStream ? "swift_test_command_accepts_event_stream() { return 0; }; " : "")
                     + setup

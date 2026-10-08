@@ -15,7 +15,6 @@ private let childExitDuringWatchdogSampleFixture = #"""
     mkdir -p "$fixture_directory/build" "$fixture_directory/events"
     LOG_PREFIX=completion-order
     BUILD_PATH="$fixture_directory/build"
-    unset SWIFT_TEST_OUTPUT_RELAY_LOCK_PATH SWIFT_TEST_OUTPUT_RELAY_SCRIPT_PATH
     LANE_EVENT_STREAM_DIR="$fixture_directory/events"
     export LOG_PREFIX BUILD_PATH LANE_EVENT_STREAM_DIR
     mkfifo "$fixture_directory/filtered" "$fixture_directory/release"

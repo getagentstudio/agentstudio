@@ -20,6 +20,7 @@ struct SwiftLaneWatchdogStateTests {
             mkfifo '__FIFO__'
             mkfifo '__STARTUP_FIFO__'
             LOG_PREFIX=watchdog-state
+            BUILD_PATH='__EVIDENCE__/build'
             LANE_EVENT_STREAM_DIR='__EVIDENCE__'
             export LANE_WATCHDOG_ARM_PATH='__ARM__'
             source scripts/swift-test-helpers.sh

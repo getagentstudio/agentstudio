@@ -33,7 +33,6 @@ struct SwiftLaneHelperCancellationTests {
             LOG_PREFIX=helper-cancel
             TIMEOUT_SECONDS=2
             BUILD_PATH='\(workDirectory)/build'
-            unset SWIFT_TEST_OUTPUT_RELAY_LOCK_PATH SWIFT_TEST_OUTPUT_RELAY_SCRIPT_PATH
             LANE_WATCHDOG_ARM_PATH='\(watchdogArmPath)'
             LANE_EVENT_STREAM_DIR='\(eventDirectory)'
             export LANE_WATCHDOG_ARM_PATH LANE_EVENT_STREAM_DIR
@@ -126,7 +125,6 @@ struct SwiftLaneHelperCancellationTests {
             LOG_PREFIX=helper-cancel-escalation
             TIMEOUT_SECONDS=2
             BUILD_PATH='\(workDirectory)/build'
-            unset SWIFT_TEST_OUTPUT_RELAY_LOCK_PATH SWIFT_TEST_OUTPUT_RELAY_SCRIPT_PATH
             LANE_WATCHDOG_ARM_PATH='\(watchdogArmPath)'
             LANE_EVENT_STREAM_DIR='\(eventDirectory)'
             export LANE_WATCHDOG_ARM_PATH LANE_EVENT_STREAM_DIR

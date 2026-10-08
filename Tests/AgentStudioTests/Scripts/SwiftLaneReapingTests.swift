@@ -50,7 +50,7 @@ struct SwiftLaneReapingTests {
                 + "chmod +x '\(workDirectory)/bin/ps' '\(workDirectory)/bin/pgrep'; "
                 + "mkfifo '\(childReleasePath)'; "
                 + "PATH='\(workDirectory)/bin':\"$PATH\"; export PATH; "
-                + "LOG_PREFIX=lane; TIMEOUT_SECONDS=2; BUILD_PATH='\(workDirectory)/build'; unset SWIFT_TEST_OUTPUT_RELAY_LOCK_PATH SWIFT_TEST_OUTPUT_RELAY_SCRIPT_PATH; "
+                + "LOG_PREFIX=lane; TIMEOUT_SECONDS=2; BUILD_PATH='\(workDirectory)/build'; "
                 + "LANE_WATCHDOG_ARM_PATH='\(watchdogArmPath)'; export LANE_WATCHDOG_ARM_PATH; "
                 + "export LANE_EVENT_STREAM_DIR='\(workDirectory)/ci-runs'; "
                 + "source scripts/swift-test-helpers.sh; set +e; "
@@ -88,7 +88,7 @@ struct SwiftLaneReapingTests {
         defer { try? FileManager.default.removeItem(atPath: workDirectory) }
         let laneOutput = try await runBashAllowingFailure(
             "mkdir -p '\(workDirectory)'; mkfifo '\(workDirectory)/orphan.release'; "
-                + "LOG_PREFIX=lane; TIMEOUT_SECONDS=2; BUILD_PATH='\(workDirectory)/build'; unset SWIFT_TEST_OUTPUT_RELAY_LOCK_PATH SWIFT_TEST_OUTPUT_RELAY_SCRIPT_PATH; "
+                + "LOG_PREFIX=lane; TIMEOUT_SECONDS=2; BUILD_PATH='\(workDirectory)/build'; "
                 + "export LANE_EVENT_STREAM_DIR='\(workDirectory)/ci-runs'; "
                 + "source scripts/swift-test-helpers.sh; set +e; "
                 + "run_swift_with_timeout 'orphan probe' 2 /bin/bash -c "
@@ -116,7 +116,7 @@ struct SwiftLaneReapingTests {
         let ledgerWorkerPIDFile = workDirectory + "/ledger-worker.pid"
         let wedgedOutput = try await runBashAllowingFailure(
             "mkdir -p '\(workDirectory)'; mkfifo '\(ledgerWorkerPIDFile).release'; "
-                + "LOG_PREFIX=lane; TIMEOUT_SECONDS=2; BUILD_PATH='\(workDirectory)/build'; unset SWIFT_TEST_OUTPUT_RELAY_LOCK_PATH SWIFT_TEST_OUTPUT_RELAY_SCRIPT_PATH; "
+                + "LOG_PREFIX=lane; TIMEOUT_SECONDS=2; BUILD_PATH='\(workDirectory)/build'; "
                 + "export LANE_EVENT_STREAM_DIR='\(ledgerDirectory)'; "
                 + "source scripts/swift-test-helpers.sh; set +e; "
                 + "run_swift_with_timeout 'ledger probe' 2 /bin/bash -c "
@@ -147,7 +147,7 @@ struct SwiftLaneReapingTests {
         try writeCapturedInvocation(passingEvents, selecting: "recordsPass()")
         let cleanDirectory = workDirectory + "/clean-runs"
         let cleanOutput = try await runBash(
-            "LOG_PREFIX=lane; TIMEOUT_SECONDS=60; BUILD_PATH='\(workDirectory)/clean-build'; unset SWIFT_TEST_OUTPUT_RELAY_LOCK_PATH SWIFT_TEST_OUTPUT_RELAY_SCRIPT_PATH; "
+            "LOG_PREFIX=lane; TIMEOUT_SECONDS=60; BUILD_PATH='\(workDirectory)/clean-build'; "
                 + "export LANE_EVENT_STREAM_DIR='\(cleanDirectory)' LANE_EVENT_STREAM_RETAIN_ALWAYS=0; "
                 + "source scripts/swift-test-helpers.sh; "
                 + "run_swift_with_timeout 'clean probe' 60 /bin/bash -c "
@@ -253,7 +253,6 @@ struct SwiftLaneReapingTests {
             LOG_PREFIX=signal-group-boundary
             TIMEOUT_SECONDS=60
             BUILD_PATH="$fixture_dir/build"
-            unset SWIFT_TEST_OUTPUT_RELAY_LOCK_PATH SWIFT_TEST_OUTPUT_RELAY_SCRIPT_PATH
             export LANE_EVENT_STREAM_DIR="$fixture_dir/events"
             probe_survivor_lock() {
               /usr/bin/perl -MFcntl=:flock -e 'open(my $lock, ">>", shift) or die $!; flock($lock, LOCK_EX|LOCK_NB) or exit 7' "$survivor_lock"

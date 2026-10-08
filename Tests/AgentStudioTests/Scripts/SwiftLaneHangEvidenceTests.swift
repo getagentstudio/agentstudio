@@ -73,7 +73,7 @@ struct SwiftLaneHangEvidenceTests {
 
         let laneOutput = try await laneBashAllowingFailure(
             "mkdir -p '\(workDirectory)'; "
-                + "LOG_PREFIX=lane; TIMEOUT_SECONDS=0; BUILD_PATH='\(workDirectory)/build'; unset SWIFT_TEST_OUTPUT_RELAY_LOCK_PATH SWIFT_TEST_OUTPUT_RELAY_SCRIPT_PATH; "
+                + "LOG_PREFIX=lane; TIMEOUT_SECONDS=0; BUILD_PATH='\(workDirectory)/build'; "
                 + "export LANE_EVENT_STREAM_DIR='\(workDirectory)/ci-runs'; "
                 + "source scripts/swift-test-helpers.sh; set +e; "
                 + "run_swift_with_timeout 'dump probe' 0 /bin/bash -c "
@@ -120,7 +120,7 @@ struct SwiftLaneHangEvidenceTests {
         try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: workDirectory + "/bin/xcrun")
 
         let laneOutput = try await laneBashAllowingFailure(
-            "LOG_PREFIX=lane; TIMEOUT_SECONDS=0; BUILD_PATH='\(workDirectory)/build'; unset SWIFT_TEST_OUTPUT_RELAY_LOCK_PATH SWIFT_TEST_OUTPUT_RELAY_SCRIPT_PATH; "
+            "LOG_PREFIX=lane; TIMEOUT_SECONDS=0; BUILD_PATH='\(workDirectory)/build'; "
                 + "export LANE_EVENT_STREAM_DIR='\(evidenceDirectory)'; "
                 + "export LANE_WATCHDOG_ARM_PATH='\(workDirectory)/watchdog-armed'; "
                 + "export PATH='\(workDirectory)/bin':$PATH; "
@@ -248,7 +248,7 @@ struct SwiftLaneHangEvidenceTests {
         """.write(toFile: workDirectory + "/wedged-test.sh", atomically: true, encoding: .utf8)
 
         let report = try await laneBashAllowingFailure(
-            "LOG_PREFIX=lane; TIMEOUT_SECONDS=0; BUILD_PATH='\(workDirectory)/build'; unset SWIFT_TEST_OUTPUT_RELAY_LOCK_PATH SWIFT_TEST_OUTPUT_RELAY_SCRIPT_PATH; "
+            "LOG_PREFIX=lane; TIMEOUT_SECONDS=0; BUILD_PATH='\(workDirectory)/build'; "
                 + "export LANE_EVENT_STREAM_DIR='\(workDirectory)/ci-runs'; "
                 + "export LANE_WATCHDOG_ARM_PATH='\(workDirectory)/armed'; "
                 + "source scripts/swift-test-helpers.sh; set +e; "
@@ -281,7 +281,7 @@ struct SwiftLaneHangEvidenceTests {
             )
         }
         func wedgedLane(inspectorDirectory: String) -> String {
-            "LOG_PREFIX=lane; TIMEOUT_SECONDS=0; BUILD_PATH='\(workDirectory)/\(inspectorDirectory)-build'; unset SWIFT_TEST_OUTPUT_RELAY_LOCK_PATH SWIFT_TEST_OUTPUT_RELAY_SCRIPT_PATH; "
+            "LOG_PREFIX=lane; TIMEOUT_SECONDS=0; BUILD_PATH='\(workDirectory)/\(inspectorDirectory)-build'; "
                 + "export LANE_EVENT_STREAM_DIR='\(workDirectory)/\(inspectorDirectory)-runs'; "
                 + "export LANE_STACK_SAMPLE_TOOL='\(workDirectory)/no-such-sample'; "
                 + "export PATH='\(workDirectory)/\(inspectorDirectory)':$PATH; "

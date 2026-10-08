@@ -970,6 +970,7 @@ func runBash(_ command: String, standardInput: String? = nil) async throws -> St
         let input = standardInput.map { _ in Pipe() }
         process.executableURL = URL(fileURLWithPath: "/bin/bash")
         process.arguments = ["-c", command]
+        process.environment = testProcessEnvironmentWithoutRelayPaths()
         process.currentDirectoryURL = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
         process.standardInput = input
         process.standardOutput = outputHandle
@@ -996,6 +997,7 @@ private func runBashStatus(_ command: String) async throws -> Int32 {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/bin/bash")
         process.arguments = ["-c", command]
+        process.environment = testProcessEnvironmentWithoutRelayPaths()
         process.currentDirectoryURL = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
         try process.run()
         process.waitUntilExit()

@@ -287,7 +287,7 @@ struct SwiftLaneReceiptTests {
                 + "chmod +x '\(workDirectory)/bin/fake-helper'; "
                 + "export SWIFT_TEST_FAILED_ISOLATED_SUITES_FILE='\(workDirectory)/tally'; "
                 + ": > \"$SWIFT_TEST_FAILED_ISOLATED_SUITES_FILE\"; "
-                + "LOG_PREFIX=webkit; TIMEOUT_SECONDS=60; BUILD_PATH='\(workDirectory)/build'; unset SWIFT_TEST_OUTPUT_RELAY_LOCK_PATH SWIFT_TEST_OUTPUT_RELAY_SCRIPT_PATH; "
+                + "LOG_PREFIX=webkit; TIMEOUT_SECONDS=60; BUILD_PATH='\(workDirectory)/build'; "
                 + "export LANE_EVENT_STREAM_DIR='\(workDirectory)/ci-runs'; "
                 + "source scripts/swift-test-helpers.sh; set +e; "
                 + "swift_test_bundle_for_suite() { echo '\(workDirectory)/fake-bundle'; }; "
@@ -347,7 +347,7 @@ struct SwiftLaneReceiptTests {
         defer { eventFixture.remove() }
         try writeCapturedInvocation(eventFixture, selecting: "recordsPass()")
         let retained = try await laneBash(
-            "LOG_PREFIX=lane; TIMEOUT_SECONDS=60; BUILD_PATH='\(workDirectory)/build'; unset SWIFT_TEST_OUTPUT_RELAY_LOCK_PATH SWIFT_TEST_OUTPUT_RELAY_SCRIPT_PATH; "
+            "LOG_PREFIX=lane; TIMEOUT_SECONDS=60; BUILD_PATH='\(workDirectory)/build'; "
                 + "export LANE_EVENT_STREAM_DIR='\(workDirectory)'; LANE_EVENT_STREAM_RETAIN_ALWAYS=1; "
                 + "source scripts/swift-test-helpers.sh; "
                 + "run_swift_with_timeout 'clean half' 60 /bin/bash -c 'echo CLEAN_RUN_OK; cp \"$1\" \"${@: -1}\"' fixture '\(eventFixture.events.path)' swiftpm-testing-helper; "

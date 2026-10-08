@@ -107,7 +107,6 @@ struct SwiftLaneRunnerReportTests {
         defer { try? FileManager.default.removeItem(atPath: evidenceDirectory) }
         let output = try await runBash(
             "LOG_PREFIX=timing; BUILD_PATH='\(evidenceDirectory)/build'; "
-                + "unset SWIFT_TEST_OUTPUT_RELAY_LOCK_PATH SWIFT_TEST_OUTPUT_RELAY_SCRIPT_PATH; "
                 + "export BUILD_PATH LANE_EVENT_STREAM_DIR='\(evidenceDirectory)' "
                 + "LANE_TIMING_FILTER=FixtureSuite LANE_TIMING_BATCH=2 LANE_TIMING_SLOT=3 "
                 + "LANE_TIMING_CONCURRENCY=4; "
@@ -423,7 +422,7 @@ struct SwiftLaneRunnerReportTests {
         let workDirectory = NSTemporaryDirectory() + "agentstudio-child-signal-report-\(UUIDv7.generate())"
         defer { try? FileManager.default.removeItem(atPath: workDirectory) }
         let laneOutput = try await runBashAllowingFailure(
-            "LOG_PREFIX=lane; TIMEOUT_SECONDS=60; BUILD_PATH='\(workDirectory)/build'; unset SWIFT_TEST_OUTPUT_RELAY_LOCK_PATH SWIFT_TEST_OUTPUT_RELAY_SCRIPT_PATH; "
+            "LOG_PREFIX=lane; TIMEOUT_SECONDS=60; BUILD_PATH='\(workDirectory)/build'; "
                 + "export LANE_EVENT_STREAM_DIR='\(workDirectory)/events'; "
                 + "source scripts/swift-test-helpers.sh; set +e; "
                 + "run_swift_with_timeout 'isolated suite: FakeSuite' 60 /bin/bash -c "

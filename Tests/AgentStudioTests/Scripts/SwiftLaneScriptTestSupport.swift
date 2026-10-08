@@ -52,9 +52,7 @@ func runLaneScriptBash(_ command: String, environment: [String: String]? = nil) 
         process.executableURL = URL(fileURLWithPath: "/bin/bash")
         process.arguments = ["-c", command]
         process.currentDirectoryURL = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
-        if let environment {
-            process.environment = environment
-        }
+        process.environment = testProcessEnvironmentWithoutRelayPaths(environment)
         process.standardOutput = outputHandle
         process.standardError = outputHandle
         try process.run()
