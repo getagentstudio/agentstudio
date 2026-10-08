@@ -49,6 +49,8 @@ package enum WorktreeCommandLineArgumentError: Error, Equatable, Sendable {
             "\(option) path must not be empty"
         case .duplicateOption(let option):
             "\(option) may be specified only once"
+        case .conflictingOptions("--from", "--from-branch"):
+            "--from and --from-branch each select a source; choose one source"
         case .conflictingOptions(let first, let second):
             "\(first) and \(second) cannot be used together"
         }
@@ -235,19 +237,20 @@ package enum WorktreeCommandLineArgumentParser {
             throw WorktreeCommandLineArgumentError.unexpectedArgument
         }
 
+        if parsedArguments.sourcePath != nil, parsedArguments.startBranch != nil {
+            throw WorktreeCommandLineArgumentError.conflictingOptions("--from", "--from-branch")
+        }
         if parsedArguments.trackedOnly,
             parsedArguments.sourcePath != nil || parsedArguments.changesOnly
         {
             throw WorktreeCreationStop.trackedOnlyExcludesSource
         }
-        if parsedArguments.startBranch != nil, !parsedArguments.trackedOnly {
-            throw WorktreeCreationStop.fromBranchNeedsTrackedOnly
-        }
         if parsedArguments.changesOnly, parsedArguments.sourcePath == nil {
             throw WorktreeCreationStop.changesOnlyNeedsFrom
         }
         let materialization: WorktreeCreateMaterialization
-        if parsedArguments.trackedOnly {
+        // A start branch has no worktree to fork, so it always checks out tracked files.
+        if parsedArguments.trackedOnly || parsedArguments.startBranch != nil {
             materialization = .trackedOnly(startBranch: parsedArguments.startBranch)
         } else {
             materialization = parsedArguments.changesOnly ? .changesOnly : .copyOnWrite
