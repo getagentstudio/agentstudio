@@ -318,7 +318,7 @@ struct SwiftBuildSlotScriptTests {
             FileManager.default.fileExists(atPath: fixture.rootURL.appending(path: ".build-agent-1/.slot.lock").path))
     }
 
-    @Test("clean-artifacts refuses while the slot is held and removes the build directories once it is free")
+    @Test("clean-artifacts refuses a held slot, and holds a free slot for its delete while keeping its lock")
     func cleanArtifactsRefusesHeldSlot() async throws {
         let fixture = try SwiftBuildSlotFixture()
         let slotBuildDatabase = fixture.rootURL.appending(path: ".build-agent-1/build.db")
@@ -354,16 +354,23 @@ struct SwiftBuildSlotScriptTests {
 
             let freeCleaner = fixture.makeProcess(cleanerBody, environment: ["PROJECT_ROOT": fixture.rootURL.path])
             freeCleaner.start()
-            _ = try await freeCleaner.readOutputToEnd()
+            let freeOutput = try await freeCleaner.readOutputToEnd()
             let freeStatus = try await freeCleaner.waitForExit()
-            return (heldStatus, heldOutput, buildSurvivedWhileHeld, freeStatus)
+            return (heldStatus, heldOutput, buildSurvivedWhileHeld, freeStatus, freeOutput)
         }
 
         #expect(result.0 == 1)
         #expect(result.1.contains("refused: the build slot is held (holder_task=held-owner"))
         #expect(result.2)
         #expect(result.3 == 0)
-        #expect(!FileManager.default.fileExists(atPath: fixture.rootURL.appending(path: ".build-agent-1").path))
+        // The free cleaner holds the slot for its whole delete and keeps .slot.lock,
+        // so a build that starts meanwhile waits on the same lock file.
+        #expect(result.4.contains("[swift-build-slot] using slot=build"))
+        #expect(result.4.contains("task=mise run clean-artifacts"))
+        #expect(result.4.contains("[swift-build-slot] released slot=build"))
+        #expect(
+            FileManager.default.fileExists(atPath: fixture.rootURL.appending(path: ".build-agent-1/.slot.lock").path))
+        #expect(!FileManager.default.fileExists(atPath: slotBuildDatabase.path))
         #expect(!FileManager.default.fileExists(atPath: fixture.rootURL.appending(path: ".build").path))
     }
 
