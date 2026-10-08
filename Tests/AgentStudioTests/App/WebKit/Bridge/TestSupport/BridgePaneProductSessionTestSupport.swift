@@ -32,6 +32,30 @@ func openBridgePaneProductSession(
         )
     )
     #expect(observation.response?.statusCode == 200)
+    // HTTP 200 carries operation admission. Metadata needs the committed open.
+    let admitted = try BridgeProductStrictJSON.decode(
+        BridgeProductOperationAdmittedResponse.self, from: observation.body)
+    let resultReply = try await collectBridgeProductSchemeReply(
+        adapter: installation.productAdapter,
+        request: bridgeProductSchemeRequest(
+            route: BridgeProductWireContract.commandRoute,
+            capability: capabilityHeader,
+            body: JSONSerialization.data(withJSONObject: [
+                "kind": "operation.result", "operationId": admitted.operationId,
+                "paneSessionId": installation.bootstrap.paneSessionId,
+                "workerInstanceId": installation.bootstrap.workerInstanceId,
+                "wireVersion": BridgeProductWireContract.version,
+            ])))
+    #expect(resultReply.response?.statusCode == 200)
+    let result = try BridgeProductStrictJSON.decode(
+        BridgeProductOperationResultResponse.self, from: resultReply.body)
+    try #require(result.operationId == admitted.operationId)
+    try #require(result.outcome == .succeeded)
+    let committedResponse = try BridgeProductStrictJSON.decode(
+        BridgeProductControlResponse.self, from: JSONEncoder().encode(try #require(result.result)))
+    let workerSessionWasAccepted =
+        if case .workerSessionAccepted = committedResponse { true } else { false }
+    try #require(workerSessionWasAccepted)
 }
 
 func openBridgePaneProductSessionThroughRouter(
@@ -191,9 +215,11 @@ private func collectBridgeSchemeHandlerProductReply(
 
 actor BridgePaneProductSessionProviderGate: BridgeProductSchemeProvider {
     private let workerRevocation: HeldStep<String>?
+    private let workerOpenResponse: HeldStep<Void>?
 
-    init(workerRevocation: HeldStep<String>? = nil) {
+    init(workerRevocation: HeldStep<String>? = nil, workerOpenResponse: HeldStep<Void>? = nil) {
         self.workerRevocation = workerRevocation
+        self.workerOpenResponse = workerOpenResponse
     }
 
     func revokeWorkerIdentity(_ workerInstanceId: String) async {
@@ -226,6 +252,7 @@ actor BridgePaneProductSessionProviderGate: BridgeProductSchemeProvider {
         do {
             switch request {
             case .workerSessionOpen:
+                try await workerOpenResponse?.arrive(())
                 return try .workerSessionAccepted(correlating: request)
             case .productCall:
                 let waiters = productCallStartWaiters
