@@ -70,7 +70,11 @@ describe('Bridge comm worker completed Review preparation lifecycle', () => {
 		);
 		await flushBridgeWorkerRuntimeContinuations();
 		await reviewBatches.install(
-			makeReviewTestBatch({ subscriptionId: reviewSubscription.subscriptionId, withContent: true }),
+			makeReviewTestBatch({
+				snapshotCause: 'open',
+				subscriptionId: reviewSubscription.subscriptionId,
+				withContent: true,
+			}),
 		);
 		await flushBridgeWorkerRuntimeContinuations();
 		await drainBridgeCommWorkerPreparationUntilIdle(

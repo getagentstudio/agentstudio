@@ -270,8 +270,8 @@ export async function createRenderStallRecoveryHarness(
 	};
 	const initialBank =
 		surface === 'file'
-			? makeFileBatchInstallation(subscriptionId)
-			: makeReviewTestBatch({ subscriptionId, withContent: true });
+			? makeFileBatchInstallation('open', subscriptionId)
+			: makeReviewTestBatch({ snapshotCause: 'open', subscriptionId, withContent: true });
 	await install(initialBank);
 	const publications = (): readonly BridgeMainRenderPublication[] =>
 		postedMessages.flatMap(({ message }) =>

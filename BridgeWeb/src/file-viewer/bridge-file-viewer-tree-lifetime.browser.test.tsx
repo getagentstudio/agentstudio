@@ -76,7 +76,11 @@ test.each([{ persistentFailure: false }, { persistentFailure: true }])(
 		};
 		const appProps = {
 			codeViewWorkerPoolEnabled: false,
-			initialFileBatch: makeBrowserFileBatchWithDescriptors(codeDescriptor, markdownDescriptor),
+			initialFileBatch: makeBrowserFileBatchWithDescriptors(
+				'open',
+				codeDescriptor,
+				markdownDescriptor,
+			),
 			markdownWorkerClient: controlledMarkdownClient,
 			navigationCommand: fileNavigationCommandForPath('First.swift'),
 			fileProductSession: {

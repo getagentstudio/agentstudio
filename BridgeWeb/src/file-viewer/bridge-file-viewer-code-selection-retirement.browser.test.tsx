@@ -320,6 +320,7 @@ function FileSelectionControllerProbe(props: {
 
 function fileBatchForTwoCodeFiles(): ReturnType<typeof makeBrowserFileBatchWithDescriptors> {
 	return makeBrowserFileBatchWithDescriptors(
+		'open',
 		makeBrowserFileDescriptorOutcome({
 			declaredByteLength: 10,
 			descriptorId: 'descriptor-file-1',

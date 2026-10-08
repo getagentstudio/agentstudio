@@ -585,11 +585,15 @@ function createPanePresentationTestTransport(props: {
 		fileSubscriptionCount: (): number => fileSubscriptionCount,
 		installFileBatch: async (): Promise<void> => {
 			if (batchSinks === null) throw new Error('File batch sinks were not installed.');
-			await batchSinks.install(makeFileBatchInstallation('file-subscription-updating-chrome'));
+			await batchSinks.install(
+				makeFileBatchInstallation('open', 'file-subscription-updating-chrome'),
+			);
 		},
 		installReviewBatch: async (): Promise<void> => {
 			if (batchSinks === null) throw new Error('Review batch sinks were not installed.');
-			await batchSinks.install(makeReviewBatchInstallation('review-subscription-updating-chrome'));
+			await batchSinks.install(
+				makeReviewBatchInstallation('open', 'review-subscription-updating-chrome'),
+			);
 		},
 		productTransport,
 		publish: (publication): void => {

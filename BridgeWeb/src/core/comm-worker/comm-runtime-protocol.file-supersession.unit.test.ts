@@ -38,7 +38,7 @@ describe('Bridge File selected-read supersession', () => {
 			scenario.select();
 			const firstOpen = await scenario.firstOpen.promise;
 			expect(scenario.advanceFileWorkerEpoch()).toBe(2);
-			const base = makeFileBatchInstallation(scenario.subscriptionId, { revision: 2 });
+			const base = makeFileBatchInstallation('open', scenario.subscriptionId, { revision: 2 });
 			await scenario.install({
 				...base,
 				records: base.records.map((record) => {
@@ -372,7 +372,7 @@ async function createSelectedReadScenario(
 	await install(
 		props.initialUnknownLineCount === true
 			? makeFileLineCountInstallation(subscriptionId, 1, false)
-			: makeFileBatchInstallation(subscriptionId, { revision: 1 }),
+			: makeFileBatchInstallation('open', subscriptionId, { revision: 1 }),
 	);
 	const present = await presentationSink.promise;
 	return {
@@ -419,7 +419,7 @@ function makeFileLineCountInstallation(
 	revision: number,
 	knownLineCount: boolean,
 ): BridgeProductViewInstallation {
-	const base = makeFileBatchInstallation(subscriptionId, { revision });
+	const base = makeFileBatchInstallation('open', subscriptionId, { revision });
 	return {
 		...base,
 		records: base.records.map((record) => {
@@ -450,7 +450,7 @@ function makeSuccessorInstallation(
 	subscriptionId: string,
 	changeKind: 'descriptor' | 'request',
 ): BridgeProductViewInstallation {
-	const base = makeFileBatchInstallation(subscriptionId, { revision: 2 });
+	const base = makeFileBatchInstallation('open', subscriptionId, { revision: 2 });
 	return {
 		...base,
 		records: base.records.map((record) => {

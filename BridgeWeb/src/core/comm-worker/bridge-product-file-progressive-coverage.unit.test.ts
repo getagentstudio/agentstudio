@@ -42,6 +42,9 @@ function frameFactory(): (props: {
 	readonly base?: number;
 	readonly handle?: string;
 	readonly incarnation?: string;
+	readonly snapshotCause:
+		| import('./bridge-product-batch-wire-contracts.js').BridgeProductSnapshotCause
+		| undefined;
 	readonly mode: 'snapshot' | 'coverage' | 'change';
 	readonly records: readonly FixtureRecord[];
 	readonly scope?: Extract<
@@ -69,6 +72,7 @@ function frameFactory(): (props: {
 				streamSequence: ++streamSequence,
 				baseRevision: props.base ?? 0,
 				mode: props.mode,
+				...(props.snapshotCause === undefined ? {} : { snapshotCause: props.snapshotCause }),
 				partCount: props.records.length,
 				scope: props.scope ?? scope,
 				targetRevision: props.target,
@@ -156,6 +160,7 @@ describe('File progressive coverage through the real batch codec and receiver', 
 			receiver,
 			batch({
 				mode: 'snapshot',
+				snapshotCause: 'open',
 				target: 1,
 				records: [
 					{ key: 'a', revision: 1, value: 'old a' },
@@ -168,6 +173,7 @@ describe('File progressive coverage through the real batch codec and receiver', 
 		installFrames(
 			receiver,
 			batch({
+				snapshotCause: undefined,
 				mode: 'coverage',
 				handle: 'handle-2',
 				incarnation: 'incarnation-2',
@@ -180,6 +186,7 @@ describe('File progressive coverage through the real batch codec and receiver', 
 		installFrames(
 			receiver,
 			batch({
+				snapshotCause: undefined,
 				mode: 'coverage',
 				handle: 'handle-3',
 				incarnation: 'incarnation-3',
@@ -200,6 +207,7 @@ describe('File progressive coverage through the real batch codec and receiver', 
 			receiver,
 			batch({
 				mode: 'snapshot',
+				snapshotCause: 'open',
 				handle: 'handle-3',
 				incarnation: 'incarnation-3',
 				target: 4,
@@ -216,6 +224,7 @@ describe('File progressive coverage through the real batch codec and receiver', 
 			receiver,
 			batch({
 				mode: 'snapshot',
+				snapshotCause: 'open',
 				target: 1,
 				records: [
 					{ key: 'a', revision: 1, value: 'old a' },
@@ -228,6 +237,7 @@ describe('File progressive coverage through the real batch codec and receiver', 
 		installFrames(
 			receiver,
 			batch({
+				snapshotCause: undefined,
 				mode: 'coverage',
 				handle: 'handle-2',
 				incarnation: 'incarnation-2',
@@ -241,6 +251,7 @@ describe('File progressive coverage through the real batch codec and receiver', 
 		installFrames(
 			receiver,
 			batch({
+				snapshotCause: undefined,
 				mode: 'coverage',
 				handle: 'handle-2',
 				incarnation: 'incarnation-2',
@@ -255,6 +266,7 @@ describe('File progressive coverage through the real batch codec and receiver', 
 		installFrames(
 			receiver,
 			batch({
+				snapshotCause: undefined,
 				mode: 'coverage',
 				handle: 'handle-2',
 				incarnation: 'incarnation-2',
@@ -271,6 +283,7 @@ describe('File progressive coverage through the real batch codec and receiver', 
 		installFrames(
 			receiver,
 			batch({
+				snapshotCause: undefined,
 				mode: 'coverage',
 				target: 1,
 				records: [{ key: 'a', revision: 1, value: 'prefix a' }],
@@ -281,6 +294,7 @@ describe('File progressive coverage through the real batch codec and receiver', 
 		installFrames(
 			receiver,
 			batch({
+				snapshotCause: undefined,
 				mode: 'coverage',
 				scope: scopeB,
 				scopeRevision: 2,
@@ -296,6 +310,7 @@ describe('File progressive coverage through the real batch codec and receiver', 
 		installFrames(
 			receiver,
 			batch({
+				snapshotCause: undefined,
 				mode: 'coverage',
 				scopeRevision: 3,
 				target: 3,
@@ -310,6 +325,7 @@ describe('File progressive coverage through the real batch codec and receiver', 
 			receiver,
 			batch({
 				mode: 'snapshot',
+				snapshotCause: 'open',
 				scopeRevision: 3,
 				target: 4,
 				records: [{ key: 'a', revision: 4, value: 'final a' }],
@@ -325,6 +341,7 @@ describe('File progressive coverage through the real batch codec and receiver', 
 			receiver,
 			batch({
 				mode: 'snapshot',
+				snapshotCause: 'open',
 				target: 1,
 				records: [{ key: 'old', revision: 1, value: 'old row' }],
 			}),
@@ -332,6 +349,7 @@ describe('File progressive coverage through the real batch codec and receiver', 
 		receiver.replaceHandle('replacement-handle', scope, 1);
 		receiver.admitDomain('default', 'replacement-incarnation');
 		const incomplete = batch({
+			snapshotCause: undefined,
 			mode: 'coverage',
 			handle: 'replacement-handle',
 			incarnation: 'replacement-incarnation',
@@ -358,7 +376,12 @@ describe('File progressive coverage through the real batch codec and receiver', 
 	test('the typed File installer preserves stale presentation rows without promoting their descriptors', () => {
 		const batch = frameFactory();
 		const oldRecords = [rowRecord('a.ts', 1), rowRecord('b.ts', 1), statusRecord('ready', 1)];
-		const oldBegin = batch({ mode: 'snapshot', target: 1, records: oldRecords })[0];
+		const oldBegin = batch({
+			mode: 'snapshot',
+			snapshotCause: 'open',
+			target: 1,
+			records: oldRecords,
+		})[0];
 		if (oldBegin?.kind !== 'subscription.batchBegin') throw new Error('Initial begin missing.');
 		const previous = installBridgeProductFileBatch({
 			begin: oldBegin,
@@ -369,6 +392,7 @@ describe('File progressive coverage through the real batch codec and receiver', 
 		});
 		const records = [rowRecord('a.ts', 2), statusRecord('loading', 2, 'source-2')];
 		const begin = batch({
+			snapshotCause: undefined,
 			mode: 'coverage',
 			handle: 'replacement-handle',
 			incarnation: 'replacement-incarnation',
@@ -402,7 +426,7 @@ describe('File progressive coverage through the real batch codec and receiver', 
 			{ key: '/new-root/src', revision: 2, value: parentDirectory.row },
 			statusRecord('loading', 2, 'new-source'),
 		];
-		const begin = batch({ mode: 'coverage', target: 2, records })[0];
+		const begin = batch({ snapshotCause: undefined, mode: 'coverage', target: 2, records })[0];
 		if (begin?.kind !== 'subscription.batchBegin') throw new Error('Coverage begin missing.');
 		const partial = installBridgeProductFileBatch({
 			begin,
@@ -434,6 +458,7 @@ describe('File progressive coverage through the real batch codec and receiver', 
 		installFrames(
 			receiver,
 			batch({
+				snapshotCause: undefined,
 				mode: 'coverage',
 				target: 2,
 				records: [
@@ -447,6 +472,7 @@ describe('File progressive coverage through the real batch codec and receiver', 
 		installFrames(
 			receiver,
 			batch({
+				snapshotCause: undefined,
 				mode: 'coverage',
 				target: 3,
 				records: [{ key: 'a', revision: 3, value: 'updated' }],
@@ -454,15 +480,27 @@ describe('File progressive coverage through the real batch codec and receiver', 
 		);
 		expect(receiver.records('default').map((record) => record.key)).toEqual(['a', 'obsolete']);
 		// Coverage advances progress, but never establishes the snapshot prerequisite for changes.
-		const change = batch({ mode: 'change', base: 3, target: 4, records: [] })[0];
+		const change = batch({
+			snapshotCause: undefined,
+			mode: 'change',
+			base: 3,
+			target: 4,
+			records: [],
+		})[0];
 		if (change === undefined) throw new Error('Change begin missing.');
 		expect(receiver.accept(change).kind).toBe('resnapshot');
 		installFrames(
 			receiver,
-			batch({ mode: 'snapshot', target: 5, records: [{ key: 'a', revision: 5, value: 'final' }] }),
+			batch({
+				mode: 'snapshot',
+				snapshotCause: 'open',
+				target: 5,
+				records: [{ key: 'a', revision: 5, value: 'final' }],
+			}),
 		);
 		expect(receiver.records('default')).toEqual([{ key: 'a', revision: 5, value: 'final' }]);
 		const late = batch({
+			snapshotCause: undefined,
 			mode: 'coverage',
 			target: 3,
 			records: [{ key: 'obsolete', revision: 2, value: 'late' }],
@@ -474,8 +512,12 @@ describe('File progressive coverage through the real batch codec and receiver', 
 	test('certified domains keep existing base continuity and absence floors for coverage', () => {
 		const receiver = fileReceiver();
 		const batch = frameFactory();
-		installFrames(receiver, batch({ mode: 'snapshot', target: 5, records: [] }));
+		installFrames(
+			receiver,
+			batch({ mode: 'snapshot', snapshotCause: 'open', target: 5, records: [] }),
+		);
 		const behind = batch({
+			snapshotCause: undefined,
 			mode: 'coverage',
 			target: 6,
 			records: [{ key: 'gone', revision: 2, value: 'stale' }],
@@ -485,6 +527,7 @@ describe('File progressive coverage through the real batch codec and receiver', 
 		installFrames(
 			receiver,
 			batch({
+				snapshotCause: undefined,
 				mode: 'coverage',
 				base: 5,
 				target: 6,
@@ -514,12 +557,14 @@ describe('File progressive coverage through the real batch codec and receiver', 
 		const batch = frameFactory();
 		for (const frame of batch({
 			mode: 'snapshot',
+			snapshotCause: 'open',
 			target: 1,
 			records: [rowRecord('a.ts', 1), rowRecord('b.ts', 1), statusRecord('ready', 1)],
 		}))
 			router.accept(frame);
 		expect(installedCount).toBe(1);
 		for (const frame of batch({
+			snapshotCause: undefined,
 			mode: 'coverage',
 			handle: 'replacement-handle',
 			incarnation: 'replacement-incarnation',
@@ -534,6 +579,7 @@ describe('File progressive coverage through the real batch codec and receiver', 
 		expect(partial.displayTreeRows.map((row) => row.path)).toEqual(['a.ts', 'b.ts']);
 		for (const frame of batch({
 			mode: 'snapshot',
+			snapshotCause: 'open',
 			handle: 'replacement-handle',
 			incarnation: 'replacement-incarnation',
 			target: 3,

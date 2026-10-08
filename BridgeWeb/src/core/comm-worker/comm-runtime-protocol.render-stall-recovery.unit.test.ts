@@ -52,7 +52,9 @@ describe('Main and Comm bounded render stall recovery', () => {
 				expect(harness.publications()).toHaveLength(2);
 				await harness.retry();
 				expect(harness.resnapshotCount()).toBe(1);
-				await harness.install(makeFileBatchInstallation(harness.subscriptionId, { revision: 5 }));
+				await harness.install(
+					makeFileBatchInstallation('open', harness.subscriptionId, { revision: 5 }),
+				);
 				expect(harness.publications()).toHaveLength(3);
 				const retry = harness.acceptLatestRender();
 				expect(retry.renderReceiptIdentity.attemptId).not.toBe(
@@ -101,7 +103,9 @@ describe('Main and Comm bounded render stall recovery', () => {
 			expect(harness.publications()).toHaveLength(2);
 			harness.setReceiptDelivery(true);
 			await harness.retry();
-			await harness.install(makeFileBatchInstallation(harness.subscriptionId, { revision: 5 }));
+			await harness.install(
+				makeFileBatchInstallation('open', harness.subscriptionId, { revision: 5 }),
+			);
 			expect(harness.publications()).toHaveLength(3);
 			harness.paint(harness.acceptLatestRender());
 			await harness.whenIdle();
@@ -123,6 +127,7 @@ describe('Main and Comm bounded render stall recovery', () => {
 			await harness.advanceRenderWake();
 			expect(harness.recoveryStatuses.at(-1)?.status).toBe('failedRetryable');
 			const bank = makeReviewTestBatch({
+				snapshotCause: 'open',
 				subscriptionId: harness.subscriptionId,
 				revision: 12,
 				withContent: true,

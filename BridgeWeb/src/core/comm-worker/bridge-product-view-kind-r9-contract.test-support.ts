@@ -19,6 +19,9 @@ interface BeginProps {
 	readonly baseRevision?: number;
 	readonly targetRevision: number;
 	readonly partCount: number;
+	readonly snapshotCause:
+		| import('./bridge-product-batch-wire-contracts.js').BridgeProductSnapshotCause
+		| undefined;
 	readonly mode?: BatchBegin['mode'];
 	readonly scope?: ViewScope;
 	readonly scopeRevision?: number;
@@ -56,6 +59,7 @@ export class ViewContractWireFixture {
 			baseRevision: props.baseRevision ?? 0,
 			targetRevision: props.targetRevision,
 			mode: props.mode ?? 'snapshot',
+			...(props.snapshotCause === undefined ? {} : { snapshotCause: props.snapshotCause }),
 			partCount: props.partCount,
 			scope: props.scope ?? this.scope,
 			...(this.kind === 'review.metadata'

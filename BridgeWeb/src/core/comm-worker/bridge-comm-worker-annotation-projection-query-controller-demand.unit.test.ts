@@ -138,6 +138,7 @@ describe('Bridge annotation projection session demand', () => {
 				const subscriptionId = harness.notifications.subscription.subscriptionId;
 				const catalog = installBridgeProductCommentBatch(
 					makeCommentCatalogInstallation({
+						snapshotCause: 'open',
 						entries: [
 							{ kind: 'session', semanticRevision: 8, sessionId },
 							{ kind: 'session', semanticRevision: 8, sessionId: otherSessionId },
@@ -274,6 +275,7 @@ describe('Bridge annotation projection session demand', () => {
 		const subscriptionId = harness.notifications.subscription.subscriptionId;
 		const catalog = installBridgeProductCommentBatch(
 			makeCommentCatalogInstallation({
+				snapshotCause: 'open',
 				entries: [
 					{ kind: 'session', semanticRevision: 1, sessionId },
 					{ kind: 'session', semanticRevision: 1, sessionId: otherSessionId },

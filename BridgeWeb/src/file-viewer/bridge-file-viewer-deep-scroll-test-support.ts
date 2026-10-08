@@ -208,6 +208,7 @@ export function makeCompleteFileDeepScrollBatch(
 ): BridgeProductViewInstallation {
 	const rows = makeBrowserSequentialFileRows({ count: completeFileDeepScrollTreeRowCount });
 	return makeBrowserFileBatch({
+		snapshotCause: 'open',
 		rows: [
 			makeBrowserFileRow({
 				path: descriptor.path,

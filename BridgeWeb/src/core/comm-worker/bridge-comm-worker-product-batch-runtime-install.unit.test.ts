@@ -306,6 +306,7 @@ function reviewBatch(props: {
 }): ReturnType<typeof makeReviewTestBatch> {
 	const itemId = props.itemId ?? 'item-1';
 	const installation = makeReviewTestBatch({
+		snapshotCause: 'open',
 		...(props.generation === undefined ? {} : { generation: props.generation }),
 		itemId,
 		itemCount: 1,

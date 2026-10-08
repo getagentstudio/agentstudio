@@ -42,7 +42,10 @@ describe('BridgeFileViewerApp virtualizer anchoring', () => {
 		await render(
 			<BridgeFileViewerApp
 				codeViewWorkerPoolEnabled={false}
-				initialFileBatch={makeBrowserFileBatch({ rows: makeFlatFileRows(240) })}
+				initialFileBatch={makeBrowserFileBatch({
+					snapshotCause: 'open',
+					rows: makeFlatFileRows(240),
+				})}
 				telemetryRecorder={makeTestTelemetryRecorder(telemetrySamples)}
 				fileProductSession={{
 					onFileBatchPublisher: (handler): (() => void) => {
@@ -106,6 +109,7 @@ function makeReplacementWithPrependedRows(): ReturnType<typeof makeBrowserFileBa
 		}),
 	);
 	return makeBrowserFileBatch({
+		snapshotCause: 'open',
 		rows: [...prependedRows, ...makeFlatFileRows(240)],
 		revision: 2,
 		source,

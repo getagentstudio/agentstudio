@@ -91,7 +91,7 @@ describe('BridgeFileViewerApp Browser Mode', () => {
 
 		await render(
 			<BridgeFileViewerApp
-				initialFileBatch={makeBrowserFileBatchWithDescriptors(...initialDescriptors)}
+				initialFileBatch={makeBrowserFileBatchWithDescriptors('open', ...initialDescriptors)}
 				fileProductSession={{
 					onFileBatchPublisher: (handler): (() => void) => {
 						publishFileBatch = handler;
@@ -157,6 +157,7 @@ describe('BridgeFileViewerApp Browser Mode', () => {
 		await render(
 			<BridgeFileViewerApp
 				initialFileBatch={makeBrowserFileBatchWithDescriptors(
+					'open',
 					oldFirstDescriptor,
 					oldSecondDescriptor,
 				)}
@@ -217,7 +218,7 @@ describe('BridgeFileViewerApp Browser Mode', () => {
 		await render(
 			<BridgeFileViewerApp
 				codeViewWorkerPoolEnabled={false}
-				initialFileBatch={makeBrowserFileBatchWithDescriptors(initialDescriptor)}
+				initialFileBatch={makeBrowserFileBatchWithDescriptors('open', initialDescriptor)}
 				navigationCommand={fileNavigationCommandForPath('src/refresh-target.ts')}
 				fileProductSession={{
 					readContent: async (props) => {
@@ -282,7 +283,7 @@ describe('BridgeFileViewerApp Browser Mode', () => {
 			<BridgeFileViewerApp
 				autoOpenInitialFile
 				codeViewWorkerPoolEnabled={false}
-				initialFileBatch={makeBrowserFileBatchWithDescriptors(initialDescriptor)}
+				initialFileBatch={makeBrowserFileBatchWithDescriptors('open', initialDescriptor)}
 				fileProductSession={{
 					readContent: async (props) => {
 						openedDescriptorIds.push(props.descriptor.descriptorId);
@@ -364,7 +365,7 @@ describe('BridgeFileViewerApp Browser Mode', () => {
 			<div style={{ display: 'grid', height: '360px', overflow: 'hidden', width: '960px' }}>
 				<BridgeFileViewerApp
 					codeViewWorkerPoolEnabled={false}
-					initialFileBatch={makeBrowserFileBatchWithDescriptors(initialDescriptor)}
+					initialFileBatch={makeBrowserFileBatchWithDescriptors('open', initialDescriptor)}
 					navigationCommand={fileNavigationCommandForPath('src/refresh-scroll-target.ts')}
 					fileProductSession={{
 						readContent: async (props) =>
@@ -453,7 +454,7 @@ describe('BridgeFileViewerApp Browser Mode', () => {
 		await render(
 			<BridgeFileViewerApp
 				codeViewWorkerPoolEnabled={false}
-				initialFileBatch={makeBrowserFileBatchWithDescriptors(initialDescriptor)}
+				initialFileBatch={makeBrowserFileBatchWithDescriptors('open', initialDescriptor)}
 				navigationCommand={fileNavigationCommandForPath('src/failed-refresh-target.ts')}
 				fileProductSession={{
 					readContent: async (props) => {
@@ -511,7 +512,7 @@ describe('BridgeFileViewerApp Browser Mode', () => {
 		await render(
 			<BridgeFileViewerApp
 				codeViewWorkerPoolEnabled={false}
-				initialFileBatch={makeBrowserFileBatchWithDescriptors(targetDescriptor)}
+				initialFileBatch={makeBrowserFileBatchWithDescriptors('open', targetDescriptor)}
 				navigationCommand={fileNavigationCommandForPath('src/degraded-worker-target.ts')}
 				fileProductSession={{
 					readContent: () => deferredContent.promise,
@@ -576,7 +577,7 @@ describe('BridgeFileViewerApp Browser Mode', () => {
 		await render(
 			<BridgeFileViewerApp
 				codeViewWorkerPoolEnabled={false}
-				initialFileBatch={makeBrowserFileBatchWithDescriptors(initialDescriptor)}
+				initialFileBatch={makeBrowserFileBatchWithDescriptors('open', initialDescriptor)}
 				navigationCommand={fileNavigationCommandForPath('src/failed-navigation-retry-target.ts')}
 				fileProductSession={{
 					readContent: async (props) => {
@@ -635,7 +636,7 @@ describe('BridgeFileViewerApp Browser Mode', () => {
 		await render(
 			<BridgeFileViewerApp
 				codeViewWorkerPoolEnabled={false}
-				initialFileBatch={makeBrowserFileBatchWithDescriptors(targetDescriptor)}
+				initialFileBatch={makeBrowserFileBatchWithDescriptors('open', targetDescriptor)}
 				navigationCommand={fileNavigationCommandForPath('src/failed-open-retry-target.ts')}
 				fileProductSession={{
 					readContent: async (props) => {
@@ -698,7 +699,7 @@ describe('BridgeFileViewerApp Browser Mode', () => {
 			return (
 				<BridgeFileViewerApp
 					codeViewWorkerPoolEnabled={false}
-					initialFileBatch={makeBrowserFileBatchWithDescriptors(initialDescriptor)}
+					initialFileBatch={makeBrowserFileBatchWithDescriptors('open', initialDescriptor)}
 					isActive={isActive}
 					navigationCommand={fileNavigationCommandForPath('src/inactive-refresh-target.ts')}
 					fileProductSession={{
@@ -773,7 +774,7 @@ describe('BridgeFileViewerApp Browser Mode', () => {
 		await render(
 			<BridgeFileViewerApp
 				codeViewWorkerPoolEnabled={false}
-				initialFileBatch={makeBrowserFileBatchWithDescriptors(initialDescriptor)}
+				initialFileBatch={makeBrowserFileBatchWithDescriptors('open', initialDescriptor)}
 				navigationCommand={fileNavigationCommandForPath('src/stable-target.ts')}
 				fileProductSession={{
 					readContent: async () => stableContent,
@@ -826,7 +827,7 @@ describe('BridgeFileViewerApp Browser Mode', () => {
 		await render(
 			<BridgeFileViewerApp
 				codeViewWorkerPoolEnabled={false}
-				initialFileBatch={makeBrowserFileBatchWithDescriptors(initialDescriptor)}
+				initialFileBatch={makeBrowserFileBatchWithDescriptors('open', initialDescriptor)}
 				navigationCommand={fileNavigationCommandForPath('src/source-less-reset-target.ts')}
 				fileProductSession={{
 					readContent: async (props) =>
@@ -874,6 +875,7 @@ function makeCertifiedReplacementBatch(
 	...outcomes: readonly BrowserFileDescriptorOutcome[]
 ): ReturnType<typeof makeBrowserFileBatch> {
 	return makeBrowserFileBatch({
+		snapshotCause: 'open',
 		rows: outcomes.map((descriptorOutcome) =>
 			makeBrowserFileRow({ path: descriptorOutcome.path, descriptorOutcome }),
 		),

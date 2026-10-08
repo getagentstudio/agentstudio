@@ -52,7 +52,7 @@ describe('Bridge comm worker File interest after typed installation', () => {
 		await activateBridgeCommWorkerFileViewerModeAndFlush(dispatch, 'interest-failure');
 		if (batchSinks.current === null) throw new Error('File batch sinks were not installed.');
 		await batchSinks.current.install(
-			makeFileBatchInstallation(subscription.subscriptionId, {
+			makeFileBatchInstallation('open', subscription.subscriptionId, {
 				revision: 1,
 				withDescriptor: false,
 			}),
@@ -72,7 +72,7 @@ describe('Bridge comm worker File interest after typed installation', () => {
 		expect(updateAttemptCount).toBe(1);
 
 		await batchSinks.current.install(
-			makeFileBatchInstallation(subscription.subscriptionId, {
+			makeFileBatchInstallation('open', subscription.subscriptionId, {
 				revision: 2,
 				withDescriptor: false,
 			}),
@@ -144,7 +144,9 @@ describe('Bridge comm worker File interest after typed installation', () => {
 		});
 		await activateBridgeCommWorkerFileViewerModeAndFlush(dispatch, 'display-resync');
 		if (batchSinks.current === null) throw new Error('File batch sinks were not installed.');
-		await batchSinks.current.install(makeFileBatchInstallation(subscription.subscriptionId));
+		await batchSinks.current.install(
+			makeFileBatchInstallation('open', subscription.subscriptionId),
+		);
 		await flushBridgeWorkerRuntimeContinuations();
 		const messagesBeforeResync = postedMessages.length;
 		const lastProjectionRevision = Math.max(

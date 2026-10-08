@@ -261,7 +261,7 @@ describe('Bridge comm worker runtime protocol telemetry', () => {
 		if (batchSinks.current === null) throw new Error('Review batch sink was not installed.');
 		const baseSource = reviewContentSourceFromDescriptor(baseDescriptor);
 		const headSource = reviewContentSourceFromDescriptor(headDescriptor);
-		const installation = makeReviewBatchInstallation('telemetry-review-subscription');
+		const installation = makeReviewBatchInstallation('open', 'telemetry-review-subscription');
 		await batchSinks.current.install({
 			...installation,
 			records: installation.records.map((record) => {

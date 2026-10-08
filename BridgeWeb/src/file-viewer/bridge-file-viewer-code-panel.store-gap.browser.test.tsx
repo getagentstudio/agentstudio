@@ -76,7 +76,7 @@ test('paints publication 21 on the retained Pierre owner after publication 14 le
 			selection,
 		});
 	};
-	const view = installBridgeProductFileBatch(makeFileBatchInstallation('store-gap'));
+	const view = installBridgeProductFileBatch(makeFileBatchInstallation('open', 'store-gap'));
 	const authority = new BridgeCommWorkerFileDisplayEventAuthority({
 		createSequence: (): number => 1,
 	});

@@ -29,6 +29,13 @@ const batchIdentityShape = {
 const presentValueSchema = z.custom<unknown>((value): boolean => value !== undefined);
 
 export const bridgeProductBatchModeSchema = z.enum(['snapshot', 'change', 'coverage']);
+export const bridgeProductSnapshotCauseSchema = z.enum([
+	'open',
+	'requested',
+	'recovery',
+	'newerInput',
+]);
+export type BridgeProductSnapshotCause = z.infer<typeof bridgeProductSnapshotCauseSchema>;
 
 export const bridgeProductBatchPartSchema = z.discriminatedUnion('operation', [
 	z
@@ -55,6 +62,7 @@ const bridgeProductBatchBeginFrameSchema = z
 		baseRevision: bridgeProductNonnegativeSequenceSchema,
 		kind: z.literal('subscription.batchBegin'),
 		mode: bridgeProductBatchModeSchema,
+		snapshotCause: bridgeProductSnapshotCauseSchema.optional(),
 		partCount: bridgeProductNonnegativeSequenceSchema,
 		publicationId: bridgeProductReviewPublicationIdSchema.optional(),
 		requiresCollection: bridgeProductNonnegativeSequenceSchema.optional(),
@@ -63,6 +71,13 @@ const bridgeProductBatchBeginFrameSchema = z
 	})
 	.strict()
 	.superRefine((frame, context): void => {
+		if ((frame.mode === 'snapshot') !== (frame.snapshotCause !== undefined)) {
+			context.addIssue({
+				code: 'custom',
+				path: ['snapshotCause'],
+				message: 'Only snapshots require a snapshot cause.',
+			});
+		}
 		if (frame.targetRevision < frame.baseRevision) {
 			context.addIssue({ code: 'custom', message: 'Batch target revision precedes its base.' });
 		}

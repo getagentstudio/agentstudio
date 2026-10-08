@@ -46,7 +46,11 @@ describe('Bridge comm worker Review product cross-surface lifecycle', () => {
 		activateBridgeCommWorkerReviewViewerMode(dispatch, 'cross-surface-epoch');
 		await flushBridgeWorkerRuntimeContinuations();
 		await reviewBatches.install(
-			makeReviewTestBatch({ subscriptionId: reviewSubscription.subscriptionId, withContent: true }),
+			makeReviewTestBatch({
+				snapshotCause: 'open',
+				subscriptionId: reviewSubscription.subscriptionId,
+				withContent: true,
+			}),
 		);
 		await flushBridgeWorkerRuntimeContinuations();
 

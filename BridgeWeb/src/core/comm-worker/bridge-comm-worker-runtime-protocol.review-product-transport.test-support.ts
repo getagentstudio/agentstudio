@@ -61,6 +61,7 @@ export function createReviewBatchSinkCapture(): {
 }
 
 export function makeReviewTestBatch(props: {
+	readonly snapshotCause: import('./bridge-product-batch-wire-contracts.js').BridgeProductSnapshotCause;
 	readonly subscriptionId: string;
 	readonly revision?: number;
 	readonly generation?: number;
@@ -167,6 +168,7 @@ export function makeReviewTestBatch(props: {
 	});
 	const begin = bridgeProductBatchFrameSchema.parse({
 		...sessionCorpus.transportV2.batchFrames[0],
+		snapshotCause: props.snapshotCause,
 		batchId: uuidv7(),
 		publicationId,
 		scope: { kind: 'review', interests: [] },

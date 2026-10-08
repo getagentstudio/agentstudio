@@ -314,7 +314,7 @@ describe('Bridge comm worker duplex backpressure over an actual MessageChannel',
 		await activateViewerMode(channel.port2, collector, 'file', 'duplex-file');
 		const batchSinks = batchState.sinks;
 		if (batchSinks === null) throw new Error('Expected typed File batch sinks.');
-		await batchSinks.install(makeFileBatchInstallation(subscription.subscriptionId));
+		await batchSinks.install(makeFileBatchInstallation('open', subscription.subscriptionId));
 		await collector.waitFor((message) => message.kind === 'fileDisplayPatch');
 
 		const selectionARequestId = 'request-duplex-file-selection-a';

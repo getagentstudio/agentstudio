@@ -256,6 +256,7 @@ function emitSamePublicationSnapshot(props: {
 		kind: 'subscription.batchBegin',
 		streamSequence,
 		mode: 'snapshot',
+		snapshotCause: 'open',
 		baseRevision: 0,
 		targetRevision: props.targetRevision,
 		partCount: 1,

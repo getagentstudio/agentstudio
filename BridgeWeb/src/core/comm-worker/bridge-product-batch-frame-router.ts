@@ -25,9 +25,9 @@ export interface BridgeProductBatchFrameSinks {
 	) => void;
 	readonly resnapshot: (frame: BridgeProductBatchFrame) => void;
 	readonly resnapshotLatest: (subscriptionId: string, domain: string) => void;
-	readonly replacementSnapshot?: (
+	readonly snapshotBeginAccepted?: (
 		frame: Extract<BridgeProductBatchFrame, { readonly kind: 'subscription.batchBegin' }>,
-	) => void;
+	) => boolean | void;
 }
 
 /** W4 routes certified installations; each application owns its typed install. */
@@ -184,8 +184,13 @@ export class BridgeProductBatchFrameRouter {
 							throw error;
 						}
 					},
+			(begin): boolean => sinks.snapshotBeginAccepted?.(begin) !== false,
 		);
-		if (frame.kind === 'subscription.batchBegin' && acceptance.kind === 'staged') {
+		const freshBegin =
+			frame.kind === 'subscription.batchBegin' &&
+			acceptance.kind === 'staged' &&
+			(frame.mode !== 'snapshot' || acceptance.snapshotCause !== undefined);
+		if (freshBegin && frame.kind === 'subscription.batchBegin') {
 			state.lastBeginByDomain.set(frame.domain, frame);
 		}
 		if (acceptance.kind === 'resnapshot') {
@@ -195,13 +200,12 @@ export class BridgeProductBatchFrameRouter {
 		}
 		if (
 			frame.kind === 'subscription.batchBegin' &&
-			acceptance.kind === 'staged' &&
-			acceptance.replacementSnapshotStarted === true
+			acceptance.kind === 'ignored' &&
+			acceptance.snapshotContained === true
 		)
-			sinks.replacementSnapshot?.(frame);
+			this.#clearDomainProgress(frame.subscriptionId, frame.domain);
 		if (acceptance.kind !== 'ignored') {
-			if (frame.kind === 'subscription.batchBegin' && acceptance.kind === 'staged')
-				this.#armProgress(state, frame);
+			if (frame.kind === 'subscription.batchBegin' && freshBegin) this.#armProgress(state, frame);
 			else if (
 				frame.kind === 'subscription.batchPart' &&
 				acceptance.kind === 'staged' &&
@@ -228,7 +232,7 @@ export class BridgeProductBatchFrameRouter {
 		}
 		if (
 			frame.kind === 'subscription.batchPart' &&
-			acceptance.kind === 'staged' &&
+			(acceptance.kind === 'staged' || acceptance.kind === 'ignored') &&
 			acceptance.receivedThroughDeliverySequence !== undefined
 		)
 			sinks.receipt(frame, acceptance.receivedThroughDeliverySequence);

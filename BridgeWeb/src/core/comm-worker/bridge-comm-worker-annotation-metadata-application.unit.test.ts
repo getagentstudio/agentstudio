@@ -29,6 +29,7 @@ describe('Bridge communication worker certified Comment catalog authority', () =
 	test('commits a session-scoped thread and admits a current demanded body read', async () => {
 		const catalog = installBridgeProductCommentBatch(
 			makeCommentCatalogInstallation({
+				snapshotCause: 'open',
 				entries: sessionScopedEntries(3),
 				revision: 3,
 				subscriptionId: firstSubscriptionId,
@@ -62,6 +63,7 @@ describe('Bridge communication worker certified Comment catalog authority', () =
 
 	test('rejects a same-lifecycle worktree substitution and admits a new certified lifecycle', () => {
 		const firstInstallation = makeCommentCatalogInstallation({
+			snapshotCause: 'open',
 			entries: sessionScopedEntries(1),
 			revision: 1,
 			subscriptionId: firstSubscriptionId,
@@ -76,6 +78,7 @@ describe('Bridge communication worker certified Comment catalog authority', () =
 		expect(firstCatalog.authority.worktreeId).toBe(worktreeId);
 
 		const replacementInstallation = makeCommentCatalogInstallation({
+			snapshotCause: 'open',
 			entries: sessionScopedEntries(1),
 			revision: 1,
 			subscriptionId: replacementSubscriptionId,
@@ -90,6 +93,7 @@ describe('Bridge communication worker certified Comment catalog authority', () =
 			}),
 		).toThrow(/subscription/u);
 		const sameLifecycleWrongWorktree = makeCommentCatalogInstallation({
+			snapshotCause: 'open',
 			entries: sessionScopedEntries(1),
 			revision: 2,
 			subscriptionId: firstSubscriptionId,

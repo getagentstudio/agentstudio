@@ -98,7 +98,7 @@ describe('BridgeFileViewerApp Markdown Browser Mode', () => {
 			await render(
 				<BridgeFileViewerApp
 					codeViewWorkerPoolEnabled={false}
-					initialFileBatch={makeBrowserFileBatchWithDescriptors(markdownDescriptor)}
+					initialFileBatch={makeBrowserFileBatchWithDescriptors('open', markdownDescriptor)}
 					markdownWorkerClient={markdownWorkerClient}
 					mermaidRenderer={createBridgeMermaidRenderer()}
 					navigationCommand={fileNavigationCommandForPath('docs/markdown-proof.md')}
@@ -167,7 +167,7 @@ describe('BridgeFileViewerApp Markdown Browser Mode', () => {
 			await render(
 				<BridgeFileViewerApp
 					codeViewWorkerPoolEnabled={false}
-					initialFileBatch={makeBrowserFileBatchWithDescriptors(markdownDescriptor)}
+					initialFileBatch={makeBrowserFileBatchWithDescriptors('open', markdownDescriptor)}
 					markdownWorkerClient={markdownWorkerClient}
 					mermaidRenderer={createBridgeMermaidRenderer()}
 					navigationCommand={fileNavigationCommandForPath('docs/stable.md')}
@@ -224,7 +224,7 @@ describe('BridgeFileViewerApp Markdown Browser Mode', () => {
 		const activeApp = (
 			<BridgeFileViewerApp
 				codeViewWorkerPoolEnabled={false}
-				initialFileBatch={makeBrowserFileBatchWithDescriptors(markdownDescriptor)}
+				initialFileBatch={makeBrowserFileBatchWithDescriptors('open', markdownDescriptor)}
 				isActive={true}
 				markdownWorkerClient={markdownWorkerClient}
 				navigationCommand={fileNavigationCommandForPath('docs/suspended.md')}
@@ -243,7 +243,7 @@ describe('BridgeFileViewerApp Markdown Browser Mode', () => {
 			await rendered.rerender(
 				<BridgeFileViewerApp
 					codeViewWorkerPoolEnabled={false}
-					initialFileBatch={makeBrowserFileBatchWithDescriptors(markdownDescriptor)}
+					initialFileBatch={makeBrowserFileBatchWithDescriptors('open', markdownDescriptor)}
 					isActive={false}
 					markdownWorkerClient={markdownWorkerClient}
 					navigationCommand={fileNavigationCommandForPath('docs/suspended.md')}
@@ -300,7 +300,7 @@ describe('BridgeFileViewerApp Markdown Browser Mode', () => {
 			await render(
 				<BridgeFileViewerApp
 					codeViewWorkerPoolEnabled={false}
-					initialFileBatch={makeBrowserFileBatchWithDescriptors(markdownDescriptor)}
+					initialFileBatch={makeBrowserFileBatchWithDescriptors('open', markdownDescriptor)}
 					markdownWorkerClient={markdownWorkerClient}
 					navigationCommand={fileNavigationCommandForPath('docs/retry.md')}
 					fileProductSession={{ readContent: async (): Promise<string> => markdownContent }}
@@ -363,7 +363,7 @@ describe('BridgeFileViewerApp Markdown Browser Mode', () => {
 			const rendered = await render(
 				<BridgeFileViewerApp
 					codeViewWorkerPoolEnabled={false}
-					initialFileBatch={makeBrowserFileBatchWithDescriptors(descriptor)}
+					initialFileBatch={makeBrowserFileBatchWithDescriptors('open', descriptor)}
 					markdownWorkerClient={markdownWorkerClient}
 					navigationCommand={fileNavigationCommandForPath('docs/retained.md')}
 					fileProductSession={{

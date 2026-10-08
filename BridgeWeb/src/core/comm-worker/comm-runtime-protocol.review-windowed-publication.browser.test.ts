@@ -56,7 +56,7 @@ describe('Bridge comm worker windowed Review publication runtime', () => {
 					message.kind === 'health' && message.requestId === 'windowed-review-mode-initial',
 			);
 
-			const installation = windowedReviewInstallation();
+			const installation = windowedReviewInstallation('open');
 			const parts = boundedReviewParts(installation);
 			expect(parts).toHaveLength(Math.ceil(installation.records.length / recordPartSize));
 			for (const part of parts) {
@@ -148,7 +148,9 @@ function activeReviewModeCommand(
 	});
 }
 
-function windowedReviewInstallation(): BridgeProductViewInstallation {
+function windowedReviewInstallation(
+	snapshotCause: import('./bridge-product-batch-wire-contracts.js').BridgeProductSnapshotCause,
+): BridgeProductViewInstallation {
 	const itemFixture = bridgeProductReviewBatchRecordSchema.parse(reviewCorpus.records[0]?.record);
 	const publicationFixture = bridgeProductReviewBatchRecordSchema.parse(
 		reviewCorpus.records[2]?.record,
@@ -242,6 +244,7 @@ function windowedReviewInstallation(): BridgeProductViewInstallation {
 	});
 	const begin = bridgeProductBatchFrameSchema.parse({
 		...sessionCorpus.transportV2.batchFrames[0],
+		snapshotCause,
 		batchId: uuidv7(),
 		partCount: records.length + 1,
 		publicationId: reviewIdentity.publicationId,

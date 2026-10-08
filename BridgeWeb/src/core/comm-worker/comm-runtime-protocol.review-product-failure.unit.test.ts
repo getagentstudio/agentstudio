@@ -38,6 +38,7 @@ describe('Bridge comm worker Review product source failure policy', () => {
 
 		await reviewBatches.install(
 			makeReviewTestBatch({
+				snapshotCause: 'open',
 				subscriptionId: reviewSubscription.subscriptionId,
 				itemCount: 0,
 				desiredStatus: 'failedRetryable',

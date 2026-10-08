@@ -70,7 +70,11 @@ describe('Bridge comm worker Review product active viewer mode lifecycle', () =>
 		);
 		await flushBridgeWorkerRuntimeContinuations();
 		await reviewBatches.install(
-			makeReviewTestBatch({ subscriptionId: reviewSubscription.subscriptionId, withContent: true }),
+			makeReviewTestBatch({
+				snapshotCause: 'open',
+				subscriptionId: reviewSubscription.subscriptionId,
+				withContent: true,
+			}),
 		);
 		await flushBridgeWorkerRuntimeContinuations();
 		dispatch.message(
@@ -163,7 +167,11 @@ describe('Bridge comm worker Review product active viewer mode lifecycle', () =>
 		);
 		await flushBridgeWorkerRuntimeContinuations();
 		await reviewBatches.install(
-			makeReviewTestBatch({ subscriptionId: reviewSubscription.subscriptionId, withContent: true }),
+			makeReviewTestBatch({
+				snapshotCause: 'open',
+				subscriptionId: reviewSubscription.subscriptionId,
+				withContent: true,
+			}),
 		);
 		await flushBridgeWorkerRuntimeContinuations();
 		await startBridgeCommWorkerPreparationDrains(

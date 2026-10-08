@@ -1,5 +1,6 @@
 import { uuidv7 } from 'uuidv7';
 
+import type { BridgeProductSnapshotCause } from '../core/comm-worker/bridge-product-batch-wire-contracts.js';
 import { bridgeProductBatchFrameSchema } from '../core/comm-worker/bridge-product-batch-wire-contracts.js';
 import {
 	bridgeProductFileBatchRowSchema,
@@ -165,6 +166,7 @@ export function makeBrowserFileRow(props: {
 }
 
 export function makeBrowserFileBatch(props: {
+	readonly snapshotCause: BridgeProductSnapshotCause;
 	readonly rows: readonly BridgeProductFileBatchRow[];
 	readonly source?: BridgeProductFileSourceIdentity;
 	readonly revision?: number;
@@ -194,6 +196,7 @@ export function makeBrowserFileBatch(props: {
 		kind: 'subscription.batchBegin',
 		metadataStreamId: 'browser-file-test-metadata-stream',
 		mode: 'snapshot',
+		snapshotCause: props.snapshotCause,
 		paneSessionId: 'browser-file-test-pane-session',
 		partCount: rows.length + 1,
 		scope: { kind: 'file', changeFilter: { kind: 'none' }, interests: [], pathScope: [] },
@@ -242,10 +245,12 @@ function withBrowserFileParentDirectories(
 }
 
 export function makeBrowserFileBatchWithDescriptors(
+	snapshotCause: BridgeProductSnapshotCause,
 	...descriptors: readonly BrowserFileDescriptorOutcome[]
 ): BridgeProductViewInstallation {
 	const source = descriptors[0]?.source ?? makeBrowserFileSourceIdentity();
 	return makeBrowserFileBatch({
+		snapshotCause,
 		rows: descriptors.map((descriptorOutcome) =>
 			makeBrowserFileRow({
 				path: descriptorOutcome.path,
@@ -257,8 +262,11 @@ export function makeBrowserFileBatchWithDescriptors(
 	});
 }
 
-export function makeBrowserMetadataOnlyFileBatch(): BridgeProductViewInstallation {
+export function makeBrowserMetadataOnlyFileBatch(
+	snapshotCause: BridgeProductSnapshotCause,
+): BridgeProductViewInstallation {
 	return makeBrowserFileBatch({
+		snapshotCause,
 		rows: [
 			makeBrowserFileRow({ path: 'Sources', kind: 'directory' }),
 			makeBrowserFileRow({ path: 'Sources/AgentStudio', kind: 'directory' }),
@@ -290,6 +298,7 @@ export function makeBrowserSequentialFileRows(props: {
 }
 
 export function replaceBrowserFileBatchRows(props: {
+	readonly snapshotCause: BridgeProductSnapshotCause;
 	readonly previous: BridgeProductViewInstallation;
 	readonly upserts?: readonly BridgeProductFileBatchRow[];
 	readonly deletedPaths?: readonly string[];
@@ -306,6 +315,7 @@ export function replaceBrowserFileBatchRows(props: {
 	for (const path of props.deletedPaths ?? []) records.delete(`/workspace/${path}`);
 	for (const row of props.upserts ?? []) records.set(`/workspace/${row.displayKey}`, row);
 	return makeBrowserFileBatch({
+		snapshotCause: props.snapshotCause,
 		rows: [...records.values()],
 		...(props.source === undefined ? {} : { source: props.source }),
 		revision: props.revision,

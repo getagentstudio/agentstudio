@@ -289,6 +289,7 @@ describe('Bridge comm worker entry', () => {
 						kind: 'subscription.batchBegin',
 						metadataStreamId: stream.metadataStreamId,
 						mode: 'snapshot',
+						snapshotCause: 'open',
 						paneSessionId: stream.paneSessionId,
 						partCount: 0,
 						scope: scope.scope,

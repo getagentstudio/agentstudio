@@ -92,7 +92,11 @@ describe('Review render recovery Retry composition', () => {
 			activateBridgeCommWorkerReviewViewerMode(dispatch, 'render-recovery');
 			await reviewModeAccepted;
 			await batches.install(
-				makeReviewTestBatch({ subscriptionId: subscription.subscriptionId, withContent: true }),
+				makeReviewTestBatch({
+					snapshotCause: 'open',
+					subscriptionId: subscription.subscriptionId,
+					withContent: true,
+				}),
 			);
 			await whenPrepared();
 			dispatch.message(
@@ -189,6 +193,7 @@ describe('Review render recovery Retry composition', () => {
 			expect(retriedSubscriptionIds).toEqual([subscription.subscriptionId]);
 			await batches.install(
 				makeReviewTestBatch({
+					snapshotCause: 'open',
 					subscriptionId: subscription.subscriptionId,
 					revision: 12,
 					withContent: true,

@@ -23,6 +23,7 @@ import type { BridgeProductViewInstallation } from './bridge-product-view-batch-
 import { createTestMetadataReopenPort } from './bridge-product-view-reopen.test-support.js';
 
 export function makeFileBatchInstallation(
+	snapshotCause: import('./bridge-product-batch-wire-contracts.js').BridgeProductSnapshotCause,
 	subscriptionId: string,
 	options: {
 		readonly emptyTree?: boolean;
@@ -33,6 +34,7 @@ export function makeFileBatchInstallation(
 	const revision = options.revision ?? 4;
 	const begin = bridgeProductBatchFrameSchema.parse({
 		...sessionCorpus.transportV2.batchFrames[0],
+		snapshotCause,
 		batchId: uuidv7(),
 		publicationId: undefined,
 		scope: { kind: 'file', changeFilter: { kind: 'none' }, interests: [], pathScope: [] },
@@ -60,7 +62,10 @@ export function makeFileBatchInstallation(
 	};
 }
 
-export function makeReviewBatchInstallation(subscriptionId: string): BridgeProductViewInstallation {
+export function makeReviewBatchInstallation(
+	snapshotCause: import('./bridge-product-batch-wire-contracts.js').BridgeProductSnapshotCause,
+	subscriptionId: string,
+): BridgeProductViewInstallation {
 	const publication = reviewCorpus.records[2];
 	const item = reviewCorpus.records[0];
 	if (
@@ -72,6 +77,7 @@ export function makeReviewBatchInstallation(subscriptionId: string): BridgeProdu
 	}
 	const begin = bridgeProductBatchFrameSchema.parse({
 		...sessionCorpus.transportV2.batchFrames[0],
+		snapshotCause,
 		batchId: uuidv7(),
 		publicationId: publication.record.publicationId,
 		scope: { kind: 'review', interests: [] },

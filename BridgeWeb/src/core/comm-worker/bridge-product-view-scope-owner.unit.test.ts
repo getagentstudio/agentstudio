@@ -241,7 +241,8 @@ describe('W2 desired view scope owner', () => {
 			subscriptionKind: 'file.metadata',
 		});
 		const opening = owner.setScope({ scope: emptyFileScope, subscriptionId: 'early-begin-file' });
-		owner.observeReplacementSnapshot({
+		owner.observeSnapshotBegin({
+			snapshotCause: 'open',
 			handle: 'early-begin-view',
 			incarnation: 'early-begin-view',
 			scopeRevision: 1,
@@ -369,7 +370,8 @@ describe('W2 desired view scope owner', () => {
 			scope: { kind: 'review', interests: [{ lane: 'visible', itemIds: ['item-1'] }] },
 			subscriptionId: 'review-subscription-1',
 		});
-		owner.observeReplacementSnapshot({
+		owner.observeSnapshotBegin({
+			snapshotCause: 'recovery',
 			handle: 'review-view-identity',
 			incarnation: 'review-view-identity',
 			scopeRevision: 1,
@@ -466,7 +468,8 @@ describe('W2 desired view scope owner', () => {
 		});
 
 		await owner.resnapshot('file-subscription-1');
-		owner.observeReplacementSnapshot({
+		owner.observeSnapshotBegin({
+			snapshotCause: 'recovery',
 			handle: 'view-identity',
 			incarnation: 'view-identity',
 			scopeRevision: 0,
@@ -537,7 +540,8 @@ describe('W2 desired view scope owner', () => {
 			consecutiveResnapshots: 1,
 			status: 'recovering',
 		});
-		owner.observeReplacementSnapshot({
+		owner.observeSnapshotBegin({
+			snapshotCause: 'recovery',
 			handle: 'view-identity',
 			incarnation: 'view-identity',
 			scopeRevision: 0,
@@ -548,7 +552,8 @@ describe('W2 desired view scope owner', () => {
 			consecutiveResnapshots: 2,
 			status: 'recovering',
 		});
-		owner.observeReplacementSnapshot({
+		owner.observeSnapshotBegin({
+			snapshotCause: 'recovery',
 			handle: 'view-identity',
 			incarnation: 'view-identity',
 			scopeRevision: 0,
@@ -660,7 +665,8 @@ describe('W2 desired view scope owner', () => {
 			subscriptionId: 'file-subscription-1',
 			subscriptionKind: 'file.metadata',
 		});
-		owner.observeReplacementSnapshot({
+		owner.observeSnapshotBegin({
+			snapshotCause: 'recovery',
 			handle: 'view-identity',
 			incarnation: 'view-identity',
 			scopeRevision: 0,
