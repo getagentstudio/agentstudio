@@ -705,19 +705,52 @@ Owner decision (2026-10-08): **a file that changes must never count against a vi
   - The next snapshot sealed for that domain consumes the owed cause and carries it. This holds at every seal site: `sealViewBatch`, the deferred File seal and the held Review seal. The sealing capture may be a disk change or a new Review publication: it still satisfies the owed obligation and carries that cause.
   - A snapshot sealed when nothing is owed carries `newerInput`.
 - **Comment producer.** After its domain becomes snapshot-required, its next batch is a snapshot carrying the owed cause, never a CHANGE over the abandoned stage.
-- **W2 accounting.**
-  - A worker resnapshot request charges +1 (unchanged) and leaves the request outstanding.
-  - `requested` satisfies the outstanding request: no charge.
-  - `recovery` charges +1 unless a worker request is outstanding; in that case it satisfies the request with no extra charge.
-  - `open` and `newerInput` never charge and are never Failed (R13). `open` also clears any outstanding request.
-  - Only snapshot begins count as replacements (W4).
-  - A certified install resets the count (unchanged).
+- **Cause classification (complete).**
+  - `open` covers:
+    - the first open;
+    - a new handle;
+    - a filter change.
+    - A same-filter demand or relabel revision keeps the emission and is NOT `open`.
+  - `requested` covers an accepted `subscription.resnapshot`.
+  - `recovery` covers:
+    - ACK expiry;
+    - a metadata-stream resume or replay;
+    - a visibility or stream resume that requires recapture, for any kind.
+  - `newerInput` covers:
+    - dirty-key overflow;
+    - a producer scan-generation restart for newer input;
+    - any snapshot sealed while nothing is owed.
+  - Coverage batches do not consume an owed cause. The obligation stays owed until a certifying snapshot.
+  - A Comment that owes a snapshot does a full recapture; it never relabels a delta.
+- **W2 accounting (charge on every accepted begin, not only replacements).**
+  - W4 reports `snapshotCause` with every newly accepted, current snapshot begin. Ignored, duplicate or stale begins never charge.
+  - Only snapshot begins count as replacements.
+  - Charging per cause:
+    - A worker resnapshot request charges +1 (unchanged) and leaves the request outstanding.
+    - `requested` satisfies that request: no charge.
+    - `recovery` charges +1 whether or not a prior bank exists, unless an outstanding worker request is satisfied by it.
+    - `open` and `newerInput` never charge and are never Failed (R13).
+  - What clears an outstanding request:
+    - a current `open` clears it;
+    - a stale `open` cannot clear it;
+    - `newerInput` leaves the request bookkeeping unchanged.
+  - **Exhaustion:** when a charge from a worker request or a native recovery reaches the budget, W2 emits `failed(retryable)` at that moment.
+  - **Containment while failed:**
+    - W2 admits no further `recovery` or `requested` snapshot begins for the view. They are acknowledged on receipt but neither staged nor installed, so native recovery cannot renew W4's deadline or reopen the view.
+    - The last installed content stays readable.
+    - The budget renews only on Retry, a current `open`, or a material input change (`newerInput`), per the renewal rule above.
+  - A certified install resets the count (unchanged). `newerInput` does not reset it, because new input is not proof of delivery.
 
-**What stays bounded.**
-- A worker stall still charges (deadline, then request).
-- Native recovery still charges: a persistent ACK-loss loop still reaches `failed(retryable)`.
+**What stays bounded, and the guarantee stated exactly.**
+- **File changes never charge and never cause Failed** (owner decision; R13).
+- Charges come only from delivery failures:
+  - a worker stall (no progress within the deadline, then a request);
+  - a native recovery.
+- A budget's worth of consecutive delivery failures with no certified install is a real delivery failure. It shows `failed(retryable)` with the last good content kept.
+- After that, a material file change renews the budget and tries again; so does Retry.
+- A persistent ACK-loss loop or stall loop therefore reaches Failed and then rests (R40).
 - Unchanged-input supersession stays bounded by the native surface budget (above).
-- Continuous churn faster than one complete delivery shows the last good state as Updating (R40 allows resting in Updating while inputs keep changing). It never shows Failed.
+- Continuous churn while delivery keeps making progress shows the last good state as Updating, never Failed.
 
 **Proof obligations.**
 - **Native unit tests,** one per cause:
@@ -727,9 +760,13 @@ Owner decision (2026-10-08): **a file that changes must never count against a vi
   - nothing owed → `newerInput`.
 - **Contract tests (Swift + Zod),** with these invalid cases: a snapshot without a cause, a change with a cause, and an unknown cause.
 - **Worker unit tests,** per cause, including the double-charge red: request, then a newer-input begin, then a `requested` snapshot must total 1 charge. Also: a CHANGE after expiry is not a replacement.
+- **Worker exhaustion and containment:**
+  - same-input ACK recovery with and without a prior bank crosses the budget with no worker request, then emits `failed(retryable)`;
+  - while failed, `recovery` begins are not staged;
+  - `newerInput`, a current `open`, or Retry renews the budget.
 - **Integration:**
-  - newer-input churn with stalls never reaches `failed(retryable)`;
-  - a persistent ACK-expiry loop still does.
+  - newer-input churn with progressing delivery never reaches `failed(retryable)`, and never charges;
+  - a persistent ACK-expiry loop or stall loop does reach it, then rests.
 - **E2E:** the Vite ordinary lane, including stream-recovery.
 
 ## State ownership
