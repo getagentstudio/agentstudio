@@ -58,6 +58,12 @@ function readStepHopState(): Record<string, unknown> {
   };
 }
 
+function installStepHopStateReader(): void {
+  const tracker = window["__pendingWaitTracker"];
+  if (tracker === undefined) throw new Error("Pending wait tracker is missing");
+  tracker.readCommandState = readStepHopState;
+}
+
 export const verifyChapterStepHop = defineBrowserCommand(
   async (
     { context, sessionId }: BrowserCommandContext,
@@ -67,7 +73,6 @@ export const verifyChapterStepHop = defineBrowserCommand(
     const page = await context.newPage();
     const unregister = registerCommandPageForDiagnostics(sessionId, {
       page,
-      readCommandState: readStepHopState,
     });
     try {
       await page.setViewportSize({ width, height: width < 620 ? 844 : 1000 });
@@ -100,6 +105,7 @@ export const verifyChapterStepHop = defineBrowserCommand(
         );
       });
       await page.addInitScript(installPendingWaitTracker);
+      await page.addInitScript(installStepHopStateReader);
       await page.goto(`${pageUrl}#many-agents`, { waitUntil: "load" });
       await page.evaluate((): void => {
         document

@@ -6,17 +6,19 @@ declare module "vitest/browser" {
   }
 }
 
-export const pendingWaitDiagnosticHookTimeoutMilliseconds = 10_000;
+// Vitest resolves browser hookTimeout to 30,000ms when it is not configured.
+export const pendingWaitDiagnosticHookTimeoutMilliseconds = 30_000;
 export const pendingWaitDiagnosticMarginMilliseconds = 1_000;
 
 interface PendingWaitRecord {
   readonly waitName: string;
-  readonly timelineAtBeginMs: number;
+  readonly timelineAtBeginMs: number | null;
   readonly beganAtMs: number;
 }
 
 interface PendingWaitTracker {
   readonly pendingWait: PendingWaitRecord | null;
+  readCommandState?: () => Record<string, unknown>;
   begin(waitName: string): void;
   end(waitName: string): void;
 }
@@ -36,7 +38,8 @@ export function installPendingWaitTracker(): void {
     begin(waitName: string): void {
       pendingWait = {
         waitName,
-        timelineAtBeginMs: Number(document.timeline.currentTime),
+        timelineAtBeginMs:
+          typeof document.timeline.currentTime === "number" ? document.timeline.currentTime : null,
         beganAtMs: performance.now(),
       };
     },
@@ -48,7 +51,6 @@ export function installPendingWaitTracker(): void {
 
 export interface CommandPageRegistration {
   readonly page: DiagnosticPage;
-  readonly readCommandState: () => Record<string, unknown>;
 }
 
 export type DiagnosticPage = Awaited<ReturnType<BrowserCommandContext["context"]["newPage"]>>;
@@ -79,69 +81,49 @@ export type PendingWaitDiagnosticResult =
   | { readonly kind: "no-active-command-page" }
   | { readonly kind: "capture-failed"; readonly reason: string };
 
-let captureDiagnostic: (() => Promise<PendingWaitDiagnosticResult>) | undefined;
-
-export function registerPendingWaitDiagnosticCapture(
-  capture: () => Promise<PendingWaitDiagnosticResult>,
-): void {
-  captureDiagnostic = capture;
-}
-
-interface CaptureInput {
-  readonly readerSource: string;
-}
-
 export const capturePendingWaitDiagnostics = async ({
   sessionId,
 }: BrowserCommandContext): Promise<PendingWaitDiagnosticResult> => {
   const registration = commandPageRegistry.get(sessionId);
   if (registration === undefined) return { kind: "no-active-command-page" };
   try {
-    const input: CaptureInput = { readerSource: registration.readCommandState.toString() };
-    return await registration.page.evaluate(
-      ({ readerSource }: CaptureInput): PendingWaitDiagnosticResult => {
-        try {
-          // oxlint-disable-next-line no-implied-eval
-          const readerFactory = Function(`return (${readerSource})`);
-          const readerUnknown: unknown = readerFactory();
-          if (typeof readerUnknown !== "function")
-            throw new Error("Command state reader is not callable");
-          const reader = (): Record<string, unknown> => {
-            const state: unknown = readerUnknown();
-            if (typeof state !== "object" || state === null || Array.isArray(state))
-              throw new Error("Command state reader did not return an object");
-            return Object.fromEntries(Object.entries(state));
-          };
-          const tracker = window["__pendingWaitTracker"];
-          const pending = tracker?.pendingWait ?? null;
-          const visibilityState = String(
-            Object.getOwnPropertyDescriptor(Document.prototype, "visibilityState")?.get?.call(
-              document,
-            ) ?? "",
-          );
-          const hidden = Boolean(
-            Object.getOwnPropertyDescriptor(Document.prototype, "hidden")?.get?.call(document),
-          );
-          const timelineNow = Number(document.timeline.currentTime);
-          const wallNow = performance.now();
-          return {
-            kind: "captured",
-            wait: pending?.waitName ?? null,
-            timelineAdvancedMs: pending === null ? null : timelineNow - pending.timelineAtBeginMs,
-            wallElapsedMs: pending === null ? null : wallNow - pending.beganAtMs,
-            visibilityState,
-            hidden,
-            state: reader(),
-          };
-        } catch (error: unknown) {
-          return {
-            kind: "capture-failed",
-            reason: error instanceof Error ? error.message : String(error),
-          };
-        }
-      },
-      input,
-    );
+    return await registration.page.evaluate((): PendingWaitDiagnosticResult => {
+      try {
+        const tracker = window["__pendingWaitTracker"];
+        const pending = tracker?.pendingWait ?? null;
+        const visibilityState = String(
+          Object.getOwnPropertyDescriptor(Document.prototype, "visibilityState")?.get?.call(
+            document,
+          ) ?? "",
+        );
+        const hidden = Boolean(
+          Object.getOwnPropertyDescriptor(Document.prototype, "hidden")?.get?.call(document),
+        );
+        const timelineNow =
+          typeof document.timeline.currentTime === "number" ? document.timeline.currentTime : null;
+        const wallNow = performance.now();
+        const state = tracker?.readCommandState?.() ?? {};
+        if (typeof state !== "object" || state === null || Array.isArray(state))
+          throw new Error("Command state reader did not return a plain object");
+        return {
+          kind: "captured",
+          wait: pending?.waitName ?? null,
+          timelineAdvancedMs:
+            pending === null || timelineNow === null || pending.timelineAtBeginMs === null
+              ? null
+              : timelineNow - pending.timelineAtBeginMs,
+          wallElapsedMs: pending === null ? null : wallNow - pending.beganAtMs,
+          visibilityState,
+          hidden,
+          state,
+        };
+      } catch (error: unknown) {
+        return {
+          kind: "capture-failed",
+          reason: error instanceof Error ? error.message : String(error),
+        };
+      }
+    });
   } catch (error: unknown) {
     return {
       kind: "capture-failed",
@@ -156,19 +138,19 @@ interface FailedTaskContext {
 
 export async function reportPendingWaitDiagnostic(
   { task }: FailedTaskContext,
+  capture: () => Promise<PendingWaitDiagnosticResult>,
   timeoutMilliseconds: number = pendingWaitDiagnosticHookTimeoutMilliseconds,
 ): Promise<void> {
   try {
     let timeoutHandle: ReturnType<typeof setTimeout> | undefined;
-    if (captureDiagnostic === undefined) throw new Error("Pending wait capture is not registered");
-    const capture = captureDiagnostic();
+    const capturePromise = capture();
     const timeout = new Promise<PendingWaitDiagnosticResult>((resolve) => {
       timeoutHandle = setTimeout(
         () => resolve({ kind: "capture-failed", reason: "capture-timeout" }),
         timeoutMilliseconds - pendingWaitDiagnosticMarginMilliseconds,
       );
     });
-    const result = await Promise.race([capture, timeout]);
+    const result = await Promise.race([capturePromise, timeout]);
     if (timeoutHandle !== undefined) clearTimeout(timeoutHandle);
     if (result.kind === "captured")
       console.error(`PENDING_WAIT_DIAGNOSTIC ${JSON.stringify({ test: task.name, ...result })}`);

@@ -19,6 +19,12 @@ function readFixtureState(): Record<string, unknown> {
   return { fixtureState: document.body.dataset["fixtureState"] ?? "missing" };
 }
 
+function installFixtureStateReader(): void {
+  const tracker = window["__pendingWaitTracker"];
+  if (tracker === undefined) throw new Error("Pending wait tracker is missing");
+  tracker.readCommandState = readFixtureState;
+}
+
 export const startPendingWaitFixture = defineBrowserCommand(
   async (
     { context, sessionId }: BrowserCommandContext,
@@ -27,13 +33,14 @@ export const startPendingWaitFixture = defineBrowserCommand(
     const page = await context.newPage();
     try {
       await page.addInitScript(installPendingWaitTracker);
+      await page.addInitScript(installFixtureStateReader);
       await page.goto("about:blank");
       if (freezeTimeline) {
         const cdp = await page.context().newCDPSession(page);
         await cdp.send("Animation.enable");
         await cdp.send("Animation.setPlaybackRate", { playbackRate: 0 });
       }
-      const registration: CommandPageRegistration = { page, readCommandState: readFixtureState };
+      const registration: CommandPageRegistration = { page };
       const unregister = registerCommandPageForDiagnostics(sessionId, registration);
       await page.evaluate(() => {
         const tracker = window["__pendingWaitTracker"];

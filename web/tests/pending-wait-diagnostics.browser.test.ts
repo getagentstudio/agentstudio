@@ -3,12 +3,9 @@ import { commands } from "vitest/browser";
 
 import {
   pendingWaitDiagnosticHookTimeoutMilliseconds,
-  registerPendingWaitDiagnosticCapture,
   reportPendingWaitDiagnostic,
   type PendingWaitDiagnosticResult,
 } from "./pending-wait-diagnostics";
-
-registerPendingWaitDiagnosticCapture(() => commands.capturePendingWaitDiagnostics());
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -62,6 +59,7 @@ it("prints the captured diagnostic line without changing the failure handler", a
     await commands.startPendingWaitFixture(false);
     await reportPendingWaitDiagnostic(
       { task: { name: "fixture diagnostic test" } },
+      () => commands.capturePendingWaitDiagnostics(),
       pendingWaitDiagnosticHookTimeoutMilliseconds,
     );
     const line = errorSpy.mock.calls.at(-1)?.[0];
@@ -81,7 +79,10 @@ it("prints the captured diagnostic line without changing the failure handler", a
 it("prints an unavailable line when no command page is registered", async () => {
   const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
   try {
-    await reportPendingWaitDiagnostic({ task: { name: "unavailable diagnostic test" } });
+    await reportPendingWaitDiagnostic(
+      { task: { name: "unavailable diagnostic test" } },
+      async () => ({ kind: "no-active-command-page" }),
+    );
     expect(errorSpy).toHaveBeenCalledWith(
       "PENDING_WAIT_DIAGNOSTIC unavailable reason=no-active-command-page",
     );
