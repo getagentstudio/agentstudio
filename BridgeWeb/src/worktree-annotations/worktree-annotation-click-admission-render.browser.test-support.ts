@@ -2,6 +2,11 @@ import { act } from 'react';
 import { expect, vi } from 'vitest';
 import { cleanup } from 'vitest-browser-react';
 
+import {
+	completeCleanup,
+	runWithOwnedCleanup,
+} from './worktree-annotation-click-admission-cleanup.browser.test-support.js';
+
 interface SlotPublicationCoordinator<TSnapshot> {
 	readonly hasHeaderRenderers: boolean;
 	readonly hasAnnotationRenderer: boolean;
@@ -42,7 +47,16 @@ export class PierreSlotPublicationFacts<TSnapshot> {
 	}
 
 	async join(): Promise<void> {
-		await Promise.all(this.#publications.splice(0));
+		const failures: unknown[] = [];
+		while (this.#publications.length > 0) {
+			const results = await Promise.allSettled(this.#publications.splice(0));
+			for (const result of results) {
+				if (result.status === 'rejected') failures.push(result.reason);
+			}
+		}
+		if (failures.length === 1) throw failures[0];
+		if (failures.length > 1)
+			throw new AggregateError(failures, 'Click-admission publications failed.');
 	}
 }
 
@@ -125,31 +139,61 @@ export async function proveHeldProductFrameIsolation(props: {
 	readonly waitForComposer: () => Promise<void>;
 	readonly dispose: () => Promise<void>;
 }): Promise<void> {
-	await props.prepareUtility();
-	let announceProductFrame: (() => void) | undefined;
-	const productFrameRequested = new Promise<void>((resolve): void => {
-		announceProductFrame = resolve;
-	});
 	const heldFrames = new Map<number, FrameRequestCallback>();
-	const requestFrame = globalThis.requestAnimationFrame.bind(globalThis);
-	const cancelFrame = globalThis.cancelAnimationFrame.bind(globalThis);
-	const frameSpy = vi
-		.spyOn(globalThis, 'requestAnimationFrame')
-		.mockImplementation((callback: FrameRequestCallback): number => {
+	const originalRequestFrame = globalThis.requestAnimationFrame;
+	const originalCancelFrame = globalThis.cancelAnimationFrame;
+	let restoreFrameSpy: (() => void) | undefined;
+	let restoreCancelSpy: (() => void) | undefined;
+	let outcome: Promise<void> | undefined;
+	// Own cleanup before prepareUtility or either global patch can fail.
+	const disposeHeldFrames = async (): Promise<void> => {
+		try {
+			await completeCleanup([
+				cleanup,
+				props.dispose,
+				(): void => restoreFrameSpy?.(),
+				(): void => restoreCancelSpy?.(),
+				(): void => {
+					globalThis.requestAnimationFrame = originalRequestFrame;
+					globalThis.cancelAnimationFrame = originalCancelFrame;
+				},
+				async (): Promise<void> => {
+					await outcome?.catch((): void => {});
+				},
+				(): Promise<void> =>
+					actEvent((): void => {
+						for (const callback of heldFrames.values()) callback(0);
+					}),
+			]);
+		} finally {
+			globalThis.requestAnimationFrame = originalRequestFrame;
+			globalThis.cancelAnimationFrame = originalCancelFrame;
+		}
+	};
+	await runWithOwnedCleanup(async (): Promise<void> => {
+		await props.prepareUtility();
+		let announceProductFrame: (() => void) | undefined;
+		const productFrameRequested = new Promise<void>((resolve): void => {
+			announceProductFrame = resolve;
+		});
+		const frameSpy = vi.spyOn(globalThis, 'requestAnimationFrame');
+		restoreFrameSpy = (): void => {
+			frameSpy.mockRestore();
+		};
+		frameSpy.mockImplementation((callback: FrameRequestCallback): number => {
 			announceProductFrame?.();
-			// Preserve real frame IDs and cancellation, but withhold product delivery.
-			const frameId = requestFrame((): void => {});
+			const frameId = originalRequestFrame.call(globalThis, (): void => {});
 			heldFrames.set(frameId, callback);
 			return frameId;
 		});
-	const cancelSpy = vi
-		.spyOn(globalThis, 'cancelAnimationFrame')
-		.mockImplementation((frameId: number): void => {
+		const cancelSpy = vi.spyOn(globalThis, 'cancelAnimationFrame');
+		restoreCancelSpy = (): void => {
+			cancelSpy.mockRestore();
+		};
+		cancelSpy.mockImplementation((frameId: number): void => {
 			heldFrames.delete(frameId);
-			cancelFrame(frameId);
+			originalCancelFrame.call(globalThis, frameId);
 		});
-	let outcome: Promise<void> | undefined;
-	try {
 		await props.clickUtility();
 		await productFrameRequested;
 		outcome = props.waitForComposer();
@@ -161,17 +205,5 @@ export async function proveHeldProductFrameIsolation(props: {
 		expect(laterActCompleted).toBe(true);
 		await props.dispose();
 		await disposedOutcome;
-	} finally {
-		// Unmount cancels the actual pending rendering owners before restoring delivery.
-		await cleanup();
-		await props.dispose();
-		await outcome?.catch((): void => {});
-		frameSpy.mockRestore();
-		cancelSpy.mockRestore();
-		// Drain uncancelled product delivery after unmount, so Pierre's shared frame
-		// owner cannot retain an intercepted frame ID into the next test.
-		await actEvent((): void => {
-			for (const callback of heldFrames.values()) callback(0);
-		});
-	}
+	}, disposeHeldFrames);
 }
