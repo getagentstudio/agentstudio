@@ -22,7 +22,7 @@ declare module "vitest/browser" {
     // Wire fields are Partial; read observations only through guardFinaleMainSample.
     observeFinaleMainPage<TGroup extends FinaleMainFieldGroup>(
       pageUrl: string,
-      proofWidth: number | undefined,
+      proofWidth: number,
       groups: readonly TGroup[],
     ): Promise<FinaleMainSample<TGroup>>;
     observeFinaleReducedMotion(pageUrl: string): Promise<FinaleReducedMotionObservation>;

@@ -288,7 +288,7 @@ export const observeFinaleMainPage = defineBrowserCommand(
   async (
     { context },
     pageUrl: string,
-    proofWidth: number = 1600,
+    proofWidth: number,
     groups: readonly FinaleMainFieldGroup[],
   ): Promise<FinaleMainWireSample> => {
     const applicationPage = await openFinaleMainPage({ context, pageUrl, proofWidth });
