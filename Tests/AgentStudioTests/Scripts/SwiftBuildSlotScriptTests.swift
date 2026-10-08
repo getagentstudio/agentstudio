@@ -327,6 +327,9 @@ struct SwiftBuildSlotScriptTests {
         try FileManager.default.createDirectory(
             at: slotBuildDatabase.deletingLastPathComponent(), withIntermediateDirectories: true)
         try Data().write(to: slotBuildDatabase)
+        // A build that starts during the clean has already created its slot channels here.
+        let startingBuildHoldChannel = fixture.rootURL.appending(path: ".build-agent-1/.slot.hold.12345")
+        #expect(mkfifo(startingBuildHoldChannel.path, 0o600) == 0)
 
         let miseConfig = try String(contentsOfFile: ".mise.toml", encoding: .utf8)
         let cleanerBody = try miseTaskBody(named: "clean-artifacts", in: miseConfig)
@@ -371,6 +374,7 @@ struct SwiftBuildSlotScriptTests {
         #expect(
             FileManager.default.fileExists(atPath: fixture.rootURL.appending(path: ".build-agent-1/.slot.lock").path))
         #expect(!FileManager.default.fileExists(atPath: slotBuildDatabase.path))
+        #expect(FileManager.default.fileExists(atPath: startingBuildHoldChannel.path))
         #expect(!FileManager.default.fileExists(atPath: fixture.rootURL.appending(path: ".build").path))
     }
 

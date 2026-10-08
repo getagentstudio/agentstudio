@@ -607,7 +607,10 @@ if [ -d "$slot_directory" ]; then
   # file would let a second claimant in.
   trap swift_build_slot_release EXIT
   swift_build_slot_acquire build "mise run clean-artifacts"
-  find "$slot_directory" -mindepth 1 -maxdepth 1 ! -name .slot.lock ! -name .slot.holder -exec rm -rf {} +
+  # Also keep any .slot.ready.*/.slot.hold.* FIFOs: a build starting now creates
+  # them here before it blocks on this lock, and deleting one breaks its claim.
+  find "$slot_directory" -mindepth 1 -maxdepth 1 ! -name .slot.lock ! -name .slot.holder \
+    ! -name '.slot.ready.*' ! -name '.slot.hold.*' -exec rm -rf {} +
 fi
 for build_directory in .build .build-*; do
   [ "$build_directory" = "$slot_directory" ] && continue
