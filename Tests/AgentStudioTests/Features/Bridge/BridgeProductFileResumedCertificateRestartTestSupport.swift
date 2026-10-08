@@ -8,6 +8,7 @@ import Testing
 
 enum ResumedFileRestartFact: Sendable {
     case lifecycle(BridgeProductMetadataLifecycleTraceEvent)
+    case sourceAccepted(BridgeProductFileSourceIdentity)
     case waiter(BridgeProductViewDomainKey)
     case descriptorDelivered(BridgeProductFileContentDescriptor)
     case interruptedState(contextCount: Int, deferred: Bool)
@@ -15,6 +16,7 @@ enum ResumedFileRestartFact: Sendable {
     var recordingScope: String {
         switch self {
         case .lifecycle: "lifecycle"
+        case .sourceAccepted: "source"
         case .waiter: "waiter"
         case .descriptorDelivered: "descriptor"
         case .interruptedState: "pump-state"
@@ -24,6 +26,7 @@ enum ResumedFileRestartFact: Sendable {
     var description: String {
         switch self {
         case .lifecycle(let event): "\(event.stage.rawValue):\(event.result.rawValue)"
+        case .sourceAccepted(let source): "accepted File source generation \(source.subscriptionGeneration)"
         case .waiter(let domain): "certificate waiter for \(domain.viewId)"
         case .descriptorDelivered(let descriptor):
             "descriptor generation \(descriptor.source.subscriptionGeneration), SHA \(descriptor.expectedSha256)"
@@ -72,14 +75,19 @@ struct ResumedFileRestartContext: Sendable {
     let replaySourceHeld: HeldStep<BridgeProductFileSourceIdentity>
     let sink: @Sendable (String, ResumedFileRestartFact) -> Void
 
-    static func make(sink: @escaping @Sendable (String, ResumedFileRestartFact) -> Void) async throws -> Self {
+    static func make(
+        sink: @escaping @Sendable (String, ResumedFileRestartFact) -> Void,
+        decorateSource: @Sendable (BridgePaneProductFileMetadataSource) -> any BridgePaneProductFileMetadataProducing =
+            { $0 }
+    ) async throws -> Self {
         let harness = try await BridgeProductSessionLifecycleHarness.opened(
             deadlineClock: TestPushClock(), viewEmissionWaiterRegistrationObserver: { sink("File", .waiter($0)) })
         let fixture = try ProductFileSourceFixture(fileCount: 9, productAdmission: harness.productAdmission)
         let source = fixture.makeSource()
         let foreground = await BridgePaneRefreshWorkAdmissionTestContext.foreground()
         let provider = BridgePaneProductSchemeProvider(
-            fileMetadataSource: source, reviewMetadataSource: BridgeUnavailablePaneProductReviewMetadataSource(),
+            fileMetadataSource: decorateSource(source),
+            reviewMetadataSource: BridgeUnavailablePaneProductReviewMetadataSource(),
             reviewContentSource: BridgeUnavailablePaneProductReviewContentSource(), markReviewItemViewed: { _, _ in },
             refreshWorkAdmissionSource: foreground.source, lifecycleTraceRecorder: ResumedFileRestartTrace(sink: sink))
         let context = Self(
@@ -89,6 +97,7 @@ struct ResumedFileRestartContext: Sendable {
             initialSourceHeld: HeldStep("Initial File source before inventory"),
             replaySourceHeld: HeldStep("Retained File replay source before inventory"), sink: sink)
         await source.setSourceAcceptedObserver { identity in
+            sink("File", .sourceAccepted(identity))
             if identity.subscriptionGeneration == 1 {
                 try? await context.initialSourceHeld.arrive(identity)
             } else if identity.subscriptionGeneration == 2 {

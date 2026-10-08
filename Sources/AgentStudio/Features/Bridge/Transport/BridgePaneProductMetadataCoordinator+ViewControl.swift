@@ -231,6 +231,9 @@ extension BridgePaneProductMetadataCoordinator {
                 workAdmissions: (foregroundWorkAdmission, fileOutcomeAdmission)
             )
         }
+        if deferredOpenSubscriptionIds.contains(subscriptionId) {
+            await resumeForegroundWork()
+        }
     }
 
     private func handleFileViewDemandFailure(

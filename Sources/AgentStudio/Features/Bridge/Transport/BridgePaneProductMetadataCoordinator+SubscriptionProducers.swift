@@ -155,17 +155,20 @@ extension BridgePaneProductMetadataCoordinator {
             productAdmission: productAdmission,
             workAdmissions: (foregroundWorkAdmission, fileOutcomeAdmission)
         )
+        let executionContext = BridgePaneProductMetadataProducerExecutionContext(
+            foregroundWorkAdmission: foregroundWorkAdmission, metadataLease: activeStream.lease,
+            productAdmission: productAdmission, session: activeStream.session,
+            fileSurfaceAttempt: selectedFileSurfaceAttempt)
         openedSourceSubscriptionIds.remove(subscription.subscriptionId)
+        // A competing demand attempt can defer this start. Consume the pending
+        // reopen only when this actor actually registers its bootstrap task.
+        if subscription.subscriptionKind == .fileMetadata {
+            deferredOpenSubscriptionIds.remove(subscription.subscriptionId)
+        }
         producerTaskLifecycle.startBootstrapTask(
             subscriptionId: subscription.subscriptionId,
             subscriptionKind: subscription.subscriptionKind,
-            executionContext: .init(
-                foregroundWorkAdmission: foregroundWorkAdmission,
-                metadataLease: activeStream.lease,
-                productAdmission: productAdmission,
-                session: activeStream.session,
-                fileSurfaceAttempt: selectedFileSurfaceAttempt
-            ),
+            executionContext: executionContext,
             taskFinished: { [weak self] subscriptionId, taskId, completion, error in
                 guard let self else { return }
                 await self.bootstrapProducerTaskFinished(
@@ -177,50 +180,63 @@ extension BridgePaneProductMetadataCoordinator {
                 )
             },
             operation: { traceContext in
-                guard foregroundWorkAdmission.withValidAdmission({ true }) == true else {
-                    throw BridgePaneProductMetadataCoordinatorError.foregroundWorkInvalidated
-                }
-                let application = try self.nativeApplicationRegistry.application(
-                    for: subscription.subscriptionKind
-                )
-                try await application.adapter.open(
-                    self,
-                    subscription,
-                    activeStream,
-                    productAdmission,
-                    foregroundWorkAdmission,
-                    traceContext,
-                    application.registration.surface
-                )
-                guard foregroundWorkAdmission.withValidAdmission({ true }) == true else {
-                    throw BridgePaneProductMetadataCoordinatorError.foregroundWorkInvalidated
-                }
-                await self.recordSourceOpened(
-                    subscriptionId: subscription.subscriptionId,
-                    activeStream: activeStream,
-                    productAdmission: productAdmission,
-                    foregroundWorkAdmission: foregroundWorkAdmission
-                )
-                if subscription.subscriptionKind == .fileMetadata {
-                    if let scope = await activeStream.session.acceptedViewScope(
-                        subscriptionId: subscription.subscriptionId
-                    ) {
-                        await self.applyAcceptedFileViewDemand(
-                            subscriptionId: subscription.subscriptionId,
-                            expectedHandle: scope.handle,
-                            expectedRevision: scope.revision,
-                            forceRecapture: true,
-                            productAdmission: productAdmission
-                        )
-                    }
-                } else if subscription.subscriptionKind == .reviewMetadata {
-                    _ = try await self.publishReviewViewSnapshot(
-                        subscriptionId: subscription.subscriptionId,
-                        productAdmission: productAdmission
-                    )
-                }
+                try await self.openSubscriptionAndApplyRetainedDemand(
+                    subscription, activeStream: activeStream, executionContext: executionContext,
+                    traceContext: traceContext)
             }
         )
+    }
+
+    private func openSubscriptionAndApplyRetainedDemand(
+        _ subscription: BridgeProductSubscriptionSnapshot,
+        activeStream: ActiveStream,
+        executionContext: BridgePaneProductMetadataProducerExecutionContext,
+        traceContext: BridgeTraceContext?
+    ) async throws {
+        let productAdmission = executionContext.productAdmission
+        let foregroundWorkAdmission = executionContext.foregroundWorkAdmission
+        guard foregroundWorkAdmission.withValidAdmission({ true }) == true else {
+            throw BridgePaneProductMetadataCoordinatorError.foregroundWorkInvalidated
+        }
+        let application = try self.nativeApplicationRegistry.application(
+            for: subscription.subscriptionKind
+        )
+        try await application.adapter.open(
+            self,
+            subscription,
+            activeStream,
+            productAdmission,
+            foregroundWorkAdmission,
+            traceContext,
+            application.registration.surface
+        )
+        guard foregroundWorkAdmission.withValidAdmission({ true }) == true else {
+            throw BridgePaneProductMetadataCoordinatorError.foregroundWorkInvalidated
+        }
+        await self.recordSourceOpened(
+            subscriptionId: subscription.subscriptionId,
+            activeStream: activeStream,
+            productAdmission: productAdmission,
+            foregroundWorkAdmission: foregroundWorkAdmission
+        )
+        if subscription.subscriptionKind == .fileMetadata {
+            if let scope = await activeStream.session.acceptedViewScope(
+                subscriptionId: subscription.subscriptionId
+            ) {
+                await self.applyAcceptedFileViewDemand(
+                    subscriptionId: subscription.subscriptionId,
+                    expectedHandle: scope.handle,
+                    expectedRevision: scope.revision,
+                    forceRecapture: true,
+                    productAdmission: productAdmission
+                )
+            }
+        } else if subscription.subscriptionKind == .reviewMetadata {
+            _ = try await self.publishReviewViewSnapshot(
+                subscriptionId: subscription.subscriptionId,
+                productAdmission: productAdmission
+            )
+        }
     }
 
     func fileSurfaceInputBasis(

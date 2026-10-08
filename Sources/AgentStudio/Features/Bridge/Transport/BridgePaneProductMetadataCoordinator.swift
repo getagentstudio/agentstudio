@@ -320,7 +320,9 @@ actor BridgePaneProductMetadataCoordinator {
             foregroundWorkAdmission.withValidAdmission {
                 productAdmission.withValidAdmission { () -> Bool in
                     subscriptionKindById[subscription.subscriptionId] = subscription.subscriptionKind
-                    deferredOpenSubscriptionIds.remove(subscription.subscriptionId)
+                    if subscription.subscriptionKind != .fileMetadata {
+                        deferredOpenSubscriptionIds.remove(subscription.subscriptionId)
+                    }
                     return true
                 } ?? false
             } ?? false
@@ -368,7 +370,11 @@ actor BridgePaneProductMetadataCoordinator {
                     subscriptionId: subscriptionId
                 )
             else { continue }
-            deferredOpenSubscriptionIds.remove(subscriptionId)
+            // Review can replay an already-open source without a bootstrap;
+            // File consumes its pending reopen only at task registration.
+            if subscription.subscriptionKind != .fileMetadata {
+                deferredOpenSubscriptionIds.remove(subscriptionId)
+            }
             if openedSourceSubscriptionIds.contains(subscriptionId),
                 await activeStream.session.acceptedViewScope(subscriptionId: subscriptionId) != nil
             {
