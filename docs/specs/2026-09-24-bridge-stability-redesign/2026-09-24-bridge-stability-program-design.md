@@ -738,8 +738,13 @@ Owner decision (2026-10-08): **a file that changes must never count against a vi
   - **Containment while failed:**
     - W2 admits no further `recovery` or `requested` snapshot begins for the view. They are acknowledged on receipt but neither staged nor installed, so native recovery cannot renew W4's deadline or reopen the view.
     - The last installed content stays readable.
-    - The budget renews only on Retry, a current `open`, or a material input change (`newerInput`), per the renewal rule above.
-  - A certified install resets the count (unchanged). `newerInput` does not reset it, because new input is not proof of delivery.
+    - No begin re-emits `recovering` while the view is failed. W2 sends no further requests.
+    - Failed is left ONLY on proof or an owner-visible restart:
+      - a certified install of a staged snapshot, which proves delivery works, so "couldn't update" would be false;
+      - Retry;
+      - a current `open`.
+    - No cause label renews the budget by itself. An unchanged republish (equal target, fresh batch id) or a queued pre-failure `newerInput` snapshot leaves Failed only if it actually certifies an install.
+  - A certified install resets the count (unchanged). `newerInput` neither resets nor renews it, because new input is not proof of delivery.
 
 **What stays bounded, and the guarantee stated exactly.**
 - **File changes never charge and never cause Failed** (owner decision; R13).
@@ -747,7 +752,7 @@ Owner decision (2026-10-08): **a file that changes must never count against a vi
   - a worker stall (no progress within the deadline, then a request);
   - a native recovery.
 - A budget's worth of consecutive delivery failures with no certified install is a real delivery failure. It shows `failed(retryable)` with the last good content kept.
-- After that, a material file change renews the budget and tries again; so does Retry.
+- After that, a file change still produces a new snapshot. The view becomes current again as soon as one actually installs; otherwise it stays Failed with Retry.
 - A persistent ACK-loss loop or stall loop therefore reaches Failed and then rests (R40).
 - Unchanged-input supersession stays bounded by the native surface budget (above).
 - Continuous churn while delivery keeps making progress shows the last good state as Updating, never Failed.
@@ -762,8 +767,9 @@ Owner decision (2026-10-08): **a file that changes must never count against a vi
 - **Worker unit tests,** per cause, including the double-charge red: request, then a newer-input begin, then a `requested` snapshot must total 1 charge. Also: a CHANGE after expiry is not a replacement.
 - **Worker exhaustion and containment:**
   - same-input ACK recovery with and without a prior bank crosses the budget with no worker request, then emits `failed(retryable)`;
-  - while failed, `recovery` begins are not staged;
-  - `newerInput`, a current `open`, or Retry renews the budget.
+  - while failed, `recovery` begins are not staged and no begin re-emits `recovering`;
+  - an unchanged equal-target republish and a queued pre-failure `newerInput` begin both stay Failed unless they certify an install;
+  - a certified install, Retry or a current `open` exits Failed.
 - **Integration:**
   - newer-input churn with progressing delivery never reaches `failed(retryable)`, and never charges;
   - a persistent ACK-expiry loop or stall loop does reach it, then rests.
