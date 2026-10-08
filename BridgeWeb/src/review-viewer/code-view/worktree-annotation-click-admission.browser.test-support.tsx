@@ -13,10 +13,7 @@ import { createBridgeMainRenderFulfillmentCoordinator } from '../../core/comm-wo
 import type { BridgeMainCodeViewItem } from '../../core/comm-worker/bridge-main-render-snapshot-store.js';
 import { makeBridgeReviewPackage } from '../../foundation/review-package/bridge-review-package-test-support.js';
 import { RecordingAnnotationBrowserSurface } from '../../worktree-annotations/worktree-annotation-browser-test-support.js';
-import {
-	completeCleanup,
-	runWithOwnedCleanup,
-} from '../../worktree-annotations/worktree-annotation-click-admission-cleanup.browser.test-support.js';
+import { runWithOwnedCleanup } from '../../worktree-annotations/worktree-annotation-click-admission-cleanup.browser.test-support.js';
 import {
 	hoverAndClickUtility,
 	waitForSinglePierreUtility,
@@ -29,6 +26,7 @@ import {
 	queryPierreElements,
 	waitForPierreCondition,
 } from '../../worktree-annotations/worktree-annotation-click-admission-render.browser.test-support.js';
+import { ClickAdmissionResourceOwner } from '../../worktree-annotations/worktree-annotation-click-admission-resource-owner.browser.test-support.js';
 import { PierreInteractionSetupFacts } from '../../worktree-annotations/worktree-annotation-click-admission-setup.browser.test-support.js';
 import { WorktreeAnnotationSurfaceProvider } from '../../worktree-annotations/worktree-annotation-surface-provider.js';
 import { buildBridgeReviewProjection } from '../navigation/review-projection.js';
@@ -43,12 +41,14 @@ interface ClickAdmissionHarnessProps {
 	readonly afterSetupBeforeHover?: ((codeView: CodeView) => void) | undefined;
 	readonly beforeRender?: (() => void) | undefined;
 	readonly metadataPublicationOwner: { publish: ((callback: () => void) => void) | undefined };
-	readonly registerCleanup: (dispose: () => Promise<void>) => () => void;
+	readonly resources: ClickAdmissionResourceOwner;
+	readonly recordDisposer?: ((dispose: () => Promise<void>) => void) | undefined;
 	readonly registerFailureDiagnostic: (readSnapshot: () => object) => void;
 }
 export interface ClickAdmissionReviewHarness {
 	readonly publishForProof: (callback: () => void) => void;
 	readonly recordPendingWait: (kind: string) => void;
+	readonly runEvent: (callback: () => void) => Promise<void>;
 	readonly codeView: CodeView;
 	readonly dispose: () => Promise<void>;
 	readonly gutterAdmissions: RecordedGutterAdmission[];
@@ -84,11 +84,17 @@ export async function createClickAdmissionReviewHarness(
 ): Promise<ClickAdmissionReviewHarness> {
 	const gutterAdmissions: RecordedGutterAdmission[] = [];
 	const interactionLifecycle: string[] = [];
-	const interactionSetup = new PierreInteractionSetupFacts(props.holdInteractionSetup ?? false);
+	const group = props.resources.createGroup('Review harness');
+	const dispose = (): Promise<void> => props.resources.releaseGroup(group);
+	props.recordDisposer?.(dispose);
+	const interactionSetup = new PierreInteractionSetupFacts(
+		props.holdInteractionSetup ?? false,
+		props.resources,
+		group,
+	);
 	const slotPublications = new PierreSlotPublicationFacts<
 		Parameters<CodeViewCoordinator<undefined>['onSnapshotChange']>[0]
-	>();
-	const outcomeController = new AbortController();
+	>(props.resources, group);
 	// oxlint-disable-next-line unbound-method -- Restored below; invoked with its original receiver.
 	const originalSetSlotCoordinator = CodeView.prototype.setSlotCoordinator;
 	// oxlint-disable-next-line unbound-method -- Restored below; invoked with its original receiver.
@@ -116,66 +122,70 @@ export async function createClickAdmissionReviewHarness(
 	});
 	let disposalSnapshot: object | undefined;
 	const codeViews: CodeView[] = [];
-	const originalMetadataPublication = props.metadataPublicationOwner.publish;
 	let coordinator: ReturnType<typeof createBridgeMainRenderFulfillmentCoordinator> | undefined;
-	let disposal: Promise<void> | undefined;
-	const dispose = (): Promise<void> => {
-		disposal ??= runWithOwnedCleanup(
-			async (): Promise<void> => {
-				await completeCleanup([
-					(): void => {
-						disposalSnapshot = readSnapshot();
-					},
-					(): void => outcomeController.abort(),
-					cleanup,
-					(): Promise<void> => slotPublications.join(),
-					(): void => coordinator?.dispose(),
-					(): void => interactionSetup.dispose(),
-				]);
-			},
-			async (): Promise<void> => {
-				// These restores run even when unmount, join, or either owner dispose fails.
-				CodeView.prototype.setSlotCoordinator = originalSetSlotCoordinator;
-				CodeView.prototype.setOptions = originalSetOptions;
-				CodeView.prototype.setup = originalCodeViewSetup;
-				InteractionManager.prototype.setup = originalInteractionSetup;
-				InteractionManager.prototype.cleanUp = originalInteractionCleanup;
-				props.metadataPublicationOwner.publish = originalMetadataPublication;
-				unregisterCleanup();
-			},
-		);
-		return disposal;
-	};
-	const unregisterCleanup = props.registerCleanup(dispose);
 	try {
 		props.registerFailureDiagnostic((): object => disposalSnapshot ?? readSnapshot());
-		props.metadataPublicationOwner.publish = (callback: () => void): void =>
-			slotPublications.publish(callback);
-		CodeView.prototype.setSlotCoordinator = function wrapSlotPublication(coordinator): boolean {
-			return originalSetSlotCoordinator.call(this, slotPublications.wrap(coordinator));
-		};
-		CodeView.prototype.setOptions = function captureGutterAdmission(
-			options: CodeViewOptions<undefined>,
-		): void {
-			originalSetOptions.call(this, recordGutterAdmissions(options, gutterAdmissions));
-		};
-		CodeView.prototype.setup = function captureCodeView(root: HTMLElement): void {
-			codeViews.push(this);
-			originalCodeViewSetup.call(this, root);
-		};
-		InteractionManager.prototype.setup = function recordInteractionSetup(
-			pre: HTMLPreElement,
-		): void {
-			interactionSetup.install(this, pre, (): void => {
-				originalInteractionSetup.call(this, pre);
-				interactionLifecycle.push('setup');
-			});
-		};
-		InteractionManager.prototype.cleanUp = function recordInteractionCleanup(): void {
-			interactionSetup.retire(this);
-			interactionLifecycle.push('cleanup');
-			originalInteractionCleanup.call(this);
-		};
+		props.resources.patch({
+			group,
+			label: 'metadata publication adapter',
+			target: props.metadataPublicationOwner,
+			key: 'publish',
+			value: (callback: () => void): void => slotPublications.publish(callback),
+		});
+		props.resources.patch({
+			group,
+			label: 'CodeView.prototype.setSlotCoordinator',
+			target: CodeView.prototype,
+			key: 'setSlotCoordinator',
+			value: function wrapSlotPublication(this: CodeView, slotCoordinator): boolean {
+				return originalSetSlotCoordinator.call(this, slotPublications.wrap(slotCoordinator));
+			},
+		});
+		props.resources.patch({
+			group,
+			label: 'CodeView.prototype.setOptions',
+			target: CodeView.prototype,
+			key: 'setOptions',
+			value: function captureGutterAdmission(options: CodeViewOptions<undefined>): void {
+				originalSetOptions.call(this, recordGutterAdmissions(options, gutterAdmissions));
+			},
+		});
+		props.resources.patch({
+			group,
+			label: 'CodeView.prototype.setup',
+			target: CodeView.prototype,
+			key: 'setup',
+			value: function captureCodeView(this: CodeView, root: HTMLElement): void {
+				codeViews.push(this);
+				originalCodeViewSetup.call(this, root);
+			},
+		});
+		props.resources.patch({
+			group,
+			label: 'InteractionManager.prototype.setup',
+			target: InteractionManager.prototype,
+			key: 'setup',
+			value: function recordInteractionSetup(
+				this: typeof InteractionManager.prototype,
+				pre: HTMLPreElement,
+			): void {
+				interactionSetup.install(this, pre, (): void => {
+					originalInteractionSetup.call(this, pre);
+					interactionLifecycle.push('setup');
+				});
+			},
+		});
+		props.resources.patch({
+			group,
+			label: 'InteractionManager.prototype.cleanUp',
+			target: InteractionManager.prototype,
+			key: 'cleanUp',
+			value: function recordInteractionCleanup(this: typeof InteractionManager.prototype): void {
+				interactionSetup.retire(this);
+				interactionLifecycle.push('cleanup');
+				originalInteractionCleanup.call(this);
+			},
+		});
 		const surface = new RecordingAnnotationBrowserSurface('review');
 		const reviewPackage = makeBridgeReviewPackage();
 		const projection = buildBridgeReviewProjection({
@@ -185,34 +195,61 @@ export async function createClickAdmissionReviewHarness(
 		coordinator = createBridgeMainRenderFulfillmentCoordinator({
 			sendDisposition: (): void => {},
 		});
+		props.resources.register({
+			group,
+			kind: 'root',
+			label: 'render fulfillment coordinator',
+			restore: (): void => coordinator?.dispose(),
+		});
+		props.resources.register({
+			group,
+			kind: 'root',
+			label: 'React mounted roots and component timers/frames',
+			restore: cleanup,
+		});
+		props.resources.register({
+			group,
+			kind: 'root',
+			label: 'freeze pre-unmount diagnostics',
+			restore: (): void => {
+				disposalSnapshot = readSnapshot();
+			},
+		});
+		const mountedCoordinator = coordinator;
 		const reviewItem = makeReviewItem();
 		props.beforeRender?.();
-		await render(
-			<WorktreeAnnotationSurfaceProvider surfaceClient={surface.client}>
-				<div style={{ height: 600, width: 1200 }}>
-					<BridgeCodeViewPanel
-						presentationPositionKey="annotation-click-admission"
-						projection={projection}
-						renderFulfillmentCoordinator={coordinator}
-						reviewPackage={reviewPackage}
-						selectedCodeViewItem={reviewItem}
-						selectedItemId="item-source"
-						visibleCodeViewItems={[reviewItem]}
-						workerPoolEnabled={false}
-					/>
-				</div>
-			</WorktreeAnnotationSurfaceProvider>,
-		);
+		await props.resources.track({
+			group,
+			label: 'React mount act',
+			start: () =>
+				render(
+					<WorktreeAnnotationSurfaceProvider surfaceClient={surface.client}>
+						<div style={{ height: 600, width: 1200 }}>
+							<BridgeCodeViewPanel
+								presentationPositionKey="annotation-click-admission"
+								projection={projection}
+								renderFulfillmentCoordinator={mountedCoordinator}
+								reviewPackage={reviewPackage}
+								selectedCodeViewItem={reviewItem}
+								selectedItemId="item-source"
+								visibleCodeViewItems={[reviewItem]}
+								workerPoolEnabled={false}
+							/>
+						</div>
+					</WorktreeAnnotationSurfaceProvider>,
+				),
+		});
 		pendingWait = 'Pierre split rows';
-		await waitForPierreCondition(
-			(): boolean =>
+		await waitForPierreCondition({
+			predicate: (): boolean =>
 				codeViews.length === 1 &&
 				queryPierreElements('[data-deletions] [data-column-number]').length >= 3 &&
 				queryPierreElements('[data-additions] [data-column-number]').length >= 3 &&
 				(props.isInitialReadinessReleased?.() ?? true),
-			outcomeController.signal,
-			props.recordInitialReadinessObserver,
-		);
+			resources: props.resources,
+			group,
+			recordObserver: props.recordInitialReadinessObserver,
+		});
 		pendingWait = 'initial publication join';
 		await slotPublications.join();
 		pendingWait = 'idle';
@@ -221,25 +258,27 @@ export async function createClickAdmissionReviewHarness(
 		return {
 			publishForProof: (callback: () => void): void => slotPublications.publish(callback),
 			codeView,
+			runEvent: (callback: () => void): Promise<void> => actEvent(props.resources, group, callback),
 			recordPendingWait: (kind: string): void => {
 				pendingWait = kind;
 			},
 			dispose,
 			waitForUtility: (): Promise<HTMLElement> => {
 				pendingWait = 'preparation gutter utility appearance';
-				return waitForSinglePierreUtility(outcomeController.signal);
+				return waitForSinglePierreUtility(props.resources, group);
 			},
 			waitForInteractionSetup: (row: HTMLElement): Promise<void> => {
 				pendingWait = 'preparation interaction setup';
 				lastRow = row;
-				return interactionSetup.waitForSetup(row, outcomeController.signal);
+				return interactionSetup.waitForSetup(row);
 			},
 			waitForComposer: async (present: boolean): Promise<void> => {
 				pendingWait = present ? 'composer appearance' : 'composer dismissal';
-				await waitForPierreCondition(
-					(): boolean => (document.querySelector(composerSelector) !== null) === present,
-					outcomeController.signal,
-				);
+				await waitForPierreCondition({
+					predicate: (): boolean => (document.querySelector(composerSelector) !== null) === present,
+					resources: props.resources,
+					group,
+				});
 				pendingWait = 'publication join after composer';
 				await slotPublications.join();
 				pendingWait = 'idle';
@@ -252,22 +291,25 @@ export async function createClickAdmissionReviewHarness(
 				lastRow = row;
 				lastPointerId = pointerId;
 				pendingWait = 'interaction setup';
-				await interactionSetup.waitForSetup(row, outcomeController.signal);
+				await interactionSetup.waitForSetup(row);
 				if (props.afterSetupBeforeHover !== undefined) {
-					await actEvent((): void => props.afterSetupBeforeHover?.(codeView));
+					await actEvent(props.resources, group, (): void =>
+						props.afterSetupBeforeHover?.(codeView),
+					);
 				}
 				pendingWait = 'current hover row appearance';
-				await waitForPierreCondition(
-					(): boolean => queryPierreElements(selector).length === 1,
-					outcomeController.signal,
-				);
+				await waitForPierreCondition({
+					predicate: (): boolean => queryPierreElements(selector).length === 1,
+					resources: props.resources,
+					group,
+				});
 				const currentRow = requirePierreElement(
 					selector,
 					`Expected the current row for hover ${pointerId}.`,
 				);
 				lastRow = currentRow;
 				pendingWait = 'current hover row interaction setup';
-				await interactionSetup.waitForSetup(currentRow, outcomeController.signal);
+				await interactionSetup.waitForSetup(currentRow);
 				await hoverAndClickUtility({
 					resolveRow: (): HTMLElement => {
 						lastRow = requirePierreElement(
@@ -276,13 +318,14 @@ export async function createClickAdmissionReviewHarness(
 						);
 						return lastRow;
 					},
-					isRowReady: (currentRow): boolean => interactionSetup.isReady(currentRow),
+					isRowReady: (dispatchRow): boolean => interactionSetup.isReady(dispatchRow),
 					pointerId,
 					onHoverDispatched: (dispatchedRow): void => {
 						lastRow = dispatchedRow;
 						interactionSetup.recordCompletedHover(dispatchedRow);
 					},
-					signal: outcomeController.signal,
+					resources: props.resources,
+					group,
 					reportWait: (kind): void => {
 						pendingWait = kind;
 					},
@@ -328,7 +371,6 @@ export function captureClickAdmissionOriginals(
 	metadataPublicationOwner: ClickAdmissionHarnessProps['metadataPublicationOwner'],
 ): {
 	readonly assertRestored: () => void;
-	readonly restore: () => void;
 } {
 	// oxlint-disable-next-line unbound-method -- Identity receipt; never invoked unbound.
 	const setSlotCoordinator = CodeView.prototype.setSlotCoordinator;
@@ -358,16 +400,6 @@ export function captureClickAdmissionOriginals(
 			expect.soft(metadataPublicationOwner.publish).toBe(metadataPublication);
 			expect.soft(globalThis.requestAnimationFrame).toBe(requestFrame);
 			expect.soft(globalThis.cancelAnimationFrame).toBe(cancelFrame);
-		},
-		restore: (): void => {
-			CodeView.prototype.setSlotCoordinator = setSlotCoordinator;
-			CodeView.prototype.setOptions = setOptions;
-			CodeView.prototype.setup = codeViewSetup;
-			InteractionManager.prototype.setup = interactionSetup;
-			InteractionManager.prototype.cleanUp = interactionCleanup;
-			metadataPublicationOwner.publish = metadataPublication;
-			globalThis.requestAnimationFrame = requestFrame;
-			globalThis.cancelAnimationFrame = cancelFrame;
 		},
 	};
 }
