@@ -20,11 +20,8 @@ package enum WorktreeStopReason: String, CaseIterable, Codable, Sendable {
     case archiveDestinationExists
     case archiveDestinationInsideWorktree
     case forkUnavailable
-    case fromBranchNeedsTrackedOnly
     case changesOnlyNeedsFrom
     case trackedOnlyExcludesSource
-    case sourceDirty
-    case sourceNotOnDefaultBranch
     case configInvalid
     case sourceIndexUnreadable
     case sourceIndexUnsupported
@@ -171,24 +168,18 @@ package enum WorktreeStopCatalog {
             "The archive destination is inside the worktree being removed."
         case .forkUnavailable:
             "A copy-on-write fork is unavailable."
-        case .fromBranchNeedsTrackedOnly, .changesOnlyNeedsFrom, .trackedOnlyExcludesSource, .sourceDirty,
-            .sourceNotOnDefaultBranch, .configInvalid, .sourceIndexUnreadable, .sourceIndexUnsupported:
+        case .changesOnlyNeedsFrom, .trackedOnlyExcludesSource, .configInvalid, .sourceIndexUnreadable,
+            .sourceIndexUnsupported:
             creationMessage(for: reason)
         }
     }
 
     private static func creationMessage(for reason: WorktreeStopReason) -> String {
         switch reason {
-        case .fromBranchNeedsTrackedOnly:
-            "--from-branch requires --tracked-only."
         case .changesOnlyNeedsFrom:
             "--changes-only requires --from."
         case .trackedOnlyExcludesSource:
             "--tracked-only excludes --from and --changes-only."
-        case .sourceDirty:
-            "The default source contains uncommitted changes."
-        case .sourceNotOnDefaultBranch:
-            "The default source is not on the default branch."
         case .configInvalid:
             "The repository copy configuration could not be read."
         case .sourceIndexUnreadable:
@@ -265,11 +256,6 @@ package enum WorktreeStopCatalog {
             return options
         case .archiveDestinationExists, .archiveDestinationInsideWorktree:
             return [flag("--archive-to <other-folder>", effect: "Choose an unused folder outside the worktree.")]
-        case .fromBranchNeedsTrackedOnly:
-            return [
-                flag("--tracked-only", effect: "Check out tracked files from the named branch."),
-                flag("--from <a worktree on that branch>", effect: "Copy a worktree on the selected branch."),
-            ]
         case .changesOnlyNeedsFrom:
             return [flag("--from <worktree>", effect: "Select the worktree whose changes should be copied.")]
         case .trackedOnlyExcludesSource:
@@ -277,48 +263,25 @@ package enum WorktreeStopCatalog {
                 command("omit --from and --changes-only", effect: "Create a tracked-files checkout."),
                 command("omit --tracked-only", effect: "Copy the selected worktree."),
             ]
-        case .sourceDirty:
-            return [
-                command("commit or stash the changes first", effect: "Make the default source clean."),
-                flag("--from <worktree>", effect: "Copy uncommitted work deliberately."),
-                flag("--tracked-only", effect: "Create a tracked-files checkout."),
-            ]
-        case .sourceNotOnDefaultBranch:
-            return [
-                command(
-                    "switch the main worktree back to the default branch", effect: "Restore the default source branch."),
-                flag("--from <worktree>", effect: "Select the source deliberately."),
-                flag("--tracked-only", effect: "Create a tracked-files checkout."),
-            ]
         case .sourceIndexUnreadable:
-            return [
-                command("retry", effect: "Retry after the source can be read."),
-                flag("--tracked-only", effect: "Create a tracked-files checkout."),
-            ]
+            return [command("retry", effect: "Retry after the source can be read."), coldTrackedOnlyOption]
         case .sourceIndexUnsupported:
-            return [flag("--tracked-only", effect: "Create a tracked-files checkout.")]
+            return [coldTrackedOnlyOption]
         case .configInvalid:
             return [
                 command("fix .agentstudio.config.json and retry", effect: "Correct the repository copy declaration."),
-                flag("--tracked-only", effect: "Create a tracked-files checkout."),
+                coldTrackedOnlyOption,
             ]
         case .forkUnavailable:
-            return [flag("--tracked-only", effect: "Create a tracked-files checkout.")]
+            return [coldTrackedOnlyOption]
         }
     }
 
-    static func creationChangesUnknownEntry(mainWorktree: URL) -> WorktreeStopEntry {
-        let stopEntry = entry(for: .changesUnknown)
-        let sourcePath = WorktreeListingProjector.shellArgument(mainWorktree.standardizedFileURL.path)
-        return WorktreeStopEntry(
-            reason: stopEntry.reason, message: stopEntry.message, details: stopEntry.details,
-            options: [
-                command("retry", effect: "Retry after the worktree status can be read."),
-                flag("--tracked-only", effect: "Create a tracked-files checkout."),
-                flag(
-                    "--from \(sourcePath)", effect: "Copy the main worktree as it is; source index checks still apply."),
-            ])
-    }
+    /// A creation stop lists `--tracked-only` after any option that still forks the source.
+    private static let coldTrackedOnlyOption = flag(
+        "--tracked-only",
+        effect: "Create a cold tracked-files checkout: no build outputs, no untracked or ignored files."
+    )
 
     static func forkOptions(source: WorktreeCreateSource) -> [WorktreeStopOption] {
         var options = options(for: .forkUnavailable, offersStaleLockRemoval: false)

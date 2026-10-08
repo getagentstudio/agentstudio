@@ -10,6 +10,7 @@ import SwiftUI
 struct SidebarRootViewDependencies {
     let store: WorkspaceStore
     let octiconLoader: OcticonLoader
+    var paneContextReaders: PaneContextUIReaders?
     let paneActivityStatusAtom: PaneActivityStatusAtom
     let applicationLifecycleMonitor: ApplicationLifecycleMonitor
     let sidebarTimeInvalidationConsumerID: UUID
@@ -49,6 +50,7 @@ class MainSplitViewController: NSSplitViewController {
                 store: dependencies.store,
                 octiconLoader: dependencies.octiconLoader,
                 paneActivityStatusAtom: dependencies.paneActivityStatusAtom,
+                paneContextReaders: dependencies.paneContextReaders,
                 applicationLifecycleMonitor: dependencies.applicationLifecycleMonitor,
                 sidebarTimeInvalidationConsumerID: dependencies.sidebarTimeInvalidationConsumerID,
                 sidebarState: dependencies.sidebarState,
@@ -79,6 +81,7 @@ class MainSplitViewController: NSSplitViewController {
 
     // MARK: - Dependencies (injected)
 
+    private let paneContextReaders: PaneContextUIReaders?
     private let store: WorkspaceStore
     private let octiconLoader: OcticonLoader
     private let workspaceWindowId: UUID?
@@ -125,6 +128,7 @@ class MainSplitViewController: NSSplitViewController {
     init(
         store: WorkspaceStore,
         octiconLoader: OcticonLoader,
+        paneContextReaders: PaneContextUIReaders? = nil,
         workspaceWindowId: UUID? = nil,
         workspaceActionExecutor: WorkspaceActionExecutor,
         runtimeCommandDispatcher: any PaneRuntimeCommandDispatching,
@@ -150,6 +154,7 @@ class MainSplitViewController: NSSplitViewController {
         closeTransitionCoordinator: PaneCloseTransitionCoordinator = PaneCloseTransitionCoordinator(),
         paneTabRegistersAsCommandHandler: Bool = true
     ) {
+        self.paneContextReaders = paneContextReaders
         self.store = store
         self.octiconLoader = octiconLoader
         self.workspaceWindowId = workspaceWindowId
@@ -221,6 +226,7 @@ class MainSplitViewController: NSSplitViewController {
             bridgePaneAttendance: bridgePaneAttendance,
             editorChooser: editorChooser,
             sessionsPaneViewedMailbox: sessionsPaneViewedMailbox,
+            paneContextReaders: paneContextReaders,
             paneInboxPresentation: nil,
             pinnedPanePreferences: repoExplorerSidebarPrefs,
             closeTransitionCoordinator: closeTransitionCoordinator,
@@ -279,6 +285,7 @@ class MainSplitViewController: NSSplitViewController {
             SidebarRootViewDependencies(
                 store: store,
                 octiconLoader: octiconLoader,
+                paneContextReaders: paneContextReaders,
                 paneActivityStatusAtom: atom(\.paneActivityStatus),
                 applicationLifecycleMonitor: applicationLifecycleMonitor,
                 sidebarTimeInvalidationConsumerID: sidebarTimeInvalidationConsumerID,

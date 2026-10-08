@@ -28,6 +28,7 @@ struct RepoExplorerPaneRow: View {
     let row: RepoExplorerProjectedPaneRow
     let octiconLoader: OcticonLoader
     var keyboardPresentation = RepoExplorerRowKeyboardPresentation.inactive
+    var paneContextControl: RepoExplorerPaneContextControlFactory = { _, _ in nil }
     let onFocus: () -> Void
 
     @State private var isHovering = false
@@ -46,7 +47,14 @@ struct RepoExplorerPaneRow: View {
                 octiconLoader: octiconLoader,
                 shortcutDisplay: keyboardPresentation.shortcutDisplay,
                 showsExpandedChips: row.displayVariant == .expanded,
-                drawerRail: row.drawerRail
+                drawerRail: row.drawerRail,
+                showsChipLine: row.displayVariant == .expanded
+                    ? row.variants?.expanded.showsChipLine ?? true : row.variants?.compact.showsChipLine ?? true,
+                messageChip: row.messageChip,
+                paneId: PaneId(existingUUID: row.destination.paneId),
+                paneContextControl: paneContextControl,
+                preparedLines: row.displayVariant == .expanded
+                    ? row.variants?.expanded.lines : row.variants?.compact.lines
             )
         }
         .frame(maxHeight: .infinity, alignment: .top)
@@ -94,6 +102,11 @@ struct RepoExplorerPaneRowContent: View {
     var shortcutDisplay: ShortcutDisplayText?
     var showsExpandedChips = false
     var drawerRail: RepoExplorerDrawerRail = .none
+    var showsChipLine = true
+    var messageChip: PaneMessageChipModel?
+    var paneId: PaneId?
+    var paneContextControl: RepoExplorerPaneContextControlFactory = { _, _ in nil }
+    var preparedLines: [RepoExplorerPaneRowLine]?
 
     static func leadingContentInset(for drawerRail: RepoExplorerDrawerRail) -> CGFloat {
         switch drawerRail {
@@ -106,44 +119,42 @@ struct RepoExplorerPaneRowContent: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: AppStyles.Shell.Sidebar.rowContentSpacing) {
-            HStack(spacing: AppStyles.Shell.Sidebar.groupIconTitleSpacing) {
-                (isDrawerPane ? AppEntityIcon.drawer : .pane).swiftUIImage(
-                    loader: octiconLoader,
-                    size: AppStyles.Shell.Sidebar.rowIdentityIconSize
-                )
-                .frame(
-                    width: AppStyles.Shell.Sidebar.rowLeadingIconColumnWidth,
-                    alignment: .leading
-                )
-                Text(primaryText)
-                    .font(.system(size: AppStyles.General.Typography.textBase, weight: .semibold))
-                    .lineLimit(1)
-                    .truncationMode(.tail)
-                    .layoutPriority(1)
-                    .foregroundStyle(.primary)
-                    .frame(maxWidth: .infinity, alignment: .leading)
+            if let preparedLines {
+                ForEach(preparedLines, id: \.kind) { line in
+                    switch line {
+                    case .title(let text): titleLine(text)
+                    case .worktreeBranch(let text):
+                        SidebarMetadataLine(
+                            icon: .octicon(name: "octicon-git-branch", loader: octiconLoader), text: text)
+                    case .note(let text):
+                        SidebarMetadataLine(icon: .systemName("long.text.page.and.pencil"), text: text)
+                    case .agentLine(let line):
+                        if let paneId, let control = paneContextControl(paneId, .agentLine(line)) {
+                            control
+                        } else {
+                            RepoExplorerPaneContextLineView(line: line, isAgentLine: true, octiconLoader: octiconLoader)
+                        }
+                    case .sessionStatus(let line):
+                        RepoExplorerPaneContextLineView(line: line, isAgentLine: false, octiconLoader: octiconLoader)
+                    }
+                }
+            } else {
+                titleLine(primaryText)
+                if let branchContextText {
+                    SidebarMetadataLine(
+                        icon: .octicon(name: "octicon-git-branch", loader: octiconLoader),
+                        text: branchContextText
+                    )
+                }
+                if let secondaryLine {
+                    SidebarMetadataLine(
+                        icon: .systemName(secondaryLine.iconSystemName),
+                        text: secondaryLine.text
+                    )
+                    .saturation(secondaryLine.isTerminalOutput ? 0 : 1)
+                }
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .sidebarShortcutHint(
-                shortcutDisplay,
-                style: .toolbarStamp,
-                alignment: .trailing,
-                offset: CGSize(width: -AppStyles.Shell.Sidebar.KeyboardHint.rowTrailingInset, height: 0)
-            )
-            if let branchContextText {
-                SidebarMetadataLine(
-                    icon: .octicon(name: "octicon-git-branch", loader: octiconLoader),
-                    text: branchContextText
-                )
-            }
-            if let secondaryLine {
-                SidebarMetadataLine(
-                    icon: .systemName(secondaryLine.iconSystemName),
-                    text: secondaryLine.text
-                )
-                .saturation(secondaryLine.isTerminalOutput ? 0 : 1)
-            }
-            chipRow
+            if showsChipLine { chipRow }
         }
         .padding(.leading, Self.leadingContentInset(for: drawerRail))
         .frame(minWidth: 0, maxWidth: .infinity, alignment: .leading)
@@ -151,6 +162,33 @@ struct RepoExplorerPaneRowContent: View {
     }
 
     @ViewBuilder
+    private func titleLine(_ text: String) -> some View {
+        HStack(spacing: AppStyles.Shell.Sidebar.groupIconTitleSpacing) {
+            (isDrawerPane ? AppEntityIcon.drawer : .pane).swiftUIImage(
+                loader: octiconLoader,
+                size: AppStyles.Shell.Sidebar.rowIdentityIconSize
+            )
+            .frame(
+                width: AppStyles.Shell.Sidebar.rowLeadingIconColumnWidth,
+                alignment: .leading
+            )
+            Text(text)
+                .font(.system(size: AppStyles.General.Typography.textBase, weight: .semibold))
+                .lineLimit(1)
+                .truncationMode(.tail)
+                .layoutPriority(1)
+                .foregroundStyle(.primary)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .sidebarShortcutHint(
+            shortcutDisplay,
+            style: .toolbarStamp,
+            alignment: .trailing,
+            offset: CGSize(width: -AppStyles.Shell.Sidebar.KeyboardHint.rowTrailingInset, height: 0)
+        )
+    }
+
     private var chipRow: some View {
         SidebarStatusChipRow(
             isPendingPullRequestFacts: false
@@ -180,6 +218,9 @@ struct RepoExplorerPaneRowContent: View {
                             showsDiffChip: detailLevel.showsChanges,
                             showsSyncChip: detailLevel.showsSync
                         )
+                    }
+                    if let messageChip, let paneId {
+                        paneContextControl(paneId, .messages(messageChip))
                     }
                     SidebarChip(
                         icon: .system(.clock),

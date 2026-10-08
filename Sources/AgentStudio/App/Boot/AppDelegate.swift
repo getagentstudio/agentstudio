@@ -103,6 +103,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
     var appIPCServerChannel: AgentStudioIPCChannel = AppDelegate.compiledAppIPCChannel()
     var paneIPCIdentityOwner: PaneIPCIdentityOwner!
     var appIPCSessionsPaneContextComposition: SessionsPaneContextComposition?
+    var appIPCPaneContextUIAdapter: PaneContextUIAdapter?
     var paneCLIOutboxDrainTask: Task<Void, Never>?
     var appLifecycleStore: AppLifecycleAtom!
     var windowLifecycleStore: WindowLifecycleAtom!

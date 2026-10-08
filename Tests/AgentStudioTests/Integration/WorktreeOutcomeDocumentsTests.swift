@@ -197,7 +197,7 @@ struct WorktreeOutcomeDocumentsTests {
             directory: .retained,
             administration: .partial,
             branch: nil,
-            evidence: .archived(path: "/main/tmp/feature/partial", files: 2),
+            evidence: .archived(path: "/main/tmp/feature/partial", files: 2, skippedSpecialFiles: []),
             assessment: .unknown(.readFailed),
             activity: .noActivity
         )
@@ -240,7 +240,7 @@ struct WorktreeOutcomeDocumentsTests {
         let encodedFailedEntry = try Self.json(failedEntry)
         #expect(
             encodedFailedEntry
-                == #"{"details":{"failure":{"effects":{"activity":{"status":"none"},"administration":"partial","assessment":{"grade":"unknown","reason":"readFailed"},"directory":"retained","evidence":{"files":2,"path":"/main/tmp/feature/partial","status":"archived"},"lockResidue":[]},"kind":{"code":-1,"kind":"pruneFailed","klass":20}},"inputs":[],"target":"feature/partial"},"status":"failed"}"#
+                == #"{"details":{"failure":{"effects":{"activity":{"status":"none"},"administration":"partial","assessment":{"grade":"unknown","reason":"readFailed"},"directory":"retained","evidence":{"files":2,"path":"/main/tmp/feature/partial","skippedSpecialFiles":[],"status":"archived"},"lockResidue":[]},"kind":{"code":-1,"kind":"pruneFailed","klass":20}},"inputs":[],"target":"feature/partial"},"status":"failed"}"#
         )
 
         let report = WorktreeRemovalReport(

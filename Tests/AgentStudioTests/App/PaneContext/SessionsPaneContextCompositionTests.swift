@@ -19,6 +19,9 @@ struct SessionsPaneContextCompositionTests {
         let composition = try #require(
             SessionsVerticalHarnessContext.current?.harness.appDelegate.appIPCSessionsPaneContextComposition,
             "Boot did not construct the Sessions/PaneContext composition")
+        let uiAdapter = try #require(
+            SessionsVerticalHarnessContext.current?.harness.appDelegate.appIPCPaneContextUIAdapter,
+            "Boot did not publish the lazy UI adapter after preparation")
         let fixture = try #require(SessionsVerticalHarnessContext.current)
         let harness = try await fixture.freshPanePair()
         let paneId = PaneId(existingUUID: harness.boundPaneId)
@@ -49,6 +52,10 @@ struct SessionsPaneContextCompositionTests {
                     shape: .ask(reason: .question, form: .freeText(placeholder: nil), waiting: .nonBlocking)))
                 == .created(askId))
         #expect(try await composition.ingestion.sessionSummary(paneId: paneId.uuid)?.status == .needsYou(.question))
+        let uiRead = await uiAdapter.readDetail(.init(paneId: paneId, page: .first))
+        let uiDetail: PaneContextDetail?
+        if case .detail(let value) = uiRead { uiDetail = value } else { uiDetail = nil }
+        #expect(try #require(uiDetail).messages.contains { $0.id == askId })
         #expect(await composition.paneContextService.dismiss(messageId: askId, paneId: paneId) == .done)
         let claim = await composition.paneContextService.claimEpoch(
             .init(paneId: paneId, writer: writer, stream: .line, claimId: UUIDv7.generate()))
