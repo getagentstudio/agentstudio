@@ -746,7 +746,8 @@ Owner decision (2026-10-08): **a file that changes must never count against a vi
       - a certified install of a staged snapshot, which proves delivery works, so "couldn't update" would be false;
       - Retry;
       - a current `open`.
-    - No cause label renews the budget by itself. An unchanged republish (equal target, fresh batch id) or a queued pre-failure `newerInput` snapshot leaves Failed only if it actually certifies an install.
+    - A current `open` (a new handle or filter the page asked for) is a material desired change. It renews the budget (count 0) exactly as Retry does.
+    - No delivery cause renews by itself. `requested`, `recovery` and `newerInput` never renew. An unchanged republish (equal target, fresh batch id) or a queued pre-failure `newerInput` snapshot leaves Failed only if it actually certifies an install.
   - A certified install resets the count (unchanged). `newerInput` neither resets nor renews it, because new input is not proof of delivery.
 
 **What stays bounded, and the guarantee stated exactly.**
