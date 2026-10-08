@@ -29,7 +29,9 @@ import {
   verifyHeroIntroReducedMotion,
   verifyHeroIntroKeydown,
   verifyHeroIntroSecondResize,
-  verifyHeroIntroRefresh,
+  observeHeroReload,
+  observeHeroScrollAndWheel,
+  observeHeroHashLink,
   verifyHeroIntroShift,
   verifyHeroScrollCue,
   verifyHeroPhoneMidIntro,
@@ -55,7 +57,12 @@ import {
   verifySiteFooterResponsiveLayout,
 } from "./tests/site-footer-browser-command.ts";
 import { verifySiteHeaderScrollStability } from "./tests/site-header-browser-command.ts";
-import { verifyFinaleBookend, verifyTopologyEnd } from "./tests/topology-end-browser-command.ts";
+import {
+  observeFinaleMainPage,
+  observeFinaleReducedMotion,
+  observeFinaleSkipAndResize,
+  verifyTopologyEnd,
+} from "./tests/topology-end-browser-command.ts";
 import { verifyTopologyNodeVocabulary } from "./tests/topology-node-vocabulary-browser-command.ts";
 import { verifySkipToContent } from "./tests/website-access-browser-command.ts";
 import {
@@ -121,7 +128,9 @@ export default defineConfig({
               verifyHeroIntroReducedMotion,
               verifyHeroIntroKeydown,
               verifyHeroIntroSecondResize,
-              verifyHeroIntroRefresh,
+              observeHeroReload,
+              observeHeroScrollAndWheel,
+              observeHeroHashLink,
               verifyHeroIntroShift,
               verifyHeroScrollCue,
               verifyHeroPhoneMidIntro,
@@ -144,7 +153,9 @@ export default defineConfig({
               verifyFooterEndRoom,
               verifySiteHeaderScrollStability,
               verifyTopologyEnd,
-              verifyFinaleBookend,
+              observeFinaleMainPage,
+              observeFinaleReducedMotion,
+              observeFinaleSkipAndResize,
               verifyTopologyNodeVocabulary,
               verifyWebsiteQualityLayout,
             },

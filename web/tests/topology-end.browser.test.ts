@@ -4,7 +4,11 @@ import { commands } from "vitest/browser";
 import { installCommandText, marketingCopy } from "../src/marketing-copy";
 import type {
   TopologyEndObservation,
-  FinaleBookendObservation,
+  FinaleMainFieldGroups,
+  FinaleMainFieldGroup,
+  FinaleMainSample,
+  FinaleReducedMotionObservation,
+  FinaleSkipAndResizeObservation,
 } from "./topology-end-browser-command.ts";
 import { sharpCornerCount } from "./topology-path-corners";
 
@@ -15,8 +19,91 @@ declare module "vitest/browser" {
       widths: readonly number[],
       viewportHeight?: number,
     ): Promise<TopologyEndObservation[]>;
-    verifyFinaleBookend(pageUrl: string, proofWidth?: number): Promise<FinaleBookendObservation>;
+    // Wire fields are Partial; read observations only through guardFinaleMainSample.
+    observeFinaleMainPage<TGroup extends FinaleMainFieldGroup>(
+      pageUrl: string,
+      proofWidth: number | undefined,
+      groups: readonly TGroup[],
+    ): Promise<FinaleMainSample<TGroup>>;
+    observeFinaleReducedMotion(pageUrl: string): Promise<FinaleReducedMotionObservation>;
+    observeFinaleSkipAndResize(pageUrl: string): Promise<FinaleSkipAndResizeObservation>;
   }
+}
+
+const finaleMainFieldGroups = {
+  readyOutlineAt03: "outline",
+  traceOpacityAt03: "outline",
+  readyOutlineAt08: "outline",
+  traceOpacityAt08: "outline",
+  traceDashFractionAt08: "outline",
+  readyOutlineAfterReverseSeek: "outline",
+  traceOpacityAfterReverseSeek: "outline",
+  tracePathData: "outline",
+  pillHeight: "outline",
+  pillWidth: "outline",
+  eventCount: "playback",
+  transitionalFanAngles: "playback",
+  transitionalPlaneBorderWidths: "playback",
+  finalState: "playback",
+  logoOpacity: "playback",
+  traceOpacity: "playback",
+  railStartFraction: "playback",
+  railArrivalFraction: "playback",
+  nodeStartOpacity: "playback",
+  nodeArrivalOpacity: "playback",
+  sectionHeightDelta: "playback",
+  footerTopDelta: "playback",
+  pillBorderColor: "pill",
+  pillBorderWidth: "pill",
+  pillOverflowX: "pill",
+  starLeftOffset: "pill",
+  copyRightRadius: "pill",
+  terminalHaloDisplay: "pill",
+  href: "pill",
+  copiedIconVisible: "pill",
+  oldInstallBoxCount: "pill",
+  ctaParagraphCount: "pill",
+  splitPillCount: "pill",
+  starText: "pill",
+  copyText: "pill",
+  copiedText: "pill",
+  copyCount: "pill",
+  copiedLabel: "pill",
+  resizedTraceWidthDelta: "resizedTrace",
+  resizedViewBoxWidthDelta: "resizedTrace",
+  settledDashCleared: "resizedTrace",
+  pillStyle: "paint",
+  stepPillStyle: "paint",
+  segmentColorsMatch: "paint",
+  iconsAreThinOutlines: "paint",
+  ancestorPaintExtent: "paint",
+  nodeTangentDelta: "paint",
+  nodeCenterYDelta: "paint",
+  traceEdgeDelta: "paint",
+  dividerHeightFraction: "paint",
+} satisfies {
+  readonly [TGroup in FinaleMainFieldGroup as keyof FinaleMainFieldGroups[TGroup]]: TGroup;
+};
+const finaleGroupByField = new Map<string, FinaleMainFieldGroup>(
+  Object.entries(finaleMainFieldGroups),
+);
+function guardFinaleMainSample<TGroup extends FinaleMainFieldGroup>(
+  sample: FinaleMainSample<TGroup>,
+  groups: readonly TGroup[],
+): FinaleMainSample<TGroup> {
+  return new Proxy(sample as object, {
+    get(target, field, receiver): unknown {
+      if (typeof field !== "string") return Reflect.get(target, field, receiver);
+      const group = finaleGroupByField.get(field);
+      if (group !== undefined) {
+        if (!groups.some((requested) => requested === group))
+          throw new Error(`Field ${field} belongs to unrequested group ${group}`);
+        if (!Object.hasOwn(target, field))
+          throw new Error(`Missing field ${field} in requested group ${group}`);
+      }
+      return Reflect.get(target, field, receiver);
+    },
+  }) as FinaleMainSample<TGroup>;
 }
 
 describe("where the rail ends on the home page", () => {
@@ -41,9 +128,10 @@ describe("where the rail ends on the home page", () => {
   it.each([1600, 1280, 390])(
     "matches the finale and step-label pill paints at %ipx",
     async (width) => {
-      const observation = await commands.verifyFinaleBookend(
-        inject("siteHeaderBrowserTestUrl"),
-        width,
+      const groups = ["paint"] as const;
+      const observation = guardFinaleMainSample(
+        await commands.observeFinaleMainPage(inject("siteHeaderBrowserTestUrl"), width, groups),
+        groups,
       );
       expect(observation.pillStyle).toEqual(observation.stepPillStyle);
       expect(observation.segmentColorsMatch).toBe(true);
@@ -55,11 +143,12 @@ describe("where the rail ends on the home page", () => {
       expect(observation.dividerHeightFraction).toBeCloseTo(0.5, 1);
     },
   );
-  it("plays the finale once at the rail end and copies both install commands", async () => {
-    const observation = await commands.verifyFinaleBookend(inject("siteHeaderBrowserTestUrl"));
-    expect.soft(observation.pillStyle).toEqual(observation.stepPillStyle);
-    expect.soft(observation.segmentColorsMatch).toBe(true);
-    expect.soft(observation.iconsAreThinOutlines).toBe(true);
+  it("traces the split-pill outline forward and back on seeks", async () => {
+    const groups = ["outline"] as const;
+    const observation = guardFinaleMainSample(
+      await commands.observeFinaleMainPage(inject("siteHeaderBrowserTestUrl"), 1600, groups),
+      groups,
+    );
     expect(observation.readyOutlineAt03).toBe(true);
     expect(observation.traceOpacityAt03).toBe(0);
     expect(observation.readyOutlineAt08).toBe(false);
@@ -67,31 +156,50 @@ describe("where the rail ends on the home page", () => {
     expect(observation.traceDashFractionAt08).toBeLessThan(1);
     expect(observation.readyOutlineAfterReverseSeek).toBe(true);
     expect(observation.traceOpacityAfterReverseSeek).toBe(0);
-    expect(observation.eventCount).toBe(1);
     const firstArc = /A ([\d.]+) ([\d.]+)/u.exec(observation.tracePathData);
     expect(firstArc).not.toBeNull();
     expect(Math.abs(Number(firstArc?.[1]) - observation.pillHeight / 2)).toBeLessThanOrEqual(0.5);
     expect(firstArc?.[1]).toBe(firstArc?.[2]);
-    expect(observation.pillBorderColor).toBe(observation.stepPillStyle["borderTopColor"]);
-    expect(observation.pillBorderWidth).toBe(observation.stepPillStyle["borderTopWidth"]);
-    expect(observation.pillOverflowX).toBe("hidden");
-    expect(observation.starLeftOffset).toBeLessThanOrEqual(1);
-    expect(observation.copyRightRadius).not.toBe("0px");
-    expect(observation.terminalHaloDisplay).toBe("none");
+  });
+
+  it("plays the finale once at the rail end", async () => {
+    const groups = ["playback"] as const;
+    const observation = guardFinaleMainSample(
+      await commands.observeFinaleMainPage(inject("siteHeaderBrowserTestUrl"), 1600, groups),
+      groups,
+    );
+    expect(observation.eventCount).toBe(1);
     for (const [index, angle] of [0, 7, -12].entries())
       expect(observation.transitionalFanAngles[index]).toBeCloseTo(angle, 1);
     expect(observation.transitionalPlaneBorderWidths).toEqual([1, 1, 1, 1]);
-    expect(observation.href).toBe(marketingCopy.githubUrl);
     expect(observation.finalState).toBe("settled");
     expect(observation.logoOpacity).toBe("1");
     expect(observation.traceOpacity).toBe("0");
-    expect(observation.copiedIconVisible).toBe(true);
     expect(observation.railStartFraction).toBeCloseTo(1, 1);
     expect(observation.railArrivalFraction).toBeCloseTo(0, 1);
     expect(observation.nodeStartOpacity).toBe("0");
     expect(observation.nodeArrivalOpacity).toBe("1");
     expect(observation.sectionHeightDelta).toBeCloseTo(0, 1);
     expect(observation.footerTopDelta).toBeCloseTo(0, 1);
+  });
+
+  it("copies both install commands from the split pill", async () => {
+    const groups = ["pill", "paint"] as const;
+    const observation = guardFinaleMainSample(
+      await commands.observeFinaleMainPage(inject("siteHeaderBrowserTestUrl"), 1600, groups),
+      groups,
+    );
+    expect.soft(observation.pillStyle).toEqual(observation.stepPillStyle);
+    expect.soft(observation.segmentColorsMatch).toBe(true);
+    expect.soft(observation.iconsAreThinOutlines).toBe(true);
+    expect(observation.pillBorderColor).toBe(observation.stepPillStyle["borderTopColor"]);
+    expect(observation.pillBorderWidth).toBe(observation.stepPillStyle["borderTopWidth"]);
+    expect(observation.pillOverflowX).toBe("hidden");
+    expect(observation.starLeftOffset).toBeLessThanOrEqual(1);
+    expect(observation.copyRightRadius).not.toBe("0px");
+    expect(observation.terminalHaloDisplay).toBe("none");
+    expect(observation.href).toBe(marketingCopy.githubUrl);
+    expect(observation.copiedIconVisible).toBe(true);
     expect(observation.oldInstallBoxCount).toBe(0);
     expect(observation.ctaParagraphCount).toBe(1);
     expect(observation.splitPillCount).toBe(1);
@@ -100,22 +208,51 @@ describe("where the rail ends on the home page", () => {
     expect(observation.copiedText).toBe(installCommandText);
     expect(observation.copyCount).toBe(1);
     expect(observation.copiedLabel).toBe(marketingCopy.installation.copiedStatus);
+  });
+
+  it("retraces the settled split-pill outline after its width changes", async () => {
+    const groups = ["resizedTrace"] as const;
+    const observation = guardFinaleMainSample(
+      await commands.observeFinaleMainPage(inject("siteHeaderBrowserTestUrl"), 1600, groups),
+      groups,
+    );
+    expect(observation.resizedTraceWidthDelta).toBeLessThanOrEqual(1);
+    expect(observation.resizedViewBoxWidthDelta).toBeLessThanOrEqual(1);
+    expect(observation.settledDashCleared).toBe(true);
+  });
+
+  it("keeps the phone split pill in one row and settles under reduced motion", async () => {
+    const observation = await commands.observeFinaleReducedMotion(
+      inject("siteHeaderBrowserTestUrl"),
+    );
     expect(observation.phoneOneRow).toBe(true);
     expect(observation.phoneShortLabels).toBe(true);
     expect(observation.phoneOverflow).toBeLessThanOrEqual(0);
     expect(observation.reducedMotionState).toBe("settled");
     expect(observation.reducedMotionTimelineCreated).toBe(false);
     expect(observation.reducedMotionLogoOpacity).toBe("1");
+  });
+
+  it("settles on pointer skip and resize, and fits a 320px heading", async () => {
+    const observation = await commands.observeFinaleSkipAndResize(
+      inject("siteHeaderBrowserTestUrl"),
+    );
     expect(observation.pointerSkipState).toBe("settled");
     expect(observation.resizeSettleState).toBe("settled");
     expect(observation.narrowTitleFontSize).toBeLessThan(36);
     expect(observation.narrowHeadingOverflow).toBeLessThanOrEqual(0);
   });
-  it("retraces the settled split-pill outline after its width changes", async () => {
-    const observation = await commands.verifyFinaleBookend(inject("siteHeaderBrowserTestUrl"));
-    expect(observation.resizedTraceWidthDelta).toBeLessThanOrEqual(1);
-    expect(observation.resizedViewBoxWidthDelta).toBeLessThanOrEqual(1);
-    expect(observation.settledDashCleared).toBe(true);
+
+  it("rejects reads from unrequested finale main-page field groups", async () => {
+    const groups = ["paint"] as const;
+    const observation = guardFinaleMainSample(
+      await commands.observeFinaleMainPage(inject("siteHeaderBrowserTestUrl"), 1600, groups),
+      groups,
+    );
+    expect(() => {
+      // @ts-expect-error A paint-only sample cannot expose playback state.
+      return observation.eventCount;
+    }).toThrow("Field eventCount belongs to unrequested group playback");
   });
   it("ends at the Star button after the lanes close below the final glass", async () => {
     const observations = await commands.verifyTopologyEnd(
