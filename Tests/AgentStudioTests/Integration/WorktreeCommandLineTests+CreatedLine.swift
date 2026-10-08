@@ -70,7 +70,8 @@ extension WorktreeCommandLineTests {
                 makeCreatedSummary(
                     branch: "feat", path: path, repository: repository,
                     materialization: .changesOnly(
-                        GitChangesOnlyMaterializationReport(trackedChanges: 1, untrackedFiles: 0, largeFiles: nil)),
+                        GitChangesOnlyMaterializationReport(trackedChanges: 1, untrackedFiles: 0, largeFiles: .filled())
+                    ),
                     fetch: .skipped(.notNeeded)),
                 "created feat at /code/app.feat (changes-only)"
             ),
@@ -128,7 +129,8 @@ extension WorktreeCommandLineTests {
                 makeCreatedSummary(
                     branch: "feat", path: path, repository: repository,
                     materialization: .changesOnly(
-                        GitChangesOnlyMaterializationReport(trackedChanges: 1, untrackedFiles: 2, largeFiles: nil)),
+                        GitChangesOnlyMaterializationReport(trackedChanges: 1, untrackedFiles: 2, largeFiles: .filled())
+                    ),
                     fetch: .skipped(.notNeeded)),
                 #"{"branch":{"name":"feat","status":"created","upstream":null},"fetch":{"branch":null,"reason":"notNeeded","remote":null,"status":"skipped"},"materialization":{"ignoredExcluded":true,"kind":"changesOnly","trackedChanges":1,"untrackedFiles":2},"operation":"new","outcome":"created","path":"/code/app.feat","repository":"/code/app","start":{"commit":"1111111111111111111111111111111111111111","from":"sourceHead","localOnlyCommits":null,"ref":null}}"#
             ),
