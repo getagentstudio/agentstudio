@@ -734,7 +734,10 @@ Owner decision (2026-10-08): **a file that changes must never count against a vi
     - a current `open` clears it;
     - a stale `open` cannot clear it;
     - `newerInput` leaves the request bookkeeping unchanged.
-  - **Exhaustion:** when a charge from a worker request or a native recovery reaches the budget, W2 emits `failed(retryable)` at that moment.
+  - **Exhaustion:** the budget is the number of delivery-failure attempts allowed since the last certified install. W2 emits `failed(retryable)` at the moment an attempt is needed while the count already equals the budget:
+    - a worker request (today's threshold behaviour, unchanged): the request is not sent;
+    - a native `recovery` begin: it is contained, not staged.
+    - So native recovery alone can reach Failed, and no attempt inside the budget is wasted.
   - **Containment while failed:**
     - W2 admits no further `recovery` or `requested` snapshot begins for the view. They are acknowledged on receipt but neither staged nor installed, so native recovery cannot renew W4's deadline or reopen the view.
     - The last installed content stays readable.
