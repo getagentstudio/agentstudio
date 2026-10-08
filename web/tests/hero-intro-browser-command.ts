@@ -1,4 +1,5 @@
 import { defineBrowserCommand } from "@vitest/browser-playwright";
+import type { BrowserCommandContext } from "vitest/node";
 
 export interface HeroLayoutObservation {
   readonly viewport: string;
@@ -561,77 +562,90 @@ export interface HeroPlaybackObservation {
   readonly keydownSettledEvents: number;
 }
 
-export const verifyHeroIntroPlayback = defineBrowserCommand(
-  async ({ context }, pageUrl: string): Promise<HeroPlaybackObservation> => {
-    const introPage = await context.newPage();
-    introPage.on("response", (response) => {
-      if (response.status() >= 400)
-        process.stdout.write(`intro ${response.status()} ${new URL(response.url()).pathname}\n`);
-    });
-    const freshNarrowPage = await context.newPage();
-    const freshWidePage = await context.newPage();
-    const keydownPage = await context.newPage();
-    for (const applicationPage of [introPage, keydownPage]) {
-      await applicationPage.addInitScript(() => {
-        Object.defineProperty(document, "hidden", { configurable: true, get: () => false });
-        Object.defineProperty(document, "visibilityState", {
-          configurable: true,
-          get: () => "visible",
-        });
-        let resolveReady: (state: "playing" | "settled") => void = () => {};
-        const ready = new Promise<"playing" | "settled">((resolve) => {
-          resolveReady = resolve;
-        });
-        (window as Window & { heroIntroReady?: typeof ready }).heroIntroReady = ready;
-        document.addEventListener("hero-intro-playback-ready", (event) => {
-          if (!(event instanceof CustomEvent)) return;
-          const control = event.detail as { pause(): void; seek(seconds: number): void };
-          control.pause();
-          (
-            window as Window & { heroIntroPlaybackControl?: typeof control }
-          ).heroIntroPlaybackControl = control;
-          resolveReady("playing");
-        });
-        document.addEventListener("hero-intro-settled", () => resolveReady("settled"), {
-          once: true,
-        });
+const observeHeroPlaybackLayout = (): {
+  rect: HeroWindowRect;
+  inlineStyles: number;
+  inlineStyleElements: string[];
+  fourthPlanes: number;
+  progress: number;
+} => {
+  const root = document.querySelector<HTMLElement>("[data-hero-intro-root]");
+  const windowNode = root?.querySelector<HTMLElement>("[data-hero-terminal-window]");
+  if (root === null || windowNode === null || root === undefined || windowNode === undefined) {
+    throw new Error("Hero intro is missing");
+  }
+  const targets = root.querySelectorAll<HTMLElement>(
+    "[data-hero-intro-copy], [data-hero-icon-stack], [data-hero-icon-front], [data-hero-icon-rear], [data-hero-icon-cursor], [data-hero-terminal-window], [data-hero-intro-content], [data-hero-intro-install], [data-hero-intro-description], [data-hero-intro-glow], [data-hero-intro-typed-input], [data-hero-intro-spinner], .hero-transcript-row",
+  );
+  const rect = windowNode.getBoundingClientRect();
+  return {
+    rect: { left: rect.left, top: rect.top, width: rect.width, height: rect.height },
+    inlineStyles: [...targets].filter((target) => target.hasAttribute("style")).length,
+    inlineStyleElements: [...targets]
+      .filter((target) => target.hasAttribute("style"))
+      .map((target) => `${target.tagName}.${target.className}: ${target.getAttribute("style")}`),
+    fourthPlanes: root.querySelectorAll("[data-hero-intro-fourth-plane]").length,
+    progress: Number(root.getAttribute("data-hero-intro-progress")),
+  };
+};
+
+async function openHeroPlaybackPage(
+  context: BrowserCommandContext["context"],
+): Promise<Awaited<ReturnType<BrowserCommandContext["context"]["newPage"]>>> {
+  const applicationPage = await context.newPage();
+  try {
+    await applicationPage.addInitScript(() => {
+      Object.defineProperty(document, "hidden", { configurable: true, get: () => false });
+      Object.defineProperty(document, "visibilityState", {
+        configurable: true,
+        get: () => "visible",
       });
-    }
-    await Promise.all(
-      [introPage, freshNarrowPage, freshWidePage, keydownPage].map(async (applicationPage) => {
-        await applicationPage.route(/\.(mp4|webm)(\?|$)/u, async (route) => {
-          await route.abort();
-        });
-      }),
-    );
-    const observe = (): {
-      rect: HeroWindowRect;
-      inlineStyles: number;
-      inlineStyleElements: string[];
-      fourthPlanes: number;
-      progress: number;
-    } => {
-      const root = document.querySelector<HTMLElement>("[data-hero-intro-root]");
-      const windowNode = root?.querySelector<HTMLElement>("[data-hero-terminal-window]");
-      if (root === null || windowNode === null || root === undefined || windowNode === undefined) {
-        throw new Error("Hero intro is missing");
-      }
-      const targets = root.querySelectorAll<HTMLElement>(
-        "[data-hero-intro-copy], [data-hero-icon-stack], [data-hero-icon-front], [data-hero-icon-rear], [data-hero-icon-cursor], [data-hero-terminal-window], [data-hero-intro-content], [data-hero-intro-install], [data-hero-intro-description], [data-hero-intro-glow], [data-hero-intro-typed-input], [data-hero-intro-spinner], .hero-transcript-row",
-      );
-      const rect = windowNode.getBoundingClientRect();
-      return {
-        rect: { left: rect.left, top: rect.top, width: rect.width, height: rect.height },
-        inlineStyles: [...targets].filter((target) => target.hasAttribute("style")).length,
-        inlineStyleElements: [...targets]
-          .filter((target) => target.hasAttribute("style"))
-          .map(
-            (target) => `${target.tagName}.${target.className}: ${target.getAttribute("style")}`,
-          ),
-        fourthPlanes: root.querySelectorAll("[data-hero-intro-fourth-plane]").length,
-        progress: Number(root.getAttribute("data-hero-intro-progress")),
-      };
-    };
+      let resolveReady: (state: "playing" | "settled") => void = () => {};
+      const ready = new Promise<"playing" | "settled">((resolve) => {
+        resolveReady = resolve;
+      });
+      (window as Window & { heroIntroReady?: typeof ready }).heroIntroReady = ready;
+      document.addEventListener("hero-intro-playback-ready", (event) => {
+        if (!(event instanceof CustomEvent)) return;
+        const control = event.detail as { pause(): void; seek(seconds: number): void };
+        control.pause();
+        (
+          window as Window & { heroIntroPlaybackControl?: typeof control }
+        ).heroIntroPlaybackControl = control;
+        resolveReady("playing");
+      });
+      document.addEventListener("hero-intro-settled", () => resolveReady("settled"), {
+        once: true,
+      });
+    });
+
+    await applicationPage.route(/\.(mp4|webm)(\?|$)/u, async (route) => {
+      await route.abort();
+    });
+    return applicationPage;
+  } catch (error: unknown) {
+    await applicationPage.close();
+    throw error;
+  }
+}
+
+export const verifyHeroIntroDealtFan = defineBrowserCommand(
+  async (
+    { context },
+    pageUrl: string,
+  ): Promise<
+    Pick<
+      HeroPlaybackObservation,
+      | "midIntroWasPlaying"
+      | "fanAnglesAtEnd"
+      | "fourthAngleAtEnd"
+      | "fanBorderWidthsAtEnd"
+      | "fourthBorderWidthWhileDealing"
+      | "terminalWindowBorderWidth"
+      | "midIntroHorizontalOverflow"
+    >
+  > => {
+    const introPage = await openHeroPlaybackPage(context);
     try {
       await introPage.setViewportSize({ width: 1600, height: 1000 });
       await introPage.goto(pageUrl, { waitUntil: "commit" });
@@ -697,6 +711,62 @@ export const verifyHeroIntroPlayback = defineBrowserCommand(
       const midIntroHorizontalOverflow = await introPage.evaluate(
         () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
       );
+
+      return {
+        midIntroWasPlaying,
+        fanAnglesAtEnd,
+        fourthAngleAtEnd,
+        fanBorderWidthsAtEnd,
+        fourthBorderWidthWhileDealing,
+        terminalWindowBorderWidth,
+        midIntroHorizontalOverflow,
+      };
+    } finally {
+      await introPage.close();
+    }
+  },
+);
+
+export const verifyHeroIntroResize = defineBrowserCommand(
+  async (
+    { context },
+    pageUrl: string,
+  ): Promise<
+    Pick<
+      HeroPlaybackObservation,
+      | "resizeSettledEvents"
+      | "resizeProgress"
+      | "resizeInlineStyles"
+      | "resizeInlineStyleElements"
+      | "resizeFourthPlanes"
+      | "resizedWindow"
+      | "freshNarrowWindow"
+    >
+  > => {
+    const introPage = await openHeroPlaybackPage(context);
+    const freshNarrowPage = await openHeroPlaybackPage(context);
+    try {
+      await introPage.setViewportSize({ width: 1600, height: 1000 });
+      await introPage.goto(pageUrl, { waitUntil: "commit" });
+      const introReady = await introPage.evaluate(
+        async () => await (window as Window & { heroIntroReady?: Promise<string> }).heroIntroReady,
+      );
+      if (introReady !== "playing") throw new Error(`Intro settled before control: ${introReady}`);
+      await introPage.evaluate(() => {
+        const control = (
+          window as Window & { heroIntroPlaybackControl?: { seek(seconds: number): void } }
+        ).heroIntroPlaybackControl;
+        if (control === undefined) throw new Error("Hero intro playback control is missing");
+        control.seek(3);
+      });
+      await introPage.evaluate(() => {
+        const control = (
+          window as Window & { heroIntroPlaybackControl?: { seek(seconds: number): void } }
+        ).heroIntroPlaybackControl;
+        if (control === undefined) throw new Error("Hero intro playback control is missing");
+        control.seek(1.8);
+        control.seek(3.2);
+      });
       await introPage.evaluate(() => {
         const root = document.querySelector("[data-hero-intro-root]");
         root?.setAttribute("data-test-settled-events", "0");
@@ -709,7 +779,7 @@ export const verifyHeroIntroPlayback = defineBrowserCommand(
       });
       await introPage.setViewportSize({ width: 1100, height: 1000 });
       await introPage.waitForSelector('[data-hero-intro-state="settled"]');
-      const resized = await introPage.evaluate(observe);
+      const resized = await introPage.evaluate(observeHeroPlaybackLayout);
       const resizeSettledEvents = await introPage.evaluate(() =>
         Number(
           document
@@ -721,7 +791,34 @@ export const verifyHeroIntroPlayback = defineBrowserCommand(
       await freshNarrowPage.emulateMedia({ reducedMotion: "reduce" });
       await freshNarrowPage.setViewportSize({ width: 1100, height: 1000 });
       await freshNarrowPage.goto(pageUrl, { waitUntil: "domcontentloaded" });
-      const narrow = await freshNarrowPage.evaluate(observe);
+      const narrow = await freshNarrowPage.evaluate(observeHeroPlaybackLayout);
+
+      return {
+        resizeSettledEvents,
+        resizeProgress: resized.progress,
+        resizeInlineStyles: resized.inlineStyles,
+        resizeInlineStyleElements: resized.inlineStyleElements,
+        resizeFourthPlanes: resized.fourthPlanes,
+        resizedWindow: resized.rect,
+        freshNarrowWindow: narrow.rect,
+      };
+    } finally {
+      await Promise.all([introPage.close(), freshNarrowPage.close()]);
+    }
+  },
+);
+
+export const verifyHeroIntroReducedMotion = defineBrowserCommand(
+  async (
+    { context },
+    pageUrl: string,
+  ): Promise<Pick<HeroPlaybackObservation, "reducedMotionCreatedTimeline">> => {
+    const freshNarrowPage = await openHeroPlaybackPage(context);
+    try {
+      await freshNarrowPage.emulateMedia({ reducedMotion: "reduce" });
+      await freshNarrowPage.setViewportSize({ width: 1100, height: 1000 });
+      await freshNarrowPage.goto(pageUrl, { waitUntil: "domcontentloaded" });
+
       const reducedMotionCreatedTimeline = await freshNarrowPage.evaluate(
         () =>
           document
@@ -729,13 +826,20 @@ export const verifyHeroIntroPlayback = defineBrowserCommand(
             ?.hasAttribute("data-hero-intro-timeline-created") ?? false,
       );
 
-      await introPage.setViewportSize({ width: 1600, height: 1000 });
-      const afterSecondResize = await introPage.evaluate(observe);
-      await freshWidePage.emulateMedia({ reducedMotion: "reduce" });
-      await freshWidePage.setViewportSize({ width: 1600, height: 1000 });
-      await freshWidePage.goto(pageUrl, { waitUntil: "domcontentloaded" });
-      const wide = await freshWidePage.evaluate(observe);
+      return { reducedMotionCreatedTimeline };
+    } finally {
+      await freshNarrowPage.close();
+    }
+  },
+);
 
+export const verifyHeroIntroKeydown = defineBrowserCommand(
+  async (
+    { context },
+    pageUrl: string,
+  ): Promise<Pick<HeroPlaybackObservation, "keydownSettledEvents">> => {
+    const keydownPage = await openHeroPlaybackPage(context);
+    try {
       await keydownPage.setViewportSize({ width: 1600, height: 1000 });
       await keydownPage.goto(pageUrl, { waitUntil: "commit" });
       const keydownReady = await keydownPage.evaluate(
@@ -770,34 +874,63 @@ export const verifyHeroIntroPlayback = defineBrowserCommand(
             ?.getAttribute("data-test-settled-events"),
         ),
       );
+      return { keydownSettledEvents };
+    } finally {
+      await keydownPage.close();
+    }
+  },
+);
+
+export const verifyHeroIntroSecondResize = defineBrowserCommand(
+  async (
+    { context },
+    pageUrl: string,
+  ): Promise<
+    Pick<
+      HeroPlaybackObservation,
+      "afterSecondResizeWindow" | "freshWideWindow" | "afterSecondResizeInlineStyles"
+    >
+  > => {
+    const introPage = await openHeroPlaybackPage(context);
+    const freshWidePage = await openHeroPlaybackPage(context);
+    try {
+      await introPage.setViewportSize({ width: 1600, height: 1000 });
+      await introPage.goto(pageUrl, { waitUntil: "commit" });
+      const introReady = await introPage.evaluate(
+        async () => await (window as Window & { heroIntroReady?: Promise<string> }).heroIntroReady,
+      );
+      if (introReady !== "playing") throw new Error(`Intro settled before control: ${introReady}`);
+      await introPage.evaluate(() => {
+        const control = (
+          window as Window & { heroIntroPlaybackControl?: { seek(seconds: number): void } }
+        ).heroIntroPlaybackControl;
+        if (control === undefined) throw new Error("Hero intro playback control is missing");
+        control.seek(3);
+      });
+      await introPage.evaluate(() => {
+        const control = (
+          window as Window & { heroIntroPlaybackControl?: { seek(seconds: number): void } }
+        ).heroIntroPlaybackControl;
+        if (control === undefined) throw new Error("Hero intro playback control is missing");
+        control.seek(1.8);
+        control.seek(3.2);
+      });
+      await introPage.setViewportSize({ width: 1100, height: 1000 });
+      await introPage.waitForSelector('[data-hero-intro-state="settled"]');
+      await introPage.setViewportSize({ width: 1600, height: 1000 });
+      const afterSecondResize = await introPage.evaluate(observeHeroPlaybackLayout);
+      await freshWidePage.emulateMedia({ reducedMotion: "reduce" });
+      await freshWidePage.setViewportSize({ width: 1600, height: 1000 });
+      await freshWidePage.goto(pageUrl, { waitUntil: "domcontentloaded" });
+      const wide = await freshWidePage.evaluate(observeHeroPlaybackLayout);
+
       return {
-        midIntroWasPlaying,
-        fanAnglesAtEnd,
-        fourthAngleAtEnd,
-        fanBorderWidthsAtEnd,
-        fourthBorderWidthWhileDealing,
-        terminalWindowBorderWidth,
-        midIntroHorizontalOverflow,
-        resizeSettledEvents,
-        resizeProgress: resized.progress,
-        resizeInlineStyles: resized.inlineStyles,
-        resizeInlineStyleElements: resized.inlineStyleElements,
-        resizeFourthPlanes: resized.fourthPlanes,
-        resizedWindow: resized.rect,
-        freshNarrowWindow: narrow.rect,
         afterSecondResizeWindow: afterSecondResize.rect,
         freshWideWindow: wide.rect,
         afterSecondResizeInlineStyles: afterSecondResize.inlineStyles,
-        reducedMotionCreatedTimeline,
-        keydownSettledEvents,
       };
     } finally {
-      await Promise.all([
-        introPage.close(),
-        freshNarrowPage.close(),
-        freshWidePage.close(),
-        keydownPage.close(),
-      ]);
+      await Promise.all([introPage.close(), freshWidePage.close()]);
     }
   },
 );
