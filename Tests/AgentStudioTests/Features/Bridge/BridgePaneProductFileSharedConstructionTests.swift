@@ -1,4 +1,5 @@
 import AgentStudioCore
+import AgentStudioTestHarness
 import Foundation
 import Testing
 
@@ -6,6 +7,61 @@ import Testing
 
 @Suite("Bridge pane product File shared construction")
 struct BridgePaneProductFileSharedConstructionTests {
+    @Test("missing-root construction failure survives a source paused after preparation")
+    func missingRootFailureSurvivesPreparedSourcePause() async throws {
+        let fixture = try ProductFileSourceFixture(fileCount: 1)
+        defer { fixture.remove() }
+        let eventProbe = BridgeWorktreeProductConstructionEventProbe()
+        let coordinator = BridgeWorktreeProductConstructionCoordinator(eventSink: eventProbe.eventSink)
+        let beforeRootProbe = HeldStep<Void>(
+            "File construction before missing-root probe", cancellation: .holdThroughCancellation)
+        let preparedSource = HeldStep<Void>(
+            "File source prepared before first window read", cancellation: .holdThroughCancellation)
+        defer {
+            beforeRootProbe.release()
+            preparedSource.release()
+        }
+        let source = fixture.makeSource(
+            constructionCoordinator: coordinator,
+            sharedSnapshotBuilder: { request, preparation, publisher in
+                try await publisher.publishPreparation(preparation)
+                try await beforeRootProbe.arrive(())
+                for try await _ in BridgeWorktreeFileMaterializer.materializeTreeRowWindows(
+                    request: request, afterCount: 0, windowSize: 1)
+                {}
+                return BridgeSharedFileSnapshotCompletion()
+            })
+        let subscription = try fixture.openSnapshot()
+        let displacedRootURL = fixture.rootURL.deletingLastPathComponent()
+            .appending(path: "\(fixture.rootURL.lastPathComponent)-temporarily-unavailable")
+        try FileManager.default.moveItem(at: fixture.rootURL, to: displacedRootURL)
+        defer { try? FileManager.default.moveItem(at: displacedRootURL, to: fixture.rootURL) }
+        let pausePreparedSource: BridgePaneProductFileSourceFactSink = { fact in
+            if case .statusChanged = fact { try await preparedSource.arrive(()) }
+        }
+        let opening = Task {
+            try await source.open(
+                subscription: subscription, productAdmission: fixture.productAdmission.context,
+                emit: pausePreparedSource)
+        }
+        _ = try await beforeRootProbe.firstArrival()
+        _ = try await preparedSource.firstArrival()
+        beforeRootProbe.release()
+        _ = await eventProbe.waitFor(.buildFailed)
+        preparedSource.release()
+        switch await opening.result {
+        case .success:
+            Issue.record("Expected the real missing-root construction failure")
+        case .failure(let error):
+            let failure = BridgeFileSurfaceReconciler.failure(for: error, phase: .build)
+            #expect(failure.cause == .missingRoot, "Observed source-open error: \(String(reflecting: error))")
+            #expect(failure.refreshFailure.failureKind == .missingRoot)
+        }
+        await source.cancel(subscriptionId: subscription.subscriptionId)
+        await coordinator.shutdown()
+        await assertBridgeConstructionCoordinatorDrained(coordinator)
+    }
+
     @Test("preparation accounting includes retained ignore and status payloads")
     func preparationAccountingIsNonzeroAndDeterministic() {
         // Arrange
