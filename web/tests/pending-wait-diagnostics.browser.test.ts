@@ -36,6 +36,7 @@ it("captures a pending wait with a running document timeline", async () => {
   if (result.kind !== "captured") throw new Error("Pending fixture capture failed");
   expect(result.wait).toBe("fixture-wait");
   expect(result.timelineAdvancedMs).toBeGreaterThanOrEqual(0);
+  expect(result.timelineAdvancedMs).toBeGreaterThan(1);
   expect(result.wallElapsedMs).toBeGreaterThan(0);
   expect(typeof result.visibilityState).toBe("string");
   expect(result.stateReader).toBe("installed");
@@ -49,6 +50,7 @@ it("distinguishes a frozen document timeline from wall time", async () => {
   expect(result.wait).toBe("fixture-wait");
   expect(result.timelineAdvancedMs).toBeLessThanOrEqual(1);
   expect(result.wallElapsedMs).toBeGreaterThan(0);
+  expect(result.wallElapsedMs).toBeGreaterThan(1);
 });
 
 it("reports the absence of a registered command page", async () => {

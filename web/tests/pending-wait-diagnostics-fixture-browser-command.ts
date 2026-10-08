@@ -54,8 +54,6 @@ export const startPendingWaitFixture = defineBrowserCommand(
         await cdp.send("Animation.enable");
         await cdp.send("Animation.setPlaybackRate", { playbackRate: 0 });
       }
-      const registration: CommandPageRegistration = { page };
-      const unregister = registerCommandPageForDiagnostics(sessionId, registration);
       await page.evaluate(() => {
         const tracker = window["__pendingWaitTracker"];
         if (tracker === undefined) throw new Error("Pending wait tracker is missing");
@@ -70,6 +68,21 @@ export const startPendingWaitFixture = defineBrowserCommand(
           value: release,
         });
       });
+      await page.evaluate(async (): Promise<void> => {
+        const visibilityState = Object.getOwnPropertyDescriptor(
+          Document.prototype,
+          "visibilityState",
+        )?.get?.call(document);
+        if (visibilityState !== "visible")
+          throw new Error(
+            "Pending-wait fixture page is hidden; requestAnimationFrame would not fire",
+          );
+        await new Promise<void>((resolve) =>
+          requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+        );
+      });
+      const registration: CommandPageRegistration = { page };
+      const unregister = registerCommandPageForDiagnostics(sessionId, registration);
       fixturePages.set(sessionId, { page, unregister });
       return { started: true };
     } catch (error: unknown) {
