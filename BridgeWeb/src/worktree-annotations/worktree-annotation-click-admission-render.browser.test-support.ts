@@ -76,14 +76,16 @@ export function queryPierreElements(selector: string): Element[] {
 
 export function waitForPierreCondition(
 	predicate: () => boolean,
-	signal?: AbortSignal,
+	signal: AbortSignal,
+	recordObserver?: (observer: MutationObserver) => void,
 ): Promise<void> {
 	return new Promise<void>((resolve, reject): void => {
 		const observedRoots = new Set<Node>();
 		const observer = new MutationObserver(checkCondition);
+		recordObserver?.(observer);
 		function finish(): void {
 			observer.disconnect();
-			signal?.removeEventListener('abort', abortWait);
+			signal.removeEventListener('abort', abortWait);
 		}
 		function abortWait(): void {
 			finish();
@@ -107,9 +109,9 @@ export function waitForPierreCondition(
 				resolve();
 			}
 		}
-		if (signal?.aborted === true) abortWait();
+		if (signal.aborted) abortWait();
 		else {
-			signal?.addEventListener('abort', abortWait, { once: true });
+			signal.addEventListener('abort', abortWait, { once: true });
 			checkCondition();
 		}
 	});

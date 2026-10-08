@@ -1,9 +1,10 @@
-import { CodeView, InteractionManager, type CodeViewLineSelection } from '@pierre/diffs';
+import type { CodeView, CodeViewLineSelection } from '@pierre/diffs';
 import { afterEach, describe, expect, onTestFailed, test, vi, type MockInstance } from 'vitest';
 import { cleanup } from 'vitest-browser-react';
 
 import {
 	createClickAdmissionReviewHarness,
+	captureClickAdmissionOriginals,
 	type ClickAdmissionReviewHarness,
 } from '../review-viewer/code-view/worktree-annotation-click-admission.browser.test-support.js';
 import {
@@ -16,12 +17,12 @@ import '../app/bridge-app.css';
 import {
 	dispatchPointer,
 	requirePierreElement,
-	waitForSinglePierreUtility,
 	clickCurrentUtility,
 	pointerAt,
 	pointerHitProbe,
 	type PointerHitProbe,
 } from './worktree-annotation-click-admission-pointer.browser.test-support.js';
+import { proveDisposedInitialReadiness } from './worktree-annotation-click-admission-readiness.browser.test-support.js';
 import {
 	actEvent,
 	observeTestFrameWait,
@@ -62,6 +63,13 @@ vi.mock(
 
 const ownedHarnessDisposers = new Set<() => Promise<void>>();
 
+function registerHarnessCleanup(dispose: () => Promise<void>): () => void {
+	ownedHarnessDisposers.add(dispose);
+	return (): void => {
+		ownedHarnessDisposers.delete(dispose);
+	};
+}
+
 async function renderReviewHarness(
 	holdInteractionSetup = false,
 	beforeRender?: () => void,
@@ -77,12 +85,7 @@ async function renderReviewHarness(
 				console.info(`GO17 pending-owner snapshot: ${context.task.name}`, readSnapshot());
 			});
 		},
-		registerCleanup: (dispose): (() => void) => {
-			ownedHarnessDisposers.add(dispose);
-			return (): void => {
-				ownedHarnessDisposers.delete(dispose);
-			};
-		},
+		registerCleanup: registerHarnessCleanup,
 	});
 }
 
@@ -91,6 +94,21 @@ const composerSelector = '[aria-label="Write an annotation in Markdown"]';
 describe('worktree annotation click admission through Pierre pointers', () => {
 	afterEach(async (): Promise<void> => {
 		await completeCleanup([...ownedHarnessDisposers, cleanup]);
+	});
+
+	test('disposes held initial readiness before later rows can resume its setup', async () => {
+		await proveDisposedInitialReadiness({
+			createHeld: (controls): Promise<ClickAdmissionReviewHarness> =>
+				createClickAdmissionReviewHarness({
+					metadataPublicationOwner,
+					registerCleanup: controls.registerCleanup,
+					registerFailureDiagnostic: (): void => {},
+					isInitialReadinessReleased: controls.isReleased,
+					recordInitialReadinessObserver: controls.recordObserver,
+				}),
+			registerCleanup: registerHarnessCleanup,
+			admitLater: proveLaterHarnessAdmission,
+		});
 	});
 
 	test('dispatches a context hover on the current row after setup-boundary replacement', async () => {
@@ -138,7 +156,7 @@ describe('worktree annotation click admission through Pierre pointers', () => {
 	});
 
 	test('restores harness patches after setup rejects and a later harness admits', async () => {
-		const originals = captureHarnessOriginals();
+		const originals = captureClickAdmissionOriginals(metadataPublicationOwner);
 		const setupFailure = new Error('Controlled click-admission setup failure.');
 		await runWithOwnedCleanup(
 			async (): Promise<void> => {
@@ -162,7 +180,7 @@ describe('worktree annotation click admission through Pierre pointers', () => {
 	});
 
 	test('preserves body and publication failures while restoring prototypes and frame spies', async () => {
-		const originals = captureHarnessOriginals();
+		const originals = captureClickAdmissionOriginals(metadataPublicationOwner);
 		const bodyFailure = new Error('Controlled click-admission body failure.');
 		const publicationFailure = new Error('Controlled click-admission publication failure.');
 		const harness = await renderReviewHarness();
@@ -205,7 +223,7 @@ describe('worktree annotation click admission through Pierre pointers', () => {
 	});
 
 	test('owns preparation failure cleanup before installing the held-frame spies', async () => {
-		const originals = captureHarnessOriginals();
+		const originals = captureClickAdmissionOriginals(metadataPublicationOwner);
 		const preparationFailure = new Error('Controlled click-admission preparation failure.');
 		const harness = await renderReviewHarness();
 		await runWithOwnedCleanup(
@@ -417,11 +435,11 @@ describe('worktree annotation click admission through Pierre pointers', () => {
 					'[data-additions] [data-column-number="2"][data-line-type="change-addition"]',
 					'Expected an addition row for the held product frame proof.',
 				);
-				await harness.interactionSetup.waitForSetup(row);
+				await harness.waitForInteractionSetup(row);
 				await actEvent((): void =>
 					dispatchPointer(row, 'pointermove', pointerAt(row.getBoundingClientRect(), 701)),
 				);
-				await waitForSinglePierreUtility();
+				await harness.waitForUtility();
 			},
 			clickUtility: async (): Promise<void> => {
 				await clickCurrentUtility(702);
@@ -470,52 +488,6 @@ describe('worktree annotation click admission through Pierre pointers', () => {
 		);
 	});
 });
-
-function captureHarnessOriginals(): {
-	readonly assertRestored: () => void;
-	readonly restore: () => void;
-} {
-	// oxlint-disable-next-line unbound-method -- Identity receipt; never invoked unbound.
-	const setSlotCoordinator = CodeView.prototype.setSlotCoordinator;
-	// oxlint-disable-next-line unbound-method -- Identity receipt; never invoked unbound.
-	const setOptions = CodeView.prototype.setOptions;
-	// oxlint-disable-next-line unbound-method -- Identity receipt; never invoked unbound.
-	const codeViewSetup = CodeView.prototype.setup;
-	// oxlint-disable-next-line unbound-method -- Identity receipt; never invoked unbound.
-	const interactionSetup = InteractionManager.prototype.setup;
-	// oxlint-disable-next-line unbound-method -- Identity receipt; never invoked unbound.
-	const interactionCleanup = InteractionManager.prototype.cleanUp;
-	const metadataPublication = metadataPublicationOwner.publish;
-	const requestFrame = globalThis.requestAnimationFrame;
-	const cancelFrame = globalThis.cancelAnimationFrame;
-	return {
-		assertRestored: (): void => {
-			// oxlint-disable-next-line unbound-method -- Compares method identity; never invoked.
-			expect.soft(CodeView.prototype.setSlotCoordinator).toBe(setSlotCoordinator);
-			// oxlint-disable-next-line unbound-method -- Compares method identity; never invoked.
-			expect.soft(CodeView.prototype.setOptions).toBe(setOptions);
-			// oxlint-disable-next-line unbound-method -- Compares method identity; never invoked.
-			expect.soft(CodeView.prototype.setup).toBe(codeViewSetup);
-			// oxlint-disable-next-line unbound-method -- Compares method identity; never invoked.
-			expect.soft(InteractionManager.prototype.setup).toBe(interactionSetup);
-			// oxlint-disable-next-line unbound-method -- Compares method identity; never invoked.
-			expect.soft(InteractionManager.prototype.cleanUp).toBe(interactionCleanup);
-			expect.soft(metadataPublicationOwner.publish).toBe(metadataPublication);
-			expect.soft(globalThis.requestAnimationFrame).toBe(requestFrame);
-			expect.soft(globalThis.cancelAnimationFrame).toBe(cancelFrame);
-		},
-		restore: (): void => {
-			CodeView.prototype.setSlotCoordinator = setSlotCoordinator;
-			CodeView.prototype.setOptions = setOptions;
-			CodeView.prototype.setup = codeViewSetup;
-			InteractionManager.prototype.setup = interactionSetup;
-			InteractionManager.prototype.cleanUp = interactionCleanup;
-			metadataPublicationOwner.publish = metadataPublication;
-			globalThis.requestAnimationFrame = requestFrame;
-			globalThis.cancelAnimationFrame = cancelFrame;
-		},
-	};
-}
 
 async function proveLaterHarnessAdmission(): Promise<void> {
 	const laterHarness = await renderReviewHarness();

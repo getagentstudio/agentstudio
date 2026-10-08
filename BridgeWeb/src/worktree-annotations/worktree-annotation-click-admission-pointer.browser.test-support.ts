@@ -52,7 +52,7 @@ export function requirePierreElement(selector: string, message: string): HTMLEle
 	return element;
 }
 
-export async function waitForSinglePierreUtility(signal?: AbortSignal): Promise<HTMLElement> {
+export async function waitForSinglePierreUtility(signal: AbortSignal): Promise<HTMLElement> {
 	await waitForPierreCondition(
 		(): boolean => queryPierreElements('[data-utility-button]').length === 1,
 		signal,
@@ -73,7 +73,7 @@ export async function hoverAndClickUtility(props: {
 	readonly isRowReady: (row: HTMLElement) => boolean;
 	readonly pointerId: number;
 	readonly onHoverDispatched: (row: HTMLElement) => void;
-	readonly signal?: AbortSignal;
+	readonly signal: AbortSignal;
 	readonly reportWait?: (kind: string) => void;
 }): Promise<void> {
 	props.reportWait?.('hover pointermove act');

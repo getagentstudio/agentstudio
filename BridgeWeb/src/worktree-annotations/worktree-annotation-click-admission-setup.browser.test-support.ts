@@ -63,9 +63,8 @@ export class PierreInteractionSetupFacts {
 		return pre instanceof HTMLPreElement && this.#readyPreNodes.has(pre);
 	}
 
-	waitForSetup(row: HTMLElement, signal?: AbortSignal): Promise<void> {
-		if (signal?.aborted === true)
-			return Promise.reject(new Error('Click-admission setup wait disposed.'));
+	waitForSetup(row: HTMLElement, signal: AbortSignal): Promise<void> {
+		if (signal.aborted) return Promise.reject(new Error('Click-admission setup wait disposed.'));
 		const pre = row.closest('pre');
 		if (!(pre instanceof HTMLPreElement)) {
 			return Promise.reject(new Error('Expected a Pierre row within its interaction pre.'));
@@ -74,7 +73,7 @@ export class PierreInteractionSetupFacts {
 		return new Promise<void>((resolve, reject): void => {
 			const waiters = this.#waiters.get(pre) ?? new Set<() => void>();
 			const finishSetup = (): void => {
-				signal?.removeEventListener('abort', abortSetup);
+				signal.removeEventListener('abort', abortSetup);
 				resolve();
 			};
 			const abortSetup = (): void => {
@@ -82,7 +81,7 @@ export class PierreInteractionSetupFacts {
 				if (waiters.size === 0) this.#waiters.delete(pre);
 				reject(new Error('Click-admission setup wait disposed.'));
 			};
-			signal?.addEventListener('abort', abortSetup, { once: true });
+			signal.addEventListener('abort', abortSetup, { once: true });
 			waiters.add(finishSetup);
 			this.#waiters.set(pre, waiters);
 			this.#recordFirstHoverAction('awaitingInteractionSetup');
