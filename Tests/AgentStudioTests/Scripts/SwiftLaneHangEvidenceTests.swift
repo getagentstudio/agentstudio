@@ -73,12 +73,13 @@ struct SwiftLaneHangEvidenceTests {
 
         let laneOutput = try await laneBashAllowingFailure(
             "mkdir -p '\(workDirectory)'; "
-                + "LOG_PREFIX=lane; TIMEOUT_SECONDS=0; BUILD_PATH=.build-agent-1; "
+                + "LOG_PREFIX=lane; TIMEOUT_SECONDS=0; BUILD_PATH='\(workDirectory)/build'; "
                 + "export LANE_EVENT_STREAM_DIR='\(workDirectory)/ci-runs'; "
                 + "source scripts/swift-test-helpers.sh; set +e; "
                 + "run_swift_with_timeout 'dump probe' 0 /bin/bash -c "
                 + "'while true; do sleep 1; done' swiftpm-testing-helper AgentStudioTests.xctest "
-                + "|| returned=$?; echo \"RETURNED=${returned:-0}\""
+                + "|| returned=$?; echo \"RETURNED=${returned:-0}\"",
+            innerWatchdog: .armed
         )
         let dumpRange = try #require(laneOutput.range(of: "lane-report task_dump="))
         let reapRange = try #require(laneOutput.range(of: "lane-report timeout_reap="))
@@ -120,13 +121,14 @@ struct SwiftLaneHangEvidenceTests {
         try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: workDirectory + "/bin/xcrun")
 
         let laneOutput = try await laneBashAllowingFailure(
-            "LOG_PREFIX=lane; TIMEOUT_SECONDS=0; BUILD_PATH=.build-agent-1; "
+            "LOG_PREFIX=lane; TIMEOUT_SECONDS=0; BUILD_PATH='\(workDirectory)/build'; "
                 + "export LANE_EVENT_STREAM_DIR='\(evidenceDirectory)'; "
                 + "export LANE_WATCHDOG_ARM_PATH='\(workDirectory)/watchdog-armed'; "
                 + "export PATH='\(workDirectory)/bin':$PATH; "
                 + "source scripts/swift-test-helpers.sh; set +e; "
                 + "run_swift_with_timeout 'evidence probe' 0 /bin/bash '\(workDirectory)/wedged-test.sh' "
-                + "swiftpm-testing-helper AgentStudioTests.xctest || returned=$?; echo \"RETURNED=${returned:-0}\""
+                + "swiftpm-testing-helper AgentStudioTests.xctest || returned=$?; echo \"RETURNED=${returned:-0}\"",
+            innerWatchdog: .armed
         )
         let evidenceFiles = try FileManager.default.contentsOfDirectory(atPath: evidenceDirectory).sorted()
         let ledger = try #require(evidenceFiles.first { $0.hasSuffix(".events.jsonl") })
@@ -248,12 +250,13 @@ struct SwiftLaneHangEvidenceTests {
         """.write(toFile: workDirectory + "/wedged-test.sh", atomically: true, encoding: .utf8)
 
         let report = try await laneBashAllowingFailure(
-            "LOG_PREFIX=lane; TIMEOUT_SECONDS=0; BUILD_PATH=.build-agent-1; "
+            "LOG_PREFIX=lane; TIMEOUT_SECONDS=0; BUILD_PATH='\(workDirectory)/build'; "
                 + "export LANE_EVENT_STREAM_DIR='\(workDirectory)/ci-runs'; "
                 + "export LANE_WATCHDOG_ARM_PATH='\(workDirectory)/armed'; "
                 + "source scripts/swift-test-helpers.sh; set +e; "
                 + "run_swift_with_timeout 'unavailable probe' 0 /bin/bash '\(workDirectory)/wedged-test.sh' "
-                + "swiftpm-testing-helper AgentStudioTests.xctest || returned=$?; echo \"RETURNED=${returned:-0}\""
+                + "swiftpm-testing-helper AgentStudioTests.xctest || returned=$?; echo \"RETURNED=${returned:-0}\"",
+            innerWatchdog: .armed
         )
         let unavailableRange = try #require(report.range(of: "lane-report held_step_log_unavailable"))
         let reapRange = try #require(report.range(of: "lane-report timeout_reap="))
@@ -281,7 +284,7 @@ struct SwiftLaneHangEvidenceTests {
             )
         }
         func wedgedLane(inspectorDirectory: String) -> String {
-            "LOG_PREFIX=lane; TIMEOUT_SECONDS=0; BUILD_PATH=.build-agent-1; "
+            "LOG_PREFIX=lane; TIMEOUT_SECONDS=0; BUILD_PATH='\(workDirectory)/\(inspectorDirectory)-build'; "
                 + "export LANE_EVENT_STREAM_DIR='\(workDirectory)/\(inspectorDirectory)-runs'; "
                 + "export LANE_STACK_SAMPLE_TOOL='\(workDirectory)/no-such-sample'; "
                 + "export PATH='\(workDirectory)/\(inspectorDirectory)':$PATH; "
@@ -291,8 +294,10 @@ struct SwiftLaneHangEvidenceTests {
                 + "echo \"DUMPS=$(ls -1 '\(workDirectory)/\(inspectorDirectory)-runs' | grep -c task-dump || true)\""
         }
 
-        let samplerMissing = try await laneBashAllowingFailure(wedgedLane(inspectorDirectory: "attaching"))
-        let bothMissing = try await laneBashAllowingFailure(wedgedLane(inspectorDirectory: "refusing"))
+        let samplerMissing = try await laneBashAllowingFailure(
+            wedgedLane(inspectorDirectory: "attaching"), innerWatchdog: .armed)
+        let bothMissing = try await laneBashAllowingFailure(
+            wedgedLane(inspectorDirectory: "refusing"), innerWatchdog: .armed)
 
         for laneOutput in [samplerMissing, bothMissing] {
             #expect(laneOutput.contains("RETURNED=124"))
