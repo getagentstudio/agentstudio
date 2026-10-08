@@ -1,3 +1,10 @@
+import {
+	ClickAdmissionResourceOwner,
+	type ClickAdmissionResourceGroup,
+	type ClickAdmissionOwnedWait,
+	type ClickAdmissionResourceToken,
+} from './worktree-annotation-click-admission-resource-owner.browser.test-support.js';
+
 type FirstHoverAction =
 	| 'awaitingInteractionSetup'
 	| 'pointerMoveBeforeSetup'
@@ -8,30 +15,38 @@ export class PierreInteractionSetupFacts {
 	readonly #readyPreNodes = new WeakSet<HTMLPreElement>();
 	readonly #preByManager = new WeakMap<object, HTMLPreElement>();
 	readonly #waiters = new Map<HTMLPreElement, Set<() => void>>();
-	readonly #heldSetups: (() => void)[] = [];
+	readonly #heldSetups: { readonly install: () => void; token?: ClickAdmissionResourceToken }[] =
+		[];
+	readonly #resources: ClickAdmissionResourceOwner;
+	readonly #group: ClickAdmissionResourceGroup;
+	readonly #firstHover: ClickAdmissionOwnedWait<FirstHoverAction>;
+	readonly #hover: ClickAdmissionOwnedWait<FirstHoverAction>;
 	readonly hoverDispatched: Promise<FirstHoverAction>;
 	readonly #recordHoverDispatched: (action: FirstHoverAction) => void;
 	readonly firstHoverAction: Promise<FirstHoverAction>;
 	readonly #recordFirstHoverAction: (action: FirstHoverAction) => void;
 	#holdingSetup: boolean;
 
-	constructor(holdSetup: boolean) {
+	constructor(
+		holdSetup: boolean,
+		resources: ClickAdmissionResourceOwner,
+		group: ClickAdmissionResourceGroup,
+	) {
 		this.#holdingSetup = holdSetup;
-		const registration: {
-			resolve?: (action: FirstHoverAction) => void;
-			resolveHover?: (action: FirstHoverAction) => void;
-		} = {};
-		this.firstHoverAction = new Promise<FirstHoverAction>((resolve): void => {
-			registration.resolve = resolve;
+		this.#resources = resources;
+		this.#group = group;
+		this.#firstHover = resources.wait<FirstHoverAction>({ group, label: 'first hover action' });
+		this.#hover = resources.wait<FirstHoverAction>({ group, label: 'hover dispatched' });
+		this.firstHoverAction = this.#firstHover.promise;
+		this.hoverDispatched = this.#hover.promise;
+		this.#recordFirstHoverAction = this.#firstHover.resolve;
+		this.#recordHoverDispatched = this.#hover.resolve;
+		resources.register({
+			group,
+			kind: 'root',
+			label: 'interaction setup facts',
+			restore: (): void => this.dispose(),
 		});
-		this.hoverDispatched = new Promise<FirstHoverAction>((resolve): void => {
-			registration.resolveHover = resolve;
-		});
-		if (registration.resolve === undefined || registration.resolveHover === undefined) {
-			throw new Error('Expected the first-hover fact continuation to be registered.');
-		}
-		this.#recordFirstHoverAction = registration.resolve;
-		this.#recordHoverDispatched = registration.resolveHover;
 	}
 
 	install(manager: object, pre: HTMLPreElement, setup: () => void): void {
@@ -42,8 +57,21 @@ export class PierreInteractionSetupFacts {
 			for (const resolve of this.#waiters.get(pre) ?? []) resolve();
 			this.#waiters.delete(pre);
 		};
-		if (this.#holdingSetup) this.#heldSetups.push(install);
-		else install();
+		if (this.#holdingSetup) {
+			const held: { readonly install: () => void; token?: ClickAdmissionResourceToken } = {
+				install,
+			};
+			held.token = this.#resources.register({
+				group: this.#group,
+				kind: 'wait',
+				label: 'held interaction setup',
+				restore: (): void => {
+					const index = this.#heldSetups.indexOf(held);
+					if (index >= 0) this.#heldSetups.splice(index, 1);
+				},
+			});
+			this.#heldSetups.push(held);
+		} else install();
 	}
 
 	retire(manager: object): void {
@@ -63,34 +91,43 @@ export class PierreInteractionSetupFacts {
 		return pre instanceof HTMLPreElement && this.#readyPreNodes.has(pre);
 	}
 
-	waitForSetup(row: HTMLElement, signal: AbortSignal): Promise<void> {
-		if (signal.aborted) return Promise.reject(new Error('Click-admission setup wait disposed.'));
+	waitForSetup(row: HTMLElement): Promise<void> {
+		this.#resources.assertOpen(this.#group);
 		const pre = row.closest('pre');
-		if (!(pre instanceof HTMLPreElement)) {
+		if (!(pre instanceof HTMLPreElement))
 			return Promise.reject(new Error('Expected a Pierre row within its interaction pre.'));
-		}
 		if (this.#readyPreNodes.has(pre)) return Promise.resolve();
-		return new Promise<void>((resolve, reject): void => {
-			const waiters = this.#waiters.get(pre) ?? new Set<() => void>();
-			const finishSetup = (): void => {
-				signal.removeEventListener('abort', abortSetup);
-				resolve();
-			};
-			const abortSetup = (): void => {
-				waiters.delete(finishSetup);
-				if (waiters.size === 0) this.#waiters.delete(pre);
-				reject(new Error('Click-admission setup wait disposed.'));
-			};
-			signal.addEventListener('abort', abortSetup, { once: true });
-			waiters.add(finishSetup);
-			this.#waiters.set(pre, waiters);
-			this.#recordFirstHoverAction('awaitingInteractionSetup');
+		const completion = this.#resources.wait<void>({
+			group: this.#group,
+			label: 'interaction pre setup',
+			error: new Error('Click-admission setup wait disposed.'),
 		});
+		const waiters = this.#waiters.get(pre) ?? new Set<() => void>();
+		const finishSetup = (): void => completion.resolve(undefined);
+		const removeWaiter = (): void => {
+			waiters.delete(finishSetup);
+			if (waiters.size === 0) this.#waiters.delete(pre);
+			this.#resources.forget(indexResource);
+		};
+		const indexResource = this.#resources.register({
+			group: this.#group,
+			kind: 'wait',
+			label: 'setup waiter index',
+			restore: removeWaiter,
+		});
+		waiters.add(finishSetup);
+		this.#waiters.set(pre, waiters);
+		void completion.promise.then(removeWaiter, removeWaiter);
+		this.#recordFirstHoverAction('awaitingInteractionSetup');
+		return completion.promise;
 	}
 
 	releaseSetup(): void {
 		this.#holdingSetup = false;
-		for (const setup of this.#heldSetups.splice(0)) setup();
+		for (const held of this.#heldSetups.splice(0)) {
+			if (held.token !== undefined) this.#resources.forget(held.token);
+			if (this.#resources.isOpen(this.#group)) held.install();
+		}
 	}
 
 	dispose(): void {
