@@ -40,6 +40,23 @@ actor ReconnectFileMetadataSource: BridgePaneProductFileMetadataProducing {
     private var activeSubscriptionWaiters: [CheckedContinuation<Void, Never>] = []
     private var updateCallWaiters: [(Int, CheckedContinuation<Void, Never>)] = []
     private var openCompletionStepByOrdinal: [Int: HeldStep<Void>] = [:]
+    private var openingEmitStepByOrdinal: [Int: HeldStep<Void>] = [:]
+    private var openingEmitObserver: (@Sendable () -> Void)?
+    private var openingInventoryStepByOrdinal: [Int: HeldStep<Void>] = [:]
+    private var openingInventoryObserver: (@Sendable () -> Void)?
+
+    func holdOpeningInventory(ordinal: Int, at step: HeldStep<Void>, returned: @escaping @Sendable () -> Void) {
+        openingInventoryStepByOrdinal[ordinal] = step
+        openingInventoryObserver = returned
+    }
+
+    func observeOpeningEmit(_ observer: (@Sendable () -> Void)?) {
+        openingEmitObserver = observer
+    }
+
+    func holdOpeningEmit(ordinal: Int, at step: HeldStep<Void>) {
+        openingEmitStepByOrdinal[ordinal] = step
+    }
 
     func holdOpenCompletion(ordinal: Int, at step: HeldStep<Void>) {
         openCompletionStepByOrdinal[ordinal] = step
@@ -134,7 +151,20 @@ actor ReconnectFileMetadataSource: BridgePaneProductFileMetadataProducing {
         // Released before the emit suspends: the subscription is already open here, so a
         // waiter should not be held behind the first event's delivery.
         resumeActiveSubscriptionWaiters()
+        if let openingEmitStep = openingEmitStepByOrdinal.removeValue(forKey: openCallCount) {
+            try await openingEmitStep.arrive(())
+        }
         try await emit(try reconnectFileSourceAcceptedEvent(cursor: "initial"))
+        openingEmitObserver?()
+        if let inventoryStep = openingInventoryStepByOrdinal.removeValue(forKey: openCallCount) {
+            try await inventoryStep.arrive(())
+            publicationCallCount += 1
+            guard case .sourceAccepted(let source) = try reconnectFileSourceAcceptedEvent(cursor: "inventory") else {
+                throw ReconnectSubscriptionTestError.expectedBatch
+            }
+            try await emit(.inventoryProgress(.init(finalWindow: true, updatedPaths: [], source: source)))
+            openingInventoryObserver?()
+        }
         if let openCompletionStep = openCompletionStepByOrdinal.removeValue(forKey: openCallCount) {
             try await openCompletionStep.arrive(())
             try Task.checkCancellation()
@@ -189,8 +219,11 @@ actor ReconnectFileMetadataSource: BridgePaneProductFileMetadataProducing {
     ) -> BridgePaneProductFileContentReadPlan? { nil }
 }
 
-func makeReconnectSubscriptionContext() async throws -> ReconnectSubscriptionContext {
-    let harness = try await BridgeProductSessionLifecycleHarness.opened()
+func makeReconnectSubscriptionContext(
+    emissionWaitObserver: BridgeProductSession.ViewEmissionWaiterRegistrationObserver? = nil
+) async throws -> ReconnectSubscriptionContext {
+    let harness = try await BridgeProductSessionLifecycleHarness.opened(
+        viewEmissionWaiterRegistrationObserver: emissionWaitObserver)
     let refreshWorkAdmission = await BridgePaneRefreshWorkAdmissionTestContext.foreground()
     let fileSource = ReconnectFileMetadataSource()
     let provider = BridgePaneProductSchemeProvider(
