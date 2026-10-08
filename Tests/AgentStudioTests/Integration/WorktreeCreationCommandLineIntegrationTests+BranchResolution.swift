@@ -424,7 +424,10 @@ extension WorktreeCreationCommandLineIntegrationTests {
         #expect(try tooLong.refused().reason == "invalidBranchName")
         let head = await fixture.runNew("HEAD", json: true)
         #expect(head.exit == 1)
-        #expect(try head.refused().reason == "invalidBranchName")
+        let headRefusal = try head.refused()
+        #expect(headRefusal.reason == "invalidBranchName")
+        // Refused by the name check itself, not later by Git: nothing was fetched.
+        #expect(headRefusal.fetch == nil)
     }
 
     @Test("a branch taken by another worktree at the attach, after the fetch, still reports the fetch")
