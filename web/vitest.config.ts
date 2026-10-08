@@ -49,6 +49,11 @@ import {
 import { verifyHeroWorkspace } from "./tests/hero-workspace-browser-command.ts";
 import { verifyInstallCommandLayout } from "./tests/install-command-layout-browser-command.ts";
 import { buildMediaCalloutForBrowserTest } from "./tests/media-callout-browser-command.ts";
+import {
+  releasePendingWaitFixture,
+  startPendingWaitFixture,
+} from "./tests/pending-wait-diagnostics-fixture-browser-command.ts";
+import { capturePendingWaitDiagnostics } from "./tests/pending-wait-diagnostics.ts";
 import { verifyProofChapter, verifyProofClipMedia } from "./tests/proof-chapter-browser-command.ts";
 import { verifyRailViewportBands } from "./tests/rail-band-browser-command.ts";
 import { buildSceneBundlesForBrowserTest } from "./tests/scene-bundle-browser-command.ts";
@@ -83,6 +88,7 @@ export function selectChromeLaunchOptions(
 const webTestHangBoundMilliseconds = 120_000;
 
 export default defineConfig({
+  cacheDir: "/tmp/agentstudio-website-vite-cache",
   test: {
     projects: [
       {
@@ -96,7 +102,7 @@ export default defineConfig({
       {
         // Pre-bundle GSAP up front so the first browser run does not discover it
         // mid-run and reload the test page.
-        optimizeDeps: { include: ["gsap"] },
+        optimizeDeps: { include: ["gsap"], exclude: ["fsevents"] },
         test: {
           name: "browser",
           testTimeout: webTestHangBoundMilliseconds,
@@ -120,6 +126,9 @@ export default defineConfig({
               verifyManualChapterClaim,
               verifyChapterScrollGeometry,
               verifyChapterStepHop,
+              capturePendingWaitDiagnostics,
+              startPendingWaitFixture,
+              releasePendingWaitFixture,
               verifyReducedMotionStepLine,
               verifyHeroIntroLayout,
               verifyHeroNoScriptWidth,
