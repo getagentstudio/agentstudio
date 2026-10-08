@@ -231,8 +231,9 @@ package struct WorktreeCreationBranchResolver: Sendable {
         guard reads.localBranch(named: branch) == nil else {
             return .refused(.creationStopped(.branchAlreadyExists(branch: branch)))
         }
-        // No branch with an invalid name can exist, and reading one would fail as a bad revision.
-        guard case .success = WorktreeBranchName.validated(start.branchName) else {
+        // No branch with a malformed name can exist, and reading one would fail as a bad revision. A start
+        // names an existing branch (D15), so the new-branch length cap doesn't apply.
+        guard WorktreeBranchName.isWellFormedExistingName(start.branchName) else {
             return .refused(.startBranchNotFound(typedStart))
         }
         let remoteReference = "refs/remotes/\(start.remoteName)/\(start.branchName)"

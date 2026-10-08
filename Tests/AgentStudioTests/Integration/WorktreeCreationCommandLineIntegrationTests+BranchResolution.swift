@@ -1,3 +1,4 @@
+import AgentStudioGit
 import AgentStudioWorktreeOperations
 import Foundation
 import Testing
@@ -365,6 +366,92 @@ extension WorktreeCreationCommandLineIntegrationTests {
                 == "created feature/shared at \(sharedDestination.path) "
                 + "(copy-on-write; existing branch; fast-forwarded to origin/feature/shared)")
         #expect(try await fixture.git("rev-parse", "refs/heads/feature/shared") == sharedTip)
+    }
+
+    @Test("--from-branch starts from an existing branch whose name is longer than a new branch's may be")
+    func startsFromLongExistingBranchNames() async throws {
+        let fixture = try await WorktreeCreationRemoteFixture.create(named: "new-long-start")
+        defer { fixture.destroy() }
+        let segment = String(repeating: "s", count: 60)
+        let localStart = "release/\(segment)/\(segment)/\(segment)/\(segment)/local"
+        let remoteStart = "release/\(segment)/\(segment)/\(segment)/\(segment)/remote"
+        #expect(localStart.count > WorktreeCreationPolicy.maximumBranchNameLength)
+        try await fixture.git("branch", localStart, "main")
+        let remoteTip = try await fixture.advance(remoteStart, file: "long.txt")
+
+        let fromLocal = await fixture.runNew("feature/short-local", ["--from-branch", localStart], json: true)
+        #expect(fromLocal.exit == 0, "\(fromLocal.output)")
+        #expect(
+            try fromLocal.created().start
+                == .init(
+                    commit: fixture.mainCommit, from: "localBranch", ref: "refs/heads/\(localStart)",
+                    localOnlyCommits: nil))
+
+        let fromRemote = await fixture.runNew(
+            "feature/short-remote", ["--from-branch", "origin/\(remoteStart)"], json: true)
+        #expect(fromRemote.exit == 0, "\(fromRemote.output)")
+        #expect(try fromRemote.created().start.commit == remoteTip)
+
+        // A malformed start is still refused, and a new branch still has the length cap.
+        let malformed = await fixture.runNew("feature/short-bad", ["--from-branch", "release..bad"], json: true)
+        #expect(malformed.exit == 1)
+        #expect(try malformed.refused().reason == "startBranchNotFound")
+        let tooLong = await fixture.runNew(localStart + "-new", json: true)
+        #expect(tooLong.exit == 1)
+        #expect(try tooLong.refused().reason == "invalidBranchName")
+    }
+
+    @Test("a branch taken by another worktree at the attach, after the fetch, still reports the fetch")
+    func lateBranchCheckedOutKeepsFetch() async throws {
+        let fixture = try await WorktreeCreationRemoteFixture.create(named: "new-late-held")
+        defer { fixture.destroy() }
+        let tip = try await fixture.advance("feature/late", file: "late.txt")
+        let realClient = LibGit2AgentStudioGitLocalClient()
+        let snapshot = try #require(await realClient.worktrees(for: fixture.repository).first)
+        let identity = try await realClient.repositoryIdentity(for: fixture.repository)
+        let repository = try #require(identity.mainWorktreePath).standardizedFileURL
+        let racer = fixture.folder.appending(path: "racer")
+        // The SDK refuses at the attach when another worktree took the branch after resolution.
+        let client = WorktreeOperationClientStub(
+            startPath: repository, snapshot: snapshot, identity: identity, baseClient: realClient,
+            forkFailure: .branchCheckedOut(worktreePath: racer))
+        let runner = WorktreeOperationRunner(
+            client: client, remoteClient: SystemGitRemoteClient(configuration: .init(allowedProtocols: [.file])))
+
+        let outcome = await runner.run(
+            .create(
+                WorktreeCreateRequest(
+                    start: repository, branch: "feature/late", source: .mainWorktree, startBranch: nil,
+                    materialization: .copyOnWrite, fetchPolicy: .fetch)))
+
+        #expect(
+            outcome
+                == .refused(
+                    .creationStopped(.branchCheckedOut(path: racer.standardizedFileURL.path)),
+                    creationFetch: .fetched(
+                        remoteName: "origin", branchName: "feature/late", commit: tip, lockResidue: nil)))
+        let human = try WorktreeCommandLineFormatter.format(outcome: outcome, usesJSONOutput: false)
+        #expect(human.text.hasSuffix("\nfetch: fetched origin/feature/late \(tip)"))
+    }
+
+    @Test("a malformed copy config doesn't hide a branch held by another worktree")
+    func heldBranchWinsOverInvalidConfig() async throws {
+        let fixture = try await WorktreeCreationRemoteFixture.create(named: "new-held-invalid-config")
+        defer { fixture.destroy() }
+        let holder = fixture.folder.appending(path: "holder")
+        try await fixture.git("worktree", "add", "-b", "feature/held", holder.path)
+        try Data("{".utf8).write(to: fixture.repository.appending(path: ".agentstudio.config.json"))
+
+        let held = await fixture.runNew("feature/held", json: true)
+        #expect(held.exit == 1)
+        let refusal = try held.refused()
+        #expect(refusal.reason == "branchCheckedOut")
+        #expect(refusal.path.map(Self.realPath) == Self.realPath(holder.path))
+
+        // With nothing held, the same config still refuses configInvalid.
+        let free = await fixture.runNew("feature/free", json: true)
+        #expect(free.exit == 1)
+        #expect(try free.refused().reason == "configInvalid")
     }
 
     static func realPath(_ path: String) -> String {

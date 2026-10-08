@@ -22,24 +22,35 @@ package struct WorktreeBranchName: Equatable, Hashable, Sendable {
         guard !text.isEmpty else { return .failure(.empty) }
         let maximumLength = WorktreeCreationPolicy.maximumBranchNameLength
         guard text.count <= maximumLength else { return .failure(.tooLong(maximumLength: maximumLength)) }
+        if let rejection = syntaxRejection(text) { return .failure(rejection) }
+        return .success(Self(rawValue: text))
+    }
+
+    /// Whether `text` could name a branch that already exists: the same `git check-ref-format --branch`
+    /// syntax as `validated`, without the length cap only a new branch's ref and destination slug need.
+    package static func isWellFormedExistingName(_ text: String) -> Bool {
+        !text.isEmpty && syntaxRejection(text) == nil
+    }
+
+    private static func syntaxRejection(_ text: String) -> WorktreeBranchNameRejection? {
         let hasWhitespaceOrControl = text.unicodeScalars.contains {
             CharacterSet.whitespacesAndNewlines.contains($0) || CharacterSet.controlCharacters.contains($0)
         }
-        guard !hasWhitespaceOrControl else { return .failure(.containsWhitespaceOrControlCharacter) }
+        guard !hasWhitespaceOrControl else { return .containsWhitespaceOrControlCharacter }
         if let forbidden = text.first(where: forbiddenCharacters.contains) {
-            return .failure(.containsForbiddenCharacter(forbidden))
+            return .containsForbiddenCharacter(forbidden)
         }
         if let sequence = forbiddenSequences.first(where: text.contains) {
-            return .failure(.containsForbiddenSequence(sequence))
+            return .containsForbiddenSequence(sequence)
         }
-        guard text != "@", !text.hasPrefix("-") else { return .failure(.invalidComponentBoundary) }
+        guard text != "@", !text.hasPrefix("-") else { return .invalidComponentBoundary }
         let components = text.split(separator: "/", omittingEmptySubsequences: false)
         let hasInvalidComponent = components.contains { component in
             component.isEmpty || component.hasPrefix(".") || component.hasSuffix(".")
                 || component.hasSuffix(".lock")
         }
-        guard !hasInvalidComponent else { return .failure(.invalidComponentBoundary) }
-        return .success(Self(rawValue: text))
+        guard !hasInvalidComponent else { return .invalidComponentBoundary }
+        return nil
     }
 
     private init(rawValue: String) {

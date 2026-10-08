@@ -45,6 +45,8 @@ struct WorktreeOperationClientStub: AgentStudioGitLocalClient {
                 GitDeleteLocalBranchResult, GitLockedOperationFailure<GitDeleteLocalBranchErrorReason>
             >
         )?
+    /// What every fork throws; by default the capability rejection.
+    let forkFailure: GitWorktreeForkError
 
     init(
         startPath: URL,
@@ -70,7 +72,8 @@ struct WorktreeOperationClientStub: AgentStudioGitLocalClient {
             @Sendable (GitDeleteLocalBranchRequest) async -> Result<
                 GitDeleteLocalBranchResult, GitLockedOperationFailure<GitDeleteLocalBranchErrorReason>
             >
-        )? = nil
+        )? = nil,
+        forkFailure: GitWorktreeForkError = .rejected(reason: .clientCapabilityUnavailable)
     ) {
         self.startPath = startPath
         self.snapshot = snapshot
@@ -87,6 +90,7 @@ struct WorktreeOperationClientStub: AgentStudioGitLocalClient {
         self.defaultTargetResolutionFailureSchedule = defaultTargetResolutionFailureSchedule
         self.removeWorktreeHandler = removeWorktreeHandler
         self.deleteLocalBranchHandler = deleteLocalBranchHandler
+        self.forkFailure = forkFailure
     }
 
     func repositoryIdentity(for worktreePath: URL) async throws(GitDataPlaneError) -> GitRepositoryIdentity {
@@ -122,7 +126,7 @@ struct WorktreeOperationClientStub: AgentStudioGitLocalClient {
     }
 
     func forkWorktree(_: GitForkWorktreeRequest) async throws(GitWorktreeForkError) -> GitForkWorktreeResult {
-        throw .rejected(reason: .clientCapabilityUnavailable)
+        throw forkFailure
     }
 
     func forkWorktreeEligibility(sourceWorktreePath _: URL, destinationPath _: URL) async
