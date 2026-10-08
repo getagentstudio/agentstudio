@@ -316,12 +316,19 @@ root, zmx root, build directory, trace marker, or process-discovery scheme.
 Agent-driven write-capable debug automation must opt in explicitly:
 
 ```bash
-AGENTSTUDIO_IPC_DEBUG_TOKEN_ESCROW=1 \
+mkdir -p tmp/debug-observability
+AGENTSTUDIO_IPC_DEBUG_TOKEN_ESCROW="$PWD/tmp/debug-observability/ipc-escrow.json" \
 mise run run-debug-observability -- --detach
 ```
 
-The worktree-isolated debug app then issues one owner-only, one-time
-authenticated automation token. That principal can use the DEBUG semantic
+`AGENTSTUDIO_IPC_DEBUG_TOKEN_ESCROW` is the absolute path of the escrow file,
+not a flag. The app writes it as an owner-only file, and its directory must
+already exist (see [IPC — debug credential escrow](../commands/ipc.md)). A value
+like `1` is read as a relative path, which a LaunchServices-launched app
+resolves against `/`, so no escrow is written and the CLI can't authenticate.
+
+The worktree-isolated debug app then mints one owner-only automation credential,
+reusable for that app runtime's lifetime, and writes it to that file. That principal can use the DEBUG semantic
 control allowlist plus the App command execution, read-back, and
 workspace-bounded sidebar scopes used by proof harnesses. The selector is not
 required to launch, develop, or test the app manually. Stable, beta, and
@@ -336,7 +343,7 @@ records the selected action into the state file as
 verifier handoff, not the app input environment variable. Example:
 
 ```bash
-AGENTSTUDIO_IPC_DEBUG_TOKEN_ESCROW=1 \
+AGENTSTUDIO_IPC_DEBUG_TOKEN_ESCROW="$PWD/tmp/debug-observability/ipc-escrow.json" \
 AGENTSTUDIO_STARTUP_DIAGNOSTIC_ACTION=ipc-terminal-smoke \
 mise run run-debug-observability -- --detach
 mise run verify-debug-observability
