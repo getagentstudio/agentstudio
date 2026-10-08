@@ -88,7 +88,6 @@ export function selectChromeLaunchOptions(
 const webTestHangBoundMilliseconds = 120_000;
 
 export default defineConfig({
-  cacheDir: "/tmp/agentstudio-website-vite-cache",
   test: {
     projects: [
       {
@@ -102,7 +101,7 @@ export default defineConfig({
       {
         // Pre-bundle GSAP up front so the first browser run does not discover it
         // mid-run and reload the test page.
-        optimizeDeps: { include: ["gsap"], exclude: ["fsevents"] },
+        optimizeDeps: { include: ["gsap"] },
         test: {
           name: "browser",
           testTimeout: webTestHangBoundMilliseconds,
