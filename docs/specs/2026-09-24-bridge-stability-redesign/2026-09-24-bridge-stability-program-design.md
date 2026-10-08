@@ -680,6 +680,58 @@ The PR1 main assessment, the real-app journey and the Advisor's wedge hunt found
 - A publication delivery failure is still flattened into refresh or load success. R18 and wedge f stay with N5.
 - PR1's proof claim names this limitation and doesn't imply the stability program is complete.
 
+### Settled 2026-10-08 (owner): snapshot cause on the wire (R13, R40)
+
+Owner decision (2026-10-08): **a file that changes must never count against a view's "couldn't update" budget.** Files change all the time. Only unsuccessful recovery counts. This realizes the W2 budget rule above: count consecutive *unsuccessful* resnapshots; genuine newer input is never Failed.
+
+**Why W2 got it wrong (verified in code).**
+- W2 cannot tell why a snapshot begin replaced its unfinished stage, so it charges every replacement it did not request (`bridge-product-view-scope-owner.ts` `observeReplacementSnapshot`).
+- One worker stall is charged twice:
+  1. The worker's own resnapshot request is charged (+1).
+  2. The next begin clears that request, even when it is a deferred newer-input batch.
+  3. Native's honored resnapshot then arrives "unrequested" and is charged again (+1).
+- A CHANGE or COVERAGE begin that arrives after the worker expired a stage is still flagged as a replacement (`bridge-product-view-batch-receiver.ts`).
+- After a Comment stage is abandoned, the producer can send a newer-input CHANGE over it. W4 rejects that as `overlappingChange` and requests a charged resnapshot.
+
+**Contract.**
+- Every `subscription.batchBegin` with `mode: "snapshot"` carries `snapshotCause`, one of `open | requested | recovery | newerInput`. A non-snapshot begin never carries it.
+- The field is required on snapshot begins: a hard cutover across the Swift codec, the strict JSON vocabulary, Zod `.strict()`, and the shared contract fixtures (mirrored byte-identically).
+- **Native owns the cause, and session state decides it, not the caller.**
+  - `BridgeProductViewPendingChange.snapshotRequired` becomes `snapshotRequired(cause)`. Each site that marks a view domain snapshot-required records why:
+    - open, handle or filter change → `open`;
+    - an accepted `subscription.resnapshot` → `requested`;
+    - ACK expiry, or a stream-resume replay that requires a snapshot → `recovery`.
+  - When several are owed, the strongest wins: `open` > `requested` > `recovery`.
+  - The next snapshot sealed for that domain consumes the owed cause and carries it. This holds at every seal site: `sealViewBatch`, the deferred File seal and the held Review seal. The sealing capture may be a disk change or a new Review publication: it still satisfies the owed obligation and carries that cause.
+  - A snapshot sealed when nothing is owed carries `newerInput`.
+- **Comment producer.** After its domain becomes snapshot-required, its next batch is a snapshot carrying the owed cause, never a CHANGE over the abandoned stage.
+- **W2 accounting.**
+  - A worker resnapshot request charges +1 (unchanged) and leaves the request outstanding.
+  - `requested` satisfies the outstanding request: no charge.
+  - `recovery` charges +1 unless a worker request is outstanding; in that case it satisfies the request with no extra charge.
+  - `open` and `newerInput` never charge and are never Failed (R13). `open` also clears any outstanding request.
+  - Only snapshot begins count as replacements (W4).
+  - A certified install resets the count (unchanged).
+
+**What stays bounded.**
+- A worker stall still charges (deadline, then request).
+- Native recovery still charges: a persistent ACK-loss loop still reaches `failed(retryable)`.
+- Unchanged-input supersession stays bounded by the native surface budget (above).
+- Continuous churn faster than one complete delivery shows the last good state as Updating (R40 allows resting in Updating while inputs keep changing). It never shows Failed.
+
+**Proof obligations.**
+- **Native unit tests,** one per cause:
+  - an accepted resnapshot sealed by a disk-change capture still carries `requested`;
+  - the deferred File seal and the held Review seal carry the owed cause;
+  - precedence between owed causes;
+  - nothing owed → `newerInput`.
+- **Contract tests (Swift + Zod),** with these invalid cases: a snapshot without a cause, a change with a cause, and an unknown cause.
+- **Worker unit tests,** per cause, including the double-charge red: request, then a newer-input begin, then a `requested` snapshot must total 1 charge. Also: a CHANGE after expiry is not a replacement.
+- **Integration:**
+  - newer-input churn with stalls never reaches `failed(retryable)`;
+  - a persistent ACK-expiry loop still does.
+- **E2E:** the Vite ordinary lane, including stream-recovery.
+
 ## State ownership
 
 | State | Owner | Kind |
