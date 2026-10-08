@@ -182,15 +182,22 @@ function observeHeroFinaleSample(
     for (const selector of requiredTargets) target(selector);
     const install = target("[data-hero-intro-install]");
     const payoff = target("[data-hero-intro-payoff-first]").parentElement;
-    if (payoff === null) throw new Error(`Payoff wrapper missing at ${sampleTime}`);
+    if (payoff === null)
+      throw new Error(
+        `Payoff wrapper missing: [data-hero-intro-payoff-first] parent at ${sampleTime}`,
+      );
     const bashRows = [
       ...root.querySelectorAll<HTMLElement>(
         ".hero-terminal-pane--claude .hero-transcript-row--tool-call",
       ),
     ].filter((row) => row.querySelector("[data-hero-bash-dot]") !== null);
-    if (bashRows.length === 0 || install.querySelector(".install-command__line") === null)
-      throw new Error(`Install burst anchors missing at ${sampleTime}`);
-    for (const bashRow of bashRows) {
+    if (bashRows.length === 0)
+      throw new Error(`Install burst anchors missing: claude Bash-dot tool row at ${sampleTime}`);
+    if (install.querySelector(".install-command__line") === null)
+      throw new Error(
+        `Install burst anchors missing: first .install-command__line at ${sampleTime}`,
+      );
+    for (const [bashRowIndex, bashRow] of bashRows.entries()) {
       const textWalker = document.createTreeWalker(bashRow, NodeFilter.SHOW_TEXT);
       let hasBashText = false;
       while (textWalker.nextNode()) {
@@ -200,23 +207,36 @@ function observeHeroFinaleSample(
           break;
         }
       }
-      if (!hasBashText) throw new Error(`Bash row has no text at ${sampleTime}`);
+      if (!hasBashText)
+        throw new Error(
+          `Bash row has no text: claude Bash-dot tool row ${bashRowIndex} at ${sampleTime}`,
+        );
     }
-    for (const node of rail.querySelectorAll<SVGGElement>("[data-topology-node-progress]")) {
+    for (const [nodeIndex, node] of rail
+      .querySelectorAll<SVGGElement>("[data-topology-node-progress]")
+      .entries()) {
+      const dotIdentity = node.getAttribute("data-node-signature") ?? `index ${nodeIndex}`;
       const circle = node.querySelector("circle");
       const parent = node.parentElement;
-      if (circle === null || !(parent instanceof SVGGraphicsElement))
-        throw new Error(`Intro dot circle or parent missing at ${sampleTime}`);
-      // SVG ancestry is the existence-only counterpart; matrix measurement stays in rail.
-      if (node.closest("svg") === null || parent.closest("svg") === null)
-        throw new Error(`Intro dot matrix missing (SVG ancestor) at ${sampleTime}`);
+      if (circle === null)
+        throw new Error(`Intro dot circle missing: ${dotIdentity} at ${sampleTime}`);
+      if (!(parent instanceof SVGGraphicsElement))
+        throw new Error(
+          `Intro dot SVGGraphicsElement parent missing: ${dotIdentity} at ${sampleTime}`,
+        );
     }
     for (const terminalPane of root.querySelectorAll<HTMLElement>(".hero-terminal-pane")) {
-      if (
-        terminalPane.querySelector(".hero-terminal-transcript") === null ||
-        terminalPane.querySelector(".hero-claude-footer, .hero-codex-footer") === null
-      )
-        throw new Error(`Pinned transcript structure is missing at ${sampleTime}`);
+      const paneName = terminalPane.classList.contains("hero-terminal-pane--claude")
+        ? "claude"
+        : "codex";
+      if (terminalPane.querySelector(".hero-terminal-transcript") === null)
+        throw new Error(
+          `Pinned transcript structure is missing: ${paneName} transcript at ${sampleTime}`,
+        );
+      if (terminalPane.querySelector(".hero-claude-footer, .hero-codex-footer") === null)
+        throw new Error(
+          `Pinned transcript structure is missing: ${paneName} pinned footer at ${sampleTime}`,
+        );
     }
   }
   if (groups.includes("copy")) {
