@@ -38,6 +38,8 @@ extension WorktreeCommandLineFormatter {
             return "cancelled"
         case .rejectedAfterChange(let reason):
             return "rejectedAfterChange \(reason.rawValue)"
+        case .branchCheckedOutAfterChange(let path):
+            return "rejectedAfterChange branchCheckedOut \(path)"
         }
     }
 
@@ -89,6 +91,8 @@ extension WorktreeCommandLineFormatter {
             return .init(kind: "cancelled")
         case .rejectedAfterChange(let reason):
             return .init(kind: "rejectedAfterChange", reason: reason.rawValue)
+        case .branchCheckedOutAfterChange(let path):
+            return .init(kind: "rejectedAfterChange", reason: "branchCheckedOut", path: path)
         }
     }
 
@@ -117,6 +121,7 @@ private struct WorktreeFailedCommandLineJSON: Encodable {
         let errno: Int32?
         let gitLockFact: LockFact?
         let permissionPath: String?
+        let path: String?
 
         init(
             kind: String,
@@ -125,7 +130,8 @@ private struct WorktreeFailedCommandLineJSON: Encodable {
             reason: String? = nil,
             errno: Int32? = nil,
             gitLockFact: GitLockFact? = nil,
-            permissionPath: String? = nil
+            permissionPath: String? = nil,
+            path: String? = nil
         ) {
             self.kind = kind
             self.gitErrorKind = gitErrorKind
@@ -134,6 +140,7 @@ private struct WorktreeFailedCommandLineJSON: Encodable {
             self.errno = errno
             self.gitLockFact = gitLockFact.map(LockFact.init)
             self.permissionPath = permissionPath
+            self.path = path
         }
 
         struct LockFact: Encodable {

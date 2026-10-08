@@ -94,6 +94,8 @@ package enum WorktreeFailureKind: Sendable, Equatable {
     case workingStateUnsupported(GitWorktreeWorkingStateRefusal)
     case cancelled
     case rejectedAfterChange(GitWorktreeForkRejectionReason)
+    /// The branch was taken by the worktree at `path` at the attach, and rollback is incomplete.
+    case branchCheckedOutAfterChange(path: String)
 }
 
 package enum WorktreeLeftoverStatus: Sendable, Equatable {
@@ -145,6 +147,8 @@ package enum WorktreeGitErrorKind: Sendable, Equatable {
     case remoteRefTransactionIndeterminate
     case libgit2Failure
     case unsupported
+    case branchMoved
+    case branchCheckedOut
 
     package var name: String {
         switch self {
@@ -192,6 +196,10 @@ package enum WorktreeGitErrorKind: Sendable, Equatable {
             "libgit2Failure"
         case .unsupported:
             "unsupported"
+        case .branchMoved:
+            "branchMoved"
+        case .branchCheckedOut:
+            "branchCheckedOut"
         }
     }
 

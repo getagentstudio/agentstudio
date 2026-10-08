@@ -150,7 +150,7 @@ struct WorktreeFetchStepIntegrationTests {
                 GitCreateWorktreeRequest(
                     repositoryPath: fixture.repository,
                     destinationPath: destinationPath,
-                    mode: .newBranch(name: branchName, startPoint: .named("refs/heads/main"))
+                    mode: .newBranch(name: branchName, startPoint: .named("refs/heads/main"), upstream: nil)
                 ))
         }
 
@@ -418,6 +418,12 @@ private struct WorktreeFetchResidueRemoteClient: AgentStudioGitRemoteClient {
     func remoteReferences(_ request: GitRemoteReferencesRequest) async throws(GitDataPlaneError) -> [GitRemoteReference]
     {
         throw .unsupported(message: "remote reference lookup is unused by the fetch residue test")
+    }
+
+    func probeRemoteBranch(_ request: GitRemoteBranchProbeRequest) async throws(GitDataPlaneError)
+        -> GitRemoteBranchPresence
+    {
+        throw .unsupported(message: "remote branch probe is unused by the fetch residue test")
     }
 }
 

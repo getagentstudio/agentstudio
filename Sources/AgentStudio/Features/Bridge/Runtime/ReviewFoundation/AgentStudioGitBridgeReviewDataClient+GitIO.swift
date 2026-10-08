@@ -454,6 +454,10 @@ extension AgentStudioGitBridgeReviewDataClient {
             return .providerFailed(message: "gitDataPlane:processOutputTooLarge")
         case .remoteRefTransactionIndeterminate:
             return .providerFailed(message: "gitDataPlane:remoteRefTransactionIndeterminate")
+        case .branchMoved:
+            return .providerFailed(message: "gitDataPlane:branchMoved")
+        case .branchCheckedOut:
+            return .providerFailed(message: "gitDataPlane:branchCheckedOut")
         }
     }
 

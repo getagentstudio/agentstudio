@@ -18,7 +18,7 @@ func createBranchWorktree(
         GitCreateWorktreeRequest(
             repositoryPath: repository,
             destinationPath: destination,
-            mode: .newBranch(name: branch, startPoint: .named("refs/heads/main"))
+            mode: .newBranch(name: branch, startPoint: .named("refs/heads/main"), upstream: nil)
         )
     ).worktree
 }

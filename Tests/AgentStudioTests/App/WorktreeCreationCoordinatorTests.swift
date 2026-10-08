@@ -36,7 +36,8 @@ struct WorktreeCreationCoordinatorTests {
                     GitCreateWorktreeRequest(
                         repositoryPath: fixture.repository.repoPath,
                         destinationPath: destination,
-                        mode: .newBranch(name: "feat/ledger", startPoint: .named("refs/remotes/origin/main"))
+                        mode: .newBranch(
+                            name: "feat/ledger", startPoint: .named("refs/remotes/origin/main"), upstream: nil)
                     )),
                 .release,
                 .refresh(fixture.watchedPath.id),
@@ -91,7 +92,8 @@ struct WorktreeCreationCoordinatorTests {
                     GitCreateWorktreeRequest(
                         repositoryPath: fixture.repository.repoPath,
                         destinationPath: destination,
-                        mode: .newBranch(name: "feat/new", startPoint: .named("refs/heads/feature/source"))
+                        mode: .newBranch(
+                            name: "feat/new", startPoint: .named("refs/heads/feature/source"), upstream: nil)
                     ))))
     }
 
@@ -174,7 +176,7 @@ struct WorktreeCreationCoordinatorTests {
                     GitForkWorktreeRequest(
                         sourceWorktreePath: fixture.worktree.path,
                         destinationPath: destination,
-                        mode: .newBranch(name: "fork/ledger"),
+                        mode: .newBranch(name: "fork/ledger", start: .sourceHead, upstream: nil),
                         materialization: .copyOnWrite,
                         copyRules: GitWorktreeCopyRules(ignoredPaths: .copyAll)
                     )),
@@ -346,7 +348,8 @@ private struct FakeWorktreeCreationGitClient: WorktreeCreationGitClient {
                     logicalRegularFileBytes: 1,
                     skippedEntries: [],
                     normalizedEntries: [],
-                    ignoredIncludedPatterns: [], ignoredExcludedCount: 0, nestedWorktreesSkipped: []
+                    ignoredIncludedPatterns: [], ignoredExcludedCount: 0, nestedWorktreesSkipped: [],
+                    sourceState: .asIs, submodulesNotAtStart: [], largeFiles: nil
                 ))
         )
     }

@@ -350,7 +350,8 @@ struct WorktreeCommandLineTests {
                                 logicalRegularFileBytes: 0,
                                 skippedEntries: [],
                                 normalizedEntries: [],
-                                ignoredIncludedPatterns: [], ignoredExcludedCount: 0, nestedWorktreesSkipped: []
+                                ignoredIncludedPatterns: [], ignoredExcludedCount: 0, nestedWorktreesSkipped: [],
+                                sourceState: .asIs, submodulesNotAtStart: [], largeFiles: nil
                             ))
                     )
                 ),

@@ -45,7 +45,8 @@ struct WorktreeCopyConfigCompilationTests {
             clonedRegularFileCount: 2, createdDirectoryCount: 1, recreatedSymbolicLinkCount: 0,
             preservedHardLinkCount: 0, preservedGitRepositoryCount: 0, recreatedFIFOCount: 0,
             logicalRegularFileBytes: 32, skippedEntries: [], normalizedEntries: [],
-            ignoredIncludedPatterns: ["cache/"], ignoredExcludedCount: 7, nestedWorktreesSkipped: ["nested/source"])
+            ignoredIncludedPatterns: ["cache/"], ignoredExcludedCount: 7, nestedWorktreesSkipped: ["nested/source"],
+            sourceState: .asIs, submodulesNotAtStart: [], largeFiles: nil)
         let summary = WorktreeCreatedSummary(
             operation: .new, branch: "feature/report", path: URL(fileURLWithPath: "/repo.feature-report"),
             repository: URL(fileURLWithPath: "/repo"), materialization: .copyOnWrite(report))

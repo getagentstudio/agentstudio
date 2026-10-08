@@ -96,7 +96,7 @@ extension WorktreeOperationRunner {
             let creation = try await client.createWorktree(
                 GitCreateWorktreeRequest(
                     repositoryPath: prepared.repositoryPath, destinationPath: prepared.destinationPath,
-                    mode: .newBranch(name: prepared.branchName.rawValue, startPoint: .named(startPoint))
+                    mode: .newBranch(name: prepared.branchName.rawValue, startPoint: .named(startPoint), upstream: nil)
                 ))
             return .created(
                 WorktreeCreatedSummary(
@@ -104,7 +104,7 @@ extension WorktreeOperationRunner {
                     repository: prepared.repositoryPath, materialization: .checkout(creation.largeFiles)
                 ))
         } catch {
-            return .failed(WorktreeOperationErrorMapper.createFailure(error))
+            return WorktreeOperationErrorMapper.createOutcome(error)
         }
     }
 
@@ -122,7 +122,8 @@ extension WorktreeOperationRunner {
             let fork = try await client.forkWorktree(
                 GitForkWorktreeRequest(
                     sourceWorktreePath: source, destinationPath: prepared.destinationPath,
-                    mode: .newBranch(name: prepared.branchName.rawValue), materialization: sdkMaterialization,
+                    mode: .newBranch(name: prepared.branchName.rawValue, start: .sourceHead, upstream: nil),
+                    materialization: sdkMaterialization,
                     copyRules: copyRules
                 ))
             return .created(

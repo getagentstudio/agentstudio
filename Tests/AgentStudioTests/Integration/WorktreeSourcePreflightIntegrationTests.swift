@@ -25,7 +25,7 @@ struct WorktreeSourcePreflightIntegrationTests {
         _ = try await LibGit2AgentStudioGitLocalClient().createWorktree(
             GitCreateWorktreeRequest(
                 repositoryPath: repository, destinationPath: linked,
-                mode: .newBranch(name: linkedBranch, startPoint: .named("HEAD"))))
+                mode: .newBranch(name: linkedBranch, startPoint: .named("HEAD"), upstream: nil)))
         try Data("caller only".utf8).write(to: linked.appending(path: "caller.txt"))
         try await worktreeCreationGit(at: linked, arguments: ["add", "caller.txt"])
         try await worktreeCreationGit(at: linked, arguments: ["commit", "-m", "caller change"])

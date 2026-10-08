@@ -169,6 +169,10 @@ package struct WorktreeGitErrorDocument: Codable, Sendable, Equatable {
             .libgit2Failure
         case "unsupported":
             .unsupported
+        case "branchMoved":
+            .branchMoved
+        case "branchCheckedOut":
+            .branchCheckedOut
         default:
             nil
         }

@@ -75,6 +75,10 @@ extension WorktreeCreationFailure {
             "Git reported: \(message)"
         case .unsupported(let message):
             message
+        case .branchMoved:
+            "The branch moved while the worktree was being created."
+        case .branchCheckedOut(let worktreePath):
+            "The branch is checked out in the worktree at \(worktreePath.path)."
         case .worktreeNotFound, .worktreeNotPrunable, .unsafeWorktreeRemoval, .contentTooLarge,
             .pathEscapesRepository, .requiredObjectNotFound, .noSharedHistory, .multipleBestMergeBases,
             .processFailed, .processTimedOut, .processCancelled, .processOutputTooLarge,
@@ -89,6 +93,8 @@ extension WorktreeCreationFailure {
         switch error {
         case .rejected(let reason):
             "Nothing was changed: \(WorktreeForkRejectionCopy.phrase(for: reason))."
+        case .branchCheckedOut(let worktreePath):
+            "Nothing was changed: the branch is checked out in the worktree at \(worktreePath.path)."
         case .workingStateUnsupported(let refusal):
             "Nothing was changed: \(workingStateUnsupportedCause(refusal))"
         case .gitFailure(let gitError):
@@ -112,6 +118,8 @@ extension WorktreeCreationFailure {
         switch error {
         case .rejected(let reason):
             "The fork was rejected: \(WorktreeForkRejectionCopy.phrase(for: reason))."
+        case .branchCheckedOut(let worktreePath):
+            "The branch is checked out in the worktree at \(worktreePath.path)."
         case .workingStateUnsupported(let refusal):
             workingStateUnsupportedCause(refusal)
         case .gitFailure(let gitError):
@@ -159,8 +167,10 @@ enum WorktreeForkRejectionCopy {
         case .invalidBranchName: "the branch name is not valid"
         case .branchNotFound: "the branch does not exist"
         case .branchAlreadyExists: "a branch with that name already exists"
-        case .branchNotAtCapturedHead: "the branch does not point at the source's HEAD"
-        case .branchCheckedOut: "the branch is checked out in another worktree"
+        case .branchMoved: "the branch moved since it was read"
+        case .invalidStart: "the fork cannot start at that commit"
+        case .fastForwardNotDescendant: "the branch cannot be fast-forwarded to that commit"
+        case .invalidUpstream: "the upstream branch name is not valid"
         case .fileProviderManagedLocation: "the location is managed by iCloud Drive or another File Provider"
         case .datalessContent: "some files have not been downloaded to this Mac"
         }

@@ -210,6 +210,21 @@ struct WorktreeOperationClientStub: AgentStudioGitLocalClient {
         throw .unsupported(message: "unexpected branch lookup")
     }
 
+    func remoteNames(for repositoryPath: URL) async throws(GitDataPlaneError) -> [String] {
+        if let baseClient { return try await baseClient.remoteNames(for: repositoryPath) }
+        throw .unsupported(message: "unexpected remote name lookup")
+    }
+
+    func branchUse(_ request: GitBranchUseRequest) async throws(GitDataPlaneError) -> GitBranchUse {
+        if let baseClient { return try await baseClient.branchUse(request) }
+        throw .unsupported(message: "unexpected branch use lookup")
+    }
+
+    func aheadBehind(_ request: GitAheadBehindRequest) async throws(GitDataPlaneError) -> GitAheadBehind {
+        if let baseClient { return try await baseClient.aheadBehind(request) }
+        throw .unsupported(message: "unexpected ahead/behind read")
+    }
+
     func assessBranchIntegration(_ request: GitBranchIntegrationRequest) async throws(GitDataPlaneError)
         -> GitBranchIntegrationReport
     {

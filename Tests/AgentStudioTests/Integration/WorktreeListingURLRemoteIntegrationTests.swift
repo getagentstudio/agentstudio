@@ -25,7 +25,7 @@ struct WorktreeListingURLRemoteIntegrationTests {
             GitCreateWorktreeRequest(
                 repositoryPath: repository,
                 destinationPath: worktreePath,
-                mode: .newBranch(name: "feature/url-remote", startPoint: .named("refs/heads/main"))
+                mode: .newBranch(name: "feature/url-remote", startPoint: .named("refs/heads/main"), upstream: nil)
             ))
         try await FilesystemTestGitRepo.runGit(
             at: repository,

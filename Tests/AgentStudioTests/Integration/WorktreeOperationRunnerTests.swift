@@ -81,7 +81,8 @@ struct WorktreeOperationRunnerTests {
                 destinationPath: sourceWorktree,
                 mode: .newBranch(
                     name: "feature/source",
-                    startPoint: GitRevisionTarget.named("refs/heads/main")
+                    startPoint: GitRevisionTarget.named("refs/heads/main"),
+                    upstream: nil
                 )
             ))
         let nestedStart = try makeNestedDirectory(in: sourceWorktree)
