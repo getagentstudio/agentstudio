@@ -71,12 +71,11 @@ it("reports the absence of a registered command page", async () => {
 });
 
 it("prints the captured diagnostic line without changing the failure handler", async () => {
-  onTestFailed(
-    (context) =>
-      reportPendingWaitDiagnostic(context, () => commands.capturePendingWaitDiagnostics()),
-    pendingWaitDiagnosticHookTimeoutMilliseconds,
-  );
   const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
+  onTestFailed((context) => {
+    errorSpy.mockRestore();
+    return reportPendingWaitDiagnostic(context, () => commands.capturePendingWaitDiagnostics());
+  }, pendingWaitDiagnosticHookTimeoutMilliseconds);
   try {
     await commands.startPendingWaitFixture({ freezeTimeline: false });
     await reportPendingWaitDiagnostic(
