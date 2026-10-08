@@ -49,6 +49,10 @@ extension WorktreeNewPreflightTests {
         #expect(
             Self.fetchTarget("feat", start: "feat", remoteNames: remoteNames)
                 == .branch(remoteName: "origin", branchName: "feat"))
+        // The `/` splits even when a combining mark joins it into one grapheme with the next scalar.
+        #expect(
+            Self.fetchTarget("feat", start: "origin/\u{301}x", remoteNames: remoteNames)
+                == .branch(remoteName: "origin", branchName: "\u{301}x"))
         // Without an `upstream` remote, `upstream/feat` is a branch name compared with origin's.
         #expect(
             Self.fetchTarget("feat", start: "upstream/feat", remoteNames: ["origin"])

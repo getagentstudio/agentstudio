@@ -130,21 +130,33 @@ extension WorktreeCreationCommandLineIntegrationTests {
                     localOnlyCommits: nil))
     }
 
-    @Test("--from-branch origin/<name> starts from a remote branch whose name begins with a combining mark")
+    @Test(
+        "--from-branch origin/<U+0301>x takes origin's branch over a local shadow, and its tracking ref without a fetch"
+    )
     func startsFromRemoteBranchBeginningWithCombiningMark() async throws {
         let fixture = try await WorktreeCreationRemoteFixture.create(named: "new-combining-remote-start")
         defer { fixture.destroy() }
         // `/` and U+0301 form one grapheme, but git reads `origin/<U+0301>x` as origin's branch `<U+0301>x`.
         let originTip = try await fixture.advance("\u{301}x", file: "mark.txt")
+        // A local branch literally named `origin/<U+0301>x`, at another commit: the remote prefix still wins.
+        try await fixture.git("branch", "origin/\u{301}x", "main")
+        #expect(originTip != fixture.mainCommit)
+        let fromOrigin = WorktreeCreationCommandLineDocuments.StartDocument(
+            commit: originTip, from: "remoteBranch", ref: "refs/remotes/origin/\u{301}x", localOnlyCommits: nil)
 
         let created = await fixture.runNew("feature/mark", ["--from-branch", "origin/\u{301}x"], json: true)
 
         #expect(created.exit == 0, "\(created.output)")
-        #expect(
-            try created.created().start
-                == .init(
-                    commit: originTip, from: "remoteBranch", ref: "refs/remotes/origin/\u{301}x", localOnlyCommits: nil)
-        )
+        #expect(try created.created().start == fromOrigin)
+
+        // Without a fetch, the start is the tracking ref already on disk, not origin's newer tip.
+        let newerTip = try await fixture.advance("\u{301}x", file: "mark-again.txt")
+        let offline = await fixture.runNew(
+            "feature/mark-offline", ["--no-fetch", "--from-branch", "origin/\u{301}x"], json: true)
+
+        #expect(offline.exit == 0, "\(offline.output)")
+        #expect(try offline.created().start == fromOrigin)
+        #expect(newerTip != originTip)
     }
 
     /// Whether `git check-ref-format <refname>` accepts it. A refusal is the answer here, not a failed
