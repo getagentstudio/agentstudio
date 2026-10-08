@@ -65,6 +65,45 @@ func runLaneScriptBash(_ command: String, environment: [String: String]? = nil) 
     }
 }
 
+/// Shell, sourced after the lane helpers, that replaces a loaded host's timing
+/// with a handshake for a fixture that runs the real lane runner.
+///
+/// The watchdog takes its first sample only after the command's output has
+/// reached EOF while the runner's own drain still holds the command's process
+/// group open, and that sample reports the whole inactivity bound as elapsed.
+/// A loaded host produced this ordering (TQ14): only runner-owned processes were
+/// left in the group, so an armed inner watchdog read an exited command as a
+/// timeout. A fixture whose subject is not inactivity keeps its inner watchdog
+/// unarmed and keeps its verdict here. The next sample releases the drain.
+func laneRunnerStarvedDrainHook(fifoDirectory: String) -> String {
+    #"""
+    mkfifo '\#(fifoDirectory)/starved-drain-held' '\#(fifoDirectory)/starved-drain-release'
+    export LANE_STARVED_DRAIN_HELD='\#(fifoDirectory)/starved-drain-held'
+    export LANE_STARVED_DRAIN_RELEASE='\#(fifoDirectory)/starved-drain-release'
+    # Read-write opens return at once, so no side of the handshake blocks in open.
+    exec 81<>"$LANE_STARVED_DRAIN_HELD" 82<>"$LANE_STARVED_DRAIN_RELEASE"
+    lane_starved_drain() {
+      _xcb_pipe
+      printf 'DRAIN_HELD\n' >"$LANE_STARVED_DRAIN_HELD"
+      local release_line
+      IFS= read -r release_line <"$LANE_STARVED_DRAIN_RELEASE"
+    }
+    export -f lane_starved_drain
+    _xcb_pipe_cmd() { echo lane_starved_drain; }
+    swift_test_watchdog_timeout_status() { return 124; }
+    lane_starved_sample=held
+    sleep() {
+      local handshake_line
+      case "$lane_starved_sample" in
+        held) IFS= read -r handshake_line <&81; lane_starved_sample=release ;;
+        release) printf 'RELEASE\n' >&82; lane_starved_sample=runner ;;
+        *) /bin/sleep "$@" ;;
+      esac
+    }
+
+    """#
+}
+
 /// The body of one `name() {` shell function, up to its closing brace.
 func laneScriptShellFunction(named functionName: String, in script: String) throws -> String {
     try laneScriptNamedBlock(startingWith: "\(functionName)() {", endingBefore: "\n}\n", in: script)

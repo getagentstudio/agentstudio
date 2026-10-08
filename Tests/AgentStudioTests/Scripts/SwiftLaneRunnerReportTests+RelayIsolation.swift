@@ -12,6 +12,10 @@ private let invalidChildBytesLaneFixture = #"""
     unset SWIFT_TEST_OUTPUT_RELAY_LOCK_PATH SWIFT_TEST_OUTPUT_RELAY_SCRIPT_PATH
     mkdir -p "$fixture_directory/events"
     export LANE_EVENT_STREAM_DIR="$fixture_directory/events"
+    # This fixture proves byte handling, not inactivity. Keep the inner watchdog
+    # unarmed; only the outer lane owns a hang bound, however slowly a loaded
+    # host starts the probe or drains its output.
+    LANE_WATCHDOG_ARM_PATH="$fixture_directory/unarmed-watchdog"
     swift_test_begin_active_command_groups
     trap swift_test_cleanup_active_command_groups_directory EXIT
 
@@ -36,6 +40,9 @@ private let invalidChildBytesLaneFixture = #"""
 // releases the enclosing writer after reading the actual timeout error (red) or
 // completed probe (green), so output ordering does not depend on machine speed.
 private let sharedRelayLockSchedulingFixture = #"""
+    # This proof drives the watchdog through its own clock and sampling below,
+    # so it re-arms the watchdog the byte fixture keeps unarmed.
+    unset LANE_WATCHDOG_ARM_PATH
     # Observe the real fixture's lock while a second writer owns the enclosing lane's.
     eval "$(declare -f run_swift_with_timeout | sed '1s/run_swift_with_timeout/tq14_original_run/')"
     eval "$(declare -f swift_test_output_relay_begin_command | sed '1s/swift_test_output_relay_begin_command/tq14_original_begin/')"
@@ -196,6 +203,9 @@ extension SwiftLaneRunnerReportTests {
         let command =
             invalidChildBytesLaneFixture
             .replacingOccurrences(of: "__PROBE_DIRECTORY__", with: fixtureDirectory)
+            .replacingOccurrences(
+                of: "passed_status=0",
+                with: laneRunnerStarvedDrainHook(fifoDirectory: fixtureDirectory) + "passed_status=0")
 
         let result = try await runLaneScriptBash(command)
         #expect(result.exitCode == 0, Comment(rawValue: result.output))

@@ -289,7 +289,12 @@ struct SwiftLaneReceiptTests {
                 + ": > \"$SWIFT_TEST_FAILED_ISOLATED_SUITES_FILE\"; "
                 + "LOG_PREFIX=webkit; TIMEOUT_SECONDS=60; BUILD_PATH='\(workDirectory)/build'; "
                 + "export LANE_EVENT_STREAM_DIR='\(workDirectory)/ci-runs'; "
+                // This fixture proves crash tallies, not inactivity: the inner
+                // watchdog stays unarmed and only the outer lane owns a hang bound.
+                + "LANE_WATCHDOG_ARM_PATH='\(workDirectory)/unarmed-watchdog'; "
                 + "source scripts/swift-test-helpers.sh; set +e; "
+                // Starve the runner as on a loaded host; every crash must still be named.
+                + laneRunnerStarvedDrainHook(fifoDirectory: workDirectory)
                 + "swift_test_bundle_for_suite() { echo '\(workDirectory)/fake-bundle'; }; "
                 + "swift_testing_helper_path() { echo '\(workDirectory)/bin/fake-helper'; }; "
                 + "swift_testing_framework_path() { echo '\(workDirectory)'; }; "

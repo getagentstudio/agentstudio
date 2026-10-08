@@ -389,7 +389,7 @@ struct InvocationReceiptFixture {
         try await runEventFixture(as: kind, expectedRuns: 19, exitStatus: exitStatus)
     }
 
-    func runEventFixture(as kind: String, expectedRuns: Int, exitStatus: Int) async throws -> (
+    func runEventFixture(as kind: String, expectedRuns: Int, exitStatus: Int, setup: String = "") async throws -> (
         output: String, record: [String: Any]
     ) {
         try await run(
@@ -397,9 +397,13 @@ struct InvocationReceiptFixture {
             eventStream: true,
             setup:
                 "BUILD_PATH='\(root.path)'; printf 'bundle_count=\(expectedRuns)\\n' > \"$BUILD_PATH/agentstudio-test-build-receipt\"; "
+                + setup
         )
     }
 
+    /// Runs `command` under the real lane runner. These fixtures prove receipts and
+    /// verdicts, not inactivity, so the inner watchdog stays unarmed and only the
+    /// outer lane owns a hang bound; a timeout proof arms it in `setup`.
     func run(_ command: String, eventStream: Bool = false, setup: String = "", helper: URL? = nil) async throws -> (
         output: String, record: [String: Any]
     ) {
@@ -408,6 +412,7 @@ struct InvocationReceiptFixture {
             arguments: [
                 "-c",
                 "LOG_PREFIX=f2; BUILD_PATH='\(root.path)/build'; export LANE_EVENT_STREAM_DIR='\(root.path)/evidence'; "
+                    + "LANE_WATCHDOG_ARM_PATH='\(root.path)/unarmed-watchdog'; "
                     + "source '\(helper?.path ?? "scripts/swift-test-helpers.sh")'; "
                     + (eventStream ? "swift_test_command_accepts_event_stream() { return 0; }; " : "")
                     + setup
