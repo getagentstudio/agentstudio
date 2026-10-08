@@ -725,6 +725,11 @@ export async function selectRangeForAnnotation(props: {
 				`Review annotation canvas is not interactive: ${JSON.stringify(interactionState)}`,
 			);
 		}
+		const additionRows = props.page
+			.locator('[data-testid="bridge-code-view-panel"]')
+			.locator('[data-additions] [data-column-number]');
+		await additionRows.nth(0).waitFor({ state: 'visible' });
+		await additionRows.nth(2).waitFor({ state: 'visible' });
 		[startBounds, endBounds] = await reviewAdditionRangeBounds({
 			endLine: props.endLine,
 			page: props.page,
