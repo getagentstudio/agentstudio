@@ -28,31 +28,51 @@ package enum WorktreeOperationOutcome: Sendable, Equatable {
     case fetchingReadFailure(WorktreeFetchingReadFailure)
     case removal(WorktreeRemovalReport)
     case pruned(WorktreePruneSummary)
-    case refused(WorktreeOperationRefusal)
+    /// `creationFetch` is set once `new`'s fetch has run: a refusal after it still reports it (LR30).
+    case refused(WorktreeOperationRefusal, creationFetch: WorktreeCreationFetchStatus? = nil)
     case failed(WorktreeOperationFailure)
+
+    /// The same outcome reporting `new`'s fetch, for a refusal or failure that came after it.
+    func carryingCreationFetch(_ fetch: WorktreeCreationFetchStatus) -> Self {
+        switch self {
+        case .refused(let refusal, _):
+            .refused(refusal, creationFetch: fetch)
+        case .failed(let failure):
+            .failed(
+                WorktreeOperationFailure(failure: failure.failure, leftovers: failure.leftovers, creationFetch: fetch))
+        case .created, .listed, .fetchingReadFailure, .removal, .pruned:
+            self
+        }
+    }
 }
 
 package struct WorktreeCreatedSummary: Sendable, Equatable {
     package let operation: WorktreeOperationKind
-    package let branch: String
+    package let branch: WorktreeCreatedBranch
     package let path: URL
     package let repository: URL
     package let materialization: WorktreeCreatedMaterialization
+    package let start: WorktreeCreationStart
+    package let fetch: WorktreeCreationFetchStatus
 
     package var largeFiles: GitLargeFileFill? { materialization.largeFiles }
 
     package init(
         operation: WorktreeOperationKind,
-        branch: String,
+        branch: WorktreeCreatedBranch,
         path: URL,
         repository: URL,
-        materialization: WorktreeCreatedMaterialization
+        materialization: WorktreeCreatedMaterialization,
+        start: WorktreeCreationStart,
+        fetch: WorktreeCreationFetchStatus
     ) {
         self.operation = operation
         self.branch = branch
         self.path = path
         self.repository = repository
         self.materialization = materialization
+        self.start = start
+        self.fetch = fetch
     }
 }
 
@@ -64,9 +84,6 @@ package enum WorktreeOperationRefusal: Sendable, Equatable {
     case invalidBranchName(WorktreeBranchNameProblem)
     case emptyBranchSlug
     case startBranchNotFound(String)
-    /// Interim until the branch resolver and the reset fork land: a request form the runner
-    /// can't build yet, named by its flags, refused instead of creating the wrong worktree.
-    case creationFormUnsupported(String)
     case destinationExists(URL)
     case destinationParentMissing(URL)
     case unsupportedRepositoryLayout(URL)
@@ -77,10 +94,17 @@ package enum WorktreeOperationRefusal: Sendable, Equatable {
 package struct WorktreeOperationFailure: Sendable, Equatable {
     package let failure: WorktreeFailureKind
     package let leftovers: WorktreeLeftoverStatus
+    /// Set once `new`'s fetch has run (LR30); the fork's own cleanup evidence stays in `leftovers`.
+    package let creationFetch: WorktreeCreationFetchStatus?
 
-    package init(failure: WorktreeFailureKind, leftovers: WorktreeLeftoverStatus) {
+    package init(
+        failure: WorktreeFailureKind,
+        leftovers: WorktreeLeftoverStatus,
+        creationFetch: WorktreeCreationFetchStatus? = nil
+    ) {
         self.failure = failure
         self.leftovers = leftovers
+        self.creationFetch = creationFetch
     }
 }
 

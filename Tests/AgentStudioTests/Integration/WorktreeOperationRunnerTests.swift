@@ -38,14 +38,18 @@ struct WorktreeOperationRunnerTests {
             return
         }
         #expect(created.operation == .new)
-        #expect(created.branch == branch)
+        #expect(created.branch == WorktreeCreatedBranch(name: branch, status: .created, upstream: nil))
+        #expect(created.start.source == .sourceHead)
+        #expect(created.fetch == .skipped(.noFetchFlag))
         #expect(canonicalPath(created.path) == canonicalPath(destination))
         #expect(canonicalPath(created.repository) == canonicalPath(repository))
         #expect(created.materialization.largeFiles != nil)
         #expect(try await git(at: destination, "rev-parse", "--abbrev-ref", "HEAD") == branch)
+        // `--no-fork` starts where the fork would: at the main worktree's HEAD commit.
         let destinationHead = try await git(at: destination, "rev-parse", "HEAD")
-        let defaultBranchHead = try await git(at: repository, "rev-parse", "refs/heads/main")
-        #expect(destinationHead == defaultBranchHead)
+        let sourceHead = try await git(at: repository, "rev-parse", "HEAD")
+        #expect(destinationHead == sourceHead)
+        #expect(created.start.commit == sourceHead)
 
         let listOutcome = await runner.run(
             .list(start: nestedStart, callerDirectory: nestedStart, targets: [], fetchPolicy: .skip)
@@ -147,7 +151,7 @@ struct WorktreeOperationRunnerTests {
                 listing.worktrees.contains {
                     canonicalPath($0.path) == canonicalPath(destination) && $0.branch == branch && !$0.isMain
                 })
-        case .refused(.forkUnavailable(let reason, _)):
+        case .refused(.forkUnavailable(let reason, _), _):
             #expect(Self.isEnvironmentForkUnavailable(reason))
         default:
             Issue.record("expected a successful fork or an environment capability refusal, received \(outcome)")
@@ -231,43 +235,43 @@ struct WorktreeOperationRunnerTests {
                 == .refused(.destinationExists(destination)))
     }
 
-    @Test("an existing Git branch is refused")
-    func refusesExistingBranch() async throws {
+    @Test("an existing branch opens as it is, and refuses only when --from-branch names another start")
+    func opensExistingBranchAndRefusesItForAnotherStart() async throws {
         let repository = try await FilesystemTestGitRepo.create(named: "operation-branch-exists")
         defer { FilesystemTestGitRepo.destroy(repository) }
         try await FilesystemTestGitRepo.seedTrackedAndUntrackedChanges(at: repository)
         let branch = "feature/already-exists"
         try await FilesystemTestGitRepo.runGit(at: repository, args: ["branch", branch])
+        let tip = try await git(at: repository, "rev-parse", "refs/heads/\(branch)")
+        let destination = try siblingDestination(repository: repository, branch: branch)
+        defer { try? FileManager.default.removeItem(at: destination) }
 
         #expect(
             await WorktreeOperationRunner().run(
                 .create(
                     WorktreeCreateRequest(
                         start: repository, branch: branch, source: .mainWorktree,
-                        startBranch: nil, materialization: .checkout, fetchPolicy: .skip)))
-                == .refused(.creationStopped(.branchAlreadyExists(branch: branch))))
-    }
+                        startBranch: "main", materialization: .checkout, fetchPolicy: .skip)))
+                == .refused(
+                    .creationStopped(.branchAlreadyExists(branch: branch)), creationFetch: .skipped(.noFetchFlag)))
+        #expect(!FileManager.default.fileExists(atPath: destination.path))
 
-    /// Interim: these forms need the branch resolver and the SDK's reset fork. Until then the
-    /// runner refuses them by their flags before reading the repository.
-    @Test("forms the runner cannot build yet are refused by their flags")
-    func refusesFormsAwaitingBranchResolution() async {
-        let start = URL(fileURLWithPath: "/tmp/worktree-operation-interim-forms")
-        let source = WorktreeCreateSource.worktree(start.appending(path: "linked"))
-        let cases: [(startBranch: String?, materialization: WorktreeCreateMaterialization, form: String)] = [
-            (nil, .checkout, "--no-fork with --from"),
-            ("release", .checkout, "--no-fork with --from"),
-            ("release", .copyOnWrite, "--from with --from-branch"),
-            ("release", .changesOnly, "--changes-only with --from-branch"),
-        ]
-        for testCase in cases {
-            let outcome = await WorktreeOperationRunner().run(
-                .create(
-                    WorktreeCreateRequest(
-                        start: start, branch: "feature/interim", source: source, startBranch: testCase.startBranch,
-                        materialization: testCase.materialization, fetchPolicy: .skip)))
-            #expect(outcome == .refused(.creationFormUnsupported(testCase.form)))
+        let outcome = await WorktreeOperationRunner().run(
+            .create(
+                WorktreeCreateRequest(
+                    start: repository, branch: branch, source: .mainWorktree,
+                    startBranch: nil, materialization: .checkout, fetchPolicy: .skip)))
+        guard case .created(let created) = outcome else {
+            Issue.record("expected the existing branch to open, received \(outcome)")
+            return
         }
+        #expect(created.branch == WorktreeCreatedBranch(name: branch, status: .existing, upstream: nil))
+        #expect(
+            created.start
+                == WorktreeCreationStart(
+                    commit: tip, source: .localBranch, reference: "refs/heads/\(branch)", localOnlyCommits: nil))
+        #expect(try await git(at: destination, "rev-parse", "--abbrev-ref", "HEAD") == branch)
+        #expect(try await git(at: repository, "rev-parse", "refs/heads/\(branch)") == tip)
     }
 
     @Test("new refuses when the repository has no default branch")
@@ -281,7 +285,7 @@ struct WorktreeOperationRunnerTests {
                     WorktreeCreateRequest(
                         start: repository, branch: "feature/no-default", source: .mainWorktree,
                         startBranch: nil, materialization: .checkout, fetchPolicy: .skip)))
-                == .refused(.noDefaultBranch))
+                == .refused(.noDefaultBranch, creationFetch: .skipped(.noFetchFlag)))
     }
 
     @Test("new and fork refuse repositories with a separate Git directory")
@@ -337,17 +341,14 @@ struct WorktreeOperationRunnerTests {
             mainWorktreePath: repository
         )
         let client = WorktreeOperationClientStub(startPath: start, snapshot: snapshot, identity: identity)
-        let runner = WorktreeOperationRunner(
-            client: client,
-            defaultStartPointResolver: WorktreeOperationStartPointStub(.noDefaultBranch)
-        )
+        let runner = WorktreeOperationRunner(client: client)
 
         let outcome = await runner.run(
             .create(
                 WorktreeCreateRequest(
                     start: start, branch: "feature/missing-parent", source: .mainWorktree,
                     startBranch: nil, materialization: .checkout, fetchPolicy: .skip)))
-        guard case .refused(.destinationParentMissing(let missingParent)) = outcome else {
+        guard case .refused(.destinationParentMissing(let missingParent), nil) = outcome else {
             Issue.record("expected missing destination parent refusal, received \(outcome)")
             return
         }
@@ -371,7 +372,7 @@ struct WorktreeOperationRunnerTests {
     }
 
     private func expectUnsupportedLayout(_ outcome: WorktreeOperationOutcome, repository: URL) {
-        guard case .refused(.unsupportedRepositoryLayout(let path)) = outcome else {
+        guard case .refused(.unsupportedRepositoryLayout(let path), nil) = outcome else {
             Issue.record("expected unsupported layout refusal, received \(outcome)")
             return
         }
@@ -403,16 +404,4 @@ private func canonicalPath(_ url: URL) -> String {
         path.removeLast()
     }
     return path
-}
-
-private struct WorktreeOperationStartPointStub: WorktreeDefaultStartPointResolving {
-    let startPoint: WorktreeDefaultStartPoint
-
-    init(_ startPoint: WorktreeDefaultStartPoint) {
-        self.startPoint = startPoint
-    }
-
-    func resolveDefaultStartPoint(repositoryPath _: URL) async throws(GitDataPlaneError) -> WorktreeDefaultStartPoint {
-        startPoint
-    }
 }

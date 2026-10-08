@@ -3,14 +3,17 @@ import Foundation
 
 extension WorktreeCommandLineFormatter {
     package static func failedHumanLine(_ failure: WorktreeOperationFailure) -> String {
-        "failed: \(humanFailure(failure.failure)); leftovers: \(WorktreeCleanupLeftoversFormatter.human(failure.leftovers))"
+        withCreationFetchLine(
+            "failed: \(humanFailure(failure.failure)); leftovers: \(WorktreeCleanupLeftoversFormatter.human(failure.leftovers))",
+            failure.creationFetch)
     }
 
     package static func failedJSONText(_ failure: WorktreeOperationFailure) throws -> String {
         try encodeJSON(
             WorktreeFailedCommandLineJSON(
                 failure: jsonFailure(failure.failure),
-                leftovers: WorktreeCleanupLeftoversFormatter.document(failure.leftovers)
+                leftovers: WorktreeCleanupLeftoversFormatter.document(failure.leftovers),
+                fetch: failure.creationFetch
             )
         )
     }
@@ -155,4 +158,5 @@ private struct WorktreeFailedCommandLineJSON: Encodable {
     }
 
     let leftovers: WorktreeCleanupLeftoversDocument
+    let fetch: WorktreeCreationFetchStatus?
 }

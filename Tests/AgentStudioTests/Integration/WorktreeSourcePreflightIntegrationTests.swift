@@ -65,7 +65,11 @@ struct WorktreeSourcePreflightIntegrationTests {
                         start: canonicalRepository, branch: "feature/unavailable", source: source, startBranch: nil,
                         materialization: .copyOnWrite, fetchPolicy: .skip)
                 ))
-            #expect(outcome == .refused(.forkUnavailable(.clientCapabilityUnavailable, source: source)))
+            #expect(
+                outcome
+                    == .refused(
+                        .forkUnavailable(.clientCapabilityUnavailable, source: source),
+                        creationFetch: .skipped(.noFetchFlag)))
             let response = try WorktreeCommandLineFormatter.format(outcome: outcome, usesJSONOutput: true)
             let document = try #require(JSONSerialization.jsonObject(with: Data(response.text.utf8)) as? [String: Any])
             #expect(document["alternative"] == nil)

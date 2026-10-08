@@ -53,7 +53,7 @@ package enum WorktreeCreatedMaterialization: Sendable, Equatable {
 
     package var largeFiles: GitLargeFileFill? {
         switch self {
-        case .copyOnWrite: nil
+        case .copyOnWrite(let report): report.largeFiles
         case .changesOnly(let report): report.largeFiles
         case .checkout(let fill): fill
         }

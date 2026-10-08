@@ -15,7 +15,10 @@ extension WorktreeCommandLineFormatter {
         return "\(refusalLine); options: [\(options)]"
     }
 
-    package static func refusedJSONText(_ refusal: WorktreeOperationRefusal) throws -> String {
+    package static func refusedJSONText(
+        _ refusal: WorktreeOperationRefusal,
+        creationFetch: WorktreeCreationFetchStatus? = nil
+    ) throws -> String {
         let details = refusalDetails(for: refusal)
         return try encodeJSON(
             WorktreeRefusedCommandLineJSON(
@@ -25,7 +28,8 @@ extension WorktreeCommandLineFormatter {
                 alternatives: details.alternatives?.map(\.rawValue),
                 options: details.options.isEmpty ? nil : details.options,
                 message: details.message,
-                details: details.creationDetails
+                details: details.creationDetails,
+                fetch: creationFetch
             )
         )
     }
@@ -54,8 +58,6 @@ extension WorktreeCommandLineFormatter {
                 reason: "invalidBranchName", path: nil, detail: "Git rejected the branch name")
         case .emptyBranchSlug:
             return WorktreeRefusalDetails(reason: "emptyBranchSlug", path: nil, detail: nil)
-        case .creationFormUnsupported(let form):
-            return WorktreeRefusalDetails(reason: "creationFormUnsupported", path: nil, detail: form)
         case .destinationExists(let path):
             return WorktreeRefusalDetails(reason: "destinationExists", path: absolutePath(path), detail: nil)
         case .destinationParentMissing(let path):
@@ -178,4 +180,5 @@ private struct WorktreeRefusedCommandLineJSON: Encodable {
     let options: [WorktreeStopOption]?
     let message: String?
     let details: WorktreeCreationStop?
+    let fetch: WorktreeCreationFetchStatus?
 }

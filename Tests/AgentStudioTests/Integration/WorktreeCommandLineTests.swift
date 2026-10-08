@@ -318,8 +318,7 @@ struct WorktreeCommandLineTests {
         [
             FormatterGolden(
                 outcome: .created(
-                    WorktreeCreatedSummary(
-                        operation: .new,
+                    makeCreatedSummary(
                         branch: "feature/cli",
                         path: createdPath,
                         repository: repository,
@@ -327,15 +326,14 @@ struct WorktreeCommandLineTests {
                             GitLargeFileFill(materializedCount: 0, missing: [], residuePaths: [], scan: .complete))
                     )
                 ),
-                humanText: "created feature/cli at /tmp/worktree-output/repository.feature-cli",
+                humanText: "created feature/cli at /tmp/worktree-output/repository.feature-cli (checkout)",
                 jsonText:
-                    "{\"branch\":\"feature/cli\",\"materialization\":{\"kind\":\"checkout\",\"largeFiles\":{\"materialized\":0,\"missing\":[],\"missingCount\":0,\"scan\":\"complete\"}},\"operation\":\"new\",\"outcome\":\"created\",\"path\":\"/tmp/worktree-output/repository.feature-cli\",\"repository\":\"/tmp/worktree-output/repository\"}",
+                    "{\"branch\":{\"name\":\"feature/cli\",\"status\":\"created\",\"upstream\":null},\"fetch\":{\"branch\":null,\"reason\":\"noRemote\",\"remote\":null,\"status\":\"skipped\"},\"materialization\":{\"kind\":\"checkout\",\"largeFiles\":{\"materialized\":0,\"missing\":[],\"missingCount\":0,\"scan\":\"complete\"}},\"operation\":\"new\",\"outcome\":\"created\",\"path\":\"/tmp/worktree-output/repository.feature-cli\",\"repository\":\"/tmp/worktree-output/repository\",\"start\":{\"commit\":\"1111111111111111111111111111111111111111\",\"from\":\"sourceHead\",\"localOnlyCommits\":null,\"ref\":null}}",
                 exitCode: 0
             ),
             FormatterGolden(
                 outcome: .created(
-                    WorktreeCreatedSummary(
-                        operation: .new,
+                    makeCreatedSummary(
                         branch: "feature/cow",
                         path: createdPath,
                         repository: repository,
@@ -355,10 +353,9 @@ struct WorktreeCommandLineTests {
                             ))
                     )
                 ),
-                humanText:
-                    "created feature/cow at /tmp/worktree-output/repository.feature-cli\ncopyOnWrite: ignoredIncludedPatterns=[] ignoredExcludedCount=0 nestedWorktreesSkipped=[]",
+                humanText: "created feature/cow at /tmp/worktree-output/repository.feature-cli (copy-on-write)",
                 jsonText:
-                    "{\"branch\":\"feature/cow\",\"materialization\":{\"clonedRegularFileCount\":0,\"createdDirectoryCount\":0,\"ignoredExcludedCount\":0,\"ignoredIncludedPatterns\":[],\"kind\":\"copyOnWrite\",\"logicalRegularFileBytes\":0,\"nestedWorktreesSkipped\":[],\"normalizedEntries\":[],\"preservedGitRepositoryCount\":0,\"preservedHardLinkCount\":0,\"recreatedFIFOCount\":0,\"recreatedSymbolicLinkCount\":0,\"skippedEntries\":[]},\"operation\":\"new\",\"outcome\":\"created\",\"path\":\"/tmp/worktree-output/repository.feature-cli\",\"repository\":\"/tmp/worktree-output/repository\"}",
+                    "{\"branch\":{\"name\":\"feature/cow\",\"status\":\"created\",\"upstream\":null},\"fetch\":{\"branch\":null,\"reason\":\"noRemote\",\"remote\":null,\"status\":\"skipped\"},\"materialization\":{\"clonedRegularFileCount\":0,\"createdDirectoryCount\":0,\"ignoredExcludedCount\":0,\"ignoredIncludedPatterns\":[],\"kind\":\"copyOnWrite\",\"logicalRegularFileBytes\":0,\"nestedWorktreesSkipped\":[],\"normalizedEntries\":[],\"preservedGitRepositoryCount\":0,\"preservedHardLinkCount\":0,\"recreatedFIFOCount\":0,\"recreatedSymbolicLinkCount\":0,\"skippedEntries\":[],\"sourceState\":\"asIs\",\"submodulesNotAtStart\":[]},\"operation\":\"new\",\"outcome\":\"created\",\"path\":\"/tmp/worktree-output/repository.feature-cli\",\"repository\":\"/tmp/worktree-output/repository\",\"start\":{\"commit\":\"1111111111111111111111111111111111111111\",\"from\":\"sourceHead\",\"localOnlyCommits\":null,\"ref\":null}}",
                 exitCode: 0
             ),
         ]
@@ -468,7 +465,8 @@ struct WorktreeCommandLineTests {
             errorOutput: { createProbe.appendErrorOutput($0) }
         )
         #expect(createExitCode == 0)
-        #expect(createProbe.outputSnapshot() == ["created \(branch) at \(destination.standardizedFileURL.path)"])
+        #expect(
+            createProbe.outputSnapshot() == ["created \(branch) at \(destination.standardizedFileURL.path) (checkout)"])
 
         let createdListingProbe = WorktreeCommandLineTestProbe()
         let listAfterCreateExitCode = await WorktreeCommandLine.run(

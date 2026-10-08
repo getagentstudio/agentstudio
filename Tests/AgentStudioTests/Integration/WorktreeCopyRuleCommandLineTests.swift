@@ -100,17 +100,26 @@ struct WorktreeCopyRuleCommandLineTests {
         try await expectAbsent(repository: repository, destination: destination, branch: branch)
     }
 
-    @Test("human creation prints all three copy-rule report fields")
-    func humanOutputIncludesCopyRuleReport() async throws {
+    @Test("human creation prints one line and the copy-rule report stays in --json")
+    func humanOutputIsOneLineAndJSONCarriesCopyRuleReport() async throws {
         let repository = try await makeRepository(named: "cli-copy-rules-human", include: ["included/"])
         defer { FilesystemTestGitRepo.destroy(repository) }
         let destination = try siblingDestination(repository: repository, branch: "feature/human")
         defer { try? FileManager.default.removeItem(at: destination) }
         let (exit, text) = try await runNew(repository: repository, branch: "feature/human", json: false)
         #expect(exit == 0)
-        #expect(text.contains("ignoredIncludedPatterns=[included/]"))
-        #expect(text.contains("ignoredExcludedCount=2"))
-        #expect(text.contains("nestedWorktreesSkipped=[]"))
+        #expect(text == "created feature/human at \(destination.path) (copy-on-write)")
+
+        let jsonBranch = "feature/human-json"
+        let jsonDestination = try siblingDestination(repository: repository, branch: jsonBranch)
+        defer { try? FileManager.default.removeItem(at: jsonDestination) }
+        let (jsonExit, json) = try await runNew(repository: repository, branch: jsonBranch, json: true)
+        #expect(jsonExit == 0)
+        let document = try #require(JSONSerialization.jsonObject(with: Data(json.utf8)) as? [String: Any])
+        let materialization = try #require(document["materialization"] as? [String: Any])
+        #expect(materialization["ignoredIncludedPatterns"] as? [String] == ["included/"])
+        #expect(materialization["ignoredExcludedCount"] as? Int == 2)
+        #expect((materialization["nestedWorktreesSkipped"] as? [String])?.isEmpty == true)
     }
 
     private func makeRepository(named name: String, include: [String]?) async throws -> URL {

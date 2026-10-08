@@ -48,12 +48,10 @@ extension WorktreeOperationRunner {
             return .outcome(.refused(.destinationParentMissing(destinationParent)))
         }
 
+        // An existing branch no longer refuses here: LR1's resolver decides what it means.
         let branches: [GitBranchSnapshot]
         do {
             branches = try await client.branches(for: discovery.repositoryPath)
-            guard !branches.contains(where: { $0.name == branchName.rawValue }) else {
-                return .outcome(.refused(.creationStopped(.branchAlreadyExists(branch: branchName.rawValue))))
-            }
         } catch {
             return .outcome(.failed(WorktreeOperationErrorMapper.readFailure(error)))
         }

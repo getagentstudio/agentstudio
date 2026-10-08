@@ -55,7 +55,7 @@ struct WorktreeCreationCommandLineIntegrationTests {
         let document = try JSONDecoder().decode(CreatedDocument.self, from: Data(output.utf8))
         #expect(document.outcome == "created")
         #expect(document.operation == "new")
-        #expect(document.branch == branch)
+        #expect(document.branch.name == branch)
         #expect(document.path == destination.path)
         #expect(document.repository == repository.path)
         #expect(document.materialization?.kind == "checkout")
@@ -65,7 +65,7 @@ struct WorktreeCreationCommandLineIntegrationTests {
         #expect(try await git(at: repository, "rev-parse", "refs/heads/\(startBranch)") == expectedTip)
     }
 
-    @Test("new --from-branch without another flag creates its new branch at that local branch tip")
+    @Test("new --from-branch without another flag forks main and resets the copy to that local branch tip")
     func createsFromBranchWithoutNoFork() async throws {
         let repository = try await FilesystemTestGitRepo.create(named: "cli-from-branch-alone")
         defer { FilesystemTestGitRepo.destroy(repository) }
@@ -95,9 +95,14 @@ struct WorktreeCreationCommandLineIntegrationTests {
         #expect(probe.errorSnapshot().isEmpty)
         let document = try JSONDecoder().decode(CreatedDocument.self, from: Data(output.utf8))
         #expect(document.outcome == "created")
-        #expect(document.branch == "feat")
+        #expect(document.branch.name == "feat")
         #expect(document.path == destination.path)
-        #expect(document.materialization?.kind == "checkout")
+        #expect(document.materialization?.kind == "copyOnWrite")
+        #expect(document.materialization?.sourceState == "reset")
+        #expect(
+            document.start
+                == .init(commit: releaseTip, from: "localBranch", ref: "refs/heads/release", localOnlyCommits: nil))
+        #expect(try String(contentsOf: destination.appending(path: "release.txt"), encoding: .utf8) == "release\n")
         #expect(try await git(at: repository, "rev-parse", "refs/heads/feat") == releaseTip)
         #expect(try await git(at: destination, "rev-parse", "HEAD") == releaseTip)
     }
@@ -184,7 +189,7 @@ struct WorktreeCreationCommandLineIntegrationTests {
         let document = try JSONDecoder().decode(CreatedDocument.self, from: Data(output.utf8))
         #expect(document.outcome == "created")
         #expect(document.operation == "new")
-        #expect(document.branch == branch)
+        #expect(document.branch.name == branch)
         #expect(document.path == destination.path)
         guard let report = document.materialization, report.kind == "changesOnly" else {
             Issue.record("expected the CLI to report changesOnly materialization")

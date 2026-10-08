@@ -2,23 +2,11 @@ import AgentStudioGit
 import Foundation
 
 extension WorktreeCommandLineFormatter {
+    /// LR31: one line, `created <branch> at <path> (<how>[; notes])`. Notes appear only when they
+    /// apply, in a fixed order; everything else is in `--json`.
     package static func createdHumanLine(_ summary: WorktreeCreatedSummary) -> String {
-        var lines = ["created \(summary.branch) at \(absolutePath(summary.path))"]
-        if case .copyOnWrite(let report) = summary.materialization {
-            lines.append(
-                "copyOnWrite: ignoredIncludedPatterns=[\(report.ignoredIncludedPatterns.joined(separator: ", "))] ignoredExcludedCount=\(report.ignoredExcludedCount) nestedWorktreesSkipped=[\(report.nestedWorktreesSkipped.joined(separator: ", "))]"
-            )
-        }
-        if let largeFiles = WorktreeLargeFilesProjector.document(
-            for: summary.largeFiles,
-            worktreePath: summary.path
-        ) {
-            lines.append(largeFilesHumanLine(largeFiles))
-        }
-        if let leftovers = WorktreeLargeFilesProjector.cleanupLeftovers(for: summary.largeFiles) {
-            lines.append("leftovers: \(WorktreeCleanupLeftoversFormatter.human(leftovers))")
-        }
-        return lines.joined(separator: "\n")
+        let details = [materializationWord(summary.materialization)] + createdNotes(summary)
+        return "created \(summary.branch.name) at \(absolutePath(summary.path)) (\(details.joined(separator: "; ")))"
     }
 
     package static func createdJSONText(_ summary: WorktreeCreatedSummary) throws -> String {
@@ -30,6 +18,8 @@ extension WorktreeCommandLineFormatter {
                 repository: absolutePath(summary.repository),
                 materialization: WorktreeCreatedMaterializationDocument(
                     summary.materialization, worktreePath: summary.path),
+                start: summary.start,
+                fetch: summary.fetch,
                 largeFiles: WorktreeLargeFilesProjector.document(
                     for: summary.largeFiles,
                     worktreePath: summary.path
@@ -40,25 +30,56 @@ extension WorktreeCommandLineFormatter {
         )
     }
 
-    private static func largeFilesHumanLine(_ largeFiles: WorktreeLargeFilesDocument) -> String {
-        var line = "LFS: \(largeFiles.materialized) filled, \(largeFiles.missingCount) missing"
-        switch largeFiles.scan {
-        case .complete:
-            break
-        case .incompleteReadFailed(let errno):
-            line += ", scan incomplete (readFailed errno \(errno))"
-        case .incompleteGitFailure(let kind):
-            line += ", scan incomplete (gitFailure \(kind))"
+    private static func materializationWord(_ materialization: WorktreeCreatedMaterialization) -> String {
+        switch materialization {
+        case .copyOnWrite: "copy-on-write"
+        case .checkout: "checkout"
+        case .changesOnly: "changes-only"
         }
-        if let option = largeFiles.options?.first {
-            line += " (run: \(option))"
+    }
+
+    private static func createdNotes(_ summary: WorktreeCreatedSummary) -> [String] {
+        var notes: [String] = []
+        let startName = summary.start.reference.map(shortReferenceName)
+        if summary.branch.status != .created {
+            notes.append("existing branch")
         }
-        return line
+        if summary.branch.status == .fastForwarded, let startName {
+            notes.append("fast-forwarded to \(startName)")
+        }
+        if let localOnlyCommits = summary.start.localOnlyCommits, let startName {
+            notes.append(
+                "kept local \(startName): \(counted(localOnlyCommits.count, "commit")) not on \(localOnlyCommits.remoteName)"
+            )
+        }
+        if summary.start.source == .remoteBranch, summary.branch.status != .fastForwarded, let startName {
+            notes.append("from \(startName)")
+        }
+        if case .failed(_, _, let failure) = summary.fetch {
+            notes.append("fetch failed: \(failure.reason.rawValue); used local refs")
+        }
+        if let missingCount = summary.largeFiles?.missing.count, missingCount > 0 {
+            notes.append("\(counted(missingCount, "large file")) left as pointers")
+        }
+        return notes
+    }
+
+    /// `refs/remotes/origin/feat` → `origin/feat`, `refs/heads/feat` → `feat`.
+    private static func shortReferenceName(_ reference: String) -> String {
+        for prefix in ["refs/remotes/", "refs/heads/"] where reference.hasPrefix(prefix) {
+            return String(reference.dropFirst(prefix.count))
+        }
+        return reference
+    }
+
+    private static func counted(_ count: Int, _ noun: String) -> String {
+        count == 1 ? "1 \(noun)" : "\(count) \(noun)s"
     }
 }
 
 package enum WorktreeCreatedMaterializationDocument: Encodable, Sendable {
-    case copyOnWrite(GitWorktreeMaterializationReport)
+    /// `largeFiles` is the reset copy's fill (LR4); an as-is copy has none.
+    case copyOnWrite(GitWorktreeMaterializationReport, largeFiles: WorktreeLargeFilesDocument?)
     case checkout(WorktreeLargeFilesDocument)
     case changesOnly(trackedChanges: Int, untrackedFiles: Int, ignoredExcluded: Bool)
 
@@ -77,6 +98,8 @@ package enum WorktreeCreatedMaterializationDocument: Encodable, Sendable {
         case ignoredIncludedPatterns
         case ignoredExcludedCount
         case nestedWorktreesSkipped
+        case sourceState
+        case submodulesNotAtStart
         case trackedChanges
         case untrackedFiles
         case ignoredExcluded
@@ -87,7 +110,9 @@ package enum WorktreeCreatedMaterializationDocument: Encodable, Sendable {
         case .checkout(let fill):
             self = .checkout(WorktreeLargeFilesDocument(fill: fill, worktreePath: worktreePath))
         case .copyOnWrite(let report):
-            self = .copyOnWrite(report)
+            self = .copyOnWrite(
+                report,
+                largeFiles: report.largeFiles.map { WorktreeLargeFilesDocument(fill: $0, worktreePath: worktreePath) })
         case .changesOnly(let report):
             self = .changesOnly(
                 trackedChanges: report.trackedChanges,
@@ -103,7 +128,7 @@ package enum WorktreeCreatedMaterializationDocument: Encodable, Sendable {
         case .checkout(let largeFiles):
             try container.encode("checkout", forKey: .kind)
             try container.encode(largeFiles, forKey: .largeFiles)
-        case .copyOnWrite(let report):
+        case .copyOnWrite(let report, let largeFiles):
             try container.encode("copyOnWrite", forKey: .kind)
             try container.encode(report.clonedRegularFileCount, forKey: .clonedRegularFileCount)
             try container.encode(report.createdDirectoryCount, forKey: .createdDirectoryCount)
@@ -117,6 +142,9 @@ package enum WorktreeCreatedMaterializationDocument: Encodable, Sendable {
             try container.encode(report.ignoredIncludedPatterns, forKey: .ignoredIncludedPatterns)
             try container.encode(report.ignoredExcludedCount, forKey: .ignoredExcludedCount)
             try container.encode(report.nestedWorktreesSkipped, forKey: .nestedWorktreesSkipped)
+            try container.encode(report.sourceState, forKey: .sourceState)
+            try container.encode(report.submodulesNotAtStart, forKey: .submodulesNotAtStart)
+            try container.encodeIfPresent(largeFiles, forKey: .largeFiles)
         case .changesOnly(let trackedChanges, let untrackedFiles, let ignoredExcluded):
             try container.encode("changesOnly", forKey: .kind)
             try container.encode(trackedChanges, forKey: .trackedChanges)
@@ -129,10 +157,12 @@ package enum WorktreeCreatedMaterializationDocument: Encodable, Sendable {
 private struct WorktreeCreatedCommandLineJSON: Encodable {
     let outcome = "created"
     let operation: String
-    let branch: String
+    let branch: WorktreeCreatedBranch
     let path: String
     let repository: String
     let materialization: WorktreeCreatedMaterializationDocument
+    let start: WorktreeCreationStart
+    let fetch: WorktreeCreationFetchStatus
     let largeFiles: WorktreeLargeFilesDocument?
     let leftovers: WorktreeCleanupLeftoversDocument?
 }

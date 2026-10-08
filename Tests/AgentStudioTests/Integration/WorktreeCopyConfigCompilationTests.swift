@@ -47,8 +47,8 @@ struct WorktreeCopyConfigCompilationTests {
             logicalRegularFileBytes: 32, skippedEntries: [], normalizedEntries: [],
             ignoredIncludedPatterns: ["cache/"], ignoredExcludedCount: 7, nestedWorktreesSkipped: ["nested/source"],
             sourceState: .asIs, submodulesNotAtStart: [], largeFiles: nil)
-        let summary = WorktreeCreatedSummary(
-            operation: .new, branch: "feature/report", path: URL(fileURLWithPath: "/repo.feature-report"),
+        let summary = makeCreatedSummary(
+            branch: "feature/report", path: URL(fileURLWithPath: "/repo.feature-report"),
             repository: URL(fileURLWithPath: "/repo"), materialization: .copyOnWrite(report))
         let json = try WorktreeCommandLineFormatter.format(outcome: .created(summary), usesJSONOutput: true)
         let document = try #require(JSONSerialization.jsonObject(with: Data(json.text.utf8)) as? [String: Any])
@@ -56,9 +56,10 @@ struct WorktreeCopyConfigCompilationTests {
         #expect(materialization["ignoredIncludedPatterns"] as? [String] == ["cache/"])
         #expect(materialization["ignoredExcludedCount"] as? Int == 7)
         #expect(materialization["nestedWorktreesSkipped"] as? [String] == ["nested/source"])
+        #expect(materialization["sourceState"] as? String == "asIs")
+        #expect((materialization["submodulesNotAtStart"] as? [String])?.isEmpty == true)
+        // LR31: the copy-rule report is in --json only; the human line says what was created.
         let human = try WorktreeCommandLineFormatter.format(outcome: .created(summary), usesJSONOutput: false)
-        #expect(human.text.contains("ignoredIncludedPatterns=[cache/]"))
-        #expect(human.text.contains("ignoredExcludedCount=7"))
-        #expect(human.text.contains("nestedWorktreesSkipped=[nested/source]"))
+        #expect(human.text == "created feature/report at /repo.feature-report (copy-on-write)")
     }
 }

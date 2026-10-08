@@ -92,12 +92,11 @@ struct WorktreeCreationLargeFileCommandLineTests {
         #expect(exitCode == 0)
         #expect(probe.errorSnapshot().isEmpty)
         #expect(try Data(contentsOf: destination.appending(path: "asset.bin")) == Data(fixture.pointer.utf8))
+        // LR31: one line counts what is left as pointers; the quoted pull option is in --json below.
         let output = try #require(probe.outputSnapshot().first)
-        let expectedHumanPullCommand = WorktreeLargeFileCLIContract.expectedPullCommand(for: destination)
         #expect(destination.path.contains(" "))
         #expect(destination.path.contains("'"))
-        #expect(output.contains("LFS: 0 filled, 1 missing"))
-        #expect(output.contains(expectedHumanPullCommand))
+        #expect(output == "created \(branch) at \(destination.path) (checkout; 1 large file left as pointers)")
 
         let jsonProbe = WorktreeCreationCommandLineProbe()
         let jsonBranch = "feature/lfs-absent-json"
@@ -132,8 +131,8 @@ struct WorktreeCreationLargeFileCommandLineTests {
         #expect(forkExitCode == 0)
         #expect(forkProbe.errorSnapshot().isEmpty)
         #expect(
-            forkProbe.outputSnapshot().first?.contains(
-                WorktreeLargeFileCLIContract.expectedPullCommand(for: forkDestination)) == true)
+            forkProbe.outputSnapshot().first
+                == "created \(forkBranch) at \(forkDestination.path) (changes-only; 1 large file left as pointers)")
 
         let forkJSONBranch = "feature/lfs-absent-fork-json"
         let forkJSONDestination = try siblingDestination(repository: fixture.repository, branch: forkJSONBranch)
@@ -239,8 +238,7 @@ struct WorktreeCreationLargeFileCommandLineTests {
 
         let humanResponse = try WorktreeCommandLineFormatter.format(outcome: outcome, usesJSONOutput: false)
         #expect(humanResponse.exitCode == 0)
-        #expect(humanResponse.text.contains("scan incomplete (readFailed errno \(EIO))"))
-        #expect(humanResponse.text.contains("git -C \(destination.path) lfs pull"))
+        #expect(humanResponse.text == "created \(branch) at \(destination.path) (checkout)")
     }
 
     @Test("incomplete Git scan uses the CLI's string failure shape")
@@ -296,7 +294,7 @@ struct WorktreeCreationLargeFileCommandLineTests {
 
         let humanResponse = try WorktreeCommandLineFormatter.format(outcome: outcome, usesJSONOutput: false)
         #expect(humanResponse.exitCode == 0)
-        #expect(humanResponse.text.contains("scan incomplete (gitFailure headUnavailable)"))
+        #expect(humanResponse.text == "created \(branch) at \(destination.path) (checkout)")
     }
 
     @Test("nested LFS residue is rooted at the new worktree with zero fills and misses")
@@ -357,8 +355,9 @@ struct WorktreeCreationLargeFileCommandLineTests {
         #expect(item["location"] as? String == residuePath)
         #expect(FileManager.default.fileExists(atPath: residueFile.path))
 
+        // LR31: the residue is reported in --json (above); the human line says what was created.
         let humanResponse = try WorktreeCommandLineFormatter.format(outcome: outcome, usesJSONOutput: false)
-        #expect(humanResponse.text.contains("temporaryArtifact \(residuePath) (destination)"))
+        #expect(humanResponse.text == "created \(branch) at \(destination.path) (checkout)")
     }
 
 }
