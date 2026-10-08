@@ -348,11 +348,14 @@ extension BridgePaneProductMetadataCoordinator {
             subscription: subscription,
             productAdmission: productAdmission,
             foregroundWorkAdmission: foregroundWorkAdmission
-        ) { _ in
+        ) { fact in
             _ = try await self.publishFileViewCapture(
                 subscriptionId: subscription.subscriptionId,
                 productAdmission: productAdmission
             )
+            // Source acceptance precedes enumeration and open completion. Its
+            // recovery capture must not hold source opening behind the receiver.
+            if case .sourceAccepted = fact { return }
             guard
                 let view = await activeStream.session.acceptedViewScope(
                     subscriptionId: subscription.subscriptionId),
