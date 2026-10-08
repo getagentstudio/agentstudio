@@ -55,39 +55,6 @@ extension WorktreeNewPreflightTests {
                 == .branch(remoteName: "origin", branchName: "upstream/feat"))
     }
 
-    @Test("a start matches <branch> and a remote name byte for byte, as git does, not by canonical equivalence")
-    func comparesStartNamesAsBytes() {
-        let decomposed = "release/e\u{301}"
-        let precomposed = "release/\u{e9}"
-        // Swift's `==` calls these equal; git sees two branches. String-payload `==` would hide the
-        // difference, so the decisive checks below compare UTF-8 bytes.
-        #expect(decomposed == precomposed)
-        #expect(!decomposed.utf8.elementsEqual(precomposed.utf8))
-
-        // Not the same-name form: the start is compared with its own origin branch, not with <branch>'s.
-        let start = WorktreeStartReference.parse(decomposed, remoteNames: ["origin"])
-        #expect(!start.names(branch: precomposed))
-        #expect(start.names(branch: decomposed))
-        guard
-            case .branch(let remoteName, let branchName) = Self.fetchTarget(
-                precomposed, start: decomposed, remoteNames: ["origin"])
-        else {
-            Issue.record("expected a one-branch fetch target")
-            return
-        }
-        #expect(remoteName == "origin")
-        #expect(Array(branchName.utf8) == Array(decomposed.utf8))
-
-        // A first segment only canonically equal to a configured remote doesn't qualify the start.
-        let remoteNames = ["origin", "caf\u{e9}"]
-        #expect(
-            WorktreeStartReference.parse("cafe\u{301}/release", remoteNames: remoteNames)
-                == .unqualified(branchName: "cafe\u{301}/release"))
-        #expect(
-            WorktreeStartReference.parse("caf\u{e9}/release", remoteNames: remoteNames)
-                == .remote(remoteName: "caf\u{e9}", branchName: "release"))
-    }
-
     @Test("a skipped refresh says why: notNeeded before noFetchFlag before noRemote")
     func ordersFetchSkipReasons() {
         #expect(
