@@ -6,6 +6,7 @@ import {
 	type CodeViewOptions,
 	type SelectedLineRange,
 } from '@pierre/diffs';
+import { expect } from 'vitest';
 import { cleanup, render } from 'vitest-browser-react';
 
 import { createBridgeMainRenderFulfillmentCoordinator } from '../../core/comm-worker/bridge-main-render-fulfillment-coordinator.js';
@@ -18,6 +19,7 @@ import {
 } from '../../worktree-annotations/worktree-annotation-click-admission-cleanup.browser.test-support.js';
 import {
 	hoverAndClickUtility,
+	waitForSinglePierreUtility,
 	pierreRowSelector,
 	requirePierreElement,
 } from '../../worktree-annotations/worktree-annotation-click-admission-pointer.browser.test-support.js';
@@ -36,6 +38,8 @@ const composerSelector = '[aria-label="Write an annotation in Markdown"]';
 
 interface ClickAdmissionHarnessProps {
 	readonly holdInteractionSetup?: boolean;
+	readonly isInitialReadinessReleased?: () => boolean;
+	readonly recordInitialReadinessObserver?: (observer: MutationObserver) => void;
 	readonly afterSetupBeforeHover?: ((codeView: CodeView) => void) | undefined;
 	readonly beforeRender?: (() => void) | undefined;
 	readonly metadataPublicationOwner: { publish: ((callback: () => void) => void) | undefined };
@@ -50,6 +54,8 @@ export interface ClickAdmissionReviewHarness {
 	readonly gutterAdmissions: RecordedGutterAdmission[];
 	readonly interactionLifecycle: string[];
 	readonly interactionSetup: PierreInteractionSetupFacts;
+	readonly waitForUtility: () => Promise<HTMLElement>;
+	readonly waitForInteractionSetup: (row: HTMLElement) => Promise<void>;
 	readonly waitForComposer: (present: boolean) => Promise<void>;
 	readonly hoverAndClickUtility: (row: HTMLElement, pointerId: number) => Promise<void>;
 }
@@ -202,7 +208,10 @@ export async function createClickAdmissionReviewHarness(
 			(): boolean =>
 				codeViews.length === 1 &&
 				queryPierreElements('[data-deletions] [data-column-number]').length >= 3 &&
-				queryPierreElements('[data-additions] [data-column-number]').length >= 3,
+				queryPierreElements('[data-additions] [data-column-number]').length >= 3 &&
+				(props.isInitialReadinessReleased?.() ?? true),
+			outcomeController.signal,
+			props.recordInitialReadinessObserver,
 		);
 		pendingWait = 'initial publication join';
 		await slotPublications.join();
@@ -216,6 +225,15 @@ export async function createClickAdmissionReviewHarness(
 				pendingWait = kind;
 			},
 			dispose,
+			waitForUtility: (): Promise<HTMLElement> => {
+				pendingWait = 'preparation gutter utility appearance';
+				return waitForSinglePierreUtility(outcomeController.signal);
+			},
+			waitForInteractionSetup: (row: HTMLElement): Promise<void> => {
+				pendingWait = 'preparation interaction setup';
+				lastRow = row;
+				return interactionSetup.waitForSetup(row, outcomeController.signal);
+			},
 			waitForComposer: async (present: boolean): Promise<void> => {
 				pendingWait = present ? 'composer appearance' : 'composer dismissal';
 				await waitForPierreCondition(
@@ -303,5 +321,53 @@ function makeReviewItem(): BridgeMainCodeViewItem {
 		id: 'item-source',
 		type: 'diff',
 		version: 1,
+	};
+}
+
+export function captureClickAdmissionOriginals(
+	metadataPublicationOwner: ClickAdmissionHarnessProps['metadataPublicationOwner'],
+): {
+	readonly assertRestored: () => void;
+	readonly restore: () => void;
+} {
+	// oxlint-disable-next-line unbound-method -- Identity receipt; never invoked unbound.
+	const setSlotCoordinator = CodeView.prototype.setSlotCoordinator;
+	// oxlint-disable-next-line unbound-method -- Identity receipt; never invoked unbound.
+	const setOptions = CodeView.prototype.setOptions;
+	// oxlint-disable-next-line unbound-method -- Identity receipt; never invoked unbound.
+	const codeViewSetup = CodeView.prototype.setup;
+	// oxlint-disable-next-line unbound-method -- Identity receipt; never invoked unbound.
+	const interactionSetup = InteractionManager.prototype.setup;
+	// oxlint-disable-next-line unbound-method -- Identity receipt; never invoked unbound.
+	const interactionCleanup = InteractionManager.prototype.cleanUp;
+	const metadataPublication = metadataPublicationOwner.publish;
+	const requestFrame = globalThis.requestAnimationFrame;
+	const cancelFrame = globalThis.cancelAnimationFrame;
+	return {
+		assertRestored: (): void => {
+			// oxlint-disable-next-line unbound-method -- Compares method identity; never invoked.
+			expect.soft(CodeView.prototype.setSlotCoordinator).toBe(setSlotCoordinator);
+			// oxlint-disable-next-line unbound-method -- Compares method identity; never invoked.
+			expect.soft(CodeView.prototype.setOptions).toBe(setOptions);
+			// oxlint-disable-next-line unbound-method -- Compares method identity; never invoked.
+			expect.soft(CodeView.prototype.setup).toBe(codeViewSetup);
+			// oxlint-disable-next-line unbound-method -- Compares method identity; never invoked.
+			expect.soft(InteractionManager.prototype.setup).toBe(interactionSetup);
+			// oxlint-disable-next-line unbound-method -- Compares method identity; never invoked.
+			expect.soft(InteractionManager.prototype.cleanUp).toBe(interactionCleanup);
+			expect.soft(metadataPublicationOwner.publish).toBe(metadataPublication);
+			expect.soft(globalThis.requestAnimationFrame).toBe(requestFrame);
+			expect.soft(globalThis.cancelAnimationFrame).toBe(cancelFrame);
+		},
+		restore: (): void => {
+			CodeView.prototype.setSlotCoordinator = setSlotCoordinator;
+			CodeView.prototype.setOptions = setOptions;
+			CodeView.prototype.setup = codeViewSetup;
+			InteractionManager.prototype.setup = interactionSetup;
+			InteractionManager.prototype.cleanUp = interactionCleanup;
+			metadataPublicationOwner.publish = metadataPublication;
+			globalThis.requestAnimationFrame = requestFrame;
+			globalThis.cancelAnimationFrame = cancelFrame;
+		},
 	};
 }
