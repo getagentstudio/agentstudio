@@ -12,14 +12,42 @@ export interface SettledProductCallResponse {
 	readonly result: unknown;
 }
 
-/** Installs before the user action and correlates the admission with its result. */
+export interface SupersededProductCallObservation {
+	readonly failureCode: 'superseded';
+	readonly operationId: string;
+	readonly requestSequence: number;
+}
+
+interface ProductCallSettlementObservationProps {
+	readonly page: Page;
+	readonly matchesCall: (response: Response) => boolean | Promise<boolean>;
+	readonly signal?: AbortSignal;
+	readonly onSuperseded?: (observation: SupersededProductCallObservation) => void;
+}
+
+/** A single-call assertion is terminal on every refusal; projection alone opts into supersession. */
 export function waitForProductCallSettlement(
 	page: Page,
 	matchesCall: (response: Response) => boolean | Promise<boolean>,
 	signal?: AbortSignal,
 ): Promise<SettledProductCallResponse> {
+	return observeProductCallSettlement({
+		page,
+		matchesCall,
+		...(signal === undefined ? {} : { signal }),
+	});
+}
+
+/** Correlates real admissions/results, retaining newer candidates received before an older refusal. */
+export function observeProductCallSettlement(
+	props: ProductCallSettlementObservationProps,
+): Promise<SettledProductCallResponse> {
 	return new Promise<SettledProductCallResponse>((resolve, reject): void => {
-		let admission: { readonly operationId: string; readonly requestSequence: number } | null = null;
+		const admissions = new Map<
+			string,
+			{ readonly operationId: string; readonly requestSequence: number }
+		>();
+		const pendingAdmissions = new Set<{ readonly requestSequence: number }>();
 		const resultsByOperationId = new Map<
 			string,
 			{
@@ -27,11 +55,12 @@ export function waitForProductCallSettlement(
 				readonly response: Response;
 			}
 		>();
+		let minimumRequestSequence = 0;
 		let finished = false;
 		const cleanup = (): void => {
-			page.off('response', onResponse);
-			page.off('close', onClose);
-			signal?.removeEventListener('abort', onAbort);
+			props.page.off('response', onResponse);
+			props.page.off('close', onClose);
+			props.signal?.removeEventListener('abort', onAbort);
 		};
 		const fail = (error: unknown): void => {
 			if (finished) return;
@@ -40,21 +69,46 @@ export function waitForProductCallSettlement(
 			reject(error);
 		};
 		const finishIfReady = (): void => {
-			if (finished || admission === null) return;
-			const settlement = resultsByOperationId.get(admission.operationId);
-			if (settlement === undefined) return;
-			finished = true;
-			cleanup();
-			if (settlement.parsed.outcome !== 'succeeded') {
-				reject(new Error(`Product call settled as ${settlement.parsed.outcome}.`));
-				return;
+			// Each iteration consumes a buffered superseded admission; this never waits or resends.
+			while (!finished) {
+				const admission = [...admissions.values()]
+					.filter((candidate) => candidate.requestSequence > minimumRequestSequence)
+					.toSorted((left, right) => left.requestSequence - right.requestSequence)[0];
+				if (admission === undefined) return;
+				// An earlier response may still be resolving the committed-session matcher.
+				if (
+					[...pendingAdmissions].some(
+						(candidate) =>
+							candidate.requestSequence > minimumRequestSequence &&
+							candidate.requestSequence < admission.requestSequence,
+					)
+				)
+					return;
+				const settlement = resultsByOperationId.get(admission.operationId);
+				if (settlement === undefined) return;
+				if (
+					settlement.parsed.outcome === 'refused' &&
+					settlement.parsed.failureCode === 'superseded' &&
+					props.onSuperseded !== undefined
+				) {
+					props.onSuperseded({ ...admission, failureCode: 'superseded' });
+					minimumRequestSequence = admission.requestSequence;
+					admissions.delete(admission.operationId);
+					resultsByOperationId.delete(admission.operationId);
+					continue;
+				}
+				finished = true;
+				cleanup();
+				if (settlement.parsed.outcome !== 'succeeded') {
+					reject(
+						new Error(
+							`Product call ${admission.operationId} settled as ${settlement.parsed.outcome}; failureCode=${settlement.parsed.failureCode ?? 'none'}.`,
+						),
+					);
+					return;
+				}
+				resolve({ ...admission, response: settlement.response, result: settlement.parsed.result });
 			}
-			resolve({
-				operationId: admission.operationId,
-				requestSequence: admission.requestSequence,
-				response: settlement.response,
-				result: settlement.parsed.result,
-			});
 		};
 		const inspect = async (response: Response): Promise<void> => {
 			const request = response.request();
@@ -64,23 +118,36 @@ export function waitForProductCallSettlement(
 			)
 				return;
 			const requestBody: unknown = request.postDataJSON();
-			if (admission === null && (await matchesCall(response))) {
-				const parsed = bridgeProductAdmissionResponseSchema.parse(await response.json());
-				if (parsed.kind !== 'operation.admitted') {
-					throw new Error(`Product call admission was refused with ${parsed.code}.`);
+			if (!isRecord(requestBody)) return;
+			if (
+				requestBody['kind'] === 'product.call' &&
+				typeof requestBody['requestSequence'] === 'number'
+			) {
+				const pending = { requestSequence: requestBody['requestSequence'] };
+				pendingAdmissions.add(pending);
+				try {
+					if (!(await props.matchesCall(response)) || finished) return;
+					const parsed = bridgeProductAdmissionResponseSchema.parse(await response.json());
+					if (finished) return;
+					if (parsed.kind !== 'operation.admitted')
+						throw new Error(`Product call admission was refused with ${parsed.code}.`);
+					admissions.set(parsed.operationId, {
+						operationId: parsed.operationId,
+						requestSequence: parsed.requestSequence,
+					});
+				} catch (error: unknown) {
+					fail(error);
+				} finally {
+					pendingAdmissions.delete(pending);
+					finishIfReady();
 				}
-				admission = {
-					operationId: parsed.operationId,
-					requestSequence: parsed.requestSequence,
-				};
-				finishIfReady();
 				return;
 			}
-			if (!isRecord(requestBody) || requestBody['kind'] !== 'operation.result') return;
+			if (requestBody['kind'] !== 'operation.result') return;
 			const parsed = bridgeProductOperationResultResponseSchema.parse(await response.json());
-			if (parsed.operationId !== requestBody['operationId']) {
+			if (finished) return;
+			if (parsed.operationId !== requestBody['operationId'])
 				throw new Error('Product result response does not match its request.');
-			}
 			resultsByOperationId.set(parsed.operationId, { parsed, response });
 			finishIfReady();
 		};
@@ -89,11 +156,11 @@ export function waitForProductCallSettlement(
 		};
 		const onClose = (): void => fail(new Error('Page closed before product call settlement.'));
 		const onAbort = (): void =>
-			fail(signal?.reason ?? new Error('Product call observation cancelled.'));
-		page.on('response', onResponse);
-		page.on('close', onClose);
-		if (signal?.aborted) onAbort();
-		else signal?.addEventListener('abort', onAbort, { once: true });
+			fail(props.signal?.reason ?? new Error('Product call observation cancelled.'));
+		props.page.on('response', onResponse);
+		props.page.on('close', onClose);
+		if (props.signal?.aborted) onAbort();
+		else props.signal?.addEventListener('abort', onAbort, { once: true });
 	});
 }
 
