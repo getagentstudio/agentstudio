@@ -37,6 +37,11 @@ import {
 	actUpdateAndWaitForBridgeFileViewerWorkerPublication,
 	installBridgeFileViewerNoopResizeObserver,
 } from './bridge-file-viewer-browser-test-harness.js';
+import {
+	createHeldFileMarkdownReadiness,
+	observeFileMarkdownArticle,
+	observeFileMermaidReady,
+} from './bridge-file-viewer-markdown-ready.browser.test-support.js';
 
 const originalResizeObserver = globalThis.ResizeObserver;
 
@@ -93,22 +98,46 @@ describe('BridgeFileViewerApp Markdown Browser Mode', () => {
 		if (markdownWorkerClient === null) {
 			throw new Error('Expected Browser Mode to support the Markdown worker.');
 		}
+		const readiness = createHeldFileMarkdownReadiness({
+			workerClient: markdownWorkerClient,
+			mermaidRenderer: createBridgeMermaidRenderer(),
+		});
 
 		try {
 			await render(
 				<BridgeFileViewerApp
 					codeViewWorkerPoolEnabled={false}
 					initialFileBatch={makeBrowserFileBatchWithDescriptors('open', markdownDescriptor)}
-					markdownWorkerClient={markdownWorkerClient}
-					mermaidRenderer={createBridgeMermaidRenderer()}
+					markdownWorkerClient={readiness.workerClient}
+					mermaidRenderer={readiness.mermaidRenderer}
 					navigationCommand={fileNavigationCommandForPath('docs/markdown-proof.md')}
-					fileProductSession={{ readContent: async (): Promise<string> => markdownContent }}
+					fileProductSession={{
+						readContent: async (): Promise<string> => markdownContent,
+						onWorkerCommand: readiness.observeCommand,
+					}}
 				/>,
 			);
 
-			await waitForMarkdownOpenFileState('ready');
-			await waitForMarkdownSelector('[data-testid="bridge-markdown-canvas"] h1');
-			await waitForMarkdownSelector('[data-bridge-mermaid-state="ready"] svg');
+			const markdownTask = await readiness.workerStarted;
+			const completion = await readiness.workerCompleted;
+			expect(completion.status).toBe('success');
+			if (completion.status !== 'success') throw new Error('Expected real Markdown completion.');
+			await actUpdate(async (): Promise<void> => {
+				readiness.releaseWorker();
+				await markdownTask.completed;
+			});
+			const article = await observeFileMarkdownArticle(markdownTask);
+			const diagramId = completion.response.mermaidDiagrams[0]?.id;
+			if (diagramId === undefined) throw new Error('Expected the Markdown Mermaid diagram.');
+			await actUpdate(async (): Promise<void> => {
+				await readiness.waitForPainted(markdownTask, article);
+				await observeFileMermaidReady({
+					article,
+					task: markdownTask,
+					diagramId,
+					release: readiness.releaseMermaid,
+				});
+			});
 
 			const markdownCanvas = requireHTMLElement(
 				document.querySelector('[data-testid="bridge-markdown-canvas"]'),
@@ -145,6 +174,7 @@ describe('BridgeFileViewerApp Markdown Browser Mode', () => {
 			expect(diagram?.getAttribute('aria-label')).toBe('Diagram 1 in docs/markdown-proof.md');
 			expect(document.querySelector('[data-testid="bridge-file-viewer-code-view"]')).toBeNull();
 		} finally {
+			readiness.close();
 			markdownWorkerClient.dispose();
 		}
 	});
