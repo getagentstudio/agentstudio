@@ -68,6 +68,11 @@ extension BridgePaneController {
         else {
             return
         }
+        // File acceptance fences the attempt owned in this MainActor turn.
+        // Receipt settlement and telemetry may suspend and admit a newer show.
+        if didAcceptSequence, previousAcceptedMode == .review, mode == .file {
+            fenceHiddenReviewBuildIfNeeded()
+        }
         var surfaceSelectionReceiptDisposition: BridgePaneSurfaceSelectionReceiptDisposition?
         if didAcceptSequence,
             let nativeSelectionRequestId,
@@ -112,21 +117,14 @@ extension BridgePaneController {
             )
         }
         handleAcceptedActiveViewerModeTransition(
-            previousAcceptedMode: previousAcceptedMode,
-            mode: mode,
             didAcceptSequence: didAcceptSequence
         )
     }
 
     private func handleAcceptedActiveViewerModeTransition(
-        previousAcceptedMode: BridgeActiveViewerMode?,
-        mode: BridgeActiveViewerMode,
         didAcceptSequence: Bool
     ) {
         guard didAcceptSequence else { return }
-        if previousAcceptedMode == .review, mode == .file {
-            fenceHiddenReviewBuildIfNeeded()
-        }
         guard activeViewerModeSignalState.acceptedMode == .review else { return }
         if !resumePendingExplicitReviewCommandIfPossible() {
             scheduleInitialReviewPackageLoadIfPossible(reason: .initialIntake)

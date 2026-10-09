@@ -109,9 +109,7 @@ extension BridgePaneController: BridgeRuntimeCommandHandling {
         activeReviewPackageLoad = nil
         // Authority supersession preserves dirty input. Its owner must resume it when
         // the full load ends, even when that load failed and retained a predecessor.
-        if isReviewShownByPage {
-            scheduleRetainedReviewPackageBuildIfPossible()
-        }
+        scheduleRetainedReviewPackageBuildIfPossible()
         scheduleWorktreeProductCatchUpIfPossible()
     }
 
