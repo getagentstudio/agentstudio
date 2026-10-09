@@ -348,9 +348,11 @@ struct BridgeDevHostSharedConstructionTests {
         let factSource = makeDevelopmentProductHostShutdownFactSource()
         let facts = try factSource.attach()
         let shutdownScope = BridgeDevelopmentProductHostFactScope(paneID: source.paneID)
+        let retirementClock = TestPushClock()
         let provider = BridgeDevelopmentSharedConstructionReviewProvider()
         let host = try await BridgeDevelopmentProductHost(
             source: source,
+            retirementClock: retirementClock,
             shutdownFactSink: factSource.sink,
             contributionTargetCommit: developmentContributionTargetCommit(
                 worktreeRoot: worktreeRoot
@@ -385,6 +387,7 @@ struct BridgeDevHostSharedConstructionTests {
         #expect(await host.isShutdown)
         await comparisonGate.releaseAll()
         let shutdownResult = await shutdown.value
+        #expect(shutdownResult == .completed)
         try await facts.expectNext(in: shutdownScope, .shutdownResolved(shutdownResult))
 
         // Assert
@@ -408,9 +411,11 @@ struct BridgeDevHostSharedConstructionTests {
         let factSource = makeDevelopmentProductHostShutdownFactSource()
         let facts = try factSource.attach()
         let scope = BridgeDevelopmentProductHostFactScope(paneID: source.paneID)
+        let retirementClock = TestPushClock()
         let provider = BridgeDevelopmentSharedConstructionReviewProvider()
         let host = try await BridgeDevelopmentProductHost(
             source: source,
+            retirementClock: retirementClock,
             shutdownFactSink: factSource.sink,
             contributionTargetCommit: developmentContributionTargetCommit(
                 worktreeRoot: worktreeRoot
@@ -422,6 +427,7 @@ struct BridgeDevHostSharedConstructionTests {
         let shutdownResult = await host.shutdown()
 
         // Assert
+        #expect(shutdownResult == .completed)
         try await facts.expectNext(in: scope, .shutdownStarted)
         try await facts.expectNext(in: scope, .shutdownResolved(shutdownResult))
         factSource.end()

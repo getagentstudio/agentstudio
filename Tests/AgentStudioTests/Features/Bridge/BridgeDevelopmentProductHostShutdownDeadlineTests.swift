@@ -1,4 +1,5 @@
 import AgentStudioInfrastructure
+import AgentStudioTestHarness
 import AgentStudioTestSupport
 import Foundation
 import Testing
@@ -35,10 +36,27 @@ struct BridgeDevelopmentProductHostShutdownDeadlineTests {
         )
         defer { FilesystemTestGitRepo.destroy(repositoryURL) }
         let clock = TestPushClock()
+        let source = makeDevelopmentProductSource(worktreeRoot: repositoryURL)
+        let factSource = LocalFactSource<
+            BridgeDevelopmentProductHostFactScope,
+            BridgeDevelopmentProductHostFact
+        >(
+            vocabulary: FactVocabulary(
+                describeScope: { String(describing: $0) },
+                describeFact: { String(describing: $0) },
+                isClosing: { _, fact in
+                    if case .shutdownResolved = fact { return true }
+                    return false
+                }
+            )
+        )
+        let facts = try factSource.attach()
+        let shutdownScope = BridgeDevelopmentProductHostFactScope(paneID: source.paneID)
         let provider = BridgeDevelopmentSharedConstructionReviewProvider()
         let host = try await BridgeDevelopmentProductHost(
-            source: makeDevelopmentProductSource(worktreeRoot: repositoryURL),
+            source: source,
             retirementClock: clock,
+            shutdownFactSink: factSource.sink,
             contributionTargetCommit: developmentContributionTargetCommit(
                 worktreeRoot: repositoryURL
             ),
@@ -66,10 +84,14 @@ struct BridgeDevelopmentProductHostShutdownDeadlineTests {
         #expect(admissionGate.acquire() == nil)
         clock.advance(by: AppPolicies.Bridge.productRetirementQuiescenceDeadline)
         let result = await shutdownTask.value
+        try await facts.expectNext(in: shutdownScope, .shutdownStarted)
+        try await facts.expectNext(in: shutdownScope, .shutdownResolved(result))
         guard case .quiescenceDeadlineExceeded(let unfinishedCount) = result else {
             Issue.record("Expected a typed whole-host deadline diagnostic, got \(result)")
             await comparisonGate.releaseAll()
             await host.waitForShutdownCleanup()
+            factSource.end()
+            try await facts.finish()
             return
         }
         #expect(unfinishedCount > 0)
@@ -78,5 +100,7 @@ struct BridgeDevelopmentProductHostShutdownDeadlineTests {
         await comparisonGate.releaseAll()
         await host.waitForShutdownCleanup()
         #expect((await host.shutdownSnapshot()).cleanupCompleted)
+        factSource.end()
+        try await facts.finish()
     }
 }

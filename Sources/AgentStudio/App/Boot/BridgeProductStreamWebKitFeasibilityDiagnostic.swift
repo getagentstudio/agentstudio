@@ -76,35 +76,23 @@ enum BridgeProductStreamWebKitFeasibilityDiagnostic {
         }
 
         let workerSettled = await waitUntil(timeout: timeout) {
-            if page.title == "S2a Fail" { return true }
-            guard page.title == "S2a Pass" else { return false }
+            let observedPageTitle = page.title
+            if observedPageTitle == "S2a Fail" { return true }
+            guard observedPageTitle == "S2a Pass" else { return false }
             return await oracle.recordWorkerResultAcknowledged()
         }
+        let observedPageTitle = page.title
         let oracleComplete = await oracle.isComplete()
-        let completed = workerSettled && page.title == "S2a Pass" && oracleComplete
+        let completed = workerSettled && observedPageTitle == "S2a Pass" && oracleComplete
         var proof = await oracle.proof(timedOut: !workerSettled)
         retainAfterStopping(page, window: window)
         guard completed else {
-            let phase: BridgeProductStreamWebKitFeasibilityProof.DiagnosticPhase
-            if page.title == "S2a Fail" {
-                phase = .pageReportedFailure(origin: .unknown)
-            } else if page.title == "S2a Pass" {
-                phase = .pageReportedCompletion(succeeded: true)
-            } else if proof.workerStartPostObserved {
-                phase = .workerProgress(
-                    workerStarted: true,
-                    measuredRequestsAdmitted: proof.measuredRequestsAdmitted
-                )
-            } else {
-                phase = .scriptInvoked
-            }
-            proof.recordDiagnosticPhase(
-                phase,
-                failureReasonIfNone: "worker_result_not_acknowledged"
+            return BridgeProductStreamWebKitFeasibilityProof.decoratingIncompleteDiagnostic(
+                proof: proof,
+                observedPageTitle: observedPageTitle
             )
-            return proof
         }
-        proof.recordDiagnosticPhase(.pageReportedCompletion(succeeded: true))
+        proof.recordDiagnosticPhase(.pageReportedCompletion)
         return proof
     }
 

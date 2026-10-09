@@ -192,13 +192,9 @@ package struct BridgeProductStreamWebKitFeasibilityProof: Equatable, Sendable {
         case navigationPending
         case scriptInvocationFailed
         case scriptInvoked
-        case workerProgress(workerStarted: Bool, measuredRequestsAdmitted: Int)
-        case pageReportedFailure(origin: PageFailureOrigin)
-        case pageReportedCompletion(succeeded: Bool)
-    }
-
-    package enum PageFailureOrigin: Equatable, Sendable {
-        case unknown
+        case workerProgress(measuredRequestsAdmitted: Int)
+        case pageReportedFailure
+        case pageReportedCompletion
     }
 
     package let authenticationBeforeBodySucceeded: Bool
@@ -317,10 +313,10 @@ package struct BridgeProductStreamWebKitFeasibilityProof: Equatable, Sendable {
     }
 
     package var measuredRequestsAdmitted: Int {
-        diagnosticSnapshot?.requestAPIObservations.filter {
+        requestAPIObservations.filter {
             $0.route == "/near-cap" && $0.nearCapMeasurementPhase == .measured
                 && $0.admissionOutcome == .accepted
-        }.count ?? 0
+        }.count
     }
 
     package mutating func recordDiagnosticPhase(
@@ -331,6 +327,29 @@ package struct BridgeProductStreamWebKitFeasibilityProof: Equatable, Sendable {
         if failureReason == "none", let failureReasonIfNone {
             failureReason = failureReasonIfNone
         }
+    }
+
+    package static func decoratingIncompleteDiagnostic(
+        proof: Self,
+        observedPageTitle: String
+    ) -> Self {
+        var decoratedProof = proof
+        let phase: DiagnosticPhase
+        switch observedPageTitle {
+        case "S2a Fail":
+            phase = .pageReportedFailure
+        case "S2a Pass":
+            phase = .pageReportedCompletion
+        case _ where proof.workerStartPostObserved:
+            phase = .workerProgress(measuredRequestsAdmitted: proof.measuredRequestsAdmitted)
+        default:
+            phase = .scriptInvoked
+        }
+        decoratedProof.recordDiagnosticPhase(
+            phase,
+            failureReasonIfNone: "worker_result_not_acknowledged"
+        )
+        return decoratedProof
     }
 
     package var succeeded: Bool {

@@ -268,40 +268,36 @@ struct BridgeProductStreamWebKitFeasibilityTests {
         await oracle.unregisterFinishedProducer(producer)
 
         let snapshot = await oracle.snapshot()
-        var proof = await oracle.proof(timedOut: true)
-        proof.recordDiagnosticPhase(
-            .workerProgress(workerStarted: true, measuredRequestsAdmitted: proof.measuredRequestsAdmitted)
+        let proof = await oracle.proof(timedOut: true)
+        let decoratedProof = BridgeProductStreamWebKitFeasibilityProof.decoratingIncompleteDiagnostic(
+            proof: proof,
+            observedPageTitle: "S2a Ready"
         )
 
         // Assert: the failure keeps raw progress, including fields whose worker-side
         // result has not arrived yet, and presents the last observed phase explicitly.
-        #expect(proof.diagnosticSnapshot == snapshot)
-        #expect(proof.workerStartPostObserved)
-        #expect(proof.measuredRequestsAdmitted == 3)
-        #expect(proof.requestAPIObservations.count == 4)
-        #expect(proof.frameReceiptCount == 1)
-        #expect(proof.cancellationOrder == [.producerStopped, .producerUnregistered])
-        #expect(proof.activeProducerCount == 0)
-        #expect(proof.workerEncodeTiming == nil)
-        #expect(proof.workerFetchCompletionTiming == nil)
-        #expect(
-            proof.diagnosticPhase
-                == .workerProgress(workerStarted: true, measuredRequestsAdmitted: 3)
-        )
-        #expect(proof.failureReason == "product_stream_probe_timeout")
-        #expect(!proof.succeeded)
+        #expect(decoratedProof.diagnosticSnapshot == snapshot)
+        #expect(decoratedProof.workerStartPostObserved)
+        #expect(decoratedProof.measuredRequestsAdmitted == 3)
+        #expect(decoratedProof.requestAPIObservations.count == 4)
+        #expect(decoratedProof.frameReceiptCount == 1)
+        #expect(decoratedProof.cancellationOrder == [.producerStopped, .producerUnregistered])
+        #expect(decoratedProof.activeProducerCount == 0)
+        #expect(decoratedProof.workerEncodeTiming == nil)
+        #expect(decoratedProof.workerFetchCompletionTiming == nil)
+        #expect(decoratedProof.diagnosticPhase == .workerProgress(measuredRequestsAdmitted: 3))
+        #expect(decoratedProof.failureReason == "product_stream_probe_timeout")
+        #expect(!decoratedProof.succeeded)
     }
 
-    @Test("diagnostic page failure remains distinct from an observed worker error")
-    func diagnosticPageFailureDoesNotInventWorkerErrorEvidence() async {
-        var proof = BridgeProductStreamWebKitFeasibilityProof.failed(reason: "none")
-
-        proof.recordDiagnosticPhase(
-            .pageReportedFailure(origin: .unknown),
-            failureReasonIfNone: "worker_result_not_acknowledged"
+    @Test("diagnostic page failure keeps its source unknown")
+    func diagnosticPageFailureKeepsItsSourceUnknown() async {
+        let proof = BridgeProductStreamWebKitFeasibilityProof.decoratingIncompleteDiagnostic(
+            proof: .failed(reason: "none"),
+            observedPageTitle: "S2a Fail"
         )
 
-        #expect(proof.diagnosticPhase == .pageReportedFailure(origin: .unknown))
+        #expect(proof.diagnosticPhase == .pageReportedFailure)
         #expect(proof.failureReason == "worker_result_not_acknowledged")
         #expect(!proof.succeeded)
         #expect(proof.diagnosticSnapshot == nil)

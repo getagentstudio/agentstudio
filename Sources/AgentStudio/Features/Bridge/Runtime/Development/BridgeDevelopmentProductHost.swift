@@ -65,7 +65,8 @@ package actor BridgeDevelopmentProductHost {
     private var publishedFileNavigation: FileNavigationPublication?
     private let worktreeId: UUID
     private let worktreeRoot: URL
-    let shutdownFactScope: BridgeDevelopmentProductHostFactScope
+    /// Built only when a test installs a sink, so production keeps no fact-only state.
+    let shutdownFactScope: BridgeDevelopmentProductHostFactScope?
     let shutdownFactSink: BridgeDevelopmentProductHostFactSink?
 
     package init(
@@ -165,7 +166,7 @@ package actor BridgeDevelopmentProductHost {
         self.committedCallTarget = productPreparation.committedCallTarget
         self.gitReadScheduler = gitReadScheduler
         self.paneSessionId = paneId.uuidString
-        self.shutdownFactScope = BridgeDevelopmentProductHostFactScope(paneID: paneId)
+        self.shutdownFactScope = shutdownFactSink.map { _ in BridgeDevelopmentProductHostFactScope(paneID: paneId) }
         self.shutdownFactSink = shutdownFactSink
         self.bootstrapAuthorizationProjection = BridgeDevelopmentBootstrapAuthorizationProjection(
             paneSessionId: paneId.uuidString)
