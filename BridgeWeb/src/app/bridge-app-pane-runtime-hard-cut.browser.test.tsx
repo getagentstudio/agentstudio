@@ -26,8 +26,11 @@ import {
 } from './bridge-app-browser-test-actions.js';
 import type { BridgeAppControlProbe } from './bridge-app-control.js';
 import {
+	registerFilesFilterDismissalTests,
+	waitForFilesShell,
+} from './bridge-app-file-menu-completion.browser.test-support.js';
+import {
 	dispatchBridgePageControl,
-	dispatchBridgeViewerFilterShortcut,
 	fileSearchInput,
 	fileTreeRowForPath,
 	makeNativeFileTargetSelectionRequest,
@@ -205,7 +208,6 @@ describe('BridgeApp pane runtime hard cut', () => {
 	afterEach(async () => {
 		await actWait(async (): Promise<void> => {
 			await cleanup();
-			await new Promise<void>((resolve) => window.setTimeout(resolve, 0));
 		});
 		vi.restoreAllMocks();
 		paneRuntimeObservation.commandLedger = [];
@@ -224,14 +226,9 @@ describe('BridgeApp pane runtime hard cut', () => {
 		// Arrange
 		await actWait(async (): Promise<void> => {
 			await render(<BridgeAppProtocolRouter protocol="worktree-file" />);
-			await new Promise<void>((resolve) => window.setTimeout(resolve, 0));
 		});
 		const appRoot = requireHTMLElement(document.querySelector('[data-testid="bridge-app-root"]'));
-		expect(
-			await pollWithinActUntilTruthy(() =>
-				document.querySelector('[data-testid="bridge-file-viewer-shell"]'),
-			),
-		).not.toBeNull();
+		expect(await waitForFilesShell()).not.toBeNull();
 		await actWait(
 			() => new Promise<void>((resolve) => window.requestAnimationFrame(() => resolve())),
 		);
@@ -261,37 +258,9 @@ describe('BridgeApp pane runtime hard cut', () => {
 		expect(paneRuntimeObservation.disposeCount).toBe(0);
 	});
 
-	test('dismisses the Files filter menu before its retained host becomes inactive', async () => {
-		// Arrange
-		await actWait(async (): Promise<void> => {
-			await render(<BridgeAppProtocolRouter protocol="worktree-file" />);
-			await new Promise<void>((resolve) => window.setTimeout(resolve, 0));
-		});
-		const appRoot = requireHTMLElement(document.querySelector('[data-testid="bridge-app-root"]'));
-		expect(
-			await pollWithinActUntilTruthy(() =>
-				document.querySelector('[data-testid="bridge-file-viewer-shell"]'),
-			),
-		).not.toBeNull();
-
-		// Act: open Files Filters, then retain Files under an inactive host.
-		await dispatchBridgeViewerFilterShortcut();
-		expect(
-			document.querySelector('[data-testid="worktree-file-filter-menu-popover"][data-open]'),
-		).not.toBeNull();
-		await actClick(requireActiveContextButton('review'));
-		expect(
-			await pollWithinActUntilEqual(
-				() => appRoot.getAttribute('data-bridge-viewer-mode'),
-				'review',
-			),
-		).toBe('review');
-
-		// Assert
-		expect(
-			document.querySelector('[data-testid="worktree-file-filter-menu-popover"][data-open]'),
-		).toBeNull();
-	});
+	registerFilesFilterDismissalTests(() =>
+		render(<BridgeAppProtocolRouter protocol="worktree-file" />),
+	);
 
 	test('forwards one local File activation before the selected File row', async () => {
 		// Arrange
@@ -997,3 +966,20 @@ function activeViewerModeUpdateForNativeRequest(
 			command.update.nativeSelectionRequestId === nativeSelectionRequestId,
 	);
 }
+
+vi.mock('../components/ui/dropdown-menu.js', async (importOriginal) => {
+	const original = await importOriginal<typeof import('../components/ui/dropdown-menu.js')>();
+	const { withAppFileMenuLifecycle } =
+		await import('./bridge-app-file-menu-completion.browser.test-support.js');
+	return withAppFileMenuLifecycle(original);
+});
+
+// The existing browser-harness seam keeps cold lazy loading outside retained-chrome proof.
+vi.mock('../file-viewer/bridge-file-viewer-app.js', async (importOriginal) => {
+	const original =
+		await importOriginal<typeof import('../file-viewer/bridge-file-viewer-app.js')>();
+	const { BridgeFileViewerShell } = await import('../file-viewer/bridge-file-viewer-shell.js');
+	const { withEagerAppFileShell } =
+		await import('./bridge-app-file-menu-completion.browser.test-support.js');
+	return withEagerAppFileShell(original, BridgeFileViewerShell);
+});
