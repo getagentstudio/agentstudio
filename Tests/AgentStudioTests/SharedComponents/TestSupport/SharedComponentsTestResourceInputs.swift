@@ -1,16 +1,10 @@
 import AgentStudioInfrastructure
 import Foundation
 
+/// SharedComponents tests cannot see the app's resource bundle, and none of them
+/// assert octicon pixels; the built-bundle octicon proof lives in
+/// `OcticonResourceBundleTests`. This loader resolves no octicons.
 @MainActor
-func makeSharedComponentsTestOcticonLoader(from testFilePath: String = #filePath) -> OcticonLoader {
-    let sourceFileURL = URL(fileURLWithPath: testFilePath)
-    let resourceRootURL =
-        sourceFileURL
-        .deletingLastPathComponent()
-        .deletingLastPathComponent()
-        .deletingLastPathComponent()
-        .deletingLastPathComponent()
-        .appending(path: "Sources/AgentStudio/Resources", directoryHint: .isDirectory)
-
-    return OcticonLoader(resourceRootURL: resourceRootURL)
+func makeSharedComponentsTestOcticonLoader() -> OcticonLoader {
+    OcticonLoader(resourceBundle: .main)
 }
