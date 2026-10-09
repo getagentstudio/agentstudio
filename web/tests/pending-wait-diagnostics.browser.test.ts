@@ -1,4 +1,4 @@
-import { expect, it, vi } from "vitest";
+import { expect, it, onTestFailed, vi } from "vitest";
 import { commands } from "vitest/browser";
 
 import {
@@ -22,7 +22,7 @@ declare module "vitest/browser" {
 }
 
 async function captureFixture(freezeTimeline: boolean): Promise<PendingWaitDiagnosticResult> {
-  await commands.startPendingWaitFixture({ freezeTimeline });
+  await commands.startPendingWaitFixture({ freezeTimeline, awaitFrames: true });
   try {
     return await commands.capturePendingWaitDiagnostics();
   } finally {
@@ -31,6 +31,11 @@ async function captureFixture(freezeTimeline: boolean): Promise<PendingWaitDiagn
 }
 
 it("captures a pending wait with a running document timeline", async () => {
+  onTestFailed(
+    (context) =>
+      reportPendingWaitDiagnostic(context, () => commands.capturePendingWaitDiagnostics()),
+    pendingWaitDiagnosticHookTimeoutMilliseconds,
+  );
   const result = await captureFixture(false);
   expect(result.kind).toBe("captured");
   if (result.kind !== "captured") throw new Error("Pending fixture capture failed");
@@ -45,6 +50,11 @@ it("captures a pending wait with a running document timeline", async () => {
 });
 
 it("distinguishes a frozen document timeline from wall time", async () => {
+  onTestFailed(
+    (context) =>
+      reportPendingWaitDiagnostic(context, () => commands.capturePendingWaitDiagnostics()),
+    pendingWaitDiagnosticHookTimeoutMilliseconds,
+  );
   const result = await captureFixture(true);
   expect(result.kind).toBe("captured");
   if (result.kind !== "captured") throw new Error("Frozen fixture capture failed");
@@ -62,6 +72,10 @@ it("reports the absence of a registered command page", async () => {
 
 it("prints the captured diagnostic line without changing the failure handler", async () => {
   const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
+  onTestFailed((context) => {
+    errorSpy.mockRestore();
+    return reportPendingWaitDiagnostic(context, () => commands.capturePendingWaitDiagnostics());
+  }, pendingWaitDiagnosticHookTimeoutMilliseconds);
   try {
     await commands.startPendingWaitFixture({ freezeTimeline: false });
     await reportPendingWaitDiagnostic(
@@ -118,6 +132,11 @@ it("quotes the handler-error reason", async () => {
 });
 
 it("keeps primary fields when the command state reader throws", async () => {
+  onTestFailed(
+    (context) =>
+      reportPendingWaitDiagnostic(context, () => commands.capturePendingWaitDiagnostics()),
+    pendingWaitDiagnosticHookTimeoutMilliseconds,
+  );
   await commands.startPendingWaitFixture({ freezeTimeline: false, readerThrows: true });
   try {
     const result = await commands.capturePendingWaitDiagnostics();
@@ -135,6 +154,11 @@ it("keeps primary fields when the command state reader throws", async () => {
 });
 
 it("identifies a missing command state reader", async () => {
+  onTestFailed(
+    (context) =>
+      reportPendingWaitDiagnostic(context, () => commands.capturePendingWaitDiagnostics()),
+    pendingWaitDiagnosticHookTimeoutMilliseconds,
+  );
   await commands.startPendingWaitFixture({ freezeTimeline: false, withReader: false });
   try {
     const result = await commands.capturePendingWaitDiagnostics();
