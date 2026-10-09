@@ -59,7 +59,7 @@ struct AgentStudioIPCBridgeServiceTests {
         #expect(response.error == nil)
         let result = try decodeResponseResult(IPCBridgeFileViewOpenResult.self, from: response)
         #expect(result.paneId == paneId)
-        #expect(result.handle == "pane:\(paneId.uuidString)")
+        #expect(result.handle == paneId.uuidString)
         #expect(result.correlationId == correlationId)
     }
 
