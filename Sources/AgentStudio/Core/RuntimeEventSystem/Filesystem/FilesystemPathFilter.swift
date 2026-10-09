@@ -138,11 +138,15 @@ package struct FilesystemPathFilter: Sendable {
     }
 
     package static func isAgentStudioPrivateStagingRefPath(_ path: String) -> Bool {
+        // Normalization cannot introduce these bytes; every admitted form already contains them.
+        guard path.utf8.firstRange(of: "refs/agentstudio/staged".utf8) != nil else {
+            return false
+        }
         let normalizedPath = normalized(relativePath: path)
         return normalizedPath == "refs/agentstudio/staged"
             || normalizedPath.hasPrefix("refs/agentstudio/staged/")
             || normalizedPath.hasSuffix("/refs/agentstudio/staged")
-            || normalizedPath.contains("/refs/agentstudio/staged/")
+            || normalizedPath.utf8.firstRange(of: "/refs/agentstudio/staged/".utf8) != nil
     }
 
     private static func normalized(relativePath: String) -> String {
