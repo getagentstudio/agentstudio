@@ -126,8 +126,10 @@ struct AppIPCProductionLifecycleIntegrationTests {
         #expect(appDelegate.appIPCSessionsPaneContextComposition == nil)
     }
 
-    @Test("production App start reuses the early registry and shutdown persists a later unused token")
-    func productionStartAndShutdownReuseEarlyRegistryAndPersistUnusedToken() async throws {
+    @Test(
+        "production App start reuses the early registry and a token issued after start is registered by the shutdown drain"
+    )
+    func productionStartReusesEarlyRegistryAndRegistersLaterTokenByShutdownDrain() async throws {
         let harness = try await makeServerCapableAppIPCTestHarness()
         do {
             let readinessPane = harness.store.createPane()
@@ -145,12 +147,7 @@ struct AppIPCProductionLifecycleIntegrationTests {
             let shutdownOnlyRecordID = try #require(
                 harness.appDelegate.paneIPCIdentityOwner
             ).environment(paneID: shutdownOnlyPane.id, workspaceID: harness.workspaceID).credentialRecordID
-            #expect(
-                try await harness.appDelegate.appIPCContinuityRepository.paneCredential(
-                    paneID: shutdownOnlyPane.id,
-                    credentialRecordID: shutdownOnlyRecordID
-                ) == nil
-            )
+            // Issuance enqueues this credential's write (#482); whether it lands before shutdown is timing, so only the drained state is asserted below.
 
             await harness.appDelegate.stopAcceptingAppIPCConnections()
             await harness.appDelegate.drainAppIPCCredentialPersistence()

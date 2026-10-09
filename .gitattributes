@@ -1,11 +1,1 @@
-web/**/*.avif filter=lfs diff=lfs merge=lfs -text
-web/**/*.gif filter=lfs diff=lfs merge=lfs -text
-web/**/*.jpeg filter=lfs diff=lfs merge=lfs -text
-web/**/*.jpg filter=lfs diff=lfs merge=lfs -text
-web/**/*.png filter=lfs diff=lfs merge=lfs -text
-web/**/*.svg filter=lfs diff=lfs merge=lfs -text
-web/**/*.webp filter=lfs diff=lfs merge=lfs -text
-web/**/*.mp4 filter=lfs diff=lfs merge=lfs -text
-web/**/*.mov filter=lfs diff=lfs merge=lfs -text
-web/**/*.webm filter=lfs diff=lfs merge=lfs -text
-web/**/*.m4v filter=lfs diff=lfs merge=lfs -text
+docs/images/*.png filter=lfs diff=lfs merge=lfs -text

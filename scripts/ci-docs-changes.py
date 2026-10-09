@@ -11,7 +11,7 @@ import sys
 import typing as t
 import urllib.parse
 
-CODE_ROOTS = {"Tests", "Tools", "BridgeWeb", "web", "scripts"}
+CODE_ROOTS = {"Tests", "Tools", "BridgeWeb", "scripts"}
 AGENT_DOC_NAMES = {"AGENTS.md", "CLAUDE.md"}
 # Literal rooted paths are retained even when a referenced doc was deleted.
 DOC_PATH = re.compile(r"\bdocs/[\w./+*?%-]+\.[\w]+\b")

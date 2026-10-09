@@ -28,31 +28,51 @@ package enum WorktreeOperationOutcome: Sendable, Equatable {
     case fetchingReadFailure(WorktreeFetchingReadFailure)
     case removal(WorktreeRemovalReport)
     case pruned(WorktreePruneSummary)
-    case refused(WorktreeOperationRefusal)
+    /// `creationFetch` is set once `new`'s fetch has run: a refusal after it still reports it (LR30).
+    case refused(WorktreeOperationRefusal, creationFetch: WorktreeCreationFetchStatus? = nil)
     case failed(WorktreeOperationFailure)
+
+    /// The same outcome reporting `new`'s fetch, for a refusal or failure that came after it.
+    func carryingCreationFetch(_ fetch: WorktreeCreationFetchStatus) -> Self {
+        switch self {
+        case .refused(let refusal, _):
+            .refused(refusal, creationFetch: fetch)
+        case .failed(let failure):
+            .failed(
+                WorktreeOperationFailure(failure: failure.failure, leftovers: failure.leftovers, creationFetch: fetch))
+        case .created, .listed, .fetchingReadFailure, .removal, .pruned:
+            self
+        }
+    }
 }
 
 package struct WorktreeCreatedSummary: Sendable, Equatable {
     package let operation: WorktreeOperationKind
-    package let branch: String
+    package let branch: WorktreeCreatedBranch
     package let path: URL
     package let repository: URL
     package let materialization: WorktreeCreatedMaterialization
+    package let start: WorktreeCreationStart
+    package let fetch: WorktreeCreationFetchStatus
 
     package var largeFiles: GitLargeFileFill? { materialization.largeFiles }
 
     package init(
         operation: WorktreeOperationKind,
-        branch: String,
+        branch: WorktreeCreatedBranch,
         path: URL,
         repository: URL,
-        materialization: WorktreeCreatedMaterialization
+        materialization: WorktreeCreatedMaterialization,
+        start: WorktreeCreationStart,
+        fetch: WorktreeCreationFetchStatus
     ) {
         self.operation = operation
         self.branch = branch
         self.path = path
         self.repository = repository
         self.materialization = materialization
+        self.start = start
+        self.fetch = fetch
     }
 }
 
@@ -63,22 +83,30 @@ package enum WorktreeOperationRefusal: Sendable, Equatable {
     case noDefaultBranch
     case invalidBranchName(WorktreeBranchNameProblem)
     case emptyBranchSlug
-    case branchAlreadyExists(String)
     case startBranchNotFound(String)
     case destinationExists(URL)
     case destinationParentMissing(URL)
     case unsupportedRepositoryLayout(URL)
-    case forkUnavailable(GitWorktreeForkRejectionReason, source: WorktreeCreateSource)
+    /// `offersChangesOnly` only when `--changes-only` would be a valid continuation: `--from`, no
+    /// `--from-branch`, and a new branch at the source's HEAD.
+    case forkUnavailable(GitWorktreeForkRejectionReason, offersChangesOnly: Bool)
     case unsupportedWorkingState(GitWorktreeWorkingStateRefusal)
 }
 
 package struct WorktreeOperationFailure: Sendable, Equatable {
     package let failure: WorktreeFailureKind
     package let leftovers: WorktreeLeftoverStatus
+    /// Set once `new`'s fetch has run (LR30); the fork's own cleanup evidence stays in `leftovers`.
+    package let creationFetch: WorktreeCreationFetchStatus?
 
-    package init(failure: WorktreeFailureKind, leftovers: WorktreeLeftoverStatus) {
+    package init(
+        failure: WorktreeFailureKind,
+        leftovers: WorktreeLeftoverStatus,
+        creationFetch: WorktreeCreationFetchStatus? = nil
+    ) {
         self.failure = failure
         self.leftovers = leftovers
+        self.creationFetch = creationFetch
     }
 }
 
@@ -92,6 +120,23 @@ package enum WorktreeFailureKind: Sendable, Equatable {
     case workingStateUnsupported(GitWorktreeWorkingStateRefusal)
     case cancelled
     case rejectedAfterChange(GitWorktreeForkRejectionReason)
+    /// The branch was taken by the worktree at `path` at the attach, and rollback is incomplete.
+    case branchCheckedOutAfterChange(path: String)
+    /// A plain checkout fast-forwarded `branch` and couldn't confirm moving it back (D22); the SDK reports this
+    /// in place of the creation's own error.
+    case branchMoveNotUndone(branch: String, move: WorktreeBranchMove)
+}
+
+/// A fast-forward a failed creation made and couldn't confirm undone: from `fromCommit` to `toCommit`. It is the
+/// attempted move, not a verified final position; read the branch for that.
+package struct WorktreeBranchMove: Sendable, Equatable {
+    package let fromCommit: String
+    package let toCommit: String
+
+    package init(fromCommit: String, toCommit: String) {
+        self.fromCommit = fromCommit
+        self.toCommit = toCommit
+    }
 }
 
 package enum WorktreeLeftoverStatus: Sendable, Equatable {
@@ -105,11 +150,19 @@ package struct WorktreeCleanupLeftover: Sendable, Equatable {
     package let kind: GitWorktreeForkResidueKind
     package let location: String
     package let base: WorktreeLeftoverBase
+    /// For a `branchMoveNotUndone` leftover whose move `new` planned: both commits of that fast-forward.
+    package let branchMove: WorktreeBranchMove?
 
-    package init(kind: GitWorktreeForkResidueKind, location: String, base: WorktreeLeftoverBase) {
+    package init(
+        kind: GitWorktreeForkResidueKind,
+        location: String,
+        base: WorktreeLeftoverBase,
+        branchMove: WorktreeBranchMove? = nil
+    ) {
         self.kind = kind
         self.location = location
         self.base = base
+        self.branchMove = branchMove
     }
 }
 
@@ -143,6 +196,9 @@ package enum WorktreeGitErrorKind: Sendable, Equatable {
     case remoteRefTransactionIndeterminate
     case libgit2Failure
     case unsupported
+    case branchMoved
+    case branchCheckedOut
+    case branchMoveNotUndone
 
     package var name: String {
         switch self {
@@ -190,6 +246,12 @@ package enum WorktreeGitErrorKind: Sendable, Equatable {
             "libgit2Failure"
         case .unsupported:
             "unsupported"
+        case .branchMoved:
+            "branchMoved"
+        case .branchCheckedOut:
+            "branchCheckedOut"
+        case .branchMoveNotUndone:
+            "branchMoveNotUndone"
         }
     }
 

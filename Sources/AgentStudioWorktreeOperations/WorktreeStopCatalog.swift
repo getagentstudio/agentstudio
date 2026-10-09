@@ -21,7 +21,11 @@ package enum WorktreeStopReason: String, CaseIterable, Codable, Sendable {
     case archiveDestinationInsideWorktree
     case forkUnavailable
     case changesOnlyNeedsFrom
-    case trackedOnlyExcludesSource
+    case branchCheckedOut
+    case branchMoved
+    case branchAlreadyExists
+    case noSuchBranch
+    case originCheckFailed
     case configInvalid
     case sourceIndexUnreadable
     case sourceIndexUnsupported
@@ -168,8 +172,8 @@ package enum WorktreeStopCatalog {
             "The archive destination is inside the worktree being removed."
         case .forkUnavailable:
             "A copy-on-write fork is unavailable."
-        case .changesOnlyNeedsFrom, .trackedOnlyExcludesSource, .configInvalid, .sourceIndexUnreadable,
-            .sourceIndexUnsupported:
+        case .changesOnlyNeedsFrom, .branchCheckedOut, .branchMoved, .branchAlreadyExists, .noSuchBranch,
+            .originCheckFailed, .configInvalid, .sourceIndexUnreadable, .sourceIndexUnsupported:
             creationMessage(for: reason)
         }
     }
@@ -178,8 +182,16 @@ package enum WorktreeStopCatalog {
         switch reason {
         case .changesOnlyNeedsFrom:
             "--changes-only requires --from."
-        case .trackedOnlyExcludesSource:
-            "--tracked-only excludes --from and --changes-only."
+        case .branchCheckedOut:
+            "The branch is checked out in another worktree."
+        case .branchMoved:
+            "The branch moved after it was resolved, so nothing was changed."
+        case .branchAlreadyExists:
+            "A branch with that name already exists."
+        case .noSuchBranch:
+            "No branch with that name exists locally or on origin."
+        case .originCheckFailed:
+            "Origin could not be asked whether the branch exists, so nothing was created."
         case .configInvalid:
             "The repository copy configuration could not be read."
         case .sourceIndexUnreadable:
@@ -220,7 +232,7 @@ package enum WorktreeStopCatalog {
                 flag("-f", effect: "Remove the worktree and discard its uncommitted changes."),
                 command("commit the changes first", effect: "Keep the changes in the repository history."),
                 command(
-                    "agentstudio worktree new <branch> --changes-only --from <path>",
+                    "agentstudio worktree new -c <branch> --changes-only --from <path>",
                     effect: "Copy the worktree's changes before removing it."
                 ),
             ]
@@ -258,34 +270,45 @@ package enum WorktreeStopCatalog {
             return [flag("--archive-to <other-folder>", effect: "Choose an unused folder outside the worktree.")]
         case .changesOnlyNeedsFrom:
             return [flag("--from <worktree>", effect: "Select the worktree whose changes should be copied.")]
-        case .trackedOnlyExcludesSource:
+        case .branchCheckedOut:
+            return [command("cd <path>", effect: "Work in the worktree that already has the branch checked out.")]
+        case .branchMoved:
+            return [command("retry", effect: "Run the command again to resolve the branch at its new tip.")]
+        case .branchAlreadyExists:
             return [
-                command("omit --from and --changes-only", effect: "Create a tracked-files checkout."),
-                command("omit --tracked-only", effect: "Copy the selected worktree."),
+                command(
+                    "agentstudio worktree new <branch>",
+                    effect: "Open the existing branch in a new worktree."
+                ),
+                command("use another branch name", effect: "Create a new branch under a name that does not exist."),
             ]
+        case .noSuchBranch:
+            return [command("agentstudio worktree new -c <branch>", effect: "Create it as a new branch.")]
+        case .originCheckFailed:
+            return [flag("--no-fetch", effect: "Answer from the origin/<branch> ref on disk instead of asking origin.")]
         case .sourceIndexUnreadable:
-            return [command("retry", effect: "Retry after the source can be read."), coldTrackedOnlyOption]
+            return [command("retry", effect: "Retry after the source can be read."), noForkOption]
         case .sourceIndexUnsupported:
-            return [coldTrackedOnlyOption]
+            return [noForkOption]
         case .configInvalid:
             return [
                 command("fix .agentstudio.config.json and retry", effect: "Correct the repository copy declaration."),
-                coldTrackedOnlyOption,
+                noForkOption,
             ]
         case .forkUnavailable:
-            return [coldTrackedOnlyOption]
+            return [noForkOption]
         }
     }
 
-    /// A creation stop lists `--tracked-only` after any option that still forks the source.
-    private static let coldTrackedOnlyOption = flag(
-        "--tracked-only",
-        effect: "Create a cold tracked-files checkout: no build outputs, no untracked or ignored files."
+    /// A creation stop lists `--no-fork` after any option that still forks the source.
+    private static let noForkOption = flag(
+        "--no-fork",
+        effect: "A plain checkout of tracked files at the same commit; no ignored files or build outputs."
     )
 
-    static func forkOptions(source: WorktreeCreateSource) -> [WorktreeStopOption] {
+    static func forkOptions(offersChangesOnly: Bool) -> [WorktreeStopOption] {
         var options = options(for: .forkUnavailable, offersStaleLockRemoval: false)
-        if case .worktree = source {
+        if offersChangesOnly {
             options.append(
                 flag("--changes-only", effect: "Create a clean checkout and copy the source worktree's changes."))
         }

@@ -33,6 +33,13 @@ struct WorktreeDestinationPolicyTests {
             BranchNameCase(text: "feat/.hidden", expected: .failure(.invalidComponentBoundary)),
             BranchNameCase(text: "name.lock", expected: .failure(.invalidComponentBoundary)),
             BranchNameCase(text: "@", expected: .failure(.invalidComponentBoundary)),
+            BranchNameCase(text: "HEAD", expected: .failure(.invalidComponentBoundary)),
+            // Git sees the `~` under the combining mark.
+            BranchNameCase(text: "a~\u{301}b", expected: .failure(.containsForbiddenCharacter("~"))),
+            // Git accepts these for an existing branch; a branch the app creates may not use them.
+            BranchNameCase(text: "release/a\u{00A0}b", expected: .failure(.containsWhitespaceOrControlCharacter)),
+            BranchNameCase(
+                text: "release/\u{1F469}\u{200D}\u{1F4BB}", expected: .failure(.containsWhitespaceOrControlCharacter)),
         ]
     )
     func branchNameValidation(_ testCase: BranchNameCase) {
@@ -67,6 +74,24 @@ struct WorktreeDestinationPolicyTests {
         let branchName = try WorktreeBranchName.validated(testCase.branch).get()
 
         #expect(WorktreeDestinationNaming.folderSlug(for: branchName) == testCase.slug)
+    }
+
+    @Test(
+        "any typed text maps to one sibling folder beside the repository",
+        arguments: [
+            SlugCase(branch: "HEAD", slug: "HEAD"),
+            SlugCase(branch: "../../escape", slug: "escape"),
+            SlugCase(branch: "a/../b", slug: "a-..-b"),
+            SlugCase(branch: "..", slug: nil),
+            SlugCase(branch: "/", slug: nil),
+        ]
+    )
+    func rawTextSiblingFolders(_ testCase: SlugCase) {
+        let sibling = WorktreeDestinationNaming.siblingPath(
+            repositoryPath: Self.repositoryPath, rawName: testCase.branch)
+
+        #expect(WorktreeDestinationNaming.folderSlug(forRawName: testCase.branch) == testCase.slug)
+        #expect(sibling?.path == testCase.slug.map { "/Users/dev/project-dev/agent-studio.\($0)" })
     }
 
     @Test("the destination is a sibling of the main checkout inside the watched folder that discovers it")
