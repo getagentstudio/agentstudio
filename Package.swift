@@ -679,6 +679,7 @@ let package = Package(
                 "AgentStudioCommandBar",
                 "AgentStudioCore",
                 "AgentStudioWorktreeOperations",
+                "AgentStudioDeadlineTestSupport",
                 "AgentStudioEditorChooser",
                 "AgentStudioIPCClientCore",
                 "AgentStudioIPCTransport",
