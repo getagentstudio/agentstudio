@@ -45,15 +45,6 @@ struct TerminalLocalActionMountedHostResolver {
 }
 
 extension Ghostty.ActionRouter {
-    @MainActor
-    static func isCurrentSurfaceLifetime(
-        expectedSurfaceID: UUID,
-        surfaceViewObjectID: ObjectIdentifier,
-        routingLookup: any GhosttyActionRoutingLookup
-    ) -> Bool {
-        routingLookup.surfaceId(forViewObjectId: surfaceViewObjectID) == expectedSurfaceID
-    }
-
     static func admitTranslatedActionToTerminalRuntime(
         _ event: GhosttyEvent,
         surfaceID: UUID,

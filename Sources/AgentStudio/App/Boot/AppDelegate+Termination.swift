@@ -158,11 +158,8 @@ extension AppDelegate {
             appLogger.warning("Workspace settings flush failed at termination: \(error.localizedDescription)")
         }
 
-        await runTerminationDrain("Ghostty action trace") { [weak self] in
-            await self?.callbackHandlingForBoot().retire()
-        }
-        await runTerminationDrain("terminal activity trace") { [weak self] in
-            await self?.terminalActivityRouter?.stop()
+        await runCallbackHandlingAndActivityDrains { name, operation in
+            await self.runTerminationDrain(name, operation: operation)
         }
         await runTerminationDrain("pane activity clock") { [weak self] in
             await self?.paneActivityClock?.shutdown()
@@ -216,6 +213,18 @@ extension AppDelegate {
             } catch {
                 appLogger.warning("Trace shutdown failed at termination: \(error.localizedDescription)")
             }
+        }
+    }
+
+    /// Callback-owned close work drains before its activity consumer stops; the runner owns each stage's bound.
+    func runCallbackHandlingAndActivityDrains(
+        using runDrain: @MainActor (String, @escaping @MainActor () async -> Void) async -> Void
+    ) async {
+        await runDrain("Ghostty action trace") { [weak self] in
+            await self?.callbackHandlingForBoot().retire()
+        }
+        await runDrain("terminal activity trace") { [weak self] in
+            await self?.terminalActivityRouter?.stop()
         }
     }
 

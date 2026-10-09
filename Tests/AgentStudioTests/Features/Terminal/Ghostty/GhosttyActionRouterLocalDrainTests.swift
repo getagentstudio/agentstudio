@@ -17,13 +17,15 @@ extension GhosttyActionRouterTests {
 
         try await withGhosttyActionRouterTestFixture(configuration: configuration) { fixture in
             #expect(
-                await fixture.handler.routeExactFactOrControlOnMainActor(
-                    precedingTitle: nil,
-                    actionTag: GhosttyActionTag.commandFinished.rawValue,
-                    payload: .commandFinished(exitCode: 0, duration: 42, sourceInstant: ContinuousClock.now),
-                    surfaceViewObjectID: fixture.surfaceViewObjectID,
-                    expectedSurfaceID: fixture.surfaceID
-                )
+                await
+                    (fixture.handler.host.applyExactFactOrControl(
+                        precedingTitle: nil,
+                        actionTag: GhosttyActionTag.commandFinished.rawValue,
+                        payload: .commandFinished(exitCode: 0, duration: 42, sourceInstant: ContinuousClock.now),
+                        surfaceID: fixture.surfaceID,
+                        viewObjectID: fixture.surfaceViewObjectID,
+                        accumulator: fixture.handler.localActionAccumulator
+                    ) == .applied)
             )
             #expect(fixture.activityInputRecorder.runtimeWasEmptyAtInput == [true])
             let input = try #require(fixture.activityInputRecorder.inputs.first)
@@ -54,7 +56,10 @@ extension GhosttyActionRouterTests {
             #expect(accumulator.offer(.titleChanged("pending"), for: fixture.surfaceID) == .scheduled)
             fixture.handler.localActionDrainScheduler.cancel(for: fixture.surfaceID)
 
-            await fixture.handler.drainLocalActions(for: fixture.surfaceID, lane: .title)
+            await fixture.handler.host.drainLocalActions(
+                for: fixture.surfaceID, lane: .title,
+                accumulator: fixture.handler.localActionAccumulator
+            )
 
             #expect(accumulator.beginDrain(for: fixture.surfaceID, lane: .title) == nil)
             #expect(accumulator.hasPendingActions(for: fixture.surfaceID))
@@ -73,7 +78,10 @@ extension GhosttyActionRouterTests {
             #expect(accumulator.offer(.titleChanged("A"), for: fixture.surfaceID) == .scheduled)
             fixture.handler.localActionDrainScheduler.cancel(for: fixture.surfaceID)
 
-            await fixture.handler.drainLocalActions(for: fixture.surfaceID, lane: .title)
+            await fixture.handler.host.drainLocalActions(
+                for: fixture.surfaceID, lane: .title,
+                accumulator: fixture.handler.localActionAccumulator
+            )
 
             #expect(activityContextReadCount == 0)
             #expect(fixture.nativeView.title == "A")
@@ -96,7 +104,10 @@ extension GhosttyActionRouterTests {
         try await withGhosttyActionRouterTestFixture(configuration: configuration) { fixture in
             offerScrollbarState(scrollbarState, fixture: fixture)
 
-            await fixture.handler.drainLocalActions(for: fixture.surfaceID, lane: .immediate)
+            await fixture.handler.host.drainLocalActions(
+                for: fixture.surfaceID, lane: .immediate,
+                accumulator: fixture.handler.localActionAccumulator
+            )
 
             #expect(fixture.nativeView.hostScrollbarState == scrollbarState)
             #expect(fixture.runtime.scrollbarState == scrollbarState)
@@ -142,13 +153,19 @@ extension GhosttyActionRouterTests {
             }
             offerScrollbarState(initialState, fixture: fixture)
 
-            await fixture.handler.drainLocalActions(for: fixture.surfaceID, lane: .immediate)
+            await fixture.handler.host.drainLocalActions(
+                for: fixture.surfaceID, lane: .immediate,
+                accumulator: fixture.handler.localActionAccumulator
+            )
             fixture.handler.localActionDrainScheduler.cancel(for: fixture.surfaceID)
 
             #expect(fixture.nativeView.hostScrollbarState == initialState)
             #expect(fixture.handler.localActionAccumulator.hasPendingActions(for: fixture.surfaceID))
 
-            await fixture.handler.drainLocalActions(for: fixture.surfaceID, lane: .immediate)
+            await fixture.handler.host.drainLocalActions(
+                for: fixture.surfaceID, lane: .immediate,
+                accumulator: fixture.handler.localActionAccumulator
+            )
             fixture.handler.localActionDrainScheduler.cancel(for: fixture.surfaceID)
             fixture.nativeView.onScrollbarStateChanged = nil
 
@@ -173,7 +190,10 @@ extension GhosttyActionRouterTests {
 
         try await withGhosttyActionRouterTestFixture(configuration: configuration) { fixture in
             offerScrollbarState(scrollbarState, fixture: fixture)
-            await fixture.handler.drainLocalActions(for: fixture.surfaceID, lane: .immediate)
+            await fixture.handler.host.drainLocalActions(
+                for: fixture.surfaceID, lane: .immediate,
+                accumulator: fixture.handler.localActionAccumulator
+            )
             try await performanceRecorder.drain()
 
             #expect(fixture.nativeView.hostScrollbarState == scrollbarState)
@@ -215,13 +235,19 @@ extension GhosttyActionRouterTests {
             offerScrollbarState(scrollbarState, fixture: fixture)
             fixture.handler.localActionDrainScheduler.cancel(for: fixture.surfaceID)
 
-            await fixture.handler.drainLocalActions(for: fixture.surfaceID, lane: .immediate)
+            await fixture.handler.host.drainLocalActions(
+                for: fixture.surfaceID, lane: .immediate,
+                accumulator: fixture.handler.localActionAccumulator
+            )
 
             #expect(fixture.nativeView.hostScrollbarState == scrollbarState)
             #expect(fixture.nativeView.title.isEmpty)
             #expect((await fixture.runtime.eventsSince(seq: 0)).events.isEmpty)
 
-            await fixture.handler.drainLocalActions(for: fixture.surfaceID, lane: .title)
+            await fixture.handler.host.drainLocalActions(
+                for: fixture.surfaceID, lane: .title,
+                accumulator: fixture.handler.localActionAccumulator
+            )
 
             #expect(fixture.nativeView.title == "window")
             let titleEvents = await fixture.runtime.eventsSince(seq: 0).events.compactMap { envelope -> String? in
@@ -276,7 +302,10 @@ extension GhosttyActionRouterTests {
                 ScrollbarState(top: 80, bottom: 120, total: 200),
                 fixture: fixture
             )
-            await fixture.handler.drainLocalActions(for: fixture.surfaceID, lane: .immediate)
+            await fixture.handler.host.drainLocalActions(
+                for: fixture.surfaceID, lane: .immediate,
+                accumulator: fixture.handler.localActionAccumulator
+            )
             fixture.handler.localActionDrainScheduler.cancel(for: fixture.surfaceID)
             #expect(!fixture.handler.localActionAccumulator.hasPendingActions(for: fixture.surfaceID))
         }

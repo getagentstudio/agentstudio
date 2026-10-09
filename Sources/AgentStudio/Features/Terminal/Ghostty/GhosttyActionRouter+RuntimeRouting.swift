@@ -3,45 +3,6 @@ import AgentStudioInfrastructure
 import Foundation
 
 extension Ghostty.ActionRouter {
-    @MainActor
-    func routeActionToTerminalRuntimeOnMainActor(
-        actionTag: UInt32,
-        payload: GhosttyActionPayload,
-        surfaceViewObjectId: ObjectIdentifier
-    ) -> Bool {
-        host.routeActionToTerminalRuntime(
-            actionTag: actionTag, payload: payload, surfaceViewObjectID: surfaceViewObjectId
-        ) == .applied
-    }
-
-    @MainActor
-    func routeContractedTitleMetadata(
-        _ metadata: TerminalLatestSemanticMetadataAction,
-        surfaceViewObjectID: ObjectIdentifier
-    ) -> Bool {
-        host.routeTitleMetadata(metadata, surfaceViewObjectID: surfaceViewObjectID)
-    }
-
-    @MainActor
-    func routeExactFactOrControlOnMainActor(
-        precedingTitle: TerminalPrecedingTitleBarrier?,
-        actionTag: UInt32,
-        payload: GhosttyActionPayload,
-        surfaceViewObjectID: ObjectIdentifier,
-        expectedSurfaceID: UUID
-    ) async -> Bool {
-        await host.applyExactFactOrControl(
-            precedingTitle: precedingTitle, actionTag: actionTag, payload: payload,
-            surfaceID: expectedSurfaceID, viewObjectID: surfaceViewObjectID,
-            accumulator: localActionAccumulator
-        ) == .applied
-    }
-
-    @MainActor
-    func drainLocalActions(for surfaceID: UUID, lane: TerminalLocalActionLane = .immediate) async {
-        await host.drainLocalActions(for: surfaceID, lane: lane, accumulator: localActionAccumulator)
-    }
-
     func retireLocalActions(for surfaceID: UUID) {
         localActionDrainScheduler.cancel(for: surfaceID)
         localActionAccumulator.removeSurface(surfaceID)

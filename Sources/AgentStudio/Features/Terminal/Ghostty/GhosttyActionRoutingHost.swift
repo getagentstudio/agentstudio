@@ -121,6 +121,26 @@ package final class GhosttyActionRoutingHost {
             accumulator.removeSurface(surfaceID)
             return .dropped(.staleSurface)
         }
+        let performanceRecorder = mountedHostResolver.surfaceForID(surfaceID).flatMap { host in
+            host.managedSurfaceID == surfaceID && ObjectIdentifier(host) == viewObjectID
+                ? host.performanceTraceRecorder : nil
+        }
+        if case .commandFinished = payload {
+            performanceRecorder?.recordSidebarPerformanceOrderedCommand()
+        }
+        var didApplyPrecedingTitle = false
+        defer {
+            if let precedingTitle {
+                performanceRecorder?.recordTerminalAccumulatorDrain(
+                    Ghostty.ActionRouter.terminalAccumulatorDrainPerformanceSnapshot(for: precedingTitle),
+                    queueAge: Ghostty.ActionRouter.terminalAccumulatorQueueAge(
+                        firstOfferedAtNanoseconds: precedingTitle.firstOfferedAtNanoseconds,
+                        currentUptimeNanoseconds: DispatchTime.now().uptimeNanoseconds
+                    ),
+                    applyOutcome: didApplyPrecedingTitle ? .changed : .equal
+                )
+            }
+        }
         if let precedingTitle {
             if let surfaceTitle = precedingTitle.metadata.surfaceTitle,
                 let mountedHost = mountedHostResolver.resolve(expectedSurfaceID: surfaceID),
@@ -129,7 +149,10 @@ package final class GhosttyActionRoutingHost {
             {
                 mountedHost.host.titleDidChange(surfaceTitle)
             }
-            if routeTitleMetadata(precedingTitle.metadata.runtimeTitle, surfaceViewObjectID: viewObjectID) {
+            didApplyPrecedingTitle = routeTitleMetadata(
+                precedingTitle.metadata.runtimeTitle, surfaceViewObjectID: viewObjectID
+            )
+            if didApplyPrecedingTitle {
                 accumulator.acknowledgeSuccessfulTitlePublication(precedingTitle.metadata, for: surfaceID)
             }
         }

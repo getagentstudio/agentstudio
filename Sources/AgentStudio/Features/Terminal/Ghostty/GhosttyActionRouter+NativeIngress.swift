@@ -23,6 +23,10 @@ extension Ghostty.ActionRouter {
             }
             return true
         case .rejected:
+            if let knownTag = GhosttyActionTag(rawValue: tag), !Self.unsupportedTags.contains(knownTag) {
+                ghosttyLogger.warning("Malformed payload for Ghostty action \(String(describing: knownTag))")
+                return false
+            }
             host.traceGhosttyAction(
                 body: "ghostty.action.received", actionTag: tag,
                 signalClass: .unhandled, routeResult: false,

@@ -7,7 +7,7 @@ import Testing
 @testable import AgentStudioTerminal
 
 @MainActor
-@Suite("TerminalActivityRouter", .serialized)
+@Suite("TerminalActivityRouter")
 struct TerminalActivityRouterTests {
     private final class MillisecondBox: @unchecked Sendable {
         private let lock = NSLock()

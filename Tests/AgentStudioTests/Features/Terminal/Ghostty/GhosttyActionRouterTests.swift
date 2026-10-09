@@ -99,7 +99,7 @@ struct GhosttyActionRouterTests {
             configuration: .init(runtimeTitle: "Before")
         ) { fixture in
             #expect(
-                fixture.handler.routeContractedTitleMetadata(
+                fixture.handler.host.routeTitleMetadata(
                     .tabTitleChanged("After"),
                     surfaceViewObjectID: fixture.surfaceViewObjectID
                 )
@@ -139,7 +139,7 @@ struct GhosttyActionRouterTests {
             )
         ) { fixture in
             #expect(
-                fixture.handler.routeContractedTitleMetadata(
+                fixture.handler.host.routeTitleMetadata(
                     .titleChanged("Same"),
                     surfaceViewObjectID: fixture.surfaceViewObjectID
                 )
@@ -181,18 +181,20 @@ struct GhosttyActionRouterTests {
             #expect(sealedTitle.metadata.runtimeTitle == .titleChanged("A"))
 
             #expect(
-                await fixture.handler.routeExactFactOrControlOnMainActor(
-                    precedingTitle: sealedTitle,
-                    actionTag: GhosttyActionTag.commandFinished.rawValue,
-                    payload: .commandFinished(exitCode: 7, duration: 42, sourceInstant: ContinuousClock.now),
-                    surfaceViewObjectID: fixture.surfaceViewObjectID,
-                    expectedSurfaceID: fixture.surfaceID
-                )
+                await
+                    (fixture.handler.host.applyExactFactOrControl(
+                        precedingTitle: sealedTitle,
+                        actionTag: GhosttyActionTag.commandFinished.rawValue,
+                        payload: .commandFinished(exitCode: 7, duration: 42, sourceInstant: ContinuousClock.now),
+                        surfaceID: fixture.surfaceID,
+                        viewObjectID: fixture.surfaceViewObjectID,
+                        accumulator: fixture.handler.localActionAccumulator
+                    ) == .applied)
             )
             let laterBatch = try #require(accumulator.beginDrain(for: fixture.surfaceID, lane: .title))
             let laterTitle = try #require(laterBatch.titleMetadata?.runtimeTitle)
             #expect(
-                fixture.handler.routeContractedTitleMetadata(
+                fixture.handler.host.routeTitleMetadata(
                     laterTitle, surfaceViewObjectID: fixture.surfaceViewObjectID
                 )
             )
@@ -219,13 +221,15 @@ struct GhosttyActionRouterTests {
             #expect(precedingTitle == nil)
             fixture.handler.localActionDrainScheduler.cancel(for: fixture.surfaceID)
             #expect(
-                await fixture.handler.routeExactFactOrControlOnMainActor(
-                    precedingTitle: precedingTitle,
-                    actionTag: GhosttyActionTag.commandFinished.rawValue,
-                    payload: .commandFinished(exitCode: 3, duration: 9, sourceInstant: ContinuousClock.now),
-                    surfaceViewObjectID: fixture.surfaceViewObjectID,
-                    expectedSurfaceID: fixture.surfaceID
-                )
+                await
+                    (fixture.handler.host.applyExactFactOrControl(
+                        precedingTitle: precedingTitle,
+                        actionTag: GhosttyActionTag.commandFinished.rawValue,
+                        payload: .commandFinished(exitCode: 3, duration: 9, sourceInstant: ContinuousClock.now),
+                        surfaceID: fixture.surfaceID,
+                        viewObjectID: fixture.surfaceViewObjectID,
+                        accumulator: fixture.handler.localActionAccumulator
+                    ) == .applied)
             )
 
             #expect(
@@ -237,7 +241,7 @@ struct GhosttyActionRouterTests {
             let laterBatch = try #require(accumulator.beginDrain(for: fixture.surfaceID, lane: .title))
             let laterTitle = try #require(laterBatch.titleMetadata?.runtimeTitle)
             #expect(
-                fixture.handler.routeContractedTitleMetadata(
+                fixture.handler.host.routeTitleMetadata(
                     laterTitle, surfaceViewObjectID: fixture.surfaceViewObjectID
                 )
             )
@@ -260,13 +264,15 @@ struct GhosttyActionRouterTests {
                 return
             }
             #expect(
-                await fixture.handler.routeExactFactOrControlOnMainActor(
-                    precedingTitle: precedingTitle,
-                    actionTag: GhosttyActionTag.pwd.rawValue,
-                    payload: .cwdChanged("/tmp/project"),
-                    surfaceViewObjectID: fixture.surfaceViewObjectID,
-                    expectedSurfaceID: fixture.surfaceID
-                )
+                await
+                    (fixture.handler.host.applyExactFactOrControl(
+                        precedingTitle: precedingTitle,
+                        actionTag: GhosttyActionTag.pwd.rawValue,
+                        payload: .cwdChanged("/tmp/project"),
+                        surfaceID: fixture.surfaceID,
+                        viewObjectID: fixture.surfaceViewObjectID,
+                        accumulator: fixture.handler.localActionAccumulator
+                    ) == .applied)
             )
 
             #expect(
@@ -288,13 +294,15 @@ struct GhosttyActionRouterTests {
             }
             fixture.handler.localActionDrainScheduler.cancel(for: fixture.surfaceID)
             #expect(
-                await fixture.handler.routeExactFactOrControlOnMainActor(
-                    precedingTitle: changedPrecedingTitle,
-                    actionTag: GhosttyActionTag.pwd.rawValue,
-                    payload: .cwdChanged("/tmp/other"),
-                    surfaceViewObjectID: fixture.surfaceViewObjectID,
-                    expectedSurfaceID: fixture.surfaceID
-                )
+                await
+                    (fixture.handler.host.applyExactFactOrControl(
+                        precedingTitle: changedPrecedingTitle,
+                        actionTag: GhosttyActionTag.pwd.rawValue,
+                        payload: .cwdChanged("/tmp/other"),
+                        surfaceID: fixture.surfaceID,
+                        viewObjectID: fixture.surfaceViewObjectID,
+                        accumulator: fixture.handler.localActionAccumulator
+                    ) == .applied)
             )
 
             let replay = await fixture.runtime.eventsSince(seq: 0)
@@ -325,13 +333,16 @@ struct GhosttyActionRouterTests {
             let sealedTitle = try #require(accumulator.detachTitleBeforeExactBarrier(for: fixture.surfaceID))
             fixture.handler.localActionDrainScheduler.cancel(for: fixture.surfaceID)
 
-            let routed = await fixture.handler.routeExactFactOrControlOnMainActor(
-                precedingTitle: sealedTitle,
-                actionTag: GhosttyActionTag.commandFinished.rawValue,
-                payload: .commandFinished(exitCode: 9, duration: 12, sourceInstant: ContinuousClock.now),
-                surfaceViewObjectID: fixture.surfaceViewObjectID,
-                expectedSurfaceID: fixture.surfaceID
-            )
+            let routed =
+                await
+                (fixture.handler.host.applyExactFactOrControl(
+                    precedingTitle: sealedTitle,
+                    actionTag: GhosttyActionTag.commandFinished.rawValue,
+                    payload: .commandFinished(exitCode: 9, duration: 12, sourceInstant: ContinuousClock.now),
+                    surfaceID: fixture.surfaceID,
+                    viewObjectID: fixture.surfaceViewObjectID,
+                    accumulator: fixture.handler.localActionAccumulator
+                ) == .applied)
 
             #expect(!routed)
             #expect((await replacementRuntime.eventsSince(seq: 0)).events.isEmpty)
@@ -343,10 +354,9 @@ struct GhosttyActionRouterTests {
         try await withGhosttyActionRouterTestFixture { fixture in
             let retainedView = NSView(frame: .zero)
             #expect(
-                !Ghostty.ActionRouter.isCurrentSurfaceLifetime(
-                    expectedSurfaceID: UUIDv7.generate(),
-                    surfaceViewObjectID: ObjectIdentifier(retainedView),
-                    routingLookup: fixture.routingLookup
+                !fixture.handler.host.isCurrentSurfaceLifetime(
+                    surfaceID: UUIDv7.generate(),
+                    viewObjectID: ObjectIdentifier(retainedView)
                 )
             )
         }

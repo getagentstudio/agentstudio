@@ -121,11 +121,11 @@ final class GhosttyActionRouterTestFixture {
         _ payload: GhosttyActionPayload,
         surfaceViewObjectID: ObjectIdentifier? = nil
     ) -> Bool {
-        handler.routeActionToTerminalRuntimeOnMainActor(
+        (handler.host.routeActionToTerminalRuntime(
             actionTag: actionTag.rawValue,
             payload: payload,
-            surfaceViewObjectId: surfaceViewObjectID ?? self.surfaceViewObjectID
-        )
+            surfaceViewObjectID: surfaceViewObjectID ?? self.surfaceViewObjectID
+        ) == .applied)
     }
 
     func closeAndJoin() async {

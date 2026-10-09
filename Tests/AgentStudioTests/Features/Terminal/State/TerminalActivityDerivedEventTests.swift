@@ -7,7 +7,7 @@ import Testing
 @testable import AgentStudioTerminal
 
 @MainActor
-@Suite("TerminalActivityRouter derived activity events", .serialized)
+@Suite("TerminalActivityRouter derived activity events")
 struct TerminalActivityDerivedEventTests {
     private typealias SettledEventRecord = (
         source: EventSource,

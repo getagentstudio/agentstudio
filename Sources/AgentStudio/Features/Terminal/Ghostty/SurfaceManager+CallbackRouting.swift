@@ -54,7 +54,7 @@ extension SurfaceManager {
                     case .cache(let rawTag, let payload):
                         guard let tag = GhosttyActionTag(rawValue: rawTag) else { return .unchanged }
                         switch tag {
-                        case .configChange, .reloadConfig:
+                        case .configChange:
                             guard case .available(let engine) = engineAccess() else {
                                 return .dropped(.engineUnavailable)
                             }
@@ -66,9 +66,6 @@ extension SurfaceManager {
                             view.updateHostScrollbarState(
                                 ScrollbarState(top: Int(offset), bottom: Int(offset + length), total: Int(total))
                             )
-                        case .setTitle:
-                            guard case .titleChanged(let title) = payload else { return .unchanged }
-                            view.titleDidChange(title)
                         default:
                             return .unchanged
                         }
