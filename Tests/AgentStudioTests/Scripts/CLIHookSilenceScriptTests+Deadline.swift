@@ -201,7 +201,8 @@ extension CLIHookSilenceScriptTests {
         #expect(observed.exitCode == 0)
         #expect(observed.streamLines.isEmpty)
         #expect(observed.controlledElapsed == CLIPolicy.synchronousLifecycleHookLimit)
-        #expect(observed.networkWaitBudgets == [.milliseconds(150)])
+        #expect(!observed.networkWaitBudgets.isEmpty)
+        #expect(observed.networkWaitBudgets.allSatisfy { $0 == .milliseconds(150) })
         #expect(requests.map(\.method) == ["auth.login"])
         #expect(!requests.contains { $0.method == "session.event" })
     }

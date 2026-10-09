@@ -1,4 +1,8 @@
+import AgentStudioDeadlineTestSupport
+import AgentStudioIPCClientCore
+import AgentStudioInfrastructure
 import AgentStudioProgrammaticControl
+import AgentStudioTestHarness
 import AgentStudioTestSupport
 import Foundation
 import Synchronization
@@ -8,7 +12,7 @@ import Testing
 
 extension CLIHookSilenceScriptTests {
     @Test(
-        "real hook refusals are readable without binding/activity and remain silent when unavailable",
+        "real refused hooks stay silent without binding, activity or a CLI store",
         arguments: HookRefusalProcessCase.matrix)
     func hookRefusalProcess(invocation: HookRefusalProcessCase) async throws {
         let submissions = Mutex(0)
@@ -47,11 +51,64 @@ extension CLIHookSilenceScriptTests {
                 #expect(query.session == nil)
                 if invocation.condition == .outsidePane {
                     #expect(query.lastRefusal == nil)
-                } else {
-                    #expect(query.lastRefusal?.reason == invocation.reason)
-                    #expect(query.lastRefusal?.event == "SessionStart")
                 }
             }
+            await harness.tearDown()
+        } catch {
+            await harness.tearDown()
+            throw error
+        }
+    }
+
+    @Test(
+        "controlled hooks deliver the exact refusal to the real Sessions owner",
+        arguments: HookRefusalProcessCase.matrix.filter { $0.condition == .up })
+    func controlledHookRefusalIsRecorded(invocation: HookRefusalProcessCase) async throws {
+        let submissions = Mutex(0)
+        let harness = try await SessionsVerticalHarness.make(
+            installActivityClock: true, activitySubmissionObserver: { _ in submissions.withLock { $0 += 1 } })
+        do {
+            let paneToken = try #require(harness.boundPaneToken)
+            let storeURL = harness.rootDirectory.appending(path: "unused-refusal-store/cli.sqlite")
+            let environment = [
+                "AGENTSTUDIO_CLI": "/fixture/agentstudio-cli", "AGENTSTUDIO_IPC_SOCKET": harness.socketPath,
+                "AGENTSTUDIO_PANE_TOKEN": paneToken.rawValue,
+                "AGENTSTUDIO_CLI_STORE": storeURL.path, "AGENTSTUDIO_CLI_STORE_CHANNEL": "debug",
+            ]
+            let observed = try await valueFromDedicatedThread {
+                let driver = ControlledDeadlineDriver()
+                defer { driver.close() }
+                let pipe = Pipe()
+                defer {
+                    try? pipe.fileHandleForReading.close()
+                    try? pipe.fileHandleForWriting.close()
+                }
+                try pipe.fileHandleForWriting.write(contentsOf: Data(invocation.payload.utf8))
+                try pipe.fileHandleForWriting.close()
+                let streams = Mutex<[String]>([])
+                let exitCode = AgentStudioIPCClientCommandLineRunner.run(
+                    props: .init(
+                        arguments: ["hook", invocation.provider, "SessionStart"],
+                        environment: environment, executablePath: "/fixture/agentstudio-cli", bundleExecutableURL: nil,
+                        standardInput: { Data() }, identifierGenerator: { UUIDv7.generate() },
+                        standardOutputSink: { line in streams.withLock { $0.append(line) } },
+                        standardErrorSink: { line in streams.withLock { $0.append(line) } },
+                        standardInputFileDescriptor: pipe.fileHandleForReading.fileDescriptor,
+                        deadlineTiming: driver.timing))
+                return (exitCode: exitCode, streamLines: streams.withLock { $0 })
+            }
+            #expect(observed.exitCode == 0)
+            #expect(observed.streamLines.isEmpty)
+            // The real refusal reply follows the owner's awaited recording;
+            // the controlled clock cannot cut that exchange short under load.
+            let query = try await harness.sessionQuery(paneId: harness.boundPaneId)
+            let refusal = try #require(query.lastRefusal)
+            #expect(refusal.reason == invocation.reason)
+            #expect(refusal.event == "SessionStart")
+            #expect(query.sourceHealth == .unbound)
+            #expect(query.session == nil)
+            #expect(submissions.withLock { $0 } == 0)
+            #expect(!FileManager.default.fileExists(atPath: storeURL.deletingLastPathComponent().path))
             await harness.tearDown()
         } catch {
             await harness.tearDown()
