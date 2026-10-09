@@ -1,0 +1,29 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1120" height="704" viewBox="0 0 1120 704">
+<defs><marker id="arrow" markerWidth="9" markerHeight="9" refX="8" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8" fill="none" stroke="#52657c" stroke-width="1.4"/></marker></defs>
+<rect width="1120" height="704" fill="#fff"/>
+<text x="32" y="39" font-family="Arial, sans-serif" font-size="25" font-weight="700" fill="#243449">Fullscreen changes presentation, not the selected worktree</text>
+<text x="32" y="69" font-family="Arial, sans-serif" font-size="16" font-weight="400" fill="#243449">Conceptual regions only. Worktree selection is command-driven in this slice; a new selector UI is deferred.</text>
+<rect x="32" y="113" width="340" height="478" rx="8" fill="#f4f8fd" stroke="#2465a4" stroke-width="1.5"/>
+<text x="48" y="141" font-family="Arial, sans-serif" font-size="18" font-weight="700" fill="#2465a4">Terminal A</text>
+<text x="48" y="168" font-family="Arial, sans-serif" font-size="16" font-weight="400" fill="#243449">CWD: backend/main</text>
+<text x="48" y="192" font-family="Arial, sans-serif" font-size="16" font-weight="400" fill="#243449"></text>
+<text x="48" y="216" font-family="Arial, sans-serif" font-size="16" font-weight="400" fill="#243449">The agent keeps running.</text>
+<text x="48" y="240" font-family="Arial, sans-serif" font-size="16" font-weight="400" fill="#243449"></text>
+<text x="48" y="264" font-family="Arial, sans-serif" font-size="16" font-weight="400" fill="#243449">Showing another worktree</text>
+<text x="48" y="288" font-family="Arial, sans-serif" font-size="16" font-weight="400" fill="#243449">does not relocate this terminal.</text>
+<rect x="402" y="113" width="678" height="478" rx="8" fill="#f3f9f6" stroke="#26735e" stroke-width="1.5"/>
+<text x="418" y="141" font-family="Arial, sans-serif" font-size="18" font-weight="700" fill="#26735e">A’s same associated Bridge</text>
+<text x="418" y="168" font-family="Arial, sans-serif" font-size="16" font-weight="400" fill="#243449">Retained Files selection: /tmp/feature-notes.md</text>
+<text x="418" y="192" font-family="Arial, sans-serif" font-size="16" font-weight="400" fill="#243449"></text>
+<text x="418" y="216" font-family="Arial, sans-serif" font-size="16" font-weight="400" fill="#243449">Currently shown: REVIEW</text>
+<text x="418" y="240" font-family="Arial, sans-serif" font-size="16" font-weight="400" fill="#243449">Worktree: frontend/feature</text>
+<text x="418" y="264" font-family="Arial, sans-serif" font-size="16" font-weight="400" fill="#243449">Comparison: frontend’s saved baseline</text>
+<text x="418" y="288" font-family="Arial, sans-serif" font-size="16" font-weight="400" fill="#243449"></text>
+<text x="418" y="312" font-family="Arial, sans-serif" font-size="16" font-weight="400" fill="#243449">Changed-file tree  →  selected diff  →  annotations</text>
+<text x="418" y="336" font-family="Arial, sans-serif" font-size="16" font-weight="400" fill="#243449"></text>
+<text x="418" y="360" font-family="Arial, sans-serif" font-size="16" font-weight="400" fill="#243449">Command: Review backend/feature</text>
+<text x="418" y="384" font-family="Arial, sans-serif" font-size="16" font-weight="400" fill="#243449">  → settle current draft</text>
+<text x="418" y="408" font-family="Arial, sans-serif" font-size="16" font-weight="400" fill="#243449">  → load backend’s own comparison in this region</text>
+<rect x="32" y="621" width="1048" height="59" rx="8" fill="#f7f8fa" stroke="#243449" stroke-width="1.5"/>
+<text x="48" y="649" font-family="Arial, sans-serif" font-size="18" font-weight="700" fill="#243449">Return to Files → notes; return to frontend Review → frontend’s retained comparison.</text>
+</svg>
