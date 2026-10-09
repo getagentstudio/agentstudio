@@ -174,6 +174,22 @@ struct PaneHostViewTests {
         #expect(window.firstResponder === otherResponder)
     }
 
+    @Test("pane host does not restore focus after an intentional clear during remount")
+    func paneHostDoesNotRestoreFocusAfterIntentionalClearDuringRemount() throws {
+        let window = makePaneHostFocusWindow()
+        defer { window.close() }
+        let host = PaneHostView(paneId: UUIDv7.generate())
+        let contentView = try #require(window.contentView)
+        contentView.addSubview(host)
+
+        #expect(window.makeFirstResponder(host))
+        let container = host.swiftUIContainer
+        #expect(window.makeFirstResponder(nil))
+        contentView.addSubview(container)
+
+        #expect(window.firstResponder !== host)
+    }
+
     @Test("pane host does not restore focus when remounted in another window")
     func paneHostDoesNotRestoreFocusWhenRemountedInAnotherWindow() throws {
         let sourceWindow = makePaneHostFocusWindow()
@@ -225,7 +241,6 @@ struct PaneHostViewTests {
         let hiddenAncestor = NSView(frame: .zero)
         hiddenAncestor.isHidden = true
         let sourceContentView = try #require(sourceWindow.contentView)
-        let destinationContentView = try #require(destinationWindow.contentView)
         sourceContentView.addSubview(host)
         sourceContentView.addSubview(otherResponder)
         sourceContentView.addSubview(hiddenAncestor)
@@ -236,16 +251,52 @@ struct PaneHostViewTests {
         hiddenAncestor.isHidden = false
         #expect(sourceWindow.firstResponder !== host)
 
-        destinationContentView.addSubview(container)
+        let stagingView = NSView(frame: .zero)
+        stagingView.addSubview(container)
         sourceContentView.addSubview(container)
 
         #expect(sourceWindow.firstResponder !== host)
     }
+
+    @Test("pane host restores a focused descendant after same-window remount")
+    func paneHostRestoresFocusedDescendantAfterSameWindowRemount() throws {
+        let window = makePaneHostFocusWindow()
+        defer { window.close() }
+        let host = PaneHostView(paneId: UUIDv7.generate())
+        let descendant = TestFocusableMountedContentView()
+        let contentView = try #require(window.contentView)
+        contentView.addSubview(host)
+        host.mountContentView(descendant)
+
+        #expect(window.makeFirstResponder(descendant))
+        let container = host.swiftUIContainer
+        contentView.addSubview(container)
+
+        #expect(window.firstResponder === descendant)
+    }
+
+    @Test("pane host does not restore a removed focused descendant")
+    func paneHostDoesNotRestoreRemovedFocusedDescendant() throws {
+        let window = makePaneHostFocusWindow()
+        defer { window.close() }
+        let host = PaneHostView(paneId: UUIDv7.generate())
+        let descendant = TestFocusableMountedContentView()
+        let contentView = try #require(window.contentView)
+        contentView.addSubview(host)
+        host.mountContentView(descendant)
+
+        #expect(window.makeFirstResponder(descendant))
+        let container = host.swiftUIContainer
+        host.unmountContentView()
+        contentView.addSubview(container)
+
+        #expect(window.firstResponder !== descendant)
+    }
 }
 
 @MainActor
-private func makePaneHostFocusWindow() -> NSWindow {
-    let window = NSWindow(
+private func makePaneHostFocusWindow() -> PaneResponderTrackingWindow {
+    let window = PaneResponderTrackingWindow(
         contentRect: NSRect(x: -10_000, y: -10_000, width: 800, height: 600),
         styleMask: [.titled],
         backing: .buffered,
@@ -259,6 +310,21 @@ private func makePaneHostFocusWindow() -> NSWindow {
 @MainActor
 private final class TestFocusablePaneView: NSView {
     override var acceptsFirstResponder: Bool { true }
+}
+
+@MainActor
+private final class TestFocusableMountedContentView: NSView, PaneMountedContent {
+    init() {
+        super.init(frame: .zero)
+    }
+
+    override var acceptsFirstResponder: Bool { true }
+
+    func setContentInteractionEnabled(_: Bool) {}
+
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) not supported")
+    }
 }
 
 @MainActor
