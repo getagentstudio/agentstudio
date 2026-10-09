@@ -58,7 +58,7 @@ An unproved new location becomes an independent new row. The old row follows the
   2. P2 is inside a current watched folder;
   3. agentstudio-git validates P2 as a non-bare checkout in C's role, and P2's folder identity equals I, including its Git-directory part, both before and after that validation;
   4. no other record holds I;
-  5. P2 is held by no checkout and by no family root (the location key a retained family keeps under Sep 11 C3), except one that relocates away earlier in the same decision. A chain resolves head first; a cycle never resolves;
+  5. P2 has no holder, except one that relocates away earlier in the same decision. A chain resolves head first; a cycle never resolves. A path's **holder** is the checkout recorded there. A family whose main checkout sits at its root counts as that same holder, not a second one. A family root counts as a holder of its own only when the family has no main checkout there: the location key a retained family keeps after its main checkout was collected (Sep 11 C3);
   6. immediately before publication, conditions 1 and 3 are checked again and still hold.
 
   If any condition fails, C does not relocate in that decision. A failed condition 6 is checked again at the next observation.

@@ -91,7 +91,7 @@ The `FilesystemActor` builds the set of looked-up records. It starts with:
 
 **Closure (N2):** whenever a looked-up record is located at a path held by another record with a recorded identity, that holder is added to the set. This is bounded by the record count.
 
-A path is *held* when it is any checkout's recorded location, or any family's root location (including a family that retains its root key after its main checkout was collected, Sep 11 C3). Holders are matched by canonical path and by the repository and checkout stable keys.
+A path's *holder* is normalized to one logical record per location. It is the checkout recorded at that path. A family whose main checkout is at its root is folded into that checkout's holder: they share the path and the stable key by existing validation (RepositoryTopologyReplacement.swift:210-215), and the family moves with its main checkout under claims step 3. A family root is a separate holder only when the family has no main checkout at that path: the retained root key after collection (Sep 11 C3). Holders are matched by canonical path and by stable key after this normalization, so every location has at most one holder.
 
 For each record in the set, the actor locates its folder and attaches one disposition:
 
