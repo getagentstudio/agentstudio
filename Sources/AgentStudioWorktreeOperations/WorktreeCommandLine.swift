@@ -38,7 +38,7 @@ package enum WorktreeCommandLine {
             output(help)
             return 0
         }
-        if helpArguments.isEmpty || helpArguments.first == "--help" || helpArguments.first == "-h"
+        if arguments.isEmpty || helpArguments.first == "--help" || helpArguments.first == "-h"
             || helpArguments.first == "help"
         {
             output(WorktreeCommandLineHelp.overview)

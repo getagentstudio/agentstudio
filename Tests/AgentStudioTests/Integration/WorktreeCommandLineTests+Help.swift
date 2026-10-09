@@ -31,7 +31,7 @@ extension WorktreeCommandLineTests {
 
     @Test(
         "overview help ignores JSON output in either order",
-        arguments: [["--json", "--help"], ["--help", "--json"], ["--json", "-h"], ["-h", "--json"], ["--json"]])
+        arguments: [["--json", "--help"], ["--help", "--json"], ["--json", "-h"], ["-h", "--json"]])
     func overviewHelpIgnoresJSONPosition(arguments: [String]) async {
         await expectHelpOutput(arguments: arguments, expected: WorktreeCommandLineHelp.overview)
     }

@@ -74,8 +74,4 @@ package enum WorktreeCommandLineHelp {
         default: nil
         }
     }
-
-    package static func isCommand(_ argument: String) -> Bool {
-        usage(for: argument) != nil
-    }
 }
