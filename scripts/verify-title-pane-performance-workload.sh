@@ -539,7 +539,8 @@ ordinary_command = (
     "i=$((i+1)); done; sleep 2\n"
 )
 title_interval_start_ns = time.time_ns()
-request("terminal.send", {"handle":handle,"input":ordinary_command})
+# ipc-catalog-15211f2b3.json: terminal.send requires a correlation UUID.
+request("terminal.send", {"handle":handle,"input":ordinary_command,"correlationId":str(uuid.uuid4())})
 request("terminal.wait", {"handle":handle,"condition":"titleChanged","timeoutSeconds":5})
 title_interval_end_ns = time.time_ns()
 request("terminal.wait", {"handle":handle,"condition":"commandFinished","timeoutSeconds":5})
@@ -557,9 +558,10 @@ if title_delta["tab_affected"] != 1:
 equal_title_offer_count = 20
 equal_title_baseline = quiescent_snapshot()
 for _ in range(equal_title_offer_count):
+    # ipc-catalog-15211f2b3.json: terminal.send requires a correlation UUID per call.
     request(
         "terminal.send",
-        {"handle":handle,"input":"printf '\\033]0;cadence-private-title\\007'\n"},
+        {"handle":handle,"input":"printf '\\033]0;cadence-private-title\\007'\n","correlationId":str(uuid.uuid4())},
     )
     request("terminal.wait", {"handle":handle,"condition":"commandFinished","timeoutSeconds":5})
 equal_title_after = quiescent_snapshot()
@@ -608,18 +610,21 @@ immediate_records = [
 ]
 if not any(title_interval_start_ns <= record_time_ns(record) <= title_interval_end_ns for record in immediate_records):
     raise RuntimeError("immediate drain did not occur inside the pending-title interval")
-request("terminal.send", {"handle":handle,"input":"printf '\\033]0;Cadence Barrier\\007\\033]7;file://localhost/tmp\\007'\n"})
+# ipc-catalog-15211f2b3.json: terminal.send requires a correlation UUID.
+request("terminal.send", {"handle":handle,"input":"printf '\\033]0;Cadence Barrier\\007\\033]7;file://localhost/tmp\\007'\n","correlationId":str(uuid.uuid4())})
 request("terminal.wait", {"handle":handle,"condition":"commandFinished","timeoutSeconds":5})
 pane_structural_baseline = quiescent_snapshot()
 before = {item["id"] for item in request("pane.list", {}).get("panes", [])}
-request("pane.split", {"handle":handle,"direction":"right","correlationId":None})
+# ipc-catalog-15211f2b3.json: pane.split requires a non-null correlation UUID.
+request("pane.split", {"handle":handle,"direction":"right","correlationId":str(uuid.uuid4())})
 after = request("pane.list", {}).get("panes", [])
 created = next((item for item in after if item["id"] not in before), None)
 if created is None: raise RuntimeError("pane.split did not create a pane")
 # IPCTargetSelector.swift:19-21 uses bare UUIDs for canonical selectors.
 created_handle = created["id"]
 request("pane.snapshot", {"handle":created_handle})
-request("pane.close", {"handle":created_handle,"correlationId":None})
+# ipc-catalog-15211f2b3.json: pane.close requires a non-null correlation UUID.
+request("pane.close", {"handle":created_handle,"correlationId":str(uuid.uuid4())})
 if created["id"] in {item["id"] for item in request("pane.list", {}).get("panes", [])}:
     raise RuntimeError("pane.close readback retained the created pane")
 pane_structural_delta = wait_for_delta(

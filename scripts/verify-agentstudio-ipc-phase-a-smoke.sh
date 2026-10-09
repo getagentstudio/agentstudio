@@ -489,11 +489,16 @@ try:
         print(f"extraneous order rejection data mismatch: {extraneous_order_error}", file=sys.stderr)
         sys.exit(1)
 
+    # ipc-catalog-15211f2b3.json: ui.commandBar.open requires window and correlation UUIDs.
     command_bar_open = require_success(
         session.request(
             12,
             "ui.commandBar.open",
-            {"scope": "commands"},
+            {
+                "workspaceWindowId": workspace_window_arguments["workspaceWindowId"],
+                "scope": "commands",
+                "correlationId": str(uuid.uuid4()),
+            },
         ),
         "ui.commandBar.open commands",
     )
