@@ -1,6 +1,7 @@
 import type { Page, Response } from 'playwright';
 
 import { bridgeProductWorktreeAnnotationCommandOutcomeSchema } from '../../src/core/comm-worker/bridge-product-worktree-annotation-contracts.js';
+import { waitForProductCallSettlement } from './bridge-viewer-vite-product-operation-response.ts';
 
 export interface CommittedAnnotationOutcome {
 	readonly context: {
@@ -22,11 +23,10 @@ export async function waitForCommittedAnnotationOutcome(
 	operationKind: 'draft.flush' | 'draft.save' | 'reply.create' | 'root.create',
 	surface: 'file' | 'review' = 'review',
 ): Promise<CommittedAnnotationOutcome> {
-	const response = await page.waitForResponse(
-		(candidate): boolean => annotationCommandResponseMatches(candidate, operationKind, surface),
-		{ timeout: 600_000 },
+	const settled = await waitForProductCallSettlement(page, (candidate): boolean =>
+		annotationCommandResponseMatches(candidate, operationKind, surface),
 	);
-	const body: unknown = await response.json();
+	const body: unknown = settled.result;
 	if (!isRecord(body) || body['kind'] !== 'call.completed' || !isRecord(body['call'])) {
 		throw new Error(`Malformed committed ${operationKind} response.`);
 	}

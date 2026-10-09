@@ -56,6 +56,7 @@ extension WebKitSerializedTests {
             )
             defer { _ = controller.beginTeardown() }  // fire-and-forget: defer cannot await; cleanup only
             let correlationId = UUID()
+            try await showIPCReviewPageAndAwaitInitialPackage(controller)
 
             let result = try await controller.refreshReviewForIPC(correlationId: correlationId)
 
@@ -105,6 +106,7 @@ extension WebKitSerializedTests {
                 initialPaneActivity: .foreground
             )
             defer { _ = controller.beginTeardown() }  // fire-and-forget: defer cannot await; cleanup only
+            try await showIPCReviewPageAndAwaitInitialPackage(controller)
             _ = try await controller.refreshReviewForIPC(correlationId: nil)
 
             let result = try controller.ipcReviewPackageSnapshot()
@@ -521,7 +523,7 @@ extension WebKitSerializedTests {
             )
             defer { _ = controller.beginTeardown() }  // fire-and-forget: defer cannot await; cleanup only
 
-            _ = try await controller.refreshReviewForIPC(correlationId: nil)
+            try await showIPCReviewPageAndAwaitInitialPackage(controller)
 
             #expect(throws: BridgeIPCProjectionError(reason: .payloadTooLarge)) {
                 try controller.ipcReviewPackageSnapshot()
@@ -578,7 +580,7 @@ extension WebKitSerializedTests {
                 initialPaneActivity: .foreground
             )
             defer { _ = controller.beginTeardown() }  // fire-and-forget: defer cannot await; cleanup only
-            _ = try await controller.refreshReviewForIPC(correlationId: nil)
+            try await showIPCReviewPageAndAwaitInitialPackage(controller)
 
             await #expect(throws: BridgeIPCProjectionError(reason: .itemNotFound)) {
                 _ = try await controller.selectReviewItemForIPC(
@@ -695,7 +697,7 @@ extension WebKitSerializedTests {
                 initialPaneActivity: .foreground
             )
             defer { _ = controller.beginTeardown() }  // fire-and-forget: defer cannot await; cleanup only
-            _ = try await controller.refreshReviewForIPC(correlationId: nil)
+            try await showIPCReviewPageAndAwaitInitialPackage(controller)
 
             let snapshot = try await controller.telemetrySnapshotForIPC()
 
@@ -715,6 +717,22 @@ private func makeIPCForegroundController() -> BridgePaneController {
         appRootURL: testBridgeAppRootURL(),
         initialPaneActivity: .foreground
     )
+}
+
+@MainActor
+private func showIPCReviewPageAndAwaitInitialPackage(
+    _ controller: BridgePaneController
+) async throws {
+    let productAdmission = try #require(controller.productAdmissionGate.acquire())
+    await sendPageActiveViewerMode(
+        .review,
+        controller: controller,
+        productAdmission: productAdmission,
+        sequence: 1
+    )
+    if let initialReviewBuild = controller.activeReviewRefreshTask {
+        await initialReviewBuild.value
+    }
 }
 
 @MainActor
@@ -752,7 +770,7 @@ private func makeIPCReviewSelectionController() async throws -> BridgePaneContro
         reviewSourceProvider: provider,
         initialPaneActivity: .foreground
     )
-    _ = try await controller.refreshReviewForIPC(correlationId: nil)
+    try await showIPCReviewPageAndAwaitInitialPackage(controller)
     return controller
 }
 

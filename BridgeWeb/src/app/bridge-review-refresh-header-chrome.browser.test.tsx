@@ -25,6 +25,26 @@ const candidateIdentity = {
 } as const;
 
 describe('Bridge Review refresh header chrome', () => {
+	test('an ordinary installation failure leaves the toolbar silent for the pane summary', async () => {
+		const rendered = await renderRefreshHeader(
+			{
+				activeIdentity: null,
+				candidate: null,
+				failure: {
+					kind: 'installation',
+					identity: candidateIdentity,
+					presentationClass: { kind: 'ordinary' },
+					retryable: true,
+					affectedStableFileIdentities: [],
+				},
+			},
+			[],
+		);
+		expect(rendered.getByRole('button', { name: 'Retry' }).query()).toBeNull();
+		expect(rendered.getByTestId('bridge-review-refresh-header-group').query()).toBeNull();
+		expect(document.body.innerText).not.toContain('unavailable');
+	});
+
 	test('keeps ordinary, replacement, and unaffected promoted candidates silent', async () => {
 		for (const refreshPresentation of [
 			candidatePresentation({
@@ -72,7 +92,7 @@ describe('Bridge Review refresh header chrome', () => {
 				.getByTestId('bridge-review-refresh-header-group')
 				.element()
 				.querySelector('.lucide-loader-circle'),
-		).not.toBeNull();
+		).toBeNull();
 		expect(refreshPresentation.candidate?.startDisposition).toMatchObject({
 			presentationClass: { kind: 'ordinary' },
 		});
@@ -133,6 +153,13 @@ describe('Bridge Review refresh header chrome', () => {
 			},
 		});
 		const rendered = await renderRefreshHeader(silentPresentation, ['item-1']);
+		const sizer = rendered.getByTestId('bridge-review-refresh-header-sizer').element();
+		expect(
+			sizer.querySelector('button, a, input, select, textarea, [tabindex], [contenteditable]'),
+		).toBeNull();
+		expect(sizer.textContent).toBe('');
+		expect(sizer.getAttribute('aria-hidden')).toBe('true');
+		expect(sizer.hasAttribute('inert')).toBe(true);
 		const title = rendered.getByTestId('bridge-viewer-content-title').element();
 		const silentTitleBounds = title.getBoundingClientRect();
 		const silentSlotBounds = rendered
@@ -152,46 +179,15 @@ describe('Bridge Review refresh header chrome', () => {
 		expect(readySlotBounds.width).toBe(silentSlotBounds.width);
 	});
 
-	test('renders retryable promoted failure through the owned button and preserves focus', async () => {
-		const onRetry = vi.fn();
-		const refreshPresentation = failurePresentation(true);
-		const headerPresentation = bridgeReviewRefreshHeaderPresentation({
-			attentionItemIds: ['item-1'],
-			canRetry: true,
-			refreshPresentation,
-		});
-		const rendered = await render(
-			<BridgeViewerContentHeader
-				controls={
-					<BridgeReviewRefreshHeaderGroup
-						onApplyNow={vi.fn()}
-						onRetry={onRetry}
-						presentation={headerPresentation}
-					/>
-				}
-				mode="review"
-				statusText={null}
-				title="Sources/First.swift"
-			/>,
-		);
-		await expect
-			.element(rendered.getByTestId('bridge-review-refresh-header-group'))
-			.toHaveTextContent('Update unavailable');
-		expect(
-			rendered.getByTestId('bridge-review-refresh-header-group').element().className,
-		).toContain('text-warning');
-		const retry = rendered.getByRole('button', { name: 'Retry' });
-		retry.element().focus();
-		await retry.click();
-		expect(onRetry).toHaveBeenCalledOnce();
-		expect(document.activeElement).toBe(retry.element());
-
-		await rendered.rerender(refreshHeader(failurePresentation(false), ['item-1']));
-		await expect
-			.element(rendered.getByTestId('bridge-review-refresh-header-group'))
-			.toHaveTextContent('Update unavailable');
-		expect(rendered.getByRole('button', { name: 'Retry' }).query()).toBeNull();
-	});
+	test.each([true, false])(
+		'promoted failure (retryable %s) has no toolbar failure copy or control',
+		async (retryable): Promise<void> => {
+			const rendered = await renderRefreshHeader(failurePresentation(retryable), ['item-1']);
+			expect(rendered.getByTestId('bridge-review-refresh-header-group').query()).toBeNull();
+			expect(rendered.getByRole('button', { name: 'Retry' }).query()).toBeNull();
+			expect(document.body.innerText).not.toContain('unavailable');
+		},
+	);
 });
 
 async function renderRefreshHeader(
@@ -260,6 +256,7 @@ function failurePresentation(retryable: boolean): BridgeMainReviewRefreshPresent
 		activeIdentity,
 		candidate: null,
 		failure: {
+			kind: 'promotedRefresh',
 			affectedStableFileIdentities: ['item-1'],
 			identity: candidateIdentity,
 			presentationClass: { kind: 'promoted', reason: 'commits' },

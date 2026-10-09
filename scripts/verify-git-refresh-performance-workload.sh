@@ -163,7 +163,11 @@ project_root = sys.argv[1]
 tracked_and_untracked = subprocess.check_output(
     ["git", "-C", project_root, "ls-files", "--cached", "--others", "--exclude-standard", "-z"]
 )
-relative_paths = sorted(path for path in tracked_and_untracked.split(b"\0") if path)
+relative_paths = sorted(
+    path
+    for path in tracked_and_untracked.split(b"\0")
+    if path and os.path.lexists(os.path.join(project_root, os.fsdecode(path)))
+)
 digest = hashlib.sha256()
 for relative_path_bytes in relative_paths:
     relative_path = os.fsdecode(relative_path_bytes)

@@ -4,6 +4,16 @@ import Foundation
 struct BridgeWorktreeFileMaterializationRequest: Sendable {
     let rootURL: URL
     let openedSource: BridgeWorktreeFileOpenedSource
+    let directoryReader: BridgeWorktreeFileDirectoryReader
+
+    init(
+        rootURL: URL, openedSource: BridgeWorktreeFileOpenedSource,
+        directoryReader: BridgeWorktreeFileDirectoryReader = .foundation
+    ) {
+        self.rootURL = rootURL
+        self.openedSource = openedSource
+        self.directoryReader = directoryReader
+    }
 }
 
 struct BridgeWorktreeTreeRowWindowBatch: Sendable {
@@ -141,6 +151,7 @@ enum BridgeWorktreeFileMaterializer {
         guard afterCount >= 0, windowSize > 0 else {
             return
         }
+        try BridgeWorktreeFileRootAccess.validateRootSynchronously(request.rootURL, reader: request.directoryReader)
         var rowsByPath: [String: BridgeWorktreeTreeRowMetadata] = [:]
         var orderedRowCount = 0
         var windowRows: [BridgeWorktreeTreeRowMetadata] = []
@@ -186,6 +197,7 @@ enum BridgeWorktreeFileMaterializer {
             rootURL: request.rootURL,
             canonicalPathScope: request.openedSource.canonicalPathScope,
             ignorePolicy: request.openedSource.ignorePolicy,
+            directoryReader: request.directoryReader,
             maxPathCount: nil
         ) { relativePath in
             try appendAncestorRowsThrowing(for: relativePath) { row in
@@ -206,6 +218,8 @@ enum BridgeWorktreeFileMaterializer {
             }
             return true
         }
+        try BridgeWorktreeFileRootAccess.validateRootKindSynchronously(
+            request.rootURL, reader: request.directoryReader)
         flushWindowIfNeeded(force: true)
     }
 
@@ -213,6 +227,7 @@ enum BridgeWorktreeFileMaterializer {
         rootURL: URL,
         canonicalPathScope: [String],
         ignorePolicy: BridgeWorktreeFileIgnorePolicy,
+        directoryReader: BridgeWorktreeFileDirectoryReader,
         maxPathCount: Int?,
         visit: (String) throws -> Bool
     ) throws {
@@ -240,8 +255,17 @@ enum BridgeWorktreeFileMaterializer {
                 break
             }
             let scopedURL = scopedPath == "." ? rootURL : rootURL.appending(path: scopedPath)
-            let values = try? scopedURL.resourceValues(forKeys: [.isDirectoryKey, .isRegularFileKey])
-            if values?.isRegularFile == true {
+            let kind: BridgeWorktreeFileEntryKind
+            do {
+                kind = try directoryReader.entryKind(scopedURL)
+            } catch {
+                if scopedPath != ".", BridgeWorktreeFileRootAccess.isMissing(error) {
+                    try BridgeWorktreeFileRootAccess.validateRootSynchronously(rootURL, reader: directoryReader)
+                    continue
+                }
+                throw BridgeWorktreeFileRootAccess.failure(for: error, isRoot: scopedPath == ".")
+            }
+            if kind == .regularFile {
                 if isPublishedTreePath(scopedPath, ignorePolicy: ignorePolicy) {
                     guard try visitIfNeeded(scopedPath) else {
                         return
@@ -249,7 +273,7 @@ enum BridgeWorktreeFileMaterializer {
                 }
                 continue
             }
-            guard values?.isDirectory == true else {
+            guard kind == .directory else {
                 continue
             }
             if scopedPath != "." && isPublishedTreePath(scopedPath, ignorePolicy: ignorePolicy) {
@@ -264,6 +288,7 @@ enum BridgeWorktreeFileMaterializer {
                 rootURL: rootURL,
                 scopedURL: scopedURL,
                 ignorePolicy: ignorePolicy,
+                directoryReader: directoryReader,
                 maxCount: maxPathCount.map { max($0 - visitedPathCount, 0) }
             ) { relativePath in
                 try visitIfNeeded(relativePath)
@@ -275,6 +300,7 @@ enum BridgeWorktreeFileMaterializer {
         rootURL: URL,
         scopedURL: URL,
         ignorePolicy: BridgeWorktreeFileIgnorePolicy,
+        directoryReader: BridgeWorktreeFileDirectoryReader,
         maxCount: Int?,
         visit: (String) throws -> Bool
     ) throws {
@@ -286,13 +312,26 @@ enum BridgeWorktreeFileMaterializer {
         // only published paths are statted. The walk below remains the
         // non-git fallback.
         if let publishableFilePaths = ignorePolicy.publishableFilePaths {
+            _ = try BridgeWorktreeFileRootAccess.directoryEntries(
+                scopedURL, reader: directoryReader, isRoot: scopedURL == rootURL)
             let isRootScope =
                 scopedURL.standardizedFileURL.path == rootURL.standardizedFileURL.path
             try enumerateTreeRowPaths(
                 publishableFilePaths: publishableFilePaths,
                 scopedRelativePath: isRootScope ? nil : relativePath(fileURL: scopedURL, rootURL: rootURL),
-                visit: visit
-            )
+                visit: { relativePath in
+                    let childURL = rootURL.appending(path: relativePath)
+                    let kind: BridgeWorktreeFileEntryKind
+                    do { kind = try directoryReader.entryKind(childURL) } catch {
+                        if BridgeWorktreeFileRootAccess.isMissing(error) { return true }
+                        throw BridgeWorktreeFileRootAccess.failure(for: error, isRoot: false)
+                    }
+                    if kind == .directory {
+                        _ = try BridgeWorktreeFileRootAccess.directoryEntries(
+                            childURL, reader: directoryReader, isRoot: false)
+                    }
+                    return try visit(relativePath)
+                })
             return
         }
 
@@ -303,11 +342,8 @@ enum BridgeWorktreeFileMaterializer {
                 break
             }
             let directoryURL = pendingDirectories.removeFirst()
-            let childURLs = try FileManager.default.contentsOfDirectory(
-                at: directoryURL,
-                includingPropertiesForKeys: [.isRegularFileKey, .isDirectoryKey],
-                options: []
-            )
+            let childURLs = try BridgeWorktreeFileRootAccess.directoryEntries(
+                directoryURL, reader: directoryReader, isRoot: directoryURL == rootURL)
             for fileURL in childURLs.sorted(by: compareFileDiscoveryOrder) {
                 if let maxCount, pathCount >= maxCount {
                     return
@@ -316,13 +352,17 @@ enum BridgeWorktreeFileMaterializer {
                 if !isPublishedTreePath(relativePath, ignorePolicy: ignorePolicy) {
                     continue
                 }
-                let values = try? fileURL.resourceValues(forKeys: [.isRegularFileKey, .isDirectoryKey])
-                if values?.isRegularFile == true {
+                let kind: BridgeWorktreeFileEntryKind
+                do { kind = try directoryReader.entryKind(fileURL) } catch {
+                    if BridgeWorktreeFileRootAccess.isMissing(error) { continue }
+                    throw BridgeWorktreeFileRootAccess.failure(for: error, isRoot: false)
+                }
+                if kind == .regularFile {
                     pathCount += 1
                     guard try visit(relativePath) else {
                         return
                     }
-                } else if values?.isDirectory == true {
+                } else if kind == .directory {
                     pathCount += 1
                     guard try visit(relativePath) else {
                         return

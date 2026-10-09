@@ -6,11 +6,8 @@ import WebKit
 
 /// Event-driven waits for the WebKit lane.
 ///
-/// Every one of these replaces a `ContinuousClock` deadline poll. None takes a
-/// timeout: the lane's inactivity watchdog is the hang bound, and a deadline here
-/// is actively wrong — a hidden headless page schedules no animation frames, so
-/// DOM state behind a rAF commit has no sound upper bound and any N you pick is a
-/// verdict about machine speed rather than about the product.
+/// Every one of these replaces a `ContinuousClock` deadline poll. Named waits
+/// appear in the runner's HeldStep ledger if its process hang bound fires.
 enum WebPageEventWaits {
     /// Suspends until the page stops loading.
     ///
@@ -27,6 +24,12 @@ enum WebPageEventWaits {
     @MainActor
     static func waitForTitle(_ page: WebPage, equals expectedTitle: String) async {
         await waitForPageChange(on: page) { page.title == expectedTitle }
+    }
+
+    @MainActor
+    static func waitForTitle(_ page: WebPage, beginningWith prefix: String) async -> String {
+        await waitForPageChange(on: page) { page.title.hasPrefix(prefix) }
+        return page.title
     }
 
     /// Suspends until a JavaScript reader returns a value, and answers with it.
@@ -50,32 +53,110 @@ enum WebPageEventWaits {
     static func waitForDocumentValue(
         _ page: WebPage,
         reader readerBody: String,
-        arguments: [String: Any] = [:]
+        arguments: [String: Any] = [:],
+        milestone: String? = nil,
+        lastObservation diagnosticBody: String = "return null;"
     ) async throws -> Any? {
-        try await page.callJavaScript(
-            """
-            const readDocumentValue = () => { \(readerBody) };
-            return await new Promise((resolve) => {
-              const attempt = () => {
-                const value = readDocumentValue();
-                if (value === null || value === undefined) { return false; }
-                resolve(value);
-                return true;
-              };
-              if (attempt()) { return; }
-              const observer = new MutationObserver(() => {
-                if (attempt()) { observer.disconnect(); }
-              });
-              observer.observe(document.documentElement, {
-                attributes: true,
-                characterData: true,
-                childList: true,
-                subtree: true
-              });
-            });
-            """,
-            arguments: arguments
+        let pendingName = await namedPageMilestone(
+            page, milestone: milestone, diagnosticBody: diagnosticBody, arguments: arguments
         )
+        let observe: @MainActor () async throws -> Any? = {
+            try await page.callJavaScript(
+                """
+                const readDocumentValue = () => { \(readerBody) };
+                return await new Promise((resolve) => {
+                  let observer = null;
+                  const attempt = () => {
+                    const value = readDocumentValue();
+                    if (value === null || value === undefined) { return false; }
+                    observer?.disconnect();
+                    resolve(value);
+                    return true;
+                  };
+                  if (attempt()) { return; }
+                  observer = new MutationObserver(attempt);
+                  observer.observe(document.documentElement, {
+                    attributes: true,
+                    characterData: true,
+                    childList: true,
+                    subtree: true
+                  });
+                });
+                """,
+                arguments: arguments
+            )
+        }
+        if let pendingName {
+            return try await awaitBridgeWebKitMilestone(pendingName, operation: observe)
+        }
+        return try await observe()
+    }
+
+    /// Observes the document and every open shadow root. Pierre places File
+    /// rows inside open roots, whose mutations do not reach a document observer.
+    @MainActor
+    static func waitForOpenShadowRootValue(
+        _ page: WebPage,
+        reader readerBody: String,
+        arguments: [String: Any] = [:],
+        milestone: String? = nil,
+        lastObservation diagnosticBody: String = "return null;"
+    ) async throws -> Any? {
+        let pendingName = await namedPageMilestone(
+            page, milestone: milestone, diagnosticBody: diagnosticBody, arguments: arguments
+        )
+        let observe: @MainActor () async throws -> Any? = {
+            try await page.callJavaScript(
+                """
+                const findInOpenShadowRoots = (root, selector) => {
+                  const direct = root.querySelector(selector);
+                  if (direct !== null) return direct;
+                  for (const element of root.querySelectorAll('*')) {
+                    if (element.shadowRoot === null) continue;
+                    const nested = findInOpenShadowRoots(element.shadowRoot, selector);
+                    if (nested !== null) return nested;
+                  }
+                  return null;
+                };
+                const readOpenShadowRootText = root => {
+                  let text = root.textContent ?? '';
+                  for (const element of root.querySelectorAll('*')) {
+                    if (element.shadowRoot !== null) text += readOpenShadowRootText(element.shadowRoot);
+                  }
+                  return text;
+                };
+                const readValue = () => { \(readerBody) };
+                return await new Promise(resolve => {
+                  const observers = new Map();
+                  const observeRoot = root => {
+                    if (!observers.has(root)) {
+                      const observer = new MutationObserver(attempt);
+                      observer.observe(root, {
+                        attributes: true, characterData: true, childList: true, subtree: true
+                      });
+                      observers.set(root, observer);
+                    }
+                    for (const element of root.querySelectorAll('*')) {
+                      if (element.shadowRoot !== null) observeRoot(element.shadowRoot);
+                    }
+                  };
+                  const attempt = () => {
+                    observeRoot(document.documentElement);
+                    const value = readValue();
+                    if (value === null || value === undefined) return;
+                    for (const observer of observers.values()) observer.disconnect();
+                    resolve(value);
+                  };
+                  attempt();
+                });
+                """,
+                arguments: arguments
+            )
+        }
+        if let pendingName {
+            return try await awaitBridgeWebKitMilestone(pendingName, operation: observe)
+        }
+        return try await observe()
     }
 
     /// Suspends until `document.querySelector(selector)` is non-null.
@@ -103,6 +184,20 @@ enum WebPageEventWaits {
                 }
             }
         }
+    }
+
+    @MainActor
+    private static func namedPageMilestone(
+        _ page: WebPage,
+        milestone: String?,
+        diagnosticBody: String,
+        arguments: [String: Any]
+    ) async -> String? {
+        guard let milestone else { return nil }
+        let readback =
+            (try? await page.callJavaScript(diagnosticBody, arguments: arguments))
+            .map { String(describing: $0) } ?? "unavailable"
+        return "\(milestone); last=\(readback)"
     }
 
     /// Parks on the page's own observation until `condition` holds.

@@ -7,10 +7,14 @@ enum BridgeProductSessionLifecycle: Equatable, Sendable {
     case revoked
 }
 
+struct BridgeProductViewOperationKey: Hashable, Sendable {
+    let subscriptionId: String
+    let domain: String
+}
+
 struct BridgeProductSessionPendingControl: Sendable {
     let deferredResyncEpochs: [BridgeProductSurface: Int]
     let productAdmission: BridgeProductAdmissionContext
-    var providerDispatchCompletion: BridgeProductControlDispatchCompletion?
     let request: BridgeProductControlRequest
     let token: BridgeProductControlAdmissionToken
 }
@@ -18,8 +22,11 @@ struct BridgeProductSessionPendingControl: Sendable {
 enum BridgeProductSessionControlRejection: Equatable, Sendable {
     case inactiveSession
     case invalidRequest
+    case unknownSubscription
     case payloadTooLarge
     case requestInFlight(nextExpectedRequestSequence: Int)
+    case resultCapacityExhausted
+    case mutationWatchCapacityExhausted
     case revoked
     case sequenceExhausted(nextExpectedRequestSequence: Int)
     case sequenceConflict(nextExpectedRequestSequence: Int)
@@ -120,7 +127,8 @@ enum BridgeProductSessionError: Error, Equatable {
     case invalidAdmissionToken
     case lifecycleFrameAdmissionFailed
     case mismatchedControlResponse
-    case providerDispatchAlreadyClaimed
+    case resultCapacityExhausted
+    case mutationWatchCapacityExhausted
     case subscriptionStateRejected(BridgeProductSubscriptionStateError)
 }
 
@@ -128,18 +136,28 @@ enum BridgeProductSessionCompletionEffect: Equatable, Sendable {
     case noEffect
     case productCall(BridgeProductCallRequest)
     case subscriptionOpened(BridgeProductSubscriptionSnapshot)
-    case subscriptionInterestsCommitted(
-        barrier: BridgeProductSubscriptionCommitBarrierIntent,
-        subscription: BridgeProductSubscriptionSnapshot
-    )
     case subscriptionCancelled(BridgeProductSubscriptionSnapshot)
+    case viewScopeAccepted(BridgeProductViewScopeRequest)
+    case viewResnapshotAccepted(BridgeProductViewResnapshotRequest)
     case resynced(BridgeProductSubscriptionResyncResult)
 }
 
 struct BridgeProductSessionSnapshot: Equatable, Sendable {
     let controlReplay: BridgeProductControlReplaySnapshot
     let lifecycle: BridgeProductSessionLifecycle
-    let pendingControlProviderDispatched: Bool
     let pendingRequestKind: String?
     let workerDerivationEpochBySurface: [BridgeProductSurface: Int]
+}
+
+struct BridgeProductSessionDiagnosticSnapshot: Equatable, Sendable {
+    let activeEscapeEffectCount: Int
+    let activeOperationExecutionCount: Int
+    let mutationWatchCount: Int
+    let observationWaiterCount: Int
+    let retainedOperationResultCount: Int
+    let pendingControlCount: Int
+    let activeSubscriptionCount: Int
+    let producerFrameWaiterCount: Int
+    let producerRetirementCount: Int
+    let producer: BridgeProductProducerRegistrySnapshot
 }

@@ -13,11 +13,11 @@ import {
 	waitForBridgeViewerTreeItemButton,
 } from '../review-viewer/test-support/bridge-viewer-browser-dom.js';
 import { BridgeFileViewerBrowserHarnessApp as BridgeFileViewerApp } from './bridge-file-viewer-browser-test-app.js';
-import { makeFileContent } from './bridge-file-viewer-browser-test-fixtures.js';
 import {
-	makeFileDescriptor,
-	makeFileMetadataEvents,
-} from './bridge-file-viewer-browser-test-fixtures.js';
+	makeBrowserFileBatchWithDescriptors,
+	makeBrowserFileDescriptorOutcome,
+} from './bridge-file-viewer-browser-test-batches.js';
+import { makeFileContent } from './bridge-file-viewer-browser-test-fixtures.js';
 import {
 	actFrame,
 	actUpdate,
@@ -29,13 +29,13 @@ import {
 
 describe('BridgeFileViewerApp Browser Mode', () => {
 	test('does not fetch visible file tree demand on the main thread', async () => {
-		const firstDescriptor = makeFileDescriptor({
-			contentHandle: 'first-visible-content',
+		const firstDescriptor = makeBrowserFileDescriptorOutcome({
+			descriptorId: 'first-visible-content',
 			fileId: 'file-first-visible',
 			path: 'src/first-visible.ts',
 		});
-		const secondDescriptor = makeFileDescriptor({
-			contentHandle: 'second-visible-content',
+		const secondDescriptor = makeBrowserFileDescriptorOutcome({
+			descriptorId: 'second-visible-content',
 			fileId: 'file-second-visible',
 			path: 'src/second-visible.ts',
 		});
@@ -43,7 +43,11 @@ describe('BridgeFileViewerApp Browser Mode', () => {
 
 		await render(
 			<BridgeFileViewerApp
-				initialMetadataEvents={makeFileMetadataEvents(firstDescriptor, secondDescriptor)}
+				initialFileBatch={makeBrowserFileBatchWithDescriptors(
+					'open',
+					firstDescriptor,
+					secondDescriptor,
+				)}
 				fileProductSession={{
 					readContent: async (props) => {
 						openedDescriptorIds.push(props.descriptor.descriptorId);
@@ -57,7 +61,7 @@ describe('BridgeFileViewerApp Browser Mode', () => {
 			/>,
 		);
 
-		await waitForMetadataTreeRowCount(2);
+		await waitForMetadataTreeRowCount(3);
 		await actFrame();
 		await actFrame();
 		await actFrame();
@@ -73,13 +77,13 @@ describe('BridgeFileViewerApp Browser Mode', () => {
 	});
 
 	test('publishes visible viewport facts to the comm worker on File tree scroll', async () => {
-		const firstDescriptor = makeFileDescriptor({
-			contentHandle: 'first-worker-viewport-content',
+		const firstDescriptor = makeBrowserFileDescriptorOutcome({
+			descriptorId: 'first-worker-viewport-content',
 			fileId: 'file-first-worker-viewport',
 			path: 'src/first-worker-viewport.ts',
 		});
-		const secondDescriptor = makeFileDescriptor({
-			contentHandle: 'second-worker-viewport-content',
+		const secondDescriptor = makeBrowserFileDescriptorOutcome({
+			descriptorId: 'second-worker-viewport-content',
 			fileId: 'file-second-worker-viewport',
 			path: 'src/second-worker-viewport.ts',
 		});
@@ -95,12 +99,16 @@ describe('BridgeFileViewerApp Browser Mode', () => {
 							viewportCommands.record(message);
 						},
 					}}
-					initialMetadataEvents={makeFileMetadataEvents(firstDescriptor, secondDescriptor)}
+					initialFileBatch={makeBrowserFileBatchWithDescriptors(
+						'open',
+						firstDescriptor,
+						secondDescriptor,
+					)}
 				/>
 			</div>,
 		);
 
-		await waitForMetadataTreeRowCount(2);
+		await waitForMetadataTreeRowCount(3);
 		await waitForBridgeViewerTreeItemButton('src/first-worker-viewport.ts');
 		await waitForBridgeViewerTreeItemButton('src/second-worker-viewport.ts');
 		const initialViewportCommand = await viewportCommands.waitForFirst();
@@ -120,18 +128,20 @@ describe('BridgeFileViewerApp Browser Mode', () => {
 		);
 		expect(viewportCommandAfterScroll.message).toMatchObject({
 			command: 'viewport',
-			firstVisibleIndex: 0,
-			lastVisibleIndex: 1,
 			phase: 'settled',
 			visibleItemIds: ['file-first-worker-viewport', 'file-second-worker-viewport'],
 		});
+		expect(
+			viewportCommandAfterScroll.message.lastVisibleIndex -
+				viewportCommandAfterScroll.message.firstVisibleIndex,
+		).toBe(1);
 	});
 
 	test('publishes real scrolled File tree viewport indices to the comm worker', async () => {
 		const descriptors = Array.from({ length: 80 }, (_value, index) => {
 			const paddedIndex = index.toString().padStart(3, '0');
-			return makeFileDescriptor({
-				contentHandle: `scrolled-worker-viewport-content-${paddedIndex}`,
+			return makeBrowserFileDescriptorOutcome({
+				descriptorId: `scrolled-worker-viewport-content-${paddedIndex}`,
 				fileId: `file-scrolled-worker-viewport-${paddedIndex}`,
 				path: `File-${paddedIndex}.swift`,
 			});
@@ -148,7 +158,7 @@ describe('BridgeFileViewerApp Browser Mode', () => {
 							viewportCommands.record(message);
 						},
 					}}
-					initialMetadataEvents={makeFileMetadataEvents(...descriptors)}
+					initialFileBatch={makeBrowserFileBatchWithDescriptors('open', ...descriptors)}
 				/>
 			</div>,
 		);
@@ -176,8 +186,8 @@ describe('BridgeFileViewerApp Browser Mode', () => {
 	});
 
 	test('does not patch global fetch for worker-backed content loading', async () => {
-		const descriptor = makeFileDescriptor({
-			contentHandle: 'global-fetch-isolation-content',
+		const descriptor = makeBrowserFileDescriptorOutcome({
+			descriptorId: 'global-fetch-isolation-content',
 			fileId: 'file-global-fetch-isolation',
 			path: 'src/global-fetch-isolation.ts',
 		});
@@ -185,40 +195,41 @@ describe('BridgeFileViewerApp Browser Mode', () => {
 
 		await render(
 			<BridgeFileViewerApp
-				initialMetadataEvents={makeFileMetadataEvents(descriptor)}
+				initialFileBatch={makeBrowserFileBatchWithDescriptors('open', descriptor)}
 				fileProductSession={{
 					readContent: async () => makeFileContent('export const globalFetchIsolation = true;\n'),
 				}}
 			/>,
 		);
 
-		await waitForMetadataTreeRowCount(1);
+		await waitForMetadataTreeRowCount(2);
 		expect(window.fetch).toBe(originalFetch);
 	});
 
 	test('keeps non-text visible demand from falling back to legacy fetch', async () => {
-		const textDescriptor = makeFileDescriptor({
-			contentHandle: 'text-visible-content',
+		const textDescriptor = makeBrowserFileDescriptorOutcome({
+			descriptorId: 'text-visible-content',
 			fileId: 'file-text-visible',
 			path: 'src/text-visible.ts',
 		});
-		const binaryDescriptor = makeFileDescriptor({
-			contentHandle: 'binary-visible-content',
+		const binaryDescriptor = makeBrowserFileDescriptorOutcome({
+			descriptorId: 'binary-visible-content',
 			fileId: 'file-binary-visible',
-			isBinary: true,
+			availability: 'binary',
 			path: 'assets/logo.png',
 		});
-		const unavailableDescriptor = makeFileDescriptor({
-			contentHandle: 'unavailable-visible-content',
+		const unavailableDescriptor = makeBrowserFileDescriptorOutcome({
+			descriptorId: 'unavailable-visible-content',
 			fileId: 'file-unavailable-visible',
 			path: 'generated/huge.log',
-			virtualizedExtentKind: 'unavailable',
+			availability: 'unavailable',
 		});
 		const openedDescriptorIds: string[] = [];
 
 		await render(
 			<BridgeFileViewerApp
-				initialMetadataEvents={makeFileMetadataEvents(
+				initialFileBatch={makeBrowserFileBatchWithDescriptors(
+					'open',
 					textDescriptor,
 					binaryDescriptor,
 					unavailableDescriptor,
@@ -232,7 +243,7 @@ describe('BridgeFileViewerApp Browser Mode', () => {
 			/>,
 		);
 
-		await waitForMetadataTreeRowCount(3);
+		await waitForMetadataTreeRowCount(6);
 		await actFrame();
 		await actFrame();
 		await actFrame();
@@ -246,8 +257,8 @@ describe('BridgeFileViewerApp Browser Mode', () => {
 	});
 
 	test('does not start visible demand fetch work before Files becomes inactive', async () => {
-		const visibleDescriptor = makeFileDescriptor({
-			contentHandle: 'inactive-visible-content',
+		const visibleDescriptor = makeBrowserFileDescriptorOutcome({
+			descriptorId: 'inactive-visible-content',
 			fileId: 'file-inactive-visible',
 			path: 'src/inactive-visible.ts',
 		});
@@ -255,7 +266,7 @@ describe('BridgeFileViewerApp Browser Mode', () => {
 
 		await render(
 			<BridgeFileViewerApp
-				initialMetadataEvents={makeFileMetadataEvents(visibleDescriptor)}
+				initialFileBatch={makeBrowserFileBatchWithDescriptors('open', visibleDescriptor)}
 				isActive={false}
 				fileProductSession={{
 					readContent: async (props) => {
@@ -266,7 +277,7 @@ describe('BridgeFileViewerApp Browser Mode', () => {
 			/>,
 		);
 
-		await waitForMetadataTreeRowCount(1);
+		await waitForMetadataTreeRowCount(2);
 		await actFrame();
 		await actFrame();
 

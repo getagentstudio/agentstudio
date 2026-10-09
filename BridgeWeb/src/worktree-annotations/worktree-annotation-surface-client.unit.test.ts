@@ -1,25 +1,22 @@
 import { describe, expect, test, vi } from 'vitest';
 
 import type { BridgeWorkerAnnotationProjectionSnapshot } from '../core/comm-worker/bridge-comm-worker-annotation-projection-decoder.js';
-import { createBridgeMainRenderFulfillmentCoordinator } from '../core/comm-worker/bridge-main-render-fulfillment-coordinator.js';
-import { createBridgeMainRenderSnapshotStore } from '../core/comm-worker/bridge-main-render-snapshot-store.js';
-import type { BridgePaneSurfaceClient } from '../core/comm-worker/bridge-pane-runtime.js';
-import {
-	BRIDGE_WORKER_WIRE_VERSION,
-	type BridgeWorkerServerToMainMessage,
-} from '../core/comm-worker/bridge-worker-contracts.js';
-import { createBridgeWorkerRpcLifecycleStore } from '../core/comm-worker/bridge-worker-rpc-lifecycle-store.js';
-import type { BridgeTelemetrySample } from '../foundation/telemetry/bridge-telemetry-event.js';
+import { BRIDGE_WORKER_WIRE_VERSION } from '../core/comm-worker/bridge-worker-contracts.js';
 import { WorktreeAnnotationProjectionStore } from './worktree-annotation-projection-store.js';
 import {
-	createWorktreeAnnotationSurfaceClient,
+	worktreeAnnotationOutcomeUnknownMessage,
 	type WorktreeAnnotationOutputHistorySummary,
 } from './worktree-annotation-surface-client.js';
-
-const sessionId = '00000000-0000-7000-8000-000000000011';
-const siblingSessionId = '00000000-0000-7000-8000-000000000014';
-const threadId = '00000000-0000-7000-8000-000000000012';
-const messageId = '00000000-0000-7000-8000-000000000013';
+import {
+	catalogStagingMessages,
+	createSurfaceClientHarness,
+	messageId,
+	projectionSnapshot,
+	reviewPublicationIdentity,
+	sessionId,
+	siblingSessionId,
+	threadId,
+} from './worktree-annotation-surface-client.test-support.js';
 
 describe('worktree annotation finite projection store', () => {
 	test('installs one complete finite snapshot atomically', () => {
@@ -172,6 +169,7 @@ describe('worktree annotation surface command rendezvous', () => {
 			state: {
 				contentSessionIds: [sessionId],
 				kind: 'ready',
+				stageAttempt: 0,
 				snapshot: projectionSnapshot(7, 12),
 			},
 			surface: 'fileView',
@@ -191,14 +189,15 @@ describe('worktree annotation surface command rendezvous', () => {
 				)
 				.map((sample) => sample.stringAttributes['agentstudio.bridge.phase']),
 		).toEqual([
-			'annotation_catalog_main_begin',
-			'annotation_catalog_main_window',
-			'annotation_catalog_main_commit',
 			'projection_store_started',
 			'main_thread_install_started',
 			'projection_store_terminal',
 			'main_thread_install_terminal',
 		]);
+		expect(harness.client.getCatalogSnapshot()).toMatchObject({
+			catalog: { catalogRevision: 7 },
+			kind: 'current',
+		});
 		expect(projectionSamples).toHaveLength(2);
 		expect(projectionSamples[0]?.stringAttributes).toMatchObject({
 			'agentstudio.bridge.operation.id': 'a'.repeat(64),
@@ -210,6 +209,35 @@ describe('worktree annotation surface command rendezvous', () => {
 			'agentstudio.bridge.phase': 'main_thread_install_terminal',
 			'agentstudio.bridge.result': 'success',
 		});
+		harness.client.dispose();
+	});
+
+	test('records distinct Main attempts for two ready projections of one operation', () => {
+		const harness = createSurfaceClientHarness();
+		const correlation = 'a'.repeat(64);
+		for (const stageAttempt of [0, 1]) {
+			harness.publish({
+				direction: 'serverWorkerToMain',
+				kind: 'annotationProjectionConvergence',
+				operationCorrelationId: correlation,
+				state: {
+					contentSessionIds: [sessionId],
+					kind: 'ready',
+					snapshot: projectionSnapshot(7, 12),
+					stageAttempt,
+				},
+				surface: 'fileView',
+				transferDescriptors: [],
+				wireVersion: BRIDGE_WORKER_WIRE_VERSION,
+			});
+		}
+		expect(
+			harness.telemetrySamples
+				.filter(
+					(sample) => sample.stringAttributes['agentstudio.bridge.operation.id'] === correlation,
+				)
+				.map((sample) => sample.numericAttributes['agentstudio.bridge.stage.attempt']),
+		).toEqual([0, 0, 0, 0, 1, 1, 1, 1]);
 		harness.client.dispose();
 	});
 
@@ -228,6 +256,7 @@ describe('worktree annotation surface command rendezvous', () => {
 			state: {
 				contentSessionIds: [sessionId],
 				kind: 'ready',
+				stageAttempt: 0,
 				snapshot: projectionSnapshot(7, 12),
 			},
 			surface: 'fileView',
@@ -243,54 +272,25 @@ describe('worktree annotation surface command rendezvous', () => {
 		harness.client.dispose();
 	});
 
-	test('records bounded catalog staging units and the final presentation publication', () => {
+	test('commits catalog staging atomically without finite projection telemetry', () => {
 		const harness = createSurfaceClientHarness();
 		const messages = catalogStagingMessages(7, 'fileView');
-		const encoder = new TextEncoder();
-
-		for (const message of messages) harness.publish(message);
-
-		expect(harness.telemetrySamples).toHaveLength(3);
-		for (const [index, sample] of harness.telemetrySamples.entries()) {
-			const message = messages[index];
-			if (message === undefined) throw new Error('Expected catalog staging message.');
-			expect(sample.stringAttributes).toMatchObject({
-				'agentstudio.bridge.operation.id': 'a'.repeat(64),
-				'agentstudio.bridge.result': 'success',
-				'agentstudio.bridge.transport': 'local',
-				'agentstudio.bridge.viewer': 'file',
-			});
-			expect(sample.numericAttributes).toMatchObject({
-				'agentstudio.bridge.annotation.catalog.revision': 7,
-				'agentstudio.bridge.annotation.catalog.unit.byte_count': encoder.encode(
-					JSON.stringify(message),
-				).byteLength,
-				'agentstudio.bridge.presentation.revision.before': 0,
-			});
+		const [begin, window, commit] = messages;
+		if (begin === undefined || window === undefined || commit === undefined) {
+			throw new Error('Expected complete certified catalog staging.');
 		}
-		expect(harness.telemetrySamples[0]).toMatchObject({
-			stringAttributes: { 'agentstudio.bridge.phase': 'annotation_catalog_main_begin' },
-			numericAttributes: {
-				'agentstudio.bridge.annotation.catalog.entry.count': 3,
-				'agentstudio.bridge.presentation.revision.after': 0,
-			},
+		const initialPresentationRevision = harness.client.getSnapshot().presentationRevision;
+		harness.publish(begin);
+		harness.publish(window);
+		expect(harness.client.getCatalogSnapshot().kind).toBe('unknown');
+		expect(harness.client.getSnapshot().presentationRevision).toBe(initialPresentationRevision);
+		harness.publish(commit);
+		expect(harness.client.getCatalogSnapshot()).toMatchObject({
+			catalog: { catalogRevision: 7, entries: expect.any(Array) },
+			kind: 'current',
 		});
-		expect(harness.telemetrySamples[1]).toMatchObject({
-			stringAttributes: { 'agentstudio.bridge.phase': 'annotation_catalog_main_window' },
-			numericAttributes: {
-				'agentstudio.bridge.annotation.catalog.entry.count': 3,
-				'agentstudio.bridge.annotation.catalog.window.ordinal': 0,
-				'agentstudio.bridge.presentation.revision.after': 0,
-			},
-		});
-		expect(harness.telemetrySamples[2]).toMatchObject({
-			stringAttributes: { 'agentstudio.bridge.phase': 'annotation_catalog_main_commit' },
-			numericAttributes: {
-				'agentstudio.bridge.annotation.catalog.entry.count': 3,
-				'agentstudio.bridge.annotation.catalog.window.count': 1,
-				'agentstudio.bridge.presentation.revision.after': 1,
-			},
-		});
+		expect(harness.client.getSnapshot().presentationRevision).toBe(initialPresentationRevision + 1);
+		expect(harness.telemetrySamples).toEqual([]);
 		harness.client.dispose();
 	});
 
@@ -306,6 +306,7 @@ describe('worktree annotation surface command rendezvous', () => {
 			state: {
 				contentSessionIds: [sessionId],
 				kind: 'ready',
+				stageAttempt: 0,
 				snapshot: projectionSnapshot(7, 12),
 			},
 			surface: 'fileView',
@@ -335,6 +336,7 @@ describe('worktree annotation surface command rendezvous', () => {
 			state: {
 				contentSessionIds: [],
 				kind: 'ready',
+				stageAttempt: 0,
 				snapshot: { ...projectionSnapshot(7, 12), threads: [] },
 			},
 			surface: 'fileView',
@@ -360,6 +362,154 @@ describe('worktree annotation surface command rendezvous', () => {
 			epoch: 0,
 			surface: 'fileView',
 		});
+		harness.client.dispose();
+	});
+
+	test('reports an unknown Save outcome without claiming failure and reconciles its late receipt', async () => {
+		// Arrange
+		const harness = createSurfaceClientHarness();
+		const save = harness.client.execute({
+			editToken: '00000000-0000-7000-8000-000000000014',
+			expectedDraftRevision: 1,
+			expectedMessageRevision: 2,
+			kind: 'draft.save',
+			messageId,
+			sessionId,
+		});
+		const canonicalMessage = projectionSnapshot(3, 12).threads[0]?.messages[0];
+		if (canonicalMessage === undefined) throw new Error('Expected canonical message fixture.');
+
+		// Act: the worker's deadline passes before native answers.
+		harness.publish({
+			deliveryStatus: 'unknownAfterDispatch',
+			direction: 'serverWorkerToMain',
+			kind: 'health',
+			message: 'Bridge comm worker has not received the outcome of file.annotations.command.',
+			requestId: 'worker-save-1',
+			status: 'degraded',
+			transferDescriptors: [],
+			wireVersion: BRIDGE_WORKER_WIRE_VERSION,
+		});
+
+		// Assert: the caller learns the outcome is pending, not that the Save failed.
+		await expect(save).rejects.toThrow(worktreeAnnotationOutcomeUnknownMessage);
+		expect(worktreeAnnotationOutcomeUnknownMessage).not.toMatch(/fail/iu);
+
+		// Act: native commits the Save late.
+		harness.publish({
+			direction: 'serverWorkerToMain',
+			kind: 'annotationCommandAccepted',
+			outcome: {
+				receipt: {
+					context: {
+						diffSide: null,
+						endLine: 4,
+						path: 'Sources/App.swift',
+						resolution: 'open',
+						scope: 'located',
+						sourceIdentity: 'source-1',
+						sourceRole: 'file',
+						startLine: 3,
+						threadId,
+					},
+					kind: 'message',
+					message: {
+						...canonicalMessage,
+						messageRevision: 3,
+						savedBody: 'Saved after the deadline',
+						savedRevision: 2,
+						sessionRevision: 4,
+						status: 'editable',
+					},
+				},
+				requestId: 'product-late-save',
+				sessionId,
+				status: { kind: 'committed' },
+				surface: 'file',
+			},
+			productRequestId: 'product-late-save',
+			requestId: 'worker-save-1',
+			surface: 'fileView',
+			transferDescriptors: [],
+			wireVersion: BRIDGE_WORKER_WIRE_VERSION,
+		});
+
+		// Assert: the committed state is recorded and shown.
+		expect(harness.client.getSnapshot().commandConfirmedThreads).toMatchObject([
+			{ messages: [{ savedBody: 'Saved after the deadline' }] },
+		]);
+		expect(harness.client.getSnapshot().commandOutcomes).toMatchObject([
+			{ requestId: 'product-late-save', status: { kind: 'committed' } },
+		]);
+		harness.client.dispose();
+	});
+
+	test('keeps an unknown Save draft through worker session loss', async () => {
+		const harness = createSurfaceClientHarness();
+		const releaseSession = harness.client.acquireSession(sessionId);
+		const initialSnapshot = projectionSnapshot(3, 12);
+		const initialThread = initialSnapshot.threads[0];
+		const initialMessage = initialThread?.messages[0];
+		if (initialThread === undefined || initialMessage === undefined) {
+			throw new Error('Expected a draft message fixture.');
+		}
+		harness.publish({
+			direction: 'serverWorkerToMain',
+			kind: 'annotationProjectionConvergence',
+			operationCorrelationId: 'a'.repeat(64),
+			state: {
+				contentSessionIds: [sessionId],
+				kind: 'ready',
+				stageAttempt: 0,
+				snapshot: {
+					...initialSnapshot,
+					threads: [
+						{
+							...initialThread,
+							messages: [
+								{
+									...initialMessage,
+									draft: { activeEditToken: null, body: 'Unsaved after loss', revision: 2 },
+								},
+							],
+						},
+					],
+				},
+			},
+			surface: 'fileView',
+			transferDescriptors: [],
+			wireVersion: BRIDGE_WORKER_WIRE_VERSION,
+		});
+		const save = harness.client.execute({
+			editToken: '00000000-0000-7000-8000-000000000014',
+			expectedDraftRevision: 2,
+			expectedMessageRevision: 1,
+			kind: 'draft.save',
+			messageId,
+			sessionId,
+		});
+		expect(harness.sentCommands.at(-1)?.command).toBe('annotationCommand');
+		const saveRequestId = `worker-save-${harness.sentCommands.length.toString()}`;
+		harness.publish({
+			deliveryStatus: 'unknownAfterDispatch',
+			direction: 'serverWorkerToMain',
+			kind: 'health',
+			requestId: saveRequestId,
+			status: 'degraded',
+			transferDescriptors: [],
+			wireVersion: BRIDGE_WORKER_WIRE_VERSION,
+		});
+		await expect(save).rejects.toThrow(worktreeAnnotationOutcomeUnknownMessage);
+		expect(harness.client.getSnapshot().readStatus).toEqual({ kind: 'ready' });
+		expect(harness.client.getSnapshot().threads[0]?.messages[0]?.draft?.body).toBe(
+			'Unsaved after loss',
+		);
+
+		harness.fireWorkerReplacement();
+		expect(harness.client.getSnapshot().threads[0]?.messages[0]?.draft?.body).toBe(
+			'Unsaved after loss',
+		);
+		releaseSession();
 		harness.client.dispose();
 	});
 
@@ -448,6 +598,7 @@ describe('worktree annotation surface command rendezvous', () => {
 			state: {
 				contentSessionIds: [sessionId],
 				kind: 'ready',
+				stageAttempt: 0,
 				snapshot: projectionSnapshot(20, 12),
 			},
 			surface: 'fileView',
@@ -479,6 +630,7 @@ describe('worktree annotation surface command rendezvous', () => {
 			state: {
 				contentSessionIds: [sessionId],
 				kind: 'ready',
+				stageAttempt: 0,
 				snapshot: projectionSnapshot(21, 12),
 			},
 			surface: 'fileView',
@@ -514,6 +666,62 @@ describe('worktree annotation surface command rendezvous', () => {
 			kind: 'stale',
 		});
 		harness.publish(replacementCommit);
+		expect(harness.client.getCatalogSnapshot()).toMatchObject({
+			catalog: { catalogRevision: 1 },
+			kind: 'current',
+		});
+		harness.client.dispose();
+	});
+
+	test('a routine epoch replacement keeps comments visible as refreshing until the replacement catalog commits', () => {
+		// Arrange: the drawer shows a current catalog.
+		const harness = createSurfaceClientHarness();
+		for (const message of catalogStagingMessages(20, 'fileView')) harness.publish(message);
+		harness.publish({
+			direction: 'serverWorkerToMain',
+			kind: 'annotationProjectionConvergence',
+			operationCorrelationId: 'a'.repeat(64),
+			state: {
+				contentSessionIds: [sessionId],
+				kind: 'ready',
+				stageAttempt: 0,
+				snapshot: projectionSnapshot(20, 12),
+			},
+			surface: 'fileView',
+			transferDescriptors: [],
+			wireVersion: BRIDGE_WORKER_WIRE_VERSION,
+		});
+		const threadCountBeforeReplacement = harness.client.getSnapshot().threads.length;
+		expect(threadCountBeforeReplacement).toBeGreaterThan(0);
+
+		// Act: the worker moves annotations to a new surface epoch.
+		harness.publish({
+			direction: 'serverWorkerToMain',
+			kind: 'annotationProjectionConvergence',
+			operationCorrelationId: 'a'.repeat(64),
+			state: { catalogAuthorityRetired: true, kind: 'refreshing' },
+			surface: 'fileView',
+			transferDescriptors: [],
+			wireVersion: BRIDGE_WORKER_WIRE_VERSION,
+		});
+
+		// Assert: comments stay on screen, marked refreshing, never "Updates unavailable".
+		expect(harness.client.getSnapshot().readStatus).toEqual({ kind: 'refreshing' });
+		expect(harness.client.getSnapshot().threads).toHaveLength(threadCountBeforeReplacement);
+		expect(harness.client.getCatalogSnapshot()).toMatchObject({
+			catalog: { catalogRevision: 20 },
+			kind: 'stale',
+		});
+		for (const message of catalogStagingMessages(1, 'fileView')) {
+			harness.publish({
+				...message,
+				authority: {
+					...message.authority,
+					subscriptionId: 'fileView-annotation-subscription-2',
+					workerDerivationEpoch: 2,
+				},
+			});
+		}
 		expect(harness.client.getCatalogSnapshot()).toMatchObject({
 			catalog: { catalogRevision: 1 },
 			kind: 'current',
@@ -593,177 +801,11 @@ describe('worktree annotation surface command rendezvous', () => {
 	});
 });
 
-function createSurfaceClientHarness(
-	workerRequestIds: readonly string[] = ['worker-save-1'],
-	surface: 'fileView' | 'review' = 'fileView',
-	hasInstalledReviewIdentity = true,
-): {
-	readonly client: ReturnType<typeof createWorktreeAnnotationSurfaceClient>;
-	readonly publish: (message: BridgeWorkerServerToMainMessage) => void;
-	readonly sentCommands: Array<Parameters<BridgePaneSurfaceClient['send']>[0]>;
-	readonly telemetrySamples: BridgeTelemetrySample[];
-} {
-	let listener: ((message: BridgeWorkerServerToMainMessage) => void) | null = null;
-	let nextWorkerRequestIndex = 0;
-	let catalogStaged = false;
-	const sentCommands: Parameters<BridgePaneSurfaceClient['send']>[0][] = [];
-	const telemetrySamples: BridgeTelemetrySample[] = [];
-	const renderStore = createBridgeMainRenderSnapshotStore();
-	if (surface === 'review' && hasInstalledReviewIdentity) {
-		Object.defineProperty(renderStore, 'getReviewRefreshPresentation', {
-			value: () => ({ activeIdentity: reviewMainIdentity, candidate: null }),
-		});
-	}
-	const surfaceClient = {
-		requestWorkerReplacement: (): void => {},
-		lifecycle: createBridgeWorkerRpcLifecycleStore(),
-		renderFulfillmentCoordinator: createBridgeMainRenderFulfillmentCoordinator({
-			cancelAnimationFrame: (): void => {},
-			requestAnimationFrame: (): number => 1,
-			sendDisposition: (): void => {},
-		}),
-		renderStore,
-		send: (command): string => {
-			sentCommands.push(command);
-			const requestId = workerRequestIds[nextWorkerRequestIndex];
-			nextWorkerRequestIndex += 1;
-			return requestId ?? `worker-save-${nextWorkerRequestIndex.toString()}`;
-		},
-		subscribeMessages: (
-			nextListener: (message: BridgeWorkerServerToMainMessage) => void,
-		): (() => void) => {
-			listener = nextListener;
-			return (): void => {
-				listener = null;
-			};
-		},
-		surface,
-	} satisfies BridgePaneSurfaceClient;
-	return {
-		client: createWorktreeAnnotationSurfaceClient(surfaceClient, {
-			flush: (): boolean => true,
-			isEnabled: (): boolean => true,
-			measure: (props) => props.operation(),
-			record: (sample): void => {
-				telemetrySamples.push(sample);
-			},
-		}),
-		publish: (message): void => {
-			if (
-				!catalogStaged &&
-				message.kind === 'annotationProjectionConvergence' &&
-				message.state.kind === 'ready' &&
-				message.surface === surface
-			) {
-				catalogStaged = true;
-				for (const catalogMessage of catalogStagingMessages(
-					message.state.snapshot.projectionRevision,
-					surface,
-				)) {
-					listener?.(catalogMessage);
-				}
-			}
-			listener?.(message);
-		},
-		sentCommands,
-		telemetrySamples,
-	};
-}
-
 function stageCatalog(store: WorktreeAnnotationProjectionStore, catalogRevision: number): void {
 	for (const message of catalogStagingMessages(catalogRevision, 'fileView')) {
 		store.applyCatalogStaging(message);
 	}
 }
-
-function catalogStagingMessages(
-	catalogRevision: number,
-	surface: 'fileView' | 'review',
-	includeSession = true,
-): readonly Extract<
-	BridgeWorkerServerToMainMessage,
-	{ readonly kind: 'annotationCatalogStaging' }
->[] {
-	const authority = {
-		subscriptionId: `${surface}-annotation-subscription-1`,
-		workerDerivationEpoch: 1,
-		worktreeId: 'worktree-1',
-	} as const;
-	const transferId = `${surface}-annotation-catalog-${catalogRevision}`;
-	const entries = includeSession
-		? [
-				{ kind: 'session' as const, semanticRevision: catalogRevision, sessionId },
-				{
-					createdOrdinal: 0,
-					kind: 'thread' as const,
-					scope: 'located' as const,
-					sessionId,
-					threadId,
-				},
-				{ kind: 'message' as const, messageId, ordinal: 0, threadId },
-			]
-		: [];
-	const common = {
-		authority,
-		direction: 'serverWorkerToMain' as const,
-		kind: 'annotationCatalogStaging' as const,
-		operationCorrelationId: 'a'.repeat(64),
-		surface,
-		transferDescriptors: [],
-		wireVersion: BRIDGE_WORKER_WIRE_VERSION,
-	};
-	return [
-		{
-			...common,
-			transfer: {
-				catalogRevision,
-				expectedEntryCount: entries.length,
-				kind: 'catalog.begin',
-				transferId,
-			},
-		},
-		...(entries.length === 0
-			? []
-			: [
-					{
-						...common,
-						transfer: {
-							catalogRevision,
-							entries,
-							kind: 'catalog.window' as const,
-							transferId,
-							windowOrdinal: 0,
-						},
-					},
-				]),
-		{
-			...common,
-			transfer: {
-				catalogRevision,
-				entryCount: entries.length,
-				kind: 'catalog.commit',
-				transferId,
-				windowCount: entries.length === 0 ? 0 : 1,
-			},
-		},
-	];
-}
-
-const reviewPublicationIdentity = {
-	packageId: 'package-installed',
-	publicationId: '00000000-0000-7000-8000-000000000041',
-	reviewGeneration: 7,
-	revision: 3,
-	sourceIdentity: 'source-installed',
-} as const;
-
-const reviewMainIdentity = {
-	generation: reviewPublicationIdentity.reviewGeneration,
-	packageId: reviewPublicationIdentity.packageId,
-	publicationId: reviewPublicationIdentity.publicationId,
-	revision: reviewPublicationIdentity.revision,
-	sourceIdentity: reviewPublicationIdentity.sourceIdentity,
-} as const;
 
 function outputHistorySummary(
 	outputSessionId: string,
@@ -779,69 +821,6 @@ function outputHistorySummary(
 		sessionId: outputSessionId,
 		state: 'succeeded',
 		updatedAt: 2,
-	};
-}
-
-function projectionSnapshot(
-	projectionRevision: number,
-	sourceGeneration: number,
-): BridgeWorkerAnnotationProjectionSnapshot {
-	return {
-		expectedMessageCount: 1,
-		expectedSessionCount: 1,
-		expectedThreadCount: 1,
-		projectionRevision,
-		recoveryStatus: 'available',
-		sessions: [
-			{
-				completedAt: null,
-				createdAt: 1,
-				eligibleMessageCount: 1,
-				eligibleWithoutInlinePlacementCount: 0,
-				lifecycle: 'living',
-				semanticRevision: projectionRevision,
-				sessionId,
-				sourceRelationship: 'applicable',
-				updatedAt: 2,
-			},
-		],
-		sourceGeneration,
-		threads: [
-			{
-				context: {
-					diffSide: null,
-					endLine: 4,
-					path: 'Sources/App.swift',
-					placement: 'exact',
-					resolution: 'open',
-					scope: 'located',
-					sourceIdentity: 'source-1',
-					sourceRole: 'file',
-					startLine: 3,
-					threadId,
-				},
-				messages: [
-					{
-						attentionState: 'not_applicable',
-						authorKind: 'human',
-						createdAt: 2,
-						draft: null,
-						handled: false,
-						messageId,
-						messageRevision: 1,
-						ordinal: 0,
-						savedBody: 'Comment',
-						savedRevision: 1,
-						sessionId,
-						sessionRevision: projectionRevision,
-						status: 'locked',
-						threadId,
-						threadRevision: 1,
-					},
-				],
-			},
-		],
-		worktreeId: 'worktree-1',
 	};
 }
 

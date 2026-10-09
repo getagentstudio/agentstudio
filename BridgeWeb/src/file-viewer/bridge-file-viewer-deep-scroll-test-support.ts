@@ -1,16 +1,20 @@
 import { expect } from 'vitest';
 
+import type { BridgeProductViewInstallation } from '../core/comm-worker/bridge-product-view-batch-receiver.js';
 import { findBridgeViewerTreeScrollOwner } from '../review-viewer/test-support/bridge-viewer-browser-dom.js';
 import { initializeBridgePierreWorkerPoolSingletonForTest } from '../review-viewer/workers/pierre/bridge-pierre-worker-pool.js';
+import {
+	makeBrowserFileBatch,
+	makeBrowserFileDescriptorOutcome,
+	makeBrowserFileRow,
+	makeBrowserFileSourceIdentity,
+	makeBrowserSequentialFileRows,
+	type BrowserFileDescriptorOutcome,
+} from './bridge-file-viewer-browser-test-batches.js';
 import {
 	countFileContentByte,
 	fileContentSha256Hex,
 	logicalFileContentLineCount,
-	makeFileDescriptor,
-	makeSourceAcceptedMetadataEvent,
-	makeTreeWindowMetadataEvent,
-	type FileDescriptorReadyEvent,
-	type FileMetadataEvent,
 } from './bridge-file-viewer-browser-test-fixtures.js';
 import {
 	actClick,
@@ -22,7 +26,6 @@ import {
 } from './bridge-file-viewer-browser-test-harness.js';
 
 export const completeFileDeepScrollTreeRowCount = 3_420;
-const completeFileDeepScrollTreeWindowRowCount = 256;
 
 export const completeFileDeepScrollFixture = createCompleteFileDeepScrollFixture();
 
@@ -187,42 +190,35 @@ export function makeCompleteFileDeepScrollDescriptor(props: {
 	readonly contentHandle: string;
 	readonly fileId: string;
 	readonly path: string;
-}): FileDescriptorReadyEvent {
-	return makeFileDescriptor({
-		contentExpectedBytes: completeFileDeepScrollFixture.byteCount,
-		contentExpectedSha256: completeFileDeepScrollFixture.sha256,
-		contentHandle: props.contentHandle,
-		contentMaxBytes: completeFileDeepScrollFixture.byteCount,
+}): BrowserFileDescriptorOutcome {
+	return makeBrowserFileDescriptorOutcome({
+		declaredByteLength: completeFileDeepScrollFixture.byteCount,
+		expectedSha256: completeFileDeepScrollFixture.sha256,
+		descriptorId: props.contentHandle,
 		endsWithNewline: false,
 		fileId: props.fileId,
 		lineCount: completeFileDeepScrollFixture.lineCount,
 		path: props.path,
+		source: makeBrowserFileSourceIdentity(),
 	});
 }
 
-export function makeCompleteFileDeepScrollMetadataEvents(
-	descriptor: FileDescriptorReadyEvent,
-): readonly FileMetadataEvent[] {
-	const treeWindowEvents: FileMetadataEvent[] = [];
-	for (
-		let startIndex = 0;
-		startIndex < completeFileDeepScrollTreeRowCount;
-		startIndex += completeFileDeepScrollTreeWindowRowCount
-	) {
-		treeWindowEvents.push(
-			makeTreeWindowMetadataEvent({
-				rowCount: Math.min(
-					completeFileDeepScrollTreeWindowRowCount,
-					completeFileDeepScrollTreeRowCount - startIndex,
-				),
-				sequence: startIndex / completeFileDeepScrollTreeWindowRowCount + 1,
-				sourceIdentity: descriptor.source,
-				startIndex,
-				totalPathCount: completeFileDeepScrollTreeRowCount,
+export function makeCompleteFileDeepScrollBatch(
+	descriptor: BrowserFileDescriptorOutcome,
+): BridgeProductViewInstallation {
+	const rows = makeBrowserSequentialFileRows({ count: completeFileDeepScrollTreeRowCount });
+	return makeBrowserFileBatch({
+		snapshotCause: 'open',
+		rows: [
+			makeBrowserFileRow({
+				path: descriptor.path,
+				fileId: descriptor.fileId,
+				descriptorOutcome: descriptor,
 			}),
-		);
-	}
-	return [makeSourceAcceptedMetadataEvent(descriptor.source), ...treeWindowEvents, descriptor];
+			...rows.slice(1),
+		],
+		source: descriptor.source,
+	});
 }
 
 export async function assertCompleteFileDeepScrollSourceOracle(): Promise<void> {

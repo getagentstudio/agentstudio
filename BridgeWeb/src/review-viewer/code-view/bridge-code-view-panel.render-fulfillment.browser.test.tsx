@@ -647,6 +647,52 @@ describe('BridgeCodeViewPanel render fulfillment', () => {
 				'applied',
 				'painted',
 			]);
+
+			// A full manifest replacement must render a newer record for an already mounted row.
+			const manifestPublication = makeReviewPublication({
+				contentsMarker: 'second-attempt',
+				publicationSequence: 3,
+				version: 94,
+			});
+			const manifestSourceItem = requireExactReviewPierreDiffItem(
+				manifestPublication.job.payload.item,
+			);
+			const manifestPreparedItem = prepareBridgeMainPierreItemForPresentation({
+				currentItem: secondFinalItem,
+				presentationItem: manifestSourceItem,
+				reuseCurrentItemWhenFingerprintMatches: false,
+			});
+			expect(manifestPreparedItem.item.version).toBe((secondFinalItem.version ?? 0) + 1);
+			renderFulfillmentCoordinator.acceptPublication(manifestPublication);
+			renderFulfillmentCoordinator.bindPublicationItem({
+				finalItem: manifestPreparedItem.item,
+				publicationItem: manifestSourceItem,
+				residency: manifestPreparedItem.residency,
+			});
+			renderFulfillmentCoordinator.markPublicationQueued(manifestPublication);
+			const setItemsCountBeforeManifest = pierreSetItemsCalls.length;
+			await act(async (): Promise<void> => {
+				firstCodeView.setItems([manifestPreparedItem.item]);
+			});
+			expect(pierreSetItemsCalls.length).toBe(setItemsCountBeforeManifest + 1);
+			await act(async (): Promise<void> => {
+				await capturedPostRenderLog.waitForItem(manifestPreparedItem.item);
+			});
+			const manifestPostRender = requirePostRenderForItem(
+				capturedPostRenders,
+				manifestPreparedItem.item,
+			);
+			await invokeCapturedPostRenderWithinAct({
+				invocation: manifestPostRender,
+				phase: 'update',
+			});
+			expect(dispositionKinds(dispositions).slice(-2)).toEqual(['queued', 'applied']);
+			const manifestPaintFrame = pendingAnimationFrames.shift();
+			if (manifestPaintFrame === undefined) {
+				throw new Error('Expected a visible manifest replacement to schedule paint validation.');
+			}
+			manifestPaintFrame.callback(nowMilliseconds);
+			expect(dispositionKinds(dispositions).slice(-3)).toEqual(['queued', 'applied', 'painted']);
 		} finally {
 			CodeView.prototype.setup = originalSetup;
 			CodeView.prototype.setOptions = originalSetOptions;

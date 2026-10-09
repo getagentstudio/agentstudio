@@ -86,6 +86,7 @@ package final class BridgePaneController {
         (@MainActor @Sendable (WorkspaceReviewContributionTarget) -> BridgePaneStateMutationResult)?
     var nextReviewGeneration: BridgeReviewGeneration = 0
     var pendingComparisonReviewGeneration: BridgeReviewGeneration?
+    var activeReviewPackageLoad: ReviewPackageLoadReset?
     var reviewGitRefreshSeedHolder = BridgeReviewGitRefreshSeedHolder()
     var selectedReviewItemId: String?
     var activeReviewRefreshTask: Task<Void, Never>?
@@ -93,6 +94,9 @@ package final class BridgePaneController {
     var retiringReviewRefreshTaskById: [UUID: Task<Void, Never>] = [:]
     var surfaceSelectionTransitionTail: Task<Bool, Never>?
     var pendingReviewPackageBuildReasons: Set<BridgeReviewPackageBuildReason> = []
+    @ObservationIgnored var pendingExplicitReviewCommand: BridgePendingExplicitReviewCommand?
+    @ObservationIgnored var resumingExplicitReviewCommandsById: [UUID: BridgePendingExplicitReviewCommand] = [:]
+    @ObservationIgnored var resumingExplicitReviewCommandTasksById: [UUID: Task<Void, Never>] = [:]
     var activeViewerModeSignalState = BridgeActiveViewerModeSignalState()
     var surfaceSelectionAuthority = BridgePaneSurfaceSelectionAuthority()
 
@@ -100,6 +104,9 @@ package final class BridgePaneController {
 
     let bridgeWorld = WKContentWorld.world(name: "agentStudioBridge")
     let productSessionBootstrapSink: BridgeProductSessionBootstrapSink
+    let productSessionBootstrapFailureSink: BridgeProductSessionBootstrapFailureSink
+    let productSessionBootstrapDelay: AsyncDelay
+    let reviewConstructionProgress: BridgeReviewConstructionProgressWaitOwner
     let telemetrySessionBootstrapSink: BridgeTelemetrySessionBootstrapSink
     private let userContentController: WKUserContentController
     private let bootstrapScript: WKUserScript
@@ -109,13 +116,25 @@ package final class BridgePaneController {
     private var isTeardownStarted = false
     private var lifecycleRetirementTask: Task<Bool, Never>?
     var productSessionBootstrapTransitionTail: Task<Void, Never>?
+    var productBootstrapDelivery: BridgeProductBootstrapDelivery?
+    var latestProductSessionBootstrapRequestId: String? {
+        didSet {
+            if let productBootstrapDelivery,
+                productBootstrapDelivery.requestId != latestProductSessionBootstrapRequestId
+            {
+                productBootstrapDelivery.settle(.superseded)
+            }
+        }
+    }
     var hasPublishedProductSessionBootstrap = false
     var telemetrySessionBootstrapTransitionTail: Task<Void, Never>?
     var hasPublishedTelemetrySessionBootstrap = false
     private var teardownCleanupTask: Task<Void, Never>?
+    private let pageCommandRunner: (@MainActor @Sendable (BridgePageCommand, UUID) -> Void)?
     let telemetryScopeGate: BridgeTelemetryScopeGate
     let telemetryRecorder: (any BridgePerformanceTraceRecording)?
     let traceContextFactory: BridgeTraceContextFactory
+    let reviewBuildAdmissionFactSink: BridgePaneReviewBuildAdmissionFactSink
     var lastReviewPackageTraceContext: BridgeTraceContext?
 
     // MARK: - Init
@@ -148,14 +167,21 @@ package final class BridgePaneController {
         telemetrySessionDependencies: BridgePaneTelemetrySessionDependencies? = nil,
         productSessionBootstrapSink: @escaping BridgeProductSessionBootstrapSink =
             BridgePaneController.dispatchProductSessionBootstrap,
+        productSessionBootstrapFailureSink: @escaping BridgeProductSessionBootstrapFailureSink =
+            BridgePaneController.dispatchProductSessionBootstrapFailure,
+        productSessionBootstrapDelay: AsyncDelay = .taskSleep,
+        reviewConstructionProgress: BridgeReviewConstructionProgressWaitOwner = .init(),
         telemetrySessionBootstrapSink: @escaping BridgeTelemetrySessionBootstrapSink =
             BridgePaneController.dispatchTelemetrySessionBootstrap,
         initialContributionTargetCommit:
             (@MainActor @Sendable (WorkspaceReviewContributionTarget) -> BridgePaneStateMutationResult)? = nil,
         contributionTargetCommit:
-            (@MainActor @Sendable (WorkspaceReviewContributionTarget) -> BridgePaneStateMutationResult)? = nil
+            (@MainActor @Sendable (WorkspaceReviewContributionTarget) -> BridgePaneStateMutationResult)? = nil,
+        reviewBuildAdmissionFactSink: @escaping BridgePaneReviewBuildAdmissionFactSink = { _, _ in },
+        pageCommandRunner: (@MainActor @Sendable (BridgePageCommand, UUID) -> Void)? = nil
     ) {
         (self.paneId, self.bridgePaneState) = (paneId, state)
+        self.pageCommandRunner = pageCommandRunner
         let reviewComparisonTargetProjection = BridgeReviewComparisonTargetProjection(state: state)
         self.reviewComparisonTargetProjection = reviewComparisonTargetProjection
         self.worktreeAnnotationStore = worktreeAnnotationStore
@@ -170,6 +196,7 @@ package final class BridgePaneController {
         self.telemetryRecorder = telemetryDependencies.recorder
         self.telemetrySessionOwner = telemetryDependencies.sessionDependencies?.owner
         self.traceContextFactory = traceContextFactory
+        self.reviewBuildAdmissionFactSink = reviewBuildAdmissionFactSink
         let resolvedReviewSourceProvider = reviewSourceProvider ?? BridgeUnavailableReviewSourceProvider()
         self.reviewSourceProvider = resolvedReviewSourceProvider
         self.initialContributionTargetCommit = initialContributionTargetCommit
@@ -207,6 +234,9 @@ package final class BridgePaneController {
                     reviewContentLoaderCache: resolvedReviewContentLoaderCache,
                     reviewPublicationCoordinator: resolvedReviewPublicationCoordinator,
                     refreshWorkAdmissionSource: resolvedRefreshAdmissionCoordinator.workAdmissionSource,
+                    recordCurrentFileRefreshFailure: { failure in
+                        failure.apply { resolvedRefreshAdmissionCoordinator.recordCurrentFileRefreshFailure($0) }
+                    },
                     initialProductPresentation: resolvedRefreshAdmissionCoordinator.productPresentationSnapshot,
                     telemetryRecorder: telemetryDependencies.recorder,
                     reviewSourceProvider: resolvedReviewSourceProvider,
@@ -220,9 +250,7 @@ package final class BridgePaneController {
             productSessionDependencies: resolvedProductSessionDependencies
         )
         self.worktreeRefreshDriver = refreshDriver
-        resolvedProductSessionDependencies.fileSourceAcceptanceRelay?.bind { [weak refreshDriver] source in
-            refreshDriver?.recordFileSourceAccepted(source)
-        }
+        Self.bindFileSourceAcceptanceRelay(resolvedProductSessionDependencies, to: refreshDriver)
         let initialManagementScript = Self.makeInitialManagementScript()
         self.managementScript = initialManagementScript
         self.isContentInteractionEnabled = !atom(\.managementLayer).isActive
@@ -241,6 +269,9 @@ package final class BridgePaneController {
         )
         self.userContentController = pageComposition.userContentController
         self.productSessionBootstrapSink = productSessionBootstrapSink
+        self.productSessionBootstrapFailureSink = productSessionBootstrapFailureSink
+        self.productSessionBootstrapDelay = productSessionBootstrapDelay
+        self.reviewConstructionProgress = reviewConstructionProgress
         self.telemetrySessionBootstrapSink = telemetrySessionBootstrapSink
         self.bootstrapScript = pageComposition.bootstrapScript
         self.page = pageComposition.page
@@ -293,6 +324,15 @@ package final class BridgePaneController {
             bootstrapScript: bootstrapScript,
             readyMessageHandler: readyMessageHandler
         )
+    }
+
+    private static func bindFileSourceAcceptanceRelay(
+        _ productSessionDependencies: BridgePaneProductSessionDependencies,
+        to refreshDriver: BridgePaneWorktreeRefreshDriver
+    ) {
+        productSessionDependencies.fileSourceAcceptanceRelay?.bind { [weak refreshDriver] source in
+            refreshDriver?.recordFileSourceAccepted(source)
+        }
     }
 
     private static func makeWorktreeRefreshDriver(
@@ -360,7 +400,13 @@ package final class BridgePaneController {
     private static func initialReviewComparisonPresentation(
         for state: BridgePaneState
     ) -> BridgePaneReviewComparisonPresentation? {
-        guard case .workspace(_, let baseline) = state.source else { return nil }
+        guard case .workspace(_, let baseline) = state.source else {
+            return BridgePaneReviewComparisonPresentation(
+                activeTarget: nil,
+                attempt: .noSource,
+                displayedSnapshot: .absent
+            )
+        }
         guard let baseline else {
             return BridgePaneReviewComparisonPresentation(
                 activeTarget: nil,
@@ -392,10 +438,30 @@ package final class BridgePaneController {
         BridgeReviewContentLoaderCache(provider: provider)
     }
 
-    private func configureReadyMessageHandler(_ readyMessageHandler: BridgeReadyMessageHandler) {
+    func configureReadyMessageHandler(_ readyMessageHandler: BridgeReadyMessageHandler) {
+        readyMessageHandler.prepareProductBootstrapEnd = { [weak self] requestId, reason in
+            guard let self else { return nil }
+            latestProductSessionBootstrapRequestId = requestId
+            let snapshot = productSessionOwner.installationFenceProjection.snapshot
+            guard
+                hasPublishedProductSessionBootstrap || reason == .workerReplacement
+                    || snapshot.installation?.gate.diagnosticSnapshot.isOpen == false
+            else { return nil }
+            let predecessor = productSessionOwner.closeActiveInstallation()
+            retirePendingExplicitReviewCommand()
+            return predecessor
+        }
+        readyMessageHandler.onProductBootstrapRequest = { [weak self] requestId, reason, predecessor in
+            guard let self, latestProductSessionBootstrapRequestId == requestId else { return }
+            await enqueueProductSessionBootstrapRequest(
+                requestId: requestId, reason: reason, predecessor: predecessor)
+        }
         readyMessageHandler.onBootstrapRequest = { [weak self] bootstrapMessage in
             guard let self else { return }
             switch bootstrapMessage {
+            case .runPageCommand(_, let command):
+                guard !isTeardownStarted else { return }
+                pageCommandRunner?(command, paneId)
             case .ready(let requestId):
                 if handleBridgeReady() || isBridgeReady {
                     await emitBridgeReadyAcknowledgement(id: requestId, result: nil, error: nil)
@@ -508,6 +574,9 @@ package final class BridgePaneController {
     @discardableResult
     package func reloadWebView() -> Bool {
         guard canReloadWebView else { return false }
+        latestProductSessionBootstrapRequestId = nil
+        _ = productSessionOwner.closeActiveInstallation()
+        retirePendingExplicitReviewCommand()
         _ = page.reload()
         return true
     }
@@ -522,6 +591,7 @@ package final class BridgePaneController {
             isTeardownStarted = true
             refreshAdmissionCoordinator.close()
             productAdmissionGate.close()
+            retirePendingExplicitReviewCommand()
             surfaceSelectionAuthority.invalidate()
             let reviewPublicationCloseDrain = reviewPublicationCoordinator.close()
             let reviewPublicationCleanupSnapshot = reviewPublicationCoordinator.diagnosticSnapshot
@@ -531,6 +601,7 @@ package final class BridgePaneController {
             let reviewRefreshTasks =
                 Array(retiringReviewRefreshTaskById.values)
                 + [activeReviewRefreshTask].compactMap { $0 }
+                + Array(resumingExplicitReviewCommandTasksById.values)
             for task in reviewRefreshTasks { task.cancel() }
             activeReviewRefreshTask = nil
             activeReviewRefreshTaskId = nil

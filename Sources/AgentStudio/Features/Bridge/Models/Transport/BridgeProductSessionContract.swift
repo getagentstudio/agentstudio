@@ -21,9 +21,7 @@ package enum BridgeProductWireContract {
     static let maximumSubscriptionInterestCount = 64
     static let maximumSubscriptionInterestItemCount = 10_000
     static let maximumSubscriptionDeltaItemCount = 40_000
-    static let maximumSubscriptionInterestStateBytes = 128 * 1024
     static let maximumFileMetadataTreeWindowRowCount = 256
-    static let maximumFileMetadataOperationCount = 256
     static let maximumFileMetadataDeltaMemberCount = 256
 
     package static let maximumRequestBodyBytes = 256 * 1024
@@ -52,19 +50,26 @@ enum BridgeProductRequestErrorCode: String, Codable, Equatable, Sendable {
     case sequenceConflict = "sequence_conflict"
     case resyncRequired = "resync_required"
     case staleSource = "stale_source"
+    case superseded
+    case resultCapacityExhausted = "result_capacity_exhausted"
+    case mutationWatchCapacityExhausted = "mutation_watch_capacity_exhausted"
     case payloadTooLarge = "payload_too_large"
     case unsupportedCall = "unsupported_call"
     case unsupportedSubscription = "unsupported_subscription"
+    case unknownSubscription = "unknown_subscription"
     case unsupportedContent = "unsupported_content"
     case `internal`
 }
 
 enum BridgeProductResetReason: String, Codable, Equatable, Sendable {
-    case interestMismatch = "interest_mismatch"
     case producerOverflow = "producer_overflow"
     case sequenceGap = "sequence_gap"
     case staleSource = "stale_source"
     case snapshotRequired = "snapshot_required"
+    /// Native ended the subscription because its surface floor advanced past the
+    /// epoch it was admitted at; the worker already serves that surface at a newer
+    /// epoch.
+    case epochRetired = "epoch_retired"
 }
 
 struct BridgeProductControlCorrelation: Codable, Equatable, Sendable {

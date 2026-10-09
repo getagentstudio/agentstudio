@@ -1,9 +1,10 @@
 import { afterEach, describe, expect, test } from 'vitest';
 import { cleanup, render } from 'vitest-browser-react';
 
+import { installBridgeReadyHandshake } from '../app/bridge-app-browser-test-actions.js';
+
 // oxlint-disable-next-line import/no-unassigned-import -- Browser Mode must load the app CSS.
 import '../app/bridge-app.css';
-import { installBridgeReadyHandshake } from '../app/bridge-app-browser-test-actions.js';
 import {
 	installBridgeAppDevProductSessionHost,
 	type BridgeAppDevProductSessionHost,
@@ -29,6 +30,7 @@ import {
 	waitForBridgePierreWorkerPoolActiveTaskPublicationForTest,
 } from '../review-viewer/workers/pierre/bridge-pierre-worker-pool.js';
 import { createBridgeCommWorkerModuleWorker } from '../review-viewer/workers/shared-rpc/bridge-comm-worker-dev-factory.js';
+import pageConfigurationFixture from '../test-fixtures/bridge-contract-fixtures/valid/bridge-page-configuration.json' with { type: 'json' };
 import {
 	BridgeFileViewerBrowserHarnessApp,
 	type BridgeFileViewerBrowserTestProductSession,
@@ -62,8 +64,8 @@ import {
 	assertCompleteFilePositionSurvivesModeSwitch,
 	completeFileDeepScrollFixture,
 	completeFileDeepScrollTreeRowCount,
+	makeCompleteFileDeepScrollBatch,
 	makeCompleteFileDeepScrollDescriptor,
-	makeCompleteFileDeepScrollMetadataEvents,
 	makeCorruptedCompleteFileDeepScrollContent,
 	settleCompleteFilePierreWorkerPoolInitialization,
 	type DeepScrollSurfacePaintSnapshot,
@@ -159,7 +161,7 @@ describe('BridgeFileViewerApp sustained deep scrolling', () => {
 						autoOpenInitialFile
 						codeViewWorkerFactory={routePierreWorkerFactory.workerFactory}
 						codeViewWorkerPoolEnabled
-						initialMetadataEvents={makeCompleteFileDeepScrollMetadataEvents(selectedDescriptor)}
+						initialFileBatch={makeCompleteFileDeepScrollBatch(selectedDescriptor)}
 						fileProductSession={{
 							onWorkerCommand: (message): void => {
 								workerCommands.push(message);
@@ -244,7 +246,7 @@ describe('BridgeFileViewerApp sustained deep scrolling', () => {
 			const openedDescriptors: BridgeProductFileContentDescriptor[] = [];
 			const workerCommands: BridgeWorkerMainToServerMessage[] = [];
 			const productSession: BridgeFileViewerBrowserTestProductSession = {
-				initialMetadataEvents: makeCompleteFileDeepScrollMetadataEvents(selectedDescriptor),
+				initialFileBatch: makeCompleteFileDeepScrollBatch(selectedDescriptor),
 				onWorkerCommand: (message): void => {
 					workerCommands.push(message);
 				},
@@ -347,7 +349,7 @@ describe('BridgeFileViewerApp sustained deep scrolling', () => {
 				autoOpenInitialFile
 				codeViewWorkerFactory={routePierreWorkerFactory.workerFactory}
 				codeViewWorkerPoolEnabled
-				initialMetadataEvents={makeCompleteFileDeepScrollMetadataEvents(selectedDescriptor)}
+				initialFileBatch={makeCompleteFileDeepScrollBatch(selectedDescriptor)}
 				fileProductSession={{
 					readContent: () => deferredContent.promise,
 				}}
@@ -385,7 +387,11 @@ describe('BridgeFileViewerApp sustained deep scrolling', () => {
 					fileViewerProps={{ autoOpenInitialFile: false }}
 					paneRuntimeFactory={() => {
 						routePaneRuntime ??= createBridgePaneRuntime({
-							sessionProps: { workerFactory: createBridgeCommWorkerModuleWorker },
+							sessionProps: {
+								bootstrapTimeoutMilliseconds:
+									pageConfigurationFixture.workerBootstrapDeadlineMilliseconds,
+								workerFactory: createBridgeCommWorkerModuleWorker,
+							},
 						});
 						return routePaneRuntime;
 					}}
@@ -469,8 +475,13 @@ async function assertDeepScrollLoadingState(props: {
 	expect(document.querySelectorAll('[data-line-index], [data-content]')).toHaveLength(0);
 	expect(scrollOwner.scrollHeight).toBeLessThanOrEqual(scrollOwner.clientHeight + 32);
 	expect(
-		document.querySelector('[data-testid="bridge-file-viewer-content-state"]')?.textContent,
-	).toContain('Loading file');
+		document
+			.querySelector('[data-bridge-region="file-content"]')
+			?.getAttribute('data-presentation-state'),
+	).toBe('loading');
+	expect(
+		document.querySelector('[data-bridge-region="file-content"] [data-slot="skeleton"]'),
+	).not.toBeNull();
 }
 
 function assertDeepScrollReadyCorrelation(props: {

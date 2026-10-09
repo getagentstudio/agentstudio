@@ -1,3 +1,9 @@
+import {
+	recordBridgeReviewInstallationGateDiagnostic,
+	recordBridgeReviewCandidateSourceDiagnostic,
+	type BridgeReviewInstallationGateDiagnostic,
+} from '../../foundation/diagnostics/bridge-review-selection-diagnostic.js';
+import type { BridgeWorkerRuntimeRecoverySource } from '../../foundation/diagnostics/bridge-worker-replacement-reason.js';
 import type {
 	BridgeMainReviewEffectivePresentationClass,
 	BridgeMainReviewCandidatePresentation,
@@ -25,7 +31,7 @@ export interface BridgeMainReviewInstallAdmissionResult {
 }
 
 export interface BridgeMainReviewPresentationInstallationPort {
-	readonly requestWorkerReplacement: () => void;
+	readonly requestWorkerReplacement: (source: BridgeWorkerRuntimeRecoverySource) => void;
 	readonly requestInstallAdmission: (
 		request: BridgeMainReviewInstallAdmissionRequest,
 	) => Promise<BridgeMainReviewInstallAdmissionResult>;
@@ -102,9 +108,81 @@ export function createBridgeMainReviewPresentationInstallationGate(props: {
 	let lifecycleRevision = 0;
 	let pendingInstalledReceiptCandidate: ReadyCandidate | null = null;
 	let readyCandidate: ReadyCandidate | null = null;
+	let awaitingSourceCandidate: ReadyCandidate | null = null;
+	let unsubscribeCandidateSource: (() => void) | null = null;
 	// Retained paint does not establish native display ownership for a replacement worker.
 	let confirmedDisplayedPublicationId =
 		props.store.getReviewRefreshPresentation().activeIdentity?.publicationId ?? null;
+	let lastNativeAdmissionResult: BridgeMainReviewInstallAdmissionResult | null = null;
+	const recordGateDecision = (
+		decision: BridgeReviewInstallationGateDiagnostic['lastGateDecision'],
+	): void => {
+		const presentation = props.store.getReviewRefreshPresentation();
+		recordBridgeReviewCandidateSourceDiagnostic(props.store.getReviewCandidateSourceDiagnostic());
+		recordBridgeReviewInstallationGateDiagnostic({
+			activeIdentity:
+				presentation.activeIdentity === null
+					? null
+					: { publicationId: presentation.activeIdentity.publicationId },
+			confirmedDisplayedPublicationId,
+			pendingCandidate:
+				presentation.candidate === null
+					? null
+					: {
+							publicationId: presentation.candidate.identity.publicationId,
+							role: presentation.candidate.role,
+						},
+			lastGateDecision: decision,
+			lastNativeAdmissionResult,
+		});
+	};
+	recordGateDecision({ kind: 'skipped', reason: 'candidateMissing' });
+	const stopAwaitingCandidateSource = (): void => {
+		unsubscribeCandidateSource?.();
+		unsubscribeCandidateSource = null;
+		awaitingSourceCandidate = null;
+	};
+	const observeCandidateSource = (): void => {
+		const candidate = awaitingSourceCandidate;
+		if (candidate === null) return;
+		const source = props.store.getReviewCandidateSourceDiagnostic();
+		if (source?.publicationId !== candidate.identity.publicationId) {
+			stopAwaitingCandidateSource();
+			if (readyCandidate === candidate) {
+				readyCandidate = null;
+				props.onLifecycleEvent?.({
+					...candidateTelemetryFacts(candidate),
+					phase: 'candidateSuperseded',
+				});
+			}
+			return;
+		}
+		if (source.status === 'failed') {
+			stopAwaitingCandidateSource();
+			if (readyCandidate !== candidate) return;
+			readyCandidate = null;
+			if (props.store.failReviewCandidate({ identity: candidate.identity, retryable: true })) {
+				props.onLifecycleEvent?.({
+					...candidateTelemetryFacts(candidate),
+					phase: 'candidateFailed',
+					retryable: true,
+				});
+			}
+			recordGateDecision({ kind: 'rejected', reason: 'candidateSourceFailed' });
+			return;
+		}
+		if (source.status === 'ready') {
+			stopAwaitingCandidateSource();
+			void evaluateReadyCandidate();
+		}
+	};
+	const awaitCandidateSource = (candidate: ReadyCandidate): void => {
+		stopAwaitingCandidateSource();
+		awaitingSourceCandidate = candidate;
+		unsubscribeCandidateSource = props.store.subscribeReviewCandidateSource(observeCandidateSource);
+		recordGateDecision({ kind: 'held', reason: 'candidateSourcePending' });
+		observeCandidateSource();
+	};
 
 	const candidateMatchesStore = (candidate: ReadyCandidate): boolean => {
 		const storedCandidate = props.store.getReviewRefreshPresentation().candidate;
@@ -140,6 +218,7 @@ export function createBridgeMainReviewPresentationInstallationGate(props: {
 	const failureAffectsAttention = (): boolean => {
 		const failure = props.store.getReviewRefreshPresentation().failure;
 		if (failure === null) return false;
+		if (failure.kind === 'installation') return true;
 		if (failure.presentationClass.reason === 'unknown') return attentionFileIdentities.size > 0;
 		return failure.affectedStableFileIdentities.some((fileIdentity): boolean =>
 			attentionFileIdentities.has(fileIdentity),
@@ -165,6 +244,16 @@ export function createBridgeMainReviewPresentationInstallationGate(props: {
 			pendingInstalledReceiptCandidate !== null ||
 			(!reinstallsRetainedPublication && !candidateMatchesStore(candidate))
 		) {
+			recordGateDecision({
+				kind: 'skipped',
+				reason: isClosed
+					? 'closed'
+					: installationInFlightPublicationId !== null
+						? 'installInFlight'
+						: pendingInstalledReceiptCandidate !== null
+							? 'receiptPending'
+							: 'candidateMismatch',
+			});
 			return;
 		}
 		const requestLifecycleRevision = lifecycleRevision;
@@ -243,6 +332,7 @@ export function createBridgeMainReviewPresentationInstallationGate(props: {
 			phase: 'installRequested',
 			trigger,
 		});
+		recordGateDecision({ kind: 'requested', reason: 'requestSubmitted' });
 		let result: BridgeMainReviewInstallAdmissionResult;
 		try {
 			result = await props.installationPort.requestInstallAdmission({
@@ -255,7 +345,7 @@ export function createBridgeMainReviewPresentationInstallationGate(props: {
 				installationInFlightPublicationId === candidate.identity.publicationId;
 			if (requestIsCurrent) {
 				installationInFlightPublicationId = null;
-				props.store.discardReviewCandidate(candidate.identity);
+				props.store.failReviewInstallation(candidate.identity);
 				if (
 					readyCandidate !== null &&
 					identitiesAreExact(readyCandidate.identity, candidate.identity)
@@ -270,8 +360,10 @@ export function createBridgeMainReviewPresentationInstallationGate(props: {
 				resultReason: requestIsCurrent ? 'admissionFailed' : 'promotionStale',
 				trigger,
 			});
+			recordGateDecision({ kind: 'rejected', reason: 'nativeAdmissionFailed' });
 			return;
 		}
+		lastNativeAdmissionResult = result;
 		if (
 			isClosed ||
 			requestLifecycleRevision !== lifecycleRevision ||
@@ -305,10 +397,24 @@ export function createBridgeMainReviewPresentationInstallationGate(props: {
 			) {
 				readyCandidate = null;
 			}
+			recordGateDecision({ kind: 'rejected', reason: 'nativeAdmissionRejected' });
 			if (reinstallsRetainedPublication) await evaluateReadyCandidate();
 			return;
 		}
 		if (!reinstallsRetainedPublication && !props.store.promoteReviewCandidate(candidate.identity)) {
+			if (!candidateMatchesStore(candidate)) {
+				stopAwaitingCandidateSource();
+				if (
+					readyCandidate !== null &&
+					identitiesAreExact(readyCandidate.identity, candidate.identity)
+				) {
+					readyCandidate = null;
+				}
+				props.onLifecycleEvent?.({
+					...candidateTelemetryFacts(candidate),
+					phase: 'candidateSuperseded',
+				});
+			}
 			props.onLifecycleEvent?.({
 				...candidateTelemetryFacts(candidate),
 				phase: 'installTerminal',
@@ -326,6 +432,7 @@ export function createBridgeMainReviewPresentationInstallationGate(props: {
 			resultReason: 'none',
 			trigger,
 		});
+		recordGateDecision({ kind: 'admitted', reason: 'nativeAdmissionAdmitted' });
 		pendingInstalledReceiptCandidate = candidate;
 		const receiptConfirmed = await sendPendingInstalledReceipt();
 		if (
@@ -339,7 +446,7 @@ export function createBridgeMainReviewPresentationInstallationGate(props: {
 				requestLifecycleRevision === lifecycleRevision &&
 				pendingInstalledReceiptCandidate === candidate
 			) {
-				props.installationPort.requestWorkerReplacement();
+				props.installationPort.requestWorkerReplacement('reviewInstalledReceiptFailed');
 				return;
 			}
 		}
@@ -351,7 +458,13 @@ export function createBridgeMainReviewPresentationInstallationGate(props: {
 	const evaluateReadyCandidate = async (): Promise<void> => {
 		const candidate = readyCandidate;
 		if (candidate === null || !candidateMatchesStore(candidate)) return;
-		if (candidate.presentationClass.kind === 'promoted' && candidateAffectsAttention(candidate)) {
+		const presentation = props.store.getReviewRefreshPresentation();
+		if (
+			presentation.activeIdentity !== null &&
+			confirmedDisplayedPublicationId !== null &&
+			candidate.presentationClass.kind === 'promoted' &&
+			candidateAffectsAttention(candidate)
+		) {
 			const previousRole = props.store.getReviewRefreshPresentation().candidate?.role;
 			const held = props.store.markReviewCandidateReady({
 				identity: candidate.identity,
@@ -363,6 +476,7 @@ export function createBridgeMainReviewPresentationInstallationGate(props: {
 					phase: 'candidateHeld',
 				});
 			}
+			recordGateDecision({ kind: 'held', reason: 'attention' });
 			return;
 		}
 		if (
@@ -371,6 +485,12 @@ export function createBridgeMainReviewPresentationInstallationGate(props: {
 				role: 'provisional',
 			})
 		) {
+			const source = props.store.getReviewCandidateSourceDiagnostic();
+			if (source?.publicationId === candidate.identity.publicationId && source.status !== 'ready') {
+				awaitCandidateSource(candidate);
+				return;
+			}
+			recordGateDecision({ kind: 'rejected', reason: 'provisionalMarkRejected' });
 			return;
 		}
 		await installCandidate(candidate, 'automatic');
@@ -410,6 +530,7 @@ export function createBridgeMainReviewPresentationInstallationGate(props: {
 		close: (): void => {
 			if (isClosed) return;
 			isClosed = true;
+			stopAwaitingCandidateSource();
 			lifecycleRevision += 1;
 			installationInFlightPublicationId = null;
 			pendingInstalledReceiptCandidate = null;
@@ -430,6 +551,7 @@ export function createBridgeMainReviewPresentationInstallationGate(props: {
 			activeEditorFileIdentities = nextActiveEditorFileIdentities;
 			const storedCandidate = props.store.getReviewRefreshPresentation().candidate;
 			if (storedCandidate === null) {
+				recordGateDecision({ kind: 'skipped', reason: 'candidateMissing' });
 				const activeIdentity = props.store.getReviewRefreshPresentation().activeIdentity;
 				if (
 					confirmedDisplayedPublicationId === null &&
@@ -454,8 +576,14 @@ export function createBridgeMainReviewPresentationInstallationGate(props: {
 				return;
 			}
 			const candidate = readyCandidateFromEvent(event, storedCandidate);
-			if (candidate === null) return;
-			if (!candidateMatchesStore(candidate)) return;
+			if (candidate === null) {
+				recordGateDecision({ kind: 'skipped', reason: 'candidateMismatch' });
+				return;
+			}
+			if (!candidateMatchesStore(candidate)) {
+				recordGateDecision({ kind: 'skipped', reason: 'candidateMismatch' });
+				return;
+			}
 			if (
 				readyCandidate !== null &&
 				readyCandidatesAreEquivalent(readyCandidate, candidate) &&
@@ -478,6 +606,9 @@ export function createBridgeMainReviewPresentationInstallationGate(props: {
 		},
 		handleCandidateFailed: (event, attention): void => {
 			if (isClosed) return;
+			if (awaitingSourceCandidate?.identity.publicationId === event.publicationId) {
+				stopAwaitingCandidateSource();
+			}
 			attentionFileIdentities = new Set(attention.stableFileIdentities);
 			activeEditorFileIdentities = new Set(attention.activeEditorStableFileIdentities);
 			const identity = {
@@ -507,6 +638,7 @@ export function createBridgeMainReviewPresentationInstallationGate(props: {
 		},
 		prepareForWorkerReplacement: (): void => {
 			if (isClosed) return;
+			stopAwaitingCandidateSource();
 			lifecycleRevision += 1;
 			installationInFlightPublicationId = null;
 			pendingInstalledReceiptCandidate = null;

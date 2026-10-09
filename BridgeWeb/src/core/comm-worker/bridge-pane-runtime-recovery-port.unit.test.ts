@@ -13,7 +13,8 @@ test('surface recovery prepares both consumers through one pane session and cann
 		'requestAnimationFrame',
 		vi.fn((): number => 1),
 	);
-	const requestWorkerReplacement = vi.fn<() => void>();
+	const requestWorkerReplacement =
+		vi.fn<NonNullable<BridgePaneSessionPort['requestWorkerReplacement']>>();
 	const session: BridgePaneSessionPort = {
 		createDispatcher: () => ({ dispatch: (): void => {}, dispose: (): void => {} }),
 		dispose: (): void => {},
@@ -33,14 +34,18 @@ test('surface recovery prepares both consumers through one pane session and cann
 		reviewClient.subscribeWorkerReplacement?.(prepareReview);
 
 		// Act
-		reviewClient.requestWorkerReplacement();
+		reviewClient.requestWorkerReplacement('reviewInstalledReceiptFailed');
 
 		// Assert
 		expect(prepareFile).toHaveBeenCalledOnce();
 		expect(prepareReview).toHaveBeenCalledOnce();
 		expect(requestWorkerReplacement).toHaveBeenCalledOnce();
+		expect(requestWorkerReplacement).toHaveBeenCalledWith({
+			kind: 'runtimeRecovery',
+			source: 'reviewInstalledReceiptFailed',
+		});
 		runtime.dispose();
-		fileClient.requestWorkerReplacement();
+		fileClient.requestWorkerReplacement('renderDispositionProbeExhausted');
 		expect(requestWorkerReplacement).toHaveBeenCalledOnce();
 	} finally {
 		runtime.dispose();

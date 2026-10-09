@@ -31,7 +31,7 @@ export interface BridgeReviewPresentationSnapshot {
 
 type BridgeReviewSourceUpsertDisplaySlice = Exclude<
 	BridgeMainReviewSourceDisplaySlice,
-	{ readonly status: 'failed' }
+	{ readonly status: 'failed' | 'readyEmpty' }
 >;
 
 type BridgePresentableReviewSourceDisplaySlice = Omit<

@@ -3,6 +3,19 @@ import Testing
 @testable import AgentStudio
 
 struct BridgeProductPaintStartupDiagnosticTests {
+    @Test("no-worktree Review startup success requires both certified no-source regions")
+    func noSourceStartupRequiresBothCertifiedRegions() {
+        let ready = BridgeReviewNoSourceStartupRenderProof(
+            contentState: "empty", contentReason: "noSource", treeState: "empty", treeReason: "noSource")
+        #expect(ready.succeeded)
+        let loading = BridgeReviewNoSourceStartupRenderProof(
+            contentState: "loading", contentReason: nil, treeState: "empty", treeReason: "noSource")
+        #expect(!loading.succeeded)
+        let otherEmpty = BridgeReviewNoSourceStartupRenderProof(
+            contentState: "empty", contentReason: "noSource", treeState: "empty", treeReason: "noSelection")
+        #expect(!otherEmpty.succeeded)
+    }
+
     @Test("startup diagnostic action parses Bridge product paint correlation command")
     func parsesBridgeProductPaintCorrelationCommand() throws {
         let action = try #require(

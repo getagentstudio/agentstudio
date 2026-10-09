@@ -54,72 +54,67 @@
     {
       "name": "content-extra-metadata-key",
       "request": {
-        "kind": "stream.frameObserved",
-        "streamKind": "content",
+        "kind": "content.acknowledge",
         "wireVersion": 2,
         "paneSessionId": "pane-session-startup-1",
         "workerInstanceId": "worker-instance-startup-1",
         "contentRequestId": "content-request-startup-1",
         "leaseId": "lease-startup-1",
-        "contentSequence": 0,
+        "receivedThroughContentSequence": 0,
         "metadataStreamId": "metadata-stream-startup-1"
       }
     },
     {
       "name": "content-unknown-key",
       "request": {
-        "kind": "stream.frameObserved",
-        "streamKind": "content",
+        "kind": "content.acknowledge",
         "wireVersion": 2,
         "paneSessionId": "pane-session-startup-1",
         "workerInstanceId": "worker-instance-startup-1",
         "contentRequestId": "content-request-startup-1",
         "leaseId": "lease-startup-1",
-        "contentSequence": 0,
+        "receivedThroughContentSequence": 0,
         "unknown": true
       }
     },
     {
       "name": "content-invalid-request-id",
       "request": {
-        "kind": "stream.frameObserved",
-        "streamKind": "content",
+        "kind": "content.acknowledge",
         "wireVersion": 2,
         "paneSessionId": "pane-session-startup-1",
         "workerInstanceId": "worker-instance-startup-1",
         "contentRequestId": "",
         "leaseId": "lease-startup-1",
-        "contentSequence": 0
+        "receivedThroughContentSequence": 0
       }
     },
     {
       "name": "content-invalid-lease-id",
       "request": {
-        "kind": "stream.frameObserved",
-        "streamKind": "content",
+        "kind": "content.acknowledge",
         "wireVersion": 2,
         "paneSessionId": "pane-session-startup-1",
         "workerInstanceId": "worker-instance-startup-1",
         "contentRequestId": "content-request-startup-1",
         "leaseId": "lease/invalid",
-        "contentSequence": 0
+        "receivedThroughContentSequence": 0
       }
     },
     {
       "name": "content-invalid-sequence",
       "request": {
-        "kind": "stream.frameObserved",
-        "streamKind": "content",
+        "kind": "content.acknowledge",
         "wireVersion": 2,
         "paneSessionId": "pane-session-startup-1",
         "workerInstanceId": "worker-instance-startup-1",
         "contentRequestId": "content-request-startup-1",
         "leaseId": "lease-startup-1",
-        "contentSequence": -1
+        "receivedThroughContentSequence": -1
       }
     },
     {
-      "name": "unknown-stream-kind",
+      "name": "retired-content-frame-observation",
       "request": {
         "kind": "stream.frameObserved",
         "streamKind": "telemetry",

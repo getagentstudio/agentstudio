@@ -9,31 +9,12 @@ import {
 	bridgeProductContentRequestSchema,
 } from './bridge-product-content-contracts.js';
 import { bridgeProductFrameAcknowledgementRequestSchema } from './bridge-product-frame-acknowledgement-contracts.js';
-import type {
-	BridgeProductMetadataApplicationInterestDelta,
-	BridgeProductMetadataApplicationOpen,
-} from './bridge-product-metadata-application-protocol.js';
-import { bridgeProductReviewMetadataApplicationProtocol } from './bridge-product-metadata-application-registry.js';
-import {
-	type BridgeProductSubscriptionOpenAccepted,
-	type BridgeProductSubscriptionUpdateBatchAccepted,
-} from './bridge-product-session-authority.js';
 import {
 	bridgeProductControlRequestSchema,
 	bridgeProductControlResponseSchema,
 	bridgeProductMetadataFrameSchema,
 	bridgeProductMetadataStreamRequestSchema,
 } from './bridge-product-session-contracts.js';
-import { type BridgeProductSubscriptionInterestDeltaWire } from './bridge-product-subscription-contracts.js';
-import {
-	BridgeProductSubscriptionState,
-	type BridgeProductSubscriptionStateControlMux,
-} from './bridge-product-subscription-state.js';
-
-type ReviewMetadataProtocol = typeof bridgeProductReviewMetadataApplicationProtocol;
-type ReviewMetadataOpen = BridgeProductMetadataApplicationOpen<ReviewMetadataProtocol>;
-type ReviewMetadataInterestDelta =
-	BridgeProductMetadataApplicationInterestDelta<ReviewMetadataProtocol>;
 
 const transcriptCodecSchema = z.enum([
 	'contentHeader',
@@ -70,13 +51,6 @@ const validStartupTranscriptSchema = z
 						staleObservationCase: z.string().min(1),
 					})
 					.strict(),
-				reset: z
-					.object({
-						reason: z.literal('interest_mismatch'),
-						subscriptionId: z.string().min(1),
-						terminalFrameKind: z.literal('subscription.reset'),
-					})
-					.strict(),
 				zeroResidue: z
 					.object({
 						leases: z.literal(0),
@@ -96,6 +70,20 @@ const validStartupTranscriptSchema = z
 					expectedDisposition: observationDispositionSchema,
 					name: z.string().min(1),
 					request: z.unknown(),
+				})
+				.strict(),
+		),
+		envelopeTranscript: z.array(
+			z
+				.object({
+					codec: z.enum([
+						'operationAdmittedResponse',
+						'operationResultRequest',
+						'operationResultResponse',
+						'operationResultAcknowledgement',
+					]),
+					name: z.string().min(1),
+					value: z.unknown(),
 				})
 				.strict(),
 		),
@@ -129,8 +117,8 @@ const invalidStartupTranscriptSchema = z
 	.strict();
 
 const frozenFixtureHashes = {
-	invalid: '78da34fabc8fdfeb2316df0b21e819691ea2bb4e861a74cbee3270231d6494c8',
-	valid: 'a5556acd203621f3be1d48881b96a198385744cf85cb729832d3929a6688f4c3',
+	invalid: 'e51803d06d8dafd56d6c694569ed238bb3dd8bddadfec6d26b2834b5d5892a68',
+	valid: '29ddcc6601f7b531f637cf9a3c57a1dbdeee6dcc9e60087218ea951c7edc4498',
 } as const;
 
 describe('Bridge product startup transcript', () => {
@@ -166,7 +154,7 @@ describe('Bridge product startup transcript', () => {
 		const fixture = loadValidFixture();
 
 		// Act / Assert
-		expect(fixture.transcript).toHaveLength(27);
+		expect(fixture.transcript).toHaveLength(21);
 		for (const entry of fixture.transcript) {
 			switch (entry.codec) {
 				case 'contentHeader':
@@ -179,202 +167,58 @@ describe('Bridge product startup transcript', () => {
 						entry.value,
 					);
 					break;
-				case 'controlRequest':
+				case 'controlRequest': {
 					expect(bridgeProductControlRequestSchema.parse(entry.value), entry.name).toEqual(
 						entry.value,
 					);
 					break;
-				case 'controlResponse':
+				}
+				case 'controlResponse': {
 					expect(bridgeProductControlResponseSchema.parse(entry.value), entry.name).toEqual(
 						entry.value,
 					);
 					break;
+				}
 				case 'metadataFrame':
 					expect(bridgeProductMetadataFrameSchema.parse(entry.value), entry.name).toEqual(
 						entry.value,
 					);
 					break;
-				case 'metadataStreamRequest':
+				case 'metadataStreamRequest': {
 					expect(bridgeProductMetadataStreamRequestSchema.parse(entry.value), entry.name).toEqual(
 						entry.value,
 					);
 					break;
+				}
 			}
 		}
 	});
 
-	test('derives every Review interest transition hash through production subscription state', async () => {
+	test('accepts cumulative content credit and rejects retired metadata observations', () => {
 		// Arrange
 		const fixture = loadValidFixture();
-		const openRequest = transcriptValue(
-			fixture,
-			'review-subscription-open',
-			bridgeProductControlRequestSchema,
-		);
-		const openResponse = transcriptValue(
-			fixture,
-			'review-subscription-open-accepted',
-			bridgeProductControlResponseSchema,
-		);
-		const updateRequest = transcriptValue(
-			fixture,
-			'review-selection-demand',
-			bridgeProductControlRequestSchema,
-		);
-		const updateResponse = transcriptValue(
-			fixture,
-			'review-selection-demand-accepted',
-			bridgeProductControlResponseSchema,
-		);
-		const committedFrame = transcriptValue(
-			fixture,
-			'review-selection-demand-committed',
-			bridgeProductMetadataFrameSchema,
-		);
-		const cancelledFrame = transcriptValue(
-			fixture,
-			'review-subscription-cancelled-frame',
-			bridgeProductMetadataFrameSchema,
-		);
-		if (
-			openRequest.kind !== 'subscription.open' ||
-			openRequest.subscription.subscriptionKind !== 'review.metadata' ||
-			openResponse.kind !== 'subscription.openAccepted' ||
-			openResponse.subscriptionKind !== 'review.metadata' ||
-			updateRequest.kind !== 'subscription.updateBatch' ||
-			updateRequest.subscriptionKind !== 'review.metadata' ||
-			updateResponse.kind !== 'subscription.updateBatchAccepted' ||
-			updateResponse.subscriptionKind !== 'review.metadata' ||
-			committedFrame.kind !== 'subscription.interestsCommitted' ||
-			cancelledFrame.kind !== 'subscription.cancelled'
-		) {
-			throw new Error('Review startup transcript does not contain its required typed transitions.');
-		}
-		const typedOpenResponse = {
-			...openResponse,
-			subscriptionKind: 'review.metadata',
-		} satisfies BridgeProductSubscriptionOpenAccepted<'review.metadata'>;
-		const typedUpdateResponse = {
-			...updateResponse,
-			subscriptionKind: 'review.metadata',
-		} satisfies BridgeProductSubscriptionUpdateBatchAccepted<'review.metadata'>;
-		const controlHarness = createStartupTranscriptReviewControlHarness(
-			typedOpenResponse,
-			typedUpdateResponse,
-		);
-		const updateDelta = bridgeProductReviewMetadataApplicationProtocol.interestDeltaSchema.parse(
-			updateRequest.delta,
-		);
-		const subscriptionState = new BridgeProductSubscriptionState({
-			controlMux: controlHarness.controlMux,
-			createIdentifier: (): string => updateRequest.updateId,
-			ensureMetadataStream: async (): Promise<void> => {},
-			initialOptions: { interests: [] },
-			onTerminal: (): void => {},
-			readWorkerDerivationEpochAtAdmission: (): number => openRequest.workerDerivationEpoch,
-			subscriptionId: openRequest.subscriptionId,
-			protocol: bridgeProductReviewMetadataApplicationProtocol,
-		});
-		subscriptionState.start();
-
-		// Act
-		const updateCompletion = subscriptionState.publicSubscription.update({
-			interests: updateDelta.add.map((addition) => ({
-				itemIds: [addition.itemId],
-				lane: addition.lane,
-			})),
-		});
-		try {
-			const derivedUpdate = await controlHarness.capturedUpdate;
-
-			// Assert
-			expect(derivedUpdate).toMatchObject({
-				baseInterestRevision: updateRequest.baseInterestRevision,
-				baseInterestSha256: updateRequest.baseInterestSha256,
-				delta: updateRequest.delta,
-				subscriptionId: updateRequest.subscriptionId,
-				targetInterestRevision: updateRequest.targetInterestRevision,
-				updateId: updateRequest.updateId,
-				workerDerivationEpoch: updateRequest.workerDerivationEpoch,
-			});
-			expect([
-				updateRequest.targetInterestSha256,
-				updateResponse.targetInterestSha256,
-				committedFrame.interestSha256,
-				cancelledFrame.interestSha256,
-			]).toEqual(Array.from({ length: 4 }, () => derivedUpdate.targetInterestSha256));
-		} finally {
-			subscriptionState.fail(new Error('Review startup transcript test cleanup.'));
-			await updateCompletion.catch((): undefined => undefined);
-		}
-	});
-
-	test('freezes observation identities and lifecycle outcomes', () => {
-		// Arrange
-		const fixture = loadValidFixture();
-		const metadataCase = fixture.observationCases.find(
-			(observationCase) => observationStreamKind(observationCase.request) === 'metadata',
-		);
-		const contentCase = fixture.observationCases.find(
+		const contentCases = fixture.observationCases.filter(
 			(observationCase) => observationStreamKind(observationCase.request) === 'content',
 		);
+		const metadataCases = loadInvalidFixture().cases.filter(
+			(observationCase) => observationStreamKind(observationCase.request) === 'metadata',
+		);
 
 		// Act
-		const metadataKeys = sortedObjectKeys(metadataCase?.request);
-		const contentKeys = sortedObjectKeys(contentCase?.request);
-		const dispositions = new Set(
-			fixture.observationCases.map((observationCase) => observationCase.expectedDisposition),
-		);
-
-		// Assert
-		expect(fixture.observationCases).toHaveLength(16);
-		expect(metadataKeys).toEqual([
-			'kind',
-			'metadataStreamId',
-			'paneSessionId',
-			'streamKind',
-			'streamSequence',
-			'wireVersion',
-			'workerInstanceId',
-		]);
-		expect(contentKeys).toEqual([
-			'contentRequestId',
-			'contentSequence',
-			'kind',
-			'leaseId',
-			'paneSessionId',
-			'streamKind',
-			'wireVersion',
-			'workerInstanceId',
-		]);
-		expect(dispositions).toEqual(new Set(observationDispositionSchema.options));
-		expect(
-			fixture.observationCases.find(({ name }) => name === 'metadata-exact-replay')?.request,
-		).toEqual(
-			fixture.observationCases.find(({ name }) => name === 'metadata-sequence-zero')?.request,
-		);
-		expect(
-			fixture.observationCases.find(({ name }) => name === 'content-exact-replay')?.request,
-		).toEqual(
-			fixture.observationCases.find(({ name }) => name === 'content-end-sequence-two')?.request,
-		);
-		expect(Object.values(fixture.lifecycleExpectations.zeroResidue)).toEqual([0, 0, 0, 0, 0, 0, 0]);
-	});
-
-	test('accepts metadata and every independently paced content observation body', () => {
-		// Arrange
-		const fixture = loadValidFixture();
-
-		// Act
-		const parseResults = fixture.observationCases.map((observationCase) => ({
+		const contentParseResults = contentCases.map((observationCase) => ({
 			name: observationCase.name,
 			result: bridgeProductFrameAcknowledgementRequestSchema.safeParse(observationCase.request),
 		}));
+		const metadataParseResults = metadataCases.map((observationCase) =>
+			bridgeProductFrameAcknowledgementRequestSchema.safeParse(observationCase.request),
+		);
 
 		// Assert
-		for (const parseResult of parseResults) {
+		for (const parseResult of contentParseResults) {
 			expect(parseResult.result.success, parseResult.name).toBe(true);
 		}
+		expect(metadataParseResults).toHaveLength(4);
+		expect(metadataParseResults.every((result) => !result.success)).toBe(true);
 	});
 
 	test('rejects every structurally hostile observation body', () => {
@@ -416,76 +260,10 @@ function readFixtureBytes(relativePath: string): Buffer {
 }
 
 function observationStreamKind(value: unknown): string | undefined {
-	if (typeof value !== 'object' || value === null || !('streamKind' in value)) {
+	if (typeof value !== 'object' || value === null) {
 		return undefined;
 	}
+	if ('kind' in value && value.kind === 'content.acknowledge') return 'content';
+	if (!('streamKind' in value)) return undefined;
 	return typeof value.streamKind === 'string' ? value.streamKind : undefined;
-}
-
-function sortedObjectKeys(value: unknown): string[] {
-	return typeof value === 'object' && value !== null ? Object.keys(value).toSorted() : [];
-}
-
-function transcriptValue<TSchema extends z.ZodType>(
-	fixture: z.infer<typeof validStartupTranscriptSchema>,
-	name: string,
-	schema: TSchema,
-): z.output<TSchema> {
-	const entry = fixture.transcript.find((candidate) => candidate.name === name);
-	if (entry === undefined) throw new Error(`Missing startup transcript entry: ${name}.`);
-	return schema.parse(entry.value);
-}
-
-interface CapturedSubscriptionUpdate {
-	readonly baseInterestRevision: number;
-	readonly baseInterestSha256: string;
-	readonly batchCount: number;
-	readonly batchIndex: number;
-	readonly delta: BridgeProductSubscriptionInterestDeltaWire;
-	readonly subscriptionId: string;
-	readonly targetInterestRevision: number;
-	readonly targetInterestSha256: string;
-	readonly totalDeltaItemCount: number;
-	readonly updateId: string;
-	readonly workerDerivationEpoch: number;
-}
-
-function createStartupTranscriptReviewControlHarness(
-	openResponse: BridgeProductSubscriptionOpenAccepted<'review.metadata'>,
-	updateResponse: BridgeProductSubscriptionUpdateBatchAccepted<'review.metadata'>,
-): {
-	readonly capturedUpdate: Promise<CapturedSubscriptionUpdate>;
-	readonly controlMux: BridgeProductSubscriptionStateControlMux<
-		'review.metadata',
-		ReviewMetadataOpen,
-		ReviewMetadataInterestDelta
-	>;
-} {
-	let resolveCapturedUpdate: ((update: CapturedSubscriptionUpdate) => void) | null = null;
-	const capturedUpdate = new Promise<CapturedSubscriptionUpdate>((resolve): void => {
-		resolveCapturedUpdate = resolve;
-	});
-	const controlMux: BridgeProductSubscriptionStateControlMux<
-		'review.metadata',
-		ReviewMetadataOpen,
-		ReviewMetadataInterestDelta
-	> = {
-		cancelSubscription: async (): Promise<never> => {
-			throw new Error('Startup transcript harness does not cancel subscriptions.');
-		},
-		openSubscription: async (props) => {
-			if (props.subscription.subscriptionKind !== 'review.metadata') {
-				throw new Error('Startup transcript harness accepts only Review subscriptions.');
-			}
-			return { ...openResponse, subscriptionKind: props.subscription.subscriptionKind };
-		},
-		updateSubscriptionBatch: async (props) => {
-			resolveCapturedUpdate?.(props);
-			if (props.delta.subscriptionKind !== 'review.metadata') {
-				throw new Error('Startup transcript harness accepts only Review subscription updates.');
-			}
-			return { ...updateResponse, subscriptionKind: props.delta.subscriptionKind };
-		},
-	};
-	return { capturedUpdate, controlMux };
 }

@@ -1,6 +1,7 @@
 import type { BridgeWorkerRenderDispositionApplicationReceiptResult } from './bridge-comm-worker-render-disposition-application.js';
 import type { BridgeWorkerServerToMainMessage } from './bridge-worker-contracts.js';
 import type { BridgeWorkerRenderDispositionReceipt } from './bridge-worker-render-fulfillment.js';
+import type { BridgeWorkerPaintReleasedReceipt } from './bridge-worker-render-fulfillment.js';
 
 export function applyBridgeCommWorkerPostResponseOwnerEffects(props: {
 	readonly advanceRenderFulfillmentLifecycle: (
@@ -12,6 +13,7 @@ export function applyBridgeCommWorkerPostResponseOwnerEffects(props: {
 	readonly publish: (message: BridgeWorkerServerToMainMessage) => void;
 	readonly recordFileDisposition: (receipt: BridgeWorkerRenderDispositionReceipt) => void;
 	readonly releaseReviewPosition: (receipt: BridgeWorkerRenderDispositionReceipt) => boolean;
+	readonly readmitReviewPaintRelease: (receipt: BridgeWorkerPaintReleasedReceipt) => void;
 	readonly settleFileDisposition: (receipt: BridgeWorkerRenderDispositionReceipt) => {
 		readonly settled: boolean;
 		readonly terminalPatch: BridgeWorkerServerToMainMessage | null;
@@ -21,6 +23,12 @@ export function applyBridgeCommWorkerPostResponseOwnerEffects(props: {
 	for (const result of props.receiptResults) {
 		if (result.status === 'rejected') continue;
 		const receipt = result.receipt;
+		if (receipt.kind === 'paint.released') {
+			if (receipt.surface === 'review' && result.status === 'accepted') {
+				props.readmitReviewPaintRelease(receipt);
+			}
+			continue;
+		}
 		eligibleReceipts.push(receipt);
 		if (receipt.surface === 'review') {
 			props.releaseReviewPosition(receipt);

@@ -5,6 +5,7 @@ import {
 	bridgeProductMetadataFrameSchema,
 	type BridgeProductMetadataFrame,
 } from '../../src/core/comm-worker/bridge-product-session-contracts.js';
+import sessionCorpus from '../../src/test-fixtures/bridge-contract-fixtures/valid/bridge-product-session-corpus.json' with { type: 'json' };
 import { BridgeVerifierMetadataFrames } from './product-file-session-metadata-frames.js';
 
 const currentSubscriptionId = 'file-subscription-current';
@@ -12,6 +13,29 @@ const unexpectedAdditionalReadMessage =
 	'controlled reader observed an additional read after terminal';
 
 describe('Bridge verifier product File metadata frames', () => {
+	test('observes every sealed batch part before returning its complete frame', async () => {
+		const batchFrames = sessionCorpus.transportV2.batchFrames.map((frame) =>
+			bridgeProductMetadataFrameSchema.parse(frame),
+		);
+		const observedFrames: BridgeProductMetadataFrame[] = [];
+		const reader = readerThatFailsAfter(...batchFrames);
+		const frames = new BridgeVerifierMetadataFrames(
+			reader,
+			async (frame): Promise<void> => {
+				observedFrames.push(frame);
+			},
+			currentSubscriptionId,
+		);
+
+		try {
+			const complete = await frames.waitFor((frame) => frame.kind === 'subscription.batchComplete');
+			expect(complete.kind).toBe('subscription.batchComplete');
+			expect(observedFrames).toEqual(batchFrames);
+		} finally {
+			await reader.cancel().catch((): void => {});
+		}
+	});
+
 	test.each(['subscription.reset', 'subscription.end', 'subscription.cancelled'] as const)(
 		'rejects unexpected %s for the current File subscription',
 		async (terminalKind) => {
@@ -27,9 +51,9 @@ describe('Bridge verifier product File metadata frames', () => {
 			);
 
 			try {
-				await expect(frames.waitFor((frame) => frame.kind === 'subscription.data')).rejects.toThrow(
-					new RegExp(`current File metadata subscription.*${terminalKind}`, 'iu'),
-				);
+				await expect(
+					frames.waitFor((frame) => frame.kind === 'subscription.batchComplete'),
+				).rejects.toThrow(new RegExp(`current File metadata subscription.*${terminalKind}`, 'iu'));
 				expect(observedFrames).toEqual([terminal]);
 			} finally {
 				await reader.cancel().catch((): void => {});
@@ -50,9 +74,9 @@ describe('Bridge verifier product File metadata frames', () => {
 		);
 
 		try {
-			await expect(frames.waitFor((frame) => frame.kind === 'subscription.data')).rejects.toThrow(
-				/metadata stream.*internal/iu,
-			);
+			await expect(
+				frames.waitFor((frame) => frame.kind === 'subscription.batchComplete'),
+			).rejects.toThrow(/metadata stream.*internal/iu);
 			expect(observedFrames).toEqual([terminal]);
 		} finally {
 			await reader.cancel().catch((): void => {});
@@ -88,7 +112,7 @@ describe('Bridge verifier product File metadata frames', () => {
 		}
 	});
 
-	test('ignores another subscription terminal while preserving ACK order', async () => {
+	test('ignores another subscription terminal while preserving observation order', async () => {
 		const unrelatedTerminal = subscriptionTerminalFrame(
 			'subscription.end',
 			'file-subscription-unrelated',
@@ -160,13 +184,9 @@ function subscriptionTerminalFrame(
 	streamSequence: number,
 ): BridgeProductMetadataFrame {
 	return bridgeProductMetadataFrameSchema.parse({
-		cursor: null,
-		interestRevision: 0,
-		interestSha256: 'a'.repeat(64),
 		kind,
 		metadataStreamId: 'metadata-stream-file-terminal',
 		paneSessionId: 'pane-session-file-terminal',
-		sourceGeneration: 1,
 		streamSequence,
 		subscriptionId,
 		subscriptionKind: 'file.metadata',
@@ -174,7 +194,7 @@ function subscriptionTerminalFrame(
 		wireVersion: 2,
 		workerDerivationEpoch: 0,
 		workerInstanceId: 'worker-instance-file-terminal',
-		...(kind === 'subscription.reset' ? { reason: 'interest_mismatch' } : {}),
+		...(kind === 'subscription.reset' ? { reason: 'snapshot_required' } : {}),
 	});
 }
 

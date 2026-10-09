@@ -1,4 +1,5 @@
 import type { BridgePaneCommWorkerSessionDiagnosticSnapshot } from '../diagnostics/bridge-review-selection-diagnostic.js';
+import type { BridgeWorkerReplacementReason } from '../diagnostics/bridge-worker-replacement-reason.js';
 import type { BridgeTelemetryRecorder } from './bridge-telemetry-recorder.js';
 import type { BridgeTraceContext } from './bridge-trace-context.js';
 
@@ -93,6 +94,7 @@ export function recordBridgeCommWorkerSessionTelemetrySample(props: {
 	if (props.telemetryRecorder === undefined || !props.telemetryRecorder.isEnabled('web')) {
 		return;
 	}
+	const replacement = bridgeWorkerReplacementTelemetryFacts(props.snapshot.lastReplacementReason);
 	props.telemetryRecorder.record({
 		scope: 'web',
 		name: 'performance.bridge.web.comm_worker_session',
@@ -111,6 +113,8 @@ export function recordBridgeCommWorkerSessionTelemetrySample(props: {
 			'agentstudio.bridge.worker.review_select_dispatch':
 				props.snapshot.latestReviewSelectDispatchDisposition ?? 'none',
 			'agentstudio.bridge.worker.session_state': props.snapshot.state,
+			'agentstudio.bridge.worker.replacement_reason': replacement.reason,
+			'agentstudio.bridge.worker.replacement_source': replacement.source,
 		},
 		numericAttributes: {
 			'agentstudio.bridge.worker.native_bootstrap_install.count':
@@ -120,4 +124,47 @@ export function recordBridgeCommWorkerSessionTelemetrySample(props: {
 		},
 		booleanAttributes: {},
 	});
+}
+
+function bridgeWorkerReplacementTelemetryFacts(reason: BridgeWorkerReplacementReason | null): {
+	readonly reason: string;
+	readonly source: string;
+} {
+	if (reason === null) return { reason: 'none', source: 'none' };
+	switch (reason.kind) {
+		case 'sessionSuspect':
+			return {
+				reason: 'session_suspect',
+				source: {
+					admissionReplyExhausted: 'admission_reply_exhausted',
+					resultAcknowledgementExhausted: 'result_acknowledgement_exhausted',
+					resultDeadlineExhausted: 'result_deadline_exhausted',
+				}[reason.reason],
+			};
+		case 'runtimeRecovery':
+			return {
+				reason: 'runtime_recovery',
+				source: {
+					renderDispositionProbeExhausted: 'render_disposition_probe_exhausted',
+					renderDispositionOverload: 'render_disposition_overload',
+					reviewInstalledReceiptFailed: 'review_installed_receipt_failed',
+				}[reason.source],
+			};
+		case 'workerError':
+			return { reason: 'worker_error', source: 'none' };
+		case 'messageError':
+			return { reason: 'message_error', source: 'none' };
+		case 'bootstrapTimeout':
+			return { reason: 'bootstrap_timeout', source: 'none' };
+		case 'sessionInUse':
+			return { reason: 'session_in_use', source: 'none' };
+		case 'explicitDispose':
+			return { reason: 'explicit_dispose', source: 'none' };
+		default:
+			return assertNeverWorkerReplacementReason(reason);
+	}
+}
+
+function assertNeverWorkerReplacementReason(reason: never): never {
+	throw new Error(`Unhandled worker replacement reason: ${JSON.stringify(reason)}`);
 }

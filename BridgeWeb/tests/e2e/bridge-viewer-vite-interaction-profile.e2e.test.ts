@@ -102,7 +102,7 @@ test('profiles repeated mode switches, Open in Files, Markdown and Mermaid throu
 		});
 		const reviewFile = fixture.oracle.reviewFiles[0];
 		if (reviewFile === undefined) throw new Error('Profile requires a real changed source file.');
-		await page.goto(bridgeViewerViteProductReviewUrl(server.origin), {
+		await page.goto(bridgeViewerViteProductReviewUrl(server.origin, reviewFile.path), {
 			waitUntil: 'domcontentloaded',
 		});
 		await selectReviewFile({ page, path: reviewFile.path });
@@ -138,7 +138,7 @@ test('profiles repeated mode switches, Open in Files, Markdown and Mermaid throu
 						path: markdownPath,
 					},
 					async (): Promise<void> => {
-						await fileHost.locator(`[data-item-path="${markdownPath}"]`).click();
+						await clickMountedFileTreePath({ fileHost, path: markdownPath });
 					},
 				),
 			);
@@ -182,8 +182,36 @@ test('profiles repeated mode switches, Open in Files, Markdown and Mermaid throu
 		completed = true;
 	} catch (error: unknown) {
 		failure = String(error);
+		const pageState =
+			profilePage !== null && !profilePage.isClosed()
+				? await profilePage.evaluate((): unknown => {
+						const fileHost = document.querySelector<HTMLElement>(
+							'[data-testid="bridge-viewer-mode-host-file"]',
+						);
+						const reviewHost = document.querySelector<HTMLElement>(
+							'[data-testid="bridge-viewer-mode-host-review"]',
+						);
+						const fileCanvas = fileHost?.querySelector(
+							'[data-testid="bridge-file-viewer-code-canvas"]',
+						);
+						const markdown = fileHost?.querySelector('[data-testid="bridge-markdown-canvas"]');
+						const mermaid = markdown?.querySelector('[data-bridge-mermaid-state]');
+						return {
+							fileHostActive: fileHost?.getAttribute('data-bridge-viewer-mode-active') ?? null,
+							fileHostInert: fileHost?.inert ?? null,
+							fileOpenPath: fileCanvas?.getAttribute('data-worktree-open-file-path') ?? null,
+							fileOpenState: fileCanvas?.getAttribute('data-worktree-open-file-state') ?? null,
+							markdownSourcePath:
+								markdown?.getAttribute('data-bridge-markdown-source-path') ?? null,
+							markdownText: markdown?.textContent?.slice(0, 160) ?? null,
+							mermaidState: mermaid?.getAttribute('data-bridge-mermaid-state') ?? null,
+							reviewHostActive: reviewHost?.getAttribute('data-bridge-viewer-mode-active') ?? null,
+							url: location.href,
+						};
+					})
+				: { kind: 'page-unavailable' };
 		throw new Error(
-			`Interaction profile failed after ${samples.length} samples. Browser: ${await diagnostics?.describe()}. Backend: ${server?.diagnostics() ?? 'not started'}`,
+			`Interaction profile failed after ${samples.length} samples. Page: ${JSON.stringify(pageState)}. Browser: ${await diagnostics?.describe()}. Backend: ${server?.diagnostics() ?? 'not started'}`,
 			{ cause: error },
 		);
 	} finally {
@@ -228,6 +256,58 @@ test('profiles repeated mode switches, Open in Files, Markdown and Mermaid throu
 		}
 	}
 });
+
+async function clickMountedFileTreePath(props: {
+	readonly fileHost: ReturnType<Page['getByTestId']>;
+	readonly path: string;
+}): Promise<void> {
+	const tree = props.fileHost.getByTestId('bridge-file-viewer-pierre-file-tree');
+	const row = tree.locator(
+		`button[data-item-type="file"][data-item-path=${JSON.stringify(props.path)}]:not([data-file-tree-sticky-row]):not([data-item-parked])`,
+	);
+	await row.scrollIntoViewIfNeeded();
+	await row.evaluate((mountedRow): void => {
+		const root = mountedRow.getRootNode();
+		const scrollOwner =
+			root instanceof ShadowRoot
+				? root.querySelector('[data-file-tree-virtualized-scroll="true"]')
+				: null;
+		if (!(scrollOwner instanceof HTMLElement)) {
+			throw new Error('File tree scroll owner is unavailable.');
+		}
+		const rowRect = mountedRow.getBoundingClientRect();
+		const ownerRect = scrollOwner.getBoundingClientRect();
+		scrollOwner.scrollTop +=
+			rowRect.top + rowRect.height / 2 - (ownerRect.top + ownerRect.height / 2);
+		scrollOwner.dispatchEvent(new Event('scroll', { bubbles: true }));
+	});
+	await row.waitFor({ state: 'visible' });
+	await tree.evaluate((treeElement): void => {
+		treeElement.addEventListener(
+			'click',
+			(event): void => {
+				const clickedRow = event
+					.composedPath()
+					.find(
+						(candidate): candidate is Element =>
+							candidate instanceof Element &&
+							candidate.getAttribute('data-item-type') === 'file' &&
+							candidate.hasAttribute('data-item-path'),
+					);
+				treeElement.setAttribute(
+					'data-profile-clicked-path',
+					clickedRow?.getAttribute('data-item-path') ?? '',
+				);
+			},
+			{ capture: true, once: true },
+		);
+	});
+	await row.click();
+	expect(await tree.getAttribute('data-profile-clicked-path')).toBe(props.path);
+	await tree.evaluate((treeElement): void => {
+		treeElement.removeAttribute('data-profile-clicked-path');
+	});
+}
 
 async function readAnnotationLifecycleDiagnostic(page: Page): Promise<unknown> {
 	try {

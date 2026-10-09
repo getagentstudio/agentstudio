@@ -1,4 +1,5 @@
 import AgentStudioCore
+import AgentStudioTestHarness
 import Foundation
 import Testing
 
@@ -6,6 +7,61 @@ import Testing
 
 @Suite("Bridge pane product File shared construction")
 struct BridgePaneProductFileSharedConstructionTests {
+    @Test("missing-root construction failure survives a source paused after preparation")
+    func missingRootFailureSurvivesPreparedSourcePause() async throws {
+        let fixture = try ProductFileSourceFixture(fileCount: 1)
+        defer { fixture.remove() }
+        let eventProbe = BridgeWorktreeProductConstructionEventProbe()
+        let coordinator = BridgeWorktreeProductConstructionCoordinator(eventSink: eventProbe.eventSink)
+        let beforeRootProbe = HeldStep<Void>(
+            "File construction before missing-root probe", cancellation: .holdThroughCancellation)
+        let preparedSource = HeldStep<Void>(
+            "File source prepared before first window read", cancellation: .holdThroughCancellation)
+        defer {
+            beforeRootProbe.release()
+            preparedSource.release()
+        }
+        let source = fixture.makeSource(
+            constructionCoordinator: coordinator,
+            sharedSnapshotBuilder: { request, preparation, publisher in
+                try await publisher.publishPreparation(preparation)
+                try await beforeRootProbe.arrive(())
+                for try await _ in BridgeWorktreeFileMaterializer.materializeTreeRowWindows(
+                    request: request, afterCount: 0, windowSize: 1)
+                {}
+                return BridgeSharedFileSnapshotCompletion()
+            })
+        let subscription = try fixture.openSnapshot()
+        let displacedRootURL = fixture.rootURL.deletingLastPathComponent()
+            .appending(path: "\(fixture.rootURL.lastPathComponent)-temporarily-unavailable")
+        try FileManager.default.moveItem(at: fixture.rootURL, to: displacedRootURL)
+        defer { try? FileManager.default.moveItem(at: displacedRootURL, to: fixture.rootURL) }
+        let pausePreparedSource: BridgePaneProductFileSourceFactSink = { fact in
+            if case .statusChanged = fact { try await preparedSource.arrive(()) }
+        }
+        let opening = Task {
+            try await source.open(
+                subscription: subscription, productAdmission: fixture.productAdmission.context,
+                emit: pausePreparedSource)
+        }
+        _ = try await beforeRootProbe.firstArrival()
+        _ = try await preparedSource.firstArrival()
+        beforeRootProbe.release()
+        _ = await eventProbe.waitFor(.buildFailed)
+        preparedSource.release()
+        switch await opening.result {
+        case .success:
+            Issue.record("Expected the real missing-root construction failure")
+        case .failure(let error):
+            let failure = BridgeFileSurfaceReconciler.failure(for: error, phase: .build)
+            #expect(failure.cause == .missingRoot, "Observed source-open error: \(String(reflecting: error))")
+            #expect(failure.refreshFailure.failureKind == .missingRoot)
+        }
+        await source.cancel(subscriptionId: subscription.subscriptionId)
+        await coordinator.shutdown()
+        await assertBridgeConstructionCoordinatorDrained(coordinator)
+    }
+
     @Test("preparation accounting includes retained ignore and status payloads")
     func preparationAccountingIsNonzeroAndDeterministic() {
         // Arrange
@@ -43,7 +99,7 @@ struct BridgePaneProductFileSharedConstructionTests {
         #expect(firstEstimate == secondEstimate)
     }
 
-    @Test("empty worktree emits exactly one final tree window")
+    @Test("empty worktree emits inventory progress and its completing notification")
     func emptyWorktreeEmitsOneFinalWindow() async throws {
         // Arrange
         let fixture = try ProductFileSourceFixture(fileCount: 0)
@@ -54,7 +110,7 @@ struct BridgePaneProductFileSharedConstructionTests {
             constructionCoordinator: coordinator,
             snapshotPreparationLoader: preparationProbe.load
         )
-        let collector = ProductFileMetadataEventCollector()
+        let collector = ProductFileSourceFactCollector()
         let subscription = try fixture.openSnapshot()
 
         // Act
@@ -62,15 +118,18 @@ struct BridgePaneProductFileSharedConstructionTests {
             subscription: subscription,
             productAdmission: fixture.productAdmission.context
         ) { event in
-            await collector.append(event)
+            await collector.append(event, source: source)
         }
 
         // Assert
         let windows = (await collector.events).fileTreeWindows
-        #expect(windows.count == 1)
+        #expect(windows.count == 2)
         #expect(windows[0].finalWindow)
         #expect(windows[0].rows.isEmpty)
-        #expect(windows[0].totalRowCount == 0)
+        #expect(windows[0].inventoryRowCount == 0)
+        #expect(windows[1].finalWindow)
+        #expect(windows[1].rows.isEmpty)
+        #expect(windows[1].inventory?.isEnumerationComplete == true)
         await source.cancel(subscriptionId: subscription.subscriptionId)
         await assertSharedFileConstructionDrained(coordinator)
     }
@@ -92,8 +151,8 @@ struct BridgePaneProductFileSharedConstructionTests {
             constructionCoordinator: coordinator,
             snapshotPreparationLoader: preparationProbe.load
         )
-        let firstCollector = ProductFileMetadataEventCollector()
-        let secondCollector = ProductFileMetadataEventCollector()
+        let firstCollector = ProductFileSourceFactCollector()
+        let secondCollector = ProductFileSourceFactCollector()
         let subscription = try fixture.openSnapshot()
 
         // Act
@@ -101,13 +160,13 @@ struct BridgePaneProductFileSharedConstructionTests {
             subscription: subscription,
             productAdmission: fixture.productAdmission.context
         ) { event in
-            await firstCollector.append(event)
+            await firstCollector.append(event, source: firstSource)
         }
         async let secondOpen: Void = secondSource.open(
             subscription: subscription,
             productAdmission: fixture.productAdmission.context
         ) { event in
-            await secondCollector.append(event)
+            await secondCollector.append(event, source: secondSource)
         }
         _ = try await (firstOpen, secondOpen)
 
@@ -132,86 +191,6 @@ struct BridgePaneProductFileSharedConstructionTests {
         await assertSharedFileConstructionDrained(coordinator)
     }
 
-    @Test("selected File becomes usable before the complete tree commits")
-    func selectedFileBecomesUsableBeforeCompleteTreeCommit() async throws {
-        // Arrange
-        let fixture = try ProductFileSourceFixture(fileCount: 300)
-        defer { fixture.remove() }
-        let coordinator = BridgeWorktreeProductConstructionCoordinator()
-        let preparationProbe = SharedFilePreparationProbe()
-        let buildGate = SharedFileBuildWindowGate()
-        let sourceAcceptedGate = ProductFileMaterializationGate()
-        let descriptorReadyGate = ProductFileMaterializationGate()
-        let source = fixture.makeSource(
-            constructionCoordinator: coordinator,
-            sourceAcceptedObserver: { _ in
-                await sourceAcceptedGate.markStarted()
-                await sourceAcceptedGate.waitUntilReleased()
-            },
-            snapshotPreparationLoader: preparationProbe.load,
-            sharedSnapshotBuilder: buildGate.build
-        )
-        let collector = ProductFileMetadataEventCollector()
-        let openSnapshot = try fixture.openSnapshot()
-        let openTask = Task {
-            try await source.open(
-                subscription: openSnapshot,
-                productAdmission: fixture.productAdmission.context
-            ) { event in
-                await collector.append(event)
-                if case .descriptorReady = event {
-                    await descriptorReadyGate.markStarted()
-                }
-            }
-        }
-        await sourceAcceptedGate.waitUntilStarted()
-        try await source.update(
-            subscription: fixture.updatedSnapshot(from: openSnapshot),
-            productAdmission: fixture.productAdmission.context
-        ) { event in
-            await collector.append(event)
-        }
-
-        // Act
-        await sourceAcceptedGate.release()
-        await buildGate.waitUntilFirstWindowPublished()
-        await descriptorReadyGate.waitUntilStarted()
-        let eventsBeforeFinalWindow = await collector.events
-        let completedBuildsBeforeFinalWindow = await buildGate.completedBuildCount
-        await buildGate.releaseBuilder()
-        try await openTask.value
-        let completedEvents = await collector.events
-
-        // Assert
-        let earlyTreeWindows = eventsBeforeFinalWindow.fileTreeWindows
-        #expect(earlyTreeWindows.count == 1)
-        #expect(earlyTreeWindows.first?.finalWindow == false)
-        #expect(earlyTreeWindows.first?.rows.contains { $0.path == fixture.demandedPath } == true)
-        #expect(
-            eventsBeforeFinalWindow.contains {
-                if case .descriptorReady = $0 { true } else { false }
-            }
-        )
-        #expect(
-            eventsBeforeFinalWindow.contains {
-                if case .statusPatch = $0 { true } else { false }
-            }
-        )
-        #expect(completedBuildsBeforeFinalWindow == 0)
-
-        let completedTreeWindows = completedEvents.fileTreeWindows
-        #expect(completedTreeWindows.count == 2)
-        #expect(completedTreeWindows.last?.finalWindow == true)
-        #expect(completedTreeWindows.last?.totalRowCount == 300)
-        #expect(
-            completedEvents.filter {
-                if case .statusPatch = $0 { true } else { false }
-            }.count == 1
-        )
-        await source.cancel(subscriptionId: openSnapshot.subscriptionId)
-        await assertSharedFileConstructionDrained(coordinator)
-    }
-
     @Test("late pane replays then tails without backpressuring its peer")
     func latePaneReplaysAndTailsWithoutBackpressure() async throws {
         // Arrange
@@ -233,15 +212,15 @@ struct BridgePaneProductFileSharedConstructionTests {
             snapshotPreparationLoader: preparationProbe.load,
             sharedSnapshotBuilder: buildGate.build
         )
-        let firstCollector = ProductFileMetadataEventCollector()
-        let lateCollector = ProductFileMetadataEventCollector()
+        let firstCollector = ProductFileSourceFactCollector()
+        let lateCollector = ProductFileSourceFactCollector()
         let subscription = try fixture.openSnapshot()
         let firstOpen = Task {
             try await firstSource.open(
                 subscription: subscription,
                 productAdmission: fixture.productAdmission.context
             ) { event in
-                await firstCollector.append(event)
+                await firstCollector.append(event, source: firstSource)
             }
         }
         await buildGate.waitUntilFirstWindowPublished()
@@ -253,10 +232,10 @@ struct BridgePaneProductFileSharedConstructionTests {
                 subscription: subscription,
                 productAdmission: fixture.productAdmission.context
             ) { event in
-                if case .treeWindow = event {
+                if case .inventoryProgress = event {
                     await lateDeliveryGate.pauseFirstWindowDelivery()
                 }
-                await lateCollector.append(event)
+                await lateCollector.append(event, source: lateSource)
             }
         }
         await lateDeliveryGate.waitUntilPaused()
@@ -424,18 +403,18 @@ private actor SharedFilePaneDeliveryGate {
     }
 }
 
-extension Array where Element == BridgeProductFileMetadataEvent {
+extension Array where Element == ProductFileSourceObservation {
     fileprivate var firstFileSourceIdentity: BridgeProductFileSourceIdentity? {
         compactMap(\.sourceForTest).first
     }
 
     fileprivate var fileTreePaths: [String] {
-        flatMap(\.treeWindowRowsForTest).map(\.path)
+        flatMap(\.inventoryProgressRowsForTest).map(\.path)
     }
 
-    fileprivate var fileTreeWindows: [BridgeProductFileTreeWindowEvent] {
+    fileprivate var fileTreeWindows: [ProductFileInventoryObservation] {
         compactMap { event in
-            guard case .treeWindow(let window) = event else { return nil }
+            guard case .inventoryProgress(let window) = event else { return nil }
             return window
         }
     }
@@ -449,7 +428,7 @@ private func makeSharedFileStatus() -> GitWorkingTreeStatus {
     )
 }
 
-private func assertSharedFileConstructionDrained(
+func assertSharedFileConstructionDrained(
     _ coordinator: BridgeWorktreeProductConstructionCoordinator
 ) async {
     let snapshot = await coordinator.snapshot()

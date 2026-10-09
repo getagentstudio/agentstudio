@@ -99,6 +99,9 @@ export function handleBridgeWorkerViewportCommand(
 		lastVisibleIndex: props.message.lastVisibleIndex,
 		visibleItemIds: props.message.visibleItemIds,
 	});
+	if (props.message.surface === 'review') {
+		props.store.renderFulfillmentRegistry.updateVisibleItemIds(props.message.visibleItemIds);
+	}
 	if (props.message.surface === 'fileView') {
 		publishBridgeCommWorkerFileMetadataDemand({
 			epoch: props.message.epoch,

@@ -11,6 +11,7 @@ import type { BridgeViewerViteProductFixtureOracle } from './bridge-viewer-vite-
 const execFileAsync = promisify(execFile);
 
 export interface BridgeViewerGitStatusFixture {
+	readonly addedSourcePath: string;
 	readonly addedTestTreePaths: readonly string[];
 	readonly dispose: () => Promise<void>;
 	readonly expectedAllTreePaths: readonly string[];
@@ -90,6 +91,7 @@ export async function createBridgeViewerGitStatusFixture(): Promise<BridgeViewer
 		);
 		const expectedAllTreePaths = reviewTreePathsForFiles(visibleChangedPaths);
 		return {
+			addedSourcePath,
 			addedTestTreePaths: reviewTreePathsForFiles([addedTestPath]),
 			dispose: async (): Promise<void> => {
 				await runAllOwnedCleanupOperations({

@@ -1,13 +1,15 @@
 import AgentStudioCore
+import AgentStudioInfrastructure
 import Foundation
+import Synchronization
 import Testing
 
 @testable import AgentStudioBridge
 
 @Suite("Bridge product metadata coordinator producer task ownership")
 struct BridgeMetadataCoordinatorProducerTaskTests {
-    @Test("internally thrown cancellation error resets the accepted subscription")
-    func internallyThrownCancellationErrorResetsAcceptedSubscription() async throws {
+    @Test("an internal CancellationError publishes retryable failure without resetting the subscription")
+    func internallyThrownCancellationErrorPublishesFailureWithoutReset() async throws {
         // Arrange
         let refreshWorkAdmission = await BridgePaneRefreshWorkAdmissionTestContext.foreground()
         let harness = try await BridgeProductSessionLifecycleHarness.opened()
@@ -20,10 +22,16 @@ struct BridgeMetadataCoordinatorProducerTaskTests {
         )
         let source = CoordinatorCancellationErrorFileSource()
         let traceRecorder = CoordinatorProducerTaskTraceRecorder()
+        let publishedFileFailures = Mutex<[BridgePaneProductFileRefreshFailure?]>([])
         let coordinator = BridgePaneProductMetadataCoordinator(
             fileMetadataSource: source,
             reviewMetadataSource: BridgeUnavailablePaneProductReviewMetadataSource(),
             refreshWorkAdmissionSource: refreshWorkAdmission.source,
+            recordCurrentFileRefreshFailure: { failure in
+                failure.apply { appliedFailure in
+                    publishedFileFailures.withLock { $0.append(appliedFailure) }
+                }
+            },
             lifecycleTraceRecorder: traceRecorder
         )
         await coordinator.install(
@@ -38,14 +46,10 @@ struct BridgeMetadataCoordinatorProducerTaskTests {
 
         // Act
         let token = try #require(producerTaskControlExecutionToken(try await harness.begin(openRequest)))
-        #expect(await harness.session.claimControlProviderDispatch(token: token))
+        #expect(await harness.session.admitControlProviderExecution(token: token))
         let response = try BridgeProductControlResponse.subscriptionOpenAccepted(
-            correlating: openRequest,
-            interestSha256:
-                BridgeProductSubscriptionInterestState
-                .fileMetadata(interests: [], pathScope: []).sha256Hex()
-        )
-        let effect = try await harness.session.completeControl(
+            correlating: openRequest, worktreeId: nil)
+        let effect = try await harness.session.completeAdmittedControl(
             token: token,
             exactResponseBytes: try JSONEncoder().encode(response)
         )
@@ -58,29 +62,21 @@ struct BridgeMetadataCoordinatorProducerTaskTests {
 
         // Assert
         #expect(await source.didAttemptOpen)
-        guard (await harness.session.producerSnapshot()).queuedFrameCount > 0 else {
-            Issue.record("Expected internally thrown CancellationError to enqueue a subscription reset")
-            await harness.session.settleControlProviderDispatch(token: token)
-            #expect(await pump.cancel())
-            return
-        }
-        let resetFrame = try await pullProducerTaskMetadataFrame(from: pump)
-        guard case .subscriptionReset(let reset) = resetFrame else {
-            Issue.record("Expected internally thrown CancellationError to reset the subscription")
-            await harness.session.settleControlProviderDispatch(token: token)
-            #expect(await pump.cancel())
-            return
-        }
-        #expect(reset.reason == .staleSource)
+        let currentFailure = publishedFileFailures.withLock { $0.compactMap { $0 }.last }
+        #expect(currentFailure == .init(failureKind: .fileSourceUnavailable))
+        #expect(currentFailure?.retryable == true)
+        #expect((await harness.session.producerSnapshot()).queuedFrameCount == 0)
+        #expect(
+            await harness.session.subscriptionSnapshot(
+                subscriptionId: try producerTaskFileSubscriptionSnapshot().subscriptionId
+            ) != nil
+        )
         #expect(
             await traceRecorder.lifecycleEvents.contains {
                 $0.stage == .producerFailed && $0.failureReason == .cancellation
             }
         )
-        #expect(
-            await source.cancelledSubscriptionIds
-                == [try producerTaskFileSubscriptionSnapshot().subscriptionId]
-        )
+        #expect(await source.cancelledSubscriptionIds.isEmpty)
         await harness.session.settleControlProviderDispatch(token: token)
         #expect(await pump.cancel())
     }
@@ -115,14 +111,10 @@ struct BridgeMetadataCoordinatorProducerTaskTests {
             bridgeProductLifecycleFileSubscriptionOpenObject(requestSequence: 2, epoch: 1)
         )
         let token = try #require(producerTaskControlExecutionToken(try await harness.begin(openRequest)))
-        #expect(await harness.session.claimControlProviderDispatch(token: token))
+        #expect(await harness.session.admitControlProviderExecution(token: token))
         let response = try BridgeProductControlResponse.subscriptionOpenAccepted(
-            correlating: openRequest,
-            interestSha256:
-                BridgeProductSubscriptionInterestState
-                .fileMetadata(interests: [], pathScope: []).sha256Hex()
-        )
-        let effect = try await harness.session.completeControl(
+            correlating: openRequest, worktreeId: nil)
+        let effect = try await harness.session.completeAdmittedControl(
             token: token,
             exactResponseBytes: try JSONEncoder().encode(response)
         )
@@ -154,16 +146,18 @@ struct BridgeMetadataCoordinatorProducerTaskTests {
         #expect(await pump.cancel())
     }
 
-    @Test("stale bootstrap completion preserves the replacement task handle")
-    func staleBootstrapCompletionPreservesReplacementTaskHandle() async throws {
+    @Test("an equal-basis duplicate open rests while the current task handle remains active")
+    func equalBasisDuplicateOpenRestsWhileCurrentTaskHandleRemainsActive() async throws {
         // Arrange
         let refreshWorkAdmission = await BridgePaneRefreshWorkAdmissionTestContext.foreground()
         let harness = try await BridgeProductSessionLifecycleHarness.opened()
         let lease = try await harness.admitMetadataFrames(through: 0)
         let source = CoordinatorReplacementBootstrapFileMetadataSource()
         let traceRecorder = CoordinatorProducerTaskTraceRecorder()
+        let reconciler = BridgeFileSurfaceReconciler()
         let coordinator = BridgePaneProductMetadataCoordinator(
             fileMetadataSource: source,
+            fileSurfaceReconciler: reconciler,
             reviewMetadataSource: BridgeUnavailablePaneProductReviewMetadataSource(),
             refreshWorkAdmissionSource: refreshWorkAdmission.source,
             lifecycleTraceRecorder: traceRecorder
@@ -180,25 +174,147 @@ struct BridgeMetadataCoordinatorProducerTaskTests {
             productAdmission: harness.productAdmission.context
         )
         await source.waitUntilOpenStarted(openOrdinal: 1)
+        let activeStream = try #require(await coordinator.activeStream)
+        let inputBasis = try #require(
+            await coordinator.fileSurfaceInputBasis(for: subscription, activeStream: activeStream)
+        )
+        let initialAttempt = try #require(await reconciler.activeAttempt)
         await coordinator.apply(
             .subscriptionOpened(subscription),
             productAdmission: harness.productAdmission.context
         )
-        await source.waitUntilOpenStarted(openOrdinal: 2)
 
-        // Act
+        #expect(await reconciler.beginAttempt(inputBasis: inputBasis) == .rest)
+        #expect(await reconciler.activeAttempt == initialAttempt)
+        #expect(await source.didStartOpen(openOrdinal: 2) == false)
+
+        // Act: let the original bootstrap finish after the equal-basis rest.
         await source.releaseOpen(openOrdinal: 1)
         await source.waitUntilOpenFinished(openOrdinal: 1)
         await traceRecorder.waitUntilBootstrapFinished()
-        await coordinator.apply(
-            .subscriptionCancelled(subscription),
-            productAdmission: harness.productAdmission.context
-        )
-        await source.waitUntilOpenFinished(openOrdinal: 2)
 
         // Assert
-        #expect(await source.openObservedCancellation(openOrdinal: 2))
+        #expect(await source.openObservedCancellation(openOrdinal: 1) == false)
+        #expect(await reconciler.activeAttempt == nil)
+        #expect(await reconciler.currentFailure == nil)
         await coordinator.uninstall(lease: lease)
+    }
+
+    @Test("retained File source reopens after a cancelled bootstrap and resumed stream replay")
+    func retainedFileSourceReopensAfterCancelledBootstrapAndResumedStreamReplay() async throws {
+        let refreshWorkAdmission = await BridgePaneRefreshWorkAdmissionTestContext.foreground()
+        let harness = try await BridgeProductSessionLifecycleHarness.opened()
+        let firstLease = try await harness.admitMetadataFrames(through: 0)
+        let firstPump = BridgeProductSchemeFramePump(
+            session: harness.session,
+            producerLease: firstLease,
+            productAdmission: harness.productAdmission.context,
+            acknowledgeLifecycle: { _ in true }
+        )
+        let source = CoordinatorReplacementBootstrapFileMetadataSource()
+        let coordinator = BridgePaneProductMetadataCoordinator(
+            fileMetadataSource: source,
+            reviewMetadataSource: BridgeUnavailablePaneProductReviewMetadataSource(),
+            refreshWorkAdmissionSource: refreshWorkAdmission.source
+        )
+        await coordinator.install(
+            request: try bridgeProductMetadataStreamRequest(
+                metadataStreamId: "metadata-before-cancel", resumeFromStreamSequence: nil
+            ),
+            lease: firstLease,
+            productAdmission: harness.productAdmission.context,
+            session: harness.session
+        )
+        let openRequest = try bridgeProductLifecycleControlRequest(
+            bridgeProductLifecycleFileSubscriptionOpenObject(requestSequence: 2, epoch: 1)
+        )
+        let token = try #require(producerTaskControlExecutionToken(try await harness.begin(openRequest)))
+        #expect(await harness.session.admitControlProviderExecution(token: token))
+        let response = try BridgeProductControlResponse.subscriptionOpenAccepted(
+            correlating: openRequest, worktreeId: nil)
+        let effect = try await harness.session.completeAdmittedControl(
+            token: token,
+            exactResponseBytes: try JSONEncoder().encode(response)
+        )
+        _ = try await pullProducerTaskMetadataFrame(from: firstPump)
+        await coordinator.apply(effect, productAdmission: harness.productAdmission.context)
+        await source.waitUntilOpenStarted(openOrdinal: 1)
+
+        let resumedLease = BridgeProductProducerLease(id: UUIDv7.generate())
+        await coordinator.install(
+            request: try bridgeProductMetadataStreamRequest(
+                metadataStreamId: "metadata-after-cancel", resumeFromStreamSequence: 0
+            ),
+            lease: resumedLease,
+            productAdmission: harness.productAdmission.context,
+            session: harness.session
+        )
+
+        await coordinator.replaySubscriptionsForInstalledStream()
+        await source.waitUntilOpenStarted(openOrdinal: 2)
+        #expect(await coordinator.fileSurfaceReconciler.activeAttempt != nil)
+        await source.releaseOpen(openOrdinal: 2)
+        await source.waitUntilOpenFinished(openOrdinal: 2)
+        #expect(await coordinator.fileSurfaceReconciler.currentFailure == nil)
+
+        await coordinator.uninstall(lease: resumedLease)
+        #expect(await firstPump.cancel())
+    }
+
+    @Test("File outcome admission refusal defers the accepted subscription for foreground resume")
+    @MainActor
+    func fileOutcomeAdmissionRefusalDefersUntilForegroundResume() async throws {
+        let refresh = BridgePaneRefreshAdmissionCoordinator(initialActivity: .foreground)
+        let harness = try await BridgeProductSessionLifecycleHarness.opened()
+        let lease = try await harness.admitMetadataFrames(through: 0)
+        let pump = BridgeProductSchemeFramePump(
+            session: harness.session, producerLease: lease,
+            productAdmission: harness.productAdmission.context, acknowledgeLifecycle: { _ in true }
+        )
+        let source = CoordinatorReplacementBootstrapFileMetadataSource()
+        let coordinator = BridgePaneProductMetadataCoordinator(
+            fileMetadataSource: source, reviewMetadataSource: BridgeUnavailablePaneProductReviewMetadataSource(),
+            refreshWorkAdmissionSource: refresh.workAdmissionSource
+        )
+        await coordinator.install(
+            request: try producerTaskMetadataStreamRequest(), lease: lease,
+            productAdmission: harness.productAdmission.context, session: harness.session
+        )
+        let request = try bridgeProductLifecycleControlRequest(
+            bridgeProductLifecycleFileSubscriptionOpenObject(requestSequence: 2, epoch: 1)
+        )
+        let token = try #require(producerTaskControlExecutionToken(try await harness.begin(request)))
+        #expect(await harness.session.admitControlProviderExecution(token: token))
+        let response = try BridgeProductControlResponse.subscriptionOpenAccepted(correlating: request, worktreeId: nil)
+        let effect = try await harness.session.completeAdmittedControl(
+            token: token, exactResponseBytes: try JSONEncoder().encode(response)
+        )
+        _ = try await pullProducerTaskMetadataFrame(from: pump)
+        await harness.session.settleControlProviderDispatch(token: token)
+        guard case .subscriptionOpened(let subscription) = effect else {
+            Issue.record("Expected admitted File subscription")
+            return
+        }
+        let stream = try #require(await coordinator.activeStream)
+        let capturedForegroundWork = try #require(refresh.acquireForegroundWork())
+        refresh.applyActivity(.loadedHidden)
+        await coordinator.startSubscriptionOpen(
+            subscription, activeStream: stream, productAdmission: harness.productAdmission.context,
+            foregroundWorkAdmission: capturedForegroundWork
+        )
+        let wasDeferred = await coordinator.deferredOpenSubscriptionIds.contains(subscription.subscriptionId)
+        #expect(wasDeferred)
+        #expect(!(await coordinator.openedSourceSubscriptionIds.contains(subscription.subscriptionId)))
+        #expect(!(await source.didStartOpen(openOrdinal: 1)))
+        if wasDeferred {
+            refresh.applyActivity(.foreground)
+            await coordinator.resumeForegroundWork()
+            await source.waitUntilOpenStarted(openOrdinal: 1)
+            await source.releaseOpen(openOrdinal: 1)
+            await source.waitUntilOpenFinished(openOrdinal: 1)
+        }
+        await coordinator.closeAndDrain()
+        #expect(await pump.cancel())
     }
 
     @Test("replacement install does not return until cancelled predecessor open drains")
@@ -411,8 +527,7 @@ private actor CoordinatorDrainControlledReviewMetadataSource:
 
     func open(
         subscription _: BridgeProductSubscriptionSnapshot,
-        productAdmission _: BridgeProductAdmissionContext,
-        emit _: @escaping BridgePaneProductReviewMetadataEventSink
+        productAdmission _: BridgeProductAdmissionContext
     ) async throws {
         openStarted = true
         let waiters = openStartedWaiters
@@ -431,12 +546,6 @@ private actor CoordinatorDrainControlledReviewMetadataSource:
         openFinished = true
         try Task.checkCancellation()
     }
-
-    func update(
-        subscription _: BridgeProductSubscriptionSnapshot,
-        productAdmission _: BridgeProductAdmissionContext,
-        emit _: @escaping BridgePaneProductReviewMetadataEventSink
-    ) async throws {}
 
     func reserve(
         package: BridgeReviewPackage,
@@ -496,8 +605,7 @@ private actor CoordinatorThrowingReviewMetadataSource: BridgePaneProductReviewMe
 
     func open(
         subscription _: BridgeProductSubscriptionSnapshot,
-        productAdmission _: BridgeProductAdmissionContext,
-        emit _: @escaping BridgePaneProductReviewMetadataEventSink
+        productAdmission _: BridgeProductAdmissionContext
     ) async throws {
         switch failureMode {
         case .eventConstruction:
@@ -512,12 +620,6 @@ private actor CoordinatorThrowingReviewMetadataSource: BridgePaneProductReviewMe
             throw CoordinatorProducerTaskTestError.unexpectedReviewBootstrapFailure
         }
     }
-
-    func update(
-        subscription _: BridgeProductSubscriptionSnapshot,
-        productAdmission _: BridgeProductAdmissionContext,
-        emit _: @escaping BridgePaneProductReviewMetadataEventSink
-    ) async throws {}
 
     func reserve(
         package: BridgeReviewPackage,
@@ -551,6 +653,12 @@ private actor CoordinatorThrowingReviewMetadataSource: BridgePaneProductReviewMe
 private actor CoordinatorReplacementBootstrapFileMetadataSource:
     BridgePaneProductFileMetadataProducing
 {
+    func captureKeyedSnapshot(
+        subscriptionId _: String,
+        demand _: BridgePaneProductFileViewDemand,
+        productAdmission _: BridgeProductAdmissionContext
+    ) async -> BridgeWorktreeFileKeyedSnapshot? { nil }
+
     private var finishedOpenOrdinals: Set<Int> = []
     private var finishedOpenWaiters: [Int: [CheckedContinuation<Void, Never>]] = [:]
     private var nextOpenOrdinal = 1
@@ -567,7 +675,7 @@ private actor CoordinatorReplacementBootstrapFileMetadataSource:
         subscription _: BridgeProductSubscriptionSnapshot,
         productAdmission _: BridgeProductAdmissionContext,
         foregroundWorkAdmission _: BridgePaneRefreshWorkAdmission,
-        emit _: @escaping BridgePaneProductFileMetadataEventSink
+        emit _: @escaping BridgePaneProductFileSourceFactSink
     ) async throws {
         let openOrdinal = nextOpenOrdinal
         nextOpenOrdinal += 1
@@ -586,11 +694,13 @@ private actor CoordinatorReplacementBootstrapFileMetadataSource:
         try Task.checkCancellation()
     }
 
-    func update(
-        subscription _: BridgeProductSubscriptionSnapshot,
+    func applyViewDemand(
+        subscriptionId _: String,
+        demand _: BridgePaneProductFileViewDemand,
         productAdmission _: BridgeProductAdmissionContext,
         foregroundWorkAdmission _: BridgePaneRefreshWorkAdmission,
-        emit _: @escaping BridgePaneProductFileMetadataEventSink
+        forceRecapture _: Bool,
+        emit _: @escaping BridgePaneProductFileSourceFactSink
     ) async throws {}
 
     func cancel(subscriptionId _: String) {
@@ -620,6 +730,10 @@ private actor CoordinatorReplacementBootstrapFileMetadataSource:
         observedCancellationByOpenOrdinal[openOrdinal] ?? false
     }
 
+    func didStartOpen(openOrdinal: Int) -> Bool {
+        startedOpenOrdinals.contains(openOrdinal)
+    }
+
     func releaseOpen(openOrdinal: Int) {
         openReleaseByOrdinal.removeValue(forKey: openOrdinal)?.resume()
     }
@@ -642,6 +756,12 @@ private actor CoordinatorReplacementBootstrapFileMetadataSource:
 private actor CoordinatorCancellationErrorFileSource:
     BridgePaneProductFileMetadataProducing
 {
+    func captureKeyedSnapshot(
+        subscriptionId _: String,
+        demand _: BridgePaneProductFileViewDemand,
+        productAdmission _: BridgeProductAdmissionContext
+    ) async -> BridgeWorktreeFileKeyedSnapshot? { nil }
+
     private(set) var didAttemptOpen = false
     private(set) var cancelledSubscriptionIds: [String] = []
 
@@ -653,17 +773,19 @@ private actor CoordinatorCancellationErrorFileSource:
         subscription _: BridgeProductSubscriptionSnapshot,
         productAdmission _: BridgeProductAdmissionContext,
         foregroundWorkAdmission _: BridgePaneRefreshWorkAdmission,
-        emit _: @escaping BridgePaneProductFileMetadataEventSink
+        emit _: @escaping BridgePaneProductFileSourceFactSink
     ) async throws {
         didAttemptOpen = true
         throw CancellationError()
     }
 
-    func update(
-        subscription _: BridgeProductSubscriptionSnapshot,
+    func applyViewDemand(
+        subscriptionId _: String,
+        demand _: BridgePaneProductFileViewDemand,
         productAdmission _: BridgeProductAdmissionContext,
         foregroundWorkAdmission _: BridgePaneRefreshWorkAdmission,
-        emit _: @escaping BridgePaneProductFileMetadataEventSink
+        forceRecapture _: Bool,
+        emit _: @escaping BridgePaneProductFileSourceFactSink
     ) async throws {}
 
     func cancel(subscriptionId: String) {

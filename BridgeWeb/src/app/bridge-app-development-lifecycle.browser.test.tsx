@@ -46,6 +46,7 @@ function createNoopBridgePaneRuntime(): ReturnType<typeof createBridgePaneRuntim
 				dispose: (): void => {},
 			}),
 			dispose: (): void => {},
+			setNativeBootstrapRequester: (): void => {},
 			installNativeBootstrap: (): void => {},
 		}),
 	});

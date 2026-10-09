@@ -149,6 +149,8 @@ function bridgeWorkerCommandMatchesSurface(
 		case 'annotationOutputInspect':
 		case 'annotationProjectionRetry':
 			return command.surface === surface;
+		case 'viewRecoveryRetry':
+			return bridgeWorkerViewRecoveryKindMatchesSurface(command.view.kind, surface);
 		case 'fileDisplayResync':
 		case 'fileQueryUpdate':
 		case 'fileRefreshRetry':
@@ -232,6 +234,8 @@ function bridgeWorkerMessageMatchesSurface(
 		case 'annotationOutputInspection':
 		case 'annotationProjectionConvergence':
 			return message.surface === surface;
+		case 'viewRecoveryStatus':
+			return bridgeWorkerViewRecoveryKindMatchesSurface(message.view.kind, surface);
 		case 'health':
 			return true;
 		case 'nativeSurfaceSelectionRequest':
@@ -257,6 +261,15 @@ function bridgeWorkerMessageMatchesSurface(
 			return false;
 	}
 	return unreachableBridgeWorkerValue(message);
+}
+
+function bridgeWorkerViewRecoveryKindMatchesSurface(
+	kind: 'file.annotations' | 'file.metadata' | 'review.annotations' | 'review.metadata',
+	surface: BridgeWorkerRpcClientSurface,
+): boolean {
+	return kind === 'file.annotations' || kind === 'file.metadata'
+		? surface === 'fileView'
+		: surface === 'review';
 }
 
 function settleBridgeWorkerRpcLifecycleFromMessage(props: {
@@ -292,7 +305,7 @@ function settleBridgeWorkerRpcLifecycleFromMessage(props: {
 		props.lifecycleStore.failRequest({
 			reason:
 				props.message.kind === 'health'
-					? (props.message.message ?? 'worker_degraded')
+					? (props.message.errorKind ?? props.message.message ?? 'worker_degraded')
 					: props.message.kind === 'subscription'
 						? 'subscription_rejected'
 						: (props.message.message ?? 'comparison_targets_query_failed'),

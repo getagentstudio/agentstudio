@@ -10,17 +10,16 @@ import {
 	activateBridgeCommWorkerFileViewerModeAndFlush,
 	createRecordingBridgeCommWorkerPort,
 	flushBridgeWorkerRuntimeContinuations,
-	type FileMetadataDataFrame,
 	type FileMetadataSubscription,
 	type PostedBridgeWorkerRuntimeMessage,
 } from '../core/comm-worker/bridge-comm-worker-runtime-protocol.test-support.js';
-import { makeFileMetadataDataFrame } from '../core/comm-worker/bridge-comm-worker-runtime-protocol.test-support.js';
 import type { BridgePaneCommWorkerDispatcher } from '../core/comm-worker/bridge-pane-comm-worker-session.js';
 import {
 	createBridgePaneRuntime,
 	type BridgePaneSessionPort,
 } from '../core/comm-worker/bridge-pane-runtime.js';
 import { BridgeProductBoundedAsyncQueue } from '../core/comm-worker/bridge-product-async-queue.js';
+import type { BridgeProductBatchFrameSinks } from '../core/comm-worker/bridge-product-batch-frame-router.js';
 import type {
 	BridgeWorkerFilePierreRenderJobEvent,
 	BridgeWorkerMainToServerMessage,
@@ -29,10 +28,12 @@ import {
 	drainFilePreparationUntilIdle,
 	fileProductTestSource,
 	fileViewProductTestBudget,
-	makeDescriptorReadyEvent,
 	makeFileProductTestTransport,
-	makeTreeWindowEvent,
 } from '../core/comm-worker/comm-runtime-protocol.file-product.test-support.js';
+import {
+	makeBrowserFileBatchWithDescriptors,
+	makeBrowserFileDescriptorOutcome,
+} from './bridge-file-viewer-browser-test-batches.js';
 import type { BridgeFileViewerSelection } from './bridge-file-viewer-display-model.js';
 import {
 	BridgeFileViewerSurfaceClientProvider,
@@ -49,6 +50,7 @@ describe('Bridge File viewer code selection retirement', () => {
 				harness.selectCodeFile('file-1');
 				await drainFilePreparationUntilIdle(harness.scheduledDrains);
 			});
+			expect(harness.controller.selectedCodeViewItem?.bridgeMetadata.itemId).toBe('file-1');
 			const publicationA = requireFilePublication(harness.postedMessages, 0);
 			expect(publicationA.job.itemId).toBe('file-1');
 			await expect
@@ -167,9 +169,10 @@ interface FileCodeSelectionHarness {
 async function createFileCodeSelectionHarness(
 	options: { readonly holdFirstFilePublication?: boolean } = {},
 ): Promise<FileCodeSelectionHarness> {
-	const metadataEvents = new BridgeProductBoundedAsyncQueue<FileMetadataDataFrame>(64);
+	const metadataEvents = new BridgeProductBoundedAsyncQueue<never>(1);
 	const scheduledDrains: BridgeCommWorkerPreparationDrain[] = [];
 	const mainDispatchedMessages: BridgeWorkerMainToServerMessage[] = [];
+	let batchSinks: BridgeProductBatchFrameSinks | null = null;
 	const subscription: FileMetadataSubscription = {
 		cancel: async (): Promise<void> => {
 			metadataEvents.close(true);
@@ -177,7 +180,6 @@ async function createFileCodeSelectionHarness(
 		events: metadataEvents,
 		subscriptionId: 'file-code-selection-retirement',
 		subscriptionKind: 'file.metadata',
-		update: async (): Promise<void> => {},
 	};
 	let publishWorkerMessages: Parameters<
 		BridgePaneSessionPort['createDispatcher']
@@ -202,6 +204,9 @@ async function createFileCodeSelectionHarness(
 		fileViewBudget: fileViewProductTestBudget,
 		productTransport: makeFileProductTestTransport({
 			onDiscoverSource: (): void => {},
+			onBatchFrameSinks: (sinks): void => {
+				batchSinks = sinks;
+			},
 			onOpenDescriptor: (): void => {},
 			subscription,
 		}),
@@ -229,9 +234,7 @@ async function createFileCodeSelectionHarness(
 		workerPort.dispatch,
 		'code-selection-retirement',
 	);
-	for (const event of fileMetadataEventsForTwoCodeFiles()) {
-		metadataEvents.push(makeFileMetadataDataFrame(event));
-	}
+	await requireFileBatchSinks(batchSinks).install(fileBatchForTwoCodeFiles());
 	await flushBridgeWorkerRuntimeContinuations();
 
 	const controllerProbe: FileSelectionControllerProbe = {
@@ -247,6 +250,7 @@ async function createFileCodeSelectionHarness(
 	if (controllerProbe.selectCodeFile === null) {
 		throw new Error('Expected the production File selection driver.');
 	}
+	expect(controllerProbe.current?.fileDisplaySnapshot.fileItemById.get('file-1')).toBeDefined();
 	return {
 		close: async (): Promise<void> => {
 			await rendered.unmount();
@@ -314,47 +318,33 @@ function FileSelectionControllerProbe(props: {
 	return <div data-selected-file-id={selection?.fileId ?? 'none'} />;
 }
 
-function fileMetadataEventsForTwoCodeFiles(): readonly Parameters<
-	typeof makeFileMetadataDataFrame
->[0][] {
-	const treeWindow = makeTreeWindowEvent();
-	const descriptorReady = makeDescriptorReadyEvent();
-	if (
-		treeWindow.eventKind !== 'file.treeWindow' ||
-		descriptorReady.eventKind !== 'file.descriptorReady' ||
-		descriptorReady.availability.availabilityKind !== 'available'
-	) {
-		throw new Error('Expected available production File metadata fixtures.');
-	}
-	const firstRow = treeWindow.rows[0];
-	if (firstRow === undefined) throw new Error('Expected the first production File row fixture.');
-	const secondRow = {
-		...firstRow,
-		fileId: 'file-2',
-		name: 'SecondFile.swift',
-		path: 'Sources/SecondFile.swift',
-		rowId: 'row-file-2',
-	};
-	const secondDescriptor = {
-		...descriptorReady,
-		availability: {
-			...descriptorReady.availability,
-			contentDescriptor: {
-				...descriptorReady.availability.contentDescriptor,
-				descriptorId: 'descriptor-file-2',
-				fileId: 'file-2',
-			},
-		},
-		fileId: 'file-2',
-		path: 'Sources/SecondFile.swift',
-		rowId: 'row-file-2',
-	};
-	return [
-		{ eventKind: 'file.sourceAccepted', source: fileProductTestSource },
-		{ ...treeWindow, rows: [firstRow, secondRow], totalRowCount: 2 },
-		descriptorReady,
-		secondDescriptor,
-	];
+function fileBatchForTwoCodeFiles(): ReturnType<typeof makeBrowserFileBatchWithDescriptors> {
+	return makeBrowserFileBatchWithDescriptors(
+		'open',
+		makeBrowserFileDescriptorOutcome({
+			declaredByteLength: 10,
+			descriptorId: 'descriptor-file-1',
+			expectedSha256: '94dda0ed4b1c44a08e3ef62b978ddd97258b6e3016696ea645e176730091e885',
+			fileId: 'file-1',
+			path: 'Sources/File.swift',
+			source: fileProductTestSource,
+		}),
+		makeBrowserFileDescriptorOutcome({
+			declaredByteLength: 10,
+			descriptorId: 'descriptor-file-2',
+			expectedSha256: '94dda0ed4b1c44a08e3ef62b978ddd97258b6e3016696ea645e176730091e885',
+			fileId: 'file-2',
+			path: 'Sources/SecondFile.swift',
+			source: fileProductTestSource,
+		}),
+	);
+}
+
+function requireFileBatchSinks(
+	sinks: BridgeProductBatchFrameSinks | null,
+): BridgeProductBatchFrameSinks {
+	if (sinks === null) throw new Error('Expected typed File batch sink registration.');
+	return sinks;
 }
 
 function discardWorkerMessages(): void {}
@@ -367,7 +357,10 @@ function hasQueuedRenderReceipt(
 		(message): boolean =>
 			message.command === 'renderDisposition' &&
 			message.receipts.some(
-				(receipt): boolean => receipt.itemId === itemId && receipt.disposition === 'queued',
+				(receipt): boolean =>
+					receipt.kind === 'render.disposition' &&
+					receipt.itemId === itemId &&
+					receipt.disposition === 'queued',
 			),
 	);
 }
@@ -384,6 +377,7 @@ function hasTerminalRenderReceipt(
 			message.command === 'renderDisposition' &&
 			message.receipts.some(
 				(receipt): boolean =>
+					receipt.kind === 'render.disposition' &&
 					receipt.itemId === expected.itemId &&
 					receipt.disposition === expected.disposition &&
 					receipt.reason === 'stale_submission',

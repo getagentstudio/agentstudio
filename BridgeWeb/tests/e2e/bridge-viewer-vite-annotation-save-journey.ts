@@ -1,11 +1,7 @@
-import type { Page, Response, Route } from 'playwright';
+import type { Page, Request, Response, Route } from 'playwright';
 import { expect, test } from 'vitest';
 
-import {
-	revealReviewTreeFilePath,
-	reviewTreeReachablePathScrollTopMap,
-	waitForVisibleReviewTreeFilePath,
-} from '../../scripts/verify-bridge-viewer-worktree-dev-server/review-tree-click.ts';
+import { selectReviewTreeFilePath } from '../../scripts/verify-bridge-viewer-worktree-dev-server/review-tree-click.ts';
 import {
 	drainAnnotationLifecycleTelemetry,
 	requiredAnnotationLifecycleStageCount,
@@ -17,6 +13,7 @@ import {
 } from './bridge-viewer-vite-annotation-main-projection-observation.ts';
 import {
 	type AnnotationOutputIdentityCapture,
+	type AnnotationOutputCopyHooks,
 	verifyAnnotationOutputCaptures,
 } from './bridge-viewer-vite-annotation-output-capture.ts';
 import {
@@ -36,9 +33,11 @@ import type {
 	BridgeViewerOwnedViteProductServer,
 	BridgeViewerViteProductFixtureOracle,
 } from './bridge-viewer-vite-product-fixture.ts';
+import { waitForProductCallSettlement } from './bridge-viewer-vite-product-operation-response.ts';
 import {
 	bridgeViewerViteProductFileUrl,
 	bridgeViewerViteProductReviewUrl,
+	requireBridgeViewerVitePrimaryReviewPath,
 } from './bridge-viewer-vite-product-url.ts';
 import {
 	installReviewRenderObservation,
@@ -55,6 +54,26 @@ export interface AnnotationSaveJourneyObservations {
 	readonly savingControlCountAfterCommit: number;
 	readonly committedBodyCountWhileProjectionGated: number;
 	readonly outputIdentity: AnnotationOutputIdentityCapture;
+}
+
+export interface AnnotationSaveJourneyHookContext {
+	readonly page: Page;
+	readonly savedBody: string;
+}
+
+export interface AnnotationSaveJourneyPostSaveResult {
+	readonly savedBody?: string;
+	readonly selectedFileReadiness?: {
+		readonly lineCount: number;
+		readonly path: string;
+		readonly sha256: string;
+	};
+}
+
+export interface AnnotationSaveJourneyOutputContext extends AnnotationSaveJourneyHookContext {
+	readonly captureDefaultOutput: (
+		hooks?: AnnotationOutputCopyHooks,
+	) => Promise<AnnotationOutputIdentityCapture>;
 }
 
 interface ReleasedDraftReloadJourneyObservations {
@@ -114,9 +133,15 @@ async function runReleasedDraftReloadJourney(props: {
 		if (reviewFile === undefined) {
 			throw new Error('Review released-draft journey requires a changed review file.');
 		}
-		await page.goto(bridgeViewerViteProductReviewUrl(props.server.origin), {
-			waitUntil: 'domcontentloaded',
-		});
+		await page.goto(
+			bridgeViewerViteProductReviewUrl(
+				props.server.origin,
+				requireBridgeViewerVitePrimaryReviewPath(props.oracle),
+			),
+			{
+				waitUntil: 'domcontentloaded',
+			},
+		);
 		await selectReviewFile({ page, path: reviewFile.path });
 		await waitForSelectedReviewReady({ itemId: reviewFile.itemId, page });
 		await selectRangeForAnnotation({ endLine: 5, page, startLine: 2, surface: 'review' });
@@ -167,14 +192,22 @@ async function runReleasedDraftReloadJourney(props: {
 }
 
 export async function runAnnotationSaveJourney(props: {
+	readonly afterProjectedSave?: (
+		context: AnnotationSaveJourneyHookContext,
+	) => Promise<AnnotationSaveJourneyPostSaveResult | undefined>;
+	readonly captureOutput?: (
+		context: AnnotationSaveJourneyOutputContext,
+	) => Promise<AnnotationOutputIdentityCapture>;
 	readonly oracle: BridgeViewerViteProductFixtureOracle;
 	readonly server: BridgeViewerOwnedViteProductServer;
+	readonly setupPage?: (page: Page) => Promise<void>;
 	readonly surface: 'file' | 'review';
 }): Promise<AnnotationSaveJourneyObservations> {
 	const browser = await launchBridgeViewerE2EChromium();
 	const diagnostics: string[] = [];
 	let page: Page | null = null;
 	let expectedSavedBody: string | null = null;
+	let selectedFileReadiness: AnnotationSaveJourneyPostSaveResult['selectedFileReadiness'];
 	let transportFailures: Awaited<ReturnType<typeof observeInteractionProfileFailures>> | null =
 		null;
 	try {
@@ -184,6 +217,7 @@ export async function runAnnotationSaveJourney(props: {
 		page.setDefaultNavigationTimeout(0);
 		transportFailures = await observeInteractionProfileFailures(page);
 		observeAnnotationJourneyDiagnostics(page, diagnostics);
+		await props.setupPage?.(page);
 		const reviewFile = props.oracle.reviewFiles[0];
 		if (props.surface === 'review' && reviewFile === undefined) {
 			throw new Error('Review annotation Save journey requires a changed review file.');
@@ -196,7 +230,10 @@ export async function runAnnotationSaveJourney(props: {
 		await page.goto(
 			props.surface === 'file'
 				? bridgeViewerViteProductFileUrl(props.server.origin, props.oracle.largeFilePath)
-				: bridgeViewerViteProductReviewUrl(props.server.origin),
+				: bridgeViewerViteProductReviewUrl(
+						props.server.origin,
+						requireBridgeViewerVitePrimaryReviewPath(props.oracle),
+					),
 			{
 				waitUntil: 'domcontentloaded',
 			},
@@ -256,6 +293,20 @@ export async function runAnnotationSaveJourney(props: {
 		let savingControlCountAfterCommit = 0;
 		let committedBodyCountWhileProjectionGated = 0;
 		let projectionOperationCorrelationId: string | null = null;
+		const projectionOperationCorrelationIds: string[] = [];
+		const observeProjectionRequest = (request: Request): void => {
+			if (new URL(request.url()).pathname !== '/__bridge-product/content') return;
+			const body: unknown = request.postDataJSON();
+			if (!isUnknownRecord(body) || body['contentKind'] !== 'annotation.projection') return;
+			const correlationId = body['operationCorrelationId'];
+			if (
+				typeof correlationId === 'string' &&
+				projectionOperationCorrelationIds.at(-1) !== correlationId
+			) {
+				projectionOperationCorrelationIds.push(correlationId);
+			}
+		};
+		page.on('request', observeProjectionRequest);
 		const projectionRoutePattern = '**/__bridge-product/content**';
 		const projectionRouteHandler = async (route: Route): Promise<void> => {
 			const body: unknown = route.request().postDataJSON();
@@ -327,10 +378,22 @@ export async function runAnnotationSaveJourney(props: {
 		// The committed overlay can be visible before authoritative projection finishes.
 		// Draining seals producers, so first await this operation's exact terminal stages.
 		const correlatedLifecycleStageCount = await waitForCompleteAnnotationLifecycleTelemetry({
-			operationCorrelationId: projectionOperationCorrelationId,
+			operationCorrelationIds: () => projectionOperationCorrelationIds,
 			page,
 		});
-		await drainAnnotationLifecycleTelemetry(page);
+		page.off('request', observeProjectionRequest);
+		const telemetryDrain = await drainAnnotationLifecycleTelemetry(page);
+		const telemetrySidecar = isUnknownRecord(telemetryDrain) ? telemetryDrain['sidecar'] : null;
+		if (!isUnknownRecord(telemetrySidecar)) {
+			throw new Error('Annotation lifecycle telemetry drain had no sidecar loss summary.');
+		}
+		expect(telemetrySidecar['requiredLossCount']).toBe(0);
+		const postSaveResult = await props.afterProjectedSave?.({
+			page,
+			savedBody,
+		});
+		if (postSaveResult?.savedBody !== undefined) expectedSavedBody = postSaveResult.savedBody;
+		selectedFileReadiness = postSaveResult?.selectedFileReadiness;
 
 		const reloadedItemApplies =
 			props.surface === 'review' ? observeSelectedItemApplies(page) : null;
@@ -340,26 +403,44 @@ export async function runAnnotationSaveJourney(props: {
 			waitUntil: 'domcontentloaded',
 		});
 		if (props.surface === 'file') {
-			await waitForSelectedFileReady({ oracle: props.oracle, page });
+			await waitForSelectedFileReady({
+				...(selectedFileReadiness === undefined ? {} : { expected: selectedFileReadiness }),
+				oracle: props.oracle,
+				page,
+			});
 		} else {
 			await waitForSelectedReviewReady({ itemId: reviewFile?.itemId ?? '', page });
 			await reloadedItemApplies?.install(reviewFile?.itemId ?? '');
 			await reloadedMainProjection?.install();
 		}
+		const currentSavedBody = expectedSavedBody ?? savedBody;
 		const reloadedSavedThreadBody = page
 			.getByTestId('worktree-annotation-thread')
-			.getByText(savedBody, { exact: true });
+			.getByText(currentSavedBody, { exact: true });
 		await reloadedSavedThreadBody.waitFor({
 			state: 'visible',
 		});
 		const reloadedSavedMessageCount = await reloadedSavedThreadBody.count();
-		const outputIdentity = await verifyAnnotationOutputCaptures({
-			dataRootPath: props.oracle.dataRootPath,
-			page,
-			savedBody,
-			timeoutMilliseconds: annotationProjectionResponseTimeoutMilliseconds,
-			worktreeRoot: props.oracle.worktreeRoot,
-		});
+		const outputPage = page;
+		const captureDefaultOutput = async (
+			hooks: AnnotationOutputCopyHooks = {},
+		): Promise<AnnotationOutputIdentityCapture> =>
+			await verifyAnnotationOutputCaptures({
+				...hooks,
+				dataRootPath: props.oracle.dataRootPath,
+				page: outputPage,
+				savedBody: currentSavedBody,
+				timeoutMilliseconds: annotationProjectionResponseTimeoutMilliseconds,
+				worktreeRoot: props.oracle.worktreeRoot,
+			});
+		const outputIdentity =
+			props.captureOutput === undefined
+				? await captureDefaultOutput()
+				: await props.captureOutput({
+						captureDefaultOutput,
+						page,
+						savedBody: currentSavedBody,
+					});
 
 		return {
 			committedBodyCountWhileProjectionGated,
@@ -608,21 +689,7 @@ export async function selectReviewFile(props: {
 	readonly path: string;
 }): Promise<void> {
 	await props.page.locator('[data-testid="review-viewer-shell"]').waitFor({ state: 'attached' });
-	const scrollTopByPath = await reviewTreeReachablePathScrollTopMap(props.page);
-	const scrollTopHint = scrollTopByPath.get(props.path);
-	if (scrollTopHint === undefined) {
-		throw new Error(`Review annotation journey cannot reach tree path ${props.path}.`);
-	}
-	await revealReviewTreeFilePath({ page: props.page, path: props.path, scrollTopHint });
-	await waitForVisibleReviewTreeFilePath({ page: props.page, path: props.path });
-	await props.page.evaluate((path: string): void => {
-		const treeHost = document.querySelector(
-			'[data-testid="bridge-review-trees-panel"] file-tree-container',
-		);
-		const row = treeHost?.shadowRoot?.querySelector(`[data-item-path="${CSS.escape(path)}"]`);
-		if (!(row instanceof HTMLElement)) throw new Error(`Review file row missing: ${path}`);
-		row.click();
-	}, props.path);
+	await selectReviewTreeFilePath({ page: props.page, path: props.path });
 }
 
 export async function selectRangeForAnnotation(props: {
@@ -658,6 +725,11 @@ export async function selectRangeForAnnotation(props: {
 				`Review annotation canvas is not interactive: ${JSON.stringify(interactionState)}`,
 			);
 		}
+		const additionRows = props.page
+			.locator('[data-testid="bridge-code-view-panel"]')
+			.locator('[data-additions] [data-column-number]');
+		await additionRows.nth(0).waitFor({ state: 'visible' });
+		await additionRows.nth(2).waitFor({ state: 'visible' });
 		[startBounds, endBounds] = await reviewAdditionRangeBounds({
 			endLine: props.endLine,
 			page: props.page,
@@ -698,13 +770,12 @@ export async function waitForCommittedAnnotationCommand(
 	operationKind: 'draft.edit.release' | 'draft.save' | 'root.create' | 'source.refresh',
 	surface: 'file' | 'review',
 ): Promise<{ readonly requestSequence: number; readonly sessionId: string | null }> {
-	const response = await page.waitForResponse((candidate): boolean =>
+	const settled = await waitForProductCallSettlement(page, (candidate): boolean =>
 		isAnnotationCommandResponse(candidate, operationKind, surface),
 	);
-	const body: unknown = await response.json();
+	const body: unknown = settled.result;
 	if (
 		!isUnknownRecord(body) ||
-		typeof body['requestSequence'] !== 'number' ||
 		body['kind'] !== 'call.completed' ||
 		!isUnknownRecord(body['call']) ||
 		body['call']['method'] !== `${surface}.annotations.command` ||
@@ -720,7 +791,7 @@ export async function waitForCommittedAnnotationCommand(
 	}
 	const outcome = body['call']['result']['outcome'];
 	return {
-		requestSequence: body['requestSequence'],
+		requestSequence: settled.requestSequence,
 		sessionId: typeof outcome['sessionId'] === 'string' ? outcome['sessionId'] : null,
 	};
 }
@@ -767,9 +838,19 @@ function isAnnotationCommandResponse(
 }
 
 export async function waitForSelectedFileReady(props: {
+	readonly expected?: {
+		readonly lineCount: number;
+		readonly path: string;
+		readonly sha256: string;
+	};
 	readonly oracle: BridgeViewerViteProductFixtureOracle;
 	readonly page: Page;
 }): Promise<void> {
+	const expected = props.expected ?? {
+		lineCount: props.oracle.fileContent.lineCount,
+		path: props.oracle.largeFilePath,
+		sha256: props.oracle.fileContent.sha256,
+	};
 	await props.page.waitForFunction(
 		({ expectedLineCount, expectedSha256, path }): boolean => {
 			const canvas = document.querySelector('[data-testid="bridge-file-viewer-code-canvas"]');
@@ -795,9 +876,9 @@ export async function waitForSelectedFileReady(props: {
 			);
 		},
 		{
-			expectedLineCount: props.oracle.fileContent.lineCount,
-			expectedSha256: props.oracle.fileContent.sha256,
-			path: props.oracle.largeFilePath,
+			expectedLineCount: expected.lineCount,
+			expectedSha256: expected.sha256,
+			path: expected.path,
 		},
 	);
 }

@@ -1,5 +1,7 @@
+import { uuidv7 } from 'uuidv7';
 import { expect } from 'vitest';
 
+import sessionCorpus from '../../test-fixtures/bridge-contract-fixtures/valid/bridge-product-session-corpus.json' with { type: 'json' };
 import type { BridgeCommWorkerPort } from './bridge-comm-worker-entry.js';
 import { encodeBridgeWorkerActiveViewerModeUpdateCommand } from './bridge-comm-worker-protocol.js';
 import type { BridgeCommWorkerReviewRuntimeSource } from './bridge-comm-worker-review-source-diff.js';
@@ -14,15 +16,13 @@ import {
 	BridgeProductBoundedAsyncQueue,
 	createBridgeProductDeferred,
 } from './bridge-product-async-queue.js';
-import type {
-	BridgeProductMetadataApplicationEvent,
-	BridgeProductMetadataDataFrame,
-} from './bridge-product-metadata-application-protocol.js';
+import type { BridgeProductBatchFrameSinks } from './bridge-product-batch-frame-router.js';
+import { bridgeProductBatchFrameSchema } from './bridge-product-batch-wire-contracts.js';
 import {
 	bridgeProductFileMetadataApplicationProtocol,
 	bridgeProductReviewMetadataApplicationProtocol,
 } from './bridge-product-metadata-application-registry.js';
-import { bridgeProductReviewMetadataEventSchema } from './bridge-product-review-metadata-contracts.js';
+import { bridgeProductReviewBatchRecordSchema } from './bridge-product-review-batch-record-contracts.js';
 import type {
 	BridgeProductContentStream,
 	BridgeProductMetadataApplicationSubscription,
@@ -31,6 +31,8 @@ import type {
 	BridgeProductPanePresentationFrame,
 	BridgeProductTransportSession,
 } from './bridge-product-transport.js';
+import type { BridgeProductViewInstallation } from './bridge-product-view-batch-receiver.js';
+import { createTestMetadataReopenPort } from './bridge-product-view-reopen.test-support.js';
 import type {
 	BridgeWorkerFileViewContentMetadata,
 	BridgeWorkerReviewContentMetadata,
@@ -54,28 +56,11 @@ export const reviewContentFixtureByDescriptorId = new Map<
 	string,
 	{ readonly itemId: string; readonly text: string }
 >();
+const pendingReviewBatchInstalls = new Set<Promise<void>>();
 
-type FileMetadataEvent = BridgeProductMetadataApplicationEvent<
-	typeof bridgeProductFileMetadataApplicationProtocol
->;
-export type FileMetadataDataFrame = BridgeProductMetadataDataFrame<FileMetadataEvent>;
 export type FileMetadataSubscription = BridgeProductMetadataApplicationSubscription<
 	typeof bridgeProductFileMetadataApplicationProtocol
 >;
-
-export function makeFileMetadataDataFrame(event: FileMetadataEvent): FileMetadataDataFrame {
-	return {
-		data: event,
-		metadataStreamId: 'file-metadata-test-stream',
-		operationCorrelationId: null,
-		sourceGeneration: event.source.subscriptionGeneration,
-		streamSequence: 1,
-		subscriptionId: 'file-metadata-test-subscription',
-		subscriptionKind: 'file.metadata',
-		subscriptionSequence: 1,
-		workerDerivationEpoch: 1,
-	};
-}
 
 export function createRecordingBridgeCommWorkerPort(
 	props: {
@@ -208,6 +193,7 @@ export function assertBridgeCommWorkerPreparationDrain(
 }
 
 export async function flushBridgeWorkerRuntimeContinuations(): Promise<void> {
+	await Promise.all(pendingReviewBatchInstalls);
 	await Array.from({ length: 50 }).reduce<Promise<void>>(
 		(previousFlush) => previousFlush.then(() => Promise.resolve()),
 		Promise.resolve(),
@@ -217,6 +203,7 @@ export async function flushBridgeWorkerRuntimeContinuations(): Promise<void> {
 export interface BridgeCommWorkerReviewProductTestSource {
 	readonly close: () => void;
 	readonly productTransport: BridgeProductTransportSession;
+	readonly viewScopes: ReviewViewScopeRequest[];
 	readonly publishReplacementSource: (
 		source: BridgeCommWorkerReviewProductTestSourceInput,
 		revision?: number,
@@ -232,36 +219,42 @@ export type BridgeCommWorkerReviewProductTestSourceInput = Omit<
 	'reviewPublicationIdentity'
 >;
 
-type ReviewMetadataEvent = BridgeProductMetadataApplicationEvent<
-	typeof bridgeProductReviewMetadataApplicationProtocol
->;
-type ReviewMetadataDataFrame = BridgeProductMetadataDataFrame<ReviewMetadataEvent>;
 type ReviewMetadataSubscription = BridgeProductMetadataApplicationSubscription<
 	typeof bridgeProductReviewMetadataApplicationProtocol
+>;
+type ReviewViewScopeRequest = Parameters<
+	NonNullable<BridgeProductTransportSession['setViewScopeForSubscription']>
+>[0];
+type ReviewViewScopeSettlement = Awaited<
+	ReturnType<NonNullable<BridgeProductTransportSession['setViewScopeForSubscription']>>
 >;
 
 export function createBridgeCommWorkerReviewProductTestSource(
 	props: {
-		readonly updateReviewMetadata?: ReviewMetadataSubscription['update'];
+		readonly setViewScopeForSubscription?: (
+			request: ReviewViewScopeRequest,
+		) => Promise<ReviewViewScopeSettlement>;
 	} = {},
 ): BridgeCommWorkerReviewProductTestSource {
-	const events = new BridgeProductBoundedAsyncQueue<ReviewMetadataDataFrame>(64);
 	let currentWorkerDerivationEpoch = 0;
-	let currentSnapshot: ReviewProductTestSnapshot | null = null;
 	let currentRevision = 0;
-	let streamSequence = 0;
-	let subscriptionSequence = 0;
+	let batchSinks: BridgeProductBatchFrameSinks | null = null;
+	let closed = false;
+	const lifecycleEvents = new BridgeProductBoundedAsyncQueue<never>(1);
+	const viewScopes: ReviewViewScopeRequest[] = [];
+	const scopeRevisionBySubscriptionId = new Map<string, number>();
 	const subscription: ReviewMetadataSubscription = {
 		cancel: async (): Promise<void> => {
-			events.close(true);
+			closed = true;
+			lifecycleEvents.close(true);
 		},
-		events,
+		events: lifecycleEvents,
 		subscriptionId: 'review-product-test-subscription',
 		subscriptionKind: 'review.metadata',
-		update: props.updateReviewMetadata ?? (async (): Promise<void> => {}),
 	};
 	const productTransport: BridgeProductTransportSession = {
-		bumpWorkerDerivationEpoch: (surface): number => {
+		...createTestMetadataReopenPort(),
+		advanceWorkerDerivationEpoch: (surface): number => {
 			if (surface === 'review') currentWorkerDerivationEpoch += 1;
 			return surface === 'review' ? currentWorkerDerivationEpoch : 0;
 		},
@@ -270,9 +263,7 @@ export function createBridgeCommWorkerReviewProductTestSource(
 			if (method === 'file.source.current') {
 				return { reason: 'review-product-test-source', status: 'unavailable' } as never;
 			}
-			if (method === 'review.publication.applied') {
-				return null as never;
-			}
+			if (method === 'review.publication.applied') return null as never;
 			return undefined as never;
 		},
 		openContent: (): never => {
@@ -280,16 +271,25 @@ export function createBridgeCommWorkerReviewProductTestSource(
 				'Review product test source requires the test to provide its content-open seam.',
 			);
 		},
+		setBatchFrameSinks: (sinks): void => {
+			batchSinks = sinks;
+		},
+		setViewScopeForSubscription: async (request): Promise<ReviewViewScopeSettlement> => {
+			viewScopes.push(request);
+			if (props.setViewScopeForSubscription !== undefined) {
+				return await props.setViewScopeForSubscription(request);
+			}
+			const scopeRevision = (scopeRevisionBySubscriptionId.get(request.subscriptionId) ?? 0) + 1;
+			scopeRevisionBySubscriptionId.set(request.subscriptionId, scopeRevision);
+			return { kind: 'accepted', scopeRevision };
+		},
 		setPanePresentationFrameSink: (
 			sink: (frame: BridgeProductPanePresentationFrame) => void,
 		): void => {
-			// This shared fixture models an already active Review pane. Hidden/dormant admission tests
-			// install their own transport so suppression remains explicit and independently proven.
 			sink({
 				fileRefreshFailure: null,
 				presentationRevision: 1,
 				kind: 'pane.presentation',
-
 				operationCorrelationId: null,
 				metadataStreamId: 'review-product-test-metadata-stream',
 				nativeActivity: 'foreground',
@@ -317,337 +317,254 @@ export function createBridgeCommWorkerReviewProductTestSource(
 	};
 	return {
 		close: (): void => {
-			events.close(true);
+			closed = true;
+			lifecycleEvents.close(true);
 		},
 		productTransport,
-		publishReplacementSource: (source, revision): void => {
-			const nextRevision = Math.max(currentRevision + 1, revision ?? currentRevision + 1);
-			const nextSnapshot = reviewProductSnapshotFromRuntimeSource(source, nextRevision);
-			events.push(metadataDataFrame(nextSnapshot));
-			currentSnapshot = nextSnapshot;
-			currentRevision = nextRevision;
-		},
-		publishSource: (source, revision): void => {
-			publishReviewProductTestSource(source, revision);
-		},
+		viewScopes,
+		publishReplacementSource: publishSource,
+		publishSource,
 	};
 
-	function publishReviewProductTestSource(
+	function publishSource(
 		source: BridgeCommWorkerReviewProductTestSourceInput,
 		revision?: number,
 	): void {
+		if (closed) throw new Error('Review product test source is closed.');
+		if (batchSinks === null) throw new Error('Review batch sinks were not installed.');
 		const nextRevision = Math.max(currentRevision + 1, revision ?? currentRevision + 1);
-		const nextSnapshot = reviewProductSnapshotFromRuntimeSource(source, nextRevision);
-		const event =
-			currentSnapshot === null
-				? nextSnapshot
-				: reviewProductDeltaBetweenSnapshots(currentSnapshot, nextSnapshot);
-		events.push(metadataDataFrame(event));
-		currentSnapshot = nextSnapshot;
+		const batch = reviewProductBatchFromRuntimeSource(
+			'open',
+			source,
+			nextRevision,
+			subscription.subscriptionId,
+		);
+		const installedSinks = batchSinks;
+		const installation = Promise.resolve().then(async (): Promise<void> => {
+			if (closed) return;
+			await installedSinks.install(batch);
+		});
+		pendingReviewBatchInstalls.add(installation);
+		void installation.then(
+			(): void => {
+				pendingReviewBatchInstalls.delete(installation);
+			},
+			(): void => {
+				pendingReviewBatchInstalls.delete(installation);
+			},
+		);
 		currentRevision = nextRevision;
-	}
-
-	function metadataDataFrame(event: ReviewMetadataEvent): ReviewMetadataDataFrame {
-		streamSequence += 1;
-		subscriptionSequence += 1;
-		return {
-			data: event,
-			metadataStreamId: 'review-product-test-metadata-stream',
-			operationCorrelationId: event.operationCorrelationId,
-			sourceGeneration: event.generation,
-			streamSequence,
-			subscriptionId: subscription.subscriptionId,
-			subscriptionKind: subscription.subscriptionKind,
-			subscriptionSequence,
-			workerDerivationEpoch: currentWorkerDerivationEpoch,
-		};
 	}
 }
 
-type ReviewProductTestSnapshot = Extract<
-	ReviewMetadataEvent,
-	{ readonly eventKind: 'review.snapshot' }
->;
-
-function reviewProductSnapshotFromRuntimeSource(
+function reviewProductBatchFromRuntimeSource(
+	snapshotCause: import('./bridge-product-batch-wire-contracts.js').BridgeProductSnapshotCause,
 	source: BridgeCommWorkerReviewProductTestSourceInput,
 	revision: number,
-): ReviewProductTestSnapshot {
+	subscriptionId: string,
+): BridgeProductViewInstallation {
 	const generation = 1;
 	const packageId = 'review-product-test-package';
 	const publicationId = reviewProductTestPublicationId(revision);
 	const sourceIdentity = 'review-product-test-source';
-	const contentSources = source.contentRequestDescriptors.map((descriptor) => ({
-		contentDigest: descriptor.contentDigest,
-		contentKind: 'review.content' as const,
-		descriptorId: descriptor.descriptorId,
-		encoding: descriptor.encoding,
-		endpointId: descriptor.endpointId,
-		handleId: descriptor.handleId,
-		isBinary: descriptor.isBinary,
-		itemId: descriptor.itemId,
-		language: descriptor.language,
-		mimeType: descriptor.mimeType,
-		packageId,
-		reviewGeneration: generation,
-		role: descriptor.role,
-		sourceIdentity,
-		wholeByteLength: descriptor.wholeByteLength,
-	}));
-	const contentSourcesByItemId = new Map<string, Array<(typeof contentSources)[number]>>();
-	for (const descriptor of contentSources) {
-		const itemContentSources = contentSourcesByItemId.get(descriptor.itemId) ?? [];
-		itemContentSources.push(descriptor);
-		contentSourcesByItemId.set(descriptor.itemId, itemContentSources);
-	}
 	const semanticsByItemId = new Map(
 		source.renderSemantics.map((semantics) => [semantics.itemId, semantics]),
 	);
-	const orderedContentItems = orderedReviewRuntimeContentItems(source);
-	const itemMetadata = orderedContentItems.map((contentItem) => {
+	const rowsById = new Map(source.rows.map((row) => [row.id, row]));
+	const items = orderedReviewRuntimeContentItems(source).map((contentItem) => {
 		const semantics = semanticsByItemId.get(contentItem.itemId);
-		const itemContentSources = contentSourcesByItemId.get(contentItem.itemId) ?? [];
-		const contentDescriptorIdsByRole = Object.fromEntries(
-			itemContentSources.map((descriptor) => [descriptor.role, descriptor.descriptorId]),
+		const displayPath = semantics?.displayPath ?? contentItem.path;
+		const contentByRole = Object.fromEntries(
+			(['base', 'diff', 'file', 'head'] as const).map((role) => {
+				const descriptor = source.contentRequestDescriptors.find(
+					(candidate) => candidate.itemId === contentItem.itemId && candidate.role === role,
+				);
+				return [
+					role,
+					descriptor === undefined
+						? { state: 'absent' }
+						: {
+								state: 'available',
+								source: {
+									contentDigest: descriptor.contentDigest,
+									contentKind: 'review.content',
+									descriptorId: descriptor.descriptorId,
+									encoding: descriptor.encoding,
+									endpointId: descriptor.endpointId,
+									handleId: descriptor.handleId,
+									isBinary: descriptor.isBinary,
+									itemId: descriptor.itemId,
+									language: descriptor.language,
+									mimeType: descriptor.mimeType,
+									packageId,
+									reviewGeneration: generation,
+									role: descriptor.role,
+									sourceIdentity,
+									wholeByteLength: descriptor.wholeByteLength,
+								},
+							},
+				];
+			}),
 		);
 		const contentHashesByRole = Object.fromEntries(
-			itemContentSources.map((descriptor) => [descriptor.role, descriptor.contentDigest.value]),
+			source.contentRequestDescriptors
+				.filter((descriptor) => descriptor.itemId === contentItem.itemId)
+				.map((descriptor) => [descriptor.role, descriptor.contentDigest.value]),
 		);
-		const contentRoles = itemContentSources.map((descriptor) => descriptor.role);
-		const displayPath = semantics?.displayPath ?? contentItem.path;
-		return {
+		const pathSegments = displayPath.split('/');
+		const parentPath = pathSegments.length > 1 ? pathSegments.slice(0, -1).join('/') : null;
+		return bridgeProductReviewBatchRecordSchema.parse({
 			additions: 0,
 			basePath: semantics?.basePath ?? displayPath,
 			changeKind: semantics?.changeKind ?? 'modified',
-			contentDescriptorIdsByRole,
+			contentByRole,
 			contentHashesByRole,
-			contentRoles,
 			deletions: 0,
+			extentByRole: {
+				base: source.contentRequestDescriptors.some(
+					(descriptor) => descriptor.itemId === contentItem.itemId && descriptor.role === 'base',
+				)
+					? (contentItem.contentLineCountsByRole.base ?? null)
+					: null,
+				diff: source.contentRequestDescriptors.some(
+					(descriptor) => descriptor.itemId === contentItem.itemId && descriptor.role === 'diff',
+				)
+					? (contentItem.contentLineCountsByRole.diff ?? null)
+					: null,
+				file: source.contentRequestDescriptors.some(
+					(descriptor) => descriptor.itemId === contentItem.itemId && descriptor.role === 'file',
+				)
+					? (contentItem.contentLineCountsByRole.file ?? null)
+					: null,
+				head: source.contentRequestDescriptors.some(
+					(descriptor) => descriptor.itemId === contentItem.itemId && descriptor.role === 'head',
+				)
+					? (contentItem.contentLineCountsByRole.head ?? null)
+					: null,
+			},
 			extension: reviewProductTestPathExtension(displayPath),
-			fileClass: 'source' as const,
+			fileClass: 'source',
 			headPath: semantics?.headPath ?? displayPath,
 			isHiddenByDefault: false,
 			itemId: contentItem.itemId,
 			language: contentItem.language,
 			mimeTypes: ['text/plain'],
+			parentPath,
 			provenance: { agentSessionIds: [], operationIds: [], promptIds: [] },
-			reviewPriority: 'normal' as const,
-			reviewState: 'unreviewed' as const,
-		};
+			recordKind: 'item',
+			reviewPriority: 'normal',
+			reviewState: 'unreviewed',
+			sortKey: rowsById.get(contentItem.itemId)?.index ?? 0,
+		});
 	});
-	const treeRows = orderedReviewRuntimeRows(source).map((row) => {
-		const contentItem = source.contentItems.find((candidate) => candidate.itemId === row.id);
-		return {
-			depth: reviewRuntimeRowDepth(source, row.id),
-			isDirectory: contentItem === undefined,
-			itemId: contentItem?.itemId ?? null,
-			path: contentItem?.path ?? row.id,
-			rowId: row.id,
-		};
-	});
-	const extentFacts = orderedContentItems.flatMap((contentItem) =>
-		Object.entries(contentItem.contentLineCountsByRole).flatMap(([contentRole, lineCount]) =>
-			lineCount === undefined || lineCount === null
-				? []
-				: [{ contentRole, itemId: contentItem.itemId, lineCount }],
-		),
-	);
-	const event = {
-		baseEndpoint: {
-			createdAtUnixMilliseconds: 1,
-			endpointId: 'review-product-test-base',
-			kind: 'gitRef',
-			label: 'base',
-			providerIdentity: 'review-product-test-provider',
-			repoId: 'review-product-test-repo',
-			worktreeId: 'review-product-test-worktree',
+	const publication = bridgeProductReviewBatchRecordSchema.parse({
+		desired: { reviewComparison: null, status: 'ready' },
+		displayed: {
+			baseEndpoint: {
+				createdAtUnixMilliseconds: 1,
+				endpointId: 'review-product-test-base',
+				kind: 'gitRef',
+				label: 'base',
+				providerIdentity: 'review-product-test-provider',
+				repoId: 'review-product-test-repo',
+				worktreeId: 'review-product-test-worktree',
+			},
+			comparisonOrigin: null,
+			generation,
+			headEndpoint: {
+				createdAtUnixMilliseconds: 1,
+				endpointId: 'review-product-test-head',
+				kind: 'workingTree',
+				label: 'head',
+				providerIdentity: 'review-product-test-provider',
+				repoId: 'review-product-test-repo',
+				worktreeId: 'review-product-test-worktree',
+			},
+			packageId,
+			publicationId,
+			query: {
+				baseEndpointId: 'review-product-test-base',
+				comparisonSemantics: 'threeDot',
+				fileTarget: null,
+				grouping: { kind: 'folder' },
+				headEndpointId: 'review-product-test-head',
+				pathScope: [],
+				provenanceFilter: {
+					agentSessionIds: [],
+					operationIds: [],
+					paneIds: [],
+					promptIds: [],
+					sourceKinds: [],
+				},
+				queryId: sourceIdentity,
+				queryKind: 'compare',
+				repoId: 'review-product-test-repo',
+				viewFilter: {
+					changeKinds: [],
+					excludedExtensions: [],
+					excludedFileClasses: [],
+					excludedPathGlobs: [],
+					includedExtensions: [],
+					includedFileClasses: [],
+					includedPathGlobs: [],
+					reviewStates: [],
+					showBinaryFiles: true,
+					showHiddenFiles: false,
+					showLargeFiles: true,
+				},
+				worktreeId: 'review-product-test-worktree',
+			},
+			reviewComparison: null,
+			reviewedSubjectLabel: null,
+			revision,
+			summary: {
+				additions: 0,
+				deletions: 0,
+				filesChanged: items.length,
+				hiddenFileCount: 0,
+				visibleFileCount: items.length,
+			},
 		},
-		contentSources,
-		eventKind: 'review.snapshot',
-		operationCorrelationId: null,
-		extentFacts,
-		generation,
-		headEndpoint: {
-			createdAtUnixMilliseconds: 1,
-			endpointId: 'review-product-test-head',
-			kind: 'workingTree',
-			label: 'head',
-			providerIdentity: 'review-product-test-provider',
-			repoId: 'review-product-test-repo',
-			worktreeId: 'review-product-test-worktree',
-		},
-		itemMetadata,
-		itemWindow: {
-			finalWindow: true,
-			itemCount: itemMetadata.length,
-			startIndex: 0,
-			totalItemCount: itemMetadata.length,
-		},
-		packageId,
-		presentationRevision: revision,
 		publicationId,
-		query: {
-			baseEndpointId: 'review-product-test-base',
-			comparisonSemantics: 'threeDot',
-			fileTarget: null,
-			grouping: { kind: 'folder' },
-			headEndpointId: 'review-product-test-head',
-			pathScope: [],
-			provenanceFilter: {
-				agentSessionIds: [],
-				operationIds: [],
-				paneIds: [],
-				promptIds: [],
-				sourceKinds: [],
-			},
-			queryId: 'review-product-test-query',
-			queryKind: 'compare',
-			repoId: 'review-product-test-repo',
-			viewFilter: {
-				changeKinds: [],
-				excludedExtensions: [],
-				excludedFileClasses: [],
-				excludedPathGlobs: [],
-				includedExtensions: [],
-				includedFileClasses: [],
-				includedPathGlobs: [],
-				reviewStates: [],
-				showBinaryFiles: true,
-				showHiddenFiles: false,
-				showLargeFiles: true,
-			},
-			worktreeId: 'review-product-test-worktree',
-		},
+		classifiedRefreshImpact: null,
+		recordKind: 'publication',
 		revision,
-		reviewComparison: null,
-		sourceIdentity,
-		summary: {
-			additions: 0,
-			deletions: 0,
-			filesChanged: itemMetadata.length,
-			hiddenFileCount: 0,
-			visibleFileCount: itemMetadata.length,
-		},
-		treeRows,
-		treeWindow: {
-			finalWindow: true,
-			rowCount: treeRows.length,
-			startIndex: 0,
-			totalRowCount: treeRows.length,
-		},
-	};
-	return bridgeProductReviewMetadataEventSchema.parse(event) as ReviewProductTestSnapshot;
-}
-
-function reviewProductDeltaBetweenSnapshots(
-	previousSnapshot: ReviewProductTestSnapshot,
-	nextSnapshot: ReviewProductTestSnapshot,
-): ReviewMetadataEvent {
-	const previousItemsById = new Map(
-		previousSnapshot.itemMetadata.map((item) => [item.itemId, item]),
-	);
-	const nextItemsById = new Map(nextSnapshot.itemMetadata.map((item) => [item.itemId, item]));
-	const previousContentSourcesById = new Map(
-		previousSnapshot.contentSources.map((source) => [source.descriptorId, source]),
-	);
-	const nextContentSourcesById = new Map(
-		nextSnapshot.contentSources.map((source) => [source.descriptorId, source]),
-	);
-	const removedItemIds = [...previousItemsById.keys()].filter(
-		(itemId) => !nextItemsById.has(itemId),
-	);
-	const removedDescriptorIds = [...previousContentSourcesById.keys()].filter(
-		(descriptorId) => !nextContentSourcesById.has(descriptorId),
-	);
-	const changedItems = nextSnapshot.itemMetadata.filter(
-		(item) => !sameReviewProductTestValue(item, previousItemsById.get(item.itemId)),
-	);
-	const changedContentSources = nextSnapshot.contentSources.filter(
-		(source) =>
-			!sameReviewProductTestValue(source, previousContentSourcesById.get(source.descriptorId)),
-	);
-	const previousExtentFactsByKey = new Map(
-		previousSnapshot.extentFacts.map((fact) => [reviewProductTestExtentFactKey(fact), fact]),
-	);
-	const changedExtentFacts = nextSnapshot.extentFacts.filter(
-		(fact) =>
-			!sameReviewProductTestValue(
-				fact,
-				previousExtentFactsByKey.get(reviewProductTestExtentFactKey(fact)),
-			),
-	);
-	const previousItemOrder = previousSnapshot.itemMetadata.map((item) => item.itemId);
-	const nextItemOrder = nextSnapshot.itemMetadata.map((item) => item.itemId);
-	const operations = [
-		...changedItems.map((item) => ({ operationKind: 'upsertItem' as const, item })),
-		...(removedItemIds.length === 0
-			? []
-			: [{ operationKind: 'removeItems' as const, itemIds: removedItemIds }]),
-		...(sameReviewProductTestValue(previousItemOrder, nextItemOrder)
-			? []
-			: [{ operationKind: 'replaceItemOrder' as const, itemIds: nextItemOrder }]),
-		...(sameReviewProductTestValue(previousSnapshot.treeRows, nextSnapshot.treeRows)
-			? []
-			: [
-					{
-						deleteCount: previousSnapshot.treeRows.length,
-						operationKind: 'spliceTreeRows' as const,
-						rows: nextSnapshot.treeRows,
-						startIndex: 0,
-					},
-				]),
-		...(changedExtentFacts.length === 0
-			? []
-			: [{ operationKind: 'upsertExtentFacts' as const, facts: changedExtentFacts }]),
-		...(removedDescriptorIds.length === 0
-			? []
-			: [
-					{
-						descriptorIds: removedDescriptorIds,
-						operationKind: 'invalidateContentSources' as const,
-					},
-				]),
-	];
-	return bridgeProductReviewMetadataEventSchema.parse({
-		addedLineCount: 0,
-		affectedFileCount: changedItems.length + removedItemIds.length,
-		affectedStableFileIdentities: [
-			...new Set([...changedItems.map((item) => item.itemId), ...removedItemIds]),
-		],
-		contentSources: changedContentSources,
-		deletedLineCount: 0,
-		eventKind: 'review.delta',
-		operationCorrelationId: null,
-		fromRevision: previousSnapshot.revision,
-		generation: nextSnapshot.generation,
-		newlyImportedCommitCount: 0,
-		operations,
-		packageId: nextSnapshot.packageId,
-		preDeliveryPresentationClass: { kind: 'ordinary' },
-		presentationRevision: nextSnapshot.presentationRevision,
-		publicationId: nextSnapshot.publicationId,
-		revision: nextSnapshot.revision,
-		reviewComparison: nextSnapshot.reviewComparison,
-		sourceIdentity: nextSnapshot.sourceIdentity,
-		summary: nextSnapshot.summary,
-		toRevision: nextSnapshot.revision,
 	});
+	if (
+		publication.recordKind !== 'publication' ||
+		items.some((item) => item.recordKind !== 'item')
+	) {
+		throw new Error('Expected typed Review publication and item records.');
+	}
+	const begin = bridgeProductBatchFrameSchema.parse({
+		...sessionCorpus.transportV2.batchFrames[0],
+		snapshotCause,
+		batchId: uuidv7(),
+		publicationId,
+		scope: { kind: 'review', interests: [] },
+		subscriptionId,
+		subscriptionKind: 'review.metadata',
+		targetRevision: revision,
+	});
+	if (begin.kind !== 'subscription.batchBegin') throw new Error('Review batch begin missing.');
+	return {
+		certified: true,
+		staleRecords: [],
+		begin,
+		domain: 'default',
+		records: [
+			...items.map((item) => {
+				if (item.recordKind !== 'item') throw new Error('Expected Review item record.');
+				return { key: item.itemId, revision, value: item };
+			}),
+			{ key: 'publication', revision, value: publication },
+		],
+	};
 }
 
 function reviewProductTestPublicationId(revision: number): string {
 	const revisionSuffix = revision.toString(16).padStart(12, '0').slice(-12);
 	return `00000000-0000-7000-8000-${revisionSuffix}`;
-}
-
-function reviewProductTestExtentFactKey(fact: {
-	readonly contentRole: string;
-	readonly itemId: string;
-}): string {
-	return `${fact.itemId}:${fact.contentRole}`;
-}
-
-function sameReviewProductTestValue(left: unknown, right: unknown): boolean {
-	return JSON.stringify(left) === JSON.stringify(right);
 }
 
 function orderedReviewRuntimeRows(
@@ -670,23 +587,6 @@ function orderedReviewRuntimeContentItems(
 		const contentItem = contentItemsById.get(itemId);
 		return contentItem === undefined ? [] : [contentItem];
 	});
-}
-
-function reviewRuntimeRowDepth(
-	source: BridgeCommWorkerReviewProductTestSourceInput,
-	rowId: string,
-): number {
-	const rowsById = new Map(source.rows.map((row) => [row.id, row]));
-	const visitedRowIds = new Set<string>();
-	let depth = 0;
-	let currentRow = rowsById.get(rowId);
-	while (currentRow?.parentId !== null && currentRow?.parentId !== undefined) {
-		if (visitedRowIds.has(currentRow.parentId)) break;
-		visitedRowIds.add(currentRow.parentId);
-		depth += 1;
-		currentRow = rowsById.get(currentRow.parentId);
-	}
-	return depth;
 }
 
 function reviewProductTestPathExtension(path: string): string | null {

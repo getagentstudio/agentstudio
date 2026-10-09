@@ -18,13 +18,7 @@ import {
 	createBridgeMainRenderFulfillmentCoordinator,
 	type BridgeMainRenderPublicationItem,
 } from '../core/comm-worker/bridge-main-render-fulfillment-coordinator.js';
-import type { BridgeWorkerFilePierreRenderJobEvent } from '../core/comm-worker/bridge-worker-contracts.js';
-import {
-	buildBridgeWorkerPierreRenderJob,
-	type BridgeWorkerRenderSourceCorrelation,
-} from '../core/comm-worker/bridge-worker-pierre-render-job.js';
 import type { BridgeWorkerRenderDispositionReceipt } from '../core/comm-worker/bridge-worker-render-fulfillment.js';
-import { makeBridgeWorkerRenderReceiptIdentity } from '../core/comm-worker/bridge-worker-render-fulfillment.test-support.js';
 import { bridgePierreOptionalHighlightLanguage } from '../review-viewer/workers/pierre/bridge-pierre-language-normalization.js';
 import { createWorktreeAnnotationBrowserProviderHarness } from '../worktree-annotations/worktree-annotation-browser-test-support.js';
 import {
@@ -35,6 +29,7 @@ import {
 	bridgeFileViewerCodeViewOptions,
 	deriveBridgeFilesCodeViewOptions,
 } from './bridge-file-viewer-code-view-options.js';
+import { makeFilePublication } from './bridge-file-viewer-render-fulfillment.test-support.js';
 
 type ExactFilePierreItem = Extract<BridgeMainRenderPublicationItem, { readonly type: 'file' }> &
 	CodeViewFileItem;
@@ -566,8 +561,13 @@ describe('BridgeFileViewerCodePanel render fulfillment', () => {
 				),
 			);
 			expect(
-				document.querySelector('[data-testid="bridge-file-viewer-content-state"]')?.textContent,
-			).toContain('Loading file');
+				document
+					.querySelector('[data-bridge-region="file-content"]')
+					?.getAttribute('data-presentation-state'),
+			).toBe('updating');
+			expect(
+				document.querySelector('[data-bridge-region="file-content"] [data-slot="skeleton"]'),
+			).toBeNull();
 			const retainedView = rendered.getByTestId('bridge-file-viewer-code-view').element();
 			expect(getComputedStyle(retainedView).visibility).toBe('visible');
 			expect(mountedCodeView.current).toBe(capturedCodeView);
@@ -618,81 +618,6 @@ describe('BridgeFileViewerCodePanel render fulfillment', () => {
 		}
 	});
 });
-
-function makeFilePublication(props: {
-	readonly contentsMarker: string;
-	readonly publicationSequence: number;
-	readonly version: number;
-}): BridgeWorkerFilePierreRenderJobEvent {
-	const itemId = 'file-1';
-	const cacheKey = `cache-${props.contentsMarker}`;
-	const sourceCorrelation = {
-		descriptorId: `descriptor-${props.contentsMarker}`,
-		itemId,
-		observedSha256: 'd'.repeat(64),
-		position: 'whole',
-		requestId: `request-${props.contentsMarker}`,
-		role: 'file',
-		sourceGeneration: props.publicationSequence,
-		sourceIdentity: `source-${props.contentsMarker}`,
-	} satisfies BridgeWorkerRenderSourceCorrelation;
-	const job = buildBridgeWorkerPierreRenderJob({
-		bridgeDemandRank: { lane: 'selected', priority: props.publicationSequence },
-		budget: { className: 'interactive', maxBytes: 512 * 1024, maxWindowLines: 400 },
-		contentCacheKey: cacheKey,
-		contentHash: `sha256:${props.contentsMarker}`,
-		itemId,
-		language: 'swift',
-		payload: {
-			item: {
-				bridgeMetadata: {
-					cacheKey,
-					contentRoles: ['file'],
-					contentState: 'hydrated',
-					displayPath: 'Sources/App/View.swift',
-					itemId,
-					lineCount: 1,
-				},
-				file: {
-					cacheKey,
-					contents: `let value = "${props.contentsMarker}"\n`,
-					lang: 'swift',
-					name: 'Sources/App/View.swift',
-				},
-				id: `file:${itemId}`,
-				type: 'file',
-				version: props.version,
-			},
-			kind: 'codeViewFileItem',
-		},
-		renderKind: 'fileText',
-		sourceCorrelations: [sourceCorrelation],
-		window: { endLine: 1, startLine: 1, totalLineCount: 1 },
-	});
-	return {
-		direction: 'serverWorkerToMain',
-		job,
-		kind: 'filePierreRenderJob',
-		publicationSequence: props.publicationSequence,
-		renderReceiptIdentity: makeBridgeWorkerRenderReceiptIdentity({
-			itemId,
-			publicationSequence: props.publicationSequence,
-			surface: 'file',
-			workerDerivationEpoch: 1,
-		}),
-		surface: 'file',
-		transferDescriptors: [
-			{
-				byteLength: job.payloadByteLength,
-				fieldPath: ['job', 'payload'],
-				messageKind: 'filePierreRenderJob',
-				mode: 'clone',
-			},
-		],
-		wireVersion: 1,
-		workerDerivationEpoch: 1,
-	};
-}
 
 function dispositionKinds(
 	dispositions: readonly BridgeWorkerRenderDispositionReceipt[],

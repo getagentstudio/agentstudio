@@ -609,28 +609,9 @@ async function registerRuntimeWithInitialReviewSource(
 		4,
 	);
 	await flushBridgeWorkerRuntimeContinuations();
-	await drainAllScheduledPreparations(initializationDrains);
 	isInitializingSource = false;
+	for (const drain of initializationDrains) schedulePreparationDrain(drain);
 	return reviewProductSource;
-}
-
-async function drainAllScheduledPreparations(
-	scheduledDrains: BridgeCommWorkerPreparationDrain[],
-	nextDrainIndex = 0,
-	remainingRounds = 16,
-): Promise<void> {
-	await flushBridgeWorkerRuntimeContinuations();
-	const drainsForRound = scheduledDrains.slice(nextDrainIndex);
-	if (drainsForRound.length === 0) return;
-	if (remainingRounds === 0) {
-		throw new Error('Bridge render-fulfillment initialization exceeded its bounded drain rounds.');
-	}
-	await Promise.all(drainsForRound.map((drain) => drain()));
-	return drainAllScheduledPreparations(
-		scheduledDrains,
-		nextDrainIndex + drainsForRound.length,
-		remainingRounds - 1,
-	);
 }
 
 async function drainUntilReviewPublication(props: {

@@ -94,7 +94,7 @@ private func queryHTTPFileAnnotationProjection(
             ],
         ]
     ]) { _, newValue in newValue }
-    let response = try await executeHTTPAnnotationProjectionControl(
+    let response = try await executeHTTPControl(
         client: client,
         connection: connection,
         object: queryObject
@@ -167,12 +167,6 @@ private func openHTTPAnnotationProjectionContent(
     var reachedTerminal = false
     while !reachedTerminal {
         let frame = try await recorder.nextFrame()
-        try await acknowledgeHTTPContentFrame(
-            client: client,
-            connection: connection,
-            request: strictRequest,
-            contentSequence: frame.header.contentSequence
-        )
         switch frame.header {
         case .accepted(let accepted):
             guard case .annotationProjection(let identity) = accepted.identity,
@@ -183,8 +177,22 @@ private func openHTTPAnnotationProjectionContent(
             else {
                 throw HTTPAnnotationProjectionIntegrationError.acceptedIdentityMismatch
             }
+            try await acknowledgeHTTPContentThrough(
+                client: client,
+                connection: connection,
+                request: strictRequest,
+                receivedThroughContentSequence: frame.header.contentSequence,
+                dataFrameRecorder: nil
+            )
         case .data:
             pageData.append(frame.payload)
+            try await acknowledgeHTTPContentThrough(
+                client: client,
+                connection: connection,
+                request: strictRequest,
+                receivedThroughContentSequence: frame.header.contentSequence,
+                dataFrameRecorder: recorder
+            )
         case .end(let end):
             guard end.endOfSource,
                 end.observedByteLength == pageData.count,
@@ -202,11 +210,12 @@ private func openHTTPAnnotationProjectionContent(
     return pageData
 }
 
-private func acknowledgeHTTPContentFrame(
+private func acknowledgeHTTPContentThrough(
     client: some TestClientProtocol,
     connection: HTTPProductConnection,
     request: BridgeProductAnnotationProjectionContentRequest,
-    contentSequence: Int
+    receivedThroughContentSequence: Int,
+    dataFrameRecorder: HTTPContentFrameRecorder?
 ) async throws {
     let capabilityHeader = try #require(
         HTTPField.Name(BridgeProductWireContract.capabilityHeaderName)
@@ -214,11 +223,10 @@ private func acknowledgeHTTPContentFrame(
     let body = try JSONSerialization.data(
         withJSONObject: [
             "contentRequestId": request.contentRequestID,
-            "contentSequence": contentSequence,
-            "kind": "stream.frameObserved",
+            "receivedThroughContentSequence": receivedThroughContentSequence,
+            "kind": "content.acknowledge",
             "leaseId": request.leaseID,
             "paneSessionId": request.paneSessionID,
-            "streamKind": "content",
             "wireVersion": request.wireVersion,
             "workerInstanceId": request.workerInstanceID,
         ],
@@ -233,48 +241,29 @@ private func acknowledgeHTTPContentFrame(
         ],
         body: ByteBuffer(data: body)
     )
+    if response.status.code == 404,
+        let dataFrameRecorder,
+        await dataFrameRecorder.hasReceivedTerminalFrame(),
+        let refusal = try? BridgeProductStrictJSON.decode(
+            BridgeProductContentAcknowledgementRefusedResponse.self,
+            from: Data(response.body.readableBytesView)
+        ),
+        refusal.reason == .unknownRead,
+        refusal.contentRequestId == request.contentRequestID,
+        refusal.leaseId == request.leaseID,
+        refusal.paneSessionId == request.paneSessionID,
+        refusal.receivedThroughContentSequence == receivedThroughContentSequence,
+        refusal.wireVersion == request.wireVersion,
+        refusal.workerInstanceId == request.workerInstanceID
+    {
+        return
+    }
     guard response.status == .noContent else {
         throw unexpectedHTTPAnnotationResponse(
             response,
-            context: "annotation projection frame acknowledgement sequence \(contentSequence)"
+            context: "annotation projection cumulative credit through \(receivedThroughContentSequence)"
         )
     }
-}
-
-private func executeHTTPAnnotationProjectionControl(
-    client: some TestClientProtocol,
-    connection: HTTPProductConnection,
-    object: [String: Any]
-) async throws -> BridgeProductControlResponse {
-    let capabilityHeader = try #require(
-        HTTPField.Name(BridgeProductWireContract.capabilityHeaderName)
-    )
-    let response = try await client.execute(
-        uri: "/__bridge-product/command",
-        method: .post,
-        headers: [
-            .contentType: "application/json",
-            capabilityHeader: connection.capability,
-        ],
-        body: ByteBuffer(
-            data: try JSONSerialization.data(withJSONObject: object, options: [.sortedKeys])
-        )
-    )
-    guard response.status == .ok,
-        response.headers[.contentType] == "application/json"
-    else {
-        throw unexpectedHTTPAnnotationResponse(
-            response,
-            context: String(
-                data: try JSONSerialization.data(withJSONObject: object, options: [.sortedKeys]),
-                encoding: .utf8
-            ) ?? "<invalid UTF-8 request>"
-        )
-    }
-    return try BridgeProductStrictJSON.decode(
-        BridgeProductControlResponse.self,
-        from: Data(response.body.readableBytesView)
-    )
 }
 
 private func httpAnnotationProjectionControlIdentity(
@@ -355,6 +344,15 @@ actor HTTPContentFrameRecorder: RecordingResponseBodySink {
             }
             await withCheckedContinuation { continuation in
                 nextFrameWaiters.append(continuation)
+            }
+        }
+    }
+
+    func hasReceivedTerminalFrame() -> Bool {
+        frames.contains { frame in
+            switch frame.header {
+            case .end, .error, .reset: true
+            case .accepted, .data: false
             }
         }
     }

@@ -36,7 +36,7 @@ import {
 	waitForBackpressureTelemetry,
 } from './bridge-viewer-vite-backpressure-telemetry.ts';
 import { launchBridgeViewerE2EChromium } from './bridge-viewer-vite-e2e-browser.ts';
-import { observeFrameAcknowledgementQuiescence } from './bridge-viewer-vite-frame-acknowledgement-quiescence.ts';
+import { observeSubscriptionReceiptQuiescence } from './bridge-viewer-vite-frame-acknowledgement-quiescence.ts';
 import {
 	createBridgeViewerViteProductFixture,
 	startBridgeViewerOwnedViteProductServer,
@@ -228,170 +228,163 @@ async function withBoundedTimeout<TResult>(
 }
 
 export function registerBridgeViewerViteAnnotationBackpressureJourneyTests(): void {
-	test(
-		'1,699-item Review keeps root and five replies responsive and durable',
-		async (): Promise<void> => {
-			const milestones = new AnnotationBackpressureMilestones();
-			let fixture: Awaited<ReturnType<typeof createBridgeViewerViteProductFixture>> | null = null;
-			let server: BridgeViewerOwnedViteProductServer | null = null;
-			let failure: JourneyFailureDiagnostic | null = null;
-			let cleanupFailure: JourneyFailureDiagnostic | null = null;
-			let fixtureCleanupState: 'disposed' | 'failed' | 'not-created' = 'not-created';
-			let serverCleanupState: 'failed' | 'not-started' | 'stopped' = 'not-started';
-			try {
-				const createdFixture = await runMilestone({
-					after: 'fixture.ready',
-					before: 'fixture.starting',
-					milestones,
-					operation: async () =>
-						createBridgeViewerViteProductFixture({
-							reviewChangedFileCount: stressReviewItemCount,
-						}),
-				});
-				fixture = createdFixture;
-				server = await runMilestone({
-					after: 'server.ready',
-					before: 'server.starting',
-					milestones,
-					operation: async () => startBridgeViewerOwnedViteProductServer(createdFixture.oracle),
-				});
-				const fileSeed = await runAnnotationSaveJourney({
-					oracle: createdFixture.oracle,
-					server,
-					surface: 'file',
-				});
-				const releaseLargeCatalogFixture = await cloneSavedAnnotationMessagesIntoCompletedSession({
-					cloneCount: stressAnnotationCatalogCloneCount,
-					dataRootPath: createdFixture.oracle.dataRootPath,
-					sourceMessageId: fileSeed.outputIdentity.messageId,
-					sourceSessionId: fileSeed.outputIdentity.sessionId,
-					sourceThreadId: fileSeed.outputIdentity.threadId,
-				});
-				const observations = await runAnnotationBackpressureJourney({
-					milestones,
-					oracle: createdFixture.oracle,
-					releaseLargeCatalogFixture,
-					server,
-					undemandedSessionId: fileSeed.outputIdentity.sessionId,
-				});
-				milestones.transition('assertions.running');
-				expect(createdFixture.oracle.reviewFiles).toHaveLength(stressReviewItemCount);
-				expect(observations.exactBodyCountAfterReload).toBe(6);
-				expect(new Set(observations.messageIds).size).toBe(6);
-				expect(observations.catalogTelemetry.windowCount).toBeGreaterThanOrEqual(2);
-				expect(observations.catalogTelemetry.maximumUnitByteCount).toBeLessThanOrEqual(128 * 1024);
-				expect(observations.catalogTelemetry.presentationRevisionAfter).toBe(
-					observations.catalogTelemetry.presentationRevisionBefore + 1,
-				);
-				expect(
-					observations.catalogTelemetry.longTaskCountDelta,
-					`catalog-scoped long-task count: ${JSON.stringify({
-						continuousBounds: {
-							mainBeginStartTimeMilliseconds:
-								observations.catalogTelemetry.mainBeginStartTimeMilliseconds,
-							mainCommitStartTimeMilliseconds:
-								observations.catalogTelemetry.mainCommitStartTimeMilliseconds,
-						},
-						mainStagingSamples: observations.catalogTelemetry.mainStagingSamples,
-						matchedEntries: observations.catalogTelemetry.longTasksOverlappingMainStaging,
-						observation: observations.catalogTelemetry.longTaskObservation,
-					})}`,
-				).toBe(0);
-				expect(
-					observations.catalogTelemetry.undemandedSessionRichFetchCount,
-					'undemanded-session rich-fetch count',
-				).toBe(0);
-				expect(
-					observations.catalogTelemetry.undemandedSessionAcquireCount,
-					'completed seed Review demand-acquire count',
-				).toBe(0);
-				expect(observations.fileTelemetry.currentCount, 'File outstanding publication count').toBe(
-					0,
-				);
-				expect(observations.fileTelemetry.highWaterMark).toBe(1);
-				expect(
-					observations.reviewTelemetry.currentCount,
-					'Review outstanding publication count',
-				).toBe(0);
-				expect(observations.reviewTelemetry.highWaterMark).toBeGreaterThan(0);
-				expect(observations.reviewTelemetry.highWaterMark).toBeLessThanOrEqual(12);
-				expect(observations.reviewTelemetry.receiptProducedCount).toBeGreaterThan(0);
-				expect(
-					observations.reviewTelemetry.receiptPendingCount,
-					'Review pending receipt count',
-				).toBe(0);
-				expect(observations.reviewTelemetry.receiptHighWaterMark).toBeGreaterThan(0);
-				expect(observations.reviewTelemetry.receiptHighWaterMark).toBeLessThanOrEqual(6_144);
-				expect(observations.reviewTelemetry.maximumReceiptPendingAgeMilliseconds).toBeLessThan(
-					renderReceiptLeaseMilliseconds,
-				);
-				expect(observations.reviewTelemetry.maximumPublicationAgeMilliseconds).toBeLessThan(
-					renderReceiptLeaseMilliseconds,
-				);
-				expect(observations.reviewTelemetry.maximumWorkerQueueWaitMilliseconds).toBeLessThan(
-					renderReceiptLeaseMilliseconds,
-				);
-				expect(observations.reviewTelemetry.responseBeforeOwnerEffectObserved).toBe(true);
-				expect(observations.reviewTelemetry.failureCount, 'Review runtime failure count').toBe(0);
-				milestones.transition('assertions.complete');
-			} catch (error: unknown) {
-				if (server !== null) {
-					try {
-						const telemetryResponse = await fetch(
-							new URL('/__bridge-dev-telemetry/status', server.origin),
-						);
-						if (telemetryResponse.ok) {
-							milestones.recordFailureTelemetry(await telemetryResponse.json());
-						}
-					} catch {
-						// Preserve the product failure when optional diagnostics are unavailable.
+	test('1,699-item Review keeps root and five replies responsive and durable', async (): Promise<void> => {
+		const milestones = new AnnotationBackpressureMilestones();
+		let fixture: Awaited<ReturnType<typeof createBridgeViewerViteProductFixture>> | null = null;
+		let server: BridgeViewerOwnedViteProductServer | null = null;
+		let failure: JourneyFailureDiagnostic | null = null;
+		let cleanupFailure: JourneyFailureDiagnostic | null = null;
+		let fixtureCleanupState: 'disposed' | 'failed' | 'not-created' = 'not-created';
+		let serverCleanupState: 'failed' | 'not-started' | 'stopped' = 'not-started';
+		try {
+			const createdFixture = await runMilestone({
+				after: 'fixture.ready',
+				before: 'fixture.starting',
+				milestones,
+				operation: async () =>
+					createBridgeViewerViteProductFixture({
+						reviewChangedFileCount: stressReviewItemCount,
+					}),
+			});
+			fixture = createdFixture;
+			server = await runMilestone({
+				after: 'server.ready',
+				before: 'server.starting',
+				milestones,
+				operation: async () => startBridgeViewerOwnedViteProductServer(createdFixture.oracle),
+			});
+			const fileSeed = await runAnnotationSaveJourney({
+				oracle: createdFixture.oracle,
+				server,
+				surface: 'file',
+			});
+			const releaseLargeCatalogFixture = await cloneSavedAnnotationMessagesIntoCompletedSession({
+				cloneCount: stressAnnotationCatalogCloneCount,
+				dataRootPath: createdFixture.oracle.dataRootPath,
+				sourceMessageId: fileSeed.outputIdentity.messageId,
+				sourceSessionId: fileSeed.outputIdentity.sessionId,
+				sourceThreadId: fileSeed.outputIdentity.threadId,
+			});
+			const observations = await runAnnotationBackpressureJourney({
+				milestones,
+				oracle: createdFixture.oracle,
+				releaseLargeCatalogFixture,
+				server,
+				undemandedSessionId: fileSeed.outputIdentity.sessionId,
+			});
+			milestones.transition('assertions.running');
+			expect(createdFixture.oracle.reviewFiles).toHaveLength(stressReviewItemCount);
+			expect(observations.exactBodyCountAfterReload).toBe(6);
+			expect(new Set(observations.messageIds).size).toBe(6);
+			expect(observations.catalogTelemetry.windowCount).toBeGreaterThanOrEqual(2);
+			expect(observations.catalogTelemetry.maximumUnitByteCount).toBeLessThanOrEqual(128 * 1024);
+			expect(observations.catalogTelemetry.presentationRevisionAfter).toBe(
+				observations.catalogTelemetry.presentationRevisionBefore + 1,
+			);
+			expect(
+				observations.catalogTelemetry.longTaskCountDelta,
+				`catalog-scoped long-task count: ${JSON.stringify({
+					continuousBounds: {
+						mainBeginStartTimeMilliseconds:
+							observations.catalogTelemetry.mainBeginStartTimeMilliseconds,
+						mainCommitStartTimeMilliseconds:
+							observations.catalogTelemetry.mainCommitStartTimeMilliseconds,
+					},
+					mainStagingSamples: observations.catalogTelemetry.mainStagingSamples,
+					matchedEntries: observations.catalogTelemetry.longTasksOverlappingMainStaging,
+					observation: observations.catalogTelemetry.longTaskObservation,
+				})}`,
+			).toBe(0);
+			expect(
+				observations.catalogTelemetry.undemandedSessionRichFetchCount,
+				'undemanded-session rich-fetch count',
+			).toBe(0);
+			expect(
+				observations.catalogTelemetry.undemandedSessionAcquireCount,
+				'completed seed Review demand-acquire count',
+			).toBe(0);
+			expect(observations.fileTelemetry.currentCount, 'File outstanding publication count').toBe(0);
+			expect(observations.fileTelemetry.highWaterMark).toBe(1);
+			expect(
+				observations.reviewTelemetry.currentCount,
+				'Review outstanding publication count',
+			).toBe(0);
+			expect(observations.reviewTelemetry.highWaterMark).toBeGreaterThan(0);
+			expect(observations.reviewTelemetry.highWaterMark).toBeLessThanOrEqual(12);
+			expect(observations.reviewTelemetry.receiptProducedCount).toBeGreaterThan(0);
+			expect(observations.reviewTelemetry.receiptPendingCount, 'Review pending receipt count').toBe(
+				0,
+			);
+			expect(observations.reviewTelemetry.receiptHighWaterMark).toBeGreaterThan(0);
+			expect(observations.reviewTelemetry.receiptHighWaterMark).toBeLessThanOrEqual(6_144);
+			expect(observations.reviewTelemetry.maximumReceiptPendingAgeMilliseconds).toBeLessThan(
+				renderReceiptLeaseMilliseconds,
+			);
+			expect(observations.reviewTelemetry.maximumPublicationAgeMilliseconds).toBeLessThan(
+				renderReceiptLeaseMilliseconds,
+			);
+			expect(observations.reviewTelemetry.maximumWorkerQueueWaitMilliseconds).toBeLessThan(
+				renderReceiptLeaseMilliseconds,
+			);
+			expect(observations.reviewTelemetry.responseBeforeOwnerEffectObserved).toBe(true);
+			expect(observations.reviewTelemetry.failureCount, 'Review runtime failure count').toBe(0);
+			milestones.transition('assertions.complete');
+		} catch (error: unknown) {
+			if (server !== null) {
+				try {
+					const telemetryResponse = await fetch(
+						new URL('/__bridge-dev-telemetry/status', server.origin),
+					);
+					if (telemetryResponse.ok) {
+						milestones.recordFailureTelemetry(await telemetryResponse.json());
 					}
-				}
-				failure = milestones.failureDiagnostic(error);
-			} finally {
-				if (server !== null) {
-					try {
-						milestones.transition('cleanup.server.stopping');
-						const cleanup = await withBoundedTimeout(
-							server.stop(),
-							cleanupOperationTimeoutMilliseconds,
-						);
-						expect(cleanup.forcedTerminationRequired).toBe(false);
-						expect(cleanup.ownedProcessAliveAfterStop).toBe(false);
-						serverCleanupState = 'stopped';
-						milestones.transition('cleanup.server.stopped');
-					} catch (error: unknown) {
-						serverCleanupState = 'failed';
-						cleanupFailure = milestones.failureDiagnostic(error);
-					}
-				}
-				if (fixture !== null) {
-					try {
-						milestones.transition('cleanup.fixture.disposing');
-						await withBoundedTimeout(fixture.dispose(), cleanupOperationTimeoutMilliseconds);
-						fixtureCleanupState = 'disposed';
-						milestones.transition('cleanup.fixture.disposed');
-					} catch (error: unknown) {
-						fixtureCleanupState = 'failed';
-						cleanupFailure ??= milestones.failureDiagnostic(error);
-					}
+				} catch {
+					// Preserve the product failure when optional diagnostics are unavailable.
 				}
 			}
-			if (failure !== null || cleanupFailure !== null) {
-				throw new Error(
-					`Annotation backpressure journey failed: ${JSON.stringify({
-						cleanup: {
-							fixture: fixtureCleanupState,
-							server: serverCleanupState,
-						},
-						failure,
-						cleanupFailure,
-					})}`,
-				);
+			failure = milestones.failureDiagnostic(error);
+		} finally {
+			if (server !== null) {
+				try {
+					milestones.transition('cleanup.server.stopping');
+					const cleanup = await withBoundedTimeout(
+						server.stop(),
+						cleanupOperationTimeoutMilliseconds,
+					);
+					expect(cleanup.forcedTerminationRequired).toBe(false);
+					expect(cleanup.ownedProcessAliveAfterStop).toBe(false);
+					serverCleanupState = 'stopped';
+					milestones.transition('cleanup.server.stopped');
+				} catch (error: unknown) {
+					serverCleanupState = 'failed';
+					cleanupFailure = milestones.failureDiagnostic(error);
+				}
 			}
-		},
-		stressJourneyTimeoutMilliseconds,
-	);
+			if (fixture !== null) {
+				try {
+					milestones.transition('cleanup.fixture.disposing');
+					await withBoundedTimeout(fixture.dispose(), cleanupOperationTimeoutMilliseconds);
+					fixtureCleanupState = 'disposed';
+					milestones.transition('cleanup.fixture.disposed');
+				} catch (error: unknown) {
+					fixtureCleanupState = 'failed';
+					cleanupFailure ??= milestones.failureDiagnostic(error);
+				}
+			}
+		}
+		if (failure !== null || cleanupFailure !== null) {
+			throw new Error(
+				`Annotation backpressure journey failed: ${JSON.stringify({
+					cleanup: {
+						fixture: fixtureCleanupState,
+						server: serverCleanupState,
+					},
+					failure,
+					cleanupFailure,
+				})}`,
+			);
+		}
+	});
 }
 
 interface AnnotationBackpressureJourneyObservations {
@@ -435,7 +428,7 @@ async function runAnnotationBackpressureJourney(props: {
 	try {
 		const createdPage = await browser.newPage({ viewport: { height: 980, width: 1728 } });
 		page = createdPage;
-		const frameAcknowledgementQuiescence = observeFrameAcknowledgementQuiescence(createdPage);
+		const frameAcknowledgementQuiescence = observeSubscriptionReceiptQuiescence(createdPage);
 		const selectedItemApplyObservation = observeSelectedItemApplies(createdPage);
 		const observedReviewFile = props.oracle.reviewFiles[0];
 		if (observedReviewFile === undefined)

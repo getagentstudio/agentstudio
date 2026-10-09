@@ -28,9 +28,16 @@ struct BridgeDevHostSharedConstructionTests {
             let initialPublication = try #require(await host.diagnosticCommittedReviewPublication())
             #expect(initialPublication.classifiedRefreshImpact == nil)
 
+            let productAdmission = await host.productAdmission
+            await admitDevelopmentReviewComparisonIntent(
+                host: host,
+                workerDerivationEpoch: 1,
+                productAdmission: productAdmission
+            )
             await host.applyCommittedReviewComparisonUpdate(
                 BridgeProductReviewComparisonUpdateRequest(target: .branch(name: "stack/base")),
-                productAdmission: await host.productAdmission
+                workerDerivationEpoch: 1,
+                productAdmission: productAdmission
             )
             let comparisonTask = await host.activeReviewComparisonTask
             await comparisonTask?.value
@@ -151,9 +158,15 @@ struct BridgeDevHostSharedConstructionTests {
             let completionRecorder = BridgeComparisonUpdateCompletionRecorder()
             let productAdmission = await host.productAdmission
             let updatedTarget = WorkspaceReviewContributionTarget.branch(name: "stack/base")
+            await admitDevelopmentReviewComparisonIntent(
+                host: host,
+                workerDerivationEpoch: 1,
+                productAdmission: productAdmission
+            )
             let update = Task {
                 await host.applyCommittedReviewComparisonUpdate(
                     BridgeProductReviewComparisonUpdateRequest(target: updatedTarget),
+                    workerDerivationEpoch: 1,
                     productAdmission: productAdmission
                 )
                 await completionRecorder.recordCompletion()
@@ -233,13 +246,25 @@ struct BridgeDevHostSharedConstructionTests {
             let currentTarget = WorkspaceReviewContributionTarget.branch(name: "stack/second")
 
             // Act
+            await admitDevelopmentReviewComparisonIntent(
+                host: host,
+                workerDerivationEpoch: 2,
+                productAdmission: productAdmission
+            )
             await host.applyCommittedReviewComparisonUpdate(
                 BridgeProductReviewComparisonUpdateRequest(target: supersededTarget),
+                workerDerivationEpoch: 2,
                 productAdmission: productAdmission
             )
             await comparisonGate.waitForStartedComparisonCount(1)
+            await admitDevelopmentReviewComparisonIntent(
+                host: host,
+                workerDerivationEpoch: 3,
+                productAdmission: productAdmission
+            )
             await host.applyCommittedReviewComparisonUpdate(
                 BridgeProductReviewComparisonUpdateRequest(target: currentTarget),
+                workerDerivationEpoch: 3,
                 productAdmission: productAdmission
             )
             await comparisonGate.waitForStartedComparisonCount(2)
@@ -330,8 +355,14 @@ struct BridgeDevHostSharedConstructionTests {
         let comparisonGate = BridgeComparisonGate()
         await provider.setComparisonGate(comparisonGate)
         let productAdmission = await host.productAdmission
+        await admitDevelopmentReviewComparisonIntent(
+            host: host,
+            workerDerivationEpoch: 1,
+            productAdmission: productAdmission
+        )
         await host.applyCommittedReviewComparisonUpdate(
             BridgeProductReviewComparisonUpdateRequest(target: .branch(name: "stack/base")),
+            workerDerivationEpoch: 1,
             productAdmission: productAdmission
         )
         await comparisonGate.waitForStartedComparisonCount(1)
@@ -343,7 +374,7 @@ struct BridgeDevHostSharedConstructionTests {
         }
         let shutdownStarted = await host.isShutdown
         await comparisonGate.releaseAll()
-        await shutdown.value
+        _ = await shutdown.value
 
         // Assert
         #expect(shutdownStarted)
@@ -463,10 +494,16 @@ struct BridgeDevHostSharedConstructionTests {
             let productAdmission = await host.productAdmission
 
             // Act
+            await admitDevelopmentReviewComparisonIntent(
+                host: host,
+                workerDerivationEpoch: 1,
+                productAdmission: productAdmission
+            )
             await host.applyCommittedReviewComparisonUpdate(
                 BridgeProductReviewComparisonUpdateRequest(
                     target: .branch(name: "stack/base")
                 ),
+                workerDerivationEpoch: 1,
                 productAdmission: productAdmission
             )
             await defaultTargetGate.waitForStartedComparisonCount(1)
@@ -890,7 +927,7 @@ func makeDevelopmentBootstrapRequest(
     try JSONDecoder().decode(
         BridgeDevelopmentProductBootstrapRequest.self,
         from: Data(
-            #"{"navigationIntent":{"commandId":"open-\#(surface)-view","commandKind":"activateContext","surface":"\#(surface)"},"reason":"initial"}"#
+            #"{"navigationIntent":{"commandId":"open-\#(surface)-view","commandKind":"activateContext","surface":"\#(surface)"},"reason":"initial","tabId":"owner-tab-1"}"#
                 .utf8
         )
     )

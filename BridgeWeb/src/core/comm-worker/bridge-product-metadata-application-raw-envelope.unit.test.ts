@@ -1,30 +1,32 @@
 import { describe, expect, test } from 'vitest';
 
+import validProductSessionCorpus from '../../test-fixtures/bridge-contract-fixtures/valid/bridge-product-session-corpus.json' with { type: 'json' };
+import { bridgeProductBatchFrameSchema } from './bridge-product-batch-wire-contracts.js';
 import { bridgeProductMetadataFrameSchema } from './bridge-product-session-contracts.js';
 
 describe('Bridge product raw metadata application envelope', () => {
 	test('requires raw application data without validating an application schema', () => {
-		const rawFrame = {
-			cursor: null,
-			data: { applicationOwned: true },
-			interestRevision: 0,
-			interestSha256: 'a'.repeat(64),
-			kind: 'subscription.data',
-			metadataStreamId: 'metadata-stream-raw-1',
-			operationCorrelationId: null,
-			paneSessionId: 'pane-session-raw-1',
-			sourceGeneration: 1,
-			streamSequence: 1,
-			subscriptionId: 'subscription-raw-1',
-			subscriptionKind: 'fixture.metadata',
-			subscriptionSequence: 1,
-			wireVersion: 2,
-			workerDerivationEpoch: 0,
-			workerInstanceId: 'worker-instance-raw-1',
-		};
+		const fixturePart = validProductSessionCorpus.transportV2.batchFrames.find(
+			(frame) => frame.kind === 'subscription.batchPart',
+		);
+		if (fixturePart === undefined || fixturePart.kind !== 'subscription.batchPart') {
+			throw new Error('Comment batch part fixture missing.');
+		}
+		const rawFrame = bridgeProductBatchFrameSchema.parse({
+			...fixturePart,
+			part: { ...fixturePart.part, value: { applicationOwned: true } },
+		});
+		if (rawFrame.kind !== 'subscription.batchPart') {
+			throw new Error('Parsed application fixture is not a batch part.');
+		}
 
 		expect(bridgeProductMetadataFrameSchema.parse(rawFrame)).toEqual(rawFrame);
-		const { data: _missingData, ...frameWithoutData } = rawFrame;
-		expect(bridgeProductMetadataFrameSchema.safeParse(frameWithoutData).success).toBe(false);
+		if (rawFrame.part.operation !== 'put') {
+			throw new Error('Application fixture must be a raw put record.');
+		}
+		const { value: _missingValue, ...partWithoutValue } = rawFrame.part;
+		expect(
+			bridgeProductBatchFrameSchema.safeParse({ ...rawFrame, part: partWithoutValue }).success,
+		).toBe(false);
 	});
 });

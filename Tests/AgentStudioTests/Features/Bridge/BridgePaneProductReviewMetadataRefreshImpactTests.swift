@@ -5,49 +5,59 @@ import Testing
 @MainActor
 @Suite("Bridge pane product Review metadata refresh impact")
 struct BridgePaneProductReviewMetadataRefreshImpactTests {
-    @Test("same-looking unclassified successor remains a replacement")
+    @Test("same-looking unclassified successor replaces the keyed item")
     func sameLookingUnclassifiedSuccessorRemainsReplacement() async throws {
         let productAdmission = try BridgeProductAdmissionTestContext.make()
         let initialPackage = makeReviewPackage(itemCount: 2)
         let changedItemId = try #require(initialPackage.orderedItemIds.first)
-        let unclassifiedSuccessor = replacingReviewItem(
+        let successor = replacingReviewItem(
             in: initialPackage,
             itemId: changedItemId,
             fileClass: .config,
             revision: initialPackage.revision + 1
         )
         let source = BridgePaneProductReviewMetadataSource()
-        let collector = RefreshImpactReviewMetadataEventCollector()
         try await source.open(
-            subscription: try refreshImpactReviewSubscription(),
+            subscription: reviewSubscription(),
             productAdmission: productAdmission.context
-        ) { event, _ in
-            try await collector.append(event.event)
-        }
+        )
         _ = try await deliverReviewPackage(
             initialPackage,
             through: source,
             productAdmission: productAdmission.context
         )
-        await collector.removeAll()
+        let first = try #require(
+            try await applyReviewViewDemand(
+                through: source,
+                itemIds: initialPackage.orderedItemIds,
+                productAdmission: productAdmission.context
+            )
+        )
 
         _ = try await deliverReviewPackage(
-            unclassifiedSuccessor,
+            successor,
             through: source,
             productAdmission: productAdmission.context
         )
+        let replacement = try #require(
+            try await applyReviewViewDemand(
+                through: source,
+                scopeRevision: 2,
+                itemIds: successor.orderedItemIds,
+                productAdmission: productAdmission.context
+            )
+        )
 
-        let events = await collector.events
-        guard case .reset(let reset) = events.first else {
-            Issue.record("Expected unclassified same-looking successor to reset")
-            return
-        }
-        #expect(reset.refreshImpact == nil)
-        #expect(!events.contains { if case .delta = $0 { true } else { false } })
+        #expect(replacement.snapshot.targetRevision > first.snapshot.targetRevision)
+        #expect(replacement.snapshot.publication.publicationId == first.snapshot.publication.publicationId)
+        #expect(
+            replacement.snapshot.items.first { $0.record.itemId == changedItemId }?.record.fileClass
+                == .config
+        )
     }
 
-    @Test("initial Review windows omit same-source refresh classification")
-    func initialReviewWindowsOmitSameSourceRefreshClassification() async throws {
+    @Test("classified refresh seals a complete keyed Review batch")
+    func classifiedRefreshSealsCompleteBatch() async throws {
         let productAdmission = try BridgeProductAdmissionTestContext.make()
         let package = makeReviewPackage(itemCount: 130)
         let impact = BridgeReviewRefreshImpact.exact(
@@ -58,14 +68,10 @@ struct BridgePaneProductReviewMetadataRefreshImpactTests {
             affectedStableFileIdentities: ["review-item-00000", "review-item-00001"]
         )
         let source = BridgePaneProductReviewMetadataSource()
-        let collector = RefreshImpactReviewMetadataEventCollector()
         try await source.open(
-            subscription: try refreshImpactReviewSubscription(),
+            subscription: reviewSubscription(),
             productAdmission: productAdmission.context
-        ) { event, _ in
-            try await collector.append(event.event)
-        }
-
+        )
         _ = try await deliverReviewPackage(
             package,
             classifiedRefreshImpact: impact,
@@ -73,17 +79,21 @@ struct BridgePaneProductReviewMetadataRefreshImpactTests {
             productAdmission: productAdmission.context
         )
 
-        let windowCount = await collector.events.filter { event in
-            if case .snapshot = event { return true }
-            if case .window = event { return true }
-            return false
-        }.count
-        #expect(windowCount > 1)
+        let capture = try #require(
+            try await applyReviewViewDemand(
+                through: source,
+                itemIds: package.orderedItemIds,
+                productAdmission: productAdmission.context
+            )
+        )
+        let batch = try sealReviewCapture(capture)
+        #expect(batch.parts.count == 131)
+        #expect(batch.frameCount == 133)
+        #expect(capture.snapshot.items.map(\.record.itemId) == package.orderedItemIds)
     }
 
-    @Test("promoted unknown remains encodable beyond one metadata-window identity limit")
+    @Test("symbolic unknown impact admits a keyed batch beyond the old metadata-window limit")
     func carriesSymbolicUnknownForLargeReview() async throws {
-        // Arrange
         let productAdmission = try BridgeProductAdmissionTestContext.make()
         let package = makeReviewPackage(itemCount: 4097)
         let impact = BridgeReviewRefreshImpact.unknown(
@@ -91,15 +101,10 @@ struct BridgePaneProductReviewMetadataRefreshImpactTests {
             candidatePackage: package
         )
         let source = BridgePaneProductReviewMetadataSource()
-        let collector = RefreshImpactReviewMetadataEventCollector()
         try await source.open(
-            subscription: try refreshImpactReviewSubscription(),
+            subscription: reviewSubscription(),
             productAdmission: productAdmission.context
-        ) { event, _ in
-            try await collector.append(event.event)
-        }
-
-        // Act
+        )
         _ = try await deliverReviewPackage(
             package,
             classifiedRefreshImpact: impact,
@@ -107,36 +112,36 @@ struct BridgePaneProductReviewMetadataRefreshImpactTests {
             productAdmission: productAdmission.context
         )
 
-        // Assert
+        let capture = try #require(
+            try await applyReviewViewDemand(
+                through: source,
+                itemIds: package.orderedItemIds,
+                productAdmission: productAdmission.context
+            )
+        )
+        let batch = try sealReviewCapture(capture)
         #expect(impact.affectedStableFileIdentities.isEmpty)
+        #expect(capture.snapshot.items.count == 4097)
+        #expect(batch.parts.count == 4098)
     }
 }
 
-private actor RefreshImpactReviewMetadataEventCollector {
-    private(set) var events: [BridgeProductReviewMetadataEvent] = []
-    private var nextSequence = 0
-
-    func append(_ event: BridgeProductReviewMetadataEvent) throws -> BridgeProductProducerEnqueueResult {
-        nextSequence += 1
-        events.append(event)
-        return try reviewMetadataEnqueueResult(event, sequence: nextSequence)
-    }
-
-    func removeAll() {
-        events.removeAll()
-    }
-}
-
-private func refreshImpactReviewSubscription() throws -> BridgeProductSubscriptionSnapshot {
-    let interestState = BridgeProductSubscriptionInterestState.reviewMetadata(interests: [])
-    return BridgeProductSubscriptionSnapshot(
-        subscription: .reviewMetadata,
-        subscriptionId: "review-refresh-impact-subscription-1",
-        subscriptionKind: .reviewMetadata,
-        workerDerivationEpoch: 1,
-        interestRevision: 0,
-        interestSha256: try interestState.sha256Hex(),
-        interestState: interestState,
-        hasStagedUpdate: false
+private func sealReviewCapture(
+    _ capture: BridgePaneProductReviewViewCapture
+) throws -> BridgeProductSealedViewBatch {
+    try BridgeProductReviewViewBatchFactory.sealSnapshot(
+        .init(
+            viewDomain: .init(
+                viewId: "review-subscription-1", domain: .singleDomain,
+                incarnation: "review-incarnation-1"
+            ),
+            handle: capture.handle,
+            scopeRevision: capture.scopeRevision,
+            scope: .object(["kind": .string("review"), "interests": .array([])]),
+            firstDeliverySequence: 1,
+            targetRevision: capture.snapshot.targetRevision,
+            publication: capture.snapshot.publication,
+            items: capture.snapshot.items
+        )
     )
 }

@@ -9,6 +9,7 @@ private let bridgeProductControlDispatcherLogger = Logger(
 enum BridgeProductSchemeControlDispatchResult: Equatable, Sendable {
     case admissionClosed
     case rejected(BridgeProductSessionControlRejection)
+    case typedRefusal(BridgeProductSessionControlRejection, Data)
     case response(Data)
 }
 
@@ -24,19 +25,30 @@ struct BridgeProductSchemeControlDispatcher: Sendable {
         guard
             (productAdmission.withValidAdmission { true }) == true
         else {
-            return .admissionClosed
+            return try Self.typedRefusal(
+                for: .inactiveSession,
+                exactRequestBytes: exactRequestBytes
+            ) ?? .admissionClosed
         }
         let admission = await session.beginControl(
             exactRequestBytes: exactRequestBytes,
             presentedCapability: presentedCapability,
-            productAdmission: productAdmission
+            productAdmission: productAdmission,
+            reviewIntentAdmissionSource: provider.reviewIntentAdmissionSource
         )
+        let floorRetiredSubscriptions = await session.takeFloorRetiredSubscriptions()
         switch admission {
         case .admissionClosed:
-            return .admissionClosed
+            return try Self.typedRefusal(
+                for: .inactiveSession,
+                exactRequestBytes: exactRequestBytes
+            ) ?? .admissionClosed
         case .rejected(let rejection):
             guard let request = rejection.request else {
-                return .rejected(rejection.reason)
+                return try Self.typedRefusal(
+                    for: rejection.reason,
+                    exactRequestBytes: exactRequestBytes
+                ) ?? .rejected(rejection.reason)
             }
             return .response(
                 try Self.encode(
@@ -46,129 +58,139 @@ struct BridgeProductSchemeControlDispatcher: Sendable {
         case .replay(let exactResponseBytes):
             return .response(exactResponseBytes)
         case .execute(let token, let request):
-            if Task.isCancelled {
-                try await session.abandonControl(token: token)
-                throw CancellationError()
-            }
-            guard await session.claimControlProviderDispatch(token: token) else {
-                guard
-                    (productAdmission.withValidAdmission { true }) == true
-                else {
-                    return .admissionClosed
-                }
-                throw CancellationError()
-            }
-
-            // Provider dispatch is the replay boundary. Once it starts, this unstructured
-            // task must finish and cache one exact response even if the URL task closes.
-            let completion = Task {
-                do {
-                    guard
-                        try await session.retireMetadataResponseBeforeResync(
-                            token: token,
-                            acknowledgeLifecycle: { acknowledgement in
-                                await provider.acknowledgeLifecycle(acknowledgement)
-                            }
-                        )
-                    else {
-                        throw BridgeProductSchemeAdapterError.producerRetirementFailed
-                    }
-                    let providerResponse = await provider.response(
-                        for: request,
-                        productAdmission: productAdmission
-                    )
-                    guard
-                        (productAdmission.withValidAdmission { true }) == true
-                    else {
-                        await session.settleControlProviderDispatch(token: token)
-                        return BridgeProductSchemeControlDispatchResult.admissionClosed
-                    }
-                    let authoritativeResponse = try await session.authoritativeControlResponse(
-                        token: token,
-                        providerResponse: providerResponse
-                    )
-                    let result = try await Self.completeControl(
-                        providerResponse: authoritativeResponse,
-                        request: request,
-                        token: token,
-                        session: session,
-                        provider: provider,
-                        productAdmission: productAdmission
-                    )
-                    await session.settleControlProviderDispatch(token: token)
-                    return result
-                } catch BridgeProductSessionError.admissionClosed {
-                    await session.settleControlProviderDispatch(token: token)
-                    return .admissionClosed
-                } catch {
-                    await session.settleControlProviderDispatch(token: token)
-                    throw error
-                }
-            }
-            return try await completion.value
+            return try await dispatchAdmittedControl(
+                token: token,
+                request: request,
+                floorRetiredSubscriptions: floorRetiredSubscriptions
+            )
         }
     }
 
-    private static func completeControl(
-        providerResponse: BridgeProductControlResponse,
-        request: BridgeProductControlRequest,
+    private func dispatchAdmittedControl(
         token: BridgeProductControlAdmissionToken,
-        session: BridgeProductSession,
-        provider: any BridgeProductSchemeProvider,
-        productAdmission: BridgeProductAdmissionContext
+        request: BridgeProductControlRequest,
+        floorRetiredSubscriptions: [BridgeProductSubscriptionSnapshot]
     ) async throws -> BridgeProductSchemeControlDispatchResult {
-        let providerResponseBytes = try encode(providerResponse)
+        if Task.isCancelled {
+            try await session.abandonControl(token: token)
+            throw CancellationError()
+        }
+        if request.isSlotFreeEscape {
+            let response = try BridgeProductControlResponse.subscriptionCancelAccepted(
+                correlating: request
+            )
+            let effect = try await session.completeEscapeControl(token: token, response: response)
+            if let effectId = await session.beginEscapeEffect() {
+                let effectTask = Task {
+                    if !floorRetiredSubscriptions.isEmpty,
+                        productAdmission.withValidAdmission({ true }) == true
+                    {
+                        await provider.retireFloorRetiredSubscriptions(
+                            floorRetiredSubscriptions,
+                            productAdmission: productAdmission
+                        )
+                    }
+                    await Self.applyCommittedEffect(
+                        effect,
+                        request: request,
+                        provider: provider,
+                        productAdmission: productAdmission
+                    )
+                    await session.finishEscapeEffect(effectId: effectId)
+                }
+                await session.attachEscapeEffect(effectTask, effectId: effectId)
+            }
+            return .response(try Self.encode(response))
+        }
+        let admitted = try await session.admitControlOperation(token: token) { operationId in
+            do {
+                if !floorRetiredSubscriptions.isEmpty {
+                    await provider.retireFloorRetiredSubscriptions(
+                        floorRetiredSubscriptions,
+                        productAdmission: productAdmission
+                    )
+                }
+                guard
+                    try await session.retireMetadataResponseBeforeResync(
+                        token: token,
+                        acknowledgeLifecycle: { acknowledgement in
+                            await provider.acknowledgeLifecycle(acknowledgement)
+                        }
+                    )
+                else {
+                    throw BridgeProductSchemeAdapterError.producerRetirementFailed
+                }
+                guard await session.markOperationDispatched(operationId: operationId) else {
+                    return
+                }
+                let providerResponse = await provider.response(
+                    for: request,
+                    productAdmission: productAdmission
+                )
+                if (productAdmission.withValidAdmission { true }) != true {
+                    await session.settleControlProviderDispatch(token: token)
+                } else {
+                    do {
+                        let authoritativeResponse = try await session.authoritativeControlResponse(
+                            token: token,
+                            providerResponse: providerResponse
+                        )
+                        await completeControl(
+                            providerResponse: authoritativeResponse,
+                            operationId: operationId,
+                            request: request,
+                            token: token
+                        )
+                    } catch {
+                        if await session.isOperationSettledUnknown(operationId) {
+                            await session.settleOperation(operationId: operationId, response: providerResponse)
+                        } else {
+                            throw error
+                        }
+                    }
+                }
+            } catch {
+                await session.settleControlProviderDispatch(token: token)
+            }
+        }
+        return .response(admitted.responseBytes)
+    }
+
+    private func completeControl(
+        providerResponse: BridgeProductControlResponse,
+        operationId: String,
+        request: BridgeProductControlRequest,
+        token: BridgeProductControlAdmissionToken
+    ) async {
         do {
+            let providerResponseBytes = try Self.encode(providerResponse)
             let completionEffect = try await session.completeControl(
                 token: token,
                 exactResponseBytes: providerResponseBytes
             )
-            await applyCommittedEffect(
+            await Self.applyCommittedEffect(
                 completionEffect,
                 request: request,
                 provider: provider,
                 productAdmission: productAdmission
             )
-            guard
-                (productAdmission.withValidAdmission { true }) == true
-            else {
-                return .admissionClosed
+            guard productAdmission.withValidAdmission({ true }) == true else {
+                await session.settleControlProviderDispatch(token: token)
+                return
             }
-            return .response(providerResponseBytes)
-        } catch BridgeProductSessionError.admissionClosed {
-            return .admissionClosed
+            await session.settleOperation(operationId: operationId, response: providerResponse)
         } catch {
+            if await session.isOperationSettledUnknown(operationId) {
+                await session.settleOperation(operationId: operationId, response: providerResponse)
+                return
+            }
             // These enums contain only closed reason cases and bounded sequence
             // integers. Never log an arbitrary provider error or request payload.
             let failureReason = (error as? BridgeProductSessionError).map(String.init(describing:)) ?? "unexpected"
             bridgeProductControlDispatcherLogger.error(
                 "Product control completion failed kind=\(request.kind, privacy: .public) sequence=\(request.requestSequence) reason=\(failureReason, privacy: .public)"
             )
-            let internalError = try BridgeProductControlResponse.requestError(
-                correlating: request,
-                code: .internal,
-                nextExpectedRequestSequence: request.requestSequence + 1,
-                retryAfterMilliseconds: nil,
-                retryable: false,
-                safeMessage: nil
-            )
-            let internalErrorBytes = try encode(internalError)
-            let completionEffect = try await session.completeControl(
-                token: token,
-                exactResponseBytes: internalErrorBytes
-            )
-            await applyCommittedEffect(
-                completionEffect,
-                request: request,
-                provider: provider,
-                productAdmission: productAdmission
-            )
-            guard
-                (productAdmission.withValidAdmission { true }) == true
-            else {
-                return .admissionClosed
-            }
-            return .response(internalErrorBytes)
+            await session.settleControlProviderDispatch(token: token)
         }
     }
 
@@ -195,6 +217,22 @@ struct BridgeProductSchemeControlDispatcher: Sendable {
         return try encoder.encode(response)
     }
 
+    private static func typedRefusal(
+        for reason: BridgeProductSessionControlRejection,
+        exactRequestBytes: Data
+    ) throws -> BridgeProductSchemeControlDispatchResult? {
+        guard
+            let request = try? BridgeProductStrictJSON.decode(
+                BridgeProductControlRequest.self,
+                from: exactRequestBytes
+            )
+        else { return nil }
+        return try .typedRefusal(
+            reason,
+            encode(requestError(for: reason, request: request))
+        )
+    }
+
     private static func requestError(
         for rejection: BridgeProductSessionControlRejection,
         request: BridgeProductControlRequest
@@ -211,10 +249,22 @@ struct BridgeProductSchemeControlDispatcher: Sendable {
             code = .invalidRequest
             nextExpectedRequestSequence = nil
             retryable = false
+        case .unknownSubscription:
+            code = .unknownSubscription
+            nextExpectedRequestSequence = request.requestSequence
+            retryable = false
         case .payloadTooLarge:
             code = .payloadTooLarge
             nextExpectedRequestSequence = nil
             retryable = false
+        case .resultCapacityExhausted:
+            code = .resultCapacityExhausted
+            nextExpectedRequestSequence = request.requestSequence
+            retryable = true
+        case .mutationWatchCapacityExhausted:
+            code = .mutationWatchCapacityExhausted
+            nextExpectedRequestSequence = request.requestSequence
+            retryable = true
         case .requestInFlight(let nextExpected):
             code = .sequenceConflict
             nextExpectedRequestSequence = nextExpected

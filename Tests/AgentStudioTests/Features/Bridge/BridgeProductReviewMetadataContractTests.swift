@@ -285,47 +285,11 @@ struct BridgeProductReviewMetadataContractTests {
         }
     }
 
-    @Test("requires frame generation parity and preflights the 128 KiB metadata ceiling")
-    func enforcesReviewFrameGenerationAndBodyCeiling() throws {
-        var frameObject = reviewMetadataFrameObject(event: reviewSnapshotObject())
-        let validFrame = try decodeReviewMetadataFrame(frameObject)
-        let encodedFrame = try BridgeProductMetadataFrameCodec.encode(validFrame)
-        let decoder = try BridgeProductMetadataFrameDecoder()
-
-        let decodedFrames = try decoder.append(encodedFrame)
-        try decoder.finish()
-
-        #expect(decodedFrames == [validFrame])
-        #expect(encodedFrame.count <= BridgeProductWireContract.maximumMetadataFrameBytes + 4)
-
-        frameObject["sourceGeneration"] = 8
-        #expect(throws: (any Error).self) { try decodeReviewMetadataFrame(frameObject) }
-
-        var oversizedSnapshot = reviewSnapshotObject()
-        let repeatedItems = Array(repeating: reviewItemMetadataObject(), count: 256)
-        oversizedSnapshot["itemMetadata"] = repeatedItems
-        var oversizedWindow = try #require(oversizedSnapshot["itemWindow"] as? [String: Any])
-        oversizedWindow["itemCount"] = repeatedItems.count
-        oversizedWindow["totalItemCount"] = repeatedItems.count
-        oversizedSnapshot["itemWindow"] = oversizedWindow
-        let oversizedFrame = try decodeReviewMetadataFrame(
-            reviewMetadataFrameObject(event: oversizedSnapshot)
-        )
-
-        #expect(throws: (any Error).self) {
-            try BridgeProductMetadataFrameCodec.encode(oversizedFrame)
-        }
-    }
 }
 
 private func decodeReviewMetadataEvent(_ object: [String: Any]) throws -> BridgeProductReviewMetadataEvent {
     let data = try JSONSerialization.data(withJSONObject: object, options: [.sortedKeys])
     return try BridgeProductStrictJSON.decode(BridgeProductReviewMetadataEvent.self, from: data)
-}
-
-private func decodeReviewMetadataFrame(_ object: [String: Any]) throws -> BridgeProductMetadataFrame {
-    let data = try JSONSerialization.data(withJSONObject: object, options: [.sortedKeys])
-    return try BridgeProductStrictJSON.decode(BridgeProductMetadataFrame.self, from: data)
 }
 
 private func reviewIdentityObject(eventKind: String) -> [String: Any] {
@@ -558,29 +522,5 @@ private func reviewQueryObject() -> [String: Any] {
             "showLargeFiles": true,
         ],
         "worktreeId": "worktree-1",
-    ]
-}
-
-private func reviewMetadataFrameObject(event: [String: Any]) -> [String: Any] {
-    [
-        "cursor": "review-cursor-1",
-        "data": [
-            "event": event,
-            "subscriptionKind": "review.metadata",
-        ],
-        "interestRevision": 1,
-        "interestSha256": String(repeating: "a", count: 64),
-        "kind": "subscription.data",
-        "metadataStreamId": "metadata-stream-1",
-        "operationCorrelationId": NSNull(),
-        "paneSessionId": "pane-session-1",
-        "sourceGeneration": 7,
-        "streamSequence": 1,
-        "subscriptionId": "review-subscription-1",
-        "subscriptionKind": "review.metadata",
-        "subscriptionSequence": 1,
-        "wireVersion": 2,
-        "workerDerivationEpoch": 3,
-        "workerInstanceId": "worker-instance-1",
     ]
 }

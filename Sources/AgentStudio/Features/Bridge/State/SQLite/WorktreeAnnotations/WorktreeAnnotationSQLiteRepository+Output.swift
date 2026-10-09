@@ -362,6 +362,7 @@ extension WorktreeAnnotationSQLiteRepository {
     func finalizeOutputAttempt(
         attemptID: WorktreeAnnotationOutputAttemptID,
         eventKind: WorktreeAnnotationOutputEventKind,
+        destinationPath: String? = nil,
         now: Date
     ) throws -> WorktreeAnnotationCommittedMutation<PreparedOutput> {
         try databaseWriter.write { database in
@@ -383,6 +384,15 @@ extension WorktreeAnnotationSQLiteRepository {
             guard current.attempt.state == .prepared || current.attempt.state == .finalizationFailed else {
                 throw WorktreeAnnotationRepositoryError.invalidState
             }
+            let recordedDestination = destinationPath ?? current.attempt.destinationPath
+            switch current.attempt.outputKind {
+            case .clipboardMarkdown:
+                guard recordedDestination == nil else { throw WorktreeAnnotationRepositoryError.invalidState }
+            case .jsonFile:
+                guard recordedDestination?.isEmpty == false else {
+                    throw WorktreeAnnotationRepositoryError.invalidState
+                }
+            }
             let eventID = WorktreeAnnotationOutputEventID.generate()
             try database.execute(
                 sql: """
@@ -397,8 +407,12 @@ extension WorktreeAnnotationSQLiteRepository {
                 ]
             )
             try database.execute(
-                sql: "UPDATE annotation_output_attempt SET state = 'succeeded', updated_at = ? WHERE id = ?",
-                arguments: [now.timeIntervalSince1970, attemptID.databaseValue]
+                sql: """
+                    UPDATE annotation_output_attempt
+                    SET state = 'succeeded', destination_path = ?, updated_at = ?
+                    WHERE id = ?
+                    """,
+                arguments: [recordedDestination, now.timeIntervalSince1970, attemptID.databaseValue]
             )
             _ = try markOutputMessagesHandled(
                 database,
@@ -463,6 +477,7 @@ extension WorktreeAnnotationSQLiteRepository {
     func markOutputAttemptFinalizationFailed(
         attemptID: WorktreeAnnotationOutputAttemptID,
         cleanupError: String,
+        destinationPath: String? = nil,
         now: Date
     ) throws -> WorktreeAnnotationCommittedMutation<PreparedOutput> {
         try databaseWriter.write { database in
@@ -470,13 +485,14 @@ extension WorktreeAnnotationSQLiteRepository {
             guard current.attempt.state == .prepared || current.attempt.state == .finalizationFailed else {
                 throw WorktreeAnnotationRepositoryError.invalidState
             }
+            let recordedDestination = destinationPath ?? current.attempt.destinationPath
             try database.execute(
                 sql: """
                     UPDATE annotation_output_attempt
-                    SET state = 'finalization_failed', cleanup_error = ?, updated_at = ?
+                    SET state = 'finalization_failed', destination_path = ?, cleanup_error = ?, updated_at = ?
                     WHERE id = ?
                     """,
-                arguments: [cleanupError, now.timeIntervalSince1970, attemptID.databaseValue]
+                arguments: [recordedDestination, cleanupError, now.timeIntervalSince1970, attemptID.databaseValue]
             )
             _ = try lockOutputMessages(
                 database,

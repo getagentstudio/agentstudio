@@ -58,6 +58,7 @@ package actor WorktreeAnnotationServiceActor {
     private var latestSourceRefreshFenceByContextKey:
         [WorktreeAnnotationPlacementContextKey: WorktreeAnnotationSourceRefreshFence] = [:]
     var changeObserverByToken: [UUID: WorktreeAnnotationChangeObserverState] = [:]
+    var catalogInvalidationObserverByToken: [UUID: WorktreeAnnotationCatalogInvalidationObserverState] = [:]
     var projectionRevision = 0
     let editOwnership = WorktreeAnnotationEditOwnershipRegistry()
     var recoveryState: WorktreeAnnotationRecoveryState = .available
@@ -450,6 +451,7 @@ package actor WorktreeAnnotationServiceActor {
     func finalizeOutputAttempt(
         attemptID: WorktreeAnnotationOutputAttemptID,
         eventKind: WorktreeAnnotationOutputEventKind,
+        destinationPath: String? = nil,
         now: Date
     ) async throws -> WorktreeAnnotationSQLiteRepository.PreparedOutput {
         try requireMutationAllowed()
@@ -457,6 +459,7 @@ package actor WorktreeAnnotationServiceActor {
             try await repositoryAccess.finalizeOutputAttempt(
                 attemptID: attemptID,
                 eventKind: eventKind,
+                destinationPath: destinationPath,
                 now: now
             )
         }
@@ -466,6 +469,7 @@ package actor WorktreeAnnotationServiceActor {
     func markOutputAttemptFinalizationFailed(
         attemptID: WorktreeAnnotationOutputAttemptID,
         cleanupError: String,
+        destinationPath: String? = nil,
         now: Date
     ) async throws -> WorktreeAnnotationSQLiteRepository.PreparedOutput {
         try requireMutationAllowed()
@@ -473,6 +477,7 @@ package actor WorktreeAnnotationServiceActor {
             try await repositoryAccess.markOutputAttemptFinalizationFailed(
                 attemptID: attemptID,
                 cleanupError: cleanupError,
+                destinationPath: destinationPath,
                 now: now
             )
         }
@@ -546,6 +551,7 @@ package actor WorktreeAnnotationServiceActor {
         )
         do {
             let committedMutation = try await mutation()
+            emitCommittedCatalogInvalidation(committedMutation.change)
             await recordNativeAnnotationWork(
                 operationCorrelationID: operationCorrelationID,
                 result: .success,
@@ -557,6 +563,7 @@ package actor WorktreeAnnotationServiceActor {
             )
             return committedMutation.canonicalResult
         } catch {
+            emitConservativeCatalogInvalidationAfterUnknownOutcome()
             await recordNativeAnnotationWork(
                 operationCorrelationID: operationCorrelationID,
                 result: .failure,

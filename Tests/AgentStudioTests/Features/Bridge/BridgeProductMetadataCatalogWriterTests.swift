@@ -271,7 +271,8 @@ where Entry: Codable & Equatable & Sendable {
                 data: Data([UInt8(sequence)]),
                 sequence: sequence,
                 terminal: false,
-                requiredOpening: false
+                requiredOpening: false,
+                batchComplete: false
             )
         )
     }

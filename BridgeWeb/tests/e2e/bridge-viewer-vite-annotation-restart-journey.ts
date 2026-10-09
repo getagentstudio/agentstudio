@@ -17,9 +17,11 @@ import {
 	startBridgeViewerOwnedViteProductServer,
 	type BridgeViewerOwnedViteProductServer,
 } from './bridge-viewer-vite-product-fixture.ts';
+import { waitForProductCallSettlement } from './bridge-viewer-vite-product-operation-response.ts';
 import {
 	bridgeViewerViteProductFileUrl,
 	bridgeViewerViteProductReviewUrl,
+	requireBridgeViewerVitePrimaryReviewPath,
 } from './bridge-viewer-vite-product-url.ts';
 import {
 	observeBrowserRuntimeDiagnostics,
@@ -59,10 +61,13 @@ export function registerBridgeViewerViteAnnotationSystemJourneyTests(): void {
 			serverB = await startBridgeViewerOwnedViteProductServer(fixture.oracle);
 			browser = await launchBridgeViewerE2EChromium();
 			page = await browser.newPage({ viewport: { height: 980, width: 1728 } });
-			await page.goto(bridgeViewerViteProductFileUrl(serverB.origin), {
-				timeout: annotationRestartJourneyTimeoutMilliseconds,
-				waitUntil: 'domcontentloaded',
-			});
+			await page.goto(
+				bridgeViewerViteProductFileUrl(serverB.origin, fixture.oracle.largeFilePath),
+				{
+					timeout: annotationRestartJourneyTimeoutMilliseconds,
+					waitUntil: 'domcontentloaded',
+				},
+			);
 			await waitForSelectedFileReady({ oracle: fixture.oracle, page });
 			await page
 				.getByText('File Save must settle from its exact command receipt.', { exact: true })
@@ -76,10 +81,16 @@ export function registerBridgeViewerViteAnnotationSystemJourneyTests(): void {
 			});
 			expect(fileAfterRestart).toEqual(fileBeforeRestart.outputIdentity);
 
-			await page.goto(bridgeViewerViteProductReviewUrl(serverB.origin), {
-				timeout: annotationRestartJourneyTimeoutMilliseconds,
-				waitUntil: 'domcontentloaded',
-			});
+			await page.goto(
+				bridgeViewerViteProductReviewUrl(
+					serverB.origin,
+					requireBridgeViewerVitePrimaryReviewPath(fixture.oracle),
+				),
+				{
+					timeout: annotationRestartJourneyTimeoutMilliseconds,
+					waitUntil: 'domcontentloaded',
+				},
+			);
 			const reviewOriginFile = fixture.oracle.reviewFiles[0];
 			if (reviewOriginFile === undefined) {
 				throw new Error('Restart journey requires a Review-origin file.');
@@ -158,10 +169,16 @@ export function registerBridgeViewerViteAnnotationSystemJourneyTests(): void {
 			page = await browser.newPage({ viewport: { height: 980, width: 1728 } });
 			const runtimeDiagnostics = observeBrowserRuntimeDiagnostics(page);
 			const annotationCommandTrace = observeReviewAnnotationCommandTrace(page);
-			await page.goto(bridgeViewerViteProductReviewUrl(server.origin), {
-				timeout: annotationRestartJourneyTimeoutMilliseconds,
-				waitUntil: 'domcontentloaded',
-			});
+			await page.goto(
+				bridgeViewerViteProductReviewUrl(
+					server.origin,
+					requireBridgeViewerVitePrimaryReviewPath(fixture.oracle),
+				),
+				{
+					timeout: annotationRestartJourneyTimeoutMilliseconds,
+					waitUntil: 'domcontentloaded',
+				},
+			);
 			const affectedFile = fixture.oracle.reviewFiles[0];
 			const unaffectedFile = fixture.oracle.reviewFiles[1];
 			if (affectedFile === undefined || unaffectedFile === undefined) {
@@ -225,9 +242,10 @@ export function registerBridgeViewerViteAnnotationSystemJourneyTests(): void {
 				undefined,
 				{ timeout: annotationComposedConvergenceTimeoutMilliseconds },
 			);
-			const appliedReceiptResponse = page.waitForResponse(isReviewPublicationAppliedResponse, {
-				timeout: annotationRestartJourneyTimeoutMilliseconds,
-			});
+			const appliedReceiptResponse = waitForProductCallSettlement(
+				page,
+				isReviewPublicationAppliedResponse,
+			);
 			const applyNowButton = page.getByRole('button', { name: 'Apply now' });
 			await expect
 				.poll(async (): Promise<boolean> => applyNowButton.isEnabled(), {
@@ -235,7 +253,7 @@ export function registerBridgeViewerViteAnnotationSystemJourneyTests(): void {
 				})
 				.toBe(true);
 			await applyNowButton.press('Enter');
-			await requireCompletedReviewPublicationAppliedResponse(await appliedReceiptResponse);
+			requireCompletedReviewPublicationAppliedResponse((await appliedReceiptResponse).result);
 			const appliedComparison = await waitForInstalledReviewPackage({
 				expectedTargetLabel: 'HEAD',
 				page,
@@ -274,10 +292,20 @@ export function registerBridgeViewerViteAnnotationSystemJourneyTests(): void {
 					timeout: annotationComposedConvergenceTimeoutMilliseconds,
 				});
 			const draftSaveCommitted = waitForCommittedAnnotationCommand(page, 'draft.save', 'review');
-			await Promise.all([
-				draftSaveCommitted,
-				page.getByRole('button', { name: 'Save annotation' }).click(),
-			]);
+			try {
+				await Promise.all([
+					draftSaveCommitted,
+					page.getByRole('button', { name: 'Save annotation' }).click(),
+				]);
+			} catch (error: unknown) {
+				throw new Error(
+					`Review draft save failed after apply: ${JSON.stringify({ annotationCommandTrace })}`,
+					{ cause: error },
+				);
+			}
+			expect(
+				new Set(annotationCommandTrace.filter((kind) => kind.startsWith('draft.save@'))).size,
+			).toBe(1);
 			await page.getByText(savedDuringHoldBody, { exact: true }).waitFor({
 				state: 'visible',
 				timeout: annotationComposedConvergenceTimeoutMilliseconds,
@@ -413,7 +441,7 @@ function observeReviewAnnotationCommandTrace(page: Page): string[] {
 		}
 		const operation = call['request']['operation'];
 		if (!isUnknownRecord(operation) || typeof operation['kind'] !== 'string') return;
-		operationKinds.push(operation['kind']);
+		operationKinds.push(`${operation['kind']}@${String(body['requestSequence'])}`);
 	});
 	return operationKinds;
 }
@@ -509,11 +537,9 @@ function isReviewPublicationAppliedResponse(response: Response): boolean {
 	);
 }
 
-async function requireCompletedReviewPublicationAppliedResponse(response: Response): Promise<void> {
-	const body: unknown = await response.json();
+function requireCompletedReviewPublicationAppliedResponse(body: unknown): void {
 	const call = typeof body === 'object' && body !== null ? Reflect.get(body, 'call') : null;
 	if (
-		!response.ok() ||
 		typeof body !== 'object' ||
 		body === null ||
 		Reflect.get(body, 'kind') !== 'call.completed' ||

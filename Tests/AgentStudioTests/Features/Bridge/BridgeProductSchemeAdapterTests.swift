@@ -1,4 +1,5 @@
 import AgentStudioTestHarness
+import AgentStudioTestSupport
 import Foundation
 import Testing
 import WebKit
@@ -7,6 +8,78 @@ import WebKit
 
 @Suite("Bridge product scheme adapter")
 struct BridgeProductSchemeAdapterTests {
+    @Test("unknown typed view scope returns a refusal through the real adapter")
+    func unknownSubscriptionScopeReturnsTypedRefusal() async throws {
+        let harness = try BridgeProductSchemeAdapterHarness.make()
+        #expect(try await harness.openSession().response?.statusCode == 200)
+        await harness.provider.waitUntilControlCompleted(1)
+        let body = try JSONSerialization.data(
+            withJSONObject: [
+                "kind": "subscription.setScope",
+                "paneSessionId": bridgeProductTestPaneSessionId,
+                "requestId": "request-unknown-subscription-scope",
+                "requestSequence": 2,
+                "subscriptionId": "retired-review-subscription",
+                "subscriptionKind": "review.metadata",
+                "domain": "default",
+                "handle": "review-handle-1",
+                "incarnation": "review-incarnation-1",
+                "scopeRevision": 1,
+                "scope": ["kind": "review", "interests": []],
+                "wireVersion": BridgeProductWireContract.version,
+                "workerInstanceId": bridgeProductTestWorkerInstanceId,
+            ],
+            options: [.sortedKeys]
+        )
+
+        let reply = try await collectBridgeProductSchemeReply(
+            adapter: harness.adapter,
+            request: bridgeProductSchemeRequest(
+                route: BridgeProductWireContract.commandRoute,
+                capability: harness.capabilityHeader,
+                body: body
+            )
+        )
+        let response = try BridgeProductStrictJSON.decode(
+            BridgeProductControlResponse.self,
+            from: reply.body
+        )
+
+        #expect(reply.response?.statusCode == 200)
+        guard case .requestError(let refusal) = response else {
+            Issue.record("Expected a typed unknown-subscription refusal")
+            return
+        }
+        #expect(refusal.code == .unknownSubscription)
+        #expect(refusal.nextExpectedRequestSequence == 2)
+        #expect(!refusal.retryable)
+        #expect((await harness.provider.snapshot).controlRequests.count == 1)
+    }
+
+    @Test("a URL-less scheme request terminates only as cancellation")
+    func missingURLCannotFinishWithoutResponse() async throws {
+        let harness = try BridgeProductSchemeAdapterHarness.make()
+        var request = URLRequest(url: try #require(URL(string: BridgeProductWireContract.commandRoute)))
+        request.url = nil
+        let reply = bridgeProductSchemeReplyWithRoutingTask(
+            adapter: harness.adapter,
+            request: request
+        )
+        var receivedResponse = false
+
+        do {
+            for try await event in reply.stream {
+                if case .response = event { receivedResponse = true }
+            }
+            Issue.record("The scheme stream finished normally without a response")
+        } catch is CancellationError {
+            // WebKit always provides a URL; the impossible request has no legal
+            // response target, and must not hit WebKit's generic error catch.
+        }
+        await reply.routingTask.value
+        #expect(!receivedResponse)
+    }
+
     @Test("only the three canonical routes accept POST application/json")
     func canonicalRoutesMethodsAndMediaTypesAreClosed() async throws {
         // Arrange
@@ -76,6 +149,7 @@ struct BridgeProductSchemeAdapterTests {
         let accepted = try await harness.openSession(
             contentType: "application/json; charset=UTF-8"
         )
+        await harness.provider.waitUntilControlStarted(1)
         #expect(accepted.response?.statusCode == 200)
         #expect((await harness.provider.snapshot).controlRequests.count == 1)
     }
@@ -155,6 +229,7 @@ struct BridgeProductSchemeAdapterTests {
         )
 
         // Assert
+        await harness.provider.waitUntilControlStarted(1)
         #expect(accepted.response?.statusCode == 200)
         #expect(exactStream.readInvocationCount > 0)
         #expect(rejected.response?.statusCode == 413)
@@ -219,6 +294,7 @@ struct BridgeProductSchemeAdapterTests {
         )
 
         // Assert
+        await harness.provider.waitUntilControlStarted(1)
         #expect(rejection.response?.statusCode == 200)
         guard case .requestError(let requestError) = response else {
             Issue.record("Expected a typed request.error response")
@@ -228,6 +304,34 @@ struct BridgeProductSchemeAdapterTests {
         #expect(requestError.nextExpectedRequestSequence == 2)
         #expect(requestError.correlation.requestId == "request-call-adapter")
         #expect((await harness.provider.snapshot).controlRequests.count == 1)
+    }
+
+    @Test("retired session returns a typed HTTP refusal for a decoded control")
+    func retiredSessionReturnsTypedHTTPRefusal() async throws {
+        let harness = try BridgeProductSchemeAdapterHarness.make()
+        #expect(try await harness.openSession().response?.statusCode == 200)
+        _ = await harness.session.revoke(acknowledgeLifecycle: { _ in true })
+
+        let reply = try await collectBridgeProductSchemeReply(
+            adapter: harness.adapter,
+            request: bridgeProductSchemeRequest(
+                route: BridgeProductWireContract.commandRoute,
+                capability: harness.capabilityHeader,
+                body: bridgeProductSchemeReviewCallBody(requestSequence: 2)
+            )
+        )
+        let response = try BridgeProductStrictJSON.decode(
+            BridgeProductControlResponse.self,
+            from: reply.body
+        )
+
+        #expect(reply.response?.statusCode == 409)
+        guard case .requestError(let refusal) = response else {
+            Issue.record("Expected a typed request.error body")
+            return
+        }
+        #expect(refusal.code == .staleWorker)
+        #expect(refusal.correlation.requestId == "request-call-adapter")
     }
 
     @Test("cancellation before provider dispatch abandons admission and permits retry")
@@ -257,7 +361,9 @@ struct BridgeProductSchemeAdapterTests {
         routingStartGate.release()
         _ = try? await consumer.value
         await routedReply.routingTask.value
+        #expect((await harness.provider.snapshot).controlRequests.isEmpty)
         let retry = try await harness.openSession(body: body)
+        await harness.provider.waitUntilControlStarted(1)
 
         // Assert
         #expect(retry.response?.statusCode == 200)
@@ -266,11 +372,13 @@ struct BridgeProductSchemeAdapterTests {
         #expect(controlRequestCount == 1, "observed \(controlRequestCount) provider dispatches")
     }
 
-    @Test("pre-response cancellation terminates as cancellation instead of a clean finish")
-    func preResponseCancellationDoesNotFinishWithoutResponse() async throws {
+    @Test("revoked admission before a response returns a typed terminal refusal")
+    func revokedAdmissionBeforeResponseReturnsTypedRefusal() async throws {
         // Arrange
-        let harness = try BridgeProductSchemeAdapterHarness.make(
-            holdFirstControlResponse: true
+        let harness = try BridgeProductSchemeAdapterHarness.make()
+        let routingStartGate = HeldStep<Void>(
+            "preResponseRoutingStart",
+            cancellation: .holdThroughCancellation
         )
         let routedReply = bridgeProductSchemeReplyWithRoutingTask(
             adapter: harness.adapter,
@@ -278,26 +386,44 @@ struct BridgeProductSchemeAdapterTests {
                 route: BridgeProductWireContract.commandRoute,
                 capability: harness.capabilityHeader,
                 body: bridgeProductSchemeWorkerOpenBody()
-            )
+            ),
+            routingStartGate: routingStartGate
         )
-        await harness.provider.waitUntilControlStarted(1)
+        try await routingStartGate.firstArrival()
 
         // Act
         harness.adapter.productAdmissionGate.close()
-        await harness.provider.releaseHeldControlResponse()
-        let terminatedWithCancellation: Bool
-        do {
-            for try await _ in routedReply.stream {}
-            terminatedWithCancellation = false
-        } catch is CancellationError {
-            terminatedWithCancellation = true
+        routingStartGate.release()
+        var responseBytes = Data()
+        var responseStatus: Int?
+        var receivedResponse = false
+        for try await event in routedReply.stream {
+            switch event {
+            case .response(let response):
+                receivedResponse = true
+                responseStatus = (response as? HTTPURLResponse)?.statusCode
+            case .data(let data):
+                responseBytes.append(data)
+            @unknown default:
+                Issue.record("Unexpected scheme reply event")
+            }
         }
         await routedReply.routingTask.value
 
         // Assert
-        #expect(terminatedWithCancellation)
+        #expect(receivedResponse)
+        #expect(responseStatus == 409)
+        let refusal = try BridgeProductStrictJSON.decode(
+            BridgeProductControlResponse.self,
+            from: responseBytes
+        )
+        guard case .requestError(let error) = refusal else {
+            Issue.record("Expected a typed stale-worker refusal")
+            return
+        }
+        #expect(error.code == .staleWorker)
         #expect((await harness.session.snapshot).pendingRequestKind == nil)
-        #expect((await harness.provider.snapshot).controlRequests.count == 1)
+        #expect((await harness.provider.snapshot).controlRequests.isEmpty)
     }
 
     @Test("cancellation after provider dispatch finishes and caches the exact response")
@@ -399,11 +525,11 @@ struct BridgeProductSchemeAdapterTests {
         #expect(snapshot.producerFailureCount == 0)
     }
 
-    @Test("metadata frame remains resident until an exact worker observation is accepted")
-    func metadataFrameRequiresWorkerObservationBeforeRelease() async throws {
-        // Arrange
+    @Test("retired metadata frame observations are refused while the stream remains usable")
+    func metadataFrameObservationIsRejected() async throws {
         let harness = try BridgeProductSchemeAdapterHarness.make()
         #expect(try await harness.openSession().response?.statusCode == 200)
+        #expect(await harness.session.waitUntilActive())
         let metadataRequest = try bridgeProductMetadataStreamRequest(
             metadataStreamId: "metadata-stream-worker-observation",
             resumeFromStreamSequence: nil
@@ -420,62 +546,31 @@ struct BridgeProductSchemeAdapterTests {
                     )
                 ) {
                     switch result {
-                    case .response:
-                        await recorder.record(.response)
-                    case .data:
-                        await recorder.record(.data)
-                    @unknown default:
-                        break
+                    case .response: await recorder.record(.response)
+                    case .data: await recorder.record(.data)
+                    @unknown default: break
                     }
                 }
             } catch {
-                // The stream is cancelled after the acknowledgement assertions.
+                // Cancellation ends the stream after the rejection assertion.
             }
         }
         await recorder.waitUntilCount(2)
-        let acknowledgement = try BridgeProductStrictJSON.decode(
-            BridgeProductMetadataFrameAcknowledgement.self,
-            from: Data(
-                """
-                {
-                  "kind": "stream.frameObserved",
-                  "metadataStreamId": "metadata-stream-worker-observation",
-                  "paneSessionId": "\(bridgeProductTestPaneSessionId)",
-                  "streamKind": "metadata",
-                  "streamSequence": 0,
-                  "wireVersion": 2,
-                  "workerInstanceId": "\(bridgeProductTestWorkerInstanceId)"
-                }
-                """.utf8
+        let retiredObservation = Data(
+            """
+            {"kind":"stream.frameObserved","metadataStreamId":"metadata-stream-worker-observation",            "paneSessionId":"\(bridgeProductTestPaneSessionId)","streamKind":"metadata",            "streamSequence":0,"wireVersion":2,"workerInstanceId":"\(bridgeProductTestWorkerInstanceId)"}
+            """.utf8
+        )
+        let refusal = try await collectBridgeProductSchemeReply(
+            adapter: harness.adapter,
+            request: bridgeProductSchemeRequest(
+                route: BridgeProductWireContract.commandRoute,
+                capability: harness.capabilityHeader,
+                body: retiredObservation
             )
         )
-        let acknowledgementRequest = bridgeProductSchemeRequest(
-            route: BridgeProductWireContract.commandRoute,
-            capability: harness.capabilityHeader,
-            body: try JSONEncoder().encode(acknowledgement)
-        )
-
-        // Act
-        let beforeAcknowledgement = await harness.session.producerSnapshot()
-        let accepted = try await collectBridgeProductSchemeReply(
-            adapter: harness.adapter,
-            request: acknowledgementRequest
-        )
-        let replay = try await collectBridgeProductSchemeReply(
-            adapter: harness.adapter,
-            request: acknowledgementRequest
-        )
-        let afterAcknowledgement = await harness.session.producerSnapshot()
-
-        // Assert
-        #expect(beforeAcknowledgement.queuedFrameCount == 1)
-        #expect(beforeAcknowledgement.inFlightFrameReceiptCount == 1)
-        #expect(accepted.response?.statusCode == 204)
-        #expect(replay.response?.statusCode == 204)
-        #expect(accepted.body.isEmpty)
-        #expect(replay.body.isEmpty)
-        #expect(afterAcknowledgement.queuedFrameCount == 0)
-        #expect(afterAcknowledgement.inFlightFrameReceiptCount == 0)
+        #expect(refusal.response?.statusCode == 400)
+        #expect(refusal.body.isEmpty)
 
         consumer.cancel()
         _ = await consumer.value
@@ -514,29 +609,27 @@ struct BridgeProductSchemeAdapterTests {
         }
 
         // Act
+        let endedCleanlyAfterResponse = try await iterator.next() == nil
+        await routedReply.routingTask.value
         let openingObservation = try await collectBridgeProductSchemeReply(
             adapter: harness.adapter,
             request: bridgeProductSchemeRequest(
                 route: BridgeProductWireContract.commandRoute,
                 capability: harness.capabilityHeader,
-                body: try contentFrameAcknowledgementBody(
+                body: try contentAcknowledgementBody(
                     for: contentRequest.admission,
                     contentSequence: 0
                 )
             )
         )
-        let endedWithoutThrowing: Bool
-        do {
-            endedWithoutThrowing = try await iterator.next() == nil
-        } catch {
-            endedWithoutThrowing = false
-        }
-        await routedReply.routingTask.value
-
         // Assert
-        #expect(openingObservation.response?.statusCode == 204)
-        #expect(openingObservation.body.isEmpty)
-        #expect(endedWithoutThrowing)
+        #expect(openingObservation.response?.statusCode == 404)
+        let openingRefusal = try BridgeProductStrictJSON.decode(
+            BridgeProductContentAcknowledgementRefusedResponse.self,
+            from: openingObservation.body
+        )
+        #expect(openingRefusal.reason == .unknownRead)
+        #expect(endedCleanlyAfterResponse)
         #expect((await harness.session.producerSnapshot()).hasZeroResidue)
         let providerSnapshot = await harness.provider.snapshot
         #expect(providerSnapshot.contentRequestCount == 1)
@@ -556,18 +649,17 @@ struct BridgeProductSchemeAdapterTests {
 
 }
 
-private func contentFrameAcknowledgementBody(
+func contentAcknowledgementBody(
     for admission: BridgeProductContentAdmission,
     contentSequence: Int
 ) throws -> Data {
     try JSONSerialization.data(
         withJSONObject: [
             "contentRequestId": admission.contentRequestId,
-            "contentSequence": contentSequence,
-            "kind": "stream.frameObserved",
+            "receivedThroughContentSequence": contentSequence,
+            "kind": "content.acknowledge",
             "leaseId": admission.leaseId,
             "paneSessionId": admission.paneSessionId,
-            "streamKind": "content",
             "wireVersion": admission.wireVersion,
             "workerInstanceId": admission.workerInstanceId,
         ],

@@ -21,6 +21,8 @@ enum BridgeProductWorktreeAnnotationOperation: Codable, Equatable, Sendable {
     case chooseContinuity(ContinuityBody)
     case refreshSource(SourceRefreshBody)
     case outputScopeCommit(OutputScopeCommitBody)
+    case outputPreferenceChangeFolder
+    case outputReveal(attemptID: UUID)
     case outputHandledClear(OutputHandledClearBody)
     case outputHistory(sessionID: UUID)
     case repeatOutput(attemptID: UUID)
@@ -33,6 +35,7 @@ enum BridgeProductWorktreeAnnotationOperation: Codable, Equatable, Sendable {
         case body
         case confirmsUnresolvedWork
         case decision
+        case destination
         case displayedProjectionRevision
         case editToken
         case expectedDraftRevision
@@ -68,6 +71,8 @@ enum BridgeProductWorktreeAnnotationOperation: Codable, Equatable, Sendable {
         case outputHistory = "output.history"
         case outputHandledClear = "output.handled.clear"
         case outputScopeCommit = "output.scope.commit"
+        case outputPreferenceChangeFolder = "output.preference.changeFolder"
+        case outputReveal = "output.reveal"
         case markMessagesViewed = "message.viewed.mark"
         case releaseDemand = "demand.release"
         case repeatOutput = "output.repeat"
@@ -110,6 +115,17 @@ enum BridgeProductWorktreeAnnotationOperation: Codable, Equatable, Sendable {
         case .refreshSource:
             self = try Self.decodeSourceRefresh(container, decoder)
         case .outputScopeCommit:
+            let outputKind = try container.decode(OutputKind.self, forKey: .outputKind)
+            let destination = try container.decodeIfPresent(OutputDestination.self, forKey: .destination)
+            guard
+                (outputKind == .jsonFile && destination != nil)
+                    || (outputKind == .clipboardMarkdown && destination == nil)
+            else {
+                throw BridgeProductContractDecoding.invalidValue(
+                    "Only JSON export requires a destination",
+                    codingPath: decoder.codingPath
+                )
+            }
             self = .outputScopeCommit(
                 OutputScopeCommitBody(
                     displayedProjectionRevision: try Self.nonnegative(
@@ -122,12 +138,17 @@ enum BridgeProductWorktreeAnnotationOperation: Codable, Equatable, Sendable {
                         .expectedSessionRevision,
                         decoder
                     ),
-                    outputKind: try container.decode(OutputKind.self, forKey: .outputKind),
+                    outputKind: outputKind,
+                    destination: destination,
                     scope: try container.decode(OutputScope.self, forKey: .scope),
                     sessionId: try Self.decodeID(container, .sessionId, decoder),
                     sourceGeneration: try Self.nonnegative(container, .sourceGeneration, decoder)
                 )
             )
+        case .outputPreferenceChangeFolder:
+            self = .outputPreferenceChangeFolder
+        case .outputReveal:
+            self = .outputReveal(attemptID: try Self.decodeID(container, .attemptId, decoder))
         case .outputHandledClear:
             self = .outputHandledClear(
                 OutputHandledClearBody(
@@ -318,12 +339,19 @@ enum BridgeProductWorktreeAnnotationOperation: Codable, Equatable, Sendable {
             try container.encode(body.displayedProjectionRevision, forKey: .displayedProjectionRevision)
             try container.encode(body.expectedSessionRevision, forKey: .expectedSessionRevision)
             try container.encode(body.outputKind, forKey: .outputKind)
+            if let destination = body.destination {
+                try container.encode(destination, forKey: .destination)
+            }
             try container.encode(body.scope, forKey: .scope)
             try container.encode(
                 BridgeProductReviewPublicationIdContract.encode(body.sessionId),
                 forKey: .sessionId
             )
             try container.encode(body.sourceGeneration, forKey: .sourceGeneration)
+        case .outputPreferenceChangeFolder:
+            try container.encode(Kind.outputPreferenceChangeFolder, forKey: .kind)
+        case .outputReveal(let attemptID):
+            try Self.encode(kind: .outputReveal, id: attemptID, key: .attemptId, into: &container)
         case .outputHandledClear(let body):
             try container.encode(Kind.outputHandledClear, forKey: .kind)
             try container.encode(
@@ -355,6 +383,10 @@ enum BridgeProductWorktreeAnnotationOperation: Codable, Equatable, Sendable {
             [.kind, .sessionId]
         case .repeatOutput:
             [.attemptId, .kind]
+        case .outputReveal:
+            [.attemptId, .kind]
+        case .outputPreferenceChangeFolder:
+            [.kind]
         case .markMessagesViewed:
             [.items, .kind, .sessionId]
         case .createRoot:
@@ -381,7 +413,7 @@ enum BridgeProductWorktreeAnnotationOperation: Codable, Equatable, Sendable {
             [.kind, .sessionId, .sourceEpoch]
         case .outputScopeCommit:
             [
-                .displayedProjectionRevision, .expectedSessionRevision, .kind,
+                .destination, .displayedProjectionRevision, .expectedSessionRevision, .kind,
                 .outputKind, .scope, .sessionId, .sourceGeneration,
             ]
         case .outputHandledClear:

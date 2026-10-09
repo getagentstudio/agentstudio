@@ -2301,10 +2301,10 @@ struct GitWorkingDirectoryProjectorTests {
     func shutdownWhileProviderIsInFlightDoesNotEmitStaleSnapshot() async throws {
         let bus = EventBus<RuntimeEnvelope>()
         let gate = HeldStep<Void>("gate", cancellation: .holdThroughCancellation)
-        let calls = CallCounter()
+        let providerReleaseReceipt = AsyncReceipt()
         let provider = StubGitWorkingTreeStatusProvider { _ in
-            _ = await calls.increment()
             try? await gate.arrive(())
+            await providerReleaseReceipt.signal()
             return GitWorkingTreeStatus(
                 summary: GitWorkingTreeSummary(changed: 1, staged: 0, untracked: 0),
                 branch: "main",
@@ -2317,22 +2317,24 @@ struct GitWorkingDirectoryProjectorTests {
             coalescingWindow: .zero
         )
 
+        let worktreeId = UUIDv7.generate()
         let observed = GitProjectorOutputFactRecorder()
         let collectionTask = await startCollection(on: bus, observed: observed)
         await actor.start()
 
-        let worktreeId = UUID()
-        let rootPath = URL(fileURLWithPath: "/tmp/shutdown-inflight-\(UUID().uuidString)")
+        let rootPath = URL(
+            fileURLWithPath: "/tmp/shutdown-inflight-\(UUIDv7.generate().uuidString)"
+        )
         await bus.post(makeFilesChangedEnvelope(seq: 1, worktreeId: worktreeId, rootPath: rootPath, batchSeq: 1))
-        let started = (await calls.count(until: { $0 >= 1 })) >= 1
-        #expect(started)
+        try await gate.firstArrival()
 
         let shutdownTask = Task {
             await actor.shutdown()
         }
-        // Release the stale provider result only after shutdown has cancelled the in-flight call.
+        // Release the stale provider result only after shutdown cancels the in-flight call.
         try await gate.cancellationObserved()
         gate.release()
+        _ = try await providerReleaseReceipt.wait()
         await shutdownTask.value
 
         await observed.markAcceptedOutputs()

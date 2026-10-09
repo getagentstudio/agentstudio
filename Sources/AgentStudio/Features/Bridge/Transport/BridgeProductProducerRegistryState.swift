@@ -14,10 +14,6 @@ enum BridgeProductProducerKey: Equatable {
         return true
     }
 
-    var requiresWorkerObservation: Bool {
-        true
-    }
-
     var maximumAdmittedSequence: Int {
         switch self {
         case .metadata:
@@ -54,8 +50,6 @@ struct BridgeProductProducerState {
     var terminalFrameConsumed = false
     var frameWaiterToken: UUID?
     var inFlightFrameReceipt: BridgeProductProducerFrameReceipt?
-    var producerObservationPacingSequenceByWaiterToken: [UUID: Int] = [:]
-    var producerObservedSequenceHighWater: Int?
 }
 
 enum BridgeProductProducerFramePullPreparation {
@@ -70,51 +64,7 @@ struct BridgeProductProducerFrameWaiterResolution {
     let waiterToken: UUID
 }
 
-enum BridgeProductProducerObservationPacingPreparation {
-    case observed
-    case rejected
-    case wait
-}
-
 extension BridgeProductProducerRegistry {
-    func inFlightMetadataFrameReceipt(
-        matching acknowledgement: BridgeProductMetadataFrameAcknowledgement
-    ) -> BridgeProductProducerFrameReceipt? {
-        producersByLeaseId.values.lazy.compactMap { state in
-            guard case .metadata(let metadataKey) = state.key,
-                metadataKey.request.metadataStreamId == acknowledgement.metadataStreamId,
-                metadataKey.request.paneSessionId == acknowledgement.paneSessionId,
-                metadataKey.request.workerInstanceId == acknowledgement.workerInstanceId,
-                let receipt = state.inFlightFrameReceipt,
-                receipt.sequence == acknowledgement.streamSequence
-            else {
-                return nil
-            }
-            return receipt
-        }.first
-    }
-
-    func inFlightContentFrameReceipt(
-        matching acknowledgement: BridgeProductContentFrameAcknowledgement
-    ) -> BridgeProductProducerFrameReceipt? {
-        var matchingReceipt: BridgeProductProducerFrameReceipt?
-        for state in producersByLeaseId.values {
-            guard case .content(let request) = state.key,
-                request.admission.contentRequestId == acknowledgement.contentRequestId,
-                request.admission.leaseId == acknowledgement.leaseId,
-                request.admission.paneSessionId == acknowledgement.paneSessionId,
-                request.admission.workerInstanceId == acknowledgement.workerInstanceId,
-                let receipt = state.inFlightFrameReceipt,
-                receipt.sequence == acknowledgement.contentSequence
-            else {
-                continue
-            }
-            guard matchingReceipt == nil else { return nil }
-            matchingReceipt = receipt
-        }
-        return matchingReceipt
-    }
-
     mutating func prepareFramePull(
         for lease: BridgeProductProducerLease,
         waiterToken: UUID
@@ -200,79 +150,8 @@ extension BridgeProductProducerRegistry {
         if frame.requiredOpening {
             state.openingFrameState = .delivered
         }
-        state.producerObservedSequenceHighWater = max(
-            state.producerObservedSequenceHighWater ?? receipt.sequence,
-            receipt.sequence
-        )
         producersByLeaseId[lease.id] = state
         return true
-    }
-
-    mutating func prepareProducerObservationPacing(
-        for lease: BridgeProductProducerLease,
-        sequence: Int,
-        waiterToken: UUID
-    ) -> BridgeProductProducerObservationPacingPreparation {
-        guard var state = producersByLeaseId[lease.id],
-            state.lifecycle != .stopped
-        else {
-            return .rejected
-        }
-        if let observedSequenceHighWater = state.producerObservedSequenceHighWater,
-            observedSequenceHighWater >= sequence
-        {
-            return .observed
-        }
-        guard state.queuedFrames.contains(where: { $0.sequence == sequence }) else {
-            return .rejected
-        }
-        guard state.producerObservationPacingSequenceByWaiterToken[waiterToken] == nil else {
-            return .rejected
-        }
-        state.producerObservationPacingSequenceByWaiterToken[waiterToken] = sequence
-        producersByLeaseId[lease.id] = state
-        return .wait
-    }
-
-    mutating func takeProducerObservationPacingResolution(
-        for receipt: BridgeProductProducerFrameReceipt
-    ) -> [UUID] {
-        let lease = receipt.producerLease
-        guard var state = producersByLeaseId[lease.id],
-            let observedSequenceHighWater = state.producerObservedSequenceHighWater
-        else { return [] }
-        let waiterTokens = state.producerObservationPacingSequenceByWaiterToken.compactMap { entry in
-            entry.value <= observedSequenceHighWater ? entry.key : nil
-        }
-        for waiterToken in waiterTokens {
-            state.producerObservationPacingSequenceByWaiterToken.removeValue(forKey: waiterToken)
-        }
-        producersByLeaseId[lease.id] = state
-        return waiterTokens
-    }
-
-    mutating func cancelProducerObservationPacing(
-        for lease: BridgeProductProducerLease,
-        waiterToken: UUID
-    ) -> Bool {
-        guard var state = producersByLeaseId[lease.id],
-            state.producerObservationPacingSequenceByWaiterToken.removeValue(forKey: waiterToken) != nil
-        else {
-            return false
-        }
-        producersByLeaseId[lease.id] = state
-        return true
-    }
-
-    mutating func abandonProducerObservationPacing(
-        for lease: BridgeProductProducerLease
-    ) -> [UUID] {
-        guard var state = producersByLeaseId[lease.id] else { return [] }
-        let waiterTokens = Array(state.producerObservationPacingSequenceByWaiterToken.keys)
-        state.producerObservationPacingSequenceByWaiterToken.removeAll(keepingCapacity: false)
-        state.producerObservedSequenceHighWater = nil
-        producersByLeaseId[lease.id] = state
-        return waiterTokens
     }
 
     mutating func abandonFrameDelivery(
@@ -293,7 +172,6 @@ extension BridgeProductProducerRegistry {
     ) -> BridgeProductProducerFrameDelivery {
         let receipt = BridgeProductProducerFrameReceipt(
             producerLease: lease,
-            requiresWorkerObservation: state.key.requiresWorkerObservation,
             sequence: frame.sequence,
             nonce: UUID()
         )

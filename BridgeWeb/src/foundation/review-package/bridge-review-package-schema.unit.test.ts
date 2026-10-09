@@ -1,9 +1,24 @@
 import { describe, expect, test } from 'vitest';
 
-import { bridgeReviewPackageSchema } from './bridge-review-package-schema.js';
+import nullBranchPublication from '../../test-fixtures/bridge-contract-fixtures/valid/bridge-product-review-contribution-null-branch.json' with { type: 'json' };
+import {
+	bridgeReviewComparisonOriginSchema,
+	bridgeReviewPackageSchema,
+} from './bridge-review-package-schema.js';
 import { makeBridgeReviewPackage } from './bridge-review-package-test-support.js';
 
 describe('Bridge review package schema', () => {
+	test('retains the shared native null branch origin in the rendered package contract', () => {
+		const origin = nullBranchPublication.displayed.comparisonOrigin;
+		expect(bridgeReviewComparisonOriginSchema.parse(origin)).toEqual(origin);
+		expect(
+			bridgeReviewComparisonOriginSchema.safeParse({
+				...origin,
+				reviewedSubjectBranchName: undefined,
+			}).success,
+		).toBe(false);
+	});
+
 	test('parses the current Bridge review package contract', () => {
 		const reviewPackage = {
 			...makeBridgeReviewPackage(),
@@ -14,6 +29,7 @@ describe('Bridge review package schema', () => {
 				kind: 'contribution',
 				resolvedTargetOID: 'resolved-target-oid',
 				reviewedHeadOID: 'reviewed-head-oid',
+				reviewedSubjectBranchName: null,
 				symbolicTarget: {
 					kind: 'commit',
 					oid: '0123456789abcdef0123456789abcdef01234567',
@@ -105,6 +121,7 @@ describe('Bridge review package schema', () => {
 				kind: 'contribution',
 				resolvedTargetOID: 'resolved-target-oid',
 				reviewedHeadOID: 'reviewed-head-oid',
+				reviewedSubjectBranchName: null,
 				symbolicTarget: { kind: 'commit', oid: 'abc123' },
 			},
 		});

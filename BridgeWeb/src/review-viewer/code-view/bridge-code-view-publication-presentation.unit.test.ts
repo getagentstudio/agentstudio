@@ -153,4 +153,60 @@ describe('Bridge CodeView publication presentation', () => {
 			harness.coordinator.dispose();
 		}
 	});
+
+	test('advances the applied version for an equivalent new publication after the prior source is invalidated', () => {
+		// Arrange: CodeView still holds the old painted item while main has bound a new source.
+		const harness = createCoordinatorHarness(3_000);
+		const oldPublication = makeReviewPublication({
+			itemId: 'equivalent-source-replacement',
+			publicationSequence: 1,
+		});
+		if (oldPublication.job.payload.kind !== 'codeViewDiffItem') {
+			throw new Error('Expected a Review diff publication payload.');
+		}
+		const oldSource = bridgeCodeViewItemFromWorkerPreparedItem(oldPublication.job.payload.item);
+		if (oldSource?.type !== 'diff') throw new Error('Expected the old Review diff item.');
+		const currentAppliedItem = bridgeCodeViewPresentationItemWithExactSource({
+			presentationItem: { ...oldSource, annotations: [], collapsed: true, version: 4 },
+			sourceItem: oldSource,
+		});
+		const newSource = {
+			...oldSource,
+			bridgeMetadata: { ...oldSource.bridgeMetadata },
+			fileDiff: { ...oldSource.fileDiff },
+		};
+		const newPublication = makeReviewPublication({
+			itemId: oldSource.id,
+			publicationSequence: 2,
+		});
+		if (newPublication.job.payload.kind !== 'codeViewDiffItem') {
+			throw new Error('Expected a new Review diff publication payload.');
+		}
+		const boundNewPublication = {
+			...newPublication,
+			job: {
+				...newPublication.job,
+				payload: { ...newPublication.job.payload, item: newSource },
+			},
+		};
+		harness.coordinator.acceptPublication(boundNewPublication);
+		bindPublicationItemAsFinal(harness.coordinator, boundNewPublication);
+		try {
+			// Act
+			const preparedItem = prepareBridgeCodeViewPublicationPresentationItem({
+				currentItem: currentAppliedItem,
+				getCodeViewHandle: () => null,
+				metadataItem: newSource,
+				renderFulfillmentCoordinator: harness.coordinator,
+			});
+
+			// Assert: a prior-source record cannot make a new queued publication a no-op.
+			expect(preparedItem).not.toBe(currentAppliedItem);
+			expect(preparedItem.version).toBe(5);
+			expect(preparedItem.collapsed).toBe(true);
+			expect(preparedItem.annotations).toBe(currentAppliedItem.annotations);
+		} finally {
+			harness.coordinator.dispose();
+		}
+	});
 });

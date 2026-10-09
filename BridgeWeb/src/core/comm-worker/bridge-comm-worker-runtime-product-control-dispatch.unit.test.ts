@@ -5,7 +5,9 @@ import { encodeBridgeWorkerMetadataInterestUpdateCommand } from './bridge-comm-w
 import { dispatchBridgeCommWorkerRuntimeProductControl } from './bridge-comm-worker-runtime-product-control-dispatch.js';
 import { flushBridgeWorkerRuntimeContinuations } from './bridge-comm-worker-runtime-protocol.test-support.js';
 import type { BridgeProductWorktreeAnnotationOperation } from './bridge-product-call-contracts.js';
+import { BridgeProductControlRequestError } from './bridge-product-session-authority.js';
 import type { BridgeProductTransportSession } from './bridge-product-transport.js';
+import { createTestMetadataReopenPort } from './bridge-product-view-reopen.test-support.js';
 import {
 	BRIDGE_WORKER_WIRE_VERSION,
 	type BridgeWorkerServerToMainMessage,
@@ -134,47 +136,142 @@ describe.each(['fileView', 'review'] as const)(
 			}
 		});
 
-		test('retains the ordinary deadline for clipboard output commits', async () => {
-			vi.useFakeTimers();
-			try {
-				// Arrange
-				const action = deferredProductControlAction();
-				const publishedMessages: BridgeWorkerServerToMainMessage[] = [];
-				dispatchAnnotationOutput({
-					surface,
-					operation: {
-						displayedProjectionRevision: 9,
-						expectedSessionRevision: 4,
-						kind: 'output.scope.commit',
-						outputKind: 'clipboardMarkdown',
-						scope: 'pending',
-						sessionId: '00000000-0000-7000-8000-000000000013',
-						sourceGeneration: 7,
-					},
-					publish: (message): void => {
-						publishedMessages.push(message);
-					},
-					requestId: 'request-clipboard-output',
-					sendProductControl: action.send,
-					timeoutMilliseconds: 25,
-				});
+		test('reports a Save past its deadline as unknown and still publishes the late committed outcome', async () => {
+			// Arrange: W1 settles unknown, then its revision-aware observer receives the late result.
+			const action = deferredProductControlAction();
+			const lateAction = deferredProductControlAction();
+			const acknowledgeLate = vi.fn(async (): Promise<void> => {});
+			const publishedMessages: BridgeWorkerServerToMainMessage[] = [];
+			const requestId = 'request-late-save';
+			dispatchAnnotationOutput({
+				surface,
+				operation: {
+					editToken: '00000000-0000-7000-8000-000000000015',
+					expectedDraftRevision: 1,
+					expectedMessageRevision: 2,
+					kind: 'draft.save',
+					messageId: '00000000-0000-7000-8000-000000000016',
+					sessionId: '00000000-0000-7000-8000-000000000013',
+				},
+				publish: (message): void => {
+					publishedMessages.push(message);
+				},
+				requestId,
+				sendProductControl: action.send,
+				timeoutMilliseconds: 25,
+			});
 
-				// Act
-				await vi.advanceTimersByTimeAsync(25);
-				await flushBridgeWorkerRuntimeContinuations();
-
-				// Assert
-				expect(action.send).toHaveBeenCalledTimes(1);
-				expect(publishedMessages).toEqual([
-					expect.objectContaining({
-						kind: 'health',
-						requestId: 'request-clipboard-output',
-						status: 'degraded',
+			// Act: W1 reports its typed deadline settlement.
+			await flushBridgeWorkerRuntimeContinuations();
+			action.reject(
+				new BridgeProductControlRequestError({
+					code: 'internal',
+					message: 'Save result is unknown.',
+					outcome: 'outcomeUnknown',
+					retryAfterMilliseconds: null,
+					retryable: true,
+					observeLateOutcome: async () => ({
+						actionResult: await lateAction.send(),
+						evidence: {
+							failureCode: null,
+							kind: 'operation.lateOutcome',
+							operationId: 'save-operation-1',
+							outcome: 'succeeded',
+							result: { committed: true },
+							revision: 2,
+						},
+						acknowledge: acknowledgeLate,
 					}),
-				]);
-			} finally {
-				vi.useRealTimers();
-			}
+				}),
+			);
+			await flushBridgeWorkerRuntimeContinuations();
+
+			// Assert: the outcome is unknown, not failed.
+			expect(publishedMessages).toEqual([
+				expect.objectContaining({
+					deliveryStatus: 'unknownAfterDispatch',
+					kind: 'health',
+					requestId,
+					status: 'degraded',
+				}),
+			]);
+
+			// Act: native commits the Save late and W1's observer reports revision two.
+			lateAction.resolve({
+				kind: 'completed',
+				outcome: {
+					requestId: `product-${requestId}`,
+					sessionId: '00000000-0000-7000-8000-000000000013',
+					status: { kind: 'committed' },
+					surface: surface === 'review' ? 'review' : 'file',
+				},
+			});
+			await flushBridgeWorkerRuntimeContinuations();
+
+			// Assert: the late committed outcome still reaches main for reconciliation.
+			expect(action.send).toHaveBeenCalledTimes(1);
+			expect(
+				publishedMessages.filter((message) => message.kind === 'annotationCommandAccepted'),
+			).toEqual([
+				expect.objectContaining({
+					outcome: expect.objectContaining({ status: { kind: 'committed' } }),
+					requestId,
+				}),
+			]);
+			expect(
+				publishedMessages.filter(
+					(message) => message.kind === 'health' && message.status === 'degraded',
+				),
+			).toHaveLength(1);
+			expect(acknowledgeLate).toHaveBeenCalledTimes(1);
+		});
+
+		test('reports the W1 outcomeUnknown settlement for clipboard output commits', async () => {
+			// Arrange
+			const action = deferredProductControlAction();
+			const publishedMessages: BridgeWorkerServerToMainMessage[] = [];
+			dispatchAnnotationOutput({
+				surface,
+				operation: {
+					displayedProjectionRevision: 9,
+					expectedSessionRevision: 4,
+					kind: 'output.scope.commit',
+					outputKind: 'clipboardMarkdown',
+					scope: 'pending',
+					sessionId: '00000000-0000-7000-8000-000000000013',
+					sourceGeneration: 7,
+				},
+				publish: (message): void => {
+					publishedMessages.push(message);
+				},
+				requestId: 'request-clipboard-output',
+				sendProductControl: action.send,
+				timeoutMilliseconds: 25,
+			});
+
+			// W1 owns the deadline and reports its typed settlement to this dispatcher.
+			await flushBridgeWorkerRuntimeContinuations();
+			action.reject(
+				new BridgeProductControlRequestError({
+					code: 'internal',
+					message: 'Clipboard output result is unknown.',
+					outcome: 'outcomeUnknown',
+					retryAfterMilliseconds: null,
+					retryable: true,
+				}),
+			);
+			await flushBridgeWorkerRuntimeContinuations();
+
+			// Assert
+			expect(action.send).toHaveBeenCalledTimes(1);
+			expect(publishedMessages).toEqual([
+				expect.objectContaining({
+					deliveryStatus: 'unknownAfterDispatch',
+					kind: 'health',
+					requestId: 'request-clipboard-output',
+					status: 'degraded',
+				}),
+			]);
 		});
 	},
 );
@@ -282,7 +379,7 @@ function dispatchMetadataInterestUpdate(props: {
 		productTransport: undefined,
 		publish: props.publish,
 		publishReviewMetadataInterests: props.publishReviewMetadataInterests,
-		reviewMetadataApplicator: null,
+		reviewSuccessorSettlementOwner: null,
 		sendProductControl: async (): Promise<null> => null,
 		setActiveComparisonTargetsRequestId: (): void => {},
 	});
@@ -343,21 +440,25 @@ function dispatchAnnotationOutput(props: {
 		productTransport: undefined,
 		publish: props.publish,
 		publishReviewMetadataInterests: async (): Promise<void> => {},
-		reviewMetadataApplicator: null,
+		reviewSuccessorSettlementOwner: null,
 		sendProductControl: props.sendProductControl,
 		setActiveComparisonTargetsRequestId: (): void => {},
 	});
 }
 
 function deferredProductControlAction(): {
+	readonly reject: (reason: Error) => void;
 	readonly resolve: (value: unknown) => void;
 	readonly send: ReturnType<typeof vi.fn<() => Promise<unknown>>>;
 } {
 	let resolveAction!: (value: unknown) => void;
-	const promise = new Promise<unknown>((resolve): void => {
+	let rejectAction!: (reason: Error) => void;
+	const promise = new Promise<unknown>((resolve, reject): void => {
 		resolveAction = resolve;
+		rejectAction = reject;
 	});
 	return {
+		reject: rejectAction,
 		resolve: resolveAction,
 		send: vi.fn(async (): Promise<unknown> => promise),
 	};
@@ -381,14 +482,14 @@ function completedOutputResult(
 
 function createUnusedProductController(): BridgeCommWorkerProductController {
 	return new BridgeCommWorkerProductController({
-		onFileMetadataEvent: (): void => {},
 		productTransport: unusedProductTransport(),
 	});
 }
 
 function unusedProductTransport(): BridgeProductTransportSession {
 	return {
-		bumpWorkerDerivationEpoch: (): number => 0,
+		...createTestMetadataReopenPort(),
+		advanceWorkerDerivationEpoch: (): number => 0,
 		call: async (): Promise<never> => {
 			throw new Error('Unexpected product call.');
 		},

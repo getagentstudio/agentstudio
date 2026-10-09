@@ -97,5 +97,6 @@ function devBootstrapAccepts(navigationIntent: unknown): boolean {
 	return bridgeProductDevBootstrapRequestSchema.safeParse({
 		navigationIntent,
 		reason: 'initial',
+		tabId: 'tab-display-path-test',
 	}).success;
 }

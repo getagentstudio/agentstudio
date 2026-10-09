@@ -75,6 +75,8 @@ extension WebKitSerializedTests {
             )
             defer { _ = controller.beginTeardown() }  // fire-and-forget: defer cannot await; cleanup only
 
+            try await showReviewInNativeFixture(controller)
+
             let result = await controller.handleDiffCommand(
                 .loadDiff(
                     DiffArtifact(

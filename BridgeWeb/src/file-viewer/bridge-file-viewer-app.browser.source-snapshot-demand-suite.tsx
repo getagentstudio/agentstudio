@@ -2,86 +2,72 @@ import { expect, test } from 'vitest';
 import { render } from 'vitest-browser-react';
 
 import { BridgeFileViewerBrowserHarnessApp as BridgeFileViewerApp } from './bridge-file-viewer-browser-test-app.js';
-import type { FileMetadataInterestUpdate } from './bridge-file-viewer-browser-test-fixtures.js';
+import {
+	makeBrowserFileBatch,
+	makeBrowserFileDescriptorOutcomeForContent,
+	makeBrowserFileRow,
+	makeBrowserFileSourceIdentity,
+	type PublishBrowserFileBatch,
+} from './bridge-file-viewer-browser-test-batches.js';
 import {
 	fileNavigationCommandForPath,
 	makeFileContent,
-	makeFileDescriptorForContent,
-	makeFileMetadataEvents,
-	makeSourceIdentity,
-	makeSourceResetMetadataEvents,
-	makeSourceSnapshotMetadataEvents,
-	type PublishFileMetadataEvents,
 } from './bridge-file-viewer-browser-test-fixtures.js';
 import {
-	actFrame,
 	actUpdate,
-	metadataInterestPathsForLane,
-	requireMetadataPublisher,
 	waitForOpenFileState,
 	waitForVisibleCodeText,
 } from './bridge-file-viewer-browser-test-harness.js';
 
 export function registerBridgeFileViewerSourceSnapshotDemandTest(): void {
-	test('requests a replacement descriptor after source reset snapshot metadata arrives without descriptors', async () => {
-		const initialContent = makeFileContent('export const sourceSnapshotDemandInitial = true;\n');
-		const initialDescriptor = await makeFileDescriptorForContent({
-			content: initialContent,
-			contentHandle: 'source-snapshot-demand-content-1',
-			fileId: 'file-source-less-reset-target',
-			path: 'src/source-less-reset-target.ts',
-		});
-		const resetSourceIdentity = makeSourceIdentity({
-			subscriptionGeneration: 2,
+	test('opens a selected metadata-only file when certified descriptor coverage installs', async () => {
+		const path = 'src/source-snapshot-demand.ts';
+		const replacementContent = makeFileContent('export const sourceSnapshotDemandFresh = true;\n');
+		const replacementSource = makeBrowserFileSourceIdentity({
 			sourceCursor: 'cursor-2',
+			subscriptionGeneration: 2,
 		});
-		const metadataInterestUpdates: FileMetadataInterestUpdate[] = [];
-		let publishMetadataEvents: PublishFileMetadataEvents | null = null;
+		const replacementDescriptor = await makeBrowserFileDescriptorOutcomeForContent({
+			content: replacementContent,
+			descriptorId: 'source-snapshot-demand-content-2',
+			fileId: 'file-source-snapshot-demand',
+			path,
+			source: replacementSource,
+		});
+		let publishFileBatch: PublishBrowserFileBatch | null = null;
 
 		await render(
 			<BridgeFileViewerApp
 				codeViewWorkerPoolEnabled={false}
-				initialMetadataEvents={makeFileMetadataEvents(initialDescriptor)}
-				navigationCommand={fileNavigationCommandForPath('src/source-less-reset-target.ts')}
+				initialFileBatch={makeBrowserFileBatch({
+					snapshotCause: 'open',
+					rows: [makeBrowserFileRow({ path, fileId: 'file-source-snapshot-demand' })],
+				})}
+				navigationCommand={fileNavigationCommandForPath(path)}
 				fileProductSession={{
-					readContent: async () => initialContent,
-					onMetadataInterestUpdate: (request) => {
-						metadataInterestUpdates.push(request);
-					},
-					onMetadataSubscription: (handler): (() => void) => {
-						publishMetadataEvents = handler;
-						return (): void => {
-							publishMetadataEvents = null;
-						};
+					readContent: async () => replacementContent,
+					onFileBatchPublisher: (publisher) => {
+						publishFileBatch = publisher;
 					},
 				}}
 			/>,
 		);
 
-		await waitForOpenFileState('ready');
-		await waitForVisibleCodeText('sourceSnapshotDemandInitial');
-		const interestUpdateCountBeforeReset = metadataInterestUpdates.length;
-		const publishRequiredMetadataEvents = requireMetadataPublisher(publishMetadataEvents);
-		await actUpdate((): void => {
-			publishRequiredMetadataEvents(makeSourceResetMetadataEvents());
-		});
 		await waitForOpenFileState('loading');
-		expect(metadataInterestUpdates).toHaveLength(interestUpdateCountBeforeReset);
-
-		await actUpdate((): void => {
-			publishRequiredMetadataEvents(
-				makeSourceSnapshotMetadataEvents({ sequence: 1, sourceIdentity: resetSourceIdentity }),
+		if (publishFileBatch === null) throw new Error('Expected File batch publisher.');
+		const publishRequiredFileBatch: PublishBrowserFileBatch = publishFileBatch;
+		await actUpdate(() => {
+			publishRequiredFileBatch(
+				makeBrowserFileBatch({
+					snapshotCause: 'open',
+					rows: [makeBrowserFileRow({ path, descriptorOutcome: replacementDescriptor })],
+					revision: 2,
+					source: replacementSource,
+				}),
 			);
 		});
-
-		await actFrame();
-		await actFrame();
-		const finalInterestUpdate = metadataInterestUpdates.at(-1);
-		if (finalInterestUpdate === undefined)
-			throw new Error('Expected final File metadata interest.');
-		expect(metadataInterestPathsForLane(finalInterestUpdate, 'foreground')).toEqual([
-			'src/source-less-reset-target.ts',
-		]);
-		expect(finalInterestUpdate?.pathScope).toEqual([]);
+		await waitForVisibleCodeText('sourceSnapshotDemandFresh');
+		await waitForOpenFileState('ready');
+		expect(document.querySelector('[data-testid="worktree-file-refresh"]')).toBeNull();
 	});
 }

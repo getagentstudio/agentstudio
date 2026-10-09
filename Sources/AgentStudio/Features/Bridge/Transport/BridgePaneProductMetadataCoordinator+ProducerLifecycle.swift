@@ -2,13 +2,10 @@ import Foundation
 
 struct BridgePaneProductMetadataProducerExecutionContext: Sendable {
     let foregroundWorkAdmission: BridgePaneRefreshWorkAdmission
+    let metadataLease: BridgeProductProducerLease
     let productAdmission: BridgeProductAdmissionContext
     let session: BridgeProductSession
-}
-
-enum BridgeMetadataInterestBootstrapAdmission: Equatable, Sendable {
-    case afterBootstrap
-    case afterSourceAcceptance
+    let fileSurfaceAttempt: BridgeFileSurfaceReconciler.Attempt?
 }
 
 enum BridgePaneProductMetadataProducerCompletion: Equatable, Sendable {
@@ -16,70 +13,51 @@ enum BridgePaneProductMetadataProducerCompletion: Equatable, Sendable {
     case interrupted
     case failedWithoutReset
     case resetEnqueued
+    case staleProducer
 }
 
 struct BridgePaneProductMetadataProducerTaskLifecycle {
-    private enum ProducerTaskKind: Sendable {
-        case bootstrap
-        case interest(BridgeMetadataInterestBootstrapAdmission)
-    }
-
     private struct BootstrapProducerTask: Sendable {
         let taskId: UUID
         let task: Task<Void, Never>
     }
 
     private struct ProducerTaskStart {
-        let kind: ProducerTaskKind
         let subscriptionId: String
         let subscriptionKind: BridgeProductSubscriptionKind
         let executionContext: BridgePaneProductMetadataProducerExecutionContext
-        let taskFinished: @Sendable (String, UUID, BridgePaneProductMetadataProducerCompletion) async -> Void
+        let taskFinished:
+            @Sendable (
+                String,
+                UUID,
+                BridgePaneProductMetadataProducerCompletion,
+                (any Error)?
+            ) async -> Void
         let operation: @Sendable (BridgeTraceContext?) async throws -> Void
     }
 
     private let lifecycleTraceRecorder: (any BridgeProductMetadataLifecycleTraceRecording)?
     private var bootstrapTaskBySubscriptionId: [String: BootstrapProducerTask] = [:]
-    private var interestTasksBySubscriptionId: [String: [UUID: Task<Void, Never>]] = [:]
 
     init(lifecycleTraceRecorder: (any BridgeProductMetadataLifecycleTraceRecording)?) {
         self.lifecycleTraceRecorder = lifecycleTraceRecorder
-    }
-
-    func hasBootstrapTask(subscriptionId: String) -> Bool {
-        bootstrapTaskBySubscriptionId[subscriptionId] != nil
     }
 
     mutating func startBootstrapTask(
         subscriptionId: String,
         subscriptionKind: BridgeProductSubscriptionKind,
         executionContext: BridgePaneProductMetadataProducerExecutionContext,
-        taskFinished: @escaping @Sendable (String, UUID, BridgePaneProductMetadataProducerCompletion) async -> Void,
+        taskFinished:
+            @escaping @Sendable (
+                String,
+                UUID,
+                BridgePaneProductMetadataProducerCompletion,
+                (any Error)?
+            ) async -> Void,
         operation: @escaping @Sendable (BridgeTraceContext?) async throws -> Void
     ) {
         startTask(
             ProducerTaskStart(
-                kind: .bootstrap,
-                subscriptionId: subscriptionId,
-                subscriptionKind: subscriptionKind,
-                executionContext: executionContext,
-                taskFinished: taskFinished,
-                operation: operation
-            )
-        )
-    }
-
-    mutating func startInterestTask(
-        subscriptionId: String,
-        subscriptionKind: BridgeProductSubscriptionKind,
-        bootstrapAdmission: BridgeMetadataInterestBootstrapAdmission,
-        executionContext: BridgePaneProductMetadataProducerExecutionContext,
-        taskFinished: @escaping @Sendable (String, UUID, BridgePaneProductMetadataProducerCompletion) async -> Void,
-        operation: @escaping @Sendable (BridgeTraceContext?) async throws -> Void
-    ) {
-        startTask(
-            ProducerTaskStart(
-                kind: .interest(bootstrapAdmission),
                 subscriptionId: subscriptionId,
                 subscriptionKind: subscriptionKind,
                 executionContext: executionContext,
@@ -90,26 +68,20 @@ struct BridgePaneProductMetadataProducerTaskLifecycle {
     }
 
     private mutating func startTask(_ request: ProducerTaskStart) {
-        let kind = request.kind
         let subscriptionId = request.subscriptionId
         let subscriptionKind = request.subscriptionKind
         let productAdmission = request.executionContext.productAdmission
         let foregroundWorkAdmission = request.executionContext.foregroundWorkAdmission
+        let originatingMetadataLease = request.executionContext.metadataLease
         let session = request.executionContext.session
         let taskFinished = request.taskFinished
         let operation = request.operation
         let taskId = UUID()
-        let bootstrapPredecessor: Task<Void, Never>? =
-            switch kind {
-            case .bootstrap, .interest(.afterSourceAcceptance):
-                nil
-            case .interest(.afterBootstrap):
-                bootstrapTaskBySubscriptionId[subscriptionId]?.task
-            }
         let lifecycleTraceRecorder = lifecycleTraceRecorder
         let task = Task {
             let traceContext = BridgeTraceContextFactory.live.makeRootContext()
             var completion = BridgePaneProductMetadataProducerCompletion.completed
+            var surfacedError: (any Error)?
             await lifecycleTraceRecorder?.record(
                 .init(
                     stage: .bootstrapStarted,
@@ -119,9 +91,6 @@ struct BridgePaneProductMetadataProducerTaskLifecycle {
                 )
             )
             do {
-                if let bootstrapPredecessor {
-                    await bootstrapPredecessor.value
-                }
                 try Task.checkCancellation()
                 try await operation(traceContext)
             } catch {
@@ -140,6 +109,11 @@ struct BridgePaneProductMetadataProducerTaskLifecycle {
                     )
                 } else {
                     completion = .failedWithoutReset
+                    if subscriptionKind == .fileMetadata,
+                        request.executionContext.fileSurfaceAttempt != nil
+                    {
+                        surfacedError = error
+                    }
                     await lifecycleTraceRecorder?.record(
                         .init(
                             stage: .producerFailed,
@@ -151,114 +125,49 @@ struct BridgePaneProductMetadataProducerTaskLifecycle {
                             traceContext: traceContext
                         )
                     )
-                    let resetResult = try? await session.enqueueSubscriptionReset(
-                        subscriptionId: subscriptionId,
-                        reason: .staleSource,
-                        productAdmission: productAdmission,
-                        foregroundWorkAdmission: foregroundWorkAdmission
-                    )
-                    if case .enqueued? = resetResult {
-                        completion = .resetEnqueued
-                        await lifecycleTraceRecorder?.record(
-                            .init(
-                                stage: .subscriptionResetEnqueued,
-                                subscriptionKind: subscriptionKind,
-                                result: .queued,
-                                traceContext: traceContext
-                            )
+                    if surfacedError == nil {
+                        let resetResult = try? await session.enqueueSubscriptionReset(
+                            originatingMetadataLease: originatingMetadataLease,
+                            subscriptionId: subscriptionId,
+                            reason: .staleSource,
+                            productAdmission: productAdmission,
+                            foregroundWorkAdmission: foregroundWorkAdmission
                         )
+                        if case .enqueued? = resetResult {
+                            completion = .resetEnqueued
+                            await lifecycleTraceRecorder?.record(
+                                .init(
+                                    stage: .subscriptionResetEnqueued,
+                                    subscriptionKind: subscriptionKind,
+                                    result: .queued,
+                                    traceContext: traceContext
+                                )
+                            )
+                        } else if case .rejected(.unknownLease)? = resetResult {
+                            completion = .staleProducer
+                        }
                     }
                 }
             }
-            await taskFinished(subscriptionId, taskId, completion)
+            await taskFinished(subscriptionId, taskId, completion, surfacedError)
             await lifecycleTraceRecorder?.record(
                 .init(
                     stage: .bootstrapFinished,
                     subscriptionKind: subscriptionKind,
                     result: completion == .completed ? .success : .failure,
+                    failureReason: completion == .staleProducer
+                        ? .producerRejection(.unknownLease) : nil,
                     traceContext: traceContext
                 )
             )
         }
-        switch kind {
-        case .bootstrap:
-            bootstrapTaskBySubscriptionId[subscriptionId]?.task.cancel()
-            bootstrapTaskBySubscriptionId[subscriptionId] = .init(
-                taskId: taskId,
-                task: task
-            )
-        case .interest:
-            interestTasksBySubscriptionId[subscriptionId, default: [:]][taskId] = task
-        }
-    }
-
-    func recordEnqueued(
-        _ event: BridgeProductFileMetadataEvent,
-        traceContext: BridgeTraceContext?
-    ) async {
-        let traceEvent: BridgeProductMetadataLifecycleTraceEvent
-        switch event {
-        case .sourceAccepted:
-            traceEvent = .init(
-                stage: .sourceAcceptedEnqueued,
-                subscriptionKind: .fileMetadata,
-                result: .queued,
-                traceContext: traceContext,
-                sourceGeneration: event.sourceGeneration
-            )
-        case .treeWindow(let window):
-            traceEvent = .init(
-                stage: .windowEnqueued,
-                subscriptionKind: .fileMetadata,
-                result: .queued,
-                traceContext: traceContext,
-                sourceGeneration: event.sourceGeneration,
-                rowCount: window.rows.count,
-                isFinalWindow: window.finalWindow
-            )
-        case .treeDelta, .statusPatch, .descriptorReady, .invalidated:
-            return
-        }
-        await lifecycleTraceRecorder?.record(traceEvent)
-    }
-
-    func recordEnqueued(
-        _ event: BridgeProductReviewMetadataEvent,
-        traceContext: BridgeTraceContext?
-    ) async {
-        let stage: BridgeProductMetadataLifecycleTraceEvent.Stage
-        switch event {
-        case .sourceAccepted:
-            stage = .sourceAcceptedEnqueued
-        case .snapshot, .window:
-            stage = .windowEnqueued
-        case .delta, .invalidated, .reset:
-            return
-        }
-        await lifecycleTraceRecorder?.record(
-            .init(
-                stage: stage,
-                subscriptionKind: .reviewMetadata,
-                result: .queued,
-                traceContext: traceContext,
-                sourceGeneration: event.generation
-            )
-        )
+        bootstrapTaskBySubscriptionId[subscriptionId]?.task.cancel()
+        bootstrapTaskBySubscriptionId[subscriptionId] = .init(taskId: taskId, task: task)
     }
 
     mutating func bootstrapTaskFinished(subscriptionId: String, taskId: UUID) -> Bool {
         guard bootstrapTaskBySubscriptionId[subscriptionId]?.taskId == taskId else { return false }
         bootstrapTaskBySubscriptionId.removeValue(forKey: subscriptionId)
-        return true
-    }
-
-    mutating func interestTaskFinished(subscriptionId: String, taskId: UUID) -> Bool {
-        guard interestTasksBySubscriptionId[subscriptionId]?.removeValue(forKey: taskId) != nil else {
-            return false
-        }
-        if interestTasksBySubscriptionId[subscriptionId]?.isEmpty == true {
-            interestTasksBySubscriptionId.removeValue(forKey: subscriptionId)
-        }
         return true
     }
 
@@ -271,31 +180,15 @@ struct BridgePaneProductMetadataProducerTaskLifecycle {
         )?.task {
             tasks.append(bootstrapTask)
         }
-        tasks.append(contentsOf: takeAndCancelInterestTasks(subscriptionId: subscriptionId))
         for task in tasks { task.cancel() }
         return tasks
     }
 
-    mutating func cancelInterestTasks(subscriptionId: String) {
-        let tasks = takeAndCancelInterestTasks(subscriptionId: subscriptionId)
-        for task in tasks { task.cancel() }
-    }
-
-    private mutating func takeAndCancelInterestTasks(
-        subscriptionId: String
-    ) -> [Task<Void, Never>] {
-        let tasks = interestTasksBySubscriptionId.removeValue(forKey: subscriptionId) ?? [:]
-        return Array(tasks.values)
-    }
-
     mutating func takeAndCancelEveryProducerTask() -> [Task<Void, Never>] {
         let bootstrapTasks = bootstrapTaskBySubscriptionId.values.map(\.task)
-        let interestTasks = interestTasksBySubscriptionId.values.flatMap(\.values)
         bootstrapTaskBySubscriptionId.removeAll(keepingCapacity: false)
-        interestTasksBySubscriptionId.removeAll(keepingCapacity: false)
         for task in bootstrapTasks { task.cancel() }
-        for task in interestTasks { task.cancel() }
-        return bootstrapTasks + interestTasks
+        return bootstrapTasks
     }
 
     static func drain(_ tasks: [Task<Void, Never>]) async {

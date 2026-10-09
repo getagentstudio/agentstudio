@@ -1,4 +1,10 @@
+import type { BridgeWorkerReplacementReason } from './bridge-worker-replacement-reason.js';
+
 export interface BridgeReviewSelectionDiagnostic {
+	reviewPresentation?: BridgeReviewPresentationDiagnostic;
+	reviewInstallationGate?: BridgeReviewInstallationGateDiagnostic;
+	reviewCandidateSource?: BridgeReviewCandidateSourceDiagnostic | null;
+	lastReviewDisplayPatch?: BridgeReviewDisplayPatchDiagnostic;
 	commWorkerSessionReadyFirstObservedAtEpochMilliseconds?: number;
 	fileModeSendAttemptCount?: number;
 	fileModeSendSynchronousFailureCount?: number;
@@ -8,6 +14,9 @@ export interface BridgeReviewSelectionDiagnostic {
 	latestFileSelectDispatchDisposition?: BridgeDiagnosticDispatchDisposition | null;
 	latestFileSelectLifecycleState?: BridgeSelectLifecycleState;
 	latestReviewSelectDispatchDisposition?: BridgeDiagnosticDispatchDisposition | null;
+	lastWorkerReplacementReason?: BridgeWorkerReplacementReason | null;
+	workerReplacementFacts?: readonly BridgeWorkerReplacementDiagnosticFact[];
+	droppedWorkerReplacementFactCount?: number;
 	latestReviewSelectLifecycleState?: BridgeSelectLifecycleState;
 	nativeBootstrapInstallAcceptedCount?: number;
 	nativeBootstrapInstallAcceptedFirstObservedAtEpochMilliseconds?: number;
@@ -25,6 +34,68 @@ export interface BridgeReviewSelectionDiagnostic {
 	selectionDroppedCount: number;
 	sessionState?: BridgePaneCommWorkerSessionDiagnosticState;
 }
+
+export interface BridgeReviewPresentationDiagnostic {
+	readonly status: string;
+	readonly sourceStatus: string | null;
+	readonly comparisonAttemptStatus: string | null;
+	readonly projectionPresent: boolean;
+}
+
+export interface BridgeReviewCandidateSourceDiagnostic {
+	readonly publicationId: string;
+	readonly status: string | null;
+}
+
+export interface BridgeReviewDisplayPatchDiagnostic {
+	readonly publicationId: string | null;
+	readonly sourceStatus: string | null;
+	readonly targetCandidatePublicationId: string | null;
+	readonly stageOutcome: 'accepted' | 'refused' | 'active' | 'unscoped';
+	readonly reason:
+		| 'activePublication'
+		| 'candidateIdentityMismatch'
+		| 'staleDisplayEvent'
+		| 'stagedCandidate'
+		| 'unscopedPublication';
+}
+
+export interface BridgeReviewInstallationGateDiagnostic {
+	readonly activeIdentity: { readonly publicationId: string } | null;
+	readonly confirmedDisplayedPublicationId: string | null;
+	readonly pendingCandidate: {
+		readonly publicationId: string;
+		readonly role: 'installing' | 'provisional' | 'updateReady';
+	} | null;
+	readonly lastGateDecision: {
+		readonly kind: 'admitted' | 'held' | 'rejected' | 'requested' | 'skipped';
+		readonly reason:
+			| 'attention'
+			| 'candidateMismatch'
+			| 'candidateMissing'
+			| 'candidateSourceFailed'
+			| 'candidateSourcePending'
+			| 'closed'
+			| 'installInFlight'
+			| 'nativeAdmissionAdmitted'
+			| 'nativeAdmissionFailed'
+			| 'nativeAdmissionRejected'
+			| 'provisionalMarkRejected'
+			| 'receiptPending'
+			| 'requestSubmitted';
+	};
+	readonly lastNativeAdmissionResult: {
+		readonly candidatePublicationId: string;
+		readonly status: 'admitted' | 'rejected';
+	} | null;
+}
+
+export interface BridgeWorkerReplacementDiagnosticFact {
+	readonly requestCount: number;
+	readonly reason: BridgeWorkerReplacementReason;
+}
+
+const maximumRetainedWorkerReplacementFacts = 128;
 
 export type BridgeDiagnosticDispatchDisposition =
 	| 'dropped_detached'
@@ -46,12 +117,15 @@ export type BridgePaneCommWorkerSessionDiagnosticState =
 	| 'bootstrapping'
 	| 'ready'
 	| 'replacement_requested'
+	| 'failed'
 	| 'disposed';
 
 export interface BridgePaneCommWorkerSessionDiagnosticSnapshot {
+	readonly failureReason: 'bootstrapBudgetExhausted' | null;
 	readonly latestFileModeDispatchDisposition: BridgeDiagnosticDispatchDisposition | null;
 	readonly latestFileSelectDispatchDisposition: BridgeDiagnosticDispatchDisposition | null;
 	readonly latestReviewSelectDispatchDisposition: BridgeDiagnosticDispatchDisposition | null;
+	readonly lastReplacementReason: BridgeWorkerReplacementReason | null;
 	readonly nativeBootstrapInstallCount: number;
 	readonly queuedCommandCount: number;
 	readonly replacementRequestCount: number;
@@ -168,9 +242,30 @@ export function recordBridgePaneCommWorkerSessionDiagnosticSnapshot(
 ): void {
 	const diagnostic = ensureBridgeReviewSelectionDiagnostic();
 	if (diagnostic === null) return;
+	const previousRequestCount = diagnostic.replacementRequestCount ?? 0;
+	if (
+		snapshot.replacementRequestCount > previousRequestCount &&
+		snapshot.lastReplacementReason !== null
+	) {
+		const facts = [...(diagnostic.workerReplacementFacts ?? [])];
+		for (
+			let requestCount = previousRequestCount + 1;
+			requestCount <= snapshot.replacementRequestCount;
+			requestCount += 1
+		) {
+			facts.push({ requestCount, reason: snapshot.lastReplacementReason });
+			if (facts.length > maximumRetainedWorkerReplacementFacts) {
+				facts.shift();
+				diagnostic.droppedWorkerReplacementFactCount =
+					(diagnostic.droppedWorkerReplacementFactCount ?? 0) + 1;
+			}
+		}
+		diagnostic.workerReplacementFacts = facts;
+	}
 	diagnostic.latestFileModeDispatchDisposition = snapshot.latestFileModeDispatchDisposition;
 	diagnostic.latestFileSelectDispatchDisposition = snapshot.latestFileSelectDispatchDisposition;
 	diagnostic.latestReviewSelectDispatchDisposition = snapshot.latestReviewSelectDispatchDisposition;
+	diagnostic.lastWorkerReplacementReason = snapshot.lastReplacementReason;
 	diagnostic.nativeBootstrapInstallCount = snapshot.nativeBootstrapInstallCount;
 	diagnostic.queuedCommandCount = snapshot.queuedCommandCount;
 	diagnostic.replacementRequestCount = snapshot.replacementRequestCount;
@@ -203,6 +298,38 @@ export function recordBridgePaneRuntimeDiagnosticSnapshot(
 	if (snapshot.nativeBootstrapInstallAcceptedCount > 0) {
 		diagnostic.nativeBootstrapInstallAcceptedFirstObservedAtEpochMilliseconds ??= Date.now();
 	}
+}
+
+export function recordBridgeReviewInstallationGateDiagnostic(
+	snapshot: BridgeReviewInstallationGateDiagnostic,
+): void {
+	const diagnostic = ensureBridgeReviewSelectionDiagnostic();
+	if (diagnostic === null) return;
+	diagnostic.reviewInstallationGate = snapshot;
+}
+
+export function recordBridgeReviewCandidateSourceDiagnostic(
+	snapshot: BridgeReviewCandidateSourceDiagnostic | null,
+): void {
+	const diagnostic = ensureBridgeReviewSelectionDiagnostic();
+	if (diagnostic === null) return;
+	diagnostic.reviewCandidateSource = snapshot;
+}
+
+export function recordBridgeReviewDisplayPatchDiagnostic(
+	snapshot: BridgeReviewDisplayPatchDiagnostic,
+): void {
+	const diagnostic = ensureBridgeReviewSelectionDiagnostic();
+	if (diagnostic === null) return;
+	diagnostic.lastReviewDisplayPatch = snapshot;
+}
+
+export function recordBridgeReviewPresentationDiagnostic(
+	snapshot: BridgeReviewPresentationDiagnostic,
+): void {
+	const diagnostic = ensureBridgeReviewSelectionDiagnostic();
+	if (diagnostic === null) return;
+	diagnostic.reviewPresentation = snapshot;
 }
 
 export function readBridgeReviewSelectionDiagnostic(): BridgeReviewSelectionDiagnostic | null {

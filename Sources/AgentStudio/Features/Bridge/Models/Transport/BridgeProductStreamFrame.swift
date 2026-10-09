@@ -134,10 +134,6 @@ struct BridgeProductMetadataFrameIdentity: Codable, Equatable, Sendable {
 }
 
 enum BridgeProductSubscriptionFrameIdentityCodingKeys: String, CodingKey, CaseIterable {
-    case cursor
-    case interestRevision
-    case interestSha256
-    case sourceGeneration
     case subscriptionId
     case subscriptionKind
     case subscriptionSequence
@@ -147,10 +143,6 @@ enum BridgeProductSubscriptionFrameIdentityCodingKeys: String, CodingKey, CaseIt
 struct BridgeProductSubscriptionFrameIdentity: Codable, Equatable, Sendable {
     static let codingKeyNames = Set(BridgeProductSubscriptionFrameIdentityCodingKeys.allCases.map(\.rawValue))
 
-    let cursor: String?
-    let interestRevision: Int
-    let interestSha256: String
-    let sourceGeneration: Int
     let subscriptionId: String
     let subscriptionKind: BridgeProductSubscriptionKind
     let subscriptionSequence: Int
@@ -161,15 +153,6 @@ struct BridgeProductSubscriptionFrameIdentity: Codable, Equatable, Sendable {
 
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: BridgeProductSubscriptionFrameIdentityCodingKeys.self)
-        self.cursor = try BridgeProductContractDecoding.decodeRequiredNullable(
-            String.self,
-            forKey: .cursor,
-            from: container,
-            codingPath: decoder.codingPath
-        )
-        self.interestRevision = try container.decode(Int.self, forKey: .interestRevision)
-        self.interestSha256 = try container.decode(String.self, forKey: .interestSha256)
-        self.sourceGeneration = try container.decode(Int.self, forKey: .sourceGeneration)
         self.subscriptionId = try container.decode(String.self, forKey: .subscriptionId)
         self.subscriptionKind = try container.decode(BridgeProductSubscriptionKind.self, forKey: .subscriptionKind)
         registeredSurface = try BridgeProductMetadataApplicationRegistry.product.registration(
@@ -179,20 +162,6 @@ struct BridgeProductSubscriptionFrameIdentity: Codable, Equatable, Sendable {
         self.workerDerivationEpoch = try container.decode(
             Int.self,
             forKey: .workerDerivationEpoch
-        )
-        if let cursor {
-            try BridgeProductContractDecoding.validateOpaqueReference(cursor, codingPath: decoder.codingPath)
-        }
-        try BridgeProductContractDecoding.validateNonnegative(
-            interestRevision,
-            name: "interestRevision",
-            codingPath: decoder.codingPath
-        )
-        try BridgeProductContractDecoding.validateSHA256(interestSha256, codingPath: decoder.codingPath)
-        try BridgeProductContractDecoding.validateNonnegative(
-            sourceGeneration,
-            name: "sourceGeneration",
-            codingPath: decoder.codingPath
         )
         try BridgeProductContractDecoding.validateIdentifier(subscriptionId, codingPath: decoder.codingPath)
         try BridgeProductContractDecoding.validateNonnegative(
@@ -208,9 +177,9 @@ struct BridgeProductSubscriptionFrameIdentity: Codable, Equatable, Sendable {
     }
 
     func validateAcceptedSequence(codingPath: [any CodingKey]) throws {
-        guard subscriptionSequence == 0, interestRevision == 0 else {
+        guard subscriptionSequence == 0 else {
             throw BridgeProductContractDecoding.invalidValue(
-                "Bridge subscription.accepted sequence and interest revision must be zero",
+                "Bridge subscription.accepted sequence must be zero",
                 codingPath: codingPath
             )
         }
@@ -226,10 +195,6 @@ struct BridgeProductSubscriptionFrameIdentity: Codable, Equatable, Sendable {
 
     func encode(to encoder: Encoder) throws {
         var container = encoder.container(keyedBy: BridgeProductSubscriptionFrameIdentityCodingKeys.self)
-        try container.encode(cursor, forKey: .cursor)
-        try container.encode(interestRevision, forKey: .interestRevision)
-        try container.encode(interestSha256, forKey: .interestSha256)
-        try container.encode(sourceGeneration, forKey: .sourceGeneration)
         try container.encode(subscriptionId, forKey: .subscriptionId)
         try container.encode(subscriptionKind, forKey: .subscriptionKind)
         try container.encode(subscriptionSequence, forKey: .subscriptionSequence)
@@ -239,11 +204,11 @@ struct BridgeProductSubscriptionFrameIdentity: Codable, Equatable, Sendable {
 
 enum BridgeProductMetadataFrame: Codable, Equatable, Sendable {
     case metadataStreamAccepted(BridgeProductMetadataStreamAcceptedFrame)
+    case streamKeepalive(BridgeProductStreamKeepaliveFrame)
     case panePresentation(BridgeProductPanePresentationFrame)
     case paneSurfaceSelectionRequested(BridgeProductPaneSurfaceSelectionRequestedFrame)
     case subscriptionAccepted(BridgeProductSubscriptionAcceptedFrame)
-    case subscriptionInterestsCommitted(BridgeProductSubscriptionInterestsCommittedFrame)
-    case subscriptionData(BridgeProductSubscriptionDataFrame)
+    case batch(BridgeProductBatchFrame)
     case subscriptionReset(BridgeProductSubscriptionResetFrame)
     case subscriptionEnd(BridgeProductSubscriptionEndFrame)
     case subscriptionCancelled(BridgeProductSubscriptionCancelledFrame)
@@ -257,11 +222,16 @@ enum BridgeProductMetadataFrame: Codable, Equatable, Sendable {
     var kind: String {
         switch self {
         case .metadataStreamAccepted: "metadataStream.accepted"
+        case .streamKeepalive: "stream.keepalive"
         case .panePresentation: "pane.presentation"
         case .paneSurfaceSelectionRequested: "pane.surfaceSelectionRequested"
         case .subscriptionAccepted: "subscription.accepted"
-        case .subscriptionInterestsCommitted: "subscription.interestsCommitted"
-        case .subscriptionData: "subscription.data"
+        case .batch(let frame):
+            switch frame {
+            case .begin: "subscription.batchBegin"
+            case .part: "subscription.batchPart"
+            case .complete: "subscription.batchComplete"
+            }
         case .subscriptionReset: "subscription.reset"
         case .subscriptionEnd: "subscription.end"
         case .subscriptionCancelled: "subscription.cancelled"
@@ -275,6 +245,8 @@ enum BridgeProductMetadataFrame: Codable, Equatable, Sendable {
         switch try container.decode(String.self, forKey: .kind) {
         case "metadataStream.accepted":
             self = .metadataStreamAccepted(try BridgeProductMetadataStreamAcceptedFrame(from: decoder))
+        case "stream.keepalive":
+            self = .streamKeepalive(try BridgeProductStreamKeepaliveFrame(from: decoder))
         case "pane.presentation":
             self = .panePresentation(try BridgeProductPanePresentationFrame(from: decoder))
         case "pane.surfaceSelectionRequested":
@@ -283,12 +255,8 @@ enum BridgeProductMetadataFrame: Codable, Equatable, Sendable {
             )
         case "subscription.accepted":
             self = .subscriptionAccepted(try BridgeProductSubscriptionAcceptedFrame(from: decoder))
-        case "subscription.interestsCommitted":
-            self = .subscriptionInterestsCommitted(
-                try BridgeProductSubscriptionInterestsCommittedFrame(from: decoder)
-            )
-        case "subscription.data":
-            self = .subscriptionData(try BridgeProductSubscriptionDataFrame(from: decoder))
+        case "subscription.batchBegin", "subscription.batchPart", "subscription.batchComplete":
+            self = .batch(try BridgeProductBatchFrame(from: decoder))
         case "subscription.reset":
             self = .subscriptionReset(try BridgeProductSubscriptionResetFrame(from: decoder))
         case "subscription.end":
@@ -311,11 +279,11 @@ enum BridgeProductMetadataFrame: Codable, Equatable, Sendable {
     func encode(to encoder: Encoder) throws {
         switch self {
         case .metadataStreamAccepted(let frame): try frame.encode(to: encoder)
+        case .streamKeepalive(let frame): try frame.encode(to: encoder)
         case .panePresentation(let frame): try frame.encode(to: encoder)
         case .paneSurfaceSelectionRequested(let frame): try frame.encode(to: encoder)
         case .subscriptionAccepted(let frame): try frame.encode(to: encoder)
-        case .subscriptionInterestsCommitted(let frame): try frame.encode(to: encoder)
-        case .subscriptionData(let frame): try frame.encode(to: encoder)
+        case .batch(let frame): try frame.encode(to: encoder)
         case .subscriptionReset(let frame): try frame.encode(to: encoder)
         case .subscriptionEnd(let frame): try frame.encode(to: encoder)
         case .subscriptionCancelled(let frame): try frame.encode(to: encoder)
@@ -499,6 +467,7 @@ enum BridgePaneReviewDisplayedSnapshot: Codable, Equatable, Sendable {
 }
 
 enum BridgePaneReviewComparisonAttempt: Codable, Equatable, Sendable {
+    case noSource
     case selectionRequired
     case pending(reviewGeneration: Int)
     case settled(reviewGeneration: Int)
@@ -512,6 +481,7 @@ enum BridgePaneReviewComparisonAttempt: Codable, Equatable, Sendable {
     }
 
     private enum Status: String, Codable {
+        case noSource
         case selectionRequired
         case pending
         case settled
@@ -521,6 +491,13 @@ enum BridgePaneReviewComparisonAttempt: Codable, Equatable, Sendable {
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         switch try container.decode(Status.self, forKey: .status) {
+        case .noSource:
+            try BridgeProductContractDecoding.rejectUnknownKeys(
+                from: decoder,
+                allowedKeys: [CodingKeys.status.rawValue],
+                contract: "no-source Review comparison attempt"
+            )
+            self = .noSource
         case .selectionRequired:
             try BridgeProductContractDecoding.rejectUnknownKeys(
                 from: decoder,
@@ -569,6 +546,8 @@ enum BridgePaneReviewComparisonAttempt: Codable, Equatable, Sendable {
     func encode(to encoder: Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
         switch self {
+        case .noSource:
+            try container.encode(Status.noSource, forKey: .status)
         case .selectionRequired:
             try container.encode(Status.selectionRequired, forKey: .status)
         case .pending(let reviewGeneration):
@@ -856,73 +835,5 @@ struct BridgeProductSubscriptionAcceptedFrame: Codable, Equatable, Sendable {
         try subscriptionIdentity.encode(to: encoder)
         var container = encoder.container(keyedBy: CodingKeys.self)
         try container.encode("subscription.accepted", forKey: .kind)
-    }
-}
-
-struct BridgeProductSubscriptionDataFrame: Codable, Equatable, Sendable {
-    private enum CodingKeys: String, CodingKey, CaseIterable {
-        case data
-        case kind
-        case operationCorrelationId
-    }
-
-    let frameIdentity: BridgeProductMetadataFrameIdentity
-    let subscriptionIdentity: BridgeProductSubscriptionFrameIdentity
-    let operationCorrelationID: String?
-    let data: BridgeProductSubscriptionData
-
-    init(from decoder: Decoder) throws {
-        try BridgeProductContractDecoding.rejectUnknownKeys(
-            from: decoder,
-            allowedKeys: BridgeProductMetadataFrameIdentity.codingKeyNames
-                .union(BridgeProductSubscriptionFrameIdentity.codingKeyNames)
-                .union(CodingKeys.allCases.map(\.rawValue)),
-            contract: "subscription.data frame"
-        )
-        let container = try decoder.container(keyedBy: CodingKeys.self)
-        self.data = try container.decode(BridgeProductSubscriptionData.self, forKey: .data)
-        self.operationCorrelationID = try BridgeProductContractDecoding.decodeRequiredNullable(
-            String.self,
-            forKey: .operationCorrelationId,
-            from: container,
-            codingPath: decoder.codingPath
-        )
-        guard try container.decode(String.self, forKey: .kind) == "subscription.data" else {
-            throw BridgeProductContractDecoding.invalidValue(
-                "Invalid subscription.data frame kind",
-                codingPath: decoder.codingPath
-            )
-        }
-        self.frameIdentity = try BridgeProductMetadataFrameIdentity(from: decoder)
-        self.subscriptionIdentity = try BridgeProductSubscriptionFrameIdentity(from: decoder)
-        try frameIdentity.validateProgressSequence(codingPath: decoder.codingPath)
-        try subscriptionIdentity.validateProgressSequence(codingPath: decoder.codingPath)
-        if let operationCorrelationID {
-            try BridgeProductContractDecoding.validateSHA256(
-                operationCorrelationID,
-                codingPath: decoder.codingPath
-            )
-        }
-        guard subscriptionIdentity.subscriptionKind == data.subscriptionKind else {
-            throw BridgeProductContractDecoding.invalidValue(
-                "Bridge product subscription frame kind does not match its data",
-                codingPath: decoder.codingPath
-            )
-        }
-        guard subscriptionIdentity.sourceGeneration == data.sourceGeneration else {
-            throw BridgeProductContractDecoding.invalidValue(
-                "Bridge product metadata frame generation does not match its event",
-                codingPath: decoder.codingPath
-            )
-        }
-    }
-
-    func encode(to encoder: Encoder) throws {
-        try frameIdentity.encode(to: encoder)
-        try subscriptionIdentity.encode(to: encoder)
-        var container = encoder.container(keyedBy: CodingKeys.self)
-        try container.encode(data, forKey: .data)
-        try container.encode("subscription.data", forKey: .kind)
-        try container.encode(operationCorrelationID, forKey: .operationCorrelationId)
     }
 }

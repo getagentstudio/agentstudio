@@ -24,7 +24,11 @@ import {
 	isBridgeWorkerReviewContentMetadata,
 	publishBridgeCommWorkerFileMetadataDemand,
 } from './bridge-comm-worker-demand-command-handlers.js';
-import type { BridgeCommWorkerFileViewRuntimeMutation } from './bridge-comm-worker-file-metadata-projection.js';
+import {
+	advanceBridgeCommWorkerFileRenderFulfillmentLifecycle,
+	retryBridgeCommWorkerExhaustedFileRender,
+} from './bridge-comm-worker-file-render-fulfillment-lifecycle.js';
+import type { BridgeCommWorkerFileViewRuntimeMutation } from './bridge-comm-worker-file-view-runtime-mutation.js';
 import {
 	applyFileViewRuntimeMutationTrackingSelectedRequest,
 	didSelectedFileViewContentRequestChange,
@@ -45,7 +49,7 @@ import {
 import type { BridgeCommWorkerReviewRuntimeSource } from './bridge-comm-worker-review-source-diff.js';
 import {
 	isSelectedContentReadyPreparationCurrent,
-	readSelectedReviewDemandEpoch,
+	readSelectedContentDemandEpoch,
 	scheduleSelectedFileViewContentReadyPreparationForCurrentDemand,
 } from './bridge-comm-worker-selection-demand.js';
 import {
@@ -156,6 +160,7 @@ export function createBridgeCommWorkerCommandHandler(
 		review: 0,
 		reviewAnnotation: 0,
 	};
+	const pendingRenderRetryItemIds = new Set<string>();
 	const reportReviewMetadataPostCommitFailure = (error: unknown): void => {
 		try {
 			props.onReviewMetadataPostCommitFailure?.(error);
@@ -236,6 +241,26 @@ export function createBridgeCommWorkerCommandHandler(
 					props.updateReviewRuntimeSource?.(source);
 				},
 			});
+			postCommitEffects.push((): void => {
+				if (pendingRenderRetryItemIds.size === 0) return;
+				const reviewState = reviewStore.getState();
+				const demandedItemIds = new Set([
+					...reviewState.visibleIds,
+					...(reviewState.selectedId === null ? [] : [reviewState.selectedId]),
+				]);
+				const itemIds = application.source.contentItems
+					.map((item) => item.itemId)
+					.filter((itemId) => pendingRenderRetryItemIds.has(itemId) && demandedItemIds.has(itemId));
+				pendingRenderRetryItemIds.clear();
+				if (itemIds.length === 0) return;
+				props.scheduleDemandExecution?.({
+					affectedItemIds: itemIds,
+					cause: 'renderFulfillment',
+					epoch: currentIntentEpochByDomain.review,
+					forceExecutionItemIds: itemIds,
+					store: reviewStore,
+				});
+			});
 			return {
 				commit: (): void => {
 					if (state !== 'pending') return;
@@ -269,33 +294,37 @@ export function createBridgeCommWorkerCommandHandler(
 			),
 		advanceFileRenderFulfillmentLifecycle: (
 			atMilliseconds,
-		): BridgeCommWorkerRenderFulfillmentLifecycleAdvance => {
-			fileViewStore.renderFulfillmentRegistry.expireReceiptLeases(atMilliseconds);
-			const releasedItemIds =
-				fileViewStore.renderFulfillmentRegistry.releaseReadyRetries(atMilliseconds);
-			const selectedState = fileViewStore.getState();
-			if (selectedState.selectedId !== null && releasedItemIds.includes(selectedState.selectedId)) {
-				props.scheduleSelectedFileViewContentReadyPreparation({
-					epoch: selectedState.selectedEpoch,
-					itemId: selectedState.selectedId,
-					store: fileViewStore,
-				});
-			}
-			return {
-				nextWakeAtMilliseconds:
-					fileViewStore.renderFulfillmentRegistry.nextLifecycleWakeAtMilliseconds(),
-			};
-		},
+		): BridgeCommWorkerRenderFulfillmentLifecycleAdvance =>
+			advanceBridgeCommWorkerFileRenderFulfillmentLifecycle({
+				atMilliseconds,
+				store: fileViewStore,
+				onExhausted: props.onFileVisibleRenderExhausted,
+				scheduleSelectedPreparation: props.scheduleSelectedFileViewContentReadyPreparation,
+			}),
 		advanceReviewRenderFulfillmentLifecycle: (
 			atMilliseconds,
 		): BridgeCommWorkerRenderFulfillmentLifecycleAdvance => {
-			reviewStore.renderFulfillmentRegistry.expireReceiptLeases(atMilliseconds);
+			const expiredItemIds =
+				reviewStore.renderFulfillmentRegistry.expireReceiptLeases(atMilliseconds);
+			for (const itemId of expiredItemIds) props.releaseExpiredReviewPublication?.(itemId);
+			const visibleQueuedExpiry =
+				reviewStore.renderFulfillmentRegistry.expireVisibleQueuedLeases(atMilliseconds);
+			const exhaustedItemIds = [
+				...visibleQueuedExpiry.exhaustedItemIds,
+				...expiredItemIds.filter(
+					(itemId) =>
+						reviewStore.renderFulfillmentRegistry.getItemState(itemId)?.stage === 'failed',
+				),
+			];
+			if (exhaustedItemIds.length > 0) {
+				props.onReviewVisibleRenderExhausted?.(exhaustedItemIds);
+			}
 			const releasedItemIds =
 				reviewStore.renderFulfillmentRegistry.releaseReadyRetries(atMilliseconds);
 			if (releasedItemIds.length > 0) {
 				const releasedItemIdSet = new Set(releasedItemIds);
 				const reviewState = reviewStore.getState();
-				const selectedDemandEpoch = readSelectedReviewDemandEpoch(reviewState);
+				const selectedDemandEpoch = readSelectedContentDemandEpoch(reviewState);
 				if (
 					selectedDemandEpoch !== null &&
 					reviewState.selectedId !== null &&
@@ -426,6 +455,24 @@ export function createBridgeCommWorkerCommandHandler(
 				...(props.retryAnnotationProjection === undefined
 					? {}
 					: { retryAnnotationProjection: props.retryAnnotationProjection }),
+				...(props.retryView === undefined
+					? {}
+					: {
+							retryView: (view): void => {
+								if (view.kind === 'review.metadata') {
+									for (const itemId of reviewStore.renderFulfillmentRegistry.retryExhaustedPublications()) {
+										pendingRenderRetryItemIds.add(itemId);
+									}
+								}
+								props.retryView?.(view);
+								if (view.kind === 'file.metadata')
+									retryBridgeCommWorkerExhaustedFileRender({
+										store: fileViewStore,
+										scheduleSelectedPreparation:
+											props.scheduleSelectedFileViewContentReadyPreparation,
+									});
+							},
+						}),
 				...(props.telemetryClient === undefined ? {} : { telemetryClient: props.telemetryClient }),
 			});
 		},
@@ -459,6 +506,7 @@ interface HandleBridgeWorkerCommandProps {
 		command: BridgeWorkerFileDisplayResyncCommand,
 	) => readonly BridgeWorkerServerToMainMessage[];
 	readonly retryAnnotationProjection?: (surface: 'file' | 'review') => void;
+	readonly retryView?: CreateBridgeCommWorkerCommandHandlerProps['retryView'];
 	readonly telemetryClient?: BridgeCommWorkerTelemetryRecorder;
 	readonly applyRenderDisposition?: (props: {
 		readonly command: BridgeWorkerRenderDispositionCommand;
@@ -552,6 +600,9 @@ function handleBridgeWorkerCommand(
 			return [];
 		case 'annotationProjectionRetry':
 			props.retryAnnotationProjection?.(props.message.surface === 'fileView' ? 'file' : 'review');
+			return [buildBridgeWorkerReadyHealthEvent(props.message.requestId)];
+		case 'viewRecoveryRetry':
+			props.retryView?.(props.message.view);
 			return [buildBridgeWorkerReadyHealthEvent(props.message.requestId)];
 		case 'markFileViewed':
 		case 'fileRefreshRetry':

@@ -19,12 +19,14 @@ struct BridgePaneProductFileDescriptorRenewalTests {
             subscription: opened,
             productAdmission: fixture.productAdmission.context
         ) { _ in }
-        let interests = try fixture.updatedSnapshot(from: opened)
-        let initialEvents = ProductFileMetadataEventCollector()
-        try await source.update(
-            subscription: interests,
-            productAdmission: fixture.productAdmission.context
-        ) { await initialEvents.append($0) }
+        let interests = try fixture.viewDemand()
+        let initialEvents = ProductFileSourceFactCollector()
+        try await source.applyViewDemand(
+            subscriptionId: opened.subscriptionId,
+            demand: interests,
+            productAdmission: fixture.productAdmission.context,
+            forceRecapture: false
+        ) { await initialEvents.append($0, source: source) }
         let previousDescriptor = try #require(
             (await initialEvents.events).compactMap(availableRenewalDescriptor).first
         )
@@ -55,19 +57,21 @@ struct BridgePaneProductFileDescriptorRenewalTests {
             productAdmission: fixture.productAdmission.context
         )
         // The live metadata owner must advance existing demand without a changed interest set.
-        let publishedDescriptors = published.compactMap { availableRenewalDescriptor($0.event) }
+        let publishedDescriptors = published.compactMap { availableRenewalDescriptor($0.fact) }
         #expect(publishedDescriptors.count == 1)
         // A path without a materialized descriptor must not become a global content reset.
         #expect(
             !published.contains { emission in
-                if case .invalidated(let invalidation) = emission.event { return invalidation.fileId == nil }
+                if case .invalidated(let invalidation) = emission.fact { return invalidation.fileId == nil }
                 return false
             })
-        let renewedEvents = ProductFileMetadataEventCollector()
-        try await source.update(
-            subscription: interests,
-            productAdmission: fixture.productAdmission.context
-        ) { await renewedEvents.append($0) }
+        let renewedEvents = ProductFileSourceFactCollector()
+        try await source.applyViewDemand(
+            subscriptionId: opened.subscriptionId,
+            demand: interests,
+            productAdmission: fixture.productAdmission.context,
+            forceRecapture: false
+        ) { await renewedEvents.append($0, source: source) }
 
         // Assert — this explicit-renewal control does not claim automatic recovery.
         let renewedDescriptor = try #require(
@@ -75,11 +79,14 @@ struct BridgePaneProductFileDescriptorRenewalTests {
         )
         let expectedSha256 = SHA256.hash(data: replacementBytes)
             .map { String(format: "%02x", $0) }.joined()
-        #expect(staleReadPlan == nil)
+        let retainedReadPlan = try #require(staleReadPlan)
+        await #expect(throws: BridgePaneProductFileContentSourceError.self) {
+            _ = try await BridgePaneProductFileContentSource.openReadSession(retainedReadPlan)
+        }
         #expect(renewedDescriptor != previousDescriptor)
         #expect(renewedDescriptor.expectedSha256 == expectedSha256)
         let replacementInInvalidation = published.compactMap { emission -> BridgeProductFileContentDescriptor? in
-            guard case .invalidated(let invalidation) = emission.event,
+            guard case .invalidated(let invalidation) = emission.fact,
                 let replacement = invalidation.replacementDescriptor,
                 case .available(let descriptor) = replacement.availability
             else { return nil }
@@ -94,7 +101,7 @@ struct BridgePaneProductFileDescriptorRenewalTests {
             ) != nil
         )
         print(
-            "File renewal diagnostic: changeset descriptors=\(published.compactMap { availableRenewalDescriptor($0.event) }.count), explicit same-interest renewal descriptors=\((await renewedEvents.events).compactMap(availableRenewalDescriptor).count)"
+            "File renewal diagnostic: changeset descriptors=\(published.compactMap { availableRenewalDescriptor($0.fact) }.count), explicit same-interest renewal descriptors=\((await renewedEvents.events).compactMap(availableRenewalDescriptor).count)"
         )
     }
 
@@ -115,10 +122,12 @@ struct BridgePaneProductFileDescriptorRenewalTests {
             subscription: opened,
             productAdmission: fixture.productAdmission.context
         ) { _ in }
-        let interests = try fixture.updatedSnapshot(from: opened)
-        try await source.update(
-            subscription: interests,
-            productAdmission: fixture.productAdmission.context
+        let interests = try fixture.viewDemand()
+        try await source.applyViewDemand(
+            subscriptionId: opened.subscriptionId,
+            demand: interests,
+            productAdmission: fixture.productAdmission.context,
+            forceRecapture: false
         ) { _ in }
         let olderBytes = Data("overlapping renewal A\n".utf8)
         try olderBytes.write(to: fixture.demandedFileURL)
@@ -174,7 +183,7 @@ struct BridgePaneProductFileDescriptorRenewalTests {
 
         // Assert
         let newerDescriptor = try #require(
-            newerPublication.compactMap { availableRenewalDescriptor($0.event) }.first
+            newerPublication.compactMap { availableRenewalDescriptor($0.fact) }.first
         )
         let expectedNewerSHA256 = SHA256.hash(data: newerBytes)
             .map { String(format: "%02x", $0) }.joined()
@@ -195,11 +204,17 @@ struct BridgePaneProductFileDescriptorRenewalTests {
 }
 
 private func availableRenewalDescriptor(
-    _ event: BridgeProductFileMetadataEvent
+    _ observation: ProductFileSourceObservation
+) -> BridgeProductFileContentDescriptor? {
+    availableRenewalDescriptor(observation.fact)
+}
+
+private func availableRenewalDescriptor(
+    _ event: BridgePaneProductFileSourceFact
 ) -> BridgeProductFileContentDescriptor? {
     let payload: BridgeProductFileDescriptorReadyPayload?
     switch event {
-    case .descriptorReady(let ready): payload = ready.payload
+    case .descriptorReady(let ready): payload = ready
     case .invalidated(let invalidation): payload = invalidation.replacementDescriptor
     default: payload = nil
     }

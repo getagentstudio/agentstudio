@@ -44,10 +44,10 @@ func commitObserved(
     )
     #expect(
         coordinator.recordTransportDeliveryDisposition(
-            .transportAcknowledged,
+            .viewBatchSealed,
             publicationId: committedPublication.publicationId,
             productAdmission: productAdmission
-        ) == .committed(delivery: .transportAcknowledged)
+        ) == .committed(delivery: .viewBatchSealed)
     )
     return committedPublication
 }

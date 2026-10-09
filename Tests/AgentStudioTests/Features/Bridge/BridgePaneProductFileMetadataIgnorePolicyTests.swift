@@ -43,7 +43,7 @@ struct BridgePaneProductFileMetadataIgnorePolicyTests {
         )
 
         // Assert
-        #expect(!emissions.contains { if case .treeDelta = $0.event { true } else { false } })
-        #expect(!emissions.contains { if case .invalidated = $0.event { true } else { false } })
+        #expect(!emissions.contains { if case .inventoryChanged = $0.fact { true } else { false } })
+        #expect(!emissions.contains { if case .invalidated = $0.fact { true } else { false } })
     }
 }
