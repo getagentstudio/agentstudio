@@ -77,21 +77,10 @@ struct AgentStudioIPCTargetlessCommandRegistrationTests {
                         #expect(descriptor.resultVariants.contains(result.variant))
                         #expect(result.commandId == example.request.commandId)
                         #expect(result.correlationId == example.request.correlationId)
-                    } catch let error as AppIPCCommandError {
-                        #expect(error.reason == .stateUnavailable)
-                    } catch let error as AgentStudioAppIPCRequestError {
-                        #expect(
-                            error.code == -32_005
-                                && error.data
-                                    == .object([
-                                        "reason": .string("stateUnavailable"), "fieldPath": .string("$.commandId"),
-                                    ]),
-                            "\(descriptor.id.rawValue): catalog example returned \(error)"
-                        )
                     } catch {
                         Issue.record(
                             error,
-                            "\(descriptor.id.rawValue): catalog example must pass target validation and reach a declared result or typed stateUnavailable"
+                            "\(descriptor.id.rawValue): catalog example must pass target validation and reach a declared result"
                         )
                     }
                 }

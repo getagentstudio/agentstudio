@@ -10,6 +10,46 @@ import Testing
 
 @Suite("Pane context IPC admission")
 struct AgentStudioAppIPCPaneContextAdmissionTests {
+    @Test("Automation pane.context.get preserves the catalog unauthorized reason on the wire and in the CLI")
+    func automationContextGetPreservesUnauthorizedReason() async throws {
+        let parameters = try JSONRPCCodec.encodeJSONValue(IPCPaneContextGetParams(handle: "self", page: .first))
+        try await withLiveServer(
+            makeFixture: { try LiveServerFixture(channel: .debug) },
+            body: { fixture in
+                try fixture.server.start()
+                // The real diagnostic credential authenticates an automationClient.
+                let token = fixture.installDebugCredential()
+                let connection = try await connectWithoutBlockingCooperativePool(
+                    socketPath: fixture.paths.socketURL.path)
+                defer { connection.close() }
+                var reader = TestFrameReader()
+                try await loginWithoutBlockingMainActor(
+                    connection: connection, token: token, requestId: 1, reader: &reader)
+                try await sendRequestWithoutBlockingCooperativePool(
+                    connection: connection,
+                    request: JSONRPCClientRequest(id: .number(2), method: "pane.context.get", params: parameters))
+                let response = try await reader.receiveResponseWithoutBlockingMainActor(connection: connection)
+
+                #expect(response.id == .number(2))
+                #expect(response.result == nil)
+                #expect(
+                    response.error
+                        == JSONRPCErrorPayload(
+                            code: -32_002, message: "unauthorized", data: .object(["reason": .string("unauthorized")])
+                        ))
+            })
+
+        let parameterData = try JSONEncoder().encode(parameters)
+        let parameterText = try #require(String(data: parameterData, encoding: .utf8))
+        let observed = try await runRecordedCLIInvocation(
+            .init(arguments: ["pane.context.get", "--json", parameterText]))
+        #expect(observed.requests.contains { $0.method == "pane.context.get" })
+        #expect(observed.outcome.exitCode == 1)
+        #expect(observed.outcome.standardOutput.isEmpty)
+        let diagnostic = try JSONDecoder().decode(JSONValue.self, from: Data(observed.outcome.standardError.utf8))
+        #expect(diagnostic == .object(["reason": .string("unauthorized")]))
+    }
+
     @Test(
         "Reply allowance exactly accounts for the actual id, wrapper and delimiter",
         arguments: [JSONRPCIdentifier.number(3), .string("request-\"/\u{1}-🙂")])
@@ -224,7 +264,7 @@ struct AgentStudioAppIPCPaneContextAdmissionTests {
                         if paneAgent {
                             #expect(response.error?.data == .object(["reason": .string("notOwnPane")]))
                         } else {
-                            #expect(response.error?.data == nil)
+                            #expect(response.error?.data == .object(["reason": .string("unauthorized")]))
                             #expect(response.error?.message == "unauthorized")
                         }
                         let after = try await paneContextMutationCounts(domain)

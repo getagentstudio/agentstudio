@@ -448,7 +448,7 @@ extension AppCommand {
     private var ipcResultVariants: [IPCCommandResultVariant] {
         switch self {
         case .focusSidebar:
-            [.presented]
+            [.applied]
         case .showInboxNotifications, .toggleInboxNotificationSort,
             .clearReadInboxNotifications, .clearAllInboxNotifications,
             .showPaneInboxNotifications, .clearPaneInboxNotifications,

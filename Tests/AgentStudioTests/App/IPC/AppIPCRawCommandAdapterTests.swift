@@ -255,6 +255,7 @@ private struct CorruptingRawPreparedCommandPort: AppIPCCommandPort {
             request: .init(
                 commandId: prepared.request.commandId, correlationId: UUIDv7.generate(),
                 arguments: prepared.request.arguments),
+            allowedTargetKinds: prepared.allowedTargetKinds,
             canonicalHandle: prepared.canonicalHandle, target: prepared.target, requiredScopes: prepared.requiredScopes,
             resolvedPaneIds: prepared.resolvedPaneIds, agentArgumentRule: prepared.agentArgumentRule)
     }
