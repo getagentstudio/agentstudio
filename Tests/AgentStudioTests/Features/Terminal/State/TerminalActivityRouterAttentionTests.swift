@@ -21,7 +21,6 @@ struct TerminalActivityRouterAttentionTests {
             fixture.selectPane(at: 1)
             _ = try await fixture.recorder.expectNextControl(fixture.event(0, false))
             _ = try await fixture.recorder.expectNextControl(fixture.event(1, true))
-            await fixture.router.waitForPendingAttentionDelivery()
             try await fixture.stop()
 
             // Assert
@@ -45,7 +44,6 @@ struct TerminalActivityRouterAttentionTests {
             fixture.selectPane(at: 2)
             _ = try await fixture.recorder.expectNextControl(fixture.event(0, false))
             _ = try await fixture.recorder.expectNextControl(fixture.event(2, true))
-            await fixture.router.waitForPendingAttentionDelivery()
             try await fixture.stop()
 
             // Assert
@@ -284,8 +282,8 @@ struct TerminalActivityRouterAttentionTests {
 
             // Assert
             #expect(fixture.clock.pendingSleepGenerations == bSleepGenerations)
+            _ = try await fixture.deadlines.fire(bDeadline)
             try await fixture.stop()
-            _ = try await fixture.deadlines.expectDisposition(for: bDeadline, .cancelled)
             try await fixture.finish()
         } catch {
             await fixture.abort()

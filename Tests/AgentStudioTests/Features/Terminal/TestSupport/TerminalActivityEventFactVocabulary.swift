@@ -1,22 +1,25 @@
-import AgentStudioCore
 import AgentStudioTestHarness
+import AgentStudioTestSupport
 import Foundation
 
-package struct RecordedTerminalActivitySettle: Sendable {
-    package let envelope: PaneEnvelope
-    package let activity: TerminalSettledActivity
+@testable import AgentStudioCore
+@testable import AgentStudioTerminal
+
+struct RecordedTerminalActivitySettle: Sendable {
+    let envelope: PaneEnvelope
+    let activity: TerminalSettledActivity
 }
 
 /// The stop marker relays an awaited producer shutdown after accepted bus work settles.
 /// It is test-local observation vocabulary, not a new runtime envelope.
-package enum TerminalActivityEventObservation: Sendable {
+enum TerminalActivityEventObservation: Sendable {
     case event(PaneEnvelope)
-    case producerStopped
+    case producerStopped(TerminalActivityRouterFactScope)
 }
 
-/// Core-owned runtime envelopes shared by Terminal and executable integration tests.
-package enum TerminalActivityEventFactSource {
-    package static func attach(
+/// Terminal-test observations of existing Core-owned runtime envelopes.
+enum TerminalActivityEventFactSource {
+    static func attach(
         bus: EventBus<RuntimeEnvelope>, subscriberName: String
     ) async -> FactRecorder<UUID, TerminalActivityEventObservation> {
         let subscription = await bus.subscribe(
@@ -29,7 +32,7 @@ package enum TerminalActivityEventFactSource {
                 describeFact: {
                     switch $0 {
                     case .event(let envelope): String(describing: envelope.event)
-                    case .producerStopped: "terminal producer stopped"
+                    case .producerStopped(let stopScope): "terminal producer stopped: \(stopScope)"
                     }
                 },
                 isClosing: { _, fact in
@@ -52,7 +55,7 @@ package enum TerminalActivityEventFactSource {
 }
 
 extension FactRecorder where Scope == UUID, Fact == TerminalActivityEventObservation {
-    package func expectNextPaneObservation(
+    func expectNextPaneObservation(
         paneID: UUID, isPinnedToBottom: Bool,
         fileID: String = #fileID, line: Int = #line, function: String = #function
     ) async throws -> PaneEnvelope {
@@ -75,7 +78,7 @@ extension FactRecorder where Scope == UUID, Fact == TerminalActivityEventObserva
         return envelope
     }
 
-    package func expectNextUnseenActivity(
+    func expectNextUnseenActivity(
         paneID: UUID, windowID: UUID? = nil,
         fileID: String = #fileID, line: Int = #line, function: String = #function
     ) async throws -> RecordedTerminalActivitySettle {
@@ -103,14 +106,17 @@ extension FactRecorder where Scope == UUID, Fact == TerminalActivityEventObserva
         return RecordedTerminalActivitySettle(envelope: envelope, activity: activity)
     }
 
-    /// Call only after the real producer's stop has returned; settle its accepted
-    /// bus prefix before relaying that causal close into this observation stream.
-    package func expectNoUnseenActivityThroughStoppedProducer(
-        paneID: UUID, from opening: OpeningPosition<UUID>,
+    /// Call after stopRouter returns its verified owner scope; drain accepted
+    /// bus work before relaying that correlated close into this observation stream.
+    func expectNoUnseenActivityThroughStoppedProducer(
+        paneID: UUID, from opening: OpeningPosition<UUID>, stopScope: TerminalActivityRouterFactScope,
         fileID: String = #fileID, line: Int = #line, function: String = #function
     ) async throws -> TerminalActivityEventObservation {
+        // The caller consumed lifecycleCompleted for this stop: performStop joins
+        // pending derived bus posts. A lifecycle fact alone cannot order this separate
+        // collector; mark drains its accepted subscription prefix before the relay.
         _ = await mark(paneID)
-        append(scope: paneID, fact: .producerStopped)
+        append(scope: paneID, fact: .producerStopped(stopScope))
         try await expectNone(
             of: {
                 if case .event(let envelope) = $0,
@@ -122,11 +128,11 @@ extension FactRecorder where Scope == UUID, Fact == TerminalActivityEventObserva
             },
             "unseen activity through producer stop", from: opening,
             closedBy: {
-                if case .producerStopped = $0 { return true }
+                if case .producerStopped(let actualStopScope) = $0 { return actualStopScope == stopScope }
                 return false
             },
             fileID: fileID, line: line, function: function
         )
-        return .producerStopped
+        return .producerStopped(stopScope)
     }
 }

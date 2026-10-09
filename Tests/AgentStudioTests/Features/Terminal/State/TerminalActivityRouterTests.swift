@@ -146,6 +146,8 @@ struct TerminalActivityRouterTests {
     func typedActivityAggregateIsDebouncedIntoOneDerivedSettledFact() async throws {
         let bus = EventBus<RuntimeEnvelope>()
         let events = await TerminalActivityEventFactSource.attach(bus: bus, subscriberName: #function)
+        let factSource = TerminalActivityRouterFactSource()
+        let facts = try factSource.attach()
         let atom = TerminalActivityAtom(outputBurstThreshold: 30)
         let clock = TestPushClock()
         let deadlines = try TerminalActivityDeadlineFacts(clock: clock)
@@ -157,12 +159,13 @@ struct TerminalActivityRouterTests {
             projector: projector,
             surfaceIDForPaneID: { $0 },
             unseenActivityDebounceDuration: .milliseconds(750),
-            unseenActivityClock: clock
+            unseenActivityClock: clock,
+            factSink: factSource.sink
         )
         let paneId = PaneId.generateUUIDv7()
 
         do {
-            await router.start()
+            _ = try await facts.startRouter(router)
             await ingestActivity(
                 paneId: paneId,
                 totals: [100, 120, 140],
@@ -176,15 +179,17 @@ struct TerminalActivityRouterTests {
             _ = try await events.expectNextUnseenActivity(paneID: paneId.uuid, windowID: deadline.scope.windowID)
             let noAdditionalSettles = await events.mark(paneId.uuid)
 
-            await router.stop()
+            let stopScope = try await facts.stopRouter(router)
             _ = try await events.expectNoUnseenActivityThroughStoppedProducer(
-                paneID: paneId.uuid, from: noAdditionalSettles)
+                paneID: paneId.uuid, from: noAdditionalSettles, stopScope: stopScope)
             try await deadlines.finish()
             try await events.finish()
+            try await facts.finish()
         } catch {
             await router.stop()
             try? await deadlines.finish()
             try? await events.finish()
+            try? await facts.finish()
             throw error
         }
     }
@@ -197,6 +202,8 @@ struct TerminalActivityRouterTests {
         // pane's own sidebar row learns its latest real content either way.
         let bus = EventBus<RuntimeEnvelope>()
         let events = await TerminalActivityEventFactSource.attach(bus: bus, subscriberName: #function)
+        let factSource = TerminalActivityRouterFactSource()
+        let facts = try factSource.attach()
         let atom = TerminalActivityAtom(outputBurstThreshold: 30)
         let clock = TestPushClock()
         let deadlines = try TerminalActivityDeadlineFacts(clock: clock)
@@ -223,12 +230,13 @@ struct TerminalActivityRouterTests {
                 recordedCalls.record(paneId: paneId, lastOutputLine: lastOutputLine)
             },
             unseenActivityDebounceDuration: .milliseconds(750),
-            unseenActivityClock: clock
+            unseenActivityClock: clock,
+            factSink: factSource.sink
         )
         let paneId = PaneId.generateUUIDv7()
 
         do {
-            await router.start()
+            _ = try await facts.startRouter(router)
             await ingestActivity(
                 paneId: paneId,
                 totals: [100, 120, 140],
@@ -246,15 +254,17 @@ struct TerminalActivityRouterTests {
             #expect(recordedCalls.calls.first?.paneId == paneId.uuid)
             #expect(recordedCalls.calls.first?.lastOutputLine == "seam-live-proof")
 
-            await router.stop()
+            let stopScope = try await facts.stopRouter(router)
             _ = try await events.expectNoUnseenActivityThroughStoppedProducer(
-                paneID: paneId.uuid, from: noAdditionalSettles)
+                paneID: paneId.uuid, from: noAdditionalSettles, stopScope: stopScope)
             try await deadlines.finish()
             try await events.finish()
+            try await facts.finish()
         } catch {
             await router.stop()
             try? await deadlines.finish()
             try? await events.finish()
+            try? await facts.finish()
             throw error
         }
     }
@@ -291,7 +301,7 @@ struct TerminalActivityRouterTests {
         let paneId = PaneId.generateUUIDv7()
 
         do {
-            await router.start()
+            _ = try await facts.startRouter(router)
             await router.consumeTerminalActivityInput(
                 .orderedControl(
                     surfaceID: paneId.uuid,
@@ -325,9 +335,9 @@ struct TerminalActivityRouterTests {
             #expect(recordedCalls.calls.first?.paneId == paneId.uuid)
             #expect(recordedCalls.calls.first?.lastOutputLine == "echo-command-output")
 
-            await router.stop()
+            let stopScope = try await facts.stopRouter(router)
             _ = try await events.expectNoUnseenActivityThroughStoppedProducer(
-                paneID: paneId.uuid, from: noAdditionalSettles)
+                paneID: paneId.uuid, from: noAdditionalSettles, stopScope: stopScope)
             try await facts.finish()
             try await events.finish()
         } catch {
@@ -342,6 +352,8 @@ struct TerminalActivityRouterTests {
     func attendedTypedActivityUpdatesCompactStateWithoutUnseenSettlement() async throws {
         let bus = EventBus<RuntimeEnvelope>()
         let events = await TerminalActivityEventFactSource.attach(bus: bus, subscriberName: #function)
+        let factSource = TerminalActivityRouterFactSource()
+        let facts = try factSource.attach()
         let atom = TerminalActivityAtom(outputBurstThreshold: 30)
         let clock = TestPushClock()
         let deadlines = try TerminalActivityDeadlineFacts(clock: clock)
@@ -353,12 +365,13 @@ struct TerminalActivityRouterTests {
             projector: projector,
             surfaceIDForPaneID: { $0 },
             unseenActivityDebounceDuration: .milliseconds(750),
-            unseenActivityClock: clock
+            unseenActivityClock: clock,
+            factSink: factSource.sink
         )
         let paneId = PaneId.generateUUIDv7()
 
         do {
-            await router.start()
+            _ = try await facts.startRouter(router)
             let noSettleFrom = await events.mark(paneId.uuid)
             await ingestActivity(
                 paneId: paneId,
@@ -370,14 +383,17 @@ struct TerminalActivityRouterTests {
             #expect(clock.pendingSleepCount == 0)
             _ = try await events.expectNextPaneObservation(paneID: paneId.uuid, isPinnedToBottom: false)
 
-            await router.stop()
-            _ = try await events.expectNoUnseenActivityThroughStoppedProducer(paneID: paneId.uuid, from: noSettleFrom)
+            let stopScope = try await facts.stopRouter(router)
+            _ = try await events.expectNoUnseenActivityThroughStoppedProducer(
+                paneID: paneId.uuid, from: noSettleFrom, stopScope: stopScope)
             try await deadlines.finish()
             try await events.finish()
+            try await facts.finish()
         } catch {
             await router.stop()
             try? await deadlines.finish()
             try? await events.finish()
+            try? await facts.finish()
             throw error
         }
     }
@@ -386,6 +402,8 @@ struct TerminalActivityRouterTests {
     func stopCancelsProjectorQuietTimersWithoutPublishingStaleActivity() async throws {
         let bus = EventBus<RuntimeEnvelope>()
         let events = await TerminalActivityEventFactSource.attach(bus: bus, subscriberName: #function)
+        let factSource = TerminalActivityRouterFactSource()
+        let facts = try factSource.attach()
         let clock = TestPushClock()
         let deadlines = try TerminalActivityDeadlineFacts(clock: clock)
         let projector = TerminalActivityProjector(
@@ -396,12 +414,13 @@ struct TerminalActivityRouterTests {
             projector: projector,
             surfaceIDForPaneID: { $0 },
             unseenActivityDebounceDuration: .milliseconds(750),
-            unseenActivityClock: clock
+            unseenActivityClock: clock,
+            factSink: factSource.sink
         )
         let paneId = PaneId.generateUUIDv7()
 
         do {
-            await router.start()
+            _ = try await facts.startRouter(router)
             let noSettleFrom = await events.mark(paneId.uuid)
             await ingestActivity(
                 paneId: paneId,
@@ -411,18 +430,21 @@ struct TerminalActivityRouterTests {
             )
             let deadline = try await deadlines.expectNextRegistration(paneID: paneId.uuid)
             _ = try await events.expectNextPaneObservation(paneID: paneId.uuid, isPinnedToBottom: false)
-            await router.stop()
+            let stopScope = try await facts.stopRouter(router)
             _ = try await deadlines.expectDisposition(for: deadline, .cancelled)
             await clock.waitForPendingSleepCount(exactly: 0)
             clock.advance(by: .milliseconds(750))
 
-            _ = try await events.expectNoUnseenActivityThroughStoppedProducer(paneID: paneId.uuid, from: noSettleFrom)
+            _ = try await events.expectNoUnseenActivityThroughStoppedProducer(
+                paneID: paneId.uuid, from: noSettleFrom, stopScope: stopScope)
             try await deadlines.finish()
             try await events.finish()
+            try await facts.finish()
         } catch {
             await router.stop()
             try? await deadlines.finish()
             try? await events.finish()
+            try? await facts.finish()
             throw error
         }
     }
@@ -431,6 +453,8 @@ struct TerminalActivityRouterTests {
     func laterTypedAggregateReplacesEarlierQuietTimer() async throws {
         let bus = EventBus<RuntimeEnvelope>()
         let events = await TerminalActivityEventFactSource.attach(bus: bus, subscriberName: #function)
+        let factSource = TerminalActivityRouterFactSource()
+        let facts = try factSource.attach()
         let clock = TestPushClock()
         let deadlines = try TerminalActivityDeadlineFacts(clock: clock)
         let projector = TerminalActivityProjector(
@@ -441,12 +465,13 @@ struct TerminalActivityRouterTests {
             projector: projector,
             surfaceIDForPaneID: { $0 },
             unseenActivityDebounceDuration: .milliseconds(750),
-            unseenActivityClock: clock
+            unseenActivityClock: clock,
+            factSink: factSource.sink
         )
         let paneId = PaneId.generateUUIDv7()
 
         do {
-            await router.start()
+            _ = try await facts.startRouter(router)
             await ingestActivity(
                 paneId: paneId,
                 totals: [100],
@@ -468,15 +493,17 @@ struct TerminalActivityRouterTests {
             _ = try await events.expectNextUnseenActivity(paneID: paneId.uuid, windowID: deadline.scope.windowID)
             let noAdditionalSettles = await events.mark(paneId.uuid)
 
-            await router.stop()
+            let stopScope = try await facts.stopRouter(router)
             _ = try await events.expectNoUnseenActivityThroughStoppedProducer(
-                paneID: paneId.uuid, from: noAdditionalSettles)
+                paneID: paneId.uuid, from: noAdditionalSettles, stopScope: stopScope)
             try await deadlines.finish()
             try await events.finish()
+            try await facts.finish()
         } catch {
             await router.stop()
             try? await deadlines.finish()
             try? await events.finish()
+            try? await facts.finish()
             throw error
         }
     }
@@ -485,6 +512,8 @@ struct TerminalActivityRouterTests {
     func decreasingTypedTotalsClampGrowthToZero() async throws {
         let bus = EventBus<RuntimeEnvelope>()
         let events = await TerminalActivityEventFactSource.attach(bus: bus, subscriberName: #function)
+        let factSource = TerminalActivityRouterFactSource()
+        let facts = try factSource.attach()
         let atom = TerminalActivityAtom(outputBurstThreshold: 30)
         let clock = TestPushClock()
         let deadlines = try TerminalActivityDeadlineFacts(clock: clock)
@@ -496,12 +525,13 @@ struct TerminalActivityRouterTests {
             projector: projector,
             surfaceIDForPaneID: { $0 },
             unseenActivityDebounceDuration: .milliseconds(750),
-            unseenActivityClock: clock
+            unseenActivityClock: clock,
+            factSink: factSource.sink
         )
         let paneId = PaneId.generateUUIDv7()
 
         do {
-            await router.start()
+            _ = try await facts.startRouter(router)
             let noSettleFrom = await events.mark(paneId.uuid)
             await ingestActivity(
                 paneId: paneId,
@@ -514,14 +544,17 @@ struct TerminalActivityRouterTests {
             _ = try await events.expectNextPaneObservation(paneID: paneId.uuid, isPinnedToBottom: false)
             _ = try await deadlines.fire(deadline)
 
-            await router.stop()
-            _ = try await events.expectNoUnseenActivityThroughStoppedProducer(paneID: paneId.uuid, from: noSettleFrom)
+            let stopScope = try await facts.stopRouter(router)
+            _ = try await events.expectNoUnseenActivityThroughStoppedProducer(
+                paneID: paneId.uuid, from: noSettleFrom, stopScope: stopScope)
             try await deadlines.finish()
             try await events.finish()
+            try await facts.finish()
         } catch {
             await router.stop()
             try? await deadlines.finish()
             try? await events.finish()
+            try? await facts.finish()
             throw error
         }
     }
@@ -563,47 +596,83 @@ struct TerminalActivityRouterTests {
     }
 
     @Test("stop prevents later runtime events from mutating activity")
-    func stopPreventsLaterRuntimeEventsFromMutatingActivity() async {
+    func stopPreventsLaterRuntimeEventsFromMutatingActivity() async throws {
         let bus = EventBus<RuntimeEnvelope>()
         let atom = TerminalActivityAtom()
-        let router = TerminalActivityRouter(bus: bus, activityAtom: atom)
+        let factSource = TerminalActivityRouterFactSource()
+        let facts = try factSource.attach()
+        let router = TerminalActivityRouter(bus: bus, activityAtom: atom, factSink: factSource.sink)
         let paneId = PaneId.generateUUIDv7()
 
-        await router.start()
-        await router.stop()
-        _ = await bus.post(
-            .pane(
-                .test(
-                    event: .terminal(.progressReportUpdated(ProgressState(kind: .set, percent: 99))),
-                    paneId: paneId,
-                    paneKind: .terminal
+        do {
+            _ = try await facts.startRouter(router)
+            _ = try await facts.stopRouter(router)
+            // The owner's stop completion follows cancellation and await of busTask.
+            // No consumer survives that boundary to mutate state for a later post.
+            _ = await bus.post(
+                .pane(
+                    .test(
+                        event: .terminal(.progressReportUpdated(ProgressState(kind: .set, percent: 99))),
+                        paneId: paneId,
+                        paneKind: .terminal
+                    )
                 )
             )
-        )
 
-        #expect(atom.snapshot(for: paneId.uuid) == nil)
+            #expect(atom.snapshot(for: paneId.uuid) == nil)
+            try await facts.finish()
+        } catch {
+            await router.stop()
+            try? await facts.finish()
+            throw error
+        }
     }
 
     @Test("non-terminal pane envelopes are ignored")
-    func nonTerminalPaneEnvelopesAreIgnored() async {
+    func nonTerminalPaneEnvelopesAreIgnored() async throws {
         let bus = EventBus<RuntimeEnvelope>()
         let atom = TerminalActivityAtom()
-        let router = TerminalActivityRouter(bus: bus, activityAtom: atom)
+        let factSource = TerminalActivityRouterFactSource()
+        let facts = try factSource.attach()
+        let router = TerminalActivityRouter(bus: bus, activityAtom: atom, factSink: factSource.sink)
         let paneId = PaneId.generateUUIDv7()
+        let sentinelPaneId = PaneId.generateUUIDv7()
+        let sentinelEventID = UUIDv7.generate()
 
-        await router.start()
-        _ = await bus.post(
-            .pane(
-                .test(
-                    event: .browser(.pageLoaded(url: URL(fileURLWithPath: "/tmp/index.html"))),
-                    paneId: paneId,
-                    paneKind: .browser
+        do {
+            _ = try await facts.startRouter(router)
+            _ = await bus.post(
+                .pane(
+                    .test(
+                        event: .browser(.pageLoaded(url: URL(fileURLWithPath: "/tmp/index.html"))),
+                        paneId: paneId,
+                        paneKind: .browser
+                    )
                 )
             )
-        )
-
-        #expect(atom.snapshot(for: paneId.uuid) == nil)
-        await router.stop()
+            // One ordered subscriber must handle this later envelope before the
+            // browser assertion; filtering the browser requires no handler receipt.
+            _ = await bus.post(
+                .pane(
+                    .test(
+                        event: .terminal(.progressReportUpdated(ProgressState(kind: .set, percent: 99))),
+                        paneId: sentinelPaneId,
+                        paneKind: .terminal,
+                        eventId: sentinelEventID
+                    )
+                )
+            )
+            _ = try await facts.expectRuntimeEnvelopeHandled(paneID: sentinelPaneId.uuid, eventID: sentinelEventID)
+            #expect(
+                atom.snapshot(for: sentinelPaneId.uuid)?.progress == .reported(ProgressState(kind: .set, percent: 99)))
+            #expect(atom.snapshot(for: paneId.uuid) == nil)
+            _ = try await facts.stopRouter(router)
+            try await facts.finish()
+        } catch {
+            await router.stop()
+            try? await facts.finish()
+            throw error
+        }
     }
 
     private func ingestActivity(

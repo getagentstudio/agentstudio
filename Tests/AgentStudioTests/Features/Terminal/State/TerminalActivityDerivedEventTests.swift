@@ -58,6 +58,8 @@ struct TerminalActivityDerivedEventTests {
     func scrollbackGrowthDoesNotEmitUnseenActivityBeforeQuiet() async throws {
         let bus = EventBus<RuntimeEnvelope>()
         let events = await TerminalActivityEventFactSource.attach(bus: bus, subscriberName: #function)
+        let factSource = TerminalActivityRouterFactSource()
+        let facts = try factSource.attach()
         let atom = TerminalActivityAtom(outputBurstThreshold: 30)
         let clock = TestPushClock()
         let deadlines = try TerminalActivityDeadlineFacts(clock: clock)
@@ -69,12 +71,13 @@ struct TerminalActivityDerivedEventTests {
             projector: projector,
             surfaceIDForPaneID: { $0 },
             unseenActivityDebounceDuration: .milliseconds(750),
-            unseenActivityClock: clock
+            unseenActivityClock: clock,
+            factSink: factSource.sink
         )
         let paneId = PaneId.generateUUIDv7()
 
         do {
-            await router.start()
+            _ = try await facts.startRouter(router)
             await bus.waitForSubscriberRegistration(subscriberName: "TerminalActivityRouter")
             let noSettleFrom = await events.mark(paneId.uuid)
             await postScrollbackBurst(paneId: paneId, totals: [100, 120, 140], through: router)
@@ -82,16 +85,19 @@ struct TerminalActivityDerivedEventTests {
             let deadline = try await deadlines.expectNextRegistration(paneID: paneId.uuid)
             _ = try await events.expectNextPaneObservation(paneID: paneId.uuid, isPinnedToBottom: false)
             clock.advance(to: deadlines.origin.advanced(by: deadline.deadline - .milliseconds(1)))
-            #expect(clock.now < deadlines.origin.advanced(by: deadline.deadline))
-            await router.stop()
+            #expect(deadline.deadline == .milliseconds(750))
+            let stopScope = try await facts.stopRouter(router)
             _ = try await deadlines.expectDisposition(for: deadline, .cancelled)
-            _ = try await events.expectNoUnseenActivityThroughStoppedProducer(paneID: paneId.uuid, from: noSettleFrom)
+            _ = try await events.expectNoUnseenActivityThroughStoppedProducer(
+                paneID: paneId.uuid, from: noSettleFrom, stopScope: stopScope)
             try await deadlines.finish()
             try await events.finish()
+            try await facts.finish()
         } catch {
             await router.stop()
             try? await deadlines.finish()
             try? await events.finish()
+            try? await facts.finish()
             throw error
         }
     }
@@ -100,6 +106,8 @@ struct TerminalActivityDerivedEventTests {
     func scrollbackGrowthEmitsOneSettledActivityAfterQuiet() async throws {
         let bus = EventBus<RuntimeEnvelope>()
         let events = await TerminalActivityEventFactSource.attach(bus: bus, subscriberName: #function)
+        let factSource = TerminalActivityRouterFactSource()
+        let facts = try factSource.attach()
         let atom = TerminalActivityAtom(outputBurstThreshold: 30)
         let clock = TestPushClock()
         let deadlines = try TerminalActivityDeadlineFacts(clock: clock)
@@ -113,12 +121,13 @@ struct TerminalActivityDerivedEventTests {
             surfaceIDForPaneID: { $0 },
             unseenActivityDebounceDuration: .milliseconds(750),
             unseenActivityClock: clock,
-            nowMilliseconds: { nowMilliseconds.get() }
+            nowMilliseconds: { nowMilliseconds.get() },
+            factSink: factSource.sink
         )
         let paneId = PaneId.generateUUIDv7()
 
         do {
-            await router.start()
+            _ = try await facts.startRouter(router)
             await bus.waitForSubscriberRegistration(subscriberName: "TerminalActivityRouter")
             await postScrollbackBurst(
                 paneId: paneId,
@@ -130,7 +139,7 @@ struct TerminalActivityDerivedEventTests {
             let deadline = try await deadlines.expectNextRegistration(paneID: paneId.uuid)
             _ = try await events.expectNextPaneObservation(paneID: paneId.uuid, isPinnedToBottom: false)
             clock.advance(by: .milliseconds(749))
-            #expect(clock.now < deadlines.origin.advanced(by: deadline.deadline))
+            #expect(deadline.deadline == .milliseconds(750))
 
             _ = try await deadlines.fire(deadline)
             let settled = try await events.expectNextUnseenActivity(
@@ -145,15 +154,17 @@ struct TerminalActivityDerivedEventTests {
             #expect(activity.settledAtMilliseconds == 2000 + 200 + 750)
 
             let noAdditionalSettles = await events.mark(paneId.uuid)
-            await router.stop()
+            let stopScope = try await facts.stopRouter(router)
             _ = try await events.expectNoUnseenActivityThroughStoppedProducer(
-                paneID: paneId.uuid, from: noAdditionalSettles)
+                paneID: paneId.uuid, from: noAdditionalSettles, stopScope: stopScope)
             try await deadlines.finish()
             try await events.finish()
+            try await facts.finish()
         } catch {
             await router.stop()
             try? await deadlines.finish()
             try? await events.finish()
+            try? await facts.finish()
             throw error
         }
     }
@@ -162,6 +173,8 @@ struct TerminalActivityDerivedEventTests {
     func observingPaneBeforeQuietCancelsSettledActivity() async throws {
         let bus = EventBus<RuntimeEnvelope>()
         let events = await TerminalActivityEventFactSource.attach(bus: bus, subscriberName: #function)
+        let factSource = TerminalActivityRouterFactSource()
+        let facts = try factSource.attach()
         let atom = TerminalActivityAtom(outputBurstThreshold: 30)
         let clock = TestPushClock()
         let deadlines = try TerminalActivityDeadlineFacts(clock: clock)
@@ -176,11 +189,12 @@ struct TerminalActivityDerivedEventTests {
             surfaceIDForPaneID: { $0 },
             isPaneCurrentlyAttended: { attendedPaneIds.contains($0) },
             unseenActivityDebounceDuration: .milliseconds(750),
-            unseenActivityClock: clock
+            unseenActivityClock: clock,
+            factSink: factSource.sink
         )
 
         do {
-            await router.start()
+            _ = try await facts.startRouter(router)
             await bus.waitForSubscriberRegistration(subscriberName: "TerminalActivityRouter")
             let noSettleFrom = await events.mark(paneId.uuid)
             await postScrollbackBurst(paneId: paneId, totals: [100], through: router)
@@ -194,17 +208,20 @@ struct TerminalActivityDerivedEventTests {
                 through: router,
                 isAttended: true
             )
-            _ = try await deadlines.expectDisposition(for: deadline, .cancelled)
+            _ = try await deadlines.expectDisposition(for: deadline, .superseded)
             await clock.waitForPendingSleepCount(exactly: 0)
             clock.advance(by: .milliseconds(750))
-            await router.stop()
-            _ = try await events.expectNoUnseenActivityThroughStoppedProducer(paneID: paneId.uuid, from: noSettleFrom)
+            let stopScope = try await facts.stopRouter(router)
+            _ = try await events.expectNoUnseenActivityThroughStoppedProducer(
+                paneID: paneId.uuid, from: noSettleFrom, stopScope: stopScope)
             try await deadlines.finish()
             try await events.finish()
+            try await facts.finish()
         } catch {
             await router.stop()
             try? await deadlines.finish()
             try? await events.finish()
+            try? await facts.finish()
             throw error
         }
     }
@@ -213,6 +230,8 @@ struct TerminalActivityDerivedEventTests {
     func settledActivityEventsUseIndependentMonotonicSourceSequence() async throws {
         let bus = EventBus<RuntimeEnvelope>()
         let events = await TerminalActivityEventFactSource.attach(bus: bus, subscriberName: #function)
+        let factSource = TerminalActivityRouterFactSource()
+        let facts = try factSource.attach()
         let atom = TerminalActivityAtom(outputBurstThreshold: 30)
         let clock = TestPushClock()
         let deadlines = try TerminalActivityDeadlineFacts(clock: clock)
@@ -224,12 +243,13 @@ struct TerminalActivityDerivedEventTests {
             projector: projector,
             surfaceIDForPaneID: { $0 },
             unseenActivityDebounceDuration: .milliseconds(750),
-            unseenActivityClock: clock
+            unseenActivityClock: clock,
+            factSink: factSource.sink
         )
         let paneId = PaneId.generateUUIDv7()
 
         do {
-            await router.start()
+            _ = try await facts.startRouter(router)
             await bus.waitForSubscriberRegistration(subscriberName: "TerminalActivityRouter")
             await postScrollbackBurst(paneId: paneId, totals: [100, 120, 140], through: router)
             #expect(atom.snapshot(for: paneId.uuid)?.scrollbarState?.total == 140)
@@ -266,15 +286,17 @@ struct TerminalActivityDerivedEventTests {
             #expect(settledEvents.map(\.seq) == [2, 3])
 
             let noAdditionalSettles = await events.mark(paneId.uuid)
-            await router.stop()
+            let stopScope = try await facts.stopRouter(router)
             _ = try await events.expectNoUnseenActivityThroughStoppedProducer(
-                paneID: paneId.uuid, from: noAdditionalSettles)
+                paneID: paneId.uuid, from: noAdditionalSettles, stopScope: stopScope)
             try await deadlines.finish()
             try await events.finish()
+            try await facts.finish()
         } catch {
             await router.stop()
             try? await deadlines.finish()
             try? await events.finish()
+            try? await facts.finish()
             throw error
         }
     }

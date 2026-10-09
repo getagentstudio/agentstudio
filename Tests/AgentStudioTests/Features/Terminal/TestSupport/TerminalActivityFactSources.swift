@@ -65,9 +65,13 @@ struct TerminalActivityDeadlineFacts: Sendable {
         return RegisteredTerminalActivityDeadline(scope: scope, deadline: deadline)
     }
 
-    func fire(_ registration: RegisteredTerminalActivityDeadline) async throws -> TerminalActivityProjectorFact {
+    func fire(
+        _ registration: RegisteredTerminalActivityDeadline,
+        fileID: String = #fileID, line: Int = #line, function: String = #function
+    ) async throws -> TerminalActivityProjectorFact {
         clock.advance(to: origin.advanced(by: registration.deadline))
-        return try await expectDisposition(for: registration, .fired)
+        return try await expectDisposition(
+            for: registration, .fired, fileID: fileID, line: line, function: function)
     }
 
     func expectDisposition(
@@ -107,6 +111,28 @@ final class TerminalActivityRouterFactSource: Sendable {
 }
 
 extension FactRecorder where Scope == TerminalActivityRouterFactScope, Fact == TerminalActivityRouterFact {
+    @MainActor
+    func startRouter(
+        _ router: TerminalActivityRouter,
+        fileID: String = #fileID, line: Int = #line, function: String = #function
+    ) async throws -> TerminalActivityRouterFactScope {
+        await router.start()
+        let scope = try await expectNextLifecycleEnqueued(.start, fileID: fileID, line: line, function: function)
+        _ = try await expectLifecycleCompleted(in: scope, fileID: fileID, line: line, function: function)
+        return scope
+    }
+
+    @MainActor
+    func stopRouter(
+        _ router: TerminalActivityRouter,
+        fileID: String = #fileID, line: Int = #line, function: String = #function
+    ) async throws -> TerminalActivityRouterFactScope {
+        await router.stop()
+        let scope = try await expectNextLifecycleEnqueued(.stop, fileID: fileID, line: line, function: function)
+        _ = try await expectLifecycleCompleted(in: scope, fileID: fileID, line: line, function: function)
+        return scope
+    }
+
     func expectRuntimeEnvelopeHandled(
         paneID: UUID, eventID: UUID,
         fileID: String = #fileID, line: Int = #line, function: String = #function
