@@ -1,3 +1,4 @@
+import AgentStudioInfrastructure
 import Foundation
 import Testing
 
@@ -5,15 +6,44 @@ import Testing
 
 @Suite("FilesystemPathFilter")
 struct FilesystemPathFilterTests {
-    @Test("classifies git internals before ignore policy")
+    @Test("own Git internals bypass ignore policy while ignored nested Git internals do not")
     func classifiesGitInternalsBeforeIgnorePolicy() throws {
         let rootPath = try makeRootWithGitIgnore(lines: ["*"])
         defer { try? FileManager.default.removeItem(at: rootPath) }
         let filter = FilesystemPathFilter.load(forRootPath: rootPath)
 
         #expect(filter.classify(relativePath: ".git/index") == .gitInternal)
-        #expect(filter.classify(relativePath: "src/.git/config") == .gitInternal)
+        #expect(filter.classify(relativePath: "src/.git/config") == .ignoredByPolicy)
         #expect(filter.classify(relativePath: ".git/config") == .projected)
+    }
+
+    @Test(
+        "ignored build checkouts suppress their nested Git metadata and objects",
+        arguments: [
+            ".build-agent-1/checkouts/dep/.git/index",
+            ".build-agent-1/checkouts/dep/.git/objects/aa/bb",
+        ])
+    func ignoredBuildCheckoutsSuppressNestedGitPaths(relativePath: String) throws {
+        // Arrange
+        let rootPath = try makeRootWithGitIgnore(lines: [".build-*"])
+        defer { try? FileManager.default.removeItem(at: rootPath) }
+        let filter = FilesystemPathFilter.load(forRootPath: rootPath)
+
+        // Act
+        let disposition = filter.classify(relativePath: relativePath)
+
+        // Assert
+        #expect(disposition == .ignoredByPolicy)
+    }
+
+    @Test("non-ignored nested repositories keep their Git dispositions")
+    func nonIgnoredNestedRepositoriesKeepGitDispositions() {
+        // Arrange
+        let filter = FilesystemPathFilter.empty
+
+        // Act / Assert
+        #expect(filter.classify(relativePath: "vendor/sub/.git") == .gitInternal)
+        #expect(filter.classify(relativePath: "nested/.git/objects/pack/x") == .gitObjectDatabase)
     }
 
     @Test("classifies git object database writes separately from repository state")
@@ -190,7 +220,7 @@ struct FilesystemPathFilterTests {
 
     private func makeRootWithGitIgnore(lines: [String]) throws -> URL {
         let fileManager = FileManager.default
-        let rootPath = fileManager.temporaryDirectory.appending(path: "path-filter-\(UUID().uuidString)")
+        let rootPath = fileManager.temporaryDirectory.appending(path: "path-filter-\(UUIDv7.generate().uuidString)")
         try fileManager.createDirectory(at: rootPath, withIntermediateDirectories: true)
         let contents = lines.joined(separator: "\n")
         try contents.write(
@@ -203,7 +233,8 @@ struct FilesystemPathFilterTests {
 
     private func makeEmptyRoot() throws -> URL {
         let fileManager = FileManager.default
-        let rootPath = fileManager.temporaryDirectory.appending(path: "path-filter-empty-\(UUID().uuidString)")
+        let rootPath = fileManager.temporaryDirectory.appending(
+            path: "path-filter-empty-\(UUIDv7.generate().uuidString)")
         try fileManager.createDirectory(at: rootPath, withIntermediateDirectories: true)
         return rootPath
     }

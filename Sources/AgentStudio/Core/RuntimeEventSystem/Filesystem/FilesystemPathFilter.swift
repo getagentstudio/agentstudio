@@ -67,14 +67,17 @@ package struct FilesystemPathFilter: Sendable {
         if Self.isOriginConfigPath(relativePath: relativePath) {
             return .projected
         }
+        let isOwnGitPath = Self.normalized(relativePath: relativePath).split(separator: "/").first == ".git"
+        // The owning repository's Git directory stays observable even under broad
+        // ignore rules. Nested repositories inherit their owning root's ignore policy.
+        if !isOwnGitPath, isIgnored(relativePath: relativePath) {
+            return .ignoredByPolicy
+        }
         if Self.isGitObjectDatabase(relativePath: relativePath) {
             return .gitObjectDatabase
         }
         if Self.isGitInternal(relativePath: relativePath) {
             return .gitInternal
-        }
-        if isIgnored(relativePath: relativePath) {
-            return .ignoredByPolicy
         }
         return .projected
     }
