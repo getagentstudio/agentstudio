@@ -4,6 +4,8 @@
 
 Extends [Repository and checkout lifecycle](../2026-09-11-repository-lifecycle/requirements.md) (U1–U7) and [Remove a watched folder](../2026-10-07-remove-watched-folder/requirements.md) (its U1–U4). Rows not changed here still apply.
 
+**Supersedes:** the September protected-scope line "No new persistent common-directory identity or move-correlation store" (and the matching sentence "No manual reassociation or persistent move-correlation identity is requested"). The supersession covers only one thing: a folder identity recorded on existing checkout records, used to recognize a move. There is still no separate correlation store, no manual reassociation, and no common-directory identity.
+
 ## Why
 
 On 2026-10-04 the owner moved repositories from `~/Documents/dev/...` to `~/code/...`. Each moved checkout became a new row. The old rows were hidden, and their pins and pane links stayed behind. Production state on 2026-10-09 (read-only copy of `~/.agentstudio/core.sqlite`):
@@ -18,7 +20,7 @@ The September lifecycle realized U3 ("handle moves automatically within the evid
 
 | Id | Need | Owner authority |
 |---|---|---|
-| M1 | When a checkout folder moves to a new location inside a watched folder, it keeps its identity automatically, with no user action. The identity includes the row, pin, note, tags, recents and local activity. A family follows its main checkout. | 2026-10-08 "we want stable merging when folders are moved"; Sep 11 U3 "i dont want users to do this" |
+| M1 | When a checkout folder moves to a new location inside a watched folder, it keeps its identity automatically, with no user action. The identity includes the row, pin, note, tags, recents and local activity. Panes bound to that checkout keep their binding. A family follows its main checkout. | 2026-10-08 "we want stable merging when folders are moved"; Sep 11 U3 "i dont want users to do this" |
 | M2 | Merge only on proof that the new location is the same folder that moved. When proof is missing or ambiguous, the new location stays independent, as today. A wrong merge is worse than a missed one. | Sep 11 U3 "do not claim two locations are the same without proof" |
 | M3 | Separate checkouts and independent clones of one project never merge, even with identical history, remote and name. | Sep 11 U6 |
 | M4 | Git identity guards the merge. Git must still resolve the moved folder to the same Git directory, in the same role (main or linked checkout). Shared history, remote or name is never enough on its own. | 2026-10-08 "we also did use the git identities to help no? to prevent reassociation?" |
@@ -29,12 +31,14 @@ The September lifecycle realized U3 ("handle moves automatically within the evid
 ## Out of scope
 
 - A manual Locate, Repair or merge action (superseded by Sep 11 U3).
-- Following a folder that moved outside every watched folder, or to another volume. Copy-then-delete is not a move. These stay independent, and the old row retires normally.
-- Merging rows whose folders moved before this ships. No folder identity was recorded for them (see decision D3).
+- Following a folder that moved outside every watched folder.
+- Moves on any volume other than the Mac's startup disk: external drives, disk images, snapshots and network volumes. Copy-then-delete is not a move either. All of these stay independent, and the old row retires normally.
+- Merging rows whose folders moved before this ships. No folder identity was recorded for them (decision D3).
 - Changing the 30-day retention interval.
 
 ## Open owner decisions
 
-- **D1.** Which signal proves a move. Recommended: the identity of the folder itself, as the filesystem records it (Specification E3).
-- **D2.** Today a row stays hidden forever when its watched folder is removed or no longer exists. Should such rows retire 30 days after they were hidden? This affects U5, "avoid permanent abandoned data".
+- **D1.** Which signal proves a move. Proposed: the identity of the folder itself, as the startup disk records it (Specification E3). Nothing in the Specification or Program Design is approved until D1 is decided.
+- **D2.** Today a row stays hidden forever when its covering watched folders are removed. Should such rows retire 30 days after they were hidden? This affects U5, "avoid permanent abandoned data".
 - **D3.** What happens to the legacy rows from the 2026-10-04 move: 281 hidden rows and 3 pins.
+- **To acknowledge with D1:** M5 (inferred), and the crash-window limit for recents and local activity (Specification S9).
