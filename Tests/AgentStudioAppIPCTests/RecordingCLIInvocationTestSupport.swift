@@ -142,7 +142,7 @@ func runClientCommandLineOffCooperativePool(
         effectiveTiming = driver.timing
     }
     defer { ownedDriver?.close() }
-    await valueFromDedicatedThread {
+    return await valueFromDedicatedThread {
         let standardOutput = CommandLineOutputCollector()
         let standardError = CommandLineOutputCollector()
         let exitCode = AgentStudioIPCClientCommandLineRunner.run(
