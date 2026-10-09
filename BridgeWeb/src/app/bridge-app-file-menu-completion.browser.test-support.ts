@@ -6,7 +6,7 @@ import {
 	type ComponentProps,
 	type ReactElement,
 } from 'react';
-import { expect, vi } from 'vitest';
+import { beforeEach, expect, test, vi } from 'vitest';
 
 import { actClick } from './bridge-app-browser-test-actions.js';
 import {
@@ -16,6 +16,24 @@ import {
 } from './bridge-app-pane-runtime-control-test-support.js';
 
 const popupSelector = '[data-testid="worktree-file-filter-menu-popover"]';
+let lastWaitStep: string | undefined;
+
+beforeEach((context): void => {
+	lastWaitStep = undefined;
+	context.onTestFinished((): void => {
+		if (
+			lastWaitStep !== undefined &&
+			(context.signal.aborted || context.task.result?.state === 'fail')
+		) {
+			console.info(`GO30 failed/aborted while awaiting ${lastWaitStep}.`);
+		}
+	});
+});
+
+function beginFileMenuWait(step: string): void {
+	lastWaitStep = step;
+	console.info(`GO30 awaiting ${step}.`);
+}
 
 export function withEagerAppFileShell(
 	original: typeof import('../file-viewer/bridge-file-viewer-app.js'),
@@ -31,6 +49,7 @@ export function withEagerAppFileShell(
 }
 
 export async function waitForFilesShell(): Promise<Element> {
+	beginFileMenuWait('Files shell DOM mount');
 	const selector = '[data-testid="bridge-file-viewer-shell"]';
 	const currentShell = document.querySelector(selector);
 	if (currentShell !== null) return currentShell;
@@ -56,10 +75,12 @@ export async function dismissFilesFilterMenu(props: {
 }): Promise<void> {
 	const dismissal = observeFilesFilterDismissal(props);
 	try {
+		beginFileMenuWait('Review switch: active context lookup and click');
 		await actClick(requireActiveContextButton('review'));
 		await act(async (): Promise<void> => {
 			await props.onAwaitUnmount?.();
 			await finishFilesFilterAnimations(props.popup);
+			beginFileMenuWait('Files filter popup unmount with retained host inactive');
 			await dismissal.promise;
 		});
 		expect(props.appRoot.getAttribute('data-bridge-viewer-mode')).toBe('review');
@@ -185,6 +206,7 @@ export function holdFilesFilterCloseAnimation(): {
 }
 
 export async function finishFilesFilterAnimations(popup: HTMLElement): Promise<void> {
+	beginFileMenuWait('Files filter native animations finished or cancelled');
 	await act(async (): Promise<void> => {
 		await Promise.all(
 			popup.getAnimations({ subtree: true }).map(async (animation): Promise<void> => {
@@ -205,10 +227,12 @@ export async function mountOpenFilesFilterMenu(mount: () => Promise<unknown>): P
 	readonly host: HTMLElement;
 	readonly popup: HTMLElement;
 }> {
+	beginFileMenuWait('Files filter fixture React mount commit');
 	await act(async (): Promise<void> => {
 		await mount();
 	});
 	expect(await waitForFilesShell()).not.toBeNull();
+	beginFileMenuWait('Files filter shortcut open commit');
 	await dispatchBridgeViewerFilterShortcut();
 	const popup = requireHTMLElement(
 		document.querySelector('[data-testid="worktree-file-filter-menu-popover"][data-open]'),
@@ -224,7 +248,6 @@ export async function mountOpenFilesFilterMenu(mount: () => Promise<unknown>): P
 
 export async function proveHeldFilesFilterDismissal(mount: () => Promise<unknown>): Promise<void> {
 	const { appRoot, host, popup } = await mountOpenFilesFilterMenu(mount);
-	const dismissal = observeFilesFilterDismissal({ host, popup });
 	const heldClose = holdFilesFilterCloseAnimation();
 	try {
 		await dismissFilesFilterMenu({
@@ -232,6 +255,7 @@ export async function proveHeldFilesFilterDismissal(mount: () => Promise<unknown
 			host,
 			popup,
 			onAwaitUnmount: async (): Promise<void> => {
+				beginFileMenuWait('Files filter native close animation capture');
 				const animations = await heldClose.captured;
 				expect(host.getAttribute('data-bridge-viewer-mode-active')).toBe('false');
 				expect(popup.isConnected).toBe(true);
@@ -240,6 +264,7 @@ export async function proveHeldFilesFilterDismissal(mount: () => Promise<unknown
 			},
 		});
 		await act(async (): Promise<void> => {
+			beginFileMenuWait('Files filter native close animation capture receipt');
 			await heldClose.captured;
 		});
 		expect(
@@ -251,15 +276,38 @@ export async function proveHeldFilesFilterDismissal(mount: () => Promise<unknown
 		expect(heldClose.facts()).toContainEqual({ kind: 'completion', open: false });
 		console.info('[go30-close-lifecycle]', JSON.stringify(heldClose.facts()));
 	} finally {
-		try {
-			heldClose.release();
-			await finishFilesFilterAnimations(popup);
-			await act(async (): Promise<void> => {
-				await dismissal.promise;
-			});
-		} finally {
-			dismissal.dispose();
-			heldClose.dispose();
-		}
+		heldClose.release();
+		heldClose.dispose();
 	}
+}
+
+export function registerFilesFilterDismissalTests(mount: () => Promise<unknown>): void {
+	test('dismisses the Files filter menu before its retained host becomes inactive', async (): Promise<void> => {
+		await dismissFilesFilterMenu(await mountOpenFilesFilterMenu(mount));
+	});
+	test('joins Files filter popup unmount when its native close completion is held after host inactivity', async (): Promise<void> => {
+		await proveHeldFilesFilterDismissal(mount);
+	});
+	test('preserves a named pre-switch failure and disposes the held Files menu observation', async (): Promise<void> => {
+		// oxlint-disable-next-line unbound-method -- Compare the restored method identity; do not invoke it unbound.
+		const originalGetAnimations = Element.prototype.getAnimations;
+		const switchFailure = new Error('GO30 injected failure before Review switch');
+		// oxlint-disable-next-line unbound-method -- Rebound below to the original clicked element.
+		const originalClick = HTMLElement.prototype.click;
+		const clickSpy = vi
+			.spyOn(HTMLElement.prototype, 'click')
+			.mockImplementation(function (this: HTMLElement): void {
+				if (this.getAttribute('data-testid') === 'bridge-viewer-context-review')
+					throw switchFailure;
+				originalClick.call(this);
+			});
+		try {
+			await expect(proveHeldFilesFilterDismissal(mount)).rejects.toBe(switchFailure);
+			console.info(`GO30 preserved original failure: ${switchFailure.message}.`);
+			expect(Element.prototype.getAnimations).toBe(originalGetAnimations);
+			expect(recordingCloseLifecycle).toBe(false);
+		} finally {
+			clickSpy.mockRestore();
+		}
+	});
 }

@@ -26,9 +26,7 @@ import {
 } from './bridge-app-browser-test-actions.js';
 import type { BridgeAppControlProbe } from './bridge-app-control.js';
 import {
-	dismissFilesFilterMenu,
-	mountOpenFilesFilterMenu,
-	proveHeldFilesFilterDismissal,
+	registerFilesFilterDismissalTests,
 	waitForFilesShell,
 } from './bridge-app-file-menu-completion.browser.test-support.js';
 import {
@@ -260,19 +258,9 @@ describe('BridgeApp pane runtime hard cut', () => {
 		expect(paneRuntimeObservation.disposeCount).toBe(0);
 	});
 
-	test('dismisses the Files filter menu before its retained host becomes inactive', async () => {
-		await dismissFilesFilterMenu(
-			await mountOpenFilesFilterMenu(() =>
-				render(<BridgeAppProtocolRouter protocol="worktree-file" />),
-			),
-		);
-	});
-
-	test('joins Files filter popup unmount when its native close completion is held after host inactivity', async () => {
-		await proveHeldFilesFilterDismissal(() =>
-			render(<BridgeAppProtocolRouter protocol="worktree-file" />),
-		);
-	});
+	registerFilesFilterDismissalTests(() =>
+		render(<BridgeAppProtocolRouter protocol="worktree-file" />),
+	);
 
 	test('forwards one local File activation before the selected File row', async () => {
 		// Arrange
