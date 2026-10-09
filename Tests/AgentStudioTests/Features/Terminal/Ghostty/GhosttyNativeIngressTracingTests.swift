@@ -1,9 +1,9 @@
 import AgentStudioCore
-import AgentStudioInfrastructure
 import Foundation
 import GhosttyKit
 import Testing
 
+@testable import AgentStudioInfrastructure
 @testable import AgentStudioTerminal
 
 @MainActor

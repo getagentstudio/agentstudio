@@ -1,8 +1,8 @@
 import AgentStudioCore
-import AgentStudioInfrastructure
 import Foundation
 import Testing
 
+@testable import AgentStudioInfrastructure
 @testable import AgentStudioTerminal
 
 @MainActor
