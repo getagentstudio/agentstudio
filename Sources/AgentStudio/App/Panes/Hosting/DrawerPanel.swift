@@ -459,7 +459,7 @@ private struct DrawerSurfaceRegistrationModifier: ViewModifier {
                 Spacer()
                 DrawerPanel(
                     layout: DrawerGridLayout(),
-                    octiconLoader: OcticonLoader(resourceRootURL: Bundle.appResourceRootURL),
+                    octiconLoader: OcticonLoader(resourceBundle: Bundle.appResources),
                     parentPaneId: UUID(),
                     tabId: UUID(),
                     activeChildId: nil,

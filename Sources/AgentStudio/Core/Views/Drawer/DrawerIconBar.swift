@@ -625,9 +625,7 @@ struct DrawerIconBar: View {
             VStack {
                 Spacer()
                 DrawerIconBar(
-                    octiconLoader: OcticonLoader(
-                        resourceRootURL: URL(fileURLWithPath: "/dev/null")
-                    ),
+                    octiconLoader: OcticonLoader(resourceBundle: .main),
                     leadingControls: .hidden,
                     trailingActions: nil
                 )

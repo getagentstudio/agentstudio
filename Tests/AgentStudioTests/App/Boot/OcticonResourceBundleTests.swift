@@ -25,7 +25,7 @@ struct OcticonResourceBundleTests {
             .map { String($0.dropLast(".imageset".count)) }
             .sorted()
         #expect(!octiconNames.isEmpty, "the source catalog lists no imagesets at \(catalogURL.path)")
-        let loader = OcticonLoader(resourceRootURL: Bundle.appResourceRootURL)
+        let loader = OcticonLoader(resourceBundle: Bundle.appResources)
 
         // Act
         let loadedImages = octiconNames.map { (name: $0, image: loader.image(named: $0)) }

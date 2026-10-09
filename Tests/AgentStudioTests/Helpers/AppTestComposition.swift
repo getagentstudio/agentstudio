@@ -40,8 +40,6 @@ func withAsyncTestAtomRegistry<T>(
 }
 
 @MainActor
-func makeTestOcticonLoader(from testFilePath: String = #filePath) -> OcticonLoader {
-    OcticonLoader(
-        resourceRootURL: testAgentStudioResourceRootURL(from: testFilePath)
-    )
+func makeTestOcticonLoader() -> OcticonLoader {
+    OcticonLoader(resourceBundle: Bundle.appResources)
 }
