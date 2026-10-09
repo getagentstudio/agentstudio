@@ -1,3 +1,5 @@
+import type { TestContext } from 'vitest';
+
 import type { BridgeMermaidRenderer } from '../app/markdown/bridge-mermaid-renderer.js';
 import type {
 	BridgeMarkdownRenderWorkerClient,
@@ -35,6 +37,7 @@ export function createHeldFileMarkdownReadiness(props: {
 	const releaseWorker = createBridgeProductDeferred<void>();
 	const releaseMermaid = createBridgeProductDeferred<void>();
 	const receipts = new BridgeProductTestFactRecorder<BridgeWorkerRenderDispositionReceipt>();
+	let isClosed = false;
 	const workerClient: BridgeMarkdownRenderWorkerClient = {
 		...props.workerClient,
 		startRender: (
@@ -72,7 +75,7 @@ export function createHeldFileMarkdownReadiness(props: {
 		releaseWorker: (): void => releaseWorker.resolve(),
 		releaseMermaid: (): void => releaseMermaid.resolve(),
 		observeCommand: (message: BridgeWorkerMainToServerMessage): void => {
-			if (message.command !== 'renderDisposition') return;
+			if (isClosed || message.command !== 'renderDisposition') return;
 			for (const receipt of message.receipts) {
 				if (receipt.kind === 'render.disposition') receipts.record(receipt);
 			}
@@ -100,10 +103,26 @@ export function createHeldFileMarkdownReadiness(props: {
 			}
 		},
 		close: (): void => {
+			if (isClosed) return;
+			isClosed = true;
 			releaseWorker.resolve();
 			releaseMermaid.resolve();
 			receipts.close(new Error('File Markdown readiness observation closed.'));
 		},
+	};
+}
+
+/** Keep runner-bound failures named even when an owner fact never arrives. */
+export function recordFileMarkdownWaits(testContext: TestContext): (step: string) => void {
+	let lastStep = 'test setup';
+	testContext.onTestFinished((): void => {
+		if (testContext.signal.aborted || testContext.task.result?.state === 'fail') {
+			console.info(`TQ23 failed/aborted at step: ${lastStep}`);
+		}
+	});
+	return (step: string): void => {
+		lastStep = step;
+		console.info(`TQ23 checkpoint: ${step}`);
 	};
 }
 

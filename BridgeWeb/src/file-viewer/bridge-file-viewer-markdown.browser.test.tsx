@@ -1,4 +1,13 @@
-import { afterAll, afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
+import {
+	afterAll,
+	afterEach,
+	beforeEach,
+	describe,
+	expect,
+	test,
+	vi,
+	type TestContext,
+} from 'vitest';
 import { cleanup, render } from 'vitest-browser-react';
 
 // oxlint-disable-next-line import/no-unassigned-import -- Browser Mode must load the product Markdown styles.
@@ -41,6 +50,7 @@ import {
 	createHeldFileMarkdownReadiness,
 	observeFileMarkdownArticle,
 	observeFileMermaidReady,
+	recordFileMarkdownWaits,
 } from './bridge-file-viewer-markdown-ready.browser.test-support.js';
 
 const originalResizeObserver = globalThis.ResizeObserver;
@@ -61,7 +71,8 @@ describe('BridgeFileViewerApp Markdown Browser Mode', () => {
 		Object.assign(globalThis, { ResizeObserver: originalResizeObserver });
 	});
 
-	test('mounts the complete semantic Markdown document instead of Pierre', async () => {
+	test('mounts the complete semantic Markdown document instead of Pierre', async (testContext: TestContext): Promise<void> => {
+		const beginWait = recordFileMarkdownWaits(testContext);
 		const markdownContent = [
 			'# File Markdown proof',
 			'',
@@ -86,6 +97,7 @@ describe('BridgeFileViewerApp Markdown Browser Mode', () => {
 			'```',
 			'',
 		].join('\n');
+		beginWait('Markdown descriptor preparation');
 		const markdownDescriptor = await makeBrowserFileDescriptorOutcomeForContent({
 			content: markdownContent,
 			descriptorId: 'file-markdown-browser-content',
@@ -104,6 +116,7 @@ describe('BridgeFileViewerApp Markdown Browser Mode', () => {
 		});
 
 		try {
+			beginWait('File Viewer mount');
 			await render(
 				<BridgeFileViewerApp
 					codeViewWorkerPoolEnabled={false}
@@ -118,19 +131,25 @@ describe('BridgeFileViewerApp Markdown Browser Mode', () => {
 				/>,
 			);
 
+			beginWait('Markdown worker start');
 			const markdownTask = await readiness.workerStarted;
+			beginWait('real Markdown worker completion');
 			const completion = await readiness.workerCompleted;
 			expect(completion.status).toBe('success');
 			if (completion.status !== 'success') throw new Error('Expected real Markdown completion.');
 			await actUpdate(async (): Promise<void> => {
+				beginWait('held Markdown worker completion delivery');
 				readiness.releaseWorker();
 				await markdownTask.completed;
 			});
+			beginWait('request-correlated Markdown article installation');
 			const article = await observeFileMarkdownArticle(markdownTask);
 			const diagramId = completion.response.mermaidDiagrams[0]?.id;
 			if (diagramId === undefined) throw new Error('Expected the Markdown Mermaid diagram.');
 			await actUpdate(async (): Promise<void> => {
+				beginWait('request-correlated Markdown painted publication');
 				await readiness.waitForPainted(markdownTask, article);
+				beginWait(`Mermaid READY for diagram ${diagramId}`);
 				await observeFileMermaidReady({
 					article,
 					task: markdownTask,
@@ -139,9 +158,16 @@ describe('BridgeFileViewerApp Markdown Browser Mode', () => {
 				});
 			});
 
+			beginWait('semantic Markdown assertions after readiness');
 			const markdownCanvas = requireHTMLElement(
 				document.querySelector('[data-testid="bridge-markdown-canvas"]'),
 			);
+			expect(markdownCanvas.querySelector('h1')?.textContent).toBe('File Markdown proof');
+			expect(
+				document
+					.querySelector('[data-worktree-open-file-state]')
+					?.getAttribute('data-worktree-open-file-state'),
+			).toBe('ready');
 			const inertLink = requireHTMLElement(markdownCanvas.querySelector('a'));
 			const codeBlock = requireHTMLElement(
 				markdownCanvas.querySelector('.bridge-markdown-code-block'),
@@ -465,6 +491,75 @@ describe('BridgeFileViewerApp Markdown Browser Mode', () => {
 		} finally {
 			releaseMarkdownCompletion.resolve();
 			markdownWorkerClient.dispose();
+		}
+	});
+
+	test('unmounts a pending Markdown publication after its readiness tap closes', async (testContext: TestContext): Promise<void> => {
+		const beginWait = recordFileMarkdownWaits(testContext);
+		const markdownContent = '# Unmounted Markdown\n';
+		beginWait('unmount regression descriptor preparation');
+		const descriptor = await makeBrowserFileDescriptorOutcomeForContent({
+			content: markdownContent,
+			fileId: 'file-unmounted-markdown',
+			path: 'docs/unmounted.md',
+		});
+		const workerClient = createBridgeMarkdownRenderWebWorkerClient({
+			workerFactory: createBridgeMarkdownRenderModuleWorkerFactory(),
+		});
+		if (workerClient === null) throw new Error('Expected the real Markdown worker.');
+		const readiness = createHeldFileMarkdownReadiness({
+			workerClient,
+			mermaidRenderer: createBridgeMermaidRenderer(),
+		});
+		const retiredPublication = createBridgeProductDeferred<BridgeWorkerMainToServerMessage>();
+		let readinessClosed = false;
+		try {
+			beginWait('pending-publication File Viewer mount');
+			const rendered = await render(
+				<BridgeFileViewerApp
+					codeViewWorkerPoolEnabled={false}
+					initialFileBatch={makeBrowserFileBatchWithDescriptors('open', descriptor)}
+					markdownWorkerClient={readiness.workerClient}
+					navigationCommand={fileNavigationCommandForPath('docs/unmounted.md')}
+					fileProductSession={{
+						readContent: async (): Promise<string> => markdownContent,
+						onWorkerCommand: (command: BridgeWorkerMainToServerMessage): void => {
+							if (
+								readinessClosed &&
+								command.command === 'renderDisposition' &&
+								command.receipts.some(
+									(receipt): boolean =>
+										receipt.kind === 'render.disposition' &&
+										receipt.disposition === 'superseded' &&
+										receipt.itemId === 'file-unmounted-markdown',
+								)
+							)
+								retiredPublication.resolve(command);
+							readiness.observeCommand(command);
+						},
+					}}
+				/>,
+			);
+			beginWait('pending-publication Markdown worker start');
+			const task = await readiness.workerStarted;
+			beginWait('pending-publication real Markdown worker completion');
+			expect((await readiness.workerCompleted).status).toBe('success');
+			beginWait('pending-publication unmount after readiness close');
+			await expect(
+				actUpdate(async (): Promise<void> => {
+					readiness.close();
+					readinessClosed = true;
+					await rendered.unmount();
+				}),
+			).resolves.toBeUndefined();
+			beginWait('closed-tap publication retirement on unmount');
+			const retirement = await retiredPublication.promise;
+			expect(retirement.command).toBe('renderDisposition');
+			expect(task.identity.sourceIdentity.fileId).toBe('file-unmounted-markdown');
+			expect(document.querySelector('[data-testid="bridge-file-viewer-shell"]')).toBeNull();
+		} finally {
+			readiness.close();
+			workerClient.dispose();
 		}
 	});
 });
