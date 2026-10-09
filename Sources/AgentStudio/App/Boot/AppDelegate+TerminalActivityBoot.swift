@@ -4,9 +4,13 @@ import Foundation
 
 extension AppDelegate {
     func bootStartTerminalActivityRouter(bus: EventBus<RuntimeEnvelope>) {
-        let paneActivityClock = PaneActivityClock { [weak self] batch in
-            self?.atomStore.core.paneActivityTime.apply(batch)
-        }
+        let datastore = workspaceSQLiteDatastore
+        let paneActivityClock = PaneActivityClock(
+            sink: makePaneActivitySink { commit in
+                guard let datastore else { return }
+                try await datastore.commitPaneActivity(commit)
+            }
+        )
         self.paneActivityClock = paneActivityClock
         workspaceSurfaceCoordinator?.paneActivityClock = paneActivityClock
         Task { await paneActivityClock.start() }
@@ -41,6 +45,20 @@ extension AppDelegate {
         )
         Task { @MainActor [weak self] in
             await self?.terminalActivityRouter.start()
+        }
+    }
+
+    func makePaneActivitySink(
+        commit: @escaping @Sendable (PaneActivityCommit) async throws -> Void
+    ) -> @MainActor @Sendable ([PaneActivityTimeMutation]) async -> Void {
+        { [weak self] batch in
+            guard let self else { return }
+            atomStore.core.paneActivityTime.apply(batch)
+            do {
+                try await commit(PaneActivityCommit(mutations: batch))
+            } catch {
+                appLogger.warning("Pane activity save failed: \(String(describing: error), privacy: .private)")
+            }
         }
     }
 

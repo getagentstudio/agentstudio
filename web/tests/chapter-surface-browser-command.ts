@@ -545,6 +545,7 @@ export const verifyChapterStepRow = defineBrowserCommand(
         `[data-route-kind="attach"][data-route-anchor="${chapterId}"] [data-topology-path-role="core"]`,
         { state: "attached" },
       );
+      await applicationPage.waitForSelector('.site-header[data-visual-state="floating"]');
       glassLayout = await applicationPage.evaluate(readGlassLayout, chapterId);
       semantics = await applicationPage.evaluate(readStepTabs, chapterId);
       initial = await applicationPage.evaluate(readStepSnapshot, chapterId);

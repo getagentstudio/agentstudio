@@ -28,6 +28,7 @@ package struct RepoExplorerView: View {
     let repoExplorerPrefs: RepoExplorerSidebarPrefsAtom
     let isProjectionDemanded: Bool
     let bridgeAttendanceSnapshot: BridgeAttendanceSnapshot
+    let paneContextControl: RepoExplorerPaneContextControlFactory
     let latestPaneMessageSnapshot: LatestPaneMessageSnapshot
     let commandDispatcher: any AppCommandDispatching
     let commandPresentationDelta: RepoExplorerCommandPresentationDelta?
@@ -70,7 +71,10 @@ package struct RepoExplorerView: View {
             @escaping @MainActor @Sendable (RepoExplorerVisibleWorktreeSnapshot) -> Void = { _ in },
         onPerformanceProofReadback:
             @escaping @MainActor @Sendable (RepoExplorerPerformanceProofReadback) -> Void = { _ in },
+        paneContextControl: @escaping RepoExplorerPaneContextControlFactory = { _, _ in nil },
         latestPaneMessageSnapshot: @escaping LatestPaneMessageSnapshot = { _ in nil },
+        sessionStatusForPane: @escaping RepoExplorerSessionStatusReader = { _ in nil },
+        contextDisplayForPane: @escaping RepoExplorerContextDisplayReader = { _ in nil },
         performanceTraceRecorder: AgentStudioPerformanceTraceRecorder? = nil,
         recencyNow: @escaping @MainActor @Sendable () -> Date = Date.init,
         recencyDelay: AsyncDelay = .taskSleep,
@@ -97,6 +101,7 @@ package struct RepoExplorerView: View {
         self.onSidebarVisibleWorktreesChanged = onSidebarVisibleWorktreesChanged
         self.onVisibleWorktreeSnapshotChanged = onVisibleWorktreeSnapshotChanged
         self.onPerformanceProofReadback = onPerformanceProofReadback
+        self.paneContextControl = paneContextControl
         self.latestPaneMessageSnapshot = latestPaneMessageSnapshot
         self.performanceTraceRecorder = performanceTraceRecorder
         _projectionAdapter = State(
@@ -109,7 +114,9 @@ package struct RepoExplorerView: View {
                     sidebarCache: atom(\.sidebarCache),
                     coreAtoms: CoreAtomScope.store,
                     bridgeAttendanceSnapshot: bridgeAttendanceSnapshot,
-                    latestPaneMessageSnapshot: latestPaneMessageSnapshot
+                    latestPaneMessageSnapshot: latestPaneMessageSnapshot,
+                    sessionStatusForPane: sessionStatusForPane,
+                    contextDisplayForPane: contextDisplayForPane
                 ),
                 performanceTraceRecorder: performanceTraceRecorder,
                 recencyNow: recencyNow,
@@ -251,6 +258,7 @@ package struct RepoExplorerView: View {
             onCommandRequest: dispatchTableCommand,
             onToggleGroup: toggleGroupExpansion,
             onFocusPane: focusPane,
+            paneContextControl: paneContextControl,
             onSetGroupExpanded: setGroupExpansion,
             onOpenPaneInEditor: { paneId, editorId in
                 guard let directory = store.paneAtom.pane(paneId)?.metadata.cwd else { return }

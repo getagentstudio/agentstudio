@@ -363,6 +363,7 @@ extension AppDelegate {
         filesystemSource: inout FilesystemGitPipeline?
     ) async {
         let undoRecovery = await bootRecoverUndoJournal()
+        await bootRestorePaneActivity()
         runtime = SessionRuntime(atom: atomStore.core.sessionRuntime, store: store)
         viewRegistry = ViewRegistry()
         closeTransitionCoordinator = PaneCloseTransitionCoordinator()

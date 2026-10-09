@@ -65,6 +65,43 @@ struct WorktreeCreationCommandLineIntegrationTests {
         #expect(try await git(at: repository, "rev-parse", "refs/heads/\(startBranch)") == expectedTip)
     }
 
+    @Test("new --from-branch without another flag creates its new branch at that local branch tip")
+    func createsFromBranchWithoutTrackedOnly() async throws {
+        let repository = try await FilesystemTestGitRepo.create(named: "cli-from-branch-alone")
+        defer { FilesystemTestGitRepo.destroy(repository) }
+        try "base\n".write(to: repository.appending(path: "README.md"), atomically: true, encoding: .utf8)
+        try await git(at: repository, "add", "README.md")
+        try await git(at: repository, "commit", "-m", "base")
+        try await git(at: repository, "checkout", "-b", "release")
+        try "release\n".write(to: repository.appending(path: "release.txt"), atomically: true, encoding: .utf8)
+        try await git(at: repository, "add", "release.txt")
+        try await git(at: repository, "commit", "-m", "release")
+        let releaseTip = try await git(at: repository, "rev-parse", "refs/heads/release")
+        try await git(at: repository, "checkout", "main")
+        #expect(try await git(at: repository, "rev-parse", "HEAD") != releaseTip)
+        let destination = try siblingDestination(repository: repository, branch: "feat")
+        defer { try? FileManager.default.removeItem(at: destination) }
+
+        let probe = WorktreeCreationCommandLineProbe()
+        let exitCode = await WorktreeCommandLine.run(
+            arguments: ["new", "feat", "--from-branch", "release", "--repo", repository.path, "--json"],
+            currentDirectory: repository,
+            output: { probe.appendOutput($0) },
+            errorOutput: { probe.appendError($0) }
+        )
+
+        let output = try #require(probe.outputSnapshot().first)
+        #expect(exitCode == 0, "new --from-branch did not create: \(output)")
+        #expect(probe.errorSnapshot().isEmpty)
+        let document = try JSONDecoder().decode(CreatedDocument.self, from: Data(output.utf8))
+        #expect(document.outcome == "created")
+        #expect(document.branch == "feat")
+        #expect(document.path == destination.path)
+        #expect(document.materialization?.kind == "trackedOnly")
+        #expect(try await git(at: repository, "rev-parse", "refs/heads/feat") == releaseTip)
+        #expect(try await git(at: destination, "rev-parse", "HEAD") == releaseTip)
+    }
+
     @Test("new from a missing local branch refuses with startBranchNotFound")
     func refusesMissingStartBranch() async throws {
         let repository = try await FilesystemTestGitRepo.create(named: "cli-missing-start-branch")

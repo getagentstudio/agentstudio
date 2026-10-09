@@ -1,7 +1,7 @@
 import Foundation
 
 package enum WorktreeEvidenceArchiveResult: Sendable, Equatable {
-    case archived(path: URL, fileCount: Int)
+    case archived(path: URL, fileCount: Int, skippedSpecialFiles: [String])
     case partialCopy(path: URL)
 }
 
@@ -10,6 +10,7 @@ package struct WorktreeEvidenceArchiver: Sendable {
         case directory
         case regularFile
         case symbolicLink
+        case specialFile
     }
 
     private struct Entry: Equatable {
@@ -36,7 +37,22 @@ package struct WorktreeEvidenceArchiver: Sendable {
                 at: normalizedDestination.deletingLastPathComponent(),
                 withIntermediateDirectories: true
             )
-            try fileManager.copyItem(at: normalizedSource, to: normalizedDestination)
+            try fileManager.createDirectory(at: normalizedDestination, withIntermediateDirectories: false)
+            for entry in sourceEntries {
+                let sourceEntry = normalizedSource.appending(path: entry.relativePath)
+                let destinationEntry = normalizedDestination.appending(path: entry.relativePath)
+                switch entry.kind {
+                case .directory:
+                    try fileManager.createDirectory(at: destinationEntry, withIntermediateDirectories: false)
+                case .regularFile:
+                    try fileManager.copyItem(at: sourceEntry, to: destinationEntry)
+                case .symbolicLink:
+                    let target = try fileManager.destinationOfSymbolicLink(atPath: sourceEntry.path)
+                    try fileManager.createSymbolicLink(atPath: destinationEntry.path, withDestinationPath: target)
+                case .specialFile:
+                    continue
+                }
+            }
             guard let destinationEntries = entries(at: normalizedDestination),
                 Self.verify(
                     sourceEntries: sourceEntries,
@@ -49,7 +65,11 @@ package struct WorktreeEvidenceArchiver: Sendable {
             }
             return .archived(
                 path: normalizedDestination,
-                fileCount: sourceEntries.filter { $0.kind != .directory }.count
+                fileCount: sourceEntries.filter { $0.kind != .directory && $0.kind != .specialFile }.count,
+                skippedSpecialFiles:
+                    sourceEntries
+                    .filter { $0.kind == .specialFile }
+                    .map { "tmp/\($0.relativePath)" }
             )
         } catch {
             return .partialCopy(path: normalizedDestination)
@@ -88,7 +108,7 @@ package struct WorktreeEvidenceArchiver: Sendable {
                 let kind: EntryKind = type == .typeRegular ? .regularFile : .symbolicLink
                 result.append(Entry(relativePath: relativePath, kind: kind, size: size))
             } else {
-                return false
+                result.append(Entry(relativePath: relativePath, kind: .specialFile, size: 0))
             }
         }
         return true
@@ -114,8 +134,9 @@ package struct WorktreeEvidenceArchiver: Sendable {
         sourceRoot: URL,
         destinationRoot: URL
     ) -> Bool {
-        guard sourceEntries == destinationEntries else { return false }
-        for entry in sourceEntries where entry.kind != .directory {
+        let copiedSourceEntries = sourceEntries.filter { $0.kind != .specialFile }
+        guard copiedSourceEntries == destinationEntries else { return false }
+        for entry in copiedSourceEntries where entry.kind != .directory {
             let source = sourceRoot.appending(path: entry.relativePath)
             let destination = destinationRoot.appending(path: entry.relativePath)
             switch entry.kind {
@@ -132,6 +153,8 @@ package struct WorktreeEvidenceArchiver: Sendable {
                 else {
                     return false
                 }
+            case .specialFile:
+                continue
             }
         }
         return true

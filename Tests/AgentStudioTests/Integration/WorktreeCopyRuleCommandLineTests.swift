@@ -15,7 +15,9 @@ struct WorktreeCopyRuleCommandLineTests {
         defer { try? FileManager.default.removeItem(at: destination) }
         let (exit, text) = try await runNew(repository: repository, branch: "feature/rules", json: true)
         #expect(exit == 0)
-        #expect(try Data(contentsOf: destination.appending(path: "included/cache.bin")) == Data("warm cache".utf8))
+        #expect(
+            try Data(contentsOf: destination.appending(path: "included/cache.bin"))
+                == Data("included ignored content".utf8))
         #expect(!FileManager.default.fileExists(atPath: destination.appending(path: "excluded").path))
         let document = try #require(JSONSerialization.jsonObject(with: Data(text.utf8)) as? [String: Any])
         let report = try #require(document["materialization"] as? [String: Any])
@@ -70,8 +72,8 @@ struct WorktreeCopyRuleCommandLineTests {
             let (exit, text) = try await runNew(
                 repository: repository, branch: branch, json: json, explicitSource: usesExplicitSource)
             #expect(exit == 1)
-            #expect(text.contains(usesExplicitSource ? "sourceIndexUnreadable" : "changesUnknown"))
-            #expect(text.contains("--from") == !usesExplicitSource)
+            #expect(text.contains("sourceIndexUnreadable"))
+            #expect(!text.contains("changesUnknown"))
             #expect(text.contains("retry"))
             #expect(text.contains("--tracked-only"))
         }
@@ -90,10 +92,10 @@ struct WorktreeCopyRuleCommandLineTests {
             let (exit, text) = try await runNew(
                 repository: repository, branch: branch, json: json, explicitSource: usesExplicitSource)
             #expect(exit == 1)
-            #expect(text.contains(usesExplicitSource ? "sourceIndexUnsupported" : "changesUnknown"))
-            #expect(text.contains("--from") == !usesExplicitSource)
+            #expect(text.contains("sourceIndexUnsupported"))
+            #expect(!text.contains("changesUnknown"))
             #expect(text.contains("--tracked-only"))
-            #expect(text.contains("retry") == !usesExplicitSource)
+            #expect(!text.contains("retry"))
         }
         try await expectAbsent(repository: repository, destination: destination, branch: branch)
     }
@@ -124,7 +126,7 @@ struct WorktreeCopyRuleCommandLineTests {
         for directory in ["included", "excluded"] {
             try FileManager.default.createDirectory(
                 at: repository.appending(path: directory), withIntermediateDirectories: true)
-            try Data("warm cache".utf8).write(to: repository.appending(path: "\(directory)/cache.bin"))
+            try Data("included ignored content".utf8).write(to: repository.appending(path: "\(directory)/cache.bin"))
         }
         return repository
     }
