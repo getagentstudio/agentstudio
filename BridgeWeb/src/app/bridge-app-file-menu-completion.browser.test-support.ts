@@ -304,6 +304,7 @@ export function registerFilesFilterDismissalTests(mount: () => Promise<unknown>)
 		try {
 			await expect(proveHeldFilesFilterDismissal(mount)).rejects.toBe(switchFailure);
 			console.info(`GO30 preserved original failure: ${switchFailure.message}.`);
+			// oxlint-disable-next-line unbound-method -- Compare the restored method identity; do not invoke it unbound.
 			expect(Element.prototype.getAnimations).toBe(originalGetAnimations);
 			expect(recordingCloseLifecycle).toBe(false);
 		} finally {
