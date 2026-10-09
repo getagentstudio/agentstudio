@@ -1,6 +1,6 @@
 # Agent IPC v2 and Agent Package — Specification
 
-Date: 2026-09-16.
+Date: 2026-09-16. **Amended 2026-10-07** (owner, stopgap until a daemon owns pane tokens): a pane verifier is written durably when it's issued, so an abrupt app end no longer loses it (credential continuity below).
 Requirements: [user-requirements.md](user-requirements.md).
 Authority and rationale: [decision-record.md](decision-record.md).
 Structural realization: [program-design.md](program-design.md).
@@ -150,9 +150,14 @@ or the debug-channel testing principal. Pane principals cannot mark messages
 seen, including their own; knowing an occurrence ID supplies no authority.
 
 Credential continuity survives restart for continuing shells whose verifier was
-durably registered before the prior process ended. A credential not durable when
-the process ends is an accepted limitation whether the end was abrupt or followed
-optional schema/storage failure: after relaunch it is unknown, every request fails
+durably registered before the prior process ended. Each pane verifier is written
+durably when it's issued (owner, 2026-10-07; stopgap until a daemon owns pane
+tokens), so a crash, force quit or SIGTERM no longer loses it. Before this, a
+token never used for IPC was saved only at a normal quit, and its pane's shell
+lost IPC after an abrupt end (finding #6, 2026-10-06). The write never blocks the
+terminal. A credential still not durable when the process ends (an end in the
+moment between issue and write, or a schema/storage failure) is an accepted
+limitation: after relaunch it is unknown, every request fails
 with explicit IPC-unavailable/authentication status, and the terminal remains
 usable until a new shell supplies a new credential. That rejection never enters
 the offline spool. Within one app runtime, IPC supplies one reused environment
