@@ -452,16 +452,13 @@ package final class CLIStore: Sendable {
         var cleanupAllowed = true
         // A crashed creator's files are ignored. Only this attempt's private
         // names may be removed, after its connection closes and before return.
+        // cleanupAllowed is false only while that connection may still be open
+        // (a failed open has already released it), so a WAL-mode attempt's
+        // -wal and -shm go with it.
         defer {
-            let ownedPaths = [
-                temporaryURL.path, temporaryURL.path + "-journal",
-            ]
-            let hasSidecars =
-                FileManager.default.fileExists(atPath: temporaryURL.path + "-wal")
-                || FileManager.default.fileExists(atPath: temporaryURL.path + "-shm")
-            if cleanupAllowed && !hasSidecars {
-                for path in ownedPaths {
-                    try? FileManager.default.removeItem(atPath: path)
+            if cleanupAllowed {
+                for suffix in ["", "-journal", "-wal", "-shm"] {
+                    try? FileManager.default.removeItem(atPath: temporaryURL.path + suffix)
                 }
             }
         }
