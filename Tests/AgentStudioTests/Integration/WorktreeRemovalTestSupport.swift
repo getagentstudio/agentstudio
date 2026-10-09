@@ -36,7 +36,7 @@ struct WorktreeRemovalRepository {
             GitCreateWorktreeRequest(
                 repositoryPath: path,
                 destinationPath: worktreePath,
-                mode: .newBranch(name: branch, startPoint: .named("refs/heads/main"))
+                mode: .newBranch(name: branch, startPoint: .named("refs/heads/main"), upstream: nil)
             ))
         linkedWorktreePaths.append(worktreePath)
         return worktreePath

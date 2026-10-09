@@ -58,7 +58,7 @@ struct WorktreeRemovalArgumentTests {
                         discardWorkingChanges: false,
                         branchPolicy: .deleteIfIntegrated,
                         evidencePolicy: .requireEmpty,
-                        fetchPolicy: .defaultBranch,
+                        fetchPolicy: .fetch,
                         removeStaleLock: false,
                         closePanes: false,
                         removeWithOpenPanes: false,

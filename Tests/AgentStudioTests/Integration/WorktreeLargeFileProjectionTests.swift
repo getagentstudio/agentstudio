@@ -13,12 +13,11 @@ struct WorktreeLargeFileProjectionTests {
         let missing = (0..<missingCount).map { index in
             GitLargeFileFillMiss(path: "asset-\(index).bin", reason: .objectAbsent)
         }
-        let summary = WorktreeCreatedSummary(
-            operation: .new,
+        let summary = makeCreatedSummary(
             branch: "feature/lfs",
             path: worktree,
             repository: repository,
-            materialization: .trackedOnly(
+            materialization: .checkout(
                 GitLargeFileFill(
                     materializedCount: 1,
                     missing: missing,
@@ -47,21 +46,23 @@ struct WorktreeLargeFileProjectionTests {
         #expect(item["kind"] as? String == "temporaryArtifact")
         #expect(item["location"] as? String == "assets/.agentstudio-lfs-fill-orphan")
 
+        // LR31: the human line only counts what is left as pointers; residue and options are in --json.
         let humanResponse = try WorktreeCommandLineFormatter.format(outcome: .created(summary), usesJSONOutput: false)
-        #expect(humanResponse.text.contains("temporaryArtifact assets/.agentstudio-lfs-fill-orphan (destination)"))
+        #expect(
+            humanResponse.text
+                == "created feature/lfs at \(worktree.path) (checkout; \(missingCount) large files left as pointers)")
         #expect(largeFiles["options"] as? [String] == ["git -C \(worktree.path) lfs pull"])
     }
 
-    @Test("residue alone remains visible with zero fills and missing paths")
+    @Test("residue alone remains visible in --json with zero fills and missing paths")
     func includesResidueOnlyReportWithNoMissingFiles() throws {
         let repository = URL(fileURLWithPath: "/tmp/worktree-output/repository")
         let worktree = URL(fileURLWithPath: "/tmp/worktree-output/repository.feature-lfs")
-        let summary = WorktreeCreatedSummary(
-            operation: .new,
+        let summary = makeCreatedSummary(
             branch: "feature/lfs-residue-only",
             path: worktree,
             repository: repository,
-            materialization: .trackedOnly(
+            materialization: .checkout(
                 GitLargeFileFill(
                     materializedCount: 0,
                     missing: [],
@@ -83,20 +84,18 @@ struct WorktreeLargeFileProjectionTests {
         #expect(item["location"] as? String == "assets/.agentstudio-lfs-fill-orphan")
 
         let humanResponse = try WorktreeCommandLineFormatter.format(outcome: .created(summary), usesJSONOutput: false)
-        #expect(humanResponse.text.contains("LFS: 0 filled, 0 missing"))
-        #expect(humanResponse.text.contains("temporaryArtifact assets/.agentstudio-lfs-fill-orphan (destination)"))
+        #expect(humanResponse.text == "created feature/lfs-residue-only at \(worktree.path) (checkout)")
     }
 
     @Test("complete LFS materialization omits an unnecessary pull option")
     func omitsPullOptionWhenScanIsCompleteAndNothingIsMissing() throws {
         let repository = URL(fileURLWithPath: "/tmp/worktree-output/repository")
         let worktree = URL(fileURLWithPath: "/tmp/worktree-output/repository.feature-lfs")
-        let summary = WorktreeCreatedSummary(
-            operation: .new,
+        let summary = makeCreatedSummary(
             branch: "feature/lfs",
             path: worktree,
             repository: repository,
-            materialization: .trackedOnly(
+            materialization: .checkout(
                 GitLargeFileFill(
                     materializedCount: 1,
                     missing: [],
@@ -126,8 +125,7 @@ struct WorktreeLargeFileProjectionTests {
             residuePaths: [],
             scan: .complete
         )
-        let summary = WorktreeCreatedSummary(
-            operation: .new,
+        let summary = makeCreatedSummary(
             branch: "feature/changes-only",
             path: worktree,
             repository: repository,

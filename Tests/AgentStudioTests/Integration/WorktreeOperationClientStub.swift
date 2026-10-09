@@ -45,6 +45,11 @@ struct WorktreeOperationClientStub: AgentStudioGitLocalClient {
                 GitDeleteLocalBranchResult, GitLockedOperationFailure<GitDeleteLocalBranchErrorReason>
             >
         )?
+    /// What every fork throws when there is no `forkHandler`; by default the capability rejection.
+    let forkFailure: GitWorktreeForkError
+    /// When set, every branch-use read throws it instead of answering.
+    let branchUseFailure: GitDataPlaneError?
+    let forkHandler: (@Sendable (GitForkWorktreeRequest) async -> Result<GitForkWorktreeResult, GitWorktreeForkError>)?
 
     init(
         startPath: URL,
@@ -70,6 +75,11 @@ struct WorktreeOperationClientStub: AgentStudioGitLocalClient {
             @Sendable (GitDeleteLocalBranchRequest) async -> Result<
                 GitDeleteLocalBranchResult, GitLockedOperationFailure<GitDeleteLocalBranchErrorReason>
             >
+        )? = nil,
+        forkFailure: GitWorktreeForkError = .rejected(reason: .clientCapabilityUnavailable),
+        branchUseFailure: GitDataPlaneError? = nil,
+        forkHandler: (
+            @Sendable (GitForkWorktreeRequest) async -> Result<GitForkWorktreeResult, GitWorktreeForkError>
         )? = nil
     ) {
         self.startPath = startPath
@@ -87,6 +97,9 @@ struct WorktreeOperationClientStub: AgentStudioGitLocalClient {
         self.defaultTargetResolutionFailureSchedule = defaultTargetResolutionFailureSchedule
         self.removeWorktreeHandler = removeWorktreeHandler
         self.deleteLocalBranchHandler = deleteLocalBranchHandler
+        self.forkFailure = forkFailure
+        self.branchUseFailure = branchUseFailure
+        self.forkHandler = forkHandler
     }
 
     func repositoryIdentity(for worktreePath: URL) async throws(GitDataPlaneError) -> GitRepositoryIdentity {
@@ -121,8 +134,14 @@ struct WorktreeOperationClientStub: AgentStudioGitLocalClient {
         throw .unsupported(message: "unexpected worktree creation")
     }
 
-    func forkWorktree(_: GitForkWorktreeRequest) async throws(GitWorktreeForkError) -> GitForkWorktreeResult {
-        throw .rejected(reason: .clientCapabilityUnavailable)
+    func forkWorktree(_ request: GitForkWorktreeRequest) async throws(GitWorktreeForkError) -> GitForkWorktreeResult {
+        if let forkHandler {
+            switch await forkHandler(request) {
+            case .success(let result): return result
+            case .failure(let error): throw error
+            }
+        }
+        throw forkFailure
     }
 
     func forkWorktreeEligibility(sourceWorktreePath _: URL, destinationPath _: URL) async
@@ -208,6 +227,23 @@ struct WorktreeOperationClientStub: AgentStudioGitLocalClient {
         if let branchSnapshots { return branchSnapshots }
         if let baseClient { return try await baseClient.branches(for: repositoryPath) }
         throw .unsupported(message: "unexpected branch lookup")
+    }
+
+    func remoteNames(for repositoryPath: URL) async throws(GitDataPlaneError) -> [String] {
+        if let baseClient { return try await baseClient.remoteNames(for: repositoryPath) }
+        throw .unsupported(message: "unexpected remote name lookup")
+    }
+
+    /// Preflight reads branch use before the destination checks; without a real client the branch is free.
+    func branchUse(_ request: GitBranchUseRequest) async throws(GitDataPlaneError) -> GitBranchUse {
+        if let branchUseFailure { throw branchUseFailure }
+        if let baseClient { return try await baseClient.branchUse(request) }
+        return .free
+    }
+
+    func aheadBehind(_ request: GitAheadBehindRequest) async throws(GitDataPlaneError) -> GitAheadBehind {
+        if let baseClient { return try await baseClient.aheadBehind(request) }
+        throw .unsupported(message: "unexpected ahead/behind read")
     }
 
     func assessBranchIntegration(_ request: GitBranchIntegrationRequest) async throws(GitDataPlaneError)

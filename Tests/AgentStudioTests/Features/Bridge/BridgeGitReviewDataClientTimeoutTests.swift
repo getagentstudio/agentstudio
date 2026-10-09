@@ -340,6 +340,18 @@ private actor NonCooperativeDiffAgentStudioGitClient: AgentStudioGitLocalClient 
         throw GitDataPlaneError.unsupported(message: "not used")
     }
 
+    func remoteNames(for repositoryPath: URL) async throws(GitDataPlaneError) -> [String] {
+        throw GitDataPlaneError.unsupported(message: "not used")
+    }
+
+    func branchUse(_: GitBranchUseRequest) async throws(GitDataPlaneError) -> GitBranchUse {
+        throw GitDataPlaneError.unsupported(message: "not used")
+    }
+
+    func aheadBehind(_: GitAheadBehindRequest) async throws(GitDataPlaneError) -> GitAheadBehind {
+        throw GitDataPlaneError.unsupported(message: "not used")
+    }
+
     func assessBranchIntegration(_: GitBranchIntegrationRequest) async throws(GitDataPlaneError)
         -> GitBranchIntegrationReport
     {

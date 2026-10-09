@@ -20,18 +20,21 @@ package enum WorktreeCommandLine {
         )
     }
 
+    /// `runner` defaults to the production one; tests pass one whose remote client allows Git's
+    /// `file` transport, so the command line can fetch from local bare remotes.
     package static func run(
         arguments: [String],
         currentDirectory: URL,
         output: @Sendable (String) -> Void,
-        errorOutput: @Sendable (String) -> Void
+        errorOutput: @Sendable (String) -> Void,
+        runner: WorktreeOperationRunner = WorktreeOperationRunner()
     ) async -> Int32 {
         do {
             let invocation = try WorktreeCommandLineArgumentParser.parse(
                 arguments,
                 currentDirectory: currentDirectory
             )
-            let outcome = await WorktreeOperationRunner().run(invocation.request)
+            let outcome = await runner.run(invocation.request)
             let response = try WorktreeCommandLineFormatter.format(
                 outcome: outcome,
                 usesJSONOutput: invocation.usesJSONOutput
