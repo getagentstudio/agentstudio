@@ -303,8 +303,8 @@ enum BridgeProductWebKitTwoPaneJourneyTestSupport {
         input.paneTwoClosingSource.observePage(input.paneTwo.page)
         input.paneOne.loadApp()
         input.paneTwo.loadApp()
-        try await input.paneOneClosingSource.requireMountedApp(input.paneOne)
-        try await input.paneTwoClosingSource.requireMountedApp(input.paneTwo)
+        _ = try await input.paneOneClosingSource.requireMountedApp(input.paneOne)
+        _ = try await input.paneTwoClosingSource.requireMountedApp(input.paneTwo)
 
         let dormantDefaults = try await requirePositionSnapshot(input.paneTwo.page)
         let dormantNative = await BridgeProductWebKitCarrierTestSupport.nativeSnapshot(input.paneTwo)
@@ -318,14 +318,14 @@ enum BridgeProductWebKitTwoPaneJourneyTestSupport {
 
         let paneTwoForegroundTransition = input.paneTwo.applyBridgePaneActivity(.foreground)
         await paneTwoForegroundTransition?.value
-        try await requireReadyReview(
+        _ = try await requireReadyReview(
             input.paneOne,
             paneLabel: "pane one",
             closingSource: input.paneOneClosingSource,
             reviewProvider: input.paneOneReviewProvider,
             traceRecorder: input.paneOneTrace
         )
-        try await requireReadyReview(
+        _ = try await requireReadyReview(
             input.paneTwo,
             paneLabel: "pane two",
             closingSource: input.paneTwoClosingSource,
@@ -339,7 +339,7 @@ enum BridgeProductWebKitTwoPaneJourneyTestSupport {
         guard await activateReviewMode(input.paneOne.page) else {
             throw JourneyError.conditionFailed("pane one Review mode did not reactivate")
         }
-        try await requireReadyReview(
+        _ = try await requireReadyReview(
             input.paneOne,
             paneLabel: "pane one after mode round-trip",
             closingSource: input.paneOneClosingSource,
@@ -415,7 +415,7 @@ enum BridgeProductWebKitTwoPaneJourneyTestSupport {
         let paneOneForegroundTransition = input.paneOne.applyBridgePaneActivity(.foreground)
         await paneOneForegroundTransition?.value
         try await requireRefreshIdle(input.paneOne, terminalExpectation: catchUpTerminal)
-        try await requireReadyReview(
+        _ = try await requireReadyReview(
             input.paneOne,
             paneLabel: "pane one after foreground return",
             closingSource: input.paneOneClosingSource,
@@ -706,7 +706,7 @@ enum BridgeProductWebKitTwoPaneJourneyTestSupport {
         closingSource: WebPageDocumentWaitClosingSource,
         reviewProvider: BridgeProductWebKitGatedReviewSourceProvider,
         traceRecorder: BridgeProductWebKitCarrierTraceRecorder
-    ) async throws {
+    ) async throws -> BridgeProductWebKitCarrierTrace {
         _ = try await WebPageEventWaits.waitForDocumentValue(
             controller.page,
             reader: """
@@ -715,8 +715,8 @@ enum BridgeProductWebKitTwoPaneJourneyTestSupport {
                 """, milestone: "\(paneLabel) Review selected content ready", closingSource: closingSource
         )
         let trace = await traceRecorder.waitForTrace(.canonicalSubscriptionsAndReviewPublication)
-        guard trace?.hasCanonicalEagerSubscriptions == true,
-            trace?.hasReviewMetadataPublication == true
+        guard let trace, trace.hasCanonicalEagerSubscriptions,
+            trace.hasReviewMetadataPublication
         else {
             let dom = await BridgeProductWebKitCarrierTestSupport.domSnapshot(controller.page)
             let native = await BridgeProductWebKitCarrierTestSupport.nativeSnapshot(controller)
@@ -725,6 +725,7 @@ enum BridgeProductWebKitTwoPaneJourneyTestSupport {
                 "\(paneLabel) real-git Review did not become ready; appRoot=\(dom?.hasAppRoot == true), canonicalSubscriptions=\(trace?.hasCanonicalEagerSubscriptions == true), reviewPublication=\(trace?.hasReviewMetadataPublication == true), reviewState=\(dom?.reviewSelectedContentState ?? "missing"), comparisons=\(providerSnapshot.comparisonCount), blockedComparisons=\(providerSnapshot.blockedComparisonCount), native=\(native)"
             )
         }
+        return trace
     }
 
     private static func requireBlockedComparison(

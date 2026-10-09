@@ -18,20 +18,21 @@ enum WebPageEventWaits {
     /// `onChange` fires on willSet and is one-shot; it suspends every pass rather
     /// than spinning.
     @MainActor
-    static func waitForNavigationToFinish(_ page: WebPage) async {
-        await waitForPageChange(on: page) { !page.isLoading }
+    @discardableResult
+    static func waitForNavigationToFinish(_ page: WebPage) async -> Bool {
+        await waitForPageChange(on: page, reader: { !page.isLoading }, until: { $0 })
     }
 
     /// Suspends until the page reports the expected title.
     @MainActor
-    static func waitForTitle(_ page: WebPage, equals expectedTitle: String) async {
-        await waitForPageChange(on: page) { page.title == expectedTitle }
+    @discardableResult
+    static func waitForTitle(_ page: WebPage, equals expectedTitle: String) async -> String {
+        await waitForPageChange(on: page, reader: { page.title }, until: { $0 == expectedTitle })
     }
 
     @MainActor
     static func waitForTitle(_ page: WebPage, beginningWith prefix: String) async -> String {
-        await waitForPageChange(on: page) { page.title.hasPrefix(prefix) }
-        return page.title
+        await waitForPageChange(on: page, reader: { page.title }, until: { $0.hasPrefix(prefix) })
     }
 
     /// Suspends until a JavaScript reader returns a value, and answers with it.
@@ -219,15 +220,17 @@ enum WebPageEventWaits {
 
     /// Suspends until `document.querySelector(selector)` is non-null.
     @MainActor
+    @discardableResult
     static func waitForDocumentSelector(
         _ page: WebPage, _ selector: String,
         closingSource: WebPageDocumentWaitClosingSource? = nil, milestone: String? = nil
-    ) async throws {
-        _ = try await waitForDocumentValue(
+    ) async throws -> Bool {
+        let observed = try await waitForDocumentValue(
             page,
             reader: "return document.querySelector(selector) === null ? null : true;",
             arguments: ["selector": selector], milestone: milestone, closingSource: closingSource
         )
+        return try #require(observed as? Bool, "GO26 selector wait did not return its matched observation")
     }
 
     /// Suspends until the controller's bridge handshake has completed.
@@ -235,8 +238,11 @@ enum WebPageEventWaits {
     /// `isBridgeReady` is a stored property of an `@Observable` type, so the
     /// transition is observable and needs no production seam.
     @MainActor
-    static func waitForBridgeReady(_ controller: BridgePaneController) async {
-        while !controller.isBridgeReady {
+    @discardableResult
+    static func waitForBridgeReady(_ controller: BridgePaneController) async -> Bool {
+        while true {
+            let observed = controller.isBridgeReady
+            if observed { return observed }
             await withCheckedContinuation { continuation in
                 withObservationTracking {
                     _ = controller.isBridgeReady
@@ -263,11 +269,14 @@ enum WebPageEventWaits {
 
     /// Parks on the page's own observation until `condition` holds.
     @MainActor
-    private static func waitForPageChange(
+    private static func waitForPageChange<ObservedValue>(
         on page: WebPage,
-        until condition: @escaping () -> Bool
-    ) async {
-        while !condition() {
+        reader: @escaping () -> ObservedValue,
+        until matches: @escaping (ObservedValue) -> Bool
+    ) async -> ObservedValue {
+        while true {
+            let observed = reader()
+            if matches(observed) { return observed }
             await withCheckedContinuation { continuation in
                 withObservationTracking {
                     _ = page.isLoading
@@ -389,7 +398,8 @@ final class WebPageDocumentWaitClosingSource {
         }
     }
 
-    func requireMountedApp(_ controller: BridgePaneController) async throws {
+    func requireMountedApp(_ controller: BridgePaneController) async throws -> BridgeProductWebKitCarrierNativeSnapshot
+    {
         await WebPageEventWaits.waitForNavigationToFinish(controller.page)
         try await WebPageEventWaits.waitForDocumentSelector(
             controller.page,
@@ -407,6 +417,7 @@ final class WebPageDocumentWaitClosingSource {
             throw BridgeProductWebKitTwoPaneJourneyTestSupport.JourneyError.conditionFailed(
                 "bundled app native session was not active")
         }
+        return native
     }
 
     func activateReadyFileMode(

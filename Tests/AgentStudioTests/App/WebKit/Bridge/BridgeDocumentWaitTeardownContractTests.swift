@@ -54,7 +54,7 @@ extension WebKitSerializedTests {
                             #expect(String(describing: error).contains("GO26 reader failed"))
                         }
                     }
-                    try await requireRemovedEntry(page: page, token: pending.token)
+                    #expect(try await requireRemovedEntry(page: page, token: pending.token))
                     #expect(try await page.callJavaScript("return globalThis.__go26DisconnectCount;") as? Int == 1)
                 }
             }
@@ -76,7 +76,7 @@ extension WebKitSerializedTests {
                 #expect(actualToken == token)
                 #expect(reason == "early close")
                 #expect(try await page.callJavaScript("return globalThis.__go26ReaderCount;") as? Int == 0)
-                try await requireRemovedEntry(page: page, token: token)
+                #expect(try await requireRemovedEntry(page: page, token: token))
             }
         }
 
@@ -98,12 +98,13 @@ extension WebKitSerializedTests {
                     #expect(failure.description.contains("delivery_failed"))
                 }
                 #expect(try await page.callJavaScript("return globalThis.__go26ReaderCount;") as? Int == 0)
-                try await source.recorder.expectNext(
+                let observedClosure = try await source.recorder.expectNext(
                     in: .init(pane: "already closed pane", requestId: "closed-request"),
                     where: {
                         if case .bootstrap(.deliveryFailed) = $0 { return true }
                         return false
                     }, "delivery_failed")
+                #expect(observedClosure.description == "bootstrap delivery_failed")
                 try await source.finish()
             }
         }
@@ -127,7 +128,7 @@ extension WebKitSerializedTests {
                         #expect(failure.closure.scope.requestId == "racing-request")
                         #expect(failure.description.contains("delivery_failed"))
                     }
-                    try await requireRemovedEntry(page: page, token: pending.token)
+                    #expect(try await requireRemovedEntry(page: page, token: pending.token))
                     #expect(try await page.callJavaScript("return globalThis.__go26DisconnectCount;") as? Int == 1)
                 }
             }
@@ -148,7 +149,7 @@ extension WebKitSerializedTests {
                     } catch { observation.error = error }
                 }
                 do {
-                    try await requireInstallationFact(page)
+                    try #require(try await requireInstallationFact(page), "GO26 document observer did not install")
                     source.record(.bootstrap(.deliveryFailed), requestId: "owner-request")
                     await waiter.value
                 } catch {
@@ -165,12 +166,13 @@ extension WebKitSerializedTests {
                 #expect(
                     try await page.callJavaScript("return globalThis.__agentstudioTestDocumentWaits.size;") as? Int == 0
                 )
-                try await source.recorder.expectNext(
+                let observedClosure = try await source.recorder.expectNext(
                     in: .init(pane: "closing pane", requestId: "owner-request"),
                     where: {
                         if case .bootstrap(.deliveryFailed) = $0 { return true }
                         return false
                     }, "delivery_failed")
+                #expect(observedClosure.description == "bootstrap delivery_failed")
                 try await source.finish()
             }
         }
@@ -206,7 +208,7 @@ extension WebKitSerializedTests {
                     return state === 'ready' ? 'ready value' : null;
                     """)
             do {
-                try await requireInstallationFact(page)
+                try #require(try await requireInstallationFact(page), "GO26 document observer did not install")
                 let instrumented = try await page.callJavaScript(
                     """
                     const observer = globalThis.__agentstudioTestDocumentWaits.get(token)?.observer;
@@ -246,18 +248,17 @@ extension WebKitSerializedTests {
             """
         }
 
-        private func requireInstallationFact(_ page: WebPage) async throws {
+        private func requireInstallationFact(_ page: WebPage) async throws -> Bool {
             let installed = try await awaitBridgeWebKitMilestone("GO26 registry observer installation") {
                 try await page.callJavaScript("return await globalThis.__go26Installed;")
             }
-            try #require(installed as? Bool == true, "GO26 document observer did not install")
+            return try #require(installed as? Bool, "GO26 missing document observer installation fact")
         }
 
-        private func requireRemovedEntry(page: WebPage, token: String) async throws {
-            #expect(
-                try await page.callJavaScript(
-                    "return !globalThis.__agentstudioTestDocumentWaits.has(token);", arguments: ["token": token])
-                    as? Bool == true)
+        private func requireRemovedEntry(page: WebPage, token: String) async throws -> Bool {
+            let removed = try await page.callJavaScript(
+                "return !globalThis.__agentstudioTestDocumentWaits.has(token);", arguments: ["token": token])
+            return try #require(removed as? Bool, "GO26 missing registry entry removal observation")
         }
     }
 }
