@@ -8,7 +8,7 @@ import WebKit
 @testable import AgentStudioBridge
 
 private enum DocumentWaitContractOutcome: String, CaseIterable, Sendable {
-    case abort, success, readerError
+    case abort, success, readerError, failedStart
 }
 
 @MainActor
@@ -44,6 +44,12 @@ extension WebKitSerializedTests {
                         _ = try await page.callJavaScript(
                             "document.documentElement.setAttribute('data-go26-state', 'ready');")
                         #expect(try await pending.join().value() as? String == "ready value")
+                    case .failedStart:
+                        try await renderFailureSummary(page, title: "Bridge couldn't start.")
+                        guard case .failedStart = try await pending.join() else {
+                            Issue.record("GO26 terminal marker did not return its terminal envelope")
+                            return
+                        }
                     case .readerError:
                         _ = try await page.callJavaScript(
                             "document.documentElement.setAttribute('data-go26-state', 'throw');")
@@ -84,8 +90,8 @@ extension WebKitSerializedTests {
         func recordedClosureDoesNotCallJavaScript() async throws {
             try await withContractPage { page in
                 let source = try WebPageDocumentWaitClosingSource(pane: "already closed pane")
-                source.record(.bootstrap(.deliveryFailed), requestId: "closed-request")
-                source.record(.bootstrap(.activationFailed), requestId: "later-request")
+                source.record(.pageClosed, requestId: "closed-request")
+                source.record(.navigationFailed("later failure"), requestId: "later-request")
                 _ = try await page.callJavaScript("globalThis.__go26ReaderCount = 0;")
                 do {
                     _ = try await WebPageEventWaits.waitForDocumentValue(
@@ -95,16 +101,16 @@ extension WebKitSerializedTests {
                 } catch let failure as WebPageDocumentWaitOwnerFailure {
                     #expect(failure.closure.scope.requestId == "closed-request")
                     #expect(failure.description.contains("closed milestone"))
-                    #expect(failure.description.contains("delivery_failed"))
+                    #expect(failure.description.contains("pageClosed"))
                 }
                 #expect(try await page.callJavaScript("return globalThis.__go26ReaderCount;") as? Int == 0)
                 let observedClosure = try await source.recorder.expectNext(
                     in: .init(pane: "already closed pane", requestId: "closed-request"),
                     where: {
-                        if case .bootstrap(.deliveryFailed) = $0 { return true }
+                        if case .pageClosed = $0 { return true }
                         return false
-                    }, "delivery_failed")
-                #expect(observedClosure.description == "bootstrap delivery_failed")
+                    }, "pageClosed")
+                #expect(observedClosure.description == "pageClosed")
                 try await source.finish()
             }
         }
@@ -115,7 +121,7 @@ extension WebKitSerializedTests {
                 try await withInstalledDocumentWait(page: page) { pending in
                     let closure = WebPageDocumentWaitClosure(
                         scope: .init(pane: "racing pane", requestId: "racing-request"),
-                        reason: .bootstrap(.deliveryFailed))
+                        reason: .pageClosed)
                     // The closing disposition is captured before success is released.
                     _ = try await page.callJavaScript(
                         "document.documentElement.setAttribute('data-go26-state', 'ready');")
@@ -126,7 +132,7 @@ extension WebKitSerializedTests {
                         Issue.record("GO26 document success replaced its winning owner failure")
                     } catch let failure as WebPageDocumentWaitOwnerFailure {
                         #expect(failure.closure.scope.requestId == "racing-request")
-                        #expect(failure.description.contains("delivery_failed"))
+                        #expect(failure.description.contains("pageClosed"))
                     }
                     #expect(try await requireRemovedEntry(page: page, token: pending.token))
                     #expect(try await page.callJavaScript("return globalThis.__go26DisconnectCount;") as? Int == 1)
@@ -134,8 +140,8 @@ extension WebKitSerializedTests {
             }
         }
 
-        @Test("GO26 bootstrap closing fact aborts and joins the live document waiter")
-        func bootstrapClosingFactAbortsAndJoinsWaiter() async throws {
+        @Test("GO26 navigation closing fact aborts and joins the live document waiter")
+        func navigationClosingFactAbortsAndJoinsWaiter() async throws {
             try await withContractPage { page in
                 let source = try WebPageDocumentWaitClosingSource(pane: "closing pane")
                 let observation = DocumentWaitFailureObservation()
@@ -150,7 +156,7 @@ extension WebKitSerializedTests {
                 }
                 do {
                     try #require(try await requireInstallationFact(page), "GO26 document observer did not install")
-                    source.record(.bootstrap(.deliveryFailed), requestId: "owner-request")
+                    source.record(.pageClosed, requestId: "owner-request")
                     await waiter.value
                 } catch {
                     source.record(.cancelled)
@@ -162,17 +168,128 @@ extension WebKitSerializedTests {
                 #expect(failure.closure.scope.pane == "closing pane")
                 #expect(failure.closure.scope.requestId == "owner-request")
                 #expect(failure.milestone == "never-ready File")
-                #expect(failure.description.contains("delivery_failed"))
+                #expect(failure.description.contains("pageClosed"))
                 #expect(
                     try await page.callJavaScript("return globalThis.__agentstudioTestDocumentWaits.size;") as? Int == 0
                 )
                 let observedClosure = try await source.recorder.expectNext(
                     in: .init(pane: "closing pane", requestId: "owner-request"),
                     where: {
-                        if case .bootstrap(.deliveryFailed) = $0 { return true }
+                        if case .pageClosed = $0 { return true }
                         return false
-                    }, "delivery_failed")
-                #expect(observedClosure.description == "bootstrap delivery_failed")
+                    }, "pageClosed")
+                #expect(observedClosure.description == "pageClosed")
+                try await source.finish()
+            }
+        }
+
+        @Test("GO26 existing failed-start marker wins over an immediate ready value")
+        func existingFailedStartMarkerClosesBeforeReadyValue() async throws {
+            try await withContractPage { page in
+                try await renderFailureSummary(page, title: "Bridge couldn't start.")
+                do {
+                    _ = try await WebPageEventWaits.waitForDocumentValue(
+                        page, reader: "return true;", milestone: "already failed File")
+                    Issue.record("GO26 ignored an existing terminal marker")
+                } catch let failure as WebPageDocumentWaitOwnerFailure {
+                    #expect(failure.closure.scope.pane == "page")
+                    #expect(failure.closure.scope.requestId == nil)
+                    #expect(failure.milestone == "already failed File")
+                    #expect(failure.description.contains("reason=failedStart"))
+                }
+                #expect(
+                    try await page.callJavaScript("return globalThis.__agentstudioTestDocumentWaits.size;") as? Int == 0
+                )
+            }
+        }
+
+        @Test("GO26 transient bootstrap failures await the terminal failed-start DOM", arguments: [false, true])
+        func failedStartMarkerClosesPendingWait(staleReady: Bool) async throws {
+            try await withContractPage { page in
+                let source = try WebPageDocumentWaitClosingSource(pane: "terminal pane")
+                source.recordBootstrapFailure(.deliveryFailed)
+                source.recordBootstrapFailure(.activationFailed)
+                #expect(source.firstClosure == nil)
+                let observation = DocumentWaitFailureObservation()
+                try await prepareInstallationFact(page)
+                let waiter = Task { @MainActor in
+                    do {
+                        _ = try await WebPageEventWaits.waitForDocumentValue(
+                            page,
+                            reader: installationReader + """
+                                return document.documentElement.getAttribute('data-go26-state') === 'ready' ? true : null;
+                                """, milestone: "terminal File", closingSource: source)
+                        Issue.record("GO26 terminal marker waiter unexpectedly succeeded")
+                    } catch { observation.error = error }
+                }
+                do {
+                    try #require(try await requireInstallationFact(page), "GO26 terminal observer did not install")
+                    source.recordBootstrapFailure(.activationFailed)
+                    #expect(source.firstClosure == nil)
+                    try await renderFailureSummary(page, title: "Bridge couldn't start.", staleReady: staleReady)
+                    await waiter.value
+                } catch {
+                    waiter.cancel()
+                    await waiter.value
+                    try? await source.finish()
+                    throw error
+                }
+                let failure = try #require(observation.error as? WebPageDocumentWaitOwnerFailure)
+                #expect(failure.closure.scope.pane == "terminal pane")
+                #expect(failure.closure.scope.requestId == nil)
+                #expect(failure.milestone == "terminal File")
+                #expect(failure.description.contains("reason=failedStart"))
+                #expect(failure.description.contains("bootstrap failed 3 times, last=activation_failed"))
+                #expect(
+                    try await page.callJavaScript("return globalThis.__agentstudioTestDocumentWaits.size;") as? Int == 0
+                )
+                try await source.finish()
+            }
+        }
+
+        @Test("GO26 ordinary viewer failure summary does not close a ready document wait")
+        func ordinaryFailureSummaryAllowsReadyValue() async throws {
+            try await withContractPage { page in
+                try await withInstalledDocumentWait(page: page) { pending in
+                    try await renderFailureSummary(page, title: "Files couldn't load.", staleReady: true)
+                    #expect(try await pending.join().value() as? String == "ready value")
+                    #expect(try await requireRemovedEntry(page: page, token: pending.token))
+                    #expect(try await page.callJavaScript("return globalThis.__go26DisconnectCount;") as? Int == 1)
+                }
+            }
+        }
+
+        @Test("GO26 cancelled installed waiter names cancellation and empties its registry")
+        func cancelledWaiterAbortsAndJoins() async throws {
+            try await withContractPage { page in
+                let source = try WebPageDocumentWaitClosingSource(pane: "cancelled pane")
+                let observation = DocumentWaitFailureObservation()
+                try await prepareInstallationFact(page)
+                let waiter = Task { @MainActor in
+                    do {
+                        _ = try await WebPageEventWaits.waitForDocumentValue(
+                            page, reader: installationReader + "return null;",
+                            milestone: "cancelled File", closingSource: source)
+                        Issue.record("GO26 cancelled waiter unexpectedly succeeded")
+                    } catch { observation.error = error }
+                }
+                do {
+                    try #require(try await requireInstallationFact(page), "GO26 cancellation observer did not install")
+                    waiter.cancel()
+                    await waiter.value
+                } catch {
+                    waiter.cancel()
+                    await waiter.value
+                    try? await source.finish()
+                    throw error
+                }
+                let failure = try #require(observation.error as? WebPageDocumentWaitOwnerFailure)
+                #expect(failure.description.contains("reason=wait cancelled"))
+                #expect(failure.closure.scope.requestId == nil)
+                #expect(failure.milestone == "cancelled File")
+                #expect(
+                    try await page.callJavaScript("return globalThis.__agentstudioTestDocumentWaits.size;") as? Int == 0
+                )
                 try await source.finish()
             }
         }
@@ -222,12 +339,31 @@ extension WebKitSerializedTests {
                 try await operation(pending)
                 _ = try? await pending.join()
             } catch {
-                _ = try? await WebPageEventWaits.settleClosedDocumentWait(
-                    pending,
-                    closure: .init(scope: .init(pane: "contract fixture", requestId: nil), reason: .cancelled),
-                    milestone: "contract error-path cleanup")
+                let cleanup = Task { @MainActor in
+                    _ = try? await WebPageEventWaits.settleClosedDocumentWait(
+                        pending,
+                        closure: .init(scope: .init(pane: "contract fixture", requestId: nil), reason: .cancelled),
+                        milestone: "contract error-path cleanup")
+                }
+                await cleanup.value
                 throw error
             }
+        }
+
+        private func renderFailureSummary(_ page: WebPage, title: String, staleReady: Bool = false) async throws {
+            _ = try await page.callJavaScript(
+                """
+                const summary = document.createElement('div');
+                summary.setAttribute('data-testid', 'bridge-pane-failure-summary');
+                summary.setAttribute('data-bridge-region', 'pane-failure');
+                summary.setAttribute('data-presentation-state', 'failed');
+                const heading = document.createElement('div');
+                heading.setAttribute('data-slot', 'alert-title');
+                heading.textContent = title;
+                summary.append(heading);
+                document.body.append(summary);
+                if (staleReady) document.documentElement.setAttribute('data-go26-state', 'ready');
+                """, arguments: ["title": title, "staleReady": staleReady])
         }
 
         private func prepareInstallationFact(_ page: WebPage) async throws {

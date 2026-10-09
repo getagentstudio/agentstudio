@@ -42,7 +42,8 @@ enum WebPageEventWaits {
     /// up front and then again from a `MutationObserver` on
     /// `document.documentElement` watching `childList`, `subtree`, `attributes` and
     /// `characterData` — every channel through which the Bridge app publishes
-    /// test-visible state. Observer callbacks are microtasks fired by the mutation
+    /// test-visible state. The same observer closes on the qualified failed-start
+    /// pane summary, before accepting any stale ready value. Observer callbacks are microtasks fired by the mutation
     /// itself: they are NOT throttled by page visibility or requestAnimationFrame,
     /// which is what makes this sound on the hidden headless page the lane runs,
     /// where no animation frames are scheduled at all.
@@ -63,25 +64,39 @@ enum WebPageEventWaits {
     ) async throws -> Any? {
         let name = milestone ?? "document value"
         if let failure = closingSource?.firstClosure {
-            throw failure.named(name)
+            throw failure.named(name, bootstrapDiagnostics: closingSource?.bootstrapDiagnostics)
+        }
+        let pendingName = await namedPageMilestone(
+            page, milestone: milestone, diagnosticBody: diagnosticBody, arguments: arguments,
+            bootstrapDiagnostics: closingSource?.bootstrapDiagnostics)
+        if let failure = closingSource?.firstClosure {
+            throw failure.named(name, bootstrapDiagnostics: closingSource?.bootstrapDiagnostics)
         }
         let (events, signal) = AsyncStream.makeStream(
-            of: WebPageDocumentWaitWake.self, bufferingPolicy: .bufferingOldest(1))
-        let observationId = closingSource?.observe { closure in signal.yield(.closed(closure)) }
+            of: WebPageDocumentWaitWake.self, bufferingPolicy: .unbounded)
+        let observationId = closingSource?.observe { signal.yield($0) }
         defer {
             if let observationId { closingSource?.removeObservation(observationId) }
             signal.finish()
         }
         let pending = WebPagePendingDocumentWait(
             page: page, reader: readerBody, arguments: arguments,
-            diagnostic: diagnosticBody, onCompleted: { signal.yield(.documentCompleted) })
+            onCompleted: { signal.yield(.documentCompleted) })
         let eventWait = Task { @MainActor in
-            (try? await awaitBridgeWebKitMilestone(
-                "GO26 document value pane=\(closingSource?.pane ?? "page") milestone=\(name) token=\(pending.token)"
-            ) {
-                var iterator = events.makeAsyncIterator()
-                return await iterator.next() ?? .cancelled
-            }) ?? .cancelled
+            var iterator = events.makeAsyncIterator()
+            while true {
+                let diagnostics = closingSource.map { "; " + $0.bootstrapDiagnostics } ?? ""
+                let wake =
+                    (try? await awaitBridgeWebKitMilestone(
+                        "GO26 document value pane=\(closingSource?.pane ?? "page") milestone=\(pendingName ?? name) token=\(pending.token)\(diagnostics)"
+                    ) {
+                        await iterator.next() ?? .cancelled
+                    }) ?? .cancelled
+                // A diagnostic event only refreshes the named wait; it cannot
+                // settle the document or duplicate the page's replacement budget.
+                if case .diagnosticsUpdated = wake { continue }
+                return wake
+            }
         }
         let wake = await withTaskCancellationHandler {
             await eventWait.value
@@ -95,15 +110,27 @@ enum WebPageEventWaits {
             do {
                 switch wake {
                 case .documentCompleted:
-                    completion.result = .success(try await pending.join().value())
+                    let envelope = try await pending.join()
+                    if case .failedStart = envelope {
+                        let closure = WebPageDocumentWaitClosure(
+                            scope: .init(pane: closingSource?.pane ?? "page", requestId: nil), reason: .failedStart)
+                        throw closure.named(name, bootstrapDiagnostics: closingSource?.bootstrapDiagnostics)
+                    }
+                    completion.result = .success(try envelope.value())
                 case .closed(let closure):
                     completion.result = .success(
-                        try await settleClosedDocumentWait(pending, closure: closure, milestone: name))
+                        try await settleClosedDocumentWait(
+                            pending, closure: closure, milestone: name, stepName: pendingName,
+                            bootstrapDiagnostics: closingSource?.bootstrapDiagnostics))
+                case .diagnosticsUpdated:
+                    preconditionFailure("GO26 diagnostic event cannot settle a document wait")
                 case .cancelled:
                     let closure = WebPageDocumentWaitClosure(
                         scope: .init(pane: closingSource?.pane ?? "page", requestId: nil), reason: .cancelled)
                     completion.result = .success(
-                        try await settleClosedDocumentWait(pending, closure: closure, milestone: name))
+                        try await settleClosedDocumentWait(
+                            pending, closure: closure, milestone: name, stepName: pendingName,
+                            bootstrapDiagnostics: closingSource?.bootstrapDiagnostics))
                 }
             } catch {
                 completion.result = .failure(error)
@@ -118,33 +145,36 @@ enum WebPageEventWaits {
     static func settleClosedDocumentWait(
         _ pending: WebPagePendingDocumentWait,
         closure: WebPageDocumentWaitClosure,
-        milestone: String
+        milestone: String,
+        stepName: String? = nil,
+        bootstrapDiagnostics: String? = nil
     ) async throws -> Any? {
-        let failure = closure.named(milestone)
+        let failure = closure.named(milestone, bootstrapDiagnostics: bootstrapDiagnostics)
+        let name = (stepName ?? milestone) + (bootstrapDiagnostics.map { "; " + $0 } ?? "")
         if closure.reason.requiresPageAbort && pending.result == nil {
             do {
                 try await awaitBridgeWebKitMilestone(
-                    "GO26 abort acknowledgement pane=\(closure.scope.pane) milestone=\(milestone) token=\(pending.token)"
+                    "GO26 abort acknowledgement pane=\(closure.scope.pane) milestone=\(name) token=\(pending.token)"
                 ) {
                     try await pending.abort(reason: failure.description)
                 }
             } catch {
                 // A rejected abort must still join the original physical call.
                 _ = try? await awaitBridgeWebKitMilestone(
-                    "GO26 original document call join after rejected abort pane=\(closure.scope.pane) milestone=\(milestone) token=\(pending.token)"
+                    "GO26 original document call join after rejected abort pane=\(closure.scope.pane) milestone=\(name) token=\(pending.token)"
                 ) { try await pending.join() }
                 throw failure
             }
         }
         let original = try? await awaitBridgeWebKitMilestone(
-            "GO26 original document call join pane=\(closure.scope.pane) milestone=\(milestone) token=\(pending.token)"
+            "GO26 original document call join pane=\(closure.scope.pane) milestone=\(name) token=\(pending.token)"
         ) { try await pending.join() }
         if closure.reason.requiresPageAbort, pending.didAbort, original?.wasAborted != true {
             // Success/error may have removed its entry before the abort arrived.
             // Delete that early-abort tombstone only AFTER the original is joined.
             do {
                 try await awaitBridgeWebKitMilestone(
-                    "GO26 abort acknowledgement cleanup pane=\(closure.scope.pane) milestone=\(milestone) token=\(pending.token)"
+                    "GO26 abort acknowledgement cleanup pane=\(closure.scope.pane) milestone=\(name) token=\(pending.token)"
                 ) { try await pending.removeEarlyAbort() }
             } catch { throw failure }
         }
@@ -258,12 +288,18 @@ enum WebPageEventWaits {
         _ page: WebPage,
         milestone: String?,
         diagnosticBody: String,
-        arguments: [String: Any]
+        arguments: [String: Any],
+        bootstrapDiagnostics: String? = nil
     ) async -> String? {
         guard let milestone else { return nil }
-        let readback =
-            (try? await page.callJavaScript(diagnosticBody, arguments: arguments))
-            .map { String(describing: $0) } ?? "unavailable"
+        let diagnosticName = milestone + (bootstrapDiagnostics.map { "; " + $0 } ?? "")
+        let readbackTask = Task { @MainActor in
+            (try? await awaitBridgeWebKitMilestone("GO26 last observation milestone=\(diagnosticName)") {
+                let value = try await page.callJavaScript(diagnosticBody, arguments: arguments)
+                return value.map { String(describing: $0) } ?? "unavailable"
+            }) ?? "unavailable"
+        }
+        let readback = await readbackTask.value
         return "\(milestone); last=\(readback)"
     }
 
@@ -295,165 +331,6 @@ enum WebPageEventWaits {
 /// must read the same element or the wait proves nothing about the assertion.
 let bridgeReviewShellSelector = "[data-testid=\"review-viewer-shell\"]"
 
-struct WebPageDocumentWaitScope: Hashable, Sendable {
-    let pane: String
-    let requestId: String?
-}
-
-enum WebPageDocumentWaitCloseReason: Sendable {
-    case bootstrap(BridgeProductSessionBootstrapFailureReason)
-    case pageClosed
-    case webContentProcessTerminated
-    case navigationFailed(String)
-    case navigationEnded
-    case cancelled
-
-    var description: String {
-        switch self {
-        case .bootstrap(let reason): "bootstrap \(reason.rawValue)"
-        case .pageClosed: "pageClosed"
-        case .webContentProcessTerminated: "webContentProcessTerminated"
-        case .navigationFailed(let error): "navigation failed: \(error)"
-        case .navigationEnded: "navigation stream ended"
-        case .cancelled: "wait cancelled"
-        }
-    }
-
-    var requiresPageAbort: Bool {
-        if case .webContentProcessTerminated = self { return false }
-        return true
-    }
-}
-
-struct WebPageDocumentWaitClosure: Sendable {
-    let scope: WebPageDocumentWaitScope
-    let reason: WebPageDocumentWaitCloseReason
-
-    func named(_ milestone: String) -> WebPageDocumentWaitOwnerFailure {
-        WebPageDocumentWaitOwnerFailure(closure: self, milestone: milestone)
-    }
-}
-
-struct WebPageDocumentWaitOwnerFailure: Error, Sendable, CustomStringConvertible {
-    let closure: WebPageDocumentWaitClosure
-    let milestone: String
-
-    var description: String {
-        "GO26 pane=\(closure.scope.pane) milestone=\(milestone) requestId=\(closure.scope.requestId ?? "none") reason=\(closure.reason.description)"
-    }
-}
-
-/// Adapts existing owner announcements into one sticky, typed pane/request fact.
-@MainActor
-final class WebPageDocumentWaitClosingSource {
-    let pane: String
-    private(set) var firstClosure: WebPageDocumentWaitClosure?
-    private let source: LocalFactSource<WebPageDocumentWaitScope, WebPageDocumentWaitCloseReason>
-    let recorder: FactRecorder<WebPageDocumentWaitScope, WebPageDocumentWaitCloseReason>
-    private var observers: [UUID: @MainActor (WebPageDocumentWaitClosure) -> Void] = [:]
-    private var navigationTask: Task<Void, Never>?
-
-    init(pane: String) throws {
-        self.pane = pane
-        source = LocalFactSource(
-            vocabulary: .init(
-                describeScope: { "pane=\($0.pane) requestId=\($0.requestId ?? "none")" },
-                describeFact: { $0.description }, isClosing: { _, _ in true }))
-        recorder = try source.attach()
-    }
-
-    func record(_ reason: WebPageDocumentWaitCloseReason, requestId: String? = nil) {
-        guard firstClosure == nil else { return }
-        let closure = WebPageDocumentWaitClosure(scope: .init(pane: pane, requestId: requestId), reason: reason)
-        firstClosure = closure
-        source.sink(closure.scope, closure.reason)
-        for observer in observers.values { observer(closure) }
-    }
-
-    func observe(_ observer: @escaping @MainActor (WebPageDocumentWaitClosure) -> Void) -> UUID {
-        let observationId = UUIDv7.generate()
-        observers[observationId] = observer
-        if let firstClosure { observer(firstClosure) }
-        return observationId
-    }
-
-    func removeObservation(_ observationId: UUID) { observers.removeValue(forKey: observationId) }
-
-    func observePage(_ page: WebPage) {
-        precondition(navigationTask == nil)
-        // Property access attaches the indefinite sequence synchronously, before loadApp.
-        let navigations = page.navigations
-        navigationTask = Task { @MainActor in
-            do {
-                for try await _ in navigations {}
-                if !Task.isCancelled { record(.navigationEnded) }
-            } catch {
-                guard !Task.isCancelled else { return }
-                switch error as? WebPage.NavigationError {
-                case .some(.webContentProcessTerminated): record(.webContentProcessTerminated)
-                case .some(.pageClosed): record(.pageClosed)
-                default: record(.navigationFailed(String(describing: error)))
-                }
-            }
-        }
-    }
-
-    func requireMountedApp(_ controller: BridgePaneController) async throws -> BridgeProductWebKitCarrierNativeSnapshot
-    {
-        await WebPageEventWaits.waitForNavigationToFinish(controller.page)
-        try await WebPageEventWaits.waitForDocumentSelector(
-            controller.page,
-            "[data-testid=\"bridge-app-root\"]", closingSource: self, milestone: "bundled app mounted"
-        )
-        await WebPageEventWaits.waitForBridgeReady(controller)
-        guard let installation = await controller.productSessionOwner.activeInstallation,
-            await installation.session.waitUntilActive()
-        else {
-            throw BridgeProductWebKitTwoPaneJourneyTestSupport.JourneyError.conditionFailed(
-                "bundled app native session did not activate")
-        }
-        let native = await BridgeProductWebKitCarrierTestSupport.nativeSnapshot(controller)
-        guard native.lifecycle == "active" else {
-            throw BridgeProductWebKitTwoPaneJourneyTestSupport.JourneyError.conditionFailed(
-                "bundled app native session was not active")
-        }
-        return native
-    }
-
-    func activateReadyFileMode(
-        _ controller: BridgePaneController,
-        failure: String
-    ) async throws {
-        guard await BridgeProductWebKitCarrierTestSupport.activateFileMode(controller.page) else {
-            throw BridgeProductWebKitTwoPaneJourneyTestSupport.JourneyError.conditionFailed(failure)
-        }
-        _ = try await WebPageEventWaits.waitForDocumentValue(
-            controller.page,
-            reader: """
-                const shell = document.querySelector('[data-testid="bridge-file-viewer-shell"]');
-                const count = Number(shell?.getAttribute('data-file-display-item-count') ?? '0');
-                return shell?.getAttribute('data-file-display-status') === 'ready'
-                  && count > 0 ? count : null;
-                """, milestone: "File display ready with nonempty items", closingSource: self
-        )
-    }
-
-    func finish() async throws {
-        navigationTask?.cancel()
-        await navigationTask?.value
-        navigationTask = nil
-        observers.removeAll()
-        source.end()
-        try await recorder.finish()
-    }
-}
-
-private enum WebPageDocumentWaitWake: Sendable {
-    case documentCompleted
-    case closed(WebPageDocumentWaitClosure)
-    case cancelled
-}
-
 @MainActor
 private final class WebPageDocumentWaitCompletion {
     var result: Result<Any?, any Error>?
@@ -461,6 +338,7 @@ private final class WebPageDocumentWaitCompletion {
 
 enum WebPageDocumentWaitEnvelope {
     case value(Any?)
+    case failedStart
     case aborted(token: String, reason: String)
 
     var wasAborted: Bool {
@@ -471,6 +349,8 @@ enum WebPageDocumentWaitEnvelope {
     func value() throws -> Any? {
         switch self {
         case .value(let value): return value
+        case .failedStart:
+            throw WebPageDocumentWaitProtocolFailure(detail: "terminal reason=failedStart")
         case .aborted(let token, let reason):
             throw WebPageDocumentWaitProtocolFailure(detail: "aborted token=\(token) reason=\(reason)")
         }
@@ -494,7 +374,7 @@ final class WebPagePendingDocumentWait {
 
     init(
         page: WebPage, token: String = UUIDv7.generate().uuidString,
-        reader: String, arguments: [String: Any] = [:], diagnostic: String = "return null;",
+        reader: String, arguments: [String: Any] = [:],
         onCompleted: @escaping @MainActor () -> Void = {}
     ) {
         self.page = page
@@ -506,12 +386,15 @@ final class WebPagePendingDocumentWait {
         operation = Task { @MainActor in
             do {
                 let raw = try await page.callJavaScript(
-                    Self.script(reader: reader, diagnostic: diagnostic), arguments: pageArguments,
+                    Self.script(reader: reader), arguments: pageArguments,
                     contentWorld: contentWorld)
                 let envelope = try #require(raw as? [String: Any], "GO26 missing tagged document result")
                 try #require(envelope["token"] as? String == token, "GO26 document token mismatch")
                 switch envelope["kind"] as? String {
                 case "value": result = .success(.value(envelope["value"]))
+                case "terminal":
+                    try #require(envelope["reason"] as? String == "failedStart", "GO26 unknown terminal reason")
+                    result = .success(.failedStart)
                 case "aborted":
                     result = .success(.aborted(token: token, reason: try #require(envelope["reason"] as? String)))
                 default: throw WebPageDocumentWaitProtocolFailure(detail: "unknown envelope kind")
@@ -554,7 +437,7 @@ final class WebPagePendingDocumentWait {
             """, arguments: ["token": token, "reason": reason], contentWorld: contentWorld)) as? Bool == true
     }
 
-    static func script(reader: String, diagnostic: String) -> String {
+    static func script(reader: String) -> String {
         """
         const token = __go26WaitToken;
         const registry = globalThis.__agentstudioTestDocumentWaits ??= new Map();
@@ -576,6 +459,16 @@ final class WebPagePendingDocumentWait {
           const attempt = () => {
             if (settled) return true;
             try {
+              // The shared summary also renders recoverable viewer failures.
+              // Qualify the pane-wide failed-start title before accepting stale ready DOM.
+              const failures = document.querySelectorAll(
+                '[data-testid="bridge-pane-failure-summary"][data-bridge-region="pane-failure"][data-presentation-state="failed"]'
+              );
+              for (const failure of failures) {
+                if (failure.querySelector('[data-slot="alert-title"]')?.textContent?.trim() === "Bridge couldn't start.") {
+                  finish({kind: 'terminal', reason: 'failedStart'}); return true;
+                }
+              }
               const value = readDocumentValue();
               if (value === null || value === undefined) return false;
               finish({kind: 'value', value}); return true;
@@ -584,8 +477,6 @@ final class WebPagePendingDocumentWait {
             }
           };
           try {
-            // Diagnostic readers remain best effort, as in namedPageMilestone.
-            try { (() => { \(diagnostic) })(); } catch (_) {}
             if (attempt()) return;
             observer = new MutationObserver(attempt);
             entry.observer = observer;

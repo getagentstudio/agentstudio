@@ -644,7 +644,7 @@ enum BridgeProductWebKitTwoPaneJourneyTestSupport {
             telemetryRecorder: input.traceRecorder,
             initialPaneActivity: input.initialActivity,
             productSessionBootstrapFailureSink: { page, requestId, reason, contentWorld in
-                input.closingSource.record(.bootstrap(reason), requestId: requestId)
+                input.closingSource.recordBootstrapFailure(reason)
                 try await BridgePaneController.dispatchProductSessionBootstrapFailure(
                     page: page, requestId: requestId, reason: reason, contentWorld: contentWorld)
             }
