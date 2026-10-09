@@ -56,7 +56,11 @@ export function bridgeReviewRegionSurfaceStatus(props: {
 						correctiveAction: bridgeReviewRegionDisplaySpec.refreshCorrectiveAction,
 					},
 		};
-	if (refresh?.candidate != null || comparison.kind === 'loadingPrevious')
+	if (
+		props.recoveryStatus?.status === 'recovering' ||
+		refresh?.candidate != null ||
+		comparison.kind === 'loadingPrevious'
+	)
 		return {
 			kind: 'updating',
 			...(props.isActive === false

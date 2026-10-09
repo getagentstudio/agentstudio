@@ -115,3 +115,67 @@ test('a metadata failure preserves the last complete Review and uses refresh voc
 		failure: { kind: 'retryable', message: 'Update unavailable' },
 	});
 });
+
+test('recovering rests hidden or held and stays Loading without a good bank', (): void => {
+	const recoveryStatus = {
+		status: 'recovering',
+		view: { kind: 'review.metadata', subscriptionId: 'review-e3' },
+	} as const;
+	const comparisonPaneState = { kind: 'settled' } as const;
+	expect(
+		bridgeReviewRegionSurfaceStatus({ comparisonPaneState, recoveryStatus, isActive: false }),
+	).toEqual({ kind: 'updating', rest: 'hidden' });
+	expect(
+		bridgeReviewRegionSurfaceStatus({
+			comparisonPaneState,
+			recoveryStatus,
+			refreshPresentation: {
+				activeIdentity: null,
+				failure: null,
+				candidate: {
+					affectedStableFileIdentities: [],
+					effectivePresentationClass: { kind: 'promoted', reason: 'unknown' },
+					identity: {
+						packageId: 'package',
+						publicationId: 'publication',
+						generation: 1,
+						revision: 2,
+						sourceIdentity: 'source',
+					},
+					role: 'updateReady',
+					startDisposition: { kind: 'replacement' },
+				},
+			},
+		}),
+	).toEqual({ kind: 'updating', rest: 'held' });
+	expect(
+		bridgeReviewFallbackRegionPresentation({
+			status: 'loading',
+			comparisonPaneState,
+			recoveryStatus,
+		}),
+	).toEqual({ kind: 'loading' });
+});
+
+test.each([null, { kind: 'ref', name: 'main', basis: 'commonCommit' }] as const)(
+	'comparison failure takes precedence over recovering (Retry target %j)',
+	(retryTarget): void => {
+		const surface = bridgeReviewRegionSurfaceStatus({
+			comparisonPaneState: {
+				kind: 'failedPrevious',
+				displayedTargetLabel: 'main',
+				requestedTargetLabel: 'gone',
+				failureKind: 'targetNotFound',
+				retryTarget,
+			},
+			recoveryStatus: {
+				status: 'recovering',
+				view: { kind: 'review.metadata', subscriptionId: 'review-e3' },
+			},
+		});
+		expect(surface).toMatchObject({
+			kind: 'failed',
+			failure: { kind: retryTarget === null ? 'permanent' : 'retryable' },
+		});
+	},
+);

@@ -423,9 +423,17 @@ function BridgeReviewViewerModeContent(props: BridgeReviewViewerModeProps): Reac
 		isActive,
 	});
 	const onRetryRegion = (): void => {
-		if (installationRetry || controller.viewRecoveryStatus !== null || refreshRetryTarget === null)
+		if (installationRetry || controller.viewRecoveryStatus?.status === 'failedRetryable') {
 			controller.retryFailedMetadataView(refreshRetryTarget);
-		else controller.updateReviewComparisonTarget(refreshRetryTarget);
+			if (
+				installationRetry &&
+				(rawComparisonPaneState.kind === 'failedInitial' ||
+					rawComparisonPaneState.kind === 'failedPrevious') &&
+				rawComparisonPaneState.retryTarget !== null
+			)
+				controller.updateReviewComparisonTarget(rawComparisonPaneState.retryTarget);
+		} else if (refreshRetryTarget !== null)
+			controller.updateReviewComparisonTarget(refreshRetryTarget);
 	};
 	const contentHeaderControls = (
 		<>
