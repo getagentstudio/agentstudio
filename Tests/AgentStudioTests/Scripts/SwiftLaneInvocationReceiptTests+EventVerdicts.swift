@@ -243,7 +243,8 @@ extension SwiftLaneInvocationReceiptTests {
             "/bin/bash -c 'cp \"$1\" \"${@: -1}\"; : > \"$2\"; read line < \"$3\"' fixture '\(fixture.events.path)' '\(armedPath)' '\(releasePath)' swiftpm-testing-helper",
             eventStream: true,
             setup:
-                "mkfifo '\(releasePath)'; LANE_WATCHDOG_ARM_PATH='\(armedPath)'; swift_test_watchdog_timeout_status() { return 1; }; "
+                "mkfifo '\(releasePath)'; LANE_WATCHDOG_ARM_PATH='\(armedPath)'; swift_test_watchdog_timeout_status() { return 1; }; ",
+            innerWatchdog: .armed
         )
         #expect(result.output.contains("STATUS=124"), Comment(rawValue: result.output))
         #expect(

@@ -12,12 +12,17 @@ struct SwiftTestFailureScannerScriptTests {
             fixture, selecting: hasEarlyFailure ? "recordsFailure()" : "recordsPass()",
             extraRecords: 200_000)
 
-        // Act
-        let result = try await fixture.runEventFixture(as: "swift test", expectedRuns: 1, exitStatus: 0)
+        // Act: the runner is starved as on a loaded host; the verdict must not change.
+        let result = try await fixture.runEventFixture(
+            as: "swift test", expectedRuns: 1, exitStatus: 0,
+            setup: laneRunnerStarvedDrainHook(fifoDirectory: fixture.root.path))
 
         // Assert
         #expect(result.record["command_status"] as? Int == 0)
-        #expect(result.output.contains("STATUS=\(hasEarlyFailure ? 1 : 0)"), Comment(rawValue: result.output))
+        // A whole line: "STATUS=124" (a timeout) also contains "STATUS=1".
+        #expect(
+            laneOutputLines(result.output).contains("STATUS=\(hasEarlyFailure ? 1 : 0)"),
+            Comment(rawValue: result.output))
         #expect(result.output.contains("stream=complete"), Comment(rawValue: result.output))
         #expect(result.output.contains("unreadable_records=0"), Comment(rawValue: result.output))
         #expect(result.output.contains("failing_issues=\(hasEarlyFailure ? 1 : 0)"), Comment(rawValue: result.output))
