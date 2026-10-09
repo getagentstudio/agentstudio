@@ -82,9 +82,21 @@ Packages 6–9 became follow-ups (section 6).
 | 7 | Reduce the surface: split the large coordinator and test-support files by responsibility | Coordinator 2,588 lines; carrier test support 900+ lines | Product + tests | Bridge | LUNA-408 (related) |
 | 8 | Smaller vertical PRs: PR2 lands as slices, not one rewrite | Learning 2 | Process | Bridge | Section 7 |
 
-**LUNA-408 design direction (to be designed, not decided):** states roughly `closed / opening(task) / open / pendingReopen(cause) / retired`; `BridgeFileSurfaceReconciler` plugs in as the File build sub-machine; model-based tests drive event interleavings (GO11/GO12/GO19/GO24 orders); existing behavior suites stay green. About 26 write sites in 3 coordinator files. It is a production change: design cycle first, its own PR, and it should land **before PR2 builds more on this coordinator**.
+**LUNA-408 design direction (to be designed, not decided):** states roughly `closed / opening(task) / open / pendingReopen(cause) / retired`; `BridgeFileSurfaceReconciler` (335 lines; it already models attempts) plugs in as the File build sub-machine; model-based tests drive event interleavings (GO11/GO12/GO19/GO24 orders); existing behavior suites stay green. About 26 write sites in 3 coordinator files. It is a production change: design cycle first, its own PR, and it should land **before PR2 builds more on this coordinator**.
+
+**Difficulty of #1: moderate.** It is a focused refactor of one actor with the existing behavior suites as the safety net. The hard part is not the enum but the async effects: opening a source is async, so every transition must change state and register its task in one turn, then await. GO19's and GO24's fixes already applied that rule to one transition each, so the pattern is proven in this code.
+
+**Recommended order:**
+1. One design cycle for #1 and #2 together (native lifecycle and status ownership). That closes the class behind GO11, GO12, GO15, GO19 and GO24.
+2. A test-infrastructure program with the CI Lead for #3–#6 (most of PR1's final-day time went there).
+3. #8 for every PR from PR2 on: vertical slices, so races show up per slice instead of at one final gate.
+4. #7 opportunistically, when a file is being changed for #1 anyway.
 
 ## 6. Follow-up backlog
+
+**Documentation (Bridge Lead; do this before PR2):** the permanent Bridge architecture docs are **stale**. `docs/architecture/bridge/bridge_product_transport_architecture.md`, `bridge_native_runtime_architecture.md` and `bridge_web_runtime_architecture.md` were last changed 2026-08-20 to 2026-09-10 and describe the pre-PR1 transport; PR1 did not update them. Until they are refreshed from the stability Program Design, learn the system from `docs/specs/2026-09-24-bridge-stability-redesign/` and this file, not from `docs/architecture/bridge/`.
+
+**Local proof environment:** CI and Sunclaw build with Xcode 27. This development Mac had only Xcode 26.6, which cannot type-check `Tests/AgentStudioTests/App/Boot/PaneActivitySaveIntegrationTests.swift:77` (from #477) in reasonable time, so a full local `mise run test` fails at prebuild. Install Xcode 27 for full local runs. Linked worktrees also need the primary checkout's vendors at the same ghostty pin (fast-forward the primary, then plain `mise run setup` in both).
 
 **Product (Bridge Lead):**
 - Packages 6–9 from the final review: D1 logical completion vs physical drain on pane disposal (S1-F1/S2-F1); remembered Export/Repeat deadline classification (S1-F4); dev-host parity (S2-F2, S2-F5).
@@ -115,12 +127,44 @@ Packages 6–9 became follow-ups (section 6).
 
 ## 8. Decisions for the next session
 
+0. Refresh the three stale Bridge architecture docs first (section 6), so new agents learn the PR1 model.
 1. PR2 approach: re-carry B1 onto main in slices (recommended) vs merging main into #367.
 2. Order: LUNA-408 first, or as PR2's first slice.
 3. PR2 scope: B1 only, with B2 and B3 as later PRs.
 4. Whether PR3 (surfaces, per-member change filter) and PR4 (comments, migration 018 after #367's 017) keep their current shape.
 
-## 9. Index
+## 9. Glossary of codes used above
+
+Design identifiers (E1, W2, W4, N10, R13, C5, U13, R40–R43, INST) are defined in `docs/specs/2026-09-24-bridge-stability-redesign/`. The codes below are PR1 gate findings; full evidence is in the private session-logs history.
+
+| Code | What it was | Kind | Outcome |
+|---|---|---|---|
+| GO10 | R13: snapshot cause on the wire; only real recovery charges the budget (owner option B) | Product | Shipped in PR1 |
+| GO11 | File source acceptance awaited a recovery delivery that waited on it: reconnect hung on 3-core CI | Product | Fixed |
+| GO12 | A failed File build dropped its error with its entry; a late reader got "unknown lease" instead of "missing root" | Product | Fixed |
+| GO13 | A WebKit test helper returned at HTTP admission, before the worker session was active, so the next calls got 409 | Test | Fixed |
+| GO14 | Review content lost after a successful install under load; diagnosis led to GO15 | Product (via GO15) | Fixed |
+| GO15 | A render failure wrote the delivery budget and could fail sibling views | Product | Fixed: fails only its own view |
+| GO16 | A worker-recovery E2E waited on a visibility condition instead of the owner's fact | Test | Fixed |
+| GO17 | Click-admission browser harness: stale row and frame waits; the R3 rewrite was reverted | Test | Fixed (option A) |
+| GO18 | A test double in the carrier support raced overlapping demands | Test | Fixed |
+| GO19 | The deferred File reopen marker was cleared before the reopen was committed: the File view silently stopped updating | Product | Fixed |
+| GO20 | File menu close animation finished outside `act()` | Test | Fixed |
+| GO21 | Tracked symlinks made the File batch throw (final-review package 1) | Product | Fixed |
+| GO22 | Healthy File demand forced a false "recovering" and a resnapshot (package 2) | Product | Fixed |
+| GO23 | Content tests ran before session activation and got 409 | Test | Fixed |
+| GO24 | The first hide fence ran after `await`s and fenced a newer Review attempt (package 4) | Product | Fixed in the acceptance turn |
+| GO25 | The copy-churn E2E treated a legal `superseded` projection query as fatal | Test | Fixed |
+| GO26 | WebKit two-pane setup stalled while the console was locked; the harness turned it into a silent 600 s hang | Environment + harness | Open (CI Lead) |
+| GO27 | A test read the telemetry trace before its completed phase was recorded | Test | Fixed |
+| GO28 | File menu tests did not wait for Base UI's open/close completion | Test | Fixed |
+| GO29 | Click-admission did not follow a row retired after hover | Test | Fixed |
+| GO30 | GO28's conversion of the hard-cut Files filter test hung on 3-core | Test | Reverted; open (CI Lead) |
+| R68 | Review deep-scroll position witness reads geometry before it settles (from main #422) | Test | Open (CI Lead) |
+| S1–S4 F-codes | Final-review findings by section (S1 native transport, S2 native runtime, S3 page comm worker, S4 page app) | Review | See section 3 |
+| TQ-codes | CI Lead's test-quality items (TQ15 website, TQ19 Panes, TQ23 markdown act, TQ24–TQ26 and TQ33 superseded by PR1, TQ35 tab ownership) | Test | Tracked by the CI Lead |
+
+## 10. Index
 
 | Path | What |
 |---|---|
