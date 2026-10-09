@@ -25,7 +25,7 @@ jobs:
   code-quality:
     name: Code quality
     needs: changes
-    if: ${{ !cancelled() && (needs.changes.result != 'success' || needs.changes.outputs.scope == 'full') }}
+    if: ${{ !cancelled() }}
     runs-on: ubuntu-24.04
     container: swift@sha256:8de8ea332a61e961ead4ef41029c2552b18e1a70dd5942d25ecf7d8de2eec5b5
     defaults:
@@ -93,6 +93,20 @@ jobs:
       - name: Trust checkout for Git
         run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
 
+      - name: Check changed documentation links
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          mkdir -p tmp/ci-docs
+          : > tmp/ci-docs/changed-paths
+          if [ "$EVENT_NAME" = "pull_request" ]; then
+            merge_base="$(git merge-base "$BASE_SHA" "$HEAD_SHA")"
+            git diff --name-only -z --no-renames "$merge_base" "$HEAD_SHA" -- > tmp/ci-docs/changed-paths
+          fi
+          python3 scripts/check-changed-doc-links.py --changed-files tmp/ci-docs/changed-paths
+
       - name: Setup mise
         uses: jdx/mise-action@v3
         with:
@@ -103,15 +117,18 @@ jobs:
           cache: false
 
       - name: Install lint tools
+        if: ${{ !cancelled() && (needs.changes.result != 'success' || (needs.changes.outputs.scope != 'docs' && needs.changes.outputs.scope != 'website')) }}
         run: bash scripts/install-ci-lint-tools.sh
 
       - name: Verify lint tools on PATH
+        if: ${{ !cancelled() && (needs.changes.result != 'success' || (needs.changes.outputs.scope != 'docs' && needs.changes.outputs.scope != 'website')) }}
         run: |
           swift-format --version
           swiftlint version
 
       - name: Restore architecture lint build cache
         id: architecture-cache-restore
+        if: ${{ !cancelled() && (needs.changes.result != 'success' || (needs.changes.outputs.scope != 'docs' && needs.changes.outputs.scope != 'website')) }}
         uses: actions/cache/restore@v4
         with:
           path: .build-ci/architecture-lint
@@ -120,19 +137,22 @@ jobs:
             architecture-lint-linux-${{ runner.arch }}-swift-6.3.3-image-8de8ea332a61-
 
       - name: AgentStudio architecture lint tool tests
+        if: ${{ !cancelled() && (needs.changes.result != 'success' || (needs.changes.outputs.scope != 'docs' && needs.changes.outputs.scope != 'website')) }}
         run: mise run test:architecture
 
       - name: Save architecture lint build cache
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.architecture-cache-restore.outputs.cache-hit != 'true'
+        if: ${{ !cancelled() && (needs.changes.result != 'success' || (needs.changes.outputs.scope != 'docs' && needs.changes.outputs.scope != 'website')) && github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.architecture-cache-restore.outputs.cache-hit != 'true' }}
         uses: actions/cache/save@v4
         with:
           path: .build-ci/architecture-lint
           key: ${{ steps.architecture-cache-restore.outputs.cache-primary-key }}
 
       - name: Lint
+        if: ${{ !cancelled() && (needs.changes.result != 'success' || (needs.changes.outputs.scope != 'docs' && needs.changes.outputs.scope != 'website')) }}
         run: mise run lint:portable
 
       - name: Debt ledger ratchet
+        if: ${{ !cancelled() && (needs.changes.result != 'success' || (needs.changes.outputs.scope != 'docs' && needs.changes.outputs.scope != 'website')) }}
         env:
           BASE_REF: ${{ github.event.pull_request.base.ref || 'main' }}
         run: /bin/bash Tools/AgentStudioArchitectureLint/check-ledger-ratchet.sh "origin/${BASE_REF}"
@@ -155,46 +175,14 @@ jobs:
         id: classify
         env:
           EVENT_NAME: ${{ github.event_name }}
-          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
-          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
-          PUSH_BEFORE_SHA: ${{ github.event.before }}
-          PUSH_HEAD_SHA: ${{ github.sha }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: |
           set -euo pipefail
           mkdir -p tmp/ci-docs
-          case "$EVENT_NAME" in
-            pull_request)
-              base="$PR_BASE_SHA"
-              head="$PR_HEAD_SHA"
-              ;;
-            push)
-              base="$PUSH_BEFORE_SHA"
-              head="$PUSH_HEAD_SHA"
-              ;;
-            *)
-              base=""
-              head=""
-              ;;
-          esac
           python3 scripts/ci-change-scope.py classify \
-            --event "$EVENT_NAME" --base "$base" --head "$head" \
+            --event "$EVENT_NAME" --base "$BASE_SHA" --head "$HEAD_SHA" \
             --receipt tmp/ci-docs/changes.json --github-output "$GITHUB_OUTPUT"
-
-      - name: Check changed documentation links
-        if: steps.classify.outcome == 'success'
-        run: |
-          python3 - tmp/ci-docs/changes.json tmp/ci-docs/changed-paths <<'PY'
-          import json
-          import sys
-
-          with open(sys.argv[1], encoding="utf-8") as receipt:
-              changed = json.load(receipt)["changed_files"]
-          with open(sys.argv[2], "wb") as output:
-              output.write("\0".join(changed).encode("utf-8"))
-              if changed:
-                  output.write(b"\0")
-          PY
-          python3 scripts/check-changed-doc-links.py --changed-files tmp/ci-docs/changed-paths
 
   marketing-site-validation:
     name: Marketing site validation
@@ -245,7 +233,7 @@ jobs:
   bridge-web:
     name: BridgeWeb
     needs: changes
-    if: ${{ !cancelled() && github.event_name != 'push' && (needs.changes.result != 'success' || needs.changes.outputs.scope == 'full') }}
+    if: ${{ !cancelled() && github.event_name != 'push' && (needs.changes.result != 'success' || (needs.changes.outputs.scope != 'docs' && needs.changes.outputs.scope != 'website')) }}
     runs-on: xcode-27
     env:
       SWIFT_BUILD_DIR: .build-ci
@@ -488,7 +476,7 @@ jobs:
   swift-test-suite:
     name: Swift test suite
     needs: changes
-    if: ${{ !cancelled() && (needs.changes.result != 'success' || needs.changes.outputs.scope == 'full') }}
+    if: ${{ !cancelled() && (needs.changes.result != 'success' || (needs.changes.outputs.scope != 'docs' && needs.changes.outputs.scope != 'website')) }}
     runs-on: xcode-27
     permissions:
       contents: read

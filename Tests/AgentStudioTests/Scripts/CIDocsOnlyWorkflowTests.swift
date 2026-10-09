@@ -16,23 +16,31 @@ extension CITopologyWorkflowTests {
         #expect(changes.contains("github.event.pull_request.base.sha"))
         #expect(changes.contains("github.event.pull_request.head.sha"))
         #expect(changes.contains("python3 scripts/ci-change-scope.py classify"))
-        #expect(changes.contains("check-changed-doc-links.py"))
-        let linkStep = try changeScopeLinkStep(in: changes)
-        #expect(linkStep.contains("if: steps.classify.outcome == 'success'"))
-        #expect(linkStep.contains("changed_files"))
+        #expect(!changes.contains("check-changed-doc-links.py"))
+        let quality = try changeScopeJob("code-quality", in: workflow)
+        let linkStep = try changeScopeLinkStep(in: quality)
+        #expect(linkStep.contains("git merge-base"))
+        #expect(linkStep.contains("git diff --name-only -z --no-renames"))
         #expect(linkStep.contains("python3 scripts/check-changed-doc-links.py --changed-files"))
+        #expect(!linkStep.contains("steps.classify"))
         #expect(!workflow.contains("paths-ignore:"))
-        for name in ["code-quality", "swift-test-suite", "bridge-web", "marketing-site-validation"] {
+        let qualityHeader = quality.components(separatedBy: "    steps:").first ?? ""
+        #expect(qualityHeader.contains("needs: changes"))
+        #expect(qualityHeader.contains("if: ${{ !cancelled() }}"))
+        for name in ["swift-test-suite", "bridge-web"] {
             let job = try changeScopeJob(name, in: workflow)
             let header = job.components(separatedBy: "    steps:").first ?? ""
             #expect(header.contains("needs: changes"))
             #expect(header.contains("!cancelled()"))
-            if name == "marketing-site-validation" {
-                #expect(header.contains("needs.changes.outputs.scope != 'docs'"))
-            } else {
-                #expect(header.contains("needs.changes.outputs.scope == 'full'"))
-            }
+            #expect(header.contains("needs.changes.result != 'success'"))
+            #expect(
+                header.contains("needs.changes.outputs.scope != 'docs' && needs.changes.outputs.scope != 'website'"))
         }
+        let marketingHeader =
+            try changeScopeJob("marketing-site-validation", in: workflow).components(separatedBy: "    steps:").first
+            ?? ""
+        #expect(marketingHeader.contains("needs.changes.result != 'success'"))
+        #expect(marketingHeader.contains("needs.changes.outputs.scope != 'docs'"))
     }
 
     @Test("required link check rejects a broken anchor in a mixed PR and skips cleanly without changed docs")
@@ -116,9 +124,10 @@ extension CITopologyWorkflowTests {
         try fixture.write("docs/guide.md", "# Revised Guide")
         let docsHead = try await fixture.commit("docs")
         #expect(try await fixture.classify(base: base, head: docsHead) == "docs")
-        for event in ["push", "schedule", "workflow_dispatch"] {
+        for event in ["schedule", "workflow_dispatch"] {
             #expect(try await fixture.classify(base: base, head: docsHead, event: event) == "full")
         }
+        #expect(try await fixture.classify(base: base, head: docsHead, event: "push") == "full")
         try fixture.write("docs/contract.md", "# Changed contract")
         let pinnedHead = try await fixture.commit("contract")
         #expect(try await fixture.classify(base: docsHead, head: pinnedHead) == "full")
@@ -131,8 +140,8 @@ extension CITopologyWorkflowTests {
         #expect(try await fixture.classify(base: testHead, head: codeHead) == "full")
     }
 
-    @Test("website scope wins over documentation and push ranges share the PR diff rules")
-    func changeScopeClassifiesWebsiteAndPushRanges() async throws {
+    @Test("website scope wins over documentation and mixed PR ranges")
+    func changeScopeClassifiesWebsiteAndMixedRanges() async throws {
         let fixture = try ChangeScopeGitFixture()
         defer { fixture.remove() }
         try fixture.write("docs/guide.md", "# Guide")
@@ -142,22 +151,49 @@ extension CITopologyWorkflowTests {
         try fixture.write("docs/guide.md", "# Docs change")
         let docsHead = try await fixture.commit("docs")
         #expect(try await fixture.classify(base: base, head: docsHead) == "docs")
-        #expect(try await fixture.classify(base: base, head: docsHead, event: "push") == "docs")
 
         try fixture.write("web/index.html", "<main>website change</main>")
         let websiteHead = try await fixture.commit("website")
         #expect(try await fixture.classify(base: docsHead, head: websiteHead) == "website")
-        #expect(try await fixture.classify(base: docsHead, head: websiteHead, event: "push") == "website")
 
         try fixture.write("docs/guide.md", "# Docs and website change")
         let mixedHead = try await fixture.commit("docs and website")
         #expect(try await fixture.classify(base: websiteHead, head: mixedHead) == "website")
-        #expect(try await fixture.classify(base: websiteHead, head: mixedHead, event: "push") == "website")
+    }
 
-        #expect(
-            try await fixture.classify(
-                base: String(repeating: "0", count: 40), head: mixedHead, event: "push") == "full")
-        #expect(try await fixture.classify(base: mixedHead, head: websiteHead, event: "push") == "full")
+    @Test("deleting a referenced path outside docs remains full")
+    func changeScopeDeletedReferencedPathKeepsFullProof() async throws {
+        let fixture = try ChangeScopeGitFixture()
+        defer { fixture.remove() }
+        try fixture.write("AGENTS.md", "The generated input is generated.json")
+        try fixture.write("generated.json", "{}")
+        let base = try await fixture.commit("base")
+        try FileManager.default.removeItem(at: fixture.root.appendingPathComponent("generated.json"))
+        let head = try await fixture.commit("delete referenced input")
+        #expect(try await fixture.classify(base: base, head: head) == "full")
+    }
+
+    @Test("AGENTS paths under web pin any extension across a rename")
+    func changeScopePinsWebAgentNamedPaths() async throws {
+        let fixture = try ChangeScopeGitFixture()
+        defer { fixture.remove() }
+        try fixture.write("web/AGENTS.md", "The generated file is web/generated.ts")
+        try fixture.write("web/generated.ts", "export const value = 1")
+        let base = try await fixture.commit("base")
+        try await fixture.git(["mv", "web/generated.ts", "web/renamed.ts"])
+        let head = try await fixture.commit("rename generated file")
+        #expect(try await fixture.classify(base: base, head: head) == "full")
+    }
+
+    @Test("Markdown under Sources remains code")
+    func changeScopeMarkdownUnderSourcesKeepsFullProof() async throws {
+        let fixture = try ChangeScopeGitFixture()
+        defer { fixture.remove() }
+        try fixture.write("Sources/guide.md", "# Initial")
+        let base = try await fixture.commit("base")
+        try fixture.write("Sources/guide.md", "# Changed")
+        let head = try await fixture.commit("source markdown")
+        #expect(try await fixture.classify(base: base, head: head) == "full")
     }
 
     @Test("literal readers under each owning code root veto documentation skipping")
@@ -353,8 +389,27 @@ private struct ChangeScopeGitFixture {
     }
 
     func runQualityLinkStep(base: String, head: String) async throws -> ExitedProcessOutput {
-        _ = try await classify(base: base, head: head)
-        return try await checkLinks()
+        let workflow = try String(contentsOfFile: ".github/workflows/ci.yml", encoding: .utf8)
+        let step = try changeScopeLinkStep(in: changeScopeJob("code-quality", in: workflow))
+        let run = try #require(step.range(of: "        run: |\n"))
+        let script = step[run.upperBound...].split(separator: "\n", omittingEmptySubsequences: false)
+            .map { String($0.dropFirst(10)) }.joined(separator: "\n")
+        let fixtureChecker = root.appendingPathComponent("scripts/check-changed-doc-links.py")
+        if !FileManager.default.fileExists(atPath: fixtureChecker.path) {
+            try FileManager.default.createDirectory(
+                at: fixtureChecker.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try FileManager.default.copyItem(at: checker, to: fixtureChecker)
+            try FileManager.default.copyItem(
+                at: checker.deletingLastPathComponent().appendingPathComponent("architecture-doc-fixture-root.txt"),
+                to: fixtureChecker.deletingLastPathComponent().appendingPathComponent(
+                    "architecture-doc-fixture-root.txt"))
+        }
+        let environment = ProcessInfo.processInfo.environment.merging([
+            "BASE_SHA": base, "HEAD_SHA": head, "EVENT_NAME": "pull_request",
+        ]) { _, new in new }
+        return try await runProcessToExit(
+            executableURL: URL(fileURLWithPath: "/bin/bash"), arguments: ["-euc", script], currentDirectoryURL: root,
+            environment: environment)
     }
 
     func checkLinks() async throws -> ExitedProcessOutput {

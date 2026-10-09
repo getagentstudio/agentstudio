@@ -16,7 +16,9 @@ struct CITopologyWorkflowTests {
             startingWith: "  swift-test-suite:\n", endingBefore: "    steps:", in: swiftJob)
         #expect(bridgeHeader.contains("github.event_name != 'push'"))
         #expect(swiftHeader.contains("!cancelled()"))
-        #expect(swiftHeader.contains("needs.changes.outputs.scope == 'full'"))
+        #expect(swiftHeader.contains("needs.changes.result != 'success'"))
+        #expect(
+            swiftHeader.contains("needs.changes.outputs.scope != 'docs' && needs.changes.outputs.scope != 'website'"))
         #expect(swiftHeader.contains("\n    needs: changes"))
         #expect(!swiftJob.contains("needs.bridge-web"))
         for stepName in ["Compute Swift cache compatibility prefix", "Inventory Swift build inputs before prebuild"] {
@@ -148,7 +150,7 @@ struct CITopologyWorkflowTests {
         #expect(inputScript.contains("swift-build-v1-"))
         #expect(workflow.contains("steps.swift-cache-prefix.outputs.prefix"))
     }
-    @Test("all scoped CI jobs depend on classification and keep failed-classifier fail-open guards")
+    @Test("scoped CI jobs keep failed-classifier and unknown-scope fail-open guards")
     func ciJobsDependOnlyOnClassification() throws {
         let workflow = try String(contentsOfFile: ".github/workflows/ci.yml", encoding: .utf8)
 
@@ -162,6 +164,22 @@ struct CITopologyWorkflowTests {
             #expect(job.contains("\n    needs: changes"))
             let header = job.components(separatedBy: "    steps:").first ?? ""
             #expect(header.contains("!cancelled()"))
+            if jobName == "code-quality" {
+                #expect(header.contains("if: ${{ !cancelled() }}"))
+                #expect(job.contains("name: Check changed documentation links"))
+                #expect(
+                    job.contains("needs.changes.outputs.scope != 'docs' && needs.changes.outputs.scope != 'website'"))
+            } else if jobName == "marketing-site-validation" {
+                #expect(header.contains("needs.changes.result != 'success'"))
+                #expect(header.contains("needs.changes.outputs.scope != 'docs'"))
+            } else {
+                #expect(header.contains("needs.changes.result != 'success'"))
+                #expect(
+                    header.contains(
+                        "needs.changes.outputs.scope != 'docs' && needs.changes.outputs.scope != 'website'"
+                    )
+                )
+            }
         }
     }
 

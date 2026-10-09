@@ -5,6 +5,7 @@ import argparse
 import json
 import os
 import pathlib
+import posixpath
 import re
 import subprocess
 import sys
@@ -15,11 +16,11 @@ CODE_ROOTS = {"Tests", "Tools", "BridgeWeb", "web", "scripts"}
 AGENT_DOC_NAMES = {"AGENTS.md", "CLAUDE.md"}
 DOC_PATH = re.compile(r"\bdocs/[\w./+*?%-]+\.[\w]+\b")
 QUOTED_PATH = re.compile(r"[\"'`]([^\"'`\n]+)[\"'`]")
+REPOSITORY_PATH = re.compile(
+    r"(?<![\w:/])(?:\.?/?[A-Za-z0-9_.+%-]+/)+[A-Za-z0-9_.+%*?=-]+(?:#[\w-]+)?"
+)
+BARE_REPOSITORY_FILE = re.compile(r"(?<![\w/])[A-Za-z0-9_.+-]+\.[A-Za-z0-9_-]+(?:#[\w-]+)?")
 Scope = t.Literal["docs", "website", "full"]
-
-
-class UnsafePushRange(ValueError):
-    """A push range cannot be trusted for selective CI."""
 
 
 def git_output(root: pathlib.Path, *arguments: str) -> bytes:
@@ -41,10 +42,12 @@ def is_website(path: str) -> bool:
 
 
 def is_doc(path: str) -> bool:
-    # Tests remain code even when their fixture happens to be Markdown. Website
-    # paths are classified separately, including website Markdown.
-    return not is_website(path) and not path.startswith("Tests/") and (
-        path.startswith("docs/") or path.endswith(".md")
+    # Documentation scope is deliberately narrow: docs/** and top-level Markdown
+    # only. Markdown inside any code/tooling folder remains code.
+    path_value = pathlib.PurePosixPath(path)
+    return not is_website(path) and (
+        path.startswith("docs/")
+        or (len(path_value.parts) == 1 and path.endswith(".md") and path_value.name not in AGENT_DOC_NAMES)
     )
 
 
@@ -60,11 +63,42 @@ def repository_doc_paths(root: pathlib.Path, path: pathlib.Path) -> t.Set[str]:
     return pins
 
 
-def literal_doc_paths(root: pathlib.Path, reader: str, contents: str) -> t.Set[str]:
+def repository_path_candidates(reader: str, token: str) -> t.Set[str]:
+    target = urllib.parse.unquote(token.split("#", 1)[0])
+    if (
+        not target
+        or target.startswith(("http:", "https:", "//", "$"))
+        or "\\" in target
+    ):
+        return set()
+    candidates: t.Set[str] = set()
+    reader_parent = pathlib.PurePosixPath(reader).parent
+    for candidate in [pathlib.PurePosixPath(target), reader_parent / target]:
+        normalized_text = posixpath.normpath(candidate.as_posix())
+        normalized = pathlib.PurePosixPath(normalized_text)
+        if normalized.is_absolute() or normalized == pathlib.PurePosixPath("..") or normalized_text.startswith("../"):
+            continue
+        candidates.add(normalized.as_posix())
+    return candidates
+
+
+def literal_doc_paths(
+    root: pathlib.Path,
+    reader: str,
+    contents: str,
+    available: t.Set[str] | None = None,
+) -> t.Set[str]:
     pins = set(DOC_PATH.findall(contents))
     for match in QUOTED_PATH.finditer(contents):
         token = match.group(1).split("#", 1)[0]
         if not token.endswith(".md") or re.search(r"[{}$()\\]", token):
+            continue
+        if available is not None:
+            pins.update(
+                candidate
+                for candidate in repository_path_candidates(reader, token)
+                if token.startswith("docs/") or candidate in available
+            )
             continue
         candidates = [root / token]
         if not token.startswith("docs/"):
@@ -75,11 +109,36 @@ def literal_doc_paths(root: pathlib.Path, reader: str, contents: str) -> t.Set[s
     return pins
 
 
-def pinned_docs(root: pathlib.Path) -> t.List[str]:
-    tracked = tracked_files(root)
+def agent_named_paths(reader: str, contents: str) -> t.Set[str]:
+    tokens = set(REPOSITORY_PATH.findall(contents))
+    tokens.update(BARE_REPOSITORY_FILE.findall(contents))
+    tokens.update(match.group(1) for match in QUOTED_PATH.finditer(contents))
+    paths: t.Set[str] = set()
+    for token in tokens:
+        paths.update(repository_path_candidates(reader, token))
+    return paths
+
+
+def tree_files(root: pathlib.Path, revision: str | None) -> t.List[str]:
+    if revision is None:
+        return tracked_files(root)
+    return [
+        os.fsdecode(path)
+        for path in git_output(root, "ls-tree", "-r", "--name-only", revision, "--").split(b"\n")
+        if path
+    ]
+
+
+def tree_file_bytes(root: pathlib.Path, revision: str | None, path: str) -> bytes:
+    if revision is None:
+        return (root / path).read_bytes()
+    return git_output(root, "show", f"{revision}:{path}")
+
+
+def pinned_docs(root: pathlib.Path, revision: str | None = None) -> t.List[str]:
+    tracked = tree_files(root, revision)
     pins: t.Set[str] = set()
     for path in tracked:
-        file = root / path
         agent_doc = pathlib.PurePosixPath(path).name in AGENT_DOC_NAMES
         # Scan all tracked inputs in the owning roots: CSS, Markdown used by
         # tooling, extensionless scripts and future formats can name doc inputs.
@@ -87,20 +146,15 @@ def pinned_docs(root: pathlib.Path) -> t.List[str]:
         code_reader = path.split("/", 1)[0] in CODE_ROOTS
         if not agent_doc and not code_reader:
             continue
-        if not file.is_file():
-            raise OSError(f"tracked classifier input is missing: {path}")
         if agent_doc:
             pins.add(path)
-        contents = file.read_bytes().decode("utf-8", errors="ignore")
-        pins.update(literal_doc_paths(root, path, contents))
+        contents = tree_file_bytes(root, revision, path).decode("utf-8", errors="ignore")
+        pins.update(literal_doc_paths(root, path, contents, set(tracked) if revision else None))
         if agent_doc:
             # Architecture lint opens linked targets and inline repository paths
-            # while resolving agent instructions; those documents are code inputs.
-            for token in re.findall(r"[\w./+%-]+\.md(?:#[\w-]+)?", contents):
-                target = urllib.parse.unquote(token.split("#", 1)[0])
-                for candidate in [file.parent / target, root / target]:
-                    if candidate.is_file():
-                        pins.update(repository_doc_paths(root, candidate))
+            # while resolving agent instructions. Pin every named path, even if
+            # it is absent in this tree, because deletion is a code change.
+            pins.update(agent_named_paths(path, contents))
     expanded: t.Set[str] = set()
     for pin in pins:
         if "*" in pin or "?" in pin:
@@ -119,25 +173,13 @@ def complete_revision(revision: str) -> bool:
 def classify_diff_paths(
     root: pathlib.Path, event: str, base: str, head: str
 ) -> t.Tuple[str, t.List[str]]:
-    """Select and read one trusted range for PR and push events."""
+    """Select and read one trusted pull-request range."""
     if not complete_revision(head):
         raise ValueError("head must be a complete commit ID")
     if event == "pull_request":
         if not complete_revision(base):
             raise ValueError("PR base must be a complete commit ID")
         diff_base = git_output(root, "merge-base", base, head).decode().strip()
-    elif event == "push":
-        if not complete_revision(base):
-            raise ValueError("push before must be a complete commit ID")
-        if set(base) == {"0"}:
-            raise UnsafePushRange("push before is the all-zero revision")
-        try:
-            git_output(root, "cat-file", "-e", f"{base}^{{commit}}")
-            git_output(root, "cat-file", "-e", f"{head}^{{commit}}")
-            git_output(root, "merge-base", "--is-ancestor", base, head)
-        except subprocess.CalledProcessError as error:
-            raise UnsafePushRange("push before is missing or is not an ancestor") from error
-        diff_base = base
     else:
         return "", []
     changed = [
@@ -150,13 +192,24 @@ def classify_diff_paths(
     return diff_base, changed
 
 
+def deleted_paths(root: pathlib.Path, diff_base: str, head: str) -> t.Set[str]:
+    return {
+        os.fsdecode(path)
+        for path in git_output(
+            root, "diff", "--name-only", "--diff-filter=D", "-z", "--no-renames", diff_base, head, "--"
+        ).split(b"\0")
+        if path
+    }
+
+
 def scope_for_paths(
-    changed: t.List[str], pins: t.Set[str]
+    changed: t.List[str], pins: t.Set[str], deleted: t.Set[str]
 ) -> t.Tuple[Scope, t.List[str], t.List[str], t.List[str]]:
     code_files = [
         path
         for path in changed
-        if (not is_doc(path) and not is_website(path))
+        if path in deleted and not path.startswith("docs/")
+        or (not is_doc(path) and not is_website(path))
         or path in pins
         or pathlib.PurePosixPath(path).name in AGENT_DOC_NAMES
     ]
@@ -209,14 +262,12 @@ def classify_changes(
     root: pathlib.Path, arguments: ChangesArguments
 ) -> t.Dict[str, object]:
     event, base, head = arguments.event, arguments.base, arguments.head
-    if event not in {"pull_request", "push"}:
-        return full_result(event, head, "non-PR and non-push events keep full CI")
-    try:
-        diff_base, changed = classify_diff_paths(root, event, base, head)
-    except UnsafePushRange as error:
-        return full_result(event, head, str(error))
-    pins = pinned_docs(root)
-    scope, code_files, website_files, doc_files = scope_for_paths(changed, set(pins))
+    if event != "pull_request":
+        return full_result(event, head, "non-PR events keep full CI")
+    diff_base, changed = classify_diff_paths(root, event, base, head)
+    pins = sorted(set(pinned_docs(root, diff_base)) | set(pinned_docs(root, head)))
+    deleted = deleted_paths(root, diff_base, head)
+    scope, code_files, website_files, doc_files = scope_for_paths(changed, set(pins), deleted)
     return {
         "scope": scope,
         "event": event,
