@@ -253,8 +253,8 @@ extension BridgePaneController {
         }
     }
 
-    func retireActiveReviewRefreshTask(preservePendingPublication: Bool = false) {
-        if !preservePendingPublication, let productAdmission = productAdmissionGate.acquire() {
+    func retireActiveReviewRefreshTask() {
+        if let productAdmission = productAdmissionGate.acquire() {
             reviewPublicationCoordinator.supersedePendingPublication(
                 productAdmission: productAdmission
             )
@@ -266,15 +266,6 @@ extension BridgePaneController {
         retiringReviewRefreshTaskById[taskId] = task
         activeReviewRefreshTask = nil
         activeReviewRefreshTaskId = nil
-    }
-
-    func fenceHiddenReviewBuildIfNeeded() {
-        guard activeReviewRefreshTask != nil else { return }
-        if let activeReviewPackageLoad {
-            pendingReviewPackageBuildReasons.insert(activeReviewPackageLoad.buildReason)
-        }
-        refreshAdmissionCoordinator.advanceAuthority(for: .review)
-        retireActiveReviewRefreshTask(preservePendingPublication: true)
     }
 
     private func performReviewCatchUp(
