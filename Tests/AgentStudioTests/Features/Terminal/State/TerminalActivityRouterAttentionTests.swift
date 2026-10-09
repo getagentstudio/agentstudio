@@ -276,9 +276,8 @@ struct TerminalActivityRouterAttentionTests {
             // Act
             fixture.selectPane(at: 1)
             fixture.selectPane(at: 2)
-            // Same-turn selection is coalesced into one settled old-pane -> C delivery.
-            // Join that owner delivery before consuming the projector's closing fact.
-            await fixture.router.waitForPendingAttentionDelivery()
+            // Same-turn selection is coalesced into one settled old-pane -> C delivery;
+            // C's cancellation is that delivery's closing fact.
             _ = try await fixture.deadlines.expectDisposition(for: cDeadline, .cancelled)
             await fixture.clock.waitForPendingSleepCount(exactly: 1)
 
@@ -365,6 +364,7 @@ private final class AttentionFixture {
             surfaceIDForPaneID: { $0 },
             isPaneCurrentlyAttended: { paneID in attentionAllowed && attendedPane.attendedPaneId == paneID },
             isPaneAgentClassified: { _, _ in false },
+            lastOutputLineReader: { _ in .surfaceStale },
             unseenActivityDebounceDuration: .seconds(2), unseenActivityClock: clock,
             factSink: routerFactSource.sink
         )

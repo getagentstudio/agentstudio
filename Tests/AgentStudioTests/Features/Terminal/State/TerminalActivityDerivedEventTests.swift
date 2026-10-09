@@ -208,6 +208,8 @@ struct TerminalActivityDerivedEventTests {
                 through: router,
                 isAttended: true
             )
+            // The awaited ingest made the scheduling decision: attending cancels, never postpones.
+            #expect(await projector.scheduledTimerCount == 0)
             _ = try await deadlines.expectDisposition(for: deadline, .superseded)
             await clock.waitForPendingSleepCount(exactly: 0)
             clock.advance(by: .milliseconds(750))
