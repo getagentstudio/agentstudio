@@ -1,3 +1,4 @@
+import AgentStudioTestHarness
 import Foundation
 import Testing
 
@@ -119,19 +120,30 @@ extension WebKitSerializedTests {
             assertProof(run)
         }
 
-        @Test("Review publication failure replays committed B without replacing File or the pane worker")
-        func reviewPublicationFailureReplaysCommittedBWithoutReplacingFileOrWorker() async throws {
+        @Test(
+            "Review publication failure replays committed B without replacing File or the pane worker",
+            arguments: [false, true]
+        )
+        func reviewPublicationFailureReplaysCommittedBWithoutReplacingFileOrWorker(
+            holdsCompletedTraceWrite: Bool
+        ) async throws {
             // Arrange
             let repoURL = try await FilesystemTestGitRepo.create(named: "bridge-product-review-replay-webkit")
             defer { FilesystemTestGitRepo.destroy(repoURL) }
             try await FilesystemTestGitRepo.seedTrackedAndUntrackedChanges(at: repoURL)
             try seedMultiWindowReviewChanges(at: repoURL)
             let harness = makeTransactionalPublicationHarness(repoURL: repoURL)
+            let completedTraceWrite =
+                holdsCompletedTraceWrite
+                ? HeldStep<Void>("native B completed publication trace write", cancellation: .holdThroughCancellation)
+                : nil
+            defer { completedTraceWrite?.release() }
 
             // Act
             let run = try await collectTransactionalPublicationProof(
                 harness: harness,
-                repoURL: repoURL
+                repoURL: repoURL,
+                completedTraceWrite: completedTraceWrite
             )
 
             // Assert
@@ -419,7 +431,8 @@ extension WebKitSerializedTests {
 
         private func collectTransactionalPublicationProof(
             harness: TransactionalPublicationHarness,
-            repoURL: URL
+            repoURL: URL,
+            completedTraceWrite: HeldStep<Void>? = nil
         ) async throws -> BridgeProductWebKitCarrierRunResult<TransactionalPublicationProof> {
             try await BridgeProductWebKitCarrierTestSupport.withHostedController(
                 harness.controller
@@ -440,7 +453,8 @@ extension WebKitSerializedTests {
                     controller: controller,
                     firstCheckpoint: firstCheckpoint,
                     harness: harness,
-                    repoURL: repoURL
+                    repoURL: repoURL,
+                    completedTraceWrite: completedTraceWrite
                 )
             }
         }
@@ -467,6 +481,7 @@ extension WebKitSerializedTests {
             else {
                 throw TransactionalPublicationTestError.initialPublicationDidNotApply
             }
+            let initialTrace = try #require(await harness.traceRecorder.waitForTrace(.reviewPublication))
             await harness.reviewMetadataSource.armFailure(after: publication.publicationId)
             return FirstPublicationCheckpoint(
                 fileSnapshot: await harness.fileMetadataSource.snapshot(),
@@ -476,7 +491,7 @@ extension WebKitSerializedTests {
                 publication: publication,
                 retiringLease: retiringLease,
                 reviewSnapshot: await harness.reviewMetadataSource.snapshot(),
-                trace: await harness.traceRecorder.scrubbedTrace()
+                trace: initialTrace
             )
         }
 
@@ -484,13 +499,17 @@ extension WebKitSerializedTests {
             controller: BridgePaneController,
             firstCheckpoint: FirstPublicationCheckpoint,
             harness: TransactionalPublicationHarness,
-            repoURL: URL
+            repoURL: URL,
+            completedTraceWrite: HeldStep<Void>?
         ) async throws -> TransactionalPublicationProof {
             try "publication B\n".write(
                 to: repoURL.appending(path: "bridge-window-000.txt"),
                 atomically: true,
                 encoding: .utf8
             )
+            if let completedTraceWrite {
+                await harness.traceRecorder.holdNextCompletedPublicationWrite(at: completedTraceWrite)
+            }
             controller.scheduleReviewPackageReloadForProductResync(reason: .productResync)
             guard await harness.reviewMetadataSource.waitForReplayFailureState() else {
                 let reviewFailure = await harness.reviewMetadataSource.snapshot()
@@ -523,7 +542,19 @@ extension WebKitSerializedTests {
                 controller
             )
             let retiringState = controller.reviewPublicationCoordinator.diagnosticSnapshot
-            let traceAfterFailure = await harness.traceRecorder.scrubbedTrace()
+            if let completedTraceWrite { _ = try await completedTraceWrite.firstArrival() }
+            if let completedTraceWrite {
+                let beforeCompletedWrite = await harness.traceRecorder.scrubbedTrace()
+                // The replay owner has announced failure, but the recorder has not
+                // appended B's completed phase. This is the CI sampling interleaving.
+                #expect(
+                    beforeCompletedWrite.completedReviewPublicationCount
+                        == firstCheckpoint.trace.completedReviewPublicationCount)
+                completedTraceWrite.release()
+            }
+            let traceAfterFailure = try await harness.traceRecorder.waitForCompletedReviewPublicationCount(
+                firstCheckpoint.trace.completedReviewPublicationCount + 1
+            )
             await harness.reviewMetadataSource.releaseReplay()
             let pendingReplayReadback = await reviewReplayPendingReadback(
                 controller: controller,
@@ -633,7 +664,7 @@ extension WebKitSerializedTests {
             #expect(
                 proof.traceAfterFailure.completedReviewPublicationCount
                     == proof.traceBeforeFailure.completedReviewPublicationCount + 1,
-                "the invalid first B delivery must be transport-observed before worker application fails"
+                "B's native publication transport completion must be recorded despite worker application failure"
             )
             #expect(
                 proof.retiringPublicationState.active?.publicationId == secondPublicationId

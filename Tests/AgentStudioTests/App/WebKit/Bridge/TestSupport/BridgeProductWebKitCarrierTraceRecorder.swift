@@ -20,6 +20,7 @@ actor BridgeProductWebKitCarrierTraceRecorder: BridgePerformanceTraceRecording {
     }
 
     private var samples: [BridgeTelemetrySample] = []
+    private var nextCompletedPublicationWrite: HeldStep<Void>?
     private var foregroundCatchUp: BridgeProductWebKitCatchUpTerminalExpectation?
     private var foregroundCatchUpOperations: Set<BridgeProductWebKitCatchUpOperation> = []
     private let firstApplication: BridgeProductWebKitFirstApplicationRecorder?
@@ -31,13 +32,31 @@ actor BridgeProductWebKitCarrierTraceRecorder: BridgePerformanceTraceRecording {
         self.firstApplication = firstApplication
     }
 
-    func record(sample: BridgeTelemetrySample, receivedAtUnixNano _: UInt64) {
+    func holdNextCompletedPublicationWrite(at step: HeldStep<Void>) {
+        precondition(nextCompletedPublicationWrite == nil)
+        nextCompletedPublicationWrite = step
+    }
+
+    func record(sample: BridgeTelemetrySample, receivedAtUnixNano _: UInt64) async {
+        if sample.name == "performance.bridge.swift.review_metadata_publication",
+            sample.stringAttributes["agentstudio.bridge.phase"] == "review_metadata_publication_completed",
+            let step = nextCompletedPublicationWrite
+        {
+            nextCompletedPublicationWrite = nil
+            try? await step.arrive(())
+        }
         samples.append(sample)
         recordForegroundCatchUp(sample)
         firstApplication?.observe(sample)
         let trace = scrubbedTrace()
         for condition in [TraceCondition.reviewPublication, .canonicalSubscriptionsAndReviewPublication] {
             if condition.isSatisfied(by: trace) { traces.append(scope: String(describing: condition), fact: trace) }
+        }
+        if sample.name == "performance.bridge.swift.review_metadata_publication",
+            sample.stringAttributes["agentstudio.bridge.phase"] == "review_metadata_publication_completed"
+        {
+            traces.append(
+                scope: "completed Review publication count \(trace.completedReviewPublicationCount)", fact: trace)
         }
     }
 
@@ -84,6 +103,17 @@ actor BridgeProductWebKitCarrierTraceRecorder: BridgePerformanceTraceRecording {
         return try? await traces.expectNext(
             in: String(describing: condition), where: { condition.isSatisfied(by: $0) },
             "carrier trace satisfies \(condition)")
+    }
+
+    func waitForCompletedReviewPublicationCount(_ expectedCount: Int) async throws -> BridgeProductWebKitCarrierTrace {
+        precondition(expectedCount >= 0)
+        let current = scrubbedTrace()
+        if current.completedReviewPublicationCount >= expectedCount { return current }
+        return try await traces.expectNext(
+            in: "completed Review publication count \(expectedCount)",
+            where: { $0.completedReviewPublicationCount >= expectedCount },
+            "\(expectedCount) completed Review publication writes recorded"
+        )
     }
 
     func recordDrop(
