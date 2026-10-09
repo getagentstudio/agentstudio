@@ -153,6 +153,8 @@ extension WorktreeCreationCommandLineIntegrationTests {
         #expect(taken.exit == 1)
         #expect(try taken.refused().reason == "branchAlreadyExists")
         #expect(try taken.refused().detail == "feature/taken")
+        // Refused by -c's own check, before any fetch, not by the SDK at the attach.
+        #expect(try taken.refused().fetch == nil)
     }
 
     @Test("a branch deleted on origin is absent even with its old remote-tracking ref still on disk")
@@ -398,6 +400,7 @@ extension WorktreeCreationCommandLineIntegrationTests {
             "feature/existing", ["-c", "--from", fixture.repository.path, "--changes-only"], json: true)
         #expect(existing.exit == 1)
         #expect(try existing.refused().reason == "branchAlreadyExists")
+        #expect(try existing.refused().fetch == nil)
         let originOnly = await fixture.runNew(
             "feature/origin-only", ["-c", "--from", fixture.repository.path, "--changes-only"], json: true)
         #expect(originOnly.exit == 1)
