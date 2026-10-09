@@ -7,7 +7,10 @@ import { userEvent } from 'vitest/browser';
 import '../app/bridge-app.css';
 import { bridgeAppControlProbeSchema } from '../app/bridge-app-control.js';
 import type { BridgeWorkerMainToServerMessage } from '../core/comm-worker/bridge-worker-contracts.js';
-import { waitForFileViewerMenuOptionContaining } from './bridge-file-viewer-app-startup.browser.test-support.js';
+import {
+	settleFileViewerMenuTransition,
+	waitForFileViewerMenuOptionContaining,
+} from './bridge-file-viewer-app-startup.browser.test-support.js';
 import { BridgeFileViewerBrowserHarnessApp } from './bridge-file-viewer-browser-test-app.js';
 import {
 	makeBrowserFileBatch,
@@ -628,6 +631,7 @@ async function dispatchFileViewerShortcut(
 		);
 	});
 	await actFrame();
+	if (modifiers.altKey) await settleFileViewerMenuTransition();
 }
 
 async function dispatchFileViewerSearchCommand(props: {
@@ -671,8 +675,9 @@ async function clickFileViewerMenuOptionAndWaitForQuery(element: HTMLElement): P
 	await interactAndWaitForBridgeFileViewerQueryCompletion((): void => {
 		element.click();
 	});
-	// Base UI advances one frame before committing popup mounted-state changes.
+	// Base UI captures animations on this frame; their completion can unmount MenuRoot later.
 	await actFrame();
+	await settleFileViewerMenuTransition();
 }
 
 function setBridgeFileViewerSearchInputValue(element: Element, value: string): void {
@@ -711,6 +716,7 @@ async function dispatchFileViewerMenuKey(key: 'ArrowDown' | 'Enter' | 'Escape'):
 	// event returns. Commit that effect in an act-scoped frame before polling
 	// the resulting DOM state, so CI load cannot expose an unwrapped update.
 	await actFrame();
+	await settleFileViewerMenuTransition();
 }
 
 async function waitForFileViewerMenuFocus(): Promise<void> {
