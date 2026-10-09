@@ -37,6 +37,12 @@ struct WorktreeCommandLineTests {
                     materialization: .trackedOnly(startBranch: "feature/source")), false
             ),
             (
+                ["new", "feat", "--from-branch", "release", "--repo", "repositories/main"],
+                WorktreeCreateRequest(
+                    start: repository, branch: "feat", source: .mainWorktree,
+                    materialization: .trackedOnly(startBranch: "release")), false
+            ),
+            (
                 ["new", "feature/fork", "--from", "linked/nested"],
                 WorktreeCreateRequest(
                     start: currentDirectory, branch: "feature/fork", source: .worktree(source),
@@ -188,6 +194,33 @@ struct WorktreeCommandLineTests {
         }
     }
 
+    @Test("new with both --from and --from-branch is a usage error that asks for one source")
+    func rejectsTwoCreationSources() async throws {
+        let currentDirectory = URL(fileURLWithPath: "/tmp/worktree-cli", isDirectory: true)
+        for options in [
+            ["--from", "linked/nested", "--from-branch", "release"],
+            ["--from-branch", "release", "--from", "linked/nested", "--tracked-only"],
+        ] {
+            #expect(throws: WorktreeCommandLineArgumentError.conflictingOptions("--from", "--from-branch")) {
+                try WorktreeCommandLineArgumentParser.parse(
+                    ["new", "feat"] + options, currentDirectory: currentDirectory)
+            }
+            for includeJSONFlag in [false, true] {
+                let probe = WorktreeCommandLineTestProbe()
+                let exitCode = await WorktreeCommandLine.run(
+                    arguments: ["new", "feat"] + options + (includeJSONFlag ? ["--json"] : []),
+                    currentDirectory: currentDirectory,
+                    output: { probe.appendOutput($0) },
+                    errorOutput: { probe.appendErrorOutput($0) }
+                )
+                #expect(exitCode == 64)
+                #expect(probe.outputSnapshot().isEmpty)
+                let errorLine = try #require(probe.errorOutputSnapshot().first)
+                #expect(errorLine.contains("choose one source"))
+            }
+        }
+    }
+
     @Test("path options reject another option as their value")
     func pathOptionsRejectFollowingFlagsAsValues() throws {
         let currentDirectory = URL(fileURLWithPath: "/tmp/worktree-cli", isDirectory: true)
@@ -296,9 +329,17 @@ struct WorktreeCommandLineTests {
                 FormatterGolden(
                     outcome: .refused(.forkUnavailable(.sourceFilesystemNotAPFS, source: .mainWorktree)),
                     humanText:
-                        "refused: forkUnavailable sourceFilesystemNotAPFS --tracked-only; options: [--tracked-only: Create a tracked-files checkout.]",
+                        "refused: forkUnavailable sourceFilesystemNotAPFS --tracked-only; options: [--tracked-only: Create a cold tracked-files checkout: no build outputs, no untracked or ignored files.]",
                     jsonText:
-                        "{\"alternatives\":[\"trackedOnly\"],\"detail\":\"sourceFilesystemNotAPFS\",\"options\":[{\"effect\":\"Create a tracked-files checkout.\",\"flag\":\"--tracked-only\"}],\"outcome\":\"refused\",\"reason\":\"forkUnavailable\"}",
+                        "{\"alternatives\":[\"trackedOnly\"],\"detail\":\"sourceFilesystemNotAPFS\",\"options\":[{\"effect\":\"Create a cold tracked-files checkout: no build outputs, no untracked or ignored files.\",\"flag\":\"--tracked-only\"}],\"outcome\":\"refused\",\"reason\":\"forkUnavailable\"}",
+                    exitCode: 1
+                ),
+                FormatterGolden(
+                    outcome: .refused(.creationStopped(.sourceIndexUnreadable)),
+                    humanText:
+                        "refused: sourceIndexUnreadable; options: [retry: Retry after the source can be read.; --tracked-only: Create a cold tracked-files checkout: no build outputs, no untracked or ignored files.]",
+                    jsonText:
+                        "{\"details\":{\"sourceIndexUnreadable\":{}},\"message\":\"The source index could not be read.\",\"options\":[{\"command\":\"retry\",\"effect\":\"Retry after the source can be read.\"},{\"effect\":\"Create a cold tracked-files checkout: no build outputs, no untracked or ignored files.\",\"flag\":\"--tracked-only\"}],\"outcome\":\"refused\",\"reason\":\"sourceIndexUnreadable\"}",
                     exitCode: 1
                 ),
                 FormatterGolden(

@@ -58,7 +58,6 @@ package struct WorktreeCreatedSummary: Sendable, Equatable {
 
 package enum WorktreeOperationRefusal: Sendable, Equatable {
     case creationStopped(WorktreeCreationStop)
-    case changesUnknown(mainWorktree: URL)
     case notInRepository(URL)
     case notInWorktree(URL)
     case noDefaultBranch

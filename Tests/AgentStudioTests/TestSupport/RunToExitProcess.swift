@@ -9,6 +9,15 @@ package struct ExitedProcessOutput: Sendable {
     package let standardError: Data
 }
 
+/// A fixture owns its relay configuration; the enclosing lane's cached paths
+/// must not cross this subprocess boundary. Other caller values stay intact.
+package func testProcessEnvironmentWithoutRelayPaths(_ environment: [String: String]? = nil) -> [String: String] {
+    var isolatedEnvironment = environment ?? ProcessInfo.processInfo.environment
+    isolatedEnvironment.removeValue(forKey: "SWIFT_TEST_OUTPUT_RELAY_LOCK_PATH")
+    isolatedEnvironment.removeValue(forKey: "SWIFT_TEST_OUTPUT_RELAY_SCRIPT_PATH")
+    return isolatedEnvironment
+}
+
 /// Runs a subprocess to exit with no per-test elapsed-time budget.
 ///
 /// A test's verdict must not depend on how fast the runner is. A subprocess
@@ -65,9 +74,7 @@ package func runProcessToExit(
     if let currentDirectoryURL {
         process.currentDirectoryURL = currentDirectoryURL
     }
-    if let environment {
-        process.environment = environment
-    }
+    process.environment = testProcessEnvironmentWithoutRelayPaths(environment)
     process.standardOutput = standardOutputHandle
     process.standardError = standardErrorHandle
     if let standardInput { process.standardInput = standardInput }

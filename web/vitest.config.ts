@@ -24,16 +24,36 @@ import { verifyHeroEyebrowSettle } from "./tests/hero-eyebrow-settle-browser-com
 import {
   verifyHeroIntroLayout,
   verifyHeroNoScriptWidth,
-  verifyHeroIntroPlayback,
-  verifyHeroIntroRefresh,
+  verifyHeroIntroDealtFan,
+  verifyHeroIntroResize,
+  verifyHeroIntroReducedMotion,
+  verifyHeroIntroKeydown,
+  verifyHeroIntroSecondResize,
+  observeHeroReload,
+  observeHeroScrollAndWheel,
+  observeHeroHashLink,
   verifyHeroIntroShift,
   verifyHeroScrollCue,
   verifyHeroPhoneMidIntro,
 } from "./tests/hero-intro-browser-command.ts";
-import { verifyHeroIntroFinale } from "./tests/hero-intro-finale-browser-command.ts";
+import {
+  observeHeroFinaleTimes,
+  observeHeroFinaleSettled,
+  verifyHeroFinaleDirectSeek,
+  verifyHeroFinaleConstrainedScroll,
+  verifyHeroTranscriptWheel,
+  verifyHeroFinaleResizeSettle,
+  verifyHeroFinaleEscapeSkip,
+  verifyHeroFinaleReducedMotion,
+} from "./tests/hero-intro-finale-browser-command.ts";
 import { verifyHeroWorkspace } from "./tests/hero-workspace-browser-command.ts";
 import { verifyInstallCommandLayout } from "./tests/install-command-layout-browser-command.ts";
 import { buildMediaCalloutForBrowserTest } from "./tests/media-callout-browser-command.ts";
+import {
+  releasePendingWaitFixture,
+  startPendingWaitFixture,
+} from "./tests/pending-wait-diagnostics-fixture-browser-command.ts";
+import { capturePendingWaitDiagnostics } from "./tests/pending-wait-diagnostics.ts";
 import { verifyProofChapter, verifyProofClipMedia } from "./tests/proof-chapter-browser-command.ts";
 import { verifyRailViewportBands } from "./tests/rail-band-browser-command.ts";
 import { buildSceneBundlesForBrowserTest } from "./tests/scene-bundle-browser-command.ts";
@@ -42,7 +62,12 @@ import {
   verifySiteFooterResponsiveLayout,
 } from "./tests/site-footer-browser-command.ts";
 import { verifySiteHeaderScrollStability } from "./tests/site-header-browser-command.ts";
-import { verifyFinaleBookend, verifyTopologyEnd } from "./tests/topology-end-browser-command.ts";
+import {
+  observeFinaleMainPage,
+  observeFinaleReducedMotion,
+  observeFinaleSkipAndResize,
+  verifyTopologyEnd,
+} from "./tests/topology-end-browser-command.ts";
 import { verifyTopologyNodeVocabulary } from "./tests/topology-node-vocabulary-browser-command.ts";
 import { verifySkipToContent } from "./tests/website-access-browser-command.ts";
 import {
@@ -100,15 +125,31 @@ export default defineConfig({
               verifyManualChapterClaim,
               verifyChapterScrollGeometry,
               verifyChapterStepHop,
+              capturePendingWaitDiagnostics,
+              startPendingWaitFixture,
+              releasePendingWaitFixture,
               verifyReducedMotionStepLine,
               verifyHeroIntroLayout,
               verifyHeroNoScriptWidth,
-              verifyHeroIntroPlayback,
-              verifyHeroIntroRefresh,
+              verifyHeroIntroDealtFan,
+              verifyHeroIntroResize,
+              verifyHeroIntroReducedMotion,
+              verifyHeroIntroKeydown,
+              verifyHeroIntroSecondResize,
+              observeHeroReload,
+              observeHeroScrollAndWheel,
+              observeHeroHashLink,
               verifyHeroIntroShift,
               verifyHeroScrollCue,
               verifyHeroPhoneMidIntro,
-              verifyHeroIntroFinale,
+              observeHeroFinaleTimes,
+              observeHeroFinaleSettled,
+              verifyHeroFinaleDirectSeek,
+              verifyHeroFinaleConstrainedScroll,
+              verifyHeroTranscriptWheel,
+              verifyHeroFinaleResizeSettle,
+              verifyHeroFinaleEscapeSkip,
+              verifyHeroFinaleReducedMotion,
               verifyHeroEyebrowSettle,
               verifyHeroWorkspace,
               verifyInstallCommandLayout,
@@ -120,7 +161,9 @@ export default defineConfig({
               verifyFooterEndRoom,
               verifySiteHeaderScrollStability,
               verifyTopologyEnd,
-              verifyFinaleBookend,
+              observeFinaleMainPage,
+              observeFinaleReducedMotion,
+              observeFinaleSkipAndResize,
               verifyTopologyNodeVocabulary,
               verifyWebsiteQualityLayout,
             },

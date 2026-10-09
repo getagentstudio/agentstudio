@@ -309,7 +309,8 @@ struct SwiftLaneResourceWrapperTests {
                 + "close(\u{0024}armed); print qq{PARKED\\n}; open(my \u{0024}release,q{<},shift) or die \u{0024}!; <\u{0024}release>;' "
                 + "'\(arm.path)' '\(release.path)'",
             setup: "SWIFT_TEST_RESOURCE_TIMER='\(timer.path)'; LANE_WATCHDOG_ARM_PATH='\(arm.path)'; "
-                + "mkfifo '\(release.path)'; swift_test_watchdog_timeout_status() { return 1; }; ")
+                + "mkfifo '\(release.path)'; swift_test_watchdog_timeout_status() { return 1; }; ",
+            innerWatchdog: .armed)
         #expect(result.output.contains("STATUS=124"))
         #expect(result.record["timed_out"] as? Bool == true)
         let timerPID = try String(contentsOf: fixture.root.appending(path: "timer.pid"), encoding: .utf8)
@@ -389,7 +390,7 @@ struct InvocationReceiptFixture {
         try await runEventFixture(as: kind, expectedRuns: 19, exitStatus: exitStatus)
     }
 
-    func runEventFixture(as kind: String, expectedRuns: Int, exitStatus: Int) async throws -> (
+    func runEventFixture(as kind: String, expectedRuns: Int, exitStatus: Int, setup: String = "") async throws -> (
         output: String, record: [String: Any]
     ) {
         try await run(
@@ -397,20 +398,22 @@ struct InvocationReceiptFixture {
             eventStream: true,
             setup:
                 "BUILD_PATH='\(root.path)'; printf 'bundle_count=\(expectedRuns)\\n' > \"$BUILD_PATH/agentstudio-test-build-receipt\"; "
+                + setup
         )
     }
 
-    func run(_ command: String, eventStream: Bool = false, setup: String = "", helper: URL? = nil) async throws -> (
-        output: String, record: [String: Any]
-    ) {
+    /// Runs `command` under the real lane runner, with the lane launchers' inner
+    /// watchdog default; a timeout proof passes `.armed`.
+    func run(
+        _ command: String, eventStream: Bool = false, setup: String = "", helper: URL? = nil,
+        innerWatchdog: LaneFixtureInnerWatchdog = .unarmed
+    ) async throws -> (output: String, record: [String: Any]) {
         let result = try await runCommandToExit(
             command: "/bin/bash",
             arguments: [
                 "-c",
-                "LOG_PREFIX=f2; export LANE_EVENT_STREAM_DIR='\(root.path)/evidence'; "
-                    + (helper == nil
-                        ? ""
-                        : "unset SWIFT_TEST_OUTPUT_RELAY_LOCK_PATH SWIFT_TEST_OUTPUT_RELAY_SCRIPT_PATH; ")
+                innerWatchdog.shellPreamble
+                    + "LOG_PREFIX=f2; BUILD_PATH='\(root.path)/build'; export LANE_EVENT_STREAM_DIR='\(root.path)/evidence'; "
                     + "source '\(helper?.path ?? "scripts/swift-test-helpers.sh")'; "
                     + (eventStream ? "swift_test_command_accepts_event_stream() { return 0; }; " : "")
                     + setup

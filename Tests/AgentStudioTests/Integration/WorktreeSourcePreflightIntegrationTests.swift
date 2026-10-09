@@ -6,7 +6,7 @@ import Testing
 
 @Suite("Worktree source preflight integration")
 struct WorktreeSourcePreflightIntegrationTests {
-    @Test("default new invoked from a linked checkout copies the clean main HEAD and warm cache")
+    @Test("default new invoked from a linked checkout copies main as it is, including an included ignored folder")
     func copiesMainSourceFromLinkedCheckout() async throws {
         let repository = try await seededRepository(named: "new-main-from-linked")
         defer { FilesystemTestGitRepo.destroy(repository) }
@@ -18,7 +18,7 @@ struct WorktreeSourcePreflightIntegrationTests {
         let cache = repository.appending(path: ".build-cache/output")
         try FileManager.default.createDirectory(
             at: cache.deletingLastPathComponent(), withIntermediateDirectories: true)
-        try Data("warm cache".utf8).write(to: cache)
+        try Data("included ignored content".utf8).write(to: cache)
         let linkedBranch = "feature/caller"
         let linked = try siblingDestination(repository: repository, branch: linkedBranch)
         defer { try? FileManager.default.removeItem(at: linked) }
@@ -39,7 +39,9 @@ struct WorktreeSourcePreflightIntegrationTests {
         #expect(exit == 0)
         #expect(probe.errorSnapshot().isEmpty)
         #expect(probe.outputSnapshot().first?.contains("copyOnWrite") == true)
-        #expect(try Data(contentsOf: destination.appending(path: ".build-cache/output")) == Data("warm cache".utf8))
+        #expect(
+            try Data(contentsOf: destination.appending(path: ".build-cache/output"))
+                == Data("included ignored content".utf8))
         #expect(!FileManager.default.fileExists(atPath: destination.appending(path: "caller.txt").path))
         #expect(
             try await worktreeCreationGit(at: destination, arguments: ["rev-parse", "HEAD"])
@@ -76,21 +78,57 @@ struct WorktreeSourcePreflightIntegrationTests {
         }
     }
 
-    @Test("default source off default branch refuses without mutation")
-    func refusesNonDefaultMainBranch() async throws {
-        let repository = try await seededRepository(named: "new-off-default")
+    @Test("default new forks a dirty main checkout as it is and leaves main unchanged")
+    func forksDirtyDefaultSourceAsItIs() async throws {
+        let repository = try await seededRepository(named: "new-dirty-default")
+        defer { FilesystemTestGitRepo.destroy(repository) }
+        let unstagedBytes = Data("tracked\nunstaged change\n".utf8)
+        let untrackedBytes = Data("untracked work\n".utf8)
+        try unstagedBytes.write(to: repository.appending(path: "tracked.txt"))
+        try untrackedBytes.write(to: repository.appending(path: "untracked.txt"))
+        let mainHead = try await worktreeCreationGit(at: repository, arguments: ["rev-parse", "HEAD"])
+        let beforeStatus = try await worktreeCreationGit(at: repository, arguments: ["status", "--porcelain=v1"])
+        #expect(beforeStatus.contains("M tracked.txt"))
+        #expect(beforeStatus.contains("?? untracked.txt"))
+        let branch = "feature/dirty-copy"
+        let destination = try siblingDestination(repository: repository, branch: branch)
+        defer { try? FileManager.default.removeItem(at: destination) }
+
+        let document = try await runDefaultNew(repository: repository, branch: branch)
+
+        #expect(document.outcome == "created")
+        #expect(document.materialization?.kind == "copyOnWrite")
+        #expect(try Data(contentsOf: destination.appending(path: "tracked.txt")) == unstagedBytes)
+        #expect(try Data(contentsOf: destination.appending(path: "untracked.txt")) == untrackedBytes)
+        #expect(try await worktreeCreationGit(at: destination, arguments: ["rev-parse", "HEAD"]) == mainHead)
+        #expect(try await worktreeCreationGit(at: repository, arguments: ["status", "--porcelain=v1"]) == beforeStatus)
+        #expect(try await worktreeCreationGit(at: repository, arguments: ["rev-parse", "HEAD"]) == mainHead)
+    }
+
+    @Test("default new forks a main checkout on a non-default branch at its HEAD commit")
+    func forksOffBranchDefaultSourceAtItsHead() async throws {
+        let repository = try await seededRepository(named: "new-off-default-copy")
         defer { FilesystemTestGitRepo.destroy(repository) }
         try await worktreeCreationGit(at: repository, arguments: ["checkout", "-b", "feature/source"])
-        let branch = "feature/refused"
+        try Data("source branch\n".utf8).write(to: repository.appending(path: "source.txt"))
+        try await worktreeCreationGit(at: repository, arguments: ["add", "source.txt"])
+        try await worktreeCreationGit(at: repository, arguments: ["commit", "-m", "source branch commit"])
+        let mainHead = try await worktreeCreationGit(at: repository, arguments: ["rev-parse", "HEAD"])
+        #expect(try await worktreeCreationGit(at: repository, arguments: ["rev-parse", "refs/heads/main"]) != mainHead)
+        let branch = "feature/off-branch-copy"
         let destination = try siblingDestination(repository: repository, branch: branch)
-        let outcome = await WorktreeOperationRunner().run(
-            .create(
-                WorktreeCreateRequest(
-                    start: repository, branch: branch, source: .mainWorktree, materialization: .copyOnWrite)))
+        defer { try? FileManager.default.removeItem(at: destination) }
+
+        let document = try await runDefaultNew(repository: repository, branch: branch)
+
+        #expect(document.outcome == "created")
+        #expect(document.materialization?.kind == "copyOnWrite")
         #expect(
-            outcome == .refused(.creationStopped(.sourceNotOnDefaultBranch(actual: "feature/source", expected: "main")))
-        )
-        try await expectNoCreation(repository: repository, destination: destination, branch: branch)
+            try await worktreeCreationGit(at: repository, arguments: ["rev-parse", "refs/heads/\(branch)"]) == mainHead)
+        #expect(try await worktreeCreationGit(at: destination, arguments: ["rev-parse", "HEAD"]) == mainHead)
+        #expect(
+            try await worktreeCreationGit(at: repository, arguments: ["rev-parse", "--abbrev-ref", "HEAD"])
+                == "feature/source")
     }
 
     @Test("explicit main source copies dirty files and its HEAD even off default branch")
@@ -163,6 +201,20 @@ struct WorktreeSourcePreflightIntegrationTests {
         try await worktreeCreationGit(at: repository, arguments: ["add", "tracked.txt"])
         try await worktreeCreationGit(at: repository, arguments: ["commit", "-m", "base"])
         return repository
+    }
+
+    private func runDefaultNew(
+        repository: URL, branch: String
+    ) async throws -> WorktreeCreationCommandLineDocuments.CreatedDocument {
+        let probe = WorktreeCreationCommandLineProbe()
+        let exit = await WorktreeCommandLine.run(
+            arguments: ["new", branch, "--repo", repository.path, "--json"], currentDirectory: repository,
+            output: { probe.appendOutput($0) }, errorOutput: { probe.appendError($0) })
+        let output = try #require(probe.outputSnapshot().first)
+        #expect(exit == 0, "default new did not create: \(output)")
+        #expect(probe.errorSnapshot().isEmpty)
+        return try JSONDecoder().decode(
+            WorktreeCreationCommandLineDocuments.CreatedDocument.self, from: Data(output.utf8))
     }
 
     private func expectNoCreation(repository: URL, destination: URL, branch: String) async throws {
