@@ -48,7 +48,8 @@
         }
       }
     ],
-    "targetRevision": 16
+    "targetRevision": 16,
+    "snapshotCause": "open"
   },
   "coverage": {
     "mode": "coverage",

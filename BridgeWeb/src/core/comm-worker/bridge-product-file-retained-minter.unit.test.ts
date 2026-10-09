@@ -35,6 +35,7 @@ function replayFrames(capture: NativeCapture, batchId: string): readonly BridgeP
 		baseRevision: 0,
 		kind: 'subscription.batchBegin',
 		mode: capture.mode,
+		...('snapshotCause' in capture ? { snapshotCause: capture.snapshotCause } : {}),
 		partCount: capture.parts.length,
 		scope,
 		streamSequence: batchId === 'coverage' ? 1 : 101,
@@ -77,13 +78,17 @@ describe('native File retained-minter replay', (): void => {
 		const coverage = receiver.takeInstallations();
 		expect(coverage).toHaveLength(1);
 		expect(coverage[0]?.certified).toBe(false);
+		expect(coverage[0]?.begin.snapshotCause).toBeUndefined();
 		expect(coverage[0]?.records).toHaveLength(corpus.coverage.parts.length);
 
 		// This is the same receiver, domain, incarnation and handle. There is no
 		// replaceHandle, bank clear or new E3 to conceal a regressed native floor.
 		const [begin, ...following] = replayFrames(corpus.certificate, 'certificate');
 		if (begin === undefined) throw new Error('Expected a native certificate begin.');
-		expect(receiver.accept(begin)).toEqual({ kind: 'staged' });
+		expect(receiver.accept(begin)).toEqual({
+			kind: 'staged',
+			snapshotCause: corpus.certificate.snapshotCause,
+		});
 		for (const frame of following) receiver.accept(frame);
 		const repaired = receiver.takeInstallations();
 		expect(repaired).toHaveLength(1);

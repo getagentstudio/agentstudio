@@ -207,11 +207,13 @@ private struct FileRevisionFloorCorpus: Decodable {
         let mode: BridgeProductBatchMode
         let targetRevision: Int
         let parts: [BridgeProductBatchPart]
+        let snapshotCause: BridgeProductSnapshotCause?
 
-        init(batch: BridgeProductSealedViewBatch) {
+        init(batch: BridgeProductSealedViewBatch, snapshotCause: BridgeProductSnapshotCause?) {
             mode = batch.mode
             targetRevision = batch.targetRevision
             parts = batch.parts.map(normalizeRevisionFloorPart)
+            self.snapshotCause = snapshotCause
         }
     }
 
@@ -232,8 +234,51 @@ private func assertRevisionFloorCorpus(
     let corpus = try JSONDecoder().decode(FileRevisionFloorCorpus.self, from: swiftBytes)
     // Apart from physical root spelling/hash, compare every field replayed by
     // W4. A native revision, row or mode drift must fail this permanent gate.
-    #expect(FileRevisionFloorCorpus.Capture(batch: coverage) == corpus.coverage)
-    #expect(FileRevisionFloorCorpus.Capture(batch: certificate) == corpus.certificate)
+    let causes = try emittedRetrySnapshotCauses(coverage: coverage, certificate: certificate)
+    #expect(FileRevisionFloorCorpus.Capture(batch: coverage, snapshotCause: causes.coverage) == corpus.coverage)
+    #expect(
+        FileRevisionFloorCorpus.Capture(batch: certificate, snapshotCause: causes.certificate) == corpus.certificate)
+}
+
+private func emittedRetrySnapshotCauses(
+    coverage: BridgeProductSealedViewBatch,
+    certificate: BridgeProductSealedViewBatch
+) throws -> (coverage: BridgeProductSnapshotCause?, certificate: BridgeProductSnapshotCause?) {
+    var sender = BridgeProductViewSenderState(maximumDirtyKeys: 32, creditParts: 4, creditBytes: 100_000)
+    let stream = BridgeProductMetadataStreamCorrelation(
+        metadataStreamId: "retained-minter-stream", paneSessionId: "retained-minter-pane",
+        wireVersion: BridgeProductWireContract.version, workerInstanceId: "retained-minter-worker")
+    sender.open(coverage.viewDomain, handle: coverage.handle, scanGeneration: coverage.producerScanGeneration)
+    try sender.seal(coverage)
+    var coverageCause: BridgeProductSnapshotCause?
+    for ordinal in 0..<coverage.frameCount {
+        let frame = try #require(try sender.nextFrame(stream: stream, streamSequence: ordinal + 1))
+        if case .batch(.begin(let begin)) = frame {
+            #expect(begin.mode == .coverage)
+            #expect(begin.snapshotCause == nil)
+            coverageCause = begin.snapshotCause
+        }
+        if case .batch(.part(let part)) = frame {
+            #expect(
+                sender.acknowledge(for: coverage.viewDomain, handle: coverage.handle, through: part.deliverySequence))
+        }
+    }
+    #expect(sender.pending(for: coverage.viewDomain) == .snapshotRequired(.open))
+    // Explicit Retry can request a snapshot, but partial coverage never paid
+    // the initial open obligation. C5 reuses this domain rather than opening it.
+    // ViewDelivery:533 marks requested; BatchWireContract:17 preserves open;
+    // ViewSenderState:98-106 consumes the owed cause only for snapshots.
+    sender.resnapshot(coverage.viewDomain, cause: .requested)
+    #expect(sender.pending(for: coverage.viewDomain) == .snapshotRequired(.open))
+    try sender.seal(certificate)
+    let frame = try #require(try sender.nextFrame(stream: stream, streamSequence: coverage.frameCount + 1))
+    guard case .batch(.begin(let begin)) = frame else {
+        throw ProductFileSourceFixtureError.invalidControlRequest
+    }
+    #expect(begin.mode == .snapshot)
+    #expect(begin.snapshotCause == .open)
+    #expect(sender.pending(for: coverage.viewDomain) == .keys([:]))
+    return (coverageCause, begin.snapshotCause)
 }
 
 private func normalizeRevisionFloorPart(_ part: BridgeProductBatchPart) -> BridgeProductBatchPart {
