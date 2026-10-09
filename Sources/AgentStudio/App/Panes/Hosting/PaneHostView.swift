@@ -46,6 +46,7 @@ class PaneHostView: NSView, Identifiable {
 
     private weak var pendingFocusWindow: NSWindow?
     private weak var pendingFocusResponder: NSResponder?
+    private var pendingFocusGeneration: UInt64?
 
     /// Stable identity for this specific host instance. Changes when the host
     /// is replaced (repair, placeholder retry), forcing SwiftUI to recreate
@@ -85,13 +86,19 @@ class PaneHostView: NSView, Identifiable {
     }
 
     override func viewWillMove(toWindow newWindow: NSWindow?) {
-        if newWindow == nil,
-            let currentWindow = window,
+        guard newWindow == nil else {
+            super.viewWillMove(toWindow: newWindow)
+            return
+        }
+
+        clearPendingFocusRestoration()
+        if let currentWindow = window as? PaneResponderTrackingWindow,
             let responderView = currentWindow.firstResponder as? NSView,
             responderView === self || responderView.isDescendant(of: self)
         {
             pendingFocusWindow = currentWindow
             pendingFocusResponder = currentWindow.firstResponder
+            pendingFocusGeneration = currentWindow.responderChangeGeneration
         }
         super.viewWillMove(toWindow: newWindow)
     }
@@ -99,16 +106,16 @@ class PaneHostView: NSView, Identifiable {
     private func restoreFocusAfterSameWindowRemountIfNeeded() {
         guard let pendingWindow = pendingFocusWindow,
             let currentWindow = window,
-            pendingWindow === currentWindow
+            let trackingWindow = currentWindow as? PaneResponderTrackingWindow,
+            pendingWindow === currentWindow,
+            pendingFocusGeneration == trackingWindow.responderChangeGeneration
         else {
-            pendingFocusWindow = nil
-            pendingFocusResponder = nil
+            clearPendingFocusRestoration()
             return
         }
 
         let responder = pendingFocusResponder
-        pendingFocusWindow = nil
-        pendingFocusResponder = nil
+        clearPendingFocusRestoration()
 
         guard currentWindow.firstResponder === currentWindow,
             !isHiddenOrHasHiddenAncestor,
@@ -119,6 +126,12 @@ class PaneHostView: NSView, Identifiable {
         }
 
         _ = currentWindow.makeFirstResponder(responder)
+    }
+
+    private func clearPendingFocusRestoration() {
+        pendingFocusWindow = nil
+        pendingFocusResponder = nil
+        pendingFocusGeneration = nil
     }
 
     override func layout() {
@@ -148,6 +161,7 @@ class PaneHostView: NSView, Identifiable {
     func retire() {
         (mountedContentView as? PaneMountedContent)?.paneHostWillRetire()
         unmountContentView()
+        clearPendingFocusRestoration()
         onAttachedToWindow = nil
         removeFromSuperview()
     }
