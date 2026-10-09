@@ -14,38 +14,46 @@ struct WorktreeNewPreflightTests {
             (["--repo", "repositories/main", "--json"], Self.request(start: Self.repository), true),
             (["--no-fork"], Self.request(materialization: .checkout), false),
             (["--no-fetch"], Self.request(fetchPolicy: .skip), false),
-            (["--from-branch", "release"], Self.request(startBranch: "release"), false),
-            (["--from-branch", "upstream/release"], Self.request(startBranch: "upstream/release"), false),
             (["--from", "linked/nested"], Self.request(source: .worktree(Self.source)), false),
-            (
-                ["--from", "linked/nested", "--from-branch", "origin/release"],
-                Self.request(source: .worktree(Self.source), startBranch: "origin/release"), false
-            ),
             (
                 ["--no-fork", "--from", "linked/nested"],
                 Self.request(source: .worktree(Self.source), materialization: .checkout), false
             ),
+            // D23: -c (or --create) creates; --from-branch and --changes-only only come with it.
+            (["-c"], Self.request(create: true), false),
+            (["--create"], Self.request(create: true), false),
+            (["-c", "--no-fork"], Self.request(create: true, materialization: .checkout), false),
+            (["-c", "--from-branch", "release"], Self.request(create: true, startBranch: "release"), false),
             (
-                ["--no-fork", "--from-branch", "release"],
-                Self.request(startBranch: "release", materialization: .checkout), false
+                ["--from-branch", "upstream/release", "--create"],
+                Self.request(create: true, startBranch: "upstream/release"), false
+            ),
+            (
+                ["-c", "--from", "linked/nested", "--from-branch", "origin/release"],
+                Self.request(create: true, source: .worktree(Self.source), startBranch: "origin/release"), false
+            ),
+            (
+                ["-c", "--no-fork", "--from-branch", "release"],
+                Self.request(create: true, startBranch: "release", materialization: .checkout), false
             ),
             (
                 [
                     "--from-branch", "release", "--from", "linked/nested", "--no-fork", "--no-fetch", "--repo",
-                    "repositories/main", "--json",
+                    "repositories/main", "-c", "--json",
                 ],
                 Self.request(
-                    start: Self.repository, source: .worktree(Self.source), startBranch: "release",
+                    start: Self.repository, create: true, source: .worktree(Self.source), startBranch: "release",
                     materialization: .checkout, fetchPolicy: .skip),
                 true
             ),
             (
-                ["--changes-only", "--from", "linked/nested"],
-                Self.request(source: .worktree(Self.source), materialization: .changesOnly), false
+                ["-c", "--changes-only", "--from", "linked/nested"],
+                Self.request(create: true, source: .worktree(Self.source), materialization: .changesOnly), false
             ),
             (
-                ["--changes-only", "--from", "linked/nested", "--no-fetch"],
-                Self.request(source: .worktree(Self.source), materialization: .changesOnly, fetchPolicy: .skip),
+                ["-c", "--changes-only", "--from", "linked/nested", "--no-fetch"],
+                Self.request(
+                    create: true, source: .worktree(Self.source), materialization: .changesOnly, fetchPolicy: .skip),
                 false
             ),
         ]
@@ -64,13 +72,19 @@ struct WorktreeNewPreflightTests {
         let rows: [(arguments: [String], error: WorktreeCommandLineArgumentError)] = [
             (["--tracked-only"], .unknownOption),
             (["--tracked-only", "--from", "linked/nested"], .unknownOption),
+            // D23: the options that only create need -c.
+            (["--from-branch", "release"], .requiresCreate("--from-branch")),
+            (["--changes-only", "--from", "linked/nested"], .requiresCreate("--changes-only")),
+            (["--from", "linked/nested", "--from-branch", "release", "--no-fork"], .requiresCreate("--from-branch")),
+            (["-c", "--create"], .duplicateOption("--create")),
+            (["-c", "-c"], .duplicateOption("-c")),
             (
-                ["--changes-only", "--no-fork", "--from", "linked/nested"],
+                ["-c", "--changes-only", "--no-fork", "--from", "linked/nested"],
                 .conflictingOptions("--changes-only", "--no-fork")
             ),
-            (["--changes-only", "--no-fork"], .conflictingOptions("--changes-only", "--no-fork")),
+            (["-c", "--changes-only", "--no-fork"], .conflictingOptions("--changes-only", "--no-fork")),
             (
-                ["--changes-only", "--from", "linked/nested", "--from-branch", "release"],
+                ["-c", "--changes-only", "--from", "linked/nested", "--from-branch", "release"],
                 .conflictingOptions("--changes-only", "--from-branch")
             ),
             (["--no-fork", "--no-fork"], .duplicateOption("--no-fork")),
@@ -93,9 +107,11 @@ struct WorktreeNewPreflightTests {
             }
         }
         for subcommand in [["list"], ["remove", "feat"], ["prune"]] {
-            #expect(throws: WorktreeCommandLineArgumentError.unsupportedOption) {
-                try WorktreeCommandLineArgumentParser.parse(
-                    subcommand + ["--no-fork"], currentDirectory: Self.currentDirectory)
+            for option in ["--no-fork", "-c", "--create"] {
+                #expect(throws: WorktreeCommandLineArgumentError.unsupportedOption) {
+                    try WorktreeCommandLineArgumentParser.parse(
+                        subcommand + [option], currentDirectory: Self.currentDirectory)
+                }
             }
         }
     }
@@ -105,7 +121,7 @@ struct WorktreeNewPreflightTests {
         for json in [false, true] {
             let probe = WorktreeCreationCommandLineProbe()
             let exit = await WorktreeCommandLine.run(
-                arguments: ["new", "feature/example", "--changes-only"] + (json ? ["--json"] : []),
+                arguments: ["new", "-c", "feature/example", "--changes-only"] + (json ? ["--json"] : []),
                 currentDirectory: URL(fileURLWithPath: "/tmp"),
                 output: { probe.appendOutput($0) }, errorOutput: { probe.appendError($0) }
             )
@@ -117,7 +133,7 @@ struct WorktreeNewPreflightTests {
         }
     }
 
-    @Test("removed fork verb names new --from on stderr even with JSON")
+    @Test("removed fork verb names new -c --from on stderr even with JSON")
     func rejectsRemovedForkVerb() async {
         for options in [[], ["--json"]] {
             let probe = WorktreeCreationCommandLineProbe()
@@ -129,19 +145,20 @@ struct WorktreeNewPreflightTests {
             #expect(exit == 64)
             #expect(probe.outputSnapshot().isEmpty)
             #expect(probe.errorSnapshot().count == 1)
-            #expect(probe.errorSnapshot().first?.contains("new --from") == true)
+            #expect(probe.errorSnapshot().first?.contains("new -c <branch> --from <worktree>") == true)
         }
     }
 
     private static func request(
         start: URL = currentDirectory,
+        create: Bool = false,
         source: WorktreeCreateSource = .mainWorktree,
         startBranch: String? = nil,
         materialization: WorktreeCreateMaterialization = .copyOnWrite,
         fetchPolicy: WorktreeFetchPolicy = .fetch
     ) -> WorktreeCreateRequest {
         WorktreeCreateRequest(
-            start: start, branch: "feat", source: source, startBranch: startBranch,
+            start: start, branch: "feat", create: create, source: source, startBranch: startBranch,
             materialization: materialization, fetchPolicy: fetchPolicy)
     }
 }

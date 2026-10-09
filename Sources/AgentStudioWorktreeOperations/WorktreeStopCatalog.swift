@@ -24,6 +24,8 @@ package enum WorktreeStopReason: String, CaseIterable, Codable, Sendable {
     case branchCheckedOut
     case branchMoved
     case branchAlreadyExists
+    case noSuchBranch
+    case originCheckFailed
     case configInvalid
     case sourceIndexUnreadable
     case sourceIndexUnsupported
@@ -170,8 +172,8 @@ package enum WorktreeStopCatalog {
             "The archive destination is inside the worktree being removed."
         case .forkUnavailable:
             "A copy-on-write fork is unavailable."
-        case .changesOnlyNeedsFrom, .branchCheckedOut, .branchMoved, .branchAlreadyExists, .configInvalid,
-            .sourceIndexUnreadable, .sourceIndexUnsupported:
+        case .changesOnlyNeedsFrom, .branchCheckedOut, .branchMoved, .branchAlreadyExists, .noSuchBranch,
+            .originCheckFailed, .configInvalid, .sourceIndexUnreadable, .sourceIndexUnsupported:
             creationMessage(for: reason)
         }
     }
@@ -186,6 +188,10 @@ package enum WorktreeStopCatalog {
             "The branch moved after it was resolved, so nothing was changed."
         case .branchAlreadyExists:
             "A branch with that name already exists."
+        case .noSuchBranch:
+            "No branch with that name exists locally or on origin."
+        case .originCheckFailed:
+            "Origin could not be asked whether the branch exists, so nothing was created."
         case .configInvalid:
             "The repository copy configuration could not be read."
         case .sourceIndexUnreadable:
@@ -226,7 +232,7 @@ package enum WorktreeStopCatalog {
                 flag("-f", effect: "Remove the worktree and discard its uncommitted changes."),
                 command("commit the changes first", effect: "Keep the changes in the repository history."),
                 command(
-                    "agentstudio worktree new <branch> --changes-only --from <path>",
+                    "agentstudio worktree new -c <branch> --changes-only --from <path>",
                     effect: "Copy the worktree's changes before removing it."
                 ),
             ]
@@ -276,6 +282,10 @@ package enum WorktreeStopCatalog {
                 ),
                 command("use another branch name", effect: "Create a new branch under a name that does not exist."),
             ]
+        case .noSuchBranch:
+            return [command("agentstudio worktree new -c <branch>", effect: "Create it as a new branch.")]
+        case .originCheckFailed:
+            return [flag("--no-fetch", effect: "Answer from the origin/<branch> ref on disk instead of asking origin.")]
         case .sourceIndexUnreadable:
             return [command("retry", effect: "Retry after the source can be read."), noForkOption]
         case .sourceIndexUnsupported:

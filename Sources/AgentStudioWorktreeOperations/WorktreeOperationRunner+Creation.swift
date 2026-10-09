@@ -30,6 +30,7 @@ extension WorktreeOperationRunner {
 
         let branchRequest = WorktreeCreationBranchRequest(
             branch: prepared.branchName.rawValue,
+            create: request.create,
             startBranch: request.startBranch,
             changesOnly: request.materialization == .changesOnly
         )
@@ -106,29 +107,44 @@ extension WorktreeOperationRunner {
         }
     }
 
-    /// LR30's fetch, then the branch resolution. LR1 step (1) already ran in preflight.
+    /// `-c`'s name check (D23), LR30's fetch, then the branch resolution. LR1 step (1) already ran in preflight.
     private func decideBranch(
         _ branchRequest: WorktreeCreationBranchRequest,
         prepared: PreparedWorktreeCreation,
         fetchPolicy: WorktreeFetchPolicy
     ) async -> WorktreeCreationStep<WorktreeCreationBranchDecision> {
         let resolver = WorktreeCreationBranchResolver(client: client)
+        let fetchStep = WorktreeCreationFetchStep(remoteClient: remoteClient)
         let remoteNames: [String]
         do throws(GitDataPlaneError) {
-            if branchRequest.changesOnly {
-                remoteNames = []
-            } else {
-                remoteNames = try await client.remoteNames(for: prepared.repositoryPath)
-            }
+            remoteNames = try await client.remoteNames(for: prepared.repositoryPath)
         } catch {
             return .outcome(.failed(WorktreeOperationErrorMapper.readFailure(error)))
         }
 
-        let fetch = await WorktreeCreationFetchStep(remoteClient: remoteClient).run(
-            repositoryPath: prepared.repositoryPath,
-            target: WorktreeCreationBranchResolver.fetchTarget(
-                for: branchRequest, remoteNames: remoteNames, fetchPolicy: fetchPolicy)
-        )
+        let fetchTarget = WorktreeCreationBranchResolver.fetchTarget(
+            for: branchRequest, remoteNames: remoteNames, fetchPolicy: fetchPolicy)
+        let fetch: WorktreeCreationFetchStatus
+        if branchRequest.create {
+            switch await resolver.checkNameIsFree(
+                branchRequest.branch, repositoryPath: prepared.repositoryPath, localBranches: prepared.branches,
+                originAnswer: await originNameAnswer(
+                    branchRequest.branch, prepared: prepared, remoteNames: remoteNames, fetchPolicy: fetchPolicy,
+                    fetchStep: fetchStep))
+            {
+            case .refused(let stop):
+                return .outcome(.refused(.creationStopped(stop)))
+            case .unreadable(let error):
+                return .outcome(.failed(WorktreeOperationErrorMapper.readFailure(error)))
+            case .free(let originAnswer) where branchRequest.startBranch == nil && !branchRequest.changesOnly:
+                // With nothing to refresh, origin's answer about the name is the creation fetch.
+                fetch = originAnswer
+            case .free:
+                fetch = await fetchStep.run(repositoryPath: prepared.repositoryPath, target: fetchTarget)
+            }
+        } else {
+            fetch = await fetchStep.run(repositoryPath: prepared.repositoryPath, target: fetchTarget)
+        }
         switch await resolver.resolve(
             branchRequest, repositoryPath: prepared.repositoryPath, localBranches: prepared.branches,
             remoteNames: remoteNames, fetch: fetch)
@@ -140,6 +156,21 @@ extension WorktreeOperationRunner {
         case .unreadable(let error):
             return .outcome(.failed(WorktreeOperationErrorMapper.readFailure(error)).carryingCreationFetch(fetch))
         }
+    }
+
+    /// Asks origin about `-c`'s name, unless `--no-fetch` or there is no origin. It fetches nothing (LR30).
+    private func originNameAnswer(
+        _ branch: String,
+        prepared: PreparedWorktreeCreation,
+        remoteNames: [String],
+        fetchPolicy: WorktreeFetchPolicy,
+        fetchStep: WorktreeCreationFetchStep
+    ) async -> WorktreeOriginNameAnswer {
+        let origin = WorktreeStartReference.defaultRemoteName
+        guard fetchPolicy == .fetch else { return .notAskedNoFetch(originConfigured: remoteNames.contains(origin)) }
+        guard remoteNames.contains(origin) else { return .noOrigin }
+        return .asked(
+            await fetchStep.probe(repositoryPath: prepared.repositoryPath, remoteName: origin, branchName: branch))
     }
 }
 

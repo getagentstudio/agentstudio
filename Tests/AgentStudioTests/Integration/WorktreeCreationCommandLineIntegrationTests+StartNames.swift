@@ -18,7 +18,7 @@ extension WorktreeCreationCommandLineIntegrationTests {
         try await fixture.git("branch", localStart, "main")
         let remoteTip = try await fixture.advance(remoteStart, file: "long.txt")
 
-        let fromLocal = await fixture.runNew("feature/short-local", ["--from-branch", localStart], json: true)
+        let fromLocal = await fixture.runNew("feature/short-local", ["-c", "--from-branch", localStart], json: true)
         #expect(fromLocal.exit == 0, "\(fromLocal.output)")
         #expect(
             try fromLocal.created().start
@@ -27,13 +27,13 @@ extension WorktreeCreationCommandLineIntegrationTests {
                     localOnlyCommits: nil))
 
         let fromRemote = await fixture.runNew(
-            "feature/short-remote", ["--from-branch", "origin/\(remoteStart)"], json: true)
+            "feature/short-remote", ["-c", "--from-branch", "origin/\(remoteStart)"], json: true)
         #expect(fromRemote.exit == 0, "\(fromRemote.output)")
         #expect(try fromRemote.created().start.commit == remoteTip)
 
         // A malformed start is still refused, and a new branch name still gets the full check before the
         // branch-use read: the length cap, and HEAD, which `git check-ref-format --branch` rejects.
-        let malformed = await fixture.runNew("feature/short-bad", ["--from-branch", "release..bad"], json: true)
+        let malformed = await fixture.runNew("feature/short-bad", ["-c", "--from-branch", "release..bad"], json: true)
         #expect(malformed.exit == 1)
         #expect(try malformed.refused().reason == "startBranchNotFound")
         let tooLong = await fixture.runNew(localStart + "-new", json: true)
@@ -59,7 +59,7 @@ extension WorktreeCreationCommandLineIntegrationTests {
         ]
         for (start, branch) in startsAndBranches {
             try await fixture.git("branch", start, "main")
-            let created = await fixture.runNew(branch, ["--from-branch", start], json: true)
+            let created = await fixture.runNew(branch, ["-c", "--from-branch", start], json: true)
             #expect(created.exit == 0, "\(start): \(created.output)")
             #expect(
                 try created.created().start
@@ -69,7 +69,7 @@ extension WorktreeCreationCommandLineIntegrationTests {
                 "\(start)")
         }
 
-        let spaced = await fixture.runNew("feature/ascii-space", ["--from-branch", "release/a b"], json: true)
+        let spaced = await fixture.runNew("feature/ascii-space", ["-c", "--from-branch", "release/a b"], json: true)
         #expect(spaced.exit == 1)
         #expect(try spaced.refused().reason == "startBranchNotFound")
     }
@@ -104,7 +104,7 @@ extension WorktreeCreationCommandLineIntegrationTests {
         try await fixture.git("update-ref", "refs/heads/@", sideTip)
         #expect(sideTip != fixture.mainCommit)
 
-        let created = await fixture.runNew("feature/at", ["--from-branch", "@"], json: true)
+        let created = await fixture.runNew("feature/at", ["-c", "--from-branch", "@"], json: true)
 
         #expect(created.exit == 0, "\(created.output)")
         #expect(
@@ -120,7 +120,8 @@ extension WorktreeCreationCommandLineIntegrationTests {
         defer { fixture.destroy() }
         let originTip = try await fixture.advance("release/a./b", file: "dotted.txt")
 
-        let created = await fixture.runNew("feature/dotted", ["--from-branch", "origin/release/a./b"], json: true)
+        let created = await fixture.runNew(
+            "feature/dotted", ["-c", "--from-branch", "origin/release/a./b"], json: true)
 
         #expect(created.exit == 0, "\(created.output)")
         #expect(
@@ -144,7 +145,7 @@ extension WorktreeCreationCommandLineIntegrationTests {
         let fromOrigin = WorktreeCreationCommandLineDocuments.StartDocument(
             commit: originTip, from: "remoteBranch", ref: "refs/remotes/origin/\u{301}x", localOnlyCommits: nil)
 
-        let created = await fixture.runNew("feature/mark", ["--from-branch", "origin/\u{301}x"], json: true)
+        let created = await fixture.runNew("feature/mark", ["-c", "--from-branch", "origin/\u{301}x"], json: true)
 
         #expect(created.exit == 0, "\(created.output)")
         #expect(try created.created().start == fromOrigin)
@@ -152,7 +153,7 @@ extension WorktreeCreationCommandLineIntegrationTests {
         // Without a fetch, the start is the tracking ref already on disk, not origin's newer tip.
         let newerTip = try await fixture.advance("\u{301}x", file: "mark-again.txt")
         let offline = await fixture.runNew(
-            "feature/mark-offline", ["--no-fetch", "--from-branch", "origin/\u{301}x"], json: true)
+            "feature/mark-offline", ["-c", "--no-fetch", "--from-branch", "origin/\u{301}x"], json: true)
 
         #expect(offline.exit == 0, "\(offline.output)")
         #expect(try offline.created().start == fromOrigin)
@@ -168,7 +169,7 @@ extension WorktreeCreationCommandLineIntegrationTests {
         let originTip = try await fixture.advance("a\u{2028}b", file: "line.txt")
         #expect(!(try await fixture.git("for-each-ref", "--format=%(objectname)").contains(originTip)))
 
-        let created = await fixture.runNew("feature/line", ["--from-branch", "origin/a\u{2028}b"], json: true)
+        let created = await fixture.runNew("feature/line", ["-c", "--from-branch", "origin/a\u{2028}b"], json: true)
 
         #expect(created.exit == 0, "\(created.output)")
         let document = try created.created()

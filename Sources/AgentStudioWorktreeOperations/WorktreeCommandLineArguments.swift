@@ -22,13 +22,15 @@ package enum WorktreeCommandLineArgumentError: Error, Equatable, Sendable {
     case emptyOptionValue(String)
     case duplicateOption(String)
     case conflictingOptions(String, String)
+    /// D23: an option that only creates a branch, used without `-c`.
+    case requiresCreate(String)
 
     package var message: String {
         switch self {
         case .missingSubcommand:
             "usage: agentstudio worktree new|list|remove|prune [target...]"
         case .unknownSubcommand:
-            "unknown worktree subcommand; expected new, list, remove, or prune; use new --from <worktree> to copy a source"
+            "unknown worktree subcommand; expected new, list, remove, or prune; use new -c <branch> --from <worktree> to copy a source"
         case .missingBranch:
             "a branch name is required for worktree new"
         case .missingTarget:
@@ -51,6 +53,8 @@ package enum WorktreeCommandLineArgumentError: Error, Equatable, Sendable {
             "\(option) may be specified only once"
         case .conflictingOptions(let first, let second):
             "\(first) and \(second) cannot be used together"
+        case .requiresCreate(let option):
+            "\(option) creates a new branch, so it needs -c (--create)"
         }
     }
 }
@@ -235,6 +239,15 @@ package enum WorktreeCommandLineArgumentParser {
             throw WorktreeCommandLineArgumentError.unexpectedArgument
         }
 
+        // D23: these only create a branch, so they need -c.
+        if !parsedArguments.create {
+            if parsedArguments.startBranch != nil {
+                throw WorktreeCommandLineArgumentError.requiresCreate("--from-branch")
+            }
+            if parsedArguments.changesOnly {
+                throw WorktreeCommandLineArgumentError.requiresCreate("--changes-only")
+            }
+        }
         let materialization: WorktreeCreateMaterialization
         if parsedArguments.changesOnly {
             // A changes-only copy is a new branch at the source's HEAD commit, never a plain checkout.
@@ -255,6 +268,7 @@ package enum WorktreeCommandLineArgumentParser {
             WorktreeCreateRequest(
                 start: parsedArguments.repositoryPath ?? callerDirectory,
                 branch: branch,
+                create: parsedArguments.create,
                 source: parsedArguments.sourcePath.map(WorktreeCreateSource.worktree) ?? .mainWorktree,
                 startBranch: parsedArguments.startBranch,
                 materialization: materialization,
@@ -271,6 +285,7 @@ private struct ParsedArguments {
     let usesJSONOutput: Bool
     let fetchPolicy: WorktreeFetchPolicy
     let startBranch: String?
+    let create: Bool
     let noFork: Bool
     let changesOnly: Bool
     let discardWorkingChanges: Bool
@@ -291,6 +306,7 @@ private struct ParsedArgumentAccumulator {
     var startBranch: String?
     var usesJSONOutput = false
     var fetchPolicy = WorktreeFetchPolicy.fetch
+    var create = false
     var noFork = false
     var changesOnly = false
     var discardWorkingChanges = false
@@ -311,6 +327,16 @@ private struct ParsedArgumentAccumulator {
                 throw WorktreeCommandLineArgumentError.duplicateOption(argument)
             }
             usesJSONOutput = true
+            return true
+        }
+        if argument == "-c" || argument == "--create" {
+            guard subcommand == "new" else {
+                throw WorktreeCommandLineArgumentError.unsupportedOption
+            }
+            guard seenFlags.insert("-c").inserted else {
+                throw WorktreeCommandLineArgumentError.duplicateOption(argument)
+            }
+            create = true
             return true
         }
         if argument == "--changes-only" || argument == "--no-fork" {
@@ -454,6 +480,7 @@ private struct ParsedArgumentAccumulator {
             usesJSONOutput: usesJSONOutput,
             fetchPolicy: fetchPolicy,
             startBranch: startBranch,
+            create: create,
             noFork: noFork,
             changesOnly: changesOnly,
             discardWorkingChanges: discardWorkingChanges,

@@ -96,7 +96,7 @@ extension WorktreeCommandLineFormatter {
                 effect: "Stash the changed attributes, then retry --changes-only."
             ),
             WorktreeStopOption(
-                action: .command("agentstudio worktree new <branch> --from <source>"),
+                action: .command("agentstudio worktree new -c <branch> --from <source>"),
                 effect: "Use the APFS copy-on-write fork without --changes-only."
             ),
         ]

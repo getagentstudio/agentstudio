@@ -4,15 +4,38 @@ import Foundation
 /// What `new` asked for, as LR1 reads it.
 package struct WorktreeCreationBranchRequest: Sendable, Equatable {
     package let branch: String
-    /// `--from-branch <start>` as typed.
+    /// `-c` (D23): create `<branch>`; without it, open an existing one.
+    package let create: Bool
+    /// `--from-branch <start>` as typed; only with `-c`.
     package let startBranch: String?
     package let changesOnly: Bool
 
-    package init(branch: String, startBranch: String?, changesOnly: Bool) {
+    package init(branch: String, create: Bool, startBranch: String?, changesOnly: Bool) {
         self.branch = branch
+        self.create = create
         self.startBranch = startBranch
         self.changesOnly = changesOnly
     }
+}
+
+/// D23: whether `-c` may create its name.
+package enum WorktreeCreateNameCheck: Sendable, Equatable {
+    /// The name is free. `originAnswer` is origin's reply in LR30's terms, which a `-c` without a start
+    /// reports as its creation fetch.
+    case free(originAnswer: WorktreeCreationFetchStatus)
+    /// `branchAlreadyExists`, or `originCheckFailed` when origin couldn't be asked: `-c` refuses rather than
+    /// risk creating a branch origin already has.
+    case refused(WorktreeCreationStop)
+    case unreadable(GitDataPlaneError)
+}
+
+/// What origin said about `-c`'s name, or why it wasn't asked.
+package enum WorktreeOriginNameAnswer: Sendable, Equatable {
+    case asked(WorktreeRemoteBranchProbe)
+    /// `--no-fetch`: the `origin/<branch>` ref on disk answers, when origin is configured.
+    case notAskedNoFetch(originConfigured: Bool)
+    /// No `origin` remote is configured.
+    case noOrigin
 }
 
 /// LR1's answer: the branch the worktree ends on, at which start, and what the output says.
@@ -43,7 +66,7 @@ package enum WorktreeBranchResolution: Sendable, Equatable {
 /// `--from-branch <start>` read against the configured remotes: a first segment naming a remote
 /// means that remote's branch, even over a local branch literally named `origin/x`.
 ///
-/// Names are matched with canonical `==` on purpose, for the remote here and for the same-name rule:
+/// Names are matched with canonical `==` on purpose, for the remote here and for `-c`'s local-name check:
 /// git on macOS precomposes typed names (`core.precomposeunicode`), so a spelling in another Unicode
 /// normalization names the same remote or branch. Only syntax validity is decided on bytes.
 package enum WorktreeStartReference: Sendable, Equatable {
@@ -115,6 +138,46 @@ package struct WorktreeCreationBranchResolver: Sendable {
         return .branch(remoteName: reference.remoteName, branchName: reference.branchName)
     }
 
+    /// D23: `-c` refuses a name that exists locally or on origin. Origin's own answer decides; with `--no-fetch`
+    /// the `origin/<branch>` ref on disk does, and with no origin remote only local branches count.
+    @concurrent
+    package func checkNameIsFree(
+        _ branch: String,
+        repositoryPath: URL,
+        localBranches: [GitBranchSnapshot],
+        originAnswer: WorktreeOriginNameAnswer
+    ) async -> WorktreeCreateNameCheck {
+        let origin = WorktreeStartReference.defaultRemoteName
+        guard !localBranches.contains(where: { $0.name == branch }) else {
+            return .refused(.branchAlreadyExists(branch: branch))
+        }
+        switch originAnswer {
+        case .asked(.present):
+            return .refused(.branchAlreadyExists(branch: branch, remoteName: origin))
+        case .asked(.absent):
+            return .free(originAnswer: .notOnRemote(remoteName: origin, branchName: branch))
+        case .asked(.failed(let failure)):
+            return .refused(.originCheckFailed(branch: branch, remoteName: origin, reason: failure.reason))
+        case .noOrigin:
+            return .free(originAnswer: .skipped(.noRemote))
+        case .notAskedNoFetch(originConfigured: false):
+            return .free(originAnswer: .skipped(.noFetchFlag))
+        case .notAskedNoFetch(originConfigured: true):
+            break
+        }
+        let reads = WorktreeBranchReads(
+            client: client, repositoryPath: repositoryPath, localBranches: localBranches, remoteNames: [origin],
+            fetch: .skipped(.noFetchFlag))
+        do throws(GitDataPlaneError) {
+            guard try await reads.remoteTip(remoteName: origin, branchName: branch) == nil else {
+                return .refused(.branchAlreadyExists(branch: branch, remoteName: origin))
+            }
+            return .free(originAnswer: .skipped(.noFetchFlag))
+        } catch {
+            return .unreadable(error)
+        }
+    }
+
     /// Steps (2)–(4), `--from-branch`, and `--changes-only`, after LR30's fetch.
     @concurrent
     package func resolve(
@@ -128,57 +191,41 @@ package struct WorktreeCreationBranchResolver: Sendable {
             client: client, repositoryPath: repositoryPath, localBranches: localBranches,
             remoteNames: remoteNames, fetch: fetch)
         do throws(GitDataPlaneError) {
-            if request.changesOnly {
-                return Self.resolveChangesOnly(request, localBranches: localBranches)
+            guard request.create else {
+                return try await resolveExistingBranch(
+                    request.branch, remoteName: WorktreeStartReference.defaultRemoteName, reads: reads)
             }
-            guard let startBranch = request.startBranch else {
-                return try await resolveOwnBranch(
-                    request.branch, remoteName: WorktreeStartReference.defaultRemoteName, sameNameStart: nil,
-                    reads: reads)
+            // `-c`'s name was checked free before this (D23); `--changes-only` always starts at the source's HEAD.
+            guard let startBranch = request.startBranch, !request.changesOnly else {
+                return .planned(Self.sourceHeadPlan)
             }
             let start = WorktreeStartReference.parse(startBranch, remoteNames: remoteNames)
-            if start.branchName == request.branch {
-                return try await resolveOwnBranch(
-                    request.branch, remoteName: start.remoteName, sameNameStart: startBranch, reads: reads)
-            }
-            return try await resolveOtherStart(request.branch, start: start, typedStart: startBranch, reads: reads)
+            return try await resolveStart(start, typedStart: startBranch, reads: reads)
         } catch {
             return .unreadable(error)
         }
     }
 
+    /// The branch LR30 reports on: `-c --from-branch`'s start, else `<branch>` on origin.
     private static func comparedReference(
         for request: WorktreeCreationBranchRequest,
         remoteNames: [String]
     ) -> WorktreeStartReference {
-        guard let startBranch = request.startBranch else {
+        guard request.create, let startBranch = request.startBranch else {
             return .unqualified(branchName: request.branch)
         }
-        let start = WorktreeStartReference.parse(startBranch, remoteNames: remoteNames)
-        // Canonical `==` on purpose, here and in `resolve`: git on macOS precomposes typed names.
-        guard start.branchName == request.branch else { return start }
-        return .remote(remoteName: start.remoteName, branchName: request.branch)
+        return WorktreeStartReference.parse(startBranch, remoteNames: remoteNames)
     }
 
-    /// `--changes-only` carries changes only at the source's own commit, so it only creates.
-    private static func resolveChangesOnly(
-        _ request: WorktreeCreationBranchRequest,
-        localBranches: [GitBranchSnapshot]
-    ) -> WorktreeBranchResolution {
-        guard !localBranches.contains(where: { $0.name == request.branch }) else {
-            return .refused(.creationStopped(.branchAlreadyExists(branch: request.branch)))
-        }
-        return .planned(
-            WorktreeBranchPlan(
-                target: .newBranch(start: .sourceHead, upstream: nil), status: .created, upstreamReference: nil,
-                startSource: .sourceHead, startReference: nil, localOnlyCommits: nil))
-    }
+    /// `-c` with no start, and `--changes-only`: a new branch at the source's HEAD, with no upstream.
+    private static let sourceHeadPlan = WorktreeBranchPlan(
+        target: .newBranch(start: .sourceHead, upstream: nil), status: .created, upstreamReference: nil,
+        startSource: .sourceHead, startReference: nil, localOnlyCommits: nil)
 
-    /// Steps (2)–(4): `<branch>` itself, compared with `<remoteName>/<branch>`.
-    private func resolveOwnBranch(
+    /// Steps (2)–(4) without `-c`: `<branch>` itself, compared with `<remoteName>/<branch>`.
+    private func resolveExistingBranch(
         _ branch: String,
         remoteName: String,
-        sameNameStart: String?,
         reads: WorktreeBranchReads
     ) async throws(GitDataPlaneError) -> WorktreeBranchResolution {
         let remoteReference = "refs/remotes/\(remoteName)/\(branch)"
@@ -219,26 +266,16 @@ package struct WorktreeCreationBranchResolver: Sendable {
                     status: .created, upstreamReference: remoteReference, startSource: .remoteBranch,
                     startReference: remoteReference, localOnlyCommits: nil))
         }
-        if let sameNameStart {
-            // A same-name start never falls through to step (4).
-            return .refused(.startBranchNotFound(sameNameStart))
-        }
-        return .planned(
-            WorktreeBranchPlan(
-                target: .newBranch(start: .sourceHead, upstream: nil), status: .created, upstreamReference: nil,
-                startSource: .sourceHead, startReference: nil, localOnlyCommits: nil))
+        // Step (4): opening needs a branch; creating one takes `-c` (D23).
+        return .refused(.creationStopped(.noSuchBranch(branch: branch)))
     }
 
-    /// `--from-branch` naming another branch: always a new `<branch>`, at the start's commit.
-    private func resolveOtherStart(
-        _ branch: String,
-        start: WorktreeStartReference,
+    /// `-c --from-branch`: a new `<branch>` at the start's commit.
+    private func resolveStart(
+        _ start: WorktreeStartReference,
         typedStart: String,
         reads: WorktreeBranchReads
     ) async throws(GitDataPlaneError) -> WorktreeBranchResolution {
-        guard reads.localBranch(named: branch) == nil else {
-            return .refused(.creationStopped(.branchAlreadyExists(branch: branch)))
-        }
         // No branch with a malformed name can exist, and reading one would fail as a bad revision. A start
         // names an existing branch (D15), so the new-branch length cap doesn't apply.
         guard WorktreeBranchName.isWellFormedExistingName(start.branchName) else {

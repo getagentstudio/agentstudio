@@ -34,7 +34,7 @@ struct WorktreeSourcePreflightIntegrationTests {
         defer { try? FileManager.default.removeItem(at: destination) }
         let probe = WorktreeCreationCommandLineProbe()
         let exit = await WorktreeCommandLine.run(
-            arguments: ["new", branch, "--json"], currentDirectory: linked,
+            arguments: ["new", "-c", branch, "--json"], currentDirectory: linked,
             output: { probe.appendOutput($0) }, errorOutput: { probe.appendError($0) })
         #expect(exit == 0)
         #expect(probe.errorSnapshot().isEmpty)
@@ -53,6 +53,7 @@ struct WorktreeSourcePreflightIntegrationTests {
         struct AlternativesCase {
             let source: WorktreeCreateSource
             let branch: String
+            let create: Bool
             let startBranch: String?
             let offersChangesOnly: Bool
         }
@@ -68,26 +69,28 @@ struct WorktreeSourcePreflightIntegrationTests {
         let cases = [
             // The main worktree as the source: --changes-only needs --from.
             AlternativesCase(
-                source: .mainWorktree, branch: "feature/unavailable", startBranch: nil, offersChangesOnly: false),
-            // --from creating a new branch at the source's HEAD: --changes-only would do it without a fork.
+                source: .mainWorktree, branch: "feature/unavailable", create: true, startBranch: nil,
+                offersChangesOnly: false),
+            // -c --from creating a new branch at the source's HEAD: --changes-only would do it without a fork.
             AlternativesCase(
-                source: .worktree(canonicalRepository), branch: "feature/unavailable", startBranch: nil,
+                source: .worktree(canonicalRepository), branch: "feature/unavailable", create: true, startBranch: nil,
                 offersChangesOnly: true),
             // --from with --from-branch: --changes-only excludes --from-branch.
             AlternativesCase(
-                source: .worktree(canonicalRepository), branch: "feature/unavailable", startBranch: "main",
-                offersChangesOnly: false),
-            // --from opening an existing branch: --changes-only only creates.
+                source: .worktree(canonicalRepository), branch: "feature/unavailable", create: true,
+                startBranch: "main", offersChangesOnly: false),
+            // --from opening an existing branch (no -c): --changes-only only creates.
             AlternativesCase(
-                source: .worktree(canonicalRepository), branch: "feature/existing", startBranch: nil,
+                source: .worktree(canonicalRepository), branch: "feature/existing", create: false, startBranch: nil,
                 offersChangesOnly: false),
         ]
         for testCase in cases {
             let outcome = await WorktreeOperationRunner(client: client).run(
                 .create(
                     WorktreeCreateRequest(
-                        start: canonicalRepository, branch: testCase.branch, source: testCase.source,
-                        startBranch: testCase.startBranch, materialization: .copyOnWrite, fetchPolicy: .skip)
+                        start: canonicalRepository, branch: testCase.branch, create: testCase.create,
+                        source: testCase.source, startBranch: testCase.startBranch, materialization: .copyOnWrite,
+                        fetchPolicy: .skip)
                 ))
             #expect(
                 outcome
@@ -171,7 +174,7 @@ struct WorktreeSourcePreflightIntegrationTests {
         defer { try? FileManager.default.removeItem(at: destination) }
         let probe = WorktreeCreationCommandLineProbe()
         let exit = await WorktreeCommandLine.run(
-            arguments: ["new", branch, "--from", repository.path, "--json"], currentDirectory: repository,
+            arguments: ["new", "-c", branch, "--from", repository.path, "--json"], currentDirectory: repository,
             output: { probe.appendOutput($0) }, errorOutput: { probe.appendError($0) })
         #expect(exit == 0)
         #expect(probe.errorSnapshot().isEmpty)
@@ -202,7 +205,7 @@ struct WorktreeSourcePreflightIntegrationTests {
         let beforeStatus = try await worktreeCreationGit(at: repository, arguments: ["status", "--porcelain=v1"])
         let probe = WorktreeCreationCommandLineProbe()
         let exit = await WorktreeCommandLine.run(
-            arguments: ["new", branch, "--repo", repository.path, "--json"] + options,
+            arguments: ["new", "-c", branch, "--repo", repository.path, "--json"] + options,
             currentDirectory: repository,
             output: { probe.appendOutput($0) }, errorOutput: { probe.appendError($0) })
         #expect(probe.errorSnapshot().isEmpty)
@@ -237,7 +240,7 @@ struct WorktreeSourcePreflightIntegrationTests {
     ) async throws -> WorktreeCreationCommandLineDocuments.CreatedDocument {
         let probe = WorktreeCreationCommandLineProbe()
         let exit = await WorktreeCommandLine.run(
-            arguments: ["new", branch, "--repo", repository.path, "--json"], currentDirectory: repository,
+            arguments: ["new", "-c", branch, "--repo", repository.path, "--json"], currentDirectory: repository,
             output: { probe.appendOutput($0) }, errorOutput: { probe.appendError($0) })
         let output = try #require(probe.outputSnapshot().first)
         #expect(exit == 0, "default new did not create: \(output)")

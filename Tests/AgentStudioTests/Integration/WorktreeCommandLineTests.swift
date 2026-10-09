@@ -189,6 +189,9 @@ struct WorktreeCommandLineTests {
             ["new", "feature/new", "--no-fork", "--no-fork"],
             ["new", "feature/new", "--json", "--json"],
             ["new", "feature/fork", "--from", "--json"],
+            ["new", "feature/new", "--from-branch", "feature/start"],
+            ["new", "feature/new", "-c", "--create"],
+            ["list", "-c"],
             ["fork", "feature/fork", "--from-branch", "feature/start"],
             ["fork", "feature/fork", "--changes-only", "--changes-only"],
             ["new"],
@@ -370,9 +373,9 @@ struct WorktreeCommandLineTests {
                         GitWorktreeWorkingStateRefusal(reason: .attributesChanged, relativePath: ".gitattributes"))
                 ),
                 humanText:
-                    "refused: unsupportedWorkingState .gitattributes attributesChanged; options: [commit the changed .gitattributes first: Commit the changed attributes, then retry --changes-only.; stash the changed .gitattributes first: Stash the changed attributes, then retry --changes-only.; agentstudio worktree new <branch> --from <source>: Use the APFS copy-on-write fork without --changes-only.]",
+                    "refused: unsupportedWorkingState .gitattributes attributesChanged; options: [commit the changed .gitattributes first: Commit the changed attributes, then retry --changes-only.; stash the changed .gitattributes first: Stash the changed attributes, then retry --changes-only.; agentstudio worktree new -c <branch> --from <source>: Use the APFS copy-on-write fork without --changes-only.]",
                 jsonText:
-                    "{\"detail\":\"attributesChanged\",\"options\":[{\"command\":\"commit the changed .gitattributes first\",\"effect\":\"Commit the changed attributes, then retry --changes-only.\"},{\"command\":\"stash the changed .gitattributes first\",\"effect\":\"Stash the changed attributes, then retry --changes-only.\"},{\"command\":\"agentstudio worktree new <branch> --from <source>\",\"effect\":\"Use the APFS copy-on-write fork without --changes-only.\"}],\"outcome\":\"refused\",\"path\":\".gitattributes\",\"reason\":\"unsupportedWorkingState\"}",
+                    "{\"detail\":\"attributesChanged\",\"options\":[{\"command\":\"commit the changed .gitattributes first\",\"effect\":\"Commit the changed attributes, then retry --changes-only.\"},{\"command\":\"stash the changed .gitattributes first\",\"effect\":\"Stash the changed attributes, then retry --changes-only.\"},{\"command\":\"agentstudio worktree new -c <branch> --from <source>\",\"effect\":\"Use the APFS copy-on-write fork without --changes-only.\"}],\"outcome\":\"refused\",\"path\":\".gitattributes\",\"reason\":\"unsupportedWorkingState\"}",
                 exitCode: 1
             ),
             FormatterGolden(
@@ -459,7 +462,7 @@ struct WorktreeCommandLineTests {
 
         let createProbe = WorktreeCommandLineTestProbe()
         let createExitCode = await WorktreeCommandLine.run(
-            arguments: ["new", branch, "--no-fork", "--repo", repository.path],
+            arguments: ["new", "-c", branch, "--no-fork", "--repo", repository.path],
             currentDirectory: outsideRepository,
             output: { createProbe.appendOutput($0) },
             errorOutput: { createProbe.appendErrorOutput($0) }

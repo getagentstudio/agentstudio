@@ -6,10 +6,11 @@ This guide covers the worktree commands in Agent Studio 0.0.109 and later.
 
 Agent Studio **0.0.109** ships the full lifecycle: `new`, `list` with state,
 `remove`, and `prune`. `new` copies a source checkout, then puts the copy on
-the branch you named. It fetches that branch first, opens a branch that
-already exists, and takes `--from-branch` from any local or remote branch.
-`fork` is gone; use `new --from <worktree>`. Upgrade with
-`brew upgrade --cask agent-studio`.
+the branch you named, as `wt switch` does: `new <branch>` opens a branch that
+already exists, locally or on origin (fetched first), and `new -c <branch>`
+(`--create`) creates a new one, at the source's HEAD or, with `--from-branch`,
+at any local or remote branch. `fork` is gone; use `new -c <branch> --from <worktree>`.
+Upgrade with `brew upgrade --cask agent-studio`.
 
 ### Older helpers (0.0.107 and 0.0.108)
 
@@ -19,6 +20,8 @@ already exists, and takes `--from-branch` from any local or remote branch.
   `--from` with `--from-branch` is a usage error.
 - `new` refuses a branch that already exists (`branchAlreadyExists`) and
   never fetches.
+- `new <name>` creates the branch when it doesn't exist; there is no `-c`.
+  0.0.109 refuses that (`noSuchBranch`) and creates only with `new -c`.
 - `new` prints the copy report on extra lines after `created …`.
 
 ### Older helpers (0.0.106 and earlier)
@@ -65,17 +68,20 @@ production helper.
 
 | Command | Behavior | Options |
 |---|---|---|
-| `"$ASW" worktree new <branch>` | Copies the main worktree, or the worktree named by `--from`, and puts the copy on `<branch>`: an existing branch, origin's branch, or a new one (see [How `new` picks its branch](#how-new-picks-its-branch)). | `--repo <path>`, `--from <worktree>`, `--from-branch <branch>`, `--no-fork`, `--changes-only`, `--no-fetch`, `--json` |
+| `"$ASW" worktree new <branch>` | Copies the main worktree, or the worktree named by `--from`, and puts the copy on an existing `<branch>`: local, or origin's (see [How `new` picks its branch](#how-new-picks-its-branch)). A name that exists nowhere is refused `noSuchBranch`. | `--repo <path>`, `--from <worktree>`, `--no-fork`, `--no-fetch`, `--json` |
+| `"$ASW" worktree new -c <branch>` | The same copy on a new `<branch>` (`-c` / `--create`), at the source's HEAD or `--from-branch`. A name that exists locally or on origin is refused `branchAlreadyExists`, and one origin can't be asked about is refused `originCheckFailed`. | `--repo <path>`, `--from <worktree>`, `--from-branch <branch>`, `--no-fork`, `--changes-only`, `--no-fetch`, `--json` |
 | `"$ASW" worktree list [target...]` | Lists worktrees with branch, path, current/locked state, working changes, integration, `tmp/` evidence, blockers, and removal readiness. Targets limit the rows. | `--repo <path>`, `--no-fetch`, `--json` |
 | `"$ASW" worktree remove <target...>` | Removes worktrees or branch-only targets. Processes each target and reports its result. | `--repo <path>`, `--no-fetch`, `-f` / `--force`, `-D`, `--no-delete-branch`, `--archive-to-main`, `--archive-to <path>`, `--discard-tmp`, `--remove-stale-lock`, `--dry-run`, `--json` |
 | `"$ASW" worktree prune` | Previews eligible linked worktrees. Skipped rows include the reason and available remove commands. | `--repo <path>`, `--no-fetch`, `--archive-to-main`, `--archive-to <path>`, `--apply`, `--json` |
 
-`fork` is removed: it returns exit 64 with a stderr line naming `new --from`, including with `--json`.
+`fork` is removed: it returns exit 64 with a stderr line naming `new -c <branch> --from`, including with `--json`.
 
-`new --from <worktree> --changes-only` carries tracked changes and eligible
+`new -c --from <worktree> --changes-only` carries tracked changes and eligible
 untracked files, excludes ignored files, and leaves the destination index at
-HEAD. `--changes-only` requires `--from` (refused, exit 1, with options), and
-excludes `--no-fork` and `--from-branch` (usage error, exit 64).
+HEAD. `--from-branch` and `--changes-only` only create, so without `-c` they
+are usage errors (exit 64, naming `-c`). `--changes-only` requires `--from`
+(refused, exit 1, with options), and excludes `--no-fork` and `--from-branch`
+(usage error, exit 64).
 `--tracked-only` no longer exists: it is an unknown option (exit 64); use
 `--no-fork`.
 
@@ -86,6 +92,8 @@ excludes `--no-fork` and `--from-branch` (usage error, exit 64).
    any fetch, and before checking the destination, so running `new feat` again
    for an existing `<repo>.feat` points you there. Work there instead
    (`cd <path>`).
+`new <branch>` (no `-c`) opens an existing branch:
+
 2. `new` asks origin whether it has `<branch>` and fetches that one branch
    (no tags, no pruning). A branch origin doesn't have counts as absent, even
    if an old `origin/<branch>` ref is still on disk. `--no-fetch` skips this and
@@ -97,27 +105,35 @@ excludes `--no-fork` and `--from-branch` (usage error, exit 64).
    counts them.
 4. If only `origin/<branch>` exists, local `<branch>` is created at it and
    tracks it, so `git push` works.
-5. Otherwise a new `<branch>` starts at the source's HEAD commit.
+5. Otherwise `new` refuses `noSuchBranch`, with the option
+   `new -c <branch>`.
 
-`--from-branch <start>` instead starts a new `<branch>` at another branch:
+`new -c <branch>` creates a new branch:
 
-- `<start>` beginning with a configured remote's name (`origin/x`,
-  `upstream/x`) means that remote's branch, fetched from it. Otherwise it is
-  the local branch `<start>`, else `origin/<start>`.
+- If `<branch>` exists locally or on origin, `new -c` refuses
+  `branchAlreadyExists`, before anything is fetched; run `new <branch>` to
+  open it, or pick another name. `new -c` asks origin whether it has
+  `<branch>`, which fetches nothing. With `--no-fetch`, the `origin/<branch>`
+  ref on disk answers instead. With no origin remote, only local branches
+  count.
+- If origin can't be asked, `new -c` refuses `originCheckFailed` with the
+  reason and creates nothing, so it never makes a branch origin already has.
+  Run it again with `--no-fetch` to go by the refs on disk.
+- Otherwise the new `<branch>` starts at the source's HEAD commit, with no
+  upstream.
+- `--from-branch <start>` starts it at another branch instead, fetching
+  `<start>` first. `<start>` beginning with a configured remote's name
+  (`origin/x`, `upstream/x`) means that remote's branch. Otherwise it is the
+  local branch `<start>`, else `origin/<start>`.
 - A local `<start>` strictly behind `origin/<start>` starts at origin's commit
   and leaves the local branch where it is. A diverged one starts at the local
   tip, and the output counts the commits origin lacks.
 - A start that isn't found refuses `startBranchNotFound`.
-- When `<start>` is `<branch>` itself (`new feat --from-branch origin/feat`),
-  `new` takes steps 3 and 4 with that start's remote, and refuses
-  `startBranchNotFound` when neither applies.
-- When `<branch>` already exists, `new` refuses `branchAlreadyExists`; run
-  `new <branch>` without `--from-branch` to open it, or pick another name.
 
-`--from <worktree>` and `--from-branch` combine: the named worktree is copied,
-then the copy is reset to the start. `--changes-only` only creates a new branch
-at the source's HEAD and never fetches, so an existing `<branch>` refuses
-`branchAlreadyExists`. A branch that moves between this resolution and the
+`--from <worktree>` works with both forms: without `-c` the named worktree is
+copied and set to the existing branch; with `-c --from-branch` the copy is
+reset to the start. `--changes-only` needs `-c`, starts at the source's HEAD,
+and fetches nothing. A branch that moves between this resolution and the
 attach refuses `branchMoved` with nothing changed; run `new` again.
 
 ## What `new` prints
@@ -142,7 +158,9 @@ Everything else is in `--json`: `branch` (`name`, `status`: `created`,
 
 A refusal or failure that comes after the fetch still reports it: `--json`
 carries the same `fetch` object, and the human output adds a `fetch:` line
-after the refusal.
+after the refusal. `noSuchBranch` comes after the fetch and reports it;
+`new -c`'s `branchAlreadyExists` and `originCheckFailed` come before any fetch
+and report none.
 
 `list`, `remove`, and `prune` fetch the integration target branch before
 assessing it. `--no-fetch` skips that fetch. `remove --dry-run` reports the
@@ -180,8 +198,9 @@ Exit codes:
   Submodules that commit has at another revision are listed in
   `submodulesNotAtStart` (`git -C <worktree> submodule update --init <path>`).
 - `new --from <worktree>` copies that worktree the same way.
-- `new --from <worktree> --changes-only` starts from HEAD and carries tracked
-  changes plus eligible untracked files. It excludes ignored build output.
+- `new -c --from <worktree> --changes-only` starts from HEAD and carries
+  tracked changes plus eligible untracked files. It excludes ignored build
+  output.
 - `new --no-fork` is a plain checkout of tracked files at the same commit the
   fork would use; no ignored files or build outputs. It combines with every
   source and branch form. Submodules stay empty. In agent-studio, run
@@ -193,7 +212,7 @@ The copy-on-write `new` refuses when the source or destination is not
 on APFS, crosses volumes, is not a worktree root, or the destination already
 exists.
 
-**Git LFS:** `new --no-fork`, a reset copy, and `new --from … --changes-only`
+**Git LFS:** `new --no-fork`, a reset copy, and `new -c --from … --changes-only`
 fill LFS pointers from the repository's local object store when those objects
 are available. They do not download objects. The line counts files left as
 pointers; `--json` lists each with its reason and the
@@ -229,7 +248,7 @@ Source index problems, the same for default `new` and `new --from`:
 - A copy reset to another commit reads only the source's HEAD commit, not its
   index, so these two refusals apply only when the branch starts at the
   source's HEAD.
-  `new <existing-or-origin-branch>` and `--from-branch` still fork warm.
+  `new <existing-or-origin-branch>` and `new -c --from-branch` still fork warm.
 
 The copy-on-write report in `--json` carries `ignoredIncludedPatterns`,
 `ignoredExcludedCount` (excluded paths), `nestedWorktreesSkipped`,

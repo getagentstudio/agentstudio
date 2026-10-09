@@ -74,6 +74,13 @@ package enum WorktreeCreationFetchStatus: Encodable, Sendable, Equatable {
     }
 }
 
+/// A remote's answer to "do you have this branch?": LR30's question, which fetches nothing.
+package enum WorktreeRemoteBranchProbe: Sendable, Equatable {
+    case present(commit: String)
+    case absent
+    case failed(WorktreeFetchFailure)
+}
+
 /// LR30: asks the remote whether the branch exists, fetches it alone only when it does (no tags,
 /// no pruning, no submodules), and never stops `new`: a failed question or fetch is reported and
 /// creation continues with the refs on disk.
@@ -96,23 +103,14 @@ package struct WorktreeCreationFetchStep: Sendable {
             branchName = targetBranchName
         }
 
-        let presence: GitRemoteBranchPresence
-        do throws(GitDataPlaneError) {
-            presence = try await remoteClient.probeRemoteBranch(
-                GitRemoteBranchProbeRequest(
-                    repositoryPath: repositoryPath,
-                    remoteName: remoteName,
-                    branchName: branchName
-                ))
-        } catch {
-            return .failed(
-                remoteName: remoteName,
-                branchName: branchName,
-                failure: WorktreeFetchFailureMapper.failure(for: error)
-            )
-        }
-        guard case .present(let probedCommit) = presence else {
+        let probedCommit: String
+        switch await probe(repositoryPath: repositoryPath, remoteName: remoteName, branchName: branchName) {
+        case .failed(let failure):
+            return .failed(remoteName: remoteName, branchName: branchName, failure: failure)
+        case .absent:
             return .notOnRemote(remoteName: remoteName, branchName: branchName)
+        case .present(let commit):
+            probedCommit = commit
         }
 
         do throws(GitLockedOperationFailure<GitDataPlaneError>) {
@@ -130,6 +128,26 @@ package struct WorktreeCreationFetchStep: Sendable {
                 branchName: branchName,
                 failure: WorktreeFetchFailureMapper.failure(for: error)
             )
+        }
+    }
+
+    /// Asks `remoteName` whether it has `branchName`, and fetches nothing. `-c` asks this about its own
+    /// name (D23); `run` asks it before the one-branch fetch.
+    @concurrent
+    package func probe(repositoryPath: URL, remoteName: String, branchName: String) async
+        -> WorktreeRemoteBranchProbe
+    {
+        do throws(GitDataPlaneError) {
+            let presence = try await remoteClient.probeRemoteBranch(
+                GitRemoteBranchProbeRequest(
+                    repositoryPath: repositoryPath,
+                    remoteName: remoteName,
+                    branchName: branchName
+                ))
+            guard case .present(let commit) = presence else { return .absent }
+            return .present(commit: commit)
+        } catch {
+            return .failed(WorktreeFetchFailureMapper.failure(for: error))
         }
     }
 }

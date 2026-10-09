@@ -23,8 +23,8 @@ struct WorktreeLifecyclePolicyTests {
 @Suite("Worktree stop catalog")
 struct WorktreeStopCatalogTests {
     private static let creationReasons: Set<WorktreeStopReason> = [
-        .changesOnlyNeedsFrom, .branchCheckedOut, .branchMoved, .branchAlreadyExists, .configInvalid,
-        .sourceIndexUnreadable, .sourceIndexUnsupported,
+        .changesOnlyNeedsFrom, .branchCheckedOut, .branchMoved, .branchAlreadyExists, .noSuchBranch, .originCheckFailed,
+        .configInvalid, .sourceIndexUnreadable, .sourceIndexUnsupported,
     ]
     private static let noForkEffect =
         "A plain checkout of tracked files at the same commit; no ignored files or build outputs."
@@ -44,6 +44,10 @@ struct WorktreeStopCatalogTests {
                     "agentstudio worktree new <branch>",
                     effect: "Open the existing branch in a new worktree."),
                 command("use another branch name", effect: "Create a new branch under a name that does not exist."),
+            ],
+            .noSuchBranch: [command("agentstudio worktree new -c <branch>", effect: "Create it as a new branch.")],
+            .originCheckFailed: [
+                flag("--no-fetch", effect: "Answer from the origin/<branch> ref on disk instead of asking origin.")
             ],
             .configInvalid: [
                 command("fix .agentstudio.config.json and retry", effect: "Correct the repository copy declaration."),
@@ -131,7 +135,7 @@ struct WorktreeStopCatalogTests {
                     flag("-f", effect: "Remove the worktree and discard its uncommitted changes."),
                     command("commit the changes first", effect: "Keep the changes in the repository history."),
                     command(
-                        "agentstudio worktree new <branch> --changes-only --from <path>",
+                        "agentstudio worktree new -c <branch> --changes-only --from <path>",
                         effect: "Copy the worktree's changes before removing it."
                     ),
                 ]
@@ -258,8 +262,8 @@ struct WorktreeStopCatalogTests {
 
     private func details(for reason: WorktreeStopReason) -> WorktreeStopDetails {
         switch reason {
-        case .changesOnlyNeedsFrom, .branchCheckedOut, .branchMoved, .branchAlreadyExists, .configInvalid,
-            .sourceIndexUnreadable, .sourceIndexUnsupported:
+        case .changesOnlyNeedsFrom, .branchCheckedOut, .branchMoved, .branchAlreadyExists, .noSuchBranch,
+            .originCheckFailed, .configInvalid, .sourceIndexUnreadable, .sourceIndexUnsupported:
             .creation(creationDetails(for: reason))
         case .defaultBranch:
             .defaultBranch
@@ -317,6 +321,9 @@ struct WorktreeStopCatalogTests {
         case .branchCheckedOut: .branchCheckedOut(path: "/repo/worktree")
         case .branchMoved: .branchMoved
         case .branchAlreadyExists: .branchAlreadyExists(branch: "feature/existing")
+        case .noSuchBranch: .noSuchBranch(branch: "feature/missing")
+        case .originCheckFailed:
+            .originCheckFailed(branch: "feature/new", remoteName: "origin", reason: .networkFailure)
         case .configInvalid: .configInvalid(path: "/repo/.agentstudio.config.json", error: "malformed")
         case .sourceIndexUnreadable: .sourceIndexUnreadable
         case .sourceIndexUnsupported: .sourceIndexUnsupported

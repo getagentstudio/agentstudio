@@ -23,7 +23,7 @@ struct WorktreeCreationLargeFileCommandLineTests {
 
         let createProbe = WorktreeCreationCommandLineProbe()
         let createExitCode = await WorktreeCommandLine.run(
-            arguments: ["new", branch, "--no-fork", "--repo", fixture.repository.path, "--json"],
+            arguments: ["new", "-c", branch, "--no-fork", "--repo", fixture.repository.path, "--json"],
             currentDirectory: fixture.repository,
             output: { createProbe.appendOutput($0) },
             errorOutput: { createProbe.appendError($0) }
@@ -83,7 +83,7 @@ struct WorktreeCreationLargeFileCommandLineTests {
         let probe = WorktreeCreationCommandLineProbe()
 
         let exitCode = await WorktreeCommandLine.run(
-            arguments: ["new", branch, "--no-fork", "--repo", fixture.repository.path],
+            arguments: ["new", "-c", branch, "--no-fork", "--repo", fixture.repository.path],
             currentDirectory: fixture.repository,
             output: { probe.appendOutput($0) },
             errorOutput: { probe.appendError($0) }
@@ -103,7 +103,7 @@ struct WorktreeCreationLargeFileCommandLineTests {
         let jsonDestination = try siblingDestination(repository: fixture.repository, branch: jsonBranch)
         defer { try? FileManager.default.removeItem(at: jsonDestination) }
         let jsonExitCode = await WorktreeCommandLine.run(
-            arguments: ["new", jsonBranch, "--no-fork", "--repo", fixture.repository.path, "--json"],
+            arguments: ["new", "-c", jsonBranch, "--no-fork", "--repo", fixture.repository.path, "--json"],
             currentDirectory: fixture.repository,
             output: { jsonProbe.appendOutput($0) },
             errorOutput: { jsonProbe.appendError($0) }
@@ -123,7 +123,7 @@ struct WorktreeCreationLargeFileCommandLineTests {
         defer { try? FileManager.default.removeItem(at: forkDestination) }
         let forkProbe = WorktreeCreationCommandLineProbe()
         let forkExitCode = await WorktreeCommandLine.run(
-            arguments: ["new", forkBranch, "--from", fixture.repository.path, "--changes-only"],
+            arguments: ["new", "-c", forkBranch, "--from", fixture.repository.path, "--changes-only"],
             currentDirectory: fixture.repository,
             output: { forkProbe.appendOutput($0) },
             errorOutput: { forkProbe.appendError($0) }
@@ -139,7 +139,7 @@ struct WorktreeCreationLargeFileCommandLineTests {
         defer { try? FileManager.default.removeItem(at: forkJSONDestination) }
         let forkJSONProbe = WorktreeCreationCommandLineProbe()
         let forkJSONExitCode = await WorktreeCommandLine.run(
-            arguments: ["new", forkJSONBranch, "--from", fixture.repository.path, "--changes-only", "--json"],
+            arguments: ["new", "-c", forkJSONBranch, "--from", fixture.repository.path, "--changes-only", "--json"],
             currentDirectory: fixture.repository,
             output: { forkJSONProbe.appendOutput($0) },
             errorOutput: { forkJSONProbe.appendError($0) }
@@ -168,7 +168,7 @@ struct WorktreeCreationLargeFileCommandLineTests {
         let probe = WorktreeCreationCommandLineProbe()
 
         let exitCode = await WorktreeCommandLine.run(
-            arguments: ["new", branch, "--from", fixture.repository.path, "--changes-only", "--json"],
+            arguments: ["new", "-c", branch, "--from", fixture.repository.path, "--changes-only", "--json"],
             currentDirectory: fixture.repository,
             output: { probe.appendOutput($0) },
             errorOutput: { probe.appendError($0) }
@@ -217,7 +217,7 @@ struct WorktreeCreationLargeFileCommandLineTests {
         let outcome = await WorktreeOperationRunner(client: client).run(
             .create(
                 WorktreeCreateRequest(
-                    start: repository, branch: branch, source: .mainWorktree,
+                    start: repository, branch: branch, create: true, source: .mainWorktree,
                     startBranch: nil, materialization: .checkout, fetchPolicy: .skip))
         )
         guard case .created = outcome else {
@@ -271,7 +271,7 @@ struct WorktreeCreationLargeFileCommandLineTests {
         let outcome = await WorktreeOperationRunner(client: client).run(
             .create(
                 WorktreeCreateRequest(
-                    start: repository, branch: branch, source: .mainWorktree,
+                    start: repository, branch: branch, create: true, source: .mainWorktree,
                     startBranch: nil, materialization: .checkout, fetchPolicy: .skip))
         )
         guard case .created = outcome else {
@@ -328,7 +328,7 @@ struct WorktreeCreationLargeFileCommandLineTests {
         let outcome = await WorktreeOperationRunner(client: client).run(
             .create(
                 WorktreeCreateRequest(
-                    start: repository, branch: branch, source: .mainWorktree,
+                    start: repository, branch: branch, create: true, source: .mainWorktree,
                     startBranch: nil, materialization: .checkout, fetchPolicy: .skip))
         )
         guard case .created = outcome else {

@@ -4,6 +4,9 @@ import Foundation
 package struct WorktreeCreateRequest: Sendable, Equatable {
     package let start: URL
     package let branch: String
+    /// `-c` / `--create` (D23): create `<branch>` and refuse a name that exists. Without it, `new` opens an
+    /// existing branch and refuses a name that exists nowhere.
+    package let create: Bool
     package let source: WorktreeCreateSource
     /// `--from-branch <start>` as typed: a local branch, `<remote>/<name>`, or origin's branch.
     package let startBranch: String?
@@ -13,6 +16,7 @@ package struct WorktreeCreateRequest: Sendable, Equatable {
     package init(
         start: URL,
         branch: String,
+        create: Bool,
         source: WorktreeCreateSource,
         startBranch: String?,
         materialization: WorktreeCreateMaterialization,
@@ -20,6 +24,7 @@ package struct WorktreeCreateRequest: Sendable, Equatable {
     ) {
         self.start = start
         self.branch = branch
+        self.create = create
         self.source = source
         self.startBranch = startBranch
         self.materialization = materialization

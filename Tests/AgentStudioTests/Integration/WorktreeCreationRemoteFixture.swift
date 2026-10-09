@@ -120,16 +120,16 @@ struct WorktreeCreationRemoteFixture {
             forkFailure: forkFailure, branchUseFailure: branchUseFailure, forkHandler: forkHandler)
     }
 
-    /// `new <branch>` from the main worktree through the runner instead of the command line, so the client
-    /// can be a stub. The fetch runs, over the `file` transport as in `runNew`.
+    /// `new <branch>` (opening an existing branch) from the main worktree through the runner instead of the
+    /// command line, so the client can be a stub. The fetch runs, over the `file` transport as in `runNew`.
     func runCreate(_ branch: String, client: WorktreeOperationClientStub) async -> WorktreeOperationOutcome {
         let runner = WorktreeOperationRunner(
             client: client, remoteClient: SystemGitRemoteClient(configuration: .init(allowedProtocols: [.file])))
         return await runner.run(
             .create(
                 WorktreeCreateRequest(
-                    start: client.startPath, branch: branch, source: .mainWorktree, startBranch: nil,
-                    materialization: .copyOnWrite, fetchPolicy: .fetch)))
+                    start: client.startPath, branch: branch, create: false, source: .mainWorktree,
+                    startBranch: nil, materialization: .copyOnWrite, fetchPolicy: .fetch)))
     }
 
     /// Every ref with its target, and the folder's entries, where any created destination would appear.

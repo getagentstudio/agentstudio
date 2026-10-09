@@ -5,17 +5,17 @@ import Testing
 
 /// LR1 and LR30 through the real command line, against a local bare `origin` and a second bare remote.
 extension WorktreeCreationCommandLineIntegrationTests {
-    @Test("a new name the remote lacks starts at the source's HEAD after the remote says notOnRemote")
+    @Test("new -c (or --create) with a name the remote lacks starts at the source's HEAD after notOnRemote")
     func createsNewNameAtSourceHead() async throws {
         let fixture = try await WorktreeCreationRemoteFixture.create(named: "new-fresh")
         defer { fixture.destroy() }
 
         let destination = try fixture.destination(for: "feature/fresh")
-        let human = await fixture.runNew("feature/fresh", json: false)
+        let human = await fixture.runNew("feature/fresh", ["-c"], json: false)
         #expect(human.exit == 0)
         #expect(human.line == "created feature/fresh at \(destination.path) (copy-on-write)")
 
-        let json = await fixture.runNew("feature/fresh-json", json: true)
+        let json = await fixture.runNew("feature/fresh-json", ["--create"], json: true)
         #expect(json.exit == 0)
         let document = try json.created()
         #expect(document.branch == .init(name: "feature/fresh-json", status: "created", upstream: nil))
@@ -28,6 +28,133 @@ extension WorktreeCreationCommandLineIntegrationTests {
         #expect(document.materialization?.sourceState == "asIs")
     }
 
+    @Test("new without -c refuses a name that exists nowhere, naming -c, and changes nothing")
+    func refusesUnknownNameWithoutCreate() async throws {
+        let fixture = try await WorktreeCreationRemoteFixture.create(named: "new-not-found")
+        defer { fixture.destroy() }
+        let before = try await fixture.observedState()
+
+        let human = await fixture.runNew("feature/nowhere", json: false)
+        let json = await fixture.runNew("feature/nowhere", json: true)
+
+        #expect(human.exit == 1)
+        #expect(
+            human.line
+                == "refused: noSuchBranch feature/nowhere; options: [agentstudio worktree new -c <branch>: "
+                + "Create it as a new branch.]\nfetch: notOnRemote origin/feature/nowhere")
+        #expect(json.exit == 1)
+        #expect(
+            json.line
+                == #"{"detail":"feature/nowhere","details":{"noSuchBranch":{"branch":"feature/nowhere"}},"fetch":{"branch":"feature/nowhere","remote":"origin","status":"notOnRemote"},"message":"No branch with that name exists locally or on origin.","options":[{"command":"agentstudio worktree new -c <branch>","effect":"Create it as a new branch."}],"outcome":"refused","reason":"noSuchBranch"}"#
+        )
+        #expect(try await fixture.observedState() == before)
+
+        // A failed refresh leaves only the refs on disk, which don't have it either: still refused, with the
+        // failed fetch reported.
+        try await fixture.git("remote", "set-url", "origin", fixture.folder.appending(path: "missing.git").path)
+        let unreachable = await fixture.runNew("feature/nowhere", json: true)
+        #expect(unreachable.exit == 1)
+        #expect(try unreachable.refused().reason == "noSuchBranch")
+        #expect(
+            try unreachable.refused().fetch
+                == .init(
+                    remote: "origin", branch: "feature/nowhere", status: "failed", commit: nil,
+                    reason: "processFailure"))
+    }
+
+    @Test("new -c refuses a name taken locally or on origin; with --no-fetch, the ref on disk decides")
+    func createRefusesAnExistingName() async throws {
+        let fixture = try await WorktreeCreationRemoteFixture.create(named: "new-create-existing")
+        defer { fixture.destroy() }
+        try await fixture.git("branch", "feature/local")
+
+        let local = await fixture.runNew("feature/local", ["-c"], json: false)
+
+        #expect(local.exit == 1)
+        #expect(
+            local.line
+                == "refused: branchAlreadyExists feature/local; options: [agentstudio worktree new <branch>: Open the existing branch in a new worktree.; use another branch name: Create a new branch under a name that does not exist.]"
+        )
+
+        // Only origin has it: origin's answer refuses, and nothing is fetched.
+        try await fixture.advance("feature/remote", file: "remote.txt")
+        let remote = await fixture.runNew("feature/remote", ["-c"], json: true)
+        #expect(remote.exit == 1)
+        #expect(
+            remote.line
+                == #"{"detail":"origin/feature/remote","details":{"branchAlreadyExists":{"branch":"feature/remote","remoteName":"origin"}},"message":"A branch with that name already exists.","options":[{"command":"agentstudio worktree new <branch>","effect":"Open the existing branch in a new worktree."},{"command":"use another branch name","effect":"Create a new branch under a name that does not exist."}],"outcome":"refused","reason":"branchAlreadyExists"}"#
+        )
+        #expect(try await fixture.git("for-each-ref", "refs/remotes/origin/feature/remote").isEmpty)
+        #expect(try await fixture.git("branch", "--list", "feature/remote").isEmpty)
+
+        // --no-fetch: the origin ref on disk answers. On disk, the name is taken; not on disk, -c creates it.
+        try await fixture.advance("feature/on-disk", file: "on-disk.txt")
+        try await fixture.git("fetch", "origin", "+refs/heads/feature/on-disk:refs/remotes/origin/feature/on-disk")
+        let onDisk = await fixture.runNew("feature/on-disk", ["-c", "--no-fetch"], json: true)
+        #expect(onDisk.exit == 1)
+        #expect(try onDisk.refused().reason == "branchAlreadyExists")
+        #expect(try onDisk.refused().detail == "origin/feature/on-disk")
+        try await fixture.advance("feature/not-on-disk", file: "not-on-disk.txt")
+        let notOnDisk = await fixture.runNew("feature/not-on-disk", ["-c", "--no-fetch"], json: true)
+        #expect(notOnDisk.exit == 0, "\(notOnDisk.output)")
+        #expect(
+            try notOnDisk.created().fetch
+                == .init(remote: nil, branch: nil, status: "skipped", commit: nil, reason: "noFetchFlag"))
+    }
+
+    @Test("new -c refuses originCheckFailed when origin can't be asked, naming --no-fetch, and creates nothing")
+    func createFailsClosedWhenOriginCannotBeAsked() async throws {
+        let fixture = try await WorktreeCreationRemoteFixture.create(named: "new-origin-check-failed")
+        defer { fixture.destroy() }
+        try "changed\n".write(to: fixture.repository.appending(path: "README.md"), atomically: true, encoding: .utf8)
+        try await fixture.git("remote", "set-url", "origin", fixture.folder.appending(path: "missing.git").path)
+        let before = try await fixture.observedState()
+
+        let human = await fixture.runNew("feature/new", ["-c"], json: false)
+        let json = await fixture.runNew("feature/new", ["-c"], json: true)
+        // --changes-only refreshes nothing, but -c's question about the name still runs.
+        let changesOnly = await fixture.runNew(
+            "feature/new", ["-c", "--from", fixture.repository.path, "--changes-only"], json: true)
+
+        #expect(human.exit == 1)
+        #expect(
+            human.line
+                == "refused: originCheckFailed origin/feature/new (processFailure); options: [--no-fetch: "
+                + "Answer from the origin/<branch> ref on disk instead of asking origin.]")
+        #expect(json.exit == 1)
+        #expect(
+            json.line
+                == #"{"detail":"origin/feature/new (processFailure)","details":{"originCheckFailed":{"branch":"feature/new","reason":"processFailure","remoteName":"origin"}},"message":"Origin could not be asked whether the branch exists, so nothing was created.","options":[{"effect":"Answer from the origin/<branch> ref on disk instead of asking origin.","flag":"--no-fetch"}],"outcome":"refused","reason":"originCheckFailed"}"#
+        )
+        #expect(changesOnly.exit == 1)
+        #expect(try changesOnly.refused().reason == "originCheckFailed")
+        #expect(try await fixture.observedState() == before)
+
+        // The option: with --no-fetch, the ref on disk answers and the branch is created.
+        let noFetch = await fixture.runNew("feature/new", ["-c", "--no-fetch"], json: true)
+        #expect(noFetch.exit == 0, "\(noFetch.output)")
+        #expect(try noFetch.created().branch == .init(name: "feature/new", status: "created", upstream: nil))
+    }
+
+    @Test("new -c with no origin remote checks local branches only and reports skipped(noRemote)")
+    func createWithoutOriginChecksLocalBranchesOnly() async throws {
+        let fixture = try await WorktreeCreationRemoteFixture.create(named: "new-no-origin")
+        defer { fixture.destroy() }
+        try await fixture.git("branch", "feature/taken")
+        try await fixture.git("remote", "remove", "origin")
+
+        let created = await fixture.runNew("feature/local-only", ["-c"], json: true)
+        #expect(created.exit == 0, "\(created.output)")
+        let document = try created.created()
+        #expect(document.fetch == .init(remote: nil, branch: nil, status: "skipped", commit: nil, reason: "noRemote"))
+        #expect(document.start.from == "sourceHead")
+
+        let taken = await fixture.runNew("feature/taken", ["-c"], json: true)
+        #expect(taken.exit == 1)
+        #expect(try taken.refused().reason == "branchAlreadyExists")
+        #expect(try taken.refused().detail == "feature/taken")
+    }
+
     @Test("a branch deleted on origin is absent even with its old remote-tracking ref still on disk")
     func treatsBranchDeletedOnOriginAsAbsent() async throws {
         let fixture = try await WorktreeCreationRemoteFixture.create(named: "new-deleted-on-origin")
@@ -37,7 +164,7 @@ extension WorktreeCreationCommandLineIntegrationTests {
         try await WorktreeCreationRemoteFixture.git(fixture.originClone, "push", "origin", "--delete", "feature/gone")
         #expect(try await fixture.git("rev-parse", "refs/remotes/origin/feature/gone") == staleTip)
 
-        let created = await fixture.runNew("feature/gone", json: true)
+        let created = await fixture.runNew("feature/gone", ["-c"], json: true)
         #expect(created.exit == 0)
         let document = try created.created()
         #expect(document.branch == .init(name: "feature/gone", status: "created", upstream: nil))
@@ -46,7 +173,8 @@ extension WorktreeCreationCommandLineIntegrationTests {
         let destination = try fixture.destination(for: "feature/gone")
         #expect(try await WorktreeCreationRemoteFixture.git(destination, "rev-parse", "HEAD") == fixture.mainCommit)
 
-        let fromStale = await fixture.runNew("feature/other", ["--from-branch", "origin/feature/gone"], json: true)
+        let fromStale = await fixture.runNew(
+            "feature/other", ["-c", "--from-branch", "origin/feature/gone"], json: true)
         #expect(fromStale.exit == 1)
         #expect(try fromStale.refused().reason == "startBranchNotFound")
         #expect(try fromStale.refused().detail == "origin/feature/gone")
@@ -56,20 +184,6 @@ extension WorktreeCreationCommandLineIntegrationTests {
                 == .init(remote: "origin", branch: "feature/gone", status: "notOnRemote", commit: nil, reason: nil))
         let otherDestination = try fixture.destination(for: "feature/other")
         #expect(!FileManager.default.fileExists(atPath: otherDestination.path))
-    }
-
-    @Test("a same-name --from-branch found nowhere refuses startBranchNotFound instead of creating")
-    func refusesSameNameStartFoundNowhere() async throws {
-        let fixture = try await WorktreeCreationRemoteFixture.create(named: "new-same-name-missing")
-        defer { fixture.destroy() }
-
-        for start in ["feature/nowhere", "origin/feature/nowhere"] {
-            let run = await fixture.runNew("feature/nowhere", ["--from-branch", start], json: true)
-            #expect(run.exit == 1)
-            #expect(try run.refused().reason == "startBranchNotFound")
-            #expect(try run.refused().detail == start)
-        }
-        #expect(try await fixture.git("branch", "--list", "feature/nowhere").isEmpty)
     }
 
     @Test("a branch checked out or bisected in another worktree refuses branchCheckedOut before any fetch")
@@ -218,21 +332,21 @@ extension WorktreeCreationCommandLineIntegrationTests {
 
         let cases = [
             WorktreeCreationLineCase(
-                "feature/from-local", ["--from-branch", "release/local"], localTip, "copy-on-write"),
+                "feature/from-local", ["-c", "--from-branch", "release/local"], localTip, "copy-on-write"),
             WorktreeCreationLineCase(
-                "feature/from-behind", ["--from-branch", "release/behind"], behindRemoteTip,
+                "feature/from-behind", ["-c", "--from-branch", "release/behind"], behindRemoteTip,
                 "copy-on-write; from origin/release/behind"),
             WorktreeCreationLineCase(
-                "feature/from-diverged", ["--from-branch", "release/diverged"], divergedLocal,
+                "feature/from-diverged", ["-c", "--from-branch", "release/diverged"], divergedLocal,
                 "copy-on-write; kept local release/diverged: 1 commit not on origin"),
             WorktreeCreationLineCase(
-                "feature/from-origin", ["--from-branch", "release/origin"], originOnlyTip,
+                "feature/from-origin", ["-c", "--from-branch", "release/origin"], originOnlyTip,
                 "copy-on-write; from origin/release/origin"),
             WorktreeCreationLineCase(
-                "feature/from-origin-prefix", ["--from-branch", "origin/release/origin"], originOnlyTip,
+                "feature/from-origin-prefix", ["-c", "--from-branch", "origin/release/origin"], originOnlyTip,
                 "copy-on-write; from origin/release/origin"),
             WorktreeCreationLineCase(
-                "feature/from-upstream", ["--from-branch", "upstream/release/upstream"], upstreamTip,
+                "feature/from-upstream", ["-c", "--from-branch", "upstream/release/upstream"], upstreamTip,
                 "copy-on-write; from upstream/release/upstream"),
         ]
         for testCase in cases {
@@ -249,7 +363,7 @@ extension WorktreeCreationCommandLineIntegrationTests {
         #expect(try await fixture.git("rev-parse", "refs/heads/release/behind") == fixture.mainCommit)
 
         let upstreamJSON = try await fixture.runNew(
-            "feature/from-upstream-json", ["--from-branch", "upstream/release/upstream"], json: true
+            "feature/from-upstream-json", ["-c", "--from-branch", "upstream/release/upstream"], json: true
         ).created()
         #expect(
             upstreamJSON.fetch
@@ -258,66 +372,42 @@ extension WorktreeCreationCommandLineIntegrationTests {
         )
         #expect(upstreamJSON.branch.upstream == nil)
 
-        let missing = await fixture.runNew("feature/from-missing", ["--from-branch", "release/missing"], json: true)
+        let missing = await fixture.runNew(
+            "feature/from-missing", ["-c", "--from-branch", "release/missing"], json: true)
         #expect(missing.exit == 1)
         #expect(try missing.refused().reason == "startBranchNotFound")
 
+        // -c refuses an existing <branch> before the start is read or anything is fetched (D23).
         try await fixture.git("branch", "feature/taken")
-        let taken = await fixture.runNew("feature/taken", ["--from-branch", "release/local"], json: true)
+        let taken = await fixture.runNew("feature/taken", ["-c", "--from-branch", "release/local"], json: true)
         #expect(taken.exit == 1)
         let refusal = try taken.refused()
         #expect(refusal.reason == "branchAlreadyExists")
         #expect(refusal.options?.first?.action == .command("agentstudio worktree new <branch>"))
-        #expect(
-            refusal.fetch
-                == .init(remote: "origin", branch: "release/local", status: "notOnRemote", commit: nil, reason: nil))
-
-        // The fetch succeeded before the refusal, so the refusal reports the fetched commit (LR30).
-        try await fixture.git("branch", "feature/taken-fetched")
-        let takenAfterFetch = await fixture.runNew(
-            "feature/taken-fetched", ["--from-branch", "release/origin"], json: true)
-        #expect(takenAfterFetch.exit == 1)
-        let fetchedRefusal = try takenAfterFetch.refused()
-        #expect(fetchedRefusal.reason == "branchAlreadyExists")
-        #expect(
-            fetchedRefusal.fetch
-                == .init(
-                    remote: "origin", branch: "release/origin", status: "fetched", commit: originOnlyTip, reason: nil))
-        let fetchedHuman = await fixture.runNew(
-            "feature/taken-fetched", ["--from-branch", "release/origin"], json: false)
-        #expect(fetchedHuman.line?.hasSuffix("\nfetch: fetched origin/release/origin \(originOnlyTip)") == true)
+        #expect(refusal.fetch == nil)
     }
 
-    @Test("a same-name --from-branch takes the existing-branch steps with that start's remote")
-    func sameNameStartUsesItsRemote() async throws {
-        let fixture = try await WorktreeCreationRemoteFixture.create(named: "new-same-name")
-        defer { fixture.destroy() }
-        let tip = try await fixture.advance("feature/shared", on: "upstream", file: "shared.txt")
-
-        let run = await fixture.runNew("feature/shared", ["--from-branch", "upstream/feature/shared"], json: true)
-        #expect(run.exit == 0)
-        let document = try run.created()
-        #expect(
-            document.branch
-                == .init(name: "feature/shared", status: "created", upstream: "refs/remotes/upstream/feature/shared"))
-        #expect(document.start.commit == tip)
-        #expect(try await fixture.git("config", "branch.feature/shared.remote") == "upstream")
-    }
-
-    @Test("--changes-only refuses an existing branch and fetches nothing")
+    @Test("--changes-only refuses a name taken locally or on origin and refreshes nothing")
     func changesOnlyRefusesExistingBranchAndSkipsFetch() async throws {
         let fixture = try await WorktreeCreationRemoteFixture.create(named: "new-changes-only")
         defer { fixture.destroy() }
         try await fixture.git("branch", "feature/existing")
+        try await fixture.advance("feature/origin-only", file: "origin-only.txt")
 
         let existing = await fixture.runNew(
-            "feature/existing", ["--from", fixture.repository.path, "--changes-only"], json: true)
+            "feature/existing", ["-c", "--from", fixture.repository.path, "--changes-only"], json: true)
         #expect(existing.exit == 1)
         #expect(try existing.refused().reason == "branchAlreadyExists")
+        let originOnly = await fixture.runNew(
+            "feature/origin-only", ["-c", "--from", fixture.repository.path, "--changes-only"], json: true)
+        #expect(originOnly.exit == 1)
+        #expect(try originOnly.refused().reason == "branchAlreadyExists")
+        #expect(try originOnly.refused().detail == "origin/feature/origin-only")
+        #expect(try await fixture.git("for-each-ref", "refs/remotes/origin/feature/origin-only").isEmpty)
 
         try "changed\n".write(to: fixture.repository.appending(path: "README.md"), atomically: true, encoding: .utf8)
         let created = await fixture.runNew(
-            "feature/changes", ["--from", fixture.repository.path, "--changes-only"], json: true)
+            "feature/changes", ["-c", "--from", fixture.repository.path, "--changes-only"], json: true)
         #expect(created.exit == 0)
         let document = try created.created()
         #expect(document.fetch == .init(remote: nil, branch: nil, status: "skipped", commit: nil, reason: "notNeeded"))
@@ -362,9 +452,9 @@ extension WorktreeCreationCommandLineIntegrationTests {
         #expect(try await fixture.git("for-each-ref", "refs/remotes/origin/feature/again").isEmpty)
     }
 
-    @Test("a remote prefix wins over a same-named local branch, and a same-name start opens the existing branch")
-    func remotePrefixAndSameNameStarts() async throws {
-        let fixture = try await WorktreeCreationRemoteFixture.create(named: "new-prefix-and-same-name")
+    @Test("a remote prefix wins over a local branch literally named like it")
+    func remotePrefixWinsOverLocalBranch() async throws {
+        let fixture = try await WorktreeCreationRemoteFixture.create(named: "new-prefix")
         defer { fixture.destroy() }
         let originTip = try await fixture.advance("release/origin", file: "origin.txt")
         try await fixture.git("branch", "origin/release/origin", "main")
@@ -372,22 +462,12 @@ extension WorktreeCreationCommandLineIntegrationTests {
 
         let prefixedDestination = try fixture.destination(for: "feature/prefixed")
         let prefixed = await fixture.runNew(
-            "feature/prefixed", ["--from-branch", "origin/release/origin"], json: false)
+            "feature/prefixed", ["-c", "--from-branch", "origin/release/origin"], json: false)
         #expect(
             prefixed.line
                 == "created feature/prefixed at \(prefixedDestination.path) (copy-on-write; from origin/release/origin)"
         )
         #expect(try await WorktreeCreationRemoteFixture.git(prefixedDestination, "rev-parse", "HEAD") == originTip)
-
-        try await fixture.git("branch", "feature/shared", "main")
-        let sharedTip = try await fixture.advance("feature/shared", file: "shared.txt")
-        let sharedDestination = try fixture.destination(for: "feature/shared")
-        let shared = await fixture.runNew("feature/shared", ["--from-branch", "feature/shared"], json: false)
-        #expect(
-            shared.line
-                == "created feature/shared at \(sharedDestination.path) "
-                + "(copy-on-write; existing branch; fast-forwarded to origin/feature/shared)")
-        #expect(try await fixture.git("rev-parse", "refs/heads/feature/shared") == sharedTip)
     }
 
     @Test("a branch taken by another worktree at the attach, after the fetch, still reports the fetch")
@@ -466,7 +546,7 @@ extension WorktreeCreationCommandLineIntegrationTests {
         #expect(refusal.path.map(Self.realPath) == Self.realPath(holder.path))
 
         // With nothing held, the same config still refuses configInvalid.
-        let free = await fixture.runNew("feature/free", json: true)
+        let free = await fixture.runNew("feature/free", ["-c"], json: true)
         #expect(free.exit == 1)
         #expect(try free.refused().reason == "configInvalid")
     }

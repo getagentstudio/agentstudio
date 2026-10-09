@@ -146,7 +146,7 @@ struct WorktreeCopyRuleCommandLineTests {
         let probe = WorktreeCreationCommandLineProbe()
         let source = explicitSource ? ["--from", repository.path] : []
         let exit = await WorktreeCommandLine.run(
-            arguments: ["new", branch, "--repo", repository.path] + source + (json ? ["--json"] : []),
+            arguments: ["new", "-c", branch, "--repo", repository.path] + source + (json ? ["--json"] : []),
             currentDirectory: repository,
             output: { probe.appendOutput($0) }, errorOutput: { probe.appendError($0) })
         #expect(probe.errorSnapshot().isEmpty)

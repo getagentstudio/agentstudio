@@ -42,7 +42,7 @@ struct WorktreeCreationCommandLineIntegrationTests {
         let probe = WorktreeCreationCommandLineProbe()
         let exitCode = await WorktreeCommandLine.run(
             arguments: [
-                "new", branch, "--no-fork", "--from-branch", startBranch, "--repo", repository.path, "--json",
+                "new", "-c", branch, "--no-fork", "--from-branch", startBranch, "--repo", repository.path, "--json",
             ],
             currentDirectory: repository,
             output: { probe.appendOutput($0) },
@@ -84,7 +84,7 @@ struct WorktreeCreationCommandLineIntegrationTests {
 
         let probe = WorktreeCreationCommandLineProbe()
         let exitCode = await WorktreeCommandLine.run(
-            arguments: ["new", "feat", "--from-branch", "release", "--repo", repository.path, "--json"],
+            arguments: ["new", "-c", "feat", "--from-branch", "release", "--repo", repository.path, "--json"],
             currentDirectory: repository,
             output: { probe.appendOutput($0) },
             errorOutput: { probe.appendError($0) }
@@ -130,7 +130,7 @@ struct WorktreeCreationCommandLineIntegrationTests {
         let probe = WorktreeCreationCommandLineProbe()
         let exitCode = await WorktreeCommandLine.run(
             arguments: [
-                "new", branch, "--no-fork", "--repo", repository.path, "--from-branch", "feature/missing",
+                "new", "-c", branch, "--no-fork", "--repo", repository.path, "--from-branch", "feature/missing",
                 "--json",
             ],
             currentDirectory: repository,
@@ -176,7 +176,7 @@ struct WorktreeCreationCommandLineIntegrationTests {
 
         let probe = WorktreeCreationCommandLineProbe()
         let exitCode = await WorktreeCommandLine.run(
-            arguments: ["new", branch, "--changes-only", "--from", repository.path, "--json"],
+            arguments: ["new", "-c", branch, "--changes-only", "--from", repository.path, "--json"],
             currentDirectory: repository,
             output: { probe.appendOutput($0) },
             errorOutput: { probe.appendError($0) }
@@ -242,7 +242,7 @@ struct WorktreeCreationCommandLineIntegrationTests {
 
         let probe = WorktreeCreationCommandLineProbe()
         let exitCode = await WorktreeCommandLine.run(
-            arguments: ["new", branch, "--from", repository.path, "--changes-only", "--json"],
+            arguments: ["new", "-c", branch, "--from", repository.path, "--changes-only", "--json"],
             currentDirectory: repository,
             output: { probe.appendOutput($0) },
             errorOutput: { probe.appendError($0) }
@@ -265,7 +265,7 @@ struct WorktreeCreationCommandLineIntegrationTests {
                 effect: "Stash the changed attributes, then retry --changes-only."
             ),
             WorktreeStopOption(
-                action: .command("agentstudio worktree new <branch> --from <source>"),
+                action: .command("agentstudio worktree new -c <branch> --from <source>"),
                 effect: "Use the APFS copy-on-write fork without --changes-only."
             ),
         ]
@@ -275,7 +275,7 @@ struct WorktreeCreationCommandLineIntegrationTests {
 
         let humanProbe = WorktreeCreationCommandLineProbe()
         let humanExitCode = await WorktreeCommandLine.run(
-            arguments: ["new", branch, "--from", repository.path, "--changes-only"],
+            arguments: ["new", "-c", branch, "--from", repository.path, "--changes-only"],
             currentDirectory: repository,
             output: { humanProbe.appendOutput($0) },
             errorOutput: { humanProbe.appendError($0) }
@@ -285,7 +285,7 @@ struct WorktreeCreationCommandLineIntegrationTests {
         let humanOutput = try #require(humanProbe.outputSnapshot().first)
         #expect(humanOutput.contains("commit the changed .gitattributes first"))
         #expect(humanOutput.contains("stash the changed .gitattributes first"))
-        #expect(humanOutput.contains("agentstudio worktree new <branch> --from <source>"))
+        #expect(humanOutput.contains("agentstudio worktree new -c <branch> --from <source>"))
         #expect(!FileManager.default.fileExists(atPath: destination.path))
         #expect(try await git(at: repository, "branch", "--list", branch).isEmpty)
     }

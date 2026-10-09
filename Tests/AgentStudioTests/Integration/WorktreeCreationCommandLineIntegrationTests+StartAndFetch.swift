@@ -16,7 +16,7 @@ extension WorktreeCreationCommandLineIntegrationTests {
 
         let destination = try fixture.destination(for: "feature/reset")
         let run = await fixture.runNew(
-            "feature/reset", ["--from", source.path, "--from-branch", "release/start"], json: true)
+            "feature/reset", ["-c", "--from", source.path, "--from-branch", "release/start"], json: true)
         #expect(run.exit == 0, "\(run.output)")
         let document = try run.created()
         #expect(document.materialization?.kind == "copyOnWrite")
@@ -51,11 +51,11 @@ extension WorktreeCreationCommandLineIntegrationTests {
         let plainOriginTip = try await fixture.advance("feature/plain-origin", file: "plain-origin.txt")
 
         let cases = [
-            WorktreeCreationLineCase("feature/plain", ["--no-fork"], mainSourceHead, "checkout"),
+            WorktreeCreationLineCase("feature/plain", ["-c", "--no-fork"], mainSourceHead, "checkout"),
             WorktreeCreationLineCase(
-                "feature/plain-from", ["--no-fork", "--from", linked.path], linkedHead, "checkout"),
+                "feature/plain-from", ["-c", "--no-fork", "--from", linked.path], linkedHead, "checkout"),
             WorktreeCreationLineCase(
-                "feature/plain-start", ["--no-fork", "--from-branch", "release/origin"], originTip,
+                "feature/plain-start", ["-c", "--no-fork", "--from-branch", "release/origin"], originTip,
                 "checkout; from origin/release/origin"),
             WorktreeCreationLineCase(
                 "feature/behind", ["--no-fork"], behindTip,
@@ -103,7 +103,9 @@ extension WorktreeCreationCommandLineIntegrationTests {
         let fixture = try await WorktreeCreationRemoteFixture.create(named: "new-fetch-failed")
         defer { fixture.destroy() }
 
-        // The question fails: origin points at a repository that doesn't exist.
+        // The question fails: origin points at a repository that doesn't exist. A local branch opens as it is.
+        try await fixture.git("branch", "feature/unreachable")
+        try await fixture.git("branch", "feature/unreachable-human")
         try await fixture.git("remote", "set-url", "origin", fixture.folder.appending(path: "missing.git").path)
         let unreachable = await fixture.runNew("feature/unreachable", json: true)
         #expect(unreachable.exit == 0, "\(unreachable.output)")
@@ -111,17 +113,20 @@ extension WorktreeCreationCommandLineIntegrationTests {
         #expect(unreachableDocument.fetch.status == "failed")
         #expect(unreachableDocument.fetch.remote == "origin")
         #expect(unreachableDocument.fetch.branch == "feature/unreachable")
-        #expect(unreachableDocument.start.from == "sourceHead")
+        #expect(unreachableDocument.branch.status == "existing")
+        #expect(unreachableDocument.start.from == "localBranch")
         let reason = try #require(unreachableDocument.fetch.reason)
         let humanDestination = try fixture.destination(for: "feature/unreachable-human")
         let human = await fixture.runNew("feature/unreachable-human", json: false)
         #expect(
             human.line
                 == "created feature/unreachable-human at \(humanDestination.path) "
-                + "(copy-on-write; fetch failed: \(reason); used local refs)")
+                + "(copy-on-write; existing branch; fetch failed: \(reason); used local refs)")
 
-        // The question succeeds but the fetch fails: a held lock on the remote-tracking ref.
+        // The question succeeds but the fetch fails: a held lock on the remote-tracking ref. The local branch
+        // opens as it is.
         try await fixture.git("remote", "set-url", "origin", fixture.origin.path)
+        try await fixture.git("branch", "feature/locked", "main")
         try await fixture.advance("feature/locked", file: "locked.txt")
         let lock = fixture.repository.appending(path: ".git/refs/remotes/origin/feature/locked.lock")
         try FileManager.default.createDirectory(
@@ -133,10 +138,13 @@ extension WorktreeCreationCommandLineIntegrationTests {
         let lockedDocument = try locked.created()
         #expect(lockedDocument.fetch.status == "failed")
         #expect(lockedDocument.fetch.reason == "gitLockHeld")
-        // With no remote-tracking ref on disk, the branch starts at the source's HEAD.
+        // With no remote-tracking ref on disk, the local branch is used as it is.
+        #expect(lockedDocument.branch.status == "existing")
         #expect(
             lockedDocument.start
-                == .init(commit: fixture.mainCommit, from: "sourceHead", ref: nil, localOnlyCommits: nil))
+                == .init(
+                    commit: fixture.mainCommit, from: "localBranch", ref: "refs/heads/feature/locked",
+                    localOnlyCommits: nil))
         #expect(FileManager.default.fileExists(atPath: lock.path))
     }
 }
