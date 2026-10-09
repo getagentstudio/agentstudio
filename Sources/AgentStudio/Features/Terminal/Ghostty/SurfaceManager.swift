@@ -166,10 +166,6 @@ package final class SurfaceManager {
         cwdChangeStream
     }
 
-    package func setPerformanceTraceRecorder(_ recorder: AgentStudioPerformanceTraceRecorder?) {
-        performanceTraceRecorder = recorder
-    }
-
     /// Registers (or clears, passing `nil`) the `onAttachedBindingsChanged` handler.
     package func setAttachedBindingsChangeHandler(_ handler: (() -> Void)?) {
         onAttachedBindingsChanged = handler
@@ -889,11 +885,6 @@ extension SurfaceManager {
     func paneId(for surfaceId: UUID) -> UUID? {
         guard let managed = activeSurfaces[surfaceId] ?? hiddenSurfaces[surfaceId] else { return nil }
         return managed.attachmentPaneId
-    }
-
-    /// Reverse-lookup: SurfaceView → surfaceId via ObjectIdentifier map.
-    func surfaceId(forView surfaceView: Ghostty.SurfaceView) -> UUID? {
-        surfaceId(forViewObjectId: ObjectIdentifier(surfaceView))
     }
 
     /// Reverse-lookup: SurfaceView ObjectIdentifier → surfaceId.

@@ -404,7 +404,7 @@ struct DraggableTabBarWindowDragTests {
         )
         let tabBar = CustomTabBar(
             adapter: adapter,
-            commandDispatcher: AppTerminalFixtureCommandDispatcher(), onSelect: { _ in },
+            onSelect: { _ in },
             canDispatchCommand: { _, _ in true },
             onCommand: { _, _ in },
             onShowArrangements: { _ in }

@@ -61,7 +61,6 @@ private struct ScrollOverflowDetector: ViewModifier {
 /// Custom Ghostty-style tab bar with pill-shaped tabs
 struct CustomTabBar: View {
     @Bindable var adapter: TabBarAdapter
-    let commandDispatcher: any AppCommandDispatching
     var onSelect: (UUID) -> Void
     var canDispatchCommand: ((AppCommand, UUID) -> Bool)?
     var onCommand: ((AppCommand, UUID) -> Void)?
@@ -792,7 +791,6 @@ struct TabBarEmptyState: View {
             return VStack(spacing: 0) {
                 CustomTabBar(
                     adapter: adapter,
-                    commandDispatcher: PreviewAppCommandDispatcher(),
                     onSelect: { _ in },
                     canDispatchCommand: { _, _ in true },
                     onCommand: { _, _ in },

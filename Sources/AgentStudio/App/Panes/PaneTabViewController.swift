@@ -442,7 +442,6 @@ class PaneTabViewController: NSViewController, NSPopoverDelegate, WorkspaceComma
         let commandDispatcher = self.commandDispatcher
         let tabBar = CustomTabBar(
             adapter: tabBarAdapter,
-            commandDispatcher: commandDispatcher,
             onSelect: { [weak self] tabId in
                 self?.handlePaneFocusTrigger(.tabClick(PaneTabClickFocusTrigger(targetTabId: tabId)))
             },

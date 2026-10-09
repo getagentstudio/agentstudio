@@ -9,7 +9,7 @@ import Testing
 @testable import AgentStudioTerminal
 
 @MainActor
-@Suite("TerminalActivityRouter agent settled heuristic")
+@Suite("TerminalActivityRouter agent settled heuristic", .serialized)
 struct TerminalActivityAgentSettledHeuristicTests {
     @Test("non-agent qualifying output emits blue activity instead of yellow")
     func nonAgentQualifyingOutputEmitsBlueActivityInsteadOfYellow() async throws {

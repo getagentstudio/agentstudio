@@ -1026,6 +1026,7 @@ large|SwiftLaneOutputRelayTests|concurrent
 large|SwiftLaneRunnerReportTests|concurrent
 large|SwiftPackageSandboxScriptTests|concurrent
 large|SwiftTestFailureScannerScriptTests|concurrent
+large|TerminalActivityAgentSettledHeuristicTests|process-global
 large|TitlePanePerformanceWorkloadScriptTests|concurrent
 large|TopologyEventPipelineIntegrationTests|process-global
 large|TopologyRuntimeScopeFeedbackTests|process-global
