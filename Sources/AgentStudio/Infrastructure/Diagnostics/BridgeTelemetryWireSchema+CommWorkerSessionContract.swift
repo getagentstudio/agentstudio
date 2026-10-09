@@ -14,6 +14,8 @@ extension BridgeTelemetryWireSchema {
                         "agentstudio.bridge.worker.file_mode_dispatch",
                         "agentstudio.bridge.worker.file_select_dispatch",
                         "agentstudio.bridge.worker.review_select_dispatch",
+                        "agentstudio.bridge.worker.replacement_reason",
+                        "agentstudio.bridge.worker.replacement_source",
                         "agentstudio.bridge.worker.session_state",
                     ],
                     numericKeys: [

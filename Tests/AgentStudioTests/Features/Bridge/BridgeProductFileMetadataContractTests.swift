@@ -4,147 +4,59 @@ import Testing
 @testable import AgentStudioBridge
 
 struct BridgeProductFileMetadataContractTests {
-    @Test("File metadata accepts every closed event and round-trips exactly")
-    func acceptsEveryClosedEventAndRoundTripsExactly() throws {
-        let events: [[String: Any]] = [
-            ["eventKind": "file.sourceAccepted", "source": source],
-            [
-                "eventKind": "file.treeWindow",
-                "finalWindow": true,
-                "lineage": ["lane": "foreground", "loadedBy": "startup_window"],
-                "pathScope": ["src"],
-                "rows": [row],
-                "source": source,
-                "startIndex": 0,
-                "totalRowCount": 1,
-            ],
-            [
-                "eventKind": "file.treeDelta",
-                "operations": [
-                    ["op": "upsertRows", "rows": [row]],
-                    ["op": "removeRows", "paths": ["src/old.ts"], "rowIds": ["row-old"]],
-                ],
-                "source": source,
-            ],
-            [
-                "eventKind": "file.statusPatch",
-                "patch": [
-                    "ahead": 1,
-                    "behind": 0,
-                    "branchName": "main",
-                    "patchKind": "summary",
-                    "staged": 1,
-                    "unstaged": 2,
-                    "untracked": 3,
-                ],
-                "source": source,
-            ],
-            descriptorReady,
-            lineLimitedDescriptorReady,
-            binaryDescriptorReady,
-            unavailableDescriptorReady,
-            [
-                "eventKind": "file.invalidated",
-                "fileId": "file-1",
-                "path": "src/file.ts",
-                "reason": "contentChanged",
-                "replacementDescriptor": descriptorReadyPayload,
-                "source": source,
-            ],
-        ]
-
-        for event in events {
-            do {
-                let decoded = try decode(event)
-                let encoded = try JSONSerialization.jsonObject(with: JSONEncoder().encode(decoded)) as? NSDictionary
-                #expect(encoded?.isEqual(to: event) == true)
-            } catch {
-                let eventKind = event["eventKind"] as? String ?? "unknown event"
-                Issue.record("\(eventKind): \(error)")
-            }
+    @Test("canonical File values round-trip their closed row, status, source and descriptor contracts")
+    func acceptsCanonicalValuesAndRoundTripsExactly() throws {
+        try assertCanonicalRoundTrip(source, as: BridgeProductFileSourceIdentity.self)
+        try assertCanonicalRoundTrip(row, as: BridgeProductFileTreeRow.self)
+        try assertCanonicalRoundTrip(memberStatus, as: BridgeProductFileMemberStatusRecord.self)
+        for value in [descriptorReady, lineLimitedDescriptorReady, binaryDescriptorReady, unavailableDescriptorReady] {
+            try assertCanonicalRoundTrip(value, as: BridgeProductFileDescriptorReadyPayload.self)
         }
     }
 
-    @Test("File metadata requires nullable facts and rejects legacy or cross-wired fields")
+    @Test("canonical File values reject missing nullable facts, legacy envelopes and cross-wired descriptors")
     func rejectsLegacyCrossWiredAndMissingNullableFacts() throws {
         var missingLanguage = descriptorReady
         missingLanguage.removeValue(forKey: "language")
         var legacyHandle = descriptorReady
         legacyHandle["contentHandle"] = "legacy-handle"
-        var mismatchedSource = descriptorReady
-        var mismatchedAvailability = try #require(mismatchedSource["availability"] as? [String: Any])
-        var mismatchedContentDescriptor = try #require(
-            mismatchedAvailability["contentDescriptor"] as? [String: Any]
-        )
-        var mismatchedContentSource = try #require(
-            mismatchedContentDescriptor["source"] as? [String: Any]
-        )
-        mismatchedContentSource["sourceCursor"] = "different-source-cursor"
-        mismatchedContentDescriptor["source"] = mismatchedContentSource
-        mismatchedAvailability["contentDescriptor"] = mismatchedContentDescriptor
-        mismatchedSource["availability"] = mismatchedAvailability
-        var legacyEnvelope: [String: Any] = [
-            "eventKind": "file.treeWindow",
-            "finalWindow": true,
-            "lineage": ["lane": "foreground", "loadedBy": "startup_window"],
-            "pathScope": [],
-            "rows": [],
-            "source": source,
-            "startIndex": 0,
-            "totalRowCount": 0,
-        ]
-        legacyEnvelope["streamId"] = "legacy-stream"
-        legacyEnvelope["generation"] = 11
-        legacyEnvelope["sequence"] = 1
-        var ignoredStatusRow = row
-        ignoredStatusRow["changeStatus"] = "ignored"
-        var missingFileClassRow = row
-        missingFileClassRow.removeValue(forKey: "fileClass")
-        var invalidFileClassRow = row
-        invalidFileClassRow["fileClass"] = "text"
-        let closedStatusWindow: [String: Any] = [
-            "eventKind": "file.treeWindow",
-            "finalWindow": true,
-            "lineage": ["lane": "foreground", "loadedBy": "startup_window"],
-            "pathScope": [],
-            "rows": [ignoredStatusRow],
-            "source": source,
-            "startIndex": 0,
-            "totalRowCount": 1,
-        ]
-        func treeWindow(row: [String: Any]) -> [String: Any] {
-            [
-                "eventKind": "file.treeWindow",
-                "finalWindow": true,
-                "lineage": ["lane": "foreground", "loadedBy": "startup_window"],
-                "pathScope": [],
-                "rows": [row],
-                "source": source,
-                "startIndex": 0,
-                "totalRowCount": 1,
-            ]
+        var mismatched = descriptorReady
+        var availability = try #require(mismatched["availability"] as? [String: Any])
+        var content = try #require(availability["contentDescriptor"] as? [String: Any])
+        var contentSource = try #require(content["source"] as? [String: Any])
+        contentSource["sourceCursor"] = "different-source-cursor"
+        content["source"] = contentSource
+        availability["contentDescriptor"] = content
+        mismatched["availability"] = availability
+        var legacyEnvelope = descriptorReady
+        legacyEnvelope["eventKind"] = "file.descriptorReady"
+        for value in [missingLanguage, legacyHandle, mismatched, legacyEnvelope] {
+            #expect(throws: (any Error).self) { _ = try decode(value) }
         }
-        let crossWiredStatusPatch: [String: Any] = [
-            "eventKind": "file.statusPatch",
-            "patch": [
-                "patchKind": "invalidated",
-                "reason": "git_status_changed",
-                "staged": 1,
-            ],
-            "source": source,
-        ]
-
-        for event in [
-            missingLanguage,
-            legacyHandle,
-            mismatchedSource,
-            legacyEnvelope,
-            closedStatusWindow,
-            treeWindow(row: missingFileClassRow),
-            treeWindow(row: invalidFileClassRow),
-            crossWiredStatusPatch,
-        ] {
-            #expect(throws: (any Error).self) { _ = try decode(event) }
+        var ignoredRow = row
+        ignoredRow["changeStatus"] = "ignored"
+        var missingClass = row
+        missingClass.removeValue(forKey: "fileClass")
+        var invalidClass = row
+        invalidClass["fileClass"] = "text"
+        for value in [ignoredRow, missingClass, invalidClass] {
+            #expect(throws: (any Error).self) { _ = try decodeCanonical(value, as: BridgeProductFileTreeRow.self) }
+        }
+        var missingCount = memberStatus
+        missingCount.removeValue(forKey: "staged")
+        var crossWiredStatus = memberStatus
+        crossWiredStatus["patchKind"] = "invalidated"
+        for value in [missingCount, crossWiredStatus] {
+            #expect(throws: (any Error).self) {
+                _ = try decodeCanonical(value, as: BridgeProductFileMemberStatusRecord.self)
+            }
+        }
+        var legacySource = source
+        legacySource["streamId"] = "legacy-stream"
+        legacySource["generation"] = 11
+        legacySource["sequence"] = 1
+        #expect(throws: (any Error).self) {
+            _ = try decodeCanonical(legacySource, as: BridgeProductFileSourceIdentity.self)
         }
     }
 
@@ -232,68 +144,28 @@ struct BridgeProductFileMetadataContractTests {
         }
     }
 
-    @Test("File metadata caps tree rows, operations, and aggregate delta members")
-    func enforcesCollectionCeilings() throws {
-        #expect(BridgeProductWireContract.maximumFileMetadataTreeWindowRowCount == 256)
-        #expect(BridgeProductWireContract.maximumFileMetadataOperationCount == 256)
-        #expect(BridgeProductWireContract.maximumFileMetadataDeltaMemberCount == 256)
-
-        let excessRows = (0...BridgeProductWireContract.maximumFileMetadataTreeWindowRowCount).map {
-            treeRow(index: $0)
-        }
-        let oversizedWindow: [String: Any] = [
-            "eventKind": "file.treeWindow",
-            "finalWindow": true,
-            "lineage": ["lane": "foreground", "loadedBy": "startup_window"],
-            "pathScope": [],
-            "rows": excessRows,
-            "source": source,
-            "startIndex": 0,
-            "totalRowCount": excessRows.count,
-        ]
-        #expect(throws: (any Error).self) { _ = try decode(oversizedWindow) }
-
-        let excessOperations = (0...BridgeProductWireContract.maximumFileMetadataOperationCount).map {
-            ["op": "removeRows", "paths": [], "rowIds": ["row-\($0)"]] as [String: Any]
-        }
+    // The retired positional envelope ceilings had no wire consumer. The real
+    // batch limit is exercised in BridgeProductSealedViewBatchTests.sealedFileFrameRejectsOversizedPart.
+    @Test("canonical File producer values reject invalid row depth and status counts")
+    func rejectsInvalidProducerValues() throws {
+        var negativeDepth = row
+        negativeDepth["depth"] = -1
         #expect(throws: (any Error).self) {
-            _ = try decode([
-                "eventKind": "file.treeDelta",
-                "operations": excessOperations,
-                "source": source,
-            ])
+            _ = try decodeCanonical(negativeDepth, as: BridgeProductFileTreeRow.self)
         }
-
+        let identity = try decodeCanonical(source, as: BridgeProductFileSourceIdentity.self)
         #expect(throws: (any Error).self) {
-            _ = try decode([
-                "eventKind": "file.treeDelta",
-                "operations": [["op": "upsertRows", "rows": excessRows]],
-                "source": source,
-            ])
+            _ = try BridgeProductFileMemberStatusRecord(
+                source: identity, status: .ready, branchName: nil,
+                ahead: -1, behind: nil, staged: nil, unstaged: nil, untracked: nil)
         }
     }
 
-    @Test("File metadata rejects invalid producer values during encoding")
-    func rejectsInvalidProducerValuesDuringEncoding() {
-        #expect(throws: (any Error).self) {
-            _ = try JSONEncoder().encode(
-                BridgeProductFileTreeOperation.removeRows(paths: [], rowIds: [])
-            )
-        }
-        #expect(throws: (any Error).self) {
-            _ = try JSONEncoder().encode(
-                BridgeProductFileStatusPatch.summary(
-                    BridgeProductFileStatusSummary(
-                        ahead: -1,
-                        behind: nil,
-                        branchName: nil,
-                        staged: nil,
-                        unstaged: nil,
-                        untracked: nil
-                    )
-                )
-            )
-        }
+    private var memberStatus: [String: Any] {
+        [
+            "kind": "memberStatus", "status": "ready", "source": source,
+            "ahead": 1, "behind": 0, "branchName": "main", "staged": 1, "unstaged": 2, "untracked": 3,
+        ]
     }
 
     private var source: [String: Any] {
@@ -349,9 +221,7 @@ struct BridgeProductFileMetadataContractTests {
     }
 
     private var descriptorReady: [String: Any] {
-        var value = descriptorReadyPayload
-        value["eventKind"] = "file.descriptorReady"
-        return value
+        descriptorReadyPayload
     }
 
     private var binaryDescriptorReady: [String: Any] {
@@ -433,8 +303,22 @@ struct BridgeProductFileMetadataContractTests {
         return descriptor
     }
 
-    private func decode(_ object: [String: Any]) throws -> BridgeProductFileMetadataEvent {
+    private func decode(_ object: [String: Any]) throws -> BridgeProductFileDescriptorReadyPayload {
+        try decodeCanonical(object, as: BridgeProductFileDescriptorReadyPayload.self)
+    }
+
+    private func decodeCanonical<CanonicalValue: Decodable>(
+        _ object: [String: Any], as type: CanonicalValue.Type
+    ) throws -> CanonicalValue {
         let data = try JSONSerialization.data(withJSONObject: object, options: [.sortedKeys])
-        return try BridgeProductStrictJSON.decode(BridgeProductFileMetadataEvent.self, from: data)
+        return try BridgeProductStrictJSON.decode(type, from: data)
+    }
+
+    private func assertCanonicalRoundTrip<CanonicalValue: Codable>(
+        _ object: [String: Any], as type: CanonicalValue.Type
+    ) throws {
+        let value = try decodeCanonical(object, as: type)
+        let encoded = try JSONSerialization.jsonObject(with: JSONEncoder().encode(value)) as? NSDictionary
+        #expect(encoded?.isEqual(to: object) == true)
     }
 }

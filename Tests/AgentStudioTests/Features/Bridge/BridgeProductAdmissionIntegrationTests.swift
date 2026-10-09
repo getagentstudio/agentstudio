@@ -1,3 +1,4 @@
+import AgentStudioTestHarness
 import AgentStudioTestSupport
 import Foundation
 import Testing
@@ -169,8 +170,8 @@ struct BridgeProductAdmissionIntegrationTests {
         }
     }
 
-    @Test("close before the first control response suppresses every response and settles residue")
-    func closeBeforeControlResponseSuppressesProviderSuccess() async throws {
+    @Test("close after admission fences provider completion and settles residue")
+    func closeAfterAdmissionFencesProviderCompletion() async throws {
         // Arrange
         let harness = try await BridgeProductAdmissionIntegrationHarness.make(
             holdFirstControlResponse: true
@@ -180,39 +181,42 @@ struct BridgeProductAdmissionIntegrationTests {
             body: harness.workerOpenBody
         )
         let replyTask = Task {
-            do {
-                _ = try await bridgeProductAdmissionCollectReply(
-                    handler: harness.handler,
-                    request: request
-                )
-                return false
-            } catch is CancellationError {
-                return true
-            } catch {
-                Issue.record("Unexpected pre-response cancellation error: \(error)")
-                return false
-            }
+            try await bridgeProductAdmissionCollectReply(
+                handler: harness.handler,
+                request: request
+            )
         }
         await harness.provider.waitUntilControlStarted(1)
+        let admissionReply = try await replyTask.value
+        let admitted = try BridgeProductStrictJSON.decode(
+            BridgeProductOperationAdmittedResponse.self,
+            from: admissionReply.body
+        )
 
         // Act
         harness.owner.productAdmissionGate.close()
         await harness.provider.releaseHeldControlResponse()
-        let cancellationObserved = await replyTask.value
+        await harness.provider.waitUntilControlCompleted(1)
+        await harness.installation.session.waitForOutstandingOperationExecutions()
         let sessionSnapshot = await harness.installation.session.snapshot
+        let operationSettlement = await harness.installation.session.operationTable
+            .entriesById[admitted.operationId]?.settlement?.outcome
         let providerSnapshot = await harness.provider.snapshot
         let routerSnapshot = await bridgeProductAdmissionDrainedRouterSnapshot(harness.router)
         let ownerSnapshot = await harness.owner.snapshot()
         _ = await harness.owner.retire(reason: .paneDisposal)
 
         // Assert
-        #expect(cancellationObserved)
+        #expect(admissionReply.response?.statusCode == 200)
+        #expect(admissionReply.events.first == .response)
+        #expect(operationSettlement == .failed)
         #expect(providerSnapshot.controlRequests.count == 1)
         #expect(providerSnapshot.controlCompletionCount == 1)
         #expect(sessionSnapshot.pendingRequestKind == nil)
-        #expect(!sessionSnapshot.pendingControlProviderDispatched)
+        #expect((await harness.installation.session.diagnosticSnapshot).activeOperationExecutionCount == 0)
         #expect(sessionSnapshot.controlReplay.inFlightRequestSequence == nil)
-        #expect(sessionSnapshot.controlReplay.replayableRequestSequence == nil)
+        #expect(sessionSnapshot.controlReplay.replayableRequestSequence == 1)
+        #expect(sessionSnapshot.lifecycle == .awaitingOpen)
         #expect(routerSnapshot.hasZeroResidue)
         #expect(routerSnapshot.transportClaimMintCount == 1)
         #expect(ownerSnapshot.activeSchemeTaskCount == 0)
@@ -236,7 +240,7 @@ struct BridgeProductAdmissionIntegrationTests {
             Issue.record("Expected worker-open control execution admission")
             return
         }
-        guard await session.claimControlProviderDispatch(token: token) else {
+        guard await session.admitControlProviderExecution(token: token) else {
             Issue.record("Expected worker-open provider dispatch claim")
             return
         }
@@ -250,15 +254,16 @@ struct BridgeProductAdmissionIntegrationTests {
             token: token,
             exactResponseBytes: exactResponseBytes
         )
+        await session.settleControlProviderDispatch(token: token)
         let sessionSnapshot = await session.snapshot
         _ = await harness.owner.retire(reason: .paneDisposal)
 
         // Assert
         #expect(completionEffect == .noEffect)
         #expect(sessionSnapshot.pendingRequestKind == nil)
-        #expect(!sessionSnapshot.pendingControlProviderDispatched)
+        #expect((await session.diagnosticSnapshot).activeOperationExecutionCount == 0)
         #expect(sessionSnapshot.controlReplay.inFlightRequestSequence == nil)
-        #expect(sessionSnapshot.controlReplay.replayableRequestSequence == nil)
+        #expect(sessionSnapshot.controlReplay.replayableRequestSequence == 1)
         #expect(sessionSnapshot.lifecycle == .awaitingOpen)
     }
 }
@@ -296,7 +301,8 @@ private struct BridgeProductAdmissionIntegrationHarness {
         let owner = try BridgePaneProductSessionOwner(
             paneSessionId: bridgeProductTestPaneSessionId,
             provider: provider,
-            productAdmissionGate: BridgeProductAdmissionGate()
+            productAdmissionGate: BridgeProductAdmissionGate(),
+            retirementClock: TestPushClock()
         )
         let productAdmission = try #require(owner.productAdmissionGate.acquire())
         let installation = try await owner.prepareCandidate(productAdmission: productAdmission)

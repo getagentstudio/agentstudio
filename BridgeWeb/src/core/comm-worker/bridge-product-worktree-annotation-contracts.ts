@@ -37,6 +37,7 @@ const annotationOutputCommandOutcomeSchema = z.discriminatedUnion('kind', [
 		.strict(),
 	z
 		.object({
+			effectCode: z.enum(['missing_folder', 'permission_denied']).optional(),
 			effectError: z.string().min(1),
 			kind: z.literal('effect_failed'),
 			summary: annotationOutputResultSummarySchema,
@@ -45,6 +46,7 @@ const annotationOutputCommandOutcomeSchema = z.discriminatedUnion('kind', [
 	z
 		.object({
 			cleanupError: z.string().min(1),
+			effectCode: z.enum(['missing_folder', 'permission_denied']).optional(),
 			effectError: z.string().min(1),
 			kind: z.literal('effect_and_cleanup_failed'),
 			summary: annotationOutputResultSummarySchema,
@@ -181,6 +183,7 @@ const annotationFailedCommandOutcomeStatusSchema = z
 			'not_found',
 			'open_thread_count_conflict',
 			'output_unavailable',
+			'output_file_missing',
 			'recovery_acknowledgement_required',
 			'session_read_only',
 			'session_selection_required',

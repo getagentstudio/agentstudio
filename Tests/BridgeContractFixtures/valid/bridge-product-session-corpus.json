@@ -1,5 +1,519 @@
 {
   "wireVersion": 2,
+  "transportV2": {
+    "admittedResponses": [
+      {
+        "kind": "operation.admitted",
+        "wireVersion": 2,
+        "paneSessionId": "pane-session-1",
+        "workerInstanceId": "worker-instance-1",
+        "requestId": "request-ordinary-1",
+        "requestSequence": 8,
+        "operationId": "operation-ordinary-1",
+        "waitKind": "ordinary"
+      },
+      {
+        "kind": "operation.admitted",
+        "wireVersion": 2,
+        "paneSessionId": "pane-session-1",
+        "workerInstanceId": "worker-instance-1",
+        "requestId": "request-save-1",
+        "requestSequence": 9,
+        "operationId": "operation-save-1",
+        "waitKind": "human"
+      }
+    ],
+    "resultRequests": [
+      {
+        "kind": "operation.result",
+        "wireVersion": 2,
+        "paneSessionId": "pane-session-1",
+        "workerInstanceId": "worker-instance-1",
+        "operationId": "operation-ordinary-1"
+      }
+    ],
+    "resultResponses": [
+      {
+        "kind": "operation.result",
+        "failureCode": null,
+        "operationId": "operation-ordinary-1",
+        "outcome": "succeeded",
+        "result": null
+      },
+      {
+        "kind": "operation.result",
+        "failureCode": null,
+        "operationId": "operation-unknown-1",
+        "outcome": "outcomeUnknown",
+        "result": null
+      },
+      {
+        "kind": "operation.result",
+        "operationId": "operation-refused-1",
+        "outcome": "refused",
+        "failureCode": "result_capacity_exhausted",
+        "result": null
+      }
+    ],
+    "resultAcknowledgements": [
+      {
+        "kind": "operation.resultAcknowledgement",
+        "wireVersion": 2,
+        "paneSessionId": "pane-session-1",
+        "workerInstanceId": "worker-instance-1",
+        "requestId": "ack-result-1",
+        "requestSequence": 10,
+        "operationId": "operation-ordinary-1"
+      }
+    ],
+    "resultAcknowledgedResponses": [
+      {
+        "kind": "operation.resultAcknowledged",
+        "wireVersion": 2,
+        "paneSessionId": "pane-session-1",
+        "workerInstanceId": "worker-instance-1",
+        "requestId": "ack-result-1",
+        "requestSequence": 10,
+        "operationId": "operation-ordinary-1"
+      }
+    ],
+    "resultAckRefusedResponses": [
+      {
+        "kind": "operation.resultAckRefused",
+        "wireVersion": 2,
+        "paneSessionId": "pane-session-1",
+        "workerInstanceId": "worker-instance-1",
+        "requestId": "ack-result-1",
+        "requestSequence": 10,
+        "operationId": "operation-ordinary-1",
+        "refusalKind": "requestSequenceRejected",
+        "replayRejectionKind": "sequenceConflict",
+        "nextExpectedRequestSequence": 11
+      }
+    ],
+    "viewScopeRequests": [
+      {
+        "kind": "subscription.setScope",
+        "wireVersion": 2,
+        "paneSessionId": "pane-session-1",
+        "workerInstanceId": "worker-instance-1",
+        "requestId": "scope-request-1",
+        "requestSequence": 11,
+        "subscriptionId": "review-subscription-1",
+        "subscriptionKind": "review.metadata",
+        "domain": "default",
+        "handle": "review-handle-1",
+        "incarnation": "review-incarnation-1",
+        "scopeRevision": 2,
+        "scope": {
+          "kind": "review",
+          "interests": []
+        }
+      },
+      {
+        "kind": "subscription.setScope",
+        "wireVersion": 2,
+        "paneSessionId": "pane-session-1",
+        "workerInstanceId": "worker-instance-1",
+        "requestId": "file-scope-none",
+        "requestSequence": 20,
+        "subscriptionId": "file-subscription-1",
+        "subscriptionKind": "file.metadata",
+        "domain": "default",
+        "handle": "file-handle-1",
+        "incarnation": "file-incarnation-1",
+        "scopeRevision": 1,
+        "scope": {
+          "kind": "file",
+          "changeFilter": {
+            "kind": "none"
+          },
+          "interests": [],
+          "pathScope": []
+        }
+      },
+      {
+        "kind": "subscription.setScope",
+        "wireVersion": 2,
+        "paneSessionId": "pane-session-1",
+        "workerInstanceId": "worker-instance-1",
+        "requestId": "file-scope-uncommitted",
+        "requestSequence": 21,
+        "subscriptionId": "file-subscription-1",
+        "subscriptionKind": "file.metadata",
+        "domain": "default",
+        "handle": "file-handle-1",
+        "incarnation": "file-incarnation-1",
+        "scopeRevision": 2,
+        "scope": {
+          "kind": "file",
+          "interests": [],
+          "pathScope": [],
+          "changeFilter": {
+            "kind": "changes",
+            "baseline": {
+              "kind": "uncommitted"
+            },
+            "kinds": [
+              "added",
+              "modified",
+              "renamed",
+              "deleted",
+              "copied"
+            ]
+          }
+        }
+      },
+      {
+        "kind": "subscription.setScope",
+        "wireVersion": 2,
+        "paneSessionId": "pane-session-1",
+        "workerInstanceId": "worker-instance-1",
+        "requestId": "file-scope-all-changes",
+        "requestSequence": 22,
+        "subscriptionId": "file-subscription-1",
+        "subscriptionKind": "file.metadata",
+        "domain": "default",
+        "handle": "file-handle-1",
+        "incarnation": "file-incarnation-1",
+        "scopeRevision": 3,
+        "scope": {
+          "kind": "file",
+          "interests": [],
+          "pathScope": [],
+          "changeFilter": {
+            "kind": "changes",
+            "baseline": {
+              "kind": "originDefaultMergeBase"
+            },
+            "kinds": [
+              "modified",
+              "deleted"
+            ]
+          }
+        }
+      },
+      {
+        "kind": "subscription.setScope",
+        "wireVersion": 2,
+        "paneSessionId": "pane-session-1",
+        "workerInstanceId": "worker-instance-1",
+        "requestId": "comment-scope-worktree-1",
+        "requestSequence": 23,
+        "subscriptionId": "comment-subscription-1",
+        "subscriptionKind": "file.annotations",
+        "domain": "default",
+        "handle": "comment-handle-1",
+        "incarnation": "comment-incarnation-1",
+        "scopeRevision": 1,
+        "scope": {
+          "kind": "comment",
+          "sessionIds": [],
+          "worktreeId": "worktree-1"
+        }
+      }
+    ],
+    "viewResnapshotRequests": [
+      {
+        "kind": "subscription.resnapshot",
+        "wireVersion": 2,
+        "paneSessionId": "pane-session-1",
+        "workerInstanceId": "worker-instance-1",
+        "requestId": "resnapshot-request-1",
+        "requestSequence": 12,
+        "subscriptionId": "file-subscription-1",
+        "subscriptionKind": "file.metadata",
+        "domain": "default",
+        "handle": "file-handle-1",
+        "incarnation": "file-incarnation-1",
+        "scopeRevision": 2
+      }
+    ],
+    "viewAcknowledgements": [
+      {
+        "kind": "subscription.acknowledge",
+        "wireVersion": 2,
+        "paneSessionId": "pane-session-1",
+        "workerInstanceId": "worker-instance-1",
+        "subscriptionId": "file-subscription-1",
+        "domain": "default",
+        "handle": "file-handle-1",
+        "incarnation": "file-incarnation-1",
+        "receivedThroughDeliverySequence": 3
+      }
+    ],
+    "viewScopeAcceptedResponses": [
+      {
+        "kind": "subscription.scopeAccepted",
+        "wireVersion": 2,
+        "paneSessionId": "pane-session-1",
+        "workerInstanceId": "worker-instance-1",
+        "requestId": "scope-request-1",
+        "requestSequence": 11,
+        "subscriptionId": "review-subscription-1",
+        "subscriptionKind": "review.metadata",
+        "domain": "default",
+        "handle": "review-handle-1",
+        "incarnation": "review-incarnation-1",
+        "scopeRevision": 2
+      },
+      {
+        "kind": "subscription.scopeAccepted",
+        "wireVersion": 2,
+        "paneSessionId": "pane-session-1",
+        "workerInstanceId": "worker-instance-1",
+        "requestId": "file-scope-uncommitted",
+        "requestSequence": 21,
+        "subscriptionId": "file-subscription-1",
+        "subscriptionKind": "file.metadata",
+        "domain": "default",
+        "handle": "file-handle-1",
+        "incarnation": "file-incarnation-1",
+        "scopeRevision": 2
+      }
+    ],
+    "viewResnapshotAcceptedResponses": [
+      {
+        "kind": "subscription.resnapshotAccepted",
+        "wireVersion": 2,
+        "paneSessionId": "pane-session-1",
+        "workerInstanceId": "worker-instance-1",
+        "requestId": "resnapshot-request-1",
+        "requestSequence": 12,
+        "subscriptionId": "file-subscription-1",
+        "subscriptionKind": "file.metadata",
+        "domain": "default",
+        "handle": "file-handle-1",
+        "incarnation": "file-incarnation-1",
+        "scopeRevision": 2
+      }
+    ],
+    "viewAcknowledgedResponses": [
+      {
+        "kind": "subscription.acknowledged",
+        "wireVersion": 2,
+        "paneSessionId": "pane-session-1",
+        "workerInstanceId": "worker-instance-1",
+        "subscriptionId": "file-subscription-1",
+        "domain": "default",
+        "handle": "file-handle-1",
+        "incarnation": "file-incarnation-1",
+        "receivedThroughDeliverySequence": 3
+      }
+    ],
+    "batchFrames": [
+      {
+        "kind": "subscription.batchBegin",
+        "wireVersion": 2,
+        "paneSessionId": "pane-session-1",
+        "workerInstanceId": "worker-instance-1",
+        "metadataStreamId": "metadata-stream-1",
+        "streamSequence": 21,
+        "subscriptionId": "review-subscription-1",
+        "subscriptionKind": "review.metadata",
+        "domain": "default",
+        "handle": "review-handle-1",
+        "incarnation": "review-incarnation-1",
+        "scopeRevision": 2,
+        "batchId": "review-batch-1",
+        "mode": "snapshot",
+        "snapshotCause": "open",
+        "scope": {
+          "kind": "review",
+          "interests": []
+        },
+        "baseRevision": 0,
+        "targetRevision": 4,
+        "partCount": 3,
+        "publicationId": "00000000-0000-7000-8000-000000000011"
+      },
+      {
+        "kind": "subscription.batchPart",
+        "wireVersion": 2,
+        "paneSessionId": "pane-session-1",
+        "workerInstanceId": "worker-instance-1",
+        "metadataStreamId": "metadata-stream-1",
+        "streamSequence": 22,
+        "subscriptionId": "review-subscription-1",
+        "subscriptionKind": "review.metadata",
+        "domain": "default",
+        "handle": "review-handle-1",
+        "incarnation": "review-incarnation-1",
+        "scopeRevision": 2,
+        "batchId": "review-batch-1",
+        "deliverySequence": 1,
+        "partIndex": 0,
+        "part": {
+          "operation": "put",
+          "key": "item/a.ts",
+          "revision": 4,
+          "value": {
+            "itemId": "item-a"
+          }
+        }
+      },
+      {
+        "kind": "subscription.batchPart",
+        "wireVersion": 2,
+        "paneSessionId": "pane-session-1",
+        "workerInstanceId": "worker-instance-1",
+        "metadataStreamId": "metadata-stream-1",
+        "streamSequence": 23,
+        "subscriptionId": "review-subscription-1",
+        "subscriptionKind": "review.metadata",
+        "domain": "default",
+        "handle": "review-handle-1",
+        "incarnation": "review-incarnation-1",
+        "scopeRevision": 2,
+        "batchId": "review-batch-1",
+        "deliverySequence": 2,
+        "partIndex": 1,
+        "part": {
+          "operation": "delete",
+          "key": "item/old.ts",
+          "revision": 4
+        }
+      },
+      {
+        "kind": "subscription.batchPart",
+        "wireVersion": 2,
+        "paneSessionId": "pane-session-1",
+        "workerInstanceId": "worker-instance-1",
+        "metadataStreamId": "metadata-stream-1",
+        "streamSequence": 24,
+        "subscriptionId": "review-subscription-1",
+        "subscriptionKind": "review.metadata",
+        "domain": "default",
+        "handle": "review-handle-1",
+        "incarnation": "review-incarnation-1",
+        "scopeRevision": 2,
+        "batchId": "review-batch-1",
+        "deliverySequence": 3,
+        "partIndex": 2,
+        "part": {
+          "operation": "evict",
+          "key": "item/outside.ts"
+        }
+      },
+      {
+        "kind": "subscription.batchComplete",
+        "wireVersion": 2,
+        "paneSessionId": "pane-session-1",
+        "workerInstanceId": "worker-instance-1",
+        "metadataStreamId": "metadata-stream-1",
+        "streamSequence": 25,
+        "subscriptionId": "review-subscription-1",
+        "subscriptionKind": "review.metadata",
+        "domain": "default",
+        "handle": "review-handle-1",
+        "incarnation": "review-incarnation-1",
+        "scopeRevision": 2,
+        "batchId": "review-batch-1",
+        "coveredScope": {
+          "kind": "review",
+          "interests": []
+        }
+      },
+      {
+        "kind": "subscription.batchBegin",
+        "wireVersion": 2,
+        "paneSessionId": "pane-session-1",
+        "workerInstanceId": "worker-instance-1",
+        "metadataStreamId": "metadata-stream-1",
+        "streamSequence": 26,
+        "subscriptionId": "review-subscription-1",
+        "subscriptionKind": "review.metadata",
+        "domain": "default",
+        "handle": "review-handle-1",
+        "incarnation": "review-incarnation-1",
+        "scopeRevision": 3,
+        "batchId": "review-batch-coverage-empty",
+        "mode": "coverage",
+        "scope": {
+          "kind": "review",
+          "interests": []
+        },
+        "baseRevision": 4,
+        "targetRevision": 4,
+        "partCount": 0,
+        "publicationId": "00000000-0000-7000-8000-000000000011"
+      },
+      {
+        "kind": "subscription.batchComplete",
+        "wireVersion": 2,
+        "paneSessionId": "pane-session-1",
+        "workerInstanceId": "worker-instance-1",
+        "metadataStreamId": "metadata-stream-1",
+        "streamSequence": 27,
+        "subscriptionId": "review-subscription-1",
+        "subscriptionKind": "review.metadata",
+        "domain": "default",
+        "handle": "review-handle-1",
+        "incarnation": "review-incarnation-1",
+        "scopeRevision": 3,
+        "batchId": "review-batch-coverage-empty",
+        "coveredScope": {
+          "kind": "review",
+          "interests": []
+        }
+      },
+      {
+        "kind": "subscription.batchBegin",
+        "wireVersion": 2,
+        "paneSessionId": "pane-session-1",
+        "workerInstanceId": "worker-instance-1",
+        "metadataStreamId": "metadata-stream-1",
+        "streamSequence": 28,
+        "subscriptionId": "file-subscription-1",
+        "subscriptionKind": "file.metadata",
+        "domain": "member-a",
+        "handle": "file-handle-1",
+        "incarnation": "member-a-incarnation-1",
+        "scopeRevision": 4,
+        "batchId": "member-a-batch-1",
+        "mode": "snapshot",
+        "snapshotCause": "newerInput",
+        "scope": {
+          "kind": "file",
+          "changeFilter": {
+            "kind": "none"
+          },
+          "interests": [],
+          "pathScope": []
+        },
+        "baseRevision": 0,
+        "targetRevision": 5,
+        "partCount": 0,
+        "requiresCollection": 3
+      },
+      {
+        "kind": "subscription.batchComplete",
+        "wireVersion": 2,
+        "paneSessionId": "pane-session-1",
+        "workerInstanceId": "worker-instance-1",
+        "metadataStreamId": "metadata-stream-1",
+        "streamSequence": 29,
+        "subscriptionId": "file-subscription-1",
+        "subscriptionKind": "file.metadata",
+        "domain": "member-a",
+        "handle": "file-handle-1",
+        "incarnation": "member-a-incarnation-1",
+        "scopeRevision": 4,
+        "batchId": "member-a-batch-1",
+        "coveredScope": {
+          "kind": "file",
+          "changeFilter": {
+            "kind": "none"
+          },
+          "interests": [],
+          "pathScope": []
+        }
+      },
+      {"kind": "subscription.batchComplete", "wireVersion": 2, "paneSessionId": "pane-session-1", "workerInstanceId": "worker-instance-1", "metadataStreamId": "metadata-stream-1", "streamSequence": 30, "subscriptionId": "review-subscription-1", "subscriptionKind": "review.metadata", "domain": "default", "handle": "review-handle-1", "incarnation": "review-incarnation-1", "scopeRevision": 3, "batchId": "file-recovery-batch-1", "coveredScope": {"kind": "review", "interests": []}},
+      {"kind": "subscription.batchBegin", "wireVersion": 2, "paneSessionId": "pane-session-1", "workerInstanceId": "worker-instance-1", "metadataStreamId": "metadata-stream-1", "streamSequence": 31, "subscriptionId": "file-subscription-1", "subscriptionKind": "file.metadata", "domain": "member-a", "handle": "file-handle-1", "incarnation": "member-a-incarnation-1", "scopeRevision": 4, "batchId": "file-recovery-batch-1", "mode": "snapshot", "snapshotCause": "recovery", "scope": {"kind": "file", "changeFilter": {"kind": "none"}, "interests": [], "pathScope": []}, "baseRevision": 0, "targetRevision": 5, "partCount": 0, "requiresCollection": 3},
+      {"kind": "subscription.batchComplete", "wireVersion": 2, "paneSessionId": "pane-session-1", "workerInstanceId": "worker-instance-1", "metadataStreamId": "metadata-stream-1", "streamSequence": 32, "subscriptionId": "file-subscription-1", "subscriptionKind": "file.metadata", "domain": "member-a", "handle": "file-handle-1", "incarnation": "member-a-incarnation-1", "scopeRevision": 4, "batchId": "file-recovery-batch-1", "coveredScope": {"kind": "file", "changeFilter": {"kind": "none"}, "interests": [], "pathScope": []}}
+    ]
+  },
   "bootstrap": {
     "kind": "productSession.bootstrap",
     "wireVersion": 2,
@@ -10,6 +524,19 @@
       "maximumRequestBodyBytes": 262144,
       "maximumMetadataFrameBytes": 131072,
       "maximumQueuedStreamBytes": 4194304,
+      "admissionRetryCount": 2,
+      "contentAcknowledgementDeadlineMilliseconds": 5000,
+      "contentProgressDeadlineMilliseconds": 5000,
+      "viewBatchProgressDeadlineMilliseconds": 5000,
+      "streamKeepaliveIntervalMilliseconds": 350,
+      "viewAcknowledgementDeadlineMilliseconds": 4000,
+      "viewCreditBytes": 524288,
+      "viewCreditParts": 8,
+      "viewMaximumConsecutiveResnapshots": 3,
+      "viewMaximumDirtyKeys": 4096,
+      "workerSettlementDeadlineMilliseconds": 5000,
+      "telemetryPreReadyBufferMaxBytes": 65536,
+      "telemetryPreReadyBufferMaxSamples": 128,
       "maximumQueuedStreamFrames": 64,
       "terminalFrameReserve": 1
     }
@@ -201,75 +728,6 @@
       ]
     }
   },
-  "interestStateVectors": [
-    {
-      "name": "review-empty",
-      "state": {
-        "subscriptionKind": "review.metadata",
-        "interests": []
-      },
-      "encodedBase64": "AQEAAAAA",
-      "sha256": "1a71797cab8ed23c72233b7706b166a33049e4e87dfbc55b9e252f9c1843eca6"
-    },
-    {
-      "name": "file-empty",
-      "state": {
-        "subscriptionKind": "file.metadata",
-        "interests": [],
-        "pathScope": []
-      },
-      "encodedBase64": "AQIAAAAAAAAAAA==",
-      "sha256": "51ce8b03041697e18e2a24d5311e14bb1df4da119635bb84246c1b047316e46b"
-    },
-    {
-      "name": "review-multi-lane",
-      "state": {
-        "subscriptionKind": "review.metadata",
-        "interests": [
-          {
-            "itemIds": [
-              "review-item-2"
-            ],
-            "lane": "visible"
-          },
-          {
-            "itemIds": [
-              "review-item-1"
-            ],
-            "lane": "foreground"
-          }
-        ]
-      },
-      "encodedBase64": "AQEAAAACAAAADXJldmlldy1pdGVtLTEBAAAADXJldmlldy1pdGVtLTID",
-      "sha256": "2535176c2a822c1f5007dd72a7987b7c0a1b6e9af1bc28324ec4618b43f71ebd"
-    },
-    {
-      "name": "file-multi-lane-and-scope",
-      "state": {
-        "subscriptionKind": "file.metadata",
-        "interests": [
-          {
-            "lane": "visible",
-            "paths": [
-              "src/z.ts"
-            ]
-          },
-          {
-            "lane": "foreground",
-            "paths": [
-              "src/a.ts"
-            ]
-          }
-        ],
-        "pathScope": [
-          "tests",
-          "src"
-        ]
-      },
-      "encodedBase64": "AQIAAAACAAAACHNyYy9hLnRzAQAAAAhzcmMvei50cwMAAAACAAAAA3NyYwAAAAV0ZXN0cw==",
-      "sha256": "9396c477af63ed0b05a10296eb36674ea43886e009901564f0db31b363940702"
-    }
-  ],
   "fileSourceCurrentCases": [
     {
       "name": "available",
@@ -304,6 +762,29 @@
           "reason": "no-file-source-authority",
           "status": "unavailable"
         }
+      }
+    }
+  ],
+  "fileRefreshFailureCases": [
+    {
+      "rootAccessFailure": "missingRoot",
+      "failure": {
+        "failureKind": "missingRoot",
+        "retryable": true
+      }
+    },
+    {
+      "rootAccessFailure": "unreadable",
+      "failure": {
+        "failureKind": "unreadableRoot",
+        "retryable": true
+      }
+    },
+    {
+      "rootAccessFailure": "refused",
+      "failure": {
+        "failureKind": "producerRejected",
+        "retryable": false
       }
     }
   ],
@@ -389,12 +870,12 @@
   "controlRequests": [
     {
       "kind": "workerSession.open",
+      "request": null,
       "wireVersion": 2,
       "paneSessionId": "pane-session-1",
       "workerInstanceId": "worker-instance-1",
       "requestId": "request-open-1",
-      "requestSequence": 1,
-      "request": null
+      "requestSequence": 1
     },
     {
       "kind": "product.call",
@@ -446,39 +927,6 @@
       }
     },
     {
-      "kind": "subscription.updateBatch",
-      "wireVersion": 2,
-      "paneSessionId": "pane-session-1",
-      "workerDerivationEpoch": 7,
-      "workerInstanceId": "worker-instance-1",
-      "requestId": "request-review-subscription-update-batch-1",
-      "requestSequence": 5,
-      "subscriptionId": "review-subscription-1",
-      "subscriptionKind": "review.metadata",
-      "updateId": "review-interest-update-1",
-      "baseInterestRevision": 0,
-      "baseInterestSha256": "1a71797cab8ed23c72233b7706b166a33049e4e87dfbc55b9e252f9c1843eca6",
-      "targetInterestRevision": 1,
-      "targetInterestSha256": "2535176c2a822c1f5007dd72a7987b7c0a1b6e9af1bc28324ec4618b43f71ebd",
-      "batchIndex": 0,
-      "batchCount": 1,
-      "totalDeltaItemCount": 2,
-      "delta": {
-        "subscriptionKind": "review.metadata",
-        "add": [
-          {
-            "itemId": "review-item-1",
-            "lane": "foreground"
-          },
-          {
-            "itemId": "review-item-2",
-            "lane": "visible"
-          }
-        ],
-        "removeItemIds": []
-      }
-    },
-    {
       "kind": "subscription.cancel",
       "wireVersion": 2,
       "paneSessionId": "pane-session-1",
@@ -500,16 +948,12 @@
         {
           "subscriptionId": "review-subscription-1",
           "subscriptionKind": "review.metadata",
-          "interestRevision": 1,
-          "interestSha256": "2535176c2a822c1f5007dd72a7987b7c0a1b6e9af1bc28324ec4618b43f71ebd",
           "workerDerivationEpoch": 7
         },
         {
           "subscriptionId": "file-subscription-1",
           "subscriptionKind": "file.metadata",
-          "workerDerivationEpoch": 2,
-          "interestRevision": 0,
-          "interestSha256": "51ce8b03041697e18e2a24d5311e14bb1df4da119635bb84246c1b047316e46b"
+          "workerDerivationEpoch": 2
         }
       ],
       "lastAcceptedRequestSequence": 6,
@@ -545,12 +989,12 @@
   "controlResponses": [
     {
       "kind": "workerSession.accepted",
+      "result": null,
       "wireVersion": 2,
       "paneSessionId": "pane-session-1",
       "workerInstanceId": "worker-instance-1",
       "requestId": "request-open-1",
-      "requestSequence": 1,
-      "result": null
+      "requestSequence": 1
     },
     {
       "kind": "call.completed",
@@ -572,24 +1016,18 @@
       "requestId": "request-review-subscription-open-1",
       "requestSequence": 3,
       "subscriptionId": "review-subscription-1",
-      "subscriptionKind": "review.metadata",
-      "interestRevision": 0,
-      "interestSha256": "1a71797cab8ed23c72233b7706b166a33049e4e87dfbc55b9e252f9c1843eca6"
+      "subscriptionKind": "review.metadata"
     },
     {
-      "kind": "subscription.updateBatchAccepted",
+      "kind": "subscription.openAccepted",
       "wireVersion": 2,
       "paneSessionId": "pane-session-1",
       "workerInstanceId": "worker-instance-1",
-      "requestId": "request-review-subscription-update-batch-1",
-      "requestSequence": 5,
-      "subscriptionId": "review-subscription-1",
-      "subscriptionKind": "review.metadata",
-      "updateId": "review-interest-update-1",
-      "batchIndex": 0,
-      "targetInterestRevision": 1,
-      "targetInterestSha256": "2535176c2a822c1f5007dd72a7987b7c0a1b6e9af1bc28324ec4618b43f71ebd",
-      "disposition": "committed"
+      "requestId": "request-review-annotation-open-accepted-1",
+      "requestSequence": 10,
+      "subscriptionId": "review-annotations-subscription-1",
+      "subscriptionKind": "review.annotations",
+      "worktreeId": "00000000-0000-7000-8000-000000000001"
     },
     {
       "kind": "subscription.cancelAccepted",
@@ -615,16 +1053,12 @@
           "disposition": "retained",
           "subscriptionId": "review-subscription-1",
           "subscriptionKind": "review.metadata",
-          "interestRevision": 1,
-          "interestSha256": "2535176c2a822c1f5007dd72a7987b7c0a1b6e9af1bc28324ec4618b43f71ebd",
           "workerDerivationEpoch": 7
         },
         {
           "disposition": "retained",
           "subscriptionId": "file-subscription-1",
           "subscriptionKind": "file.metadata",
-          "interestRevision": 0,
-          "interestSha256": "51ce8b03041697e18e2a24d5311e14bb1df4da119635bb84246c1b047316e46b",
           "workerDerivationEpoch": 2
         }
       ]
@@ -688,7 +1122,7 @@
       "paneSessionId": "pane-session-1",
       "workerInstanceId": "worker-instance-1",
       "metadataStreamId": "metadata-stream-resumed-1",
-      "resumeFromStreamSequence": 6
+      "resumeFromStreamSequence": 8
     },
     {
       "kind": "metadataStream.open",
@@ -711,15 +1145,15 @@
     },
     {
       "kind": "pane.presentation",
-      "operationCorrelationId": null,
       "wireVersion": 2,
       "paneSessionId": "pane-session-1",
       "workerInstanceId": "worker-instance-1",
       "metadataStreamId": "metadata-stream-presentation-1",
       "streamSequence": 1,
       "presentationRevision": 1,
-      "nativeActivity": "foreground",
       "fileRefreshFailure": null,
+      "nativeActivity": "foreground",
+      "operationCorrelationId": null,
       "reviewComparison": {
         "activeTarget": {
           "basis": "commonCommit",
@@ -748,7 +1182,6 @@
     },
     {
       "kind": "pane.presentation",
-      "operationCorrelationId": null,
       "wireVersion": 2,
       "paneSessionId": "pane-session-1",
       "workerInstanceId": "worker-instance-1",
@@ -760,34 +1193,35 @@
         "failureKind": "fileSourceUnavailable",
         "retryable": true
       },
+      "operationCorrelationId": null,
       "reviewComparison": null,
       "refreshingLanes": []
     },
     {
       "kind": "pane.presentation",
-      "operationCorrelationId": null,
       "wireVersion": 2,
       "paneSessionId": "pane-session-1",
       "workerInstanceId": "worker-instance-1",
       "metadataStreamId": "metadata-stream-presentation-1",
       "streamSequence": 3,
       "presentationRevision": 3,
-      "nativeActivity": "dormant",
       "fileRefreshFailure": null,
+      "nativeActivity": "dormant",
+      "operationCorrelationId": null,
       "reviewComparison": null,
       "refreshingLanes": []
     },
     {
       "kind": "pane.presentation",
-      "operationCorrelationId": null,
       "wireVersion": 2,
       "paneSessionId": "pane-session-1",
       "workerInstanceId": "worker-instance-1",
       "metadataStreamId": "metadata-stream-presentation-1",
       "streamSequence": 4,
       "presentationRevision": 4,
-      "nativeActivity": "closed",
       "fileRefreshFailure": null,
+      "nativeActivity": "closed",
+      "operationCorrelationId": null,
       "reviewComparison": null,
       "refreshingLanes": []
     },
@@ -801,57 +1235,7 @@
       "streamSequence": 1,
       "subscriptionId": "review-subscription-1",
       "subscriptionKind": "review.metadata",
-      "subscriptionSequence": 0,
-      "interestRevision": 0,
-      "interestSha256": "1a71797cab8ed23c72233b7706b166a33049e4e87dfbc55b9e252f9c1843eca6",
-      "sourceGeneration": 7,
-      "cursor": null
-    },
-    {
-      "kind": "subscription.interestsCommitted",
-      "wireVersion": 2,
-      "paneSessionId": "pane-session-1",
-      "workerDerivationEpoch": 7,
-      "workerInstanceId": "worker-instance-1",
-      "metadataStreamId": "metadata-stream-1",
-      "streamSequence": 2,
-      "subscriptionId": "review-subscription-1",
-      "subscriptionKind": "review.metadata",
-      "subscriptionSequence": 1,
-      "interestRevision": 1,
-      "interestSha256": "2535176c2a822c1f5007dd72a7987b7c0a1b6e9af1bc28324ec4618b43f71ebd",
-      "sourceGeneration": 7,
-      "cursor": "review-cursor-commit-1",
-      "updateId": "review-interest-update-1"
-    },
-    {
-      "kind": "subscription.data",
-      "operationCorrelationId": null,
-      "wireVersion": 2,
-      "paneSessionId": "pane-session-1",
-      "workerDerivationEpoch": 7,
-      "workerInstanceId": "worker-instance-1",
-      "metadataStreamId": "metadata-stream-1",
-      "streamSequence": 3,
-      "subscriptionId": "review-subscription-1",
-      "subscriptionKind": "review.metadata",
-      "subscriptionSequence": 2,
-      "interestRevision": 1,
-      "interestSha256": "2535176c2a822c1f5007dd72a7987b7c0a1b6e9af1bc28324ec4618b43f71ebd",
-      "sourceGeneration": 7,
-      "cursor": "review-cursor-1",
-      "data": {
-        "subscriptionKind": "review.metadata",
-        "event": {
-          "eventKind": "review.sourceAccepted",
-          "operationCorrelationId": null,
-          "sourceIdentity": "review-source-1",
-          "packageId": "review-package-1",
-          "publicationId": "11111111-1111-7111-8111-111111111111",
-          "generation": 7,
-          "revision": 1
-        }
-      }
+      "subscriptionSequence": 0
     },
     {
       "kind": "subscription.accepted",
@@ -860,62 +1244,10 @@
       "workerDerivationEpoch": 2,
       "workerInstanceId": "worker-instance-1",
       "metadataStreamId": "metadata-stream-1",
-      "streamSequence": 4,
+      "streamSequence": 2,
       "subscriptionId": "file-subscription-1",
       "subscriptionKind": "file.metadata",
-      "subscriptionSequence": 0,
-      "interestRevision": 0,
-      "interestSha256": "51ce8b03041697e18e2a24d5311e14bb1df4da119635bb84246c1b047316e46b",
-      "sourceGeneration": 11,
-      "cursor": null
-    },
-    {
-      "kind": "subscription.data",
-      "operationCorrelationId": null,
-      "wireVersion": 2,
-      "paneSessionId": "pane-session-1",
-      "workerDerivationEpoch": 2,
-      "workerInstanceId": "worker-instance-1",
-      "metadataStreamId": "metadata-stream-1",
-      "streamSequence": 5,
-      "subscriptionId": "file-subscription-1",
-      "subscriptionKind": "file.metadata",
-      "subscriptionSequence": 1,
-      "interestRevision": 0,
-      "interestSha256": "51ce8b03041697e18e2a24d5311e14bb1df4da119635bb84246c1b047316e46b",
-      "sourceGeneration": 11,
-      "cursor": "file-cursor-1",
-      "data": {
-        "subscriptionKind": "file.metadata",
-        "event": {
-          "eventKind": "file.sourceAccepted",
-          "source": {
-            "repoId": "00000000-0000-4000-8000-000000000001",
-            "rootRevisionToken": null,
-            "sourceCursor": "source-cursor-1",
-            "sourceId": "source-1",
-            "subscriptionGeneration": 11,
-            "worktreeId": "00000000-0000-4000-8000-000000000002"
-          }
-        }
-      }
-    },
-    {
-      "kind": "subscription.reset",
-      "wireVersion": 2,
-      "paneSessionId": "pane-session-1",
-      "workerDerivationEpoch": 7,
-      "workerInstanceId": "worker-instance-1",
-      "metadataStreamId": "metadata-stream-1",
-      "streamSequence": 6,
-      "subscriptionId": "review-subscription-1",
-      "subscriptionKind": "review.metadata",
-      "subscriptionSequence": 3,
-      "interestRevision": 2,
-      "interestSha256": "1a71797cab8ed23c72233b7706b166a33049e4e87dfbc55b9e252f9c1843eca6",
-      "sourceGeneration": 7,
-      "cursor": "review-cursor-2",
-      "reason": "interest_mismatch"
+      "subscriptionSequence": 0
     },
     {
       "kind": "subscription.accepted",
@@ -924,45 +1256,10 @@
       "workerDerivationEpoch": 3,
       "workerInstanceId": "worker-instance-1",
       "metadataStreamId": "metadata-stream-1",
-      "streamSequence": 7,
+      "streamSequence": 3,
       "subscriptionId": "file-subscription-epoch-3",
       "subscriptionKind": "file.metadata",
-      "subscriptionSequence": 0,
-      "interestRevision": 0,
-      "interestSha256": "51ce8b03041697e18e2a24d5311e14bb1df4da119635bb84246c1b047316e46b",
-      "sourceGeneration": 12,
-      "cursor": null
-    },
-    {
-      "kind": "subscription.data",
-      "operationCorrelationId": null,
-      "wireVersion": 2,
-      "paneSessionId": "pane-session-1",
-      "workerDerivationEpoch": 2,
-      "workerInstanceId": "worker-instance-1",
-      "metadataStreamId": "metadata-stream-1",
-      "streamSequence": 8,
-      "subscriptionId": "file-subscription-1",
-      "subscriptionKind": "file.metadata",
-      "subscriptionSequence": 2,
-      "interestRevision": 0,
-      "interestSha256": "51ce8b03041697e18e2a24d5311e14bb1df4da119635bb84246c1b047316e46b",
-      "sourceGeneration": 11,
-      "cursor": "file-cursor-stale-2",
-      "data": {
-        "subscriptionKind": "file.metadata",
-        "event": {
-          "eventKind": "file.sourceAccepted",
-          "source": {
-            "repoId": "00000000-0000-4000-8000-000000000001",
-            "rootRevisionToken": null,
-            "sourceCursor": "source-cursor-1",
-            "sourceId": "source-1",
-            "subscriptionGeneration": 11,
-            "worktreeId": "00000000-0000-4000-8000-000000000002"
-          }
-        }
-      }
+      "subscriptionSequence": 0
     },
     {
       "kind": "subscription.accepted",
@@ -971,14 +1268,10 @@
       "workerDerivationEpoch": 7,
       "workerInstanceId": "worker-instance-1",
       "metadataStreamId": "metadata-stream-1",
-      "streamSequence": 9,
+      "streamSequence": 4,
       "subscriptionId": "review-subscription-cancel-1",
       "subscriptionKind": "review.metadata",
-      "subscriptionSequence": 0,
-      "interestRevision": 0,
-      "interestSha256": "1a71797cab8ed23c72233b7706b166a33049e4e87dfbc55b9e252f9c1843eca6",
-      "sourceGeneration": 7,
-      "cursor": null
+      "subscriptionSequence": 0
     },
     {
       "kind": "subscription.cancelled",
@@ -987,14 +1280,10 @@
       "workerDerivationEpoch": 7,
       "workerInstanceId": "worker-instance-1",
       "metadataStreamId": "metadata-stream-1",
-      "streamSequence": 10,
+      "streamSequence": 5,
       "subscriptionId": "review-subscription-cancel-1",
       "subscriptionKind": "review.metadata",
-      "subscriptionSequence": 1,
-      "interestRevision": 0,
-      "interestSha256": "1a71797cab8ed23c72233b7706b166a33049e4e87dfbc55b9e252f9c1843eca6",
-      "sourceGeneration": 7,
-      "cursor": null
+      "subscriptionSequence": 1
     },
     {
       "kind": "content.cancelled",
@@ -1003,7 +1292,7 @@
       "workerDerivationEpoch": 2,
       "workerInstanceId": "worker-instance-1",
       "metadataStreamId": "metadata-stream-1",
-      "streamSequence": 11,
+      "streamSequence": 6,
       "contentRequestId": "content-request-1",
       "leaseId": "lease-1",
       "operationCorrelationId": null,
@@ -1035,14 +1324,10 @@
       "workerDerivationEpoch": 2,
       "workerInstanceId": "worker-instance-1",
       "metadataStreamId": "metadata-stream-1",
-      "streamSequence": 12,
+      "streamSequence": 7,
       "subscriptionId": "file-subscription-1",
       "subscriptionKind": "file.metadata",
-      "subscriptionSequence": 3,
-      "interestRevision": 0,
-      "interestSha256": "51ce8b03041697e18e2a24d5311e14bb1df4da119635bb84246c1b047316e46b",
-      "sourceGeneration": 11,
-      "cursor": "file-cursor-2"
+      "subscriptionSequence": 3
     },
     {
       "kind": "metadataStream.error",
@@ -1050,10 +1335,10 @@
       "paneSessionId": "pane-session-1",
       "workerInstanceId": "worker-instance-1",
       "metadataStreamId": "metadata-stream-1",
-      "streamSequence": 13,
+      "streamSequence": 8,
       "code": "internal",
-      "retryable": false,
-      "safeMessage": null
+      "safeMessage": null,
+      "retryable": false
     },
     {
       "kind": "metadataStream.accepted",
@@ -1061,7 +1346,7 @@
       "paneSessionId": "pane-session-1",
       "workerInstanceId": "worker-instance-1",
       "metadataStreamId": "metadata-stream-resumed-1",
-      "streamSequence": 7,
+      "streamSequence": 9,
       "resumeDisposition": "resumed"
     },
     {
@@ -1093,13 +1378,13 @@
         "expectedSha256": "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad",
         "fileId": "file-1",
         "maximumBytes": 3,
-        "source": {
-          "repoId": "00000000-0000-4000-8000-000000000001",
-          "rootRevisionToken": null,
-          "sourceCursor": "source-cursor-1",
-          "sourceId": "source-1",
-          "subscriptionGeneration": 11,
-          "worktreeId": "00000000-0000-4000-8000-000000000002"
+          "source": {
+            "repoId": "00000000-0000-4000-8000-000000000001",
+            "rootRevisionToken": null,
+            "sourceCursor": "source-cursor-1",
+            "sourceId": "source-1",
+            "subscriptionGeneration": 11,
+            "worktreeId": "00000000-0000-4000-8000-000000000002"
         },
         "window": {
           "kind": "prefix",
@@ -1129,13 +1414,13 @@
   "contentHeaders": [
     {
       "kind": "content.accepted",
+      "operationCorrelationId": null,
       "wireVersion": 2,
       "paneSessionId": "pane-session-1",
       "workerDerivationEpoch": 2,
       "workerInstanceId": "worker-instance-1",
       "contentRequestId": "content-request-1",
       "leaseId": "lease-1",
-      "operationCorrelationId": null,
       "contentSequence": 0,
       "declaredByteLength": 3,
       "expectedSha256": "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad",
@@ -1145,8 +1430,8 @@
         "descriptorId": "file-descriptor-1",
         "fileId": "file-1",
         "source": {
-          "repoId": "00000000-0000-4000-8000-000000000001",
           "rootRevisionToken": null,
+          "repoId": "00000000-0000-4000-8000-000000000001",
           "sourceCursor": "source-cursor-1",
           "sourceId": "source-1",
           "subscriptionGeneration": 11,
@@ -1162,31 +1447,39 @@
     },
     {
       "kind": "content.data",
+      "operationCorrelationId": null,
       "contentSequence": 1,
-      "offsetBytes": 0,
-      "operationCorrelationId": null
+      "offsetBytes": 0
     },
     {
       "kind": "content.end",
+      "operationCorrelationId": null,
       "contentSequence": 2,
       "endOfSource": true,
       "observedByteLength": 3,
-      "observedSha256": "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad",
-      "operationCorrelationId": null
+      "observedSha256": "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
     },
     {
       "kind": "content.error",
+      "operationCorrelationId": null,
       "contentSequence": 2,
       "code": "internal",
       "retryable": false,
-      "safeMessage": null,
-      "operationCorrelationId": null
+      "safeMessage": null
+    },
+    {
+      "kind": "content.error",
+      "operationCorrelationId": null,
+      "contentSequence": 2,
+      "code": "superseded",
+      "retryable": true,
+      "safeMessage": null
     },
     {
       "kind": "content.reset",
+      "operationCorrelationId": null,
       "contentSequence": 2,
-      "reason": "stale_source",
-      "operationCorrelationId": null
+      "reason": "stale_source"
     }
   ],
   "wireVectors": {

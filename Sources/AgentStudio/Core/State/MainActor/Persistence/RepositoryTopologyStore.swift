@@ -5,6 +5,23 @@ import os.log
 
 private let repositoryTopologyStoreLogger = Logger(subsystem: "com.agentstudio", category: "RepositoryTopologyStore")
 
+/// One persisted capture in the store's already-serialized save tail.
+package struct RepositoryTopologyStoreSaveScope: Hashable, Sendable {
+    package let generation: UInt64
+}
+
+/// Synchronous observations of the store's own transitions; they do not add
+/// events to the app runtime bus. Completion includes the store's commit acknowledgement.
+package enum RepositoryTopologyStoreFact: Equatable, Sendable {
+    case saveStarted
+    case saveCompleted(captureRevision: UInt64)
+    case saveFailed
+    case saveCancelled
+}
+
+package typealias RepositoryTopologyStoreFactSink =
+    @Sendable (RepositoryTopologyStoreSaveScope, RepositoryTopologyStoreFact) -> Void
+
 @MainActor
 package final class RepositoryTopologyStore {
     private let atom: RepositoryTopologyAtom
@@ -12,6 +29,7 @@ package final class RepositoryTopologyStore {
     private let persistDebounceDuration: Duration
     private let persistMaximumDelay: Duration
     private let delay: AsyncDelay
+    private let factSink: RepositoryTopologyStoreFactSink?
     private var debouncedSaveTask: Task<Void, Never>?
     private var maximumDelaySaveTask: Task<Void, Never>?
     private var isObservingTopology = false
@@ -39,13 +57,15 @@ package final class RepositoryTopologyStore {
         sqliteDatastore: WorkspaceSQLiteDatastoreActor? = nil,
         persistDebounceDuration: Duration = .milliseconds(500),
         persistMaximumDelay: Duration = AppPolicies.WorkspacePersistence.autosaveMaximumDelay,
-        clock: (any Clock<Duration> & Sendable)? = nil
+        clock: (any Clock<Duration> & Sendable)? = nil,
+        factSink: RepositoryTopologyStoreFactSink? = nil
     ) {
         self.atom = atom
         self.sqliteDatastore = sqliteDatastore
         self.persistDebounceDuration = persistDebounceDuration
         self.persistMaximumDelay = persistMaximumDelay
         delay = clock.map(AsyncDelay.clock) ?? .taskSleep
+        self.factSink = factSink
     }
 
     package func startObserving() {
@@ -160,14 +180,14 @@ package final class RepositoryTopologyStore {
         let generation = saveTailGeneration
         let operation = Task { @MainActor [self] in
             if let previous { _ = try? await previous.value }
-            try await persistCurrentCapture()
+            try await persistCurrentCapture(generation: generation)
         }
         saveTail = operation
         defer { if generation == saveTailGeneration { saveTail = nil } }
         try await operation.value
     }
 
-    private func persistCurrentCapture() async throws {
+    private func persistCurrentCapture(generation: UInt64) async throws {
         guard let sqliteDatastore else { return }
         let captureRevision = atom.lifecycleRevision
         let pending = pendingReparenting
@@ -187,11 +207,27 @@ package final class RepositoryTopologyStore {
             absenceRecords: atom.absenceRecords
         )
         let reparenting = await Self.coalesceReparenting(pending, snapshot: snapshot)
-        try await sqliteDatastore.saveRepositoryTopologySnapshot(
-            snapshot, captureRevision: captureRevision, reparenting: reparenting
-        )
-        pendingReparenting.removeAll { $0.revision <= captureRevision }
-        isDirty = atom.lifecycleRevision != captureRevision
+        let saveScope = beginSaveFact(generation: generation)
+        do {
+            try await sqliteDatastore.saveRepositoryTopologySnapshot(
+                snapshot, captureRevision: captureRevision, reparenting: reparenting
+            )
+            pendingReparenting.removeAll { $0.revision <= captureRevision }
+            isDirty = atom.lifecycleRevision != captureRevision
+            if let saveScope { factSink?(saveScope, .saveCompleted(captureRevision: captureRevision)) }
+        } catch {
+            if let saveScope {
+                factSink?(saveScope, error is CancellationError ? .saveCancelled : .saveFailed)
+            }
+            throw error
+        }
+    }
+
+    private func beginSaveFact(generation: UInt64) -> RepositoryTopologyStoreSaveScope? {
+        guard let factSink else { return nil }
+        let scope = RepositoryTopologyStoreSaveScope(generation: generation)
+        factSink(scope, .saveStarted)
+        return scope
     }
     @concurrent nonisolated private static func coalesceReparenting(
         _ pending: [PendingReparenting],

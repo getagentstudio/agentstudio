@@ -1,5 +1,6 @@
 import AgentStudioCore
 import AgentStudioInfrastructure
+import AgentStudioTestSupport
 import Foundation
 import Testing
 
@@ -33,11 +34,15 @@ struct BridgeProductBootstrapHardCutContractTests {
         // Arrange
         let repoId = UUID(uuidString: "00000000-0000-4000-8000-000000000001")!
         let worktreeId = UUID(uuidString: "00000000-0000-4000-8000-000000000002")!
+        let rootURL = FileManager.default.temporaryDirectory
+            .appending(path: "bridge-product-startup-contract-\(UUIDv7.generate().uuidString)")
+        try FileManager.default.createDirectory(at: rootURL, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: rootURL) }
         let worktree = Worktree(
             id: worktreeId,
             repoId: repoId,
             name: "startup-contract",
-            path: URL(fileURLWithPath: "/tmp/bridge-product-startup-contract")
+            path: rootURL
         )
         let activeModeRecorder = BridgeProductStartupActiveModeRecorder()
         let refreshWorkAdmission = await BridgePaneRefreshWorkAdmissionTestContext.foreground()
@@ -60,10 +65,12 @@ struct BridgeProductBootstrapHardCutContractTests {
             refreshWorkAdmissionSource: refreshWorkAdmission.source
         )
         let productAdmissionGate = BridgeProductAdmissionGate()
+        let operationClock = TestPushClock()
         let installation = try BridgeProductSessionInstallation.make(
             paneSessionId: "pane-startup-contract",
             provider: provider,
-            productAdmissionGate: productAdmissionGate
+            productAdmissionGate: productAdmissionGate,
+            deadlineClock: operationClock
         )
         let capabilityHeader = try BridgeProductCapabilityHeaderEncoding.encode(
             installation.capabilityBytes
@@ -152,9 +159,37 @@ private func bridgeProductStartupCommand(
         )
     )
     #expect(observation.response?.statusCode == 200)
+    let admission = try BridgeProductStrictJSON.decode(
+        BridgeProductOperationAdmittedResponse.self,
+        from: observation.body
+    )
+    let resultRequestBody = try JSONSerialization.data(
+        withJSONObject: [
+            "kind": "operation.result",
+            "operationId": admission.operationId,
+            "paneSessionId": admission.correlation.paneSessionId,
+            "wireVersion": BridgeProductWireContract.version,
+            "workerInstanceId": admission.correlation.workerInstanceId,
+        ]
+    )
+    let resultReply = try await collectBridgeProductSchemeReply(
+        adapter: installation.productAdapter,
+        request: bridgeProductSchemeRequest(
+            route: BridgeProductWireContract.commandRoute,
+            capability: capabilityHeader,
+            body: resultRequestBody
+        )
+    )
+    #expect(resultReply.response?.statusCode == 200)
+    let result = try BridgeProductStrictJSON.decode(
+        BridgeProductOperationResultResponse.self,
+        from: resultReply.body
+    )
+    #expect(result.operationId == admission.operationId)
+    #expect(result.outcome == .succeeded, Comment(rawValue: admission.correlation.requestId))
     return try BridgeProductStrictJSON.decode(
         BridgeProductControlResponse.self,
-        from: observation.body
+        from: JSONEncoder().encode(try #require(result.result))
     )
 }
 

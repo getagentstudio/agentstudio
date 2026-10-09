@@ -27,8 +27,7 @@ extension BridgePaneProductSchemeProvider {
         let disposition = await metadataCoordinator.publish(
             status: status,
             productAdmission: productAdmission,
-            foregroundWorkAdmission: foregroundWorkAdmission,
-            operationCorrelationID: operationCorrelationID
+            foregroundWorkAdmission: foregroundWorkAdmission
         )
         await recordOperationLifecycle(
             operationCorrelationID: operationCorrelationID,
@@ -71,8 +70,7 @@ extension BridgePaneProductSchemeProvider {
         let disposition = await metadataCoordinator.publish(
             changeset: changeset,
             productAdmission: productAdmission,
-            foregroundWorkAdmission: foregroundWorkAdmission,
-            operationCorrelationID: operationCorrelationID
+            foregroundWorkAdmission: foregroundWorkAdmission
         )
         await recordOperationLifecycle(
             operationCorrelationID: operationCorrelationID,
@@ -161,6 +159,7 @@ extension BridgePaneProductSchemeProvider {
                 break
             case .fileRefreshRetry:
                 await applyFileRefreshRetry(productAdmission)
+                await metadataCoordinator.retryFailedFileSurface(productAdmission: productAdmission)
             case .fileActiveViewerModeUpdate, .reviewActiveViewerModeUpdate:
                 await applyActiveViewerModeUpdate(
                     committedProductCall,
@@ -168,7 +167,11 @@ extension BridgePaneProductSchemeProvider {
                     productAdmission
                 )
             case .reviewComparisonUpdate(let updateRequest):
-                await applyReviewComparisonUpdate(updateRequest, productAdmission)
+                await applyReviewComparisonUpdate(
+                    updateRequest,
+                    callRequest.workerDerivationEpoch,
+                    productAdmission
+                )
             case .reviewComparisonTargetsQuery:
                 break
             case .reviewMarkFileViewed(let markRequest):
@@ -190,6 +193,20 @@ extension BridgePaneProductSchemeProvider {
             effect,
             productAdmission: productAdmission
         )
+    }
+
+    func retireFloorRetiredSubscriptions(
+        _ subscriptions: [BridgeProductSubscriptionSnapshot],
+        productAdmission: BridgeProductAdmissionContext
+    ) async {
+        // Native ended these subscriptions exactly as a committed cancel does, so
+        // their producers stop through the same metadata-coordinator path.
+        for subscription in subscriptions {
+            await metadataCoordinator.apply(
+                .subscriptionCancelled(subscription),
+                productAdmission: productAdmission
+            )
+        }
     }
 
     func replayCommittedReviewPublicationIfPresent(

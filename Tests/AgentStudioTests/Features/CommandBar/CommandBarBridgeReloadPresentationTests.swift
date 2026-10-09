@@ -46,5 +46,6 @@ struct CommandBarBridgeReloadPresentationTests {
         // Assert
         #expect(!nonBridgeItems.contains { $0.id == "cmd-reloadBridgeWebView" })
         #expect(bridgeItems.contains { $0.id == "cmd-reloadBridgeWebView" })
+        #expect(bridgeItems.first { $0.id == "cmd-reloadBridgeWebView" }?.title == "Reload Bridge")
     }
 }

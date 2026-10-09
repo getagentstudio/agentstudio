@@ -57,6 +57,7 @@ package enum SessionsHookOutcome: Sendable, Equatable {
 package struct SessionsHookCommit: Sendable, Equatable {
     package let disposition: SessionsHookDisposition
     package let binding: SessionsBindingRecord
+    package let supersededBinding: SessionsBindingRecord?
     package let evidence: SessionsEvidenceRecord
     package let revision: Int64
 }

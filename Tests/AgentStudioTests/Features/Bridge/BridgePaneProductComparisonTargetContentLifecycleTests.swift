@@ -1,3 +1,5 @@
+import AgentStudioTestHarness
+import AgentStudioTestSupport
 import Foundation
 import Testing
 
@@ -27,7 +29,8 @@ struct BridgeComparisonTargetContentLifecycleTests {
         let session = try BridgeProductSession(
             paneSessionId: bridgeProductTestPaneSessionId,
             workerInstanceId: bridgeProductTestWorkerInstanceId,
-            capabilityBytes: capabilityBytes
+            capabilityBytes: capabilityBytes,
+            deadlineClock: TestPushClock()
         )
         let productAdmission = try BridgeProductAdmissionTestContext.make().context
         let dispatcher = makeBridgeProductSchemeControlDispatcher(
@@ -35,18 +38,26 @@ struct BridgeComparisonTargetContentLifecycleTests {
             provider: provider,
             productAdmission: productAdmission
         )
-        _ = try await dispatcher.dispatch(
+        let openAdmission = try await dispatcher.dispatch(
             exactRequestBytes: bridgeProductSchemeWorkerOpenBody(),
             presentedCapability: capabilityHeader
         )
+        let openResult = try await awaitBridgeProductAdmittedControlResult(
+            openAdmission,
+            session: session,
+            productAdmission: productAdmission
+        )
+        #expect(openResult.outcome == .succeeded)
         let firstQueryResult = try await dispatcher.dispatch(
             exactRequestBytes: JSONEncoder().encode(try queryRequest(sequence: 2)),
             presentedCapability: capabilityHeader
         )
-        guard case .response = firstQueryResult else {
-            Issue.record("Expected the authorization-only query to settle")
-            return
-        }
+        let queryResult = try await awaitBridgeProductAdmittedControlResult(
+            firstQueryResult,
+            session: session,
+            productAdmission: productAdmission
+        )
+        #expect(queryResult.outcome == .succeeded)
 
         let request = try contentRequest(
             descriptor: fixture.descriptor,
@@ -84,10 +95,12 @@ struct BridgeComparisonTargetContentLifecycleTests {
             presentedCapability: capabilityHeader
         )
 
-        guard case .response = unrelatedControl else {
-            Issue.record("Expected unrelated valid control completion during production")
-            return
-        }
+        let modeResult = try await awaitBridgeProductAdmittedControlResult(
+            unrelatedControl,
+            session: session,
+            productAdmission: productAdmission
+        )
+        #expect(modeResult.outcome == .succeeded)
         #expect(await provider.pendingComparisonTargetReservation == nil)
         await producer.release()
         try await acknowledgeRemainingFramesAndRetire(
@@ -477,7 +490,9 @@ extension BridgeComparisonTargetContentLifecycleTests {
         let owner = try BridgePaneProductSessionOwner(
             paneSessionId: bridgeProductTestPaneSessionId,
             provider: provider,
-            productAdmissionGate: productAdmissionGate
+            productAdmissionGate: productAdmissionGate,
+            operationDeadlineClock: TestPushClock(),
+            retirementClock: TestPushClock()
         )
         let productAdmission = try #require(productAdmissionGate.acquire())
         let oldInstallation = try await owner.prepareCandidate(productAdmission: productAdmission)
@@ -498,16 +513,10 @@ extension BridgeComparisonTargetContentLifecycleTests {
         )
         let paneSessionId = oldInstallation.bootstrap.paneSessionId
         let workerInstanceId = oldInstallation.bootstrap.workerInstanceId
-        _ = try await dispatcher.dispatch(
-            exactRequestBytes: JSONEncoder().encode(
-                try queryRequest(
-                    suffix: "claimed",
-                    sequence: 2,
-                    paneSessionId: paneSessionId,
-                    workerInstanceId: workerInstanceId
-                )
-            ),
-            presentedCapability: capabilityHeader
+        try await admitComparisonTargetQuery(
+            suffix: "claimed", sequence: 2, installation: oldInstallation,
+            dispatcher: dispatcher, capabilityHeader: capabilityHeader,
+            productAdmission: productAdmission
         )
         let contentRequest = try contentRequest(
             descriptor: claimedCapture.descriptor,
@@ -522,16 +531,10 @@ extension BridgeComparisonTargetContentLifecycleTests {
             productAdmission: productAdmission
         )
         await producer.waitUntilStarted()
-        _ = try await dispatcher.dispatch(
-            exactRequestBytes: JSONEncoder().encode(
-                try queryRequest(
-                    suffix: "unclaimed",
-                    sequence: 3,
-                    paneSessionId: paneSessionId,
-                    workerInstanceId: workerInstanceId
-                )
-            ),
-            presentedCapability: capabilityHeader
+        try await admitComparisonTargetQuery(
+            suffix: "unclaimed", sequence: 3, installation: oldInstallation,
+            dispatcher: dispatcher, capabilityHeader: capabilityHeader,
+            productAdmission: productAdmission
         )
         #expect(await provider.pendingComparisonTargetReservation?.descriptor == unclaimedCapture.descriptor)
 
@@ -544,6 +547,10 @@ extension BridgeComparisonTargetContentLifecycleTests {
         )
         await producer.waitUntilCancelled()
 
+        let oldSessionRevocation = await oldInstallation.session.revoke(
+            acknowledgeLifecycle: provider.acknowledgeLifecycle
+        )
+        #expect(await oldSessionRevocation.wait())
         #expect((await oldInstallation.session.producerSnapshot()).hasZeroResidue)
         #expect(await provider.pendingComparisonTargetReservation == nil)
         #expect(
@@ -552,6 +559,33 @@ extension BridgeComparisonTargetContentLifecycleTests {
         )
         #expect(await owner.retire(reason: .paneDisposal) == .retired)
         #expect((await owner.snapshot()).hasZeroResidue)
+    }
+
+    func admitComparisonTargetQuery(
+        suffix: String,
+        sequence: Int,
+        installation: BridgeProductSessionInstallation,
+        dispatcher: BridgeProductSchemeControlDispatcher,
+        capabilityHeader: String,
+        productAdmission: BridgeProductAdmissionContext
+    ) async throws {
+        let queryAdmission = try await dispatcher.dispatch(
+            exactRequestBytes: JSONEncoder().encode(
+                try queryRequest(
+                    suffix: suffix,
+                    sequence: sequence,
+                    paneSessionId: installation.bootstrap.paneSessionId,
+                    workerInstanceId: installation.bootstrap.workerInstanceId
+                )
+            ),
+            presentedCapability: capabilityHeader
+        )
+        let result = try await awaitBridgeProductAdmittedControlResult(
+            queryAdmission,
+            session: installation.session,
+            productAdmission: productAdmission
+        )
+        #expect(result.outcome == .succeeded)
     }
 
     private func startComparisonTargetProducer(
@@ -612,7 +646,9 @@ extension BridgeComparisonTargetContentLifecycleTests {
         let owner = try BridgePaneProductSessionOwner(
             paneSessionId: bridgeProductTestPaneSessionId,
             provider: provider,
-            productAdmissionGate: productAdmissionGate
+            productAdmissionGate: productAdmissionGate,
+            operationDeadlineClock: TestPushClock(),
+            retirementClock: TestPushClock()
         )
         let productAdmission = try #require(productAdmissionGate.acquire())
         let oldInstallation = try await owner.prepareCandidate(
@@ -653,18 +689,29 @@ extension BridgeComparisonTargetContentLifecycleTests {
         let retirementTask = Task {
             await owner.retire(reason: .workerReplacement)
         }
-        await waitUntilSessionRevoked(oldInstallation.session)
+        #expect(await retirementTask.value == .retired)
+        #expect((await oldInstallation.session.snapshot).lifecycle == .revoked)
 
         await authorizationSource.release()
         _ = try await queryTask.value
 
-        #expect(await retirementTask.value == .retired)
+        #expect(await provider.pendingComparisonTargetReservation == nil)
+        try await expectRetiredWorkerQueryRefused(
+            provider: provider,
+            installation: oldInstallation,
+            productAdmission: productAdmission
+        )
         #expect(await provider.pendingComparisonTargetReservation == nil)
         #expect(
             await owner.activatePreparedCandidate(
                 replacementCandidate,
                 productAdmission: productAdmission
             ) == .activated
+        )
+        try await expectSuccessorComparisonTargetReservation(
+            provider: provider,
+            installation: replacementCandidate,
+            productAdmission: productAdmission
         )
         #expect(await owner.retire(reason: .paneDisposal) == .retired)
         #expect((await owner.snapshot()).hasZeroResidue)
@@ -803,6 +850,11 @@ extension BridgeComparisonTargetContentLifecycleTests {
         case .cancelled, .finished, .rejected:
             throw TestError.expectedFrame
         }
+        #expect(
+            await harness.session.acknowledgeProducerFrameConsumed(
+                openingDelivery.receipt,
+                productAdmission: harness.productAdmission.context
+            ))
         let opening = try #require(
             decoder.append(openingDelivery.frame.data).first
         )
@@ -836,19 +888,18 @@ extension BridgeComparisonTargetContentLifecycleTests {
             let frame = try #require(
                 decoder.append(delivery.frame.data).first
             )
-            let observed = await harness.session.acknowledgeContentFrameObservation(
-                try contentFrameAcknowledgement(
-                    for: request.admission,
-                    contentSequence: delivery.frame.sequence
-                ),
-                productAdmission: harness.productAdmission.context
-            )
             switch frame.header {
             case .data:
+                let observed = await harness.session.acknowledgeContentFrameObservation(
+                    try contentFrameAcknowledgement(
+                        for: request.admission,
+                        contentSequence: delivery.frame.sequence
+                    ),
+                    productAdmission: harness.productAdmission.context
+                )
                 #expect(observed)
                 body.append(frame.payload)
             case .end(let header):
-                #expect(observed)
                 try await harness.closeProducer(lease)
                 #expect((await harness.session.producerSnapshot()).hasZeroResidue)
                 return ContentResult(
@@ -861,7 +912,6 @@ extension BridgeComparisonTargetContentLifecycleTests {
                     retryable: nil
                 )
             case .error(let header):
-                #expect(observed)
                 try await harness.closeProducer(lease)
                 #expect((await harness.session.producerSnapshot()).hasZeroResidue)
                 return ContentResult(
@@ -874,7 +924,6 @@ extension BridgeComparisonTargetContentLifecycleTests {
                     retryable: header.retryable
                 )
             case .accepted, .reset:
-                #expect(observed)
                 Issue.record("Unexpected non-terminal comparison content frame")
             }
         }
@@ -903,6 +952,11 @@ extension BridgeComparisonTargetContentLifecycleTests {
         guard case .frame(let delivery) = result else {
             throw TestError.expectedFrame
         }
+        #expect(
+            await session.acknowledgeProducerFrameConsumed(
+                delivery.receipt,
+                productAdmission: productAdmission
+            ))
         return delivery
     }
 
@@ -912,11 +966,10 @@ extension BridgeComparisonTargetContentLifecycleTests {
     ) throws -> BridgeProductContentFrameAcknowledgement {
         let data = try JSONSerialization.data(withJSONObject: [
             "contentRequestId": admission.contentRequestId,
-            "contentSequence": contentSequence,
-            "kind": "stream.frameObserved",
+            "receivedThroughContentSequence": contentSequence,
+            "kind": "content.acknowledge",
             "leaseId": admission.leaseId,
             "paneSessionId": admission.paneSessionId,
-            "streamKind": "content",
             "wireVersion": admission.wireVersion,
             "workerInstanceId": admission.workerInstanceId,
         ])
@@ -924,14 +977,6 @@ extension BridgeComparisonTargetContentLifecycleTests {
             BridgeProductContentFrameAcknowledgement.self,
             from: data
         )
-    }
-
-    private func waitUntilSessionRevoked(_ session: BridgeProductSession) async {
-        for _ in 0..<512 {
-            if (await session.snapshot).lifecycle == .revoked { return }
-            await Task.yield()
-        }
-        Issue.record("Bridge product session did not enter revocation")
     }
 
     private enum TestError: Error {

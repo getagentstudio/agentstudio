@@ -466,7 +466,7 @@ struct WorktreeAnnotationTransportAdapterTests {
     @Test("prepare output executes the durable coordinator and publishes its typed result")
     func prepareOutputExecutesCoordinatorAndPublishesTypedResult() async throws {
         // Arrange
-        let outputEffect = TransportTestOutputEffect(outcome: .succeeded)
+        let outputEffect = TransportTestOutputEffect(outcome: .succeeded(destinationPath: nil))
         let harness = try await makeTransportAdapterHarness(outputEffect: outputEffect)
         defer { try? FileManager.default.removeItem(at: harness.root) }
         let savedFixture = try await prepareSavedOutputCommandFixture(harness: harness)
@@ -603,7 +603,7 @@ struct WorktreeAnnotationTransportAdapterTests {
 
     @Test("stale displayed output scope conflicts without an effect or durable transition")
     func staleDisplayedOutputScopeHasNoEffect() async throws {
-        let outputEffect = TransportTestOutputEffect(outcome: .succeeded)
+        let outputEffect = TransportTestOutputEffect(outcome: .succeeded(destinationPath: nil))
         let harness = try await makeTransportAdapterHarness(outputEffect: outputEffect)
         defer { try? FileManager.default.removeItem(at: harness.root) }
         let savedFixture = try await prepareSavedOutputCommandFixture(harness: harness)

@@ -10,19 +10,17 @@ import { terminateBridgePierreWorkerPoolSingletonForTest } from '../review-viewe
 import { waitForFileViewerTreeItemButtonInAct } from './bridge-file-viewer-app-startup.browser.test-support.js';
 import { BridgeFileViewerBrowserHarnessApp as BridgeFileViewerApp } from './bridge-file-viewer-browser-test-app.js';
 import {
-	makeFileContent,
-	makeFileDescriptor,
-	makeFileDescriptorForContent,
-	makeFileMetadataEvents,
-	type PublishFileMetadataEvents,
-} from './bridge-file-viewer-browser-test-fixtures.js';
+	makeBrowserFileBatchWithDescriptors,
+	makeBrowserFileDescriptorOutcome,
+	makeBrowserFileDescriptorOutcomeForContent,
+} from './bridge-file-viewer-browser-test-batches.js';
+import { makeFileContent } from './bridge-file-viewer-browser-test-fixtures.js';
 import {
 	actFrame,
 	actUpdate,
+	makeBrowserFileBatchPublisherObservation,
 	makeTestTelemetryRecorder,
-	requireMetadataPublisher,
 	settleBridgeFileViewerBrowserUpdates,
-	waitForMetadataPublisher,
 	waitForOpenFileState,
 	waitForTelemetrySampleCount,
 	waitForVisibleCodeText,
@@ -41,28 +39,29 @@ describe('Bridge File activation telemetry', () => {
 	});
 
 	test('records File TTFI when metadata arrives after the mounted tree setup frame', async () => {
-		let publishMetadata: PublishFileMetadataEvents | null = null;
+		const publisherObservation = makeBrowserFileBatchPublisherObservation();
 		const telemetrySamples: BridgeTelemetrySample[] = [];
 		await render(
 			<BridgeFileViewerApp
 				isActive={true}
 				telemetryRecorder={makeTestTelemetryRecorder(telemetrySamples)}
 				fileProductSession={{
-					onMetadataSubscription: (publisher) => {
-						publishMetadata = publisher;
+					onFileBatchPublisher: (publisher) => {
+						publisherObservation.observe(publisher);
 					},
 				}}
 			/>,
 		);
-		await waitForMetadataPublisher(() => publishMetadata);
+		const publishFileBatch = await publisherObservation.publisher;
 		await actFrame();
 		await actFrame();
 
 		await actUpdate(() => {
-			requireMetadataPublisher(publishMetadata)(
-				makeFileMetadataEvents(
-					makeFileDescriptor({
-						contentHandle: 'delayed-ttfi-content',
+			publishFileBatch(
+				makeBrowserFileBatchWithDescriptors(
+					'open',
+					makeBrowserFileDescriptorOutcome({
+						descriptorId: 'delayed-ttfi-content',
 						fileId: 'delayed-ttfi-file',
 						path: 'src/delayed-ttfi.ts',
 					}),
@@ -82,9 +81,9 @@ describe('Bridge File activation telemetry', () => {
 	test('records one File selection commit and one file-open-ready terminal', async () => {
 		const telemetrySamples: BridgeTelemetrySample[] = [];
 		const content = makeFileContent('export const activationTelemetryReady = true;\n');
-		const descriptor = await makeFileDescriptorForContent({
+		const descriptor = await makeBrowserFileDescriptorOutcomeForContent({
 			content,
-			contentHandle: 'activation-ready-content',
+			descriptorId: 'activation-ready-content',
 			fileId: 'activation-ready-file',
 			path: 'src/activation-ready.ts',
 		});
@@ -95,7 +94,7 @@ describe('Bridge File activation telemetry', () => {
 				activationSequence={17}
 				activationStartedAtPerfNow={performance.now()}
 				isActive={true}
-				initialMetadataEvents={makeFileMetadataEvents(descriptor)}
+				initialFileBatch={makeBrowserFileBatchWithDescriptors('open', descriptor)}
 				openPathCommand={{
 					activationStartedAtPerfNow: performance.now(),
 					commandId: 17,
@@ -133,19 +132,19 @@ describe('Bridge File activation telemetry', () => {
 	test('records context-switcher selection and open-ready without remounting File', async () => {
 		const telemetrySamples: BridgeTelemetrySample[] = [];
 		const content = makeFileContent('export const contextSwitcherReady = true;\n');
-		const descriptor = await makeFileDescriptorForContent({
+		const descriptor = await makeBrowserFileDescriptorOutcomeForContent({
 			content,
-			contentHandle: 'context-switcher-ready-content',
+			descriptorId: 'context-switcher-ready-content',
 			fileId: 'context-switcher-ready-file',
 			path: 'src/context-switcher-ready.ts',
 		});
 		const telemetryRecorder = makeTestTelemetryRecorder(telemetrySamples);
 		const fileProductSession = { readContent: async (): Promise<string> => content };
-		const initialMetadataEvents = makeFileMetadataEvents(descriptor);
+		const initialFileBatch = makeBrowserFileBatchWithDescriptors('open', descriptor);
 		const { rerender } = await render(
 			<BridgeFileViewerApp
 				autoOpenInitialFile={true}
-				initialMetadataEvents={initialMetadataEvents}
+				initialFileBatch={initialFileBatch}
 				isActive={false}
 				telemetryRecorder={telemetryRecorder}
 				fileProductSession={fileProductSession}
@@ -161,7 +160,7 @@ describe('Bridge File activation telemetry', () => {
 					activationSequence={3}
 					activationStartedAtPerfNow={activationStartedAtPerfNow}
 					autoOpenInitialFile={true}
-					initialMetadataEvents={initialMetadataEvents}
+					initialFileBatch={initialFileBatch}
 					isActive={true}
 					telemetryRecorder={telemetryRecorder}
 					fileProductSession={fileProductSession}

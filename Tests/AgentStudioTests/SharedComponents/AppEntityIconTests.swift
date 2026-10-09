@@ -15,7 +15,7 @@ struct AppEntityIconTests {
     @Test("foregroundOverride paints the icon; the baked default never leaks through it")
     @MainActor
     func foregroundOverrideWinsOverBakedDefaultStyle() throws {
-        let loader = OcticonLoader(resourceRootURL: URL(fileURLWithPath: "/tmp"))
+        let loader = OcticonLoader(resourceBundle: .main)
 
         let defaultColor = try centerGlyphColor(
             in: renderBitmap(

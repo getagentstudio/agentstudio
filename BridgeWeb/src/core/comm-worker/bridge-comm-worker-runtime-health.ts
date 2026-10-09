@@ -40,6 +40,12 @@ export function buildBridgeWorkerRuntimeDegradedHealthEvent(): BridgeWorkerServe
 
 export function buildBridgeWorkerRuntimeCommandFailedHealthEvent(props: {
 	readonly deliveryStatus?: 'unknownAfterDispatch';
+	readonly errorKind?:
+		| 'transport'
+		| 'requestRefused'
+		| 'invalidResult'
+		| 'unexpected'
+		| 'workerUnavailable';
 	readonly message: string;
 	readonly requestId: string;
 }): BridgeWorkerServerToMainMessage {
@@ -52,6 +58,7 @@ export function buildBridgeWorkerRuntimeCommandFailedHealthEvent(props: {
 		status: 'degraded',
 		message: props.message,
 		...(props.deliveryStatus === undefined ? {} : { deliveryStatus: props.deliveryStatus }),
+		...(props.errorKind === undefined ? {} : { errorKind: props.errorKind }),
 	};
 }
 

@@ -2,11 +2,9 @@ import { useEffect, useMemo, useRef, type ReactElement } from 'react';
 
 import { createBridgePaneRuntime } from '../core/comm-worker/bridge-pane-runtime.js';
 import type { BridgeProductFileContentDescriptor } from '../core/comm-worker/bridge-product-content-contracts.js';
-import type {
-	BridgeProductSubscriptionOptions,
-	BridgeProductSubscriptionUpdateOptions,
-} from '../core/comm-worker/bridge-product-subscription-contracts.js';
+import type { BridgeProductSubscriptionOptions } from '../core/comm-worker/bridge-product-subscription-contracts.js';
 import type { BridgeProductCallResult } from '../core/comm-worker/bridge-product-transport-contract.js';
+import type { BridgeProductViewInstallation } from '../core/comm-worker/bridge-product-view-batch-receiver.js';
 import type {
 	BridgeWorkerMainToServerMessage,
 	BridgeWorkerServerToMainMessage,
@@ -17,9 +15,9 @@ import {
 	type BridgeFileViewerAppProps,
 } from './bridge-file-viewer-app.js';
 import type {
-	FileMetadataEvent,
-	PublishFileMetadataEvents,
-} from './bridge-file-viewer-browser-test-fixtures.js';
+	BrowserFileViewScope,
+	PublishBrowserFileBatch,
+} from './bridge-file-viewer-browser-test-batches.js';
 import {
 	createBridgeFileViewerBrowserTestPaneSessionFactory,
 	type BridgeFileViewerBrowserTestPaneSessionFactory,
@@ -30,21 +28,19 @@ import { BridgeFileViewerShell } from './bridge-file-viewer-shell.js';
 export interface BridgeFileViewerBrowserHarnessAppProps extends BridgeFileViewerAppProps {
 	readonly fileProductSession?: BridgeFileViewerBrowserTestProductSession;
 	readonly fileViewPaneSessionFactory?: BridgeFileViewerBrowserTestPaneSessionFactory;
-	readonly initialMetadataEvents?: readonly FileMetadataEvent[];
+	readonly initialFileBatch?: BridgeProductViewInstallation;
 }
 
 export interface BridgeFileViewerBrowserTestProductSession {
 	readonly currentSource?: () =>
 		| BridgeProductCallResult<'file.source.current'>
 		| Promise<BridgeProductCallResult<'file.source.current'>>;
-	readonly initialMetadataEvents?: readonly FileMetadataEvent[];
-	readonly onMetadataSubscription?: (publisher: PublishFileMetadataEvents) => void | (() => void);
+	readonly initialFileBatch?: BridgeProductViewInstallation;
+	readonly onFileBatchPublisher?: (publisher: PublishBrowserFileBatch) => void | (() => void);
 	readonly onMetadataSubscriptionOpen?: (
 		options: BridgeProductSubscriptionOptions<'file.metadata'>,
 	) => void;
-	readonly onMetadataInterestUpdate?: (
-		options: BridgeProductSubscriptionUpdateOptions<'file.metadata'>,
-	) => void | Promise<void>;
+	readonly onFileScopeChange?: (scope: BrowserFileViewScope) => void | Promise<void>;
 	readonly onWorkerCommand?: (message: BridgeWorkerMainToServerMessage) => void;
 	readonly onWorkerMessagesPublisher?: (
 		publisher: (messages: readonly BridgeWorkerServerToMainMessage[]) => void,
@@ -62,13 +58,13 @@ export function BridgeFileViewerBrowserHarnessApp(
 		undefined,
 	);
 	productSessionRef.current =
-		props.fileProductSession === undefined && props.initialMetadataEvents === undefined
+		props.fileProductSession === undefined && props.initialFileBatch === undefined
 			? undefined
 			: {
 					...props.fileProductSession,
-					...(props.initialMetadataEvents === undefined
+					...(props.initialFileBatch === undefined
 						? {}
-						: { initialMetadataEvents: props.initialMetadataEvents }),
+						: { initialFileBatch: props.initialFileBatch }),
 				};
 	const fileViewPaneSessionFactory = useMemo(
 		() =>
@@ -88,7 +84,7 @@ export function BridgeFileViewerBrowserHarnessApp(
 	const {
 		fileProductSession: _fileProductSession,
 		fileViewPaneSessionFactory: _fileViewPaneSessionFactory,
-		initialMetadataEvents: _initialMetadataEvents,
+		initialFileBatch: _initialFileBatch,
 		...productionProps
 	} = props;
 	const fileViewClient = paneRuntime.surfaceClient('fileView');

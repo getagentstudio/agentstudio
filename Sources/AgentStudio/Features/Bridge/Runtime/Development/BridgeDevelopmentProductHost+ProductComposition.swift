@@ -7,6 +7,7 @@ struct BridgeDevelopmentProductProviderPreparationInput {
     // instead of sampling the host's diagnostic read.
     let didCommitReviewPublication: (@MainActor @Sendable (BridgeReviewCommittedPublication) -> Void)?
     let gitReadContext: BridgeGitReadContext
+    let operationDeadlineClock: (any Clock<Duration> & Sendable)?
     let reviewInitialization: BridgeDevelopmentProductReviewInitialization
     let reviewProvider: any BridgeReviewSourceProvider
     let schemeTaskCensus: BridgeProductSchemeTaskCensus
@@ -44,9 +45,11 @@ private struct BridgeDevelopmentProductProviderDependencies {
     let applyReviewComparisonUpdate:
         @MainActor @Sendable (
             BridgeProductReviewComparisonUpdateRequest,
+            Int,
             BridgeProductAdmissionContext
         ) async -> Void
     let applyFileRefreshRetry: @MainActor @Sendable (BridgeProductAdmissionContext) async -> Void
+    let refreshAdmissionCoordinator: BridgePaneRefreshAdmissionCoordinator
     let applyActiveViewerModeUpdate:
         @MainActor @Sendable (
             BridgeProductCallRequest,
@@ -121,13 +124,15 @@ extension BridgeDevelopmentProductHost {
                     worktreeID: input.source.worktreeID.uuidString.lowercased()
                 ),
                 applyWorktreeAnnotationCommand: annotationCommandHandler,
-                applyReviewComparisonUpdate: { request, productAdmission in
+                applyReviewComparisonUpdate: { request, workerDerivationEpoch, productAdmission in
                     await committedCallTarget.applyReviewComparisonUpdate(
                         request,
+                        workerDerivationEpoch: workerDerivationEpoch,
                         productAdmission: productAdmission
                     )
                 },
                 applyFileRefreshRetry: committedCallTarget.applyFileRefreshRetry,
+                refreshAdmissionCoordinator: refreshAdmissionCoordinator,
                 applyActiveViewerModeUpdate: committedCallTarget.applyActiveViewerModeUpdate,
                 fileMetadataSource: fileMetadataSource,
                 initialPresentation: initialPresentation,
@@ -178,6 +183,7 @@ extension BridgeDevelopmentProductHost {
             paneSessionId: input.source.paneID.uuidString,
             provider: productProvider,
             productAdmissionGate: productAdmissionGate,
+            operationDeadlineClock: input.operationDeadlineClock,
             didRetireWorkerInstance: { workerInstanceId in
                 await reviewPublicationCoordinator.retireDisplayWorker(
                     workerInstanceId: workerInstanceId
@@ -268,7 +274,7 @@ extension BridgeDevelopmentProductHost {
                 )
             },
             isReviewPublicationCurrent: { publicationId, productAdmission in
-                dependencies.reviewPublicationCoordinator.isCurrentPublication(
+                dependencies.reviewPublicationCoordinator.isCurrentCanonicalPublication(
                     publicationId: publicationId,
                     productAdmission: productAdmission
                 )
@@ -292,6 +298,9 @@ extension BridgeDevelopmentProductHost {
             applyActiveViewerModeUpdate: dependencies.applyActiveViewerModeUpdate,
             applyReviewComparisonUpdate: dependencies.applyReviewComparisonUpdate,
             applyFileRefreshRetry: dependencies.applyFileRefreshRetry,
+            recordCurrentFileRefreshFailure: { failure in
+                failure.apply { dependencies.refreshAdmissionCoordinator.recordCurrentFileRefreshFailure($0) }
+            },
             applyWorktreeAnnotationCommand: dependencies.applyWorktreeAnnotationCommand,
             authorizeReviewComparisonTargets:
                 BridgePaneProductComparisonTargetQuerySource.makeAuthorization(

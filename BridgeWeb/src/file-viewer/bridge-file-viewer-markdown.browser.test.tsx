@@ -6,6 +6,8 @@ import '../app/bridge-app.css';
 import { createBridgeMermaidRenderer } from '../app/markdown/bridge-mermaid-renderer.js';
 import {
 	createBridgeMarkdownRenderWorkerClient,
+	type BridgeMarkdownRenderWorkerClient,
+	type BridgeMarkdownRenderWorkerTask,
 	type BridgeMarkdownRenderWorkerTransport,
 } from '../app/markdown/worker/bridge-markdown-render-worker-client.js';
 import {
@@ -16,17 +18,23 @@ import {
 	createBridgeMarkdownRenderModuleWorkerFactory,
 	createBridgeMarkdownRenderWebWorkerClient,
 } from '../app/markdown/worker/bridge-markdown-render-worker-transport.js';
+import { createBridgeProductDeferred } from '../core/comm-worker/bridge-product-async-queue.js';
+import type {
+	BridgeWorkerMainToServerMessage,
+	BridgeWorkerServerToMainMessage,
+} from '../core/comm-worker/bridge-worker-contracts.js';
 import { terminateBridgePierreWorkerPoolSingletonForTest } from '../review-viewer/workers/pierre/bridge-pierre-worker-pool.js';
 import { BridgeFileViewerBrowserHarnessApp as BridgeFileViewerApp } from './bridge-file-viewer-browser-test-app.js';
 import {
-	fileNavigationCommandForPath,
-	makeFileDescriptorForContent,
-	makeFileMetadataEvents,
-} from './bridge-file-viewer-browser-test-fixtures.js';
+	makeBrowserFileBatchWithDescriptors,
+	makeBrowserFileDescriptorOutcomeForContent,
+} from './bridge-file-viewer-browser-test-batches.js';
+import { fileNavigationCommandForPath } from './bridge-file-viewer-browser-test-fixtures.js';
 import {
 	actFrame,
 	actClick,
 	actUpdate,
+	actUpdateAndWaitForBridgeFileViewerWorkerPublication,
 	installBridgeFileViewerNoopResizeObserver,
 } from './bridge-file-viewer-browser-test-harness.js';
 
@@ -73,9 +81,9 @@ describe('BridgeFileViewerApp Markdown Browser Mode', () => {
 			'```',
 			'',
 		].join('\n');
-		const markdownDescriptor = await makeFileDescriptorForContent({
+		const markdownDescriptor = await makeBrowserFileDescriptorOutcomeForContent({
 			content: markdownContent,
-			contentHandle: 'file-markdown-browser-content',
+			descriptorId: 'file-markdown-browser-content',
 			fileId: 'file-markdown-browser',
 			path: 'docs/markdown-proof.md',
 		});
@@ -90,7 +98,7 @@ describe('BridgeFileViewerApp Markdown Browser Mode', () => {
 			await render(
 				<BridgeFileViewerApp
 					codeViewWorkerPoolEnabled={false}
-					initialMetadataEvents={makeFileMetadataEvents(markdownDescriptor)}
+					initialFileBatch={makeBrowserFileBatchWithDescriptors('open', markdownDescriptor)}
 					markdownWorkerClient={markdownWorkerClient}
 					mermaidRenderer={createBridgeMermaidRenderer()}
 					navigationCommand={fileNavigationCommandForPath('docs/markdown-proof.md')}
@@ -144,9 +152,9 @@ describe('BridgeFileViewerApp Markdown Browser Mode', () => {
 	test('preserves the rendered document and Mermaid SVG across File search rerenders', async () => {
 		const markdownContent =
 			'# Stable Markdown\n\n```mermaid\nflowchart LR\nFile --> Markdown\n```\n';
-		const markdownDescriptor = await makeFileDescriptorForContent({
+		const markdownDescriptor = await makeBrowserFileDescriptorOutcomeForContent({
 			content: markdownContent,
-			contentHandle: 'stable-markdown-content',
+			descriptorId: 'stable-markdown-content',
 			fileId: 'stable-markdown',
 			path: 'docs/stable.md',
 		});
@@ -159,7 +167,7 @@ describe('BridgeFileViewerApp Markdown Browser Mode', () => {
 			await render(
 				<BridgeFileViewerApp
 					codeViewWorkerPoolEnabled={false}
-					initialMetadataEvents={makeFileMetadataEvents(markdownDescriptor)}
+					initialFileBatch={makeBrowserFileBatchWithDescriptors('open', markdownDescriptor)}
 					markdownWorkerClient={markdownWorkerClient}
 					mermaidRenderer={createBridgeMermaidRenderer()}
 					navigationCommand={fileNavigationCommandForPath('docs/stable.md')}
@@ -188,7 +196,11 @@ describe('BridgeFileViewerApp Markdown Browser Mode', () => {
 			expect(originalCanvas.parentElement).toBe(markdownScrollOwner);
 			expect(originalCanvas.querySelector('svg')).toBe(originalSvg);
 			expect(originalCanvas.querySelector('[data-bridge-mermaid-state="ready"]')).not.toBeNull();
-			expect(document.querySelector('[data-testid="bridge-markdown-status"]')).toBeNull();
+			expect(
+				document.querySelector(
+					'[data-bridge-region="markdown"][data-presentation-state="loading"]',
+				),
+			).toBeNull();
 		} finally {
 			markdownWorkerClient.dispose();
 		}
@@ -196,9 +208,9 @@ describe('BridgeFileViewerApp Markdown Browser Mode', () => {
 
 	test('aborts in-flight Markdown preparation when retained File view becomes inactive', async () => {
 		const markdownContent = '# Suspended Markdown\n';
-		const markdownDescriptor = await makeFileDescriptorForContent({
+		const markdownDescriptor = await makeBrowserFileDescriptorOutcomeForContent({
 			content: markdownContent,
-			contentHandle: 'suspended-markdown-content',
+			descriptorId: 'suspended-markdown-content',
 			fileId: 'suspended-markdown',
 			path: 'docs/suspended.md',
 		});
@@ -212,7 +224,7 @@ describe('BridgeFileViewerApp Markdown Browser Mode', () => {
 		const activeApp = (
 			<BridgeFileViewerApp
 				codeViewWorkerPoolEnabled={false}
-				initialMetadataEvents={makeFileMetadataEvents(markdownDescriptor)}
+				initialFileBatch={makeBrowserFileBatchWithDescriptors('open', markdownDescriptor)}
 				isActive={true}
 				markdownWorkerClient={markdownWorkerClient}
 				navigationCommand={fileNavigationCommandForPath('docs/suspended.md')}
@@ -223,13 +235,15 @@ describe('BridgeFileViewerApp Markdown Browser Mode', () => {
 		try {
 			const rendered = await render(activeApp);
 			await waitForMarkdownOpenFileState('ready');
-			await waitForMarkdownSelector('[data-testid="bridge-markdown-status"]');
+			await waitForMarkdownSelector(
+				'[data-bridge-region="markdown"][data-presentation-state="loading"]',
+			);
 			expect(sendRenderRequest).toHaveBeenCalledOnce();
 
 			await rendered.rerender(
 				<BridgeFileViewerApp
 					codeViewWorkerPoolEnabled={false}
-					initialMetadataEvents={makeFileMetadataEvents(markdownDescriptor)}
+					initialFileBatch={makeBrowserFileBatchWithDescriptors('open', markdownDescriptor)}
 					isActive={false}
 					markdownWorkerClient={markdownWorkerClient}
 					navigationCommand={fileNavigationCommandForPath('docs/suspended.md')}
@@ -247,9 +261,9 @@ describe('BridgeFileViewerApp Markdown Browser Mode', () => {
 	test('recovers a failed File Markdown render through the visible Retry action', async () => {
 		// Arrange
 		const markdownContent = '# Retry Markdown\n';
-		const markdownDescriptor = await makeFileDescriptorForContent({
+		const markdownDescriptor = await makeBrowserFileDescriptorOutcomeForContent({
 			content: markdownContent,
-			contentHandle: 'retry-markdown-content',
+			descriptorId: 'retry-markdown-content',
 			fileId: 'retry-markdown',
 			path: 'docs/retry.md',
 		});
@@ -286,7 +300,7 @@ describe('BridgeFileViewerApp Markdown Browser Mode', () => {
 			await render(
 				<BridgeFileViewerApp
 					codeViewWorkerPoolEnabled={false}
-					initialMetadataEvents={makeFileMetadataEvents(markdownDescriptor)}
+					initialFileBatch={makeBrowserFileBatchWithDescriptors('open', markdownDescriptor)}
 					markdownWorkerClient={markdownWorkerClient}
 					navigationCommand={fileNavigationCommandForPath('docs/retry.md')}
 					fileProductSession={{ readContent: async (): Promise<string> => markdownContent }}
@@ -307,6 +321,119 @@ describe('BridgeFileViewerApp Markdown Browser Mode', () => {
 			expect(document.querySelector('[role="alert"]')).toBeNull();
 			expect(sendCount).toBe(2);
 		} finally {
+			markdownWorkerClient.dispose();
+		}
+	});
+
+	test('a File surface failure over Markdown retries File recovery and retains its document', async (): Promise<void> => {
+		const markdownContent = '# Retained File Markdown\n';
+		const markdownRenderStarted = createBridgeProductDeferred<BridgeMarkdownRenderWorkerTask>();
+		const markdownWorkerCompleted = createBridgeProductDeferred<void>();
+		const releaseMarkdownCompletion = createBridgeProductDeferred<void>();
+		const initialDocumentPainted = createBridgeProductDeferred<void>();
+		const descriptor = await makeBrowserFileDescriptorOutcomeForContent({
+			content: markdownContent,
+			path: 'docs/retained.md',
+		});
+		const commands: BridgeWorkerMainToServerMessage[] = [];
+		const workerPublication: {
+			publish: ((messages: readonly BridgeWorkerServerToMainMessage[]) => void) | null;
+		} = { publish: null };
+		const realMarkdownWorkerClient = createBridgeMarkdownRenderWebWorkerClient({
+			workerFactory: createBridgeMarkdownRenderModuleWorkerFactory(),
+		});
+		if (realMarkdownWorkerClient === null) throw new Error('Expected the Markdown worker.');
+		const markdownWorkerClient: BridgeMarkdownRenderWorkerClient = {
+			...realMarkdownWorkerClient,
+			startRender: (props): BridgeMarkdownRenderWorkerTask => {
+				const task = realMarkdownWorkerClient.startRender(props);
+				const heldTask: BridgeMarkdownRenderWorkerTask = {
+					...task,
+					completed: task.completed.then(async (completion) => {
+						markdownWorkerCompleted.resolve();
+						await releaseMarkdownCompletion.promise;
+						return completion;
+					}),
+				};
+				markdownRenderStarted.resolve(heldTask);
+				return heldTask;
+			},
+		};
+		try {
+			const rendered = await render(
+				<BridgeFileViewerApp
+					codeViewWorkerPoolEnabled={false}
+					initialFileBatch={makeBrowserFileBatchWithDescriptors('open', descriptor)}
+					markdownWorkerClient={markdownWorkerClient}
+					navigationCommand={fileNavigationCommandForPath('docs/retained.md')}
+					fileProductSession={{
+						readContent: async (): Promise<string> => markdownContent,
+						onWorkerCommand: (command): void => {
+							commands.push(command);
+							if (
+								command.command === 'renderDisposition' &&
+								command.receipts.some(
+									(receipt) =>
+										receipt.kind === 'render.disposition' && receipt.disposition === 'painted',
+								)
+							)
+								initialDocumentPainted.resolve();
+						},
+						onWorkerMessagesPublisher: (publish): void => {
+							workerPublication.publish = publish;
+						},
+					}}
+				/>,
+			);
+			const markdownRender = await markdownRenderStarted.promise;
+			await markdownWorkerCompleted.promise;
+			await actUpdate(async (): Promise<void> => {
+				releaseMarkdownCompletion.resolve();
+				expect((await markdownRender.completed).status).toBe('success');
+			});
+			// useBridgeMarkdownAnnotationLayout queues one measurement rAF when annotation targets mount.
+			await actFrame();
+			await initialDocumentPainted.promise;
+			await waitForMarkdownOpenFileState('ready');
+			await waitForMarkdownSelector('[data-testid="bridge-markdown-canvas"] h1');
+			await expect
+				.element(rendered.getByRole('heading', { name: 'Retained File Markdown' }))
+				.toBeVisible();
+			const canvas = rendered.getByTestId('bridge-markdown-canvas').element();
+			await actUpdateAndWaitForBridgeFileViewerWorkerPublication((): void => {
+				if (workerPublication.publish === null)
+					throw new Error('Expected the File message publisher.');
+				workerPublication.publish([
+					{
+						wireVersion: 1,
+						direction: 'serverWorkerToMain',
+						transferDescriptors: [],
+						kind: 'viewRecoveryStatus',
+						view: { kind: 'file.metadata', subscriptionId: 'browser-file-metadata-subscription' },
+						status: 'failedRetryable',
+					},
+				]);
+			});
+			await expect.element(rendered.getByRole('alert')).toBeVisible();
+			expect(rendered.getByRole('button', { name: 'Retry', exact: true }).all()).toHaveLength(1);
+			await actUpdateAndWaitForBridgeFileViewerWorkerPublication((): void => {
+				requireHTMLElement(
+					rendered.getByRole('button', { name: 'Retry', exact: true }).element(),
+				).click();
+			});
+			expect(
+				commands
+					.filter(
+						({ command }) => command === 'viewRecoveryRetry' || command === 'fileRefreshRetry',
+					)
+					.map(({ command }) => command),
+			).toEqual(['viewRecoveryRetry', 'fileRefreshRetry']);
+			expect(rendered.getByTestId('bridge-markdown-canvas').element()).toBe(canvas);
+			await expect
+				.element(rendered.getByRole('heading', { name: 'Retained File Markdown' }))
+				.toBeVisible();
+		} finally {
+			releaseMarkdownCompletion.resolve();
 			markdownWorkerClient.dispose();
 		}
 	});
@@ -335,7 +462,8 @@ async function waitForMarkdownSelector(selector: string): Promise<void> {
 	const terminalFailure =
 		selector === '[role="alert"]'
 			? null
-			: (document.querySelector('[role="alert"]')?.textContent ??
+			: (document.querySelector('[data-bridge-region="markdown"][data-presentation-state="failed"]')
+					?.textContent ??
 				document.querySelector('[data-bridge-mermaid-state="failed"]')?.textContent);
 	if (terminalFailure !== null && terminalFailure !== undefined) {
 		throw new Error(

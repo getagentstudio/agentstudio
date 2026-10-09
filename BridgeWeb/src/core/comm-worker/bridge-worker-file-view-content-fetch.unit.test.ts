@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest';
 
-import type { BridgeCommWorkerFileViewContentRequest } from './bridge-comm-worker-file-metadata-projection.js';
+import type { BridgeCommWorkerFileViewContentRequest } from './bridge-comm-worker-file-view-runtime-mutation.js';
 import {
 	fetchBridgeWorkerFileViewContentResource,
 	type BridgeWorkerFileViewContentOpen,

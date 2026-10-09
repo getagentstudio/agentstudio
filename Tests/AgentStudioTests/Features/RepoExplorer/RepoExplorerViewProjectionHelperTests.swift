@@ -23,10 +23,8 @@ final class RepoProjectionInvalidationRecorder: @unchecked Sendable {
 }
 
 @MainActor
-func makeRepoExplorerTestOcticonLoader(from testFilePath: String = #filePath) -> OcticonLoader {
-    OcticonLoader(
-        resourceRootURL: testAgentStudioResourceRootURL(from: testFilePath)
-    )
+func makeRepoExplorerTestOcticonLoader() -> OcticonLoader {
+    OcticonLoader(resourceBundle: testSourceCatalogOcticonBundle())
 }
 
 @MainActor

@@ -1,14 +1,22 @@
 import { createHash } from 'node:crypto';
 
+import { uuidv7 as generateUuidv7 } from 'uuidv7';
 import { vi } from 'vitest';
 
 import type { BridgeTelemetrySample } from '../../../foundation/telemetry/bridge-telemetry-event.js';
+import sessionCorpus from '../../../test-fixtures/bridge-contract-fixtures/valid/bridge-product-session-corpus.json' with { type: 'json' };
 import {
 	BridgeCommWorkerAnnotationProjectionQueryController,
 	type BridgeCommWorkerAnnotationProjectionPublication,
 	type BridgeCommWorkerAnnotationProjectionTransport,
 } from '../bridge-comm-worker-annotation-projection-query-controller.js';
-import type { BridgeProductMetadataDataFrame } from '../bridge-product-metadata-application-protocol.js';
+import { BridgeProductBoundedAsyncQueue } from '../bridge-product-async-queue.js';
+import { bridgeProductBatchFrameSchema } from '../bridge-product-batch-wire-contracts.js';
+import { installBridgeProductCommentBatch } from '../bridge-product-comment-batch-installer.js';
+import {
+	bridgeProductCommentCatalogRecordKey,
+	bridgeProductCommentCatalogRecordSchema,
+} from '../bridge-product-comment-catalog-record-contracts.js';
 import {
 	bridgeProductFileAnnotationMetadataApplicationProtocol,
 	bridgeProductReviewAnnotationMetadataApplicationProtocol,
@@ -17,11 +25,13 @@ import type {
 	BridgeProductContentStream,
 	BridgeProductMetadataApplicationSubscription,
 } from '../bridge-product-transport-contract.js';
-import type { BridgeProductWorktreeAnnotationEvent } from '../bridge-product-worktree-annotation-contracts.js';
+import type { BridgeProductViewInstallation } from '../bridge-product-view-batch-receiver.js';
+import type { BridgeProductWorktreeAnnotationCatalogEntry } from '../bridge-product-worktree-annotation-contracts.js';
 import type {
 	BridgeProductAnnotationProjectionContentDescriptor,
 	BridgeProductAnnotationProjectionQueryRequest,
 } from '../bridge-product-worktree-annotation-projection-query-contracts.js';
+import { bridgeProductAnnotationProjectionContentDescriptorSchema } from '../bridge-product-worktree-annotation-projection-query-contracts.js';
 
 export const worktreeId = 'worktree-annotations-1';
 export const sessionId = uuidv7(1);
@@ -34,7 +44,10 @@ export interface MutableProjectionPage {
 
 export interface TestNotificationQueue {
 	readonly close: () => void;
-	readonly push: (event: BridgeProductWorktreeAnnotationEvent) => void;
+	readonly installCatalog: (revision: number, semanticRevision?: number) => void;
+	readonly setCatalogReceiver: (
+		receiver: (catalog: ReturnType<typeof installBridgeProductCommentBatch>) => void,
+	) => void;
 	readonly subscription: AnnotationMetadataSubscription;
 }
 
@@ -43,7 +56,6 @@ type AnnotationMetadataProtocol =
 	| typeof bridgeProductReviewAnnotationMetadataApplicationProtocol;
 type AnnotationMetadataSubscription =
 	BridgeProductMetadataApplicationSubscription<AnnotationMetadataProtocol>;
-type AnnotationMetadataFrame = BridgeProductMetadataDataFrame<BridgeProductWorktreeAnnotationEvent>;
 
 export interface AnnotationProjectionTestHarness {
 	readonly catalogAuthorityRetirements: boolean[];
@@ -66,6 +78,11 @@ export interface AnnotationProjectionTestHarness {
 	}>;
 	readonly querySourceGenerations: number[];
 	readonly querySessionIds: string[][];
+	readonly scopeUpdates: Array<{
+		readonly sessionIds: readonly string[];
+		readonly subscriptionId: string;
+		readonly worktreeId: string;
+	}>;
 	readonly sourceAuthorityStalePublications: Array<{
 		readonly currentSourceGeneration: number;
 		readonly requestedSourceGeneration: number;
@@ -85,6 +102,9 @@ export async function createHarness(props: {
 	) => Promise<unknown>;
 	readonly terminalKind?: 'complete' | 'error';
 	readonly surface?: 'file' | 'review';
+	readonly scopeUpdateOverride?: (
+		scope: Parameters<BridgeCommWorkerAnnotationProjectionTransport['setScope']>[0],
+	) => Promise<void>;
 }): Promise<AnnotationProjectionTestHarness> {
 	const surface = props.surface ?? 'file';
 	const notifications = createNotificationQueue(surface);
@@ -96,6 +116,7 @@ export async function createHarness(props: {
 	const statuses: AnnotationProjectionTestHarness['statuses'] = [];
 	const querySourceGenerations: number[] = [];
 	const querySessionIds: string[][] = [];
+	const scopeUpdates: AnnotationProjectionTestHarness['scopeUpdates'] = [];
 	const sourceAuthorityStalePublications: AnnotationProjectionTestHarness['sourceAuthorityStalePublications'] =
 		[];
 	const telemetrySamples: BridgeTelemetrySample[] = [];
@@ -109,8 +130,25 @@ export async function createHarness(props: {
 		callProjection: async (_surface, request, signal): Promise<unknown> => {
 			querySourceGenerations.push(request.sourceGeneration);
 			querySessionIds.push([...request.sessionIds]);
-			if (props.queryOverride !== undefined) return await props.queryOverride(request, signal);
-			return { descriptor: pageByCursor.get(request.cursor)?.descriptor, kind: 'content' };
+			const result =
+				props.queryOverride !== undefined
+					? await props.queryOverride(request, signal)
+					: { descriptor: pageByCursor.get(request.cursor)?.descriptor, kind: 'content' };
+			if (result === null || typeof result !== 'object' || !('descriptor' in result)) return result;
+			const parsedDescriptor = bridgeProductAnnotationProjectionContentDescriptorSchema.safeParse(
+				result.descriptor,
+			);
+			if (!parsedDescriptor.success) return result;
+			return {
+				...result,
+				descriptor: {
+					...parsedDescriptor.data,
+					page: {
+						...parsedDescriptor.data.page,
+						operationCorrelationId: request.operationCorrelationId,
+					},
+				},
+			};
 		},
 		openContent: (descriptor): BridgeProductContentStream<'annotation.projection'> => {
 			const page = props.pages.find(
@@ -125,9 +163,16 @@ export async function createHarness(props: {
 			if (subscription === undefined) throw new Error('Unexpected annotation subscription reopen.');
 			return subscription;
 		},
+		setScope: async (scope): Promise<void> => {
+			scopeUpdates.push({
+				sessionIds: [...scope.sessionIds],
+				subscriptionId: scope.subscriptionId,
+				worktreeId: scope.worktreeId,
+			});
+			await props.scopeUpdateOverride?.(scope);
+		},
 	};
 	const controller = new BridgeCommWorkerAnnotationProjectionQueryController({
-		onCatalog: (): void => {},
 		onConvergence: ({ state, surface: publicationSurface }): void => {
 			statuses.push(state.kind);
 			if (state.kind === 'ready') {
@@ -155,6 +200,11 @@ export async function createHarness(props: {
 		},
 		transport,
 	});
+	for (const catalogSubscription of notificationQueues) {
+		catalogSubscription.setCatalogReceiver((catalog): void => {
+			controller.acceptInstalledCatalog(catalog);
+		});
+	}
 	return {
 		catalogAuthorityRetirements,
 		controller,
@@ -163,6 +213,7 @@ export async function createHarness(props: {
 		publications,
 		querySourceGenerations,
 		querySessionIds,
+		scopeUpdates,
 		sourceAuthorityStalePublications,
 		statuses,
 		subscriptionCount: (): number => observedSubscriptionCount,
@@ -170,47 +221,56 @@ export async function createHarness(props: {
 	};
 }
 
-export function createNotificationQueue(surface: 'file' | 'review'): TestNotificationQueue {
-	const pending: Array<IteratorResult<AnnotationMetadataFrame>> = [];
-	const waiters: Array<(result: IteratorResult<AnnotationMetadataFrame>) => void> = [];
-	const events: AsyncIterable<AnnotationMetadataFrame> = {
-		[Symbol.asyncIterator]: () => ({
-			next: async (): Promise<IteratorResult<AnnotationMetadataFrame>> => {
-				const result = pending.shift();
-				if (result !== undefined) return result;
-				return await new Promise((resolve) => waiters.push(resolve));
-			},
-		}),
-	};
+export function createNotificationQueue(
+	surface: 'file' | 'review',
+	authority?: { readonly subscriptionId: string; readonly worktreeId: string },
+): TestNotificationQueue {
+	const events = new BridgeProductBoundedAsyncQueue<never>(1);
+	let catalogReceiver:
+		| ((catalog: ReturnType<typeof installBridgeProductCommentBatch>) => void)
+		| null = null;
 	const base = {
 		cancel: vi.fn(async (): Promise<void> => {
-			for (const resolve of waiters.splice(0)) resolve({ done: true, value: undefined });
+			events.close(true);
 		}),
 		events,
-		update: vi.fn(async (): Promise<void> => {}),
 	};
 	const subscription: AnnotationMetadataSubscription =
 		surface === 'file'
 			? {
 					...base,
-					subscriptionId: 'file-annotation-notifications',
+					subscriptionId: authority?.subscriptionId ?? 'file-annotation-notifications',
 					subscriptionKind: 'file.annotations',
 				}
 			: {
 					...base,
-					subscriptionId: 'review-annotation-notifications',
+					subscriptionId: authority?.subscriptionId ?? 'review-annotation-notifications',
 					subscriptionKind: 'review.annotations',
 				};
 	return {
 		close: (): void => {
-			for (const resolve of waiters.splice(0)) resolve({ done: true, value: undefined });
-			pending.push({ done: true, value: undefined });
+			events.close(true);
 		},
-		push: (event: BridgeProductWorktreeAnnotationEvent): void => {
-			const frame = annotationMetadataFrame(event, subscription);
-			const resolve = waiters.shift();
-			if (resolve === undefined) pending.push({ done: false, value: frame });
-			else resolve({ done: false, value: frame });
+		installCatalog: (revision, semanticRevision = 1): void => {
+			if (catalogReceiver === null) throw new Error('Comment catalog receiver was not installed.');
+			const installation = makeCommentCatalogInstallation({
+				snapshotCause: 'open',
+				entries: [{ kind: 'session', semanticRevision, sessionId }],
+				revision,
+				subscriptionId: subscription.subscriptionId,
+				subscriptionKind: subscription.subscriptionKind,
+				worktreeId: authority?.worktreeId ?? worktreeId,
+			});
+			catalogReceiver(
+				installBridgeProductCommentBatch(installation, {
+					subscriptionId: subscription.subscriptionId,
+					workerDerivationEpoch: 1,
+					worktreeId: authority?.worktreeId ?? worktreeId,
+				}),
+			);
+		},
+		setCatalogReceiver: (receiver): void => {
+			catalogReceiver = receiver;
 		},
 		subscription,
 	};
@@ -368,89 +428,49 @@ function concatenate(chunks: readonly Uint8Array<ArrayBuffer>[]): Uint8Array<Arr
 	return result;
 }
 
-export function controlChanged(sourceGeneration: number): BridgeProductWorktreeAnnotationEvent {
-	return {
-		authority: {
-			applicationSourceGeneration: sourceGeneration,
-			worktreeId,
-		},
-		kind: 'annotation.controlChanged',
-		reason: 'discovery',
-	};
-}
-
-export function sessionChanged(
-	sourceGeneration: number,
-	semanticRevision: number,
-): BridgeProductWorktreeAnnotationEvent {
-	return {
-		authority: {
-			applicationSourceGeneration: sourceGeneration,
-			worktreeId,
-		},
-		kind: 'annotation.sessionChanged',
-		semanticRevision,
-		sessionId,
-	};
-}
-
-export function pushSessionCatalog(
-	notifications: TestNotificationQueue,
-	sourceGeneration: number,
+export function installSessionCatalog(
+	comments: TestNotificationQueue,
+	revision: number,
+	semanticRevision = 1,
 ): void {
-	const transferId = `catalog-transfer-${sourceGeneration}`;
-	const authority = {
-		applicationSourceGeneration: sourceGeneration,
-		worktreeId,
-	} as const;
-	notifications.push({
-		authority,
-		kind: 'annotation.catalog',
-		transfer: {
-			catalogRevision: sourceGeneration,
-			expectedEntryCount: 1,
-			kind: 'catalog.begin',
-			transferId,
-		},
-	});
-	notifications.push({
-		authority,
-		kind: 'annotation.catalog',
-		transfer: {
-			catalogRevision: sourceGeneration,
-			entries: [{ kind: 'session', semanticRevision: 1, sessionId }],
-			kind: 'catalog.window',
-			transferId,
-			windowOrdinal: 0,
-		},
-	});
-	notifications.push({
-		authority,
-		kind: 'annotation.catalog',
-		transfer: {
-			catalogRevision: sourceGeneration,
-			entryCount: 1,
-			kind: 'catalog.commit',
-			transferId,
-			windowCount: 1,
-		},
-	});
+	comments.installCatalog(revision, semanticRevision);
 }
 
-function annotationMetadataFrame(
-	event: BridgeProductWorktreeAnnotationEvent,
-	subscription: AnnotationMetadataSubscription,
-): AnnotationMetadataFrame {
+export function makeCommentCatalogInstallation(props: {
+	readonly snapshotCause: import('../bridge-product-batch-wire-contracts.js').BridgeProductSnapshotCause;
+	readonly entries: readonly BridgeProductWorktreeAnnotationCatalogEntry[];
+	readonly revision: number;
+	readonly subscriptionId: string;
+	readonly subscriptionKind: 'file.annotations' | 'review.annotations';
+	readonly worktreeId: string;
+}): BridgeProductViewInstallation {
+	const begin = bridgeProductBatchFrameSchema.parse({
+		...sessionCorpus.transportV2.batchFrames[0],
+		snapshotCause: props.snapshotCause,
+		batchId: generateUuidv7(),
+		publicationId: undefined,
+		scope: { kind: 'comment', sessionIds: [], worktreeId: props.worktreeId },
+		subscriptionId: props.subscriptionId,
+		subscriptionKind: props.subscriptionKind,
+		targetRevision: props.revision,
+	});
+	if (begin.kind !== 'subscription.batchBegin') throw new Error('Comment batch begin missing.');
 	return {
-		data: event,
-		metadataStreamId: 'annotation-metadata-stream',
-		operationCorrelationId: 'a'.repeat(64),
-		sourceGeneration: event.authority.applicationSourceGeneration,
-		streamSequence: 1,
-		subscriptionId: subscription.subscriptionId,
-		subscriptionKind: subscription.subscriptionKind,
-		subscriptionSequence: 1,
-		workerDerivationEpoch: 1,
+		certified: true,
+		staleRecords: [],
+		begin,
+		domain: 'default',
+		records: props.entries.map((entry) => {
+			const record = bridgeProductCommentCatalogRecordSchema.parse({
+				entry,
+				revision: props.revision,
+			});
+			return {
+				key: bridgeProductCommentCatalogRecordKey(record),
+				revision: record.revision,
+				value: record,
+			};
+		}),
 	};
 }
 

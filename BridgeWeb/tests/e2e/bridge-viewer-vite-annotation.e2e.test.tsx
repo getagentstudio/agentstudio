@@ -17,6 +17,7 @@ import {
 import {
 	bridgeViewerViteProductFileUrl,
 	bridgeViewerViteProductReviewUrl,
+	requireBridgeViewerVitePrimaryReviewPath,
 } from './bridge-viewer-vite-product-url.ts';
 
 /**
@@ -117,7 +118,10 @@ test.each([
 			await page.goto(
 				surface === 'file'
 					? bridgeViewerViteProductFileUrl(server.origin, fixture.oracle.largeFilePath)
-					: bridgeViewerViteProductReviewUrl(server.origin),
+					: bridgeViewerViteProductReviewUrl(
+							server.origin,
+							requireBridgeViewerVitePrimaryReviewPath(fixture.oracle),
+						),
 				{ waitUntil: 'domcontentloaded' },
 			);
 			if (surface === 'file') {

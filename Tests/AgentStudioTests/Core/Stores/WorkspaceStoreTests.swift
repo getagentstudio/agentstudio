@@ -1064,7 +1064,9 @@ final class WorkspaceStoreTests {
     }
 
     @Test
-    func repositoryTopologyStoreAutosavesWithoutWorkspaceActivation() async {
+    func repositoryTopologyStoreAutosavesWithoutWorkspaceActivation() async throws {
+        let factSource = RepositoryTopologyStoreFactSource()
+        let facts = try factSource.attach()
         await prepareSharedDatastoreForBoot()
         let topologyAtom = RepositoryTopologyAtom()
         let clock = TestPushClock()
@@ -1072,7 +1074,8 @@ final class WorkspaceStoreTests {
             atom: topologyAtom,
             sqliteDatastore: sqliteDatastore,
             persistDebounceDuration: .milliseconds(10),
-            clock: clock
+            clock: clock,
+            factSink: factSource.sink
         )
         topologyStore.startObserving()
         #expect(!topologyStore.isDirty)
@@ -1105,14 +1108,12 @@ final class WorkspaceStoreTests {
         }
         let nextSleepGeneration = clock.scheduledSleepGeneration
         topologyAtom.replaceTopology(replacement)
+        let capturedRevision = topologyAtom.lifecycleRevision
         await clock.waitForPendingSleepGeneration(nextSleepGeneration)
         #expect(topologyStore.isDirty)
         clock.advance(by: .milliseconds(10))
 
-        // SQL visibility can precede the MainActor completion of the autosave.
-        await assertEventuallyMain("topology autosave acknowledges its committed capture") {
-            !topologyStore.isDirty
-        }
+        _ = try await facts.expectNextSaveCompleted(captureRevision: capturedRevision)
         guard case .loaded(let snapshot) = await sqliteDatastore.loadRepositoryTopologySnapshot() else {
             Issue.record("expected autosaved repository topology")
             return
@@ -1120,6 +1121,7 @@ final class WorkspaceStoreTests {
 
         #expect(snapshot.repos.map(\.id) == [repositoryID])
         #expect(!topologyStore.isDirty)
+        try await facts.finish()
     }
 
     private func requirePaneGraphReplacement(

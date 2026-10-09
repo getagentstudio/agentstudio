@@ -4,13 +4,13 @@ import Testing
 
 @Suite("Bridge product admission static contract")
 struct BridgeProductAdmissionStaticContractTests {
-    @Test("pane composition is the sole product admission gate constructor")
+    @Test("pane composition and the installation owner are the only admission gate constructors")
     func paneCompositionSolelyConstructsProductAdmissionGate() throws {
         // Arrange
         let projectRoot = URL(
             fileURLWithPath: TestPathResolver.projectRoot(from: #filePath)
         )
-        let bridgeProductionSources = try bridgeProductAdmissionSwiftSources(
+        let constructorsBySource = try bridgeProductAdmissionConstructorCountBySource(
             under: projectRoot.appendingPathComponent(
                 "Sources/AgentStudio/Features/Bridge"
             )
@@ -30,6 +30,10 @@ struct BridgeProductAdmissionStaticContractTests {
             relativePath:
                 "Sources/AgentStudio/Features/Bridge/Transport/BridgeProductSchemeSessionRouter.swift"
         )
+        let adapterSource = try bridgeProductAdmissionSource(
+            projectRoot: projectRoot,
+            relativePath: "Sources/AgentStudio/Features/Bridge/Transport/BridgeProductSchemeAdapter.swift"
+        )
 
         // Act
         let normalizedBootstrapSource = bridgeProductAdmissionNormalizeWhitespace(bootstrapSource)
@@ -39,17 +43,18 @@ struct BridgeProductAdmissionStaticContractTests {
         let normalizedSessionRouterSource = bridgeProductAdmissionNormalizeWhitespace(
             sessionRouterSource
         )
-        let constructorCount =
-            bridgeProductionSources
-            .reduce(into: 0) { count, source in
-                count += source.components(separatedBy: "BridgeProductAdmissionGate()").count - 1
-            }
-
         // Assert
         #expect(
-            constructorCount == 1,
-            "BridgePaneController.makeProductSessionDependencies must be the sole production pane admission gate constructor"
+            constructorsBySource == [
+                "Runtime/BridgePaneController+Bootstrap.swift": 1,
+                "Runtime/Development/BridgeDevelopmentProductHost+ProductComposition.swift": 1,
+                "Transport/BridgePaneProductSessionOwner.swift": 1,
+            ],
+            "PD:421: pane composition mints pane gates; the session owner alone mints installation gates"
         )
+        #expect(normalizedBootstrapSource.contains("let productAdmissionGate = BridgeProductAdmissionGate()"))
+        #expect(normalizedSessionOwnerSource.contains("let installationAdmissionGate = BridgeProductAdmissionGate()"))
+        #expect(!adapterSource.contains("= BridgeProductAdmissionGate()"))
         #expect(
             !normalizedBootstrapSource.contains(
                 "productAdmissionGate: BridgeProductAdmissionGate = BridgeProductAdmissionGate()"
@@ -116,6 +121,38 @@ struct BridgeProductAdmissionStaticContractTests {
         let acquisitionCountBySource = try bridgeProductAdmissionAcquisitionCountBySource(
             under: agentStudioSources
         )
+        let diffCommandsSource = bridgeProductAdmissionNormalizeWhitespace(
+            try bridgeProductAdmissionSource(
+                projectRoot: projectRoot,
+                relativePath:
+                    "Sources/AgentStudio/Features/Bridge/Runtime/BridgePaneController+DiffCommands.swift"
+            )
+        )
+        let ipcProjectionSource = bridgeProductAdmissionNormalizeWhitespace(
+            try bridgeProductAdmissionSource(
+                projectRoot: projectRoot,
+                relativePath:
+                    "Sources/AgentStudio/Features/Bridge/Runtime/BridgePaneController+IPCProjection.swift"
+            )
+        )
+        let refreshAdmissionSource = bridgeProductAdmissionNormalizeWhitespace(
+            try bridgeProductAdmissionSource(
+                projectRoot: projectRoot,
+                relativePath:
+                    "Sources/AgentStudio/Features/Bridge/Runtime/BridgePaneController+RefreshAdmission.swift"
+            )
+        )
+        let installationCompositionCountBySource = [
+            "DiffCommands": diffCommandsSource.components(
+                separatedBy: "withInstallation(installation.gate)"
+            ).count - 1,
+            "IPCProjection": ipcProjectionSource.components(
+                separatedBy: "withInstallation(installation.gate)"
+            ).count - 1,
+            "RefreshAdmission": refreshAdmissionSource.components(
+                separatedBy: "withInstallation(installation.gate)"
+            ).count - 1,
+        ]
 
         // Assert
         #expect(
@@ -128,9 +165,46 @@ struct BridgeProductAdmissionStaticContractTests {
                 "Features/Bridge/Runtime/BridgePaneController+IPCProjection.swift": 2,
                 "Features/Bridge/Runtime/BridgePaneController+RefreshAdmission.swift": 2,
                 "Features/Bridge/Runtime/BridgePaneController+SurfaceSelection.swift": 2,
-                "Features/Bridge/Transport/BridgeProductSchemeSessionRouter.swift": 1,
+                "Features/Bridge/Transport/BridgeProductSchemeAdapter.swift": 1,
             ],
             "Downstream product owners must carry the original context instead of reacquiring pane admission"
+        )
+        #expect(
+            installationCompositionCountBySource == [
+                "DiffCommands": 1,
+                "IPCProjection": 2,
+                "RefreshAdmission": 1,
+            ],
+            "Each existing Review ingress carries its single pane acquisition composed with the current E1"
+        )
+        let routerSource = bridgeProductAdmissionNormalizeWhitespace(
+            try bridgeProductAdmissionSource(
+                projectRoot: projectRoot,
+                relativePath: "Sources/AgentStudio/Features/Bridge/Transport/BridgeProductSchemeSessionRouter.swift"
+            )
+        )
+        let adapterSource = bridgeProductAdmissionNormalizeWhitespace(
+            try bridgeProductAdmissionSource(
+                projectRoot: projectRoot,
+                relativePath: "Sources/AgentStudio/Features/Bridge/Transport/BridgeProductSchemeAdapter.swift"
+            )
+        )
+        #expect(
+            adapterSource.contains("productAdmissionGate.acquire()?.withInstallation(installationAdmissionGate)"),
+            "The one product-ingress acquisition composes the pane and captured installation gates"
+        )
+        #expect(routerSource.components(separatedBy: "activeInstallation.productAdapter.acquireAdmission()").count == 2)
+        let ingressStart = try #require(routerSource.range(of: "func claimActiveAdapter("))
+        let ingressEnd = try #require(routerSource.range(of: "func metadataStreamHasEnded("))
+        let ingress = String(routerSource[ingressStart.lowerBound..<ingressEnd.lowerBound])
+        let admission = try #require(ingress.range(of: "activeInstallation.productAdapter.acquireAdmission()"))
+        let claim = try #require(ingress.range(of: "activeTransportClaimIds.insert(claimId)"))
+        #expect(admission.lowerBound < claim.lowerBound, "Admission precedes any route, operation or producer claim")
+        #expect(ingress.contains("productAdmission: productAdmission"))
+        #expect(
+            routerSource.contains(
+                "await adapter.route( request, productAdmission: productAdmission, continuation: continuation,"),
+            "The captured claim forwards its original composed context, without another acquisition"
         )
     }
 
@@ -184,9 +258,9 @@ private func bridgeProductAdmissionNormalizeWhitespace(_ source: String) -> Stri
     source.split(whereSeparator: \Character.isWhitespace).joined(separator: " ")
 }
 
-private func bridgeProductAdmissionSwiftSources(
+private func bridgeProductAdmissionConstructorCountBySource(
     under directory: URL
-) throws -> [String] {
+) throws -> [String: Int] {
     guard
         let enumerator = FileManager.default.enumerator(
             at: directory,
@@ -195,15 +269,20 @@ private func bridgeProductAdmissionSwiftSources(
     else {
         throw CocoaError(.fileReadUnknown)
     }
-    return try enumerator.compactMap { element in
+    var constructorsBySource: [String: Int] = [:]
+    for element in enumerator {
         guard let fileURL = element as? URL,
-            fileURL.pathExtension == "swift",
-            !fileURL.path.contains("/Runtime/Development/")
+            fileURL.pathExtension == "swift"
         else {
-            return nil
+            continue
         }
-        return try String(contentsOf: fileURL, encoding: .utf8)
+        let source = try String(contentsOf: fileURL, encoding: .utf8)
+        let count = source.components(separatedBy: "BridgeProductAdmissionGate()").count - 1
+        guard count > 0 else { continue }
+        let relativePath = String(fileURL.path.dropFirst(directory.path.count + 1))
+        constructorsBySource[relativePath] = count
     }
+    return constructorsBySource
 }
 
 private func bridgeProductAdmissionAcquisitionCountBySource(

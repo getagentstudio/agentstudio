@@ -21,6 +21,7 @@ struct BridgePaneProductSessionAnnotationRetirementTests {
         let host = try await BridgeDevelopmentProductHost(
             source: makeDevelopmentProductSource(worktreeRoot: repositoryURL),
             worktreeAnnotationStore: store,
+            operationDeadlineClock: TestPushClock(),
             contributionTargetCommit: developmentContributionTargetCommit(worktreeRoot: repositoryURL),
             makeReviewProvider: { _, _ in BridgeObservabilitySmokeReviewSourceProvider() }
         )

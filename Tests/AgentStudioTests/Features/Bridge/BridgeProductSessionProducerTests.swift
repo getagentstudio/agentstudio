@@ -6,6 +6,39 @@ import Testing
 
 @Suite("Bridge product session producer registry")
 struct BridgeProductSessionProducerTests {
+    @Test("transport keepalives cannot enter the N3 frame and credit registry")
+    func keepaliveBypassesProducerRegistry() async throws {
+        let registry = BridgeProductProducerRegistryTestHarness()
+        let request = try producerRegistryMetadataStreamRequest()
+        let operation = HeldStep<BridgeProductProducerLease>("keepaliveOperation")
+        let registration = await registry.registerMetadataProducer(request: request) { lease in
+            try? await operation.arrive(lease)
+        }
+        let lease = try #require(registration.lease)
+        _ = try await operation.firstArrival()
+        _ = try await registry.enqueueRequiredOpeningFrame(for: lease) { sequence in
+            try producerRegistryMetadataOpeningFrame(for: request, sequence: sequence)
+        }
+        let before = await registry.snapshot()
+
+        let keepalive = try await registry.enqueueNonterminalFrame(
+            for: lease,
+            build: { sequence in
+                .metadata(
+                    .streamKeepalive(
+                        .init(frameIdentity: .init(correlation: request.correlation, streamSequence: sequence))
+                    ))
+            },
+            overflowReset: { sequence in
+                try producerRegistryMetadataTerminalFrame(for: request, sequence: sequence)
+            }
+        )
+
+        #expect(keepalive == .rejected(.frameKindMismatch))
+        #expect(await registry.snapshot() == before)
+        try await closeAllProducerRegistryProducers(in: registry)
+    }
+
     @Test("metadata registration is singular and rejects before starting duplicate work")
     func metadataRegistrationRejectsDuplicateBeforeStartingWork() async throws {
         // Arrange
@@ -211,7 +244,8 @@ struct BridgeProductSessionProducerTests {
                         data: resetData,
                         sequence: 1,
                         terminal: true,
-                        requiredOpening: false
+                        requiredOpening: false,
+                        batchComplete: false
                     ),
                     discardedFrameCount: 2,
                     discardedByteCount: firstData.count + secondData.count
@@ -364,7 +398,8 @@ struct BridgeProductSessionProducerTests {
                         data: replacementTerminalData,
                         sequence: 1,
                         terminal: true,
-                        requiredOpening: false
+                        requiredOpening: false,
+                        batchComplete: false
                     ),
                     discardedFrameCount: 1,
                     discardedByteCount: pendingData.count

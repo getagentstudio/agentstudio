@@ -221,7 +221,7 @@ struct SidebarSurfaceHostSwitchGuardTests {
             },
             executionOwnerIdentities: dispatcher.executionOwnerIdentities,
             store: store,
-            octiconLoader: OcticonLoader(resourceRootURL: testAgentStudioResourceRootURL()),
+            octiconLoader: makeTestOcticonLoader(),
             paneActivityStatusAtom: coreAtoms.paneActivityStatus,
             applicationLifecycleMonitor: applicationLifecycleMonitor,
             sidebarTimeInvalidationConsumerID: UUIDv7.generate(),

@@ -17,7 +17,7 @@ struct BridgeReviewGitRefreshSeedHolder {
     }
 }
 
-struct BridgeReviewPackageConstructionResult {
+struct BridgeReviewPackageConstructionResult: Sendable {
     let result: BridgeReviewPipelineResult
     let artifactPin: BridgeReviewPublicationArtifactPin?
 

@@ -241,6 +241,23 @@ export const bridgeProductReviewPreDeliveryPresentationClassSchema = z.discrimin
 		.strict(),
 ]);
 
+export const bridgeProductReviewRefreshImpactSchema = z
+	.object({
+		addedLineCount: bridgeProductNonnegativeSequenceSchema.nullable(),
+		affectedFileCount: bridgeProductNonnegativeSequenceSchema.nullable(),
+		affectedStableFileIdentities: z
+			.array(bridgeProductIdentifierSchema)
+			.refine(
+				(identities) => new Set(identities).size === identities.length,
+				'Review refresh affected stable file identities must be unique.',
+			)
+			.readonly(),
+		deletedLineCount: bridgeProductNonnegativeSequenceSchema.nullable(),
+		newlyImportedCommitCount: bridgeProductNonnegativeSequenceSchema.nullable(),
+		preDeliveryPresentationClass: bridgeProductReviewPreDeliveryPresentationClassSchema,
+	})
+	.strict();
+
 const bridgeProductReviewRefreshImpactShape = {
 	addedLineCount: bridgeProductNonnegativeSequenceSchema.nullable().optional(),
 	affectedFileCount: bridgeProductNonnegativeSequenceSchema.nullable().optional(),

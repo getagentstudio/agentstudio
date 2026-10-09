@@ -12,10 +12,6 @@ import type {
 	BridgeProductRegistryValue,
 	BridgeProductSurface,
 } from './bridge-product-contract-primitives.js';
-import type {
-	BridgeProductMetadataApplicationEvent,
-	BridgeProductMetadataDataFrame,
-} from './bridge-product-metadata-application-protocol.js';
 import {
 	bridgeProductFileMetadataApplicationProtocol,
 	bridgeProductReviewMetadataApplicationProtocol,
@@ -24,26 +20,18 @@ import type {
 	BridgeProductRequestExecutor,
 	BridgeProductRequestRoute,
 } from './bridge-product-request-executor.js';
-import type {
-	BridgeProductControlRequest,
-	BridgeProductMetadataFrame,
-} from './bridge-product-session-contracts.js';
-import type {
-	BridgeProductSubscriptionKind,
-	BridgeProductSubscriptionUpdateOptions,
-} from './bridge-product-subscription-contracts.js';
+import type { BridgeProductMetadataFrame } from './bridge-product-session-contracts.js';
+import type { BridgeProductSubscriptionKind } from './bridge-product-subscription-contracts.js';
 import type {
 	BridgeProductCallResult,
 	BridgeProductContentStream,
 	BridgeProductMetadataApplicationSubscription,
-	BridgeProductSubscription,
 	BridgeProductTransport,
 } from './bridge-product-transport-contract.js';
 
 declare const productTransport: BridgeProductTransport;
 declare const productRequestExecutor: BridgeProductRequestExecutor;
 declare const abortSignal: AbortSignal;
-declare function acceptControlRequest(request: BridgeProductControlRequest): void;
 declare function acceptMetadataFrame(frame: BridgeProductMetadataFrame): void;
 const requestRoute: BridgeProductRequestRoute = 'command';
 void productRequestExecutor(requestRoute, { method: 'POST' });
@@ -324,28 +312,16 @@ void unavailableCurrentFileSourceResult;
 
 const reviewSubscription: BridgeProductMetadataApplicationSubscription<
 	typeof bridgeProductReviewMetadataApplicationProtocol
-> = productTransport.subscribe(bridgeProductReviewMetadataApplicationProtocol, {
-	interests: [{ itemIds: ['review-item-1'], lane: 'foreground' }],
-});
-void reviewSubscription;
-void reviewSubscription.update({
-	interests: [{ itemIds: ['review-item-2'], lane: 'visible' }],
-});
-void reviewSubscription.update({
-	interests: [
-		{
-			lane: 'visible',
-			// @ts-expect-error Review updates cannot cross-wire File path interests.
-			paths: ['src/file.ts'],
-		},
-	],
-});
+> = productTransport.subscribe(bridgeProductReviewMetadataApplicationProtocol, {});
+const reviewLifecycleEvents: AsyncIterable<never> = reviewSubscription.events;
+void reviewLifecycleEvents;
+
+// @ts-expect-error Subscription data updates are removed from the transport API.
+void reviewSubscription.update({});
 
 const fileSubscription: BridgeProductMetadataApplicationSubscription<
 	typeof bridgeProductFileMetadataApplicationProtocol
 > = productTransport.subscribe(bridgeProductFileMetadataApplicationProtocol, {
-	interests: [{ lane: 'visible', paths: ['src/file.ts'] }],
-	pathScope: [],
 	source: {
 		cwdScope: null,
 		freshness: 'live',
@@ -355,95 +331,13 @@ const fileSubscription: BridgeProductMetadataApplicationSubscription<
 		worktreeId: '00000000-0000-4000-8000-000000000002',
 	},
 });
-void fileSubscription.update({
-	interests: [{ lane: 'foreground', paths: ['src/file.ts'] }],
-	pathScope: ['src'],
-});
-void fileSubscription.update({
-	interests: [
-		{
-			// @ts-expect-error File updates cannot cross-wire Review item interests.
-			itemIds: ['review-item-1'],
-			lane: 'foreground',
-		},
-	],
-	pathScope: [],
-});
+void fileSubscription;
+
+// @ts-expect-error Metadata subscriptions reject the retired interest options.
+void productTransport.subscribe(bridgeProductReviewMetadataApplicationProtocol, { interests: [] });
 
 // @ts-expect-error Subscription strings are retired; callers retain the registered protocol.
-void productTransport.subscribe('review.metadata', { interests: [] });
-
-declare const unionSubscription: BridgeProductSubscription<BridgeProductSubscriptionKind>;
-const reviewSubscriptionUpdate = {
-	interests: [{ itemIds: ['review-item-2'], lane: 'visible' }],
-} satisfies BridgeProductSubscriptionUpdateOptions<'review.metadata'>;
-const fileSubscriptionUpdate = {
-	interests: [{ lane: 'foreground', paths: ['src/file.ts'] }],
-	pathScope: ['src'],
-} satisfies BridgeProductSubscriptionUpdateOptions<'file.metadata'>;
-// @ts-expect-error A union subscription must be narrowed before accepting Review updates.
-void unionSubscription.update(reviewSubscriptionUpdate);
-// @ts-expect-error A union subscription must be narrowed before accepting File updates.
-void unionSubscription.update(fileSubscriptionUpdate);
-
-if (unionSubscription.subscriptionKind === 'review.metadata') {
-	void unionSubscription.update(reviewSubscriptionUpdate);
-} else if (unionSubscription.subscriptionKind === 'file.metadata') {
-	void unionSubscription.update(fileSubscriptionUpdate);
-} else {
-	void unionSubscription.update({});
-}
-
-declare const fileMetadataFrame: BridgeProductMetadataDataFrame<
-	BridgeProductMetadataApplicationEvent<typeof bridgeProductFileMetadataApplicationProtocol>
->;
-// @ts-expect-error Review and File subscription frames cannot cross-wire.
-const invalidReviewMetadataFrame: BridgeProductMetadataDataFrame<
-	BridgeProductMetadataApplicationEvent<typeof bridgeProductReviewMetadataApplicationProtocol>
-> = fileMetadataFrame;
-void invalidReviewMetadataFrame;
-
-const fileMetadataFrameIdentity: readonly [string, string | null, number, number] = [
-	fileMetadataFrame.metadataStreamId,
-	fileMetadataFrame.operationCorrelationId,
-	fileMetadataFrame.sourceGeneration,
-	fileMetadataFrame.workerDerivationEpoch,
-];
-void fileMetadataFrameIdentity;
-
-switch (fileMetadataFrame.data.eventKind) {
-	case 'file.sourceAccepted':
-		void fileMetadataFrame.data.source.sourceId;
-		break;
-	case 'file.treeWindow':
-		void fileMetadataFrame.data.rows;
-		break;
-	case 'file.treeDelta':
-		void fileMetadataFrame.data.operations;
-		break;
-	case 'file.statusPatch':
-		void fileMetadataFrame.data.patch.patchKind;
-		break;
-	case 'file.descriptorReady': {
-		void fileMetadataFrame.data.availability.availabilityKind;
-		const descriptorEncoding: 'utf-8' | null = fileMetadataFrame.data.encoding;
-		const descriptorPayloadByteCount: number = fileMetadataFrame.data.payloadByteCount;
-		const descriptorPayloadLineCount: number = fileMetadataFrame.data.payloadLineCount;
-		const descriptorTotalLineCount: number | null = fileMetadataFrame.data.totalLineCount;
-		void descriptorEncoding;
-		void descriptorPayloadByteCount;
-		void descriptorPayloadLineCount;
-		void descriptorTotalLineCount;
-		// @ts-expect-error Descriptor-ready events cannot expose legacy resource carriers.
-		void fileMetadataFrame.data.resourceUrl;
-		// @ts-expect-error Descriptor-ready events no longer expose ambiguous line counts.
-		void fileMetadataFrame.data.lineCount;
-		break;
-	}
-	case 'file.invalidated':
-		void fileMetadataFrame.data.replacementDescriptor;
-		break;
-}
+void productTransport.subscribe('review.metadata', {});
 
 const fileContent: BridgeProductContentStream<'file.content'> = productTransport.openContent(
 	{
@@ -526,15 +420,8 @@ void productTransport.call('file.source.current', { retry: true });
 const invalidMarkViewedResult: BridgeProductCallResult<'review.markFileViewed'> = {};
 void invalidMarkViewedResult;
 
-void productTransport.subscribe(bridgeProductReviewMetadataApplicationProtocol, {
-	interests: [
-		{
-			lane: 'foreground',
-			// @ts-expect-error Review and File subscription options cannot cross-wire.
-			paths: ['src/file.ts'],
-		},
-	],
-});
+// @ts-expect-error Review subscriptions accept no retired interest options.
+void productTransport.subscribe(bridgeProductReviewMetadataApplicationProtocol, { interests: [] });
 
 // @ts-expect-error Review content opens require the complete strict source and range descriptor.
 void productTransport.openContent({ contentKind: 'review.content' }, abortSignal);
@@ -564,68 +451,15 @@ void productTransport.openContent({
 	},
 });
 
-// Generic control envelopes retain raw application fields for registered validation.
-acceptControlRequest({
-	baseInterestRevision: 0,
-	baseInterestSha256: '1a71797cab8ed23c72233b7706b166a33049e4e87dfbc55b9e252f9c1843eca6',
-	batchCount: 1,
-	batchIndex: 0,
-	delta: {
-		add: [
-			{
-				lane: 'foreground',
-				path: 'src/file.ts',
-			},
-		],
-		addPathScope: [],
-		removePathScope: [],
-		removePaths: [],
-		subscriptionKind: 'file.metadata',
-	},
-	kind: 'subscription.updateBatch',
-	paneSessionId: 'pane-session-1',
-	requestId: 'request-1',
-	requestSequence: 1,
-	subscriptionId: 'review-subscription-1',
-	subscriptionKind: 'review.metadata',
-	targetInterestRevision: 1,
-	targetInterestSha256: '2535176c2a822c1f5007dd72a7987b7c0a1b6e9af1bc28324ec4618b43f71ebd',
-	totalDeltaItemCount: 1,
-	updateId: 'update-1',
-	wireVersion: 2,
-	workerDerivationEpoch: 3,
-	workerInstanceId: 'worker-instance-1',
-});
-
-// Generic metadata envelopes retain raw application data for registered validation.
+// Lifecycle frames are the only subscription frames in the metadata transport.
 acceptMetadataFrame({
-	cursor: null,
-	data: {
-		event: {
-			eventKind: 'file.sourceAccepted',
-			source: {
-				repoId: '00000000-0000-4000-8000-000000000001',
-				rootRevisionToken: null,
-				sourceCursor: 'source-cursor-1',
-				sourceId: 'source-1',
-				subscriptionGeneration: 1,
-				worktreeId: '00000000-0000-4000-8000-000000000002',
-			},
-		},
-		subscriptionKind: 'file.metadata',
-	},
-	interestRevision: 1,
-	interestSha256: '2535176c2a822c1f5007dd72a7987b7c0a1b6e9af1bc28324ec4618b43f71ebd',
-	kind: 'subscription.data',
-
-	operationCorrelationId: null,
+	kind: 'subscription.accepted',
 	metadataStreamId: 'metadata-stream-1',
 	paneSessionId: 'pane-session-1',
-	sourceGeneration: 1,
 	streamSequence: 1,
 	subscriptionId: 'review-subscription-1',
 	subscriptionKind: 'review.metadata',
-	subscriptionSequence: 1,
+	subscriptionSequence: 0,
 	wireVersion: 2,
 	workerDerivationEpoch: 3,
 	workerInstanceId: 'worker-instance-1',

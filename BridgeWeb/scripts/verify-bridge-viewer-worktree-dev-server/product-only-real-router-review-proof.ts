@@ -708,6 +708,7 @@ function recordFreshReviewHydrationCoverageWindow(props: {
 	props.accumulator.missingHydratedVisibleWindows.push({
 		hydratedNonSelectedItemIds: props.window.hydratedNonSelectedItemIds,
 		scrollTop: props.window.scrollTop,
+		visibleContentStates: props.window.visibleContentStates,
 		visibleNonSelectedItemIds: props.window.visibleNonSelectedItemIds,
 	});
 }
@@ -787,11 +788,9 @@ async function scrollFreshReviewCodeView(props: {
 		props.direction === 'forward'
 			? nextFreshReviewTraversalScrollTop({
 					codeScroll: props.state.codeScroll,
-					visibleItems: props.state.visibleItems,
 				})
 			: previousFreshReviewTraversalScrollTop({
 					codeScroll: props.state.codeScroll,
-					visibleItems: props.state.visibleItems,
 				});
 	await props.page.evaluate(
 		({ nextScrollTop, selector }): void => {
@@ -848,28 +847,15 @@ async function waitForFreshReviewFrameSettlement(props: {
 
 export function nextFreshReviewTraversalScrollTop(props: {
 	readonly codeScroll: FreshReviewViewportState['codeScroll'];
-	readonly visibleItems: FreshReviewViewportState['visibleItems'];
 }): number {
 	const maximumScrollTop = Math.max(
 		0,
 		props.codeScroll.scrollHeight - props.codeScroll.clientHeight,
 	);
 	const viewportAdvance = Math.max(1, props.codeScroll.clientHeight * 0.8);
-	const finalVisibleHostBottomOffset = props.visibleItems.reduce(
-		(maximumBottomOffset, item): number =>
-			Number.isFinite(item.hostBottomOffset)
-				? Math.max(maximumBottomOffset, item.hostBottomOffset)
-				: maximumBottomOffset,
-		0,
-	);
-	const hydratedHostAdvance = Math.max(
-		0,
-		finalVisibleHostBottomOffset - props.codeScroll.clientHeight * 0.1,
-	);
-	return Math.min(
-		maximumScrollTop,
-		Math.floor(props.codeScroll.scrollTop + Math.max(viewportAdvance, hydratedHostAdvance)),
-	);
+	// A hydrated host may extend several viewports and then shrink after render.
+	// Keep overlap with every intervening geometry window during traversal.
+	return Math.min(maximumScrollTop, Math.floor(props.codeScroll.scrollTop + viewportAdvance));
 }
 
 async function installFreshReviewIdentitySnapshot(page: Page): Promise<void> {

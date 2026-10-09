@@ -1,16 +1,22 @@
 import { readdir, readFile } from 'node:fs/promises';
-import { join } from 'node:path';
+import { basename, join } from 'node:path';
 
 import type { Locator, Page, Response } from 'playwright';
 import { expect } from 'vitest';
 
+import { bridgeProductWorktreeAnnotationCommandOutcomeSchema } from '../../src/core/comm-worker/bridge-product-worktree-annotation-contracts.js';
 import {
 	captureSharePreview,
 	normalizedAnnotationEntries,
 	type AnnotationPreviewEntryCapture,
 } from './bridge-viewer-vite-annotation-preview-capture.ts';
+import { waitForProductCallSettlement } from './bridge-viewer-vite-product-operation-response.ts';
 
-interface AnnotationOutputCaptureJourneyProps {
+export interface AnnotationOutputCopyHooks {
+	readonly beforeCopy?: () => Promise<void>;
+}
+
+interface AnnotationOutputCaptureJourneyProps extends AnnotationOutputCopyHooks {
 	readonly dataRootPath: string;
 	readonly page: Page;
 	readonly savedBody: string;
@@ -48,10 +54,10 @@ export async function verifyAnnotationOutputCaptures(
 	await waitForEnabledOutputButton(copyButton, props.timeoutMilliseconds);
 	const copiedPreview = await captureSharePreview(props.page);
 	expect(copiedPreview.map((message) => message.body)).toContain(props.savedBody);
+	await props.beforeCopy?.();
 	const copyResponseObservation = waitForOutputCommandResponse(
 		props.page,
 		'clipboardMarkdown',
-		props.timeoutMilliseconds,
 	).then(
 		(response) => ({ kind: 'response' as const, response }),
 		(error: unknown) => ({ error, kind: 'failed' as const }),
@@ -96,11 +102,7 @@ export async function verifyAnnotationOutputCaptures(
 	const history = props.page.getByRole('button', { name: /^History \([1-9][0-9]*\)$/u });
 	await history.waitFor({ state: 'visible', timeout: props.timeoutMilliseconds });
 	await history.click();
-	await props.page
-		.getByRole('region', { name: 'Output history' })
-		.getByRole('button', { name: 'Mark as not handled' })
-		.first()
-		.click();
+	await markOutputNotHandled(props.page, 'clipboardMarkdown');
 	await waitForPendingCommentCount(props.page, props.timeoutMilliseconds, (count) => count > 0);
 
 	const jsonNamesBefore = await outputCaptureNames(outputDirectory, '.json');
@@ -111,32 +113,27 @@ export async function verifyAnnotationOutputCaptures(
 	expect(normalizedAnnotationEntries(exportedPreview)).toEqual(
 		normalizedAnnotationEntries(copiedPreview),
 	);
-	const exportResponsePromise = waitForOutputCommandResponse(
-		props.page,
-		'jsonFile',
-		props.timeoutMilliseconds,
-	);
+	const exportResponsePromise = waitForOutputCommandResponse(props.page, 'jsonFile');
 	await exportButton.click();
 	const exportResponse = await exportResponsePromise;
-	const exportResponseBody = await exportResponse.text();
-	try {
-		await props.page
-			.getByRole('region', { name: 'Annotations' })
-			.waitFor({ state: 'hidden', timeout: props.timeoutMilliseconds });
-	} catch (error: unknown) {
-		const alerts = await props.page.getByRole('alert').allTextContents();
-		const namesAfter = await outputCaptureNames(outputDirectory, '.json');
-		const createdNames = [...namesAfter].filter((name): boolean => !jsonNamesBefore.has(name));
-		throw new Error(
-			`Export did not dismiss Annotations: status=${exportResponse.status()} body=${exportResponseBody} alerts=${JSON.stringify(alerts)} captures=${JSON.stringify(createdNames)}.`,
-			{ cause: error },
-		);
-	}
+	expect(exportResponse.status()).toBe(200);
 	const jsonPath = await requireNewOutputCapture({
 		extension: '.json',
 		namesBefore: jsonNamesBefore,
 		outputDirectory,
 	});
+	const annotations = props.page.getByRole('region', { name: 'Annotations' });
+	await annotations.waitFor({ state: 'visible', timeout: props.timeoutMilliseconds });
+	await annotations
+		.getByRole('status')
+		.getByText(`Saved to ${basename(jsonPath)}`, { exact: true })
+		.waitFor({ state: 'visible', timeout: props.timeoutMilliseconds });
+	await annotations
+		.getByRole('button', { name: 'Reveal in Finder', exact: true })
+		.waitFor({ state: 'visible', timeout: props.timeoutMilliseconds });
+	await annotations
+		.getByRole('button', { name: 'Change folder…', exact: true })
+		.waitFor({ state: 'visible', timeout: props.timeoutMilliseconds });
 	const document: unknown = JSON.parse(await readFile(jsonPath, 'utf8'));
 	const pendingOutput = decodeAnnotationOutputDocument(document, props.savedBody);
 	expectOutputEntriesMatchPreview(pendingOutput.entries, exportedPreview);
@@ -146,18 +143,14 @@ export async function verifyAnnotationOutputCaptures(
 		throw new Error('Annotation JSON capture omitted the saved message identity.');
 	}
 
-	await props.page.getByRole('button', { name: 'Annotations', exact: true }).click();
 	await waitForPendingCommentCount(props.page, props.timeoutMilliseconds, (count) => count === 0);
 	const completedHistory = props.page.getByRole('button', {
 		name: /^History \((?:[2-9]|[1-9][0-9]+)\)$/u,
 	});
 	await completedHistory.waitFor({ state: 'visible', timeout: props.timeoutMilliseconds });
-	await completedHistory.click();
-	await props.page
-		.getByRole('region', { name: 'Output history' })
-		.getByRole('button', { name: 'Mark as not handled' })
-		.first()
-		.click();
+	// JSON export retains the drawer and the History disclosure opened for the clipboard clear.
+	expect(await completedHistory.getAttribute('aria-expanded')).toBe('true');
+	await markOutputNotHandled(props.page, 'jsonFile');
 	await waitForPendingCommentCount(props.page, props.timeoutMilliseconds, (count) => count > 0);
 	expect(
 		normalizedAnnotationEntries(await captureSharePreview(props.page)).get(
@@ -217,6 +210,10 @@ export async function verifyAnnotationOutputCaptures(
 	const allOutput = decodeAnnotationOutputDocument(JSON.parse(allJSON), props.savedBody);
 	expectOutputEntriesMatchPreview(allOutput.entries, allExportedPreview);
 	expectMarkdownMatchesOutputEntries(allMarkdown, allOutput.entries, props.worktreeRoot);
+	await props.page.getByRole('button', { name: 'Close Annotations' }).click();
+	await props.page
+		.getByRole('region', { name: 'Annotations' })
+		.waitFor({ state: 'hidden', timeout: props.timeoutMilliseconds });
 
 	await setThreadResolution({
 		page: props.page,
@@ -251,33 +248,46 @@ async function executeAndReadOutputCapture(props: {
 	readonly timeoutMilliseconds: number;
 }): Promise<string> {
 	const namesBefore = await outputCaptureNames(props.outputDirectory, props.extension);
-	const responsePromise = waitForOutputCommandResponse(
-		props.page,
-		props.outputKind,
-		props.timeoutMilliseconds,
-	);
-	await props.page
-		.getByRole('button', {
-			name: props.outputKind === 'clipboardMarkdown' ? 'Copy Markdown' : 'Export JSON',
-		})
-		.click();
+	const actionButton = props.page.getByRole('button', {
+		name: props.outputKind === 'clipboardMarkdown' ? 'Copy Markdown' : 'Export JSON',
+	});
+	await waitForEnabledOutputButton(actionButton, props.timeoutMilliseconds);
+	const responsePromise = waitForOutputCommandResponse(props.page, props.outputKind);
+	await actionButton.click();
 	const response = await responsePromise;
 	const responseBody = await response.text();
-	await props.page
-		.getByRole('region', { name: 'Annotations' })
-		.waitFor({ state: 'hidden', timeout: props.timeoutMilliseconds })
-		.catch(async (error: unknown): Promise<never> => {
-			const alerts = await props.page.getByRole('alert').allTextContents();
-			throw new Error(
-				`All ${props.outputKind} did not dismiss Annotations: status=${response.status()} body=${responseBody} alerts=${JSON.stringify(alerts)}.`,
-				{ cause: error },
-			);
-		});
+	if (props.outputKind === 'clipboardMarkdown') {
+		await props.page
+			.getByRole('region', { name: 'Annotations' })
+			.waitFor({ state: 'hidden', timeout: props.timeoutMilliseconds })
+			.catch(async (error: unknown): Promise<never> => {
+				const alerts = await props.page.getByRole('alert').allTextContents();
+				throw new Error(
+					`All ${props.outputKind} did not dismiss Annotations: status=${response.status()} body=${responseBody} alerts=${JSON.stringify(alerts)}.`,
+					{ cause: error },
+				);
+			});
+	}
 	const capturePath = await requireNewOutputCapture({
 		extension: props.extension,
 		namesBefore,
 		outputDirectory: props.outputDirectory,
 	});
+	if (props.outputKind === 'jsonFile') {
+		expect(response.status()).toBe(200);
+		const annotations = props.page.getByRole('region', { name: 'Annotations' });
+		await annotations.waitFor({ state: 'visible', timeout: props.timeoutMilliseconds });
+		await annotations
+			.getByRole('status')
+			.getByText(`Saved to ${basename(capturePath)}`, { exact: true })
+			.waitFor({ state: 'visible', timeout: props.timeoutMilliseconds });
+		await annotations
+			.getByRole('button', { name: 'Reveal in Finder', exact: true })
+			.waitFor({ state: 'visible', timeout: props.timeoutMilliseconds });
+		await annotations
+			.getByRole('button', { name: 'Change folder…', exact: true })
+			.waitFor({ state: 'visible', timeout: props.timeoutMilliseconds });
+	}
 	return await readFile(capturePath, 'utf8');
 }
 
@@ -391,11 +401,7 @@ async function setThreadResolution(props: {
 	readonly timeoutMilliseconds: number;
 }): Promise<void> {
 	const thread = props.page.locator(`[data-annotation-thread-id="${props.threadId}"]`);
-	const responsePromise = waitForThreadResolutionResponse(
-		props.page,
-		props.resolution,
-		props.timeoutMilliseconds,
-	);
+	const responsePromise = waitForThreadResolutionResponse(props.page, props.resolution);
 	await thread
 		.getByRole('button', {
 			name:
@@ -555,53 +561,90 @@ async function waitForEnabledOutputButton(
 async function waitForOutputCommandResponse(
 	page: Page,
 	outputKind: 'clipboardMarkdown' | 'jsonFile',
-	timeoutMilliseconds: number,
 ): Promise<Response> {
-	return await page.waitForResponse(
-		(response): boolean => {
-			const request = response.request();
-			if (
-				request.method() !== 'POST' ||
-				new URL(request.url()).pathname !== '/__bridge-product/command'
-			) {
-				return false;
-			}
-			const body: unknown = request.postDataJSON();
-			if (!isRecord(body) || !isRecord(body['call'])) return false;
-			const call = body['call'];
-			if (!isRecord(call['request']) || !isRecord(call['request']['operation'])) return false;
-			const operation = call['request']['operation'];
-			return operation['kind'] === 'output.scope.commit' && operation['outputKind'] === outputKind;
-		},
-		{ timeout: timeoutMilliseconds },
-	);
+	const settled = await waitForProductCallSettlement(page, (response): boolean => {
+		const request = response.request();
+		if (
+			request.method() !== 'POST' ||
+			new URL(request.url()).pathname !== '/__bridge-product/command'
+		) {
+			return false;
+		}
+		const body: unknown = request.postDataJSON();
+		if (!isRecord(body) || !isRecord(body['call'])) return false;
+		const call = body['call'];
+		if (!isRecord(call['request']) || !isRecord(call['request']['operation'])) return false;
+		const operation = call['request']['operation'];
+		return operation['kind'] === 'output.scope.commit' && operation['outputKind'] === outputKind;
+	});
+	return settled.response;
+}
+
+async function markOutputNotHandled(
+	page: Page,
+	outputKind: 'clipboardMarkdown' | 'jsonFile',
+): Promise<void> {
+	const settlement = waitForProductCallSettlement(page, (response): boolean => {
+		const request = response.request();
+		if (
+			request.method() !== 'POST' ||
+			new URL(request.url()).pathname !== '/__bridge-product/command'
+		)
+			return false;
+		const body: unknown = request.postDataJSON();
+		return (
+			isRecord(body) &&
+			isRecord(body['call']) &&
+			isRecord(body['call']['request']) &&
+			isRecord(body['call']['request']['operation']) &&
+			body['call']['request']['operation']['kind'] === 'output.handled.clear'
+		);
+	});
+	await page
+		.getByRole('region', { name: 'Output history' })
+		.getByTestId('annotation-output-history-entry')
+		.filter({
+			has: page.getByText(outputKind === 'jsonFile' ? 'JSON file' : 'Clipboard Markdown', {
+				exact: true,
+			}),
+		})
+		.first()
+		.getByRole('button', { name: 'Mark as not handled' })
+		.click();
+	const result: unknown = (await settlement).result;
+	const outcome =
+		isRecord(result) && isRecord(result['call']) && isRecord(result['call']['result'])
+			? bridgeProductWorktreeAnnotationCommandOutcomeSchema.safeParse(
+					result['call']['result']['outcome'],
+				)
+			: null;
+	if (outcome === null || !outcome.success || outcome.data.status.kind !== 'committed') {
+		throw new Error(
+			`Mark as not handled did not commit: ${outcome?.success ? outcome.data.status.kind : 'unparseable'}.`,
+		);
+	}
 }
 
 async function waitForThreadResolutionResponse(
 	page: Page,
 	resolution: 'open' | 'resolved',
-	timeoutMilliseconds: number,
 ): Promise<Response> {
-	return await page.waitForResponse(
-		(response): boolean => {
-			const request = response.request();
-			if (
-				request.method() !== 'POST' ||
-				new URL(request.url()).pathname !== '/__bridge-product/command'
-			) {
-				return false;
-			}
-			const body: unknown = request.postDataJSON();
-			if (!isRecord(body) || !isRecord(body['call'])) return false;
-			const call = body['call'];
-			if (!isRecord(call['request']) || !isRecord(call['request']['operation'])) return false;
-			const operation = call['request']['operation'];
-			return (
-				operation['kind'] === 'thread.resolution.set' && operation['resolution'] === resolution
-			);
-		},
-		{ timeout: timeoutMilliseconds },
-	);
+	const settled = await waitForProductCallSettlement(page, (response): boolean => {
+		const request = response.request();
+		if (
+			request.method() !== 'POST' ||
+			new URL(request.url()).pathname !== '/__bridge-product/command'
+		) {
+			return false;
+		}
+		const body: unknown = request.postDataJSON();
+		if (!isRecord(body) || !isRecord(body['call'])) return false;
+		const call = body['call'];
+		if (!isRecord(call['request']) || !isRecord(call['request']['operation'])) return false;
+		const operation = call['request']['operation'];
+		return operation['kind'] === 'thread.resolution.set' && operation['resolution'] === resolution;
+	});
+	return settled.response;
 }
 
 function isRecord(value: unknown): value is Readonly<Record<string, unknown>> {

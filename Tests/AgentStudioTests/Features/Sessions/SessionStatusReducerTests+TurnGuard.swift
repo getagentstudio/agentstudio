@@ -136,7 +136,11 @@ enum ReducerTurnGuardRow: CaseIterable, Sendable {
 }
 
 private struct TurnGuardReducerFixture {
-    var state = SessionStatusState(binding: .bound(UUIDv7.generate()))
+    var state: SessionStatusState
+
+    init(binding: UUID = UUIDv7.generate()) {
+        state = SessionStatusState(binding: .bound(binding))
+    }
     var instant = ContinuousClock.now
     var sequence: Int64 = 0
     var status: AgentSessionStatus { SessionStatusReducer.status(of: state) }
@@ -149,4 +153,54 @@ private struct TurnGuardReducerFixture {
                 input: input, sequence: sequence, occurredAt: Date(timeIntervalSince1970: Double(sequence)),
                 admittedAt: instant, turnId: turnId), to: &state)
     }
+}
+
+extension SessionStatusReducerTests {
+    @Test(
+        "a compact SessionStart closes its named turn in either admission order",
+        arguments: CompactAdmissionOrder.allCases)
+    func compactSessionStartClosesNamedTurn(order: CompactAdmissionOrder) {
+        let generation = UUIDv7.generate()
+        let compactPromptId = "compact-prompt"
+        var fixture = TurnGuardReducerFixture(binding: generation)
+        fixture.send(.userPromptSubmit, turnId: "prior-turn")
+        fixture.send(.stop, turnId: "prior-turn")
+        switch order {
+        case .sessionStartThenSubagentStop:
+            fixture.send(.sessionStart(generation: generation), turnId: compactPromptId)
+            fixture.send(.subagentActivity, turnId: compactPromptId)
+        case .subagentStopThenSessionStart:
+            fixture.send(.subagentActivity, turnId: compactPromptId)
+            fixture.send(.sessionStart(generation: generation), turnId: compactPromptId)
+        }
+        #expect(fixture.status == .idle(.done))
+        #expect(fixture.state.openTurnId == nil)
+        #expect(fixture.state.lastClosedTurnId == compactPromptId)
+    }
+
+    @Test("a binding's first turn-naming SessionStart keeps the binding unknown")
+    func firstTurnNamingSessionStartKeepsUnknown() {
+        let generation = UUIDv7.generate()
+        var fixture = TurnGuardReducerFixture(binding: generation)
+        fixture.send(.sessionStart(generation: generation), turnId: "first-turn")
+        #expect(fixture.status == .unknown)
+        #expect(fixture.state.openTurnId == nil)
+        #expect(fixture.state.lastClosedTurnId == nil)
+    }
+
+    @Test("a turn-less SessionStart keeps the live main's existing reset behavior")
+    func turnlessSessionStartKeepsExistingReset() {
+        let generation = UUIDv7.generate()
+        var fixture = TurnGuardReducerFixture(binding: generation)
+        fixture.send(.toolActivity, turnId: "turn")
+        fixture.send(.sessionStart(generation: generation), turnId: nil)
+        #expect(fixture.status == .unknown)
+        #expect(fixture.state.openTurnId == nil)
+        #expect(fixture.state.lastClosedTurnId == nil)
+    }
+}
+
+enum CompactAdmissionOrder: CaseIterable, Equatable, Sendable {
+    case sessionStartThenSubagentStop
+    case subagentStopThenSessionStart
 }

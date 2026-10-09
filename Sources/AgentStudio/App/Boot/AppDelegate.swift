@@ -267,7 +267,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, Observ
         commandDispatcher: AppCommandDispatcher? = nil
     ) {
         self.suppliedCommandDispatcher = commandDispatcher
-        self.octiconLoader = OcticonLoader(resourceRootURL: Bundle.appResourceRootURL)
+        self.octiconLoader = OcticonLoader(resourceBundle: Bundle.appResources)
         self.traceRuntime = traceRuntime
         let performanceTraceRecorder = AgentStudioPerformanceTraceRecorder(
             traceRuntime: traceRuntime,

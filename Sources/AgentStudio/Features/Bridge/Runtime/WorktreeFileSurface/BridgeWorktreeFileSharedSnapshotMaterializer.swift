@@ -10,7 +10,8 @@ extension BridgeWorktreeFileMaterializer {
         try await publisher.publishPreparation(preparation)
         let preparedRequest = BridgeWorktreeFileMaterializationRequest(
             rootURL: request.rootURL,
-            openedSource: request.openedSource.withIgnorePolicy(preparation.ignorePolicy)
+            openedSource: request.openedSource.withIgnorePolicy(preparation.ignorePolicy),
+            directoryReader: request.directoryReader
         )
         var nextOrdinal = 0
         var discoveredRowCount = 0

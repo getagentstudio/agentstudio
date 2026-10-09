@@ -2,12 +2,10 @@ import { readFileSync } from 'node:fs';
 
 import { describe, expect, test } from 'vitest';
 
-import { bridgeProductReviewMetadataApplicationProtocol } from './bridge-product-metadata-application-registry.js';
 import {
 	bridgeProductReviewItemMetadataSchema,
 	bridgeProductReviewMetadataEventSchema,
 } from './bridge-product-review-metadata-contracts.js';
-import { bridgeProductMetadataFrameSchema } from './bridge-product-session-contracts.js';
 
 const reviewSourceIdentity = {
 	eventKind: 'review.sourceAccepted',
@@ -113,6 +111,7 @@ describe('Bridge product Review metadata contracts', () => {
 				kind: 'contribution',
 				resolvedTargetOID: 'resolved-target-oid',
 				reviewedHeadOID: 'reviewed-head-oid',
+				reviewedSubjectBranchName: null,
 				symbolicTarget: { basis: 'commonCommit', kind: 'branch', name: 'integration' },
 			},
 			contentSources: [reviewContentSource],
@@ -394,51 +393,6 @@ describe('Bridge product Review metadata contracts', () => {
 				},
 			}),
 		).toThrow();
-
-		const metadataFrame = {
-			cursor: 'review-cursor-1',
-			data: { event: snapshot, subscriptionKind: 'review.metadata' },
-			interestRevision: 1,
-			interestSha256: 'a'.repeat(64),
-			kind: 'subscription.data',
-
-			operationCorrelationId: null,
-			metadataStreamId: 'metadata-stream-1',
-			paneSessionId: 'pane-session-1',
-			sourceGeneration: 7,
-			streamSequence: 1,
-			subscriptionId: 'review-subscription-1',
-			subscriptionKind: 'review.metadata',
-			subscriptionSequence: 1,
-			wireVersion: 2,
-			workerDerivationEpoch: 3,
-			workerInstanceId: 'worker-instance-1',
-		} as const;
-		const mismatchedGenerationFrame = bridgeProductMetadataFrameSchema.parse({
-			...metadataFrame,
-			sourceGeneration: 8,
-		});
-		if (mismatchedGenerationFrame.kind !== 'subscription.data') {
-			throw new Error('Expected generic Review metadata data frame.');
-		}
-		const typedData = bridgeProductReviewMetadataApplicationProtocol.dataSchema.parse(
-			mismatchedGenerationFrame.data,
-		);
-		expect(
-			bridgeProductReviewMetadataApplicationProtocol.readEventSourceGeneration(typedData.event),
-		).not.toBe(mismatchedGenerationFrame.sourceGeneration);
-		expect(() =>
-			bridgeProductMetadataFrameSchema.parse({
-				...metadataFrame,
-				data: {
-					event: {
-						...snapshot,
-						itemMetadata: Array.from({ length: 512 }, () => snapshotItem),
-					},
-					subscriptionKind: 'review.metadata',
-				},
-			}),
-		).toThrow(/body ceiling/i);
 	});
 
 	test('rejects legacy resource URLs and main-owned selection in Review snapshots', () => {

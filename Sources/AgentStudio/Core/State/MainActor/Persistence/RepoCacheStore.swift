@@ -5,6 +5,23 @@ import os.log
 
 private let repoCacheStoreLogger = Logger(subsystem: "com.agentstudio", category: "RepoCacheStore")
 
+/// One persisted save attempt; its generation is minted by the owning store.
+package struct RepoCacheStoreSaveScope: Hashable, Sendable {
+    package let workspaceId: UUID
+    package let generation: UInt64
+}
+
+/// Synchronous observations of the store's own transitions; they do not add
+/// events to the app runtime bus. Completion acknowledges a committed SQLite write.
+package enum RepoCacheStoreFact: Equatable, Sendable {
+    case saveStarted
+    case saveCompleted(sourceRevision: UInt64)
+    case saveFailed
+    case saveCancelled
+}
+
+package typealias RepoCacheStoreFactSink = @Sendable (RepoCacheStoreSaveScope, RepoCacheStoreFact) -> Void
+
 struct RepoCacheSaveCapture: Sendable {
     let repoEnrichmentByRepoID: [UUID: RepoEnrichment]
     let worktreeEnrichmentByWorktreeID: [UUID: WorktreeEnrichment]
@@ -109,6 +126,7 @@ package final class RepoCacheStore {
     private let persistMaximumDelay: Duration
     private let delay: AsyncDelay
     private let recoveryReporter: PersistenceRecoveryReporter?
+    private let factSink: RepoCacheStoreFactSink?
     private var debouncedSaveTask: Task<Void, Never>?
     private var maximumDelaySaveTask: Task<Void, Never>?
     private var activeSaveTask: Task<Void, Error>?
@@ -127,7 +145,8 @@ package final class RepoCacheStore {
         persistDebounceDuration: Duration = .milliseconds(500),
         persistMaximumDelay: Duration = AppPolicies.WorkspacePersistence.autosaveMaximumDelay,
         clock: (any Clock<Duration> & Sendable)? = nil,
-        recoveryReporter: PersistenceRecoveryReporter? = nil
+        recoveryReporter: PersistenceRecoveryReporter? = nil,
+        factSink: RepoCacheStoreFactSink? = nil
     ) {
         self.cacheAtom = cacheAtom
         self.sqliteDatastore = sqliteDatastore
@@ -135,6 +154,7 @@ package final class RepoCacheStore {
         self.persistMaximumDelay = persistMaximumDelay
         delay = clock.map(AsyncDelay.clock) ?? .taskSleep
         self.recoveryReporter = recoveryReporter
+        self.factSink = factSink
     }
 
     convenience init(
@@ -143,7 +163,8 @@ package final class RepoCacheStore {
         persistDebounceDuration: Duration = .milliseconds(500),
         persistMaximumDelay: Duration = AppPolicies.WorkspacePersistence.autosaveMaximumDelay,
         clock: any Clock<Duration> = ContinuousClock(),
-        recoveryReporter: PersistenceRecoveryReporter? = nil
+        recoveryReporter: PersistenceRecoveryReporter? = nil,
+        factSink: RepoCacheStoreFactSink? = nil
     ) {
         self.init(
             cacheAtom: atom.enrichmentCacheAtom,
@@ -151,7 +172,8 @@ package final class RepoCacheStore {
             persistDebounceDuration: persistDebounceDuration,
             persistMaximumDelay: persistMaximumDelay,
             clock: clock,
-            recoveryReporter: recoveryReporter
+            recoveryReporter: recoveryReporter,
+            factSink: factSink
         )
     }
 
@@ -290,7 +312,7 @@ package final class RepoCacheStore {
                     previous.cancel()
                 }
             }
-            try await persistCurrentCapture(for: workspaceId, force: force)
+            try await persistCurrentCapture(for: workspaceId, force: force, generation: generation)
         }
         activeSaveTask = operation
         defer { if generation == saveGeneration { activeSaveTask = nil } }
@@ -301,7 +323,7 @@ package final class RepoCacheStore {
         }
     }
 
-    private func persistCurrentCapture(for workspaceId: UUID, force: Bool) async throws {
+    private func persistCurrentCapture(for workspaceId: UUID, force: Bool, generation: UInt64) async throws {
         try Task.checkCancellation()
         let capture = captureCurrentSaveState()
         let preparedSave = await RepoCacheSavePreparer.prepareOffMain(
@@ -311,17 +333,24 @@ package final class RepoCacheStore {
         )
         try Task.checkCancellation()
         guard preparedSave.shouldPersist else { return }
+        let saveScope = RepoCacheStoreSaveScope(workspaceId: workspaceId, generation: generation)
+        factSink?(saveScope, .saveStarted)
+        var didCompleteSave = false
         do {
             // Cancellation may arrive after SQL commits but before its acknowledgement returns.
             lastPersistedProjection = nil
             try await sqliteDatastore.saveRepoCacheState(
                 cacheState: preparedSave.cacheState
             )
+            didCompleteSave = true
+            factSink?(saveScope, .saveCompleted(sourceRevision: preparedSave.cacheState.sourceRevision))
             try Task.checkCancellation()
             lastPersistedProjection = preparedSave.projection
         } catch let error as CancellationError {
+            if !didCompleteSave { factSink?(saveScope, .saveCancelled) }
             throw error
         } catch {
+            factSink?(saveScope, .saveFailed)
             recoveryReporter?(
                 .init(store: .repoCache, workspaceId: workspaceId, recovery: .saveFailed)
             )

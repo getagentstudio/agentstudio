@@ -269,6 +269,7 @@ export const bridgeProductWorktreeAnnotationOperationSchema = z.discriminatedUni
 		.strict(),
 	z
 		.object({
+			destination: z.enum(['remembered', 'choose']).optional(),
 			displayedProjectionRevision: z.number().int().nonnegative(),
 			expectedSessionRevision: z.number().int().nonnegative(),
 			kind: z.literal('output.scope.commit'),
@@ -276,6 +277,20 @@ export const bridgeProductWorktreeAnnotationOperationSchema = z.discriminatedUni
 			scope: z.enum(['pending', 'all']),
 			sessionId: bridgeProductWorktreeAnnotationIdSchema,
 			sourceGeneration: z.number().int().nonnegative(),
+		})
+		.strict()
+		.refine(
+			(operation) =>
+				operation.outputKind === 'jsonFile'
+					? operation.destination !== undefined
+					: operation.destination === undefined,
+			{ message: 'Only JSON export requires a destination.' },
+		),
+	z.object({ kind: z.literal('output.preference.changeFolder') }).strict(),
+	z
+		.object({
+			attemptId: bridgeProductWorktreeAnnotationIdSchema,
+			kind: z.literal('output.reveal'),
 		})
 		.strict(),
 	z

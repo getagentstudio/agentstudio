@@ -53,8 +53,18 @@ const journeyWorkerSource = `self.addEventListener('message', async (event) => {
 	if (event.data.afterHeldDocumentRequested === true) {
 		await fetch('/held-document-requested');
 	}
-	const response = await fetch('/__bridge-product/command', {
-		body: JSON.stringify({ kind: event.data.kind, requestId: event.data.requestId }),
+	const response = await fetch('/__bridge-product/command?requestId=' + encodeURIComponent(event.data.requestId), {
+		body: JSON.stringify({
+			domain: 'default',
+			handle: 'handle-1',
+			incarnation: 'incarnation-1',
+			kind: event.data.kind,
+			paneSessionId: 'pane-session-1',
+			receivedThroughDeliverySequence: 1,
+			subscriptionId: 'subscription-1',
+			wireVersion: 2,
+			workerInstanceId: 'worker-instance-1'
+		}),
 		headers: { 'content-type': 'application/json' },
 		method: 'POST',
 	});

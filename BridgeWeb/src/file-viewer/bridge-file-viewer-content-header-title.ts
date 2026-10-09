@@ -6,5 +6,5 @@ interface BridgeFileViewerContentHeaderTitleProps {
 export function bridgeFileViewerContentHeaderTitle({
 	selectedPath,
 }: BridgeFileViewerContentHeaderTitleProps): string {
-	return selectedPath ?? 'Source pending';
+	return selectedPath ?? 'Files';
 }

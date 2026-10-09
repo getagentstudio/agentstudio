@@ -764,9 +764,10 @@ extension WorktreeAnnotationRepositoryAccess {
     func finalizeOutputAttempt(
         attemptID: WorktreeAnnotationOutputAttemptID,
         eventKind: WorktreeAnnotationOutputEventKind,
+        destinationPath: String?,
         now: Date
     ) async throws -> WorktreeAnnotationCommittedMutation<WorktreeAnnotationSQLiteRepository.PreparedOutput> {
-        _ = (attemptID, eventKind, now)
+        _ = (attemptID, eventKind, destinationPath, now)
         throw TestAnnotationAccessError.unexpectedOperation
     }
 

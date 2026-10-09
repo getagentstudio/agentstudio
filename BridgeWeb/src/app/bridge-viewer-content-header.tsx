@@ -9,6 +9,7 @@ export function BridgeViewerContentHeader(props: {
 	readonly controls?: ReactNode;
 	readonly mode: 'file' | 'review';
 	readonly statusText: string | null;
+	readonly regionIndicator?: ReactNode;
 	readonly title: string;
 }): ReactElement {
 	return (
@@ -46,6 +47,7 @@ export function BridgeViewerContentHeader(props: {
 						{props.statusText}
 					</span>
 				)}
+				{props.regionIndicator}
 			</div>
 			{props.controls === undefined ? null : (
 				<div

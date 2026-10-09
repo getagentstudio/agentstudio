@@ -169,11 +169,14 @@ function createOwnershipFixture(initialMessage: WorktreeAnnotationMessageEntry):
 		getCatalogSnapshot: () => ({ kind: 'unknown' }),
 		getServerSnapshot: snapshot,
 		getSnapshot: snapshot,
+		getViewRecoveryStatus: () => null,
 		inspectOutput: async () => {
 			throw new Error('Unexpected output inspection.');
 		},
 		retryProjection: (): void => {},
+		retryViewRecovery: (): void => {},
 		subscribe: () => (): void => {},
+		subscribeViewRecoveryStatus: () => (): void => {},
 		waitForSnapshot: async (select) => {
 			const result = select(snapshot());
 			if (result === null) throw new Error('Expected immediate ownership projection.');

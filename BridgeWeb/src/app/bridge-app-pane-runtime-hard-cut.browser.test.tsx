@@ -4,6 +4,10 @@ import { cleanup, render } from 'vitest-browser-react';
 // oxlint-disable-next-line import/no-unassigned-import -- Browser Mode renders the real app chrome.
 import './bridge-app.css';
 import type { BridgeMainRenderSnapshotStore } from '../core/comm-worker/bridge-main-render-snapshot-store.js';
+import type {
+	BridgePaneRuntime,
+	BridgePaneSurfaceClient,
+} from '../core/comm-worker/bridge-pane-runtime.js';
 import {
 	BRIDGE_WORKER_WIRE_VERSION,
 	type BridgeWorkerServerToMainMessage,
@@ -86,7 +90,7 @@ vi.mock('../core/comm-worker/bridge-pane-runtime.js', async (importOriginal) => 
 		await import('../core/comm-worker/bridge-worker-rpc-lifecycle-store.js');
 	return {
 		...actual,
-		createBridgePaneRuntime: (): unknown => {
+		createBridgePaneRuntime: (): BridgePaneRuntime => {
 			paneRuntimeObservation.createCount += 1;
 			const lifecycleStore = createBridgeWorkerRpcLifecycleStore();
 			const surfaceMessageListeners = new Map<
@@ -106,6 +110,8 @@ vi.mock('../core/comm-worker/bridge-pane-runtime.js', async (importOriginal) => 
 					return [
 						surface,
 						{
+							requestWorkerReplacement:
+								vi.fn<BridgePaneSurfaceClient['requestWorkerReplacement']>(),
 							lifecycle: {
 								getServerSnapshot: lifecycleStore.getServerSnapshot,
 								getSnapshot: lifecycleStore.getSnapshot,
@@ -181,12 +187,16 @@ vi.mock('../core/comm-worker/bridge-pane-runtime.js', async (importOriginal) => 
 						};
 					},
 				},
+				handleNativeBootstrapFailure: vi.fn(),
 				setNativeBootstrapRequester: vi.fn(),
-				surfaceClient: (surface: 'fileView' | 'review') => {
+				setPaneFailedStartHandler: vi.fn<BridgePaneRuntime['setPaneFailedStartHandler']>(),
+				surfaceClient: (surface: 'fileView' | 'review'): BridgePaneSurfaceClient => {
 					paneRuntimeObservation.surfaceRequests.push(surface);
-					return surfaceClients.get(surface);
+					const client = surfaceClients.get(surface);
+					if (client === undefined) throw new Error(`Missing fixture surface: ${surface}`);
+					return client;
 				},
-			};
+			} satisfies BridgePaneRuntime;
 		},
 	};
 });

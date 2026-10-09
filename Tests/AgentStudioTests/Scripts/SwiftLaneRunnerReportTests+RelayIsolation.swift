@@ -271,6 +271,7 @@ extension SwiftLaneRunnerReportTests {
             if scenario == .sharedBuildPath || scenario == .inheritedPaths {
                 #expect(result.output.contains("PROBE_LOCK_SHARED=yes"))
                 #expect(result.output.contains("PROBE_CLOSED=124"))
+                #expect(result.output.contains("[utf8-probe] lane-report timeout_root=exited_before_diagnostics"))
                 let errorPosition = try #require(result.output.range(of: "ERROR: no output progress"))
                 let tailPosition = try #require(result.output.range(of: "\nTESTS_PASSED\n"))
                 #expect(errorPosition.lowerBound < tailPosition.lowerBound)

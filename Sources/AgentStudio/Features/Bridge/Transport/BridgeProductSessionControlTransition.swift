@@ -31,25 +31,7 @@ enum BridgeProductSessionControlTransitionBuilder {
             var emptySubscriptions = BridgeProductSubscriptionState()
             let receipt = try emptySubscriptions.open(openRequest)
             guard openResponse.subscriptionId == receipt.subscriptionId,
-                openResponse.subscriptionKind == receipt.subscriptionKind,
-                openResponse.interestRevision == receipt.interestRevision,
-                openResponse.interestSha256 == receipt.interestSha256
-            else {
-                throw BridgeProductSessionError.mismatchedControlResponse
-            }
-        case (
-            .subscriptionUpdateBatch(let updateRequest),
-            .subscriptionUpdateBatchAccepted(let updateResponse)
-        ):
-            let expectedDisposition: BridgeProductSubscriptionUpdateBatchDisposition =
-                updateRequest.batchIndex + 1 == updateRequest.batchCount ? .committed : .staged
-            guard updateResponse.batchIndex == updateRequest.batchIndex,
-                updateResponse.disposition == expectedDisposition,
-                updateResponse.subscriptionId == updateRequest.subscriptionId,
-                updateResponse.subscriptionKind == updateRequest.subscriptionKind,
-                updateResponse.targetInterestRevision == updateRequest.targetInterestRevision,
-                updateResponse.targetInterestSha256 == updateRequest.targetInterestSha256,
-                updateResponse.updateId == updateRequest.updateId
+                openResponse.subscriptionKind == receipt.subscriptionKind
             else {
                 throw BridgeProductSessionError.mismatchedControlResponse
             }
@@ -60,6 +42,14 @@ enum BridgeProductSessionControlTransitionBuilder {
             guard cancelResponse.subscriptionId == cancelRequest.subscriptionId,
                 cancelResponse.subscriptionKind == cancelRequest.subscriptionKind
             else {
+                throw BridgeProductSessionError.mismatchedControlResponse
+            }
+        case (.viewScope(let scopeRequest), .viewAccepted(let accepted)):
+            guard accepted == BridgeProductViewAcceptedResponse(correlating: scopeRequest) else {
+                throw BridgeProductSessionError.mismatchedControlResponse
+            }
+        case (.viewResnapshot(let resnapshotRequest), .viewAccepted(let accepted)):
+            guard accepted == BridgeProductViewAcceptedResponse(correlating: resnapshotRequest) else {
                 throw BridgeProductSessionError.mismatchedControlResponse
             }
         case (.workerSessionResync(let resyncRequest), .resyncAccepted(let resyncResponse)):
@@ -115,9 +105,7 @@ enum BridgeProductSessionControlTransitionBuilder {
         case (.subscriptionOpen(let openRequest), .subscriptionOpenAccepted(let openResponse)):
             let receipt = try candidateSubscriptions.open(openRequest)
             guard openResponse.subscriptionId == receipt.subscriptionId,
-                openResponse.subscriptionKind == receipt.subscriptionKind,
-                openResponse.interestRevision == receipt.interestRevision,
-                openResponse.interestSha256 == receipt.interestSha256
+                openResponse.subscriptionKind == receipt.subscriptionKind
             else {
                 throw BridgeProductSessionError.mismatchedControlResponse
             }
@@ -134,16 +122,6 @@ enum BridgeProductSessionControlTransitionBuilder {
             )
 
         case (
-            .subscriptionUpdateBatch(let updateRequest),
-            .subscriptionUpdateBatchAccepted(let updateResponse)
-        ):
-            return try prepareSubscriptionUpdate(
-                request: updateRequest,
-                response: updateResponse,
-                subscriptionState: candidateSubscriptions
-            )
-
-        case (
             .subscriptionCancel(let cancelRequest),
             .subscriptionCancelAccepted(let cancelResponse)
         ):
@@ -155,7 +133,20 @@ enum BridgeProductSessionControlTransitionBuilder {
             }
             return .init(
                 subscriptionState: candidateSubscriptions,
-                effect: .subscriptionCancelled(cancelledSubscription)
+                effect: cancelledSubscription.map(BridgeProductSessionCompletionEffect.subscriptionCancelled)
+                    ?? .noEffect
+            )
+
+        case (.viewScope(let scopeRequest), .viewAccepted):
+            return .init(
+                subscriptionState: candidateSubscriptions,
+                effect: .viewScopeAccepted(scopeRequest)
+            )
+
+        case (.viewResnapshot(let resnapshotRequest), .viewAccepted):
+            return .init(
+                subscriptionState: candidateSubscriptions,
+                effect: .viewResnapshotAccepted(resnapshotRequest)
             )
 
         case (.workerSessionResync(let resyncRequest), .resyncAccepted(let resyncResponse)):
@@ -169,7 +160,7 @@ enum BridgeProductSessionControlTransitionBuilder {
             }
             for (surface, epoch) in resyncEpochs
             where epoch > currentEpochs[surface, default: 0] {
-                candidateSubscriptions.reset(surface: surface)
+                candidateSubscriptions.retireSubscriptions(on: surface, belowWorkerDerivationEpoch: epoch)
             }
             let resyncResult = try candidateSubscriptions.reconcile(
                 activeSubscriptions: resyncRequest.activeSubscriptions,
@@ -188,49 +179,4 @@ enum BridgeProductSessionControlTransitionBuilder {
         }
     }
 
-    private static func prepareSubscriptionUpdate(
-        request: BridgeProductSubscriptionUpdateBatchRequest,
-        response: BridgeProductSubscriptionBatchAcceptedResponse,
-        subscriptionState: BridgeProductSubscriptionState
-    ) throws -> BridgeProductSessionControlTransition {
-        var candidateSubscriptions = subscriptionState
-        let updateResult = try candidateSubscriptions.apply(request)
-        let expectedDisposition: BridgeProductSubscriptionUpdateBatchDisposition
-        let effect: BridgeProductSessionCompletionEffect
-        switch updateResult {
-        case .staged:
-            expectedDisposition = .staged
-            effect = .noEffect
-        case .committed(let barrierIntent):
-            expectedDisposition = .committed
-            guard candidateSubscriptions.drainCommitBarrierIntents() == [barrierIntent] else {
-                throw BridgeProductSessionError.mismatchedControlResponse
-            }
-            guard
-                let committedSubscription = candidateSubscriptions.snapshot(
-                    subscriptionId: barrierIntent.subscriptionId
-                )
-            else {
-                throw BridgeProductSessionError.mismatchedControlResponse
-            }
-            effect = .subscriptionInterestsCommitted(
-                barrier: barrierIntent,
-                subscription: committedSubscription
-            )
-        }
-        guard response.batchIndex == request.batchIndex,
-            response.disposition == expectedDisposition,
-            response.subscriptionId == request.subscriptionId,
-            response.subscriptionKind == request.subscriptionKind,
-            response.targetInterestRevision == request.targetInterestRevision,
-            response.targetInterestSha256 == request.targetInterestSha256,
-            response.updateId == request.updateId
-        else {
-            throw BridgeProductSessionError.mismatchedControlResponse
-        }
-        return .init(
-            subscriptionState: candidateSubscriptions,
-            effect: effect
-        )
-    }
 }

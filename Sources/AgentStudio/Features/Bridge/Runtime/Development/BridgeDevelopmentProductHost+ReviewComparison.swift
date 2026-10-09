@@ -13,6 +13,11 @@ struct BridgeDevelopmentReviewPublicationConstruction {
     let gitRefreshSeed: GitReviewRefreshSeed?
 }
 
+private enum BridgeDevelopmentReviewComparisonTargetAdmission {
+    case superseded
+    case committed(BridgePaneStateMutationResult)
+}
+
 extension BridgeDevelopmentProductHost {
     func applyCommittedActiveViewerModeUpdate(
         _ call: BridgeProductCallRequest,
@@ -49,10 +54,12 @@ extension BridgeDevelopmentProductHost {
                 guard !Task.isCancelled,
                     productAdmission.withValidAdmission({ true }) == true
                 else { return }
-                self.refreshAdmissionCoordinator.beginReviewComparisonAttempt(
-                    activeTarget: target,
-                    reviewGeneration: reviewGeneration.rawValue
-                )
+                _ = productAdmission.withValidAdmission {
+                    self.refreshAdmissionCoordinator.beginReviewComparisonAttempt(
+                        activeTarget: target,
+                        reviewGeneration: reviewGeneration.rawValue
+                    )
+                }
             }
             await self.publishCurrentPanePresentation()
             // Unlike bootstrap replay, this path must deliver to subscriptions
@@ -61,7 +68,7 @@ extension BridgeDevelopmentProductHost {
                 target: target,
                 reviewGeneration: reviewGeneration,
                 classifySameSourceRefresh: false,
-                productAdmission: productAdmission
+                productAdmission: self.productAdmission
             )
             await self.clearReviewComparisonTask(taskAttempt: taskAttempt)
         }
@@ -107,7 +114,7 @@ extension BridgeDevelopmentProductHost {
             _ = refreshAdmissionCoordinator.advanceAuthority(for: .file)
             _ = refreshAdmissionCoordinator.advanceAuthority(for: .review)
             worktreeRefreshDriver.retireActiveFileOperation()
-            refreshAdmissionCoordinator.recordFileRefreshFailure(
+            refreshAdmissionCoordinator.recordCurrentFileRefreshFailure(
                 .init(failureKind: .fileRefreshFailed)
             )
             refreshAdmissionCoordinator.beginReviewComparisonAttempt(
@@ -124,44 +131,78 @@ extension BridgeDevelopmentProductHost {
         await publishCurrentPanePresentation()
     }
 
+    @discardableResult
     func applyCommittedReviewComparisonUpdate(
         _ request: BridgeProductReviewComparisonUpdateRequest,
+        workerDerivationEpoch: Int,
         productAdmission: BridgeProductAdmissionContext
-    ) async {
-        guard !isShutdown, productAdmission.withValidAdmission({ true }) == true else { return }
-        let mutationResult = await contributionTargetCommit(request.target)
-        guard productAdmission.withValidAdmission({ true }) == true else { return }
+    ) async -> BridgePaneReviewComparisonEffectDisposition {
+        guard !isShutdown, productAdmission.withValidAdmission({ true }) == true else {
+            return .rejected
+        }
+        let commit = contributionTargetCommit
+        guard
+            let targetAdmission = await MainActor.run(body: {
+                productAdmission.withValidAdmission {
+                    refreshAdmissionCoordinator.workAdmissionSource.withCurrentReviewComparisonIntent(
+                        workerDerivationEpoch: workerDerivationEpoch,
+                        productAdmission: productAdmission
+                    ) {
+                        BridgeDevelopmentReviewComparisonTargetAdmission.committed(
+                            commit(request.target)
+                        )
+                    } ?? .superseded
+                }
+            })
+        else { return .rejected }
+        let mutationResult: BridgePaneStateMutationResult
+        switch targetAdmission {
+        case .superseded:
+            return .superseded
+        case .committed(let committedResult):
+            mutationResult = committedResult
+        }
+        guard productAdmission.withValidAdmission({ true }) == true else { return .rejected }
         let canonicalState: BridgePaneState
         switch mutationResult {
         case .applied(let state), .unchanged(let state):
             canonicalState = state
         case .paneMissing, .notBridgePane, .notWorkspaceSource:
             productAdmissionGate.close()
-            return
+            return .rejected
         }
         guard case .workspace(_, let baseline)? = canonicalState.source,
             baseline?.contributionTarget == request.target
         else {
             productAdmissionGate.close()
-            return
+            return .rejected
         }
-        paneState = canonicalState
+        guard
+            productAdmission.withValidAdmission({
+                paneState = canonicalState
+                return true
+            }) == true
+        else { return .rejected }
         await MainActor.run {
-            reviewComparisonTargetProjection.update(state: canonicalState)
+            _ = productAdmission.withValidAdmission { reviewComparisonTargetProjection.update(state: canonicalState) }
         }
-        guard case .applied = mutationResult else { return }
+        guard case .applied = mutationResult else { return .applied }
         let reviewGeneration = nextReviewGeneration.next()
         nextReviewGeneration = reviewGeneration
         reviewGitRefreshSeedHolder.retire()
         retireActiveReviewComparisonTask()
         await MainActor.run {
-            refreshAdmissionCoordinator.beginReviewComparisonAttempt(
-                activeTarget: request.target,
-                reviewGeneration: reviewGeneration.rawValue
-            )
+            _ = productAdmission.withValidAdmission {
+                refreshAdmissionCoordinator.beginReviewComparisonAttempt(
+                    activeTarget: request.target,
+                    reviewGeneration: reviewGeneration.rawValue
+                )
+            }
         }
         await publishCurrentPanePresentation()
-        guard !isShutdown, productAdmission.withValidAdmission({ true }) == true else { return }
+        guard !isShutdown, productAdmission.withValidAdmission({ true }) == true else {
+            return .rejected
+        }
 
         let taskAttempt = allocateReviewComparisonTaskAttempt()
         activeReviewComparisonTaskAttempt = taskAttempt
@@ -171,10 +212,11 @@ extension BridgeDevelopmentProductHost {
                 target: request.target,
                 reviewGeneration: reviewGeneration,
                 classifySameSourceRefresh: false,
-                productAdmission: productAdmission
+                productAdmission: self.productAdmission
             )
             await self.clearReviewComparisonTask(taskAttempt: taskAttempt)
         }
+        return .applied
     }
 
     func scheduleObservedReviewRefreshIfPossible() async {
@@ -241,7 +283,7 @@ extension BridgeDevelopmentProductHost {
                 stageAttempt: reservation.operationStageAttempt,
                 surface: .review
             )
-            await MainActor.run {
+            _ = await MainActor.run {
                 self.refreshAdmissionCoordinator.completeRefreshPass(
                     reservation,
                     outcome: outcome

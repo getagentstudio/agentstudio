@@ -110,7 +110,8 @@ describe('Review viewer S1a recovery source structure', () => {
 			'../app/bridge-app-review-navigation-controller.ts',
 		);
 
-		expect(navigationSource).toContain('appliedNavigationApplicationKeyRef');
+		expect(navigationSource).toContain('consumedNavigationCommandIdsRef');
+		expect(navigationSource).toContain('notifyUserSelection');
 		expect(navigationSource).toContain('resolveBridgeReviewNavigationTarget');
 		expect(navigationSource).toContain('onTargetOutsideAcceptedProjection');
 		expect(navigationSource).toContain('orderedItemIds[0]');

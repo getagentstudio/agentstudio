@@ -1,4 +1,4 @@
-import type { BridgeCommWorkerFileViewRuntimeMutation } from './bridge-comm-worker-file-metadata-projection.js';
+import type { BridgeCommWorkerFileViewRuntimeMutation } from './bridge-comm-worker-file-view-runtime-mutation.js';
 import type { BridgeCommWorkerFileViewRuntimeSource } from './bridge-comm-worker-file-view-runtime-source.js';
 import type { BridgeCommWorkerFileMetadataDemand } from './bridge-comm-worker-product-controller.js';
 import type { BridgeWorkerRenderDispositionApplication } from './bridge-comm-worker-render-disposition-application.js';
@@ -17,6 +17,7 @@ import type {
 	BridgeWorkerReviewRenderSemantics,
 	BridgeWorkerRenderDispositionCommand,
 	BridgeWorkerServerToMainMessage,
+	BridgeWorkerViewRecoveryRetryCommand,
 } from './bridge-worker-contracts.js';
 import type {
 	BridgeWorkerRenderFulfillmentIdentifierPurpose,
@@ -35,11 +36,18 @@ export interface CreateBridgeCommWorkerCommandHandlerProps {
 	) => string;
 	readonly now?: () => number;
 	readonly onReviewMetadataPostCommitFailure?: (error: unknown) => void;
+	readonly onReviewVisibleRenderExhausted?: (itemIds: readonly string[]) => void;
+	readonly onFileVisibleRenderExhausted?: (
+		itemIds: readonly string[],
+		store: BridgeCommWorkerStore,
+	) => void;
 	readonly renderFulfillmentContext?: Omit<BridgeWorkerRenderFulfillmentRegistryContext, 'surface'>;
 	readonly renderFulfillmentNow?: () => number;
 	readonly renderReceiptLeaseDurationMilliseconds?: number;
 	readonly renderRetryBackoffMilliseconds?: number;
+	readonly releaseExpiredReviewPublication?: (itemId: string) => void;
 	readonly retryAnnotationProjection?: (surface: 'file' | 'review') => void;
+	readonly retryView?: (view: BridgeWorkerViewRecoveryRetryCommand['view']) => void;
 	readonly scheduleDemandExecution?: (
 		request: BridgeCommWorkerDemandExecutionScheduleRequest,
 	) => void;

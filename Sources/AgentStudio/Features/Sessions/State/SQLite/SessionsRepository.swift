@@ -5,7 +5,11 @@ package struct SessionsRepository: Sendable {
     let sqliteAccess: any SessionsSQLiteAccess
     package init(sqliteAccess: any SessionsSQLiteAccess) { self.sqliteAccess = sqliteAccess }
 
-    package func applyHook(_ hook: SessionsHookAdmission, commitParticipant: (any SessionsCommitParticipant)? = nil)
+    package func applyHook(
+        _ hook: SessionsHookAdmission,
+        commitParticipant: (any SessionsCommitParticipant)? = nil,
+        confirmedLiveBindingIds: Set<UUID>? = nil
+    )
         async throws -> SessionsHookOutcome
     {
         try await sqliteAccess.write { database in
@@ -14,9 +18,16 @@ package struct SessionsRepository: Sendable {
                 query: .bind(
                     paneId: hook.paneId, providerIdentifier: hook.providerIdentifier,
                     providerConversationId: hook.sessionId))
-            let (reduction, decision) = SessionsEvidenceReducer.reduceHook(hook, context: context)
+            let confirmedLiveMain: Bool
+            if let liveMain = context.bindings.first(where: { $0.status == .active }) {
+                confirmedLiveMain = confirmedLiveBindingIds?.contains(liveMain.bindingGenerationId) ?? true
+            } else {
+                confirmedLiveMain = false
+            }
+            let (reduction, decision) = SessionsEvidenceReducer.reduceHook(
+                hook, context: context, confirmedLiveMain: confirmedLiveMain)
             guard let reduction,
-                case .accepted(let decisionBinding, let disposition) = decision
+                case .accepted(let decisionBinding, let disposition, let supersededBinding) = decision
             else { return .ignored }
             let revision = try SessionsRepositoryStorage.insertHookOperation(
                 database: database, hook: hook,
@@ -30,7 +41,9 @@ package struct SessionsRepository: Sendable {
                     $0.bindingGenerationId == decisionBinding.bindingGenerationId
                 }) ?? decisionBinding
             return .committed(
-                .init(disposition: disposition, binding: binding, evidence: evidence, revision: revision))
+                .init(
+                    disposition: disposition, binding: binding,
+                    supersededBinding: supersededBinding, evidence: evidence, revision: revision))
         }
     }
 

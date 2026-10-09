@@ -6,6 +6,7 @@ import {
 	actFrame,
 	bridgeFileViewerNoopResizeObserverIsInstalled,
 } from './bridge-file-viewer-browser-test-harness.js';
+import { waitForCurrentFileMenuCompletion } from './bridge-file-viewer-menu-completion.browser.test-support.js';
 
 interface FileViewerUiTraceEntry {
 	readonly contentStateText: string | null;
@@ -216,8 +217,23 @@ export async function actClickAndSettleFileViewerMenu(element: HTMLElement): Pro
 		element.click();
 	});
 	await commitFileViewerMenuTransition();
+	await settleFileViewerMenuTransition({ element, expectedExpandedState });
+}
+
+export async function settleFileViewerMenuTransition(props?: {
+	readonly element: HTMLElement;
+	readonly expectedExpandedState: 'false' | 'true';
+}): Promise<void> {
+	const element =
+		props?.element ?? document.querySelector('[data-testid="worktree-file-filter-menu"]');
+	if (!(element instanceof HTMLElement)) throw new Error('Expected the File Viewer menu trigger.');
+	const expectedExpandedState =
+		props?.expectedExpandedState ??
+		(element.getAttribute('aria-expanded') === 'true' ? 'true' : 'false');
+	// MenuRoot unmounts from useAnimationsFinished after the capture frame. Keep both
+	// finished/cancelled animations and that closing DOM fact inside the same act scope.
 	await act(async (): Promise<void> => {
-		const popup = document.querySelector('[data-slot="dropdown-menu-content"]');
+		const popup = document.querySelector('[data-testid="worktree-file-filter-menu-popover"]');
 		if (popup instanceof HTMLElement) {
 			await Promise.all(
 				popup.getAnimations({ subtree: true }).map(async (animation): Promise<void> => {
@@ -229,6 +245,7 @@ export async function actClickAndSettleFileViewerMenu(element: HTMLElement): Pro
 				}),
 			);
 		}
+		await waitForCurrentFileMenuCompletion(expectedExpandedState === 'true');
 		await waitForFileViewerMenuState({ element, expectedExpandedState });
 	});
 }

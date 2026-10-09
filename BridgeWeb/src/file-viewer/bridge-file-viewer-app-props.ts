@@ -1,8 +1,10 @@
 import type { ReactNode } from 'react';
 
+import type { BridgePaneReloadPort } from '../app/bridge-pane-reload-port.js';
 import type { BridgeMermaidRenderer } from '../app/markdown/bridge-mermaid-renderer.js';
 import type { BridgeMarkdownRenderWorkerClient } from '../app/markdown/worker/bridge-markdown-render-worker-client.js';
 import type { BridgeProductNavigationCommand } from '../core/comm-worker/bridge-product-session-contracts.js';
+import type { BridgePaneFailedStartFact } from '../core/models/bridge-pane-failed-start.js';
 import type { BridgeTelemetryRecorder } from '../foundation/telemetry/bridge-telemetry-recorder.js';
 import type { BridgeTraceContext } from '../foundation/telemetry/bridge-trace-context.js';
 import type { BridgeFileViewerDisplaySource } from './bridge-file-viewer-display-model.js';
@@ -15,6 +17,9 @@ export interface BridgeFileViewerOpenPathCommand {
 }
 
 export interface BridgeFileViewerAppProps {
+	readonly paneFailedStart?: BridgePaneFailedStartFact | null;
+	readonly paneReloadPort?: BridgePaneReloadPort | undefined;
+	readonly railVisible?: boolean;
 	readonly activationCause?: 'context_switcher' | 'native_request' | 'review_file_corner' | null;
 	readonly activationSequence?: number | null;
 	readonly activationStartedAtPerfNow?: number | null;

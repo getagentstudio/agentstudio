@@ -14,6 +14,14 @@ protocol WorktreeAnnotationRepositoryAccess: Sendable {
     func fetchSessionDetail(sessionID: WorktreeAnnotationSessionID) async throws
         -> WorktreeAnnotationSessionDetail
     func fetchCatalogCapture(worktreeID: String) async throws -> WorktreeAnnotationCatalogCapture
+    func fetchCatalogRange(
+        worktreeID: String,
+        range: WorktreeAnnotationCatalogRange
+    ) async throws -> [WorktreeAnnotationCatalogKey: WorktreeAnnotationCatalogEntry]
+    func fetchCurrentCatalogEntries(
+        worktreeID: String,
+        keys: Set<WorktreeAnnotationCatalogKey>
+    ) async throws -> [WorktreeAnnotationCatalogKey: WorktreeAnnotationCatalogEntry]
     func createRootDraft(_ props: WorktreeAnnotationSQLiteRepository.CreateRootDraftProps) async throws
         -> WorktreeAnnotationCommittedMutation<WorktreeAnnotationSessionDetail>
     func flushDraft(_ props: WorktreeAnnotationSQLiteRepository.FlushDraftProps) async throws
@@ -60,11 +68,13 @@ protocol WorktreeAnnotationRepositoryAccess: Sendable {
     func finalizeOutputAttempt(
         attemptID: WorktreeAnnotationOutputAttemptID,
         eventKind: WorktreeAnnotationOutputEventKind,
+        destinationPath: String?,
         now: Date
     ) async throws -> WorktreeAnnotationCommittedMutation<WorktreeAnnotationSQLiteRepository.PreparedOutput>
     func markOutputAttemptFinalizationFailed(
         attemptID: WorktreeAnnotationOutputAttemptID,
         cleanupError: String,
+        destinationPath: String?,
         now: Date
     ) async throws -> WorktreeAnnotationCommittedMutation<WorktreeAnnotationSQLiteRepository.PreparedOutput>
     func fetchOutputHistory(
@@ -87,6 +97,22 @@ protocol WorktreeAnnotationRepositoryAccess: Sendable {
 }
 
 extension WorktreeAnnotationRepositoryAccess {
+    func fetchCatalogRange(
+        worktreeID: String,
+        range: WorktreeAnnotationCatalogRange
+    ) async throws -> [WorktreeAnnotationCatalogKey: WorktreeAnnotationCatalogEntry] {
+        _ = (worktreeID, range)
+        throw WorktreeAnnotationRepositoryError.invalidState
+    }
+
+    func fetchCurrentCatalogEntries(
+        worktreeID: String,
+        keys: Set<WorktreeAnnotationCatalogKey>
+    ) async throws -> [WorktreeAnnotationCatalogKey: WorktreeAnnotationCatalogEntry] {
+        _ = (worktreeID, keys)
+        throw WorktreeAnnotationRepositoryError.invalidState
+    }
+
     func fetchCatalogCapture(worktreeID: String) async throws -> WorktreeAnnotationCatalogCapture {
         _ = worktreeID
         throw WorktreeAnnotationRepositoryError.invalidState
@@ -157,9 +183,10 @@ extension WorktreeAnnotationRepositoryAccess {
     func markOutputAttemptFinalizationFailed(
         attemptID: WorktreeAnnotationOutputAttemptID,
         cleanupError: String,
+        destinationPath: String?,
         now: Date
     ) async throws -> WorktreeAnnotationCommittedMutation<WorktreeAnnotationSQLiteRepository.PreparedOutput> {
-        _ = (attemptID, cleanupError, now)
+        _ = (attemptID, cleanupError, destinationPath, now)
         throw WorktreeAnnotationRepositoryError.invalidState
     }
 
@@ -232,6 +259,22 @@ package struct WorktreeAnnotationSQLiteDatastoreAdapter: WorktreeAnnotationRepos
 
     func fetchCatalogCapture(worktreeID: String) async throws -> WorktreeAnnotationCatalogCapture {
         try await restore { try $0.fetchCatalogCapture(worktreeID: worktreeID) }
+    }
+
+    func fetchCatalogRange(
+        worktreeID: String,
+        range: WorktreeAnnotationCatalogRange
+    ) async throws -> [WorktreeAnnotationCatalogKey: WorktreeAnnotationCatalogEntry] {
+        try await restore { try $0.fetchCatalogRange(worktreeID: worktreeID, range: range) }
+    }
+
+    func fetchCurrentCatalogEntries(
+        worktreeID: String,
+        keys: Set<WorktreeAnnotationCatalogKey>
+    ) async throws -> [WorktreeAnnotationCatalogKey: WorktreeAnnotationCatalogEntry] {
+        try await restore {
+            try $0.fetchCurrentCatalogEntries(worktreeID: worktreeID, keys: keys)
+        }
     }
 
     func createRootDraft(_ props: WorktreeAnnotationSQLiteRepository.CreateRootDraftProps) async throws
@@ -372,12 +415,14 @@ package struct WorktreeAnnotationSQLiteDatastoreAdapter: WorktreeAnnotationRepos
     func finalizeOutputAttempt(
         attemptID: WorktreeAnnotationOutputAttemptID,
         eventKind: WorktreeAnnotationOutputEventKind,
+        destinationPath: String?,
         now: Date
     ) async throws -> WorktreeAnnotationCommittedMutation<WorktreeAnnotationSQLiteRepository.PreparedOutput> {
         try await mutate { repository in
             try repository.finalizeOutputAttempt(
                 attemptID: attemptID,
                 eventKind: eventKind,
+                destinationPath: destinationPath,
                 now: now
             )
         }
@@ -386,12 +431,14 @@ package struct WorktreeAnnotationSQLiteDatastoreAdapter: WorktreeAnnotationRepos
     func markOutputAttemptFinalizationFailed(
         attemptID: WorktreeAnnotationOutputAttemptID,
         cleanupError: String,
+        destinationPath: String?,
         now: Date
     ) async throws -> WorktreeAnnotationCommittedMutation<WorktreeAnnotationSQLiteRepository.PreparedOutput> {
         try await mutate { repository in
             try repository.markOutputAttemptFinalizationFailed(
                 attemptID: attemptID,
                 cleanupError: cleanupError,
+                destinationPath: destinationPath,
                 now: now
             )
         }

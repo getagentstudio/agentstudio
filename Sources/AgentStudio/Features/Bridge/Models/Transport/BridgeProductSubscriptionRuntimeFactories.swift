@@ -52,8 +52,8 @@ extension BridgeProductReviewMetadataEvent {
     }
 }
 
-extension BridgeProductFileMetadataEvent {
+extension BridgePaneProductFileSourceFact {
     init(source: BridgeProductFileSourceIdentity) {
-        self = .sourceAccepted(.init(source: source))
+        self = .sourceAccepted(source)
     }
 }

@@ -37,9 +37,9 @@ describe('Bridge product journey document generations in a real browser', () => 
 			});
 
 			// Act
-			const sameDocumentRequestId = await journey.sendFrameObservation();
+			const sameDocumentRequestId = await journey.sendSubscriptionReceipt();
 			const generationAfterSameDocumentNavigation = journey.currentGeneration();
-			const nextDocumentRequestId = await journey.reloadAndSendFrameObservation();
+			const nextDocumentRequestId = await journey.reloadAndSendSubscriptionReceipt();
 
 			// Assert: only the next document's acknowledgement settles the reload waiter.
 			expect(await acknowledgedRequestId(reloadJoin)).toBe(nextDocumentRequestId);
@@ -58,9 +58,9 @@ describe('Bridge product journey document generations in a real browser', () => 
 			});
 
 			// Act
-			await journey.sendFrameObservation();
+			await journey.sendSubscriptionReceipt();
 			const generationBeforeReload = journey.currentGeneration();
-			const nextDocumentRequestId = await journey.reloadAndSendFrameObservation();
+			const nextDocumentRequestId = await journey.reloadAndSendSubscriptionReceipt();
 
 			// Assert
 			expect(await acknowledgedRequestId(reloadJoin)).toBe(nextDocumentRequestId);
@@ -75,7 +75,7 @@ describe('Bridge product journey document generations in a real browser', () => 
 			const reloadJoin = journey.armReloadJoinWaiters();
 
 			// Act
-			const nextDocumentRequestId = await journey.reloadAndSendFrameObservation();
+			const nextDocumentRequestId = await journey.reloadAndSendSubscriptionReceipt();
 
 			// Assert
 			expect(await acknowledgedRequestId(reloadJoin)).toBe(nextDocumentRequestId);
@@ -91,7 +91,7 @@ describe('Bridge product journey document generations in a real browser', () => 
 			// Act
 			await journey.page.goto(`${journey.origin}/redirect-to-journey`, { waitUntil: 'load' });
 			await journey.waitForWorkerReady();
-			const redirectedDocumentRequestId = await journey.sendFrameObservation();
+			const redirectedDocumentRequestId = await journey.sendSubscriptionReceipt();
 
 			// Assert
 			expect(await acknowledgedRequestId(reloadJoin)).toBe(redirectedDocumentRequestId);
@@ -111,9 +111,9 @@ describe('Bridge product journey document generations in a real browser', () => 
 			);
 
 			// Act
-			await journey.sendFrameObservation();
+			await journey.sendSubscriptionReceipt();
 			const generationBeforeReload = journey.currentGeneration();
-			const nextDocumentRequestId = await journey.reloadAndSendFrameObservation();
+			const nextDocumentRequestId = await journey.reloadAndSendSubscriptionReceipt();
 
 			// Assert
 			expect(await acknowledgedRequestId(reloadJoin)).toBe(nextDocumentRequestId);
@@ -132,7 +132,7 @@ describe('Bridge product journey document generations in a real browser', () => 
 			const pendingWindowRequestId = uuidv7();
 			const pendingWindowResponse = journey.page.waitForResponse(
 				(response: Response): boolean =>
-					response.request().postData()?.includes(pendingWindowRequestId) === true,
+					new URL(response.url()).searchParams.get('requestId') === pendingWindowRequestId,
 			);
 			await journey.page.evaluate((requestId: string): void => {
 				(
@@ -142,7 +142,7 @@ describe('Bridge product journey document generations in a real browser', () => 
 							requestId: string,
 						) => void;
 					}
-				).bridgeJourneyWorkerSendDuringHeldNavigation('stream.frameObserved', requestId);
+				).bridgeJourneyWorkerSendDuringHeldNavigation('subscription.acknowledge', requestId);
 			}, pendingWindowRequestId);
 
 			// Act
@@ -155,7 +155,7 @@ describe('Bridge product journey document generations in a real browser', () => 
 			heldDocument.release();
 			await journey.page.waitForURL('**/held-journey.html', { waitUntil: 'load' });
 			await journey.waitForWorkerReady();
-			const nextDocumentRequestId = await journey.sendFrameObservation();
+			const nextDocumentRequestId = await journey.sendSubscriptionReceipt();
 
 			// Assert
 			expect(await acknowledgedRequestId(reloadJoin)).toBe(nextDocumentRequestId);
@@ -171,8 +171,8 @@ describe('Bridge product journey document generations in a real browser', () => 
 		readonly holdNextDocument: BridgeViewerJourneyDocumentGenerationServer['holdNextDocument'];
 		readonly origin: string;
 		readonly page: Page;
-		readonly reloadAndSendFrameObservation: () => Promise<string>;
-		readonly sendFrameObservation: () => Promise<string>;
+		readonly reloadAndSendSubscriptionReceipt: () => Promise<string>;
+		readonly sendSubscriptionReceipt: () => Promise<string>;
 		readonly waitForWorkerReady: () => Promise<void>;
 	}
 
@@ -194,19 +194,19 @@ describe('Bridge product journey document generations in a real browser', () => 
 					// The waiters this test does not settle reject when the page closes.
 					void reloadJoin.fileMetadataOpen.catch((): void => {});
 					void reloadJoin.reviewMetadataOpen.catch((): void => {});
-					void reloadJoin.frameAcknowledgement.catch((): void => {});
+					void reloadJoin.subscriptionReceipt.catch((): void => {});
 					return reloadJoin;
 				},
 				currentGeneration: documentGenerations.currentGeneration,
 				holdNextDocument: server.holdNextDocument,
 				origin,
 				page,
-				reloadAndSendFrameObservation: async (): Promise<string> => {
+				reloadAndSendSubscriptionReceipt: async (): Promise<string> => {
 					await page.reload({ waitUntil: 'load' });
 					await waitForWorkerReady();
-					return await sendFrameObservation(page);
+					return await sendSubscriptionReceipt(page);
 				},
-				sendFrameObservation: async (): Promise<string> => await sendFrameObservation(page),
+				sendSubscriptionReceipt: async (): Promise<string> => await sendSubscriptionReceipt(page),
 				waitForWorkerReady,
 			});
 		} finally {
@@ -215,13 +215,14 @@ describe('Bridge product journey document generations in a real browser', () => 
 	}
 });
 
-// Sends one frame observation from the page's current worker and returns its
+// Sends one typed subscription receipt from the page's current worker and returns its
 // request id once the harness has observed the response, so every response
 // waiter armed before it has already judged that response.
-async function sendFrameObservation(page: Page): Promise<string> {
+async function sendSubscriptionReceipt(page: Page): Promise<string> {
 	const requestId = uuidv7();
 	const observedResponse = page.waitForResponse(
-		(response: Response): boolean => response.request().postData()?.includes(requestId) === true,
+		(response: Response): boolean =>
+			new URL(response.url()).searchParams.get('requestId') === requestId,
 	);
 	const status = await page.evaluate(
 		async (sentRequestId: string): Promise<number> =>
@@ -229,7 +230,7 @@ async function sendFrameObservation(page: Page): Promise<string> {
 				window as unknown as {
 					readonly bridgeJourneyWorkerSend: (kind: string, requestId: string) => Promise<number>;
 				}
-			).bridgeJourneyWorkerSend('stream.frameObserved', sentRequestId),
+			).bridgeJourneyWorkerSend('subscription.acknowledge', sentRequestId),
 		requestId,
 	);
 	expect(status).toBe(204);
@@ -238,12 +239,6 @@ async function sendFrameObservation(page: Page): Promise<string> {
 }
 
 async function acknowledgedRequestId(reloadJoin: BridgeViewerReloadJoinResponses): Promise<string> {
-	const acknowledgement = await reloadJoin.frameAcknowledgement;
-	const body: unknown = JSON.parse(acknowledgement.request().postData() ?? '{}');
-	return typeof body === 'object' &&
-		body !== null &&
-		'requestId' in body &&
-		typeof body.requestId === 'string'
-		? body.requestId
-		: 'missing';
+	const acknowledgement = await reloadJoin.subscriptionReceipt;
+	return new URL(acknowledgement.url()).searchParams.get('requestId') ?? 'missing';
 }

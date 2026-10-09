@@ -1,4 +1,5 @@
-import type { BridgeWorkerPanelChromePatchPayload } from '../core/comm-worker/bridge-worker-contracts.js';
+import type { BridgeMainPanelChromeSlice } from '../core/comm-worker/bridge-main-review-comparison-presentation.js';
+import type { BridgeMainReviewFailureKind } from '../core/comm-worker/bridge-main-review-comparison-presentation.js';
 import type { BridgeReviewPackage } from '../foundation/review-package/bridge-review-package.js';
 import {
 	bridgeReviewComparisonTargetLabel,
@@ -17,11 +18,13 @@ export type BridgeReviewComparisonPaneState =
 	| {
 			readonly displayedTargetLabel: string;
 			readonly kind: 'failedPrevious';
+			readonly failureKind: BridgeMainReviewFailureKind;
 			readonly requestedTargetLabel: string;
 			readonly retryTarget: BridgeReviewComparisonTarget | null;
 	  }
 	| {
 			readonly kind: 'failedInitial';
+			readonly failureKind: BridgeMainReviewFailureKind;
 			readonly requestedTargetLabel: string;
 			readonly retryTarget: BridgeReviewComparisonTarget | null;
 	  };
@@ -35,7 +38,7 @@ export type BridgeReviewComparisonPackageMatch =
 	| 'revision_mismatch';
 
 export function bridgeReviewComparisonPaneState(props: {
-	readonly comparisonPresentation: BridgeWorkerPanelChromePatchPayload['reviewComparison'];
+	readonly comparisonPresentation: BridgeMainPanelChromeSlice['reviewComparison'];
 	readonly displayedReviewPackage: BridgeReviewPackage | null;
 }): BridgeReviewComparisonPaneState {
 	const comparisonPresentation = props.comparisonPresentation;
@@ -61,6 +64,7 @@ export function bridgeReviewComparisonPaneState(props: {
 		}) === 'matched';
 
 	switch (comparisonPresentation.attempt.status) {
+		case 'noSource':
 		case 'selectionRequired':
 			return { kind: 'settled' };
 		case 'pending':
@@ -77,6 +81,7 @@ export function bridgeReviewComparisonPaneState(props: {
 				: { displayedTargetLabel, kind: 'loadingPrevious', requestedTargetLabel };
 		}
 		case 'unavailable': {
+			const failureKind = comparisonPresentation.attempt.failureKind;
 			const retryTarget =
 				comparisonPresentation.attempt.retryable && comparisonPresentation.activeTarget !== null
 					? comparisonPresentation.activeTarget
@@ -85,10 +90,11 @@ export function bridgeReviewComparisonPaneState(props: {
 				? {
 						displayedTargetLabel,
 						kind: 'failedPrevious',
+						failureKind,
 						requestedTargetLabel,
 						retryTarget,
 					}
-				: { kind: 'failedInitial', requestedTargetLabel, retryTarget };
+				: { kind: 'failedInitial', failureKind, requestedTargetLabel, retryTarget };
 		}
 		default:
 			return assertNeverComparisonAttempt(comparisonPresentation.attempt);
@@ -126,7 +132,7 @@ function displayedComparisonTarget(
 export function bridgeReviewComparisonPackageMatch(props: {
 	readonly displayedReviewPackage: BridgeReviewPackage | null;
 	readonly displayedSnapshot: NonNullable<
-		BridgeWorkerPanelChromePatchPayload['reviewComparison']
+		BridgeMainPanelChromeSlice['reviewComparison']
 	>['displayedSnapshot'];
 }): BridgeReviewComparisonPackageMatch {
 	const displayedReviewPackage = props.displayedReviewPackage;

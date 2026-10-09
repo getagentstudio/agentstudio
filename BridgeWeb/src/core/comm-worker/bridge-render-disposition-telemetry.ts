@@ -15,6 +15,7 @@ export type BridgeWorkerOutstandingPublicationPhase =
 
 export type BridgeWorkerOutstandingPublicationOutcome =
 	| 'cleared'
+	| 'held'
 	| 'painted'
 	| 'published'
 	| 'queued'

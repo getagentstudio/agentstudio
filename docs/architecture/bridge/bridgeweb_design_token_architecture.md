@@ -343,7 +343,9 @@ classes fail closed. There are no migration allowances.
 
 Composition patterns above own menu, settings, list and drawer usage. This section
 owns enforcement mechanics, not a second pattern catalog.
-Alert owns card/banner/inline layouts and warning/destructive presentation;
+Alert owns card/banner/inline/floating layouts and warning/destructive presentation.
+Its floating presentation uses the popover fill, border, foreground and shadow;
+the feature owns viewport placement without moving document content.
 StatusBadge owns badge/indicator recipes. Features supply domain meaning and
 callbacks, not local control paint. Busy/disclosure icons expose state attributes
 to the Button-owned motion recipe.

@@ -158,6 +158,7 @@ function makePaneRuntimeFixture(): {
 			},
 			dispose: (): void => {},
 			installNativeBootstrap: (): void => {},
+			handleNativeBootstrapFailure: (): void => {},
 			setNativeBootstrapRequester: (): void => {},
 		}),
 	});

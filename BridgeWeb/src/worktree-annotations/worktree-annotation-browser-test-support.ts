@@ -10,6 +10,7 @@ import type {
 	BridgeProductWorktreeAnnotationOperation,
 } from '../core/comm-worker/bridge-product-call-contracts.js';
 import type { BridgeWorkerServerToMainMessage } from '../core/comm-worker/bridge-worker-contracts.js';
+import type { BridgeWorkerRpcCommandInput } from '../core/comm-worker/bridge-worker-rpc-client.js';
 import { WorktreeAnnotationBrowserCommandReceiptFixture } from './worktree-annotation-browser-command-receipt-fixture.js';
 import { reviewAnnotationPublicationIdentityForMainIdentity } from './worktree-annotation-review-application.js';
 import type {
@@ -87,6 +88,12 @@ export class RecordingAnnotationBrowserSurface {
 	readonly #listeners = new Set<(message: BridgeWorkerServerToMainMessage) => void>();
 	readonly client: BridgePaneSurfaceClient;
 	readonly sentOperations: BridgeProductWorktreeAnnotationOperation[] = [];
+	readonly sentRecoveryCommands: Array<
+		Extract<
+			BridgeWorkerRpcCommandInput,
+			{ readonly command: 'annotationProjectionRetry' | 'viewRecoveryRetry' }
+		>
+	> = [];
 	readonly sentReviewPublicationIdentities: BridgeProductReviewAnnotationPublicationIdentity[] = [];
 	readonly sentOutputInspectionAttemptIds: string[] = [];
 	#reviewActiveIdentity: BridgeMainReviewPublicationIdentity = annotationReviewMainIdentity;
@@ -144,6 +151,14 @@ export class RecordingAnnotationBrowserSurface {
 			renderFulfillmentCoordinator: {} as BridgePaneSurfaceClient['renderFulfillmentCoordinator'],
 			renderStore,
 			send: (command): string => {
+				if (
+					command.command === 'annotationProjectionRetry' ||
+					command.command === 'viewRecoveryRetry'
+				) {
+					this.#nextRequest += 1;
+					this.sentRecoveryCommands.push(command);
+					return `worker-request-${this.#nextRequest}`;
+				}
 				if (
 					command.command !== 'annotationCommand' &&
 					command.command !== 'annotationOutputInspect'
@@ -260,7 +275,7 @@ export class RecordingAnnotationBrowserSurface {
 			direction: 'serverWorkerToMain',
 			kind: 'annotationProjectionConvergence',
 			operationCorrelationId: null,
-			state: { kind: 'refreshing' },
+			state: { catalogAuthorityRetired: false, kind: 'refreshing' },
 			surface: this.client.surface,
 			transferDescriptors: [],
 			wireVersion: 1,
@@ -677,6 +692,7 @@ export class RecordingAnnotationBrowserSurface {
 			state: {
 				contentSessionIds: this.#sessions.map((session) => session.sessionId),
 				kind: 'ready',
+				stageAttempt: 0,
 				...(this.client.surface === 'review'
 					? {
 							reviewPublicationIdentity: reviewAnnotationPublicationIdentityForMainIdentity(

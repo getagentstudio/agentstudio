@@ -10,6 +10,24 @@ Architecture](bridge_native_runtime_architecture.md); worker and demand
 ownership are detailed in [Bridge Web Runtime
 Architecture](bridge_web_runtime_architecture.md).
 
+**Updated 2026-10-09 for Bridge PR1 (#463).** PR1 replaced the metadata model
+with keyed state in sealed batches and split control admission from operation
+results. The governing design, with its component table (N1–N10, W1–W6, INST),
+is the [Bridge Stability Program
+Design](../../specs/2026-09-24-bridge-stability-redesign/2026-09-24-bridge-stability-program-design.md#components-and-ownership).
+The current state and next work are in [Bridge after
+PR1](../../specs/2026-10-09-bridge-after-pr1/2026-10-09-bridge-after-pr1.md).
+
+## What PR1 built and what comes later
+
+| Built in PR1 | Comes later |
+| --- | --- |
+| N1 pane session with per-installation authority (E1) and a fence-first session end | **PR2:** the INST page installation receipt core, with #367 multi-root re-carried onto PR1 |
+| N2 operation table: admission answered now, results settled separately | **PR3:** the full Review surface reconciler (N5/N6/N7 convergence), the per-member File change filter |
+| N3 view sender and N10 view publishers: keyed state, sealed batches, dirty-key coalescing, credits | **PR4:** the Comments surface on migration 018 (N8 version records and persistent receipts) |
+| W1 control admission, W2 per-subscription lifecycle, W4 batch receiver, W6 region presentation | The native per-subscription lifecycle state machine (Linear LUNA-408) |
+| The File surface reconciler (restart in place, C5) and the Review hide fence (R15, scheduled builds) | |
+
 ## The three route jobs
 
 | Route | Direction | Job |
@@ -56,6 +74,25 @@ This keeps application semantics in the call/content registries while the
 generic transport remains responsible for correlation, admission, sequencing,
 bounds, cancellation, and errors.
 
+## Admission is answered now; the result settles later
+
+Control requests keep exact-replay sequence admission, but native answers a
+request as soon as it is **admitted**. The operation then runs concurrently and
+its result arrives separately, so one slow operation never holds the sequence.
+The native operation table (N2) owns each admitted operation's execution task,
+settlement and deadline. A cancel or retirement is out-of-band: it never queues
+behind the work it ends.
+
+A mutation whose result shape is unknown after it may have taken effect settles
+as `outcomeUnknown`, never as a guessed success. The page may then observe that
+operation for later evidence for the rest of the session; an observation that
+expires returns "still unknown" and never triggers session recovery.
+
+When a pane installation (E1) ends, the session fences first: it advances the
+epoch, refuses new admissions, rejects late publications and settles pending
+operations as cancelled. A new installation may start immediately; each owner
+releases its own resources when its task stops.
+
 ## Recent subscription update IDs
 
 `BridgeProductSubscriptionState` owns recent committed update-ID detection for
@@ -88,25 +125,47 @@ Proof covers repeated ring wraparound, recent/evicted labels, invalid and staged
 non-eviction, exact replay, candidate rollback, reconciliation and sustained real
 Vite/Swift and packaged traffic beyond the window.
 
-## Metadata describes what exists and what changed
+## Metadata is keyed state in sealed batches
 
-One metadata stream is installed per pane. Application subscriptions are
-multiplexed over it:
+One metadata stream is installed per pane. Application subscriptions (views)
+are multiplexed over it: `pane.presentation`, `file.metadata`,
+`review.metadata` and the comment subscriptions.
+
+Native is the single writer. Each view carries an incarnation **handle**, and
+each kind's publisher (N10) keeps its **current keyed state** with per-key
+revisions minted at commit: File rows keyed by canonical location (with parent
+and sort key), Review items keyed by id and staged per publication, comment
+sessions and threads keyed by id. Per-key revisions are monotonic within one
+page-owned incarnation, even when a native source context is rebuilt under a
+retained view.
+
+The view sender (N3) delivers that state as **sealed batches**:
 
 ```text
-pane metadata stream
-  ├─ pane.presentation
-  │    activity, refresh state, compact current comparison state
-  ├─ file.metadata subscription
-  │    source, tree rows/deltas, status, descriptors, invalidations
-  └─ review.metadata subscription
-       source/publication, item/tree windows and deltas,
-       content descriptors, invalidations, resets
+subscription.batchBegin(batchId, handle, mode, partCount, targetRevision [, snapshotCause])
+subscription.batchPart(put key rev value | delete key rev | evict key)   × partCount
+subscription.batchComplete(batchId, coveredScope)
 ```
 
-Generic stream mechanics know stream/subscription identities, sequence,
-generation/revision, accepted/reset/end/error, acknowledgement, and
-backpressure. File and Review protocols define their own metadata payloads.
+- `mode` is `snapshot`, `change` or `coverage` (progressive first paint, then
+  one certifying snapshot).
+- Every `snapshot` begin carries `snapshotCause`: `open`, `requested`,
+  `recovery` or `newerInput`. Native session state decides it; when several
+  are owed the strongest wins (`open` > `requested` > `recovery`). A
+  non-snapshot begin never carries a cause.
+- Native coalesces changes per key, so a slow page sees the latest values,
+  never a backlog. Dirty-key overflow becomes a snapshot.
+- Delivery is paced by per-view **credits** (parts and bytes) and cumulative
+  acknowledgements. Acknowledgements pace delivery only; an acknowledgement
+  that expires makes the view snapshot-required with cause `recovery`.
+
+The page's batch receiver (W4) stages each batch in a side bank, verifies every
+declared part, and installs atomically only when the batch is complete. An
+incomplete batch is never installed: the previous state stays on screen and the
+receiver asks for a resnapshot. A gap is a staged resnapshot, never a dead
+subscription or a blank view. The page's per-subscription lifecycle (W2)
+charges its "couldn't update" budget only for unsuccessful recovery; newer
+input never charges (owner decision R13, 2026-10-08).
 
 Metadata may say that a file or Review item exists, changed, has a particular
 extent, and has an authorized content descriptor. It does not carry the file,
@@ -166,13 +225,15 @@ and carry the selected request.
 ## File and Review application metadata
 
 File subscription interests center on paths. File metadata carries source
-identity, bounded tree windows and deltas, Git status facts, file descriptors,
-extent facts, and invalidations. Requested file bytes arrive through content.
+identity and keyed rows (one record per tracked path, including symlink rows;
+only the worktree root is resolved), Git status facts, descriptor outcomes,
+extent facts, and invalidations. Requested file bytes arrive through content;
+the content reader validates the resolved target and verifies the bytes.
 
 Review subscription interests center on Review item IDs. Review metadata
-carries publication identity, resolved comparison summary, bounded item/tree
-windows and deltas, per-item roles and descriptors, and invalidation/reset
-events. Requested base/head/diff bodies arrive through content.
+carries publication identity, resolved comparison summary, items keyed by id
+and staged per publication, per-item roles and descriptors, and invalidations.
+Requested base/head/diff bodies arrive through content.
 
 Pane presentation carries only compact pane state needed independently of an
 application query. For Review comparison this includes the active target,
@@ -236,3 +297,10 @@ and its Program Design.
 | Vite route mapping | [`bridge-product-http-request-executor.ts`](../../../BridgeWeb/src/core/comm-worker/bridge-product-http-request-executor.ts) |
 | File metadata protocol | [`bridge-product-subscription-contracts.ts`](../../../BridgeWeb/src/core/comm-worker/bridge-product-subscription-contracts.ts) |
 | Review metadata protocol | [`bridge-product-review-metadata-contracts.ts`](../../../BridgeWeb/src/core/comm-worker/bridge-product-review-metadata-contracts.ts) |
+| Sealed batch wire (native / page; shared fixtures mirrored byte-identically) | [`BridgeProductBatchWireContract.swift`](../../../Sources/AgentStudio/Features/Bridge/Models/Transport/BridgeProductBatchWireContract.swift), [`bridge-product-batch-wire-contracts.ts`](../../../BridgeWeb/src/core/comm-worker/bridge-product-batch-wire-contracts.ts) |
+| Operations and observation wire | [`BridgeProductOperationWireContract.swift`](../../../Sources/AgentStudio/Features/Bridge/Models/Transport/BridgeProductOperationWireContract.swift), [`BridgeProductOperationObservationWireContract.swift`](../../../Sources/AgentStudio/Features/Bridge/Models/Transport/BridgeProductOperationObservationWireContract.swift), [`bridge-product-operation-observation-wire-contracts.ts`](../../../BridgeWeb/src/core/comm-worker/bridge-product-operation-observation-wire-contracts.ts) |
+| View control wire (scope, resnapshot) | [`BridgeProductViewControlWireContract.swift`](../../../Sources/AgentStudio/Features/Bridge/Models/Transport/BridgeProductViewControlWireContract.swift) |
+| Native view sender (N3) and snapshot cause | [`BridgeProductViewSenderState.swift`](../../../Sources/AgentStudio/Features/Bridge/Transport/BridgeProductViewSenderState.swift), [`BridgeProductSession+ViewDelivery.swift`](../../../Sources/AgentStudio/Features/Bridge/Transport/BridgeProductSession+ViewDelivery.swift), [`BridgeProductSession+SnapshotCause.swift`](../../../Sources/AgentStudio/Features/Bridge/Transport/BridgeProductSession+SnapshotCause.swift) |
+| Native operations (N2) | [`BridgeProductSession+Operations.swift`](../../../Sources/AgentStudio/Features/Bridge/Transport/BridgeProductSession+Operations.swift) |
+| Page control admission (W1) | [`bridge-product-session-authority.ts`](../../../BridgeWeb/src/core/comm-worker/bridge-product-session-authority.ts) |
+| Page lifecycle (W2) and batch receiver (W4) | [`bridge-product-view-scope-owner.ts`](../../../BridgeWeb/src/core/comm-worker/bridge-product-view-scope-owner.ts), [`bridge-product-view-batch-receiver.ts`](../../../BridgeWeb/src/core/comm-worker/bridge-product-view-batch-receiver.ts), [`bridge-product-batch-frame-router.ts`](../../../BridgeWeb/src/core/comm-worker/bridge-product-batch-frame-router.ts), [`bridge-product-view-receipt-acknowledger.ts`](../../../BridgeWeb/src/core/comm-worker/bridge-product-view-receipt-acknowledger.ts) |

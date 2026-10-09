@@ -74,6 +74,7 @@ func executeOutputScope(
               "displayedProjectionRevision": \(projection.revision),
               "expectedSessionRevision": \(sessionRevision),
               "kind": "output.scope.commit", "outputKind": "jsonFile",
+              "destination": "remembered",
               "scope": "\(scope.rawValue)", "sessionId": "\(sessionIDString)",
               "sourceGeneration": 7
             } }
@@ -318,18 +319,26 @@ func makeTransportAdapterHarness(
 
 actor TransportTestOutputEffect: WorktreeAnnotationOutputEffect {
     private let outcome: WorktreeAnnotationOutputEffectOutcome
+    private let revealSucceeds: Bool
     private(set) var requests: [WorktreeAnnotationOutputEffectRequest] = []
     var lastRequest: WorktreeAnnotationOutputEffectRequest? { requests.last }
 
-    init(outcome: WorktreeAnnotationOutputEffectOutcome) {
+    init(outcome: WorktreeAnnotationOutputEffectOutcome, revealSucceeds: Bool = true) {
         self.outcome = outcome
+        self.revealSucceeds = revealSucceeds
     }
 
-    func chooseJSONDestination(
-        suggestedFilename: String
-    ) -> WorktreeAnnotationOutputDestinationOutcome {
-        _ = suggestedFilename
-        return .selected(path: "/tmp/transport-output.json")
+    func rememberedJSONFolder() -> String { "/tmp" }
+
+    func chooseJSONDestination(productAdmission: BridgeProductAdmissionContext)
+        -> WorktreeAnnotationOutputDestinationOutcome
+    {
+        .selected(path: "/tmp")
+    }
+
+    func revealJSONFile(path: String, productAdmission: BridgeProductAdmissionContext) -> Bool {
+        _ = path
+        return revealSucceeds
     }
 
     func perform(

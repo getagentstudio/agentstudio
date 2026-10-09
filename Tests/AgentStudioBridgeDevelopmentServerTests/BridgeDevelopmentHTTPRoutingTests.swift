@@ -187,7 +187,7 @@ struct BridgeDevelopmentHTTPRoutingTests {
         try await withDevelopmentHost(host) {
             let body = ByteBuffer(
                 string:
-                    #"{"navigationIntent":{"commandId":"open-file-view","commandKind":"activateContext","surface":"file"},"reason":"initial"}"#
+                    #"{"navigationIntent":{"commandId":"open-file-view","commandKind":"activateContext","surface":"file"},"reason":"initial","tabId":"owner-tab-1"}"#
             )
 
             // Act / Assert
@@ -233,7 +233,7 @@ struct BridgeDevelopmentHTTPRoutingTests {
                         headers: [.contentType: "application/json"],
                         body: ByteBuffer(
                             string:
-                                #"{"navigationIntent":{"commandId":"second-page","commandKind":"activateContext","surface":"file"},"reason":"initial"}"#
+                                #"{"navigationIntent":{"commandId":"second-page","commandKind":"activateContext","surface":"file"},"reason":"initial","tabId":"other-tab-2"}"#
                         )
                     )
                     // Assert: no new capability is issued; the original session still serves calls.
@@ -244,6 +244,39 @@ struct BridgeDevelopmentHTTPRoutingTests {
                     throw error
                 }
                 try await shutdownHTTPHostAndDrainMetadataStream(host: host, drain: metadata.drain)
+            }
+        }
+    }
+
+    @Test("a competing tab bootstrap receives HTTP 409 before the owner opens its stream")
+    func competingTabBootstrapReturnsConflict() async throws {
+        let repositoryURL = try await FilesystemTestGitRepo.create(
+            named: "bridge-http-competing-tab-before-stream"
+        )
+        defer { FilesystemTestGitRepo.destroy(repositoryURL) }
+        let host = try await makeHTTPDevelopmentProductHost(worktreeRoot: repositoryURL)
+        try await withDevelopmentHost(host) {
+            try await withBridgeDevelopmentHTTPRouterTestClient(host: host) { client in
+                let first = try await client.execute(
+                    uri: "/__bridge-product/bootstrap",
+                    method: .post,
+                    headers: [.contentType: "application/json"],
+                    body: ByteBuffer(
+                        string:
+                            #"{"navigationIntent":{"commandId":"open-file-view","commandKind":"activateContext","surface":"file"},"reason":"initial","tabId":"owner-tab-1"}"#
+                    )
+                )
+                #expect(first.status == .ok)
+                let competing = try await client.execute(
+                    uri: "/__bridge-product/bootstrap",
+                    method: .post,
+                    headers: [.contentType: "application/json"],
+                    body: ByteBuffer(
+                        string:
+                            #"{"navigationIntent":{"commandId":"open-file-view","commandKind":"activateContext","surface":"file"},"reason":"initial","tabId":"other-tab-2"}"#
+                    )
+                )
+                #expect(competing.status == .conflict)
             }
         }
     }
@@ -276,7 +309,7 @@ struct BridgeDevelopmentHTTPRoutingTests {
                     headers: [.contentType: "application/json"],
                     body: ByteBuffer(
                         string:
-                            #"{"navigationIntent":{"commandId":"dev:worktree:review","commandKind":"activateContext","surface":"review"},"reason":"initial"}"#
+                            #"{"navigationIntent":{"commandId":"dev:worktree:review","commandKind":"activateContext","surface":"review"},"reason":"initial","tabId":"owner-tab-1"}"#
                     )
                 ) { response in
                     #expect(response.status == .ok)
@@ -304,7 +337,7 @@ struct BridgeDevelopmentHTTPRoutingTests {
                     client: client,
                     bootstrapRequestBody: ByteBuffer(
                         string:
-                            #"{"navigationIntent":{"commandId":"open-cold-file-target","commandKind":"activateTarget","surface":"file","target":{"targetKind":"file","path":"startup.txt","version":"current"}},"reason":"initial"}"#
+                            #"{"navigationIntent":{"commandId":"open-cold-file-target","commandKind":"activateTarget","surface":"file","target":{"targetKind":"file","path":"startup.txt","version":"current"}},"reason":"initial","tabId":"owner-tab-1"}"#
                     )
                 )
                 let metadata = try await startHTTPMetadataStream(
@@ -351,7 +384,10 @@ struct BridgeDevelopmentHTTPRoutingTests {
 
                     // Assert — the initial File context precedes the boundary without a source-bound target.
                     guard case .activateContext(let commandID, let bindingRevision, let surface) = firstSelection else {
-                        throw HTTPAnnotationIntegrationError.unexpectedControlResponse
+                        throw HTTPAnnotationIntegrationError.unexpectedControlResponse(
+                            callSite: "initialFileSelection",
+                            receivedKind: String(reflecting: firstSelection)
+                        )
                     }
                     #expect(surface == .file)
                     #expect(bindingRevision == 1)
@@ -387,7 +423,7 @@ struct BridgeDevelopmentHTTPRoutingTests {
                     headers: [.contentType: "application/json"],
                     body: ByteBuffer(
                         string:
-                            #"{"navigationIntent":{"commandId":"open-file-view","commandKind":"activateContext","surface":"file"},"reason":"initial"}"#
+                            #"{"navigationIntent":{"commandId":"open-file-view","commandKind":"activateContext","surface":"file"},"reason":"initial","tabId":"owner-tab-1"}"#
                     )
                 )
                 let envelope = try decodeHTTPBootstrapEnvelope(
@@ -432,16 +468,12 @@ struct BridgeDevelopmentHTTPRoutingTests {
                     }
                     #expect(response.status == .ok)
                     #expect(response.headers[.contentType] == "application/json")
-                    let controlResponse = try BridgeProductStrictJSON.decode(
-                        BridgeProductControlResponse.self,
+                    let admission = try BridgeProductStrictJSON.decode(
+                        BridgeProductOperationAdmittedResponse.self,
                         from: Data(response.body.readableBytesView)
                     )
-                    guard case .workerSessionAccepted(let accepted) = controlResponse else {
-                        Issue.record("Expected workerSession.accepted through the HTTP carrier")
-                        return
-                    }
-                    #expect(accepted.correlation.paneSessionId == envelope.bootstrap.paneSessionId)
-                    #expect(accepted.correlation.workerInstanceId == envelope.bootstrap.workerInstanceId)
+                    #expect(admission.correlation.paneSessionId == envelope.bootstrap.paneSessionId)
+                    #expect(admission.correlation.workerInstanceId == envelope.bootstrap.workerInstanceId)
                 }
             }
         }
@@ -545,6 +577,7 @@ private func makeHTTPDevelopmentProductHost(
     )
     return try await BridgeDevelopmentProductHost(
         source: source,
+        operationDeadlineClock: TestPushClock(),
         contributionTargetCommit: { target in
             .unchanged(
                 BridgePaneState(
@@ -585,6 +618,7 @@ private func makeHTTPDevelopmentServerHarness(
         source: composition.productSource,
         worktreeAnnotationStore: composition.worktreeAnnotationStore,
         worktreeAnnotationOutputCoordinator: composition.worktreeAnnotationOutputCoordinator,
+        operationDeadlineClock: TestPushClock(),
         contributionTargetCommit: { target in
             composition.applyContributionTarget(target)
         }

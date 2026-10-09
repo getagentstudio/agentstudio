@@ -8,6 +8,51 @@ import Testing
 @testable import AgentStudioCLIStore
 
 extension CLIStoreTests {
+    @Test(
+        "fresh creation exhausting its budget leaves no published store or private creator files",
+        arguments: FreshCreatorBudgetExhaustionPoint.allCases)
+    func exhaustedFreshCreatorRemovesOwnedFiles(point: FreshCreatorBudgetExhaustionPoint) async throws {
+        let observed = try await valueFromDedicatedThread {
+            let fixture = try CLIStoreFileFixture()
+            defer { fixture.remove() }
+            let probe = Mutex(
+                (remainingBudget: Duration.seconds(1), activatedWAL: false, reachedExhaustionPoint: false))
+            let attempted = CLIStore.openWriter(
+                url: fixture.databaseURL, channel: .debug,
+                migrationLockWaitBudget: { probe.withLock { $0.remainingBudget } },
+                prepareConnection: { database in
+                    database.trace { event in
+                        guard case .statement(let statement) = event else { return }
+                        probe.withLock {
+                            if statement.sql == "PRAGMA synchronous = FULL" { $0.activatedWAL = true }
+                            // Admission reads commit before WAL activation. Only
+                            // a later commit can belong to the private WAL schema.
+                            guard $0.activatedWAL, point.matches(statement.sql) else { return }
+                            $0.reachedExhaustionPoint = true
+                            $0.remainingBudget = .zero
+                        }
+                    }
+                })
+            let failure: CLIStoreFailure?
+            switch attempted {
+            case .failure(let value): failure = value
+            case .success(let writer):
+                failure = nil
+                try writer.databaseQueue.close()
+            }
+            return (
+                failure: failure, reachedExhaustionPoint: probe.withLock { $0.reachedExhaustionPoint },
+                published: FileManager.default.fileExists(atPath: fixture.databaseURL.path),
+                creatorFiles: try FileManager.default.contentsOfDirectory(atPath: fixture.rootURL.path)
+                    .filter { $0.contains(".creating-") }
+            )
+        }
+        #expect(observed.reachedExhaustionPoint)
+        #expect(observed.failure == .busy(extendedResultCode: nil, stage: point.failureStage))
+        #expect(!observed.published)
+        #expect(observed.creatorFiles.isEmpty)
+    }
+
     @Test("a crashed creator's private file is ignored without deleting its bytes")
     func staleCreatorDoesNotBlockPublication() async throws {
         let observed = try await valueFromDedicatedThread {
@@ -117,6 +162,25 @@ extension CLIStoreTests {
         #expect(
             observed.afterWriterOpen == .published(observed.identity, CLIStoreMigrator.knownMigrations, true))
         #expect(!observed.files.contains { $0.contains(".creating-") })
+    }
+}
+
+enum FreshCreatorBudgetExhaustionPoint: CaseIterable, Sendable {
+    case walActivation
+    case schemaCommit
+
+    var failureStage: CLIStoreFailure.Stage {
+        switch self {
+        case .walActivation: .migration
+        case .schemaCommit: .identity
+        }
+    }
+
+    func matches(_ sql: String) -> Bool {
+        switch self {
+        case .walActivation: sql == "PRAGMA synchronous = FULL"
+        case .schemaCommit: sql.hasPrefix("COMMIT")
+        }
     }
 }
 

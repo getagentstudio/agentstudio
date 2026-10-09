@@ -1,0 +1,39 @@
+{
+  "observeRequests": [
+    {
+      "kind": "operation.observe",
+      "wireVersion": 2,
+      "paneSessionId": "pane-session-1",
+      "workerInstanceId": "worker-instance-1",
+      "operationId": "save-operation-1",
+      "after": 1
+    }
+  ],
+  "observeResponses": [
+    {
+      "kind": "operation.stillUnknown",
+      "operationId": "save-operation-1",
+      "revision": 1
+    },
+    {
+      "kind": "operation.lateOutcome",
+      "operationId": "save-operation-1",
+      "revision": 2,
+      "outcome": "succeeded",
+      "failureCode": null,
+      "result": { "messageId": "33333333-3333-7333-8333-333333333333" }
+    }
+  ],
+  "lateOutcomeAcknowledgements": [
+    {
+      "kind": "operation.lateOutcomeAcknowledgement",
+      "wireVersion": 2,
+      "paneSessionId": "pane-session-1",
+      "workerInstanceId": "worker-instance-1",
+      "requestId": "late-ack-request-1",
+      "requestSequence": 13,
+      "operationId": "save-operation-1",
+      "revision": 2
+    }
+  ]
+}

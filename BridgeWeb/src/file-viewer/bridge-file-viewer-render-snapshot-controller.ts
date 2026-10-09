@@ -15,6 +15,7 @@ import {
 	encodeBridgeWorkerSelectCommand,
 	encodeBridgeWorkerFileDisplayResyncCommand,
 	encodeBridgeWorkerFileQueryUpdateCommand,
+	encodeBridgeWorkerViewRecoveryRetryCommand,
 	encodeBridgeWorkerViewportCommand,
 } from '../core/comm-worker/bridge-comm-worker-protocol.js';
 import type { BridgeMainFileTreePatchStream } from '../core/comm-worker/bridge-main-file-display-patch-applier.js';
@@ -28,7 +29,6 @@ import type { BridgePaneSurfaceClient } from '../core/comm-worker/bridge-pane-ru
 import type {
 	BridgeWorkerContentAvailabilityPatchPayload,
 	BridgeWorkerFileRenderPatch,
-	BridgeWorkerHealthEvent,
 	BridgeWorkerServerToMainMessage,
 } from '../core/comm-worker/bridge-worker-contracts.js';
 import type { BridgeWorkerFileQuery } from '../core/comm-worker/bridge-worker-file-query-contracts.js';
@@ -64,6 +64,9 @@ export interface BridgeFileViewerRenderSnapshotController {
 		readonly visibleItemIds: readonly string[];
 	}) => void;
 	readonly retryUnavailableFileRefresh: () => void;
+	readonly fileViewRecoveryStatus: ReturnType<
+		BridgePaneSurfaceClient['renderStore']['getViewRecoveryStatus']
+	>;
 	readonly fileDisplaySnapshot: Pick<
 		BridgeMainRenderSnapshot,
 		'fileDisplayFreshness' | 'fileItemById' | 'fileQuerySlice' | 'fileStatusSlice' | 'fileTreeSlice'
@@ -95,6 +98,13 @@ export function useBridgeFileViewerRenderSnapshotController(props: {
 		renderSnapshotStore.subscribe,
 		renderSnapshotStore.getSnapshot,
 		renderSnapshotStore.getServerSnapshot,
+	);
+	const fileViewRecoveryStatus = useSyncExternalStore(
+		(listener): (() => void) => renderSnapshotStore.subscribeViewRecoveryStatus(listener),
+		(): ReturnType<typeof renderSnapshotStore.getViewRecoveryStatus> =>
+			renderSnapshotStore.getViewRecoveryStatus('file.metadata'),
+		(): ReturnType<typeof renderSnapshotStore.getViewRecoveryStatus> =>
+			renderSnapshotStore.getViewRecoveryStatus('file.metadata'),
 	);
 	const publishWorkerMessages = useCallback(
 		(messages: readonly BridgeWorkerServerToMainMessage[]): void => {
@@ -228,11 +238,20 @@ export function useBridgeFileViewerRenderSnapshotController(props: {
 		[fileViewClient],
 	);
 	const retryUnavailableFileRefresh = useCallback((): void => {
+		if (fileViewRecoveryStatus?.status === 'failedRetryable') {
+			fileViewClient.send(
+				encodeBridgeWorkerViewRecoveryRetryCommand({
+					epoch: nextBridgeFileViewerWorkerEpoch(workerEpochRef),
+					requestId: nextBridgeFileViewerWorkerRequestId(requestSequenceRef),
+					view: fileViewRecoveryStatus.view,
+				}),
+			);
+		}
 		fileViewClient.send({
 			command: 'fileRefreshRetry',
 			epoch: nextBridgeFileViewerWorkerEpoch(workerEpochRef),
 		});
-	}, [fileViewClient]);
+	}, [fileViewClient, fileViewRecoveryStatus]);
 	const selectedCodeViewItem = selectedBridgeFileViewerCodeViewItemForSnapshot({
 		renderSnapshot,
 		selection: props.selection,
@@ -255,6 +274,7 @@ export function useBridgeFileViewerRenderSnapshotController(props: {
 			dispatchSelectedFileViewContentRequest,
 			dispatchVisibleFileViewViewportFact,
 			retryUnavailableFileRefresh,
+			fileViewRecoveryStatus,
 			fileDisplaySnapshot: {
 				fileDisplayFreshness: renderSnapshot.fileDisplayFreshness,
 				fileItemById: renderSnapshot.fileItemById,
@@ -274,6 +294,7 @@ export function useBridgeFileViewerRenderSnapshotController(props: {
 			dispatchFileViewQueryFact,
 			dispatchVisibleFileViewViewportFact,
 			retryUnavailableFileRefresh,
+			fileViewRecoveryStatus,
 			renderSnapshotStore.completeFileQueryTransaction,
 			renderSnapshotStore.fileTreePatchStream,
 			fileViewClient.renderFulfillmentCoordinator,
@@ -412,12 +433,12 @@ export function applyBridgeWorkerMessagesToFileViewerRenderSnapshotStore(props: 
 				break;
 			}
 			case 'health':
-				publishBridgeProductMetadataStreamDiagnostic(message.diagnostic);
 				break;
 			case 'annotationCommandAccepted':
 			case 'annotationCatalogStaging':
 			case 'annotationOutputInspection':
 			case 'annotationProjectionConvergence':
+			case 'viewRecoveryStatus':
 			case 'nativeSurfaceSelectionRequest':
 			case 'reviewCandidateReady':
 			case 'reviewCandidateFailed':
@@ -512,20 +533,6 @@ function fileDisplayPatchInvalidatesSelection(
 					patch.itemId === selection.fileId &&
 					patch.payload.displayPath !== selection.path)),
 	);
-}
-
-type BridgeProductMetadataStreamHealthDiagnostic = NonNullable<
-	BridgeWorkerHealthEvent['diagnostic']
->;
-
-function publishBridgeProductMetadataStreamDiagnostic(
-	diagnostic: BridgeWorkerHealthEvent['diagnostic'],
-): void {
-	if (diagnostic?.kind !== 'productMetadataStream') return;
-	const diagnosticGlobal = globalThis as typeof globalThis & {
-		__bridgeProductMetadataStreamDiagnostic?: BridgeProductMetadataStreamHealthDiagnostic;
-	};
-	diagnosticGlobal.__bridgeProductMetadataStreamDiagnostic = Object.freeze({ ...diagnostic });
 }
 
 function bridgeFileDisplayEventIsAccepted(

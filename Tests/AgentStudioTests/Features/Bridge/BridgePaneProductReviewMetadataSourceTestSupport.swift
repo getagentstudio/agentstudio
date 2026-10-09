@@ -3,60 +3,6 @@ import Testing
 
 @testable import AgentStudioBridge
 
-struct ReviewWindowPayload {
-    let isSnapshot: Bool
-    let itemStartIndex: Int
-    let itemFinalWindow: Bool
-    let itemMetadata: [BridgeProductReviewItemMetadataValue]
-    let treeStartIndex: Int
-    let treeFinalWindow: Bool
-    let treeRows: [BridgeProductReviewTreeRowValue]
-}
-
-func reviewWindowPayload(_ event: BridgeProductReviewMetadataEvent) throws -> ReviewWindowPayload {
-    switch event {
-    case .snapshot(let snapshot):
-        ReviewWindowPayload(
-            isSnapshot: true,
-            itemStartIndex: snapshot.itemWindow.startIndex,
-            itemFinalWindow: snapshot.itemWindow.finalWindow,
-            itemMetadata: snapshot.itemMetadata,
-            treeStartIndex: snapshot.treeWindow.startIndex,
-            treeFinalWindow: snapshot.treeWindow.finalWindow,
-            treeRows: snapshot.treeRows
-        )
-    case .window(let window):
-        ReviewWindowPayload(
-            isSnapshot: false,
-            itemStartIndex: window.itemWindow.startIndex,
-            itemFinalWindow: window.itemWindow.finalWindow,
-            itemMetadata: window.itemMetadata,
-            treeStartIndex: window.treeWindow.startIndex,
-            treeFinalWindow: window.treeWindow.finalWindow,
-            treeRows: window.treeRows
-        )
-    default:
-        throw ReviewMetadataSourceTestError.unexpectedEvent
-    }
-}
-
-func assertContiguousReviewWindows(
-    _ windows: [ReviewWindowPayload],
-    package: BridgeReviewPackage,
-    sourceLocation: SourceLocation = #_sourceLocation
-) {
-    var nextItemIndex = 0
-    var nextTreeIndex = 0
-    for window in windows {
-        #expect(window.itemStartIndex == nextItemIndex, sourceLocation: sourceLocation)
-        #expect(window.treeStartIndex == nextTreeIndex, sourceLocation: sourceLocation)
-        nextItemIndex += window.itemMetadata.count
-        nextTreeIndex += window.treeRows.count
-    }
-    #expect(nextItemIndex == package.orderedItemIds.count, sourceLocation: sourceLocation)
-    #expect(nextTreeIndex >= package.orderedItemIds.count, sourceLocation: sourceLocation)
-}
-
 enum ReviewMetadataSourceTestError: Error {
     case unexpectedEvent
 }
@@ -111,29 +57,6 @@ func deliveredReviewReceipt(
         throw ReviewMetadataSourceTestError.unexpectedEvent
     }
     return receipt
-}
-
-func reviewMetadataEnqueueResult(
-    _ event: BridgeProductReviewMetadataEvent,
-    sequence: Int
-) throws -> BridgeProductProducerEnqueueResult {
-    .enqueued(
-        BridgeProductQueuedProducerFrame(
-            data: try JSONEncoder().encode(event),
-            sequence: sequence,
-            terminal: false,
-            requiredOpening: false
-        ))
-}
-
-func reviewIdentity(for package: BridgeReviewPackage) -> BridgeProductReviewMetadataIdentity {
-    try! BridgeProductReviewMetadataIdentity(
-        generation: package.reviewGeneration.rawValue,
-        packageId: package.packageId,
-        publicationId: reviewMetadataTestPublicationId,
-        revision: package.revision,
-        sourceIdentity: package.query.queryId
-    )
 }
 
 var reviewMetadataTestPublicationId: UUID {
@@ -364,31 +287,65 @@ func reviewItemWithDiffStatistics(
     )
 }
 
-actor ReviewMetadataEventCollector {
-    private(set) var events: [BridgeProductReviewMetadataEvent] = []
-    private var nextSequence = 0
-
-    func append(_ event: BridgeProductReviewMetadataEvent) throws -> BridgeProductProducerEnqueueResult {
-        nextSequence += 1
-        events.append(event)
-        return try reviewMetadataEnqueueResult(event, sequence: nextSequence)
-    }
-
-    func removeAll() {
-        events.removeAll()
-    }
-}
-
-func reviewSubscription(interestRevision: Int = 0) throws -> BridgeProductSubscriptionSnapshot {
-    let interestState = BridgeProductSubscriptionInterestState.reviewMetadata(interests: [])
-    return BridgeProductSubscriptionSnapshot(
+func reviewSubscription() -> BridgeProductSubscriptionSnapshot {
+    BridgeProductSubscriptionSnapshot(
         subscription: .reviewMetadata,
         subscriptionId: "review-subscription-1",
         subscriptionKind: .reviewMetadata,
-        workerDerivationEpoch: 1,
-        interestRevision: interestRevision,
-        interestSha256: try interestState.sha256Hex(),
-        interestState: interestState,
-        hasStagedUpdate: false
+        workerDerivationEpoch: 1
     )
+}
+
+func reviewTestViewScopeRequest(
+    itemIds: [String],
+    handle: String = "review-availability-handle"
+) throws -> BridgeProductViewScopeRequest {
+    let interests: [[String: Any]] =
+        itemIds.isEmpty
+        ? [] : [["lane": "foreground", "itemIds": itemIds]]
+    let data = try JSONSerialization.data(withJSONObject: [
+        "kind": "subscription.setScope",
+        "wireVersion": BridgeProductWireContract.version,
+        "paneSessionId": "pane-session-1",
+        "workerInstanceId": "worker-instance-1",
+        "requestId": "review-test-scope",
+        "requestSequence": 3,
+        "subscriptionId": "review-subscription-1",
+        "subscriptionKind": "review.metadata",
+        "domain": "default",
+        "handle": handle,
+        "incarnation": "review-test-incarnation",
+        "scopeRevision": 1,
+        "scope": ["kind": "review", "interests": interests],
+    ])
+    return try BridgeProductStrictJSON.decode(BridgeProductViewScopeRequest.self, from: data)
+}
+
+func reviewViewDemand(itemIds: [String]) throws -> BridgeProductReviewMetadataInterestState {
+    guard !itemIds.isEmpty else { return BridgeProductReviewMetadataInterestState(interests: []) }
+    return BridgeProductReviewMetadataInterestState(
+        interests: [try BridgeProductReviewMetadataInterestStateGroup(itemIds: itemIds, lane: .foreground)]
+    )
+}
+
+func applyReviewViewDemand(
+    through source: any BridgePaneProductReviewMetadataProducing,
+    subscriptionId: String = "review-subscription-1",
+    handle: String = "review-handle-1",
+    scopeRevision: Int = 1,
+    admissionSequence: Int? = nil,
+    itemIds: [String],
+    expectedPublicationId: UUID = reviewMetadataTestPublicationId,
+    productAdmission: BridgeProductAdmissionContext
+) async throws -> BridgePaneProductReviewViewCapture? {
+    try await source.applyViewDemand(
+        .init(
+            subscriptionId: subscriptionId,
+            handle: handle,
+            scopeRevision: scopeRevision,
+            admissionSequence: admissionSequence ?? scopeRevision,
+            demand: reviewViewDemand(itemIds: itemIds),
+            expectedPublicationId: expectedPublicationId,
+            productAdmission: productAdmission
+        ))
 }

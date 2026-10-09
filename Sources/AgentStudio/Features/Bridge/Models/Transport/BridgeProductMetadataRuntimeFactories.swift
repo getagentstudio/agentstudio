@@ -2,8 +2,6 @@ import Foundation
 
 enum BridgeProductMetadataFrameFactoryError: Error, Equatable {
     case contentSessionMismatch
-    case subscriptionDataMismatch
-    case subscriptionDataSourceGenerationMismatch
 }
 
 struct BridgeProductMetadataStreamCorrelation: Equatable, Sendable {
@@ -39,10 +37,6 @@ extension BridgeProductMetadataStreamRequest {
 }
 
 struct BridgeProductSubscriptionFrameCorrelation: Equatable, Sendable {
-    let cursor: String?
-    let interestRevision: Int
-    let interestSha256: String
-    let sourceGeneration: Int
     let subscriptionId: String
     let subscriptionKind: BridgeProductSubscriptionKind
     let workerDerivationEpoch: Int
@@ -51,59 +45,24 @@ struct BridgeProductSubscriptionFrameCorrelation: Equatable, Sendable {
     var surface: BridgeProductSurface { registeredSurface }
 
     init(
-        cursor: String?,
-        interestRevision: Int,
-        interestSha256: String,
-        sourceGeneration: Int,
         subscriptionId: String,
         subscriptionKind: BridgeProductSubscriptionKind,
         workerDerivationEpoch: Int
     ) throws {
-        if let cursor {
-            try BridgeProductContractDecoding.validateOpaqueReference(cursor, codingPath: [])
-        }
-        try BridgeProductContractDecoding.validateNonnegative(
-            interestRevision,
-            name: "interestRevision",
-            codingPath: []
-        )
         registeredSurface = try BridgeProductMetadataApplicationRegistry.product.registration(
             for: subscriptionKind
         ).surface
-        try BridgeProductContractDecoding.validateSHA256(interestSha256, codingPath: [])
-        try BridgeProductContractDecoding.validateNonnegative(
-            sourceGeneration,
-            name: "sourceGeneration",
-            codingPath: []
-        )
         try BridgeProductContractDecoding.validateIdentifier(subscriptionId, codingPath: [])
         try BridgeProductContractDecoding.validateNonnegative(
             workerDerivationEpoch,
             name: "workerDerivationEpoch",
             codingPath: []
         )
-        self.cursor = cursor
-        self.interestRevision = interestRevision
-        self.interestSha256 = interestSha256
-        self.sourceGeneration = sourceGeneration
         self.subscriptionId = subscriptionId
         self.subscriptionKind = subscriptionKind
         self.workerDerivationEpoch = workerDerivationEpoch
     }
 
-    func replacingSourceGeneration(
-        with sourceGeneration: Int
-    ) throws -> Self {
-        try .init(
-            cursor: cursor,
-            interestRevision: interestRevision,
-            interestSha256: interestSha256,
-            sourceGeneration: sourceGeneration,
-            subscriptionId: subscriptionId,
-            subscriptionKind: subscriptionKind,
-            workerDerivationEpoch: workerDerivationEpoch
-        )
-    }
 }
 
 extension BridgeProductMetadataFrameIdentity {
@@ -118,10 +77,6 @@ extension BridgeProductMetadataFrameIdentity {
 
 extension BridgeProductSubscriptionFrameIdentity {
     init(correlation: BridgeProductSubscriptionFrameCorrelation, subscriptionSequence: Int) {
-        self.cursor = correlation.cursor
-        self.interestRevision = correlation.interestRevision
-        self.interestSha256 = correlation.interestSha256
-        self.sourceGeneration = correlation.sourceGeneration
         self.subscriptionId = correlation.subscriptionId
         self.subscriptionKind = correlation.subscriptionKind
         self.subscriptionSequence = subscriptionSequence
@@ -155,25 +110,6 @@ extension BridgeProductSubscriptionProgressIdentity {
     }
 }
 
-extension BridgeProductSubscriptionInterestsCommittedFrame {
-    init(
-        stream: BridgeProductMetadataStreamCorrelation,
-        streamSequence: Int,
-        subscription: BridgeProductSubscriptionFrameCorrelation,
-        subscriptionSequence: Int,
-        updateId: String
-    ) throws {
-        try BridgeProductContractDecoding.validateIdentifier(updateId, codingPath: [])
-        self.identity = try .init(
-            stream: stream,
-            streamSequence: streamSequence,
-            subscription: subscription,
-            subscriptionSequence: subscriptionSequence
-        )
-        self.updateId = updateId
-    }
-}
-
 extension BridgeProductMetadataStreamAcceptedFrame {
     init(
         stream: BridgeProductMetadataStreamCorrelation,
@@ -196,12 +132,6 @@ extension BridgeProductSubscriptionAcceptedFrame {
         streamSequence: Int,
         subscription: BridgeProductSubscriptionFrameCorrelation
     ) throws {
-        guard subscription.interestRevision == 0 else {
-            throw BridgeProductContractDecoding.invalidValue(
-                "subscription.accepted interest revision must be zero",
-                codingPath: []
-            )
-        }
         try BridgeProductContractDecoding.validatePositive(
             streamSequence,
             name: "streamSequence",
@@ -209,44 +139,6 @@ extension BridgeProductSubscriptionAcceptedFrame {
         )
         self.frameIdentity = .init(correlation: stream, streamSequence: streamSequence)
         self.subscriptionIdentity = .init(correlation: subscription, subscriptionSequence: 0)
-    }
-}
-
-extension BridgeProductSubscriptionDataFrame {
-    init(
-        stream: BridgeProductMetadataStreamCorrelation,
-        streamSequence: Int,
-        subscription: BridgeProductSubscriptionFrameCorrelation,
-        subscriptionSequence: Int,
-        operationCorrelationID: String? = nil,
-        data: BridgeProductSubscriptionData
-    ) throws {
-        guard subscription.subscriptionKind == data.subscriptionKind else {
-            throw BridgeProductMetadataFrameFactoryError.subscriptionDataMismatch
-        }
-        guard subscription.sourceGeneration == data.sourceGeneration else {
-            throw BridgeProductMetadataFrameFactoryError.subscriptionDataSourceGenerationMismatch
-        }
-        try BridgeProductContractDecoding.validatePositive(
-            streamSequence,
-            name: "streamSequence",
-            codingPath: []
-        )
-        try BridgeProductContractDecoding.validatePositive(
-            subscriptionSequence,
-            name: "subscriptionSequence",
-            codingPath: []
-        )
-        self.frameIdentity = .init(correlation: stream, streamSequence: streamSequence)
-        self.subscriptionIdentity = .init(
-            correlation: subscription,
-            subscriptionSequence: subscriptionSequence
-        )
-        self.operationCorrelationID = operationCorrelationID
-        if let operationCorrelationID {
-            try BridgeProductContractDecoding.validateSHA256(operationCorrelationID, codingPath: [])
-        }
-        self.data = data
     }
 }
 
@@ -446,44 +338,6 @@ extension BridgeProductMetadataFrame {
                 stream: stream,
                 streamSequence: streamSequence,
                 subscription: subscription
-            )
-        )
-    }
-
-    static func subscriptionData(
-        stream: BridgeProductMetadataStreamCorrelation,
-        streamSequence: Int,
-        subscription: BridgeProductSubscriptionFrameCorrelation,
-        subscriptionSequence: Int,
-        operationCorrelationID: String? = nil,
-        data: BridgeProductSubscriptionData
-    ) throws -> Self {
-        .subscriptionData(
-            try .init(
-                stream: stream,
-                streamSequence: streamSequence,
-                subscription: subscription,
-                subscriptionSequence: subscriptionSequence,
-                operationCorrelationID: operationCorrelationID,
-                data: data
-            )
-        )
-    }
-
-    static func subscriptionInterestsCommitted(
-        stream: BridgeProductMetadataStreamCorrelation,
-        streamSequence: Int,
-        subscription: BridgeProductSubscriptionFrameCorrelation,
-        subscriptionSequence: Int,
-        updateId: String
-    ) throws -> Self {
-        .subscriptionInterestsCommitted(
-            try .init(
-                stream: stream,
-                streamSequence: streamSequence,
-                subscription: subscription,
-                subscriptionSequence: subscriptionSequence,
-                updateId: updateId
             )
         )
     }

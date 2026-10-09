@@ -230,7 +230,7 @@ struct WorktreeBranchListingOpeningIntegrationTests {
             let branchListingCache = WorktreeBranchListingCache()
             let controller = CommandBarPanelController(
                 store: store,
-                octiconLoader: OcticonLoader(resourceRootURL: testAgentStudioResourceRootURL(from: #filePath)),
+                octiconLoader: makeTestOcticonLoader(),
                 repoCache: repoCache,
                 dispatcher: WorktreeBranchListingAppCommandDispatcher(),
                 quickOpenDirectoryHandler: { _, _ in },

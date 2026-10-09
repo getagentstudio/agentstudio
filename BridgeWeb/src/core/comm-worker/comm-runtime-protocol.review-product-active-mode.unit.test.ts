@@ -7,7 +7,6 @@ import {
 } from './bridge-comm-worker-protocol.js';
 import { registerBridgeCommWorkerRuntimePortProtocol } from './bridge-comm-worker-runtime-protocol.js';
 import type { BridgeCommWorkerPreparationDrain } from './bridge-comm-worker-runtime-protocol.js';
-import { reviewSnapshotWithContentEvent } from './bridge-comm-worker-runtime-protocol.review-product-fixtures.test-support.js';
 import {
 	drainBridgeCommWorkerPreparationUntilIdle,
 	drainUntilReviewAttemptCount,
@@ -17,7 +16,9 @@ import {
 	type PendingReviewContentAttempt,
 } from './bridge-comm-worker-runtime-protocol.review-product-preparation.test-support.js';
 import {
-	makeReviewMetadataDataFrame,
+	createReviewBatchSinkCapture,
+	makeIdleReviewMetadataSubscription,
+	makeReviewTestBatch,
 	makeReviewProductTransport,
 	type ReviewMetadataSubscription,
 } from './bridge-comm-worker-runtime-protocol.review-product-transport.test-support.js';
@@ -26,22 +27,15 @@ import {
 	createRecordingBridgeCommWorkerPort,
 	flushBridgeWorkerRuntimeContinuations,
 } from './bridge-comm-worker-runtime-protocol.test-support.js';
-import { BridgeProductBoundedAsyncQueue } from './bridge-product-async-queue.js';
-
-type ReviewMetadataDataFrame = ReturnType<typeof makeReviewMetadataDataFrame>;
 
 describe('Bridge comm worker Review product active viewer mode lifecycle', () => {
 	test('does not publish content that completes after File mode suspends Review', async () => {
-		const events = new BridgeProductBoundedAsyncQueue<ReviewMetadataDataFrame>(64);
+		const reviewBatches = createReviewBatchSinkCapture();
 		const scheduledDrains: BridgeCommWorkerPreparationDrain[] = [];
 		const deferredStreams = new Map<string, ReturnType<typeof createDeferredReviewContentStream>>();
-		const reviewSubscription: ReviewMetadataSubscription = {
-			cancel: async (): Promise<void> => {},
-			events,
-			subscriptionId: 'review-subscription-file-mode-late-content',
-			subscriptionKind: 'review.metadata',
-			update: async (): Promise<void> => {},
-		};
+		const reviewSubscription: ReviewMetadataSubscription = makeIdleReviewMetadataSubscription(
+			'review-subscription-file-mode-late-content',
+		);
 		const { dispatch, postedMessages } = createRecordingBridgeCommWorkerPort();
 		registerBridgeCommWorkerRuntimePortProtocol(dispatch.port, {
 			bridgeDemandRank: { lane: 'selected', priority: 0 },
@@ -51,7 +45,11 @@ describe('Bridge comm worker Review product active viewer mode lifecycle', () =>
 				deferredStreams.set(descriptor.descriptorId, deferredStream);
 				return deferredStream.stream;
 			},
-			productTransport: makeReviewProductTransport({ reviewSubscription, subscribedKinds: [] }),
+			productTransport: makeReviewProductTransport({
+				reviewSubscription,
+				subscribedKinds: [],
+				onBatchFrameSinks: reviewBatches.onBatchFrameSinks,
+			}),
 			schedulePreparationDrain: (drain): void => {
 				scheduledDrains.push(drain);
 			},
@@ -71,7 +69,13 @@ describe('Bridge comm worker Review product active viewer mode lifecycle', () =>
 			}),
 		);
 		await flushBridgeWorkerRuntimeContinuations();
-		events.push(makeReviewMetadataDataFrame(reviewSnapshotWithContentEvent));
+		await reviewBatches.install(
+			makeReviewTestBatch({
+				snapshotCause: 'open',
+				subscriptionId: reviewSubscription.subscriptionId,
+				withContent: true,
+			}),
+		);
 		await flushBridgeWorkerRuntimeContinuations();
 		dispatch.message(
 			encodeBridgeWorkerViewportCommand({
@@ -123,16 +127,12 @@ describe('Bridge comm worker Review product active viewer mode lifecycle', () =>
 	});
 
 	test('preserves pending Review content across accepted, stale, and repeated viewer mode updates', async () => {
-		const events = new BridgeProductBoundedAsyncQueue<ReviewMetadataDataFrame>(64);
+		const reviewBatches = createReviewBatchSinkCapture();
 		const scheduledDrains: BridgeCommWorkerPreparationDrain[] = [];
 		const attempts: PendingReviewContentAttempt[] = [];
-		const reviewSubscription: ReviewMetadataSubscription = {
-			cancel: async (): Promise<void> => {},
-			events,
-			subscriptionId: 'review-subscription-active-surface-lifecycle',
-			subscriptionKind: 'review.metadata',
-			update: async (): Promise<void> => {},
-		};
+		const reviewSubscription: ReviewMetadataSubscription = makeIdleReviewMetadataSubscription(
+			'review-subscription-active-surface-lifecycle',
+		);
 		const { dispatch } = createRecordingBridgeCommWorkerPort();
 		registerBridgeCommWorkerRuntimePortProtocol(dispatch.port, {
 			bridgeDemandRank: { lane: 'selected', priority: 0 },
@@ -143,7 +143,11 @@ describe('Bridge comm worker Review product active viewer mode lifecycle', () =>
 					attempts,
 					descriptorId: descriptor.descriptorId,
 				}),
-			productTransport: makeReviewProductTransport({ reviewSubscription, subscribedKinds: [] }),
+			productTransport: makeReviewProductTransport({
+				reviewSubscription,
+				subscribedKinds: [],
+				onBatchFrameSinks: reviewBatches.onBatchFrameSinks,
+			}),
 			schedulePreparationDrain: (drain): void => {
 				scheduledDrains.push(drain);
 			},
@@ -162,7 +166,13 @@ describe('Bridge comm worker Review product active viewer mode lifecycle', () =>
 			}),
 		);
 		await flushBridgeWorkerRuntimeContinuations();
-		events.push(makeReviewMetadataDataFrame(reviewSnapshotWithContentEvent));
+		await reviewBatches.install(
+			makeReviewTestBatch({
+				snapshotCause: 'open',
+				subscriptionId: reviewSubscription.subscriptionId,
+				withContent: true,
+			}),
+		);
 		await flushBridgeWorkerRuntimeContinuations();
 		await startBridgeCommWorkerPreparationDrains(
 			scheduledDrains,

@@ -6,10 +6,7 @@ import {
 	registerBridgeCommWorkerRuntimePortProtocol,
 	type BridgeCommWorkerPreparationDrain,
 } from './bridge-comm-worker-runtime-protocol.js';
-import {
-	makeReviewMetadataDataFrame,
-	type ReviewMetadataSubscription,
-} from './bridge-comm-worker-runtime-protocol.review-product-transport.test-support.js';
+import type { ReviewMetadataSubscription } from './bridge-comm-worker-runtime-protocol.review-product-transport.test-support.js';
 import {
 	activateBridgeCommWorkerFileViewerModeAndFlush,
 	activateBridgeCommWorkerReviewViewerMode,
@@ -19,18 +16,19 @@ import {
 	createRecordingBridgeCommWorkerPort,
 	flushBridgeWorkerRuntimeContinuations,
 	makeContentRequestDescriptor,
-	type FileMetadataDataFrame,
 	type FileMetadataSubscription,
 	type DeferredReviewContentStream,
 } from './bridge-comm-worker-runtime-protocol.test-support.js';
 import { BridgeProductBoundedAsyncQueue } from './bridge-product-async-queue.js';
+import type { BridgeProductBatchFrameSinks } from './bridge-product-batch-frame-router.js';
+import { bridgeProductReviewBatchRecordSchema } from './bridge-product-review-batch-record-contracts.js';
 import type {
 	BridgeProductPanePresentationFrame,
 	BridgeProductTransportSession,
 } from './bridge-product-transport.js';
+import { createTestMetadataReopenPort } from './bridge-product-view-reopen.test-support.js';
 import type { BridgeWorkerReviewContentRequestDescriptor } from './bridge-worker-contracts.js';
-
-type ReviewMetadataDataFrame = ReturnType<typeof makeReviewMetadataDataFrame>;
+import { makeReviewBatchInstallation } from './comm-runtime-protocol.file-product.test-support.js';
 
 const currentFileSourceConfiguration = {
 	cwdScope: null,
@@ -44,7 +42,7 @@ const currentFileSourceConfiguration = {
 describe('Bridge comm worker runtime protocol telemetry', () => {
 	test('records unavailable as the sole terminal outcome of initial File source discovery', async () => {
 		const telemetrySamples: BridgeTelemetrySample[] = [];
-		const reviewMetadataEvents = new BridgeProductBoundedAsyncQueue<ReviewMetadataDataFrame>(8);
+		const reviewMetadataEvents = new BridgeProductBoundedAsyncQueue<never>(8);
 		const { dispatch } = createRecordingBridgeCommWorkerPort();
 
 		registerBridgeCommWorkerRuntimePortProtocol(dispatch.port, {
@@ -91,7 +89,7 @@ describe('Bridge comm worker runtime protocol telemetry', () => {
 
 	test('maps available File source discovery to the accepted success result', async () => {
 		const telemetrySamples: BridgeTelemetrySample[] = [];
-		const reviewMetadataEvents = new BridgeProductBoundedAsyncQueue<ReviewMetadataDataFrame>(8);
+		const reviewMetadataEvents = new BridgeProductBoundedAsyncQueue<never>(8);
 		const { dispatch } = createRecordingBridgeCommWorkerPort();
 
 		registerBridgeCommWorkerRuntimePortProtocol(dispatch.port, {
@@ -128,7 +126,7 @@ describe('Bridge comm worker runtime protocol telemetry', () => {
 
 	test('records a failed terminal outcome when File source discovery throws', async () => {
 		const telemetrySamples: BridgeTelemetrySample[] = [];
-		const reviewMetadataEvents = new BridgeProductBoundedAsyncQueue<ReviewMetadataDataFrame>(8);
+		const reviewMetadataEvents = new BridgeProductBoundedAsyncQueue<never>(8);
 		const { dispatch } = createRecordingBridgeCommWorkerPort();
 
 		registerBridgeCommWorkerRuntimePortProtocol(dispatch.port, {
@@ -220,8 +218,9 @@ describe('Bridge comm worker runtime protocol telemetry', () => {
 	test('does not report a stale selected drop when an in-flight preparation is demoted', async () => {
 		const telemetrySamples: BridgeTelemetrySample[] = [];
 		const scheduledDrains: BridgeCommWorkerPreparationDrain[] = [];
-		const reviewMetadataEvents = new BridgeProductBoundedAsyncQueue<ReviewMetadataDataFrame>(8);
+		const reviewMetadataEvents = new BridgeProductBoundedAsyncQueue<never>(8);
 		const { dispatch, postedMessages } = createRecordingBridgeCommWorkerPort();
+		const batchSinks: { current: BridgeProductBatchFrameSinks | null } = { current: null };
 		const deferredStreamsByDescriptorId = new Map<string, DeferredReviewContentStream>();
 		const baseDescriptor = makeContentRequestDescriptor({
 			itemId: 'item-1',
@@ -243,6 +242,9 @@ describe('Bridge comm worker runtime protocol telemetry', () => {
 			},
 			productTransport: makeTelemetryReviewProductTransport({
 				deferredStreamsByDescriptorId,
+				onBatchFrameSinks: (sinks): void => {
+					batchSinks.current = sinks;
+				},
 				reviewMetadataEvents,
 			}),
 			schedulePreparationDrain: (drain: BridgeCommWorkerPreparationDrain): void => {
@@ -256,9 +258,52 @@ describe('Bridge comm worker runtime protocol telemetry', () => {
 		});
 		activateBridgeCommWorkerReviewViewerMode(dispatch, 'stale-selected-telemetry');
 		await flushBridgeWorkerRuntimeContinuations();
-		reviewMetadataEvents.push(
-			makeReviewMetadataDataFrame(telemetryReviewSnapshotEvent([baseDescriptor, headDescriptor])),
-		);
+		if (batchSinks.current === null) throw new Error('Review batch sink was not installed.');
+		const baseSource = reviewContentSourceFromDescriptor(baseDescriptor);
+		const headSource = reviewContentSourceFromDescriptor(headDescriptor);
+		const installation = makeReviewBatchInstallation('open', 'telemetry-review-subscription');
+		await batchSinks.current.install({
+			...installation,
+			records: installation.records.map((record) => {
+				const value = bridgeProductReviewBatchRecordSchema.parse(record.value);
+				if (value.recordKind !== 'item') return record;
+				return {
+					...record,
+					key: 'item-1',
+					value: bridgeProductReviewBatchRecordSchema.parse({
+						...value,
+						itemId: 'item-1',
+						contentByRole: {
+							...value.contentByRole,
+							base: {
+								state: 'available',
+								source: {
+									...baseSource,
+									packageId: 'review-package-1',
+									reviewGeneration: 7,
+									sourceIdentity: 'review-query-1',
+								},
+							},
+							head: {
+								state: 'available',
+								source: {
+									...headSource,
+									packageId: 'review-package-1',
+									reviewGeneration: 7,
+									sourceIdentity: 'review-query-1',
+								},
+							},
+						},
+						contentHashesByRole: {
+							...value.contentHashesByRole,
+							base: baseDescriptor.contentDigest.value,
+							head: headDescriptor.contentDigest.value,
+						},
+						extentByRole: { ...value.extentByRole, base: 1, head: 1 },
+					}),
+				};
+			}),
+		});
 		await flushBridgeWorkerRuntimeContinuations();
 
 		dispatch.message(
@@ -305,27 +350,28 @@ describe('Bridge comm worker runtime protocol telemetry', () => {
 function makeTelemetryReviewProductTransport(props: {
 	readonly deferredStreamsByDescriptorId: Map<string, DeferredReviewContentStream>;
 	readonly fileSourceDiscovery?: () => Promise<unknown>;
-	readonly reviewMetadataEvents: BridgeProductBoundedAsyncQueue<ReviewMetadataDataFrame>;
+	readonly onBatchFrameSinks?: (sinks: BridgeProductBatchFrameSinks) => void;
+	readonly reviewMetadataEvents: BridgeProductBoundedAsyncQueue<never>;
 }): BridgeProductTransportSession {
 	let fileWorkerDerivationEpoch = 0;
 	let reviewWorkerDerivationEpoch = 0;
-	const fileMetadataEvents = new BridgeProductBoundedAsyncQueue<FileMetadataDataFrame>(8);
+	let nextScopeRevision = 0;
+	const fileMetadataEvents = new BridgeProductBoundedAsyncQueue<never>(8);
 	const fileSubscription: FileMetadataSubscription = {
 		cancel: async (): Promise<void> => {},
 		events: fileMetadataEvents,
 		subscriptionId: 'telemetry-file-subscription',
 		subscriptionKind: 'file.metadata',
-		update: async (): Promise<void> => {},
 	};
 	const reviewSubscription: ReviewMetadataSubscription = {
 		cancel: async (): Promise<void> => {},
 		events: props.reviewMetadataEvents,
 		subscriptionId: 'telemetry-review-subscription',
 		subscriptionKind: 'review.metadata',
-		update: async (): Promise<void> => {},
 	};
 	return {
-		bumpWorkerDerivationEpoch: (surface): number => {
+		...createTestMetadataReopenPort(),
+		advanceWorkerDerivationEpoch: (surface): number => {
 			if (surface === 'file') fileWorkerDerivationEpoch += 1;
 			if (surface === 'review') reviewWorkerDerivationEpoch += 1;
 			return surface === 'review' ? reviewWorkerDerivationEpoch : fileWorkerDerivationEpoch;
@@ -352,6 +398,11 @@ function makeTelemetryReviewProductTransport(props: {
 			// oxlint-disable-next-line typescript/no-unsafe-type-assertion -- The content-kind guard above closes this test transport to Review streams.
 			return deferredStream.stream as never;
 		},
+		setBatchFrameSinks: (sinks): void => props.onBatchFrameSinks?.(sinks),
+		setViewScopeForSubscription: async () => ({
+			kind: 'accepted',
+			scopeRevision: ++nextScopeRevision,
+		}),
 		setPanePresentationFrameSink: (
 			sink: (frame: BridgeProductPanePresentationFrame) => void,
 		): void => {
@@ -387,182 +438,43 @@ function makeTelemetryReviewProductTransport(props: {
 	};
 }
 
-function telemetryReviewSnapshotEvent(
-	descriptors: readonly BridgeWorkerReviewContentRequestDescriptor[],
-): Parameters<typeof makeReviewMetadataDataFrame>[0] {
-	const descriptorByRole = new Map(descriptors.map((descriptor) => [descriptor.role, descriptor]));
-	const baseDescriptor = requireReviewDescriptor(descriptorByRole.get('base'));
-	const headDescriptor = requireReviewDescriptor(descriptorByRole.get('head'));
+function reviewContentSourceFromDescriptor(
+	descriptor: BridgeWorkerReviewContentRequestDescriptor,
+): Pick<
+	BridgeWorkerReviewContentRequestDescriptor,
+	| 'contentDigest'
+	| 'contentKind'
+	| 'descriptorId'
+	| 'encoding'
+	| 'endpointId'
+	| 'handleId'
+	| 'isBinary'
+	| 'itemId'
+	| 'language'
+	| 'mimeType'
+	| 'packageId'
+	| 'reviewGeneration'
+	| 'role'
+	| 'sourceIdentity'
+	| 'wholeByteLength'
+> {
 	return {
-		baseEndpoint: {
-			createdAtUnixMilliseconds: 1,
-			endpointId: 'base-endpoint',
-			kind: 'gitRef',
-			label: 'base',
-			providerIdentity: 'base-provider',
-			repoId: 'repo-1',
-			worktreeId: 'worktree-1',
-		},
-		contentSources: descriptors.map((descriptor) => ({
-			contentDigest: descriptor.contentDigest,
-			contentKind: descriptor.contentKind,
-			descriptorId: descriptor.descriptorId,
-			encoding: descriptor.encoding,
-			endpointId: descriptor.endpointId,
-			handleId: descriptor.handleId,
-			isBinary: descriptor.isBinary,
-			itemId: descriptor.itemId,
-			language: descriptor.language,
-			mimeType: descriptor.mimeType,
-			packageId: descriptor.packageId,
-			reviewGeneration: descriptor.reviewGeneration,
-			role: descriptor.role,
-			sourceIdentity: descriptor.sourceIdentity,
-			wholeByteLength: descriptor.wholeByteLength,
-		})),
-		eventKind: 'review.snapshot',
-		operationCorrelationId: null,
-		extentFacts: [
-			{ contentRole: 'base', itemId: 'item-1', lineCount: 1 },
-			{ contentRole: 'head', itemId: 'item-1', lineCount: 1 },
-		],
-		generation: baseDescriptor.reviewGeneration,
-		headEndpoint: {
-			createdAtUnixMilliseconds: 1,
-			endpointId: 'head-endpoint',
-			kind: 'workingTree',
-			label: 'head',
-			providerIdentity: 'head-provider',
-			repoId: 'repo-1',
-			worktreeId: 'worktree-1',
-		},
-		itemMetadata: [
-			{
-				additions: 1,
-				deletions: 1,
-				basePath: 'Sources/App/item-1.swift',
-				changeKind: 'modified',
-				contentDescriptorIdsByRole: {
-					base: baseDescriptor.descriptorId,
-					head: headDescriptor.descriptorId,
-				},
-				contentHashesByRole: {
-					base: baseDescriptor.contentDigest.value,
-					head: headDescriptor.contentDigest.value,
-				},
-				contentRoles: ['base', 'head'],
-				extension: 'swift',
-				fileClass: 'source',
-				headPath: 'Sources/App/item-1.swift',
-				isHiddenByDefault: false,
-				itemId: 'item-1',
-				language: 'swift',
-				mimeTypes: ['text/plain'],
-				provenance: { agentSessionIds: [], operationIds: [], promptIds: [] },
-				reviewPriority: 'normal',
-				reviewState: 'unreviewed',
-			},
-			{
-				additions: 1,
-				deletions: 1,
-				basePath: 'Sources/App/item-2.swift',
-				changeKind: 'modified',
-				contentDescriptorIdsByRole: {},
-				contentHashesByRole: {},
-				contentRoles: [],
-				extension: 'swift',
-				fileClass: 'source',
-				headPath: 'Sources/App/item-2.swift',
-				isHiddenByDefault: false,
-				itemId: 'item-2',
-				language: 'swift',
-				mimeTypes: ['text/plain'],
-				provenance: { agentSessionIds: [], operationIds: [], promptIds: [] },
-				reviewPriority: 'normal',
-				reviewState: 'unreviewed',
-			},
-		],
-		itemWindow: {
-			finalWindow: true,
-			itemCount: 2,
-			startIndex: 0,
-			totalItemCount: 2,
-		},
-		packageId: baseDescriptor.packageId,
-		presentationRevision: 1,
-		publicationId: '00000000-0000-7000-8000-000000000001',
-		query: {
-			baseEndpointId: 'base-endpoint',
-			comparisonSemantics: 'threeDot',
-			fileTarget: null,
-			grouping: { kind: 'folder' },
-			headEndpointId: 'head-endpoint',
-			pathScope: [],
-			provenanceFilter: {
-				agentSessionIds: [],
-				operationIds: [],
-				paneIds: [],
-				promptIds: [],
-				sourceKinds: [],
-			},
-			queryId: 'query-1',
-			queryKind: 'compare',
-			repoId: 'repo-1',
-			viewFilter: {
-				changeKinds: [],
-				excludedExtensions: [],
-				excludedFileClasses: [],
-				excludedPathGlobs: [],
-				includedExtensions: [],
-				includedFileClasses: [],
-				includedPathGlobs: [],
-				reviewStates: [],
-				showBinaryFiles: true,
-				showHiddenFiles: false,
-				showLargeFiles: true,
-			},
-			worktreeId: 'worktree-1',
-		},
-		revision: 1,
-		reviewComparison: null,
-		sourceIdentity: baseDescriptor.sourceIdentity,
-		summary: {
-			additions: 2,
-			deletions: 2,
-			filesChanged: 2,
-			hiddenFileCount: 0,
-			visibleFileCount: 2,
-		},
-		treeRows: [
-			{
-				depth: 0,
-				isDirectory: false,
-				itemId: 'item-1',
-				path: 'Sources/App/item-1.swift',
-				rowId: 'row-item-1',
-			},
-			{
-				depth: 0,
-				isDirectory: false,
-				itemId: 'item-2',
-				path: 'Sources/App/item-2.swift',
-				rowId: 'row-item-2',
-			},
-		],
-		treeWindow: {
-			finalWindow: true,
-			rowCount: 2,
-			startIndex: 0,
-			totalRowCount: 2,
-		},
+		contentDigest: descriptor.contentDigest,
+		contentKind: descriptor.contentKind,
+		descriptorId: descriptor.descriptorId,
+		encoding: descriptor.encoding,
+		endpointId: descriptor.endpointId,
+		handleId: descriptor.handleId,
+		isBinary: descriptor.isBinary,
+		itemId: descriptor.itemId,
+		language: descriptor.language,
+		mimeType: descriptor.mimeType,
+		packageId: descriptor.packageId,
+		reviewGeneration: descriptor.reviewGeneration,
+		role: descriptor.role,
+		sourceIdentity: descriptor.sourceIdentity,
+		wholeByteLength: descriptor.wholeByteLength,
 	};
-}
-
-function requireReviewDescriptor(
-	descriptor: BridgeWorkerReviewContentRequestDescriptor | undefined,
-): BridgeWorkerReviewContentRequestDescriptor {
-	if (descriptor === undefined) throw new Error('Expected Review content descriptor.');
-	return descriptor;
 }
 
 async function drainScheduledPreparation(

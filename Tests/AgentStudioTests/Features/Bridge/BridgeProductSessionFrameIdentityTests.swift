@@ -218,7 +218,7 @@ struct BridgeProductSessionFrameIdentityTests {
             productAdmission: harness.productAdmission,
             build: { _ in producerRegistryContentOpeningFrame(for: request) }
         )
-        let delivery = try #require(
+        _ = try #require(
             await contentFrameDelivery(
                 for: lease,
                 from: harness.session,
@@ -277,8 +277,7 @@ struct BridgeProductSessionFrameIdentityTests {
         let afterReplay = await harness.session.producerSnapshot()
 
         // Assert
-        #expect(delivery.receipt.requiresWorkerObservation)
-        #expect(beforeObservation.inFlightFrameReceiptCount == 1)
+        #expect(beforeObservation.inFlightFrameReceiptCount == 0)
         #expect(!foreignRequestAccepted)
         #expect(!foreignLeaseAccepted)
         #expect(!foreignPaneAccepted)
@@ -288,12 +287,6 @@ struct BridgeProductSessionFrameIdentityTests {
         #expect(exactAccepted)
         #expect(exactReplayAccepted)
         #expect(afterReplay.inFlightFrameReceiptCount == 0)
-        #expect(
-            await harness.session.waitUntilProducerFrameObserved(
-                delivery.receipt,
-                productAdmission: harness.productAdmission
-            )
-        )
         try await closeProducer(lease, in: harness.session)
         let postRetirementAccepted =
             await harness.session.acknowledgeContentFrameObservation(
@@ -301,6 +294,59 @@ struct BridgeProductSessionFrameIdentityTests {
                 productAdmission: harness.productAdmission
             )
         #expect(!postRetirementAccepted)
+    }
+
+    @Test("terminal content needs no worker ACK and a late ACK is an unknown read")
+    func terminalContentReleasesReadBeforeLateAcknowledgement() async throws {
+        let harness = try await FrameIdentitySessionHarness.opened()
+        let operation = HeldStep<BridgeProductProducerLease>("terminalOperation")
+        let request = try fileContentRequest(identitySuffix: "late-terminal-ack")
+        let registration = await harness.session.registerContentProducer(
+            request: request,
+            productAdmission: harness.productAdmission
+        ) { lease in
+            try? await operation.arrive(lease)
+        }
+        let lease = try #require(registration.acceptedLease)
+        _ = try await operation.firstArrival()
+        _ = try await harness.session.enqueueRequiredProducerOpeningFrame(
+            for: lease,
+            productAdmission: harness.productAdmission,
+            build: { _ in producerRegistryContentOpeningFrame(for: request) }
+        )
+        let opening = try #require(
+            await contentFrameDelivery(
+                for: lease,
+                from: harness.session,
+                productAdmission: harness.productAdmission
+            ))
+        #expect(opening.frame.sequence == 0)
+        #expect(
+            await harness.session.acknowledgeContentFrameObservation(
+                try contentFrameAcknowledgement(for: request.admission, contentSequence: 0),
+                productAdmission: harness.productAdmission
+            ))
+        _ = try await harness.session.enqueueTerminalProducerFrame(
+            for: lease,
+            productAdmission: harness.productAdmission,
+            build: { sequence in try producerRegistryContentTerminalFrame(sequence: sequence) }
+        )
+        let terminal = try #require(
+            await contentFrameDelivery(
+                for: lease,
+                from: harness.session,
+                productAdmission: harness.productAdmission
+            ))
+        #expect(terminal.frame.sequence == 1)
+
+        try await closeProducer(lease, in: harness.session)
+
+        #expect((await harness.session.producerSnapshot()).hasZeroResidue)
+        #expect(
+            await harness.session.contentAcknowledgementDisposition(
+                try contentFrameAcknowledgement(for: request.admission, contentSequence: 1),
+                productAdmission: harness.productAdmission
+            ) == .refused(.unknownRead))
     }
 
     @Test("content observation releases only its matching concurrent producer")
@@ -337,14 +383,14 @@ struct BridgeProductSessionFrameIdentityTests {
             productAdmission: harness.productAdmission,
             build: { _ in producerRegistryContentOpeningFrame(for: secondRequest) }
         )
-        let firstDelivery = try #require(
+        _ = try #require(
             await contentFrameDelivery(
                 for: firstLease,
                 from: harness.session,
                 productAdmission: harness.productAdmission
             )
         )
-        let secondDelivery = try #require(
+        _ = try #require(
             await contentFrameDelivery(
                 for: secondLease,
                 from: harness.session,
@@ -366,21 +412,9 @@ struct BridgeProductSessionFrameIdentityTests {
 
         // Assert
         #expect(firstAccepted)
-        #expect(afterFirst.inFlightFrameReceiptCount == 1)
+        #expect(afterFirst.inFlightFrameReceiptCount == 0)
         #expect(secondAccepted)
         #expect(afterSecond.inFlightFrameReceiptCount == 0)
-        #expect(
-            await harness.session.waitUntilProducerFrameObserved(
-                firstDelivery.receipt,
-                productAdmission: harness.productAdmission
-            )
-        )
-        #expect(
-            await harness.session.waitUntilProducerFrameObserved(
-                secondDelivery.receipt,
-                productAdmission: harness.productAdmission
-            )
-        )
         try await closeProducer(firstLease, in: harness.session)
         try await closeProducer(secondLease, in: harness.session)
     }
@@ -463,7 +497,7 @@ private struct FrameIdentitySessionHarness {
         let response = try BridgeProductControlResponse.workerSessionAccepted(
             correlating: request
         )
-        _ = try await session.completeControl(
+        _ = try await session.completeAdmittedControl(
             token: token,
             exactResponseBytes: try JSONEncoder().encode(response)
         )
@@ -595,6 +629,10 @@ private func contentFrameDelivery(
     else {
         return nil
     }
+    _ = await session.acknowledgeProducerFrameConsumed(
+        delivery.receipt,
+        productAdmission: productAdmission
+    )
     return delivery
 }
 
@@ -609,11 +647,10 @@ private func contentFrameAcknowledgement(
     let data = try JSONSerialization.data(
         withJSONObject: [
             "contentRequestId": contentRequestId ?? admission.contentRequestId,
-            "contentSequence": contentSequence,
-            "kind": "stream.frameObserved",
+            "receivedThroughContentSequence": contentSequence,
+            "kind": "content.acknowledge",
             "leaseId": leaseId ?? admission.leaseId,
             "paneSessionId": paneSessionId ?? admission.paneSessionId,
-            "streamKind": "content",
             "wireVersion": admission.wireVersion,
             "workerInstanceId": workerInstanceId ?? admission.workerInstanceId,
         ],

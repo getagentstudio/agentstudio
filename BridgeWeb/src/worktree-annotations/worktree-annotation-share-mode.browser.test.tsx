@@ -89,6 +89,53 @@ describe('worktree annotation Annotations presentation', () => {
 		expect(getComputedStyle(loadingSurface).backgroundColor).not.toBe('rgba(0, 0, 0, 0)');
 	});
 
+	test('shows saved export actions and routes folder choices through the owned menu', async () => {
+		const onChangeFolder = vi.fn();
+		const onExportTo = vi.fn<(scope: WorktreeAnnotationShareScope) => void>();
+		const onReveal = vi.fn();
+		const rendered = await render(
+			<Drawer>
+				<WorktreeAnnotationShareModeRow
+					error="The export folder no longer exists."
+					errorCanChooseFolder
+					history={null}
+					isOutputPending={false}
+					membership={{ allCount: 1, kind: 'ready', pendingCount: 1 }}
+					onChangeFolder={onChangeFolder}
+					onCopy={vi.fn()}
+					onDone={vi.fn()}
+					onExport={vi.fn()}
+					onExportTo={onExportTo}
+					onReveal={onReveal}
+					onScopeChange={vi.fn()}
+					savedFilename="AgentStudio Review Comments 2026-09-29.json"
+					scope="all"
+				/>
+			</Drawer>,
+		);
+
+		await expect.element(rendered.getByRole('status')).toHaveTextContent('Saved to AgentStudio');
+		await performBrowserAction(() =>
+			rendered.getByRole('button', { name: 'Reveal in Finder' }).click(),
+		);
+		await performBrowserAction(() =>
+			rendered.getByRole('button', { name: 'Choose folder…' }).click(),
+		);
+		await performBrowserAction(() =>
+			rendered.getByRole('button', { name: 'Export options' }).click(),
+		);
+		await performBrowserAction(() =>
+			rendered.getByRole('menuitem', { name: 'Export to…' }).click(),
+		);
+		expect(onReveal).toHaveBeenCalledOnce();
+		expect(onChangeFolder).toHaveBeenCalledOnce();
+		expect(onExportTo).toHaveBeenCalledWith('all');
+		await page.screenshot({
+			element: rendered.getByRole('region', { name: 'Annotations' }).element(),
+			path: '../../../tmp/bridgeweb-n9-export-drawer.png',
+		});
+	});
+
 	test('opens one floating Pending/All shelf without selection UI', async () => {
 		const onCopy = vi.fn<(scope: WorktreeAnnotationShareScope) => void>();
 		const onExport = vi.fn<(scope: WorktreeAnnotationShareScope) => void>();
@@ -295,12 +342,29 @@ async function performBrowserAction(action: () => Promise<void> | void): Promise
 	const shelfBeforeAction = document.querySelector<HTMLElement>(
 		'[data-testid="worktree-annotation-share-shelf"]',
 	);
+	const menuBeforeAction = document.querySelector<HTMLElement>(
+		'[data-slot="dropdown-menu-content"]',
+	);
 	await act(async (): Promise<void> => {
 		await action();
 		await Promise.resolve();
 		await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
 		await settleClosingShareShelf(shelfBeforeAction);
+		await settleClosingDropdownMenu(menuBeforeAction);
 	});
+}
+
+async function settleClosingDropdownMenu(menu: HTMLElement | null): Promise<void> {
+	if (menu === null || !menu.hasAttribute('data-closed')) return;
+	await Promise.all(
+		menu.getAnimations({ subtree: true }).map(async (animation): Promise<void> => {
+			try {
+				await animation.finished;
+			} catch {
+				// A closing menu can replace its preceding animation.
+			}
+		}),
+	);
 }
 
 async function settleClosingShareShelf(shelf: HTMLElement | null): Promise<void> {

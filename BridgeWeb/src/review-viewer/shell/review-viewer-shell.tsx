@@ -1,12 +1,19 @@
 import { useEffect, useRef, type ReactElement, type ReactNode, type RefObject } from 'react';
 
 import type { BridgeFileTreeFilterCandidate } from '../../app/bridge-app-control.js';
+import { BridgePaneFailureSummarySlot } from '../../app/bridge-pane-failure-summary-slot.js';
+import type { BridgePaneReloadPort } from '../../app/bridge-pane-reload-port.js';
+import type {
+	BridgeRegionSurfaceStatus,
+	BridgeRegionFailure,
+} from '../../app/bridge-region-presentation-state.js';
+import { BridgeRegionPresentation } from '../../app/bridge-region-presentation.js';
 import {
 	bridgeReviewComparisonPaneIsLoading,
 	type BridgeReviewComparisonPaneState,
 } from '../../app/bridge-review-comparison-pane-state.js';
-import { BridgeReviewComparisonStatusBanner } from '../../app/bridge-review-comparison-status-banner.js';
 import type { BridgeReviewComparisonTarget } from '../../app/bridge-review-comparison-target.js';
+import { bridgeReviewRegionDisplaySpec } from '../../app/bridge-review-region-display-spec.js';
 import { BridgeViewerContentHeader } from '../../app/bridge-viewer-content-header.js';
 import {
 	BridgeViewerContextPanelProvider,
@@ -26,8 +33,13 @@ import type { BridgeViewerSearchError } from '../../app/bridge-viewer-search-sta
 import { cn } from '../../app/class-name.js';
 import { useBridgeViewerSearchFocusRestoration } from '../../app/use-bridge-viewer-search-focus-restoration.js';
 import type { BridgeMainCodeViewItem } from '../../core/comm-worker/bridge-main-render-snapshot-store.js';
-import type { BridgeWorkerPanelChromePatchPayload } from '../../core/comm-worker/bridge-worker-contracts.js';
+import type { BridgeMainPanelChromeSlice } from '../../core/comm-worker/bridge-main-review-comparison-presentation.js';
 import { compileBridgeFileTreeSearchPattern } from '../../core/models/bridge-file-tree-search.js';
+import {
+	bridgeReviewReadyRegionPresentation,
+	bridgeReviewRegionSurfaceStatus,
+	bridgeReviewSelectedContentReadFailure,
+} from '../../features/review/bridge-review-region-presentation.js';
 import type { ReviewTreeRowMetadata } from '../../features/review/models/review-protocol-models.js';
 import {
 	type BridgeReviewItemRegistry,
@@ -39,7 +51,6 @@ import type {
 } from '../../foundation/review-package/bridge-review-package.js';
 import type { BridgeTelemetryRecorder } from '../../foundation/telemetry/bridge-telemetry-recorder.js';
 import type { BridgeTraceContext } from '../../foundation/telemetry/bridge-trace-context.js';
-import { WorktreeAnnotationRecoveryWarning } from '../../worktree-annotations/worktree-annotation-recovery-warning.js';
 import { BridgeReviewFacetMenu } from '../chrome/bridge-review-facet-menu.js';
 import type { BridgeCodeViewItemPresentation } from '../code-view/bridge-code-view-materialization.js';
 import type { BridgeReviewCodeViewOptions } from '../code-view/bridge-code-view-options.js';
@@ -62,6 +73,11 @@ import { BridgeReviewTreesPanel } from '../trees/bridge-trees-panel.js';
 import type { BridgeReviewTreeSelectionRevealRequest } from '../trees/bridge-trees-panel.js';
 
 export interface ReviewViewerShellProps {
+	readonly paneReloadPort?: BridgePaneReloadPort | undefined;
+	readonly railVisible?: boolean | undefined;
+	readonly onRetryRead?: (() => void) | undefined;
+	readonly regionSurfaceStatus?: BridgeRegionSurfaceStatus;
+	readonly onRetryRegion?: () => void;
 	readonly annotationReveal?: BridgeCodeViewAnnotationReveal | null;
 	readonly onAnnotationRevealComplete?: (requestId: number) => void;
 	readonly activationCause?: 'context_switcher' | 'native_request' | 'review_file_corner';
@@ -81,12 +97,13 @@ export interface ReviewViewerShellProps {
 	readonly selectedContentPaintTelemetryStart?: SelectedContentPaintTelemetryStart | null;
 	readonly onSelectItem: (itemId: string) => void;
 	readonly onHoveredItemIdChange?: (itemId: string | null) => void;
-	readonly panelChromeSlice: BridgeWorkerPanelChromePatchPayload;
+	readonly panelChromeSlice: BridgeMainPanelChromeSlice;
 	readonly selectedContentText?: string | null;
 	readonly selectedCodeViewItem?: BridgeMainCodeViewItem | null;
 	readonly selectionCommitDurationMilliseconds?: number | null;
 	readonly selectedItemPresentation?: BridgeCodeViewItemPresentation | null;
 	readonly selectedContentUnavailablePath?: string | null;
+	readonly selectedContentFailure?: BridgeRegionFailure | null;
 	readonly selectedCanvasLoadingReason?: BridgeReviewCanvasLoadingReason | null;
 	readonly lastSelectedDemandTelemetry?: ReviewContentDemandTelemetry | null;
 	readonly lastVisibleDemandTelemetry?: ReviewContentDemandTelemetry | null;
@@ -128,7 +145,6 @@ export interface ReviewViewerShellProps {
 	readonly visibleCodeViewItems?: readonly BridgeMainCodeViewItem[];
 	readonly viewerContextSwitcher?: ReactNode;
 	readonly viewerHeaderControls?: ReactNode;
-	readonly reviewRefreshStatusText?: string | null;
 }
 
 export type BridgeReviewCanvasLoadingReason = 'content';
@@ -194,13 +210,7 @@ export function renderReviewViewerShellPresentation(presentation: {
 	const projectionMode = props.projectionMode ?? { kind: 'normalReview' };
 	const gitStatusFilter = props.gitStatusFilter ?? 'all';
 	const categoryFilter = props.categoryFilter ?? 'all';
-	const comparisonStatusText =
-		props.comparisonPaneState.kind === 'settled' &&
-		props.isActive === true &&
-		props.panelChromeSlice.isLoading === true
-			? (props.panelChromeSlice.message ?? null)
-			: null;
-	const statusText = props.reviewRefreshStatusText ?? comparisonStatusText;
+	const statusText = null;
 	const comparisonIsLoading = bridgeReviewComparisonPaneIsLoading(props.comparisonPaneState);
 	const treeSearchText = props.treeSearchText ?? '';
 	const treeSearchMode = props.treeSearchMode ?? { kind: 'text' };
@@ -243,6 +253,56 @@ export function renderReviewViewerShellPresentation(presentation: {
 	const selectedDemandTelemetry = props.lastSelectedDemandTelemetry ?? null;
 	const visibleDemandTelemetry = props.lastVisibleDemandTelemetry ?? null;
 	const hasChangedFiles = props.reviewPackage.orderedItemIds.length > 0;
+	const surface =
+		props.regionSurfaceStatus ??
+		bridgeReviewRegionSurfaceStatus({
+			comparisonPaneState: props.comparisonPaneState,
+			isActive: props.isActive ?? true,
+		});
+	const regionInput = {
+		identity: `${props.reviewPackage.packageId}:${props.reviewPackage.reviewGeneration}:${props.reviewPackage.revision}`,
+		hasChangedFiles,
+		hasSelectedItem: props.selectedItemId !== null,
+		selectedContentLoading: props.selectedCanvasLoadingReason === 'content',
+		selectedContentFailure:
+			props.selectedContentUnavailablePath == null
+				? null
+				: (props.selectedContentFailure ?? bridgeReviewSelectedContentReadFailure('unavailable')),
+		surface,
+	};
+	const contentPresentation = bridgeReviewReadyRegionPresentation({
+		...regionInput,
+		region: 'content',
+	});
+	const treePresentation = bridgeReviewReadyRegionPresentation({ ...regionInput, region: 'tree' });
+	const retryTarget =
+		props.comparisonPaneState.kind === 'failedPrevious' ||
+		props.comparisonPaneState.kind === 'failedInitial'
+			? props.comparisonPaneState.retryTarget
+			: null;
+	const retrySurface =
+		props.onRetryRegion ??
+		((): void => {
+			if (retryTarget !== null) props.onRetryComparison(retryTarget);
+		});
+	const failureSummary = (
+		<BridgePaneFailureSummarySlot
+			active={props.isActive}
+			paneReloadPort={props.paneReloadPort}
+			entries={[
+				{ part: 'review', state: treePresentation, retry: retrySurface },
+				{
+					part: 'review',
+					state: contentPresentation,
+					fileName: selectedDisplayPath,
+					retry:
+						contentPresentation.kind === 'failed' && contentPresentation.failure.scope === 'read'
+							? props.onRetryRead
+							: retrySurface,
+				},
+			]}
+		/>
+	);
 
 	return (
 		<main
@@ -377,6 +437,8 @@ export function renderReviewViewerShellPresentation(presentation: {
 			tabIndex={-1}
 		>
 			<BridgeViewerResizableRailLayout
+				railVisible={props.railVisible}
+				failureSummary={failureSummary}
 				autosaveId="bridge-viewer-right-rail"
 				// The loaded review shell keeps its resizable frame mounted across activation so the
 				// CodeView and tree are never remounted when Review goes hidden.
@@ -395,12 +457,7 @@ export function renderReviewViewerShellPresentation(presentation: {
 								statusText={statusText}
 								title={contentHeaderTitle}
 							/>
-							<div data-testid="bridge-review-comparison-status-slot">
-								<BridgeReviewComparisonStatusBanner
-									onRetry={props.onRetryComparison}
-									state={props.comparisonPaneState}
-								/>
-							</div>
+							<div data-testid="bridge-review-comparison-status-slot"></div>
 							<BridgeViewerContextPanelViewport testId="bridge-review-context-panel-viewport">
 								<section
 									aria-label="Code canvas"
@@ -412,72 +469,88 @@ export function renderReviewViewerShellPresentation(presentation: {
 									data-testid="bridge-review-canvas"
 									inert={comparisonIsLoading || undefined}
 								>
-									{!hasChangedFiles ? (
-										<BridgeReviewEmptyCanvas />
-									) : props.selectedContentUnavailablePath !== undefined &&
-									  props.selectedContentUnavailablePath !== null ? (
-										<BridgeReviewContentUnavailableState
-											sourcePath={props.selectedContentUnavailablePath}
-										/>
-									) : (
-										<BridgeCodeViewPanel
-											annotationReveal={props.annotationReveal ?? null}
-											{...(props.onAnnotationRevealComplete === undefined
-												? {}
-												: { onAnnotationRevealComplete: props.onAnnotationRevealComplete })}
-											presentationPositionKey={props.presentationPositionKey}
-											projection={projection}
-											renderFulfillmentCoordinator={props.renderFulfillmentCoordinator}
-											reviewPackage={props.reviewPackage}
-											selectedCodeViewItem={props.selectedCodeViewItem ?? null}
-											selectedContentLoadingItemId={props.selectedContentLoadingItemId ?? null}
-											selectedContentPaintTelemetryStart={
-												props.selectedContentPaintTelemetryStart ?? null
-											}
-											selectedItemId={props.selectedItemId}
-											selectedItemPresentation={props.selectedItemPresentation ?? null}
-											{...(props.onOpenFile === undefined ? {} : { onOpenFile: props.onOpenFile })}
-											telemetryParentTraceContext={props.telemetryParentTraceContext ?? null}
-											visibleCodeViewItems={props.visibleCodeViewItems ?? []}
-											{...(props.codeViewOptions === undefined
-												? {}
-												: { codeViewOptions: props.codeViewOptions })}
-											{...(props.onCodeViewVisibleItemIdsChange === undefined
-												? {}
-												: { onVisibleItemIdsChange: props.onCodeViewVisibleItemIdsChange })}
-											{...(props.onAnnotationAttentionItemIdsChange === undefined
-												? {}
-												: {
-														onAnnotationAttentionItemIdsChange:
-															props.onAnnotationAttentionItemIdsChange,
-													})}
-											{...(props.onAnnotationEditorAttentionItemIdsChange === undefined
-												? {}
-												: {
-														onAnnotationEditorAttentionItemIdsChange:
-															props.onAnnotationEditorAttentionItemIdsChange,
-													})}
-											{...(props.onReadingPositionItemIdChange === undefined
-												? {}
-												: {
-														onReadingPositionItemIdChange: props.onReadingPositionItemIdChange,
-													})}
-											{...(props.onCodeViewControlHandleChange === undefined
-												? {}
-												: {
-														onControlHandleChange: props.onCodeViewControlHandleChange,
-													})}
-											{...(props.codeViewWorkerPoolEnabled === undefined
-												? {}
-												: { workerPoolEnabled: props.codeViewWorkerPoolEnabled })}
-											{...(props.codeViewWorkerFactory === undefined
-												? {}
-												: { workerFactory: props.codeViewWorkerFactory })}
-											{...(props.telemetryRecorder === undefined
-												? {}
-												: { telemetryRecorder: props.telemetryRecorder })}
-										/>
-									)}
+									<BridgeRegionPresentation
+										region="review-content"
+										testId={hasChangedFiles ? undefined : 'bridge-review-empty-canvas'}
+										shape="diff"
+										state={contentPresentation}
+										keepContentMounted
+										emptyCopy={{
+											noSelection: bridgeReviewRegionDisplaySpec.noFileSelection,
+											certified: bridgeReviewRegionDisplaySpec.certifiedContent,
+										}}
+									>
+										{!hasChangedFiles ? (
+											contentPresentation.kind === 'updating' ||
+											(contentPresentation.kind === 'failed' &&
+												contentPresentation.retainsContent) ? (
+												<p className="px-3 py-2 text-sm text-muted-foreground">
+													{bridgeReviewRegionDisplaySpec.certifiedContent}
+												</p>
+											) : null
+										) : props.selectedContentUnavailablePath !== undefined &&
+										  props.selectedContentUnavailablePath !== null ? null : (
+											<BridgeCodeViewPanel
+												annotationReveal={props.annotationReveal ?? null}
+												{...(props.onAnnotationRevealComplete === undefined
+													? {}
+													: { onAnnotationRevealComplete: props.onAnnotationRevealComplete })}
+												presentationPositionKey={props.presentationPositionKey}
+												projection={projection}
+												renderFulfillmentCoordinator={props.renderFulfillmentCoordinator}
+												reviewPackage={props.reviewPackage}
+												selectedCodeViewItem={props.selectedCodeViewItem ?? null}
+												selectedContentLoadingItemId={props.selectedContentLoadingItemId ?? null}
+												selectedContentPaintTelemetryStart={
+													props.selectedContentPaintTelemetryStart ?? null
+												}
+												selectedItemId={props.selectedItemId}
+												selectedItemPresentation={props.selectedItemPresentation ?? null}
+												{...(props.onOpenFile === undefined
+													? {}
+													: { onOpenFile: props.onOpenFile })}
+												telemetryParentTraceContext={props.telemetryParentTraceContext ?? null}
+												visibleCodeViewItems={props.visibleCodeViewItems ?? []}
+												{...(props.codeViewOptions === undefined
+													? {}
+													: { codeViewOptions: props.codeViewOptions })}
+												{...(props.onCodeViewVisibleItemIdsChange === undefined
+													? {}
+													: { onVisibleItemIdsChange: props.onCodeViewVisibleItemIdsChange })}
+												{...(props.onAnnotationAttentionItemIdsChange === undefined
+													? {}
+													: {
+															onAnnotationAttentionItemIdsChange:
+																props.onAnnotationAttentionItemIdsChange,
+														})}
+												{...(props.onAnnotationEditorAttentionItemIdsChange === undefined
+													? {}
+													: {
+															onAnnotationEditorAttentionItemIdsChange:
+																props.onAnnotationEditorAttentionItemIdsChange,
+														})}
+												{...(props.onReadingPositionItemIdChange === undefined
+													? {}
+													: {
+															onReadingPositionItemIdChange: props.onReadingPositionItemIdChange,
+														})}
+												{...(props.onCodeViewControlHandleChange === undefined
+													? {}
+													: {
+															onControlHandleChange: props.onCodeViewControlHandleChange,
+														})}
+												{...(props.codeViewWorkerPoolEnabled === undefined
+													? {}
+													: { workerPoolEnabled: props.codeViewWorkerPoolEnabled })}
+												{...(props.codeViewWorkerFactory === undefined
+													? {}
+													: { workerFactory: props.codeViewWorkerFactory })}
+												{...(props.telemetryRecorder === undefined
+													? {}
+													: { telemetryRecorder: props.telemetryRecorder })}
+											/>
+										)}
+									</BridgeRegionPresentation>
 								</section>
 							</BridgeViewerContextPanelViewport>
 						</section>
@@ -497,42 +570,57 @@ export function renderReviewViewerShellPresentation(presentation: {
 							data-testid="bridge-review-rail-tree-slot"
 							inert={comparisonIsLoading || undefined}
 						>
-							{hasChangedFiles ? (
-								<BridgeReviewTreesPanel
-									{...(props.activationCause === undefined
-										? {}
-										: { activationCause: props.activationCause })}
-									{...(props.activationSequence === undefined
-										? {}
-										: { activationSequence: props.activationSequence })}
-									{...(props.activationStartedAtPerfNow === undefined
-										? {}
-										: { activationStartedAtPerfNow: props.activationStartedAtPerfNow })}
-									isActive={props.isActive === true}
-									key={bridgeTreesDisclosurePolicyIdentity}
-									presentationPositionKey={props.presentationPositionKey}
-									onSelectItem={props.onSelectItem}
-									{...(props.onHoveredItemIdChange === undefined
-										? {}
-										: { onHoveredItemIdChange: props.onHoveredItemIdChange })}
-									{...(props.onTreeVisibleItemIdsChange === undefined
-										? {}
-										: { onVisibleItemIdsChange: props.onTreeVisibleItemIdsChange })}
-									projection={projection}
-									reviewPackage={props.reviewPackage}
-									reviewTreeRows={props.reviewTreeRows ?? []}
-									searchMode={treeAcceptedSearchMode}
-									searchText={treeAcceptedSearchText}
-									selectedItemId={props.selectedItemId}
-									selectionRevealRequest={props.treeSelectionRevealRequest ?? null}
-									{...(props.telemetryRecorder === undefined
-										? {}
-										: { telemetryRecorder: props.telemetryRecorder })}
-									telemetryTraceContext={props.telemetryParentTraceContext ?? null}
-								/>
-							) : (
-								<BridgeReviewEmptyFileTree />
-							)}
+							<BridgeRegionPresentation
+								region="review-tree"
+								testId={hasChangedFiles ? undefined : 'bridge-review-empty-file-tree'}
+								shape="tree"
+								state={treePresentation}
+								keepContentMounted
+								emptyCopy={{
+									noSelection: bridgeReviewRegionDisplaySpec.noSelection,
+									certified: bridgeReviewRegionDisplaySpec.certifiedTree,
+								}}
+							>
+								{hasChangedFiles ? (
+									<BridgeReviewTreesPanel
+										{...(props.activationCause === undefined
+											? {}
+											: { activationCause: props.activationCause })}
+										{...(props.activationSequence === undefined
+											? {}
+											: { activationSequence: props.activationSequence })}
+										{...(props.activationStartedAtPerfNow === undefined
+											? {}
+											: { activationStartedAtPerfNow: props.activationStartedAtPerfNow })}
+										isActive={props.isActive === true}
+										key={bridgeTreesDisclosurePolicyIdentity}
+										presentationPositionKey={props.presentationPositionKey}
+										onSelectItem={props.onSelectItem}
+										{...(props.onHoveredItemIdChange === undefined
+											? {}
+											: { onHoveredItemIdChange: props.onHoveredItemIdChange })}
+										{...(props.onTreeVisibleItemIdsChange === undefined
+											? {}
+											: { onVisibleItemIdsChange: props.onTreeVisibleItemIdsChange })}
+										projection={projection}
+										reviewPackage={props.reviewPackage}
+										reviewTreeRows={props.reviewTreeRows ?? []}
+										searchMode={treeAcceptedSearchMode}
+										searchText={treeAcceptedSearchText}
+										selectedItemId={props.selectedItemId}
+										selectionRevealRequest={props.treeSelectionRevealRequest ?? null}
+										{...(props.telemetryRecorder === undefined
+											? {}
+											: { telemetryRecorder: props.telemetryRecorder })}
+										telemetryTraceContext={props.telemetryParentTraceContext ?? null}
+									/>
+								) : treePresentation.kind === 'updating' ||
+								  (treePresentation.kind === 'failed' && treePresentation.retainsContent) ? (
+									<p className="px-3 py-2 text-sm text-muted-foreground">
+										{bridgeReviewRegionDisplaySpec.certifiedTree}
+									</p>
+								) : null}
+							</BridgeRegionPresentation>
 							{registry.visibleItems.length === 0 ? null : (
 								<div aria-hidden="true" hidden>
 									{hiddenVisiblePathText}
@@ -546,7 +634,7 @@ export function renderReviewViewerShellPresentation(presentation: {
 					testId: 'bridge-review-sidebar',
 					toolbarBelow: (
 						<>
-							<WorktreeAnnotationRecoveryWarning />
+							{props.railVisible === false ? null : failureSummary}
 							{treeSearchOpen ? (
 								<BridgeViewerSearchField
 									clearButtonTestId="bridge-review-search-clear"
@@ -612,28 +700,6 @@ export function renderReviewViewerShellPresentation(presentation: {
 	);
 }
 
-function BridgeReviewEmptyCanvas(): ReactElement {
-	return (
-		<div
-			className="flex h-full items-center justify-center px-8 text-center"
-			data-testid="bridge-review-empty-canvas"
-		>
-			<p className="text-sm font-medium text-foreground">Nothing to review</p>
-		</div>
-	);
-}
-
-function BridgeReviewEmptyFileTree(): ReactElement {
-	return (
-		<div
-			className="flex h-full items-center justify-center px-4 text-center"
-			data-testid="bridge-review-empty-file-tree"
-		>
-			<p className="text-xs text-muted-foreground">No changed files</p>
-		</div>
-	);
-}
-
 function hiddenVisiblePathTextForRegistry(registry: BridgeReviewItemRegistry): string {
 	const cachedText = hiddenVisiblePathTextByRegistry.get(registry);
 	if (cachedText !== undefined) {
@@ -673,21 +739,6 @@ function bridgeReviewComparisonTitle(reviewPackage: BridgeReviewPackage): string
 		return 'Unstaged changes';
 	}
 	return 'Current worktree changes';
-}
-
-function BridgeReviewContentUnavailableState(props: { readonly sourcePath: string }): ReactElement {
-	return (
-		<section
-			aria-label="Selected content unavailable"
-			className="flex h-full min-h-[260px] items-center justify-center bg-background px-8 text-center"
-			data-testid="bridge-review-content-unavailable"
-		>
-			<div className="max-w-md">
-				<p className="text-sm font-medium text-foreground">Content unavailable</p>
-				<p className="mt-1 truncate text-xs text-faint-foreground">{props.sourcePath}</p>
-			</div>
-		</section>
-	);
 }
 
 function selectedContentStateForShell(props: {

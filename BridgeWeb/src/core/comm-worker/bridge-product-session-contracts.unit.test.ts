@@ -37,8 +37,6 @@ import {
 	postBridgePaneCommWorkerInstall,
 } from './bridge-product-session-contracts.js';
 import { parseBridgeProductStrictJSON } from './bridge-product-strict-json.js';
-import { bridgeProductSubscriptionInterestStateSchema } from './bridge-product-subscription-contracts.js';
-import { encodeBridgeProductSubscriptionInterestState } from './bridge-product-subscription-interest-state-codec.js';
 
 describe('Bridge product session contracts', () => {
 	test('admits only the intrinsic shared navigation command matrix', () => {
@@ -104,11 +102,11 @@ describe('Bridge product session contracts', () => {
 	test('keeps the Swift and TypeScript corpora byte-identical at frozen hashes', () => {
 		const fixturePairs = [
 			{
-				expectedHash: '0e2d6b2f9c0577dda107f34df7e6cb79bbefe5f9ebaae15c2eb743cfd5e14893',
+				expectedHash: '6ee108e9ecb1bbd8a3c5f1686dfad59795ac92e0661eabf8cc7c35d2f617e5cd',
 				kind: 'valid',
 			},
 			{
-				expectedHash: 'b21fd70db537c0d2fef3f05746da9d63daf8ea8ea2db911369ed2844af0992a9',
+				expectedHash: '2b814082676fad29bbfe6d33531fa2434d1066f2d1ab7900aeef460f0bbe780d',
 				kind: 'invalid',
 			},
 		] as const;
@@ -136,7 +134,21 @@ describe('Bridge product session contracts', () => {
 		expect(bridgeProductSessionBootstrapSchema.parse(validProductSessionCorpus.bootstrap)).toEqual(
 			validProductSessionCorpus.bootstrap,
 		);
+		const policyWithoutBatchDeadline = Object.fromEntries(
+			Object.entries(validProductSessionCorpus.bootstrap.policy).filter(
+				([key]): boolean => key !== 'viewBatchProgressDeadlineMilliseconds',
+			),
+		);
+		expect(
+			bridgeProductSessionBootstrapSchema.safeParse({
+				...validProductSessionCorpus.bootstrap,
+				policy: policyWithoutBatchDeadline,
+			}).success,
+		).toBe(false);
 		expect(validProductSessionCorpus.bootstrap).not.toHaveProperty('initialSurface');
+		expect(validProductSessionCorpus.bootstrap.policy.streamKeepaliveIntervalMilliseconds).toBe(
+			350,
+		);
 		expect(validProductSessionCorpus.bootstrap).not.toHaveProperty('productCapabilityBytes');
 		expect(validProductSessionCorpus.bootstrap).not.toHaveProperty('routes');
 		expect(BRIDGE_PRODUCT_MAXIMUM_REQUEST_BODY_BYTES).toBe(256 * 1024);
@@ -182,6 +194,27 @@ describe('Bridge product session contracts', () => {
 	});
 
 	test('accepts every closed request, response, metadata, and content variant', () => {
+		const resetFrame = {
+			kind: 'subscription.reset',
+			metadataStreamId: 'metadata-stream-1',
+			paneSessionId: 'pane-session-1',
+			reason: 'sequence_gap',
+			streamSequence: 14,
+			subscriptionId: 'review-subscription-1',
+			subscriptionKind: 'review.metadata',
+			subscriptionSequence: 1,
+			wireVersion: 2,
+			workerDerivationEpoch: 7,
+			workerInstanceId: 'worker-instance-1',
+		} as const;
+		const metadataFrames = [
+			...validProductSessionCorpus.metadataFrames.map((frame) =>
+				bridgeProductMetadataFrameSchema.parse(frame),
+			),
+			bridgeProductMetadataFrameSchema.parse(resetFrame),
+		];
+		const contentRequests = validProductSessionCorpus.contentRequests;
+		const contentHeaders = validProductSessionCorpus.contentHeaders;
 		expect(
 			new Set(validProductSessionCorpus.controlRequests.map((request) => request.kind)),
 		).toEqual(
@@ -189,7 +222,6 @@ describe('Bridge product session contracts', () => {
 				'workerSession.open',
 				'product.call',
 				'subscription.open',
-				'subscription.updateBatch',
 				'subscription.cancel',
 				'workerSession.resync',
 			]),
@@ -201,19 +233,16 @@ describe('Bridge product session contracts', () => {
 				'workerSession.accepted',
 				'call.completed',
 				'subscription.openAccepted',
-				'subscription.updateBatchAccepted',
 				'subscription.cancelAccepted',
 				'resync.accepted',
 				'request.error',
 			]),
 		);
-		expect(new Set(validProductSessionCorpus.metadataFrames.map((frame) => frame.kind))).toEqual(
+		expect(new Set(metadataFrames.map((frame) => frame.kind))).toEqual(
 			new Set([
 				'metadataStream.accepted',
 				'pane.presentation',
 				'subscription.accepted',
-				'subscription.interestsCommitted',
-				'subscription.data',
 				'subscription.reset',
 				'subscription.end',
 				'subscription.cancelled',
@@ -239,7 +268,7 @@ describe('Bridge product session contracts', () => {
 		for (const request of validProductSessionCorpus.metadataStreamRequests) {
 			expect(bridgeProductMetadataStreamRequestSchema.parse(request)).toEqual(request);
 		}
-		for (const frame of validProductSessionCorpus.metadataFrames) {
+		for (const frame of metadataFrames) {
 			expect(bridgeProductMetadataFrameSchema.parse(frame)).toEqual(frame);
 		}
 		const panePresentations = validProductSessionCorpus.metadataFrames.filter(
@@ -260,10 +289,10 @@ describe('Bridge product session contracts', () => {
 			[],
 			[],
 		]);
-		for (const request of validProductSessionCorpus.contentRequests) {
+		for (const request of contentRequests) {
 			expect(bridgeProductContentRequestSchema.parse(request)).toEqual(request);
 		}
-		for (const header of validProductSessionCorpus.contentHeaders) {
+		for (const header of contentHeaders) {
 			expect(bridgeProductContentHeaderSchema.parse(header)).toEqual(header);
 		}
 	});
@@ -289,7 +318,7 @@ describe('Bridge product session contracts', () => {
 			...validProductSessionCorpus.controlResponses.map((response) => ({
 				name: response.kind,
 				schema: bridgeProductControlResponseSchema,
-				value: response,
+				value: bridgeProductControlResponseSchema.parse(response),
 			})),
 			...validProductSessionCorpus.metadataStreamRequests.map((request) => ({
 				name: request.kind,
@@ -306,7 +335,7 @@ describe('Bridge product session contracts', () => {
 				.map((frame) => ({
 					name: frame.kind,
 					schema: bridgeProductMetadataFrameSchema,
-					value: frame,
+					value: bridgeProductMetadataFrameSchema.parse(frame),
 				})),
 		];
 
@@ -351,19 +380,19 @@ describe('Bridge product session contracts', () => {
 				.map((frame) => ({
 					name: frame.kind,
 					schema: bridgeProductMetadataFrameSchema,
-					value: frame,
+					value: bridgeProductMetadataFrameSchema.parse(frame),
 				})),
 			...validProductSessionCorpus.contentRequests.map((request) => ({
 				name: request.kind,
 				schema: bridgeProductContentRequestSchema,
-				value: request,
+				value: bridgeProductContentRequestSchema.parse(request),
 			})),
 			...validProductSessionCorpus.contentHeaders
 				.filter((header) => header.kind === 'content.accepted')
 				.map((header) => ({
 					name: header.kind,
 					schema: bridgeProductContentHeaderSchema,
-					value: header,
+					value: bridgeProductContentHeaderSchema.parse(header),
 				})),
 		];
 
@@ -378,10 +407,9 @@ describe('Bridge product session contracts', () => {
 				`${surfaceScopedCase.name} requires workerDerivationEpoch`,
 			).toBe(false);
 			expect(
-				surfaceScopedCase.schema.safeParse({
-					...withoutWorkerDerivationEpoch(surfaceScopedCase.value),
-					workerEpoch: 3,
-				}).success,
+				surfaceScopedCase.schema.safeParse(
+					withWorkerEpoch(withoutWorkerDerivationEpoch(surfaceScopedCase.value)),
+				).success,
 				`${surfaceScopedCase.name} rejects workerEpoch`,
 			).toBe(false);
 			expect(
@@ -557,99 +585,6 @@ describe('Bridge product session contracts', () => {
 		expect(bridgeProductMetadataAcceptedStreamSequence(resumedRequest)).toBe(7);
 	});
 
-	test('matches canonical interest-state bytes and SHA-256 vectors', () => {
-		for (const vector of validProductSessionCorpus.interestStateVectors) {
-			const encodedState = encodeBridgeProductSubscriptionInterestState(
-				bridgeProductSubscriptionInterestStateSchema.parse(vector.state),
-			);
-
-			expect(Buffer.from(encodedState).toString('base64'), vector.name).toBe(vector.encodedBase64);
-			expect(createHash('sha256').update(encodedState).digest('hex'), vector.name).toBe(
-				vector.sha256,
-			);
-		}
-
-		expect(() =>
-			encodeBridgeProductSubscriptionInterestState({
-				interests: [
-					{ itemIds: ['review-item-1'], lane: 'foreground' },
-					{ itemIds: ['review-item-1'], lane: 'visible' },
-				],
-				subscriptionKind: 'review.metadata',
-			}),
-		).toThrow(/unique across demand lanes/iu);
-	});
-
-	test('stages bounded interest deltas and orders committed metadata by revision', () => {
-		const legacyWholeOptionsUpdate = invalidProductSessionCorpus.cases.find(
-			(hostileCase) => hostileCase.name === 'legacy subscription update carries whole options',
-		)?.value;
-		const baseInterestSha256 = '1a71797cab8ed23c72233b7706b166a33049e4e87dfbc55b9e252f9c1843eca6';
-		const targetInterestSha256 = '2535176c2a822c1f5007dd72a7987b7c0a1b6e9af1bc28324ec4618b43f71ebd';
-		const updateBatch = {
-			baseInterestRevision: 0,
-			baseInterestSha256,
-			batchCount: 1,
-			batchIndex: 0,
-			delta: {
-				add: [
-					{ itemId: 'review-item-1', lane: 'foreground' },
-					{ itemId: 'review-item-2', lane: 'visible' },
-				],
-				removeItemIds: [],
-				subscriptionKind: 'review.metadata',
-			},
-			kind: 'subscription.updateBatch',
-			paneSessionId: 'pane-session-1',
-			requestId: 'request-review-subscription-update-batch-1',
-			requestSequence: 5,
-			subscriptionId: 'review-subscription-1',
-			subscriptionKind: 'review.metadata',
-			targetInterestRevision: 1,
-			targetInterestSha256,
-			totalDeltaItemCount: 2,
-			updateId: 'review-interest-update-1',
-			wireVersion: 2,
-			workerDerivationEpoch: 7,
-			workerInstanceId: 'worker-instance-1',
-		};
-		const committedFrame = {
-			cursor: 'review-cursor-committed-1',
-			interestRevision: 1,
-			interestSha256: targetInterestSha256,
-			kind: 'subscription.interestsCommitted',
-			metadataStreamId: 'metadata-stream-1',
-			paneSessionId: 'pane-session-1',
-			sourceGeneration: 7,
-			streamSequence: 2,
-			subscriptionId: 'review-subscription-1',
-			subscriptionKind: 'review.metadata',
-			subscriptionSequence: 1,
-			updateId: 'review-interest-update-1',
-			wireVersion: 2,
-			workerDerivationEpoch: 7,
-			workerInstanceId: 'worker-instance-1',
-		};
-		const revisionedDataFrame = validProductSessionCorpus.metadataFrames.find(
-			(frame) => frame.kind === 'subscription.data',
-		);
-		if (revisionedDataFrame === undefined) {
-			throw new Error('Shared corpus is missing a subscription.data frame.');
-		}
-		const unrevisionedDataFrame = {
-			...revisionedDataFrame,
-			interestRevision: undefined,
-			interestSha256: undefined,
-		};
-
-		expect(bridgeProductControlRequestSchema.safeParse(legacyWholeOptionsUpdate).success).toBe(
-			false,
-		);
-		expect(bridgeProductControlRequestSchema.safeParse(updateBatch).success).toBe(true);
-		expect(bridgeProductMetadataFrameSchema.safeParse(committedFrame).success).toBe(true);
-		expect(bridgeProductMetadataFrameSchema.safeParse(unrevisionedDataFrame).success).toBe(false);
-	});
-
 	test('rejects every hostile shared-corpus case at its receiving boundary', () => {
 		for (const hostileCase of invalidProductSessionCorpus.cases) {
 			expect(
@@ -657,6 +592,34 @@ describe('Bridge product session contracts', () => {
 				hostileCase.name,
 			).toBe(true);
 		}
+	});
+
+	test("view scope owns each metadata kind's admitted demand", () => {
+		const requests = validProductSessionCorpus.transportV2.viewScopeRequests;
+		const fileRequest = requests.find((request) => request.subscriptionKind === 'file.metadata');
+		const reviewRequest = requests.find(
+			(request) => request.subscriptionKind === 'review.metadata',
+		);
+		if (fileRequest === undefined || reviewRequest === undefined)
+			throw new Error('File and Review scope fixtures are required.');
+		expect(bridgeProductControlRequestSchema.safeParse(fileRequest).success).toBe(true);
+		expect(bridgeProductControlRequestSchema.safeParse(reviewRequest).success).toBe(true);
+		for (const scope of [
+			{ kind: 'file', changeFilter: { kind: 'none' }, pathScope: [] },
+			{ kind: 'file', changeFilter: { kind: 'none' }, interests: [] },
+			{ kind: 'review' },
+		]) {
+			const request = scope.kind === 'review' ? reviewRequest : fileRequest;
+			expect(bridgeProductControlRequestSchema.safeParse({ ...request, scope }).success).toBe(
+				false,
+			);
+		}
+		expect(
+			bridgeProductControlRequestSchema.safeParse({
+				...fileRequest,
+				scope: { kind: 'review', interests: [] },
+			}).success,
+		).toBe(false);
 	});
 
 	test('rejects the obsolete generic payload and resource GET corridors', () => {
@@ -780,8 +743,8 @@ describe('Bridge product session contracts', () => {
 		expect(middle.map((frame) => frame.kind)).toEqual(['metadataStream.accepted']);
 		expect(rest.map((frame) => frame.kind)).toEqual([
 			'subscription.accepted',
-			'subscription.interestsCommitted',
-			'subscription.data',
+			'subscription.accepted',
+			'subscription.accepted',
 			'subscription.accepted',
 		]);
 		expect(rest.map((frame) => frame.streamSequence)).toEqual([1, 2, 3, 4]);
@@ -941,9 +904,16 @@ function concatenateBytes(...parts: readonly Uint8Array[]): Uint8Array {
 	return result;
 }
 
-function withoutWorkerDerivationEpoch<TValue extends { readonly workerDerivationEpoch?: number }>(
-	value: TValue,
-): Omit<TValue, 'workerDerivationEpoch'> {
+function withoutWorkerDerivationEpoch(value: unknown): unknown {
+	if (!isRecord(value)) return value;
 	const { workerDerivationEpoch: _workerDerivationEpoch, ...withoutEpoch } = value;
 	return withoutEpoch;
+}
+
+function withWorkerEpoch(value: unknown): unknown {
+	return isRecord(value) ? { ...value, workerEpoch: 3 } : value;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+	return typeof value === 'object' && value !== null && !Array.isArray(value);
 }

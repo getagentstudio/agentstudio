@@ -6,6 +6,7 @@ import {
 	encodeBridgeWorkerMetadataInterestUpdateCommand,
 	encodeBridgeWorkerReviewIntakeReadyCommand,
 	encodeBridgeWorkerReviewComparisonUpdateCommand,
+	encodeBridgeWorkerSelectCommand,
 	encodeBridgeWorkerViewportCommand,
 } from './bridge-comm-worker-protocol.js';
 import {
@@ -26,7 +27,6 @@ import {
 } from './bridge-comm-worker-runtime-protocol.test-support.js';
 import { drainBridgeWorkerVisibleDemandRuntimeUntil } from './bridge-comm-worker-runtime-protocol.visible-demand.test-support.js';
 import type { BridgeProductControlCommand } from './bridge-product-control-contracts.js';
-import type { BridgeProductSubscriptionUpdateOptions } from './bridge-product-subscription-contracts.js';
 import { createWorkerContentPreparationPump } from './bridge-worker-content-preparation-pump.js';
 
 describe('Bridge comm worker runtime protocol', () => {
@@ -262,15 +262,20 @@ describe('Bridge comm worker runtime protocol', () => {
 		// Arrange
 		let clockMs = 0;
 		const scheduledDrains: BridgeCommWorkerPreparationDrain[] = [];
-		const updates: BridgeProductSubscriptionUpdateOptions<'review.metadata'>[] = [];
 		const openedDescriptorIds: string[] = [];
 		const firstInterestCommit = createDeferredVoid();
 		const secondInterestCommit = createDeferredVoid();
+		let viewScopeCount = 0;
 		const reviewProductSource = createBridgeCommWorkerReviewProductTestSource({
-			updateReviewMetadata: async (options): Promise<void> => {
-				updates.push(options);
-				if (updates.length === 1) await firstInterestCommit.promise;
-				else if (updates.length === 2) await secondInterestCommit.promise;
+			setViewScopeForSubscription: async (): Promise<{
+				kind: 'accepted';
+				scopeRevision: number;
+			}> => {
+				viewScopeCount += 1;
+				const scopeCount = viewScopeCount;
+				if (scopeCount === 1) await firstInterestCommit.promise;
+				else if (scopeCount === 2) await secondInterestCommit.promise;
+				return { kind: 'accepted', scopeRevision: scopeCount };
 			},
 		});
 		const { dispatch, postedMessages } = createRecordingBridgeCommWorkerPort();
@@ -306,9 +311,7 @@ describe('Bridge comm worker runtime protocol', () => {
 			4,
 		);
 		await flushBridgeWorkerRuntimeContinuations();
-		await assertBridgeCommWorkerPreparationDrain(scheduledDrains[0])();
-		await flushBridgeWorkerRuntimeContinuations();
-		expect(updates).toEqual([{ interests: [{ itemIds: ['item-1'], lane: 'idle' }] }]);
+		expect(reviewProductSource.viewScopes).toEqual([]);
 
 		// Act: promote before the first snapshot commits, then start content work.
 		dispatch.message(
@@ -320,6 +323,19 @@ describe('Bridge comm worker runtime protocol', () => {
 				requestId: 'request-promote-before-native-open',
 				surface: 'review',
 				visibleItemIds: ['item-1'],
+			}),
+		);
+		await flushBridgeWorkerRuntimeContinuations();
+		expect(reviewProductSource.viewScopes.map(({ scope }) => scope)).toEqual([
+			{ kind: 'review', interests: [{ itemIds: ['item-1'], lane: 'visible' }] },
+		]);
+		dispatch.message(
+			encodeBridgeWorkerSelectCommand({
+				epoch: 5,
+				requestId: 'request-select-before-native-open',
+				selectedItemId: 'item-1',
+				selectedSource: 'user',
+				surface: 'review',
 			}),
 		);
 		dispatch.message(
@@ -334,12 +350,6 @@ describe('Bridge comm worker runtime protocol', () => {
 			}),
 		);
 		clockMs += 1;
-		const renderCompletion = drainBridgeWorkerVisibleDemandRuntimeUntil({
-			hasExpectedEvent: () =>
-				postedMessages.some(({ message }) => message.kind === 'reviewPierreRenderJob'),
-			scheduledDrains,
-			startIndex: 1,
-		});
 		await flushBridgeWorkerRuntimeContinuations();
 
 		// Assert: neither the native open nor command acknowledgement can overtake the newest role.
@@ -349,17 +359,24 @@ describe('Bridge comm worker runtime protocol', () => {
 		);
 		firstInterestCommit.resolve();
 		await flushBridgeWorkerRuntimeContinuations();
-		expect(updates).toEqual([
-			{ interests: [{ itemIds: ['item-1'], lane: 'idle' }] },
-			{ interests: [{ itemIds: ['item-1'], lane: 'visible' }] },
+		expect(reviewProductSource.viewScopes.map(({ scope }) => scope)).toEqual([
+			{ kind: 'review', interests: [{ itemIds: ['item-1'], lane: 'visible' }] },
+			{ kind: 'review', interests: [{ itemIds: ['item-1'], lane: 'foreground' }] },
 		]);
 		expect(openedDescriptorIds).toEqual([]);
 		secondInterestCommit.resolve();
-		await renderCompletion;
+		await drainBridgeWorkerVisibleDemandRuntimeUntil({
+			hasExpectedEvent: () =>
+				postedMessages.some(({ message }) => message.kind === 'reviewPierreRenderJob'),
+			scheduledDrains,
+			startIndex: 0,
+		});
 		await flushBridgeWorkerRuntimeContinuations();
 		expect(openedDescriptorIds).toHaveLength(2);
 		expect(
-			updates.flatMap(({ interests }) => interests.flatMap(({ itemIds }) => itemIds)),
+			reviewProductSource.viewScopes
+				.flatMap(({ scope }) => (scope.kind === 'review' ? scope.interests : []))
+				.flatMap(({ itemIds }) => itemIds),
 		).not.toContain('forged-caller-item');
 		expect(postedMessages.map(({ message }) => message)).toContainEqual(
 			expect.objectContaining({
@@ -529,9 +546,6 @@ describe('Bridge comm worker runtime protocol', () => {
 			4,
 		);
 		await flushBridgeWorkerRuntimeContinuations();
-		await assertBridgeCommWorkerPreparationDrain(scheduledDrains[0])();
-		await flushBridgeWorkerRuntimeContinuations();
-		scheduledDrains.splice(0, 1);
 		postedMessages.length = 0;
 
 		dispatch.message(
@@ -561,6 +575,12 @@ describe('Bridge comm worker runtime protocol', () => {
 			scheduledDrains,
 			startIndex: 0,
 		});
+		const publishedReviewJob = postedMessages.find(
+			({ message }) => message.kind === 'reviewPierreRenderJob' && message.job.itemId === 'item-1',
+		)?.message;
+		if (publishedReviewJob?.kind !== 'reviewPierreRenderJob') {
+			throw new Error('Expected the visible Review render job.');
+		}
 		expect(postedMessages.map((postedMessage) => postedMessage.message.kind)).toEqual([
 			'slicePatch',
 			'health',
@@ -577,7 +597,7 @@ describe('Bridge comm worker runtime protocol', () => {
 		});
 		expect(postedMessages[3]?.message).toMatchObject({
 			kind: 'reviewRenderPatch',
-			publicationSequence: 105,
+			publicationSequence: publishedReviewJob.renderReceiptIdentity.publicationSequence,
 			workerDerivationEpoch: 1,
 			patches: [
 				{
@@ -660,6 +680,7 @@ describe('Bridge comm worker runtime protocol', () => {
 			'reviewCandidateStarted',
 			'reviewDisplayPatch',
 			'reviewCandidateReady',
+			'fileDisplayPatch',
 		]);
 		expect(scheduledDrains).toHaveLength(1);
 		clockMs += 1;
@@ -670,9 +691,15 @@ describe('Bridge comm worker runtime protocol', () => {
 		const secondDrainResult = await assertBridgeCommWorkerPreparationDrain(scheduledDrains[1])();
 		const firstDrainResult = await firstDrainCompletion;
 
-		expect(firstDrainResult.completedIds).toEqual(['review-source-reset:1']);
+		expect(firstDrainResult.completedIds).toEqual([]);
+		const publishedReviewJob = postedMessages.find(
+			({ message }) => message.kind === 'reviewPierreRenderJob' && message.job.itemId === 'item-1',
+		)?.message;
+		if (publishedReviewJob?.kind !== 'reviewPierreRenderJob') {
+			throw new Error('Expected the visible Review render job after source repair.');
+		}
 		expect(secondDrainResult.completedIds).toEqual([
-			'review-content-ready:item-1:review-ledger:item-1:206',
+			`review-content-ready:item-1:review-ledger:item-1:${publishedReviewJob.renderReceiptIdentity.publicationSequence}`,
 		]);
 		expect(postedMessages.map((postedMessage) => postedMessage.message.kind)).toEqual([
 			'slicePatch',
@@ -680,10 +707,13 @@ describe('Bridge comm worker runtime protocol', () => {
 			'reviewCandidateStarted',
 			'reviewDisplayPatch',
 			'reviewCandidateReady',
+			'fileDisplayPatch',
 			'reviewPierreRenderJob',
 			'reviewRenderPatch',
 		]);
-		expect(postedMessages[5]?.message).toMatchObject({
+		expect(
+			postedMessages.find(({ message }) => message.kind === 'reviewPierreRenderJob')?.message,
+		).toMatchObject({
 			kind: 'reviewPierreRenderJob',
 			job: {
 				itemId: 'item-1',
@@ -691,9 +721,16 @@ describe('Bridge comm worker runtime protocol', () => {
 				budgetClass: 'visible',
 			},
 		});
-		expect(postedMessages[6]?.message).toMatchObject({
+		expect(
+			postedMessages.find(
+				({ message }) =>
+					message.kind === 'reviewRenderPatch' &&
+					message.publicationSequence ===
+						publishedReviewJob.renderReceiptIdentity.publicationSequence,
+			)?.message,
+		).toMatchObject({
 			kind: 'reviewRenderPatch',
-			publicationSequence: 206,
+			publicationSequence: publishedReviewJob.renderReceiptIdentity.publicationSequence,
 			workerDerivationEpoch: 1,
 			patches: [
 				{

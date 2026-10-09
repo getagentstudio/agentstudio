@@ -12,7 +12,10 @@ import {
 	startBridgeViewerOwnedViteProductServer,
 	type BridgeViewerOwnedViteProductServer,
 } from './bridge-viewer-vite-product-fixture.ts';
-import { bridgeViewerViteProductReviewUrl } from './bridge-viewer-vite-product-url.ts';
+import {
+	bridgeViewerViteProductReviewUrl,
+	requireBridgeViewerVitePrimaryReviewPath,
+} from './bridge-viewer-vite-product-url.ts';
 
 test.each(['shared-profile', 'separate-profile'] as const)(
 	'development tabs show open elsewhere until the active tab closes (%s)',
@@ -43,7 +46,10 @@ test.each(['shared-profile', 'separate-profile'] as const)(
 			});
 			const reviewFile = fixture.oracle.reviewFiles[0];
 			if (reviewFile === undefined) throw new Error('Tab ownership fixture needs a changed file.');
-			const url = bridgeViewerViteProductReviewUrl(server.origin);
+			const url = bridgeViewerViteProductReviewUrl(
+				server.origin,
+				requireBridgeViewerVitePrimaryReviewPath(fixture.oracle),
+			);
 			await firstTab.goto(url, { waitUntil: 'domcontentloaded' });
 			await selectReviewFile({ page: firstTab, path: reviewFile.path });
 			await waitForSelectedReviewReady({ page: firstTab, itemId: reviewFile.itemId });

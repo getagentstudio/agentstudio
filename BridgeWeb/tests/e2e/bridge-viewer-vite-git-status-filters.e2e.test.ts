@@ -28,7 +28,7 @@ test('filters the native Git working-tree review by every status and clears comb
 		const page = await browser.newPage({ viewport: { height: 980, width: 1728 } });
 		diagnostics = observeBrowserRuntimeDiagnostics(page);
 
-		await page.goto(bridgeViewerViteProductReviewUrl(server.origin), {
+		await page.goto(bridgeViewerViteProductReviewUrl(server.origin, fixture.addedSourcePath), {
 			waitUntil: 'domcontentloaded',
 		});
 		await page.getByTestId('review-viewer-shell').waitFor({ state: 'visible' });

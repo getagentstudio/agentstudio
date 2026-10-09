@@ -8,6 +8,59 @@ import Testing
 @Suite("Bridge pane refresh admission coordinator")
 @MainActor
 struct BridgePaneRefreshAdmissionCoordinatorTests {
+    @Test("Review intent floor is monotonic within E1 and resets for a new E1")
+    func reviewIntentFloorIsKeyedToProductAdmission() throws {
+        let coordinator = BridgePaneRefreshAdmissionCoordinator(initialActivity: .foreground)
+        let source = coordinator.workAdmissionSource
+        let firstAdmission = try BridgeProductAdmissionTestContext.make()
+        let secondAdmission = try BridgeProductAdmissionTestContext.make()
+
+        _ = firstAdmission.context.withValidAdmission {
+            source.admitReviewComparisonIntent(
+                workerDerivationEpoch: 3,
+                productAdmission: firstAdmission.context
+            )
+        }
+        _ = firstAdmission.context.withValidAdmission {
+            source.admitReviewComparisonIntent(
+                workerDerivationEpoch: 2,
+                productAdmission: firstAdmission.context
+            )
+        }
+        let olderIntentWasAdmitted =
+            firstAdmission.context.withValidAdmission {
+                source.withCurrentReviewComparisonIntent(
+                    workerDerivationEpoch: 2,
+                    productAdmission: firstAdmission.context
+                ) { true } == true
+            } == true
+
+        _ = secondAdmission.context.withValidAdmission {
+            source.admitReviewComparisonIntent(
+                workerDerivationEpoch: 1,
+                productAdmission: secondAdmission.context
+            )
+        }
+        let newE1IntentWasAdmitted =
+            secondAdmission.context.withValidAdmission {
+                source.withCurrentReviewComparisonIntent(
+                    workerDerivationEpoch: 1,
+                    productAdmission: secondAdmission.context
+                ) { true } == true
+            } == true
+        let oldE1CannotReuseItsHigherEpoch =
+            firstAdmission.context.withValidAdmission {
+                source.withCurrentReviewComparisonIntent(
+                    workerDerivationEpoch: 99,
+                    productAdmission: firstAdmission.context
+                ) { true } == true
+            } == true
+
+        #expect(!olderIntentWasAdmitted)
+        #expect(newE1IntentWasAdmitted)
+        #expect(!oldE1CannotReuseItsHigherEpoch)
+    }
+
     @Test("explicit File retry cannot bypass stream-reset recovery without unavailable state")
     func explicitFileRetryRequiresUnavailableState() {
         let coordinator = BridgePaneRefreshAdmissionCoordinator(initialActivity: .foreground)
@@ -39,7 +92,7 @@ struct BridgePaneRefreshAdmissionCoordinatorTests {
             coordinator.reserveForegroundRefreshPass(for: .file)
         )
         coordinator.completeRefreshPass(failedReservation, outcome: .failed)
-        coordinator.recordFileRefreshFailure(
+        coordinator.recordCurrentFileRefreshFailure(
             .init(failureKind: .fileSourceUnavailable)
         )
 
@@ -60,7 +113,7 @@ struct BridgePaneRefreshAdmissionCoordinatorTests {
     func newFileInvalidationClearsRetainedRefreshFailureAndAdmitsCurrentDirtyWork() throws {
         // Arrange
         let coordinator = BridgePaneRefreshAdmissionCoordinator(initialActivity: .foreground)
-        coordinator.recordFileRefreshFailure(
+        coordinator.recordCurrentFileRefreshFailure(
             .init(failureKind: .fileSourceUnavailable)
         )
         let unavailableRevision = coordinator.productPresentationSnapshot.presentationRevision
@@ -562,6 +615,54 @@ struct BridgePaneRefreshAdmissionCoordinatorTests {
         coordinator.completeRefreshPass(operation12, outcome: .succeeded)
         #expect(coordinator.diagnosticSnapshot.activeRefreshPass == nil)
         #expect(coordinator.diagnosticSnapshot.dirtyFact == nil)
+    }
+
+    @Test("a superseded File failure cannot overwrite a newer refresh")
+    func supersededFileFailureCannotOverwriteNewerRefresh() throws {
+        let coordinator = BridgePaneRefreshAdmissionCoordinator(initialActivity: .foreground)
+        coordinator.recordInvalidation(
+            fileChangeset: makeFileChangeset(paths: ["Sources/App/old.swift"], batchSequence: 70),
+            requiresReviewRefresh: false
+        )
+        let predecessor = try #require(coordinator.reserveForegroundRefreshPass(for: .file))
+
+        coordinator.recordInvalidation(
+            fileChangeset: makeFileChangeset(paths: ["Sources/App/new.swift"], batchSequence: 71),
+            requiresReviewRefresh: false
+        )
+        let successor = try #require(coordinator.reserveForegroundRefreshPass(for: .file))
+        coordinator.completeRefreshPass(successor, outcome: .succeeded)
+
+        let didCompletePredecessor = coordinator.completeRefreshPass(predecessor, outcome: .failed)
+        if didCompletePredecessor {
+            coordinator.recordCurrentFileRefreshFailure(
+                .init(failureKind: .fileSourceUnavailable)
+            )
+        }
+
+        #expect(!coordinator.isRefreshPassCurrent(predecessor))
+        #expect(coordinator.productPresentationSnapshot.fileRefreshFailure == nil)
+    }
+
+    @Test("a current terminal File failure is recorded after its pass completes")
+    func currentTerminalFileFailureIsRecorded() throws {
+        let coordinator = BridgePaneRefreshAdmissionCoordinator(initialActivity: .foreground)
+        coordinator.recordInvalidation(
+            fileChangeset: makeFileChangeset(paths: ["Sources/App/current.swift"], batchSequence: 72),
+            requiresReviewRefresh: false
+        )
+        let current = try #require(coordinator.reserveForegroundRefreshPass(for: .file))
+        let didComplete = coordinator.completeRefreshPass(current, outcome: .failed)
+        if didComplete {
+            coordinator.recordCurrentFileRefreshFailure(
+                .init(failureKind: .fileRefreshFailed)
+            )
+        }
+        #expect(didComplete)
+        #expect(
+            coordinator.productPresentationSnapshot.fileRefreshFailure?.failureKind
+                == .fileRefreshFailed
+        )
     }
 
     @Test("loaded-hidden coalescing retains only the latest File status snapshot")
