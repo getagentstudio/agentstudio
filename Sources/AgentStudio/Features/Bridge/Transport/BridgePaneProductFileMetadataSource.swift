@@ -82,7 +82,9 @@ actor BridgePaneProductFileMetadataSource: BridgePaneProductFileMetadataProducin
     let statusProvider: any GitWorkingTreeStatusProvider
     var sourceAcceptedObserver: BridgePaneProductFileSourceAcceptedObserver
     let treeRowRefresher: BridgePaneProductFileTreeRowRefresher
+    let revisionFloorCapture: @Sendable (BridgeWorktreeFileManifestIndex) async -> Int
     var contextBySubscriptionId: [String: SubscriptionContext] = [:]
+    var retiringContextBySubscriptionId: [String: SubscriptionContext] = [:]
     var nextSourceGeneration = 0
     var lastIssuedFileViewRevision = 0
 
@@ -92,6 +94,8 @@ actor BridgePaneProductFileMetadataSource: BridgePaneProductFileMetadataProducin
         constructionCoordinator: BridgeWorktreeProductConstructionCoordinator,
         sourceAcceptedObserver: @escaping BridgePaneProductFileSourceAcceptedObserver = { _ in },
         statusProvider: any GitWorkingTreeStatusProvider,
+        revisionFloorCapture: @escaping @Sendable (BridgeWorktreeFileManifestIndex) async -> Int =
+            BridgePaneProductFileMetadataSource.captureRevisionFloor,
         snapshotPreparationLoader: BridgePaneProductFileSnapshotPreparationLoader? = nil,
         sharedSnapshotBuilder: @escaping BridgePaneProductFileSharedSnapshotBuilder =
             BridgeWorktreeFileMaterializer.buildSharedSnapshot,
@@ -103,6 +107,7 @@ actor BridgePaneProductFileMetadataSource: BridgePaneProductFileMetadataProducin
         self.authority = authority
         self.descriptorMaterializer = descriptorMaterializer
         self.statusProvider = statusProvider
+        self.revisionFloorCapture = revisionFloorCapture
         let resolvedPreparationLoader: BridgePaneProductFileSnapshotPreparationLoader =
             if let snapshotPreparationLoader {
                 snapshotPreparationLoader
@@ -150,6 +155,10 @@ actor BridgePaneProductFileMetadataSource: BridgePaneProductFileMetadataProducin
                     includeAncestorDirectories: includeAncestorDirectories
                 )
             }
+    }
+
+    nonisolated static func captureRevisionFloor(_ index: BridgeWorktreeFileManifestIndex) async -> Int {
+        await index.captureKeyedSnapshot().targetRevision
     }
 
     func setSourceAcceptedObserver(

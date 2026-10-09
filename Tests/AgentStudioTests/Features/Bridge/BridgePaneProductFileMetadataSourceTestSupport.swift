@@ -66,6 +66,8 @@ struct ProductFileSourceFixture {
     func makeSource(
         paneId: UUID? = nil,
         constructionCoordinator: BridgeWorktreeProductConstructionCoordinator? = nil,
+        revisionFloorCapture: @escaping @Sendable (BridgeWorktreeFileManifestIndex) async -> Int =
+            BridgePaneProductFileMetadataSource.captureRevisionFloor,
         sourceAcceptedObserver: @escaping @Sendable (BridgeProductFileSourceIdentity) async -> Void = { _ in },
         snapshotPreparationLoader: BridgePaneProductFileSnapshotPreparationLoader? = nil,
         sharedSnapshotBuilder: @escaping BridgePaneProductFileSharedSnapshotBuilder =
@@ -89,6 +91,7 @@ struct ProductFileSourceFixture {
             constructionCoordinator: constructionCoordinator ?? BridgeWorktreeProductConstructionCoordinator(),
             sourceAcceptedObserver: sourceAcceptedObserver,
             statusProvider: ProductFileSourceStatusProvider(),
+            revisionFloorCapture: revisionFloorCapture,
             snapshotPreparationLoader: snapshotPreparationLoader,
             sharedSnapshotBuilder: sharedSnapshotBuilder,
             ignorePolicyLoader: ignorePolicyLoader,
