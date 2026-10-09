@@ -128,6 +128,46 @@ swift_test_webkit_process_concurrency() {
   echo "$SWIFT_TEST_WEBKIT_PROCESS_CONCURRENCY"
 }
 
+# Console lock can suspend WebContent without producing a test issue. Read it
+# at the invocation boundary and again before timeout diagnostics, since the
+# owner's desktop can lock while a lane is running. Only the boolean is kept.
+swift_test_console_lock_state() {
+  local console_properties
+  if ! console_properties="$(ioreg -n Root -d1 2>/dev/null)"; then
+    echo unavailable
+    return 0
+  fi
+  printf '%s\n' "$console_properties" | /usr/bin/awk '
+    {
+      remaining = $0
+      while (match(remaining, /"IOConsoleLocked"[[:space:]]*=[[:space:]]*(Yes|No)/)) {
+        state = substr(remaining, RSTART, RLENGTH)
+        sub(/^.*=[[:space:]]*/, "", state)
+        if (observed != "" && observed != state) conflicting = 1
+        observed = state
+        remaining = substr(remaining, RSTART + RLENGTH)
+      }
+    }
+    END {
+      if (observed == "" || conflicting) print "unavailable"
+      else print observed
+    }
+  ' || echo unavailable
+  return 0
+}
+
+swift_test_report_webkit_console_lock() {
+  local label="$1"
+  local phase="$2"
+  case "$label" in
+    *WebKitSerializedTests*) ;;
+    *) return 0 ;;
+  esac
+  printf '[%s] lane-report console_locked=%s phase=%s label=%s\n' \
+    "$LOG_PREFIX" "$(swift_test_console_lock_state)" "$phase" "$label"
+  return 0
+}
+
 # Largest number of test cases RUNNING at once, from Swift Testing's JSON event
 # stream. The parallelization serializer gates _runTestCase and testCaseStarted /
 # testCaseEnded fire inside it, so unlike peak_announced_tests this observes the cap.
@@ -1037,6 +1077,7 @@ large|WatchedFolderPublicationHoldIntegrationTests|concurrent
 fast|WebInteractionManagementScriptTests|concurrent
 webkit|WebKitSerializedTests|serial
 webkit|WebKitSerializedTests/BridgeContentWorldIsolationTests|serial
+webkit|WebKitSerializedTests/BridgeDocumentWaitTeardownContractTests|serial
 webkit|WebKitSerializedTests/BridgeTransportIntegrationTests|serial
 webkit|WebKitSerializedTests/BridgeWebKitSpikeTests|serial
 webkit|WebKitSerializedTests/WorkspaceBridgeConstructionIntegrationTests|serial
@@ -2179,6 +2220,7 @@ WebKitSerializedTests/BridgePaneControllerContentAuthorityTests
 WebKitSerializedTests/BridgePaneControllerInitialLoadTests
 WebKitSerializedTests/BridgeSchemeHandlerSpikeTests
 WebKitSerializedTests/BridgeContentWorldIsolationTests
+WebKitSerializedTests/BridgeDocumentWaitTeardownContractTests
 WebKitSerializedTests/BridgePaneControllerIPCProjectionTests
 WebKitSerializedTests/BridgePaneControllerRealGitReviewLoadTests
 WebKitSerializedTests/BridgePaneControllerTelemetryTests
@@ -2617,6 +2659,7 @@ swift_test_run_with_timeout_body() {
   shift
 
   echo "[$LOG_PREFIX] >>> $label (inactivity-timeout=${timeout_seconds}s)"
+  swift_test_report_webkit_console_lock "$label" start
   local start_epoch
   start_epoch=$(date +%s)
   local last_heartbeat="$start_epoch"
@@ -2753,6 +2796,7 @@ swift_test_run_with_timeout_body() {
   done
 
   if [ "$timed_out" -eq 1 ]; then
+    swift_test_report_webkit_console_lock "$label" timeout
     echo "[$LOG_PREFIX] ERROR: no output progress from '$label' for ${timeout_seconds}s"
     # Read the stream before terminating anything: this names what was still
     # executing at the timeout, not what survived the kill.

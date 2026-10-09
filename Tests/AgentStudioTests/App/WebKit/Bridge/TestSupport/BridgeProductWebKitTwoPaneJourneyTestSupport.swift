@@ -532,7 +532,7 @@ enum BridgeProductWebKitTwoPaneJourneyTestSupport {
         )
     }
 
-    private static func withHostedControllers<Value>(
+    static func withHostedControllers<Value>(
         _ controllers: [BridgePaneController],
         operation: @MainActor () async throws -> Value
     ) async throws -> Value {
