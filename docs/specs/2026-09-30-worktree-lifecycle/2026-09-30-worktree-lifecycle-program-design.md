@@ -749,7 +749,7 @@ flowchart TB
   P -->|"absent, --changes-only"| CO["creation fetch skipped(notNeeded)<br/>newBranch at sourceHead"]
   P -->|"absent, --from-branch"| T2["LR30 refreshes &lt;start&gt;; resolve it: remote prefix, else local, else origin/&lt;start&gt;<br/>newest of local and remote; none → startBranchNotFound"]
   T2 --> N["newBranch at that commit, no upstream"]
-  P -->|"absent, no start"| Z["creation fetch: the existence answer (notOnRemote / failed)<br/>newBranch at sourceHead"]
+  P -->|"absent, no start"| Z["creation fetch: the existence answer (notOnRemote)<br/>newBranch at sourceHead"]
   X & Y & Z & N & CO --> M["materialize with the plan's SDK mode:<br/>forkWorktree (copyOnWrite, changesOnly) or createWorktree (checkout)<br/>SDK re-checks branch use under the ref lock at attach"]
   M --> O["created → LR31 line; details in --json"]
 ```

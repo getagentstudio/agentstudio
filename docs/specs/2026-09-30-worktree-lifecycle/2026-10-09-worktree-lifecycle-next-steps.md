@@ -5,9 +5,10 @@ This folder is the design home: [Requirements](2026-09-30-worktree-lifecycle-req
 ```text
 worktree lifecycle
 ├── 1. PR #489: `agentstudio worktree new` (CLI + leaf), finish and merge
-│   ├── a. D23 implementation: `new <b>` opens an existing branch, `new -c <b>` creates   ← in progress (WIP commit on the branch)
+│   ├── a. D23 implementation: `new <b>` opens an existing branch, `new -c <b>` creates   ← implemented (385b7d3fd, 7b2f80f9b); tests not yet run
 │   │      parser -c/--create · resolver two forms · noSuchBranch · originCheckFailed (fail-closed)
-│   │      no origin → local only · printed strings say -c · guide + ipc.md · tests · mutation batch 10
+│   │      no origin → local only · printed strings say -c · guide · tests · mutation batch 10 (9 predicted)
+│   │      still open: the ipc.md example (docs/architecture) wasn't in the batch; check it
 │   ├── b. Sol design review of D23 (the Claude reviewer says READY at d4c89926f)
 │   ├── c. merge the latest main (carries #463 Bridge stability)
 │   ├── d. final gate on the Xcode 27 test machine at that head: fresh build, every `mise run test` step with the
