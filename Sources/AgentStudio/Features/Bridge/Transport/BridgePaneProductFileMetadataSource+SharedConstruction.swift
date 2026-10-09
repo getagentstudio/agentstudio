@@ -14,13 +14,9 @@ extension BridgePaneProductFileMetadataSource {
     }
 
     func cancel(subscriptionId: String) async {
-        guard let context = contextBySubscriptionId.removeValue(forKey: subscriptionId) else { return }
-        let retiredRevision = await context.manifestIndex.captureKeyedSnapshot().targetRevision
-        lastIssuedFileViewRevision = max(lastIssuedFileViewRevision, retiredRevision)
-        await context.manifestIndex.revokeRetainedDescriptors()
-        if let constructionLease = context.constructionLease {
-            await sharedConstructionBinder.release(constructionLease)
-        }
+        guard let context = contextBySubscriptionId[subscriptionId] ?? retiringContextBySubscriptionId[subscriptionId]
+        else { return }
+        await releaseContext(subscriptionId: subscriptionId, expectedSource: context.productSource)
     }
 
     func diagnosticSnapshot() async -> BridgeFileMetadataSourceDiagnostics {
@@ -89,10 +85,21 @@ extension BridgePaneProductFileMetadataSource {
         subscriptionId: String,
         expectedSource: BridgeProductFileSourceIdentity
     ) async {
-        guard let context = contextBySubscriptionId[subscriptionId],
+        if let context = contextBySubscriptionId[subscriptionId], context.productSource == expectedSource {
+            // Fence live publication immediately, while retaining the index's
+            // counter for another cancel/open to finish the same handoff.
+            contextBySubscriptionId.removeValue(forKey: subscriptionId)
+            retiringContextBySubscriptionId[subscriptionId] = context
+        }
+        guard let context = retiringContextBySubscriptionId[subscriptionId],
             context.productSource == expectedSource
         else { return }
-        contextBySubscriptionId.removeValue(forKey: subscriptionId)
+        let retiredRevision = await revisionFloorCapture(context.manifestIndex)
+        guard retiringContextBySubscriptionId[subscriptionId]?.productSource == expectedSource else { return }
+        // Publishing the floor and releasing its slot is one source-actor turn.
+        // A successor cannot observe a removed context with the old seed.
+        lastIssuedFileViewRevision = max(lastIssuedFileViewRevision, retiredRevision)
+        retiringContextBySubscriptionId.removeValue(forKey: subscriptionId)
         await context.manifestIndex.revokeRetainedDescriptors()
         if let constructionLease = context.constructionLease {
             await sharedConstructionBinder.release(constructionLease)

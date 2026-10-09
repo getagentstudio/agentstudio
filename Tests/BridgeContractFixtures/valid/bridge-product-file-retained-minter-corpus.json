@@ -1,0 +1,302 @@
+{
+  "certificate": {
+    "mode": "snapshot",
+    "parts": [
+      {
+        "key": "/retained-minter-fixture/File-0000.swift",
+        "operation": "put",
+        "revision": 15,
+        "value": {
+          "changeStatus": null,
+          "depth": 0,
+          "descriptorOutcome": null,
+          "displayKey": "File-0000.swift",
+          "fileClass": "source",
+          "fileId": "worktree-file-9c920c0d6bfd994385f4341adb4c31d7",
+          "kind": "file",
+          "lineCount": null,
+          "name": "File-0000.swift",
+          "oldPath": null,
+          "parentDisplayKey": null,
+          "readDescriptor": null,
+          "rowId": "worktree-file-row-9c920c0d6bfd994385f4341adb4c31d7",
+          "sizeBytes": 27,
+          "sortKey": "File-0000.swift"
+        }
+      },
+      {
+        "key": "member-status",
+        "operation": "put",
+        "revision": 16,
+        "value": {
+          "ahead": null,
+          "behind": null,
+          "branchName": "main",
+          "kind": "memberStatus",
+          "source": {
+            "repoId": "00000000-0000-4000-8000-000000000001",
+            "rootRevisionToken": "retained-minter-root",
+            "sourceCursor": "generation-2",
+            "sourceId": "pane-00000000-0000-4000-8000-000000000003-worktree-00000000-0000-4000-8000-000000000002-2",
+            "subscriptionGeneration": 2,
+            "worktreeId": "00000000-0000-4000-8000-000000000002"
+          },
+          "staged": 2,
+          "status": "ready",
+          "unstaged": 1,
+          "untracked": 3
+        }
+      }
+    ],
+    "targetRevision": 16
+  },
+  "coverage": {
+    "mode": "coverage",
+    "parts": [
+      {
+        "key": "/retained-minter-fixture/File-0000.swift",
+        "operation": "put",
+        "revision": 3,
+        "value": {
+          "changeStatus": null,
+          "depth": 0,
+          "descriptorOutcome": null,
+          "displayKey": "File-0000.swift",
+          "fileClass": "source",
+          "fileId": "worktree-file-9c920c0d6bfd994385f4341adb4c31d7",
+          "kind": "file",
+          "lineCount": null,
+          "name": "File-0000.swift",
+          "oldPath": null,
+          "parentDisplayKey": null,
+          "readDescriptor": null,
+          "rowId": "worktree-file-row-9c920c0d6bfd994385f4341adb4c31d7",
+          "sizeBytes": 10,
+          "sortKey": "File-0000.swift"
+        }
+      },
+      {
+        "key": "/retained-minter-fixture/File-0001.swift",
+        "operation": "put",
+        "revision": 4,
+        "value": {
+          "changeStatus": null,
+          "depth": 0,
+          "descriptorOutcome": null,
+          "displayKey": "File-0001.swift",
+          "fileClass": "source",
+          "fileId": "worktree-file-b9be30179f35e046e29b97d2e777acee",
+          "kind": "file",
+          "lineCount": null,
+          "name": "File-0001.swift",
+          "oldPath": null,
+          "parentDisplayKey": null,
+          "readDescriptor": null,
+          "rowId": "worktree-file-row-b9be30179f35e046e29b97d2e777acee",
+          "sizeBytes": 14,
+          "sortKey": "File-0001.swift"
+        }
+      },
+      {
+        "key": "/retained-minter-fixture/File-0002.swift",
+        "operation": "put",
+        "revision": 5,
+        "value": {
+          "changeStatus": null,
+          "depth": 0,
+          "descriptorOutcome": null,
+          "displayKey": "File-0002.swift",
+          "fileClass": "source",
+          "fileId": "worktree-file-0048c580e3a39a7f355c1165afc7c821",
+          "kind": "file",
+          "lineCount": null,
+          "name": "File-0002.swift",
+          "oldPath": null,
+          "parentDisplayKey": null,
+          "readDescriptor": null,
+          "rowId": "worktree-file-row-0048c580e3a39a7f355c1165afc7c821",
+          "sizeBytes": 14,
+          "sortKey": "File-0002.swift"
+        }
+      },
+      {
+        "key": "/retained-minter-fixture/File-0003.swift",
+        "operation": "put",
+        "revision": 6,
+        "value": {
+          "changeStatus": null,
+          "depth": 0,
+          "descriptorOutcome": null,
+          "displayKey": "File-0003.swift",
+          "fileClass": "source",
+          "fileId": "worktree-file-dcc0ba99b398bba3f93eb323d58b4457",
+          "kind": "file",
+          "lineCount": null,
+          "name": "File-0003.swift",
+          "oldPath": null,
+          "parentDisplayKey": null,
+          "readDescriptor": null,
+          "rowId": "worktree-file-row-dcc0ba99b398bba3f93eb323d58b4457",
+          "sizeBytes": 14,
+          "sortKey": "File-0003.swift"
+        }
+      },
+      {
+        "key": "/retained-minter-fixture/File-0004.swift",
+        "operation": "put",
+        "revision": 7,
+        "value": {
+          "changeStatus": null,
+          "depth": 0,
+          "descriptorOutcome": null,
+          "displayKey": "File-0004.swift",
+          "fileClass": "source",
+          "fileId": "worktree-file-5591e9744e2cc52fbe94948dc290ad6d",
+          "kind": "file",
+          "lineCount": null,
+          "name": "File-0004.swift",
+          "oldPath": null,
+          "parentDisplayKey": null,
+          "readDescriptor": null,
+          "rowId": "worktree-file-row-5591e9744e2cc52fbe94948dc290ad6d",
+          "sizeBytes": 14,
+          "sortKey": "File-0004.swift"
+        }
+      },
+      {
+        "key": "/retained-minter-fixture/File-0005.swift",
+        "operation": "put",
+        "revision": 8,
+        "value": {
+          "changeStatus": null,
+          "depth": 0,
+          "descriptorOutcome": null,
+          "displayKey": "File-0005.swift",
+          "fileClass": "source",
+          "fileId": "worktree-file-8842e82800a0718cc92292a68d252b10",
+          "kind": "file",
+          "lineCount": null,
+          "name": "File-0005.swift",
+          "oldPath": null,
+          "parentDisplayKey": null,
+          "readDescriptor": null,
+          "rowId": "worktree-file-row-8842e82800a0718cc92292a68d252b10",
+          "sizeBytes": 14,
+          "sortKey": "File-0005.swift"
+        }
+      },
+      {
+        "key": "/retained-minter-fixture/File-0006.swift",
+        "operation": "put",
+        "revision": 9,
+        "value": {
+          "changeStatus": null,
+          "depth": 0,
+          "descriptorOutcome": null,
+          "displayKey": "File-0006.swift",
+          "fileClass": "source",
+          "fileId": "worktree-file-de82fa153b0b169006539d1167cbc6e4",
+          "kind": "file",
+          "lineCount": null,
+          "name": "File-0006.swift",
+          "oldPath": null,
+          "parentDisplayKey": null,
+          "readDescriptor": null,
+          "rowId": "worktree-file-row-de82fa153b0b169006539d1167cbc6e4",
+          "sizeBytes": 14,
+          "sortKey": "File-0006.swift"
+        }
+      },
+      {
+        "key": "/retained-minter-fixture/File-0007.swift",
+        "operation": "put",
+        "revision": 10,
+        "value": {
+          "changeStatus": null,
+          "depth": 0,
+          "descriptorOutcome": null,
+          "displayKey": "File-0007.swift",
+          "fileClass": "source",
+          "fileId": "worktree-file-35b21ec074ccbe6745655c824af2af76",
+          "kind": "file",
+          "lineCount": null,
+          "name": "File-0007.swift",
+          "oldPath": null,
+          "parentDisplayKey": null,
+          "readDescriptor": null,
+          "rowId": "worktree-file-row-35b21ec074ccbe6745655c824af2af76",
+          "sizeBytes": 14,
+          "sortKey": "File-0007.swift"
+        }
+      },
+      {
+        "key": "/retained-minter-fixture/File-0008.swift",
+        "operation": "put",
+        "revision": 11,
+        "value": {
+          "changeStatus": null,
+          "depth": 0,
+          "descriptorOutcome": null,
+          "displayKey": "File-0008.swift",
+          "fileClass": "source",
+          "fileId": "worktree-file-deed3133e53a99cbff714e2eac233c8f",
+          "kind": "file",
+          "lineCount": null,
+          "name": "File-0008.swift",
+          "oldPath": null,
+          "parentDisplayKey": null,
+          "readDescriptor": null,
+          "rowId": "worktree-file-row-deed3133e53a99cbff714e2eac233c8f",
+          "sizeBytes": 14,
+          "sortKey": "File-0008.swift"
+        }
+      },
+      {
+        "key": "/retained-minter-fixture/File-0009.swift",
+        "operation": "put",
+        "revision": 12,
+        "value": {
+          "changeStatus": null,
+          "depth": 0,
+          "descriptorOutcome": null,
+          "displayKey": "File-0009.swift",
+          "fileClass": "source",
+          "fileId": "worktree-file-7b9defdd23524ae5c8aba2cbc7e55e48",
+          "kind": "file",
+          "lineCount": null,
+          "name": "File-0009.swift",
+          "oldPath": null,
+          "parentDisplayKey": null,
+          "readDescriptor": null,
+          "rowId": "worktree-file-row-7b9defdd23524ae5c8aba2cbc7e55e48",
+          "sizeBytes": 14,
+          "sortKey": "File-0009.swift"
+        }
+      },
+      {
+        "key": "member-status",
+        "operation": "put",
+        "revision": 2,
+        "value": {
+          "ahead": null,
+          "behind": null,
+          "branchName": "main",
+          "kind": "memberStatus",
+          "source": {
+            "repoId": "00000000-0000-4000-8000-000000000001",
+            "rootRevisionToken": "retained-minter-root",
+            "sourceCursor": "generation-1",
+            "sourceId": "pane-00000000-0000-4000-8000-000000000003-worktree-00000000-0000-4000-8000-000000000002-1",
+            "subscriptionGeneration": 1,
+            "worktreeId": "00000000-0000-4000-8000-000000000002"
+          },
+          "staged": 2,
+          "status": "loading",
+          "unstaged": 1,
+          "untracked": 3
+        }
+      }
+    ],
+    "targetRevision": 12
+  }
+}
