@@ -7,8 +7,9 @@ enum BridgeProductControlRequest: Codable, Equatable, Sendable {
     case workerSessionOpen(BridgeProductWorkerSessionOpenRequest)
     case productCall(BridgeProductCallControlRequest)
     case subscriptionOpen(BridgeProductSubscriptionOpenRequest)
-    case subscriptionUpdateBatch(BridgeProductSubscriptionUpdateBatchRequest)
     case subscriptionCancel(BridgeProductSubscriptionCancelRequest)
+    case viewScope(BridgeProductViewScopeRequest)
+    case viewResnapshot(BridgeProductViewResnapshotRequest)
     case workerSessionResync(BridgeProductWorkerSessionResyncRequest)
 
     private enum CodingKeys: String, CodingKey {
@@ -20,10 +21,16 @@ enum BridgeProductControlRequest: Codable, Equatable, Sendable {
         case .workerSessionOpen: "workerSession.open"
         case .productCall: "product.call"
         case .subscriptionOpen: "subscription.open"
-        case .subscriptionUpdateBatch: "subscription.updateBatch"
         case .subscriptionCancel: "subscription.cancel"
+        case .viewScope: "subscription.setScope"
+        case .viewResnapshot: "subscription.resnapshot"
         case .workerSessionResync: "workerSession.resync"
         }
+    }
+
+    var isSlotFreeEscape: Bool {
+        if case .subscriptionCancel = self { return true }
+        return false
     }
 
     var correlation: BridgeProductControlCorrelation {
@@ -31,8 +38,9 @@ enum BridgeProductControlRequest: Codable, Equatable, Sendable {
         case .workerSessionOpen(let request): request.correlation
         case .productCall(let request): request.correlation
         case .subscriptionOpen(let request): request.correlation
-        case .subscriptionUpdateBatch(let request): request.correlation
         case .subscriptionCancel(let request): request.correlation
+        case .viewScope(let request): request.correlation
+        case .viewResnapshot(let request): request.correlation
         case .workerSessionResync(let request): request.correlation
         }
     }
@@ -42,6 +50,17 @@ enum BridgeProductControlRequest: Codable, Equatable, Sendable {
     var requestSequence: Int { correlation.requestSequence }
     var workerInstanceId: String { correlation.workerInstanceId }
 
+    var viewControlSubscription: (id: String, kind: BridgeProductSubscriptionKind)? {
+        switch self {
+        case .viewScope(let request):
+            (request.subscriptionId, request.subscriptionKind)
+        case .viewResnapshot(let request):
+            (request.subscriptionId, request.subscriptionKind)
+        default:
+            nil
+        }
+    }
+
     var surface: BridgeProductSurface? {
         switch self {
         case .workerSessionOpen, .workerSessionResync:
@@ -50,10 +69,12 @@ enum BridgeProductControlRequest: Codable, Equatable, Sendable {
             request.surface
         case .subscriptionOpen(let request):
             request.surface
-        case .subscriptionUpdateBatch(let request):
-            request.surface
         case .subscriptionCancel(let request):
             request.surface
+        case .viewScope(let request):
+            request.subscriptionKind.surface
+        case .viewResnapshot(let request):
+            request.subscriptionKind.surface
         }
     }
 
@@ -65,10 +86,10 @@ enum BridgeProductControlRequest: Codable, Equatable, Sendable {
             request.workerDerivationEpoch
         case .subscriptionOpen(let request):
             request.workerDerivationEpoch
-        case .subscriptionUpdateBatch(let request):
-            request.workerDerivationEpoch
         case .subscriptionCancel(let request):
             request.workerDerivationEpoch
+        case .viewScope, .viewResnapshot:
+            nil
         }
     }
 
@@ -81,10 +102,12 @@ enum BridgeProductControlRequest: Codable, Equatable, Sendable {
             self = .productCall(try BridgeProductCallControlRequest(from: decoder))
         case "subscription.open":
             self = .subscriptionOpen(try BridgeProductSubscriptionOpenRequest(from: decoder))
-        case "subscription.updateBatch":
-            self = .subscriptionUpdateBatch(try BridgeProductSubscriptionUpdateBatchRequest(from: decoder))
         case "subscription.cancel":
             self = .subscriptionCancel(try BridgeProductSubscriptionCancelRequest(from: decoder))
+        case "subscription.setScope":
+            self = .viewScope(try BridgeProductViewScopeRequest(from: decoder))
+        case "subscription.resnapshot":
+            self = .viewResnapshot(try BridgeProductViewResnapshotRequest(from: decoder))
         case "workerSession.resync":
             self = .workerSessionResync(try BridgeProductWorkerSessionResyncRequest(from: decoder))
         default:
@@ -101,8 +124,9 @@ enum BridgeProductControlRequest: Codable, Equatable, Sendable {
         case .workerSessionOpen(let request): try request.encode(to: encoder)
         case .productCall(let request): try request.encode(to: encoder)
         case .subscriptionOpen(let request): try request.encode(to: encoder)
-        case .subscriptionUpdateBatch(let request): try request.encode(to: encoder)
         case .subscriptionCancel(let request): try request.encode(to: encoder)
+        case .viewScope(let request): try request.encode(to: encoder)
+        case .viewResnapshot(let request): try request.encode(to: encoder)
         case .workerSessionResync(let request): try request.encode(to: encoder)
         }
     }
@@ -234,161 +258,6 @@ struct BridgeProductSubscriptionOpenRequest: Codable, Equatable, Sendable {
     }
 }
 
-struct BridgeProductSubscriptionUpdateBatchRequest: Codable, Equatable, Sendable {
-    private enum CodingKeys: String, CodingKey, CaseIterable {
-        case baseInterestRevision
-        case baseInterestSha256
-        case batchCount
-        case batchIndex
-        case delta
-        case kind
-        case subscriptionId
-        case subscriptionKind
-        case targetInterestRevision
-        case targetInterestSha256
-        case totalDeltaItemCount
-        case updateId
-    }
-
-    private let identity: BridgeProductSurfaceControlRequestIdentity
-    let baseInterestRevision: Int
-    let baseInterestSha256: String
-    let batchCount: Int
-    let batchIndex: Int
-    let delta: BridgeProductSubscriptionInterestDelta
-    let subscriptionId: String
-    let subscriptionKind: BridgeProductSubscriptionKind
-    let targetInterestRevision: Int
-    let targetInterestSha256: String
-    let totalDeltaItemCount: Int
-    let updateId: String
-
-    var correlation: BridgeProductControlCorrelation { identity.correlation }
-    var surface: BridgeProductSurface? { subscriptionKind.surface }
-    var workerDerivationEpoch: Int { identity.workerDerivationEpoch }
-
-    init(from decoder: Decoder) throws {
-        try BridgeProductContractDecoding.rejectUnknownKeys(
-            from: decoder,
-            allowedKeys: BridgeProductSurfaceControlRequestIdentity.codingKeyNames.union(
-                CodingKeys.allCases.map(\.rawValue)
-            ),
-            contract: "subscription.updateBatch request"
-        )
-        let container = try decoder.container(keyedBy: CodingKeys.self)
-        self.baseInterestRevision = try container.decode(Int.self, forKey: .baseInterestRevision)
-        self.baseInterestSha256 = try container.decode(String.self, forKey: .baseInterestSha256)
-        self.batchCount = try container.decode(Int.self, forKey: .batchCount)
-        self.batchIndex = try container.decode(Int.self, forKey: .batchIndex)
-        self.delta = try container.decode(BridgeProductSubscriptionInterestDelta.self, forKey: .delta)
-        guard try container.decode(String.self, forKey: .kind) == "subscription.updateBatch" else {
-            throw BridgeProductContractDecoding.invalidValue(
-                "Invalid subscription.updateBatch request kind",
-                codingPath: decoder.codingPath
-            )
-        }
-        self.subscriptionId = try container.decode(String.self, forKey: .subscriptionId)
-        self.subscriptionKind = try container.decode(
-            BridgeProductSubscriptionKind.self,
-            forKey: .subscriptionKind
-        )
-        self.targetInterestRevision = try container.decode(Int.self, forKey: .targetInterestRevision)
-        self.targetInterestSha256 = try container.decode(String.self, forKey: .targetInterestSha256)
-        self.totalDeltaItemCount = try container.decode(Int.self, forKey: .totalDeltaItemCount)
-        self.updateId = try container.decode(String.self, forKey: .updateId)
-        self.identity = try BridgeProductSurfaceControlRequestIdentity(from: decoder)
-
-        try BridgeProductContractDecoding.validateNonnegative(
-            baseInterestRevision,
-            name: "baseInterestRevision",
-            codingPath: decoder.codingPath
-        )
-        try BridgeProductContractDecoding.validateSHA256(baseInterestSha256, codingPath: decoder.codingPath)
-        try BridgeProductContractDecoding.validatePositive(
-            batchCount,
-            name: "batchCount",
-            codingPath: decoder.codingPath
-        )
-        try BridgeProductContractDecoding.validateMaximum(
-            batchCount,
-            maximum: BridgeProductWireContract.maximumSubscriptionDeltaItemCount,
-            name: "batchCount",
-            codingPath: decoder.codingPath
-        )
-        try BridgeProductContractDecoding.validateNonnegative(
-            batchIndex,
-            name: "batchIndex",
-            codingPath: decoder.codingPath
-        )
-        try BridgeProductContractDecoding.validateIdentifier(subscriptionId, codingPath: decoder.codingPath)
-        try BridgeProductContractDecoding.validatePositive(
-            targetInterestRevision,
-            name: "targetInterestRevision",
-            codingPath: decoder.codingPath
-        )
-        try BridgeProductContractDecoding.validateSHA256(targetInterestSha256, codingPath: decoder.codingPath)
-        try BridgeProductContractDecoding.validatePositive(
-            totalDeltaItemCount,
-            name: "totalDeltaItemCount",
-            codingPath: decoder.codingPath
-        )
-        try BridgeProductContractDecoding.validateMaximum(
-            totalDeltaItemCount,
-            maximum: BridgeProductWireContract.maximumSubscriptionDeltaItemCount,
-            name: "totalDeltaItemCount",
-            codingPath: decoder.codingPath
-        )
-        try BridgeProductContractDecoding.validateIdentifier(updateId, codingPath: decoder.codingPath)
-        guard subscriptionKind == delta.subscriptionKind else {
-            throw BridgeProductContractDecoding.invalidValue(
-                "Subscription update kind must match its typed interest delta",
-                codingPath: decoder.codingPath
-            )
-        }
-        guard targetInterestRevision == baseInterestRevision + 1 else {
-            throw BridgeProductContractDecoding.invalidValue(
-                "Subscription update must advance exactly one interest revision",
-                codingPath: decoder.codingPath
-            )
-        }
-        guard batchIndex < batchCount else {
-            throw BridgeProductContractDecoding.invalidValue(
-                "Subscription update batch index must be below its batch count",
-                codingPath: decoder.codingPath
-            )
-        }
-        guard delta.itemCount > 0, delta.itemCount <= totalDeltaItemCount else {
-            throw BridgeProductContractDecoding.invalidValue(
-                "Subscription update batch item count must fit its declared total",
-                codingPath: decoder.codingPath
-            )
-        }
-        guard batchCount <= totalDeltaItemCount else {
-            throw BridgeProductContractDecoding.invalidValue(
-                "Subscription update cannot declare more nonempty batches than items",
-                codingPath: decoder.codingPath
-            )
-        }
-    }
-
-    func encode(to encoder: Encoder) throws {
-        try identity.encode(to: encoder)
-        var container = encoder.container(keyedBy: CodingKeys.self)
-        try container.encode(baseInterestRevision, forKey: .baseInterestRevision)
-        try container.encode(baseInterestSha256, forKey: .baseInterestSha256)
-        try container.encode(batchCount, forKey: .batchCount)
-        try container.encode(batchIndex, forKey: .batchIndex)
-        try container.encode(delta, forKey: .delta)
-        try container.encode("subscription.updateBatch", forKey: .kind)
-        try container.encode(subscriptionId, forKey: .subscriptionId)
-        try container.encode(subscriptionKind, forKey: .subscriptionKind)
-        try container.encode(targetInterestRevision, forKey: .targetInterestRevision)
-        try container.encode(targetInterestSha256, forKey: .targetInterestSha256)
-        try container.encode(totalDeltaItemCount, forKey: .totalDeltaItemCount)
-        try container.encode(updateId, forKey: .updateId)
-    }
-}
-
 struct BridgeProductSubscriptionCancelRequest: Codable, Equatable, Sendable {
     private enum CodingKeys: String, CodingKey, CaseIterable {
         case kind
@@ -437,15 +306,11 @@ struct BridgeProductSubscriptionCancelRequest: Codable, Equatable, Sendable {
 
 struct BridgeProductActiveSubscription: Codable, Equatable, Sendable {
     private enum CodingKeys: String, CodingKey, CaseIterable {
-        case interestRevision
-        case interestSha256
         case subscriptionId
         case subscriptionKind
         case workerDerivationEpoch
     }
 
-    let interestRevision: Int
-    let interestSha256: String
     let subscriptionId: String
     let subscriptionKind: BridgeProductSubscriptionKind
     let workerDerivationEpoch: Int
@@ -460,8 +325,6 @@ struct BridgeProductActiveSubscription: Codable, Equatable, Sendable {
             contract: "active Bridge product subscription"
         )
         let container = try decoder.container(keyedBy: CodingKeys.self)
-        self.interestRevision = try container.decode(Int.self, forKey: .interestRevision)
-        self.interestSha256 = try container.decode(String.self, forKey: .interestSha256)
         self.subscriptionId = try container.decode(String.self, forKey: .subscriptionId)
         self.subscriptionKind = try container.decode(BridgeProductSubscriptionKind.self, forKey: .subscriptionKind)
         registeredSurface = try BridgeProductMetadataApplicationRegistry.product.registration(
@@ -471,12 +334,6 @@ struct BridgeProductActiveSubscription: Codable, Equatable, Sendable {
             Int.self,
             forKey: .workerDerivationEpoch
         )
-        try BridgeProductContractDecoding.validateNonnegative(
-            interestRevision,
-            name: "interestRevision",
-            codingPath: decoder.codingPath
-        )
-        try BridgeProductContractDecoding.validateSHA256(interestSha256, codingPath: decoder.codingPath)
         try BridgeProductContractDecoding.validateIdentifier(subscriptionId, codingPath: decoder.codingPath)
         try BridgeProductContractDecoding.validateNonnegative(
             workerDerivationEpoch,
@@ -487,8 +344,6 @@ struct BridgeProductActiveSubscription: Codable, Equatable, Sendable {
 
     func encode(to encoder: Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
-        try container.encode(interestRevision, forKey: .interestRevision)
-        try container.encode(interestSha256, forKey: .interestSha256)
         try container.encode(subscriptionId, forKey: .subscriptionId)
         try container.encode(subscriptionKind, forKey: .subscriptionKind)
         try container.encode(workerDerivationEpoch, forKey: .workerDerivationEpoch)

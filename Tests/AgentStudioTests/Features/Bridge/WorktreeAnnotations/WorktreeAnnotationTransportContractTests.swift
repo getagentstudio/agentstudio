@@ -359,6 +359,18 @@ struct WorktreeAnnotationTransportContractTests {
     ) -> [[String: Any]] {
         [
             [
+                "destination": "remembered",
+                "displayedProjectionRevision": 9,
+                "expectedSessionRevision": 4,
+                "kind": "output.scope.commit",
+                "outputKind": "jsonFile",
+                "scope": "pending",
+                "sessionId": sessionID,
+                "sourceGeneration": 7,
+            ],
+            ["kind": "output.preference.changeFolder"],
+            ["attemptId": attemptID, "kind": "output.reveal"],
+            [
                 "displayedProjectionRevision": 9,
                 "expectedSessionRevision": 4,
                 "kind": "output.scope.commit",
@@ -475,6 +487,31 @@ struct WorktreeAnnotationTransportContractTests {
         ]
 
         for operation in invalidOperations {
+            #expect(throws: (any Error).self) {
+                _ = try decodeAnnotationCommand(method: "file.annotations.command", operation: operation)
+            }
+        }
+    }
+
+    @Test("JSON output requires a destination while clipboard output forbids one")
+    func outputDestinationIsStrictByKind() {
+        let sessionID = "00000000-0000-7000-8000-000000000011"
+        let outputOperation: [String: Any] = [
+            "displayedProjectionRevision": 9,
+            "expectedSessionRevision": 4,
+            "kind": "output.scope.commit",
+            "outputKind": "jsonFile",
+            "scope": "pending",
+            "sessionId": sessionID,
+            "sourceGeneration": 7,
+        ]
+        for operation in [
+            outputOperation,
+            outputOperation.merging([
+                "destination": "choose",
+                "outputKind": "clipboardMarkdown",
+            ]) { _, new in new },
+        ] {
             #expect(throws: (any Error).self) {
                 _ = try decodeAnnotationCommand(method: "file.annotations.command", operation: operation)
             }

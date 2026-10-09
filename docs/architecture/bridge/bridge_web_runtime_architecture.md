@@ -12,6 +12,13 @@ Architecture](bridge_native_runtime_architecture.md). Route and payload
 placement is defined by [Bridge Product Transport
 Architecture](bridge_product_transport_architecture.md).
 
+**Updated 2026-10-09 for Bridge PR1 (#463).** The worker-side owners follow the
+[Bridge Stability Program
+Design](../../specs/2026-09-24-bridge-stability-redesign/2026-09-24-bridge-stability-program-design.md#components-and-ownership):
+W1 control admission, W2 per-subscription lifecycle, W4 batch receiver, W5
+surface epochs and W6 region presentation. Next work is in [Bridge after
+PR1](../../specs/2026-10-09-bridge-after-pr1/2026-10-09-bridge-after-pr1.md).
+
 ## Runtime Topology
 
 ```mermaid
@@ -49,6 +56,10 @@ not destroy the inactive surface's durable display state.
 | State | Owner | Examples |
 | --- | --- | --- |
 | Product/session state | Comm worker | capability, stream, subscriptions, resync, native bootstrap |
+| Control admission (W1) | `BridgeProductControlMux` in the comm worker | page-side sequence and admission, operation-result requests, settlement deadline |
+| Per-subscription lifecycle (W2) | `BridgeProductViewScopeOwner` | desired vs committed scope, begin obligations, recovery budget, `failedRetryable`, Retry |
+| Batch receiver (W4) | `BridgeProductViewBatchReceiver` | side bank, part verification, atomic install, per-key revision rules, resnapshot requests, cumulative receipts |
+| Region presentation (W6) | File, Review, Comments and Markdown region mappers | one presentation state per region: content, Loading, Empty, Updating or Failed |
 | File runtime state | File-owned fields and projections in the comm worker | tree metadata, source generation, selection, File demand, cached bodies |
 | Review runtime state | Review-owned fields and projections in the comm worker | package/catalog, item metadata, Review demand, render fulfillment |
 | Main-thread display snapshots | Surface-specific render stores | compact keyed rows/items and transaction cursors |
@@ -75,18 +86,29 @@ sequenceDiagram
     participant S as Surface store
     participant R as React
 
-    N->>T: metadata begin / item frames / commit
-    T->>W: decoded, validated frames
-    W->>W: prepare transaction
-    W->>S: atomically apply accepted generation
+    N->>T: batchBegin / batchPart × n / batchComplete
+    T->>W: strict-decoded batch frames (W4 receiver)
+    W->>W: stage in side bank, verify every declared part
+    W->>S: install the complete batch atomically (typed application per kind)
     S-->>R: keyed catalog/tree changes
-    W-->>N: frame acknowledgement
+    W-->>N: cumulative receipt (pacing only)
 ```
 
-File and Review metadata use separate applicators and projections. Transactions
-are generation/epoch checked before commit. A reset clears identities and
-derived state that belong to the retired source; it does not leave old items
-addressable through a new generation.
+Since PR1, metadata arrives as **keyed state in sealed batches** (see [Bridge
+Product Transport Architecture](bridge_product_transport_architecture.md#metadata-is-keyed-state-in-sealed-batches)).
+The W2 scope owner decides, per subscription, whether a batch begin is owed:
+the first open, a new handle, a filter change, or pending recovery require a
+snapshot begin; an ordinary same-filter demand change does not, because demand
+reprioritizes enrichment and never restarts an in-flight batch. W4 stages the
+batch, installs it only when complete, and applies it through the typed
+per-kind application (File projection, Review batch installer, comment
+sources). An incomplete batch is never installed: the previous state stays on
+screen and W4 asks for a resnapshot. A batch from an ended subscription
+incarnation (E3) is never applied anywhere.
+
+File and Review metadata keep separate applicators and projections. A reset
+clears identities and derived state that belong to the retired source; it does
+not leave old items addressable through a new generation.
 
 Metadata intake is not content hydration. It makes tree rows, item descriptors,
 content handles, and render semantics available so demand can be derived.
@@ -320,6 +342,26 @@ Failure must converge to retry, reset, or an explicit unavailable state. A
 permanent `loading` entry with no active demand or retry owner is a lifecycle
 bug, not a valid idle state.
 
+**Recovery budget (R13, owner decision 2026-10-08).** W2 counts only
+unsuccessful recovery against a view's "couldn't update" budget. A snapshot
+whose cause is `newerInput` never charges; `recovery` and `requested` snapshots
+are charged and, while the view is `failedRetryable`, are acknowledged but not
+staged. A view leaves Failed only on a certified install, an explicit Retry, or
+a current `open`. The page shows `recovering` as Updating while retaining the
+last good content.
+
+## Region States (U13)
+
+Every region (File tree and content, Review items and comparison, Comments,
+Markdown) ends in exactly one presentation state: content, Loading, Empty,
+Updating or Failed. W6 maps the region's inputs (its surface status, its
+demanded identity and its own read) to that state, and one shared renderer
+draws Loading, Empty, Updating and Failed. W6 is a presentation boundary only:
+it is not a second currentness owner and adds no timer, retry or atom. Each
+pane shows one failure message and one Retry; Retry dispatches the jobs that
+actually failed (view recovery, comparison, or both). A failed start offers
+Reload Bridge (`AppCommand.reloadBridgeWebView`).
+
 ## Invariants
 
 - Exactly one comm worker exists per Bridge pane.
@@ -351,3 +393,8 @@ bug, not a valid idle state.
 | Pierre/Shiki jobs | [`bridge-worker-pierre-render-job.ts`](../../../BridgeWeb/src/core/comm-worker/bridge-worker-pierre-render-job.ts), [`bridge-worker-pierre-courier.ts`](../../../BridgeWeb/src/core/comm-worker/bridge-worker-pierre-courier.ts) |
 | Main-thread snapshots and fulfillment | [`bridge-main-render-snapshot-store.ts`](../../../BridgeWeb/src/core/comm-worker/bridge-main-render-snapshot-store.ts), [`bridge-main-render-fulfillment-coordinator.ts`](../../../BridgeWeb/src/core/comm-worker/bridge-main-render-fulfillment-coordinator.ts) |
 | React mode ownership | [`BridgeWeb/src/app/bridge-app.tsx`](../../../BridgeWeb/src/app/bridge-app.tsx), [`bridge-app-file-viewer-mode.tsx`](../../../BridgeWeb/src/app/bridge-app-file-viewer-mode.tsx), [`bridge-app-review-viewer-mode.tsx`](../../../BridgeWeb/src/app/bridge-app-review-viewer-mode.tsx) |
+| Control admission (W1) | [`bridge-product-session-authority.ts`](../../../BridgeWeb/src/core/comm-worker/bridge-product-session-authority.ts) |
+| Per-subscription lifecycle (W2) | [`bridge-product-view-scope-owner.ts`](../../../BridgeWeb/src/core/comm-worker/bridge-product-view-scope-owner.ts) |
+| Batch receiver (W4) and frame routing | [`bridge-product-view-batch-receiver.ts`](../../../BridgeWeb/src/core/comm-worker/bridge-product-view-batch-receiver.ts), [`bridge-product-batch-frame-router.ts`](../../../BridgeWeb/src/core/comm-worker/bridge-product-batch-frame-router.ts), [`bridge-product-batch-delivery.ts`](../../../BridgeWeb/src/core/comm-worker/bridge-product-batch-delivery.ts), [`bridge-product-view-receipt-acknowledger.ts`](../../../BridgeWeb/src/core/comm-worker/bridge-product-view-receipt-acknowledger.ts) |
+| Typed batch application | [`bridge-comm-worker-product-batch-application.ts`](../../../BridgeWeb/src/core/comm-worker/bridge-comm-worker-product-batch-application.ts), [`bridge-comm-worker-review-batch-installer.ts`](../../../BridgeWeb/src/core/comm-worker/bridge-comm-worker-review-batch-installer.ts) |
+| Region presentation (W6) | [`bridge-review-region-presentation.ts`](../../../BridgeWeb/src/features/review/bridge-review-region-presentation.ts), [`bridge-pane-failure-summary-slot.tsx`](../../../BridgeWeb/src/app/bridge-pane-failure-summary-slot.tsx) |

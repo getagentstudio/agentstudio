@@ -1,4 +1,4 @@
-import { afterAll, afterEach, beforeEach, describe, expect, test } from 'vitest';
+import { afterAll, afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { cleanup, render } from 'vitest-browser-react';
 
 // oxlint-disable-next-line import/no-unassigned-import -- Browser Mode renders need app CSS.
@@ -7,8 +7,9 @@ import { createBridgePaneRuntime } from '../core/comm-worker/bridge-pane-runtime
 import type { BridgeProductCallResult } from '../core/comm-worker/bridge-product-call-contracts.js';
 import type { BridgeProductSubscriptionOptions } from '../core/comm-worker/bridge-product-subscription-contracts.js';
 import type { BridgeFileViewerBrowserTestProductSession } from '../file-viewer/bridge-file-viewer-browser-test-app.js';
-import { makeTreeRowsOnlyMetadataEvents } from '../file-viewer/bridge-file-viewer-browser-test-fixtures.js';
+import { makeBrowserMetadataOnlyFileBatch } from '../file-viewer/bridge-file-viewer-browser-test-batches.js';
 import {
+	actFrame,
 	createBridgeFileViewerBrowserTestPaneSessionFactory,
 	installBridgeFileViewerNoopResizeObserver,
 	settleBridgeFileViewerBrowserUpdates,
@@ -57,7 +58,7 @@ describe('Bridge file viewer mode re-open on switch', () => {
 				sourceDiscoveryCount += 1;
 				return availableFileSource();
 			},
-			initialMetadataEvents: makeTreeRowsOnlyMetadataEvents(),
+			initialFileBatch: makeBrowserMetadataOnlyFileBatch('open'),
 			onMetadataSubscriptionOpen: (
 				_options: BridgeProductSubscriptionOptions<'file.metadata'>,
 			): void => {
@@ -93,7 +94,7 @@ describe('Bridge file viewer mode re-open on switch', () => {
 		const handshake = installBridgeReadyHandshake();
 		await renderFileProductApp('worktree-file', {
 			currentSource: availableFileSource,
-			initialMetadataEvents: makeTreeRowsOnlyMetadataEvents(),
+			initialFileBatch: makeBrowserMetadataOnlyFileBatch('open'),
 		});
 		expect(await pollWithinActUntilEqual(activeViewerMode, 'file')).toBe('file');
 		const outgoingReviewButton = activeContextButton('file', 'review');
@@ -102,6 +103,8 @@ describe('Bridge file viewer mode re-open on switch', () => {
 
 		// Act
 		await actClick(outgoingReviewButton);
+		// useBridgeViewerContextFocusHandoff queues focus on the incoming toggle in rAF.
+		await actFrame();
 		expect(await pollWithinActUntilEqual(activeViewerMode, 'review')).toBe('review');
 
 		// Assert
@@ -123,6 +126,58 @@ describe('Bridge file viewer mode re-open on switch', () => {
 		handshake.dispose();
 	});
 
+	test('settles a held context focus handoff before the mode-switch step completes', async () => {
+		// Arrange: hold only the production handoff, leaving other owners' frames real.
+		const handshake = installBridgeReadyHandshake();
+		await renderFileProductApp('worktree-file', {
+			currentSource: availableFileSource,
+			initialFileBatch: makeBrowserMetadataOnlyFileBatch('open'),
+		});
+		await settleBridgeFileViewerBrowserUpdates();
+		let heldFocusHandoff: FrameRequestCallback | undefined;
+		let focusHandoffReleasedByStep = false;
+		const requestFrame = window.requestAnimationFrame.bind(window);
+		const heldFrameId = requestFrame((): void => {});
+		window.cancelAnimationFrame(heldFrameId);
+		const frameSpy = vi
+			.spyOn(window, 'requestAnimationFrame')
+			.mockImplementation((callback: FrameRequestCallback): number => {
+				if (callback.toString().includes('focusActiveBridgeViewerContextControl')) {
+					heldFocusHandoff = callback;
+					return heldFrameId;
+				}
+				// The step's actFrame awaits this existing owner's frame completion.
+				if (
+					heldFocusHandoff !== undefined &&
+					new Error().stack?.includes('waitForBridgeViewerAnimationFrame') === true
+				) {
+					const handoff = heldFocusHandoff;
+					heldFocusHandoff = undefined;
+					return requestFrame((timestamp: number): void => {
+						handoff(timestamp);
+						focusHandoffReleasedByStep = true;
+						callback(timestamp);
+					});
+				}
+				return requestFrame(callback);
+			});
+		try {
+			// Act: removing the step's causal frame leaves this callback held.
+			await clickContext('review');
+			// Release any unsettled callback outside act: the red must trip the real guard.
+			// This branch also drains the owned callback before a failed assertion returns.
+			heldFocusHandoff?.(0);
+
+			// Assert
+			expect(focusHandoffReleasedByStep).toBe(true);
+			expect(activeViewerMode()).toBe('review');
+			expect(document.activeElement).toBe(activeContextButton('review', 'review'));
+		} finally {
+			frameSpy.mockRestore();
+			handshake.dispose();
+		}
+	});
+
 	test('reuses a live healthy stream — no re-open spam on healthy re-activations', async () => {
 		let sourceDiscoveryCount = 0;
 		let metadataSubscriptionOpenCount = 0;
@@ -131,7 +186,7 @@ describe('Bridge file viewer mode re-open on switch', () => {
 				sourceDiscoveryCount += 1;
 				return availableFileSource();
 			},
-			initialMetadataEvents: makeTreeRowsOnlyMetadataEvents(),
+			initialFileBatch: makeBrowserMetadataOnlyFileBatch('open'),
 			onMetadataSubscriptionOpen: (): void => {
 				metadataSubscriptionOpenCount += 1;
 			},
@@ -165,7 +220,7 @@ describe('Bridge file viewer mode re-open on switch', () => {
 					sourceDiscoveryCount += 1;
 					return availableFileSource();
 				},
-				initialMetadataEvents: makeTreeRowsOnlyMetadataEvents(),
+				initialFileBatch: makeBrowserMetadataOnlyFileBatch('open'),
 				onMetadataSubscriptionOpen: (): void => {
 					metadataSubscriptionOpenCount += 1;
 				},
@@ -290,6 +345,8 @@ async function clickContext(context: 'file' | 'review'): Promise<void> {
 		throw new Error(`Missing bridge-viewer-context-${context} button`);
 	}
 	await actClick(button);
+	// useBridgeViewerContextFocusHandoff queues focus on the incoming toggle in rAF.
+	await actFrame();
 }
 
 async function openViewSettings(surface: 'file' | 'review'): Promise<void> {

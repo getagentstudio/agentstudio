@@ -1,3 +1,5 @@
+import AgentStudioInfrastructure
+import AgentStudioTestHarness
 import Foundation
 import Testing
 
@@ -137,10 +139,13 @@ struct BridgeProductSessionTests {
         let openToken = try #require(openAdmission.executionToken)
         let openResponse = try BridgeProductControlResponse.workerSessionAccepted(correlating: openRequest)
         let openResponseBytes = try JSONEncoder().encode(openResponse)
+        let openOperation = try await session.admitControlOperation(token: openToken, execute: { _ in })
         _ = try await session.completeControl(
             token: openToken,
             exactResponseBytes: openResponseBytes
         )
+        await session.settleOperation(operationId: openOperation.operationId, response: openResponse)
+        let openResult = await session.operationTable.entriesById[openOperation.operationId]?.settlement
         let openReplay = await productAdmission.beginControl(
             in: session,
             exactRequestBytes: openRequestBytes,
@@ -160,30 +165,23 @@ struct BridgeProductSessionTests {
             correlating: reviewRequest,
             result: .reviewMarkFileViewed
         )
+        let reviewOperation = try await session.admitControlOperation(token: reviewToken, execute: { _ in })
         _ = try await session.completeControl(
             token: reviewToken,
             exactResponseBytes: try JSONEncoder().encode(reviewResponse)
         )
+        await session.settleOperation(operationId: reviewOperation.operationId, response: reviewResponse)
 
-        let fileRequestBytes = try controlRequestData(fileSubscriptionOpenObject(requestSequence: 3, epoch: 2))
-        let fileRequest = try decodeControlRequest(fileRequestBytes)
-        let fileAdmission = await productAdmission.beginControl(
-            in: session,
-            exactRequestBytes: fileRequestBytes,
-            presentedCapability: capabilityHeader
+        let heldProducer = try await installSessionEpochMetadataProducer(
+            session: session,
+            productAdmission: productAdmission.context
         )
-        let fileToken = try #require(fileAdmission.executionToken)
-        let emptyFileInterestSha256 =
-            try BridgeProductSubscriptionInterestState
-            .fileMetadata(interests: [], pathScope: [])
-            .sha256Hex()
-        let fileResponse = try BridgeProductControlResponse.subscriptionOpenAccepted(
-            correlating: fileRequest,
-            interestSha256: emptyFileInterestSha256
-        )
-        _ = try await session.completeControl(
-            token: fileToken,
-            exactResponseBytes: try JSONEncoder().encode(fileResponse)
+        defer { heldProducer.release() }
+
+        try await openFileSessionEpochSubscription(
+            session: session,
+            productAdmission: productAdmission,
+            capabilityHeader: capabilityHeader
         )
 
         let staleReviewBytes = try controlRequestData(reviewCallObject(requestSequence: 4, epoch: 6))
@@ -196,7 +194,8 @@ struct BridgeProductSessionTests {
         let finalSnapshot = await session.snapshot
 
         // Assert
-        #expect(openReplay == .replay(exactResponseBytes: openResponseBytes))
+        #expect(openReplay == .replay(exactResponseBytes: openOperation.responseBytes))
+        #expect(openResult?.outcome == .succeeded)
         #expect(
             staleReviewAdmission
                 == .rejected(
@@ -387,6 +386,60 @@ private func reviewCallObject(requestSequence: Int, epoch: Int) -> [String: Any]
         "workerDerivationEpoch": epoch,
         "workerInstanceId": "worker-instance-1",
     ]
+}
+
+private func installSessionEpochMetadataProducer(
+    session: BridgeProductSession,
+    productAdmission: BridgeProductAdmissionContext
+) async throws -> HeldStep<BridgeProductProducerLease> {
+    let heldProducer = HeldStep<BridgeProductProducerLease>("sessionEpochMetadataProducer")
+    let metadataRequest = try bridgeProductMetadataStreamRequest(
+        metadataStreamId: "metadata-epoch-\(UUIDv7.generate().uuidString)",
+        resumeFromStreamSequence: nil
+    )
+    let registration = await session.registerMetadataProducer(
+        request: metadataRequest,
+        productAdmission: productAdmission
+    ) { lease in
+        try? await heldProducer.arrive(lease)
+    }
+    guard case .accepted(let lease) = registration else {
+        throw BridgeProductSessionError.lifecycleFrameAdmissionFailed
+    }
+    #expect(try await heldProducer.firstArrival() == lease)
+    _ = try await session.enqueueRequiredProducerOpeningFrame(
+        for: lease,
+        productAdmission: productAdmission,
+        build: { sequence in
+            try producerRegistryMetadataOpeningFrame(for: metadataRequest, sequence: sequence)
+        }
+    )
+    return heldProducer
+}
+
+private func openFileSessionEpochSubscription(
+    session: BridgeProductSession,
+    productAdmission: BridgeProductAdmissionTestContext,
+    capabilityHeader: String
+) async throws {
+    let requestBytes = try controlRequestData(fileSubscriptionOpenObject(requestSequence: 3, epoch: 2))
+    let request = try decodeControlRequest(requestBytes)
+    let admission = await productAdmission.beginControl(
+        in: session,
+        exactRequestBytes: requestBytes,
+        presentedCapability: capabilityHeader
+    )
+    let token = try #require(admission.executionToken)
+    let response = try BridgeProductControlResponse.subscriptionOpenAccepted(
+        correlating: request,
+        worktreeId: nil
+    )
+    let operation = try await session.admitControlOperation(token: token, execute: { _ in })
+    _ = try await session.completeControl(
+        token: token,
+        exactResponseBytes: try JSONEncoder().encode(response)
+    )
+    await session.settleOperation(operationId: operation.operationId, response: response)
 }
 
 private func fileSubscriptionOpenObject(requestSequence: Int, epoch: Int) -> [String: Any] {

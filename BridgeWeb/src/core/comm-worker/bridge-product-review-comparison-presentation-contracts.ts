@@ -7,6 +7,7 @@ import {
 import { bridgeProductReviewComparisonTargetSchema } from './bridge-product-review-comparison-contracts.js';
 
 const bridgeProductReviewComparisonAttemptSchema = z.discriminatedUnion('status', [
+	z.object({ status: z.literal('noSource') }).strict(),
 	z.object({ status: z.literal('selectionRequired') }).strict(),
 	z
 		.object({

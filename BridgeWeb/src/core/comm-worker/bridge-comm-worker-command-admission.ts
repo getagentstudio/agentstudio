@@ -30,6 +30,19 @@ export function bridgeCommWorkerIntentEpochDomain(
 		case 'fileQueryUpdate':
 		case 'fileRefreshRetry':
 			return 'fileView';
+		case 'viewRecoveryRetry':
+			switch (message.view.kind) {
+				case 'file.annotations':
+					return 'fileAnnotation';
+				case 'file.metadata':
+					return 'fileView';
+				case 'review.annotations':
+					return 'reviewAnnotation';
+				case 'review.metadata':
+					return 'review';
+				default:
+					return assertNeverViewRecoveryKind(message.view.kind);
+			}
 		case 'markFileViewed':
 		case 'metadataInterestUpdate':
 		case 'reviewIntakeReady':
@@ -49,6 +62,10 @@ export function bridgeCommWorkerIntentEpochDomain(
 		default:
 			return assertNeverBridgeWorkerCommand(message);
 	}
+}
+
+function assertNeverViewRecoveryKind(kind: never): never {
+	throw new Error(`Unexpected Bridge view recovery kind: ${String(kind)}`);
 }
 
 export function bridgeCommWorkerCommandUsesIntentEpochAdmission(

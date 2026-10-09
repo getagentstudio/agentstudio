@@ -4,8 +4,8 @@ import {
 } from './product-only-real-router-review-contract.ts';
 
 export const bridgeProductStartupFixtureIdentities = {
-	invalid: '78da34fabc8fdfeb2316df0b21e819691ea2bb4e861a74cbee3270231d6494c8',
-	valid: 'a5556acd203621f3be1d48881b96a198385744cf85cb729832d3929a6688f4c3',
+	invalid: 'e51803d06d8dafd56d6c694569ed238bb3dd8bddadfec6d26b2834b5d5892a68',
+	valid: '29ddcc6601f7b531f637cf9a3c57a1dbdeee6dcc9e60087218ea951c7edc4498',
 } as const;
 
 export const bridgeViewerProductOnlySelectors = {
@@ -15,6 +15,7 @@ export const bridgeViewerProductOnlySelectors = {
 		'[data-bridge-viewer-mode-active="true"] [data-testid="bridge-viewer-context-review"]',
 	appRoot: '[data-testid="bridge-app-root"]',
 	fileCodeCanvas: '[data-testid="bridge-file-viewer-code-canvas"]',
+	fileMarkdownCanvas: '[data-testid="bridge-markdown-canvas"]',
 	fileShell: '[data-testid="bridge-file-viewer-shell"]',
 	reviewCodePanel: '[data-testid="bridge-code-view-panel"]',
 	reviewCodeScrollOwner: '[data-testid="bridge-code-view-panel"] .bridge-code-view-scroll-owner',
@@ -24,6 +25,7 @@ export const bridgeViewerProductOnlySelectors = {
 
 export interface BridgeViewerProductRouteTranscriptEntry {
 	readonly callMethod?: string | null;
+	readonly contentUnknownReadRefusalCorrelated?: boolean;
 	readonly contentKind: string | null;
 	readonly documentGeneration: number;
 	readonly httpStatus: number | null;
@@ -36,6 +38,8 @@ export interface BridgeViewerProductRouteTranscriptEntry {
 	readonly requestSequence: number | null;
 	readonly responseCode: string | null;
 	readonly responseKind: string | null;
+	readonly resultAcknowledged: boolean;
+	readonly settledResponseKind: string | null;
 	readonly streamKind: string | null;
 	readonly subscriptionKind: string | null;
 	readonly workerInstanceId: string | null;
@@ -81,7 +85,7 @@ export interface BridgeViewerUnresolvedWaiter {
 	readonly documentGeneration: number;
 	readonly name:
 		| 'file-metadata-open'
-		| 'frame-acknowledgement'
+		| 'subscription-receipt'
 		| 'legacy-metadata-completion'
 		| 'product-response-quiescence'
 		| 'review-metadata-open';
@@ -173,6 +177,13 @@ export interface BridgeViewerFileProductStateSnapshot {
 	readonly shellCount: number;
 }
 
+export interface BridgeViewerFileMarkdownStateSnapshot {
+	readonly articleCharacterCount: number;
+	readonly canvasVisible: boolean;
+	readonly selectedDisplayPath: string | null;
+	readonly sourcePath: string | null;
+}
+
 export interface BridgeViewerReviewProductStateSnapshot {
 	readonly codePanelVisible: boolean;
 	readonly metadataItemCount: number;
@@ -201,6 +212,10 @@ export interface BridgeViewerReviewHydrationMilestone {
 export interface BridgeViewerReviewHydrationWindowFailure {
 	readonly hydratedNonSelectedItemIds: readonly string[];
 	readonly scrollTop: number;
+	readonly visibleContentStates: readonly {
+		readonly contentState: string | null;
+		readonly itemId: string;
+	}[];
 	readonly visibleNonSelectedItemIds: readonly string[];
 }
 
@@ -286,6 +301,7 @@ export interface BridgeViewerProductOnlyJourneyProof {
 	readonly fileAfterReviewFirstSwitch: BridgeViewerFileProductStateSnapshot;
 	readonly fileAfterFirstAcknowledgement: BridgeViewerFileProductStateSnapshot;
 	readonly fileAtCompletion: BridgeViewerFileProductStateSnapshot;
+	readonly fileMarkdownAtReviewFirstSwitch: BridgeViewerFileMarkdownStateSnapshot;
 	readonly legacyIntakeTranscript: readonly BridgeViewerLegacyIntakeTranscriptEntry[];
 	readonly legacyRouteTranscript: readonly BridgeViewerLegacyRouteTranscriptEntry[];
 	readonly mainWindowProductRouteTranscript: readonly BridgeViewerMainWindowProductRequest[];
@@ -329,20 +345,45 @@ export function collectBridgeViewerProductOnlyContractViolations(
 		...proof,
 		productRouteTranscript: measuredProductRouteTranscript,
 	};
-	const acknowledgementEntries = measuredProductRouteTranscript.filter(
-		(entry): boolean => entry.requestKind === 'stream.frameObserved',
+	const subscriptionReceiptEntries = measuredProductRouteTranscript.filter(
+		(entry): boolean => entry.requestKind === 'subscription.acknowledge',
 	);
 	if (
-		acknowledgementEntries.length === 0 ||
-		acknowledgementEntries.some((entry): boolean => entry.httpStatus !== 204)
+		subscriptionReceiptEntries.length === 0 ||
+		subscriptionReceiptEntries.some(
+			(entry): boolean =>
+				entry.httpStatus !== 200 || entry.responseKind !== 'subscription.acknowledged',
+		)
 	) {
 		violations.push({
-			actual: acknowledgementEntries.map((entry) => ({
+			actual: subscriptionReceiptEntries.map((entry) => ({
 				status: entry.httpStatus,
-				streamKind: entry.streamKind,
+				responseKind: entry.responseKind,
 			})),
-			code: 'transport.frame-observation-bodyless-204',
-			expected: 'at least one frame observation and every observation accepted with HTTP 204',
+			code: 'transport.subscription-receipt-accepted',
+			expected:
+				'at least one cumulative subscription receipt acknowledged with HTTP 200 and subscription.acknowledged',
+		});
+	}
+	const contentAcknowledgementEntries = measuredProductRouteTranscript.filter(
+		(entry): boolean => entry.requestKind === 'content.acknowledge',
+	);
+	if (
+		contentAcknowledgementEntries.length === 0 ||
+		contentAcknowledgementEntries.some(
+			(entry): boolean =>
+				entry.httpStatus !== 204 &&
+				!(entry.httpStatus === 404 && entry.contentUnknownReadRefusalCorrelated === true),
+		)
+	) {
+		violations.push({
+			actual: contentAcknowledgementEntries.map((entry) => ({
+				status: entry.httpStatus,
+				unknownReadCorrelated: entry.contentUnknownReadRefusalCorrelated ?? false,
+			})),
+			code: 'transport.content-acknowledgement-bodyless-204',
+			expected:
+				'at least one content credit accepted with bodyless HTTP 204, or a strictly correlated unknownRead 404',
 		});
 	}
 
@@ -383,6 +424,14 @@ export function collectBridgeViewerProductOnlyContractViolations(
 			actual: proof.fileAtCompletion,
 			code: 'file.product-display-ready',
 			expected: 'File product metadata rows and selected product content are ready',
+		});
+	}
+	if (!fileMarkdownStateReady(proof.fileMarkdownAtReviewFirstSwitch)) {
+		violations.push({
+			actual: proof.fileMarkdownAtReviewFirstSwitch,
+			code: 'file.markdown-visible-readable',
+			expected:
+				'selected Markdown paints a visible article with its exact source path and nonempty text',
 		});
 	}
 	if (!fileSelectedContentNontrivial(proof.fileAtCompletion)) {
@@ -557,7 +606,7 @@ export function collectBridgeViewerProductOnlyContractViolations(
 			actual: startupOrder,
 			code: 'transport.exact-startup-order',
 			expected:
-				'workerSession.open -> metadataStream.open -> metadata frame observation -> Review and File subscription opens',
+				'workerSession.open -> metadataStream.open -> Review and File subscription opens, then a subscription receipt',
 		});
 	}
 	return violations;
@@ -632,16 +681,23 @@ function requireAcceptedSubscription(props: {
 	);
 	if (
 		entries.length === 0 ||
-		entries.some((entry): boolean => entry.responseKind !== 'subscription.openAccepted')
+		entries.some(
+			(entry): boolean =>
+				entry.responseKind !== 'operation.admitted' ||
+				entry.settledResponseKind !== 'subscription.openAccepted' ||
+				!entry.resultAcknowledged,
+		)
 	) {
 		props.violations.push({
 			actual: entries.map((entry) => ({
 				code: entry.responseCode,
 				responseKind: entry.responseKind,
+				resultAcknowledged: entry.resultAcknowledged,
+				settledResponseKind: entry.settledResponseKind,
 				status: entry.httpStatus,
 			})),
 			code: `transport.${props.subscriptionKind}-accepted`,
-			expected: `${props.subscriptionKind} opens only with subscription.openAccepted`,
+			expected: `${props.subscriptionKind} admission has a subscription.openAccepted result and an acknowledged read`,
 		});
 	}
 }
@@ -687,6 +743,15 @@ function fileProductStateReady(state: BridgeViewerFileProductStateSnapshot): boo
 		state.renderedDisplayPath === state.selectedDisplayPath &&
 		state.bodyPreviewCharacterCount > 0 &&
 		state.bodyPreviewSha256 !== null
+	);
+}
+
+function fileMarkdownStateReady(state: BridgeViewerFileMarkdownStateSnapshot): boolean {
+	return (
+		state.canvasVisible &&
+		state.selectedDisplayPath !== null &&
+		state.sourcePath === state.selectedDisplayPath &&
+		state.articleCharacterCount > 0
 	);
 }
 
@@ -742,7 +807,7 @@ function requiredProductStartupOrder(
 	transcript: readonly BridgeViewerProductRouteTranscriptEntry[],
 ): {
 	readonly fileSubscriptionOpenIndex: number;
-	readonly frameObservedIndex: number;
+	readonly subscriptionReceiptIndex: number;
 	readonly metadataStreamOpenIndex: number;
 	readonly reviewSubscriptionOpenIndex: number;
 	readonly satisfied: boolean;
@@ -754,8 +819,8 @@ function requiredProductStartupOrder(
 	const metadataStreamOpenIndex = transcript.findIndex(
 		(entry): boolean => entry.requestKind === 'metadataStream.open',
 	);
-	const frameObservedIndex = transcript.findIndex(
-		(entry): boolean => entry.requestKind === 'stream.frameObserved',
+	const subscriptionReceiptIndex = transcript.findIndex(
+		(entry): boolean => entry.requestKind === 'subscription.acknowledge',
 	);
 	const reviewSubscriptionOpenIndex = transcript.findIndex(
 		(entry): boolean =>
@@ -767,15 +832,15 @@ function requiredProductStartupOrder(
 	);
 	return {
 		fileSubscriptionOpenIndex,
-		frameObservedIndex,
+		subscriptionReceiptIndex,
 		metadataStreamOpenIndex,
 		reviewSubscriptionOpenIndex,
 		satisfied:
 			workerSessionOpenIndex >= 0 &&
 			metadataStreamOpenIndex > workerSessionOpenIndex &&
-			frameObservedIndex > metadataStreamOpenIndex &&
-			reviewSubscriptionOpenIndex > frameObservedIndex &&
-			fileSubscriptionOpenIndex > frameObservedIndex,
+			reviewSubscriptionOpenIndex > metadataStreamOpenIndex &&
+			fileSubscriptionOpenIndex > metadataStreamOpenIndex &&
+			subscriptionReceiptIndex > Math.min(reviewSubscriptionOpenIndex, fileSubscriptionOpenIndex),
 		workerSessionOpenIndex,
 	};
 }

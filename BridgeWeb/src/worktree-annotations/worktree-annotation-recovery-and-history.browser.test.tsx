@@ -5,17 +5,59 @@ import { page } from 'vitest/browser';
 
 // oxlint-disable-next-line import/no-unassigned-import -- Browser Mode must load production app CSS.
 import '../app/bridge-app.css';
+import { BridgePaneFailureSummarySlot } from '../app/bridge-pane-failure-summary-slot.js';
 import {
 	annotationSessionId,
 	annotationSessionSummary,
 	RecordingAnnotationBrowserSurface,
 } from './worktree-annotation-browser-test-support.js';
 import { WorktreeAnnotationOutputHistoryControl } from './worktree-annotation-output-history-control.js';
-import { WorktreeAnnotationRecoveryWarning } from './worktree-annotation-recovery-warning.js';
+import { WorktreeAnnotationRecoveryNotice } from './worktree-annotation-recovery-notice.js';
 import type { WorktreeAnnotationOutputHistorySummary } from './worktree-annotation-surface-client.js';
-import { WorktreeAnnotationSurfaceProvider } from './worktree-annotation-surface-provider.js';
+import {
+	useWorktreeAnnotationProjection,
+	WorktreeAnnotationSurfaceProvider,
+} from './worktree-annotation-surface-provider.js';
 
 describe('worktree annotation recovery and rail history controls', () => {
+	test('shows one Comments Retry for a failed annotation view and keeps the last good projection', async () => {
+		const surface = new RecordingAnnotationBrowserSurface('fileView');
+		surface.client.renderStore.applyViewRecoveryStatusEvent({
+			wireVersion: 1,
+			direction: 'serverWorkerToMain',
+			transferDescriptors: [],
+			kind: 'viewRecoveryStatus',
+			view: { kind: 'file.annotations', subscriptionId: 'file-comments-retry-1' },
+			status: 'failedRetryable',
+		});
+		const rendered = await render(<RecoveryAndHistoryFixture surface={surface} />);
+		await act(async (): Promise<void> => {
+			surface.publishProjectionState({
+				expectedThreadCount: 0,
+				revision: 1,
+				sessions: [annotationSessionSummary({ revision: 1, sessionId: annotationSessionId })],
+			});
+			await Promise.resolve();
+		});
+
+		await expect.element(rendered.getByText("Comments couldn't load.")).toBeVisible();
+		await expect
+			.element(rendered.getByText(`Last good comments: ${annotationSessionId}`))
+			.toBeVisible();
+		expect(document.querySelectorAll('button[aria-label="Retry"]')).toHaveLength(1);
+		await act(async (): Promise<void> => {
+			await rendered.getByRole('button', { name: 'Retry' }).click();
+		});
+		await expect
+			.element(rendered.getByText(`Last good comments: ${annotationSessionId}`))
+			.toBeVisible();
+		expect(surface.sentRecoveryCommands.map((command) => command.command)).toEqual([
+			'viewRecoveryRetry',
+			'annotationProjectionRetry',
+		]);
+		await page.screenshot({ path: '../../../tmp/bridgeweb-comments-view-retry.png' });
+	});
+
 	test('shows a compact recovered-degraded warning and acknowledges through the strict operation', async () => {
 		const surface = new RecordingAnnotationBrowserSurface('fileView');
 		const rendered = await render(<RecoveryAndHistoryFixture surface={surface} />);
@@ -253,11 +295,19 @@ function RecoveryAndHistoryFixture(props: {
 	return (
 		<div style={{ width: props.width ?? 180 }}>
 			<WorktreeAnnotationSurfaceProvider surfaceClient={props.surface.client}>
-				<WorktreeAnnotationRecoveryWarning />
+				<LastGoodCommentsProbe />
+				<BridgePaneFailureSummarySlot entries={[]} />
+				<WorktreeAnnotationRecoveryNotice />
 				<WorktreeAnnotationOutputHistoryControl />
 			</WorktreeAnnotationSurfaceProvider>
 		</div>
 	);
+}
+
+function LastGoodCommentsProbe(): ReactElement {
+	const projection = useWorktreeAnnotationProjection();
+	const sessionId = projection.sessions[0]?.sessionId ?? 'none';
+	return <output data-testid="last-good-comments">{`Last good comments: ${sessionId}`}</output>;
 }
 
 async function settleInteraction(): Promise<void> {

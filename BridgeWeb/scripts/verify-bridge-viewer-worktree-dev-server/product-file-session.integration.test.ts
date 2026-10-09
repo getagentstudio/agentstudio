@@ -9,6 +9,7 @@ import { promisify } from 'node:util';
 import { createServer as createViteServer, type ViteDevServer } from 'vite';
 import { afterEach, describe, expect, test } from 'vitest';
 
+import { installBridgeProductFileBatch } from '../../src/core/comm-worker/bridge-product-file-batch-installer.js';
 import {
 	runAllOwnedCleanupOperations,
 	startOwnedBridgeDevelopmentServer,
@@ -170,14 +171,16 @@ describe('Bridge verifier product File session', () => {
 		// Act
 		currentPhase = 'source.opening';
 		const source = await session.open();
-		const finalTreeWindow = source.treeWindows.findLast((event) => event.finalWindow);
-		const targetPath = source.treeWindows
-			.flatMap((event) => event.rows)
-			.find((row) => row.path === 'README.md' && !row.isDirectory)?.path;
+		const initialInstallation = source.installations.at(-1);
+		if (initialInstallation === undefined) throw new Error('Expected a certified File snapshot.');
+		const initialView = installBridgeProductFileBatch(initialInstallation);
+		const targetPath = initialView.displayTreeRows.find(
+			(row) => row.path === 'README.md' && !row.isDirectory,
+		)?.path;
 		if (targetPath === undefined) throw new Error('Expected README.md in the product File tree.');
-		const secondTargetPath = source.treeWindows
-			.flatMap((event) => event.rows)
-			.find((row) => row.path !== targetPath && !row.isDirectory)?.path;
+		const secondTargetPath = initialView.displayTreeRows.find(
+			(row) => row.path !== targetPath && !row.isDirectory,
+		)?.path;
 		if (secondTargetPath === undefined) {
 			throw new Error('Expected a second file in the product File tree.');
 		}
@@ -204,6 +207,9 @@ describe('Bridge verifier product File session', () => {
 		);
 		currentPhase = 'content.replacement';
 		const replacementContent = await session.openContent(refresh.descriptor);
+		if (refresh.descriptor.availability.availabilityKind !== 'available') {
+			throw new Error('Expected the replacement README descriptor to be available.');
+		}
 		currentPhase = 'session.closing';
 		await session.close();
 		currentPhase = 'metadataStream.waitingClosed';
@@ -212,16 +218,22 @@ describe('Bridge verifier product File session', () => {
 		// Assert
 		currentPhase = 'assertions';
 		expect(source.acceptedStreamSequence).toBe(0);
-		expect(source.sourceAccepted.source.sourceId).toBe(source.sourceIdentity.sourceId);
-		expect(finalTreeWindow?.totalRowCount).toBeGreaterThan(0);
+		expect(initialView.memberStatus.source.sourceId).toBe(source.sourceIdentity.sourceId);
+		expect(initialInstallation.begin.mode).toBe('snapshot');
+		expect(initialView.displayTreeRows.length).toBeGreaterThan(0);
 		expect(descriptor.path).toBe(targetPath);
 		expect(descriptor.availability.availabilityKind).toBe('available');
 		expect(secondDescriptor.path).toBe(secondTargetPath);
 		expect(repeatedDescriptor).toBe(descriptor);
 		expect(content.byteLength).toBeGreaterThan(0);
 		expect(new TextDecoder().decode(content.bytes)).toContain('Agent Studio');
-		expect(refresh.invalidation.reason).toBe('contentChanged');
-		expect(refresh.status.patch).toMatchObject({ patchKind: 'summary', unstaged: 1 });
+		expect(refresh.previousDescriptorId).toBe(
+			descriptor.availability.contentDescriptor.descriptorId,
+		);
+		expect(refresh.descriptor.availability.contentDescriptor.descriptorId).not.toBe(
+			refresh.previousDescriptorId,
+		);
+		expect(refresh.status.unstaged).toBe(1);
 		expect(new TextDecoder().decode(replacementContent.bytes)).toContain(
 			'Updated through the live development backend.',
 		);

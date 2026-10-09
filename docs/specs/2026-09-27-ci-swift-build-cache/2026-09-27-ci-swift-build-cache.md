@@ -15,4 +15,3 @@ Traces to Requirements U1–U4.
 - **O5** After a successful prune, at most one owned seed remains. Save and prune failures degrade to "more entries or a cold build", never to a wrong build.
 - **O6** Lane receipts still name the commit under test. Seed provenance (producer commit, run, fingerprint, manifest digest) is reported beside them.
 - **O7** A PR reports restore, verify, stamp and build times separately. "Prebuild time" never hides the transfer cost.
-

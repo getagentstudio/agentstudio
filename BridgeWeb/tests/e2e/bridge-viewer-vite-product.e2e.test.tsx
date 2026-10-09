@@ -1,3 +1,5 @@
+import { createHash } from 'node:crypto';
+
 import type { Browser, Page, Request } from 'playwright';
 import { afterAll, beforeAll, describe, expect, test } from 'vitest';
 
@@ -11,6 +13,11 @@ import {
 } from '../../scripts/verify-bridge-viewer-worktree-dev-server/review-tree-click.ts';
 import { launchBridgeViewerE2EChromium } from './bridge-viewer-vite-e2e-browser.ts';
 import {
+	clearFileSearchAndScrollTreeDeep,
+	readFileDeepScrollObservation,
+	scrollSelectedFileThroughMarkers,
+} from './bridge-viewer-vite-file-deep-scroll-observation.ts';
+import {
 	decodePaintedSourceCorrelations,
 	type PaintedSourceCorrelation,
 } from './bridge-viewer-vite-painted-source-correlation.ts';
@@ -21,11 +28,13 @@ import {
 	type BridgeViewerOwnedViteProductServerCleanup,
 	type BridgeViewerViteProductContentOracle,
 	type BridgeViewerViteProductFixtureOracle,
+	type BridgeViewerViteProductProofFixtureOracle,
 	type BridgeViewerViteProductReviewFileOracle,
 } from './bridge-viewer-vite-product-fixture.ts';
 import {
 	bridgeViewerViteProductFileUrl,
 	bridgeViewerViteProductReviewUrl,
+	requireBridgeViewerVitePrimaryReviewPath,
 } from './bridge-viewer-vite-product-url.ts';
 import {
 	observeBrowserRuntimeDiagnostics,
@@ -34,27 +43,6 @@ import {
 } from './bridge-viewer-vite-review-comparison-observation.ts';
 
 const productJourneyTimeoutMilliseconds = 120_000;
-
-interface FileDeepScrollObservation {
-	readonly deepTreePathPainted: boolean;
-	readonly finalMarkerPainted: boolean;
-	readonly lineCount: number;
-	readonly paintedCorrelations: readonly PaintedSourceCorrelation[];
-	readonly renderedItemId: string | null;
-	readonly renderedPath: string | null;
-	readonly scrollHeight: number;
-	readonly scrollTop: number;
-	readonly selectedPath: string | null;
-	readonly treeScrollTop: number;
-	readonly workerUrls: readonly string[];
-}
-
-interface FileDeepScrollBrowserSnapshot extends Omit<
-	FileDeepScrollObservation,
-	'paintedCorrelations'
-> {
-	readonly encodedPaintedCorrelations: string;
-}
 
 interface ProductContentRequestObservation {
 	readonly contentKind: string;
@@ -76,14 +64,8 @@ interface ReviewSelectionBrowserSnapshot {
 	readonly paintedPublicationId: string | null;
 }
 
-interface FileContentScrollObservation {
-	readonly finalMarkerPainted: boolean;
-	readonly firstMarkerPainted: boolean;
-	readonly middleMarkerPainted: boolean;
-}
-
 let disposeFixture: (() => Promise<void>) | null = null;
-let fixtureOracle: BridgeViewerViteProductFixtureOracle | null = null;
+let fixtureOracle: BridgeViewerViteProductProofFixtureOracle | null = null;
 let ownedServer: BridgeViewerOwnedViteProductServer | null = null;
 let ownedServerCleanup: BridgeViewerOwnedViteProductServerCleanup | null = null;
 
@@ -112,10 +94,12 @@ describe('Bridge Viewer dedicated Vite product E2E', () => {
 		const server = requireOwnedServer();
 		expect(oracle.changedPaths).toHaveLength(16);
 		expect(oracle.reviewFiles).toHaveLength(oracle.changedPaths.length);
+		expect(oracle.fileProofCodeContent.length).toBeLessThanOrEqual(160);
 
 		const journeyObservations = await runBridgeViewerProductOnlyJourney({
 			baseUrl: server.origin,
 			expectedReviewItemIds: oracle.expectedReviewItemIds,
+			fileProofTargets: oracle.fileProofTargets,
 		});
 
 		expect(collectBridgeViewerProductOnlyContractViolations(journeyObservations)).toEqual([]);
@@ -130,10 +114,16 @@ describe('Bridge Viewer dedicated Vite product E2E', () => {
 		try {
 			page = await browser.newPage({ viewport: { height: 980, width: 1728 } });
 			const contentRequests = observeProductContentRequests(page);
-			await page.goto(bridgeViewerViteProductReviewUrl(server.origin), {
-				timeout: productJourneyTimeoutMilliseconds,
-				waitUntil: 'domcontentloaded',
-			});
+			await page.goto(
+				bridgeViewerViteProductReviewUrl(
+					server.origin,
+					requireBridgeViewerVitePrimaryReviewPath(oracle),
+				),
+				{
+					timeout: productJourneyTimeoutMilliseconds,
+					waitUntil: 'domcontentloaded',
+				},
+			);
 			await page.waitForSelector('[data-testid="review-viewer-shell"]', {
 				timeout: productJourneyTimeoutMilliseconds,
 			});
@@ -418,10 +408,16 @@ describe('Bridge Viewer dedicated Vite product E2E', () => {
 			serverA = await startBridgeViewerOwnedViteProductServer(fixture.oracle);
 			const pageA = await browser.newPage({ viewport: { height: 980, width: 1728 } });
 			const pageADiagnostics = observeBrowserRuntimeDiagnostics(pageA);
-			await pageA.goto(bridgeViewerViteProductReviewUrl(serverA.origin), {
-				timeout: productJourneyTimeoutMilliseconds,
-				waitUntil: 'domcontentloaded',
-			});
+			await pageA.goto(
+				bridgeViewerViteProductReviewUrl(
+					serverA.origin,
+					requireBridgeViewerVitePrimaryReviewPath(fixture.oracle),
+				),
+				{
+					timeout: productJourneyTimeoutMilliseconds,
+					waitUntil: 'domcontentloaded',
+				},
+			);
 			try {
 				await pageA.waitForFunction(
 					(): boolean =>
@@ -470,10 +466,16 @@ describe('Bridge Viewer dedicated Vite product E2E', () => {
 			serverB = await startBridgeViewerOwnedViteProductServer(fixture.oracle);
 			const pageB = await browser.newPage({ viewport: { height: 980, width: 1728 } });
 			const pageBDiagnostics = observeBrowserRuntimeDiagnostics(pageB);
-			await pageB.goto(bridgeViewerViteProductReviewUrl(serverB.origin), {
-				timeout: productJourneyTimeoutMilliseconds,
-				waitUntil: 'domcontentloaded',
-			});
+			await pageB.goto(
+				bridgeViewerViteProductReviewUrl(
+					serverB.origin,
+					requireBridgeViewerVitePrimaryReviewPath(fixture.oracle),
+				),
+				{
+					timeout: productJourneyTimeoutMilliseconds,
+					waitUntil: 'domcontentloaded',
+				},
+			);
 			const processBObservation = await waitForSettledReviewComparisonWithDiagnostics({
 				diagnostics: pageBDiagnostics,
 				expectedTargetLabel: fixture.oracle.comparisonTargetName,
@@ -520,13 +522,31 @@ describe('Bridge Viewer dedicated Vite product E2E', () => {
 
 function assertJourneyFreshness(props: {
 	readonly journeyObservations: Awaited<ReturnType<typeof runBridgeViewerProductOnlyJourney>>;
-	readonly oracle: BridgeViewerViteProductFixtureOracle;
+	readonly oracle: BridgeViewerViteProductProofFixtureOracle;
 	readonly server: BridgeViewerOwnedViteProductServer;
 }): void {
 	expect(props.server.pid).toBeGreaterThan(0);
 	expect(props.server.version).toMatch(/^\d+\.\d+\.\d+$/u);
 	expect(new URL(props.journeyObservations.observedPageUrl).origin).toBe(props.server.origin);
 	expect(props.journeyObservations.browser.name).toBe('chromium');
+	expect(props.journeyObservations.fileMarkdownAtReviewFirstSwitch).toEqual(
+		expect.objectContaining({
+			canvasVisible: true,
+			selectedDisplayPath: props.oracle.fileProofTargets.markdownPath,
+			sourcePath: props.oracle.fileProofTargets.markdownPath,
+		}),
+	);
+	const codeBodyPreviewSha256 = createHash('sha256')
+		.update(props.oracle.fileProofCodeContent.slice(0, 160))
+		.digest('hex');
+	for (const fileState of [
+		props.journeyObservations.fileAfterReviewFirstSwitch,
+		props.journeyObservations.fileAfterFirstAcknowledgement,
+		props.journeyObservations.fileAtCompletion,
+	]) {
+		expect(fileState.renderedDisplayPath).toBe(props.oracle.fileProofTargets.codePath);
+		expect(fileState.bodyPreviewSha256).toBe(codeBodyPreviewSha256);
+	}
 	expect(props.journeyObservations.reviewFreshRoute.expectedItemIds).toEqual(
 		props.oracle.expectedReviewItemIds,
 	);
@@ -549,6 +569,11 @@ function assertJourneyFreshness(props: {
 			(entry): boolean => entry.contentKind === 'review.content' && entry.httpStatus === 200,
 		),
 	).toBe(true);
+	expect(
+		props.journeyObservations.productRouteTranscript.filter(
+			(entry): boolean => entry.requestKind === 'content.acknowledge' && entry.httpStatus === 404,
+		),
+	).toHaveLength(0);
 }
 
 async function waitForSelectedFileReady(props: {
@@ -598,169 +623,6 @@ async function waitForSelectedFileContentReady(props: {
 		},
 		{ timeout: productJourneyTimeoutMilliseconds },
 	);
-}
-
-async function clearFileSearchAndScrollTreeDeep(props: {
-	readonly oracle: BridgeViewerViteProductFixtureOracle;
-	readonly page: Page;
-}): Promise<void> {
-	const searchInput = props.page.locator('[data-testid="worktree-file-search-input"]');
-	if ((await searchInput.count()) > 0) await searchInput.fill('');
-	await props.page.waitForFunction(
-		(targetPath: string): boolean => {
-			const treeHost = document.querySelector(
-				'[data-testid="bridge-file-viewer-pierre-file-tree"] file-tree-container',
-			);
-			const scrollOwner = treeHost?.shadowRoot?.querySelector(
-				'[data-file-tree-virtualized-scroll="true"]',
-			);
-			if (!(scrollOwner instanceof HTMLElement)) return false;
-			scrollOwner.scrollTop = Math.max(0, scrollOwner.scrollHeight - scrollOwner.clientHeight);
-			scrollOwner.dispatchEvent(new Event('scroll', { bubbles: true }));
-			return scrollOwner.scrollTop > 0 && targetPath.length > 0;
-		},
-		props.oracle.fileTreeDeepPath,
-		{ timeout: productJourneyTimeoutMilliseconds },
-	);
-	await props.page.waitForFunction(
-		(targetPath: string): boolean => {
-			const treeHost = document.querySelector(
-				'[data-testid="bridge-file-viewer-pierre-file-tree"] file-tree-container',
-			);
-			return (
-				treeHost?.shadowRoot?.querySelector(`[data-item-path="${CSS.escape(targetPath)}"]`) !== null
-			);
-		},
-		props.oracle.fileTreeDeepPath,
-		{ timeout: productJourneyTimeoutMilliseconds },
-	);
-}
-
-async function scrollSelectedFileThroughMarkers(props: {
-	readonly content: BridgeViewerViteProductContentOracle;
-	readonly page: Page;
-}): Promise<FileContentScrollObservation> {
-	const observedMarkers = new Set<string>();
-	for (const [scrollFraction, marker] of [
-		[0, props.content.firstMarker],
-		[0.5, props.content.middleMarker],
-		[1, props.content.finalMarker],
-	] as const) {
-		// oxlint-disable-next-line no-await-in-loop -- Each virtualized content window must paint before advancing.
-		await props.page.evaluate((fraction: number): void => {
-			const scrollOwner = document.querySelector(
-				'[data-testid="bridge-file-viewer-code-view"] .bridge-code-view-scroll-owner',
-			);
-			if (!(scrollOwner instanceof HTMLElement))
-				throw new Error('File CodeView scroll owner missing.');
-			scrollOwner.scrollTop = Math.max(
-				0,
-				(scrollOwner.scrollHeight - scrollOwner.clientHeight) * fraction,
-			);
-			scrollOwner.dispatchEvent(new Event('scroll', { bubbles: true }));
-		}, scrollFraction);
-		// oxlint-disable-next-line no-await-in-loop -- Marker observation is the bounded event for each scroll.
-		await props.page.waitForFunction(
-			(markerText: string): boolean => {
-				const pendingRoots: Array<Document | Element | ShadowRoot> = [document];
-				while (pendingRoots.length > 0) {
-					const root = pendingRoots.shift();
-					if (root === undefined) break;
-					if (
-						[...root.querySelectorAll('[data-line-index], [data-content]')].some((element) =>
-							(element.textContent ?? '').includes(markerText),
-						)
-					) {
-						return true;
-					}
-					for (const descendant of root.querySelectorAll('*')) {
-						if (descendant.shadowRoot !== null) pendingRoots.push(descendant.shadowRoot);
-					}
-				}
-				return false;
-			},
-			marker,
-			{ timeout: productJourneyTimeoutMilliseconds },
-		);
-		observedMarkers.add(marker);
-	}
-	return {
-		finalMarkerPainted: observedMarkers.has(props.content.finalMarker),
-		firstMarkerPainted: observedMarkers.has(props.content.firstMarker),
-		middleMarkerPainted: observedMarkers.has(props.content.middleMarker),
-	};
-}
-
-async function readFileDeepScrollObservation(props: {
-	readonly content?: BridgeViewerViteProductContentOracle;
-	readonly oracle: BridgeViewerViteProductFixtureOracle;
-	readonly page: Page;
-	readonly workerUrls: readonly string[];
-}): Promise<FileDeepScrollObservation> {
-	const content = props.content ?? props.oracle.fileContent;
-	const snapshot = await props.page.evaluate(
-		({ deepTreePath, finalMarker, workerUrls }): FileDeepScrollBrowserSnapshot => {
-			const canvas = document.querySelector('[data-testid="bridge-file-viewer-code-canvas"]');
-			const renderedItem = canvas?.querySelector(
-				'diffs-container[data-bridge-painted-source-correlations]',
-			);
-			const scrollOwner = document.querySelector(
-				'[data-testid="bridge-file-viewer-code-view"] .bridge-code-view-scroll-owner',
-			);
-			if (!(canvas instanceof HTMLElement) || !(scrollOwner instanceof HTMLElement)) {
-				throw new Error(
-					'File deep-scroll observation requires the mounted canvas and scroll owner.',
-				);
-			}
-			const encodedCorrelations =
-				renderedItem?.getAttribute('data-bridge-painted-source-correlations') ?? '[]';
-			const pendingRoots: Array<Document | Element | ShadowRoot> = [document];
-			const paintedText: string[] = [];
-			while (pendingRoots.length > 0) {
-				const root = pendingRoots.shift();
-				if (root === undefined) break;
-				paintedText.push(
-					...[...root.querySelectorAll('[data-line-index], [data-content]')].map(
-						(element): string => element.textContent ?? '',
-					),
-				);
-				for (const descendant of root.querySelectorAll('*')) {
-					if (descendant.shadowRoot !== null) pendingRoots.push(descendant.shadowRoot);
-				}
-			}
-			const treeHost = document.querySelector(
-				'[data-testid="bridge-file-viewer-pierre-file-tree"] file-tree-container',
-			);
-			const treeScrollOwner = treeHost?.shadowRoot?.querySelector(
-				'[data-file-tree-virtualized-scroll="true"]',
-			);
-			return {
-				deepTreePathPainted:
-					treeHost?.shadowRoot?.querySelector(`[data-item-path="${CSS.escape(deepTreePath)}"]`) !==
-					null,
-				encodedPaintedCorrelations: encodedCorrelations,
-				finalMarkerPainted: paintedText.some((text): boolean => text.includes(finalMarker)),
-				lineCount: Number(canvas.getAttribute('data-worktree-rendered-line-count') ?? '0'),
-				renderedItemId: canvas.getAttribute('data-worktree-rendered-item-id'),
-				renderedPath: canvas.getAttribute('data-worktree-rendered-file-path'),
-				scrollHeight: scrollOwner.scrollHeight,
-				scrollTop: scrollOwner.scrollTop,
-				selectedPath: canvas.getAttribute('data-worktree-open-file-path'),
-				treeScrollTop: treeScrollOwner instanceof HTMLElement ? treeScrollOwner.scrollTop : 0,
-				workerUrls,
-			};
-		},
-		{
-			deepTreePath: props.oracle.fileTreeDeepPath,
-			finalMarker: content.finalMarker,
-			workerUrls: props.workerUrls,
-		},
-	);
-	const { encodedPaintedCorrelations, ...observation } = snapshot;
-	return {
-		...observation,
-		paintedCorrelations: decodePaintedSourceCorrelations(encodedPaintedCorrelations),
-	};
 }
 
 function observeProductContentRequests(page: Page): ProductContentRequestObservation[] {
@@ -982,7 +844,7 @@ function isUnknownRecord(value: unknown): value is Readonly<Record<string, unkno
 	return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
-function requireFixtureOracle(): BridgeViewerViteProductFixtureOracle {
+function requireFixtureOracle(): BridgeViewerViteProductProofFixtureOracle {
 	if (fixtureOracle === null) throw new Error('Vite product fixture was not initialized.');
 	return fixtureOracle;
 }

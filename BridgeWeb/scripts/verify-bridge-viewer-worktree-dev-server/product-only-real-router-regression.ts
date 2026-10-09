@@ -1,9 +1,9 @@
 import { execFile, spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
 import { createHash, randomUUID } from 'node:crypto';
-import { access, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { access, copyFile, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { createServer } from 'node:net';
 import { tmpdir } from 'node:os';
-import { join, relative } from 'node:path';
+import { join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
 
@@ -124,6 +124,7 @@ export async function runSelfHostedBridgeViewerProductOnlyRegression(): Promise<
 		journey = await runBridgeViewerProductOnlyJourney({
 			baseUrl: server.startProof.origin,
 			expectedReviewItemIds,
+			fileProofTargets: { codePath: 'Package.swift', markdownPath: 'README.md' },
 		});
 	} catch (error: unknown) {
 		journeyFailure = bridgeViewerProductOnlyJourneyFailureFromError(error);
@@ -232,18 +233,22 @@ export async function runSelfHostedBridgeViewerProductOnlyRegression(): Promise<
 	if (violations.length > 0) process.exitCode = 1;
 }
 
-async function readExpectedReviewItemIds(props: {
+export async function readExpectedReviewItemIds(props: {
 	readonly reviewBase: string;
 	readonly worktreeRoot: string;
 }): Promise<readonly string[]> {
-	const [trackedChanges, untrackedPaths] = await Promise.all([
-		gitStdoutAt(props.worktreeRoot, bridgeReviewOracleTrackedDiffArguments(props.reviewBase)),
-		gitStdoutAt(props.worktreeRoot, ['ls-files', '--others', '--exclude-standard', '-z']),
+	const untrackedPaths = await gitStdoutAt(props.worktreeRoot, [
+		'ls-files',
+		'--others',
+		'--exclude-standard',
+		'-z',
 	]);
-	const changedPaths = parseGitNameStatus(trackedChanges);
-	for (const path of untrackedPaths
+	const untrackedFilePaths = untrackedPaths
 		.split('\0')
-		.filter((candidate): boolean => candidate.length > 0)) {
+		.filter((candidate): boolean => candidate.length > 0);
+	const trackedChanges = await readRenameAwareReviewDiff(props, untrackedFilePaths);
+	const changedPaths = parseGitNameStatus(trackedChanges);
+	for (const path of untrackedFilePaths) {
 		if (!changedPaths.some((candidate): boolean => candidate.path === path)) {
 			changedPaths.push({ path, previousPath: null });
 		}
@@ -271,13 +276,44 @@ async function readExpectedReviewItemIds(props: {
 	return orderedItemIds;
 }
 
+async function readRenameAwareReviewDiff(
+	props: { readonly reviewBase: string; readonly worktreeRoot: string },
+	untrackedFilePaths: readonly string[],
+): Promise<string> {
+	const temporaryIndexDirectory = await mkdtemp(join(tmpdir(), 'bridge-review-oracle-index-'));
+	try {
+		const indexLocation = (
+			await gitStdoutAt(props.worktreeRoot, ['rev-parse', '--git-path', 'index'])
+		).trim();
+		const temporaryIndexPath = join(temporaryIndexDirectory, 'index');
+		await copyFile(resolve(props.worktreeRoot, indexLocation), temporaryIndexPath);
+		const environment = { ...process.env, GIT_INDEX_FILE: temporaryIndexPath };
+		if (untrackedFilePaths.length > 0) {
+			await gitStdoutAt(
+				props.worktreeRoot,
+				['add', '-N', '--', ...untrackedFilePaths],
+				environment,
+			);
+		}
+		return await gitStdoutAt(
+			props.worktreeRoot,
+			bridgeReviewOracleTrackedDiffArguments(props.reviewBase),
+			environment,
+		);
+	} finally {
+		await rm(temporaryIndexDirectory, { recursive: true, force: true });
+	}
+}
+
 export function bridgeReviewOraclePathOrder(left: string, right: string): number {
 	if (left === right) return 0;
 	return left < right ? -1 : 1;
 }
 
 export function bridgeReviewOracleTrackedDiffArguments(reviewBase: string): readonly string[] {
-	return ['diff', '--name-status', '-z', '--no-renames', reviewBase, '--'];
+	// LibGit2DiffReader.findRenames initializes git_diff_find_options and uses its
+	// default 50% rename threshold (AgentStudioGitLocal/Review/LibGit2DiffReader.swift:207-222).
+	return ['diff', '--name-status', '-z', '--find-renames=50%', reviewBase, '--'];
 }
 
 function parseGitNameStatus(encodedChanges: string): Array<{
@@ -541,10 +577,15 @@ async function gitStdout(arguments_: readonly string[]): Promise<string> {
 	return await gitStdoutAt(repoRootPath, arguments_);
 }
 
-async function gitStdoutAt(cwd: string, arguments_: readonly string[]): Promise<string> {
+async function gitStdoutAt(
+	cwd: string,
+	arguments_: readonly string[],
+	environment?: NodeJS.ProcessEnv,
+): Promise<string> {
 	const { stdout } = await execFileAsync('git', arguments_, {
 		cwd,
 		encoding: 'utf8',
+		...(environment === undefined ? {} : { env: environment }),
 		maxBuffer: maximumGitDiffBytes,
 	});
 	return stdout;

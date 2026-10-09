@@ -5,6 +5,7 @@ import Testing
 @testable import AgentStudio
 @testable import AgentStudioBridge
 @testable import AgentStudioCore
+@testable import AgentStudioInfrastructure
 @testable import AgentStudioTerminal
 @testable import AgentStudioTestSupport
 
@@ -34,6 +35,7 @@ func makeBridgePaneActivityTestHarness(
     includeSiblingInTab: Bool = true,
     store: WorkspaceStore = WorkspaceStore(),
     filesystemProjectionIndex: (any WorkspaceFilesystemProjectionIndexing)? = nil,
+    traceRuntime: AgentStudioTraceRuntime? = nil,
     worktreeProductConstructionCoordinator: BridgeWorktreeProductConstructionCoordinator =
         BridgeWorktreeProductConstructionCoordinator()
 ) -> BridgePaneActivityTestHarness {
@@ -105,7 +107,8 @@ func makeBridgePaneActivityTestHarness(
         windowLifecycleStore: windowLifecycleStore,
         appLifecycleStore: appLifecycleStore,
         ipcLifecycle: .testUnavailable,
-        bridgePaneAttendance: BridgePaneAttendanceAtom()
+        bridgePaneAttendance: BridgePaneAttendanceAtom(),
+        traceRuntime: traceRuntime
     )
     coordinator.startBridgePaneActivityObservation()
 
@@ -137,6 +140,17 @@ func installBridgeControllerAndEnterForeground(
         in: harness.coordinator,
         because: "the controller is installed in the active native surface"
     )
+}
+
+func initializeBridgeReviewGitFixture(at repositoryURL: URL) async throws {
+    try await FilesystemTestGitRepo.runGit(at: repositoryURL, args: ["init"])
+    try await FilesystemTestGitRepo.runGit(at: repositoryURL, args: ["symbolic-ref", "HEAD", "refs/heads/main"])
+    try await FilesystemTestGitRepo.runGit(
+        at: repositoryURL,
+        args: [
+            "-c", "user.name=Bridge Fixture", "-c", "user.email=bridge-fixture@example.invalid",
+            "-c", "commit.gpgsign=false", "commit", "--allow-empty", "-m", "Initial fixture snapshot",
+        ])
 }
 
 @MainActor

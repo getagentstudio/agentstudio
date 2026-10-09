@@ -31,17 +31,14 @@ extension WebKitSerializedTests {
             defer { _ = harness.controller.beginTeardown() }  // fire-and-forget: defer cannot await; cleanup only
             let metadataLease = try await harness.openReviewMetadataSubscription()
             let metadataEventsTask = Task { @MainActor in
-                let sourceAcceptedEvent = try await harness.nextReviewMetadataEvent(
-                    for: metadataLease
-                )
-                let snapshotEvent = try await harness.nextReviewMetadataEvent(for: metadataLease)
-                return (sourceAcceptedEvent, snapshotEvent)
+                try await harness.nextReviewBatchPublication(for: metadataLease)
             }
 
             // Act
-            let result = await harness.controller.loadInitialReviewPackageIfPossible(correlationId: nil)
-            let completedResult = try #require(result)
-            guard case .success = completedResult else {
+            let result = try await beginInitialReviewInNativeFixture(
+                harness.controller, facts: harness.buildFacts, metadataProducerLease: metadataLease)
+            let completedResult = result
+            guard case .succeeded = completedResult else {
                 metadataEventsTask.cancel()
                 try await closeBridgeProductSessionProducer(
                     metadataLease,
@@ -51,22 +48,15 @@ extension WebKitSerializedTests {
                 Issue.record("Real-git Review package load failed: \(String(describing: completedResult))")
                 return
             }
-            let (sourceAcceptedEvent, snapshotEvent) = try await metadataEventsTask.value
+            let publication = try await metadataEventsTask.value
 
             // Assert
             let package = try #require(harness.controller.paneState.diff.packageMetadata)
             #expect(harness.controller.paneState.diff.status == .ready)
 
-            guard case .sourceAccepted = sourceAcceptedEvent,
-                case .snapshot = snapshotEvent
-            else {
-                Issue.record("Expected Review sourceAccepted followed by snapshot")
-                return
-            }
-            #expect(sourceAcceptedEvent.packageId == package.packageId)
-            #expect(sourceAcceptedEvent.generation == package.reviewGeneration.rawValue)
-            #expect(snapshotEvent.packageId == package.packageId)
-            #expect(snapshotEvent.revision == package.revision)
+            #expect(publication.displayed?.packageId == package.packageId)
+            #expect(publication.displayed?.generation == package.reviewGeneration.rawValue)
+            #expect(publication.displayed?.revision == package.revision)
             let trackedItem = try #require(
                 package.itemsById.values.first { $0.headPath == "tracked.txt" }
             )
@@ -120,32 +110,28 @@ extension WebKitSerializedTests {
             defer { _ = harness.controller.beginTeardown() }  // fire-and-forget: defer cannot await; cleanup only
             let metadataLease = try await harness.openReviewMetadataSubscription()
             let initialEventsTask = Task { @MainActor in
-                let sourceAccepted = try await harness.nextReviewMetadataEvent(for: metadataLease)
-                let snapshot = try await harness.nextReviewMetadataEvent(for: metadataLease)
-                return (sourceAccepted, snapshot)
+                try await harness.nextReviewBatchPublication(for: metadataLease)
             }
 
             // Act
-            let initialResult = try #require(
-                await harness.controller.loadInitialReviewPackageIfPossible(correlationId: nil)
-            )
-            guard case .success = initialResult else {
+            let initialResult = try await beginInitialReviewInNativeFixture(
+                harness.controller, facts: harness.buildFacts, metadataProducerLease: metadataLease)
+            guard case .succeeded = initialResult else {
                 Issue.record("Expected the real contribution package to load: \(initialResult)")
                 return
             }
-            let (initialSourceAcceptedEvent, initialSnapshotEvent) = try await initialEventsTask.value
+            let initialPublication = try await initialEventsTask.value
             let initialPackage = try #require(harness.controller.paneState.diff.packageMetadata)
 
             // Assert
-            guard case .sourceAccepted = initialSourceAcceptedEvent,
-                case .snapshot(let initialSnapshot) = initialSnapshotEvent,
+            guard let initialDisplayed = initialPublication.displayed,
                 case .contribution(let initialOrigin) = initialPackage.comparisonOrigin
             else {
-                Issue.record("Expected contribution source acceptance, snapshot, and origin")
+                Issue.record("Expected a displayed contribution batch publication and origin")
                 return
             }
-            #expect(initialSnapshot.comparisonOrigin == initialPackage.comparisonOrigin)
-            #expect(initialSnapshot.reviewedSubjectLabel == "real-git-review")
+            #expect(initialDisplayed.comparisonOrigin == initialPackage.comparisonOrigin)
+            #expect(initialDisplayed.reviewedSubjectLabel == "real-git-review")
             #expect(initialOrigin.symbolicTarget == .localDefaultBranch(branchName: "main"))
             #expect(initialOrigin.resolvedTargetOID == fixture.initialTargetOID)
             #expect(initialOrigin.reviewedHeadOID == fixture.reviewedHeadOID)
@@ -160,10 +146,7 @@ extension WebKitSerializedTests {
 
             let successorTargetOID = try await advanceTargetOnlyHistory(at: repoURL)
             let successorEventsTask = Task { @MainActor in
-                let reset = try await harness.nextReviewMetadataEvent(for: metadataLease)
-                let sourceAccepted = try await harness.nextReviewMetadataEvent(for: metadataLease)
-                let snapshot = try await harness.nextReviewMetadataEvent(for: metadataLease)
-                return (reset, sourceAccepted, snapshot)
+                try await harness.nextReviewBatchPublication(for: metadataLease)
             }
             harness.controller.refreshAdmissionCoordinator.recordInvalidation(
                 fileChangeset: nil,
@@ -178,23 +161,20 @@ extension WebKitSerializedTests {
             let refreshOutcome = await harness.controller.refreshCurrentReviewPackage(
                 reservation: reservation,
                 foregroundWorkAdmission: reservation.foregroundWorkAdmission,
-                productAdmission: harness.productAdmission
+                productAdmission: harness.paneProductAdmission
             )
             harness.controller.refreshAdmissionCoordinator.completeRefreshPass(
                 reservation,
                 outcome: refreshOutcome
             )
-            let (resetEvent, successorSourceAcceptedEvent, successorSnapshotEvent) =
-                try await successorEventsTask.value
+            let successorPublication = try await successorEventsTask.value
             let successorPackage = try #require(harness.controller.paneState.diff.packageMetadata)
 
             #expect(refreshOutcome == .succeeded)
-            guard case .reset(let reset) = resetEvent,
-                case .sourceAccepted = successorSourceAcceptedEvent,
-                case .snapshot(let successorSnapshot) = successorSnapshotEvent,
+            guard let successorDisplayed = successorPublication.displayed,
                 case .contribution(let successorOrigin) = successorPackage.comparisonOrigin
             else {
-                Issue.record("Expected target movement to reset and publish a successor contribution snapshot")
+                Issue.record("Expected target movement to publish a successor contribution batch")
                 return
             }
             #expect(successorPackage.reviewGeneration == initialPackage.reviewGeneration)
@@ -205,9 +185,8 @@ extension WebKitSerializedTests {
             #expect(successorOrigin.baseOID == initialOrigin.baseOID)
             #expect(successorPackage.itemsById.keys == initialPackage.itemsById.keys)
             #expect(!successorPackage.itemsById.values.compactMap(\.headPath).contains("target-only.txt"))
-            #expect(reset.comparisonOrigin == successorPackage.comparisonOrigin)
-            #expect(successorSnapshot.comparisonOrigin == successorPackage.comparisonOrigin)
-            #expect(successorSnapshot.identity.publicationId != initialSnapshot.identity.publicationId)
+            #expect(successorDisplayed.comparisonOrigin == successorPackage.comparisonOrigin)
+            #expect(successorPublication.publicationId != initialPublication.publicationId)
             #expect(initialPackage.comparisonOrigin == .contribution(initialOrigin))
             #expect(initialPackage.itemsById.values.compactMap(\.headPath).contains("target-only.txt") == false)
 
@@ -337,11 +316,13 @@ private func assertCompleteContributionContent(
 
 @MainActor
 private struct RealGitReviewLoadHarness {
+    let buildFacts: BridgePaneReviewBuildAdmissionTrace
     let capabilityHeader: String
     let controlDispatcher: BridgeProductSchemeControlDispatcher
     let controller: BridgePaneController
     let constructionCoordinator: BridgeWorktreeProductConstructionCoordinator
     let installation: BridgeProductSessionInstallation
+    let paneProductAdmission: BridgeProductAdmissionContext
     let productAdmission: BridgeProductAdmissionContext
     let productProvider: BridgePaneProductSchemeProvider
     let reviewDataClient: AgentStudioGitBridgeReviewDataClient<LibGit2AgentStudioGitLocalClient>
@@ -358,6 +339,7 @@ private struct RealGitReviewLoadHarness {
             statusPhysicalGate: AgentStudioGitStatusPhysicalGate()
         )
         let reviewSourceProvider = BridgeGitReviewSourceProvider(client: reviewDataClient)
+        let buildFacts = try BridgePaneReviewBuildAdmissionTrace()
         let controller = BridgePaneController(
             paneId: paneId,
             state: BridgePaneState(
@@ -382,13 +364,15 @@ private struct RealGitReviewLoadHarness {
             reviewSourceProvider: reviewSourceProvider,
             gitReadContext: gitReadContext,
             worktreeProductConstructionCoordinator: constructionCoordinator,
-            initialPaneActivity: .foreground
+            initialPaneActivity: .foreground,
+            reviewBuildAdmissionFactSink: buildFacts.source.sink
         )
         let productProvider = try #require(controller.productSchemeProvider)
         let installation = try #require(
             await controller.productSessionOwner.activeInstallation
         )
-        let productAdmission = try #require(controller.productAdmissionGate.acquire())
+        let paneProductAdmission = try #require(controller.productAdmissionGate.acquire())
+        let productAdmission = try #require(installation.productAdapter.acquireAdmission())
         let capabilityHeader = try BridgeProductCapabilityHeaderEncoding.encode(
             installation.capabilityBytes
         )
@@ -399,11 +383,13 @@ private struct RealGitReviewLoadHarness {
         )
         #expect(controller.handleBridgeReady())
         return Self(
+            buildFacts: buildFacts,
             capabilityHeader: capabilityHeader,
             controlDispatcher: controlDispatcher,
             controller: controller,
             constructionCoordinator: constructionCoordinator,
             installation: installation,
+            paneProductAdmission: paneProductAdmission,
             productAdmission: productAdmission,
             productProvider: productProvider,
             reviewDataClient: reviewDataClient,
@@ -413,12 +399,15 @@ private struct RealGitReviewLoadHarness {
 
     func openReviewMetadataSubscription() async throws -> BridgeProductProducerLease {
         let workerOpenRequest = try realGitReviewWorkerOpenRequest(installation: installation)
-        guard
-            case .response = try await controlDispatcher.dispatch(
+        let workerOpenResponse = try await readAdmittedBridgeProductControlResponse(
+            try await controlDispatcher.dispatch(
                 exactRequestBytes: try realGitReviewControlRequestBytes(workerOpenRequest),
                 presentedCapability: capabilityHeader
-            )
-        else {
+            ),
+            installation: installation,
+            capabilityHeader: capabilityHeader
+        )
+        guard case .workerSessionAccepted = workerOpenResponse else {
             throw RealGitReviewMetadataEventError.expectedWorkerSessionAccepted
         }
         let metadataRequest = try realGitReviewMetadataRequest(installation: installation)
@@ -458,16 +447,15 @@ private struct RealGitReviewLoadHarness {
             await Task.yield()
         }
         #expect(metadataStreamIsReady)
-        guard
-            case .response(let reviewOpenResponseBytes) = try await controlDispatcher.dispatch(
+        let reviewOpenResponse = try await readAdmittedBridgeProductControlResponse(
+            try await controlDispatcher.dispatch(
                 exactRequestBytes: try realGitReviewControlRequestBytes(reviewOpenRequest),
                 presentedCapability: capabilityHeader
             ),
-            case .subscriptionOpenAccepted = try BridgeProductStrictJSON.decode(
-                BridgeProductControlResponse.self,
-                from: reviewOpenResponseBytes
-            )
-        else {
+            installation: installation,
+            capabilityHeader: capabilityHeader
+        )
+        guard case .subscriptionOpenAccepted = reviewOpenResponse else {
             throw RealGitReviewMetadataEventError.expectedReviewSubscriptionControlAccepted
         }
         var observedSubscriptionAcceptance = false
@@ -496,12 +484,43 @@ private struct RealGitReviewLoadHarness {
         guard observedSubscriptionAcceptance else {
             throw RealGitReviewMetadataEventError.expectedReviewSubscriptionFrameAccepted
         }
+        try await admitReviewViewScope()
         return metadataLease
     }
 
-    func nextReviewMetadataEvent(
+    private func admitReviewViewScope() async throws {
+        let scopeRequest = try realGitReviewControlRequest([
+            "kind": "subscription.setScope",
+            "paneSessionId": installation.bootstrap.paneSessionId,
+            "workerInstanceId": installation.bootstrap.workerInstanceId,
+            "wireVersion": BridgeProductWireContract.version,
+            "requestId": "request-review-scope-real-git-review",
+            "requestSequence": 3,
+            "subscriptionId": "review-subscription-real-git-review",
+            "subscriptionKind": "review.metadata",
+            "domain": "default",
+            "handle": "real-git-review-handle",
+            "incarnation": "real-git-review-incarnation",
+            "scopeRevision": 1,
+            "scope": ["kind": "review", "interests": []],
+        ])
+        let scopeResponse = try await readAdmittedBridgeProductControlResponse(
+            try await controlDispatcher.dispatch(
+                exactRequestBytes: try realGitReviewControlRequestBytes(scopeRequest),
+                presentedCapability: capabilityHeader
+            ),
+            installation: installation,
+            capabilityHeader: capabilityHeader
+        )
+        guard case .viewAccepted = scopeResponse else {
+            throw RealGitReviewMetadataEventError.expectedReviewBatchPublication
+        }
+    }
+
+    func nextReviewBatchPublication(
         for metadataLease: BridgeProductProducerLease
-    ) async throws -> BridgeProductReviewMetadataEvent {
+    ) async throws -> BridgeProductReviewBatchPublicationRecord {
+        var publication: BridgeProductReviewBatchPublicationRecord?
         while true {
             let frame = try realGitReviewMetadataFrame(
                 from: try #require(
@@ -513,15 +532,28 @@ private struct RealGitReviewLoadHarness {
                 )
             )
             switch frame {
-            case .subscriptionData(let dataFrame):
-                guard let event = dataFrame.data.reviewMetadataEvent else {
-                    throw RealGitReviewMetadataEventError.expectedReviewMetadataEvent
+            case .batch(.begin(let begin)):
+                guard begin.mode == .snapshot else {
+                    throw RealGitReviewMetadataEventError.expectedReviewBatchPublication
                 }
-                return event
+            case .batch(.part(let part)):
+                guard case .put(_, _, let value) = part.part else { continue }
+                let record = try JSONDecoder().decode(
+                    BridgeProductReviewBatchRecord.self,
+                    from: JSONEncoder().encode(value)
+                )
+                if case .publication(let receivedPublication) = record {
+                    publication = receivedPublication
+                }
+            case .batch(.complete):
+                guard let publication else {
+                    throw RealGitReviewMetadataEventError.expectedReviewBatchPublication
+                }
+                return publication
             case .panePresentation:
                 continue
             default:
-                throw RealGitReviewMetadataEventError.expectedReviewMetadataEvent
+                throw RealGitReviewMetadataEventError.expectedReviewBatchPublication
             }
         }
     }
@@ -532,7 +564,7 @@ private enum RealGitReviewMetadataEventError: Error {
     case expectedReviewSubscriptionControlAccepted
     case expectedReviewSubscriptionFrameAccepted
     case unexpectedReviewSubscriptionFrame(String)
-    case expectedReviewMetadataEvent
+    case expectedReviewBatchPublication
     case expectedSingleMetadataFrame
     case expectedWorkerSessionAccepted
 }
@@ -612,15 +644,4 @@ private func realGitReviewMetadataFrame(
         throw RealGitReviewMetadataEventError.expectedSingleMetadataFrame
     }
     return frame
-}
-
-private func realGitReviewEvent(
-    from frame: BridgeProductMetadataFrame
-) throws -> BridgeProductReviewMetadataEvent {
-    guard case .subscriptionData(let dataFrame) = frame,
-        let event = dataFrame.data.reviewMetadataEvent
-    else {
-        throw RealGitReviewMetadataEventError.expectedReviewMetadataEvent
-    }
-    return event
 }

@@ -72,7 +72,8 @@ struct BridgePaneReviewSharedConstructionBinder: Sendable {
     }
 
     func acquire(
-        _ request: BridgeReviewPipelineRequest
+        _ request: BridgeReviewPipelineRequest,
+        progress: @escaping BridgeReviewConstructionProgressSink = { _ in }
     ) async throws -> BridgePaneReviewSharedConstructionBinding {
         let worktree = worktreeIdentity(for: request)
         let pipeline = pipeline
@@ -86,23 +87,27 @@ struct BridgePaneReviewSharedConstructionBinder: Sendable {
             )
             let candidateRequest = try await pipeline.resolveSharedConstructionRequest(
                 request,
-                freshnessKey: freshnessKey
+                freshnessKey: freshnessKey,
+                progress: { phase in progress(phase) }
             )
             let key = try constructionKey(for: candidateRequest)
             do {
                 lease = try await coordinator.acquire(
                     key: .review(key),
-                    expectedEpoch: context.epoch
-                ) { _ in
+                    expectedEpoch: context.epoch,
+                    reviewProgress: progress
+                ) { constructionContext in
                     let template = try await pipeline.buildSharedTemplate(
                         request: candidateRequest,
                         baseEndpointKey: key.baseEndpoint,
                         headEndpointKey: key.headEndpoint,
-                        freshnessKey: freshnessKey
+                        freshnessKey: freshnessKey,
+                        progress: constructionContext.reviewProgress
                     )
                     return .reviewTemplate(template)
                 }
                 resolvedRequest = candidateRequest
+                progress(.artifactAcquired)
                 break
             } catch BridgeWorktreeProductConstructionError.freshnessEpochMismatch {
                 try Task.checkCancellation()
@@ -119,7 +124,8 @@ struct BridgePaneReviewSharedConstructionBinder: Sendable {
         do {
             let result = try await pipeline.bindSharedTemplate(
                 template,
-                request: resolvedRequest
+                request: resolvedRequest,
+                progress: { phase in progress(phase) }
             )
             return BridgePaneReviewSharedConstructionBinding(
                 result: result,

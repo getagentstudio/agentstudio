@@ -19,30 +19,63 @@ import {
 	bridgeViewerCleanupProofAfterOwnedStops,
 	bridgeViewerProductOnlyRegressionPhase,
 } from './product-only-real-router-regression.ts';
+import { classifyFreshReviewHydrationWindow } from './product-only-real-router-review-hydration-window.ts';
 import { waitForFreshReviewManifestState } from './product-only-real-router-review-proof.ts';
 
 describe('Bridge Viewer product-only real-router regression contract', () => {
-	test('requires paint only after a Review shell has rendered lines or prior paint evidence', async () => {
-		// Arrange
-		const hydrationWindowSource = await readFile(
-			new URL('./product-only-real-router-review-hydration-window.ts', import.meta.url),
-			'utf8',
-		);
+	test('requires a painted Markdown source as well as the selected code canvas', () => {
+		const passingProof = makePassingProductOnlyProof();
+		const missingMarkdownPaint = {
+			...passingProof,
+			fileMarkdownAtReviewFirstSwitch: {
+				articleCharacterCount: 0,
+				canvasVisible: false,
+				selectedDisplayPath: 'README.md',
+				sourcePath: null,
+			},
+		};
 
-		// Act
-		const paintEligibilityIndex = hydrationWindowSource.indexOf(
-			'item.renderedLineCount > 0 || item.publicationId !== null',
-		);
-		const paintValidationIndex = hydrationWindowSource.indexOf('paintEligibleItems.some');
-
-		// Assert
-		expect(paintEligibilityIndex).toBeGreaterThan(0);
-		expect(paintValidationIndex).toBeGreaterThan(paintEligibilityIndex);
-		expect(hydrationWindowSource).toContain('const renderedLineCount = queryAllInOpenShadowRoots(');
-		expect(hydrationWindowSource).toContain("'[data-line][data-line-index]'");
+		expect(
+			collectBridgeViewerProductOnlyContractViolations(missingMarkdownPaint).map(
+				(violation) => violation.code,
+			),
+		).toContain('file.markdown-visible-readable');
 	});
 
-	test('keeps rename source and destination as separate Review oracle items', () => {
+	test('requires correlated painted Review evidence for a visible hydrated item', () => {
+		const visibleItem = {
+			contentState: 'windowed',
+			itemId: 'review-item-1',
+			publicationId: 'publication-1',
+			renderedLineCount: 8,
+			sourceCorrelations: JSON.stringify([
+				{
+					itemId: 'review-item-1',
+					pierreItemId: 'review-item-1',
+					publicationId: 'publication-1',
+					semanticItemId: 'review-item-1',
+				},
+			]),
+		};
+		const painted = classifyFreshReviewHydrationWindow({
+			excludedItemIds: [],
+			scrollTop: 0,
+			selectedItemId: null,
+			visibleItems: [visibleItem],
+		});
+		const mismatched = classifyFreshReviewHydrationWindow({
+			excludedItemIds: [],
+			scrollTop: 0,
+			selectedItemId: null,
+			visibleItems: [{ ...visibleItem, publicationId: 'other-publication' }],
+		});
+
+		expect(painted.hydratedNonSelectedItemIds).toEqual(['review-item-1']);
+		expect(mismatched.visibleNonSelectedItemIds).toEqual(['review-item-1']);
+		expect(mismatched.hydratedNonSelectedItemIds).toEqual([]);
+	});
+
+	test('uses native Review rename similarity for oracle items', () => {
 		// Arrange
 		const reviewBase = 'fixture-base';
 
@@ -54,7 +87,7 @@ describe('Bridge Viewer product-only real-router regression contract', () => {
 			'diff',
 			'--name-status',
 			'-z',
-			'--no-renames',
+			'--find-renames=50%',
 			reviewBase,
 			'--',
 		]);
@@ -136,8 +169,8 @@ describe('Bridge Viewer product-only real-router regression contract', () => {
 				makeProductEntry(1, '/__bridge-product/command', 'workerSession.open', 200),
 				makeProductEntry(2, '/__bridge-product/stream', 'metadataStream.open', 200),
 				{
-					...makeProductEntry(3, '/__bridge-product/command', 'stream.frameObserved', 400),
-					streamKind: 'metadata',
+					...makeProductEntry(3, '/__bridge-product/command', 'subscription.acknowledge', 400),
+					responseKind: 'request.error',
 				},
 				{
 					...makeProductEntry(4, '/__bridge-product/command', 'subscription.open', 200),
@@ -157,7 +190,8 @@ describe('Bridge Viewer product-only real-router regression contract', () => {
 		const violations = collectBridgeViewerProductOnlyContractViolations(proof);
 		const codes = violations.map((violation) => violation.code);
 
-		expect(codes).toContain('transport.frame-observation-bodyless-204');
+		expect(codes).toContain('transport.subscription-receipt-accepted');
+		expect(codes).toContain('transport.content-acknowledgement-bodyless-204');
 		expect(codes).toContain('transport.file.metadata-accepted');
 		expect(codes).toContain('transport.review.metadata-accepted');
 		expect(codes).toContain('file.product-display-ready');
@@ -167,6 +201,36 @@ describe('Bridge Viewer product-only real-router regression contract', () => {
 		expect(bridgeViewerProductOnlyRegressionPhase(violations)).toBe(
 			'initial-product-transport-red',
 		);
+	});
+
+	test('accepts only a correlated typed unknown-read content refusal', () => {
+		const correlatedTranscript = passingTranscript().map((entry) =>
+			entry.requestKind === 'content.acknowledge' && entry.ordinal === 7
+				? {
+						...entry,
+						contentUnknownReadRefusalCorrelated: true,
+						httpStatus: 404,
+						responseKind: 'content.acknowledgementRefused',
+					}
+				: entry,
+		);
+		const correlatedProof = makePassingProductOnlyProof({ transcript: correlatedTranscript });
+		expect(
+			collectBridgeViewerProductOnlyContractViolations(correlatedProof).map(
+				(violation) => violation.code,
+			),
+		).not.toContain('transport.content-acknowledgement-bodyless-204');
+
+		const uncorrelatedProof = makePassingProductOnlyProof({
+			transcript: correlatedTranscript.map((entry) =>
+				entry.httpStatus === 404 ? { ...entry, contentUnknownReadRefusalCorrelated: false } : entry,
+			),
+		});
+		expect(
+			collectBridgeViewerProductOnlyContractViolations(uncorrelatedProof).map(
+				(violation) => violation.code,
+			),
+		).toContain('transport.content-acknowledgement-bodyless-204');
 	});
 
 	test('uses the same permanent contract for the product-only green state', () => {

@@ -140,7 +140,7 @@ struct BridgeRuntimeTests {
 
     private func makeRuntime(
         commandHandler: (any BridgeRuntimeCommandHandling)? = nil,
-        paneEventBus: EventBus<RuntimeEnvelope> = PaneRuntimeEventBus.shared
+        paneEventBus: EventBus<RuntimeEnvelope> = EventBus<RuntimeEnvelope>()
     ) -> BridgeRuntime {
         let paneId = PaneId.generateUUIDv7()
         let metadata = PaneMetadata(

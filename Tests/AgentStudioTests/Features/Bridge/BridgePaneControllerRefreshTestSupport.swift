@@ -1,5 +1,6 @@
 import AgentStudioCore
 import AgentStudioInfrastructure
+import AgentStudioTestHarness
 import AgentStudioTestSupport
 import Foundation
 import Testing
@@ -249,27 +250,26 @@ func makeRefreshAdmissionIntegrationFixture(
     failsReviewReservation: Bool = false,
     failsReviewDelivery: Bool = false,
     fileMetadataProducerGate: RefreshAdmissionCancellationIgnoringProducerGate? = nil,
-    reviewMetadataReservationGate: RefreshAdmissionReviewReservationGate? = nil
+    reviewMetadataReservationGate: RefreshAdmissionReviewReservationGate? = nil,
+    reviewMetadataHeldPackageItemId: String? = nil,
+    reviewMetadataReservationStep: HeldStep<Void>? = nil,
+    reviewConstructionProgress: BridgeReviewConstructionProgressWaitOwner = .init(),
+    reviewBuildAdmissionFactSink: BridgePaneReviewBuildAdmissionFactSink? = nil,
+    telemetryRecorder: (any BridgePerformanceTraceRecording)? = nil,
+    publicationLifecycleRecorder: (any BridgeProductMetadataLifecycleTraceRecording)? = nil,
+    contributionTargetCommit:
+        (@MainActor @Sendable (WorkspaceReviewContributionTarget) -> BridgePaneStateMutationResult)? = nil
 ) async throws -> RefreshAdmissionIntegrationFixture {
     let baseEndpoint = makeBridgeEndpoint(endpointId: "baseline-headMinusOne", kind: .gitRef)
     let headEndpoint = makeBridgeEndpoint(endpointId: "working-tree", kind: .workingTree)
-    let initialFile = makeBridgeEndpointChangedFile(
-        fileId: "initial",
-        path: "Sources/App/Initial.swift",
-        sizeBytes: 100
-    )
     let refreshedFile = makeBridgeEndpointChangedFile(
         fileId: "refreshed",
         path: "Sources/App/Refreshed.swift",
         sizeBytes: 100
     )
-    let reviewProvider = BridgeReviewSourceProviderFake(
-        comparison: BridgeEndpointComparison(
-            baseEndpoint: baseEndpoint,
-            headEndpoint: headEndpoint,
-            changedFiles: [initialFile]
-        ),
-        contentByHandleId: [:],
+    let reviewProvider = makeRefreshAdmissionInitialReviewProvider(
+        baseEndpoint: baseEndpoint,
+        headEndpoint: headEndpoint,
         comparisonGate: comparisonGate
     )
     let fileMetadataSource = RefreshAdmissionTrackingFileMetadataSource(
@@ -279,7 +279,9 @@ func makeRefreshAdmissionIntegrationFixture(
     let reviewMetadataSource = RefreshAdmissionGatedReviewMetadataSource(
         failsReservation: failsReviewReservation,
         failsDelivery: failsReviewDelivery,
-        reservationGate: reviewMetadataReservationGate
+        reservationGate: reviewMetadataReservationGate,
+        heldPackageItemId: reviewMetadataHeldPackageItemId,
+        reservationStep: reviewMetadataReservationStep
     )
     let refreshWorkAdmission = BridgePaneRefreshWorkAdmissionTestContext.foregroundOnMainActor()
     let productProvider = BridgePaneProductSchemeProvider(
@@ -287,7 +289,8 @@ func makeRefreshAdmissionIntegrationFixture(
         reviewMetadataSource: reviewMetadataSource,
         reviewContentSource: BridgeUnavailablePaneProductReviewContentSource(),
         markReviewItemViewed: { _, _ in },
-        refreshWorkAdmissionSource: refreshWorkAdmission.source
+        refreshWorkAdmissionSource: refreshWorkAdmission.source,
+        lifecycleTraceRecorder: publicationLifecycleRecorder
     )
     let paneId = UUIDv7.generate()
     let productAdmissionGate = BridgeProductAdmissionGate()
@@ -315,6 +318,7 @@ func makeRefreshAdmissionIntegrationFixture(
             )
         ),
         reviewSourceProvider: reviewProvider,
+        telemetryRecorder: telemetryRecorder,
         initialPaneActivity: .dormant,
         productSessionDependencies: BridgePaneProductSessionDependencies(
             installation: installation,
@@ -325,9 +329,12 @@ func makeRefreshAdmissionIntegrationFixture(
                 activeInstallation: installation
             ),
             productProvider: productProvider
-        )
+        ),
+        reviewConstructionProgress: reviewConstructionProgress,
+        contributionTargetCommit: contributionTargetCommit,
+        reviewBuildAdmissionFactSink: reviewBuildAdmissionFactSink ?? { _, _ in }
     )
-    let productAdmission = try #require(productAdmissionGate.acquire())
+    let productAdmission = try #require(installation.productAdapter.acquireAdmission())
     let metadataProducerLease = try await installRefreshAdmissionMetadataProducer(
         installation: installation,
         productProvider: productProvider,
@@ -351,7 +358,31 @@ func makeRefreshAdmissionIntegrationFixture(
     )
 }
 
+private func makeRefreshAdmissionInitialReviewProvider(
+    baseEndpoint: BridgeSourceEndpoint,
+    headEndpoint: BridgeSourceEndpoint,
+    comparisonGate: BridgeComparisonGate?
+) -> BridgeReviewSourceProviderFake {
+    let initialFile = makeBridgeEndpointChangedFile(
+        fileId: "initial", path: "Sources/App/Initial.swift", sizeBytes: 100)
+    return BridgeReviewSourceProviderFake(
+        comparison: BridgeEndpointComparison(
+            baseEndpoint: baseEndpoint,
+            headEndpoint: headEndpoint,
+            changedFiles: [initialFile]
+        ),
+        contentByHandleId: [:],
+        comparisonGate: comparisonGate
+    )
+}
+
 actor RefreshAdmissionTrackingFileMetadataSource: BridgePaneProductFileMetadataProducing {
+    func captureKeyedSnapshot(
+        subscriptionId _: String,
+        demand _: BridgePaneProductFileViewDemand,
+        productAdmission _: BridgeProductAdmissionContext
+    ) async -> BridgeWorktreeFileKeyedSnapshot? { nil }
+
     private let failsChangesetPublication: Bool
     private let metadataProducerGate: RefreshAdmissionCancellationIgnoringProducerGate?
     private var changesets: [FileChangeset] = []
@@ -380,16 +411,18 @@ actor RefreshAdmissionTrackingFileMetadataSource: BridgePaneProductFileMetadataP
         subscription _: BridgeProductSubscriptionSnapshot,
         productAdmission _: BridgeProductAdmissionContext,
         foregroundWorkAdmission _: BridgePaneRefreshWorkAdmission,
-        emit _: @escaping BridgePaneProductFileMetadataEventSink
+        emit _: @escaping BridgePaneProductFileSourceFactSink
     ) async throws {
         await metadataProducerGate?.holdIgnoringCancellation()
     }
 
-    func update(
-        subscription _: BridgeProductSubscriptionSnapshot,
+    func applyViewDemand(
+        subscriptionId _: String,
+        demand _: BridgePaneProductFileViewDemand,
         productAdmission _: BridgeProductAdmissionContext,
         foregroundWorkAdmission _: BridgePaneRefreshWorkAdmission,
-        emit _: @escaping BridgePaneProductFileMetadataEventSink
+        forceRecapture _: Bool,
+        emit _: @escaping BridgePaneProductFileSourceFactSink
     ) async throws {}
 
     func cancel(subscriptionId _: String) {}
@@ -610,40 +643,38 @@ private actor RefreshAdmissionGatedReviewMetadataSource: BridgePaneProductReview
     private let failsReservation: Bool
     private let failsDelivery: Bool
     private let reservationGate: RefreshAdmissionReviewReservationGate?
+    private let heldPackageItemId: String?
+    private let reservationStep: HeldStep<Void>?
     private let source = BridgePaneProductReviewMetadataSource()
 
     init(
         failsReservation: Bool,
         failsDelivery: Bool,
-        reservationGate: RefreshAdmissionReviewReservationGate?
+        reservationGate: RefreshAdmissionReviewReservationGate?,
+        heldPackageItemId: String?,
+        reservationStep: HeldStep<Void>?
     ) {
         self.failsReservation = failsReservation
         self.failsDelivery = failsDelivery
         self.reservationGate = reservationGate
+        self.heldPackageItemId = heldPackageItemId
+        self.reservationStep = reservationStep
     }
 
     func open(
         subscription: BridgeProductSubscriptionSnapshot,
-        productAdmission: BridgeProductAdmissionContext,
-        emit: @escaping BridgePaneProductReviewMetadataEventSink
+        productAdmission: BridgeProductAdmissionContext
     ) async throws {
         try await source.open(
             subscription: subscription,
-            productAdmission: productAdmission,
-            emit: emit
+            productAdmission: productAdmission
         )
     }
 
-    func update(
-        subscription: BridgeProductSubscriptionSnapshot,
-        productAdmission: BridgeProductAdmissionContext,
-        emit: @escaping BridgePaneProductReviewMetadataEventSink
-    ) async throws {
-        try await source.update(
-            subscription: subscription,
-            productAdmission: productAdmission,
-            emit: emit
-        )
+    func applyViewDemand(_ request: BridgePaneProductReviewViewDemandRequest) async throws
+        -> BridgePaneProductReviewViewCapture?
+    {
+        try await source.applyViewDemand(request)
     }
 
     func reserve(
@@ -652,6 +683,9 @@ private actor RefreshAdmissionGatedReviewMetadataSource: BridgePaneProductReview
         productAdmission: BridgeProductAdmissionContext
     ) async throws -> BridgeReviewMetadataPublicationReservation {
         await reservationGate?.holdIfEnabled()
+        if heldPackageItemId == nil || package.itemsById[heldPackageItemId ?? ""] != nil {
+            try await reservationStep?.arrive(())
+        }
         if failsReservation {
             throw BridgePaneProductReviewMetadataSourceError.metadataEventExceedsByteLimit
         }
@@ -693,10 +727,10 @@ private enum RefreshAdmissionInjectedReviewMetadataFailure: Error {
 private enum RefreshAdmissionIntegrationError: Error {
     case expectedMetadataProducerRegistration
     case expectedMetadataFrame
+    case expectedMetadataStreamAcceptance
     case expectedSubscriptionAcceptedFrame
     case expectedWorkerSessionExecution
     case fileSubscriptionDidNotOpen
-    case metadataStreamDidNotInstall
     case reviewSubscriptionDidNotOpen
 }
 
@@ -724,7 +758,7 @@ private func installRefreshAdmissionMetadataProducer(
     guard case .execute(let workerOpenToken, _) = workerOpenAdmission else {
         throw RefreshAdmissionIntegrationError.expectedWorkerSessionExecution
     }
-    _ = try await installation.session.completeControl(
+    _ = try await installation.session.completeAdmittedControl(
         token: workerOpenToken,
         exactResponseBytes: try JSONEncoder().encode(
             BridgeProductControlResponse.workerSessionAccepted(correlating: workerOpenRequest)
@@ -746,41 +780,23 @@ private func installRefreshAdmissionMetadataProducer(
     guard case .accepted(let lease) = registration else {
         throw RefreshAdmissionIntegrationError.expectedMetadataProducerRegistration
     }
-    _ = await consumeNextBridgeProductProducerFrame(
-        for: lease,
-        from: installation.session,
-        productAdmission: productAdmission
-    )
-    try await waitForRefreshAdmissionMetadataStream(
-        provider: productProvider,
-        installation: installation
-    )
-    return lease
-}
-
-private func waitForRefreshAdmissionMetadataStream(
-    provider: BridgePaneProductSchemeProvider,
-    installation: BridgeProductSessionInstallation,
-    maxTurns: Int = 200
-) async throws {
-    let request = try refreshAdmissionControlRequest([
-        "activeSubscriptions": [],
-        "kind": "workerSession.resync",
-        "lastAcceptedRequestSequence": 1,
-        "lastAcceptedStreamSequence": 0,
-        "paneSessionId": installation.bootstrap.paneSessionId,
-        "requestId": "request-resync-refresh-admission",
-        "requestSequence": 2,
-        "wireVersion": BridgeProductWireContract.version,
-        "workerInstanceId": installation.bootstrap.workerInstanceId,
-    ])
-    for _ in 0..<maxTurns {
-        if case .resyncAccepted = await provider.response(for: request) {
-            return
-        }
-        await Task.yield()
+    guard
+        let acceptedStreamFrame = await consumeNextBridgeProductProducerFrame(
+            for: lease,
+            from: installation.session,
+            productAdmission: productAdmission
+        )
+    else {
+        throw RefreshAdmissionIntegrationError.expectedMetadataFrame
     }
-    throw RefreshAdmissionIntegrationError.metadataStreamDidNotInstall
+    let frameDecoder = try BridgeProductMetadataFrameDecoder()
+    guard
+        let initialFrame = try frameDecoder.append(acceptedStreamFrame.data).first,
+        case .metadataStreamAccepted = initialFrame
+    else {
+        throw RefreshAdmissionIntegrationError.expectedMetadataStreamAcceptance
+    }
+    return lease
 }
 
 private func refreshAdmissionControlRequest(
@@ -853,19 +869,16 @@ private func refreshAdmissionReviewSubscriptionOpenRequest(
     ])
 }
 
-func refreshAdmissionFileSourceAcceptedEvent() throws -> BridgeProductFileMetadataEvent {
+func refreshAdmissionFileSourceAcceptedEvent() throws -> BridgePaneProductFileSourceFact {
     .sourceAccepted(
-        .init(
-            source: try .init(
-                repoId: "00000000-0000-4000-8000-000000000001",
-                rootRevisionToken: "root-token-refresh-admission",
-                sourceCursor: "source-cursor-refresh-admission",
-                sourceId: "file-source-refresh-admission",
-                subscriptionGeneration: 1,
-                worktreeId: "00000000-0000-4000-8000-000000000002"
-            )
-        )
-    )
+        try .init(
+            repoId: "00000000-0000-4000-8000-000000000001",
+            rootRevisionToken: "root-token-refresh-admission",
+            sourceCursor: "source-cursor-refresh-admission",
+            sourceId: "file-source-refresh-admission",
+            subscriptionGeneration: 1,
+            worktreeId: "00000000-0000-4000-8000-000000000002"
+        ))
 }
 
 func waitForRefreshAdmissionQueuedMetadataFrame(

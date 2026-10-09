@@ -2,6 +2,12 @@ import AgentStudioGit
 import AgentStudioInfrastructure
 import CryptoKit
 import Foundation
+import os.log
+
+private let annotationSourceContextLogger = Logger(
+    subsystem: "com.agentstudio",
+    category: "WorktreeAnnotationSourceContext"
+)
 
 enum WorktreeAnnotationSourceCapture {
     struct LocatedOriginProps {
@@ -604,9 +610,7 @@ extension BridgePaneProductFileMetadataSource {
     func worktreeAnnotationAdmissionDiagnostic(
         to productAdmission: BridgeProductAdmissionContext
     ) -> BridgeWorktreeAnnotationAdmissionDiagnostic {
-        let relations = contextBySubscriptionId.values.map {
-            $0.productAdmission.diagnosticRelation(to: productAdmission)
-        }
+        let relations = worktreeAnnotationContextRelations(to: productAdmission)
         return BridgeWorktreeAnnotationAdmissionDiagnostic(
             relations: relations,
             selectedGeneration: try? currentAnnotationContext(
@@ -721,9 +725,28 @@ extension BridgePaneProductFileMetadataSource {
                 $0.productSource.subscriptionGeneration < $1.productSource.subscriptionGeneration
             })
         else {
+            let diagnostic = worktreeAnnotationContextRelations(to: productAdmission)
+            let sameGateCount = diagnostic.filter(\.sameGate).count
+            let sameEpochCount = diagnostic.filter(\.sameEpoch).count
+            let requestIsValid = productAdmission.withValidAdmission { true } == true
+            annotationSourceContextLogger.error(
+                """
+                File annotation context unavailable: contexts=\(diagnostic.count, privacy: .public) \
+                sameGate=\(sameGateCount, privacy: .public) sameEpoch=\(sameEpochCount, privacy: .public) \
+                requestValid=\(requestIsValid, privacy: .public) latestGeneration=\(self.nextSourceGeneration, privacy: .public)
+                """
+            )
             throw WorktreeAnnotationSourceResolutionError.unavailable
         }
         return context
+    }
+
+    private func worktreeAnnotationContextRelations(
+        to productAdmission: BridgeProductAdmissionContext
+    ) -> [BridgeProductAdmissionDiagnosticRelation] {
+        contextBySubscriptionId.values.map {
+            $0.productAdmission.diagnosticRelation(to: productAdmission)
+        }
     }
 
     private func annotationFingerprint(
@@ -762,7 +785,12 @@ extension BridgePaneProductFileMetadataSource {
             relativePath: path,
             rootURL: authority.worktree.path
         )
-        let reader = try await BridgePaneProductFileContentSource.openReadSession(plan)
+        let reader: any BridgePaneProductFileContentReading
+        do {
+            reader = try await BridgePaneProductFileContentSource.openReadSession(plan)
+        } catch BridgePaneProductFileContentSourceError.sourceChanged {
+            throw WorktreeAnnotationSourceResolutionError.invalidSource
+        }
         var data = Data()
         do {
             while let chunk = try await reader.nextChunk(maximumByteCount: 128 * 1024) {

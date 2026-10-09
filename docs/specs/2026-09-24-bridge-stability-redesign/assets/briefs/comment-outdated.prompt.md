@@ -1,0 +1,6 @@
+Use case: ui-mockup
+Asset type: high fidelity Bridge comment concept image
+Input images: Image 1 is the current File view screenshot with a saved inline comment; it is the layout, code, typography, dark palette and component style reference.
+Primary request: Preserve the current Agent Studio File code view, right file tree, and inline comment treatment. Show one inline thread for code that changed. Give that thread a compact badge reading exactly "Outdated". Inside it, above the comment message, show a quoted 2–3 line TypeScript code excerpt with the exact label "Originally on lines 42–44" and the small exact text "Written on file version a1b2c3d". Put two small enabled buttons in that thread labelled exactly "Re-attach" and "Resolve". Render its gutter marker muted or outlined to indicate it is no longer attached to a current line. Show a second nearby normal inline comment thread with no badge for comparison.
+Constraints: Keep existing layout, density, icon style and code readable. The outdated thread remains visible, and the second thread uses the current normal appearance. Every quoted label must be spelled exactly and legibly. Change only the specified comment states and actions; no extra controls, panels or navigation.
+Avoid: auto-moved markers, deleted comments, warning dialogs.

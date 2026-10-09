@@ -30,14 +30,11 @@ extension WebKitSerializedTests {
             try await WebPageTestHarness.withManagedPage(page) { page in
                 // Act — the page GETs a payload, POSTs it back, and verifies the echo.
                 _ = page.load(URL(string: "agentstudio://capacity/index.html"))
-                let reachedTerminal = await BridgeProductWebKitCarrierTestSupport.waitUntil(timeout: .seconds(20)) {
-                    page.title.hasPrefix("capacity:")
-                }
+                let terminalTitle = await WebPageEventWaits.waitForTitle(page, beginningWith: "capacity:")
 
                 // Assert — exact bytes, not only successful request completion or length.
-                #expect(reachedTerminal)
-                #expect(page.title == "capacity:passed:\(byteCount)")
-                print("URL scheme capacity bytes=\(byteCount) chunked=\(chunked) terminal=\(page.title)")
+                #expect(terminalTitle == "capacity:passed:\(byteCount)")
+                print("URL scheme capacity bytes=\(byteCount) chunked=\(chunked) terminal=\(terminalTitle)")
             }
         }
     }

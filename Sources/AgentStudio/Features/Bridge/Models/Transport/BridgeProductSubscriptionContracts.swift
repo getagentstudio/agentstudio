@@ -144,14 +144,6 @@ struct BridgeProductSubscriptionRequest: Codable, Equatable, Sendable {
 
     var surface: BridgeProductSurface { registeredSurface }
 
-    func initialInterestState() throws -> BridgeProductSubscriptionInterestState {
-        let registration = try BridgeProductMetadataApplicationRegistry.product.registration(for: subscriptionKind)
-        return BridgeProductSubscriptionInterestState(
-            subscriptionKind: subscriptionKind,
-            applicationState: try registration.initialInterestState(from: options)
-        )
-    }
-
     var fileMetadataSource: BridgeProductFileSourceSpec? {
         guard subscriptionKind == .fileMetadata,
             let decoded = try? JSONDecoder().decode(
@@ -303,119 +295,6 @@ struct BridgeProductFileSourceIdentity: Codable, Equatable, Sendable {
         try container.encode(sourceId, forKey: .sourceId)
         try container.encode(subscriptionGeneration, forKey: .subscriptionGeneration)
         try container.encode(worktreeId, forKey: .worktreeId)
-    }
-}
-
-struct BridgeProductSubscriptionData: Codable, Equatable, Sendable {
-    private enum CodingKeys: String, CodingKey, CaseIterable {
-        case event
-        case subscriptionKind
-    }
-
-    let subscriptionKind: BridgeProductSubscriptionKind
-    let event: BridgeProductJSONValue
-    let sourceGeneration: Int
-    private let registeredSurface: BridgeProductSurface
-    var surface: BridgeProductSurface { registeredSurface }
-
-    init(from decoder: Decoder) throws {
-        try BridgeProductContractDecoding.rejectUnknownKeys(
-            from: decoder,
-            allowedKeys: Set(CodingKeys.allCases.map(\.rawValue)),
-            contract: "Bridge product subscription data"
-        )
-        let container = try decoder.container(keyedBy: CodingKeys.self)
-        subscriptionKind = try container.decode(BridgeProductSubscriptionKind.self, forKey: .subscriptionKind)
-        event = try container.decode(BridgeProductJSONValue.self, forKey: .event)
-        let registration = try BridgeProductMetadataApplicationRegistry.product.registration(
-            for: subscriptionKind
-        )
-        registeredSurface = registration.surface
-        sourceGeneration = try registration.sourceGeneration(
-            of: JSONEncoder.bridgeProductSorted.encode(event)
-        )
-    }
-
-    func encode(to encoder: Encoder) throws {
-        var container = encoder.container(keyedBy: CodingKeys.self)
-        try container.encode(subscriptionKind, forKey: .subscriptionKind)
-        try container.encode(event, forKey: .event)
-    }
-
-    static func fileAnnotations(_ event: BridgeProductWorktreeAnnotationEvent) -> Self {
-        try! registered(event, subscriptionKind: .fileAnnotations)
-    }
-
-    static func fileMetadata(_ event: BridgeProductFileMetadataEvent) -> Self {
-        try! registered(event, subscriptionKind: .fileMetadata)
-    }
-
-    static func reviewAnnotations(_ event: BridgeProductWorktreeAnnotationEvent) -> Self {
-        try! registered(event, subscriptionKind: .reviewAnnotations)
-    }
-
-    static func reviewMetadata(_ event: BridgeProductReviewMetadataEvent) -> Self {
-        try! registered(event, subscriptionKind: .reviewMetadata)
-    }
-
-    func decodeEvent<TEvent: Decodable>(_ eventType: TEvent.Type) throws -> TEvent {
-        let registration = try BridgeProductMetadataApplicationRegistry.product.registration(
-            for: subscriptionKind
-        )
-        return try registration.decodeEvent(eventType, from: event)
-    }
-
-    var fileAnnotationsEvent: BridgeProductWorktreeAnnotationEvent? {
-        guard subscriptionKind == .fileAnnotations else { return nil }
-        return try? decodeEvent(BridgeProductWorktreeAnnotationEvent.self)
-    }
-
-    var fileMetadataEvent: BridgeProductFileMetadataEvent? {
-        guard subscriptionKind == .fileMetadata else { return nil }
-        return try? decodeEvent(BridgeProductFileMetadataEvent.self)
-    }
-
-    var reviewAnnotationsEvent: BridgeProductWorktreeAnnotationEvent? {
-        guard subscriptionKind == .reviewAnnotations else { return nil }
-        return try? decodeEvent(BridgeProductWorktreeAnnotationEvent.self)
-    }
-
-    var reviewMetadataEvent: BridgeProductReviewMetadataEvent? {
-        guard subscriptionKind == .reviewMetadata else { return nil }
-        return try? decodeEvent(BridgeProductReviewMetadataEvent.self)
-    }
-
-    static func registered<TEvent>(
-        _ event: TEvent,
-        subscriptionKind: BridgeProductSubscriptionKind
-    ) throws -> Self where TEvent: Codable & Equatable & Sendable {
-        let registration = try BridgeProductMetadataApplicationRegistry.product.registration(
-            for: subscriptionKind
-        )
-        return try registered(registration.sealEvent(event))
-    }
-
-    static func registered<TEvent>(
-        _ sealedEvent: BridgeProductSealedMetadataApplicationEvent<TEvent>
-    ) throws -> Self where TEvent: Codable & Equatable & Sendable {
-        try Self(
-            subscriptionKind: sealedEvent.applicationKind,
-            event: sealedEvent.applicationPayload,
-            sourceGeneration: sealedEvent.sourceGeneration
-        )
-    }
-
-    private init(
-        subscriptionKind: BridgeProductSubscriptionKind,
-        event: BridgeProductJSONValue,
-        sourceGeneration: Int
-    ) throws {
-        self.subscriptionKind = subscriptionKind
-        self.event = event
-        self.sourceGeneration = sourceGeneration
-        self.registeredSurface = try BridgeProductMetadataApplicationRegistry.product.registration(
-            for: subscriptionKind
-        ).surface
     }
 }
 

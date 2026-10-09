@@ -1,4 +1,6 @@
+import { bridgePageConfigurationSchema } from '../bridge/bridge-page-configuration.js';
 import type { BridgeTelemetryBootstrapHandshakeConfig } from '../foundation/telemetry/bridge-telemetry-bootstrap-config.js';
+import pageConfigurationFixture from '../test-fixtures/bridge-contract-fixtures/valid/bridge-page-configuration.json' with { type: 'json' };
 
 export type BridgeAppDevTelemetryBootstrapConfig = BridgeTelemetryBootstrapHandshakeConfig;
 
@@ -54,6 +56,7 @@ export function installBridgeAppDevTelemetryHost(
 	props: InstallBridgeAppDevTelemetryHostProps,
 ): BridgeAppDevTelemetryHost {
 	const target = props.target ?? document;
+	const pageConfiguration = bridgePageConfigurationSchema.parse(pageConfigurationFixture);
 	const telemetryConfig = createBridgeAppDevTelemetryBootstrapConfig(
 		props.scenario,
 		props.createTelemetrySessionId,
@@ -61,7 +64,7 @@ export function installBridgeAppDevTelemetryHost(
 	const handleHandshakeRequest = (): void => {
 		target.dispatchEvent(
 			new CustomEvent('__bridge_handshake', {
-				detail: { telemetryConfig },
+				detail: { telemetryConfig, pageConfiguration },
 			}),
 		);
 	};

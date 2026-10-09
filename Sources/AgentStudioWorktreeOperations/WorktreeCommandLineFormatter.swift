@@ -60,11 +60,17 @@ package enum WorktreeCommandLineFormatter {
             removalHumanLines(report)
         case .pruned(let summary):
             pruneHumanLines(summary)
-        case .refused(let refusal):
-            refusedHumanLine(refusal)
+        case .refused(let refusal, let creationFetch):
+            withCreationFetchLine(refusedHumanLine(refusal), creationFetch)
         case .failed(let failure):
             failedHumanLine(failure)
         }
+    }
+
+    /// A refusal or failure after `new`'s fetch adds the fetch line that LR30 keeps reporting.
+    static func withCreationFetchLine(_ text: String, _ creationFetch: WorktreeCreationFetchStatus?) -> String {
+        guard let creationFetch else { return text }
+        return "\(text)\n\(creationFetchHumanLine(creationFetch))"
     }
 
     private static func jsonText(for outcome: WorktreeOperationOutcome) throws -> String {
@@ -79,8 +85,8 @@ package enum WorktreeCommandLineFormatter {
             try encodeJSON(report)
         case .pruned(let summary):
             try encodeJSON(summary)
-        case .refused(let refusal):
-            try refusedJSONText(refusal)
+        case .refused(let refusal, let creationFetch):
+            try refusedJSONText(refusal, creationFetch: creationFetch)
         case .failed(let failure):
             try failedJSONText(failure)
         }

@@ -1,9 +1,10 @@
 import { describe, expect, test } from 'vitest';
 
 import { registerBridgeCommWorkerRuntimePortProtocol } from './bridge-comm-worker-runtime-protocol.js';
-import { reviewSnapshotWithContentEvent } from './bridge-comm-worker-runtime-protocol.review-product-fixtures.test-support.js';
 import {
-	makeReviewMetadataDataFrame,
+	createReviewBatchSinkCapture,
+	makeIdleReviewMetadataSubscription,
+	makeReviewTestBatch,
 	makeReviewProductTransport,
 	type ReviewMetadataSubscription,
 } from './bridge-comm-worker-runtime-protocol.review-product-transport.test-support.js';
@@ -12,14 +13,11 @@ import {
 	createRecordingBridgeCommWorkerPort,
 	flushBridgeWorkerRuntimeContinuations,
 } from './bridge-comm-worker-runtime-protocol.test-support.js';
-import { BridgeProductBoundedAsyncQueue } from './bridge-product-async-queue.js';
 import { bridgeProductReviewMetadataApplicationProtocol } from './bridge-product-metadata-application-registry.js';
-import type {
-	BridgeProductSubscriptionEvent,
-	BridgeProductSubscriptionOptions,
-} from './bridge-product-subscription-contracts.js';
+import type { BridgeProductSubscriptionOptions } from './bridge-product-subscription-contracts.js';
 import type { BridgeProductSubscription } from './bridge-product-transport-contract.js';
 import type { BridgeProductTransportSession } from './bridge-product-transport.js';
+import { createTestMetadataReopenPort } from './bridge-product-view-reopen.test-support.js';
 
 describe('Bridge comm worker Review product bootstrap', () => {
 	test('opens Review metadata only after Review becomes the active viewer', async () => {
@@ -28,15 +26,8 @@ describe('Bridge comm worker Review product bootstrap', () => {
 			readonly kind: 'review.metadata';
 			readonly options: BridgeProductSubscriptionOptions<'review.metadata'>;
 		}> = [];
-		const reviewSubscription: BridgeProductSubscription<'review.metadata'> = {
-			cancel: async (): Promise<void> => {},
-			events: new BridgeProductBoundedAsyncQueue<BridgeProductSubscriptionEvent<'review.metadata'>>(
-				1,
-			),
-			subscriptionId: 'review-bootstrap-subscription',
-			subscriptionKind: 'review.metadata',
-			update: async (): Promise<void> => {},
-		};
+		const reviewSubscription: BridgeProductSubscription<'review.metadata'> =
+			makeIdleReviewMetadataSubscription('review-bootstrap-subscription');
 		const { dispatch } = createRecordingBridgeCommWorkerPort();
 
 		registerBridgeCommWorkerRuntimePortProtocol(dispatch.port, {
@@ -58,29 +49,24 @@ describe('Bridge comm worker Review product bootstrap', () => {
 		expect(subscriptions).toEqual([
 			{
 				kind: 'review.metadata',
-				options: { interests: [] },
+				options: {},
 			},
 		]);
 	});
 
 	test('starts File metadata only after the active Review publication commits', async () => {
 		// Arrange
-		const events = new BridgeProductBoundedAsyncQueue<
-			ReturnType<typeof makeReviewMetadataDataFrame>
-		>(64);
+		const reviewBatches = createReviewBatchSinkCapture();
 		const calledMethods: string[] = [];
-		const reviewSubscription: ReviewMetadataSubscription = {
-			cancel: async (): Promise<void> => {},
-			events,
-			subscriptionId: 'review-active-first-subscription',
-			subscriptionKind: 'review.metadata',
-			update: async (): Promise<void> => {},
-		};
+		const reviewSubscription: ReviewMetadataSubscription = makeIdleReviewMetadataSubscription(
+			'review-active-first-subscription',
+		);
 		const { dispatch } = createRecordingBridgeCommWorkerPort();
 		registerBridgeCommWorkerRuntimePortProtocol(dispatch.port, {
 			bridgeDemandRank: { lane: 'selected', priority: 0 },
 			budget: { className: 'interactive', maxBytes: 512 * 1024, maxWindowLines: 400 },
 			productTransport: makeReviewProductTransport({
+				onBatchFrameSinks: reviewBatches.onBatchFrameSinks,
 				calledMethods,
 				reviewSubscription,
 				subscribedKinds: [],
@@ -92,7 +78,13 @@ describe('Bridge comm worker Review product bootstrap', () => {
 		await flushBridgeWorkerRuntimeContinuations();
 		expect(calledMethods).not.toContain('file.source.current');
 
-		events.push(makeReviewMetadataDataFrame(reviewSnapshotWithContentEvent));
+		await reviewBatches.install(
+			makeReviewTestBatch({
+				snapshotCause: 'open',
+				subscriptionId: reviewSubscription.subscriptionId,
+				withContent: true,
+			}),
+		);
 		await flushBridgeWorkerRuntimeContinuations();
 		expect(calledMethods.filter((method) => method === 'file.source.current')).toHaveLength(1);
 	});
@@ -107,7 +99,8 @@ function productTransportRecordingReviewBootstrap(props: {
 }): BridgeProductTransportSession {
 	let reviewEpoch = 0;
 	return {
-		bumpWorkerDerivationEpoch: (surface): number => {
+		...createTestMetadataReopenPort(),
+		advanceWorkerDerivationEpoch: (surface): number => {
 			if (surface === 'review') reviewEpoch += 1;
 			return surface === 'review' ? reviewEpoch : 0;
 		},

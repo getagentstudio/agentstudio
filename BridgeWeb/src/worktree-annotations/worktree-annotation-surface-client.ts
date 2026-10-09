@@ -1,3 +1,5 @@
+import { encodeBridgeWorkerViewRecoveryRetryCommand } from '../core/comm-worker/bridge-comm-worker-protocol.js';
+import type { BridgeMainViewRecoveryStatus } from '../core/comm-worker/bridge-main-render-snapshot-store.js';
 import type { BridgePaneSurfaceClient } from '../core/comm-worker/bridge-pane-runtime.js';
 import type { BridgeProductWorktreeAnnotationOperation } from '../core/comm-worker/bridge-product-call-contracts.js';
 import type { BridgeProductAnnotationOutputContentDescriptor } from '../core/comm-worker/bridge-product-content-contracts.js';
@@ -21,7 +23,13 @@ import {
 
 const noopUnsubscribe = (): void => {};
 const maximumRetainedOrphanCorrelationCount = 128;
-const annotationCatalogStagingEncoder = new TextEncoder();
+// Consecutive demand acquisitions sent before the client waits for the next worker
+// convergence event. Bounds retries without a clock; every worker event re-admits one.
+const maximumConsecutiveDemandAcquireAttempts = 3;
+// The worker's deadline passed after dispatch: native may still commit, and a late
+// receipt reconciles the comments. This copy must not claim the change failed.
+export const worktreeAnnotationOutcomeUnknownMessage =
+	'Still confirming this change. Comments update when it completes.';
 export {
 	emptyWorktreeAnnotationProjectionSnapshot,
 	WorktreeAnnotationProjectionStore,
@@ -54,9 +62,12 @@ export interface WorktreeAnnotationSurfaceClient {
 	readonly getServerSnapshot: () => WorktreeAnnotationProjectionSnapshot;
 	readonly getCatalogSnapshot: () => WorktreeAnnotationCatalogProjection;
 	readonly getSnapshot: () => WorktreeAnnotationProjectionSnapshot;
+	readonly getViewRecoveryStatus: () => BridgeMainViewRecoveryStatus | null;
 	readonly inspectOutput: (attemptId: string) => Promise<WorktreeAnnotationOutputInspection>;
 	readonly retryProjection: () => void;
+	readonly retryViewRecovery: () => void;
 	readonly subscribe: (listener: () => void) => () => void;
+	readonly subscribeViewRecoveryStatus: (listener: () => void) => () => void;
 	readonly waitForSnapshot: <TResult>(
 		select: (snapshot: WorktreeAnnotationProjectionSnapshot) => TResult | null,
 	) => Promise<TResult>;
@@ -66,6 +77,21 @@ interface PendingAnnotationCommand {
 	readonly reject: (error: Error) => void;
 	readonly resolve: (outcome: WorktreeAnnotationCommandOutcome) => void;
 	productRequestId: string | null;
+}
+
+interface PendingAnnotationCommandSettlement {
+	readonly reject: (error: Error) => void;
+	readonly resolve: (outcome: WorktreeAnnotationCommandOutcome) => void;
+}
+
+// The worker registers a demanded session only on a committed `demand.acquire`, and a
+// replacement worker starts with none. `committed` is demand this worker holds;
+// `awaitingWorker` is demand to re-acquire on the next worker convergence event.
+interface SessionDemandAcquisition {
+	attemptId: number;
+	consecutiveFailedAttempts: number;
+	refreshesSourceOnReacquire: boolean;
+	state: 'acquiring' | 'awaitingWorker' | 'committed';
 }
 
 interface PendingAnnotationOutputInspection {
@@ -87,16 +113,21 @@ export function createWorktreeAnnotationSurfaceClient(
 	const outcomesByProductRequestId = new Map<string, WorktreeAnnotationCommandOutcome>();
 	const degradedFailureByWorkerRequestId = new Map<string, Error>();
 	const demandCountBySessionId = new Map<string, number>();
+	const demandAcquisitionBySessionId = new Map<string, SessionDemandAcquisition>();
+	let nextDemandAcquireAttemptId = 0;
 	const rejectPendingSnapshotWaiters = new Set<(error: Error) => void>();
 	let isDisposed = false;
 	let observedSurfaceEpoch = currentSurfaceEpoch(surfaceClient);
 	let nextSourceRefreshEpoch = 0;
+	let nextViewRecoveryRetryRequestId = 0;
 	let nextReviewAnnotationApplicationId = 0;
 	let completedReviewAnnotationApplicationCheckpoint: ReviewAnnotationApplicationCheckpoint | null =
 		null;
 	let pendingReviewAnnotationApplicationCheckpoint: PendingReviewAnnotationApplicationCheckpoint | null =
 		null;
 	const projectionStore = new WorktreeAnnotationProjectionStore();
+	const annotationSubscriptionKind =
+		surfaceClient.surface === 'fileView' ? 'file.annotations' : 'review.annotations';
 
 	const settleProductOutcome = (outcome: WorktreeAnnotationCommandOutcome): void => {
 		projectionStore.recordCommandOutcome(outcome);
@@ -159,12 +190,7 @@ export function createWorktreeAnnotationSurfaceClient(
 			if (isDisposed) return;
 			if (message.kind === 'annotationCatalogStaging') {
 				if (message.surface === surfaceClient.surface) {
-					applyAnnotationCatalogStagingMessage({
-						message,
-						projectionStore,
-						telemetryRecorder,
-						viewer: surfaceClient.surface === 'fileView' ? 'file' : 'review',
-					});
+					projectionStore.applyCatalogStaging(message);
 				}
 				return;
 			}
@@ -185,6 +211,7 @@ export function createWorktreeAnnotationSurfaceClient(
 			}
 			if (message.kind === 'annotationProjectionConvergence') {
 				if (message.surface !== surfaceClient.surface) return;
+				reacquireDemandAwaitingWorker();
 				if (message.state.kind === 'ready') {
 					if (message.operationCorrelationId !== null) {
 						const expectedContentSessionIds = [...demandCountBySessionId.keys()];
@@ -243,6 +270,7 @@ export function createWorktreeAnnotationSurfaceClient(
 								recorder: telemetryRecorder,
 								result: 'started',
 								sourceGeneration: message.state.snapshot.sourceGeneration,
+								stageAttempt: message.state.stageAttempt,
 								transport: 'local',
 								viewer: surfaceClient.surface === 'fileView' ? 'file' : 'review',
 							});
@@ -267,6 +295,7 @@ export function createWorktreeAnnotationSurfaceClient(
 							recorder: telemetryRecorder,
 							result: 'success',
 							sourceGeneration: message.state.snapshot.sourceGeneration,
+							stageAttempt: message.state.stageAttempt,
 							transport: 'local',
 							viewer: surfaceClient.surface === 'fileView' ? 'file' : 'review',
 						});
@@ -276,11 +305,19 @@ export function createWorktreeAnnotationSurfaceClient(
 							recorder: telemetryRecorder,
 							result: 'success',
 							sourceGeneration: message.state.snapshot.sourceGeneration,
+							stageAttempt: message.state.stageAttempt,
 							transport: 'local',
 							viewer: surfaceClient.surface === 'fileView' ? 'file' : 'review',
 						});
 					}
 				} else if (message.state.kind === 'refreshing') {
+					if (message.state.catalogAuthorityRetired) {
+						// A routine epoch replacement: comments stay visible as stale until the
+						// replacement catalog arrives, instead of reading as unavailable.
+						completedReviewAnnotationApplicationCheckpoint = null;
+						pendingReviewAnnotationApplicationCheckpoint = null;
+						projectionStore.prepareForWorkerReplacement();
+					}
 					projectionStore.markRefreshing();
 				} else {
 					if (message.state.catalogAuthorityRetired) {
@@ -299,16 +336,26 @@ export function createWorktreeAnnotationSurfaceClient(
 			) {
 				failWorkerRequest(
 					message.requestId,
-					new Error(message.message ?? 'Bridge annotation command failed.'),
+					new Error(
+						message.deliveryStatus === 'unknownAfterDispatch'
+							? worktreeAnnotationOutcomeUnknownMessage
+							: (message.message ?? 'Bridge annotation command failed.'),
+					),
 				);
 			}
 		},
 	);
 
-	const execute = (
+	// Settlement runs synchronously with the worker message that decides it, so demand
+	// recovery reacts in the same turn as the outcome.
+	const dispatchCommand = (
 		operation: BridgeProductWorktreeAnnotationOperation,
-	): Promise<WorktreeAnnotationCommandOutcome> => {
-		if (isDisposed) return Promise.reject(new Error('Annotation surface client is disposed.'));
+		settlement: PendingAnnotationCommandSettlement,
+	): void => {
+		if (isDisposed) {
+			settlement.reject(new Error('Annotation surface client is disposed.'));
+			return;
+		}
 		let workerRequestId: string;
 		try {
 			workerRequestId =
@@ -321,30 +368,90 @@ export function createWorktreeAnnotationSurfaceClient(
 						})
 					: sendReviewAnnotationCommand(surfaceClient, operation);
 		} catch (error) {
-			return Promise.reject(
+			settlement.reject(
 				error instanceof Error ? error : new Error('Review annotation command admission failed.'),
 			);
+			return;
 		}
-		return new Promise<WorktreeAnnotationCommandOutcome>((resolve, reject): void => {
-			const pendingCommand: PendingAnnotationCommand = {
-				productRequestId: null,
-				reject,
-				resolve,
-			};
-			pendingCommandsByWorkerRequestId.set(workerRequestId, pendingCommand);
-			const degradedFailure = degradedFailureByWorkerRequestId.get(workerRequestId);
-			if (degradedFailure !== undefined) {
-				degradedFailureByWorkerRequestId.delete(workerRequestId);
-				failWorkerRequest(workerRequestId, degradedFailure);
-				return;
-			}
-			const acceptedProductRequestId =
-				acceptedProductRequestIdByWorkerRequestId.get(workerRequestId);
-			if (acceptedProductRequestId !== undefined) {
-				acceptedProductRequestIdByWorkerRequestId.delete(workerRequestId);
-				acceptProductRequest(workerRequestId, acceptedProductRequestId);
-			}
+		const pendingCommand: PendingAnnotationCommand = {
+			productRequestId: null,
+			reject: settlement.reject,
+			resolve: settlement.resolve,
+		};
+		pendingCommandsByWorkerRequestId.set(workerRequestId, pendingCommand);
+		const degradedFailure = degradedFailureByWorkerRequestId.get(workerRequestId);
+		if (degradedFailure !== undefined) {
+			degradedFailureByWorkerRequestId.delete(workerRequestId);
+			failWorkerRequest(workerRequestId, degradedFailure);
+			return;
+		}
+		const acceptedProductRequestId = acceptedProductRequestIdByWorkerRequestId.get(workerRequestId);
+		if (acceptedProductRequestId !== undefined) {
+			acceptedProductRequestIdByWorkerRequestId.delete(workerRequestId);
+			acceptProductRequest(workerRequestId, acceptedProductRequestId);
+		}
+	};
+	const execute = (
+		operation: BridgeProductWorktreeAnnotationOperation,
+	): Promise<WorktreeAnnotationCommandOutcome> =>
+		new Promise<WorktreeAnnotationCommandOutcome>((resolve, reject): void => {
+			dispatchCommand(operation, { reject, resolve });
 		});
+	const settleDemandAcquireAttempt = (
+		sessionId: string,
+		attemptId: number,
+		didCommit: boolean,
+	): void => {
+		const acquisition = demandAcquisitionBySessionId.get(sessionId);
+		if (isDisposed || acquisition?.attemptId !== attemptId) return;
+		if (didCommit) {
+			acquisition.state = 'committed';
+			acquisition.consecutiveFailedAttempts = 0;
+			return;
+		}
+		acquisition.consecutiveFailedAttempts += 1;
+		if (acquisition.consecutiveFailedAttempts < maximumConsecutiveDemandAcquireAttempts) {
+			sendDemandAcquire(sessionId);
+			return;
+		}
+		acquisition.state = 'awaitingWorker';
+	};
+	const sendDemandAcquire = (sessionId: string): void => {
+		const acquisition = demandAcquisitionBySessionId.get(sessionId);
+		if (acquisition === undefined) return;
+		nextDemandAcquireAttemptId += 1;
+		const attemptId = nextDemandAcquireAttemptId;
+		acquisition.attemptId = attemptId;
+		acquisition.state = 'acquiring';
+		dispatchCommand(
+			{ kind: 'demand.acquire', sessionId },
+			{
+				reject: (): void => settleDemandAcquireAttempt(sessionId, attemptId, false),
+				resolve: (outcome): void =>
+					settleDemandAcquireAttempt(sessionId, attemptId, outcome.status.kind === 'committed'),
+			},
+		);
+	};
+	const reacquireDemandAwaitingWorker = (): void => {
+		for (const [sessionId, acquisition] of demandAcquisitionBySessionId) {
+			if (acquisition.state !== 'awaitingWorker') continue;
+			const refreshesSource = acquisition.refreshesSourceOnReacquire;
+			acquisition.refreshesSourceOnReacquire = false;
+			sendDemandAcquire(sessionId);
+			if (refreshesSource && demandAcquisitionBySessionId.has(sessionId)) {
+				refreshDemandedSession(sessionId);
+			}
+		}
+	};
+	const retireDemandForWorkerReplacement = (): void => {
+		for (const acquisition of demandAcquisitionBySessionId.values()) {
+			// A fresh attempt id retires any in-flight attempt owned by the old worker.
+			nextDemandAcquireAttemptId += 1;
+			acquisition.attemptId = nextDemandAcquireAttemptId;
+			acquisition.consecutiveFailedAttempts = 0;
+			acquisition.refreshesSourceOnReacquire = true;
+			acquisition.state = 'awaitingWorker';
+		}
 	};
 	const inspectOutput = (attemptId: string): Promise<WorktreeAnnotationOutputInspection> => {
 		if (isDisposed) return Promise.reject(new Error('Annotation surface client is disposed.'));
@@ -423,6 +530,9 @@ export function createWorktreeAnnotationSurfaceClient(
 			completedReviewAnnotationApplicationCheckpoint = null;
 			pendingReviewAnnotationApplicationCheckpoint = null;
 			projectionStore.prepareForWorkerReplacement();
+			// The retiring worker still owns the port here; re-acquire once the replacement
+			// reports its first projection convergence.
+			retireDemandForWorkerReplacement();
 		}) ?? noopUnsubscribe;
 
 	return {
@@ -431,7 +541,13 @@ export function createWorktreeAnnotationSurfaceClient(
 			demandCountBySessionId.set(sessionId, currentDemandCount + 1);
 			if (currentDemandCount === 0) {
 				projectionStore.markSessionDemanded(sessionId);
-				void execute({ kind: 'demand.acquire', sessionId }).catch((): void => {});
+				demandAcquisitionBySessionId.set(sessionId, {
+					attemptId: 0,
+					consecutiveFailedAttempts: 0,
+					refreshesSourceOnReacquire: false,
+					state: 'acquiring',
+				});
+				sendDemandAcquire(sessionId);
 				refreshDemandedSession(sessionId);
 				void execute({ kind: 'output.history', sessionId }).catch((): void => {});
 			}
@@ -445,6 +561,7 @@ export function createWorktreeAnnotationSurfaceClient(
 					return;
 				}
 				demandCountBySessionId.delete(sessionId);
+				demandAcquisitionBySessionId.delete(sessionId);
 				void execute({ kind: 'demand.release', sessionId }).catch((): void => {});
 			};
 		},
@@ -486,11 +603,14 @@ export function createWorktreeAnnotationSurfaceClient(
 			for (const rejectWaiter of rejectPendingSnapshotWaiters) rejectWaiter(disposalError);
 			rejectPendingSnapshotWaiters.clear();
 			demandCountBySessionId.clear();
+			demandAcquisitionBySessionId.clear();
 		},
 		execute,
 		getCatalogSnapshot: projectionStore.getCatalogSnapshot,
 		getServerSnapshot: projectionStore.getServerSnapshot,
 		getSnapshot: projectionStore.getSnapshot,
+		getViewRecoveryStatus: (): BridgeMainViewRecoveryStatus | null =>
+			surfaceClient.renderStore.getViewRecoveryStatus(annotationSubscriptionKind),
 		inspectOutput,
 		retryProjection: (): void => {
 			if (isDisposed) return;
@@ -500,77 +620,24 @@ export function createWorktreeAnnotationSurfaceClient(
 				surface: surfaceClient.surface,
 			});
 		},
+		retryViewRecovery: (): void => {
+			if (isDisposed) return;
+			const recoveryStatus = surfaceClient.renderStore.getViewRecoveryStatus(
+				annotationSubscriptionKind,
+			);
+			if (recoveryStatus?.status !== 'failedRetryable') return;
+			surfaceClient.send(
+				encodeBridgeWorkerViewRecoveryRetryCommand({
+					epoch: currentSurfaceEpoch(surfaceClient),
+					requestId: `annotation-view-recovery-retry-${++nextViewRecoveryRetryRequestId}`,
+					view: recoveryStatus.view,
+				}),
+			);
+		},
 		subscribe: projectionStore.subscribe,
+		subscribeViewRecoveryStatus: surfaceClient.renderStore.subscribeViewRecoveryStatus,
 		waitForSnapshot,
 	};
-}
-
-function applyAnnotationCatalogStagingMessage(props: {
-	readonly message: Extract<
-		BridgeWorkerServerToMainMessage,
-		{ readonly kind: 'annotationCatalogStaging' }
-	>;
-	readonly projectionStore: WorktreeAnnotationProjectionStore;
-	readonly telemetryRecorder: BridgeTelemetryRecorder | undefined;
-	readonly viewer: 'file' | 'review';
-}): void {
-	if (props.telemetryRecorder?.isEnabled('web') !== true) {
-		props.projectionStore.applyCatalogStaging(props.message);
-		return;
-	}
-	const presentationRevisionBefore = props.projectionStore.getSnapshot().presentationRevision;
-	const result = props.projectionStore.applyCatalogStaging(props.message);
-	const presentationRevisionAfter = props.projectionStore.getSnapshot().presentationRevision;
-	const common = {
-		catalogRevision: props.message.transfer.catalogRevision,
-		encodedUnitByteCount: annotationCatalogStagingEncoder.encode(JSON.stringify(props.message))
-			.byteLength,
-		presentationRevisionAfter,
-		presentationRevisionBefore,
-	};
-	const lifecycle = {
-		operationCorrelationId: props.message.operationCorrelationId,
-		recorder: props.telemetryRecorder,
-		result: result.status === 'rejected' ? ('failure' as const) : ('success' as const),
-		transport: 'local' as const,
-		viewer: props.viewer,
-	};
-	switch (props.message.transfer.kind) {
-		case 'catalog.begin':
-			recordWorktreeAnnotationLifecycleTelemetry({
-				...lifecycle,
-				catalogStaging: {
-					...common,
-					entryCount: props.message.transfer.expectedEntryCount,
-					kind: 'begin',
-				},
-				phase: 'annotation_catalog_main_begin',
-			});
-			return;
-		case 'catalog.commit':
-			recordWorktreeAnnotationLifecycleTelemetry({
-				...lifecycle,
-				catalogStaging: {
-					...common,
-					entryCount: props.message.transfer.entryCount,
-					kind: 'commit',
-					windowCount: props.message.transfer.windowCount,
-				},
-				phase: 'annotation_catalog_main_commit',
-			});
-			return;
-		case 'catalog.window':
-			recordWorktreeAnnotationLifecycleTelemetry({
-				...lifecycle,
-				catalogStaging: {
-					...common,
-					entryCount: props.message.transfer.entries.length,
-					kind: 'window',
-					windowOrdinal: props.message.transfer.windowOrdinal,
-				},
-				phase: 'annotation_catalog_main_window',
-			});
-	}
 }
 
 function sendReviewAnnotationCommand(

@@ -37,6 +37,25 @@ describe('BridgeViewerRealRouterObserver', () => {
 		]);
 	});
 
+	test('correlates only a strict typed unknown-read refusal for content credit', async () => {
+		const harness = makeObserverHarness();
+		const observer = new BridgeViewerRealRouterObserver(
+			harness.page,
+			documentGenerationsAt((): number => 1),
+		);
+		const matchingRequest = makeContentAcknowledgementRequest('content-request-matching');
+		const foreignRequest = makeContentAcknowledgementRequest('content-request-foreign');
+		harness.emit('request', matchingRequest);
+		harness.emit('response', makeUnknownReadResponse(matchingRequest, 'content-request-matching'));
+		harness.emit('request', foreignRequest);
+		harness.emit('response', makeUnknownReadResponse(foreignRequest, 'content-request-other'));
+
+		await observer.flushResponseParsers();
+		expect(
+			observer.productRouteTranscript().map((entry) => entry.contentUnknownReadRefusalCorrelated),
+		).toEqual([true, false]);
+	});
+
 	test('retains scrubbed content lifecycle and unfinished request ordinals for a failed journey', () => {
 		// Arrange
 		const harness = makeObserverHarness();
@@ -303,18 +322,18 @@ describe('BridgeViewerRealRouterObserver', () => {
 	});
 
 	test('settles a reload waiter only with a response to a request from the next page generation', async () => {
-		// Arrange: the previous document sent a frame acknowledgement before the reload.
+		// Arrange: the previous document sent a subscription receipt before the reload.
 		const harness = makeObserverHarness();
 		let documentGeneration = 1;
 		const observer = new BridgeViewerRealRouterObserver(
 			harness.page,
 			documentGenerationsAt((): number => documentGeneration),
 		);
-		const staleAcknowledgementRequest = makeFrameObservationRequest();
+		const staleAcknowledgementRequest = makeSubscriptionReceiptRequest();
 		harness.emit('request', staleAcknowledgementRequest);
 		const reloadJoin = observer.armReloadJoinWaiters();
 		let settledAcknowledgement: PlaywrightResponse | null = null;
-		const acknowledgement = reloadJoin.frameAcknowledgement.then(
+		const acknowledgement = reloadJoin.subscriptionReceipt.then(
 			(response: PlaywrightResponse): PlaywrightResponse => {
 				settledAcknowledgement = response;
 				return response;
@@ -323,19 +342,19 @@ describe('BridgeViewerRealRouterObserver', () => {
 
 		// Act: the new document commits, then the previous document's response arrives first.
 		documentGeneration = 2;
-		harness.emit('response', makeBodylessCommandResponse(staleAcknowledgementRequest));
+		harness.emit('response', makeSubscriptionReceiptResponse(staleAcknowledgementRequest));
 		await flushMicrotasks();
 
 		// Assert
 		expect(settledAcknowledgement).toBeNull();
 		expect(observer.failureTransportSnapshot().unresolvedWaiters).toContainEqual({
 			documentGeneration: 2,
-			name: 'frame-acknowledgement',
+			name: 'subscription-receipt',
 		});
 
 		// Act: the new document's own acknowledgement arrives.
-		const currentAcknowledgementRequest = makeFrameObservationRequest();
-		const currentAcknowledgementResponse = makeBodylessCommandResponse(
+		const currentAcknowledgementRequest = makeSubscriptionReceiptRequest();
+		const currentAcknowledgementResponse = makeSubscriptionReceiptResponse(
 			currentAcknowledgementRequest,
 		);
 		harness.emit('request', currentAcknowledgementRequest);
@@ -393,31 +412,9 @@ describe('mountedHeaderOrderViolationForExpectedOrder', () => {
 });
 
 describe('nextFreshReviewTraversalScrollTop', () => {
-	test('skips the already-hydrated body while retaining viewport overlap at the next header', () => {
-		// Arrange
-		const codeScroll = {
-			clientHeight: 1_000,
-			scrollHeight: 40_000,
-			scrollTop: 5_000,
-		};
-
-		// Act
-		const nextScrollTop = nextFreshReviewTraversalScrollTop({
-			codeScroll,
-			visibleItems: [
-				{
-					contentState: 'hydrated',
-					hostBottomOffset: 6_000,
-					hostTopOffset: -250,
-					itemId: 'review-item-42',
-					paintIdentity: 'paint-42',
-					renderedLineCount: 42,
-				},
-			],
-		});
-
-		// Assert
-		expect(nextScrollTop).toBe(10_900);
+	test('keeps every item geometry-visible during forward traversal with viewport overlap', () => {
+		const observedIndexes = simulateReviewTraversal('forward');
+		expect(observedIndexes).toEqual(Array.from({ length: 20 }, (_, index) => index));
 	});
 
 	test('falls back to bounded viewport progress when no host geometry is available', () => {
@@ -428,7 +425,6 @@ describe('nextFreshReviewTraversalScrollTop', () => {
 				scrollHeight: 6_500,
 				scrollTop: 5_000,
 			},
-			visibleItems: [],
 		});
 
 		// Assert
@@ -493,18 +489,9 @@ describe('freshReviewInitialWindowRequiresTraversal', () => {
 });
 
 describe('previousFreshReviewTraversalScrollTop', () => {
-	test('skips the already-hydrated body while retaining viewport overlap at the previous header', () => {
-		// Arrange / Act
-		const previousScrollTop = previousFreshReviewTraversalScrollTop({
-			codeScroll: {
-				clientHeight: 1_000,
-				scrollTop: 10_000,
-			},
-			visibleItems: [{ hostTopOffset: -6_000 }],
-		});
-
-		// Assert
-		expect(previousScrollTop).toBe(3_900);
+	test('keeps every item geometry-visible during reverse traversal with viewport overlap', () => {
+		const observedIndexes = simulateReviewTraversal('backward');
+		expect(observedIndexes).toEqual(Array.from({ length: 20 }, (_, index) => index));
 	});
 
 	test('falls back to bounded viewport progress when no host geometry is available', () => {
@@ -514,13 +501,40 @@ describe('previousFreshReviewTraversalScrollTop', () => {
 				clientHeight: 1_000,
 				scrollTop: 5_000,
 			},
-			visibleItems: [],
 		});
 
 		// Assert
 		expect(previousScrollTop).toBe(4_200);
 	});
 });
+
+function simulateReviewTraversal(direction: 'forward' | 'backward'): number[] {
+	const itemCount = 20;
+	const itemHeight = 100;
+	const clientHeight = 400;
+	const scrollHeight = itemCount * itemHeight;
+	const maximumScrollTop = scrollHeight - clientHeight;
+	const observedIndexes = new Set<number>();
+	let scrollTop = direction === 'forward' ? 0 : maximumScrollTop;
+	for (let stepIndex = 0; stepIndex < itemCount * 2; stepIndex += 1) {
+		const visibleIndexes = Array.from({ length: itemCount }, (_, index) => index).filter(
+			(index) =>
+				(index + 1) * itemHeight > scrollTop && index * itemHeight < scrollTop + clientHeight,
+		);
+		for (const index of visibleIndexes) observedIndexes.add(index);
+		if (direction === 'forward' && scrollTop === maximumScrollTop) break;
+		if (direction === 'backward' && scrollTop === 0) break;
+		scrollTop =
+			direction === 'forward'
+				? nextFreshReviewTraversalScrollTop({
+						codeScroll: { clientHeight, scrollHeight, scrollTop },
+					})
+				: previousFreshReviewTraversalScrollTop({
+						codeScroll: { clientHeight, scrollTop },
+					});
+	}
+	return [...observedIndexes].toSorted((left, right) => left - right);
+}
 
 // A page whose every request and worker belongs to the current generation, as
 // the tests set it; the observer reads generations only through this seam.
@@ -640,6 +654,47 @@ function makeProductContentRequest(contentRequestId: string): PlaywrightRequest 
 	} as unknown as PlaywrightRequest;
 }
 
+function makeContentAcknowledgementRequest(contentRequestId: string): PlaywrightRequest {
+	return {
+		method: (): string => 'POST',
+		postData: (): string =>
+			JSON.stringify({
+				contentRequestId,
+				kind: 'content.acknowledge',
+				leaseId: 'lease-1',
+				paneSessionId: 'pane-session-secret',
+				receivedThroughContentSequence: 1,
+				wireVersion: 2,
+				workerInstanceId: 'worker-instance-secret',
+			}),
+		url: (): string => 'http://127.0.0.1:5173/__bridge-product/command',
+	} as unknown as PlaywrightRequest;
+}
+
+function makeUnknownReadResponse(
+	request: PlaywrightRequest,
+	contentRequestId: string,
+): PlaywrightResponse {
+	const body = new TextEncoder().encode(
+		JSON.stringify({
+			contentRequestId,
+			kind: 'content.acknowledgementRefused',
+			leaseId: 'lease-1',
+			paneSessionId: 'pane-session-secret',
+			reason: 'unknownRead',
+			receivedThroughContentSequence: 1,
+			wireVersion: 2,
+			workerInstanceId: 'worker-instance-secret',
+		}),
+	);
+	return {
+		body: async (): Promise<Uint8Array> => body,
+		request: (): PlaywrightRequest => request,
+		status: (): number => 404,
+		url: (): string => request.url(),
+	} as unknown as PlaywrightResponse;
+}
+
 function makeLegacyMetadataRequest(): PlaywrightRequest {
 	return {
 		method: (): string => 'GET',
@@ -661,23 +716,29 @@ function makeLegacyMetadataResponse(
 	} as unknown as PlaywrightResponse;
 }
 
-function makeFrameObservationRequest(): PlaywrightRequest {
+function makeSubscriptionReceiptRequest(): PlaywrightRequest {
 	return {
 		method: (): string => 'POST',
 		postData: (): string =>
 			JSON.stringify({
-				kind: 'stream.frameObserved',
+				kind: 'subscription.acknowledge',
+				domain: 'default',
+				handle: 'handle-1',
+				incarnation: 'incarnation-1',
 				paneSessionId: 'pane-session-secret',
+				receivedThroughDeliverySequence: 1,
+				subscriptionId: 'subscription-1',
+				wireVersion: 2,
 				workerInstanceId: 'worker-instance-secret',
 			}),
 		url: (): string => 'http://127.0.0.1:5173/__bridge-product/command',
 	} as unknown as PlaywrightRequest;
 }
 
-function makeBodylessCommandResponse(request: PlaywrightRequest): PlaywrightResponse {
+function makeSubscriptionReceiptResponse(request: PlaywrightRequest): PlaywrightResponse {
 	return {
 		request: (): PlaywrightRequest => request,
-		status: (): number => 204,
+		status: (): number => 200,
 		url: (): string => request.url(),
 	} as unknown as PlaywrightResponse;
 }

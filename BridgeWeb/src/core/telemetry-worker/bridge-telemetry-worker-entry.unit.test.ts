@@ -2,6 +2,12 @@ import { describe, expect, it, vi } from 'vitest';
 
 import type { BridgeTelemetryWorkerBatchRequest } from './bridge-telemetry-worker-contracts.js';
 import {
+	createSettlementSkewHarness,
+	makeRequiredMainRecorderEvent,
+	nextPortMessageOfType,
+	nextPortMessagesOfType,
+} from './bridge-telemetry-worker-entry-settlement.unit.test-support.js';
+import {
 	bootstrapBridgeTelemetryWorkerEntry,
 	createBridgeTelemetryWorkerPortHost,
 	type BridgeTelemetryWorkerGlobalScope,
@@ -104,6 +110,132 @@ describe('telemetry worker port entry', () => {
 		expect(capturedBatches[0]?.samples[0]?.producerId).toBe('comm');
 		mainChannel.port2.close();
 		commChannel.port2.close();
+	});
+
+	it('holds a Main recorder event until both producers settle and reopens cleanly', async () => {
+		const harness = await createSettlementSkewHarness();
+		const mainSettlementRequested = nextPortMessageOfType(
+			harness.mainChannel.port2,
+			'producer.settlement.request',
+		);
+		const mainIngressAccepted = nextPortMessageOfType(
+			harness.mainChannel.port2,
+			'producer.ingress-result',
+		);
+		const firstDrain = harness.host.drain();
+
+		try {
+			await Promise.all([mainSettlementRequested, harness.commSettlementGate.held]);
+			harness.mainRecorder.record(makeRequiredMainRecorderEvent());
+			const sentSamplesBeforeCommSettlement = harness.mainProducerMessages.filter(
+				(message) => message.type === 'sample',
+			).length;
+			harness.commSettlementGate.release();
+
+			const firstDrainResult = await firstDrain;
+			expect(sentSamplesBeforeCommSettlement).toBe(0);
+			expect(firstDrainResult).toMatchObject({ type: 'drained', proofEligible: true });
+			const acceptedMainSample = await mainIngressAccepted;
+			const secondDrainResult = await harness.host.drain();
+			expect(acceptedMainSample).toMatchObject({
+				type: 'producer.ingress-result',
+				result: { type: 'accepted', producerId: 'main', sequence: 1 },
+			});
+			expect(secondDrainResult).toMatchObject({
+				type: 'drained',
+				proofEligible: true,
+				requiredLossCount: 0,
+				optionalLossCount: 0,
+				sequenceGapCount: 0,
+				producerHighWatermarks: { main: 1, comm: 0 },
+			});
+			expect(
+				harness.capturedBatches
+					.flatMap((batch) => batch.samples)
+					.map((sample) => sample.producerId),
+			).toContain('main');
+		} finally {
+			harness.commSettlementGate.release();
+			harness.host.dispose();
+			harness.mainChannel.port2.close();
+			harness.commChannel.port2.close();
+		}
+	});
+
+	it('reports required loss when a settlement-gap burst exceeds producer retention', async () => {
+		const harness = await createSettlementSkewHarness();
+		const mainSettlementRequested = nextPortMessageOfType(
+			harness.mainChannel.port2,
+			'producer.settlement.request',
+		);
+		const mainIngressResults = nextPortMessagesOfType(
+			harness.mainChannel.port2,
+			'producer.ingress-result',
+			3,
+		);
+		const firstDrain = harness.host.drain();
+
+		try {
+			await Promise.all([mainSettlementRequested, harness.commSettlementGate.held]);
+			harness.mainRecorder.record(makeRequiredMainRecorderEvent());
+			harness.mainRecorder.record(makeRequiredMainRecorderEvent());
+			harness.mainRecorder.record(makeRequiredMainRecorderEvent());
+			const sentSamplesBeforeCommSettlement = harness.mainProducerMessages.filter(
+				(message) => message.type === 'sample',
+			).length;
+			harness.commSettlementGate.release();
+
+			await firstDrain;
+			expect(sentSamplesBeforeCommSettlement).toBe(0);
+			await mainIngressResults;
+			const nextDrainResult = await harness.host.drain();
+
+			expect(nextDrainResult).toMatchObject({
+				type: 'drained',
+				proofEligible: false,
+				requiredLossCount: 1,
+				sequenceGapCount: 0,
+			});
+		} finally {
+			harness.commSettlementGate.release();
+			harness.host.dispose();
+			harness.mainChannel.port2.close();
+			harness.commChannel.port2.close();
+		}
+	});
+
+	it('closes without publishing reopened credits after terminal settlement', async () => {
+		const harness = await createSettlementSkewHarness();
+		const mainSettlementRequested = nextPortMessageOfType(
+			harness.mainChannel.port2,
+			'producer.settlement.request',
+		);
+		const terminalDrain = harness.host.drainAndClose();
+
+		try {
+			await Promise.all([mainSettlementRequested, harness.commSettlementGate.held]);
+			harness.commSettlementGate.release();
+
+			const result = await terminalDrain;
+
+			expect(result).toMatchObject({ type: 'drained', settlementDisposition: 'closed' });
+			expect(harness.mainWorkerCommands).toContainEqual(
+				expect.objectContaining({
+					type: 'producer.settlement.request',
+					disposition: 'close',
+					sampleCredits: 0,
+					controlCredits: 0,
+				}),
+			);
+			expect(harness.mainWorkerCommands).not.toContainEqual(
+				expect.objectContaining({ type: 'producer.credit-grant' }),
+			);
+		} finally {
+			harness.commSettlementGate.release();
+			harness.host.dispose();
+			harness.mainChannel.port2.close();
+			harness.commChannel.port2.close();
+		}
 	});
 
 	it('policy-schedules flush and returns native-admitted credits on the producer port', async () => {

@@ -1,8 +1,8 @@
 import { describe, expect, test } from 'vitest';
 
 import type { BridgeCommWorkerPort } from './bridge-comm-worker-entry.js';
-import type { BridgeCommWorkerFileViewContentRequest } from './bridge-comm-worker-file-metadata-projection.js';
 import { enqueueSelectedBridgeWorkerFileViewContentReadyPreparation } from './bridge-comm-worker-file-view-preparation.js';
+import type { BridgeCommWorkerFileViewContentRequest } from './bridge-comm-worker-file-view-runtime-mutation.js';
 import {
 	createBridgeCommWorkerStore,
 	type BridgeCommWorkerStore,

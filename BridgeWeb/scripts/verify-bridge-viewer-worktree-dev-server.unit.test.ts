@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url';
 
 import { describe, expect, test } from 'vitest';
 
+import { makeFileBatchInstallation } from '../src/core/comm-worker/comm-runtime-protocol.file-product.test-support.js';
 import {
 	fileToReviewHandoffFixtureRelativePath,
 	repoRootPath,
@@ -17,7 +18,6 @@ import {
 	makeReviewStartupTelemetrySample,
 } from './verify-bridge-viewer-worktree-dev-server/unit-test-fixtures.ts';
 import { readWorktreeDevServerVerifierSource } from './verify-bridge-viewer-worktree-dev-server/unit-test-source.ts';
-import { makeWorktreeFileTreeRow } from './verify-bridge-viewer-worktree-dev-server/unit-test-worktree-fixtures.ts';
 import { worktreeFileTreeRows } from './verify-bridge-viewer-worktree-dev-server/worktree-data.ts';
 import {
 	buildReviewContentRoutePressureProof,
@@ -51,39 +51,12 @@ describe('worktree dev-server verifier Review interaction contract', () => {
 		).resolves.toContain('file-to-review handoff canary');
 	});
 
-	test('reads Worktree/File rows from typed product tree windows', () => {
-		const source = {
-			repoId: '11111111-1111-4111-8111-111111111111',
-			rootRevisionToken: 'revision-1',
-			sourceCursor: 'cursor-1',
-			sourceId: 'source-1',
-			subscriptionGeneration: 1,
-			worktreeId: '22222222-2222-4222-8222-222222222222',
-		};
-		expect(
-			worktreeFileTreeRows([
-				{
-					eventKind: 'file.treeWindow',
-					finalWindow: false,
-					lineage: { lane: 'visible', loadedBy: 'startup_window' },
-					pathScope: [],
-					rows: [makeWorktreeFileTreeRow('first-window.ts', 'row-1')],
-					source,
-					startIndex: 0,
-					totalRowCount: 2,
-				},
-				{
-					eventKind: 'file.treeWindow',
-					finalWindow: true,
-					lineage: { lane: 'visible', loadedBy: 'startup_window' },
-					pathScope: [],
-					rows: [makeWorktreeFileTreeRow('continued-window.ts', 'row-2')],
-					source,
-					startIndex: 1,
-					totalRowCount: 2,
-				},
-			]).map((row) => row.path),
-		).toEqual(['first-window.ts', 'continued-window.ts']);
+	test('reads Worktree/File rows from a certified keyed batch', () => {
+		const installation = makeFileBatchInstallation('open', 'file-subscription-worktree-verifier');
+		expect(worktreeFileTreeRows([installation]).map((row) => row.path)).toEqual([
+			'src',
+			'src/a.ts',
+		]);
 	});
 
 	test('summarizes interaction latency samples with p95 and p99 gates', () => {
@@ -376,7 +349,7 @@ describe('worktree dev-server verifier Review interaction contract', () => {
 
 		expect(verifierSource).toContain('BridgeVerifierProductFileSession');
 		expect(verifierSource).toContain('session.demandDescriptor(props.path)');
-		expect(verifierSource).toContain('bridgeProductFileMetadataEventSchema.safeParse(frame)');
+		expect(verifierSource).toContain('installBridgeProductFileBatch(latestInstallation)');
 		expect(verifierSource).toContain('worktreeFileDemandCandidatePaths(surface)');
 		expect(verifierSource).not.toContain('function worktreeFileDescriptors(');
 		expect(verifierSource).not.toContain('firstFetchableDescriptor(');

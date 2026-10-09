@@ -1,4 +1,5 @@
 import AgentStudioTestHarness
+import AgentStudioTestSupport
 import Foundation
 import Testing
 
@@ -14,7 +15,7 @@ struct BridgeProductSchemeControlCompletionEffectsTests {
         let session = try BridgeProductSession(
             paneSessionId: bridgeProductTestPaneSessionId,
             workerInstanceId: bridgeProductTestWorkerInstanceId,
-            capabilityBytes: capabilityBytes
+            capabilityBytes: capabilityBytes, deadlineClock: TestPushClock()
         )
         let recorder = await MainActor.run { BridgeProductCallMutationRecorder() }
         let refreshWorkAdmission = await BridgePaneRefreshWorkAdmissionTestContext.foreground()
@@ -55,11 +56,15 @@ struct BridgeProductSchemeControlCompletionEffectsTests {
         // Act
         _ = await provider.response(for: decodedCall)
         let callsBeforeCommit = await recorder.annotationCalls
-        _ = try await dispatcher.dispatch(
+        try await dispatchCompletionEffectsOperation(
+            dispatcher: dispatcher,
+            session: session,
             exactRequestBytes: bridgeProductSchemeWorkerOpenBody(),
             presentedCapability: capabilityHeader
         )
-        let commandDispatch = try await dispatcher.dispatch(
+        let commandResult = try await dispatchCompletionEffectsOperation(
+            dispatcher: dispatcher,
+            session: session,
             exactRequestBytes: callBody,
             presentedCapability: capabilityHeader
         )
@@ -69,10 +74,10 @@ struct BridgeProductSchemeControlCompletionEffectsTests {
         )
 
         // Assert
-        guard case .response(let responseBytes) = commandDispatch,
+        guard let responseValue = commandResult.result,
             case .callCompleted(let completedResponse) = try BridgeProductStrictJSON.decode(
                 BridgeProductControlResponse.self,
-                from: responseBytes
+                from: JSONEncoder().encode(responseValue)
             ),
             case .fileAnnotationsCommand(.completed(let outcome)) = completedResponse.call
         else {
@@ -95,7 +100,7 @@ struct BridgeProductSchemeControlCompletionEffectsTests {
         let session = try BridgeProductSession(
             paneSessionId: bridgeProductTestPaneSessionId,
             workerInstanceId: bridgeProductTestWorkerInstanceId,
-            capabilityBytes: capabilityBytes
+            capabilityBytes: capabilityBytes, deadlineClock: TestPushClock()
         )
         let recorder = await MainActor.run { BridgeProductCallMutationRecorder() }
         let refreshWorkAdmission = await BridgePaneRefreshWorkAdmissionTestContext.foreground()
@@ -123,11 +128,15 @@ struct BridgeProductSchemeControlCompletionEffectsTests {
         // Act
         _ = await provider.response(for: decodedCall)
         let countAfterProviderResponse = await recorder.count
-        _ = try await dispatcher.dispatch(
+        try await dispatchCompletionEffectsOperation(
+            dispatcher: dispatcher,
+            session: session,
             exactRequestBytes: bridgeProductSchemeWorkerOpenBody(),
             presentedCapability: capabilityHeader
         )
-        _ = try await dispatcher.dispatch(
+        try await dispatchCompletionEffectsOperation(
+            dispatcher: dispatcher,
+            session: session,
             exactRequestBytes: callBody,
             presentedCapability: capabilityHeader
         )
@@ -158,7 +167,7 @@ struct BridgeProductSchemeControlCompletionEffectsTests {
         let session = try BridgeProductSession(
             paneSessionId: bridgeProductTestPaneSessionId,
             workerInstanceId: bridgeProductTestWorkerInstanceId,
-            capabilityBytes: capabilityBytes
+            capabilityBytes: capabilityBytes, deadlineClock: TestPushClock()
         )
         let recorder = await MainActor.run { BridgeProductCallMutationRecorder() }
         let refreshWorkAdmission = await BridgePaneRefreshWorkAdmissionTestContext.foreground()
@@ -189,11 +198,15 @@ struct BridgeProductSchemeControlCompletionEffectsTests {
         // Act
         let response = await provider.response(for: decodedCall)
         let idsAfterProviderResponse = await recorder.publicationIds
-        _ = try await dispatcher.dispatch(
+        try await dispatchCompletionEffectsOperation(
+            dispatcher: dispatcher,
+            session: session,
             exactRequestBytes: bridgeProductSchemeWorkerOpenBody(),
             presentedCapability: capabilityHeader
         )
-        _ = try await dispatcher.dispatch(
+        try await dispatchCompletionEffectsOperation(
+            dispatcher: dispatcher,
+            session: session,
             exactRequestBytes: callBody,
             presentedCapability: capabilityHeader
         )
@@ -216,7 +229,7 @@ struct BridgeProductSchemeControlCompletionEffectsTests {
         )
     }
 
-    @Test("Review publication install admission linearizes in the response and does not replay")
+    @Test("Review publication install admission settles once and replays its admission receipt")
     func reviewPublicationInstallAdmissionReturnsExactResponseWithoutReplay() async throws {
         // Arrange
         let capabilityBytes = (0..<BridgeProductWireContract.capabilityByteLength).map(UInt8.init)
@@ -224,7 +237,7 @@ struct BridgeProductSchemeControlCompletionEffectsTests {
         let session = try BridgeProductSession(
             paneSessionId: bridgeProductTestPaneSessionId,
             workerInstanceId: bridgeProductTestWorkerInstanceId,
-            capabilityBytes: capabilityBytes
+            capabilityBytes: capabilityBytes, deadlineClock: TestPushClock()
         )
         let recorder = await MainActor.run { BridgeProductCallMutationRecorder() }
         let refreshWorkAdmission = await BridgePaneRefreshWorkAdmissionTestContext.foreground()
@@ -254,11 +267,15 @@ struct BridgeProductSchemeControlCompletionEffectsTests {
 
         // Act
         let responseWithoutAdmission = await provider.response(for: decodedCall)
-        _ = try await dispatcher.dispatch(
+        try await dispatchCompletionEffectsOperation(
+            dispatcher: dispatcher,
+            session: session,
             exactRequestBytes: bridgeProductSchemeWorkerOpenBody(),
             presentedCapability: capabilityHeader
         )
-        let firstDispatch = try await dispatcher.dispatch(
+        let firstResult = try await dispatchCompletionEffectsOperation(
+            dispatcher: dispatcher,
+            session: session,
             exactRequestBytes: callBody,
             presentedCapability: capabilityHeader
         )
@@ -275,7 +292,16 @@ struct BridgeProductSchemeControlCompletionEffectsTests {
             return
         }
         #expect(rejectedResult.status == .rejected)
-        #expect(firstDispatch == replayDispatch)
+        #expect(firstResult.outcome == .succeeded)
+        guard case .response(let replayBytes) = replayDispatch else {
+            Issue.record("Expected exact operation admission replay")
+            return
+        }
+        let replayAdmission = try BridgeProductStrictJSON.decode(
+            BridgeProductOperationAdmittedResponse.self,
+            from: replayBytes
+        )
+        #expect(replayAdmission.operationId == firstResult.operationId)
         #expect(await recorder.admissionRequests.count == 1)
         let recordedRequest = try #require(await recorder.admissionRequests.first)
         #expect(
@@ -296,7 +322,7 @@ struct BridgeProductSchemeControlCompletionEffectsTests {
         let session = try BridgeProductSession(
             paneSessionId: bridgeProductTestPaneSessionId,
             workerInstanceId: bridgeProductTestWorkerInstanceId,
-            capabilityBytes: capabilityBytes
+            capabilityBytes: capabilityBytes, deadlineClock: TestPushClock()
         )
         let provider = BridgeProductCompletionEffectsRecordingProvider(session: session)
         let productAdmission = try BridgeProductAdmissionTestContext.make().context
@@ -308,15 +334,20 @@ struct BridgeProductSchemeControlCompletionEffectsTests {
         let subscriptionOpenBody = bridgeProductCompletionEffectsSubscriptionOpenBody()
         let subscriptionCancelBody = bridgeProductCompletionEffectsSubscriptionCancelBody()
 
-        _ = try await dispatcher.dispatch(
+        try await dispatchCompletionEffectsOperation(
+            dispatcher: dispatcher,
+            session: session,
             exactRequestBytes: bridgeProductSchemeWorkerOpenBody(),
             presentedCapability: capabilityHeader
         )
-        _ = try await installCompletionEffectsMetadataStream(
+        let metadataStream = try await installCompletionEffectsMetadataStream(
             in: session,
             productAdmission: productAdmission
         )
-        _ = try await dispatcher.dispatch(
+        defer { metadataStream.operation.release() }
+        try await dispatchCompletionEffectsOperation(
+            dispatcher: dispatcher,
+            session: session,
             exactRequestBytes: subscriptionOpenBody,
             presentedCapability: capabilityHeader
         )
@@ -326,6 +357,7 @@ struct BridgeProductSchemeControlCompletionEffectsTests {
             exactRequestBytes: subscriptionCancelBody,
             presentedCapability: capabilityHeader
         )
+        await session.waitForOutstandingEscapeEffects()
         _ = try await dispatcher.dispatch(
             exactRequestBytes: subscriptionCancelBody,
             presentedCapability: capabilityHeader
@@ -348,11 +380,11 @@ struct BridgeProductSchemeControlCompletionEffectsTests {
         let session = try BridgeProductSession(
             paneSessionId: bridgeProductTestPaneSessionId,
             workerInstanceId: bridgeProductTestWorkerInstanceId,
-            capabilityBytes: capabilityBytes
+            capabilityBytes: capabilityBytes, deadlineClock: TestPushClock()
         )
         let provider = BridgeProductCompletionEffectsRecordingProvider(
             session: session,
-            subscriptionOpenInterestSha256: String(repeating: "0", count: 64)
+            mismatchedSubscriptionOpenResponse: true
         )
         let productAdmission = try BridgeProductAdmissionTestContext.make().context
         let dispatcher = makeBridgeProductSchemeControlDispatcher(
@@ -361,29 +393,23 @@ struct BridgeProductSchemeControlCompletionEffectsTests {
             productAdmission: productAdmission
         )
 
-        _ = try await dispatcher.dispatch(
+        try await dispatchCompletionEffectsOperation(
+            dispatcher: dispatcher,
+            session: session,
             exactRequestBytes: bridgeProductSchemeWorkerOpenBody(),
             presentedCapability: capabilityHeader
         )
 
         // Act
-        let dispatchResult = try await dispatcher.dispatch(
+        let result = try await dispatchCompletionEffectsOperation(
+            dispatcher: dispatcher,
+            session: session,
             exactRequestBytes: bridgeProductCompletionEffectsSubscriptionOpenBody(),
             presentedCapability: capabilityHeader
         )
 
         // Assert
-        guard case .response(let responseBytes) = dispatchResult,
-            case .requestError(let response) = try BridgeProductStrictJSON.decode(
-                BridgeProductControlResponse.self,
-                from: responseBytes
-            )
-        else {
-            Issue.record("Expected a typed internal response for the rejected mutation")
-            return
-        }
-        #expect(response.code == .internal)
-        #expect(response.nextExpectedRequestSequence == 3)
+        #expect(result.outcome == .failed)
         #expect(await provider.completionEffectObservations.isEmpty)
         #expect(
             await session.subscriptionSnapshot(
@@ -391,7 +417,7 @@ struct BridgeProductSchemeControlCompletionEffectsTests {
             ) == nil
         )
         let finalSnapshot = await session.snapshot
-        #expect(!finalSnapshot.pendingControlProviderDispatched)
+        #expect((await session.diagnosticSnapshot).activeOperationExecutionCount == 0)
         #expect(finalSnapshot.controlReplay.inFlightRequestSequence == nil)
         #expect(finalSnapshot.controlReplay.replayableRequestSequence == 2)
     }
@@ -404,7 +430,7 @@ struct BridgeProductSchemeControlCompletionEffectsTests {
         let session = try BridgeProductSession(
             paneSessionId: bridgeProductTestPaneSessionId,
             workerInstanceId: bridgeProductTestWorkerInstanceId,
-            capabilityBytes: capabilityBytes
+            capabilityBytes: capabilityBytes, deadlineClock: TestPushClock()
         )
         let refreshWorkAdmission = await BridgePaneRefreshWorkAdmissionTestContext.foreground()
         let provider = BridgePaneProductSchemeProvider(
@@ -420,32 +446,24 @@ struct BridgeProductSchemeControlCompletionEffectsTests {
             provider: provider,
             productAdmission: productAdmission
         )
-        _ = try await dispatcher.dispatch(
+        try await dispatchCompletionEffectsOperation(
+            dispatcher: dispatcher,
+            session: session,
             exactRequestBytes: bridgeProductSchemeWorkerOpenBody(),
             presentedCapability: capabilityHeader
         )
 
         // Act
-        let dispatchResult = try await dispatcher.dispatch(
+        let result = try await dispatchCompletionEffectsOperation(
+            dispatcher: dispatcher,
+            session: session,
             exactRequestBytes: bridgeProductCompletionEffectsSubscriptionOpenBody(),
             presentedCapability: capabilityHeader
         )
 
         // Assert
-        guard case .response(let responseBytes) = dispatchResult else {
-            Issue.record("Expected a correlated subscription-open response")
-            return
-        }
-        let response = try BridgeProductStrictJSON.decode(
-            BridgeProductControlResponse.self,
-            from: responseBytes
-        )
-        guard case .requestError(let requestError) = response else {
-            Issue.record("Expected a typed resync-required response")
-            return
-        }
-        #expect(requestError.code == .resyncRequired)
-        #expect(requestError.retryable)
+        #expect(result.outcome == .refused)
+        #expect(result.failureCode == .resyncRequired)
         #expect(
             await session.subscriptionSnapshot(
                 subscriptionId: bridgeProductCompletionEffectsSubscriptionId
@@ -462,7 +480,7 @@ struct BridgeProductSchemeControlCompletionEffectsTests {
         let session = try BridgeProductSession(
             paneSessionId: bridgeProductTestPaneSessionId,
             workerInstanceId: bridgeProductTestWorkerInstanceId,
-            capabilityBytes: capabilityBytes
+            capabilityBytes: capabilityBytes, deadlineClock: TestPushClock()
         )
         let provider = BridgeProductCompletionEffectsRecordingProvider(session: session)
         let productAdmission = try BridgeProductAdmissionTestContext.make().context
@@ -472,13 +490,17 @@ struct BridgeProductSchemeControlCompletionEffectsTests {
             productAdmission: productAdmission
         )
         let openBody = bridgeProductCompletionEffectsSubscriptionOpenBody()
-        _ = try await dispatcher.dispatch(
+        try await dispatchCompletionEffectsOperation(
+            dispatcher: dispatcher,
+            session: session,
             exactRequestBytes: bridgeProductSchemeWorkerOpenBody(),
             presentedCapability: capabilityHeader
         )
 
         // Act
-        let firstResult = try await dispatcher.dispatch(
+        let firstResult = try await dispatchCompletionEffectsOperation(
+            dispatcher: dispatcher,
+            session: session,
             exactRequestBytes: openBody,
             presentedCapability: capabilityHeader
         )
@@ -488,18 +510,17 @@ struct BridgeProductSchemeControlCompletionEffectsTests {
         )
 
         // Assert
-        guard case .response(let firstBytes) = firstResult,
-            case .response(let replayBytes) = replayResult,
-            case .requestError(let errorResponse) = try BridgeProductStrictJSON.decode(
-                BridgeProductControlResponse.self,
-                from: firstBytes
-            )
+        guard case .response(let replayBytes) = replayResult
         else {
-            Issue.record("Expected a replayable typed error response")
+            Issue.record("Expected a replayable operation admission")
             return
         }
-        #expect(errorResponse.code == .internal)
-        #expect(firstBytes == replayBytes)
+        let replayAdmission = try BridgeProductStrictJSON.decode(
+            BridgeProductOperationAdmittedResponse.self,
+            from: replayBytes
+        )
+        #expect(firstResult.outcome == .failed)
+        #expect(firstResult.operationId == replayAdmission.operationId)
         #expect(
             await session.subscriptionSnapshot(
                 subscriptionId: bridgeProductCompletionEffectsSubscriptionId
@@ -509,15 +530,15 @@ struct BridgeProductSchemeControlCompletionEffectsTests {
         #expect(await provider.completionEffectObservations.isEmpty)
     }
 
-    @Test("revocation waits until committed control effects finish")
-    func revocationWaitsForCommittedControlEffects() async throws {
+    @Test("revocation settles while a committed escape effect is held")
+    func revocationDoesNotWaitForCommittedEscapeEffect() async throws {
         // Arrange
         let capabilityBytes = (0..<BridgeProductWireContract.capabilityByteLength).map(UInt8.init)
         let capabilityHeader = try BridgeProductCapabilityHeaderEncoding.encode(capabilityBytes)
         let session = try BridgeProductSession(
             paneSessionId: bridgeProductTestPaneSessionId,
             workerInstanceId: bridgeProductTestWorkerInstanceId,
-            capabilityBytes: capabilityBytes
+            capabilityBytes: capabilityBytes, deadlineClock: TestPushClock()
         )
         let committedEffectsGate = BridgeProductCommittedEffectsGate()
         let provider = BridgeProductCompletionEffectsRecordingProvider(
@@ -530,15 +551,19 @@ struct BridgeProductSchemeControlCompletionEffectsTests {
             provider: provider,
             productAdmission: productAdmission
         )
-        _ = try await dispatcher.dispatch(
+        try await dispatchCompletionEffectsOperation(
+            dispatcher: dispatcher,
+            session: session,
             exactRequestBytes: bridgeProductSchemeWorkerOpenBody(),
             presentedCapability: capabilityHeader
         )
-        _ = try await installCompletionEffectsMetadataStream(
+        let metadataStream = try await installCompletionEffectsMetadataStream(
             in: session,
             productAdmission: productAdmission
         )
-        _ = try await dispatcher.dispatch(
+        try await dispatchCompletionEffectsOperation(
+            dispatcher: dispatcher,
+            session: session,
             exactRequestBytes: bridgeProductCompletionEffectsSubscriptionOpenBody(),
             presentedCapability: capabilityHeader
         )
@@ -549,30 +574,29 @@ struct BridgeProductSchemeControlCompletionEffectsTests {
             )
         }
         await committedEffectsGate.waitUntilStarted()
+        metadataStream.operation.release()
 
         // Act
         let revocationBarrier = await session.revoke(acknowledgeLifecycle: { _ in true })
         let whileEffectsAreBlocked = await session.snapshot
-        let revocationProbe = BridgeProductRevocationBarrierProbe()
-        let revocationWait = Task { await revocationProbe.wait(on: revocationBarrier) }
-        await revocationProbe.waitUntilStarted()
-        let revocationResultBeforeEffectsFinished = await revocationProbe.result
+        let blockedEffectCount = await session.diagnosticSnapshot.activeEscapeEffectCount
+        let revocationResultBeforeEffectsFinished = await revocationBarrier.wait()
 
         cancelDispatch.cancel()
         await committedEffectsGate.release()
         let cancelledCallerResult = try await cancelDispatch.value
-        let revocationResult = await revocationWait.value
+        await session.waitForOutstandingEscapeEffects()
         let afterEffectsFinished = await session.snapshot
 
         // Assert
-        #expect(whileEffectsAreBlocked.pendingControlProviderDispatched)
-        #expect(revocationResultBeforeEffectsFinished == nil)
+        #expect(whileEffectsAreBlocked.lifecycle == .revoked)
+        #expect(blockedEffectCount == 1)
+        #expect(revocationResultBeforeEffectsFinished)
         guard case .response = cancelledCallerResult else {
             Issue.record("Expected claimed dispatch to finish after caller cancellation")
             return
         }
-        #expect(revocationResult)
-        #expect(!afterEffectsFinished.pendingControlProviderDispatched)
+        #expect((await session.diagnosticSnapshot).activeEscapeEffectCount == 0)
         #expect(afterEffectsFinished.controlReplay.inFlightRequestSequence == nil)
     }
 
@@ -584,7 +608,7 @@ struct BridgeProductSchemeControlCompletionEffectsTests {
         let session = try BridgeProductSession(
             paneSessionId: bridgeProductTestPaneSessionId,
             workerInstanceId: bridgeProductTestWorkerInstanceId,
-            capabilityBytes: capabilityBytes
+            capabilityBytes: capabilityBytes, deadlineClock: TestPushClock()
         )
         let productAdmission = try BridgeProductAdmissionTestContext.make()
         let admission = await productAdmission.beginControl(
@@ -596,7 +620,7 @@ struct BridgeProductSchemeControlCompletionEffectsTests {
             Issue.record("Expected worker open execution admission")
             return
         }
-        #expect(await session.claimControlProviderDispatch(token: token))
+        #expect(await session.admitControlProviderExecution(token: token))
 
         // Act
         let revocationBarrier = await session.revoke(acknowledgeLifecycle: { _ in true })
@@ -613,7 +637,7 @@ struct BridgeProductSchemeControlCompletionEffectsTests {
 private func installCompletionEffectsMetadataStream(
     in session: BridgeProductSession,
     productAdmission: BridgeProductAdmissionContext
-) async throws -> BridgeProductProducerLease {
+) async throws -> (lease: BridgeProductProducerLease, operation: HeldStep<BridgeProductProducerLease>) {
     let operation = HeldStep<BridgeProductProducerLease>("operation")
     let request = try bridgeProductMetadataStreamRequest(
         metadataStreamId: "metadata-completion-effects-\(UUID().uuidString)",
@@ -636,7 +660,7 @@ private func installCompletionEffectsMetadataStream(
             try producerRegistryMetadataOpeningFrame(for: request, sequence: sequence)
         }
     )
-    return lease
+    return (lease, operation)
 }
 
 @MainActor
@@ -760,9 +784,6 @@ private func bridgeProductCompletionEffectsMarkViewedBody() -> Data {
 }
 
 private let bridgeProductCompletionEffectsSubscriptionId = "review-subscription-effects-1"
-private let bridgeProductCompletionEffectsEmptyInterestSha256 =
-    "1a71797cab8ed23c72233b7706b166a33049e4e87dfbc55b9e252f9c1843eca6"
-
 private struct BridgeProductCompletionEffectsObservation: Equatable, Sendable {
     let cancelledSubscriptionId: String?
     let cancelledSubscriptionWasStillRegistered: Bool
@@ -772,17 +793,17 @@ private struct BridgeProductCompletionEffectsObservation: Equatable, Sendable {
 private actor BridgeProductCompletionEffectsRecordingProvider: BridgeProductSchemeProvider {
     private let committedEffectsGate: BridgeProductCommittedEffectsGate?
     private let session: BridgeProductSession
-    private let subscriptionOpenInterestSha256: String
+    private let mismatchedSubscriptionOpenResponse: Bool
     private(set) var completionEffectObservations: [BridgeProductCompletionEffectsObservation] = []
 
     init(
         session: BridgeProductSession,
-        subscriptionOpenInterestSha256: String = bridgeProductCompletionEffectsEmptyInterestSha256,
+        mismatchedSubscriptionOpenResponse: Bool = false,
         committedEffectsGate: BridgeProductCommittedEffectsGate? = nil
     ) {
         self.committedEffectsGate = committedEffectsGate
         self.session = session
-        self.subscriptionOpenInterestSha256 = subscriptionOpenInterestSha256
+        self.mismatchedSubscriptionOpenResponse = mismatchedSubscriptionOpenResponse
     }
 
     func response(
@@ -793,14 +814,25 @@ private actor BridgeProductCompletionEffectsRecordingProvider: BridgeProductSche
             switch request {
             case .workerSessionOpen:
                 return try .workerSessionAccepted(correlating: request)
-            case .subscriptionOpen:
+            case .subscriptionOpen(let openRequest):
+                if mismatchedSubscriptionOpenResponse {
+                    return try .subscriptionOpenAccepted(
+                        .init(
+                            correlation: request.correlation,
+                            subscriptionId: "other-subscription",
+                            subscriptionKind: openRequest.subscription.subscriptionKind,
+                            worktreeId: nil
+                        )
+                    )
+                }
                 return try .subscriptionOpenAccepted(
                     correlating: request,
-                    interestSha256: subscriptionOpenInterestSha256
+                    worktreeId: nil
                 )
             case .subscriptionCancel:
                 return try .subscriptionCancelAccepted(correlating: request)
-            case .productCall, .subscriptionUpdateBatch, .workerSessionResync:
+            case .productCall, .viewScope, .viewResnapshot,
+                .workerSessionResync:
                 preconditionFailure("Unexpected completion-effects control request")
             }
         } catch {
@@ -887,29 +919,6 @@ private actor BridgeProductCommittedEffectsGate {
     }
 }
 
-private actor BridgeProductRevocationBarrierProbe {
-    private(set) var result: Bool?
-    private var didStart = false
-    private var startContinuation: CheckedContinuation<Void, Never>?
-
-    func wait(on barrier: BridgeProductSessionRevocationBarrier) async -> Bool {
-        didStart = true
-        startContinuation?.resume()
-        startContinuation = nil
-        let result = await barrier.wait()
-        self.result = result
-        return result
-    }
-
-    func waitUntilStarted() async {
-        if didStart { return }
-        await withCheckedContinuation { continuation in
-            precondition(startContinuation == nil)
-            startContinuation = continuation
-        }
-    }
-}
-
 func makeBridgeProductSchemeControlDispatcher(
     session: BridgeProductSession,
     provider: any BridgeProductSchemeProvider,
@@ -919,6 +928,31 @@ func makeBridgeProductSchemeControlDispatcher(
         session: session,
         provider: provider,
         productAdmission: productAdmission
+    )
+}
+
+@discardableResult
+private func dispatchCompletionEffectsOperation(
+    dispatcher: BridgeProductSchemeControlDispatcher,
+    session: BridgeProductSession,
+    exactRequestBytes: Data,
+    presentedCapability: String
+) async throws -> BridgeProductOperationResultResponse {
+    let dispatch = try await dispatcher.dispatch(
+        exactRequestBytes: exactRequestBytes,
+        presentedCapability: presentedCapability
+    )
+    guard case .response(let responseBytes) = dispatch else {
+        Issue.record("Expected a Bridge product operation admission")
+        throw BridgeProductSessionError.invalidControlResponse
+    }
+    let admitted = try BridgeProductStrictJSON.decode(
+        BridgeProductOperationAdmittedResponse.self,
+        from: responseBytes
+    )
+    await session.waitForOperationExecution(operationId: admitted.operationId)
+    return try #require(
+        await session.operationTable.entriesById[admitted.operationId]?.settlement
     )
 }
 

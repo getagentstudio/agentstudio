@@ -108,6 +108,15 @@ const bridgeWorkerReviewSourceDisplayPayloadSchema = z
 const bridgeWorkerReviewSourceDisplayPatchSchema = z.discriminatedUnion('operation', [
 	z
 		.object({
+			operation: z.literal('replace'),
+			payload: z
+				.object({ kind: z.literal('readyEmpty'), status: z.literal('readyEmpty') })
+				.strict(),
+			slice: z.literal('reviewSource'),
+		})
+		.strict(),
+	z
+		.object({
 			operation: z.literal('upsert'),
 			payload: bridgeWorkerReviewSourceDisplayPayloadSchema,
 			slice: z.literal('reviewSource'),

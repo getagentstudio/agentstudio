@@ -209,7 +209,9 @@ extension SessionsIngestion {
                 case .hook(let hook):
                     try await restoreStatusIfNeeded(paneId: paneId)
                     let outcome = try await repository.applyHook(
-                        hook.hook, commitParticipant: hook.commitParticipant)
+                        hook.hook,
+                        commitParticipant: hook.commitParticipant,
+                        confirmedLiveBindingIds: statusRuntime.confirmedLiveBindingIds)
                     if case .committed(let committed) = outcome {
                         try await applyCommittedHook(committed, admittedAt: hook.admittedAt)
                     }

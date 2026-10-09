@@ -46,10 +46,38 @@ enum BridgeWorktreeProductConstructionArtifact: Sendable {
     }
 }
 
+enum BridgeReviewConstructionPhase: Hashable, Sendable {
+    case contributionResolved
+    case endpointsResolved
+    case comparisonResolved
+    case treeRead
+    case descriptorRead
+    case packageBuilt
+    case sharedContentCaptured
+    case artifactAcquired
+    case sharedContentInstalled
+}
+
+typealias BridgeReviewConstructionProgressSink = @Sendable (BridgeReviewConstructionPhase) -> Void
+typealias BridgeReviewConstructionProgressReporter = @Sendable (BridgeReviewConstructionPhase) async -> Void
+
 struct BridgeWorktreeProductConstructionContext: Sendable {
     let key: BridgeWorktreeProductConstructionKey
     let epoch: BridgeWorktreeFreshnessEpoch
     let entryNonce: UInt64
+    let reviewProgress: BridgeReviewConstructionProgressReporter
+
+    init(
+        key: BridgeWorktreeProductConstructionKey,
+        epoch: BridgeWorktreeFreshnessEpoch,
+        entryNonce: UInt64,
+        reviewProgress: @escaping BridgeReviewConstructionProgressReporter = { _ in }
+    ) {
+        self.key = key
+        self.epoch = epoch
+        self.entryNonce = entryNonce
+        self.reviewProgress = reviewProgress
+    }
 }
 
 struct BridgeWorktreeProductConstructionFreshnessContext: Sendable {

@@ -22,6 +22,11 @@ import {
 import { ItemDescription, ItemMetadata, ItemMetadataIcon } from '@/components/ui/item-content.js';
 
 import {
+	type BridgeRegionSurfaceStatus,
+	type BridgeRegionPresentationState,
+} from '../app/bridge-region-presentation-state.js';
+import { BridgeRegionPresentation } from '../app/bridge-region-presentation.js';
+import {
 	WorktreeAnnotationAuthorLabel,
 	WorktreeAnnotationInlineSurface,
 } from './worktree-annotation-inline-surface.js';
@@ -30,6 +35,7 @@ import {
 	worktreeAnnotationOpenLabel,
 	type WorktreeAnnotationDestination,
 } from './worktree-annotation-navigation.js';
+import { worktreeAnnotationRegionPresentation } from './worktree-annotation-region-presentation.js';
 import type { FilteredShareThread } from './worktree-annotation-share-projection.js';
 import type { WorktreeAnnotationThreadProjection } from './worktree-annotation-surface-client.js';
 
@@ -49,6 +55,10 @@ interface AnnotationPreviewNavigationProps {
 }
 
 interface WorktreeAnnotationSharePreviewProps extends AnnotationPreviewNavigationProps {
+	readonly presentationState?: BridgeRegionPresentationState;
+	readonly surfaceStatus?: BridgeRegionSurfaceStatus;
+	readonly retryControl?: ReactElement;
+	readonly hasSelection?: boolean;
 	readonly scope: 'pending' | 'all';
 	readonly inlineThreads: readonly SharePreviewThread[];
 	readonly otherThreads: readonly SharePreviewThread[];
@@ -58,39 +68,45 @@ interface WorktreeAnnotationSharePreviewProps extends AnnotationPreviewNavigatio
 export function WorktreeAnnotationSharePreview(
 	props: WorktreeAnnotationSharePreviewProps,
 ): ReactElement {
-	if (props.readiness === 'unknown')
-		return <p className="mt-4 text-sm text-muted-foreground">Loading comments…</p>;
 	const participatingThreads = [...props.inlineThreads, ...props.otherThreads];
-	if (!participatingThreads.some((thread): boolean => thread.messages.length > 0)) {
-		return (
-			<p className="mt-4 text-sm text-muted-foreground">
-				{props.readiness === 'current'
-					? props.scope === 'pending'
-						? 'No pending comments.'
-						: 'No annotations yet.'
-					: 'Comments are still being confirmed.'}
-			</p>
-		);
-	}
+	const hasContent = participatingThreads.some((thread): boolean => thread.messages.length > 0);
+	const state =
+		props.presentationState ??
+		worktreeAnnotationRegionPresentation({
+			readiness: props.readiness,
+			hasContent,
+			hasSelection: props.hasSelection !== false,
+			...(props.surfaceStatus === undefined ? {} : { surface: props.surfaceStatus }),
+		});
 	return (
-		<section aria-label="Annotation list" className="mt-4">
-			{props.readiness === 'unconfirmed' ? (
-				<p className="mb-2 text-sm text-muted-foreground">Last known comments</p>
-			) : null}
-			<div className="flex min-w-0 flex-col gap-2">
-				{participatingThreads.map(
-					(thread): ReactElement => (
-						<AnnotationThreadCard
-							key={thread.context.threadId}
-							thread={thread}
-							activeSurface={props.activeSurface}
-							onOpenThread={props.onOpenThread}
-							navigationPending={props.navigationPending}
-						/>
-					),
-				)}
-			</div>
-		</section>
+		<BridgeRegionPresentation
+			region="comments"
+			shape="comments"
+			state={state}
+			emptyCopy={{
+				noSelection: 'Choose a review session',
+				certified: props.scope === 'pending' ? 'No pending comments.' : 'No annotations yet.',
+			}}
+		>
+			<section aria-label="Annotation list" className="mt-4">
+				{props.readiness === 'unconfirmed' ? (
+					<p className="mb-2 text-sm text-muted-foreground">Last known comments</p>
+				) : null}
+				<div className="flex min-w-0 flex-col gap-2">
+					{participatingThreads.map(
+						(thread): ReactElement => (
+							<AnnotationThreadCard
+								key={thread.context.threadId}
+								thread={thread}
+								activeSurface={props.activeSurface}
+								onOpenThread={props.onOpenThread}
+								navigationPending={props.navigationPending}
+							/>
+						),
+					)}
+				</div>
+			</section>
+		</BridgeRegionPresentation>
 	);
 }
 

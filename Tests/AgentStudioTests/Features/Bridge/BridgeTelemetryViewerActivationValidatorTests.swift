@@ -83,6 +83,8 @@ struct BridgeTelemetryViewerActivationValidatorTests {
                     "agentstudio.bridge.worker.file_mode_dispatch": "posted",
                     "agentstudio.bridge.worker.file_select_dispatch": "queued_not_ready",
                     "agentstudio.bridge.worker.review_select_dispatch": "none",
+                    "agentstudio.bridge.worker.replacement_reason": "runtime_recovery",
+                    "agentstudio.bridge.worker.replacement_source": "review_installed_receipt_failed",
                     "agentstudio.bridge.worker.session_state": "replacement_requested",
                 ],
                 extraNumbers: [

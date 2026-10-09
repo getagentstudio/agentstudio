@@ -84,6 +84,7 @@ extension WorktreeAnnotationTransportAdapter {
         let result = try await outputCoordinator.executeNew(
             .init(
                 outputKind: outputKind,
+                destination: body.destination,
                 sessionDetail: sessionDetail,
                 selectedMessages: try selectedMessages.map { message in
                     guard let savedRevision = message.savedRevision else {
@@ -97,17 +98,20 @@ extension WorktreeAnnotationTransportAdapter {
                 comparisonLabel: comparisonLabel,
                 expectedSessionRevision: body.expectedSessionRevision,
                 expectedProjectionRevision: body.displayedProjectionRevision
-            )
+            ),
+            productAdmission: productAdmission
         )
         return result.commandOutcome
     }
 
     func executeOutputRepeat(
-        attemptID: WorktreeAnnotationOutputAttemptID
+        attemptID: WorktreeAnnotationOutputAttemptID,
+        productAdmission: BridgeProductAdmissionContext
     ) async throws -> WorktreeAnnotationOutputCommandOutcome {
         guard let outputCoordinator else {
             throw WorktreeAnnotationTransportAdapterError.outputUnavailable
         }
-        return try await outputCoordinator.executeRepeat(sourceAttemptID: attemptID).commandOutcome
+        return try await outputCoordinator.executeRepeat(sourceAttemptID: attemptID, productAdmission: productAdmission)
+            .commandOutcome
     }
 }

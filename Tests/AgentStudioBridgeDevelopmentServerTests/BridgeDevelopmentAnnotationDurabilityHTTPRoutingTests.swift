@@ -105,13 +105,14 @@ private func createHTTPRootAndFiveSavedReplies(
             body: rootBody,
             client: client,
             connection: connection,
+            commentSubscription: context.commentSubscription,
             descriptorID: context.descriptor.descriptorId,
             recorder: context.metadataStream.recorder
         )
         let sessionID = root.sessionID
         var latestSavedReceipt = root.savedReceipt
         var messageIDs = [latestSavedReceipt.messageId]
-        var requestSequence = 9
+        var requestSequence = 11
         for (replyIndex, replyBody) in expectedBodies.dropFirst().enumerated() {
             let editToken = "backend-reply-editor-\(replyIndex + 1)"
             let replyCreateOutcome = try await executeHTTPAnnotationCommand(
@@ -181,6 +182,7 @@ private func createHTTPSavedRoot(
     body: String,
     client: some TestClientProtocol,
     connection: HTTPProductConnection,
+    commentSubscription: BridgeProductSubscriptionOpenAcceptedResponse,
     descriptorID: String,
     recorder: HTTPMetadataFrameRecorder
 ) async throws -> HTTPSavedRootObservation {
@@ -203,11 +205,19 @@ private func createHTTPSavedRoot(
             ],
         ],
         requestID: "backend-root-create",
-        requestSequence: 6
+        requestSequence: 7
     )
     #expect(createOutcome.status == .committed)
     let sessionID = try #require(createOutcome.sessionId)
     let createReceipt = try requireHTTPAnnotationMessage(createOutcome)
+    try await acceptHTTPCommentViewScope(
+        client: client,
+        connection: connection,
+        openResponse: commentSubscription,
+        requestSequence: 8,
+        scopeRevision: 2,
+        sessionIDs: [sessionID]
+    )
     _ = try await waitForHTTPAnnotationCatalogCommit(
         client: client,
         connection: connection,
@@ -221,7 +231,7 @@ private func createHTTPSavedRoot(
             body: body,
             createReceipt: createReceipt,
             editToken: "backend-root-editor",
-            requestSequence: 7,
+            requestSequence: 9,
             sessionID: sessionID
         )
     )
@@ -297,7 +307,8 @@ private func restoreHTTPRootAndFiveSavedReplies(
     try await withBridgeDevelopmentHTTPRouterTestClient(host: runtime.host) { client in
         let context = try await prepareHTTPAnnotationLocatedRestore(
             client: client,
-            runtime: runtime
+            runtime: runtime,
+            sessionID: sessionID
         )
         let projection = try await fetchHTTPFileAnnotationProjection(
             client: client,
@@ -305,7 +316,7 @@ private func restoreHTTPRootAndFiveSavedReplies(
             connection: context.connection,
             demandedSessionIDs: [sessionID],
             sourceGeneration: context.fileSourceGeneration,
-            requestSequence: 5
+            requestSequence: 7
         )
         try await shutdownHTTPHostAndDrainMetadataStream(
             host: runtime.host,

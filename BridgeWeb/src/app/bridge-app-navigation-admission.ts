@@ -47,7 +47,12 @@ export function createBridgeAppNavigationAdmissionState(
 export function bridgeAppReviewNavigationSourceForDisplaySlice(
 	sourceSlice: BridgeMainReviewSourceDisplaySlice | null,
 ): Extract<BridgeAppNavigationSource, { readonly sourceKind: 'review' }> | null {
-	if (sourceSlice === null || sourceSlice.status === 'failed') return null;
+	if (
+		sourceSlice === null ||
+		sourceSlice.status === 'failed' ||
+		sourceSlice.status === 'readyEmpty'
+	)
+		return null;
 	return {
 		generation: sourceSlice.reviewGeneration,
 		metadataSourceId: sourceSlice.metadataSourceId,

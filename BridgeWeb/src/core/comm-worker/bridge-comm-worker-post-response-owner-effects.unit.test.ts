@@ -6,6 +6,30 @@ import type { BridgeWorkerRenderDispositionReceipt } from './bridge-worker-rende
 import { makeBridgeWorkerRenderReceiptIdentity } from './bridge-worker-render-fulfillment.test-support.js';
 
 describe('Bridge comm worker post-response owner effects', () => {
+	test('routes an accepted paint release to Review readmission without a disposition release', () => {
+		const identity = makeBridgeWorkerRenderReceiptIdentity({
+			itemId: 'review-item-1',
+			publicationSequence: 2,
+			surface: 'review',
+			workerDerivationEpoch: 7,
+		});
+		const release = { ...identity, kind: 'paint.released', receivedAtMilliseconds: 10 } as const;
+		const readmitReviewPaintRelease = vi.fn();
+		const releaseReviewPosition = vi.fn();
+		applyBridgeCommWorkerPostResponseOwnerEffects({
+			advanceRenderFulfillmentLifecycle: vi.fn(),
+			currentFileOperationCorrelationId: (): null => null,
+			onFileOperationSettled: (): void => {},
+			publish: (): void => {},
+			readmitReviewPaintRelease,
+			receiptResults: [{ receipt: release, status: 'accepted' }],
+			recordFileDisposition: (): void => {},
+			releaseReviewPosition,
+			settleFileDisposition: () => ({ settled: false, terminalPatch: null }),
+		});
+		expect(readmitReviewPaintRelease).toHaveBeenCalledWith(release);
+		expect(releaseReviewPosition).not.toHaveBeenCalled();
+	});
 	test('applies owner effects only for accepted or idempotent receipt results', () => {
 		// Arrange
 		const acceptedReceipt = makeQueuedReceipt('accepted-item', 1);
@@ -27,6 +51,7 @@ describe('Bridge comm worker post-response owner effects', () => {
 			currentFileOperationCorrelationId: (): null => null,
 			onFileOperationSettled: (): void => {},
 			publish: (): void => {},
+			readmitReviewPaintRelease: (): void => {},
 			receiptResults,
 			recordFileDisposition: (): void => {},
 			releaseReviewPosition,

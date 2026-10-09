@@ -1,6 +1,8 @@
 import { z } from 'zod';
 
-import type { BridgeProductSubscriptionEvent } from '../../src/core/comm-worker/bridge-product-subscription-contracts.ts';
+import type { BridgeProductFileBatchRow } from '../../src/core/comm-worker/bridge-product-file-batch-row-contracts.ts';
+import type { BridgeProductFileMemberStatusRecord } from '../../src/core/comm-worker/bridge-product-file-member-status-contracts.ts';
+import type { BridgeProductViewInstallation } from '../../src/core/comm-worker/bridge-product-view-batch-receiver.ts';
 import type { BridgeWorktreeDevFileContentRouteRequest } from '../bridge-worktree-dev-reload-diagnostics.ts';
 import type {
 	ReviewCollapseControlProof,
@@ -155,28 +157,27 @@ export const worktreeReviewMetadataFrameResponseSchema = z
 	})
 	.strict();
 
-type WorktreeProductFileMetadataEvent = BridgeProductSubscriptionEvent<'file.metadata'>;
-
-export type WorktreeProductFileTreeWindow = Extract<
-	WorktreeProductFileMetadataEvent,
-	{ readonly eventKind: 'file.treeWindow' }
+export type WorktreeProductFileDescriptor = NonNullable<
+	BridgeProductFileBatchRow['descriptorOutcome']
 >;
 
-export type WorktreeProductFileDescriptor = Extract<
-	WorktreeProductFileMetadataEvent,
-	{ readonly eventKind: 'file.descriptorReady' }
->;
-
-export type WorktreeFileTreeRow = WorktreeProductFileTreeWindow['rows'][number];
+export type WorktreeFileTreeRow = Pick<
+	BridgeProductFileBatchRow,
+	'changeStatus' | 'depth' | 'fileClass' | 'fileId' | 'lineCount' | 'name' | 'rowId' | 'sizeBytes'
+> & {
+	readonly isDirectory: boolean;
+	readonly parentPath: string | null;
+	readonly path: string;
+};
 
 export interface WorktreeFileSurface {
-	readonly frames: readonly WorktreeProductFileTreeWindow[];
+	readonly frames: readonly BridgeProductViewInstallation[];
 	readonly provenance: {
 		readonly baseRef: string;
 		readonly scenarioName: string;
 		readonly worktreeRootToken: string;
 	};
-	readonly source: WorktreeProductFileTreeWindow['source'];
+	readonly source: BridgeProductFileMemberStatusRecord['source'];
 	readonly treeSizeFacts: {
 		readonly estimatedTotalHeightPixels: number;
 		readonly pathCount: number;

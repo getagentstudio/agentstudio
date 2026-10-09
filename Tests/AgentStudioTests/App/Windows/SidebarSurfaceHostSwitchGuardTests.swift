@@ -223,7 +223,7 @@ struct SidebarSurfaceHostSwitchGuardTests {
         )
         let host = SidebarSurfaceHost(
             store: store,
-            octiconLoader: OcticonLoader(resourceRootURL: testAgentStudioResourceRootURL()),
+            octiconLoader: makeTestOcticonLoader(),
             paneActivityStatusAtom: coreAtoms.paneActivityStatus,
             applicationLifecycleMonitor: applicationLifecycleMonitor,
             sidebarTimeInvalidationConsumerID: UUIDv7.generate(),

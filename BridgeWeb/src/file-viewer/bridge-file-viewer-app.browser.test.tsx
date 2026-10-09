@@ -14,7 +14,7 @@ import './bridge-file-viewer-app.browser.demand-suite.js';
 import './bridge-file-viewer-app.browser.reactivation-demand-suite.js';
 // oxlint-disable-next-line import/no-unassigned-import -- Aggregates Browser Mode suites.
 import './bridge-file-viewer-app.browser.refresh-demand-suite.js';
-import { afterAll, beforeEach } from 'vitest';
+import { afterAll, beforeEach, vi } from 'vitest';
 
 import { installBridgeFileViewerNoopResizeObserver } from './bridge-file-viewer-browser-test-harness.js';
 
@@ -26,4 +26,12 @@ beforeEach(() => {
 
 afterAll(() => {
 	Object.assign(globalThis, { ResizeObserver: originalBridgeFileViewerResizeObserver });
+});
+
+// Register at the Browser Mode entry; the shared module owns the pure pass-through wrapper.
+vi.mock('../components/ui/dropdown-menu.js', async (importOriginal) => {
+	const original = await importOriginal<typeof import('../components/ui/dropdown-menu.js')>();
+	const { withFileMenuCompletion } =
+		await import('./bridge-file-viewer-menu-completion.browser.test-support.js');
+	return withFileMenuCompletion(original);
 });

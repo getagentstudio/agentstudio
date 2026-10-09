@@ -161,7 +161,7 @@ struct BridgeReviewPublicationCoordinatorTests {
         let committedPublication = try #require(commitResult.committedPublication)
         deliveryAttemptStarted = true
         let deliveryOutcome = coordinator.recordTransportDeliveryDisposition(
-            .transportAcknowledged,
+            .viewBatchSealed,
             publicationId: committedPublication.publicationId,
             productAdmission: productAdmission.context
         )
@@ -172,7 +172,7 @@ struct BridgeReviewPublicationCoordinatorTests {
         #expect(committedPublication.operationCorrelationID == String(repeating: "b", count: 64))
         #expect(committedPublication.comparisonPresentationRevision == 23)
         #expect(committedPublication.reviewComparison == expectedComparison)
-        #expect(deliveryOutcome == .committed(delivery: .transportAcknowledged))
+        #expect(deliveryOutcome == .committed(delivery: .viewBatchSealed))
     }
 
     @Test(
@@ -299,7 +299,7 @@ struct BridgeReviewPublicationCoordinatorTests {
         let closeDrain = coordinator.close()
         let repeatedCloseDrain = coordinator.close()
         let deliveryOutcome = coordinator.recordTransportDeliveryDisposition(
-            .transportAcknowledged,
+            .viewBatchSealed,
             publicationId: committedPublication.publicationId,
             productAdmission: productAdmission.context
         )
@@ -572,7 +572,7 @@ struct BridgeReviewPublicationCoordinatorTests {
 
         // Act
         let transportOutcome = coordinator.recordTransportDeliveryDisposition(
-            .transportAcknowledged,
+            .viewBatchSealed,
             publicationId: committedB.publicationId,
             productAdmission: productAdmission.context
         )
@@ -592,7 +592,7 @@ struct BridgeReviewPublicationCoordinatorTests {
         )
 
         // Assert
-        #expect(transportOutcome == .committed(delivery: .transportAcknowledged))
+        #expect(transportOutcome == .committed(delivery: .viewBatchSealed))
         #expect(retiringAfterTransport.map(\.packageId) == [publicationA.package.packageId])
         #expect(applicationRecorded == .advanced)
         #expect(coordinator.diagnosticSnapshot.retiring.map(\.packageId) == [publicationA.package.packageId])

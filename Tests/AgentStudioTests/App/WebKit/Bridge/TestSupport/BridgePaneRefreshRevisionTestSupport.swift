@@ -18,7 +18,7 @@ struct RefreshRevisionFixture {
 }
 
 @MainActor
-func makeRefreshRevisionFixture() -> RefreshRevisionFixture {
+func makeRefreshRevisionFixture() async throws -> RefreshRevisionFixture {
     let baseEndpoint = makeBridgeEndpoint(endpointId: "baseline-headMinusOne", kind: .gitRef)
     let headEndpoint = makeBridgeEndpoint(endpointId: "working-tree", kind: .workingTree)
     let initialFile = makeBridgeEndpointChangedFile(
@@ -66,6 +66,7 @@ func makeRefreshRevisionFixture() -> RefreshRevisionFixture {
         reviewSourceProvider: provider,
         initialPaneActivity: .foreground
     )
+    try await showReviewInNativeFixture(controller)
     return RefreshRevisionFixture(
         baseEndpoint: baseEndpoint,
         headEndpoint: headEndpoint,

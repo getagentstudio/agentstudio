@@ -1,5 +1,10 @@
 import { act } from 'react';
 
+import { bridgePageConfigurationSchema } from '../bridge/bridge-page-configuration.js';
+import pageConfigurationFixture from '../test-fixtures/bridge-contract-fixtures/valid/bridge-page-configuration.json' with { type: 'json' };
+
+const pageConfiguration = bridgePageConfigurationSchema.parse(pageConfigurationFixture);
+
 export async function pollWithinAct<TValue>(props: {
 	readonly getValue: () => TValue;
 	readonly isSatisfied: (value: TValue) => boolean;
@@ -61,7 +66,7 @@ export interface InstalledControlledBridgeReadyHandshake extends InstalledBridge
 }
 
 function dispatchBridgeHandshakeWithoutTelemetryConfig(): void {
-	document.dispatchEvent(new CustomEvent('__bridge_handshake'));
+	document.dispatchEvent(new CustomEvent('__bridge_handshake', { detail: { pageConfiguration } }));
 }
 
 export function installControlledBridgeReadyHandshake(): InstalledControlledBridgeReadyHandshake {
@@ -115,7 +120,7 @@ export function installBridgeReadyHandshake(
 	const handleBridgeHandshakeRequest = (): void => {
 		document.dispatchEvent(
 			new CustomEvent('__bridge_handshake', {
-				detail: { telemetryConfig: props.telemetryConfig },
+				detail: { pageConfiguration, telemetryConfig: props.telemetryConfig },
 			}),
 		);
 	};

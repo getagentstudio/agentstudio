@@ -10,6 +10,10 @@ enum BridgePaneSurfaceSelectionStreamAbsenceDisposition: Equatable, Sendable {
 
 // swiftlint:disable type_body_length
 actor BridgePaneProductSchemeProvider: BridgeProductSchemeProvider {
+    nonisolated var reviewIntentAdmissionSource: BridgePaneRefreshWorkAdmissionSource? {
+        refreshWorkAdmissionSource
+    }
+
     let admitReviewPublicationInstallation:
         @MainActor @Sendable (
             BridgeProductReviewInstallAdmissionRequest,
@@ -25,6 +29,7 @@ actor BridgePaneProductSchemeProvider: BridgeProductSchemeProvider {
     let applyReviewComparisonUpdate:
         @MainActor @Sendable (
             BridgeProductReviewComparisonUpdateRequest,
+            Int,
             BridgeProductAdmissionContext
         ) async -> Void
     let applyFileRefreshRetry: @MainActor @Sendable (BridgeProductAdmissionContext) async -> Void
@@ -58,6 +63,20 @@ actor BridgePaneProductSchemeProvider: BridgeProductSchemeProvider {
     let reviewComparisonTargetCatalogProducer: any BridgeReviewComparisonTargetCatalogProducing
     let comparisonTargetCatalogTraceRecorder: (any BridgeReviewComparisonTargetCatalogTraceRecording)?
     package var pendingComparisonTargetReservation: BridgeProductReviewComparisonTargetsReservation?
+    private var currentWorkerInstanceId: String?
+    private var hasSessionOwner = false
+
+    func activateWorkerIdentity(_ workerInstanceId: String) {
+        hasSessionOwner = true
+        currentWorkerInstanceId = workerInstanceId
+    }
+
+    func revokeWorkerIdentity(_ workerInstanceId: String) {
+        hasSessionOwner = true
+        if currentWorkerInstanceId == workerInstanceId || currentWorkerInstanceId == nil {
+            currentWorkerInstanceId = nil
+        }
+    }
 
     init(
         annotationSource: BridgePaneAnnotationNotificationSource = .unavailable,
@@ -98,10 +117,13 @@ actor BridgePaneProductSchemeProvider: BridgeProductSchemeProvider {
         applyReviewComparisonUpdate:
             @escaping @MainActor @Sendable (
                 BridgeProductReviewComparisonUpdateRequest,
+                Int,
                 BridgeProductAdmissionContext
-            ) async -> Void = { _, _ in },
+            ) async -> Void = { _, _, _ in },
         applyFileRefreshRetry:
             @escaping @MainActor @Sendable (BridgeProductAdmissionContext) async -> Void = { _ in },
+        recordCurrentFileRefreshFailure:
+            @escaping @MainActor @Sendable (BridgeFileSurfaceOutcomeApplication) async -> Void = { _ in },
         applyWorktreeAnnotationCommand:
             @escaping @MainActor @Sendable (
                 BridgeProductWorktreeAnnotationCommandRequest,
@@ -148,6 +170,7 @@ actor BridgePaneProductSchemeProvider: BridgeProductSchemeProvider {
             isReviewPublicationCurrent: isReviewPublicationCurrent,
             initialPanePresentation: initialPanePresentation,
             refreshWorkAdmissionSource: refreshWorkAdmissionSource,
+            recordCurrentFileRefreshFailure: recordCurrentFileRefreshFailure,
             lifecycleTraceRecorder: lifecycleTraceRecorder
         )
         self.lifecycleTraceRecorder = lifecycleTraceRecorder
@@ -183,28 +206,62 @@ actor BridgePaneProductSchemeProvider: BridgeProductSchemeProvider {
                 guard await metadataCoordinator.hasActiveStream else {
                     return try metadataStreamRequiredError(for: request)
                 }
-                let emptyInterestState = try openRequest.subscription.initialInterestState()
-                return try .subscriptionOpenAccepted(
-                    correlating: request,
-                    interestSha256: emptyInterestState.sha256Hex()
-                )
-            case .subscriptionUpdateBatch(let updateRequest):
-                guard await metadataCoordinator.hasActiveStream else {
-                    return try metadataStreamRequiredError(for: request)
+                let subscriptionKind = openRequest.subscription.subscriptionKind
+                let worktreeId: String?
+                if subscriptionKind == .fileAnnotations || subscriptionKind == .reviewAnnotations {
+                    guard let admittedWorktreeId = await metadataCoordinator.annotationSource.admittedWorktreeID(),
+                        (try? BridgeProductContractDecoding.validateIdentifier(
+                            admittedWorktreeId,
+                            codingPath: []
+                        )) != nil
+                    else {
+                        return try .requestError(
+                            correlating: request,
+                            code: .staleSource,
+                            nextExpectedRequestSequence: request.requestSequence + 1,
+                            retryAfterMilliseconds: nil,
+                            retryable: true,
+                            safeMessage: "Comment worktree is unavailable"
+                        )
+                    }
+                    worktreeId = admittedWorktreeId
+                } else {
+                    worktreeId = nil
                 }
-                let disposition: BridgeProductSubscriptionUpdateBatchDisposition =
-                    updateRequest.batchIndex + 1 == updateRequest.batchCount
-                    ? .committed
-                    : .staged
-                return try .subscriptionUpdateBatchAccepted(
-                    correlating: request,
-                    disposition: disposition
-                )
+                return try .subscriptionOpenAccepted(correlating: request, worktreeId: worktreeId)
             case .subscriptionCancel:
                 guard await metadataCoordinator.hasActiveStream else {
                     return try metadataStreamRequiredError(for: request)
                 }
                 return try .subscriptionCancelAccepted(correlating: request)
+            case .viewScope(let scope):
+                guard await metadataCoordinator.hasActiveStream else {
+                    return try metadataStreamRequiredError(for: request)
+                }
+                guard let productAdmission else {
+                    return try viewControlRejectedError(for: request, code: .staleWorker)
+                }
+                if let rejection = await metadataCoordinator.acceptViewScope(
+                    scope,
+                    productAdmission: productAdmission
+                ) {
+                    return try viewControlRejectedError(for: request, code: rejection)
+                }
+                return try .viewAccepted(correlating: request)
+            case .viewResnapshot(let resnapshot):
+                guard await metadataCoordinator.hasActiveStream else {
+                    return try metadataStreamRequiredError(for: request)
+                }
+                guard let productAdmission else {
+                    return try viewControlRejectedError(for: request, code: .staleWorker)
+                }
+                if let rejection = await metadataCoordinator.acceptViewResnapshot(
+                    resnapshot,
+                    productAdmission: productAdmission
+                ) {
+                    return try viewControlRejectedError(for: request, code: rejection)
+                }
+                return try .viewAccepted(correlating: request)
             case .workerSessionResync(let resyncRequest):
                 return try .resyncAccepted(
                     correlating: request,
@@ -256,10 +313,7 @@ actor BridgePaneProductSchemeProvider: BridgeProductSchemeProvider {
                 request: request
             )
         case .fileSourceCurrent:
-            return try .callCompleted(
-                correlating: request,
-                result: .fileSourceCurrent(await fileMetadataSource.currentSource())
-            )
+            return try await fileSourceCurrentResponse(for: request, source: fileMetadataSource)
         case .fileRefreshRetry:
             return try .callCompleted(correlating: request, result: .fileRefreshRetry)
         case .fileActiveViewerModeUpdate:
@@ -269,7 +323,10 @@ actor BridgePaneProductSchemeProvider: BridgeProductSchemeProvider {
         case .reviewComparisonUpdate:
             return try .callCompleted(correlating: request, result: .reviewComparisonUpdate)
         case .reviewComparisonTargetsQuery:
-            return try await reviewComparisonTargetsQueryResponse(for: request)
+            return try await reviewComparisonTargetsQueryResponse(
+                for: request,
+                productAdmission: productAdmission
+            )
         case .reviewMarkFileViewed:
             return try .callCompleted(correlating: request, result: .reviewMarkFileViewed)
         case .reviewIntakeReady:
@@ -314,7 +371,8 @@ actor BridgePaneProductSchemeProvider: BridgeProductSchemeProvider {
     }
 
     private func reviewComparisonTargetsQueryResponse(
-        for request: BridgeProductControlRequest
+        for request: BridgeProductControlRequest,
+        productAdmission: BridgeProductAdmissionContext?
     ) async throws -> BridgeProductControlResponse {
         let authorizationStartedAt = ContinuousClock.now
         guard let authorization = await authorizeReviewComparisonTargets() else {
@@ -340,7 +398,21 @@ actor BridgePaneProductSchemeProvider: BridgeProductSchemeProvider {
             )
             return try comparisonTargetsUnavailableError(for: request)
         }
-        pendingComparisonTargetReservation = reservation
+        guard !hasSessionOwner || currentWorkerInstanceId == reservation.workerInstanceId else {
+            return try comparisonTargetsUnavailableError(for: request)
+        }
+        if let productAdmission {
+            guard
+                productAdmission.withValidAdmission({
+                    pendingComparisonTargetReservation = reservation
+                    return true
+                }) == true
+            else {
+                return try comparisonTargetsUnavailableError(for: request)
+            }
+        } else {
+            pendingComparisonTargetReservation = reservation
+        }
         recordComparisonTargetCatalogTrace(
             stage: .authorization,
             outcome: .success,
@@ -609,12 +681,12 @@ actor BridgePaneProductSchemeProvider: BridgeProductSchemeProvider {
             )
         else { return }
         guard
-            await waitForExactWorkerObservation(
-                openingResult,
-                lease: lease,
+            case .enqueued = openingResult,
+            await session.waitForContentAcknowledgement(
+                for: lease,
+                sequence: 0,
                 productAdmission: productAdmission,
-                foregroundWorkAdmission: foregroundWorkAdmission,
-                session: session
+                foregroundWorkAdmission: foregroundWorkAdmission
             )
         else {
             recordClaimedComparisonTargetCancellation(comparisonTargetReservation)
@@ -749,7 +821,7 @@ actor BridgePaneProductSchemeProvider: BridgeProductSchemeProvider {
             readPlan.descriptor == request.descriptor
         else {
             guard foregroundWorkAdmission.withValidAdmission({ true }) == true else { return }
-            try? await enqueueUnavailableContentTerminal(
+            try? await enqueueSupersededContentTerminal(
                 for: lease,
                 productAdmission: productAdmission,
                 foregroundWorkAdmission: foregroundWorkAdmission,
@@ -767,7 +839,7 @@ actor BridgePaneProductSchemeProvider: BridgeProductSchemeProvider {
             }
         } catch {
             guard foregroundWorkAdmission.withValidAdmission({ true }) == true else { return }
-            try? await enqueueStaleSourceReset(
+            try? await enqueueSupersededContentTerminal(
                 for: lease,
                 productAdmission: productAdmission,
                 foregroundWorkAdmission: foregroundWorkAdmission,
@@ -793,7 +865,7 @@ actor BridgePaneProductSchemeProvider: BridgeProductSchemeProvider {
                 digest.sha256 == request.descriptor.expectedSha256
             else {
                 guard foregroundWorkAdmission.withValidAdmission({ true }) == true else { return }
-                try await enqueueStaleSourceReset(
+                try await enqueueSupersededContentTerminal(
                     for: lease,
                     productAdmission: productAdmission,
                     foregroundWorkAdmission: foregroundWorkAdmission,
@@ -824,7 +896,7 @@ actor BridgePaneProductSchemeProvider: BridgeProductSchemeProvider {
         } catch {
             await reader.close()
             guard foregroundWorkAdmission.withValidAdmission({ true }) == true else { return }
-            try? await enqueueStaleSourceReset(
+            try? await enqueueSupersededContentTerminal(
                 for: lease,
                 productAdmission: productAdmission,
                 foregroundWorkAdmission: foregroundWorkAdmission,
@@ -845,6 +917,14 @@ actor BridgePaneProductSchemeProvider: BridgeProductSchemeProvider {
         var hasher = SHA256()
         while foregroundWorkAdmission.withValidAdmission({ true }) == true {
             guard
+                await session.waitForContentCredit(
+                    for: lease,
+                    byteCount: BridgeProductContentCreditReadState.maximumReservedFrameByteCount,
+                    productAdmission: productAdmission,
+                    foregroundWorkAdmission: foregroundWorkAdmission
+                )
+            else { return nil }
+            guard
                 let chunk = try await reader.nextChunk(
                     maximumByteCount: AppPolicies.Bridge.contentProducerChunkBytes
                 )
@@ -858,7 +938,7 @@ actor BridgePaneProductSchemeProvider: BridgeProductSchemeProvider {
             guard !overflowed,
                 nextByteCount <= descriptor.declaredByteLength
             else {
-                try await enqueueStaleSourceReset(
+                try await enqueueSupersededContentTerminal(
                     for: lease,
                     productAdmission: productAdmission,
                     foregroundWorkAdmission: foregroundWorkAdmission,
@@ -895,18 +975,9 @@ actor BridgePaneProductSchemeProvider: BridgeProductSchemeProvider {
                     )
                 }
             )
-            guard
-                foregroundWorkAdmission.withValidAdmission({ true }) == true,
-                await waitForExactWorkerObservation(
-                    result,
-                    lease: lease,
-                    productAdmission: productAdmission,
-                    foregroundWorkAdmission: foregroundWorkAdmission,
-                    session: session
-                )
-            else {
-                return nil
-            }
+            guard case .enqueued = result,
+                foregroundWorkAdmission.withValidAdmission({ true }) == true
+            else { return nil }
             byteCount = nextByteCount
         }
         guard foregroundWorkAdmission.withValidAdmission({ true }) == true else { return nil }
@@ -914,46 +985,6 @@ actor BridgePaneProductSchemeProvider: BridgeProductSchemeProvider {
             .map { String(format: "%02x", $0) }
             .joined()
         return FileContentStreamDigest(byteCount: byteCount, sha256: sha256)
-    }
-
-    private func waitForExactWorkerObservation(
-        _ result: BridgeProductProducerEnqueueResult,
-        lease: BridgeProductProducerLease,
-        productAdmission: BridgeProductAdmissionContext,
-        foregroundWorkAdmission: BridgePaneRefreshWorkAdmission,
-        session: BridgeProductSession
-    ) async -> Bool {
-        guard case .enqueued(let frame) = result else { return false }
-        return await session.waitUntilProducerFrameSequenceObserved(
-            for: lease,
-            sequence: frame.sequence,
-            productAdmission: productAdmission,
-            foregroundWorkAdmission: foregroundWorkAdmission
-        )
-    }
-
-    private func enqueueStaleSourceReset(
-        for lease: BridgeProductProducerLease,
-        productAdmission: BridgeProductAdmissionContext,
-        foregroundWorkAdmission: BridgePaneRefreshWorkAdmission,
-        session: BridgeProductSession
-    ) async throws {
-        _ = try await session.enqueueTerminalContentFrame(
-            for: lease,
-            productAdmission: productAdmission,
-            foregroundWorkAdmission: foregroundWorkAdmission,
-            build: { sequence in
-                .content(
-                    .init(
-                        header: try .reset(
-                            contentSequence: sequence,
-                            reason: .staleSource
-                        ),
-                        payload: Data()
-                    )
-                )
-            }
-        )
     }
 
     func closeAndDrain() async {

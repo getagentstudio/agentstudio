@@ -75,23 +75,49 @@ extension SessionsIngestion: SessionOpenAskInput {
 
     func applyCommittedHook(_ committed: SessionsHookCommit, admittedAt: ContinuousClock.Instant) async throws {
         guard committed.disposition != .recordedOnly else { return }
+        let supersededBindingGenerationId: UUID?
+        if let superseded = committed.supersededBinding {
+            supersededBindingGenerationId = superseded.bindingGenerationId
+            statusRuntime.bindings[superseded.bindingGenerationId] = superseded
+            statusRuntime.confirmedLiveBindingIds.remove(superseded.bindingGenerationId)
+            statusRuntime.liveBindingBoundAt.removeValue(forKey: superseded.bindingGenerationId)
+            if var state = statusRuntime.states[superseded.bindingGenerationId] {
+                SessionStatusReducer.apply(
+                    .init(
+                        input: .bindingReplaced(by: committed.binding.bindingGenerationId),
+                        sequence: committed.revision, occurredAt: committed.evidence.occurredAt,
+                        admittedAt: admittedAt, turnId: nil), to: &state)
+                statusRuntime.states[superseded.bindingGenerationId] = state
+            }
+        } else {
+            supersededBindingGenerationId = nil
+        }
         let binding = committed.binding
         if committed.disposition == .bound {
             installStatusBinding(binding, boundAt: admittedAt)
+        } else if binding.status == .active {
+            statusRuntime.confirmedLiveBindingIds.insert(binding.bindingGenerationId)
         }
         statusRuntime.bindings[binding.bindingGenerationId] = binding
         let input = SessionsStatusRuntime.statusInput(committed.evidence)
         if let input {
+            let turnId: String? =
+                committed.disposition == .bound && committed.evidence.providerSignal == .sessionStart
+                ? nil : committed.evidence.turnId
             updateStatus(
                 generation: binding.bindingGenerationId,
                 event: .init(
                     input: input, sequence: committed.revision, occurredAt: committed.evidence.occurredAt,
-                    admittedAt: admittedAt, turnId: committed.evidence.turnId))
+                    admittedAt: admittedAt, turnId: turnId))
         }
         consumePaneViewedBatch()
         publishStatus(paneId: binding.paneId)
+        if let supersededBindingGenerationId {
+            await sessionEnded(supersededBindingGenerationId)
+        }
         if case .sessionEnd? = input {
             statusRuntime.liveBindingBoundAt.removeValue(forKey: binding.bindingGenerationId)
+            statusRuntime.confirmedLiveBindingIds.remove(binding.bindingGenerationId)
             await sessionEnded(binding.bindingGenerationId)
         }
     }
@@ -133,6 +159,7 @@ extension SessionsIngestion: SessionOpenAskInput {
             statusRuntime.states[binding.bindingGenerationId] = state
         }
         statusRuntime.liveBindingBoundAt.removeValue(forKey: binding.bindingGenerationId)
+        statusRuntime.confirmedLiveBindingIds.remove(binding.bindingGenerationId)
         publishStatus(paneId: binding.paneId)
     }
 
@@ -141,6 +168,7 @@ extension SessionsIngestion: SessionOpenAskInput {
         statusRuntime.bindings[binding.bindingGenerationId] = binding
         statusRuntime.currentBindingByPane[binding.paneId] = binding.bindingGenerationId
         statusRuntime.liveBindingBoundAt[binding.bindingGenerationId] = boundAt
+        statusRuntime.confirmedLiveBindingIds.insert(binding.bindingGenerationId)
         var state = SessionStatusState(binding: .bound(binding.bindingGenerationId))
         if let asks = statusRuntime.pendingAsks[binding.bindingGenerationId] { state.openAsks = asks }
         statusRuntime.states[binding.bindingGenerationId] = state
@@ -167,6 +195,7 @@ extension SessionsIngestion: SessionOpenAskInput {
             clearRefusal(paneId: paneId)
             if let bindingGenerationId = statusRuntime.currentBindingByPane.removeValue(forKey: paneId) {
                 statusRuntime.liveBindingBoundAt.removeValue(forKey: bindingGenerationId)
+                statusRuntime.confirmedLiveBindingIds.remove(bindingGenerationId)
             }
             statusRuntime.latestViewedAt.removeValue(forKey: paneId)
             statusPublicationMailbox.retire(.init(existingUUID: paneId))

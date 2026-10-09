@@ -152,7 +152,8 @@ final class WorktreeCreationCoordinator {
                 GitCreateWorktreeRequest(
                     repositoryPath: repository.repoPath,
                     destinationPath: destination,
-                    mode: .newBranch(name: branchName.rawValue, startPoint: .named(referenceName))
+                    mode: .newBranch(
+                        name: branchName.rawValue, startPoint: .named(referenceName), upstream: nil)
                 ))
             return nil
         } catch {
@@ -171,7 +172,8 @@ final class WorktreeCreationCoordinator {
                 GitCreateWorktreeRequest(
                     repositoryPath: repository.repoPath,
                     destinationPath: destination,
-                    mode: .newBranch(name: branchName.rawValue, startPoint: .named(referenceName))
+                    mode: .newBranch(
+                        name: branchName.rawValue, startPoint: .named(referenceName), upstream: nil)
                 ))
             return nil
         } catch {
@@ -180,7 +182,7 @@ final class WorktreeCreationCoordinator {
     }
 
     /// Copy-on-write fork of the source's current files; the new branch starts at the
-    /// source HEAD the SDK captures, so no start point is passed.
+    /// source HEAD the SDK captures (`.sourceHead`), so the copy is kept as it is.
     private func forkSource(
         source: (worktree: Worktree, repository: Repo),
         destination: URL,
@@ -191,7 +193,7 @@ final class WorktreeCreationCoordinator {
                 GitForkWorktreeRequest(
                     sourceWorktreePath: source.worktree.path,
                     destinationPath: destination,
-                    mode: .newBranch(name: branchName.rawValue),
+                    mode: .newBranch(name: branchName.rawValue, start: .sourceHead, upstream: nil),
                     materialization: .copyOnWrite,
                     copyRules: GitWorktreeCopyRules(ignoredPaths: .copyAll)
                 ))

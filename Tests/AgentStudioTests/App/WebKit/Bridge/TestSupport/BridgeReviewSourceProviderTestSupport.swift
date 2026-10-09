@@ -14,6 +14,10 @@ actor BridgeReviewSourceProviderFake: BridgeReviewSourceProvider {
         -> BridgeContributionComparisonCapture
     {
         contributionRequests.append(request)
+        if nextReviewPackageCancellationCount > 0 {
+            nextReviewPackageCancellationCount -= 1
+            throw CancellationError()
+        }
         if let contributionFailure {
             throw contributionFailure
         }
@@ -60,6 +64,9 @@ actor BridgeReviewSourceProviderFake: BridgeReviewSourceProvider {
     private let comparisonFailureByBaseProviderIdentity: [String: BridgeProviderFailure]
     private let contentLoadGate: HeldStep<Void>?
     private var comparisonGate: BridgeComparisonGate?
+    private var nextReviewPackageCancellationCount = 0
+    private var throwsCancellationWhenComparisonTaskIsCancelled = false
+    private var comparisonStep: HeldStep<BridgeEndpointComparisonRequest>?
     private let checksCancellationAfterGate: Bool
     private var contentRequests: [BridgeContentLoadRequest] = []
     private var comparisonRequests: [BridgeEndpointComparisonRequest] = []
@@ -109,11 +116,19 @@ actor BridgeReviewSourceProviderFake: BridgeReviewSourceProvider {
 
     func compareEndpoints(_ request: BridgeEndpointComparisonRequest) async throws -> BridgeEndpointComparison {
         comparisonRequests.append(request)
+        if nextReviewPackageCancellationCount > 0 {
+            nextReviewPackageCancellationCount -= 1
+            throw CancellationError()
+        }
         if let failure = comparisonFailureByBaseProviderIdentity[request.baseEndpoint.providerIdentity] {
             throw failure
         }
         let resolvedComparison = comparison
+        try await comparisonStep?.arrive(request)
         await comparisonGate?.waitUntilReleased()
+        if throwsCancellationWhenComparisonTaskIsCancelled {
+            try Task.checkCancellation()
+        }
         return BridgeEndpointComparison(
             baseEndpoint: endpoint(
                 request.baseEndpoint,
@@ -190,6 +205,10 @@ actor BridgeReviewSourceProviderFake: BridgeReviewSourceProvider {
         self.comparison = comparison
     }
 
+    func setComparisonStep(_ comparisonStep: HeldStep<BridgeEndpointComparisonRequest>?) {
+        self.comparisonStep = comparisonStep
+    }
+
     func setRepositoryDefaultTarget(
         _ repositoryDefaultTarget: BridgeReviewComparisonDefaultTargetIdentity?
     ) {
@@ -214,6 +233,14 @@ actor BridgeReviewSourceProviderFake: BridgeReviewSourceProvider {
 
     func setComparisonGate(_ comparisonGate: BridgeComparisonGate?) {
         self.comparisonGate = comparisonGate
+    }
+
+    func cancelNextReviewPackageBuild() {
+        nextReviewPackageCancellationCount += 1
+    }
+
+    func throwCancellationWhenComparisonTaskIsCancelled() {
+        throwsCancellationWhenComparisonTaskIsCancelled = true
     }
 
     func recordedTreeReadRequestsCount() -> Int {

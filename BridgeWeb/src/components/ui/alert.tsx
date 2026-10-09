@@ -10,10 +10,12 @@ const alertVariants = cva(
 			layout: {
 				card: '',
 				banner: 'rounded-none border-x-0 border-t-0',
+				floating: 'w-fit shadow-popover',
 				inline: 'rounded-none border-0 bg-transparent',
 			},
 			variant: {
 				default: 'bg-card text-card-foreground',
+				floating: 'border-popover-border bg-popover text-popover-foreground',
 				warning: 'border-warning/35 bg-warning/10 text-foreground *:[svg]:text-warning',
 				destructive:
 					'bg-card text-destructive *:data-[slot=alert-description]:text-destructive/90 *:[svg]:text-current',

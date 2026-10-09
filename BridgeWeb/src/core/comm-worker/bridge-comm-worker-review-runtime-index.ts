@@ -37,12 +37,31 @@ export function reviewRuntimeItemSignatures(
 		contentItem: BridgeCommWorkerReviewRuntimeSource['contentItems'][number] | null;
 		contentRequests: BridgeCommWorkerReviewRuntimeSource['contentRequestDescriptors'][number][];
 		renderSemantics: BridgeCommWorkerReviewRuntimeSource['renderSemantics'][number] | null;
+		sourceLineage: {
+			packageId: string;
+			reviewGeneration: number;
+			sourceIdentity: string;
+		} | null;
 	};
+	const publication = source.reviewPublicationIdentity;
+	const sourceLineage =
+		publication === null
+			? null
+			: {
+					packageId: publication.packageId,
+					reviewGeneration: publication.reviewGeneration,
+					sourceIdentity: publication.sourceIdentity,
+				};
 	const signaturesByItemId = new Map<string, ReviewRuntimeItemSignatureInput>();
 	const signatureForItem = (itemId: string): ReviewRuntimeItemSignatureInput => {
 		const existing = signaturesByItemId.get(itemId);
 		if (existing !== undefined) return existing;
-		const created = { contentItem: null, contentRequests: [], renderSemantics: null };
+		const created = {
+			contentItem: null,
+			contentRequests: [],
+			renderSemantics: null,
+			sourceLineage,
+		};
 		signaturesByItemId.set(itemId, created);
 		return created;
 	};
@@ -55,6 +74,18 @@ export function reviewRuntimeItemSignatures(
 	}
 	return new Map(
 		[...signaturesByItemId].map(([itemId, signature]) => [itemId, JSON.stringify(signature)]),
+	);
+}
+
+/** One semantic change classification for presentation impact and content admission. */
+export function reviewRuntimeChangedItemIds(
+	previous: BridgeCommWorkerReviewRuntimeSource,
+	successor: BridgeCommWorkerReviewRuntimeSource,
+): readonly string[] {
+	const previousSignatures = reviewRuntimeItemSignatures(previous);
+	const successorSignatures = reviewRuntimeItemSignatures(successor);
+	return [...new Set([...previousSignatures.keys(), ...successorSignatures.keys()])].filter(
+		(itemId): boolean => previousSignatures.get(itemId) !== successorSignatures.get(itemId),
 	);
 }
 

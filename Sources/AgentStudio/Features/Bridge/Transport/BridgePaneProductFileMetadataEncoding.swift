@@ -93,7 +93,7 @@ enum BridgePaneProductFileMetadataEncoding {
         return chunks
     }
 
-    static func treeDeltaEmissions(
+    static func inventoryChangeEmissions(
         refreshed: BridgeWorktreeRefreshedTreeRows,
         removedRows: [BridgeWorktreeTreeRowMetadata],
         source: BridgeProductFileSourceIdentity,
@@ -103,56 +103,20 @@ enum BridgePaneProductFileMetadataEncoding {
         for rows in try boundedProductRowChunks(refreshed.rows) {
             emissions.append(
                 .init(
-                    event: .treeDelta(
-                        try .init(
-                            operations: [.upsertRows(rows)],
-                            source: source
-                        )
-                    ),
-                    subscriptionId: subscriptionId
-                )
-            )
+                    fact: .inventoryChanged(
+                        .init(
+                            updatedPaths: Set(rows.map(\.path)), removedPaths: [], source: source)),
+                    subscriptionId: subscriptionId))
         }
         for chunk in boundedRemovalChunks(removedRows) {
             emissions.append(
                 .init(
-                    event: .treeDelta(
-                        try .init(
-                            operations: [
-                                .removeRows(
-                                    paths: chunk.map(\.path),
-                                    rowIds: chunk.map(\.rowId)
-                                )
-                            ],
-                            source: source
-                        )
-                    ),
-                    subscriptionId: subscriptionId
-                )
-            )
+                    fact: .inventoryChanged(
+                        .init(
+                            updatedPaths: [], removedPaths: Set(chunk.map(\.path)), source: source)),
+                    subscriptionId: subscriptionId))
         }
         return emissions
-    }
-
-    static func statusEvent(
-        _ status: GitWorkingTreeStatus,
-        source: BridgeProductFileSourceIdentity
-    ) -> BridgeProductFileMetadataEvent {
-        .statusPatch(
-            .init(
-                patch: .summary(
-                    .init(
-                        ahead: status.summary.aheadCount,
-                        behind: status.summary.behindCount,
-                        branchName: status.branch,
-                        staged: status.summary.staged,
-                        unstaged: status.summary.changed,
-                        untracked: status.summary.untracked
-                    )
-                ),
-                source: source
-            )
-        )
     }
 
     static func highestPriorityLaneByPath(

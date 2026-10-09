@@ -36,6 +36,7 @@ struct BridgeProductSchemeAdapterHarness {
                 session: session,
                 provider: provider,
                 productAdmissionGate: productAdmissionGate,
+                installationAdmissionGate: BridgeProductAdmissionGate(),
                 telemetryRecorder: telemetryRecorder
             ),
             capabilityHeader: capabilityHeader,
@@ -96,6 +97,7 @@ actor BridgeProductSchemeProviderSpy: BridgeProductSchemeProvider {
         let controlRequests: [BridgeProductControlRequest]
         let metadataRequestCount: Int
         let producerFailureCount: Int
+        let producerFailureReasons: [String]
     }
 
     private let contentOperationGate = HeldStep<BridgeProductProducerLease>("contentOperationGate")
@@ -265,7 +267,8 @@ actor BridgeProductSchemeProviderSpy: BridgeProductSchemeProvider {
             controlCompletionCount: controlCompletionCount,
             controlRequests: controlRequests,
             metadataRequestCount: metadataRequestCount,
-            producerFailureCount: producerFailures.count
+            producerFailureCount: producerFailures.count,
+            producerFailureReasons: producerFailures
         )
     }
 
@@ -281,7 +284,8 @@ actor BridgeProductSchemeProviderSpy: BridgeProductSchemeProvider {
                     correlating: request,
                     result: .reviewMarkFileViewed
                 )
-            case .subscriptionOpen, .subscriptionUpdateBatch, .subscriptionCancel,
+            case .subscriptionOpen, .subscriptionCancel,
+                .viewScope, .viewResnapshot,
                 .workerSessionResync:
                 preconditionFailure("The adapter test provider received an unconfigured control request")
             }
@@ -316,11 +320,13 @@ struct BridgeProductSchemeReplyObservation: Equatable, Sendable {
 
 func collectBridgeProductSchemeReply(
     adapter: BridgeProductSchemeAdapter,
-    request: URLRequest
+    request: URLRequest,
+    firstDataReceipt: HeldStep<Void>? = nil
 ) async throws -> BridgeProductSchemeReplyObservation {
     var body = Data()
     var events: [BridgeProductSchemeReplyObservation.Event] = []
     var response: HTTPURLResponse?
+    var hasHeldFirstDataReceipt = false
     for try await result in bridgeProductSchemeReply(adapter: adapter, request: request) {
         switch result {
         case .response(let emittedResponse):
@@ -329,6 +335,10 @@ func collectBridgeProductSchemeReply(
         case .data(let chunk):
             events.append(.data)
             body.append(chunk)
+            if !hasHeldFirstDataReceipt, let firstDataReceipt {
+                hasHeldFirstDataReceipt = true
+                try await firstDataReceipt.arrive(())
+            }
         @unknown default:
             break
         }
@@ -356,7 +366,7 @@ func bridgeProductSchemeReplyWithRoutingTask(
     let (stream, replyContinuation) =
         AsyncThrowingStream<URLSchemeTaskResult, any Error>.makeStream()
     let routingTask = Task {
-        guard let productAdmission = adapter.productAdmissionGate.acquire() else {
+        guard let productAdmission = adapter.acquireAdmission() else {
             replyContinuation.finish(
                 throwing: BridgeProductSchemeAdapterTestSupportError.admissionClosed
             )

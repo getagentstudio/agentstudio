@@ -1,11 +1,75 @@
 import { errors, type Page } from 'playwright';
+import { z } from 'zod';
 
 import { bridgeViewerProductOnlySelectors } from './product-only-real-router-contract.ts';
 
 export interface FreshReviewHydrationWindowSnapshot {
 	readonly hydratedNonSelectedItemIds: readonly string[];
 	readonly scrollTop: number;
+	readonly visibleContentStates: readonly {
+		readonly contentState: string | null;
+		readonly itemId: string;
+	}[];
 	readonly visibleNonSelectedItemIds: readonly string[];
+}
+
+const visibleReviewItemSchema = z
+	.object({
+		contentState: z.string().nullable(),
+		itemId: z.string().min(1),
+		publicationId: z.string().nullable(),
+		renderedLineCount: z.number().int().nonnegative(),
+		sourceCorrelations: z.string().nullable(),
+	})
+	.strict();
+const rawReviewWindowSchema = z
+	.object({
+		scrollTop: z.number().nonnegative(),
+		visibleItems: z.array(visibleReviewItemSchema),
+	})
+	.strict();
+
+type VisibleReviewItem = z.infer<typeof visibleReviewItemSchema>;
+
+export function classifyFreshReviewHydrationWindow(props: {
+	readonly excludedItemIds: readonly string[];
+	readonly scrollTop: number;
+	readonly selectedItemId: string | null;
+	readonly visibleItems: readonly VisibleReviewItem[];
+}): FreshReviewHydrationWindowSnapshot {
+	const excludedItemIds = new Set(props.excludedItemIds);
+	const candidates = props.visibleItems.filter(
+		(item) => item.itemId !== props.selectedItemId && !excludedItemIds.has(item.itemId),
+	);
+	return {
+		hydratedNonSelectedItemIds: candidates.filter(isPaintedReviewItem).map((item) => item.itemId),
+		scrollTop: props.scrollTop,
+		visibleContentStates: candidates.map(({ contentState, itemId }) => ({ contentState, itemId })),
+		visibleNonSelectedItemIds: candidates.map((item) => item.itemId),
+	};
+}
+
+function isPaintedReviewItem(item: VisibleReviewItem): boolean {
+	if (item.renderedLineCount === 0 && item.publicationId === null) return false;
+	if (item.publicationId === null || item.sourceCorrelations === null) return false;
+	try {
+		const correlations: unknown = JSON.parse(item.sourceCorrelations);
+		return (
+			Array.isArray(correlations) &&
+			correlations.length > 0 &&
+			correlations.every(
+				(correlation): boolean =>
+					typeof correlation === 'object' &&
+					correlation !== null &&
+					Reflect.get(correlation, 'itemId') === item.itemId &&
+					Reflect.get(correlation, 'pierreItemId') === item.itemId &&
+					Reflect.get(correlation, 'semanticItemId') === item.itemId &&
+					Reflect.get(correlation, 'publicationId') === item.publicationId,
+			)
+		);
+	} catch {
+		return false;
+	}
 }
 
 export function previousFreshReviewTraversalScrollTop(props: {
@@ -13,23 +77,9 @@ export function previousFreshReviewTraversalScrollTop(props: {
 		readonly clientHeight: number;
 		readonly scrollTop: number;
 	};
-	readonly visibleItems: readonly { readonly hostTopOffset: number }[];
 }): number {
 	const viewportAdvance = Math.max(1, props.codeScroll.clientHeight * 0.8);
-	const firstVisibleHostTopOffset = props.visibleItems.reduce(
-		(minimumTopOffset, item): number =>
-			Number.isFinite(item.hostTopOffset)
-				? Math.min(minimumTopOffset, item.hostTopOffset)
-				: minimumTopOffset,
-		Number.POSITIVE_INFINITY,
-	);
-	const hydratedHostAdvance = Number.isFinite(firstVisibleHostTopOffset)
-		? Math.max(0, -firstVisibleHostTopOffset + props.codeScroll.clientHeight * 0.1)
-		: 0;
-	return Math.max(
-		0,
-		Math.floor(props.codeScroll.scrollTop - Math.max(viewportAdvance, hydratedHostAdvance)),
-	);
+	return Math.max(0, Math.floor(props.codeScroll.scrollTop - viewportAdvance));
 }
 
 export async function waitForFreshReviewHydrationWindowSnapshot(props: {
@@ -40,11 +90,10 @@ export async function waitForFreshReviewHydrationWindowSnapshot(props: {
 }): Promise<FreshReviewHydrationWindowSnapshot | null> {
 	try {
 		const snapshotHandle = await props.page.waitForFunction(
-			({ excludedItemIds, selectedItemId, selectors }) => {
+			({ selectors }) => {
 				const codePanel = document.querySelector(selectors.reviewCodePanel);
 				const codeScrollOwner = document.querySelector(selectors.reviewCodeScrollOwner);
 				if (!(codeScrollOwner instanceof HTMLElement)) return false;
-				const excludedItemIdSet = new Set(excludedItemIds);
 				const codeScrollRect = codeScrollOwner.getBoundingClientRect();
 				const visibleItems = queryAllInOpenShadowRoots(
 					codePanel ?? document,
@@ -71,46 +120,15 @@ export async function waitForFreshReviewHydrationWindowSnapshot(props: {
 					).length;
 					return [{ contentState, itemId, publicationId, renderedLineCount, sourceCorrelations }];
 				});
-				const paintEligibleItems = visibleItems.filter(
-					(item) => item.renderedLineCount > 0 || item.publicationId !== null,
-				);
-				const visibleCandidates = paintEligibleItems.filter(
-					(item) => item.itemId !== selectedItemId && !excludedItemIdSet.has(item.itemId),
-				);
 				if (
 					visibleItems.length === 0 ||
 					visibleItems.some(
 						(item) => item.contentState !== 'hydrated' && item.contentState !== 'windowed',
-					) ||
-					paintEligibleItems.some((item) => {
-						if (item.publicationId === null || item.sourceCorrelations === null) return true;
-						try {
-							const sourceCorrelations: unknown = JSON.parse(item.sourceCorrelations);
-							return (
-								!Array.isArray(sourceCorrelations) ||
-								sourceCorrelations.length === 0 ||
-								sourceCorrelations.some(
-									(sourceCorrelation): boolean =>
-										typeof sourceCorrelation !== 'object' ||
-										sourceCorrelation === null ||
-										Reflect.get(sourceCorrelation, 'itemId') !== item.itemId ||
-										Reflect.get(sourceCorrelation, 'pierreItemId') !== item.itemId ||
-										Reflect.get(sourceCorrelation, 'semanticItemId') !== item.itemId ||
-										Reflect.get(sourceCorrelation, 'publicationId') !== item.publicationId,
-								)
-							);
-						} catch {
-							return true;
-						}
-					})
+					)
 				) {
 					return false;
 				}
-				return {
-					hydratedNonSelectedItemIds: visibleCandidates.map((item) => item.itemId),
-					scrollTop: codeScrollOwner.scrollTop,
-					visibleNonSelectedItemIds: visibleCandidates.map((item) => item.itemId),
-				};
+				return { scrollTop: codeScrollOwner.scrollTop, visibleItems };
 
 				function bridgeReviewHostElement(host: Element, selector: string): Element | null {
 					return host.querySelector(selector) ?? host.shadowRoot?.querySelector(selector) ?? null;
@@ -128,15 +146,18 @@ export async function waitForFreshReviewHydrationWindowSnapshot(props: {
 					return matches;
 				}
 			},
-			{
-				excludedItemIds: props.excludedItemIds,
-				selectedItemId: props.selectedItemId,
-				selectors: bridgeViewerProductOnlySelectors,
-			},
+			{ selectors: bridgeViewerProductOnlySelectors },
 			{ timeout: props.timeoutMilliseconds },
 		);
-		const snapshot = await snapshotHandle.jsonValue();
-		return snapshot === false ? null : snapshot;
+		const rawSnapshot: unknown = await snapshotHandle.jsonValue();
+		if (rawSnapshot === false) return null;
+		const snapshot = rawReviewWindowSchema.parse(rawSnapshot);
+		return classifyFreshReviewHydrationWindow({
+			excludedItemIds: props.excludedItemIds,
+			scrollTop: snapshot.scrollTop,
+			selectedItemId: props.selectedItemId,
+			visibleItems: snapshot.visibleItems,
+		});
 	} catch (error: unknown) {
 		if (error instanceof errors.TimeoutError) return null;
 		throw error;

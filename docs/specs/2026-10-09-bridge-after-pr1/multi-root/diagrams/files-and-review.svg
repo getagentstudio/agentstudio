@@ -1,0 +1,37 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1120" height="700" viewBox="0 0 1120 700">
+<defs><marker id="arrow" markerWidth="9" markerHeight="9" refX="8" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8" fill="none" stroke="#52657c" stroke-width="1.4"/></marker></defs>
+<rect width="1120" height="700" fill="#fff"/>
+<text x="32" y="39" font-family="Arial, sans-serif" font-size="25" font-weight="700" fill="#243449">One Bridge, independent Files and Review</text>
+<text x="32" y="69" font-family="Arial, sans-serif" font-size="16" font-weight="400" fill="#243449">Example: the agent uses backend/main but the feature spans backend and frontend.</text>
+<rect x="32" y="106" width="300" height="106" rx="8" fill="#f4f8fd" stroke="#2465a4" stroke-width="1.5"/>
+<text x="48" y="134" font-family="Arial, sans-serif" font-size="18" font-weight="700" fill="#2465a4">Terminal A</text>
+<text x="48" y="161" font-family="Arial, sans-serif" font-size="16" font-weight="400" fill="#243449">CWD: backend/main</text>
+<text x="48" y="185" font-family="Arial, sans-serif" font-size="16" font-weight="400" fill="#243449">Keeps running in its own location</text>
+<rect x="420" y="106" width="660" height="106" rx="8" fill="#f4f8fd" stroke="#2465a4" stroke-width="1.5"/>
+<text x="436" y="134" font-family="Arial, sans-serif" font-size="18" font-weight="700" fill="#2465a4">Stable associated Bridge</text>
+<text x="436" y="161" font-family="Arial, sans-serif" font-size="16" font-weight="400" fill="#243449">Belongs to terminal A, even when its viewer is recreated</text>
+<text x="436" y="185" font-family="Arial, sans-serif" font-size="16" font-weight="400" fill="#243449">Current known CWD member is injected and protected; selections stay independent</text>
+<polyline points="332,156 420,156" fill="none" stroke="#52657c" stroke-width="1.8" marker-end="url(#arrow)"/>
+<text x="342" y="143" font-family="Arial, sans-serif" font-size="15" font-weight="400" fill="#243449">targets</text>
+<rect x="32" y="281" width="500" height="254" rx="8" fill="#f4f8fd" stroke="#2465a4" stroke-width="1.5"/>
+<text x="48" y="309" font-family="Arial, sans-serif" font-size="18" font-weight="700" fill="#2465a4">FILES — read and annotate</text>
+<text x="48" y="336" font-family="Arial, sans-serif" font-size="16" font-weight="400" fill="#243449">All member trees together:</text>
+<text x="48" y="360" font-family="Arial, sans-serif" font-size="16" font-weight="400" fill="#243449">  backend/main (current CWD; protected)</text>
+<text x="48" y="384" font-family="Arial, sans-serif" font-size="16" font-weight="400" fill="#243449">  backend/feature + frontend/feature</text>
+<text x="48" y="408" font-family="Arial, sans-serif" font-size="16" font-weight="400" fill="#243449">Loose files: /tmp/feature-notes.md</text>
+<text x="48" y="432" font-family="Arial, sans-serif" font-size="16" font-weight="400" fill="#243449">Search the whole collection; open any result.</text>
+<text x="48" y="456" font-family="Arial, sans-serif" font-size="16" font-weight="400" fill="#243449">No worktrees left: loose Files, empty Review.</text>
+<rect x="580" y="281" width="500" height="254" rx="8" fill="#f3f9f6" stroke="#26735e" stroke-width="1.5"/>
+<text x="596" y="309" font-family="Arial, sans-serif" font-size="18" font-weight="700" fill="#26735e">REVIEW — Git changes</text>
+<text x="596" y="336" font-family="Arial, sans-serif" font-size="16" font-weight="400" fill="#243449">Review selects from the same member collection</text>
+<text x="596" y="360" font-family="Arial, sans-serif" font-size="16" font-weight="400" fill="#243449">Selected Review: frontend/feature</text>
+<text x="596" y="384" font-family="Arial, sans-serif" font-size="16" font-weight="400" fill="#243449">Comparison: frontend’s retained baseline</text>
+<text x="596" y="408" font-family="Arial, sans-serif" font-size="16" font-weight="400" fill="#243449">Show its complete changed-file tree and diff.</text>
+<text x="596" y="432" font-family="Arial, sans-serif" font-size="16" font-weight="400" fill="#243449">Select backend → show backend’s comparison.</text>
+<text x="596" y="456" font-family="Arial, sans-serif" font-size="16" font-weight="400" fill="#243449">No combined cross-repository diff.</text>
+<polyline points="610,212 610,246 282,246 282,281" fill="none" stroke="#52657c" stroke-width="1.8" marker-end="url(#arrow)"/>
+<polyline points="890,212 890,281" fill="none" stroke="#52657c" stroke-width="1.8" marker-end="url(#arrow)"/>
+<rect x="32" y="578" width="1048" height="86" rx="8" fill="#f7f8fa" stroke="#243449" stroke-width="1.5"/>
+<text x="48" y="606" font-family="Arial, sans-serif" font-size="18" font-weight="700" fill="#243449">Selections stay separate</text>
+<text x="48" y="633" font-family="Arial, sans-serif" font-size="16" font-weight="400" fill="#243449">Opening notes does not change Review. Selecting Review does not change terminal CWD or the Files selection.</text>
+</svg>

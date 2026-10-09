@@ -11,17 +11,13 @@ extension WebKitSerializedTests.BridgePaneControllerTests {
         // Arrange
         let comparisonGate = BridgeComparisonGate()
         let fixture = try await makeRefreshAdmissionIntegrationFixture(comparisonGate: comparisonGate)
+        await fixture.reviewProvider.throwCancellationWhenComparisonTaskIsCancelled()
         // fire-and-forget: the test asserts admission state; the presentation transition handle is not its claim
         _ = fixture.controller.applyBridgePaneActivity(.foreground)
-        let initialLoadStarted = await BridgeProductWebKitCarrierTestSupport.waitUntil(timeout: .seconds(2)) {
-            await comparisonGate.hasStartedComparisonCount(1)
-        }
-        guard initialLoadStarted else {
-            Issue.record("Explicit initial Review intake did not reach the provider")
-            await comparisonGate.releaseAll()
-            await fixture.finish()
-            return
-        }
+        await comparisonGate.waitForStartedComparisonCount(1)
+        let initialReviewTask = try #require(fixture.controller.activeReviewRefreshTask)
+        let predecessorPhysicalTasks = fixture.controller.reviewConstructionProgress.physicalTaskHandles()
+        #expect(predecessorPhysicalTasks.count == 1)
         #expect(fixture.controller.paneState.diff.status == .loading)
         #expect(fixture.controller.paneState.diff.packageMetadata == nil)
 
@@ -35,17 +31,25 @@ extension WebKitSerializedTests.BridgePaneControllerTests {
                 )
             )
         )
-        let successorStarted = await BridgeProductWebKitCarrierTestSupport.waitUntil(timeout: .seconds(2)) {
-            await comparisonGate.hasStartedComparisonCount(2)
-        }
-        #expect(successorStarted, "A cancelled initial load must not consume its successor as a no-op")
+        await comparisonGate.waitForStartedComparisonCount(2)
+        // C16 owns physical construction lifetime separately from the controller's
+        // logically settled refresh task. Both held captures remain accounted for.
+        await initialReviewTask.value
+        #expect(fixture.controller.reviewConstructionProgress.physicalTaskHandles().count == 2)
+        await comparisonGate.releaseFirst()
+        for task in predecessorPhysicalTasks { await task.value }
+        let successorPhysicalTasks = fixture.controller.reviewConstructionProgress.physicalTaskHandles()
+        #expect(successorPhysicalTasks.count == 1)
+        #expect(fixture.controller.retiringReviewRefreshTaskById.isEmpty)
+        #expect(fixture.controller.paneState.diff.status == .loading)
+        #expect(
+            fixture.controller.refreshAdmissionCoordinator.productPresentationSnapshot.reviewComparison?
+                .attempt != .unavailable(failureKind: "loadFailed:package:cancelled", retryable: true)
+        )
         await comparisonGate.releaseAll()
-        let predecessorDrained = await BridgeProductWebKitCarrierTestSupport.waitUntil(timeout: .seconds(2)) {
-            fixture.controller.retiringReviewRefreshTaskById.isEmpty
-        }
-        #expect(predecessorDrained)
         await fixture.controller.activeReviewRefreshTask?.value
         await waitForActiveReviewRefreshTaskToFinish(fixture.controller)
+        for task in successorPhysicalTasks { await task.value }
 
         // Assert
         #expect(await fixture.reviewProvider.recordedComparisonRequestsCount() == 2)
@@ -53,6 +57,8 @@ extension WebKitSerializedTests.BridgePaneControllerTests {
         #expect(fixture.controller.paneState.diff.status == .ready)
         #expect(fixture.controller.paneState.diff.packageMetadata?.orderedItemIds == ["item-initial"])
         #expect(fixture.controller.refreshAdmissionCoordinator.diagnosticSnapshot.dirtyFact == nil)
+        #expect(fixture.controller.reviewConstructionProgress.activeWaitCount() == 0)
+        #expect(fixture.controller.reviewConstructionProgress.physicalTaskHandles().isEmpty)
         await fixture.finish()
     }
 }

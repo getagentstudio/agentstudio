@@ -221,7 +221,46 @@ package enum AppPolicies {
     }
 
     package enum Bridge {
+        /// Settled results retain their slots until the worker acknowledges them.
+        package static let maximumOrdinaryProductOperations: Int = 32
+        package static let maximumHumanWaitProductOperations: Int = 2
+        /// Reserved at mutation admission so unknown outcomes remain observable
+        /// without consuming ordinary result slots indefinitely.
+        package static let maximumProductMutationWatches: Int = 64
+        package static let productMutationObservationDeadline: Duration = .seconds(4)
+        package static let productRetirementQuiescenceDeadline: Duration = .seconds(4)
+        package static let productOperationSettlementDeadline: Duration = .seconds(4)
+        /// The worker allows the native settlement deadline to fire first.
+        package static let productWorkerSettlementDeadline: Duration = .seconds(5)
+        /// Bounds native delivery into a page independently of a cooperative WebKit reply.
+        package static let productBootstrapDeliveryProgressDeadline: Duration = .seconds(5)
+        package static let reviewBuildProgressDeadline: Duration = .seconds(5)
+        /// A finite content read must make response or verified body progress.
+        package static let contentProgressDeadline: Duration = .seconds(5)
+        /// A page content receipt must be acknowledged independently of body progress.
+        package static let productContentAcknowledgementDeadline: Duration = .seconds(5)
+        /// Available through document-start configuration before any product session response.
+        package static let productPageBootstrapDeadline: Duration = .seconds(5)
+        package static let productPageReadyAcknowledgementDeadline: Duration = .seconds(5)
+        package static let productAdmissionRetryCount: Int = 2
+        /// N3 bounds in-transit metadata parts independently of the producer queue.
+        package static let productViewCreditParts: Int = 8
+        package static let productViewCreditBytes: Int = 512 * 1024
+        package static let productViewMaximumDirtyKeys: Int = 4096
+        package static let productViewAcknowledgementDeadline: Duration = .seconds(4)
+        /// An incomplete W4 side bank must make begin/part/complete progress.
+        package static let productViewBatchProgressDeadline: Duration = .seconds(5)
+        /// Keeps an open WebKit metadata response moving after its last product frame.
+        package static let streamKeepaliveInterval: Duration = .milliseconds(350)
+        package static let productViewMaximumConsecutiveResnapshots: Int = 3
+        /// PR1 interim: metadata budget for issued File descriptors that are no
+        /// longer newest. PR2's installed-selection lease replaces this cache.
+        package static let fileRetainedDescriptorMaximumCount: Int = 128
+        package static let fileRetainedDescriptorMaximumEncodedBytes: Int = 256 * 1024
         package static let fileRefreshMaximumAutomaticRetryCount: Int = 1
+        package static let fileSurfaceMaximumUnchangedInputSupersessions: Int = 1
+        /// Caps automatic same-basis restarts after uncertified File interruptions.
+        package static let fileSurfaceInterruptionRestartLimit: Int = 3
         /// Observability-only custody for pairing Bridge lifecycle starts and
         /// terminals. This never controls product work or retry behavior.
         package static let operationLifecycleTerminalWindow: Duration = .seconds(30)

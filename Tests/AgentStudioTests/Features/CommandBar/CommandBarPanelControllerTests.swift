@@ -8,10 +8,8 @@ import Testing
 @testable import AgentStudioCore
 
 @MainActor
-func makeCommandBarTestOcticonLoader(from testFilePath: String = #filePath) -> OcticonLoader {
-    OcticonLoader(
-        resourceRootURL: testAgentStudioResourceRootURL(from: testFilePath)
-    )
+func makeCommandBarTestOcticonLoader() -> OcticonLoader {
+    OcticonLoader(resourceBundle: testSourceCatalogOcticonBundle())
 }
 
 private final class CommandBarInteractionTestClock: @unchecked Sendable {

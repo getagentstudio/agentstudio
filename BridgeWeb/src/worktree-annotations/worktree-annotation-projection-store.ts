@@ -542,12 +542,18 @@ function reconcileCommandConfirmedReceipts(props: {
 			props.commandConfirmedMessagesById.delete(messageId);
 			continue;
 		}
+		if (sessionRevision > receipt.message.sessionRevision) {
+			// Complete content at a newer session revision already includes this commit
+			// and whatever changed it since, possibly from another surface or pane.
+			props.commandConfirmedMessagesById.delete(messageId);
+			continue;
+		}
 		result = 'contradictory';
 	}
 	for (const [messageId, removal] of props.commandConfirmedRemovalsByMessageId) {
 		const sessionRevision = props.completeContentRevisionBySessionId.get(removal.sessionId);
 		if (sessionRevision === undefined || sessionRevision < removal.sessionRevision) continue;
-		if (!projectedMessageById.has(messageId)) {
+		if (!projectedMessageById.has(messageId) || sessionRevision > removal.sessionRevision) {
 			props.commandConfirmedRemovalsByMessageId.delete(messageId);
 			continue;
 		}

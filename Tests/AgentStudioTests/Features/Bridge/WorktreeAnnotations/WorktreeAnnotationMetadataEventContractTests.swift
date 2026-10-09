@@ -4,239 +4,144 @@ import Testing
 
 @testable import AgentStudioBridge
 
-@Suite("Worktree annotation metadata event contracts")
+@Suite("Worktree annotation view contracts")
 struct WorktreeAnnotationMetadataEventContractTests {
-    @Test("catalog event round trips inside the product metadata frame")
-    func catalogEventRoundTripsInsideProductMetadataFrame() throws {
-        // Arrange
-        let authority = try BridgeProductWorktreeAnnotationEvent.Authority(
-            worktreeID: "worktree-1",
-            applicationSourceGeneration: 7
-        )
-        let sessionID = WorktreeAnnotationSessionID(rawValue: UUIDv7.generate())
-        let threadID = WorktreeAnnotationThreadID(rawValue: UUIDv7.generate())
-        let event = BridgeProductWorktreeAnnotationEvent.catalog(
-            try .init(
-                authority: authority,
-                transfer: .window(
-                    transferID: UUIDv7.generate().uuidString.lowercased(),
-                    catalogRevision: 7,
-                    windowOrdinal: 0,
-                    entries: [
-                        .session(try .init(sessionID: sessionID, semanticRevision: 0)),
-                        .thread(
-                            try .init(
-                                threadID: threadID,
-                                sessionID: sessionID,
-                                scope: .wholeFile,
-                                createdOrdinal: 0
-                            )
-                        ),
-                    ]
-                )
-            )
-        )
-        let frame = try BridgeProductMetadataFrame.subscriptionData(
-            stream: .init(
-                metadataStreamId: "metadata-stream-annotation-catalog",
-                paneSessionId: "pane-session-annotation-catalog",
-                wireVersion: BridgeProductWireContract.version,
-                workerInstanceId: "worker-annotation-catalog"
-            ),
-            streamSequence: 1,
-            subscription: .init(
-                cursor: nil,
-                interestRevision: 0,
-                interestSha256: String(repeating: "a", count: 64),
-                sourceGeneration: 7,
-                subscriptionId: "file-annotations-catalog",
-                subscriptionKind: .fileAnnotations,
-                workerDerivationEpoch: 1
-            ),
-            subscriptionSequence: 1,
-            data: .fileAnnotations(event)
-        )
-        let encoded = try BridgeProductMetadataFrameCodec.encode(frame)
-        let decoder = try BridgeProductMetadataFrameDecoder()
-
-        // Act
-        let decoded = try decoder.append(encoded)
-        try decoder.finish()
-
-        // Assert
-        #expect(decoded == [frame])
-    }
-
-    @Test("catalog session and control events round trip through the strict wire contract")
-    func eventVariantsRoundTrip() throws {
-        // Arrange
-        let authority = try BridgeProductWorktreeAnnotationEvent.Authority(
-            worktreeID: "worktree-1",
-            applicationSourceGeneration: 7
-        )
+    @Test("a certified Comment catalog round trips as one scoped W4 batch")
+    func commentCatalogBatchRoundTrips() throws {
         let sessionID = WorktreeAnnotationSessionID(rawValue: UUIDv7.generate())
         let threadID = WorktreeAnnotationThreadID(rawValue: UUIDv7.generate())
         let messageID = WorktreeAnnotationMessageID(rawValue: UUIDv7.generate())
-        let transferID = UUIDv7.generate().uuidString.lowercased()
-        let events: [BridgeProductWorktreeAnnotationEvent] = [
-            .catalog(
+        let entries: [WorktreeAnnotationCatalogEntry] = [
+            .session(try .init(sessionID: sessionID, semanticRevision: 3)),
+            .thread(
                 try .init(
-                    authority: authority,
-                    transfer: .window(
-                        transferID: transferID,
-                        catalogRevision: 7,
-                        windowOrdinal: 0,
-                        entries: [
-                            .session(try .init(sessionID: sessionID, semanticRevision: 0)),
-                            .thread(
-                                try .init(
-                                    threadID: threadID,
-                                    sessionID: sessionID,
-                                    scope: .wholeFile,
-                                    createdOrdinal: 0
-                                )
-                            ),
-                            .message(
-                                try .init(messageID: messageID, threadID: threadID, ordinal: 0)
-                            ),
-                        ]
-                    )
+                    threadID: threadID,
+                    sessionID: sessionID,
+                    scope: .wholeFile,
+                    createdOrdinal: 0
                 )
             ),
-            .sessionChanged(
-                try .init(authority: authority, sessionID: sessionID, semanticRevision: 3)
-            ),
-            .controlChanged(.init(authority: authority, reason: .recovery)),
+            .message(try .init(messageID: messageID, threadID: threadID, ordinal: 0)),
         ]
-
-        // Act / Assert
-        for event in events {
-            let encoded = try JSONEncoder.bridgeProductSorted.encode(event)
-            #expect(
-                try decodeAnnotationMetadataEvent(from: encoded) == event
-            )
-            #expect(event.sourceGeneration == 7)
-        }
-    }
-
-    @Test("event entry and authority unions reject unknown or mismatched schema")
-    func strictSchemasRejectUnknownAndMismatchedMembers() throws {
-        // Arrange
-        let sessionID = UUIDv7.generate().uuidString.lowercased()
-        let threadID = UUIDv7.generate().uuidString.lowercased()
-        let transferID = UUIDv7.generate().uuidString.lowercased()
-        let invalidBodies = [
-            """
-            {"authority":{"applicationSourceGeneration":7,"worktreeId":"worktree-1"},"kind":"annotation.unknown","reason":"recovery"}
-            """,
-            """
-            {"authority":{"applicationSourceGeneration":7,"unknown":true,"worktreeId":"worktree-1"},"kind":"annotation.controlChanged","reason":"recovery"}
-            """,
-            """
-            {"authority":{"applicationSourceGeneration":7,"worktreeId":"worktree-1"},"kind":"annotation.controlChanged","reason":"unsupported"}
-            """,
-            """
-            {"authority":{"applicationSourceGeneration":7,"worktreeId":"worktree-1"},"kind":"annotation.sessionChanged","semanticRevision":3,"sessionId":"\(sessionID)","unknown":true}
-            """,
-            """
-            {"authority":{"applicationSourceGeneration":7,"worktreeId":"worktree-1"},"kind":"annotation.catalog","transfer":{"catalogRevision":7,"entries":[{"createdOrdinal":0,"kind":"thread","scope":"located","sessionId":"\(sessionID)","threadId":"\(threadID)","unknown":true}],"kind":"catalog.window","transferId":"\(transferID)","windowOrdinal":0}}
-            """,
-            """
-            {"authority":{"applicationSourceGeneration":7,"worktreeId":"worktree-1"},"kind":"annotation.catalog","transfer":{"catalogRevision":7,"entries":[{"createdOrdinal":0,"kind":"thread","scope":"unsupported","sessionId":"\(sessionID)","threadId":"\(threadID)"}],"kind":"catalog.window","transferId":"\(transferID)","windowOrdinal":0}}
-            """,
-            """
-            {"authority":{"applicationSourceGeneration":7,"worktreeId":"worktree-1"},"kind":"annotation.catalog","transfer":{"catalogRevision":8,"expectedEntryCount":0,"kind":"catalog.begin","transferId":"\(transferID)"}}
-            """,
-        ]
-
-        // Act / Assert
-        for body in invalidBodies {
-            #expect(throws: (any Error).self) {
-                _ = try decodeAnnotationMetadataEvent(from: Data(body.utf8))
-            }
-        }
-    }
-
-    @Test("event numeric and identity fields enforce application wire ranges")
-    func numericAndIdentityFieldsEnforceWireRanges() throws {
-        // Arrange
-        let sessionID = UUIDv7.generate().uuidString.lowercased()
-        let threadID = UUIDv7.generate().uuidString.lowercased()
-        let messageID = UUIDv7.generate().uuidString.lowercased()
-        let transferID = UUIDv7.generate().uuidString.lowercased()
-        let excessiveInteger = BridgeProductWireContract.maximumSafeInteger + 1
-        let invalidBodies = [
-            """
-            {"authority":{"applicationSourceGeneration":-1,"worktreeId":"worktree-1"},"kind":"annotation.controlChanged","reason":"discovery"}
-            """,
-            """
-            {"authority":{"applicationSourceGeneration":\(excessiveInteger),"worktreeId":"worktree-1"},"kind":"annotation.controlChanged","reason":"discovery"}
-            """,
-            """
-            {"authority":{"applicationSourceGeneration":1,"worktreeId":""},"kind":"annotation.controlChanged","reason":"discovery"}
-            """,
-            """
-            {"authority":{"applicationSourceGeneration":1,"worktreeId":"worktree-1"},"kind":"annotation.sessionChanged","semanticRevision":0,"sessionId":"\(sessionID)"}
-            """,
-            """
-            {"authority":{"applicationSourceGeneration":1,"worktreeId":"worktree-1"},"kind":"annotation.sessionChanged","semanticRevision":\(excessiveInteger),"sessionId":"\(sessionID)"}
-            """,
-            """
-            {"authority":{"applicationSourceGeneration":1,"worktreeId":"worktree-1"},"kind":"annotation.catalog","transfer":{"catalogRevision":1,"entries":[{"kind":"session","semanticRevision":-1,"sessionId":"\(sessionID)"}],"kind":"catalog.window","transferId":"\(transferID)","windowOrdinal":0}}
-            """,
-            """
-            {"authority":{"applicationSourceGeneration":1,"worktreeId":"worktree-1"},"kind":"annotation.catalog","transfer":{"catalogRevision":1,"entries":[{"createdOrdinal":-1,"kind":"thread","scope":"located","sessionId":"\(sessionID)","threadId":"\(threadID)"}],"kind":"catalog.window","transferId":"\(transferID)","windowOrdinal":0}}
-            """,
-            """
-            {"authority":{"applicationSourceGeneration":1,"worktreeId":"worktree-1"},"kind":"annotation.catalog","transfer":{"catalogRevision":1,"entries":[{"kind":"message","messageId":"\(messageID)","ordinal":-1,"threadId":"\(threadID)"}],"kind":"catalog.window","transferId":"\(transferID)","windowOrdinal":0}}
-            """,
-            """
-            {"authority":{"applicationSourceGeneration":1,"worktreeId":"worktree-1"},"kind":"annotation.catalog","transfer":{"catalogRevision":1,"entries":[{"kind":"session","semanticRevision":\(excessiveInteger),"sessionId":"\(sessionID)"}],"kind":"catalog.window","transferId":"\(transferID)","windowOrdinal":0}}
-            """,
-            """
-            {"authority":{"applicationSourceGeneration":1,"worktreeId":"worktree-1"},"kind":"annotation.catalog","transfer":{"catalogRevision":1,"entries":[{"createdOrdinal":\(excessiveInteger),"kind":"thread","scope":"located","sessionId":"\(sessionID)","threadId":"\(threadID)"}],"kind":"catalog.window","transferId":"\(transferID)","windowOrdinal":0}}
-            """,
-            """
-            {"authority":{"applicationSourceGeneration":1,"worktreeId":"worktree-1"},"kind":"annotation.catalog","transfer":{"catalogRevision":1,"entries":[{"kind":"message","messageId":"\(messageID)","ordinal":\(excessiveInteger),"threadId":"\(threadID)"}],"kind":"catalog.window","transferId":"\(transferID)","windowOrdinal":0}}
-            """,
-        ]
-
-        // Act / Assert
-        for body in invalidBodies {
-            #expect(throws: (any Error).self) {
-                _ = try decodeAnnotationMetadataEvent(from: Data(body.utf8))
-            }
-        }
-    }
-
-    @Test("registered annotation event generation must match the generic frame")
-    func registryRejectsGenerationMismatch() throws {
-        // Arrange
-        let registration = AnyBridgeProductMetadataApplicationProtocol(
-            BridgeProductFileAnnotationsMetadataApplication.self
-        )
-        let event = BridgeProductWorktreeAnnotationEvent.controlChanged(
+        let records = try entries.map { try BridgeProductCommentCatalogRecord(entry: $0, revision: 7) }
+        let scope: BridgeProductJSONValue = .object([
+            "kind": .string("comment"),
+            "sessionIds": .array([.string(sessionID.rawValue.uuidString.lowercased())]),
+            "worktreeId": .string("worktree-1"),
+        ])
+        let sealed = try BridgeProductCommentViewBatchFactory.seal(
             .init(
-                authority: try .init(
-                    worktreeID: "worktree-1",
-                    applicationSourceGeneration: 7
+                viewDomain: .init(
+                    viewId: "file-annotations-catalog",
+                    domain: .singleDomain,
+                    incarnation: "comment-incarnation-1"
                 ),
-                reason: .discovery
+                scopeRevision: 2,
+                scope: scope,
+                firstDeliverySequence: 1,
+                mode: .snapshot,
+                batch: .init(
+                    handle: "comment-handle-1",
+                    scopeRevision: 2,
+                    baseRevision: 0,
+                    targetRevision: 7,
+                    puts: records,
+                    deletes: []
+                ),
+                subscriptionKind: .fileAnnotations
             )
         )
-        let encoded = try JSONEncoder.bridgeProductSorted.encode(event)
+        let stream = BridgeProductMetadataStreamCorrelation(
+            metadataStreamId: "metadata-stream-annotation-catalog",
+            paneSessionId: "pane-session-annotation-catalog",
+            wireVersion: BridgeProductWireContract.version,
+            workerInstanceId: "worker-annotation-catalog"
+        )
+        let decoder = try BridgeProductMetadataFrameDecoder()
+        let frames = try (0..<sealed.frameCount).map { ordinal in
+            try sealed.frame(
+                atOrdinal: ordinal, stream: stream, streamSequence: ordinal + 1, snapshotCause: .newerInput)
+        }
+        for frame in frames {
+            #expect(try decoder.append(BridgeProductMetadataFrameCodec.encode(frame)) == [frame])
+        }
+        try decoder.finish()
 
-        // Act / Assert
-        #expect(try registration.validateEvent(encoded, frameSourceGeneration: 7) == encoded)
-        #expect(throws: BridgeProductMetadataApplicationRegistryError.sourceGenerationMismatch) {
-            _ = try registration.validateEvent(encoded, frameSourceGeneration: 8)
+        #expect(
+            frames.map(\.kind) == [
+                "subscription.batchBegin",
+                "subscription.batchPart",
+                "subscription.batchPart",
+                "subscription.batchPart",
+                "subscription.batchComplete",
+            ])
+        guard case .batch(.begin(let begin)) = frames.first,
+            case .batch(.complete(let complete)) = frames.last
+        else {
+            Issue.record("Expected a certified Comment batch boundary")
+            return
+        }
+        #expect(begin.scope == scope)
+        #expect(complete.coveredScope == scope)
+        #expect(begin.targetRevision == 7)
+        #expect(
+            Set(
+                sealed.parts.compactMap { part -> String? in
+                    guard case .put(let key, _, _) = part else { return nil }
+                    return key
+                }) == Set(records.map(\.recordKey)))
+    }
+
+    @Test("E4 Comment scope admits exact session subjects and rejects unknown or mismatched shapes")
+    func commentScopeStrictlyValidatesSubjects() throws {
+        let sessionID = UUIDv7.generate().uuidString.lowercased()
+        let valid = commentScopeRequestJSON(sessionIDs: [sessionID])
+        let request = try BridgeProductStrictJSON.decode(
+            BridgeProductViewScopeRequest.self,
+            from: Data(valid.utf8)
+        )
+        #expect(request.subscriptionKind == .fileAnnotations)
+        #expect(request.scopeRevision == 1)
+        #expect(
+            request.scope
+                == .object([
+                    "kind": .string("comment"),
+                    "sessionIds": .array([.string(sessionID)]),
+                    "worktreeId": .string("worktree-1"),
+                ]))
+
+        let invalidRequests = [
+            commentScopeRequestJSON(sessionIDs: [sessionID, sessionID]),
+            commentScopeRequestJSON(sessionIDs: [sessionID], worktreeID: ""),
+            commentScopeRequestJSON(sessionIDs: [sessionID], extraScopeKey: true),
+            commentScopeRequestJSON(sessionIDs: [sessionID], subscriptionKind: "file.metadata"),
+        ]
+        for invalid in invalidRequests {
+            #expect(throws: (any Error).self) {
+                _ = try BridgeProductStrictJSON.decode(
+                    BridgeProductViewScopeRequest.self,
+                    from: Data(invalid.utf8)
+                )
+            }
         }
     }
 }
 
-private func decodeAnnotationMetadataEvent(
-    from data: Data
-) throws -> BridgeProductWorktreeAnnotationEvent {
-    try BridgeProductStrictJSON.validate(data)
-    return try JSONDecoder().decode(BridgeProductWorktreeAnnotationEvent.self, from: data)
+private func commentScopeRequestJSON(
+    sessionIDs: [String],
+    worktreeID: String = "worktree-1",
+    extraScopeKey: Bool = false,
+    subscriptionKind: String = "file.annotations"
+) -> String {
+    let subjects = sessionIDs.map { "\"\($0)\"" }.joined(separator: ",")
+    let extra = extraScopeKey ? ",\"unknown\":true" : ""
+    return """
+        {"kind":"subscription.setScope","wireVersion":2,"paneSessionId":"pane-session-1",\
+        "workerInstanceId":"worker-instance-1","requestId":"comment-scope-1",\
+        "requestSequence":1,"subscriptionId":"file-annotations-catalog",\
+        "subscriptionKind":"\(subscriptionKind)","domain":"default",\
+        "handle":"comment-handle-1","incarnation":"comment-incarnation-1",\
+        "scopeRevision":1,"scope":{"kind":"comment","worktreeId":"\(worktreeID)",\
+        "sessionIds":[\(subjects)]\(extra)}}
+        """
 }

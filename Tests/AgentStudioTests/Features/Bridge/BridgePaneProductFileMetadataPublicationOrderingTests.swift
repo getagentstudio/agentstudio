@@ -16,16 +16,18 @@ struct FileMetadataPublicationOrderingTests {
             subscription: openSnapshot,
             productAdmission: fixture.productAdmission.context
         ) { _ in }
-        let updatedSnapshot = try fixture.updatedSnapshot(from: openSnapshot)
+        let updatedSnapshot = try fixture.viewDemand()
         let observation = ImmediateFileContentReadPlanObservation()
 
         // Act
-        try await source.update(
-            subscription: updatedSnapshot,
-            productAdmission: fixture.productAdmission.context
+        try await source.applyViewDemand(
+            subscriptionId: openSnapshot.subscriptionId,
+            demand: updatedSnapshot,
+            productAdmission: fixture.productAdmission.context,
+            forceRecapture: false
         ) { event in
             guard case .descriptorReady(let ready) = event,
-                case .available(let descriptor) = ready.payload.availability
+                case .available(let descriptor) = ready.availability
             else { return }
             let request = try fixture.contentRequest(descriptor: descriptor)
             await observation.record(
@@ -40,8 +42,8 @@ struct FileMetadataPublicationOrderingTests {
         #expect(await observation.wasImmediatelyAuthorized == true)
     }
 
-    @Test("failed descriptor publication revokes its content read plan")
-    func failedDescriptorPublicationRevokesContentReadPlan() async throws {
+    @Test("failed descriptor emission keeps the index-accepted content read plan")
+    func failedDescriptorEmissionKeepsAcceptedContentReadPlan() async throws {
         // Arrange
         let fixture = try ProductFileSourceFixture(fileCount: 1)
         defer { fixture.remove() }
@@ -51,17 +53,19 @@ struct FileMetadataPublicationOrderingTests {
             subscription: openSnapshot,
             productAdmission: fixture.productAdmission.context
         ) { _ in }
-        let updatedSnapshot = try fixture.updatedSnapshot(from: openSnapshot)
+        let updatedSnapshot = try fixture.viewDemand()
         let observation = ImmediateFileContentReadPlanObservation()
 
         // Act
         do {
-            try await source.update(
-                subscription: updatedSnapshot,
-                productAdmission: fixture.productAdmission.context
+            try await source.applyViewDemand(
+                subscriptionId: openSnapshot.subscriptionId,
+                demand: updatedSnapshot,
+                productAdmission: fixture.productAdmission.context,
+                forceRecapture: false
             ) { event in
                 guard case .descriptorReady(let ready) = event,
-                    case .available(let descriptor) = ready.payload.availability
+                    case .available(let descriptor) = ready.availability
                 else { return }
                 await observation.record(descriptor)
                 throw DescriptorPublicationTestError.expectedEmissionFailure
@@ -78,11 +82,11 @@ struct FileMetadataPublicationOrderingTests {
             for: request,
             productAdmission: fixture.productAdmission.context
         )
-        #expect(readPlan == nil)
+        #expect(readPlan != nil)
     }
 
-    @Test("failed replacement publication restores the previously authorized descriptor")
-    func failedReplacementPublicationRestoresPreviousDescriptor() async throws {
+    @Test("failed replacement emission keeps the old lease and newly accepted descriptor")
+    func failedReplacementEmissionKeepsIssuedDescriptors() async throws {
         // Arrange
         let fixture = try ProductFileSourceFixture(fileCount: 1)
         defer { fixture.remove() }
@@ -92,31 +96,35 @@ struct FileMetadataPublicationOrderingTests {
             subscription: openSnapshot,
             productAdmission: fixture.productAdmission.context
         ) { _ in }
-        let firstSnapshot = try fixture.updatedSnapshot(from: openSnapshot)
+        let firstSnapshot = try fixture.viewDemand()
         let firstObservation = ImmediateFileContentReadPlanObservation()
-        try await source.update(
-            subscription: firstSnapshot,
-            productAdmission: fixture.productAdmission.context
+        try await source.applyViewDemand(
+            subscriptionId: openSnapshot.subscriptionId,
+            demand: firstSnapshot,
+            productAdmission: fixture.productAdmission.context,
+            forceRecapture: false
         ) { event in
             guard case .descriptorReady(let ready) = event,
-                case .available(let descriptor) = ready.payload.availability
+                case .available(let descriptor) = ready.availability
             else { return }
             await firstObservation.record(descriptor)
         }
         let firstDescriptor = try #require(await firstObservation.descriptor)
         let firstRequest = try fixture.contentRequest(descriptor: firstDescriptor)
         try Data("replacement\n".utf8).write(to: fixture.demandedFileURL)
-        let replacementSnapshot = advancedSnapshot(from: firstSnapshot, revision: 2)
+        let replacementSnapshot = advancedDemand(from: firstSnapshot, revision: 2)
         let replacementObservation = ImmediateFileContentReadPlanObservation()
 
         // Act
         do {
-            try await source.update(
-                subscription: replacementSnapshot,
-                productAdmission: fixture.productAdmission.context
+            try await source.applyViewDemand(
+                subscriptionId: openSnapshot.subscriptionId,
+                demand: replacementSnapshot,
+                productAdmission: fixture.productAdmission.context,
+                forceRecapture: false
             ) { event in
                 guard case .descriptorReady(let ready) = event,
-                    case .available(let descriptor) = ready.payload.availability
+                    case .available(let descriptor) = ready.availability
                 else { return }
                 await replacementObservation.record(descriptor)
                 throw DescriptorPublicationTestError.expectedEmissionFailure
@@ -139,7 +147,7 @@ struct FileMetadataPublicationOrderingTests {
             await source.contentReadPlan(
                 for: replacementRequest,
                 productAdmission: fixture.productAdmission.context
-            ) == nil
+            ) != nil
         )
     }
 
@@ -154,16 +162,18 @@ struct FileMetadataPublicationOrderingTests {
             subscription: openSnapshot,
             productAdmission: fixture.productAdmission.context
         ) { _ in }
-        let olderSnapshot = try fixture.updatedSnapshot(from: openSnapshot)
+        let olderSnapshot = try fixture.viewDemand()
         let olderObservation = ImmediateFileContentReadPlanObservation()
         let olderEmissionGate = ProductFileMaterializationGate()
         let olderUpdate = Task {
-            try await source.update(
-                subscription: olderSnapshot,
-                productAdmission: fixture.productAdmission.context
+            try await source.applyViewDemand(
+                subscriptionId: openSnapshot.subscriptionId,
+                demand: olderSnapshot,
+                productAdmission: fixture.productAdmission.context,
+                forceRecapture: false
             ) { event in
                 guard case .descriptorReady(let ready) = event,
-                    case .available(let descriptor) = ready.payload.availability
+                    case .available(let descriptor) = ready.availability
                 else { return }
                 await olderObservation.record(descriptor)
                 await olderEmissionGate.markStarted()
@@ -172,16 +182,18 @@ struct FileMetadataPublicationOrderingTests {
         }
         await olderEmissionGate.waitUntilStarted()
         try Data("newer descriptor\n".utf8).write(to: fixture.demandedFileURL)
-        let newerSnapshot = advancedSnapshot(from: olderSnapshot, revision: 2)
+        let newerSnapshot = advancedDemand(from: olderSnapshot, revision: 2)
         let newerObservation = ImmediateFileContentReadPlanObservation()
 
         // Act
-        try await source.update(
-            subscription: newerSnapshot,
-            productAdmission: fixture.productAdmission.context
+        try await source.applyViewDemand(
+            subscriptionId: openSnapshot.subscriptionId,
+            demand: newerSnapshot,
+            productAdmission: fixture.productAdmission.context,
+            forceRecapture: false
         ) { event in
             guard case .descriptorReady(let ready) = event,
-                case .available(let descriptor) = ready.payload.availability
+                case .available(let descriptor) = ready.availability
             else { return }
             await newerObservation.record(descriptor)
         }
@@ -193,12 +205,15 @@ struct FileMetadataPublicationOrderingTests {
         let newerDescriptor = try #require(await newerObservation.descriptor)
         let olderRequest = try fixture.contentRequest(descriptor: olderDescriptor)
         let newerRequest = try fixture.contentRequest(descriptor: newerDescriptor)
-        #expect(
+        let olderReadPlan = try #require(
             await source.contentReadPlan(
                 for: olderRequest,
                 productAdmission: fixture.productAdmission.context
-            ) == nil
+            )
         )
+        await #expect(throws: BridgePaneProductFileContentSourceError.self) {
+            _ = try await BridgePaneProductFileContentSource.openReadSession(olderReadPlan)
+        }
         #expect(
             await source.contentReadPlan(
                 for: newerRequest,
@@ -208,19 +223,15 @@ struct FileMetadataPublicationOrderingTests {
     }
 }
 
-private func advancedSnapshot(
-    from snapshot: BridgeProductSubscriptionSnapshot,
+private func advancedDemand(
+    from demand: BridgePaneProductFileViewDemand,
     revision: Int
-) -> BridgeProductSubscriptionSnapshot {
-    BridgeProductSubscriptionSnapshot(
-        subscription: snapshot.subscription,
-        subscriptionId: snapshot.subscriptionId,
-        subscriptionKind: snapshot.subscriptionKind,
-        workerDerivationEpoch: snapshot.workerDerivationEpoch,
-        interestRevision: revision,
-        interestSha256: snapshot.interestSha256,
-        interestState: snapshot.interestState,
-        hasStagedUpdate: false
+) -> BridgePaneProductFileViewDemand {
+    .init(
+        admissionSequence: revision,
+        handle: demand.handle,
+        scopeRevision: revision,
+        state: demand.state
     )
 }
 

@@ -15,7 +15,10 @@ extension WorktreeCommandLineFormatter {
         return "\(refusalLine); options: [\(options)]"
     }
 
-    package static func refusedJSONText(_ refusal: WorktreeOperationRefusal) throws -> String {
+    package static func refusedJSONText(
+        _ refusal: WorktreeOperationRefusal,
+        creationFetch: WorktreeCreationFetchStatus? = nil
+    ) throws -> String {
         let details = refusalDetails(for: refusal)
         return try encodeJSON(
             WorktreeRefusedCommandLineJSON(
@@ -25,7 +28,8 @@ extension WorktreeCommandLineFormatter {
                 alternatives: details.alternatives?.map(\.rawValue),
                 options: details.options.isEmpty ? nil : details.options,
                 message: details.message,
-                details: details.creationDetails
+                details: details.creationDetails,
+                fetch: creationFetch
             )
         )
     }
@@ -54,21 +58,19 @@ extension WorktreeCommandLineFormatter {
                 reason: "invalidBranchName", path: nil, detail: "Git rejected the branch name")
         case .emptyBranchSlug:
             return WorktreeRefusalDetails(reason: "emptyBranchSlug", path: nil, detail: nil)
-        case .branchAlreadyExists(let branch):
-            return WorktreeRefusalDetails(reason: "branchAlreadyExists", path: nil, detail: branch)
         case .destinationExists(let path):
             return WorktreeRefusalDetails(reason: "destinationExists", path: absolutePath(path), detail: nil)
         case .destinationParentMissing(let path):
             return WorktreeRefusalDetails(reason: "destinationParentMissing", path: absolutePath(path), detail: nil)
         case .unsupportedRepositoryLayout(let path):
             return WorktreeRefusalDetails(reason: "unsupportedRepositoryLayout", path: absolutePath(path), detail: nil)
-        case .forkUnavailable(let reason, let source):
+        case .forkUnavailable(let reason, let offersChangesOnly):
             return WorktreeRefusalDetails(
                 reason: "forkUnavailable",
                 path: nil,
                 detail: reason.rawValue,
-                alternatives: source == .mainWorktree ? [.trackedOnly] : [.trackedOnly, .changesOnly],
-                options: WorktreeStopCatalog.forkOptions(source: source)
+                alternatives: offersChangesOnly ? [.checkout, .changesOnly] : [.checkout],
+                options: WorktreeStopCatalog.forkOptions(offersChangesOnly: offersChangesOnly)
             )
         case .unsupportedWorkingState(let refusal):
             return WorktreeRefusalDetails(
@@ -94,7 +96,7 @@ extension WorktreeCommandLineFormatter {
                 effect: "Stash the changed attributes, then retry --changes-only."
             ),
             WorktreeStopOption(
-                action: .command("agentstudio worktree new <branch> --from <source>"),
+                action: .command("agentstudio worktree new -c <branch> --from <source>"),
                 effect: "Use the APFS copy-on-write fork without --changes-only."
             ),
         ]
@@ -156,13 +158,13 @@ private struct WorktreeRefusalDetails {
 }
 
 private enum WorktreeRefusalAlternative: String {
-    case trackedOnly
+    case checkout
     case changesOnly
 
     var commandLineFlag: String {
         switch self {
-        case .trackedOnly:
-            "--tracked-only"
+        case .checkout:
+            "--no-fork"
         case .changesOnly:
             "--changes-only"
         }
@@ -178,4 +180,5 @@ private struct WorktreeRefusedCommandLineJSON: Encodable {
     let options: [WorktreeStopOption]?
     let message: String?
     let details: WorktreeCreationStop?
+    let fetch: WorktreeCreationFetchStatus?
 }

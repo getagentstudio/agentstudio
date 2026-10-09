@@ -13,7 +13,9 @@ import Testing
 /// unreachable; router teardown did not resume it either.
 @Suite("Bridge product scheme session router stream drain")
 struct BridgeProductSchemeSessionRouterDrainTests {
-    private func makeRouterWithLiveStreamClaim() throws -> (
+    private func makeRouterWithLiveStreamClaim(
+        onStreamDrainWaiterRegistered: (@Sendable () -> Void)? = nil
+    ) throws -> (
         router: BridgeProductSchemeSessionRouter,
         capability: String
     ) {
@@ -28,7 +30,8 @@ struct BridgeProductSchemeSessionRouterDrainTests {
         )
         let router = BridgeProductSchemeSessionRouter(
             activeInstallation: installation,
-            productAdmissionGate: productAdmissionGate
+            productAdmissionGate: productAdmissionGate,
+            streamDrainWaiterRegistrationObserver: onStreamDrainWaiterRegistered
         )
         let capability = try BridgeProductCapabilityHeaderEncoding.encode(
             installation.capabilityBytes
@@ -39,7 +42,10 @@ struct BridgeProductSchemeSessionRouterDrainTests {
     @Test("a cancelled bootstrap stops waiting for the stream drain")
     func cancelledBootstrapStopsWaitingForTheStreamDrain() async throws {
         // Arrange — one live stream claim, so the drain wait parks.
-        let (router, capability) = try makeRouterWithLiveStreamClaim()
+        let parked = DrainWaitProbe()
+        let (router, capability) = try makeRouterWithLiveStreamClaim {
+            Task { await parked.markParked() }
+        }
         let admission = await router.claimActiveAdapter(
             presentedCapability: capability,
             schemeTaskId: UUIDv7.generate(),
@@ -49,12 +55,9 @@ struct BridgeProductSchemeSessionRouterDrainTests {
             Issue.record("expected the stream claim to be admitted")
             return
         }
-        let parked = DrainWaitProbe()
-
         // Act — park, then cancel. The probe resumes this test from the waiter's
         // own effects, so there is no clock anywhere.
         let waiting = Task {
-            await parked.markParked()
             await router.waitForStreamClaimDrain()
             await parked.markReturned()
         }
@@ -74,7 +77,10 @@ struct BridgeProductSchemeSessionRouterDrainTests {
     @Test("clearing the router resumes a parked stream-drain waiter")
     func clearingTheRouterResumesAParkedStreamDrainWaiter() async throws {
         // Arrange
-        let (router, capability) = try makeRouterWithLiveStreamClaim()
+        let parked = DrainWaitProbe()
+        let (router, capability) = try makeRouterWithLiveStreamClaim {
+            Task { await parked.markParked() }
+        }
         let admission = await router.claimActiveAdapter(
             presentedCapability: capability,
             schemeTaskId: UUIDv7.generate(),
@@ -84,11 +90,8 @@ struct BridgeProductSchemeSessionRouterDrainTests {
             Issue.record("expected the stream claim to be admitted")
             return
         }
-        let parked = DrainWaitProbe()
-
         // Act
         let waiting = Task {
-            await parked.markParked()
             await router.waitForStreamClaimDrain()
             await parked.markReturned()
         }
@@ -108,6 +111,111 @@ struct BridgeProductSchemeSessionRouterDrainTests {
         // assertion.
         await router.waitForStreamClaimDrain()
         #expect(await router.snapshot.activeSchemeTaskCount == 0)
+    }
+
+    @Test("content claim completion is identified while an unrelated metadata claim remains")
+    func contentClaimCompletionIsIndependentOfMetadataClaim() async throws {
+        let (router, capability) = try makeRouterWithLiveStreamClaim()
+        guard
+            case .admitted(let metadataClaim) = await router.claimActiveAdapter(
+                presentedCapability: capability,
+                schemeTaskId: UUIDv7.generate(),
+                route: .metadataStream
+            ),
+            case .admitted(let contentClaim) = await router.claimActiveAdapter(
+                presentedCapability: capability,
+                schemeTaskId: UUIDv7.generate(),
+                route: .content
+            )
+        else {
+            Issue.record("Expected both scheme claims to be admitted")
+            return
+        }
+        let contentRequestId = "content-claim-finish-observation"
+        let finishEvents = await router.observeContentClaimFinish(for: contentRequestId)
+        await contentClaim.associateContentRequest(contentRequestId)
+        #expect(await router.hasActiveContentClaim(for: contentRequestId))
+
+        await contentClaim.finish()
+        var finishIterator = finishEvents.makeAsyncIterator()
+        #expect(await finishIterator.next() != nil)
+        #expect(!(await router.hasActiveContentClaim(for: contentRequestId)))
+        #expect((await router.snapshot).activeSchemeTaskCount == 1)
+        await metadataClaim.finish()
+    }
+
+    @Test("a new installation admits work while an old transport claim remains")
+    func replacementDoesNotWaitForOldClaim() async throws {
+        let gate = BridgeProductAdmissionGate()
+        let firstInstallation = try BridgeProductSessionInstallation.make(
+            paneSessionId: UUIDv7.generate().uuidString,
+            provider: BridgeProductSchemeProviderSpy(
+                holdFirstControlResponse: false,
+                contentReturnsWithoutTerminal: false
+            ),
+            productAdmissionGate: gate
+        )
+        let router = BridgeProductSchemeSessionRouter(
+            activeInstallation: firstInstallation,
+            productAdmissionGate: gate
+        )
+        let firstCapability = try BridgeProductCapabilityHeaderEncoding.encode(
+            firstInstallation.capabilityBytes
+        )
+        guard
+            case .admitted(let oldClaim) = await router.claimActiveAdapter(
+                presentedCapability: firstCapability,
+                schemeTaskId: UUIDv7.generate(),
+                route: .command
+            )
+        else {
+            Issue.record("Expected old installation transport admission")
+            return
+        }
+
+        let nextInstallation = try BridgeProductSessionInstallation.make(
+            paneSessionId: firstInstallation.bootstrap.paneSessionId,
+            provider: BridgeProductSchemeProviderSpy(
+                holdFirstControlResponse: false,
+                contentReturnsWithoutTerminal: false
+            ),
+            productAdmissionGate: gate
+        )
+        let admission = try #require(gate.acquire())
+        #expect(await router.activate(nextInstallation, productAdmission: admission))
+        let nextCapability = try BridgeProductCapabilityHeaderEncoding.encode(
+            nextInstallation.capabilityBytes
+        )
+        guard
+            case .admitted(let newClaim) = await router.claimActiveAdapter(
+                presentedCapability: nextCapability,
+                schemeTaskId: UUIDv7.generate(),
+                route: .command
+            )
+        else {
+            Issue.record("Expected new installation transport admission")
+            await oldClaim.finish()
+            return
+        }
+
+        #expect(oldClaim.adapter.session === firstInstallation.session)
+        #expect(newClaim.adapter.session === nextInstallation.session)
+        #expect((await router.snapshot).activeTransportClaimCount == 2)
+        #expect(
+            await router.snapshot(for: firstInstallation.bootstrap.workerInstanceId).activeTransportClaimCount
+                == 1
+        )
+        #expect(
+            await router.snapshot(for: nextInstallation.bootstrap.workerInstanceId).activeTransportClaimCount
+                == 1
+        )
+        await oldClaim.finish()
+        #expect((await router.snapshot).activeTransportClaimCount == 1)
+        #expect(
+            await router.snapshot(for: firstInstallation.bootstrap.workerInstanceId).hasZeroResidue
+        )
+        await newClaim.finish()
+        #expect((await router.snapshot).hasZeroResidue)
     }
 }
 

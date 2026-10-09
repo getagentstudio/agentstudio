@@ -18,6 +18,8 @@ export interface BridgeViewerResizableRailLayoutProps {
 	readonly minRailSize?: number;
 	readonly rail: ReactNode;
 	readonly railTestId: string;
+	readonly railVisible?: boolean | undefined;
+	readonly failureSummary?: ReactNode;
 }
 
 const defaultBridgeViewerRailMinSize = 20;
@@ -31,6 +33,17 @@ type BridgeViewerPanelLayout = Record<string, number>;
 export function BridgeViewerResizableRailLayout(
 	props: BridgeViewerResizableRailLayoutProps,
 ): ReactElement {
+	if (props.railVisible === false) {
+		return (
+			<div
+				className="flex h-full min-h-0 min-w-0 flex-1 flex-col"
+				data-testid={props.contentTestId}
+			>
+				{props.failureSummary}
+				<div className="min-h-0 flex-1">{props.content}</div>
+			</div>
+		);
+	}
 	// Gating boundary: only the lightweight fallback/loading shells pass isActive={false} to
 	// drop the resizable-panel-group machinery when hidden. Real loaded shells always render
 	// their panel-group (isActive={true}) and rely on hidden-subtree dormancy — a display:none

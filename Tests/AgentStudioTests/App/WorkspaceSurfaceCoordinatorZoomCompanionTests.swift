@@ -121,13 +121,22 @@ extension WebKitSerializedTests {
                 mountedView.controller.productAdmissionGate.acquire()
             )
             let selectedTarget = WorkspaceReviewContributionTarget.branch(name: "stack/base")
+            _ = productAdmission.withValidAdmission {
+                mountedView.controller.refreshAdmissionCoordinator.workAdmissionSource
+                    .admitReviewComparisonIntent(
+                        workerDerivationEpoch: 1,
+                        productAdmission: productAdmission
+                    )
+            }
 
             // Act
             let didApplyTarget = await mountedView.controller
                 .handleCommittedProductReviewComparisonUpdate(
                     BridgeProductReviewComparisonUpdateRequest(target: selectedTarget),
+                    workerDerivationEpoch: 1,
                     productAdmission: productAdmission
                 )
+            #expect(didApplyTarget == .applied)
             #expect(
                 harness.store.panePresentationAtom.setZoomViewerVisible(
                     false,
@@ -140,7 +149,7 @@ extension WebKitSerializedTests {
             )
 
             // Assert
-            #expect(didApplyTarget)
+            #expect(didApplyTarget == .applied)
             #expect(hiddenPresentation == .retainedHidden(companionPaneId: companionPaneId))
             #expect(
                 mountedView.controller.bridgePaneState.source

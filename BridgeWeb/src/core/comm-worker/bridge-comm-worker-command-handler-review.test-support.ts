@@ -1,5 +1,5 @@
 import { makeReviewPublicationIdentity } from './bridge-comm-worker-entry.test-support.js';
-import type { BridgeCommWorkerReviewMetadataApplication } from './bridge-comm-worker-review-metadata-applicator.js';
+import type { BridgeCommWorkerReviewMetadataApplication } from './bridge-comm-worker-review-runtime-application.js';
 
 export function reviewMetadataApplication(props: {
 	readonly contentItems: BridgeCommWorkerReviewMetadataApplication['source']['contentItems'];

@@ -17,7 +17,7 @@ extension CISwiftBuildInputsScriptTests {
             ".mise.toml [tasks.\"test:swift:coverage\"]": "standalone code-coverage task",
             ".mise.toml [tasks.\"test:swift:e2e\"]": "standalone local E2E task",
             ".mise.toml [tasks.\"test:swift:zmx-e2e\"]": "opt-in standalone zmx E2E task",
-            ".mise.toml [tasks.\"test:swift:benchmark\"]": "benchmark workflow owns its separate build cache",
+            ".mise.toml [tasks.\"test:swift:benchmark\"]": "benchmark workflow consumes the main Swift seed read-only",
         ]
         let runtimeOnlyOwners: Set<String> = [
             "scripts/swift-test-helpers.sh", "scripts/run-swift-test-task.sh",

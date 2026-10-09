@@ -79,14 +79,8 @@ describe('Bridge comm worker runtime Review demand rerun', () => {
 			4,
 		);
 		await flushBridgeWorkerRuntimeContinuations();
-		await assertBridgeCommWorkerPreparationDrain(scheduledDrains[0])();
-		await flushBridgeWorkerRuntimeContinuations();
-		const staleFirstDrain = assertBridgeCommWorkerPreparationDrain(scheduledDrains[1])();
-		await flushBridgeWorkerRuntimeContinuations();
-		expect(deferredStreamsByDescriptorId.size).toBe(2);
-		scheduledDrains.length = 0;
-		postedMessages.length = 0;
-
+		// The certified bank is complete. Visible demand, not a source-reset chunk,
+		// starts the old content reads that the replacement must retire.
 		dispatch.message(
 			encodeBridgeWorkerViewportCommand({
 				requestId: 'request-visible-before-update',
@@ -99,7 +93,11 @@ describe('Bridge comm worker runtime Review demand rerun', () => {
 			}),
 		);
 		await flushBridgeWorkerRuntimeContinuations();
-		expect(scheduledDrains).toEqual([]);
+		const staleFirstDrain = assertBridgeCommWorkerPreparationDrain(scheduledDrains[0])();
+		await flushBridgeWorkerRuntimeContinuations();
+		expect(deferredStreamsByDescriptorId.size).toBe(2);
+		scheduledDrains.length = 0;
+		postedMessages.length = 0;
 
 		reviewProductSource.publishSource(
 			{

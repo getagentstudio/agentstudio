@@ -94,10 +94,6 @@ func producerRegistryMetadataProgressFrame(
     identitySuffix: String
 ) throws -> BridgeProductProducerFrame {
     let subscription = try BridgeProductSubscriptionFrameCorrelation(
-        cursor: nil,
-        interestRevision: 0,
-        interestSha256: String(repeating: "a", count: 64),
-        sourceGeneration: 1,
         subscriptionId: "subscription-\(identitySuffix)",
         subscriptionKind: .fileMetadata,
         workerDerivationEpoch: 1

@@ -65,6 +65,8 @@ interface CreateBridgeCommWorkerReviewDemandSchedulingProps {
 
 export interface BridgeCommWorkerReviewDemandScheduling {
 	readonly applyPublishedDisposition: (receipt: BridgeWorkerRenderDispositionReceipt) => boolean;
+	readonly readmitPaintRelease: (itemId: string) => void;
+	readonly releaseExpiredPublication: (itemId: string) => boolean;
 	readonly publishCurrentMetadataInterests: () => Promise<void>;
 	readonly resume: () => void;
 	readonly scheduleDemandExecution: (
@@ -199,7 +201,7 @@ export function createBridgeCommWorkerReviewDemandScheduling(
 	let latestSchedulingStore: BridgeCommWorkerStore | null = null;
 	let latestSchedulingEpoch: number | null = null;
 	let currentMembershipByItemId = new Map<string, BridgeCommWorkerDemandMember>();
-	let currentActiveDemand: readonly BridgeCommWorkerReviewCurrentActiveDemand[] = [];
+	let currentViewDemand: readonly BridgeCommWorkerReviewCurrentActiveDemand[] = [];
 	let previousFirstVisibleOrderedIndex: number | null = null;
 	const retryAttemptByItemId = new Map<string, number>();
 	let latestMetadataInterestCommit: {
@@ -217,7 +219,7 @@ export function createBridgeCommWorkerReviewDemandScheduling(
 			);
 		}
 		const promise = props.replaceReviewMetadataInterests({
-			activeDemand: currentActiveDemand,
+			activeDemand: currentViewDemand,
 			workerDerivationEpoch,
 		});
 		latestMetadataInterestCommit = { promise, workerDerivationEpoch };
@@ -266,10 +268,6 @@ export function createBridgeCommWorkerReviewDemandScheduling(
 				}),
 		resolvePreparationIdentity: (itemId): string =>
 			reviewItemPreparationIdentity({ itemId, source: reviewRuntimeSource }),
-		onCurrentActiveDemandChanged: (activeDemand): void => {
-			currentActiveDemand = activeDemand;
-			void publishCurrentMetadataInterests().catch((): void => {});
-		},
 		start: (admission): BridgeCommWorkerReviewDemandStartHandle => {
 			const store = latestSchedulingStore;
 			const epoch = latestSchedulingEpoch;
@@ -510,6 +508,23 @@ export function createBridgeCommWorkerReviewDemandScheduling(
 		latestSchedulingStore = store;
 		latestSchedulingEpoch = epoch;
 		const state = store.getState();
+		const nextViewDemand: BridgeCommWorkerReviewCurrentActiveDemand[] = [];
+		const seenDemandItemIds = new Set<string>();
+		const selectedId = selectedDemandEpochFromState(state) === null ? null : state.selectedId;
+		if (selectedId !== null) {
+			nextViewDemand.push({ itemId: selectedId, role: 'selected' });
+			seenDemandItemIds.add(selectedId);
+		}
+		for (const itemId of state.visibleIds) {
+			if (!seenDemandItemIds.has(itemId)) {
+				nextViewDemand.push({ itemId, role: 'visible' });
+				seenDemandItemIds.add(itemId);
+			}
+		}
+		if (JSON.stringify(nextViewDemand) !== JSON.stringify(currentViewDemand)) {
+			currentViewDemand = nextViewDemand;
+			void publishCurrentMetadataInterests().catch((): void => {});
+		}
 		const orderedItemIds = reviewRuntimeSource.contentItems.map(({ itemId }) => itemId);
 		const orderedIndexByItemIdForDirection = new Map(
 			orderedItemIds.map((itemId, orderedIndex) => [itemId, orderedIndex]),
@@ -628,6 +643,15 @@ export function createBridgeCommWorkerReviewDemandScheduling(
 
 	return {
 		applyPublishedDisposition: (receipt): boolean => reviewDemandLedger.releasePublished(receipt),
+		readmitPaintRelease: (itemId): void => {
+			reviewDemandLedger.invalidate(itemId);
+			if (latestSchedulingStore === null || latestSchedulingEpoch === null) return;
+			const state = latestSchedulingStore.getState();
+			if (state.selectedId !== itemId && !state.visibleIds.includes(itemId)) return;
+			reconcileCurrentReviewDemand(latestSchedulingStore, latestSchedulingEpoch, new Set([itemId]));
+		},
+		releaseExpiredPublication: (itemId): boolean =>
+			reviewDemandLedger.releaseExpiredPublication(itemId),
 		publishCurrentMetadataInterests,
 		resume,
 		scheduleDemandExecution: reconcileDemandExecutionFromRequest,
@@ -646,7 +670,7 @@ export function createBridgeCommWorkerReviewDemandScheduling(
 			latestSchedulingStore = null;
 			latestSchedulingEpoch = null;
 			currentMembershipByItemId = new Map();
-			currentActiveDemand = [];
+			currentViewDemand = [];
 			previousFirstVisibleOrderedIndex = null;
 			visibleSourceChurnDedupeState = createBridgeCommWorkerVisibleSourceChurnDedupeState();
 			if (activeSourceResetEpoch !== null) {

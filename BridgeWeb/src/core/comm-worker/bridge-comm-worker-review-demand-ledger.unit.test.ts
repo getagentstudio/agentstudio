@@ -427,6 +427,37 @@ describe('Bridge comm worker Review published-position ownership', () => {
 			firstAdmission.attemptToken,
 		);
 	});
+
+	test('releases a held same-item publication at its owned render lease expiry', () => {
+		const startedItemIds: string[] = [];
+		const ledger = createTestLedger(startedItemIds);
+		const membership = [{ itemId: 'same-item', role: 'selected', selectedDemandEpoch: 7 }] as const;
+		const first = ledger.reconcile(membership).active[0];
+		if (first === undefined) throw new Error('Expected the first selected Review admission.');
+		const identity = renderReceiptIdentity(first.itemId, first.attemptToken);
+		expect(ledger.markPublished(first.itemId, first.attemptToken, identity)).toBe(true);
+		expect(ledger.release(first.itemId, first.attemptToken, 'resident')).toBe(true);
+		ledger.invalidate(first.itemId);
+		ledger.reconcile(membership);
+		expect(startedItemIds).toEqual(['same-item']);
+
+		// The existing registry lease expired without any first main-thread disposition.
+		expect(ledger.releaseExpiredPublication(first.itemId)).toBe(true);
+		expect(ledger.releaseExpiredPublication(first.itemId)).toBe(false);
+		const successor = ledger.reconcile(membership).active[0];
+		expect(startedItemIds).toEqual(['same-item', 'same-item']);
+		expect(successor?.attemptToken).not.toBe(first.attemptToken);
+		expect(
+			ledger.releasePublished(
+				bridgeWorkerRenderDispositionReceiptSchema.parse({
+					...identity,
+					disposition: 'queued',
+					kind: 'render.disposition',
+					receivedAtMilliseconds: 106,
+				}),
+			),
+		).toBe(false);
+	});
 });
 
 function createTestLedger(

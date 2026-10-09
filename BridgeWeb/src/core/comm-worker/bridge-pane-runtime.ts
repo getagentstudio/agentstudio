@@ -1,23 +1,31 @@
+import { publishBridgeProductMetadataStreamDiagnostic } from '../../foundation/diagnostics/bridge-product-metadata-stream-diagnostic.js';
 import {
 	recordBridgePaneCommWorkerSessionDiagnosticSnapshot,
 	recordBridgePaneRuntimeDiagnosticSnapshot,
 	type BridgePaneRuntimeDiagnosticSnapshot,
 } from '../../foundation/diagnostics/bridge-review-selection-diagnostic.js';
+import type {
+	BridgeWorkerReplacementReason,
+	BridgeWorkerRuntimeRecoverySource,
+} from '../../foundation/diagnostics/bridge-worker-replacement-reason.js';
 import { bridgeWorkerPierreRenderPolicy } from '../demand/bridge-content-demand-policy.js';
+import type { BridgePaneFailedStartFact } from '../models/bridge-pane-failed-start.js';
 import { encodeBridgeWorkerRenderDispositionCommand } from './bridge-comm-worker-protocol.js';
 import type { BridgeCommWorkerTelemetryRecorder } from './bridge-comm-worker-telemetry.js';
-import type { BridgeMainFileDisplayPatchApplierProps } from './bridge-main-file-display-patch-applier.js';
 import {
 	createBridgeMainRenderDispositionAdmission,
 	type BridgeMainRenderDispositionAdmission,
 } from './bridge-main-render-disposition-admission.js';
 import {
+	BRIDGE_PAINTED_PUBLICATION_ID_ATTRIBUTE,
 	createBridgeMainRenderFulfillmentCoordinator,
+	stampBridgeRenderDispositionSettlementEvidence,
 	type BridgeMainRenderFulfillmentCoordinator,
 } from './bridge-main-render-fulfillment-coordinator.js';
 import {
 	createBridgeMainRenderSnapshotStore,
 	type BridgeMainRenderSnapshotStore,
+	type BridgeMainRenderSnapshotStoreProps,
 } from './bridge-main-render-snapshot-store.js';
 import {
 	BridgePaneCommWorkerSession,
@@ -47,12 +55,14 @@ export interface BridgePaneSessionPort {
 		readonly publishWorkerMessages: (messages: readonly BridgeWorkerServerToMainMessage[]) => void;
 	}) => BridgePaneCommWorkerDispatcher;
 	readonly dispose: () => void;
+	readonly handleNativeBootstrapFailure?: () => void;
 	readonly installNativeBootstrap: (bootstrap: BridgePaneCommWorkerNativeBootstrap) => void;
 	readonly installTelemetryProducer?: (
 		install: BridgePaneCommWorkerTelemetryProducerInstall,
 	) => void;
-	readonly requestWorkerReplacement?: () => void;
+	readonly requestWorkerReplacement?: (reason: BridgeWorkerReplacementReason) => void;
 	readonly setNativeBootstrapRequester?: (requester: (reason: 'workerReplacement') => void) => void;
+	readonly setReplacementBootstrapExhaustionHandler?: (onExhausted: () => void) => void;
 	readonly setWorkerReplacementPreparer?: (prepare: () => void) => void;
 }
 
@@ -63,7 +73,7 @@ export interface BridgePaneSurfaceLifecycleView {
 }
 
 export interface BridgePaneSurfaceClient {
-	readonly requestWorkerReplacement: () => void;
+	readonly requestWorkerReplacement: (source: BridgeWorkerRuntimeRecoverySource) => void;
 	readonly lifecycle: BridgePaneSurfaceLifecycleView;
 	readonly renderFulfillmentCoordinator: BridgeMainRenderFulfillmentCoordinator;
 	readonly renderStore: BridgeMainRenderSnapshotStore;
@@ -84,9 +94,13 @@ export interface BridgePaneClient {
 }
 
 export interface BridgePaneRuntime {
+	readonly setPaneFailedStartHandler: (
+		handler: ((fact: BridgePaneFailedStartFact) => void) | null,
+	) => void;
 	readonly lifecycleStore: BridgeWorkerRpcLifecycleStore;
 	readonly paneClient: BridgePaneClient;
 	readonly dispose: () => void;
+	readonly handleNativeBootstrapFailure: () => void;
 	readonly installNativeBootstrap: (bootstrap: BridgePaneCommWorkerNativeBootstrap) => void;
 	readonly installTelemetryProducer: (
 		install: BridgePaneCommWorkerTelemetryProducerInstall,
@@ -100,7 +114,7 @@ export interface CreateBridgePaneRuntimeProps {
 	readonly lifecycleStoreFactory?: () => BridgeWorkerRpcLifecycleStore;
 	readonly recordDiagnosticSnapshot?: (snapshot: BridgePaneRuntimeDiagnosticSnapshot) => void;
 	readonly renderStoreFactory?: (
-		fileDisplayApplierProps?: BridgeMainFileDisplayPatchApplierProps,
+		storeProps?: BridgeMainRenderSnapshotStoreProps,
 	) => BridgeMainRenderSnapshotStore;
 	readonly sessionFactory?: () => BridgePaneSessionPort;
 	readonly sessionProps?: BridgePaneCommWorkerSessionProps;
@@ -120,8 +134,14 @@ export function createBridgePaneRuntime(
 	const renderFulfillmentCoordinators = new Set<BridgeMainRenderFulfillmentCoordinator>();
 	const renderDispositionAdmissions = new Set<BridgeMainRenderDispositionAdmission>();
 	const renderStores = new Set<BridgeMainRenderSnapshotStore>();
+	const workerUnavailableViews = new Map<
+		Extract<BridgeWorkerServerToMainMessage, { kind: 'viewRecoveryStatus' }>['view']['kind'],
+		Extract<BridgeWorkerServerToMainMessage, { kind: 'viewRecoveryStatus' }>['view']
+	>();
 	const workerReplacementListeners = new Set<() => void>();
 	let isDisposed = false;
+	let paneFailedStartFact: BridgePaneFailedStartFact | null = null;
+	let paneFailedStartHandler: ((fact: BridgePaneFailedStartFact) => void) | null = null;
 	let nativeBootstrapInstalled = false;
 	let nativeBootstrapReplacementRequested = false;
 	let nativeBootstrapInstallAcceptedCount = 0;
@@ -190,6 +210,26 @@ export function createBridgePaneRuntime(
 		}
 	};
 	session.setWorkerReplacementPreparer?.(prepareRuntimeForWorkerReplacement);
+	const publishViewRecoveryStatus = (
+		event: Extract<BridgeWorkerServerToMainMessage, { kind: 'viewRecoveryStatus' }>,
+	): void => {
+		const targetSurface = bridgePaneSurfaceForViewRecoveryStatusKind(event.view.kind);
+		surfaceClients.get(targetSurface)?.renderStore.applyViewRecoveryStatusEvent(event);
+		for (const client of rpcClients.values()) client.receive(event);
+	};
+	const failRenderView = (surface: 'fileView' | 'review'): void => {
+		const kind = surface === 'fileView' ? 'file.metadata' : 'review.metadata';
+		const current = surfaceClients.get(surface)?.renderStore.getViewRecoveryStatus(kind);
+		if (current === null || current === undefined) return;
+		publishViewRecoveryStatus({
+			direction: 'serverWorkerToMain',
+			kind: 'viewRecoveryStatus',
+			status: 'failedRetryable',
+			transferDescriptors: [],
+			view: current.view,
+			wireVersion: 1,
+		});
+	};
 
 	const publishDiagnosticSnapshot = (): void => {
 		try {
@@ -207,28 +247,54 @@ export function createBridgePaneRuntime(
 	const dispatcher = session.createDispatcher({
 		publishWorkerMessages: (messages): void => {
 			for (const message of messages) {
+				if (message.kind === 'health') publishBridgeProductMetadataStreamDiagnostic(message);
+				if (message.kind === 'viewRecoveryStatus') {
+					publishViewRecoveryStatus(message);
+					continue;
+				}
 				for (const client of rpcClients.values()) client.receive(message);
 				if (
 					message.kind === 'health' &&
 					message.requestId === 'pane-runtime-bootstrap' &&
 					message.status === 'ready'
 				) {
+					for (const view of workerUnavailableViews.values()) {
+						const store = surfaceClients.get(
+							bridgePaneSurfaceForViewRecoveryStatusKind(view.kind),
+						)?.renderStore;
+						const current = store?.getViewRecoveryStatus(view.kind);
+						if (
+							current?.view.subscriptionId === view.subscriptionId &&
+							current.status === 'failedRetryable'
+						) {
+							publishViewRecoveryStatus({
+								direction: 'serverWorkerToMain',
+								kind: 'viewRecoveryStatus',
+								status: 'ready',
+								transferDescriptors: [],
+								view,
+								wireVersion: 1,
+							});
+						}
+					}
+					workerUnavailableViews.clear();
 					replayCurrentIntentAfterReplacement();
 				}
 			}
 		},
 	});
 
-	const requestWorkerReplacement = (): void => {
+	const requestWorkerReplacement = (source: BridgeWorkerRuntimeRecoverySource): void => {
 		if (isDisposed) return;
 		if (session.requestWorkerReplacement === undefined) {
 			throw new Error('Bridge pane runtime session cannot replace an overloaded worker.');
 		}
 		prepareRuntimeForWorkerReplacement();
-		session.requestWorkerReplacement();
+		session.requestWorkerReplacement({ kind: 'runtimeRecovery', source });
 	};
 
 	for (const surface of ['fileView', 'review'] as const) {
+		let renderFulfillmentCoordinatorForStore: BridgeMainRenderFulfillmentCoordinator | null = null;
 		const renderStore = renderStoreFactory(
 			surface === 'fileView'
 				? {
@@ -244,7 +310,11 @@ export function createBridgePaneRuntime(
 							});
 						},
 					}
-				: undefined,
+				: {
+						onReviewPaintedCopyReleased: (itemId): boolean => {
+							return renderFulfillmentCoordinatorForStore?.releasePaintedCopy(itemId) ?? false;
+						},
+					},
 		);
 		renderStores.add(renderStore);
 		const rpcClient = createBridgeWorkerRpcClient({
@@ -273,16 +343,33 @@ export function createBridgePaneRuntime(
 					}),
 				),
 			lifecycleStore,
+			onProbeExhausted: (): void => failRenderView(surface),
+			onPublicationSettled: (settlement): void => {
+				if (typeof document === 'undefined') return;
+				stampBridgeRenderDispositionSettlementEvidence({
+					elements: document.querySelectorAll(`[${BRIDGE_PAINTED_PUBLICATION_ID_ATTRIBUTE}]`),
+					outcome: settlement.outcome,
+					publicationId: settlement.publicationId,
+				});
+			},
 			requestWorkerReplacement,
 			surface,
 			telemetryClient: admissionTelemetryRecorder,
 		});
 		const renderFulfillmentCoordinator = createBridgeMainRenderFulfillmentCoordinator({
 			sendDisposition: (receipt): void => renderDispositionAdmission.enqueue(receipt),
+			sendPaintRelease: (receipt): void => renderDispositionAdmission.enqueue(receipt),
 		});
+		renderFulfillmentCoordinatorForStore = renderFulfillmentCoordinator;
 		renderDispositionAdmissions.add(renderDispositionAdmission);
 		renderFulfillmentCoordinators.add(renderFulfillmentCoordinator);
 		const sendSurfaceCommand = (command: BridgeWorkerRpcCommandInput): string => {
+			if (
+				command.command === 'viewRecoveryRetry' &&
+				command.view.kind === (surface === 'fileView' ? 'file.metadata' : 'review.metadata')
+			) {
+				renderDispositionAdmission.resumeAfterViewRecovery();
+			}
 			recordReplacementReplayEntry(command, rpcClient.send);
 			return rpcClient.send(command);
 		};
@@ -302,6 +389,39 @@ export function createBridgePaneRuntime(
 			surface,
 		});
 	}
+	session.setReplacementBootstrapExhaustionHandler?.((): void => {
+		let hasRecordedView = false;
+		for (const kind of [
+			'file.metadata',
+			'file.annotations',
+			'review.metadata',
+			'review.annotations',
+		] as const) {
+			const store = surfaceClients.get(
+				bridgePaneSurfaceForViewRecoveryStatusKind(kind),
+			)?.renderStore;
+			const current = store?.getViewRecoveryStatus(kind);
+			if (current === null || current === undefined) continue;
+			hasRecordedView = true;
+			workerUnavailableViews.set(kind, current.view);
+			publishViewRecoveryStatus({
+				direction: 'serverWorkerToMain',
+				kind: 'viewRecoveryStatus',
+				status: 'failedRetryable',
+				transferDescriptors: [],
+				view: current.view,
+				wireVersion: 1,
+			});
+		}
+		if (
+			!hasRecordedView &&
+			nativeBootstrapInstallAcceptedCount === 0 &&
+			paneFailedStartFact === null
+		) {
+			paneFailedStartFact = { kind: 'failedStart', cause: 'bootstrapBudgetExhausted' };
+			paneFailedStartHandler?.(paneFailedStartFact);
+		}
+	});
 	const paneRpcClient = createBridgeWorkerRpcClient({
 		dispatch: dispatcher.dispatch,
 		lifecycleStore,
@@ -338,8 +458,13 @@ export function createBridgePaneRuntime(
 			surfaceClients.clear();
 			renderStores.clear();
 			workerReplacementListeners.clear();
+			paneFailedStartHandler = null;
 			dispatcher.dispose();
 			session.dispose();
+		},
+		handleNativeBootstrapFailure: (): void => {
+			if (isDisposed) return;
+			session.handleNativeBootstrapFailure?.();
 		},
 		installNativeBootstrap: (bootstrap): void => {
 			nativeBootstrapInstallAttemptCount += 1;
@@ -391,12 +516,23 @@ export function createBridgePaneRuntime(
 				requester(reason);
 			});
 		},
+		setPaneFailedStartHandler: (handler): void => {
+			if (isDisposed) return;
+			paneFailedStartHandler = handler;
+			if (handler !== null && paneFailedStartFact !== null) handler(paneFailedStartFact);
+		},
 		surfaceClient: (surface): BridgePaneSurfaceClient => {
 			const client = surfaceClients.get(surface);
 			if (client === undefined) throw new Error('Bridge pane runtime is disposed.');
 			return client;
 		},
 	};
+}
+
+function bridgePaneSurfaceForViewRecoveryStatusKind(
+	kind: 'file.annotations' | 'file.metadata' | 'review.annotations' | 'review.metadata',
+): BridgePaneSurface {
+	return kind === 'file.annotations' || kind === 'file.metadata' ? 'fileView' : 'review';
 }
 
 interface BridgePaneReplacementReplayEntry {
@@ -430,6 +566,7 @@ function bridgePaneReplacementReplayIdentity(
 		case 'annotationCommand':
 		case 'annotationOutputInspect':
 		case 'annotationProjectionRetry':
+		case 'viewRecoveryRetry':
 		case 'fileDisplayResync':
 		case 'fileRefreshRetry':
 		case 'hover':
@@ -473,11 +610,14 @@ function createDefaultBridgePaneSessionPort(
 				publishWorkerMessages: dispatcherProps.publishWorkerMessages,
 			}),
 		dispose: (): void => session.dispose(),
+		handleNativeBootstrapFailure: (): void => session.handleNativeBootstrapFailure(),
 		installNativeBootstrap: (bootstrap): void => session.installNativeBootstrap(bootstrap),
 		installTelemetryProducer: (install): void => session.installTelemetryProducer(install),
-		requestWorkerReplacement: (): void => session.requestWorkerReplacement(),
+		requestWorkerReplacement: (reason): void => session.requestWorkerReplacement(reason),
 		setNativeBootstrapRequester: (requester): void =>
 			session.setNativeBootstrapRequester(requester),
+		setReplacementBootstrapExhaustionHandler: (onExhausted): void =>
+			session.setReplacementBootstrapExhaustionHandler(onExhausted),
 		setWorkerReplacementPreparer: (prepare): void => session.setWorkerReplacementPreparer(prepare),
 	};
 }
