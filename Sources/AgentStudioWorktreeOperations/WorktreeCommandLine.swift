@@ -29,6 +29,19 @@ package enum WorktreeCommandLine {
         errorOutput: @Sendable (String) -> Void,
         runner: WorktreeOperationRunner = WorktreeOperationRunner()
     ) async -> Int32 {
+        if arguments.isEmpty || arguments.first == "--help" || arguments.first == "-h" || arguments.first == "help" {
+            output(WorktreeCommandLineHelp.overview)
+            return 0
+        }
+        if let command = arguments.first,
+            WorktreeCommandLineHelp.isCommand(command),
+            arguments.dropFirst().contains(where: { $0 == "--help" || $0 == "-h" }),
+            let help = WorktreeCommandLineHelp.usage(for: command)
+        {
+            output(help)
+            return 0
+        }
+
         do {
             let invocation = try WorktreeCommandLineArgumentParser.parse(
                 arguments,

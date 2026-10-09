@@ -14,6 +14,102 @@ struct WorktreeCommandLineTests {
         let exitCode: Int32
     }
 
+    private static func runnerThatWouldFailIfCalled() -> WorktreeOperationRunner {
+        let start = URL(fileURLWithPath: "/path/that/does/not/exist", isDirectory: true)
+        let repository = URL(fileURLWithPath: "/path/that/does/not/exist/repository", isDirectory: true)
+        let repositoryID = GitRepositoryID(rawValue: "common:/path/that/does/not/exist/repository.git")
+        let snapshot = GitWorktreeSnapshot(
+            id: GitWorktreeID(rawValue: "help|worktree:source"),
+            repositoryID: repositoryID,
+            displayName: "main",
+            path: start,
+            canonicalPath: start,
+            gitDirectory: start.appending(path: ".git"),
+            indexPath: start.appending(path: ".git/index"),
+            isMainWorktree: true,
+            isLocked: false,
+            lockReason: nil,
+            head: nil
+        )
+        let identity = GitRepositoryIdentity(
+            id: repositoryID,
+            canonicalCommonDirectory: repository.appending(path: ".git"),
+            mainWorktreePath: repository
+        )
+        let client = WorktreeOperationClientStub(
+            startPath: start,
+            snapshot: snapshot,
+            identity: identity,
+            failsWorktreeListing: true,
+            failsDefaultTargetResolution: true
+        )
+        return WorktreeOperationRunner(client: client)
+    }
+
+    @Test(
+        "worktree help prints the overview without invoking the runner",
+        arguments: [[], ["--help"], ["-h"], ["help"]])
+    func printsOverviewHelp(arguments: [String]) async {
+        let probe = WorktreeCommandLineTestProbe()
+        let exitCode = await WorktreeCommandLine.run(
+            arguments: arguments,
+            currentDirectory: URL(fileURLWithPath: "/path/that/does/not/exist", isDirectory: true),
+            output: { probe.appendOutput($0) },
+            errorOutput: { probe.appendErrorOutput($0) },
+            runner: Self.runnerThatWouldFailIfCalled())
+
+        #expect(exitCode == 0)
+        #expect(probe.outputSnapshot() == [WorktreeCommandLineHelp.overview])
+        #expect(probe.errorOutputSnapshot().isEmpty)
+    }
+
+    @Test(
+        "each worktree verb help prints its usage without invoking the runner",
+        arguments: ["new", "list", "remove", "prune"])
+    func printsVerbHelp(command: String) async {
+        let expected = WorktreeCommandLineHelp.usage(for: command) ?? ""
+        for helpFlag in ["--help", "-h"] {
+            let probe = WorktreeCommandLineTestProbe()
+            let exitCode = await WorktreeCommandLine.run(
+                arguments: [command, helpFlag],
+                currentDirectory: URL(fileURLWithPath: "/path/that/does/not/exist", isDirectory: true),
+                output: { probe.appendOutput($0) },
+                errorOutput: { probe.appendErrorOutput($0) },
+                runner: Self.runnerThatWouldFailIfCalled())
+
+            #expect(exitCode == 0)
+            #expect(probe.outputSnapshot() == [expected])
+            #expect(probe.errorOutputSnapshot().isEmpty)
+        }
+    }
+
+    @Test("worktree help documents every option accepted by the parser")
+    func helpDocumentsParserOptions() {
+        let acceptedOptions: [String: [String]] = [
+            "new": [
+                "-c", "--create", "--repo", "--from", "--from-branch", "--no-fork", "--changes-only",
+                "--no-fetch", "--json",
+            ],
+            "list": ["--repo", "--no-fetch", "--json"],
+            "remove": [
+                "--repo", "--no-fetch", "-f", "--force", "-D", "--no-delete-branch", "--archive-to-main",
+                "--archive-to", "--discard-tmp", "--remove-stale-lock", "--dry-run", "--json",
+            ],
+            "prune": ["--repo", "--no-fetch", "--archive-to-main", "--archive-to", "--apply", "--json"],
+        ]
+
+        for (command, options) in acceptedOptions {
+            let help = WorktreeCommandLineHelp.usage(for: command) ?? ""
+            for option in options {
+                #expect(help.contains(option), "missing \(option) from \(command) help")
+            }
+        }
+
+        #expect(!WorktreeCommandLineHelp.newUsage.contains("--tracked-only"))
+        #expect(!WorktreeCommandLineHelp.pruneUsage.contains("--force"))
+        #expect(!WorktreeCommandLineHelp.pruneUsage.contains("-D"))
+    }
+
     @Test("argument parsing maps list --repo to an absolute start")
     func parsesListRepositoryPath() throws {
         let currentDirectory = URL(fileURLWithPath: "/tmp/worktree-cli", isDirectory: true)
