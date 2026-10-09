@@ -196,10 +196,10 @@ struct CITopologyWorkflowTests {
     @Test("heavy CI jobs depend only on classification while code quality stays independent")
     func ciJobsDependOnlyOnClassification() throws {
         let workflow = try String(contentsOfFile: ".github/workflows/ci.yml", encoding: .utf8)
+        #expect(!workflow.contains("marketing-site-validation"))
 
         for jobName in [
             "code-quality",
-            "marketing-site-validation",
             "bridge-web",
             "swift-test-suite",
         ] {
@@ -259,7 +259,6 @@ struct CITopologyWorkflowTests {
     func portableCIJobsRetainTheirContracts() throws {
         let workflow = try String(contentsOfFile: ".github/workflows/ci.yml", encoding: .utf8)
         let qualityJob = try topologyJob(named: "code-quality", in: workflow)
-        let marketingJob = try topologyJob(named: "marketing-site-validation", in: workflow)
         let bridgeWebJob = try topologyJob(named: "bridge-web", in: workflow)
         let swiftJob = try topologyJob(named: "swift-test-suite", in: workflow)
         let lintInstaller = try String(
@@ -275,7 +274,6 @@ struct CITopologyWorkflowTests {
         #expect(qualityJob.contains("name: Trust checkout for Git"))
         #expect(qualityJob.contains("name: Verify lint tools on PATH"))
         #expect(qualityJob.contains("shell: bash"))
-        #expect(marketingJob.contains("runs-on: ubuntu-24.04"))
         #expect(bridgeWebJob.contains("runs-on: xcode-27"))
         #expect(bridgeWebJob.contains("      - parallel:\n          - name: Install BridgeWeb dependencies"))
         #expect(bridgeWebJob.contains("      - parallel:\n          - name: BridgeWeb packaged build"))
@@ -289,11 +287,6 @@ struct CITopologyWorkflowTests {
         #expect(qualityJob.contains("check-ledger-ratchet.sh"))
         #expect(qualityJob.contains("architecture-lint-linux-${{ runner.arch }}-swift-6.3.3-"))
         #expect(qualityJob.contains("github.ref == 'refs/heads/main'"))
-        #expect(marketingJob.contains("lfs: true"))
-        #expect(marketingJob.contains("playwright@1.61.0 install --with-deps chrome"))
-        #expect(marketingJob.contains("CHROME_BIN=$chrome_binary"))
-        #expect(marketingJob.contains("pnpm --dir web run check"))
-        #expect(marketingJob.contains("pnpm --dir web run build"))
         #expect(swiftJob.contains("run: mise run lint:release-scripts"))
         // The Swift job runs no swift-format, so it must not pay to build it.
         #expect(!swiftJob.contains("install-ci-lint-tools.sh"))
