@@ -1,4 +1,5 @@
 import AgentStudioInfrastructure
+import AgentStudioTestHarness
 import AgentStudioTestSupport
 import Foundation
 import GRDB
@@ -348,6 +349,8 @@ struct EntityRecencyStoreTests {
 
     @Test("store hydrates each lane before observation and preserves application state across workspace changes")
     func storeLifecycleSeparatesApplicationAndWorkspaceHydration() async throws {
+        let factSource = EntityRecencyStoreFactSource()
+        let facts = try factSource.attach()
         let firstWorkspaceID = UUID()
         let secondWorkspaceID = UUID()
         let fixture = try makeWorkspaceLocalSQLiteStoreFixture(workspaceId: firstWorkspaceID)
@@ -367,7 +370,8 @@ struct EntityRecencyStoreTests {
             workspaceAtom: workspaceAtom,
             sqliteDatastore: datastore,
             persistDebounceDuration: .milliseconds(10),
-            clock: clock
+            clock: clock,
+            factSink: factSource.sink
         )
         let initialApplicationRecency = try ApplicationEntityRecency(
             entity: .repository(repositoryStableKey: "aaaaaaaaaaaaaaaa"),
@@ -417,13 +421,13 @@ struct EntityRecencyStoreTests {
         )
         await clock.waitForPendingSleepCount()
         clock.advance(by: .milliseconds(10))
-        await assertEventuallyMain("application recency change should autosave") {
-            (try? fixture.repository.fetchApplicationEntityRecency().count) == 2
-        }
+        _ = try await facts.expectNextSaveCompleted(in: .application)
+        #expect(try fixture.repository.fetchApplicationEntityRecency().count == 2)
 
         workspaceAtom.record(firstAdditionalPaneRecency)
         await clock.waitForPendingSleepCount()
         await store.restoreWorkspaceAsync(for: secondWorkspaceID)
+        _ = try await facts.expectNextSaveCompleted(in: .workspace(firstWorkspaceID))
 
         #expect(applicationAtom.recentEntities.count == 2)
         #expect(workspaceAtom.workspaceID == secondWorkspaceID)
@@ -437,6 +441,7 @@ struct EntityRecencyStoreTests {
         await store.restoreApplicationAsync()
 
         #expect(applicationAtom.recentEntities.count == 2)
+        try await facts.finish()
     }
 
     @Test("flush all preserves the application error when both lanes fail")
