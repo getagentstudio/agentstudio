@@ -100,3 +100,99 @@ private enum BindingCleanupFact: Equatable, Sendable {
     case cleanupFailed
     case submissionJoined
 }
+
+extension SessionsIngestionTests {
+    @Test(
+        "compact SessionStart and SubagentStop end the named turn through the real FIFO",
+        arguments: CompactIngestionOrder.allCases, [false, true])
+    func compactSessionStartEndsTurnThroughIngestion(order: CompactIngestionOrder, reopen: Bool) async throws {
+        let fixture = try SessionsFileDatabaseFixture()
+        defer { fixture.removeFiles() }
+        let pane = UUIDv7.generate()
+        let promptId = "compact-prompt"
+
+        if reopen {
+            try await withSessionsIngestion(repository: fixture.makeRepository()) { ingestion in
+                try await sendCompactEvent(
+                    .toolActivity, session: "compact-session", turnId: promptId,
+                    paneId: pane, ingestion: ingestion)
+            }
+            try await withSessionsIngestion(repository: fixture.makeRepository()) { ingestion in
+                try await sendCompactEvents(order, promptId: promptId, paneId: pane, ingestion: ingestion)
+                #expect(try await ingestion.sessionSummary(paneId: pane)?.status == .idle(.done))
+            }
+        } else {
+            try await withSessionsIngestion(repository: fixture.makeRepository()) { ingestion in
+                try await sendCompactEvent(
+                    .turnStart, session: "compact-session", turnId: "prior-turn",
+                    paneId: pane, ingestion: ingestion)
+                try await sendCompactEvent(
+                    .turnDone, session: "compact-session", turnId: "prior-turn",
+                    paneId: pane, ingestion: ingestion)
+                try await sendCompactEvents(order, promptId: promptId, paneId: pane, ingestion: ingestion)
+                #expect(try await ingestion.sessionSummary(paneId: pane)?.status == .idle(.done))
+            }
+        }
+    }
+
+    @Test("a turn-less compact SessionStart keeps the live main reset behavior through ingestion")
+    func turnlessCompactSessionStartKeepsResetThroughIngestion() async throws {
+        let fixture = try SessionsDatabaseFixture()
+        let pane = UUIDv7.generate()
+        try await withSessionsIngestion(repository: fixture.makeRepository()) { ingestion in
+            try await sendCompactEvent(
+                .toolActivity, session: "compact-session", turnId: "turn",
+                paneId: pane, ingestion: ingestion)
+            try await sendCompactEvent(
+                .sessionStart, session: "compact-session", turnId: nil,
+                paneId: pane, ingestion: ingestion)
+            #expect(try await ingestion.sessionSummary(paneId: pane)?.status == .unknown)
+        }
+    }
+}
+
+enum CompactIngestionOrder: CaseIterable, Equatable, Sendable {
+    case sessionStartThenSubagentStop
+    case subagentStopThenSessionStart
+}
+
+private func sendCompactEvents(
+    _ order: CompactIngestionOrder, promptId: String, paneId: UUID, ingestion: SessionsIngestion
+) async throws {
+    switch order {
+    case .sessionStartThenSubagentStop:
+        try await sendCompactEvent(
+            .sessionStart, session: "compact-session", turnId: promptId,
+            paneId: paneId, ingestion: ingestion)
+        try await sendCompactEvent(
+            .subagentActivity, session: "compact-session", turnId: promptId,
+            paneId: paneId, ingestion: ingestion)
+    case .subagentStopThenSessionStart:
+        try await sendCompactEvent(
+            .subagentActivity, session: "compact-session", turnId: promptId,
+            paneId: paneId, ingestion: ingestion)
+        try await sendCompactEvent(
+            .sessionStart, session: "compact-session", turnId: promptId,
+            paneId: paneId, ingestion: ingestion)
+    }
+}
+
+private func sendCompactEvent(
+    _ signalName: SessionProviderSignalName, session: String, turnId: String?, paneId: UUID,
+    ingestion: SessionsIngestion
+) async throws {
+    let signal: SessionProviderSignal
+    switch signalName {
+    case .sessionStart: signal = .sessionStart
+    case .turnStart: signal = .turnStart
+    case .turnDone: signal = .turnDone
+    case .subagentActivity: signal = .subagentActivity
+    case .toolActivity: signal = .toolActivity(toolName: nil)
+    default: throw SessionsRepositoryError.invalidStoredValue("compact test signal")
+    }
+    let outcome = try await ingestion.submitHook(
+        makeHookAdmission(
+            paneId: paneId, sessionId: session, eventName: signalName, signal: signal,
+            turnId: turnId, providerIdentifier: "claude-code"))
+    #expect(outcome != .ignored)
+}
