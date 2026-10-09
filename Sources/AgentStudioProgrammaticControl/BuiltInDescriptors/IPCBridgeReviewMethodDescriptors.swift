@@ -43,7 +43,7 @@ package struct IPCBridgeReviewMethodDescriptors: Sendable {
                 ),
                 result: IPCBridgeReviewOpenResult(
                     paneId: example.paneId,
-                    handle: "pane:\(example.paneId.uuidString)",
+                    handle: example.paneId.uuidString,
                     correlationId: example.correlationId
                 ),
                 metadata: .init(
@@ -75,7 +75,7 @@ package struct IPCBridgeReviewMethodDescriptors: Sendable {
                 ),
                 result: IPCBridgeFileViewOpenResult(
                     paneId: example.paneId,
-                    handle: "pane:\(example.paneId.uuidString)",
+                    handle: example.paneId.uuidString,
                     correlationId: example.correlationId
                 ),
                 metadata: .init(
