@@ -27,6 +27,18 @@ extension WorktreeOperationRunner {
             return .outcome(.refused(.invalidBranchName(.local(rejection))))
         }
 
+        // LR1 step (1), first and before any network: a re-run of `new feat` whose `<repo>.feat` already
+        // holds the branch is told where it is, not that the destination exists.
+        do throws(GitDataPlaneError) {
+            if let holder = try await WorktreeCreationBranchResolver(client: client).branchHolder(
+                repositoryPath: discovery.repositoryPath, branch: branchName.rawValue)
+            {
+                return .outcome(.refused(.creationStopped(.branchCheckedOut(path: holder.standardizedFileURL.path))))
+            }
+        } catch {
+            return .outcome(.failed(WorktreeOperationErrorMapper.readFailure(error)))
+        }
+
         guard
             let destinationPath = WorktreeDestinationNaming.siblingPath(
                 repositoryPath: mainWorktreePath,
@@ -48,12 +60,10 @@ extension WorktreeOperationRunner {
             return .outcome(.refused(.destinationParentMissing(destinationParent)))
         }
 
+        // An existing branch no longer refuses here: LR1's resolver decides what it means.
         let branches: [GitBranchSnapshot]
         do {
             branches = try await client.branches(for: discovery.repositoryPath)
-            guard !branches.contains(where: { $0.name == branchName.rawValue }) else {
-                return .outcome(.refused(.branchAlreadyExists(branchName.rawValue)))
-            }
         } catch {
             return .outcome(.failed(WorktreeOperationErrorMapper.readFailure(error)))
         }

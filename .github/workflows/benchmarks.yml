@@ -17,9 +17,12 @@ concurrency:
 jobs:
   benchmarks:
     runs-on: xcode-27
+    permissions:
+      contents: read
     env:
       SWIFT_BUILD_DIR: .build-ci
       XCB_EXTRA_ARGS: "--renderer github-actions"
+      SWIFT_BUILD_STATS_DIR: ${{ github.workspace }}/tmp/plan-workflows/ci-runs/compiler-stats
 
     steps:
       - name: Checkout
@@ -121,13 +124,76 @@ jobs:
             [ -f "$TERMINFO_SRC/67/ghostty" ] && cp "$TERMINFO_SRC/67/ghostty" "$TERMINFO_DST/67/"
           fi
 
-      - name: Cache Swift benchmark build
-        uses: actions/cache@v4
+      # Main's seed is published after the BridgeWeb packaged build, so the inventory
+      # must see the same Resources/BridgeWeb/app or verification rebuilds cold.
+      - name: BridgeWeb packaged build
+        run: pnpm --dir BridgeWeb run build
+
+      - name: Compute Swift cache compatibility prefix
+        id: swift-cache-prefix
+        run: |
+          mkdir -p "$SWIFT_BUILD_STATS_DIR"
+          prefix="$(/bin/bash scripts/ci-swift-build-inputs.sh fingerprint)"
+          echo "prefix=$prefix" >> "$GITHUB_OUTPUT"
+
+      - name: Start Swift cache restore timer
+        id: swift-cache-restore-start
+        run: echo "epoch=$(date +%s)" >> "$GITHUB_OUTPUT"
+
+      - name: Restore Swift build seed
+        id: swift-cache-restore
+        continue-on-error: true
+        uses: actions/cache/restore@v4
         with:
           path: .build-ci
-          key: benchmark-swift-build-ci-${{ runner.os }}-${{ hashFiles('Package.swift', 'Package.resolved') }}
+          key: ${{ steps.swift-cache-prefix.outputs.prefix }}r0-none
           restore-keys: |
-            benchmark-swift-build-ci-${{ runner.os }}-
+            ${{ steps.swift-cache-prefix.outputs.prefix }}
+
+      - name: Record Swift cache restore time
+        id: swift-cache-restore-time
+        run: |
+          restore_seconds=$(( $(date +%s) - ${{ steps.swift-cache-restore-start.outputs.epoch }} ))
+          echo "restore_seconds=$restore_seconds" >> "$GITHUB_OUTPUT"
+          echo "benchmark swift_cache_restore_seconds=$restore_seconds"
+
+      - name: Inventory Swift build inputs before prebuild
+        id: swift-cache-inventory-before
+        env:
+          CI_SWIFT_BUILD_PATH: .build-ci
+          CI_SWIFT_PRODUCER_COMMIT: ${{ github.sha }}
+          CI_SWIFT_PRODUCER_RUN: ${{ github.run_number }}
+          CI_SWIFT_PRODUCER_REF: ${{ github.ref }}
+        run: |
+          inventory_started=$(date +%s)
+          mkdir -p tmp/plan-workflows/ci-runs
+          /bin/bash scripts/ci-swift-build-inputs.sh inventory tmp/plan-workflows/ci-runs/swift-inputs-before.json
+          echo "valid=true" >> "$GITHUB_OUTPUT"
+          echo "inventory_seconds=$(( $(date +%s) - inventory_started ))" >> "$GITHUB_OUTPUT"
+
+      - name: Verify and restamp PR Swift seed
+        id: swift-cache-verify
+        env:
+          CI_SWIFT_BUILD_PATH: .build-ci
+        run: |
+          restore_seconds="${{ steps.swift-cache-restore-time.outputs.restore_seconds }}"
+          echo "restore_seconds=$restore_seconds" >> "$GITHUB_OUTPUT"
+          verify_started=$(date +%s)
+          disposition="$(/bin/bash scripts/ci-swift-build-inputs.sh verify \
+            .build-ci/ci-swift-build-seed.json tmp/plan-workflows/ci-runs/swift-inputs-before.json)"
+          verify_seconds=$(( $(date +%s) - verify_started + ${{ steps.swift-cache-inventory-before.outputs.inventory_seconds }} ))
+          echo "verify_seconds=$verify_seconds" >> "$GITHUB_OUTPUT"
+          echo "benchmark swift_cache_verify_seconds=$verify_seconds"
+          stamp_started=$(date +%s)
+          if [[ "$disposition" == warm\ * ]]; then
+            disposition="$(/bin/bash scripts/ci-swift-build-inputs.sh restamp \
+              .build-ci/ci-swift-build-seed.json tmp/plan-workflows/ci-runs/swift-inputs-before.json)"
+          fi
+          stamp_seconds=$(( $(date +%s) - stamp_started ))
+          echo "stamp_seconds=$stamp_seconds" >> "$GITHUB_OUTPUT"
+          echo "disposition=$disposition" >> "$GITHUB_OUTPUT"
+          echo "benchmark swift_cache_stamp_seconds=$stamp_seconds"
+          echo "swift-cache $disposition restore=${restore_seconds}s"
 
       - name: Test large non-WebKit lane
         env:

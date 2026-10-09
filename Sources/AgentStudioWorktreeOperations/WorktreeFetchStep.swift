@@ -2,7 +2,7 @@ import AgentStudioGit
 import Foundation
 
 package enum WorktreeFetchPolicy: Sendable, Equatable {
-    case defaultBranch
+    case fetch
     case skip
 }
 
@@ -41,7 +41,7 @@ package struct WorktreeFetchStep: Sendable {
         guard case .resolved(let target) = resolution else {
             return WorktreeFetchStepResult(resolution: resolution, status: .skipped(reason: .noTarget))
         }
-        guard policy == .defaultBranch else {
+        guard policy == .fetch else {
             return WorktreeFetchStepResult(resolution: resolution, status: .skipped(reason: .noFetchFlag))
         }
 
@@ -80,35 +80,59 @@ package struct WorktreeFetchStep: Sendable {
     }
 }
 
+/// Why a one-branch fetch or a remote probe failed, with the exact lock facts the SDK observed.
+package struct WorktreeFetchFailure: Sendable, Equatable {
+    package let reason: WorktreeFetchFailureReason
+    package let lock: WorktreeFetchLock?
+    package let lockResidue: [String]?
+
+    package init(reason: WorktreeFetchFailureReason, lock: WorktreeFetchLock? = nil, lockResidue: [String]? = nil) {
+        self.reason = reason
+        self.lock = lock
+        self.lockResidue = lockResidue
+    }
+}
+
 package enum WorktreeFetchFailureMapper {
     package static func status(
         for failure: GitLockedOperationFailure<GitDataPlaneError>
     ) -> WorktreeFetchStatus {
-        let residue = nonEmptyPaths(failure.lockResidue)
-        switch failure.reason {
+        let mapped = self.failure(for: failure)
+        return .failed(reason: mapped.reason, lock: mapped.lock, lockResidue: mapped.lockResidue)
+    }
+
+    package static func failure(
+        for failure: GitLockedOperationFailure<GitDataPlaneError>
+    ) -> WorktreeFetchFailure {
+        let mapped = self.failure(for: failure.reason)
+        return WorktreeFetchFailure(
+            reason: mapped.reason,
+            lock: mapped.lock,
+            lockResidue: nonEmptyPaths(failure.lockResidue)
+        )
+    }
+
+    /// A failure that took no locks the SDK could observe, such as `new`'s remote probe.
+    package static func failure(for error: GitDataPlaneError) -> WorktreeFetchFailure {
+        switch error {
         case .lockHeld(let fact):
-            return .failed(
+            return WorktreeFetchFailure(
                 reason: .gitLockHeld,
-                lock: WorktreeFetchLock(path: fact.path.standardizedFileURL.path, resource: fact.resource),
-                lockResidue: residue
+                lock: WorktreeFetchLock(path: fact.path.standardizedFileURL.path, resource: fact.resource)
             )
         case .lockUnidentified(let resource):
-            return .failed(
+            return WorktreeFetchFailure(
                 reason: .gitLockUnidentified,
-                lock: WorktreeFetchLock(path: nil, resource: resource),
-                lockResidue: residue
+                lock: WorktreeFetchLock(path: nil, resource: resource)
             )
         case .processFailed(let processFailure):
-            return .failed(
-                reason: processFailureReason(processFailure.redactedStderr),
-                lockResidue: residue
-            )
+            return WorktreeFetchFailure(reason: processFailureReason(processFailure.redactedStderr))
         case .processTimedOut:
-            return .failed(reason: .networkFailure, lockResidue: residue)
+            return WorktreeFetchFailure(reason: .networkFailure)
         case .permissionDenied, .processCancelled, .processOutputTooLarge:
-            return .failed(reason: .processFailure, lockResidue: residue)
+            return WorktreeFetchFailure(reason: .processFailure)
         default:
-            return .failed(reason: .unknown, lockResidue: residue)
+            return WorktreeFetchFailure(reason: .unknown)
         }
     }
 

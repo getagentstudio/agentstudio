@@ -535,7 +535,7 @@ struct WorktreePruneFetchingReadFailureIntegrationTests {
                 repository: fixture.path,
                 callerDirectory: fixture.path,
                 apply: false,
-                fetchPolicy: .defaultBranch
+                fetchPolicy: .fetch
             )
         )
 

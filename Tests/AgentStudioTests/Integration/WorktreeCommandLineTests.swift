@@ -14,52 +14,9 @@ struct WorktreeCommandLineTests {
         let exitCode: Int32
     }
 
-    @Test("argument parsing maps new fork and list options to operation requests")
-    func parsesWorktreeCommandsAndPaths() throws {
+    @Test("argument parsing maps list --repo to an absolute start")
+    func parsesListRepositoryPath() throws {
         let currentDirectory = URL(fileURLWithPath: "/tmp/worktree-cli", isDirectory: true)
-
-        let repository = currentDirectory.appending(path: "repositories/main").standardizedFileURL
-        let source = currentDirectory.appending(path: "linked/nested").standardizedFileURL
-        let cases: [([String], WorktreeCreateRequest, Bool)] = [
-            (
-                ["new", "feature/new", "--repo", "repositories/main", "--json"],
-                WorktreeCreateRequest(
-                    start: repository, branch: "feature/new", source: .mainWorktree, materialization: .copyOnWrite),
-                true
-            ),
-            (
-                [
-                    "new", "feature/from-source", "--tracked-only", "--from-branch", "feature/source", "--repo",
-                    "repositories/main",
-                ],
-                WorktreeCreateRequest(
-                    start: repository, branch: "feature/from-source", source: .mainWorktree,
-                    materialization: .trackedOnly(startBranch: "feature/source")), false
-            ),
-            (
-                ["new", "feat", "--from-branch", "release", "--repo", "repositories/main"],
-                WorktreeCreateRequest(
-                    start: repository, branch: "feat", source: .mainWorktree,
-                    materialization: .trackedOnly(startBranch: "release")), false
-            ),
-            (
-                ["new", "feature/fork", "--from", "linked/nested"],
-                WorktreeCreateRequest(
-                    start: currentDirectory, branch: "feature/fork", source: .worktree(source),
-                    materialization: .copyOnWrite), false
-            ),
-            (
-                ["new", "feature/changes", "--changes-only", "--from", "linked/nested", "--json"],
-                WorktreeCreateRequest(
-                    start: currentDirectory, branch: "feature/changes", source: .worktree(source),
-                    materialization: .changesOnly), true
-            ),
-        ]
-        for (arguments, request, json) in cases {
-            #expect(
-                try WorktreeCommandLineArgumentParser.parse(arguments, currentDirectory: currentDirectory)
-                    == WorktreeCommandLineInvocation(request: .create(request), usesJSONOutput: json))
-        }
 
         let list = try WorktreeCommandLineArgumentParser.parse(
             ["list", "--repo", "/tmp/another-repository"],
@@ -72,7 +29,7 @@ struct WorktreeCommandLineTests {
                         start: URL(fileURLWithPath: "/tmp/another-repository"),
                         callerDirectory: currentDirectory,
                         targets: [],
-                        fetchPolicy: .defaultBranch
+                        fetchPolicy: .fetch
                     ),
                     usesJSONOutput: false
                 ))
@@ -110,7 +67,7 @@ struct WorktreeCommandLineTests {
                         start: currentDirectory,
                         callerDirectory: currentDirectory,
                         targets: [],
-                        fetchPolicy: .defaultBranch
+                        fetchPolicy: .fetch
                     ),
                     usesJSONOutput: false
                 ))
@@ -153,7 +110,7 @@ struct WorktreeCommandLineTests {
                             callerDirectory: currentDirectory,
                             apply: true,
                             evidencePolicy: .archiveToMain,
-                            fetchPolicy: .defaultBranch
+                            fetchPolicy: .fetch
                         )
                     ),
                     usesJSONOutput: false
@@ -194,33 +151,6 @@ struct WorktreeCommandLineTests {
         }
     }
 
-    @Test("new with both --from and --from-branch is a usage error that asks for one source")
-    func rejectsTwoCreationSources() async throws {
-        let currentDirectory = URL(fileURLWithPath: "/tmp/worktree-cli", isDirectory: true)
-        for options in [
-            ["--from", "linked/nested", "--from-branch", "release"],
-            ["--from-branch", "release", "--from", "linked/nested", "--tracked-only"],
-        ] {
-            #expect(throws: WorktreeCommandLineArgumentError.conflictingOptions("--from", "--from-branch")) {
-                try WorktreeCommandLineArgumentParser.parse(
-                    ["new", "feat"] + options, currentDirectory: currentDirectory)
-            }
-            for includeJSONFlag in [false, true] {
-                let probe = WorktreeCommandLineTestProbe()
-                let exitCode = await WorktreeCommandLine.run(
-                    arguments: ["new", "feat"] + options + (includeJSONFlag ? ["--json"] : []),
-                    currentDirectory: currentDirectory,
-                    output: { probe.appendOutput($0) },
-                    errorOutput: { probe.appendErrorOutput($0) }
-                )
-                #expect(exitCode == 64)
-                #expect(probe.outputSnapshot().isEmpty)
-                let errorLine = try #require(probe.errorOutputSnapshot().first)
-                #expect(errorLine.contains("choose one source"))
-            }
-        }
-    }
-
     @Test("path options reject another option as their value")
     func pathOptionsRejectFollowingFlagsAsValues() throws {
         let currentDirectory = URL(fileURLWithPath: "/tmp/worktree-cli", isDirectory: true)
@@ -249,16 +179,19 @@ struct WorktreeCommandLineTests {
             ["unknown"],
             ["list", "--unknown"],
             ["list", "--no-fetch", "--no-fetch"],
-            ["new", "feature/new", "--no-fetch"],
             ["fork", "feature/fork", "--repo", "/tmp/repository"],
             ["list", "--repo"],
             ["new", "feature/new", "--repo", "--json"],
             ["new", "feature/new", "--from-branch", "--json"],
             ["new", "feature/new", "--from-branch", "feature/start", "--from-branch", "feature/other"],
             ["new", "feature/new", "--changes-only", "--changes-only"],
-            ["new", "feature/new", "--tracked-only", "--tracked-only"],
+            ["new", "feature/new", "--tracked-only"],
+            ["new", "feature/new", "--no-fork", "--no-fork"],
             ["new", "feature/new", "--json", "--json"],
             ["new", "feature/fork", "--from", "--json"],
+            ["new", "feature/new", "--from-branch", "feature/start"],
+            ["new", "feature/new", "-c", "--create"],
+            ["list", "-c"],
             ["fork", "feature/fork", "--from-branch", "feature/start"],
             ["fork", "feature/fork", "--changes-only", "--changes-only"],
             ["new"],
@@ -327,19 +260,43 @@ struct WorktreeCommandLineTests {
                     exitCode: 1
                 ),
                 FormatterGolden(
-                    outcome: .refused(.forkUnavailable(.sourceFilesystemNotAPFS, source: .mainWorktree)),
+                    outcome: .refused(.forkUnavailable(.sourceFilesystemNotAPFS, offersChangesOnly: false)),
                     humanText:
-                        "refused: forkUnavailable sourceFilesystemNotAPFS --tracked-only; options: [--tracked-only: Create a cold tracked-files checkout: no build outputs, no untracked or ignored files.]",
+                        "refused: forkUnavailable sourceFilesystemNotAPFS --no-fork; options: [--no-fork: A plain checkout of tracked files at the same commit; no ignored files or build outputs.]",
                     jsonText:
-                        "{\"alternatives\":[\"trackedOnly\"],\"detail\":\"sourceFilesystemNotAPFS\",\"options\":[{\"effect\":\"Create a cold tracked-files checkout: no build outputs, no untracked or ignored files.\",\"flag\":\"--tracked-only\"}],\"outcome\":\"refused\",\"reason\":\"forkUnavailable\"}",
+                        "{\"alternatives\":[\"checkout\"],\"detail\":\"sourceFilesystemNotAPFS\",\"options\":[{\"effect\":\"A plain checkout of tracked files at the same commit; no ignored files or build outputs.\",\"flag\":\"--no-fork\"}],\"outcome\":\"refused\",\"reason\":\"forkUnavailable\"}",
                     exitCode: 1
                 ),
                 FormatterGolden(
                     outcome: .refused(.creationStopped(.sourceIndexUnreadable)),
                     humanText:
-                        "refused: sourceIndexUnreadable; options: [retry: Retry after the source can be read.; --tracked-only: Create a cold tracked-files checkout: no build outputs, no untracked or ignored files.]",
+                        "refused: sourceIndexUnreadable; options: [retry: Retry after the source can be read.; --no-fork: A plain checkout of tracked files at the same commit; no ignored files or build outputs.]",
                     jsonText:
-                        "{\"details\":{\"sourceIndexUnreadable\":{}},\"message\":\"The source index could not be read.\",\"options\":[{\"command\":\"retry\",\"effect\":\"Retry after the source can be read.\"},{\"effect\":\"Create a cold tracked-files checkout: no build outputs, no untracked or ignored files.\",\"flag\":\"--tracked-only\"}],\"outcome\":\"refused\",\"reason\":\"sourceIndexUnreadable\"}",
+                        "{\"details\":{\"sourceIndexUnreadable\":{}},\"message\":\"The source index could not be read.\",\"options\":[{\"command\":\"retry\",\"effect\":\"Retry after the source can be read.\"},{\"effect\":\"A plain checkout of tracked files at the same commit; no ignored files or build outputs.\",\"flag\":\"--no-fork\"}],\"outcome\":\"refused\",\"reason\":\"sourceIndexUnreadable\"}",
+                    exitCode: 1
+                ),
+                FormatterGolden(
+                    outcome: .refused(.creationStopped(.branchAlreadyExists(branch: "feature/cli"))),
+                    humanText:
+                        "refused: branchAlreadyExists feature/cli; options: [agentstudio worktree new <branch>: Open the existing branch in a new worktree.; use another branch name: Create a new branch under a name that does not exist.]",
+                    jsonText:
+                        "{\"detail\":\"feature/cli\",\"details\":{\"branchAlreadyExists\":{\"branch\":\"feature/cli\"}},\"message\":\"A branch with that name already exists.\",\"options\":[{\"command\":\"agentstudio worktree new <branch>\",\"effect\":\"Open the existing branch in a new worktree.\"},{\"command\":\"use another branch name\",\"effect\":\"Create a new branch under a name that does not exist.\"}],\"outcome\":\"refused\",\"reason\":\"branchAlreadyExists\"}",
+                    exitCode: 1
+                ),
+                FormatterGolden(
+                    outcome: .refused(.creationStopped(.branchCheckedOut(path: createdPath.path))),
+                    humanText:
+                        "refused: branchCheckedOut /tmp/worktree-output/repository.feature-cli; options: [cd <path>: Work in the worktree that already has the branch checked out.]",
+                    jsonText:
+                        "{\"details\":{\"branchCheckedOut\":{\"path\":\"/tmp/worktree-output/repository.feature-cli\"}},\"message\":\"The branch is checked out in another worktree.\",\"options\":[{\"command\":\"cd <path>\",\"effect\":\"Work in the worktree that already has the branch checked out.\"}],\"outcome\":\"refused\",\"path\":\"/tmp/worktree-output/repository.feature-cli\",\"reason\":\"branchCheckedOut\"}",
+                    exitCode: 1
+                ),
+                FormatterGolden(
+                    outcome: .refused(.creationStopped(.branchMoved)),
+                    humanText:
+                        "refused: branchMoved; options: [retry: Run the command again to resolve the branch at its new tip.]",
+                    jsonText:
+                        "{\"details\":{\"branchMoved\":{}},\"message\":\"The branch moved after it was resolved, so nothing was changed.\",\"options\":[{\"command\":\"retry\",\"effect\":\"Run the command again to resolve the branch at its new tip.\"}],\"outcome\":\"refused\",\"reason\":\"branchMoved\"}",
                     exitCode: 1
                 ),
                 FormatterGolden(
@@ -364,24 +321,22 @@ struct WorktreeCommandLineTests {
         [
             FormatterGolden(
                 outcome: .created(
-                    WorktreeCreatedSummary(
-                        operation: .new,
+                    makeCreatedSummary(
                         branch: "feature/cli",
                         path: createdPath,
                         repository: repository,
-                        materialization: .trackedOnly(
+                        materialization: .checkout(
                             GitLargeFileFill(materializedCount: 0, missing: [], residuePaths: [], scan: .complete))
                     )
                 ),
-                humanText: "created feature/cli at /tmp/worktree-output/repository.feature-cli",
+                humanText: "created feature/cli at /tmp/worktree-output/repository.feature-cli (checkout)",
                 jsonText:
-                    "{\"branch\":\"feature/cli\",\"materialization\":{\"kind\":\"trackedOnly\",\"largeFiles\":{\"materialized\":0,\"missing\":[],\"missingCount\":0,\"scan\":\"complete\"}},\"operation\":\"new\",\"outcome\":\"created\",\"path\":\"/tmp/worktree-output/repository.feature-cli\",\"repository\":\"/tmp/worktree-output/repository\"}",
+                    "{\"branch\":{\"name\":\"feature/cli\",\"status\":\"created\",\"upstream\":null},\"fetch\":{\"branch\":null,\"reason\":\"noRemote\",\"remote\":null,\"status\":\"skipped\"},\"materialization\":{\"kind\":\"checkout\",\"largeFiles\":{\"materialized\":0,\"missing\":[],\"missingCount\":0,\"scan\":\"complete\"}},\"operation\":\"new\",\"outcome\":\"created\",\"path\":\"/tmp/worktree-output/repository.feature-cli\",\"repository\":\"/tmp/worktree-output/repository\",\"start\":{\"commit\":\"1111111111111111111111111111111111111111\",\"from\":\"sourceHead\",\"localOnlyCommits\":null,\"ref\":null}}",
                 exitCode: 0
             ),
             FormatterGolden(
                 outcome: .created(
-                    WorktreeCreatedSummary(
-                        operation: .new,
+                    makeCreatedSummary(
                         branch: "feature/cow",
                         path: createdPath,
                         repository: repository,
@@ -396,14 +351,14 @@ struct WorktreeCommandLineTests {
                                 logicalRegularFileBytes: 0,
                                 skippedEntries: [],
                                 normalizedEntries: [],
-                                ignoredIncludedPatterns: [], ignoredExcludedCount: 0, nestedWorktreesSkipped: []
+                                ignoredIncludedPatterns: [], ignoredExcludedCount: 0, nestedWorktreesSkipped: [],
+                                sourceState: .asIs, submodulesNotAtStart: [], largeFiles: nil
                             ))
                     )
                 ),
-                humanText:
-                    "created feature/cow at /tmp/worktree-output/repository.feature-cli\ncopyOnWrite: ignoredIncludedPatterns=[] ignoredExcludedCount=0 nestedWorktreesSkipped=[]",
+                humanText: "created feature/cow at /tmp/worktree-output/repository.feature-cli (copy-on-write)",
                 jsonText:
-                    "{\"branch\":\"feature/cow\",\"materialization\":{\"clonedRegularFileCount\":0,\"createdDirectoryCount\":0,\"ignoredExcludedCount\":0,\"ignoredIncludedPatterns\":[],\"kind\":\"copyOnWrite\",\"logicalRegularFileBytes\":0,\"nestedWorktreesSkipped\":[],\"normalizedEntries\":[],\"preservedGitRepositoryCount\":0,\"preservedHardLinkCount\":0,\"recreatedFIFOCount\":0,\"recreatedSymbolicLinkCount\":0,\"skippedEntries\":[]},\"operation\":\"new\",\"outcome\":\"created\",\"path\":\"/tmp/worktree-output/repository.feature-cli\",\"repository\":\"/tmp/worktree-output/repository\"}",
+                    "{\"branch\":{\"name\":\"feature/cow\",\"status\":\"created\",\"upstream\":null},\"fetch\":{\"branch\":null,\"reason\":\"noRemote\",\"remote\":null,\"status\":\"skipped\"},\"materialization\":{\"clonedRegularFileCount\":0,\"createdDirectoryCount\":0,\"ignoredExcludedCount\":0,\"ignoredIncludedPatterns\":[],\"kind\":\"copyOnWrite\",\"logicalRegularFileBytes\":0,\"nestedWorktreesSkipped\":[],\"normalizedEntries\":[],\"preservedGitRepositoryCount\":0,\"preservedHardLinkCount\":0,\"recreatedFIFOCount\":0,\"recreatedSymbolicLinkCount\":0,\"skippedEntries\":[],\"sourceState\":\"asIs\",\"submodulesNotAtStart\":[]},\"operation\":\"new\",\"outcome\":\"created\",\"path\":\"/tmp/worktree-output/repository.feature-cli\",\"repository\":\"/tmp/worktree-output/repository\",\"start\":{\"commit\":\"1111111111111111111111111111111111111111\",\"from\":\"sourceHead\",\"localOnlyCommits\":null,\"ref\":null}}",
                 exitCode: 0
             ),
         ]
@@ -418,9 +373,9 @@ struct WorktreeCommandLineTests {
                         GitWorktreeWorkingStateRefusal(reason: .attributesChanged, relativePath: ".gitattributes"))
                 ),
                 humanText:
-                    "refused: unsupportedWorkingState .gitattributes attributesChanged; options: [commit the changed .gitattributes first: Commit the changed attributes, then retry --changes-only.; stash the changed .gitattributes first: Stash the changed attributes, then retry --changes-only.; agentstudio worktree new <branch> --from <source>: Use the APFS copy-on-write fork without --changes-only.]",
+                    "refused: unsupportedWorkingState .gitattributes attributesChanged; options: [commit the changed .gitattributes first: Commit the changed attributes, then retry --changes-only.; stash the changed .gitattributes first: Stash the changed attributes, then retry --changes-only.; agentstudio worktree new -c <branch> --from <source>: Use the APFS copy-on-write fork without --changes-only.]",
                 jsonText:
-                    "{\"detail\":\"attributesChanged\",\"options\":[{\"command\":\"commit the changed .gitattributes first\",\"effect\":\"Commit the changed attributes, then retry --changes-only.\"},{\"command\":\"stash the changed .gitattributes first\",\"effect\":\"Stash the changed attributes, then retry --changes-only.\"},{\"command\":\"agentstudio worktree new <branch> --from <source>\",\"effect\":\"Use the APFS copy-on-write fork without --changes-only.\"}],\"outcome\":\"refused\",\"path\":\".gitattributes\",\"reason\":\"unsupportedWorkingState\"}",
+                    "{\"detail\":\"attributesChanged\",\"options\":[{\"command\":\"commit the changed .gitattributes first\",\"effect\":\"Commit the changed attributes, then retry --changes-only.\"},{\"command\":\"stash the changed .gitattributes first\",\"effect\":\"Stash the changed attributes, then retry --changes-only.\"},{\"command\":\"agentstudio worktree new -c <branch> --from <source>\",\"effect\":\"Use the APFS copy-on-write fork without --changes-only.\"}],\"outcome\":\"refused\",\"path\":\".gitattributes\",\"reason\":\"unsupportedWorkingState\"}",
                 exitCode: 1
             ),
             FormatterGolden(
@@ -507,13 +462,14 @@ struct WorktreeCommandLineTests {
 
         let createProbe = WorktreeCommandLineTestProbe()
         let createExitCode = await WorktreeCommandLine.run(
-            arguments: ["new", branch, "--tracked-only", "--repo", repository.path],
+            arguments: ["new", "-c", branch, "--no-fork", "--repo", repository.path],
             currentDirectory: outsideRepository,
             output: { createProbe.appendOutput($0) },
             errorOutput: { createProbe.appendErrorOutput($0) }
         )
         #expect(createExitCode == 0)
-        #expect(createProbe.outputSnapshot() == ["created \(branch) at \(destination.standardizedFileURL.path)"])
+        #expect(
+            createProbe.outputSnapshot() == ["created \(branch) at \(destination.standardizedFileURL.path) (checkout)"])
 
         let createdListingProbe = WorktreeCommandLineTestProbe()
         let listAfterCreateExitCode = await WorktreeCommandLine.run(
