@@ -340,7 +340,7 @@ then
 fi
 
 /usr/bin/python3 - "$IPC_RUNTIME_FILE" "$IPC_DEBUG_ESCROW_PATH" "$LOGS_QUERY_URL" "$TRACE_MARKER" <<'PY'
-import datetime, json, socket, sys, time, urllib.parse, urllib.request
+import datetime, json, socket, sys, time, urllib.parse, urllib.request, uuid
 with open(sys.argv[1], encoding="utf-8") as stream: socket_path = json.load(stream)["socketPath"]
 with open(sys.argv[2], encoding="utf-8") as stream: escrow = json.load(stream)
 if escrow.get("socketPath") != socket_path:
@@ -482,11 +482,16 @@ def wait_for_repo_sort_projection(expected_order=None, after_ns=0, timeout=10):
         f"timed out waiting for completed repo sort projection order={expected_order}: {latest}"
     )
 request("auth.login", {"token":token})
+windows = request("window.list", {}).get("windows", [])
+if len(windows) != 1:
+    raise RuntimeError(f"title/pane proof requires exactly one workspace window; got {len(windows)}")
+workspace_window_arguments = {"workspaceWindowId": str(uuid.UUID(windows[0]["id"]))}
 show_repos_result = request(
     "command.execute",
-    {"commandId":"showReposSidebar","targetHandle":None,"arguments":{}},
+    {"commandId":"showReposSidebar","correlationId":str(uuid.uuid4()),"arguments":workspace_window_arguments},
 )
-if show_repos_result.get("applied") is not True:
+# IPCCommandExecutionResult.swift:213 encodes the kind discriminator.
+if show_repos_result.get("kind") != "applied":
     raise RuntimeError(f"showReposSidebar did not apply: {show_repos_result}")
 pane = wait_for_terminal_pane()
 wait_for_startup_diagnostic_completion()
@@ -497,11 +502,12 @@ first_sort_toggle_result = request(
     "command.execute",
     {
         "commandId":"toggleReposSortDirection",
-        "targetHandle":None,
-        "arguments":{},
+        "correlationId":str(uuid.uuid4()),
+        "arguments":workspace_window_arguments,
     },
 )
-if first_sort_toggle_result.get("applied") is not True:
+# IPCCommandExecutionResult.swift:213 encodes the kind discriminator.
+if first_sort_toggle_result.get("kind") != "applied":
     raise RuntimeError(f"first repo sort toggle did not apply: {first_sort_toggle_result}")
 opposite_sort_order = "descending" if initial_sort_order == "ascending" else "ascending"
 first_sort_projection = wait_for_repo_sort_projection(
@@ -512,11 +518,12 @@ second_sort_toggle_result = request(
     "command.execute",
     {
         "commandId":"toggleReposSortDirection",
-        "targetHandle":None,
-        "arguments":{},
+        "correlationId":str(uuid.uuid4()),
+        "arguments":workspace_window_arguments,
     },
 )
-if second_sort_toggle_result.get("applied") is not True:
+# IPCCommandExecutionResult.swift:213 encodes the kind discriminator.
+if second_sort_toggle_result.get("kind") != "applied":
     raise RuntimeError(f"second repo sort toggle did not apply: {second_sort_toggle_result}")
 wait_for_repo_sort_projection(
     expected_order=initial_sort_order,
@@ -632,11 +639,12 @@ capability_result = request(
     "command.execute",
     {
         "commandId":"toggleReposSortDirection",
-        "targetHandle":None,
-        "arguments":{},
+        "correlationId":str(uuid.uuid4()),
+        "arguments":workspace_window_arguments,
     },
 )
-if capability_result.get("applied") is not True:
+# IPCCommandExecutionResult.swift:213 encodes the kind discriminator.
+if capability_result.get("kind") != "applied":
     raise RuntimeError(f"repo sort toggle did not apply: {capability_result}")
 capability_delta = wait_for_delta(capability_baseline, lambda value: value["repo_events"] >= 1, "capability presentation telemetry")
 capability_after = quiescent_snapshot()
@@ -657,11 +665,12 @@ capability_restore_result = request(
     "command.execute",
     {
         "commandId":"toggleReposSortDirection",
-        "targetHandle":None,
-        "arguments":{},
+        "correlationId":str(uuid.uuid4()),
+        "arguments":workspace_window_arguments,
     },
 )
-if capability_restore_result.get("applied") is not True:
+# IPCCommandExecutionResult.swift:213 encodes the kind discriminator.
+if capability_restore_result.get("kind") != "applied":
     raise RuntimeError(f"repo sort restoration toggle did not apply: {capability_restore_result}")
 wait_for_repo_sort_projection(
     expected_order=initial_sort_order,
