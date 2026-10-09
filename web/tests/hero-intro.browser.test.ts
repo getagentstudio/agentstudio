@@ -5,7 +5,9 @@ import type { HeroEyebrowSettleObservation } from "./hero-eyebrow-settle-browser
 import type {
   HeroLayoutObservation,
   HeroPlaybackObservation,
-  HeroRefreshObservation,
+  HeroReloadObservation,
+  HeroScrollAndWheelObservation,
+  HeroHashLinkObservation,
   HeroShiftObservation,
   HeroScrollCueObservation,
   HeroPhoneFlowObservation,
@@ -25,8 +27,51 @@ declare module "vitest/browser" {
     verifyHeroNoScriptWidth(
       pageUrl: string,
     ): Promise<{ readonly documentWidth: number; readonly shortLabels: boolean }>;
-    verifyHeroIntroPlayback(pageUrl: string): Promise<HeroPlaybackObservation>;
-    verifyHeroIntroRefresh(pageUrl: string): Promise<HeroRefreshObservation>;
+    verifyHeroIntroDealtFan(
+      pageUrl: string,
+    ): Promise<
+      Pick<
+        HeroPlaybackObservation,
+        | "midIntroWasPlaying"
+        | "fanAnglesAtEnd"
+        | "fourthAngleAtEnd"
+        | "fanBorderWidthsAtEnd"
+        | "fourthBorderWidthWhileDealing"
+        | "terminalWindowBorderWidth"
+        | "midIntroHorizontalOverflow"
+      >
+    >;
+    verifyHeroIntroResize(
+      pageUrl: string,
+    ): Promise<
+      Pick<
+        HeroPlaybackObservation,
+        | "resizeSettledEvents"
+        | "resizeProgress"
+        | "resizeInlineStyles"
+        | "resizeInlineStyleElements"
+        | "resizeFourthPlanes"
+        | "resizedWindow"
+        | "freshNarrowWindow"
+      >
+    >;
+    verifyHeroIntroReducedMotion(
+      pageUrl: string,
+    ): Promise<Pick<HeroPlaybackObservation, "reducedMotionCreatedTimeline">>;
+    verifyHeroIntroKeydown(
+      pageUrl: string,
+    ): Promise<Pick<HeroPlaybackObservation, "keydownSettledEvents">>;
+    verifyHeroIntroSecondResize(
+      pageUrl: string,
+    ): Promise<
+      Pick<
+        HeroPlaybackObservation,
+        "afterSecondResizeWindow" | "freshWideWindow" | "afterSecondResizeInlineStyles"
+      >
+    >;
+    observeHeroReload(pageUrl: string): Promise<HeroReloadObservation>;
+    observeHeroScrollAndWheel(pageUrl: string): Promise<HeroScrollAndWheelObservation>;
+    observeHeroHashLink(pageUrl: string): Promise<HeroHashLinkObservation>;
     verifyHeroIntroShift(
       pageUrl: string,
       width: number,
@@ -133,12 +178,20 @@ describe("hero intro", () => {
       }
     },
   );
-  it("replays from the top on reload, settles for anchors, and skips on wheel", async () => {
-    const observation = await commands.verifyHeroIntroRefresh(inject("siteHeaderBrowserTestUrl"));
+  it("replays from the top after a reload", async () => {
+    const observation = await commands.observeHeroReload(inject("siteHeaderBrowserTestUrl"));
     expect(observation.reloadState).toBe("playing");
     expect(observation.reloadScrollY).toBe(0);
+  });
+  it("keeps playing on programmatic scroll and settles on wheel", async () => {
+    const observation = await commands.observeHeroScrollAndWheel(
+      inject("siteHeaderBrowserTestUrl"),
+    );
     expect(observation.programmaticScrollState).toBe("playing");
     expect(observation.wheelState).toBe("settled");
+  });
+  it("settles a #many-agents deep link without creating a timeline", async () => {
+    const observation = await commands.observeHeroHashLink(inject("siteHeaderBrowserTestUrl"));
     expect(observation.hashState).toBe("settled");
     expect(observation.hashCreatedTimeline).toBe(false);
   });
@@ -286,8 +339,8 @@ describe("hero intro", () => {
     },
   );
 
-  it("settles once on resize or keydown and leaves CSS in charge of the final layout", async () => {
-    const observation = await commands.verifyHeroIntroPlayback(inject("siteHeaderBrowserTestUrl"));
+  it("keeps the dealt fan angles, borders and width mid-intro", async () => {
+    const observation = await commands.verifyHeroIntroDealtFan(inject("siteHeaderBrowserTestUrl"));
     expect(observation.midIntroWasPlaying).toBe(true);
     for (const [index, expectedAngle] of [0, 7, -12].entries()) {
       expect(observation.fanAnglesAtEnd[index]).toBeCloseTo(expectedAngle, 1);
@@ -297,17 +350,40 @@ describe("hero intro", () => {
     expect(observation.fanBorderWidthsAtEnd).toEqual([1, 1, 1, 1]);
     expect(observation.fourthBorderWidthWhileDealing).toBe(1);
     expect(observation.midIntroHorizontalOverflow).toBeLessThanOrEqual(0);
+  });
+  it("settles once on resize and matches a fresh narrow load", async () => {
+    const observation = await commands.verifyHeroIntroResize(inject("siteHeaderBrowserTestUrl"));
     expect(observation.resizeSettledEvents).toBe(1);
     expect(observation.resizeProgress).toBe(1);
     expect(observation.resizeInlineStyles, observation.resizeInlineStyleElements.join("\n")).toBe(
       0,
     );
     expect(observation.resizeFourthPlanes).toBe(0);
-    expect(observation.reducedMotionCreatedTimeline).toBe(false);
-    expect(observation.keydownSettledEvents).toBe(1);
-    expect(observation.afterSecondResizeInlineStyles).toBe(0);
     for (const [actual, expected] of [
       [observation.resizedWindow, observation.freshNarrowWindow],
+    ] as const) {
+      expect(Math.abs(actual.left - expected.left)).toBeLessThanOrEqual(1);
+      expect(Math.abs(actual.top - expected.top)).toBeLessThanOrEqual(1);
+      expect(Math.abs(actual.width - expected.width)).toBeLessThanOrEqual(1);
+      expect(Math.abs(actual.height - expected.height)).toBeLessThanOrEqual(1);
+    }
+  });
+  it("creates no timeline under reduced motion", async () => {
+    const observation = await commands.verifyHeroIntroReducedMotion(
+      inject("siteHeaderBrowserTestUrl"),
+    );
+    expect(observation.reducedMotionCreatedTimeline).toBe(false);
+  });
+  it("settles once on keydown", async () => {
+    const observation = await commands.verifyHeroIntroKeydown(inject("siteHeaderBrowserTestUrl"));
+    expect(observation.keydownSettledEvents).toBe(1);
+  });
+  it("returns to a fresh wide layout after a second resize with no inline styles", async () => {
+    const observation = await commands.verifyHeroIntroSecondResize(
+      inject("siteHeaderBrowserTestUrl"),
+    );
+    expect(observation.afterSecondResizeInlineStyles).toBe(0);
+    for (const [actual, expected] of [
       [observation.afterSecondResizeWindow, observation.freshWideWindow],
     ] as const) {
       expect(Math.abs(actual.left - expected.left)).toBeLessThanOrEqual(1);

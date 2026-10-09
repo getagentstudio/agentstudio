@@ -1,7 +1,11 @@
-import { expect, inject, it } from "vitest";
+import { expect, inject, it, onTestFailed } from "vitest";
 import { commands } from "vitest/browser";
 
 import type { StepHopObservation } from "./chapter-step-hop-browser-command";
+import {
+  pendingWaitDiagnosticHookTimeoutMilliseconds,
+  reportPendingWaitDiagnostic,
+} from "./pending-wait-diagnostics";
 
 declare module "vitest/browser" {
   interface BrowserCommands {
@@ -15,6 +19,11 @@ declare module "vitest/browser" {
 
 for (const width of [390, 820, 1600]) {
   it(`keeps the step line still and hides its ring under reduced motion at ${width}px`, async () => {
+    onTestFailed(
+      (context) =>
+        reportPendingWaitDiagnostic(context, () => commands.capturePendingWaitDiagnostics()),
+      pendingWaitDiagnosticHookTimeoutMilliseconds,
+    );
     const result = await commands.verifyReducedMotionStepLine(
       inject("siteHeaderBrowserTestUrl"),
       width,
@@ -26,6 +35,11 @@ for (const width of [390, 820, 1600]) {
 
 for (const width of [390, 820, 1600]) {
   it(`shows a seekable countdown and a 250ms commit hop at ${width}px`, async () => {
+    onTestFailed(
+      (context) =>
+        reportPendingWaitDiagnostic(context, () => commands.capturePendingWaitDiagnostics()),
+      pendingWaitDiagnosticHookTimeoutMilliseconds,
+    );
     const result = await commands.verifyChapterStepHop(inject("siteHeaderBrowserTestUrl"), width);
     expect(result.ringFraction).toBeCloseTo(0.5, 1);
     expect(result.autoHeldState).toBe("held");

@@ -609,7 +609,7 @@ struct CIFastLaneWorkflowTests {
         let isolatedSuiteRunner = try shellFunction(named: "run_selected_isolated_suite", in: helperScript)
         let fastRunner = try shellFunction(named: "run_fast_non_webkit_swift_tests", in: helperScript)
         let discoveredSuiteFilters = try await runBash(
-            "LOG_PREFIX=test TIMEOUT_SECONDS=60 PREBUILD_TIMEOUT_SECONDS=60 BUILD_PATH=.build-agent-1 "
+            "LOG_PREFIX=test TIMEOUT_SECONDS=60 PREBUILD_TIMEOUT_SECONDS=60 "
                 + "bash -c 'source scripts/swift-test-helpers.sh; aggregate_serial_non_webkit_suite_filters'"
         )
         let webKitSuiteFilters = try await runBash(
@@ -970,6 +970,7 @@ func runBash(_ command: String, standardInput: String? = nil) async throws -> St
         let input = standardInput.map { _ in Pipe() }
         process.executableURL = URL(fileURLWithPath: "/bin/bash")
         process.arguments = ["-c", command]
+        process.environment = testProcessEnvironmentWithoutRelayPaths()
         process.currentDirectoryURL = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
         process.standardInput = input
         process.standardOutput = outputHandle
@@ -996,6 +997,7 @@ private func runBashStatus(_ command: String) async throws -> Int32 {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/bin/bash")
         process.arguments = ["-c", command]
+        process.environment = testProcessEnvironmentWithoutRelayPaths()
         process.currentDirectoryURL = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
         try process.run()
         process.waitUntilExit()

@@ -32,7 +32,7 @@ struct SwiftLaneHelperCancellationTests {
             export PATH
             LOG_PREFIX=helper-cancel
             TIMEOUT_SECONDS=2
-            BUILD_PATH=.build-agent-1
+            BUILD_PATH='\(workDirectory)/build'
             LANE_WATCHDOG_ARM_PATH='\(watchdogArmPath)'
             LANE_EVENT_STREAM_DIR='\(eventDirectory)'
             export LANE_WATCHDOG_ARM_PATH LANE_EVENT_STREAM_DIR
@@ -60,7 +60,7 @@ struct SwiftLaneHelperCancellationTests {
               echo HELPER_GROUP_ALIVE=no
             fi
             """
-        let result = try await runLaneScriptBash(shellCommand)
+        let result = try await runLaneScriptBash(shellCommand, innerWatchdog: .armed)
         let laneOutput = result.output
 
         let helperPIDReceipt =
@@ -124,7 +124,7 @@ struct SwiftLaneHelperCancellationTests {
             export PATH
             LOG_PREFIX=helper-cancel-escalation
             TIMEOUT_SECONDS=2
-            BUILD_PATH=.build-agent-1
+            BUILD_PATH='\(workDirectory)/build'
             LANE_WATCHDOG_ARM_PATH='\(watchdogArmPath)'
             LANE_EVENT_STREAM_DIR='\(eventDirectory)'
             export LANE_WATCHDOG_ARM_PATH LANE_EVENT_STREAM_DIR
@@ -144,7 +144,7 @@ struct SwiftLaneHelperCancellationTests {
               echo COMMAND_ALIVE=no
             fi
             """
-        let result = try await runLaneScriptBash(shellCommand)
+        let result = try await runLaneScriptBash(shellCommand, innerWatchdog: .armed)
         let laneOutput = result.output
 
         let commandPIDReceipt =
