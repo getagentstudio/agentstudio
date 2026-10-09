@@ -4,6 +4,7 @@ import Foundation
 import Testing
 
 @testable import AgentStudio
+@testable import AgentStudioCore
 @testable import AgentStudioInfrastructure
 
 /// The app ships its octicons through the built SwiftPM resource bundle. Since the
@@ -13,7 +14,7 @@ import Testing
 /// fallback (v0.0.108). This test reads the BUILT bundle, so it fails whenever the
 /// packaged form and the loader disagree.
 @MainActor
-@Suite("Octicons load from the built resource bundle")
+@Suite("Octicons load from the built resource bundle", .serialized)
 struct OcticonResourceBundleTests {
     @Test("every octicon in the source catalog loads from the built resource bundle as a template image")
     func everySourceCatalogOcticonLoadsFromBuiltBundle() throws {
@@ -35,5 +36,18 @@ struct OcticonResourceBundleTests {
         let notTemplate = loadedImages.filter { $0.image?.isTemplate == false }.map(\.name)
         #expect(missing.isEmpty, "octicons missing from the built resource bundle: \(missing)")
         #expect(notTemplate.isEmpty, "octicons not loaded as template images: \(notTemplate)")
+    }
+
+    @Test("every typed octicon symbol resolves from the built resource bundle")
+    func everyTypedOcticonSymbolResolvesFromBuiltBundle() {
+        // Arrange
+        let loader = OcticonLoader(resourceBundle: Bundle.appResources)
+
+        // Act
+        let missing = OcticonSymbol.allCases.filter { loader.image(named: $0.rawValue) == nil }.map(\.rawValue)
+
+        // Assert
+        #expect(!OcticonSymbol.allCases.isEmpty)
+        #expect(missing.isEmpty, "typed octicons missing from the built resource bundle: \(missing)")
     }
 }
