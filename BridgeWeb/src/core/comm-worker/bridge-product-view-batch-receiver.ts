@@ -546,7 +546,7 @@ function sameJSON(left: unknown, right: unknown): boolean {
 	return canonicalJSON(left) === canonicalJSON(right);
 }
 
-function sameViewFilter(left: BatchBegin['scope'], right: BatchBegin['scope']): boolean {
+export function sameViewFilter(left: BatchBegin['scope'], right: BatchBegin['scope']): boolean {
 	if (left.kind !== right.kind) return false;
 	if (left.kind !== 'file' || right.kind !== 'file') return true;
 	return (

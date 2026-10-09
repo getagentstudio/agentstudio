@@ -424,6 +424,8 @@ describe('W2 desired view scope owner', () => {
 			scopeRevision: 1,
 			subscriptionId: 'review-subscription-1',
 		});
+		// Genuine recovery, rather than ordinary demand, owns the replacement-begin obligation.
+		await owner.resnapshot('review-subscription-1');
 		await owner.setScope({
 			scope: { kind: 'review', interests: [{ lane: 'foreground', itemIds: ['item-1'] }] },
 			subscriptionId: 'review-subscription-1',
