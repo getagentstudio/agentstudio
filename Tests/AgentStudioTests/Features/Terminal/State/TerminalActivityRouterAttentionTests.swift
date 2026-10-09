@@ -276,8 +276,10 @@ struct TerminalActivityRouterAttentionTests {
             // Act
             fixture.selectPane(at: 1)
             fixture.selectPane(at: 2)
-            _ = try await fixture.deadlines.expectDisposition(for: cDeadline, .cancelled)
+            // Same-turn selection is coalesced into one settled old-pane -> C delivery.
+            // Join that owner delivery before consuming the projector's closing fact.
             await fixture.router.waitForPendingAttentionDelivery()
+            _ = try await fixture.deadlines.expectDisposition(for: cDeadline, .cancelled)
             await fixture.clock.waitForPendingSleepCount(exactly: 1)
 
             // Assert
