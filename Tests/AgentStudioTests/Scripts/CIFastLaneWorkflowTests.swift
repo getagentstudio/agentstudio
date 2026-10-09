@@ -748,7 +748,6 @@ struct CIFastLaneWorkflowTests {
             "DarwinSharedLocalFSEventObserverTests",
             "DarwinSharedExactItemObserverTests",
             "DarwinSharedExactItemRealStreamIntegrationTests",
-            "DerivedActivityNotificationIntegrationTests",
             "DrawerCommandIntegrationTests",
             "FilesystemActorActivityTests",
             "FilesystemGitPipelineDemandIntegrationTests",
