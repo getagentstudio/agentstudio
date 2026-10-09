@@ -102,6 +102,7 @@ Packages 6–9 became follow-ups (section 6).
 - Packages 6–9 from the final review: D1 logical completion vs physical drain on pane disposal (S1-F1/S2-F1); remembered Export/Repeat deadline classification (S1-F4); dev-host parity (S2-F2, S2-F5).
 - Package 4 residual: explicit Review loads not fenced on hide (main has the same behavior). Fix with item 1.
 - Tracked-symlink alias refresh when only the target changes (pre-existing; stale reads fail typed, never serve wrong bytes).
+- **GO24 recurred after merge (product, lost wake-up):** hosted CI 37912832921 at the PR1 merge head `bf68ab69e` failed the two-pane WebKit journey (`BridgeProductRealGitFileAndReviewWebKitTests` › "two hosted panes isolate native hidden admission…"): the File catch-up succeeded, the Review catch-up ended stale, and the Review lane stayed dirty with no owner ("foreground catch-up did not settle"). It passed on hosted at `6a02f219b` and `a9bd962b2`, so it is intermittent. The second fix moved the hide fence into the acceptance turn, but a further path remains; native-b's diagnosis flagged that the catch-up loop can reserve another pass after success without checking cancellation, task identity or `completeRefreshPass` (`BridgePaneController+RefreshAdmission.swift:214-221`), and that a retired catch-up skips rescheduling at `:246`. Fix it with item 1 (LUNA-408); evidence is in the private session-logs history (`go24-recurrence/`).
 - Investigate V2 refused retryability: `bridge-product-session-authority.ts` flattens refused/superseded to `retryable=false`.
 
 **Test reliability (CI Lead owns this program from 2026-10-09; handoff in the private session-logs repo):** GO30 hard-cut Files filter dismissal (3-core), GO26 WebKit waits without closing facts, TQ23 markdown act escape, TQ35 shared-profile tab ownership, and audits for the GO25/GO27 patterns.
@@ -153,7 +154,7 @@ Design identifiers (E1, W2, W4, N10, R13, C5, U13, R40–R43, INST) are defined 
 | GO21 | Tracked symlinks made the File batch throw (final-review package 1) | Product | Fixed |
 | GO22 | Healthy File demand forced a false "recovering" and a resnapshot (package 2) | Product | Fixed |
 | GO23 | Content tests ran before session activation and got 409 | Test | Fixed |
-| GO24 | The first hide fence ran after `await`s and fenced a newer Review attempt (package 4) | Product | Fixed in the acceptance turn |
+| GO24 | The first hide fence ran after `await`s and fenced a newer Review attempt (package 4) | Product | Fence fixed in the acceptance turn; **recurred after merge** as a lost wake-up (section 6) |
 | GO25 | The copy-churn E2E treated a legal `superseded` projection query as fatal | Test | Fixed |
 | GO26 | WebKit two-pane setup stalled while the console was locked; the harness turned it into a silent 600 s hang | Environment + harness | Open (CI Lead) |
 | GO27 | A test read the telemetry trace before its completed phase was recorded | Test | Fixed |
