@@ -23,7 +23,7 @@ struct WorktreeCreationLargeFileCommandLineTests {
 
         let createProbe = WorktreeCreationCommandLineProbe()
         let createExitCode = await WorktreeCommandLine.run(
-            arguments: ["new", branch, "--tracked-only", "--repo", fixture.repository.path, "--json"],
+            arguments: ["new", "-c", branch, "--no-fork", "--repo", fixture.repository.path, "--json"],
             currentDirectory: fixture.repository,
             output: { createProbe.appendOutput($0) },
             errorOutput: { createProbe.appendError($0) }
@@ -83,7 +83,7 @@ struct WorktreeCreationLargeFileCommandLineTests {
         let probe = WorktreeCreationCommandLineProbe()
 
         let exitCode = await WorktreeCommandLine.run(
-            arguments: ["new", branch, "--tracked-only", "--repo", fixture.repository.path],
+            arguments: ["new", "-c", branch, "--no-fork", "--repo", fixture.repository.path],
             currentDirectory: fixture.repository,
             output: { probe.appendOutput($0) },
             errorOutput: { probe.appendError($0) }
@@ -92,19 +92,18 @@ struct WorktreeCreationLargeFileCommandLineTests {
         #expect(exitCode == 0)
         #expect(probe.errorSnapshot().isEmpty)
         #expect(try Data(contentsOf: destination.appending(path: "asset.bin")) == Data(fixture.pointer.utf8))
+        // LR31: one line counts what is left as pointers; the quoted pull option is in --json below.
         let output = try #require(probe.outputSnapshot().first)
-        let expectedHumanPullCommand = WorktreeLargeFileCLIContract.expectedPullCommand(for: destination)
         #expect(destination.path.contains(" "))
         #expect(destination.path.contains("'"))
-        #expect(output.contains("LFS: 0 filled, 1 missing"))
-        #expect(output.contains(expectedHumanPullCommand))
+        #expect(output == "created \(branch) at \(destination.path) (checkout; 1 large file left as pointers)")
 
         let jsonProbe = WorktreeCreationCommandLineProbe()
         let jsonBranch = "feature/lfs-absent-json"
         let jsonDestination = try siblingDestination(repository: fixture.repository, branch: jsonBranch)
         defer { try? FileManager.default.removeItem(at: jsonDestination) }
         let jsonExitCode = await WorktreeCommandLine.run(
-            arguments: ["new", jsonBranch, "--tracked-only", "--repo", fixture.repository.path, "--json"],
+            arguments: ["new", "-c", jsonBranch, "--no-fork", "--repo", fixture.repository.path, "--json"],
             currentDirectory: fixture.repository,
             output: { jsonProbe.appendOutput($0) },
             errorOutput: { jsonProbe.appendError($0) }
@@ -124,7 +123,7 @@ struct WorktreeCreationLargeFileCommandLineTests {
         defer { try? FileManager.default.removeItem(at: forkDestination) }
         let forkProbe = WorktreeCreationCommandLineProbe()
         let forkExitCode = await WorktreeCommandLine.run(
-            arguments: ["new", forkBranch, "--from", fixture.repository.path, "--changes-only"],
+            arguments: ["new", "-c", forkBranch, "--from", fixture.repository.path, "--changes-only"],
             currentDirectory: fixture.repository,
             output: { forkProbe.appendOutput($0) },
             errorOutput: { forkProbe.appendError($0) }
@@ -132,15 +131,15 @@ struct WorktreeCreationLargeFileCommandLineTests {
         #expect(forkExitCode == 0)
         #expect(forkProbe.errorSnapshot().isEmpty)
         #expect(
-            forkProbe.outputSnapshot().first?.contains(
-                WorktreeLargeFileCLIContract.expectedPullCommand(for: forkDestination)) == true)
+            forkProbe.outputSnapshot().first
+                == "created \(forkBranch) at \(forkDestination.path) (changes-only; 1 large file left as pointers)")
 
         let forkJSONBranch = "feature/lfs-absent-fork-json"
         let forkJSONDestination = try siblingDestination(repository: fixture.repository, branch: forkJSONBranch)
         defer { try? FileManager.default.removeItem(at: forkJSONDestination) }
         let forkJSONProbe = WorktreeCreationCommandLineProbe()
         let forkJSONExitCode = await WorktreeCommandLine.run(
-            arguments: ["new", forkJSONBranch, "--from", fixture.repository.path, "--changes-only", "--json"],
+            arguments: ["new", "-c", forkJSONBranch, "--from", fixture.repository.path, "--changes-only", "--json"],
             currentDirectory: fixture.repository,
             output: { forkJSONProbe.appendOutput($0) },
             errorOutput: { forkJSONProbe.appendError($0) }
@@ -169,7 +168,7 @@ struct WorktreeCreationLargeFileCommandLineTests {
         let probe = WorktreeCreationCommandLineProbe()
 
         let exitCode = await WorktreeCommandLine.run(
-            arguments: ["new", branch, "--from", fixture.repository.path, "--changes-only", "--json"],
+            arguments: ["new", "-c", branch, "--from", fixture.repository.path, "--changes-only", "--json"],
             currentDirectory: fixture.repository,
             output: { probe.appendOutput($0) },
             errorOutput: { probe.appendError($0) }
@@ -218,8 +217,8 @@ struct WorktreeCreationLargeFileCommandLineTests {
         let outcome = await WorktreeOperationRunner(client: client).run(
             .create(
                 WorktreeCreateRequest(
-                    start: repository, branch: branch, source: .mainWorktree,
-                    materialization: .trackedOnly(startBranch: nil)))
+                    start: repository, branch: branch, create: true, source: .mainWorktree,
+                    startBranch: nil, materialization: .checkout, fetchPolicy: .skip))
         )
         guard case .created = outcome else {
             Issue.record("expected worktree creation to succeed with an incomplete LFS scan, received \(outcome)")
@@ -239,8 +238,7 @@ struct WorktreeCreationLargeFileCommandLineTests {
 
         let humanResponse = try WorktreeCommandLineFormatter.format(outcome: outcome, usesJSONOutput: false)
         #expect(humanResponse.exitCode == 0)
-        #expect(humanResponse.text.contains("scan incomplete (readFailed errno \(EIO))"))
-        #expect(humanResponse.text.contains("git -C \(destination.path) lfs pull"))
+        #expect(humanResponse.text == "created \(branch) at \(destination.path) (checkout)")
     }
 
     @Test("incomplete Git scan uses the CLI's string failure shape")
@@ -273,8 +271,8 @@ struct WorktreeCreationLargeFileCommandLineTests {
         let outcome = await WorktreeOperationRunner(client: client).run(
             .create(
                 WorktreeCreateRequest(
-                    start: repository, branch: branch, source: .mainWorktree,
-                    materialization: .trackedOnly(startBranch: nil)))
+                    start: repository, branch: branch, create: true, source: .mainWorktree,
+                    startBranch: nil, materialization: .checkout, fetchPolicy: .skip))
         )
         guard case .created = outcome else {
             Issue.record("expected worktree creation to succeed with an incomplete Git scan, received \(outcome)")
@@ -296,7 +294,7 @@ struct WorktreeCreationLargeFileCommandLineTests {
 
         let humanResponse = try WorktreeCommandLineFormatter.format(outcome: outcome, usesJSONOutput: false)
         #expect(humanResponse.exitCode == 0)
-        #expect(humanResponse.text.contains("scan incomplete (gitFailure headUnavailable)"))
+        #expect(humanResponse.text == "created \(branch) at \(destination.path) (checkout)")
     }
 
     @Test("nested LFS residue is rooted at the new worktree with zero fills and misses")
@@ -330,8 +328,8 @@ struct WorktreeCreationLargeFileCommandLineTests {
         let outcome = await WorktreeOperationRunner(client: client).run(
             .create(
                 WorktreeCreateRequest(
-                    start: repository, branch: branch, source: .mainWorktree,
-                    materialization: .trackedOnly(startBranch: nil)))
+                    start: repository, branch: branch, create: true, source: .mainWorktree,
+                    startBranch: nil, materialization: .checkout, fetchPolicy: .skip))
         )
         guard case .created = outcome else {
             Issue.record("expected creation to report its retained LFS residue, got \(outcome)")
@@ -357,8 +355,9 @@ struct WorktreeCreationLargeFileCommandLineTests {
         #expect(item["location"] as? String == residuePath)
         #expect(FileManager.default.fileExists(atPath: residueFile.path))
 
+        // LR31: the residue is reported in --json (above); the human line says what was created.
         let humanResponse = try WorktreeCommandLineFormatter.format(outcome: outcome, usesJSONOutput: false)
-        #expect(humanResponse.text.contains("temporaryArtifact \(residuePath) (destination)"))
+        #expect(humanResponse.text == "created \(branch) at \(destination.path) (checkout)")
     }
 
 }

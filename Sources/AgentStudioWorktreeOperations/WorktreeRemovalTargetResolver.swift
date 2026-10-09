@@ -129,12 +129,11 @@ package struct WorktreeRemovalTargetResolver: Sendable {
         }
     }
 
+    /// Any typed text is checked, not only a name `new` would accept, so a `<repo>.HEAD` folder still keeps
+    /// `HEAD` from reading as already removed (LR10). The slug can't name a path outside the repository's parent.
     private func hasSiblingWorktreeFolder(for target: String, repositoryPath: URL) -> Bool {
-        guard case .success(let branchName) = WorktreeBranchName.validated(target),
-            let siblingPath = WorktreeDestinationNaming.siblingPath(
-                repositoryPath: repositoryPath,
-                branchName: branchName
-            )
+        guard !target.isEmpty,
+            let siblingPath = WorktreeDestinationNaming.siblingPath(repositoryPath: repositoryPath, rawName: target)
         else {
             return false
         }

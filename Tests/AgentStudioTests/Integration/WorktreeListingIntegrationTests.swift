@@ -168,7 +168,7 @@ struct WorktreeListingIntegrationTests {
         )
 
         let outcome = await WorktreeOperationRunner(client: client).run(
-            .list(start: fixture.path, callerDirectory: nil, targets: [], fetchPolicy: .defaultBranch)
+            .list(start: fixture.path, callerDirectory: nil, targets: [], fetchPolicy: .fetch)
         )
 
         guard case .listed(let listing) = outcome else {
@@ -476,7 +476,7 @@ struct WorktreeListingIntegrationTests {
         #expect(staleFeature.integration == .hasRemainingContribution)
 
         let fetchedOutcome = await runner.run(
-            .list(start: repository, callerDirectory: nil, targets: [], fetchPolicy: .defaultBranch)
+            .list(start: repository, callerDirectory: nil, targets: [], fetchPolicy: .fetch)
         )
         guard case .listed(let fetchedListing) = fetchedOutcome,
             let fetchedFeature = fetchedListing.worktrees.first(where: { $0.branch == "feature/squash" })
@@ -538,7 +538,7 @@ struct WorktreeListingIntegrationTests {
         )
 
         let outcome = await runner.run(
-            .list(start: repository, callerDirectory: repository, targets: [], fetchPolicy: .defaultBranch)
+            .list(start: repository, callerDirectory: repository, targets: [], fetchPolicy: .fetch)
         )
 
         guard case .fetchingReadFailure(let failure) = outcome else {

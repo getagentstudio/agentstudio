@@ -7,6 +7,8 @@ enum WorktreeLargeFileCLIContract {
         let trackedChanges: Int?
         let untrackedFiles: Int?
         let ignoredExcluded: Bool?
+        let sourceState: String?
+        let submodulesNotAtStart: [String]?
     }
 
     enum ScanDocument: Decodable, Equatable {
