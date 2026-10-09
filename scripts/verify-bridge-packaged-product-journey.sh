@@ -225,6 +225,7 @@ while IFS='=' read -r key raw_value; do
     JOURNEY_ROOT) journey_root="$value" ;;
     AGENTSTUDIO_BRIDGE_JOURNEY_DATA_ROOT) journey_data_root="$value" ;;
     AGENTSTUDIO_BRIDGE_JOURNEY_OBSERVABILITY_STATE_FILE) observability_state_file="$value" ;;
+    AGENTSTUDIO_IPC_DEBUG_TOKEN_ESCROW) ipc_debug_escrow_path="$value" ;;
     AGENTSTUDIO_BRIDGE_JOURNEY_FIXTURE_ROOT) fixture_root="$value" ;;
     AGENTSTUDIO_BRIDGE_JOURNEY_FIXTURE_IDENTITY) fixture_identity="$value" ;;
     AGENTSTUDIO_BRIDGE_JOURNEY_FIXTURE_BASE_SHA) fixture_base_sha="$value" ;;
@@ -686,9 +687,15 @@ AGENTSTUDIO_OBSERVABILITY_STATE_FILE="$observability_state_file" \
   /bin/bash "$PROJECT_ROOT/scripts/verify-bridge-product-paint-correlation.sh"
 
 ipc_metadata="$state_data_dir/ipc/runtime.json"
-ipc_token="$state_data_dir/ipc/debug-token"
-if [ ! -f "$ipc_metadata" ] || [ ! -f "$ipc_token" ]; then
-  echo "Bridge packaged journey requires fresh one-shot authenticated IPC escrow" >&2
+case "${ipc_debug_escrow_path:-}" in
+  /*) ;;
+  *)
+    echo "Bridge packaged journey receipt requires an absolute AGENTSTUDIO_IPC_DEBUG_TOKEN_ESCROW path" >&2
+    exit 1
+    ;;
+esac
+if [ ! -f "$ipc_metadata" ] || [ ! -s "$ipc_debug_escrow_path" ]; then
+  echo "Bridge packaged journey requires authenticated IPC escrow: AGENTSTUDIO_IPC_DEBUG_TOKEN_ESCROW=$ipc_debug_escrow_path" >&2
   exit 1
 fi
 
@@ -697,7 +704,7 @@ AGENTSTUDIO_BRIDGE_JOURNEY_PROOF_TOKEN="$state_proof_token" \
 AGENTSTUDIO_BRIDGE_JOURNEY_APP="$state_app" \
 /usr/bin/python3 - \
   "$ipc_metadata" \
-  "$ipc_token" \
+  "$ipc_debug_escrow_path" \
   "$fixture_root" \
   "$expected_file_count" \
   "$expected_review_diff_count" \
@@ -719,7 +726,7 @@ import subprocess
 import sys
 import time
 
-metadata_path, token_path, fixture_root = sys.argv[1:4]
+metadata_path, escrow_path, fixture_root = sys.argv[1:4]
 expected_file_count = int(sys.argv[4])
 expected_review_diff_count = int(sys.argv[5])
 sentinel_paths = sys.argv[6:9]
@@ -743,10 +750,14 @@ with open(metadata_path, "r", encoding="utf-8") as file:
 socket_path = metadata.get("socketPath")
 if not isinstance(socket_path, str) or not socket_path:
     fail("Bridge packaged journey IPC metadata has no socketPath")
-with open(token_path, "r", encoding="utf-8") as file:
-    token = file.read().strip()
-if not token:
-    fail("Bridge packaged journey IPC token is empty")
+with open(escrow_path, "r", encoding="utf-8") as file:
+    escrow = json.load(file)
+token = escrow.get("token")
+if not isinstance(token, str) or not token:
+    fail("Bridge packaged journey AGENTSTUDIO_IPC_DEBUG_TOKEN_ESCROW has no token")
+if (escrow.get("socketPath") != socket_path or not escrow.get("runtimeId")
+        or escrow.get("runtimeId") != metadata.get("runtimeId")):
+    fail("Bridge packaged journey AGENTSTUDIO_IPC_DEBUG_TOKEN_ESCROW does not match IPC metadata")
 
 
 class Session:
@@ -935,8 +946,16 @@ def focus_foreground_pane(handle, label):
 
 try:
     login = session.request("auth.login", {"token": token})
-    if login.get("authenticated") is not True or os.path.exists(token_path):
-        fail("Bridge packaged journey IPC escrow was not authenticated and consumed exactly once")
+    # IPC v2 escrow is reusable until shutdown (IPC escrow and startup diagnostics).
+    if login.get("authenticated") is not True or not os.path.isfile(escrow_path):
+        fail("Bridge packaged journey IPC escrow was not authenticated or disappeared")
+    replay_session = Session(socket_path)
+    try:
+        replay_login = replay_session.request("auth.login", {"token": token})
+        if replay_login.get("authenticated") is not True:
+            fail("Bridge packaged journey IPC escrow replay did not authenticate")
+    finally:
+        replay_session.close()
 
     session.request("system.identify", {})
     capabilities = session.request("system.capabilities", {})

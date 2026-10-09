@@ -14,6 +14,7 @@ HEAD_SHA="$(cd "$PROJECT_ROOT" && git rev-parse HEAD)"
 APP_PID=""
 
 mkdir -p "$ARTIFACT_DIR"
+IPC_DEBUG_ESCROW_PATH="$(/usr/bin/python3 -c 'import os,sys; print(os.path.abspath(sys.argv[1]))' "$ARTIFACT_DIR/ipc-escrow.json")"
 
 decode_state_value() {
   local key="$1"
@@ -45,17 +46,21 @@ env \
   AGENTSTUDIO_TRACE_FLUSH=immediate \
   AGENTSTUDIO_TRACE_TAGS="performance,app.startup" \
   AGENTSTUDIO_TRACE_NAME="$TRACE_NAME" \
-  AGENTSTUDIO_IPC_DEBUG_TOKEN_ESCROW=1 \
+  AGENTSTUDIO_IPC_DEBUG_TOKEN_ESCROW="$IPC_DEBUG_ESCROW_PATH" \
   AGENTSTUDIO_STARTUP_DIAGNOSTIC_ACTION=sidebar-performance-proof \
   AGENTSTUDIO_OBSERVABILITY_STATE_FILE="$STATE_FILE" \
   "$PROJECT_ROOT/scripts/run-debug-observability.sh" --detach
 
 for _ in $(seq 1 60); do
-  [ -s "$STATE_FILE" ] && break
+  [ -s "$STATE_FILE" ] && [ -s "$IPC_DEBUG_ESCROW_PATH" ] && break
   sleep 1
 done
 if [ ! -s "$STATE_FILE" ]; then
   echo "missing debug observability state file: $STATE_FILE" >&2
+  exit 1
+fi
+if [ ! -s "$IPC_DEBUG_ESCROW_PATH" ]; then
+  echo "missing debug IPC escrow: AGENTSTUDIO_IPC_DEBUG_TOKEN_ESCROW=$IPC_DEBUG_ESCROW_PATH" >&2
   exit 1
 fi
 

@@ -240,6 +240,7 @@ SUMMARY_FILE="$ARTIFACT/summary.txt"
 DEBUG_OBSERVABILITY_STATE_FILE="${AGENTSTUDIO_OBSERVABILITY_STATE_FILE:-$PROJECT_ROOT/tmp/debug-observability/latest-observability.env}"
 DEBUG_IDENTITY_FILE="$ARTIFACT/debug-identity.env"
 DEBUG_STATE_COPY="$ARTIFACT/debug-observability.env"
+IPC_DEBUG_ESCROW_PATH="$ARTIFACT/ipc-escrow.json"
 ZMX_CLEANUP_SCRIPT="$PROJECT_ROOT/scripts/cleanup-owned-zmx-sessions.sh"
 ZMX_CLEANUP_ARTIFACT="$ARTIFACT/zmx-cleanup.env"
 RUNTIME_DATA_ROOT=""
@@ -776,7 +777,7 @@ launch_debug_observability_app() {
     "AGENTSTUDIO_TRACE_FLUSH=immediate"
     "AGENTSTUDIO_TRACE_NAME=$TRACE_NAME"
     "AGENTSTUDIO_TRACE_DIR=$TRACE_DIR"
-    "AGENTSTUDIO_IPC_DEBUG_TOKEN_ESCROW=1"
+    "AGENTSTUDIO_IPC_DEBUG_TOKEN_ESCROW=$IPC_DEBUG_ESCROW_PATH"
     "AGENTSTUDIO_DEBUG_DATA_DIR=$RUNTIME_DATA_ROOT"
   )
   if [ "$DRIVE_COMMAND_BAR" = "1" ]; then
@@ -1797,32 +1798,38 @@ capture_restore_trace() {
 
 capture_authenticated_final_state_oracle() {
   local ipc_metadata_path="${AGENTSTUDIO_OBSERVABILITY_IPC_METADATA:-$APP_DATA_DIR/ipc/runtime.json}"
-  local ipc_debug_token_path="${AGENTSTUDIO_OBSERVABILITY_IPC_DEBUG_TOKEN:-$APP_DATA_DIR/ipc/debug-token}"
+  local ipc_debug_escrow_path="$IPC_DEBUG_ESCROW_PATH"
   local oracle_file="$ARTIFACT/final-state-oracle.env"
-  if [ ! -f "$ipc_metadata_path" ] || [ ! -f "$ipc_debug_token_path" ]; then
-    echo "authenticated IPC metadata or token is missing for final-state oracle" >&2
+  if [ ! -f "$ipc_metadata_path" ] || [ ! -s "$ipc_debug_escrow_path" ]; then
+    echo "authenticated IPC metadata or AGENTSTUDIO_IPC_DEBUG_TOKEN_ESCROW is missing for final-state oracle: $ipc_debug_escrow_path" >&2
     return 1
   fi
 
   /usr/bin/python3 - \
     "$ipc_metadata_path" \
-    "$ipc_debug_token_path" \
+    "$ipc_debug_escrow_path" \
     "$TAB_ID" \
     "$ACTIVE_PANE_COUNT" >"$oracle_file" <<'PY'
 import json
 import socket
 import sys
 
-metadata_path, token_path, expected_tab_id = sys.argv[1:4]
+metadata_path, escrow_path, expected_tab_id = sys.argv[1:4]
 expected_pane_count = int(sys.argv[4])
 expected_tab_id = expected_tab_id.lower()
 
 with open(metadata_path, "r", encoding="utf-8") as metadata_file:
-    socket_path = json.load(metadata_file).get("socketPath")
-with open(token_path, "r", encoding="utf-8") as token_file:
-    token = token_file.read().strip()
-if not socket_path or not token:
-    print("authenticated IPC metadata or token is incomplete", file=sys.stderr)
+    metadata = json.load(metadata_file)
+socket_path = metadata.get("socketPath")
+with open(escrow_path, "r", encoding="utf-8") as escrow_file:
+    escrow = json.load(escrow_file)
+token = escrow.get("token")
+if not socket_path or not isinstance(token, str) or not token:
+    print("authenticated IPC metadata or AGENTSTUDIO_IPC_DEBUG_TOKEN_ESCROW is incomplete", file=sys.stderr)
+    sys.exit(1)
+if (escrow.get("socketPath") != socket_path or not escrow.get("runtimeId")
+        or escrow.get("runtimeId") != metadata.get("runtimeId")):
+    print("AGENTSTUDIO_IPC_DEBUG_TOKEN_ESCROW does not match IPC metadata", file=sys.stderr)
     sys.exit(1)
 
 ipc_socket = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)

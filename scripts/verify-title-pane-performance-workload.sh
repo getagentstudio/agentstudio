@@ -126,6 +126,7 @@ ARTIFACT="$PROOF_ROOT/$TRACE_NAME"
 STATE_FILE="${AGENTSTUDIO_OBSERVABILITY_STATE_FILE:-$ARTIFACT/debug-observability.env}"
 APP_PID=""
 mkdir -p "$ARTIFACT" "$(dirname "$STATE_FILE")"
+IPC_DEBUG_ESCROW_PATH="$(/usr/bin/python3 -c 'import os,sys; print(os.path.abspath(sys.argv[1]))' "$ARTIFACT/ipc-escrow.json")"
 
 decode_state() {
   local raw
@@ -138,15 +139,25 @@ PY
 }
 
 ipc_runtime_matches_app_pid() {
-  /usr/bin/python3 - "$1" "$2" <<'PY'
+  /usr/bin/python3 - "$1" "$2" "$3" <<'PY'
 import json, sys
 try:
     with open(sys.argv[1], encoding="utf-8") as stream:
         runtime = json.load(stream)
     expected_pid = int(sys.argv[2])
+    with open(sys.argv[3], encoding="utf-8") as stream:
+        escrow = json.load(stream)
 except (OSError, TypeError, ValueError, json.JSONDecodeError):
     raise SystemExit(1)
-raise SystemExit(0 if runtime.get("processIdentifier") == expected_pid else 1)
+matches = (
+    runtime.get("processIdentifier") == expected_pid
+    and bool(escrow.get("runtimeId"))
+    and escrow.get("runtimeId") == runtime.get("runtimeId")
+    and bool(escrow.get("socketPath"))
+    and escrow.get("socketPath") == runtime.get("socketPath")
+    and isinstance(escrow.get("token"), str) and bool(escrow["token"])
+)
+raise SystemExit(0 if matches else 1)
 PY
 }
 
@@ -292,7 +303,7 @@ reset_disposable_debug_root
 env \
   AGENTSTUDIO_TRACE_TAGS="$WORKLOAD_TRACE_TAGS" \
   AGENTSTUDIO_TRACE_NAME="$TRACE_MARKER" \
-  AGENTSTUDIO_IPC_DEBUG_TOKEN_ESCROW=1 \
+  AGENTSTUDIO_IPC_DEBUG_TOKEN_ESCROW="$IPC_DEBUG_ESCROW_PATH" \
   AGENTSTUDIO_STARTUP_DIAGNOSTIC_ACTION=sidebar-performance-proof \
   AGENTSTUDIO_OBSERVABILITY_STATE_FILE="$STATE_FILE" \
   "$PROJECT_ROOT/scripts/run-debug-observability.sh" --detach
@@ -309,30 +320,32 @@ case "$APP_PID" in
 esac
 DATA_DIR="$(decode_state AGENTSTUDIO_OBSERVABILITY_DATA_DIR)"
 IPC_RUNTIME_FILE="$DATA_DIR/ipc/runtime.json"
-IPC_DEBUG_TOKEN_FILE="$DATA_DIR/ipc/debug-token"
 IPC_READINESS_ATTEMPTS=80
 METRIC_EXPORT_ATTEMPTS=45
 ipc_readiness_attempt=0
 while [ "$ipc_readiness_attempt" -lt "$IPC_READINESS_ATTEMPTS" ]; do
-  if [ -s "$IPC_DEBUG_TOKEN_FILE" ] \
-    && ipc_runtime_matches_app_pid "$IPC_RUNTIME_FILE" "$APP_PID"
+  if [ -s "$IPC_DEBUG_ESCROW_PATH" ] \
+    && ipc_runtime_matches_app_pid "$IPC_RUNTIME_FILE" "$APP_PID" "$IPC_DEBUG_ESCROW_PATH"
   then
     break
   fi
   ipc_readiness_attempt=$((ipc_readiness_attempt + 1))
   /bin/sleep 0.25
 done
-if [ ! -s "$IPC_DEBUG_TOKEN_FILE" ] \
-  || ! ipc_runtime_matches_app_pid "$IPC_RUNTIME_FILE" "$APP_PID"
+if [ ! -s "$IPC_DEBUG_ESCROW_PATH" ] \
+  || ! ipc_runtime_matches_app_pid "$IPC_RUNTIME_FILE" "$APP_PID" "$IPC_DEBUG_ESCROW_PATH"
 then
-  echo "authenticated IPC for the launched PID did not become ready before timeout" >&2
+  echo "authenticated IPC for the launched PID did not become ready before timeout: AGENTSTUDIO_IPC_DEBUG_TOKEN_ESCROW=$IPC_DEBUG_ESCROW_PATH" >&2
   exit 1
 fi
 
-/usr/bin/python3 - "$IPC_RUNTIME_FILE" "$IPC_DEBUG_TOKEN_FILE" "$LOGS_QUERY_URL" "$TRACE_MARKER" <<'PY'
+/usr/bin/python3 - "$IPC_RUNTIME_FILE" "$IPC_DEBUG_ESCROW_PATH" "$LOGS_QUERY_URL" "$TRACE_MARKER" <<'PY'
 import datetime, json, socket, sys, time, urllib.parse, urllib.request
 with open(sys.argv[1], encoding="utf-8") as stream: socket_path = json.load(stream)["socketPath"]
-with open(sys.argv[2], encoding="utf-8") as stream: token = stream.read().strip()
+with open(sys.argv[2], encoding="utf-8") as stream: escrow = json.load(stream)
+if escrow.get("socketPath") != socket_path:
+    raise SystemExit("AGENTSTUDIO_IPC_DEBUG_TOKEN_ESCROW does not match IPC metadata")
+token = escrow["token"]
 logs_url, marker = sys.argv[3:5]
 sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM); sock.settimeout(20); sock.connect(socket_path)
 reader = sock.makefile("rb"); request_id = 0

@@ -83,27 +83,34 @@ if [ "$state_activation_mode" != "background" ]; then
 fi
 
 AGENTSTUDIO_OBSERVABILITY_IPC_METADATA="${AGENTSTUDIO_OBSERVABILITY_IPC_METADATA:-$state_data_dir/ipc/runtime.json}"
-AGENTSTUDIO_OBSERVABILITY_IPC_DEBUG_TOKEN="${AGENTSTUDIO_OBSERVABILITY_IPC_DEBUG_TOKEN:-$state_data_dir/ipc/debug-token}"
+IPC_DEBUG_ESCROW_PATH="${AGENTSTUDIO_IPC_DEBUG_TOKEN_ESCROW:-}"
+case "$IPC_DEBUG_ESCROW_PATH" in
+  /*) ;;
+  *)
+    echo "Set AGENTSTUDIO_IPC_DEBUG_TOKEN_ESCROW to the absolute escrow path used to launch the debug app." >&2
+    exit 1
+    ;;
+esac
 
 if [ ! -f "$AGENTSTUDIO_OBSERVABILITY_IPC_METADATA" ]; then
   echo "AgentStudio IPC runtime metadata is missing: $AGENTSTUDIO_OBSERVABILITY_IPC_METADATA" >&2
   exit 1
 fi
 
-if [ ! -f "$AGENTSTUDIO_OBSERVABILITY_IPC_DEBUG_TOKEN" ]; then
-  echo "AgentStudio IPC debug token is missing: $AGENTSTUDIO_OBSERVABILITY_IPC_DEBUG_TOKEN" >&2
-  echo "Launch with AGENTSTUDIO_IPC_DEBUG_TOKEN_ESCROW=1 before running this verifier." >&2
+if [ ! -s "$IPC_DEBUG_ESCROW_PATH" ]; then
+  echo "AgentStudio IPC debug escrow is missing: AGENTSTUDIO_IPC_DEBUG_TOKEN_ESCROW=$IPC_DEBUG_ESCROW_PATH" >&2
+  echo "Launch with AGENTSTUDIO_IPC_DEBUG_TOKEN_ESCROW set to this absolute path before running this verifier." >&2
   exit 1
 fi
 
-/usr/bin/python3 - "$AGENTSTUDIO_OBSERVABILITY_IPC_METADATA" "$AGENTSTUDIO_OBSERVABILITY_IPC_DEBUG_TOKEN" <<'PY'
+/usr/bin/python3 - "$AGENTSTUDIO_OBSERVABILITY_IPC_METADATA" "$IPC_DEBUG_ESCROW_PATH" <<'PY'
 import json
 import os
 import socket
 import sys
 
 metadata_path = sys.argv[1]
-debug_token_path = sys.argv[2]
+escrow_path = sys.argv[2]
 response_timeout_seconds = float(os.environ.get("AGENTSTUDIO_IPC_PHASE_A_SMOKE_RESPONSE_TIMEOUT_SECONDS", "15"))
 
 with open(metadata_path, "r", encoding="utf-8") as metadata_file:
@@ -113,10 +120,15 @@ if not socket_path:
     print(f"IPC metadata missing socketPath: {metadata_path}", file=sys.stderr)
     sys.exit(1)
 
-with open(debug_token_path, "r", encoding="utf-8") as token_file:
-    debug_token = token_file.read().strip()
-if not debug_token:
-    print(f"AgentStudio IPC debug token file is empty: {debug_token_path}", file=sys.stderr)
+with open(escrow_path, "r", encoding="utf-8") as escrow_file:
+    escrow = json.load(escrow_file)
+debug_token = escrow.get("token")
+if not isinstance(debug_token, str) or not debug_token:
+    print(f"AgentStudio IPC debug escrow has no token: AGENTSTUDIO_IPC_DEBUG_TOKEN_ESCROW={escrow_path}", file=sys.stderr)
+    sys.exit(1)
+if (escrow.get("socketPath") != socket_path or not escrow.get("runtimeId")
+        or escrow.get("runtimeId") != metadata.get("runtimeId")):
+    print("AGENTSTUDIO_IPC_DEBUG_TOKEN_ESCROW does not match IPC metadata", file=sys.stderr)
     sys.exit(1)
 
 
@@ -186,20 +198,34 @@ try:
     if login_result.get("authenticated") is not True:
         print(f"auth.login did not authenticate: {login_result}", file=sys.stderr)
         sys.exit(1)
-    if os.path.exists(debug_token_path):
-        print(f"AgentStudio IPC debug token was not consumed: {debug_token_path}", file=sys.stderr)
+    # IPC v2 escrow is reusable until shutdown (IPC escrow and startup diagnostics).
+    if not os.path.isfile(escrow_path):
+        print(f"AgentStudio IPC debug escrow disappeared: AGENTSTUDIO_IPC_DEBUG_TOKEN_ESCROW={escrow_path}", file=sys.stderr)
         sys.exit(1)
 
     replay_session = JSONRPCSession(socket_path)
     try:
-        require_error(
+        replay_result = require_success(
             replay_session.request(900, "auth.login", {"token": debug_token}),
             "auth.login replay",
+        )
+        if replay_result.get("authenticated") is not True:
+            print("auth.login replay did not authenticate", file=sys.stderr)
+            sys.exit(1)
+    finally:
+        replay_session.close()
+
+    tampered_token = ("A" if debug_token[0] != "A" else "B") + debug_token[1:]
+    denied_session = JSONRPCSession(socket_path)
+    try:
+        require_error(
+            denied_session.request(901, "auth.login", {"token": tampered_token}),
+            "auth.login tampered credential",
             -32001,
             "unauthenticated",
         )
     finally:
-        replay_session.close()
+        denied_session.close()
 
     capabilities = require_success(
         session.request(2, "system.capabilities", {}),
