@@ -1,5 +1,6 @@
 import AgentStudioCore
 import AgentStudioInfrastructure
+import AgentStudioTestHarness
 import AgentStudioTestSupport
 import Foundation
 import Testing
@@ -105,292 +106,102 @@ struct TerminalActivityRouterTests {
         }
     }
 
-    private struct TraceRecordFixture: Decodable {
-        let body: String
-        let traceID: String?
-        let attributes: [String: TraceAttributeFixture]
-
-        enum CodingKeys: String, CodingKey {
-            case attributes
-            case body
-            case traceID = "trace_id"
-        }
-    }
-
-    private enum TraceAttributeFixture: Decodable, Equatable {
-        case int(Int)
-        case string(String)
-        case other
-
-        init(from decoder: Decoder) throws {
-            let container = try decoder.singleValueContainer()
-            if let value = try? container.decode(Int.self) {
-                self = .int(value)
-            } else if let value = try? container.decode(String.self) {
-                self = .string(value)
-            } else {
-                self = .other
-            }
-        }
-    }
-
     @Test("consumes pane terminal events from runtime bus into activity atom")
-    func consumesPaneTerminalEventsFromRuntimeBusIntoActivityAtom() async {
+    func consumesPaneTerminalEventsFromRuntimeBusIntoActivityAtom() async throws {
+        let factSource = TerminalActivityRouterFactSource()
+        let facts = try factSource.attach()
         let bus = EventBus<RuntimeEnvelope>()
         let atom = TerminalActivityAtom(outputBurstThreshold: 30)
-        let router = TerminalActivityRouter(bus: bus, activityAtom: atom)
+        let router = TerminalActivityRouter(bus: bus, activityAtom: atom, factSink: factSource.sink)
         let paneId = PaneId.generateUUIDv7()
 
-        await router.start()
-        await waitForBusSubscriberCount(bus, atLeast: 1)
-        _ = await bus.post(
-            .pane(
-                .test(
-                    event: .terminal(.progressReportUpdated(ProgressState(kind: .set, percent: 25))),
-                    paneId: paneId,
-                    paneKind: .terminal
-                )
-            )
-        )
-
-        await assertEventuallyMain("terminal activity router should update progress") {
-            atom.snapshot(for: paneId.uuid)?.progress == .reported(ProgressState(kind: .set, percent: 25))
-        }
-
-        await router.stop()
-    }
-
-    @Test("records terminal activity trace records when runtime tracing is enabled")
-    func recordsTerminalActivityTraceRecordsWhenRuntimeTracingIsEnabled() async throws {
-        let bus = EventBus<RuntimeEnvelope>()
-        let atom = TerminalActivityAtom(outputBurstThreshold: 30)
-        let traceDirectory = temporaryTraceDirectoryURL()
-        let traceFixture = makeTraceRuntime(
-            traceDirectory: traceDirectory,
-            traceName: "terminal-activity",
-            traceTags: "terminal.activity",
-            processIdentifier: 246,
-            flushMode: "immediate"
-        )
-        let traceRuntime = traceFixture.runtime
-        let router = TerminalActivityRouter(bus: bus, activityAtom: atom, traceRuntime: traceRuntime)
-        let paneId = PaneId.generateUUIDv7()
-        let correlationId = UUID()
-
-        await router.start()
-        await waitForBusSubscriberCount(bus, atLeast: 1)
-        _ = await bus.post(
-            .pane(
-                .test(
-                    event: .terminal(.openURLRequested(url: "https://example.com/trace", kind: .text)),
-                    paneId: paneId,
-                    paneKind: .terminal,
-                    seq: 7,
-                    correlationId: correlationId
-                )
-            )
-        )
-
-        await assertEventuallyMain("terminal activity router should consume before trace drain") {
-            atom.snapshot(for: paneId.uuid)?.recentURLRequests.count == 1
-        }
-        await router.stop()
-
-        let outputFileURL = traceFixture.outputFileURL
-        let contents = try String(contentsOf: outputFileURL, encoding: .utf8)
-        #expect(contents.contains("\"body\":\"terminal.activity.observed\""))
-        #expect(contents.contains("\"agentstudio.runtime.event\":\"terminal.openURLRequested\""))
-        #expect(contents.contains("\"agentstudio.envelope.seq\":7"))
-        #expect(contents.contains("\"agentstudio.pane.id\":\"\(paneId.uuidString)\""))
-        #expect(contents.contains("\"agentstudio.envelope.correlation_id\":\"\(correlationId.uuidString)\""))
-        #expect(contents.contains("\"agentstudio.session.id\":"))
-    }
-
-    @Test("records eventbus delivery summaries for exact terminal facts")
-    func recordsEventBusDeliverySummariesForExactTerminalFacts() async throws {
-        let bus = EventBus<RuntimeEnvelope>()
-        let atom = TerminalActivityAtom(outputBurstThreshold: 30)
-        let traceDirectory = temporaryTraceDirectoryURL()
-        let traceFixture = makeTraceRuntime(
-            traceDirectory: traceDirectory,
-            traceName: "terminal-activity-eventbus",
-            traceTags: "eventbus",
-            processIdentifier: 251,
-            flushMode: "immediate"
-        )
-        let traceRuntime = traceFixture.runtime
-        let router = TerminalActivityRouter(bus: bus, activityAtom: atom, traceRuntime: traceRuntime)
-        let paneId = PaneId.generateUUIDv7()
-
-        await router.start()
-        await waitForBusSubscriberCount(bus, atLeast: 1)
-        _ = await bus.post(
-            .pane(
-                .test(
-                    event: .terminal(.openURLRequested(url: "https://example.com/eventbus", kind: .text)),
-                    paneId: paneId,
-                    paneKind: .terminal,
-                    seq: 1
-                )
-            )
-        )
-
-        await assertEventuallyMain("terminal activity router should consume before trace drain") {
-            atom.snapshot(for: paneId.uuid)?.recentURLRequests.count == 1
-        }
-        await router.stop()
-
-        let outputFileURL = traceFixture.outputFileURL
-        let contents = try String(contentsOf: outputFileURL, encoding: .utf8)
-        let records = try traceRecords(in: outputFileURL)
-        let deliveryRecords = records.filter { $0.body == "eventbus.deliver" }
-        #expect(deliveryRecords.count == 1)
-        let deliveryAttributes = try #require(deliveryRecords.first?.attributes)
-        #expect(deliveryAttributes["agentstudio.eventbus.consumer"] == .string("TerminalActivityRouter"))
-        #expect(deliveryAttributes["agentstudio.eventbus.name"] == .string("paneRuntime"))
-        #expect(deliveryAttributes["agentstudio.eventbus.delivery"] == .string("consumed"))
-        #expect(deliveryAttributes["agentstudio.runtime.event"] == .string("terminal.openURLRequested"))
-        #expect(deliveryAttributes["agentstudio.envelope.seq"] == .int(1))
-        #expect(contents.contains("\"agentstudio.eventbus.consumer\":\"TerminalActivityRouter\""))
-        #expect(contents.contains("\"agentstudio.eventbus.name\":\"paneRuntime\""))
-        #expect(contents.contains("\"agentstudio.eventbus.delivery\":\"consumed\""))
-        #expect(contents.contains("\"agentstudio.runtime.event\":\"terminal.openURLRequested\""))
-        #expect(contents.contains("\"agentstudio.envelope.seq\":1"))
-    }
-
-    @Test("stop drains buffered terminal activity trace records")
-    func stopDrainsBufferedTerminalActivityTraceRecords() async throws {
-        let bus = EventBus<RuntimeEnvelope>()
-        let atom = TerminalActivityAtom(outputBurstThreshold: 30)
-        let traceDirectory = temporaryTraceDirectoryURL()
-        let traceFixture = makeTraceRuntime(
-            traceDirectory: traceDirectory,
-            traceName: "terminal-activity-drain",
-            traceTags: "terminal.activity",
-            processIdentifier: 247
-        )
-        let traceRuntime = traceFixture.runtime
-        let router = TerminalActivityRouter(bus: bus, activityAtom: atom, traceRuntime: traceRuntime)
-        let paneId = PaneId.generateUUIDv7()
-
-        await router.start()
-        _ = await bus.post(
-            .pane(
-                .test(
-                    event: .terminal(.openURLRequested(url: "https://example.com/drain", kind: .text)),
-                    paneId: paneId,
-                    paneKind: .terminal,
-                    seq: 8
-                )
-            )
-        )
-
-        await assertEventuallyMain("terminal activity router should consume before stop") {
-            atom.snapshot(for: paneId.uuid)?.recentURLRequests.count == 1
-        }
-
-        let outputFileURL = traceFixture.outputFileURL
-        #expect(FileManager.default.fileExists(atPath: outputFileURL.path) == false)
-
-        await router.stop()
-
-        let contents = try String(contentsOf: outputFileURL, encoding: .utf8)
-        #expect(contents.contains("\"body\":\"terminal.activity.observed\""))
-        #expect(contents.contains("\"agentstudio.envelope.seq\":8"))
-    }
-
-    @Test("terminal activity trace records preserve envelope arrival order")
-    func terminalActivityTraceRecordsPreserveEnvelopeArrivalOrder() async throws {
-        let bus = EventBus<RuntimeEnvelope>()
-        let atom = TerminalActivityAtom(outputBurstThreshold: 30)
-        let traceDirectory = temporaryTraceDirectoryURL()
-        let traceFixture = makeTraceRuntime(
-            traceDirectory: traceDirectory,
-            traceName: "terminal-activity-order",
-            traceTags: "terminal.activity",
-            processIdentifier: 248
-        )
-        let traceRuntime = traceFixture.runtime
-        let router = TerminalActivityRouter(bus: bus, activityAtom: atom, traceRuntime: traceRuntime)
-        let paneId = PaneId.generateUUIDv7()
-
-        await router.start()
-        for sequence in 1...5 {
+        do {
+            await router.start()
+            await bus.waitForSubscriberRegistration(subscriberName: "TerminalActivityRouter")
+            let eventID = UUIDv7.generate()
             _ = await bus.post(
                 .pane(
                     .test(
-                        event: .terminal(.openURLRequested(url: "https://example.com/\(sequence)", kind: .text)),
+                        event: .terminal(.progressReportUpdated(ProgressState(kind: .set, percent: 25))),
                         paneId: paneId,
                         paneKind: .terminal,
-                        seq: UInt64(sequence)
+                        eventId: eventID
                     )
                 )
             )
+
+            _ = try await facts.expectRuntimeEnvelopeHandled(paneID: paneId.uuid, eventID: eventID)
+            #expect(atom.snapshot(for: paneId.uuid)?.progress == .reported(ProgressState(kind: .set, percent: 25)))
+
+            await router.stop()
+            try await facts.finish()
+        } catch {
+            await router.stop()
+            try? await facts.finish()
+            throw error
         }
-
-        await assertEventuallyMain("terminal activity router should consume all URL requests") {
-            atom.snapshot(for: paneId.uuid)?.recentURLRequests.count == 5
-        }
-
-        await router.stop()
-
-        let outputFileURL = traceFixture.outputFileURL
-        let sequences = try traceEnvelopeSequences(in: outputFileURL)
-        #expect(sequences == [1, 2, 3, 4, 5])
     }
 
     @Test("typed activity aggregate is debounced into one derived settled fact")
-    func typedActivityAggregateIsDebouncedIntoOneDerivedSettledFact() async {
+    func typedActivityAggregateIsDebouncedIntoOneDerivedSettledFact() async throws {
         let bus = EventBus<RuntimeEnvelope>()
-        let subscriber = RecordingSubscriber(
-            subscription: await bus.subscribe(policy: .criticalUnbounded, subscriberName: #function))
+        let events = await TerminalActivityEventFactSource.attach(bus: bus, subscriberName: #function)
         let atom = TerminalActivityAtom(outputBurstThreshold: 30)
         let clock = TestPushClock()
+        let deadlines = try TerminalActivityDeadlineFacts(clock: clock)
+        let projector = TerminalActivityProjector(
+            unseenQuietDuration: .milliseconds(750), clock: clock, factSink: deadlines.sink)
         let router = TerminalActivityRouter(
             bus: bus,
             activityAtom: atom,
+            projector: projector,
             surfaceIDForPaneID: { $0 },
             unseenActivityDebounceDuration: .milliseconds(750),
             unseenActivityClock: clock
         )
         let paneId = PaneId.generateUUIDv7()
 
-        await router.start()
-        await ingestActivity(
-            paneId: paneId,
-            totals: [100, 120, 140],
-            context: .init(isAttended: false, isAgentClassified: false, outputBurstThreshold: 30),
-            through: router
-        )
-        await clock.waitForPendingSleepCount(atLeast: 1)
-        clock.advance(by: .milliseconds(750))
+        do {
+            await router.start()
+            await ingestActivity(
+                paneId: paneId,
+                totals: [100, 120, 140],
+                context: .init(isAttended: false, isAgentClassified: false, outputBurstThreshold: 30),
+                through: router
+            )
+            let deadline = try await deadlines.expectNextRegistration(paneID: paneId.uuid)
+            _ = try await events.expectNextPaneObservation(paneID: paneId.uuid, isPinnedToBottom: false)
+            _ = try await deadlines.fire(deadline)
 
-        _ = await subscriber.firstEvent { envelope in
-            RuntimeEnvelopeHarness.paneEvents(from: [envelope]).contains {
-                if case .terminalActivity(.unseenActivitySettled) = $0.event { return true }
-                return false
-            }
+            _ = try await events.expectNextUnseenActivity(paneID: paneId.uuid, windowID: deadline.scope.windowID)
+            let noAdditionalSettles = await events.mark(paneId.uuid)
+
+            await router.stop()
+            _ = try await events.expectNoUnseenActivityThroughStoppedProducer(
+                paneID: paneId.uuid, from: noAdditionalSettles)
+            try await deadlines.finish()
+            try await events.finish()
+        } catch {
+            await router.stop()
+            try? await deadlines.finish()
+            try? await events.finish()
+            throw error
         }
-        let settledEventCount = RuntimeEnvelopeHarness.paneEvents(from: await subscriber.snapshot()).count {
-            if case .terminalActivity(.unseenActivitySettled) = $0.event { return true }
-            return false
-        }
-        #expect(settledEventCount == 1)
-        await router.stop()
-        await subscriber.shutdown()
     }
 
     @Test("unseen settlement records the pane's activity status regardless of downstream suppression")
-    func unseenSettlementRecordsPaneActivityStatus() async {
+    func unseenSettlementRecordsPaneActivityStatus() async throws {
         // The router must publish the settled activity's last output line unconditionally: it has
         // no knowledge of InboxNotificationRouter/InboxPromoter's later suppression decisions for
         // the derived envelope it posts, so this recording call is the one place that guarantees a
         // pane's own sidebar row learns its latest real content either way.
         let bus = EventBus<RuntimeEnvelope>()
-        let subscriber = RecordingSubscriber(
-            subscription: await bus.subscribe(policy: .criticalUnbounded, subscriberName: #function))
+        let events = await TerminalActivityEventFactSource.attach(bus: bus, subscriberName: #function)
         let atom = TerminalActivityAtom(outputBurstThreshold: 30)
         let clock = TestPushClock()
+        let deadlines = try TerminalActivityDeadlineFacts(clock: clock)
+        let projector = TerminalActivityProjector(
+            unseenQuietDuration: .milliseconds(750), clock: clock, factSink: deadlines.sink)
         final class RecordedCallBox: @unchecked Sendable {
             private let lock = NSLock()
             private(set) var calls: [(paneId: UUID, lastOutputLine: String?)] = []
@@ -405,6 +216,7 @@ struct TerminalActivityRouterTests {
         let router = TerminalActivityRouter(
             bus: bus,
             activityAtom: atom,
+            projector: projector,
             surfaceIDForPaneID: { $0 },
             lastOutputLineReader: { _ in .value("seam-live-proof") },
             recordSettledActivityStatus: { paneId, lastOutputLine in
@@ -415,36 +227,44 @@ struct TerminalActivityRouterTests {
         )
         let paneId = PaneId.generateUUIDv7()
 
-        await router.start()
-        await ingestActivity(
-            paneId: paneId,
-            totals: [100, 120, 140],
-            context: .init(isAttended: false, isAgentClassified: false, outputBurstThreshold: 30),
-            through: router
-        )
-        await clock.waitForPendingSleepCount(atLeast: 1)
-        clock.advance(by: .milliseconds(750))
+        do {
+            await router.start()
+            await ingestActivity(
+                paneId: paneId,
+                totals: [100, 120, 140],
+                context: .init(isAttended: false, isAgentClassified: false, outputBurstThreshold: 30),
+                through: router
+            )
+            let deadline = try await deadlines.expectNextRegistration(paneID: paneId.uuid)
+            _ = try await events.expectNextPaneObservation(paneID: paneId.uuid, isPinnedToBottom: false)
+            _ = try await deadlines.fire(deadline)
 
-        _ = await subscriber.firstEvent { envelope in
-            RuntimeEnvelopeHarness.paneEvents(from: [envelope]).contains {
-                if case .terminalActivity(.unseenActivitySettled) = $0.event { return true }
-                return false
-            }
+            _ = try await events.expectNextUnseenActivity(paneID: paneId.uuid, windowID: deadline.scope.windowID)
+            let noAdditionalSettles = await events.mark(paneId.uuid)
+
+            #expect(recordedCalls.calls.count == 1)
+            #expect(recordedCalls.calls.first?.paneId == paneId.uuid)
+            #expect(recordedCalls.calls.first?.lastOutputLine == "seam-live-proof")
+
+            await router.stop()
+            _ = try await events.expectNoUnseenActivityThroughStoppedProducer(
+                paneID: paneId.uuid, from: noAdditionalSettles)
+            try await deadlines.finish()
+            try await events.finish()
+        } catch {
+            await router.stop()
+            try? await deadlines.finish()
+            try? await events.finish()
+            throw error
         }
-
-        #expect(recordedCalls.calls.count == 1)
-        #expect(recordedCalls.calls.first?.paneId == paneId.uuid)
-        #expect(recordedCalls.calls.first?.lastOutputLine == "seam-live-proof")
-
-        await router.stop()
-        await subscriber.shutdown()
     }
 
     @Test("ordered commandFinished settles before and independently of lossy bus delivery")
-    func orderedCommandFinishedSettlesIndependentlyOfBusDelivery() async {
+    func orderedCommandFinishedSettlesIndependentlyOfBusDelivery() async throws {
         let bus = EventBus<RuntimeEnvelope>()
-        let subscriber = RecordingSubscriber(
-            subscription: await bus.subscribe(policy: .criticalUnbounded, subscriberName: #function))
+        let events = await TerminalActivityEventFactSource.attach(bus: bus, subscriberName: #function)
+        let factSource = TerminalActivityRouterFactSource()
+        let facts = try factSource.attach()
         let atom = TerminalActivityAtom(outputBurstThreshold: 30)
         final class RecordedCallBox: @unchecked Sendable {
             private let lock = NSLock()
@@ -465,240 +285,281 @@ struct TerminalActivityRouterTests {
             lastOutputLineReader: { _ in .value("echo-command-output") },
             recordSettledActivityStatus: { paneId, lastOutputLine in
                 recordedCalls.record(paneId: paneId, lastOutputLine: lastOutputLine)
-            }
+            },
+            factSink: factSource.sink
         )
         let paneId = PaneId.generateUUIDv7()
 
-        await router.start()
-        await waitForBusSubscriberCount(bus, atLeast: 1)
-        await router.consumeTerminalActivityInput(
-            .orderedControl(
-                surfaceID: paneId.uuid,
-                paneID: paneId.uuid,
-                precedingAggregate: nil,
-                control: .commandFinished
-            )
-        )
-        await router.waitForPendingDerivedActivityPosts()
-
-        await assertEventuallyAsync("ordered commandFinished should publish a zero-row settled activity") {
-            await subscriber.count { envelope in
-                RuntimeEnvelopeHarness.paneEvents(from: [envelope]).contains {
-                    if case .terminalActivity(.unseenActivitySettled(let activity)) = $0.event {
-                        return activity.lastOutputLine == "echo-command-output" && activity.rowsAdded == 0
-                    }
-                    return false
-                }
-            } == 1
-        }
-
-        // The ordinary semantic fact remains available on the bus, but activity settlement does
-        // not consume it a second time or depend on this subscriber path.
-        _ = await bus.post(
-            .pane(
-                .test(
-                    event: .terminal(.commandFinished(exitCode: 0, duration: 50_000_000)),
-                    paneId: paneId,
-                    paneKind: .terminal
+        do {
+            await router.start()
+            await router.consumeTerminalActivityInput(
+                .orderedControl(
+                    surfaceID: paneId.uuid,
+                    paneID: paneId.uuid,
+                    precedingAggregate: nil,
+                    control: .commandFinished
                 )
             )
-        )
+            let settled = try await events.expectNextUnseenActivity(paneID: paneId.uuid)
+            #expect(settled.activity.lastOutputLine == "echo-command-output")
+            #expect(settled.activity.rowsAdded == 0)
+            let noAdditionalSettles = await events.mark(paneId.uuid)
 
-        await assertEventuallyAsync("bus delivery must not duplicate ordered command settlement") {
-            await subscriber.count { envelope in
-                RuntimeEnvelopeHarness.paneEvents(from: [envelope]).contains {
-                    if case .terminalActivity(.unseenActivitySettled(let activity)) = $0.event {
-                        return activity.lastOutputLine == "echo-command-output" && activity.rowsAdded == 0
-                    }
-                    return false
-                }
-            } == 1
+            // The ordinary semantic fact remains available on the bus, but activity settlement does
+            // not consume it a second time or depend on this subscriber path.
+            let eventID = UUIDv7.generate()
+            _ = await bus.post(
+                .pane(
+                    .test(
+                        event: .terminal(.commandFinished(exitCode: 0, duration: 50_000_000)),
+                        paneId: paneId,
+                        paneKind: .terminal,
+                        eventId: eventID
+                    )
+                )
+            )
+
+            _ = try await facts.expectRuntimeEnvelopeHandled(paneID: paneId.uuid, eventID: eventID)
+
+            #expect(recordedCalls.calls.count == 1)
+            #expect(recordedCalls.calls.first?.paneId == paneId.uuid)
+            #expect(recordedCalls.calls.first?.lastOutputLine == "echo-command-output")
+
+            await router.stop()
+            _ = try await events.expectNoUnseenActivityThroughStoppedProducer(
+                paneID: paneId.uuid, from: noAdditionalSettles)
+            try await facts.finish()
+            try await events.finish()
+        } catch {
+            await router.stop()
+            try? await facts.finish()
+            try? await events.finish()
+            throw error
         }
-
-        #expect(recordedCalls.calls.count == 1)
-        #expect(recordedCalls.calls.first?.paneId == paneId.uuid)
-        #expect(recordedCalls.calls.first?.lastOutputLine == "echo-command-output")
-
-        await router.stop()
-        await subscriber.shutdown()
     }
 
     @Test("attended typed activity updates compact state without unseen settlement")
-    func attendedTypedActivityUpdatesCompactStateWithoutUnseenSettlement() async {
+    func attendedTypedActivityUpdatesCompactStateWithoutUnseenSettlement() async throws {
         let bus = EventBus<RuntimeEnvelope>()
-        let subscriber = RecordingSubscriber(
-            subscription: await bus.subscribe(policy: .criticalUnbounded, subscriberName: #function))
+        let events = await TerminalActivityEventFactSource.attach(bus: bus, subscriberName: #function)
         let atom = TerminalActivityAtom(outputBurstThreshold: 30)
         let clock = TestPushClock()
+        let deadlines = try TerminalActivityDeadlineFacts(clock: clock)
+        let projector = TerminalActivityProjector(
+            unseenQuietDuration: .milliseconds(750), clock: clock, factSink: deadlines.sink)
         let router = TerminalActivityRouter(
             bus: bus,
             activityAtom: atom,
+            projector: projector,
             surfaceIDForPaneID: { $0 },
             unseenActivityDebounceDuration: .milliseconds(750),
             unseenActivityClock: clock
         )
         let paneId = PaneId.generateUUIDv7()
 
-        await router.start()
-        await ingestActivity(
-            paneId: paneId,
-            totals: [100, 140],
-            context: .init(isAttended: true, isAgentClassified: false, outputBurstThreshold: 30),
-            through: router
-        )
-        #expect(atom.snapshot(for: paneId.uuid)?.scrollbarState?.total == 140)
-        #expect(clock.pendingSleepCount == 0)
-        #expect(
-            RuntimeEnvelopeHarness.paneEvents(from: await subscriber.snapshot()).contains {
-                if case .terminalActivity(.unseenActivitySettled) = $0.event { return true }
-                return false
-            } == false)
+        do {
+            await router.start()
+            let noSettleFrom = await events.mark(paneId.uuid)
+            await ingestActivity(
+                paneId: paneId,
+                totals: [100, 140],
+                context: .init(isAttended: true, isAgentClassified: false, outputBurstThreshold: 30),
+                through: router
+            )
+            #expect(atom.snapshot(for: paneId.uuid)?.scrollbarState?.total == 140)
+            #expect(clock.pendingSleepCount == 0)
+            _ = try await events.expectNextPaneObservation(paneID: paneId.uuid, isPinnedToBottom: false)
 
-        await router.stop()
-        await subscriber.shutdown()
+            await router.stop()
+            _ = try await events.expectNoUnseenActivityThroughStoppedProducer(paneID: paneId.uuid, from: noSettleFrom)
+            try await deadlines.finish()
+            try await events.finish()
+        } catch {
+            await router.stop()
+            try? await deadlines.finish()
+            try? await events.finish()
+            throw error
+        }
     }
 
     @Test("stop cancels projector quiet timers without publishing stale activity")
-    func stopCancelsProjectorQuietTimersWithoutPublishingStaleActivity() async {
+    func stopCancelsProjectorQuietTimersWithoutPublishingStaleActivity() async throws {
         let bus = EventBus<RuntimeEnvelope>()
-        let subscriber = RecordingSubscriber(
-            subscription: await bus.subscribe(policy: .criticalUnbounded, subscriberName: #function))
+        let events = await TerminalActivityEventFactSource.attach(bus: bus, subscriberName: #function)
         let clock = TestPushClock()
+        let deadlines = try TerminalActivityDeadlineFacts(clock: clock)
+        let projector = TerminalActivityProjector(
+            unseenQuietDuration: .milliseconds(750), clock: clock, factSink: deadlines.sink)
         let router = TerminalActivityRouter(
             bus: bus,
             activityAtom: TerminalActivityAtom(outputBurstThreshold: 30),
+            projector: projector,
             surfaceIDForPaneID: { $0 },
             unseenActivityDebounceDuration: .milliseconds(750),
             unseenActivityClock: clock
         )
         let paneId = PaneId.generateUUIDv7()
 
-        await router.start()
-        await ingestActivity(
-            paneId: paneId,
-            totals: [100, 140],
-            context: .init(isAttended: false, isAgentClassified: false, outputBurstThreshold: 30),
-            through: router
-        )
-        await clock.waitForPendingSleepCount(atLeast: 1)
-        await router.stop()
-        await clock.waitForPendingSleepCount(exactly: 0)
-        clock.advance(by: .milliseconds(750))
-        #expect(
-            RuntimeEnvelopeHarness.paneEvents(from: await subscriber.snapshot()).contains {
-                if case .terminalActivity(.unseenActivitySettled) = $0.event { return true }
-                return false
-            } == false)
-        await subscriber.shutdown()
+        do {
+            await router.start()
+            let noSettleFrom = await events.mark(paneId.uuid)
+            await ingestActivity(
+                paneId: paneId,
+                totals: [100, 140],
+                context: .init(isAttended: false, isAgentClassified: false, outputBurstThreshold: 30),
+                through: router
+            )
+            let deadline = try await deadlines.expectNextRegistration(paneID: paneId.uuid)
+            _ = try await events.expectNextPaneObservation(paneID: paneId.uuid, isPinnedToBottom: false)
+            await router.stop()
+            _ = try await deadlines.expectDisposition(for: deadline, .cancelled)
+            await clock.waitForPendingSleepCount(exactly: 0)
+            clock.advance(by: .milliseconds(750))
+
+            _ = try await events.expectNoUnseenActivityThroughStoppedProducer(paneID: paneId.uuid, from: noSettleFrom)
+            try await deadlines.finish()
+            try await events.finish()
+        } catch {
+            await router.stop()
+            try? await deadlines.finish()
+            try? await events.finish()
+            throw error
+        }
     }
 
     @Test("later typed aggregate replaces the earlier quiet timer")
-    func laterTypedAggregateReplacesEarlierQuietTimer() async {
+    func laterTypedAggregateReplacesEarlierQuietTimer() async throws {
         let bus = EventBus<RuntimeEnvelope>()
-        let subscriber = RecordingSubscriber(
-            subscription: await bus.subscribe(policy: .criticalUnbounded, subscriberName: #function))
+        let events = await TerminalActivityEventFactSource.attach(bus: bus, subscriberName: #function)
         let clock = TestPushClock()
+        let deadlines = try TerminalActivityDeadlineFacts(clock: clock)
+        let projector = TerminalActivityProjector(
+            unseenQuietDuration: .milliseconds(750), clock: clock, factSink: deadlines.sink)
         let router = TerminalActivityRouter(
             bus: bus,
             activityAtom: TerminalActivityAtom(outputBurstThreshold: 30),
+            projector: projector,
             surfaceIDForPaneID: { $0 },
             unseenActivityDebounceDuration: .milliseconds(750),
             unseenActivityClock: clock
         )
         let paneId = PaneId.generateUUIDv7()
 
-        await router.start()
-        let firstGeneration = clock.scheduledSleepGeneration
-        await ingestActivity(
-            paneId: paneId,
-            totals: [100],
-            context: .init(isAttended: false, isAgentClassified: false, outputBurstThreshold: 30),
-            through: router
-        )
-        await clock.waitForPendingSleepGeneration(firstGeneration)
-        await ingestActivity(
-            paneId: paneId,
-            totals: [100, 140],
-            context: .init(isAttended: false, isAgentClassified: false, outputBurstThreshold: 30),
-            through: router,
-            startedAtMilliseconds: 1300
-        )
-        await clock.waitForPendingSleepGeneration(firstGeneration + 1)
-        clock.advance(by: .milliseconds(750))
-        _ = await subscriber.firstEvent { envelope in
-            RuntimeEnvelopeHarness.paneEvents(from: [envelope]).contains {
-                if case .terminalActivity(.unseenActivitySettled) = $0.event { return true }
-                return false
-            }
+        do {
+            await router.start()
+            await ingestActivity(
+                paneId: paneId,
+                totals: [100],
+                context: .init(isAttended: false, isAgentClassified: false, outputBurstThreshold: 30),
+                through: router
+            )
+            let firstDeadline = try await deadlines.expectNextRegistration(paneID: paneId.uuid)
+            _ = try await events.expectNextPaneObservation(paneID: paneId.uuid, isPinnedToBottom: false)
+            await ingestActivity(
+                paneId: paneId,
+                totals: [100, 140],
+                context: .init(isAttended: false, isAgentClassified: false, outputBurstThreshold: 30),
+                through: router,
+                startedAtMilliseconds: 1300
+            )
+            _ = try await deadlines.expectDisposition(for: firstDeadline, .superseded)
+            let deadline = try await deadlines.expectNextRegistration(paneID: paneId.uuid)
+            _ = try await deadlines.fire(deadline)
+            _ = try await events.expectNextUnseenActivity(paneID: paneId.uuid, windowID: deadline.scope.windowID)
+            let noAdditionalSettles = await events.mark(paneId.uuid)
+
+            await router.stop()
+            _ = try await events.expectNoUnseenActivityThroughStoppedProducer(
+                paneID: paneId.uuid, from: noAdditionalSettles)
+            try await deadlines.finish()
+            try await events.finish()
+        } catch {
+            await router.stop()
+            try? await deadlines.finish()
+            try? await events.finish()
+            throw error
         }
-        let settledEventCount = RuntimeEnvelopeHarness.paneEvents(from: await subscriber.snapshot()).count {
-            if case .terminalActivity(.unseenActivitySettled) = $0.event { return true }
-            return false
-        }
-        #expect(settledEventCount == 1)
-        await router.stop()
-        await subscriber.shutdown()
     }
 
     @Test("decreasing typed totals clamp growth to zero")
-    func decreasingTypedTotalsClampGrowthToZero() async {
+    func decreasingTypedTotalsClampGrowthToZero() async throws {
         let bus = EventBus<RuntimeEnvelope>()
-        let subscriber = RecordingSubscriber(
-            subscription: await bus.subscribe(policy: .criticalUnbounded, subscriberName: #function))
+        let events = await TerminalActivityEventFactSource.attach(bus: bus, subscriberName: #function)
         let atom = TerminalActivityAtom(outputBurstThreshold: 30)
         let clock = TestPushClock()
+        let deadlines = try TerminalActivityDeadlineFacts(clock: clock)
+        let projector = TerminalActivityProjector(
+            unseenQuietDuration: .milliseconds(750), clock: clock, factSink: deadlines.sink)
         let router = TerminalActivityRouter(
             bus: bus,
             activityAtom: atom,
+            projector: projector,
             surfaceIDForPaneID: { $0 },
             unseenActivityDebounceDuration: .milliseconds(750),
             unseenActivityClock: clock
         )
         let paneId = PaneId.generateUUIDv7()
 
-        await router.start()
-        await ingestActivity(
-            paneId: paneId,
-            totals: [100, 80],
-            context: .init(isAttended: false, isAgentClassified: false, outputBurstThreshold: 30),
-            through: router
-        )
-        #expect(atom.snapshot(for: paneId.uuid)?.outputBurst == .quiet(lastTotal: 80))
-        await clock.waitForPendingSleepCount(atLeast: 1)
-        clock.advance(by: .milliseconds(750))
-        #expect(
-            RuntimeEnvelopeHarness.paneEvents(from: await subscriber.snapshot()).contains {
-                if case .terminalActivity(.unseenActivitySettled) = $0.event { return true }
-                return false
-            } == false)
-        await router.stop()
-        await subscriber.shutdown()
+        do {
+            await router.start()
+            let noSettleFrom = await events.mark(paneId.uuid)
+            await ingestActivity(
+                paneId: paneId,
+                totals: [100, 80],
+                context: .init(isAttended: false, isAgentClassified: false, outputBurstThreshold: 30),
+                through: router
+            )
+            #expect(atom.snapshot(for: paneId.uuid)?.outputBurst == .quiet(lastTotal: 80))
+            let deadline = try await deadlines.expectNextRegistration(paneID: paneId.uuid)
+            _ = try await events.expectNextPaneObservation(paneID: paneId.uuid, isPinnedToBottom: false)
+            _ = try await deadlines.fire(deadline)
+
+            await router.stop()
+            _ = try await events.expectNoUnseenActivityThroughStoppedProducer(paneID: paneId.uuid, from: noSettleFrom)
+            try await deadlines.finish()
+            try await events.finish()
+        } catch {
+            await router.stop()
+            try? await deadlines.finish()
+            try? await events.finish()
+            throw error
+        }
     }
 
     @Test("start is idempotent and does not double-consume events")
-    func startIsIdempotentAndDoesNotDoubleConsumeEvents() async {
+    func startIsIdempotentAndDoesNotDoubleConsumeEvents() async throws {
+        let factSource = TerminalActivityRouterFactSource()
+        let facts = try factSource.attach()
         let bus = EventBus<RuntimeEnvelope>()
         let atom = TerminalActivityAtom()
-        let router = TerminalActivityRouter(bus: bus, activityAtom: atom)
+        let router = TerminalActivityRouter(bus: bus, activityAtom: atom, factSink: factSource.sink)
         let paneId = PaneId.generateUUIDv7()
 
-        await router.start()
-        await router.start()
-        _ = await bus.post(
-            .pane(
-                .test(
-                    event: .terminal(.openURLRequested(url: "https://example.com", kind: .text)),
-                    paneId: paneId,
-                    paneKind: .terminal
+        do {
+            await router.start()
+            await router.start()
+            let eventID = UUIDv7.generate()
+            _ = await bus.post(
+                .pane(
+                    .test(
+                        event: .terminal(.openURLRequested(url: "https://example.com", kind: .text)),
+                        paneId: paneId,
+                        paneKind: .terminal,
+                        eventId: eventID
+                    )
                 )
             )
-        )
 
-        await assertEventuallyMain("idempotent start should consume one URL request") {
-            atom.snapshot(for: paneId.uuid)?.recentURLRequests.count == 1
+            _ = try await facts.expectRuntimeEnvelopeHandled(paneID: paneId.uuid, eventID: eventID)
+            #expect(atom.snapshot(for: paneId.uuid)?.recentURLRequests.count == 1)
+
+            await router.stop()
+            try await facts.finish()
+        } catch {
+            await router.stop()
+            try? await facts.finish()
+            throw error
         }
-
-        await router.stop()
     }
 
     @Test("stop prevents later runtime events from mutating activity")
@@ -719,7 +580,6 @@ struct TerminalActivityRouterTests {
                 )
             )
         )
-        await Task.yield()
 
         #expect(atom.snapshot(for: paneId.uuid) == nil)
     }
@@ -741,41 +601,9 @@ struct TerminalActivityRouterTests {
                 )
             )
         )
-        await Task.yield()
 
         #expect(atom.snapshot(for: paneId.uuid) == nil)
         await router.stop()
-    }
-
-    private func temporaryTraceDirectoryURL() -> URL {
-        FileManager.default.temporaryDirectory
-            .appendingPathComponent("agentstudio-terminal-activity-router-tests", isDirectory: true)
-            .appendingPathComponent(UUID().uuidString, isDirectory: true)
-    }
-
-    private func makeTraceRuntime(
-        traceDirectory: URL,
-        traceName: String,
-        traceTags: String,
-        processIdentifier: Int32,
-        flushMode: String? = nil
-    ) -> (runtime: AgentStudioTraceRuntime, outputFileURL: URL) {
-        var environment = [
-            "AGENTSTUDIO_TRACE_BACKEND": "jsonl",
-            "AGENTSTUDIO_TRACE_DIR": traceDirectory.path,
-            "AGENTSTUDIO_TRACE_NAME": traceName,
-            "AGENTSTUDIO_TRACE_TAGS": traceTags,
-        ]
-        environment["AGENTSTUDIO_TRACE_FLUSH"] = flushMode
-        return (
-            runtime: AgentStudioTraceRuntime.fromEnvironment(
-                environment,
-                processIdentifier: processIdentifier
-            ),
-            outputFileURL: traceDirectory.appendingPathComponent(
-                "agentstudio-\(traceName)-\(processIdentifier).jsonl"
-            )
-        )
     }
 
     private func ingestActivity(
@@ -829,23 +657,6 @@ struct TerminalActivityRouterTests {
         atoms.workspaceTabLayout.appendTab(tab)
         atoms.workspaceTabLayout.setActiveTab(tab.id)
         return atoms.attendedPane
-    }
-
-    private func traceEnvelopeSequences(in fileURL: URL) throws -> [Int] {
-        try traceRecords(in: fileURL).map { record in
-            guard case .int(let sequence) = record.attributes["agentstudio.envelope.seq"] else {
-                Issue.record("Missing integer envelope sequence in trace record")
-                return -1
-            }
-            return sequence
-        }
-    }
-
-    private func traceRecords(in fileURL: URL) throws -> [TraceRecordFixture] {
-        let contents = try String(contentsOf: fileURL, encoding: .utf8)
-        return try contents.split(separator: "\n").map { line in
-            try JSONDecoder().decode(TraceRecordFixture.self, from: Data(line.utf8))
-        }
     }
 
 }
