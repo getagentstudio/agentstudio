@@ -252,15 +252,18 @@ private func emittedRetrySnapshotCauses(
     try sender.seal(coverage)
     var coverageCause: BridgeProductSnapshotCause?
     for ordinal in 0..<coverage.frameCount {
-        let frame = try #require(try sender.nextFrame(stream: stream, streamSequence: ordinal + 1))
+        // Mutating sender calls stay outside the macros, which capture their operands immutably.
+        let emittedFrame = try sender.nextFrame(stream: stream, streamSequence: ordinal + 1)
+        let frame = try #require(emittedFrame)
         if case .batch(.begin(let begin)) = frame {
             #expect(begin.mode == .coverage)
             #expect(begin.snapshotCause == nil)
             coverageCause = begin.snapshotCause
         }
         if case .batch(.part(let part)) = frame {
-            #expect(
-                sender.acknowledge(for: coverage.viewDomain, handle: coverage.handle, through: part.deliverySequence))
+            let acknowledged = sender.acknowledge(
+                for: coverage.viewDomain, handle: coverage.handle, through: part.deliverySequence)
+            #expect(acknowledged)
         }
     }
     #expect(sender.pending(for: coverage.viewDomain) == .snapshotRequired(.open))
@@ -271,7 +274,8 @@ private func emittedRetrySnapshotCauses(
     sender.resnapshot(coverage.viewDomain, cause: .requested)
     #expect(sender.pending(for: coverage.viewDomain) == .snapshotRequired(.open))
     try sender.seal(certificate)
-    let frame = try #require(try sender.nextFrame(stream: stream, streamSequence: coverage.frameCount + 1))
+    let emittedFrame = try sender.nextFrame(stream: stream, streamSequence: coverage.frameCount + 1)
+    let frame = try #require(emittedFrame)
     guard case .batch(.begin(let begin)) = frame else {
         throw ProductFileSourceFixtureError.invalidControlRequest
     }
