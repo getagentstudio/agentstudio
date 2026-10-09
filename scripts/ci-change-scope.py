@@ -83,7 +83,7 @@ def literal_doc_paths(
     root: pathlib.Path,
     reader: str,
     contents: str,
-    available: t.Set[str] | None = None,
+    available: "t.Set[str] | None" = None,
 ) -> t.Set[str]:
     pins = set(DOC_PATH.findall(contents))
     for match in QUOTED_PATH.finditer(contents):
@@ -116,7 +116,7 @@ def agent_named_paths(reader: str, contents: str) -> t.Set[str]:
     return paths
 
 
-def tree_files(root: pathlib.Path, revision: str | None) -> t.List[str]:
+def tree_files(root: pathlib.Path, revision: "str | None") -> t.List[str]:
     if revision is None:
         return tracked_files(root)
     return [
@@ -126,13 +126,13 @@ def tree_files(root: pathlib.Path, revision: str | None) -> t.List[str]:
     ]
 
 
-def tree_file_bytes(root: pathlib.Path, revision: str | None, path: str) -> bytes:
+def tree_file_bytes(root: pathlib.Path, revision: "str | None", path: str) -> bytes:
     if revision is None:
         return (root / path).read_bytes()
     return git_output(root, "show", f"{revision}:{path}")
 
 
-def pinned_docs(root: pathlib.Path, revision: str | None = None) -> t.List[str]:
+def pinned_docs(root: pathlib.Path, revision: "str | None" = None) -> t.List[str]:
     tracked = tree_files(root, revision)
     pins: t.Set[str] = set()
     for path in tracked:
