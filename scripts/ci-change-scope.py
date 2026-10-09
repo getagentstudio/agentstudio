@@ -132,6 +132,52 @@ def tree_file_bytes(root: pathlib.Path, revision: "str | None", path: str) -> by
     return git_output(root, "show", f"{revision}:{path}")
 
 
+def revision_symlink_pins(
+    root: pathlib.Path, revision: str, pins: t.Set[str]
+) -> t.Set[str]:
+    # Resolve against this revision, not the checkout: the base and head may
+    # give the same alias different targets, and both are classifier inputs.
+    symlinks: t.Dict[str, str] = {}
+    for entry in git_output(root, "ls-tree", "-r", "-z", revision, "--").split(b"\0"):
+        if not entry:
+            continue
+        metadata, path = entry.split(b"\t", 1)
+        if metadata.split(b" ", 1)[0] == b"120000":
+            symlinks[os.fsdecode(path)] = ""
+    resolved_pins = set(pins)
+    for pin in pins:
+        candidate = pin
+        visited: t.Set[str] = set()
+        while True:
+            parts = pathlib.PurePosixPath(candidate).parts
+            alias = next(
+                ("/".join(parts[:index]) for index in range(1, len(parts) + 1)
+                 if "/".join(parts[:index]) in symlinks),
+                None,
+            )
+            if alias is None:
+                break
+            if alias in visited:
+                raise ValueError(f"cyclic pinned symlink in {revision}: {alias}")
+            visited.add(alias)
+            resolved_pins.add(alias)
+            target = symlinks[alias]
+            if not target:
+                target = os.fsdecode(tree_file_bytes(root, revision, alias))
+                symlinks[alias] = target
+            target_path = pathlib.PurePosixPath(target)
+            if target_path.is_absolute():
+                raise ValueError(f"pinned symlink leaves repository in {revision}: {alias}")
+            suffix = parts[len(pathlib.PurePosixPath(alias).parts):]
+            candidate = posixpath.normpath(
+                (pathlib.PurePosixPath(alias).parent / target_path).joinpath(*suffix).as_posix()
+            )
+            if candidate == ".." or candidate.startswith("../"):
+                raise ValueError(f"pinned symlink leaves repository in {revision}: {alias}")
+            resolved_pins.add(candidate)
+    return resolved_pins
+
+
 def pinned_docs(root: pathlib.Path, revision: "str | None" = None) -> t.List[str]:
     tracked = tree_files(root, revision)
     pins: t.Set[str] = set()
@@ -160,6 +206,8 @@ def pinned_docs(root: pathlib.Path, revision: "str | None" = None) -> t.List[str
             )
         else:
             expanded.add(pin)
+    if revision is not None:
+        expanded = revision_symlink_pins(root, revision, expanded)
     return sorted(expanded)
 
 
