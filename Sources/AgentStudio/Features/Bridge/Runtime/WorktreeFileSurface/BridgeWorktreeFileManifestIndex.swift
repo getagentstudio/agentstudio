@@ -554,8 +554,9 @@ actor BridgeWorktreeFileManifestIndex {
     }
 
     private func upsert(_ row: BridgeWorktreeTreeRowMetadata) {
-        let canonicalLocation = canonicalRootURL.appending(path: row.path)
-            .standardizedFileURL.resolvingSymlinksInPath().path
+        // Tracked paths own distinct records, including symlink rows. Only the
+        // root is resolved; the content reader validates the resolved target.
+        let canonicalLocation = canonicalRootURL.appending(path: row.path).standardizedFileURL.path
         if rowsByPath[row.path] == row,
             canonicalLocationByPath[row.path] == canonicalLocation
         {

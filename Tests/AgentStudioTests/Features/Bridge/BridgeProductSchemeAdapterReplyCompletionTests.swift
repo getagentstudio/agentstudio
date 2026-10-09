@@ -68,6 +68,8 @@ struct BridgeProductSchemeAdapterReplyCompletionTests {
     func floorRetirementCompletesOlderContentReply() async throws {
         let harness = try BridgeProductSchemeAdapterHarness.make()
         #expect(try await harness.openSession().response?.statusCode == 200)
+        // HTTP 200 acknowledges opening admission, not the active session.
+        try #require(await harness.session.waitUntilActive())
         let firstRequest = try bridgeProductFileContentRequest(
             identitySuffix: "floor-older",
             workerDerivationEpoch: 1
@@ -181,14 +183,39 @@ struct BridgeProductSchemeAdapterReplyCompletionTests {
         #expect((await harness.provider.snapshot).controlRequests.isEmpty)
     }
 
-    @Test("a post-response producer failure finishes the WebKit request cleanly")
-    func containedFailureAfterResponseCompletesWebKitRequest() async throws {
-        let harness = try BridgeProductSchemeAdapterHarness.make(contentReturnsWithoutTerminal: true)
+    @Test("a post-response producer failure finishes the WebKit request cleanly", arguments: [false, true])
+    func containedFailureAfterResponseCompletesWebKitRequest(holdWorkerOpenCompletion: Bool) async throws {
+        let harness = try BridgeProductSchemeAdapterHarness.make(
+            holdFirstControlResponse: holdWorkerOpenCompletion,
+            contentReturnsWithoutTerminal: true
+        )
         #expect(try await harness.openSession().response?.statusCode == 200)
         let contentRequest = try bridgeProductFileContentRequest(
             identitySuffix: "contained-after-response",
             workerDerivationEpoch: 1
         )
+        if holdWorkerOpenCompletion {
+            await harness.provider.waitUntilControlStarted(1)
+            #expect(await harness.session.lifecycle == .opening)
+            // Before commitment, the real adapter refuses content without
+            // invoking its producer. This was the flaky test's HTTP 409.
+            let beforeCommit = try await collectBridgeProductSchemeReply(
+                adapter: harness.adapter,
+                request: bridgeProductSchemeRequest(
+                    route: BridgeProductWireContract.contentRoute,
+                    capability: harness.capabilityHeader,
+                    body: try JSONEncoder().encode(contentRequest)
+                )
+            )
+            #expect(beforeCommit.response?.statusCode == 409)
+            #expect(beforeCommit.events == [.response])
+            #expect(beforeCommit.body.isEmpty)
+            #expect((await harness.provider.snapshot).contentRequestCount == 0)
+            #expect((await harness.provider.snapshot).producerFailureReasons.isEmpty)
+            await harness.provider.releaseHeldControlResponse()
+        }
+        // Admission and provider completion can arrive in either order.
+        try #require(await harness.session.waitUntilActive())
         let responseGate = HeldStep<Void>("containedAfterResponseDispatch")
         let postResponseGate = HeldStep<PostResponseOutcome>("containedAfterResponsePostResponseOutcome")
         let routedReply = bridgeProductSchemeReplyWithRoutingTask(
@@ -249,6 +276,9 @@ struct BridgeProductSchemeAdapterReplyCompletionTests {
         #expect(await consumer.firstOutcomeKind == "response")
         #expect(await consumer.contractViolations.isEmpty)
         #expect((await harness.session.producerSnapshot()).hasZeroResidue)
+        await harness.session.waitForOutstandingOperationExecutions()
+        let revocation = await harness.session.revoke(acknowledgeLifecycle: { _ in true })
+        #expect(await revocation.wait())
     }
 
     @Test("product scheme replies throw only CancellationError into WebKit")
