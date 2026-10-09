@@ -78,8 +78,34 @@ extension WorktreeOperationRunner {
                 return .refused(
                     .forkUnavailable(reason, offersChangesOnly: Self.offersChangesOnly(request, plan: branch.plan)))
             }
+            // The SDK's residue names only the ref; the move it couldn't undo is this plan's fast-forward.
+            if case .existingBranch(let expectedTip, let fastForwardTo?) = branch.plan.target {
+                return Self.namingBranchMove(
+                    outcome, branch: branchName,
+                    move: WorktreeBranchMove(fromCommit: expectedTip, toCommit: fastForwardTo))
+            }
             return outcome
         }
+    }
+
+    /// Adds both commits to the `branchMoveNotUndone` leftover for `branch`, so the failure names the move (LR1).
+    private static func namingBranchMove(
+        _ outcome: WorktreeOperationOutcome,
+        branch: String,
+        move: WorktreeBranchMove
+    ) -> WorktreeOperationOutcome {
+        guard case .failed(let failure) = outcome, case .incomplete(let leftovers) = failure.leftovers else {
+            return outcome
+        }
+        let reference = "refs/heads/\(branch)"
+        let named = leftovers.map { leftover in
+            guard leftover.kind == .branchMoveNotUndone, leftover.location == reference else { return leftover }
+            return WorktreeCleanupLeftover(
+                kind: leftover.kind, location: leftover.location, base: leftover.base, branchMove: move)
+        }
+        return .failed(
+            WorktreeOperationFailure(
+                failure: failure.failure, leftovers: .incomplete(named), creationFetch: failure.creationFetch))
     }
 
     /// `--changes-only` continues an unavailable fork only where it is valid: a copy-on-write `--from`

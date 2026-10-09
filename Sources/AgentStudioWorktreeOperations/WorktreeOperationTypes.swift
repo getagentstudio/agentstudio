@@ -108,6 +108,13 @@ package struct WorktreeOperationFailure: Sendable, Equatable {
         self.leftovers = leftovers
         self.creationFetch = creationFetch
     }
+
+    /// Whether a branch may be left fast-forwarded: the failure itself, or a fork leftover, says so.
+    package var leavesBranchMoved: Bool {
+        if case .branchMoveNotUndone = failure { return true }
+        guard case .incomplete(let items) = leftovers else { return false }
+        return items.contains { $0.kind == .branchMoveNotUndone }
+    }
 }
 
 package enum WorktreeFailureKind: Sendable, Equatable {
@@ -122,6 +129,21 @@ package enum WorktreeFailureKind: Sendable, Equatable {
     case rejectedAfterChange(GitWorktreeForkRejectionReason)
     /// The branch was taken by the worktree at `path` at the attach, and rollback is incomplete.
     case branchCheckedOutAfterChange(path: String)
+    /// A plain checkout fast-forwarded `branch` and couldn't confirm moving it back (D22); the SDK reports this
+    /// in place of the creation's own error.
+    case branchMoveNotUndone(branch: String, move: WorktreeBranchMove)
+}
+
+/// A fast-forward a failed creation made and couldn't confirm undone: from `fromCommit` to `toCommit`. It is the
+/// attempted move, not a verified final position; read the branch for that.
+package struct WorktreeBranchMove: Sendable, Equatable {
+    package let fromCommit: String
+    package let toCommit: String
+
+    package init(fromCommit: String, toCommit: String) {
+        self.fromCommit = fromCommit
+        self.toCommit = toCommit
+    }
 }
 
 package enum WorktreeLeftoverStatus: Sendable, Equatable {
@@ -135,11 +157,19 @@ package struct WorktreeCleanupLeftover: Sendable, Equatable {
     package let kind: GitWorktreeForkResidueKind
     package let location: String
     package let base: WorktreeLeftoverBase
+    /// For a `branchMoveNotUndone` leftover whose move `new` planned: both commits of that fast-forward.
+    package let branchMove: WorktreeBranchMove?
 
-    package init(kind: GitWorktreeForkResidueKind, location: String, base: WorktreeLeftoverBase) {
+    package init(
+        kind: GitWorktreeForkResidueKind,
+        location: String,
+        base: WorktreeLeftoverBase,
+        branchMove: WorktreeBranchMove? = nil
+    ) {
         self.kind = kind
         self.location = location
         self.base = base
+        self.branchMove = branchMove
     }
 }
 
@@ -175,6 +205,7 @@ package enum WorktreeGitErrorKind: Sendable, Equatable {
     case unsupported
     case branchMoved
     case branchCheckedOut
+    case branchMoveNotUndone
 
     package var name: String {
         switch self {
@@ -226,6 +257,8 @@ package enum WorktreeGitErrorKind: Sendable, Equatable {
             "branchMoved"
         case .branchCheckedOut:
             "branchCheckedOut"
+        case .branchMoveNotUndone:
+            "branchMoveNotUndone"
         }
     }
 

@@ -102,7 +102,7 @@ extension WorktreeCommandLineFormatter {
         ]
     }
 
-    private static func humanOption(_ option: WorktreeStopOption) -> String {
+    static func humanOption(_ option: WorktreeStopOption) -> String {
         switch option.action {
         case .flag(let flag):
             "\(flag): \(option.effect)"

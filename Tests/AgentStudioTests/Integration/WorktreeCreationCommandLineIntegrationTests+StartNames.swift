@@ -159,6 +159,29 @@ extension WorktreeCreationCommandLineIntegrationTests {
         #expect(newerTip != originTip)
     }
 
+    @Test("--from-branch origin/<name> starts from origin's branch whose name holds U+2028, after fetching it")
+    func startsFromRemoteBranchWithLineSeparator() async throws {
+        let fixture = try await WorktreeCreationRemoteFixture.create(named: "new-line-separator-start")
+        defer { fixture.destroy() }
+        // A branch only origin has, at a commit no local ref names. Swift splits lines at U+2028, so the remote
+        // probe has to frame `ls-remote` output by bytes to find it (SDK 14d6d18).
+        let originTip = try await fixture.advance("a\u{2028}b", file: "line.txt")
+        #expect(!(try await fixture.git("for-each-ref", "--format=%(objectname)").contains(originTip)))
+
+        let created = await fixture.runNew("feature/line", ["--from-branch", "origin/a\u{2028}b"], json: true)
+
+        #expect(created.exit == 0, "\(created.output)")
+        let document = try created.created()
+        #expect(
+            document.start
+                == .init(
+                    commit: originTip, from: "remoteBranch", ref: "refs/remotes/origin/a\u{2028}b",
+                    localOnlyCommits: nil))
+        #expect(
+            document.fetch
+                == .init(remote: "origin", branch: "a\u{2028}b", status: "fetched", commit: originTip, reason: nil))
+    }
+
     /// Whether `git check-ref-format <refname>` accepts it. A refusal is the answer here, not a failed
     /// launch, so it is not reported as one.
     private static func gitAcceptsReferenceName(_ refname: String) async throws -> Bool {

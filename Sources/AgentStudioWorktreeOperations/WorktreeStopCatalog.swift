@@ -290,6 +290,14 @@ package enum WorktreeStopCatalog {
         }
     }
 
+    /// A failure that left a branch moved lists how to look at it first; every other failure lists none.
+    static func failureOptions(for failure: WorktreeOperationFailure) -> [WorktreeStopOption] {
+        guard failure.leavesBranchMoved else { return [] }
+        return [
+            command("git log -1 <branch>", effect: "Check where the branch is now before using it or moving it back.")
+        ]
+    }
+
     /// A creation stop lists `--no-fork` after any option that still forks the source.
     private static let noForkOption = flag(
         "--no-fork",

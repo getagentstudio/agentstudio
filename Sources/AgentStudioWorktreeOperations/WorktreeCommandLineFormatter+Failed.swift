@@ -3,16 +3,22 @@ import Foundation
 
 extension WorktreeCommandLineFormatter {
     package static func failedHumanLine(_ failure: WorktreeOperationFailure) -> String {
-        withCreationFetchLine(
-            "failed: \(humanFailure(failure.failure)); leftovers: \(WorktreeCleanupLeftoversFormatter.human(failure.leftovers))",
-            failure.creationFetch)
+        var line =
+            "failed: \(humanFailure(failure.failure)); leftovers: \(WorktreeCleanupLeftoversFormatter.human(failure.leftovers))"
+        let options = WorktreeStopCatalog.failureOptions(for: failure)
+        if !options.isEmpty {
+            line += "; options: [\(options.map(humanOption).joined(separator: "; "))]"
+        }
+        return withCreationFetchLine(line, failure.creationFetch)
     }
 
     package static func failedJSONText(_ failure: WorktreeOperationFailure) throws -> String {
-        try encodeJSON(
+        let options = WorktreeStopCatalog.failureOptions(for: failure)
+        return try encodeJSON(
             WorktreeFailedCommandLineJSON(
                 failure: jsonFailure(failure.failure),
                 leftovers: WorktreeCleanupLeftoversFormatter.document(failure.leftovers),
+                options: options.isEmpty ? nil : options,
                 fetch: failure.creationFetch
             )
         )
@@ -43,6 +49,8 @@ extension WorktreeCommandLineFormatter {
             return "rejectedAfterChange \(reason.rawValue)"
         case .branchCheckedOutAfterChange(let path):
             return "rejectedAfterChange branchCheckedOut \(path)"
+        case .branchMoveNotUndone(let branch, let move):
+            return "branchMoveNotUndone \(branch) from \(move.fromCommit) to \(move.toCommit)"
         }
     }
 
@@ -96,6 +104,9 @@ extension WorktreeCommandLineFormatter {
             return .init(kind: "rejectedAfterChange", reason: reason.rawValue)
         case .branchCheckedOutAfterChange(let path):
             return .init(kind: "rejectedAfterChange", reason: "branchCheckedOut", path: path)
+        case .branchMoveNotUndone(let branch, let move):
+            return .init(
+                kind: "branchMoveNotUndone", branch: branch, fromCommit: move.fromCommit, toCommit: move.toCommit)
         }
     }
 
@@ -125,6 +136,9 @@ private struct WorktreeFailedCommandLineJSON: Encodable {
         let gitLockFact: LockFact?
         let permissionPath: String?
         let path: String?
+        let branch: String?
+        let fromCommit: String?
+        let toCommit: String?
 
         init(
             kind: String,
@@ -134,7 +148,10 @@ private struct WorktreeFailedCommandLineJSON: Encodable {
             errno: Int32? = nil,
             gitLockFact: GitLockFact? = nil,
             permissionPath: String? = nil,
-            path: String? = nil
+            path: String? = nil,
+            branch: String? = nil,
+            fromCommit: String? = nil,
+            toCommit: String? = nil
         ) {
             self.kind = kind
             self.gitErrorKind = gitErrorKind
@@ -144,6 +161,9 @@ private struct WorktreeFailedCommandLineJSON: Encodable {
             self.gitLockFact = gitLockFact.map(LockFact.init)
             self.permissionPath = permissionPath
             self.path = path
+            self.branch = branch
+            self.fromCommit = fromCommit
+            self.toCommit = toCommit
         }
 
         struct LockFact: Encodable {
@@ -158,5 +178,6 @@ private struct WorktreeFailedCommandLineJSON: Encodable {
     }
 
     let leftovers: WorktreeCleanupLeftoversDocument
+    let options: [WorktreeStopOption]?
     let fetch: WorktreeCreationFetchStatus?
 }

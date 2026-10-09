@@ -210,10 +210,38 @@ struct WorktreeOperationErrorMapperTests {
         #expect(
             WorktreeCommandLineFormatter.failedHumanLine(expectedFailure)
                 == "failed: rejectedAfterChange branchCheckedOut /tmp/worktree-error-mapping/repo.holder; "
-                + "leftovers: incomplete [branchMoveNotUndone refs/heads/feature/example (branch reference)]")
+                + "leftovers: incomplete [branchMoveNotUndone refs/heads/feature/example (branch reference)]; "
+                + "options: [git log -1 <branch>: Check where the branch is now before using it or moving it back.]")
         #expect(
             try WorktreeCommandLineFormatter.failedJSONText(expectedFailure)
-                == #"{"failure":{"kind":"rejectedAfterChange","path":"/tmp/worktree-error-mapping/repo.holder","reason":"branchCheckedOut"},"leftovers":{"items":[{"base":"branchReference","kind":"branchMoveNotUndone","location":"refs/heads/feature/example"}],"status":"incomplete"},"outcome":"failed"}"#
+                == #"{"failure":{"kind":"rejectedAfterChange","path":"/tmp/worktree-error-mapping/repo.holder","reason":"branchCheckedOut"},"leftovers":{"items":[{"base":"branchReference","kind":"branchMoveNotUndone","location":"refs/heads/feature/example"}],"status":"incomplete"},"options":[{"command":"git log -1 <branch>","effect":"Check where the branch is now before using it or moving it back."}],"outcome":"failed"}"#
+        )
+    }
+
+    @Test("a fast-forward the plain checkout couldn't undo fails naming the branch and both commits")
+    func mapsUnconfirmedBranchMoveForCheckout() throws {
+        let fromCommit = String(repeating: "1", count: 40)
+        let toCommit = String(repeating: "2", count: 40)
+        let error = GitDataPlaneError.branchMoveNotUndone(
+            branchName: "feature/example", fromOID: fromCommit, toOID: toCommit)
+
+        let outcome = WorktreeOperationErrorMapper.createOutcome(error)
+
+        let expectedFailure = WorktreeOperationFailure(
+            failure: .branchMoveNotUndone(
+                branch: "feature/example", move: WorktreeBranchMove(fromCommit: fromCommit, toCommit: toCommit)),
+            leftovers: .unverified)
+        #expect(outcome == .failed(expectedFailure))
+        #expect(WorktreeOperationErrorMapper.gitErrorKind(for: error) == .branchMoveNotUndone)
+        let human = try WorktreeCommandLineFormatter.format(outcome: outcome, usesJSONOutput: false)
+        #expect(human.exitCode == 2)
+        #expect(
+            human.text
+                == "failed: branchMoveNotUndone feature/example from \(fromCommit) to \(toCommit); leftovers: unverified; "
+                + "options: [git log -1 <branch>: Check where the branch is now before using it or moving it back.]")
+        #expect(
+            try WorktreeCommandLineFormatter.format(outcome: outcome, usesJSONOutput: true).text
+                == #"{"failure":{"branch":"feature/example","fromCommit":"\#(fromCommit)","kind":"branchMoveNotUndone","toCommit":"\#(toCommit)"},"leftovers":{"status":"unverified"},"options":[{"command":"git log -1 <branch>","effect":"Check where the branch is now before using it or moving it back."}],"outcome":"failed"}"#
         )
     }
 

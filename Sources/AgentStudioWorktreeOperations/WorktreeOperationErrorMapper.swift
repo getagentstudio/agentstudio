@@ -36,14 +36,20 @@ package enum WorktreeOperationErrorMapper {
         WorktreeOperationFailure(failure: .createFailed(gitErrorKind(for: error)), leftovers: .unverified)
     }
 
-    /// A plain checkout refuses a branch that moved or is held elsewhere with nothing changed; every
-    /// other error is a failed creation.
+    /// A plain checkout refuses a branch that moved or is held elsewhere with nothing changed. A fast-forward it
+    /// couldn't undo fails naming the branch and both commits (LR1, D22). Every other error is a failed creation.
     package static func createOutcome(_ error: GitDataPlaneError) -> WorktreeOperationOutcome {
         switch error {
         case .branchMoved:
             .refused(.creationStopped(.branchMoved))
         case .branchCheckedOut(let worktreePath):
             .refused(.creationStopped(.branchCheckedOut(path: worktreePath.standardizedFileURL.path)))
+        case .branchMoveNotUndone(let branchName, let fromOID, let toOID):
+            .failed(
+                WorktreeOperationFailure(
+                    failure: .branchMoveNotUndone(
+                        branch: branchName, move: WorktreeBranchMove(fromCommit: fromOID, toCommit: toOID)),
+                    leftovers: .unverified))
         default:
             .failed(createFailure(error))
         }
@@ -99,6 +105,8 @@ package enum WorktreeOperationErrorMapper {
             .branchMoved
         case .branchCheckedOut:
             .branchCheckedOut
+        case .branchMoveNotUndone:
+            .branchMoveNotUndone
         }
     }
 

@@ -458,6 +458,8 @@ extension AgentStudioGitBridgeReviewDataClient {
             return .providerFailed(message: "gitDataPlane:branchMoved")
         case .branchCheckedOut:
             return .providerFailed(message: "gitDataPlane:branchCheckedOut")
+        case .branchMoveNotUndone:
+            return .providerFailed(message: "gitDataPlane:branchMoveNotUndone")
         }
     }
 

@@ -6,7 +6,7 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/getagentstudio/agentstudio-git.git",
       "state" : {
-        "revision" : "f488c44f30ed922bf8ed056c2e69f2ed9eeeb91e"
+        "revision" : "fcc3ad4d21d51527a3666a74992d95c736db2de7"
       }
     },
     {

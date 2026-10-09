@@ -82,7 +82,7 @@ extension WorktreeCreationFailure {
         case .worktreeNotFound, .worktreeNotPrunable, .unsafeWorktreeRemoval, .contentTooLarge,
             .pathEscapesRepository, .requiredObjectNotFound, .noSharedHistory, .multipleBestMergeBases,
             .processFailed, .processTimedOut, .processCancelled, .processOutputTooLarge,
-            .remoteRefTransactionIndeterminate:
+            .remoteRefTransactionIndeterminate, .branchMoveNotUndone:
             "Git could not create the worktree (\(error))."
         }
     }

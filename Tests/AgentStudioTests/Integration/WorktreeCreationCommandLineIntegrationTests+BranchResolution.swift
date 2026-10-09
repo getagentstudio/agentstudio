@@ -411,6 +411,47 @@ extension WorktreeCreationCommandLineIntegrationTests {
         #expect(human.text.hasSuffix("\nfetch: fetched origin/feature/late \(tip)"))
     }
 
+    @Test("a fork whose fast-forward couldn't be undone names the branch and both commits in its leftovers")
+    func forkLeftoverNamesTheUndoneFastForward() async throws {
+        let fixture = try await WorktreeCreationRemoteFixture.create(named: "new-fork-move-not-undone")
+        defer { fixture.destroy() }
+        try await fixture.git("branch", "feature/ff", "main")
+        let originTip = try await fixture.advance("feature/ff", file: "ff.txt")
+        // The SDK fast-forwarded the strictly-behind branch, failed later, and couldn't move it back. Its residue
+        // names only the ref; the plan knows the move.
+        let client = try await fixture.stubClient(
+            forkFailure: .cleanupIncomplete(
+                primary: .cancelled,
+                residue: [GitWorktreeForkResidue(kind: .branchMoveNotUndone, location: "refs/heads/feature/ff")]))
+
+        let outcome = await fixture.runCreate("feature/ff", client: client)
+
+        let mainCommit = fixture.mainCommit
+        #expect(
+            outcome
+                == .failed(
+                    WorktreeOperationFailure(
+                        failure: .cancelled,
+                        leftovers: .incomplete([
+                            WorktreeCleanupLeftover(
+                                kind: .branchMoveNotUndone, location: "refs/heads/feature/ff", base: .branchReference,
+                                branchMove: WorktreeBranchMove(fromCommit: mainCommit, toCommit: originTip))
+                        ]),
+                        creationFetch: .fetched(
+                            remoteName: "origin", branchName: "feature/ff", commit: originTip, lockResidue: nil))))
+        let human = try WorktreeCommandLineFormatter.format(outcome: outcome, usesJSONOutput: false)
+        #expect(human.exitCode == 2)
+        #expect(
+            human.text
+                == "failed: cancelled; leftovers: incomplete [branchMoveNotUndone refs/heads/feature/ff from \(mainCommit) "
+                + "to \(originTip) (branch reference)]; options: [git log -1 <branch>: Check where the branch is now before using it or moving it back.]\nfetch: fetched origin/feature/ff \(originTip)"
+        )
+        #expect(
+            try WorktreeCommandLineFormatter.format(outcome: outcome, usesJSONOutput: true).text
+                == #"{"failure":{"kind":"cancelled"},"fetch":{"branch":"feature/ff","commit":"\#(originTip)","remote":"origin","status":"fetched"},"leftovers":{"items":[{"base":"branchReference","fromCommit":"\#(mainCommit)","kind":"branchMoveNotUndone","location":"refs/heads/feature/ff","toCommit":"\#(originTip)"}],"status":"incomplete"},"options":[{"command":"git log -1 <branch>","effect":"Check where the branch is now before using it or moving it back."}],"outcome":"failed"}"#
+        )
+    }
+
     @Test("a malformed copy config doesn't hide a branch held by another worktree")
     func heldBranchWinsOverInvalidConfig() async throws {
         let fixture = try await WorktreeCreationRemoteFixture.create(named: "new-held-invalid-config")

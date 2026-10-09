@@ -173,6 +173,8 @@ package struct WorktreeGitErrorDocument: Codable, Sendable, Equatable {
             .branchMoved
         case "branchCheckedOut":
             .branchCheckedOut
+        case "branchMoveNotUndone":
+            .branchMoveNotUndone
         default:
             nil
         }
