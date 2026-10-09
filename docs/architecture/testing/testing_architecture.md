@@ -440,8 +440,8 @@ Script tests that run the real lane runner inside a fixture face a trap. The
 runner's inactivity watchdog times the whole tracked process: the command, then
 the runner's own pipeline, relay drain and epilogue. Under load, that overhead
 alone can use up a fixture's short bound (20 or 60 seconds), and the fixture then
-reports a timeout for a command that has already exited. The production bound is
-600 seconds and is not exposed.
+reports a timeout for a command that has already exited. The `test:swift` gating
+lanes use a 600-second bound; `test:swift:coverage` uses a 60-second bound.
 
 So the fixture launchers run the inner watchdog **unarmed** by default
 (`LaneFixtureInnerWatchdog.unarmed` in
