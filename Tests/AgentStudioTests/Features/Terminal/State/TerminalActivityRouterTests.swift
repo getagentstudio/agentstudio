@@ -381,7 +381,8 @@ struct TerminalActivityRouterTests {
             )
             #expect(atom.snapshot(for: paneId.uuid)?.scrollbarState?.total == 140)
             // The awaited ingest made the scheduling decision; an attended pane schedules no window.
-            #expect(await projector.scheduledTimerCount == 0)
+            // `#require` stops here on a regression instead of waiting on the timer it scheduled.
+            try #require(await projector.scheduledTimerCount == 0)
             #expect(clock.pendingSleepCount == 0)
             _ = try await events.expectNextPaneObservation(paneID: paneId.uuid, isPinnedToBottom: false)
 
