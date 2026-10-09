@@ -26,7 +26,7 @@ extension CITopologyWorkflowTests {
         #expect(!linkStep.contains("needs.changes"))
         #expect(!linkStep.contains("docs_only"))
         #expect(!workflow.contains("paths-ignore:"))
-        for name in ["swift-test-suite", "bridge-web", "marketing-site-validation"] {
+        for name in ["swift-test-suite", "bridge-web"] {
             let job = try docsOnlyJob(name, in: workflow)
             let header = job.components(separatedBy: "    steps:").first ?? ""
             #expect(header.contains("needs: changes"))
@@ -137,7 +137,7 @@ extension CITopologyWorkflowTests {
 
     @Test("literal readers under each owning code root veto documentation skipping")
     func docsOnlyScannerCoversEachCodeRoot() async throws {
-        for codeRoot in ["Tests", "Tools", "BridgeWeb", "web", "scripts"] {
+        for codeRoot in ["Tests", "Tools", "BridgeWeb", "scripts"] {
             let fixture = try DocsOnlyGitFixture()
             defer { fixture.remove() }
             try fixture.write("\(codeRoot)/reader.swift", "let path = \"docs/contract.md\"")

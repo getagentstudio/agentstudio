@@ -272,7 +272,7 @@ bash scripts/doctor-mac.sh
 
 [tasks.setup]
 description = "Prepare shared vendors, or explicitly hydrate and build local vendors"
-depends = ["bridge-web-install", "web-install", "install-hooks"]
+depends = ["bridge-web-install", "install-hooks"]
 usage = '''
 flag "--use-local-vendors" help="Hydrate and build Ghostty and zmx in this worktree"
 '''
@@ -361,7 +361,6 @@ mise run lint
 mise run test:architecture
 mise run test:atomlib-compile-negative
 mise run test:bridge-web
-mise run test:web
 mise run verify-vendors
 mise run --skip-deps bridge-web-build
 test -f Sources/AgentStudio/Resources/BridgeWeb/app/index.html
@@ -369,15 +368,6 @@ SWIFT_TEST_INCLUDE_E2E=1 \
 mise run --skip-deps test:swift
 git diff --check
 """
-
-[tasks."test:web"]
-description = "Run the marketing website pull-request gate"
-depends = ["web-install"]
-run = "pnpm --dir web run check && pnpm --dir web run build && pnpm --dir web exec cf build && pnpm --dir web run verify:cloudflare-discovery"
-
-[tasks.web-install]
-description = "Install frozen marketing website dependencies"
-run = "pnpm --dir web install --frozen-lockfile"
 
 [tasks."test:architecture"]
 description = "Run the AgentStudio architecture lint tool package tests"
