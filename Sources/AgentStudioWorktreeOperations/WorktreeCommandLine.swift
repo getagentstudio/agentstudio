@@ -29,13 +29,23 @@ package enum WorktreeCommandLine {
         errorOutput: @Sendable (String) -> Void,
         runner: WorktreeOperationRunner = WorktreeOperationRunner()
     ) async -> Int32 {
-        if arguments.isEmpty || arguments.first == "--help" || arguments.first == "-h" || arguments.first == "help" {
+        let helpArguments = arguments.filter { $0 != "--json" }
+        if helpArguments.first == "help", let command = helpArguments.dropFirst().first {
+            guard let help = WorktreeCommandLineHelp.usage(for: command) else {
+                errorOutput(WorktreeCommandLineArgumentError.unknownSubcommand.message)
+                return 64
+            }
+            output(help)
+            return 0
+        }
+        if helpArguments.isEmpty || helpArguments.first == "--help" || helpArguments.first == "-h"
+            || helpArguments.first == "help"
+        {
             output(WorktreeCommandLineHelp.overview)
             return 0
         }
-        if let command = arguments.first,
-            WorktreeCommandLineHelp.isCommand(command),
-            arguments.dropFirst().contains(where: { $0 == "--help" || $0 == "-h" }),
+        if let command = helpArguments.first,
+            helpArguments.dropFirst().contains(where: { $0 == "--help" || $0 == "-h" }),
             let help = WorktreeCommandLineHelp.usage(for: command)
         {
             output(help)

@@ -7,7 +7,7 @@ package enum WorktreeCommandLineHelp {
           new -c <branch>      Create <branch> in a copy-on-write fork of the main checkout
           list [target...]     List worktrees: changes, integration, tmp/ evidence, removal readiness
           remove <target...>   Remove worktrees and their integrated branches (destructive)
-          prune                Preview removable worktrees; --apply removes them
+          prune                Preview removable worktrees; may still fetch; use --no-fetch for a fully read-only preview; --apply removes them
 
         Run 'agentstudio worktree <command> --help' for that command's options.
         Runs locally through Git; needs no app or IPC.
@@ -47,7 +47,7 @@ package enum WorktreeCommandLineHelp {
           --archive-to <path>     Copy tmp/ evidence to this folder
           --discard-tmp           Discard tmp/ evidence
           --remove-stale-lock     Remove an identified stale Git lock
-          --dry-run               Preview removal without changing the lifecycle
+          --dry-run               Preview removal; may still fetch; use --no-fetch for a fully read-only preview
           --json                  Print machine-readable output
         Example: agentstudio worktree remove feature/search
         Example: agentstudio worktree remove /path/to/worktree --archive-to-main

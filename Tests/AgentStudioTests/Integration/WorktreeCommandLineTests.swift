@@ -14,7 +14,7 @@ struct WorktreeCommandLineTests {
         let exitCode: Int32
     }
 
-    private static func runnerThatWouldFailIfCalled() -> WorktreeOperationRunner {
+    static func runnerThatWouldFailIfCalled() -> WorktreeOperationRunner {
         let start = URL(fileURLWithPath: "/path/that/does/not/exist", isDirectory: true)
         let repository = URL(fileURLWithPath: "/path/that/does/not/exist/repository", isDirectory: true)
         let repositoryID = GitRepositoryID(rawValue: "common:/path/that/does/not/exist/repository.git")
@@ -81,33 +81,6 @@ struct WorktreeCommandLineTests {
             #expect(probe.outputSnapshot() == [expected])
             #expect(probe.errorOutputSnapshot().isEmpty)
         }
-    }
-
-    @Test("worktree help documents every option accepted by the parser")
-    func helpDocumentsParserOptions() {
-        let acceptedOptions: [String: [String]] = [
-            "new": [
-                "-c", "--create", "--repo", "--from", "--from-branch", "--no-fork", "--changes-only",
-                "--no-fetch", "--json",
-            ],
-            "list": ["--repo", "--no-fetch", "--json"],
-            "remove": [
-                "--repo", "--no-fetch", "-f", "--force", "-D", "--no-delete-branch", "--archive-to-main",
-                "--archive-to", "--discard-tmp", "--remove-stale-lock", "--dry-run", "--json",
-            ],
-            "prune": ["--repo", "--no-fetch", "--archive-to-main", "--archive-to", "--apply", "--json"],
-        ]
-
-        for (command, options) in acceptedOptions {
-            let help = WorktreeCommandLineHelp.usage(for: command) ?? ""
-            for option in options {
-                #expect(help.contains(option), "missing \(option) from \(command) help")
-            }
-        }
-
-        #expect(!WorktreeCommandLineHelp.newUsage.contains("--tracked-only"))
-        #expect(!WorktreeCommandLineHelp.pruneUsage.contains("--force"))
-        #expect(!WorktreeCommandLineHelp.pruneUsage.contains("-D"))
     }
 
     @Test("argument parsing maps list --repo to an absolute start")
@@ -273,6 +246,7 @@ struct WorktreeCommandLineTests {
         // A bare `worktree` prints help (LR32); an option with no command is still a usage error.
         let malformedForms: [[String]] = [
             ["--json"],
+            ["help", "unknown"],
             ["unknown"],
             ["list", "--unknown"],
             ["list", "--no-fetch", "--no-fetch"],
@@ -601,7 +575,7 @@ struct WorktreeCommandLineTests {
     }
 }
 
-private final class WorktreeCommandLineTestProbe: @unchecked Sendable {
+final class WorktreeCommandLineTestProbe: @unchecked Sendable {
     private let lock = NSLock()
     private var outputs: [String] = []
     private var errorOutputs: [String] = []
