@@ -5,6 +5,7 @@ import {
 import type { BridgeProductSnapshotCause } from './bridge-product-batch-wire-contracts.js';
 import type { BridgeProductDeadlineClock } from './bridge-product-deadline-clock.js';
 import type { BridgeProductControlMux } from './bridge-product-session-authority.js';
+import { sameViewFilter } from './bridge-product-view-batch-receiver.js';
 import type { ViewResnapshotAdmissionProps } from './bridge-product-view-control-admission.js';
 import type { BridgeProductViewScopeRequest } from './bridge-product-view-control-wire-contracts.js';
 import type { BridgeWorkerViewRecoveryStatusEvent } from './bridge-worker-contracts.js';
@@ -146,16 +147,17 @@ export class BridgeProductViewScopeOwner {
 		if (!scopeMatchesKind(view.subscriptionKind, props.scope.kind)) {
 			throw new Error('Metadata view scope differs from its registered kind.');
 		}
-		const commentView =
-			view.subscriptionKind === 'file.annotations' ||
-			view.subscriptionKind === 'review.annotations';
+		const filterChanged = !sameViewFilter(view.desiredScope, props.scope);
 		const requiresBatchBegin =
-			!commentView || view.scopeRevision === 0 || view.awaitingBegin || view.resnapshotRequested;
+			filterChanged || view.scopeRevision === 0 || view.awaitingBegin || view.resnapshotRequested;
+		const preserveResnapshotRequest =
+			view.scopeRevision > 0 && !filterChanged && view.resnapshotRequested;
 		view.currentAdmission?.abort();
 		view.scopeRevision += 1;
 		view.desiredScope = props.scope;
 		view.resnapshotInFlight = null;
-		view.resnapshotRequested = false;
+		// Same-filter demand preserves the request already charged for the live inventory.
+		view.resnapshotRequested = preserveResnapshotRequest;
 		this.#clearReplacementBeginDeadline(view);
 		view.awaitingBegin = requiresBatchBegin;
 		if (requiresBatchBegin) this.#emitRecoveryStatus(view, 'recovering');
@@ -258,9 +260,12 @@ export class BridgeProductViewScopeOwner {
 	observeSnapshotBegin(
 		identity: ViewIdentity & { readonly snapshotCause: BridgeProductSnapshotCause },
 	): boolean {
-		const view = this.#matchingView(identity);
-		if (view === undefined) return true;
+		// W4 has already checked membership and begin currentness. Demand revision is
+		// an E4 fence; accepted older-demand recovery still belongs to this live view.
+		const view = this.#views.get(identity.subscriptionId);
+		if (view?.handle !== identity.handle || view.incarnation !== identity.incarnation) return true;
 		const cause = identity.snapshotCause;
+		if (cause === 'open' && identity.scopeRevision !== view.scopeRevision) return true;
 		const failed = view.recoveryStatus === 'failedRetryable';
 		if (failed && (cause === 'recovery' || cause === 'requested')) return false;
 		if (cause === 'newerInput') return true;
