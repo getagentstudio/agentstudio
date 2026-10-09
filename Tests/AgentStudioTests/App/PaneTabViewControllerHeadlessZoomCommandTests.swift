@@ -88,6 +88,7 @@ struct PaneTabViewControllerHeadlessZoomCommandTests {
 
         #expect(outcome == .applied)
         #expect(window.firstResponder === targetHost)
+        let originalSuperview = targetHost.superview
 
         let hostingView = NSHostingView(
             rootView: PaneViewRepresentable(paneHost: targetHost)
@@ -99,6 +100,7 @@ struct PaneTabViewControllerHeadlessZoomCommandTests {
         hostingView.layoutSubtreeIfNeeded()
         contentView.layoutSubtreeIfNeeded()
 
+        #expect(targetHost.superview !== originalSuperview)
         #expect(window.firstResponder === targetHost)
     }
 
