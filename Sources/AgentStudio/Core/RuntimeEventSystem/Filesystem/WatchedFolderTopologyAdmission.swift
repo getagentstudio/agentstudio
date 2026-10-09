@@ -43,7 +43,7 @@ enum WatchedFolderTopologyAdmission {
             guard isGitTopologyPath(path) else { return false }
             guard let checkout = knownCheckout(containing: path, knownPaths: knownPathSet) else { return true }
             return admitsGitPath(
-                String(path.dropFirst(checkout.count + 1)),
+                String(path.dropFirst(checkout == "/" ? 1 : checkout.count + 1)),
                 observationFlags: observationFlagsByPath[path], casePolicy: root.volumeSemantics.casePolicy)
         }) {
             return true

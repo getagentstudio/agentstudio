@@ -140,6 +140,25 @@ struct WatchedFolderTopologyAdmissionTests {
             !WatchedFolderTopologyAdmission.shouldScan(routine, root: fixture.descriptor, knownGroups: fixture.groups))
     }
 
+    @Test(
+        "own Git marker creation and removal admit membership recovery",
+        arguments: [UInt32(kFSEventStreamEventFlagItemCreated), UInt32(kFSEventStreamEventFlagItemRemoved)])
+    func ownGitMarkerChangesAdmitMembershipRecovery(flags: UInt32) throws {
+        // Arrange
+        let fixture = try makeGitAdmissionFixture()
+        defer { try? FileManager.default.removeItem(at: fixture.root) }
+        let path = fixture.checkout.appending(path: ".git").path
+        let batch = FSEventBatch(
+            worktreeId: UUIDv7.generate(), paths: [path],
+            observations: [.init(path: path, eventID: 1, flags: flags | UInt32(kFSEventStreamEventFlagItemIsDir))])
+
+        // Act / Assert
+        #expect(WatchedFolderTopologyAdmission.shouldScan(batch, root: fixture.descriptor, knownGroups: fixture.groups))
+        #expect(
+            WatchedFolderTopologyAdmission.shouldScan(
+                batch, root: fixture.descriptor, knownGroups: [], heldCheckoutPaths: [fixture.checkout.path]))
+    }
+
     @Test("nested Git churn stays rejected through the private path alias")
     func nestedGitChurnRejectsCanonicalAndLexicalAliases() throws {
         // Arrange
@@ -191,6 +210,25 @@ struct WatchedFolderTopologyAdmissionTests {
         let checkout: URL
         let descriptor: RegisteredRootDescriptor
         let groups: [RepoScanner.RepoScanGroup]
+    }
+
+    @Test("a filesystem-root checkout preserves its own Git path components")
+    func filesystemRootCheckoutPreservesGitAdmission() throws {
+        // Arrange
+        let checkout = URL(fileURLWithPath: "/")
+        let registration = FSEventRegistrationToken(
+            sourceID: .init(kind: .watchedParentMembership, rootID: UUIDv7.generate()),
+            registrationGeneration: 1, rootGeneration: 1)
+        let descriptor = try FilesystemSourceConfiguration.registerRoot(
+            from: .hostAuthorized(
+                .init(registration: registration, authorizedBoundary: checkout, registeredRoot: checkout)))
+        let groups = [RepoScanner.RepoScanGroup(clonePath: checkout, linkedWorktreePaths: [])]
+        let config = FSEventBatch(worktreeId: UUIDv7.generate(), paths: ["/.git/config"])
+        let index = FSEventBatch(worktreeId: UUIDv7.generate(), paths: ["/.git/index"])
+
+        // Act / Assert
+        #expect(WatchedFolderTopologyAdmission.shouldScan(config, root: descriptor, knownGroups: groups))
+        #expect(!WatchedFolderTopologyAdmission.shouldScan(index, root: descriptor, knownGroups: groups))
     }
 
     private func makeGitAdmissionFixture() throws -> GitAdmissionFixture {
@@ -260,5 +298,69 @@ struct WatchedFolderTopologyAdmissionTests {
         #expect(recoveries.first?.requiresWatchedFolderScan == true)
         #expect((recoveries.first?.paths == nil) == (pathLimit == 1))
         #expect(buffer.consumeOverflowRecoveries().isEmpty)
+    }
+
+    @Test("scoped overflow preserves path observations and coarse overflow drops them", arguments: [1, 4])
+    func overflowRetainsBoundedPathObservations(pathLimit: Int) throws {
+        // Arrange
+        let buffer = DarwinFSEventIngressBuffer(capacity: 1, maximumRetainedOverflowPathsPerRegistration: pathLimit)
+        defer { buffer.finish() }
+        let callbackID = UUIDv7.generate()
+        let paths = ["/watched/repo/.git/HEAD", "/watched/new-directory"]
+        let observations = [
+            FSEventObservation(path: paths[0], eventID: 2, flags: UInt32(kFSEventStreamEventFlagItemRenamed)),
+            FSEventObservation(
+                path: paths[1], eventID: 3,
+                flags: UInt32(kFSEventStreamEventFlagItemIsDir | kFSEventStreamEventFlagItemCreated)),
+        ]
+        buffer.yield(.init(worktreeId: callbackID, paths: ["/watched/retained.txt"]))
+
+        // Act
+        buffer.yield(.init(worktreeId: callbackID, paths: paths, observations: observations))
+        let recovery = try #require(buffer.consumeOverflowRecoveries().first)
+
+        // Assert
+        #expect(recovery.requiresWatchedFolderScan)
+        if pathLimit == 1 {
+            #expect(recovery.paths == nil)
+            #expect(recovery.observations.isEmpty)
+        } else {
+            #expect(recovery.paths == Set(paths))
+            #expect(Set(recovery.observations.map(\.path)) == Set(paths))
+            for expected in observations {
+                #expect(recovery.observations.contains(expected))
+            }
+        }
+    }
+
+    @Test("repeated overflow observations merge flags while retaining one bounded entry per path")
+    func overflowObservationMergeRetainsRemovalEvidence() throws {
+        // Arrange
+        let buffer = DarwinFSEventIngressBuffer(capacity: 1, maximumRetainedOverflowPathsPerRegistration: 1)
+        defer { buffer.finish() }
+        let callbackID = UUIDv7.generate()
+        let path = "/watched/repo/.git/HEAD"
+        buffer.yield(.init(worktreeId: callbackID, paths: ["/watched/retained.txt"]))
+
+        // Act
+        for (eventID, flags) in [
+            (UInt64(2), UInt32(kFSEventStreamEventFlagItemRemoved)),
+            (UInt64(3), UInt32(kFSEventStreamEventFlagItemRenamed)),
+        ] {
+            buffer.yield(
+                .init(
+                    worktreeId: callbackID, paths: [path],
+                    observations: [.init(path: path, eventID: eventID, flags: flags)]))
+        }
+        let recovery = try #require(buffer.consumeOverflowRecoveries().first)
+
+        // Assert
+        #expect(recovery.paths == [path])
+        #expect(
+            recovery.observations == [
+                .init(
+                    path: path, eventID: 3,
+                    flags: UInt32(kFSEventStreamEventFlagItemRemoved | kFSEventStreamEventFlagItemRenamed))
+            ])
     }
 }

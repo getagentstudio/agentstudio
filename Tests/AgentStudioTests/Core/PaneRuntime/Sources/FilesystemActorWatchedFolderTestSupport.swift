@@ -98,29 +98,35 @@ actor TopologyEventRecorder {
 /// so actor work can be ordered between a scan starting and its acceptance returning.
 actor WatchedFolderScanAcceptanceGate {
     private var isArmed = false
-    private var heldSubmission: HeldStep<Void>?
+    private var heldSubmission: HeldStep<WatchedFolderScanRequest>?
 
     nonisolated var port: WatchedFolderScanSubmissionPort {
         WatchedFolderScanSubmissionPort { scheduler, request, intent in
             let result = await scheduler.submit(request, intent: intent)
-            await self.holdIfArmed()
+            await self.holdIfArmed(request)
             return result
         }
     }
 
     func arm() {
         isArmed = true
-        heldSubmission = HeldStep<Void>("watchedFolderScanAcceptance", cancellation: .holdThroughCancellation)
+        heldSubmission = HeldStep<WatchedFolderScanRequest>(
+            "watchedFolderScanAcceptance", cancellation: .holdThroughCancellation)
     }
 
     func open() {
         heldSubmission?.release()
     }
 
-    private func holdIfArmed() async {
+    func waitForHeldSubmission() async throws -> WatchedFolderScanRequest {
+        guard let heldSubmission else { preconditionFailure("arm the submission before awaiting its arrival") }
+        return try await heldSubmission.firstArrival()
+    }
+
+    private func holdIfArmed(_ request: WatchedFolderScanRequest) async {
         guard isArmed, let heldSubmission else { return }
         isArmed = false
-        try? await heldSubmission.arrive(())
+        try? await heldSubmission.arrive(request)
     }
 }
 
