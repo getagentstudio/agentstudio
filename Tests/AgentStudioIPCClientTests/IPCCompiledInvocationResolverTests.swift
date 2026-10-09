@@ -110,7 +110,7 @@ struct IPCCompiledInvocationResolverTests {
 
         #expect(
             help.contains(
-                "  agentstudio worktree new|list|remove|prune — Git worktrees, run locally; see agentstudio worktree --help"
+                "  agentstudio worktree new|list|remove|prune [OPTIONS]  (local Git worktrees; see agentstudio worktree --help)"
             ))
     }
 
