@@ -570,7 +570,7 @@ The WebKit lane runs only the suites named in `webkit_suite_filters`, so a
 `WebKitSerializedTests` suite missing from that list never runs anywhere (four
 did, from #463 until TQ50).
 [`SwiftLaneWebKitSuiteListGateTests`](../../../Tests/AgentStudioTests/Scripts/SwiftLaneWebKitSuiteListGateTests.swift)
-fails when a source suite is unlisted, when a suite listed test by test is missing one of its tests, or when a listed entry no longer selects anything.
+fails when a source suite is unlisted, when a suite listed test by test is missing one of its tests, or when a listed entry no longer selects anything; it scans source text, so it does not evaluate `#if` conditional compilation.
 Lint debt — polling waits, blocking waits, ad-hoc gates, void wait helpers and
 the MainActor shapes — lives in one file,
 [`architecture-debt-ledger.tsv`](../../../Tools/AgentStudioArchitectureLint/architecture-debt-ledger.tsv),

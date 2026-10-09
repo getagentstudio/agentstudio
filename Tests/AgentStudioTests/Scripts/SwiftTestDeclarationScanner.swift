@@ -119,18 +119,24 @@ private let declarationModifiers: Set<Substring> = [
     "static", "mutating", "override",
 ]
 
-/// `class func`, `class var` and the like declare members, not a class.
-private let nonTypeNamesAfterClassKeyword: Set<String> = ["func", "var", "let", "subscript", "init", "deinit"]
+/// `class var`, `class subscript` and the like declare members, not a class.
+private let nonTypeNamesAfterClassKeyword: Set<String> = ["var", "let", "subscript", "init", "deinit"]
 
 /// The declaration keyword and the (possibly dotted) name after it, once
-/// leading modifiers are dropped: `final class Foo: Bar` is `class`, `Foo`.
+/// leading modifiers are dropped: `final class Foo: Bar` is `class`, `Foo`, and
+/// `class func run()` is `func`, `run`.
 private func leadingDeclaration(in text: Substring) -> (keyword: Substring, name: Substring)? {
     var remainder = text
     while true {
         let word = remainder.prefix { $0.isLetter || $0.isNumber || $0 == "_" }
         guard !word.isEmpty else { return nil }
         remainder = remainder[word.endIndex...].drop(while: \.isWhitespace)
-        guard declarationModifiers.contains(word) else {
+        let nextWord = remainder.prefix { $0.isLetter || $0.isNumber || $0 == "_" }
+        // Before `func` (or another modifier, as in `class override func`), `class`
+        // marks a type method the way `static` does.
+        let isClassMethodModifier =
+            word == "class" && (nextWord == "func" || declarationModifiers.contains(nextWord))
+        guard declarationModifiers.contains(word) || isClassMethodModifier else {
             let name = remainder.prefix { $0.isLetter || $0.isNumber || $0 == "_" || $0 == "." }
             guard name.first.map({ $0.isLetter || $0 == "_" }) ?? true else { return nil }
             return (word, name)
@@ -184,16 +190,16 @@ private func parenthesizedArgumentsEnd(
 // MARK: - Lexing
 
 /// Where a line starts: in code, inside a block comment `depth` deep, or inside
-/// a multi-line string that `closer` ends.
+/// a multi-line string opened with `rawHashCount` `#` characters.
 private enum SwiftLexicalContext: Equatable {
     case code
     case blockComment(depth: Int)
-    case multilineString(closer: String)
+    case multilineString(rawHashCount: Int)
 }
 
 /// A line's code with string-literal contents and comments removed, and the
 /// context the next line starts in. Block comments nest; raw strings
-/// (`#"..."#`, `#"""`) close only on their own hash count.
+/// (`#"..."#`, `#"""`) honor only their own hash count, for escapes and closers.
 private func swiftCodeOutsideLiteralsAndComments(
     _ line: Substring, startingIn startContext: SwiftLexicalContext
 ) -> (code: String, nextContext: SwiftLexicalContext) {
@@ -203,10 +209,14 @@ private func swiftCodeOutsideLiteralsAndComments(
     while index < line.endIndex {
         let rest = line[index...]
         switch context {
-        case .multilineString(let closer):
-            guard let closerRange = rest.range(of: closer) else { return (code, context) }
+        case .multilineString(let rawHashCount):
+            guard
+                let stringEnd = stringLiteralEnd(
+                    in: line, contentStart: index, quoteCount: 3, rawHashCount: rawHashCount
+                )
+            else { return (code, context) }
             context = .code
-            index = closerRange.upperBound
+            index = stringEnd
         case .blockComment(let depth):
             if rest.hasPrefix("/*") {
                 context = .blockComment(depth: depth + 1)
@@ -230,17 +240,17 @@ private func swiftCodeOutsideLiteralsAndComments(
             }
             let hashCount = rest.prefix { $0 == "#" }.count
             let afterHashes = rest.dropFirst(hashCount)
-            let rawDelimiter = String(repeating: "#", count: hashCount)
             if afterHashes.hasPrefix("\"\"\"") {
-                context = .multilineString(closer: "\"\"\"" + rawDelimiter)
+                context = .multilineString(rawHashCount: hashCount)
                 index = line.index(afterHashes.startIndex, offsetBy: 3)
             } else if afterHashes.hasPrefix("\"") {
-                index = singleLineStringEnd(
-                    in: line,
-                    contentStart: afterHashes.index(after: afterHashes.startIndex),
-                    closer: "\"" + rawDelimiter,
-                    isRaw: hashCount > 0
-                )
+                index =
+                    stringLiteralEnd(
+                        in: line,
+                        contentStart: afterHashes.index(after: afterHashes.startIndex),
+                        quoteCount: 1,
+                        rawHashCount: hashCount
+                    ) ?? line.endIndex
             } else {
                 code.append(line[index])
                 index = line.index(after: index)
@@ -250,19 +260,29 @@ private func swiftCodeOutsideLiteralsAndComments(
     return (code, context)
 }
 
-private func singleLineStringEnd(
-    in line: Substring, contentStart: Substring.Index, closer: String, isRaw: Bool
-) -> Substring.Index {
+/// Where a string literal whose contents start at `contentStart` closes on this
+/// line, or nil when it continues past the line. With `rawHashCount` N, an
+/// escape is a backslash followed by N `#` (just a backslash in an ordinary
+/// string), and the literal closes on `quoteCount` quotes followed by exactly N `#`.
+private func stringLiteralEnd(
+    in line: Substring, contentStart: Substring.Index, quoteCount: Int, rawHashCount: Int
+) -> Substring.Index? {
+    let rawDelimiter = String(repeating: "#", count: rawHashCount)
+    let escapeIntroducer = "\\" + rawDelimiter
+    let closer = String(repeating: "\"", count: quoteCount) + rawDelimiter
     var index = contentStart
     while index < line.endIndex {
-        if !isRaw, line[index] == "\\" {
-            index = line.index(index, offsetBy: 2, limitedBy: line.endIndex) ?? line.endIndex
+        let rest = line[index...]
+        if rest.hasPrefix(escapeIntroducer) {
+            // The introducer escapes the one character after it.
+            index =
+                line.index(index, offsetBy: escapeIntroducer.count + 1, limitedBy: line.endIndex) ?? line.endIndex
             continue
         }
-        if line[index...].hasPrefix(closer) {
+        if rest.hasPrefix(closer), rawHashCount == 0 || !rest.dropFirst(closer.count).hasPrefix("#") {
             return line.index(index, offsetBy: closer.count)
         }
         index = line.index(after: index)
     }
-    return line.endIndex
+    return nil
 }

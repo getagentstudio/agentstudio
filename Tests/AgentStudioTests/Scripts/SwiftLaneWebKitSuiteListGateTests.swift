@@ -219,6 +219,86 @@ struct SwiftLaneWebKitSuiteListGateTests {
                 == WebKitLaneListVerdict(unlisted: [], stale: ["WebKitSerializedTests/PerTestListedTests/removed"])
         )
     }
+
+    @Test("class and static test methods are discovered: an unlisted one is named and a removed one is stale")
+    func classAndStaticTestMethodsAreDiscovered() {
+        // Arrange
+        let suiteLines = [
+            "extension WebKitSerializedTests {",
+            "    @Suite(.serialized)",
+            "    final class TypeMethodTests {",
+            "        @Test func instanceRuns() {}",
+            "        @Test class func classRuns() {}",
+            "        @Test static func staticRuns() {}",
+            "    }",
+            "}",
+        ]
+        let classTestEntry = "WebKitSerializedTests/TypeMethodTests/classRuns"
+        let everyTestEntry: Set<String> = [
+            "WebKitSerializedTests/TypeMethodTests/instanceRuns",
+            classTestEntry,
+            "WebKitSerializedTests/TypeMethodTests/staticRuns",
+        ]
+        let declared = webKitLaneUnits(declaredIn: suiteLines.joined(separator: "\n"), sourcePath: "Fixture.swift")
+        let declaredAfterClassTestRemoval = webKitLaneUnits(
+            declaredIn: suiteLines.filter { !$0.contains("classRuns") }.joined(separator: "\n"),
+            sourcePath: "Fixture.swift"
+        )
+
+        // Act
+        let classTestOmitted = webKitLaneListVerdict(
+            declared: declared,
+            listedEntries: everyTestEntry.filter { $0 != classTestEntry }
+        )
+        let classTestRemovedFromSource = webKitLaneListVerdict(
+            declared: declaredAfterClassTestRemoval,
+            listedEntries: everyTestEntry
+        )
+
+        // Assert
+        #expect(Set(declared.testSources.keys) == everyTestEntry)
+        #expect(classTestOmitted == WebKitLaneListVerdict(unlisted: [classTestEntry], stale: []))
+        #expect(classTestRemovedFromSource == WebKitLaneListVerdict(unlisted: [], stale: [classTestEntry]))
+    }
+
+    @Test("an escaped quote in a raw string does not end it, so the suite after it is still named")
+    func rawStringEscapesKeepTheEnclosingScope() {
+        // Arrange
+        let singleLineRawString = webKitLaneUnits(
+            declaredIn: [
+                "extension WebKitSerializedTests {",
+                "    static let fixture = #\" \\#\"# } \"#",
+                "    @Suite(.serialized) struct AfterRawStringTests {}",
+                "}",
+            ].joined(separator: "\n"),
+            sourcePath: "Fixture.swift"
+        )
+        let multilineRawString = webKitLaneUnits(
+            declaredIn: [
+                "extension WebKitSerializedTests {",
+                "    static let fixture = #\"\"\"",
+                "        \\#\"\"\"# }",
+                "        \"\"\"#",
+                "    @Suite(.serialized) struct AfterMultilineRawStringTests {}",
+                "}",
+            ].joined(separator: "\n"),
+            sourcePath: "Fixture.swift"
+        )
+
+        // Act
+        let singleLineVerdict = webKitLaneListVerdict(declared: singleLineRawString, listedEntries: [])
+        let multilineVerdict = webKitLaneListVerdict(declared: multilineRawString, listedEntries: [])
+
+        // Assert
+        #expect(
+            singleLineVerdict
+                == WebKitLaneListVerdict(unlisted: ["WebKitSerializedTests/AfterRawStringTests"], stale: [])
+        )
+        #expect(
+            multilineVerdict
+                == WebKitLaneListVerdict(unlisted: ["WebKitSerializedTests/AfterMultilineRawStringTests"], stale: [])
+        )
+    }
 }
 
 private let webKitLaneRootSuite = "WebKitSerializedTests"
