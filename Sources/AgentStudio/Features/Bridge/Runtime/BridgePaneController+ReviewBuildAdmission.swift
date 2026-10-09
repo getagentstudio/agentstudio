@@ -110,7 +110,7 @@ extension BridgePaneController {
             }
             let outcome: BridgePaneReviewBuildAttemptOutcome
             if Task.isCancelled {
-                outcome = .cancelled
+                outcome = self.retiringReviewRefreshTaskById[taskId] == nil ? .cancelled : .stale
             } else if let result {
                 switch result {
                 case .success, .queued:

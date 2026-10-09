@@ -18,6 +18,7 @@ extension BridgePaneController {
     ) async {
         var rejectionReasons: [BridgeActiveViewerModeSignalRejectionReason] = []
         var didAcceptSequence = false
+        let previousAcceptedMode = activeViewerModeSignalState.acceptedMode
         let previousAcceptedSignal = activeViewerModeSignalState.acceptedSignal
         let isActiveSourceAccepted = activeSource.map { source in
             isCommittedProductActiveViewerSourceAccepted(
@@ -110,12 +111,27 @@ extension BridgePaneController {
                 activeSource: activeSource
             )
         }
-        if didAcceptSequence, activeViewerModeSignalState.acceptedMode == .review {
-            if !resumePendingExplicitReviewCommandIfPossible() {
-                scheduleInitialReviewPackageLoadIfPossible(reason: .initialIntake)
-                scheduleRetainedReviewPackageBuildIfPossible()
-                scheduleWorktreeProductCatchUpIfPossible()
-            }
+        handleAcceptedActiveViewerModeTransition(
+            previousAcceptedMode: previousAcceptedMode,
+            mode: mode,
+            didAcceptSequence: didAcceptSequence
+        )
+    }
+
+    private func handleAcceptedActiveViewerModeTransition(
+        previousAcceptedMode: BridgeActiveViewerMode?,
+        mode: BridgeActiveViewerMode,
+        didAcceptSequence: Bool
+    ) {
+        guard didAcceptSequence else { return }
+        if previousAcceptedMode == .review, mode == .file {
+            fenceHiddenReviewBuildIfNeeded()
+        }
+        guard activeViewerModeSignalState.acceptedMode == .review else { return }
+        if !resumePendingExplicitReviewCommandIfPossible() {
+            scheduleInitialReviewPackageLoadIfPossible(reason: .initialIntake)
+            scheduleRetainedReviewPackageBuildIfPossible()
+            scheduleWorktreeProductCatchUpIfPossible()
         }
     }
 
