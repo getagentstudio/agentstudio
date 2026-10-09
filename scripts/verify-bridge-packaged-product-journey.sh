@@ -1013,10 +1013,12 @@ try:
     )
     if file_pane is None:
         fail("Bridge packaged journey startup File pane is missing")
-    file_handle = f"pane:{file_pane['id']}"
+    # IPCTargetSelector.swift:19-21 uses bare UUIDs for canonical selectors.
+    file_handle = file_pane["id"]
 
     review_open = session.request("bridge.diff.load", {"worktreeId": worktree_id})
-    review_handle = review_open.get("handle")
+    # AgentStudioIPCBridgeAdapter.swift:37/48 emits a stale handle; IPCTargetSelector.swift:19-21 accepts paneId.
+    review_handle = review_open.get("paneId")
     if not isinstance(review_handle, str) or review_handle == file_handle:
         fail("Bridge packaged journey did not create two independent panes")
     focus_foreground_pane(review_handle, "Review pane foreground")
@@ -1127,7 +1129,7 @@ try:
         ),
         attempts=1800,
     )
-    review_pane_id = review_handle.removeprefix("pane:")
+    review_pane_id = review_open["paneId"]
     wait_for(
         "persisted symbolic comparison target selected through the UI",
         lambda: persisted_comparison_target(review_pane_id),

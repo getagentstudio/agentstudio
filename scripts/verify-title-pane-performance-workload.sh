@@ -495,7 +495,8 @@ if show_repos_result.get("kind") != "applied":
     raise RuntimeError(f"showReposSidebar did not apply: {show_repos_result}")
 pane = wait_for_terminal_pane()
 wait_for_startup_diagnostic_completion()
-handle = f"pane:{pane['id']}"
+# IPCTargetSelector.swift:19-21 uses bare UUIDs for canonical selectors.
+handle = pane["id"]
 initial_sort_projection = wait_for_repo_sort_projection()
 initial_sort_order = initial_sort_projection["agentstudio.performance.sidebar.sort_order"]
 first_sort_toggle_result = request(
@@ -615,7 +616,8 @@ request("pane.split", {"handle":handle,"direction":"right","correlationId":None}
 after = request("pane.list", {}).get("panes", [])
 created = next((item for item in after if item["id"] not in before), None)
 if created is None: raise RuntimeError("pane.split did not create a pane")
-created_handle = f"pane:{created['id']}"
+# IPCTargetSelector.swift:19-21 uses bare UUIDs for canonical selectors.
+created_handle = created["id"]
 request("pane.snapshot", {"handle":created_handle})
 request("pane.close", {"handle":created_handle,"correlationId":None})
 if created["id"] in {item["id"] for item in request("pane.list", {}).get("panes", [])}:

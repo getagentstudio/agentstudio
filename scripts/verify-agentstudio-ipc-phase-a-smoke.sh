@@ -251,14 +251,15 @@ try:
     if not pane_id:
         print("pane:1 result is missing a canonical id", file=sys.stderr)
         sys.exit(1)
-    canonical_pane_handle = f"pane:{pane_id}"
+    # IPCTargetSelector.swift:19-21 uses bare UUIDs for canonical selectors.
+    canonical_pane_handle = pane_id
 
     friendly_snapshot = require_success(
         session.request(4, "pane.snapshot", {"handle": "pane:1"}),
         "pane.snapshot pane:1",
     )
     friendly_pane_id = friendly_snapshot.get("pane", {}).get("id")
-    if f"pane:{friendly_pane_id}" != canonical_pane_handle:
+    if friendly_pane_id != canonical_pane_handle:
         print("pane.snapshot pane:1 did not resolve to the expected canonical pane", file=sys.stderr)
         sys.exit(1)
 
@@ -267,7 +268,7 @@ try:
         "pane.snapshot canonical handle",
     )
     canonical_result_pane_id = canonical_snapshot.get("pane", {}).get("id")
-    if f"pane:{canonical_result_pane_id}" != canonical_pane_handle:
+    if canonical_result_pane_id != canonical_pane_handle:
         print("pane.snapshot canonical result does not match requested pane", file=sys.stderr)
         sys.exit(1)
 
