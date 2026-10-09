@@ -299,7 +299,7 @@ struct PaneHostViewTests {
         let host = PaneHostView(paneId: UUIDv7.generate())
         window?.contentView?.addSubview(host)
 
-        #expect(window?.makeFirstResponder(host))
+        #expect(window?.makeFirstResponder(host) == true)
         window?.close()
         window = nil
     }
