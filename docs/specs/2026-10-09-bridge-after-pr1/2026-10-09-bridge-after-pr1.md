@@ -105,7 +105,7 @@ Packages 6–9 became follow-ups (section 6).
 - **GO24 recurred after merge (product, lost wake-up):** hosted CI 37912832921 at the PR1 merge head `bf68ab69e` failed the two-pane WebKit journey (`BridgeProductRealGitFileAndReviewWebKitTests` › "two hosted panes isolate native hidden admission…"): the File catch-up succeeded, the Review catch-up ended stale, and the Review lane stayed dirty with no owner ("foreground catch-up did not settle"). It passed on hosted at `6a02f219b` and `a9bd962b2`, so it is intermittent. The second fix moved the hide fence into the acceptance turn, but a further path remains; native-b's diagnosis flagged that the catch-up loop can reserve another pass after success without checking cancellation, task identity or `completeRefreshPass` (`BridgePaneController+RefreshAdmission.swift:214-221`), and that a retired catch-up skips rescheduling at `:246`. Fix it with item 1 (LUNA-408); evidence is in the private session-logs history (`go24-recurrence/`).
 - Investigate V2 refused retryability: `bridge-product-session-authority.ts` flattens refused/superseded to `retryable=false`.
 
-**Test reliability (CI Lead owns this program from 2026-10-09; handoff in the private session-logs repo):** GO30 hard-cut Files filter dismissal (3-core), GO26 WebKit waits without closing facts, TQ23 markdown act escape, TQ35 shared-profile tab ownership, and audits for the GO25/GO27 patterns.
+**Test reliability (CI Lead owns this program from 2026-10-09; handoff in the private session-logs repo):** R68 Review deep-scroll witness (interim assertion in #509; settled-geometry fact deferred), GO30 hard-cut Files filter dismissal (3-core), GO26 WebKit waits without closing facts, TQ23 markdown act escape, TQ35 shared-profile tab ownership, and audits for the GO25/GO27 patterns.
 
 **Closed by PR1 (reopen only if seen again):** TQ24, TQ25, TQ26, TQ33.
 
@@ -161,7 +161,7 @@ Design identifiers (E1, W2, W4, N10, R13, C5, U13, R40–R43, INST) are defined 
 | GO28 | File menu tests did not wait for Base UI's open/close completion | Test | Fixed |
 | GO29 | Click-admission did not follow a row retired after hover | Test | Fixed |
 | GO30 | GO28's conversion of the hard-cut Files filter test hung on 3-core | Test | Reverted; open (CI Lead) |
-| R68 | Review deep-scroll position witness read pixel geometry before it settled (from main #422) | Test | Fixed: asserts semantic retention (same content region, scroll not reset, selection, disclosure, identity); exact pixel equality dropped because Pierre has no layout-settled boundary (checked through 1.5.2 and upstream main; no upstream issue yet) |
+| R68 | Review deep-scroll position witness read pixel geometry before it settled (from main #422) | Test | Interim (#509): asserts the position is retained (same coordinate, or same item and offset, or clamped to the new maximum after a height shrink) plus first-visible rank within ±1, selection, disclosure and identity. Still open (CI Lead): the settled-geometry fact. Pierre has no layout-settled boundary (shipped @pierre/diffs 1.2.10; also absent in 1.5.2 and upstream main); the owner deferred an upstream API, 2026-10-09 |
 | S1–S4 F-codes | Final-review findings by section (S1 native transport, S2 native runtime, S3 page comm worker, S4 page app) | Review | See section 3 |
 | TQ-codes | CI Lead's test-quality items (TQ15 website, TQ19 Panes, TQ23 markdown act, TQ24–TQ26 and TQ33 superseded by PR1, TQ35 tab ownership) | Test | Tracked by the CI Lead |
 
