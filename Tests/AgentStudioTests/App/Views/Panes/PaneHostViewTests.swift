@@ -313,6 +313,7 @@ private func makePaneHostFocusWindow() -> PaneResponderTrackingWindow {
         backing: .buffered,
         defer: true
     )
+    window.isReleasedWhenClosed = false
     window.makeKeyAndOrderFront(nil)
     return window
 }
