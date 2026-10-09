@@ -42,6 +42,7 @@ final class BridgeProductWebKitCarrierControllerTarget {
 
     weak var controller: BridgePaneController?
     private(set) var applicationReceipts: [BridgeProductWebKitCarrierApplicationReceipt] = []
+    let firstApplication = BridgeProductWebKitFirstApplicationRecorder()
     private(set) var reviewContentSource: BridgePaneProductReviewContentSource?
     private var nextApplicationReceiptWaiterID: UInt64 = 0
     private var applicationReceiptWaiters: [UInt64: ApplicationReceiptWaiter] = [:]
@@ -73,11 +74,11 @@ final class BridgeProductWebKitCarrierControllerTarget {
         )
     }
 
-    func isCurrentPublication(
+    func isCurrentCanonicalPublication(
         _ publicationId: UUID,
         productAdmission: BridgeProductAdmissionContext
     ) -> Bool {
-        controller?.reviewPublicationCoordinator.isCurrentPublication(
+        controller?.reviewPublicationCoordinator.isCurrentCanonicalPublication(
             publicationId: publicationId,
             productAdmission: productAdmission
         ) == true
@@ -94,44 +95,30 @@ final class BridgeProductWebKitCarrierControllerTarget {
                 workerInstanceId: workerInstanceId,
                 productAdmission: productAdmission
             ) ?? .rejected
-        applicationReceipts.append(
-            BridgeProductWebKitCarrierApplicationReceipt(
-                applicationResult: result,
-                publicationId: publicationId
-            )
+        let receipt = BridgeProductWebKitCarrierApplicationReceipt(
+            applicationResult: result,
+            publicationId: publicationId
         )
+        applicationReceipts.append(receipt)
+        firstApplication.record(.receipt(receipt))
         resumeApplicationReceiptWaitersIfReady()
         return result
     }
 
+    func waitForFirstApplicationReceipt() async throws -> BridgeProductWebKitFirstApplicationOutcome {
+        try await firstApplication.wait()
+    }
+
     func waitForAcceptedApplication(
-        publicationId: UUID,
-        timeout: Duration
+        publicationId: UUID
     ) async -> Bool {
         guard !hasAcceptedApplication(for: publicationId) else { return true }
         let waiterID = nextApplicationReceiptWaiterID
         nextApplicationReceiptWaiterID += 1
-        return await withTaskGroup(of: Bool?.self) { group in
-            group.addTask { [weak self] in
-                guard let self else { return nil }
-                return await self.waitForAcceptedApplicationEvent(
-                    publicationId: publicationId,
-                    waiterID: waiterID
-                )
-            }
-            group.addTask {
-                do {
-                    try await ContinuousClock().sleep(for: timeout)
-                    return false
-                } catch {
-                    return nil
-                }
-            }
-            let result = await group.next()
-            group.cancelAll()
-            guard let result else { return false }
-            return result ?? false
-        }
+        return await waitForAcceptedApplicationEvent(
+            publicationId: publicationId,
+            waiterID: waiterID
+        )
     }
 
     private func hasAcceptedApplication(for publicationId: UUID) -> Bool {

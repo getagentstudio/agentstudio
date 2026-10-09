@@ -13,7 +13,7 @@ extension BridgePaneProductFileMetadataSourceTests {
         let source = fixture.makeSource(sourceAcceptedObserver: { acceptedSource in
             await acceptedSourceRecorder.record(acceptedSource)
         })
-        let collector = ProductFileMetadataEventCollector()
+        let collector = ProductFileSourceFactCollector()
         let subscription = try fixture.openSnapshot()
 
         // Act
@@ -22,7 +22,7 @@ extension BridgePaneProductFileMetadataSourceTests {
                 subscription: subscription,
                 productAdmission: fixture.productAdmission.context
             ) { event in
-                await collector.append(event)
+                await collector.append(event, source: source)
             }
         } catch {
             await source.cancel(subscriptionId: subscription.subscriptionId)
@@ -35,7 +35,7 @@ extension BridgePaneProductFileMetadataSourceTests {
         let emittedSource = try #require(
             (await collector.events).compactMap { event -> BridgeProductFileSourceIdentity? in
                 guard case .sourceAccepted(let accepted) = event else { return nil }
-                return accepted.source
+                return accepted
             }.first
         )
         #expect(observedSource == emittedSource)

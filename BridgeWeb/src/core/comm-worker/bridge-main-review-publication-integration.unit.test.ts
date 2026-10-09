@@ -19,6 +19,79 @@ import {
 } from './bridge-main-review-publication-integration.test-support.js';
 
 describe('Bridge main Review publication integration', () => {
+	test('late candidate source readiness resumes one installation after an early ready fact', async () => {
+		const harness = createHarness();
+		harness.startCandidate(CANDIDATE, 'ordinary', []);
+		harness.receive(candidateReady(CANDIDATE, 'ordinary', []));
+		await harness.integration.whenSettled();
+		expect(harness.pendingCommandCount('reviewPublicationInstallAdmit')).toBe(0);
+
+		harness.receive(reviewDisplayEvent(CANDIDATE, 'item-b'));
+		await harness.integration.whenSettled();
+		expect(harness.pendingCommandCount('reviewPublicationInstallAdmit')).toBe(1);
+		const admission = await harness.nextCommand('reviewPublicationInstallAdmit');
+		harness.admit(admission, CANDIDATE, 'admitted');
+		const installed = await harness.nextCommand('reviewPublicationInstalled');
+		harness.ack(installed);
+		await harness.integration.whenSettled();
+		expect(harness.store.getReviewRefreshPresentation().activeIdentity).toEqual(
+			mainIdentity(CANDIDATE),
+		);
+		harness.dispose();
+	});
+
+	test('a failed source ends an awaiting candidate with a typed failure and no install request', async () => {
+		const harness = createHarness();
+		harness.startCandidate(CANDIDATE, 'ordinary', []);
+		harness.receive(candidateReady(CANDIDATE, 'ordinary', []));
+		await harness.integration.whenSettled();
+		const display = reviewDisplayEvent(CANDIDATE, 'item-b');
+		const failedSourcePatch = {
+			operation: 'failed',
+			payload: { error: 'metadataUnavailable', status: 'failed' },
+			slice: 'reviewSource',
+		} as const;
+
+		harness.receive({
+			...display,
+			patches: display.patches.map((patch) =>
+				patch.slice === 'reviewSource' ? failedSourcePatch : patch,
+			),
+		});
+		await harness.integration.whenSettled();
+
+		expect(harness.pendingCommandCount('reviewPublicationInstallAdmit')).toBe(0);
+		expect(harness.store.getReviewRefreshPresentation().candidate).toBeNull();
+		expect(
+			harness.telemetrySamples.some(
+				(sample): boolean =>
+					sample.stringAttributes['agentstudio.bridge.phase'] === 'review_refresh_candidate_failed',
+			),
+		).toBe(true);
+		harness.dispose();
+	});
+
+	test('a superseded source wait cannot install the retired candidate', async () => {
+		const harness = createHarness();
+		harness.startCandidate(CANDIDATE, 'ordinary', []);
+		harness.receive(candidateReady(CANDIDATE, 'ordinary', []));
+		await harness.integration.whenSettled();
+		harness.startCandidate(SUCCESSOR, 'ordinary', []);
+		harness.receive(reviewDisplayEvent(CANDIDATE, 'item-b'));
+		harness.receive(candidateReady(SUCCESSOR, 'ordinary', []));
+		await harness.integration.whenSettled();
+		expect(harness.pendingCommandCount('reviewPublicationInstallAdmit')).toBe(0);
+
+		harness.receive(reviewDisplayEvent(SUCCESSOR, 'item-c'));
+		await harness.integration.whenSettled();
+		const admission = await harness.nextCommand('reviewPublicationInstallAdmit');
+		expect(admission).toMatchObject({ candidatePublicationId: SUCCESSOR.publicationId });
+		expect(harness.commandKinds.filter((kind) => kind === 'reviewPublicationInstallAdmit')).toEqual(
+			['reviewPublicationInstallAdmit'],
+		);
+		harness.dispose();
+	});
+
 	test('retains the displayed item while exact-active metadata rebinds to a newer worker epoch', async () => {
 		// Arrange — installed content precedes a subscription-only authority replacement.
 		const harness = createHarness();
@@ -542,6 +615,49 @@ describe('Bridge main Review publication integration', () => {
 		harness.dispose();
 	});
 
+	test('records two affected stable identities for a same-source successor publication', async () => {
+		const harness = createHarness();
+		try {
+			await installPublication(harness, ACTIVE, 'item-before-mutation');
+			const successor = {
+				...ACTIVE,
+				publicationId: '00000000-0000-7000-8000-000000000014',
+				revision: ACTIVE.revision + 1,
+			};
+			const samplesAfterMutation: BridgeTelemetrySample[] = [];
+			harness.telemetryRecorderRef.current = recordingTelemetryRecorder(samplesAfterMutation);
+			const affectedStableFileIdentities = ['file-before-mutation', 'file-after-mutation'];
+
+			harness.startCandidate(successor, 'ordinary', affectedStableFileIdentities);
+			// The harness's receive() convenience synthesizes an empty candidate start for display patches.
+			harness.integration.handleMessage(reviewDisplayEvent(successor, 'item-after-mutation'));
+			harness.receive(candidateReady(successor, 'ordinary', affectedStableFileIdentities));
+			const admission = await harness.nextCommand('reviewPublicationInstallAdmit');
+			harness.admit(admission, successor, 'admitted');
+			const installed = await harness.nextCommand('reviewPublicationInstalled');
+			harness.ack(installed);
+			await harness.integration.whenSettled();
+
+			const candidateReadySamples = samplesAfterMutation.filter(
+				(sample): boolean =>
+					sample.name === 'performance.bridge.web.review_refresh_lifecycle' &&
+					sample.stringAttributes['agentstudio.bridge.phase'] === 'review_refresh_candidate_ready',
+			);
+			expect(candidateReadySamples).toHaveLength(1);
+			expect(candidateReadySamples[0]).toMatchObject({
+				stringAttributes: {
+					'agentstudio.bridge.review.refresh.presentation_class': 'ordinary',
+				},
+				numericAttributes: {
+					'agentstudio.bridge.review.generation': ACTIVE.reviewGeneration,
+					'agentstudio.bridge.review.refresh.affected_stable_file.count': 2,
+				},
+			});
+		} finally {
+			harness.dispose();
+		}
+	});
+
 	test('ignores stale B failure, retains affected C failure, and clears it when attention leaves', async () => {
 		const harness = createHarness();
 		await installPublication(harness, ACTIVE, 'item-a');
@@ -577,7 +693,7 @@ describe('Bridge main Review publication integration', () => {
 		harness.dispose();
 	});
 
-	test('fences same-publication ready and failure to the restarted worker epoch', async () => {
+	test('fences stale ready and failure after the restarted worker installs its publication', async () => {
 		const harness = createHarness();
 		await installPublication(harness, ACTIVE, 'item-a');
 		harness.receive({ ...candidateStarted(CANDIDATE, 'promoted', ['file-b']), epoch: 1 });
@@ -597,19 +713,28 @@ describe('Bridge main Review publication integration', () => {
 		});
 
 		harness.receive(candidateReady(CANDIDATE, 'promoted', ['file-b']));
+		const admission = await harness.nextCommand('reviewPublicationInstallAdmit');
+		harness.admit(admission, CANDIDATE, 'admitted');
+		const installed = await harness.nextCommand('reviewPublicationInstalled');
+		harness.ack(installed);
 		await harness.integration.whenSettled();
-		expect(harness.store.getReviewRefreshPresentation().candidate?.role).toBe('updateReady');
+		expect(harness.store.getReviewRefreshPresentation().activeIdentity).toEqual(
+			mainIdentity(CANDIDATE),
+		);
+		expect(harness.store.getReviewRefreshPresentation().candidate).toBeNull();
 
 		harness.receive({ ...candidateFailed(CANDIDATE, true), epoch: 1 });
-		expect(harness.store.getReviewRefreshPresentation().candidate?.role).toBe('updateReady');
+		expect(harness.store.getReviewRefreshPresentation().activeIdentity).toEqual(
+			mainIdentity(CANDIDATE),
+		);
 		expect(harness.store.getReviewRefreshPresentation().failure).toBeNull();
 
 		harness.receive(candidateFailed(CANDIDATE, true));
 		expect(harness.store.getReviewRefreshPresentation().candidate).toBeNull();
-		expect(harness.store.getReviewRefreshPresentation().failure).toMatchObject({
-			identity: mainIdentity(CANDIDATE),
-			retryable: true,
-		});
+		expect(harness.store.getReviewRefreshPresentation().activeIdentity).toEqual(
+			mainIdentity(CANDIDATE),
+		);
+		expect(harness.store.getReviewRefreshPresentation().failure).toBeNull();
 		harness.dispose();
 	});
 });

@@ -21,7 +21,7 @@ struct ContributionRefreshFixture {
 }
 
 @MainActor
-func makeContributionRefreshFixture() -> ContributionRefreshFixture {
+func makeContributionRefreshFixture() async throws -> ContributionRefreshFixture {
     let symbolicBaseEndpoint = makeBridgeEndpoint(endpointId: "baseline-ref-target", kind: .gitRef)
     let workingTreeEndpoint = makeBridgeEndpoint(endpointId: "working-tree", kind: .workingTree)
     let initialCapture = BridgeContributionComparisonCapture(
@@ -97,6 +97,7 @@ func makeContributionRefreshFixture() -> ContributionRefreshFixture {
         reviewSourceProvider: provider,
         initialPaneActivity: .foreground
     )
+    try await showReviewInNativeFixture(controller)
     return ContributionRefreshFixture(
         controller: controller,
         provider: provider,

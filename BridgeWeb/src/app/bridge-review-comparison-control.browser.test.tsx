@@ -5,8 +5,8 @@ import { userEvent } from 'vitest/browser';
 
 // oxlint-disable-next-line import/no-unassigned-import -- Browser Mode must load production CSS.
 import './bridge-app.css';
+import type { BridgeMainPanelChromeSlice } from '../core/comm-worker/bridge-main-review-comparison-presentation.js';
 import type { BridgeProductReviewComparisonTargetCatalog } from '../core/comm-worker/bridge-product-review-comparison-contracts.js';
-import type { BridgeWorkerPanelChromePatchPayload } from '../core/comm-worker/bridge-worker-contracts.js';
 import { makeBridgeReviewPackage } from '../foundation/review-package/bridge-review-package-test-support.js';
 import type { BridgeReviewPackage } from '../foundation/review-package/bridge-review-package.js';
 import {
@@ -323,7 +323,7 @@ describe('BridgeReviewComparisonControl Browser Mode', () => {
 			.toHaveTextContent('aaaaaaaaaaaa');
 	});
 
-	test('retries a retryable unavailable comparison with the canonical active target', async () => {
+	test('keeps E2 failure recovery out of the chooser and with the pane summary', async () => {
 		// Arrange
 		const activeTarget = { basis: 'commonCommit', kind: 'branch', name: 'release/next' } as const;
 		const applyTarget = vi.fn();
@@ -352,19 +352,10 @@ describe('BridgeReviewComparisonControl Browser Mode', () => {
 		});
 
 		// Assert
-		await expect.element(rendered.getByText('Comparison unavailable')).toBeVisible();
-		await expect
-			.element(rendered.getByText('The selected target could not be compared.'))
-			.toBeVisible();
-
-		// Act
-		await performComparisonAction(async (): Promise<void> => {
-			await rendered.getByRole('button', { name: 'Retry' }).click();
-		});
-
-		// Assert
-		expect(applyTarget).toHaveBeenCalledExactlyOnceWith(activeTarget);
-		expect(cancelTargetQuery).toHaveBeenCalledExactlyOnceWith();
+		expect(rendered.getByText('Comparison unavailable').query()).toBeNull();
+		expect(rendered.getByRole('button', { name: 'Retry' }).query()).toBeNull();
+		expect(applyTarget).not.toHaveBeenCalled();
+		expect(cancelTargetQuery).not.toHaveBeenCalled();
 	});
 
 	test('shows searchable default, local, and remote-tracking branch choices', async () => {
@@ -890,18 +881,16 @@ describe('BridgeReviewComparisonControl Browser Mode', () => {
 
 function comparisonPresentation(props: {
 	readonly activeTarget?: NonNullable<
-		BridgeWorkerPanelChromePatchPayload['reviewComparison']
+		BridgeMainPanelChromeSlice['reviewComparison']
 	>['activeTarget'];
-	readonly attempt?: NonNullable<
-		BridgeWorkerPanelChromePatchPayload['reviewComparison']
-	>['attempt'];
+	readonly attempt?: NonNullable<BridgeMainPanelChromeSlice['reviewComparison']>['attempt'];
 	readonly displayedSnapshot: NonNullable<
-		BridgeWorkerPanelChromePatchPayload['reviewComparison']
+		BridgeMainPanelChromeSlice['reviewComparison']
 	>['displayedSnapshot'];
 	readonly repositoryDefaultTarget?: NonNullable<
-		NonNullable<BridgeWorkerPanelChromePatchPayload['reviewComparison']>
+		NonNullable<BridgeMainPanelChromeSlice['reviewComparison']>
 	>['repositoryDefaultTarget'];
-}): NonNullable<BridgeWorkerPanelChromePatchPayload['reviewComparison']> {
+}): NonNullable<BridgeMainPanelChromeSlice['reviewComparison']> {
 	return {
 		activeTarget:
 			props.activeTarget === undefined
@@ -951,7 +940,7 @@ function targetCatalog(
 
 function currentPresentationForPackage(
 	reviewPackage: BridgeReviewPackage,
-): NonNullable<BridgeWorkerPanelChromePatchPayload['reviewComparison']> {
+): NonNullable<BridgeMainPanelChromeSlice['reviewComparison']> {
 	return comparisonPresentation({
 		displayedSnapshot: {
 			packageId: reviewPackage.packageId,
@@ -979,6 +968,7 @@ function contributionPackage(props: {
 			kind: 'contribution',
 			resolvedTargetOID: props.resolvedTargetOID,
 			reviewedHeadOID: 'hhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhh',
+			reviewedSubjectBranchName: null,
 			symbolicTarget: props.symbolicTarget ?? {
 				basis: 'commonCommit',
 				branchName: 'master',

@@ -2,7 +2,7 @@ import {
 	type BridgeCommWorkerPort,
 	postPreparedBridgeCommWorkerMessage,
 } from './bridge-comm-worker-entry.js';
-import type { BridgeCommWorkerFileViewContentRequest } from './bridge-comm-worker-file-metadata-projection.js';
+import type { BridgeCommWorkerFileViewContentRequest } from './bridge-comm-worker-file-view-runtime-mutation.js';
 import type { BridgeCommWorkerStore } from './bridge-comm-worker-store.js';
 import {
 	isBridgeWorkerFileViewContentMetadata,

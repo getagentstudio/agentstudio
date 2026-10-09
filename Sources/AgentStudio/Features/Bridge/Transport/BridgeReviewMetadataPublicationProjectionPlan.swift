@@ -1,14 +1,5 @@
 import Foundation
 
-func sealBridgeReviewMetadataEvent(
-    _ event: BridgeProductReviewMetadataEvent
-) throws -> BridgeProductSealedMetadataApplicationEvent<BridgeProductReviewMetadataEvent> {
-    let registration = try BridgeProductMetadataApplicationRegistry.product.registration(
-        for: .reviewMetadata
-    )
-    return try registration.sealEvent(event)
-}
-
 struct BridgeReviewMetadataProjectionWindow: Equatable, Sendable {
     let itemRange: Range<Int>
     let treeRowRange: Range<Int>
@@ -88,12 +79,6 @@ struct BridgeReviewMetadataPublicationProjectionPlan: Equatable, Sendable {
         return plan.replacingWindows(
             try plan.makeWindows(provisionalBinding: provisionalBinding)
         )
-    }
-
-    func events(
-        binding: BridgeReviewMetadataPublicationBinding
-    ) throws -> [BridgeProductReviewMetadataEvent] {
-        try windows.map { try event(window: $0, binding: binding) }
     }
 
     private func makeWindows(
@@ -370,7 +355,7 @@ func productTreeRows(
     return rows
 }
 
-private func productEndpoint(
+func productEndpoint(
     _ endpoint: BridgeSourceEndpoint
 ) throws -> BridgeProductReviewSourceEndpointValue {
     guard let createdAt = Int(exactly: endpoint.createdAtUnixMilliseconds) else {
@@ -400,7 +385,7 @@ func productSummary(
     )
 }
 
-private func productQuery(_ query: BridgeReviewQuery) throws -> BridgeProductReviewQueryValue {
+func productQuery(_ query: BridgeReviewQuery) throws -> BridgeProductReviewQueryValue {
     guard
         let createdAfter = query.provenanceFilter.createdAfterUnixMilliseconds.map(Int.init(exactly:)) ?? .some(nil),
         let createdBefore = query.provenanceFilter.createdBeforeUnixMilliseconds.map(Int.init(exactly:)) ?? .some(nil)

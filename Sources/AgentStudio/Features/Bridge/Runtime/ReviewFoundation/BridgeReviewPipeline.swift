@@ -15,7 +15,8 @@ actor BridgeReviewPipeline {
 
     func resolveSharedConstructionRequest(
         _ request: BridgeReviewPipelineRequest,
-        freshnessKey: BridgeGitReadFreshnessKey
+        freshnessKey: BridgeGitReadFreshnessKey,
+        progress: BridgeReviewConstructionProgressReporter = { _ in }
     ) async throws -> BridgeReviewPipelineRequest {
         guard let sharedProvider = provider as? any BridgeSharedReviewConstructionSourceProvider else {
             throw unsupportedSharedConstruction()
@@ -38,6 +39,7 @@ actor BridgeReviewPipeline {
             BridgeEndpointResolutionRequest(endpoint: request.headEndpoint),
             freshnessKey: freshnessKey
         )
+        await progress(.endpointsResolved)
         let query = BridgeReviewQuery(
             queryId: request.query.queryId,
             queryKind: request.query.queryKind,
@@ -73,16 +75,18 @@ actor BridgeReviewPipeline {
         request: BridgeReviewPipelineRequest,
         baseEndpointKey: BridgeResolvedReviewEndpointKey,
         headEndpointKey: BridgeResolvedReviewEndpointKey,
-        freshnessKey: BridgeGitReadFreshnessKey
+        freshnessKey: BridgeGitReadFreshnessKey,
+        progress: BridgeReviewConstructionProgressReporter = { _ in }
     ) async throws -> BridgeSharedReviewPackageTemplate {
         guard let sharedProvider = provider as? any BridgeSharedReviewConstructionSourceProvider else {
             throw unsupportedSharedConstruction()
         }
-        let result = try await loadPackage(request, freshnessKey: freshnessKey)
+        let result = try await loadPackage(request, freshnessKey: freshnessKey, progress: progress)
         let backing = try await sharedProvider.captureSharedContent(
             handles: result.registeredContentHandles,
             freshnessKey: freshnessKey
         )
+        await progress(.sharedContentCaptured)
         return BridgeSharedReviewPackageTemplate.make(
             result: result,
             baseEndpointKey: baseEndpointKey,
@@ -93,7 +97,8 @@ actor BridgeReviewPipeline {
 
     func bindSharedTemplate(
         _ template: BridgeSharedReviewPackageTemplate,
-        request: BridgeReviewPipelineRequest
+        request: BridgeReviewPipelineRequest,
+        progress: BridgeReviewConstructionProgressReporter = { _ in }
     ) async throws -> BridgeReviewPipelineResult {
         guard let sharedProvider = provider as? any BridgeSharedReviewConstructionSourceProvider,
             let backing = template.backing
@@ -107,23 +112,29 @@ actor BridgeReviewPipeline {
             backing: backing,
             handles: result.registeredContentHandles
         )
+        await progress(.sharedContentInstalled)
         return result
     }
 
-    func loadPackage(_ request: BridgeReviewPipelineRequest) async throws -> BridgeReviewPipelineResult {
-        try await loadPackage(request, freshnessKey: nil)
+    func loadPackage(
+        _ request: BridgeReviewPipelineRequest,
+        progress: BridgeReviewConstructionProgressReporter = { _ in }
+    ) async throws -> BridgeReviewPipelineResult {
+        try await loadPackage(request, freshnessKey: nil, progress: progress)
     }
 
     private func loadPackage(
         _ request: BridgeReviewPipelineRequest,
-        freshnessKey: BridgeGitReadFreshnessKey?
+        freshnessKey: BridgeGitReadFreshnessKey?,
+        progress: BridgeReviewConstructionProgressReporter
     ) async throws -> BridgeReviewPipelineResult {
         let package: BridgeReviewPackage
         switch request.query.queryKind {
         case .compare, .filterPackage, .groupPackage:
             let comparison = try await preparedOrComparedEndpoints(
                 for: request,
-                freshnessKey: freshnessKey
+                freshnessKey: freshnessKey,
+                progress: progress
             )
             package = try buildPackage(request: request, comparison: comparison)
         case .browseTree:
@@ -135,6 +146,7 @@ actor BridgeReviewPipeline {
                 ),
                 freshnessKey: freshnessKey
             )
+            await progress(.treeRead)
             package = try buildDescriptorPackage(
                 request: request,
                 headEndpoint: tree.endpoint,
@@ -146,7 +158,8 @@ actor BridgeReviewPipeline {
             }
             let comparison = try await preparedOrComparedEndpoints(
                 for: request,
-                freshnessKey: freshnessKey
+                freshnessKey: freshnessKey,
+                progress: progress
             )
             if let changedFile = BridgeReviewPipeline.changedFile(in: comparison, matching: fileTarget) {
                 package = try buildPackage(
@@ -166,6 +179,7 @@ actor BridgeReviewPipeline {
                     ),
                     freshnessKey: freshnessKey
                 )
+                await progress(.descriptorRead)
                 package = try buildDescriptorPackage(
                     request: request,
                     headEndpoint: request.headEndpoint,
@@ -173,7 +187,9 @@ actor BridgeReviewPipeline {
                 )
             }
         }
-        return pipelineResult(package: package, gitRefreshSeed: request.gitRefreshSeed)
+        let result = pipelineResult(package: package, gitRefreshSeed: request.gitRefreshSeed)
+        await progress(.packageBuilt)
+        return result
     }
 
     private func compareEndpoints(
@@ -189,15 +205,18 @@ actor BridgeReviewPipeline {
 
     private func preparedOrComparedEndpoints(
         for request: BridgeReviewPipelineRequest,
-        freshnessKey: BridgeGitReadFreshnessKey?
+        freshnessKey: BridgeGitReadFreshnessKey?,
+        progress: BridgeReviewConstructionProgressReporter
     ) async throws -> BridgeEndpointComparison {
         if let preparedComparison = request.preparedComparison {
             return preparedComparison
         }
-        return try await compareEndpoints(
+        let comparison = try await compareEndpoints(
             comparisonRequest(for: request),
             freshnessKey: freshnessKey
         )
+        await progress(.comparisonResolved)
+        return comparison
     }
 
     private func readTree(

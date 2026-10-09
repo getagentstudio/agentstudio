@@ -12,6 +12,7 @@ import {
 
 import { Textarea } from '@/components/ui/textarea.js';
 
+import { annotationErrorMessage } from './worktree-annotation-command-result.js';
 import {
 	browserWorktreeAnnotationDraftClock,
 	WorktreeAnnotationDraftScheduler,
@@ -525,10 +526,6 @@ export function annotationRelativeTime(appleReferenceSeconds: number): string {
 	const elapsedHours = Math.floor(elapsedMinutes / 60);
 	if (elapsedHours < 24) return `${elapsedHours}h`;
 	return `${Math.floor(elapsedHours / 24)}d`;
-}
-
-function annotationErrorMessage(error: unknown): string {
-	return error instanceof Error ? error.message : 'Annotation operation failed.';
 }
 
 function annotationMarkdownValidationMessage(

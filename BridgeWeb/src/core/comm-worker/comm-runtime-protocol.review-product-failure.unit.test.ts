@@ -3,7 +3,9 @@ import { describe, expect, test } from 'vitest';
 import { expectedEmptyReviewProjectionResetPatches } from './bridge-comm-worker-entry.test-support.js';
 import { registerBridgeCommWorkerRuntimePortProtocol } from './bridge-comm-worker-runtime-protocol.js';
 import {
-	makeReviewMetadataDataFrame,
+	createReviewBatchSinkCapture,
+	makeIdleReviewMetadataSubscription,
+	makeReviewTestBatch,
 	makeReviewProductTransport,
 	type ReviewMetadataSubscription,
 } from './bridge-comm-worker-runtime-protocol.review-product-transport.test-support.js';
@@ -12,26 +14,20 @@ import {
 	createRecordingBridgeCommWorkerPort,
 	flushBridgeWorkerRuntimeContinuations,
 } from './bridge-comm-worker-runtime-protocol.test-support.js';
-import { BridgeProductBoundedAsyncQueue } from './bridge-product-async-queue.js';
-
-type ReviewMetadataDataFrame = ReturnType<typeof makeReviewMetadataDataFrame>;
 
 describe('Bridge comm worker Review product source failure policy', () => {
-	test('publishes a bounded Review display failure when the product subscription fails', async () => {
-		const events = new BridgeProductBoundedAsyncQueue<ReviewMetadataDataFrame>(64);
-		const reviewSubscription: ReviewMetadataSubscription = {
-			cancel: async (): Promise<void> => {},
-			events,
-			subscriptionId: 'review-subscription-failure',
-			subscriptionKind: 'review.metadata',
-			update: async (): Promise<void> => {},
-		};
+	test('publishes a bounded Review display failure from a certified failed publication', async () => {
+		const reviewBatches = createReviewBatchSinkCapture();
+		const reviewSubscription: ReviewMetadataSubscription = makeIdleReviewMetadataSubscription(
+			'review-subscription-failure',
+		);
 		const { dispatch, postedMessages } = createRecordingBridgeCommWorkerPort();
 		const calledMethods: string[] = [];
 		registerBridgeCommWorkerRuntimePortProtocol(dispatch.port, {
 			bridgeDemandRank: { lane: 'selected', priority: 0 },
 			budget: { className: 'interactive', maxBytes: 512 * 1024, maxWindowLines: 400 },
 			productTransport: makeReviewProductTransport({
+				onBatchFrameSinks: reviewBatches.onBatchFrameSinks,
 				calledMethods,
 				reviewSubscription,
 				subscribedKinds: [],
@@ -40,7 +36,15 @@ describe('Bridge comm worker Review product source failure policy', () => {
 		activateBridgeCommWorkerReviewViewerMode(dispatch, 'terminal-failure');
 		await flushBridgeWorkerRuntimeContinuations();
 
-		events.fail(new Error('private transport failure detail'), true);
+		await reviewBatches.install(
+			makeReviewTestBatch({
+				snapshotCause: 'open',
+				subscriptionId: reviewSubscription.subscriptionId,
+				itemCount: 0,
+				desiredStatus: 'failedRetryable',
+				withoutDisplayed: true,
+			}),
+		);
 		await flushBridgeWorkerRuntimeContinuations();
 
 		const reviewDisplayEvents = postedMessages
@@ -55,11 +59,11 @@ describe('Bridge comm worker Review product source failure policy', () => {
 					payload: { error: 'metadataUnavailable', status: 'failed' },
 					slice: 'reviewSource',
 				},
+				{ operation: 'replace', payload: null, slice: 'reviewComparison' },
 				...expectedEmptyReviewProjectionResetPatches(),
 			],
 			surface: 'review',
 		});
-		expect(JSON.stringify(reviewDisplayEvents)).not.toContain('private transport failure detail');
 		expect(calledMethods).toContain('file.source.current');
 	});
 });

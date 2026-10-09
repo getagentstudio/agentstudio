@@ -30,6 +30,12 @@ export function makePassingProductOnlyProof(
 		fileAfterReviewFirstSwitch: fileState(fileReady),
 		fileAfterFirstAcknowledgement: fileState(fileReady),
 		fileAtCompletion: fileState(fileReady),
+		fileMarkdownAtReviewFirstSwitch: {
+			articleCharacterCount: fileReady ? 128 : 0,
+			canvasVisible: fileReady,
+			selectedDisplayPath: 'README.md',
+			sourcePath: fileReady ? 'README.md' : null,
+		},
 		legacyIntakeTranscript: legacyTraffic
 			? [
 					{
@@ -144,27 +150,33 @@ export function passingTranscript(): readonly BridgeViewerProductRouteTranscript
 		makeProductEntry(1, '/__bridge-product/command', 'workerSession.open', 200),
 		makeProductEntry(2, '/__bridge-product/stream', 'metadataStream.open', 200),
 		{
-			...makeProductEntry(3, '/__bridge-product/command', 'stream.frameObserved', 204),
-			streamKind: 'metadata',
-		},
-		{
-			...makeProductEntry(4, '/__bridge-product/command', 'subscription.open', 200),
-			responseKind: 'subscription.openAccepted',
+			...makeProductEntry(3, '/__bridge-product/command', 'subscription.open', 200),
+			responseKind: 'operation.admitted',
+			resultAcknowledged: true,
+			settledResponseKind: 'subscription.openAccepted',
 			subscriptionKind: 'review.metadata',
 		},
 		{
-			...makeProductEntry(5, '/__bridge-product/command', 'subscription.open', 200),
-			responseKind: 'subscription.openAccepted',
+			...makeProductEntry(4, '/__bridge-product/command', 'subscription.open', 200),
+			responseKind: 'operation.admitted',
+			resultAcknowledged: true,
+			settledResponseKind: 'subscription.openAccepted',
 			subscriptionKind: 'file.metadata',
+		},
+		{
+			...makeProductEntry(5, '/__bridge-product/command', 'subscription.acknowledge', 200),
+			responseKind: 'subscription.acknowledged',
 		},
 		{
 			...makeProductEntry(6, '/__bridge-product/content', null, 200),
 			contentKind: 'file.content',
 		},
+		makeProductEntry(7, '/__bridge-product/command', 'content.acknowledge', 204),
 		{
-			...makeProductEntry(7, '/__bridge-product/content', null, 200),
+			...makeProductEntry(8, '/__bridge-product/content', null, 200),
 			contentKind: 'review.content',
 		},
+		makeProductEntry(9, '/__bridge-product/command', 'content.acknowledge', 204),
 	];
 }
 
@@ -187,6 +199,8 @@ export function makeProductEntry(
 		requestSequence: ordinal,
 		responseCode: null,
 		responseKind: null,
+		resultAcknowledged: false,
+		settledResponseKind: null,
 		streamKind: null,
 		subscriptionKind: null,
 		workerInstanceId: 'worker-instance-1',

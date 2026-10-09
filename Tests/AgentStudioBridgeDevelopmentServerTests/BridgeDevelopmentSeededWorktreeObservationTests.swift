@@ -290,7 +290,7 @@ struct BridgeDevelopmentSeededWorktreeObservationTests {
             let bootstrapRequest = try JSONDecoder().decode(
                 BridgeDevelopmentProductBootstrapRequest.self,
                 from: Data(
-                    #"{"navigationIntent":{"commandId":"live-review","commandKind":"activateContext","surface":"review"},"reason":"initial"}"#
+                    #"{"navigationIntent":{"commandId":"live-review","commandKind":"activateContext","surface":"review"},"reason":"initial","tabId":"owner-tab-1"}"#
                         .utf8
                 )
             )

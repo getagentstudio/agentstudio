@@ -11,6 +11,7 @@ struct BridgeProductSessionRequestErrorTests {
         let harness = try await RequestErrorSessionHarness.opened()
         let requestBytes = try requestErrorJSONData(reviewSubscriptionOpenObject())
         let token = try await harness.beginExecution(requestBytes)
+        let admitted = try await harness.session.admitControlOperation(token: token, execute: { _ in })
         let pendingSnapshot = await harness.session.snapshot
         let pendingSubscription = await harness.session.subscriptionSnapshot(
             subscriptionId: requestErrorReviewSubscriptionId
@@ -35,12 +36,12 @@ struct BridgeProductSessionRequestErrorTests {
             )
         }
         #expect(pendingSnapshot.lifecycle == .active)
-        #expect(pendingSnapshot.pendingRequestKind == "subscription.open")
-        #expect(pendingSnapshot.controlReplay.inFlightRequestSequence == 2)
-        #expect(pendingSnapshot.controlReplay.nextExpectedRequestSequence == 2)
+        #expect(pendingSnapshot.pendingRequestKind == nil)
+        #expect(pendingSnapshot.controlReplay.inFlightRequestSequence == nil)
+        #expect(pendingSnapshot.controlReplay.nextExpectedRequestSequence == 3)
 
         let correctResponseBytes = try requestErrorJSONData(baseResponseObject)
-        let completionEffects = try await harness.session.completeControl(
+        let completionEffects = try await harness.session.completeAdmittedControl(
             token: token,
             exactResponseBytes: correctResponseBytes
         )
@@ -53,7 +54,7 @@ struct BridgeProductSessionRequestErrorTests {
         #expect(completedSnapshot.controlReplay.inFlightRequestSequence == nil)
         #expect(completedSnapshot.controlReplay.nextExpectedRequestSequence == 3)
         #expect(completedSnapshot.controlReplay.replayableRequestSequence == 2)
-        #expect(retryAdmission == .replay(exactResponseBytes: correctResponseBytes))
+        #expect(retryAdmission == .replay(exactResponseBytes: admitted.responseBytes))
         #expect(
             await harness.session.subscriptionSnapshot(
                 subscriptionId: requestErrorReviewSubscriptionId
@@ -91,7 +92,7 @@ private struct RequestErrorSessionHarness {
             ).merging(["result": NSNull()]) { _, newValue in newValue }
         )
         let token = try await harness.beginExecution(requestBytes)
-        _ = try await harness.session.completeControl(
+        _ = try await harness.session.completeAdmittedControl(
             token: token,
             exactResponseBytes: responseBytes
         )
@@ -126,7 +127,7 @@ private func expectRequestErrorCompletionFailure(
     responseBytes: Data
 ) async {
     do {
-        _ = try await session.completeControl(
+        _ = try await session.completeAdmittedControl(
             token: token,
             exactResponseBytes: responseBytes
         )

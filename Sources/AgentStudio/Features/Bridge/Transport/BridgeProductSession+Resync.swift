@@ -3,7 +3,7 @@ extension BridgeProductSession {
         token: BridgeProductControlAdmissionToken,
         acknowledgeLifecycle: @escaping ProducerLifecycleAcknowledger
     ) async throws -> Bool {
-        guard let pendingControl, pendingControl.token == token else {
+        guard let pendingControl = operationTable.entry(for: token)?.admission else {
             throw BridgeProductSessionError.invalidAdmissionToken
         }
         guard case .workerSessionResync = pendingControl.request else { return true }
@@ -32,7 +32,7 @@ extension BridgeProductSession {
         token: BridgeProductControlAdmissionToken,
         providerResponse: BridgeProductControlResponse
     ) throws -> BridgeProductControlResponse {
-        guard let pendingControl, pendingControl.token == token else {
+        guard let pendingControl = operationTable.entry(for: token)?.admission else {
             throw BridgeProductSessionError.invalidAdmissionToken
         }
         guard
@@ -57,7 +57,7 @@ extension BridgeProductSession {
         var candidateSubscriptions = subscriptionState
         for (surface, epoch) in pendingControl.deferredResyncEpochs
         where epoch > workerDerivationEpochBySurface[surface, default: 0] {
-            candidateSubscriptions.reset(surface: surface)
+            candidateSubscriptions.retireSubscriptions(on: surface, belowWorkerDerivationEpoch: epoch)
         }
         let reconciliation: BridgeProductSubscriptionResyncResult
         do {

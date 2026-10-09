@@ -8,13 +8,11 @@ import {
 import { registerBridgeCommWorkerRuntimePortProtocol } from './bridge-comm-worker-runtime-protocol.js';
 import {
 	createBridgeCommWorkerReviewProductTestSource,
-	makeFileMetadataDataFrame,
 	makeContentRequestDescriptor,
 	makeRenderSemantics,
 	makeWorkerReviewContentMetadata,
 	openReviewContentFromDescriptorMap,
 	type BridgeCommWorkerReviewProductTestSource,
-	type FileMetadataDataFrame,
 	type FileMetadataSubscription,
 } from './bridge-comm-worker-runtime-protocol.test-support.js';
 import { createBridgeMainRenderDispositionAdmission } from './bridge-main-render-disposition-admission.js';
@@ -22,6 +20,7 @@ import {
 	BridgeProductBoundedAsyncQueue,
 	createBridgeProductDeferred,
 } from './bridge-product-async-queue.js';
+import type { BridgeProductBatchFrameSinks } from './bridge-product-batch-frame-router.js';
 import type { BridgeProductTransportSession } from './bridge-product-transport.js';
 import { bridgeProductWorktreeAnnotationDecodedCommandOutcomeSchema } from './bridge-product-worktree-annotation-contracts.js';
 import type {
@@ -38,11 +37,9 @@ import {
 } from './bridge-worker-rpc-client.js';
 import { createBridgeWorkerRpcLifecycleStore } from './bridge-worker-rpc-lifecycle-store.js';
 import {
-	fileProductTestSource,
 	fileViewProductTestBudget,
-	makeDescriptorReadyEvent,
+	makeFileBatchInstallation,
 	makeFileProductTestTransport,
-	makeTreeWindowEvent,
 } from './comm-runtime-protocol.file-product.test-support.js';
 
 const openReviewProductSources = new Set<BridgeCommWorkerReviewProductTestSource>();
@@ -293,33 +290,31 @@ describe('Bridge comm worker duplex backpressure over an actual MessageChannel',
 		const channel = new MessageChannel();
 		openChannels.add(channel);
 		const collector = createMainPortCollector(channel.port2);
-		const events = new BridgeProductBoundedAsyncQueue<FileMetadataDataFrame>(64);
+		const events = new BridgeProductBoundedAsyncQueue<never>(1);
+		const batchState: { sinks: BridgeProductBatchFrameSinks | null } = { sinks: null };
 		const subscription: FileMetadataSubscription = {
 			cancel: async (): Promise<void> => {},
 			events,
 			subscriptionId: 'file-subscription-duplex-backpressure',
 			subscriptionKind: 'file.metadata',
-			update: async (): Promise<void> => {},
 		};
 		registerBridgeCommWorkerRuntimePortProtocol(channel.port1, {
 			bridgeDemandRank: { lane: 'selected', priority: 0 },
 			budget: { className: 'interactive', maxBytes: 512 * 1024, maxWindowLines: 400 },
 			fileViewBudget: fileViewProductTestBudget,
 			productTransport: makeFileProductTestTransport({
+				onBatchFrameSinks: (sinks): void => {
+					batchState.sinks = sinks;
+				},
 				onDiscoverSource: (): void => {},
 				onOpenDescriptor: (): void => {},
 				subscription,
 			}),
 		});
 		await activateViewerMode(channel.port2, collector, 'file', 'duplex-file');
-		events.push(
-			makeFileMetadataDataFrame({
-				eventKind: 'file.sourceAccepted',
-				source: fileProductTestSource,
-			}),
-		);
-		events.push(makeFileMetadataDataFrame(makeTreeWindowEvent()));
-		events.push(makeFileMetadataDataFrame(makeDescriptorReadyEvent()));
+		const batchSinks = batchState.sinks;
+		if (batchSinks === null) throw new Error('Expected typed File batch sinks.');
+		await batchSinks.install(makeFileBatchInstallation('open', subscription.subscriptionId));
 		await collector.waitFor((message) => message.kind === 'fileDisplayPatch');
 
 		const selectionARequestId = 'request-duplex-file-selection-a';

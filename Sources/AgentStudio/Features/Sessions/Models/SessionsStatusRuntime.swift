@@ -8,6 +8,7 @@ struct SessionsStatusRuntime {
     var currentBindingByPane: [UUID: UUID] = [:]
     // Restored bindings intentionally have no instant and predate this process's observations.
     var liveBindingBoundAt: [UUID: ContinuousClock.Instant] = [:]
+    var confirmedLiveBindingIds: Set<UUID> = []
     var pendingAsks: [UUID: OpenAskSummary] = [:]
     var latestViewedAt: [UUID: ContinuousClock.Instant] = [:]
     var retiredPaneIds: Set<UUID> = []
@@ -32,10 +33,11 @@ struct SessionsStatusRuntime {
         }.sorted(by: SessionsEvidenceReducer.admissionOrder)
         for record in evidence {
             guard let input = Self.statusInput(record) else { continue }
+            let turnId = context.bindingStartRecordIds.contains(record.recordId) ? nil : record.turnId
             SessionStatusReducer.apply(
                 .init(
                     input: input, sequence: record.admissionSequence ?? 0, occurredAt: record.occurredAt,
-                    admittedAt: admittedAt, turnId: record.turnId), to: &state)
+                    admittedAt: admittedAt, turnId: turnId), to: &state)
         }
         if binding.status == .ended {
             SessionStatusReducer.apply(

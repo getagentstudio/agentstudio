@@ -12,6 +12,15 @@ import {
 	bridgeActiveViewerModeUpdateSchema,
 	bridgeProductControlIntakeReadyParamsSchema,
 } from './bridge-product-control-contracts.js';
+import {
+	bridgeWorkerAckAttemptOutcomeSchema,
+	bridgeWorkerPriorControlRequestSchema,
+} from './bridge-worker-ack-diagnostic-contracts.js';
+export type {
+	BridgeWorkerAckAttemptOutcome,
+	BridgeWorkerControlAttemptOutcome,
+	BridgeWorkerPriorControlRequest,
+} from './bridge-worker-ack-diagnostic-contracts.js';
 import { bridgeProductReviewFileChangeKindSchema } from './bridge-product-review-primitives.js';
 import { bridgeProductNavigationCommandSchema } from './bridge-product-session-contracts.js';
 import { bridgeProductSubscriptionFrameFailureCodes } from './bridge-product-subscription-frame-failure.js';
@@ -86,6 +95,10 @@ import {
 	bridgeWorkerReviewPublicationIdentitySchema,
 } from './bridge-worker-review-publication-contracts.js';
 import {
+	bridgeWorkerViewRecoveryRetryCommandSchema,
+	bridgeWorkerViewRecoveryStatusEventSchema,
+} from './bridge-worker-view-recovery-contracts.js';
+import {
 	BRIDGE_WORKER_WIRE_VERSION,
 	bridgeWorkerEpochSchema,
 	bridgeWorkerInteractionSurfaceSchema,
@@ -128,6 +141,17 @@ export type {
 } from './bridge-worker-review-publication-contracts.js';
 
 export { BRIDGE_WORKER_WIRE_VERSION } from './bridge-worker-wire-base-contracts.js';
+export {
+	bridgeWorkerViewRecoveryKindSchema,
+	bridgeWorkerViewRecoveryRetryCommandSchema,
+	bridgeWorkerViewRecoveryStatusEventSchema,
+	bridgeWorkerViewRecoveryViewSchema,
+} from './bridge-worker-view-recovery-contracts.js';
+export type {
+	BridgeWorkerViewRecoveryRetryCommand,
+	BridgeWorkerViewRecoveryStatusEvent,
+	BridgeWorkerViewRecoveryView,
+} from './bridge-worker-view-recovery-contracts.js';
 export {
 	BRIDGE_WORKER_FILE_DISPLAY_PATCH_LIMIT,
 	bridgeWorkerFileDisplayPatchSchema,
@@ -325,6 +349,7 @@ export const bridgeWorkerMainToServerCommandSchema = z.discriminatedUnion('comma
 	bridgeWorkerReviewPublicationInstalledCommandSchema,
 	bridgeWorkerFileQueryUpdateCommandSchema,
 	bridgeWorkerFileRefreshRetryCommandSchema,
+	bridgeWorkerViewRecoveryRetryCommandSchema,
 	bridgeWorkerFileDisplayResyncCommandSchema,
 	bridgeWorkerRenderDispositionCommandSchema,
 ]);
@@ -548,7 +573,6 @@ const bridgeWorkerProductMetadataStreamDiagnosticSchema = z
 			.strict()
 			.nullable(),
 		routeFailureSubscriptionId: bridgeProductIdentifierSchema.nullable(),
-		acknowledgedFrameCount: z.number().int().nonnegative(),
 		activeSubscriptionCount: z.number().int().nonnegative(),
 		committedFrameCount: z.number().int().nonnegative(),
 		decoderState: z.enum(['open', 'terminal', 'finished', 'poisoned']),
@@ -586,7 +610,6 @@ const bridgeWorkerProductMetadataStreamDiagnosticSchema = z
 			.enum(['metadataStreamId', 'paneSessionId', 'wireVersion', 'workerInstanceId'])
 			.nullable(),
 		lastChunkByteCount: z.number().int().nonnegative(),
-		lastAcknowledgedStreamSequence: z.number().int().nonnegative().nullable(),
 		lastCommittedFrameKind: z.string().min(1).nullable(),
 		lastRoutedFrameKind: z.string().min(1).nullable(),
 		lifecycleState: z.enum(['failed', 'idle', 'opening', 'reading']),
@@ -620,8 +643,27 @@ export const bridgeWorkerHealthEventSchema = bridgeWorkerServerToMainBaseSchema
 		requestId: bridgeWorkerRequestIdSchema.optional(),
 		status: z.enum(['ready', 'degraded']),
 		deliveryStatus: z.enum(['unknownAfterDispatch']).optional(),
+		errorKind: z
+			.enum(['transport', 'requestRefused', 'invalidResult', 'unexpected', 'workerUnavailable'])
+			.optional(),
 		diagnostic: bridgeWorkerHealthDiagnosticSchema.optional(),
 		message: z.string().min(1).optional(),
+	})
+	.strict();
+
+export const bridgeWorkerSessionSuspectEventSchema = bridgeWorkerServerToMainBaseSchema
+	.extend({
+		ackAttemptOutcomes: z.array(bridgeWorkerAckAttemptOutcomeSchema).max(64).readonly(),
+		droppedPriorControlRequestCount: z.number().int().nonnegative(),
+		kind: z.literal('sessionSuspect'),
+		paneSessionId: bridgeProductIdentifierSchema,
+		priorControlRequests: z.array(bridgeWorkerPriorControlRequestSchema).max(16).readonly(),
+		reason: z.enum([
+			'admissionReplyExhausted',
+			'resultAcknowledgementExhausted',
+			'resultDeadlineExhausted',
+		]),
+		workerInstanceId: bridgeProductIdentifierSchema,
 	})
 	.strict();
 
@@ -826,6 +868,7 @@ export const bridgeWorkerServerToMainMessageSchema = z.discriminatedUnion('kind'
 	bridgeWorkerAnnotationOutputInspectionEventSchema,
 	bridgeWorkerAnnotationProjectionConvergenceEventSchema,
 	bridgeWorkerHealthEventSchema,
+	bridgeWorkerViewRecoveryStatusEventSchema,
 	bridgeWorkerSlicePatchEventSchema,
 	bridgeWorkerFileDisplayPatchEventSchema,
 	bridgeWorkerReviewDisplayPatchEventSchema,
@@ -848,6 +891,8 @@ export const bridgeWorkerServerToMainWireMessageSchema = z.discriminatedUnion('k
 	bridgeWorkerAnnotationOutputInspectionEventSchema,
 	bridgeWorkerAnnotationProjectionConvergenceEventSchema,
 	bridgeWorkerHealthEventSchema,
+	bridgeWorkerSessionSuspectEventSchema,
+	bridgeWorkerViewRecoveryStatusEventSchema,
 	bridgeWorkerSlicePatchEventSchema,
 	bridgeWorkerFileDisplayPatchEventSchema,
 	bridgeWorkerFileQueryOutcomeEventSchema,
@@ -866,6 +911,7 @@ export const bridgeWorkerServerToMainWireMessageSchema = z.discriminatedUnion('k
 ]);
 
 export type BridgeWorkerHealthEvent = z.infer<typeof bridgeWorkerHealthEventSchema>;
+export type BridgeWorkerSessionSuspectEvent = z.infer<typeof bridgeWorkerSessionSuspectEventSchema>;
 export type BridgeWorkerSlicePatchEvent = z.infer<typeof bridgeWorkerSlicePatchEventSchema>;
 export type BridgeWorkerFileDisplayPatchEvent = z.infer<
 	typeof bridgeWorkerFileDisplayPatchEventSchema

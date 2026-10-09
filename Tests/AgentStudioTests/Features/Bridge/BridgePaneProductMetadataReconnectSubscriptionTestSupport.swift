@@ -1,17 +1,17 @@
 import AgentStudioCore
+import AgentStudioTestHarness
 import Foundation
 import Testing
 
 @testable import AgentStudioBridge
 
 struct ReconnectSubscriptionContext {
-    let committedInterest: BridgeProductSubscriptionInterestsCommittedFrame
     let dispatcher: BridgeProductSchemeControlDispatcher
     let fileSource: ReconnectFileMetadataSource
     let firstStream: ReconnectMetadataStream
     let refreshWorkAdmission: BridgePaneRefreshWorkAdmission
     let harness: BridgeProductSessionLifecycleHarness
-    let initialData: BridgeProductSubscriptionDataFrame
+    let initialBatch: BridgeProductBatchCompleteFrame
     let provider: BridgePaneProductSchemeProvider
     let retainedSubscription: BridgeProductSubscriptionSnapshot
 }
@@ -22,7 +22,8 @@ struct ReconnectMetadataStream {
 
 struct ReconnectFileSourceDiagnostics: Sendable {
     let cancellationCount: Int
-    let interestSha256: String?
+    let viewHandle: String?
+    let scopeRevision: Int?
     let openCallCount: Int
     let publicationCallCount: Int
     let updateCallCount: Int
@@ -31,12 +32,42 @@ struct ReconnectFileSourceDiagnostics: Sendable {
 actor ReconnectFileMetadataSource: BridgePaneProductFileMetadataProducing {
     private var activeSubscriptionIds: Set<String> = []
     private var cancellationCount = 0
-    private var appliedInterestSha256: String?
+    private var acceptedViewHandle: String?
+    private var acceptedScopeRevision: Int?
     private var openCallCount = 0
     private var publicationCallCount = 0
     private var updateCallCount = 0
     private var activeSubscriptionWaiters: [CheckedContinuation<Void, Never>] = []
-    private var updateCallWaiters: [CheckedContinuation<Void, Never>] = []
+    private var updateCallWaiters: [(Int, CheckedContinuation<Void, Never>)] = []
+    private var openCompletionStepByOrdinal: [Int: HeldStep<Void>] = [:]
+    private var openingEmitStepByOrdinal: [Int: HeldStep<Void>] = [:]
+    private var openingEmitObserver: (@Sendable () -> Void)?
+    private var openingInventoryStepByOrdinal: [Int: HeldStep<Void>] = [:]
+    private var openingInventoryObserver: (@Sendable () -> Void)?
+
+    func holdOpeningInventory(ordinal: Int, at step: HeldStep<Void>, returned: @escaping @Sendable () -> Void) {
+        openingInventoryStepByOrdinal[ordinal] = step
+        openingInventoryObserver = returned
+    }
+
+    func observeOpeningEmit(_ observer: (@Sendable () -> Void)?) {
+        openingEmitObserver = observer
+    }
+
+    func holdOpeningEmit(ordinal: Int, at step: HeldStep<Void>) {
+        openingEmitStepByOrdinal[ordinal] = step
+    }
+
+    func holdOpenCompletion(ordinal: Int, at step: HeldStep<Void>) {
+        openCompletionStepByOrdinal[ordinal] = step
+    }
+
+    func waitForUpdateCallCount(_ count: Int) async {
+        if updateCallCount >= count { return }
+        await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+            updateCallWaiters.append((count, continuation))
+        }
+    }
 
     var hasActiveSubscription: Bool { !activeSubscriptionIds.isEmpty }
 
@@ -53,16 +84,6 @@ actor ReconnectFileMetadataSource: BridgePaneProductFileMetadataProducing {
         }
     }
 
-    /// Returns once `update(_:)` has been applied at least once, signalled by that call.
-    func waitForUpdateCall() async {
-        if updateCallCount >= 1 {
-            return
-        }
-        await withCheckedContinuation { continuation in
-            updateCallWaiters.append(continuation)
-        }
-    }
-
     private func resumeActiveSubscriptionWaiters() {
         let waiters = activeSubscriptionWaiters
         activeSubscriptionWaiters.removeAll()
@@ -72,9 +93,9 @@ actor ReconnectFileMetadataSource: BridgePaneProductFileMetadataProducing {
     }
 
     private func resumeUpdateCallWaiters() {
-        let waiters = updateCallWaiters
-        updateCallWaiters.removeAll()
-        for waiter in waiters {
+        let readyWaiters = updateCallWaiters.filter { $0.0 <= updateCallCount }
+        updateCallWaiters.removeAll { $0.0 <= updateCallCount }
+        for (_, waiter) in readyWaiters {
             waiter.resume()
         }
     }
@@ -82,7 +103,8 @@ actor ReconnectFileMetadataSource: BridgePaneProductFileMetadataProducing {
     var diagnostics: ReconnectFileSourceDiagnostics {
         .init(
             cancellationCount: cancellationCount,
-            interestSha256: appliedInterestSha256,
+            viewHandle: acceptedViewHandle,
+            scopeRevision: acceptedScopeRevision,
             openCallCount: openCallCount,
             publicationCallCount: publicationCallCount,
             updateCallCount: updateCallCount
@@ -93,36 +115,81 @@ actor ReconnectFileMetadataSource: BridgePaneProductFileMetadataProducing {
         .unavailable(.noFileSourceAuthority)
     }
 
+    func captureKeyedSnapshot(
+        subscriptionId: String,
+        demand _: BridgePaneProductFileViewDemand,
+        productAdmission _: BridgeProductAdmissionContext
+    ) async -> BridgeWorktreeFileKeyedSnapshot? {
+        guard activeSubscriptionIds.contains(subscriptionId),
+            let source = try? BridgeProductFileSourceIdentity(
+                repoId: "00000000-0000-4000-8000-000000000001",
+                rootRevisionToken: "root-token-reconnect",
+                sourceCursor: publicationCallCount == 0 ? "source-cursor-initial" : "source-cursor-post-reconnect",
+                sourceId: "file-source-reconnect",
+                subscriptionGeneration: 1,
+                worktreeId: "00000000-0000-4000-8000-000000000002"
+            )
+        else { return nil }
+        return .init(
+            isEnumerationComplete: true,
+            memberStatus: .init(record: .init(source: source), revision: publicationCallCount + 1),
+            records: [],
+            targetRevision: publicationCallCount + 1,
+            tombstoneRevisionByKey: [:],
+            absenceFloorRevisionByRange: [:]
+        )
+    }
+
     func open(
         subscription: BridgeProductSubscriptionSnapshot,
         productAdmission _: BridgeProductAdmissionContext,
         foregroundWorkAdmission _: BridgePaneRefreshWorkAdmission,
-        emit: @escaping BridgePaneProductFileMetadataEventSink
+        emit: @escaping BridgePaneProductFileSourceFactSink
     ) async throws {
         openCallCount += 1
-        appliedInterestSha256 = subscription.interestSha256
         activeSubscriptionIds.insert(subscription.subscriptionId)
         // Released before the emit suspends: the subscription is already open here, so a
         // waiter should not be held behind the first event's delivery.
         resumeActiveSubscriptionWaiters()
+        if let openingEmitStep = openingEmitStepByOrdinal.removeValue(forKey: openCallCount) {
+            try await openingEmitStep.arrive(())
+        }
         try await emit(try reconnectFileSourceAcceptedEvent(cursor: "initial"))
+        openingEmitObserver?()
+        if let inventoryStep = openingInventoryStepByOrdinal.removeValue(forKey: openCallCount) {
+            try await inventoryStep.arrive(())
+            publicationCallCount += 1
+            guard case .sourceAccepted(let source) = try reconnectFileSourceAcceptedEvent(cursor: "inventory") else {
+                throw ReconnectSubscriptionTestError.expectedBatch
+            }
+            try await emit(.inventoryProgress(.init(finalWindow: true, updatedPaths: [], source: source)))
+            openingInventoryObserver?()
+        }
+        if let openCompletionStep = openCompletionStepByOrdinal.removeValue(forKey: openCallCount) {
+            try await openCompletionStep.arrive(())
+            try Task.checkCancellation()
+        }
     }
 
-    func update(
-        subscription: BridgeProductSubscriptionSnapshot,
+    func applyViewDemand(
+        subscriptionId: String,
+        demand: BridgePaneProductFileViewDemand,
         productAdmission _: BridgeProductAdmissionContext,
         foregroundWorkAdmission _: BridgePaneRefreshWorkAdmission,
-        emit _: @escaping BridgePaneProductFileMetadataEventSink
+        forceRecapture _: Bool,
+        emit _: @escaping BridgePaneProductFileSourceFactSink
     ) async throws {
-        guard activeSubscriptionIds.contains(subscription.subscriptionId) else { return }
-        appliedInterestSha256 = subscription.interestSha256
+        guard activeSubscriptionIds.contains(subscriptionId) else { return }
+        acceptedViewHandle = demand.handle
+        acceptedScopeRevision = demand.scopeRevision
         updateCallCount += 1
         resumeUpdateCallWaiters()
     }
 
     func cancel(subscriptionId: String) {
         activeSubscriptionIds.remove(subscriptionId)
-        appliedInterestSha256 = nil
+        acceptedViewHandle = nil
+        acceptedScopeRevision = nil
         cancellationCount += 1
     }
 
@@ -140,7 +207,7 @@ actor ReconnectFileMetadataSource: BridgePaneProductFileMetadataProducing {
         publicationCallCount += 1
         return try activeSubscriptionIds.sorted().map { subscriptionId in
             BridgePaneProductFileMetadataEmission(
-                event: try reconnectFileSourceAcceptedEvent(cursor: "post-reconnect"),
+                fact: try reconnectFileSourceAcceptedEvent(cursor: "post-reconnect"),
                 subscriptionId: subscriptionId
             )
         }
@@ -152,8 +219,11 @@ actor ReconnectFileMetadataSource: BridgePaneProductFileMetadataProducing {
     ) -> BridgePaneProductFileContentReadPlan? { nil }
 }
 
-func makeReconnectSubscriptionContext() async throws -> ReconnectSubscriptionContext {
-    let harness = try await BridgeProductSessionLifecycleHarness.opened()
+func makeReconnectSubscriptionContext(
+    emissionWaitObserver: BridgeProductSession.ViewEmissionWaiterRegistrationObserver? = nil
+) async throws -> ReconnectSubscriptionContext {
+    let harness = try await BridgeProductSessionLifecycleHarness.opened(
+        viewEmissionWaiterRegistrationObserver: emissionWaitObserver)
     let refreshWorkAdmission = await BridgePaneRefreshWorkAdmissionTestContext.foreground()
     let fileSource = ReconnectFileMetadataSource()
     let provider = BridgePaneProductSchemeProvider(
@@ -183,13 +253,12 @@ func makeReconnectSubscriptionContext() async throws -> ReconnectSubscriptionCon
         stream: firstStream
     )
     return ReconnectSubscriptionContext(
-        committedInterest: established.committedInterest,
         dispatcher: dispatcher,
         fileSource: fileSource,
         firstStream: firstStream,
         refreshWorkAdmission: refreshWorkAdmission.admission,
         harness: harness,
-        initialData: established.initialData,
+        initialBatch: established.initialBatch,
         provider: provider,
         retainedSubscription: established.retainedSubscription
     )
@@ -201,8 +270,7 @@ func establishReconnectFileSubscription(
     harness: BridgeProductSessionLifecycleHarness,
     stream: ReconnectMetadataStream
 ) async throws -> (
-    committedInterest: BridgeProductSubscriptionInterestsCommittedFrame,
-    initialData: BridgeProductSubscriptionDataFrame,
+    initialBatch: BridgeProductBatchCompleteFrame,
     retainedSubscription: BridgeProductSubscriptionSnapshot
 ) {
     let openRequest = try bridgeProductLifecycleControlRequest(
@@ -216,32 +284,94 @@ func establishReconnectFileSubscription(
     guard case .subscriptionAccepted = try await pullMetadataFrame(from: stream.pump) else {
         throw ReconnectSubscriptionTestError.expectedSubscriptionAcceptance
     }
-    guard case .subscriptionData(let initialData) = try await pullMetadataFrame(from: stream.pump)
-    else {
-        throw ReconnectSubscriptionTestError.expectedSubscriptionData
-    }
-    let lifecycle = try coordinatorFileSubscriptionLifecycle()
-    let updateRequest = try coordinatorFileUpdateRequest(
-        emptyInterestSha256: lifecycle.opened.interestSha256,
-        targetInterestSha256: lifecycle.updated.interestSha256,
-        updateId: lifecycle.commitBarrier.updateId
-    )
-    _ = try await dispatchReconnectControl(
-        updateRequest,
+    await fileSource.waitForActiveSubscription()
+    let scopeRequest = try reconnectFileScopeRequest()
+    let scopeResponse = try await dispatchReconnectControl(
+        scopeRequest,
         dispatcher: dispatcher,
         capabilityHeader: harness.capabilityHeader
     )
-    guard
-        case .subscriptionInterestsCommitted(let committedInterest) =
-            try await pullMetadataFrame(from: stream.pump)
-    else {
-        throw ReconnectSubscriptionTestError.expectedInterestCommit
+    guard case .viewAccepted = scopeResponse else {
+        throw ReconnectSubscriptionTestError.expectedScopeAcceptance
     }
     await waitForReconnectSourceUpdate(fileSource)
+    guard case .batch(.begin) = try await pullMetadataFrame(from: stream.pump),
+        case .batch(.part(let initialPart)) = try await pullMetadataFrame(from: stream.pump),
+        case .batch(.complete(let initialBatch)) = try await pullMetadataFrame(from: stream.pump)
+    else { throw ReconnectSubscriptionTestError.expectedBatch }
+    try await acknowledgeReconnectPart(initialPart, harness: harness)
     let retainedSubscription = try #require(
         await harness.session.subscriptionSnapshot(subscriptionId: "file-subscription-1")
     )
-    return (committedInterest, initialData, retainedSubscription)
+    return (initialBatch, retainedSubscription)
+}
+
+func acknowledgeReconnectPart(
+    _ part: BridgeProductBatchPartFrame,
+    harness: BridgeProductSessionLifecycleHarness
+) async throws {
+    let requestBytes = try JSONSerialization.data(withJSONObject: [
+        "kind": "subscription.acknowledge",
+        "wireVersion": BridgeProductWireContract.version,
+        "paneSessionId": bridgeProductTestPaneSessionId,
+        "workerInstanceId": bridgeProductTestWorkerInstanceId,
+        "subscriptionId": part.identity.subscriptionId,
+        "domain": part.identity.domain,
+        "handle": part.identity.handle,
+        "incarnation": part.identity.incarnation,
+        "receivedThroughDeliverySequence": part.deliverySequence,
+    ])
+    let request = try BridgeProductStrictJSON.decode(
+        BridgeProductViewAcknowledgementRequest.self,
+        from: requestBytes
+    )
+    #expect(
+        await harness.session.acknowledgeViewReceipt(
+            request,
+            exactRequestBytes: requestBytes,
+            productAdmission: harness.productAdmission.context
+        ) != nil
+    )
+}
+
+func reconnectFileScopeRequest() throws -> BridgeProductControlRequest {
+    try bridgeProductLifecycleControlRequest([
+        "domain": "default",
+        "handle": "file-reconnect-view-handle",
+        "incarnation": "file-reconnect-view-incarnation",
+        "kind": "subscription.setScope",
+        "paneSessionId": bridgeProductTestPaneSessionId,
+        "requestId": "request-reconnect-file-scope-3",
+        "requestSequence": 3,
+        "scope": [
+            "kind": "file",
+            "changeFilter": ["kind": "none"],
+            "interests": [["lane": "foreground", "paths": ["Sources/App.swift"]]],
+            "pathScope": [],
+        ],
+        "scopeRevision": 1,
+        "subscriptionId": "file-subscription-1",
+        "subscriptionKind": "file.metadata",
+        "wireVersion": BridgeProductWireContract.version,
+        "workerInstanceId": bridgeProductTestWorkerInstanceId,
+    ])
+}
+
+func reconnectFileResnapshotRequest() throws -> BridgeProductControlRequest {
+    try bridgeProductLifecycleControlRequest([
+        "domain": "default",
+        "handle": "file-reconnect-view-handle",
+        "incarnation": "file-reconnect-view-incarnation",
+        "kind": "subscription.resnapshot",
+        "paneSessionId": bridgeProductTestPaneSessionId,
+        "requestId": "request-reconnect-file-resnapshot-5",
+        "requestSequence": 5,
+        "scopeRevision": 1,
+        "subscriptionId": "file-subscription-1",
+        "subscriptionKind": "file.metadata",
+        "wireVersion": BridgeProductWireContract.version,
+        "workerInstanceId": bridgeProductTestWorkerInstanceId,
+    ])
 }
 
 func installReconnectMetadataStream(
@@ -290,10 +420,23 @@ func dispatchReconnectControl(
     guard case .response(let responseData) = result else {
         throw ReconnectSubscriptionTestError.expectedControlResponse
     }
-    return try BridgeProductStrictJSON.decode(BridgeProductControlResponse.self, from: responseData)
+    let admitted = try BridgeProductStrictJSON.decode(
+        BridgeProductOperationAdmittedResponse.self,
+        from: responseData
+    )
+    await dispatcher.session.waitForOperationExecution(operationId: admitted.operationId)
+    guard
+        let settlement = await dispatcher.session.operationTable.entriesById[admitted.operationId]?.settlement,
+        settlement.outcome == .succeeded,
+        let responseValue = settlement.result
+    else { throw ReconnectSubscriptionTestError.expectedControlResponse }
+    return try BridgeProductStrictJSON.decode(
+        BridgeProductControlResponse.self,
+        from: JSONEncoder().encode(responseValue)
+    )
 }
 
-/// Pulls frames until the post-reconnect cursor arrives.
+/// Pulls the complete certified File bank after reconnect.
 ///
 /// The pump's `nextFrame()` already suspends until a frame exists, so the old
 /// `queuedFrameCount` guard was a test-side re-implementation of the pump's own waiting,
@@ -302,28 +445,20 @@ func dispatchReconnectControl(
 /// real terminal outcome here — not a deadline.
 func pullPostReconnectPublication(
     from pump: BridgeProductSchemeFramePump
-) async throws -> BridgeProductMetadataFrame? {
+) async throws -> BridgeProductBatchCompleteFrame {
     while true {
         let frame = try await pullMetadataFrame(from: pump)
-        if case .subscriptionData(let data) = frame,
-            case .sourceAccepted(let accepted)? = data.data.fileMetadataEvent,
-            accepted.source.sourceCursor == "source-cursor-post-reconnect"
-        {
-            return frame
-        }
+        if case .batch(.complete(let completed)) = frame { return completed }
     }
 }
 
 func reconnectResyncRequest(
     subscription: BridgeProductSubscriptionSnapshot,
-    lastAcceptedStreamSequence: Int,
-    claimedInterestSha256: String? = nil
+    lastAcceptedStreamSequence: Int
 ) throws -> BridgeProductControlRequest {
     try bridgeProductLifecycleControlRequest([
         "activeSubscriptions": [
             [
-                "interestRevision": subscription.interestRevision,
-                "interestSha256": claimedInterestSha256 ?? subscription.interestSha256,
                 "subscriptionId": subscription.subscriptionId,
                 "subscriptionKind": subscription.subscriptionKind.rawValue,
                 "workerDerivationEpoch": subscription.workerDerivationEpoch,
@@ -342,19 +477,16 @@ func reconnectResyncRequest(
 
 func reconnectFileSourceAcceptedEvent(
     cursor: String
-) throws -> BridgeProductFileMetadataEvent {
+) throws -> BridgePaneProductFileSourceFact {
     .sourceAccepted(
-        .init(
-            source: try .init(
-                repoId: "00000000-0000-4000-8000-000000000001",
-                rootRevisionToken: "root-token-reconnect",
-                sourceCursor: "source-cursor-\(cursor)",
-                sourceId: "file-source-reconnect",
-                subscriptionGeneration: 1,
-                worktreeId: "00000000-0000-4000-8000-000000000002"
-            )
-        )
-    )
+        try .init(
+            repoId: "00000000-0000-4000-8000-000000000001",
+            rootRevisionToken: "root-token-reconnect",
+            sourceCursor: "source-cursor-\(cursor)",
+            sourceId: "file-source-reconnect",
+            subscriptionGeneration: 1,
+            worktreeId: "00000000-0000-4000-8000-000000000002"
+        ))
 }
 
 func reconnectFileChangeset() throws -> FileChangeset {
@@ -380,13 +512,13 @@ func waitForReconnectSourceActivity(_ source: ReconnectFileMetadataSource) async
 }
 
 func waitForReconnectSourceUpdate(_ source: ReconnectFileMetadataSource) async {
-    await source.waitForUpdateCall()
+    await source.waitForUpdateCallCount(1)
 }
 
 enum ReconnectSubscriptionTestError: Error {
     case expectedControlResponse
-    case expectedInterestCommit
     case expectedMetadataStreamAcceptance
     case expectedSubscriptionAcceptance
-    case expectedSubscriptionData
+    case expectedBatch
+    case expectedScopeAcceptance
 }

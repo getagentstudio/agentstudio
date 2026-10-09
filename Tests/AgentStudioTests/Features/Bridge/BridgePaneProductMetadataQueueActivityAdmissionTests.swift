@@ -28,10 +28,9 @@ extension BridgePaneProductMetadataActivityAdmissionTests {
         let (precheckEvents, precheckContinuation) = AsyncStream<Void>.makeStream()
         let enqueueTask = Task {
             try await enqueueActivityMetadataResetAfterLoosePrecheck(
+                context: context,
                 subscriptionId: fileOpen.subscriptionId,
-                productAdmission: context.harness.productAdmission.context,
                 foregroundWorkAdmission: originalForegroundWorkAdmission,
-                session: context.harness.session,
                 precheckContinuation: precheckContinuation,
                 queueMutationGate: queueMutationGate
             )
@@ -45,15 +44,11 @@ extension BridgePaneProductMetadataActivityAdmissionTests {
         let staleResetResult = try await enqueueTask.value
         await context.fileSource.releaseEmission()
         await context.fileSource.waitUntilEmissionFinished()
-        let hiddenSnapshot = await waitForActivityMetadataState(context) { snapshot in
-            snapshot.queuedFrameCount == 0
-        }
-        let observedFrames = try await drainQueuedActivityMetadataFrames(context)
+        let hiddenSnapshot = await context.harness.session.producerSnapshot()
 
         // Assert
         #expect(staleResetResult == .rejected(.lifecycleClosed))
         #expect(hiddenSnapshot.queuedFrameCount == 0)
-        #expect(observedFrames.isEmpty)
         await context.provider.applyCommittedControlEffect(
             .subscriptionCancelled(fileOpen),
             for: context.fileOpenRequest,
@@ -63,21 +58,10 @@ extension BridgePaneProductMetadataActivityAdmissionTests {
     }
 }
 
-private func drainQueuedActivityMetadataFrames(
-    _ context: ActivityMetadataContext
-) async throws -> [BridgeProductMetadataFrame] {
-    var frames: [BridgeProductMetadataFrame] = []
-    while (await context.harness.session.producerSnapshot()).queuedFrameCount > 0 {
-        frames.append(try await requiredActivityMetadataFrame(from: context.pump))
-    }
-    return frames
-}
-
 private func enqueueActivityMetadataResetAfterLoosePrecheck(
+    context: ActivityMetadataContext,
     subscriptionId: String,
-    productAdmission: BridgeProductAdmissionContext,
     foregroundWorkAdmission: BridgePaneRefreshWorkAdmission,
-    session: BridgeProductSession,
     precheckContinuation: AsyncStream<Void>.Continuation,
     queueMutationGate: ActivityQueueMutationGate
 ) async throws -> BridgeProductProducerEnqueueResult {
@@ -87,10 +71,11 @@ private func enqueueActivityMetadataResetAfterLoosePrecheck(
     precheckContinuation.yield()
     precheckContinuation.finish()
     await queueMutationGate.waitUntilReleased()
-    return try await session.enqueueSubscriptionReset(
+    return try await context.harness.session.enqueueSubscriptionReset(
+        originatingMetadataLease: context.lease,
         subscriptionId: subscriptionId,
         reason: .staleSource,
-        productAdmission: productAdmission,
+        productAdmission: context.harness.productAdmission.context,
         foregroundWorkAdmission: foregroundWorkAdmission
     )
 }

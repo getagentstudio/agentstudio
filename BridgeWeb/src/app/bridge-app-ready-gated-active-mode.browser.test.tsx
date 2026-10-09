@@ -134,6 +134,7 @@ function createRecordingBridgePaneRuntime(
 			}),
 			dispose: (): void => {},
 			installNativeBootstrap: (): void => {},
+			handleNativeBootstrapFailure: (): void => {},
 			setNativeBootstrapRequester: (): void => {},
 		}),
 	});

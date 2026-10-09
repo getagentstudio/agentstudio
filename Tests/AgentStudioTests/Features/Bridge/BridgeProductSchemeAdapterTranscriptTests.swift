@@ -6,8 +6,8 @@ import WebKit
 
 @Suite("Bridge product scheme adapter transcript")
 struct BridgeProductSchemeAdapterTranscriptTests {
-    @Test("shared fixture identity and content observation command branch are frozen")
-    func sharedFixtureAndContentObservationBranchAreFrozen() throws {
+    @Test("shared fixture identity and cumulative content credit command branch are frozen")
+    func sharedFixtureAndContentCreditBranchAreFrozen() throws {
         // Arrange
         let fixture = try BridgeProductSchemeTranscriptFixture.load()
 
@@ -19,43 +19,27 @@ struct BridgeProductSchemeAdapterTranscriptTests {
 
         // Assert
         #expect(fixture.sha256Hex == BridgeProductSchemeTranscriptFixture.expectedSHA256)
-        #expect(fixture.transcriptCount == 27)
-        #expect(fixture.observationCaseCount == 16)
+        #expect(fixture.transcriptCount == 21)
+        #expect(fixture.observationCaseCount == 10)
         guard case .contentFrameAcknowledgement = command else {
-            Issue.record("Content observation did not decode through the V0b command branch")
+            Issue.record("Content credit did not decode through the command branch")
             return
         }
     }
 
-    @Test("shared Review interest update is valid against the production state codec")
-    func sharedReviewInterestUpdateIsValidAgainstProductionStateCodec() throws {
-        // Arrange
-        let fixture = try BridgeProductSchemeTranscriptFixture.load()
-        let updateCommand = try fixture.decodeTranscriptValue(
-            BridgeProductControlRequest.self,
-            named: "review-selection-demand"
-        )
-        guard case .subscriptionUpdateBatch(let updateRequest) = updateCommand else {
-            Issue.record("Shared Review update did not decode to its required command branch")
-            return
+    @Test("retired metadata frame observations are rejected by the command package")
+    func retiredMetadataFrameObservationsAreRejected() throws {
+        let fixture = try BridgeProductSchemeTranscriptFixture.loadInvalid()
+        #expect(throws: (any Error).self) {
+            try fixture.decodeInvalidRequest(
+                BridgeProductCommandPackage.self,
+                named: "metadata-unknown-key"
+            )
         }
-
-        // Act
-        let emptyState = BridgeProductSubscriptionInterestState.reviewMetadata(interests: [])
-        let candidateState = try BridgeProductSubscriptionInterestMutation.apply(
-            [updateRequest.delta],
-            to: emptyState,
-            subscriptionKind: .reviewMetadata
-        )
-        let candidateSHA256 = try candidateState.sha256Hex()
-
-        // Assert
-        #expect(try emptyState.sha256Hex() == updateRequest.baseInterestSha256)
-        #expect(candidateSHA256 == updateRequest.targetInterestSha256)
     }
 
-    @Test("mixed File and Review streams pace independently with bodyless observations")
-    func mixedFileAndReviewStreamsPaceIndependently() async throws {
+    @Test("mixed metadata and content streams keep cumulative content credit separate")
+    func mixedMetadataAndContentStreamsKeepContentCreditSeparate() async throws {
         // Arrange
         let fixture = try BridgeProductSchemeTranscriptFixture.load()
         let workerOpen = try fixture.decodeTranscriptValue(
@@ -64,9 +48,7 @@ struct BridgeProductSchemeAdapterTranscriptTests {
         )
         let harness = try BridgeProductSchemeAdapterTranscriptHarness.make(
             paneSessionId: workerOpen.paneSessionId,
-            workerInstanceId: workerOpen.workerInstanceId,
-            reviewSourceData: try fixture.subscriptionData(named: "review-source-accepted"),
-            fileSourceData: try fixture.subscriptionData(named: "file-source-accepted")
+            workerInstanceId: workerOpen.workerInstanceId
         )
         var retainedReplies: [BridgeProductSchemeReplyWithRoutingTask] = []
 
@@ -83,7 +65,7 @@ struct BridgeProductSchemeAdapterTranscriptTests {
                     harness: harness
                 )
             )
-            try await assertContentObservationAndReviewUpdate(
+            try await assertContentObservationAndReviewCancel(
                 fixture: fixture,
                 harness: harness
             )
@@ -145,23 +127,6 @@ struct BridgeProductSchemeAdapterTranscriptTests {
             )
             #expect(openingMetadataFrames == [expectedMetadataFrame])
 
-            let controlCountBeforeMetadataObservation =
-                await harness.provider.snapshot.controlRequestKinds.count
-            let metadataObservation = try await collectBridgeProductSchemeReply(
-                adapter: harness.adapter,
-                request: harness.request(
-                    route: BridgeProductWireContract.commandRoute,
-                    body: try fixture.observationRequestData(named: "metadata-sequence-zero")
-                )
-            )
-            #expect(metadataObservation.response?.statusCode == 204)
-            #expect(metadataObservation.body.isEmpty)
-            #expect(metadataObservation.events == [.response])
-            #expect(
-                await harness.provider.snapshot.controlRequestKinds.count
-                    == controlCountBeforeMetadataObservation
-            )
-
             let reviewOpenReply = try await routeControl(
                 requestName: "review-subscription-open",
                 expectedResponseName: "review-subscription-open-accepted",
@@ -169,13 +134,23 @@ struct BridgeProductSchemeAdapterTranscriptTests {
                 harness: harness
             )
             #expect(reviewOpenReply.response?.statusCode == 200)
-            let blockedReviewFrameResult = try #require(await metadataIterator.next())
-            guard case .data(let blockedReviewFrameBytes) = blockedReviewFrameResult else {
-                Issue.record("Review subscription did not emit a metadata frame")
-                throw BridgeProductSchemeAdapterTranscriptTestError.unexpectedReplyEvent
+            var reviewFrame: BridgeProductMetadataFrame?
+            while reviewFrame == nil {
+                let replyResult = try #require(await metadataIterator.next())
+                guard case .data(let frameBytes) = replyResult else {
+                    Issue.record("Review subscription did not emit a metadata frame")
+                    throw BridgeProductSchemeAdapterTranscriptTestError.unexpectedReplyEvent
+                }
+                let decodedFrames = try metadataDecoder.append(frameBytes)
+                #expect(decodedFrames.count == 1)
+                let decoded = try #require(decodedFrames.first)
+                if case .streamKeepalive(let pulse) = decoded {
+                    #expect(pulse.frameIdentity.streamSequence == 0)
+                } else {
+                    reviewFrame = decoded
+                }
             }
-            let reviewFrames = try metadataDecoder.append(blockedReviewFrameBytes)
-            guard case .subscriptionAccepted(let reviewAccepted) = try #require(reviewFrames.first)
+            guard case .subscriptionAccepted(let reviewAccepted) = reviewFrame
             else {
                 Issue.record("Review subscription did not emit subscription.accepted")
                 throw BridgeProductSchemeAdapterTranscriptTestError.unexpectedMetadataFrame
@@ -236,10 +211,13 @@ struct BridgeProductSchemeAdapterTranscriptTests {
             let pacedSnapshot = await harness.session.producerSnapshot()
             #expect(pacedSnapshot.activeContentLeaseCount == 1)
             #expect(
-                pacedSnapshot.inFlightFrameReceiptCount == 2,
-                "Metadata and content must each retain one independently observed frame"
+                pacedSnapshot.inFlightFrameReceiptCount == 0,
+                "The scheme adapter consumes its frame receipt before page credit returns"
             )
-            #expect(pacedSnapshot.pendingFrameWaiterCount == 0)
+            #expect(
+                pacedSnapshot.pendingFrameWaiterCount == 2,
+                "Both the metadata and finite content pumps wait for their next local frame"
+            )
             return contentReply
         } catch {
             contentReply.routingTask.cancel()
@@ -248,7 +226,7 @@ struct BridgeProductSchemeAdapterTranscriptTests {
         }
     }
 
-    private func assertContentObservationAndReviewUpdate(
+    private func assertContentObservationAndReviewCancel(
         fixture: BridgeProductSchemeTranscriptFixture,
         harness: BridgeProductSchemeAdapterTranscriptHarness
     ) async throws {
@@ -282,7 +260,7 @@ struct BridgeProductSchemeAdapterTranscriptTests {
         )
         #expect(
             contentObservation.response?.statusCode == 204,
-            "Content frame observations must route outside the ordinary control mux"
+            "Cumulative content credits must route outside the ordinary control mux"
         )
         #expect(contentObservation.body.isEmpty)
         #expect(contentObservation.events == [.response])
@@ -298,6 +276,56 @@ struct BridgeProductSchemeAdapterTranscriptTests {
         #expect(contentObservationReplay.body.isEmpty)
         #expect(contentObservationReplay.events == [.response])
 
+        try await assertForeignContentCreditRefusal(fixture: fixture, harness: harness)
+        #expect(
+            await harness.provider.snapshot.controlRequestKinds.count
+                == controlCountBeforeContentObservation
+        )
+
+        let reviewCancelReply = try await collectBridgeProductSchemeReply(
+            adapter: harness.adapter,
+            request: harness.request(
+                route: BridgeProductWireContract.commandRoute,
+                body: try transcriptValueData(
+                    named: "review-subscription-cancel",
+                    fixture: fixture,
+                    requestSequence: 4
+                )
+            )
+        )
+        #expect(reviewCancelReply.response?.statusCode == 200)
+        let reviewCancelResponse = try BridgeProductStrictJSON.decode(
+            BridgeProductControlResponse.self,
+            from: reviewCancelReply.body
+        )
+        let expectedCancelResponse = try BridgeProductStrictJSON.decode(
+            BridgeProductControlResponse.self,
+            from: transcriptValueData(
+                named: "review-subscription-cancel-accepted",
+                fixture: fixture,
+                requestSequence: 4
+            )
+        )
+        #expect(reviewCancelResponse == expectedCancelResponse)
+        await harness.session.waitForOutstandingEscapeEffects()
+        #expect(
+            await harness.session.subscriptionSnapshot(
+                subscriptionId: "review-subscription-startup-1"
+            ) == nil
+        )
+        #expect(
+            await harness.provider.snapshot.controlRequestKinds == [
+                "workerSession.open",
+                "subscription.open",
+                "subscription.open",
+            ]
+        )
+    }
+
+    private func assertForeignContentCreditRefusal(
+        fixture: BridgeProductSchemeTranscriptFixture,
+        harness: BridgeProductSchemeAdapterTranscriptHarness
+    ) async throws {
         let foreignContentObservation = try await collectBridgeProductSchemeReply(
             adapter: harness.adapter,
             request: harness.request(
@@ -306,28 +334,30 @@ struct BridgeProductSchemeAdapterTranscriptTests {
             )
         )
         #expect(foreignContentObservation.response?.statusCode == 409)
-        #expect(foreignContentObservation.body.isEmpty)
-        #expect(foreignContentObservation.events == [.response])
-        #expect(
-            await harness.provider.snapshot.controlRequestKinds.count
-                == controlCountBeforeContentObservation
+        let foreignRefusal = try BridgeProductStrictJSON.decode(
+            BridgeProductContentAcknowledgementRefusedResponse.self,
+            from: foreignContentObservation.body
         )
+        #expect(foreignRefusal.reason == .invalidReadIdentity)
+        #expect(foreignRefusal.contentRequestId == "content-request-startup-1")
+        #expect(foreignRefusal.leaseId == "lease-foreign-1")
+        #expect(foreignContentObservation.events == [.response, .data])
+    }
 
-        let reviewUpdateReply = try await routeControl(
-            requestName: "review-selection-demand",
-            expectedResponseName: "review-selection-demand-accepted",
-            fixture: fixture,
-            harness: harness
-        )
-        #expect(reviewUpdateReply.response?.statusCode == 200)
-        #expect(
-            await harness.provider.snapshot.controlRequestKinds == [
-                "workerSession.open",
-                "subscription.open",
-                "subscription.open",
-                "subscription.updateBatch",
-            ]
-        )
+    private func transcriptValueData(
+        named name: String,
+        fixture: BridgeProductSchemeTranscriptFixture,
+        requestSequence: Int
+    ) throws -> Data {
+        let original = try fixture.transcriptValueData(named: name)
+        guard var object = try JSONSerialization.jsonObject(with: original) as? [String: Any] else {
+            throw BridgeProductSchemeAdapterTranscriptTestError.unexpectedReplyEvent
+        }
+        // This journey has no E4 between File open (3) and Review cancel; content
+        // observation is slot-free. The shared transcript's ordinal 5 belongs to
+        // a longer journey, so adapt only this request/expected result pair.
+        object["requestSequence"] = requestSequence
+        return try JSONSerialization.data(withJSONObject: object, options: [.sortedKeys])
     }
 
     private func routeControl(
@@ -343,9 +373,35 @@ struct BridgeProductSchemeAdapterTranscriptTests {
                 body: try fixture.transcriptValueData(named: requestName)
             )
         )
+        let admission = try BridgeProductStrictJSON.decode(
+            BridgeProductOperationAdmittedResponse.self,
+            from: observation.body
+        )
+        let resultBody = try JSONSerialization.data(
+            withJSONObject: [
+                "kind": "operation.result",
+                "operationId": admission.operationId,
+                "paneSessionId": admission.correlation.paneSessionId,
+                "wireVersion": BridgeProductWireContract.version,
+                "workerInstanceId": admission.correlation.workerInstanceId,
+            ]
+        )
+        let resultReply = try await collectBridgeProductSchemeReply(
+            adapter: harness.adapter,
+            request: harness.request(
+                route: BridgeProductWireContract.commandRoute,
+                body: resultBody
+            )
+        )
+        #expect(resultReply.response?.statusCode == 200)
+        let result = try BridgeProductStrictJSON.decode(
+            BridgeProductOperationResultResponse.self,
+            from: resultReply.body
+        )
+        #expect(result.outcome == .succeeded)
         let response = try BridgeProductStrictJSON.decode(
             BridgeProductControlResponse.self,
-            from: observation.body
+            from: JSONEncoder().encode(try #require(result.result))
         )
         let expectedResponse = try fixture.decodeTranscriptValue(
             BridgeProductControlResponse.self,

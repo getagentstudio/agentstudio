@@ -6,106 +6,93 @@ import Testing
 
 @Suite("Bridge product Review metadata availability lifecycle")
 struct BridgeProductReviewAvailabilityTests {
-    @Test("Review open before package publication stays accepted and emits initial metadata later")
+    @Test("Review open before publication seals a complete keyed view after delivery")
+    @MainActor
     func reviewOpenBeforePackagePublicationStaysAccepted() async throws {
-        // Arrange
         let refreshWorkAdmission = await BridgePaneRefreshWorkAdmissionTestContext.foreground()
         let harness = try await BridgeProductSessionLifecycleHarness.opened()
         let lease = try await harness.admitMetadataFrames(through: 0)
         let pump = BridgeProductSchemeFramePump(
-            session: harness.session,
-            producerLease: lease,
+            session: harness.session, producerLease: lease,
             productAdmission: harness.productAdmission.context,
             acknowledgeLifecycle: { _ in true }
         )
-        let reviewSource = BridgePaneProductReviewMetadataSource()
+        let reviewSource = AvailabilityHeldReviewMetadataSource()
+        let replayProvider = AvailabilityReviewPublicationProvider()
         let traceRecorder = AvailabilityReviewPublicationTraceRecorder()
         let coordinator = BridgePaneProductMetadataCoordinator(
             fileMetadataSource: BridgeUnavailablePaneProductFileMetadataSource(),
             reviewMetadataSource: reviewSource,
+            reviewPublicationReplay: { _ in replayProvider.publication },
             refreshWorkAdmissionSource: refreshWorkAdmission.source,
             lifecycleTraceRecorder: traceRecorder
         )
         await coordinator.install(
-            request: try availabilityMetadataStreamRequest(),
-            lease: lease,
-            productAdmission: harness.productAdmission.context,
-            session: harness.session
+            request: try availabilityMetadataStreamRequest(), lease: lease,
+            productAdmission: harness.productAdmission.context, session: harness.session
         )
-
-        // Act
         let acceptedFrame = try await openAvailabilityReviewSubscription(
-            coordinator: coordinator,
-            harness: harness,
-            pump: pump
+            coordinator: coordinator, harness: harness, pump: pump
         )
-        for _ in 0..<100 where (await harness.session.producerSnapshot()).queuedFrameCount == 0 {
-            await Task.yield()
+        guard case .subscriptionAccepted(let accepted) = acceptedFrame else {
+            Issue.record("Expected the E3 Review subscription acceptance")
+            return
         }
-        let queuedFrameCountBeforePublication = (await harness.session.producerSnapshot()).queuedFrameCount
+        #expect((try await traceRecorder.waitUntilReviewBootstrapFinished()).result == .success)
         let reviewPackage = try availabilityReviewPackageFixture()
+        let expectedItemIds = await AvailabilityBatchKeyProjection().orderedItemIds(in: reviewPackage)
+        let scopeRequest = try reviewTestViewScopeRequest(itemIds: expectedItemIds)
+        #expect(
+            await harness.session.acceptViewScope(
+                scopeRequest, productAdmission: harness.productAdmission.context
+            ) == nil
+        )
+        #expect((await harness.session.producerSnapshot()).queuedFrameCount == 0)
+
         let traceContext = try BridgeTraceContext(
             traceId: "55555555555555555555555555555555",
-            spanId: "6666666666666666",
-            parentSpanId: nil,
-            sampled: true
+            spanId: "6666666666666666", parentSpanId: nil, sampled: true
         )
+        let publication = availabilityCorrelatedCommittedPublication(reviewPackage)
+        replayProvider.publication = publication
         let reservation = try await coordinator.reserveReviewPublication(
-            package: reviewPackage,
-            publicationId: availabilityCommittedPublication(reviewPackage).publicationId,
+            package: reviewPackage, publicationId: publication.publicationId,
             productAdmission: harness.productAdmission.context,
             foregroundWorkAdmission: refreshWorkAdmission.admission
         )
-        let publication = availabilityCorrelatedCommittedPublication(reviewPackage)
-        let deliveryProbe = AvailabilityDeliveryDispositionProbe()
-        let delivery = Task {
-            let disposition = await coordinator.deliverReviewPublication(
-                publication,
-                reservation: reservation,
-                productAdmission: harness.productAdmission.context,
-                foregroundWorkAdmission: refreshWorkAdmission.admission,
-                traceContext: traceContext
-            )
-            await deliveryProbe.record(disposition)
-            return disposition
+        let disposition = await coordinator.deliverReviewPublication(
+            publication, reservation: reservation,
+            productAdmission: harness.productAdmission.context,
+            foregroundWorkAdmission: refreshWorkAdmission.admission,
+            traceContext: traceContext
+        )
+        var frames: [BridgeProductMetadataFrame] = []
+        for _ in 0..<(expectedItemIds.count + 3) {
+            frames.append(try await pullAvailabilityMetadataFrame(from: pump))
         }
-        let sourceAcceptedFrame = try await pullAvailabilityMetadataFrame(from: pump)
-        #expect(await deliveryProbe.disposition == nil)
-        let snapshotFrame = try await pullAvailabilityMetadataFrame(from: pump)
-        let deliveryDisposition = await delivery.value
-
-        // Assert
-        guard case .subscriptionAccepted(let accepted) = acceptedFrame,
-            case .subscriptionData(let sourceAcceptedData) = sourceAcceptedFrame,
-            case .sourceAccepted(let sourceAccepted)? = sourceAcceptedData.data.reviewMetadataEvent,
-            case .subscriptionData(let snapshotData) = snapshotFrame,
-            case .snapshot(let snapshot)? = snapshotData.data.reviewMetadataEvent
+        let itemKeys = await AvailabilityBatchKeyProjection().putKeys(in: frames)
+        let firstFrame = try #require(frames.first)
+        let lastFrame = try #require(frames.last)
+        guard case .batch(.begin(let begin)) = firstFrame,
+            case .batch(.complete) = lastFrame
         else {
-            Issue.record("Expected Review accepted followed by sourceAccepted and snapshot after publication")
+            let observedKinds = await AvailabilityBatchKeyProjection().kindSummary(in: frames)
+            Issue.record("Expected one complete W4 Review snapshot; observed \(observedKinds)")
             return
         }
         #expect(accepted.frameIdentity.streamSequence == 1)
-        #expect(queuedFrameCountBeforePublication == 0)
-        #expect(sourceAcceptedData.frameIdentity.streamSequence == 2)
-        #expect(snapshotData.frameIdentity.streamSequence == 3)
-        #expect(sourceAccepted.identity.packageId == reviewPackage.packageId)
-        #expect(snapshot.identity.packageId == reviewPackage.packageId)
-        #expect(deliveryDisposition == .transportAcknowledged)
+        #expect(begin.publicationId == publication.publicationId)
+        #expect(begin.identity.handle == scopeRequest.handle)
+        #expect(itemKeys == (await AvailabilityBatchKeyProjection().expectedKeys(for: expectedItemIds)))
+        #expect((await harness.session.producerSnapshot()).queuedFrameCount == 0)
+        #expect(disposition == .viewBatchSealed)
         #expect(
             await traceRecorder.publicationEvents == [
                 .started(retainedSubscriptions: 1, traceContext: traceContext),
                 .completed(
                     receipt: BridgeReviewMetadataPublicationReceipt(
-                        retained: 1,
-                        publishedSubscriptions: 1,
-                        emittedEvents: 2,
-                        superseded: 0,
-                        finalFrames: [
-                            BridgeReviewMetadataFinalFrame(
-                                sequence: 3,
-                                subscriptionId: "review-subscription-1"
-                            )
-                        ]
+                        retained: 1, publishedSubscriptions: 1, emittedEvents: 0,
+                        superseded: 0, finalFrames: []
                     ),
                     traceContext: traceContext
                 ),
@@ -114,6 +101,7 @@ struct BridgeProductReviewAvailabilityTests {
         await coordinator.uninstall(lease: lease)
         #expect(await pump.cancel())
     }
+
     @Test("producer rejection returns failed without claiming observation")
     func producerRejectionReturnsFailedWithoutObservation() async throws {
         let traceContext = try BridgeTraceContext(
@@ -300,183 +288,22 @@ struct BridgeProductReviewAvailabilityTests {
             acknowledgeLifecycle: { _ in true }
         )
         let reviewPackage = try availabilityReviewPackageFixture()
+        let expectedItemIds = await AvailabilityBatchKeyProjection().orderedItemIds(in: reviewPackage)
         let publication = availabilityCommittedPublication(reviewPackage)
         let currentPublication = await CoordinatorCurrentReviewPublication(
             publicationId: publication.publicationId
         )
-        let source = CoordinatorRepairingReviewMetadataSource()
-        let coordinator = BridgePaneProductMetadataCoordinator(
-            fileMetadataSource: BridgeUnavailablePaneProductFileMetadataSource(),
-            reviewMetadataSource: source,
-            isReviewPublicationCurrent: { publicationId, productAdmission in
-                currentPublication.matches(publicationId, productAdmission: productAdmission)
-            },
-            refreshWorkAdmissionSource: refreshWorkAdmission.source
-        )
-        await coordinator.install(
-            request: try availabilityMetadataStreamRequest(),
-            lease: lease,
-            productAdmission: harness.productAdmission.context,
-            session: harness.session
-        )
-        _ = try await openAvailabilityReviewSubscription(
-            coordinator: coordinator,
-            harness: harness,
-            pump: pump
-        )
-        let reservation = try await coordinator.reserveReviewPublication(
-            package: reviewPackage,
-            publicationId: publication.publicationId,
-            productAdmission: harness.productAdmission.context,
-            foregroundWorkAdmission: refreshWorkAdmission.admission
-        )
-
-        // Act
-        let delivery = Task {
-            await coordinator.deliverReviewPublication(
-                publication,
-                reservation: reservation,
-                productAdmission: harness.productAdmission.context,
-                foregroundWorkAdmission: refreshWorkAdmission.admission
-            )
-        }
-        await source.waitUntilDeliverAttempt(2)
-        let deliveryAttempts = await source.deliveryAttempts
-
-        #expect(deliveryAttempts == 2)
-        guard deliveryAttempts == 2 else {
-            await coordinator.uninstall(lease: lease)
-            #expect(await pump.cancel())
-            return
-        }
-        _ = try await pullAvailabilityMetadataFrame(from: pump)
-        let disposition = await delivery.value
-
-        // Assert
-        #expect(disposition == .transportAcknowledged)
-        #expect((await harness.session.producerSnapshot()).pendingProducerObservationPacingWaiterCount == 0)
-        await coordinator.uninstall(lease: lease)
-        #expect(await pump.cancel())
-    }
-
-    @Test("maximum final frame observation covers earlier finals acknowledged before waiting")
-    func maximumFinalFrameObservationCoversEarlierAcknowledgements() async throws {
-        // Arrange
-        let refreshWorkAdmission = await BridgePaneRefreshWorkAdmissionTestContext.foreground()
-        let (pacingRegistrationEvents, pacingRegistrationContinuation) =
-            AsyncStream<(lease: BridgeProductProducerLease, sequence: Int)>.makeStream()
-        defer { pacingRegistrationContinuation.finish() }
-        var pacingRegistrationIterator = pacingRegistrationEvents.makeAsyncIterator()
-        let harness = try await BridgeProductSessionLifecycleHarness.opened(
-            producerObservationPacingRegistrationObserver: { lease, sequence in
-                pacingRegistrationContinuation.yield((lease, sequence))
-            }
-        )
-        let lease = try await harness.admitMetadataFrames(through: 0)
-        let pump = BridgeProductSchemeFramePump(
-            session: harness.session,
-            producerLease: lease,
-            productAdmission: harness.productAdmission.context,
-            acknowledgeLifecycle: { _ in true }
-        )
-        let source = CoordinatorEarlyFinalFramesSource()
-        let coordinator = BridgePaneProductMetadataCoordinator(
-            fileMetadataSource: BridgeUnavailablePaneProductFileMetadataSource(),
-            reviewMetadataSource: source,
-            refreshWorkAdmissionSource: refreshWorkAdmission.source
-        )
-        await coordinator.install(
-            request: try availabilityMetadataStreamRequest(),
-            lease: lease,
-            productAdmission: harness.productAdmission.context,
-            session: harness.session
-        )
-        _ = try await openAvailabilityReviewSubscription(
-            coordinator: coordinator,
-            harness: harness,
-            pump: pump
-        )
-        let reviewPackage = try availabilityReviewPackageFixture()
-        let reservation = try await coordinator.reserveReviewPublication(
-            package: reviewPackage,
-            publicationId: availabilityCommittedPublication(reviewPackage).publicationId,
-            productAdmission: harness.productAdmission.context,
-            foregroundWorkAdmission: refreshWorkAdmission.admission
-        )
-        let delivery = Task {
-            await coordinator.deliverReviewPublication(
-                availabilityCommittedPublication(reviewPackage),
-                reservation: reservation,
-                productAdmission: harness.productAdmission.context,
-                foregroundWorkAdmission: refreshWorkAdmission.admission
-            )
-        }
-
-        // Act
-        let firstRegistration = try #require(await pacingRegistrationIterator.next())
-        let firstDeliveries = try await pullAvailabilityMetadataFrames(
-            through: firstRegistration.sequence,
-            from: pump
-        )
-        let firstFinalFrame = try #require(firstDeliveries.last)
-        #expect(firstRegistration.lease == lease)
-        #expect(await pump.acknowledgeFrameConsumed(firstFinalFrame.receipt))
-        let secondRegistration = try #require(await pacingRegistrationIterator.next())
-        let secondDeliveries = try await pullAvailabilityMetadataFrames(
-            through: secondRegistration.sequence,
-            from: pump
-        )
-        let maximumFinalFrame = try #require(secondDeliveries.last)
-        #expect(secondRegistration.lease == lease)
-        #expect(await pump.acknowledgeFrameConsumed(maximumFinalFrame.receipt))
-        await source.waitUntilFinalFramesEnqueued()
-        await source.releaseDeliveryReceipt()
-        let disposition = await delivery.value
-        let producerSnapshot = await harness.session.producerSnapshot()
-
-        // Assert
-        #expect(disposition == .transportAcknowledged)
-        #expect(producerSnapshot.pendingProducerObservationPacingWaiterCount == 0)
-        await coordinator.uninstall(lease: lease)
-        #expect(await pump.cancel())
-    }
-
-    @Test("foreground return replays Review publication interrupted at final-frame observation")
-    @MainActor
-    // swiftlint:disable:next function_body_length
-    func foregroundReturnReplaysReviewPublicationInterruptedAtFinalFrameObservation() async throws {
-        // Arrange
-        let activityCoordinator = BridgePaneRefreshAdmissionCoordinator(
-            initialActivity: .foreground
-        )
-        let initialForegroundAdmission = try #require(
-            activityCoordinator.acquireForegroundWork()
-        )
-        let (pacingRegistrationEvents, pacingRegistrationContinuation) =
-            AsyncStream<(lease: BridgeProductProducerLease, sequence: Int)>.makeStream()
-        defer { pacingRegistrationContinuation.finish() }
-        var pacingRegistrationIterator = pacingRegistrationEvents.makeAsyncIterator()
-        let harness = try await BridgeProductSessionLifecycleHarness.opened(
-            producerObservationPacingRegistrationObserver: { lease, sequence in
-                pacingRegistrationContinuation.yield((lease, sequence))
-            }
-        )
-        let lease = try await harness.admitMetadataFrames(through: 0)
-        let pump = BridgeProductSchemeFramePump(
-            session: harness.session,
-            producerLease: lease,
-            productAdmission: harness.productAdmission.context,
-            acknowledgeLifecycle: { _ in true }
-        )
-        let reviewPackage = try availabilityReviewPackageFixture()
-        let publication = availabilityCommittedPublication(reviewPackage)
         let replayProvider = AvailabilityReviewPublicationProvider()
+        let source = CoordinatorRepairingReviewMetadataSource()
         let traceRecorder = AvailabilityReviewPublicationTraceRecorder()
         let coordinator = BridgePaneProductMetadataCoordinator(
             fileMetadataSource: BridgeUnavailablePaneProductFileMetadataSource(),
-            reviewMetadataSource: BridgePaneProductReviewMetadataSource(),
+            reviewMetadataSource: source,
             reviewPublicationReplay: { _ in replayProvider.publication },
-            refreshWorkAdmissionSource: activityCoordinator.workAdmissionSource,
+            isReviewPublicationCurrent: { publicationId, productAdmission in
+                currentPublication.matches(publicationId, productAdmission: productAdmission)
+            },
+            refreshWorkAdmissionSource: refreshWorkAdmission.source,
             lifecycleTraceRecorder: traceRecorder
         )
         await coordinator.install(
@@ -485,116 +312,176 @@ struct BridgeProductReviewAvailabilityTests {
             productAdmission: harness.productAdmission.context,
             session: harness.session
         )
-        _ = try await openAvailabilityReviewSubscription(
+        let acceptedFrame = try await openAvailabilityReviewSubscription(
             coordinator: coordinator,
             harness: harness,
             pump: pump
         )
-        replayProvider.publication = publication
+        #expect((try await traceRecorder.waitUntilReviewBootstrapFinished()).result == .success)
+        let scopeRequest = try reviewTestViewScopeRequest(itemIds: expectedItemIds)
+        #expect(
+            await harness.session.acceptViewScope(
+                scopeRequest, productAdmission: harness.productAdmission.context
+            ) == nil
+        )
+        await MainActor.run { replayProvider.publication = publication }
         let reservation = try await coordinator.reserveReviewPublication(
             package: reviewPackage,
             publicationId: publication.publicationId,
+            productAdmission: harness.productAdmission.context,
+            foregroundWorkAdmission: refreshWorkAdmission.admission
+        )
+
+        // Act
+        let delivery = Task {
+            await coordinator.deliverReviewPublication(
+                publication,
+                reservation: reservation,
+                productAdmission: harness.productAdmission.context,
+                foregroundWorkAdmission: refreshWorkAdmission.admission
+            )
+        }
+        let disposition = await delivery.value
+        let deliveryAttempts = await source.deliveryAttempts
+
+        #expect(deliveryAttempts == 2)
+        #expect(disposition == .viewBatchSealed)
+        guard disposition == .viewBatchSealed else {
+            await coordinator.uninstall(lease: lease)
+            #expect(await pump.cancel())
+            return
+        }
+        var frames: [BridgeProductMetadataFrame] = []
+        for _ in 0..<(expectedItemIds.count + 3) {
+            frames.append(try await pullAvailabilityMetadataFrame(from: pump))
+        }
+        guard case .subscriptionAccepted(let accepted) = acceptedFrame,
+            case .batch(.begin(let begin)) = frames.first,
+            case .batch(.complete(let complete)) = frames.last
+        else {
+            let observedKinds = await AvailabilityBatchKeyProjection().kindSummary(in: frames)
+            Issue.record("Expected acceptance and a complete repaired W4 batch; observed \(observedKinds)")
+            await coordinator.uninstall(lease: lease)
+            #expect(await pump.cancel())
+            return
+        }
+        let itemKeys = await AvailabilityBatchKeyProjection().putKeys(in: frames)
+
+        // Assert
+        #expect(begin.identity.frame.metadataStreamId == accepted.frameIdentity.metadataStreamId)
+        #expect(begin.identity.frame.streamSequence == accepted.frameIdentity.streamSequence + 1)
+        #expect(begin.identity.handle == scopeRequest.handle)
+        #expect(begin.publicationId == publication.publicationId)
+        #expect(begin.partCount == expectedItemIds.count + 1)
+        #expect(complete.identity.batchId == begin.identity.batchId)
+        #expect(itemKeys == (await AvailabilityBatchKeyProjection().expectedKeys(for: expectedItemIds)))
+        #expect((await harness.session.producerSnapshot()).queuedFrameCount == 0)
+        await coordinator.uninstall(lease: lease)
+        #expect(await pump.cancel())
+    }
+
+    @Test("suspended Review delivery cannot seal its predecessor and foreground return seals the current snapshot")
+    @MainActor
+    func foregroundReturnReplaysCurrentReviewSnapshot() async throws {
+        let activityCoordinator = BridgePaneRefreshAdmissionCoordinator(initialActivity: .foreground)
+        let initialForegroundAdmission = try #require(activityCoordinator.acquireForegroundWork())
+        let harness = try await BridgeProductSessionLifecycleHarness.opened()
+        let lease = try await harness.admitMetadataFrames(through: 0)
+        let pump = BridgeProductSchemeFramePump(
+            session: harness.session, producerLease: lease,
+            productAdmission: harness.productAdmission.context,
+            acknowledgeLifecycle: { _ in true }
+        )
+        let reviewPackage = try availabilityReviewPackageFixture()
+        let expectedItemIds = await AvailabilityBatchKeyProjection().orderedItemIds(in: reviewPackage)
+        let predecessor = availabilityCommittedPublication(reviewPackage)
+        let successorPackage = replacingReviewSource(
+            reviewPackage, packageId: "review-package-after-suspend",
+            queryId: "review-query-after-suspend",
+            generation: reviewPackage.reviewGeneration.rawValue + 1
+        )
+        let successorPublicationId = UUID(uuidString: "22222222-2222-7222-8222-222222222222")!
+        let successor = reviewMetadataCommittedPublication(
+            successorPackage, publicationId: successorPublicationId
+        )
+        let replayProvider = AvailabilityReviewPublicationProvider()
+        let reviewSource = AvailabilityHeldReviewMetadataSource(holdFirstDelivery: true)
+        let traceRecorder = AvailabilityReviewPublicationTraceRecorder()
+        let coordinator = BridgePaneProductMetadataCoordinator(
+            fileMetadataSource: BridgeUnavailablePaneProductFileMetadataSource(),
+            reviewMetadataSource: reviewSource,
+            reviewPublicationReplay: { _ in replayProvider.publication },
+            refreshWorkAdmissionSource: activityCoordinator.workAdmissionSource,
+            lifecycleTraceRecorder: traceRecorder
+        )
+        await coordinator.install(
+            request: try availabilityMetadataStreamRequest(), lease: lease,
+            productAdmission: harness.productAdmission.context, session: harness.session
+        )
+        _ = try await openAvailabilityReviewSubscription(
+            coordinator: coordinator, harness: harness, pump: pump
+        )
+        #expect((try await traceRecorder.waitUntilReviewBootstrapFinished()).result == .success)
+        let scopeRequest = try reviewTestViewScopeRequest(itemIds: expectedItemIds)
+        #expect(
+            await harness.session.acceptViewScope(
+                scopeRequest, productAdmission: harness.productAdmission.context
+            ) == nil
+        )
+        replayProvider.publication = predecessor
+        let reservation = try await coordinator.reserveReviewPublication(
+            package: reviewPackage, publicationId: predecessor.publicationId,
             productAdmission: harness.productAdmission.context,
             foregroundWorkAdmission: initialForegroundAdmission
         )
         let interruptedDelivery = Task {
             await coordinator.deliverReviewPublication(
-                publication,
-                reservation: reservation,
+                predecessor, reservation: reservation,
                 productAdmission: harness.productAdmission.context,
                 foregroundWorkAdmission: initialForegroundAdmission
             )
         }
-        let sourceRegistration = try #require(await pacingRegistrationIterator.next())
-        let sourceDeliveries = try await pullAvailabilityMetadataFrames(
-            through: sourceRegistration.sequence,
-            from: pump
-        )
-        let sourceDelivery = try #require(sourceDeliveries.last)
-        let sourceAccepted = try availabilityMetadataFrame(from: sourceDelivery)
-        guard case .subscriptionData(let sourceAcceptedData) = sourceAccepted,
-            case .sourceAccepted? = sourceAcceptedData.data.reviewMetadataEvent
-        else {
-            Issue.record("Expected initial replay sourceAccepted")
-            return
-        }
-        #expect(sourceRegistration.lease == lease)
-        #expect(await pump.acknowledgeFrameConsumed(sourceDelivery.receipt))
-        let matchingPacingRegistration = try #require(await pacingRegistrationIterator.next())
-        let registeredSequence = matchingPacingRegistration.sequence
-        let initialFinalFrameDeliveries = try await pullAvailabilityMetadataFrames(
-            through: registeredSequence,
-            from: pump
-        )
-        let heldFinalFrame = try #require(initialFinalFrameDeliveries.last)
-        #expect(matchingPacingRegistration.lease == lease)
-        #expect(matchingPacingRegistration.sequence == heldFinalFrame.receipt.sequence)
+        #expect(try await reviewSource.waitUntilFirstDeliveryStarted() == predecessor.publicationId)
 
-        // Act
         activityCoordinator.applyActivity(.loadedHidden)
         await coordinator.suspendForegroundWork()
-        let interruptedDisposition = await interruptedDelivery.value
-        let suspendedProducerSnapshot = await harness.session.producerSnapshot()
-        #expect(suspendedProducerSnapshot.activeProducerCount == 1)
-        #expect(suspendedProducerSnapshot.inFlightFrameReceiptCount == 1)
-        #expect(suspendedProducerSnapshot.pendingProducerObservationPacingWaiterCount == 0)
-        #expect(
-            await harness.session.subscriptionSnapshot(
-                subscriptionId: "review-subscription-1"
-            ) != nil
+        await reviewSource.releaseFirstDelivery()
+        #expect(await interruptedDelivery.value == .deferred)
+        #expect((await harness.session.producerSnapshot()).queuedFrameCount == 0)
+        #expect(initialForegroundAdmission.withValidAdmission { true } == nil)
+
+        let successorReservation = try await reviewSource.reserve(
+            package: successorPackage, publicationId: successorPublicationId,
+            productAdmission: harness.productAdmission.context
         )
-        let heldFinalAcknowledged = await pump.acknowledgeFrameConsumed(heldFinalFrame.receipt)
+        _ = try await reviewSource.deliver(
+            publication: successor, reservation: successorReservation,
+            productAdmission: harness.productAdmission.context
+        )
+        replayProvider.publication = successor
         activityCoordinator.applyActivity(.foreground)
         await coordinator.resumeForegroundWork()
-        let replayedSourceRegistration = try #require(await pacingRegistrationIterator.next())
-        let replayedSourceDeliveries = try await pullAvailabilityMetadataFrames(
-            through: replayedSourceRegistration.sequence,
-            from: pump
-        )
-        let replayedSourceDelivery = try #require(replayedSourceDeliveries.last)
-        #expect(replayedSourceRegistration.lease == lease)
-        #expect(await pump.acknowledgeFrameConsumed(replayedSourceDelivery.receipt))
-        let replayedPacingRegistration = try #require(await pacingRegistrationIterator.next())
-        let replayedFinalSequence = replayedPacingRegistration.sequence
-        let replayedDeliveries = try await pullAvailabilityMetadataFrames(
-            through: replayedFinalSequence,
-            from: pump
-        )
-        let replayedFinalDelivery = try #require(replayedDeliveries.last)
-        #expect(replayedPacingRegistration.lease == lease)
-        #expect(replayedPacingRegistration.sequence == replayedFinalDelivery.receipt.sequence)
-        #expect(await pump.acknowledgeFrameConsumed(replayedFinalDelivery.receipt))
-        #expect(heldFinalAcknowledged)
-        #expect(interruptedDisposition == .deferred)
-        await traceRecorder.waitUntilPublicationCompleted()
-        #expect(
-            (await harness.session.producerSnapshot())
-                .pendingProducerObservationPacingWaiterCount == 0
-        )
-
-        // Assert
-        let replayedFrames = try (replayedSourceDeliveries + replayedDeliveries).map(
-            availabilityMetadataFrame(from:)
-        )
-        let replayedEvents = availabilityReviewMetadataEvents(in: replayedFrames)
-        #expect(replayedEvents.allSatisfy { $0.operationCorrelationID == nil })
-        #expect(
-            replayedEvents.contains {
-                if case .sourceAccepted = $0 { return true }
-                return false
-            })
-        #expect(
-            replayedEvents.contains {
-                if case .snapshot = $0 { return true }
-                return false
-            })
-        #expect(
-            await traceRecorder.publicationEvents.contains { event in
-                if case .completed = event { return true }
-                return false
-            }
-        )
-        #expect(initialForegroundAdmission.withValidAdmission { true } == nil)
+        var frames: [BridgeProductMetadataFrame] = []
+        for _ in 0..<(expectedItemIds.count + 3) {
+            frames.append(try await pullAvailabilityMetadataFrame(from: pump))
+        }
+        let itemKeys = await AvailabilityBatchKeyProjection().putKeys(in: frames)
+        let firstFrame = try #require(frames.first)
+        let lastFrame = try #require(frames.last)
+        guard case .batch(.begin(let begin)) = firstFrame,
+            case .batch(.complete) = lastFrame
+        else {
+            let observedKinds = await AvailabilityBatchKeyProjection().kindSummary(in: frames)
+            Issue.record(
+                "Expected a complete current Review W4 snapshot after foreground return; observed \(observedKinds)"
+            )
+            return
+        }
+        #expect(begin.publicationId == successor.publicationId)
+        #expect(begin.publicationId != predecessor.publicationId)
+        #expect(begin.identity.handle == scopeRequest.handle)
+        #expect(itemKeys == (await AvailabilityBatchKeyProjection().expectedKeys(for: expectedItemIds)))
+        #expect((await harness.session.producerSnapshot()).queuedFrameCount == 0)
         await coordinator.uninstall(lease: lease)
         #expect(await pump.cancel())
     }
@@ -643,7 +530,7 @@ struct BridgeProductReviewAvailabilityTests {
                 foregroundWorkAdmission: refreshWorkAdmission.admission
             )
         }
-        await source.waitUntilDeliverStarted()
+        #expect(await source.waitUntilDeliverStarted() == reservation.publicationId)
 
         let replacementHarness = try await BridgeProductSessionLifecycleHarness.opened()
         let replacementLease = try await replacementHarness.admitMetadataFrames(through: 0)
@@ -687,6 +574,29 @@ private enum AvailabilityCoordinatorTestError: Error {
     case publicationFailed
 }
 
+private actor AvailabilityBatchKeyProjection {
+    func orderedItemIds(in package: BridgeReviewPackage) -> [String] {
+        BridgePaneProductReviewMetadataSource.orderedItemIds(in: package)
+    }
+
+    func kindSummary(in frames: [BridgeProductMetadataFrame]) -> [String] {
+        frames.map(\.kind)
+    }
+
+    func expectedKeys(for itemIds: [String]) -> [String] {
+        itemIds.sorted() + ["publication"]
+    }
+
+    func putKeys(in frames: [BridgeProductMetadataFrame]) -> [String] {
+        frames.compactMap { frame in
+            guard case .batch(.part(let part)) = frame,
+                case .put(let key, _, _) = part.part
+            else { return nil }
+            return key
+        }
+    }
+}
+
 private enum AvailabilityReviewPublicationFailureMode: Sendable {
     case eventConstruction
     case producerRejection
@@ -706,43 +616,6 @@ private actor AvailabilityDeliveryDispositionProbe {
     }
 }
 
-private actor AvailabilityReviewPublicationTraceRecorder:
-    BridgeProductMetadataLifecycleTraceRecording
-{
-    private(set) var publicationEvents: [BridgeProductReviewMetadataPublicationTraceEvent] = []
-    private var publicationCompletionWaiters: [CheckedContinuation<Void, Never>] = []
-
-    func record(_: BridgeProductMetadataLifecycleTraceEvent) {}
-
-    func record(_ event: BridgeProductReviewMetadataPublicationTraceEvent) {
-        publicationEvents.append(event)
-        guard case .completed = event else { return }
-        let waiters = publicationCompletionWaiters
-        publicationCompletionWaiters.removeAll()
-        for waiter in waiters {
-            waiter.resume()
-        }
-    }
-
-    func waitUntilPublicationCompleted() async {
-        if hasCompletedPublication { return }
-        await withCheckedContinuation { continuation in
-            if hasCompletedPublication {
-                continuation.resume()
-            } else {
-                publicationCompletionWaiters.append(continuation)
-            }
-        }
-    }
-
-    private var hasCompletedPublication: Bool {
-        publicationEvents.contains { event in
-            if case .completed = event { return true }
-            return false
-        }
-    }
-}
-
 private actor AvailabilityThrowingReviewMetadataSource:
     BridgePaneProductReviewMetadataProducing
 {
@@ -754,14 +627,7 @@ private actor AvailabilityThrowingReviewMetadataSource:
 
     func open(
         subscription _: BridgeProductSubscriptionSnapshot,
-        productAdmission _: BridgeProductAdmissionContext,
-        emit _: @escaping BridgePaneProductReviewMetadataEventSink
-    ) async throws {}
-
-    func update(
-        subscription _: BridgeProductSubscriptionSnapshot,
-        productAdmission _: BridgeProductAdmissionContext,
-        emit _: @escaping BridgePaneProductReviewMetadataEventSink
+        productAdmission _: BridgeProductAdmissionContext
     ) async throws {}
 
     func reserve(
@@ -791,20 +657,13 @@ private actor AvailabilityThrowingReviewMetadataSource:
 private actor AvailabilitySuspendedFailingReviewMetadataSource:
     BridgePaneProductReviewMetadataProducing
 {
-    private var deliverStarted = false
-    private var deliverStartedWaiters: [CheckedContinuation<Void, Never>] = []
+    private var startedPublicationId: UUID?
+    private var deliverStartedWaiters: [CheckedContinuation<UUID, Never>] = []
     private var deliverRelease: CheckedContinuation<Void, Never>?
 
     func open(
         subscription _: BridgeProductSubscriptionSnapshot,
-        productAdmission _: BridgeProductAdmissionContext,
-        emit _: @escaping BridgePaneProductReviewMetadataEventSink
-    ) async throws {}
-
-    func update(
-        subscription _: BridgeProductSubscriptionSnapshot,
-        productAdmission _: BridgeProductAdmissionContext,
-        emit _: @escaping BridgePaneProductReviewMetadataEventSink
+        productAdmission _: BridgeProductAdmissionContext
     ) async throws {}
 
     func reserve(
@@ -816,14 +675,14 @@ private actor AvailabilitySuspendedFailingReviewMetadataSource:
     }
 
     func deliver(
-        publication _: BridgeReviewCommittedPublication,
+        publication: BridgeReviewCommittedPublication,
         reservation _: BridgeReviewMetadataPublicationReservation,
         productAdmission _: BridgeProductAdmissionContext
     ) async throws -> BridgePaneProductReviewMetadataPublicationOutcome {
-        deliverStarted = true
+        startedPublicationId = publication.publicationId
         let waiters = deliverStartedWaiters
         deliverStartedWaiters.removeAll(keepingCapacity: false)
-        for waiter in waiters { waiter.resume() }
+        for waiter in waiters { waiter.resume(returning: publication.publicationId) }
         await withCheckedContinuation { continuation in
             deliverRelease = continuation
         }
@@ -832,9 +691,9 @@ private actor AvailabilitySuspendedFailingReviewMetadataSource:
 
     func cancel(subscriptionId _: String) {}
 
-    func waitUntilDeliverStarted() async {
-        if deliverStarted { return }
-        await withCheckedContinuation { continuation in
+    func waitUntilDeliverStarted() async -> UUID {
+        if let startedPublicationId { return startedPublicationId }
+        return await withCheckedContinuation { continuation in
             deliverStartedWaiters.append(continuation)
         }
     }
@@ -854,12 +713,12 @@ private func openAvailabilityReviewSubscription(
         bridgeProductLifecycleReviewSubscriptionOpenObject(requestSequence: 2, epoch: 1)
     )
     let token = try #require(availabilityControlExecutionToken(try await harness.begin(openRequest)))
-    #expect(await harness.session.claimControlProviderDispatch(token: token))
+    #expect(await harness.session.admitControlProviderExecution(token: token))
     let response = try BridgeProductControlResponse.subscriptionOpenAccepted(
         correlating: openRequest,
-        interestSha256: BridgeProductSubscriptionInterestState.reviewMetadata(interests: []).sha256Hex()
+        worktreeId: nil
     )
-    let effect = try await harness.session.completeControl(
+    let effect = try await harness.session.completeAdmittedControl(
         token: token,
         exactResponseBytes: try JSONEncoder().encode(response)
     )
@@ -883,29 +742,6 @@ private func pullAvailabilityMetadataFrame(
     let frames = try decoder.append(delivery.frame.data)
     return try #require(frames.first)
 }
-private func pullAvailabilityMetadataFrames(
-    through expectedSequence: Int,
-    from pump: BridgeProductSchemeFramePump
-) async throws -> [BridgeProductProducerFrameDelivery] {
-    var deliveries: [BridgeProductProducerFrameDelivery] = []
-    while case .frame(let frame) = await pump.nextFrame() {
-        deliveries.append(frame)
-        if frame.receipt.sequence == expectedSequence {
-            return deliveries
-        }
-        #expect(await pump.acknowledgeFrameConsumed(frame.receipt))
-    }
-    Issue.record("Expected metadata frame sequence \(expectedSequence)")
-    throw CancellationError()
-}
-
-private func availabilityMetadataFrame(
-    from delivery: BridgeProductProducerFrameDelivery
-) throws -> BridgeProductMetadataFrame {
-    let decoder = try BridgeProductMetadataFrameDecoder()
-    return try #require(decoder.append(delivery.frame.data).first)
-}
-
 private func exerciseAvailabilityPublicationFailure(
     _ failureMode: AvailabilityReviewPublicationFailureMode,
     traceContext: BridgeTraceContext

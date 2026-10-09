@@ -6,7 +6,7 @@ import type {
 	Request as PlaywrightRequest,
 	Response as PlaywrightResponse,
 } from 'playwright';
-import { chromium, errors } from 'playwright';
+import { chromium } from 'playwright';
 
 import {
 	bridgeViewerProductOnlySelectors,
@@ -33,13 +33,26 @@ import {
 	bridgeViewerJourneyFailureCode,
 	BridgeViewerProductOnlyJourneyFailure,
 } from './product-only-real-router-failure.ts';
+import {
+	readPaintedFileMarkdown,
+	selectFileProofPath,
+	waitForFileProductTerminalState,
+} from './product-only-real-router-file-proof.ts';
 import { BridgeViewerLegacyMetadataCompletion } from './product-only-real-router-legacy-completion.ts';
+import { BridgeViewerProductOpenSettlementCorrelator } from './product-only-real-router-operation-settlements.ts';
 import { installBridgeViewerBrowserErrorCapture } from './product-only-real-router-page-error.ts';
 import {
 	BridgeViewerReloadJoinDiagnosticRecorder,
 	type BridgeViewerReloadJoinResponses,
 } from './product-only-real-router-reload-join-diagnostics.ts';
 import { GenerationScopedResponseParsers } from './product-only-real-router-response-parsers.ts';
+import {
+	correlatedContentUnknownReadRefusal,
+	integerValue,
+	parseJSONOrNull,
+	stringValue,
+	unknownRecord,
+} from './product-only-real-router-response-parsing.ts';
 import {
 	proveFreshReviewRoute,
 	proveReviewTreeSelection,
@@ -62,6 +75,7 @@ const maximumCapturedConsoleErrors = 32;
 const maximumCapturedConsoleErrorCharacters = 500;
 
 interface MutableProductRouteTranscriptEntry {
+	contentUnknownReadRefusalCorrelated?: boolean;
 	contentKind: string | null;
 	documentGeneration: number;
 	httpStatus: number | null;
@@ -74,6 +88,8 @@ interface MutableProductRouteTranscriptEntry {
 	requestSequence: number | null;
 	responseCode: string | null;
 	responseKind: string | null;
+	resultAcknowledged: boolean;
+	settledResponseKind: string | null;
 	streamKind: string | null;
 	subscriptionKind: string | null;
 	workerInstanceId: string | null;
@@ -94,9 +110,16 @@ interface MutableLegacyRouteTranscriptEntry {
 	sequence: number | null;
 }
 
+export interface BridgeViewerFileProofTargets {
+	readonly codePath: string;
+	readonly markdownPath: string;
+	readonly markdownRenderedText?: string;
+}
+
 export async function runBridgeViewerProductOnlyJourney(props: {
 	readonly baseUrl: string;
 	readonly expectedReviewItemIds: readonly string[];
+	readonly fileProofTargets: BridgeViewerFileProofTargets;
 }): Promise<BridgeViewerProductOnlyJourneyProof> {
 	const browser = await chromium.launch({ channel: 'chrome', headless: true });
 	const observedWorkers: MutableObservedWorker[] = [];
@@ -180,7 +203,27 @@ export async function runBridgeViewerProductOnlyJourney(props: {
 			timeout: productJourneyTimeoutMilliseconds,
 		});
 		await waitForViewerMode(page, 'file');
-		await waitForFileProductTerminalState(page);
+		await selectFileProofPath({
+			page,
+			path: props.fileProofTargets.markdownPath,
+			settleTimeoutMilliseconds: productCompositionSettleTimeoutMilliseconds,
+		});
+		const fileMarkdownAtReviewFirstSwitch = await readPaintedFileMarkdown({
+			page,
+			...(props.fileProofTargets.markdownRenderedText === undefined
+				? {}
+				: { expectedRenderedText: props.fileProofTargets.markdownRenderedText }),
+			settleTimeoutMilliseconds: productCompositionSettleTimeoutMilliseconds,
+		});
+		await selectFileProofPath({
+			page,
+			path: props.fileProofTargets.codePath,
+			settleTimeoutMilliseconds: productCompositionSettleTimeoutMilliseconds,
+		});
+		await waitForFileProductTerminalState({
+			page,
+			settleTimeoutMilliseconds: productCompositionSettleTimeoutMilliseconds,
+		});
 		const fileAfterReviewFirstSwitch = await readFileProductState(page);
 
 		pageUrl.searchParams.set('viewer', 'file');
@@ -192,17 +235,25 @@ export async function runBridgeViewerProductOnlyJourney(props: {
 		await page.waitForSelector(bridgeViewerProductOnlySelectors.fileShell, {
 			timeout: productJourneyTimeoutMilliseconds,
 		});
-		const [acknowledgementResponse, fileOpenResponse, reviewOpenResponse] = await Promise.all([
-			reloadJoinResponses.frameAcknowledgement,
+		const [receiptResponse, fileOpenResponse, reviewOpenResponse] = await Promise.all([
+			reloadJoinResponses.subscriptionReceipt,
 			reloadJoinResponses.fileMetadataOpen,
 			reloadJoinResponses.reviewMetadataOpen,
 		]);
 		if (
-			acknowledgementResponse.status() === 204 &&
+			receiptResponse.status() === 200 &&
 			fileOpenResponse.status() === 200 &&
 			reviewOpenResponse.status() === 200
 		) {
-			await waitForFileProductTerminalState(page);
+			await selectFileProofPath({
+				page,
+				path: props.fileProofTargets.codePath,
+				settleTimeoutMilliseconds: productCompositionSettleTimeoutMilliseconds,
+			});
+			await waitForFileProductTerminalState({
+				page,
+				settleTimeoutMilliseconds: productCompositionSettleTimeoutMilliseconds,
+			});
 		}
 		const fileAfterFirstAcknowledgement = await readFileProductState(page);
 		const journeyDocumentGenerationAtStart = documentGenerations.currentGeneration();
@@ -218,7 +269,10 @@ export async function runBridgeViewerProductOnlyJourney(props: {
 			timeout: productJourneyTimeoutMilliseconds,
 		});
 		await waitForViewerMode(page, 'file');
-		await waitForFileProductTerminalState(page);
+		await waitForFileProductTerminalState({
+			page,
+			settleTimeoutMilliseconds: productCompositionSettleTimeoutMilliseconds,
+		});
 		await routeObserver.waitForObservedLegacyMetadataCompletion();
 		await routeObserver.waitForAllProductResponses();
 		await routeObserver.flushResponseParsers();
@@ -240,6 +294,7 @@ export async function runBridgeViewerProductOnlyJourney(props: {
 			fileAfterReviewFirstSwitch,
 			fileAfterFirstAcknowledgement,
 			fileAtCompletion: await readFileProductState(page),
+			fileMarkdownAtReviewFirstSwitch,
 			legacyIntakeTranscript: await readLegacyIntakeTranscript(page),
 			legacyRouteTranscript: routeObserver.legacyRouteTranscript(),
 			mainWindowProductRouteTranscript: await readMainWindowProductRouteTranscript(page),
@@ -424,6 +479,7 @@ export class BridgeViewerRealRouterObserver {
 		MutableLegacyRouteTranscriptEntry
 	>();
 	readonly #responseParsers = new GenerationScopedResponseParsers();
+	readonly #openSettlements = new BridgeViewerProductOpenSettlementCorrelator();
 	readonly #productResponseClosureWaiters = new Set<() => void>();
 	readonly #unfinishedProductRequests = new Set<PlaywrightRequest>();
 	readonly #reloadJoinDiagnostics = new BridgeViewerReloadJoinDiagnosticRecorder();
@@ -533,6 +589,8 @@ export class BridgeViewerRealRouterObserver {
 				path: requestUrl.pathname,
 				responseCode: null,
 				responseKind: null,
+				resultAcknowledged: false,
+				settledResponseKind: null,
 				requestSettled: false,
 			};
 			this.#productEntries.push(entry);
@@ -657,10 +715,19 @@ export class BridgeViewerRealRouterObserver {
 		response: PlaywrightResponse,
 		entry: MutableProductRouteTranscriptEntry,
 	): Promise<void> {
-		const body = parseJSONOrNull(await response.text());
-		const summary = summarizeBridgeProductResponseBody(body);
-		entry.responseCode = summary.responseCode;
-		entry.responseKind = summary.responseKind;
+		let body: unknown;
+		if (entry.requestKind === 'content.acknowledge' && response.status() === 404) {
+			const responseBytes = await response.body();
+			body = parseJSONOrNull(new TextDecoder().decode(responseBytes));
+			entry.contentUnknownReadRefusalCorrelated = correlatedContentUnknownReadRefusal(
+				response.request().postData(),
+				responseBytes,
+			);
+		} else {
+			body = parseJSONOrNull(await response.text());
+		}
+		Object.assign(entry, summarizeBridgeProductResponseBody(body));
+		this.#openSettlements.observe(entry, parseJSONOrNull(response.request().postData()), body);
 	}
 
 	async #parseLegacyMetadataResponse(
@@ -772,54 +839,6 @@ async function readLegacyIntakeTranscript(
 		};
 		return (window as ProofWindow).bridgeViewerProductOnlyLegacyIntakeTranscript ?? [];
 	});
-}
-
-async function waitForFileProductTerminalState(page: Page): Promise<boolean> {
-	return await waitForProductCompositionState(async (): Promise<void> => {
-		await page.waitForFunction(
-			(selectors): boolean => {
-				const shell = document.querySelector(selectors.fileShell);
-				const codeCanvas = document.querySelector(selectors.fileCodeCanvas);
-				const selectedContentState = shell?.getAttribute('data-worktree-open-file-state');
-				const selectedPath = shell?.getAttribute('data-worktree-open-file-path');
-				const renderedPath = codeCanvas?.getAttribute('data-worktree-rendered-file-path');
-				const bodyPreview = codeCanvas?.getAttribute('data-worktree-open-file-body-preview');
-				return (
-					Number(shell?.getAttribute('data-worktree-metadata-tree-row-count') ?? '0') > 0 &&
-					selectedContentState === 'ready' &&
-					selectedPath !== null &&
-					renderedPath === selectedPath &&
-					typeof bodyPreview === 'string' &&
-					bodyPreview.length > 0 &&
-					isVisibleInPage(codeCanvas)
-				);
-
-				// oxlint-disable-next-line unicorn/consistent-function-scoping -- Playwright serializes this browser callback without outer helpers.
-				function isVisibleInPage(element: Element | null): boolean {
-					if (!(element instanceof HTMLElement) || element.closest('[hidden]') !== null)
-						return false;
-					const style = getComputedStyle(element);
-					return (
-						style.display !== 'none' &&
-						style.visibility !== 'hidden' &&
-						element.getClientRects().length > 0
-					);
-				}
-			},
-			bridgeViewerProductOnlySelectors,
-			{ timeout: productCompositionSettleTimeoutMilliseconds },
-		);
-	});
-}
-
-async function waitForProductCompositionState(wait: () => Promise<void>): Promise<boolean> {
-	try {
-		await wait();
-		return true;
-	} catch (error: unknown) {
-		if (error instanceof errors.TimeoutError) return false;
-		throw error;
-	}
 }
 
 async function readFileProductState(page: Page): Promise<BridgeViewerFileProductStateSnapshot> {
@@ -943,31 +962,6 @@ function classifyObservedWorker(url: string, documentGeneration: number): Mutabl
 function safeWorkerUrl(url: string): string {
 	const parsedUrl = new URL(url);
 	return `${parsedUrl.pathname}${parsedUrl.search}`;
-}
-
-function parseJSONOrNull(value: string | null): unknown {
-	if (value === null || value.length === 0) return null;
-	try {
-		return JSON.parse(value) as unknown;
-	} catch {
-		return null;
-	}
-}
-
-function unknownRecord(value: unknown): Readonly<Record<string, unknown>> | null {
-	return isUnknownRecord(value) ? value : null;
-}
-
-function isUnknownRecord(value: unknown): value is Readonly<Record<string, unknown>> {
-	return typeof value === 'object' && value !== null && !Array.isArray(value);
-}
-
-function stringValue(value: unknown): string | null {
-	return typeof value === 'string' ? value : null;
-}
-
-function integerValue(value: unknown): number | null {
-	return typeof value === 'number' && Number.isSafeInteger(value) ? value : null;
 }
 
 async function withBoundedTimeout<TValue>(

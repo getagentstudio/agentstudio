@@ -111,7 +111,7 @@ enum BridgeDevelopmentHTTPApplication {
         do {
             delivery = try await host.issueBootstrap(for: bootstrapRequest)
         } catch BridgeDevelopmentProductHostError.sessionAlreadyOpen {
-            return Response(status: .conflict)
+            throw HTTPError(.conflict)
         }
         return Response(
             status: .ok,

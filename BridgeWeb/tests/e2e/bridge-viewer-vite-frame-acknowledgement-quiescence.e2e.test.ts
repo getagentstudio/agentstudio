@@ -5,7 +5,7 @@ import type { Browser, Page, Request } from 'playwright';
 import { expect, test } from 'vitest';
 
 import { launchBridgeViewerE2EChromium } from './bridge-viewer-vite-e2e-browser.ts';
-import { observeFrameAcknowledgementQuiescence } from './bridge-viewer-vite-frame-acknowledgement-quiescence.ts';
+import { observeSubscriptionReceiptQuiescence } from './bridge-viewer-vite-frame-acknowledgement-quiescence.ts';
 
 const acknowledgementCommandPath = '/__bridge-product/command';
 
@@ -19,7 +19,7 @@ interface HeldAcknowledgementOrigin {
 
 /**
  * One local HTTP origin whose page starts a dedicated Web Worker that POSTs a
- * `stream.frameObserved` acknowledgement on demand, and which holds every such POST open until the
+ * typed `subscription.acknowledge` receipt on demand, and which holds every such POST open until the
  * test releases it. Playwright route interception does not reach dedicated-worker requests, so the
  * hold has to be a real server. Neither the Swift backend nor the Vite dev server takes part.
  */
@@ -36,7 +36,10 @@ const acknowledgementCommandUrl = ${JSON.stringify(acknowledgementCommandUrl)};
 const workerSource =
   'self.fetch(' + JSON.stringify(acknowledgementCommandUrl) + ', {' +
   "method: 'POST', headers: {'content-type': 'application/json'}," +
-  "body: JSON.stringify({kind: 'stream.frameObserved'})})" +
+  "body: JSON.stringify({domain: 'default', handle: 'handle-1', incarnation: 'incarnation-1'," +
+  "kind: 'subscription.acknowledge', paneSessionId: 'pane-session-1'," +
+  "receivedThroughDeliverySequence: 1, subscriptionId: 'subscription-1'," +
+  "wireVersion: 2, workerInstanceId: 'worker-instance-1'})})" +
   '.then(function (response) { return response.text(); }).catch(function () {});';
 const workerUrl = URL.createObjectURL(new Blob([workerSource], { type: 'text/javascript' }));
 const liveWorkers = [];
@@ -79,7 +82,19 @@ window.addEventListener('message', function (event) {
 		releaseHeldAcknowledgements: (): void => {
 			for (const response of heldAcknowledgements.splice(0)) {
 				response.writeHead(200, { 'content-type': 'application/json' });
-				response.end('{}');
+				response.end(
+					JSON.stringify({
+						domain: 'default',
+						handle: 'handle-1',
+						incarnation: 'incarnation-1',
+						kind: 'subscription.acknowledged',
+						paneSessionId: 'pane-session-1',
+						receivedThroughDeliverySequence: 1,
+						subscriptionId: 'subscription-1',
+						wireVersion: 2,
+						workerInstanceId: 'worker-instance-1',
+					}),
+				);
 			}
 		},
 		requestAcknowledgementPost: async (page: Page): Promise<void> => {
@@ -122,7 +137,7 @@ test('frame acknowledgement quiescence forgets a destroyed document’s acknowle
 	const browser: Browser = await launchBridgeViewerE2EChromium();
 	try {
 		const page = await browser.newPage();
-		const observer = observeFrameAcknowledgementQuiescence(page);
+		const observer = observeSubscriptionReceiptQuiescence(page);
 		await page.goto(`${origin.origin}/`, { waitUntil: 'load' });
 		await issueHeldAcknowledgement({ origin, page });
 		expect(observer.pendingAcknowledgementCount()).toBe(1);
@@ -145,7 +160,7 @@ test('frame acknowledgement quiescence still observes the document created by th
 	const browser: Browser = await launchBridgeViewerE2EChromium();
 	try {
 		const page = await browser.newPage();
-		const observer = observeFrameAcknowledgementQuiescence(page);
+		const observer = observeSubscriptionReceiptQuiescence(page);
 		await page.goto(`${origin.origin}/`, { waitUntil: 'load' });
 		await issueHeldAcknowledgement({ origin, page });
 		await page.reload({ waitUntil: 'load' });

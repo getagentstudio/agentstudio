@@ -40,7 +40,8 @@ extension BridgePaneController {
         reservation: BridgePaneRefreshCatchUpReservation,
         packageTraceContext: BridgeTraceContext?
     ) -> Bool {
-        !Task.isCancelled
+        guard productAdmission.withValidAdmission({ isReviewShownByPage }) == true else { return false }
+        return !Task.isCancelled
             && foregroundWorkAdmission.withValidAdmission({ true }) == true
             && refreshAdmissionCoordinator.isRefreshPassCurrent(reservation)
             && refreshGeneration == nextReviewGeneration
@@ -147,13 +148,33 @@ extension BridgePaneController {
     }
 
     private func scheduleReviewCatchUpIfPossible() {
+        guard !hasPendingOrResumingExplicitReviewCommand else { return }
+        guard let dirtyFact = refreshAdmissionCoordinator.diagnosticSnapshot.dirtyFact,
+            dirtyFact.requiresReviewRefresh
+        else { return }
+        let hiddenInput = BridgePaneReviewBuildAdmissionInput.filesystemCatchUp(
+            batchSequence: dirtyFact.latestBatchSequence
+        )
+        guard productAdmissionGate.isOpen else { return }
+        let isReviewShown = isReviewShownByPage
+        guard isReviewShown else {
+            recordReviewBuildAdmissionFact(
+                .deferredHidden(input: hiddenInput),
+                scope: .hiddenInput(hiddenInput)
+            )
+            return
+        }
         guard activeReviewRefreshTask == nil,
+            !hasCurrentReviewPackageLoad,
+            pendingComparisonReviewGeneration == nil,
             let firstReservation = refreshAdmissionCoordinator.reserveForegroundRefreshPass(for: .review)
         else { return }
 
         // fire-and-forget: publication joins the presentation tail; closeAndDrain awaits it
         _ = scheduleProductPresentationPublication()
         let taskId = UUIDv7.generate()
+        let factScope: BridgePaneReviewBuildAdmissionScope = .attempt(taskId)
+        recordReviewBuildAdmissionFact(.admitted(attempt: taskId), scope: factScope)
         activeReviewRefreshTaskId = taskId
         activeReviewRefreshTask = Task { @MainActor [weak self] in
             guard let self else { return }
@@ -203,6 +224,25 @@ extension BridgePaneController {
                 guard outcome == .succeeded else { break }
             }
             self.retiringReviewRefreshTaskById.removeValue(forKey: taskId)
+            let admissionOutcome: BridgePaneReviewBuildAttemptOutcome
+            if Task.isCancelled {
+                admissionOutcome = .cancelled
+            } else {
+                switch finalOutcome {
+                case .succeeded:
+                    admissionOutcome = .succeeded
+                case .failed:
+                    admissionOutcome = .failed
+                case .stale:
+                    admissionOutcome = .stale
+                case .streamReset:
+                    admissionOutcome = .streamReset
+                }
+            }
+            self.recordReviewBuildAdmissionFact(
+                .attemptEnded(attempt: taskId, outcome: admissionOutcome),
+                scope: factScope
+            )
             guard self.activeReviewRefreshTaskId == taskId else { return }
             self.activeReviewRefreshTask = nil
             self.activeReviewRefreshTaskId = nil
@@ -213,8 +253,8 @@ extension BridgePaneController {
         }
     }
 
-    func retireActiveReviewRefreshTask() {
-        if let productAdmission = productAdmissionGate.acquire() {
+    func retireActiveReviewRefreshTask(preservePendingPublication: Bool = false) {
+        if !preservePendingPublication, let productAdmission = productAdmissionGate.acquire() {
             reviewPublicationCoordinator.supersedePendingPublication(
                 productAdmission: productAdmission
             )
@@ -228,11 +268,32 @@ extension BridgePaneController {
         activeReviewRefreshTaskId = nil
     }
 
+    func fenceHiddenReviewBuildIfNeeded() {
+        guard activeReviewRefreshTask != nil else { return }
+        if let activeReviewPackageLoad {
+            guard
+                !reviewPublicationCoordinator.hasStartedPublication(
+                    reviewGeneration: activeReviewPackageLoad.reviewGeneration
+                )
+            else { return }
+            pendingReviewPackageBuildReasons.insert(activeReviewPackageLoad.buildReason)
+        } else if let operationCorrelationID = refreshAdmissionCoordinator.productPresentationSnapshot
+            .operationCorrelationID,
+            reviewPublicationCoordinator.hasStartedPublication(operationCorrelationID: operationCorrelationID)
+        {
+            return
+        }
+        refreshAdmissionCoordinator.advanceAuthority(for: .review)
+        retireActiveReviewRefreshTask(preservePendingPublication: true)
+    }
+
     private func performReviewCatchUp(
         _ reservation: BridgePaneRefreshCatchUpReservation
     ) async -> BridgePaneRefreshCatchUpOutcome {
         guard reservation.foregroundWorkAdmission.withValidAdmission({ true }) == true,
-            let productAdmission = productAdmissionGate.acquire()
+            let paneAdmission = productAdmissionGate.acquire(),
+            let installation = productSessionOwner.installationFenceProjection.snapshot.installation,
+            let productAdmission = paneAdmission.withInstallation(installation.gate)
         else { return .stale }
         return await refreshCurrentReviewPackage(
             reservation: reservation,

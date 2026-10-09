@@ -20,6 +20,7 @@ struct BridgeDevelopmentProductHostDisplayLifecycleTests {
         let commitObserver = ReviewPublicationCommitObserver()
         let host = try await BridgeDevelopmentProductHost(
             source: makeDevelopmentProductSource(worktreeRoot: repositoryURL),
+            operationDeadlineClock: TestPushClock(),
             contributionTargetCommit: developmentContributionTargetCommit(
                 worktreeRoot: repositoryURL
             ),
@@ -61,6 +62,7 @@ struct BridgeDevelopmentProductHostDisplayLifecycleTests {
         try await FilesystemTestGitRepo.seedTrackedAndUntrackedChanges(at: repositoryURL)
         let host = try await BridgeDevelopmentProductHost(
             source: makeDevelopmentProductSource(worktreeRoot: repositoryURL),
+            operationDeadlineClock: TestPushClock(),
             contributionTargetCommit: developmentContributionTargetCommit(
                 worktreeRoot: repositoryURL
             ),

@@ -10,6 +10,7 @@ describe('Bridge worker annotation convergence authority', () => {
 		const readyState = {
 			contentSessionIds: [],
 			kind: 'ready' as const,
+			stageAttempt: 0,
 			snapshot: {
 				expectedMessageCount: 0,
 				expectedSessionCount: 0,

@@ -1,6 +1,11 @@
 import Foundation
 import GRDB
 
+private struct SessionsLoadedEvidence {
+    let records: [SessionsEvidenceRecord]
+    let bindingStartRecordIds: Set<UUID>
+}
+
 extension SessionsRepositoryStorage {
     fileprivate static func loadConversation(
         database: Database,
@@ -53,17 +58,20 @@ extension SessionsRepositoryStorage {
                 bindings: bindings,
                 sources: try loadSources(database: database, paneId: paneId),
                 // Hook decisions use bindings; `.pane` owns lazy status-history hydration.
-                evidence: []
+                evidence: [],
+                bindingStartRecordIds: []
             )
         case .pane(let paneId):
             let bindings = try loadBindings(database: database, paneId: paneId)
+            let evidence = try loadEvidence(database: database, paneId: paneId)
             return SessionsRepositoryContext(
                 revision: revision,
                 matchingConversation: nil,
                 currentBinding: bindings.first,
                 bindings: bindings,
                 sources: try loadSources(database: database, paneId: paneId),
-                evidence: try loadEvidence(database: database, paneId: paneId)
+                evidence: evidence.records,
+                bindingStartRecordIds: evidence.bindingStartRecordIds
             )
 
         }
@@ -137,20 +145,32 @@ extension SessionsRepositoryStorage {
         ).map(decodeSource)
     }
 
-    fileprivate static func loadEvidence(database: Database, paneId: UUID) throws -> [SessionsEvidenceRecord] {
-        try Row.fetchAll(
+    private static func loadEvidence(database: Database, paneId: UUID) throws -> SessionsLoadedEvidence {
+        let rows = try Row.fetchAll(
             database,
             sql: """
-                SELECT evidence.*
+                SELECT evidence.*, operation.operation_kind AS admission_operation_kind
                 FROM sessions_evidence AS evidence
                 JOIN sessions_pane_binding AS binding
                   ON binding.binding_generation_id = evidence.binding_generation_id
+                JOIN sessions_operation AS operation
+                  ON operation.commit_revision = evidence.committed_revision
                 WHERE binding.pane_id = ?
                 ORDER BY evidence.admission_sequence IS NOT NULL,
                          evidence.admission_sequence,
                          evidence.occurred_at, evidence.occurrence_id
                 """,
             arguments: [paneId.uuidString]
-        ).map { try decodeEvidence($0, database: database) }
+        )
+        var bindingStartRecordIds = Set<UUID>()
+        let records = try rows.map { row in
+            let record = try decodeEvidence(row, database: database)
+            let operationKind: String = row["admission_operation_kind"]
+            if record.providerSignal == .sessionStart, operationKind == "bind" {
+                bindingStartRecordIds.insert(record.recordId)
+            }
+            return record
+        }
+        return .init(records: records, bindingStartRecordIds: bindingStartRecordIds)
     }
 }

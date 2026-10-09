@@ -205,6 +205,89 @@ export async function waitForVisibleReviewTreeFilePath(props: {
 	);
 }
 
+export async function selectReviewTreeFilePath(props: {
+	readonly page: Page;
+	readonly path: string;
+}): Promise<void> {
+	const previousSearchValue = await props.page.evaluate(
+		async (path: string): Promise<string | null> => {
+			const treeHost = document.querySelector(
+				'[data-testid="bridge-review-trees-panel"] file-tree-container',
+			);
+			const shadowRoot = treeHost?.shadowRoot;
+			if (shadowRoot === null || shadowRoot === undefined) {
+				throw new Error('Expected Review tree shadow root before selecting a file.');
+			}
+			const targetFileButton = (): HTMLElement | undefined =>
+				Array.from(shadowRoot.querySelectorAll('button[data-item-path]')).find(
+					(candidate): candidate is HTMLElement =>
+						candidate instanceof HTMLElement &&
+						candidate.dataset['itemPath'] === path &&
+						candidate.dataset['itemType'] === 'file' &&
+						!candidate.hasAttribute('data-file-tree-sticky-row') &&
+						!candidate.hasAttribute('data-item-parked'),
+				);
+			if (targetFileButton() !== undefined) return null;
+
+			const searchInput = shadowRoot.querySelector('input[data-file-tree-search-input]');
+			if (!(searchInput instanceof HTMLInputElement)) {
+				throw new Error(
+					`Review file row is not rendered and the tree search input is unavailable: ${path}`,
+				);
+			}
+			const previousValue = searchInput.value;
+			await new Promise<void>((resolve): void => {
+				const observer = new MutationObserver((): void => {
+					if (targetFileButton() === undefined) return;
+					observer.disconnect();
+					resolve();
+				});
+				observer.observe(shadowRoot, { attributes: true, childList: true, subtree: true });
+				searchInput.value = path;
+				searchInput.dispatchEvent(new InputEvent('input', { bubbles: true }));
+				if (targetFileButton() !== undefined) {
+					observer.disconnect();
+					resolve();
+				}
+			});
+			return previousValue;
+		},
+		props.path,
+	);
+
+	try {
+		await props.page.evaluate((path: string): void => {
+			const treeHost = document.querySelector(
+				'[data-testid="bridge-review-trees-panel"] file-tree-container',
+			);
+			const row = Array.from(
+				treeHost?.shadowRoot?.querySelectorAll('button[data-item-path]') ?? [],
+			).find(
+				(candidate): candidate is HTMLElement =>
+					candidate instanceof HTMLElement &&
+					candidate.dataset['itemPath'] === path &&
+					candidate.dataset['itemType'] === 'file' &&
+					!candidate.hasAttribute('data-file-tree-sticky-row') &&
+					!candidate.hasAttribute('data-item-parked'),
+			);
+			if (row === undefined) throw new Error(`Review file row missing: ${path}`);
+			row.scrollIntoView({ block: 'center', inline: 'nearest' });
+			row.click();
+		}, props.path);
+	} finally {
+		if (previousSearchValue !== null) {
+			await props.page.evaluate((value: string): void => {
+				const searchInput = document
+					.querySelector('[data-testid="bridge-review-trees-panel"] file-tree-container')
+					?.shadowRoot?.querySelector('input[data-file-tree-search-input]');
+				if (!(searchInput instanceof HTMLInputElement)) return;
+				searchInput.value = value;
+				searchInput.dispatchEvent(new InputEvent('input', { bubbles: true }));
+			}, previousSearchValue);
+		}
+	}
+}
+
 export async function collectInPageReviewTreeClickPerformanceSample(props: {
 	readonly displayPath: string;
 	readonly page: Page;

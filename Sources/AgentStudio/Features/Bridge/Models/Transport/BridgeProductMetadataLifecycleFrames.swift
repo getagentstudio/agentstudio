@@ -21,43 +21,6 @@ struct BridgeProductSubscriptionProgressIdentity: Equatable, Sendable {
     }
 }
 
-struct BridgeProductSubscriptionInterestsCommittedFrame: Codable, Equatable, Sendable {
-    private enum CodingKeys: String, CodingKey, CaseIterable {
-        case kind
-        case updateId
-    }
-
-    let identity: BridgeProductSubscriptionProgressIdentity
-    let updateId: String
-
-    init(from decoder: Decoder) throws {
-        try BridgeProductContractDecoding.rejectUnknownKeys(
-            from: decoder,
-            allowedKeys: BridgeProductSubscriptionProgressIdentity.codingKeyNames.union(
-                CodingKeys.allCases.map(\.rawValue)
-            ),
-            contract: "subscription.interestsCommitted frame"
-        )
-        let container = try decoder.container(keyedBy: CodingKeys.self)
-        guard try container.decode(String.self, forKey: .kind) == "subscription.interestsCommitted" else {
-            throw BridgeProductContractDecoding.invalidValue(
-                "Invalid subscription.interestsCommitted frame kind",
-                codingPath: decoder.codingPath
-            )
-        }
-        self.updateId = try container.decode(String.self, forKey: .updateId)
-        self.identity = try BridgeProductSubscriptionProgressIdentity(from: decoder)
-        try BridgeProductContractDecoding.validateIdentifier(updateId, codingPath: decoder.codingPath)
-    }
-
-    func encode(to encoder: Encoder) throws {
-        try identity.encode(to: encoder)
-        var container = encoder.container(keyedBy: CodingKeys.self)
-        try container.encode("subscription.interestsCommitted", forKey: .kind)
-        try container.encode(updateId, forKey: .updateId)
-    }
-}
-
 struct BridgeProductSubscriptionResetFrame: Codable, Equatable, Sendable {
     private enum CodingKeys: String, CodingKey, CaseIterable {
         case kind

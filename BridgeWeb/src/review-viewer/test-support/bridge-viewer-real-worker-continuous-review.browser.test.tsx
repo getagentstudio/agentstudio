@@ -2,9 +2,10 @@ import { act } from 'react';
 import { afterEach, describe, expect, test } from 'vitest';
 import { cleanup, render } from 'vitest-browser-react';
 
+import { installBridgeReadyHandshake } from '../../app/bridge-app-browser-test-actions.js';
+
 // oxlint-disable-next-line import/no-unassigned-import -- Browser Mode must load production app CSS.
 import '../../app/bridge-app.css';
-import { installBridgeReadyHandshake } from '../../app/bridge-app-browser-test-actions.js';
 import { parseBridgeAppDevFixtureOptions } from '../../app/bridge-app-dev-fixture.js';
 import {
 	installBridgeAppDevProductSessionHost,
@@ -15,6 +16,7 @@ import {
 	createBridgePaneRuntime,
 	type BridgePaneRuntime,
 } from '../../core/comm-worker/bridge-pane-runtime.js';
+import pageConfigurationFixture from '../../test-fixtures/bridge-contract-fixtures/valid/bridge-page-configuration.json' with { type: 'json' };
 import { ensureBridgeCodeViewThemeResolved } from '../code-view/bridge-code-view-theme.js';
 import { createBridgePierrePortableBlobWorkerFactory } from '../workers/pierre/bridge-pierre-dev-worker-factory.js';
 import { terminateBridgePierreWorkerPoolSingletonForTest } from '../workers/pierre/bridge-pierre-worker-pool.js';
@@ -80,7 +82,11 @@ describe('Bridge Review real-product continuous hydration', () => {
 					codeViewWorkerPoolEnabled
 					paneRuntimeFactory={() => {
 						activePaneRuntime ??= createBridgePaneRuntime({
-							sessionProps: { workerFactory: createBridgeCommWorkerModuleWorker },
+							sessionProps: {
+								bootstrapTimeoutMilliseconds:
+									pageConfigurationFixture.workerBootstrapDeadlineMilliseconds,
+								workerFactory: createBridgeCommWorkerModuleWorker,
+							},
 						});
 						return activePaneRuntime;
 					}}

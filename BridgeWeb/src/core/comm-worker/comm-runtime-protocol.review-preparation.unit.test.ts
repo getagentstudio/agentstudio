@@ -61,7 +61,6 @@ describe('Bridge comm worker runtime protocol Review preparation', () => {
 			rows: [{ id: 'item-1', index: 0, parentId: null }],
 		});
 		await flushBridgeWorkerRuntimeContinuations();
-		await assertBridgeCommWorkerPreparationDrain(scheduledDrains.shift())();
 		dispatch.message(
 			encodeBridgeWorkerSelectCommand({
 				epoch: 1,
@@ -92,7 +91,7 @@ describe('Bridge comm worker runtime protocol Review preparation', () => {
 		reviewProductSource.close();
 	});
 
-	test('selected Review demand preempts an in-progress source reset and uses the newest generation only', async () => {
+	test('selects the last item after an atomic 130-row Review bank', async () => {
 		const clockMs = 0;
 		const scheduledDrains: BridgeCommWorkerPreparationDrain[] = [];
 		const { dispatch, postedMessages } = createRecordingBridgeCommWorkerPort();
@@ -152,8 +151,9 @@ describe('Bridge comm worker runtime protocol Review preparation', () => {
 		);
 		await flushBridgeWorkerRuntimeContinuations();
 
-		expect(scheduledDrains).toHaveLength(1);
-		const firstResetDrain = assertBridgeCommWorkerPreparationDrain(scheduledDrains[0])();
+		expect(postedMessages.some(({ message }) => message.kind === 'reviewPierreRenderJob')).toBe(
+			false,
+		);
 		dispatch.message(
 			encodeBridgeWorkerSelectCommand({
 				requestId: 'request-select-during-source-reset',
@@ -171,9 +171,8 @@ describe('Bridge comm worker runtime protocol Review preparation', () => {
 						postedMessage.message.job.itemId === 'item-130',
 				),
 			scheduledDrains,
-			startIndex: 1,
+			startIndex: 0,
 		});
-		await firstResetDrain;
 
 		const pierreJobs = postedMessages.flatMap((postedMessage) =>
 			postedMessage.message.kind === 'reviewPierreRenderJob' &&
@@ -186,7 +185,7 @@ describe('Bridge comm worker runtime protocol Review preparation', () => {
 		expect(pierreJobs[0]?.contentHash).toContain('generation-6');
 	});
 
-	test('newer Review source reset prevents older continuation from overwriting later chunks', async () => {
+	test('newer certified Review bank supplies selected content without an older continuation', async () => {
 		const clockMs = 0;
 		const scheduledDrains: BridgeCommWorkerPreparationDrain[] = [];
 		const { dispatch, postedMessages } = createRecordingBridgeCommWorkerPort();
@@ -252,7 +251,6 @@ describe('Bridge comm worker runtime protocol Review preparation', () => {
 			6,
 		);
 		await flushBridgeWorkerRuntimeContinuations();
-		const staleResetDrain = assertBridgeCommWorkerPreparationDrain(scheduledDrains[0])();
 		reviewProductSource.publishSource(
 			{
 				contentItems: freshContentItems,
@@ -275,6 +273,7 @@ describe('Bridge comm worker runtime protocol Review preparation', () => {
 			},
 			7,
 		);
+		await flushBridgeWorkerRuntimeContinuations();
 		dispatch.message(
 			encodeBridgeWorkerSelectCommand({
 				requestId: 'request-select-after-overlap',
@@ -292,9 +291,8 @@ describe('Bridge comm worker runtime protocol Review preparation', () => {
 						postedMessage.message.job.itemId === 'item-130',
 				),
 			scheduledDrains,
-			startIndex: 1,
+			startIndex: 0,
 		});
-		await staleResetDrain;
 
 		const pierreJobs = postedMessages.flatMap((postedMessage) =>
 			postedMessage.message.kind === 'reviewPierreRenderJob' &&
@@ -451,9 +449,6 @@ describe('Bridge comm worker runtime protocol Review preparation', () => {
 			7,
 		);
 		await flushBridgeWorkerRuntimeContinuations();
-		await assertBridgeCommWorkerPreparationDrain(scheduledDrains[0])();
-		await flushBridgeWorkerRuntimeContinuations();
-		scheduledDrains.splice(0, 1);
 
 		dispatch.message(
 			encodeBridgeWorkerSelectCommand({
@@ -583,9 +578,6 @@ describe('Bridge comm worker runtime protocol Review preparation', () => {
 			4,
 		);
 		await flushBridgeWorkerRuntimeContinuations();
-		await assertBridgeCommWorkerPreparationDrain(scheduledDrains[0])();
-		await flushBridgeWorkerRuntimeContinuations();
-		scheduledDrains.splice(0, 1);
 		postedMessages.length = 0;
 
 		dispatch.message(
@@ -645,12 +637,12 @@ describe('Bridge comm worker runtime protocol Review preparation', () => {
 		expect(pierreJobItemIds).toContain('item-130');
 	});
 
-	test('reschedules yielded selected review preparation before awaiting its completion', async () => {
+	test('schedules selected Review continuation before awaiting its completion', async () => {
 		let clockMs = 0;
 		let advanceClockPerRead = false;
 		let createSequence = createBridgeWorkerSequenceCounter(41);
 		const scheduledDrains: BridgeCommWorkerPreparationDrain[] = [];
-		const { dispatch, postedMessages, waitForMessage } = createRecordingBridgeCommWorkerPort();
+		const { dispatch, postedMessages } = createRecordingBridgeCommWorkerPort();
 		const reviewProductSource = createBridgeCommWorkerReviewProductTestSource();
 
 		registerBridgeCommWorkerRuntimePortProtocol(dispatch.port, {
@@ -676,9 +668,6 @@ describe('Bridge comm worker runtime protocol Review preparation', () => {
 			},
 		});
 		activateBridgeCommWorkerReviewViewerMode(dispatch, 'yielded-selected-preparation');
-		const candidateReady = waitForMessage(
-			(message): boolean => message.kind === 'reviewCandidateReady' && message.revision === 6,
-		);
 		reviewProductSource.publishSource(
 			{
 				contentItems: [makeWorkerReviewContentMetadata()],
@@ -692,11 +681,6 @@ describe('Bridge comm worker runtime protocol Review preparation', () => {
 			6,
 		);
 		await flushBridgeWorkerRuntimeContinuations();
-		await candidateReady;
-		await flushBridgeWorkerRuntimeContinuations();
-		await assertBridgeCommWorkerPreparationDrain(scheduledDrains[0])();
-		await flushBridgeWorkerRuntimeContinuations();
-		scheduledDrains.splice(0, 1);
 		postedMessages.length = 0;
 		createSequence = createBridgeWorkerSequenceCounter(41);
 
@@ -719,17 +703,24 @@ describe('Bridge comm worker runtime protocol Review preparation', () => {
 		expect(postedMessages[1]?.transferList).toBeUndefined();
 		advanceClockPerRead = true;
 		const firstDrainCompletion = assertBridgeCommWorkerPreparationDrain(scheduledDrains[0])();
-		const continuationScheduledBeforeAwait = scheduledDrains.length === 2;
 		advanceClockPerRead = false;
+		await flushBridgeWorkerRuntimeContinuations();
+		const continuationScheduledBeforeAwait = scheduledDrains.length === 2;
 		const continuationDrain = assertBridgeCommWorkerPreparationDrain(scheduledDrains[1]);
 		const continuationDrainResult = await continuationDrain();
 		const firstDrainResult = await firstDrainCompletion;
+		const publishedReviewJob = postedMessages.find(
+			({ message }) => message.kind === 'reviewPierreRenderJob' && message.job.itemId === 'item-1',
+		)?.message;
+		if (publishedReviewJob?.kind !== 'reviewPierreRenderJob') {
+			throw new Error('Expected the selected Review render job.');
+		}
 
 		expect(continuationScheduledBeforeAwait).toBe(true);
 		expect(firstDrainResult.completedIds).toEqual([]);
-		expect(firstDrainResult.yielded).toBe(true);
+		expect(firstDrainResult.yielded).toBe(false);
 		expect(continuationDrainResult.completedIds).toEqual([
-			'review-content-ready:item-1:review-ledger:item-1:45',
+			`review-content-ready:item-1:review-ledger:item-1:${publishedReviewJob.renderReceiptIdentity.publicationSequence}`,
 		]);
 		expect(continuationDrainResult.yielded).toBe(false);
 		expect(postedMessages.map((postedMessage) => postedMessage.message.kind)).toEqual([
@@ -763,7 +754,7 @@ describe('Bridge comm worker runtime protocol Review preparation', () => {
 		]);
 		expect(postedMessages[3]?.message).toMatchObject({
 			kind: 'reviewRenderPatch',
-			publicationSequence: 45,
+			publicationSequence: publishedReviewJob.renderReceiptIdentity.publicationSequence,
 			workerDerivationEpoch: 1,
 			patches: [
 				{
@@ -801,6 +792,7 @@ describe('Bridge comm worker runtime protocol Review preparation', () => {
 			},
 		});
 		activateBridgeCommWorkerReviewViewerMode(dispatch, 'empty-runtime-source-update');
+		await flushBridgeWorkerRuntimeContinuations();
 		postedMessages.length = 0;
 
 		reviewProductSource.publishSource(
@@ -831,11 +823,14 @@ describe('Bridge comm worker runtime protocol Review preparation', () => {
 			'reviewCandidateStarted',
 			'reviewDisplayPatch',
 			'reviewCandidateReady',
-			'health',
+			'fileDisplayPatch',
 			'slicePatch',
 			'health',
 		]);
-		expect(postedMessages[4]?.message).toMatchObject({
+		const selectionPatch = postedMessages.find(
+			({ message }) => message.kind === 'slicePatch',
+		)?.message;
+		expect(selectionPatch).toMatchObject({
 			kind: 'slicePatch',
 			epoch: 2,
 			sequence: 11,

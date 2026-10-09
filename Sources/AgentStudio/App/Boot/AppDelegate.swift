@@ -160,7 +160,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         traceRuntime: AgentStudioTraceRuntime,
         startupTraceRecorder: AgentStudioStartupTraceRecorder
     ) {
-        self.octiconLoader = OcticonLoader(resourceRootURL: Bundle.appResourceRootURL)
+        self.octiconLoader = OcticonLoader(resourceBundle: Bundle.appResources)
         self.traceRuntime = traceRuntime
         self.performanceTraceRecorder = AgentStudioPerformanceTraceRecorder(
             traceRuntime: traceRuntime,

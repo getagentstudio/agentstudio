@@ -1,3 +1,4 @@
+import type { BridgeWorkerRuntimeRecoverySource } from '../../foundation/diagnostics/bridge-worker-replacement-reason.js';
 import { bridgeRenderDispositionAdmissionPolicy } from '../demand/bridge-content-demand-policy.js';
 import type { BridgeCommWorkerTelemetryRecorder } from './bridge-comm-worker-telemetry.js';
 import {
@@ -6,7 +7,7 @@ import {
 } from './bridge-render-disposition-telemetry.js';
 import {
 	bridgeWorkerRenderDispositionBatchMaximumReceiptCount,
-	type BridgeWorkerRenderDispositionReceipt,
+	type BridgeWorkerRenderAdmissionReceipt,
 } from './bridge-worker-render-fulfillment.js';
 import type { BridgePaneSurface } from './bridge-worker-rpc-client.js';
 import type { BridgeWorkerRpcLifecycleStore } from './bridge-worker-rpc-lifecycle-store.js';
@@ -30,19 +31,25 @@ export interface BridgeMainRenderDispositionAdmissionSnapshot {
 
 export interface BridgeMainRenderDispositionAdmission {
 	readonly dispose: () => void;
-	readonly enqueue: (receipt: BridgeWorkerRenderDispositionReceipt) => void;
+	readonly enqueue: (receipt: BridgeWorkerRenderAdmissionReceipt) => void;
 	readonly prepareForWorkerReplacement: () => void;
 	readonly resumeAfterWorkerReplacement: () => void;
+	readonly resumeAfterViewRecovery: () => void;
 	readonly snapshot: () => BridgeMainRenderDispositionAdmissionSnapshot;
 }
 
 export interface CreateBridgeMainRenderDispositionAdmissionProps {
-	readonly dispatchBatch: (receipts: readonly BridgeWorkerRenderDispositionReceipt[]) => string;
+	readonly dispatchBatch: (receipts: readonly BridgeWorkerRenderAdmissionReceipt[]) => string;
 	readonly lifecycleStore: BridgeWorkerRpcLifecycleStore;
 	readonly maximumBatchSize?: number;
 	readonly maximumPendingReceiptCount?: number;
 	readonly now?: () => number;
-	readonly requestWorkerReplacement: () => void;
+	readonly onProbeExhausted?: () => void;
+	readonly onPublicationSettled?: (settlement: {
+		readonly publicationId: string;
+		readonly outcome: 'settled-ok' | 'settled-failed';
+	}) => void;
+	readonly requestWorkerReplacement: (source: BridgeWorkerRuntimeRecoverySource) => void;
 	readonly surface: BridgePaneSurface;
 	readonly telemetryClient?: BridgeCommWorkerTelemetryRecorder;
 }
@@ -50,7 +57,7 @@ export interface CreateBridgeMainRenderDispositionAdmissionProps {
 interface PendingReceipt {
 	readonly enqueuedAtMilliseconds: number;
 	readonly key: string;
-	readonly receipt: BridgeWorkerRenderDispositionReceipt;
+	readonly receipt: BridgeWorkerRenderAdmissionReceipt;
 }
 
 interface InFlightBatch {
@@ -58,6 +65,7 @@ interface InFlightBatch {
 	readonly duplicateReceiptCountAtDispatch: number;
 	readonly kind: 'ordinary' | 'probe';
 	readonly receiptKeys: readonly string[];
+	readonly receipts: readonly BridgeWorkerRenderAdmissionReceipt[];
 	readonly receiptCount: number;
 	readonly requestId: string;
 }
@@ -82,6 +90,10 @@ export function createBridgeMainRenderDispositionAdmission(
 	const admittedReceiptKeys = new Set<string>();
 	const now = props.now ?? performance.now.bind(performance);
 	const pendingReceipts: PendingReceipt[] = [];
+	const pendingPublicationReceipts = new Map<
+		string,
+		{ count: number; hasPaintedReceipt: boolean; failed: boolean }
+	>();
 	let deliveryState: BridgeMainRenderDispositionDeliveryState = 'ordinary';
 	let duplicateReceiptCount = 0;
 	let producedReceiptCount = 0;
@@ -95,6 +107,7 @@ export function createBridgeMainRenderDispositionAdmission(
 
 	const clearReceipts = (): void => {
 		pendingReceipts.length = 0;
+		pendingPublicationReceipts.clear();
 		admittedReceiptKeys.clear();
 		inFlightBatch = null;
 	};
@@ -161,6 +174,7 @@ export function createBridgeMainRenderDispositionAdmission(
 			kind,
 			receiptCount: entries.length,
 			receiptKeys: entries.map((entry) => entry.key),
+			receipts: entries.map((entry) => entry.receipt),
 			requestId,
 		};
 		recordAdmissionTelemetry({
@@ -179,12 +193,26 @@ export function createBridgeMainRenderDispositionAdmission(
 		inFlightBatch = null;
 		for (const key of settledBatch.receiptKeys) admittedReceiptKeys.delete(key);
 		const workerProgressed = request.state === 'acked' || request.state === 'failed';
-		let shouldRequestWorkerReplacement = false;
+		let probeExhausted = false;
 		const outcome: BridgeRenderDispositionTerminalOutcome =
 			request.state === 'acked' ? 'acked' : request.state === 'failed' ? 'degraded' : 'timed_out';
+		for (const receipt of settledBatch.receipts) {
+			const publication = pendingPublicationReceipts.get(receipt.publicationId);
+			if (publication === undefined) continue;
+			publication.count -= 1;
+			if (request.state !== 'acked') publication.failed = true;
+			if (publication.count !== 0) continue;
+			pendingPublicationReceipts.delete(receipt.publicationId);
+			if (publication.hasPaintedReceipt) {
+				props.onPublicationSettled?.({
+					publicationId: receipt.publicationId,
+					outcome: publication.failed ? 'settled-failed' : 'settled-ok',
+				});
+			}
+		}
 		if (settledBatch.kind === 'probe') {
 			deliveryState = workerProgressed ? 'ordinary' : 'stalled';
-			shouldRequestWorkerReplacement = !workerProgressed;
+			probeExhausted = !workerProgressed;
 		} else if (request.state === 'timed_out' || request.state === 'superseded') {
 			deliveryState = 'probe_available';
 		} else {
@@ -203,8 +231,8 @@ export function createBridgeMainRenderDispositionAdmission(
 			outcome,
 			phase: 'render_disposition_batch_terminal',
 		});
-		if (shouldRequestWorkerReplacement) {
-			props.requestWorkerReplacement();
+		if (probeExhausted) {
+			props.onProbeExhausted?.();
 			return;
 		}
 		dispatchNextBatch();
@@ -228,6 +256,15 @@ export function createBridgeMainRenderDispositionAdmission(
 		});
 		clearReceipts();
 	};
+	const resumeAdmission = (): void => {
+		if (isDisposed) return;
+		clearReceipts();
+		duplicateReceiptCount = 0;
+		pendingReceiptHighWaterMark = 0;
+		producedReceiptCount = 0;
+		deliveryState = 'ordinary';
+		subscribeLifecycle();
+	};
 
 	return {
 		dispose: (): void => {
@@ -247,6 +284,15 @@ export function createBridgeMainRenderDispositionAdmission(
 			}
 			producedReceiptCount += 1;
 			admittedReceiptKeys.add(key);
+			const publication = pendingPublicationReceipts.get(receipt.publicationId) ?? {
+				count: 0,
+				failed: false,
+				hasPaintedReceipt: false,
+			};
+			publication.count += 1;
+			publication.hasPaintedReceipt ||=
+				receipt.kind === 'render.disposition' && receipt.disposition === 'painted';
+			pendingPublicationReceipts.set(receipt.publicationId, publication);
 			pendingReceipts.push({ enqueuedAtMilliseconds: now(), key, receipt });
 			pendingReceiptHighWaterMark = Math.max(pendingReceiptHighWaterMark, retainedReceiptCount());
 			if (retainedReceiptCount() >= maximumPendingReceiptCount) {
@@ -256,21 +302,14 @@ export function createBridgeMainRenderDispositionAdmission(
 				recordAdmissionTelemetry({
 					phase: 'render_disposition_admission_overloaded',
 				});
-				props.requestWorkerReplacement();
+				props.requestWorkerReplacement('renderDispositionOverload');
 				return;
 			}
 			dispatchNextBatch();
 		},
 		prepareForWorkerReplacement,
-		resumeAfterWorkerReplacement: (): void => {
-			if (isDisposed) return;
-			clearReceipts();
-			duplicateReceiptCount = 0;
-			pendingReceiptHighWaterMark = 0;
-			producedReceiptCount = 0;
-			deliveryState = 'ordinary';
-			subscribeLifecycle();
-		},
+		resumeAfterWorkerReplacement: resumeAdmission,
+		resumeAfterViewRecovery: resumeAdmission,
 		snapshot: (): BridgeMainRenderDispositionAdmissionSnapshot => ({
 			deliveryState,
 			duplicateReceiptCount,
@@ -283,9 +322,7 @@ export function createBridgeMainRenderDispositionAdmission(
 	};
 }
 
-function bridgeRenderDispositionAdmissionKey(
-	receipt: BridgeWorkerRenderDispositionReceipt,
-): string {
+function bridgeRenderDispositionAdmissionKey(receipt: BridgeWorkerRenderAdmissionReceipt): string {
 	return JSON.stringify([
 		receipt.paneSessionId,
 		receipt.workerInstanceId,
@@ -298,7 +335,7 @@ function bridgeRenderDispositionAdmissionKey(
 		receipt.workerDerivationEpoch,
 		receipt.windowKey,
 		receipt.operationCorrelationId,
-		receipt.disposition,
+		receipt.kind === 'paint.released' ? receipt.kind : receipt.disposition,
 		'reason' in receipt ? receipt.reason : null,
 	]);
 }

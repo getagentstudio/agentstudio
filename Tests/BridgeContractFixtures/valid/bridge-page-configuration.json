@@ -1,0 +1,4 @@
+{
+  "workerBootstrapDeadlineMilliseconds": 5000,
+  "readyAcknowledgementDeadlineMilliseconds": 5000
+}

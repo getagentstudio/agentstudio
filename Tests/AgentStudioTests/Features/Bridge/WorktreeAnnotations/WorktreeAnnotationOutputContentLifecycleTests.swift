@@ -279,23 +279,21 @@ struct WorktreeAnnotationOutputContentLifecycleTests {
         while true {
             let delivery = try await nextFrame(for: lease, in: harness)
             let frame = try #require(decoder.append(delivery.frame.data).first)
-            let observed = await harness.session.acknowledgeContentFrameObservation(
-                try contentFrameAcknowledgement(
-                    for: request.admission,
-                    contentSequence: delivery.frame.sequence
-                ),
-                productAdmission: harness.productAdmission.context
-            )
             switch frame.header {
             case .data:
+                let observed = await harness.session.acknowledgeContentFrameObservation(
+                    try contentFrameAcknowledgement(
+                        for: request.admission,
+                        contentSequence: delivery.frame.sequence
+                    ),
+                    productAdmission: harness.productAdmission.context
+                )
                 #expect(observed)
                 body.append(frame.payload)
             case .end:
-                #expect(observed)
                 try await harness.closeProducer(lease)
                 return .init(body: body, errorMessage: nil)
             case .error(let header):
-                #expect(observed)
                 try await harness.closeProducer(lease)
                 return .init(body: body, errorMessage: header.safeMessage)
             case .accepted, .reset:
@@ -315,6 +313,11 @@ struct WorktreeAnnotationOutputContentLifecycleTests {
         guard case .frame(let delivery) = result else {
             throw TestError.expectedFrame
         }
+        #expect(
+            await harness.session.acknowledgeProducerFrameConsumed(
+                delivery.receipt,
+                productAdmission: harness.productAdmission.context
+            ))
         return delivery
     }
 
@@ -326,11 +329,10 @@ struct WorktreeAnnotationOutputContentLifecycleTests {
             BridgeProductContentFrameAcknowledgement.self,
             from: try JSONSerialization.data(withJSONObject: [
                 "contentRequestId": admission.contentRequestId,
-                "contentSequence": contentSequence,
-                "kind": "stream.frameObserved",
+                "receivedThroughContentSequence": contentSequence,
+                "kind": "content.acknowledge",
                 "leaseId": admission.leaseId,
                 "paneSessionId": admission.paneSessionId,
-                "streamKind": "content",
                 "wireVersion": admission.wireVersion,
                 "workerInstanceId": admission.workerInstanceId,
             ])

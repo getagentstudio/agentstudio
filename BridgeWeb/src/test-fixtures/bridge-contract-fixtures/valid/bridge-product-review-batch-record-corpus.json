@@ -1,0 +1,189 @@
+{
+  "records": [
+    {
+      "recordKey": "review-item-1",
+      "record": {
+        "recordKind": "item",
+        "itemId": "review-item-1",
+        "sortKey": 0,
+        "parentPath": "src",
+        "basePath": null,
+        "headPath": "src/New.swift",
+        "changeKind": "added",
+        "fileClass": "source",
+        "language": "swift",
+        "extension": "swift",
+        "mimeTypes": [
+          "text/x-swift"
+        ],
+        "additions": 3,
+        "deletions": 0,
+        "isHiddenByDefault": false,
+        "provenance": {
+          "agentSessionIds": [],
+          "operationIds": [],
+          "promptIds": []
+        },
+        "reviewPriority": "normal",
+        "reviewState": "unreviewed",
+        "contentByRole": {
+          "base": {
+            "state": "absent"
+          },
+          "diff": {
+            "state": "unavailable"
+          },
+          "file": {
+            "state": "absent"
+          },
+          "head": {
+            "state": "available",
+            "source": {
+              "contentDigest": {
+                "algorithm": "sha256",
+                "authority": "authoritative",
+                "value": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+              },
+              "contentKind": "review.content",
+              "descriptorId": "review-descriptor-1",
+              "encoding": "utf-8",
+              "endpointId": "review-endpoint-1",
+              "handleId": "review-handle-1",
+              "isBinary": false,
+              "itemId": "review-item-1",
+              "language": "swift",
+              "mimeType": "text/x-swift",
+              "packageId": "review-package-1",
+              "reviewGeneration": 7,
+              "role": "head",
+              "sourceIdentity": "review-query-1",
+              "wholeByteLength": 12
+            }
+          }
+        },
+        "contentHashesByRole": {
+          "diff": "diff-unavailable-hash-1",
+          "head": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        },
+        "extentByRole": {
+          "base": null,
+          "diff": null,
+          "file": null,
+          "head": 3
+        }
+      }
+    },
+    {
+      "recordKey": "publication",
+      "record": {
+        "recordKind": "publication",
+        "classifiedRefreshImpact": null,
+        "desired": {
+          "reviewComparison": null,
+          "status": "ready"
+        },
+        "displayed": null,
+        "publicationId": "00000000-0000-7000-8000-000000000012",
+        "revision": 1
+      }
+    },
+    {
+      "recordKey": "publication",
+      "record": {
+        "recordKind": "publication",
+        "classifiedRefreshImpact": {
+          "preDeliveryPresentationClass": { "kind": "promoted", "reason": "files" },
+          "newlyImportedCommitCount": 0,
+          "affectedFileCount": 100,
+          "addedLineCount": 3,
+          "deletedLineCount": 0,
+          "affectedStableFileIdentities": ["review-item-1"]
+        },
+        "desired": {
+          "reviewComparison": {
+            "activeTarget": { "basis": "commonCommit", "kind": "branch", "name": "origin/feature" },
+            "attempt": { "failureKind": "sourceUnavailable", "retryable": true, "status": "unavailable" },
+            "displayedSnapshot": {
+              "packageId": "review-package-1",
+              "reviewGeneration": 7,
+              "revision": 0,
+              "status": "stale"
+            },
+            "repositoryDefaultTarget": null
+          },
+          "status": "failedRetryable"
+        },
+        "publicationId": "00000000-0000-7000-8000-000000000013",
+        "revision": 12,
+        "displayed": {
+          "baseEndpoint": {
+            "createdAtUnixMilliseconds": 1,
+            "endpointId": "review-base-endpoint",
+            "kind": "gitRef",
+            "label": "main",
+            "providerIdentity": "git-ref:main",
+            "repoId": "repo-1",
+            "worktreeId": "worktree-1"
+          },
+          "comparisonOrigin": null,
+          "generation": 7,
+          "headEndpoint": {
+            "createdAtUnixMilliseconds": 2,
+            "endpointId": "review-head-endpoint",
+            "kind": "workingTree",
+            "label": "Working Tree",
+            "providerIdentity": "working-tree",
+            "repoId": "repo-1",
+            "worktreeId": "worktree-1"
+          },
+          "packageId": "review-package-1",
+          "publicationId": "00000000-0000-7000-8000-000000000011",
+          "query": {
+            "baseEndpointId": "review-base-endpoint",
+            "comparisonSemantics": "threeDot",
+            "fileTarget": null,
+            "grouping": {
+              "kind": "folder"
+            },
+            "headEndpointId": "review-head-endpoint",
+            "pathScope": [],
+            "provenanceFilter": {
+              "agentSessionIds": [],
+              "operationIds": [],
+              "paneIds": [],
+              "promptIds": [],
+              "sourceKinds": []
+            },
+            "queryId": "review-query-1",
+            "queryKind": "compare",
+            "repoId": "repo-1",
+            "viewFilter": {
+              "changeKinds": [],
+              "excludedExtensions": [],
+              "excludedFileClasses": [],
+              "excludedPathGlobs": [],
+              "includedExtensions": [],
+              "includedFileClasses": [],
+              "includedPathGlobs": [],
+              "reviewStates": [],
+              "showBinaryFiles": true,
+              "showHiddenFiles": false,
+              "showLargeFiles": true
+            },
+            "worktreeId": "worktree-1"
+          },
+          "reviewComparison": null,
+          "reviewedSubjectLabel": "feature/review",
+          "revision": 0,
+          "summary": {
+            "additions": 3,
+            "deletions": 0,
+            "filesChanged": 1,
+            "hiddenFileCount": 0,
+            "visibleFileCount": 1
+          }
+        }
+      }
+    }
+  ]
+}

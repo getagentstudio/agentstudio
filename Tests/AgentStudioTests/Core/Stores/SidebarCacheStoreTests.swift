@@ -1,3 +1,4 @@
+import AgentStudioTestHarness
 import AgentStudioTestSupport
 import Foundation
 import Testing
@@ -62,6 +63,8 @@ struct SidebarCacheStoreTests {
 
     @Test
     func observedCollapseChangeAutosavesSQLite() async throws {
+        let factSource = SidebarCacheStoreFactSource()
+        let facts = try factSource.attach()
         let workspaceId = UUID()
         let fixture = try makeWorkspaceLocalSQLiteStoreFixture(workspaceId: workspaceId)
         let atom = SidebarCacheState()
@@ -71,7 +74,8 @@ struct SidebarCacheStoreTests {
             atom: atom,
             sqliteDatastore: try await preparedWorkspaceSQLiteDatastore(from: fixture.sqliteBackend),
             persistDebounceDuration: .milliseconds(10),
-            clock: clock
+            clock: clock,
+            factSink: factSource.sink
         )
         await store.restoreAsync(for: workspaceId)
         store.startObserving()
@@ -80,13 +84,15 @@ struct SidebarCacheStoreTests {
         await clock.waitForPendingSleepCount()
         clock.advance(by: .milliseconds(10))
 
-        await assertEventuallyMain("collapsed group should autosave") {
-            (try? fixture.repository.fetchCollapsedGroups()) == [collapsedGroup]
-        }
+        _ = try await facts.expectNextSaveCompleted(workspaceId: workspaceId)
+        #expect(try fixture.repository.fetchCollapsedGroups() == [collapsedGroup])
+        try await facts.finish()
     }
 
     @Test
     func directWriteOwnerMutationAutosavesThroughComposedState() async throws {
+        let factSource = SidebarCacheStoreFactSource()
+        let facts = try factSource.attach()
         let workspaceId = UUID()
         let fixture = try makeWorkspaceLocalSQLiteStoreFixture(workspaceId: workspaceId)
         let collapsedGroupAtom = SidebarCollapsedGroupAtom()
@@ -97,7 +103,8 @@ struct SidebarCacheStoreTests {
             atom: atom,
             sqliteDatastore: try await preparedWorkspaceSQLiteDatastore(from: fixture.sqliteBackend),
             persistDebounceDuration: .milliseconds(10),
-            clock: clock
+            clock: clock,
+            factSink: factSource.sink
         )
         await store.restoreAsync(for: workspaceId)
         store.startObserving()
@@ -106,9 +113,9 @@ struct SidebarCacheStoreTests {
         await clock.waitForPendingSleepCount()
         clock.advance(by: .milliseconds(10))
 
-        await assertEventuallyMain("write-owner mutation should autosave") {
-            (try? fixture.repository.fetchCollapsedGroups()) == [collapsedGroup]
-        }
+        _ = try await facts.expectNextSaveCompleted(workspaceId: workspaceId)
+        #expect(try fixture.repository.fetchCollapsedGroups() == [collapsedGroup])
+        try await facts.finish()
     }
 
     @Test

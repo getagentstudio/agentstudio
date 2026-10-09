@@ -98,6 +98,8 @@ package enum AgentStudioOTLPTraceProjection {
         "agentstudio.bridge.worker.lane",
         "agentstudio.bridge.worker.payload_class",
         "agentstudio.bridge.worker.review_select_dispatch",
+        "agentstudio.bridge.worker.replacement_reason",
+        "agentstudio.bridge.worker.replacement_source",
         "agentstudio.bridge.worker.semantic_class",
         "agentstudio.bridge.worker.session_state",
         "agentstudio.bridge.worker.task_kind",

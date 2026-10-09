@@ -11,10 +11,8 @@ import Testing
 @testable import AgentStudioTestSupport
 
 @MainActor
-func makeInboxNotificationTestOcticonLoader(from testFilePath: String = #filePath) -> OcticonLoader {
-    OcticonLoader(
-        resourceRootURL: testAgentStudioResourceRootURL(from: testFilePath)
-    )
+func makeInboxNotificationTestOcticonLoader() -> OcticonLoader {
+    OcticonLoader(resourceBundle: Bundle.appResources)
 }
 
 @MainActor

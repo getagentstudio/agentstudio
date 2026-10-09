@@ -10,6 +10,9 @@ export function assertCommittedAnnotationOutcome(
 }
 
 export function annotationErrorMessage(error: unknown): string {
+	if (error instanceof Error && error.message === 'invalidSource') {
+		return 'The file changed. Your comment has not been saved. Update the file and select the intended lines again.';
+	}
 	return error instanceof Error ? error.message : 'Annotation operation failed.';
 }
 

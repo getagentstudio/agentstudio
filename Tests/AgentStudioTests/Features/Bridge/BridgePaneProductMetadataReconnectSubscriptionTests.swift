@@ -1,4 +1,5 @@
 import AgentStudioCore
+import AgentStudioTestHarness
 import Foundation
 import Testing
 
@@ -6,27 +7,11 @@ import Testing
 
 @Suite("Bridge pane product metadata reconnect subscription")
 struct BridgeMetadataReconnectTests {
-    @Test(
-        "reconnection does not retain a subscription with an undeliverable sequence gap",
-        arguments: [false, true]
-    )
-    func reconnectDoesNotRetainUndeliverableSubscriptionSequenceGap(
-        publicationAfterReconciliation: Bool
-    ) async throws {
-        // Arrange: the worker observed through stream sequence 3. A later
-        // publication is queued by Swift but lost with the physical response.
+    @Test("physical reconnect retains File E3 and resnapshots after a sealed batch was lost")
+    func reconnectResnapshotsLostFileBatchWithoutReopeningSubscription() async throws {
         let context = try await makeReconnectSubscriptionContext()
-        let resyncRequest = try reconnectResyncRequest(
-            subscription: context.retainedSubscription,
-            lastAcceptedStreamSequence: 3
-        )
-        let precedingResponse: BridgeProductControlResponse? =
-            publicationAfterReconciliation
-            ? try await dispatchReconnectControl(
-                resyncRequest,
-                dispatcher: context.dispatcher,
-                capabilityHeader: context.harness.capabilityHeader
-            ) : nil
+        let observedSequence = context.initialBatch.identity.frame.streamSequence
+        let initialSubscription = context.retainedSubscription
         let disposition = await context.provider.publishFileChangeset(
             try reconnectFileChangeset(),
             productAdmission: context.harness.productAdmission.context,
@@ -34,80 +19,75 @@ struct BridgeMetadataReconnectTests {
             operationCorrelationID: String(repeating: "d", count: 64),
             operationStageAttempt: 1
         )
-        if publicationAfterReconciliation {
-            #expect(disposition == .applied || disposition == .notRequired)
-        } else {
-            #expect(disposition == .applied)
+        #expect(disposition == .applied)
+        guard case .batch(.begin(let lostBegin)) = try await pullMetadataFrame(from: context.firstStream.pump),
+            case .batch(.part(let lostPart)) = try await pullMetadataFrame(from: context.firstStream.pump)
+        else {
+            Issue.record("Expected a sealed File batch to begin before physical retirement")
+            await context.provider.closeAndDrain()
+            return
         }
-        if disposition == .applied {
-            #expect(await context.harness.session.producerSnapshot().queuedFrameCount > 0)
-        }
+        #expect(lostBegin.identity.frame.streamSequence > observedSequence)
+        #expect(lostPart.identity.batchId == lostBegin.identity.batchId)
+        #expect(lostPart.identity.subscriptionId == initialSubscription.subscriptionId)
         #expect(await context.firstStream.pump.cancel())
 
-        // Act: reconcile from the worker's actual last observation, not the
-        // native queue head, then consume the first replacement subscription frame.
-        let response: BridgeProductControlResponse
-        if let precedingResponse {
-            response = precedingResponse
-        } else {
-            response = try await dispatchReconnectControl(
-                resyncRequest,
-                dispatcher: context.dispatcher,
-                capabilityHeader: context.harness.capabilityHeader
-            )
-        }
+        let response = try await dispatchReconnectControl(
+            reconnectResyncRequest(
+                subscription: context.retainedSubscription,
+                lastAcceptedStreamSequence: observedSequence
+            ),
+            dispatcher: context.dispatcher,
+            capabilityHeader: context.harness.capabilityHeader
+        )
         guard case .resyncAccepted(let accepted) = response else {
             await context.provider.closeAndDrain()
-            Issue.record("Expected reconciliation of interrupted metadata")
+            Issue.record("Expected physical stream reconciliation after the lost File batch")
             return
         }
-        if case .reopenRequired(let reopened) = accepted.reconciliation.first {
-            // A fresh subscription identity can establish its own sequence zero.
-            #expect(reopened.reason == .snapshotRequired)
-            #expect(
-                await context.harness.session.subscriptionSnapshot(
-                    subscriptionId: context.retainedSubscription.subscriptionId
-                ) == nil
-            )
-            await context.provider.closeAndDrain()
-            #expect(await context.harness.session.producerSnapshot().hasZeroResidue)
-            return
-        }
+        #expect(accepted.reconciliation.map(\.dispositionName) == ["retained"])
+        #expect(
+            await context.harness.session.subscriptionSnapshot(
+                subscriptionId: initialSubscription.subscriptionId
+            ) == initialSubscription
+        )
         let replacement = try await installReconnectMetadataStream(
             request: bridgeProductMetadataStreamRequest(
-                metadataStreamId: "metadata-after-lost-frame",
+                metadataStreamId: "metadata-after-lost-file-batch",
                 resumeFromStreamSequence: accepted.metadataStreamSequenceBarrier
             ),
             provider: context.provider,
             harness: context.harness
         )
-        await waitForReconnectSourceActivity(context.fileSource)
-        // The pump suspends until a frame exists, so there is nothing to poll for and no
-        // need to gate the pull on a queue count.
-        let frame = try await pullMetadataFrame(from: replacement.pump)
+        let resnapshotResponse = try await dispatchReconnectControl(
+            reconnectFileResnapshotRequest(),
+            dispatcher: context.dispatcher,
+            capabilityHeader: context.harness.capabilityHeader
+        )
+        let replacementComplete = try await pullPostReconnectPublication(from: replacement.pump)
+        let sourceDiagnostics = await context.fileSource.diagnostics
         #expect(await replacement.pump.cancel())
         await context.provider.closeAndDrain()
 
-        // Assert: retaining an identity must preserve the worker's strict next
-        // subscription sequence. A physical-stream barrier cannot waive this.
+        #expect(resnapshotResponse.kind == "subscription.resnapshotAccepted")
+        #expect(replacementComplete.identity.frame.metadataStreamId == "metadata-after-lost-file-batch")
+        #expect(replacementComplete.identity.subscriptionId == initialSubscription.subscriptionId)
+        #expect(replacementComplete.identity.handle == lostBegin.identity.handle)
+        #expect(replacementComplete.identity.scopeRevision == lostBegin.identity.scopeRevision)
+        #expect(sourceDiagnostics.publicationCallCount == 1)
         #expect(await context.harness.session.producerSnapshot().hasZeroResidue)
-        guard case .subscriptionData(let data) = frame else {
-            Issue.record("Expected contiguous source data or explicit fresh-subscription reconciliation")
-            return
-        }
-        #expect(
-            data.subscriptionIdentity.subscriptionSequence
-                == context.committedInterest.identity.subscriptionIdentity.subscriptionSequence + 1
-        )
     }
 
     @Test("metadata reattachment restores subscriptions reconciled while disconnected")
     func restoresReconciledSubscriptionsWhenMetadataReattaches() async throws {
         // Arrange
         let context = try await makeReconnectSubscriptionContext()
+        let before = await context.fileSource.diagnostics
         #expect(await context.firstStream.pump.cancel())
         let response = try await dispatchReconnectControl(
-            reconnectResyncRequest(subscription: context.retainedSubscription, lastAcceptedStreamSequence: 3),
+            reconnectResyncRequest(
+                subscription: context.retainedSubscription,
+                lastAcceptedStreamSequence: context.initialBatch.identity.frame.streamSequence),
             dispatcher: context.dispatcher,
             capabilityHeader: context.harness.capabilityHeader
         )
@@ -138,18 +118,21 @@ struct BridgeMetadataReconnectTests {
             disposition == .applied
             ? try await pullPostReconnectPublication(from: replacement.pump)
             : nil
+        await context.fileSource.waitForUpdateCallCount(before.updateCallCount + 1)
+        let sourceDiagnostics = await context.fileSource.diagnostics
         #expect(await replacement.pump.cancel())
         await context.provider.closeAndDrain()
 
         // Assert
         #expect(await context.harness.session.producerSnapshot().hasZeroResidue)
         #expect(disposition == .applied)
-        guard case .subscriptionData(let data) = frame else {
+        guard let data = frame else {
             Issue.record("Expected post-reattachment source publication")
             return
         }
-        #expect(data.frameIdentity.metadataStreamId == "metadata-reattached")
-        #expect(data.subscriptionIdentity.interestRevision == 1)
+        #expect(data.identity.frame.metadataStreamId == "metadata-reattached")
+        #expect(sourceDiagnostics.viewHandle == "file-reconnect-view-handle")
+        #expect(sourceDiagnostics.scopeRevision == 1)
     }
 
     @Test("session reconciliation remains available after its metadata response closes")
@@ -159,7 +142,7 @@ struct BridgeMetadataReconnectTests {
         #expect(await context.firstStream.pump.cancel())
         let request = try reconnectResyncRequest(
             subscription: context.retainedSubscription,
-            lastAcceptedStreamSequence: 3
+            lastAcceptedStreamSequence: context.initialBatch.identity.frame.streamSequence
         )
 
         // Act
@@ -176,56 +159,55 @@ struct BridgeMetadataReconnectTests {
             Issue.record("A closed metadata response must not disable its session reconciliation command")
             return
         }
-        #expect(accepted.metadataStreamSequenceBarrier == 3)
+        #expect(accepted.metadataStreamSequenceBarrier == context.initialBatch.identity.frame.streamSequence)
         #expect(accepted.reconciliation.map(\.dispositionName) == ["retained"])
     }
 
-    @Test("reset reconciliation applies canonical empty interests to the source")
-    func resetReconciliationAppliesCanonicalSourceInterests() async throws {
-        // Arrange
+    @Test("retained reconciliation resnapshots the accepted File view on the replacement stream")
+    func retainedReconciliationResnapshotsAcceptedFileView() async throws {
         let context = try await makeReconnectSubscriptionContext()
-        let emptyInterestHash = try coordinatorFileSubscriptionLifecycle().opened.interestSha256
-        let request = try reconnectResyncRequest(
-            subscription: context.retainedSubscription,
-            lastAcceptedStreamSequence: 3,
-            claimedInterestSha256: String(repeating: "f", count: 64)
-        )
-
-        // Act
+        let before = await context.fileSource.diagnostics
+        #expect(await context.firstStream.pump.cancel())
         let response = try await dispatchReconnectControl(
-            request,
+            reconnectResyncRequest(
+                subscription: context.retainedSubscription,
+                lastAcceptedStreamSequence: context.initialBatch.identity.frame.streamSequence
+            ),
             dispatcher: context.dispatcher,
             capabilityHeader: context.harness.capabilityHeader
         )
         guard case .resyncAccepted(let accepted) = response else {
             await context.provider.closeAndDrain()
-            Issue.record("Expected canonical reset reconciliation")
+            Issue.record("Expected retained File reconciliation")
             return
         }
-        #expect(await context.harness.session.producerSnapshot().hasZeroResidue)
+        #expect(accepted.reconciliation.map(\.dispositionName) == ["retained"])
         let replacement = try await installReconnectMetadataStream(
             request: bridgeProductMetadataStreamRequest(
-                metadataStreamId: "metadata-reset-interests",
+                metadataStreamId: "metadata-resnapshot-file-view",
                 resumeFromStreamSequence: accepted.metadataStreamSequenceBarrier
             ),
             provider: context.provider,
             harness: context.harness
         )
-        await waitForReconnectSourceActivity(context.fileSource)
-        let sourceDiagnostics = await context.fileSource.diagnostics
-        let canonicalSubscription = await context.harness.session.subscriptionSnapshot(
-            subscriptionId: context.retainedSubscription.subscriptionId
+        let resnapshotResponse = try await dispatchReconnectControl(
+            reconnectFileResnapshotRequest(),
+            dispatcher: context.dispatcher,
+            capabilityHeader: context.harness.capabilityHeader
         )
-        #expect(await context.firstStream.pump.cancel())
+        let completed = try await pullPostReconnectPublication(from: replacement.pump)
+        await context.fileSource.waitForUpdateCallCount(before.updateCallCount + 1)
+        let diagnostics = await context.fileSource.diagnostics
         #expect(await replacement.pump.cancel())
         await context.provider.closeAndDrain()
 
-        // Assert
+        #expect(resnapshotResponse.kind == "subscription.resnapshotAccepted")
+        #expect(completed.identity.frame.metadataStreamId == "metadata-resnapshot-file-view")
+        #expect(completed.identity.handle == "file-reconnect-view-handle")
+        #expect(completed.identity.scopeRevision == 1)
+        #expect(diagnostics.viewHandle == "file-reconnect-view-handle")
+        #expect(diagnostics.scopeRevision == 1)
         #expect(await context.harness.session.producerSnapshot().hasZeroResidue)
-        #expect(canonicalSubscription?.interestRevision == 2)
-        #expect(canonicalSubscription?.interestSha256 == emptyInterestHash)
-        #expect(sourceDiagnostics.interestSha256 == emptyInterestHash)
-        #expect(accepted.reconciliation.map(\.dispositionName) == ["reset"])
     }
 
     @Test("retained reconciliation reattaches unchanged interests once after physical response retirement")
@@ -235,7 +217,7 @@ struct BridgeMetadataReconnectTests {
         let before = await context.fileSource.diagnostics
         let request = try reconnectResyncRequest(
             subscription: context.retainedSubscription,
-            lastAcceptedStreamSequence: 3
+            lastAcceptedStreamSequence: context.initialBatch.identity.frame.streamSequence
         )
 
         // Act
@@ -254,6 +236,17 @@ struct BridgeMetadataReconnectTests {
             subscriptionId: context.retainedSubscription.subscriptionId
         )
         #expect(await context.harness.session.producerSnapshot().hasZeroResidue)
+        let retainedScope = await context.harness.session.acceptedViewScope(
+            subscriptionId: context.retainedSubscription.subscriptionId
+        )
+        let openCompletionStep = HeldStep<Void>(
+            "reattached File source waits before retained view demand is applied",
+            cancellation: .holdThroughCancellation
+        )
+        await context.fileSource.holdOpenCompletion(
+            ordinal: before.openCallCount + 1,
+            at: openCompletionStep
+        )
         let replacement = try await installReconnectMetadataStream(
             request: bridgeProductMetadataStreamRequest(
                 metadataStreamId: "metadata-retained-interests",
@@ -262,14 +255,25 @@ struct BridgeMetadataReconnectTests {
             provider: context.provider,
             harness: context.harness
         )
-        await waitForReconnectSourceActivity(context.fileSource)
-        let disposition = await context.provider.publishFileChangeset(
-            try reconnectFileChangeset(),
-            productAdmission: context.harness.productAdmission.context,
-            foregroundWorkAdmission: context.refreshWorkAdmission,
-            operationCorrelationID: String(repeating: "b", count: 64),
-            operationStageAttempt: 1
-        )
+        _ = try await openCompletionStep.firstArrival()
+        #expect(retainedScope?.handle == "file-reconnect-view-handle")
+        #expect(retainedScope?.revision == 1)
+
+        let publicationTask = Task {
+            await context.provider.publishFileChangeset(
+                try reconnectFileChangeset(),
+                productAdmission: context.harness.productAdmission.context,
+                foregroundWorkAdmission: context.refreshWorkAdmission,
+                operationCorrelationID: String(repeating: "b", count: 64),
+                operationStageAttempt: 1
+            )
+        }
+        let disposition = try await publicationTask.value
+        let heldDiagnostics = await context.fileSource.diagnostics
+        #expect(heldDiagnostics.updateCallCount == before.updateCallCount)
+        #expect(heldDiagnostics.viewHandle == nil)
+        openCompletionStep.release()
+        await context.fileSource.waitForUpdateCallCount(before.updateCallCount + 1)
         let publication =
             disposition == .applied
             ? try await pullPostReconnectPublication(from: replacement.pump) : nil
@@ -284,32 +288,38 @@ struct BridgeMetadataReconnectTests {
         #expect(afterReconciliation.openCallCount == before.openCallCount)
         #expect(afterReconciliation.updateCallCount == before.updateCallCount)
         #expect(after.openCallCount == before.openCallCount + 1)
-        #expect(after.updateCallCount == before.updateCallCount)
+        #expect(after.updateCallCount == before.updateCallCount + 1)
         #expect(after.cancellationCount == before.cancellationCount + 1)
+        #expect(after.viewHandle == "file-reconnect-view-handle")
+        #expect(after.scopeRevision == 1)
         #expect(disposition == .applied)
-        guard case .subscriptionData(let data) = publication else {
+        guard let data = publication else {
             Issue.record("Expected retained healthy source publication")
             return
         }
         #expect(accepted.reconciliation.map(\.dispositionName) == ["retained"])
-        #expect(data.frameIdentity.metadataStreamId == "metadata-retained-interests")
+        #expect(data.identity.frame.metadataStreamId == "metadata-retained-interests")
     }
 
-    @Test(
-        "reconciled File subscription delivers source data after metadata stream replacement",
-        arguments: [false, true]
-    )
-    func reconciledFileSubscriptionDeliversAfterMetadataStreamReplacement(
-        mismatchedInterests: Bool
-    ) async throws {
+    @Test("retained File subscription delivers a certified batch after metadata stream replacement")
+    func reconciledFileSubscriptionDeliversAfterMetadataStreamReplacement() async throws {
         // Arrange
         let context = try await makeReconnectSubscriptionContext()
+        let before = await context.fileSource.diagnostics
+        let openCompletionStep = HeldStep<Void>(
+            "replacement File source opens before scope reapplication",
+            cancellation: .holdThroughCancellation
+        )
+        defer { openCompletionStep.release() }
+        await context.fileSource.holdOpenCompletion(
+            ordinal: before.openCallCount + 1,
+            at: openCompletionStep
+        )
         #expect(await context.firstStream.pump.cancel())
         let retiredSnapshot = await context.harness.session.producerSnapshot()
         let resyncRequest = try reconnectResyncRequest(
             subscription: context.retainedSubscription,
-            lastAcceptedStreamSequence: 3,
-            claimedInterestSha256: mismatchedInterests ? String(repeating: "f", count: 64) : nil
+            lastAcceptedStreamSequence: context.initialBatch.identity.frame.streamSequence
         )
 
         // Act
@@ -332,6 +342,11 @@ struct BridgeMetadataReconnectTests {
             harness: context.harness
         )
         await waitForReconnectSourceActivity(context.fileSource)
+        _ = try await openCompletionStep.firstArrival()
+        let heldDiagnostics = await context.fileSource.diagnostics
+        #expect(heldDiagnostics.updateCallCount == before.updateCallCount)
+        #expect(heldDiagnostics.viewHandle == nil)
+        #expect(heldDiagnostics.scopeRevision == nil)
         let publicationDisposition = await context.provider.publishFileChangeset(
             try reconnectFileChangeset(),
             productAdmission: context.harness.productAdmission.context,
@@ -343,6 +358,8 @@ struct BridgeMetadataReconnectTests {
             publicationDisposition == .applied
             ? try await pullPostReconnectPublication(from: secondStream.pump)
             : nil
+        openCompletionStep.release()
+        await context.fileSource.waitForUpdateCallCount(before.updateCallCount + 1)
         let sourceDiagnostics = await context.fileSource.diagnostics
         #expect(await secondStream.pump.cancel())
         await context.provider.closeAndDrain()
@@ -350,26 +367,20 @@ struct BridgeMetadataReconnectTests {
 
         // Assert
         #expect(finalProducerSnapshot.hasZeroResidue)
-        #expect(acceptedResync.reconciliation.map(\.dispositionName) == [mismatchedInterests ? "reset" : "retained"])
-        #expect(context.initialData.data.subscriptionKind == .fileMetadata)
-        #expect(context.committedInterest.identity.subscriptionIdentity.interestRevision == 1)
-        #expect(context.retainedSubscription.interestRevision == 1)
+        #expect(acceptedResync.reconciliation.map(\.dispositionName) == ["retained"])
+        #expect(context.initialBatch.identity.subscriptionKind == .fileMetadata)
         #expect(retiredSnapshot.hasZeroResidue)
         #expect(publicationDisposition == .applied)
         #expect(sourceDiagnostics.openCallCount >= 1)
         #expect(sourceDiagnostics.publicationCallCount == 1)
         #expect(sourceDiagnostics.updateCallCount >= 1)
-        let expectedInterestHash =
-            mismatchedInterests
-            ? try coordinatorFileSubscriptionLifecycle().opened.interestSha256
-            : context.retainedSubscription.interestSha256
-        #expect(sourceDiagnostics.interestSha256 == expectedInterestHash)
-        guard case .subscriptionData(let replacementData) = replacementFrame else {
-            Issue.record("Expected File data on the replacement metadata stream")
+        #expect(sourceDiagnostics.viewHandle == "file-reconnect-view-handle")
+        #expect(sourceDiagnostics.scopeRevision == 1)
+        guard let replacementData = replacementFrame else {
+            Issue.record("Expected a certified File batch on the replacement metadata stream")
             return
         }
-        #expect(replacementData.frameIdentity.metadataStreamId == "metadata-after-reconnect")
-        #expect(replacementData.data.subscriptionKind == .fileMetadata)
-        #expect(replacementData.subscriptionIdentity.interestRevision == (mismatchedInterests ? 2 : 1))
+        #expect(replacementData.identity.frame.metadataStreamId == "metadata-after-reconnect")
+        #expect(replacementData.identity.subscriptionKind == .fileMetadata)
     }
 }

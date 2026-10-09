@@ -41,6 +41,8 @@ package struct SessionsRepositoryContext: Sendable, Equatable {
     package let bindings: [SessionsBindingRecord]
     package let sources: [SessionsSourceRecord]
     package let evidence: [SessionsEvidenceRecord]
+    /// Hydration-only provenance from the existing operation log; evidence itself is unchanged.
+    package let bindingStartRecordIds: Set<UUID>
 }
 
 package struct SessionsRepositoryReduction: Sendable, Equatable {

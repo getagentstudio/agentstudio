@@ -1,4 +1,5 @@
 import AgentStudioInfrastructure
+import AgentStudioTestHarness
 import AgentStudioTestSupport
 import Foundation
 import GRDB
@@ -104,6 +105,8 @@ struct RepoCacheStoreTests {
 
     @Test
     func observedPersistedChangeAutosavesSQLite() async throws {
+        let factSource = RepoCacheStoreFactSource()
+        let facts = try factSource.attach()
         let workspaceId = UUID()
         let fixture = try makeWorkspaceLocalSQLiteStoreFixture(workspaceId: workspaceId)
         let atom = RepoCacheAtom()
@@ -113,7 +116,8 @@ struct RepoCacheStoreTests {
             atom: atom,
             sqliteDatastore: try await preparedWorkspaceSQLiteDatastore(from: fixture.sqliteBackend),
             persistDebounceDuration: .milliseconds(10),
-            clock: clock
+            clock: clock,
+            factSink: factSource.sink
         )
         await store.restoreAsync(for: workspaceId)
         store.startObserving()
@@ -122,14 +126,18 @@ struct RepoCacheStoreTests {
         await clock.waitForPendingSleepCount()
         clock.advance(by: .milliseconds(10))
 
-        await assertEventuallyMain("repo cache change should autosave") {
-            (try? fixture.repository.fetchCacheState().repoEnrichmentByRepoId[repoId])
-                == .awaitingOrigin(repoId: repoId)
-        }
+        let savedSourceRevision = try await facts.expectNextSaveCompleted(workspaceId: workspaceId)
+        #expect(savedSourceRevision == atom.sourceRevision)
+        #expect(
+            try fixture.repository.fetchCacheState().repoEnrichmentByRepoId[repoId]
+                == .awaitingOrigin(repoId: repoId))
+        try await facts.finish()
     }
 
     @Test
     func sustainedSnapshotRevisionsStillAutosave() async throws {
+        let factSource = RepoCacheStoreFactSource()
+        let facts = try factSource.attach()
         let workspaceId = UUIDv7.generate()
         let fixture = try makeWorkspaceLocalSQLiteStoreFixture(workspaceId: workspaceId)
         let atom = RepoCacheAtom()
@@ -141,19 +149,12 @@ struct RepoCacheStoreTests {
             sqliteDatastore: try await preparedWorkspaceSQLiteDatastore(from: fixture.sqliteBackend),
             persistDebounceDuration: .milliseconds(10),
             persistMaximumDelay: .milliseconds(50),
-            clock: clock
+            clock: clock,
+            factSink: factSource.sink
         )
         await store.restoreAsync(for: workspaceId)
         store.startObserving()
-        let savedBranchValues = ValueObservation.tracking { database in
-            try String.fetchOne(
-                database,
-                sql: "SELECT branch FROM cache_worktree_enrichment WHERE worktree_id = ?",
-                arguments: [worktreeId.uuidString]
-            )
-        }.values(in: fixture.databaseQueue)
-        var savedBranchIterator = savedBranchValues.makeAsyncIterator()
-        #expect(try await savedBranchIterator.next() == .some(nil))
+        #expect(try fixture.repository.fetchCacheState().worktreeEnrichmentByWorktreeId[worktreeId] == nil)
 
         for changedCount in 0..<9 {
             let nextSleepGeneration = clock.scheduledSleepGeneration
@@ -178,7 +179,10 @@ struct RepoCacheStoreTests {
             clock.advance(by: .milliseconds(6))
         }
 
-        #expect(try await savedBranchIterator.next() == "feature/x")
+        _ = try await facts.expectNextSaveCompleted(workspaceId: workspaceId)
+        #expect(
+            try fixture.repository.fetchCacheState().worktreeEnrichmentByWorktreeId[worktreeId]?.branch == "feature/x")
+        try await facts.finish()
     }
 
     @Test

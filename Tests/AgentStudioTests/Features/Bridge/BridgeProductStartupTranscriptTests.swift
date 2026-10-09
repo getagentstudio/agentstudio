@@ -16,9 +16,9 @@ struct BridgeProductStartupTranscriptTests {
     private static let invalidMirrorPath =
         "BridgeWeb/src/test-fixtures/bridge-contract-fixtures/invalid/bridge-product-startup-transcript.json"
     private static let validFixtureSHA256 =
-        "a5556acd203621f3be1d48881b96a198385744cf85cb729832d3929a6688f4c3"
+        "29ddcc6601f7b531f637cf9a3c57a1dbdeee6dcc9e60087218ea951c7edc4498"
     private static let invalidFixtureSHA256 =
-        "78da34fabc8fdfeb2316df0b21e819691ea2bb4e861a74cbee3270231d6494c8"
+        "e51803d06d8dafd56d6c694569ed238bb3dd8bddadfec6d26b2834b5d5892a68"
 
     @Test("Swift source fixtures and TypeScript mirrors have frozen byte identity")
     func fixturesHaveFrozenByteIdentity() throws {
@@ -50,51 +50,55 @@ struct BridgeProductStartupTranscriptTests {
         let transcript = try fixtureArray(named: "transcript", in: fixture)
 
         // Act / Assert
-        #expect(transcript.count == 27)
+        #expect(transcript.count == 21)
         for entry in transcript {
             let codec = try #require(entry["codec"] as? String)
             let name = try #require(entry["name"] as? String)
             let value = try #require(entry["value"] as? [String: Any])
-            switch codec {
-            case "contentHeader":
-                try assertRoundTrip(BridgeProductContentHeader.self, object: value, name: name)
-            case "contentRequest":
-                try assertRoundTrip(BridgeProductContentRequest.self, object: value, name: name)
-            case "controlRequest":
-                try assertRoundTrip(BridgeProductControlRequest.self, object: value, name: name)
-            case "controlResponse":
-                try assertRoundTrip(BridgeProductControlResponse.self, object: value, name: name)
-            case "metadataFrame":
-                try assertRoundTrip(BridgeProductMetadataFrame.self, object: value, name: name)
-            case "metadataStreamRequest":
-                try assertRoundTrip(
-                    BridgeProductMetadataStreamRequest.self,
-                    object: value,
-                    name: name
-                )
-            default:
-                Issue.record("Unsupported startup transcript codec: \(codec)")
+            do {
+                switch codec {
+                case "contentHeader":
+                    try assertRoundTrip(BridgeProductContentHeader.self, object: value, name: name)
+                case "contentRequest":
+                    try assertRoundTrip(BridgeProductContentRequest.self, object: value, name: name)
+                case "controlRequest":
+                    try assertRoundTrip(BridgeProductControlRequest.self, object: value, name: name)
+                case "controlResponse":
+                    try assertRoundTrip(BridgeProductControlResponse.self, object: value, name: name)
+                case "metadataFrame":
+                    try assertRoundTrip(BridgeProductMetadataFrame.self, object: value, name: name)
+                case "metadataStreamRequest":
+                    try assertRoundTrip(
+                        BridgeProductMetadataStreamRequest.self,
+                        object: value,
+                        name: name
+                    )
+                default:
+                    Issue.record("Unsupported startup transcript codec: \(codec)")
+                }
+            } catch {
+                Issue.record("Startup transcript entry \(name) failed \(codec) decoding: \(error)")
             }
         }
     }
 
-    @Test("Review interest transition hashes derive through production state")
-    func reviewInterestTransitionHashesDeriveThroughProductionState() throws {
+    @Test("Review subscription lifecycle retains E3 identity without an interest hash")
+    func reviewSubscriptionLifecycleRetainsIdentity() throws {
         // Arrange
         let fixture = try loadFixture(relativePath: Self.validFixturePath)
-        let updateCommand = try decodeTranscriptValue(
+        let openCommand = try decodeTranscriptValue(
             BridgeProductControlRequest.self,
-            named: "review-selection-demand",
+            named: "review-subscription-open",
             in: fixture
         )
-        let updateResponse = try decodeTranscriptValue(
+        let openResponse = try decodeTranscriptValue(
             BridgeProductControlResponse.self,
-            named: "review-selection-demand-accepted",
+            named: "review-subscription-open-accepted",
             in: fixture
         )
-        let committedFrame = try decodeTranscriptValue(
+        let acceptedFrame = try decodeTranscriptValue(
             BridgeProductMetadataFrame.self,
-            named: "review-selection-demand-committed",
+            named: "review-subscription-accepted-frame",
             in: fixture
         )
         let cancelledFrame = try decodeTranscriptValue(
@@ -102,93 +106,30 @@ struct BridgeProductStartupTranscriptTests {
             named: "review-subscription-cancelled-frame",
             in: fixture
         )
-        guard case .subscriptionUpdateBatch(let updateRequest) = updateCommand,
-            case .subscriptionUpdateBatchAccepted(let acceptedResponse) = updateResponse,
-            case .subscriptionInterestsCommitted(let committed) = committedFrame,
+        guard case .subscriptionOpen(let opened) = openCommand,
+            case .subscriptionOpenAccepted(let acceptedResponse) = openResponse,
+            case .subscriptionAccepted(let accepted) = acceptedFrame,
             case .subscriptionCancelled(let cancelled) = cancelledFrame
         else {
-            Issue.record("Review startup transcript does not contain its typed interest transitions")
+            Issue.record("Review startup transcript does not contain its E3 lifecycle")
             return
         }
 
-        // Act
-        let emptyState = BridgeProductSubscriptionInterestState.reviewMetadata(interests: [])
-        let candidateState = try BridgeProductSubscriptionInterestMutation.apply(
-            [updateRequest.delta],
-            to: emptyState,
-            subscriptionKind: .reviewMetadata
-        )
-        let derivedSHA256 = try candidateState.sha256Hex()
-
         // Assert
-        #expect(try emptyState.sha256Hex() == updateRequest.baseInterestSha256)
-        #expect(
-            [
-                updateRequest.targetInterestSha256,
-                acceptedResponse.targetInterestSha256,
-                committed.identity.subscriptionIdentity.interestSha256,
-                cancelled.identity.subscriptionIdentity.interestSha256,
-            ].allSatisfy { $0 == derivedSHA256 }
-        )
+        #expect(acceptedResponse.subscriptionId == opened.subscriptionId)
+        #expect(acceptedResponse.subscriptionKind == opened.subscription.subscriptionKind)
+        #expect(acceptedResponse.worktreeId == nil)
+        #expect(accepted.subscriptionIdentity.subscriptionId == opened.subscriptionId)
+        #expect(cancelled.identity.subscriptionIdentity.subscriptionId == opened.subscriptionId)
+        #expect(accepted.subscriptionIdentity.workerDerivationEpoch == opened.workerDerivationEpoch)
+        #expect(cancelled.identity.subscriptionIdentity.workerDerivationEpoch == opened.workerDerivationEpoch)
     }
 
-    @Test("observation identities and lifecycle outcomes are frozen")
-    func observationIdentitiesAndLifecycleOutcomesAreFrozen() throws {
+    @Test("retired metadata observation is rejected by the command package")
+    func retiredMetadataObservationIsRejected() throws {
         // Arrange
-        let fixture = try loadFixture(relativePath: Self.validFixturePath)
-        let observationCases = try fixtureArray(named: "observationCases", in: fixture)
-        let lifecycle = try #require(fixture["lifecycleExpectations"] as? [String: Any])
-        let zeroResidue = try #require(lifecycle["zeroResidue"] as? [String: Any])
-
-        // Act
-        let metadataCase = try #require(
-            observationCases.first { observationCase in
-                (observationCase["request"] as? [String: Any])?["streamKind"] as? String
-                    == "metadata"
-            }
-        )
-        let contentCase = try #require(
-            observationCases.first { observationCase in
-                (observationCase["request"] as? [String: Any])?["streamKind"] as? String
-                    == "content"
-            }
-        )
-        let metadataKeys = Set(try #require(metadataCase["request"] as? [String: Any]).keys)
-        let contentKeys = Set(try #require(contentCase["request"] as? [String: Any]).keys)
-        let dispositions = Set(
-            try observationCases.map { try #require($0["expectedDisposition"] as? String) }
-        )
-
-        // Assert
-        #expect(observationCases.count == 16)
-        #expect(
-            metadataKeys == [
-                "kind", "metadataStreamId", "paneSessionId", "streamKind", "streamSequence",
-                "wireVersion", "workerInstanceId",
-            ]
-        )
-        #expect(
-            contentKeys == [
-                "contentRequestId", "contentSequence", "kind", "leaseId", "paneSessionId",
-                "streamKind", "wireVersion", "workerInstanceId",
-            ]
-        )
-        #expect(
-            dispositions == [
-                "accepted", "idempotentReplay", "rejectedChangedReuse",
-                "rejectedForeignIdentity", "rejectedPostTerminal", "rejectedSequenceGap",
-                "rejectedStaleWorker",
-            ]
-        )
-        #expect(zeroResidue.count == 7)
-        #expect(zeroResidue.values.allSatisfy { ($0 as? Int) == 0 })
-    }
-
-    @Test("metadata observation decodes through the current command package")
-    func metadataObservationDecodesThroughCurrentCommandPackage() throws {
-        // Arrange
-        let fixture = try loadFixture(relativePath: Self.validFixturePath)
-        let observationCases = try fixtureArray(named: "observationCases", in: fixture)
+        let fixture = try loadFixture(relativePath: Self.invalidFixturePath)
+        let observationCases = try fixtureArray(named: "cases", in: fixture)
         let metadataCase = try #require(
             observationCases.first { observationCase in
                 (observationCase["request"] as? [String: Any])?["streamKind"] as? String
@@ -198,17 +139,13 @@ struct BridgeProductStartupTranscriptTests {
         let request = try #require(metadataCase["request"] as? [String: Any])
 
         // Act
-        let package = try decodeCommandPackage(request)
-
-        // Assert
-        guard case .metadataFrameAcknowledgement = package else {
-            Issue.record("Metadata observation did not decode as an acknowledgement")
-            return
+        #expect(throws: (any Error).self) {
+            _ = try decodeCommandPackage(request)
         }
     }
 
-    @Test("content accepted data and end observations decode through the command package")
-    func contentFrameObservationsDecodeThroughCommandPackage() throws {
+    @Test("content accepted data and end cumulative credits decode through the command package")
+    func contentCumulativeCreditsDecodeThroughCommandPackage() throws {
         // Arrange
         let fixture = try loadFixture(relativePath: Self.validFixturePath)
         let observationCases = try fixtureArray(named: "observationCases", in: fixture)
@@ -222,7 +159,7 @@ struct BridgeProductStartupTranscriptTests {
         let requiredCases = try requiredCaseNames.map { requiredName in
             try #require(
                 observationCases.first { $0["name"] as? String == requiredName },
-                "Missing required content observation \(requiredName)"
+                "Missing required content credit \(requiredName)"
             )
         }
 
@@ -232,7 +169,7 @@ struct BridgeProductStartupTranscriptTests {
             let request = try #require(requiredCase["request"] as? [String: Any])
             let package = try decodeCommandPackage(request)
             guard case .contentFrameAcknowledgement = package else {
-                Issue.record("\(name) did not decode as a content frame acknowledgement")
+                Issue.record("\(name) did not decode as a cumulative content acknowledgement")
                 continue
             }
         }

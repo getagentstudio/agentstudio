@@ -8,6 +8,7 @@ import {
 	encodeBridgeWorkerReviewComparisonTargetsQueryCommand,
 	encodeBridgeWorkerReviewComparisonTargetsQueryCancelCommand,
 	encodeBridgeWorkerReviewIntakeReadyCommand,
+	encodeBridgeWorkerViewRecoveryRetryCommand,
 	encodeBridgeWorkerSelectCommand,
 	encodeBridgeWorkerViewportCommand,
 } from '../core/comm-worker/bridge-comm-worker-protocol.js';
@@ -16,10 +17,12 @@ import type { BridgeMainRenderFulfillmentCoordinator } from '../core/comm-worker
 import {
 	type BridgeMainCodeViewItem,
 	type BridgeMainRenderSnapshotStore,
+	type BridgeMainViewRecoveryStatus,
 	type BridgeMainReviewCatalogSnapshot,
 	type BridgeMainReviewRefreshPresentation,
 	type BridgeMainReviewSourceDisplaySlice,
 } from '../core/comm-worker/bridge-main-render-snapshot-store.js';
+import type { BridgeMainPanelChromeSlice } from '../core/comm-worker/bridge-main-review-comparison-presentation.js';
 import {
 	createBridgeMainReviewPublicationIntegration,
 	type BridgeMainReviewPublicationIntegration,
@@ -28,7 +31,6 @@ import type { BridgePaneSurfaceClient } from '../core/comm-worker/bridge-pane-ru
 import type { BridgeProductReviewComparisonTargetCatalog } from '../core/comm-worker/bridge-product-review-comparison-contracts.js';
 import type {
 	BridgeWorkerContentAvailabilityPatchPayload,
-	BridgeWorkerPanelChromePatchPayload,
 	BridgeWorkerReviewComparisonUpdateCommand,
 	BridgeWorkerReviewDisplayItem,
 	BridgeWorkerReviewProjectionUpdateCommand,
@@ -66,6 +68,7 @@ export interface BridgeReviewDirectDisplayStore extends Pick<
 	| 'getReviewItemIdAtIndex'
 	| 'getReviewCodeViewItemSnapshot'
 	| 'getReviewItemSnapshot'
+	| 'hasPendingReviewPaintRelease'
 	| 'getReviewTreeRowAtIndex'
 	| 'getReviewTreeRowSnapshot'
 	| 'readReviewCatalogChangesAfter'
@@ -88,9 +91,10 @@ export interface BridgeReviewRenderSnapshotController {
 		selectedSource: 'keyboard' | 'programmatic' | 'user',
 	) => void;
 	readonly markFileViewed: (itemId: string, onDeliveryFailure?: () => void) => boolean;
-	readonly panelChromeSlice: BridgeWorkerPanelChromePatchPayload;
+	readonly panelChromeSlice: BridgeMainPanelChromeSlice;
 	readonly reviewSourceSlice: BridgeMainReviewSourceDisplaySlice | null;
 	readonly reviewRefreshPresentation: BridgeMainReviewRefreshPresentation;
+	readonly viewRecoveryStatus: BridgeMainViewRecoveryStatus | null;
 	readonly selectedCodeViewItem: BridgeMainCodeViewItem | null;
 	readonly selectedContentAvailability: BridgeWorkerContentAvailabilityPatchPayload | null;
 	readonly selectedItemId: string | null;
@@ -106,6 +110,9 @@ export interface BridgeReviewRenderSnapshotController {
 	) => void;
 	readonly updateReviewComparisonTarget: (
 		target: BridgeWorkerReviewComparisonUpdateCommand['target'],
+	) => void;
+	readonly retryFailedMetadataView: (
+		comparisonTarget: BridgeWorkerReviewComparisonUpdateCommand['target'] | null,
 	) => void;
 	readonly queryReviewComparisonTargets: () => void;
 	readonly cancelReviewComparisonTargetsQuery: () => void;
@@ -156,13 +163,20 @@ export function useBridgeReviewRenderSnapshotController(
 		displayStore.getReviewRefreshPresentation,
 		displayStore.getReviewRefreshPresentation,
 	);
+	const viewRecoveryStatus = useSyncExternalStore(
+		displayStore.subscribeViewRecoveryStatus,
+		(): BridgeMainViewRecoveryStatus | null =>
+			displayStore.getViewRecoveryStatus('review.metadata'),
+		(): BridgeMainViewRecoveryStatus | null =>
+			displayStore.getViewRecoveryStatus('review.metadata'),
+	);
 	const selectionSlice = useSyncExternalStore(
 		displayStore.subscribeReviewSelection,
 		displayStore.getReviewSelectionSnapshot,
 		displayStore.getReviewSelectionSnapshot,
 	);
 	const getPanelChromeSnapshot = useCallback(
-		(): BridgeWorkerPanelChromePatchPayload => displayStore.getSnapshot().panelChromeSlice,
+		(): BridgeMainPanelChromeSlice => displayStore.getSnapshot().panelChromeSlice,
 		[displayStore],
 	);
 	const panelChromeSlice = useSyncExternalStore(
@@ -186,10 +200,33 @@ export function useBridgeReviewRenderSnapshotController(
 		itemId: selectedItemId,
 		subscribe: displayStore.subscribeReviewAvailability,
 	});
-	const selectedContentAvailability =
-		rawSelectedContentAvailability?.state === 'ready' && selectedCodeViewItem === null
-			? ({ state: 'loading' } as const)
-			: (rawSelectedContentAvailability ?? null);
+	const selectedReadyCopyMissing =
+		selectedItemId !== null &&
+		rawSelectedContentAvailability?.state === 'ready' &&
+		selectedCodeViewItem === null;
+	const selectedPaintReleasePending =
+		selectedItemId !== null &&
+		selectedReadyCopyMissing &&
+		displayStore.hasPendingReviewPaintRelease(selectedItemId);
+	const reportedMissingReadyCopies = useRef<Set<string>>(new Set());
+	useEffect((): void => {
+		if (selectedItemId === null) return;
+		if (!selectedReadyCopyMissing || selectedPaintReleasePending) {
+			reportedMissingReadyCopies.current.delete(selectedItemId);
+			return;
+		}
+		if (reportedMissingReadyCopies.current.has(selectedItemId)) return;
+		reportedMissingReadyCopies.current.add(selectedItemId);
+		console.error('Bridge Review render-copy invariant breach', {
+			kind: 'review_selected_ready_without_render_copy',
+			itemId: selectedItemId,
+		});
+	}, [selectedItemId, selectedPaintReleasePending, selectedReadyCopyMissing]);
+	const selectedContentAvailability = resolveSelectedReviewContentAvailability({
+		hasCodeViewItem: selectedCodeViewItem !== null,
+		paintReleasePending: selectedPaintReleasePending,
+		rawAvailability: rawSelectedContentAvailability ?? null,
+	});
 	const [codeViewRenderedItemIds, setCodeViewRenderedItemIds] = useState<readonly string[]>([]);
 	const [comparisonTargetsQueryState, setComparisonTargetsQueryState] =
 		useState<BridgeReviewComparisonTargetsQueryState>({
@@ -395,6 +432,27 @@ export function useBridgeReviewRenderSnapshotController(
 		},
 		[props.reviewClient],
 	);
+	const retryFailedMetadataView = useCallback(
+		(comparisonTarget: BridgeWorkerReviewComparisonUpdateCommand['target'] | null): void => {
+			const installationFailed =
+				displayStore.getReviewRefreshPresentation().failure?.kind === 'installation';
+			if (
+				viewRecoveryStatus === null ||
+				(!installationFailed && viewRecoveryStatus.status !== 'failedRetryable')
+			)
+				return;
+			props.reviewClient.send(
+				encodeBridgeWorkerViewRecoveryRetryCommand({
+					epoch: nextBridgeReviewWorkerEpoch(workerEpochRef),
+					requestId: 'review-view-recovery-retry',
+					view: viewRecoveryStatus.view,
+				}),
+			);
+			if (!installationFailed && comparisonTarget !== null)
+				updateReviewComparisonTarget(comparisonTarget);
+		},
+		[displayStore, props.reviewClient, updateReviewComparisonTarget, viewRecoveryStatus],
+	);
 	const queryReviewComparisonTargets = useCallback((): void => {
 		setComparisonTargetsQueryState({ catalog: null, message: null, status: 'loading' });
 		try {
@@ -521,6 +579,7 @@ export function useBridgeReviewRenderSnapshotController(
 		panelChromeSlice,
 		reviewSourceSlice,
 		reviewRefreshPresentation,
+		viewRecoveryStatus,
 		selectedCodeViewItem: selectedCodeViewItem ?? null,
 		selectedContentAvailability,
 		selectedItemId,
@@ -531,9 +590,21 @@ export function useBridgeReviewRenderSnapshotController(
 		setReviewRefreshSemanticAttention,
 		setReviewTreeVisibleItemIds,
 		updateReviewComparisonTarget,
+		retryFailedMetadataView,
 		updateReviewDisplayProjection,
 		visibleCodeViewItems,
 	};
+}
+
+export function resolveSelectedReviewContentAvailability(props: {
+	readonly hasCodeViewItem: boolean;
+	readonly paintReleasePending: boolean;
+	readonly rawAvailability: BridgeWorkerContentAvailabilityPatchPayload | null;
+}): BridgeWorkerContentAvailabilityPatchPayload | null {
+	if (props.rawAvailability?.state !== 'ready' || props.hasCodeViewItem) {
+		return props.rawAvailability;
+	}
+	return { state: props.paintReleasePending ? 'loading' : 'failed' };
 }
 
 function useVisibleReviewCodeViewItems(props: {
@@ -666,6 +737,7 @@ export function applyBridgeWorkerMessagesToMainRenderSnapshotStore(props: {
 			case 'annotationOutputInspection':
 			case 'annotationProjectionConvergence':
 			case 'health':
+			case 'viewRecoveryStatus':
 			case 'nativeSurfaceSelectionRequest':
 			case 'reviewCandidateReady':
 			case 'reviewCandidateFailed':
@@ -745,9 +817,11 @@ function recordAppliedReviewPanelChrome(props: {
 			'agentstudio.bridge.comparison.attempt.status':
 				attempt === null || attempt === undefined
 					? 'absent'
-					: attempt.status === 'selectionRequired'
-						? 'selection_required'
-						: attempt.status,
+					: attempt.status === 'noSource'
+						? 'no_source'
+						: attempt.status === 'selectionRequired'
+							? 'selection_required'
+							: attempt.status,
 			'agentstudio.bridge.panel.operation': props.patch.operation,
 			'agentstudio.bridge.phase': 'panel_chrome_applied',
 			'agentstudio.bridge.plane': 'control',

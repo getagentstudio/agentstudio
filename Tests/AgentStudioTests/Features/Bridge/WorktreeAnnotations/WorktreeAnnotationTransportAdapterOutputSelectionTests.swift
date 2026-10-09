@@ -93,7 +93,7 @@ struct WorktreeAnnotationOutputSelectionTests {
 
     @Test("Resolve invalidates an older displayed Pending revision before any output effect")
     func resolveRejectsOlderDisplayedPendingRevisionWithoutEffect() async throws {
-        let outputEffect = TransportTestOutputEffect(outcome: .succeeded)
+        let outputEffect = TransportTestOutputEffect(outcome: .succeeded(destinationPath: nil))
         let harness = try await makeTransportAdapterHarness(outputEffect: outputEffect)
         defer { try? FileManager.default.removeItem(at: harness.root) }
         let savedRoot = try await createSavedOutputRoot(
@@ -144,6 +144,53 @@ struct WorktreeAnnotationOutputSelectionTests {
         let persisted = try await persistedDetail(sessionID: savedRoot.sessionID, harness: harness)
         #expect(persisted.threads.first?.thread.resolution == .resolved)
         #expect(persisted.threads.first?.messages.first?.handled == false)
+    }
+
+    @Test("Reveal refuses unknown attempts and files that no longer exist")
+    func revealIsBoundToARecordedFile() async throws {
+        let outputEffect = TransportTestOutputEffect(
+            outcome: .succeeded(destinationPath: nil),
+            revealSucceeds: false
+        )
+        let harness = try await makeTransportAdapterHarness(outputEffect: outputEffect)
+        defer { try? FileManager.default.removeItem(at: harness.root) }
+        let savedRoot = try await createSavedOutputRoot(
+            body: "Export for reveal", editToken: "reveal-output", harness: harness
+        )
+        let unknownID = UUIDv7.generate().uuidString.lowercased()
+        let unknown = await harness.adapter.apply(
+            try decodeAnnotationCommand(
+                "{ \"operation\": { \"attemptId\": \"\(unknownID)\", \"kind\": \"output.reveal\" } }"
+            ),
+            surface: .file,
+            correlation: try makeAnnotationCorrelation(requestID: "unknown-reveal"),
+            productAdmission: harness.productAdmission
+        )
+        #expect(unknown.status == .failed(.notFound))
+
+        try await executeOutputScope(
+            harness: harness,
+            scope: .all,
+            sessionID: savedRoot.sessionID,
+            requestID: "export-for-reveal"
+        )
+        let recordedOutput = try #require(
+            try await harness.store.fetchOutputHistory(sessionID: savedRoot.sessionID, limit: 1).first
+        )
+        let missingFile = await harness.adapter.apply(
+            try decodeAnnotationCommand(
+                """
+                { "operation": {
+                  "attemptId": "\(recordedOutput.attemptID.rawValue.uuidString.lowercased())",
+                  "kind": "output.reveal"
+                } }
+                """
+            ),
+            surface: .file,
+            correlation: try makeAnnotationCorrelation(requestID: "missing-file-reveal"),
+            productAdmission: harness.productAdmission
+        )
+        #expect(missingFile.status == .failed(.outputFileMissing))
     }
 }
 

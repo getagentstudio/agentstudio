@@ -5,6 +5,7 @@ private struct BridgeReviewPublicationAttemptContext {
     let reservation: BridgeReviewMetadataPublicationReservation
     let publishingStream: BridgePaneProductMetadataCoordinator.ActiveStream
     let productAdmission: BridgeProductAdmissionContext
+    let producerAdmission: BridgeProductAdmissionContext
     let foregroundWorkAdmission: BridgePaneRefreshWorkAdmission
     let traceContext: BridgeTraceContext?
     let attempt: Int
@@ -57,12 +58,12 @@ extension BridgePaneProductMetadataCoordinator {
         foregroundWorkAdmission: BridgePaneRefreshWorkAdmission,
         traceContext: BridgeTraceContext? = nil
     ) async -> BridgeReviewPublicationDeliveryDisposition {
-        guard let publishingStream = activeStream,
-            publishingStream.productAdmission.matches(productAdmission),
-            reservation.publicationId == publication.publicationId,
-            foregroundWorkAdmission.withValidAdmission({ true }) == true,
-            (productAdmission.withValidAdmission { true }) == true
+        guard
+            let publishingStream = admittedPanePublicationStream(
+                for: productAdmission, foregroundWorkAdmission: foregroundWorkAdmission),
+            reservation.publicationId == publication.publicationId
         else { return .deferred }
+        let streamProductAdmission = publishingStream.productAdmission
         let retainedSubscriptionCount = reviewSubscriptionIds.count
         await lifecycleTraceRecorder?.record(
             .started(
@@ -70,14 +71,23 @@ extension BridgePaneProductMetadataCoordinator {
                 traceContext: traceContext
             )
         )
+        guard
+            isCurrentPanePublicationStream(
+                publishingStream, producerAdmission: productAdmission,
+                foregroundWorkAdmission: foregroundWorkAdmission)
+        else { return .deferred }
         for attempt in 0...1 {
-            guard activeStream?.lease == publishingStream.lease,
-                foregroundWorkAdmission.withValidAdmission({ true }) == true,
+            guard
+                isCurrentPanePublicationStream(
+                    publishingStream, producerAdmission: productAdmission,
+                    foregroundWorkAdmission: foregroundWorkAdmission),
                 await isReviewPublicationCurrent(
                     publication.publicationId,
-                    productAdmission
+                    streamProductAdmission
                 ),
-                (productAdmission.withValidAdmission { true }) == true
+                isCurrentPanePublicationStream(
+                    publishingStream, producerAdmission: productAdmission,
+                    foregroundWorkAdmission: foregroundWorkAdmission)
             else { return .deferred }
             do {
                 return try await deliverReviewPublicationAttempt(
@@ -85,7 +95,8 @@ extension BridgePaneProductMetadataCoordinator {
                         publication: publication,
                         reservation: reservation,
                         publishingStream: publishingStream,
-                        productAdmission: productAdmission,
+                        productAdmission: streamProductAdmission,
+                        producerAdmission: productAdmission,
                         foregroundWorkAdmission: foregroundWorkAdmission,
                         traceContext: traceContext,
                         attempt: attempt
@@ -101,12 +112,17 @@ extension BridgePaneProductMetadataCoordinator {
                         surface: .review
                     )
                 }
-                guard activeStream?.lease == publishingStream.lease,
-                    foregroundWorkAdmission.withValidAdmission({ true }) == true,
+                guard
+                    isCurrentPanePublicationStream(
+                        publishingStream, producerAdmission: productAdmission,
+                        foregroundWorkAdmission: foregroundWorkAdmission),
                     await isReviewPublicationCurrent(
                         publication.publicationId,
-                        productAdmission
-                    )
+                        streamProductAdmission
+                    ),
+                    isCurrentPanePublicationStream(
+                        publishingStream, producerAdmission: productAdmission,
+                        foregroundWorkAdmission: foregroundWorkAdmission)
                 else { return .deferred }
                 await recordReviewPublicationFailure(
                     Self.reviewPublicationFailure(for: error),
@@ -115,13 +131,16 @@ extension BridgePaneProductMetadataCoordinator {
                 )
                 guard attempt == 0,
                     Self.isRetryableReviewDeliveryFailure(error),
-                    activeStream?.lease == publishingStream.lease,
-                    foregroundWorkAdmission.withValidAdmission({ true }) == true,
+                    isCurrentPanePublicationStream(
+                        publishingStream, producerAdmission: productAdmission,
+                        foregroundWorkAdmission: foregroundWorkAdmission),
                     await isReviewPublicationCurrent(
                         publication.publicationId,
-                        productAdmission
+                        streamProductAdmission
                     ),
-                    (productAdmission.withValidAdmission { true }) == true
+                    isCurrentPanePublicationStream(
+                        publishingStream, producerAdmission: productAdmission,
+                        foregroundWorkAdmission: foregroundWorkAdmission)
                 else { return .failed }
             }
         }
@@ -137,96 +156,65 @@ extension BridgePaneProductMetadataCoordinator {
             stage: .metadataEnqueueStarted,
             stageAttempt: context.attempt
         )
+        guard isCurrentReviewPublicationStream(context) else { return .deferred }
         let outcome = try await reviewMetadataSource.deliver(
             publication: context.publication,
             reservation: context.reservation,
             productAdmission: context.productAdmission
         )
+        guard isCurrentReviewPublicationStream(context) else { return .deferred }
         await recordReviewMetadataEnqueue(
             publication: context.publication,
             result: .success,
             stage: .metadataEnqueueTerminal,
             stageAttempt: context.attempt
         )
-        guard case .delivered(let receipt) = outcome else { return .deferred }
-        guard activeStream?.lease == context.publishingStream.lease,
-            context.foregroundWorkAdmission.withValidAdmission({ true }) == true,
+        guard isCurrentReviewPublicationStream(context),
+            case .delivered(let receipt) = outcome,
             await isReviewPublicationCurrent(
                 context.publication.publicationId,
                 context.productAdmission
-            )
+            ),
+            isCurrentReviewPublicationStream(context)
         else { return .deferred }
+        var sealedViewCount = 0
+        for subscriptionID in reviewSubscriptionIds {
+            guard isCurrentReviewPublicationStream(context) else { return .deferred }
+            if try await publishReviewViewSnapshot(
+                subscriptionId: subscriptionID,
+                productAdmission: context.productAdmission
+            ) {
+                sealedViewCount += 1
+            }
+            guard isCurrentReviewPublicationStream(context) else { return .deferred }
+        }
         await recordReviewMetadataEnqueue(
             publication: context.publication,
             result: .started,
             stage: .metadataDeliveryStarted,
             stageAttempt: context.attempt
         )
-        if let failureDisposition = await reviewMetadataReceiptFailureDisposition(
-            receipt,
-            publication: context.publication,
-            publishingStream: context.publishingStream,
-            productAdmission: context.productAdmission,
-            foregroundWorkAdmission: context.foregroundWorkAdmission,
-            stageAttempt: context.attempt
-        ) {
-            return failureDisposition
-        }
+        guard isCurrentReviewPublicationStream(context),
+            await isReviewPublicationCurrent(context.publication.publicationId, context.productAdmission),
+            isCurrentReviewPublicationStream(context)
+        else { return .deferred }
         await recordReviewMetadataDeliveryTerminal(
             publication: context.publication,
             result: .success,
             stageAttempt: context.attempt
         )
+        guard isCurrentReviewPublicationStream(context) else { return .deferred }
         await lifecycleTraceRecorder?.record(
             .completed(receipt: receipt, traceContext: context.traceContext)
         )
-        return receipt.publishedSubscriptions > 0 ? .transportAcknowledged : .deferred
+        guard isCurrentReviewPublicationStream(context) else { return .deferred }
+        return sealedViewCount > 0 ? .viewBatchSealed : .deferred
     }
 
-    private func reviewMetadataReceiptFailureDisposition(
-        _ receipt: BridgeReviewMetadataPublicationReceipt,
-        publication: BridgeReviewCommittedPublication,
-        publishingStream: ActiveStream,
-        productAdmission: BridgeProductAdmissionContext,
-        foregroundWorkAdmission: BridgePaneRefreshWorkAdmission,
-        stageAttempt: Int
-    ) async -> BridgeReviewPublicationDeliveryDisposition? {
-        if let maximumFinalSequence = receipt.finalFrames.map(\.sequence).max(),
-            !(await publishingStream.session.waitUntilProducerFrameSequenceObserved(
-                for: publishingStream.lease,
-                sequence: maximumFinalSequence,
-                productAdmission: productAdmission,
-                foregroundWorkAdmission: foregroundWorkAdmission
-            ))
-        {
-            let publicationRemainsCurrent = await isReviewPublicationCurrent(
-                publication.publicationId,
-                productAdmission
-            )
-            let remainsCurrent =
-                activeStream?.lease == publishingStream.lease
-                && foregroundWorkAdmission.withValidAdmission({ true }) == true
-                && publicationRemainsCurrent
-                && (productAdmission.withValidAdmission { true }) == true
-            await recordReviewMetadataDeliveryTerminal(
-                publication: publication,
-                result: remainsCurrent ? .failure : .stale,
-                stageAttempt: stageAttempt
-            )
-            return remainsCurrent ? .failed : .deferred
-        }
-        guard activeStream?.lease == publishingStream.lease,
-            foregroundWorkAdmission.withValidAdmission({ true }) == true,
-            await isReviewPublicationCurrent(publication.publicationId, productAdmission)
-        else {
-            await recordReviewMetadataDeliveryTerminal(
-                publication: publication,
-                result: .stale,
-                stageAttempt: stageAttempt
-            )
-            return .deferred
-        }
-        return nil
+    private func isCurrentReviewPublicationStream(_ context: BridgeReviewPublicationAttemptContext) -> Bool {
+        isCurrentPanePublicationStream(
+            context.publishingStream, producerAdmission: context.producerAdmission,
+            foregroundWorkAdmission: context.foregroundWorkAdmission)
     }
 
     private func recordReviewMetadataEnqueue(
@@ -264,25 +252,36 @@ extension BridgePaneProductMetadataCoordinator {
         productAdmission: BridgeProductAdmissionContext,
         foregroundWorkAdmission: BridgePaneRefreshWorkAdmission
     ) async {
-        guard let resettingStream = activeStream,
-            resettingStream.productAdmission.matches(productAdmission),
-            foregroundWorkAdmission.withValidAdmission({ true }) == true,
-            (productAdmission.withValidAdmission { true }) == true
+        guard
+            let resettingStream = admittedPanePublicationStream(
+                for: productAdmission, foregroundWorkAdmission: foregroundWorkAdmission)
         else { return }
 
         for subscriptionId in reviewSubscriptionIds {
-            guard activeStream?.lease == resettingStream.lease,
-                foregroundWorkAdmission.withValidAdmission({ true }) == true,
-                (productAdmission.withValidAdmission { true }) == true
+            guard
+                isCurrentPanePublicationStream(
+                    resettingStream, producerAdmission: productAdmission,
+                    foregroundWorkAdmission: foregroundWorkAdmission)
             else { return }
             let resetResult = try? await resettingStream.session.enqueueSubscriptionReset(
+                originatingMetadataLease: resettingStream.lease,
                 subscriptionId: subscriptionId,
                 reason: .staleSource,
-                productAdmission: productAdmission,
+                productAdmission: resettingStream.productAdmission,
                 foregroundWorkAdmission: foregroundWorkAdmission
             )
+            guard
+                isCurrentPanePublicationStream(
+                    resettingStream, producerAdmission: productAdmission,
+                    foregroundWorkAdmission: foregroundWorkAdmission)
+            else { return }
             guard case .enqueued = resetResult else { continue }
             await retireSubscriptionAfterReset(subscriptionId: subscriptionId)
+            guard
+                isCurrentPanePublicationStream(
+                    resettingStream, producerAdmission: productAdmission,
+                    foregroundWorkAdmission: foregroundWorkAdmission)
+            else { return }
         }
     }
 

@@ -54,6 +54,7 @@ enum BridgeProductPackagedShareJourneyTestSupport {
     private struct ShareDOMSnapshot: Decodable {
         let allCount: Int
         let animationStates: [String]
+        let copyButtonText: String?
         let historyCount: Int
         let inspectionText: String?
         let pendingCount: Int
@@ -61,6 +62,8 @@ enum BridgeProductPackagedShareJourneyTestSupport {
         let shareEndingStyle: Bool
         let shareOpen: Bool
         let shareVisible: Bool
+        let shareErrorText: String?
+        let toastText: String?
         let visibilityState: String
     }
 
@@ -75,6 +78,7 @@ enum BridgeProductPackagedShareJourneyTestSupport {
             frame: NSRect(x: 0, y: 0, width: 640, height: 720)
         ) { hostedController in
             hostedController.loadApp()
+            await WebPageEventWaits.waitForNavigationToFinish(hostedController.page)
             try await requirePackagedReviewReady(hostedController)
             try await disableAnimationsForHiddenPackagedCarrier(hostedController.page)
             _ = try await seedReviewAnnotation(
@@ -84,25 +88,34 @@ enum BridgeProductPackagedShareJourneyTestSupport {
             )
             try await requireEnabledButton(hostedController.page, label: "Annotations")
             try await clickButton(hostedController.page, label: "Annotations")
-            _ = try await requireShareSnapshot(hostedController.page, stage: "review-pending") {
-                $0.shareVisible && $0.pendingCount == 1
-            }
+            _ = try await requireShareSnapshot(
+                hostedController.page,
+                stage: "review-pending",
+                where: "return snapshot.shareVisible && snapshot.pendingCount === 1;"
+            )
             try await clickButton(hostedController.page, label: "Copy Markdown")
-            _ = try await requireShareSnapshot(hostedController.page, stage: "review-copy-dismiss") {
-                !$0.shareVisible
-            }
+            let dismissal = try await requireOutputDismissed(
+                hostedController,
+                stage: "review-copy-dismiss"
+            )
+            #expect(dismissal == "closed")
             let clipboardBytes = try #require(harness.pasteboard.data(forType: .string))
 
             try await clickButton(hostedController.page, label: "Annotations")
-            _ = try await requireShareSnapshot(hostedController.page, stage: "review-history") {
-                $0.shareVisible && $0.historyCount == 1
-            }
+            _ = try await requireShareSnapshot(
+                hostedController.page,
+                stage: "review-history",
+                where: "return snapshot.shareVisible && snapshot.historyCount === 1 && snapshot.pendingCount === 0;"
+            )
             try await clickButton(hostedController.page, label: "History (1)")
             try await clickButton(hostedController.page, label: "Inspect output attempt 1")
             let savedOutputText = try #require(String(data: clipboardBytes, encoding: .utf8))
-            _ = try await requireShareSnapshot(hostedController.page, stage: "review-inspect-output") {
-                $0.inspectionText == savedOutputText
-            }
+            _ = try await requireShareSnapshot(
+                hostedController.page,
+                stage: "review-inspect-output",
+                where: "return snapshot.inspectionText === expectedText;",
+                arguments: ["expectedText": savedOutputText]
+            )
             try await clickButton(
                 hostedController.page,
                 label: "Mark as not handled",
@@ -110,10 +123,9 @@ enum BridgeProductPackagedShareJourneyTestSupport {
             )
             let reviewAfterUnhandle = try await requireShareSnapshot(
                 hostedController.page,
-                stage: "review-unhandle"
-            ) {
-                $0.pendingCount == 1
-            }
+                stage: "review-unhandle",
+                where: "return snapshot.shareOpen && snapshot.shareVisible && snapshot.pendingCount === 1;"
+            )
             try await clickButton(hostedController.page, label: "Close Annotations")
 
             let fileProof = try await performFileExport(
@@ -177,12 +189,13 @@ enum BridgeProductPackagedShareJourneyTestSupport {
         let pasteboard = NSPasteboard(
             name: .init("agentstudio.packaged-share.\(UUIDv7.generate().uuidString)")
         )
-        let savePanel = PackagedShareJSONDestinationPanel(url: exportedJSONURL)
         let outputCoordinator = WorktreeAnnotationOutputCoordinatorActor(
             store: store,
             effect: WorktreeAnnotationOutputEffects(
                 pasteboard: pasteboard,
-                makeSavePanel: { savePanel }
+                folderPreference: InMemoryWorktreeAnnotationOutputFolderPreference(
+                    folderURL: exportedJSONURL.deletingLastPathComponent()
+                )
             )
         )
         let traceRecorder = BridgeProductWebKitCarrierTraceRecorder()
@@ -213,53 +226,73 @@ enum BridgeProductPackagedShareJourneyTestSupport {
         guard await BridgeProductWebKitCarrierTestSupport.activateFileMode(controller.page) else {
             throw PackagedShareJourneyError.fileModeUnavailable
         }
-        let selectedDifferentFile = await BridgeProductWebKitCarrierTestSupport.waitUntil(
-            timeout: .seconds(20)
-        ) {
-            guard
-                await BridgeProductWebKitCarrierTestSupport.selectFilePath(
-                    controller.page,
-                    path: "alternate.txt"
-                )
-            else { return false }
-            let dom = await BridgeProductWebKitCarrierTestSupport.domSnapshot(controller.page)
-            return dom?.fileReadableText.contains("alternate updated") == true
-        }
+        _ = try await WebPageEventWaits.waitForOpenShadowRootValue(
+            controller.page,
+            reader: """
+                const selector = `button[data-type="item"][data-item-type="file"][data-item-path="${CSS.escape(path)}"]`;
+                return findInOpenShadowRoots(document, selector) === null ? null : path;
+                """,
+            arguments: ["path": "alternate.txt"]
+        )
+        let selectedDifferentFile = await BridgeProductWebKitCarrierTestSupport.selectFilePath(
+            controller.page,
+            path: "alternate.txt"
+        )
         guard selectedDifferentFile else {
             throw PackagedShareJourneyError.fileSelectionUnavailable
         }
+        _ = try await WebPageEventWaits.waitForOpenShadowRootValue(
+            controller.page,
+            reader: """
+                const fileHost = document.querySelector('[data-testid="bridge-viewer-mode-host-file"]');
+                return fileHost !== null && readOpenShadowRootText(fileHost).includes('alternate updated')
+                  ? 'alternate updated' : null;
+                """
+        )
         try await requireEnabledButton(controller.page, label: "Annotations")
         try await clickButton(controller.page, label: "Annotations")
         try await clickButtonWithPrefix(controller.page, prefix: "All")
-        let beforeExport = try await requireShareSnapshot(controller.page, stage: "file-other") {
-            $0.shareVisible && !$0.otherSavedCommentsVisible && $0.allCount == 1
-        }
+        let beforeExport = try await requireShareSnapshot(
+            controller.page,
+            stage: "file-other",
+            where: "return snapshot.shareVisible && !snapshot.otherSavedCommentsVisible && snapshot.allCount === 1;"
+        )
         try await clickButton(controller.page, label: "Export JSON")
-        try await requireFile(exportedJSONURL)
-        _ = try await requireShareSnapshot(controller.page, stage: "file-export-dismiss") {
-            !$0.shareVisible
+        _ = try await requireShareSnapshot(
+            controller.page,
+            stage: "file-export-saved",
+            where: "return snapshot.shareVisible && snapshot.historyCount === 2;"
+        )
+        let exportedFiles = try FileManager.default.contentsOfDirectory(
+            at: exportedJSONURL.deletingLastPathComponent(),
+            includingPropertiesForKeys: nil
+        ).filter { $0.lastPathComponent.hasPrefix("AgentStudio Review Comments ") && $0.pathExtension == "json" }
+        guard exportedFiles.count == 1, let savedURL = exportedFiles.first else {
+            throw PackagedShareJourneyError.exportMissing
         }
-        let exportedJSON = try Data(contentsOf: exportedJSONURL)
+        let exportedJSON = try Data(contentsOf: savedURL)
 
-        try await clickButton(controller.page, label: "Annotations")
-        let history = try await requireShareSnapshot(controller.page, stage: "file-history") {
-            $0.shareVisible && $0.historyCount == 2
-        }
+        let history = try await requireShareSnapshot(
+            controller.page,
+            stage: "file-history",
+            where: "return snapshot.shareVisible && snapshot.historyCount === 2;"
+        )
         return (beforeExport, exportedJSON, history)
     }
 
     private static func requirePackagedReviewReady(_ controller: BridgePaneController) async throws {
-        let ready = await BridgeProductWebKitCarrierTestSupport.waitUntil(timeout: .seconds(20)) {
-            let dom = await BridgeProductWebKitCarrierTestSupport.domSnapshot(controller.page)
-            guard let productAdmission = controller.productAdmissionGate.acquire(),
-                let publication = controller.reviewPublicationCoordinator
-                    .committedPublicationForReplay(productAdmission: productAdmission)
-            else { return false }
-            return dom?.hasAppRoot == true
-                && dom?.hasReviewShell == true
-                && !publication.package.itemsById.isEmpty
-        }
-        guard ready else { throw PackagedShareJourneyError.reviewUnavailable }
+        _ = try await WebPageEventWaits.waitForDocumentValue(
+            controller.page,
+            reader: """
+                const reviewShell = document.querySelector('[data-testid="review-viewer-shell"]');
+                return reviewShell?.getAttribute('data-selected-content-state') === 'ready' ? true : null;
+                """
+        )
+        guard let productAdmission = controller.productAdmissionGate.acquire(),
+            let publication = controller.reviewPublicationCoordinator
+                .committedPublicationForReplay(productAdmission: productAdmission),
+            !publication.package.itemsById.isEmpty
+        else { throw PackagedShareJourneyError.reviewUnavailable }
     }
 
     private static func seedReviewAnnotation(
@@ -341,9 +374,9 @@ enum BridgeProductPackagedShareJourneyTestSupport {
     }
 
     private static func requireEnabledButton(_ page: WebPage, label: String) async throws {
-        let found = await BridgeProductWebKitCarrierTestSupport.waitUntil(timeout: .seconds(20)) {
-            (try? await page.callJavaScript(
-                """
+        _ = try await WebPageEventWaits.waitForDocumentValue(
+            page,
+            reader: """
                 const buttonLabel = String(label);
                 const activeHost = document.querySelector('[data-bridge-viewer-mode-active="true"]');
                 const button = Array.from(activeHost?.querySelectorAll('button') ?? []).find(
@@ -351,12 +384,44 @@ enum BridgeProductPackagedShareJourneyTestSupport {
                     candidate.getAttribute('aria-label') === buttonLabel ||
                     candidate.textContent?.trim() === buttonLabel
                 );
-                return button instanceof HTMLButtonElement && !button.disabled;
+                return button instanceof HTMLButtonElement && !button.disabled ? true : null;
                 """,
-                arguments: ["label": label]
-            )) as? Bool == true
+            arguments: ["label": label]
+        )
+    }
+
+    private static func requireOutputDismissed(
+        _ controller: BridgePaneController,
+        stage: String
+    ) async throws -> String {
+        let observed = try await WebPageEventWaits.waitForDocumentValue(
+            controller.page,
+            reader: """
+                const activeHost = document.querySelector('[data-bridge-viewer-mode-active="true"]');
+                const share = activeHost?.querySelector('[data-testid="worktree-annotation-share-mode"]');
+                if (share === null) return 'closed';
+                const error = share?.querySelector('[role="alert"]')?.textContent;
+                return error === null || error === undefined ? null : error;
+                """
+        )
+        guard let observed = observed as? String, observed == "closed" else {
+            let installation = await controller.productSessionOwner.activeInstallation
+            let sessionDiagnostic = await installation?.session.diagnosticSnapshot
+            let retainedOutcomes = await installation?.session.diagnosticRetainedOperationOutcomes()
+            let sessionSnapshot = await installation?.session.snapshot
+            let ownerDiagnostic = await controller.productSessionOwner.snapshot()
+            throw PackagedShareJourneyError.shareDidNotConverge(
+                stage: stage,
+                observed: "workerError=\(String(describing: observed)); "
+                    + "retainedResults=\(sessionDiagnostic?.retainedOperationResultCount ?? -1); "
+                    + "retainedOutcomes=\(String(describing: retainedOutcomes)); "
+                    + "activeExecutions=\(ownerDiagnostic.activeOperationExecutionCount); "
+                    + "pendingControl=\(ownerDiagnostic.pendingControlCount); "
+                    + "nextSequence=\(sessionSnapshot?.controlReplay.nextExpectedRequestSequence ?? -1); "
+                    + "inFlightSequence=\(String(describing: sessionSnapshot?.controlReplay.inFlightRequestSequence))"
+            )
         }
-        guard found else { throw PackagedShareJourneyError.missingButton(label) }
+        return observed
     }
 
     private static func clickButton(
@@ -408,81 +473,64 @@ enum BridgeProductPackagedShareJourneyTestSupport {
     private static func requireShareSnapshot(
         _ page: WebPage,
         stage: String,
-        predicate: @escaping @Sendable (ShareDOMSnapshot) -> Bool
+        where predicate: String,
+        arguments: [String: Any] = [:]
     ) async throws -> ShareDOMSnapshot {
-        var observed: ShareDOMSnapshot?
-        let found = await BridgeProductWebKitCarrierTestSupport.waitUntil(timeout: .seconds(20)) {
-            observed = try? await shareSnapshot(page)
-            return observed.map(predicate) == true
-        }
-        guard found, let observed else {
+        let encoded = try await WebPageEventWaits.waitForDocumentValue(
+            page,
+            reader: """
+                const snapshot = (() => { \(shareSnapshotReaderBody) })();
+                const matches = (() => { \(predicate) })();
+                return matches ? JSON.stringify(snapshot) : null;
+                """,
+            arguments: arguments
+        )
+        guard let string = encoded as? String else {
             throw PackagedShareJourneyError.shareDidNotConverge(
                 stage: stage,
-                observed: String(describing: observed)
+                observed: String(describing: encoded)
             )
         }
-        return observed
-    }
-
-    private static func shareSnapshot(_ page: WebPage) async throws -> ShareDOMSnapshot {
-        let encoded = try await page.callJavaScript(
-            """
-            const activeHost = document.querySelector('[data-bridge-viewer-mode-active="true"]');
-            const buttons = Array.from(activeHost?.querySelectorAll('button') ?? []);
-            const textForPrefix = prefix => buttons.find(
-              button => button.textContent?.trim().startsWith(prefix)
-            )?.textContent?.trim() ?? '';
-            const integerIn = value => Number(value.match(/\\d+/)?.[0] ?? '0');
-            return JSON.stringify({
-              allCount: integerIn(textForPrefix('All')),
-              animationStates: Array.from(
-                activeHost?.querySelector('[data-testid="worktree-annotation-share-shelf"]')
-                  ?.getAnimations({ subtree: true }) ?? []
-              ).map(animation => `${animation.playState}:${animation.pending}`),
-              historyCount: integerIn(textForPrefix('History (')),
-              inspectionText: activeHost?.querySelector(
-                '[data-testid="annotation-output-inspection"] pre'
-              )?.textContent ?? null,
-              pendingCount: integerIn(textForPrefix('Pending')),
-              otherSavedCommentsVisible:
-                (activeHost?.querySelector('[aria-label="Other saved comments"]') ?? null) !== null,
-              shareEndingStyle:
-                activeHost?.querySelector('[data-testid="worktree-annotation-share-shelf"]')
-                  ?.hasAttribute('data-ending-style') === true,
-              shareOpen:
-                activeHost?.querySelector('[data-testid="worktree-annotation-share-shelf"]')
-                  ?.hasAttribute('data-open') === true,
-              shareVisible:
-                (activeHost?.querySelector('[data-testid="worktree-annotation-share-mode"]') ?? null) !== null,
-              visibilityState: document.visibilityState
-            });
-            """
-        )
-        let string = try #require(encoded as? String)
         return try JSONDecoder().decode(ShareDOMSnapshot.self, from: Data(string.utf8))
     }
 
-    private static func requireFile(_ url: URL) async throws {
-        let exists = await BridgeProductWebKitCarrierTestSupport.waitUntil(timeout: .seconds(20)) {
-            FileManager.default.fileExists(atPath: url.path)
-        }
-        guard exists else { throw PackagedShareJourneyError.exportMissing }
-    }
-}
+    private static let shareSnapshotReaderBody = """
+        const activeHost = document.querySelector('[data-bridge-viewer-mode-active="true"]');
+        const buttons = Array.from(activeHost?.querySelectorAll('button') ?? []);
+        const textForPrefix = prefix => buttons.find(
+          button => button.textContent?.trim().startsWith(prefix)
+        )?.textContent?.trim() ?? '';
+        const integerIn = value => Number(value.match(/\\d+/)?.[0] ?? '0');
+        return {
+          allCount: integerIn(textForPrefix('All')),
+          animationStates: Array.from(
+            activeHost?.querySelector('[data-testid="worktree-annotation-share-shelf"]')
+              ?.getAnimations({ subtree: true }) ?? []
+          ).map(animation => `${animation.playState}:${animation.pending}`),
+          copyButtonText: buttons.find(button => button.getAttribute('aria-label') === 'Copy Markdown')
+            ?.textContent?.trim() ?? null,
+          historyCount: integerIn(textForPrefix('History (')),
+          inspectionText: activeHost?.querySelector(
+            '[data-testid="annotation-output-inspection"] pre'
+          )?.textContent ?? null,
+          pendingCount: integerIn(textForPrefix('Pending')),
+          otherSavedCommentsVisible:
+            (activeHost?.querySelector('[aria-label="Other saved comments"]') ?? null) !== null,
+          shareEndingStyle:
+            activeHost?.querySelector('[data-testid="worktree-annotation-share-shelf"]')
+              ?.hasAttribute('data-ending-style') === true,
+          shareOpen:
+            activeHost?.querySelector('[data-testid="worktree-annotation-share-shelf"]')
+              ?.hasAttribute('data-open') === true,
+          shareVisible:
+            (activeHost?.querySelector('[data-testid="worktree-annotation-share-mode"]') ?? null) !== null,
+          shareErrorText: activeHost?.querySelector('[data-testid="worktree-annotation-share-mode"] [role="alert"]')
+            ?.textContent ?? null,
+          toastText: document.querySelector('[data-sonner-toast]')?.textContent ?? null,
+          visibilityState: document.visibilityState
+        };
+        """
 
-@MainActor
-private final class PackagedShareJSONDestinationPanel: WorktreeAnnotationJSONDestinationPanel {
-    var allowedContentTypes: [UTType] = []
-    var nameFieldStringValue = ""
-    var canCreateDirectories = false
-    var isExtensionHidden = true
-    let url: URL?
-
-    init(url: URL) {
-        self.url = url
-    }
-
-    func runModal() throws -> NSApplication.ModalResponse { .OK }
 }
 
 private enum PackagedShareJourneyError: Error {

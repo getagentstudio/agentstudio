@@ -71,7 +71,34 @@ export function observeBrowserRuntimeDiagnostics(page: Page): BrowserRuntimeDiag
 			const reviewComparisonRead = await readBrowserDiagnosticWithinDeadline(
 				page.evaluate(() => {
 					const reviewShell = document.querySelector('[data-testid="review-viewer-shell"]');
+					const refreshHeaderGroup = document.querySelector(
+						'[data-testid="bridge-review-refresh-header-group"]',
+					);
+					const refreshHeaderSizer = document.querySelector(
+						'[data-testid="bridge-review-refresh-header-slot"] > [aria-hidden="true"]',
+					);
 					return {
+						refreshHeader: {
+							groupPresent: refreshHeaderGroup !== null,
+							groupText: refreshHeaderGroup?.textContent?.trim() ?? null,
+							groupVisibility:
+								refreshHeaderGroup === null
+									? null
+									: getComputedStyle(refreshHeaderGroup).visibility,
+							groupBounds:
+								refreshHeaderGroup === null
+									? null
+									: {
+											width: refreshHeaderGroup.getBoundingClientRect().width,
+											height: refreshHeaderGroup.getBoundingClientRect().height,
+										},
+							sizerPresent: refreshHeaderSizer !== null,
+							sizerText: refreshHeaderSizer?.textContent?.trim() ?? null,
+							sizerVisibility:
+								refreshHeaderSizer === null
+									? null
+									: getComputedStyle(refreshHeaderSizer).visibility,
+						},
 						comparisonStatus:
 							document.querySelector('[data-testid="bridge-viewer-content-status"]')?.textContent ??
 							null,
@@ -166,20 +193,13 @@ export async function waitForSettledReviewComparison(props: {
 		await expect
 			.poll(
 				async (): Promise<string | null> => {
-					const observedTargetOID = await props.page.evaluate(
-						(): string | null =>
-							document
-								.querySelector('[data-testid="bridge-review-comparison-current-state"]')
-								?.getAttribute('data-resolved-target-oid') ?? null,
-					);
-					if (observedTargetOID !== null) settledTargetOID = observedTargetOID;
-					if (
-						observedTargetOID === null &&
-						(await props.page.getByTestId('bridge-review-comparison-content').count()) === 0
-					) {
-						await comparisonTrigger.click();
-					}
-					return observedTargetOID;
+					// Read the resolved target only from an open picker. A picker animating
+					// closed after a selection still shows the previous target's state.
+					const picker = await readReviewComparisonPickerState(props.page);
+					if (picker.kind === 'closed') await comparisonTrigger.click();
+					if (picker.kind !== 'open') return null;
+					if (picker.resolvedTargetOID !== null) settledTargetOID = picker.resolvedTargetOID;
+					return picker.resolvedTargetOID;
 				},
 				{ timeout: props.timeoutMilliseconds },
 			)
@@ -211,6 +231,45 @@ export async function waitForSettledReviewComparison(props: {
 		symbolicTargetLabel,
 		targetOID: settledTargetOID,
 	};
+}
+
+type ReviewComparisonPickerState =
+	| { readonly kind: 'closed' }
+	| { readonly kind: 'closing' }
+	| { readonly kind: 'open'; readonly resolvedTargetOID: string | null };
+
+async function readReviewComparisonPickerState(page: Page): Promise<ReviewComparisonPickerState> {
+	return await page.evaluate((): ReviewComparisonPickerState => {
+		const content = document.querySelector('[data-testid="bridge-review-comparison-content"]');
+		if (content === null) return { kind: 'closed' };
+		if (content.closest('[data-ending-style]') !== null) return { kind: 'closing' };
+		if (content.closest('[inert], [data-closed]') !== null) return { kind: 'closed' };
+		return {
+			kind: 'open',
+			resolvedTargetOID:
+				content
+					.querySelector('[data-testid="bridge-review-comparison-current-state"]')
+					?.getAttribute('data-resolved-target-oid') ?? null,
+		};
+	});
+}
+
+/** Opens the comparison picker if it is closed and waits until it is open, not animating. */
+export async function openReviewComparisonPicker(props: {
+	readonly page: Page;
+	readonly timeoutMilliseconds: number;
+}): Promise<void> {
+	const comparisonTrigger = props.page.getByTestId('bridge-review-comparison-trigger');
+	await expect
+		.poll(
+			async (): Promise<ReviewComparisonPickerState['kind']> => {
+				const picker = await readReviewComparisonPickerState(props.page);
+				if (picker.kind === 'closed') await comparisonTrigger.click();
+				return picker.kind;
+			},
+			{ timeout: props.timeoutMilliseconds },
+		)
+		.toBe('open');
 }
 
 export async function waitForSettledReviewComparisonWithDiagnostics(props: {

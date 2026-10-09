@@ -1,6 +1,11 @@
 import type { Page, Response } from 'playwright';
 
 import {
+	bridgeProductAdmissionResponseSchema,
+	bridgeProductOperationResultRequestSchema,
+	bridgeProductOperationResultResponseSchema,
+} from '../../src/core/comm-worker/bridge-product-operation-wire-contracts.js';
+import {
 	bridgeProductControlRequestSchema,
 	bridgeProductControlResponseSchema,
 } from '../../src/core/comm-worker/bridge-product-session-contracts.js';
@@ -25,6 +30,29 @@ interface ControlRejectionObservation {
 	readonly safeMessage: string | null;
 }
 
+interface ResyncObservation {
+	readonly atEpochMilliseconds: number;
+	readonly claimedSubscriptionIds: readonly string[];
+	readonly operationId: string;
+	readonly reconciliation: readonly {
+		readonly disposition: string;
+		readonly reason: string | null;
+		readonly subscriptionId: string;
+		readonly subscriptionKind: string;
+	}[];
+	readonly requestSequence: number;
+	readonly responseKind: string;
+}
+
+interface ResnapshotObservation {
+	readonly atEpochMilliseconds: number;
+	readonly code: string | null;
+	readonly requestSequence: number;
+	readonly responseKind: string;
+	readonly subscriptionId: string;
+	readonly subscriptionKind: string;
+}
+
 interface AnnotationQueryObservation {
 	readonly method: string;
 	readonly operationCorrelationId: string;
@@ -39,12 +67,20 @@ export async function observeInteractionProfileFailures(page: Page): Promise<{
 		readonly annotationQueries: readonly AnnotationQueryObservation[];
 		readonly controlRejections: readonly ControlRejectionObservation[];
 		readonly metadataHealthHistory: readonly MetadataHealthDiagnostic[];
+		readonly resyncs: readonly ResyncObservation[];
+		readonly resnapshots: readonly ResnapshotObservation[];
 		readonly pendingControlResponseCount: number;
 		readonly unreadableControlResponseCount: number;
 	}>;
 }> {
 	const annotationQueries: AnnotationQueryObservation[] = [];
 	const controlRejections: ControlRejectionObservation[] = [];
+	const resyncs: ResyncObservation[] = [];
+	const resnapshots: ResnapshotObservation[] = [];
+	const pendingResyncByOperationId = new Map<
+		string,
+		{ readonly claimedSubscriptionIds: readonly string[]; readonly requestSequence: number }
+	>();
 	const pendingReads = new Set<Promise<void>>();
 	let unreadableControlResponseCount = 0;
 	await page.addInitScript((): void => {
@@ -64,9 +100,60 @@ export async function observeInteractionProfileFailures(page: Page): Promise<{
 	});
 	const inspectResponse = async (response: Response): Promise<void> => {
 		try {
-			const parsed = bridgeProductControlResponseSchema.safeParse(await response.json());
+			const requestBody: unknown = response.request().postDataJSON();
+			const responseBody: unknown = await response.json();
+			const resultRequest = bridgeProductOperationResultRequestSchema.safeParse(requestBody);
+			if (resultRequest.success) {
+				const pendingResync = pendingResyncByOperationId.get(resultRequest.data.operationId);
+				if (pendingResync === undefined) return;
+				const result = bridgeProductOperationResultResponseSchema.safeParse(responseBody);
+				if (!result.success) return;
+				const reconciliation = bridgeProductControlResponseSchema.safeParse(result.data.result);
+				resyncs.push({
+					atEpochMilliseconds: Date.now(),
+					claimedSubscriptionIds: pendingResync.claimedSubscriptionIds,
+					operationId: resultRequest.data.operationId,
+					reconciliation:
+						reconciliation.success && reconciliation.data.kind === 'resync.accepted'
+							? reconciliation.data.reconciliation.map((outcome) => ({
+									disposition: outcome.disposition,
+									reason: 'reason' in outcome ? outcome.reason : null,
+									subscriptionId: outcome.subscriptionId,
+									subscriptionKind: outcome.subscriptionKind,
+								}))
+							: [],
+					requestSequence: pendingResync.requestSequence,
+					responseKind: reconciliation.success ? reconciliation.data.kind : result.data.outcome,
+				});
+				if (resyncs.length > 32) resyncs.shift();
+				pendingResyncByOperationId.delete(resultRequest.data.operationId);
+				return;
+			}
+			const request = bridgeProductControlRequestSchema.parse(requestBody);
+			if (request.kind === 'workerSession.resync') {
+				const admission = bridgeProductAdmissionResponseSchema.safeParse(responseBody);
+				if (admission.success && admission.data.kind === 'operation.admitted') {
+					pendingResyncByOperationId.set(admission.data.operationId, {
+						claimedSubscriptionIds: request.activeSubscriptions.map(
+							(active) => active.subscriptionId,
+						),
+						requestSequence: request.requestSequence,
+					});
+				}
+			}
+			const parsed = bridgeProductControlResponseSchema.safeParse(responseBody);
 			if (!parsed.success) return;
-			const request = bridgeProductControlRequestSchema.parse(response.request().postDataJSON());
+			if (request.kind === 'subscription.resnapshot') {
+				resnapshots.push({
+					atEpochMilliseconds: Date.now(),
+					code: parsed.data.kind === 'request.error' ? parsed.data.code : null,
+					requestSequence: request.requestSequence,
+					responseKind: parsed.data.kind,
+					subscriptionId: request.subscriptionId,
+					subscriptionKind: request.subscriptionKind,
+				});
+				if (resnapshots.length > 32) resnapshots.shift();
+			}
 			if (
 				request.kind === 'product.call' &&
 				(request.call.method === 'file.annotations.projection.query' ||
@@ -117,6 +204,8 @@ export async function observeInteractionProfileFailures(page: Page): Promise<{
 				metadataHealthHistory: await page.evaluate(
 					() => window.bridgeInteractionMetadataHealthHistory ?? [],
 				),
+				resyncs: [...resyncs],
+				resnapshots: [...resnapshots],
 				unreadableControlResponseCount,
 				pendingControlResponseCount: pendingReads.size,
 			};

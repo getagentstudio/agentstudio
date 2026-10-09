@@ -150,6 +150,7 @@ export function createBridgeReviewAnnotationRetentionWitness(
 				state: {
 					contentSessionIds: [annotationSessionId],
 					kind: 'ready',
+					stageAttempt: 0,
 					reviewPublicationIdentity: {
 						packageId: publicationIdentity.packageId,
 						publicationId: publicationIdentity.publicationId,

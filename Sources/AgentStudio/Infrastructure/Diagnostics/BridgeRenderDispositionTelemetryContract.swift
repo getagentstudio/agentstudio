@@ -32,6 +32,7 @@ enum BridgeRenderDispositionTelemetryContract {
         ],
         "agentstudio.bridge.render_publication.outcome": [
             "cleared",
+            "held",
             "painted",
             "published",
             "queued",

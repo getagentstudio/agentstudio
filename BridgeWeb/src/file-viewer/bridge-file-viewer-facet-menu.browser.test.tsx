@@ -3,6 +3,8 @@ import { render } from 'vitest-browser-react';
 
 // oxlint-disable-next-line import/no-unassigned-import -- Browser Mode must load the app CSS.
 import '../app/bridge-app.css';
+import { settleFileViewerMenuTransition } from './bridge-file-viewer-app-startup.browser.test-support.js';
+import { actFrame } from './bridge-file-viewer-browser-test-harness.js';
 import type { BridgeFileViewerFilterMode } from './bridge-file-viewer-contracts.js';
 import { BridgeFileViewerFacetMenu } from './bridge-file-viewer-facet-menu.js';
 
@@ -19,6 +21,9 @@ describe('BridgeFileViewerFacetMenu Browser Mode', () => {
 				open
 			/>,
 		);
+
+		await actFrame();
+		await settleFileViewerMenuTransition();
 
 		// Act
 		const categoryRows = findMenuCheckboxItems('File category');
@@ -73,3 +78,11 @@ function requireHTMLElement(element: Element | null): HTMLElement {
 	}
 	return element;
 }
+
+// Register at the Browser Mode entry; the shared module owns the pure pass-through wrapper.
+vi.mock('../components/ui/dropdown-menu.js', async (importOriginal) => {
+	const original = await importOriginal<typeof import('../components/ui/dropdown-menu.js')>();
+	const { withFileMenuCompletion } =
+		await import('./bridge-file-viewer-menu-completion.browser.test-support.js');
+	return withFileMenuCompletion(original);
+});

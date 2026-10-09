@@ -17,16 +17,21 @@ import {
 	createRecordingBridgeCommWorkerPort,
 	flushBridgeWorkerRuntimeContinuations,
 	makeContentRequestDescriptor,
-	makeFileMetadataDataFrame,
 	makeRenderSemantics,
 	makeWorkerReviewContentMetadata,
 	openReviewContentFromDescriptorMap,
 	type BridgeCommWorkerReviewProductTestSourceInput,
-	type FileMetadataDataFrame,
 	type FileMetadataSubscription,
 	type PostedBridgeWorkerRuntimeMessage,
 } from './bridge-comm-worker-runtime-protocol.test-support.js';
 import { BridgeProductBoundedAsyncQueue } from './bridge-product-async-queue.js';
+import type { BridgeProductBatchFrameSinks } from './bridge-product-batch-frame-router.js';
+import { bridgeProductFileBatchRowSchema } from './bridge-product-file-batch-row-contracts.js';
+import {
+	BRIDGE_PRODUCT_FILE_MEMBER_STATUS_KEY,
+	bridgeProductFileMemberStatusRecordSchema,
+} from './bridge-product-file-member-status-contracts.js';
+import type { BridgeProductViewInstallation } from './bridge-product-view-batch-receiver.js';
 import type {
 	BridgeWorkerFilePierreRenderJobEvent,
 	BridgeWorkerReviewPierreRenderJobEvent,
@@ -34,11 +39,9 @@ import type {
 import { bridgeWorkerRenderDispositionReceiptSchema } from './bridge-worker-render-fulfillment.js';
 import {
 	drainFilePreparationUntilIdle,
-	fileProductTestSource,
 	fileViewProductTestBudget,
-	makeDescriptorReadyEvent,
+	makeFileBatchInstallation,
 	makeFileProductTestTransport,
-	makeTreeWindowEvent,
 } from './comm-runtime-protocol.file-product.test-support.js';
 
 describe('Bridge comm worker existing File owner backpressure', () => {
@@ -97,7 +100,7 @@ describe('Bridge comm worker existing File owner backpressure', () => {
 		const harness = await createFileBackpressureHarness();
 		const publicationA = requireFilePublication(harness.postedMessages, 0);
 
-		pushReplacementFileSource(harness);
+		await pushReplacementFileSource(harness);
 		await flushBridgeWorkerRuntimeContinuations();
 		dispatchFileDisposition(harness, publicationA, 'queued', 'a-queued-after-source-b');
 		await drainFilePreparationUntilIdle(harness.scheduledDrains);
@@ -170,7 +173,7 @@ describe('Bridge comm worker existing Review owner backpressure', () => {
 
 interface FileBackpressureHarness {
 	readonly dispatch: ReturnType<typeof createRecordingBridgeCommWorkerPort>['dispatch'];
-	readonly events: BridgeProductBoundedAsyncQueue<FileMetadataDataFrame>;
+	readonly batchSinks: BridgeProductBatchFrameSinks;
 	readonly postedMessages: PostedBridgeWorkerRuntimeMessage[];
 	readonly scheduledDrains: BridgeCommWorkerPreparationDrain[];
 }
@@ -178,14 +181,14 @@ interface FileBackpressureHarness {
 async function createFileBackpressureHarness(
 	throwForRequestId?: string,
 ): Promise<FileBackpressureHarness> {
-	const events = new BridgeProductBoundedAsyncQueue<FileMetadataDataFrame>(64);
+	const events = new BridgeProductBoundedAsyncQueue<never>(64);
+	const batchSinks: { current: BridgeProductBatchFrameSinks | null } = { current: null };
 	const scheduledDrains: BridgeCommWorkerPreparationDrain[] = [];
 	const subscription: FileMetadataSubscription = {
 		cancel: async (): Promise<void> => {},
 		events,
 		subscriptionId: 'file-subscription-existing-owner-backpressure',
 		subscriptionKind: 'file.metadata',
-		update: async (): Promise<void> => {},
 	};
 	const { dispatch, postedMessages } = createRecordingBridgeCommWorkerPort({
 		beforePostMessage: (message): void => {
@@ -199,6 +202,9 @@ async function createFileBackpressureHarness(
 		budget: { className: 'interactive', maxBytes: 512 * 1024, maxWindowLines: 400 },
 		fileViewBudget: fileViewProductTestBudget,
 		productTransport: makeFileProductTestTransport({
+			onBatchFrameSinks: (sinks): void => {
+				batchSinks.current = sinks;
+			},
 			onDiscoverSource: (): void => {},
 			onOpenDescriptor: (): void => {},
 			subscription,
@@ -208,53 +214,68 @@ async function createFileBackpressureHarness(
 		},
 	});
 	await activateBridgeCommWorkerFileViewerModeAndFlush(dispatch, 'existing-owner-backpressure');
-	events.push(
-		makeFileMetadataDataFrame({ eventKind: 'file.sourceAccepted', source: fileProductTestSource }),
-	);
-	events.push(makeFileMetadataDataFrame(makeTreeWindowEvent()));
-	events.push(makeFileMetadataDataFrame(makeDescriptorReadyEvent()));
+	if (batchSinks.current === null) throw new Error('File batch sinks were not installed.');
+	await batchSinks.current.install(makeFileBatchInstallation('open', subscription.subscriptionId));
 	await flushBridgeWorkerRuntimeContinuations();
-	const harness = { dispatch, events, postedMessages, scheduledDrains };
+	const harness = { batchSinks: batchSinks.current, dispatch, postedMessages, scheduledDrains };
 	selectFile(harness, 1, 'selection-a');
 	await drainFilePreparationUntilIdle(scheduledDrains);
 	requireFilePublication(postedMessages, 0);
 	return harness;
 }
 
-function pushReplacementFileSource(harness: FileBackpressureHarness): void {
-	const replacementSource = {
-		...fileProductTestSource,
-		rootRevisionToken: 'root-revision-2',
-		sourceCursor: 'source-cursor-2',
-		sourceId: 'file-source-2',
-		subscriptionGeneration: 4,
-	};
-	const treeWindow = makeTreeWindowEvent();
-	const descriptorReady = makeDescriptorReadyEvent();
-	if (
-		treeWindow.eventKind !== 'file.treeWindow' ||
-		descriptorReady.eventKind !== 'file.descriptorReady' ||
-		descriptorReady.availability.availabilityKind !== 'available'
-	) {
-		throw new Error('Expected available File replacement fixtures.');
-	}
-	harness.events.push(
-		makeFileMetadataDataFrame({ eventKind: 'file.sourceAccepted', source: replacementSource }),
+async function pushReplacementFileSource(harness: FileBackpressureHarness): Promise<void> {
+	const installation = makeFileBatchInstallation(
+		'open',
+		'file-subscription-existing-owner-backpressure',
+		{
+			revision: 5,
+		},
 	);
-	harness.events.push(makeFileMetadataDataFrame({ ...treeWindow, source: replacementSource }));
-	harness.events.push(
-		makeFileMetadataDataFrame({
-			...descriptorReady,
-			availability: {
-				...descriptorReady.availability,
-				contentDescriptor: {
-					...descriptorReady.availability.contentDescriptor,
+	const replacementSource = {
+		...bridgeProductFileMemberStatusRecordSchema.parse(
+			installation.records.find((record) => record.key === BRIDGE_PRODUCT_FILE_MEMBER_STATUS_KEY)
+				?.value,
+		).source,
+		sourceCursor: 'source-cursor-2',
+		sourceId: 'source-2',
+		subscriptionGeneration: 12,
+	};
+	const replacementRecords: Array<BridgeProductViewInstallation['records'][number]> = [];
+	for (const record of installation.records) {
+		if (record.key === BRIDGE_PRODUCT_FILE_MEMBER_STATUS_KEY) {
+			const status = bridgeProductFileMemberStatusRecordSchema.parse(record.value);
+			replacementRecords.push({ ...record, value: { ...status, source: replacementSource } });
+			continue;
+		}
+		const row = bridgeProductFileBatchRowSchema.parse(record.value);
+		if (row.kind !== 'file' || row.readDescriptor === null) {
+			replacementRecords.push(record);
+			continue;
+		}
+		const descriptor = { ...row.readDescriptor, source: replacementSource };
+		const outcome = row.descriptorOutcome;
+		if (outcome?.availability.availabilityKind !== 'available') {
+			throw new Error('Expected available replacement File descriptor.');
+		}
+		replacementRecords.push({
+			...record,
+			value: {
+				...row,
+				descriptorOutcome: {
+					...outcome,
+					availability: { ...outcome.availability, contentDescriptor: descriptor },
 					source: replacementSource,
 				},
+				readDescriptor: descriptor,
 			},
-			source: replacementSource,
-		}),
-	);
+		});
+	}
+	const replacementInstallation: BridgeProductViewInstallation = {
+		...installation,
+		records: replacementRecords,
+	};
+	await harness.batchSinks.install(replacementInstallation);
 }
 
 function reviewSource(

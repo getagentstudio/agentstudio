@@ -12,6 +12,7 @@ import {
 	startOwnedBridgeDevelopmentServer,
 } from '../../scripts/dev-server/bridge-development-server-process.ts';
 import { bridgeReviewItemIdOracle } from '../../scripts/verify-bridge-viewer-worktree-dev-server/bridge-review-item-id-oracle.ts';
+import type { BridgeViewerFileProofTargets } from '../../scripts/verify-bridge-viewer-worktree-dev-server/product-only-real-router-page.ts';
 
 const execFileAsync = promisify(execFile);
 const bridgeWebRootPath = new URL('../../', import.meta.url).pathname;
@@ -20,6 +21,14 @@ const viteCLIPath = join(bridgeWebRootPath, 'node_modules/vite/bin/vite.js');
 const serverStartupTimeoutMilliseconds = 30_000;
 const serverShutdownTimeoutMilliseconds = 10_000;
 const maximumServerLogTailCharacters = 8_192;
+const markdownProofPath = 'fixture-proof.md';
+const markdownProofRenderedText = 'BRIDGE_VITE_PRODUCT_MARKDOWN_PAINT_PROOF';
+const markdownProofContent = `# ${markdownProofRenderedText}\n`;
+const codeProofPath = 'fixture-proof.swift';
+const codeProofContent = `public enum BridgeViteProductCodeProof {
+    public static let marker = "BRIDGE_VITE_PRODUCT_CODE_PAINT_MARKER"
+}
+`;
 
 export interface BridgeViewerViteProductFixtureOracle {
 	readonly baseRef: string;
@@ -35,6 +44,11 @@ export interface BridgeViewerViteProductFixtureOracle {
 	readonly paneId: string;
 	readonly reviewFiles: readonly BridgeViewerViteProductReviewFileOracle[];
 	readonly worktreeRoot: string;
+}
+
+export interface BridgeViewerViteProductProofFixtureOracle extends BridgeViewerViteProductFixtureOracle {
+	readonly fileProofCodeContent: string;
+	readonly fileProofTargets: BridgeViewerFileProofTargets;
 }
 
 export interface BridgeViewerViteProductContentOracle {
@@ -114,7 +128,7 @@ export async function createBridgeViewerViteProductFixture(
 	readonly dispose: () => Promise<void>;
 	readonly mutateLargeFile: () => Promise<BridgeViewerViteProductContentOracle>;
 	readonly mutateReviewFile: () => Promise<BridgeViewerReviewWorktreeMutation>;
-	readonly oracle: BridgeViewerViteProductFixtureOracle;
+	readonly oracle: BridgeViewerViteProductProofFixtureOracle;
 }> {
 	const worktreeRoot = await mkdtemp(join(tmpdir(), 'bridge-viewer-vite-product-e2e-'));
 	let dataRootPath: string | null = null;
@@ -380,6 +394,12 @@ export async function createBridgeViewerViteProductFixture(
 				dataRootPath,
 				expectedReviewItemIds: reviewFiles.map(({ itemId }): string => itemId),
 				fileContent,
+				fileProofCodeContent: codeProofContent,
+				fileProofTargets: {
+					codePath: codeProofPath,
+					markdownPath: markdownProofPath,
+					markdownRenderedText: markdownProofRenderedText,
+				},
 				fileTreeDeepPath: fileTreeOnlyPaths.at(-1) ?? '',
 				largeFileLineCount: largeFileLines.length,
 				largeFilePath,
@@ -570,6 +590,8 @@ async function writeFixtureFiles(props: {
 	readonly worktreeRoot: string;
 }): Promise<void> {
 	await writeFile(join(props.worktreeRoot, props.largeFilePath), props.largeFileContent);
+	await writeFile(join(props.worktreeRoot, markdownProofPath), markdownProofContent);
+	await writeFile(join(props.worktreeRoot, codeProofPath), codeProofContent);
 	for (const [fileIndex, relativePath] of props.nestedPaths.entries()) {
 		const absolutePath = join(props.worktreeRoot, relativePath);
 		// oxlint-disable-next-line no-await-in-loop -- Fixture paths must exist before their deterministic writes.

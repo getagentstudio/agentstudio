@@ -3,6 +3,7 @@ import Foundation
 @MainActor
 extension BridgePaneController {
     static func reviewPackageLoadFailureSummary(for error: Error, stage: String) -> String {
+        if error is BridgeReviewConstructionProgressFailure { return "reviewBuildProgressDeadline" }
         let prefix = "loadFailed:\(stage)"
         if let providerFailure = error as? BridgeProviderFailure {
             switch providerFailure {

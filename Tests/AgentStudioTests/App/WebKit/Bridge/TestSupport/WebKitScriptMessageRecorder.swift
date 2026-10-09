@@ -21,6 +21,12 @@ final class WebKitScriptMessageRecorder: NSObject, WKScriptMessageHandler {
     private let lock = NSLock()
     nonisolated(unsafe) private var storage: [Any] = []
     nonisolated(unsafe) private var pendingCountWaiters: [PendingCountWaiter] = []
+    private let onStringMessage: (@Sendable (String) -> Void)?
+
+    init(onStringMessage: (@Sendable (String) -> Void)? = nil) {
+        self.onStringMessage = onStringMessage
+        super.init()
+    }
 
     var receivedMessages: [Any] {
         lock.lock()
@@ -57,6 +63,7 @@ final class WebKitScriptMessageRecorder: NSObject, WKScriptMessageHandler {
         let resumableWaiters = pendingCountWaiters.filter { deliveredCount >= $0.threshold }
         pendingCountWaiters.removeAll { deliveredCount >= $0.threshold }
         lock.unlock()
+        if let body = message.body as? String { onStringMessage?(body) }
         // Resume outside the lock: a resumed waiter can re-enter this handler.
         for waiter in resumableWaiters {
             waiter.continuation.resume()

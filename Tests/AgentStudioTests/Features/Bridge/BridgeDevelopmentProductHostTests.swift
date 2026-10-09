@@ -12,7 +12,7 @@ struct BridgeDevelopmentProductHostTests {
     func decodesFileTargetNavigationIntent() throws {
         // Arrange
         let requestData = Data(
-            #"{"navigationIntent":{"commandId":"open-file-target","commandKind":"activateTarget","surface":"file","target":{"path":"Sources/App.swift","targetKind":"file","version":"current"}},"reason":"initial"}"#
+            #"{"navigationIntent":{"commandId":"open-file-target","commandKind":"activateTarget","surface":"file","target":{"path":"Sources/App.swift","targetKind":"file","version":"current"}},"reason":"initial","tabId":"owner-tab-1"}"#
                 .utf8
         )
 
@@ -39,7 +39,7 @@ struct BridgeDevelopmentProductHostTests {
     func decodesReviewPathTargetNavigationIntent() throws {
         // Arrange
         let requestData = Data(
-            #"{"navigationIntent":{"commandId":"open-review-path","commandKind":"activateTarget","surface":"review","target":{"path":"Sources/App.swift","targetKind":"review","version":"head"}},"reason":"initial"}"#
+            #"{"navigationIntent":{"commandId":"open-review-path","commandKind":"activateTarget","surface":"review","target":{"path":"Sources/App.swift","targetKind":"review","version":"head"}},"reason":"initial","tabId":"owner-tab-1"}"#
                 .utf8
         )
 
@@ -66,7 +66,7 @@ struct BridgeDevelopmentProductHostTests {
     func decodesReviewItemTargetNavigationIntent() throws {
         // Arrange
         let requestData = Data(
-            #"{"navigationIntent":{"commandId":"open-review-item","commandKind":"activateTarget","surface":"review","target":{"reviewItemId":"item-git-diff-123","targetKind":"review"}},"reason":"initial"}"#
+            #"{"navigationIntent":{"commandId":"open-review-item","commandKind":"activateTarget","surface":"review","target":{"reviewItemId":"item-git-diff-123","targetKind":"review"}},"reason":"initial","tabId":"owner-tab-1"}"#
                 .utf8
         )
 
@@ -92,7 +92,7 @@ struct BridgeDevelopmentProductHostTests {
     func rejectsEmptyReviewTargetNavigationIntent() {
         // Arrange
         let requestData = Data(
-            #"{"navigationIntent":{"commandId":"open-empty-review","commandKind":"activateTarget","surface":"review","target":{"targetKind":"review"}},"reason":"initial"}"#
+            #"{"navigationIntent":{"commandId":"open-empty-review","commandKind":"activateTarget","surface":"review","target":{"targetKind":"review"}},"reason":"initial","tabId":"owner-tab-1"}"#
                 .utf8
         )
 
@@ -354,7 +354,7 @@ struct BridgeDevelopmentProductHostTests {
         let request = try JSONDecoder().decode(
             BridgeDevelopmentProductBootstrapRequest.self,
             from: Data(
-                #"{"navigationIntent":{"commandId":"open-file-view","commandKind":"activateContext","surface":"file"},"reason":"initial"}"#
+                #"{"navigationIntent":{"commandId":"open-file-view","commandKind":"activateContext","surface":"file"},"reason":"initial","tabId":"owner-tab-1"}"#
                     .utf8
             )
         )
@@ -391,7 +391,7 @@ struct BridgeDevelopmentProductHostTests {
             let navigationIntent = #"{"commandId":"open-file-view","commandKind":"activateContext","surface":"file"}"#
             let initialRequest = try JSONDecoder().decode(
                 BridgeDevelopmentProductBootstrapRequest.self,
-                from: Data(#"{"navigationIntent":\#(navigationIntent),"reason":"initial"}"#.utf8)
+                from: Data(#"{"navigationIntent":\#(navigationIntent),"reason":"initial","tabId":"owner-tab-1"}"#.utf8)
             )
 
             // Act
@@ -400,7 +400,7 @@ struct BridgeDevelopmentProductHostTests {
             let replacementRequest = try JSONDecoder().decode(
                 BridgeDevelopmentProductBootstrapRequest.self,
                 from: Data(
-                    #"{"navigationIntent":\#(navigationIntent),"paneSessionId":"\#(initialEnvelope.bootstrap.paneSessionId)","reason":"workerReplacement"}"#
+                    #"{"navigationIntent":\#(navigationIntent),"paneSessionId":"\#(initialEnvelope.bootstrap.paneSessionId)","reason":"workerReplacement","tabId":"owner-tab-1"}"#
                         .utf8
                 )
             )
@@ -435,7 +435,7 @@ struct BridgeDevelopmentProductHostTests {
             let initialRequest = try JSONDecoder().decode(
                 BridgeDevelopmentProductBootstrapRequest.self,
                 from: Data(
-                    #"{"navigationIntent":{"commandId":"open-file-view","commandKind":"activateContext","surface":"file"},"reason":"initial"}"#
+                    #"{"navigationIntent":{"commandId":"open-file-view","commandKind":"activateContext","surface":"file"},"reason":"initial","tabId":"owner-tab-1"}"#
                         .utf8
                 )
             )
@@ -474,7 +474,7 @@ struct BridgeDevelopmentProductHostTests {
             let bootstrapRequest = try JSONDecoder().decode(
                 BridgeDevelopmentProductBootstrapRequest.self,
                 from: Data(
-                    #"{"navigationIntent":{"commandId":"open-file-view","commandKind":"activateContext","surface":"file"},"reason":"initial"}"#
+                    #"{"navigationIntent":{"commandId":"open-file-view","commandKind":"activateContext","surface":"file"},"reason":"initial","tabId":"owner-tab-1"}"#
                         .utf8
                 )
             )
@@ -518,19 +518,15 @@ struct BridgeDevelopmentProductHostTests {
                     Issue.record("Unexpected URL scheme response event")
                 }
             }
-            let controlResponse = try BridgeProductStrictJSON.decode(
-                BridgeProductControlResponse.self,
+            let admission = try BridgeProductStrictJSON.decode(
+                BridgeProductOperationAdmittedResponse.self,
                 from: responseBody
             )
 
             // Assert
             #expect(response?.statusCode == 200)
-            guard case .workerSessionAccepted(let accepted) = controlResponse else {
-                Issue.record("Expected the existing adapter to accept the worker session")
-                return
-            }
-            #expect(accepted.correlation.paneSessionId == delivery.bootstrap.paneSessionId)
-            #expect(accepted.correlation.workerInstanceId == delivery.bootstrap.workerInstanceId)
+            #expect(admission.correlation.paneSessionId == delivery.bootstrap.paneSessionId)
+            #expect(admission.correlation.workerInstanceId == delivery.bootstrap.workerInstanceId)
         }
     }
 }

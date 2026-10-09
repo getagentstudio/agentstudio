@@ -1,0 +1,202 @@
+{
+  "rows": [
+    {
+      "recordKey": "/workspace/src/a.ts",
+      "row": {
+        "kind": "file",
+        "name": "a.ts",
+        "depth": 1,
+        "displayKey": "src/a.ts",
+        "parentDisplayKey": "src",
+        "sortKey": "a.ts",
+        "changeStatus": "modified",
+        "oldPath": null,
+        "readDescriptor": {
+          "contentKind": "file.content",
+          "declaredByteLength": 3,
+          "descriptorId": "file-descriptor-1",
+          "encoding": "utf-8",
+          "expectedSha256": "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad",
+          "fileId": "file-1",
+          "maximumBytes": 3,
+          "source": {
+            "repoId": "00000000-0000-4000-8000-000000000001",
+            "rootRevisionToken": null,
+            "sourceCursor": "source-cursor-1",
+            "sourceId": "source-1",
+            "subscriptionGeneration": 11,
+            "worktreeId": "00000000-0000-4000-8000-000000000002"
+          },
+          "window": {
+            "kind": "prefix",
+            "maximumBytes": 3,
+            "maximumLines": 10000,
+            "startByte": 0
+          }
+        },
+        "fileClass": "source",
+        "sizeBytes": 3,
+        "lineCount": 1,
+        "rowId": "worktree-file-row-fixture-1",
+        "fileId": "file-1",
+        "descriptorOutcome": {
+          "availability": {
+            "availabilityKind": "available",
+            "contentDescriptor": {
+              "contentKind": "file.content",
+              "declaredByteLength": 3,
+              "descriptorId": "file-descriptor-1",
+              "encoding": "utf-8",
+              "expectedSha256": "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad",
+              "fileId": "file-1",
+              "maximumBytes": 3,
+              "source": {
+                "repoId": "00000000-0000-4000-8000-000000000001",
+                "rootRevisionToken": null,
+                "sourceCursor": "source-cursor-1",
+                "sourceId": "source-1",
+                "subscriptionGeneration": 11,
+                "worktreeId": "00000000-0000-4000-8000-000000000002"
+              },
+              "window": {
+                "kind": "prefix",
+                "maximumBytes": 3,
+                "maximumLines": 10000,
+                "startByte": 0
+              }
+            }
+          },
+          "encoding": "utf-8",
+          "endsMidLine": false,
+          "endsWithNewline": false,
+          "estimatedContentHeightPixels": null,
+          "fileExtension": "ts",
+          "fileId": "file-1",
+          "language": "typescript",
+          "modifiedAtUnixMilliseconds": null,
+          "path": "src/a.ts",
+          "payloadByteCount": 3,
+          "payloadLineCount": 1,
+          "rowId": "worktree-file-row-fixture-1",
+          "sizeBytes": 3,
+          "source": {
+            "repoId": "00000000-0000-4000-8000-000000000001",
+            "rootRevisionToken": null,
+            "sourceCursor": "source-cursor-1",
+            "sourceId": "source-1",
+            "subscriptionGeneration": 11,
+            "worktreeId": "00000000-0000-4000-8000-000000000002"
+          },
+          "totalLineCount": 1,
+          "truncationKind": "none",
+          "virtualizedExtentKind": "exactLineCount"
+        }
+      }
+    },
+    {
+      "recordKey": "/workspace/src",
+      "row": {
+        "kind": "directory",
+        "name": "src",
+        "depth": 0,
+        "displayKey": "src",
+        "parentDisplayKey": null,
+        "sortKey": "src",
+        "changeStatus": null,
+        "oldPath": null,
+        "readDescriptor": null,
+        "fileClass": null,
+        "sizeBytes": null,
+        "lineCount": null,
+        "rowId": "worktree-directory-fixture-1",
+        "fileId": null,
+        "descriptorOutcome": null
+      }
+    },
+    {
+      "recordKey": "/workspace/src/old.ts",
+      "row": {
+        "kind": "deleted",
+        "name": "old.ts",
+        "depth": 1,
+        "displayKey": "src/old.ts",
+        "parentDisplayKey": "src",
+        "sortKey": "old.ts",
+        "changeStatus": "renamed",
+        "oldPath": "src/before.ts",
+        "readDescriptor": null,
+        "fileClass": null,
+        "sizeBytes": null,
+        "lineCount": null,
+        "rowId": "worktree-deleted-fixture-1",
+        "fileId": null,
+        "descriptorOutcome": null
+      }
+    }
+  ],
+  "memberStatuses": [
+    {
+      "recordKey": "member-status",
+      "record": {
+        "kind": "memberStatus",
+        "source": {
+          "repoId": "00000000-0000-4000-8000-000000000001",
+          "rootRevisionToken": null,
+          "sourceCursor": "source-cursor-1",
+          "sourceId": "source-1",
+          "subscriptionGeneration": 11,
+          "worktreeId": "00000000-0000-4000-8000-000000000002"
+        },
+        "status": "ready",
+        "branchName": "main",
+        "ahead": 2,
+        "behind": 1,
+        "staged": 3,
+        "unstaged": 4,
+        "untracked": 5
+      }
+    },
+    {
+      "recordKey": "member-status",
+      "record": {
+        "kind": "memberStatus",
+        "source": {
+          "repoId": "00000000-0000-4000-8000-000000000001",
+          "rootRevisionToken": null,
+          "sourceCursor": "source-cursor-1",
+          "sourceId": "source-1",
+          "subscriptionGeneration": 11,
+          "worktreeId": "00000000-0000-4000-8000-000000000002"
+        },
+        "status": "stale",
+        "branchName": "main",
+        "ahead": 2,
+        "behind": 1,
+        "staged": 3,
+        "unstaged": 4,
+        "untracked": 5
+      }
+    },
+    {
+      "recordKey": "member-status",
+      "record": {
+        "kind": "memberStatus",
+        "source": {
+          "repoId": "00000000-0000-4000-8000-000000000001",
+          "rootRevisionToken": null,
+          "sourceCursor": "source-cursor-1",
+          "sourceId": "source-1",
+          "subscriptionGeneration": 11,
+          "worktreeId": "00000000-0000-4000-8000-000000000002"
+        },
+        "status": "failed",
+        "branchName": "main",
+        "ahead": 2,
+        "behind": 1,
+        "staged": 3,
+        "unstaged": 4,
+        "untracked": 5
+      }
+    }
+  ]
+}

@@ -1,45 +1,91 @@
 import { describe, expect, test } from 'vitest';
 
 import type { BridgeTelemetrySample } from '../../foundation/telemetry/bridge-telemetry-event.js';
+import noSourceAttempt from '../../test-fixtures/bridge-contract-fixtures/valid/bridge-product-review-comparison-attempt-no-source.json' with { type: 'json' };
 import { makeReviewPublicationIdentity } from './bridge-comm-worker-entry.test-support.js';
 import {
 	encodeBridgeWorkerActiveViewerModeUpdateCommand,
 	encodeBridgeWorkerReviewComparisonTargetsQueryCommand,
 } from './bridge-comm-worker-protocol.js';
 import { registerBridgeCommWorkerRuntimePortProtocol } from './bridge-comm-worker-runtime-protocol.js';
-import {
-	makeReviewMetadataDataFrame,
-	type ReviewMetadataSubscription,
-} from './bridge-comm-worker-runtime-protocol.review-product-transport.test-support.js';
+import type { ReviewMetadataSubscription } from './bridge-comm-worker-runtime-protocol.review-product-transport.test-support.js';
 import {
 	createIdleWorktreeAnnotationSubscription,
 	createRecordingBridgeCommWorkerPort,
 	flushBridgeWorkerRuntimeContinuations,
-	makeFileMetadataDataFrame,
-	type FileMetadataDataFrame,
 	type FileMetadataSubscription,
 } from './bridge-comm-worker-runtime-protocol.test-support.js';
 import { publishBridgeCommWorkerUpdatingChrome } from './bridge-comm-worker-updating-chrome.js';
+import { createBridgeMainRenderSnapshotStore } from './bridge-main-render-snapshot-store.js';
 import { BridgeProductBoundedAsyncQueue } from './bridge-product-async-queue.js';
+import type { BridgeProductBatchFrameSinks } from './bridge-product-batch-frame-router.js';
 import type { BridgeProductReviewComparisonTargetsContentDescriptor } from './bridge-product-content-contracts.js';
 import type { BridgeProductMetadataApplicationProtocolIdentity } from './bridge-product-metadata-application-protocol.js';
+import { bridgeProductReviewComparisonPresentationSchema } from './bridge-product-review-comparison-presentation-contracts.js';
 import type { BridgeProductContentStream } from './bridge-product-transport-contract.js';
 import type {
 	BridgeProductPanePresentationFrame,
 	BridgeProductTransportSession,
 } from './bridge-product-transport.js';
+import { createTestMetadataReopenPort } from './bridge-product-view-reopen.test-support.js';
 import type {
 	BridgeWorkerPanelChromePatchPayload,
 	BridgeWorkerServerToMainMessage,
 	BridgeWorkerServerToMainWireMessage,
 } from './bridge-worker-contracts.js';
-
-type ReviewMetadataDataFrame = ReturnType<typeof makeReviewMetadataDataFrame>;
+import {
+	makeFileBatchInstallation,
+	makeReviewBatchInstallation,
+} from './comm-runtime-protocol.file-product.test-support.js';
 
 describe('Bridge comm worker updating panel chrome', () => {
+	test('certified no-source reaches panel chrome before a Review epoch or publication exists', () => {
+		const store = createBridgeMainRenderSnapshotStore();
+		const comparison = bridgeProductReviewComparisonPresentationSchema.parse({
+			activeTarget: null,
+			attempt: noSourceAttempt,
+			displayedSnapshot: { status: 'none' },
+			repositoryDefaultTarget: null,
+		});
+		publishBridgeCommWorkerUpdatingChrome({
+			activeFileWorkerDerivationEpoch: null,
+			activeReviewSourceIdentity: null,
+			activeReviewWorkerDerivationEpoch: null,
+			activeReviewPublicationIdentity: null,
+			activeViewerMode: null,
+			createSequence: (): number => 1,
+			previousPublicationIdentity: undefined,
+			previousReviewComparison: null,
+			presentation: {
+				fileRefreshFailure: null,
+				nativeActivity: 'foreground',
+				presentationRevision: 1,
+				refreshingLanes: [],
+				reviewComparison: comparison,
+				workAdmissionGeneration: 1,
+			},
+			publish: (): void => {
+				throw new Error('No-source must not manufacture a package publication');
+			},
+			publishCertifiedNoSourceComparison: (certifiedComparison): void => {
+				store.applyWorkerPatch({
+					slice: 'panelChrome',
+					operation: 'upsert',
+					payload: { reviewComparison: certifiedComparison },
+				});
+			},
+			surface: 'review',
+			telemetryClient: undefined,
+		});
+		expect(store.getSnapshot().panelChromeSlice.reviewComparison).toEqual(comparison);
+	});
+
 	test('publishes Review chrome only when it can carry exact publication lineage', () => {
 		const published: BridgeWorkerServerToMainWireMessage[] = [];
 		const common = {
+			publishCertifiedNoSourceComparison: (): void => {
+				throw new Error('Non-noSource state must retain its publication gate');
+			},
 			activeFileWorkerDerivationEpoch: null,
 			activeReviewSourceIdentity: null,
 			activeReviewWorkerDerivationEpoch: 7,
@@ -86,6 +132,9 @@ describe('Bridge comm worker updating panel chrome', () => {
 
 		// Act
 		publishBridgeCommWorkerUpdatingChrome({
+			publishCertifiedNoSourceComparison: (): void => {
+				throw new Error('File state must not use the Review no-source path');
+			},
 			activeFileWorkerDerivationEpoch: 7,
 			activeReviewPublicationIdentity: null,
 			activeReviewSourceIdentity: null,
@@ -132,8 +181,8 @@ describe('Bridge comm worker updating panel chrome', () => {
 
 	test('preserves a settled comparison-target query when native foreground is lost', async () => {
 		// Arrange — retaining the completed request id makes foreground loss publish a false failure.
-		const fileEvents = new BridgeProductBoundedAsyncQueue<FileMetadataDataFrame>(16);
-		const reviewEvents = new BridgeProductBoundedAsyncQueue<ReviewMetadataDataFrame>(16);
+		const fileEvents = new BridgeProductBoundedAsyncQueue<never>(16);
+		const reviewEvents = new BridgeProductBoundedAsyncQueue<never>(16);
 		const presentation = createPanePresentationTestTransport({
 			fileEvents,
 			reviewEvents,
@@ -184,8 +233,8 @@ describe('Bridge comm worker updating panel chrome', () => {
 
 	test('settles the current comparison-target query when native foreground is lost', async () => {
 		// Arrange
-		const fileEvents = new BridgeProductBoundedAsyncQueue<FileMetadataDataFrame>(16);
-		const reviewEvents = new BridgeProductBoundedAsyncQueue<ReviewMetadataDataFrame>(16);
+		const fileEvents = new BridgeProductBoundedAsyncQueue<never>(16);
+		const reviewEvents = new BridgeProductBoundedAsyncQueue<never>(16);
 		const presentation = createPanePresentationTestTransport({ fileEvents, reviewEvents });
 		const { dispatch, postedMessages } = createRecordingBridgeCommWorkerPort();
 		let resolveQuery!: (result: unknown) => void;
@@ -235,9 +284,9 @@ describe('Bridge comm worker updating panel chrome', () => {
 
 	test('reopens failed File metadata after the coalesced native File refresh settles', async () => {
 		// Arrange — removing refresh-settlement recovery makes this test fail.
-		const firstFileEvents = new BridgeProductBoundedAsyncQueue<FileMetadataDataFrame>(16);
-		const replacementFileEvents = new BridgeProductBoundedAsyncQueue<FileMetadataDataFrame>(16);
-		const reviewEvents = new BridgeProductBoundedAsyncQueue<ReviewMetadataDataFrame>(16);
+		const firstFileEvents = new BridgeProductBoundedAsyncQueue<never>(16);
+		const replacementFileEvents = new BridgeProductBoundedAsyncQueue<never>(16);
+		const reviewEvents = new BridgeProductBoundedAsyncQueue<never>(16);
 		const presentation = createPanePresentationTestTransport({
 			fileEvents: firstFileEvents,
 			replacementFileEvents,
@@ -274,8 +323,8 @@ describe('Bridge comm worker updating panel chrome', () => {
 	test('keeps Review refresh chrome classifier-owned while File retains updating state', async () => {
 		// Arrange
 		const telemetrySamples: BridgeTelemetrySample[] = [];
-		const fileEvents = new BridgeProductBoundedAsyncQueue<FileMetadataDataFrame>(16);
-		const reviewEvents = new BridgeProductBoundedAsyncQueue<ReviewMetadataDataFrame>(16);
+		const fileEvents = new BridgeProductBoundedAsyncQueue<never>(16);
+		const reviewEvents = new BridgeProductBoundedAsyncQueue<never>(16);
 		const presentation = createPanePresentationTestTransport({ fileEvents, reviewEvents });
 		const { dispatch, postedMessages } = createRecordingBridgeCommWorkerPort();
 		registerBridgeCommWorkerRuntimePortProtocol(dispatch.port, {
@@ -290,10 +339,8 @@ describe('Bridge comm worker updating panel chrome', () => {
 		});
 		dispatch.message(activeViewerModeUpdateCommand('review', 1));
 		await flushBridgeWorkerRuntimeContinuations();
-		fileEvents.push(
-			makeFileMetadataDataFrame({ eventKind: 'file.sourceAccepted', source: fileSource }),
-		);
-		reviewEvents.push(makeReviewMetadataDataFrame(reviewSourceAcceptedEvent));
+		await presentation.installFileBatch();
+		await presentation.installReviewBatch();
 		await flushBridgeWorkerRuntimeContinuations();
 		postedMessages.length = 0;
 
@@ -305,7 +352,9 @@ describe('Bridge comm worker updating panel chrome', () => {
 		});
 
 		// Assert
-		expect(panelChromePublications(postedMessages)).toEqual([]);
+		expect(panelChromePublications(postedMessages)).toEqual([
+			{ kind: 'reviewRenderPatch', operation: 'reset', payload: null, surface: 'review' },
+		]);
 		expect(telemetrySamples).toEqual(
 			expect.arrayContaining([
 				expect.objectContaining({
@@ -444,33 +493,34 @@ interface PanelChromePublication {
 }
 
 function createPanePresentationTestTransport(props: {
-	readonly fileEvents: BridgeProductBoundedAsyncQueue<FileMetadataDataFrame>;
-	readonly replacementFileEvents?: BridgeProductBoundedAsyncQueue<FileMetadataDataFrame>;
-	readonly reviewEvents: BridgeProductBoundedAsyncQueue<ReviewMetadataDataFrame>;
+	readonly fileEvents: BridgeProductBoundedAsyncQueue<never>;
+	readonly replacementFileEvents?: BridgeProductBoundedAsyncQueue<never>;
+	readonly reviewEvents: BridgeProductBoundedAsyncQueue<never>;
 	readonly supportsComparisonTargetContent?: boolean;
 }): {
 	readonly productTransport: BridgeProductTransportSession;
 	readonly fileSubscriptionCount: () => number;
+	readonly installFileBatch: () => Promise<void>;
+	readonly installReviewBatch: () => Promise<void>;
 	readonly publish: (publication: PanePresentationPublicationProps) => void;
 } {
 	let fileEpoch = 0;
 	let fileSubscriptionCount = 0;
 	let reviewEpoch = 0;
 	let panePresentationSink: ((frame: BridgeProductPanePresentationFrame) => void) | null = null;
+	let batchSinks: BridgeProductBatchFrameSinks | null = null;
 	const fileSubscriptions: readonly FileMetadataSubscription[] = [
 		{
 			cancel: async (): Promise<void> => {},
 			events: props.fileEvents,
 			subscriptionId: 'file-subscription-updating-chrome',
 			subscriptionKind: 'file.metadata',
-			update: async (): Promise<void> => {},
 		},
 		{
 			cancel: async (): Promise<void> => {},
 			events: props.replacementFileEvents ?? props.fileEvents,
 			subscriptionId: 'file-subscription-updating-chrome-replacement',
 			subscriptionKind: 'file.metadata',
-			update: async (): Promise<void> => {},
 		},
 	];
 	const reviewSubscription: ReviewMetadataSubscription = {
@@ -478,10 +528,10 @@ function createPanePresentationTestTransport(props: {
 		events: props.reviewEvents,
 		subscriptionId: 'review-subscription-updating-chrome',
 		subscriptionKind: 'review.metadata',
-		update: async (): Promise<void> => {},
 	};
 	const productTransport: BridgeProductTransportSession = {
-		bumpWorkerDerivationEpoch: (surface): number => {
+		...createTestMetadataReopenPort(),
+		advanceWorkerDerivationEpoch: (surface): number => {
 			if (surface === 'file') fileEpoch += 1;
 			if (surface === 'review') reviewEpoch += 1;
 			return surface === 'file' ? fileEpoch : reviewEpoch;
@@ -512,6 +562,9 @@ function createPanePresentationTestTransport(props: {
 		setPanePresentationFrameSink: (sink): void => {
 			panePresentationSink = sink;
 		},
+		setBatchFrameSinks: (sinks): void => {
+			batchSinks = sinks;
+		},
 		subscribe: ((protocol: BridgeProductMetadataApplicationProtocolIdentity): never => {
 			const subscriptionKind = protocol.kind;
 			if (subscriptionKind === 'file.annotations' || subscriptionKind === 'review.annotations') {
@@ -530,6 +583,18 @@ function createPanePresentationTestTransport(props: {
 	};
 	return {
 		fileSubscriptionCount: (): number => fileSubscriptionCount,
+		installFileBatch: async (): Promise<void> => {
+			if (batchSinks === null) throw new Error('File batch sinks were not installed.');
+			await batchSinks.install(
+				makeFileBatchInstallation('open', 'file-subscription-updating-chrome'),
+			);
+		},
+		installReviewBatch: async (): Promise<void> => {
+			if (batchSinks === null) throw new Error('Review batch sinks were not installed.');
+			await batchSinks.install(
+				makeReviewBatchInstallation('open', 'review-subscription-updating-chrome'),
+			);
+		},
 		productTransport,
 		publish: (publication): void => {
 			if (panePresentationSink === null) {
@@ -654,13 +719,3 @@ const currentFileSourceConfiguration = {
 	rootPathToken: 'root-token-updating-chrome',
 	worktreeId: fileSource.worktreeId,
 } as const;
-
-const reviewSourceAcceptedEvent = {
-	eventKind: 'review.sourceAccepted',
-	operationCorrelationId: null,
-	generation: 1,
-	packageId: 'review-package-updating-chrome',
-	publicationId: '00000000-0000-7000-8000-000000000011',
-	revision: 1,
-	sourceIdentity: 'review-source-updating-chrome',
-} satisfies Parameters<typeof makeReviewMetadataDataFrame>[0];

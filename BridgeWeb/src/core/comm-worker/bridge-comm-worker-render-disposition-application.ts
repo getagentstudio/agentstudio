@@ -7,10 +7,11 @@ import type {
 	BridgeWorkerServerToMainMessage,
 } from './bridge-worker-contracts.js';
 import type { BridgeWorkerRenderFulfillmentRegistry } from './bridge-worker-render-fulfillment-registry.js';
-import type { BridgeWorkerRenderDispositionReceipt } from './bridge-worker-render-fulfillment.js';
+import type { BridgeWorkerRenderAdmissionReceipt } from './bridge-worker-render-fulfillment.js';
 
 export interface BridgeWorkerRenderDispositionApplicationReceiptResult {
-	readonly receipt: BridgeWorkerRenderDispositionReceipt;
+	readonly receipt: BridgeWorkerRenderAdmissionReceipt;
+	readonly reason?: string;
 	readonly status: 'accepted' | 'duplicate' | 'rejected';
 }
 
@@ -24,17 +25,28 @@ export function applyBridgeWorkerRenderDispositionCommand(props: {
 	readonly store: {
 		readonly renderFulfillmentRegistry: Pick<
 			BridgeWorkerRenderFulfillmentRegistry,
-			'applyDisposition'
+			'applyDisposition' | 'applyPaintRelease'
 		>;
 	};
 	readonly telemetryClient?: BridgeCommWorkerTelemetryRecorder;
 }): BridgeWorkerRenderDispositionApplication {
 	const resultCounts = { accepted: 0, duplicate: 0, rejected: 0 };
+	let unexpectedRejectionCount = 0;
 	const receiptResults: BridgeWorkerRenderDispositionApplicationReceiptResult[] = [];
 	for (const receipt of props.command.receipts) {
-		const result = props.store.renderFulfillmentRegistry.applyDisposition(receipt);
+		const result =
+			receipt.kind === 'paint.released'
+				? props.store.renderFulfillmentRegistry.applyPaintRelease(receipt)
+				: props.store.renderFulfillmentRegistry.applyDisposition(receipt);
 		resultCounts[result.status] += 1;
-		receiptResults.push({ receipt, status: result.status });
+		if (result.status === 'rejected' && receipt.kind === 'render.disposition') {
+			unexpectedRejectionCount += 1;
+		}
+		receiptResults.push({
+			receipt,
+			...(result.status === 'rejected' ? { reason: result.reason } : {}),
+			status: result.status,
+		});
 	}
 	recordBridgeWorkerRenderDispositionBatchTelemetry({
 		acceptedCount: resultCounts.accepted,
@@ -45,7 +57,7 @@ export function applyBridgeWorkerRenderDispositionCommand(props: {
 		...(props.telemetryClient === undefined ? {} : { telemetryClient: props.telemetryClient }),
 	});
 	const messages =
-		resultCounts.rejected > 0
+		unexpectedRejectionCount > 0
 			? [
 					buildBridgeWorkerDegradedHealthEvent({
 						message: 'Bridge render disposition did not match a current worker publication.',

@@ -2,6 +2,28 @@ import AgentStudioInfrastructure
 import Foundation
 import Observation
 
+package enum EntityRecencyStoreSaveLane: Hashable, Sendable {
+    case application
+    case workspace(UUID)
+}
+
+/// One persisted save attempt in the store's application or workspace lane.
+package struct EntityRecencyStoreSaveScope: Hashable, Sendable {
+    package let lane: EntityRecencyStoreSaveLane
+    package let generation: UInt64
+}
+
+/// Synchronous observations of the store's own transitions; they do not add
+/// events to the app runtime bus. Completion acknowledges a committed SQLite write.
+package enum EntityRecencyStoreFact: Equatable, Sendable {
+    case saveStarted
+    case saveCompleted
+    case saveFailed
+    case saveCancelled
+}
+
+package typealias EntityRecencyStoreFactSink = @Sendable (EntityRecencyStoreSaveScope, EntityRecencyStoreFact) -> Void
+
 @MainActor
 package final class EntityRecencyStore {
     private let applicationAtom: ApplicationEntityRecencyAtom
@@ -9,6 +31,8 @@ package final class EntityRecencyStore {
     private let sqliteDatastore: WorkspaceSQLiteDatastoreActor
     private let persistDebounceDuration: Duration
     private let delay: AsyncDelay
+    private let factSink: EntityRecencyStoreFactSink?
+    private var saveFactGeneration: UInt64 = 0
 
     private var applicationSaveTask: Task<Void, Never>?
     private var workspaceSaveTask: Task<Void, Never>?
@@ -34,13 +58,15 @@ package final class EntityRecencyStore {
         workspaceAtom: WorkspaceEntityRecencyAtom,
         sqliteDatastore: WorkspaceSQLiteDatastoreActor,
         persistDebounceDuration: Duration = .milliseconds(500),
-        clock: (any Clock<Duration> & Sendable)? = nil
+        clock: (any Clock<Duration> & Sendable)? = nil,
+        factSink: EntityRecencyStoreFactSink? = nil
     ) {
         self.applicationAtom = applicationAtom
         self.workspaceAtom = workspaceAtom
         self.sqliteDatastore = sqliteDatastore
         self.persistDebounceDuration = persistDebounceDuration
         delay = clock.map(AsyncDelay.clock) ?? .taskSleep
+        self.factSink = factSink
     }
 
     package func restoreApplicationAsync() async {
@@ -90,7 +116,16 @@ package final class EntityRecencyStore {
         guard isApplicationHydrated else { return }
         applicationSaveTask?.cancel()
         applicationSaveTask = nil
-        try await sqliteDatastore.saveApplicationEntityRecency(applicationAtom.recentEntities)
+        let saveScope = beginSaveFact(in: .application)
+        do {
+            try await sqliteDatastore.saveApplicationEntityRecency(applicationAtom.recentEntities)
+            if let saveScope { factSink?(saveScope, .saveCompleted) }
+        } catch {
+            if let saveScope {
+                factSink?(saveScope, error is CancellationError ? .saveCancelled : .saveFailed)
+            }
+            throw error
+        }
     }
 
     package func flushWorkspaceAsync(for workspaceID: UUID) async throws {
@@ -99,10 +134,27 @@ package final class EntityRecencyStore {
         }
         workspaceSaveTask?.cancel()
         workspaceSaveTask = nil
-        try await sqliteDatastore.saveWorkspaceEntityRecency(
-            workspaceAtom.recentEntities,
-            workspaceId: workspaceID
-        )
+        let saveScope = beginSaveFact(in: .workspace(workspaceID))
+        do {
+            try await sqliteDatastore.saveWorkspaceEntityRecency(
+                workspaceAtom.recentEntities,
+                workspaceId: workspaceID
+            )
+            if let saveScope { factSink?(saveScope, .saveCompleted) }
+        } catch {
+            if let saveScope {
+                factSink?(saveScope, error is CancellationError ? .saveCancelled : .saveFailed)
+            }
+            throw error
+        }
+    }
+
+    private func beginSaveFact(in lane: EntityRecencyStoreSaveLane) -> EntityRecencyStoreSaveScope? {
+        guard let factSink else { return nil }
+        saveFactGeneration &+= 1
+        let scope = EntityRecencyStoreSaveScope(lane: lane, generation: saveFactGeneration)
+        factSink(scope, .saveStarted)
+        return scope
     }
 
     package func flushAllAsync() async throws {

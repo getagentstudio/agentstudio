@@ -1,3 +1,6 @@
+import { uuidv7 } from 'uuidv7';
+
+import { bridgeProductIdentifierSchema } from '../core/comm-worker/bridge-product-contract-primitives.js';
 import {
 	BRIDGE_PRODUCT_DEV_BOOTSTRAP_REQUEST_MEDIA_TYPE,
 	BRIDGE_PRODUCT_DEV_BOOTSTRAP_RESPONSE_MEDIA_TYPE,
@@ -24,6 +27,7 @@ export interface BridgeAppDevProductSessionHostProps {
 	readonly onSessionInUse?: () => void;
 	readonly reloadPage?: () => void;
 	readonly target?: BridgeAppDevProductSessionTarget;
+	readonly tabId?: string;
 	readonly waitForHealthProbe?: (signal: AbortSignal) => Promise<void>;
 }
 
@@ -33,6 +37,7 @@ class BridgeDevelopmentBootstrapTransportUnavailableError extends Error {}
 class BridgeDevelopmentSessionInUseError extends Error {}
 
 const bridgeDevelopmentBackendUnavailableMessage = 'Bridge development backend unavailable';
+const bridgeDevelopmentTabIdentityStorageKey = 'bridge.product.dev.tabId';
 const bridgeDevelopmentHealthProbeIntervalMilliseconds = 250;
 
 export function installBridgeAppDevProductSessionHost(
@@ -43,6 +48,7 @@ export function installBridgeAppDevProductSessionHost(
 	const fetchHealth = props.fetchHealth ?? globalThis.fetch.bind(globalThis);
 	const reloadPage = props.reloadPage ?? ((): void => globalThis.location.reload());
 	const waitForHealthProbe = props.waitForHealthProbe ?? defaultHealthProbeWait;
+	const tabId = props.tabId ?? readOrCreateDevelopmentTabId();
 	let activeRequestController: AbortController | null = null;
 	let healthProbeController: AbortController | null = null;
 	let initialBootstrapOutcome: InitialBootstrapOutcome = 'pending';
@@ -112,6 +118,7 @@ export function installBridgeAppDevProductSessionHost(
 			navigationIntent: props.navigationIntent,
 			paneSessionId,
 			reason: request.reason,
+			tabId,
 		});
 		if (bootstrapRequest === null) return;
 		if (request.reason === 'initial') {
@@ -311,9 +318,10 @@ function bridgeProductDevBootstrapRequest(props: {
 	readonly navigationIntent: BridgeProductDevNavigationIntent;
 	readonly paneSessionId: string | null;
 	readonly reason: 'initial' | 'workerReplacement';
+	readonly tabId: string;
 }): BridgeProductDevBootstrapRequest | null {
 	if (props.reason === 'initial') {
-		return { navigationIntent: props.navigationIntent, reason: props.reason };
+		return { navigationIntent: props.navigationIntent, reason: props.reason, tabId: props.tabId };
 	}
 	return props.paneSessionId === null
 		? null
@@ -321,7 +329,26 @@ function bridgeProductDevBootstrapRequest(props: {
 				navigationIntent: props.navigationIntent,
 				paneSessionId: props.paneSessionId,
 				reason: props.reason,
+				tabId: props.tabId,
 			};
+}
+
+function readOrCreateDevelopmentTabId(): string {
+	const generatedId = uuidv7();
+	try {
+		const storedId = globalThis.sessionStorage?.getItem(bridgeDevelopmentTabIdentityStorageKey);
+		if (
+			storedId !== null &&
+			storedId !== undefined &&
+			bridgeProductIdentifierSchema.safeParse(storedId).success
+		) {
+			return storedId;
+		}
+		globalThis.sessionStorage?.setItem(bridgeDevelopmentTabIdentityStorageKey, generatedId);
+	} catch {
+		// A restricted dev browser can still bootstrap for this page lifetime.
+	}
+	return generatedId;
 }
 
 function productBootstrapRequest(detail: unknown): {

@@ -19,7 +19,7 @@ struct BridgeMetadataLifecycleOTLPProjectionTests {
             ],
             scope: .init(name: "agentstudio.bridge.performance.swift", version: "0.1.0"),
             attributes: [
-                "agentstudio.bridge.phase": .string("metadata_window_enqueued"),
+                "agentstudio.bridge.phase": .string("metadata_bootstrap_started"),
                 "agentstudio.bridge.plane": .string("data"),
                 "agentstudio.bridge.priority": .string("hot"),
                 "agentstudio.bridge.protocol": .string("worktree-file"),
@@ -28,8 +28,6 @@ struct BridgeMetadataLifecycleOTLPProjectionTests {
                 "agentstudio.bridge.source.generation": .int(7),
                 "agentstudio.bridge.transport": .string("swift"),
                 "agentstudio.bridge.viewer": .string("file"),
-                "agentstudio.bridge.worktree_file.tree.window.row.count": .int(256),
-                "agentstudio.bridge.worktree_file.tree.window.is_final": .bool(false),
                 "agentstudio.bridge.source_id": .string("private-source-id"),
                 "agentstudio.bridge.source.path": .string("/Users/private/repo"),
                 "agentstudio.bridge.raw_error": .string("private-error"),
@@ -39,15 +37,9 @@ struct BridgeMetadataLifecycleOTLPProjectionTests {
         let projection = AgentStudioOTLPTraceProjection.project(record)
         let renderedProjection = renderedBridgeProjectionForCanaryAssertions(projection)
 
-        #expect(projection.attributes["agentstudio.bridge.phase"] == .string("metadata_window_enqueued"))
+        #expect(projection.attributes["agentstudio.bridge.phase"] == .string("metadata_bootstrap_started"))
         #expect(projection.attributes["agentstudio.bridge.protocol"] == .string("worktree-file"))
         #expect(projection.attributes["agentstudio.bridge.source.generation"] == .int(7))
-        #expect(
-            projection.attributes["agentstudio.bridge.worktree_file.tree.window.row.count"] == .int(256)
-        )
-        #expect(
-            projection.attributes["agentstudio.bridge.worktree_file.tree.window.is_final"] == .bool(false)
-        )
         #expect(!renderedProjection.contains("private-source-id"))
         #expect(!renderedProjection.contains("/Users/private/repo"))
         #expect(!renderedProjection.contains("private-error"))

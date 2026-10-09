@@ -82,11 +82,13 @@ enum BridgeProductAnnotationOutputOutcomeDTO: Codable, Equatable, Sendable {
     case succeeded(BridgeProductAnnotationOutputResultDTO)
     case effectFailed(
         summary: BridgeProductAnnotationOutputResultDTO,
-        effectError: String
+        effectError: String,
+        effectCode: WorktreeAnnotationOutputFileFailureCode?
     )
     case effectAndCleanupFailed(
         summary: BridgeProductAnnotationOutputResultDTO,
         effectError: String,
+        effectCode: WorktreeAnnotationOutputFileFailureCode?,
         cleanupError: String
     )
     case partialSuccess(
@@ -97,6 +99,7 @@ enum BridgeProductAnnotationOutputOutcomeDTO: Codable, Equatable, Sendable {
     private enum CodingKeys: String, CodingKey, CaseIterable {
         case cleanupError
         case effectError
+        case effectCode
         case finalizationError
         case kind
         case selectionError
@@ -111,12 +114,13 @@ enum BridgeProductAnnotationOutputOutcomeDTO: Codable, Equatable, Sendable {
             self = .destinationSelectionFailed(error)
         case .succeeded(let summary):
             self = .succeeded(.init(summary))
-        case .effectFailed(let summary, let effectError):
-            self = .effectFailed(summary: .init(summary), effectError: effectError)
-        case .effectAndCleanupFailed(let summary, let effectError, let cleanupError):
+        case .effectFailed(let summary, let effectError, let effectCode):
+            self = .effectFailed(summary: .init(summary), effectError: effectError, effectCode: effectCode)
+        case .effectAndCleanupFailed(let summary, let effectError, let effectCode, let cleanupError):
             self = .effectAndCleanupFailed(
                 summary: .init(summary),
                 effectError: effectError,
+                effectCode: effectCode,
                 cleanupError: cleanupError
             )
         case .partialSuccess(let summary, let finalizationError):
@@ -141,6 +145,7 @@ enum BridgeProductAnnotationOutputOutcomeDTO: Codable, Equatable, Sendable {
         case "effect_failed":
             allowedKeys = [
                 CodingKeys.effectError.rawValue,
+                CodingKeys.effectCode.rawValue,
                 CodingKeys.kind.rawValue,
                 CodingKeys.summary.rawValue,
             ]
@@ -148,6 +153,7 @@ enum BridgeProductAnnotationOutputOutcomeDTO: Codable, Equatable, Sendable {
             allowedKeys = [
                 CodingKeys.cleanupError.rawValue,
                 CodingKeys.effectError.rawValue,
+                CodingKeys.effectCode.rawValue,
                 CodingKeys.kind.rawValue,
                 CodingKeys.summary.rawValue,
             ]
@@ -180,12 +186,20 @@ enum BridgeProductAnnotationOutputOutcomeDTO: Codable, Equatable, Sendable {
         case "effect_failed":
             self = .effectFailed(
                 summary: try Self.summary(container),
-                effectError: try Self.nonemptyString(container, .effectError, decoder)
+                effectError: try Self.nonemptyString(container, .effectError, decoder),
+                effectCode: try container.decodeIfPresent(
+                    WorktreeAnnotationOutputFileFailureCode.self,
+                    forKey: .effectCode
+                )
             )
         case "effect_and_cleanup_failed":
             self = .effectAndCleanupFailed(
                 summary: try Self.summary(container),
                 effectError: try Self.nonemptyString(container, .effectError, decoder),
+                effectCode: try container.decodeIfPresent(
+                    WorktreeAnnotationOutputFileFailureCode.self,
+                    forKey: .effectCode
+                ),
                 cleanupError: try Self.nonemptyString(container, .cleanupError, decoder)
             )
         case "partial_success":
@@ -209,13 +223,15 @@ enum BridgeProductAnnotationOutputOutcomeDTO: Codable, Equatable, Sendable {
         case .succeeded(let summary):
             try container.encode("succeeded", forKey: .kind)
             try container.encode(summary, forKey: .summary)
-        case .effectFailed(let summary, let effectError):
+        case .effectFailed(let summary, let effectError, let effectCode):
             try container.encode(effectError, forKey: .effectError)
+            try container.encodeIfPresent(effectCode, forKey: .effectCode)
             try container.encode("effect_failed", forKey: .kind)
             try container.encode(summary, forKey: .summary)
-        case .effectAndCleanupFailed(let summary, let effectError, let cleanupError):
+        case .effectAndCleanupFailed(let summary, let effectError, let effectCode, let cleanupError):
             try container.encode(cleanupError, forKey: .cleanupError)
             try container.encode(effectError, forKey: .effectError)
+            try container.encodeIfPresent(effectCode, forKey: .effectCode)
             try container.encode("effect_and_cleanup_failed", forKey: .kind)
             try container.encode(summary, forKey: .summary)
         case .partialSuccess(let summary, let finalizationError):

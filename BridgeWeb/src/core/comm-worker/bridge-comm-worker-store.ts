@@ -5,7 +5,7 @@ import {
 	type BridgeBodyRegistry,
 } from '../demand/bridge-body-registry.js';
 import { bridgeContentDemandRetentionPolicy } from '../demand/bridge-content-demand-policy.js';
-import type { BridgeCommWorkerFileViewRuntimeMutation } from './bridge-comm-worker-file-metadata-projection.js';
+import type { BridgeCommWorkerFileViewRuntimeMutation } from './bridge-comm-worker-file-view-runtime-mutation.js';
 import {
 	applyBridgeCommWorkerFileViewSourceMutationFact,
 	applyBridgeCommWorkerFileViewSourceUpdateFact,

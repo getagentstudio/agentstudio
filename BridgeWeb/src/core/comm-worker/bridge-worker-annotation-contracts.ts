@@ -81,7 +81,7 @@ export const bridgeWorkerAnnotationProjectionConvergenceEventSchema =
 			kind: z.literal('annotationProjectionConvergence'),
 			operationCorrelationId: bridgeProductSha256Schema.nullable(),
 			state: z.discriminatedUnion('kind', [
-				z.object({ kind: z.literal('refreshing') }).strict(),
+				z.object({ catalogAuthorityRetired: z.boolean(), kind: z.literal('refreshing') }).strict(),
 				z
 					.object({
 						catalogAuthorityRetired: z.boolean(),
@@ -99,6 +99,7 @@ export const bridgeWorkerAnnotationProjectionConvergenceEventSchema =
 							})
 							.readonly(),
 						kind: z.literal('ready'),
+						stageAttempt: bridgeProductNonnegativeSequenceSchema,
 						reviewPublicationIdentity: bridgeWorkerReviewPublicationIdentitySchema.optional(),
 						snapshot: bridgeWorkerAnnotationProjectionSnapshotSchema,
 					})
@@ -149,7 +150,6 @@ export const bridgeWorkerAnnotationCatalogStagingEventSchema = bridgeWorkerServe
 			})
 			.strict(),
 		kind: z.literal('annotationCatalogStaging'),
-		operationCorrelationId: bridgeProductSha256Schema,
 		surface: bridgeWorkerInteractionSurfaceSchema,
 		transfer: createBridgeMetadataCatalogTransferSchema(
 			bridgeProductWorktreeAnnotationCatalogEntrySchema,

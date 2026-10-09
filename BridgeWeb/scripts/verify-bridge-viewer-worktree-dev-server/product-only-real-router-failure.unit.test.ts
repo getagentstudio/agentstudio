@@ -38,7 +38,7 @@ describe('Bridge Viewer product-only journey failure diagnostics', () => {
 				entries: [],
 				unfinishedRequestOrdinals: [],
 				unresolvedWaiters: [
-					{ documentGeneration: 2, name: 'frame-acknowledgement' },
+					{ documentGeneration: 2, name: 'subscription-receipt' },
 					{ documentGeneration: 2, name: 'product-response-quiescence' },
 				],
 			},
@@ -55,7 +55,7 @@ describe('Bridge Viewer product-only journey failure diagnostics', () => {
 		);
 		expect(failure.message).toContain('failedResponses=1');
 		expect(failure.message).toContain(
-			'unresolved=frame-acknowledgement:g2,product-response-quiescence:g2 unsettled=none',
+			'unresolved=subscription-receipt:g2,product-response-quiescence:g2 unsettled=none',
 		);
 	});
 });

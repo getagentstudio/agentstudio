@@ -74,6 +74,9 @@ export function createHarness(
 	options: {
 		readonly prepareActiveEditorsForInstallation?: () => Promise<boolean>;
 		readonly synchronousAdmissionStatus?: 'admitted' | 'rejected';
+		readonly renderFulfillmentCoordinator?: Parameters<
+			typeof createBridgeMainReviewPublicationIntegration
+		>[0]['renderFulfillmentCoordinator'];
 	} = {},
 ): Harness {
 	let commandEpoch = 100;
@@ -140,11 +143,12 @@ export function createHarness(
 		prepareActiveEditorsForInstallation:
 			options.prepareActiveEditorsForInstallation ??
 			((): Promise<boolean> => Promise.resolve(true)),
-		renderFulfillmentCoordinator: {
+		renderFulfillmentCoordinator: options.renderFulfillmentCoordinator ?? {
 			acceptPublication: (): 'accepted' => 'accepted',
 			bindPublicationItem: vi.fn(),
 			isBoundFinalItem: (): boolean => false,
 			markPublicationQueued: vi.fn(),
+			holdPublication: vi.fn(),
 			rejectPublication: (publication): void => {
 				rejectedItemIds.push(publication.job.itemId);
 			},

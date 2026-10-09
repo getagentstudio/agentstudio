@@ -26,20 +26,23 @@ describe('Bridge product dev bootstrap binary envelope', () => {
 			surface: 'file',
 			target: { path: 'README.md', targetKind: 'file', version: 'current' },
 		} as const;
+		const tabId = 'tab-owner-1';
 
 		expect(
-			bridgeProductDevBootstrapRequestSchema.parse({ navigationIntent, reason: 'initial' }),
-		).toEqual({ navigationIntent, reason: 'initial' });
+			bridgeProductDevBootstrapRequestSchema.parse({ navigationIntent, reason: 'initial', tabId }),
+		).toEqual({ navigationIntent, reason: 'initial', tabId });
 		expect(
 			bridgeProductDevBootstrapRequestSchema.parse({
 				navigationIntent,
 				paneSessionId: 'vite-dev-pane-session',
 				reason: 'workerReplacement',
+				tabId,
 			}),
 		).toEqual({
 			navigationIntent,
 			paneSessionId: 'vite-dev-pane-session',
 			reason: 'workerReplacement',
+			tabId,
 		});
 		expect(() =>
 			bridgeProductDevBootstrapRequestSchema.parse({
@@ -48,6 +51,7 @@ describe('Bridge product dev bootstrap binary envelope', () => {
 					source: { sourceId: 'query-fabricated-source' },
 				},
 				reason: 'initial',
+				tabId,
 			}),
 		).toThrow();
 		for (const target of [
@@ -63,6 +67,7 @@ describe('Bridge product dev bootstrap binary envelope', () => {
 						target,
 					},
 					reason: 'initial',
+					tabId,
 				}),
 			).toThrow();
 		}
@@ -137,6 +142,19 @@ function productBootstrapDelivery(): BridgeProductDevBootstrapDelivery {
 				maximumContentBytes: BRIDGE_PRODUCT_MAXIMUM_CONTENT_STREAM_BYTES,
 				maximumMetadataFrameBytes: BRIDGE_PRODUCT_MAXIMUM_METADATA_FRAME_BYTES,
 				maximumQueuedStreamBytes: BRIDGE_PRODUCT_MAXIMUM_QUEUED_STREAM_BYTES,
+				admissionRetryCount: 2,
+				contentAcknowledgementDeadlineMilliseconds: 5_000,
+				contentProgressDeadlineMilliseconds: 5_000,
+				viewBatchProgressDeadlineMilliseconds: 5_000,
+				streamKeepaliveIntervalMilliseconds: 350,
+				telemetryPreReadyBufferMaxBytes: 64 * 1024,
+				telemetryPreReadyBufferMaxSamples: 128,
+				workerSettlementDeadlineMilliseconds: 5_000,
+				viewAcknowledgementDeadlineMilliseconds: 4_000,
+				viewCreditBytes: 524_288,
+				viewCreditParts: 8,
+				viewMaximumConsecutiveResnapshots: 3,
+				viewMaximumDirtyKeys: 4_096,
 				maximumQueuedStreamFrames: BRIDGE_PRODUCT_MAXIMUM_QUEUED_STREAM_FRAMES,
 				maximumRequestBodyBytes: BRIDGE_PRODUCT_MAXIMUM_REQUEST_BODY_BYTES,
 				terminalFrameReserve: BRIDGE_PRODUCT_TERMINAL_FRAME_RESERVE,

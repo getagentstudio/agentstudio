@@ -21,6 +21,7 @@ import {
 	type BridgeProductDevBootstrapDelivery,
 } from '../core/comm-worker/bridge-product-dev-bootstrap.js';
 import { bridgeProductSessionBootstrapSchema } from '../core/comm-worker/bridge-product-session-contracts.js';
+import validProductSessionCorpus from '../test-fixtures/bridge-contract-fixtures/valid/bridge-product-session-corpus.json' with { type: 'json' };
 import { installBridgeAppDevProductSessionHost } from './bridge-app-dev-product-session-host.js';
 
 const navigationIntent = {
@@ -109,6 +110,7 @@ describe('Bridge app dev product session host', () => {
 		const host = installBridgeAppDevProductSessionHost({
 			fetchBootstrap,
 			navigationIntent,
+			tabId: 'tab-owner-1',
 			target,
 		});
 
@@ -145,7 +147,7 @@ describe('Bridge app dev product session host', () => {
 		const secondFetch = fetchBootstrap.mock.calls[1];
 		expect(firstFetch?.[0]).toBe(BRIDGE_PRODUCT_DEV_BOOTSTRAP_ROUTE);
 		expect(firstFetch?.[1]).toMatchObject({
-			body: JSON.stringify({ navigationIntent, reason: 'initial' }),
+			body: JSON.stringify({ navigationIntent, reason: 'initial', tabId: 'tab-owner-1' }),
 			cache: 'no-store',
 			credentials: 'same-origin',
 			headers: { 'Content-Type': BRIDGE_PRODUCT_DEV_BOOTSTRAP_REQUEST_MEDIA_TYPE },
@@ -156,6 +158,7 @@ describe('Bridge app dev product session host', () => {
 				navigationIntent,
 				paneSessionId: first.bootstrap.paneSessionId,
 				reason: 'workerReplacement',
+				tabId: 'tab-owner-1',
 			}),
 			method: 'POST',
 		});
@@ -613,12 +616,22 @@ function productBootstrapDelivery(sequence: number): BridgeProductDevBootstrapDe
 			kind: 'productSession.bootstrap',
 			paneSessionId: 'vite-dev-pane-session',
 			policy: {
+				...validProductSessionCorpus.bootstrap.policy,
+				admissionRetryCount: validProductSessionCorpus.bootstrap.policy.admissionRetryCount,
+				contentAcknowledgementDeadlineMilliseconds: 5_000,
+				contentProgressDeadlineMilliseconds: 5_000,
 				maximumContentBytes: BRIDGE_PRODUCT_MAXIMUM_CONTENT_BYTES,
 				maximumMetadataFrameBytes: BRIDGE_PRODUCT_MAXIMUM_METADATA_FRAME_BYTES,
 				maximumQueuedStreamBytes: BRIDGE_PRODUCT_MAXIMUM_QUEUED_STREAM_BYTES,
 				maximumQueuedStreamFrames: BRIDGE_PRODUCT_MAXIMUM_QUEUED_STREAM_FRAMES,
 				maximumRequestBodyBytes: BRIDGE_PRODUCT_MAXIMUM_REQUEST_BODY_BYTES,
 				terminalFrameReserve: BRIDGE_PRODUCT_TERMINAL_FRAME_RESERVE,
+				telemetryPreReadyBufferMaxBytes:
+					validProductSessionCorpus.bootstrap.policy.telemetryPreReadyBufferMaxBytes,
+				telemetryPreReadyBufferMaxSamples:
+					validProductSessionCorpus.bootstrap.policy.telemetryPreReadyBufferMaxSamples,
+				workerSettlementDeadlineMilliseconds:
+					validProductSessionCorpus.bootstrap.policy.workerSettlementDeadlineMilliseconds,
 			},
 			wireVersion: BRIDGE_PRODUCT_WIRE_VERSION,
 			workerInstanceId: `vite-dev-worker-${sequence}`,

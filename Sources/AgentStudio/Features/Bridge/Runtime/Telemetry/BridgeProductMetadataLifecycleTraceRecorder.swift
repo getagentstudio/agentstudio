@@ -114,6 +114,7 @@ struct BridgePanePresentationTraceEvent: Equatable, Sendable {
 
     enum ComparisonAttempt: String, Sendable {
         case absent
+        case noSource = "no_source"
         case pending
         case selectionRequired = "selection_required"
         case settled
@@ -166,6 +167,9 @@ struct BridgePanePresentationTraceEvent: Equatable, Sendable {
         case .none:
             comparisonAttempt = .absent
             reviewGeneration = nil
+        case .noSource:
+            comparisonAttempt = .noSource
+            reviewGeneration = nil
         case .pending(let generation):
             comparisonAttempt = .pending
             reviewGeneration = generation
@@ -216,6 +220,9 @@ enum BridgeProductReviewMetadataPublicationTraceEvent: Equatable, Sendable {
 enum BridgeProductMetadataProducerFailureReason: Equatable, Sendable {
     case cancellation
     case fileSourceUnavailable
+    case missingRoot
+    case unreadableRoot
+    case accessRefused
     case producerQueueReset
     case producerRejection(BridgeProductProducerEnqueueRejection)
     case reviewEventConstruction
@@ -231,6 +238,12 @@ enum BridgeProductMetadataProducerFailureReason: Equatable, Sendable {
             "cancellation"
         case .fileSourceUnavailable:
             "file_source_unavailable"
+        case .missingRoot:
+            "file_root_missing"
+        case .unreadableRoot:
+            "file_root_unreadable"
+        case .accessRefused:
+            "file_root_access_refused"
         case .producerQueueReset:
             "producer_queue_reset"
         case .producerRejection(let rejection):
@@ -283,8 +296,6 @@ extension BridgeProductProducerEnqueueRejection {
 struct BridgeProductMetadataLifecycleTraceEvent: Sendable {
     enum Stage: String, Sendable {
         case bootstrapStarted = "metadata_bootstrap_started"
-        case sourceAcceptedEnqueued = "metadata_source_accepted_enqueued"
-        case windowEnqueued = "metadata_window_enqueued"
         case producerCancelled = "metadata_producer_cancelled"
         case producerFailed = "metadata_producer_failed"
         case subscriptionResetEnqueued = "metadata_subscription_reset_enqueued"

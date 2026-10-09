@@ -324,6 +324,18 @@ describe('Bridge product call contracts', () => {
 			},
 			{ kind: 'source.refresh', sessionId, sourceEpoch: 5 },
 			{
+				destination: 'remembered',
+				displayedProjectionRevision: 9,
+				expectedSessionRevision: 4,
+				kind: 'output.scope.commit',
+				outputKind: 'jsonFile',
+				scope: 'pending',
+				sessionId,
+				sourceGeneration: 7,
+			},
+			{ kind: 'output.preference.changeFolder' },
+			{ attemptId, kind: 'output.reveal' },
+			{
 				displayedProjectionRevision: 9,
 				expectedSessionRevision: 4,
 				kind: 'output.scope.commit',
@@ -349,6 +361,25 @@ describe('Bridge product call contracts', () => {
 
 		for (const operation of [
 			{ attemptId, kind: 'output.inspect' },
+			{
+				displayedProjectionRevision: 9,
+				expectedSessionRevision: 4,
+				kind: 'output.scope.commit',
+				outputKind: 'jsonFile',
+				scope: 'pending',
+				sessionId,
+				sourceGeneration: 7,
+			},
+			{
+				destination: 'remembered',
+				displayedProjectionRevision: 9,
+				expectedSessionRevision: 4,
+				kind: 'output.scope.commit',
+				outputKind: 'clipboardMarkdown',
+				scope: 'pending',
+				sessionId,
+				sourceGeneration: 7,
+			},
 			{
 				kind: 'output.selection.begin',
 				outputKind: 'clipboardMarkdown',

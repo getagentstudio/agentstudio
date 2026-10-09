@@ -8,6 +8,40 @@ import type { BridgeWorkerRenderDispositionReceipt } from './bridge-worker-rende
 import { makeBridgeWorkerRenderReceiptIdentity } from './bridge-worker-render-fulfillment.test-support.js';
 
 describe('Bridge comm worker render disposition application', () => {
+	test('treats a stale painted-copy release as a typed no-op without degrading the view', () => {
+		const identity = makeBridgeWorkerRenderReceiptIdentity({
+			itemId: 'review-item-1',
+			publicationSequence: 2,
+			surface: 'review',
+			workerDerivationEpoch: 7,
+		});
+		const release = { ...identity, kind: 'paint.released', receivedAtMilliseconds: 10 } as const;
+		const applyPaintRelease = vi.fn(() => ({
+			reason: 'stale_submission',
+			state: null,
+			status: 'rejected' as const,
+		}));
+		const application = applyBridgeWorkerRenderDispositionCommand({
+			command: {
+				command: 'renderDisposition',
+				direction: 'mainToServerWorker',
+				epoch: 7,
+				kind: 'command',
+				receipts: [release],
+				requestId: 'paint-release',
+				transferDescriptors: [],
+				wireVersion: 1,
+			},
+			store: { renderFulfillmentRegistry: { applyDisposition: vi.fn(), applyPaintRelease } },
+		});
+		expect(applyPaintRelease).toHaveBeenCalledWith(release);
+		expect(application.receiptResults).toEqual([
+			{ receipt: release, reason: 'stale_submission', status: 'rejected' },
+		]);
+		expect(application.messages).toEqual([
+			expect.objectContaining({ kind: 'health', status: 'ready' }),
+		]);
+	});
 	test('applies every receipt even when an earlier receipt is rejected', () => {
 		const telemetrySamples: BridgeTelemetrySample[] = [];
 		const receipts = [makeQueuedReceipt(1), makeQueuedReceipt(2), makeQueuedReceipt(3)];
@@ -29,7 +63,7 @@ describe('Bridge comm worker render disposition application', () => {
 
 		const application = applyBridgeWorkerRenderDispositionCommand({
 			command,
-			store: { renderFulfillmentRegistry: { applyDisposition } },
+			store: { renderFulfillmentRegistry: { applyDisposition, applyPaintRelease: vi.fn() } },
 			telemetryClient: {
 				record: (sample): void => {
 					telemetrySamples.push(sample);
@@ -50,7 +84,7 @@ describe('Bridge comm worker render disposition application', () => {
 			}),
 		]);
 		expect(application.receiptResults).toEqual([
-			{ receipt: receipts[0], status: 'rejected' },
+			{ receipt: receipts[0], reason: 'stale', status: 'rejected' },
 			{ receipt: receipts[1], status: 'accepted' },
 			{ receipt: receipts[2], status: 'duplicate' },
 		]);

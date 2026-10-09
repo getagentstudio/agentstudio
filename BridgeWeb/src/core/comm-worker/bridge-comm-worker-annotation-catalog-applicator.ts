@@ -36,6 +36,11 @@ export interface BridgeCommWorkerAnnotationCatalog {
 	readonly transferId: string;
 }
 
+export interface BridgeCommWorkerAnnotationCatalogPublication {
+	readonly catalog: BridgeCommWorkerAnnotationCatalog;
+	readonly surface: 'file' | 'review';
+}
+
 export type BridgeCommWorkerAnnotationCatalogRejectionReason =
 	| MetadataCatalogAssemblerRejectionReason
 	| 'duplicate_message_id'
@@ -127,14 +132,14 @@ export class BridgeCommWorkerAnnotationCatalogApplicator {
 	}
 }
 
-interface NormalizeAnnotationCatalogProps {
+export interface NormalizeAnnotationCatalogProps {
 	readonly authority: BridgeCommWorkerAnnotationCatalogAuthority;
 	readonly catalogRevision: number;
 	readonly entries: readonly BridgeProductWorktreeAnnotationCatalogEntry[];
 	readonly transferId: string;
 }
 
-function normalizeAnnotationCatalog(props: NormalizeAnnotationCatalogProps):
+export function normalizeAnnotationCatalog(props: NormalizeAnnotationCatalogProps):
 	| { readonly catalog: BridgeCommWorkerAnnotationCatalog; readonly status: 'completed' }
 	| {
 			readonly reason: BridgeCommWorkerAnnotationCatalogRejectionReason;
