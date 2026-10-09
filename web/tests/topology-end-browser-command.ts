@@ -1,4 +1,5 @@
 import { defineBrowserCommand } from "@vitest/browser-playwright";
+import type { BrowserCommandContext } from "vitest/node";
 
 import {
   observeFinalePillSurface,
@@ -60,54 +61,79 @@ export interface TopologyEndObservation {
   readonly pathData: readonly { readonly kind: "rail" | "step"; readonly d: string }[];
 }
 
-export interface FinaleBookendObservation extends FinalePillSurfaceObservation {
-  readonly readyOutlineAt03: boolean;
-  readonly traceOpacityAt03: number;
-  readonly readyOutlineAt08: boolean;
-  readonly traceOpacityAt08: number;
-  readonly traceDashFractionAt08: number;
-  readonly readyOutlineAfterReverseSeek: boolean;
-  readonly traceOpacityAfterReverseSeek: number;
-  readonly resizedTraceWidthDelta: number;
-  readonly resizedViewBoxWidthDelta: number;
-  readonly settledDashCleared: boolean;
-  readonly pillWidth: number;
-  readonly pillHeight: number;
-  readonly tracePathData: string;
-  readonly pillBorderColor: string;
-  readonly pillBorderWidth: string;
-  readonly pillOverflowX: string;
-  readonly starLeftOffset: number;
-  readonly copyRightRadius: string;
-  readonly terminalHaloDisplay: string;
-  readonly transitionalFanAngles: readonly number[];
-  readonly transitionalPlaneBorderWidths: readonly number[];
-  readonly eventCount: number;
-  readonly href: string;
-  readonly finalState: string | undefined;
-  readonly logoOpacity: string;
-  readonly traceOpacity: string;
-  readonly copiedIconVisible: boolean;
-  readonly railStartFraction: number;
-  readonly railArrivalFraction: number;
-  readonly nodeStartOpacity: string;
-  readonly nodeArrivalOpacity: string;
-  readonly sectionHeightDelta: number;
-  readonly footerTopDelta: number;
-  readonly oldInstallBoxCount: number;
-  readonly ctaParagraphCount: number;
-  readonly splitPillCount: number;
-  readonly starText: string;
-  readonly copyText: string;
-  readonly copiedText: string;
-  readonly copyCount: number;
-  readonly copiedLabel: string;
+export interface FinaleMainFieldGroups {
+  readonly paint: FinalePillSurfaceObservation;
+  readonly outline: {
+    readonly readyOutlineAt03: boolean;
+    readonly traceOpacityAt03: number;
+    readonly readyOutlineAt08: boolean;
+    readonly traceOpacityAt08: number;
+    readonly traceDashFractionAt08: number;
+    readonly readyOutlineAfterReverseSeek: boolean;
+    readonly traceOpacityAfterReverseSeek: number;
+    readonly tracePathData: string;
+    readonly pillHeight: number;
+    readonly pillWidth: number;
+  };
+  readonly playback: {
+    readonly eventCount: number;
+    readonly transitionalFanAngles: readonly number[];
+    readonly transitionalPlaneBorderWidths: readonly number[];
+    readonly finalState: string | undefined;
+    readonly logoOpacity: string;
+    readonly traceOpacity: string;
+    readonly railStartFraction: number;
+    readonly railArrivalFraction: number;
+    readonly nodeStartOpacity: string;
+    readonly nodeArrivalOpacity: string;
+    readonly sectionHeightDelta: number;
+    readonly footerTopDelta: number;
+  };
+  readonly pill: {
+    readonly pillBorderColor: string;
+    readonly pillBorderWidth: string;
+    readonly pillOverflowX: string;
+    readonly starLeftOffset: number;
+    readonly copyRightRadius: string;
+    readonly terminalHaloDisplay: string;
+    readonly href: string;
+    readonly copiedIconVisible: boolean;
+    readonly oldInstallBoxCount: number;
+    readonly ctaParagraphCount: number;
+    readonly splitPillCount: number;
+    readonly starText: string;
+    readonly copyText: string;
+    readonly copiedText: string;
+    readonly copyCount: number;
+    readonly copiedLabel: string;
+  };
+  readonly resizedTrace: {
+    readonly resizedTraceWidthDelta: number;
+    readonly resizedViewBoxWidthDelta: number;
+    readonly settledDashCleared: boolean;
+  };
+}
+export type FinaleMainFieldGroup = keyof FinaleMainFieldGroups;
+type UnionToIntersection<TValue> = (
+  TValue extends unknown ? (value: TValue) => void : never
+) extends (value: infer TIntersection) => void
+  ? TIntersection
+  : never;
+export type FinaleMainSample<TGroup extends FinaleMainFieldGroup> = UnionToIntersection<
+  FinaleMainFieldGroups[TGroup]
+> &
+  object;
+type FinaleMainAllSample = FinaleMainSample<FinaleMainFieldGroup>;
+export type FinaleMainWireSample = Partial<FinaleMainAllSample>;
+export interface FinaleReducedMotionObservation {
   readonly phoneOneRow: boolean;
   readonly phoneShortLabels: boolean;
   readonly phoneOverflow: number;
   readonly reducedMotionState: string | undefined;
   readonly reducedMotionTimelineCreated: boolean;
   readonly reducedMotionLogoOpacity: string;
+}
+export interface FinaleSkipAndResizeObservation {
   readonly pointerSkipState: string | undefined;
   readonly resizeSettleState: string | undefined;
   readonly narrowTitleFontSize: number;
@@ -202,59 +228,72 @@ function observeFinaleArtwork(props: {
   };
 }
 
-export const verifyFinaleBookend = defineBrowserCommand(
+function installFinaleEventCounter(): void {
+  const proofWindow = window as Window & {
+    topologyEndEventCount?: number;
+    finaleControl?: { pause(): void; seek(seconds: number): void };
+    copiedInstall?: string;
+    copyCount?: number;
+  };
+  proofWindow.topologyEndEventCount = 0;
+  proofWindow.copyCount = 0;
+  document.addEventListener("topology-end-reached", () => {
+    const pageWindow = window as Window & { topologyEndEventCount?: number };
+    pageWindow.topologyEndEventCount = (pageWindow.topologyEndEventCount ?? 0) + 1;
+  });
+  document.addEventListener("finale-bookend-ready", (event) => {
+    if (!(event instanceof CustomEvent)) return;
+    proofWindow.finaleControl = event.detail as { pause(): void; seek(seconds: number): void };
+    proofWindow.finaleControl.pause();
+  });
+  Object.defineProperty(navigator, "clipboard", {
+    configurable: true,
+    value: {
+      writeText: (value: string): Promise<void> => {
+        proofWindow.copyCount = (proofWindow.copyCount ?? 0) + 1;
+        proofWindow.copiedInstall = value;
+        return Promise.resolve();
+      },
+    },
+  });
+}
+
+async function openFinaleMainPage(props: {
+  readonly context: BrowserCommandContext["context"];
+  readonly pageUrl: string;
+  readonly proofWidth: number;
+}): Promise<Awaited<ReturnType<BrowserCommandContext["context"]["newPage"]>>> {
+  const { context, pageUrl, proofWidth } = props;
+  const applicationPage = await context.newPage();
+  try {
+    await applicationPage.setViewportSize({
+      width: proofWidth,
+      height: proofWidth < 620 ? 844 : 1000,
+    });
+    await applicationPage.addInitScript(installFinaleEventCounter);
+    await applicationPage.goto(pageUrl, { waitUntil: "domcontentloaded" });
+    await applicationPage.evaluate(async () => await document.fonts.ready);
+    await applicationPage.evaluate(() => window.dispatchEvent(new WheelEvent("wheel")));
+    await applicationPage.waitForSelector('[data-hero-intro-state="settled"]');
+    await applicationPage.waitForSelector("[data-finale-timeline-created]");
+    await applicationPage.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
+    await applicationPage.waitForSelector("[data-topology-end-reached]");
+
+    return applicationPage;
+  } catch (error: unknown) {
+    await applicationPage.close();
+    throw error;
+  }
+}
+export const observeFinaleMainPage = defineBrowserCommand(
   async (
     { context },
     pageUrl: string,
-    proofWidth: number = 1600,
-  ): Promise<FinaleBookendObservation> => {
-    const applicationPage = await context.newPage();
-    const reducedMotionPage = await context.newPage();
-    const skipPage = await context.newPage();
-    const installEventCounter = (): void => {
-      const proofWindow = window as Window & {
-        topologyEndEventCount?: number;
-        finaleControl?: { pause(): void; seek(seconds: number): void };
-        copiedInstall?: string;
-        copyCount?: number;
-      };
-      proofWindow.topologyEndEventCount = 0;
-      proofWindow.copyCount = 0;
-      document.addEventListener("topology-end-reached", () => {
-        const pageWindow = window as Window & { topologyEndEventCount?: number };
-        pageWindow.topologyEndEventCount = (pageWindow.topologyEndEventCount ?? 0) + 1;
-      });
-      document.addEventListener("finale-bookend-ready", (event) => {
-        if (!(event instanceof CustomEvent)) return;
-        proofWindow.finaleControl = event.detail as { pause(): void; seek(seconds: number): void };
-        proofWindow.finaleControl.pause();
-      });
-      Object.defineProperty(navigator, "clipboard", {
-        configurable: true,
-        value: {
-          writeText: (value: string): Promise<void> => {
-            proofWindow.copyCount = (proofWindow.copyCount ?? 0) + 1;
-            proofWindow.copiedInstall = value;
-            return Promise.resolve();
-          },
-        },
-      });
-    };
+    proofWidth: number,
+    groups: readonly FinaleMainFieldGroup[],
+  ): Promise<FinaleMainWireSample> => {
+    const applicationPage = await openFinaleMainPage({ context, pageUrl, proofWidth });
     try {
-      await applicationPage.setViewportSize({
-        width: proofWidth,
-        height: proofWidth < 620 ? 844 : 1000,
-      });
-      await applicationPage.addInitScript(installEventCounter);
-      await applicationPage.goto(pageUrl, { waitUntil: "domcontentloaded" });
-      await applicationPage.evaluate(async () => await document.fonts.ready);
-      await applicationPage.evaluate(() => window.dispatchEvent(new WheelEvent("wheel")));
-      await applicationPage.waitForSelector('[data-hero-intro-state="settled"]');
-      await applicationPage.waitForSelector("[data-finale-timeline-created]");
-      await applicationPage.evaluate(() =>
-        window.scrollTo(0, document.documentElement.scrollHeight),
-      );
-      await applicationPage.waitForSelector("[data-topology-end-reached]");
       const normal = await applicationPage.evaluate(async () => {
         const proofWindow = window as Window & {
           topologyEndEventCount?: number;
@@ -449,41 +488,107 @@ export const verifyFinaleBookend = defineBrowserCommand(
           });
         });
       });
-      const pillSurface = await applicationPage.evaluate(observeFinalePillSurface);
-      const resizedTrace = await applicationPage.evaluate(async () => {
-        const pill = document.querySelector<HTMLElement>("[data-finale-split-pill]");
-        const trace = document.querySelector<SVGPathElement>("[data-finale-border-trace]");
-        const svg = trace?.closest("svg");
-        if (
-          pill === null ||
-          trace === null ||
-          trace === undefined ||
-          svg === null ||
-          svg === undefined
-        )
-          throw new Error("Settled finale outline is missing");
-        const originalWidth = pill.getBoundingClientRect().width;
-        const resized = new Promise<void>((resolve) => {
-          const observer = new ResizeObserver(() => {
-            if (Math.abs(pill.getBoundingClientRect().width - originalWidth) < 2) return;
-            observer.disconnect();
-            resolve();
-          });
-          observer.observe(pill);
-        });
-        pill.style.width = `${String(originalWidth - 80)}px`;
-        await resized;
-        await Promise.resolve();
-        const width = pill.getBoundingClientRect().width;
-        const viewBoxWidth = Number(svg.getAttribute("viewBox")?.split(/\s+/u)[2]);
-        return {
-          resizedTraceWidthDelta: Math.abs(trace.getBBox().width - (width - 1)),
-          resizedViewBoxWidthDelta: Math.abs(viewBoxWidth - width),
-          settledDashCleared:
-            trace.style.strokeDasharray === "" && trace.style.strokeDashoffset === "",
-        };
-      });
 
+      const observation: FinaleMainWireSample = {};
+      if (groups.includes("outline"))
+        Object.assign(observation, {
+          readyOutlineAt03: normal.readyOutlineAt03,
+          traceOpacityAt03: normal.traceOpacityAt03,
+          readyOutlineAt08: normal.readyOutlineAt08,
+          traceOpacityAt08: normal.traceOpacityAt08,
+          traceDashFractionAt08: normal.traceDashFractionAt08,
+          readyOutlineAfterReverseSeek: normal.readyOutlineAfterReverseSeek,
+          traceOpacityAfterReverseSeek: normal.traceOpacityAfterReverseSeek,
+          tracePathData: normal.tracePathData,
+          pillHeight: normal.pillHeight,
+          pillWidth: normal.pillWidth,
+        } satisfies FinaleMainFieldGroups["outline"]);
+      if (groups.includes("playback"))
+        Object.assign(observation, {
+          eventCount: normal.eventCount,
+          transitionalFanAngles: normal.transitionalFanAngles,
+          transitionalPlaneBorderWidths: normal.transitionalPlaneBorderWidths,
+          finalState: normal.finalState,
+          logoOpacity: normal.logoOpacity,
+          traceOpacity: normal.traceOpacity,
+          railStartFraction: normal.railStartFraction,
+          railArrivalFraction: normal.railArrivalFraction,
+          nodeStartOpacity: normal.nodeStartOpacity,
+          nodeArrivalOpacity: normal.nodeArrivalOpacity,
+          sectionHeightDelta: normal.sectionHeightDelta,
+          footerTopDelta: normal.footerTopDelta,
+        } satisfies FinaleMainFieldGroups["playback"]);
+      if (groups.includes("pill"))
+        Object.assign(observation, {
+          pillBorderColor: normal.pillBorderColor,
+          pillBorderWidth: normal.pillBorderWidth,
+          pillOverflowX: normal.pillOverflowX,
+          starLeftOffset: normal.starLeftOffset,
+          copyRightRadius: normal.copyRightRadius,
+          terminalHaloDisplay: normal.terminalHaloDisplay,
+          href: normal.href,
+          copiedIconVisible: normal.copiedIconVisible,
+          oldInstallBoxCount: normal.oldInstallBoxCount,
+          ctaParagraphCount: normal.ctaParagraphCount,
+          splitPillCount: normal.splitPillCount,
+          starText: normal.starText,
+          copyText: normal.copyText,
+          copiedText: normal.copiedText,
+          copyCount: normal.copyCount,
+          copiedLabel: normal.copiedLabel,
+        } satisfies FinaleMainFieldGroups["pill"]);
+      if (groups.includes("paint")) {
+        const pillSurface = await applicationPage.evaluate(observeFinalePillSurface);
+        Object.assign(observation, pillSurface satisfies FinaleMainFieldGroups["paint"]);
+      }
+      if (groups.includes("resizedTrace")) {
+        const resizedTrace = await applicationPage.evaluate(async () => {
+          const pill = document.querySelector<HTMLElement>("[data-finale-split-pill]");
+          const trace = document.querySelector<SVGPathElement>("[data-finale-border-trace]");
+          const svg = trace?.closest("svg");
+          if (
+            pill === null ||
+            trace === null ||
+            trace === undefined ||
+            svg === null ||
+            svg === undefined
+          )
+            throw new Error("Settled finale outline is missing");
+          const originalWidth = pill.getBoundingClientRect().width;
+          const resized = new Promise<void>((resolve) => {
+            const observer = new ResizeObserver(() => {
+              if (Math.abs(pill.getBoundingClientRect().width - originalWidth) < 2) return;
+              observer.disconnect();
+              resolve();
+            });
+            observer.observe(pill);
+          });
+          pill.style.width = `${String(originalWidth - 80)}px`;
+          await resized;
+          await Promise.resolve();
+          const width = pill.getBoundingClientRect().width;
+          const viewBoxWidth = Number(svg.getAttribute("viewBox")?.split(/\s+/u)[2]);
+          return {
+            resizedTraceWidthDelta: Math.abs(trace.getBBox().width - (width - 1)),
+            resizedViewBoxWidthDelta: Math.abs(viewBoxWidth - width),
+            settledDashCleared:
+              trace.style.strokeDasharray === "" && trace.style.strokeDashoffset === "",
+          };
+        });
+
+        Object.assign(observation, resizedTrace satisfies FinaleMainFieldGroups["resizedTrace"]);
+      }
+      return observation;
+    } finally {
+      await applicationPage.close();
+    }
+  },
+);
+
+export const observeFinaleReducedMotion = defineBrowserCommand(
+  async ({ context }, pageUrl: string): Promise<FinaleReducedMotionObservation> => {
+    const reducedMotionPage = await context.newPage();
+    try {
       await reducedMotionPage.emulateMedia({ reducedMotion: "reduce" });
       await reducedMotionPage.setViewportSize({ width: 390, height: 844 });
       await reducedMotionPage.goto(pageUrl, { waitUntil: "domcontentloaded" });
@@ -519,6 +624,18 @@ export const verifyFinaleBookend = defineBrowserCommand(
           reducedMotionLogoOpacity: getComputedStyle(logo).opacity,
         };
       });
+
+      return reduced;
+    } finally {
+      await reducedMotionPage.close();
+    }
+  },
+);
+
+export const observeFinaleSkipAndResize = defineBrowserCommand(
+  async ({ context }, pageUrl: string): Promise<FinaleSkipAndResizeObservation> => {
+    const skipPage = await context.newPage();
+    try {
       await skipPage.setViewportSize({ width: 390, height: 844 });
       await skipPage.goto(pageUrl, { waitUntil: "domcontentloaded" });
       await skipPage.waitForSelector("[data-finale-timeline-created]");
@@ -548,17 +665,10 @@ export const verifyFinaleBookend = defineBrowserCommand(
           narrowHeadingOverflow: heading.getBoundingClientRect().right - window.innerWidth,
         };
       });
-      return {
-        ...normal,
-        ...pillSurface,
-        ...resizedTrace,
-        ...reduced,
-        ...narrow,
-        pointerSkipState,
-        resizeSettleState,
-      };
+
+      return { ...narrow, pointerSkipState, resizeSettleState };
     } finally {
-      await Promise.all([applicationPage.close(), reducedMotionPage.close(), skipPage.close()]);
+      await skipPage.close();
     }
   },
 );

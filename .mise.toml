@@ -587,12 +587,44 @@ swift test $(swift_package_sandbox_arguments) --skip-build --build-path "$BUILD_
 """
 
 [tasks.clean-artifacts]
-description = "Clean swift build dirs and app bundle (vendor and vendor-derived files preserved)"
+description = "Clean swift build dirs and app bundle (vendor and vendor-derived files preserved; refuses while the build slot is held)"
 run = """
 #!/usr/bin/env bash
 set -euo pipefail
-rm -rf "${PROJECT_ROOT}/.build" "${PROJECT_ROOT}"/.build-*
-rm -rf "${PROJECT_ROOT}/AgentStudio.app"
+cd "${PROJECT_ROOT}"
+source "${PROJECT_ROOT}/scripts/swift-build-slot.sh"
+slot_directory="$(swift_build_slot_resolve_directory build)"
+if [ -d "$slot_directory" ]; then
+  # A held slot means a build or test is running in this worktree: refuse
+  # rather than wait, and never delete under it.
+  lock_status=0
+  swift_build_slot_lock_is_free "$slot_directory" || lock_status=$?
+  if [ "$lock_status" -eq 1 ]; then
+    holder="$(cat "$slot_directory/.slot.holder" 2>/dev/null || echo "holder_task=unknown")"
+    echo "[clean-artifacts] refused: the build slot is held ($holder); nothing removed" >&2
+    exit 1
+  elif [ "$lock_status" -ne 0 ]; then
+    echo "[clean-artifacts] refused: cannot check the build slot lock (status $lock_status); nothing removed" >&2
+    exit 1
+  fi
+  # Hold the slot for the whole delete, so a build that starts meanwhile waits
+  # on this same lock. Keep .slot.lock: the lock lives on that file, and a new
+  # file would let a second claimant in.
+  trap swift_build_slot_release EXIT
+  swift_build_slot_acquire build "mise run clean-artifacts"
+  # Also keep any .slot.ready.*/.slot.hold.* FIFOs: a build starting now creates
+  # them here before it blocks on this lock, and deleting one breaks its claim.
+  find "$slot_directory" -mindepth 1 -maxdepth 1 ! -name .slot.lock ! -name .slot.holder \
+    ! -name '.slot.ready.*' ! -name '.slot.hold.*' -exec rm -rf {} +
+fi
+# .build-ci belongs to CI, which builds there without this worktree's slot
+# (scripts/swift-build-slot.sh), so the slot cannot protect it from this delete.
+for build_directory in .build .build-*; do
+  [ "$build_directory" = "$slot_directory" ] && continue
+  [ "$build_directory" = .build-ci ] && continue
+  rm -rf "$build_directory"
+done
+rm -rf AgentStudio.app
 echo "Cleaned swift build dirs and app bundle in ${PROJECT_ROOT}"
 """
 

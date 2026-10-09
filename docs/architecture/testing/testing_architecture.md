@@ -434,6 +434,29 @@ agrees with itself.
 The lane `--filter` and `--skip` patterns are anchored to the type; see
 [Why filters are anchored](#lanes-and-why-they-are-split).
 
+### Lane-runner fixtures and the inner watchdog
+
+Script tests that run the real lane runner inside a fixture face a trap. The
+runner's inactivity watchdog times the whole tracked process: the command, then
+the runner's own pipeline, relay drain and epilogue. Under load, that overhead
+alone can use up a fixture's short bound (20 or 60 seconds), and the fixture then
+reports a timeout for a command that has already exited. The production bound is
+600 seconds and is not exposed.
+
+So the fixture launchers run the inner watchdog **unarmed** by default
+(`LaneFixtureInnerWatchdog.unarmed` in
+[`SwiftLaneScriptTestSupport.swift`](../../../Tests/AgentStudioTests/Scripts/SwiftLaneScriptTestSupport.swift)).
+The default covers `runLaneScriptBash`, `laneBash`, `InvocationReceiptFixture.run`
+and the output-relay pipe launcher. A test whose subject is the watchdog arms it
+by name at the call site with `innerWatchdog: .armed`. Such subjects include the
+timeout reap, "no output progress" and hang evidence. A fixture that starts the
+runner in a separate `bash` process does not inherit the default and must set it
+itself.
+
+`exitedCommandUnderStarvedRunner` proves the trap deterministically: a FIFO hook
+starves the runner after an `exit 0` command. Armed, it times out; with the
+default, it keeps its status.
+
 ## When a run is red
 
 **A red run is diagnosed, never rerun.** The point of this whole standard is
