@@ -1,6 +1,6 @@
 # Program design: repositories keep their identity when folders move
 
-[Requirements](requirements.md) → [Specification](specification.md) (S1–S16) → this document. Grounded at `cac00e968` (main `584f9992d` merged into `remove-watched-folder`). The agentstudio-git pin is `372fedb0`; no package change. **Status: proposed. It realizes owner decision D1 option A, which is not yet decided.**
+[Requirements](requirements.md) → [Specification](specification.md) (S1–S16) → this document. Grounded at `52cff4a34` (main `584f9992d` merged into `remove-watched-folder`). The agentstudio-git pin is `372fedb0`; no package change. **Status: proposed. It realizes owner decision D1 option A, which is not yet decided.**
 
 ## Crux
 
@@ -32,7 +32,6 @@ Evidence for A:
 **3. Keep today's rule wherever relocation would conflict with it.** Relocation is admitted only into a location that no record holds (S3.5). A chain resolves head first. Every conflict keeps Sep 11 R1 exactly: a held destination, a cycle or swap, a replacement at the old path while the original cannot be admitted. That one rule keeps four things true:
 
 - every path is held by at most one record, so UNIQUE keys stay valid (WorkspaceCoreMigrations+GlobalTopology.swift:17-35; RepositoryTopologyReplacement.swift:175-180);
-- every simple key move goes into an unused key, which makes the recents move replay-safe;
 - no displaced-record state is needed;
 - no new merge is introduced in any conflict case.
 
@@ -42,9 +41,10 @@ Evidence for A:
 - root sync (WorkspaceSurfaceCoordinator+FilesystemSource.swift:560-584);
 - the Git projector (GitWorkingDirectoryProjector.swift:413-448, 535-586).
 
+Recents and local activity are keyed by the path-derived stable key (EntityRecencyAtoms.swift:7-40; RepositoryLocalActivityStore.swift:35-95). They are kept per location and restart at P2 (S9). Moving them would need a new admission fence at the recency datastore, which filters every save against the durable survivor set (WorkspaceSQLiteDatastoreActor+RepositoryLocalState.swift:13-16, 47-52), and a race guard against rejected publications. No requirement justifies that machinery.
+
 These consumers capture the old location, and need an explicit relocation edge:
 
-- recents, which are keyed by the path-derived stable key (EntityRecencyAtoms.swift:7-40; EntityRecencyStore.swift:89-94);
 - Bridge panes, whose controller builds its provider and file authority once from `BridgePaneState.source = .workspace(rootPath:)` (BridgePaneState.swift:48; BridgePaneController+Bootstrap.swift:470-502, 757-778; BridgePaneProductSessionOwner.swift:136, 172-184);
 - Zoom companion reuse (WorkspaceSurfaceCoordinator+ZoomCompanion.swift:180-200).
 
@@ -55,25 +55,32 @@ These consumers capture the old location, and need an explicit relocation edge:
 No new atom, store, table or coordinator is added, and there is no package change. For owner acknowledgement with D1:
 
 - three nullable columns on `worktree`;
-- one runtime fact, the terminal correction outcome;
-- relocation moves recents before publishing topology.
+- one runtime fact, the terminal correction outcome.
 
 | Component | Slice | Owns | Change |
 |---|---|---|---|
 | `StartupVolumeFolderIdentityReader` (new) | Infrastructure/FolderIdentity | Darwin facts only | It decides whether the startup volume qualifies: the fsid and UUID of the volume holding the home folder, plus its capability bits. `identity(of:)` requires the path's fsid to equal the startup fsid and returns the folder number. `locate(number)` uses `fsgetpath` on the startup fsid. Outcomes: `.identified` / `.undefined(reason)`; `.located(URL)` / `.notFound` / `.unavailable`. No Git. |
-| `RepoScannerGitDiscoveryClient` | Infrastructure | Package validation into scanner evidence | **Enrollment.** It reads the candidate path's identity before the package read, then the identity of `canonicalWorktreePath` and `canonicalGitDirectory` after. The checkout-folder numbers must be equal and both folders on the startup volume. The result is `ResolvedGitEntry.folderIdentity`; otherwise nil (no proof). It is refreshed at every validation. **Destination validation** (S3.3), `validateRelocationDestination(path, expected: I)`, runs in this order: identity(path) == I.checkout; package read #1 → (W, G), with W == path and the role matching; identity(G) == I.gitDirectory; package read #2 → (W′, G′) == (W, G); identity(path) == I.checkout. A Git-directory retarget between the reads changes G′ and declines. There is no app-side Git parsing; both reads use the existing discovery client. The adapter currently discards G (:51-91). |
+| `RepoScannerGitDiscoveryClient` | Infrastructure | Package validation into scanner evidence | **Enrollment.** It reads the candidate path's identity before the package read, then the identity of `canonicalWorktreePath` and `canonicalGitDirectory` after. The checkout-folder numbers must be equal and both folders on the startup volume. The result is `ResolvedGitEntry.folderIdentity`; otherwise nil (no proof). It is refreshed at every validation. **Destination validation** (S3.3), `validateRelocationDestination(path, expected: I)`, runs in this order: identity(path) == I.checkout; package read #1 → (W, G, role), with W == path and the role matching; identity(G) == I.gitDirectory; package read #2 → (W′, G′, role′) == (W, G, role); identity(G′) == I.gitDirectory; identity(path) == I.checkout. A retarget, or a same-path replacement of the Git directory between the reads, changes a string or a number and declines. There is no app-side Git parsing; both reads use the existing discovery client. The adapter currently discards G (:51-91). |
 | `CheckoutFolderIdentity` (new value) | Core/Models | `volumeUUID`, `checkoutFolderNumber`, `gitDirectoryNumber` | Value type with Equatable and Hashable conformance. |
 | Recorded identities | `RepositoryTopologyStore` (Core persistence boundary) | Persisted evidence, which has no observer | The store holds `recordedFolderIdentitiesByWorktreeID` as non-observable state, loaded with the topology. `recordFolderIdentityChanges(_:revision:)` runs in the same MainActor step as `applyRepositoryLifecycleChange` (precedent: `recordReparenting`, :28-31). The store persists them with its topology save, and `captureRepositoryLifecycleInput` reads them. No atom field. |
 | Core persistence | Core persistence | `worktree` rows | Additive migration `ALTER TABLE worktree ADD COLUMN`: `folder_volume_uuid TEXT`, `folder_checkout_number INTEGER`, `folder_git_directory_number INTEGER`. The UInt64 values are bit-cast. All three present decodes to an identity; all absent to none; any other combination decodes to none, logs a diagnostic, and is rewritten at the next validation. No CHECK and no trigger. |
 | Scan baseline | Core/RuntimeEventSystem/Filesystem | `WatchedFolderScanBaseline` | Carries the recorded identity per checkout. The coordinator resends the baseline when either the membership generation or an identity-change generation advances. Today it resends only on membership change (ScopedTopology.swift:84-89). |
 | Folder dispositions | `FilesystemActor`, observation assembly (FilesystemActor+WatchedFolderResultApplication.swift:176-192) | Evidence, not decisions | Each observation gains `recordedFolderDispositions`, detailed below. The I/O runs in `@concurrent nonisolated` helpers. |
-| Identity claims | `RepositoryLifecycleReconciliation.prepare` (off-main) | Identity resolution (July TA2) | Claim rounds run before the grouping loop, detailed below. `RepositoryLifecycleChange` gains `relocations` (each tagged simple or chained), `identityChanges` and `recentsKeyBatch`. |
-| Relocation effects | `WorkspaceCacheCoordinator+ScopedTopology` (App) | Ordering | Freshness check, then recents durable, then apply, then runtime effects (see Flow). |
-| Recents relocation | `ApplicationEntityRecencyAtom.relocateKeys(_ batch)` plus `EntityRecencyStore.flushApplicationAsync()` (:89) | Live recents | An assignment-only key operation. For simple moves it replaces the key; moving an empty source leaves the destination untouched. For chained moves it removes entries under both keys. The store then persists the whole snapshot it already owns, and the coordinator awaits that flush before publication. |
+| Identity claims | `RepositoryLifecycleReconciliation.prepare` (off-main) | Identity resolution (July TA2) | Claim rounds run before the grouping loop, detailed below. `RepositoryLifecycleChange` gains `relocations` and `identityChanges`. |
+| Relocation effects | `WorkspaceCacheCoordinator+ScopedTopology` (App) | Ordering | Freshness pass, then the revision-guarded apply with no await in between, then runtime effects (see Flow). |
 | `WorktreeTopologyDelta` | Core | The topology effect contract | Adds `relocatedWorktrees: [RelocatedWorktreeEntry(id, previousPath, path)]`. |
-| Bound-pane remount | `WorkspaceSurfaceCoordinator` (App composition) | E8 rebinding | For each relocated worktree, every Bridge pane whose runtime `worktreeId` matches and whose `.workspace(rootPath:)` equals P1 is rebound in two steps. First, its stored root is updated to P2 through the existing pane content mutation (`WorkspacePaneAtom.updateBridgePaneState`, :247), which is persisted. Then the pane is remounted: `teardownView` (WorkspaceSurfaceCoordinator+ViewLifecycle.swift:459) followed by `createBridgePaneView(for:state:)` (WorkspaceSurfaceCoordinator+BridgeViewLifecycle.swift:7-55), the same path that mounts a restored pane (+NonterminalContentMounting.swift:84). A new `BridgePaneController` builds a new provider and file authority from P2; the old controller and its P1 authority are torn down. A Zoom companion for that worktree is remounted the same way (+ZoomCompanion.swift:271) and keeps its source-pane relationship. Pane identity, layout and persisted Bridge state are kept. No Bridge-internal change; Bridge Lead review is still required. |
+| Bound-pane remount | `WorkspaceSurfaceCoordinator` (App composition) | E8 rebinding | **Durable Bridge panes:** for each relocated worktree, every Bridge pane in the pane graph whose runtime `worktreeId` matches and whose `.workspace(rootPath:)` equals P1 is rebound in three steps.
+1. Its stored root is updated to P2 through the existing pane content mutation (`WorkspacePaneGraphAtom.updateBridgePaneState`, :611), which is persisted.
+2. `teardownView` (WorkspaceSurfaceCoordinator+ViewLifecycle.swift:459) starts the tracked retirement of the old controller.
+3. `createViewForContent(pane:)` is called. While that retirement is pending, it records the pane for restore after retirement (ViewLifecycle.swift:78-88), so the replacement is created only once the old controller and runtime are gone.
+
+The new `BridgePaneController` builds a new provider and file authority from P2 (BridgeViewLifecycle.swift:17-52).
+
+**Zoom companions** are transient presentation panes outside the graph (+ZoomCompanion.swift:194-240). For a relocated worktree, the existing companion is retired through the existing lost-companion path (`retireLostZoomCompanion`, :19), then `reconcileZoomCompanion` (:140-152) creates a new companion from the current worktree path (:256-271). The source relationship is kept; the companion ID is new.
+
+Pane identity, layout and persisted Bridge state are kept. No Bridge-internal change; Bridge Lead review is still required. |
 | `TerminalTrueLocationReader` (new) | Infrastructure | Reading a process's directory | Input is the zmx session identity: boot ID plus leader incarnation L. The read runs in this order: <br>1. the boot ID equals the current boot, and L matches; <br>2. read L's `e_tpgid` → group G, whose leader F is pid G; <br>3. F is alive, and descends from L through a bounded ppid walk (limit in `AppPolicies`); <br>4. read F's `pvi_cdir`; <br>5. re-read L (same incarnation, same `e_tpgid` = G) and F (same incarnation, same pgid G, same ancestry). <br>Any change, a dead group leader, or a missing ancestry gives `.unsupported(reason)`. Read-only; it never calls retirement or kill capabilities. |
-| Terminal location correction (new) | Features/Terminal runtime | The S11 decision | Raw reports keep today's path: admit, publish, acknowledge (GhosttyActionRouter+LocalActions.swift:506-563). The correction is a separate follow-up step. A trigger records the pane's report revision and session token, then reads off-main. The result is applied on MainActor only if both are unchanged. A corrected location is published through the TerminalRuntime CWD route (TerminalRuntime.swift:276-280); the existing association follows. Later identical stale raw reports are equality-suppressed at the accumulator (TerminalLocalActionAccumulator.swift:556-588), so nothing flips. Each correction posts `terminalLocationCorrectionSettled(paneId, trigger, reportRevision, outcome)`, a new runtime fact for owner acknowledgement. Triggers: a raw report naming a missing path; a relocation from P1 (panes under P1); launch (panes whose stored location is missing). No readmission hook and no timer. |
+| Terminal location correction (new) | Features/Terminal runtime | The S11 decision | Raw reports keep today's path: admit, publish, acknowledge (GhosttyActionRouter+LocalActions.swift:506-563). The correction is a separate follow-up step. A trigger records the pane's report revision and session token, then reads off-main. The result is applied on MainActor only if both are unchanged. A corrected location is published through the TerminalRuntime CWD route (TerminalRuntime.swift:276-280); the existing association follows. Later identical stale raw reports are equality-suppressed at the accumulator (TerminalLocalActionAccumulator.swift:556-588), so nothing flips. TerminalRuntime keeps, per pane, the raw path a correction superseded. A later raw report equal to that path is a stale repeat and is not applied, including a report from a freshly attached source whose accumulator admits its first report unconditionally (TerminalLocalActionAccumulator.swift:225-242). The first different raw report clears it. Each correction posts `terminalLocationCorrectionSettled(paneId, trigger, reportRevision, outcome)`, a new runtime fact for owner acknowledgement. Triggers: a raw report naming a missing path; a relocation from P1 (panes under P1); launch (panes whose stored location is missing). No readmission hook and no timer. |
 
 ## Folder dispositions: how the observation is assembled (S2)
 
@@ -83,6 +90,8 @@ The `FilesystemActor` builds the set of looked-up records. It starts with:
 2. records under root R whose recorded location is absent from the inventory, or presents another identity.
 
 **Closure (N2):** whenever a looked-up record is located at a path held by another record with a recorded identity, that holder is added to the set. This is bounded by the record count.
+
+A path is *held* when it is any checkout's recorded location, or any family's root location (including a family that retains its root key after its main checkout was collected, Sep 11 C3). Holders are matched by canonical path and by the repository and checkout stable keys.
 
 For each record in the set, the actor locates its folder and attaches one disposition:
 
@@ -103,8 +112,7 @@ Cached receipts never become dispositions.
 3. **Apply admitted claims.** For each admitted record C:
    - update its path and name, plus its family's `repoPath` when C is main;
    - clear the absences of C and its family;
-   - re-derive the stable keys of C and its family from P2;
-   - add (old key → new key, simple or chained) to `recentsKeyBatch`.
+   - re-derive the stable keys of C and its family from P2.
 
    The admitted records and their destination paths are consumed.
 4. **Grouping loop.** Unchanged (RepositoryLifecycleReconciliation.swift:65-110) over the remaining entries and records. It skips consumed records and paths. Same-path matching is Sep 11 R1, unchanged.
@@ -114,7 +122,7 @@ Re-deriving stable keys is required for three reasons:
 
 - a sticky P1 key would let a later folder at P1 match the moved record (:69-72);
 - it would collide with that folder's UNIQUE key;
-- it would split recents, which `recordOpened` writes under the current path's key (WorkspaceSurfaceCoordinator+ActionExecution.swift:609-617).
+- recents recorded after the move must land under P2's key, because `recordOpened` writes the current path's key (WorkspaceSurfaceCoordinator+ActionExecution.swift:609-617).
 
 Session IDs are opaque UUIDv7 (ZmxSessionID.swift:4-14), so no session is renamed.
 
@@ -126,19 +134,17 @@ sequenceDiagram
     participant RD as Folder identity reader + discovery client
     participant CC as WorkspaceCacheCoordinator
     participant RP as prepare (off-main)
-    participant RC as Recency atom + store
     participant MC as MainActor apply (atom + topology store)
     participant PE as Pane effects
     FA->>RD: scan entries (enrollment identity)
     FA->>RD: locate looked-up records (closed over holders); validate destinations (two reads)
     FA-->>CC: observation + recordedFolderDispositions
     CC->>RP: prepare(input incl. store-held identities)
-    RP-->>CC: change(replacement, deltas, relocations, identity changes, recents batch)
+    RP-->>CC: change(replacement, deltas, relocations, identity changes)
     CC->>RD: freshness: repeat locate + destination validation per relocation
     alt any relocation stale
         CC->>FA: refresh observation (existing refreshStaleObservation)
-    else fresh
-        CC->>RC: relocateKeys(batch); await flushApplicationAsync
+    else fresh (no await before apply)
         CC->>MC: applyRepositoryLifecycleChange + recordFolderIdentityChanges (revision-guarded)
         Note over MC: topology autosave may run from here on
         CC->>PE: deltas with relocatedWorktrees: root sync, Git, Forge, Bridge remount, terminal checks under P1
@@ -152,8 +158,8 @@ sequenceDiagram
 | Scan order (S5) | Destination-first: entry identity → lookup → claim. Source-first: absent or replaced record → lookup → claim. Closure over holders makes a chain visible from either root. When nothing is admissible yet, the record is hidden, and the later lookup restores it. |
 | Stale receipts | They are never evidence (S2) and remain inventory protection only. |
 | Conflicts | Held destinations, cycles and swaps are declined, and Sep 11 R1 applies unchanged. No displaced-record state exists. |
-| Staleness between evidence and apply | The freshness pass repeats lookup and destination validation (including both package reads), and the apply is revision-guarded. A stale result discards the change and refreshes through the existing retry limit (ScopedTopology.swift:12-27, 101). |
-| Recents durability (S9) | Recents are durable **before** topology publication, so no topology save can precede them (closes N4 for autosave, RepositoryTopologyStore.swift:101-135). <br>• Crash after the recents flush, before topology durability: on restart the old core still holds the old keys. A simple move's destination key belongs to no record, so the startup sweep may delete it (loss), or replaying the move from an empty source leaves it intact. <br>• Chained entries are already cleared; clearing again is a no-op. <br>Old-key recents are never left for a new holder of P1 (a simple move emptied it). Replaying never permutes populated keys, because swaps are not admitted. |
+| Staleness between evidence and apply | The freshness pass repeats lookup and destination validation (including both package reads and the closing Git-directory number). The revision-guarded apply follows with no other await, so the only gap is the hop to MainActor. A change inside that hop is caught at the next observation. A stale result discards the change and refreshes through the existing retry limit (ScopedTopology.swift:12-27, 101). |
+| Recents (S9) | Not moved. They are kept per location and restart at P2. Old-location entries are pruned by the existing orphan sweep (WorkspaceLocalRepository+RepositoryRetention.swift:24-29). There is no staged write, so there is nothing to roll back when publication is rejected. |
 | Local activity | Not moved. It is location-derived continuous coverage and restarts at P2. The existing root-sync revocation of changed keys applies (FilesystemActor+RepositoryLocalActivity.swift:20-32, 68-95). |
 | Duplicate identity | No transfer (S3.4), plus a counter. Replacement validation adds the backstop `duplicateFolderIdentity` for store-held identities. |
 | Terminal races | The report revision and session token gate apply. A newer report wins. Foreground handoff during a read → unsupported. Every correction ends at its correlated settled fact. |
@@ -166,14 +172,14 @@ sequenceDiagram
 | S1 recording | discovery client enrollment → claims step 5 → store → `worktree` columns | store map plus persisted columns | undefined → none; malformed → none, rewritten | temp folders on the startup volume: `mv`, `cp -R`, `git clone`, `cp -c`, replacement during read; codec round trip; baseline resend on identity-only change |
 | S2 evidence | `FilesystemActor` dispositions with closure | per-observation | receipts are not consulted | pure test: a held stale receipt at P1 neither blocks nor competes |
 | S3 admission | dispositions, claim rounds, freshness pass | relocations | each condition declines independently | assignment matrix; two-read validation with a Git-directory retarget between reads; freshness failure → refresh |
-| S4 effect | claims step 3; store; deltas | topology and identities | revision guard | real folders plus package and SQLite: UUID, pin, note, tags and recents across restart; no duplicate row |
+| S4 effect | claims step 3; store; deltas | topology and identities | revision guard | real folders plus package and SQLite: UUID, pin, note and tags across restart; no duplicate row |
 | S5 order | both disposition sources plus closure | — | — | destination-first, source-first, a three-root chain in both orders, closed-app restore |
 | S6 without proof | dispositions → none; declined claims | Sep 11 states | — | negative matrix including a held destination and a swap (R1 result equals today's) |
 | S7 same-path | grouping loop, unchanged; consumption | — | — | P1 replaced while the original relocated: new row; unrepaired original: R1 as today |
 | S8 no false merge | startup-volume binding; both-on-volume rule | — | other volumes undefined | Git directory on another volume (fixture) → undefined; clone and APFS clone → different |
-| S9 recents | recency atom `relocateKeys` + flush before publication | live and durable | loss only | simple move; chain cleared; reused P1; restart between the recents flush and topology durability |
-| S10 bound panes | App remount through `teardownView` + `createBridgePaneView` | pane content persisted | missing pane → skip | open file viewer, review pane, and visible and hidden Zoom companions: content from P2, old-generation request rejected, P1-replacement never read |
-| S11 terminal truth | correction step plus reader | per-pane report revision and session token | unsupported → kept, checked at the next trigger | real child processes: foreground handoff, dead group leader, nested shell; runtime cases from the Specification proof table; correlated settled fact |
+| S9 recents and activity | no transfer; existing per-location keys and orphan sweep | per location | — | after relocation: empty at P2, old entries pruned, a new holder of P1 never receives them |
+| S10 bound panes | `updateBridgePaneState` → `teardownView` → retirement-aware `createViewForContent`; companions retire then reconcile | pane content persisted; companion transient | missing pane → skip | held retirement plus replacement registration; open file viewer, review pane, and visible and hidden Zoom companions: content from P2, old generation rejected, P1 replacement never read |
+| S11 terminal truth | correction step plus reader; superseded-raw-path guard in TerminalRuntime | per-pane report revision, session token, superseded raw path | unsupported → kept, checked at the next trigger | real child processes: foreground handoff, dead group leader, nested shell; launch correction before the first report with P1 replaced; runtime cases from the Specification proof table; correlated settled fact |
 | S12 pane links | existing association after S11 | pane facets | — | App: a pane under P2 links to the same checkout ID; zmx session ID unchanged |
 | S13 unwatch | Oct 7 design | — | — | Oct 7 proof |
 | S14 (D2) | retention preparation: rows with no covering folder after removal | absence interval | — | controlled-clock collection (only if D2 is accepted) |

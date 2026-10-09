@@ -20,7 +20,7 @@ The September lifecycle realized U3 ("handle moves automatically within the evid
 
 | Id | Need | Owner authority |
 |---|---|---|
-| M1 | When a checkout folder moves to a new location inside a watched folder, it keeps its identity automatically, with no user action. The identity includes the row, pin, note, tags and recents. Panes bound to that checkout keep their binding. A family follows its main checkout. Local activity is measured at a location, so it restarts at the new one. | 2026-10-08 "we want stable merging when folders are moved"; Sep 11 U3 "i dont want users to do this" |
+| M1 | When a checkout folder moves to a new location inside a watched folder, it keeps its identity automatically, with no user action. The identity includes the row, pin, note and tags. Panes bound to that checkout keep their binding. A family follows its main checkout. Recents and local activity are kept per location, so they restart at the new one. | 2026-10-08 "we want stable merging when folders are moved"; Sep 11 U3 "i dont want users to do this" |
 | M2 | Merge only on proof that the new location is the same folder that moved. When proof is missing or ambiguous, the new location stays independent, as today. A wrong merge is worse than a missed one. | Sep 11 U3 "do not claim two locations are the same without proof" |
 | M3 | Separate checkouts and independent clones of one project never merge, even with identical history, remote and name. | Sep 11 U6 |
 | M4 | Git identity guards the merge. Git must still resolve the moved folder to the same Git directory, in the same role (main or linked checkout). Shared history, remote or name is never enough on its own. | 2026-10-08 "we also did use the git identities to help no? to prevent reassociation?" |
@@ -42,4 +42,4 @@ The September lifecycle realized U3 ("handle moves automatically within the evid
 - **D1.** Which signal proves a move. Proposed: the identity of the folder itself, as the startup disk records it (Specification E3). Nothing in the Specification or Program Design is approved until D1 is decided.
 - **D2.** Today a row stays hidden forever when its covering watched folders are removed. Should such rows retire 30 days after they were hidden? This affects U5, "avoid permanent abandoned data".
 - **D3.** What happens to the legacy rows from the 2026-10-04 move: 281 hidden rows and 3 pins.
-- **To acknowledge with D1:** M5 (inferred), and the crash-window limit for recents and local activity (Specification S9).
+- **To acknowledge with D1:** M5 (inferred), and the restart of recents and local activity at the new location (Specification S9).
