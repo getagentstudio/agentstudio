@@ -66,7 +66,7 @@ An unproved new location becomes an independent new row. The old row follows the
   - C keeps its UUID, its recorded location becomes P2, and any hidden state clears. Its checkout note follows.
   - When C is main, its family keeps its UUID, pin, note and tags, and the family location becomes P2.
   - Other checkouts of the family keep their identities.
-  - Recents and local activity follow (S9), and bound and terminal panes follow (S10–S12).
+  - Recents follow as S9 defines (a chain clears them, and local activity restarts at P2); bound and terminal panes follow (S10–S12).
 - **S5. Order independence.** S3 and S4 hold in every order:
   - whichever watched folder is reconciled first;
   - whether the move happened while the app ran or while it was closed;
