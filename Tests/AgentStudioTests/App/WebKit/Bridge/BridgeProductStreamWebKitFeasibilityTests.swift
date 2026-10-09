@@ -222,6 +222,92 @@ struct BridgeProductStreamWebKitFeasibilityTests {
         #expect(await oracle.isComplete())
     }
 
+    @Test("diagnostic failure evidence retains partial handler and producer progress")
+    func diagnosticFailureEvidenceRetainsPartialHandlerAndProducerProgress() async throws {
+        // Arrange
+        let capability = "test-only-product-capability"
+        let configuration = BridgeProductStreamWebKitFeasibilityConfiguration.measuredProductContract
+        let oracle = BridgeProductStreamWebKitFeasibilityOracle(configuration: configuration)
+        let handler = makeHandler(
+            capability: capability,
+            oracle: oracle,
+            configuration: configuration
+        )
+
+        // Act: admit the worker start and three measured requests through the real handler.
+        let workerStarted = makeRequest(
+            path: "/worker-started",
+            capability: capability,
+            body: Data(#"{"kind":"s2a.worker.started"}"#.utf8)
+        )
+        #expect(try await responseStatus(for: workerStarted, using: handler) == 204)
+        for sampleIndex in 0..<3 {
+            let measuredRequest = makeRequest(
+                path: "/near-cap",
+                capability: capability,
+                body: makeNearCapBody(
+                    byteCount: configuration.maximumRequestBodyBytes,
+                    phase: .measured,
+                    sampleIndex: sampleIndex
+                )
+            )
+            #expect(try await responseStatus(for: measuredRequest, using: handler) == 204)
+        }
+
+        // Drive a real oracle producer receipt and cancellation transition before the
+        // diagnostic takes its failure snapshot.
+        let producer = BridgeWebKitFeasibilityProducerKind.cancellableStream
+        let producerTask = Task<Void, Never> {}
+        #expect(await oracle.registerProducer(producer, task: producerTask))
+        let receipt = BridgeWebKitFeasibilityFrameReceipt(producer: producer, sequence: 0)
+        #expect(await oracle.enqueueFrame(producer: producer, sequence: 0, terminal: true))
+        #expect(await oracle.recordFrameYielded(producer: producer, sequence: 0))
+        #expect(await oracle.recordFrameObserved(receipt))
+        await producerTask.value
+        await oracle.finishProducerWork(producer, cancelled: true)
+        await oracle.unregisterFinishedProducer(producer)
+
+        let snapshot = await oracle.snapshot()
+        var proof = await oracle.proof(timedOut: true)
+        proof.recordDiagnosticPhase(
+            .workerProgress(workerStarted: true, measuredRequestsAdmitted: proof.measuredRequestsAdmitted)
+        )
+
+        // Assert: the failure keeps raw progress, including fields whose worker-side
+        // result has not arrived yet, and presents the last observed phase explicitly.
+        #expect(proof.diagnosticSnapshot == snapshot)
+        #expect(proof.workerStartPostObserved)
+        #expect(proof.measuredRequestsAdmitted == 3)
+        #expect(proof.requestAPIObservations.count == 4)
+        #expect(proof.frameReceiptCount == 1)
+        #expect(proof.cancellationOrder == [.producerStopped, .producerUnregistered])
+        #expect(proof.activeProducerCount == 0)
+        #expect(proof.workerEncodeTiming == nil)
+        #expect(proof.workerFetchCompletionTiming == nil)
+        #expect(
+            proof.diagnosticPhase
+                == .workerProgress(workerStarted: true, measuredRequestsAdmitted: 3)
+        )
+        #expect(proof.failureReason == "product_stream_probe_timeout")
+        #expect(!proof.succeeded)
+    }
+
+    @Test("diagnostic page failure remains distinct from an observed worker error")
+    func diagnosticPageFailureDoesNotInventWorkerErrorEvidence() async {
+        var proof = BridgeProductStreamWebKitFeasibilityProof.failed(reason: "none")
+
+        proof.recordDiagnosticPhase(
+            .pageReportedFailure(origin: .unknown),
+            failureReasonIfNone: "worker_result_not_acknowledged"
+        )
+
+        #expect(proof.diagnosticPhase == .pageReportedFailure(origin: .unknown))
+        #expect(proof.failureReason == "worker_result_not_acknowledged")
+        #expect(!proof.succeeded)
+        #expect(proof.diagnosticSnapshot == nil)
+        #expect(proof.bodyReadCount == 0)
+    }
+
     @Test("accepted admission decodes without claiming provider work")
     func acceptedAdmissionDoesNotClaimProviderWork() throws {
         // Arrange
@@ -617,8 +703,13 @@ struct BridgeProductStreamWebKitFeasibilityTests {
         )
     }
 
-    private func makeNearCapBody(byteCount: Int) -> Data {
-        let prefix = "{\"kind\":\"s2a.near-cap\",\"phase\":\"warmup\",\"sampleIndex\":0,\"padding\":\""
+    private func makeNearCapBody(
+        byteCount: Int,
+        phase: BridgeWebKitNearCapMeasurementPhase = .warmup,
+        sampleIndex: Int = 0
+    ) -> Data {
+        let prefix =
+            "{\"kind\":\"s2a.near-cap\",\"phase\":\"\(phase.rawValue)\",\"sampleIndex\":\(sampleIndex),\"padding\":\""
         let suffix = "\"}"
         precondition(byteCount >= prefix.utf8.count + suffix.utf8.count)
         let padding = String(

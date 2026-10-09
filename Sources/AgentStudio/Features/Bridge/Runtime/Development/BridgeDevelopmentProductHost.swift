@@ -65,6 +65,8 @@ package actor BridgeDevelopmentProductHost {
     private var publishedFileNavigation: FileNavigationPublication?
     private let worktreeId: UUID
     private let worktreeRoot: URL
+    let shutdownFactScope: BridgeDevelopmentProductHostFactScope
+    let shutdownFactSink: BridgeDevelopmentProductHostFactSink?
 
     package init(
         source: BridgeDevelopmentProductSource,
@@ -73,6 +75,7 @@ package actor BridgeDevelopmentProductHost {
         statusPhysicalGate: AgentStudioGitStatusPhysicalGate = AgentStudioGitStatusPhysicalGate(),
         operationDeadlineClock: (any Clock<Duration> & Sendable)? = nil,
         retirementClock: (any Clock<Duration> & Sendable)? = nil,
+        shutdownFactSink: BridgeDevelopmentProductHostFactSink? = nil,
         contributionTargetCommit:
             @escaping @MainActor @Sendable (WorkspaceReviewContributionTarget) ->
             BridgePaneStateMutationResult
@@ -83,6 +86,7 @@ package actor BridgeDevelopmentProductHost {
             worktreeAnnotationOutputCoordinator: worktreeAnnotationOutputCoordinator,
             operationDeadlineClock: operationDeadlineClock,
             retirementClock: retirementClock,
+            shutdownFactSink: shutdownFactSink,
             contributionTargetCommit: contributionTargetCommit,
             statusPhysicalGate: statusPhysicalGate,
             makeReviewProvider: { repositoryPath, gitReadContext in
@@ -101,6 +105,7 @@ package actor BridgeDevelopmentProductHost {
         worktreeAnnotationOutputCoordinator: WorktreeAnnotationOutputCoordinatorActor? = nil,
         operationDeadlineClock: (any Clock<Duration> & Sendable)? = nil,
         retirementClock: (any Clock<Duration> & Sendable)? = nil,
+        shutdownFactSink: BridgeDevelopmentProductHostFactSink? = nil,
         contributionTargetCommit:
             @escaping @MainActor @Sendable (WorkspaceReviewContributionTarget) ->
             BridgePaneStateMutationResult,
@@ -160,6 +165,8 @@ package actor BridgeDevelopmentProductHost {
         self.committedCallTarget = productPreparation.committedCallTarget
         self.gitReadScheduler = gitReadScheduler
         self.paneSessionId = paneId.uuidString
+        self.shutdownFactScope = BridgeDevelopmentProductHostFactScope(paneID: paneId)
+        self.shutdownFactSink = shutdownFactSink
         self.bootstrapAuthorizationProjection = BridgeDevelopmentBootstrapAuthorizationProjection(
             paneSessionId: paneId.uuidString)
         self.retirementDelay = retirementClock.map(AsyncDelay.clock) ?? .taskSleep

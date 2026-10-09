@@ -188,6 +188,19 @@ struct BridgeProductStreamWebKitFeasibilitySnapshot: Equatable, Sendable {
 }
 
 package struct BridgeProductStreamWebKitFeasibilityProof: Equatable, Sendable {
+    package enum DiagnosticPhase: Equatable, Sendable {
+        case navigationPending
+        case scriptInvocationFailed
+        case scriptInvoked
+        case workerProgress(workerStarted: Bool, measuredRequestsAdmitted: Int)
+        case pageReportedFailure(origin: PageFailureOrigin)
+        case pageReportedCompletion(succeeded: Bool)
+    }
+
+    package enum PageFailureOrigin: Equatable, Sendable {
+        case unknown
+    }
+
     package let authenticationBeforeBodySucceeded: Bool
     package let bodyCapBeforeDecodeSucceeded: Bool
     package let strictRouteDecodeSucceeded: Bool
@@ -222,7 +235,9 @@ package struct BridgeProductStreamWebKitFeasibilityProof: Equatable, Sendable {
     package let producerOverflowCount: Int
     package let postTerminalFrameCount: Int
     let requestAPIObservations: [BridgeWebKitRequestAPIObservation]
-    package let failureReason: String
+    package private(set) var failureReason: String
+    package private(set) var diagnosticPhase: DiagnosticPhase?
+    let diagnosticSnapshot: BridgeProductStreamWebKitFeasibilitySnapshot?
 
     init(
         authenticationBeforeBodySucceeded: Bool,
@@ -259,7 +274,8 @@ package struct BridgeProductStreamWebKitFeasibilityProof: Equatable, Sendable {
         producerOverflowCount: Int,
         postTerminalFrameCount: Int,
         requestAPIObservations: [BridgeWebKitRequestAPIObservation],
-        failureReason: String
+        failureReason: String,
+        diagnosticSnapshot: BridgeProductStreamWebKitFeasibilitySnapshot? = nil
     ) {
         self.authenticationBeforeBodySucceeded = authenticationBeforeBodySucceeded
         self.bodyCapBeforeDecodeSucceeded = bodyCapBeforeDecodeSucceeded
@@ -296,6 +312,25 @@ package struct BridgeProductStreamWebKitFeasibilityProof: Equatable, Sendable {
         self.postTerminalFrameCount = postTerminalFrameCount
         self.requestAPIObservations = requestAPIObservations
         self.failureReason = failureReason
+        self.diagnosticPhase = nil
+        self.diagnosticSnapshot = diagnosticSnapshot
+    }
+
+    package var measuredRequestsAdmitted: Int {
+        diagnosticSnapshot?.requestAPIObservations.filter {
+            $0.route == "/near-cap" && $0.nearCapMeasurementPhase == .measured
+                && $0.admissionOutcome == .accepted
+        }.count ?? 0
+    }
+
+    package mutating func recordDiagnosticPhase(
+        _ phase: DiagnosticPhase,
+        failureReasonIfNone: String? = nil
+    ) {
+        diagnosticPhase = phase
+        if failureReason == "none", let failureReasonIfNone {
+            failureReason = failureReasonIfNone
+        }
     }
 
     package var succeeded: Bool {

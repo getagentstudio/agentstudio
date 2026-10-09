@@ -9,6 +9,7 @@ extension BridgeDevelopmentProductHost {
             return await withCheckedContinuation { shutdownWaiters.append($0) }
         }
         isShutdown = true
+        shutdownFactSink?(shutdownFactScope, .shutdownStarted)
         unfinishedShutdownDrains = [
             "bootstrap", "reviewComparison", "fileRefresh", "sessionOwner", "provider",
             "reviewCache", "publication", "construction", "gitRead",
@@ -135,6 +136,7 @@ extension BridgeDevelopmentProductHost {
     private func resolveShutdown(_ result: BridgeDevelopmentProductHostShutdownResult) {
         guard shutdownResult == nil else { return }
         shutdownResult = result
+        shutdownFactSink?(shutdownFactScope, .shutdownResolved(result))
         shutdownDeadlineTask?.cancel()
         shutdownDeadlineTask = nil
         shutdownCompletion?.yield(result)

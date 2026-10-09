@@ -45,7 +45,9 @@ enum BridgeProductStreamWebKitFeasibilityDiagnostic {
         }
         guard pageReady else {
             retainAfterStopping(page, window: window)
-            return await oracle.proof(timedOut: true)
+            var proof = await oracle.proof(timedOut: true)
+            proof.recordDiagnosticPhase(.navigationPending)
+            return proof
         }
 
         do {
@@ -68,7 +70,9 @@ enum BridgeProductStreamWebKitFeasibilityDiagnostic {
             )
         } catch {
             retainAfterStopping(page, window: window)
-            return await oracle.proof(timedOut: true)
+            var proof = await oracle.proof(timedOut: true)
+            proof.recordDiagnosticPhase(.scriptInvocationFailed)
+            return proof
         }
 
         let workerSettled = await waitUntil(timeout: timeout) {
@@ -78,14 +82,29 @@ enum BridgeProductStreamWebKitFeasibilityDiagnostic {
         }
         let oracleComplete = await oracle.isComplete()
         let completed = workerSettled && page.title == "S2a Pass" && oracleComplete
-        let proof = await oracle.proof(timedOut: !workerSettled)
+        var proof = await oracle.proof(timedOut: !workerSettled)
         retainAfterStopping(page, window: window)
         guard completed else {
-            return .failed(
-                reason: proof.failureReason == "none"
-                    ? "worker_result_not_acknowledged" : proof.failureReason
+            let phase: BridgeProductStreamWebKitFeasibilityProof.DiagnosticPhase
+            if page.title == "S2a Fail" {
+                phase = .pageReportedFailure(origin: .unknown)
+            } else if page.title == "S2a Pass" {
+                phase = .pageReportedCompletion(succeeded: true)
+            } else if proof.workerStartPostObserved {
+                phase = .workerProgress(
+                    workerStarted: true,
+                    measuredRequestsAdmitted: proof.measuredRequestsAdmitted
+                )
+            } else {
+                phase = .scriptInvoked
+            }
+            proof.recordDiagnosticPhase(
+                phase,
+                failureReasonIfNone: "worker_result_not_acknowledged"
             )
+            return proof
         }
+        proof.recordDiagnosticPhase(.pageReportedCompletion(succeeded: true))
         return proof
     }
 
