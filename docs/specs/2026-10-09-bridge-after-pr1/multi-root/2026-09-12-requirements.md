@@ -316,4 +316,3 @@ worktree. Real rendered activation, annotation, Open view, ⌘-click and
 multi-PR popover proof is required; Command-P and new selector UI remain later
 work. Wire integration follows IPC v2 and the IPC control A1 rule. No implementation evidence is
 claimed here.
-
