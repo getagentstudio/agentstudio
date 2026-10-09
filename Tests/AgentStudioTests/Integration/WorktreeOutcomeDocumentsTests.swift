@@ -149,7 +149,7 @@ struct WorktreeOutcomeDocumentsTests {
         let refusal = WorktreeRefusalDocument(details: dirtyDetails)
         #expect(
             try Self.json(refusal)
-                == #"{"details":{"dirty":{"conflicted":0,"firstPaths":["changed.txt"],"staged":1,"unstaged":2,"untracked":3}},"message":"The worktree contains uncommitted changes.","options":[{"effect":"Remove the worktree and discard its uncommitted changes.","flag":"-f"},{"command":"commit the changes first","effect":"Keep the changes in the repository history."},{"command":"agentstudio worktree new <branch> --changes-only --from <path>","effect":"Copy the worktree's changes before removing it."}],"reason":"dirty"}"#
+                == #"{"details":{"dirty":{"conflicted":0,"firstPaths":["changed.txt"],"staged":1,"unstaged":2,"untracked":3}},"message":"The worktree contains uncommitted changes.","options":[{"effect":"Remove the worktree and discard its uncommitted changes.","flag":"-f"},{"command":"commit the changes first","effect":"Keep the changes in the repository history."},{"command":"agentstudio worktree new -c <branch> --changes-only --from <path>","effect":"Copy the worktree's changes before removing it."}],"reason":"dirty"}"#
         )
 
         #expect(
@@ -225,7 +225,7 @@ struct WorktreeOutcomeDocumentsTests {
         )
         #expect(
             try Self.json(refusedEntry)
-                == #"{"details":{"inputs":[],"refusal":{"details":{"dirty":{"conflicted":0,"firstPaths":["changed.txt"],"staged":1,"unstaged":2,"untracked":3}},"message":"The worktree contains uncommitted changes.","options":[{"effect":"Remove the worktree and discard its uncommitted changes.","flag":"-f"},{"command":"commit the changes first","effect":"Keep the changes in the repository history."},{"command":"agentstudio worktree new <branch> --changes-only --from <path>","effect":"Copy the worktree's changes before removing it."}],"reason":"dirty"},"target":"feature/dirty"},"status":"refused"}"#
+                == #"{"details":{"inputs":[],"refusal":{"details":{"dirty":{"conflicted":0,"firstPaths":["changed.txt"],"staged":1,"unstaged":2,"untracked":3}},"message":"The worktree contains uncommitted changes.","options":[{"effect":"Remove the worktree and discard its uncommitted changes.","flag":"-f"},{"command":"commit the changes first","effect":"Keep the changes in the repository history."},{"command":"agentstudio worktree new -c <branch> --changes-only --from <path>","effect":"Copy the worktree's changes before removing it."}],"reason":"dirty"},"target":"feature/dirty"},"status":"refused"}"#
         )
 
         let failedEntry = WorktreeRemovalEntry.failed(

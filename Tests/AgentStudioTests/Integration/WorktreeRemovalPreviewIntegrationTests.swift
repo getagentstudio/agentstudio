@@ -27,7 +27,7 @@ struct WorktreeRemovalPreviewIntegrationTests {
                 targets: [facts.featurePath.path],
                 callerDirectory: fixture.path,
                 branchPolicy: .deleteIfIntegrated,
-                fetchPolicy: .defaultBranch,
+                fetchPolicy: .fetch,
                 dryRun: true
             )
         )
