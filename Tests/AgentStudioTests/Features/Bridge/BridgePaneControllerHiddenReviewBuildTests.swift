@@ -412,6 +412,8 @@ struct BridgePaneControllerHiddenReviewBuildTests {
 
         // Act: hide Review and advance to a newer comparison while the old build is held.
         await acceptFileViewerMode(fixture, sequence: 2)
+        #expect(fixture.controller.activeReviewRefreshTask == nil)
+        #expect(fixture.controller.activeReviewRefreshTaskId == nil)
         await setLatestComparison(fixture, fileId: "latest-hidden")
         await fixture.controller.handleCommittedProductReviewIntakeReady(
             BridgeProductReviewIntakeReadyRequest(
