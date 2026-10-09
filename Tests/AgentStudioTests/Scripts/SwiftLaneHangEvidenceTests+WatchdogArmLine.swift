@@ -127,10 +127,12 @@ extension SwiftLaneHangEvidenceTests {
 
 /// Fails the test, rather than leaving its fixture unarmed until the outer hang
 /// bound, when the runner's arm line has drifted from the one fixtures print.
-private func requireRunnerArmLineMatchesFixtures() async throws {
+@discardableResult
+private func requireRunnerArmLineMatchesFixtures() async throws -> String {
     let runnerArmLine = try await laneBash(
         "source scripts/swift-test-helpers.sh; printf '%s' \"$SWIFT_TEST_WATCHDOG_ARM_LINE\"")
     try #require(runnerArmLine == laneWatchdogArmLine)
+    return runnerArmLine
 }
 
 /// Shell, sourced after the lane helpers, that turns the watchdog's first two
