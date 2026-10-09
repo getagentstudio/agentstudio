@@ -436,6 +436,9 @@ extension AppDelegate {
             surfaceManager: surfaceManager,
             terminalSurfaceCommandDispatcher: surfaceManager,
             terminalSurfaceOperations: surfaceManager.makeTerminalPaneSurfaceOperations(),
+            bridgePageCommandRunner: WorkspaceSurfaceCoordinator.makeBridgePageCommandRunner(
+                dispatcher: commandDispatcherForBoot()
+            ),
             startupTraceRecorder: startupTraceRecorder,
             runtimeRegistry: startupRuntimeRegistry,
             paneEventBus: paneRuntimeBus,

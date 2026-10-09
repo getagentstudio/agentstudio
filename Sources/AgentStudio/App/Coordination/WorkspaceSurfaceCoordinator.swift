@@ -76,6 +76,7 @@ final class WorkspaceSurfaceCoordinator {
     let surfaceManager: WorkspaceSurfaceManaging
     let terminalSurfaceCommandDispatcher: any TerminalSurfaceCommandDispatching
     let terminalSurfaceOperations: TerminalPaneMountView.SurfaceOperations
+    let bridgePageCommandRunner: (@MainActor @Sendable (BridgePageCommand, UUID) -> Void)?
     let startupTraceRecorder: AgentStudioStartupTraceRecorder?
     let runtimeRegistry: RuntimeRegistry
     let visibilityTierResolver: StoreVisibilityTierResolver
@@ -194,6 +195,7 @@ final class WorkspaceSurfaceCoordinator {
         surfaceManager: WorkspaceSurfaceManaging,
         terminalSurfaceCommandDispatcher: any TerminalSurfaceCommandDispatching,
         terminalSurfaceOperations: TerminalPaneMountView.SurfaceOperations,
+        bridgePageCommandRunner: (@MainActor @Sendable (BridgePageCommand, UUID) -> Void)? = nil,
         startupTraceRecorder: AgentStudioStartupTraceRecorder? = nil,
         runtimeRegistry: RuntimeRegistry,
         paneEventBus: EventBus<RuntimeEnvelope> = PaneRuntimeEventBus.shared,
@@ -259,6 +261,7 @@ final class WorkspaceSurfaceCoordinator {
         self.surfaceManager = surfaceManager
         self.terminalSurfaceCommandDispatcher = terminalSurfaceCommandDispatcher
         self.terminalSurfaceOperations = terminalSurfaceOperations
+        self.bridgePageCommandRunner = bridgePageCommandRunner
         self.startupTraceRecorder = startupTraceRecorder
         self.runtimeRegistry = runtimeRegistry
         self.visibilityTierResolver = visibilityTierResolver
