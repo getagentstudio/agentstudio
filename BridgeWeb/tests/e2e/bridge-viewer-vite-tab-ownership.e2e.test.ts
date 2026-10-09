@@ -21,7 +21,9 @@ import {
 	createTabOwnershipCleanup,
 	createTabOwnershipStepCheckpoint,
 	observeTabOwnershipBootstrap,
+	recordTabOwnershipBootstrapHistory,
 	tabOwnershipBootstrapTransportForPage,
+	type TabOwnershipBootstrapHistory,
 } from './bridge-viewer-vite-tab-ownership-test-support.ts';
 
 test.for(['shared-profile', 'separate-profile'] as const)(
@@ -34,6 +36,7 @@ test.for(['shared-profile', 'separate-profile'] as const)(
 		let fixture: Awaited<ReturnType<typeof createBridgeViewerViteProductFixture>> | null = null;
 		let browser: Browser | null = null;
 		let server: BridgeViewerOwnedViteProductServer | null = null;
+		let firstBootstrapHistory: TabOwnershipBootstrapHistory | null = null;
 		let primaryError: unknown;
 		const checkpoint = createTabOwnershipStepCheckpoint({
 			topology: profileTopology,
@@ -61,6 +64,7 @@ test.for(['shared-profile', 'separate-profile'] as const)(
 				await browser?.close();
 			},
 			disposeFixture: async (): Promise<void> => {
+				firstBootstrapHistory?.dispose();
 				await fixture?.dispose();
 			},
 		});
@@ -83,6 +87,14 @@ test.for(['shared-profile', 'separate-profile'] as const)(
 				});
 			});
 			const firstTab = await context.newPage();
+			checkpoint.begin('install first tab document correlation and bootstrap history');
+			const firstDocumentGenerations = await installBridgeViewerDocumentGenerations(firstTab);
+			const firstDocumentGeneration = firstDocumentGenerations.currentGeneration() + 1;
+			firstBootstrapHistory = recordTabOwnershipBootstrapHistory({
+				transport: tabOwnershipBootstrapTransportForPage(firstTab),
+				requestGeneration: firstDocumentGenerations.requestGeneration,
+				signal: testContext.signal,
+			});
 			const reviewFile = fixture.oracle.reviewFiles[0];
 			if (reviewFile === undefined) throw new Error('Tab ownership fixture needs a changed file.');
 			const url = bridgeViewerViteProductReviewUrl(
@@ -154,6 +166,8 @@ test.for(['shared-profile', 'separate-profile'] as const)(
 			await selectReviewFile({ page: secondTab, path: reviewFile.path });
 			checkpoint.begin('reloaded second tab Review ready');
 			await waitForSelectedReviewReady({ page: secondTab, itemId: reviewFile.itemId });
+			checkpoint.begin('assert closed first tab never re-bootstrapped');
+			firstBootstrapHistory.assertSingleBootstrapForDocument(firstDocumentGeneration);
 			checkpoint.begin('assert page errors');
 			expect(pageErrors).toEqual([]);
 		} catch (error: unknown) {

@@ -8,6 +8,7 @@ import {
 	createTabOwnershipCleanup,
 	createTabOwnershipStepCheckpoint,
 	observeTabOwnershipBootstrap,
+	recordTabOwnershipBootstrapHistory,
 } from './bridge-viewer-vite-tab-ownership-test-support.ts';
 
 test('runner finish stops the owned child while the journey and browser close are held', async (): Promise<void> => {
@@ -151,6 +152,102 @@ test('Refresh observes the new document bootstrap rather than the old document r
 	expect(transport.listenerCount()).toBe(0);
 });
 
+test('closed first-tab history rejects a second bootstrap even without its response', (): void => {
+	const transport = new BootstrapResponseTransport();
+	const history = recordTabOwnershipBootstrapHistory(transport.historyProps());
+	try {
+		transport.emitRequest(transport.response(1, '/__bridge-product/bootstrap').request());
+		// Hold the second request's response: request issuance is already a violated claim.
+		transport.emitRequest(transport.response(1, '/__bridge-product/bootstrap').request());
+		transport.close();
+		expect((): void => history.assertSingleBootstrapForDocument(1)).toThrow(
+			'first tab re-bootstrapped',
+		);
+		expect(transport.listenerCount()).toBe(0);
+	} finally {
+		history.dispose();
+	}
+});
+
+test('closed first-tab history accepts only its initial bootstrap and stays frozen', (): void => {
+	const transport = new BootstrapResponseTransport();
+	const history = recordTabOwnershipBootstrapHistory(transport.historyProps());
+	try {
+		transport.emitRequest(transport.response(1, '/__bridge-product/bootstrap').request());
+		transport.emitRequest(transport.response(1, '/__bridge-product/command').request());
+		transport.close();
+		history.assertSingleBootstrapForDocument(1);
+		expect(transport.listenerCount()).toBe(0);
+		transport.emitRequest(transport.response(1, '/__bridge-product/bootstrap').request());
+		history.assertSingleBootstrapForDocument(1);
+	} finally {
+		history.dispose();
+	}
+});
+
+test('closed first-tab history also rejects a bootstrap after an unexpected document replacement', (): void => {
+	const transport = new BootstrapResponseTransport();
+	const history = recordTabOwnershipBootstrapHistory(transport.historyProps());
+	try {
+		transport.emitRequest(transport.response(1, '/__bridge-product/bootstrap').request());
+		transport.emitRequest(transport.response(2, '/__bridge-product/bootstrap').request());
+		transport.close();
+		expect((): void => history.assertSingleBootstrapForDocument(1)).toThrow(
+			'first tab re-bootstrapped',
+		);
+	} finally {
+		history.dispose();
+	}
+});
+
+test('bootstrap history cannot assert a negative before its page closes', (): void => {
+	const transport = new BootstrapResponseTransport();
+	const history = recordTabOwnershipBootstrapHistory(transport.historyProps());
+	try {
+		transport.emitRequest(transport.response(1, '/__bridge-product/bootstrap').request());
+		expect((): void => history.assertSingleBootstrapForDocument(1)).toThrow(
+			'history has not closed',
+		);
+	} finally {
+		history.dispose();
+	}
+	expect(transport.listenerCount()).toBe(0);
+});
+
+test('a closed history without an observed initial bootstrap fails by name', (): void => {
+	const transport = new BootstrapResponseTransport();
+	const history = recordTabOwnershipBootstrapHistory(transport.historyProps());
+	transport.close();
+	expect((): void => history.assertSingleBootstrapForDocument(1)).toThrow(
+		'initial bootstrap request was not observed',
+	);
+});
+
+test('a single bootstrap from a different document cannot establish the initial claim', (): void => {
+	const transport = new BootstrapResponseTransport();
+	const history = recordTabOwnershipBootstrapHistory(transport.historyProps());
+	transport.emitRequest(transport.response(2, '/__bridge-product/bootstrap').request());
+	transport.close();
+	expect((): void => history.assertSingleBootstrapForDocument(1)).toThrow(
+		'belonged to document 2, expected 1',
+	);
+});
+
+test.each(['before observation', 'while observing'] as const)(
+	'runner abort %s detaches history without manufacturing page close',
+	(phase: 'before observation' | 'while observing'): void => {
+		const transport = new BootstrapResponseTransport();
+		if (phase === 'before observation') transport.controller.abort();
+		const history = recordTabOwnershipBootstrapHistory(transport.historyProps());
+		if (phase === 'while observing') transport.controller.abort();
+		transport.close();
+		expect((): void => history.assertSingleBootstrapForDocument(1)).toThrow(
+			'history has not closed',
+		);
+		expect(transport.listenerCount()).toBe(0);
+	},
+);
+
 test.each(['abort', 'close', 'requestfailed'] as const)(
 	'bootstrap observation fails and detaches on %s',
 	async (termination: 'abort' | 'close' | 'requestfailed'): Promise<void> => {
@@ -208,6 +305,7 @@ interface ObservedBootstrapResponse {
 class BootstrapResponseTransport {
 	readonly controller = new AbortController();
 	readonly #responseListeners = new Set<(response: ObservedBootstrapResponse) => void>();
+	readonly #requestListeners = new Set<(request: ObservedBootstrapRequest) => void>();
 	readonly #requestFailureListeners = new Set<(request: ObservedBootstrapRequest) => void>();
 	readonly #closeListeners = new Set<() => void>();
 
@@ -216,6 +314,12 @@ class BootstrapResponseTransport {
 	>[0] {
 		return {
 			transport: {
+				subscribeRequest: (listener): (() => void) => {
+					this.#requestListeners.add(listener);
+					return (): void => {
+						this.#requestListeners.delete(listener);
+					};
+				},
 				subscribeResponse: (listener): (() => void) => {
 					this.#responseListeners.add(listener);
 					return (): void => {
@@ -241,6 +345,17 @@ class BootstrapResponseTransport {
 		};
 	}
 
+	historyProps(): Parameters<
+		typeof recordTabOwnershipBootstrapHistory<ObservedBootstrapRequest>
+	>[0] {
+		const observation = this.observationProps();
+		return {
+			transport: observation.transport,
+			requestGeneration: observation.requestGeneration,
+			signal: observation.signal,
+		};
+	}
+
 	response(generation: number, path: string): ObservedBootstrapResponse {
 		const request = {
 			generation,
@@ -254,6 +369,10 @@ class BootstrapResponseTransport {
 		for (const listener of this.#responseListeners) listener(response);
 	}
 
+	emitRequest(request: ObservedBootstrapRequest): void {
+		for (const listener of this.#requestListeners) listener(request);
+	}
+
 	failRequest(request: ObservedBootstrapRequest): void {
 		for (const listener of this.#requestFailureListeners) listener(request);
 	}
@@ -264,7 +383,10 @@ class BootstrapResponseTransport {
 
 	listenerCount(): number {
 		return (
-			this.#responseListeners.size + this.#requestFailureListeners.size + this.#closeListeners.size
+			this.#responseListeners.size +
+			this.#requestListeners.size +
+			this.#requestFailureListeners.size +
+			this.#closeListeners.size
 		);
 	}
 }

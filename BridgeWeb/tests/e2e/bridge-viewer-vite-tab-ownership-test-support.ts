@@ -69,6 +69,7 @@ interface TabOwnershipBootstrapRequest {
 }
 
 interface TabOwnershipBootstrapTransport<TRequest, TResponse> {
+	readonly subscribeRequest: (listener: (request: TRequest) => void) => () => void;
 	readonly subscribeResponse: (listener: (response: TResponse) => void) => () => void;
 	readonly subscribeRequestFailure: (listener: (request: TRequest) => void) => () => void;
 	readonly subscribeClose: (listener: () => void) => () => void;
@@ -78,6 +79,12 @@ export function tabOwnershipBootstrapTransportForPage(
 	page: Page,
 ): TabOwnershipBootstrapTransport<Request, Response> {
 	return {
+		subscribeRequest: (listener): (() => void) => {
+			page.on('request', listener);
+			return (): void => {
+				page.off('request', listener);
+			};
+		},
 		subscribeResponse: (listener): (() => void) => {
 			page.on('response', listener);
 			return (): void => {
@@ -96,6 +103,67 @@ export function tabOwnershipBootstrapTransportForPage(
 				page.off('close', listener);
 			};
 		},
+	};
+}
+
+export interface TabOwnershipBootstrapHistory {
+	readonly assertSingleBootstrapForDocument: (documentGeneration: number) => void;
+	readonly dispose: () => void;
+}
+
+/** Page close ends the browser request history; it says nothing about native stream release. */
+export function recordTabOwnershipBootstrapHistory<
+	TRequest extends TabOwnershipBootstrapRequest,
+>(props: {
+	readonly transport: Pick<
+		TabOwnershipBootstrapTransport<TRequest, unknown>,
+		'subscribeRequest' | 'subscribeClose'
+	>;
+	readonly requestGeneration: (request: TRequest) => number;
+	readonly signal: AbortSignal;
+}): TabOwnershipBootstrapHistory {
+	const requestedDocumentGenerations: number[] = [];
+	let pageClosed = false;
+	const unsubscribe: (() => void)[] = [];
+	const dispose = (): void => {
+		for (const release of unsubscribe.splice(0)) release();
+		props.signal.removeEventListener('abort', dispose);
+	};
+	if (!props.signal.aborted) {
+		unsubscribe.push(
+			props.transport.subscribeRequest((request: TRequest): void => {
+				if (
+					request.method() === 'POST' &&
+					new URL(request.url()).pathname === '/__bridge-product/bootstrap'
+				) {
+					requestedDocumentGenerations.push(props.requestGeneration(request));
+				}
+			}),
+			props.transport.subscribeClose((): void => {
+				pageClosed = true;
+				dispose();
+			}),
+		);
+		props.signal.addEventListener('abort', dispose, { once: true });
+	}
+	return {
+		assertSingleBootstrapForDocument: (documentGeneration: number): void => {
+			if (!pageClosed) throw new Error('TQ35 first-tab bootstrap history has not closed.');
+			if (requestedDocumentGenerations.length === 0) {
+				throw new Error('TQ35 first-tab initial bootstrap request was not observed.');
+			}
+			if (requestedDocumentGenerations.length > 1) {
+				throw new Error(
+					`TQ35 first tab re-bootstrapped; closed request document generations: ${JSON.stringify(requestedDocumentGenerations)}.`,
+				);
+			}
+			if (requestedDocumentGenerations[0] !== documentGeneration) {
+				throw new Error(
+					`TQ35 first-tab bootstrap belonged to document ${requestedDocumentGenerations[0]}, expected ${documentGeneration}.`,
+				);
+			}
+		},
+		dispose,
 	};
 }
 
