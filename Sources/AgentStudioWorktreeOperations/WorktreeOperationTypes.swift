@@ -108,13 +108,6 @@ package struct WorktreeOperationFailure: Sendable, Equatable {
         self.leftovers = leftovers
         self.creationFetch = creationFetch
     }
-
-    /// Whether a branch may be left fast-forwarded: the failure itself, or a fork leftover, says so.
-    package var leavesBranchMoved: Bool {
-        if case .branchMoveNotUndone = failure { return true }
-        guard case .incomplete(let items) = leftovers else { return false }
-        return items.contains { $0.kind == .branchMoveNotUndone }
-    }
 }
 
 package enum WorktreeFailureKind: Sendable, Equatable {

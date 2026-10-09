@@ -210,11 +210,10 @@ struct WorktreeOperationErrorMapperTests {
         #expect(
             WorktreeCommandLineFormatter.failedHumanLine(expectedFailure)
                 == "failed: rejectedAfterChange branchCheckedOut /tmp/worktree-error-mapping/repo.holder; "
-                + "leftovers: incomplete [branchMoveNotUndone refs/heads/feature/example (branch reference)]; "
-                + "options: [git log -1 <branch>: Check where the branch is now before using it or moving it back.]")
+                + "leftovers: incomplete [branchMoveNotUndone refs/heads/feature/example (branch reference)]")
         #expect(
             try WorktreeCommandLineFormatter.failedJSONText(expectedFailure)
-                == #"{"failure":{"kind":"rejectedAfterChange","path":"/tmp/worktree-error-mapping/repo.holder","reason":"branchCheckedOut"},"leftovers":{"items":[{"base":"branchReference","kind":"branchMoveNotUndone","location":"refs/heads/feature/example"}],"status":"incomplete"},"options":[{"command":"git log -1 <branch>","effect":"Check where the branch is now before using it or moving it back."}],"outcome":"failed"}"#
+                == #"{"failure":{"kind":"rejectedAfterChange","path":"/tmp/worktree-error-mapping/repo.holder","reason":"branchCheckedOut"},"leftovers":{"items":[{"base":"branchReference","kind":"branchMoveNotUndone","location":"refs/heads/feature/example"}],"status":"incomplete"},"outcome":"failed"}"#
         )
     }
 
@@ -237,11 +236,11 @@ struct WorktreeOperationErrorMapperTests {
         #expect(human.exitCode == 2)
         #expect(
             human.text
-                == "failed: branchMoveNotUndone feature/example from \(fromCommit) to \(toCommit); leftovers: unverified; "
-                + "options: [git log -1 <branch>: Check where the branch is now before using it or moving it back.]")
+                == "failed: branchMoveNotUndone feature/example from \(fromCommit) to \(toCommit); leftovers: unverified"
+        )
         #expect(
             try WorktreeCommandLineFormatter.format(outcome: outcome, usesJSONOutput: true).text
-                == #"{"failure":{"branch":"feature/example","fromCommit":"\#(fromCommit)","kind":"branchMoveNotUndone","toCommit":"\#(toCommit)"},"leftovers":{"status":"unverified"},"options":[{"command":"git log -1 <branch>","effect":"Check where the branch is now before using it or moving it back."}],"outcome":"failed"}"#
+                == #"{"failure":{"branch":"feature/example","fromCommit":"\#(fromCommit)","kind":"branchMoveNotUndone","toCommit":"\#(toCommit)"},"leftovers":{"status":"unverified"},"outcome":"failed"}"#
         )
     }
 

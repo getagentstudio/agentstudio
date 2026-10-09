@@ -444,11 +444,10 @@ extension WorktreeCreationCommandLineIntegrationTests {
         #expect(
             human.text
                 == "failed: cancelled; leftovers: incomplete [branchMoveNotUndone refs/heads/feature/ff from \(mainCommit) "
-                + "to \(originTip) (branch reference)]; options: [git log -1 <branch>: Check where the branch is now before using it or moving it back.]\nfetch: fetched origin/feature/ff \(originTip)"
-        )
+                + "to \(originTip) (branch reference)]\nfetch: fetched origin/feature/ff \(originTip)")
         #expect(
             try WorktreeCommandLineFormatter.format(outcome: outcome, usesJSONOutput: true).text
-                == #"{"failure":{"kind":"cancelled"},"fetch":{"branch":"feature/ff","commit":"\#(originTip)","remote":"origin","status":"fetched"},"leftovers":{"items":[{"base":"branchReference","fromCommit":"\#(mainCommit)","kind":"branchMoveNotUndone","location":"refs/heads/feature/ff","toCommit":"\#(originTip)"}],"status":"incomplete"},"options":[{"command":"git log -1 <branch>","effect":"Check where the branch is now before using it or moving it back."}],"outcome":"failed"}"#
+                == #"{"failure":{"kind":"cancelled"},"fetch":{"branch":"feature/ff","commit":"\#(originTip)","remote":"origin","status":"fetched"},"leftovers":{"items":[{"base":"branchReference","fromCommit":"\#(mainCommit)","kind":"branchMoveNotUndone","location":"refs/heads/feature/ff","toCommit":"\#(originTip)"}],"status":"incomplete"},"outcome":"failed"}"#
         )
     }
 

@@ -3,22 +3,16 @@ import Foundation
 
 extension WorktreeCommandLineFormatter {
     package static func failedHumanLine(_ failure: WorktreeOperationFailure) -> String {
-        var line =
-            "failed: \(humanFailure(failure.failure)); leftovers: \(WorktreeCleanupLeftoversFormatter.human(failure.leftovers))"
-        let options = WorktreeStopCatalog.failureOptions(for: failure)
-        if !options.isEmpty {
-            line += "; options: [\(options.map(humanOption).joined(separator: "; "))]"
-        }
-        return withCreationFetchLine(line, failure.creationFetch)
+        withCreationFetchLine(
+            "failed: \(humanFailure(failure.failure)); leftovers: \(WorktreeCleanupLeftoversFormatter.human(failure.leftovers))",
+            failure.creationFetch)
     }
 
     package static func failedJSONText(_ failure: WorktreeOperationFailure) throws -> String {
-        let options = WorktreeStopCatalog.failureOptions(for: failure)
-        return try encodeJSON(
+        try encodeJSON(
             WorktreeFailedCommandLineJSON(
                 failure: jsonFailure(failure.failure),
                 leftovers: WorktreeCleanupLeftoversFormatter.document(failure.leftovers),
-                options: options.isEmpty ? nil : options,
                 fetch: failure.creationFetch
             )
         )
@@ -178,6 +172,5 @@ private struct WorktreeFailedCommandLineJSON: Encodable {
     }
 
     let leftovers: WorktreeCleanupLeftoversDocument
-    let options: [WorktreeStopOption]?
     let fetch: WorktreeCreationFetchStatus?
 }
