@@ -1,10 +1,10 @@
 # Agent Studio worktree CLI: agent manual
 
-This guide covers the worktree commands in Agent Studio 0.0.109 and later.
+This guide covers the worktree commands in Agent Studio 0.0.110 and later.
 
 ## Availability
 
-Agent Studio **0.0.109** ships the full lifecycle: `new`, `list` with state,
+Agent Studio **0.0.110** ships the full lifecycle: `new`, `list` with state,
 `remove`, and `prune`. `new` copies a source checkout, then puts the copy on
 the branch you named, as `wt switch` does: `new <branch>` opens a branch that
 already exists, locally or on origin (fetched first), and `new -c <branch>`
@@ -12,16 +12,16 @@ already exists, locally or on origin (fetched first), and `new -c <branch>`
 at any local or remote branch. `fork` is gone; use `new -c <branch> --from <worktree>`.
 Upgrade with `brew upgrade --cask agent-studio`.
 
-### Older helpers (0.0.107 and 0.0.108)
+### Older helpers (0.0.107 to 0.0.109)
 
-- `--tracked-only` is the plain checkout; 0.0.109 calls it `--no-fork` and
+- `--tracked-only` is the plain checkout; 0.0.110 calls it `--no-fork` and
   treats `--tracked-only` as an unknown option (exit 64).
 - `--from-branch` takes only a local branch and makes a tracked-files checkout.
   `--from` with `--from-branch` is a usage error.
 - `new` refuses a branch that already exists (`branchAlreadyExists`) and
   never fetches.
 - `new <name>` creates the branch when it doesn't exist; there is no `-c`.
-  0.0.109 refuses that (`noSuchBranch`) and creates only with `new -c`.
+  0.0.110 refuses that (`noSuchBranch`) and creates only with `new -c`.
 - `new` prints the copy report on extra lines after `created …`.
 
 ### Older helpers (0.0.106 and earlier)
