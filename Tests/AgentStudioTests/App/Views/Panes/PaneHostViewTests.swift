@@ -292,6 +292,17 @@ struct PaneHostViewTests {
 
         #expect(window.firstResponder !== descendant)
     }
+
+    @Test("pane host teardown does not retain a deallocating window")
+    func paneHostTeardownDoesNotRetainADeallocatingWindow() {
+        var window: PaneResponderTrackingWindow? = makePaneHostFocusWindow()
+        let host = PaneHostView(paneId: UUIDv7.generate())
+        window?.contentView?.addSubview(host)
+
+        #expect(window?.makeFirstResponder(host))
+        window?.close()
+        window = nil
+    }
 }
 
 @MainActor
@@ -302,7 +313,6 @@ private func makePaneHostFocusWindow() -> PaneResponderTrackingWindow {
         backing: .buffered,
         defer: true
     )
-    window.isReleasedWhenClosed = false
     window.makeKeyAndOrderFront(nil)
     return window
 }

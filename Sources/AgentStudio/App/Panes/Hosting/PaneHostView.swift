@@ -44,8 +44,8 @@ class PaneHostView: NSView, Identifiable {
     nonisolated var id: UUID { paneId }
     var onAttachedToWindow: ((UUID) -> Void)?
 
-    private weak var pendingFocusWindow: NSWindow?
-    private weak var pendingFocusResponder: NSResponder?
+    private var pendingFocusWindowToken: UUID?
+    private var pendingFocusResponderIdentity: ObjectIdentifier?
     private var pendingFocusGeneration: UInt64?
 
     /// Stable identity for this specific host instance. Changes when the host
@@ -93,45 +93,57 @@ class PaneHostView: NSView, Identifiable {
 
         clearPendingFocusRestoration()
         if let currentWindow = window as? PaneResponderTrackingWindow,
+            currentWindow.isVisible,
             let responderView = currentWindow.firstResponder as? NSView,
             responderView === self || responderView.isDescendant(of: self)
         {
-            pendingFocusWindow = currentWindow
-            pendingFocusResponder = currentWindow.firstResponder
+            pendingFocusWindowToken = currentWindow.responderTrackingToken
+            pendingFocusResponderIdentity = ObjectIdentifier(responderView)
             pendingFocusGeneration = currentWindow.responderChangeGeneration
         }
         super.viewWillMove(toWindow: newWindow)
     }
 
     private func restoreFocusAfterSameWindowRemountIfNeeded() {
-        guard let pendingWindow = pendingFocusWindow,
+        guard let pendingWindowToken = pendingFocusWindowToken,
             let currentWindow = window,
             let trackingWindow = currentWindow as? PaneResponderTrackingWindow,
-            pendingWindow === currentWindow,
+            pendingWindowToken == trackingWindow.responderTrackingToken,
             pendingFocusGeneration == trackingWindow.responderChangeGeneration
         else {
             clearPendingFocusRestoration()
             return
         }
 
-        let responder = pendingFocusResponder
+        let responderIdentity = pendingFocusResponderIdentity
         clearPendingFocusRestoration()
 
         guard currentWindow.firstResponder === currentWindow,
             !isHiddenOrHasHiddenAncestor,
-            let responderView = responder as? NSView,
-            responderView === self || responderView.isDescendant(of: self)
+            let responderView = viewInPaneHostSubtree(with: responderIdentity)
         else {
             return
         }
 
-        _ = currentWindow.makeFirstResponder(responder)
+        _ = currentWindow.makeFirstResponder(responderView)
     }
 
     private func clearPendingFocusRestoration() {
-        pendingFocusWindow = nil
-        pendingFocusResponder = nil
+        pendingFocusWindowToken = nil
+        pendingFocusResponderIdentity = nil
         pendingFocusGeneration = nil
+    }
+
+    private func viewInPaneHostSubtree(with identity: ObjectIdentifier?) -> NSView? {
+        guard let identity else { return nil }
+        var pendingViews: [NSView] = [self]
+        while let candidate = pendingViews.popLast() {
+            if ObjectIdentifier(candidate) == identity {
+                return candidate
+            }
+            pendingViews.append(contentsOf: candidate.subviews)
+        }
+        return nil
     }
 
     override func layout() {
