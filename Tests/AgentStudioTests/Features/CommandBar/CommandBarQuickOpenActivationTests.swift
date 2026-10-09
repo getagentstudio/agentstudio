@@ -26,7 +26,7 @@ struct CommandBarQuickOpenActivationTests {
     ) -> CommandBarPanelController {
         CommandBarPanelController(
             store: store,
-            octiconLoader: makeSourceCatalogTestOcticonLoader(),
+            octiconLoader: makeCommandBarTestOcticonLoader(),
             repoCache: RepoCacheAtom(),
             dispatcher: dispatcher,
             targetedSpecResolver: targetedSpecResolver,

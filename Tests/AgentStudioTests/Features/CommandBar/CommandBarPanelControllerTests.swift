@@ -9,7 +9,7 @@ import Testing
 
 @MainActor
 func makeCommandBarTestOcticonLoader() -> OcticonLoader {
-    makeSourceCatalogTestOcticonLoader()
+    OcticonLoader(resourceBundle: testSourceCatalogOcticonBundle())
 }
 
 private final class CommandBarInteractionTestClock: @unchecked Sendable {

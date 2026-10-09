@@ -24,7 +24,6 @@ struct OcticonResourceBundleTests {
         let octiconNames = try FileManager.default.contentsOfDirectory(atPath: catalogURL.path)
             .filter { $0.hasSuffix(".imageset") }
             .map { String($0.dropLast(".imageset".count)) }
-            .sorted()
         #expect(!octiconNames.isEmpty, "the source catalog lists no imagesets at \(catalogURL.path)")
         let loader = OcticonLoader(resourceBundle: Bundle.appResources)
 

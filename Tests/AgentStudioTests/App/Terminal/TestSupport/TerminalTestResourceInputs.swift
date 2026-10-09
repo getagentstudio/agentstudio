@@ -3,5 +3,5 @@ import AgentStudioTestSupport
 
 @MainActor
 func makeTerminalTestOcticonLoader() -> OcticonLoader {
-    makeSourceCatalogTestOcticonLoader()
+    OcticonLoader(resourceBundle: testSourceCatalogOcticonBundle())
 }

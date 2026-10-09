@@ -24,7 +24,7 @@ final class RepoProjectionInvalidationRecorder: @unchecked Sendable {
 
 @MainActor
 func makeRepoExplorerTestOcticonLoader() -> OcticonLoader {
-    makeSourceCatalogTestOcticonLoader()
+    OcticonLoader(resourceBundle: testSourceCatalogOcticonBundle())
 }
 
 @MainActor

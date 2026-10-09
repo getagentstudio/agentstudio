@@ -123,7 +123,7 @@ struct CommandBarCommandTargetingTests {
         )
         let controller = CommandBarPanelController(
             store: fixture.store,
-            octiconLoader: makeSourceCatalogTestOcticonLoader(),
+            octiconLoader: makeCommandBarTestOcticonLoader(),
             repoCache: RepoCacheAtom(),
             dispatcher: targetingAwareDispatcher,
             quickOpenDirectoryHandler: { _, _ in },

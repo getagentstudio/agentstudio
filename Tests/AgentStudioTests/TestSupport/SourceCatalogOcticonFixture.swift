@@ -1,13 +1,12 @@
-import AgentStudioInfrastructure
 import Foundation
 
 /// Test targets below App cannot reach the app's built resource bundle, so they load
-/// octicons from a fixture bundle that holds the source catalog's SVGs as loose files.
-/// `OcticonLoader` looks icons up by name through a bundle either way. The proof that
-/// the BUILT bundle carries every octicon lives in `OcticonResourceBundleTests`.
+/// octicons from this fixture bundle, which holds the source catalog's SVGs as loose
+/// files. `OcticonLoader` looks icons up by name through a bundle either way. The proof
+/// that the BUILT bundle carries every octicon lives in `OcticonResourceBundleTests`.
 @MainActor
-package func makeSourceCatalogTestOcticonLoader(from testFilePath: String = #filePath) -> OcticonLoader {
-    OcticonLoader(resourceBundle: SourceCatalogOcticonFixture.bundle(from: testFilePath))
+package func testSourceCatalogOcticonBundle(from testFilePath: String = #filePath) -> Bundle {
+    SourceCatalogOcticonFixture.bundle(from: testFilePath)
 }
 
 @MainActor

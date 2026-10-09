@@ -7,7 +7,7 @@ import Testing
 
 @MainActor
 func makeCoreTestOcticonLoader() -> OcticonLoader {
-    makeSourceCatalogTestOcticonLoader()
+    OcticonLoader(resourceBundle: testSourceCatalogOcticonBundle())
 }
 
 @Suite(.serialized)
