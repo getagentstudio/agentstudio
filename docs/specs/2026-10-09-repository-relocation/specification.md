@@ -5,7 +5,6 @@
 The [September lifecycle specification](../2026-09-11-repository-lifecycle/specification.md) (C1–C6) and the [October 7 specification](../2026-10-07-remove-watched-folder/specification.md) (S1–S6) remain in force, except for two explicit cutovers:
 
 - **Sep 11 C1** said there was no automatic cross-path move proof. That is replaced by S1–S8 here.
-- **Sep 11 R1** (same-path return) is narrowed by S7.
 
 The September exclusion of persistent move-correlation identity is superseded as stated in the Requirements. Until owner decision D1 is made, this Specification is a proposal.
 
@@ -24,7 +23,7 @@ stateDiagram-v2
     [*] --> Available: validated at P1 (folder identity recorded)
     Available --> Available: proved relocation to P2 (same row, location P2)
     Available --> Hidden: authoritative absence, folder not proved elsewhere
-    Hidden --> Available: same-path return (Sep 11 R1, narrowed by S7)
+    Hidden --> Available: same-path return (Sep 11 R1, unchanged)
     Hidden --> Available: proved relocation to P2
     Hidden --> Collected: 30 days + confirmed absence (Sep 11 C3)
     Collected --> [*]
@@ -42,7 +41,7 @@ An unproved new location becomes an independent new row. The old row follows the
 | E4 | Folder identity | For a checkout location, this is the triple (startup-volume UUID, number of the checkout folder, number of the Git directory). The Git directory is the one agentstudio-git resolves for that checkout: `.git` for a main checkout, `.git/worktrees/<name>` for a linked one. The identity is defined only when both folders are on the qualifying startup volume. Two identities are equal when all three parts are equal. | — |
 | E5 | Recorded folder identity | The E4 last recorded for a checkout. It survives restart. At most one record holds a given identity. Legacy rows, other volumes and unreadable reads have none. | recorded, none |
 | E6 | Folder lookup | The startup volume's answer, at one moment, to "where is the folder with this number now?" | located at a path, not found, unavailable |
-| E7 | Pane location | For a terminal pane, two locations: the *reported* location is the shell's last working-directory report, which Ghostty admits only from the local host; the *true* location is the current directory of the terminal's foreground process, when that process descends from the session's terminal leader. Otherwise the true location is unsupported. | — |
+| E7 | Pane location | For a terminal pane, two locations. The *reported* location is the shell's last working-directory report, which Ghostty admits only from the local host. The *true* location is the current directory of the leader of the terminal's foreground process group. That holds only if, while the directory is read, the leader stays alive, descends from the session's terminal leader, and keeps the terminal's foreground. Otherwise the true location is unsupported. | — |
 | E8 | Bound pane | A pane whose content is bound to a checkout. Today these are Bridge file-viewer and review panes, including Zoom companions, which store the checkout's root path. | — |
 
 ## C1 — Recording folder identity (M1, M2, M7)
@@ -59,10 +58,10 @@ An unproved new location becomes an independent new row. The old row follows the
   2. P2 is inside a current watched folder;
   3. agentstudio-git validates P2 as a non-bare checkout in C's role, and P2's folder identity equals I, including its Git-directory part, both before and after that validation;
   4. no other record holds I;
-  5. no other record holds P2, unless that record relocates away in the same decision (swaps and cycles are allowed);
-  6. a fresh lookup immediately before publication still locates the folder at P2.
+  5. no record holds P2, except a record that relocates away earlier in the same decision. A chain resolves head first; a cycle never resolves;
+  6. immediately before publication, conditions 1 and 3 are checked again and still hold.
 
-  If any condition fails, C does not relocate in that decision. Condition 6 is checked again at the next observation.
+  If any condition fails, C does not relocate in that decision. A failed condition 6 is checked again at the next observation.
 - **S4. Effect.**
   - C keeps its UUID, its recorded location becomes P2, and any hidden state clears. Its checkout note follows.
   - When C is main, its family keeps its UUID, pin, note and tags, and the family location becomes P2.
@@ -81,15 +80,15 @@ An unproved new location becomes an independent new row. The old row follows the
   - a destination outside the watched folders;
   - Git validation that fails or disagrees, for example a linked checkout moved with plain `mv`, until `git worktree repair` (Agent Studio never repairs Git metadata);
   - another volume, a copy, a clone or an APFS clone;
-  - a destination already held by a record that does not move away (S3.5).
+  - a destination held by a record that does not move away earlier in the decision, including every cycle and swap (S3.5).
 
   In the last case, Sep 11 R1 reuses the holder for the folder now at P2. The moved checkout's own metadata stays with its old record, which then retires. This is a known limit, and its behavior equals today's.
-- **S7. Same-path return (narrows Sep 11 R1).** A record C that holds P1 is reused for a *different* folder now at P1 only when C has no recorded identity, or a lookup finds C's folder nowhere (not found). If C's folder exists anywhere else, or the lookup is unavailable, the folder at P1 becomes a new record. C keeps its identity, and relocates when S3 admits it, for example after `git worktree repair`. When reuse gives C a folder whose identity another record holds, that other record loses its identity: one identity belongs to one record.
+- **S7. Same-path return (Sep 11 R1) is unchanged.** Relocations are decided before same-path matching. So a record whose folder relocated in that decision no longer holds its old path, and a different folder found there becomes a new record. When R1 reuse gives a record a folder whose identity another record holds, that other record loses its identity: one identity belongs to one record.
 - **S8. No false merge.** On the qualifying startup volume, two different folders never share a folder identity. A copy, a clone, an APFS clone, an image or a snapshot is a different volume instance or a different folder, so it never satisfies S3. Equal history, remote, branch, name or common-directory path is not considered, and grants nothing.
 
 ## C3 — Local state (M1)
 
-- **S9.** The recents and local activity of every checkout relocated in one decision move with it, as one batch, including swaps and cycles. State belonging to a record that keeps or gains an old path is never mixed in. A crash during a relocation can lose a relocated checkout's recents or local activity, but never assigns them to another checkout. This limit is to be acknowledged with D1.
+- **S9.** Each relocated checkout's recents follow it when its move is *simple*: no record held its new path when the decision began. When a checkout relocates as part of a chain, its recents are cleared rather than moved. A record that keeps or gains an old path never receives the moved checkout's recents. Local activity is measured at a location, so it restarts at the new one. A crash during a relocation can lose recents, but never assigns them to another checkout. This limit is to be acknowledged with D1.
 
 ## C4 — Panes follow (M1, M5)
 
@@ -98,14 +97,14 @@ An unproved new location becomes an independent new row. The old row follows the
   - Pane identity, layout, annotations and review history stay unchanged. A Zoom companion keeps its source pane relationship.
 - **S11. Terminal pane truth.** Two triggers start a correction:
   1. an admitted report names a path that does not exist;
-  2. after a relocation from P1, every terminal pane whose location lies under P1 is checked, even when P1 exists.
+  2. after a relocation from P1, every terminal pane whose location lies under P1 is checked, even when P1 exists. At launch, every terminal pane whose stored location does not exist is checked the same way.
 
   Behavior of a correction:
   - **Correction.** The pane's location becomes its true location (E7) when that location is readable, exists, and differs from the pane's location. The repository link then resolves through the existing CWD-derived association.
   - **Newer report wins.** A newer report always wins over a correction in flight.
   - **Stale repeats.** The shell's repeated stale report does not undo a correction.
-  - **Unreadable.** When the true location is unsupported or unreadable, the pane keeps its reported location, and the same report is evaluated again the next time the shell reports it.
-  - **Settled outcome.** Every correction ends in one outcome: corrected, unchanged or unsupported.
+  - **Unsupported.** When the true location is unsupported, the pane keeps its reported location. It is checked again at the next trigger: a different report, a relocation under it, or the next launch.
+  - **Settled outcome.** Every correction ends in one outcome, correlated to its pane and trigger: corrected, unchanged or unsupported.
   - **No interference.** Agent Studio never sends `cd`, restarts or signals a process, changes focus, or closes a pane for this.
 - **S12.** After a relocation, every pane whose location lies inside P2 links to the same checkout UUID as before. Pane identity, tab, drawer, session, undo and history stay unchanged (Sep 11 R4).
 
@@ -138,11 +137,11 @@ An unproved new location becomes an independent new row. The old row follows the
 
 | Need | Contract | Required evidence |
 |---|---|---|
-| M1, M2 | S1–S7 | V1, real startup-volume filesystem: `mv` keeps the identity; `cp -R`, `git clone` and `cp -c` change it; lookup after a move returns the new path, and after deletion returns not found; a Git directory on another volume leaves the identity undefined. V2: persisted identity round-trips across restart, a malformed value means none, and recorded identities reach the scan baseline without any membership change. V3, assignment matrix: rename within one folder; moves across folders in both orders, with a held stale receipt; a move while closed; P1 replaced by another clone; occupied P2; a swap; a linked checkout moved, P1 replaced, then repaired; destination freshness failing at publication. V4: real watched folders, package discovery and SQLite. A moved repository keeps its UUID, pin, note, tags and recents across restart, with no duplicate row. |
+| M1, M2 | S1–S7 | V1, real startup-volume filesystem: `mv` keeps the identity; `cp -R`, `git clone` and `cp -c` change it; lookup after a move returns the new path, and after deletion returns not found; a Git directory on another volume leaves the identity undefined. V2: persisted identity round-trips across restart, a malformed value means none, and recorded identities reach the scan baseline without any membership change. V3, assignment matrix: rename within one folder; moves across folders in both orders, with a held stale receipt; a move while closed; P1 replaced by another clone; a held destination; a chain spanning three roots in both orders; a swap (falls back to R1); Git directory retargeted during validation; destination stale at publication. V4: real watched folders, package discovery and SQLite. A moved repository keeps its UUID, pin, note, tags and recents across restart, with no duplicate row. |
 | M3, M4 | S3.3, S3.4, S8 | Negative cases: a copy beside the original; two clones with identical history; a duplicate recorded identity; a role mismatch; an unrepaired linked checkout. |
-| M1 local state | S9 | A delayed full recency save; a held activity commit for the old key; an A↔B swap; a reused P1; a restart between the local and core writes. Loss is allowed only as specified, and misattribution never. |
+| M1 local state | S9 | A simple move; a chain (recents cleared); a reused P1; a restart between the recency write and the topology publication. Loss is allowed only as specified, and misattribution never. |
 | M1 bound panes | S10 | An open file viewer, a review pane, and visible and hidden Zoom companions. After relocation, content is served from P2; an old-generation request is rejected; P1 replaced by another clone is never read. |
-| M5 | S11, S12 | Reader tests with a real child process whose directory is moved. A runtime test drives: a missing report then a correction; P1 replaced while the shell stays inside the moved folder; unreadable then readable on the same report; a held correction with a newer report; a nested shell; a PID mismatch during the read; repeated stale reports with no flip. Every negative case ends at a correlated settled outcome. Real app: a zmx terminal keeps its chip and session ID, and the legacy panes relink at launch. |
+| M5 | S11, S12 | Reader tests with real child processes. The foreground handoff during a read, a dead group leader, and a nested shell are each read correctly or reported unsupported. Runtime cases, each ending at its correlated settled outcome: a missing report then a correction; P1 replaced while the shell stays inside the moved folder; a held correction overtaken by a newer report; repeated stale reports with no flip. Real app: a zmx terminal keeps its chip and session ID, and the legacy panes relink at launch. |
 | Runtime | S4, S15 | Watcher, Git observation and Forge registration move to P2, and late results for the old path are rejected. |
 | M6 | S13 (S14 if D2 is accepted) | The Oct 7 proof. With D2, a controlled-clock collection test for rows whose folders were removed. |
 | M7 | S15, S16 | A source check: no MainActor I/O, no Git CLI, no writes into user folders, no process signals. Marker-scoped counters. |

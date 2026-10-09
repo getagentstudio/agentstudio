@@ -20,7 +20,7 @@ The September lifecycle realized U3 ("handle moves automatically within the evid
 
 | Id | Need | Owner authority |
 |---|---|---|
-| M1 | When a checkout folder moves to a new location inside a watched folder, it keeps its identity automatically, with no user action. The identity includes the row, pin, note, tags, recents and local activity. Panes bound to that checkout keep their binding. A family follows its main checkout. | 2026-10-08 "we want stable merging when folders are moved"; Sep 11 U3 "i dont want users to do this" |
+| M1 | When a checkout folder moves to a new location inside a watched folder, it keeps its identity automatically, with no user action. The identity includes the row, pin, note, tags and recents. Panes bound to that checkout keep their binding. A family follows its main checkout. Local activity is measured at a location, so it restarts at the new one. | 2026-10-08 "we want stable merging when folders are moved"; Sep 11 U3 "i dont want users to do this" |
 | M2 | Merge only on proof that the new location is the same folder that moved. When proof is missing or ambiguous, the new location stays independent, as today. A wrong merge is worse than a missed one. | Sep 11 U3 "do not claim two locations are the same without proof" |
 | M3 | Separate checkouts and independent clones of one project never merge, even with identical history, remote and name. | Sep 11 U6 |
 | M4 | Git identity guards the merge. Git must still resolve the moved folder to the same Git directory, in the same role (main or linked checkout). Shared history, remote or name is never enough on its own. | 2026-10-08 "we also did use the git identities to help no? to prevent reassociation?" |
@@ -35,6 +35,7 @@ The September lifecycle realized U3 ("handle moves automatically within the evid
 - Moves on any volume other than the Mac's startup disk: external drives, disk images, snapshots and network volumes. Copy-then-delete is not a move either. All of these stay independent, and the old row retires normally.
 - Merging rows whose folders moved before this ships. No folder identity was recorded for them (decision D3).
 - Changing the 30-day retention interval.
+- Changing the September same-path rule (R1) or resolving conflicts it governs. When a move's destination is already held by another record, or moves form a cycle, today's behavior applies unchanged.
 
 ## Open owner decisions
 
