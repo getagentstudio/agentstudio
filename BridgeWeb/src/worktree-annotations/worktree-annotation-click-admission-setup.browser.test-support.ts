@@ -9,6 +9,7 @@ export class PierreInteractionSetupFacts {
 	readonly #preByManager = new WeakMap<object, HTMLPreElement>();
 	readonly #waiters = new Map<HTMLPreElement, Set<() => void>>();
 	readonly #heldSetups: (() => void)[] = [];
+	readonly #retirementWaiters = new Map<HTMLPreElement, Set<() => void>>();
 	readonly hoverDispatched: Promise<FirstHoverAction>;
 	readonly #recordHoverDispatched: (action: FirstHoverAction) => void;
 	readonly firstHoverAction: Promise<FirstHoverAction>;
@@ -48,8 +49,51 @@ export class PierreInteractionSetupFacts {
 
 	retire(manager: object): void {
 		const pre = this.#preByManager.get(manager);
-		if (pre !== undefined) this.#readyPreNodes.delete(pre);
+		if (pre !== undefined) {
+			this.#readyPreNodes.delete(pre);
+			for (const resolve of this.#retirementWaiters.get(pre) ?? []) resolve();
+			this.#retirementWaiters.delete(pre);
+		}
 		this.#preByManager.delete(manager);
+	}
+
+	observeRetirement(
+		row: HTMLElement,
+		signal: AbortSignal,
+	): { readonly promise: Promise<void>; readonly dispose: () => void } {
+		const pre = row.closest('pre');
+		if (!(pre instanceof HTMLPreElement))
+			throw new Error('Expected an interaction pre for retirement.');
+		let release: (() => void) | undefined;
+		let rejectWait: ((error: Error) => void) | undefined;
+		const promise = new Promise<void>((resolve, reject): void => {
+			release = resolve;
+			rejectWait = reject;
+		});
+		void promise.catch((): void => {});
+		const retireWait = (): void => {
+			signal.removeEventListener('abort', cancel);
+			release?.();
+		};
+		const cancel = (): void => {
+			remove();
+			rejectWait?.(new Error('Click-admission retirement wait disposed.'));
+		};
+		const remove = (): void => {
+			signal.removeEventListener('abort', cancel);
+			const waiters = this.#retirementWaiters.get(pre);
+			waiters?.delete(retireWait);
+			if (waiters?.size === 0) this.#retirementWaiters.delete(pre);
+		};
+		if (!pre.isConnected || !this.#readyPreNodes.has(pre)) retireWait();
+		else {
+			const waiters = this.#retirementWaiters.get(pre) ?? new Set<() => void>();
+			waiters.add(retireWait);
+			this.#retirementWaiters.set(pre, waiters);
+			signal.addEventListener('abort', cancel, { once: true });
+			if (signal.aborted) cancel();
+		}
+		return { promise, dispose: remove };
 	}
 
 	recordCompletedHover(row: HTMLElement): void {
@@ -94,7 +138,11 @@ export class PierreInteractionSetupFacts {
 	}
 
 	dispose(): void {
-		if (this.#heldSetups.length !== 0 || this.#waiters.size !== 0) {
+		if (
+			this.#heldSetups.length !== 0 ||
+			this.#waiters.size !== 0 ||
+			this.#retirementWaiters.size !== 0
+		) {
 			throw new Error('Click-admission test left interaction setup work unjoined.');
 		}
 	}

@@ -1,5 +1,5 @@
 import { act } from 'react';
-import { afterEach, beforeEach, describe, expect, test } from 'vitest';
+import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { cleanup, render } from 'vitest-browser-react';
 import { userEvent } from 'vitest/browser';
 
@@ -790,3 +790,11 @@ function deepActiveElement(): Element | null {
 	}
 	return activeElement;
 }
+
+// Register at the Browser Mode entry; the shared module owns the pure pass-through wrapper.
+vi.mock('../components/ui/dropdown-menu.js', async (importOriginal) => {
+	const original = await importOriginal<typeof import('../components/ui/dropdown-menu.js')>();
+	const { withFileMenuCompletion } =
+		await import('./bridge-file-viewer-menu-completion.browser.test-support.js');
+	return withFileMenuCompletion(original);
+});

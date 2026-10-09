@@ -75,28 +75,60 @@ export async function hoverAndClickUtility(props: {
 	readonly onHoverDispatched: (row: HTMLElement) => void;
 	readonly signal: AbortSignal;
 	readonly reportWait?: (kind: string) => void;
+	readonly observeRetirement: (row: HTMLElement) => {
+		readonly promise: Promise<void>;
+		readonly dispose: () => void;
+	};
+	readonly waitForCurrentSetup: (row: HTMLElement) => Promise<void>;
+	readonly waitForReplacementRow: () => Promise<void>;
 }): Promise<void> {
-	props.reportWait?.('hover pointermove act');
-	await actEvent((): void => {
-		// Reconciliation may retire the pre across any preceding await. Resolve and
-		// validate the current pointer target without yielding before dispatch.
+	// Every continuation here is caused by utility appearance or a distinct observed pre retirement.
+	while (true) {
 		const currentRow = props.resolveRow();
-		if (!currentRow.isConnected || !props.isRowReady(currentRow)) {
-			throw new Error(
-				`Pierre hover ${props.pointerId} target is detached or its current setup is not ready.`,
+		await props.waitForCurrentSetup(currentRow);
+		const retirement = props.observeRetirement(currentRow);
+		const utilityWaitController = new AbortController();
+		const abortUtilityWait = (): void => utilityWaitController.abort();
+		props.signal.addEventListener('abort', abortUtilityWait, { once: true });
+		if (props.signal.aborted) abortUtilityWait();
+		let utilityOutcome: Promise<'utility'> | undefined;
+		try {
+			props.reportWait?.('hover pointermove act');
+			await actEvent((): void => {
+				const target = props.resolveRow();
+				if (target !== currentRow || !target.isConnected || !props.isRowReady(target)) {
+					throw new Error(`Pierre hover ${props.pointerId} target changed before dispatch.`);
+				}
+				dispatchPointer(
+					target,
+					'pointermove',
+					pointerAt(target.getBoundingClientRect(), props.pointerId),
+				);
+				props.onHoverDispatched(target);
+			});
+			props.reportWait?.('gutter utility appearance or hovered pre retirement');
+			utilityOutcome = waitForSinglePierreUtility(utilityWaitController.signal).then(
+				(): 'utility' => 'utility',
 			);
+			const outcome = await Promise.race([
+				utilityOutcome,
+				retirement.promise.then((): 'retired' => 'retired'),
+			]);
+			if (outcome === 'retired' || !currentRow.isConnected || !props.isRowReady(currentRow)) {
+				props.reportWait?.('replacement pre setup after observed hover retirement');
+				await props.waitForReplacementRow();
+				continue;
+			}
+			await clickCurrentUtility(props.pointerId + 1, props.reportWait);
+			props.reportWait?.('idle');
+			return;
+		} finally {
+			retirement.dispose();
+			utilityWaitController.abort();
+			props.signal.removeEventListener('abort', abortUtilityWait);
+			await utilityOutcome?.catch((): void => {});
 		}
-		dispatchPointer(
-			currentRow,
-			'pointermove',
-			pointerAt(currentRow.getBoundingClientRect(), props.pointerId),
-		);
-		props.onHoverDispatched(currentRow);
-	});
-	props.reportWait?.('gutter utility appearance');
-	await waitForSinglePierreUtility(props.signal);
-	await clickCurrentUtility(props.pointerId + 1, props.reportWait);
-	props.reportWait?.('idle');
+	}
 }
 
 export async function clickCurrentUtility(

@@ -6,6 +6,7 @@ import {
 	actFrame,
 	bridgeFileViewerNoopResizeObserverIsInstalled,
 } from './bridge-file-viewer-browser-test-harness.js';
+import { waitForCurrentFileMenuCompletion } from './bridge-file-viewer-menu-completion.browser.test-support.js';
 
 interface FileViewerUiTraceEntry {
 	readonly contentStateText: string | null;
@@ -244,6 +245,7 @@ export async function settleFileViewerMenuTransition(props?: {
 				}),
 			);
 		}
+		await waitForCurrentFileMenuCompletion(expectedExpandedState === 'true');
 		await waitForFileViewerMenuState({ element, expectedExpandedState });
 	});
 }

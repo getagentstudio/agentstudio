@@ -11,6 +11,7 @@ import {
 	completeCleanup,
 	runWithOwnedCleanup,
 } from './worktree-annotation-click-admission-cleanup.browser.test-support.js';
+import { proveRetiredHoverIntent } from './worktree-annotation-click-admission-hover-retirement.browser.test-support.js';
 
 // oxlint-disable-next-line import/no-unassigned-import -- Browser Mode must load production app CSS.
 import '../app/bridge-app.css';
@@ -324,6 +325,13 @@ describe('worktree annotation click admission through Pierre pointers', () => {
 			await harness.waitForComposer(true);
 			expect(document.querySelector(composerSelector)).not.toBeNull();
 		}, harness.dispose);
+	});
+
+	test('retirement after a live hover replays the original context intent on its replacement pre', async () => {
+		await proveRetiredHoverIntent({
+			metadataPublicationOwner,
+			registerCleanup: registerHarnessCleanup,
+		});
 	});
 
 	test('keeps repeated same-range and later new-range plus clicks admissible', async () => {

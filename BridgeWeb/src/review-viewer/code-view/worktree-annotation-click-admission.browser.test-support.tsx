@@ -41,10 +41,12 @@ interface ClickAdmissionHarnessProps {
 	readonly isInitialReadinessReleased?: () => boolean;
 	readonly recordInitialReadinessObserver?: (observer: MutationObserver) => void;
 	readonly afterSetupBeforeHover?: ((codeView: CodeView) => void) | undefined;
+	readonly afterHoverBeforeUtility?: ((codeView: CodeView, pointerId: number) => void) | undefined;
 	readonly beforeRender?: (() => void) | undefined;
 	readonly metadataPublicationOwner: { publish: ((callback: () => void) => void) | undefined };
 	readonly registerCleanup: (dispose: () => Promise<void>) => () => void;
 	readonly registerFailureDiagnostic: (readSnapshot: () => object) => void;
+	readonly recordWaitForProof?: (kind: string) => void;
 }
 export interface ClickAdmissionReviewHarness {
 	readonly publishForProof: (callback: () => void) => void;
@@ -125,6 +127,8 @@ export async function createClickAdmissionReviewHarness(
 				await completeCleanup([
 					(): void => {
 						disposalSnapshot = readSnapshot();
+						if (pendingWait !== 'idle')
+							console.info('GO29 closing pending owner fact', disposalSnapshot);
 					},
 					(): void => outcomeController.abort(),
 					cleanup,
@@ -281,10 +285,21 @@ export async function createClickAdmissionReviewHarness(
 					onHoverDispatched: (dispatchedRow): void => {
 						lastRow = dispatchedRow;
 						interactionSetup.recordCompletedHover(dispatchedRow);
+						props.afterHoverBeforeUtility?.(codeView, pointerId);
 					},
 					signal: outcomeController.signal,
+					observeRetirement: (currentRow) =>
+						interactionSetup.observeRetirement(currentRow, outcomeController.signal),
+					waitForCurrentSetup: (currentRow) =>
+						interactionSetup.waitForSetup(currentRow, outcomeController.signal),
+					waitForReplacementRow: (): Promise<void> =>
+						waitForPierreCondition(
+							(): boolean => queryPierreElements(selector).length === 1,
+							outcomeController.signal,
+						),
 					reportWait: (kind): void => {
 						pendingWait = kind;
+						props.recordWaitForProof?.(kind);
 					},
 				});
 			},

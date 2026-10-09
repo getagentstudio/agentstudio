@@ -1,9 +1,10 @@
 import { afterEach, describe, expect, test, vi } from 'vitest';
 import { cleanup, render } from 'vitest-browser-react';
 
+import type { BridgeMainRenderSnapshotStore } from '../core/comm-worker/bridge-main-render-snapshot-store.js';
+
 // oxlint-disable-next-line import/no-unassigned-import -- Browser Mode renders the real app chrome.
 import './bridge-app.css';
-import type { BridgeMainRenderSnapshotStore } from '../core/comm-worker/bridge-main-render-snapshot-store.js';
 import type {
 	BridgePaneRuntime,
 	BridgePaneSurfaceClient,
@@ -25,9 +26,9 @@ import {
 	pollWithinActUntilTruthy,
 } from './bridge-app-browser-test-actions.js';
 import type { BridgeAppControlProbe } from './bridge-app-control.js';
+import { proveFileMenuDismissalBeforeHide } from './bridge-app-file-menu-completion.browser.test-support.js';
 import {
 	dispatchBridgePageControl,
-	dispatchBridgeViewerFilterShortcut,
 	fileSearchInput,
 	fileTreeRowForPath,
 	makeNativeFileTargetSelectionRequest,
@@ -262,35 +263,9 @@ describe('BridgeApp pane runtime hard cut', () => {
 	});
 
 	test('dismisses the Files filter menu before its retained host becomes inactive', async () => {
-		// Arrange
-		await actWait(async (): Promise<void> => {
-			await render(<BridgeAppProtocolRouter protocol="worktree-file" />);
-			await new Promise<void>((resolve) => window.setTimeout(resolve, 0));
-		});
-		const appRoot = requireHTMLElement(document.querySelector('[data-testid="bridge-app-root"]'));
-		expect(
-			await pollWithinActUntilTruthy(() =>
-				document.querySelector('[data-testid="bridge-file-viewer-shell"]'),
-			),
-		).not.toBeNull();
-
-		// Act: open Files Filters, then retain Files under an inactive host.
-		await dispatchBridgeViewerFilterShortcut();
-		expect(
-			document.querySelector('[data-testid="worktree-file-filter-menu-popover"][data-open]'),
-		).not.toBeNull();
-		await actClick(requireActiveContextButton('review'));
-		expect(
-			await pollWithinActUntilEqual(
-				() => appRoot.getAttribute('data-bridge-viewer-mode'),
-				'review',
-			),
-		).toBe('review');
-
-		// Assert
-		expect(
-			document.querySelector('[data-testid="worktree-file-filter-menu-popover"][data-open]'),
-		).toBeNull();
+		await proveFileMenuDismissalBeforeHide(() =>
+			render(<BridgeAppProtocolRouter protocol="worktree-file" />),
+		);
 	});
 
 	test('forwards one local File activation before the selected File row', async () => {
@@ -997,3 +972,11 @@ function activeViewerModeUpdateForNativeRequest(
 			command.update.nativeSelectionRequestId === nativeSelectionRequestId,
 	);
 }
+
+// Register at the Browser Mode entry; the shared module owns the pure pass-through wrapper.
+vi.mock('../components/ui/dropdown-menu.js', async (importOriginal) => {
+	const original = await importOriginal<typeof import('../components/ui/dropdown-menu.js')>();
+	const { withFileMenuCompletion } =
+		await import('../file-viewer/bridge-file-viewer-menu-completion.browser.test-support.js');
+	return withFileMenuCompletion(original);
+});

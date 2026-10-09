@@ -6,7 +6,7 @@ no-timed-wait-in-tests	BridgeWeb/scripts/verify-bridge-viewer-worktree-dev-serve
 no-timed-wait-in-tests	BridgeWeb/scripts/verify-bridge-viewer-worktree-dev-server/product-only-real-router-regression.ts	1
 no-timed-wait-in-tests	BridgeWeb/scripts/verify-bridge-viewer-worktree-dev-server/route-probes.ts	3
 no-timed-wait-in-tests	BridgeWeb/src/app/bridge-app-browser-test-actions.ts	1
-no-timed-wait-in-tests	BridgeWeb/src/app/bridge-app-pane-runtime-hard-cut.browser.test.tsx	3
+no-timed-wait-in-tests	BridgeWeb/src/app/bridge-app-pane-runtime-hard-cut.browser.test.tsx	2
 no-timed-wait-in-tests	BridgeWeb/src/core/comm-worker/bridge-comm-worker-review-source-reset.unit.test.ts	1
 no-timed-wait-in-tests	BridgeWeb/src/core/comm-worker/comm-runtime-protocol.review-preparation.unit.test.ts	1
 no-timed-wait-in-tests	BridgeWeb/src/file-viewer/bridge-file-viewer-code-panel.render-fulfillment.browser.test.tsx	1
