@@ -251,8 +251,12 @@ func makeRefreshAdmissionIntegrationFixture(
     failsReviewDelivery: Bool = false,
     fileMetadataProducerGate: RefreshAdmissionCancellationIgnoringProducerGate? = nil,
     reviewMetadataReservationGate: RefreshAdmissionReviewReservationGate? = nil,
+    reviewMetadataHeldPackageItemId: String? = nil,
+    reviewMetadataReservationStep: HeldStep<Void>? = nil,
     reviewConstructionProgress: BridgeReviewConstructionProgressWaitOwner = .init(),
     reviewBuildAdmissionFactSink: BridgePaneReviewBuildAdmissionFactSink? = nil,
+    telemetryRecorder: (any BridgePerformanceTraceRecording)? = nil,
+    publicationLifecycleRecorder: (any BridgeProductMetadataLifecycleTraceRecording)? = nil,
     contributionTargetCommit:
         (@MainActor @Sendable (WorkspaceReviewContributionTarget) -> BridgePaneStateMutationResult)? = nil
 ) async throws -> RefreshAdmissionIntegrationFixture {
@@ -275,7 +279,9 @@ func makeRefreshAdmissionIntegrationFixture(
     let reviewMetadataSource = RefreshAdmissionGatedReviewMetadataSource(
         failsReservation: failsReviewReservation,
         failsDelivery: failsReviewDelivery,
-        reservationGate: reviewMetadataReservationGate
+        reservationGate: reviewMetadataReservationGate,
+        heldPackageItemId: reviewMetadataHeldPackageItemId,
+        reservationStep: reviewMetadataReservationStep
     )
     let refreshWorkAdmission = BridgePaneRefreshWorkAdmissionTestContext.foregroundOnMainActor()
     let productProvider = BridgePaneProductSchemeProvider(
@@ -283,7 +289,8 @@ func makeRefreshAdmissionIntegrationFixture(
         reviewMetadataSource: reviewMetadataSource,
         reviewContentSource: BridgeUnavailablePaneProductReviewContentSource(),
         markReviewItemViewed: { _, _ in },
-        refreshWorkAdmissionSource: refreshWorkAdmission.source
+        refreshWorkAdmissionSource: refreshWorkAdmission.source,
+        lifecycleTraceRecorder: publicationLifecycleRecorder
     )
     let paneId = UUIDv7.generate()
     let productAdmissionGate = BridgeProductAdmissionGate()
@@ -311,6 +318,7 @@ func makeRefreshAdmissionIntegrationFixture(
             )
         ),
         reviewSourceProvider: reviewProvider,
+        telemetryRecorder: telemetryRecorder,
         initialPaneActivity: .dormant,
         productSessionDependencies: BridgePaneProductSessionDependencies(
             installation: installation,
@@ -326,7 +334,7 @@ func makeRefreshAdmissionIntegrationFixture(
         contributionTargetCommit: contributionTargetCommit,
         reviewBuildAdmissionFactSink: reviewBuildAdmissionFactSink ?? { _, _ in }
     )
-    let productAdmission = try #require(productAdmissionGate.acquire())
+    let productAdmission = try #require(installation.productAdapter.acquireAdmission())
     let metadataProducerLease = try await installRefreshAdmissionMetadataProducer(
         installation: installation,
         productProvider: productProvider,
@@ -635,16 +643,22 @@ private actor RefreshAdmissionGatedReviewMetadataSource: BridgePaneProductReview
     private let failsReservation: Bool
     private let failsDelivery: Bool
     private let reservationGate: RefreshAdmissionReviewReservationGate?
+    private let heldPackageItemId: String?
+    private let reservationStep: HeldStep<Void>?
     private let source = BridgePaneProductReviewMetadataSource()
 
     init(
         failsReservation: Bool,
         failsDelivery: Bool,
-        reservationGate: RefreshAdmissionReviewReservationGate?
+        reservationGate: RefreshAdmissionReviewReservationGate?,
+        heldPackageItemId: String?,
+        reservationStep: HeldStep<Void>?
     ) {
         self.failsReservation = failsReservation
         self.failsDelivery = failsDelivery
         self.reservationGate = reservationGate
+        self.heldPackageItemId = heldPackageItemId
+        self.reservationStep = reservationStep
     }
 
     func open(
@@ -669,6 +683,9 @@ private actor RefreshAdmissionGatedReviewMetadataSource: BridgePaneProductReview
         productAdmission: BridgeProductAdmissionContext
     ) async throws -> BridgeReviewMetadataPublicationReservation {
         await reservationGate?.holdIfEnabled()
+        if heldPackageItemId == nil || package.itemsById[heldPackageItemId ?? ""] != nil {
+            try await reservationStep?.arrive(())
+        }
         if failsReservation {
             throw BridgePaneProductReviewMetadataSourceError.metadataEventExceedsByteLimit
         }

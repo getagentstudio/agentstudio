@@ -410,6 +410,10 @@ struct BridgePaneControllerHiddenReviewBuildTests {
             productAdmission: fixture.productAdmission
         )
 
+        // Open before hide: cancellation can close the retained scheduling input
+        // before the hidden provider update crosses its actor boundary.
+        let retainedInput = BridgePaneReviewBuildAdmissionInput.retainedPackageBuild
+        let retainedOpening = await facts.recorder.mark(.hiddenInput(retainedInput))
         // Act: hide Review and advance to a newer comparison while the old build is held.
         await acceptFileViewerMode(fixture, sequence: 2)
         #expect(fixture.controller.activeReviewRefreshTask == nil)
@@ -422,8 +426,6 @@ struct BridgePaneControllerHiddenReviewBuildTests {
             ),
             productAdmission: fixture.productAdmission
         )
-        let retainedInput = BridgePaneReviewBuildAdmissionInput.retainedPackageBuild
-        let retainedOpening = await facts.recorder.mark(.hiddenInput(retainedInput))
         heldBuildInput.release()
         await buildingReviewTask?.value
         let hiddenBuildOutcome = try await facts.attemptOutcome(for: activeBuildAttempt)

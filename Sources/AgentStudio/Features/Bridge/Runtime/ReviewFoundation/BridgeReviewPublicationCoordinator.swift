@@ -176,6 +176,17 @@ final class BridgeReviewPublicationCoordinator {
         self.didCommitPublication = didCommitPublication
     }
 
+    /// Staging begins Publishing; commit keeps that attempt alive through delivery/install.
+    func hasStartedPublication(reviewGeneration: BridgeReviewGeneration) -> Bool {
+        pendingPublication?.publication.preparedPublication.package.reviewGeneration == reviewGeneration
+            || activePublication?.preparedPublication.package.reviewGeneration == reviewGeneration
+    }
+
+    func hasStartedPublication(operationCorrelationID: String) -> Bool {
+        pendingPublication?.publication.operationCorrelationID == operationCorrelationID
+            || activePublication?.operationCorrelationID == operationCorrelationID
+    }
+
     var diagnosticSnapshot: BridgeReviewPublicationStateSnapshot {
         BridgeReviewPublicationStateSnapshot(
             active: activePublication.map(Self.diagnostic),

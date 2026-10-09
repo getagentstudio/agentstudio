@@ -271,7 +271,17 @@ extension BridgePaneController {
     func fenceHiddenReviewBuildIfNeeded() {
         guard activeReviewRefreshTask != nil else { return }
         if let activeReviewPackageLoad {
+            guard
+                !reviewPublicationCoordinator.hasStartedPublication(
+                    reviewGeneration: activeReviewPackageLoad.reviewGeneration
+                )
+            else { return }
             pendingReviewPackageBuildReasons.insert(activeReviewPackageLoad.buildReason)
+        } else if let operationCorrelationID = refreshAdmissionCoordinator.productPresentationSnapshot
+            .operationCorrelationID,
+            reviewPublicationCoordinator.hasStartedPublication(operationCorrelationID: operationCorrelationID)
+        {
+            return
         }
         refreshAdmissionCoordinator.advanceAuthority(for: .review)
         retireActiveReviewRefreshTask(preservePendingPublication: true)
