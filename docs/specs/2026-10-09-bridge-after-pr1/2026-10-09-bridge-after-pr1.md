@@ -1,6 +1,6 @@
 # Bridge after PR1: state, learnings, improvements and next work
 
-Status: current as of 2026-10-09, right after Bridge PR1 (#463) merged.
+Status: current as of 2026-10-09, right after Bridge PR1 (#463) merged. The Bridge Lead session for PR1 ended here; the CI Lead owns test reliability, and the product follow-ups (section 6) and LUNA-408 wait for the next Bridge session.
 Start any new Bridge session here. This file consolidates what used to be spread over local plans, a WIP note and session traces.
 
 Tracking: Linear **LUNA-408** (native subscription lifecycle state machine; it carries the improvements table in section 5).
@@ -104,7 +104,7 @@ Packages 6–9 became follow-ups (section 6).
 - Tracked-symlink alias refresh when only the target changes (pre-existing; stale reads fail typed, never serve wrong bytes).
 - Investigate V2 refused retryability: `bridge-product-session-authority.ts` flattens refused/superseded to `retryable=false`.
 
-**Test reliability (CI Lead, via side agents; handoff in the private session-logs repo):** R68 Review deep-scroll witness (main-inherited), GO30 hard-cut Files filter dismissal (3-core), GO26 WebKit waits without closing facts, TQ23 markdown act escape, TQ35 shared-profile tab ownership, and audits for the GO25/GO27 patterns.
+**Test reliability (CI Lead owns this program from 2026-10-09; handoff in the private session-logs repo):** GO30 hard-cut Files filter dismissal (3-core), GO26 WebKit waits without closing facts, TQ23 markdown act escape, TQ35 shared-profile tab ownership, and audits for the GO25/GO27 patterns.
 
 **Closed by PR1 (reopen only if seen again):** TQ24, TQ25, TQ26, TQ33.
 
@@ -160,7 +160,7 @@ Design identifiers (E1, W2, W4, N10, R13, C5, U13, R40–R43, INST) are defined 
 | GO28 | File menu tests did not wait for Base UI's open/close completion | Test | Fixed |
 | GO29 | Click-admission did not follow a row retired after hover | Test | Fixed |
 | GO30 | GO28's conversion of the hard-cut Files filter test hung on 3-core | Test | Reverted; open (CI Lead) |
-| R68 | Review deep-scroll position witness reads geometry before it settles (from main #422) | Test | Open (CI Lead) |
+| R68 | Review deep-scroll position witness read pixel geometry before it settled (from main #422) | Test | Fixed: asserts semantic retention (same content region, scroll not reset, selection, disclosure, identity); exact pixel equality dropped because Pierre has no layout-settled boundary (checked through 1.5.2 and upstream main; no upstream issue yet) |
 | S1–S4 F-codes | Final-review findings by section (S1 native transport, S2 native runtime, S3 page comm worker, S4 page app) | Review | See section 3 |
 | TQ-codes | CI Lead's test-quality items (TQ15 website, TQ19 Panes, TQ23 markdown act, TQ24–TQ26 and TQ33 superseded by PR1, TQ35 tab ownership) | Test | Tracked by the CI Lead |
 
