@@ -44,6 +44,9 @@ class PaneHostView: NSView, Identifiable {
     nonisolated var id: UUID { paneId }
     var onAttachedToWindow: ((UUID) -> Void)?
 
+    private weak var pendingFocusWindow: NSWindow?
+    private weak var pendingFocusResponder: NSResponder?
+
     /// Stable identity for this specific host instance. Changes when the host
     /// is replaced (repair, placeholder retry), forcing SwiftUI to recreate
     /// the NSViewRepresentable and remount the new view.
@@ -76,8 +79,46 @@ class PaneHostView: NSView, Identifiable {
             "PaneHostView.viewDidMoveToWindow paneId=\(paneId) window=\(window != nil) id=\(ObjectIdentifier(self)) superview=\(superview != nil)"
         )
         if window != nil {
+            restoreFocusAfterSameWindowRemountIfNeeded()
             onAttachedToWindow?(paneId)
         }
+    }
+
+    override func viewWillMove(toWindow newWindow: NSWindow?) {
+        if newWindow == nil,
+            let currentWindow = window,
+            let responderView = currentWindow.firstResponder as? NSView,
+            responderView === self || responderView.isDescendant(of: self)
+        {
+            pendingFocusWindow = currentWindow
+            pendingFocusResponder = currentWindow.firstResponder
+        }
+        super.viewWillMove(toWindow: newWindow)
+    }
+
+    private func restoreFocusAfterSameWindowRemountIfNeeded() {
+        guard let pendingWindow = pendingFocusWindow,
+            let currentWindow = window,
+            pendingWindow === currentWindow
+        else {
+            pendingFocusWindow = nil
+            pendingFocusResponder = nil
+            return
+        }
+
+        let responder = pendingFocusResponder
+        pendingFocusWindow = nil
+        pendingFocusResponder = nil
+
+        guard currentWindow.firstResponder === currentWindow,
+            !isHiddenOrHasHiddenAncestor,
+            let responderView = responder as? NSView,
+            responderView === self || responderView.isDescendant(of: self)
+        else {
+            return
+        }
+
+        _ = currentWindow.makeFirstResponder(responder)
     }
 
     override func layout() {
