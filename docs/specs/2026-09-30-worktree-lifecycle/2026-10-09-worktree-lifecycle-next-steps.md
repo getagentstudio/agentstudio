@@ -1,6 +1,6 @@
-# Worktree lifecycle: remaining work (handoff, 2026-10-09)
+# Worktree lifecycle: next steps (handoff, 2026-10-09)
 
-Design home: `docs/specs/2026-09-30-worktree-lifecycle/` (Requirements r12, Specification r37, Program Design r44). Owner decisions D13–D23 are recorded in the Requirements. Use Sol 6.1 high Sidekicks for implementation (owner, 2026-10-09).
+This folder is the design home: [Requirements](2026-09-30-worktree-lifecycle-requirements.md) r12, [Specification](2026-09-30-worktree-lifecycle-specification.md) r37, [Program Design](2026-09-30-worktree-lifecycle-program-design.md) r44. Owner decisions D13–D23 are recorded in the Requirements. Use Sol 6.1 high Sidekicks for implementation (owner, 2026-10-09).
 
 ```text
 worktree lifecycle
