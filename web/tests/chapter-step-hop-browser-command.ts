@@ -35,6 +35,16 @@ export interface StepHopObservation {
 interface StepHopBookkeeping {
   lastChapterActivity: { readonly chapterId: string | null; readonly atMs: number } | null;
   scrollEventCount: number;
+  readonly scrollHistory: {
+    readonly atMs: number;
+    readonly scrollY: number;
+    readonly documentHeight: number;
+  }[];
+  readonly layoutHistory: { readonly atMs: number; readonly documentHeight: number }[];
+  readonly scrollHistoryHead: StepHopBookkeeping["scrollHistory"];
+  readonly layoutHistoryHead: StepHopBookkeeping["layoutHistory"];
+  readonly historyDropped: { scroll: number; layout: number };
+  layoutObserver: "waiting-for-root" | "started" | "unsupported";
 }
 
 declare global {
@@ -58,6 +68,12 @@ function installStepHopStateReader(): void {
     );
     const readingLineY = window.innerHeight * 0.45;
     const bookkeeping = window["__stepHopBookkeeping"];
+    const scrollHistory = bookkeeping === undefined ? null : [...bookkeeping.scrollHistory];
+    const layoutHistory = bookkeeping === undefined ? null : [...bookkeeping.layoutHistory];
+    const scrollHistoryHead = bookkeeping === undefined ? null : [...bookkeeping.scrollHistoryHead];
+    const layoutHistoryHead = bookkeeping === undefined ? null : [...bookkeeping.layoutHistoryHead];
+    const historyDropped = bookkeeping === undefined ? null : { ...bookkeeping.historyDropped };
+    const layoutObserver = bookkeeping?.layoutObserver ?? null;
     const root = document.querySelector<HTMLElement>('[data-chapter-steps-root="many-agents"]');
     const scene = root?.querySelector<HTMLElement>('[data-scene-root="chapter-many-agents"]');
     const ring = root?.querySelector<SVGSVGElement>("[data-chapter-step-ring]");
@@ -83,6 +99,12 @@ function installStepHopStateReader(): void {
         readingLineY,
         lastChapterActivity: window["__stepHopBookkeeping"]?.lastChapterActivity ?? null,
         scrollEventCount: bookkeeping?.scrollEventCount ?? null,
+        scrollHistory,
+        layoutHistory,
+        scrollHistoryHead,
+        layoutHistoryHead,
+        historyDropped,
+        layoutObserver,
       };
     return {
       stepHopParts: "found",
@@ -115,12 +137,29 @@ function installStepHopStateReader(): void {
       readingLineY,
       lastChapterActivity: bookkeeping?.lastChapterActivity ?? null,
       scrollEventCount: bookkeeping?.scrollEventCount ?? null,
+      scrollHistory,
+      layoutHistory,
+      scrollHistoryHead,
+      layoutHistoryHead,
+      historyDropped,
+      layoutObserver,
     };
   };
 }
 
 function installStepHopBookkeeping(): void {
-  const bookkeeping: StepHopBookkeeping = { lastChapterActivity: null, scrollEventCount: 0 };
+  const historyCapacity = 16;
+  const historyHeadCapacity = 8;
+  const bookkeeping: StepHopBookkeeping = {
+    lastChapterActivity: null,
+    scrollEventCount: 0,
+    scrollHistory: [],
+    layoutHistory: [],
+    scrollHistoryHead: [],
+    layoutHistoryHead: [],
+    historyDropped: { scroll: 0, layout: 0 },
+    layoutObserver: "waiting-for-root",
+  };
   window["__stepHopBookkeeping"] = bookkeeping;
   document.addEventListener("chapter-activity-changed", (event: Event): void => {
     if (!(event instanceof CustomEvent)) return;
@@ -134,9 +173,55 @@ function installStepHopBookkeeping(): void {
     "scroll",
     (): void => {
       bookkeeping.scrollEventCount += 1;
+      const entry = {
+        atMs: performance.now(),
+        scrollY: window.scrollY,
+        documentHeight: document.documentElement.scrollHeight,
+      } satisfies StepHopBookkeeping["scrollHistory"][number];
+      if (bookkeeping.scrollHistoryHead.length < historyHeadCapacity)
+        bookkeeping.scrollHistoryHead.push(entry);
+      bookkeeping.scrollHistory.push(entry);
+      if (bookkeeping.scrollHistory.length > historyCapacity) {
+        const removedEntry = bookkeeping.scrollHistory.shift();
+        if (removedEntry !== undefined && !bookkeeping.scrollHistoryHead.includes(removedEntry))
+          bookkeeping.historyDropped.scroll += 1;
+      }
     },
     { passive: true },
   );
+  const startLayoutObserver = (root: HTMLElement): void => {
+    if (typeof ResizeObserver === "undefined") {
+      bookkeeping.layoutObserver = "unsupported";
+      return;
+    }
+    const observer = new ResizeObserver((): void => {
+      const entry = {
+        atMs: performance.now(),
+        documentHeight: document.documentElement.scrollHeight,
+      } satisfies StepHopBookkeeping["layoutHistory"][number];
+      if (bookkeeping.layoutHistoryHead.length < historyHeadCapacity)
+        bookkeeping.layoutHistoryHead.push(entry);
+      bookkeeping.layoutHistory.push(entry);
+      if (bookkeeping.layoutHistory.length > historyCapacity) {
+        const removedEntry = bookkeeping.layoutHistory.shift();
+        if (removedEntry !== undefined && !bookkeeping.layoutHistoryHead.includes(removedEntry))
+          bookkeeping.historyDropped.layout += 1;
+      }
+    });
+    observer.observe(root);
+    bookkeeping.layoutObserver = "started";
+  };
+  const documentRoot = document.documentElement;
+  if (documentRoot !== null) startLayoutObserver(documentRoot);
+  else {
+    const rootObserver = new MutationObserver((): void => {
+      const root = document.documentElement;
+      if (root === null) return;
+      startLayoutObserver(root);
+      rootObserver.disconnect();
+    });
+    rootObserver.observe(document, { childList: true });
+  }
 }
 
 export const verifyChapterStepHop = defineBrowserCommand(
@@ -189,7 +274,15 @@ export const verifyChapterStepHop = defineBrowserCommand(
         if (
           tracker === undefined ||
           typeof tracker.readCommandState !== "function" ||
-          bookkeeping === undefined
+          bookkeeping === undefined ||
+          !Array.isArray(bookkeeping.scrollHistory) ||
+          !Array.isArray(bookkeeping.layoutHistory) ||
+          !Array.isArray(bookkeeping.scrollHistoryHead) ||
+          !Array.isArray(bookkeeping.layoutHistoryHead) ||
+          bookkeeping.layoutObserver !== "started" ||
+          bookkeeping.historyDropped === undefined ||
+          typeof bookkeeping.historyDropped.scroll !== "number" ||
+          typeof bookkeeping.historyDropped.layout !== "number"
         )
           throw new Error("Pending-wait diagnostics are not installed on the step-hop page");
       });
