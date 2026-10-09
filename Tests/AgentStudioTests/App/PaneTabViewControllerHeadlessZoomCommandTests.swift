@@ -40,7 +40,14 @@ struct PaneTabViewControllerHeadlessZoomCommandTests {
         let window = makePaneTabViewControllerCommandWindow(for: harness.controller)
         window.isReleasedWhenClosed = false
         defer { window.close() }
-        let targetHost = try attachPaneHost(paneId: targetActivePane.id, in: harness, to: window)
+        let diagnosticTrace = PaneFocusDiagnosticTrace(window: window)
+        defer { diagnosticTrace.printOrderedEvents(label: #function) }
+        let targetHost = try attachDiagnosticPaneHost(
+            paneId: targetActivePane.id,
+            in: harness,
+            to: window,
+            trace: diagnosticTrace
+        )
         let outcome = try await harness.executeHeadlessPaneCommand(.zoomPane, paneId: targetActivePane.id)
 
         #expect(outcome == .applied)
@@ -78,7 +85,14 @@ struct PaneTabViewControllerHeadlessZoomCommandTests {
         let window = makePaneTabViewControllerCommandWindow(for: harness.controller)
         window.isReleasedWhenClosed = false
         defer { window.close() }
-        let targetHost = try attachPaneHost(paneId: targetActivePane.id, in: harness, to: window)
+        let diagnosticTrace = PaneFocusDiagnosticTrace(window: window)
+        defer { diagnosticTrace.printOrderedEvents(label: #function) }
+        let targetHost = try attachDiagnosticPaneHost(
+            paneId: targetActivePane.id,
+            in: harness,
+            to: window,
+            trace: diagnosticTrace
+        )
         let coordinator = harness.coordinator
         targetHost.onAttachedToWindow = { [weak coordinator] paneId in
             coordinator?.handlePaneHostAttachedToWindow(paneId)
@@ -180,4 +194,101 @@ struct PaneTabViewControllerHeadlessZoomCommandTests {
                 .viewerPresentation == .unavailableVisible
         )
     }
+}
+
+private struct PaneFocusDiagnosticEvent: Sendable {
+    let label: String
+    let stack: [String]
+}
+
+private final class PaneFocusDiagnosticTrace: @unchecked Sendable {
+    private let lock = NSLock()
+    private var events: [PaneFocusDiagnosticEvent] = []
+    private var firstResponderObservation: NSKeyValueObservation?
+
+    init(window: NSWindow) {
+        firstResponderObservation = window.observe(
+            \NSWindow.firstResponder,
+            options: [.old, .new]
+        ) { [weak self] window, change in
+            let oldResponder = change.oldValue.map { String(describing: type(of: $0)) } ?? "nil"
+            let newResponder = change.newValue.map { String(describing: type(of: $0)) } ?? "nil"
+            self?.record(
+                "window.firstResponder \(oldResponder) -> \(newResponder) window=\(ObjectIdentifier(window))"
+            )
+        }
+    }
+
+    deinit {
+        firstResponderObservation?.invalidate()
+    }
+
+    func record(_ label: String, stack: [String] = Thread.callStackSymbols) {
+        lock.lock()
+        events.append(PaneFocusDiagnosticEvent(label: label, stack: stack))
+        lock.unlock()
+    }
+
+    func printOrderedEvents(label: String) {
+        lock.lock()
+        let events = events
+        lock.unlock()
+
+        print("TQ19 focus diagnostic \(label): \(events.count) events")
+        for (index, event) in events.enumerated() {
+            print("[\(index)] \(event.label)")
+            print(event.stack.joined(separator: "\n"))
+        }
+    }
+}
+
+@MainActor
+private final class DiagnosticPaneHostView: PaneHostView {
+    private let trace: PaneFocusDiagnosticTrace
+
+    init(paneId: UUID, trace: PaneFocusDiagnosticTrace) {
+        self.trace = trace
+        super.init(paneId: paneId)
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) not supported")
+    }
+
+    override func resignFirstResponder() -> Bool {
+        trace.record(
+            "PaneHostView.resignFirstResponder pane=\(paneId) window=\(String(describing: window.map(ObjectIdentifier.init)))"
+        )
+        return super.resignFirstResponder()
+    }
+
+    override func viewWillMove(toWindow newWindow: NSWindow?) {
+        trace.record(
+            "PaneHostView.viewWillMoveToWindow pane=\(paneId) old=\(String(describing: window.map(ObjectIdentifier.init))) new=\(String(describing: newWindow.map(ObjectIdentifier.init)))"
+        )
+        super.viewWillMove(toWindow: newWindow)
+    }
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        trace.record(
+            "PaneHostView.viewDidMoveToWindow pane=\(paneId) window=\(String(describing: window.map(ObjectIdentifier.init))) superview=\(String(describing: superview.map(ObjectIdentifier.init)))"
+        )
+    }
+}
+
+@MainActor
+private func attachDiagnosticPaneHost(
+    paneId: UUID,
+    in harness: PaneTabViewControllerCommandHarness,
+    to window: NSWindow,
+    trace: PaneFocusDiagnosticTrace
+) throws -> DiagnosticPaneHostView {
+    let host = DiagnosticPaneHostView(paneId: paneId, trace: trace)
+    harness.viewRegistry.register(host, for: paneId)
+    let contentView = try #require(window.contentView)
+    host.frame = contentView.bounds
+    contentView.addSubview(host)
+    return host
 }
