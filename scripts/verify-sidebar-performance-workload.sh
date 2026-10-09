@@ -2729,6 +2729,7 @@ import sys
 import time
 import urllib.parse
 import urllib.request
+import uuid
 
 metadata_path = sys.argv[1]
 escrow_path = sys.argv[2]
@@ -2884,6 +2885,13 @@ try:
         request_id[0] += 1
         return current
 
+    window_list = require_success(session.request(next_id(), "window.list", {}), "window.list")
+    windows = window_list.get("windows", [])
+    if len(windows) != 1:
+        print(f"sidebar proof requires exactly one workspace window; got {len(windows)}", file=sys.stderr)
+        sys.exit(1)
+    workspace_window_arguments = {"workspaceWindowId": str(uuid.UUID(windows[0]["id"]))}
+
     def execute_sidebar_command(command_id, arguments, label):
         result = require_success(
             session.request(
@@ -2891,13 +2899,14 @@ try:
                 "command.execute",
                 {
                     "commandId": command_id,
-                    "targetHandle": None,
-                    "arguments": arguments,
+                    "correlationId": str(uuid.uuid4()),
+                    "arguments": {**workspace_window_arguments, **arguments},
                 },
             ),
             label,
         )
-        if result.get("applied") is not True:
+        # IPCCommandExecutionResult.swift:204 encodes the kind discriminator.
+        if result.get("kind") != "applied":
             print(f"{label} did not apply: {result}", file=sys.stderr)
             sys.exit(1)
         return result
@@ -2929,8 +2938,11 @@ try:
         if command_entry is None:
             print(f"command.list omitted retained retired command {command_id}", file=sys.stderr)
             sys.exit(1)
-        if command_entry.get("executionModes") != [] or command_entry.get("requiredPrivileges") != []:
-            print(f"retired command retained IPC authority: {command_entry}", file=sys.stderr)
+        # AppCommand+IPCProjection.swift:25,242,327,459 declares headless/unavailable and these privileges.
+        if (command_entry.get("executionMode") != "headless"
+                or set(command_entry.get("requiredPrivileges", [])) != {"appCommandExecute", "sidebarStateMutate"}
+                or command_entry.get("resultVariants") != ["unavailable"]):
+            print(f"retired command IPC descriptor mismatch: {command_entry}", file=sys.stderr)
             sys.exit(1)
 
     def assert_fixed_panes_projection(projection, label):
@@ -2947,16 +2959,18 @@ try:
         before = wait_for_sidebar_projection("panes")
         assert_fixed_panes_projection(before, "Panes projection before retired commands")
         for command_id in sorted(retired_panes_organization_commands):
-            require_error(
+            retired_result = require_success(
                 session.request(
                     next_id(),
                     "command.execute",
-                    {"commandId": command_id, "targetHandle": None, "arguments": {}},
+                    {"commandId": command_id, "correlationId": str(uuid.uuid4()), "arguments": workspace_window_arguments},
                 ),
                 f"command.execute retired {command_id}",
-                -32007,
-                "parameters required",
             )
+            # AppDelegate+HeadlessIPCCommandHandling.swift:60 leaves retired Panes settings unavailable.
+            if retired_result.get("kind") != "unavailable" or retired_result.get("reason") != "featureUnavailable":
+                print(f"retired Panes command outcome mismatch: {retired_result}", file=sys.stderr)
+                sys.exit(1)
         after = wait_for_sidebar_projection("panes")
         assert_fixed_panes_projection(after, "Panes projection after retired commands")
         for attribute in (
@@ -3024,8 +3038,10 @@ try:
                 "initial": initial_order,
                 "opposite": opposite_order,
                 "restored": restored_projection.get("agentstudio.performance.sidebar.sort_order"),
-                "firstApplied": first_toggle_result.get("applied"),
-                "secondApplied": second_toggle_result.get("applied"),
+                # IPCCommandExecutionResult.swift:204 replaces the wire applied boolean.
+                "firstApplied": first_toggle_result.get("kind") == "applied",
+                # IPCCommandExecutionResult.swift:204 replaces the wire applied boolean.
+                "secondApplied": second_toggle_result.get("kind") == "applied",
             }, sort_keys=True) + "\n")
         pace_projection_application()
 

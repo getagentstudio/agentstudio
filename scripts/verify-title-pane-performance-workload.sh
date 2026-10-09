@@ -490,7 +490,7 @@ show_repos_result = request(
     "command.execute",
     {"commandId":"showReposSidebar","correlationId":str(uuid.uuid4()),"arguments":workspace_window_arguments},
 )
-# IPCCommandExecutionResult.swift:213 encodes the kind discriminator.
+# IPCCommandExecutionResult.swift:204 encodes the kind discriminator.
 if show_repos_result.get("kind") != "applied":
     raise RuntimeError(f"showReposSidebar did not apply: {show_repos_result}")
 pane = wait_for_terminal_pane()
@@ -506,7 +506,7 @@ first_sort_toggle_result = request(
         "arguments":workspace_window_arguments,
     },
 )
-# IPCCommandExecutionResult.swift:213 encodes the kind discriminator.
+# IPCCommandExecutionResult.swift:204 encodes the kind discriminator.
 if first_sort_toggle_result.get("kind") != "applied":
     raise RuntimeError(f"first repo sort toggle did not apply: {first_sort_toggle_result}")
 opposite_sort_order = "descending" if initial_sort_order == "ascending" else "ascending"
@@ -522,7 +522,7 @@ second_sort_toggle_result = request(
         "arguments":workspace_window_arguments,
     },
 )
-# IPCCommandExecutionResult.swift:213 encodes the kind discriminator.
+# IPCCommandExecutionResult.swift:204 encodes the kind discriminator.
 if second_sort_toggle_result.get("kind") != "applied":
     raise RuntimeError(f"second repo sort toggle did not apply: {second_sort_toggle_result}")
 wait_for_repo_sort_projection(
@@ -643,7 +643,7 @@ capability_result = request(
         "arguments":workspace_window_arguments,
     },
 )
-# IPCCommandExecutionResult.swift:213 encodes the kind discriminator.
+# IPCCommandExecutionResult.swift:204 encodes the kind discriminator.
 if capability_result.get("kind") != "applied":
     raise RuntimeError(f"repo sort toggle did not apply: {capability_result}")
 capability_delta = wait_for_delta(capability_baseline, lambda value: value["repo_events"] >= 1, "capability presentation telemetry")
@@ -669,7 +669,7 @@ capability_restore_result = request(
         "arguments":workspace_window_arguments,
     },
 )
-# IPCCommandExecutionResult.swift:213 encodes the kind discriminator.
+# IPCCommandExecutionResult.swift:204 encodes the kind discriminator.
 if capability_restore_result.get("kind") != "applied":
     raise RuntimeError(f"repo sort restoration toggle did not apply: {capability_restore_result}")
 wait_for_repo_sort_projection(

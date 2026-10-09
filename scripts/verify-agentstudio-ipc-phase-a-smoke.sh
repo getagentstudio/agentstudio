@@ -108,6 +108,7 @@ import json
 import os
 import socket
 import sys
+import uuid
 
 metadata_path = sys.argv[1]
 escrow_path = sys.argv[2]
@@ -187,6 +188,7 @@ def require_error(response, label, expected_code, expected_message):
             file=sys.stderr,
         )
         sys.exit(1)
+    return error
 
 
 session = JSONRPCSession(socket_path)
@@ -269,6 +271,13 @@ try:
         print("pane.snapshot canonical result does not match requested pane", file=sys.stderr)
         sys.exit(1)
 
+    window_list = require_success(session.request(902, "window.list", {}), "window.list")
+    windows = window_list.get("windows", [])
+    if len(windows) != 1:
+        print(f"IPC phase-a smoke requires exactly one workspace window; got {len(windows)}", file=sys.stderr)
+        sys.exit(1)
+    workspace_window_arguments = {"workspaceWindowId": str(uuid.UUID(windows[0]["id"]))}
+
     command_list = require_success(
         session.request(6, "command.list", {}),
         "command.list",
@@ -302,13 +311,30 @@ try:
     if repo_sort_toggle_entry is None:
         print("command.list did not include toggleReposSortDirection", file=sys.stderr)
         sys.exit(1)
-    if repo_sort_toggle_entry.get("argumentSchema") != []:
+    def requires_workspace_window(command_entry):
+        schema = command_entry.get("argumentSchema", {})
+        properties = schema.get("properties", {})
+        # IPCCommandArguments+Schemas.swift:37; IPCSchemaProviding.swift:17 uses a UUID pattern.
+        return (
+            command_entry.get("argumentVariants") == ["workspaceWindow"]
+            and schema.get("type") == "object"
+            and set(schema.get("required", [])) == {"kind", "workspaceWindowId"}
+            and set(properties) == {"kind", "workspaceWindowId"}
+            and properties.get("kind", {}).get("enum") == ["workspaceWindow"]
+            and properties.get("workspaceWindowId", {}).get("type") == "string"
+            and properties.get("workspaceWindowId", {}).get("pattern")
+                == "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
+            and schema.get("additionalProperties") is False
+        )
+
+    # AppCommand+IPCProjection.swift:81 requires the workspaceWindow argument variant.
+    if not requires_workspace_window(repo_sort_toggle_entry):
         print(
             f"toggleReposSortDirection argument schema mismatch: {repo_sort_toggle_entry}",
             file=sys.stderr,
         )
         sys.exit(1)
-    required_sidebar_no_argument_commands = {
+    required_sidebar_workspace_window_commands = {
         "showReposSidebar",
         "showPanesSidebar",
         "setReposGroupingRepo",
@@ -333,59 +359,76 @@ try:
         if command_id in commands_by_id:
             print(f"removed Panes command remains in command.list: {command_id}", file=sys.stderr)
             sys.exit(1)
-    for command_id in sorted(required_sidebar_no_argument_commands):
+    for command_id in sorted(required_sidebar_workspace_window_commands):
         command_entry = commands_by_id.get(command_id)
         if command_entry is None:
             print(f"command.list did not include {command_id}", file=sys.stderr)
             sys.exit(1)
-        if command_entry.get("argumentSchema") != []:
-            print(f"{command_id} must expose no arguments: {command_entry}", file=sys.stderr)
+        # AppCommand+IPCProjection.swift:81 requires the workspaceWindow argument variant.
+        if not requires_workspace_window(command_entry):
+            print(f"{command_id} must require a workspaceWindowId UUID argument: {command_entry}", file=sys.stderr)
             sys.exit(1)
     for command_id in sorted(retired_panes_organization_commands):
         command_entry = commands_by_id.get(command_id)
         if command_entry is None:
             print(f"command.list omitted retained retired command {command_id}", file=sys.stderr)
             sys.exit(1)
-        if command_entry.get("executionModes") != [] or command_entry.get("requiredPrivileges") != []:
-            print(f"retired command retained IPC authority: {command_entry}", file=sys.stderr)
+        # AppCommand+IPCProjection.swift:25,242,327,459 declares headless/unavailable and these privileges.
+        if (command_entry.get("executionMode") != "headless"
+                or set(command_entry.get("requiredPrivileges", [])) != {"appCommandExecute", "sidebarStateMutate"}
+                or command_entry.get("resultVariants") != ["unavailable"]):
+            print(f"retired command IPC descriptor mismatch: {command_entry}", file=sys.stderr)
             sys.exit(1)
     allowed_command_keys = {
         "id",
         "title",
-        "executionModes",
-        "targetKinds",
+        "description",
+        "exposure",
+        "executionMode",
+        "argumentVariants",
         "requiredPrivileges",
         "argumentSchema",
+        "dataScope",
+        "allowedTargetKinds",
+        "resultVariants",
+        "resultSchema",
+        "examples",
+        "agentEligibility",
     }
     for command in commands:
         unexpected_keys = set(command.keys()) - allowed_command_keys
-        if unexpected_keys:
+        missing_keys = allowed_command_keys - set(command.keys())
+        # IPCCommandDescriptor.swift:87 declares this exact typed catalog key set.
+        if unexpected_keys or missing_keys:
             print(
-                f"command.list leaked non-IPC command metadata keys {sorted(unexpected_keys)}: {command}",
+                f"command.list descriptor keys mismatch: unexpected={sorted(unexpected_keys)} missing={sorted(missing_keys)}: {command}",
                 file=sys.stderr,
             )
             sys.exit(1)
 
-    require_error(
+    command_bar_result = require_success(
         session.request(
             7,
             "command.execute",
-            {"commandId": "showCommandBarCommands", "targetHandle": None},
+            {"commandId": "showCommandBarCommands", "correlationId": str(uuid.uuid4()), "arguments": workspace_window_arguments},
         ),
         "command.execute showCommandBarCommands",
-        -32003,
-        "requires presentation",
     )
+    # AppDelegate+HeadlessIPCCommandHandling.swift:79 reports presentation in debug.
+    if command_bar_result.get("kind") != "presented":
+        print(f"showCommandBarCommands did not present: {command_bar_result}", file=sys.stderr)
+        sys.exit(1)
 
     show_repos_result = require_success(
         session.request(
             8,
             "command.execute",
-            {"commandId": "showReposSidebar", "targetHandle": None, "arguments": {}},
+            {"commandId": "showReposSidebar", "correlationId": str(uuid.uuid4()), "arguments": workspace_window_arguments},
         ),
         "command.execute showReposSidebar before repo settings",
     )
-    if show_repos_result.get("applied") is not True:
+    # IPCCommandExecutionResult.swift:204 encodes the kind discriminator.
+    if show_repos_result.get("kind") != "applied":
         print(f"showReposSidebar did not apply: {show_repos_result}", file=sys.stderr)
         sys.exit(1)
 
@@ -395,13 +438,14 @@ try:
             "command.execute",
             {
                 "commandId": "toggleReposSortDirection",
-                "targetHandle": None,
-                "arguments": {},
+                "correlationId": str(uuid.uuid4()),
+                "arguments": workspace_window_arguments,
             },
         ),
         "command.execute toggleReposSortDirection first toggle",
     )
-    if repo_sort_first_toggle.get("applied") is not True:
+    # IPCCommandExecutionResult.swift:204 encodes the kind discriminator.
+    if repo_sort_first_toggle.get("kind") != "applied":
         print(f"first repo sort toggle did not apply: {repo_sort_first_toggle}", file=sys.stderr)
         sys.exit(1)
 
@@ -411,30 +455,38 @@ try:
             "command.execute",
             {
                 "commandId": "toggleReposSortDirection",
-                "targetHandle": None,
-                "arguments": {},
+                "correlationId": str(uuid.uuid4()),
+                "arguments": workspace_window_arguments,
             },
         ),
         "command.execute toggleReposSortDirection second toggle",
     )
-    if repo_sort_second_toggle.get("applied") is not True:
+    # IPCCommandExecutionResult.swift:204 encodes the kind discriminator.
+    if repo_sort_second_toggle.get("kind") != "applied":
         print(f"second repo sort toggle did not apply: {repo_sort_second_toggle}", file=sys.stderr)
         sys.exit(1)
 
-    require_error(
+    # AgentStudioAppIPCRequestError.swift:18 reports -32602 invalid arguments.
+    extraneous_order_error = require_error(
         session.request(
             11,
             "command.execute",
             {
                 "commandId": "toggleReposSortDirection",
-                "targetHandle": None,
-                "arguments": {"order": "currentRepoOrder"},
+                "correlationId": str(uuid.uuid4()),
+                "arguments": {**workspace_window_arguments, "order": "currentRepoOrder"},
             },
         ),
         "command.execute toggleReposSortDirection extraneous order",
-        -32007,
-        "validation rejected",
+        -32602,
+        "invalid arguments",
     )
+    # AgentStudioAppIPCRequestError.swift:16 and AppCommandRawArgumentParser.swift:29 reject the extra field.
+    if extraneous_order_error.get("data") != {
+        "reason": "invalidArguments", "fieldPath": "$.arguments.order", "expected": "only declared fields",
+    }:
+        print(f"extraneous order rejection data mismatch: {extraneous_order_error}", file=sys.stderr)
+        sys.exit(1)
 
     command_bar_open = require_success(
         session.request(
@@ -451,17 +503,24 @@ try:
         print(f"ui.commandBar.open result missing workspaceWindowId: {command_bar_open}", file=sys.stderr)
         sys.exit(1)
 
-    def execute_sidebar_command(request_id, command_id):
+    def execute_sidebar_command(request_id, command_id, expected_kind="applied"):
+        # AppCommand+IPCProjection.swift:79,81 separates targetless Inbox from window-scoped sidebar commands.
+        command_arguments = {} if command_id not in required_sidebar_workspace_window_commands else workspace_window_arguments
         result = require_success(
             session.request(
                 request_id,
                 "command.execute",
-                {"commandId": command_id, "targetHandle": None, "arguments": {}},
+                {"commandId": command_id, "correlationId": str(uuid.uuid4()), "arguments": command_arguments},
             ),
             f"command.execute {command_id}",
         )
-        if result.get("applied") is not True:
-            print(f"{command_id} did not apply: {result}", file=sys.stderr)
+        # IPCCommandExecutionResult.swift:204 carries the exact requested result kind.
+        if result.get("kind") != expected_kind:
+            print(f"{command_id} did not return {expected_kind}: {result}", file=sys.stderr)
+            sys.exit(1)
+        # AppDelegate+HeadlessIPCCommandHandling.swift:39-46 keeps dormant Inbox commands unavailable.
+        if expected_kind == "unavailable" and result.get("reason") != "featureUnavailable":
+            print(f"{command_id} did not report featureUnavailable: {result}", file=sys.stderr)
             sys.exit(1)
 
     sidebar_command_expectations = [
@@ -491,16 +550,18 @@ try:
         sys.exit(1)
 
     for request_id, command_id in enumerate(sorted(retired_panes_organization_commands), start=40):
-        require_error(
+        retired_result = require_success(
             session.request(
                 request_id,
                 "command.execute",
-                {"commandId": command_id, "targetHandle": None, "arguments": {}},
+                {"commandId": command_id, "correlationId": str(uuid.uuid4()), "arguments": workspace_window_arguments},
             ),
             f"command.execute retired {command_id}",
-            -32007,
-            "parameters required",
         )
+        # AppDelegate+HeadlessIPCCommandHandling.swift:60 leaves retired Panes settings unavailable.
+        if retired_result.get("kind") != "unavailable" or retired_result.get("reason") != "featureUnavailable":
+            print(f"retired Panes command outcome mismatch: {retired_result}", file=sys.stderr)
+            sys.exit(1)
 
     panes_grouping_after_retired_commands = require_success(
         session.request(48, "sidebar.grouping.get", {"surface": "panes"}),
@@ -514,6 +575,22 @@ try:
         )
         sys.exit(1)
 
+    repo_grouping_before_inbox_commands = require_success(
+        session.request(903, "sidebar.grouping.get", {"surface": "repo"}),
+        "sidebar.grouping.get repo before dormant Inbox commands",
+    )
+    # AgentStudioIPCSidebarAdapter.swift:25 and AgentStudioAppIPCRequestError.swift:196 reject dormant Inbox reads.
+    inbox_grouping_before_inbox_commands = require_error(
+        session.request(904, "sidebar.grouping.get", {"surface": "inbox"}),
+        "sidebar.grouping.get inbox before dormant Inbox commands",
+        -32004,
+        "target not found",
+    )
+    sidebar_surface_before_inbox_commands = require_success(
+        session.request(905, "sidebar.surface.get", {}),
+        "sidebar.surface.get before dormant Inbox commands",
+    )
+
     inbox_command_expectations = [
         (32, "showInboxNotifications"),
         (33, "setInboxGroupingTab"),
@@ -522,7 +599,7 @@ try:
         (36, "setInboxGroupingNone"),
     ]
     for request_id, command_id in inbox_command_expectations:
-        execute_sidebar_command(request_id, command_id)
+        execute_sidebar_command(request_id, command_id, expected_kind="unavailable")
 
     repo_grouping = require_success(
         session.request(49, "sidebar.grouping.get", {"surface": "repo"}),
@@ -531,21 +608,39 @@ try:
     if repo_grouping.get("mode") != "repo":
         print(f"repo grouping did not persist repository mode: {repo_grouping}", file=sys.stderr)
         sys.exit(1)
+    # AppDelegate+HeadlessIPCCommandHandling.swift:39-46 leaves grouping unchanged for dormant Inbox commands.
+    if repo_grouping != repo_grouping_before_inbox_commands:
+        print("dormant Inbox commands mutated Repos grouping", file=sys.stderr)
+        sys.exit(1)
 
-    inbox_grouping = require_success(
+    # AgentStudioIPCSidebarAdapter.swift:25 and AgentStudioAppIPCRequestError.swift:196 reject dormant Inbox reads.
+    inbox_grouping = require_error(
         session.request(50, "sidebar.grouping.get", {"surface": "inbox"}),
         "sidebar.grouping.get inbox",
+        -32004,
+        "target not found",
     )
-    if inbox_grouping.get("mode") != "none":
-        print(f"inbox grouping did not persist none mode: {inbox_grouping}", file=sys.stderr)
+    # AppDelegate+HeadlessIPCCommandHandling.swift:39-46 leaves grouping unchanged for dormant Inbox commands.
+    if inbox_grouping != inbox_grouping_before_inbox_commands:
+        print("dormant Inbox commands changed Inbox grouping unavailability", file=sys.stderr)
         sys.exit(1)
 
     sidebar_surface = require_success(
         session.request(51, "sidebar.surface.get", {}),
         "sidebar.surface.get",
     )
-    if sidebar_surface.get("surface") != "inbox":
-        print(f"sidebar surface did not persist inbox: {sidebar_surface}", file=sys.stderr)
+    # AppDelegate+HeadlessIPCCommandHandling.swift:39-46 does not revive an Inbox surface.
+    if sidebar_surface != sidebar_surface_before_inbox_commands:
+        print("dormant Inbox commands mutated the visible sidebar surface", file=sys.stderr)
+        sys.exit(1)
+
+    panes_grouping_after_inbox_commands = require_success(
+        session.request(906, "sidebar.grouping.get", {"surface": "panes"}),
+        "sidebar.grouping.get panes after dormant Inbox commands",
+    )
+    # AppDelegate+HeadlessIPCCommandHandling.swift:39-46 leaves grouping unchanged for dormant Inbox commands.
+    if panes_grouping_after_inbox_commands != panes_grouping_after_retired_commands:
+        print("dormant Inbox commands mutated Panes grouping", file=sys.stderr)
         sys.exit(1)
 
     require_error(
