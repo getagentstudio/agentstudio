@@ -26,8 +26,8 @@ let laneWatchdogArmLine = "[agentstudio-lane-watchdog] armed"
 enum LaneFixtureInnerWatchdog: Sendable {
     case unarmed
     case armed
-    /// Armed once the command prints `laneWatchdogArmLine` as a whole line,
-    /// after the evidence its timeout report must carry.
+    /// Armed once the command prints `laneWatchdogArmLine` as a whole,
+    /// newline-terminated line, after the evidence its timeout report must carry.
     case armedByFixture
 
     /// Shell run before the fixture command. It reaches runner calls in the

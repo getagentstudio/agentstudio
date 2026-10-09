@@ -20,10 +20,10 @@ SWIFT_TEST_HELPERS_SOURCE_PATH="${BASH_SOURCE[0]:-}"
 SWIFT_TEST_SIGINT_CANCELLATION_GRACE_SECONDS=35
 
 # With LANE_WATCHDOG_ARM_REQUIRED=1 (hang-test fixtures only), the inactivity
-# watchdog may time a command out only once the command has printed this exact
-# line. It travels the same pipe as the command's earlier output, so when tee has
-# written it to the output file, every line printed before it is already there
-# for the timeout report.
+# watchdog may time a command out only once the command has printed this exact,
+# newline-terminated line. It travels the same pipe as the command's earlier
+# output, so when tee has written it to the output file, every line printed
+# before it is already there for the timeout report.
 SWIFT_TEST_WATCHDOG_ARM_LINE='[agentstudio-lane-watchdog] armed'
 
 # shellcheck source=scripts/xcb-helpers.sh
@@ -2273,12 +2273,21 @@ swift_test_watchdog_timeout_status() {
 # Succeeds when the inactivity watchdog may time the command out. A lane leaves
 # LANE_WATCHDOG_ARM_REQUIRED unset and is armed from the start. With it set to 1,
 # the command arms the watchdog by printing SWIFT_TEST_WATCHDOG_ARM_LINE as a
-# whole line; a longer line that only mentions it does not arm.
+# whole line; a longer line that only mentions it does not arm. Only a
+# newline-terminated record counts: an unterminated last line may still be
+# growing into a longer one.
 swift_test_watchdog_is_armed() {
   local output_file="$1"
 
   [ "${LANE_WATCHDOG_ARM_REQUIRED:-}" = "1" ] || return 0
-  /usr/bin/grep -Fxq -- "$SWIFT_TEST_WATCHDOG_ARM_LINE" "$output_file" 2>/dev/null
+  /usr/bin/perl -e '
+    my ($arm_line, $output_path) = @ARGV;
+    open(my $output, "<", $output_path) or exit 1;
+    while (my $record = <$output>) {
+      exit 0 if $record eq "$arm_line\n";
+    }
+    exit 1;
+  ' "$SWIFT_TEST_WATCHDOG_ARM_LINE" "$output_file" 2>/dev/null
 }
 
 # Epoch milliseconds share a clock domain across the wrapper and its child.

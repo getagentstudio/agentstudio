@@ -457,12 +457,14 @@ A hang test whose report must carry what its command printed passes
 `innerWatchdog: .armedByFixture`. Its command arms the watchdog once it has
 parked by printing `laneWatchdogArmLine` as a whole line, after that evidence.
 The runner, started with `LANE_WATCHDOG_ARM_REQUIRED=1`, times out only once
-that line is in the command's output file. The line travels the same pipe as
-the evidence, so every line printed before it is in the file the timeout report
-reads. An arm signal outside that stream races the output copy and can leave
-the last evidence out of the report.
-`armLineOrdersEvidenceAheadOfTheTimeoutReport` holds that order against a tee
-whose file copy lags as far as order allows.
+that line is in the command's output file as a newline-terminated record. The
+line travels the same pipe as the evidence, so every line printed before it is
+in the file the timeout report reads. An arm signal outside that stream races
+the output copy and can leave the last evidence out of the report. The tests in
+`SwiftLaneHangEvidenceTests+WatchdogArmLine.swift` hold both rules with a `tee`
+that stops until the watchdog has sampled the file: the evidence is reported
+however late the copy runs, and the arm line's bytes without their newline do
+not arm.
 
 `exitedCommandUnderStarvedRunner` proves the trap deterministically: a FIFO hook
 starves the runner after an `exit 0` command. Armed, it times out; with the
