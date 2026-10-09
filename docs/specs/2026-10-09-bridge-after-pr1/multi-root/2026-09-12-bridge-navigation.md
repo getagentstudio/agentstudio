@@ -1,12 +1,12 @@
 # Bridge Files and Worktree Navigation — Command-First Specification
 
-[Requirements](./2026-09-12-requirements.md) → this Specification →
-separate Program Design. [Tradeoffs](./2026-09-12-proposal-and-tradeoffs.md)
+Requirements (`docs/specs/2026-09-12-bridge-navigation/2026-09-12-requirements.md`, not on main) → this Specification →
+separate Program Design. Tradeoffs (`docs/specs/2026-09-12-bridge-navigation/2026-09-12-proposal-and-tradeoffs.md`, not on main)
 explain alternatives; they do not override the selected owner decisions.
 
 This specification covers the Bridge stack. The
-[drawer specification](../2026-09-13-drawer-presentation/specification.md) owns
-drawer behavior; the [workspace IPC control specification](../../../../agent-studio.ipc-improvements/docs/specs/2026-09-23-workspace-ipc-control/specification.md)
+[drawer specification](../../2026-09-13-drawer-presentation/specification.md) owns
+drawer behavior; the workspace IPC control specification (`../agent-studio.ipc-improvements/docs/specs/2026-09-23-workspace-ipc-control/specification.md`, not on main)
 (layer A1, sibling checkout `agent-studio.ipc-improvements`) owns which commands
 pane agents may run. New pickers, selectors, Command-P UI, Sessions screens,
 notification history and approval prompts are deferred. Files still exposes all
@@ -269,23 +269,23 @@ Basis: U-BN-07. Contract C6. Proof V7.
 
 ## R9 — Normal drawer resizing
 
-Owned by R-DP-1 in the [drawer specification](../2026-09-13-drawer-presentation/specification.md).
+Owned by R-DP-1 in the [drawer specification](../../2026-09-13-drawer-presentation/specification.md).
 
 ## R10 — Fixed fullscreen overlay
 
-Owned by R-DP-2 in the [drawer specification](../2026-09-13-drawer-presentation/specification.md).
+Owned by R-DP-2 in the [drawer specification](../../2026-09-13-drawer-presentation/specification.md).
 
 ## R11 — Selected-side width and gutter
 
-Owned by R-DP-3 in the [drawer specification](../2026-09-13-drawer-presentation/specification.md).
+Owned by R-DP-3 in the [drawer specification](../../2026-09-13-drawer-presentation/specification.md).
 
 ## R12 — Drawer presentation and ownership
 
-Owned by R-DP-4/R-DP-5 in the [drawer specification](../2026-09-13-drawer-presentation/specification.md).
+Owned by R-DP-4/R-DP-5 in the [drawer specification](../../2026-09-13-drawer-presentation/specification.md).
 
 ## R13 — Drawer geometry consistency
 
-Owned by R-DP-6 in the [drawer specification](../2026-09-13-drawer-presentation/specification.md).
+Owned by R-DP-6 in the [drawer specification](../../2026-09-13-drawer-presentation/specification.md).
 
 ## R14 — Ordinary local documents
 

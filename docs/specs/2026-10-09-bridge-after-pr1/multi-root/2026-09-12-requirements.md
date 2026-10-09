@@ -7,13 +7,13 @@ directory outside Git. Git Review remains worktree-scoped. Supporting
 drawer content should remain usable without confusing its owning pane, its
 visible position, and the worktree being read in Bridge.
 
-The [current system analysis](../../wip/2026-09-13-drawer-bridge-system-analysis.md)
+The [current system analysis](../../../wip/2026-09-13-drawer-bridge-system-analysis.md)
 grounds the normal/Zoom drawer and Bridge boundaries. The
-[proposal and tradeoffs](./2026-09-12-proposal-and-tradeoffs.md) retain the
-navigation alternatives. The [command-first specification](./2026-09-12-bridge-navigation.md)
+proposal and tradeoffs (`docs/specs/2026-09-12-bridge-navigation/2026-09-12-proposal-and-tradeoffs.md`, not on main) retain the
+navigation alternatives. The command-first specification (`docs/specs/2026-09-12-bridge-navigation/2026-09-12-bridge-navigation.md`, not on main)
 defines the source/navigation slice and points to the separate drawer contract.
 Earlier recommendations do not override the owner decisions recorded here.
-The [Program Design](./program-design.md) is the separate structural artifact.
+The Program Design (`docs/specs/2026-09-12-bridge-navigation/program-design.md`, not on main) is the separate structural artifact.
 
 ## People and their jobs
 
@@ -74,7 +74,7 @@ independently of the author's interpretation of the current code.
 | S37 | “yes remove it” and “we already discussed it” in response to catalog unregistration | Apply the existing membership-removal rule when Agent Studio unregisters a worktree: clear its file, apply Review fallback, preserve annotations. No separate unavailable-member choice for explicit unregistration. |
 
 Owner statements on 2026-09-23 (orchestrator session f4ba41d2; full record in
-the [workspace IPC control Requirements](../../../../agent-studio.ipc-improvements/docs/specs/2026-09-23-workspace-ipc-control/requirements.md),
+the workspace IPC control Requirements (`../agent-studio.ipc-improvements/docs/specs/2026-09-23-workspace-ipc-control/requirements.md`, not on main),
 owner statements S1–S29 there):
 
 | Source | Owner statement | Meaning carried forward |
@@ -91,7 +91,7 @@ owner statements S1–S29 there):
 | S47 | On the revised Bridge design's new components (runtime Open view items, `PaneOpenViewPresentation`, `TerminalFileLinkResolver`, multi-member PR fold, one ⌘-click preference key): “it's fine.” | Structural realization of B1–B3 confirmed by the owner (2026-09-23). |
 
 Current source establishes what exists, not which alternative the owner has
-chosen. The [current-path evidence](./2026-09-12-proposal-and-tradeoffs.md#what-the-app-already-provides)
+chosen. The current-path evidence (`docs/specs/2026-09-12-bridge-navigation/2026-09-12-proposal-and-tradeoffs.md`, not on main)
 corrects the initial “no IPC” description without removing the desired outcome.
 
 ## User requirements
@@ -112,11 +112,11 @@ are not priority assignments or authorization to implement.
 | U-BN-05 | Human and agent | Superseded for this PR: undiscovered Git repository/worktree intake is excluded. Individual files at those paths remain openable as local documents. | File opening does not require registration of its containing worktree. | Owner-authorized supersession, S23; file coverage remains U-BN-13. |
 | U-BN-06 | Human and agent | Move between relevant files and File/Review surfaces through discoverable controls. | Entry into Bridge should not leave the user at a navigation dead end. | Authorized, original request about moving between file-mode functions and S1/S2; the precise control inventory is proposed. |
 | U-BN-07 | Human | Keep Bridge out of drawer content and prevent dragging Bridge into ordinary pane layouts, while allowing a Bridge tab to own a drawer. | A rich reading surface and its supporting tools are different things; one restriction must not remove the useful inverse relationship. | Authorized, S8/S15. Other mixed-layout creation/restore routes remain an explicit policy question. |
-| U-BN-08 | Human | Moved without changing identity to [Drawer Presentation Requirements](../2026-09-13-drawer-presentation/requirements.md#user-requirements). | Dedicated drawer track; no need removed. | Authorized; see S9–S15 in the source record above. |
-| U-BN-09 | Human | Moved without changing identity to [Drawer Presentation Requirements](../2026-09-13-drawer-presentation/requirements.md#user-requirements). | Dedicated drawer track; no need removed. | Authorized; see S9–S15 in the source record above. |
-| U-BN-10 | Human | Moved without changing identity to [Drawer Presentation Requirements](../2026-09-13-drawer-presentation/requirements.md#user-requirements). | Dedicated drawer track; no need removed. | Authorized; see S9–S15 in the source record above. |
-| U-BN-11 | Human | Moved without changing identity to [Drawer Presentation Requirements](../2026-09-13-drawer-presentation/requirements.md#user-requirements). | Dedicated drawer track; no need removed. | Authorized; see S9–S15 in the source record above. |
-| U-BN-12 | Human | Moved without changing identity to [Drawer Presentation Requirements](../2026-09-13-drawer-presentation/requirements.md#user-requirements). | Dedicated drawer track; no need removed. | Authorized; see S9–S15 in the source record above. |
+| U-BN-08 | Human | Moved without changing identity to [Drawer Presentation Requirements](../../2026-09-13-drawer-presentation/requirements.md#user-requirements). | Dedicated drawer track; no need removed. | Authorized; see S9–S15 in the source record above. |
+| U-BN-09 | Human | Moved without changing identity to [Drawer Presentation Requirements](../../2026-09-13-drawer-presentation/requirements.md#user-requirements). | Dedicated drawer track; no need removed. | Authorized; see S9–S15 in the source record above. |
+| U-BN-10 | Human | Moved without changing identity to [Drawer Presentation Requirements](../../2026-09-13-drawer-presentation/requirements.md#user-requirements). | Dedicated drawer track; no need removed. | Authorized; see S9–S15 in the source record above. |
+| U-BN-11 | Human | Moved without changing identity to [Drawer Presentation Requirements](../../2026-09-13-drawer-presentation/requirements.md#user-requirements). | Dedicated drawer track; no need removed. | Authorized; see S9–S15 in the source record above. |
+| U-BN-12 | Human | Moved without changing identity to [Drawer Presentation Requirements](../../2026-09-13-drawer-presentation/requirements.md#user-requirements). | Dedicated drawer track; no need removed. | Authorized; see S9–S15 in the source record above. |
 | U-BN-13 | Human and agent | Open and read local files outside any Git worktree in Files, with annotation support. | Agents produce notes and other material in miscellaneous directories; a missing worktree must not make those documents unreadable. | Authorized, S19; supersedes the Files-only part of S6. |
 | U-BN-14 | Human | Save opened-file locations and annotation associations, and revisit those documents. | A file shown once by an agent must remain findable even when it is outside the repository tree. | Authorized, S19. The command-first contract retains missing entries; new closed-file history and moved-file UI are deferred. |
 | U-BN-15 | Human and agent | Manage known worktree membership through commands, browse/search all members in Files, and select one member for Review. Protect the current known CWD member; remove other members with explicit file-clear and Review fallback behavior. | One task can involve multiple known worktrees or repositories. | Authorized, S20/S22/S23/S24/S29/S32/S33/S34/S35/S37. New UI entry controls may follow; shared/other-Bridge mutation is excluded. |
@@ -135,7 +135,7 @@ not imply recursively indexing its containing directory or adding it as a
 workspace root.
 
 **Drawer track:** the selected geometry, resizing, ownership and side behavior now
-have one home in [Drawer Presentation Requirements](../2026-09-13-drawer-presentation/requirements.md).
+have one home in [Drawer Presentation Requirements](../../2026-09-13-drawer-presentation/requirements.md).
 The drawer track can proceed independently of Bridge source selection and
 multi-worktree membership. U-BN-08–U-BN-12 are retained at that dedicated home.
 
@@ -294,7 +294,7 @@ The notes do not require a Git worktree, and adding frontend does not move
 terminal A or imply moving the notes' annotations into frontend's Review.
 
 Drawer journeys and proof for U-BN-08–U-BN-12 have their single home in the
-[Drawer Presentation Requirements](../2026-09-13-drawer-presentation/requirements.md).
+[Drawer Presentation Requirements](../../2026-09-13-drawer-presentation/requirements.md).
 
 ## Evidence of a useful outcome
 

@@ -94,7 +94,7 @@ Packages 6–9 became follow-ups (section 6).
 
 ## 6. Follow-up backlog
 
-**Documentation (Bridge Lead; do this before PR2):** the permanent Bridge architecture docs are **stale**. `docs/architecture/bridge/bridge_product_transport_architecture.md`, `bridge_native_runtime_architecture.md` and `bridge_web_runtime_architecture.md` were last changed 2026-08-20 to 2026-09-10 and describe the pre-PR1 transport; PR1 did not update them. Until they are refreshed from the stability Program Design, learn the system from `docs/specs/2026-09-24-bridge-stability-redesign/` and this file, not from `docs/architecture/bridge/`.
+**Documentation:** PR1 did not update the permanent Bridge architecture docs. They were refreshed on 2026-10-09 in the same docs change as this file: [transport](../../architecture/bridge/bridge_product_transport_architecture.md) (keyed state in sealed batches, operations, what PR1 built vs later), [native runtime](../../architecture/bridge/bridge_native_runtime_architecture.md) (N1/N2/N3, File keyed index and reconciler, Review hide fence, fence-then-release) and [web runtime](../../architecture/bridge/bridge_web_runtime_architecture.md) (W1/W2/W4/W6, R13 recovery budget, region states). `bridge_viewer_architecture.md` is still the pre-PR1 overview; read it for the outer model only.
 
 **Local proof environment:** CI and Sunclaw build with Xcode 27. This development Mac had only Xcode 26.6, which cannot type-check `Tests/AgentStudioTests/App/Boot/PaneActivitySaveIntegrationTests.swift:77` (from #477) in reasonable time, so a full local `mise run test` fails at prebuild. Install Xcode 27 for full local runs. Linked worktrees also need the primary checkout's vendors at the same ghostty pin (fast-forward the primary, then plain `mise run setup` in both).
 
@@ -127,7 +127,7 @@ Packages 6–9 became follow-ups (section 6).
 
 ## 8. Decisions for the next session
 
-0. Refresh the three stale Bridge architecture docs first (section 6), so new agents learn the PR1 model.
+0. Done 2026-10-09: the three Bridge architecture docs now describe the PR1 model (section 6). `bridge_viewer_architecture.md` can be refreshed when PR2 changes the outer model.
 1. PR2 approach: re-carry B1 onto main in slices (recommended) vs merging main into #367.
 2. Order: LUNA-408 first, or as PR2's first slice.
 3. PR2 scope: B1 only, with B2 and B3 as later PRs.

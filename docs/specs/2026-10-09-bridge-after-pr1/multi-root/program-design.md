@@ -1,7 +1,7 @@
 # Bridge Files and Worktree Navigation — Program Design
 
-[Requirements](./2026-09-12-requirements.md) →
-[command-first Specification](./2026-09-12-bridge-navigation.md) → this design.
+Requirements (`docs/specs/2026-09-12-bridge-navigation/2026-09-12-requirements.md`, not on main) →
+command-first Specification (`docs/specs/2026-09-12-bridge-navigation/2026-09-12-bridge-navigation.md`, not on main) → this design.
 
 ## Start with the files you want to read
 
@@ -57,33 +57,33 @@ controller can be replaced without losing the record. The diagram's arrows
 show ownership/data flow; the activation sequence below shows asynchronous
 ordering and acknowledgement.
 
-The current [BridgePaneState](../../../Sources/AgentStudio/Core/Models/BridgePaneState.swift)
+The current [BridgePaneState](../../../../Sources/AgentStudio/Core/Models/BridgePaneState.swift)
 contains one source with a workspace root and baseline. Controller construction
 uses that state for runtime metadata, File authority, Review provider/pipeline,
 annotation adapters and product sessions. Merely changing metadata leaves the
 old providers and source authority installed.
 
-The [Zoom companion coordinator](../../../Sources/AgentStudio/App/Coordination/WorkspaceSurfaceCoordinator+ZoomCompanion.swift)
+The [Zoom companion coordinator](../../../../Sources/AgentStudio/App/Coordination/WorkspaceSurfaceCoordinator+ZoomCompanion.swift)
 already keys the logical relationship by source terminal pane. On a different
 worktree it retires the old companion and creates a new companion ID/controller.
 Its continuity record preserves only File/Review surface and visibility; it does
 not persist opened documents or per-worktree comparison choices.
 
-[Review construction](../../../Sources/AgentStudio/Features/Bridge/Transport/BridgePaneReviewSharedConstructionBinder.swift)
+[Review construction](../../../../Sources/AgentStudio/Features/Bridge/Transport/BridgePaneReviewSharedConstructionBinder.swift)
 already keys calculations by repository, worktree, root and comparison. Reuse
 that calculation mechanism for each target. There is no aggregate Git comparison
 across worktrees in this design.
 
-The [File source provider](../../../Sources/AgentStudio/Features/Bridge/Runtime/WorktreeFileSurface/BridgeWorktreeFileSourceProvider.swift)
+The [File source provider](../../../../Sources/AgentStudio/Features/Bridge/Runtime/WorktreeFileSurface/BridgeWorktreeFileSourceProvider.swift)
 requires a Worktree and root token. Beneath it, the
-[descriptor-based reader](../../../Sources/AgentStudio/Features/Bridge/Transport/BridgePaneProductFileContentSource.swift)
+[descriptor-based reader](../../../../Sources/AgentStudio/Features/Bridge/Transport/BridgePaneProductFileContentSource.swift)
 already performs ordinary filesystem reads, content classification and source
 validation. The new standalone path reuses that reader while replacing the
 worktree-only admission above it.
 
-The existing [draft scheduler](../../../BridgeWeb/src/worktree-annotations/worktree-annotation-draft-scheduler.ts)
+The existing [draft scheduler](../../../../BridgeWeb/src/worktree-annotations/worktree-annotation-draft-scheduler.ts)
 already persists draft text without publishing it as a saved annotation. The
-[Review installation gate](../../../BridgeWeb/src/core/comm-worker/bridge-main-review-presentation-installation-gate.ts)
+[Review installation gate](../../../../BridgeWeb/src/core/comm-worker/bridge-main-review-presentation-installation-gate.ts)
 awaits registered editor preparation before an affected publication installs.
 Ordinary File/Markdown selection and whole-controller teardown do not currently
 provide the same awaited barrier; that is the navigation gap this design closes.
@@ -281,7 +281,7 @@ that membership path. File preparation itself does not add its containing root.
 
 ## CWD injection and worktree removal
 
-The existing [CWD update owner](../../../Sources/AgentStudio/App/Coordination/WorkspaceSurfaceCoordinator.swift)
+The existing [CWD update owner](../../../../Sources/AgentStudio/App/Coordination/WorkspaceSurfaceCoordinator.swift)
 resolves and publishes terminal association before reconciling its companion.
 Keep that authority. Replace the terminal-following source-reset effect with an
 App call to the navigation handler carrying the already-resolved association.
@@ -632,7 +632,7 @@ an admitted loose document. Synthetic tree group paths are presentation keys,
 never filesystem paths or read authority. A content request resolves through the
 native map to the original descriptor source. Basenames alone are never keys.
 
-The current [display model](../../../BridgeWeb/src/file-viewer/bridge-file-viewer-display-model.ts)
+The current [display model](../../../../BridgeWeb/src/file-viewer/bridge-file-viewer-display-model.ts)
 has one source and path-indexed rows. Extend the native/product/worker/display
 contracts together: a receiver collection identity wraps source-qualified member
 rows; row selection and content requests retain the member identity. Preserve
@@ -793,9 +793,9 @@ Actual displayed document + selection
   → human hands the feedback to the agent
 ```
 
-The current [batch projector](../../../Sources/AgentStudio/Features/Bridge/Models/WorktreeAnnotations/WorktreeAnnotationBatchProjector.swift)
+The current [batch projector](../../../../Sources/AgentStudio/Features/Bridge/Models/WorktreeAnnotations/WorktreeAnnotationBatchProjector.swift)
 builds a session with mandatory repository/worktree IDs; its validator rejects
-empty IDs. The [output coordinator](../../../Sources/AgentStudio/Features/Bridge/Runtime/WorktreeAnnotations/WorktreeAnnotationOutputCoordinatorActor.swift)
+empty IDs. The [output coordinator](../../../../Sources/AgentStudio/Features/Bridge/Runtime/WorktreeAnnotations/WorktreeAnnotationOutputCoordinatorActor.swift)
 also requires worktree labels. Extend these existing owners and the output
 snapshot/Markdown/JSON contracts to the same Git-or-local subject distinction.
 Git feedback preserves its worktree/comparison provenance; local-file feedback
