@@ -247,27 +247,31 @@ struct CIFastLaneWorkflowTests {
         #expect(buildParallelBlock.contains("if: steps.cache-zmx.outputs.cache-hit != 'true'"))
     }
 
-    @Test("benchmark workflow uses the canonical CI Swift build directory")
+    @Test("benchmark workflow restores the canonical CI Swift seed read-only")
     func benchmarkWorkflowUsesCanonicalCISwiftBuildDirectory() throws {
         let benchmarkWorkflow = try String(
             contentsOfFile: ".github/workflows/benchmarks.yml",
             encoding: .utf8
         )
         let benchmarksJob = try workflowJob(named: "benchmarks", in: benchmarkWorkflow)
-        let cacheStep = try workflowStep(
-            named: "Cache Swift benchmark build",
-            in: benchmarksJob
-        )
+        let prefixStep = try workflowStep(named: "Compute Swift cache compatibility prefix", in: benchmarksJob)
+        let restoreStep = try workflowStep(named: "Restore Swift build seed", in: benchmarksJob)
+        let verifyStep = try workflowStep(named: "Verify and restamp PR Swift seed", in: benchmarksJob)
 
         #expect(benchmarksJob.contains("SWIFT_BUILD_DIR: .build-ci"))
-        #expect(cacheStep.contains("path: .build-ci"))
         #expect(
-            cacheStep.contains(
-                "key: benchmark-swift-build-ci-${{ runner.os }}-${{ hashFiles('Package.swift', 'Package.resolved') }}"
+            benchmarksJob.contains(
+                "SWIFT_BUILD_STATS_DIR: ${{ github.workspace }}/tmp/plan-workflows/ci-runs/compiler-stats"
             )
         )
-        #expect(cacheStep.contains("restore-keys: |\n            benchmark-swift-build-ci-${{ runner.os }}-"))
-        #expect(!cacheStep.contains("swift-benchmark-"))
+        #expect(prefixStep.contains("scripts/ci-swift-build-inputs.sh fingerprint"))
+        #expect(restoreStep.contains("uses: actions/cache/restore@v4"))
+        #expect(restoreStep.contains("path: .build-ci"))
+        #expect(restoreStep.contains("steps.swift-cache-prefix.outputs.prefix"))
+        #expect(verifyStep.contains("scripts/ci-swift-build-inputs.sh verify"))
+        #expect(verifyStep.contains("scripts/ci-swift-build-inputs.sh restamp"))
+        #expect(!benchmarksJob.contains("benchmark-swift-build-ci-"))
+        #expect(!benchmarksJob.contains("actions/cache/save"))
         #expect(!benchmarksJob.contains(".build-benchmark"))
         // The responsiveness journey lives in this post-merge lane and nowhere in
         // the pull-request workflow.
