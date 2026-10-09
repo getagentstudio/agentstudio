@@ -6,7 +6,7 @@ import Testing
 @testable import AgentStudioTestSupport
 
 @MainActor
-@Suite("PaneTabViewController global shortcut routing")
+@Suite("PaneTabViewController global shortcut routing", .serialized)
 struct PaneTabViewControllerGlobalShortcutRoutingTests {
     @Test("filterSidebar is only handled when the repos sidebar owns focus")
     func filterSidebarRequiresFocusedReposSidebar() {

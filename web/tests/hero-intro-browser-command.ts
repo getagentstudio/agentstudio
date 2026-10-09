@@ -939,19 +939,22 @@ export const verifyHeroIntroSecondResize = defineBrowserCommand(
   },
 );
 
-export interface HeroRefreshObservation {
+export interface HeroReloadObservation {
   readonly reloadState: string | null;
   readonly reloadScrollY: number;
+}
+export interface HeroScrollAndWheelObservation {
   readonly programmaticScrollState: string | null;
   readonly wheelState: string | null;
+}
+export interface HeroHashLinkObservation {
   readonly hashState: string | null;
   readonly hashCreatedTimeline: boolean;
 }
 
-export const verifyHeroIntroRefresh = defineBrowserCommand(
-  async ({ context }, pageUrl: string): Promise<HeroRefreshObservation> => {
+export const observeHeroReload = defineBrowserCommand(
+  async ({ context }, pageUrl: string): Promise<HeroReloadObservation> => {
     const applicationPage = await context.newPage();
-    const hashPage = await context.newPage();
     try {
       await applicationPage.addInitScript(() => {
         Object.defineProperty(document, "hidden", { configurable: true, get: () => false });
@@ -969,6 +972,29 @@ export const verifyHeroIntroRefresh = defineBrowserCommand(
         .locator("[data-hero-intro-root]")
         .getAttribute("data-hero-intro-state");
       const reloadScrollY = await applicationPage.evaluate(() => window.scrollY);
+
+      return { reloadState, reloadScrollY };
+    } finally {
+      await applicationPage.close();
+    }
+  },
+);
+
+export const observeHeroScrollAndWheel = defineBrowserCommand(
+  async ({ context }, pageUrl: string): Promise<HeroScrollAndWheelObservation> => {
+    const applicationPage = await context.newPage();
+    try {
+      await applicationPage.addInitScript(() => {
+        Object.defineProperty(document, "hidden", { configurable: true, get: () => false });
+        document.addEventListener("hero-intro-playback-ready", (event) => {
+          if (event instanceof CustomEvent) {
+            (event.detail as { pause(): void }).pause();
+          }
+        });
+      });
+
+      await applicationPage.goto(pageUrl, { waitUntil: "domcontentloaded" });
+      await applicationPage.waitForSelector('[data-hero-intro-state="playing"]');
       await applicationPage.evaluate(() => window.scrollTo(0, 100));
       const programmaticScrollState = await applicationPage
         .locator("[data-hero-intro-root]")
@@ -978,6 +1004,17 @@ export const verifyHeroIntroRefresh = defineBrowserCommand(
         .locator("[data-hero-intro-root]")
         .getAttribute("data-hero-intro-state");
 
+      return { programmaticScrollState, wheelState };
+    } finally {
+      await applicationPage.close();
+    }
+  },
+);
+
+export const observeHeroHashLink = defineBrowserCommand(
+  async ({ context }, pageUrl: string): Promise<HeroHashLinkObservation> => {
+    const hashPage = await context.newPage();
+    try {
       const hashUrl = new URL(pageUrl);
       hashUrl.hash = "many-agents";
       await hashPage.goto(hashUrl.href, { waitUntil: "domcontentloaded" });
@@ -986,16 +1023,10 @@ export const verifyHeroIntroRefresh = defineBrowserCommand(
       const hashCreatedTimeline = await hashRoot.evaluate((root) =>
         root.hasAttribute("data-hero-intro-timeline-created"),
       );
-      return {
-        reloadState,
-        reloadScrollY,
-        programmaticScrollState,
-        wheelState,
-        hashState,
-        hashCreatedTimeline,
-      };
+
+      return { hashState, hashCreatedTimeline };
     } finally {
-      await Promise.all([applicationPage.close(), hashPage.close()]);
+      await hashPage.close();
     }
   },
 );

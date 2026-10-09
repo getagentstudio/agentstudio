@@ -25,7 +25,7 @@ private final class PaneScrollActionPerformer: TerminalSurfaceActionPerforming {
     }
 }
 
-@Suite("TerminalPaneMountView search responders")
+@Suite("TerminalPaneMountView search responders", .serialized)
 @MainActor
 struct TerminalPaneMountViewSearchTests {
     @Test("starting search focuses the search field")

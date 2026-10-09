@@ -50,7 +50,7 @@ struct SwiftLaneReapingTests {
                 + "chmod +x '\(workDirectory)/bin/ps' '\(workDirectory)/bin/pgrep'; "
                 + "mkfifo '\(childReleasePath)'; "
                 + "PATH='\(workDirectory)/bin':\"$PATH\"; export PATH; "
-                + "LOG_PREFIX=lane; TIMEOUT_SECONDS=2; BUILD_PATH=.build-agent-1; "
+                + "LOG_PREFIX=lane; TIMEOUT_SECONDS=2; BUILD_PATH='\(workDirectory)/build'; "
                 + "LANE_WATCHDOG_ARM_PATH='\(watchdogArmPath)'; export LANE_WATCHDOG_ARM_PATH; "
                 + "export LANE_EVENT_STREAM_DIR='\(workDirectory)/ci-runs'; "
                 + "source scripts/swift-test-helpers.sh; set +e; "
@@ -66,7 +66,8 @@ struct SwiftLaneReapingTests {
                 + #"'open(my $lock, ">>", shift) or die $!; flock($lock, LOCK_EX|LOCK_NB) or exit 7; print "LOCK_ACQUIRED\n";' "#
                 + "'\(childLockPath)'; then echo LOCK_AVAILABLE=yes; "
                 + "else echo LOCK_AVAILABLE=no; fi; "
-                + "if [ \"$child_alive\" = yes ]; then kill -9 \"$child_pid\" 2>/dev/null || true; fi"
+                + "if [ \"$child_alive\" = yes ]; then kill -9 \"$child_pid\" 2>/dev/null || true; fi",
+            innerWatchdog: .armed
         )
 
         #expect(!laneOutput.contains("CHILD_PID=0"))
@@ -88,7 +89,7 @@ struct SwiftLaneReapingTests {
         defer { try? FileManager.default.removeItem(atPath: workDirectory) }
         let laneOutput = try await runBashAllowingFailure(
             "mkdir -p '\(workDirectory)'; mkfifo '\(workDirectory)/orphan.release'; "
-                + "LOG_PREFIX=lane; TIMEOUT_SECONDS=2; BUILD_PATH=.build-agent-1; "
+                + "LOG_PREFIX=lane; TIMEOUT_SECONDS=2; BUILD_PATH='\(workDirectory)/build'; "
                 + "export LANE_EVENT_STREAM_DIR='\(workDirectory)/ci-runs'; "
                 + "source scripts/swift-test-helpers.sh; set +e; "
                 + "run_swift_with_timeout 'orphan probe' 2 /bin/bash -c "
@@ -99,7 +100,8 @@ struct SwiftLaneReapingTests {
                 + "echo \"ORPHAN_PID=${orphan_pid:-0}\"; "
                 + "if [ \"${orphan_pid:-0}\" -gt 0 ] && kill -0 \"$orphan_pid\" 2>/dev/null; then "
                 + "echo ORPHAN_ALIVE=yes; kill -9 \"$orphan_pid\" 2>/dev/null; "
-                + "else echo ORPHAN_ALIVE=no; fi"
+                + "else echo ORPHAN_ALIVE=no; fi",
+            innerWatchdog: .armed
         )
 
         #expect(!laneOutput.contains("ORPHAN_PID=0"))
@@ -116,7 +118,7 @@ struct SwiftLaneReapingTests {
         let ledgerWorkerPIDFile = workDirectory + "/ledger-worker.pid"
         let wedgedOutput = try await runBashAllowingFailure(
             "mkdir -p '\(workDirectory)'; mkfifo '\(ledgerWorkerPIDFile).release'; "
-                + "LOG_PREFIX=lane; TIMEOUT_SECONDS=2; BUILD_PATH=.build-agent-1; "
+                + "LOG_PREFIX=lane; TIMEOUT_SECONDS=2; BUILD_PATH='\(workDirectory)/build'; "
                 + "export LANE_EVENT_STREAM_DIR='\(ledgerDirectory)'; "
                 + "source scripts/swift-test-helpers.sh; set +e; "
                 + "run_swift_with_timeout 'ledger probe' 2 /bin/bash -c "
@@ -132,7 +134,8 @@ struct SwiftLaneReapingTests {
                 + "echo \"LEDGER_WORKER_PID=${ledger_worker_pid:-0}\"; "
                 + "if [ \"${ledger_worker_pid:-0}\" -gt 0 ] && kill -0 \"$ledger_worker_pid\" 2>/dev/null; then "
                 + "echo LEDGER_WORKER_ALIVE=yes; kill -KILL \"$ledger_worker_pid\" 2>/dev/null; "
-                + "else echo LEDGER_WORKER_ALIVE=no; fi"
+                + "else echo LEDGER_WORKER_ALIVE=no; fi",
+            innerWatchdog: .armed
         )
 
         #expect(!wedgedOutput.contains("LEDGER_WORKER_PID=0"))
@@ -147,7 +150,7 @@ struct SwiftLaneReapingTests {
         try writeCapturedInvocation(passingEvents, selecting: "recordsPass()")
         let cleanDirectory = workDirectory + "/clean-runs"
         let cleanOutput = try await runBash(
-            "LOG_PREFIX=lane; TIMEOUT_SECONDS=60; BUILD_PATH=.build-agent-1; "
+            "LOG_PREFIX=lane; TIMEOUT_SECONDS=60; BUILD_PATH='\(workDirectory)/clean-build'; "
                 + "export LANE_EVENT_STREAM_DIR='\(cleanDirectory)' LANE_EVENT_STREAM_RETAIN_ALWAYS=0; "
                 + "source scripts/swift-test-helpers.sh; "
                 + "run_swift_with_timeout 'clean probe' 60 /bin/bash -c "
@@ -252,7 +255,7 @@ struct SwiftLaneReapingTests {
             swift_test_begin_active_command_groups
             LOG_PREFIX=signal-group-boundary
             TIMEOUT_SECONDS=60
-            BUILD_PATH=.build-agent-1
+            BUILD_PATH="$fixture_dir/build"
             export LANE_EVENT_STREAM_DIR="$fixture_dir/events"
             probe_survivor_lock() {
               /usr/bin/perl -MFcntl=:flock -e 'open(my $lock, ">>", shift) or die $!; flock($lock, LOCK_EX|LOCK_NB) or exit 7' "$survivor_lock"
@@ -330,8 +333,10 @@ private func runBash(_ command: String) async throws -> String {
     return result.output
 }
 
-private func runBashAllowingFailure(_ command: String) async throws -> String {
-    (try await runLaneScriptBash(command)).output
+private func runBashAllowingFailure(
+    _ command: String, innerWatchdog: LaneFixtureInnerWatchdog = .unarmed
+) async throws -> String {
+    (try await runLaneScriptBash(command, innerWatchdog: innerWatchdog)).output
 }
 
 private enum SwiftLaneReapingTestError: Error {
