@@ -1,4 +1,5 @@
 import AgentStudioAppIPC
+import AgentStudioDeadlineTestSupport
 import AgentStudioIPCClientCore
 import AgentStudioIPCTransport
 import AgentStudioInfrastructure
@@ -127,8 +128,20 @@ private func makeRecordingCLICommandPort(_ request: RecordingCLIInvocationReques
 /// Swift Testing assertions belong to the original test task.
 func runClientCommandLineOffCooperativePool(
     arguments: [String], environment: [String: String],
-    standardInput: Data = Data(), correlationId: UUID = UUIDv7.generate()
+    standardInput: Data = Data(), correlationId: UUID = UUIDv7.generate(),
+    deadlineTiming: (any CallDeadlineTiming)? = nil
 ) async -> ClientCommandLineOutcome {
+    let ownedDriver: ControlledDeadlineDriver?
+    let effectiveTiming: any CallDeadlineTiming
+    if let deadlineTiming {
+        ownedDriver = nil
+        effectiveTiming = deadlineTiming
+    } else {
+        let driver = ControlledDeadlineDriver()
+        ownedDriver = driver
+        effectiveTiming = driver.timing
+    }
+    defer { ownedDriver?.close() }
     await valueFromDedicatedThread {
         let standardOutput = CommandLineOutputCollector()
         let standardError = CommandLineOutputCollector()
@@ -139,7 +152,7 @@ func runClientCommandLineOffCooperativePool(
                 bundleExecutableURL: Bundle.main.executableURL,
                 standardInput: { standardInput }, identifierGenerator: { correlationId },
                 standardOutputSink: { standardOutput.append($0) },
-                standardErrorSink: { standardError.append($0) }))
+                standardErrorSink: { standardError.append($0) }, deadlineTiming: effectiveTiming))
         return ClientCommandLineOutcome(
             exitCode: exitCode, standardOutput: standardOutput.joined(), standardError: standardError.joined())
     }

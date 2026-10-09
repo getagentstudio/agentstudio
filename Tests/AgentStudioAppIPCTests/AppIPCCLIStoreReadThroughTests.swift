@@ -1,4 +1,5 @@
 import AgentStudioAppIPC
+import AgentStudioDeadlineTestSupport
 import AgentStudioIPCClientCore
 import AgentStudioIPCTransport
 import AgentStudioInfrastructure
@@ -278,12 +279,15 @@ struct AppIPCCLIStoreReadThroughTests {
             "AGENTSTUDIO_IPC_SOCKET": fixture.paths.socketURL.path, "AGENTSTUDIO_PANE_TOKEN": token.rawValue,
             "AGENTSTUDIO_CLI_STORE": storeURL.path, "AGENTSTUDIO_CLI_STORE_CHANNEL": "debug",
         ]
+        let driver = ControlledDeadlineDriver()
+        defer { driver.close() }
         return await valueFromDedicatedThread {
             AgentStudioIPCClientCommandLineRunner.run(
                 props: .init(
                     arguments: ["system.ping"], environment: environment, executablePath: "/fixture/agentstudio",
                     bundleExecutableURL: nil, standardInput: { Data() }, identifierGenerator: { UUIDv7.generate() },
-                    standardOutputSink: { _ in }, standardErrorSink: { _ in }, now: { storage.now }))
+                    standardOutputSink: { _ in }, standardErrorSink: { _ in }, now: { storage.now },
+                    deadlineTiming: driver.timing))
         }
     }
 }
