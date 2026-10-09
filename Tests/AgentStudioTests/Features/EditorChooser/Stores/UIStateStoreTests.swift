@@ -101,6 +101,8 @@ struct UIStateStoreTests {
 
     @Test
     func observedSidebarMutationAutosavesSQLite() async throws {
+        let factSource = UIStateStoreFactSource()
+        let facts = try factSource.attach()
         let workspaceId = UUID()
         let fixture = try makeEditorChooserWorkspaceLocalSQLiteStoreFixture(workspaceId: workspaceId)
         let atom = WorkspaceSidebarState()
@@ -109,7 +111,8 @@ struct UIStateStoreTests {
             atom: atom,
             sqliteDatastore: try await editorChooserWorkspaceSQLiteDatastore(from: fixture.sqliteBackend),
             persistDebounceDuration: .milliseconds(10),
-            clock: clock
+            clock: clock,
+            factSink: factSource.sink
         )
         await store.restoreAsync(for: workspaceId)
         store.startObserving()
@@ -120,11 +123,12 @@ struct UIStateStoreTests {
         await clock.waitForPendingSleepCount()
         clock.advance(by: .milliseconds(10))
 
-        await assertEventuallyMain("sidebar state should autosave") {
-            guard let state = try? fixture.repository.fetchSidebarState() else { return false }
-            return state.filterText == "terminal" && state.sidebarSurface == .panes
-                && state.repoGroupingMode == .tab
-        }
+        _ = try await facts.expectNextSaveCompleted(workspaceId: workspaceId)
+        let persistedState = try fixture.repository.fetchSidebarState()
+        #expect(persistedState.filterText == "terminal")
+        #expect(persistedState.sidebarSurface == .panes)
+        #expect(persistedState.repoGroupingMode == .tab)
+        try await facts.finish()
     }
 
     @Test
