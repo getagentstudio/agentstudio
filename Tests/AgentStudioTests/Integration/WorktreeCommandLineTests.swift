@@ -270,8 +270,9 @@ struct WorktreeCommandLineTests {
 
     @Test("malformed arguments write one usage line to stderr and return 64")
     func reportsMalformedArgumentsAsUsageErrors() async {
+        // A bare `worktree` prints help (LR32); an option with no command is still a usage error.
         let malformedForms: [[String]] = [
-            [],
+            ["--json"],
             ["unknown"],
             ["list", "--unknown"],
             ["list", "--no-fetch", "--no-fetch"],
