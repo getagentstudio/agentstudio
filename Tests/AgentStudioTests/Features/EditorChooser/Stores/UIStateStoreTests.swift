@@ -124,7 +124,7 @@ struct UIStateStoreTests {
         clock.advance(by: .milliseconds(10))
 
         _ = try await facts.expectNextSaveCompleted(workspaceId: workspaceId)
-        let persistedState = try fixture.repository.fetchSidebarState()
+        let persistedState = try #require(try fixture.repository.fetchSidebarState())
         #expect(persistedState.filterText == "terminal")
         #expect(persistedState.sidebarSurface == .panes)
         #expect(persistedState.repoGroupingMode == .tab)
