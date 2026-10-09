@@ -1,5 +1,6 @@
 import type { CodeView, CodeViewLineSelection } from '@pierre/diffs';
-import { afterEach, beforeEach, describe, expect, onTestFailed, test, vi } from 'vitest';
+import { afterEach, describe, expect, onTestFailed, test, vi, type MockInstance } from 'vitest';
+import { cleanup } from 'vitest-browser-react';
 
 import {
 	createClickAdmissionReviewHarness,
@@ -13,7 +14,6 @@ import {
 
 // oxlint-disable-next-line import/no-unassigned-import -- Browser Mode must load production app CSS.
 import '../app/bridge-app.css';
-import { proveEscapeFrameIndependence } from './worktree-annotation-click-admission-frame-proof.browser.test-support.js';
 import {
 	dispatchPointer,
 	requirePierreElement,
@@ -25,10 +25,9 @@ import {
 import { proveDisposedInitialReadiness } from './worktree-annotation-click-admission-readiness.browser.test-support.js';
 import {
 	actEvent,
+	observeTestFrameWait,
 	proveHeldProductFrameIsolation,
 } from './worktree-annotation-click-admission-render.browser.test-support.js';
-import { ClickAdmissionResourceOwner } from './worktree-annotation-click-admission-resource-owner.browser.test-support.js';
-import { registerResourceWitnessCases } from './worktree-annotation-click-admission-resource-witness-cases.browser.test-support.js';
 
 const metadataPublicationOwner = vi.hoisted(() => ({
 	publish: undefined as ((callback: () => void) => void) | undefined,
@@ -62,9 +61,13 @@ vi.mock(
 	},
 );
 
-let testResources: ClickAdmissionResourceOwner;
-async function disposeTestResources(): Promise<void> {
-	await testResources.dispose();
+const ownedHarnessDisposers = new Set<() => Promise<void>>();
+
+function registerHarnessCleanup(dispose: () => Promise<void>): () => void {
+	ownedHarnessDisposers.add(dispose);
+	return (): void => {
+		ownedHarnessDisposers.delete(dispose);
+	};
 }
 
 async function renderReviewHarness(
@@ -82,61 +85,15 @@ async function renderReviewHarness(
 				console.info(`GO17 pending-owner snapshot: ${context.task.name}`, readSnapshot());
 			});
 		},
-		resources: testResources,
+		registerCleanup: registerHarnessCleanup,
 	});
 }
 
 const composerSelector = '[aria-label="Write an annotation in Markdown"]';
 
 describe('worktree annotation click admission through Pierre pointers', () => {
-	beforeEach((): void => {
-		testResources = new ClickAdmissionResourceOwner();
-	});
-	afterEach(disposeTestResources);
-	registerResourceWitnessCases({
-		resources: (): ClickAdmissionResourceOwner => testResources,
-		admitLater: proveLaterHarnessAdmission,
-		disposeOwner: disposeTestResources,
-	});
-
-	test('afterEach owns frame spies when a completed click requests no product frame', async () => {
-		const requestFrame = globalThis.requestAnimationFrame;
-		const cancelFrame = globalThis.cancelAnimationFrame;
-		const witnessGroup = testResources.createGroup('missing-frame witness');
-		const frameWaitEntered = testResources.wait<void>({
-			group: witnessGroup,
-			label: 'missing-frame wait entered',
-		});
-		let oldCallbackWoke = false;
-		const helper = proveHeldProductFrameIsolation({
-			resources: testResources,
-			prepareUtility: async (): Promise<void> => {},
-			clickUtility: async (): Promise<void> => {},
-			recordFrameWait: (): void => frameWaitEntered.resolve(undefined),
-			waitForComposer: (): Promise<void> => {
-				oldCallbackWoke = true;
-				return Promise.reject(new Error('Click-admission outcome wait disposed.'));
-			},
-			dispose: async (): Promise<void> => {},
-		});
-		const settlement = helper.then(
-			(): { readonly kind: 'ready' } => ({ kind: 'ready' }),
-			(error: unknown): { readonly kind: 'rejected'; readonly error: unknown } => ({
-				kind: 'rejected',
-				error,
-			}),
-		);
-		await frameWaitEntered.promise;
-		// Exercise the current afterEach path, not the blocked helper's finally.
-		await testResources.dispose();
-		expect.soft(globalThis.requestAnimationFrame).toBe(requestFrame);
-		expect.soft(globalThis.cancelAnimationFrame).toBe(cancelFrame);
-
-		const result = await settlement;
-		expect.soft(result.kind).toBe('rejected');
-		if (result.kind === 'rejected')
-			expect(result.error).toEqual(new Error('Click-admission outcome wait disposed.'));
-		expect.soft(oldCallbackWoke).toBe(false);
+	afterEach(async (): Promise<void> => {
+		await completeCleanup([...ownedHarnessDisposers, cleanup]);
 	});
 
 	test('disposes held initial readiness before later rows can resume its setup', async () => {
@@ -144,13 +101,12 @@ describe('worktree annotation click admission through Pierre pointers', () => {
 			createHeld: (controls): Promise<ClickAdmissionReviewHarness> =>
 				createClickAdmissionReviewHarness({
 					metadataPublicationOwner,
-					resources: testResources,
-					recordDisposer: controls.recordDisposer,
+					registerCleanup: controls.registerCleanup,
 					registerFailureDiagnostic: (): void => {},
 					isInitialReadinessReleased: controls.isReleased,
 					recordInitialReadinessObserver: controls.recordObserver,
 				}),
-			resources: testResources,
+			registerCleanup: registerHarnessCleanup,
 			admitLater: proveLaterHarnessAdmission,
 		});
 	});
@@ -213,7 +169,11 @@ describe('worktree annotation click admission through Pierre pointers', () => {
 			},
 			async (): Promise<void> => {
 				// Contain the pre-fix red; the assertions above still require owner restoration.
-				// The unconditional afterEach registry also covers an assertion failure here.
+				try {
+					await cleanup();
+				} finally {
+					originals.restore();
+				}
 			},
 		);
 		await proveLaterHarnessAdmission();
@@ -229,7 +189,6 @@ describe('worktree annotation click admission through Pierre pointers', () => {
 				let caughtFailure: unknown;
 				try {
 					await proveHeldProductFrameIsolation({
-						resources: testResources,
 						prepareUtility: async (): Promise<void> => {},
 						clickUtility: async (): Promise<void> => {
 							throw bodyFailure;
@@ -248,13 +207,16 @@ describe('worktree annotation click admission through Pierre pointers', () => {
 				expect.soft(caughtFailure).toBeInstanceOf(AggregateError);
 				if (caughtFailure instanceof AggregateError) {
 					expect.soft(caughtFailure.errors).toContain(bodyFailure);
-
 					expect.soft(caughtFailure.errors).toContain(publicationFailure);
 				}
 				originals.assertRestored();
 			},
 			async (): Promise<void> => {
-				// The unconditional afterEach registry also covers an assertion failure here.
+				try {
+					await cleanup();
+				} finally {
+					originals.restore();
+				}
 			},
 		);
 		await proveLaterHarnessAdmission();
@@ -268,7 +230,6 @@ describe('worktree annotation click admission through Pierre pointers', () => {
 			async (): Promise<void> => {
 				await expect(
 					proveHeldProductFrameIsolation({
-						resources: testResources,
 						prepareUtility: async (): Promise<void> => {
 							throw preparationFailure;
 						},
@@ -280,7 +241,11 @@ describe('worktree annotation click admission through Pierre pointers', () => {
 				originals.assertRestored();
 			},
 			async (): Promise<void> => {
-				// The unconditional afterEach registry also covers an assertion failure here.
+				try {
+					await cleanup();
+				} finally {
+					originals.restore();
+				}
 			},
 		);
 		await proveLaterHarnessAdmission();
@@ -290,7 +255,7 @@ describe('worktree annotation click admission through Pierre pointers', () => {
 		const harness = await renderReviewHarness();
 		await runWithOwnedCleanup(async (): Promise<void> => {
 			// Selection reveal/programmatic scroll must not black out the next pointer gesture.
-			await actEvent(testResources, testResources.createGroup('event helper'), (): void => {
+			await actEvent((): void => {
 				harness.codeView.scrollTo({ type: 'position', position: 0, behavior: 'instant' });
 			});
 			const gesture = await dragRangeAndClickFirstUtility(
@@ -372,7 +337,7 @@ describe('worktree annotation click admission through Pierre pointers', () => {
 			await harness.waitForComposer(true);
 			expect(document.querySelector(composerSelector)).not.toBeNull();
 
-			await clickCurrentUtility(testResources, 402, harness.recordPendingWait);
+			await clickCurrentUtility(402, harness.recordPendingWait);
 			await harness.waitForComposer(true);
 			expect(document.querySelectorAll(composerSelector)).toHaveLength(1);
 
@@ -399,30 +364,85 @@ describe('worktree annotation click admission through Pierre pointers', () => {
 
 	test('joins Escape dismissal without waiting for frame delivery', async () => {
 		const harness = await renderReviewHarness();
-		await proveEscapeFrameIndependence({
-			resources: testResources,
-			harness,
-			dismiss: dismissComposer,
+		const heldFrames: FrameRequestCallback[] = [];
+		let announceFrame: (() => void) | undefined;
+		const frameRequested = new Promise<'frameRequested'>((resolve): void => {
+			announceFrame = (): void => resolve('frameRequested');
 		});
+		let holdingTestFrame = false;
+		const requestFrame = globalThis.requestAnimationFrame.bind(globalThis);
+		let dismissal: Promise<void> | undefined;
+		let frameSpy: MockInstance<typeof requestAnimationFrame> | undefined;
+		await runWithOwnedCleanup(
+			async (): Promise<void> => {
+				const row = requirePierreElement(
+					'[data-additions] [data-column-number="2"][data-line-type="change-addition"]',
+					'Expected an addition row before testing dismissal.',
+				);
+				await harness.hoverAndClickUtility(row, 601);
+				await harness.waitForComposer(true);
+				expect(document.querySelector(composerSelector)).not.toBeNull();
+				frameSpy = vi
+					.spyOn(globalThis, 'requestAnimationFrame')
+					.mockImplementation((callback: FrameRequestCallback): number => {
+						if (!holdingTestFrame) return requestFrame(callback);
+						holdingTestFrame = false;
+						heldFrames.push(callback);
+						return heldFrames.length;
+					});
+				observeTestFrameWait((): void => {
+					holdingTestFrame = true;
+					announceFrame?.();
+				});
+				dismissal = dismissComposer();
+				const outcome = await Promise.race([
+					dismissal.then((): 'dismissed' => 'dismissed'),
+					frameRequested,
+				]);
+				expect(outcome, 'Escape publication must complete without an unrelated frame.').toBe(
+					'dismissed',
+				);
+				await harness.waitForComposer(false);
+				expect(document.querySelector(composerSelector)).toBeNull();
+			},
+			async (): Promise<void> => {
+				await completeCleanup([
+					(): void => {
+						frameSpy?.mockRestore();
+					},
+					(): void => observeTestFrameWait(undefined),
+					(): void => {
+						for (const callback of heldFrames.splice(0)) callback(0);
+					},
+					async (): Promise<void> => {
+						await dismissal;
+					},
+					(): Promise<void> =>
+						actEvent((): void => {
+							for (const callback of heldFrames.splice(0)) callback(0);
+						}),
+					harness.dispose,
+				]);
+			},
+		);
 	});
 
 	test('disposes its outcome wait with product frames held and leaves later acts admissible', async () => {
 		const harness = await renderReviewHarness();
 		await proveHeldProductFrameIsolation({
-			resources: testResources,
 			prepareUtility: async (): Promise<void> => {
 				const row = requirePierreElement(
 					'[data-additions] [data-column-number="2"][data-line-type="change-addition"]',
 					'Expected an addition row for the held product frame proof.',
 				);
 				await harness.waitForInteractionSetup(row);
-				await harness.runEvent((): void =>
+				await actEvent((): void =>
 					dispatchPointer(row, 'pointermove', pointerAt(row.getBoundingClientRect(), 701)),
 				);
 				await harness.waitForUtility();
 			},
 			clickUtility: async (): Promise<void> => {
-				await clickCurrentUtility(testResources, 702);
+				await clickCurrentUtility(702);
 			},
 			waitForComposer: (): Promise<void> => harness.waitForComposer(true),
 			dispose: (): Promise<void> => harness.dispose(),
@@ -456,7 +476,7 @@ describe('worktree annotation click admission through Pierre pointers', () => {
 					(): void => harness.interactionSetup.releaseSetup(),
 					async (): Promise<void> => {
 						if (firstAction === 'pointerMoveBeforeSetup') {
-							await harness.runEvent((): void =>
+							await actEvent((): void =>
 								dispatchPointer(row, 'pointermove', pointerAt(row.getBoundingClientRect(), 501)),
 							);
 						}
@@ -502,7 +522,7 @@ async function dragRangeAndClickFirstUtility(
 	const startRow = requirePierreElement(startSelector, 'Expected the drag anchor gutter row.');
 	const startBounds = startRow.getBoundingClientRect();
 	const lifecycleCountBeforeAnchor = interactionLifecycle.length;
-	await actEvent(testResources, testResources.createGroup('event helper'), (): void => {
+	await actEvent((): void => {
 		dispatchPointer(startRow, 'pointerdown', pointerAt(startBounds, pointerId));
 	});
 	const afterAnchorPublication = interactionLifecycle.slice(lifecycleCountBeforeAnchor);
@@ -512,7 +532,7 @@ async function dragRangeAndClickFirstUtility(
 	);
 	const endBounds = endRowAfterAnchorPublication.getBoundingClientRect();
 	const movePointerHit = pointerHitProbe(endRowAfterAnchorPublication, endBounds);
-	await actEvent(testResources, testResources.createGroup('event helper'), (): void => {
+	await actEvent((): void => {
 		dispatchPointer(endRowAfterAnchorPublication, 'pointermove', pointerAt(endBounds, pointerId));
 	});
 	const selectionAfterMove = getSelectedLines();
@@ -521,11 +541,11 @@ async function dragRangeAndClickFirstUtility(
 		'Expected the drag endpoint after range publication.',
 	);
 	const finalEndBounds = endRowAfterRangePublication.getBoundingClientRect();
-	await actEvent(testResources, testResources.createGroup('event helper'), (): void => {
+	await actEvent((): void => {
 		dispatchPointer(endRowAfterRangePublication, 'pointerup', pointerAt(finalEndBounds, pointerId));
 	});
 	const selectionAfterPointerUp = getSelectedLines();
-	const utilityGesture = await clickCurrentUtility(testResources, pointerId + 1);
+	const utilityGesture = await clickCurrentUtility(pointerId + 1);
 	return {
 		afterAnchorPublication,
 		movePointerHit,
@@ -536,7 +556,7 @@ async function dragRangeAndClickFirstUtility(
 }
 
 async function dismissComposer(): Promise<void> {
-	await actEvent(testResources, testResources.createGroup('event helper'), (): void => {
+	await actEvent((): void => {
 		document.dispatchEvent(new KeyboardEvent('keydown', { bubbles: true, key: 'Escape' }));
 	});
 }

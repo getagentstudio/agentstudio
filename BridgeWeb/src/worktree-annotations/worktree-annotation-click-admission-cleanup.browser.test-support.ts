@@ -4,7 +4,6 @@ export async function completeCleanup(actions: readonly CleanupAction[]): Promis
 	const failures: unknown[] = [];
 	for (const action of actions) {
 		try {
-			// oxlint-disable-next-line no-await-in-loop -- Cleanup actions have ordering dependencies and all must be attempted.
 			await action();
 		} catch (error) {
 			failures.push(error);

@@ -1,46 +1,43 @@
 import { expect, vi } from 'vitest';
 
 import type { ClickAdmissionReviewHarness } from '../review-viewer/code-view/worktree-annotation-click-admission.browser.test-support.js';
-import { runWithOwnedCleanup } from './worktree-annotation-click-admission-cleanup.browser.test-support.js';
-import { ClickAdmissionResourceOwner } from './worktree-annotation-click-admission-resource-owner.browser.test-support.js';
+import {
+	completeCleanup,
+	runWithOwnedCleanup,
+} from './worktree-annotation-click-admission-cleanup.browser.test-support.js';
 
 export interface HeldInitialReadinessControls {
 	readonly isReleased: () => boolean;
 	readonly recordObserver: (observer: MutationObserver) => void;
-	readonly recordDisposer: (dispose: () => Promise<void>) => void;
+	readonly registerCleanup: (dispose: () => Promise<void>) => () => void;
 }
 
 export async function proveDisposedInitialReadiness(props: {
 	readonly createHeld: (
 		controls: HeldInitialReadinessControls,
 	) => Promise<ClickAdmissionReviewHarness>;
-	readonly resources: ClickAdmissionResourceOwner;
+	readonly registerCleanup: (dispose: () => Promise<void>) => () => void;
 	readonly admitLater: () => Promise<void>;
 }): Promise<void> {
-	const group = props.resources.createGroup('held readiness proof');
 	let released = false;
 	let oldCallbackResumed = false;
 	let ownerDispose: (() => Promise<void>) | undefined;
 	let readinessObserver: MutationObserver | undefined;
-	const readinessHeld = props.resources.wait<void>({ group, label: 'readiness held fact' });
-	props.resources.register({
-		group,
-		kind: 'root',
-		label: 'held readiness harness cleanup',
-		restore: async (): Promise<void> => {
-			await ownerDispose?.();
-		},
+	let announceReadinessHeld: (() => void) | undefined;
+	const readinessHeld = new Promise<void>((resolve): void => {
+		announceReadinessHeld = resolve;
 	});
 	const setup = props.createHeld({
 		isReleased: (): boolean => {
-			readinessHeld.resolve(undefined);
+			announceReadinessHeld?.();
 			return released;
 		},
 		recordObserver: (observer): void => {
 			readinessObserver = observer;
 		},
-		recordDisposer: (dispose): void => {
+		registerCleanup: (dispose): (() => void) => {
 			ownerDispose = dispose;
+			return props.registerCleanup(dispose);
 		},
 	});
 	const setupSettlement = setup.then(
@@ -53,15 +50,10 @@ export async function proveDisposedInitialReadiness(props: {
 			error,
 		}),
 	);
-	await readinessHeld.promise;
+	await readinessHeld;
 	if (ownerDispose === undefined || readinessObserver === undefined)
 		throw new Error('Expected registered readiness ownership.');
-	const observedReadiness = readinessObserver;
-	const disconnectSpy = props.resources.spy({
-		group,
-		label: 'readiness disconnect witness',
-		create: () => vi.spyOn(observedReadiness, 'disconnect'),
-	}).spy;
+	const disconnectSpy = vi.spyOn(readinessObserver, 'disconnect');
 	await runWithOwnedCleanup(
 		async (): Promise<void> => {
 			await ownerDispose?.();
@@ -82,6 +74,18 @@ export async function proveDisposedInitialReadiness(props: {
 			}
 			expect.soft(oldCallbackResumed).toBe(false);
 		},
-		(): Promise<void> => props.resources.releaseGroup(group),
+		async (): Promise<void> => {
+			await completeCleanup([
+				async (): Promise<void> => {
+					await ownerDispose?.();
+				},
+				(): void => {
+					readinessObserver?.disconnect();
+				},
+				(): void => {
+					disconnectSpy.mockRestore();
+				},
+			]);
+		},
 	);
 }

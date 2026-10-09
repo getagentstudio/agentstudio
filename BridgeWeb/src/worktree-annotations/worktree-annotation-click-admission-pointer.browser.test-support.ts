@@ -3,10 +3,6 @@ import {
 	queryPierreElements,
 	waitForPierreCondition,
 } from './worktree-annotation-click-admission-render.browser.test-support.js';
-import {
-	ClickAdmissionResourceOwner,
-	type ClickAdmissionResourceGroup,
-} from './worktree-annotation-click-admission-resource-owner.browser.test-support.js';
 
 export function dispatchPointer(
 	target: EventTarget,
@@ -56,15 +52,11 @@ export function requirePierreElement(selector: string, message: string): HTMLEle
 	return element;
 }
 
-export async function waitForSinglePierreUtility(
-	resources: ClickAdmissionResourceOwner,
-	group: ClickAdmissionResourceGroup,
-): Promise<HTMLElement> {
-	await waitForPierreCondition({
-		predicate: (): boolean => queryPierreElements('[data-utility-button]').length === 1,
-		resources,
-		group,
-	});
+export async function waitForSinglePierreUtility(signal: AbortSignal): Promise<HTMLElement> {
+	await waitForPierreCondition(
+		(): boolean => queryPierreElements('[data-utility-button]').length === 1,
+		signal,
+	);
 	return requirePierreElement('[data-utility-button]', 'Expected one Pierre utility.');
 }
 
@@ -81,12 +73,11 @@ export async function hoverAndClickUtility(props: {
 	readonly isRowReady: (row: HTMLElement) => boolean;
 	readonly pointerId: number;
 	readonly onHoverDispatched: (row: HTMLElement) => void;
-	readonly resources: ClickAdmissionResourceOwner;
-	readonly group: ClickAdmissionResourceGroup;
+	readonly signal: AbortSignal;
 	readonly reportWait?: (kind: string) => void;
 }): Promise<void> {
 	props.reportWait?.('hover pointermove act');
-	await actEvent(props.resources, props.group, (): void => {
+	await actEvent((): void => {
 		// Reconciliation may retire the pre across any preceding await. Resolve and
 		// validate the current pointer target without yielding before dispatch.
 		const currentRow = props.resolveRow();
@@ -103,20 +94,18 @@ export async function hoverAndClickUtility(props: {
 		props.onHoverDispatched(currentRow);
 	});
 	props.reportWait?.('gutter utility appearance');
-	await waitForSinglePierreUtility(props.resources, props.group);
-	await clickCurrentUtility(props.resources, props.pointerId + 1, props.reportWait);
+	await waitForSinglePierreUtility(props.signal);
+	await clickCurrentUtility(props.pointerId + 1, props.reportWait);
 	props.reportWait?.('idle');
 }
 
 export async function clickCurrentUtility(
-	resources: ClickAdmissionResourceOwner,
 	pointerId: number,
 	reportWait?: (kind: string) => void,
 ): Promise<{
 	readonly utilityPointerDownHit: PointerHitProbe;
 	readonly utilityPointerUpHit: PointerHitProbe;
 }> {
-	const group = resources.createGroup('utility event acts');
 	const utility = requirePierreElement(
 		'[data-utility-button]',
 		'Expected Pierre to expose one gutter utility.',
@@ -124,7 +113,7 @@ export async function clickCurrentUtility(
 	const bounds = utility.getBoundingClientRect();
 	const utilityPointerDownHit = pointerHitProbe(utility, bounds);
 	reportWait?.('utility pointerdown act');
-	await actEvent(resources, group, (): void => {
+	await actEvent((): void => {
 		dispatchPointer(utility, 'pointerdown', pointerAt(bounds, pointerId));
 	});
 	const utilityAfterPointerDownPublication = requirePierreElement(
@@ -134,7 +123,7 @@ export async function clickCurrentUtility(
 	const finalBounds = utilityAfterPointerDownPublication.getBoundingClientRect();
 	const utilityPointerUpHit = pointerHitProbe(utilityAfterPointerDownPublication, finalBounds);
 	reportWait?.('utility pointerup act');
-	await actEvent(resources, group, (): void => {
+	await actEvent((): void => {
 		dispatchPointer(
 			utilityAfterPointerDownPublication,
 			'pointerup',
