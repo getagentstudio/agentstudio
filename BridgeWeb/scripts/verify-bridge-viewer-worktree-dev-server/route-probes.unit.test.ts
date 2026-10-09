@@ -1,10 +1,19 @@
 import { readFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 
-import { describe, expect, test } from 'vitest';
+import { describe, expect, test, vi } from 'vitest';
 
+import { createBridgeProductDeferred } from '../../src/core/comm-worker/bridge-product-async-queue.js';
+import { worktreeDevServerOrigin } from './config.js';
 import { assertSelectedContentRouteProof } from './content-state.js';
-import { mapBridgeTelemetrySampleToProof } from './route-probes.ts';
+import {
+	installReviewRouteProbe,
+	mapBridgeTelemetrySampleToProof,
+	waitForReviewContentRouteHitAfterIndex,
+	waitForReviewContentRouteHitContaining,
+	waitForReviewContentRouteHitCountAbove,
+	type ReviewRouteProbePage,
+} from './route-probes.ts';
 import type { WorktreeFileContentRouteProbe } from './types.js';
 
 const routeProbesSourcePath = fileURLToPath(new URL('./route-probes.ts', import.meta.url));
@@ -81,3 +90,120 @@ describe('Bridge viewer product File content route probe', () => {
 		expect(proof.numericAttributes['agentstudio.bridge.worker.queue_wait_ms']).toBe(9);
 	});
 });
+
+describe('Review route probe owner completion', () => {
+	test.each(['containing', 'count', 'descriptorDelta'] as const)(
+		'closes a pending %s observation when its probe is disposed',
+		async (waitKind): Promise<void> => {
+			vi.useFakeTimers();
+			const page = recordingReviewProbePage();
+			const probe = await installReviewRouteProbe(page);
+			const operation =
+				waitKind === 'containing'
+					? waitForReviewContentRouteHitContaining({ needle: 'target', routeProbe: probe })
+					: waitKind === 'count'
+						? waitForReviewContentRouteHitCountAbove({ minHitCount: 1, routeProbe: probe })
+						: waitForReviewContentRouteHitAfterIndex({
+								beforeHitCount: 0,
+								expectedItemId: 'target',
+								routeProbe: probe,
+							});
+			const outcome = operation.then(
+				(): string => 'unexpected completion',
+				(error: unknown): string => String(error),
+			);
+			try {
+				await probe.dispose();
+				// Exercise the old poll's complete virtual budget, never real elapsed time.
+				await vi.advanceTimersByTimeAsync(10_000);
+				expect(await outcome).toContain('Review content route probe closed');
+			} finally {
+				vi.useRealTimers();
+			}
+		},
+	);
+
+	test('awaits the exact post-opening descriptor delta before releasing gated content', async (): Promise<void> => {
+		const page = recordingReviewProbePage();
+		const gate = createBridgeProductDeferred<void>();
+		const probe = await installReviewRouteProbe(page, { contentGate: gate });
+		const requestTasks: Promise<void>[] = [];
+		const deliver = (descriptorId: string): Promise<void> => {
+			const request = { url: (): string => contentUrl(descriptorId) };
+			const route = {
+				request: () => request,
+				continue: async (): Promise<void> => {},
+				fulfill: async (): Promise<void> => {},
+			};
+			const callback = page.route.mock.calls.find(([pattern]) =>
+				pattern.includes('/review-content/'),
+			)?.[1];
+			if (typeof callback !== 'function') throw new Error('Missing Review content route owner.');
+			const task = callback(route);
+			requestTasks.push(task);
+			return probe.waitForContentHits((urls): boolean => urls.includes(contentUrl(descriptorId)));
+		};
+		try {
+			await deliver('target-base');
+			const beforeHitCount = probe.contentHitCount();
+			const observedProofs: unknown[] = [];
+			const readiness = waitForReviewContentRouteHitAfterIndex({
+				beforeHitCount,
+				expectedContentDescriptorIds: ['target-base', 'target-head'],
+				expectedItemId: 'target-item',
+				routeProbe: probe,
+			}).then((proof) => {
+				observedProofs.push(proof);
+				return proof;
+			});
+			await deliver('unrelated');
+			expect(observedProofs).toEqual([]);
+			await deliver('target-head');
+			const proof = await readiness;
+			expect(proof.matchingPreClickHitUrls).toEqual([contentUrl('target-base')]);
+			expect(proof.matchingPostClickHitUrls).toEqual([contentUrl('target-head')]);
+			expect(proof.contentRouteSatisfiedBy).toBe('matching-post-click-route');
+			await waitForReviewContentRouteHitContaining({ needle: 'target-head', routeProbe: probe });
+			await waitForReviewContentRouteHitCountAbove({ minHitCount: 3, routeProbe: probe });
+		} finally {
+			gate.resolve();
+			await Promise.all(requestTasks);
+			await probe.dispose();
+		}
+	});
+
+	test('page closure rejects a pending route observation', async (): Promise<void> => {
+		const page = recordingReviewProbePage();
+		const probe = await installReviewRouteProbe(page);
+		const outcome = waitForReviewContentRouteHitCountAbove({
+			minHitCount: 1,
+			routeProbe: probe,
+		}).then(
+			(): string => 'unexpected completion',
+			(error: unknown): string => String(error),
+		);
+		const closeListener = page.on.mock.calls.find(([event]) => event === 'close')?.[1];
+		if (closeListener === undefined) throw new Error('Missing page-close observation.');
+		closeListener();
+		expect(await outcome).toContain('Review content route probe closed');
+		await probe.dispose();
+	});
+});
+
+function recordingReviewProbePage(): {
+	readonly route: ReturnType<typeof vi.fn<ReviewRouteProbePage['route']>>;
+	readonly unroute: ReturnType<typeof vi.fn<ReviewRouteProbePage['unroute']>>;
+	readonly on: ReturnType<typeof vi.fn<ReviewRouteProbePage['on']>>;
+	readonly off: ReturnType<typeof vi.fn<ReviewRouteProbePage['off']>>;
+} {
+	return {
+		route: vi.fn<ReviewRouteProbePage['route']>().mockResolvedValue(undefined),
+		unroute: vi.fn<ReviewRouteProbePage['unroute']>().mockResolvedValue(undefined),
+		on: vi.fn<ReviewRouteProbePage['on']>(),
+		off: vi.fn<ReviewRouteProbePage['off']>(),
+	} satisfies ReviewRouteProbePage;
+}
+
+function contentUrl(descriptorId: string): string {
+	return `${worktreeDevServerOrigin}/__bridge-worktree/review-content/${descriptorId}`;
+}

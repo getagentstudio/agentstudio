@@ -11,8 +11,6 @@ import type {
 } from '../../foundation/review-package/bridge-review-package.js';
 import type { BridgeViewerBrowserFixtureClass } from './bridge-viewer-mocked-backend-fixture.js';
 
-type BridgeViewerMockedBackendLatencyProfile = 'zero' | 'small' | 'slowBounded';
-
 export function primaryPathForItem(item: BridgeReviewItemDescriptor): string {
 	return item.headPath ?? item.basePath ?? item.itemId;
 }
@@ -236,35 +234,6 @@ export function requiredHandleId(
 		throw new Error(`expected ${label} content handle`);
 	}
 	return handle.handleId;
-}
-
-export async function waitForLatencyProfile(
-	latencyProfile: BridgeViewerMockedBackendLatencyProfile,
-): Promise<void> {
-	const delayMilliseconds = latencyDelayMilliseconds(latencyProfile);
-	if (delayMilliseconds === 0) {
-		await Promise.resolve();
-		return;
-	}
-	await new Promise<void>((resolve) => {
-		setTimeout(resolve, delayMilliseconds);
-	});
-}
-
-export function latencyDelayMilliseconds(
-	latencyProfile: BridgeViewerMockedBackendLatencyProfile,
-): number {
-	switch (latencyProfile) {
-		case 'zero':
-			return 0;
-		case 'small':
-			return 6;
-		case 'slowBounded':
-			return 80;
-	}
-	const exhaustiveLatencyProfile: never = latencyProfile;
-	void exhaustiveLatencyProfile;
-	throw new Error('Unhandled latency profile');
 }
 
 export function largeBrowserDiffText(label: 'base' | 'head'): string {

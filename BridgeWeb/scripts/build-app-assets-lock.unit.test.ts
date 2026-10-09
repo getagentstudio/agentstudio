@@ -1,8 +1,9 @@
-import { mkdir, rmdir, unlink, utimes, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, rmdir, unlink, utimes, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
-import { afterEach, beforeEach, describe, expect, test } from 'vitest';
+import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 
+import { createBridgeProductDeferred } from '../src/core/comm-worker/bridge-product-async-queue.js';
 import { withBridgeWebAppBuildLock } from './build-app-assets-lock.ts';
 
 const buildLockParentDirectoryPath = new URL('../../tmp/bridge-web-assets/', import.meta.url);
@@ -16,6 +17,7 @@ describe('BridgeWeb app asset build lock', () => {
 	});
 
 	afterEach(async () => {
+		vi.useRealTimers();
 		await removeTestLockDirectory();
 	});
 
@@ -39,24 +41,40 @@ describe('BridgeWeb app asset build lock', () => {
 
 		await expectBuildLockRecovery();
 	});
+
+	test('follows a held critical section through release instead of a recovery timer', async () => {
+		vi.useFakeTimers();
+		const criticalSectionEntered = createBridgeProductDeferred<void>();
+		const releaseCriticalSection = createBridgeProductDeferred<void>();
+		const recoveryOutcome = expectBuildLockRecovery(async (): Promise<void> => {
+			criticalSectionEntered.resolve();
+			await releaseCriticalSection.promise;
+		}).then(
+			(): null => null,
+			(error: unknown): unknown => error,
+		);
+		try {
+			await criticalSectionEntered.promise;
+			// Drive the former oracle's timer while the lock owner is explicitly held.
+			await vi.advanceTimersByTimeAsync(1_000);
+		} finally {
+			releaseCriticalSection.resolve();
+		}
+		expect(await recoveryOutcome).toBeNull();
+	});
 });
 
-async function expectBuildLockRecovery(): Promise<void> {
+async function expectBuildLockRecovery(
+	runCriticalSection: () => Promise<void> = async (): Promise<void> => {},
+): Promise<void> {
 	let didEnterCriticalSection = false;
 	const buildLockPromise = withBridgeWebAppBuildLock(async (): Promise<void> => {
 		didEnterCriticalSection = true;
+		await runCriticalSection();
 	});
-	const recoveryResultPromise = Promise.race([
-		buildLockPromise.then((): boolean => true),
-		new Promise<boolean>((resolve): void => {
-			setTimeout((): void => {
-				resolve(false);
-			}, 1_000);
-		}),
-	]);
-
-	await expect(recoveryResultPromise).resolves.toBe(true);
+	await buildLockPromise;
 	expect(didEnterCriticalSection).toBe(true);
+	await expect(readFile(buildLockOwnerFilePath)).rejects.toMatchObject({ code: 'ENOENT' });
 }
 
 async function removeTestLockDirectory(): Promise<void> {
