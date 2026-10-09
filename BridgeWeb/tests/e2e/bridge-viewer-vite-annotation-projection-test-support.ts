@@ -1,9 +1,10 @@
 import { type Page, type Response } from 'playwright';
-import { expect } from 'vitest';
 
-import { waitForProductCallSettlement } from './bridge-viewer-vite-product-operation-response.ts';
-
-const annotationProjectionResponseTimeoutMilliseconds = 30_000;
+import { bridgeProductAnnotationProjectionQueryResultSchema } from '../../src/core/comm-worker/bridge-product-worktree-annotation-projection-query-contracts.js';
+import {
+	observeProductCallSettlement,
+	type SupersededProductCallObservation,
+} from './bridge-viewer-vite-product-operation-response.ts';
 
 export async function annotationProjectionUiDiagnostic(
 	page: Page,
@@ -106,6 +107,7 @@ export function annotationProjectionQueryResultDiagnostic(
 
 export async function waitForDemandedAnnotationProjectionContent(props: {
 	readonly afterRequestSequence: Promise<number>;
+	readonly onSuperseded?: (observation: SupersededProductCallObservation) => void;
 	readonly page: Page;
 	readonly sessionId: Promise<string>;
 }): Promise<void> {
@@ -118,15 +120,27 @@ export async function waitForDemandedAnnotationProjectionContent(props: {
 		resolveMatch = resolve;
 		rejectMatch = reject;
 	});
+	// Attach ownership at creation, before any response can reject the inner completion.
+	const completionOutcome = completion.then(
+		(): { readonly kind: 'complete' } => ({ kind: 'complete' }),
+		(error: unknown): { readonly kind: 'failed'; readonly error: unknown } => ({
+			kind: 'failed',
+			error,
+		}),
+	);
 	const failObservation = (error: Error): void => {
 		if (settled) return;
 		settled = true;
 		rejectMatch?.(error);
 	};
 	const observationController = new AbortController();
-	const querySettlement = waitForProductCallSettlement(
-		props.page,
-		async (response): Promise<boolean> => {
+	const querySettlement = observeProductCallSettlement({
+		page: props.page,
+		onSuperseded: (observation): void => {
+			console.info('[annotation-projection-superseded]', JSON.stringify(observation));
+			props.onSuperseded?.(observation);
+		},
+		matchesCall: async (response): Promise<boolean> => {
 			const request = response.request();
 			if (new URL(request.url()).pathname !== '/__bridge-product/command') return false;
 			const requestBody: unknown = request.postDataJSON();
@@ -150,26 +164,31 @@ export async function waitForDemandedAnnotationProjectionContent(props: {
 				queryRequest['sessionIds'].includes(sessionId)
 			);
 		},
-		observationController.signal,
-	);
-	void querySettlement.then(
-		(settled): void => {
-			const result = settled.result;
-			const call = isUnknownRecord(result) ? result['call'] : null;
-			const callResult = isUnknownRecord(call) ? call['result'] : null;
-			const descriptor = isUnknownRecord(callResult) ? callResult['descriptor'] : null;
-			const descriptorId = isUnknownRecord(descriptor) ? descriptor['descriptorId'] : null;
-			if (typeof descriptorId !== 'string') {
-				failObservation(new Error('Demanded annotation projection result has no descriptor.'));
-				return;
-			}
-			matchingDescriptorIds.add(descriptorId);
-			settleIfMatched(descriptorId);
-		},
-		(error: unknown): void => {
-			failObservation(error instanceof Error ? error : new Error('Projection query failed.'));
-		},
-	);
+		signal: observationController.signal,
+	});
+	void querySettlement
+		.then(
+			(settled): void => {
+				const result = settled.result;
+				const call = isUnknownRecord(result) ? result['call'] : null;
+				const callResult = isUnknownRecord(call) ? call['result'] : null;
+				const projectionResult =
+					bridgeProductAnnotationProjectionQueryResultSchema.parse(callResult);
+				if (projectionResult.kind !== 'content') {
+					failObservation(new Error('Demanded annotation projection result has no descriptor.'));
+					return;
+				}
+				const descriptorId = projectionResult.descriptor.descriptorId;
+				matchingDescriptorIds.add(descriptorId);
+				settleIfMatched(descriptorId);
+			},
+			(error: unknown): void => {
+				failObservation(error instanceof Error ? error : new Error('Projection query failed.'));
+			},
+		)
+		.catch((error: unknown): void => {
+			failObservation(error instanceof Error ? error : new Error('Projection parsing failed.'));
+		});
 	const settleIfMatched = (descriptorId: string): void => {
 		if (settled || !matchingDescriptorIds.has(descriptorId)) return;
 		if (!completedDescriptorIds.has(descriptorId)) return;
@@ -200,17 +219,17 @@ export async function waitForDemandedAnnotationProjectionContent(props: {
 			);
 		});
 	};
+	const onPageClosed = (): void =>
+		failObservation(new Error('Page closed before demanded projection content completed.'));
 	props.page.on('response', responseListener);
+	props.page.on('close', onPageClosed);
 	try {
-		await expect
-			.poll((): boolean => settled, {
-				timeout: annotationProjectionResponseTimeoutMilliseconds,
-			})
-			.toBe(true);
-		await completion;
+		const outcome = await completionOutcome;
+		if (outcome.kind === 'failed') throw outcome.error;
 	} finally {
 		observationController.abort();
 		props.page.off('response', responseListener);
+		props.page.off('close', onPageClosed);
 	}
 }
 
