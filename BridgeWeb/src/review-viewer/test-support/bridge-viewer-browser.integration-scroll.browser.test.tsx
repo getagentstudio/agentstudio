@@ -8,6 +8,7 @@ import {
 	scrollBridgeReviewRecoveryWitnessTo,
 	waitForBridgeReviewRecoveryDomState,
 } from './bridge-review-recovery-dom-state.test-support.js';
+import { evaluateReviewScrollPositionRetention } from './bridge-review-scroll-position-retention.test-support.js';
 import {
 	disposeBridgeReviewRecoveryWitnessHarnesses,
 	makeBridgeReviewRecoveryWitnessFiles,
@@ -360,6 +361,13 @@ describe('Bridge Review sustained deep-scroll Browser witness', () => {
 		const semanticAnchorRankAfterReplacement = files.findIndex(
 			(file): boolean => file.itemId === semanticAnchorAfterReplacement.itemId,
 		);
+		const positionRetention = evaluateReviewScrollPositionRetention({
+			maximumScrollTopAfterReplacement,
+			rawScrollTopAfterReplacement,
+			rawScrollTopBeforeReplacement,
+			semanticAnchorAfterReplacement,
+			semanticAnchorBeforeReplacement,
+		});
 		const retentionDiagnostic = {
 			codeViewRemainedMountedWhileInactive,
 			codeViewRetainedIdentity: scrollOwnerAfterReplacement === scrollOwnerBeforeReplacement,
@@ -367,6 +375,7 @@ describe('Bridge Review sustained deep-scroll Browser witness', () => {
 			inactiveFallbackWasShown,
 			maximumScrollTopAfterReplacement,
 			maximumScrollTopBeforeReplacement,
+			...positionRetention,
 			rawScrollTopAfterReplacement,
 			rawScrollTopBeforeReplacement,
 			selectedItemIdAfterReplacement,
@@ -379,11 +388,12 @@ describe('Bridge Review sustained deep-scroll Browser witness', () => {
 			treeRemainedMountedWhileInactive,
 			treeRetainedIdentity: harness.pierreTreeHost() === treeHostBeforeReplacement,
 		};
-		// Position retention is asserted semantically: the same content region stays in view
-		// and the scroll is never reset to the top. Exact pixel equality is not asserted:
-		// Pierre exposes no "layout settled" boundary (checked through @pierre/diffs 1.5.2 and
-		// upstream main), so later height measurement can legitimately clamp the raw coordinate
-		// while the user still sees the same item. See R68 in
+		// Retain a positive scroll at the same coordinate or the same item and viewport offset,
+		// within 1px; also allow a clamp to the new maximum when the old coordinate exceeds it.
+		// Keep the independent first-visible rank check within +/-1. Shipped @pierre/diffs 1.2.10
+		// has no layout-settled boundary (the upstream audit also checked 1.5.2 and main), so later
+		// height measurement can legitimately shrink the maximum and clamp the raw coordinate.
+		// This permits that clamp without accepting arbitrary header snaps or offset loss. See R68 in
 		// docs/specs/2026-10-09-bridge-after-pr1/2026-10-09-bridge-after-pr1.md.
 		expect(
 			{
@@ -391,7 +401,7 @@ describe('Bridge Review sustained deep-scroll Browser witness', () => {
 				codeViewRetainedIdentity: retentionDiagnostic.codeViewRetainedIdentity,
 				disclosureRetained: disclosureAfterReplacement === 'false',
 				inactiveFallbackWasShown,
-				scrollNotResetToTop: rawScrollTopAfterReplacement > 0,
+				scrollPositionRetained: positionRetention.scrollPositionRetained,
 				selectedItemRetained: selectedItemIdAfterReplacement === selectedFile.itemId,
 				semanticScrollRegionRetained:
 					semanticAnchorRankBeforeReplacement >= 0 &&
@@ -406,7 +416,7 @@ describe('Bridge Review sustained deep-scroll Browser witness', () => {
 			codeViewRetainedIdentity: true,
 			disclosureRetained: true,
 			inactiveFallbackWasShown: false,
-			scrollNotResetToTop: true,
+			scrollPositionRetained: true,
 			selectedItemRetained: true,
 			semanticScrollRegionRetained: true,
 			treeRemainedMountedWhileInactive: true,
