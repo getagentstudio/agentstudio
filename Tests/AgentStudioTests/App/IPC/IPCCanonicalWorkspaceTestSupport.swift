@@ -47,11 +47,12 @@ func makeCanonicalIPCWorkspaceOwners() async throws -> (
 /// Each live case owns one fresh datastore, shared by its workspace and IPC.
 @MainActor
 func makeCanonicalIPCWorkspaceCommandHarness(
-    workspaceWindowId: UUID? = nil
+    workspaceWindowId: UUID? = nil,
+    commandDispatcher: AppCommandDispatcher? = nil
 ) async throws -> (commandHarness: PaneTabViewControllerCommandHarness, datastore: WorkspaceSQLiteDatastoreActor) {
     let owners = try await makeCanonicalIPCWorkspaceOwners()
     let harness = CoreAtomScope.$override.withValue(owners.core) {
-        makeHarness(store: owners.store, workspaceWindowId: workspaceWindowId)
+        makeHarness(commandDispatcher: commandDispatcher, store: owners.store, workspaceWindowId: workspaceWindowId)
     }
     try #require(harness.atomRegistry.core.workspacePaneGraph === owners.store.paneAtom.graphAtom)
     return (harness, owners.datastore)

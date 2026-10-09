@@ -107,7 +107,7 @@ struct PaneManagementTrailingControlTests {
                 editorChooser: makeTestAtomRegistry().editorChooser,
                 closeTransitionCoordinator: PaneCloseTransitionCoordinator(),
                 actionDispatcher: makeNoOpPaneActionDispatcher(),
-                onPaneFocusTrigger: { _ in },
+                commandDispatcher: AppTerminalFixtureCommandDispatcher(), onPaneFocusTrigger: { _ in },
                 onOpenPaneGitHub: { _ in },
                 toolbarPresentation: .terminal(TerminalToolbarModel())
             )
@@ -265,7 +265,7 @@ struct PaneManagementTrailingControlTests {
                 editorChooser: makeTestAtomRegistry().editorChooser,
                 closeTransitionCoordinator: PaneCloseTransitionCoordinator(),
                 actionDispatcher: makeNoOpPaneActionDispatcher(),
-                onPaneFocusTrigger: { _ in },
+                commandDispatcher: AppTerminalFixtureCommandDispatcher(), onPaneFocusTrigger: { _ in },
                 onOpenPaneGitHub: { _ in },
                 toolbarPresentation: .hidden
             )

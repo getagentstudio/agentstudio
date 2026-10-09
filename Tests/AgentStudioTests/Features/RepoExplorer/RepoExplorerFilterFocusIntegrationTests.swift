@@ -335,6 +335,9 @@ enum ColdFilterFocusEntry: CaseIterable, Sendable {
 
 @MainActor
 private final class ColdFocusRecordingCommandDispatcher: AppCommandDispatching {
+    func dispatchKeyboardShortcut(_: AppShortcut) {}
+    func dispatchExtractPaneToTab(tabId _: UUID, paneId _: UUID, targetTabInsertionIndex _: Int?) {}
+
     weak var listHost: RepoExplorerMaterializationHost?
     private(set) var commands: [AppCommand] = []
 

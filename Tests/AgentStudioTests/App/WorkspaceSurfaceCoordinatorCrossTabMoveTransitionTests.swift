@@ -87,6 +87,8 @@ struct WorkspaceCrossTabMoveTransitionTests {
                 viewRegistry: viewRegistry,
                 runtime: SessionRuntime(store: store),
                 surfaceManager: surfaceManager,
+                terminalSurfaceCommandDispatcher: AppTerminalFixtureSurfaceCommands(),
+                terminalSurfaceOperations: makeAppTerminalFixtureMountOperations(surfaceManager: surfaceManager),
                 runtimeRegistry: RuntimeRegistry(),
                 windowLifecycleStore: WindowLifecycleAtom(),
                 ipcLifecycle: .testUnavailable,
@@ -177,6 +179,8 @@ struct WorkspaceCrossTabMoveTransitionTests {
                 viewRegistry: viewRegistry,
                 runtime: SessionRuntime(store: store),
                 surfaceManager: surfaceManager,
+                terminalSurfaceCommandDispatcher: AppTerminalFixtureSurfaceCommands(),
+                terminalSurfaceOperations: makeAppTerminalFixtureMountOperations(surfaceManager: surfaceManager),
                 runtimeRegistry: RuntimeRegistry(),
                 windowLifecycleStore: WindowLifecycleAtom(),
                 ipcLifecycle: .testUnavailable,
@@ -246,7 +250,8 @@ struct WorkspaceCrossTabMoveTransitionTests {
         surfaceId: UUID
     ) {
         let host = PaneHostView(paneId: paneId)
-        let terminalView = TerminalPaneMountView(restoredSurfaceId: surfaceId, paneId: paneId)
+        let terminalView = TerminalPaneMountView(
+            surfaceOperations: makeAppTerminalFixtureMountOperations(), restoredSurfaceId: surfaceId, paneId: paneId)
         host.mountContentView(terminalView)
         viewRegistry.register(host, for: paneId)
     }

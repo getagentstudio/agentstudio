@@ -61,6 +61,7 @@ private struct ScrollOverflowDetector: ViewModifier {
 /// Custom Ghostty-style tab bar with pill-shaped tabs
 struct CustomTabBar: View {
     @Bindable var adapter: TabBarAdapter
+    let commandDispatcher: any AppCommandDispatching
     var onSelect: (UUID) -> Void
     var canDispatchCommand: ((AppCommand, UUID) -> Bool)?
     var onCommand: ((AppCommand, UUID) -> Void)?
@@ -364,6 +365,7 @@ struct TabBarArrangementButton: View {
     @Bindable var adapter: TabBarAdapter
     @Bindable var arrangementInlineRenameState: ArrangementInlineRenameState
     let octiconLoader: OcticonLoader
+    let commandDispatcher: any AppCommandDispatching
     let onCommand: ((AppCommand, UUID) -> Void)?
     let onPaneAction: ((WorkspaceActionCommand) -> Void)?
     let workspaceWindowId: UUID?
@@ -458,13 +460,13 @@ struct TabBarArrangementButton: View {
                     zoomMode: tab.zoomMode,
                     arrangements: tab.arrangements,
                     inlineRenameState: arrangementInlineRenameState,
-                    commandActionResolver: { command, surface, target, targetType in
+                    commandActionResolver: { [commandDispatcher] command, surface, target, targetType in
                         TargetedCommandControlAction.resolve(
                             command: command,
                             surface: surface,
                             target: target,
                             targetType: targetType,
-                            dispatcher: AppCommandDispatcher.shared
+                            dispatcher: commandDispatcher
                         )
                     },
                     onPaneAction: onPaneAction,
@@ -790,6 +792,7 @@ struct TabBarEmptyState: View {
             return VStack(spacing: 0) {
                 CustomTabBar(
                     adapter: adapter,
+                    commandDispatcher: PreviewAppCommandDispatcher(),
                     onSelect: { _ in },
                     canDispatchCommand: { _, _ in true },
                     onCommand: { _, _ in },

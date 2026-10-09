@@ -288,6 +288,9 @@ private struct TargetedCommandQuery: Equatable, Hashable {
 
 @MainActor
 private final class RecordingTargetedCommandDispatcher: AppCommandDispatching {
+    func dispatchKeyboardShortcut(_: AppShortcut) {}
+    func dispatchExtractPaneToTab(tabId _: UUID, paneId _: UUID, targetTabInsertionIndex _: Int?) {}
+
     var enabledQueries: Set<TargetedCommandQuery> = []
     private(set) var capabilityQueries: [TargetedCommandQuery] = []
     private(set) var dispatchedQueries: [TargetedCommandQuery] = []

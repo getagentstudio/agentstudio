@@ -181,6 +181,9 @@ struct PaneCloseTransitionCoordinatorTests {
 
 @MainActor
 private final class DrawerCloseTransitionCommandDispatcher: AppCommandDispatching {
+    func dispatchKeyboardShortcut(_: AppShortcut) {}
+    func dispatchExtractPaneToTab(tabId _: UUID, paneId _: UUID, targetTabInsertionIndex _: Int?) {}
+
     private let paneId: UUID
     private let performClose: @MainActor () -> Void
 

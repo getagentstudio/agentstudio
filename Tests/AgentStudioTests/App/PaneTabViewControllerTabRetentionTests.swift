@@ -51,6 +51,7 @@ struct PaneTabViewControllerTabRetentionTests {
             appLifecycleStore: appLifecycleStore,
             executor: WorkspaceActionExecutor(coordinator: coordinator, store: store),
             runtimeCommandDispatcher: coordinator,
+            commandDispatcher: AppTerminalFixtureCommandDispatcher(), synchronizeRuntimeFocus: { _ in },
             tabBarAdapter: TabBarAdapter(
                 store: store,
                 repoCache: RepoCacheAtom(),

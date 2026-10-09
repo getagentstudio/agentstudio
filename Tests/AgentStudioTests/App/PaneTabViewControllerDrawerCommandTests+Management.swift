@@ -117,19 +117,18 @@ extension PaneTabViewControllerDrawerCommandTests {
             _ = try #require(harness.store.addDrawerPane(to: parent.id))
             atom(\.workspaceFocusOwner).focusMainPane(parent.id)
 
-            try await withIsolatedCommandDispatcher(
-                configure: {
-                    AppCommandDispatcher.shared.handler = harness.controller
-                    AppCommandDispatcher.shared.appCommandRouter = nil
-                },
-                body: {
-                    AppCommandDispatcher.shared.dispatch(
+            try await withCommandDispatcher(
+                harness.commandDispatcher,
+                body: { dispatcher in
+                    dispatcher.dispatch(
                         .detachDrawerPane,
                         target: firstDrawerPane.id,
                         targetType: .pane
                     )
                 }
             )
+
+            _ = await harness.executor.submitGesture { _ in true }.value
 
             #expect(harness.store.pane(firstDrawerPane.id)?.parentPaneId == nil)
             #expect(harness.store.tab(tab.id)?.paneIds.contains(firstDrawerPane.id) == true)

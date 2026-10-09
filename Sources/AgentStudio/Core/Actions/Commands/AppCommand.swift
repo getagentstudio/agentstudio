@@ -248,6 +248,9 @@ package protocol AppCommandDispatching: AnyObject, Sendable {
     /// Returns whether an interactive execution owner accepted the command.
     @discardableResult func dispatch(_ command: AppCommand) -> Bool
     func dispatch(_ command: AppCommand, target: UUID, targetType: SearchItemType)
+    /// Keep keyboard-only interaction admission at the selected execution owner.
+    func dispatchKeyboardShortcut(_ shortcut: AppShortcut)
+    func dispatchExtractPaneToTab(tabId: UUID, paneId: UUID, targetTabInsertionIndex: Int?)
     func canDispatch(_ command: AppCommand) -> Bool
     func canDispatch(_ command: AppCommand, target: UUID, targetType: SearchItemType) -> Bool
     func bridgePaneCommandTarget(worktreeId: UUID) -> BridgePaneCommandTarget?

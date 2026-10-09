@@ -225,12 +225,9 @@ struct PaneTabViewControllerZoomDrawerSideCommandTests {
         let fixture = try makeZoomDrawerFixture()
         defer { try? FileManager.default.removeItem(at: fixture.harness.tempDir) }
         try await withWorkspaceCommandHarness(fixture.harness) {
-            try await withIsolatedCommandDispatcher(
-                configure: {
-                    AppCommandDispatcher.shared.handler = fixture.harness.controller
-                    AppCommandDispatcher.shared.appCommandRouter = nil
-                },
-                body: {
+            try await withCommandDispatcher(
+                fixture.harness.commandDispatcher,
+                body: { dispatcher in
                     let store = fixture.harness.store
                     let alternateSource = store.createPane()
                     #expect(
@@ -251,7 +248,7 @@ struct PaneTabViewControllerZoomDrawerSideCommandTests {
                         TargetedCommandControlAction.resolve(
                             command: command, surface: .inlineControl,
                             target: fixture.sourcePane.id, targetType: .pane,
-                            dispatcher: AppCommandDispatcher.shared
+                            dispatcher: dispatcher
                         )
                     }
                     let initialKey = resolutionKey()

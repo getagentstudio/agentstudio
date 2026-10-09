@@ -36,7 +36,9 @@ extension WorkspaceSurfaceCoordinator {
 
         let terminalRuntime = TerminalRuntime(
             paneId: runtimePaneId,
-            metadata: pane.metadata
+            metadata: pane.metadata,
+            paneEventBus: paneEventBus,
+            surfaceCommandDispatcher: terminalSurfaceCommandDispatcher
         )
         guard terminalRuntime.transitionToReady() else {
             Self.logger.warning(

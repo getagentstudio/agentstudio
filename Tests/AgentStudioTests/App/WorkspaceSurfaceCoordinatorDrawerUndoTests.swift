@@ -34,6 +34,8 @@ struct WorkspaceSurfaceCoordinatorDrawerUndoTests {
             viewRegistry: viewRegistry,
             runtime: runtime,
             surfaceManager: surfaceManager,
+            terminalSurfaceCommandDispatcher: AppTerminalFixtureSurfaceCommands(),
+            terminalSurfaceOperations: makeAppTerminalFixtureMountOperations(surfaceManager: surfaceManager),
             runtimeRegistry: RuntimeRegistry(),
             windowLifecycleStore: WindowLifecycleAtom(),
             ipcLifecycle: .testUnavailable,

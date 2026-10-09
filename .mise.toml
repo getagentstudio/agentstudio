@@ -367,6 +367,7 @@ mise run --skip-deps bridge-web-build
 test -f Sources/AgentStudio/Resources/BridgeWeb/app/index.html
 SWIFT_TEST_INCLUDE_E2E=1 \
 mise run --skip-deps test:swift
+mise run test:terminal-di-compile-negative
 git diff --check
 """
 
@@ -396,6 +397,10 @@ swift test $(swift_package_sandbox_arguments) --package-path Tools/AgentStudioAr
 [tasks."test:atomlib-compile-negative"]
 description = "Verify AtomLib compile-time transfer constraints"
 run = "/bin/bash scripts/verify-atomlib-compile-failures.sh"
+
+[tasks."test:terminal-di-compile-negative"]
+description = "Verify compiled terminal DI owned-input and actor constraints (after Swift prebuild)"
+run = "/bin/bash scripts/verify-terminal-di-compile-failures.sh"
 
 [tasks."test:swift"]
 description = "Run Swift non-serialized and serialized WebKit tests"

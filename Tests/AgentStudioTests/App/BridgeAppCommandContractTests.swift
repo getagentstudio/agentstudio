@@ -37,7 +37,7 @@ struct BridgeAppCommandContractTests {
         )
 
         // Act
-        let definition = AppCommandDispatcher.shared.definition(for: reloadBridgeWebView)
+        let definition = reloadBridgeWebView.definition
 
         // Assert
         #expect(definition.label == "Reload Bridge Web View")
@@ -81,7 +81,7 @@ struct BridgeAppCommandContractTests {
         let showReview = try #require(AppCommand(rawValue: "showBridgeReview"))
 
         // Act
-        let definition = AppCommandDispatcher.shared.definition(for: showReview)
+        let definition = showReview.definition
 
         // Assert
         #expect(definition.surfacePolicy == .exposed([.commandBar, .contextMenu]))

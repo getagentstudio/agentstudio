@@ -34,8 +34,9 @@ struct TerminalActivityRouterCloseTests {
         let router = TerminalActivityRouter(
             bus: bus,
             activityAtom: atom,
+            callbackHandlingAccess: { nil },
             surfaceIDForPaneID: { surfaceLifetime.containsSurface() ? $0 : nil },
-            unseenActivityDebounceDuration: .milliseconds(750),
+            lastOutputLineReader: { _ in .surfaceStale }, unseenActivityDebounceDuration: .milliseconds(750),
             unseenActivityClock: clock
         )
         let paneId = PaneId.generateUUIDv7()
@@ -80,7 +81,9 @@ struct TerminalActivityRouterCloseTests {
         let router = TerminalActivityRouter(
             bus: bus,
             activityAtom: atom,
+            callbackHandlingAccess: { nil },
             surfaceIDForPaneID: { surfaceLifetime.containsSurface() ? $0 : nil },
+            lastOutputLineReader: { _ in .surfaceStale },
             recordSettledActivityStatus: { paneId, lastOutputLine in
                 statusAtom.recordSettledActivity(paneId: paneId, lastOutputLine: lastOutputLine)
             },

@@ -14,12 +14,12 @@ struct RepoExplorerCommandPresentationBatchTests {
     func keyedRepositoryProgressReresolvesVisibleUpdateControl() async throws {
         let handler = RepoExplorerCommandPresentationRecordingHandler()
 
-        try await withIsolatedCommandDispatcher(
-            configure: {
-                AppCommandDispatcher.shared.handler = handler
-                AppCommandDispatcher.shared.appCommandRouter = nil
+        try await withCommandDispatcherFixture(
+            configure: { configuration in
+                configuration.workspaceOwner = handler
+                configuration.shellOwner = nil
             },
-            body: {
+            body: { dispatcher in
                 try await withAsyncTestCoreAtoms { coreAtoms in
                     let traceDirectory = FileManager.default.temporaryDirectory.appending(
                         path: "repo-command-progress-trace-\(UUIDv7.generate().uuidString)"
@@ -48,7 +48,10 @@ struct RepoExplorerCommandPresentationBatchTests {
                     let batch = RepoExplorerCommandPresentationBatch(
                         store: store,
                         repoExplorerPrefs: RepoExplorerSidebarPrefsAtom(),
-                        dispatcher: .shared,
+                        resolveCommandCapabilities: {
+                            dispatcher.repoExplorerCommandPresentationSnapshot(requests: $0, generation: $1)
+                        },
+                        executionOwnerIdentities: dispatcher.executionOwnerIdentities,
                         performanceTraceRecorder: recorder
                     )
                     batch.start()
@@ -102,12 +105,12 @@ struct RepoExplorerCommandPresentationBatchTests {
     func staleObservationTrackingsDoNotMultiplyRefreshes() async throws {
         let handler = RepoExplorerCommandPresentationRecordingHandler()
 
-        try await withIsolatedCommandDispatcher(
-            configure: {
-                AppCommandDispatcher.shared.handler = handler
-                AppCommandDispatcher.shared.appCommandRouter = nil
+        try await withCommandDispatcherFixture(
+            configure: { configuration in
+                configuration.workspaceOwner = handler
+                configuration.shellOwner = nil
             },
-            body: {
+            body: { dispatcher in
                 try await withAsyncTestCoreAtoms { coreAtoms in
                     let traceDirectory = FileManager.default.temporaryDirectory.appending(
                         path: "repo-command-stale-tracking-trace-\(UUIDv7.generate().uuidString)"
@@ -136,7 +139,10 @@ struct RepoExplorerCommandPresentationBatchTests {
                     let batch = RepoExplorerCommandPresentationBatch(
                         store: store,
                         repoExplorerPrefs: RepoExplorerSidebarPrefsAtom(),
-                        dispatcher: .shared,
+                        resolveCommandCapabilities: {
+                            dispatcher.repoExplorerCommandPresentationSnapshot(requests: $0, generation: $1)
+                        },
+                        executionOwnerIdentities: dispatcher.executionOwnerIdentities,
                         performanceTraceRecorder: recorder
                     )
                     batch.start()
@@ -199,10 +205,13 @@ struct RepoExplorerCommandPresentationBatchTests {
                 )
             )
             let worktree = try! #require(repo.worktrees.first)
+            let dispatcher = CommandDispatcherFixtureConfiguration().makeDispatcher()
             let batch = RepoExplorerCommandPresentationBatch(
                 store: store,
                 repoExplorerPrefs: RepoExplorerSidebarPrefsAtom(),
-                dispatcher: .shared
+                resolveCommandCapabilities: {
+                    dispatcher.repoExplorerCommandPresentationSnapshot(requests: $0, generation: $1)
+                }, executionOwnerIdentities: dispatcher.executionOwnerIdentities
             )
             batch.start()
             defer { batch.stop() }
@@ -240,6 +249,7 @@ struct RepoExplorerCommandPresentationBatchTests {
 
     @Test("pin transition includes both old and new request identities")
     func pinTransitionIncludesOldAndNewRequestIdentities() async throws {
+        let dispatcher = CommandDispatcherFixtureConfiguration().makeDispatcher()
         await withAsyncTestCoreAtoms { _ in
             let store = WorkspaceStore()
             let repo = store.addRepo(
@@ -251,7 +261,9 @@ struct RepoExplorerCommandPresentationBatchTests {
             let batch = RepoExplorerCommandPresentationBatch(
                 store: store,
                 repoExplorerPrefs: RepoExplorerSidebarPrefsAtom(),
-                dispatcher: .shared
+                resolveCommandCapabilities: {
+                    dispatcher.repoExplorerCommandPresentationSnapshot(requests: $0, generation: $1)
+                }, executionOwnerIdentities: dispatcher.executionOwnerIdentities
             )
             batch.start()
             defer { batch.stop() }
@@ -303,12 +315,12 @@ struct RepoExplorerCommandPresentationBatchTests {
     func mixedCapabilityAndVisibleSetWakeReresolvesSurvivingRequests() async throws {
         let handler = RepoExplorerCommandPresentationRecordingHandler()
 
-        try await withIsolatedCommandDispatcher(
-            configure: {
-                AppCommandDispatcher.shared.handler = handler
-                AppCommandDispatcher.shared.appCommandRouter = nil
+        try await withCommandDispatcherFixture(
+            configure: { configuration in
+                configuration.workspaceOwner = handler
+                configuration.shellOwner = nil
             },
-            body: {
+            body: { dispatcher in
                 await withAsyncTestCoreAtoms { coreAtoms in
                     coreAtoms.managementLayer.deactivate()
                     defer { coreAtoms.managementLayer.deactivate() }
@@ -329,7 +341,9 @@ struct RepoExplorerCommandPresentationBatchTests {
                     let batch = RepoExplorerCommandPresentationBatch(
                         store: store,
                         repoExplorerPrefs: RepoExplorerSidebarPrefsAtom(),
-                        dispatcher: .shared
+                        resolveCommandCapabilities: {
+                            dispatcher.repoExplorerCommandPresentationSnapshot(requests: $0, generation: $1)
+                        }, executionOwnerIdentities: dispatcher.executionOwnerIdentities
                     )
                     batch.start()
                     defer { batch.stop() }
@@ -387,12 +401,12 @@ struct RepoExplorerCommandPresentationBatchTests {
     func visibleSetDeltaResolvesOnlyNewlyVisibleWorktreeRequests() async throws {
         let handler = RepoExplorerCommandPresentationRecordingHandler()
 
-        try await withIsolatedCommandDispatcher(
-            configure: {
-                AppCommandDispatcher.shared.handler = handler
-                AppCommandDispatcher.shared.appCommandRouter = nil
+        try await withCommandDispatcherFixture(
+            configure: { configuration in
+                configuration.workspaceOwner = handler
+                configuration.shellOwner = nil
             },
-            body: {
+            body: { dispatcher in
                 await withAsyncTestCoreAtoms { _ in
                     let store = WorkspaceStore()
                     let firstRepo = store.addRepo(
@@ -410,7 +424,9 @@ struct RepoExplorerCommandPresentationBatchTests {
                     let batch = RepoExplorerCommandPresentationBatch(
                         store: store,
                         repoExplorerPrefs: RepoExplorerSidebarPrefsAtom(),
-                        dispatcher: .shared
+                        resolveCommandCapabilities: {
+                            dispatcher.repoExplorerCommandPresentationSnapshot(requests: $0, generation: $1)
+                        }, executionOwnerIdentities: dispatcher.executionOwnerIdentities
                     )
                     batch.start()
                     defer { batch.stop() }
@@ -456,6 +472,7 @@ struct RepoExplorerCommandPresentationBatchTests {
 
     @Test("accepted batch records bounded command presentation work")
     func acceptedBatchRecordsBoundedCommandPresentationWork() async throws {
+        let dispatcher = CommandDispatcherFixtureConfiguration().makeDispatcher()
         try await withAsyncTestCoreAtoms { _ in
             let traceDirectory = FileManager.default.temporaryDirectory.appending(
                 path: "repo-command-presentation-trace-\(UUIDv7.generate().uuidString)"
@@ -477,7 +494,10 @@ struct RepoExplorerCommandPresentationBatchTests {
             let batch = RepoExplorerCommandPresentationBatch(
                 store: store,
                 repoExplorerPrefs: RepoExplorerSidebarPrefsAtom(),
-                dispatcher: .shared,
+                resolveCommandCapabilities: {
+                    dispatcher.repoExplorerCommandPresentationSnapshot(requests: $0, generation: $1)
+                },
+                executionOwnerIdentities: dispatcher.executionOwnerIdentities,
                 performanceTraceRecorder: recorder
             )
 
@@ -529,13 +549,13 @@ struct RepoExplorerCommandPresentationBatchTests {
             showsPinnedControl: true
         )
 
-        try await withIsolatedCommandDispatcher(
-            configure: {
-                AppCommandDispatcher.shared.handler = handler
-                AppCommandDispatcher.shared.appCommandRouter = nil
+        try await withCommandDispatcherFixture(
+            configure: { configuration in
+                configuration.workspaceOwner = handler
+                configuration.shellOwner = nil
             },
-            body: {
-                let snapshot = AppCommandDispatcher.shared.repoExplorerCommandPresentationSnapshot(
+            body: { dispatcher in
+                let snapshot = dispatcher.repoExplorerCommandPresentationSnapshot(
                     requests: requests,
                     generation: 4
                 )
@@ -546,7 +566,7 @@ struct RepoExplorerCommandPresentationBatchTests {
                 #expect(snapshot.results[openRequest] == true)
 
                 handler.targetedCanExecuteResult = false
-                AppCommandDispatcher.shared.dispatch(
+                dispatcher.dispatch(
                     .openWorktree,
                     target: worktreeId,
                     targetType: .worktree
@@ -559,12 +579,15 @@ struct RepoExplorerCommandPresentationBatchTests {
 
     @Test("capability recompute preserves presentation for structural facts outside the visible worktree set")
     func capabilityRecomputePreservesPresentationForUnrelatedStructuralFacts() async throws {
-        try await withIsolatedCommandDispatcher(
-            configure: {
-                AppCommandDispatcher.shared.handler = nil
-                AppCommandDispatcher.shared.appCommandRouter = nil
+        let handler = MockCommandHandler()
+        handler.canExecuteResult = false
+        handler.targetedCanExecuteResult = false
+        try await withCommandDispatcherFixture(
+            configure: { configuration in
+                configuration.workspaceOwner = handler
+                configuration.shellOwner = nil
             },
-            body: {
+            body: { dispatcher in
                 await withAsyncTestCoreAtoms { coreAtoms in
                     coreAtoms.managementLayer.deactivate()
                     defer { coreAtoms.managementLayer.deactivate() }
@@ -583,7 +606,9 @@ struct RepoExplorerCommandPresentationBatchTests {
                     let batch = RepoExplorerCommandPresentationBatch(
                         store: store,
                         repoExplorerPrefs: prefs,
-                        dispatcher: .shared
+                        resolveCommandCapabilities: {
+                            dispatcher.repoExplorerCommandPresentationSnapshot(requests: $0, generation: $1)
+                        }, executionOwnerIdentities: dispatcher.executionOwnerIdentities
                     )
                     batch.start()
                     defer { batch.stop() }
@@ -596,12 +621,8 @@ struct RepoExplorerCommandPresentationBatchTests {
                     }
                     let initialGeneration = batch.snapshot.generation
 
-                    let replacementHandler = MockCommandHandler()
-                    replacementHandler.canExecuteResult = false
-                    replacementHandler.targetedCanExecuteResult = false
-                    AppCommandDispatcher.shared.handler = replacementHandler
                     let ownedCapabilityBatchCount = {
-                        replacementHandler.repoExplorerCapabilityRequestBatches.filter { requests in
+                        handler.repoExplorerCapabilityRequestBatches.filter { requests in
                             requests.contains { request in
                                 request.target == visibleWorktree.id
                             }
@@ -618,11 +639,15 @@ struct RepoExplorerCommandPresentationBatchTests {
                     }
                     #expect(batch.snapshot.generation == initialGeneration)
 
+                    let capabilityBatchesBeforeManagement = ownedCapabilityBatchCount()
+                    let initialResults = batch.snapshot.results
                     coreAtoms.managementLayer.toggle()
-                    await eventually("management capability generation") {
-                        batch.snapshot.generation > initialGeneration
+                    await eventually("management invalidation re-resolves owned capabilities") {
+                        ownedCapabilityBatchCount() > capabilityBatchesBeforeManagement
                     }
-                    let managementGeneration = batch.snapshot.generation
+                    #expect(batch.snapshot.results == initialResults)
+                    #expect(batch.snapshot.generation == initialGeneration)
+                    let managementGeneration = initialGeneration
 
                     store.panePresentationAtom.enterZoom(
                         inTab: tab.id,
@@ -645,7 +670,7 @@ struct RepoExplorerCommandPresentationBatchTests {
 
                     // The dispatcher is process-global, so unrelated toolbar traffic must not be
                     // attributed to this batch owner's exact visible-worktree request set.
-                    _ = AppCommandDispatcher.shared.repoExplorerCommandPresentationSnapshot(
+                    _ = dispatcher.repoExplorerCommandPresentationSnapshot(
                         requests: RepoExplorerToolbarCommandPresentation.requests(),
                         generation: batch.snapshot.generation &+ 1
                     )
@@ -670,12 +695,12 @@ struct RepoExplorerCommandPresentationBatchTests {
     func associationMoveBetweenVisibleWorktreesDoesNotReresolve() async throws {
         let handler = RepoExplorerCommandPresentationRecordingHandler()
 
-        try await withIsolatedCommandDispatcher(
-            configure: {
-                AppCommandDispatcher.shared.handler = handler
-                AppCommandDispatcher.shared.appCommandRouter = nil
+        try await withCommandDispatcherFixture(
+            configure: { configuration in
+                configuration.workspaceOwner = handler
+                configuration.shellOwner = nil
             },
-            body: {
+            body: { dispatcher in
                 await withAsyncTestCoreAtoms { _ in
                     let store = WorkspaceStore()
                     let repos = (0..<3).map { index in
@@ -702,7 +727,9 @@ struct RepoExplorerCommandPresentationBatchTests {
                     let batch = RepoExplorerCommandPresentationBatch(
                         store: store,
                         repoExplorerPrefs: RepoExplorerSidebarPrefsAtom(),
-                        dispatcher: .shared
+                        resolveCommandCapabilities: {
+                            dispatcher.repoExplorerCommandPresentationSnapshot(requests: $0, generation: $1)
+                        }, executionOwnerIdentities: dispatcher.executionOwnerIdentities
                     )
                     batch.start()
                     defer { batch.stop() }
@@ -733,6 +760,7 @@ struct RepoExplorerCommandPresentationBatchTests {
 
     @Test("drawer changes outside the visible worktree set stay quiet")
     func unrelatedDrawerVisibilityStaysQuiet() async {
+        let dispatcher = CommandDispatcherFixtureConfiguration().makeDispatcher()
         await withAsyncTestCoreAtoms { _ in
             let store = WorkspaceStore()
             let pane = store.createPane()
@@ -740,7 +768,9 @@ struct RepoExplorerCommandPresentationBatchTests {
             let batch = RepoExplorerCommandPresentationBatch(
                 store: store,
                 repoExplorerPrefs: RepoExplorerSidebarPrefsAtom(),
-                dispatcher: .shared
+                resolveCommandCapabilities: {
+                    dispatcher.repoExplorerCommandPresentationSnapshot(requests: $0, generation: $1)
+                }, executionOwnerIdentities: dispatcher.executionOwnerIdentities
             )
             batch.start()
             defer { batch.stop() }

@@ -50,14 +50,20 @@ extension WebKitSerializedTests {
             let mountInput = NonterminalContentMountInput(entries: [descriptor])
             let store = WorkspaceStore()
             let viewRegistry = ViewRegistry()
-            let coordinator = WorkspaceSurfaceCoordinator(
-                store: store,
-                viewRegistry: viewRegistry,
-                runtime: SessionRuntime(store: store),
-                windowLifecycleStore: WindowLifecycleAtom(),
-                ipcLifecycle: .testUnavailable,
-                bridgePaneAttendance: BridgePaneAttendanceAtom()
-            )
+            let coordinator = {
+                let fixtureSurfaceManager = makeAppTerminalFixtureSurfaceManager()
+                return WorkspaceSurfaceCoordinator(
+                    store: store,
+                    viewRegistry: viewRegistry,
+                    runtime: SessionRuntime(store: store),
+                    surfaceManager: fixtureSurfaceManager, terminalSurfaceCommandDispatcher: fixtureSurfaceManager,
+                    terminalSurfaceOperations: fixtureSurfaceManager.makeTerminalPaneSurfaceOperations(),
+                    runtimeRegistry: RuntimeRegistry(),
+                    windowLifecycleStore: WindowLifecycleAtom(),
+                    ipcLifecycle: .testUnavailable,
+                    bridgePaneAttendance: BridgePaneAttendanceAtom()
+                )
+            }()
             viewRegistry.installPreparedContentMountCohort(
                 WorkspacePreparedContentMountCohort(
                     generation: generation,
@@ -178,14 +184,20 @@ extension WebKitSerializedTests {
         func heldPreviewAcceptsLatePreparedHostOnlyForCurrentRequest() async throws {
             let store = WorkspaceStore()
             let viewRegistry = ViewRegistry()
-            let coordinator = WorkspaceSurfaceCoordinator(
-                store: store,
-                viewRegistry: viewRegistry,
-                runtime: SessionRuntime(store: store),
-                windowLifecycleStore: WindowLifecycleAtom(),
-                ipcLifecycle: .testUnavailable,
-                bridgePaneAttendance: BridgePaneAttendanceAtom()
-            )
+            let coordinator = {
+                let fixtureSurfaceManager = makeAppTerminalFixtureSurfaceManager()
+                return WorkspaceSurfaceCoordinator(
+                    store: store,
+                    viewRegistry: viewRegistry,
+                    runtime: SessionRuntime(store: store),
+                    surfaceManager: fixtureSurfaceManager, terminalSurfaceCommandDispatcher: fixtureSurfaceManager,
+                    terminalSurfaceOperations: fixtureSurfaceManager.makeTerminalPaneSurfaceOperations(),
+                    runtimeRegistry: RuntimeRegistry(),
+                    windowLifecycleStore: WindowLifecycleAtom(),
+                    ipcLifecycle: .testUnavailable,
+                    bridgePaneAttendance: BridgePaneAttendanceAtom()
+                )
+            }()
             let pane = store.createPane(
                 content: .webview(WebviewState(url: URL(string: "https://example.com/late")!)),
                 metadata: PaneMetadata(title: "Late preview")

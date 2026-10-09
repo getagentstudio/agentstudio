@@ -69,6 +69,7 @@ enum ArchitectureRuleRegistry {
         TestBlockingWaitOffCooperativePoolRule(),
         TestExpectationOffTestTaskRule(),
         ProcessSingletonRule(),
+        CompositionRootConstructionRule(),
         TestElapsedTimeBudgetRule(),
         TestCoreAtomFallbackOwnershipRule(),
         CompletionHandleNotDiscardableRule(),

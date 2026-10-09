@@ -65,6 +65,9 @@ private final class BridgeAttendanceSnapshotReadRecorder {
 
 @MainActor
 private final class PaneFocusRecordingDispatcher: AppCommandDispatching {
+    func dispatchKeyboardShortcut(_: AppShortcut) {}
+    func dispatchExtractPaneToTab(tabId _: UUID, paneId _: UUID, targetTabInsertionIndex _: Int?) {}
+
     private(set) var command: AppCommand?
     private(set) var target: UUID?
     private(set) var targetType: SearchItemType?

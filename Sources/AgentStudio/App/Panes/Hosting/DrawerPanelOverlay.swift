@@ -179,6 +179,7 @@ struct DrawerPanelOverlay: View {
     let tabSize: CGSize
     let iconBarFrame: CGRect
     let actionDispatcher: PaneActionDispatching
+    let commandDispatcher: any AppCommandDispatching
     let arrangementInlineRenameState: ArrangementInlineRenameState
     let onPaneFocusTrigger: PaneFocusTriggerHandler
     let onFocusPane: (UUID) -> Void
@@ -308,6 +309,7 @@ struct DrawerPanelOverlay: View {
                     editorChooser: editorChooser,
                     viewRegistry: viewRegistry,
                     action: actionDispatcher.dispatch,
+                    commandDispatcher: commandDispatcher,
                     arrangementInlineRenameState: arrangementInlineRenameState,
                     resizeInteraction: geometry.resizeHandleFrame == nil
                         ? nil
@@ -483,7 +485,7 @@ struct DrawerPanelOverlay: View {
                 surface: .inlineControl,
                 target: key.ownerPaneId,
                 targetType: .pane,
-                dispatcher: AppCommandDispatcher.shared
+                dispatcher: commandDispatcher
             )
         else {
             resolvedMoveControlAction = nil

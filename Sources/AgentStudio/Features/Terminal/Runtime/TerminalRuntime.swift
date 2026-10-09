@@ -46,7 +46,9 @@ package final class TerminalRuntime: BusPostingPaneRuntime, TerminalRuntimeSnaps
         clock: ContinuousClock = ContinuousClock(),
         replayBuffer: EventReplayBuffer? = nil,
         paneEventBus: EventBus<RuntimeEnvelope> = PaneRuntimeEventBus.shared,
-        surfaceCommandDispatcher: any TerminalSurfaceCommandDispatching = SurfaceManager.shared,
+        performanceReporter: RuntimeDeliveryPerformanceReporter = PaneRuntimeEventBus.performanceReporter,
+        outboundPost: PaneRuntimeEventChannel.OutboundPost? = nil,
+        surfaceCommandDispatcher: any TerminalSurfaceCommandDispatching,
         openExternalURL: (@MainActor (String) -> Void)? = nil
     ) {
         self.paneId = paneId
@@ -62,7 +64,9 @@ package final class TerminalRuntime: BusPostingPaneRuntime, TerminalRuntimeSnaps
         self.eventChannel = PaneRuntimeEventChannel(
             clock: clock,
             replayBuffer: replayBuffer ?? EventReplayBuffer(),
-            paneEventBus: paneEventBus
+            paneEventBus: paneEventBus,
+            performanceReporter: performanceReporter,
+            outboundPost: outboundPost
         )
         self.surfaceCommandDispatcher = surfaceCommandDispatcher
         self.openExternalURL = openExternalURL ?? { TerminalExternalURLOpener.open($0) }
@@ -151,6 +155,15 @@ package final class TerminalRuntime: BusPostingPaneRuntime, TerminalRuntimeSnaps
         lifecycle = .terminated
         eventChannel.finishSubscribers()
         return []
+    }
+
+    /// Finishes subscriber streams and awaits the channel's outbound worker.
+    ///
+    /// This completion operation is separate from the lifecycle transition and timeout behavior
+    /// in `shutdown(timeout:)`. Subscriber termination handlers may schedule independent removal
+    /// work; this join does not await those tasks.
+    package func finishAndJoinOutboundDelivery() async {
+        await eventChannel.finishAndJoinOutboundDelivery()
     }
 
     func handleGhosttyEvent(

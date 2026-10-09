@@ -81,15 +81,7 @@ struct AgentStudioIPCCommandAdapterTests {
             arguments: .workspaceWindow(.init(workspaceWindowId: harness.windowId))
         )
 
-        let result = try await withIsolatedCommandDispatcher(
-            configure: {
-                AppCommandDispatcher.shared.handler = nil
-                AppCommandDispatcher.shared.appCommandRouter = shell
-            },
-            body: {
-                try await harness.adapter.executeCommand(request, ownPaneAssertion: nil)
-            }
-        )
+        let result = try await harness.adapter.executeCommand(request, ownPaneAssertion: nil)
 
         #expect(result.variant == .applied)
         #expect(result.correlationId == request.correlationId)
@@ -136,10 +128,15 @@ struct AgentStudioIPCCommandAdapterTests {
 
     @Test("targeted execution awaits the dispatcher owner outcome")
     func targetedExecutionAwaitsOwner() async throws {
-        let harness = CommandAdapterHarness()
+        let windowId = UUIDv7.generate()
+        let owner = RecordingWorkspaceCommandHandler(currentWindowId: windowId)
+        let harness = CommandAdapterHarness(
+            windowId: windowId,
+            workspaceCommandHandler: owner,
+            dispatcherShellOwnerAccess: .absent
+        )
         let pane = harness.workspaceStore.createPane(title: "Target")
         harness.workspaceStore.appendTab(Tab(paneId: pane.id))
-        let owner = RecordingWorkspaceCommandHandler()
         let request = IPCCommandExecutionRequest(
             commandId: .init(rawValue: AppCommand.zoomPane.rawValue),
             correlationId: UUIDv7.generate(),
@@ -151,21 +148,13 @@ struct AgentStudioIPCCommandAdapterTests {
             )
         )
 
-        let result = try await withIsolatedCommandDispatcher(
-            configure: {
-                AppCommandDispatcher.shared.handler = owner
-                AppCommandDispatcher.shared.appCommandRouter = nil
-            },
-            body: {
-                try await harness.adapter.executeCommand(request, ownPaneAssertion: nil)
-            }
-        )
+        let result = try await harness.adapter.executeCommand(request, ownPaneAssertion: nil)
 
         #expect(result.variant == .applied)
         #expect(owner.awaitedCommands == [.zoomPane])
     }
 
-    @Test("registered historical window is rejected when the App owner has been replaced")
+    @Test("registered historical window is rejected by the current shell owner's capability")
     func registeredHistoricalWindowDoesNotReachCurrentShellOwner() async throws {
         let historicalWindowId = UUIDv7.generate()
         let currentWindowId = UUIDv7.generate()
@@ -187,13 +176,15 @@ struct AgentStudioIPCCommandAdapterTests {
         )
 
         #expect(historicalLifecycle.registeredWindowIds.contains(historicalWindowId))
+        // The selected shell owner is fixed; its current-window capability is
+        // distinct from historical registration in the lifecycle snapshot.
         await #expect(throws: AppIPCCommandError.self) {
             try await harness.adapter.executeCommand(request, ownPaneAssertion: nil)
         }
         #expect(shell.handledRequests.isEmpty)
     }
 
-    @Test("prepared command is rejected when the sole App window is replaced before execution")
+    @Test("prepared command rechecks the shell owner's current-window capability before execution")
     func preparedCommandRechecksCurrentWindowOwnerBeforeExecution() async throws {
         let firstWindowId = UUIDv7.generate()
         let replacementWindowId = UUIDv7.generate()
@@ -215,6 +206,8 @@ struct AgentStudioIPCCommandAdapterTests {
             }
         )
 
+        // Change the fake owner's reported window capability without replacing
+        // the owner or the dispatcher bound into the adapter.
         shell.currentWindowId = replacementWindowId
 
         await #expect(throws: AppIPCCommandError.self) {
@@ -226,10 +219,15 @@ struct AgentStudioIPCCommandAdapterTests {
     @Test("targeted command rejects a dispatcher handler owned by another window")
     func targetedCommandRequiresMatchingDispatcherOwner() async throws {
         let requestedWindowId = UUIDv7.generate()
-        let harness = CommandAdapterHarness(windowId: requestedWindowId)
+        let wrongOwnerWindowId = UUIDv7.generate()
+        let wrongWindowOwner = RecordingWorkspaceCommandHandler(currentWindowId: wrongOwnerWindowId)
+        let harness = CommandAdapterHarness(
+            windowId: requestedWindowId,
+            workspaceCommandHandler: wrongWindowOwner,
+            dispatcherShellOwnerAccess: .absent
+        )
         let pane = harness.workspaceStore.createPane(title: "Target")
         harness.workspaceStore.appendTab(Tab(paneId: pane.id))
-        let wrongWindowOwner = RecordingWorkspaceCommandHandler(currentWindowId: UUIDv7.generate())
         let request = IPCCommandExecutionRequest(
             commandId: .init(rawValue: AppCommand.zoomPane.rawValue),
             correlationId: UUIDv7.generate(),
@@ -242,15 +240,7 @@ struct AgentStudioIPCCommandAdapterTests {
         )
 
         await #expect(throws: AppIPCCommandError.self) {
-            try await withIsolatedCommandDispatcher(
-                configure: {
-                    AppCommandDispatcher.shared.handler = wrongWindowOwner
-                    AppCommandDispatcher.shared.appCommandRouter = nil
-                },
-                body: {
-                    try await harness.adapter.executeCommand(request, ownPaneAssertion: nil)
-                }
-            )
+            try await harness.adapter.executeCommand(request, ownPaneAssertion: nil)
         }
         #expect(wrongWindowOwner.awaitedCommands.isEmpty)
     }

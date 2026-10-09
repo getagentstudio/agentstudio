@@ -439,12 +439,9 @@ extension WebKitSerializedTests {
                     #expect(!managementLayer.isActive)
 
                     // Act
-                    try await withIsolatedCommandDispatcher(
-                        configure: {
-                            AppCommandDispatcher.shared.handler = harness.controller
-                            AppCommandDispatcher.shared.appCommandRouter = nil
-                        },
-                        body: {
+                    try await withCommandDispatcher(
+                        harness.commandDispatcher,
+                        body: { _ in
                             #expect(harness.controller.handleAppOwnedKeyEvent(commandREvent))
                         }
                     )
@@ -563,7 +560,7 @@ private func assertSuccessfulBridgeCommandRecordsRecency(_ command: AppCommand) 
             try await dispatchBridgeCommand(
                 command,
                 worktreeId: worktree.id,
-                controller: harness.controller,
+                commandDispatcher: harness.commandDispatcher,
                 executor: harness.executor
             )
 
@@ -614,21 +611,13 @@ private func assertSuccessfulBridgeCommandRecordsRecency(_ command: AppCommand) 
 private func dispatchBridgeCommand(
     _ command: AppCommand,
     worktreeId: UUID,
-    controller: PaneTabViewController,
+    commandDispatcher: AppCommandDispatcher,
     executor: WorkspaceActionExecutor
 ) async throws {
-    try await withIsolatedCommandDispatcher(
-        configure: {
-            AppCommandDispatcher.shared.handler = controller
-            AppCommandDispatcher.shared.appCommandRouter = nil
-        },
-        body: {
-            AppCommandDispatcher.shared.dispatch(
-                command,
-                target: worktreeId,
-                targetType: .worktree
-            )
-        }
+    commandDispatcher.dispatch(
+        command,
+        target: worktreeId,
+        targetType: .worktree
     )
     _ = await executor.submitGesture { _ in true }.value
 }

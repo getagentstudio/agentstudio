@@ -73,7 +73,7 @@ startupTraceRecorder.recordAppStartup(
     "app.ghostty_engine.started",
     phase: "ghostty_engine"
 )
-let ghosttyInitialized = Ghostty.initialize()
+let ghosttyInitialized = delegate.initializeNativeEngineForBoot()
 if !ghosttyInitialized {
     startupTraceRecorder.recordAppStartup(
         "app.ghostty_engine.failed",

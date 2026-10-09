@@ -24,17 +24,9 @@ import Testing
 struct SidebarSurfaceHostSwitchGuardTests {
     @Test("pane and tab switches stay within the refresh bound after many sidebar updates")
     func paneAndTabSwitchesStayWithinRefreshBoundAfterManySidebarUpdates() async throws {
-        try await withIsolatedCommandDispatcher(
-            configure: {
-                AppCommandDispatcher.shared.handler = nil
-                AppCommandDispatcher.shared.appCommandRouter = nil
-            },
-            body: {
-                try await withAsyncTestCoreAtoms { coreAtoms in
-                    try await Self.runSwitchGuard(coreAtoms: coreAtoms)
-                }
-            }
-        )
+        try await withAsyncTestCoreAtoms { coreAtoms in
+            try await Self.runSwitchGuard(coreAtoms: coreAtoms)
+        }
     }
 
     // MARK: - Orchestration
@@ -221,7 +213,13 @@ struct SidebarSurfaceHostSwitchGuardTests {
             appLifecycleStore: AppLifecycleAtom(),
             windowLifecycleStore: coreAtoms.windowLifecycle
         )
+        let dispatcher = CommandDispatcherFixtureConfiguration().makeDispatcher()
         let host = SidebarSurfaceHost(
+            commandDispatcher: dispatcher,
+            resolveCommandCapabilities: {
+                dispatcher.repoExplorerCommandPresentationSnapshot(requests: $0, generation: $1)
+            },
+            executionOwnerIdentities: dispatcher.executionOwnerIdentities,
             store: store,
             octiconLoader: OcticonLoader(resourceRootURL: testAgentStudioResourceRootURL()),
             paneActivityStatusAtom: coreAtoms.paneActivityStatus,

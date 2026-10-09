@@ -18,6 +18,8 @@ struct SurfaceManagerRendererStateDeliveryTests {
         performanceTraceRecorder: AgentStudioPerformanceTraceRecorder? = nil
     ) -> SurfaceManager {
         SurfaceManager(
+            appCommandDispatcher: TerminalFixtureCommandDispatcher(), engineAccess: { .unavailable },
+            callbackHandlingAccess: { nil },
             maxCreationRetries: 0,
             healthCheckInterval: 3600,
             rendererStateDelivery: delivery,
@@ -605,6 +607,9 @@ private actor SurfaceManagerRendererLifecycleRecordingTraceSink: AgentStudioTrac
 
 @MainActor
 private final class NoOpAppCommandDispatcher: AppCommandDispatching {
+    func dispatchKeyboardShortcut(_: AppShortcut) {}
+    func dispatchExtractPaneToTab(tabId _: UUID, paneId _: UUID, targetTabInsertionIndex _: Int?) {}
+
     func dispatch(_: AppCommand) -> Bool { false }
     func dispatch(_: AppCommand, target _: UUID, targetType _: SearchItemType) {}
     func canDispatch(_: AppCommand) -> Bool { false }

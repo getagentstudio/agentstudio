@@ -32,6 +32,8 @@ func makeTestWorkspaceSurfaceCoordinator(
         viewRegistry: viewRegistry,
         runtime: runtime,
         surfaceManager: surfaceManager,
+        terminalSurfaceCommandDispatcher: AppTerminalFixtureSurfaceCommands(),
+        terminalSurfaceOperations: makeAppTerminalFixtureMountOperations(surfaceManager: surfaceManager),
         runtimeRegistry: runtimeRegistry,
         paneEventBus: paneEventBus,
         windowLifecycleStore: windowLifecycleStore,

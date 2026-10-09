@@ -18,6 +18,7 @@ struct ActiveTabContent: View {
     let appLifecycleStore: AppLifecycleAtom
     let closeTransitionCoordinator: PaneCloseTransitionCoordinator
     let actionDispatcher: PaneActionDispatching
+    let commandDispatcher: any AppCommandDispatching
     let arrangementInlineRenameState: ArrangementInlineRenameState
     let onPaneFocusTrigger: PaneFocusTriggerHandler
     let onFocusPane: (UUID) -> Void
@@ -67,6 +68,7 @@ struct ActiveTabContent: View {
                     arrangementInlineRenameState: arrangementInlineRenameState,
                     closeTransitionCoordinator: closeTransitionCoordinator,
                     actionDispatcher: actionDispatcher,
+                    commandDispatcher: commandDispatcher,
                     onPaneFocusTrigger: onPaneFocusTrigger,
                     onFocusPane: onFocusPane,
                     store: store,

@@ -3,6 +3,7 @@ import Testing
 
 @testable import AgentStudio
 @testable import AgentStudioCore
+@testable import AgentStudioInfrastructure
 @testable import AgentStudioTestSupport
 
 @MainActor
@@ -15,21 +16,16 @@ struct AppDelegateMenuPresentationTests {
     @Test("main menu presence follows presentation policy before dispatcher enablement")
     func mainMenuPresencePrecedesDispatcherEnablement() {
         withTestCoreAtoms { coreAtoms in
-            let delegate = AppDelegate()
-            delegate.atomStore = AtomRegistry(core: coreAtoms)
-            delegate.store = WorkspaceStore()
-
-            let dispatcher = AppCommandDispatcher.shared
-            let previousWorkspaceHandler = dispatcher.handler
-            let previousShellRouter = dispatcher.appCommandRouter
             let commandHandler = MockCommandHandler()
             commandHandler.canExecuteResult = false
-            dispatcher.handler = commandHandler
-            dispatcher.appCommandRouter = nil
-            defer {
-                dispatcher.handler = previousWorkspaceHandler
-                dispatcher.appCommandRouter = previousShellRouter
-            }
+            let dispatcher = CommandDispatcherFixtureConfiguration(workspaceOwner: commandHandler).makeDispatcher()
+            let trace = AgentStudioTraceRuntime.fromEnvironment()
+            let delegate = AppDelegate(
+                traceRuntime: trace, startupTraceRecorder: AgentStudioStartupTraceRecorder(traceRuntime: trace),
+                commandDispatcher: dispatcher
+            )
+            delegate.atomStore = AtomRegistry(core: coreAtoms)
+            delegate.store = WorkspaceStore()
 
             let closeTabMenuItem = makeMenuItem(command: .closeTab)
 
@@ -57,13 +53,17 @@ struct AppDelegateMenuPresentationTests {
     func windowMenuActivationRechecksDispatcher() async throws {
         let rejectingRouter = RejectingWindowMenuRouter()
 
-        try await withIsolatedCommandDispatcher(
-            configure: {
-                AppCommandDispatcher.shared.handler = nil
-                AppCommandDispatcher.shared.appCommandRouter = rejectingRouter
+        try await withCommandDispatcherFixture(
+            configure: { configuration in
+                configuration.workspaceOwner = nil
+                configuration.shellOwner = rejectingRouter
             },
-            body: {
-                let delegate = AppDelegate()
+            body: { dispatcher in
+                let trace = AgentStudioTraceRuntime.fromEnvironment()
+                let delegate = AppDelegate(
+                    traceRuntime: trace, startupTraceRecorder: AgentStudioStartupTraceRecorder(traceRuntime: trace),
+                    commandDispatcher: dispatcher
+                )
 
                 delegate.dispatchNewWindowMenuCommand()
                 delegate.dispatchCloseWindowMenuCommand()
@@ -94,8 +94,8 @@ struct AppDelegateMenuPresentationTests {
                 "menuItem(command: .closeWindow, action: #selector(dispatchCloseWindowMenuCommand))"
             )
         )
-        #expect(source.contains("AppCommandDispatcher.shared.dispatch(.newWindow)"))
-        #expect(source.contains("AppCommandDispatcher.shared.dispatch(.closeWindow)"))
+        #expect(source.contains("self.commandDispatcherForBoot().dispatch(.newWindow)"))
+        #expect(source.contains("self.commandDispatcherForBoot().dispatch(.closeWindow)"))
     }
 
     private func makeMenuItem(command: AppCommand) -> NSMenuItem {

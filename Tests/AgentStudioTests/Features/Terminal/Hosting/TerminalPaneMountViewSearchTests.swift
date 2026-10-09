@@ -25,12 +25,13 @@ private final class PaneScrollActionPerformer: TerminalSurfaceActionPerforming {
     }
 }
 
-@Suite("TerminalPaneMountView search responders")
+@Suite("TerminalPaneMountView search responders", .serialized)
 @MainActor
 struct TerminalPaneMountViewSearchTests {
     @Test("starting search focuses the search field")
     func startingSearchFocusesSearchField() throws {
-        let mountView = TerminalPaneMountView(paneId: UUIDv7.generate(), title: "Terminal")
+        let mountView = TerminalPaneMountView(
+            surfaceOperations: makeTerminalFixtureMountOperations(), paneId: UUIDv7.generate(), title: "Terminal")
         let performer = PaneSearchActionPerformer()
         mountView.installActionPerformerForTesting(performer)
 
@@ -60,7 +61,8 @@ struct TerminalPaneMountViewSearchTests {
 
     @Test("Cmd-F keeps Find open and focused when its field already owns focus")
     func commandFKeepsFindOpenWhenSearchFieldOwnsFocus() throws {
-        let mountView = TerminalPaneMountView(paneId: UUIDv7.generate(), title: "Terminal")
+        let mountView = TerminalPaneMountView(
+            surfaceOperations: makeTerminalFixtureMountOperations(), paneId: UUIDv7.generate(), title: "Terminal")
         let performer = PaneSearchActionPerformer()
         mountView.installActionPerformerForTesting(performer)
         let window = NSWindow(
@@ -91,8 +93,10 @@ struct TerminalPaneMountViewSearchTests {
 
     @Test("Cmd-F refocuses an open Find field from its owning terminal")
     func commandFRefocusesOpenFindFromOwningTerminal() throws {
-        let mountView = TerminalPaneMountView(paneId: UUIDv7.generate(), title: "Terminal")
-        let otherMountView = TerminalPaneMountView(paneId: UUIDv7.generate(), title: "Other Terminal")
+        let mountView = TerminalPaneMountView(
+            surfaceOperations: makeTerminalFixtureMountOperations(), paneId: UUIDv7.generate(), title: "Terminal")
+        let otherMountView = TerminalPaneMountView(
+            surfaceOperations: makeTerminalFixtureMountOperations(), paneId: UUIDv7.generate(), title: "Other Terminal")
         let performer = PaneSearchActionPerformer()
         mountView.installActionPerformerForTesting(performer)
         let splitContentView = NSView()
@@ -135,7 +139,8 @@ struct TerminalPaneMountViewSearchTests {
 
     @Test("Escape returns focus to the terminal and further Escape does not close Find")
     func escapeReturnsFocusToTerminalWithoutClosingFind() throws {
-        let mountView = TerminalPaneMountView(paneId: UUIDv7.generate(), title: "Terminal")
+        let mountView = TerminalPaneMountView(
+            surfaceOperations: makeTerminalFixtureMountOperations(), paneId: UUIDv7.generate(), title: "Terminal")
         let performer = PaneSearchActionPerformer()
         mountView.installActionPerformerForTesting(performer)
 
@@ -164,12 +169,13 @@ struct TerminalPaneMountViewSearchTests {
 
     @Test("Ghostty acknowledgements cannot reverse a newer Find presentation intent")
     func ghosttyAcknowledgementsCannotReverseNewerFindPresentationIntent() throws {
-        let mountView = TerminalPaneMountView(paneId: UUIDv7.generate(), title: "Terminal")
+        let mountView = TerminalPaneMountView(
+            surfaceOperations: makeTerminalFixtureMountOperations(), paneId: UUIDv7.generate(), title: "Terminal")
         let performer = PaneSearchActionPerformer()
         mountView.installActionPerformerForTesting(performer)
         let runtime = TerminalRuntime(
             paneId: PaneId.generateUUIDv7(),
-            metadata: PaneMetadata(title: "Terminal")
+            metadata: PaneMetadata(title: "Terminal"), surfaceCommandDispatcher: TerminalFixtureSurfaceCommands()
         )
         #expect(runtime.transitionToReady())
 
@@ -194,12 +200,15 @@ struct TerminalPaneMountViewSearchTests {
 
     @Test("coalesced Ghostty lifecycle settles the latest Find presentation intent")
     func coalescedGhosttyLifecycleSettlesLatestFindPresentationIntent() throws {
-        let openingMountView = TerminalPaneMountView(paneId: UUIDv7.generate(), title: "Opening Terminal")
+        let openingMountView = TerminalPaneMountView(
+            surfaceOperations: makeTerminalFixtureMountOperations(), paneId: UUIDv7.generate(),
+            title: "Opening Terminal")
         let openingPerformer = PaneSearchActionPerformer()
         openingMountView.installActionPerformerForTesting(openingPerformer)
         let openingRuntime = TerminalRuntime(
             paneId: PaneId.generateUUIDv7(),
-            metadata: PaneMetadata(title: "Opening Terminal")
+            metadata: PaneMetadata(title: "Opening Terminal"),
+            surfaceCommandDispatcher: TerminalFixtureSurfaceCommands()
         )
         #expect(openingRuntime.transitionToReady())
 
@@ -217,12 +226,15 @@ struct TerminalPaneMountViewSearchTests {
         #expect(openingMountView.searchOverlayView != nil)
         #expect(openingPerformer.actions == [.startSearch, .endSearch, .startSearch])
 
-        let closingMountView = TerminalPaneMountView(paneId: UUIDv7.generate(), title: "Closing Terminal")
+        let closingMountView = TerminalPaneMountView(
+            surfaceOperations: makeTerminalFixtureMountOperations(), paneId: UUIDv7.generate(),
+            title: "Closing Terminal")
         let closingPerformer = PaneSearchActionPerformer()
         closingMountView.installActionPerformerForTesting(closingPerformer)
         let closingRuntime = TerminalRuntime(
             paneId: PaneId.generateUUIDv7(),
-            metadata: PaneMetadata(title: "Closing Terminal")
+            metadata: PaneMetadata(title: "Closing Terminal"),
+            surfaceCommandDispatcher: TerminalFixtureSurfaceCommands()
         )
         #expect(closingRuntime.transitionToReady())
 
@@ -253,15 +265,16 @@ struct TerminalPaneMountViewSearchTests {
 
     @Test("empty-query Escape closes consecutive Find sessions")
     func emptyQueryEscapeClosesConsecutiveFindSessions() throws {
-        let mountView = TerminalPaneMountView(paneId: UUIDv7.generate(), title: "Terminal")
+        let mountView = TerminalPaneMountView(
+            surfaceOperations: makeTerminalFixtureMountOperations(), paneId: UUIDv7.generate(), title: "Terminal")
         let performer = PaneSearchActionPerformer()
         mountView.installActionPerformerForTesting(performer)
         let runtime = TerminalRuntime(
             paneId: PaneId.generateUUIDv7(),
-            metadata: PaneMetadata(title: "Terminal")
+            metadata: PaneMetadata(title: "Terminal"), surfaceCommandDispatcher: TerminalFixtureSurfaceCommands()
         )
         #expect(runtime.transitionToReady())
-        let accumulator = TerminalLocalActionAccumulator { _, _ in }
+        let accumulator = TerminalLocalActionAccumulator { _, _, _ in }
         let surfaceID = UUIDv7.generate()
         let window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 800, height: 600),
@@ -328,15 +341,16 @@ struct TerminalPaneMountViewSearchTests {
 
     @Test("typed-query Escape focus transfer precedes both delivered Ghostty ends")
     func typedQueryEscapeFocusTransferPrecedesConsecutiveGhosttyEnds() throws {
-        let mountView = TerminalPaneMountView(paneId: UUIDv7.generate(), title: "Terminal")
+        let mountView = TerminalPaneMountView(
+            surfaceOperations: makeTerminalFixtureMountOperations(), paneId: UUIDv7.generate(), title: "Terminal")
         let performer = PaneSearchActionPerformer()
         mountView.installActionPerformerForTesting(performer)
         let runtime = TerminalRuntime(
             paneId: PaneId.generateUUIDv7(),
-            metadata: PaneMetadata(title: "Terminal")
+            metadata: PaneMetadata(title: "Terminal"), surfaceCommandDispatcher: TerminalFixtureSurfaceCommands()
         )
         #expect(runtime.transitionToReady())
-        let accumulator = TerminalLocalActionAccumulator { _, _ in }
+        let accumulator = TerminalLocalActionAccumulator { _, _, _ in }
         let surfaceID = UUIDv7.generate()
         let window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 800, height: 600),
@@ -403,7 +417,8 @@ struct TerminalPaneMountViewSearchTests {
 
     @Test("editing the focused search field sends the query to Ghostty")
     func editingFocusedSearchFieldSendsQueryToGhostty() throws {
-        let mountView = TerminalPaneMountView(paneId: UUIDv7.generate(), title: "Terminal")
+        let mountView = TerminalPaneMountView(
+            surfaceOperations: makeTerminalFixtureMountOperations(), paneId: UUIDv7.generate(), title: "Terminal")
         let performer = PaneSearchActionPerformer()
         mountView.installActionPerformerForTesting(performer)
 
@@ -435,12 +450,13 @@ struct TerminalPaneMountViewSearchTests {
 
     @Test("runtime result updates preserve the active search draft")
     func runtimeResultUpdatesPreserveActiveSearchDraft() throws {
-        let mountView = TerminalPaneMountView(paneId: UUIDv7.generate(), title: "Terminal")
+        let mountView = TerminalPaneMountView(
+            surfaceOperations: makeTerminalFixtureMountOperations(), paneId: UUIDv7.generate(), title: "Terminal")
         let performer = PaneSearchActionPerformer()
         mountView.installActionPerformerForTesting(performer)
         let runtime = TerminalRuntime(
             paneId: PaneId.generateUUIDv7(),
-            metadata: PaneMetadata(title: "Terminal")
+            metadata: PaneMetadata(title: "Terminal"), surfaceCommandDispatcher: TerminalFixtureSurfaceCommands()
         )
         #expect(runtime.transitionToReady())
 
@@ -477,7 +493,8 @@ struct TerminalPaneMountViewSearchTests {
 
     @Test("search overlay buttons send navigation and close actions")
     func searchOverlayButtonsSendNavigationAndCloseActions() throws {
-        let mountView = TerminalPaneMountView(paneId: UUIDv7.generate(), title: "Terminal")
+        let mountView = TerminalPaneMountView(
+            surfaceOperations: makeTerminalFixtureMountOperations(), paneId: UUIDv7.generate(), title: "Terminal")
         let performer = PaneSearchActionPerformer()
         mountView.installActionPerformerForTesting(performer)
         mountView.startSearch(nil)
@@ -504,7 +521,8 @@ struct TerminalPaneMountViewSearchTests {
 
     @Test("mount view search responders and close button send exact ghostty binding actions")
     func mountViewSearchRespondersAndCloseButtonSendExactGhosttyBindingActions() throws {
-        let mountView = TerminalPaneMountView(paneId: UUIDv7.generate(), title: "Terminal")
+        let mountView = TerminalPaneMountView(
+            surfaceOperations: makeTerminalFixtureMountOperations(), paneId: UUIDv7.generate(), title: "Terminal")
         let performer = PaneSearchActionPerformer()
         mountView.installActionPerformerForTesting(performer)
 
@@ -525,13 +543,16 @@ struct TerminalPaneMountViewSearchTests {
 
     @Test("search overlay fills available pane width up to its maximum")
     func searchOverlayFillsAvailablePaneWidthUpToMaximum() throws {
-        let wideMountView = TerminalPaneMountView(paneId: UUIDv7.generate(), title: "Wide Terminal")
+        let wideMountView = TerminalPaneMountView(
+            surfaceOperations: makeTerminalFixtureMountOperations(), paneId: UUIDv7.generate(), title: "Wide Terminal")
         wideMountView.frame = NSRect(x: 0, y: 0, width: 1200, height: 600)
         wideMountView.ensureSearchOverlayForTesting()
         wideMountView.layoutSubtreeIfNeeded()
         let wideFrame = try #require(wideMountView.searchOverlayFrameForTesting)
 
-        let narrowMountView = TerminalPaneMountView(paneId: UUIDv7.generate(), title: "Narrow Terminal")
+        let narrowMountView = TerminalPaneMountView(
+            surfaceOperations: makeTerminalFixtureMountOperations(), paneId: UUIDv7.generate(), title: "Narrow Terminal"
+        )
         narrowMountView.frame = NSRect(x: 0, y: 0, width: 400, height: 600)
         narrowMountView.ensureSearchOverlayForTesting()
         narrowMountView.layoutSubtreeIfNeeded()
@@ -543,7 +564,8 @@ struct TerminalPaneMountViewSearchTests {
 
     @Test("search navigation and close controls use icon-only accessible buttons")
     func searchControlsUseIconOnlyAccessibleButtons() throws {
-        let mountView = TerminalPaneMountView(paneId: UUIDv7.generate(), title: "Terminal")
+        let mountView = TerminalPaneMountView(
+            surfaceOperations: makeTerminalFixtureMountOperations(), paneId: UUIDv7.generate(), title: "Terminal")
         mountView.ensureSearchOverlayForTesting()
 
         for accessibilityLabel in ["Previous Match", "Next Match", "Close Find"] {
@@ -557,7 +579,8 @@ struct TerminalPaneMountViewSearchTests {
 
     @Test("hitTest prioritizes search overlay over terminal content")
     func hitTestPrioritizesSearchOverlayOverTerminalContent() {
-        let mountView = TerminalPaneMountView(paneId: UUIDv7.generate(), title: "Terminal")
+        let mountView = TerminalPaneMountView(
+            surfaceOperations: makeTerminalFixtureMountOperations(), paneId: UUIDv7.generate(), title: "Terminal")
         mountView.frame = NSRect(x: 0, y: 0, width: 800, height: 600)
 
         mountView.ensureSearchOverlayForTesting()
@@ -573,7 +596,8 @@ struct TerminalPaneMountViewSearchTests {
 
     @Test("hitTest routes every search button center to that button")
     func hitTestRoutesEverySearchButtonCenterToThatButton() throws {
-        let mountView = TerminalPaneMountView(paneId: UUIDv7.generate(), title: "Terminal")
+        let mountView = TerminalPaneMountView(
+            surfaceOperations: makeTerminalFixtureMountOperations(), paneId: UUIDv7.generate(), title: "Terminal")
         let window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 800, height: 600),
             styleMask: [.titled],
@@ -607,7 +631,8 @@ struct TerminalPaneMountViewSearchTests {
 
     @Test("hitTest prioritizes scroll-to-bottom indicator over terminal content")
     func hitTestPrioritizesScrollToBottomIndicatorOverTerminalContent() {
-        let mountView = TerminalPaneMountView(paneId: UUIDv7.generate(), title: "Terminal")
+        let mountView = TerminalPaneMountView(
+            surfaceOperations: makeTerminalFixtureMountOperations(), paneId: UUIDv7.generate(), title: "Terminal")
         mountView.frame = NSRect(x: 0, y: 0, width: 800, height: 600)
 
         mountView.ensureScrollToBottomIndicatorForTesting()
@@ -625,7 +650,8 @@ struct TerminalPaneMountViewSearchTests {
 
     @Test("scroll-to-bottom indicator sits 12 points from trailing and bottom edges")
     func scrollToBottomIndicatorSitsTwelvePointsFromTrailingAndBottomEdges() {
-        let mountView = TerminalPaneMountView(paneId: UUIDv7.generate(), title: "Terminal")
+        let mountView = TerminalPaneMountView(
+            surfaceOperations: makeTerminalFixtureMountOperations(), paneId: UUIDv7.generate(), title: "Terminal")
         mountView.frame = NSRect(x: 0, y: 0, width: 800, height: 600)
 
         mountView.ensureScrollToBottomIndicatorForTesting()
@@ -640,7 +666,8 @@ struct TerminalPaneMountViewSearchTests {
 
     @Test("cancelOperation without search overlay falls through without emitting actions")
     func cancelOperationWithoutSearchOverlayDoesNotEmitActions() {
-        let mountView = TerminalPaneMountView(paneId: UUIDv7.generate(), title: "Terminal")
+        let mountView = TerminalPaneMountView(
+            surfaceOperations: makeTerminalFixtureMountOperations(), paneId: UUIDv7.generate(), title: "Terminal")
         let performer = PaneSearchActionPerformer()
         mountView.installActionPerformerForTesting(performer)
 
@@ -651,7 +678,8 @@ struct TerminalPaneMountViewSearchTests {
 
     @Test("bind does not drive the native scroll wrapper directly from runtime replay")
     func bindDoesNotDriveTheNativeScrollWrapperDirectlyFromRuntimeReplay() {
-        let mountView = TerminalPaneMountView(paneId: UUIDv7.generate(), title: "Terminal")
+        let mountView = TerminalPaneMountView(
+            surfaceOperations: makeTerminalFixtureMountOperations(), paneId: UUIDv7.generate(), title: "Terminal")
         let scrollView = TerminalSurfaceScrollView(actionPerformer: PaneScrollActionPerformer())
         scrollView.frame = NSRect(x: 0, y: 0, width: 800, height: 600)
         scrollView.layoutSubtreeIfNeeded()
@@ -659,7 +687,7 @@ struct TerminalPaneMountViewSearchTests {
 
         let runtime = TerminalRuntime(
             paneId: PaneId.generateUUIDv7(),
-            metadata: PaneMetadata(title: "Terminal")
+            metadata: PaneMetadata(title: "Terminal"), surfaceCommandDispatcher: TerminalFixtureSurfaceCommands()
         )
         #expect(runtime.transitionToReady())
         runtime.handleGhosttyEvent(.cellSizeChanged(NSSize(width: 8, height: 20)))

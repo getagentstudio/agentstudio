@@ -11,64 +11,6 @@ import Testing
 @MainActor
 @Suite("Derived terminal activity notification integration", .serialized)
 struct DerivedActivityNotificationIntegrationTests {
-    private struct Fixture {
-        let bus: EventBus<RuntimeEnvelope>
-        let inboxAtom: InboxNotificationAtom
-        let prefsAtom: InboxNotificationPrefsAtom
-        let paneAtom: WorkspacePaneAtom
-        let tabLayout: WorkspaceTabLayoutAtom
-        let windowLifecycle: WindowLifecycleAtom
-        let managementLayer: ManagementLayerAtom
-        let attendedPane: AttendedPaneDerived
-        let tracker: PaneFocusTracker
-        let terminalActivity: TerminalActivityAtom
-        let inboxRouter: InboxNotificationRouter
-        let terminalRouter: TerminalActivityRouter
-        let terminalRouterBox: TerminalRouterBox
-        let clock: TestPushClock
-        let paneActivityObservationRecorder: PaneActivityObservationRecorder
-        let eventRecorder: RecordingSubscriber<RuntimeEnvelope>
-
-        @MainActor
-        func shutdown() async {
-            await terminalRouter.stop()
-            await inboxRouter.stop()
-            await tracker.stop()
-            await eventRecorder.shutdown()
-        }
-    }
-
-    @MainActor
-    private final class TerminalRouterBox {
-        var router: TerminalActivityRouter?
-        private var latestObservationTask: Task<Void, Never>?
-
-        func observeActivity(for paneId: UUID) {
-            guard let router else { return }
-            latestObservationTask = Task { @MainActor in
-                await router.consumeTerminalActivityInput(
-                    .orderedControl(
-                        surfaceID: paneId,
-                        paneID: paneId,
-                        precedingAggregate: nil,
-                        control: .observed
-                    )
-                )
-            }
-        }
-
-        func waitForLatestObservation() async {
-            await latestObservationTask?.value
-        }
-    }
-    private final class PaneActivityObservationRecorder {
-        private(set) var paneIds: [UUID] = []
-
-        func record(_ paneId: UUID) {
-            paneIds.append(paneId)
-        }
-    }
-
     @Test("drawer child output burst reaches parent PaneInbox through runtime bus")
     func drawerChildOutputBurstReachesParentPaneInboxThroughRuntimeBus() async throws {
         let fixture = await makeFixture()
@@ -674,97 +616,6 @@ struct DerivedActivityNotificationIntegrationTests {
 }
 
 extension DerivedActivityNotificationIntegrationTests {
-    private func makeFixture() async -> Fixture {
-        let bus = EventBus<RuntimeEnvelope>()
-        let inboxAtom = InboxNotificationAtom()
-        let prefsAtom = InboxNotificationPrefsAtom()
-        let paneAtom = WorkspacePaneAtom()
-        let tabLayout = WorkspaceTabLayoutAtom()
-        let windowLifecycle = WindowLifecycleAtom()
-        let managementLayer = ManagementLayerAtom()
-        let attendedPane = AttendedPaneDerived(
-            tabLayout: tabLayout,
-            windowLifecycle: windowLifecycle,
-            managementLayer: managementLayer
-        )
-        let tracker = PaneFocusTracker(attendedPane: attendedPane)
-        let terminalActivity = TerminalActivityAtom(
-            outputBurstThreshold: AppPolicies.InboxNotification.terminalActivityOutputBurstThresholdRows
-        )
-        let clock = TestPushClock()
-        let terminalRouterBox = TerminalRouterBox()
-        let paneActivityObservationRecorder = PaneActivityObservationRecorder()
-        let eventRecorder = RecordingSubscriber(
-            subscription: await bus.subscribe(policy: .criticalUnbounded, subscriberName: #function))
-        let drawerView: @MainActor (UUID) -> DrawerView? = { parentPaneId in
-            guard let drawer = paneAtom.pane(parentPaneId)?.drawer,
-                let tabId = tabLayout.tabContaining(paneId: parentPaneId)?.id
-            else {
-                return nil
-            }
-            return tabLayout.arrangementAtom.arrangementState(tabId)?.arrangements
-                .first { $0.id == tabLayout.tab(tabId)?.activeArrangementId }?
-                .drawerViews[drawer.drawerId]
-        }
-        let inboxRouter = InboxNotificationRouter(
-            bus: bus,
-            inboxAtom: inboxAtom,
-            prefsAtom: prefsAtom,
-            paneAtom: paneAtom,
-            tabLayout: tabLayout,
-            attendedPane: attendedPane,
-            focusTracker: tracker,
-            terminalIsPinnedToBottom: { paneId in
-                terminalActivity.snapshot(for: paneId)?.isPinnedToBottom == true
-            },
-            terminalPinnedStateSnapshot: {
-                terminalActivity.snapshotsByPaneId.mapValues(\.isPinnedToBottom)
-            },
-            drawerView: drawerView,
-            onPaneActivityObserved: { paneId in
-                paneActivityObservationRecorder.record(paneId)
-                terminalRouterBox.observeActivity(for: paneId)
-            }
-        )
-        let terminalRouter = TerminalActivityRouter(
-            bus: bus,
-            activityAtom: terminalActivity,
-            attendedPane: attendedPane,
-            surfaceIDForPaneID: { $0 },
-            isPaneCurrentlyAttended: {
-                PaneObservationResolver.isPaneCurrentlyAttended(
-                    paneId: $0,
-                    attendedPaneId: attendedPane.attendedPaneId,
-                    pane: { paneAtom.pane($0) },
-                    drawerView: drawerView
-                )
-            },
-            unseenActivityDebounceDuration: AppPolicies.InboxNotification.terminalActivityQuietDebounceDuration,
-            unseenActivityClock: clock
-        )
-        terminalRouterBox.router = terminalRouter
-        await inboxRouter.start()
-        await terminalRouter.start()
-        return Fixture(
-            bus: bus,
-            inboxAtom: inboxAtom,
-            prefsAtom: prefsAtom,
-            paneAtom: paneAtom,
-            tabLayout: tabLayout,
-            windowLifecycle: windowLifecycle,
-            managementLayer: managementLayer,
-            attendedPane: attendedPane,
-            tracker: tracker,
-            terminalActivity: terminalActivity,
-            inboxRouter: inboxRouter,
-            terminalRouter: terminalRouter,
-            terminalRouterBox: terminalRouterBox,
-            clock: clock,
-            paneActivityObservationRecorder: paneActivityObservationRecorder,
-            eventRecorder: eventRecorder
-        )
-    }
-
     private func addTerminalPane(
         _ paneId: PaneId,
         to fixture: Fixture
@@ -937,7 +788,7 @@ extension DerivedActivityNotificationIntegrationTests {
         await assertEventuallyMain("activity observation should reach the terminal router") {
             fixture.paneActivityObservationRecorder.paneIds.contains(paneId)
         }
-        await fixture.terminalRouterBox.waitForLatestObservation()
+        await fixture.terminalRouterBox.joinLatestObservation()
     }
 
     private func postScrollbackBurst(

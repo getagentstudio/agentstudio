@@ -121,7 +121,7 @@ struct ShortcutCatalogTests {
     @Test
     func shortcutAndCommandDefinitions_stayBidirectionallyConsistent() {
         for shortcut in AppShortcut.allCases {
-            let definition = AppCommandDispatcher.shared.definition(for: shortcut.command)
+            let definition = shortcut.command.definition
             if shortcut == .showInboxNotifications || shortcut == .showPaneInboxNotifications {
                 #expect(definition.shortcut == nil)
             } else {
@@ -132,11 +132,11 @@ struct ShortcutCatalogTests {
 
     @Test
     func commandSpecDerivesGlobalKeyBindingFromShortcut() {
-        let managementLayerDefinition = AppCommandDispatcher.shared.definition(for: .toggleManagementLayer)
-        let quickOpenDefinition = AppCommandDispatcher.shared.definition(for: .showCommandBarEverything)
-        let terminalQuickOpenDefinition = AppCommandDispatcher.shared.definition(for: .showCommandBarQuickOpen)
-        let addDrawerPaneDefinition = AppCommandDispatcher.shared.definition(for: .addDrawerPane)
-        let paneInboxDefinition = AppCommandDispatcher.shared.definition(for: .showPaneInboxNotifications)
+        let managementLayerDefinition = AppCommand.toggleManagementLayer.definition
+        let quickOpenDefinition = AppCommand.showCommandBarEverything.definition
+        let terminalQuickOpenDefinition = AppCommand.showCommandBarQuickOpen.definition
+        let addDrawerPaneDefinition = AppCommand.addDrawerPane.definition
+        let paneInboxDefinition = AppCommand.showPaneInboxNotifications.definition
 
         #expect(managementLayerDefinition.globalKeyBinding?.key == "r")
         #expect(managementLayerDefinition.globalKeyBinding?.modifiers == [.command])
@@ -197,7 +197,7 @@ struct ShortcutCatalogTests {
 
     @Test
     func reposSidebar_hasNoGlobalDisplayOrMenuBinding() {
-        let definition = AppCommandDispatcher.shared.definition(for: .showReposSidebar)
+        let definition = AppCommand.showReposSidebar.definition
 
         #expect(AppShortcut.showReposSidebar.displayKeyBinding(in: .global) == nil)
         #expect(definition.globalKeyBinding == nil)

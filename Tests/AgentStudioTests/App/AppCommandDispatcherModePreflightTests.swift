@@ -20,17 +20,17 @@ struct AppCommandDispatcherModePreflightTests {
         let shellOwner = RecordingDispatcherShellCommandOwner(executionResult: true)
         var admittedCorrelationIds: [UUID] = []
 
-        try await withIsolatedCommandDispatcher(
-            configure: {
-                AppCommandDispatcher.shared.appCommandRouter = shellOwner
-                AppCommandDispatcher.shared.interactionProbe = probe
-                AppCommandDispatcher.shared.onCommandRefreshAccepted = {
+        try await withCommandDispatcherFixture(
+            configure: { configuration in
+                configuration.shellOwner = shellOwner
+                configuration.interactionProbe = probe
+                configuration.commandRefreshAccepted = {
                     admittedCorrelationIds.append($0)
                 }
             },
-            body: {
-                AppCommandDispatcher.shared.dispatchKeyboardShortcut(.toggleManagementLayer)
-                AppCommandDispatcher.shared.dispatch(.toggleManagementLayer)
+            body: { dispatcher in
+                dispatcher.dispatchKeyboardShortcut(.toggleManagementLayer)
+                dispatcher.dispatch(.toggleManagementLayer)
 
                 #expect(admittedCorrelationIds.count == 1)
                 #expect(recorder.records.isEmpty)
@@ -83,13 +83,13 @@ struct AppCommandDispatcherModePreflightTests {
         let workspaceOwner = RecordingDispatcherWorkspaceCommandOwner()
         #expect(AppCommand.pinRepo.definition.targeting == .targeted([.repo]))
 
-        try await withIsolatedCommandDispatcher(
-            configure: {
-                AppCommandDispatcher.shared.appCommandRouter = shellOwner
-                AppCommandDispatcher.shared.handler = workspaceOwner
+        try await withCommandDispatcherFixture(
+            configure: { configuration in
+                configuration.shellOwner = shellOwner
+                configuration.workspaceOwner = workspaceOwner
             },
-            body: {
-                AppCommandDispatcher.shared.dispatch(.pinRepo)
+            body: { dispatcher in
+                dispatcher.dispatch(.pinRepo)
 
                 #expect(shellOwner.interactions.isEmpty)
                 #expect(workspaceOwner.interactions.isEmpty)
@@ -105,13 +105,13 @@ struct AppCommandDispatcherModePreflightTests {
         let target = UUID()
         #expect(AppCommand.toggleSidebar.definition.targeting == .contextual)
 
-        try await withIsolatedCommandDispatcher(
-            configure: {
-                AppCommandDispatcher.shared.appCommandRouter = shellOwner
-                AppCommandDispatcher.shared.handler = workspaceOwner
+        try await withCommandDispatcherFixture(
+            configure: { configuration in
+                configuration.shellOwner = shellOwner
+                configuration.workspaceOwner = workspaceOwner
             },
-            body: {
-                AppCommandDispatcher.shared.dispatch(.toggleSidebar, target: target, targetType: .pane)
+            body: { dispatcher in
+                dispatcher.dispatch(.toggleSidebar, target: target, targetType: .pane)
 
                 #expect(shellOwner.interactions.isEmpty)
                 #expect(workspaceOwner.interactions.isEmpty)
@@ -130,13 +130,13 @@ struct AppCommandDispatcherModePreflightTests {
                 == .contextualAndTargeted([.pane], preferredInvocation: .contextual)
         )
 
-        try await withIsolatedCommandDispatcher(
-            configure: {
-                AppCommandDispatcher.shared.appCommandRouter = shellOwner
-                AppCommandDispatcher.shared.handler = workspaceOwner
+        try await withCommandDispatcherFixture(
+            configure: { configuration in
+                configuration.shellOwner = shellOwner
+                configuration.workspaceOwner = workspaceOwner
             },
-            body: {
-                AppCommandDispatcher.shared.dispatch(.zoomPane, target: target, targetType: .repo)
+            body: { dispatcher in
+                dispatcher.dispatch(.zoomPane, target: target, targetType: .repo)
 
                 #expect(shellOwner.interactions.isEmpty)
                 #expect(workspaceOwner.interactions.isEmpty)
@@ -155,13 +155,13 @@ struct AppCommandDispatcherModePreflightTests {
                 == .contextualAndTargeted([.pane], preferredInvocation: .contextual)
         )
 
-        try await withIsolatedCommandDispatcher(
-            configure: {
-                AppCommandDispatcher.shared.appCommandRouter = shellOwner
-                AppCommandDispatcher.shared.handler = workspaceOwner
+        try await withCommandDispatcherFixture(
+            configure: { configuration in
+                configuration.shellOwner = shellOwner
+                configuration.workspaceOwner = workspaceOwner
             },
-            body: {
-                AppCommandDispatcher.shared.dispatch(.zoomPane, target: target, targetType: .pane)
+            body: { dispatcher in
+                dispatcher.dispatch(.zoomPane, target: target, targetType: .pane)
 
                 let expectedInteractions: [DispatcherOwnerInteraction] = [
                     .targetedCapability(command: .zoomPane, target: target, targetType: .pane)
@@ -183,19 +183,19 @@ struct AppCommandDispatcherModePreflightTests {
             let targetTabId = UUID()
             #expect(AppCommand.movePaneToTab.definition.targeting == .targeted([.pane, .tab]))
 
-            try await withIsolatedCommandDispatcher(
-                configure: {
-                    AppCommandDispatcher.shared.appCommandRouter = shellOwner
-                    AppCommandDispatcher.shared.handler = workspaceOwner
+            try await withCommandDispatcherFixture(
+                configure: { configuration in
+                    configuration.shellOwner = shellOwner
+                    configuration.workspaceOwner = workspaceOwner
                 },
-                body: {
+                body: { dispatcher in
                     atom(\.managementLayer).activate()
 
-                    #expect(!AppCommandDispatcher.shared.canDispatch(.movePaneToTab))
+                    #expect(!dispatcher.canDispatch(.movePaneToTab))
                     #expect(shellOwner.interactions.isEmpty)
                     #expect(workspaceOwner.interactions.isEmpty)
 
-                    AppCommandDispatcher.shared.dispatchMovePaneToTab(
+                    dispatcher.dispatchMovePaneToTab(
                         sourcePaneId: sourcePaneId,
                         sourceTabId: sourceTabId,
                         targetTabId: targetTabId
@@ -246,7 +246,7 @@ private final class CommandRefreshProbeRecorder: @unchecked Sendable {
     }
 }
 
-private enum DispatcherOwnerInteraction: Equatable {
+enum DispatcherOwnerInteraction: Equatable {
     case contextualCapability(command: AppCommand)
     case targetedCapability(command: AppCommand, target: UUID, targetType: SearchItemType)
     case contextualExecution(command: AppCommand)
@@ -255,7 +255,7 @@ private enum DispatcherOwnerInteraction: Equatable {
 }
 
 @MainActor
-private final class RecordingDispatcherShellCommandOwner: ShellCommandHandling {
+final class RecordingDispatcherShellCommandOwner: ShellCommandHandling {
     private let capabilityResult: Bool
     private let executionResult: Bool
     private(set) var interactions: [DispatcherOwnerInteraction] = []
@@ -296,7 +296,7 @@ private final class RecordingDispatcherShellCommandOwner: ShellCommandHandling {
 }
 
 @MainActor
-private final class RecordingDispatcherWorkspaceCommandOwner: WorkspaceCommandHandling {
+final class RecordingDispatcherWorkspaceCommandOwner: WorkspaceCommandHandling {
 
     private let capabilityResult: Bool
     private(set) var interactions: [DispatcherOwnerInteraction] = []

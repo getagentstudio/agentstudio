@@ -23,7 +23,8 @@ package final class TerminalActivityRouter {
 
     private let bus: EventBus<RuntimeEnvelope>
     private let projector: TerminalActivityProjector
-    private let projectorBindingID = UUIDv7.generate()
+    private let callbackHandlingAccess: @MainActor @Sendable () -> Ghostty.ActionRouter?
+    private var acceptsSourceInput = false
     private let activityAtom: TerminalActivityAtom
     private let attendedPane: AttendedPaneDerived?
     private let traceRuntime: AgentStudioTraceRuntime?
@@ -52,14 +53,15 @@ package final class TerminalActivityRouter {
     package init(
         bus: EventBus<RuntimeEnvelope>,
         activityAtom: TerminalActivityAtom,
+        callbackHandlingAccess: @escaping @MainActor @Sendable () -> Ghostty.ActionRouter?,
         projector: TerminalActivityProjector? = nil,
         attendedPane: AttendedPaneDerived? = nil,
         traceRuntime: AgentStudioTraceRuntime? = nil,
         startupTraceRecorder: AgentStudioStartupTraceRecorder? = nil,
-        surfaceIDForPaneID: (@MainActor (UUID) -> UUID?)? = nil,
+        surfaceIDForPaneID: @escaping @MainActor (UUID) -> UUID?,
         isPaneCurrentlyAttended: (@MainActor (UUID) -> Bool)? = nil,
         isPaneAgentClassified: (@MainActor (UUID, PaneContentType) -> Bool)? = nil,
-        lastOutputLineReader: (@MainActor (UUID) -> TerminalViewportTextReadResult)? = nil,
+        lastOutputLineReader: @escaping @MainActor (UUID) -> TerminalViewportTextReadResult,
         recordSettledActivityStatus: (@MainActor (UUID, String?) -> Void)? = nil,
         clearPaneActivityStatus: (@MainActor (UUID) -> Void)? = nil,
         activityOccurrenceSink: (@Sendable (PaneActivityOccurrence) -> Void)? = nil,
@@ -72,6 +74,7 @@ package final class TerminalActivityRouter {
         }
     ) {
         self.bus = bus
+        self.callbackHandlingAccess = callbackHandlingAccess
         self.projector =
             projector
             ?? TerminalActivityProjector(
@@ -85,15 +88,14 @@ package final class TerminalActivityRouter {
         self.attendedPane = attendedPane
         self.traceRuntime = traceRuntime
         self.startupTraceRecorder = startupTraceRecorder
-        self.surfaceIDForPaneID = surfaceIDForPaneID ?? { SurfaceManager.shared.surfaceId(forPaneId: $0) }
+        self.surfaceIDForPaneID = surfaceIDForPaneID
         self.isPaneCurrentlyAttended =
             isPaneCurrentlyAttended
             ?? { [attendedPane] paneID in
                 attendedPane?.attendedPaneId == paneID
             }
         self.isPaneAgentClassified = isPaneAgentClassified ?? { _, paneKind in paneKind == .agent }
-        self.lastOutputLineReader =
-            lastOutputLineReader ?? { SurfaceManager.shared.readViewportTrailingText(forSurfaceID: $0) }
+        self.lastOutputLineReader = lastOutputLineReader
         self.recordSettledActivityStatus = recordSettledActivityStatus ?? { _, _ in }
         self.clearPaneActivityStatus = clearPaneActivityStatus ?? { _ in }
     }
@@ -145,20 +147,7 @@ package final class TerminalActivityRouter {
                 self?.consumeProjectionOutcomes(outcomes)
             }
         )
-        Ghostty.ActionRouter.bindTerminalActivityInput(
-            id: projectorBindingID,
-            context: { [weak self] paneID in
-                self?.projectionContext(for: paneID)
-                    ?? TerminalActivityProjectionContext(
-                        isAttended: false,
-                        isAgentClassified: false,
-                        outputBurstThreshold: AppPolicies.InboxNotification.terminalActivityOutputBurstThresholdRows
-                    )
-            },
-            sink: { [weak self] input in
-                await self?.consumeTerminalActivityInput(input)
-            }
-        )
+        acceptsSourceInput = true
         let stream = await bus.subscribe(
             policy: .lossyNewest(BusSubscriberPolicy.standardLossyBufferLimit),
             subscriberName: "TerminalActivityRouter",
@@ -180,7 +169,7 @@ package final class TerminalActivityRouter {
     }
 
     private func performStop() async {
-        Ghostty.ActionRouter.unbindTerminalActivityInput(id: projectorBindingID)
+        acceptsSourceInput = false
         let task = busTask
         task?.cancel()
         busTask = nil
@@ -196,7 +185,7 @@ package final class TerminalActivityRouter {
     package func markUnseenActivityObserved(paneId: UUID) {
         guard let surfaceID = surfaceIDForPaneID(paneId) else { return }
         Task { @MainActor in
-            await Ghostty.ActionRouter.applyOrderedActivityControl(
+            _ = await callbackHandlingAccess()?.applyOrderedActivityControl(
                 surfaceID: surfaceID,
                 paneID: paneId,
                 control: .observed
@@ -208,6 +197,16 @@ package final class TerminalActivityRouter {
     /// `consumeTerminalActivityInput` call, without blocking ordinary production callers.
     package func waitForPendingDerivedActivityPosts() async {
         await derivedActivityPostTask?.value
+    }
+
+    func sourceInputContext(paneID: UUID) -> TerminalActivityProjectionContext? {
+        guard acceptsSourceInput else { return nil }
+        return projectionContext(for: paneID)
+    }
+
+    func consumeSourceInputIfAccepting(_ input: TerminalActivitySourceInput) async {
+        guard acceptsSourceInput else { return }
+        await consumeTerminalActivityInput(input)
     }
 
     func consumeTerminalActivityInput(_ input: TerminalActivitySourceInput) async {
@@ -327,7 +326,7 @@ package final class TerminalActivityRouter {
                 // semantic fact entered the lossy bus. Other consumers retain the fact; this
                 // projector must not settle it twice or depend on subscriber delivery.
             } else {
-                await Ghostty.ActionRouter.applyOrderedActivityControl(
+                _ = await callbackHandlingAccess()?.applyOrderedActivityControl(
                     surfaceID: surfaceID,
                     paneID: paneEnvelope.paneId.uuid,
                     control: .semanticSignal
@@ -551,7 +550,7 @@ extension TerminalActivityRouter {
             for delivery in deliveries {
                 guard !Task.isCancelled, attentionLifecycleEpoch == epoch, busTask != nil else { return }
                 guard surfaceIDForPaneID(delivery.paneID) == delivery.surfaceID else { continue }
-                await Ghostty.ActionRouter.applyOrderedActivityControl(
+                _ = await callbackHandlingAccess()?.applyOrderedActivityControl(
                     surfaceID: delivery.surfaceID,
                     paneID: delivery.paneID,
                     control: .contextChanged(delivery.after),

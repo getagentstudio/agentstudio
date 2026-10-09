@@ -778,7 +778,7 @@ extension WebKitSerializedTests {
             var capturedStore: WorkspaceStore?
             var capturedViewRegistry: ViewRegistry?
             var capturedRuntimeRegistry: RuntimeRegistry?
-            let harness = makeHarness { surface, companionPaneId in
+            let harness = makeHarness(bridgeViewerSurfaceRequestHandler: { surface, companionPaneId in
                 #expect(surface == .file)
                 capturedCompanionPaneId = companionPaneId
                 #expect(capturedStore?.pane(companionPaneId) == nil)
@@ -789,7 +789,7 @@ extension WebKitSerializedTests {
                     ) is BridgeRuntime
                 )
                 return false
-            }
+            })
             defer { try? FileManager.default.removeItem(at: harness.tempDir) }
             capturedStore = harness.store
             capturedViewRegistry = harness.viewRegistry
@@ -841,14 +841,20 @@ extension WebKitSerializedTests {
         func unresolvableSourceLeavesNoPartialCompanionResources() async {
             let store = WorkspaceStore()
             let viewRegistry = ViewRegistry()
-            let coordinator = WorkspaceSurfaceCoordinator(
-                store: store,
-                viewRegistry: viewRegistry,
-                runtime: SessionRuntime(store: store),
-                windowLifecycleStore: WindowLifecycleAtom(),
-                ipcLifecycle: .testUnavailable,
-                bridgePaneAttendance: BridgePaneAttendanceAtom()
-            )
+            let coordinator = {
+                let fixtureSurfaceManager = makeAppTerminalFixtureSurfaceManager()
+                return WorkspaceSurfaceCoordinator(
+                    store: store,
+                    viewRegistry: viewRegistry,
+                    runtime: SessionRuntime(store: store),
+                    surfaceManager: fixtureSurfaceManager, terminalSurfaceCommandDispatcher: fixtureSurfaceManager,
+                    terminalSurfaceOperations: fixtureSurfaceManager.makeTerminalPaneSurfaceOperations(),
+                    runtimeRegistry: RuntimeRegistry(),
+                    windowLifecycleStore: WindowLifecycleAtom(),
+                    ipcLifecycle: .testUnavailable,
+                    bridgePaneAttendance: BridgePaneAttendanceAtom()
+                )
+            }()
             let sourcePane = store.createPane()
             let sourceTab = Tab(paneId: sourcePane.id)
             store.appendTab(sourceTab)
@@ -894,14 +900,20 @@ private func makeZoomCompanionHarness() -> ZoomCompanionHarness {
     let store = WorkspaceStore()
     let (_, worktree) = makeRepoAndWorktree(store, root: root)
     let viewRegistry = ViewRegistry()
-    let coordinator = WorkspaceSurfaceCoordinator(
-        store: store,
-        viewRegistry: viewRegistry,
-        runtime: SessionRuntime(store: store),
-        windowLifecycleStore: WindowLifecycleAtom(),
-        ipcLifecycle: .testUnavailable,
-        bridgePaneAttendance: BridgePaneAttendanceAtom()
-    )
+    let coordinator = {
+        let fixtureSurfaceManager = makeAppTerminalFixtureSurfaceManager()
+        return WorkspaceSurfaceCoordinator(
+            store: store,
+            viewRegistry: viewRegistry,
+            runtime: SessionRuntime(store: store),
+            surfaceManager: fixtureSurfaceManager, terminalSurfaceCommandDispatcher: fixtureSurfaceManager,
+            terminalSurfaceOperations: fixtureSurfaceManager.makeTerminalPaneSurfaceOperations(),
+            runtimeRegistry: RuntimeRegistry(),
+            windowLifecycleStore: WindowLifecycleAtom(),
+            ipcLifecycle: .testUnavailable,
+            bridgePaneAttendance: BridgePaneAttendanceAtom()
+        )
+    }()
     return ZoomCompanionHarness(
         root: root,
         store: store,

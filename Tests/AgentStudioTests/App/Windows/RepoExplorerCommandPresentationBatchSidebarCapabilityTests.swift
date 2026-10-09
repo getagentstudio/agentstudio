@@ -14,12 +14,9 @@ extension RepoExplorerCommandPresentationBatchTests {
         let harness = makeHarness()
         defer { try? FileManager.default.removeItem(at: harness.tempDir) }
         try await withWorkspaceCommandHarness(harness) {
-            try await withIsolatedCommandDispatcher(
-                configure: {
-                    AppCommandDispatcher.shared.handler = harness.controller
-                    AppCommandDispatcher.shared.appCommandRouter = nil
-                },
-                body: {
+            try await withCommandDispatcher(
+                harness.commandDispatcher,
+                body: { dispatcher in
                     let directory = harness.tempDir.appending(path: "cwd", directoryHint: .isDirectory)
                     let focused = harness.store.createPane(launchDirectory: directory)
                     let target = harness.store.createPane(launchDirectory: directory)
@@ -33,7 +30,10 @@ extension RepoExplorerCommandPresentationBatchTests {
                     harness.store.setActiveTab(tab.id)
                     harness.store.tabLayoutAtom.setActivePane(focused.id, inTab: tab.id)
                     let batch = RepoExplorerCommandPresentationBatch(
-                        store: harness.store, repoExplorerPrefs: RepoExplorerSidebarPrefsAtom(), dispatcher: .shared
+                        store: harness.store, repoExplorerPrefs: RepoExplorerSidebarPrefsAtom(),
+                        resolveCommandCapabilities: {
+                            dispatcher.repoExplorerCommandPresentationSnapshot(requests: $0, generation: $1)
+                        }, executionOwnerIdentities: dispatcher.executionOwnerIdentities
                     )
                     batch.start()
                     defer { batch.stop() }
@@ -65,99 +65,91 @@ extension RepoExplorerCommandPresentationBatchTests {
 
     @Test("sidebar screen switch re-resolves toolbar capabilities without a visible-set change")
     func sidebarScreenSwitchReresolvesToolbarCapabilitiesWithoutVisibleSetChange() async throws {
-        try await withIsolatedCommandDispatcher(
-            configure: {},
-            body: {
-                await withAsyncTestCoreAtoms { coreAtoms in
-                    let prefs = RepoExplorerSidebarPrefsAtom(
-                        sidebarState: coreAtoms.workspaceSidebarState
-                    )
-                    let atoms = AtomRegistry(core: coreAtoms, repoExplorerSidebarPrefs: prefs)
-                    let delegate = AppDelegate()
-                    delegate.atomStore = atoms
-                    AppCommandDispatcher.shared.appCommandRouter = delegate
-                    AppCommandDispatcher.shared.handler = nil
+        await withAsyncTestCoreAtoms { coreAtoms in
+            let prefs = RepoExplorerSidebarPrefsAtom(
+                sidebarState: coreAtoms.workspaceSidebarState
+            )
+            let atoms = AtomRegistry(core: coreAtoms, repoExplorerSidebarPrefs: prefs)
+            let delegate = AppDelegate()
+            delegate.atomStore = atoms
+            let dispatcher = CommandDispatcherFixtureConfiguration(shellOwner: delegate).makeDispatcher()
 
-                    let batch = RepoExplorerCommandPresentationBatch(
-                        store: WorkspaceStore(),
-                        repoExplorerPrefs: prefs,
-                        dispatcher: .shared
-                    )
-                    batch.start()
-                    defer { batch.stop() }
-                    batch.acceptVisibleWorktreeSnapshot(
-                        sidebarCapabilityVisibleSnapshot()
-                    )
-                    await eventually("initial Repos command capabilities") {
-                        toolbarCapability(
-                            .setReposGroupingActivity,
-                            in: batch.snapshot
-                        ) == true
-                            && toolbarCapability(
-                                .togglePanesShowsPinned,
-                                in: batch.snapshot
-                            ) == false
-                    }
-                    let reposGeneration = batch.snapshot.generation
-
-                    coreAtoms.workspaceSidebarState.setSidebarSurface(.panes)
-
-                    await eventually("Panes command capabilities after screen switch") {
-                        batch.snapshot.generation > reposGeneration
-                            && toolbarCapability(
-                                .setReposGroupingActivity,
-                                in: batch.snapshot
-                            ) == false
-                            && toolbarCapability(
-                                .togglePanesShowsPinned,
-                                in: batch.snapshot
-                            ) == true
-                    }
-                }
+            let batch = RepoExplorerCommandPresentationBatch(
+                store: WorkspaceStore(),
+                repoExplorerPrefs: prefs,
+                resolveCommandCapabilities: {
+                    dispatcher.repoExplorerCommandPresentationSnapshot(requests: $0, generation: $1)
+                }, executionOwnerIdentities: dispatcher.executionOwnerIdentities
+            )
+            batch.start()
+            defer { batch.stop() }
+            batch.acceptVisibleWorktreeSnapshot(
+                sidebarCapabilityVisibleSnapshot()
+            )
+            await eventually("initial Repos command capabilities") {
+                toolbarCapability(
+                    .setReposGroupingActivity,
+                    in: batch.snapshot
+                ) == true
+                    && toolbarCapability(
+                        .togglePanesShowsPinned,
+                        in: batch.snapshot
+                    ) == false
             }
-        )
+            let reposGeneration = batch.snapshot.generation
+
+            coreAtoms.workspaceSidebarState.setSidebarSurface(.panes)
+
+            await eventually("Panes command capabilities after screen switch") {
+                batch.snapshot.generation > reposGeneration
+                    && toolbarCapability(
+                        .setReposGroupingActivity,
+                        in: batch.snapshot
+                    ) == false
+                    && toolbarCapability(
+                        .togglePanesShowsPinned,
+                        in: batch.snapshot
+                    ) == true
+            }
+        }
     }
 
     @Test("Panes command presentation excludes organization settings")
     func panesCommandPresentationExcludesOrganizationSettings() async throws {
-        try await withIsolatedCommandDispatcher(
-            configure: {},
-            body: {
-                await withAsyncTestCoreAtoms { coreAtoms in
-                    let prefs = RepoExplorerSidebarPrefsAtom(
-                        sidebarState: coreAtoms.workspaceSidebarState
-                    )
-                    let atoms = AtomRegistry(core: coreAtoms, repoExplorerSidebarPrefs: prefs)
-                    let delegate = AppDelegate()
-                    delegate.atomStore = atoms
-                    AppCommandDispatcher.shared.appCommandRouter = delegate
-                    AppCommandDispatcher.shared.handler = nil
-                    coreAtoms.workspaceSidebarState.setSidebarSurface(.panes)
+        await withAsyncTestCoreAtoms { coreAtoms in
+            let prefs = RepoExplorerSidebarPrefsAtom(
+                sidebarState: coreAtoms.workspaceSidebarState
+            )
+            let atoms = AtomRegistry(core: coreAtoms, repoExplorerSidebarPrefs: prefs)
+            let delegate = AppDelegate()
+            delegate.atomStore = atoms
+            let dispatcher = CommandDispatcherFixtureConfiguration(shellOwner: delegate).makeDispatcher()
+            coreAtoms.workspaceSidebarState.setSidebarSurface(.panes)
 
-                    let batch = RepoExplorerCommandPresentationBatch(
-                        store: WorkspaceStore(),
-                        repoExplorerPrefs: prefs,
-                        dispatcher: .shared
-                    )
-                    batch.start()
-                    defer { batch.stop() }
-                    batch.acceptVisibleWorktreeSnapshot(
-                        sidebarCapabilityVisibleSnapshot()
-                    )
-                    await eventually("Panes pin capability is published") {
-                        toolbarCapability(
-                            .togglePanesShowsPinned,
-                            in: batch.snapshot
-                        ) == true
-                    }
-                    for command in [
-                        AppCommand.setPanesSortFieldName, .setPanesSortFieldActivity, .togglePanesSortDirection,
-                    ] {
-                        #expect(toolbarCapability(command, in: batch.snapshot) == nil)
-                    }
-                }
+            let batch = RepoExplorerCommandPresentationBatch(
+                store: WorkspaceStore(),
+                repoExplorerPrefs: prefs,
+                resolveCommandCapabilities: {
+                    dispatcher.repoExplorerCommandPresentationSnapshot(requests: $0, generation: $1)
+                }, executionOwnerIdentities: dispatcher.executionOwnerIdentities
+            )
+            batch.start()
+            defer { batch.stop() }
+            batch.acceptVisibleWorktreeSnapshot(
+                sidebarCapabilityVisibleSnapshot()
+            )
+            await eventually("Panes pin capability is published") {
+                toolbarCapability(
+                    .togglePanesShowsPinned,
+                    in: batch.snapshot
+                ) == true
             }
-        )
+            for command in [
+                AppCommand.setPanesSortFieldName, .setPanesSortFieldActivity, .togglePanesSortDirection,
+            ] {
+                #expect(toolbarCapability(command, in: batch.snapshot) == nil)
+            }
+        }
     }
 }
 

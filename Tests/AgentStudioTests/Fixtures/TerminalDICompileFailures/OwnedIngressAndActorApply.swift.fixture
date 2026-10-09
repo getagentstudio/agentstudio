@@ -1,0 +1,11 @@
+import Foundation
+@testable import AgentStudioTerminal
+
+func acceptsOwnedIngress(handler: Ghostty.ActionRouter, work: GhosttyOwnedCallbackWork) -> Bool {
+    handler.accept(work)
+}
+
+@MainActor
+func actorApplyIsAdmitted(host: GhosttyActionRoutingHost, surfaceID: UUID, viewObjectID: ObjectIdentifier) -> Bool {
+    host.isCurrentSurfaceLifetime(surfaceID: surfaceID, viewObjectID: viewObjectID)
+}

@@ -61,6 +61,7 @@ enum WorkspaceEmptyStateCopy {
 struct WorkspaceEmptyStateView: View {
     let model: WorkspaceEmptyStateModel
     let octiconLoader: OcticonLoader
+    let commandDispatcher: any AppCommandDispatching
     let onWatchFolder: () -> Void
     let onOpenRecent: (ApplicationRecentEntity) -> Void
     let onOpenAllRecent: () -> Void
@@ -293,17 +294,20 @@ struct WorkspaceEmptyStateView: View {
         let quickFindPresentation = ShellTabBarCommandPresentation(
             definition: quickFindDefinition,
             surface: .inlineControl,
-            commandContext: commandContext
+            commandContext: commandContext,
+            dispatcher: commandDispatcher
         )
         let repositoriesPresentation = ShellTabBarCommandPresentation(
             definition: newTabOrWorktreeDefinition,
             surface: .inlineControl,
-            commandContext: commandContext
+            commandContext: commandContext,
+            dispatcher: commandDispatcher
         )
         let watchFolderPresentation = ShellTabBarCommandPresentation(
             definition: watchFolderDefinition,
             surface: .inlineControl,
-            commandContext: commandContext
+            commandContext: commandContext,
+            dispatcher: commandDispatcher
         )
 
         return HStack(alignment: .top, spacing: AppStyles.Welcome.launcherShortcutsColumnsGap) {

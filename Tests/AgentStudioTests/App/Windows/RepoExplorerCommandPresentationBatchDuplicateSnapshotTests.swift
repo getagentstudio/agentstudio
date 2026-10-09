@@ -46,10 +46,14 @@ extension RepoExplorerCommandPresentationBatchTests {
                 hostLifetimeID: hostLifetimeID,
                 worktreeIDs: [firstWorktree.id, secondWorktree.id]
             )
+            let dispatcher = CommandDispatcherFixtureConfiguration().makeDispatcher()
             let batch = RepoExplorerCommandPresentationBatch(
                 store: store,
                 repoExplorerPrefs: RepoExplorerSidebarPrefsAtom(),
-                dispatcher: .shared,
+                resolveCommandCapabilities: {
+                    dispatcher.repoExplorerCommandPresentationSnapshot(requests: $0, generation: $1)
+                },
+                executionOwnerIdentities: dispatcher.executionOwnerIdentities,
                 performanceTraceRecorder: recorder
             )
             batch.start()

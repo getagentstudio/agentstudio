@@ -20,12 +20,9 @@ struct PaneTabViewControllerPaneInboxDispatchTests {
             defer { try? FileManager.default.removeItem(at: harness.tempDir) }
             configureMainWindowKeyboardOwner(atoms)
 
-            try await withIsolatedCommandDispatcher(
-                configure: {
-                    AppCommandDispatcher.shared.handler = harness.controller
-                    AppCommandDispatcher.shared.appCommandRouter = nil
-                },
-                body: {
+            try await withCommandDispatcher(
+                harness.commandDispatcher,
+                body: { _ in
                     let parentPane = harness.store.createPane()
                     let tab = Tab(paneId: parentPane.id)
                     harness.store.appendTab(tab)

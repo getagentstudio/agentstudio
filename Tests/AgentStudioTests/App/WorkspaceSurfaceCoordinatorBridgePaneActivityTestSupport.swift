@@ -98,6 +98,8 @@ func makeBridgePaneActivityTestHarness(
         viewRegistry: viewRegistry,
         runtime: SessionRuntime(store: store),
         surfaceManager: BridgeActivityIntegrationSurfaceManager(),
+        terminalSurfaceCommandDispatcher: AppTerminalFixtureSurfaceCommands(),
+        terminalSurfaceOperations: makeAppTerminalFixtureMountOperations(),
         runtimeRegistry: RuntimeRegistry(),
         paneEventBus: paneEventBus,
         worktreeProductConstructionCoordinator: worktreeProductConstructionCoordinator,

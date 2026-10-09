@@ -34,12 +34,18 @@ struct WorkspaceSurfaceCoordinatorTests {
         }
         let viewRegistry = ViewRegistry()
         let runtime = SessionRuntime(store: store)
-        let coordinator = WorkspaceSurfaceCoordinator(
-            store: store, viewRegistry: viewRegistry, runtime: runtime,
-            windowLifecycleStore: WindowLifecycleAtom(),
-            ipcLifecycle: .testUnavailable,
-            bridgePaneAttendance: BridgePaneAttendanceAtom()
-        )
+        let coordinator = {
+            let fixtureSurfaceManager = makeAppTerminalFixtureSurfaceManager()
+            return WorkspaceSurfaceCoordinator(
+                store: store, viewRegistry: viewRegistry, runtime: runtime,
+                surfaceManager: fixtureSurfaceManager, terminalSurfaceCommandDispatcher: fixtureSurfaceManager,
+                terminalSurfaceOperations: fixtureSurfaceManager.makeTerminalPaneSurfaceOperations(),
+                runtimeRegistry: RuntimeRegistry(),
+                windowLifecycleStore: WindowLifecycleAtom(),
+                ipcLifecycle: .testUnavailable,
+                bridgePaneAttendance: BridgePaneAttendanceAtom()
+            )
+        }()
         return WorkspaceSurfaceCoordinatorHarness(
             store: store,
             viewRegistry: viewRegistry,
@@ -79,6 +85,8 @@ struct WorkspaceSurfaceCoordinatorTests {
             viewRegistry: ViewRegistry(),
             runtime: SessionRuntime(store: store),
             surfaceManager: CoordinatorFilesystemMockSurfaceManager(),
+            terminalSurfaceCommandDispatcher: AppTerminalFixtureSurfaceCommands(),
+            terminalSurfaceOperations: makeAppTerminalFixtureMountOperations(),
             runtimeRegistry: RuntimeRegistry(),
             paneEventBus: paneEventBus,
             gitWorkingTreeStatusProvider: StubGitWorkingTreeStatusProvider { _ in nil },

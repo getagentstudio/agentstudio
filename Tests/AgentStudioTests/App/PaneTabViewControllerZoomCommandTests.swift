@@ -160,6 +160,7 @@ struct PaneTabViewControllerZoomCommandTests {
         harness.store.setActiveTab(tab.id)
         let surfaceId = UUID()
         let terminalView = TerminalPaneMountView(
+            surfaceOperations: makeAppTerminalFixtureMountOperations(),
             restoredSurfaceId: surfaceId,
             paneId: minimizedPane.id
         )

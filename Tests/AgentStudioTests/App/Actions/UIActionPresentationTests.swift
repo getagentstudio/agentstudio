@@ -5,11 +5,11 @@ import Testing
 @testable import AgentStudioInfrastructure
 
 @MainActor
-@Suite(.serialized)
+@Suite
 struct UIActionPresentationTests {
     @Test
     func detachDrawerPaneCommandDefinition_hasStablePresentation() {
-        let definition = AppCommandDispatcher.shared.definition(for: .detachDrawerPane)
+        let definition = AppCommand.detachDrawerPane.definition
 
         #expect(definition.label == "Detach Drawer Pane")
         #expect(definition.helpText == "Promote the selected drawer pane into the main layout")

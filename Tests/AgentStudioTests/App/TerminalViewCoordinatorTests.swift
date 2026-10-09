@@ -114,7 +114,8 @@ extension WebKitSerializedTests {
         func terminalViewTeardownRemainsSynchronous() {
             let harness = makeWorkspaceSurfaceCoordinatorViewFactoryHarness()
             let paneId = UUIDv7.generate()
-            let terminalView = TerminalPaneMountView(paneId: paneId, title: "Terminal")
+            let terminalView = TerminalPaneMountView(
+                surfaceOperations: makeAppTerminalFixtureMountOperations(), paneId: paneId, title: "Terminal")
             let tempDir = harness.tempDir
             defer { try? FileManager.default.removeItem(at: tempDir) }
             harness.coordinator.registerHostedView(mountedView: terminalView, for: paneId)

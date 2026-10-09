@@ -14,6 +14,7 @@ struct SingleTabContent: View {
     let appLifecycleStore: AppLifecycleAtom
     let closeTransitionCoordinator: PaneCloseTransitionCoordinator
     let actionDispatcher: PaneActionDispatching
+    let commandDispatcher: any AppCommandDispatching
     let arrangementInlineRenameState: ArrangementInlineRenameState
     let onPaneFocusTrigger: PaneFocusTriggerHandler
     let onFocusPane: (UUID) -> Void
@@ -36,6 +37,7 @@ struct SingleTabContent: View {
         appLifecycleStore: AppLifecycleAtom,
         closeTransitionCoordinator: PaneCloseTransitionCoordinator,
         actionDispatcher: PaneActionDispatching,
+        commandDispatcher: any AppCommandDispatching,
         arrangementInlineRenameState: ArrangementInlineRenameState,
         onPaneFocusTrigger: @escaping PaneFocusTriggerHandler,
         onFocusPane: @escaping (UUID) -> Void,
@@ -58,6 +60,7 @@ struct SingleTabContent: View {
         self.appLifecycleStore = appLifecycleStore
         self.closeTransitionCoordinator = closeTransitionCoordinator
         self.actionDispatcher = actionDispatcher
+        self.commandDispatcher = commandDispatcher
         self.arrangementInlineRenameState = arrangementInlineRenameState
         self.onPaneFocusTrigger = onPaneFocusTrigger
         self.onFocusPane = onFocusPane
@@ -131,6 +134,7 @@ struct SingleTabContent: View {
                     arrangementInlineRenameState: arrangementInlineRenameState,
                     closeTransitionCoordinator: closeTransitionCoordinator,
                     actionDispatcher: actionDispatcher,
+                    commandDispatcher: commandDispatcher,
                     onPaneFocusTrigger: onPaneFocusTrigger,
                     onFocusPane: onFocusPane,
                     store: store,
@@ -224,6 +228,7 @@ struct SingleTabContent: View {
                 paneNotePresentation: paneNotePresentation,
                 workspaceWindowId: workspaceWindowId,
                 actionDispatcher: actionDispatcher,
+                commandDispatcher: commandDispatcher,
                 arrangementInlineRenameState: arrangementInlineRenameState,
                 onPaneFocusTrigger: onPaneFocusTrigger,
                 onFocusPane: onFocusPane,
@@ -261,6 +266,7 @@ struct SingleTabContent: View {
                 editorChooser: editorChooser,
                 closeTransitionCoordinator: closeTransitionCoordinator,
                 actionDispatcher: actionDispatcher,
+                commandDispatcher: commandDispatcher,
                 onPaneFocusTrigger: onPaneFocusTrigger,
                 onOpenPaneGitHub: onOpenPaneGitHub,
                 dropTargetCoordinateSpace: "tabContainer",

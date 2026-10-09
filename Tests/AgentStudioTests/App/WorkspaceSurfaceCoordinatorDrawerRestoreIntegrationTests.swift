@@ -68,7 +68,9 @@ struct WorkspaceDrawerRestoreIntegrationTests {
             viewRegistry: viewRegistry,
             runtime: runtime,
             surfaceManager: surfaceManager,
-            runtimeRegistry: .shared,
+            terminalSurfaceCommandDispatcher: AppTerminalFixtureSurfaceCommands(),
+            terminalSurfaceOperations: makeAppTerminalFixtureMountOperations(surfaceManager: surfaceManager),
+            runtimeRegistry: RuntimeRegistry(),
             windowLifecycleStore: windowLifecycleStore,
             ipcLifecycle: .testUnavailable,
             bridgePaneAttendance: BridgePaneAttendanceAtom()
@@ -483,6 +485,8 @@ struct WorkspaceDrawerRestoreIntegrationTests {
             viewRegistry: restoredViewRegistry,
             runtime: SessionRuntime(store: restoredStore),
             surfaceManager: restoredSurfaceManager,
+            terminalSurfaceCommandDispatcher: AppTerminalFixtureSurfaceCommands(),
+            terminalSurfaceOperations: makeAppTerminalFixtureMountOperations(surfaceManager: restoredSurfaceManager),
             runtimeRegistry: RuntimeRegistry(),
             windowLifecycleStore: restoredWindowLifecycleStore,
             ipcLifecycle: .testUnavailable,
@@ -610,15 +614,12 @@ struct WorkspaceDrawerRestoreIntegrationTests {
         let runtime = SessionRuntime(store: store)
         let windowLifecycleStore = WindowLifecycleAtom()
         let surfaceManager = DrawerRestoreCapturingSurfaceManager()
-        let coordinator = WorkspaceSurfaceCoordinator(
+        let coordinator = makeDrawerRestoreCoordinator(
             store: store,
             viewRegistry: viewRegistry,
             runtime: runtime,
             surfaceManager: surfaceManager,
-            runtimeRegistry: RuntimeRegistry(),
-            windowLifecycleStore: windowLifecycleStore,
-            ipcLifecycle: .testUnavailable,
-            bridgePaneAttendance: BridgePaneAttendanceAtom()
+            windowLifecycleStore: windowLifecycleStore
         )
         coordinator.sessionConfig = fixtureSessionConfiguration
         coordinator.terminalRestoreRuntime = TerminalRestoreRuntime(
@@ -659,15 +660,12 @@ struct WorkspaceDrawerRestoreIntegrationTests {
         let restoredRuntime = SessionRuntime(store: restoredStore)
         let restoredWindowLifecycleStore = WindowLifecycleAtom()
         let restoredSurfaceManager = DrawerRestoreCapturingSurfaceManager()
-        let restoredCoordinator = WorkspaceSurfaceCoordinator(
+        let restoredCoordinator = makeDrawerRestoreCoordinator(
             store: restoredStore,
             viewRegistry: restoredViewRegistry,
             runtime: restoredRuntime,
             surfaceManager: restoredSurfaceManager,
-            runtimeRegistry: RuntimeRegistry(),
-            windowLifecycleStore: restoredWindowLifecycleStore,
-            ipcLifecycle: .testUnavailable,
-            bridgePaneAttendance: BridgePaneAttendanceAtom()
+            windowLifecycleStore: restoredWindowLifecycleStore
         )
         restoredCoordinator.sessionConfig = fixtureSessionConfiguration
         restoredCoordinator.terminalRestoreRuntime = TerminalRestoreRuntime(
@@ -686,6 +684,27 @@ struct WorkspaceDrawerRestoreIntegrationTests {
             firstDrawerPaneID: firstDrawerPane.id,
             secondDrawerPaneID: secondDrawerPane.id,
             tabID: tab.id
+        )
+    }
+
+    private func makeDrawerRestoreCoordinator(
+        store: WorkspaceStore,
+        viewRegistry: ViewRegistry,
+        runtime: SessionRuntime,
+        surfaceManager: DrawerRestoreCapturingSurfaceManager,
+        windowLifecycleStore: WindowLifecycleAtom
+    ) -> WorkspaceSurfaceCoordinator {
+        WorkspaceSurfaceCoordinator(
+            store: store,
+            viewRegistry: viewRegistry,
+            runtime: runtime,
+            surfaceManager: surfaceManager,
+            terminalSurfaceCommandDispatcher: AppTerminalFixtureSurfaceCommands(),
+            terminalSurfaceOperations: makeAppTerminalFixtureMountOperations(surfaceManager: surfaceManager),
+            runtimeRegistry: RuntimeRegistry(),
+            windowLifecycleStore: windowLifecycleStore,
+            ipcLifecycle: .testUnavailable,
+            bridgePaneAttendance: BridgePaneAttendanceAtom()
         )
     }
 

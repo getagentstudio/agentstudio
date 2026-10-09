@@ -48,7 +48,7 @@ struct FlatTabStripContainerAllMinimizedTests {
                     arrangementInlineRenameState: ArrangementInlineRenameState(),
                     closeTransitionCoordinator: PaneCloseTransitionCoordinator(),
                     actionDispatcher: actionDispatcher,
-                    onPaneFocusTrigger: { _ in },
+                    commandDispatcher: AppTerminalFixtureCommandDispatcher(), onPaneFocusTrigger: { _ in },
                     onFocusPane: { _ in },
                     store: store,
                     repoCache: RepoCacheAtom(),

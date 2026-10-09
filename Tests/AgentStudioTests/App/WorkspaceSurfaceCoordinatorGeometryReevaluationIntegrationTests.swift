@@ -57,7 +57,9 @@ struct WorkspaceGeometryReevaluationIntegrationTests {
             viewRegistry: viewRegistry,
             runtime: runtime,
             surfaceManager: surfaceManager,
-            runtimeRegistry: .shared,
+            terminalSurfaceCommandDispatcher: AppTerminalFixtureSurfaceCommands(),
+            terminalSurfaceOperations: makeAppTerminalFixtureMountOperations(surfaceManager: surfaceManager),
+            runtimeRegistry: RuntimeRegistry(),
             windowLifecycleStore: windowLifecycleStore,
             ipcLifecycle: .testUnavailable,
             bridgePaneAttendance: BridgePaneAttendanceAtom()

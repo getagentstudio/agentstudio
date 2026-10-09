@@ -317,6 +317,8 @@ struct WorktreeRemovalDiscoveryIntegrationTests {
             viewRegistry: ViewRegistry(),
             runtime: SessionRuntime(store: store),
             surfaceManager: HarnessSurfaceManager(),
+            terminalSurfaceCommandDispatcher: AppTerminalFixtureSurfaceCommands(),
+            terminalSurfaceOperations: makeAppTerminalFixtureMountOperations(),
             runtimeRegistry: RuntimeRegistry(),
             paneEventBus: bus,
             gitWorkingTreeStatusProvider: StubGitWorkingTreeStatusProvider { _ in nil },

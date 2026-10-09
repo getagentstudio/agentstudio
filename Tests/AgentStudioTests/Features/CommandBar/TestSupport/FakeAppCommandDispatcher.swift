@@ -5,6 +5,9 @@ import Foundation
 
 @MainActor
 final class FakeAppCommandDispatcher: AppCommandDispatching {
+    func dispatchKeyboardShortcut(_: AppShortcut) {}
+    func dispatchExtractPaneToTab(tabId _: UUID, paneId _: UUID, targetTabInsertionIndex _: Int?) {}
+
     var availableCommands = Set(AppCommand.allCases)
     var dispatchedCommands: [AppCommand] = []
     var targetedDispatches: [(command: AppCommand, target: UUID, targetType: SearchItemType)] = []
