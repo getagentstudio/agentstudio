@@ -60,7 +60,8 @@ struct CITopologyWorkflowTests {
     func benchmarkUsesMainSwiftSeedWithoutSaving() throws {
         let benchmarkWorkflow = try String(contentsOfFile: ".github/workflows/benchmarks.yml", encoding: .utf8)
         let benchmarkJob = try topologyJob(named: "benchmarks", in: benchmarkWorkflow)
-        #expect(benchmarkJob.contains("actions: read"))
+        #expect(!benchmarkJob.contains("actions: read"))
+        #expect(!benchmarkJob.contains("actions: write"))
         #expect(benchmarkJob.contains("SWIFT_BUILD_DIR: .build-ci"))
         #expect(
             benchmarkJob.contains(
@@ -91,6 +92,15 @@ struct CITopologyWorkflowTests {
         #expect(verify.contains("scripts/ci-swift-build-inputs.sh restamp"))
         #expect(verify.contains(".build-ci/ci-swift-build-seed.json"))
         #expect(verify.contains("swift-inputs-before.json"))
+
+        // The inventory must see the same packaged BridgeWeb resources main seeded, or the seed is rejected.
+        let inventory = try #require(benchmarkJob.range(of: "name: Inventory Swift build inputs before prebuild"))
+        let verifyStep = try #require(benchmarkJob.range(of: "name: Verify and restamp PR Swift seed"))
+        for setupName in ["BridgeWeb packaged build", "Copy XCFramework", "Setup dev resources"] {
+            let setup = try #require(benchmarkJob.range(of: "name: \(setupName)"))
+            #expect(setup.lowerBound < inventory.lowerBound)
+        }
+        #expect(inventory.lowerBound < verifyStep.lowerBound)
     }
 
     @Test("BridgeWeb consumes the shared verified seed after setup without publishing")

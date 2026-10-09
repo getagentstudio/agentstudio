@@ -19,7 +19,6 @@ jobs:
     runs-on: xcode-27
     permissions:
       contents: read
-      actions: read
     env:
       SWIFT_BUILD_DIR: .build-ci
       XCB_EXTRA_ARGS: "--renderer github-actions"
@@ -124,6 +123,11 @@ jobs:
             [ -f "$TERMINFO_SRC/78/xterm-ghostty" ] && cp "$TERMINFO_SRC/78/xterm-ghostty" "$TERMINFO_DST/78/"
             [ -f "$TERMINFO_SRC/67/ghostty" ] && cp "$TERMINFO_SRC/67/ghostty" "$TERMINFO_DST/67/"
           fi
+
+      # Main's seed is published after the BridgeWeb packaged build, so the inventory
+      # must see the same Resources/BridgeWeb/app or verification rebuilds cold.
+      - name: BridgeWeb packaged build
+        run: pnpm --dir BridgeWeb run build
 
       - name: Compute Swift cache compatibility prefix
         id: swift-cache-prefix
