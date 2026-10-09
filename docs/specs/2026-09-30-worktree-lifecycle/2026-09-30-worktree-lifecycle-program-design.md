@@ -384,8 +384,10 @@ func branchUse(_ request: GitBranchUseRequest) async throws(GitDataPlaneError) -
 enum GitBranchUse { case free; case inUse(worktreePath: URL) }
 
 // ── New errors: fork rejection `branchMoved` and `branchCheckedOut(path)`; `createWorktree` gains the same
-// two. `branchNotAtCapturedHead` is deleted (an existing branch no longer has to be at the captured HEAD).
-// Fork residue gains `branchMoveNotUndone(name, expectedTip)` for a fast-forward whose undo failed.
+// two, plus `GitDataPlaneError.branchMoveNotUndone(branchName:fromOID:toOID:)` for a fast-forward its own undo
+// couldn't confirm (D22). `branchNotAtCapturedHead` is deleted (an existing branch no longer has to be at the
+// captured HEAD). Fork residue gains kind `branchMoveNotUndone`, with the ref name in `location` and no tip; the
+// leaf adds both commits from its own plan.
 // `.copyAll` with a start other than the captured HEAD is an invalid request (only the app UI uses .copyAll,
 // always at .sourceHead).
 ```
