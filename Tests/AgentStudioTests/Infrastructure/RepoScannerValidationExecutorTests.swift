@@ -184,11 +184,11 @@ struct RepoScannerValidationExecutorTests {
         await client.release(candidateURL: first.candidateURL, outcome: authoritativeNegative)
         await client.waitUntilStarted(candidateURL: followUp.candidateURL)
 
-        // Assert
-        #expect(
-            await client.startedCandidates()
-                == [first.candidateURL, second.candidateURL, followUp.candidateURL]
-        )
+        // Assert — each physical slot reads on its own detached task, so the first two reads
+        // reach the client in either order; the follow-up must be the third read.
+        let startedCandidates = await client.startedCandidates()
+        #expect(Set(startedCandidates.prefix(2)) == [first.candidateURL, second.candidateURL])
+        #expect(Array(startedCandidates.dropFirst(2)) == [followUp.candidateURL])
         await client.release(candidateURL: second.candidateURL, outcome: authoritativeNegative)
         #expect(
             await executor.nextCompletion()
