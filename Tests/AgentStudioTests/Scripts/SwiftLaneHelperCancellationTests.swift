@@ -18,7 +18,6 @@ struct SwiftLaneHelperCancellationTests {
 
         let eventDirectory = workDirectory + "/events"
         let releasePath = workDirectory + "/helper.release"
-        let watchdogArmPath = workDirectory + "/watchdog.arm"
         let helperPIDPath = workDirectory + "/helper.pid"
         let parentReapedPath = workDirectory + "/parent-reaped"
         let helperFixturePath = workDirectory + "/helper-fixture.pl"
@@ -33,13 +32,12 @@ struct SwiftLaneHelperCancellationTests {
             LOG_PREFIX=helper-cancel
             TIMEOUT_SECONDS=2
             BUILD_PATH='\(workDirectory)/build'
-            LANE_WATCHDOG_ARM_PATH='\(watchdogArmPath)'
             LANE_EVENT_STREAM_DIR='\(eventDirectory)'
-            export LANE_WATCHDOG_ARM_PATH LANE_EVENT_STREAM_DIR
+            export LANE_EVENT_STREAM_DIR
             source scripts/swift-test-helpers.sh
             set +e
             run_swift_with_timeout 'separate helper probe' 2 /usr/bin/perl '\(helperFixturePath)' \
-              '\(helperPIDPath)' '\(watchdogArmPath)' '\(releasePath)' '\(parentReapedPath)' || runner_status=$?
+              '\(helperPIDPath)' '\(releasePath)' '\(parentReapedPath)' || runner_status=$?
             echo "RUNNER_STATUS=${runner_status:-0}"
             if [ -f '\(parentReapedPath)' ]; then echo PARENT_REAPED_HELPER=yes; else echo PARENT_REAPED_HELPER=no; fi
             helper_pid=0
@@ -60,7 +58,7 @@ struct SwiftLaneHelperCancellationTests {
               echo HELPER_GROUP_ALIVE=no
             fi
             """
-        let result = try await runLaneScriptBash(shellCommand, innerWatchdog: .armed)
+        let result = try await runLaneScriptBash(shellCommand, innerWatchdog: .armedByFixture)
         let laneOutput = result.output
 
         let helperPIDReceipt =
@@ -95,22 +93,20 @@ struct SwiftLaneHelperCancellationTests {
 
         let eventDirectory = workDirectory + "/events"
         let releasePath = workDirectory + "/command.release"
-        let watchdogArmPath = workDirectory + "/watchdog.arm"
         let commandPIDPath = workDirectory + "/command.pid"
         let commandFixturePath = workDirectory + "/command-fixture.pl"
         let commandFixture = #"""
             use strict;
             use warnings;
             $| = 1;
-            my ($pid_path, $arm_path, $release_path) = @ARGV;
+            my ($pid_path, $release_path) = @ARGV;
             $SIG{INT} = "IGNORE";
             $SIG{TERM} = "IGNORE";
             open(my $pid_file, ">", $pid_path) or die $!;
             print {$pid_file} "$$\n";
             close($pid_file) or die $!;
-            open(my $arm, ">", $arm_path) or die $!;
-            close($arm) or die $!;
             print "IGNORING_INT_AND_TERM\n";
+            print "\#(laneWatchdogArmLine)\n";
             open(my $release, "<", $release_path) or die $!;
             <$release>;
             """#
@@ -125,13 +121,12 @@ struct SwiftLaneHelperCancellationTests {
             LOG_PREFIX=helper-cancel-escalation
             TIMEOUT_SECONDS=2
             BUILD_PATH='\(workDirectory)/build'
-            LANE_WATCHDOG_ARM_PATH='\(watchdogArmPath)'
             LANE_EVENT_STREAM_DIR='\(eventDirectory)'
-            export LANE_WATCHDOG_ARM_PATH LANE_EVENT_STREAM_DIR
+            export LANE_EVENT_STREAM_DIR
             source scripts/swift-test-helpers.sh
             set +e
             run_swift_with_timeout 'ignored signal probe' 2 /usr/bin/perl '\(commandFixturePath)' \
-              '\(commandPIDPath)' '\(watchdogArmPath)' '\(releasePath)' || runner_status=$?
+              '\(commandPIDPath)' '\(releasePath)' || runner_status=$?
             echo "RUNNER_STATUS=${runner_status:-0}"
             command_pid=$(cat '\(commandPIDPath)' 2>/dev/null || echo 0)
             echo "COMMAND_PID=$command_pid"
@@ -144,7 +139,7 @@ struct SwiftLaneHelperCancellationTests {
               echo COMMAND_ALIVE=no
             fi
             """
-        let result = try await runLaneScriptBash(shellCommand, innerWatchdog: .armed)
+        let result = try await runLaneScriptBash(shellCommand, innerWatchdog: .armedByFixture)
         let laneOutput = result.output
 
         let commandPIDReceipt =
@@ -171,7 +166,7 @@ struct SwiftLaneHelperCancellationTests {
         use strict;
         use warnings;
         $| = 1;
-        my ($pid_path, $arm_path, $release_path, $reaped_path) = @ARGV;
+        my ($pid_path, $release_path, $reaped_path) = @ARGV;
         pipe(my $ready_reader, my $ready_writer) or die $!;
         my $helper_pid = fork();
         defined $helper_pid or die $!;
@@ -202,9 +197,8 @@ struct SwiftLaneHelperCancellationTests {
           close($reaped) or die $!;
           exit 0;
         };
-        open(my $arm, ">", $arm_path) or die $!;
-        close($arm) or die $!;
         print "HELPER_READY\n";
+        print "\#(laneWatchdogArmLine)\n";
         open(my $release, "<", $release_path) or die $!;
         <$release>;
         waitpid($helper_pid, 0);

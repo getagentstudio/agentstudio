@@ -453,6 +453,17 @@ timeout reap, "no output progress" and hang evidence. A fixture that starts the
 runner in a separate `bash` process does not inherit the default and must set it
 itself.
 
+A hang test whose report must carry what its command printed passes
+`innerWatchdog: .armedByFixture`. Its command arms the watchdog once it has
+parked by printing `laneWatchdogArmLine` as a whole line, after that evidence.
+The runner, started with `LANE_WATCHDOG_ARM_REQUIRED=1`, times out only once
+that line is in the command's output file. The line travels the same pipe as
+the evidence, so every line printed before it is in the file the timeout report
+reads. An arm signal outside that stream races the output copy and can leave
+the last evidence out of the report.
+`armLineOrdersEvidenceAheadOfTheTimeoutReport` holds that order against a tee
+whose file copy lags as far as order allows.
+
 `exitedCommandUnderStarvedRunner` proves the trap deterministically: a FIFO hook
 starves the runner after an `exit 0` command. Armed, it times out; with the
 default, it keeps its status.

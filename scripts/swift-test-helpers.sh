@@ -19,6 +19,13 @@ SWIFT_TEST_HELPERS_SOURCE_PATH="${BASH_SOURCE[0]:-}"
 # AsyncProcess.swift:223-245 at the swift-6.3.3-RELEASE tag.
 SWIFT_TEST_SIGINT_CANCELLATION_GRACE_SECONDS=35
 
+# With LANE_WATCHDOG_ARM_REQUIRED=1 (hang-test fixtures only), the inactivity
+# watchdog may time a command out only once the command has printed this exact
+# line. It travels the same pipe as the command's earlier output, so when tee has
+# written it to the output file, every line printed before it is already there
+# for the timeout report.
+SWIFT_TEST_WATCHDOG_ARM_LINE='[agentstudio-lane-watchdog] armed'
+
 # shellcheck source=scripts/xcb-helpers.sh
 source "$(dirname "${BASH_SOURCE[0]}")/xcb-helpers.sh"
 # shellcheck source=scripts/swift-package-sandbox.sh
@@ -2263,6 +2270,17 @@ swift_test_watchdog_timeout_status() {
   return 0
 }
 
+# Succeeds when the inactivity watchdog may time the command out. A lane leaves
+# LANE_WATCHDOG_ARM_REQUIRED unset and is armed from the start. With it set to 1,
+# the command arms the watchdog by printing SWIFT_TEST_WATCHDOG_ARM_LINE as a
+# whole line; a longer line that only mentions it does not arm.
+swift_test_watchdog_is_armed() {
+  local output_file="$1"
+
+  [ "${LANE_WATCHDOG_ARM_REQUIRED:-}" = "1" ] || return 0
+  /usr/bin/grep -Fxq -- "$SWIFT_TEST_WATCHDOG_ARM_LINE" "$output_file" 2>/dev/null
+}
+
 # Epoch milliseconds share a clock domain across the wrapper and its child.
 lane_timing_now_ms() {
   /usr/bin/perl -MTime::HiRes=time -e 'printf "%d\n", time()*1000'
@@ -2623,6 +2641,8 @@ swift_test_run_with_timeout_body() {
   local last_progress_epoch="$start_epoch"
   local last_output_size=0
   local watchdog_state
+  local watchdog_armed=0
+  local arm_checked_output_size=unchecked
   local timed_out=0
 
   local xcb_pipe
@@ -2726,8 +2746,16 @@ swift_test_run_with_timeout_body() {
     read -r last_output_size last_progress_epoch <<<"$watchdog_state"
     local inactive_seconds=$((now_epoch - last_progress_epoch))
 
-    # Hang tests arm the watchdog only after their child is parked.
-    if [ -z "${LANE_WATCHDOG_ARM_PATH:-}" ] || [ -e "$LANE_WATCHDOG_ARM_PATH" ]; then
+    # Hang tests arm the watchdog from their own output once their child is
+    # parked. The arm line can only arrive by growing the output file, so the
+    # file is searched again only when it has grown, and never once armed.
+    if [ "$watchdog_armed" -eq 0 ] && [ "$output_size" != "$arm_checked_output_size" ]; then
+      arm_checked_output_size="$output_size"
+      if swift_test_watchdog_is_armed "$output_file"; then
+        watchdog_armed=1
+      fi
+    fi
+    if [ "$watchdog_armed" -eq 1 ]; then
       if ! swift_test_watchdog_timeout_status \
         "$last_progress_epoch" \
         "$now_epoch" \

@@ -9,27 +9,37 @@ struct LaneScriptBashResult: Sendable {
     let output: String
 }
 
+/// The exact line a fixture's command prints to arm a runner that requires it
+/// (`SWIFT_TEST_WATCHDOG_ARM_LINE` in `scripts/swift-test-helpers.sh`). The
+/// runner reads it from the command's own output, so every line the command
+/// printed before it is in the output file by the time the runner sees it.
+let laneWatchdogArmLine = "[agentstudio-lane-watchdog] armed"
+
 /// Whether a lane fixture's own `run_swift_with_timeout` watchdog may fire.
 ///
 /// The outer lane owns the hang bound for every test. A fixture whose subject is
 /// not inactivity runs unarmed, so a loaded host that starves the runner's own
 /// work cannot turn a command that already exited into a timeout (TQ14). A test
 /// whose subject is the watchdog, an inactivity timeout, a timeout reap or a
-/// heartbeat passes `.armed` at its call site.
+/// heartbeat passes `.armed` at its call site. A hang test whose report must
+/// carry evidence the command prints passes `.armedByFixture`.
 enum LaneFixtureInnerWatchdog: Sendable {
     case unarmed
     case armed
+    /// Armed once the command prints `laneWatchdogArmLine` as a whole line,
+    /// after the evidence its timeout report must carry.
+    case armedByFixture
 
     /// Shell run before the fixture command. It reaches runner calls in the
     /// launched shell and its subshells; it is not exported, so a fixture that
     /// starts the runner in a separate bash process sets that process itself.
     var shellPreamble: String {
         switch self {
-        case .unarmed:
-            // An arm path that never exists: no process can add entries to /var/empty.
-            "LANE_WATCHDOG_ARM_PATH=/var/empty/agentstudio-lane-fixture-watchdog-unarmed\n"
+        case .unarmed, .armedByFixture:
+            // The runner waits for the arm line, which an unarmed command never prints.
+            "LANE_WATCHDOG_ARM_REQUIRED=1\n"
         case .armed:
-            "unset LANE_WATCHDOG_ARM_PATH\n"
+            "unset LANE_WATCHDOG_ARM_REQUIRED\n"
         }
     }
 }

@@ -109,7 +109,7 @@ struct SwiftLaneHangEvidenceTests {
           >> "$AGENTSTUDIO_HELD_STEP_LOG"
         printf 'expecting\\tchild-1\\trefreshClosed\\tworktree-1\\tSuite.swift test()\\tSuite.swift:42 test()\\n' \
           >> "$AGENTSTUDIO_HELD_STEP_LOG"
-        touch "$LANE_WATCHDOG_ARM_PATH"
+        echo '\(laneWatchdogArmLine)'
         while true; do sleep 1; done
 
         """.write(toFile: workDirectory + "/wedged-test.sh", atomically: true, encoding: .utf8)
@@ -123,12 +123,11 @@ struct SwiftLaneHangEvidenceTests {
         let laneOutput = try await laneBashAllowingFailure(
             "LOG_PREFIX=lane; TIMEOUT_SECONDS=0; BUILD_PATH='\(workDirectory)/build'; "
                 + "export LANE_EVENT_STREAM_DIR='\(evidenceDirectory)'; "
-                + "export LANE_WATCHDOG_ARM_PATH='\(workDirectory)/watchdog-armed'; "
                 + "export PATH='\(workDirectory)/bin':$PATH; "
                 + "source scripts/swift-test-helpers.sh; set +e; "
                 + "run_swift_with_timeout 'evidence probe' 0 /bin/bash '\(workDirectory)/wedged-test.sh' "
                 + "swiftpm-testing-helper AgentStudioTests.xctest || returned=$?; echo \"RETURNED=${returned:-0}\"",
-            innerWatchdog: .armed
+            innerWatchdog: .armedByFixture
         )
         let evidenceFiles = try FileManager.default.contentsOfDirectory(atPath: evidenceDirectory).sorted()
         let ledger = try #require(evidenceFiles.first { $0.hasSuffix(".events.jsonl") })
@@ -244,7 +243,7 @@ struct SwiftLaneHangEvidenceTests {
         try FileManager.default.createDirectory(atPath: workDirectory, withIntermediateDirectories: true)
         try """
         echo '[agentstudio-test-log] unavailable path=/missing/events.log errno=2' >&2
-        touch "$LANE_WATCHDOG_ARM_PATH"
+        echo '\(laneWatchdogArmLine)'
         while true; do sleep 1; done
 
         """.write(toFile: workDirectory + "/wedged-test.sh", atomically: true, encoding: .utf8)
@@ -252,16 +251,81 @@ struct SwiftLaneHangEvidenceTests {
         let report = try await laneBashAllowingFailure(
             "LOG_PREFIX=lane; TIMEOUT_SECONDS=0; BUILD_PATH='\(workDirectory)/build'; "
                 + "export LANE_EVENT_STREAM_DIR='\(workDirectory)/ci-runs'; "
-                + "export LANE_WATCHDOG_ARM_PATH='\(workDirectory)/armed'; "
                 + "source scripts/swift-test-helpers.sh; set +e; "
                 + "run_swift_with_timeout 'unavailable probe' 0 /bin/bash '\(workDirectory)/wedged-test.sh' "
                 + "swiftpm-testing-helper AgentStudioTests.xctest || returned=$?; echo \"RETURNED=${returned:-0}\"",
-            innerWatchdog: .armed
+            innerWatchdog: .armedByFixture
         )
         let unavailableRange = try #require(report.range(of: "lane-report held_step_log_unavailable"))
         let reapRange = try #require(report.range(of: "lane-report timeout_reap="))
         #expect(report.contains("RETURNED=124"))
         #expect(unavailableRange.lowerBound < reapRange.lowerBound)
+    }
+
+    @Test("output printed before the arm line is in the timeout report even when its file copy lags")
+    func armLineOrdersEvidenceAheadOfTheTimeoutReport() async throws {
+        // The runner arms on a line the command prints, so the arm reaches the
+        // output file through the same pipe as the evidence printed before it.
+        // This tee lags as far as that order allows: it holds every line back
+        // from the output file until it reads the arm line. An arm signal outside
+        // the stream, such as a file touched beside it, would let the runner read
+        // the output file before the evidence lands, every time.
+        let workDirectory = NSTemporaryDirectory() + "agentstudio-receipt-arm-order-\(UUIDv7.generate())"
+        defer { try? FileManager.default.removeItem(atPath: workDirectory) }
+        try FileManager.default.createDirectory(atPath: workDirectory + "/bin", withIntermediateDirectories: true)
+        let runnerArmLine = try await laneBash(
+            "source scripts/swift-test-helpers.sh; printf '%s' \"$SWIFT_TEST_WATCHDOG_ARM_LINE\"")
+        try #require(runnerArmLine == laneWatchdogArmLine)
+        try #"""
+        #!/usr/bin/perl
+        use strict;
+        use warnings;
+        use IO::Handle;
+        open(my $output, ">", shift) or die $!;
+        $output->autoflush(1);
+        $| = 1;
+        my @held;
+        my $armed = 0;
+        while (my $line = <STDIN>) {
+          print $line;
+          if ($armed) { print {$output} $line; next; }
+          push @held, $line;
+          next unless $line eq "\#(laneWatchdogArmLine)\n";
+          print {$output} @held;
+          @held = ();
+          $armed = 1;
+        }
+        print {$output} @held;
+
+        """#.write(toFile: workDirectory + "/bin/tee", atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: workDirectory + "/bin/tee")
+        // A wedged test that honours the runner's SIGINT, so the reap needs no grace period.
+        try #"""
+        $| = 1;
+        $SIG{INT} = "DEFAULT";
+        print STDERR "[agentstudio-test-log] unavailable path=/missing/events.log errno=2\n";
+        print "\#(laneWatchdogArmLine)\n";
+        open(my $never_written, "<", shift) or die $!;
+        <$never_written>;
+
+        """#.write(toFile: workDirectory + "/wedged-test.pl", atomically: true, encoding: .utf8)
+
+        let report = try await laneBashAllowingFailure(
+            "mkfifo '\(workDirectory)/never-written.fifo'; "
+                + "LOG_PREFIX=lane; TIMEOUT_SECONDS=0; BUILD_PATH='\(workDirectory)/build'; "
+                + "export LANE_EVENT_STREAM_DIR='\(workDirectory)/ci-runs'; "
+                + "export PATH='\(workDirectory)/bin':$PATH; "
+                + "source scripts/swift-test-helpers.sh; set +e; "
+                + "run_swift_with_timeout 'arm order probe' 0 /usr/bin/perl '\(workDirectory)/wedged-test.pl' "
+                + "'\(workDirectory)/never-written.fifo' swiftpm-testing-helper "
+                + "|| returned=$?; echo \"RETURNED=${returned:-0}\"",
+            innerWatchdog: .armedByFixture
+        )
+        let unavailableRange = try #require(
+            report.range(of: "lane-report held_step_log_unavailable"), Comment(rawValue: report))
+        let reapRange = try #require(report.range(of: "lane-report timeout_reap="), Comment(rawValue: report))
+        #expect(report.contains("RETURNED=124"), Comment(rawValue: report))
+        #expect(unavailableRange.lowerBound < reapRange.lowerBound, Comment(rawValue: report))
     }
 
     @Test("a missing stack sampler does not cost the task dump, and each missing tool says why")
