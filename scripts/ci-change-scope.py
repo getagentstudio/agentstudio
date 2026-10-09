@@ -20,7 +20,7 @@ REPOSITORY_PATH = re.compile(
     r"(?<![\w:/])(?:\.?/?[A-Za-z0-9_.+%-]+/)+[A-Za-z0-9_.+%*?=-]+(?:#[\w-]+)?"
 )
 BARE_REPOSITORY_FILE = re.compile(r"(?<![\w/])[A-Za-z0-9_.+-]+\.[A-Za-z0-9_-]+(?:#[\w-]+)?")
-Scope = t.Literal["docs", "website", "full"]
+Scope = t.Literal["docs", "full"]
 
 
 def git_output(root: pathlib.Path, *arguments: str) -> bytes:
@@ -37,17 +37,14 @@ def tracked_files(root: pathlib.Path) -> t.List[str]:
     ]
 
 
-def is_website(path: str) -> bool:
-    return path.startswith("web/")
-
-
 def is_doc(path: str) -> bool:
     # Documentation scope is deliberately narrow: docs/** and top-level Markdown
     # only. Markdown inside any code/tooling folder remains code.
     path_value = pathlib.PurePosixPath(path)
-    return not is_website(path) and (
-        path.startswith("docs/")
-        or (len(path_value.parts) == 1 and path.endswith(".md") and path_value.name not in AGENT_DOC_NAMES)
+    return path.startswith("docs/") or (
+        len(path_value.parts) == 1
+        and path.endswith(".md")
+        and path_value.name not in AGENT_DOC_NAMES
     )
 
 
@@ -204,24 +201,21 @@ def deleted_paths(root: pathlib.Path, diff_base: str, head: str) -> t.Set[str]:
 
 def scope_for_paths(
     changed: t.List[str], pins: t.Set[str], deleted: t.Set[str]
-) -> t.Tuple[Scope, t.List[str], t.List[str], t.List[str]]:
+) -> t.Tuple[Scope, t.List[str], t.List[str]]:
     code_files = [
         path
         for path in changed
         if path in deleted and not path.startswith("docs/")
-        or (not is_doc(path) and not is_website(path))
+        or not is_doc(path)
         or path in pins
         or pathlib.PurePosixPath(path).name in AGENT_DOC_NAMES
     ]
-    website_files = [path for path in changed if is_website(path) and path not in pins]
     doc_files = [path for path in changed if is_doc(path) and path not in pins]
     if not changed or code_files:
         scope: Scope = "full"
-    elif website_files:
-        scope = "website"
     else:
         scope = "docs"
-    return scope, code_files, website_files, doc_files
+    return scope, code_files, doc_files
 
 
 class ChangesArguments(argparse.Namespace):
@@ -252,7 +246,6 @@ def full_result(event: str, head: str, reason: str) -> t.Dict[str, object]:
         "changed_files": [],
         "pinned_docs": [],
         "code_files": [],
-        "website_files": [],
         "doc_files": [],
         "reason": reason,
     }
@@ -267,7 +260,7 @@ def classify_changes(
     diff_base, changed = classify_diff_paths(root, event, base, head)
     pins = sorted(set(pinned_docs(root, diff_base)) | set(pinned_docs(root, head)))
     deleted = deleted_paths(root, diff_base, head)
-    scope, code_files, website_files, doc_files = scope_for_paths(changed, set(pins), deleted)
+    scope, code_files, doc_files = scope_for_paths(changed, set(pins), deleted)
     return {
         "scope": scope,
         "event": event,
@@ -276,11 +269,9 @@ def classify_changes(
         "changed_files": changed,
         "pinned_docs": pins,
         "code_files": code_files,
-        "website_files": website_files,
         "doc_files": doc_files,
         "reason": {
             "docs": "only unpinned documentation changed",
-            "website": "only unpinned website and documentation changed",
             "full": "empty diff or code/contract input changed",
         }[scope],
     }
@@ -316,7 +307,7 @@ def main() -> int:
         scope = result["scope"]
         if not isinstance(changed_files, list) or not isinstance(pinned_paths, list):
             raise ValueError("classification receipt has invalid path lists")
-        if not isinstance(scope, str) or scope not in {"docs", "website", "full"}:
+        if not isinstance(scope, str) or scope not in {"docs", "full"}:
             raise ValueError("classification receipt has invalid scope")
         if args.github_output is not None:
             write_scope_output(args.github_output, scope)

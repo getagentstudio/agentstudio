@@ -3,18 +3,15 @@ import Foundation
 
 package struct WorktreeOperationRunner {
     let client: any AgentStudioGitLocalClient
-    let defaultStartPointResolver: any WorktreeDefaultStartPointResolving
-    private let remoteClient: any AgentStudioGitRemoteClient
+    let remoteClient: any AgentStudioGitRemoteClient
     private let staleLockAssessment: WorktreeStaleLockAssessment
 
     package init(
         client: any AgentStudioGitLocalClient = LibGit2AgentStudioGitLocalClient(),
-        defaultStartPointResolver: any WorktreeDefaultStartPointResolving = SDKWorktreeDefaultStartPointResolver(),
         remoteClient: any AgentStudioGitRemoteClient = SystemGitRemoteClient(),
         staleLockAssessment: WorktreeStaleLockAssessment = WorktreeStaleLockAssessment()
     ) {
         self.client = client
-        self.defaultStartPointResolver = defaultStartPointResolver
         self.remoteClient = remoteClient
         self.staleLockAssessment = staleLockAssessment
     }

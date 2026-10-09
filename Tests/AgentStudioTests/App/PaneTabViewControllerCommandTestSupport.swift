@@ -340,8 +340,8 @@ func expectPaneTabViewControllerCommandWebviewContent(_ pane: Pane, issuePrefix:
 @MainActor
 func makePaneTabViewControllerCommandWindow(
     for controller: PaneTabViewController
-) -> NSWindow {
-    let window = NSWindow(
+) -> PaneResponderTrackingWindow {
+    let window = PaneResponderTrackingWindow(
         contentRect: NSRect(x: -10_000, y: -10_000, width: 1200, height: 800),
         styleMask: [.titled],
         backing: .buffered,

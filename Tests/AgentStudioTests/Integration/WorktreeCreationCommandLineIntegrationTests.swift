@@ -42,7 +42,7 @@ struct WorktreeCreationCommandLineIntegrationTests {
         let probe = WorktreeCreationCommandLineProbe()
         let exitCode = await WorktreeCommandLine.run(
             arguments: [
-                "new", branch, "--tracked-only", "--from-branch", startBranch, "--repo", repository.path, "--json",
+                "new", "-c", branch, "--no-fork", "--from-branch", startBranch, "--repo", repository.path, "--json",
             ],
             currentDirectory: repository,
             output: { probe.appendOutput($0) },
@@ -55,18 +55,18 @@ struct WorktreeCreationCommandLineIntegrationTests {
         let document = try JSONDecoder().decode(CreatedDocument.self, from: Data(output.utf8))
         #expect(document.outcome == "created")
         #expect(document.operation == "new")
-        #expect(document.branch == branch)
+        #expect(document.branch.name == branch)
         #expect(document.path == destination.path)
         #expect(document.repository == repository.path)
-        #expect(document.materialization?.kind == "trackedOnly")
+        #expect(document.materialization?.kind == "checkout")
         #expect(document.largeFiles == nil)
         #expect(try await git(at: destination, "rev-parse", "--abbrev-ref", "HEAD") == branch)
         #expect(try await git(at: destination, "rev-parse", "HEAD") == expectedTip)
         #expect(try await git(at: repository, "rev-parse", "refs/heads/\(startBranch)") == expectedTip)
     }
 
-    @Test("new --from-branch without another flag creates its new branch at that local branch tip")
-    func createsFromBranchWithoutTrackedOnly() async throws {
+    @Test("new --from-branch without another flag forks main and resets the copy to that local branch tip")
+    func createsFromBranchWithoutNoFork() async throws {
         let repository = try await FilesystemTestGitRepo.create(named: "cli-from-branch-alone")
         defer { FilesystemTestGitRepo.destroy(repository) }
         try "base\n".write(to: repository.appending(path: "README.md"), atomically: true, encoding: .utf8)
@@ -84,7 +84,7 @@ struct WorktreeCreationCommandLineIntegrationTests {
 
         let probe = WorktreeCreationCommandLineProbe()
         let exitCode = await WorktreeCommandLine.run(
-            arguments: ["new", "feat", "--from-branch", "release", "--repo", repository.path, "--json"],
+            arguments: ["new", "-c", "feat", "--from-branch", "release", "--repo", repository.path, "--json"],
             currentDirectory: repository,
             output: { probe.appendOutput($0) },
             errorOutput: { probe.appendError($0) }
@@ -95,9 +95,14 @@ struct WorktreeCreationCommandLineIntegrationTests {
         #expect(probe.errorSnapshot().isEmpty)
         let document = try JSONDecoder().decode(CreatedDocument.self, from: Data(output.utf8))
         #expect(document.outcome == "created")
-        #expect(document.branch == "feat")
+        #expect(document.branch.name == "feat")
         #expect(document.path == destination.path)
-        #expect(document.materialization?.kind == "trackedOnly")
+        #expect(document.materialization?.kind == "copyOnWrite")
+        #expect(document.materialization?.sourceState == "reset")
+        #expect(
+            document.start
+                == .init(commit: releaseTip, from: "localBranch", ref: "refs/heads/release", localOnlyCommits: nil))
+        #expect(try String(contentsOf: destination.appending(path: "release.txt"), encoding: .utf8) == "release\n")
         #expect(try await git(at: repository, "rev-parse", "refs/heads/feat") == releaseTip)
         #expect(try await git(at: destination, "rev-parse", "HEAD") == releaseTip)
     }
@@ -125,7 +130,7 @@ struct WorktreeCreationCommandLineIntegrationTests {
         let probe = WorktreeCreationCommandLineProbe()
         let exitCode = await WorktreeCommandLine.run(
             arguments: [
-                "new", branch, "--tracked-only", "--repo", repository.path, "--from-branch", "feature/missing",
+                "new", "-c", branch, "--no-fork", "--repo", repository.path, "--from-branch", "feature/missing",
                 "--json",
             ],
             currentDirectory: repository,
@@ -171,7 +176,7 @@ struct WorktreeCreationCommandLineIntegrationTests {
 
         let probe = WorktreeCreationCommandLineProbe()
         let exitCode = await WorktreeCommandLine.run(
-            arguments: ["new", branch, "--changes-only", "--from", repository.path, "--json"],
+            arguments: ["new", "-c", branch, "--changes-only", "--from", repository.path, "--json"],
             currentDirectory: repository,
             output: { probe.appendOutput($0) },
             errorOutput: { probe.appendError($0) }
@@ -184,7 +189,7 @@ struct WorktreeCreationCommandLineIntegrationTests {
         let document = try JSONDecoder().decode(CreatedDocument.self, from: Data(output.utf8))
         #expect(document.outcome == "created")
         #expect(document.operation == "new")
-        #expect(document.branch == branch)
+        #expect(document.branch.name == branch)
         #expect(document.path == destination.path)
         guard let report = document.materialization, report.kind == "changesOnly" else {
             Issue.record("expected the CLI to report changesOnly materialization")
@@ -237,7 +242,7 @@ struct WorktreeCreationCommandLineIntegrationTests {
 
         let probe = WorktreeCreationCommandLineProbe()
         let exitCode = await WorktreeCommandLine.run(
-            arguments: ["new", branch, "--from", repository.path, "--changes-only", "--json"],
+            arguments: ["new", "-c", branch, "--from", repository.path, "--changes-only", "--json"],
             currentDirectory: repository,
             output: { probe.appendOutput($0) },
             errorOutput: { probe.appendError($0) }
@@ -260,7 +265,7 @@ struct WorktreeCreationCommandLineIntegrationTests {
                 effect: "Stash the changed attributes, then retry --changes-only."
             ),
             WorktreeStopOption(
-                action: .command("agentstudio worktree new <branch> --from <source>"),
+                action: .command("agentstudio worktree new -c <branch> --from <source>"),
                 effect: "Use the APFS copy-on-write fork without --changes-only."
             ),
         ]
@@ -270,7 +275,7 @@ struct WorktreeCreationCommandLineIntegrationTests {
 
         let humanProbe = WorktreeCreationCommandLineProbe()
         let humanExitCode = await WorktreeCommandLine.run(
-            arguments: ["new", branch, "--from", repository.path, "--changes-only"],
+            arguments: ["new", "-c", branch, "--from", repository.path, "--changes-only"],
             currentDirectory: repository,
             output: { humanProbe.appendOutput($0) },
             errorOutput: { humanProbe.appendError($0) }
@@ -280,7 +285,7 @@ struct WorktreeCreationCommandLineIntegrationTests {
         let humanOutput = try #require(humanProbe.outputSnapshot().first)
         #expect(humanOutput.contains("commit the changed .gitattributes first"))
         #expect(humanOutput.contains("stash the changed .gitattributes first"))
-        #expect(humanOutput.contains("agentstudio worktree new <branch> --from <source>"))
+        #expect(humanOutput.contains("agentstudio worktree new -c <branch> --from <source>"))
         #expect(!FileManager.default.fileExists(atPath: destination.path))
         #expect(try await git(at: repository, "branch", "--list", branch).isEmpty)
     }

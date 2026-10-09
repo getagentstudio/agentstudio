@@ -128,7 +128,10 @@ struct WorktreeOperationErrorMapperTests {
             case .invalidBranchName:
                 expectedRefusal = .invalidBranchName(.rejectedByGit)
             case .branchAlreadyExists:
-                expectedRefusal = .branchAlreadyExists(branch)
+                expectedRefusal = .creationStopped(.branchAlreadyExists(branch: branch))
+            case .branchMoved, .branchNotFound:
+                // `branchNotFound` comes only from an existing-branch fork whose branch vanished after resolution.
+                expectedRefusal = .creationStopped(.branchMoved)
             case .clientCapabilityUnavailable,
                 .unsupportedOperatingSystem,
                 .sourceFilesystemNotAPFS,
@@ -141,12 +144,12 @@ struct WorktreeOperationErrorMapperTests {
                 .invalidDestinationPath,
                 .overlappingRoots,
                 .linkedWorktreeNameInUse,
-                .branchNotFound,
-                .branchNotAtCapturedHead,
-                .branchCheckedOut,
+                .invalidStart,
+                .fastForwardNotDescendant,
+                .invalidUpstream,
                 .fileProviderManagedLocation,
                 .datalessContent:
-                expectedRefusal = .forkUnavailable(reason, source: .mainWorktree)
+                expectedRefusal = .forkUnavailable(reason, offersChangesOnly: false)
             }
 
             #expect(
@@ -162,6 +165,83 @@ struct WorktreeOperationErrorMapperTests {
                     branchName: branch
                 ) == .refused(expectedRefusal))
         }
+    }
+
+    @Test("a branch held elsewhere or moved refuses with its stop, for the fork and the plain checkout")
+    func mapsBranchAttachRefusals() throws {
+        let destination = URL(fileURLWithPath: "/tmp/worktree-error-mapping/repo.feature")
+        let holder = URL(fileURLWithPath: "/tmp/worktree-error-mapping/repo.holder")
+
+        #expect(
+            WorktreeOperationErrorMapper.forkOutcome(
+                .branchCheckedOut(worktreePath: holder),
+                destinationPath: destination,
+                branchName: "feature/example"
+            ) == .refused(.creationStopped(.branchCheckedOut(path: holder.path))))
+        #expect(
+            WorktreeOperationErrorMapper.createOutcome(.branchCheckedOut(worktreePath: holder))
+                == .refused(.creationStopped(.branchCheckedOut(path: holder.path))))
+        #expect(
+            WorktreeOperationErrorMapper.createOutcome(.branchMoved) == .refused(.creationStopped(.branchMoved)))
+        #expect(
+            WorktreeOperationErrorMapper.createOutcome(.unsupported(message: "private detail"))
+                == .failed(WorktreeOperationErrorMapper.createFailure(.unsupported(message: "private detail"))))
+        #expect(WorktreeOperationErrorMapper.gitErrorKind(for: .branchMoved) == .branchMoved)
+        #expect(
+            WorktreeOperationErrorMapper.gitErrorKind(for: .branchCheckedOut(worktreePath: holder)) == .branchCheckedOut
+        )
+
+        let racedAttach = WorktreeOperationErrorMapper.forkOutcome(
+            .cleanupIncomplete(
+                primary: .branchCheckedOut(worktreePath: holder),
+                residue: [GitWorktreeForkResidue(kind: .branchMoveNotUndone, location: "refs/heads/feature/example")]
+            ),
+            destinationPath: destination,
+            branchName: "feature/example"
+        )
+        let expectedFailure = WorktreeOperationFailure(
+            failure: .branchCheckedOutAfterChange(path: holder.path),
+            leftovers: .incomplete([
+                WorktreeCleanupLeftover(
+                    kind: .branchMoveNotUndone, location: "refs/heads/feature/example", base: .branchReference)
+            ])
+        )
+        #expect(racedAttach == .failed(expectedFailure))
+        #expect(
+            WorktreeCommandLineFormatter.failedHumanLine(expectedFailure)
+                == "failed: rejectedAfterChange branchCheckedOut /tmp/worktree-error-mapping/repo.holder; "
+                + "leftovers: incomplete [branchMoveNotUndone refs/heads/feature/example (branch reference)]")
+        #expect(
+            try WorktreeCommandLineFormatter.failedJSONText(expectedFailure)
+                == #"{"failure":{"kind":"rejectedAfterChange","path":"/tmp/worktree-error-mapping/repo.holder","reason":"branchCheckedOut"},"leftovers":{"items":[{"base":"branchReference","kind":"branchMoveNotUndone","location":"refs/heads/feature/example"}],"status":"incomplete"},"outcome":"failed"}"#
+        )
+    }
+
+    @Test("a fast-forward the plain checkout couldn't undo fails naming the branch and both commits")
+    func mapsUnconfirmedBranchMoveForCheckout() throws {
+        let fromCommit = String(repeating: "1", count: 40)
+        let toCommit = String(repeating: "2", count: 40)
+        let error = GitDataPlaneError.branchMoveNotUndone(
+            branchName: "feature/example", fromOID: fromCommit, toOID: toCommit)
+
+        let outcome = WorktreeOperationErrorMapper.createOutcome(error)
+
+        let expectedFailure = WorktreeOperationFailure(
+            failure: .branchMoveNotUndone(
+                branch: "feature/example", move: WorktreeBranchMove(fromCommit: fromCommit, toCommit: toCommit)),
+            leftovers: .unverified)
+        #expect(outcome == .failed(expectedFailure))
+        #expect(WorktreeOperationErrorMapper.gitErrorKind(for: error) == .branchMoveNotUndone)
+        let human = try WorktreeCommandLineFormatter.format(outcome: outcome, usesJSONOutput: false)
+        #expect(human.exitCode == 2)
+        #expect(
+            human.text
+                == "failed: branchMoveNotUndone feature/example from \(fromCommit) to \(toCommit); leftovers: unverified"
+        )
+        #expect(
+            try WorktreeCommandLineFormatter.format(outcome: outcome, usesJSONOutput: true).text
+                == #"{"failure":{"branch":"feature/example","fromCommit":"\#(fromCommit)","kind":"branchMoveNotUndone","toCommit":"\#(toCommit)"},"leftovers":{"status":"unverified"},"outcome":"failed"}"#
+        )
     }
 
     @Test("working-state fork refusals retain their reason and repository-relative path")
@@ -214,6 +294,7 @@ struct WorktreeOperationErrorMapperTests {
             (.linkedWorktreeAdministration, "worktrees/repo.feature", .repositoryGitDirectory),
             (.nestedAdministration, "modules/nested/worktrees/repo", .repositoryGitDirectory),
             (.createdBranch, "refs/heads/feature/example", .branchReference),
+            (.branchMoveNotUndone, "refs/heads/feature/example", .branchReference),
             (.temporaryArtifact, "worktrees/.temporary-artifact", .temporary),
             (.lockFile, "worktrees/repo/index.lock", .repositoryGitDirectory),
         ]

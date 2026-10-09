@@ -117,18 +117,18 @@ jobs:
           cache: false
 
       - name: Install lint tools
-        if: ${{ !cancelled() && (needs.changes.result != 'success' || (needs.changes.outputs.scope != 'docs' && needs.changes.outputs.scope != 'website')) }}
+        if: ${{ !cancelled() && (needs.changes.result != 'success' || (needs.changes.outputs.scope != 'docs')) }}
         run: bash scripts/install-ci-lint-tools.sh
 
       - name: Verify lint tools on PATH
-        if: ${{ !cancelled() && (needs.changes.result != 'success' || (needs.changes.outputs.scope != 'docs' && needs.changes.outputs.scope != 'website')) }}
+        if: ${{ !cancelled() && (needs.changes.result != 'success' || (needs.changes.outputs.scope != 'docs')) }}
         run: |
           swift-format --version
           swiftlint version
 
       - name: Restore architecture lint build cache
         id: architecture-cache-restore
-        if: ${{ !cancelled() && (needs.changes.result != 'success' || (needs.changes.outputs.scope != 'docs' && needs.changes.outputs.scope != 'website')) }}
+        if: ${{ !cancelled() && (needs.changes.result != 'success' || (needs.changes.outputs.scope != 'docs')) }}
         uses: actions/cache/restore@v4
         with:
           path: .build-ci/architecture-lint
@@ -137,22 +137,22 @@ jobs:
             architecture-lint-linux-${{ runner.arch }}-swift-6.3.3-image-8de8ea332a61-
 
       - name: AgentStudio architecture lint tool tests
-        if: ${{ !cancelled() && (needs.changes.result != 'success' || (needs.changes.outputs.scope != 'docs' && needs.changes.outputs.scope != 'website')) }}
+        if: ${{ !cancelled() && (needs.changes.result != 'success' || (needs.changes.outputs.scope != 'docs')) }}
         run: mise run test:architecture
 
       - name: Save architecture lint build cache
-        if: ${{ !cancelled() && (needs.changes.result != 'success' || (needs.changes.outputs.scope != 'docs' && needs.changes.outputs.scope != 'website')) && github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.architecture-cache-restore.outputs.cache-hit != 'true' }}
+        if: ${{ !cancelled() && (needs.changes.result != 'success' || (needs.changes.outputs.scope != 'docs')) && github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.architecture-cache-restore.outputs.cache-hit != 'true' }}
         uses: actions/cache/save@v4
         with:
           path: .build-ci/architecture-lint
           key: ${{ steps.architecture-cache-restore.outputs.cache-primary-key }}
 
       - name: Lint
-        if: ${{ !cancelled() && (needs.changes.result != 'success' || (needs.changes.outputs.scope != 'docs' && needs.changes.outputs.scope != 'website')) }}
+        if: ${{ !cancelled() && (needs.changes.result != 'success' || (needs.changes.outputs.scope != 'docs')) }}
         run: mise run lint:portable
 
       - name: Debt ledger ratchet
-        if: ${{ !cancelled() && (needs.changes.result != 'success' || (needs.changes.outputs.scope != 'docs' && needs.changes.outputs.scope != 'website')) }}
+        if: ${{ !cancelled() && (needs.changes.result != 'success' || (needs.changes.outputs.scope != 'docs')) }}
         env:
           BASE_REF: ${{ github.event.pull_request.base.ref || 'main' }}
         run: /bin/bash Tools/AgentStudioArchitectureLint/check-ledger-ratchet.sh "origin/${BASE_REF}"
@@ -184,56 +184,10 @@ jobs:
             --event "$EVENT_NAME" --base "$BASE_SHA" --head "$HEAD_SHA" \
             --receipt tmp/ci-docs/changes.json --github-output "$GITHUB_OUTPUT"
 
-  marketing-site-validation:
-    name: Marketing site validation
-    needs: changes
-    if: ${{ !cancelled() && (needs.changes.result != 'success' || needs.changes.outputs.scope != 'docs') }}
-    runs-on: ubuntu-24.04
-
-    steps:
-      - *first-attempt-gate
-
-      - name: Checkout
-        uses: actions/checkout@v4
-        with:
-          lfs: true
-          persist-credentials: false
-
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v4
-        with:
-          version: 11.14.0
-
-      - name: Setup Node for marketing site
-        uses: actions/setup-node@v4
-        with:
-          node-version: "26.5.0"
-          cache: pnpm
-          cache-dependency-path: web/pnpm-lock.yaml
-
-      - name: Install Google Chrome
-        run: |
-          npx --yes playwright@1.61.0 install --with-deps chrome
-          chrome_binary="$(command -v google-chrome || command -v google-chrome-stable)"
-          test -x "$chrome_binary"
-          echo "CHROME_BIN=$chrome_binary" >> "$GITHUB_ENV"
-
-      - name: Install marketing site dependencies
-        run: pnpm --dir web install --frozen-lockfile
-
-      - name: Run marketing site checks
-        run: pnpm --dir web run check
-
-      - name: Build marketing site and Cloudflare package
-        run: |
-          pnpm --dir web run build
-          pnpm --dir web exec cf build
-          pnpm --dir web run verify:cloudflare-discovery
-
   bridge-web:
     name: BridgeWeb
     needs: changes
-    if: ${{ !cancelled() && github.event_name != 'push' && (needs.changes.result != 'success' || (needs.changes.outputs.scope != 'docs' && needs.changes.outputs.scope != 'website')) }}
+    if: ${{ !cancelled() && github.event_name != 'push' && (needs.changes.result != 'success' || (needs.changes.outputs.scope != 'docs')) }}
     runs-on: xcode-27
     env:
       SWIFT_BUILD_DIR: .build-ci
@@ -476,7 +430,7 @@ jobs:
   swift-test-suite:
     name: Swift test suite
     needs: changes
-    if: ${{ !cancelled() && (needs.changes.result != 'success' || (needs.changes.outputs.scope != 'docs' && needs.changes.outputs.scope != 'website')) }}
+    if: ${{ !cancelled() && (needs.changes.result != 'success' || (needs.changes.outputs.scope != 'docs')) }}
     runs-on: xcode-27
     permissions:
       contents: read

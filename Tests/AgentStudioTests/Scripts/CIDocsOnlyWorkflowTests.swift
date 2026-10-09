@@ -33,14 +33,8 @@ extension CITopologyWorkflowTests {
             #expect(header.contains("needs: changes"))
             #expect(header.contains("!cancelled()"))
             #expect(header.contains("needs.changes.result != 'success'"))
-            #expect(
-                header.contains("needs.changes.outputs.scope != 'docs' && needs.changes.outputs.scope != 'website'"))
+            #expect(header.contains("needs.changes.outputs.scope != 'docs'"))
         }
-        let marketingHeader =
-            try changeScopeJob("marketing-site-validation", in: workflow).components(separatedBy: "    steps:").first
-            ?? ""
-        #expect(marketingHeader.contains("needs.changes.result != 'success'"))
-        #expect(marketingHeader.contains("needs.changes.outputs.scope != 'docs'"))
     }
 
     @Test("required link check rejects a broken anchor in a mixed PR and skips cleanly without changed docs")
@@ -140,27 +134,6 @@ extension CITopologyWorkflowTests {
         #expect(try await fixture.classify(base: testHead, head: codeHead) == "full")
     }
 
-    @Test("website scope wins over documentation and mixed PR ranges")
-    func changeScopeClassifiesWebsiteAndMixedRanges() async throws {
-        let fixture = try ChangeScopeGitFixture()
-        defer { fixture.remove() }
-        try fixture.write("docs/guide.md", "# Guide")
-        try fixture.write("web/index.html", "<main>initial</main>")
-        let base = try await fixture.commit("base")
-
-        try fixture.write("docs/guide.md", "# Docs change")
-        let docsHead = try await fixture.commit("docs")
-        #expect(try await fixture.classify(base: base, head: docsHead) == "docs")
-
-        try fixture.write("web/index.html", "<main>website change</main>")
-        let websiteHead = try await fixture.commit("website")
-        #expect(try await fixture.classify(base: docsHead, head: websiteHead) == "website")
-
-        try fixture.write("docs/guide.md", "# Docs and website change")
-        let mixedHead = try await fixture.commit("docs and website")
-        #expect(try await fixture.classify(base: websiteHead, head: mixedHead) == "website")
-    }
-
     @Test("deleting a referenced path outside docs remains full")
     func changeScopeDeletedReferencedPathKeepsFullProof() async throws {
         let fixture = try ChangeScopeGitFixture()
@@ -170,18 +143,6 @@ extension CITopologyWorkflowTests {
         let base = try await fixture.commit("base")
         try FileManager.default.removeItem(at: fixture.root.appendingPathComponent("generated.json"))
         let head = try await fixture.commit("delete referenced input")
-        #expect(try await fixture.classify(base: base, head: head) == "full")
-    }
-
-    @Test("AGENTS paths under web pin any extension across a rename")
-    func changeScopePinsWebAgentNamedPaths() async throws {
-        let fixture = try ChangeScopeGitFixture()
-        defer { fixture.remove() }
-        try fixture.write("web/AGENTS.md", "The generated file is web/generated.ts")
-        try fixture.write("web/generated.ts", "export const value = 1")
-        let base = try await fixture.commit("base")
-        try await fixture.git(["mv", "web/generated.ts", "web/renamed.ts"])
-        let head = try await fixture.commit("rename generated file")
         #expect(try await fixture.classify(base: base, head: head) == "full")
     }
 
@@ -196,9 +157,20 @@ extension CITopologyWorkflowTests {
         #expect(try await fixture.classify(base: base, head: head) == "full")
     }
 
+    @Test("web paths are ordinary code after the website split")
+    func changeScopeWebPathKeepsFullProof() async throws {
+        let fixture = try ChangeScopeGitFixture()
+        defer { fixture.remove() }
+        try fixture.write("web/index.html", "<main>Initial</main>")
+        let base = try await fixture.commit("base")
+        try fixture.write("web/index.html", "<main>Changed</main>")
+        let head = try await fixture.commit("web change")
+        #expect(try await fixture.classify(base: base, head: head) == "full")
+    }
+
     @Test("literal readers under each owning code root veto documentation skipping")
     func changeScopeScannerCoversEachCodeRoot() async throws {
-        for codeRoot in ["Tests", "Tools", "BridgeWeb", "web", "scripts"] {
+        for codeRoot in ["Tests", "Tools", "BridgeWeb", "scripts"] {
             let fixture = try ChangeScopeGitFixture()
             defer { fixture.remove() }
             try fixture.write("\(codeRoot)/reader.swift", "let path = \"docs/contract.md\"")
