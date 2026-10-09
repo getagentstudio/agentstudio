@@ -9,7 +9,7 @@ worktree lifecycle
 │   │      parser -c/--create · resolver two forms · noSuchBranch · originCheckFailed (fail-closed)
 │   │      no origin → local only · printed strings say -c · guide · tests · mutation batch 10 (9 predicted)
 │   │      still open: the ipc.md example (docs/architecture) wasn't in the batch; check it
-│   ├── b. Sol design review of D23 (the Claude reviewer says READY at d4c89926f)
+│   ├── b. design review of D23   ← done: Sol ready-for-planning at 508d693f7, Claude READY at d4c89926f
 │   ├── c. merge the latest main (carries #463 Bridge stability)
 │   ├── d. final gate on the Xcode 27 test machine at that head: fresh build, every `mise run test` step with the
 │   │      four Swift lanes separate, mutation reds, debug CLI matrices rewritten for -c,
