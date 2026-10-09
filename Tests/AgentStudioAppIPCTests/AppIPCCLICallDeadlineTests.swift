@@ -1,3 +1,4 @@
+import AgentStudioAppIPC
 import AgentStudioDeadlineTestSupport
 import AgentStudioIPCClientCore
 import AgentStudioIPCTransport
