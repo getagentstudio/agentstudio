@@ -75,7 +75,7 @@ What grounds the diagram:
     `.existingBranch(name:)`, `.newBranch(name:startPoint:)` and
     `.detached(startPoint:)`.
   - `forkWorktree` exists only in the spec:
-    `/Users/shravansunder/Documents/dev/project-dev/agentstudio-git.worktree-fork/docs/specs/2026-08-15-apfs-cow-worktree-creation/specification.md:70-127`.
+    agentstudio-git `docs/specs/2026-08-15-apfs-cow-worktree-creation/specification.md:70-127`.
 - **SDK mutation serialization is process-wide.** This resolves the
   revision-1 grounding gap.
   - `LibGit2AgentStudioGitLocalClient.init()` passes

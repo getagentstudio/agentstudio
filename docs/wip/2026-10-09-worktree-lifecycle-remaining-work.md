@@ -10,9 +10,9 @@ worktree lifecycle
 │   │      no origin → local only · printed strings say -c · guide + ipc.md · tests · mutation batch 10
 │   ├── b. Sol design review of D23 (the Claude reviewer says READY at d4c89926f)
 │   ├── c. merge the latest main (carries #463 Bridge stability)
-│   ├── d. final gate on sunclaw at that head: fresh build, every `mise run test` step with the
+│   ├── d. final gate on the Xcode 27 test machine at that head: fresh build, every `mise run test` step with the
 │   │      four Swift lanes separate, mutation reds, debug CLI matrices rewritten for -c,
-│   │      receipts INDEX (session-logs 2026-10-08-app489-receipts)
+│   │      receipts INDEX
 │   └── e. Sol final verify → PR body → ready → owner squash-merges
 ├── 2. Release 0.0.109 after #489 (stable + beta tags, smoke, Homebrew SHA)
 ├── 3. PR 2: worktree lifecycle in the app (Spec LR18–LR24; a separate PR)
@@ -46,6 +46,6 @@ worktree lifecycle
 ## Where things are
 
 - PR #489: `fix/worktree-new-from-any-branch`, pinned to SDK main `eace2b5` (SDK #21 merged 2026-10-09).
-- Receipts and their INDEX: `~/dev/session-logs/2026-10-08-app489-receipts/` (local to the Lead's machine).
+- Receipts and their INDEX are kept with the Lead's local session logs (not in the repository).
 - The canonical plan with its D22/D23 amendment: `tmp/plan-workflows/2026-10-08-worktree-creation-followup.md` on the #489 worktree.
 - Every known red at the last full gate (`94b57512d`) is foreign and has a CI Lead disposition (TQ9, TQ15, TQ24–TQ26, TQ28, TQ32, TQ33, the #499 residual); none traces to #489.
