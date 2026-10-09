@@ -37,10 +37,13 @@ struct PaneTabViewControllerHeadlessZoomCommandTests {
         harness.store.setActivePane(targetActivePane.id, inTab: targetTab.id)
         harness.store.setActiveTab(sourceTab.id)
 
-        let window = makePaneTabViewControllerCommandWindow(for: harness.controller)
+        let diagnosticTrace = PaneFocusDiagnosticTrace()
+        let window = makeDiagnosticPaneTabViewControllerCommandWindow(
+            for: harness.controller,
+            trace: diagnosticTrace
+        )
         window.isReleasedWhenClosed = false
         defer { window.close() }
-        let diagnosticTrace = PaneFocusDiagnosticTrace(window: window)
         defer { diagnosticTrace.printOrderedEvents(label: #function) }
         let targetHost = try attachDiagnosticPaneHost(
             paneId: targetActivePane.id,
@@ -82,10 +85,13 @@ struct PaneTabViewControllerHeadlessZoomCommandTests {
         harness.store.setActivePane(targetActivePane.id, inTab: targetTab.id)
         harness.store.setActiveTab(sourceTab.id)
 
-        let window = makePaneTabViewControllerCommandWindow(for: harness.controller)
+        let diagnosticTrace = PaneFocusDiagnosticTrace()
+        let window = makeDiagnosticPaneTabViewControllerCommandWindow(
+            for: harness.controller,
+            trace: diagnosticTrace
+        )
         window.isReleasedWhenClosed = false
         defer { window.close() }
-        let diagnosticTrace = PaneFocusDiagnosticTrace(window: window)
         defer { diagnosticTrace.printOrderedEvents(label: #function) }
         let targetHost = try attachDiagnosticPaneHost(
             paneId: targetActivePane.id,
@@ -204,24 +210,6 @@ private struct PaneFocusDiagnosticEvent: Sendable {
 private final class PaneFocusDiagnosticTrace: @unchecked Sendable {
     private let lock = NSLock()
     private var events: [PaneFocusDiagnosticEvent] = []
-    private var firstResponderObservation: NSKeyValueObservation?
-
-    init(window: NSWindow) {
-        firstResponderObservation = window.observe(
-            \NSWindow.firstResponder,
-            options: [.old, .new]
-        ) { [weak self] window, change in
-            let oldResponder = change.oldValue.map { String(describing: type(of: $0)) } ?? "nil"
-            let newResponder = change.newValue.map { String(describing: type(of: $0)) } ?? "nil"
-            self?.record(
-                "window.firstResponder \(oldResponder) -> \(newResponder) window=\(ObjectIdentifier(window))"
-            )
-        }
-    }
-
-    deinit {
-        firstResponderObservation?.invalidate()
-    }
 
     func record(_ label: String, stack: [String] = Thread.callStackSymbols) {
         lock.lock()
@@ -239,6 +227,34 @@ private final class PaneFocusDiagnosticTrace: @unchecked Sendable {
             print("[\(index)] \(event.label)")
             print(event.stack.joined(separator: "\n"))
         }
+    }
+}
+
+@MainActor
+private final class DiagnosticPaneFocusWindow: NSWindow {
+    private let trace: PaneFocusDiagnosticTrace
+
+    init(trace: PaneFocusDiagnosticTrace) {
+        self.trace = trace
+        super.init(
+            contentRect: NSRect(x: -10_000, y: -10_000, width: 1200, height: 800),
+            styleMask: [.titled],
+            backing: .buffered,
+            defer: true
+        )
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) not supported")
+    }
+
+    override func makeFirstResponder(_ responder: NSResponder?) -> Bool {
+        let didMakeFirstResponder = super.makeFirstResponder(responder)
+        trace.record(
+            "NSWindow.makeFirstResponder requested=\(diagnosticResponderDescription(responder)) result=\(didMakeFirstResponder) actual=\(diagnosticResponderDescription(firstResponder))"
+        )
+        return didMakeFirstResponder
     }
 }
 
@@ -291,4 +307,21 @@ private func attachDiagnosticPaneHost(
     host.frame = contentView.bounds
     contentView.addSubview(host)
     return host
+}
+
+@MainActor
+private func makeDiagnosticPaneTabViewControllerCommandWindow(
+    for controller: PaneTabViewController,
+    trace: PaneFocusDiagnosticTrace
+) -> DiagnosticPaneFocusWindow {
+    let window = DiagnosticPaneFocusWindow(trace: trace)
+    window.contentViewController = controller
+    window.makeKeyAndOrderFront(nil)
+    window.contentView?.layoutSubtreeIfNeeded()
+    return window
+}
+
+private func diagnosticResponderDescription(_ responder: NSResponder?) -> String {
+    guard let responder else { return "nil" }
+    return "\(type(of: responder))@\(ObjectIdentifier(responder))"
 }
