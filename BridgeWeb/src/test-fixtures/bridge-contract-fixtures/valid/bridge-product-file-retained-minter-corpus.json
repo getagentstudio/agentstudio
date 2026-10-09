@@ -3,7 +3,7 @@
     "mode": "snapshot",
     "parts": [
       {
-        "key": "/package5-fixture/File-0000.swift",
+        "key": "/retained-minter-fixture/File-0000.swift",
         "operation": "put",
         "revision": 15,
         "value": {
@@ -35,7 +35,7 @@
           "kind": "memberStatus",
           "source": {
             "repoId": "00000000-0000-4000-8000-000000000001",
-            "rootRevisionToken": "fe3648e292946c93",
+            "rootRevisionToken": "retained-minter-root",
             "sourceCursor": "generation-2",
             "sourceId": "pane-00000000-0000-4000-8000-000000000003-worktree-00000000-0000-4000-8000-000000000002-2",
             "subscriptionGeneration": 2,
@@ -54,7 +54,7 @@
     "mode": "coverage",
     "parts": [
       {
-        "key": "/package5-fixture/File-0000.swift",
+        "key": "/retained-minter-fixture/File-0000.swift",
         "operation": "put",
         "revision": 3,
         "value": {
@@ -76,7 +76,7 @@
         }
       },
       {
-        "key": "/package5-fixture/File-0001.swift",
+        "key": "/retained-minter-fixture/File-0001.swift",
         "operation": "put",
         "revision": 4,
         "value": {
@@ -98,7 +98,7 @@
         }
       },
       {
-        "key": "/package5-fixture/File-0002.swift",
+        "key": "/retained-minter-fixture/File-0002.swift",
         "operation": "put",
         "revision": 5,
         "value": {
@@ -120,7 +120,7 @@
         }
       },
       {
-        "key": "/package5-fixture/File-0003.swift",
+        "key": "/retained-minter-fixture/File-0003.swift",
         "operation": "put",
         "revision": 6,
         "value": {
@@ -142,7 +142,7 @@
         }
       },
       {
-        "key": "/package5-fixture/File-0004.swift",
+        "key": "/retained-minter-fixture/File-0004.swift",
         "operation": "put",
         "revision": 7,
         "value": {
@@ -164,7 +164,7 @@
         }
       },
       {
-        "key": "/package5-fixture/File-0005.swift",
+        "key": "/retained-minter-fixture/File-0005.swift",
         "operation": "put",
         "revision": 8,
         "value": {
@@ -186,7 +186,7 @@
         }
       },
       {
-        "key": "/package5-fixture/File-0006.swift",
+        "key": "/retained-minter-fixture/File-0006.swift",
         "operation": "put",
         "revision": 9,
         "value": {
@@ -208,7 +208,7 @@
         }
       },
       {
-        "key": "/package5-fixture/File-0007.swift",
+        "key": "/retained-minter-fixture/File-0007.swift",
         "operation": "put",
         "revision": 10,
         "value": {
@@ -230,7 +230,7 @@
         }
       },
       {
-        "key": "/package5-fixture/File-0008.swift",
+        "key": "/retained-minter-fixture/File-0008.swift",
         "operation": "put",
         "revision": 11,
         "value": {
@@ -252,7 +252,7 @@
         }
       },
       {
-        "key": "/package5-fixture/File-0009.swift",
+        "key": "/retained-minter-fixture/File-0009.swift",
         "operation": "put",
         "revision": 12,
         "value": {
@@ -284,7 +284,7 @@
           "kind": "memberStatus",
           "source": {
             "repoId": "00000000-0000-4000-8000-000000000001",
-            "rootRevisionToken": "fe3648e292946c93",
+            "rootRevisionToken": "retained-minter-root",
             "sourceCursor": "generation-1",
             "sourceId": "pane-00000000-0000-4000-8000-000000000003-worktree-00000000-0000-4000-8000-000000000002-1",
             "subscriptionGeneration": 1,

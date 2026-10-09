@@ -85,7 +85,7 @@ struct BridgeProductFileRevisionFloorTests {
         #expect(repaired.records.allSatisfy { $0.revision > installedCoverage.targetRevision })
         #expect(repaired.memberStatus.revision > installedCoverage.targetRevision)
         #expect(repaired.isEnumerationComplete)
-        if !giveUp { try writeRevisionFloorReplay(coverage: coverageBatch, certificate: certificate) }
+        try assertRevisionFloorCorpus(coverage: coverageBatch, certificate: certificate)
         await source.cancel(subscriptionId: subscription.subscriptionId)
         await coordinator.shutdown()
         await assertBridgeConstructionCoordinatorDrained(coordinator)
@@ -202,20 +202,61 @@ private func repairToSmallerInventory(_ fixture: ProductFileSourceFixture) throw
     try Data("repaired smaller inventory\n".utf8).write(to: fixture.demandedFileURL)
 }
 
-private func writeRevisionFloorReplay(coverage: BridgeProductSealedViewBatch, certificate: BridgeProductSealedViewBatch)
-    throws
-{
-    guard ProcessInfo.processInfo.environment["AGENTSTUDIO_PACKAGE5_REPLAY_PATH"] != nil else { return }
-    let replayPath = try #require(ProcessInfo.processInfo.environment["AGENTSTUDIO_PACKAGE5_REPLAY_PATH"])
-    func value(_ batch: BridgeProductSealedViewBatch) throws -> [String: Any] {
-        let parts = try batch.parts.map { part -> Any in
-            let object = try JSONSerialization.jsonObject(with: JSONEncoder().encode(part))
-            return object
+private struct FileRevisionFloorCorpus: Decodable {
+    struct Capture: Decodable, Equatable {
+        let mode: BridgeProductBatchMode
+        let targetRevision: Int
+        let parts: [BridgeProductBatchPart]
+
+        init(batch: BridgeProductSealedViewBatch) {
+            mode = batch.mode
+            targetRevision = batch.targetRevision
+            parts = batch.parts.map(normalizeRevisionFloorPart)
         }
-        return ["mode": batch.mode.rawValue, "targetRevision": batch.targetRevision, "parts": parts]
     }
-    let data = try JSONSerialization.data(
-        withJSONObject: ["coverage": value(coverage), "certificate": value(certificate)],
-        options: [.prettyPrinted, .sortedKeys])
-    try data.write(to: URL(fileURLWithPath: replayPath))
+
+    let coverage: Capture
+    let certificate: Capture
+}
+
+private func assertRevisionFloorCorpus(
+    coverage: BridgeProductSealedViewBatch,
+    certificate: BridgeProductSealedViewBatch
+) throws {
+    let projectRoot = URL(fileURLWithPath: TestPathResolver.projectRoot(from: #filePath))
+    let relativePath = "valid/bridge-product-file-retained-minter-corpus.json"
+    let swiftBytes = try Data(contentsOf: projectRoot.appending(path: "Tests/BridgeContractFixtures/" + relativePath))
+    let mirroredBytes = try Data(
+        contentsOf: projectRoot.appending(path: "BridgeWeb/src/test-fixtures/bridge-contract-fixtures/" + relativePath))
+    #expect(swiftBytes == mirroredBytes)
+    let corpus = try JSONDecoder().decode(FileRevisionFloorCorpus.self, from: swiftBytes)
+    // Apart from physical root spelling/hash, compare every field replayed by
+    // W4. A native revision, row or mode drift must fail this permanent gate.
+    #expect(FileRevisionFloorCorpus.Capture(batch: coverage) == corpus.coverage)
+    #expect(FileRevisionFloorCorpus.Capture(batch: certificate) == corpus.certificate)
+}
+
+private func normalizeRevisionFloorPart(_ part: BridgeProductBatchPart) -> BridgeProductBatchPart {
+    func key(_ original: String) -> String {
+        original.hasPrefix("/")
+            ? "/retained-minter-fixture/" + URL(fileURLWithPath: original).lastPathComponent : original
+    }
+    switch part {
+    case .put(let originalKey, let revision, let value):
+        var normalizedValue = value
+        if originalKey == BridgeProductFileMemberStatusRecord.recordKey,
+            case .object(var fields) = value,
+            case .object(var source)? = fields["source"],
+            case .string? = source["rootRevisionToken"]
+        {
+            source["rootRevisionToken"] = .string("retained-minter-root")
+            fields["source"] = .object(source)
+            normalizedValue = .object(fields)
+        }
+        return .put(key: key(originalKey), revision: revision, value: normalizedValue)
+    case .delete(let originalKey, let revision):
+        return .delete(key: key(originalKey), revision: revision)
+    case .evict(let originalKey):
+        return .evict(key: key(originalKey))
+    }
 }
