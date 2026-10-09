@@ -33,11 +33,12 @@ struct AppTerminationDrainDeadlineTests {
         let paneID = UUIDv7.generate()
         let callbackStep = HeldStep<Void>("admitted callback completes during termination retirement")
         var stages: [String] = []
+        var callbackTask: Task<Void, Never>?
         let drains = Task { @MainActor in
             await delegate.runCallbackHandlingAndActivityDrains { name, operation in
                 stages.append(name + " started")
                 if name == "Ghostty action trace" {
-                    _ = handler.taskOwner.enqueueTask {
+                    callbackTask = handler.taskOwner.enqueueTask {
                         try? await callbackStep.arrive(())
                         stages.append("admitted callback completed")
                     }
@@ -62,6 +63,7 @@ struct AppTerminationDrainDeadlineTests {
         } catch {
             callbackStep.retire()
             await drains.value
+            await callbackTask?.value
             await handler.retire()
             await router.stop()
             throw error
