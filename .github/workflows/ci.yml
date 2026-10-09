@@ -24,6 +24,8 @@ permissions:
 jobs:
   code-quality:
     name: Code quality
+    needs: changes
+    if: ${{ !cancelled() && (needs.changes.result != 'success' || needs.changes.outputs.scope == 'full') }}
     runs-on: ubuntu-24.04
     container: swift@sha256:8de8ea332a61e961ead4ef41029c2552b18e1a70dd5942d25ecf7d8de2eec5b5
     defaults:
@@ -91,17 +93,6 @@ jobs:
       - name: Trust checkout for Git
         run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
 
-      - name: Check changed documentation links
-        if: github.event_name == 'pull_request'
-        env:
-          BASE_SHA: ${{ github.event.pull_request.base.sha }}
-          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
-        run: |
-          mkdir -p tmp/ci-docs
-          merge_base="$(git merge-base "$BASE_SHA" "$HEAD_SHA")"
-          git diff --name-only -z --no-renames "$merge_base" "$HEAD_SHA" -- > tmp/ci-docs/changed-paths
-          python3 scripts/check-changed-doc-links.py --changed-files tmp/ci-docs/changed-paths
-
       - name: Setup mise
         uses: jdx/mise-action@v3
         with:
@@ -150,7 +141,7 @@ jobs:
     name: Changed-file classification
     runs-on: ubuntu-24.04
     outputs:
-      docs_only: ${{ steps.classify.outputs.docs_only }}
+      scope: ${{ steps.classify.outputs.scope }}
     steps:
       - *first-attempt-gate
 
@@ -164,17 +155,51 @@ jobs:
         id: classify
         env:
           EVENT_NAME: ${{ github.event_name }}
-          BASE_SHA: ${{ github.event.pull_request.base.sha }}
-          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          PUSH_BEFORE_SHA: ${{ github.event.before }}
+          PUSH_HEAD_SHA: ${{ github.sha }}
         run: |
-          python3 scripts/ci-docs-changes.py classify \
-            --event "$EVENT_NAME" --base "$BASE_SHA" --head "$HEAD_SHA" \
+          set -euo pipefail
+          mkdir -p tmp/ci-docs
+          case "$EVENT_NAME" in
+            pull_request)
+              base="$PR_BASE_SHA"
+              head="$PR_HEAD_SHA"
+              ;;
+            push)
+              base="$PUSH_BEFORE_SHA"
+              head="$PUSH_HEAD_SHA"
+              ;;
+            *)
+              base=""
+              head=""
+              ;;
+          esac
+          python3 scripts/ci-change-scope.py classify \
+            --event "$EVENT_NAME" --base "$base" --head "$head" \
             --receipt tmp/ci-docs/changes.json --github-output "$GITHUB_OUTPUT"
+
+      - name: Check changed documentation links
+        if: steps.classify.outcome == 'success'
+        run: |
+          python3 - tmp/ci-docs/changes.json tmp/ci-docs/changed-paths <<'PY'
+          import json
+          import sys
+
+          with open(sys.argv[1], encoding="utf-8") as receipt:
+              changed = json.load(receipt)["changed_files"]
+          with open(sys.argv[2], "wb") as output:
+              output.write("\0".join(changed).encode("utf-8"))
+              if changed:
+                  output.write(b"\0")
+          PY
+          python3 scripts/check-changed-doc-links.py --changed-files tmp/ci-docs/changed-paths
 
   marketing-site-validation:
     name: Marketing site validation
     needs: changes
-    if: ${{ !cancelled() && (github.event_name != 'pull_request' || needs.changes.outputs.docs_only != 'true') }}
+    if: ${{ !cancelled() && (needs.changes.result != 'success' || needs.changes.outputs.scope != 'docs') }}
     runs-on: ubuntu-24.04
 
     steps:
@@ -220,7 +245,7 @@ jobs:
   bridge-web:
     name: BridgeWeb
     needs: changes
-    if: ${{ !cancelled() && github.event_name != 'push' && (github.event_name != 'pull_request' || needs.changes.outputs.docs_only != 'true') }}
+    if: ${{ !cancelled() && github.event_name != 'push' && (needs.changes.result != 'success' || needs.changes.outputs.scope == 'full') }}
     runs-on: xcode-27
     env:
       SWIFT_BUILD_DIR: .build-ci
@@ -463,7 +488,7 @@ jobs:
   swift-test-suite:
     name: Swift test suite
     needs: changes
-    if: ${{ !cancelled() && (github.event_name != 'pull_request' || needs.changes.outputs.docs_only != 'true') }}
+    if: ${{ !cancelled() && (needs.changes.result != 'success' || needs.changes.outputs.scope == 'full') }}
     runs-on: xcode-27
     permissions:
       contents: read
@@ -821,7 +846,7 @@ jobs:
 
   prune-swift-build-cache:
     name: Prune Swift build cache
-    if: always() && github.event_name == 'push' && github.ref == 'refs/heads/main' && (needs.swift-test-suite.outputs.swift_cache_disposition == 'saved' || needs.swift-test-suite.outputs.swift_cache_disposition == 'skipped-budget')
+    if: always() && github.event_name == 'push' && github.ref == 'refs/heads/main' && needs.swift-test-suite.result != 'skipped' && (needs.swift-test-suite.outputs.swift_cache_disposition == 'saved' || needs.swift-test-suite.outputs.swift_cache_disposition == 'skipped-budget')
     needs: swift-test-suite
     runs-on: ubuntu-24.04
     permissions:

@@ -15,7 +15,8 @@ struct CITopologyWorkflowTests {
         let swiftHeader = try topologyBlock(
             startingWith: "  swift-test-suite:\n", endingBefore: "    steps:", in: swiftJob)
         #expect(bridgeHeader.contains("github.event_name != 'push'"))
-        #expect(swiftHeader.contains("needs.changes.outputs.docs_only != 'true'"))
+        #expect(swiftHeader.contains("!cancelled()"))
+        #expect(swiftHeader.contains("needs.changes.outputs.scope == 'full'"))
         #expect(swiftHeader.contains("\n    needs: changes"))
         #expect(!swiftJob.contains("needs.bridge-web"))
         for stepName in ["Compute Swift cache compatibility prefix", "Inventory Swift build inputs before prebuild"] {
@@ -138,6 +139,7 @@ struct CITopologyWorkflowTests {
         #expect(!swiftJob.contains("actions: write"))
         #expect(pruneJob.contains("needs: swift-test-suite"))
         #expect(pruneJob.contains("if: always() && github.event_name == 'push'"))
+        #expect(pruneJob.contains("needs.swift-test-suite.result != 'skipped'"))
         #expect(pruneJob.contains("actions: write"))
         #expect(pruneJob.contains("needs.swift-test-suite.outputs.swift_cache_disposition"))
         #expect(pruneJob.contains("needs.swift-test-suite.outputs.swift_cache_disposition == 'skipped-budget'"))
@@ -146,7 +148,7 @@ struct CITopologyWorkflowTests {
         #expect(inputScript.contains("swift-build-v1-"))
         #expect(workflow.contains("steps.swift-cache-prefix.outputs.prefix"))
     }
-    @Test("heavy CI jobs depend only on classification while code quality stays independent")
+    @Test("all scoped CI jobs depend on classification and keep failed-classifier fail-open guards")
     func ciJobsDependOnlyOnClassification() throws {
         let workflow = try String(contentsOfFile: ".github/workflows/ci.yml", encoding: .utf8)
 
@@ -157,11 +159,9 @@ struct CITopologyWorkflowTests {
             "swift-test-suite",
         ] {
             let job = try topologyJob(named: jobName, in: workflow)
-            if jobName == "code-quality" {
-                #expect(!job.contains("\n    needs:"))
-            } else {
-                #expect(job.contains("\n    needs: changes"))
-            }
+            #expect(job.contains("\n    needs: changes"))
+            let header = job.components(separatedBy: "    steps:").first ?? ""
+            #expect(header.contains("!cancelled()"))
         }
     }
 

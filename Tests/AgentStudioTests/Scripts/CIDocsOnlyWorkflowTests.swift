@@ -6,42 +6,38 @@ import Testing
 
 // Extend the owning topology suite so its existing lane classification stays authoritative.
 extension CITopologyWorkflowTests {
-    @Test("docs-only PR classification gates heavy jobs while quality remains independent")
-    func docsOnlyTopologyFailsOpen() throws {
+    @Test("scope PR classification gates heavy jobs while required jobs follow scope")
+    func changeScopeTopologyFailsOpen() throws {
         let workflow = try String(contentsOfFile: ".github/workflows/ci.yml", encoding: .utf8)
-        let changes = try docsOnlyJob("changes", in: workflow)
+        let changes = try changeScopeJob("changes", in: workflow)
         #expect(changes.contains("runs-on: ubuntu-24.04"))
-        #expect(changes.contains("docs_only: ${{ steps.classify.outputs.docs_only }}"))
+        #expect(changes.contains("scope: ${{ steps.classify.outputs.scope }}"))
         #expect(changes.contains("fetch-depth: 0"))
         #expect(changes.contains("github.event.pull_request.base.sha"))
         #expect(changes.contains("github.event.pull_request.head.sha"))
-        #expect(changes.contains("python3 scripts/ci-docs-changes.py classify"))
-        #expect(!changes.contains("check-changed-doc-links.py"))
-        let quality = try docsOnlyJob("code-quality", in: workflow)
-        let linkStep = try docsOnlyLinkStep(in: quality)
-        #expect(linkStep.contains("if: github.event_name == 'pull_request'"))
-        #expect(linkStep.contains("git merge-base"))
-        #expect(linkStep.contains("git diff --name-only -z --no-renames"))
+        #expect(changes.contains("python3 scripts/ci-change-scope.py classify"))
+        #expect(changes.contains("check-changed-doc-links.py"))
+        let linkStep = try changeScopeLinkStep(in: changes)
+        #expect(linkStep.contains("if: steps.classify.outcome == 'success'"))
+        #expect(linkStep.contains("changed_files"))
         #expect(linkStep.contains("python3 scripts/check-changed-doc-links.py --changed-files"))
-        #expect(!linkStep.contains("needs.changes"))
-        #expect(!linkStep.contains("docs_only"))
         #expect(!workflow.contains("paths-ignore:"))
-        for name in ["swift-test-suite", "bridge-web", "marketing-site-validation"] {
-            let job = try docsOnlyJob(name, in: workflow)
+        for name in ["code-quality", "swift-test-suite", "bridge-web", "marketing-site-validation"] {
+            let job = try changeScopeJob(name, in: workflow)
             let header = job.components(separatedBy: "    steps:").first ?? ""
             #expect(header.contains("needs: changes"))
             #expect(header.contains("!cancelled()"))
-            #expect(header.contains("github.event_name != 'pull_request' || needs.changes.outputs.docs_only != 'true'"))
+            if name == "marketing-site-validation" {
+                #expect(header.contains("needs.changes.outputs.scope != 'docs'"))
+            } else {
+                #expect(header.contains("needs.changes.outputs.scope == 'full'"))
+            }
         }
-        let qualityHeader =
-            try docsOnlyJob("code-quality", in: workflow).components(separatedBy: "    steps:").first ?? ""
-        #expect(!qualityHeader.contains("needs:"))
-        #expect(!qualityHeader.contains("if:"))
     }
 
-    @Test("required Code quality rejects a broken anchor in a mixed PR and skips cleanly without changed docs")
-    func requiredQualityChecksEveryPRDocChange() async throws {
-        let fixture = try DocsOnlyGitFixture()
+    @Test("required link check rejects a broken anchor in a mixed PR and skips cleanly without changed docs")
+    func requiredLinkCheckRunsForEveryPRDocChange() async throws {
+        let fixture = try ChangeScopeGitFixture()
         defer { fixture.remove() }
         try fixture.write("docs/target.md", "# Good")
         try fixture.write("docs/guide.md", "[Good](target.md#good)")
@@ -72,7 +68,7 @@ extension CITopologyWorkflowTests {
         #expect(linkChecker.contains("architecture-doc-fixture-root.txt"))
         #expect(!lintScript.contains(fixtureRoot))
         #expect(!linkChecker.contains(fixtureRoot))
-        let fixture = try DocsOnlyGitFixture()
+        let fixture = try ChangeScopeGitFixture()
         defer { fixture.remove() }
         let negativeFixture =
             "Tools/AgentStudioArchitectureLint/Tests/AgentStudioArchitectureLintTests/Fixtures/Bad/AGENTS.md"
@@ -88,10 +84,10 @@ extension CITopologyWorkflowTests {
     }
 
     @Test("structural scanner finds code-pinned documents and agent documents")
-    func docsOnlyScannerFindsPinnedDocs() async throws {
+    func changeScopeScannerFindsPinnedDocs() async throws {
         let python = try await TestToolResolver.resolved().python3
         let result = try await runProcessToExit(
-            executableURL: python, arguments: ["scripts/ci-docs-changes.py", "pinned"])
+            executableURL: python, arguments: ["scripts/ci-change-scope.py", "pinned"])
         #expect(result.terminationStatus == 0)
         let output = try #require(String(data: result.standardOutput, encoding: .utf8))
         for path in [
@@ -104,9 +100,9 @@ extension CITopologyWorkflowTests {
         }
     }
 
-    @Test("a literal doc read is code but unpinned prose stays docs-only; all non-PR events are code")
-    func docsOnlyClassificationRespectsContractsAndEvents() async throws {
-        let fixture = try DocsOnlyGitFixture()
+    @Test("a literal doc read is code but unpinned prose stays scope; all non-PR events are code")
+    func changeScopeClassificationRespectsContractsAndEvents() async throws {
+        let fixture = try ChangeScopeGitFixture()
         defer { fixture.remove() }
         try fixture.write(
             "Tests/DocContract.swift", "let body = try String(contentsOfFile: \"docs/contract.md\", encoding: .utf8)")
@@ -119,26 +115,55 @@ extension CITopologyWorkflowTests {
         let base = try await fixture.commit("base")
         try fixture.write("docs/guide.md", "# Revised Guide")
         let docsHead = try await fixture.commit("docs")
-        #expect(try await fixture.classify(base: base, head: docsHead) == true)
+        #expect(try await fixture.classify(base: base, head: docsHead) == "docs")
         for event in ["push", "schedule", "workflow_dispatch"] {
-            #expect(try await fixture.classify(base: base, head: docsHead, event: event) == false)
+            #expect(try await fixture.classify(base: base, head: docsHead, event: event) == "full")
         }
         try fixture.write("docs/contract.md", "# Changed contract")
         let pinnedHead = try await fixture.commit("contract")
-        #expect(try await fixture.classify(base: docsHead, head: pinnedHead) == false)
+        #expect(try await fixture.classify(base: docsHead, head: pinnedHead) == "full")
         try fixture.write("Tests/fixture.md", "# Changed test fixture")
         let testHead = try await fixture.commit("test")
-        #expect(try await fixture.classify(base: pinnedHead, head: testHead) == false)
-        #expect(try await fixture.classify(base: testHead, head: testHead) == false)
+        #expect(try await fixture.classify(base: pinnedHead, head: testHead) == "full")
+        #expect(try await fixture.classify(base: testHead, head: testHead) == "full")
         try fixture.write("Sources/Example.swift", "let value = 1")
         let codeHead = try await fixture.commit("code")
-        #expect(try await fixture.classify(base: testHead, head: codeHead) == false)
+        #expect(try await fixture.classify(base: testHead, head: codeHead) == "full")
+    }
+
+    @Test("website scope wins over documentation and push ranges share the PR diff rules")
+    func changeScopeClassifiesWebsiteAndPushRanges() async throws {
+        let fixture = try ChangeScopeGitFixture()
+        defer { fixture.remove() }
+        try fixture.write("docs/guide.md", "# Guide")
+        try fixture.write("web/index.html", "<main>initial</main>")
+        let base = try await fixture.commit("base")
+
+        try fixture.write("docs/guide.md", "# Docs change")
+        let docsHead = try await fixture.commit("docs")
+        #expect(try await fixture.classify(base: base, head: docsHead) == "docs")
+        #expect(try await fixture.classify(base: base, head: docsHead, event: "push") == "docs")
+
+        try fixture.write("web/index.html", "<main>website change</main>")
+        let websiteHead = try await fixture.commit("website")
+        #expect(try await fixture.classify(base: docsHead, head: websiteHead) == "website")
+        #expect(try await fixture.classify(base: docsHead, head: websiteHead, event: "push") == "website")
+
+        try fixture.write("docs/guide.md", "# Docs and website change")
+        let mixedHead = try await fixture.commit("docs and website")
+        #expect(try await fixture.classify(base: websiteHead, head: mixedHead) == "website")
+        #expect(try await fixture.classify(base: websiteHead, head: mixedHead, event: "push") == "website")
+
+        #expect(
+            try await fixture.classify(
+                base: String(repeating: "0", count: 40), head: mixedHead, event: "push") == "full")
+        #expect(try await fixture.classify(base: mixedHead, head: websiteHead, event: "push") == "full")
     }
 
     @Test("literal readers under each owning code root veto documentation skipping")
-    func docsOnlyScannerCoversEachCodeRoot() async throws {
+    func changeScopeScannerCoversEachCodeRoot() async throws {
         for codeRoot in ["Tests", "Tools", "BridgeWeb", "web", "scripts"] {
-            let fixture = try DocsOnlyGitFixture()
+            let fixture = try ChangeScopeGitFixture()
             defer { fixture.remove() }
             try fixture.write("\(codeRoot)/reader.swift", "let path = \"docs/contract.md\"")
             try fixture.write("docs/contract.md", "# Contract")
@@ -149,23 +174,23 @@ extension CITopologyWorkflowTests {
             let base = try await fixture.commit("base")
             try fixture.write("docs/contract.md", "# Changed")
             let head = try await fixture.commit("contract")
-            #expect(try await fixture.classify(base: base, head: head) == false, "\(codeRoot) did not pin its input")
+            #expect(try await fixture.classify(base: base, head: head) == "full", "\(codeRoot) did not pin its input")
             try fixture.write("docs/contract.json", "{\"value\":1}")
             let dataHead = try await fixture.commit("data contract")
             #expect(
-                try await fixture.classify(base: head, head: dataHead) == false,
+                try await fixture.classify(base: head, head: dataHead) == "full",
                 "\(codeRoot) did not pin its data input")
             try fixture.write("docs/diagram.svg", "<svg><g /></svg>")
             let styleHead = try await fixture.commit("style input")
             #expect(
-                try await fixture.classify(base: dataHead, head: styleHead) == false,
+                try await fixture.classify(base: dataHead, head: styleHead) == "full",
                 "\(codeRoot) did not scan its CSS input")
         }
     }
 
     @Test("a literal documentation alias and its resolved input both stay code-pinned")
-    func docsOnlyScannerPinsDocAliases() async throws {
-        let fixture = try DocsOnlyGitFixture()
+    func changeScopeScannerPinsDocAliases() async throws {
+        let fixture = try ChangeScopeGitFixture()
         defer { fixture.remove() }
         try fixture.write("Tests/reader.swift", "let path = \"alias.md\"")
         try fixture.write("docs/original.md", "# Original")
@@ -175,16 +200,16 @@ extension CITopologyWorkflowTests {
         let base = try await fixture.commit("base")
         try fixture.write("docs/original.md", "# Changed input")
         let inputHead = try await fixture.commit("input changed")
-        #expect(try await fixture.classify(base: base, head: inputHead) == false)
+        #expect(try await fixture.classify(base: base, head: inputHead) == "full")
         try FileManager.default.removeItem(at: alias)
         try FileManager.default.createSymbolicLink(atPath: alias.path, withDestinationPath: "docs/replacement.md")
         let aliasHead = try await fixture.commit("alias changed")
-        #expect(try await fixture.classify(base: inputHead, head: aliasHead) == false)
+        #expect(try await fixture.classify(base: inputHead, head: aliasHead) == "full")
     }
 
-    @Test("a broken classifier emits false and fails without authorizing a heavy-job skip")
-    func docsOnlyClassifierFailureKeepsFullProof() async throws {
-        let fixture = try DocsOnlyGitFixture()
+    @Test("a broken classifier emits full and fails without authorizing a heavy-job skip")
+    func changeScopeClassifierFailureKeepsFullProof() async throws {
+        let fixture = try ChangeScopeGitFixture()
         defer { fixture.remove() }
         try fixture.write("docs/guide.md", "# Guide")
         let head = try await fixture.commit("base")
@@ -198,13 +223,13 @@ extension CITopologyWorkflowTests {
                 "--receipt", fixture.receipt.path, "--github-output", output.path,
             ])
         #expect(result.terminationStatus == 1)
-        #expect(try String(contentsOf: output, encoding: .utf8) == "docs_only=false\n")
+        #expect(try String(contentsOf: output, encoding: .utf8) == "scope=full\n")
         #expect(String(data: result.standardError, encoding: .utf8)?.contains("run full CI") == true)
     }
 
     @Test("merge-base diff excludes target-only churn and rename sides retain a code veto")
-    func docsOnlyDiffUsesMergeBaseAndBothRenameSides() async throws {
-        let fixture = try DocsOnlyGitFixture()
+    func changeScopeDiffUsesMergeBaseAndBothRenameSides() async throws {
+        let fixture = try ChangeScopeGitFixture()
         defer { fixture.remove() }
         try fixture.write("docs/guide.md", "# Guide")
         try fixture.write("Sources/Example.swift", "let value = 1")
@@ -214,16 +239,16 @@ extension CITopologyWorkflowTests {
         let target = try await fixture.commit("target-only code")
         try await fixture.git(["checkout", "-q", "-b", "pr", base])
         try fixture.write("docs/guide.md", "# Changed Guide")
-        let head = try await fixture.commit("docs-only PR")
-        #expect(try await fixture.classify(base: target, head: head) == true)
+        let head = try await fixture.commit("scope PR")
+        #expect(try await fixture.classify(base: target, head: head) == "docs")
         try await fixture.git(["mv", "Sources/Example.swift", "docs/renamed.md"])
         let renamedHead = try await fixture.commit("rename code as docs")
-        #expect(try await fixture.classify(base: head, head: renamedHead) == false)
+        #expect(try await fixture.classify(base: head, head: renamedHead) == "full")
     }
 
     @Test("changed-doc link check passes relative links duplicate and explicit anchors and rejects missing anchors")
-    func docsOnlyLinkCheckerValidatesLocalTargets() async throws {
-        let fixture = try DocsOnlyGitFixture()
+    func changeScopeLinkCheckerValidatesLocalTargets() async throws {
+        let fixture = try ChangeScopeGitFixture()
         defer { fixture.remove() }
         try fixture.write("docs/diagram.svg", "<svg><g id=\"present\" /></svg>")
         try fixture.write("docs/target.md", "# Good Heading\n# Good Heading\n<a id=\"explicit\"></a>\nSetext\n======")
@@ -241,7 +266,7 @@ extension CITopologyWorkflowTests {
         for target in ["target.md#does-not-exist", "diagram.svg#does-not-exist", "missing.md"] {
             try fixture.write("docs/guide.md", "[Broken](\(target))")
             let bad = try await fixture.commit("broken")
-            #expect(try await fixture.classify(base: good, head: bad) == true)
+            #expect(try await fixture.classify(base: good, head: bad) == "docs")
             let badResult = try await fixture.checkLinks()
             #expect(badResult.terminationStatus == 1)
             #expect(
@@ -251,7 +276,7 @@ extension CITopologyWorkflowTests {
     }
 }
 
-private func docsOnlyJob(_ name: String, in workflow: String) throws -> String {
+private func changeScopeJob(_ name: String, in workflow: String) throws -> String {
     let lines = workflow.components(separatedBy: "\n")
     let start = try #require(lines.firstIndex(of: "  \(name):"))
     let end =
@@ -262,23 +287,23 @@ private func docsOnlyJob(_ name: String, in workflow: String) throws -> String {
     return lines[start..<end].joined(separator: "\n")
 }
 
-private func docsOnlyLinkStep(in job: String) throws -> String {
+private func changeScopeLinkStep(in job: String) throws -> String {
     let start = try #require(job.range(of: "      - name: Check changed documentation links\n"))
     let rest = job[start.lowerBound...]
     let end = rest.range(of: "\n      - ")?.lowerBound ?? rest.endIndex
     return String(rest[..<end])
 }
 
-private struct DocsOnlyGitFixture {
+private struct ChangeScopeGitFixture {
     let root: URL
     let classifier: URL
     let checker: URL
     var receipt: URL { root.appendingPathComponent(".git/receipt.json") }
 
     init() throws {
-        root = FileManager.default.temporaryDirectory.appendingPathComponent("docs-only-\(UUIDv7.generate())")
+        root = FileManager.default.temporaryDirectory.appendingPathComponent("scope-\(UUIDv7.generate())")
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
-        classifier = URL(fileURLWithPath: "scripts/ci-docs-changes.py").standardizedFileURL
+        classifier = URL(fileURLWithPath: "scripts/ci-change-scope.py").standardizedFileURL
         checker = URL(fileURLWithPath: "scripts/check-changed-doc-links.py").standardizedFileURL
     }
 
@@ -312,7 +337,7 @@ private struct DocsOnlyGitFixture {
             in: .whitespacesAndNewlines)
     }
 
-    func classify(base: String, head: String, event: String = "pull_request") async throws -> Bool {
+    func classify(base: String, head: String, event: String = "pull_request") async throws -> String {
         let executable = try await TestToolResolver.resolved().python3
         let result = try await runProcessToExit(
             executableURL: executable,
@@ -324,31 +349,12 @@ private struct DocsOnlyGitFixture {
             result.terminationStatus == 0, Comment(rawValue: String(data: result.standardError, encoding: .utf8) ?? ""))
         let body = try Data(contentsOf: receipt)
         let record = try #require(JSONSerialization.jsonObject(with: body) as? [String: Any])
-        return try #require(record["docs_only"] as? Bool)
+        return try #require(record["scope"] as? String)
     }
 
     func runQualityLinkStep(base: String, head: String) async throws -> ExitedProcessOutput {
-        let workflow = try String(contentsOfFile: ".github/workflows/ci.yml", encoding: .utf8)
-        let step = try docsOnlyLinkStep(in: docsOnlyJob("code-quality", in: workflow))
-        let run = try #require(step.range(of: "        run: |\n"))
-        let script = step[run.upperBound...].split(separator: "\n", omittingEmptySubsequences: false)
-            .map { String($0.dropFirst(10)) }.joined(separator: "\n")
-        let fixtureChecker = root.appendingPathComponent("scripts/check-changed-doc-links.py")
-        if !FileManager.default.fileExists(atPath: fixtureChecker.path) {
-            try FileManager.default.createDirectory(
-                at: fixtureChecker.deletingLastPathComponent(), withIntermediateDirectories: true)
-            try FileManager.default.copyItem(at: checker, to: fixtureChecker)
-            try FileManager.default.copyItem(
-                at: checker.deletingLastPathComponent().appendingPathComponent("architecture-doc-fixture-root.txt"),
-                to: fixtureChecker.deletingLastPathComponent().appendingPathComponent(
-                    "architecture-doc-fixture-root.txt"))
-        }
-        let environment = ProcessInfo.processInfo.environment.merging(["BASE_SHA": base, "HEAD_SHA": head]) { _, new in
-            new
-        }
-        return try await runProcessToExit(
-            executableURL: URL(fileURLWithPath: "/bin/bash"), arguments: ["-euc", script], currentDirectoryURL: root,
-            environment: environment)
+        _ = try await classify(base: base, head: head)
+        return try await checkLinks()
     }
 
     func checkLinks() async throws -> ExitedProcessOutput {

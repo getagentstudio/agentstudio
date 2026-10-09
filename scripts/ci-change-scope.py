@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Classify PR documentation conservatively; a scanner failure keeps full CI."""
+"""Classify changed files conservatively; a scanner failure keeps full CI."""
 
 import argparse
 import json
@@ -13,9 +13,13 @@ import urllib.parse
 
 CODE_ROOTS = {"Tests", "Tools", "BridgeWeb", "web", "scripts"}
 AGENT_DOC_NAMES = {"AGENTS.md", "CLAUDE.md"}
-# Literal rooted paths are retained even when a referenced doc was deleted.
 DOC_PATH = re.compile(r"\bdocs/[\w./+*?%-]+\.[\w]+\b")
-QUOTED_PATH = re.compile(r"""["'`]([^"'`\n]+)["'`]""")
+QUOTED_PATH = re.compile(r"[\"'`]([^\"'`\n]+)[\"'`]")
+Scope = t.Literal["docs", "website", "full"]
+
+
+class UnsafePushRange(ValueError):
+    """A push range cannot be trusted for selective CI."""
 
 
 def git_output(root: pathlib.Path, *arguments: str) -> bytes:
@@ -32,9 +36,14 @@ def tracked_files(root: pathlib.Path) -> t.List[str]:
     ]
 
 
+def is_website(path: str) -> bool:
+    return path.startswith("web/")
+
+
 def is_doc(path: str) -> bool:
-    # Tests remain code even when their fixture happens to be Markdown.
-    return not path.startswith("Tests/") and (
+    # Tests remain code even when their fixture happens to be Markdown. Website
+    # paths are classified separately, including website Markdown.
+    return not is_website(path) and not path.startswith("Tests/") and (
         path.startswith("docs/") or path.endswith(".md")
     )
 
@@ -78,10 +87,10 @@ def pinned_docs(root: pathlib.Path) -> t.List[str]:
         code_reader = path.split("/", 1)[0] in CODE_ROOTS
         if not agent_doc and not code_reader:
             continue
+        if not file.is_file():
+            raise OSError(f"tracked classifier input is missing: {path}")
         if agent_doc:
             pins.add(path)
-        # Literal ASCII paths remain visible in opaque fixture/assets too;
-        # undecodable binary bytes are not documentation path characters.
         contents = file.read_bytes().decode("utf-8", errors="ignore")
         pins.update(literal_doc_paths(root, path, contents))
         if agent_doc:
@@ -101,6 +110,65 @@ def pinned_docs(root: pathlib.Path) -> t.List[str]:
         else:
             expanded.add(pin)
     return sorted(expanded)
+
+
+def complete_revision(revision: str) -> bool:
+    return bool(re.fullmatch(r"[0-9a-fA-F]{40,64}", revision))
+
+
+def classify_diff_paths(
+    root: pathlib.Path, event: str, base: str, head: str
+) -> t.Tuple[str, t.List[str]]:
+    """Select and read one trusted range for PR and push events."""
+    if not complete_revision(head):
+        raise ValueError("head must be a complete commit ID")
+    if event == "pull_request":
+        if not complete_revision(base):
+            raise ValueError("PR base must be a complete commit ID")
+        diff_base = git_output(root, "merge-base", base, head).decode().strip()
+    elif event == "push":
+        if not complete_revision(base):
+            raise ValueError("push before must be a complete commit ID")
+        if set(base) == {"0"}:
+            raise UnsafePushRange("push before is the all-zero revision")
+        try:
+            git_output(root, "cat-file", "-e", f"{base}^{{commit}}")
+            git_output(root, "cat-file", "-e", f"{head}^{{commit}}")
+            git_output(root, "merge-base", "--is-ancestor", base, head)
+        except subprocess.CalledProcessError as error:
+            raise UnsafePushRange("push before is missing or is not an ancestor") from error
+        diff_base = base
+    else:
+        return "", []
+    changed = [
+        os.fsdecode(path)
+        for path in git_output(
+            root, "diff", "--name-only", "-z", "--no-renames", diff_base, head, "--"
+        ).split(b"\0")
+        if path
+    ]
+    return diff_base, changed
+
+
+def scope_for_paths(
+    changed: t.List[str], pins: t.Set[str]
+) -> t.Tuple[Scope, t.List[str], t.List[str], t.List[str]]:
+    code_files = [
+        path
+        for path in changed
+        if (not is_doc(path) and not is_website(path))
+        or path in pins
+        or pathlib.PurePosixPath(path).name in AGENT_DOC_NAMES
+    ]
+    website_files = [path for path in changed if is_website(path) and path not in pins]
+    doc_files = [path for path in changed if is_doc(path) and path not in pins]
+    if not changed or code_files:
+        scope: Scope = "full"
+    elif website_files:
+        scope = "website"
+    else:
+        scope = "docs"
+    return scope, code_files, website_files, doc_files
 
 
 class ChangesArguments(argparse.Namespace):
@@ -123,52 +191,53 @@ class ChangesArguments(argparse.Namespace):
         self.github_output = None
 
 
+def full_result(event: str, head: str, reason: str) -> t.Dict[str, object]:
+    return {
+        "scope": "full",
+        "event": event,
+        "head": head,
+        "changed_files": [],
+        "pinned_docs": [],
+        "code_files": [],
+        "website_files": [],
+        "doc_files": [],
+        "reason": reason,
+    }
+
+
 def classify_changes(
     root: pathlib.Path, arguments: ChangesArguments
 ) -> t.Dict[str, object]:
     event, base, head = arguments.event, arguments.base, arguments.head
-    if event != "pull_request":
-        return {
-            "docs_only": False,
-            "event": event,
-            "changed_files": [],
-            "pinned_docs": [],
-            "reason": "non-PR events keep their existing proof topology",
-        }
-    if not all(
-        re.fullmatch(r"[0-9a-fA-F]{40,64}", revision) for revision in [base, head]
-    ):
-        raise ValueError("PR base and head must be complete commit IDs")
-    merge_base = git_output(root, "merge-base", base, head).decode().strip()
-    changed = [
-        os.fsdecode(path)
-        for path in git_output(
-            root, "diff", "--name-only", "-z", "--no-renames", merge_base, head, "--"
-        ).split(b"\0")
-        if path
-    ]
+    if event not in {"pull_request", "push"}:
+        return full_result(event, head, "non-PR and non-push events keep full CI")
+    try:
+        diff_base, changed = classify_diff_paths(root, event, base, head)
+    except UnsafePushRange as error:
+        return full_result(event, head, str(error))
     pins = pinned_docs(root)
-    pin_set = set(pins)
-    code_files = [
-        path
-        for path in changed
-        if not is_doc(path)
-        or path in pin_set
-        or pathlib.PurePosixPath(path).name in AGENT_DOC_NAMES
-    ]
-    docs_only = bool(changed) and not code_files
+    scope, code_files, website_files, doc_files = scope_for_paths(changed, set(pins))
     return {
-        "docs_only": docs_only,
+        "scope": scope,
         "event": event,
-        "merge_base": merge_base,
+        "diff_base": diff_base,
         "head": head,
         "changed_files": changed,
         "pinned_docs": pins,
         "code_files": code_files,
-        "reason": "only unpinned documentation changed"
-        if docs_only
-        else "empty diff or code/contract input changed",
+        "website_files": website_files,
+        "doc_files": doc_files,
+        "reason": {
+            "docs": "only unpinned documentation changed",
+            "website": "only unpinned website and documentation changed",
+            "full": "empty diff or code/contract input changed",
+        }[scope],
     }
+
+
+def write_scope_output(path: pathlib.Path, scope: str) -> None:
+    with path.open("a", encoding="utf-8") as output:
+        output.write(f"scope={scope}\n")
 
 
 def main() -> int:
@@ -193,23 +262,23 @@ def main() -> int:
         args.receipt.write_text(json.dumps(result, indent=2) + "\n", encoding="utf-8")
         changed_files = result["changed_files"]
         pinned_paths = result["pinned_docs"]
+        scope = result["scope"]
         if not isinstance(changed_files, list) or not isinstance(pinned_paths, list):
             raise ValueError("classification receipt has invalid path lists")
-        disposition = "true" if result["docs_only"] else "false"
+        if not isinstance(scope, str) or scope not in {"docs", "website", "full"}:
+            raise ValueError("classification receipt has invalid scope")
         if args.github_output is not None:
-            with args.github_output.open("a", encoding="utf-8") as output:
-                output.write(f"docs_only={disposition}\n")
+            write_scope_output(args.github_output, scope)
         print(
-            f"docs-only classification: docs_only={disposition} changed_files={len(changed_files)} pinned_docs={len(pinned_paths)}"
+            f"change-scope classification: scope={scope} changed_files={len(changed_files)} pinned_docs={len(pinned_paths)}"
         )
         print(json.dumps(result, ensure_ascii=True))
         return 0
     except (OSError, ValueError, subprocess.CalledProcessError) as error:
         # A failed changes job must never make dependent required checks skip.
         if args.github_output is not None:
-            with args.github_output.open("a", encoding="utf-8") as output:
-                output.write("docs_only=false\n")
-        print(f"docs-only classification failed; run full CI: {error}", file=sys.stderr)
+            write_scope_output(args.github_output, "full")
+        print(f"change-scope classification failed; run full CI: {error}", file=sys.stderr)
         return 1
 
 
