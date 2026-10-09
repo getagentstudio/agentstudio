@@ -83,14 +83,14 @@ enum WebPageEventWaits {
             page: page, reader: readerBody, arguments: arguments,
             onCompleted: { signal.yield(.documentCompleted) })
         let eventWait = Task { @MainActor in
-            var iterator = events.makeAsyncIterator()
+            let eventIterator = WebPageDocumentWaitEventIterator(events)
             while true {
                 let diagnostics = closingSource.map { "; " + $0.bootstrapDiagnostics } ?? ""
                 let wake =
                     (try? await awaitBridgeWebKitMilestone(
                         "GO26 document value pane=\(closingSource?.pane ?? "page") milestone=\(pendingName ?? name) token=\(pending.token)\(diagnostics)"
                     ) {
-                        await iterator.next() ?? .cancelled
+                        await eventIterator.next()
                     }) ?? .cancelled
                 // A diagnostic event only refreshes the named wait; it cannot
                 // settle the document or duplicate the page's replacement budget.
@@ -330,6 +330,24 @@ enum WebPageEventWaits {
 /// (`BridgePaneController+IPCProjection.swift:449`). The wait and the assertion
 /// must read the same element or the wait proves nothing about the assertion.
 let bridgeReviewShellSelector = "[data-testid=\"review-viewer-shell\"]"
+
+/// One sequential consumer keeps the stream's single iterator on MainActor.
+@MainActor
+private final class WebPageDocumentWaitEventIterator {
+    private var iterator: AsyncStream<WebPageDocumentWaitWake>.Iterator
+
+    init(_ events: AsyncStream<WebPageDocumentWaitWake>) {
+        iterator = events.makeAsyncIterator()
+    }
+
+    func next() async -> WebPageDocumentWaitWake {
+        // Match DevelopmentDisplayMetadataStream.nextFrame: lend a local value
+        // to the mutating async call, then restore it on the same actor.
+        var nextIterator = iterator
+        defer { iterator = nextIterator }
+        return await nextIterator.next(isolation: #isolation) ?? .cancelled
+    }
+}
 
 @MainActor
 private final class WebPageDocumentWaitCompletion {
