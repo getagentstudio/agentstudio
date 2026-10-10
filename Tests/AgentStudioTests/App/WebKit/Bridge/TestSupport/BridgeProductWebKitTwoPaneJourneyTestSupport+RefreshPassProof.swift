@@ -80,9 +80,15 @@ extension BridgeProductWebKitTwoPaneJourneyTestSupport {
             input.paneOne,
             afterRequestSequence: nativeBeforeReviewActivation.nextControlRequestSequence
         )
+        _ = try await requireBlockedComparison(
+            input.paneOneReviewProvider,
+            expectedCount: 2,
+            milestone: "Review reactivation comparison hold"
+        )
+        // The reactivated comparison is now held at the gate, so its task and reservation exist.
         guard let reactivatedReviewTask = input.paneOne.activeReviewRefreshTask else {
             throw JourneyError.conditionFailed(
-                "Review mode reactivation did not admit a catch-up task before its comparison wait"
+                "Review mode reactivation did not admit a catch-up task while its comparison is held"
             )
         }
         guard
@@ -91,14 +97,9 @@ extension BridgeProductWebKitTwoPaneJourneyTestSupport {
             reactivatedOperationID != previousOperationID
         else {
             throw JourneyError.conditionFailed(
-                "Review mode reactivation did not reserve a distinct catch-up operation before its comparison wait"
+                "Review mode reactivation did not reserve a distinct catch-up operation while its comparison is held"
             )
         }
-        _ = try await requireBlockedComparison(
-            input.paneOneReviewProvider,
-            expectedCount: 2,
-            milestone: "Review reactivation comparison hold"
-        )
         let lifecycleEvents = await input.paneOneTrace.operationLifecycleEvents()
         let reactivatedReviewStart = try #require(
             lifecycleEvents.last {
