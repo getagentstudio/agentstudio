@@ -59,6 +59,7 @@ extension GitWorkingDirectoryProjector {
         for worktreeId in Array(backoffFactOpenEpisodeByWorktreeId.keys) {
             closeBackoffFact(worktreeId: worktreeId)
         }
+
         capacityRetryWorktreeIds.removeAll(keepingCapacity: false)
         capacityRetryReasonByWorktreeId.removeAll(keepingCapacity: false)
         capacityRearmedWorktreeIds.removeAll(keepingCapacity: false)
@@ -79,7 +80,9 @@ extension GitWorkingDirectoryProjector {
         lastAutomaticCompletionAtByWorktreeId.removeAll(keepingCapacity: false)
         lastAutomaticDutyByWorktreeId.removeAll(keepingCapacity: false)
         pendingByWorktreeId.removeAll(keepingCapacity: false)
-        closeAllOpenIntakeFacts(as: .changesetDropped(.superseded))
+        if factSink != nil {
+            closeAllOpenIntakeFacts(as: .changesetDropped(.superseded))
+        }
         immediateRefreshWorktreeIds.removeAll(keepingCapacity: false)
         explicitRefreshWorktreeIds.removeAll(keepingCapacity: false)
         tierEligibleWorktreeIds.removeAll(keepingCapacity: false)

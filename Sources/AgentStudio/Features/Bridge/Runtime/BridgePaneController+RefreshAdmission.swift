@@ -173,7 +173,7 @@ extension BridgePaneController {
         // fire-and-forget: publication joins the presentation tail; closeAndDrain awaits it
         _ = scheduleProductPresentationPublication()
         let taskId = UUIDv7.generate()
-        let factScope: BridgePaneReviewBuildAdmissionScope = .attempt(taskId)
+        let factScope = reviewBuildAdmissionFactScope(for: taskId)
         recordReviewBuildAdmissionFact(.admitted(attempt: taskId), scope: factScope)
         activeReviewRefreshTaskId = taskId
         activeReviewRefreshTask = Task { @MainActor [weak self] in

@@ -215,19 +215,21 @@ extension GitWorkingDirectoryProjector {
 
     func mergeTrackedChangesets(_ existing: FileChangeset?, with incoming: FileChangeset) -> FileChangeset {
         let merged = Self.mergeChangesets(existing, with: incoming)
-        if let existing, existing.batchSeq != merged.batchSeq {
-            closeIntakeFactOnce(
-                worktreeId: existing.worktreeId,
-                batchSeq: existing.batchSeq,
-                fact: .changesetCoalesced(into: merged.batchSeq)
-            )
-        }
-        if incoming.batchSeq != merged.batchSeq {
-            closeIntakeFactOnce(
-                worktreeId: incoming.worktreeId,
-                batchSeq: incoming.batchSeq,
-                fact: .changesetCoalesced(into: merged.batchSeq)
-            )
+        if factSink != nil {
+            if let existing, existing.batchSeq != merged.batchSeq {
+                closeIntakeFactOnce(
+                    worktreeId: existing.worktreeId,
+                    batchSeq: existing.batchSeq,
+                    fact: .changesetCoalesced(into: merged.batchSeq)
+                )
+            }
+            if incoming.batchSeq != merged.batchSeq {
+                closeIntakeFactOnce(
+                    worktreeId: incoming.worktreeId,
+                    batchSeq: incoming.batchSeq,
+                    fact: .changesetCoalesced(into: merged.batchSeq)
+                )
+            }
         }
         return merged
     }
@@ -259,6 +261,7 @@ extension GitWorkingDirectoryProjector {
     }
 
     func cancelDeadlineFact(worktreeId: UUID, sourceKind: GitRefreshDeadlineKind) {
+        guard factSink != nil else { return }
         closeDeadlineFact(worktreeId: worktreeId, sourceKind: sourceKind, disposition: .cancelled)
     }
 

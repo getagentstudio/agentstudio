@@ -202,6 +202,7 @@ extension GitWorkingDirectoryProjector {
         }
         visibilityAdmissionTask?.cancel()
         closeVisibilityAdmissionFacts(as: .obsolete)
+
         pendingVisibilityDeltaWorktreeIds =
             sidebarVisibleWorktreeIds
             .subtracting(lastProcessedSidebarVisibleWorktreeIds)
@@ -287,6 +288,7 @@ extension GitWorkingDirectoryProjector {
         closeVisibilityAdmissionFacts(
             admittedWorktreeIds: Set(newlyVisibleWorktreeIds)
         )
+
     }
 
     func rescheduleDeadlineTask() {
@@ -329,7 +331,10 @@ extension GitWorkingDirectoryProjector {
         guard generation == deadlineTaskGeneration, !isShuttingDown else { return }
         deadlineTask = nil
         let now = deadlineClock.now
-        var evaluatedDeadlineFacts: [(scope: GitProjectorScope, worktreeId: UUID)] = []
+        var evaluatedDeadlineFacts: [(scope: GitProjectorScope, worktreeId: UUID)]?
+        if factSink != nil {
+            evaluatedDeadlineFacts = []
+        }
 
         while let entry = deadlineQueue.first, entry.deadline <= now {
             deadlineQueue.removeFirst()
@@ -363,23 +368,31 @@ extension GitWorkingDirectoryProjector {
                         continue
                     }
                     tierEligibleWorktreeIds.insert(entry.worktreeId)
-                    if let factScope { evaluatedDeadlineFacts.append((factScope, entry.worktreeId)) }
+                    if factSink != nil, let factScope {
+                        evaluatedDeadlineFacts?.append((factScope, entry.worktreeId))
+                    }
                     continue
                 }
             case .failure:
                 expireStatusBackoff(worktreeId: entry.worktreeId)
-                if let factScope { evaluatedDeadlineFacts.append((factScope, entry.worktreeId)) }
+                if factSink != nil, let factScope {
+                    evaluatedDeadlineFacts?.append((factScope, entry.worktreeId))
+                }
             case .capacityFallback:
                 expireCapacityRetry(worktreeId: entry.worktreeId)
-                if let factScope { evaluatedDeadlineFacts.append((factScope, entry.worktreeId)) }
+                if factSink != nil, let factScope {
+                    evaluatedDeadlineFacts?.append((factScope, entry.worktreeId))
+                }
             }
         }
         admitPendingWorktrees()
         rescheduleDeadlineTask()
-        for evaluated in evaluatedDeadlineFacts {
-            let disposition: GitProjectorDeadlineDisposition =
-                worktreeTasks[evaluated.worktreeId] == nil ? .deferred : .admitted
-            factSink?(evaluated.scope, .deadlineDisposition(disposition))
+        if let factSink, let evaluatedDeadlineFacts {
+            for evaluated in evaluatedDeadlineFacts {
+                let disposition: GitProjectorDeadlineDisposition =
+                    worktreeTasks[evaluated.worktreeId] == nil ? .deferred : .admitted
+                factSink(evaluated.scope, .deadlineDisposition(disposition))
+            }
         }
     }
 
@@ -429,7 +442,7 @@ extension GitWorkingDirectoryProjector {
         _ deadline: Duration,
         kind: GitRefreshDeadlineKind,
         worktreeId: UUID,
-        factKind: GitProjectorDeadlineKind? = nil
+        factKind: @autoclosure () -> GitProjectorDeadlineKind? = nil
     ) {
         switch kind {
         case .automatic:
@@ -445,17 +458,19 @@ extension GitWorkingDirectoryProjector {
         deadlineQueue.insert(
             GitRefreshDeadlineEntry(deadline: deadline, kind: kind, worktreeId: worktreeId)
         )
-        let registeredKind: GitProjectorDeadlineKind
-        if let factKind {
-            registeredKind = factKind
-        } else {
-            switch kind {
-            case .automatic: registeredKind = .automatic
-            case .failure: registeredKind = .failure
-            case .capacityFallback: registeredKind = .capacityFallback
+        if factSink != nil {
+            let registeredKind: GitProjectorDeadlineKind
+            if let factKind = factKind() {
+                registeredKind = factKind
+            } else {
+                switch kind {
+                case .automatic: registeredKind = .automatic
+                case .failure: registeredKind = .failure
+                case .capacityFallback: registeredKind = .capacityFallback
+                }
             }
+            registerDeadlineFact(worktreeId: worktreeId, sourceKind: kind, factKind: registeredKind)
         }
-        registerDeadlineFact(worktreeId: worktreeId, sourceKind: kind, factKind: registeredKind)
     }
 
     private func isCurrentDeadline(_ entry: GitRefreshDeadlineEntry) -> Bool {

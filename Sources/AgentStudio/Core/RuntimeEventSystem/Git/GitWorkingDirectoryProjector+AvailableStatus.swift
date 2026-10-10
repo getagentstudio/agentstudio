@@ -88,23 +88,12 @@ extension GitWorkingDirectoryProjector {
             )
         }
 
-        var branchChanged = false
-        if let previousSnapshot,
-            let nextBranch = currentStatusSnapshot.branch,
-            previousSnapshot.branch != nextBranch
-        {
-            await emitGitWorkingDirectoryEvent(
-                worktreeId: changeset.worktreeId,
-                repoId: changeset.repoId,
-                event: .branchChanged(
-                    worktreeId: changeset.worktreeId,
-                    repoId: changeset.repoId,
-                    from: previousSnapshot.branch ?? "",
-                    to: nextBranch
-                )
-            )
-            branchChanged = true
-        }
+        let branchChanged = await emitBranchChangedEvent(
+            previousSnapshot: previousSnapshot,
+            currentBranch: currentStatusSnapshot.branch,
+            worktreeId: changeset.worktreeId,
+            repoId: changeset.repoId
+        )
         closeCompletedRefreshFact(
             worktreeId: changeset.worktreeId,
             ifCurrent: context.refreshFactScope,
@@ -113,12 +102,37 @@ extension GitWorkingDirectoryProjector {
         )
     }
 
+    private func emitBranchChangedEvent(
+        previousSnapshot: GitWorkingTreeSnapshot?,
+        currentBranch: String?,
+        worktreeId: UUID,
+        repoId: UUID
+    ) async -> Bool {
+        guard let previousSnapshot, let currentBranch,
+            previousSnapshot.branch != currentBranch
+        else {
+            return false
+        }
+        await emitGitWorkingDirectoryEvent(
+            worktreeId: worktreeId,
+            repoId: repoId,
+            event: .branchChanged(
+                worktreeId: worktreeId,
+                repoId: repoId,
+                from: previousSnapshot.branch ?? "",
+                to: currentBranch
+            )
+        )
+        return true
+    }
+
     private func closeCompletedRefreshFact(
         worktreeId: UUID,
         ifCurrent refreshFactScope: GitProjectorScope?,
         snapshotChanged: Bool,
         branchChanged: Bool
     ) {
+        guard factSink != nil else { return }
         closeRefreshFact(
             worktreeId: worktreeId,
             ifCurrent: refreshFactScope,

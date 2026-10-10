@@ -145,7 +145,7 @@ extension GitWorkingDirectoryProjector {
                 reason: unavailable.reason,
                 afterPhysicalCompletionGeneration: physicalCompletionGeneration
             )
-            if !capacityRetryWorktreeIds.contains(changeset.worktreeId) {
+            if factSink != nil, !capacityRetryWorktreeIds.contains(changeset.worktreeId) {
                 closeRefreshFact(
                     worktreeId: changeset.worktreeId, ifCurrent: context.refreshFactScope, outcome: .capacityExceeded
                 )
@@ -210,6 +210,7 @@ extension GitWorkingDirectoryProjector {
             ifCurrent: context.refreshFactScope,
             outcome: unavailable.reason == .timeout ? .timeout : .unavailable
         )
+
     }
 
 }

@@ -474,7 +474,9 @@ extension WatchedFolderScanScheduler {
         let admissions = Array(validationAdmissionsByRequestID.values)
         for admission in admissions {
             // Traversal cancellation/join is complete before admission settlement resumes.
-            factSink?(admission.scope, .shutdownAwaitingAdmission)
+            if let factSink, let scope = admission.scope {
+                factSink(scope, .shutdownAwaitingAdmission)
+            }
             await admission.task.value
         }
         if let validationCompletionDrainTask {

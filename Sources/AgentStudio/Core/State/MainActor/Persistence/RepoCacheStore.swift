@@ -333,24 +333,33 @@ package final class RepoCacheStore {
         )
         try Task.checkCancellation()
         guard preparedSave.shouldPersist else { return }
-        let saveScope = RepoCacheStoreSaveScope(workspaceId: workspaceId, generation: generation)
-        factSink?(saveScope, .saveStarted)
-        var didCompleteSave = false
+        let saveScope: RepoCacheStoreSaveScope?
+        if factSink != nil {
+            saveScope = RepoCacheStoreSaveScope(workspaceId: workspaceId, generation: generation)
+        } else {
+            saveScope = nil
+        }
+        if let factSink, let saveScope { factSink(saveScope, .saveStarted) }
+        var didCompleteSaveForFacts = false
         do {
             // Cancellation may arrive after SQL commits but before its acknowledgement returns.
             lastPersistedProjection = nil
             try await sqliteDatastore.saveRepoCacheState(
                 cacheState: preparedSave.cacheState
             )
-            didCompleteSave = true
-            factSink?(saveScope, .saveCompleted(sourceRevision: preparedSave.cacheState.sourceRevision))
+            didCompleteSaveForFacts = true
+            if let factSink, let saveScope {
+                factSink(saveScope, .saveCompleted(sourceRevision: preparedSave.cacheState.sourceRevision))
+            }
             try Task.checkCancellation()
             lastPersistedProjection = preparedSave.projection
         } catch let error as CancellationError {
-            if !didCompleteSave { factSink?(saveScope, .saveCancelled) }
+            if let factSink, let saveScope, didCompleteSaveForFacts == false {
+                factSink(saveScope, .saveCancelled)
+            }
             throw error
         } catch {
-            factSink?(saveScope, .saveFailed)
+            if let factSink, let saveScope { factSink(saveScope, .saveFailed) }
             recoveryReporter?(
                 .init(store: .repoCache, workspaceId: workspaceId, recovery: .saveFailed)
             )

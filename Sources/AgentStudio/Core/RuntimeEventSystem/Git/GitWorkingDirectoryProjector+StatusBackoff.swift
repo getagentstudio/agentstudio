@@ -162,6 +162,7 @@ extension GitWorkingDirectoryProjector {
             capacityFallbackDeadlineByWorktreeId.removeValue(forKey: worktreeId)
             closeDeadlineFact(worktreeId: worktreeId, sourceKind: .capacityFallback, disposition: .obsolete)
             closeCapacityFact(worktreeId: worktreeId, outcome: .rearmed)
+
         }
         admitPendingWorktrees()
         rescheduleDeadlineTask()
@@ -170,7 +171,9 @@ extension GitWorkingDirectoryProjector {
     func expireCapacityRetry(worktreeId: UUID) {
         capacityFallbackDeadlineByWorktreeId.removeValue(forKey: worktreeId)
         guard capacityRetryWorktreeIds.remove(worktreeId) != nil else { return }
-        defer { closeCapacityFact(worktreeId: worktreeId, outcome: .expired) }
+        defer {
+            closeCapacityFact(worktreeId: worktreeId, outcome: .expired)
+        }
         capacityRetryReasonByWorktreeId.removeValue(forKey: worktreeId)
         guard !isShuttingDown else {
             capacityRearmedWorktreeIds.remove(worktreeId)
@@ -226,7 +229,9 @@ extension GitWorkingDirectoryProjector {
     func resetStatusBackoff(worktreeId: UUID) {
         let hadFailures = statusBackoffFailureCountByWorktreeId.removeValue(forKey: worktreeId) != nil
         statusFailureDeadlineByWorktreeId.removeValue(forKey: worktreeId)
-        closeDeadlineFact(worktreeId: worktreeId, sourceKind: .failure, disposition: .obsolete)
+        if factSink != nil {
+            closeDeadlineFact(worktreeId: worktreeId, sourceKind: .failure, disposition: .obsolete)
+        }
         let wasOpen = openStatusBackoffWorktreeIds.remove(worktreeId) != nil
         deferredStatusBackoffChangesetByWorktreeId.removeValue(forKey: worktreeId)
         rescheduleDeadlineTask()

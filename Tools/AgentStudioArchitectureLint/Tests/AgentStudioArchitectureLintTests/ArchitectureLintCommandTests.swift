@@ -37,6 +37,7 @@ struct ArchitectureLintCommandTests {
         #expect(result.output.contains("error: [agentstudio_eventbus_subscriber_policy_required]"))
         #expect(result.output.contains("error: [agentstudio_shared_components_are_stateless]"))
         #expect(result.output.contains("error: [agentstudio_hot_pane_snapshot_reads]"))
+        #expect(result.output.contains("error: [agentstudio_owner_fact_sink_boundary]"))
     }
 
     @Test("shared components reject Core-owned static presentation reads")

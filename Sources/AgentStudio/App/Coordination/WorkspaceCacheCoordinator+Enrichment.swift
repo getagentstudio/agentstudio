@@ -5,7 +5,12 @@ import os
 
 extension WorkspaceCacheCoordinator {
     func handleEnrichment(_ envelope: WorktreeEnvelope) {
-        let scope = Self.applicationScope(for: .worktree(envelope))
+        let scope: WorkspaceCacheApplicationScope?
+        if factSink != nil {
+            scope = Self.applicationScope(for: .worktree(envelope))
+        } else {
+            scope = nil
+        }
         guard
             workspaceStore.repositoryTopologyAtom.acceptsObservation(
                 envelope.observationLifetime, repositoryID: envelope.repoId, worktreeID: envelope.worktreeId
