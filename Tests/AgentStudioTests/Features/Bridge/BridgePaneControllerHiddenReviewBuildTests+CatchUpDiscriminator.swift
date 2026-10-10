@@ -116,6 +116,10 @@ private actor BridgePaneCatchUpLifecycleRecorder:
         }
     }
 
+    func record(_: BridgeProductMetadataLifecycleTraceEvent) async {}
+
+    func record(_: BridgeProductReviewMetadataPublicationTraceEvent) async {}
+
     func nextReviewPreparation() async throws -> BridgeOperationLifecycleTraceEvent {
         try await reviewEvents.expectNext(
             in: "review",
