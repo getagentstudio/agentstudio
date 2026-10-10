@@ -1,4 +1,5 @@
 import AgentStudioTestHarness
+import AgentStudioTestSupport
 import Foundation
 import Testing
 
