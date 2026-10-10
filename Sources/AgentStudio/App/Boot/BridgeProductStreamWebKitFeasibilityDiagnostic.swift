@@ -45,7 +45,9 @@ enum BridgeProductStreamWebKitFeasibilityDiagnostic {
         }
         guard pageReady else {
             retainAfterStopping(page, window: window)
-            return await oracle.proof(timedOut: true)
+            var proof = await oracle.proof(timedOut: true)
+            proof.recordDiagnosticPhase(.navigationPending)
+            return proof
         }
 
         do {
@@ -68,24 +70,29 @@ enum BridgeProductStreamWebKitFeasibilityDiagnostic {
             )
         } catch {
             retainAfterStopping(page, window: window)
-            return await oracle.proof(timedOut: true)
+            var proof = await oracle.proof(timedOut: true)
+            proof.recordDiagnosticPhase(.scriptInvocationFailed)
+            return proof
         }
 
         let workerSettled = await waitUntil(timeout: timeout) {
-            if page.title == "S2a Fail" { return true }
-            guard page.title == "S2a Pass" else { return false }
+            let observedPageTitle = page.title
+            if observedPageTitle == "S2a Fail" { return true }
+            guard observedPageTitle == "S2a Pass" else { return false }
             return await oracle.recordWorkerResultAcknowledged()
         }
+        let observedPageTitle = page.title
         let oracleComplete = await oracle.isComplete()
-        let completed = workerSettled && page.title == "S2a Pass" && oracleComplete
-        let proof = await oracle.proof(timedOut: !workerSettled)
+        let completed = workerSettled && observedPageTitle == "S2a Pass" && oracleComplete
+        var proof = await oracle.proof(timedOut: !workerSettled)
         retainAfterStopping(page, window: window)
         guard completed else {
-            return .failed(
-                reason: proof.failureReason == "none"
-                    ? "worker_result_not_acknowledged" : proof.failureReason
+            return BridgeProductStreamWebKitFeasibilityProof.decoratingIncompleteDiagnostic(
+                proof: proof,
+                observedPageTitle: observedPageTitle
             )
         }
+        proof.recordDiagnosticPhase(.pageReportedCompletion)
         return proof
     }
 

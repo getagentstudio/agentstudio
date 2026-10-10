@@ -46,6 +46,7 @@ extension BridgeDevelopmentProductHost {
         activeReviewComparisonTask = nil
         activeReviewComparisonTaskAttempt = nil
         self.retiringReviewComparisonTasks.removeAll()
+        if let shutdownFactSink, let shutdownFactScope { shutdownFactSink(shutdownFactScope, .shutdownStarted) }
         let publicationDrain = await MainActor.run {
             // The admission gates reject late work while physical drains continue.
             if let comparison = refreshAdmissionCoordinator.productPresentationSnapshot.reviewComparison,
@@ -135,6 +136,9 @@ extension BridgeDevelopmentProductHost {
     private func resolveShutdown(_ result: BridgeDevelopmentProductHostShutdownResult) {
         guard shutdownResult == nil else { return }
         shutdownResult = result
+        if let shutdownFactSink, let shutdownFactScope {
+            shutdownFactSink(shutdownFactScope, .shutdownResolved(result))
+        }
         shutdownDeadlineTask?.cancel()
         shutdownDeadlineTask = nil
         shutdownCompletion?.yield(result)
