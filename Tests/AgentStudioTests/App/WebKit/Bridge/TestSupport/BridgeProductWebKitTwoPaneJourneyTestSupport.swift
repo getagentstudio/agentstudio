@@ -87,10 +87,12 @@ actor BridgeProductWebKitGatedReviewSourceProvider: BridgeReviewSourceProvider {
         isNextComparisonArmed = true
     }
 
-    func releaseBlockedComparisons() {
+    @discardableResult
+    func releaseBlockedComparisons() -> Int {
         let steps = blockedSteps
         blockedSteps.removeAll()
         for step in steps { step.release() }
+        return steps.count
     }
 
     func snapshot() -> (comparisonCount: Int, blockedComparisonCount: Int) {
@@ -200,6 +202,7 @@ enum BridgeProductWebKitTwoPaneJourneyTestSupport {
 
     struct JourneyUpdatingState {
         let fileStatus: BridgeProductWebKitTwoPanePositionSnapshot
+        let heldHiddenReviewOperationID: String
         let reviewModeIdentity: BridgeProductWebKitActiveViewerModeIdentity
         let reviewStatus: BridgeProductWebKitTwoPanePositionSnapshot
     }
@@ -401,15 +404,17 @@ enum BridgeProductWebKitTwoPaneJourneyTestSupport {
             throw JourneyError.conditionFailed("loaded-hidden invalidation started Review work")
         }
 
-        await input.paneOneReviewProvider.releaseBlockedComparisons()
-        try await requireHiddenRefreshSettled(input.paneOne)
+        try await releaseHeldReviewWhileHidden(
+            input,
+            heldOperationID: updatingState.heldHiddenReviewOperationID
+        )
         let hiddenTraceAfterLateRelease = await input.paneOneTrace.scrubbedTrace()
         guard let catchUpDirtyFact = input.paneOne.refreshAdmissionCoordinator.diagnosticSnapshot.dirtyFact,
             catchUpDirtyFact.requiresReviewRefresh,
-            catchUpDirtyFact.latestBatchSequence == 703
+            catchUpDirtyFact.latestBatchSequence == 707
         else {
             throw JourneyError.conditionFailed(
-                "foreground recovery did not retain Review dirty batch 703"
+                "foreground recovery did not retain Review dirty batch 707"
             )
         }
         let catchUpTerminal = await input.paneOneTrace.prepareForegroundCatchUp(
@@ -500,7 +505,7 @@ enum BridgeProductWebKitTwoPaneJourneyTestSupport {
     }
 
     private static func publishHiddenFileStorm(_ controller: BridgePaneController) async throws {
-        for batchSequence in [UInt64(702), 703] {
+        for batchSequence in [UInt64(706), 707] {
             await controller.handleWorktreeProductInvalidation(
                 .filesChanged(
                     try makeChangeset(
@@ -563,8 +568,10 @@ enum BridgeProductWebKitTwoPaneJourneyTestSupport {
             input,
             previousOperationID: heldReviewAttempt.operationCorrelationID
         )
+        let heldHiddenReviewOperationID = try await beginHeldReviewAttempt(input, batchSequence: 705)
         return JourneyUpdatingState(
             fileStatus: updatingFileStatus,
+            heldHiddenReviewOperationID: heldHiddenReviewOperationID,
             reviewModeIdentity: reviewModeIdentity,
             reviewStatus: updatingReviewStatus
         )
@@ -793,7 +800,7 @@ enum BridgeProductWebKitTwoPaneJourneyTestSupport {
         }
     }
 
-    private static func requireHiddenRefreshSettled(
+    static func requireHiddenRefreshSettled(
         _ controller: BridgePaneController
     ) async throws {
         let retiringTasks = Array(controller.retiringReviewRefreshTaskById.values)

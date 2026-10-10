@@ -5,8 +5,10 @@ import Testing
 
 @testable import AgentStudioBridge
 
-extension BridgeProductSchemeControlCompletionEffectsTests {
-    @MainActor
+/// Installs the shared Core atom scope, so the suite runs serialized in a process of its own.
+@MainActor
+@Suite("Bridge product scheme Review mode completion effect", .serialized)
+struct BridgeProductSchemeReviewModeCompletionEffectTests {
     @Test("control replay and producer quiescence do not complete a held Review mode effect")
     func controlReplayQuiescenceDoesNotCompleteReviewModeEffect() async throws {
         // Arrange: the session and dispatcher are real; only the committed effect boundary is held.

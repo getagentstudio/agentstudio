@@ -176,6 +176,57 @@ extension BridgeProductWebKitTwoPaneJourneyTestSupport {
         return reviewModeIdentity
     }
 
+    /// Holds a foreground Review attempt at its comparison so loaded-hidden admission
+    /// must retire it while its physical construction is still running.
+    static func beginHeldReviewAttempt(
+        _ input: JourneyInput,
+        batchSequence: UInt64
+    ) async throws -> String {
+        await input.paneOneReviewProvider.armNextComparison()
+        try appendTrackedChange(at: input.paneOneRepoURL)
+        await input.paneOne.handleWorktreeProductInvalidation(
+            .filesChanged(
+                try makeChangeset(
+                    for: input.paneOne,
+                    paths: ["tracked.txt"],
+                    batchSequence: batchSequence
+                )
+            )
+        )
+        guard input.paneOne.activeReviewRefreshTask != nil else {
+            throw JourneyError.conditionFailed(
+                "batch \(batchSequence) Review invalidation did not admit a catch-up task before its comparison wait"
+            )
+        }
+        _ = try await requireBlockedComparison(
+            input.paneOneReviewProvider,
+            expectedCount: 3,
+            milestone: "batch \(batchSequence) Review comparison hold"
+        )
+        let heldAttempt = try await requireHeldReviewAttempt(input.paneOneTrace)
+        // The same batch's File pass settles in the foreground, so hiding retires only the held Review attempt.
+        await input.paneOne.worktreeRefreshDriver.awaitActiveFileOperations()
+        return heldAttempt.operationCorrelationID
+    }
+
+    /// Releases the held comparison only after loaded-hidden admission retired its attempt,
+    /// then joins the late physical construction and the attempt's correlated terminal.
+    static func releaseHeldReviewWhileHidden(
+        _ input: JourneyInput,
+        heldOperationID: String
+    ) async throws {
+        let physicalConstructions = input.paneOne.reviewConstructionProgress.physicalTaskHandles()
+        let releasedComparisonCount = await input.paneOneReviewProvider.releaseBlockedComparisons()
+        try #require(releasedComparisonCount == 1)
+        for construction in physicalConstructions { await construction.value }
+        try await requireHiddenRefreshSettled(input.paneOne)
+        let heldTerminals = await input.paneOneTrace.operationLifecycleEvents().filter {
+            $0.operationCorrelationID == heldOperationID && $0.stage == .refreshOperationTerminal
+        }
+        try #require(heldTerminals.count == 1)
+        try #require(heldTerminals.first?.result == .stale)
+    }
+
 }
 
 /// Review refresh facts read in the same MainActor turn that observed native File acceptance.
