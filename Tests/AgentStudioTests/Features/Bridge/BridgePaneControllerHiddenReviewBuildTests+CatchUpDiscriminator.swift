@@ -12,7 +12,7 @@ extension BridgePaneControllerHiddenReviewBuildTests {
         // Arrange: settle the initial package so only filesystem Review catch-up is under test.
         let lifecycle = BridgePaneCatchUpLifecycleRecorder()
         let fixture = try await makeRefreshAdmissionIntegrationFixture(
-            lifecycleTraceRecorder: lifecycle
+            publicationLifecycleRecorder: lifecycle
         )
         await fixture.controller.applyBridgePaneActivity(.foreground)?.value
         await sendPageActiveViewerMode(
