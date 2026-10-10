@@ -50,6 +50,7 @@ struct SwiftLaneIsolationListGateTests {
             "AppIPCCLIHelpAndExitTests",
             "AppIPCCLICatalogDiscoverySkipTests",
             "AppIPCCLIStoreReadThroughTests",
+            "AppIPCCLICallDeadlineTests",
         ]
         #expect(aggregateSuiteNames == formerAggregateSuiteNames.union(deadlineDependentCLISuiteNames))
         #expect(explicitSuitePathPairs(in: largeFunction).isEmpty)
