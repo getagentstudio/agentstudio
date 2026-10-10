@@ -224,6 +224,23 @@ extension CITopologyWorkflowTests {
         #expect(try await fixture.classify(base: base, head: head) == "full")
     }
 
+    @Test("a reader-relative parent path to top-level Markdown stays pinned")
+    func changeScopePinsParentRelativeTopLevelMarkdown() async throws {
+        for (reader, token, target) in [
+            ("Tests/reader.swift", "../README.md", "README.md"),
+            ("Tests/sub/reader.swift", "../../GUIDE.md", "GUIDE.md"),
+        ] {
+            let fixture = try ChangeScopeGitFixture()
+            defer { fixture.remove() }
+            try fixture.write(reader, "let path = \"\(token)\"")
+            try fixture.write(target, "# Before")
+            let base = try await fixture.commit("base")
+            try fixture.write(target, "# After")
+            let head = try await fixture.commit("pinned Markdown")
+            #expect(try await fixture.classify(base: base, head: head) == "full", "\(reader) names \(token)")
+        }
+    }
+
     @Test("web paths are ordinary code after the website split")
     func changeScopeWebPathKeepsFullProof() async throws {
         let fixture = try ChangeScopeGitFixture()
