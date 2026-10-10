@@ -58,6 +58,7 @@ struct SidebarPerformanceProofStartupDiagnosticTests {
             population: .zeroPTYIdle,
             window: NSWindow(),
             recorder: recorder,
+            commandDispatcher: AppTerminalFixtureCommandDispatcher(),
             performanceRecorder: performanceRecorder,
             readAttendance: {
                 self.makeWindowAttendance(applicationIsActive: appLifecycleStore.isActive)
@@ -121,6 +122,7 @@ struct SidebarPerformanceProofStartupDiagnosticTests {
                 population: .zeroPTYIdle,
                 window: NSWindow(),
                 recorder: recorder,
+                commandDispatcher: AppTerminalFixtureCommandDispatcher(),
                 performanceRecorder: performanceRecorder,
                 readAttendance: { self.makeWindowAttendance() },
                 readShell: { attendedReadback.shell }
@@ -636,11 +638,11 @@ extension SidebarPerformanceProofStartupDiagnosticTests {
         #expect(sessionSource.contains("nativeSidebarGeometryIsVisible"))
         #expect(sessionSource.contains("nativeActivePaneHasFocus"))
         #expect(sessionSource.contains("actionTracker.advance("))
-        #expect(sessionSource.contains("AppCommandDispatcher.shared.dispatch"))
-        #expect(sessionSource.contains("AppCommandDispatcher.shared.dispatch(.showReposSidebar)"))
+        #expect(sessionSource.contains("commandDispatcher.dispatch"))
+        #expect(sessionSource.contains("commandDispatcher.dispatch(.showReposSidebar)"))
         #expect(sessionSource.contains("case .repo: command = .setReposGroupingRepo"))
         #expect(sessionSource.contains("case .activity: command = .setReposGroupingActivity"))
-        #expect(!sessionSource.contains("AppCommandDispatcher.shared.dispatch(.showPanesSidebar)"))
+        #expect(!sessionSource.contains("commandDispatcher.dispatch(.showPanesSidebar)"))
         #expect(!sessionSource.contains(".setPanesGroupingRepo"))
         #expect(!sessionSource.contains(".setPanesGroupingActivity"))
         #expect(!sessionSource.contains(".setPanesGroupingTab"))

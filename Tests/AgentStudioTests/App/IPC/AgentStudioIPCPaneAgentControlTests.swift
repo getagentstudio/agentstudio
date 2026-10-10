@@ -39,9 +39,9 @@ struct AgentStudioIPCPaneAgentControlTests {
                 #expect(send.error == nil, "terminal.send \(target): \(String(describing: send.error))")
                 #expect(status.error == nil, "terminal.status \(target): \(String(describing: status.error))")
             }
-            let scrolled = try await withIsolatedCommandDispatcher(
-                configure: { AppCommandDispatcher.shared.handler = harness.commandHarness.controller },
-                body: {
+            let scrolled = try await withCommandDispatcher(
+                harness.commandHarness.commandDispatcher,
+                body: { _ in
                     try await harness.response(
                         token: token, method: "command.execute",
                         params: try harness.command(
@@ -282,9 +282,9 @@ struct AgentStudioIPCPaneAgentControlTests {
 
             // Both panes are inside the agent's own pane, so admission passes; the
             // sibling is not the child's parent, so the effect owner refuses.
-            let close = try await withIsolatedCommandDispatcher(
-                configure: { AppCommandDispatcher.shared.handler = harness.commandHarness.controller },
-                body: {
+            let close = try await withCommandDispatcher(
+                harness.commandHarness.commandDispatcher,
+                body: { _ in
                     try await harness.response(
                         token: token, method: "command.execute",
                         params: try harness.command(
@@ -313,9 +313,9 @@ struct AgentStudioIPCPaneAgentControlTests {
         do {
             let token = try harness.agentToken(boundTo: harness.mainPaneId)
 
-            let close = try await withIsolatedCommandDispatcher(
-                configure: { AppCommandDispatcher.shared.handler = harness.commandHarness.controller },
-                body: {
+            let close = try await withCommandDispatcher(
+                harness.commandHarness.commandDispatcher,
+                body: { _ in
                     try await harness.response(
                         token: token, method: "command.execute",
                         params: try harness.command(

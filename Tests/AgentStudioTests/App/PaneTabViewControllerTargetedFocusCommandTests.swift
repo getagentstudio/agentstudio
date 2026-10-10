@@ -231,6 +231,7 @@ struct PaneTabViewControllerTargetedFocusCommandTests {
             try attachPaneHost(paneId: parentPane.id, in: harness, to: window)
             let surfaceID = UUIDv7.generate()
             let terminalView = TerminalPaneMountView(
+                surfaceOperations: makeAppTerminalFixtureMountOperations(),
                 restoredSurfaceId: surfaceID,
                 paneId: drawerPane.id
             )

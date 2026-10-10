@@ -41,7 +41,9 @@ struct AgentStudioIPCOwnPaneEffectRecheckTests {
                 == .drawerChild(parentPaneId: parent.id))
         let coordinator = WorkspaceSurfaceCoordinator(
             store: store, viewRegistry: ViewRegistry(), runtime: SessionRuntime(store: store),
-            surfaceManager: HarnessSurfaceManager(), runtimeRegistry: RuntimeRegistry(),
+            surfaceManager: HarnessSurfaceManager(),
+            terminalSurfaceCommandDispatcher: AppTerminalFixtureSurfaceCommands(),
+            terminalSurfaceOperations: makeAppTerminalFixtureMountOperations(), runtimeRegistry: RuntimeRegistry(),
             windowLifecycleStore: WindowLifecycleAtom(), ipcLifecycle: .testUnavailable,
             bridgePaneAttendance: BridgePaneAttendanceAtom())
         let executor = WorkspaceActionExecutor(coordinator: coordinator, store: store)

@@ -87,56 +87,50 @@ struct AgentStudioIPCCommandChannelCoverageTests {
 
     @Test("every AppCommand reaches an owner through the typed debug dispatch path")
     func everyAppCommandReachesAnOwnerOnDebug() async throws {
+        let windowId = AgentStudioIPCCommandCatalogProjection.ExampleIdentities.window
         let shell = RecordingShellCommandHandler(
-            currentWindowId: AgentStudioIPCCommandCatalogProjection.ExampleIdentities.window)
+            currentWindowId: windowId)
         shell.defaultOutcome = .unsupportedCommand
-        let workspaceOwner = RecordingWorkspaceIPCCommandHandler()
+        let workspaceOwner = RecordingWorkspaceIPCCommandHandler(currentWindowId: windowId)
         let harness = CommandAdapterHarness(
-            windowId: AgentStudioIPCCommandCatalogProjection.ExampleIdentities.window,
+            windowId: windowId,
             channel: .debug,
             targetAuthorizer: PermissiveDurableTargetAuthorizer(),
-            shellCommandHandler: shell
+            shellCommandHandler: shell,
+            workspaceCommandHandler: workspaceOwner
         )
 
         var unreached: [String] = []
         var mismatchedResults: [String] = []
-        try await withIsolatedCommandDispatcher(
-            configure: {
-                AppCommandDispatcher.shared.handler = workspaceOwner
-                AppCommandDispatcher.shared.appCommandRouter = shell
-            },
-            body: {
-                for command in AppCommand.allCases {
-                    for variant in command.ipcSpec.argumentVariants {
-                        let request = try AgentStudioIPCCommandCatalogProjection.exampleRequest(
-                            for: command, variant: variant)
-                        let observedBefore = workspaceOwner.headlessRequests.count
-                        do {
-                            let result = try await harness.adapter.executeCommand(request, ownPaneAssertion: nil)
-                            if !command.ipcSpec.resultVariants.contains(result.variant) {
-                                mismatchedResults.append("\(command.rawValue):\(result.variant.rawValue)")
-                            }
-                            #expect(result.correlationId == request.correlationId)
-                            #expect(result.commandId == request.commandId)
-                        } catch {
-                            unreached.append("\(command.rawValue):\(variant.rawValue) threw \(error)")
-                            continue
-                        }
-                        guard workspaceOwner.headlessRequests.count > observedBefore,
-                            let delivered = workspaceOwner.headlessRequests.last
-                        else {
-                            unreached.append("\(command.rawValue):\(variant.rawValue) reached no owner")
-                            continue
-                        }
-                        // The owner must receive the command identity and the
-                        // exact typed identities the wire supplied.
-                        #expect(delivered.command == command)
-                        #expect(delivered.arguments == .typedIPC(request.arguments))
-                        #expect(delivered.executionContext == .headlessIPC(admitsDebugTestingCommands: true))
+        for command in AppCommand.allCases {
+            for variant in command.ipcSpec.argumentVariants {
+                let request = try AgentStudioIPCCommandCatalogProjection.exampleRequest(
+                    for: command, variant: variant)
+                let observedBefore = workspaceOwner.headlessRequests.count
+                do {
+                    let result = try await harness.adapter.executeCommand(request, ownPaneAssertion: nil)
+                    if !command.ipcSpec.resultVariants.contains(result.variant) {
+                        mismatchedResults.append("\(command.rawValue):\(result.variant.rawValue)")
                     }
+                    #expect(result.correlationId == request.correlationId)
+                    #expect(result.commandId == request.commandId)
+                } catch {
+                    unreached.append("\(command.rawValue):\(variant.rawValue) threw \(error)")
+                    continue
                 }
+                guard workspaceOwner.headlessRequests.count > observedBefore,
+                    let delivered = workspaceOwner.headlessRequests.last
+                else {
+                    unreached.append("\(command.rawValue):\(variant.rawValue) reached no owner")
+                    continue
+                }
+                // The owner must receive the command identity and the
+                // exact typed identities the wire supplied.
+                #expect(delivered.command == command)
+                #expect(delivered.arguments == .typedIPC(request.arguments))
+                #expect(delivered.executionContext == .headlessIPC(admitsDebugTestingCommands: true))
             }
-        )
+        }
 
         #expect(unreached.isEmpty, "Commands without a debug dispatch path: \(unreached)")
         #expect(mismatchedResults.isEmpty, "Results outside the declared variants: \(mismatchedResults)")
@@ -147,38 +141,32 @@ struct AgentStudioIPCCommandChannelCoverageTests {
         arguments: [AgentStudioIPCChannel.stable, .beta]
     )
     func admittedChannelsRefuseDebugOnlyCommands(channel: AgentStudioIPCChannel) async throws {
+        let windowId = AgentStudioIPCCommandCatalogProjection.ExampleIdentities.window
         let shell = RecordingShellCommandHandler(
-            currentWindowId: AgentStudioIPCCommandCatalogProjection.ExampleIdentities.window)
+            currentWindowId: windowId)
         shell.defaultOutcome = .unsupportedCommand
-        let workspaceOwner = RecordingWorkspaceIPCCommandHandler()
+        let workspaceOwner = RecordingWorkspaceIPCCommandHandler(currentWindowId: windowId)
         let harness = CommandAdapterHarness(
-            windowId: AgentStudioIPCCommandCatalogProjection.ExampleIdentities.window,
+            windowId: windowId,
             channel: channel,
             targetAuthorizer: PermissiveDurableTargetAuthorizer(),
-            shellCommandHandler: shell
+            shellCommandHandler: shell,
+            workspaceCommandHandler: workspaceOwner
         )
         let debugOnly = AppCommand.allCases.filter { $0.ipcSpec.exposure == .debugTesting }
 
         var admitted: [String] = []
-        try await withIsolatedCommandDispatcher(
-            configure: {
-                AppCommandDispatcher.shared.handler = workspaceOwner
-                AppCommandDispatcher.shared.appCommandRouter = shell
-            },
-            body: {
-                for command in debugOnly {
-                    guard let variant = command.ipcSpec.argumentVariants.first else { continue }
-                    let request = try AgentStudioIPCCommandCatalogProjection.exampleRequest(
-                        for: command, variant: variant)
-                    do {
-                        _ = try await harness.adapter.executeCommand(request, ownPaneAssertion: nil)
-                        admitted.append(command.rawValue)
-                    } catch let error as AppIPCCommandError {
-                        #expect(error.reason == .unsupportedCommand)
-                    }
-                }
+        for command in debugOnly {
+            guard let variant = command.ipcSpec.argumentVariants.first else { continue }
+            let request = try AgentStudioIPCCommandCatalogProjection.exampleRequest(
+                for: command, variant: variant)
+            do {
+                _ = try await harness.adapter.executeCommand(request, ownPaneAssertion: nil)
+                admitted.append(command.rawValue)
+            } catch let error as AppIPCCommandError {
+                #expect(error.reason == .unsupportedCommand)
             }
-        )
+        }
 
         #expect(admitted.isEmpty, "Debug-only commands admitted on \(channel.rawValue): \(admitted)")
         #expect(workspaceOwner.headlessRequests.isEmpty)
@@ -190,33 +178,26 @@ struct AgentStudioIPCCommandChannelCoverageTests {
         let windowId = AgentStudioIPCCommandCatalogProjection.ExampleIdentities.window
         let shell = RecordingShellCommandHandler(currentWindowId: windowId)
         shell.defaultOutcome = .unavailable(.featureUnavailable)
+        let workspaceOwner = RecordingWorkspaceIPCCommandHandler(currentWindowId: windowId)
         let harness = CommandAdapterHarness(
             windowId: windowId,
             channel: .debug,
             targetAuthorizer: PermissiveDurableTargetAuthorizer(),
-            shellCommandHandler: shell
+            shellCommandHandler: shell,
+            workspaceCommandHandler: workspaceOwner
         )
-        let workspaceOwner = RecordingWorkspaceIPCCommandHandler()
 
-        try await withIsolatedCommandDispatcher(
-            configure: {
-                AppCommandDispatcher.shared.handler = workspaceOwner
-                AppCommandDispatcher.shared.appCommandRouter = shell
-            },
-            body: {
-                for command in retiredPanesOrganizationCommands {
-                    #expect(command.ipcSpec.resultVariants == [.unavailable])
-                    let result = try await harness.adapter.executeCommand(
-                        IPCCommandExecutionRequest(
-                            commandId: .init(rawValue: command.rawValue),
-                            correlationId: UUIDv7.generate(),
-                            arguments: .workspaceWindow(.init(workspaceWindowId: windowId))
-                        ), ownPaneAssertion: nil
-                    )
-                    #expect(result.variant == .unavailable)
-                }
-            }
-        )
+        for command in retiredPanesOrganizationCommands {
+            #expect(command.ipcSpec.resultVariants == [.unavailable])
+            let result = try await harness.adapter.executeCommand(
+                IPCCommandExecutionRequest(
+                    commandId: .init(rawValue: command.rawValue),
+                    correlationId: UUIDv7.generate(),
+                    arguments: .workspaceWindow(.init(workspaceWindowId: windowId))
+                ), ownPaneAssertion: nil
+            )
+            #expect(result.variant == .unavailable)
+        }
         #expect(workspaceOwner.headlessRequests.isEmpty)
     }
 

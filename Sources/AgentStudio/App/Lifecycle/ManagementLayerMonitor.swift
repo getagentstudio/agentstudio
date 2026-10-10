@@ -30,10 +30,14 @@ final class ManagementLayerMonitor {
     private let interactionProbe: AgentStudioInteractionPerformanceProbe?
     private var pendingCommandRefreshCorrelationId: UUID?
 
+    private let commandDispatcher: any AppCommandDispatching
+
     init(
+        commandDispatcher: any AppCommandDispatching,
         startKeyboardMonitoring: Bool = true,
         interactionProbe: AgentStudioInteractionPerformanceProbe? = nil
     ) {
+        self.commandDispatcher = commandDispatcher
         self.interactionProbe = interactionProbe
         if startKeyboardMonitoring {
             self.startKeyboardMonitoring()
@@ -94,7 +98,7 @@ final class ManagementLayerMonitor {
                 self.deactivate()
                 return nil
             case .dispatch(let shortcut):
-                AppCommandDispatcher.shared.dispatchKeyboardShortcut(shortcut)
+                commandDispatcher.dispatchKeyboardShortcut(shortcut)
                 return nil
             case .passThrough:
                 return event

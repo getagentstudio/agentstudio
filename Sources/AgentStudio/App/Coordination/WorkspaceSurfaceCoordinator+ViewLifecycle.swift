@@ -200,6 +200,7 @@ extension WorkspaceSurfaceCoordinator {
             traceSurfaceAttached(pane: pane, surfaceID: managed.id)
 
             let view = TerminalPaneMountView(
+                surfaceOperations: terminalSurfaceOperations,
                 worktree: worktree,
                 repo: repo,
                 restoredSurfaceId: managed.id,
@@ -327,6 +328,7 @@ extension WorkspaceSurfaceCoordinator {
             }
 
             let view = TerminalPaneMountView(
+                surfaceOperations: terminalSurfaceOperations,
                 restoredSurfaceId: managed.id,
                 paneId: pane.id,
                 title: pane.metadata.title,
@@ -631,6 +633,7 @@ extension WorkspaceSurfaceCoordinator {
     ) -> TerminalPaneMountView {
         if let worktree, let repo {
             return TerminalPaneMountView(
+                surfaceOperations: terminalSurfaceOperations,
                 worktree: worktree,
                 repo: repo,
                 restoredSurfaceId: restoredSurfaceId,
@@ -639,6 +642,7 @@ extension WorkspaceSurfaceCoordinator {
             )
         }
         return TerminalPaneMountView(
+            surfaceOperations: terminalSurfaceOperations,
             restoredSurfaceId: restoredSurfaceId,
             paneId: pane.id,
             title: pane.metadata.title,

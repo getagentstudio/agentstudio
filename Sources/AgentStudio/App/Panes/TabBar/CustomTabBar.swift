@@ -364,6 +364,7 @@ struct TabBarArrangementButton: View {
     @Bindable var adapter: TabBarAdapter
     @Bindable var arrangementInlineRenameState: ArrangementInlineRenameState
     let octiconLoader: OcticonLoader
+    let commandDispatcher: any AppCommandDispatching
     let onCommand: ((AppCommand, UUID) -> Void)?
     let onPaneAction: ((WorkspaceActionCommand) -> Void)?
     let workspaceWindowId: UUID?
@@ -458,13 +459,13 @@ struct TabBarArrangementButton: View {
                     zoomMode: tab.zoomMode,
                     arrangements: tab.arrangements,
                     inlineRenameState: arrangementInlineRenameState,
-                    commandActionResolver: { command, surface, target, targetType in
+                    commandActionResolver: { [commandDispatcher] command, surface, target, targetType in
                         TargetedCommandControlAction.resolve(
                             command: command,
                             surface: surface,
                             target: target,
                             targetType: targetType,
-                            dispatcher: AppCommandDispatcher.shared
+                            dispatcher: commandDispatcher
                         )
                     },
                     onPaneAction: onPaneAction,

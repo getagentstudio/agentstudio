@@ -34,8 +34,7 @@ struct AgentStudioIPCCommandOwnerEffectTests {
         let result = try await execute(
             adapter,
             command: .pinPane,
-            arguments: .standalonePane(.init(paneSelector: try .init(rawValue: pane.id.uuidString))),
-            harness: harness
+            arguments: .standalonePane(.init(paneSelector: try .init(rawValue: pane.id.uuidString)))
         )
         withExtendedLifetime(shellOwner) {}
 
@@ -58,8 +57,7 @@ struct AgentStudioIPCCommandOwnerEffectTests {
             adapter,
             command: .renameTab,
             arguments: .renamedTab(
-                .init(workspaceWindowId: windowId, tabId: tab.id, name: "Renamed")),
-            harness: harness
+                .init(workspaceWindowId: windowId, tabId: tab.id, name: "Renamed"))
         )
         withExtendedLifetime(shellOwner) {}
 
@@ -88,8 +86,7 @@ struct AgentStudioIPCCommandOwnerEffectTests {
                     workspaceWindowId: windowId,
                     tabId: tab.id,
                     name: "Review Layout"
-                )),
-            harness: harness
+                ))
         )
         withExtendedLifetime(shellOwner) {}
 
@@ -113,8 +110,7 @@ struct AgentStudioIPCCommandOwnerEffectTests {
                 .init(
                     workspaceWindowId: windowId,
                     paneSelector: try .init(rawValue: pane.id.uuidString)
-                )),
-            harness: harness
+                ))
         )
         withExtendedLifetime(shellOwner) {}
 
@@ -172,12 +168,16 @@ struct AgentStudioIPCCommandOwnerEffectTests {
         channel: AgentStudioIPCChannel
     ) -> (adapter: AgentStudioIPCCommandAdapter, shellOwner: StubWorkspaceWindowShellOwner) {
         let shellOwner = StubWorkspaceWindowShellOwner(currentWindowId: windowId)
+        // Resolve the harness's fixed `.controller` access before the adapter
+        // starts dispatching through this same local dispatcher.
+        _ = harness.controller
         return (
             AgentStudioIPCCommandAdapter(
                 workspaceId: harness.store.identityAtom.workspaceId,
                 channel: channel,
                 targetAuthorizer: WorkspaceDurableTargetAuthorizationPort(workspaceStore: harness.store),
-                shellCommandHandler: shellOwner
+                shellCommandHandler: shellOwner,
+                commandDispatcher: harness.commandDispatcher
             ),
             shellOwner
         )
@@ -186,23 +186,14 @@ struct AgentStudioIPCCommandOwnerEffectTests {
     private func execute(
         _ adapter: AgentStudioIPCCommandAdapter,
         command: AppCommand,
-        arguments: IPCCommandArguments,
-        harness: Harness
+        arguments: IPCCommandArguments
     ) async throws -> IPCCommandExecutionResult {
-        try await withIsolatedCommandDispatcher(
-            configure: {
-                AppCommandDispatcher.shared.handler = harness.controller
-                AppCommandDispatcher.shared.appCommandRouter = nil
-            },
-            body: {
-                try await adapter.executeCommand(
-                    IPCCommandExecutionRequest(
-                        commandId: .init(rawValue: command.rawValue),
-                        correlationId: UUIDv7.generate(),
-                        arguments: arguments
-                    ), ownPaneAssertion: nil
-                )
-            }
+        try await adapter.executeCommand(
+            IPCCommandExecutionRequest(
+                commandId: .init(rawValue: command.rawValue),
+                correlationId: UUIDv7.generate(),
+                arguments: arguments
+            ), ownPaneAssertion: nil
         )
     }
 }

@@ -15,10 +15,10 @@ struct ShellTabBarCommandPresentation: Equatable {
         command: AppCommand,
         surface: AppCommandSurface,
         commandContext: CommandContext,
-        dispatcher: any AppCommandDispatching = AppCommandDispatcher.shared
+        dispatcher: any AppCommandDispatching
     ) {
         self.init(
-            definition: AppCommandDispatcher.shared.definition(for: command),
+            definition: command.definition,
             surface: surface,
             commandContext: commandContext,
             dispatcher: dispatcher
@@ -30,7 +30,7 @@ struct ShellTabBarCommandPresentation: Equatable {
         definition: AppCommandSpec,
         surface: AppCommandSurface,
         commandContext: CommandContext,
-        dispatcher: any AppCommandDispatching = AppCommandDispatcher.shared
+        dispatcher: any AppCommandDispatching
     ) {
         guard
             definition.shouldPresent(
@@ -85,6 +85,7 @@ enum ShellTabBarCommandContext {
 }
 
 struct WatchFolderTabBarMenu: View {
+    let commandDispatcher: any AppCommandDispatching
     @State private var isHovered = false
 
     @ViewBuilder
@@ -92,7 +93,8 @@ struct WatchFolderTabBarMenu: View {
         if let presentation = ShellTabBarCommandPresentation(
             command: .watchFolder,
             surface: .toolbar(.app),
-            commandContext: ShellTabBarCommandContext.current()
+            commandContext: ShellTabBarCommandContext.current(),
+            dispatcher: commandDispatcher
         ) {
             Button {
                 presentation.perform()
@@ -113,6 +115,7 @@ struct WatchFolderTabBarMenu: View {
 
 /// Management layer toggle in the tab bar. Blue accent when active, standard hover otherwise.
 struct TabBarManagementLayerButton: View {
+    let commandDispatcher: any AppCommandDispatching
     private var isManagementLayerActive: Bool {
         atom(\.managementLayer).isActive
     }
@@ -123,7 +126,8 @@ struct TabBarManagementLayerButton: View {
         if let presentation = ShellTabBarCommandPresentation(
             command: .toggleManagementLayer,
             surface: .toolbar(.app),
-            commandContext: ShellTabBarCommandContext.current()
+            commandContext: ShellTabBarCommandContext.current(),
+            dispatcher: commandDispatcher
         ) {
             Button(action: presentation.perform) {
                 ChromeToolbarButtonLabel(
@@ -190,6 +194,7 @@ struct TabSelectionToolbarMenu: View {
 /// "+" button for creating a new tab.
 /// Click = empty terminal (existing behavior). Right-click = menu with options.
 struct NewTabButton: View {
+    let commandDispatcher: any AppCommandDispatching
     @State private var isHovered = false
 
     @ViewBuilder
@@ -198,17 +203,20 @@ struct NewTabButton: View {
         let newTabToolbarPresentation = ShellTabBarCommandPresentation(
             command: .newTab,
             surface: .toolbar(.app),
-            commandContext: commandContext
+            commandContext: commandContext,
+            dispatcher: commandDispatcher
         )
         let emptyTerminalPresentation = ShellTabBarCommandPresentation(
             command: .newTab,
             surface: .contextMenu,
-            commandContext: commandContext
+            commandContext: commandContext,
+            dispatcher: commandDispatcher
         )
         let repositoriesPresentation = ShellTabBarCommandPresentation(
             command: .showCommandBarRepos,
             surface: .contextMenu,
-            commandContext: commandContext
+            commandContext: commandContext,
+            dispatcher: commandDispatcher
         )
 
         if let newTabToolbarPresentation {

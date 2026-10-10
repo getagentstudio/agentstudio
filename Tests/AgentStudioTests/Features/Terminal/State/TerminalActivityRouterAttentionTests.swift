@@ -9,6 +9,28 @@ import Testing
 @MainActor
 @Suite("TerminalActivityRouter attention ordering", .serialized)
 struct TerminalActivityRouterAttentionTests {
+    @Test("two activity fixtures keep controls separate across one fixture's retirement")
+    func twoActivityFixturesKeepControlsSeparateAcrossRetirement() async {
+        let first = AttentionFixture()
+        let second = AttentionFixture()
+        await first.start()
+        await second.start()
+
+        first.selectPane(at: 1)
+        await first.joinPendingAttentionDelivery()
+        #expect(first.recorder.events == [first.event(0, false), first.event(1, true)])
+        #expect(second.recorder.events.isEmpty)
+        await first.closeAndJoin()
+        #expect(await first.applyObservedControl(at: 1) == .dropped(.retiredHandling))
+        #expect(second.callbackContext(for: second.paneIDs[0]) != nil)
+
+        second.selectPane(at: 2)
+        await second.joinPendingAttentionDelivery()
+        #expect(second.recorder.events == [second.event(0, false), second.event(2, true)])
+        #expect(first.recorder.events == [first.event(0, false), first.event(1, true)])
+        await second.closeAndJoin()
+    }
+
     @Test("first settled attention change delivers previous off before current on")
     func firstSettledChangeIsObserved() async {
         // Arrange
@@ -18,7 +40,7 @@ struct TerminalActivityRouterAttentionTests {
         // Act
         fixture.selectPane(at: 1)
         await assertEventuallyMain("first attention pair") { fixture.recorder.events.count == 2 }
-        await fixture.stop()
+        await fixture.closeAndJoin()
 
         // Assert
         #expect(fixture.recorder.events == [fixture.event(0, false), fixture.event(1, true)])
@@ -34,7 +56,7 @@ struct TerminalActivityRouterAttentionTests {
         fixture.selectPane(at: 1)
         fixture.selectPane(at: 2)
         await assertEventuallyMain("settled attention pair") { fixture.recorder.events.count == 2 }
-        await fixture.stop()
+        await fixture.closeAndJoin()
 
         // Assert
         #expect(fixture.recorder.events == [fixture.event(0, false), fixture.event(2, true)])
@@ -48,19 +70,19 @@ struct TerminalActivityRouterAttentionTests {
         fixture.selectPane(at: 1)
         await assertEventuallyMain("first control entered") { fixture.recorder.isBlocked }
         guard fixture.recorder.isBlocked else {
-            await fixture.stop()
+            await fixture.closeAndJoin()
             return
         }
 
         // Act
         fixture.selectPane(at: 2)
-        await fixture.router.waitForPendingAttentionSettlement()
+        await fixture.joinPendingAttentionSettlement()
         fixture.selectPane(at: 3)
-        await fixture.router.waitForPendingAttentionSettlement()
+        await fixture.joinPendingAttentionSettlement()
         #expect(fixture.recorder.events == [fixture.event(0, false)])
         fixture.recorder.releaseBlockedControl()
-        await fixture.router.waitForPendingAttentionDelivery()
-        await fixture.stop()
+        await fixture.joinPendingAttentionDelivery()
+        await fixture.closeAndJoin()
 
         // Assert
         #expect(fixture.recorder.maximumConcurrentControls == 1)
@@ -84,20 +106,20 @@ struct TerminalActivityRouterAttentionTests {
         for transition in 2...257 {
             let next = transition % fixture.paneIDs.count
             fixture.selectPane(at: next)
-            await fixture.router.waitForPendingAttentionSettlement()
+            await fixture.joinPendingAttentionSettlement()
             expected.append(contentsOf: [fixture.event(previous, false), fixture.event(next, true)])
             previous = next
         }
         #expect(fixture.recorder.events == [fixture.event(0, false)])
         fixture.recorder.releaseBlockedControl()
-        await fixture.router.waitForPendingAttentionDelivery()
+        await fixture.joinPendingAttentionDelivery()
         #expect(fixture.recorder.events == expected)
 
         let next = (previous + 1) % fixture.paneIDs.count
         fixture.selectPane(at: next)
-        await fixture.router.waitForPendingAttentionDelivery()
+        await fixture.joinPendingAttentionDelivery()
         expected.append(contentsOf: [fixture.event(previous, false), fixture.event(next, true)])
-        await fixture.stop()
+        await fixture.closeAndJoin()
         #expect(fixture.recorder.events == expected)
         #expect(fixture.recorder.maximumConcurrentControls == 1)
     }
@@ -108,24 +130,24 @@ struct TerminalActivityRouterAttentionTests {
         let fixture = AttentionFixture()
         await fixture.start()
         fixture.selectPane(at: 1)
-        await fixture.router.waitForPendingAttentionDelivery()
+        await fixture.joinPendingAttentionDelivery()
         await fixture.stop()
         let stoppedEvents = fixture.recorder.events
 
         // Act
         fixture.selectPane(at: 2)
-        await fixture.router.waitForPendingAttentionDelivery()
+        await fixture.joinPendingAttentionDelivery()
         #expect(fixture.recorder.events == stoppedEvents)
         await fixture.start()
         fixture.selectPane(at: 3)
-        await fixture.router.waitForPendingAttentionDelivery()
-        await fixture.stop()
+        await fixture.joinPendingAttentionDelivery()
+        await fixture.closeAndJoin()
 
         // Assert
         #expect(fixture.recorder.events == stoppedEvents + [fixture.event(2, false), fixture.event(3, true)])
     }
 
-    @Test("restart waits for a suspended stop and preserves the new attention binding")
+    @Test("restart waits for a suspended stop and preserves its injected callback handler")
     func restartWaitsForSuspendedStop() async {
         // Arrange
         let fixture = AttentionFixture()
@@ -134,15 +156,15 @@ struct TerminalActivityRouterAttentionTests {
         fixture.selectPane(at: 1)
         await assertEventuallyMain("control suspended") { fixture.recorder.isBlocked }
         guard fixture.recorder.isBlocked else {
-            await fixture.stop()
+            await fixture.closeAndJoin()
             return
         }
-        let stopTask = Task { await fixture.router.stop() }
+        let stopTask = Task { await fixture.stop() }
         await assertEventuallyMain("stop cancelled the delivery") { fixture.recorder.cancellation.wasObserved }
         guard fixture.recorder.cancellation.wasObserved else {
             fixture.recorder.releaseBlockedControl()
             await stopTask.value
-            await fixture.stop()
+            await fixture.closeAndJoin()
             return
         }
 
@@ -150,16 +172,16 @@ struct TerminalActivityRouterAttentionTests {
         var restartRequested = false
         let restartTask = Task { @MainActor in
             restartRequested = true
-            await fixture.router.start()
+            await fixture.start()
         }
         await assertEventuallyMain("restart requested during stop") { restartRequested }
         fixture.recorder.releaseBlockedControl()
         await stopTask.value
         await restartTask.value
-        // Reinstall only the test recorder after verifying the real binding exists.
-        #expect(Ghostty.ActionRouter.terminalActivityProjectionContext(paneID: fixture.paneIDs[1]) != nil)
+        // The same fixture-owned handler and its context remain selected after restart.
+        #expect(fixture.callbackContext(for: fixture.paneIDs[1]) != nil)
         let scrollbar = ScrollbarState(top: 0, bottom: 10, total: 10)
-        await Ghostty.ActionRouter.submitTerminalActivityInput(
+        await fixture.submitSourceInput(
             .aggregate(
                 surfaceID: fixture.paneIDs[1], paneID: fixture.paneIDs[1],
                 input: TerminalActivityAggregateInput(
@@ -173,8 +195,8 @@ struct TerminalActivityRouterAttentionTests {
         #expect(fixture.activityAtom.snapshot(for: fixture.paneIDs[1])?.scrollbarState == scrollbar)
         await fixture.start()
         fixture.selectPane(at: 2)
-        await fixture.router.waitForPendingAttentionDelivery()
-        await fixture.stop()
+        await fixture.joinPendingAttentionDelivery()
+        await fixture.closeAndJoin()
 
         // Assert
         #expect(
@@ -192,8 +214,8 @@ struct TerminalActivityRouterAttentionTests {
 
         // Act
         fixture.selectPane(at: 1)
-        await fixture.router.waitForPendingAttentionDelivery()
-        await fixture.stop()
+        await fixture.joinPendingAttentionDelivery()
+        await fixture.closeAndJoin()
 
         // Assert
         #expect(fixture.recorder.events == [fixture.event(0, false), fixture.event(1, false)])
@@ -201,13 +223,13 @@ struct TerminalActivityRouterAttentionTests {
 
     @Test("settled attention cancels the real projector unseen window")
     func settledAttentionCancelsRealWindow() async {
-        // Arrange: preserve the production activity-input binding.
+        // Arrange: route activity inputs through the fixture-owned host into the real router.
         let fixture = AttentionFixture()
-        await fixture.router.start()
+        await fixture.start()
         await fixture.seedUnseenWindow(at: 1)
         await assertEventuallyMain("B unseen window scheduled") { fixture.clock.pendingSleepCount == 1 }
         guard fixture.clock.pendingSleepCount == 1 else {
-            await fixture.stop()
+            await fixture.closeAndJoin()
             return
         }
 
@@ -217,21 +239,21 @@ struct TerminalActivityRouterAttentionTests {
 
         // Assert
         #expect(fixture.clock.pendingSleepCount == 0)
-        await fixture.stop()
+        await fixture.closeAndJoin()
     }
 
     @Test("same-turn intermediate keeps its real unseen window while settled pane cancels")
     func intermediateAttentionPreservesRealWindow() async {
         // Arrange: both B and C have distinct pending windows.
         let fixture = AttentionFixture()
-        await fixture.router.start()
+        await fixture.start()
         await fixture.seedUnseenWindow(at: 1)
         await assertEventuallyMain("B window scheduled") { fixture.clock.pendingSleepCount == 1 }
         let bSleepGenerations = fixture.clock.pendingSleepGenerations
         await fixture.seedUnseenWindow(at: 2)
         await assertEventuallyMain("B and C windows scheduled") { fixture.clock.pendingSleepCount == 2 }
         guard bSleepGenerations.count == 1, fixture.clock.pendingSleepCount == 2 else {
-            await fixture.stop()
+            await fixture.closeAndJoin()
             return
         }
 
@@ -244,7 +266,7 @@ struct TerminalActivityRouterAttentionTests {
 
         // Assert
         #expect(fixture.clock.pendingSleepGenerations == bSleepGenerations)
-        await fixture.stop()
+        await fixture.closeAndJoin()
     }
 
     @Test("stopped router releases lifecycle and observation task ownership")
@@ -258,11 +280,11 @@ struct TerminalActivityRouterAttentionTests {
 
     private func stoppedRouterReference() async -> WeakAttentionRouterReference {
         let fixture = AttentionFixture()
-        let reference = WeakAttentionRouterReference(router: fixture.router)
+        let reference = fixture.weakRouterReference()
         await fixture.start()
         fixture.selectPane(at: 1)
-        await fixture.router.waitForPendingAttentionDelivery()
-        await fixture.stop()
+        await fixture.joinPendingAttentionDelivery()
+        await fixture.closeAndJoin()
         return reference
     }
 
@@ -274,14 +296,56 @@ private final class AttentionFixture {
     let tabLayout = WorkspaceTabLayoutAtom()
     let windowLifecycle = WindowLifecycleAtom()
     let managementLayer = ManagementLayerAtom()
-    let recorder = AttentionControlRecorder()
+    let recorder: AttentionControlRecorder
     let activityAtom = TerminalActivityAtom()
     let clock = TestPushClock()
-    let bindingID = UUIDv7.generate()
     let tabID: UUID
-    let router: TerminalActivityRouter
+    private lazy var routingLookup = AttentionRoutingLookup()
+    private lazy var mountedHostResolver = TerminalLocalActionMountedHostResolver(
+        surfaceForID: { _ in nil },
+        paneIDForSurfaceID: { _ in nil }
+    )
+    private lazy var host: GhosttyActionRoutingHost = .init(
+        dependencies: .init(
+            runtimeRegistry: RuntimeRegistry(),
+            routingLookup: routingLookup,
+            mountedHostResolver: mountedHostResolver,
+            applyNativeView: { _, _, _ in .dropped(.staleSurface) },
+            activityContext: { [weak self] paneID in
+                self?.router.sourceInputContext(paneID: paneID)
+            },
+            submitActivityInput: { [weak self] input in
+                guard let self else { return }
+                await self.recorder.record(input)
+                await self.router.consumeSourceInputIfAccepting(input)
+            },
+            startupTraceRecorder: nil,
+            traceRuntime: nil
+        )
+    )
+    private lazy var handler: Ghostty.ActionRouter = .init(host: host)
+    private lazy var router: TerminalActivityRouter = .init(
+        bus: EventBus<RuntimeEnvelope>(),
+        activityAtom: activityAtom,
+        callbackHandlingAccess: { [weak self] in self?.handler },
+        attendedPane: attendedPane,
+        surfaceIDForPaneID: { $0 },
+        isPaneCurrentlyAttended: { [weak self] paneID in
+            guard let self else { return false }
+            return self.attentionAllowed && self.attendedPane.attendedPaneId == paneID
+        },
+        isPaneAgentClassified: { _, _ in false },
+        lastOutputLineReader: { _ in .surfaceStale },
+        unseenActivityDebounceDuration: .seconds(2),
+        unseenActivityClock: clock
+    )
+    private let attentionAllowed: Bool
+    private let attendedPane: AttendedPaneDerived
 
     init(attentionAllowed: Bool = true) {
+        self.attentionAllowed = attentionAllowed
+        let recorder = AttentionControlRecorder()
+        self.recorder = recorder
         let arrangement = PaneArrangement(
             name: "Default", isDefault: true, layout: Layout.autoTiled(paneIDs), activePaneId: paneIDs[0]
         )
@@ -296,30 +360,48 @@ private final class AttentionFixture {
         let attendedPane = AttendedPaneDerived(
             tabLayout: tabLayout, windowLifecycle: windowLifecycle, managementLayer: managementLayer
         )
-        router = TerminalActivityRouter(
-            bus: EventBus<RuntimeEnvelope>(), activityAtom: activityAtom, attendedPane: attendedPane,
-            surfaceIDForPaneID: { $0 },
-            isPaneCurrentlyAttended: { paneID in attentionAllowed && attendedPane.attendedPaneId == paneID },
-            isPaneAgentClassified: { _, _ in false },
-            unseenActivityDebounceDuration: .seconds(2), unseenActivityClock: clock
-        )
+        self.attendedPane = attendedPane
     }
 
     func start() async {
         await router.start()
-        Ghostty.ActionRouter.bindTerminalActivityInput(
-            id: bindingID,
-            context: { _ in
-                TerminalActivityProjectionContext(isAttended: false, isAgentClassified: false, outputBurstThreshold: 1)
-            },
-            sink: { [recorder] input in await recorder.record(input) }
-        )
     }
 
     func stop() async {
+        await router.stop()
+    }
+
+    func closeAndJoin() async {
         recorder.releaseBlockedControl()
         await router.stop()
-        Ghostty.ActionRouter.unbindTerminalActivityInput(id: bindingID)
+        await handler.retire()
+    }
+
+    func joinPendingAttentionSettlement() async {
+        await router.waitForPendingAttentionSettlement()
+    }
+
+    func joinPendingAttentionDelivery() async {
+        await router.waitForPendingAttentionDelivery()
+    }
+
+    func callbackContext(for paneID: UUID) -> TerminalActivityProjectionContext? {
+        host.activityContext(paneID)
+    }
+
+    func weakRouterReference() -> WeakAttentionRouterReference {
+        WeakAttentionRouterReference(router: router)
+    }
+
+    func applyObservedControl(at index: Int) async -> GhosttyDeferredApplyResult {
+        let paneID = paneIDs[index]
+        return await handler.applyOrderedActivityControl(
+            surfaceID: paneID, paneID: paneID, control: .observed
+        )
+    }
+
+    func submitSourceInput(_ input: TerminalActivitySourceInput) async {
+        await host.submitActivityInput(input)
     }
 
     func seedUnseenWindow(at index: Int) async {
@@ -328,7 +410,7 @@ private final class AttentionFixture {
         )
         let latest = ScrollbarState(top: 0, bottom: 10, total: 140)
         aggregate.merge(state: latest, observedAtMilliseconds: 1100)
-        await Ghostty.ActionRouter.submitTerminalActivityInput(
+        await host.submitActivityInput(
             .aggregate(
                 surfaceID: paneIDs[index], paneID: paneIDs[index],
                 input: TerminalActivityAggregateInput(
@@ -347,6 +429,13 @@ private final class AttentionFixture {
     func event(_ index: Int, _ attended: Bool) -> AttentionControlRecorder.Event {
         .init(paneID: paneIDs[index], attended: attended)
     }
+}
+
+@MainActor
+private final class AttentionRoutingLookup: GhosttyActionRoutingLookup {
+    func surfaceId(forViewObjectId viewObjectId: ObjectIdentifier) -> UUID? { nil }
+
+    func paneId(for surfaceId: UUID) -> UUID? { nil }
 }
 
 @MainActor

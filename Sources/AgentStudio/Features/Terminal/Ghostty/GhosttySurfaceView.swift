@@ -259,7 +259,7 @@ extension Ghostty {
 
         var onWorkingDirectoryChanged: (@MainActor @Sendable (ObjectIdentifier, String?) -> Void)?
         var onRendererHealthChanged: (@MainActor @Sendable (ObjectIdentifier, Bool) -> Void)?
-        var onCloseRequested: (@MainActor @Sendable (Bool) -> Void)?
+        var onCloseRequested: (@MainActor @Sendable (Bool) -> Task<Void, Never>?)?
 
         /// Tracks whether the surface was previously detached from a window.
         /// Used for instrumentation: distinguishes reparenting (nil→window) from initial attachment.
@@ -273,9 +273,12 @@ extension Ghostty {
 
         /// Immutable managed lifetime identity available at the synchronous callback boundary.
         nonisolated let managedSurfaceID: UUID
+        nonisolated let callbackHandling: Ghostty.ActionRouter?
 
         /// The ghostty app reference
         private var ghosttyApp: App?
+        let paneIDForViewObjectID: @MainActor (ObjectIdentifier) -> UUID?
+        private let didBecomeFirstResponder: @MainActor (ObjectIdentifier) -> Void
         private(set) var hostScrollbarState: ScrollbarState?
         private(set) var hostConfigSnapshot: GhosttyHostConfigSnapshot
         var onHostScrollbarStateChanged: (@MainActor @Sendable (ScrollbarState) -> Void)?
@@ -295,7 +298,7 @@ extension Ghostty {
         var lastPerformKeyEvent: TimeInterval?
 
         /// Content size for the terminal (may differ from frame during resize)
-        private var contentSize: NSSize = .zero
+        private(set) var contentSize: NSSize = .zero
         private var lastCommittedGeometry: SurfaceGeometry?
 
         /// Initial content size reported by Ghostty action callbacks.
@@ -354,6 +357,8 @@ extension Ghostty {
             managedSurfaceID: UUID,
             config: SurfaceConfiguration? = nil,
             appCommandDispatcher: any AppCommandDispatching,
+            paneIDForViewObjectID: @escaping @MainActor (ObjectIdentifier) -> UUID?,
+            didBecomeFirstResponder: @escaping @MainActor (ObjectIdentifier) -> Void,
             performanceTraceRecorder: AgentStudioPerformanceTraceRecorder? = nil
         ) {
             guard let config else {
@@ -364,6 +369,9 @@ extension Ghostty {
             config.requireInitialFrameForSurfaceCreation()
             self.managedSurfaceID = managedSurfaceID
             self.ghosttyApp = app
+            self.paneIDForViewObjectID = paneIDForViewObjectID
+            self.didBecomeFirstResponder = didBecomeFirstResponder
+            self.callbackHandling = app.callbackContext.handling
             self.hostConfigSnapshot = app.hostConfigSnapshot()
             self.appCommandDispatcher = appCommandDispatcher
             self.performanceTraceRecorder = performanceTraceRecorder
@@ -475,9 +483,13 @@ extension Ghostty {
         /// `SurfaceManager` lifecycle tests run without a live Ghostty app.
         package init(
             managedSurfaceID: UUID,
-            appCommandDispatcher: any AppCommandDispatching
+            appCommandDispatcher: any AppCommandDispatching,
+            callbackHandling: Ghostty.ActionRouter? = nil
         ) {
             self.managedSurfaceID = managedSurfaceID
+            self.callbackHandling = callbackHandling
+            self.paneIDForViewObjectID = { _ in nil }
+            self.didBecomeFirstResponder = { _ in }
             self.hostConfigSnapshot = GhosttyHostConfigSnapshot(configHandle: nil)
             self.appCommandDispatcher = appCommandDispatcher
             super.init(frame: .zero)
@@ -572,7 +584,7 @@ extension Ghostty {
             if result {
                 focused = true
                 if surface != nil {
-                    SurfaceManager.shared.surfaceDidBecomeFirstResponder(managedSurfaceID)
+                    didBecomeFirstResponder(ObjectIdentifier(self))
                 }
                 applyMouseVisibility(isVisible: terminalRuntime?.isMouseVisible ?? true)
                 logSurfaceSnapshot(reason: "becomeFirstResponder")
@@ -971,20 +983,5 @@ extension Ghostty {
             logSurfaceSnapshot(reason: "narrowPaneRedrawNudge.complete")
         }
 
-        func metricsSnapshotDescription() -> String {
-            guard let surface else {
-                return "surface=nil"
-            }
-
-            let metrics = ghostty_surface_size(surface)
-            let initialSizeDescription = reportedInitialSize.map(NSStringFromSize) ?? "nil"
-            let cellSizeDescription = reportedCellSize.map(NSStringFromSize) ?? "nil"
-            return
-                "frame=\(NSStringFromRect(frame)) bounds=\(NSStringFromRect(bounds)) contentSize=\(NSStringFromSize(contentSize)) initialSize=\(initialSizeDescription) cellSize=\(cellSizeDescription) columns=\(metrics.columns) rows=\(metrics.rows) widthPx=\(metrics.width_px) heightPx=\(metrics.height_px) cellWidthPx=\(metrics.cell_width_px) cellHeightPx=\(metrics.cell_height_px) focused=\(focused) window=\(window != nil)"
-        }
-
-        private func logSurfaceSnapshot(reason: String) {
-            RestoreTrace.log("Ghostty.SurfaceView.snapshot reason=\(reason) \(metricsSnapshotDescription())")
-        }
     }
 }

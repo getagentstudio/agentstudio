@@ -9,6 +9,7 @@ extension Ghostty {
     final class AppHandle {
         private let appHandle: ghostty_app_t
         private let configHandle: ghostty_config_t
+        private let callbackContext: GhosttyCallbackContext
         static let disableDefaultConfigEnvironmentKey = "AGENTSTUDIO_GHOSTTY_DISABLE_DEFAULT_CONFIG"
         static let disableVsyncEnvironmentKey = "AGENTSTUDIO_GHOSTTY_DISABLE_VSYNC"
         static let baseOverrideContents = """
@@ -94,7 +95,7 @@ extension Ghostty {
             return overrideURL
         }
 
-        init?(runtimeConfig: ghostty_runtime_config_s) {
+        init?(runtimeConfig: ghostty_runtime_config_s, callbackContext: GhosttyCallbackContext) {
             guard let config = ghostty_config_new() else {
                 ghosttyLogger.error("Failed to create ghostty config")
                 return nil
@@ -129,11 +130,14 @@ extension Ghostty {
 
             self.appHandle = app
             self.configHandle = config
+            self.callbackContext = callbackContext
         }
 
         deinit {
-            ghostty_app_free(appHandle)
-            ghostty_config_free(configHandle)
+            withExtendedLifetime(callbackContext) {
+                ghostty_app_free(appHandle)
+                ghostty_config_free(configHandle)
+            }
         }
 
         @MainActor

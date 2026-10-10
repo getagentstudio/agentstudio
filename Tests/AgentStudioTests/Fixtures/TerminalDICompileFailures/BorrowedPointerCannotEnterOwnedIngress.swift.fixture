@@ -1,0 +1,6 @@
+import Foundation
+@testable import AgentStudioTerminal
+
+func borrowedPointerCannotEnterOwnedIngress(handler: Ghostty.ActionRouter, pointer: UnsafeMutableRawPointer) -> Bool {
+    handler.accept(pointer)
+}

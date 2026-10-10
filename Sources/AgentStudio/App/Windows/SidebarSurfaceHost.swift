@@ -42,6 +42,9 @@ struct SidebarSurfaceHost: View {
         case repoExplorer
     }
 
+    let commandDispatcher: any AppCommandDispatching
+    let resolveCommandCapabilities: RepoExplorerCommandCapabilityResolver
+    let executionOwnerIdentities: @MainActor () -> CommandExecutionOwnerIdentities
     let store: WorkspaceStore
     let octiconLoader: OcticonLoader
     let paneContextReaders: PaneContextUIReaders?
@@ -63,6 +66,9 @@ struct SidebarSurfaceHost: View {
     @State private var repoCommandPresentationBatch: RepoExplorerCommandPresentationBatch?
 
     init(
+        commandDispatcher: any AppCommandDispatching,
+        resolveCommandCapabilities: @escaping RepoExplorerCommandCapabilityResolver,
+        executionOwnerIdentities: @escaping @MainActor () -> CommandExecutionOwnerIdentities,
         store: WorkspaceStore,
         octiconLoader: OcticonLoader,
         paneActivityStatusAtom: PaneActivityStatusAtom,
@@ -86,6 +92,9 @@ struct SidebarSurfaceHost: View {
         onRepositoryFactUpdateProgressPresented:
             @escaping @MainActor @Sendable (UUID, UUID) -> Void
     ) {
+        self.commandDispatcher = commandDispatcher
+        self.resolveCommandCapabilities = resolveCommandCapabilities
+        self.executionOwnerIdentities = executionOwnerIdentities
         self.paneContextReaders = paneContextReaders
         self.store = store
         self.octiconLoader = octiconLoader
@@ -119,7 +128,7 @@ struct SidebarSurfaceHost: View {
                 repoExplorerPrefs: repoExplorerSidebarPrefs,
                 isProjectionDemanded: !sidebarState.sidebarCollapsed,
                 bridgeAttendanceSnapshot: bridgeAttendanceSnapshot,
-                commandDispatcher: AppCommandDispatcher.shared,
+                commandDispatcher: commandDispatcher,
                 commandPresentationDelta: repoCommandPresentationBatch?.latestDelta,
                 visibleSnapshotConsumerToken: repoCommandPresentationBatch?.consumerToken,
                 onRefocusActivePane: onRefocusActivePane,
@@ -141,7 +150,7 @@ struct SidebarSurfaceHost: View {
                             paneId: pane, presentation: presentation, location: .sidebar, readers: paneContextReaders,
                             octiconLoader: octiconLoader,
                             onGoToPane: { target in
-                                AppCommandDispatcher.shared.dispatch(.focusPane, target: target, targetType: .pane)
+                                commandDispatcher.dispatch(.focusPane, target: target, targetType: .pane)
                             }, includingDrawers: !paneContextReaders.isDrawerPane(pane)))
                 },
                 latestPaneMessageSnapshot: { paneId in
@@ -168,7 +177,8 @@ struct SidebarSurfaceHost: View {
                 let batch = RepoExplorerCommandPresentationBatch(
                     store: store,
                     repoExplorerPrefs: repoExplorerSidebarPrefs,
-                    dispatcher: .shared,
+                    resolveCommandCapabilities: resolveCommandCapabilities,
+                    executionOwnerIdentities: executionOwnerIdentities,
                     performanceTraceRecorder: performanceTraceRecorder
                 )
                 repoCommandPresentationBatch = batch

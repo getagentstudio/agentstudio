@@ -45,12 +45,9 @@ struct PaneTabViewControllerTerminalShortcutCommandTests {
 
             let events = try makeTerminalNavigationKeyEvents()
 
-            try await withIsolatedCommandDispatcher(
-                configure: {
-                    AppCommandDispatcher.shared.handler = harness.controller
-                    AppCommandDispatcher.shared.appCommandRouter = nil
-                },
-                body: {
+            try await withCommandDispatcher(
+                harness.commandDispatcher,
+                body: { _ in
                     for (index, event) in events.enumerated() {
                         #expect(harness.controller.handleAppOwnedKeyEvent(event))
                         await waitForRecordedCommands(on: drawerRuntime, count: index + 1)
@@ -82,12 +79,9 @@ struct PaneTabViewControllerTerminalShortcutCommandTests {
                 )
             )
 
-            try await withIsolatedCommandDispatcher(
-                configure: {
-                    AppCommandDispatcher.shared.handler = harness.controller
-                    AppCommandDispatcher.shared.appCommandRouter = nil
-                },
-                body: {
+            try await withCommandDispatcher(
+                harness.commandDispatcher,
+                body: { _ in
                     #expect(harness.controller.handleAppOwnedKeyEvent(event))
                 }
             )
@@ -122,12 +116,9 @@ struct PaneTabViewControllerTerminalShortcutCommandTests {
                 )
             )
 
-            try await withIsolatedCommandDispatcher(
-                configure: {
-                    AppCommandDispatcher.shared.handler = harness.controller
-                    AppCommandDispatcher.shared.appCommandRouter = nil
-                },
-                body: {
+            try await withCommandDispatcher(
+                harness.commandDispatcher,
+                body: { _ in
                     #expect(harness.controller.handleAppOwnedKeyEvent(event))
                     await waitForRecordedCommands(on: runtime, count: 1, maxTurns: 5)
                     #expect(runtime.receivedCommands.isEmpty)
@@ -168,12 +159,9 @@ struct PaneTabViewControllerTerminalShortcutCommandTests {
                 )
             )
 
-            try await withIsolatedCommandDispatcher(
-                configure: {
-                    AppCommandDispatcher.shared.handler = harness.controller
-                    AppCommandDispatcher.shared.appCommandRouter = nil
-                },
-                body: {
+            try await withCommandDispatcher(
+                harness.commandDispatcher,
+                body: { _ in
                     #expect(harness.controller.handleAppOwnedKeyEvent(event))
                     await waitForRecordedCommands(on: runtime, count: 1, maxTurns: 5)
                     #expect(runtime.receivedCommands.isEmpty)

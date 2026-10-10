@@ -14,26 +14,39 @@ struct WorkspaceSurfaceCoordinatorRuntimeDispatchTests {
         installTestCoreAtomsIfNeeded()
     }
 
-    @Test("coordinator injects its runtime registry into Ghostty action routing")
-    func coordinatorInjectsGhosttyRuntimeRegistry() async throws {
-        let tempDir = FileManager.default.temporaryDirectory
-            .appending(path: "agentstudio-pane-coordinator-runtime-registry-injection-\(UUID().uuidString)")
+    @Test("constructing another coordinator cannot replace the selected runtime registry")
+    func anotherCoordinatorCannotReplaceSelectedRegistry() async {
         let store = WorkspaceStore()
-        let viewRegistry = ViewRegistry()
-        let runtime = SessionRuntime(store: store)
-        let mockSurfaceManager = MockWorkspaceSurfaceCoordinatorSurfaceManager()
-        let runtimeRegistry = RuntimeRegistry()
-        _ = makeTestWorkspaceSurfaceCoordinator(
-            store: store,
-            viewRegistry: viewRegistry,
-            runtime: runtime,
-            surfaceManager: mockSurfaceManager,
-            runtimeRegistry: runtimeRegistry
+        let firstRegistry = RuntimeRegistry()
+        let secondRegistry = RuntimeRegistry()
+        let first = makeTestWorkspaceSurfaceCoordinator(
+            store: store, viewRegistry: ViewRegistry(), runtime: SessionRuntime(store: store),
+            surfaceManager: MockWorkspaceSurfaceCoordinatorSurfaceManager(), runtimeRegistry: firstRegistry
         )
+        let pane = store.createPane(
+            content: .webview(WebviewState(url: URL(string: "https://example.com/registry-selection")!)),
+            metadata: PaneMetadata(title: "Selected registry")
+        )
+        let paneID = PaneId(existingUUID: pane.id)
+        let firstRuntime = FakePaneRuntime(paneId: paneID)
+        first.registerRuntime(firstRuntime)
+        let second = makeTestWorkspaceSurfaceCoordinator(
+            store: store, viewRegistry: ViewRegistry(), runtime: SessionRuntime(store: store),
+            surfaceManager: MockWorkspaceSurfaceCoordinatorSurfaceManager(), runtimeRegistry: secondRegistry
+        )
+        let secondRuntime = FakePaneRuntime(paneId: paneID)
+        second.registerRuntime(secondRuntime)
 
-        #expect(ObjectIdentifier(Ghostty.App.runtimeRegistryForActionRouting) == ObjectIdentifier(runtimeRegistry))
-
-        try? FileManager.default.removeItem(at: tempDir)
+        let firstResult = await first.dispatchRuntimeCommand(.activate, target: .pane(paneID))
+        if case .success = firstResult {} else { Issue.record("First selected runtime did not activate") }
+        #expect(firstRuntime.receivedCommands.count == 1)
+        #expect(secondRuntime.receivedCommands.isEmpty)
+        let secondResult = await second.dispatchRuntimeCommand(.activate, target: .pane(paneID))
+        if case .success = secondResult {} else { Issue.record("Second selected runtime did not activate") }
+        #expect(firstRuntime.receivedCommands.count == 1)
+        #expect(secondRuntime.receivedCommands.count == 1)
+        await first.shutdown()
+        await second.shutdown()
     }
 
     @Test("dispatchRuntimeCommand resolves pane target centrally")

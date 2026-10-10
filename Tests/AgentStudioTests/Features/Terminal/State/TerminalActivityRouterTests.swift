@@ -138,7 +138,10 @@ struct TerminalActivityRouterTests {
     func consumesPaneTerminalEventsFromRuntimeBusIntoActivityAtom() async {
         let bus = EventBus<RuntimeEnvelope>()
         let atom = TerminalActivityAtom(outputBurstThreshold: 30)
-        let router = TerminalActivityRouter(bus: bus, activityAtom: atom)
+        let router = TerminalActivityRouter(
+            bus: bus, activityAtom: atom, callbackHandlingAccess: { nil }, surfaceIDForPaneID: { _ in nil },
+            lastOutputLineReader: { _ in .surfaceStale }
+        )
         let paneId = PaneId.generateUUIDv7()
 
         await router.start()
@@ -173,7 +176,10 @@ struct TerminalActivityRouterTests {
             flushMode: "immediate"
         )
         let traceRuntime = traceFixture.runtime
-        let router = TerminalActivityRouter(bus: bus, activityAtom: atom, traceRuntime: traceRuntime)
+        let router = TerminalActivityRouter(
+            bus: bus, activityAtom: atom, callbackHandlingAccess: { nil }, traceRuntime: traceRuntime,
+            surfaceIDForPaneID: { _ in nil }, lastOutputLineReader: { _ in .surfaceStale }
+        )
         let paneId = PaneId.generateUUIDv7()
         let correlationId = UUID()
 
@@ -219,7 +225,10 @@ struct TerminalActivityRouterTests {
             flushMode: "immediate"
         )
         let traceRuntime = traceFixture.runtime
-        let router = TerminalActivityRouter(bus: bus, activityAtom: atom, traceRuntime: traceRuntime)
+        let router = TerminalActivityRouter(
+            bus: bus, activityAtom: atom, callbackHandlingAccess: { nil }, traceRuntime: traceRuntime,
+            surfaceIDForPaneID: { _ in nil }, lastOutputLineReader: { _ in .surfaceStale }
+        )
         let paneId = PaneId.generateUUIDv7()
 
         await router.start()
@@ -270,7 +279,10 @@ struct TerminalActivityRouterTests {
             processIdentifier: 247
         )
         let traceRuntime = traceFixture.runtime
-        let router = TerminalActivityRouter(bus: bus, activityAtom: atom, traceRuntime: traceRuntime)
+        let router = TerminalActivityRouter(
+            bus: bus, activityAtom: atom, callbackHandlingAccess: { nil }, traceRuntime: traceRuntime,
+            surfaceIDForPaneID: { _ in nil }, lastOutputLineReader: { _ in .surfaceStale }
+        )
         let paneId = PaneId.generateUUIDv7()
 
         await router.start()
@@ -311,7 +323,10 @@ struct TerminalActivityRouterTests {
             processIdentifier: 248
         )
         let traceRuntime = traceFixture.runtime
-        let router = TerminalActivityRouter(bus: bus, activityAtom: atom, traceRuntime: traceRuntime)
+        let router = TerminalActivityRouter(
+            bus: bus, activityAtom: atom, callbackHandlingAccess: { nil }, traceRuntime: traceRuntime,
+            surfaceIDForPaneID: { _ in nil }, lastOutputLineReader: { _ in .surfaceStale }
+        )
         let paneId = PaneId.generateUUIDv7()
 
         await router.start()
@@ -349,8 +364,9 @@ struct TerminalActivityRouterTests {
         let router = TerminalActivityRouter(
             bus: bus,
             activityAtom: atom,
+            callbackHandlingAccess: { nil },
             surfaceIDForPaneID: { $0 },
-            unseenActivityDebounceDuration: .milliseconds(750),
+            lastOutputLineReader: { _ in .surfaceStale }, unseenActivityDebounceDuration: .milliseconds(750),
             unseenActivityClock: clock
         )
         let paneId = PaneId.generateUUIDv7()
@@ -405,6 +421,7 @@ struct TerminalActivityRouterTests {
         let router = TerminalActivityRouter(
             bus: bus,
             activityAtom: atom,
+            callbackHandlingAccess: { nil },
             surfaceIDForPaneID: { $0 },
             lastOutputLineReader: { _ in .value("seam-live-proof") },
             recordSettledActivityStatus: { paneId, lastOutputLine in
@@ -460,6 +477,7 @@ struct TerminalActivityRouterTests {
         let router = TerminalActivityRouter(
             bus: bus,
             activityAtom: atom,
+            callbackHandlingAccess: { nil },
             surfaceIDForPaneID: { $0 },
             isPaneCurrentlyAttended: { _ in true },
             lastOutputLineReader: { _ in .value("echo-command-output") },
@@ -533,8 +551,9 @@ struct TerminalActivityRouterTests {
         let router = TerminalActivityRouter(
             bus: bus,
             activityAtom: atom,
+            callbackHandlingAccess: { nil },
             surfaceIDForPaneID: { $0 },
-            unseenActivityDebounceDuration: .milliseconds(750),
+            lastOutputLineReader: { _ in .surfaceStale }, unseenActivityDebounceDuration: .milliseconds(750),
             unseenActivityClock: clock
         )
         let paneId = PaneId.generateUUIDv7()
@@ -567,8 +586,9 @@ struct TerminalActivityRouterTests {
         let router = TerminalActivityRouter(
             bus: bus,
             activityAtom: TerminalActivityAtom(outputBurstThreshold: 30),
+            callbackHandlingAccess: { nil },
             surfaceIDForPaneID: { $0 },
-            unseenActivityDebounceDuration: .milliseconds(750),
+            lastOutputLineReader: { _ in .surfaceStale }, unseenActivityDebounceDuration: .milliseconds(750),
             unseenActivityClock: clock
         )
         let paneId = PaneId.generateUUIDv7()
@@ -601,8 +621,9 @@ struct TerminalActivityRouterTests {
         let router = TerminalActivityRouter(
             bus: bus,
             activityAtom: TerminalActivityAtom(outputBurstThreshold: 30),
+            callbackHandlingAccess: { nil },
             surfaceIDForPaneID: { $0 },
-            unseenActivityDebounceDuration: .milliseconds(750),
+            lastOutputLineReader: { _ in .surfaceStale }, unseenActivityDebounceDuration: .milliseconds(750),
             unseenActivityClock: clock
         )
         let paneId = PaneId.generateUUIDv7()
@@ -650,8 +671,9 @@ struct TerminalActivityRouterTests {
         let router = TerminalActivityRouter(
             bus: bus,
             activityAtom: atom,
+            callbackHandlingAccess: { nil },
             surfaceIDForPaneID: { $0 },
-            unseenActivityDebounceDuration: .milliseconds(750),
+            lastOutputLineReader: { _ in .surfaceStale }, unseenActivityDebounceDuration: .milliseconds(750),
             unseenActivityClock: clock
         )
         let paneId = PaneId.generateUUIDv7()
@@ -679,7 +701,10 @@ struct TerminalActivityRouterTests {
     func startIsIdempotentAndDoesNotDoubleConsumeEvents() async {
         let bus = EventBus<RuntimeEnvelope>()
         let atom = TerminalActivityAtom()
-        let router = TerminalActivityRouter(bus: bus, activityAtom: atom)
+        let router = TerminalActivityRouter(
+            bus: bus, activityAtom: atom, callbackHandlingAccess: { nil }, surfaceIDForPaneID: { _ in nil },
+            lastOutputLineReader: { _ in .surfaceStale }
+        )
         let paneId = PaneId.generateUUIDv7()
 
         await router.start()
@@ -705,7 +730,10 @@ struct TerminalActivityRouterTests {
     func stopPreventsLaterRuntimeEventsFromMutatingActivity() async {
         let bus = EventBus<RuntimeEnvelope>()
         let atom = TerminalActivityAtom()
-        let router = TerminalActivityRouter(bus: bus, activityAtom: atom)
+        let router = TerminalActivityRouter(
+            bus: bus, activityAtom: atom, callbackHandlingAccess: { nil }, surfaceIDForPaneID: { _ in nil },
+            lastOutputLineReader: { _ in .surfaceStale }
+        )
         let paneId = PaneId.generateUUIDv7()
 
         await router.start()
@@ -728,7 +756,10 @@ struct TerminalActivityRouterTests {
     func nonTerminalPaneEnvelopesAreIgnored() async {
         let bus = EventBus<RuntimeEnvelope>()
         let atom = TerminalActivityAtom()
-        let router = TerminalActivityRouter(bus: bus, activityAtom: atom)
+        let router = TerminalActivityRouter(
+            bus: bus, activityAtom: atom, callbackHandlingAccess: { nil }, surfaceIDForPaneID: { _ in nil },
+            lastOutputLineReader: { _ in .surfaceStale }
+        )
         let paneId = PaneId.generateUUIDv7()
 
         await router.start()

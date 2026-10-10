@@ -11,6 +11,9 @@ struct SidebarRootViewDependencies {
     let store: WorkspaceStore
     let octiconLoader: OcticonLoader
     var paneContextReaders: PaneContextUIReaders?
+    let commandDispatcher: any AppCommandDispatching
+    let resolveCommandCapabilities: RepoExplorerCommandCapabilityResolver
+    let executionOwnerIdentities: @MainActor () -> CommandExecutionOwnerIdentities
     let paneActivityStatusAtom: PaneActivityStatusAtom
     let applicationLifecycleMonitor: ApplicationLifecycleMonitor
     let sidebarTimeInvalidationConsumerID: UUID
@@ -47,6 +50,9 @@ class MainSplitViewController: NSSplitViewController {
     ) -> AnyView {
         AnyView(
             SidebarSurfaceHost(
+                commandDispatcher: dependencies.commandDispatcher,
+                resolveCommandCapabilities: dependencies.resolveCommandCapabilities,
+                executionOwnerIdentities: dependencies.executionOwnerIdentities,
                 store: dependencies.store,
                 octiconLoader: dependencies.octiconLoader,
                 paneActivityStatusAtom: dependencies.paneActivityStatusAtom,
@@ -89,7 +95,10 @@ class MainSplitViewController: NSSplitViewController {
     private var uiState: WorkspaceSidebarState { atom(\.workspaceSidebarState) }
     private let workspaceActionExecutor: WorkspaceActionExecutor
     private let runtimeCommandDispatcher: any PaneRuntimeCommandDispatching
+    private let synchronizeRuntimeFocus: @MainActor (UUID?) -> Void
     private let commandDispatcher: any AppCommandDispatching
+    private let resolveCommandCapabilities: RepoExplorerCommandCapabilityResolver
+    private let executionOwnerIdentities: @MainActor () -> CommandExecutionOwnerIdentities
     private let applicationLifecycleMonitor: ApplicationLifecycleMonitor
     private let sidebarTimeInvalidationConsumerID: UUID
     private let appLifecycleStore: AppLifecycleAtom
@@ -132,7 +141,10 @@ class MainSplitViewController: NSSplitViewController {
         workspaceWindowId: UUID? = nil,
         workspaceActionExecutor: WorkspaceActionExecutor,
         runtimeCommandDispatcher: any PaneRuntimeCommandDispatching,
-        commandDispatcher: any AppCommandDispatching = AppCommandDispatcher.shared,
+        commandDispatcher: any AppCommandDispatching,
+        resolveCommandCapabilities: @escaping RepoExplorerCommandCapabilityResolver,
+        executionOwnerIdentities: @escaping @MainActor () -> CommandExecutionOwnerIdentities,
+        synchronizeRuntimeFocus: @escaping @MainActor (UUID?) -> Void,
         applicationLifecycleMonitor: ApplicationLifecycleMonitor,
         appLifecycleStore: AppLifecycleAtom,
         windowLifecycleStore: WindowLifecycleAtom = atom(\.windowLifecycle),
@@ -160,7 +172,10 @@ class MainSplitViewController: NSSplitViewController {
         self.workspaceWindowId = workspaceWindowId
         self.workspaceActionExecutor = workspaceActionExecutor
         self.runtimeCommandDispatcher = runtimeCommandDispatcher
+        self.synchronizeRuntimeFocus = synchronizeRuntimeFocus
         self.commandDispatcher = commandDispatcher
+        self.resolveCommandCapabilities = resolveCommandCapabilities
+        self.executionOwnerIdentities = executionOwnerIdentities
         self.applicationLifecycleMonitor = applicationLifecycleMonitor
         sidebarTimeInvalidationConsumerID = workspaceWindowId ?? UUIDv7.generate()
         self.appLifecycleStore = appLifecycleStore
@@ -221,6 +236,8 @@ class MainSplitViewController: NSSplitViewController {
             workspaceWindowId: workspaceWindowId,
             executor: workspaceActionExecutor,
             runtimeCommandDispatcher: runtimeCommandDispatcher,
+            commandDispatcher: commandDispatcher,
+            synchronizeRuntimeFocus: synchronizeRuntimeFocus,
             tabBarAdapter: tabBarAdapter,
             viewRegistry: viewRegistry,
             bridgePaneAttendance: bridgePaneAttendance,
@@ -286,6 +303,9 @@ class MainSplitViewController: NSSplitViewController {
                 store: store,
                 octiconLoader: octiconLoader,
                 paneContextReaders: paneContextReaders,
+                commandDispatcher: commandDispatcher,
+                resolveCommandCapabilities: resolveCommandCapabilities,
+                executionOwnerIdentities: executionOwnerIdentities,
                 paneActivityStatusAtom: atom(\.paneActivityStatus),
                 applicationLifecycleMonitor: applicationLifecycleMonitor,
                 sidebarTimeInvalidationConsumerID: sidebarTimeInvalidationConsumerID,

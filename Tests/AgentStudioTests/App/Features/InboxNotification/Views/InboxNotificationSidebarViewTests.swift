@@ -26,12 +26,12 @@ struct InboxNotificationSidebarViewTests {
     func mountedDormantInboxSidebarOmitsRetiredCommandControls() async throws {
         let router = MockAppCommandRouter()
         router.appCommands = [.clearReadInboxNotifications]
-        try await withIsolatedCommandDispatcher(
-            configure: {
-                AppCommandDispatcher.shared.appCommandRouter = router
-                AppCommandDispatcher.shared.handler = nil
+        try await withCommandDispatcherFixture(
+            configure: { configuration in
+                configuration.shellOwner = router
+                configuration.workspaceOwner = nil
             },
-            body: {
+            body: { dispatcher in
                 let hostingView = NSHostingView(
                     rootView: InboxNotificationSidebarView(
                         inboxAtom: InboxNotificationAtom(),
@@ -43,7 +43,7 @@ struct InboxNotificationSidebarViewTests {
                         workspacePaneAtom: WorkspacePaneAtom(),
                         workspaceRepositoryTopologyAtom: RepositoryTopologyAtom(),
                         repoCache: RepoCacheAtom(),
-                        dispatcher: AppCommandDispatcher.shared,
+                        dispatcher: dispatcher,
                         onSetRowStateFilter: { _ in },
                         onSetContentMode: { _ in },
                         onRefocusActivePane: {}

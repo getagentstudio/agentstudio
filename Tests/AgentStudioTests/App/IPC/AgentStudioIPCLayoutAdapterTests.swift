@@ -393,8 +393,10 @@ struct AgentStudioIPCLayoutAdapterTests {
     func appFocusCompositionDoesNotCaptureReplacedWindow() async throws {
         let delegate = AppDelegate()
         delegate.store = makeIPCLayoutWorkspaceStore()
-        let firstWindow = RecordingIPCFocusWindowController(window: nil)
-        let secondWindow = RecordingIPCFocusWindowController(window: nil)
+        let firstWindow = RecordingIPCFocusWindowController(
+            window: nil, commandDispatcher: delegate.commandDispatcherForBoot())
+        let secondWindow = RecordingIPCFocusWindowController(
+            window: nil, commandDispatcher: delegate.commandDispatcherForBoot())
         let paneId = delegate.store.createPane(title: "Target").id
         delegate.mainWindowController = firstWindow
         try await delegate.focusPane(paneId)

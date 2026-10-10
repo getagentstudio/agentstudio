@@ -11,7 +11,7 @@ import Testing
 struct TerminalHyperlinkDispatchTests {
     @Test("Ghostty OSC 8 hyperlink kind survives event translation")
     func preservesOSC8Kind() {
-        let translated = GhosttyAdapter.shared.translate(
+        let translated = GhosttyActionTranslation.translate(
             actionTag: UInt32(GHOSTTY_ACTION_OPEN_URL.rawValue),
             payload: .openURL(
                 url: "https://example.com/terminal-link",
@@ -28,6 +28,7 @@ struct TerminalHyperlinkDispatchTests {
             paneId: .generateUUIDv7(),
             metadata: PaneMetadata(title: "Hyperlink"),
             paneEventBus: EventBus<RuntimeEnvelope>(),
+            surfaceCommandDispatcher: TerminalFixtureSurfaceCommands(),
             openExternalURL: { opened.append($0) }
         )
         runtime.transitionToReady()

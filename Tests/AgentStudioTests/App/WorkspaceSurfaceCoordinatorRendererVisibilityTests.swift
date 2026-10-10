@@ -31,6 +31,8 @@ struct WorkspaceSurfaceCoordinatorRendererVisibilityTests {
             viewRegistry: ViewRegistry(),
             runtime: SessionRuntime(store: store),
             surfaceManager: surfaceManager,
+            terminalSurfaceCommandDispatcher: AppTerminalFixtureSurfaceCommands(),
+            terminalSurfaceOperations: makeAppTerminalFixtureMountOperations(surfaceManager: surfaceManager),
             runtimeRegistry: RuntimeRegistry(),
             paneEventBus: EventBus<RuntimeEnvelope>(),
             windowLifecycleStore: windowLifecycleStore,

@@ -11,13 +11,13 @@ import Testing
 struct GhosttyAdapterTests {
     @Test("known action tags map to typed events")
     func knownTagMappings() {
-        let adapter = GhosttyAdapter.shared
+        let adapter = GhosttyActionTranslation.self
         assertCoreMappings(using: adapter)
         assertObservedStateMappings(using: adapter)
         assertDeferredMappings(using: adapter)
     }
 
-    private func assertCoreMappings(using adapter: GhosttyAdapter) {
+    private func assertCoreMappings(using adapter: GhosttyActionTranslation.Type) {
         #expect(
             adapter.translate(actionTag: UInt32(GHOSTTY_ACTION_NEW_TAB.rawValue)) == .newTab
         )
@@ -86,7 +86,7 @@ struct GhosttyAdapterTests {
         )
     }
 
-    private func assertObservedStateMappings(using adapter: GhosttyAdapter) {
+    private func assertObservedStateMappings(using adapter: GhosttyActionTranslation.Type) {
         #expect(
             adapter.translate(
                 actionTag: UInt32(GHOSTTY_ACTION_PROGRESS_REPORT.rawValue),
@@ -185,12 +185,12 @@ struct GhosttyAdapterTests {
         )
     }
 
-    private func assertDeferredMappings(using adapter: GhosttyAdapter) {
+    private func assertDeferredMappings(using adapter: GhosttyActionTranslation.Type) {
         assertPromotedViewportAndInputMappings(using: adapter)
         assertPromotedConfigAndSearchMappings(using: adapter)
     }
 
-    private func assertPromotedViewportAndInputMappings(using adapter: GhosttyAdapter) {
+    private func assertPromotedViewportAndInputMappings(using adapter: GhosttyActionTranslation.Type) {
         #expect(
             adapter.translate(
                 actionTag: UInt32(GHOSTTY_ACTION_SET_TAB_TITLE.rawValue),
@@ -277,7 +277,7 @@ struct GhosttyAdapterTests {
         )
     }
 
-    private func assertPromotedConfigAndSearchMappings(using adapter: GhosttyAdapter) {
+    private func assertPromotedConfigAndSearchMappings(using adapter: GhosttyActionTranslation.Type) {
         #expect(
             adapter.translate(
                 actionTag: UInt32(GHOSTTY_ACTION_COLOR_CHANGE.rawValue),
@@ -337,14 +337,14 @@ struct GhosttyAdapterTests {
 
     @Test("invalid payload maps to unhandled")
     func invalidPayloadMapsToUnhandled() {
-        let adapter = GhosttyAdapter.shared
+        let adapter = GhosttyActionTranslation.self
         let closeTag = UInt32(GHOSTTY_ACTION_CLOSE_TAB.rawValue)
         #expect(adapter.translate(actionTag: closeTag, payload: .noPayload) == .unhandled(tag: closeTag))
     }
 
     @Test("unknown raw action tags map to unhandled event")
     func unknownRawTagMapsToUnhandled() {
-        let adapter = GhosttyAdapter.shared
+        let adapter = GhosttyActionTranslation.self
         let unknownTag: UInt32 = 9_999_999
         #expect(adapter.translate(actionTag: unknownTag) == .unhandled(tag: unknownTag))
     }

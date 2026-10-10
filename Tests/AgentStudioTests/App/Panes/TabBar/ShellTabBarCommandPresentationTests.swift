@@ -77,6 +77,9 @@ struct ShellTabBarCommandPresentationTests {
 
 @MainActor
 private final class ShellPresentationDispatcher: AppCommandDispatching {
+    func dispatchKeyboardShortcut(_: AppShortcut) {}
+    func dispatchExtractPaneToTab(tabId _: UUID, paneId _: UUID, targetTabInsertionIndex _: Int?) {}
+
     var enabledCommands: Set<AppCommand> = []
     private(set) var capabilityCommands: [AppCommand] = []
     private(set) var dispatchedCommands: [AppCommand] = []

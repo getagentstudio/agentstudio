@@ -2,11 +2,13 @@ import AgentStudioAppIPC
 import AgentStudioIPCTransport
 import AgentStudioInfrastructure
 import AgentStudioProgrammaticControl
+import AgentStudioTestHarness
 import Foundation
 import Testing
 
 @testable import AgentStudio
 @testable import AgentStudioCore
+@testable import AgentStudioTerminal
 @testable import AgentStudioTestSupport
 
 /// `applicationShouldTerminate` returns `.terminateLater`, so the AppKit quit
@@ -16,6 +18,58 @@ import Testing
 @Suite("App termination drain deadline", .serialized)
 struct AppTerminationDrainDeadlineTests {
     init() { installTestCoreAtomsIfNeeded() }
+
+    @Test("callback retirement joins admitted work before the real activity router stops")
+    func callbackRetirementPrecedesActivityStop() async throws {
+        let delegate = AppDelegate()
+        let handler = delegate.callbackHandlingForBoot()
+        let router = TerminalActivityRouter(
+            bus: EventBus<RuntimeEnvelope>(), activityAtom: TerminalActivityAtom(),
+            callbackHandlingAccess: { handler }, surfaceIDForPaneID: { $0 },
+            lastOutputLineReader: { _ in .surfaceStale }
+        )
+        delegate.terminalActivityRouter = router
+        await router.start()
+        let paneID = UUIDv7.generate()
+        let callbackStep = HeldStep<Void>("admitted callback completes during termination retirement")
+        var stages: [String] = []
+        var callbackTask: Task<Void, Never>?
+        let drains = Task { @MainActor in
+            await delegate.runCallbackHandlingAndActivityDrains { name, operation in
+                stages.append(name + " started")
+                if name == "Ghostty action trace" {
+                    callbackTask = handler.taskOwner.enqueueTask {
+                        try? await callbackStep.arrive(())
+                        stages.append("admitted callback completed")
+                    }
+                }
+                await operation()
+                stages.append(name + " completed")
+            }
+        }
+        do {
+            _ = try await callbackStep.firstArrival()
+            #expect(router.sourceInputContext(paneID: paneID) != nil)
+            callbackStep.release()
+            await drains.value
+            #expect(
+                stages == [
+                    "Ghostty action trace started", "admitted callback completed", "Ghostty action trace completed",
+                    "terminal activity trace started", "terminal activity trace completed",
+                ])
+            #expect(!handler.taskOwner.isAcceptingWork)
+            #expect(handler.taskOwner.pendingTaskCount == 0)
+            #expect(router.sourceInputContext(paneID: paneID) == nil)
+        } catch {
+            callbackStep.retire()
+            await drains.value
+            await callbackTask?.value
+            await handler.retire()
+            await router.stop()
+            throw error
+        }
+        callbackStep.retire()
+    }
 
     @Test("the AppKit reply fires when a drain stage never completes")
     func replyFiresWhenTheDrainNeverCompletes() async {

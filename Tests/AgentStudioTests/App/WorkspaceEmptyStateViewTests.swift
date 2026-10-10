@@ -330,7 +330,7 @@ struct WorkspaceEmptyStateViewTests {
     @Test("watchFolder command label is Watch Folder")
     @MainActor
     func watchFolderCommandLabelIsWatchFolder() {
-        let definition = AppCommandDispatcher.shared.definition(for: .watchFolder)
+        let definition = AppCommand.watchFolder.definition
         #expect(definition.actionSpec.label == "Watch Folder")
         #expect(definition.shortcut == nil)
     }

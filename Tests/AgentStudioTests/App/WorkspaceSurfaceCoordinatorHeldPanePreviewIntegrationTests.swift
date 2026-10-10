@@ -28,7 +28,6 @@ extension WorkspaceSurfaceTerminalRestoreIntegrationTests {
         _ operation: @MainActor (RealHeldTerminalFixture) async throws -> Void
     ) async throws {
         try await withRealSurfaceManagerHarness { store, _, surfaceManager, windowLifecycleStore, coordinator in
-            surfaceManager.setAppCommandDispatcher(TerminalRestoreNoOpAppCommandDispatcher())
             let pane = store.createPane(provider: .zmx)
             let tab = Tab(paneId: pane.id, name: "Held terminal")
             store.appendTab(tab)
@@ -72,6 +71,7 @@ extension WorkspaceSurfaceTerminalRestoreIntegrationTests {
 
     private func makeLateTerminalView(for fixture: RealHeldTerminalFixture) -> TerminalPaneMountView {
         TerminalPaneMountView(
+            surfaceOperations: makeAppTerminalFixtureMountOperations(),
             restoredSurfaceId: fixture.managedSurface.id,
             paneId: fixture.pane.id,
             title: "Late terminal"
@@ -99,6 +99,7 @@ extension WorkspaceSurfaceTerminalRestoreIntegrationTests {
                 )
             ).get()
             let terminalView = TerminalPaneMountView(
+                surfaceOperations: makeAppTerminalFixtureMountOperations(),
                 restoredSurfaceId: managedSurface.id,
                 paneId: pane.id,
                 title: "Hidden terminal"
@@ -167,7 +168,6 @@ extension WorkspaceSurfaceTerminalRestoreIntegrationTests {
     @Test
     func heldPreview_lateValidDrawerChildPublishesWhenParentIsAbsentFromActiveArrangement() async throws {
         try await withRealSurfaceManagerHarness { store, _, surfaceManager, windowLifecycleStore, coordinator in
-            surfaceManager.setAppCommandDispatcher(TerminalRestoreNoOpAppCommandDispatcher())
             let parentPane = store.createPane(provider: .zmx)
             let drawerPane = try #require(store.addDrawerPane(to: parentPane.id))
             let backgroundPane = store.createPane(provider: .zmx)
@@ -220,6 +220,7 @@ extension WorkspaceSurfaceTerminalRestoreIntegrationTests {
             _ = coordinator.beginHeldPanePreviewPreparation()
 
             let lateView = TerminalPaneMountView(
+                surfaceOperations: makeAppTerminalFixtureMountOperations(),
                 restoredSurfaceId: managedSurface.id,
                 paneId: drawerPane.id,
                 title: "Drawer preview"
@@ -256,6 +257,7 @@ extension WorkspaceSurfaceTerminalRestoreIntegrationTests {
             #expect(heldState.presentedTarget == nil)
 
             let lateView = TerminalPaneMountView(
+                surfaceOperations: makeAppTerminalFixtureMountOperations(),
                 restoredSurfaceId: UUIDv7.generate(),
                 paneId: pane.id,
                 title: "Late terminal"
@@ -365,6 +367,9 @@ extension WorkspaceSurfaceTerminalRestoreIntegrationTests {
 
 @MainActor
 private final class TerminalRestoreNoOpAppCommandDispatcher: AppCommandDispatching {
+    func dispatchKeyboardShortcut(_: AppShortcut) {}
+    func dispatchExtractPaneToTab(tabId _: UUID, paneId _: UUID, targetTabInsertionIndex _: Int?) {}
+
     func dispatch(_: AppCommand) -> Bool { false }
     func dispatch(_: AppCommand, target _: UUID, targetType _: SearchItemType) {}
     func canDispatch(_: AppCommand) -> Bool { false }

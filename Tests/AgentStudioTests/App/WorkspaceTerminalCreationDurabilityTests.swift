@@ -75,6 +75,8 @@ struct WorkspaceTerminalCreationDurabilityTests {
             viewRegistry: ViewRegistry(),
             runtime: SessionRuntime(store: store),
             surfaceManager: manager,
+            terminalSurfaceCommandDispatcher: AppTerminalFixtureSurfaceCommands(),
+            terminalSurfaceOperations: makeAppTerminalFixtureMountOperations(surfaceManager: manager),
             runtimeRegistry: RuntimeRegistry(),
             windowLifecycleStore: WindowLifecycleAtom(),
             ipcLifecycle: .testUnavailable,
@@ -138,6 +140,8 @@ struct WorkspaceTerminalCreationDurabilityTests {
             viewRegistry: ViewRegistry(),
             runtime: SessionRuntime(store: store),
             surfaceManager: HardeningSurfaceManager(createSurfaceResult: .failure(.ghosttyNotInitialized)),
+            terminalSurfaceCommandDispatcher: AppTerminalFixtureSurfaceCommands(),
+            terminalSurfaceOperations: makeAppTerminalFixtureMountOperations(),
             runtimeRegistry: RuntimeRegistry(),
             windowLifecycleStore: WindowLifecycleAtom(),
             ipcLifecycle: .testUnavailable,
@@ -218,7 +222,10 @@ struct WorkspaceTerminalCreationDurabilityTests {
         let publication = PublicationObservation()
         let coordinator = WorkspaceSurfaceCoordinator(
             store: store, viewRegistry: registry, runtime: SessionRuntime(store: store),
-            surfaceManager: manager, runtimeRegistry: RuntimeRegistry(),
+            surfaceManager: manager,
+            terminalSurfaceCommandDispatcher: AppTerminalFixtureSurfaceCommands(),
+            terminalSurfaceOperations: makeAppTerminalFixtureMountOperations(surfaceManager: manager),
+            runtimeRegistry: RuntimeRegistry(),
             windowLifecycleStore: WindowLifecycleAtom(), ipcLifecycle: .testUnavailable,
             bridgePaneAttendance: BridgePaneAttendanceAtom())
         coordinator.windowLifecycleStore.recordTerminalContainerBounds(
@@ -278,7 +285,10 @@ struct WorkspaceTerminalCreationDurabilityTests {
         let registry = ViewRegistry()
         let coordinator = WorkspaceSurfaceCoordinator(
             store: store, viewRegistry: registry, runtime: SessionRuntime(store: store),
-            surfaceManager: manager, runtimeRegistry: RuntimeRegistry(),
+            surfaceManager: manager,
+            terminalSurfaceCommandDispatcher: AppTerminalFixtureSurfaceCommands(),
+            terminalSurfaceOperations: makeAppTerminalFixtureMountOperations(surfaceManager: manager),
+            runtimeRegistry: RuntimeRegistry(),
             windowLifecycleStore: WindowLifecycleAtom(), ipcLifecycle: .testUnavailable,
             bridgePaneAttendance: BridgePaneAttendanceAtom())
         coordinator.sessionConfig = SessionConfiguration(
@@ -317,13 +327,17 @@ struct WorkspaceTerminalCreationDurabilityTests {
         let registry = ViewRegistry()
         let coordinator = WorkspaceSurfaceCoordinator(
             store: store, viewRegistry: registry, runtime: SessionRuntime(store: store),
-            surfaceManager: manager, runtimeRegistry: RuntimeRegistry(),
+            surfaceManager: manager,
+            terminalSurfaceCommandDispatcher: AppTerminalFixtureSurfaceCommands(),
+            terminalSurfaceOperations: makeAppTerminalFixtureMountOperations(surfaceManager: manager),
+            runtimeRegistry: RuntimeRegistry(),
             windowLifecycleStore: WindowLifecycleAtom(), ipcLifecycle: .testUnavailable,
             bridgePaneAttendance: BridgePaneAttendanceAtom())
         coordinator.windowLifecycleStore.recordTerminalContainerBounds(
             CGRect(x: 0, y: 0, width: 1000, height: 600))
         let surfaceID = UUIDv7.generate()
-        let mounted = TerminalPaneMountView(restoredSurfaceId: surfaceID, paneId: pane.id)
+        let mounted = TerminalPaneMountView(
+            surfaceOperations: makeAppTerminalFixtureMountOperations(), restoredSurfaceId: surfaceID, paneId: pane.id)
         coordinator.registerHostedView(mountedView: mounted, for: pane.id)
 
         if requestsPlaceholderFirst {

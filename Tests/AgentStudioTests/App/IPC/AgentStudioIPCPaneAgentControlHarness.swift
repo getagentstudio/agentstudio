@@ -32,7 +32,12 @@ struct PaneAgentControlHarness {
         let (commandHarness, datastore) = try await makeCanonicalIPCWorkspaceCommandHarness(
             workspaceWindowId: workspaceWindowId
         )
-        let appDelegate = AppDelegate()
+        let traceRuntime = AgentStudioTraceRuntime.fromEnvironment()
+        let appDelegate = AppDelegate(
+            traceRuntime: traceRuntime,
+            startupTraceRecorder: AgentStudioStartupTraceRecorder(traceRuntime: traceRuntime),
+            commandDispatcher: commandHarness.commandDispatcher
+        )
         var createdRootDirectory: URL?
         do {
             let store = commandHarness.store
@@ -62,7 +67,8 @@ struct PaneAgentControlHarness {
             appDelegate.viewRegistry = commandHarness.viewRegistry
             appDelegate.workspaceSurfaceCoordinator = commandHarness.coordinator
             appDelegate.executor = commandHarness.executor
-            let mainWindowController = SessionsVerticalMainWindowController(window: nil)
+            let mainWindowController = SessionsVerticalMainWindowController(
+                window: nil, commandDispatcher: commandHarness.commandDispatcher)
             mainWindowController.registeredWorkspaceWindowId = workspaceWindowId
             appDelegate.mainWindowController = mainWindowController
             appDelegate.installAppIPCIdentityAuthority(datastore: datastore)

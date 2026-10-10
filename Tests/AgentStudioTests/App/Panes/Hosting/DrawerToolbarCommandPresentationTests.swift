@@ -231,6 +231,9 @@ private struct DrawerToolbarTargetedQuery: Equatable, Hashable {
 
 @MainActor
 private final class RecordingDrawerToolbarDispatcher: AppCommandDispatching {
+    func dispatchKeyboardShortcut(_: AppShortcut) {}
+    func dispatchExtractPaneToTab(tabId _: UUID, paneId _: UUID, targetTabInsertionIndex _: Int?) {}
+
     var enabledQueries: Set<DrawerToolbarTargetedQuery> = []
     private(set) var capabilityQueries: [DrawerToolbarTargetedQuery] = []
     private(set) var dispatchedQueries: [DrawerToolbarTargetedQuery] = []

@@ -1,110 +1,59 @@
 import AgentStudioCore
 import AgentStudioInfrastructure
 import Foundation
-import GhosttyKit
 
 extension Ghostty.ActionRouter {
-    static func surfaceView(from surface: ghostty_surface_t) -> Ghostty.SurfaceView? {
-        guard let userdata = ghostty_surface_userdata(surface) else { return nil }
-        return Unmanaged<Ghostty.SurfaceView>.fromOpaque(userdata).takeUnretainedValue()
+    func retireLocalActions(for surfaceID: UUID) {
+        localActionDrainScheduler.cancel(for: surfaceID)
+        localActionAccumulator.removeSurface(surfaceID)
     }
 
     @MainActor
-    static func routeActionToTerminalRuntimeOnMainActor(
-        actionTag: UInt32,
-        payload: GhosttyAdapter.ActionPayload,
-        surfaceViewObjectId: ObjectIdentifier
-    ) -> Bool {
-        routeActionToTerminalRuntimeOnMainActor(
-            actionTag: actionTag,
-            payload: payload,
-            surfaceViewObjectId: surfaceViewObjectId,
-            routingLookup: SurfaceManager.shared
+    func closeLocalActions(surfaceID: UUID, paneID: UUID) {
+        guard taskOwner.isAcceptingWork else {
+            retireLocalActions(for: surfaceID)
+            return
+        }
+        localActionDrainScheduler.cancel(for: surfaceID)
+        let aggregate = localActionAccumulator.detachActivityForSurfaceClose(
+            surfaceID, defaultActivityContext: host.activityContext(paneID)
         )
+        // fire-and-forget: the callback task owner retains this handle and joins it during retirement.
+        _ = taskOwner.enqueueTask { @MainActor [host] in
+            guard
+                Self.shouldSubmitSurfaceClose(
+                    currentPaneID: host.routingLookup.paneId(for: surfaceID), closingPaneID: paneID
+                )
+            else { return }
+            await host.submitActivityInput(
+                .orderedControl(
+                    surfaceID: surfaceID, paneID: paneID, precedingAggregate: aggregate, control: .surfaceClosed)
+            )
+        }
     }
 
     @MainActor
-    static func routeActionToTerminalRuntimeOnMainActor(
-        actionTag: UInt32,
-        payload: GhosttyAdapter.ActionPayload,
-        surfaceViewObjectId: ObjectIdentifier,
-        routingLookup: any GhosttyActionRoutingLookup
-    ) -> Bool {
-        guard let surfaceId = routingLookup.surfaceId(forViewObjectId: surfaceViewObjectId) else {
-            traceGhosttyAction(
-                body: "ghostty.action.dropped",
-                actionTag: actionTag,
-                payload: payload,
-                signalClass: .unhandled,
-                routeResult: false,
-                reason: "surface_not_registered"
-            )
-            ghosttyLogger.warning("Dropped action tag \(actionTag): surface not registered in SurfaceManager")
-            return false
+    func applyOrderedActivityControl(
+        surfaceID: UUID,
+        paneID: UUID,
+        control: TerminalActivityOrderedControl,
+        contextBeforeControl: TerminalActivityProjectionContext? = nil,
+        contextAfterControl: TerminalActivityProjectionContext? = nil
+    ) async -> GhosttyDeferredApplyResult {
+        guard
+            let task = taskOwner.enqueueTask({ @MainActor [host, localActionAccumulator] in
+                await host.applyOrderedActivityControl(
+                    surfaceID: surfaceID, paneID: paneID, control: control,
+                    contextBeforeControl: contextBeforeControl, contextAfterControl: contextAfterControl,
+                    accumulator: localActionAccumulator
+                )
+                return GhosttyDeferredApplyResult.applied
+            })
+        else { return .dropped(.retiredHandling) }
+        return await withTaskCancellationHandler {
+            await task.value
+        } onCancel: {
+            task.cancel()
         }
-        guard let paneUUID = routingLookup.paneId(for: surfaceId) else {
-            traceGhosttyAction(
-                body: "ghostty.action.dropped",
-                actionTag: actionTag,
-                payload: payload,
-                surfaceId: surfaceId,
-                signalClass: .unhandled,
-                routeResult: false,
-                reason: "pane_not_mapped"
-            )
-            ghosttyLogger.warning("Dropped action tag \(actionTag): no pane mapped for surface \(surfaceId)")
-            return false
-        }
-        let paneId = PaneId(existingUUID: paneUUID)
-        let routedRuntime = runtimeRegistryForActionRouting.runtime(for: paneId) as? TerminalRuntime
-        let runtime: TerminalRuntime?
-        if let routedRuntime {
-            runtime = routedRuntime
-        } else if ObjectIdentifier(runtimeRegistryForActionRouting) != ObjectIdentifier(RuntimeRegistry.shared) {
-            runtime = RuntimeRegistry.shared.runtime(for: paneId) as? TerminalRuntime
-        } else {
-            runtime = nil
-        }
-
-        guard let runtime else {
-            traceGhosttyAction(
-                body: "ghostty.action.dropped",
-                actionTag: actionTag,
-                payload: payload,
-                paneId: paneUUID,
-                surfaceId: surfaceId,
-                signalClass: .unhandled,
-                routeResult: false,
-                reason: "runtime_not_found"
-            )
-            ghosttyLogger.warning(
-                "Dropped action tag \(actionTag): terminal runtime not found for pane \(paneUUID)")
-            return false
-        }
-
-        let event = GhosttyAdapter.shared.translate(actionTag: actionTag, payload: payload)
-        traceGhosttyAction(
-            body: "ghostty.action.translated",
-            actionTag: actionTag,
-            payload: payload,
-            event: event,
-            paneId: paneUUID,
-            surfaceId: surfaceId,
-            signalClass: signalClass(for: event, fallbackActionTag: actionTag),
-            routeResult: true,
-            reason: nil
-        )
-        traceTerminalStartupMilestones(
-            actionTag: actionTag,
-            event: event,
-            paneID: paneUUID,
-            surfaceID: surfaceId
-        )
-        GhosttyAdapter.shared.route(
-            actionTag: actionTag,
-            payload: payload,
-            to: runtime
-        )
-        return true
     }
 }

@@ -294,6 +294,8 @@ struct WorkspaceSurfaceCoordinatorFilesystemEffectsTests {
             viewRegistry: ViewRegistry(),
             runtime: SessionRuntime(store: context.store),
             surfaceManager: surfaceManager,
+            terminalSurfaceCommandDispatcher: AppTerminalFixtureSurfaceCommands(),
+            terminalSurfaceOperations: makeAppTerminalFixtureMountOperations(surfaceManager: surfaceManager),
             runtimeRegistry: RuntimeRegistry(),
             paneEventBus: context.bus,
             gitWorkingTreeStatusProvider: StubGitWorkingTreeStatusProvider { _ in nil },

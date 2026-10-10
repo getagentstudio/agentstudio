@@ -72,6 +72,8 @@ extension E2ESerializedTests {
                 viewRegistry: ViewRegistry(),
                 runtime: SessionRuntime(store: store),
                 surfaceManager: FilesystemE2ESurfaceManager(),
+                terminalSurfaceCommandDispatcher: AppTerminalFixtureSurfaceCommands(),
+                terminalSurfaceOperations: makeAppTerminalFixtureMountOperations(),
                 runtimeRegistry: RuntimeRegistry(),
                 paneEventBus: paneEventBus,
                 gitWorkingTreeStatusProvider: gitWorkingTreeStatusProvider,

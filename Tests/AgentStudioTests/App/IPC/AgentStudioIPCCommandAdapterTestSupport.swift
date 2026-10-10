@@ -6,12 +6,20 @@ import Foundation
 @testable import AgentStudio
 @testable import AgentStudioCore
 
-/// Shared harness for the typed `command.execute` adapter tests. It composes the
-/// real adapter against a recording shell owner so every test drives the same
-/// registration path the App server uses.
+/// Shared harness for typed `command.execute` tests. It selects fixed shell and
+/// workspace owners, creates one real dispatcher, and passes that dispatcher
+/// into the adapter before any request is executed.
 @MainActor
 struct CommandAdapterHarness {
+    /// Selects dispatcher shell access; the adapter's shell reference remains
+    /// present for workspace-window authorization even when dispatch omits it.
+    enum DispatcherShellOwnerAccess {
+        case adapterWindowOwner
+        case absent
+    }
+
     let adapter: AgentStudioIPCCommandAdapter
+    let commandDispatcher: AppCommandDispatcher
     let workspaceStore: WorkspaceStore
     let windowId: UUID
     let channel: AgentStudioIPCChannel
@@ -21,7 +29,9 @@ struct CommandAdapterHarness {
         windowId: UUID = UUIDv7.generate(),
         channel: AgentStudioIPCChannel = .stable,
         targetAuthorizer: (any WorkspaceDurableTargetAuthorizing)? = nil,
-        shellCommandHandler: RecordingShellCommandHandler = RecordingShellCommandHandler()
+        shellCommandHandler: RecordingShellCommandHandler = RecordingShellCommandHandler(),
+        workspaceCommandHandler: (any WorkspaceCommandHandling)? = nil,
+        dispatcherShellOwnerAccess: DispatcherShellOwnerAccess = .adapterWindowOwner
     ) {
         workspaceStore = WorkspaceStore()
         self.windowId = windowId
@@ -30,12 +40,30 @@ struct CommandAdapterHarness {
         if shellCommandHandler.currentWindowId == nil {
             shellCommandHandler.currentWindowId = windowId
         }
+        let selectedDispatcherShellOwner: (any ShellCommandHandling)?
+        switch dispatcherShellOwnerAccess {
+        case .adapterWindowOwner:
+            selectedDispatcherShellOwner = shellCommandHandler
+        case .absent:
+            selectedDispatcherShellOwner = nil
+        }
+        let selectedWorkspaceOwner = workspaceCommandHandler
+        let commandDispatcher = AppCommandDispatcher(
+            dependencies: .init(
+                shellOwnerAccess: { selectedDispatcherShellOwner },
+                workspaceOwnerAccess: { selectedWorkspaceOwner },
+                interactionProbeAccess: { nil },
+                commandRefreshAccepted: { _ in }
+            )
+        )
+        self.commandDispatcher = commandDispatcher
         adapter = AgentStudioIPCCommandAdapter(
             workspaceId: workspaceStore.identityAtom.workspaceId,
             channel: channel,
             targetAuthorizer: targetAuthorizer
                 ?? WorkspaceDurableTargetAuthorizationPort(workspaceStore: workspaceStore),
-            shellCommandHandler: shellCommandHandler
+            shellCommandHandler: shellCommandHandler,
+            commandDispatcher: commandDispatcher
         )
     }
 }
@@ -169,16 +197,13 @@ let retiredPanesOrganizationCommands: [AppCommand] = [
     .togglePanesSortDirection,
 ]
 
-/// Gives raw-wire adapter tests the existing isolated dispatcher ownership.
+/// Runs the raw adapter body with its already-owned command dispatcher.
 @MainActor
-func withRawCommandAdapterDispatcher<Result>(
-    harness: CommandAdapterHarness, body: @MainActor () async throws -> Result
-) async throws -> Result {
-    try await withIsolatedCommandDispatcher(
-        configure: {
-            AppCommandDispatcher.shared.handler = nil
-            AppCommandDispatcher.shared.appCommandRouter = harness.shellCommandHandler
-        }, body: body)
+func withRawCommandAdapterDispatcher<Output>(
+    harness: CommandAdapterHarness, body: @MainActor () async throws -> Output
+) async throws -> Output {
+    _ = harness.commandDispatcher
+    return try await body()
 }
 
 @MainActor

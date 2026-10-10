@@ -223,8 +223,8 @@ final class AppCommandTests {
 
     @Test
     func test_zoomPane_presentsForSinglePaneTabsWithNarrowHeadlessIPC() {
-        let zoomPane = AppCommandDispatcher.shared.definition(for: .zoomPane)
-        let expandPane = AppCommandDispatcher.shared.definition(for: .expandPane)
+        let zoomPane = AppCommand.zoomPane.definition
+        let expandPane = AppCommand.expandPane.definition
 
         #expect(zoomPane.helpText == "Zoom the active pane")
         #expect(!zoomPane.visibleWhen.contains(.hasMultiplePanes))
@@ -266,8 +266,8 @@ final class AppCommandTests {
 
     @Test
     func test_dispatcher_definitions_registered() {
+        let dispatcher = CommandDispatcherFixtureConfiguration().makeDispatcher()
         // Act
-        let dispatcher = AppCommandDispatcher.shared
 
         // Assert
         #expect(dispatcher.definitions.count == AppCommand.allCases.count)
@@ -280,7 +280,7 @@ final class AppCommandTests {
 
     @Test
     func test_toggleSidebar_isVisibleInCommandBarAndAppToolbar() {
-        let definition = AppCommandDispatcher.shared.definition(for: .toggleSidebar)
+        let definition = AppCommand.toggleSidebar.definition
         #expect(definition.surfacePolicy.exposes(.commandBar))
         #expect(definition.surfacePolicy == .exposed([.commandBar, .toolbar(.app)]))
         #expect(definition.targeting == .contextual)
@@ -288,10 +288,9 @@ final class AppCommandTests {
 
     @Test
     func test_dispatcher_allCommandsHaveHelpText() throws {
-        let dispatcher = AppCommandDispatcher.shared
 
         for command in AppCommand.allCases {
-            let definition = dispatcher.definition(for: command)
+            let definition = command.definition
             #expect(!definition.helpText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
         }
     }
@@ -301,7 +300,7 @@ final class AppCommandTests {
     @Test
     func test_dispatcher_closeTab_hasNoKeyBinding() {
         // Act
-        let def = AppCommandDispatcher.shared.definition(for: .closeTab)
+        let def = AppCommand.closeTab.definition
 
         // Assert
         #expect(def.globalKeyBinding == nil)
@@ -312,7 +311,7 @@ final class AppCommandTests {
     @Test
     func test_dispatcher_commands_forTab_includesExpected() {
         // Act
-        let tabCommands = AppCommandDispatcher.shared.commands(for: .tab)
+        let tabCommands = AppCommand.allCases.map(\.definition).filter { $0.targeting.supports(targetType: .tab) }
 
         // Assert
         let commandNames = tabCommands.map(\.command)
@@ -334,7 +333,7 @@ final class AppCommandTests {
     @Test
     func test_dispatcher_commands_forPane_includesExpected() {
         // Act
-        let paneCommands = AppCommandDispatcher.shared.commands(for: .pane)
+        let paneCommands = AppCommand.allCases.map(\.definition).filter { $0.targeting.supports(targetType: .pane) }
 
         // Assert
         let commandNames = paneCommands.map(\.command)
@@ -347,9 +346,9 @@ final class AppCommandTests {
 
     @Test
     func test_arrangementShortcutDefinitions_useTabGroupAndShortcuts() {
-        let show = AppCommandDispatcher.shared.definition(for: .switchArrangement)
-        let previous = AppCommandDispatcher.shared.definition(for: .previousArrangement)
-        let next = AppCommandDispatcher.shared.definition(for: .nextArrangement)
+        let show = AppCommand.switchArrangement.definition
+        let previous = AppCommand.previousArrangement.definition
+        let next = AppCommand.nextArrangement.definition
 
         #expect(show.command == .switchArrangement)
         #expect(show.shortcut == .showArrangementPanel)
@@ -371,10 +370,10 @@ final class AppCommandTests {
 
     @Test
     func test_ordinalShortcutDefinitions_useCommandForTabsAndOptionForPanes() {
-        let firstTab = AppCommandDispatcher.shared.definition(for: .selectTab1)
-        let ninthTab = AppCommandDispatcher.shared.definition(for: .selectTab9)
-        let firstPane = AppCommandDispatcher.shared.definition(for: .focusPane1)
-        let ninthPane = AppCommandDispatcher.shared.definition(for: .focusPane9)
+        let firstTab = AppCommand.selectTab1.definition
+        let ninthTab = AppCommand.selectTab9.definition
+        let firstPane = AppCommand.focusPane1.definition
+        let ninthPane = AppCommand.focusPane9.definition
 
         #expect(firstTab.shortcut == .selectTab1)
         #expect(firstTab.globalKeyBinding?.key == "1")
@@ -441,7 +440,7 @@ final class AppCommandTests {
         ]
 
         for expected in expectedDefinitions {
-            let definition = AppCommandDispatcher.shared.definition(for: expected.command)
+            let definition = expected.command.definition
             #expect(definition.command == expected.command)
             #expect(definition.shortcut == expected.shortcut)
             #expect(definition.label == expected.label)
@@ -474,10 +473,10 @@ final class AppCommandTests {
             .setInboxRowStateFilter,
             .setInboxContentMode,
         ]
-        let reposSidebar = AppCommandDispatcher.shared.definition(for: .showReposSidebar)
+        let reposSidebar = AppCommand.showReposSidebar.definition
 
         for command in retiredCommands {
-            let definition = AppCommandDispatcher.shared.definition(for: command)
+            let definition = command.definition
             #expect(definition.shortcut == nil)
             #expect(definition.surfacePolicy == .notPresented)
             #expect(definition.targeting == .contextual)
@@ -493,7 +492,7 @@ final class AppCommandTests {
     @Test
     func test_dispatcher_commands_forRepo_includesExpected() {
         // Act
-        let repoCommands = AppCommandDispatcher.shared.commands(for: .repo)
+        let repoCommands = AppCommand.allCases.map(\.definition).filter { $0.targeting.supports(targetType: .repo) }
 
         // Assert
         let commandNames = repoCommands.map(\.command)
@@ -508,14 +507,13 @@ final class AppCommandTests {
     @Test
     func test_dispatcher_dispatch_withoutHandler_doesNotCrash() async throws {
         // Arrange
-        let dispatcher = AppCommandDispatcher.shared
 
-        try await withIsolatedCommandDispatcher(
-            configure: {
-                dispatcher.handler = nil
-                dispatcher.appCommandRouter = nil
+        try await withCommandDispatcherFixture(
+            configure: { configuration in
+                configuration.workspaceOwner = nil
+                configuration.shellOwner = nil
             },
-            body: {
+            body: { dispatcher in
                 #expect(!dispatcher.dispatch(.closeTab))
             }
         )
@@ -523,7 +521,7 @@ final class AppCommandTests {
 
     @Test
     func test_dispatcher_dispatchRequest_routesNoArgumentSidebarCommandToAppRouter() async throws {
-        let dispatcher = AppCommandDispatcher.shared
+
         let appRouter = MockAppCommandRouter()
         appRouter.requestCommands = [.setReposSortFieldActivity]
         appRouter.parameterlessCanExecuteResult = true
@@ -531,12 +529,12 @@ final class AppCommandTests {
             command: .setReposSortFieldActivity
         )
 
-        try await withIsolatedCommandDispatcher(
-            configure: {
-                dispatcher.handler = nil
-                dispatcher.appCommandRouter = appRouter
+        try await withCommandDispatcherFixture(
+            configure: { configuration in
+                configuration.workspaceOwner = nil
+                configuration.shellOwner = appRouter
             },
-            body: {
+            body: { dispatcher in
                 let outcome = dispatcher.dispatch(request)
 
                 #expect(outcome == .applied)
@@ -550,14 +548,13 @@ final class AppCommandTests {
     @Test
     func test_dispatcher_canDispatch_withoutHandler_returnsFalse() async throws {
         // Arrange
-        let dispatcher = AppCommandDispatcher.shared
 
-        try await withIsolatedCommandDispatcher(
-            configure: {
-                dispatcher.handler = nil
-                dispatcher.appCommandRouter = nil
+        try await withCommandDispatcherFixture(
+            configure: { configuration in
+                configuration.workspaceOwner = nil
+                configuration.shellOwner = nil
             },
-            body: {
+            body: { dispatcher in
                 // Act
                 let result = dispatcher.canDispatch(.closeTab)
 
@@ -572,15 +569,15 @@ final class AppCommandTests {
     @Test
     func test_dispatcher_dispatch_callsHandler() async throws {
         // Arrange
-        let dispatcher = AppCommandDispatcher.shared
+
         let handler = MockCommandHandler()
 
-        try await withIsolatedCommandDispatcher(
-            configure: {
-                dispatcher.handler = handler
-                dispatcher.appCommandRouter = nil
+        try await withCommandDispatcherFixture(
+            configure: { configuration in
+                configuration.workspaceOwner = handler
+                configuration.shellOwner = nil
             },
-            body: {
+            body: { dispatcher in
                 // Act
                 let accepted = dispatcher.dispatch(.closeTab)
 
@@ -598,16 +595,16 @@ final class AppCommandTests {
     @Test
     func test_dispatcher_dispatch_targeted_callsHandler() async throws {
         // Arrange
-        let dispatcher = AppCommandDispatcher.shared
+
         let handler = MockCommandHandler()
         let targetId = UUID()
 
-        try await withIsolatedCommandDispatcher(
-            configure: {
-                dispatcher.handler = handler
-                dispatcher.appCommandRouter = nil
+        try await withCommandDispatcherFixture(
+            configure: { configuration in
+                configuration.workspaceOwner = handler
+                configuration.shellOwner = nil
             },
-            body: {
+            body: { dispatcher in
                 // Act
                 dispatcher.dispatch(.closeTab, target: targetId, targetType: .tab)
 
@@ -623,18 +620,18 @@ final class AppCommandTests {
     @MainActor
     @Test
     func test_dispatcher_dispatch_targeted_usesTargetedAvailability() async throws {
-        let dispatcher = AppCommandDispatcher.shared
+
         let handler = MockCommandHandler()
         handler.canExecuteResult = false
         handler.targetedCanExecuteResult = true
         let targetId = UUID()
 
-        try await withIsolatedCommandDispatcher(
-            configure: {
-                dispatcher.handler = handler
-                dispatcher.appCommandRouter = nil
+        try await withCommandDispatcherFixture(
+            configure: { configuration in
+                configuration.workspaceOwner = handler
+                configuration.shellOwner = nil
             },
-            body: {
+            body: { dispatcher in
                 dispatcher.dispatch(.closeTab, target: targetId, targetType: .tab)
 
                 #expect(handler.executedCommands.count == 1)
@@ -649,17 +646,17 @@ final class AppCommandTests {
 
     @Test
     func test_dispatcher_dispatch_routesAppCommandToAppRouterBeforeHandler() async throws {
-        let dispatcher = AppCommandDispatcher.shared
+
         let handler = MockCommandHandler()
         let appRouter = MockAppCommandRouter()
         appRouter.appCommands = [.watchFolder]
 
-        try await withIsolatedCommandDispatcher(
-            configure: {
-                dispatcher.handler = handler
-                dispatcher.appCommandRouter = appRouter
+        try await withCommandDispatcherFixture(
+            configure: { configuration in
+                configuration.workspaceOwner = handler
+                configuration.shellOwner = appRouter
             },
-            body: {
+            body: { dispatcher in
                 let accepted = dispatcher.dispatch(.watchFolder)
 
                 #expect(accepted)
@@ -678,18 +675,18 @@ final class AppCommandTests {
 
     @Test
     func test_dispatcher_dispatchTargeted_routesAppCommandToAppRouterBeforeHandler() async throws {
-        let dispatcher = AppCommandDispatcher.shared
+
         let handler = MockCommandHandler()
         let appRouter = MockAppCommandRouter()
         appRouter.appCommands = [.removeRepo]
         let repoId = UUID()
 
-        try await withIsolatedCommandDispatcher(
-            configure: {
-                dispatcher.handler = handler
-                dispatcher.appCommandRouter = appRouter
+        try await withCommandDispatcherFixture(
+            configure: { configuration in
+                configuration.workspaceOwner = handler
+                configuration.shellOwner = appRouter
             },
-            body: {
+            body: { dispatcher in
                 dispatcher.dispatch(.removeRepo, target: repoId, targetType: .repo)
 
                 #expect(appRouter.handledTargets.count == 1)
@@ -705,18 +702,18 @@ final class AppCommandTests {
 
     @Test
     func test_dispatcher_dispatchExtractPaneToTab_callsHandlerSurface() async throws {
-        let dispatcher = AppCommandDispatcher.shared
+
         let handler = MockCommandHandler()
 
         let tabId = UUID()
         let paneId = UUID()
 
-        try await withIsolatedCommandDispatcher(
-            configure: {
-                dispatcher.handler = handler
-                dispatcher.appCommandRouter = nil
+        try await withCommandDispatcherFixture(
+            configure: { configuration in
+                configuration.workspaceOwner = handler
+                configuration.shellOwner = nil
             },
-            body: {
+            body: { dispatcher in
                 dispatcher.dispatchExtractPaneToTab(
                     tabId: tabId,
                     paneId: paneId,
@@ -736,7 +733,7 @@ final class AppCommandTests {
     @Test
     func test_dispatcher_dispatchMovePaneToTab_callsHandlerSurface() async throws {
         try await withAsyncTestCoreAtoms { _ in
-            let dispatcher = AppCommandDispatcher.shared
+
             let handler = MockCommandHandler()
             atom(\.managementLayer).deactivate()
 
@@ -744,12 +741,12 @@ final class AppCommandTests {
             let sourceTabId = UUID()
             let targetTabId = UUID()
 
-            try await withIsolatedCommandDispatcher(
-                configure: {
-                    dispatcher.handler = handler
-                    dispatcher.appCommandRouter = nil
+            try await withCommandDispatcherFixture(
+                configure: { configuration in
+                    configuration.workspaceOwner = handler
+                    configuration.shellOwner = nil
                 },
-                body: {
+                body: { dispatcher in
                     atom(\.managementLayer).toggle()
                     defer { atom(\.managementLayer).deactivate() }
 
@@ -774,18 +771,18 @@ final class AppCommandTests {
     @Test
     func test_dispatcher_dispatchMovePaneToTab_rechecksExactSourcePaneCapability() async throws {
         try await withAsyncTestCoreAtoms { _ in
-            let dispatcher = AppCommandDispatcher.shared
+
             let handler = MockCommandHandler()
             handler.canExecuteResult = true
             handler.targetedCanExecuteResult = false
             atom(\.managementLayer).deactivate()
 
-            try await withIsolatedCommandDispatcher(
-                configure: {
-                    dispatcher.handler = handler
-                    dispatcher.appCommandRouter = nil
+            try await withCommandDispatcherFixture(
+                configure: { configuration in
+                    configuration.workspaceOwner = handler
+                    configuration.shellOwner = nil
                 },
-                body: {
+                body: { dispatcher in
                     atom(\.managementLayer).toggle()
                     defer { atom(\.managementLayer).deactivate() }
 
@@ -806,16 +803,16 @@ final class AppCommandTests {
     @Test
     func test_dispatcher_cannotDispatch_whenHandlerReturnsFalse() async throws {
         // Arrange
-        let dispatcher = AppCommandDispatcher.shared
+
         let handler = MockCommandHandler()
         handler.canExecuteResult = false
 
-        try await withIsolatedCommandDispatcher(
-            configure: {
-                dispatcher.handler = handler
-                dispatcher.appCommandRouter = nil
+        try await withCommandDispatcherFixture(
+            configure: { configuration in
+                configuration.workspaceOwner = handler
+                configuration.shellOwner = nil
             },
-            body: {
+            body: { dispatcher in
                 // Act
                 dispatcher.dispatch(.closeTab)
 
@@ -827,26 +824,18 @@ final class AppCommandTests {
 
     @Test
     func dispatcherDoesNotAcceptRejectedShellSidebarCommandThroughWorkspaceFallback() async throws {
-        let dispatcher = AppCommandDispatcher.shared
+
         let shell = MockAppCommandRouter()
         shell.parameterlessCanExecuteResult = true
-        let harness = makePaneTabViewControllerCommandHarness()
+        let harness = makePaneTabViewControllerCommandHarness(shellCommandOwner: shell)
         defer { try? FileManager.default.removeItem(at: harness.tempDir) }
 
         for command in [AppCommand.showReposSidebar, .showPanesSidebar, .filterSidebar, .toggleSidebar] {
             #expect(!harness.controller.canExecute(command))
         }
 
-        try await withIsolatedCommandDispatcher(
-            configure: {
-                dispatcher.handler = harness.controller
-                dispatcher.appCommandRouter = shell
-            },
-            body: {
-                #expect(!dispatcher.dispatch(.showPanesSidebar))
-                #expect(shell.handledCommands.isEmpty)
-            }
-        )
+        #expect(!harness.commandDispatcher.dispatch(.showPanesSidebar))
+        #expect(shell.handledCommands.isEmpty)
 
         await harness.coordinator.shutdown()
     }
@@ -856,7 +845,7 @@ final class AppCommandTests {
     @Test
     func test_dispatcher_movePaneToTab_requiresManagementLayer() {
         // Act
-        let def = AppCommandDispatcher.shared.definition(for: .movePaneToTab)
+        let def = AppCommand.movePaneToTab.definition
 
         // Assert
         #expect(def.requiresManagementLayer)
@@ -869,16 +858,16 @@ final class AppCommandTests {
     @Test
     func test_dispatcher_managementRequiredCommand_blockedWhenInactive() async throws {
         try await withAsyncTestCoreAtoms { _ in
-            let dispatcher = AppCommandDispatcher.shared
+
             let handler = MockCommandHandler()
             atom(\.managementLayer).deactivate()
 
-            try await withIsolatedCommandDispatcher(
-                configure: {
-                    dispatcher.handler = handler
-                    dispatcher.appCommandRouter = nil
+            try await withCommandDispatcherFixture(
+                configure: { configuration in
+                    configuration.workspaceOwner = handler
+                    configuration.shellOwner = nil
                 },
-                body: {
+                body: { dispatcher in
                     defer { atom(\.managementLayer).deactivate() }
 
                     #expect(!dispatcher.canDispatch(.closePane))
@@ -893,17 +882,17 @@ final class AppCommandTests {
     @Test
     func test_dispatcher_managementRequiredCommands_useAcceptedInvocationWhenActive() async throws {
         try await withAsyncTestCoreAtoms { _ in
-            let dispatcher = AppCommandDispatcher.shared
+
             let handler = MockCommandHandler()
             let paneId = UUID()
             atom(\.managementLayer).deactivate()
 
-            try await withIsolatedCommandDispatcher(
-                configure: {
-                    dispatcher.handler = handler
-                    dispatcher.appCommandRouter = nil
+            try await withCommandDispatcherFixture(
+                configure: { configuration in
+                    configuration.workspaceOwner = handler
+                    configuration.shellOwner = nil
                 },
-                body: {
+                body: { dispatcher in
                     atom(\.managementLayer).toggle()
                     defer { atom(\.managementLayer).deactivate() }
 

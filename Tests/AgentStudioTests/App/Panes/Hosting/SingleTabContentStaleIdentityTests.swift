@@ -89,6 +89,7 @@ struct SingleTabContentStaleIdentityTests {
                     shouldAcceptDrop: { _, _, _, _ in false },
                     handleDrop: { _, _, _, _ in }
                 ),
+                commandDispatcher: AppTerminalFixtureCommandDispatcher(),
                 arrangementInlineRenameState: ArrangementInlineRenameState(),
                 onPaneFocusTrigger: { _ in },
                 onFocusPane: { _ in },

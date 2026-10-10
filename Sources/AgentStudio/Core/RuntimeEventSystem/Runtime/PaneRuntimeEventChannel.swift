@@ -116,6 +116,14 @@ package final class PaneRuntimeEventChannel {
         busConsumerTask.cancel()
     }
 
+    /// Finishes subscriber streams and awaits the owned outbound worker.
+    /// Buffered cancellation keeps finish's existing behavior; call outside that worker.
+    /// Completion covers the outbound worker, not subscriber onTermination cleanup.
+    package func finishAndJoinOutboundDelivery() async {
+        finishSubscribers()
+        await busConsumerTask.value
+    }
+
     @concurrent nonisolated private static func consumeOutboundBusStream(
         _ stream: AsyncStream<RuntimeEnvelope>,
         outboundPost: OutboundPost,

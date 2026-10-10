@@ -64,7 +64,9 @@ struct PaneTabViewControllerLaunchRestoreTests {
             viewRegistry: viewRegistry,
             runtime: runtime,
             surfaceManager: surfaceManager,
-            runtimeRegistry: .shared,
+            terminalSurfaceCommandDispatcher: AppTerminalFixtureSurfaceCommands(),
+            terminalSurfaceOperations: makeAppTerminalFixtureMountOperations(surfaceManager: surfaceManager),
+            runtimeRegistry: RuntimeRegistry(),
             windowLifecycleStore: windowLifecycleStore,
             ipcLifecycle: .testUnavailable,
             bridgePaneAttendance: atomRegistry.bridgePaneAttendance
@@ -82,6 +84,7 @@ struct PaneTabViewControllerLaunchRestoreTests {
             appLifecycleStore: appLifecycleStore,
             executor: executor,
             runtimeCommandDispatcher: coordinator,
+            commandDispatcher: AppTerminalFixtureCommandDispatcher(), synchronizeRuntimeFocus: { _ in },
             tabBarAdapter: TabBarAdapter(
                 store: store,
                 repoCache: RepoCacheAtom(),
@@ -457,6 +460,7 @@ struct PaneTabViewControllerLaunchRestoreTests {
         )
         let stableSurfaceID = UUID()
         let alreadyMountedView = TerminalPaneMountView(
+            surfaceOperations: makeAppTerminalFixtureMountOperations(),
             restoredSurfaceId: stableSurfaceID,
             paneId: targetPane.id,
             title: "Already Mounted"

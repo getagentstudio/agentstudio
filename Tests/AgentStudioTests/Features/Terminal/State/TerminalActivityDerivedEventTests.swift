@@ -63,8 +63,9 @@ struct TerminalActivityDerivedEventTests {
         let router = TerminalActivityRouter(
             bus: bus,
             activityAtom: atom,
+            callbackHandlingAccess: { nil },
             surfaceIDForPaneID: { $0 },
-            unseenActivityDebounceDuration: .milliseconds(750),
+            lastOutputLineReader: { _ in .surfaceStale }, unseenActivityDebounceDuration: .milliseconds(750),
             unseenActivityClock: clock
         )
         let paneId = PaneId.generateUUIDv7()
@@ -97,8 +98,9 @@ struct TerminalActivityDerivedEventTests {
         let router = TerminalActivityRouter(
             bus: bus,
             activityAtom: atom,
+            callbackHandlingAccess: { nil },
             surfaceIDForPaneID: { $0 },
-            unseenActivityDebounceDuration: .milliseconds(750),
+            lastOutputLineReader: { _ in .surfaceStale }, unseenActivityDebounceDuration: .milliseconds(750),
             unseenActivityClock: clock,
             nowMilliseconds: { nowMilliseconds.get() }
         )
@@ -151,9 +153,10 @@ struct TerminalActivityDerivedEventTests {
         let router = TerminalActivityRouter(
             bus: bus,
             activityAtom: atom,
+            callbackHandlingAccess: { nil },
             surfaceIDForPaneID: { $0 },
             isPaneCurrentlyAttended: { attendedPaneIds.contains($0) },
-            unseenActivityDebounceDuration: .milliseconds(750),
+            lastOutputLineReader: { _ in .surfaceStale }, unseenActivityDebounceDuration: .milliseconds(750),
             unseenActivityClock: clock
         )
 
@@ -194,8 +197,9 @@ struct TerminalActivityDerivedEventTests {
         let router = TerminalActivityRouter(
             bus: bus,
             activityAtom: atom,
+            callbackHandlingAccess: { nil },
             surfaceIDForPaneID: { $0 },
-            unseenActivityDebounceDuration: .milliseconds(750),
+            lastOutputLineReader: { _ in .surfaceStale }, unseenActivityDebounceDuration: .milliseconds(750),
             unseenActivityClock: clock
         )
         let paneId = PaneId.generateUUIDv7()

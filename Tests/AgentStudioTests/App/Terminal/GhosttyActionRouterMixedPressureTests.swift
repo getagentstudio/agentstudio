@@ -41,20 +41,19 @@ struct GhosttyActionRouterMixedPressureTests {
         let localSampleCount = 100_000
         let exactFactCount = 25
         let fixture = await MixedAdmissionFixture(exactFactCapacity: exactFactCount)
-        let originalRegistry = Ghostty.ActionRouter.runtimeRegistryForActionRouting
-        Ghostty.ActionRouter.setRuntimeRegistry(fixture.runtimeRegistry)
-        defer {
-            Ghostty.ActionRouter.setRuntimeRegistry(originalRegistry)
-            fixture.accumulator.removeSurface(fixture.surfaceID)
-        }
 
-        try routeMixedTerminalPressure(
-            fixture: fixture,
-            localSampleCount: localSampleCount,
-            exactFactCount: exactFactCount
-        )
-        try assertMixedPressureAccumulatorConverges(fixture: fixture, localSampleCount: localSampleCount)
-        try await assertMixedPressurePublicationPaths(fixture: fixture, exactFactCount: exactFactCount)
+        do {
+            try routeMixedTerminalPressure(
+                fixture: fixture,
+                localSampleCount: localSampleCount,
+                exactFactCount: exactFactCount
+            )
+            try assertMixedPressureAccumulatorConverges(fixture: fixture, localSampleCount: localSampleCount)
+            try await assertMixedPressurePublicationPaths(fixture: fixture, exactFactCount: exactFactCount)
+        } catch {
+            await fixture.shutdown()
+            throw error
+        }
         await fixture.shutdown()
     }
 
@@ -92,7 +91,7 @@ struct GhosttyActionRouterMixedPressureTests {
 
     private func routeLocalTranslatedSample(_ sampleIndex: Int, fixture: MixedAdmissionFixture) {
         let localAction = localTranslatedAction(sampleIndex: sampleIndex)
-        let translatedEvent = GhosttyAdapter.shared.translate(
+        let translatedEvent = GhosttyActionTranslation.translate(
             actionTag: UInt32(localAction.tag.rawValue),
             payload: localAction.payload
         )
@@ -106,7 +105,7 @@ struct GhosttyActionRouterMixedPressureTests {
 
     private func localTranslatedAction(
         sampleIndex: Int
-    ) -> (tag: GhosttyActionTag, payload: GhosttyAdapter.ActionPayload) {
+    ) -> (tag: GhosttyActionTag, payload: GhosttyActionPayload) {
         switch sampleIndex % 7 {
         case 0:
             return (.mouseShape, .mouseShape(rawValue: UInt32(GHOSTTY_MOUSE_SHAPE_TEXT.rawValue)))
@@ -134,13 +133,13 @@ struct GhosttyActionRouterMixedPressureTests {
 
     private func routeExactCommandFinishedFact(_ factIndex: Int, fixture: MixedAdmissionFixture) {
         let sourceInstant = ContinuousClock.now
-        let exactPayload = GhosttyAdapter.ActionPayload.commandFinished(
+        let exactPayload = GhosttyActionPayload.commandFinished(
             exitCode: factIndex,
             duration: UInt64(factIndex + 1),
             sourceInstant: sourceInstant
         )
         let exactActionTag = UInt32(GHOSTTY_ACTION_COMMAND_FINISHED.rawValue)
-        let translatedEvent = GhosttyAdapter.shared.translate(
+        let translatedEvent = GhosttyActionTranslation.translate(
             actionTag: exactActionTag,
             payload: exactPayload
         )
@@ -152,12 +151,11 @@ struct GhosttyActionRouterMixedPressureTests {
 
         #expect(disposition == .routeExactFactOrControl(precedingTitle: nil))
         #expect(
-            Ghostty.ActionRouter.routeActionToTerminalRuntimeOnMainActor(
+            fixture.routingHost.routeActionToTerminalRuntime(
                 actionTag: exactActionTag,
                 payload: exactPayload,
-                surfaceViewObjectId: fixture.surfaceViewObjectID,
-                routingLookup: fixture.routingLookup
-            )
+                surfaceViewObjectID: fixture.surfaceViewObjectID
+            ) == .applied
         )
     }
 
@@ -230,6 +228,7 @@ struct GhosttyActionRouterMixedPressureTests {
         let runtimeSubscriber: RecordingSubscriber<RuntimeEnvelope>
         let runtimeRegistry: RuntimeRegistry
         let routingLookup: FakeActionRoutingLookup
+        let routingHost: GhosttyActionRoutingHost
         let ipcAdapter: AgentStudioIPCRuntimeAdapter
         let drainScheduleRecorder: MixedAdmissionDrainScheduleRecorder
         let accumulator: TerminalLocalActionAccumulator
@@ -264,7 +263,9 @@ struct GhosttyActionRouterMixedPressureTests {
                 paneId: paneID,
                 metadata: PaneMetadata(paneId: paneID, contentType: .terminal, title: "Mixed admission"),
                 replayBuffer: EventReplayBuffer(capacity: exactFactCapacity),
-                paneEventBus: eventBusHarness.bus
+                paneEventBus: eventBusHarness.bus,
+                performanceReporter: RuntimeDeliveryPerformanceReporter(),
+                surfaceCommandDispatcher: MixedAdmissionSurfaceCommands()
             )
             let runtimeSubscriber = RecordingSubscriber(stream: runtime.subscribe())
             let runtimeRegistry = RuntimeRegistry()
@@ -273,6 +274,14 @@ struct GhosttyActionRouterMixedPressureTests {
                 surfaceIdsByViewObjectId: [surfaceViewObjectID: surfaceID],
                 paneIdsBySurfaceId: [surfaceID: pane.id]
             )
+            let routingHost = GhosttyActionRoutingHost(
+                dependencies: .init(
+                    runtimeRegistry: runtimeRegistry, routingLookup: routingLookup,
+                    mountedHostResolver: .init(surfaceForID: { _ in nil }, paneIDForSurfaceID: { _ in nil }),
+                    applyNativeView: { _, _, _ in .dropped(.staleSurface) },
+                    activityContext: { _ in nil }, submitActivityInput: { _ in },
+                    startupTraceRecorder: nil, traceRuntime: nil
+                ))
             let ipcAdapter = AgentStudioIPCRuntimeAdapter(
                 workspaceStore: workspaceStore,
                 runtimeRegistry: runtimeRegistry,
@@ -291,6 +300,7 @@ struct GhosttyActionRouterMixedPressureTests {
             self.runtimeSubscriber = runtimeSubscriber
             self.runtimeRegistry = runtimeRegistry
             self.routingLookup = routingLookup
+            self.routingHost = routingHost
             self.ipcAdapter = ipcAdapter
             self.drainScheduleRecorder = drainScheduleRecorder
             self.accumulator = accumulator
@@ -300,6 +310,8 @@ struct GhosttyActionRouterMixedPressureTests {
             await runtimeSubscriber.shutdown()
             await eventBusSubscriber.shutdown()
             _ = await runtime.shutdown(timeout: .zero)
+            await runtime.finishAndJoinOutboundDelivery()
+            accumulator.removeSurface(surfaceID)
             await assertBusDrained(eventBusHarness.bus)
         }
     }
@@ -329,9 +341,18 @@ private final class MixedAdmissionDrainScheduleRecorder: @unchecked Sendable {
         lock.withLock { storage }
     }
 
-    func record(_ surfaceID: UUID, _: TerminalLocalDrainRequest) {
+    func record(_ surfaceID: UUID, _: TerminalLocalDrainRequest, _: TerminalLocalActionAccumulator) {
         lock.withLock {
             storage.append(surfaceID)
         }
     }
+}
+
+@MainActor
+private final class MixedAdmissionSurfaceCommands: TerminalSurfaceCommandDispatching {
+    func sendInput(_: String, toPaneId _: UUID) -> Result<Void, SurfaceError> { .success(()) }
+    func clearScrollback(forPaneId _: UUID) -> Result<Void, SurfaceError> { .success(()) }
+    func scrollToBottom(forPaneId _: UUID) -> Result<Void, SurfaceError> { .success(()) }
+    func scrollPageFractional(fraction _: Double, forPaneId _: UUID) -> Result<Void, SurfaceError> { .success(()) }
+    func jumpToPrompt(delta _: Int, forPaneId _: UUID) -> Result<Void, SurfaceError> { .success(()) }
 }

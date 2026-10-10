@@ -248,7 +248,9 @@ private final class HeuristicFixture {
             clock: clock, factSink: source.sink)
         router = TerminalActivityRouter(
             bus: bus, activityAtom: TerminalActivityAtom(outputBurstThreshold: 30),
-            projector: projector, surfaceIDForPaneID: { $0 })
+            callbackHandlingAccess: { nil },
+            projector: projector, surfaceIDForPaneID: { $0 }, lastOutputLineReader: { _ in .surfaceStale }
+        )
         let events = recordedEvents
         outputs = EventBusFactSource.attach(
             subscription: await bus.subscribe(policy: .criticalUnbounded, subscriberName: "heuristic output"),

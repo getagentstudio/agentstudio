@@ -98,6 +98,7 @@ struct DrawerPanelOverlayStateTests {
             height: 300, store: store, repoCache: RepoCacheAtom(),
             editorChooser: makeTestAtomRegistry().editorChooser,
             viewRegistry: ViewRegistry(), action: { _ in },
+            commandDispatcher: AppTerminalFixtureCommandDispatcher(),
             arrangementInlineRenameState: ArrangementInlineRenameState(),
             resizeInteraction: hasResizeInteraction
                 ? DrawerResizeInteraction(onChanged: { _, _ in }, onEnded: { _ in }, onTerminated: { _ in })

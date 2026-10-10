@@ -25,6 +25,7 @@ struct FlatTabStripContainer: View {
     let arrangementInlineRenameState: ArrangementInlineRenameState
     let closeTransitionCoordinator: PaneCloseTransitionCoordinator
     let actionDispatcher: PaneActionDispatching
+    let commandDispatcher: any AppCommandDispatching
     let onPaneFocusTrigger: PaneFocusTriggerHandler
     let onFocusPane: (UUID) -> Void
     let store: WorkspaceStore
@@ -90,6 +91,7 @@ struct FlatTabStripContainer: View {
         arrangementInlineRenameState: ArrangementInlineRenameState,
         closeTransitionCoordinator: PaneCloseTransitionCoordinator,
         actionDispatcher: PaneActionDispatching,
+        commandDispatcher: any AppCommandDispatching,
         onPaneFocusTrigger: @escaping PaneFocusTriggerHandler,
         onFocusPane: @escaping (UUID) -> Void,
         store: WorkspaceStore,
@@ -112,6 +114,7 @@ struct FlatTabStripContainer: View {
         self.arrangementInlineRenameState = arrangementInlineRenameState
         self.closeTransitionCoordinator = closeTransitionCoordinator
         self.actionDispatcher = actionDispatcher
+        self.commandDispatcher = commandDispatcher
         self.onPaneFocusTrigger = onPaneFocusTrigger
         self.onFocusPane = onFocusPane
         self.store = store
@@ -127,13 +130,14 @@ struct FlatTabStripContainer: View {
     }
 
     private var commandActionResolver: TargetedCommandControlActionResolver {
-        { command, surface, target, targetType in
+        let commandDispatcher = self.commandDispatcher
+        return { command, surface, target, targetType in
             TargetedCommandControlAction.resolve(
                 command: command,
                 surface: surface,
                 target: target,
                 targetType: targetType,
-                dispatcher: AppCommandDispatcher.shared
+                dispatcher: commandDispatcher
             )
         }
     }
@@ -309,6 +313,7 @@ struct FlatTabStripContainer: View {
                 collapsedPaneWidth: state.effectiveCollapsedWidth,
                 arrangementInlineRenameState: arrangementInlineRenameState,
                 commandActionResolver: commandActionResolver,
+                commandDispatcher: commandDispatcher,
                 closeTransitionCoordinator: closeTransitionCoordinator,
                 actionDispatcher: actionDispatcher,
                 onPaneFocusTrigger: onPaneFocusTrigger,
@@ -346,6 +351,7 @@ struct FlatTabStripContainer: View {
             tabSize: tabSize,
             iconBarFrame: iconBarFrame,
             actionDispatcher: actionDispatcher,
+            commandDispatcher: commandDispatcher,
             arrangementInlineRenameState: arrangementInlineRenameState,
             onPaneFocusTrigger: onPaneFocusTrigger,
             onFocusPane: onFocusPane,

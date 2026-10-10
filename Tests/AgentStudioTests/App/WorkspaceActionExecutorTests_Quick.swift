@@ -22,14 +22,20 @@ private func makeWorkspaceActionExecutorHarness() throws -> WorkspaceActionExecu
     let store = try makeWorkspaceJournalTestStore()
     let viewRegistry = ViewRegistry()
     let runtime = SessionRuntime(store: store)
-    let coordinator = WorkspaceSurfaceCoordinator(
-        store: store,
-        viewRegistry: viewRegistry,
-        runtime: runtime,
-        windowLifecycleStore: WindowLifecycleAtom(),
-        ipcLifecycle: .testUnavailable,
-        bridgePaneAttendance: BridgePaneAttendanceAtom()
-    )
+    let coordinator = {
+        let fixtureSurfaceManager = makeAppTerminalFixtureSurfaceManager()
+        return WorkspaceSurfaceCoordinator(
+            store: store,
+            viewRegistry: viewRegistry,
+            runtime: runtime,
+            surfaceManager: fixtureSurfaceManager, terminalSurfaceCommandDispatcher: fixtureSurfaceManager,
+            terminalSurfaceOperations: fixtureSurfaceManager.makeTerminalPaneSurfaceOperations(),
+            runtimeRegistry: RuntimeRegistry(),
+            windowLifecycleStore: WindowLifecycleAtom(),
+            ipcLifecycle: .testUnavailable,
+            bridgePaneAttendance: BridgePaneAttendanceAtom()
+        )
+    }()
     let executor = WorkspaceActionExecutor(coordinator: coordinator, store: store)
     return WorkspaceActionExecutorHarness(
         store: store,

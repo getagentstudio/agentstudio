@@ -26,6 +26,17 @@ class MainWindowController: NSWindowController, NSWindowDelegate {
 
     private static let estimatedTitlebarHeight: CGFloat = 40
 
+    private let commandDispatcher: any AppCommandDispatching
+
+    init(window: NSWindow?, commandDispatcher: any AppCommandDispatching) {
+        self.commandDispatcher = commandDispatcher
+        super.init(window: window)
+    }
+
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) not supported")
+    }
+
     convenience init(
         workspaceWindowId: UUID = UUID(),
         store: WorkspaceStore,
@@ -33,6 +44,10 @@ class MainWindowController: NSWindowController, NSWindowDelegate {
         paneContextReaders: PaneContextUIReaders? = nil,
         workspaceActionExecutor: WorkspaceActionExecutor,
         runtimeCommandDispatcher: any PaneRuntimeCommandDispatching,
+        commandDispatcher: any AppCommandDispatching,
+        resolveCommandCapabilities: @escaping RepoExplorerCommandCapabilityResolver,
+        executionOwnerIdentities: @escaping @MainActor () -> CommandExecutionOwnerIdentities,
+        synchronizeRuntimeFocus: @escaping @MainActor (UUID?) -> Void,
         applicationLifecycleMonitor: ApplicationLifecycleMonitor,
         appLifecycleStore: AppLifecycleAtom,
         tabBarAdapter: TabBarAdapter,
@@ -80,7 +95,7 @@ class MainWindowController: NSWindowController, NSWindowDelegate {
             window.center()
         }
 
-        self.init(window: window)
+        self.init(window: window, commandDispatcher: commandDispatcher)
         self.windowId = workspaceWindowId
         self.applicationLifecycleMonitor = applicationLifecycleMonitor
         self.workspaceWindowMemoryAtom = store.windowMemoryAtom
@@ -104,6 +119,10 @@ class MainWindowController: NSWindowController, NSWindowDelegate {
             workspaceWindowId: windowId,
             workspaceActionExecutor: workspaceActionExecutor,
             runtimeCommandDispatcher: runtimeCommandDispatcher,
+            commandDispatcher: commandDispatcher,
+            resolveCommandCapabilities: resolveCommandCapabilities,
+            executionOwnerIdentities: executionOwnerIdentities,
+            synchronizeRuntimeFocus: synchronizeRuntimeFocus,
             applicationLifecycleMonitor: applicationLifecycleMonitor,
             appLifecycleStore: appLifecycleStore,
             tabBarAdapter: tabBarAdapter,
@@ -336,7 +355,7 @@ class MainWindowController: NSWindowController, NSWindowDelegate {
     }
 
     @objc private func toggleSidebarToolbarAction() {
-        AppCommandDispatcher.shared.dispatch(.toggleSidebar)
+        commandDispatcher.dispatch(.toggleSidebar)
         Task { @MainActor [weak self] in
             self?.refreshToolbarToggleState()
         }
@@ -478,9 +497,9 @@ extension MainWindowController: NSToolbarDelegate {
         item.target = self
         item.action = action
         item.applyControlTooltip(
-            AppCommandDispatcher.shared.definition(for: command).controlTooltipRenderValue()
+            command.definition.controlTooltipRenderValue()
         )
-        item.isEnabled = AppCommandDispatcher.shared.canDispatch(command)
+        item.isEnabled = commandDispatcher.canDispatch(command)
         return item
     }
 

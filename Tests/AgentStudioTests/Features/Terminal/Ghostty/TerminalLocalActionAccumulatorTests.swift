@@ -579,7 +579,7 @@ struct TerminalLocalActionAccumulatorTests {
 
     @Test("title barrier eviction preserves the search epoch")
     func titleBarrierEvictionPreservesSearchEpoch() throws {
-        let accumulator = TerminalLocalActionAccumulator { _, _ in }
+        let accumulator = TerminalLocalActionAccumulator { _, _, _ in }
         let surfaceID = UUIDv7.generate()
 
         accumulator.offer(.searchStarted(query: "first"), for: surfaceID)
@@ -600,7 +600,7 @@ struct TerminalLocalActionAccumulatorTests {
 
     @Test("surface removal resets only that surface search epoch")
     func surfaceRemovalResetsOnlyThatSurfaceSearchEpoch() throws {
-        let accumulator = TerminalLocalActionAccumulator { _, _ in }
+        let accumulator = TerminalLocalActionAccumulator { _, _, _ in }
         let removedSurfaceID = UUIDv7.generate()
         let closedSurfaceID = UUIDv7.generate()
         let retainedSurfaceID = UUIDv7.generate()
@@ -682,7 +682,7 @@ struct TerminalLocalActionAccumulatorTests {
 
     @Test("context transition detaches earlier evidence from later samples")
     func contextTransitionSeparatesActivityEpochs() throws {
-        let accumulator = TerminalLocalActionAccumulator { _, _ in }
+        let accumulator = TerminalLocalActionAccumulator { _, _, _ in }
         let surfaceID = UUIDv7.generate()
         let before = TerminalActivityProjectionContext(
             isAttended: false,
@@ -746,7 +746,7 @@ private final class DrainRequestRecorder: @unchecked Sendable {
         lock.withLock { storage }
     }
 
-    func record(_ surfaceID: UUID, _ request: TerminalLocalDrainRequest) {
+    func record(_ surfaceID: UUID, _ request: TerminalLocalDrainRequest, _: TerminalLocalActionAccumulator) {
         lock.withLock {
             storage.append(.init(surfaceID: surfaceID, request: request))
         }
@@ -775,7 +775,7 @@ private final class DrainScheduleRecorder: @unchecked Sendable {
         lock.withLock { storage.map(\.surfaceID) }
     }
 
-    func record(_ surfaceID: UUID, _ request: TerminalLocalDrainRequest) {
+    func record(_ surfaceID: UUID, _ request: TerminalLocalDrainRequest, _: TerminalLocalActionAccumulator) {
         lock.withLock {
             storage.append(
                 .init(
@@ -790,207 +790,4 @@ private final class DrainScheduleRecorder: @unchecked Sendable {
 private struct RecordedDrainSchedule: Equatable {
     let surfaceID: UUID
     let schedule: TerminalLocalDrainSchedule
-}
-
-@Suite("Terminal local action drain scheduler")
-struct TerminalLocalActionDrainSchedulerTests {
-    @Test("default title scheduling reserves one hundred milliseconds for MainActor admission")
-    func defaultTitleSchedulingReservesMainActorAdmissionSlack() {
-        #expect(
-            TerminalLocalActionDrainScheduler.titleAdmissionDeadline(
-                forPublicationDeadline: 1_000_000_007
-            ) == 900_000_007
-        )
-    }
-
-    @Test("title deadlines retain the accumulator absolute deadline")
-    func titleDeadlineRetainsAccumulatorAbsoluteDeadline() {
-        let executor = ControlledLocalDrainSchedulerExecutor()
-        let recorder = SchedulerDrainRecorder()
-        let scheduler = TerminalLocalActionDrainScheduler(
-            drain: recorder.record,
-            scheduleTitleDeadline: executor.recordTitleDeadline,
-            enqueueMainActorDrain: executor.recordMainActorAdmission
-        )
-        let surfaceID = UUIDv7.generate()
-
-        scheduler.schedule(
-            surfaceID,
-            .init(lane: .title, absoluteDeadlineNanoseconds: 1_000_000_007)
-        )
-
-        #expect(executor.recordedTitleDeadlines == [1_000_000_007])
-        #expect(scheduler.pendingDrainClaimCount == 1)
-    }
-
-    @Test("independent title and immediate claims execute once when title admits first")
-    func independentLaneClaimsExecuteOnceWhenTitleAdmitsFirst() async throws {
-        let executor = ControlledLocalDrainSchedulerExecutor()
-        let recorder = SchedulerDrainRecorder()
-        let scheduler = TerminalLocalActionDrainScheduler(
-            drain: recorder.record,
-            scheduleTitleDeadline: executor.recordTitleDeadline,
-            enqueueMainActorDrain: executor.recordMainActorAdmission
-        )
-        let surfaceID = UUIDv7.generate()
-
-        scheduler.schedule(
-            surfaceID,
-            .init(lane: .title, absoluteDeadlineNanoseconds: 1_000_000_007)
-        )
-        scheduler.schedule(surfaceID, .init(lane: .immediate, absoluteDeadlineNanoseconds: nil))
-        try executor.claimTitleDeadline()
-
-        try await executor.runMainActorAdmission(at: 1)
-        try await executor.runMainActorAdmission(at: 0)
-
-        #expect(
-            await recorder.drains == [
-                .init(surfaceID: surfaceID, lane: .title),
-                .init(surfaceID: surfaceID, lane: .immediate),
-            ]
-        )
-        #expect(scheduler.pendingDrainClaimCount == 0)
-    }
-
-    @Test("independent immediate and title claims execute once when immediate admits first")
-    func independentLaneClaimsExecuteOnceWhenImmediateAdmitsFirst() async throws {
-        let executor = ControlledLocalDrainSchedulerExecutor()
-        let recorder = SchedulerDrainRecorder()
-        let scheduler = TerminalLocalActionDrainScheduler(
-            drain: recorder.record,
-            scheduleTitleDeadline: executor.recordTitleDeadline,
-            enqueueMainActorDrain: executor.recordMainActorAdmission
-        )
-        let surfaceID = UUIDv7.generate()
-
-        scheduler.schedule(
-            surfaceID,
-            .init(lane: .title, absoluteDeadlineNanoseconds: 1_000_000_007)
-        )
-        scheduler.schedule(surfaceID, .init(lane: .immediate, absoluteDeadlineNanoseconds: nil))
-        try executor.claimTitleDeadline()
-
-        try await executor.runMainActorAdmission(at: 0)
-        try await executor.runMainActorAdmission(at: 0)
-
-        #expect(
-            await recorder.drains == [
-                .init(surfaceID: surfaceID, lane: .immediate),
-                .init(surfaceID: surfaceID, lane: .title),
-            ]
-        )
-        #expect(scheduler.pendingDrainClaimCount == 0)
-    }
-
-    @Test("retirement invalidates captured immediate and title claims")
-    func retirementInvalidatesCapturedImmediateAndTitleClaims() async throws {
-        let executor = ControlledLocalDrainSchedulerExecutor()
-        let recorder = SchedulerDrainRecorder()
-        let scheduler = TerminalLocalActionDrainScheduler(
-            drain: recorder.record,
-            scheduleTitleDeadline: executor.recordTitleDeadline,
-            enqueueMainActorDrain: executor.recordMainActorAdmission
-        )
-        let surfaceID = UUIDv7.generate()
-
-        scheduler.schedule(
-            surfaceID,
-            .init(lane: .title, absoluteDeadlineNanoseconds: 1_000_000_007)
-        )
-        scheduler.schedule(surfaceID, .init(lane: .immediate, absoluteDeadlineNanoseconds: nil))
-        try executor.claimTitleDeadline()
-        scheduler.cancel(for: surfaceID)
-
-        try await executor.runMainActorAdmission(at: 0)
-        try await executor.runMainActorAdmission(at: 0)
-
-        #expect(await recorder.drains.isEmpty)
-        #expect(scheduler.pendingDrainClaimCount == 0)
-    }
-
-    @Test("exact barriers invalidate only the title claim")
-    func exactBarriersInvalidateOnlyTitleClaim() async throws {
-        let executor = ControlledLocalDrainSchedulerExecutor()
-        let recorder = SchedulerDrainRecorder()
-        let scheduler = TerminalLocalActionDrainScheduler(
-            drain: recorder.record,
-            scheduleTitleDeadline: executor.recordTitleDeadline,
-            enqueueMainActorDrain: executor.recordMainActorAdmission
-        )
-        let surfaceID = UUIDv7.generate()
-
-        scheduler.schedule(
-            surfaceID,
-            .init(lane: .title, absoluteDeadlineNanoseconds: 1_000_000_007)
-        )
-        scheduler.schedule(surfaceID, .init(lane: .immediate, absoluteDeadlineNanoseconds: nil))
-        scheduler.cancelTitle(for: surfaceID)
-
-        executor.claimTitleDeadlineWithoutExpectation()
-        try await executor.runMainActorAdmission(at: 0)
-
-        #expect(await recorder.drains == [.init(surfaceID: surfaceID, lane: .immediate)])
-        #expect(scheduler.pendingDrainClaimCount == 0)
-    }
-}
-
-@MainActor
-private final class SchedulerDrainRecorder {
-    private(set) var drains: [RecordedSchedulerDrain] = []
-
-    func record(surfaceID: UUID, lane: TerminalLocalActionLane) {
-        drains.append(.init(surfaceID: surfaceID, lane: lane))
-    }
-}
-
-private struct RecordedSchedulerDrain: Equatable {
-    let surfaceID: UUID
-    let lane: TerminalLocalActionLane
-}
-
-private final class ControlledLocalDrainSchedulerExecutor: @unchecked Sendable {
-    private let lock = NSLock()
-    private var titleDeadlines: [(UInt64, DispatchWorkItem)] = []
-    private var mainActorAdmissions: [TerminalMainActorDrainOperation] = []
-
-    var recordedTitleDeadlines: [UInt64] {
-        lock.withLock { titleDeadlines.map(\.0) }
-    }
-
-    func recordTitleDeadline(_ deadline: UInt64, _ workItem: DispatchWorkItem) {
-        lock.withLock {
-            titleDeadlines.append((deadline, workItem))
-        }
-    }
-
-    func recordMainActorAdmission(_ operation: @escaping TerminalMainActorDrainOperation) {
-        lock.withLock {
-            mainActorAdmissions.append(operation)
-        }
-    }
-
-    func claimTitleDeadline() throws {
-        let workItem = try #require(
-            lock.withLock {
-                titleDeadlines.isEmpty ? nil : titleDeadlines.removeFirst().1
-            })
-        workItem.perform()
-    }
-
-    func claimTitleDeadlineWithoutExpectation() {
-        let workItem = lock.withLock {
-            titleDeadlines.isEmpty ? nil : titleDeadlines.removeFirst().1
-        }
-        workItem?.perform()
-    }
-
-    func runMainActorAdmission(at index: Int) async throws {
-        let queuedOperation: TerminalMainActorDrainOperation? = lock.withLock {
-            guard mainActorAdmissions.indices.contains(index) else { return nil }
-            return mainActorAdmissions.remove(at: index)
-        }
-        let operation = try #require(queuedOperation)
-        await operation()
-    }
 }

@@ -207,6 +207,7 @@ struct SidebarPerformanceProofShellReadback: Equatable, Sendable {
 
         private let population: SidebarPerformanceProofPopulation
         private let window: NSWindow
+        private let commandDispatcher: any AppCommandDispatching
         private let recorder: AgentStudioStartupTraceRecorder
         private let performanceRecorder: AgentStudioPerformanceTraceRecorder?
         private let delay: AsyncDelay
@@ -233,6 +234,7 @@ struct SidebarPerformanceProofShellReadback: Equatable, Sendable {
             population: SidebarPerformanceProofPopulation,
             window: NSWindow,
             recorder: AgentStudioStartupTraceRecorder,
+            commandDispatcher: any AppCommandDispatching,
             performanceRecorder: AgentStudioPerformanceTraceRecorder?,
             delay: AsyncDelay = .taskSleep,
             settleRepositoryFactDemandAdmission: @escaping @MainActor @Sendable () async -> Void = {},
@@ -242,6 +244,7 @@ struct SidebarPerformanceProofShellReadback: Equatable, Sendable {
             self.population = population
             self.window = window
             self.recorder = recorder
+            self.commandDispatcher = commandDispatcher
             self.performanceRecorder = performanceRecorder
             self.delay = delay
             self.settleRepositoryFactDemandAdmission = settleRepositoryFactDemandAdmission
@@ -391,7 +394,7 @@ struct SidebarPerformanceProofShellReadback: Equatable, Sendable {
             filteredAction: SidebarPerformanceProofOutstandingAction
         ) async -> Bool {
             guard case .search(let fixtureQuery) = filteredAction.expectedOutcome else { return false }
-            AppCommandDispatcher.shared.dispatch(.filterSidebar)
+            commandDispatcher.dispatch(.filterSidebar)
             await Task.yield()
             await Task.yield()
             let inputDriver = SidebarPerformanceProofNativeInputDriver(delay: delay)
@@ -438,24 +441,24 @@ struct SidebarPerformanceProofShellReadback: Equatable, Sendable {
             case .search:
                 return false
             case .grouping(let groupingMode):
-                AppCommandDispatcher.shared.dispatch(.showReposSidebar)
+                commandDispatcher.dispatch(.showReposSidebar)
                 let command: AppCommand
                 switch groupingMode {
                 case .repo: command = .setReposGroupingRepo
                 case .activity: command = .setReposGroupingActivity
                 case .tab: return false
                 }
-                AppCommandDispatcher.shared.dispatch(command)
+                commandDispatcher.dispatch(command)
                 return true
             case .sidebarCollapsed:
-                AppCommandDispatcher.shared.dispatch(.toggleSidebar)
+                commandDispatcher.dispatch(.toggleSidebar)
                 return true
             case .tabSelection(let tabID, _):
                 guard let tabIndex = latestReadback?.shell.tab.orderedTabIDs.firstIndex(of: tabID) else {
                     return false
                 }
                 let command: AppCommand = tabIndex == 0 ? .selectTab1 : .selectTab2
-                AppCommandDispatcher.shared.dispatch(command)
+                commandDispatcher.dispatch(command)
                 return true
             }
         }

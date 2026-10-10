@@ -30,6 +30,7 @@ struct DrawerPaneHostPublicationTests {
             height: 500, store: store, repoCache: RepoCacheAtom(),
             editorChooser: AtomRegistry(core: CoreAtomScope.store).editorChooser,
             viewRegistry: registry, action: { _ in },
+            commandDispatcher: AppTerminalFixtureCommandDispatcher(),
             arrangementInlineRenameState: ArrangementInlineRenameState(),
             resizeInteraction: nil, onDismiss: {}, onPaneFocusTrigger: { _ in },
             onFocusParentPane: {}, appLifecycleStore: AppLifecycleAtom(),

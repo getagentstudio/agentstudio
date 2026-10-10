@@ -7,6 +7,7 @@ enum GhosttyTranslatedActionAdmission: Sendable, Equatable {
     case routeExactFactOrControl(precedingTitle: TerminalPrecedingTitleBarrier?)
     case updateDirectHostState
     case handledLocally
+    case rejectedRetired
 }
 
 @MainActor
@@ -41,50 +42,6 @@ struct TerminalLocalActionMountedHostResolver {
         return MountedHost(host: host, paneID: paneID)
     }
 
-    static let surfaceManager = Self(
-        surfaceForID: { SurfaceManager.shared.surface(for: $0) },
-        paneIDForSurfaceID: { SurfaceManager.shared.paneId(for: $0) }
-    )
-}
-
-@MainActor
-struct TerminalLocalActionDrainDependencies {
-    let mountedHostResolver: TerminalLocalActionMountedHostResolver
-    let runtimeRegistry: RuntimeRegistry
-    let fallbackRuntimeRegistry: RuntimeRegistry?
-    let routingLookup: any GhosttyActionRoutingLookup
-    let activityContext: @MainActor (UUID) -> TerminalActivityProjectionContext?
-    let submitActivityInput: @MainActor (TerminalActivitySourceInput) async -> Void
-
-    init(
-        mountedHostResolver: TerminalLocalActionMountedHostResolver,
-        runtimeRegistry: RuntimeRegistry,
-        fallbackRuntimeRegistry: RuntimeRegistry?,
-        routingLookup: any GhosttyActionRoutingLookup = SurfaceManager.shared,
-        activityContext: @escaping @MainActor (UUID) -> TerminalActivityProjectionContext?,
-        submitActivityInput: @escaping @MainActor (TerminalActivitySourceInput) async -> Void
-    ) {
-        self.mountedHostResolver = mountedHostResolver
-        self.runtimeRegistry = runtimeRegistry
-        self.fallbackRuntimeRegistry = fallbackRuntimeRegistry
-        self.routingLookup = routingLookup
-        self.activityContext = activityContext
-        self.submitActivityInput = submitActivityInput
-    }
-
-    static var live: Self {
-        let runtimeRegistry = Ghostty.ActionRouter.runtimeRegistryForActionRouting
-        return Self(
-            mountedHostResolver: .surfaceManager,
-            runtimeRegistry: runtimeRegistry,
-            fallbackRuntimeRegistry: ObjectIdentifier(runtimeRegistry) != ObjectIdentifier(RuntimeRegistry.shared)
-                ? RuntimeRegistry.shared
-                : nil,
-            routingLookup: SurfaceManager.shared,
-            activityContext: { Ghostty.ActionRouter.terminalActivityProjectionContext(paneID: $0) },
-            submitActivityInput: { await Ghostty.ActionRouter.submitTerminalActivityInput($0) }
-        )
-    }
 }
 
 extension Ghostty.ActionRouter {
@@ -96,94 +53,33 @@ extension Ghostty.ActionRouter {
     ) -> GhosttyTranslatedActionAdmission {
         switch GhosttyActionDisposition.classify(event) {
         case .exactFactOrControl:
-            if case .cwdChanged(let cwdPath) = event,
-                accumulator.admitCWDPublication(cwdPath, for: surfaceID) == .equalSuppressed
-            {
-                equalSuppressionObserver(.cwd)
-                return .handledLocally
+            if case .cwdChanged(let cwdPath) = event {
+                let cwdAdmission = accumulator.admitCWDPublication(cwdPath, for: surfaceID)
+                if cwdAdmission == .retired { return .rejectedRetired }
+                if cwdAdmission == .equalSuppressed {
+                    equalSuppressionObserver(.cwd)
+                    return .handledLocally
+                }
             }
-            return .routeExactFactOrControl(
-                precedingTitle: accumulator.detachTitleBeforeExactBarrier(for: surfaceID)
-            )
+            return .routeExactFactOrControl(precedingTitle: accumulator.detachTitleBeforeExactBarrier(for: surfaceID))
         case .latestPresentation(let presentation):
-            offerLocalPresentation(presentation, for: surfaceID, accumulator: accumulator)
-            return .handledLocally
+            let result = offerLocalPresentation(presentation, for: surfaceID, accumulator: accumulator)
+            return result == .retired ? .rejectedRetired : .handledLocally
         case .latestSemanticMetadata(let metadata):
-            if offerLatestSemanticMetadata(metadata, for: surfaceID, accumulator: accumulator)
-                == .equalSuppressed
-            {
-                equalSuppressionObserver(.title)
-            }
-            return .handledLocally
+            let result = offerLatestSemanticMetadata(metadata, for: surfaceID, accumulator: accumulator)
+            if result == .equalSuppressed { equalSuppressionObserver(.title) }
+            return result == .retired ? .rejectedRetired : .handledLocally
         case .activityEvidence(let evidence):
-            if offerLocalActivityEvidence(evidence, for: surfaceID, accumulator: accumulator)
-                == .equalSuppressed
-            {
-                equalSuppressionObserver(.activity)
-            }
-            return .handledLocally
+            let result = offerLocalActivityEvidence(evidence, for: surfaceID, accumulator: accumulator)
+            if result == .equalSuppressed { equalSuppressionObserver(.activity) }
+            return result == .retired ? .rejectedRetired : .handledLocally
         case .exactLocalLifecycle(let lifecycle):
-            offerLocalLifecycle(lifecycle, for: surfaceID, accumulator: accumulator)
-            return .handledLocally
+            let result = offerLocalLifecycle(lifecycle, for: surfaceID, accumulator: accumulator)
+            return result == .retired ? .rejectedRetired : .handledLocally
         case .diagnostic(.directHostState):
             return .updateDirectHostState
         case .diagnostic(.localOnly), .diagnostic(.deferred), .diagnostic(.unhandled):
             return .handledLocally
-        }
-    }
-
-    static func retireLocalActions(for surfaceID: UUID) {
-        localActionDrainScheduler.cancel(for: surfaceID)
-        localActionAccumulator.removeSurface(surfaceID)
-    }
-
-    @MainActor
-    static func applyOrderedActivityControl(
-        surfaceID: UUID,
-        paneID: UUID,
-        control: TerminalActivityOrderedControl,
-        contextBeforeControl: TerminalActivityProjectionContext? = nil,
-        contextAfterControl: TerminalActivityProjectionContext? = nil,
-        accumulator: TerminalLocalActionAccumulator = localActionAccumulator
-    ) async {
-        let currentContext = terminalActivityProjectionContext(paneID: paneID)
-        let precedingAggregate = accumulator.detachActivityBeforeControl(
-            for: surfaceID,
-            contextBeforeControl: contextBeforeControl ?? currentContext,
-            contextAfterControl: contextAfterControl
-        )
-        await submitTerminalActivityInput(
-            .orderedControl(
-                surfaceID: surfaceID,
-                paneID: paneID,
-                precedingAggregate: precedingAggregate,
-                control: control
-            )
-        )
-    }
-
-    @MainActor
-    static func closeLocalActions(surfaceID: UUID, paneID: UUID) {
-        localActionDrainScheduler.cancel(for: surfaceID)
-        let precedingAggregate = localActionAccumulator.detachActivityForSurfaceClose(
-            surfaceID,
-            defaultActivityContext: terminalActivityProjectionContext(paneID: paneID)
-        )
-        Task { @MainActor in
-            guard
-                shouldSubmitSurfaceClose(
-                    currentPaneID: SurfaceManager.shared.paneId(for: surfaceID),
-                    closingPaneID: paneID
-                )
-            else { return }
-            await submitTerminalActivityInput(
-                .orderedControl(
-                    surfaceID: surfaceID,
-                    paneID: paneID,
-                    precedingAggregate: precedingAggregate,
-                    control: .surfaceClosed
-                )
-            )
         }
     }
 
@@ -198,16 +94,16 @@ extension Ghostty.ActionRouter {
         _ presentation: TerminalLocalPresentationAction,
         for surfaceID: UUID,
         accumulator: TerminalLocalActionAccumulator
-    ) {
+    ) -> TerminalLocalAccumulatorOfferResult {
         switch presentation {
         case .mouseShape(let shape):
-            accumulator.offer(.mouseShape(shape), for: surfaceID)
+            return accumulator.offer(.mouseShape(shape), for: surfaceID)
         case .mouseVisibility(let isVisible):
-            accumulator.offer(.mouseVisibility(isVisible), for: surfaceID)
+            return accumulator.offer(.mouseVisibility(isVisible), for: surfaceID)
         case .searchMatches(let totalMatches):
-            accumulator.offer(.searchMatches(totalMatches), for: surfaceID)
+            return accumulator.offer(.searchMatches(totalMatches), for: surfaceID)
         case .searchSelection(let selectedMatchIndex):
-            accumulator.offer(.searchSelection(selectedMatchIndex), for: surfaceID)
+            return accumulator.offer(.searchSelection(selectedMatchIndex), for: surfaceID)
         }
     }
 
@@ -245,165 +141,13 @@ extension Ghostty.ActionRouter {
         _ lifecycle: TerminalLocalLifecycleAction,
         for surfaceID: UUID,
         accumulator: TerminalLocalActionAccumulator
-    ) {
+    ) -> TerminalLocalAccumulatorOfferResult {
         switch lifecycle {
         case .searchStarted(let query):
-            accumulator.offer(.searchStarted(query: query), for: surfaceID)
+            return accumulator.offer(.searchStarted(query: query), for: surfaceID)
         case .searchEnded:
-            accumulator.offer(.searchEnded, for: surfaceID)
+            return accumulator.offer(.searchEnded, for: surfaceID)
         }
-    }
-
-    @MainActor
-    static func drainLocalActions(for surfaceID: UUID) async {
-        await drainLocalActions(
-            for: surfaceID,
-            lane: .immediate,
-            dependencies: .live
-        )
-    }
-
-    @MainActor
-    static func drainLocalActions(
-        for surfaceID: UUID,
-        lane: TerminalLocalActionLane
-    ) async {
-        await drainLocalActions(for: surfaceID, lane: lane, dependencies: .live)
-    }
-
-    @MainActor
-    static func drainLocalActions(
-        for surfaceID: UUID,
-        lane: TerminalLocalActionLane,
-        dependencies: TerminalLocalActionDrainDependencies
-    ) async {
-        guard
-            let mountedHost = dependencies.mountedHostResolver.resolve(
-                expectedSurfaceID: surfaceID
-            )
-        else {
-            retireLocalActions(for: surfaceID)
-            return
-        }
-        let surfaceView = mountedHost.host
-        let paneUUID = mountedHost.paneID
-
-        guard
-            let batch = localActionAccumulator.beginDrain(
-                for: surfaceID,
-                lane: lane,
-                defaultActivityContext: lane == .title ? nil : dependencies.activityContext(paneUUID)
-            )
-        else { return }
-        defer {
-            localActionAccumulator.restoreUnacknowledgedPublications(from: batch)
-            _ = localActionAccumulator.finishDrain(for: surfaceID, lane: lane)
-        }
-
-        let clock = ContinuousClock()
-        let compactApplyStartedAt = clock.now
-        if let scrollbarState = batch.presentation.scrollbarState,
-            surfaceView.hostScrollbarState != scrollbarState
-        {
-            surfaceView.updateHostScrollbarState(scrollbarState)
-        }
-
-        let paneID = PaneId(existingUUID: paneUUID)
-        let routedRuntime = dependencies.runtimeRegistry.runtime(for: paneID) as? TerminalRuntime
-        let runtime =
-            routedRuntime
-            ?? dependencies.fallbackRuntimeRegistry?.runtime(for: paneID) as? TerminalRuntime
-
-        var didChangeTitle = false
-        let equalWriteSuppressedCount: Int
-        if let runtime {
-            if let surfaceTitle = batch.titleMetadata?.surfaceTitle,
-                surfaceView.title != surfaceTitle
-            {
-                surfaceView.titleDidChange(surfaceTitle)
-                didChangeTitle = true
-            }
-            equalWriteSuppressedCount = runtime.applyLocalActionBatch(batch)
-            let didApplyRuntimeTitle: Bool
-            if let runtimeTitle = batch.titleMetadata?.runtimeTitle {
-                didApplyRuntimeTitle = routeContractedTitleMetadata(
-                    runtimeTitle,
-                    surfaceViewObjectID: ObjectIdentifier(surfaceView),
-                    routingLookup: dependencies.routingLookup
-                )
-            } else {
-                didApplyRuntimeTitle = false
-            }
-            if let titleMetadata = batch.titleMetadata, didApplyRuntimeTitle {
-                didChangeTitle = true
-                localActionAccumulator.acknowledgeSuccessfulTitlePublication(
-                    titleMetadata,
-                    for: surfaceID
-                )
-            }
-        } else {
-            equalWriteSuppressedCount = 0
-        }
-        let compactApplyServiceTime = compactApplyStartedAt.duration(to: clock.now)
-        let activityProjectionRoundTrip = await publishActivityProjectionIfNeeded(
-            batch,
-            paneUUID: paneUUID,
-            dependencies: dependencies
-        )
-        surfaceView.performanceTraceRecorder?.recordTerminalCompactApply(
-            TerminalCompactApplyPerformanceSnapshot(
-                equalWriteSuppressedCount: UInt64(equalWriteSuppressedCount),
-                activityProjectionRoundTrip: activityProjectionRoundTrip
-            ),
-            serviceTime: compactApplyServiceTime
-        )
-        let currentUptimeNanoseconds = DispatchTime.now().uptimeNanoseconds
-        surfaceView.performanceTraceRecorder?.recordTerminalAccumulatorDrain(
-            terminalAccumulatorDrainPerformanceSnapshot(
-                for: batch,
-                drainClass: terminalAccumulatorDrainClass(for: batch)
-            ),
-            queueAge: terminalAccumulatorQueueAge(
-                firstOfferedAtNanoseconds: batch.firstOfferedAtNanoseconds,
-                currentUptimeNanoseconds: currentUptimeNanoseconds
-            ),
-            applyOutcome: batch.titleMetadata == nil ? nil : (didChangeTitle ? .changed : .equal)
-        )
-    }
-
-    @MainActor
-    private static func publishActivityProjectionIfNeeded(
-        _ batch: TerminalLocalActionBatch,
-        paneUUID: UUID,
-        dependencies: TerminalLocalActionDrainDependencies
-    ) async -> TerminalActivityProjectionRoundTripPerformance {
-        guard
-            let aggregate = batch.activity,
-            let latestState = batch.presentation.scrollbarState,
-            let context = batch.activityContext,
-            !Task.isCancelled
-        else { return .notSubmitted }
-
-        let clock = ContinuousClock()
-        let projectionStartedAt = clock.now
-        await dependencies.submitActivityInput(
-            .aggregate(
-                surfaceID: batch.surfaceID,
-                paneID: paneUUID,
-                input: TerminalActivityAggregateInput(
-                    aggregate: aggregate,
-                    latestState: latestState,
-                    context: context
-                )
-            )
-        )
-        if !Task.isCancelled {
-            localActionAccumulator.acknowledgeSuccessfulActivityPublication(
-                aggregate,
-                for: batch.surfaceID
-            )
-        }
-        return .completed(projectionStartedAt.duration(to: clock.now))
     }
 
     static func terminalAccumulatorDrainPerformanceSnapshot(
@@ -468,98 +212,4 @@ extension Ghostty.ActionRouter {
         return .nanoseconds(Int64(clamping: queueAgeNanoseconds))
     }
 
-    @MainActor
-    @discardableResult
-    static func routeContractedTitleMetadata(
-        _ metadata: TerminalLatestSemanticMetadataAction,
-        surfaceViewObjectID: ObjectIdentifier,
-        routingLookup: any GhosttyActionRoutingLookup
-    ) -> Bool {
-        let actionTag: UInt32
-        let payload: GhosttyAdapter.ActionPayload
-        switch metadata {
-        case .titleChanged(let title):
-            actionTag = UInt32(GHOSTTY_ACTION_SET_TITLE.rawValue)
-            payload = .titleChanged(title)
-        case .tabTitleChanged(let title):
-            actionTag = UInt32(GHOSTTY_ACTION_SET_TAB_TITLE.rawValue)
-            payload = .tabTitleChanged(title)
-        }
-        return routeActionToTerminalRuntimeOnMainActor(
-            actionTag: actionTag,
-            payload: payload,
-            surfaceViewObjectId: surfaceViewObjectID,
-            routingLookup: routingLookup
-        )
-    }
-
-    @MainActor
-    static func isCurrentSurfaceLifetime(
-        expectedSurfaceID: UUID,
-        surfaceViewObjectID: ObjectIdentifier,
-        routingLookup: any GhosttyActionRoutingLookup
-    ) -> Bool {
-        routingLookup.surfaceId(forViewObjectId: surfaceViewObjectID) == expectedSurfaceID
-    }
-
-    @MainActor
-    static func routeExactFactOrControlOnMainActor(
-        precedingTitle: TerminalPrecedingTitleBarrier?,
-        actionTag: UInt32,
-        payload: GhosttyAdapter.ActionPayload,
-        surfaceViewObjectID: ObjectIdentifier,
-        expectedSurfaceID: UUID,
-        routingLookup: any GhosttyActionRoutingLookup,
-        accumulator: TerminalLocalActionAccumulator = localActionAccumulator,
-        precedingTitleApplyObserver: @MainActor (Bool) -> Void = { _ in }
-    ) async -> Bool {
-        guard
-            isCurrentSurfaceLifetime(
-                expectedSurfaceID: expectedSurfaceID,
-                surfaceViewObjectID: surfaceViewObjectID,
-                routingLookup: routingLookup
-            )
-        else {
-            accumulator.removeSurface(expectedSurfaceID)
-            return false
-        }
-        if let precedingTitle {
-            let didApplyPrecedingTitle = routeContractedTitleMetadata(
-                precedingTitle.metadata.runtimeTitle,
-                surfaceViewObjectID: surfaceViewObjectID,
-                routingLookup: routingLookup
-            )
-            precedingTitleApplyObserver(didApplyPrecedingTitle)
-            if didApplyPrecedingTitle {
-                accumulator.acknowledgeSuccessfulTitlePublication(
-                    precedingTitle.metadata,
-                    for: expectedSurfaceID
-                )
-            }
-        }
-        if case .commandFinished = payload,
-            let paneID = routingLookup.paneId(for: expectedSurfaceID)
-        {
-            await applyOrderedActivityControl(
-                surfaceID: expectedSurfaceID,
-                paneID: paneID,
-                control: .commandFinished,
-                accumulator: accumulator
-            )
-        }
-        let didPublish = routeActionToTerminalRuntimeOnMainActor(
-            actionTag: actionTag,
-            payload: payload,
-            surfaceViewObjectId: surfaceViewObjectID,
-            routingLookup: routingLookup
-        )
-        if case .cwdChanged(let cwdPath) = payload {
-            if didPublish {
-                accumulator.acknowledgeSuccessfulCWDPublication(cwdPath, for: expectedSurfaceID)
-            } else {
-                accumulator.recordFailedCWDPublication(cwdPath, for: expectedSurfaceID)
-            }
-        }
-        return didPublish
-    }
 }

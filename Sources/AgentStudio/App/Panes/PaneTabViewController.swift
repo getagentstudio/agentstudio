@@ -83,7 +83,7 @@ private struct PaneInboxCommandTarget {
 /// local. It also handles direct tab-order updates (`store.moveTab`) from drag
 /// interactions as a UI-only mutation.
 @MainActor
-class PaneTabViewController: NSViewController, NSPopoverDelegate, WorkspaceCommandHandling {
+class PaneTabViewController: NSViewController, NSPopoverDelegate, WorkspaceCommandHandling, Observable {
     typealias OpenEditorHandler =
         @MainActor (_ id: EditorTargetId, _ path: URL, _ installedTargets: [ExternalEditorTarget]) -> Bool
     typealias BridgeViewerSurfaceRequestHandler =
@@ -125,7 +125,14 @@ class PaneTabViewController: NSViewController, NSPopoverDelegate, WorkspaceComma
     private let tabRenamePopoverState: TabRenamePopoverState
     private let arrangementInlineRenameState: ArrangementInlineRenameState
     private let arrangementPanelPresentation: ArrangementPanelPresentationAtom
+    let commandDispatcher: any AppCommandDispatching
+    private let synchronizeRuntimeFocus: @MainActor (UUID?) -> Void
     private let registersAsCommandHandler: Bool
+    private let commandOwnerObservation = ObservationRegistrar()
+    var isEligibleCommandHandler: Bool {
+        commandOwnerObservation.access(self, keyPath: \.isEligibleCommandHandler)
+        return registersAsCommandHandler && isViewLoaded
+    }
     private var tabRenamePopover: NSPopover?
     private var paneNotePopover: NSPopover?
     private var tabRenameTransientSurfaceToken: TransientKeyboardSurfaceToken?
@@ -251,6 +258,8 @@ class PaneTabViewController: NSViewController, NSPopoverDelegate, WorkspaceComma
         workspaceWindowId: UUID? = nil,
         executor: WorkspaceActionExecutor,
         runtimeCommandDispatcher: any PaneRuntimeCommandDispatching,
+        commandDispatcher: any AppCommandDispatching,
+        synchronizeRuntimeFocus: @escaping @MainActor (UUID?) -> Void,
         tabBarAdapter: TabBarAdapter,
         viewRegistry: ViewRegistry,
         bridgePaneAttendance: BridgePaneAttendanceAtom,
@@ -338,6 +347,8 @@ class PaneTabViewController: NSViewController, NSPopoverDelegate, WorkspaceComma
         self.tabRenamePopoverState = tabRenamePopoverState
         self.arrangementInlineRenameState = arrangementInlineRenameState
         self.arrangementPanelPresentation = arrangementPanelPresentation
+        self.commandDispatcher = commandDispatcher
+        self.synchronizeRuntimeFocus = synchronizeRuntimeFocus
         self.registersAsCommandHandler = registersAsCommandHandler
         self.embedsTabBarInView = embedsTabBarInView
         super.init(nibName: nil, bundle: nil)
@@ -428,21 +439,22 @@ class PaneTabViewController: NSViewController, NSPopoverDelegate, WorkspaceComma
             return tabBarHostingView
         }
 
+        let commandDispatcher = self.commandDispatcher
         let tabBar = CustomTabBar(
             adapter: tabBarAdapter,
             onSelect: { [weak self] tabId in
                 self?.handlePaneFocusTrigger(.tabClick(PaneTabClickFocusTrigger(targetTabId: tabId)))
             },
-            canDispatchCommand: { command, tabId in
-                AppCommandDispatcher.shared.canDispatch(
+            canDispatchCommand: { [commandDispatcher] command, tabId in
+                commandDispatcher.canDispatch(
                     command,
                     target: tabId,
                     targetType: .tab
                 )
             },
-            onCommand: { [weak self] command, tabId in
+            onCommand: { [weak self, commandDispatcher] command, tabId in
                 guard self != nil else { return }
-                AppCommandDispatcher.shared.dispatch(
+                commandDispatcher.dispatch(
                     command,
                     target: tabId,
                     targetType: .tab
@@ -458,6 +470,7 @@ class PaneTabViewController: NSViewController, NSPopoverDelegate, WorkspaceComma
         )
         let hostingView = DraggableTabBarHostingView(
             rootView: tabBar,
+            commandDispatcher: commandDispatcher,
             performanceTraceRecorder: performanceTraceRecorder
         )
         hostingView.configure(adapter: tabBarAdapter) { [weak self] fromId, insertionIndex, correlationId in
@@ -467,7 +480,7 @@ class PaneTabViewController: NSViewController, NSPopoverDelegate, WorkspaceComma
                 correlationId: correlationId
             )
         }
-        hostingView.contextMenuRequestHandler = { [weak self, weak hostingView] tabId, event in
+        hostingView.contextMenuRequestHandler = { [weak self, weak hostingView, commandDispatcher] tabId, event in
             guard
                 let self,
                 let hostingView,
@@ -477,15 +490,15 @@ class PaneTabViewController: NSViewController, NSPopoverDelegate, WorkspaceComma
                 clickedTabIsSplit: clickedTab.isSplit,
                 event: event,
                 in: hostingView,
-                canDispatchCommand: { command in
-                    AppCommandDispatcher.shared.canDispatch(
+                canDispatchCommand: { [commandDispatcher] command in
+                    commandDispatcher.canDispatch(
                         command,
                         target: tabId,
                         targetType: .tab
                     )
                 },
-                onCommand: { command in
-                    AppCommandDispatcher.shared.dispatch(
+                onCommand: { [commandDispatcher] command in
+                    commandDispatcher.dispatch(
                         command,
                         target: tabId,
                         targetType: .tab
@@ -519,20 +532,22 @@ class PaneTabViewController: NSViewController, NSPopoverDelegate, WorkspaceComma
     }
 
     func makeToolbarControlView(_ control: MainToolbarControl) -> NSView {
+        let commandDispatcher = self.commandDispatcher
         let content: AnyView =
             switch control {
             case .watchFolder:
-                AnyView(WatchFolderTabBarMenu())
+                AnyView(WatchFolderTabBarMenu(commandDispatcher: commandDispatcher))
             case .managementLayer:
-                AnyView(TabBarManagementLayerButton())
+                AnyView(TabBarManagementLayerButton(commandDispatcher: commandDispatcher))
             case .arrangement:
                 AnyView(
                     TabBarArrangementButton(
                         adapter: tabBarAdapter,
                         arrangementInlineRenameState: arrangementInlineRenameState,
                         octiconLoader: octiconLoader,
-                        onCommand: { command, tabId in
-                            AppCommandDispatcher.shared.dispatch(
+                        commandDispatcher: commandDispatcher,
+                        onCommand: { [commandDispatcher] command, tabId in
+                            commandDispatcher.dispatch(
                                 command,
                                 target: tabId,
                                 targetType: .tab
@@ -552,7 +567,7 @@ class PaneTabViewController: NSViewController, NSPopoverDelegate, WorkspaceComma
                     }
                 )
             case .newTab:
-                AnyView(NewTabButton())
+                AnyView(NewTabButton(commandDispatcher: commandDispatcher))
             }
 
         let hostingView = ToolbarControlHostingView(
@@ -566,11 +581,15 @@ class PaneTabViewController: NSViewController, NSPopoverDelegate, WorkspaceComma
     }
 
     override func viewDidLoad() {
-        super.viewDidLoad()
-
         if registersAsCommandHandler {
-            AppCommandDispatcher.shared.handler = self
+            commandOwnerObservation.willSet(self, keyPath: \.isEligibleCommandHandler)
         }
+        defer {
+            if registersAsCommandHandler {
+                commandOwnerObservation.didSet(self, keyPath: \.isEligibleCommandHandler)
+            }
+        }
+        super.viewDidLoad()
 
         syncPaneViewRegistrySlots()
         syncTabContentHosts()
@@ -1005,9 +1024,7 @@ class PaneTabViewController: NSViewController, NSPopoverDelegate, WorkspaceComma
                 self.managementNavigationScope = .drawer(parentPaneId: parentPaneId)
                 _ = self.clearFirstResponderToWindowContentForDrawer(parentPaneId: parentPaneId)
             },
-            syncRuntimeFocus: { surfaceId in
-                SurfaceManager.shared.syncFocus(activeSurfaceId: surfaceId)
-            }
+            syncRuntimeFocus: synchronizeRuntimeFocus
         )
     }
 
@@ -1414,6 +1431,7 @@ class PaneTabViewController: NSViewController, NSPopoverDelegate, WorkspaceComma
             appLifecycleStore: appLifecycleStore,
             closeTransitionCoordinator: closeTransitionCoordinator,
             actionDispatcher: actionDispatcher,
+            commandDispatcher: commandDispatcher,
             arrangementInlineRenameState: arrangementInlineRenameState,
             onPaneFocusTrigger: { [weak self] trigger in
                 self?.handlePaneFocusTrigger(trigger)
@@ -1527,7 +1545,7 @@ class PaneTabViewController: NSViewController, NSPopoverDelegate, WorkspaceComma
             return nil
         }
 
-        let dispatcher = AppCommandDispatcher.shared
+        let dispatcher = commandDispatcher
         let isEnabled = dispatcher.canDispatch(
             command,
             target: sourcePaneId,
@@ -1973,6 +1991,7 @@ class PaneTabViewController: NSViewController, NSPopoverDelegate, WorkspaceComma
         PaneTabEmptyStateViewFactory.make(
             model: emptyStateModel,
             octiconLoader: octiconLoader,
+            commandDispatcher: commandDispatcher,
 
             onWatchFolder: { [weak self] in self?.watchFolderAction() },
             onOpenRecent: { [weak self] target in self?.openRecentTarget(target) },
@@ -1981,7 +2000,7 @@ class PaneTabViewController: NSViewController, NSPopoverDelegate, WorkspaceComma
     }
 
     @objc private func watchFolderAction() {
-        AppCommandDispatcher.shared.dispatch(.watchFolder)
+        commandDispatcher.dispatch(.watchFolder)
     }
 
     private func updateEmptyState() {
@@ -1998,6 +2017,7 @@ class PaneTabViewController: NSViewController, NSPopoverDelegate, WorkspaceComma
             WorkspaceEmptyStateView(
                 model: currentModel,
                 octiconLoader: octiconLoader,
+                commandDispatcher: commandDispatcher,
 
                 onWatchFolder: { [weak self] in self?.watchFolderAction() },
                 onOpenRecent: { [weak self] target in self?.openRecentTarget(target) },
@@ -2097,11 +2117,11 @@ class PaneTabViewController: NSViewController, NSPopoverDelegate, WorkspaceComma
                     shortcut,
                     context: keyboardContext
                 ),
-                AppCommandDispatcher.shared.canDispatch(shortcut.command)
+                commandDispatcher.canDispatch(shortcut.command)
             else {
                 return false
             }
-            AppCommandDispatcher.shared.dispatchKeyboardShortcut(shortcut)
+            commandDispatcher.dispatchKeyboardShortcut(shortcut)
             return true
         }
 
@@ -2123,8 +2143,8 @@ class PaneTabViewController: NSViewController, NSPopoverDelegate, WorkspaceComma
             else {
                 return false
             }
-            if AppCommandDispatcher.shared.canDispatch(shortcut.command) {
-                AppCommandDispatcher.shared.dispatchKeyboardShortcut(shortcut)
+            if commandDispatcher.canDispatch(shortcut.command) {
+                commandDispatcher.dispatchKeyboardShortcut(shortcut)
                 return true
             }
             if AppShortcutDispatchPolicy.shouldConsumeUnavailableGlobalShortcut(
@@ -2154,7 +2174,7 @@ class PaneTabViewController: NSViewController, NSPopoverDelegate, WorkspaceComma
             requiresNeutralFocus: trigger.modifiers.isEmpty || !allowsModifiedEmptyDrawerShortcutWithTextFocus
         ) {
             guard
-                AppCommandDispatcher.shared.canDispatch(
+                commandDispatcher.canDispatch(
                     .addDrawerPane,
                     target: parentPaneId,
                     targetType: .pane
@@ -2162,7 +2182,7 @@ class PaneTabViewController: NSViewController, NSPopoverDelegate, WorkspaceComma
             else {
                 return false
             }
-            AppCommandDispatcher.shared.dispatch(.addDrawerPane, target: parentPaneId, targetType: .pane)
+            commandDispatcher.dispatch(.addDrawerPane, target: parentPaneId, targetType: .pane)
             return true
         }
 
@@ -2205,11 +2225,11 @@ class PaneTabViewController: NSViewController, NSPopoverDelegate, WorkspaceComma
                 shortcut,
                 context: keyboardContext
             ),
-            AppCommandDispatcher.shared.canDispatch(shortcut.command)
+            commandDispatcher.canDispatch(shortcut.command)
         else {
             return true
         }
-        AppCommandDispatcher.shared.dispatch(shortcut.command)
+        commandDispatcher.dispatch(shortcut.command)
         return true
     }
 

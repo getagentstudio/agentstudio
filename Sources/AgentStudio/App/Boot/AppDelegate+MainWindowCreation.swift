@@ -10,6 +10,10 @@ struct AppDelegateMainWindowCreationDependencies {
     let store: WorkspaceStore
     let repoCache: RepoCacheAtom
     let octiconLoader: OcticonLoader
+    let commandDispatcher: any AppCommandDispatching
+    let resolveCommandCapabilities: RepoExplorerCommandCapabilityResolver
+    let executionOwnerIdentities: @MainActor () -> CommandExecutionOwnerIdentities
+    let synchronizeRuntimeFocus: @MainActor (UUID?) -> Void
     let executor: WorkspaceActionExecutor
     let workspaceSurfaceCoordinator: WorkspaceSurfaceCoordinator
     let applicationLifecycleMonitor: ApplicationLifecycleMonitor
@@ -76,6 +80,12 @@ extension AppDelegate {
             store: store,
             repoCache: atomStore.core.repoCache,
             octiconLoader: octiconLoader,
+            commandDispatcher: commandDispatcherForBoot(),
+            resolveCommandCapabilities: commandDispatcherForBoot().repoExplorerCommandPresentationSnapshot,
+            executionOwnerIdentities: commandDispatcherForBoot().executionOwnerIdentities,
+            synchronizeRuntimeFocus: { [weak surfaceManager = terminalLookupForBoot()] in
+                surfaceManager?.syncFocus(activeSurfaceId: $0)
+            },
             executor: executor,
             workspaceSurfaceCoordinator: workspaceSurfaceCoordinator,
             applicationLifecycleMonitor: applicationLifecycleMonitor,
@@ -114,6 +124,10 @@ extension AppDelegate {
             paneContextReaders: dependencies.paneContextReaders,
             workspaceActionExecutor: dependencies.executor,
             runtimeCommandDispatcher: dependencies.workspaceSurfaceCoordinator,
+            commandDispatcher: dependencies.commandDispatcher,
+            resolveCommandCapabilities: dependencies.resolveCommandCapabilities,
+            executionOwnerIdentities: dependencies.executionOwnerIdentities,
+            synchronizeRuntimeFocus: dependencies.synchronizeRuntimeFocus,
             applicationLifecycleMonitor: dependencies.applicationLifecycleMonitor,
             appLifecycleStore: dependencies.appLifecycleStore,
             tabBarAdapter: tabBarAdapter,

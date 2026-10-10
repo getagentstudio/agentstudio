@@ -34,7 +34,9 @@ struct WorkspacePaneDiscardFocusTests {
         let registry = ViewRegistry()
         let coordinator = WorkspaceSurfaceCoordinator(
             store: store, viewRegistry: registry, runtime: SessionRuntime(store: store),
-            surfaceManager: HarnessSurfaceManager(), runtimeRegistry: RuntimeRegistry(),
+            surfaceManager: HarnessSurfaceManager(),
+            terminalSurfaceCommandDispatcher: AppTerminalFixtureSurfaceCommands(),
+            terminalSurfaceOperations: makeAppTerminalFixtureMountOperations(), runtimeRegistry: RuntimeRegistry(),
             windowLifecycleStore: WindowLifecycleAtom(), ipcLifecycle: .testUnavailable,
             bridgePaneAttendance: BridgePaneAttendanceAtom())
         let window = NSWindow(

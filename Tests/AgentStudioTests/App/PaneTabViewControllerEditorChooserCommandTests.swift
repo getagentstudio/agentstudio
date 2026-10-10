@@ -55,6 +55,8 @@ struct PaneTabViewControllerEditorChooserCommandTests {
             viewRegistry: viewRegistry,
             runtime: runtime,
             surfaceManager: surfaceManager,
+            terminalSurfaceCommandDispatcher: AppTerminalFixtureSurfaceCommands(),
+            terminalSurfaceOperations: makeAppTerminalFixtureMountOperations(surfaceManager: surfaceManager),
             runtimeRegistry: runtimeRegistry,
             windowLifecycleStore: windowLifecycleStore,
             ipcLifecycle: .testUnavailable,
@@ -68,6 +70,7 @@ struct PaneTabViewControllerEditorChooserCommandTests {
             appLifecycleStore: appLifecycleStore,
             executor: WorkspaceActionExecutor(coordinator: coordinator, store: store),
             runtimeCommandDispatcher: coordinator,
+            commandDispatcher: AppTerminalFixtureCommandDispatcher(), synchronizeRuntimeFocus: { _ in },
             tabBarAdapter: TabBarAdapter(
                 store: store,
                 repoCache: RepoCacheAtom(),

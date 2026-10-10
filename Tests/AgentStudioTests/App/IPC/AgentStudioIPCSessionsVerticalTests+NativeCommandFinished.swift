@@ -23,13 +23,6 @@ extension AgentStudioIPCSessionsVerticalTests {
         defer { try? FileManager.default.removeItem(at: database.root) }
         let pane = harness.boundPaneId
         let native = NativeCommandExitRoute(pane: pane, bus: harness.commandHarness.coordinator.paneEventBus)
-        let originalRegistry = Ghostty.ActionRouter.runtimeRegistryForActionRouting
-        Ghostty.ActionRouter.setRuntimeRegistry(native.registry)
-        Ghostty.ActionRouter.bindTerminalActivityInput(
-            id: native.bindingId,
-            context: { _ in
-                .init(isAttended: true, isAgentClassified: true, outputBurstThreshold: 30)
-            }, sink: { _ in try? await native.held.arrive(()) })
         let time = Mutex(ContinuousClock.now.advanced(by: .seconds(-1)))
         let endFacts = FactRecorder<UUID, UUID>(
             vocabulary: .init(
@@ -55,12 +48,12 @@ extension AgentStudioIPCSessionsVerticalTests {
                 let summary = try await ingestion.sessionSummary(paneId: pane)
                 #expect(summary == expected)
             }
-            await native.cleanUp(originalRegistry: originalRegistry)
+            await native.cleanUp()
             await harness.tearDown()
             try await endFacts.finish()
         } catch {
             harness.commandHarness.coordinator.sessionsIngestion = nil
-            await native.cleanUp(originalRegistry: originalRegistry)
+            await native.cleanUp()
             await harness.tearDown()
             try? await endFacts.finish()
             throw error
@@ -95,7 +88,7 @@ private func exerciseNativeExit(_ context: NativeCommandExitContext) async throw
     }
     let initial = try #require(try await ingestion.sessionSummary(paneId: pane))
     let invocation = try await native.invokeCallback()
-    try #require(invocation.handled)
+    try #require(invocation)
     try await native.held.firstArrival()
     #expect((await native.runtime.eventsSince(seq: 0)).events.isEmpty)
     let captured = try #require(native.capture.instant.withLock { $0 })
@@ -108,7 +101,7 @@ private func exerciseNativeExit(_ context: NativeCommandExitContext) async throw
     }
     let beforeRelease = try await ingestion.sessionSummary(paneId: pane)
     native.held.release()
-    #expect(await invocation.route.value)
+    await native.handler.retire()
     let replay = await native.runtime.eventsSince(seq: 0)
     let envelope = try #require(replay.events.first)
     guard case .pane(let exit) = envelope else {
@@ -140,28 +133,41 @@ enum NativeCommandExitScenario: CaseIterable, Equatable, Sendable {
 private final class NativeCommandExitRoute {
     let held = HeldStep<Void>("native commandFinished ordered control")
     let capture = NativeCommandExitCapture()
-    let bindingId = UUIDv7.generate()
     let surfaceId = UUIDv7.generate()
     let view = NSView(frame: .zero)
     let runtime: TerminalRuntime
     let registry = RuntimeRegistry()
     let lookup: NativeCommandExitLookup
-    let accumulator = TerminalLocalActionAccumulator { _, _ in }
+    let handler: Ghostty.ActionRouter
 
     init(pane: UUID, bus: EventBus<RuntimeEnvelope>) {
         runtime = TerminalRuntime(
             paneId: .init(existingUUID: pane), metadata: .init(paneId: .init(existingUUID: pane), title: "Native exit"),
-            paneEventBus: bus)
+            paneEventBus: bus, surfaceCommandDispatcher: AppTerminalFixtureSurfaceCommands()
+        )
         lookup = NativeCommandExitLookup(view: ObjectIdentifier(view), surface: surfaceId, pane: pane)
         _ = registry.register(runtime)
+        let heldControl = held
+        handler = Ghostty.ActionRouter(
+            host: GhosttyActionRoutingHost(
+                dependencies: .init(
+                    runtimeRegistry: registry,
+                    routingLookup: lookup,
+                    mountedHostResolver: .init(surfaceForID: { _ in nil }, paneIDForSurfaceID: { _ in nil }),
+                    applyNativeView: { _, _, _ in .dropped(.staleSurface) },
+                    activityContext: { _ in .init(isAttended: true, isAgentClassified: true, outputBurstThreshold: 30)
+                    },
+                    submitActivityInput: { _ in try? await heldControl.arrive(()) },
+                    startupTraceRecorder: nil,
+                    traceRuntime: nil
+                )))
     }
 
-    func cleanUp(originalRegistry: RuntimeRegistry) async {
+    func cleanUp() async {
         held.retire()
-        if let route = capture.routeTask.withLock({ $0 }) { _ = await route.value }
+        await handler.retire()
         _ = await runtime.shutdown(timeout: .zero)
-        Ghostty.ActionRouter.unbindTerminalActivityInput(id: bindingId)
-        Ghostty.ActionRouter.setRuntimeRegistry(originalRegistry)
+        await runtime.finishAndJoinOutboundDelivery()
     }
 
     func waitForCoordinatorDelivery(pane: UUID) async -> AppEvent? {
@@ -179,34 +185,26 @@ private final class NativeCommandExitRoute {
         return await bellWaiter.value
     }
 
-    func invokeCallback() async throws -> (handled: Bool, route: Task<Bool, Never>) {
+    func invokeCallback() async throws -> Bool {
         let callbackCapture = capture
-        let callbackLookup = lookup
-        let callbackAccumulator = accumulator
+        let callbackHandler = handler
         let viewIdentity = ObjectIdentifier(view)
         let expectedSurface = surfaceId
-        let handled = await valueFromDedicatedThread {
+        return await valueFromDedicatedThread {
             var action = ghostty_action_s(tag: GHOSTTY_ACTION_COMMAND_FINISHED, action: ghostty_action_u())
             action.action.command_finished.exit_code = 0
             action.action.command_finished.duration = 42
-            guard let app = UnsafeMutableRawPointer(bitPattern: 1) else { return false }
-            return Ghostty.ActionRouter.handleAction(
-                app, target: ghostty_target_s(tag: GHOSTTY_TARGET_APP, target: ghostty_target_u(surface: nil)),
-                action: action, routingLookupProvider: { callbackLookup },
-                metadataActionRouter: { tag, payload, _, handledResult in
-                    guard case .commandFinished(_, _, let instant) = payload else { return false }
-                    callbackCapture.instant.withLock { $0 = instant }
-                    let task = Task { @MainActor in
-                        await Ghostty.ActionRouter.routeExactFactOrControlOnMainActor(
-                            precedingTitle: nil, actionTag: tag, payload: payload,
-                            surfaceViewObjectID: viewIdentity, expectedSurfaceID: expectedSurface,
-                            routingLookup: callbackLookup, accumulator: callbackAccumulator)
-                    }
-                    callbackCapture.routeTask.withLock { $0 = task }
-                    return handledResult
-                })
+            guard case .payload(let payload, let handled) = GhosttyCallbackPayloadDecoder.decode(action),
+                case .commandFinished(_, _, let instant) = payload
+            else { return false }
+            callbackCapture.instant.withLock { $0 = instant }
+            let accepted = callbackHandler.accept(
+                .action(
+                    target: .surface(surfaceID: expectedSurface, viewObjectID: viewIdentity),
+                    tag: UInt32(GHOSTTY_ACTION_COMMAND_FINISHED.rawValue), payload: payload
+                ))
+            return handled && accepted
         }
-        return (handled, try #require(callbackCapture.routeTask.withLock { $0 }))
     }
 
 }
@@ -240,5 +238,4 @@ private func nativeExitHook(
 
 private final class NativeCommandExitCapture: Sendable {
     let instant = Mutex<ContinuousClock.Instant?>(nil)
-    let routeTask = Mutex<Task<Bool, Never>?>(nil)
 }

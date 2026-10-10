@@ -17,19 +17,19 @@ extension WebKitSerializedTests {
         func pageReloadDispatchesToControllerPaneWithoutSession() async throws {
             let owner = BridgePageReloadExecutionRecorder()
             let paneId = UUIDv7.generate()
-            try await withIsolatedCommandDispatcher(
+            try await withCommandDispatcherFixture(
                 configure: {
-                    AppCommandDispatcher.shared.handler = nil
-                    AppCommandDispatcher.shared.appCommandRouter = owner
+                    $0.shellOwner = owner
                 },
-                body: {
+                body: { dispatcher in
                     let controller = BridgePaneController(
                         paneId: paneId,
                         state: BridgePaneState(
                             panelKind: .diffViewer, source: .workspace(rootPath: "/tmp/worktree", baseline: .staged)),
                         appRootURL: testBridgeAppRootURL(),
                         initialPaneActivity: .dormant,
-                        pageCommandRunner: WorkspaceSurfaceCoordinator.runBridgePageCommand
+                        pageCommandRunner: WorkspaceSurfaceCoordinator.makeBridgePageCommandRunner(
+                            dispatcher: dispatcher)
                     )
                     do {
                         let handler = BridgeReadyMessageHandler()
