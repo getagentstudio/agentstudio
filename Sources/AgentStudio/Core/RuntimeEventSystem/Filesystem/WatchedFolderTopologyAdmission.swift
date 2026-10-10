@@ -5,7 +5,7 @@ import Foundation
 /// Interprets source facts without I/O; ordinary work inside a known checkout cannot change scan membership.
 enum WatchedFolderTopologyAdmission {
     private static let routineGitFiles: Set<String> = [
-        "index", "HEAD", "ORIG_HEAD", "FETCH_HEAD", "MERGE_HEAD", "CHERRY_PICK_HEAD",
+        "index", "ORIG_HEAD", "FETCH_HEAD", "MERGE_HEAD", "CHERRY_PICK_HEAD",
         "REVERT_HEAD", "REBASE_HEAD", "AUTO_MERGE", "BISECT_LOG", "COMMIT_EDITMSG", "packed-refs",
     ]
     private static let foldedRoutineGitFiles = Set(routineGitFiles.map { $0.lowercased() })
@@ -76,10 +76,10 @@ enum WatchedFolderTopologyAdmission {
             gitComponents = gitComponents.dropFirst(2)
         }
         let gitPath = gitComponents.joined(separator: "/")
-        let headPath = casePolicy == .caseInsensitive ? "head" : "HEAD"
-        if gitPath == headPath || gitPath == "objects" || gitPath == "refs" {
-            // Content writes are routine; lost entry validity or missing source flags are not.
-            return observationFlags.map { $0 & UInt32(kFSEventStreamEventFlagItemRemoved) != 0 } ?? true
+        if gitPath == "objects" || gitPath == "refs" {
+            // A rename can remove a required entry without carrying a removal flag.
+            let invalidatingFlags = UInt32(kFSEventStreamEventFlagItemRemoved | kFSEventStreamEventFlagItemRenamed)
+            return observationFlags.map { $0 & invalidatingFlags != 0 } ?? true
         }
         let fileNames = casePolicy == .caseInsensitive ? foldedRoutineGitFiles : routineGitFiles
         if fileNames.contains(gitPath) || gitPath.hasSuffix(".lock") { return false }

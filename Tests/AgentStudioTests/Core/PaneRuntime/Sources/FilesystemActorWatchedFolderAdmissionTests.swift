@@ -14,12 +14,12 @@ enum WatchedFolderIngressFact: Sendable {
 
 extension FilesystemActorWatchedFolderTests {
     enum OverflowAdmissionScenario: CaseIterable, Sendable {
-        case nestedAndKnownDirectory, routineHead, outsideDirectory, coarse, fullRefresh, coverageLoss
+        case nestedAndKnownDirectory, headUpdate, renamedRefs, outsideDirectory, coarse, fullRefresh, coverageLoss
 
         var expectsScan: Bool {
             switch self {
-            case .nestedAndKnownDirectory, .routineHead: false
-            case .outsideDirectory, .coarse, .fullRefresh, .coverageLoss: true
+            case .nestedAndKnownDirectory: false
+            case .headUpdate, .renamedRefs, .outsideDirectory, .coarse, .fullRefresh, .coverageLoss: true
             }
         }
 
@@ -38,9 +38,16 @@ extension FilesystemActorWatchedFolderTests {
                         path: paths[1], eventID: 3,
                         flags: UInt32(kFSEventStreamEventFlagItemIsDir | kFSEventStreamEventFlagItemCreated)),
                 ]
-            case .routineHead:
+            case .headUpdate:
                 paths = [checkout.appending(path: ".git/HEAD").path]
                 observations = [.init(path: paths[0], eventID: 2, flags: UInt32(kFSEventStreamEventFlagItemRenamed))]
+            case .renamedRefs:
+                paths = [checkout.appending(path: ".git/refs").path, checkout.appending(path: "backup-refs").path]
+                observations = paths.enumerated().map { offset, path in
+                    .init(
+                        path: path, eventID: UInt64(offset + 2),
+                        flags: UInt32(kFSEventStreamEventFlagItemIsDir | kFSEventStreamEventFlagItemRenamed))
+                }
             case .outsideDirectory:
                 paths = [watchedFolder.appending(path: "new-repository").path]
                 observations = [
@@ -156,9 +163,39 @@ extension FilesystemActorWatchedFolderTests {
     }
 
     enum GitAdmissionScenario: CaseIterable, Sendable {
-        case routineAndNestedChurn, linkedMembership, originConfig
+        case routineAndNestedChurn, linkedMembership, originConfig, mainHead, linkedHead, renamedRefs, renamedObjects
 
         var expectsScan: Bool { self != .routineAndNestedChurn }
+
+        func ingressBatch(callbackID: UUID, checkout: URL) -> FSEventBatch {
+            let relativePaths: [String]
+            let flags: UInt32
+            switch self {
+            case .routineAndNestedChurn:
+                relativePaths = [
+                    ".build-agent-1/checkouts/dep/.git/index", ".build-agent-1/checkouts/dep/.git/config",
+                    ".build-agent-1/checkouts/dep/.git/HEAD", ".git/index", ".git/objects/aa/bb", ".git/logs/HEAD",
+                ]
+                flags = UInt32(kFSEventStreamEventFlagItemModified)
+            case .linkedMembership:
+                relativePaths = [".git/worktrees/new"]
+                flags = UInt32(kFSEventStreamEventFlagItemIsDir | kFSEventStreamEventFlagItemCreated)
+            case .originConfig:
+                relativePaths = [".git/config"]
+                flags = UInt32(kFSEventStreamEventFlagItemModified)
+            case .mainHead, .linkedHead:
+                relativePaths = [self == .mainHead ? ".git/HEAD" : ".git/worktrees/new/HEAD"]
+                flags = UInt32(kFSEventStreamEventFlagItemModified)
+            case .renamedRefs, .renamedObjects:
+                relativePaths =
+                    self == .renamedRefs ? [".git/refs", "backup-refs"] : [".git/objects", "backup-objects"]
+                flags = UInt32(kFSEventStreamEventFlagItemIsDir | kFSEventStreamEventFlagItemRenamed)
+            }
+            let paths = relativePaths.map { checkout.appending(path: $0).path }
+            return .init(
+                worktreeId: callbackID, paths: paths,
+                observations: paths.map { .init(path: $0, eventID: 1, flags: flags) })
+        }
     }
 
     @Test(
@@ -186,26 +223,7 @@ extension FilesystemActorWatchedFolderTests {
             }
         }
         let callbackID = try #require(fixture.fseventClient.registeredWorktreeIds.first)
-        let relativePaths: [String]
-        let flags: UInt32
-        switch scenario {
-        case .routineAndNestedChurn:
-            relativePaths = [
-                ".build-agent-1/checkouts/dep/.git/index", ".build-agent-1/checkouts/dep/.git/config",
-                ".git/index", ".git/objects/aa/bb", ".git/logs/HEAD",
-            ]
-            flags = UInt32(kFSEventStreamEventFlagItemModified)
-        case .linkedMembership:
-            relativePaths = [".git/worktrees/new"]
-            flags = UInt32(kFSEventStreamEventFlagItemIsDir | kFSEventStreamEventFlagItemCreated)
-        case .originConfig:
-            relativePaths = [".git/config"]
-            flags = UInt32(kFSEventStreamEventFlagItemModified)
-        }
-        let paths = relativePaths.map { checkout.appending(path: $0).path }
-        let batch = FSEventBatch(
-            worktreeId: callbackID, paths: paths,
-            observations: paths.map { .init(path: $0, eventID: 1, flags: flags) })
+        let batch = scenario.ingressBatch(callbackID: callbackID, checkout: checkout)
         let opening = await recorder.mark(operationID)
 
         do {

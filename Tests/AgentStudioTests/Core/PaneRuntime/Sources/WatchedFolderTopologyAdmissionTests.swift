@@ -12,8 +12,8 @@ struct WatchedFolderTopologyAdmissionTests {
 
         var shouldScan: Bool {
             switch self {
-            case .knownCheckout, .ancestor, .newDirectory: true
-            case .insideCheckout, .metadataOnly, .outsideRoot, .ordinaryFile, .gitMarker: false
+            case .knownCheckout, .ancestor, .newDirectory, .gitMarker: true
+            case .insideCheckout, .metadataOnly, .outsideRoot, .ordinaryFile: false
             }
         }
     }
@@ -59,7 +59,7 @@ struct WatchedFolderTopologyAdmissionTests {
     }
 
     private static let routinePaths = [
-        "index", "HEAD", "ORIG_HEAD", "FETCH_HEAD", "MERGE_HEAD", "CHERRY_PICK_HEAD",
+        "index", "ORIG_HEAD", "FETCH_HEAD", "MERGE_HEAD", "CHERRY_PICK_HEAD",
         "REVERT_HEAD", "REBASE_HEAD", "AUTO_MERGE", "BISECT_LOG", "COMMIT_EDITMSG", "packed-refs",
         "index.lock", "config.lock", "objects/ab/cd", "refs/heads/main", "logs/HEAD",
         "modules/sub/index", "rebase-merge/head-name", "rebase-apply/next", "sequencer/todo",
@@ -112,8 +112,36 @@ struct WatchedFolderTopologyAdmissionTests {
     }
 
     @Test(
-        "structural Git entries admit removal and unknown observations while rejecting routine updates",
-        arguments: ["HEAD", "objects", "refs"].flatMap { [".git/" + $0, ".git/worktrees/new/" + $0] })
+        "HEAD content changes remain discovery inputs in main and linked administrative directories",
+        arguments: [".git/HEAD", ".git/worktrees/new/HEAD"])
+    func headContentChangesAdmitScan(relativePath: String) throws {
+        // Arrange
+        let fixture = try makeGitAdmissionFixture()
+        defer { try? FileManager.default.removeItem(at: fixture.root) }
+        let path = fixture.checkout.appending(path: relativePath).path
+
+        // Act / Assert
+        for flags in [
+            UInt32(kFSEventStreamEventFlagItemModified), UInt32(kFSEventStreamEventFlagItemRenamed),
+            UInt32(kFSEventStreamEventFlagItemRemoved),
+        ] {
+            let batch = FSEventBatch(
+                worktreeId: UUIDv7.generate(), paths: [path],
+                observations: [.init(path: path, eventID: 1, flags: flags)])
+            #expect(
+                WatchedFolderTopologyAdmission.shouldScan(batch, root: fixture.descriptor, knownGroups: fixture.groups))
+            #expect(
+                WatchedFolderTopologyAdmission.shouldScan(
+                    batch, root: fixture.descriptor, knownGroups: [], heldCheckoutPaths: [fixture.checkout.path]))
+        }
+        let pathsOnly = FSEventBatch(worktreeId: UUIDv7.generate(), paths: [path])
+        #expect(
+            WatchedFolderTopologyAdmission.shouldScan(pathsOnly, root: fixture.descriptor, knownGroups: fixture.groups))
+    }
+
+    @Test(
+        "structural Git directories admit removal, rename and unknown observations while rejecting routine updates",
+        arguments: ["objects", "refs"].flatMap { [".git/" + $0, ".git/worktrees/new/" + $0] })
     func structuralGitEntriesPreserveValidityRecovery(relativePath: String) throws {
         // Arrange
         let fixture = try makeGitAdmissionFixture()
@@ -127,7 +155,14 @@ struct WatchedFolderTopologyAdmissionTests {
             observations: [
                 .init(
                     path: path, eventID: 2,
-                    flags: UInt32(kFSEventStreamEventFlagItemModified | kFSEventStreamEventFlagItemRenamed))
+                    flags: UInt32(kFSEventStreamEventFlagItemModified | kFSEventStreamEventFlagItemIsDir))
+            ])
+        let renamed = FSEventBatch(
+            worktreeId: UUIDv7.generate(), paths: [path],
+            observations: [
+                .init(
+                    path: path, eventID: 3,
+                    flags: UInt32(kFSEventStreamEventFlagItemRenamed | kFSEventStreamEventFlagItemIsDir))
             ])
         let unknown = FSEventBatch(worktreeId: UUIDv7.generate(), paths: [path])
 
@@ -138,6 +173,11 @@ struct WatchedFolderTopologyAdmissionTests {
             WatchedFolderTopologyAdmission.shouldScan(unknown, root: fixture.descriptor, knownGroups: fixture.groups))
         #expect(
             !WatchedFolderTopologyAdmission.shouldScan(routine, root: fixture.descriptor, knownGroups: fixture.groups))
+        #expect(
+            WatchedFolderTopologyAdmission.shouldScan(renamed, root: fixture.descriptor, knownGroups: fixture.groups))
+        #expect(
+            WatchedFolderTopologyAdmission.shouldScan(
+                renamed, root: fixture.descriptor, knownGroups: [], heldCheckoutPaths: [fixture.checkout.path]))
     }
 
     @Test(
