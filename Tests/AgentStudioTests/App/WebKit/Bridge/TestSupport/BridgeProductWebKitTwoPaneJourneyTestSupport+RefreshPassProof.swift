@@ -182,6 +182,11 @@ extension BridgeProductWebKitTwoPaneJourneyTestSupport {
         _ input: JourneyInput,
         batchSequence: UInt64
     ) async throws -> String {
+        // Earlier Review attempts have joined their logical tasks, so their physical
+        // handles are recorded; join them so only the held attempt's construction remains.
+        for construction in input.paneOne.reviewConstructionProgress.physicalTaskHandles() {
+            await construction.value
+        }
         await input.paneOneReviewProvider.armNextComparison()
         try appendTrackedChange(at: input.paneOneRepoURL)
         await input.paneOne.handleWorktreeProductInvalidation(
@@ -215,11 +220,15 @@ extension BridgeProductWebKitTwoPaneJourneyTestSupport {
         _ input: JourneyInput,
         heldOperationID: String
     ) async throws {
-        let physicalConstructions = input.paneOne.reviewConstructionProgress.physicalTaskHandles()
+        // The retired attempt's logical task has ended, so the construction it started has
+        // recorded its handle; that construction cannot finish while its comparison is held.
+        try await requireHiddenRefreshSettled(input.paneOne)
+        let heldConstructions = input.paneOne.reviewConstructionProgress.physicalTaskHandles()
+        try #require(heldConstructions.count == 1)
         let releasedComparisonCount = await input.paneOneReviewProvider.releaseBlockedComparisons()
         try #require(releasedComparisonCount == 1)
-        for construction in physicalConstructions { await construction.value }
-        try await requireHiddenRefreshSettled(input.paneOne)
+        for construction in heldConstructions { await construction.value }
+        try #require(input.paneOne.reviewConstructionProgress.physicalTaskHandles().isEmpty)
         let heldTerminals = await input.paneOneTrace.operationLifecycleEvents().filter {
             $0.operationCorrelationID == heldOperationID && $0.stage == .refreshOperationTerminal
         }
