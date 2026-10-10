@@ -123,12 +123,12 @@ actor BridgeProductWebKitGatedReviewSourceProvider: BridgeReviewSourceProvider {
         comparisonCount += 1
         if isNextComparisonArmed {
             isNextComparisonArmed = false
+            let step = HeldStep<Void>("blocked review comparison", cancellation: .holdThroughCancellation)
+            blockedSteps.append(step)
             blockedComparisonCount += 1
             let readyWaiters = blockedCountWaiters.filter { blockedComparisonCount >= $0.count }
             blockedCountWaiters.removeAll { blockedComparisonCount >= $0.count }
             for waiter in readyWaiters { waiter.continuation.resume() }
-            let step = HeldStep<Void>("blocked review comparison", cancellation: .holdThroughCancellation)
-            blockedSteps.append(step)
             try? await step.arrive(())
         }
     }
@@ -527,9 +527,17 @@ enum BridgeProductWebKitTwoPaneJourneyTestSupport {
                 )
             )
         )
-        try await requireBlockedComparison(input.paneOneReviewProvider, expectedCount: 1)
+        guard let heldReviewTask = input.paneOne.activeReviewRefreshTask else {
+            throw JourneyError.conditionFailed(
+                "batch 701 Review invalidation did not admit a catch-up task before its comparison wait"
+            )
+        }
+        _ = try await requireBlockedComparison(
+            input.paneOneReviewProvider,
+            expectedCount: 1,
+            milestone: "batch 701 Review comparison hold"
+        )
         let heldReviewAttempt = try await requireHeldReviewAttempt(input.paneOneTrace)
-        let heldReviewTask = try #require(input.paneOne.activeReviewRefreshTask)
         let updatingReviewStatus = try await requireNoUpdatingStatus(input.paneOne.page)
         guard updatingReviewStatus.activeMode == "review" else {
             let observedActiveMode = updatingReviewStatus.activeMode ?? "nil"
@@ -730,11 +738,17 @@ enum BridgeProductWebKitTwoPaneJourneyTestSupport {
 
     static func requireBlockedComparison(
         _ provider: BridgeProductWebKitGatedReviewSourceProvider,
-        expectedCount: Int
-    ) async throws {
-        let blockedComparisonCount = await provider.waitForBlockedComparisonCount(expectedCount)
-        guard blockedComparisonCount == expectedCount else {
-            throw JourneyError.conditionFailed("real-git comparison did not block")
+        expectedCount: Int,
+        milestone: String
+    ) async throws -> Int {
+        try await awaitBridgeWebKitMilestone(milestone) {
+            let blockedComparisonCount = await provider.waitForBlockedComparisonCount(expectedCount)
+            guard blockedComparisonCount == expectedCount else {
+                throw JourneyError.conditionFailed(
+                    "\(milestone) observed comparison count \(blockedComparisonCount), expected \(expectedCount)"
+                )
+            }
+            return blockedComparisonCount
         }
     }
 

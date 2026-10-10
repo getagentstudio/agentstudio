@@ -80,7 +80,25 @@ extension BridgeProductWebKitTwoPaneJourneyTestSupport {
             input.paneOne,
             afterRequestSequence: nativeBeforeReviewActivation.nextControlRequestSequence
         )
-        try await requireBlockedComparison(input.paneOneReviewProvider, expectedCount: 2)
+        guard let reactivatedReviewTask = input.paneOne.activeReviewRefreshTask else {
+            throw JourneyError.conditionFailed(
+                "Review mode reactivation did not admit a catch-up task before its comparison wait"
+            )
+        }
+        guard
+            let reactivatedOperationID = input.paneOne.refreshAdmissionCoordinator.productPresentationSnapshot
+                .operationCorrelationID,
+            reactivatedOperationID != previousOperationID
+        else {
+            throw JourneyError.conditionFailed(
+                "Review mode reactivation did not reserve a distinct catch-up operation before its comparison wait"
+            )
+        }
+        _ = try await requireBlockedComparison(
+            input.paneOneReviewProvider,
+            expectedCount: 2,
+            milestone: "Review reactivation comparison hold"
+        )
         let lifecycleEvents = await input.paneOneTrace.operationLifecycleEvents()
         let reactivatedReviewStart = try #require(
             lifecycleEvents.last {
@@ -88,7 +106,7 @@ extension BridgeProductWebKitTwoPaneJourneyTestSupport {
             }
         )
         let reactivatedReviewReservation = reactivatedReviewStart.operationCorrelationID
-        #expect(reactivatedReviewReservation != previousOperationID)
+        #expect(reactivatedReviewReservation == reactivatedOperationID)
         #expect(reactivatedReviewStart.result == .started)
         #expect(
             lifecycleEvents.filter {
@@ -96,7 +114,6 @@ extension BridgeProductWebKitTwoPaneJourneyTestSupport {
                     && $0.stage == .refreshReserved
             }.count == 1
         )
-        let reactivatedReviewTask = try #require(input.paneOne.activeReviewRefreshTask)
         await input.paneOneReviewProvider.releaseBlockedComparisons()
         await reactivatedReviewTask.value
         let reactivatedReviewTerminal = await input.paneOneTrace.operationLifecycleEvents().filter {
