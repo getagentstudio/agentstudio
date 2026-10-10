@@ -31,6 +31,16 @@ struct OwnerFactSinkBoundaryRuleTests {
         )
     }
 
+    @Test("G1 reports direct observation-scope construction before the sink gate")
+    func directGitScopeConstructionFollowsNilGate() throws {
+        let diagnostics = try findings(in: "BadDirectGitProjectorScope.swift")
+
+        #expect(
+            diagnostics.contains { $0.message.contains("scope construction") },
+            "Expected direct enum-case scope construction before the sink guard to be diagnosed."
+        )
+    }
+
     @Test("W1 reports a workspace receipt scope that can suppress production application")
     func workspaceCacheScopeDoesNotGatePublication() throws {
         let diagnostics = try findings(in: "BadWorkspaceCacheFactScope.swift")

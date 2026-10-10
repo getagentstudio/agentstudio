@@ -87,7 +87,6 @@ struct OwnerFactSinkBoundaryRule: ArchitectureRule {
             let visitor = FactScopeFactoryCollector(scopeNames: scopeNames, sinkNames: sinkNames)
             visitor.walk(context.sourceFile)
             index.outerGateRequired.formUnion(visitor.outerGateRequiredNames)
-            index.internallyGated.formUnion(visitor.internallyGatedNames)
         }
         return index
     }
@@ -128,9 +127,8 @@ private struct OwnerFactSinkViolation {
 
 private struct FactScopeFactoryIndex {
     var outerGateRequired: Set<String>
-    var internallyGated: Set<String>
 
-    static let empty = Self(outerGateRequired: [], internallyGated: [])
+    static let empty = Self(outerGateRequired: [])
 }
 
 private final class FactSinkAliasCollector: SyntaxVisitor {
@@ -244,7 +242,6 @@ private final class FactScopeFactoryCollector: SyntaxVisitor {
     private let scopeNames: Set<String>
     private let sinkNames: Set<String>
     private(set) var outerGateRequiredNames: Set<String> = []
-    private(set) var internallyGatedNames: Set<String> = []
 
     init(scopeNames: Set<String>, sinkNames: Set<String>) {
         self.scopeNames = scopeNames
@@ -262,7 +259,7 @@ private final class FactScopeFactoryCollector: SyntaxVisitor {
             firstGuard.body.exitsScope,
             FactSinkGateSyntax.establishesSink(firstGuard.conditions, sinkNames: sinkNames)
         {
-            internallyGatedNames.insert(node.name.text)
+            return
         } else {
             outerGateRequiredNames.insert(node.name.text)
         }
@@ -375,32 +372,14 @@ private final class OwnerFactSinkBoundaryVisitor: SyntaxVisitor {
             if let bindingType,
                 aliases.values.contains(where: { $0.scopeType == Self.baseTypeName(bindingType) }),
                 bindingType.contains("?") == false,
-                !FactScopeFactoryCollector.isComputedProperty(binding)
+                !FactScopeFactoryCollector.isComputedProperty(binding),
+                Self.isStoredProperty(node)
             {
                 record(
                     node.positionAfterSkippingLeadingTrivia,
                     "A fact-only scope must not be stored as unconditional production state"
                 )
             }
-            guard let initializer = binding.initializer else { continue }
-            let typeName =
-                bindingType.map(Self.baseTypeName)
-                ?? Self.scopeConstructorType(initializer.value, scopeTypeNames: Set(aliases.values.map(\.scopeType)))
-            let factoryName = initializer.value.as(FunctionCallExprSyntax.self)?.directCalleeBaseName
-            let factoryIsInternallyGated =
-                factoryName.map {
-                    scopeFactoryIndex.internallyGated.contains($0)
-                } ?? false
-            guard let typeName, aliases.values.contains(where: { $0.scopeType == typeName }),
-                !factoryIsInternallyGated,
-                !isBehindSinkGate(Syntax(node))
-            else {
-                continue
-            }
-            record(
-                binding.positionAfterSkippingLeadingTrivia,
-                "Fact scope preparation must happen only after the optional sink is present"
-            )
         }
     }
 
@@ -410,6 +389,15 @@ private final class OwnerFactSinkBoundaryVisitor: SyntaxVisitor {
             record(
                 node.calledExpression.positionAfterSkippingLeadingTrivia,
                 "A fact-scope factory must only be called behind the optional sink gate"
+            )
+        }
+        if Self.scopeConstructorType(Syntax(node), scopeTypeNames: Self.scopeTypeNames(in: aliases)) != nil,
+            !isInsideIndexedScopeFactory(Syntax(node)),
+            !isBehindSinkGate(Syntax(node))
+        {
+            record(
+                node.calledExpression.positionAfterSkippingLeadingTrivia,
+                "Fact scope construction must happen only after the optional sink is present"
             )
         }
         if calleeName?.hasPrefix("begin") == true,
@@ -457,14 +445,23 @@ private final class OwnerFactSinkBoundaryVisitor: SyntaxVisitor {
     }
 
     override func visitPost(_ node: MemberAccessExprSyntax) {
-        guard scopeFactoryIndex.outerGateRequired.contains(node.declName.baseName.text),
+        if scopeFactoryIndex.outerGateRequired.contains(node.declName.baseName.text),
             !isBehindSinkGate(Syntax(node))
-        else {
+        {
+            record(
+                node.positionAfterSkippingLeadingTrivia,
+                "A fact-scope factory must only be read behind the optional sink gate"
+            )
             return
         }
+        guard node.parent?.is(FunctionCallExprSyntax.self) != true,
+            Self.scopeConstructorType(Syntax(node), scopeTypeNames: Self.scopeTypeNames(in: aliases)) != nil,
+            !isInsideIndexedScopeFactory(Syntax(node)),
+            !isBehindSinkGate(Syntax(node))
+        else { return }
         record(
             node.positionAfterSkippingLeadingTrivia,
-            "A fact-scope factory must only be read behind the optional sink gate"
+            "Fact scope construction must happen only after the optional sink is present"
         )
     }
 
@@ -501,9 +498,66 @@ private final class OwnerFactSinkBoundaryVisitor: SyntaxVisitor {
             {
                 return true
             }
+            if let closure = ancestor.as(ClosureExprSyntax.self), isOptionalSinkMap(closure) {
+                return true
+            }
             current = ancestor.parent
         }
         return false
+    }
+
+    private func isInsideIndexedScopeFactory(_ syntax: Syntax) -> Bool {
+        var current = syntax.parent
+        while let ancestor = current {
+            if let function = ancestor.as(FunctionDeclSyntax.self),
+                let returnType = function.signature.returnClause?.type.trimmedDescription,
+                Self.scopeTypeNames(in: aliases).contains(Self.baseTypeName(returnType))
+            {
+                return true
+            }
+            if let variable = ancestor.as(VariableDeclSyntax.self) {
+                for binding in variable.bindings {
+                    guard FactScopeFactoryCollector.isComputedProperty(binding),
+                        let scopeType = binding.typeAnnotation?.type.trimmedDescription,
+                        Self.scopeTypeNames(in: aliases).contains(Self.baseTypeName(scopeType)),
+                        let name = binding.pattern.as(IdentifierPatternSyntax.self)?.identifier.text,
+                        scopeFactoryIndex.outerGateRequired.contains(name)
+                    else {
+                        continue
+                    }
+                    return true
+                }
+            }
+            current = ancestor.parent
+        }
+        return false
+    }
+
+    private func isOptionalSinkMap(_ closure: ClosureExprSyntax) -> Bool {
+        guard let call = closure.parent?.as(FunctionCallExprSyntax.self),
+            let member = call.calledExpression.as(MemberAccessExprSyntax.self),
+            member.declName.baseName.text == "map",
+            let base = member.base,
+            let sinkName = Self.lastMemberName(base),
+            sinkNames.contains(sinkName)
+        else {
+            return false
+        }
+        return call.trailingClosure?.id == closure.id
+            || call.arguments.contains(where: { $0.expression.as(ClosureExprSyntax.self)?.id == closure.id })
+    }
+
+    private static func lastMemberName(_ expression: ExprSyntax) -> String? {
+        if let reference = expression.as(DeclReferenceExprSyntax.self) {
+            return reference.baseName.text
+        }
+        if let member = expression.as(MemberAccessExprSyntax.self) {
+            return member.declName.baseName.text
+        }
+        if let optional = expression.as(OptionalChainingExprSyntax.self) {
+            return lastMemberName(optional.expression)
+        }
+        return nil
     }
 
     private func record(_ position: AbsolutePosition, _ message: String) {
@@ -517,19 +571,100 @@ private final class OwnerFactSinkBoundaryVisitor: SyntaxVisitor {
             .trimmingCharacters(in: .whitespaces)
     }
 
-    private static func scopeConstructorType(_ expression: ExprSyntax, scopeTypeNames: Set<String>) -> String? {
-        guard let call = expression.as(FunctionCallExprSyntax.self) else { return nil }
-        if let reference = call.calledExpression.as(DeclReferenceExprSyntax.self),
+    private static func scopeTypeNames(in aliases: [String: FactSinkAlias]) -> Set<String> {
+        Set(aliases.values.map(\.scopeType))
+    }
+
+    private static func scopeConstructorType(_ syntax: Syntax, scopeTypeNames: Set<String>) -> String? {
+        let calledExpression: ExprSyntax?
+        if let call = syntax.as(FunctionCallExprSyntax.self) {
+            calledExpression = call.calledExpression
+        } else {
+            calledExpression = syntax.as(ExprSyntax.self)
+        }
+        guard let calledExpression else { return nil }
+        if let scopeType = scopeTypeReference(in: calledExpression, scopeTypeNames: scopeTypeNames) {
+            return scopeType
+        }
+        if let memberAccess = calledExpression.as(MemberAccessExprSyntax.self) {
+            if let base = memberAccess.base,
+                let scopeType = scopeTypeReference(in: base, scopeTypeNames: scopeTypeNames)
+            {
+                return scopeType
+            }
+            if memberAccess.base == nil,
+                let contextualType = contextualScopeType(for: syntax, scopeTypeNames: scopeTypeNames)
+            {
+                return contextualType
+            }
+        }
+        return nil
+    }
+
+    private static func scopeTypeReference(in expression: ExprSyntax, scopeTypeNames: Set<String>) -> String? {
+        if let reference = expression.as(DeclReferenceExprSyntax.self),
             scopeTypeNames.contains(reference.baseName.text)
         {
             return reference.baseName.text
         }
-        if let memberAccess = call.calledExpression.as(MemberAccessExprSyntax.self),
-            scopeTypeNames.contains(memberAccess.declName.baseName.text)
-        {
-            return memberAccess.declName.baseName.text
+        if let memberAccess = expression.as(MemberAccessExprSyntax.self) {
+            if scopeTypeNames.contains(memberAccess.declName.baseName.text) {
+                return memberAccess.declName.baseName.text
+            }
+            if let base = memberAccess.base {
+                return scopeTypeReference(in: base, scopeTypeNames: scopeTypeNames)
+            }
         }
         return nil
+    }
+
+    private static func contextualScopeType(for syntax: Syntax, scopeTypeNames: Set<String>) -> String? {
+        var current = syntax.parent
+        while let ancestor = current {
+            if let binding = ancestor.as(PatternBindingSyntax.self),
+                let type = binding.typeAnnotation?.type.trimmedDescription
+            {
+                let typeName = baseTypeName(type)
+                if scopeTypeNames.contains(typeName) { return typeName }
+            }
+            if ancestor.is(ReturnStmtSyntax.self) {
+                var returnOwner = ancestor.parent
+                while let owner = returnOwner {
+                    if let function = owner.as(FunctionDeclSyntax.self),
+                        let type = function.signature.returnClause?.type.trimmedDescription
+                    {
+                        let typeName = baseTypeName(type)
+                        if scopeTypeNames.contains(typeName) { return typeName }
+                    }
+                    returnOwner = owner.parent
+                }
+            }
+            current = ancestor.parent
+        }
+        return nil
+    }
+
+    private static func isStoredProperty(_ node: VariableDeclSyntax) -> Bool {
+        var current = node.parent
+        while let ancestor = current {
+            if ancestor.is(FunctionDeclSyntax.self)
+                || ancestor.is(InitializerDeclSyntax.self)
+                || ancestor.is(ClosureExprSyntax.self)
+                || ancestor.is(AccessorDeclSyntax.self)
+            {
+                return false
+            }
+            if ancestor.is(StructDeclSyntax.self)
+                || ancestor.is(ClassDeclSyntax.self)
+                || ancestor.is(ActorDeclSyntax.self)
+                || ancestor.is(EnumDeclSyntax.self)
+                || ancestor.is(ExtensionDeclSyntax.self)
+            {
+                return true
+            }
+            current = ancestor.parent
+        }
+        return false
     }
 
     private static func isFactLaneConstructor(_ expression: ExprSyntax) -> Bool {
