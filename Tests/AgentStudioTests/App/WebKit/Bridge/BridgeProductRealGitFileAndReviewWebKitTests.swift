@@ -183,9 +183,6 @@ extension WebKitSerializedTests {
                 proof.hiddenReviewPublicationCountAfterLateRelease
                     == proof.hiddenReviewPublicationCountBeforeLateRelease
             )
-            // The causal File-only invalidation after switching surfaces contributes one
-            // additional pass beyond the initial Review + hidden/foreground recovery.
-            #expect(proof.paneOneFinalRefreshPassCount == proof.paneOneForegroundRefreshPassCount + 3)
             #expect(proof.updatingReviewStatus.comparisonStatusText == nil)
             #expect(proof.updatingReviewStatus.reviewStatusText == nil)
             #expect(proof.updatingReviewStatus.fileStatusText == nil)
