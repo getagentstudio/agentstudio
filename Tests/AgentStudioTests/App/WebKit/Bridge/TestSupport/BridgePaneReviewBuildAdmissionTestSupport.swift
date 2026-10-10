@@ -1,5 +1,6 @@
 import AgentStudioTestHarness
 import Foundation
+import Testing
 
 @testable import AgentStudioBridge
 
@@ -34,17 +35,23 @@ struct BridgePaneReviewBuildAdmissionTrace {
 
     func expectNoAdmission(
         for input: BridgePaneReviewBuildAdmissionInput,
-        from opening: OpeningPosition<BridgePaneReviewBuildAdmissionScope>
-    ) async throws -> Bool {
-        try await recorder.expectNone(
-            of: { fact in
-                if case .admitted = fact { true } else { false }
-            },
-            "Review build admission while hidden",
-            from: opening,
-            closedBy: { $0 == .deferredHidden(input: input) }
-        )
-        return true
+        from opening: OpeningPosition<BridgePaneReviewBuildAdmissionScope>,
+        sourceLocation: SourceLocation = #_sourceLocation
+    ) async -> Bool {
+        do {
+            try await recorder.expectNone(
+                of: { fact in
+                    if case .admitted = fact { true } else { false }
+                },
+                "Review build admission while hidden",
+                from: opening,
+                closedBy: { $0 == .deferredHidden(input: input) }
+            )
+            return true
+        } catch {
+            Issue.record(error, sourceLocation: sourceLocation)
+            return false
+        }
     }
 
     func nextAdmittedAttempt() async throws -> UUID {

@@ -1,6 +1,7 @@
 import AgentStudioCore
 import AgentStudioInfrastructure
 import AgentStudioTestHarness
+import AgentStudioTestSupport
 import Foundation
 import Testing
 
@@ -11,7 +12,7 @@ extension BridgePaneControllerHiddenReviewBuildTests {
     func hiddenBuildCompletionClosesRetainedAdmission() async throws {
         // Arrange
         let facts = try BridgePaneReviewBuildAdmissionTrace()
-        let progressOwner = BridgeReviewConstructionProgressWaitOwner()
+        let progressOwner = BridgeReviewConstructionProgressWaitOwner(clock: TestPushClock())
         let hideTelemetry = HeldStep<Void>("accepted File telemetry", cancellation: .holdThroughCancellation)
         let fixture = try await makeRefreshAdmissionIntegrationFixture(
             reviewConstructionProgress: progressOwner,
@@ -20,6 +21,10 @@ extension BridgePaneControllerHiddenReviewBuildTests {
         )
         await fixture.controller.applyBridgePaneActivity(.foreground)?.value
         let buildStep = HeldStep<Void>("initial build before hide", cancellation: .holdThroughCancellation)
+        defer {
+            hideTelemetry.release()
+            buildStep.release()
+        }
         await fixture.reviewProvider.setComparisonStep(buildStep)
         await sendPageActiveViewerMode(
             .review, controller: fixture.controller, productAdmission: fixture.productAdmission, sequence: 1
@@ -59,20 +64,17 @@ extension BridgePaneControllerHiddenReviewBuildTests {
 
         // Settle the source after both logical and physical construction owners.
         facts.source.end()
-        let negativeExpectationError: (any Error)?
-        do {
-            _ = try await facts.expectNoAdmission(for: input, from: opening)
-            negativeExpectationError = nil
-        } catch {
-            negativeExpectationError = error
-        }
+        let hiddenAdmissionStayedClosed = await facts.expectNoAdmission(for: input, from: opening)
         hideTelemetry.release()
         await hideTask.value
+        #expect(hiddenAdmissionStayedClosed)
+        guard hiddenAdmissionStayedClosed else {
+            await fixture.finish()
+            try await facts.finish()
+            return
+        }
         await fixture.finish()
         try await facts.finish()
-        if let negativeExpectationError {
-            throw negativeExpectationError
-        }
     }
 
     @Test("File acceptance fences before telemetry and its delayed tail preserves the shown successor")

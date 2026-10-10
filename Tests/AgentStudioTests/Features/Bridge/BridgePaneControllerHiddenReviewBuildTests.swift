@@ -39,7 +39,7 @@ struct BridgePaneControllerHiddenReviewBuildTests {
             ),
             productAdmission: fixture.productAdmission
         )
-        let hiddenAdmissionStayedClosed = try await facts.expectNoAdmission(
+        let hiddenAdmissionStayedClosed = await facts.expectNoAdmission(
             for: hiddenInput,
             from: hiddenOpening
         )
@@ -147,7 +147,7 @@ struct BridgePaneControllerHiddenReviewBuildTests {
             ),
             productAdmission: fixture.productAdmission
         )
-        let hiddenAdmissionStayedClosed = try await facts.expectNoAdmission(
+        let hiddenAdmissionStayedClosed = await facts.expectNoAdmission(
             for: hiddenInput,
             from: hiddenOpening
         )
@@ -222,7 +222,7 @@ struct BridgePaneControllerHiddenReviewBuildTests {
             workerDerivationEpoch: 1,
             productAdmission: fixture.productAdmission
         )
-        let hiddenAdmissionStayedClosed = try await facts.expectNoAdmission(
+        let hiddenAdmissionStayedClosed = await facts.expectNoAdmission(
             for: hiddenInput,
             from: hiddenOpening
         )
@@ -306,7 +306,7 @@ struct BridgePaneControllerHiddenReviewBuildTests {
             path: "Sources/App/Intermediate.swift",
             batchSequence: 41
         )
-        let firstCatchUpStayedHidden = try await facts.expectNoAdmission(
+        let firstCatchUpStayedHidden = await facts.expectNoAdmission(
             for: firstCatchUpInput,
             from: firstCatchUpOpening
         )
@@ -322,7 +322,7 @@ struct BridgePaneControllerHiddenReviewBuildTests {
         )
         let latestCatchUpOpening = await facts.recorder.mark(.hiddenInput(latestCatchUpInput))
         await postFilesystemEvent(fixture, path: "Sources/App/Latest.swift", batchSequence: 42)
-        let latestCatchUpStayedHidden = try await facts.expectNoAdmission(
+        let latestCatchUpStayedHidden = await facts.expectNoAdmission(
             for: latestCatchUpInput,
             from: latestCatchUpOpening
         )
@@ -435,7 +435,7 @@ struct BridgePaneControllerHiddenReviewBuildTests {
             try await facts.finish()
             return
         }
-        let retainedAdmissionStayedClosed = try await facts.expectNoAdmission(
+        let retainedAdmissionStayedClosed = await facts.expectNoAdmission(
             for: retainedInput,
             from: retainedOpening
         )
