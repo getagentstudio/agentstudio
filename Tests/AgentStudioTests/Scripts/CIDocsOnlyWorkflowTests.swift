@@ -157,6 +157,73 @@ extension CITopologyWorkflowTests {
         #expect(try await fixture.classify(base: base, head: head) == "full")
     }
 
+    @Test(
+        "directory symlink paths and globs pin resolved documentation inputs",
+        arguments: [
+            ("guide", "docs", "guide/intro.md"),
+            ("Tests/fixtures", "../docs", "fixtures/intro.md"),
+            ("guide", "docs", "guide/*.md"),
+            ("Tests/fixtures", "../docs", "fixtures/*.md"),
+        ])
+    func changeScopePinsDirectorySymlinkPaths(aliasPath: String, aliasTarget: String, readerPath: String) async throws {
+        let fixture = try ChangeScopeGitFixture()
+        defer { fixture.remove() }
+        try fixture.write("Tests/reader.swift", "let path = \"\(readerPath)\"")
+        try fixture.write("docs/intro.md", "# Initial")
+        try FileManager.default.createSymbolicLink(
+            atPath: fixture.root.appendingPathComponent(aliasPath).path,
+            withDestinationPath: aliasTarget)
+        let base = try await fixture.commit("base")
+        try fixture.write("docs/intro.md", "# Changed")
+        let head = try await fixture.commit("resolved input")
+        #expect(try await fixture.classify(base: base, head: head) == "full")
+    }
+
+    @Test("parent traversal after a symlink fails closed")
+    func changeScopeRejectsParentTraversalAfterSymlink() async throws {
+        let fixture = try ChangeScopeGitFixture()
+        defer { fixture.remove() }
+        try fixture.write("Tests/reader.swift", "let path = \"alias.md\"")
+        try fixture.write("docs/deep/docs/real.md", "# Initial")
+        try fixture.write("docs/deep/dir/.keep", "keep")
+        try FileManager.default.createSymbolicLink(
+            atPath: fixture.root.appendingPathComponent("lnk").path,
+            withDestinationPath: "docs/deep/dir")
+        try FileManager.default.createSymbolicLink(
+            atPath: fixture.root.appendingPathComponent("alias.md").path,
+            withDestinationPath: "lnk/../docs/real.md")
+        let base = try await fixture.commit("base")
+        try fixture.write("docs/deep/docs/real.md", "# Changed")
+        let head = try await fixture.commit("resolved input")
+        let output = fixture.root.appendingPathComponent("github-output")
+        let executable = try await TestToolResolver.resolved().python3
+        let result = try await runProcessToExit(
+            executableURL: executable,
+            arguments: [
+                fixture.classifier.path, "classify", "--root", fixture.root.path, "--event", "pull_request",
+                "--base", base, "--head", head, "--receipt", fixture.receipt.path,
+                "--github-output", output.path,
+            ])
+        #expect(result.terminationStatus == 1)
+        #expect(try String(contentsOf: output, encoding: .utf8) == "scope=full\n")
+        #expect(String(data: result.standardError, encoding: .utf8)?.contains("parent traversal after symlink") == true)
+    }
+
+    @Test("a quoted non-Markdown symlink alias pins its resolved input")
+    func changeScopePinsNonMarkdownSymlinkAliases() async throws {
+        let fixture = try ChangeScopeGitFixture()
+        defer { fixture.remove() }
+        try fixture.write("Tests/reader.swift", "let path = \"alias.json\"")
+        try fixture.write("docs/contract.json", "{}")
+        try FileManager.default.createSymbolicLink(
+            atPath: fixture.root.appendingPathComponent("alias.json").path,
+            withDestinationPath: "docs/contract.json")
+        let base = try await fixture.commit("base")
+        try fixture.write("docs/contract.json", "{\"changed\":true}")
+        let head = try await fixture.commit("resolved input")
+        #expect(try await fixture.classify(base: base, head: head) == "full")
+    }
+
     @Test("web paths are ordinary code after the website split")
     func changeScopeWebPathKeepsFullProof() async throws {
         let fixture = try ChangeScopeGitFixture()

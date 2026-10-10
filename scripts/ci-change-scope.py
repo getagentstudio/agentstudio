@@ -75,8 +75,17 @@ def repository_path_candidates(reader: str, token: str) -> t.Set[str]:
         normalized = pathlib.PurePosixPath(normalized_text)
         if normalized.is_absolute() or normalized == pathlib.PurePosixPath("..") or normalized_text.startswith("../"):
             continue
-        candidates.add(normalized.as_posix())
+        # Preserve component order until symlinks have been resolved.
+        candidates.add(candidate.as_posix())
     return candidates
+
+
+def has_symlink_prefix(candidate: str, symlinks: t.Set[str]) -> bool:
+    parts = pathlib.PurePosixPath(candidate).parts
+    return any(
+        posixpath.normpath("/".join(parts[:index])) in symlinks
+        for index in range(1, len(parts) + 1)
+    )
 
 
 def literal_doc_paths(
@@ -84,18 +93,23 @@ def literal_doc_paths(
     reader: str,
     contents: str,
     available: "t.Set[str] | None" = None,
+    symlinks: "t.Set[str] | None" = None,
 ) -> t.Set[str]:
     pins = set(DOC_PATH.findall(contents))
     for match in QUOTED_PATH.finditer(contents):
         token = match.group(1).split("#", 1)[0]
-        if not token.endswith(".md") or re.search(r"[{}$()\\]", token):
+        if re.search(r"[{}$()\\]", token):
             continue
         if available is not None:
-            pins.update(
-                candidate
-                for candidate in repository_path_candidates(reader, token)
-                if token.startswith("docs/") or candidate in available
-            )
+            candidates = repository_path_candidates(reader, token)
+            for candidate in candidates:
+                is_symlink = symlinks is not None and has_symlink_prefix(candidate, symlinks)
+                if not token.endswith(".md") and not is_symlink:
+                    continue
+                if token.startswith("docs/") or candidate in available or is_symlink:
+                    pins.add(candidate)
+            continue
+        if not token.endswith(".md"):
             continue
         candidates = [root / token]
         if not token.startswith("docs/"):
@@ -132,9 +146,7 @@ def tree_file_bytes(root: pathlib.Path, revision: "str | None", path: str) -> by
     return git_output(root, "show", f"{revision}:{path}")
 
 
-def revision_symlink_pins(
-    root: pathlib.Path, revision: str, pins: t.Set[str]
-) -> t.Set[str]:
+def revision_symlink_targets(root: pathlib.Path, revision: str) -> t.Dict[str, str]:
     # Resolve against this revision, not the checkout: the base and head may
     # give the same alias different targets, and both are classifier inputs.
     symlinks: t.Dict[str, str] = {}
@@ -143,43 +155,65 @@ def revision_symlink_pins(
             continue
         metadata, path = entry.split(b"\t", 1)
         if metadata.split(b" ", 1)[0] == b"120000":
-            symlinks[os.fsdecode(path)] = ""
+            alias = os.fsdecode(path)
+            symlinks[alias] = os.fsdecode(tree_file_bytes(root, revision, alias))
+    return symlinks
+
+
+def resolve_revision_path(candidate: str, symlinks: t.Dict[str, str]) -> t.Tuple[str, t.Set[str]]:
+    # Walk before normalizing: collapsing alias/.. lexically changes its target.
+    pending = list(pathlib.PurePosixPath(candidate).parts)
+    resolved: t.List[str] = []
+    aliases: t.Set[str] = set()
+    if pathlib.PurePosixPath(candidate).is_absolute():
+        raise ValueError(f"pinned path leaves repository: {candidate}")
+    while pending:
+        component = pending.pop(0)
+        if component == "..":
+            if not resolved:
+                raise ValueError(f"pinned path leaves repository: {candidate}")
+            resolved.pop()
+            continue
+        resolved.append(component)
+        alias = "/".join(resolved)
+        if alias not in symlinks:
+            continue
+        if alias in aliases:
+            raise ValueError(f"cyclic pinned symlink: {alias}")
+        if pending and pending[0] == "..":
+            raise ValueError(f"parent traversal after symlink: {candidate}")
+        aliases.add(alias)
+        target = pathlib.PurePosixPath(symlinks[alias])
+        if target.is_absolute():
+            raise ValueError(f"pinned symlink leaves repository: {alias}")
+        resolved.pop()
+        pending = list(target.parts) + pending
+    return "/".join(resolved), aliases
+
+
+def revision_symlink_pins(
+    root: pathlib.Path, revision: str, pins: t.Set[str], symlinks: t.Dict[str, str]
+) -> t.Set[str]:
+    tracked = set(tree_files(root, revision))
     resolved_pins = set(pins)
     for pin in pins:
-        candidate = pin
-        visited: t.Set[str] = set()
-        while True:
-            parts = pathlib.PurePosixPath(candidate).parts
-            alias = next(
-                ("/".join(parts[:index]) for index in range(1, len(parts) + 1)
-                 if "/".join(parts[:index]) in symlinks),
-                None,
+        resolved, aliases = resolve_revision_path(pin, symlinks)
+        resolved_pins.add(resolved)
+        resolved_pins.update(aliases)
+        if any(marker in pin or marker in resolved for marker in ["*", "?"]):
+            resolved_pins.update(
+                path for path in tracked
+                if pathlib.PurePosixPath(path).match(pin)
+                or pathlib.PurePosixPath(path).match(resolved)
             )
-            if alias is None:
-                break
-            if alias in visited:
-                raise ValueError(f"cyclic pinned symlink in {revision}: {alias}")
-            visited.add(alias)
-            resolved_pins.add(alias)
-            target = symlinks[alias]
-            if not target:
-                target = os.fsdecode(tree_file_bytes(root, revision, alias))
-                symlinks[alias] = target
-            target_path = pathlib.PurePosixPath(target)
-            if target_path.is_absolute():
-                raise ValueError(f"pinned symlink leaves repository in {revision}: {alias}")
-            suffix = parts[len(pathlib.PurePosixPath(alias).parts):]
-            candidate = posixpath.normpath(
-                (pathlib.PurePosixPath(alias).parent / target_path).joinpath(*suffix).as_posix()
-            )
-            if candidate == ".." or candidate.startswith("../"):
-                raise ValueError(f"pinned symlink leaves repository in {revision}: {alias}")
-            resolved_pins.add(candidate)
     return resolved_pins
 
 
 def pinned_docs(root: pathlib.Path, revision: "str | None" = None) -> t.List[str]:
     tracked = tree_files(root, revision)
+    symlinks = revision_symlink_targets(root, revision) if revision is not None else None
+    available = set(tracked) if revision is not None else None
+    symlink_paths = set(symlinks) if symlinks is not None else None
     pins: t.Set[str] = set()
     for path in tracked:
         agent_doc = pathlib.PurePosixPath(path).name in AGENT_DOC_NAMES
@@ -192,12 +226,16 @@ def pinned_docs(root: pathlib.Path, revision: "str | None" = None) -> t.List[str
         if agent_doc:
             pins.add(path)
         contents = tree_file_bytes(root, revision, path).decode("utf-8", errors="ignore")
-        pins.update(literal_doc_paths(root, path, contents, set(tracked) if revision else None))
+        pins.update(literal_doc_paths(root, path, contents, available, symlink_paths))
         if agent_doc:
             # Architecture lint opens linked targets and inline repository paths
             # while resolving agent instructions. Pin every named path, even if
             # it is absent in this tree, because deletion is a code change.
             pins.update(agent_named_paths(path, contents))
+    if revision is not None:
+        # Keep glob patterns until after symlink expansion; guide/*.md has no
+        # matching blob before guide is resolved to its target directory.
+        return sorted(revision_symlink_pins(root, revision, pins, symlinks or {}))
     expanded: t.Set[str] = set()
     for pin in pins:
         if "*" in pin or "?" in pin:
@@ -206,8 +244,6 @@ def pinned_docs(root: pathlib.Path, revision: "str | None" = None) -> t.List[str
             )
         else:
             expanded.add(pin)
-    if revision is not None:
-        expanded = revision_symlink_pins(root, revision, expanded)
     return sorted(expanded)
 
 
