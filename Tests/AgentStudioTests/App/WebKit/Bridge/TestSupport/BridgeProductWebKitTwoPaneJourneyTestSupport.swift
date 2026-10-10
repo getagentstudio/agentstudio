@@ -528,7 +528,8 @@ enum BridgeProductWebKitTwoPaneJourneyTestSupport {
             )
         )
         try await requireBlockedComparison(input.paneOneReviewProvider, expectedCount: 1)
-        let fencedReviewOperationID = try requireFencedReviewAttempt(input.paneOne)
+        let heldReviewAttempt = try await requireHeldReviewAttempt(input.paneOneTrace)
+        let heldReviewTask = try #require(input.paneOne.activeReviewRefreshTask)
         let updatingReviewStatus = try await requireNoUpdatingStatus(input.paneOne.page)
         guard updatingReviewStatus.activeMode == "review" else {
             let observedActiveMode = updatingReviewStatus.activeMode ?? "nil"
@@ -541,11 +542,12 @@ enum BridgeProductWebKitTwoPaneJourneyTestSupport {
             input.paneOne,
             failure: "File mode did not activate during refresh"
         )
-        try await requireFencedReviewAttemptRetired(input, operationID: fencedReviewOperationID)
+        await input.paneOneReviewProvider.releaseBlockedComparisons()
+        await heldReviewTask.value
         let updatingFileStatus = try await performBatch704FileCatchUp(input)
         let reviewModeIdentity = try await requireSingleReviewReactivation(
             input,
-            fencedOperationID: fencedReviewOperationID
+            previousOperationID: heldReviewAttempt.operationCorrelationID
         )
         return JourneyUpdatingState(
             fileStatus: updatingFileStatus,

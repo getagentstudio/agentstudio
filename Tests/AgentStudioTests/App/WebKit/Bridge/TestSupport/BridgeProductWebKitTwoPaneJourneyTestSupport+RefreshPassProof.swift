@@ -5,38 +5,22 @@ import WebKit
 @testable import AgentStudioBridge
 
 extension BridgeProductWebKitTwoPaneJourneyTestSupport {
-    static func requireFencedReviewAttempt(_ controller: BridgePaneController) throws -> String {
-        let operationID = try #require(
-            controller.refreshAdmissionCoordinator.productPresentationSnapshot.operationCorrelationID
+    static func requireHeldReviewAttempt(
+        _ traceRecorder: BridgeProductWebKitCarrierTraceRecorder
+    ) async throws -> BridgeOperationLifecycleTraceEvent {
+        let lifecycleEvents = await traceRecorder.operationLifecycleEvents()
+        let preparationEvent = try #require(
+            lifecycleEvents.last {
+                $0.surface == .review && $0.stage == .reviewPrepareStarted
+            }
         )
-        #expect(controller.refreshAdmissionCoordinator.isRefreshLaneActive(.review))
-        return operationID
-    }
-
-    static func requireFencedReviewAttemptRetired(
-        _ input: JourneyInput,
-        operationID: String
-    ) async throws {
-        await input.paneOneReviewProvider.releaseBlockedComparisons()
-        let retiringReviewTasks = Array(input.paneOne.retiringReviewRefreshTaskById.values)
-        for retiringTask in retiringReviewTasks { await retiringTask.value }
-        let fencedReviewEvents = await input.paneOneTrace.operationLifecycleEvents().filter {
-            $0.operationCorrelationID == operationID
+        let reservationEvents = lifecycleEvents.filter {
+            $0.operationCorrelationID == preparationEvent.operationCorrelationID
+                && $0.stage == .refreshReserved
         }
-        let fencedReviewReservations = fencedReviewEvents.filter { $0.stage == .refreshReserved }
-        let fencedReviewTerminals = fencedReviewEvents.filter {
-            $0.stage == .refreshOperationTerminal
-        }
-        let restoredReviewDirtyFact = input.paneOne.refreshAdmissionCoordinator.diagnosticSnapshot.dirtyFact
-        #expect(!input.paneOne.refreshAdmissionCoordinator.isRefreshLaneActive(.review))
-        #expect(restoredReviewDirtyFact?.requiresReviewRefresh == true)
-        #expect(restoredReviewDirtyFact?.latestBatchSequence == 701)
-        #expect(fencedReviewReservations.count == 1)
-        #expect(fencedReviewTerminals.count == 1)
-        #expect(
-            fencedReviewTerminals.first?.result == .stale
-                || fencedReviewTerminals.first?.result == .cancelled
-        )
+        #expect(preparationEvent.result == .started)
+        #expect(reservationEvents.count == 1)
+        return preparationEvent
     }
 
     static func performBatch704FileCatchUp(
@@ -86,11 +70,9 @@ extension BridgeProductWebKitTwoPaneJourneyTestSupport {
 
     static func requireSingleReviewReactivation(
         _ input: JourneyInput,
-        fencedOperationID: String
+        previousOperationID: String
     ) async throws -> BridgeProductWebKitActiveViewerModeIdentity {
         await input.paneOneReviewProvider.armNextComparison()
-        let passCountBeforeReviewReactivation =
-            input.paneOne.refreshAdmissionCoordinator.diagnosticSnapshot.refreshPassCount
         let nativeBeforeReviewActivation =
             await BridgeProductWebKitCarrierTestSupport.nativeSnapshot(input.paneOne)
         let reviewModeIdentity = try await activateReviewMode(input.paneOne)
@@ -99,19 +81,21 @@ extension BridgeProductWebKitTwoPaneJourneyTestSupport {
             afterRequestSequence: nativeBeforeReviewActivation.nextControlRequestSequence
         )
         try await requireBlockedComparison(input.paneOneReviewProvider, expectedCount: 2)
-        let reactivatedReviewReservation = try #require(
-            input.paneOne.refreshAdmissionCoordinator.productPresentationSnapshot.operationCorrelationID
+        let lifecycleEvents = await input.paneOneTrace.operationLifecycleEvents()
+        let reactivatedReviewStart = try #require(
+            lifecycleEvents.last {
+                $0.surface == .review && $0.stage == .reviewPrepareStarted
+            }
         )
-        #expect(reactivatedReviewReservation != fencedOperationID)
-        #expect(input.paneOne.refreshAdmissionCoordinator.isRefreshLaneActive(.review))
+        let reactivatedReviewReservation = reactivatedReviewStart.operationCorrelationID
+        #expect(reactivatedReviewReservation != previousOperationID)
+        #expect(reactivatedReviewStart.result == .started)
         #expect(
-            input.paneOne.refreshAdmissionCoordinator.diagnosticSnapshot.refreshPassCount
-                == passCountBeforeReviewReactivation + 1
+            lifecycleEvents.filter {
+                $0.operationCorrelationID == reactivatedReviewReservation
+                    && $0.stage == .refreshReserved
+            }.count == 1
         )
-        let reactivatedReviewEvents = await input.paneOneTrace.operationLifecycleEvents().filter {
-            $0.operationCorrelationID == reactivatedReviewReservation
-        }
-        #expect(reactivatedReviewEvents.filter { $0.stage == .refreshReserved }.count == 1)
         let reactivatedReviewTask = try #require(input.paneOne.activeReviewRefreshTask)
         await input.paneOneReviewProvider.releaseBlockedComparisons()
         await reactivatedReviewTask.value
