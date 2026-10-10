@@ -11,8 +11,12 @@ extension BridgePaneControllerHiddenReviewBuildTests {
     func hiddenBuildCompletionClosesRetainedAdmission() async throws {
         // Arrange
         let facts = try BridgePaneReviewBuildAdmissionTrace()
+        let progressOwner = BridgeReviewConstructionProgressWaitOwner()
+        let hideTelemetry = HeldStep<Void>("accepted File telemetry", cancellation: .holdThroughCancellation)
         let fixture = try await makeRefreshAdmissionIntegrationFixture(
-            reviewBuildAdmissionFactSink: facts.source.sink
+            reviewBuildAdmissionFactSink: facts.source.sink,
+            reviewConstructionProgress: progressOwner,
+            telemetryRecorder: HiddenReviewAcceptedFileTelemetryRecorder(step: hideTelemetry)
         )
         await fixture.controller.applyBridgePaneActivity(.foreground)?.value
         let buildStep = HeldStep<Void>("initial build before hide", cancellation: .holdThroughCancellation)
@@ -24,25 +28,51 @@ extension BridgePaneControllerHiddenReviewBuildTests {
         let buildTask = try #require(fixture.controller.activeReviewRefreshTask)
         _ = try await buildStep.firstArrival()
 
-        // Act
-        await sendPageActiveViewerMode(
-            .file, controller: fixture.controller, productAdmission: fixture.productAdmission, sequence: 2
-        )
         let input = BridgePaneReviewBuildAdmissionInput.retainedPackageBuild
         let opening = await facts.recorder.mark(.hiddenInput(input))
+        let hideTask = Task { @MainActor in
+            await sendPageActiveViewerMode(
+                .file,
+                controller: fixture.controller,
+                productAdmission: fixture.productAdmission,
+                sequence: 2,
+                activeSource: BridgeActiveViewerSource(
+                    protocolId: .worktreeFile,
+                    streamId: "file-source",
+                    generation: 1
+                )
+            )
+        }
+        _ = try await hideTelemetry.firstArrival()
+        let physicalConstructionTasks = progressOwner.physicalTaskHandles()
+        #expect(physicalConstructionTasks.count == 1)
         buildStep.release()
         await buildTask.value
-        #expect(try await facts.attemptOutcome(for: attempt) == .stale)
-
-        // The physical owner has returned: end the fact stream so an absent
-        // correlated close is a deterministic failure, rather than a hanging wait.
-        facts.source.end()
-        #expect(await facts.expectNoAdmission(for: input, from: opening))
+        let buildOutcome = try await facts.attemptOutcome(for: attempt)
+        #expect(buildOutcome == .stale)
+        for physicalConstructionTask in physicalConstructionTasks {
+            await physicalConstructionTask.value
+        }
         #expect(await fixture.reviewProvider.recordedComparisonRequestsCount() == 1)
         #expect(fixture.controller.activeReviewRefreshTask == nil)
         #expect(fixture.controller.pendingReviewPackageBuildReasons.contains(.initialIntake))
+
+        // Settle the source after both logical and physical construction owners.
+        facts.source.end()
+        let negativeExpectationError: (any Error)?
+        do {
+            _ = try await facts.expectNoAdmission(for: input, from: opening)
+            negativeExpectationError = nil
+        } catch {
+            negativeExpectationError = error
+        }
+        hideTelemetry.release()
+        await hideTask.value
         await fixture.finish()
         try await facts.finish()
+        if let negativeExpectationError {
+            throw negativeExpectationError
+        }
     }
 
     @Test("File acceptance fences before telemetry and its delayed tail preserves the shown successor")

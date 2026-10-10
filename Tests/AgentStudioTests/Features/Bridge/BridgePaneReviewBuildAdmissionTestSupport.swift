@@ -35,20 +35,16 @@ struct BridgePaneReviewBuildAdmissionTrace {
     func expectNoAdmission(
         for input: BridgePaneReviewBuildAdmissionInput,
         from opening: OpeningPosition<BridgePaneReviewBuildAdmissionScope>
-    ) async -> Bool {
-        do {
-            try await recorder.expectNone(
-                of: { fact in
-                    if case .admitted = fact { true } else { false }
-                },
-                "Review build admission while hidden",
-                from: opening,
-                closedBy: { $0 == .deferredHidden(input: input) }
-            )
-            return true
-        } catch {
-            return false
-        }
+    ) async throws -> Bool {
+        try await recorder.expectNone(
+            of: { fact in
+                if case .admitted = fact { true } else { false }
+            },
+            "Review build admission while hidden",
+            from: opening,
+            closedBy: { $0 == .deferredHidden(input: input) }
+        )
+        return true
     }
 
     func nextAdmittedAttempt() async throws -> UUID {
