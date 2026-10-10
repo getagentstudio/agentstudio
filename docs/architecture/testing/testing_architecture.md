@@ -566,6 +566,11 @@ A hand-maintained list that test correctness depends on — the set of suites th
 need process isolation, the lint debt — must be verified by a gate, so that
 a member cannot silently fall out. The isolation list has
 [`SwiftLaneIsolationListGateTests`](../../../Tests/AgentStudioTests/Scripts/SwiftLaneIsolationListGateTests.swift).
+The WebKit lane runs only the suites named in `webkit_suite_filters`, so a
+`WebKitSerializedTests` suite missing from that list never runs anywhere (four
+did, from #463 until TQ50).
+[`SwiftLaneWebKitSuiteListGateTests`](../../../Tests/AgentStudioTests/Scripts/SwiftLaneWebKitSuiteListGateTests.swift)
+fails when a source suite is unlisted, when a suite listed test by test is missing one of its tests, or when a listed entry no longer selects anything; it scans source text, so it does not evaluate `#if` conditional compilation.
 Lint debt — polling waits, blocking waits, ad-hoc gates, void wait helpers and
 the MainActor shapes — lives in one file,
 [`architecture-debt-ledger.tsv`](../../../Tools/AgentStudioArchitectureLint/architecture-debt-ledger.tsv),
@@ -609,4 +614,5 @@ See [`BridgeWeb/AGENTS.md` — Test Waits](../../../BridgeWeb/AGENTS.md#test-wai
 | [`ArchitectureAllowlists.swift`](../../../Tools/AgentStudioArchitectureLint/Sources/AgentStudioArchitectureLintCore/Paths/ArchitectureAllowlists.swift) | Named owners of blocking waits and other allowed sites (ownership, not debt) |
 | [`Tests/AgentStudioTests/TestSupport/`](../../../Tests/AgentStudioTests/TestSupport) | The `AgentStudioTestSupport` harnesses |
 | [`SwiftLaneIsolationListGateTests.swift`](../../../Tests/AgentStudioTests/Scripts/SwiftLaneIsolationListGateTests.swift) | The isolation-list gate |
+| [`SwiftLaneWebKitSuiteListGateTests.swift`](../../../Tests/AgentStudioTests/Scripts/SwiftLaneWebKitSuiteListGateTests.swift) | The WebKit suite-list gate (no unlisted or stale WebKit suite) |
 | [CI Reliability — Specification](../../specs/2026-09-17-ci-reliability/2026-09-17-ci-reliability.md) | The requirements this document implements |
