@@ -14,8 +14,8 @@ extension BridgePaneControllerHiddenReviewBuildTests {
         let progressOwner = BridgeReviewConstructionProgressWaitOwner()
         let hideTelemetry = HeldStep<Void>("accepted File telemetry", cancellation: .holdThroughCancellation)
         let fixture = try await makeRefreshAdmissionIntegrationFixture(
-            reviewBuildAdmissionFactSink: facts.source.sink,
             reviewConstructionProgress: progressOwner,
+            reviewBuildAdmissionFactSink: facts.source.sink,
             telemetryRecorder: HiddenReviewAcceptedFileTelemetryRecorder(step: hideTelemetry)
         )
         await fixture.controller.applyBridgePaneActivity(.foreground)?.value
