@@ -106,8 +106,14 @@ def literal_doc_paths(
                 is_symlink = symlinks is not None and has_symlink_prefix(candidate, symlinks)
                 if not token.endswith(".md") and not is_symlink:
                     continue
-                if token.startswith("docs/") or candidate in available or is_symlink:
+                if is_symlink:
+                    # Symlink paths stay raw: resolution walks their components in order.
                     pins.add(candidate)
+                    continue
+                # Without a symlink prefix the text-normalized path is the real path.
+                normalized_candidate = posixpath.normpath(candidate)
+                if token.startswith("docs/") or normalized_candidate in available:
+                    pins.add(normalized_candidate)
             continue
         if not token.endswith(".md"):
             continue
