@@ -80,9 +80,7 @@ extension GitWorkingDirectoryProjector {
         lastAutomaticCompletionAtByWorktreeId.removeAll(keepingCapacity: false)
         lastAutomaticDutyByWorktreeId.removeAll(keepingCapacity: false)
         pendingByWorktreeId.removeAll(keepingCapacity: false)
-        if factSink != nil {
-            closeAllOpenIntakeFacts(as: .changesetDropped(.superseded))
-        }
+        closeAllOpenIntakeFacts(as: .changesetDropped(.superseded))
         immediateRefreshWorktreeIds.removeAll(keepingCapacity: false)
         explicitRefreshWorktreeIds.removeAll(keepingCapacity: false)
         tierEligibleWorktreeIds.removeAll(keepingCapacity: false)

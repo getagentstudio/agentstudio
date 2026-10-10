@@ -215,21 +215,19 @@ extension GitWorkingDirectoryProjector {
 
     func mergeTrackedChangesets(_ existing: FileChangeset?, with incoming: FileChangeset) -> FileChangeset {
         let merged = Self.mergeChangesets(existing, with: incoming)
-        if factSink != nil {
-            if let existing, existing.batchSeq != merged.batchSeq {
-                closeIntakeFactOnce(
-                    worktreeId: existing.worktreeId,
-                    batchSeq: existing.batchSeq,
-                    fact: .changesetCoalesced(into: merged.batchSeq)
-                )
-            }
-            if incoming.batchSeq != merged.batchSeq {
-                closeIntakeFactOnce(
-                    worktreeId: incoming.worktreeId,
-                    batchSeq: incoming.batchSeq,
-                    fact: .changesetCoalesced(into: merged.batchSeq)
-                )
-            }
+        if let existing, existing.batchSeq != merged.batchSeq {
+            closeIntakeFactOnce(
+                worktreeId: existing.worktreeId,
+                batchSeq: existing.batchSeq,
+                fact: .changesetCoalesced(into: merged.batchSeq)
+            )
+        }
+        if incoming.batchSeq != merged.batchSeq {
+            closeIntakeFactOnce(
+                worktreeId: incoming.worktreeId,
+                batchSeq: incoming.batchSeq,
+                fact: .changesetCoalesced(into: merged.batchSeq)
+            )
         }
         return merged
     }

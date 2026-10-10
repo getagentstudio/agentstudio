@@ -19,6 +19,20 @@ struct OwnerFactSinkBoundaryRuleTests {
             diagnostics.contains { $0.message.contains("forward") },
             "Expected the sink-forwarding diagnostic; it is absent from the current rule registry."
         )
+        #expect(
+            diagnostics.contains { $0.message.contains("owning type") },
+            "Expected an unrelated stored sink property to be rejected."
+        )
+    }
+
+    @Test("owner fact sinks must use an optional nil default")
+    func ownerFactSinkNilDefaultIsRequired() throws {
+        let diagnostics = try findings(in: "BadOwnerFactSinkNilDefault.swift")
+
+        #expect(
+            diagnostics.contains { $0.message.contains("defaulted to nil") },
+            "Expected the owner nil-default diagnostic."
+        )
     }
 
     @Test("G1 reports fact scope and payload preparation outside the nil gate")
@@ -38,6 +52,16 @@ struct OwnerFactSinkBoundaryRuleTests {
         #expect(
             diagnostics.contains { $0.message.contains("scope construction") },
             "Expected direct enum-case scope construction before the sink guard to be diagnosed."
+        )
+    }
+
+    @Test("a disjunction containing a nonnil sink does not establish a sink gate")
+    func sinkDisjunctionDoesNotGateScopeConstruction() throws {
+        let diagnostics = try findings(in: "BadDisjunctionSinkGate.swift")
+
+        #expect(
+            diagnostics.contains { $0.message.contains("scope construction") },
+            "Expected direct scope construction under a disjunctive condition to be diagnosed."
         )
     }
 

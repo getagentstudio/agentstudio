@@ -5,7 +5,7 @@ typealias GitProjectorFactSink = (GitProjectorScope, GitProjectorFact) -> Void
 actor GitWorkingDirectoryProjector {
     let factSink: GitProjectorFactSink?
 
-    init(factSink: GitProjectorFactSink?) {
+    init(factSink: GitProjectorFactSink? = nil) {
         self.factSink = factSink
     }
 
@@ -22,3 +22,5 @@ actor GitWorkingDirectoryProjector {
 
     private func emitRuntimeBranchChanged(from: String?, to: String) {}
 }
+
+extension GitWorkingDirectoryProjector {}

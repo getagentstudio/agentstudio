@@ -12,6 +12,10 @@ struct GoodValidationRequest {
 struct GoodLazyFactScopeOwner {
     let factSink: GoodObservationFactSink?
 
+    init(factSink: GoodObservationFactSink? = nil) {
+        self.factSink = factSink
+    }
+
     func reportValidation(_ request: GoodValidationRequest) {
         factSink?(request.validationScope, .opened)
     }
@@ -25,6 +29,24 @@ struct GoodLazyFactScopeOwner {
         guard let factSink else { return }
         let scope: GoodObservationScope = .attempt(2)
         factSink(scope, .opened)
+    }
+
+    func reportScopeAfterBindingGuard() {
+        guard let observationSink = factSink else { return }
+        let scope: GoodObservationScope = .attempt(6)
+        observationSink(scope, .opened)
+    }
+
+    func reportScopeAfterNilReturn() {
+        if factSink == nil { return }
+        let scope = GoodObservationScope.attempt(7)
+        factSink?(scope, .opened)
+    }
+
+    func reportScopeAfterNilThrow() throws {
+        guard let observationSink = factSink else { throw GoodSinkUnavailable() }
+        let scope = GoodObservationScope.attempt(8)
+        observationSink(scope, .opened)
     }
 
     func reportScopeInsideIf() {
@@ -51,6 +73,8 @@ struct GoodLazyFactScopeOwner {
     }
 }
 
+struct GoodSinkUnavailable: Error {}
+
 struct GoodStoreScope {
     let generation: Int
 }
@@ -60,6 +84,10 @@ typealias GoodStoreFactSink = (GoodStoreScope, GoodStoreFact) -> Void
 
 struct GoodStoreScopeOwner {
     let factSink: GoodStoreFactSink?
+
+    init(factSink: GoodStoreFactSink? = nil) {
+        self.factSink = factSink
+    }
 
     func saveAfterGuard() {
         guard let factSink else { return }
@@ -78,3 +106,6 @@ struct GoodStoreScopeOwner {
         factSink?(GoodStoreScope(generation: 3), .saved)
     }
 }
+
+extension GoodLazyFactScopeOwner {}
+extension GoodStoreScopeOwner {}

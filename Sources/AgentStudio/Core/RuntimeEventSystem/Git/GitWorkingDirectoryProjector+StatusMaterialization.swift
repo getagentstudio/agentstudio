@@ -145,7 +145,7 @@ extension GitWorkingDirectoryProjector {
                 reason: unavailable.reason,
                 afterPhysicalCompletionGeneration: physicalCompletionGeneration
             )
-            if factSink != nil, !capacityRetryWorktreeIds.contains(changeset.worktreeId) {
+            if !capacityRetryWorktreeIds.contains(changeset.worktreeId) {
                 closeRefreshFact(
                     worktreeId: changeset.worktreeId, ifCurrent: context.refreshFactScope, outcome: .capacityExceeded
                 )

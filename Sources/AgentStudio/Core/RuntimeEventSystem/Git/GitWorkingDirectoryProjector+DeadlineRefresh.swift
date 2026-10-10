@@ -368,19 +368,19 @@ extension GitWorkingDirectoryProjector {
                         continue
                     }
                     tierEligibleWorktreeIds.insert(entry.worktreeId)
-                    if factSink != nil, let factScope {
+                    if let factScope {
                         evaluatedDeadlineFacts?.append((factScope, entry.worktreeId))
                     }
                     continue
                 }
             case .failure:
                 expireStatusBackoff(worktreeId: entry.worktreeId)
-                if factSink != nil, let factScope {
+                if let factScope {
                     evaluatedDeadlineFacts?.append((factScope, entry.worktreeId))
                 }
             case .capacityFallback:
                 expireCapacityRetry(worktreeId: entry.worktreeId)
-                if factSink != nil, let factScope {
+                if let factScope {
                     evaluatedDeadlineFacts?.append((factScope, entry.worktreeId))
                 }
             }

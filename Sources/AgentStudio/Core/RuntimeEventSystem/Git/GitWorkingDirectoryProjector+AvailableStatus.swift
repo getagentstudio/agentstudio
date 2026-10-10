@@ -88,42 +88,29 @@ extension GitWorkingDirectoryProjector {
             )
         }
 
-        let branchChanged = await emitBranchChangedEvent(
-            previousSnapshot: previousSnapshot,
-            currentBranch: currentStatusSnapshot.branch,
-            worktreeId: changeset.worktreeId,
-            repoId: changeset.repoId
-        )
+        var branchChanged = false
+        if let previousSnapshot,
+            let nextBranch = currentStatusSnapshot.branch,
+            previousSnapshot.branch != nextBranch
+        {
+            await emitGitWorkingDirectoryEvent(
+                worktreeId: changeset.worktreeId,
+                repoId: changeset.repoId,
+                event: .branchChanged(
+                    worktreeId: changeset.worktreeId,
+                    repoId: changeset.repoId,
+                    from: previousSnapshot.branch ?? "",
+                    to: nextBranch
+                )
+            )
+            branchChanged = true
+        }
         closeCompletedRefreshFact(
             worktreeId: changeset.worktreeId,
             ifCurrent: context.refreshFactScope,
             snapshotChanged: snapshotChanged,
             branchChanged: branchChanged
         )
-    }
-
-    private func emitBranchChangedEvent(
-        previousSnapshot: GitWorkingTreeSnapshot?,
-        currentBranch: String?,
-        worktreeId: UUID,
-        repoId: UUID
-    ) async -> Bool {
-        guard let previousSnapshot, let currentBranch,
-            previousSnapshot.branch != currentBranch
-        else {
-            return false
-        }
-        await emitGitWorkingDirectoryEvent(
-            worktreeId: worktreeId,
-            repoId: repoId,
-            event: .branchChanged(
-                worktreeId: worktreeId,
-                repoId: repoId,
-                from: previousSnapshot.branch ?? "",
-                to: currentBranch
-            )
-        )
-        return true
     }
 
     private func closeCompletedRefreshFact(

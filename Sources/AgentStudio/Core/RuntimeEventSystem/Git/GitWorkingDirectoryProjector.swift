@@ -328,112 +328,105 @@ package actor GitWorkingDirectoryProjector {
     private func handleIncomingRuntimeEnvelope(_ envelope: RuntimeEnvelope) -> GitProjectorEnvelopeDisposition {
         switch envelope {
         case .system(let systemEnvelope):
-            return handleSystemRuntimeEnvelope(systemEnvelope)
+            guard systemEnvelope.source == .builtin(.filesystemWatcher),
+                case .topology(let topologyEvent) = systemEnvelope.event
+            else {
+                return .ignored
+            }
+            switch topologyEvent {
+            case .worktreeRegistered(let worktreeId, let repoId, let rootPath):
+                let context = WorktreeFilesystemContext(repoId: repoId, rootPath: rootPath)
+                guard acceptsLifecycleRegistration(worktreeId: worktreeId, context: context) else {
+                    return .ignored
+                }
+                applyRegistration(worktreeId: worktreeId, context: context, timestamp: systemEnvelope.timestamp)
+            case .worktreeUnregistered(let worktreeId, let repoId):
+                guard latestTopologyAssertion == nil else { return .ignored }
+                applyUnregistration(worktreeId: worktreeId, repoId: repoId)
+            case .repoDiscovered, .reposDiscovered, .repoRemoved, .watchedFolderReconciled:
+                return .ignored
+            }
+            return .routed
         case .worktree(let worktreeEnvelope):
-            return handleWorktreeRuntimeEnvelope(worktreeEnvelope)
+            guard worktreeEnvelope.source == .system(.builtin(.filesystemWatcher)),
+                case .filesystem(.filesChanged(let changeset)) = worktreeEnvelope.event
+            else {
+                return .ignored
+            }
+            let worktreeId = changeset.worktreeId
+            observeIntakeFact(worktreeId: worktreeId, batchSeq: changeset.batchSeq)
+            guard !suppressedWorktreeIds.contains(worktreeId) else {
+                closeIntakeFactOnce(
+                    worktreeId: worktreeId,
+                    batchSeq: changeset.batchSeq,
+                    fact: .changesetDropped(.stale)
+                )
+                return .ignored
+            }
+            guard acceptsFilesystemChanges(changeset) else {
+                closeIntakeFactOnce(
+                    worktreeId: worktreeId,
+                    batchSeq: changeset.batchSeq,
+                    fact: .changesetDropped(.stale)
+                )
+                return .ignored
+            }
+            if exactCleanAuthorityByWorktreeId.removeValue(forKey: worktreeId) != nil {
+                recordExactCleanMutationInvalidatedTelemetry()
+            }
+            guard Self.shouldRefresh(for: changeset) else {
+                aggregatePerformance.increment(\.suppressedInput)
+                flushAggregatePerformanceSnapshotIfNeeded()
+                closeIntakeFactOnce(
+                    worktreeId: worktreeId,
+                    batchSeq: changeset.batchSeq,
+                    fact: .changesetDropped(.equal)
+                )
+                return .ignored
+            }
+            guard admitFileChangeAfterQuarantine(worktreeId: worktreeId, rootPath: changeset.rootPath) else {
+                closeIntakeFactOnce(
+                    worktreeId: worktreeId,
+                    batchSeq: changeset.batchSeq,
+                    fact: .changesetDropped(.stale)
+                )
+                return .ignored
+            }
+            repoIdByWorktreeId[worktreeId] = changeset.repoId
+            if openStatusBackoffWorktreeIds.contains(worktreeId) {
+                recordRequiredIntent(changeset: changeset, triggerSource: .filesystemChange)
+                _ = deferChangesetIfStatusBackoffOpen(changeset)
+                return .routed
+            }
+            if capacityRetryWorktreeIds.contains(worktreeId) {
+                recordRequiredIntent(changeset: changeset, triggerSource: .filesystemChange)
+                _ = deferChangesetIfCapacityRetryPending(changeset)
+                return .routed
+            }
+            // A queued immediate full refresh covers changes observed before
+            // it starts. Once its task is running, retain one merged pending
+            // invalidation so later mutations cannot disappear behind it.
+            if !immediateRefreshWorktreeIds.contains(worktreeId) || worktreeTasks[worktreeId] != nil {
+                pendingByWorktreeId[worktreeId] = mergeTrackedChangesets(
+                    pendingByWorktreeId[worktreeId],
+                    with: changeset
+                )
+                recordRequiredIntent(changeset: changeset, triggerSource: .filesystemChange)
+                refreshAttribution.triggerSourceByWorktreeId[worktreeId] = .filesystemChange
+            } else if let coveringChangeset = pendingByWorktreeId[worktreeId] {
+                recordRequiredIntent(changeset: coveringChangeset, triggerSource: .filesystemChange)
+                closeIntakeFactOnce(
+                    worktreeId: worktreeId,
+                    batchSeq: changeset.batchSeq,
+                    fact: .changesetAccepted
+                )
+            }
+            grantDemandEligibility(worktreeId: worktreeId)
+            admitPendingWorktrees()
+            return .routed
         case .pane:
             return .ignored
         }
-    }
-
-    private func handleSystemRuntimeEnvelope(
-        _ envelope: SystemEnvelope
-    ) -> GitProjectorEnvelopeDisposition {
-        guard envelope.source == .builtin(.filesystemWatcher),
-            case .topology(let topologyEvent) = envelope.event
-        else {
-            return .ignored
-        }
-        switch topologyEvent {
-        case .worktreeRegistered(let worktreeId, let repoId, let rootPath):
-            let context = WorktreeFilesystemContext(repoId: repoId, rootPath: rootPath)
-            guard acceptsLifecycleRegistration(worktreeId: worktreeId, context: context) else {
-                return .ignored
-            }
-            applyRegistration(worktreeId: worktreeId, context: context, timestamp: envelope.timestamp)
-        case .worktreeUnregistered(let worktreeId, let repoId):
-            guard latestTopologyAssertion == nil else {
-                return .ignored
-            }
-            applyUnregistration(worktreeId: worktreeId, repoId: repoId)
-        case .repoDiscovered, .reposDiscovered, .repoRemoved, .watchedFolderReconciled:
-            return .ignored
-        }
-        return .routed
-    }
-
-    private func handleWorktreeRuntimeEnvelope(
-        _ envelope: WorktreeEnvelope
-    ) -> GitProjectorEnvelopeDisposition {
-        guard envelope.source == .system(.builtin(.filesystemWatcher)),
-            case .filesystem(.filesChanged(let changeset)) = envelope.event
-        else {
-            return .ignored
-        }
-        let worktreeId = changeset.worktreeId
-        observeIntakeFact(worktreeId: worktreeId, batchSeq: changeset.batchSeq)
-        guard !suppressedWorktreeIds.contains(worktreeId) else {
-            closeIntakeFactOnce(
-                worktreeId: worktreeId, batchSeq: changeset.batchSeq, fact: .changesetDropped(.stale))
-
-            return .ignored
-        }
-        guard acceptsFilesystemChanges(changeset) else {
-            closeIntakeFactOnce(
-                worktreeId: worktreeId, batchSeq: changeset.batchSeq, fact: .changesetDropped(.stale))
-
-            return .ignored
-        }
-        if exactCleanAuthorityByWorktreeId.removeValue(forKey: worktreeId) != nil {
-            recordExactCleanMutationInvalidatedTelemetry()
-        }
-        guard Self.shouldRefresh(for: changeset) else {
-            aggregatePerformance.increment(\.suppressedInput)
-            flushAggregatePerformanceSnapshotIfNeeded()
-            closeIntakeFactOnce(
-                worktreeId: worktreeId, batchSeq: changeset.batchSeq, fact: .changesetDropped(.equal))
-
-            return .ignored
-        }
-        guard admitFileChangeAfterQuarantine(worktreeId: worktreeId, rootPath: changeset.rootPath) else {
-            closeIntakeFactOnce(
-                worktreeId: worktreeId, batchSeq: changeset.batchSeq, fact: .changesetDropped(.stale))
-
-            return .ignored
-        }
-        repoIdByWorktreeId[worktreeId] = changeset.repoId
-        if openStatusBackoffWorktreeIds.contains(worktreeId) {
-            recordRequiredIntent(changeset: changeset, triggerSource: .filesystemChange)
-            _ = deferChangesetIfStatusBackoffOpen(changeset)
-            return .routed
-        }
-        if capacityRetryWorktreeIds.contains(worktreeId) {
-            recordRequiredIntent(changeset: changeset, triggerSource: .filesystemChange)
-            _ = deferChangesetIfCapacityRetryPending(changeset)
-            return .routed
-        }
-        // A queued immediate full refresh covers changes observed before
-        // it starts. Once its task is running, retain one merged pending
-        // invalidation so later mutations cannot disappear behind it.
-        if !immediateRefreshWorktreeIds.contains(worktreeId) || worktreeTasks[worktreeId] != nil {
-            pendingByWorktreeId[worktreeId] = mergeTrackedChangesets(
-                pendingByWorktreeId[worktreeId],
-                with: changeset
-            )
-            recordRequiredIntent(changeset: changeset, triggerSource: .filesystemChange)
-            refreshAttribution.triggerSourceByWorktreeId[worktreeId] = .filesystemChange
-        } else if let coveringChangeset = pendingByWorktreeId[worktreeId] {
-            recordRequiredIntent(
-                changeset: coveringChangeset,
-                triggerSource: .filesystemChange
-            )
-            closeIntakeFactOnce(
-                worktreeId: worktreeId, batchSeq: changeset.batchSeq, fact: .changesetAccepted)
-
-        }
-        grantDemandEligibility(worktreeId: worktreeId)
-        admitPendingWorktrees()
-        return .routed
     }
 
     package func assertTopology(_ assertion: FilesystemTopologyAssertion) {
@@ -736,7 +729,7 @@ package actor GitWorkingDirectoryProjector {
         worktreeId: UUID, taskGeneration: UInt64, refreshFactScope: GitProjectorScope?
     ) async {
         defer {
-            if factSink != nil, !capacityRetryWorktreeIds.contains(worktreeId) {
+            if !capacityRetryWorktreeIds.contains(worktreeId) {
                 let outcome: GitProjectorRefreshOutcome =
                     isShuttingDown ? .shutdown : Task.isCancelled ? .cancelled : .superseded
                 closeRefreshFact(worktreeId: worktreeId, ifCurrent: refreshFactScope, outcome: outcome)

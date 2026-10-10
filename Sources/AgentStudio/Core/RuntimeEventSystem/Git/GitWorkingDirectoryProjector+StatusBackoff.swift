@@ -229,9 +229,7 @@ extension GitWorkingDirectoryProjector {
     func resetStatusBackoff(worktreeId: UUID) {
         let hadFailures = statusBackoffFailureCountByWorktreeId.removeValue(forKey: worktreeId) != nil
         statusFailureDeadlineByWorktreeId.removeValue(forKey: worktreeId)
-        if factSink != nil {
-            closeDeadlineFact(worktreeId: worktreeId, sourceKind: .failure, disposition: .obsolete)
-        }
+        closeDeadlineFact(worktreeId: worktreeId, sourceKind: .failure, disposition: .obsolete)
         let wasOpen = openStatusBackoffWorktreeIds.remove(worktreeId) != nil
         deferredStatusBackoffChangesetByWorktreeId.removeValue(forKey: worktreeId)
         rescheduleDeadlineTask()
