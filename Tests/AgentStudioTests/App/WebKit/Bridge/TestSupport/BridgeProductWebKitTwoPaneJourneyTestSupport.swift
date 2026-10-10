@@ -546,10 +546,16 @@ enum BridgeProductWebKitTwoPaneJourneyTestSupport {
                     + "(observedActiveMode: \(observedActiveMode))"
             )
         }
+        let precedingModeSignal = input.paneOne.activeViewerModeSignalState
         try await input.paneOneClosingSource.activateReadyFileMode(
             input.paneOne,
             failure: "File mode did not activate during refresh"
         )
+        let fileModeAcceptance = try await requireNativeFileModeAcceptance(
+            input.paneOne,
+            after: precedingModeSignal
+        )
+        try requireFencedReviewBuild(fileModeAcceptance, batchSequence: 701)
         await input.paneOneReviewProvider.releaseBlockedComparisons()
         await heldReviewTask.value
         let updatingFileStatus = try await performBatch704FileCatchUp(input)

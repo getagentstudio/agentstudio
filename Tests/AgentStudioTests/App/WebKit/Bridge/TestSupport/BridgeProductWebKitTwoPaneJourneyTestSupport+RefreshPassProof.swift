@@ -23,6 +23,56 @@ extension BridgeProductWebKitTwoPaneJourneyTestSupport {
         return preparationEvent
     }
 
+    /// The page shows File before native admission accepts it; only native acceptance
+    /// fences an in-flight Review build, so the journey waits for that owner fact and
+    /// captures the refresh facts from the same read that satisfied the wait.
+    static func requireNativeFileModeAcceptance(
+        _ controller: BridgePaneController,
+        after precedingSignal: BridgeActiveViewerModeSignalState
+    ) async throws -> BridgeProductWebKitNativeFileModeAcceptance {
+        guard let sessionId = precedingSignal.sessionId,
+            let precedingSequence = precedingSignal.lastSequence
+        else {
+            throw JourneyError.conditionFailed(
+                "File activation had no preceding native mode session and sequence"
+            )
+        }
+        return try await BridgePaneControllerEventWaits.waitForValue(
+            { () -> BridgeProductWebKitNativeFileModeAcceptance? in
+                let currentSignal = controller.activeViewerModeSignalState
+                guard currentSignal.sessionId == sessionId,
+                    currentSignal.acceptedMode == .file,
+                    let currentSequence = currentSignal.lastSequence,
+                    currentSequence > precedingSequence
+                else { return nil }
+                let coordinator = controller.refreshAdmissionCoordinator
+                return BridgeProductWebKitNativeFileModeAcceptance(
+                    isReviewRefreshActive: coordinator.isRefreshLaneActive(.review),
+                    dirtyFact: coordinator.diagnosticSnapshot.dirtyFact
+                )
+            },
+            milestone: "native File mode acceptance after sequence \(precedingSequence)",
+            lastObservation: {
+                let signal = controller.activeViewerModeSignalState
+                return "session=\(signal.sessionId ?? "nil"),"
+                    + "sequence=\(signal.lastSequence.map { String($0) } ?? "nil"),"
+                    + "mode=\(signal.acceptedMode?.rawValue ?? "nil")"
+            }
+        )
+    }
+
+    /// Native File acceptance fences the held Review build: its pass is gone and its
+    /// Review input is restored as the pane's dirty fact before the comparison resumes.
+    static func requireFencedReviewBuild(
+        _ acceptance: BridgeProductWebKitNativeFileModeAcceptance,
+        batchSequence: UInt64
+    ) throws {
+        try #require(!acceptance.isReviewRefreshActive)
+        let restoredDirtyFact = try #require(acceptance.dirtyFact)
+        try #require(restoredDirtyFact.requiresReviewRefresh)
+        try #require(restoredDirtyFact.latestBatchSequence == batchSequence)
+    }
+
     static func performBatch704FileCatchUp(
         _ input: JourneyInput
     ) async throws -> BridgeProductWebKitTwoPanePositionSnapshot {
@@ -126,4 +176,10 @@ extension BridgeProductWebKitTwoPaneJourneyTestSupport {
         return reviewModeIdentity
     }
 
+}
+
+/// Review refresh facts read in the same MainActor turn that observed native File acceptance.
+struct BridgeProductWebKitNativeFileModeAcceptance: Sendable {
+    let isReviewRefreshActive: Bool
+    let dirtyFact: BridgePaneRefreshDirtyFact?
 }
