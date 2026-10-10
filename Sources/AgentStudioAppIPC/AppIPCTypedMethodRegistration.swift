@@ -32,6 +32,8 @@ package struct AppIPCTargetResolution<Parameters: Sendable>: Sendable {
     package let resolvedPaneIds: [UUID]
     /// The `command.execute` command, so admission can read its eligibility.
     package let commandId: String?
+    /// The selected command's kinds, rather than command.execute's catalog union.
+    package let commandAllowedTargetKinds: Set<IPCHandleKind>?
     package let agentArgumentRule: AppIPCAgentArgumentRule
 
     package init(
@@ -41,6 +43,7 @@ package struct AppIPCTargetResolution<Parameters: Sendable>: Sendable {
         requiredScopes: [IPCPermissionScope] = [],
         resolvedPaneIds: [UUID]? = nil,
         commandId: String? = nil,
+        commandAllowedTargetKinds: Set<IPCHandleKind>? = nil,
         agentArgumentRule: AppIPCAgentArgumentRule = .targetOnly
     ) {
         self.parameters = parameters
@@ -49,6 +52,7 @@ package struct AppIPCTargetResolution<Parameters: Sendable>: Sendable {
         self.requiredScopes = requiredScopes
         self.resolvedPaneIds = resolvedPaneIds ?? Self.paneIds(in: target)
         self.commandId = commandId
+        self.commandAllowedTargetKinds = commandAllowedTargetKinds
         self.agentArgumentRule = agentArgumentRule
     }
 
@@ -166,7 +170,16 @@ package struct AppIPCTypedMethodRegistration<
             let resolution = try await resolveTarget(prepared, context, tools)
             try Self.validateCorrelation(
                 in: resolution.parameters, using: preparedCorrelation, matches: wireCorrelation)
-            try Self.validateTarget(resolution.canonicalHandle, allowedKinds: descriptor.allowedTargetKinds)
+            let allowedTargetKinds: Set<IPCHandleKind>
+            if descriptor.name == AppIPCMethodNames.commandExecute, resolution.canonicalHandle == nil {
+                guard let commandAllowedTargetKinds = resolution.commandAllowedTargetKinds else {
+                    throw AppIPCTypedMethodRegistrationError.targetKindNotAllowed
+                }
+                allowedTargetKinds = commandAllowedTargetKinds
+            } else {
+                allowedTargetKinds = descriptor.allowedTargetKinds
+            }
+            try Self.validateTarget(resolution.canonicalHandle, allowedKinds: allowedTargetKinds)
             if descriptor.principalAvailability == .authenticated {
                 guard let principal = context.principal else {
                     throw AppIPCTypedMethodRegistrationError.authenticationRequired
