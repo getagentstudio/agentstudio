@@ -138,6 +138,8 @@ struct RefreshAdmissionIntegrationFixture {
     let productInstallation: BridgeProductSessionInstallation
     let productAdmission: BridgeProductAdmissionContext
     let productProvider: BridgePaneProductSchemeProvider
+    /// Optional direct-dispatch decorator; the controller installation keeps the real base provider.
+    let productControlProvider: any BridgeProductSchemeProvider
     let controller: BridgePaneController
 
     func loadInitialReviewPackage() async throws {
@@ -257,6 +259,10 @@ func makeRefreshAdmissionIntegrationFixture(
     reviewBuildAdmissionFactSink: BridgePaneReviewBuildAdmissionFactSink? = nil,
     telemetryRecorder: (any BridgePerformanceTraceRecording)? = nil,
     publicationLifecycleRecorder: (any BridgeProductMetadataLifecycleTraceRecording)? = nil,
+    sessionDeadlineClock: (any Clock<Duration> & Sendable)? = nil,
+    productSchemeProviderDecorator:
+        (@MainActor (BridgePaneProductSchemeProvider, BridgeProductAdmissionGate) -> any BridgeProductSchemeProvider)? =
+        nil,
     contributionTargetCommit:
         (@MainActor @Sendable (WorkspaceReviewContributionTarget) -> BridgePaneStateMutationResult)? = nil
 ) async throws -> RefreshAdmissionIntegrationFixture {
@@ -284,20 +290,22 @@ func makeRefreshAdmissionIntegrationFixture(
         reservationStep: reviewMetadataReservationStep
     )
     let refreshWorkAdmission = BridgePaneRefreshWorkAdmissionTestContext.foregroundOnMainActor()
-    let productProvider = BridgePaneProductSchemeProvider(
+    let productProvider = makeRefreshAdmissionProductProvider(
         fileMetadataSource: fileMetadataSource,
         reviewMetadataSource: reviewMetadataSource,
-        reviewContentSource: BridgeUnavailablePaneProductReviewContentSource(),
-        markReviewItemViewed: { _, _ in },
         refreshWorkAdmissionSource: refreshWorkAdmission.source,
         lifecycleTraceRecorder: publicationLifecycleRecorder
     )
     let paneId = UUIDv7.generate()
     let productAdmissionGate = BridgeProductAdmissionGate()
-    let installation = BridgePaneController.makeInitialProductSessionInstallation(
+    let productControlProvider =
+        productSchemeProviderDecorator?(productProvider, productAdmissionGate)
+        ?? productProvider
+    let installation = try BridgeProductSessionInstallation.make(
         paneSessionId: paneId.uuidString,
         provider: productProvider,
-        productAdmissionGate: productAdmissionGate
+        productAdmissionGate: productAdmissionGate,
+        deadlineClock: sessionDeadlineClock
     )
     let controller = BridgePaneController(
         paneId: paneId,
@@ -354,7 +362,25 @@ func makeRefreshAdmissionIntegrationFixture(
         productInstallation: installation,
         productAdmission: productAdmission,
         productProvider: productProvider,
+        productControlProvider: productControlProvider,
         controller: controller
+    )
+}
+
+@MainActor
+private func makeRefreshAdmissionProductProvider(
+    fileMetadataSource: RefreshAdmissionTrackingFileMetadataSource,
+    reviewMetadataSource: RefreshAdmissionGatedReviewMetadataSource,
+    refreshWorkAdmissionSource: BridgePaneRefreshWorkAdmissionSource,
+    lifecycleTraceRecorder: (any BridgeProductMetadataLifecycleTraceRecording)?
+) -> BridgePaneProductSchemeProvider {
+    BridgePaneProductSchemeProvider(
+        fileMetadataSource: fileMetadataSource,
+        reviewMetadataSource: reviewMetadataSource,
+        reviewContentSource: BridgeUnavailablePaneProductReviewContentSource(),
+        markReviewItemViewed: { _, _ in },
+        refreshWorkAdmissionSource: refreshWorkAdmissionSource,
+        lifecycleTraceRecorder: lifecycleTraceRecorder
     )
 }
 

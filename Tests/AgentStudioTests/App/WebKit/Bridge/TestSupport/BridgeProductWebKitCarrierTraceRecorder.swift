@@ -61,10 +61,14 @@ actor BridgeProductWebKitCarrierTraceRecorder: BridgePerformanceTraceRecording {
     }
 
     func prepareForegroundCatchUp(
-        dirtyFact: BridgePaneRefreshDirtyFact?
+        dirtyFact: BridgePaneRefreshDirtyFact?,
+        reviewModeIdentity: BridgeProductWebKitActiveViewerModeIdentity
     ) -> BridgeProductWebKitCatchUpTerminalExpectation {
         precondition(foregroundCatchUp == nil)
-        let expectation = BridgeProductWebKitCatchUpTerminalExpectation(dirtyFact: dirtyFact)
+        let expectation = BridgeProductWebKitCatchUpTerminalExpectation(
+            dirtyFact: dirtyFact,
+            reviewModeIdentity: reviewModeIdentity
+        )
         foregroundCatchUp = expectation
         return expectation
     }
