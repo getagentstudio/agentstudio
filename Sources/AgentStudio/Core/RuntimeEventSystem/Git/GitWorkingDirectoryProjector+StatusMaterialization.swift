@@ -210,7 +210,6 @@ extension GitWorkingDirectoryProjector {
             ifCurrent: context.refreshFactScope,
             outcome: unavailable.reason == .timeout ? .timeout : .unavailable
         )
-
     }
 
 }

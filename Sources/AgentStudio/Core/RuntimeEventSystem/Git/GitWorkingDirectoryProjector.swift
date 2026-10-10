@@ -275,7 +275,6 @@ package actor GitWorkingDirectoryProjector {
         for worktreeId in Array(openRefreshFactScopeByWorktreeId.keys) {
             closeRefreshFact(worktreeId: worktreeId, outcome: .shutdown)
         }
-
         settleAllRepositoryRecomputations(.cancelled)
         for (worktreeId, rootPath) in rootPathByWorktreeId {
             (gitWorkingTreeProvider as? any GitExactCleanStatusProviding)?.retireExactCleanAuthority(
@@ -803,7 +802,6 @@ package actor GitWorkingDirectoryProjector {
                     batchSeq: nextChangeset.batchSeq,
                     fact: .changesetAccepted
                 )
-
                 _ = immediateRefreshWorktreeIds.remove(worktreeId)
             }
             if let factSink, let coalescingFactScope {

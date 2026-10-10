@@ -59,7 +59,6 @@ extension GitWorkingDirectoryProjector {
         for worktreeId in Array(backoffFactOpenEpisodeByWorktreeId.keys) {
             closeBackoffFact(worktreeId: worktreeId)
         }
-
         capacityRetryWorktreeIds.removeAll(keepingCapacity: false)
         capacityRetryReasonByWorktreeId.removeAll(keepingCapacity: false)
         capacityRearmedWorktreeIds.removeAll(keepingCapacity: false)

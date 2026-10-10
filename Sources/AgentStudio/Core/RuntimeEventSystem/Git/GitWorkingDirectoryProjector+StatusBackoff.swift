@@ -162,7 +162,6 @@ extension GitWorkingDirectoryProjector {
             capacityFallbackDeadlineByWorktreeId.removeValue(forKey: worktreeId)
             closeDeadlineFact(worktreeId: worktreeId, sourceKind: .capacityFallback, disposition: .obsolete)
             closeCapacityFact(worktreeId: worktreeId, outcome: .rearmed)
-
         }
         admitPendingWorktrees()
         rescheduleDeadlineTask()

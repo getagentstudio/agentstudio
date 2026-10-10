@@ -35,7 +35,7 @@ struct OwnerFactSinkBoundaryRuleTests {
         )
     }
 
-    @Test("G1 reports fact scope and payload preparation outside the nil gate")
+    @Test("G1 reports fact scope preparation outside the nil gate")
     func gitProjectorFactScopeAndPayloadFollowNilGate() throws {
         let diagnostics = try findings(in: "BadGitProjectorFactPreparation.swift")
 

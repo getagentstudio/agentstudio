@@ -155,7 +155,6 @@ extension GitWorkingDirectoryProjector {
         if let changeset = pendingByWorktreeId[worktreeId] {
             closeIntakeFactOnce(
                 worktreeId: worktreeId, batchSeq: changeset.batchSeq, fact: .changesetAccepted)
-
         }
         if let requestSequence = refreshAttribution.requestSequenceByWorktreeId[worktreeId] {
             admitRefreshFact(worktreeId: worktreeId, requestSequence: requestSequence)

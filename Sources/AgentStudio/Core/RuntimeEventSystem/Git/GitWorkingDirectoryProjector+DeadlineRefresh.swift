@@ -202,7 +202,6 @@ extension GitWorkingDirectoryProjector {
         }
         visibilityAdmissionTask?.cancel()
         closeVisibilityAdmissionFacts(as: .obsolete)
-
         pendingVisibilityDeltaWorktreeIds =
             sidebarVisibleWorktreeIds
             .subtracting(lastProcessedSidebarVisibleWorktreeIds)
@@ -288,7 +287,6 @@ extension GitWorkingDirectoryProjector {
         closeVisibilityAdmissionFacts(
             admittedWorktreeIds: Set(newlyVisibleWorktreeIds)
         )
-
     }
 
     func rescheduleDeadlineTask() {
