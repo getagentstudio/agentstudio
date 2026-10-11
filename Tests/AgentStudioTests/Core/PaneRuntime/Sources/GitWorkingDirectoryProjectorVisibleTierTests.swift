@@ -96,7 +96,7 @@ struct GitWorkingDirectoryProjectorVisibleTierTests {
     }
 
     @Test("automatic registration wave waits for process start pacing")
-    func automaticRegistrationRecordsPacedStartFacts() async throws {
+    func automaticRegistrationWaveWaitsForProcessStartPacing() async throws {
         let source = GitProjectorFactSource()
         let facts = try source.attach()
         let bus = EventBus<RuntimeEnvelope>()
@@ -265,7 +265,7 @@ struct GitWorkingDirectoryProjectorVisibleTierTests {
     }
 
     @Test("covered worktree visibility change waits for its tier cadence")
-    func coveredWorktreeVisibilityAdmissionIsUnobservedBeforeCadence() async throws {
+    func coveredWorktreeVisibilityChangeWaitsForTierCadence() async throws {
         let bus = EventBus<RuntimeEnvelope>()
         let clock = TestPushClock()
         let calls = VisibleTierCallRecorder()
@@ -312,7 +312,7 @@ struct GitWorkingDirectoryProjectorVisibleTierTests {
     }
 
     @Test("160 visible worktrees stay within the visible share and make rolling progress")
-    func visibleTierGateReportsItsWaiterCount() async throws {
+    func hugeVisibleFleetUsesBoundedShareWithRollingProgress() async throws {
         let source = GitProjectorFactSource()
         let facts = try source.attach()
         let bus = EventBus<RuntimeEnvelope>()
@@ -697,7 +697,7 @@ struct GitWorkingDirectoryProjectorVisibleTierTests {
     }
 
     @Test("demotion preserves pending refresh debt until visibility returns")
-    func demotionLeavesPendingDebtUntilVisibilityRestoration() async throws {
+    func demotionPreservesPendingRefreshDebtUntilVisibilityReturns() async throws {
         let source = GitProjectorFactSource()
         let facts = try source.attach()
         let bus = EventBus<RuntimeEnvelope>()
@@ -774,7 +774,7 @@ struct GitWorkingDirectoryProjectorVisibleTierTests {
     }
 
     @Test("active pane reservation admits before merely visible sidebar worktree")
-    func activePaneUsesCapacityWhenVisibleBudgetIsFull() async throws {
+    func activePaneReservationAdmitsBeforeMerelyVisibleSidebarWorktree() async throws {
         let bus = EventBus<RuntimeEnvelope>()
         let gate = VisibleTierStatusGate()
         let policy = AppPolicies.GitRefresh.Policy(

@@ -133,7 +133,7 @@ struct GitWorkingDirectoryProjectorExplicitUpdateTests {
     }
 
     @Test("explicit repository update remains unsettled across local capacity retry")
-    func explicitRepositoryUpdateSettlesAfterCapacityRetry() async throws {
+    func explicitRepositoryUpdateRemainsUnsettledAcrossCapacityRetry() async throws {
         let source = LocalFactSource(vocabulary: FactVocabulary<GitProjectorScope, GitProjectorFact>.gitProjector)
         let facts = try source.attach()
         let eventRecorder = ExplicitUpdateSettlementEventRecorder()
@@ -186,7 +186,7 @@ struct GitWorkingDirectoryProjectorExplicitUpdateTests {
     }
 
     @Test("explicit repository update retains one full follower behind insufficient active local work")
-    func explicitRepositoryUpdateChoosesFollowerAfterInsufficientActiveWork() async throws {
+    func explicitRepositoryUpdateFollowsInsufficientActiveWork() async throws {
         let source = LocalFactSource(vocabulary: FactVocabulary<GitProjectorScope, GitProjectorFact>.gitProjector)
         let facts = try source.attach()
         let statusGate = ExplicitUpdateStatusGate()
