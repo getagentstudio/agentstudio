@@ -1,6 +1,33 @@
 import Foundation
 
 extension RepoScannerTraversalSession {
+    struct RetainedTargetIndex: Sendable {
+        let rootPathKey: String
+        let retainedPathKeys: [String]
+        private let pathKeyByEntryComponents: [ArraySlice<String>: String]
+
+        init(rootURL: URL, retainedCheckoutPaths: [URL]) {
+            let standardizedRootURL = rootURL.standardizedFileURL
+            let rootComponents = standardizedRootURL.pathComponents
+            rootPathKey = standardizedRootURL.path
+            retainedPathKeys = retainedCheckoutPaths.map { $0.standardizedFileURL.path }
+
+            var pathKeysByComponents: [ArraySlice<String>: String] = [:]
+            for retainedPathKey in retainedPathKeys {
+                let retainedComponents = URL(fileURLWithPath: retainedPathKey).pathComponents
+                guard retainedComponents.starts(with: rootComponents) else { continue }
+                pathKeysByComponents[retainedComponents.dropFirst(rootComponents.count)] = retainedPathKey
+            }
+            pathKeyByEntryComponents = pathKeysByComponents
+        }
+
+        func pathKey(for entry: PendingEnumerationEntry) -> String? {
+            // Enumeration can use a physical root alias. Its level identifies
+            // the root-relative components without normalizing another URL.
+            pathKeyByEntryComponents[entry.url.pathComponents.suffix(entry.depth)]
+        }
+    }
+
     func removeRetainedTargetExaminedByTraversal(
         _ entry: PendingEnumerationEntry,
         isSymbolicLink: Bool,
@@ -8,20 +35,10 @@ extension RepoScannerTraversalSession {
     ) {
         guard entry.depth <= state.maxDepth,
             !isSymbolicLink,
-            !state.remainingRetainedPathKeys.isEmpty
+            !state.remainingRetainedPathKeys.isEmpty,
+            let retainedPathKey = retainedTargetIndex.pathKey(for: entry)
         else { return }
-        state.remainingRetainedPathKeys.remove(
-            retainedTargetKey(for: entry, rootURL: state.rootURL)
-        )
-    }
-
-    func retainedTargetKey(
-        for entry: PendingEnumerationEntry,
-        rootURL: URL
-    ) -> String {
-        entry.url.pathComponents.suffix(entry.depth).reduce(rootURL) { partialPath, component in
-            partialPath.appending(path: component)
-        }.standardizedFileURL.path
+        state.remainingRetainedPathKeys.remove(retainedPathKey)
     }
 
     func inspectNextRetainedTarget<ServiceClock: Clock<Duration>>(
@@ -42,7 +59,7 @@ extension RepoScannerTraversalSession {
 
         let retainedCheckoutPath = traversalLease.state.retainedCheckoutPaths[nextIndex]
         let followingPosition = TraversalPosition.retainedTargets(nextIndex: nextIndex + 1)
-        let retainedPathKey = retainedCheckoutPath.standardizedFileURL.path
+        let retainedPathKey = retainedTargetIndex.retainedPathKeys[nextIndex]
         guard traversalLease.state.remainingRetainedPathKeys.contains(retainedPathKey) else {
             usage.enumeratedItemCount += 1
             traversalLease.state.position = followingPosition

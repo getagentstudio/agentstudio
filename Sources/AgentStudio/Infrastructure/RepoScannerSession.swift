@@ -7,6 +7,7 @@ final class RepoScannerTraversalSession: Sendable {
     let id = RepoScannerSessionID(rawValue: UUIDv7.generate())
 
     let quantumBudget: RepoScannerQuantumBudget
+    let retainedTargetIndex: RetainedTargetIndex
     private let capacity: RepoScannerSessionCapacity
     private let serviceClock: any Clock<Duration>
     private let lifecycle: Mutex<Lifecycle>
@@ -21,6 +22,10 @@ final class RepoScannerTraversalSession: Sendable {
         serviceClock: any Clock<Duration>
     ) {
         self.quantumBudget = quantumBudget
+        retainedTargetIndex = RetainedTargetIndex(
+            rootURL: rootURL,
+            retainedCheckoutPaths: retainedCheckoutPaths
+        )
         self.capacity = capacity
         self.serviceClock = serviceClock
         lifecycle = Mutex(
@@ -350,7 +355,7 @@ extension RepoScannerTraversalSession {
         traversalLease.state.directoryVisitCount += 1
         if !traversalLease.state.remainingRetainedPathKeys.isEmpty {
             traversalLease.state.remainingRetainedPathKeys.remove(
-                traversalLease.state.rootURL.standardizedFileURL.path
+                retainedTargetIndex.rootPathKey
             )
         }
         switch inspectGitMarker(at: traversalLease.state.rootURL) {
