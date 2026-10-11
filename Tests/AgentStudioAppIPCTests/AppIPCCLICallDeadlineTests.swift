@@ -51,13 +51,23 @@ struct AppIPCCLICallDeadlineTests {
                         correlationId: UUIDv7.generate(), deadlineTiming: driver.timing)
                 }
 
-                let submittedFrame = try await submitted.firstArrival()
-                submitted.release()
-                _ = try await heldReply.firstArrival()
-                try await valueFromDedicatedThread {
-                    try driver.advance(by: CLIPolicy.ordinaryCallLimit)
+                let submittedFrame: Data
+                let outcome: ClientCommandLineOutcome
+                do {
+                    submittedFrame = try await submitted.firstArrival()
+                    submitted.release()
+                    _ = try await heldReply.firstArrival()
+                    try await valueFromDedicatedThread {
+                        try driver.advance(by: CLIPolicy.ordinaryCallLimit)
+                    }
+                    outcome = await client.value
+                } catch {
+                    driver.cancel()
+                    submitted.release()
+                    heldReply.release()
+                    _ = await client.result
+                    throw error
                 }
-                let outcome = await client.value
                 heldReply.release()
 
                 var decoder = NDJSONFrameDecoder(maxFrameBytes: IPCFramePolicy.maximumRequestFrameBytes)

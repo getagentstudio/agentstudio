@@ -1,3 +1,4 @@
+import AgentStudioDeadlineTestSupport
 import AgentStudioIPCClientCore
 import AgentStudioIPCTransport
 import AgentStudioInfrastructure
@@ -10,6 +11,88 @@ import Synchronization
 import Testing
 
 extension CLIHookSilenceScriptTests {
+    @Test(
+        "Codex SessionEnd consumes responding and refusing app replies silently",
+        arguments: [HookSilenceCondition.up, .refusing], HookSilenceStoreSetting.allCases)
+    func sessionEndRespondingAppReceivesEvent(
+        condition: HookSilenceCondition, storeSetting: HookSilenceStoreSetting
+    ) async throws {
+        let fixture = try HookSilenceProcessFixture(condition: condition)
+        defer { fixture.removeFiles() }
+        let sessionID = UUIDv7.generate().uuidString
+        let correlationID = UUIDv7.generate()
+        let observed: (exitCode: Int32, streamLines: [String])
+        do {
+            observed = try await valueFromDedicatedThread {
+                try fixture.start()
+                let driver = ControlledDeadlineDriver()
+                defer { driver.close() }
+                let pipe = Pipe()
+                defer {
+                    try? pipe.fileHandleForReading.close()
+                    try? pipe.fileHandleForWriting.close()
+                }
+                let payload = try JSONSerialization.data(withJSONObject: [
+                    "session_id": sessionID, "hook_event_name": CodexHookEventName.sessionEnd.rawValue,
+                ])
+                try pipe.fileHandleForWriting.write(contentsOf: payload)
+                try pipe.fileHandleForWriting.close()
+                let streams = Mutex<[String]>([])
+                let exitCode = AgentStudioIPCClientCommandLineRunner.run(
+                    props: .init(
+                        arguments: ["hook", "codex", "SessionEnd"],
+                        environment: fixture.environment(
+                            executable: URL(fileURLWithPath: "/fixture/agentstudio-cli"), storeSetting: storeSetting),
+                        executablePath: "/fixture/agentstudio-cli", bundleExecutableURL: nil,
+                        standardInput: { Data() }, identifierGenerator: { correlationID },
+                        standardOutputSink: { line in streams.withLock { $0.append(line) } },
+                        standardErrorSink: { line in streams.withLock { $0.append(line) } },
+                        standardInputFileDescriptor: pipe.fileHandleForReading.fileDescriptor,
+                        deadlineTiming: driver.timing))
+                return (exitCode: exitCode, streamLines: streams.withLock { $0 })
+            }
+        } catch {
+            await fixture.shutdown()
+            throw error
+        }
+        await fixture.shutdown()
+        #expect(observed.exitCode == 0)
+        #expect(observed.streamLines.isEmpty)
+        let requests = fixture.requests
+        #expect(requests.map(\.method) == ["auth.login", "session.event"])
+        let eventRequest = try #require(requests.last)
+        let event = try JSONDecoder().decode(
+            IPCSessionEventParams.self, from: JSONEncoder().encode(try #require(eventRequest.params)))
+        #expect(event.event.conversationId == sessionID)
+        #expect(event.event.name == .sessionEnd)
+        #expect(event.correlationId == correlationID)
+        let responses = fixture.responses
+        #expect(responses.count == 2)
+        let loginResponse = try #require(responses.first)
+        #expect(loginResponse.id == requests.first?.id)
+        #expect(loginResponse.error == nil)
+        let eventResponse = try #require(responses.last)
+        #expect(eventResponse.id == eventRequest.id)
+        if condition == .up {
+            #expect(eventResponse.error == nil)
+            let result = try JSONDecoder().decode(
+                IPCSessionEventResult.self, from: JSONEncoder().encode(try #require(eventResponse.result)))
+            #expect(result.disposition == .admitted)
+            #expect(result.correlationId == correlationID)
+        } else {
+            #expect(eventResponse.result == nil)
+            let error = try #require(eventResponse.error)
+            #expect(error.code == -32_001)
+            #expect(error.data == .object(["reason": .string("unauthenticated")]))
+        }
+        if storeSetting == .fresh {
+            let store = try await valueFromDedicatedThread { try fixture.storeOutcome() }
+            #expect(!store.exists)
+            #expect(!store.directoryExists)
+            #expect(store.creatorFiles.isEmpty)
+        }
+    }
+
     @Test(
         "a held or trickling real input pipe exhausts the argv-selected hook total",
         arguments: HookInputDeadlineCase.matrix, [false, true])

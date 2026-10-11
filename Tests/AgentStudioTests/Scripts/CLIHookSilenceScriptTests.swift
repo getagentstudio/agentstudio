@@ -115,8 +115,8 @@ struct CLIHookSilenceScriptTests {
 
     @Test(
         "every provider hook exits zero with empty process streams",
-        // Codex SessionEnd delivery is covered by sessionEndSlowAppSharesControlledIngressTotal
-        // and sessionEndRefusalSharesIngressTotal in CLIHookSilenceScriptTests+Deadline.swift:73.
+        // Codex SessionEnd success/rejection is covered by sessionEndRespondingAppReceivesEvent;
+        // slow/auth-refusal coverage remains in the other +Deadline tests.
         arguments: HookSilenceInvocation.matrix.filter {
             $0.condition != .slow
                 && !($0.provider == "codex" && $0.event == CodexHookEventName.sessionEnd.rawValue
@@ -175,7 +175,10 @@ struct CLIHookSilenceScriptTests {
         }
         if invocation.condition == .outsidePane {
             #expect(fixture.requests.isEmpty)
-        } else if invocation.isProjected, invocation.condition != .down {
+        } else if invocation.isProjected, invocation.condition != .down,
+            !(invocation.provider == "codex" && invocation.event == CodexHookEventName.sessionEnd.rawValue
+                && invocation.condition == .refusing)
+        {
             #expect(fixture.requests.first?.method == "auth.login")
             if invocation.condition != .slow {
                 #expect(fixture.requests.contains { $0.method == "session.event" })
@@ -275,6 +278,7 @@ final class HookSilenceProcessFixture: @unchecked Sendable {
     private let principalID = UUIDv7.generate()
     private let lock = NSLock()
     private var observedRequests: [JSONRPCRequest] = []
+    private var sentResponses: [JSONRPCResponse] = []
     private var connections: [UnixSocketConnection] = []
     private var workers: [DedicatedThreadCompletion] = []
     private var isClosing = false
@@ -292,6 +296,7 @@ final class HookSilenceProcessFixture: @unchecked Sendable {
     }
 
     var requests: [JSONRPCRequest] { lock.withLock { observedRequests } }
+    var responses: [JSONRPCResponse] { lock.withLock { sentResponses } }
 
     func waitForNetworkResponse(_ index: Int) throws {
         switch index {
@@ -407,6 +412,7 @@ final class HookSilenceProcessFixture: @unchecked Sendable {
                                     NDJSONFrameEncoder.encode(
                                         JSONRPCCodec.encodeResponse(response),
                                         maxFrameBytes: IPCFramePolicy.maximumResponseFrameBytes))
+                                lock.withLock { sentResponses.append(response) }
                                 if request.method == "auth.login" { authenticationResponseSent.release() }
                                 if request.method == "session.refusal" { refusalResponseSent.release() }
                             }
