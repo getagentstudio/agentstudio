@@ -28,7 +28,14 @@ function startFixture(mode: string): {
 } {
 	const child = spawn(process.execPath, ['--input-type=module', '--eval', driver], {
 		cwd: bridgeWebRootPath,
-		env: { ...process.env, BRIDGE_TEST_LAUNCH_FIXTURE_MODE: mode },
+		env: {
+			...process.env,
+			BRIDGE_TEST_LAUNCH_FIXTURE_MODE: mode,
+			NODE_OPTIONS:
+				mode === 'unhandled-strict'
+					? '--unhandled-rejections=strict'
+					: '--unhandled-rejections=throw',
+		},
 		stdio: ['pipe', 'pipe', 'pipe'],
 	});
 	if (child.stdout === null || child.stderr === null) throw new Error('Fixture pipes missing.');
@@ -83,29 +90,32 @@ test('unsafe startup promise bypasses finally in the negative control', async ()
 	}
 });
 
-test.each(['startup-rejection', 'unhandled-rejection', 'SIGTERM', 'SIGINT'] as const)(
-	'%s stops the owned child and removes its data root',
-	async (mode) => {
-		const fixture = startFixture(mode);
-		let ready: Awaited<typeof fixture.ready> | null = null;
-		try {
-			ready = await fixture.ready;
-			if (mode === 'SIGTERM' || mode === 'SIGINT') fixture.child.kill(mode);
-			const [code] = await fixture.exit.value();
-			expect(code).toBe(mode === 'SIGINT' ? 130 : mode === 'SIGTERM' ? 143 : 1);
-			await expect(access(ready.dataRootPath)).rejects.toMatchObject({ code: 'ENOENT' });
-			const backendPid = ready.backendPid;
-			expect(() => process.kill(backendPid, 0)).toThrow();
-			if (mode === 'startup-rejection') expect(fixture.stderr()).toContain('File metadata startup');
-			if (mode === 'unhandled-rejection')
-				expect(fixture.stderr()).toContain('injected unhandled startup step');
-		} finally {
-			fixture.child.kill('SIGKILL');
-			await fixture.exit.settled;
-			if (ready !== null) await rm(ready.dataRootPath, { recursive: true, force: true });
-		}
-	},
-);
+test.each([
+	'startup-rejection',
+	'unhandled-rejection',
+	'unhandled-strict',
+	'SIGTERM',
+	'SIGINT',
+] as const)('%s stops the owned child and removes its data root', async (mode) => {
+	const fixture = startFixture(mode);
+	let ready: Awaited<typeof fixture.ready> | null = null;
+	try {
+		ready = await fixture.ready;
+		if (mode === 'SIGTERM' || mode === 'SIGINT') fixture.child.kill(mode);
+		const [code] = await fixture.exit.value();
+		expect(code).toBe(mode === 'SIGINT' ? 130 : mode === 'SIGTERM' ? 143 : 1);
+		await expect(access(ready.dataRootPath)).rejects.toMatchObject({ code: 'ENOENT' });
+		const backendPid = ready.backendPid;
+		expect(() => process.kill(backendPid, 0)).toThrow();
+		if (mode === 'startup-rejection') expect(fixture.stderr()).toContain('File metadata startup');
+		if (mode === 'unhandled-rejection' || mode === 'unhandled-strict')
+			expect(fixture.stderr()).toContain('injected unhandled startup step');
+	} finally {
+		fixture.child.kill('SIGKILL');
+		await fixture.exit.settled;
+		if (ready !== null) await rm(ready.dataRootPath, { recursive: true, force: true });
+	}
+});
 
 test.each(['swift-parent-kill', 'vite-parent-kill'] as const)(
 	'SIGKILL of the harness closes stdin and its child exits: %s',

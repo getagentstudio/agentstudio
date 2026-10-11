@@ -85,13 +85,16 @@ function installExitHooks(): void {
 		});
 	};
 	const unhandled = (error: unknown): void => terminate(error, 1);
+	const uncaught = (error: Error): void => terminate(error, 1);
 	const interrupt = (): void => terminate('SIGINT', 130);
 	const terminated = (): void => terminate('SIGTERM', 143);
 	process.on('unhandledRejection', unhandled);
+	process.on('uncaughtException', uncaught);
 	process.on('SIGINT', interrupt);
 	process.on('SIGTERM', terminated);
 	registry.removeExitHooks = (): void => {
 		process.off('unhandledRejection', unhandled);
+		process.off('uncaughtException', uncaught);
 		process.off('SIGINT', interrupt);
 		process.off('SIGTERM', terminated);
 		registry.removeExitHooks = null;

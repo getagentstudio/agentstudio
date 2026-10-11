@@ -105,7 +105,7 @@ export async function runLaunchProcessFixture(): Promise<void> {
 			`${JSON.stringify({ event: 'ready', dataRootPath: launch.dataRootPath, backendPid: vite.startProof.pid })}\n`,
 		);
 	}
-	if (mode === 'unhandled-rejection')
+	if (mode === 'unhandled-rejection' || mode === 'unhandled-strict')
 		void Promise.reject(new Error('injected unhandled startup step'));
 	process.stdin.resume();
 	try {
