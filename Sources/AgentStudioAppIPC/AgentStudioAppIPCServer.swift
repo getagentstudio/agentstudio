@@ -151,6 +151,9 @@ public final class AgentStudioAppIPCServer: @unchecked Sendable {
             for paneID in principalRegistry.finalRevokedPaneIDsSnapshot() {
                 credentialPersistenceLane.enqueueFinalRevoke(paneID: paneID)
             }
+            principalRegistry.installIssuedPaneCredentialSink { [weak self] credential in
+                self?.schedulePersistence(of: [credential])
+            }
             schedulePersistence(of: principalRegistry.issuedCredentialCandidates())
         } catch {
             stopListenerAndConnections()

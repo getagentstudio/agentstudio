@@ -188,6 +188,15 @@ struct BridgeProductStreamWebKitFeasibilitySnapshot: Equatable, Sendable {
 }
 
 package struct BridgeProductStreamWebKitFeasibilityProof: Equatable, Sendable {
+    package enum DiagnosticPhase: Equatable, Sendable {
+        case navigationPending
+        case scriptInvocationFailed
+        case scriptInvoked
+        case workerProgress(measuredRequestsAdmitted: Int)
+        case pageReportedFailure
+        case pageReportedCompletion
+    }
+
     package let authenticationBeforeBodySucceeded: Bool
     package let bodyCapBeforeDecodeSucceeded: Bool
     package let strictRouteDecodeSucceeded: Bool
@@ -222,7 +231,9 @@ package struct BridgeProductStreamWebKitFeasibilityProof: Equatable, Sendable {
     package let producerOverflowCount: Int
     package let postTerminalFrameCount: Int
     let requestAPIObservations: [BridgeWebKitRequestAPIObservation]
-    package let failureReason: String
+    package private(set) var failureReason: String
+    package private(set) var diagnosticPhase: DiagnosticPhase?
+    let diagnosticSnapshot: BridgeProductStreamWebKitFeasibilitySnapshot?
 
     init(
         authenticationBeforeBodySucceeded: Bool,
@@ -259,7 +270,8 @@ package struct BridgeProductStreamWebKitFeasibilityProof: Equatable, Sendable {
         producerOverflowCount: Int,
         postTerminalFrameCount: Int,
         requestAPIObservations: [BridgeWebKitRequestAPIObservation],
-        failureReason: String
+        failureReason: String,
+        diagnosticSnapshot: BridgeProductStreamWebKitFeasibilitySnapshot? = nil
     ) {
         self.authenticationBeforeBodySucceeded = authenticationBeforeBodySucceeded
         self.bodyCapBeforeDecodeSucceeded = bodyCapBeforeDecodeSucceeded
@@ -296,6 +308,48 @@ package struct BridgeProductStreamWebKitFeasibilityProof: Equatable, Sendable {
         self.postTerminalFrameCount = postTerminalFrameCount
         self.requestAPIObservations = requestAPIObservations
         self.failureReason = failureReason
+        self.diagnosticPhase = nil
+        self.diagnosticSnapshot = diagnosticSnapshot
+    }
+
+    package var measuredRequestsAdmitted: Int {
+        requestAPIObservations.filter {
+            $0.route == "/near-cap" && $0.nearCapMeasurementPhase == .measured
+                && $0.admissionOutcome == .accepted
+        }.count
+    }
+
+    package mutating func recordDiagnosticPhase(
+        _ phase: DiagnosticPhase,
+        failureReasonIfNone: String? = nil
+    ) {
+        diagnosticPhase = phase
+        if failureReason == "none", let failureReasonIfNone {
+            failureReason = failureReasonIfNone
+        }
+    }
+
+    package static func decoratingIncompleteDiagnostic(
+        proof: Self,
+        observedPageTitle: String
+    ) -> Self {
+        var decoratedProof = proof
+        let phase: DiagnosticPhase
+        switch observedPageTitle {
+        case "S2a Fail":
+            phase = .pageReportedFailure
+        case "S2a Pass":
+            phase = .pageReportedCompletion
+        case _ where proof.workerStartPostObserved:
+            phase = .workerProgress(measuredRequestsAdmitted: proof.measuredRequestsAdmitted)
+        default:
+            phase = .scriptInvoked
+        }
+        decoratedProof.recordDiagnosticPhase(
+            phase,
+            failureReasonIfNone: "worker_result_not_acknowledged"
+        )
+        return decoratedProof
     }
 
     package var succeeded: Bool {

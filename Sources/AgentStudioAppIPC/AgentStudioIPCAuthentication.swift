@@ -115,6 +115,7 @@ public final class AgentStudioIPCPrincipalRegistry: @unchecked Sendable {
     private var activeLeases: [LeaseKey: Set<UUID>] = [:]
     private var issuedPaneCredentialsByRecordID: [UUID: AgentStudioIPCIssuedPaneCredential] = [:]
     private var issuedPaneCredentialRecordIDByVerifier: [Data: UUID] = [:]
+    private var issuedPaneCredentialSink: (@Sendable (AgentStudioIPCIssuedPaneCredential) -> Void)?
     private var durableIssuedPaneCredentialIDs: Set<UUID> = []
     private var finalRevokedPaneIDs: Set<UUID> = []
     private var installedDebugCredential: InstalledDebugCredential?
@@ -145,7 +146,8 @@ public final class AgentStudioIPCPrincipalRegistry: @unchecked Sendable {
             credentialRecordID: credentialRecordID,
             verifierSHA256: verifierSHA256
         )
-        try lock.withLock {
+        let issuanceSink = try lock.withLock {
+            () throws -> (@Sendable (AgentStudioIPCIssuedPaneCredential) -> Void)? in
             guard !isShutdown else {
                 throw AgentStudioIPCIssuedCredentialRegistrationError.registryShutdown
             }
@@ -156,7 +158,7 @@ public final class AgentStudioIPCPrincipalRegistry: @unchecked Sendable {
                 guard existing == credential else {
                     throw AgentStudioIPCIssuedCredentialRegistrationError.conflictingRecordIdentity
                 }
-                return
+                return nil
             }
             if let existingRecordID = issuedPaneCredentialRecordIDByVerifier[verifierSHA256],
                 existingRecordID != credentialRecordID
@@ -165,6 +167,19 @@ public final class AgentStudioIPCPrincipalRegistry: @unchecked Sendable {
             }
             issuedPaneCredentialsByRecordID[credentialRecordID] = credential
             issuedPaneCredentialRecordIDByVerifier[verifierSHA256] = credentialRecordID
+            return issuedPaneCredentialSink
+        }
+        issuanceSink?(credential)
+    }
+
+    /// Installed before the IPC readiness snapshot so earlier admissions are
+    /// covered by that snapshot and later admissions enqueue without storage waits.
+    package func installIssuedPaneCredentialSink(
+        _ sink: @escaping @Sendable (AgentStudioIPCIssuedPaneCredential) -> Void
+    ) {
+        lock.withLock {
+            precondition(issuedPaneCredentialSink == nil, "pane credential issuance sink is installed once")
+            issuedPaneCredentialSink = sink
         }
     }
 

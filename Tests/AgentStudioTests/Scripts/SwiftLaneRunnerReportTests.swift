@@ -361,6 +361,7 @@ struct SwiftLaneRunnerReportTests {
                 "bundle_count",
                 "bundle_set",
                 "bundle_state",
+                "console_locked",
                 "cpu_count",
                 "cpu_seconds",
                 "cpu_utilization",

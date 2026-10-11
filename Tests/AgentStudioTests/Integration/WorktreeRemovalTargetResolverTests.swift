@@ -56,6 +56,42 @@ struct WorktreeRemovalTargetResolverTests {
                 .notFound(target: "feature/unregistered", inputs: ["feature/unregistered"]),
             ])
     }
+
+    @Test("a sibling folder named by text new refuses as a branch name is not found, never already removed")
+    func unmatchedSiblingForInvalidBranchNameIsNotFound() throws {
+        let fixture = try TargetFixture.make()
+        defer { fixture.destroy() }
+        // `HEAD` names no branch and, from the fixture root, no relative path; only `<repo>.HEAD` exists.
+        try FileManager.default.createDirectory(
+            at: fixture.root.appending(path: "repo.HEAD", directoryHint: .isDirectory),
+            withIntermediateDirectories: true)
+
+        let targets = WorktreeRemovalTargetResolver().resolve(
+            ["HEAD"],
+            callerDirectory: fixture.root,
+            repositoryPath: fixture.mainWorktree,
+            worktrees: [fixture.mainSnapshot],
+            branches: fixture.branches
+        )
+
+        #expect(targets == [.notFound(target: "HEAD", inputs: ["HEAD"])])
+    }
+
+    @Test("text new refuses as a branch name, with no sibling folder, is already removed")
+    func absentInvalidBranchNameIsAlreadyRemoved() throws {
+        let fixture = try TargetFixture.make()
+        defer { fixture.destroy() }
+
+        let targets = WorktreeRemovalTargetResolver().resolve(
+            ["HEAD"],
+            callerDirectory: fixture.root,
+            repositoryPath: fixture.mainWorktree,
+            worktrees: [fixture.mainSnapshot],
+            branches: fixture.branches
+        )
+
+        #expect(targets == [.alreadyRemoved(target: "HEAD", inputs: ["HEAD"])])
+    }
 }
 
 private struct TargetFixture {

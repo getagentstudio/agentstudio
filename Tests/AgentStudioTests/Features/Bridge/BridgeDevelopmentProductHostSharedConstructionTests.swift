@@ -1,5 +1,6 @@
 import AgentStudioCore
 import AgentStudioInfrastructure
+import AgentStudioTestHarness
 import AgentStudioTestSupport
 import Foundation
 import Testing
@@ -343,9 +344,16 @@ struct BridgeDevHostSharedConstructionTests {
             named: "bridge-development-product-host-comparison-shutdown"
         )
         defer { try? FileManager.default.removeItem(at: worktreeRoot) }
+        let source = makeDevelopmentProductSource(worktreeRoot: worktreeRoot)
+        let factSource = makeDevelopmentProductHostShutdownFactSource()
+        let facts = try factSource.attach()
+        let shutdownScope = BridgeDevelopmentProductHostFactScope(paneID: source.paneID)
+        let retirementClock = TestPushClock()
         let provider = BridgeDevelopmentSharedConstructionReviewProvider()
         let host = try await BridgeDevelopmentProductHost(
-            source: makeDevelopmentProductSource(worktreeRoot: worktreeRoot),
+            source: source,
+            retirementClock: retirementClock,
+            shutdownFactSink: factSource.sink,
             contributionTargetCommit: developmentContributionTargetCommit(
                 worktreeRoot: worktreeRoot
             ),
@@ -369,20 +377,61 @@ struct BridgeDevHostSharedConstructionTests {
 
         // Act
         let shutdown = Task { await host.shutdown() }
-        for _ in 0..<100 where !(await host.isShutdown) {
-            await Task.yield()
+        do {
+            try await facts.expectNext(in: shutdownScope, .shutdownStarted)
+        } catch {
+            await comparisonGate.releaseAll()
+            _ = await shutdown.value
+            throw error
         }
-        let shutdownStarted = await host.isShutdown
+        #expect(await host.isShutdown)
         await comparisonGate.releaseAll()
-        _ = await shutdown.value
+        let shutdownResult = await shutdown.value
+        #expect(shutdownResult == .completed)
+        try await facts.expectNext(in: shutdownScope, .shutdownResolved(shutdownResult))
 
         // Assert
-        #expect(shutdownStarted)
         #expect(
             await host.diagnosticPanePresentation().reviewComparison?.attempt
                 == .unavailable(failureKind: "publication_failed", retryable: true)
         )
         #expect(await host.activeReviewComparisonTask == nil)
+        factSource.end()
+        try await facts.finish()
+    }
+
+    @Test("shutdown fact contract reports entry and resolution")
+    func shutdownFactContractReportsEntryAndResolution() async throws {
+        // Arrange
+        let worktreeRoot = try makeDevelopmentWorktreeRoot(
+            named: "bridge-development-product-host-shutdown-fact-contract"
+        )
+        defer { try? FileManager.default.removeItem(at: worktreeRoot) }
+        let source = makeDevelopmentProductSource(worktreeRoot: worktreeRoot)
+        let factSource = makeDevelopmentProductHostShutdownFactSource()
+        let facts = try factSource.attach()
+        let scope = BridgeDevelopmentProductHostFactScope(paneID: source.paneID)
+        let retirementClock = TestPushClock()
+        let provider = BridgeDevelopmentSharedConstructionReviewProvider()
+        let host = try await BridgeDevelopmentProductHost(
+            source: source,
+            retirementClock: retirementClock,
+            shutdownFactSink: factSource.sink,
+            contributionTargetCommit: developmentContributionTargetCommit(
+                worktreeRoot: worktreeRoot
+            ),
+            makeReviewProvider: { _, _ in provider }
+        )
+
+        // Act
+        let shutdownResult = await host.shutdown()
+
+        // Assert
+        #expect(shutdownResult == .completed)
+        try await facts.expectNext(in: scope, .shutdownStarted)
+        try await facts.expectNext(in: scope, .shutdownResolved(shutdownResult))
+        factSource.end()
+        try await facts.finish()
     }
 
     @Test("detected observation terminal retains the last complete Review publication")
@@ -919,6 +968,22 @@ private func makeDevelopmentWorktreeRoot(named name: String) throws -> URL {
     let gitDirectory = worktreeRoot.appending(path: ".git", directoryHint: .isDirectory)
     try FileManager.default.createDirectory(at: gitDirectory, withIntermediateDirectories: false)
     return worktreeRoot
+}
+
+private func makeDevelopmentProductHostShutdownFactSource() -> LocalFactSource<
+    BridgeDevelopmentProductHostFactScope,
+    BridgeDevelopmentProductHostFact
+> {
+    LocalFactSource(
+        vocabulary: FactVocabulary(
+            describeScope: { String(describing: $0) },
+            describeFact: { String(describing: $0) },
+            isClosing: { _, fact in
+                if case .shutdownResolved = fact { return true }
+                return false
+            }
+        )
+    )
 }
 
 func makeDevelopmentBootstrapRequest(

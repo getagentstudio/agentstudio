@@ -22,13 +22,15 @@ package enum WorktreeCommandLineArgumentError: Error, Equatable, Sendable {
     case emptyOptionValue(String)
     case duplicateOption(String)
     case conflictingOptions(String, String)
+    /// D23: an option that only creates a branch, used without `-c`.
+    case requiresCreate(String)
 
     package var message: String {
         switch self {
         case .missingSubcommand:
             "usage: agentstudio worktree new|list|remove|prune [target...]"
         case .unknownSubcommand:
-            "unknown worktree subcommand; expected new, list, remove, or prune; use new --from <worktree> to copy a source"
+            "unknown worktree subcommand; expected new, list, remove, or prune; use new -c <branch> --from <worktree> to copy a source"
         case .missingBranch:
             "a branch name is required for worktree new"
         case .missingTarget:
@@ -49,15 +51,36 @@ package enum WorktreeCommandLineArgumentError: Error, Equatable, Sendable {
             "\(option) path must not be empty"
         case .duplicateOption(let option):
             "\(option) may be specified only once"
-        case .conflictingOptions("--from", "--from-branch"):
-            "--from and --from-branch each select a source; choose one source"
         case .conflictingOptions(let first, let second):
             "\(first) and \(second) cannot be used together"
+        case .requiresCreate(let option):
+            "\(option) creates a new branch, so it needs -c (--create)"
         }
     }
 }
 
 package enum WorktreeCommandLineArgumentParser {
+    package static let pathOptions: Set<String> = ["--repo", "--from", "--archive-to"]
+    package static let valueOptions: Set<String> = ["--from-branch"]
+    private static let commonFlags: Set<String> = ["--json", "--no-fetch"]
+    private static let creationFlags: Set<String> = ["-c", "--create", "--changes-only", "--no-fork"]
+    private static let removalFlags: Set<String> = [
+        "-f", "--force", "-D", "--no-delete-branch", "--archive-to-main", "--discard-tmp",
+        "--remove-stale-lock", "--dry-run",
+    ]
+    fileprivate static let flagOptions: Set<String> =
+        commonFlags.union(creationFlags).union(removalFlags).union(["--apply"])
+
+    package static func optionNames(for command: String) throws -> Set<String> {
+        switch command {
+        case "new": commonFlags.union(creationFlags).union(["--repo", "--from"]).union(valueOptions)
+        case "list": commonFlags.union(["--repo"])
+        case "remove": commonFlags.union(removalFlags).union(["--repo", "--archive-to"])
+        case "prune": commonFlags.union(["--repo", "--archive-to", "--archive-to-main", "--apply"])
+        default: throw WorktreeCommandLineArgumentError.unknownSubcommand
+        }
+    }
+
     package static func parse(
         _ arguments: [String],
         currentDirectory: URL
@@ -66,21 +89,9 @@ package enum WorktreeCommandLineArgumentParser {
             throw WorktreeCommandLineArgumentError.missingSubcommand
         }
 
-        let allowedPathOptions: Set<String>
-        let allowedValueOptions: Set<String>
-        switch subcommand {
-        case "new":
-            allowedPathOptions = ["--repo", "--from"]
-            allowedValueOptions = ["--from-branch"]
-        case "list":
-            allowedPathOptions = ["--repo"]
-            allowedValueOptions = []
-        case "remove", "prune":
-            allowedPathOptions = ["--repo", "--archive-to"]
-            allowedValueOptions = []
-        default:
-            throw WorktreeCommandLineArgumentError.unknownSubcommand
-        }
+        let allowedOptions = try optionNames(for: subcommand)
+        let allowedPathOptions = allowedOptions.intersection(pathOptions)
+        let allowedValueOptions = allowedOptions.intersection(valueOptions)
 
         let parsedArguments = try parseArguments(
             arguments.dropFirst(),
@@ -237,30 +248,40 @@ package enum WorktreeCommandLineArgumentParser {
             throw WorktreeCommandLineArgumentError.unexpectedArgument
         }
 
-        if parsedArguments.sourcePath != nil, parsedArguments.startBranch != nil {
-            throw WorktreeCommandLineArgumentError.conflictingOptions("--from", "--from-branch")
-        }
-        if parsedArguments.trackedOnly,
-            parsedArguments.sourcePath != nil || parsedArguments.changesOnly
-        {
-            throw WorktreeCreationStop.trackedOnlyExcludesSource
-        }
-        if parsedArguments.changesOnly, parsedArguments.sourcePath == nil {
-            throw WorktreeCreationStop.changesOnlyNeedsFrom
+        // D23: these only create a branch, so they need -c.
+        if !parsedArguments.create {
+            if parsedArguments.startBranch != nil {
+                throw WorktreeCommandLineArgumentError.requiresCreate("--from-branch")
+            }
+            if parsedArguments.changesOnly {
+                throw WorktreeCommandLineArgumentError.requiresCreate("--changes-only")
+            }
         }
         let materialization: WorktreeCreateMaterialization
-        // A start branch has no worktree to fork, so it always checks out tracked files.
-        if parsedArguments.trackedOnly || parsedArguments.startBranch != nil {
-            materialization = .trackedOnly(startBranch: parsedArguments.startBranch)
+        if parsedArguments.changesOnly {
+            // A changes-only copy is a new branch at the source's HEAD commit, never a plain checkout.
+            if parsedArguments.noFork {
+                throw WorktreeCommandLineArgumentError.conflictingOptions("--changes-only", "--no-fork")
+            }
+            if parsedArguments.startBranch != nil {
+                throw WorktreeCommandLineArgumentError.conflictingOptions("--changes-only", "--from-branch")
+            }
+            if parsedArguments.sourcePath == nil {
+                throw WorktreeCreationStop.changesOnlyNeedsFrom
+            }
+            materialization = .changesOnly
         } else {
-            materialization = parsedArguments.changesOnly ? .changesOnly : .copyOnWrite
+            materialization = parsedArguments.noFork ? .checkout : .copyOnWrite
         }
         return .create(
             WorktreeCreateRequest(
                 start: parsedArguments.repositoryPath ?? callerDirectory,
                 branch: branch,
+                create: parsedArguments.create,
                 source: parsedArguments.sourcePath.map(WorktreeCreateSource.worktree) ?? .mainWorktree,
-                materialization: materialization
+                startBranch: parsedArguments.startBranch,
+                materialization: materialization,
+                fetchPolicy: parsedArguments.fetchPolicy
             ))
     }
 }
@@ -273,7 +294,8 @@ private struct ParsedArguments {
     let usesJSONOutput: Bool
     let fetchPolicy: WorktreeFetchPolicy
     let startBranch: String?
-    let trackedOnly: Bool
+    let create: Bool
+    let noFork: Bool
     let changesOnly: Bool
     let discardWorkingChanges: Bool
     let deleteAtObservedCommit: Bool
@@ -292,8 +314,9 @@ private struct ParsedArgumentAccumulator {
     var archivePath: URL?
     var startBranch: String?
     var usesJSONOutput = false
-    var fetchPolicy = WorktreeFetchPolicy.defaultBranch
-    var trackedOnly = false
+    var fetchPolicy = WorktreeFetchPolicy.fetch
+    var create = false
+    var noFork = false
     var changesOnly = false
     var discardWorkingChanges = false
     var deleteAtObservedCommit = false
@@ -308,6 +331,10 @@ private struct ParsedArgumentAccumulator {
     private var seenFlags: Set<String> = []
 
     mutating func consumeFlag(_ argument: String, subcommand: String) throws -> Bool {
+        guard WorktreeCommandLineArgumentParser.flagOptions.contains(argument) else { return false }
+        guard try WorktreeCommandLineArgumentParser.optionNames(for: subcommand).contains(argument) else {
+            throw WorktreeCommandLineArgumentError.unsupportedOption
+        }
         if argument == "--json" {
             guard seenFlags.insert(argument).inserted else {
                 throw WorktreeCommandLineArgumentError.duplicateOption(argument)
@@ -315,20 +342,21 @@ private struct ParsedArgumentAccumulator {
             usesJSONOutput = true
             return true
         }
-        if argument == "--changes-only" || argument == "--tracked-only" {
-            guard subcommand == "new" else {
-                throw WorktreeCommandLineArgumentError.unsupportedOption
+        if argument == "-c" || argument == "--create" {
+            guard seenFlags.insert("-c").inserted else {
+                throw WorktreeCommandLineArgumentError.duplicateOption(argument)
             }
+            create = true
+            return true
+        }
+        if argument == "--changes-only" || argument == "--no-fork" {
             guard seenFlags.insert(argument).inserted else {
                 throw WorktreeCommandLineArgumentError.duplicateOption(argument)
             }
-            if argument == "--tracked-only" { trackedOnly = true } else { changesOnly = true }
+            if argument == "--no-fork" { noFork = true } else { changesOnly = true }
             return true
         }
         if argument == "--no-fetch" {
-            guard subcommand == "list" || subcommand == "remove" || subcommand == "prune" else {
-                throw WorktreeCommandLineArgumentError.unsupportedOption
-            }
             guard !noFetchSpecified else {
                 throw WorktreeCommandLineArgumentError.duplicateOption(argument)
             }
@@ -337,18 +365,11 @@ private struct ParsedArgumentAccumulator {
             return true
         }
         if argument == "--apply" {
-            guard subcommand == "prune" else {
-                throw WorktreeCommandLineArgumentError.unsupportedOption
-            }
             guard seenFlags.insert(argument).inserted else {
                 throw WorktreeCommandLineArgumentError.duplicateOption(argument)
             }
             apply = true
             return true
-        }
-        guard Self.removeFlags.contains(argument) else { return false }
-        guard subcommand == "remove" || (subcommand == "prune" && argument == "--archive-to-main") else {
-            throw WorktreeCommandLineArgumentError.unsupportedOption
         }
         let flagIdentity = argument == "--force" ? "-f" : argument
         guard seenFlags.insert(flagIdentity).inserted else {
@@ -378,7 +399,7 @@ private struct ParsedArgumentAccumulator {
         currentDirectory: URL,
         index: inout ArraySlice<String>.Index
     ) throws -> Bool {
-        guard Self.pathOptions.contains(argument) else { return false }
+        guard WorktreeCommandLineArgumentParser.pathOptions.contains(argument) else { return false }
         guard allowedPathOptions.contains(argument) else {
             throw WorktreeCommandLineArgumentError.unsupportedOption
         }
@@ -419,7 +440,7 @@ private struct ParsedArgumentAccumulator {
         allowedValueOptions: Set<String>,
         index: inout ArraySlice<String>.Index
     ) throws -> Bool {
-        guard Self.valueOptions.contains(argument) else { return false }
+        guard WorktreeCommandLineArgumentParser.valueOptions.contains(argument) else { return false }
         guard allowedValueOptions.contains(argument) else {
             throw WorktreeCommandLineArgumentError.unsupportedOption
         }
@@ -459,7 +480,8 @@ private struct ParsedArgumentAccumulator {
             usesJSONOutput: usesJSONOutput,
             fetchPolicy: fetchPolicy,
             startBranch: startBranch,
-            trackedOnly: trackedOnly,
+            create: create,
+            noFork: noFork,
             changesOnly: changesOnly,
             discardWorkingChanges: discardWorkingChanges,
             deleteAtObservedCommit: deleteAtObservedCommit,
@@ -471,11 +493,4 @@ private struct ParsedArgumentAccumulator {
             apply: apply
         )
     }
-
-    private static let removeFlags: Set<String> = [
-        "-f", "--force", "-D", "--no-delete-branch", "--archive-to-main", "--discard-tmp",
-        "--remove-stale-lock", "--dry-run",
-    ]
-    private static let pathOptions: Set<String> = ["--repo", "--from", "--archive-to"]
-    private static let valueOptions: Set<String> = ["--from-branch"]
 }

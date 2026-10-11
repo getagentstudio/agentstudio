@@ -115,6 +115,7 @@ fails on an owner whose file does not exist.
 | A `*Gate`, `*Latch`, `*Barrier`, `*Blocker` or `*Hold` type in `Tests/`, outside the causal-test harness target (`AgentStudioTestHarness`), stores no continuation, `DispatchSemaphore` or `NSCondition`; holds use the harness's `HeldStep`. | `agentstudio_test_ad_hoc_gate` | error | [`docs/architecture/testing/testing_architecture.md`](../testing/testing_architecture.md#how-a-test-may-wait) |
 | An `async` test helper named `wait…`, `require…`, `await…`, `waitUntil…` or `expect…Eventually` returns the observation that satisfied it. | `agentstudio_test_wait_helper_returns_observation` | error | [`docs/architecture/testing/testing_architecture.md`](../testing/testing_architecture.md#how-a-test-may-wait) |
 | Every link target and repository-path code token in each `AGENTS.md` exists, and each `#anchor` is a GitHub heading slug or explicit `<a id>`/`<a name>` in its target. | `agentstudio_agent_doc_reference_resolves` | error | `AGENTS.md` |
+| Owner-local synchronous fact sinks are stored and injected only by their indexed owner, owner sink initializers use optional `nil` defaults, and supported fact-scope preparation stays behind a sink gate. | `agentstudio_owner_fact_sink_boundary` | error | [Fact-sink boundary rule](#fact-sink-boundary-rule) |
 
 All rules are lexical: they recognize only the call, declaration and literal
 shapes named above and do not resolve types, executors or control flow. Their
@@ -165,6 +166,41 @@ repository-owned SwiftPM target sets `treatAllWarnings(as: .error)`.
 The retained `InboxNotificationRouter` source is dormant historical implementation:
 its exhaustive switches describe preserved source, not an active enforcement owner.
 It must not be reconnected without a new product decision.
+
+### Fact-sink boundary rule
+
+`agentstudio_owner_fact_sink_boundary` indexes synchronous two-argument
+`*FactSink` aliases, their companion owner hints, owner initializers and stored
+sink properties from workspace-relative production `Sources/` roots. Test
+paths are excluded even when a test directory contains a nested `Sources/`
+component. Rule fixtures use a fixture corpus as their workspace root, so its
+`Sources/` fixtures exercise the same path classifier.
+
+An owner hint comes from the alias's companion source stem or a type extension
+declared beside it. The rule accepts an owner only when that type both declares
+an initializer parameter and stores a property of the alias type; property
+names do not establish ownership. Other types may not declare a sink
+initializer/property or forward it into another type. Owner initializers must
+take an optional sink with a default of `nil`.
+
+The eager-preparation subset checks named scope factories and computed scope
+properties, direct `ScopeType(...)` and qualified `ScopeType.case(...)` /
+`ScopeType.init(...)` construction, and `.case(...)` / `.init(...)` when a
+scope type is explicit on the local binding or enclosing function return. It
+accepts `guard let sink` and `guard let localSink = sink`, matching `if let`
+forms, `sink != nil` conditions without disjunction, a sole `if sink == nil`
+whose body exits with `return`, `throw`, `continue` or `break` before later
+statements, optional sink-call arguments, and an optional sink's `map` closure.
+Factory bodies are checked at their call site; factories with a leading sink
+guard that exits may prepare internally. `sink != nil || condition` is not a
+gate.
+
+This is a syntax subset, not general Swift type or control-flow analysis. It
+does not infer `.case(...)` from an argument position alone, derive fact
+payload/outcome values through switches, or recursively inspect stored
+collections such as `[Scope]`, `Set<Scope>` or maps containing scopes. Those
+shapes remain review responsibilities. A zero-diagnostic result does not claim
+that Bridge payload derivation or those argument-position scopes are clean.
 
 ## Former Shell And Custom SwiftLint Coverage
 

@@ -348,7 +348,8 @@ package actor BridgeProductStreamWebKitFeasibilityOracle {
             producerOverflowCount: snapshot.producers.producerOverflowCount,
             postTerminalFrameCount: snapshot.producers.postTerminalFrameCount,
             requestAPIObservations: snapshot.requestAPIObservations,
-            failureReason: failureReason
+            failureReason: failureReason,
+            diagnosticSnapshot: snapshot
         )
     }
 

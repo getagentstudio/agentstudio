@@ -1,6 +1,6 @@
 # Agent IPC v2 and Agent Package — Program Design
 
-Date: 2026-09-16. Source baseline: `ipc-improvements@d93f2755`.
+Date: 2026-09-16. Source baseline: `ipc-improvements@d93f2755`. **Amended 2026-10-07** (owner, finding #6; stopgap until a daemon owns pane tokens): issuance after IPC readiness schedules the verifier's persistence (verifier continuity below).
 Requirements: [user-requirements.md](user-requirements.md).
 Specification: [specification.md](specification.md).
 Decisions: [decision-record.md](decision-record.md).
@@ -174,8 +174,10 @@ Proposed names describe contracts rather than existing APIs:
   logical pane/app runtime and the hash-only verifier lifecycle. Its first
   environment request for that pane/runtime mints one 256-bit token plus an opaque
   credential record ID, admits the verifier to the existing principal registry,
-  and caches the environment. That request performs no persistence submission,
-  activation, retirement or flush. Every later mount or attachment request
+  and caches the environment. The identity owner itself performs no SQL, wait,
+  activation, retirement or flush. After IPC readiness, the registry's admission
+  hands the new record to the IPC service's enqueue-only issuance sink (amended
+  2026-10-07), which queues the write and returns. Every later mount or attachment request
   receives the same cached environment. Mount
   code only copies it: an existing zmx shell ignores the supplied environment and
   keeps its original token, while a genuinely new shell inherits it. No raw token
@@ -336,9 +338,11 @@ canonical pane/workspace, opaque credential record ID and status; raw credential
 in memory and shell environment. On the first environment request for a logical
 pane in an app runtime, the identity owner mints one 256-bit token and opaque
 credential record ID, admits the verifier to the existing principal registry,
-caches the complete environment and returns it. This path is RAM-only: it does
-not submit persistence, activate a durable row, retire a credential or flush
-accepted work.
+caches the complete environment and returns it. The identity owner does no SQL
+and never waits: it doesn't activate a durable row, retire a credential or flush
+accepted work. Its one storage-facing edge (amended 2026-10-07) is the registry's
+admission handing the new record to the IPC service's enqueue-only issuance sink
+after readiness; the write itself runs later on the existing persistence lane.
 Every later mount or attachment request for that pane/runtime receives the same
 cached environment. Mount code neither decides whether the shell is new nor owns
 credential persistence or lifecycle. An existing zmx shell ignores the supplied
@@ -360,7 +364,9 @@ from canonical membership and the existing lease gate, not a new durable state.
 The existing IPC service owns persistence scheduling through an injected
 continuity port. After post-frame IPC readiness it snapshots issued in-memory
 verifiers and schedules their writes; successful authentication/admission schedules
-a write for a newly used in-memory verifier; normal IPC shutdown snapshots and
+a write for a newly used in-memory verifier; a verifier issued after readiness is
+scheduled at issuance through the registry's issuance sink (amended 2026-10-07);
+normal IPC shutdown snapshots and
 schedules every still-unsaved issued RAM verifier before draining accepted writes.
 These are IPC-owned boundaries, not pane, mount or terminal callbacks. They add
 no timer, polling worker or coordinator.
@@ -396,6 +402,7 @@ VERIFIER CONTINUITY
 current-runtime token -> exact in-memory verifier
 older durable token -> exact durable verifier
 post-frame IPC readiness -> snapshot issued RAM verifiers -> schedule persistence
+verifier issued after readiness -> registry issuance sink -> schedule persistence (2026-10-07)
 newly used RAM verifier -> authenticated admission -> schedule persistence
 normal IPC shutdown -> snapshot unsaved RAM verifiers -> schedule + drain accepted writes
 IPC continuity port -> Core local writer: hash + opaque credential record ID
@@ -561,8 +568,17 @@ After service readiness, the IPC service snapshots already issued RAM verifiers
 and schedules their persistence through the injected port. Later authenticated
 admission schedules any newly used in-memory verifier. Normal IPC shutdown first
 snapshots and schedules every still-unsaved issued RAM verifier, including one
-never used for IPC, then drains accepted writes. Environment requests never enter
-this sequence.
+never used for IPC, then drains accepted writes.
+**Issuance (amended 2026-10-07, owner).** A verifier issued after readiness is
+scheduled at issuance, so an abrupt end (crash, force quit, SIGTERM) can't lose a
+token that was never used. The IPC service installs an issuance sink on the shared
+principal registry when it starts, before its readiness snapshot. After admitting
+a new verifier, `registerIssuedPaneCredential` hands the record to that sink, outside
+its lock. The sink only enqueues onto the existing persistence lane, so the
+environment request never waits on storage. If the sink and the snapshot both see
+a record, the write is idempotent by credential record ID. Final revocation still
+dominates, and a write that fails stays eligible at the next boundary, as before.
+This is the only way an environment request reaches this sequence.
 
 This split is compatible with databases on either side of the cut. GRDB 7.10.0 at revision
 `36e30a6f1ef10e4194f6af0cff90888526f0c115` selects the last registered target for full migration
@@ -705,12 +721,13 @@ Target: = logical pane identity owned by IPC
         + first pane/runtime env request -> mint token + opaque credential record ID
         + principal registry -> current-runtime in-memory verifier admission
         + identity owner -> cache pane env; later mounts receive the same env
-        = env request -> RAM-only; no persist/activate/retire/flush
+        = env request -> no SQL or wait in the identity owner; no activate/retire/flush
+        + after readiness: registry admission -> IPC issuance sink -> enqueue verifier write (2026-10-07)
         = mount/attachment -> copies env only; owns no credential lifecycle
         = existing zmx attach -> ignores env; keeps original shell/token
         = genuine new shell -> inherits cached env
         = presented token -> in-memory or durable hash + canonical membership + lease gate
-        + IPC readiness/auth admission/shutdown -> verifier writes -> same Core local writer
+        + IPC readiness/issuance/auth admission/shutdown -> verifier writes -> same Core local writer
         - fd-bootstrap delivery
         + close -> immediate canonical denial/lease close
         + same retained shell Undo -> same-credential eligibility restoration
@@ -873,7 +890,7 @@ SDK/Rust CLI, remote transport and grant issuance remain outside the design.
 | S7 | App-down CLI and post-readiness drain to real SQLite: removed-socket and stale-socket-file unreachability, exact messages and deliberate reports once, late ordering, never-bound reports retained until the pane binds, malformed and oversized lines counted and skipped, truncate only when every line admitted or duplicate; offline-ineligible clear/command negatives; unattributed fallback. No quarantine, lock files, or operator cleanup (AE). Acknowledgment proof deferred with its entry (AH). |
 | S8 | Distinctive private input to real sinks/storage and architecture checks: no forbidden content or ownership crossings; D4 probes verify off-main admission with no added MainActor hop. |
 | S9 | Boot/catalog/package inspection: explicit negative space remains absent; reserved contract stays unregistered. |
-| S10 | Controlled optional-readiness barriers plus real first-schema and steady-schema launches: normal restore and automatic-restore-suppressed paths cross their exact existing release edges before optional IPC starts; first interactive frame, genuine new shell and existing-zmx restoration/attachment complete while the GRDB same-writer barrier, verifier persistence, server publication and spool recovery are delayed or fail. Prove the first pane/runtime environment request performs only mint/register/cache in RAM and later mounts reuse that environment, a genuine shell inherits it, restoration keeps its original token without replacement, and the IPC service alone schedules writes at post-frame readiness, newly used authenticated admission and normal shutdown. Graceful shutdown must snapshot a still-unsaved issued verifier that was never used for IPC before draining accepted writes; interrupted shutdown or storage failure retains AB's explicit non-durable failure. Close/Undo/discard under delayed persistence cannot regress; auth rejection does not spool. Record real startup, genuine construction and reattachment measurements without a fabricated threshold. |
+| S10 | Controlled optional-readiness barriers plus real first-schema and steady-schema launches: normal restore and automatic-restore-suppressed paths cross their exact existing release edges before optional IPC starts; first interactive frame, genuine new shell and existing-zmx restoration/attachment complete while the GRDB same-writer barrier, verifier persistence, server publication and spool recovery are delayed or fail. Prove the first pane/runtime environment request performs only mint/register/cache plus, after readiness, one enqueue through the issuance sink (no SQL, no wait), and later mounts reuse that environment, a genuine shell inherits it, restoration keeps its original token without replacement, and the IPC service alone schedules writes at post-frame readiness, issuance after readiness (amended 2026-10-07), newly used authenticated admission and normal shutdown. Issuance regression (finding #6): issue a verifier after server readiness, make no login and take no graceful credential snapshot, observe the hash commit through the existing lane, then reopen the repository and a fresh registry and authenticate the retained token. A delayed or failing write still never blocks the environment request. Graceful shutdown must snapshot a still-unsaved issued verifier that was never used for IPC before draining accepted writes; interrupted shutdown or storage failure retains AB's explicit non-durable failure. Close/Undo/discard under delayed persistence cannot regress; auth rejection does not spool. Record real startup, genuine construction and reattachment measurements without a fabricated threshold. |
 
 | Requirement | Owner | Specification contract; proof |
 | --- | --- | --- |

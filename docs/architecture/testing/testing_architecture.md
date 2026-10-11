@@ -453,6 +453,19 @@ timeout reap, "no output progress" and hang evidence. A fixture that starts the
 runner in a separate `bash` process does not inherit the default and must set it
 itself.
 
+A hang test whose report must carry what its command printed passes
+`innerWatchdog: .armedByFixture`. Its command arms the watchdog once it has
+parked by printing `laneWatchdogArmLine` as a whole line, after that evidence.
+The runner, started with `LANE_WATCHDOG_ARM_REQUIRED=1`, times out only once
+that line is in the command's output file as a newline-terminated record. The
+line travels the same pipe as the evidence, so every line printed before it is
+in the file the timeout report reads. An arm signal outside that stream races
+the output copy and can leave the last evidence out of the report. The tests in
+`SwiftLaneHangEvidenceTests+WatchdogArmLine.swift` hold both rules with a `tee`
+that stops until the watchdog has sampled the file: the evidence is reported
+however late the copy runs, and the arm line's bytes without their newline do
+not arm.
+
 `exitedCommandUnderStarvedRunner` proves the trap deterministically: a FIFO hook
 starves the runner after an `exit 0` command. Armed, it times out; with the
 default, it keeps its status.
@@ -566,6 +579,11 @@ A hand-maintained list that test correctness depends on — the set of suites th
 need process isolation, the lint debt — must be verified by a gate, so that
 a member cannot silently fall out. The isolation list has
 [`SwiftLaneIsolationListGateTests`](../../../Tests/AgentStudioTests/Scripts/SwiftLaneIsolationListGateTests.swift).
+The WebKit lane runs only the suites named in `webkit_suite_filters`, so a
+`WebKitSerializedTests` suite missing from that list never runs anywhere (four
+did, from #463 until TQ50).
+[`SwiftLaneWebKitSuiteListGateTests`](../../../Tests/AgentStudioTests/Scripts/SwiftLaneWebKitSuiteListGateTests.swift)
+fails when a source suite is unlisted, when a suite listed test by test is missing one of its tests, or when a listed entry no longer selects anything; it scans source text, so it does not evaluate `#if` conditional compilation.
 Lint debt — polling waits, blocking waits, ad-hoc gates, void wait helpers and
 the MainActor shapes — lives in one file,
 [`architecture-debt-ledger.tsv`](../../../Tools/AgentStudioArchitectureLint/architecture-debt-ledger.tsv),
@@ -609,4 +627,5 @@ See [`BridgeWeb/AGENTS.md` — Test Waits](../../../BridgeWeb/AGENTS.md#test-wai
 | [`ArchitectureAllowlists.swift`](../../../Tools/AgentStudioArchitectureLint/Sources/AgentStudioArchitectureLintCore/Paths/ArchitectureAllowlists.swift) | Named owners of blocking waits and other allowed sites (ownership, not debt) |
 | [`Tests/AgentStudioTests/TestSupport/`](../../../Tests/AgentStudioTests/TestSupport) | The `AgentStudioTestSupport` harnesses |
 | [`SwiftLaneIsolationListGateTests.swift`](../../../Tests/AgentStudioTests/Scripts/SwiftLaneIsolationListGateTests.swift) | The isolation-list gate |
+| [`SwiftLaneWebKitSuiteListGateTests.swift`](../../../Tests/AgentStudioTests/Scripts/SwiftLaneWebKitSuiteListGateTests.swift) | The WebKit suite-list gate (no unlisted or stale WebKit suite) |
 | [CI Reliability — Specification](../../specs/2026-09-17-ci-reliability/2026-09-17-ci-reliability.md) | The requirements this document implements |
