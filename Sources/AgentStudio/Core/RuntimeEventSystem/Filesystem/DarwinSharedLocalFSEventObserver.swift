@@ -14,41 +14,10 @@ private struct DarwinSharedLocalFSEventRegistrationKey: Hashable, Sendable {
     let lifecycleGeneration: UInt64
 }
 
-private final class DarwinSharedLocalFSEventRegistration: @unchecked Sendable {
+private struct DarwinSharedLocalFSEventRegistration: @unchecked Sendable {
     let watchedPaths: [DarwinSharedLocalFSEventPreparedPath]
     let privateStagingExclusionPaths: [DarwinSharedLocalFSEventPreparedPath]
-    private let eventHandler: @Sendable ([DarwinLocalFSEventRawEvent]) -> Void
-    private let admissionLock = NSLock()
-    private let deliveryLock = NSRecursiveLock()
-    private var hasClosedDeliveryAdmission = false
-
-    init(
-        watchedPaths: [DarwinSharedLocalFSEventPreparedPath],
-        privateStagingExclusionPaths: [DarwinSharedLocalFSEventPreparedPath],
-        eventHandler: @escaping @Sendable ([DarwinLocalFSEventRawEvent]) -> Void
-    ) {
-        self.watchedPaths = watchedPaths
-        self.privateStagingExclusionPaths = privateStagingExclusionPaths
-        self.eventHandler = eventHandler
-    }
-
-    func closeDeliveryAdmission() {
-        admissionLock.withLock { hasClosedDeliveryAdmission = true }
-    }
-
-    func waitForDeliveryCompletion() {
-        // A handler may retire its own lease. External retirement joins the
-        // entered callback; recursive retirement closes future admission.
-        deliveryLock.lock()
-        deliveryLock.unlock()
-    }
-
-    func deliver(_ events: [DarwinLocalFSEventRawEvent]) {
-        deliveryLock.lock()
-        defer { deliveryLock.unlock() }
-        guard admissionLock.withLock({ !hasClosedDeliveryAdmission }) else { return }
-        eventHandler(events)
-    }
+    let eventHandler: @Sendable ([DarwinLocalFSEventRawEvent]) -> Void
 }
 
 private struct DarwinSharedLocalFSEventObserver: @unchecked Sendable {
@@ -81,42 +50,6 @@ private struct DarwinSharedLocalFSEventBindingState: @unchecked Sendable {
     let retainedRegistrations: [DarwinSharedLocalFSEventRegistration]
 }
 
-private struct DarwinSharedLocalFSEventRoutingSnapshot: @unchecked Sendable {
-    let physicalObserver: DarwinSharedLocalFSEventObserver
-    let registrationsByKey: [DarwinSharedLocalFSEventRegistrationKey: DarwinSharedLocalFSEventRegistration]
-}
-
-private enum DarwinSharedLocalFSEventRoutingState: @unchecked Sendable {
-    case awaitingInstallation
-    case awaitingReplay(DarwinSharedLocalFSEventRoutingSnapshot)
-    case ready(DarwinSharedLocalFSEventRoutingSnapshot)
-
-    func replacingSnapshot(_ snapshot: DarwinSharedLocalFSEventRoutingSnapshot) -> Self {
-        if case .ready = self { return .ready(snapshot) }
-        return .awaitingReplay(snapshot)
-    }
-}
-
-/// The existing generation buffer retains its routing meaning until replay
-/// finishes, even when a concurrent bind installs another physical generation.
-private struct DarwinSharedLocalFSEventPendingGeneration: @unchecked Sendable {
-    let volumeSystemNumber: UInt64
-    var bufferedEvents: [DarwinLocalFSEventRawEvent] = []
-    var routingState = DarwinSharedLocalFSEventRoutingState.awaitingInstallation
-}
-
-private struct DarwinSharedLocalFSEventBindingOutcome: @unchecked Sendable {
-    let registrationLease: any DarwinLocalFSEventStreamLifetime
-    let replayGeneration: UInt64?
-    let replacedRegistrations: [DarwinSharedLocalFSEventRegistration]
-}
-
-private enum DarwinSharedLocalFSEventReceiveDisposition: @unchecked Sendable {
-    case noDelivery
-    case drain
-    case deliver(DarwinSharedLocalFSEventRoutingSnapshot)
-}
-
 /// Owns a bounded set of physical local FSEvents streams while preserving
 /// independent logical registrations for worktree routing and continuity.
 package final class DarwinSharedLocalFSEventObserverRegistry: @unchecked Sendable {
@@ -132,8 +65,7 @@ package final class DarwinSharedLocalFSEventObserverRegistry: @unchecked Sendabl
     private var registrationByKey: [DarwinSharedLocalFSEventRegistrationKey: DarwinSharedLocalFSEventRegistration] = [:]
     private var volumeByRegistrationKey: [DarwinSharedLocalFSEventRegistrationKey: UInt64] = [:]
     private var pendingGenerationByVolume: [UInt64: UInt64] = [:]
-    private var pendingDeliveryByGeneration: [UInt64: DarwinSharedLocalFSEventPendingGeneration] = [:]
-    private var drainingVolumes: Set<UInt64> = []
+    private var pendingEventsByGeneration: [UInt64: [DarwinLocalFSEventRawEvent]] = [:]
 
     package init(
         streamFactory: @escaping DarwinLocalFSEventStreamFactory,
@@ -162,24 +94,7 @@ package final class DarwinSharedLocalFSEventObserverRegistry: @unchecked Sendabl
         }
 
         configurationLock.lock()
-        let outcome = bindAssumingConfigurationLock(request: request, volumeSystemNumber: volumeSystemNumber)
-        configurationLock.unlock()
-        guard let outcome else { return nil }
-        for registration in outcome.replacedRegistrations {
-            registration.waitForDeliveryCompletion()
-        }
-        if let generation = outcome.replayGeneration {
-            beginReplay(physicalGeneration: generation, volumeSystemNumber: volumeSystemNumber)
-        }
-        return outcome.registrationLease
-    }
-
-    /// Only configuration and installation run under this lock. Replay owns
-    /// no configuration lock, so another bind can publish a consistent successor.
-    private func bindAssumingConfigurationLock(
-        request: DarwinLocalFSEventStreamRequest,
-        volumeSystemNumber: UInt64
-    ) -> DarwinSharedLocalFSEventBindingOutcome? {
+        defer { configurationLock.unlock() }
 
         let registrationKey = DarwinSharedLocalFSEventRegistrationKey(
             worktreeID: request.worktreeId,
@@ -256,51 +171,45 @@ package final class DarwinSharedLocalFSEventObserverRegistry: @unchecked Sendabl
     private func joinObserverWithUnchangedPaths(
         _ existingObserver: DarwinSharedLocalFSEventObserver,
         plan: DarwinSharedLocalFSEventBindingPlan
-    ) -> DarwinSharedLocalFSEventBindingOutcome? {
+    ) -> (any DarwinLocalFSEventStreamLifetime)? {
         var joinedObserver = existingObserver
         joinedObserver.registrationKeys.subtract(plan.replacedRegistrationKeys)
         joinedObserver.registrationKeys.insert(plan.registrationKey)
         joinedObserver.privateStagingPathIndex = DarwinFSEventWatchedPathIndex(
             normalizedPaths: plan.desiredExclusionPaths.map(\.normalizedPath)
         )
-        var replacedRegistrations: [DarwinSharedLocalFSEventRegistration] = []
-        let installed = stateLock.withLock { () -> Bool in
-            guard !hasShutdown else { return false }
-            replacedRegistrations = removeRegistrationsAssumingStateLock(plan.replacedRegistrationKeys)
+        stateLock.withLock {
+            guard !hasShutdown else { return }
+            removeRegistrationsAssumingStateLock(plan.replacedRegistrationKeys)
             registrationByKey[plan.registrationKey] = plan.registration
             volumeByRegistrationKey[plan.registrationKey] = plan.volumeSystemNumber
             joinedObserver.registrationKeysByWatchedPath = Self.makeRegistrationPathLookup(
                 registrationKeys: joinedObserver.registrationKeys, registrations: registrationByKey
             )
             observerByVolume[plan.volumeSystemNumber] = joinedObserver
-            updateRoutingSnapshotAssumingStateLock(joinedObserver)
-            return true
         }
-        guard installed else { return nil }
-        return DarwinSharedLocalFSEventBindingOutcome(
-            registrationLease: DarwinSharedLocalFSEventRegistrationLease(
-                registry: self, registrationKey: plan.registrationKey, registration: plan.registration
-            ),
-            replayGeneration: nil,
-            replacedRegistrations: replacedRegistrations
+        guard stateLock.withLock({ registrationByKey[plan.registrationKey] != nil }) else {
+            return nil
+        }
+        return DarwinSharedLocalFSEventRegistrationLease(
+            registry: self,
+            registrationKey: plan.registrationKey
         )
     }
 
     /// Caller holds `configurationLock`. Starts a replacement physical stream
     /// for the widened path set, drains the predecessor, and installs the
-    /// replacement atomically. The caller starts replay after unlocking.
+    /// replacement atomically.
     private func replacePhysicalObserver(
         plan: DarwinSharedLocalFSEventBindingPlan
-    ) -> DarwinSharedLocalFSEventBindingOutcome? {
+    ) -> (any DarwinLocalFSEventStreamLifetime)? {
         let volumeSystemNumber = plan.volumeSystemNumber
         let existingObserver = plan.existingObserver
         let physicalGeneration = stateLock.withLock { () -> UInt64 in
             nextPhysicalGeneration &+= 1
             let generation = nextPhysicalGeneration
             pendingGenerationByVolume[volumeSystemNumber] = generation
-            pendingDeliveryByGeneration[generation] = DarwinSharedLocalFSEventPendingGeneration(
-                volumeSystemNumber: volumeSystemNumber
-            )
+            pendingEventsByGeneration[generation] = []
             return generation
         }
         let physicalRequest = DarwinLocalFSEventStreamRequest(
@@ -342,15 +251,14 @@ package final class DarwinSharedLocalFSEventObserverRegistry: @unchecked Sendabl
         }
 
         var retiredLifetime: (any DarwinLocalFSEventStreamLifetime)?
-        var replacedRegistrations: [DarwinSharedLocalFSEventRegistration] = []
         let installed = stateLock.withLock { () -> Bool in
             guard !hasShutdown,
                 pendingGenerationByVolume[volumeSystemNumber] == physicalGeneration
             else {
-                pendingDeliveryByGeneration.removeValue(forKey: physicalGeneration)
+                pendingEventsByGeneration.removeValue(forKey: physicalGeneration)
                 return false
             }
-            replacedRegistrations = removeRegistrationsAssumingStateLock(plan.replacedRegistrationKeys)
+            removeRegistrationsAssumingStateLock(plan.replacedRegistrationKeys)
             registrationByKey[plan.registrationKey] = plan.registration
             volumeByRegistrationKey[plan.registrationKey] = volumeSystemNumber
             var registrationKeys =
@@ -359,7 +267,7 @@ package final class DarwinSharedLocalFSEventObserverRegistry: @unchecked Sendabl
                 ) ?? []
             registrationKeys.insert(plan.registrationKey)
             retiredLifetime = existingObserver?.streamLifetime
-            let installedObserver = DarwinSharedLocalFSEventObserver(
+            observerByVolume[volumeSystemNumber] = DarwinSharedLocalFSEventObserver(
                 generation: physicalGeneration,
                 watchedPaths: plan.desiredWatchedPaths,
                 watchedPathIndex: DarwinFSEventWatchedPathIndex(
@@ -374,8 +282,6 @@ package final class DarwinSharedLocalFSEventObserverRegistry: @unchecked Sendabl
                     registrationKeys: registrationKeys, registrations: registrationByKey
                 )
             )
-            observerByVolume[volumeSystemNumber] = installedObserver
-            updateRoutingSnapshotAssumingStateLock(installedObserver)
             return true
         }
         guard installed else {
@@ -383,12 +289,19 @@ package final class DarwinSharedLocalFSEventObserverRegistry: @unchecked Sendabl
             return nil
         }
         retiredLifetime?.retire()
-        return DarwinSharedLocalFSEventBindingOutcome(
-            registrationLease: DarwinSharedLocalFSEventRegistrationLease(
-                registry: self, registrationKey: plan.registrationKey, registration: plan.registration
-            ),
-            replayGeneration: physicalGeneration,
-            replacedRegistrations: replacedRegistrations
+        while let bufferedEvents = takeNextPendingBatch(
+            physicalGeneration: physicalGeneration,
+            volumeSystemNumber: volumeSystemNumber
+        ) {
+            deliver(
+                volumeSystemNumber: volumeSystemNumber,
+                physicalGeneration: physicalGeneration,
+                rawEvents: bufferedEvents
+            )
+        }
+        return DarwinSharedLocalFSEventRegistrationLease(
+            registry: self,
+            registrationKey: plan.registrationKey
         )
     }
 
@@ -432,24 +345,19 @@ package final class DarwinSharedLocalFSEventObserverRegistry: @unchecked Sendabl
 
     package func shutdown() {
         configurationLock.lock()
-        let retirementState = stateLock.withLock {
-            () -> ([any DarwinLocalFSEventStreamLifetime], [DarwinSharedLocalFSEventRegistration]) in
-            guard !hasShutdown else { return ([], []) }
+        let streamLifetimes = stateLock.withLock { () -> [any DarwinLocalFSEventStreamLifetime] in
+            guard !hasShutdown else { return [] }
             hasShutdown = true
             let lifetimes = observerByVolume.values.map(\.streamLifetime)
-            let registrations = Array(registrationByKey.values)
-            for registration in registrations { registration.closeDeliveryAdmission() }
             observerByVolume.removeAll(keepingCapacity: false)
             registrationByKey.removeAll(keepingCapacity: false)
             volumeByRegistrationKey.removeAll(keepingCapacity: false)
             pendingGenerationByVolume.removeAll(keepingCapacity: false)
-            pendingDeliveryByGeneration.removeAll(keepingCapacity: false)
-            drainingVolumes.removeAll(keepingCapacity: false)
-            return (lifetimes, registrations)
+            pendingEventsByGeneration.removeAll(keepingCapacity: false)
+            return lifetimes
         }
         configurationLock.unlock()
-        for registration in retirementState.1 { registration.waitForDeliveryCompletion() }
-        for streamLifetime in retirementState.0 {
+        for streamLifetime in streamLifetimes {
             streamLifetime.retire()
         }
     }
@@ -485,36 +393,21 @@ package final class DarwinSharedLocalFSEventObserverRegistry: @unchecked Sendabl
     ) {
         configurationLock.lock()
         var retiredLifetime: (any DarwinLocalFSEventStreamLifetime)?
-        var retiredRegistration: DarwinSharedLocalFSEventRegistration?
         stateLock.withLock {
             guard let volumeSystemNumber = volumeByRegistrationKey.removeValue(forKey: registrationKey) else {
                 return
             }
-            retiredRegistration = registrationByKey.removeValue(forKey: registrationKey)
-            retiredRegistration?.closeDeliveryAdmission()
+            registrationByKey.removeValue(forKey: registrationKey)
             guard var observer = observerByVolume[volumeSystemNumber] else { return }
             observer.registrationKeys.remove(registrationKey)
-            for watchedPath in retiredRegistration?.watchedPaths ?? [] {
-                observer.registrationKeysByWatchedPath[watchedPath.normalizedPath]?.remove(registrationKey)
-                if observer.registrationKeysByWatchedPath[watchedPath.normalizedPath]?.isEmpty == true {
-                    observer.registrationKeysByWatchedPath.removeValue(forKey: watchedPath.normalizedPath)
-                }
-            }
             if observer.registrationKeys.isEmpty {
                 observerByVolume.removeValue(forKey: volumeSystemNumber)
                 retiredLifetime = observer.streamLifetime
-                pendingGenerationByVolume.removeValue(forKey: volumeSystemNumber)
-                let generations = pendingDeliveryByGeneration.filter {
-                    $0.value.volumeSystemNumber == volumeSystemNumber
-                }.keys
-                for generation in generations { pendingDeliveryByGeneration.removeValue(forKey: generation) }
             } else {
                 observerByVolume[volumeSystemNumber] = observer
-                updateRoutingSnapshotAssumingStateLock(observer)
             }
         }
         configurationLock.unlock()
-        retiredRegistration?.waitForDeliveryCompletion()
         retiredLifetime?.retire()
     }
 
@@ -534,73 +427,27 @@ package final class DarwinSharedLocalFSEventObserverRegistry: @unchecked Sendabl
             if pendingGenerationByVolume[volumeSystemNumber] == generation {
                 pendingGenerationByVolume.removeValue(forKey: volumeSystemNumber)
             }
-            pendingDeliveryByGeneration.removeValue(forKey: generation)
-        }
-    }
-
-    private func updateRoutingSnapshotAssumingStateLock(_ observer: DarwinSharedLocalFSEventObserver) {
-        guard let routingState = pendingDeliveryByGeneration[observer.generation]?.routingState else { return }
-        let snapshot = DarwinSharedLocalFSEventRoutingSnapshot(
-            physicalObserver: observer, registrationsByKey: registrationByKey
-        )
-        pendingDeliveryByGeneration[observer.generation]?.routingState = routingState.replacingSnapshot(snapshot)
-    }
-
-    private func beginReplay(physicalGeneration: UInt64, volumeSystemNumber: UInt64) {
-        let shouldDrain = stateLock.withLock { () -> Bool in
-            guard !hasShutdown,
-                let routingState = pendingDeliveryByGeneration[physicalGeneration]?.routingState,
-                case .awaitingReplay(let snapshot) = routingState
-            else { return false }
-            pendingDeliveryByGeneration[physicalGeneration]?.routingState = .ready(snapshot)
-            return claimDrainAssumingStateLock(volumeSystemNumber)
-        }
-        if shouldDrain { drainPendingBatches(volumeSystemNumber: volumeSystemNumber) }
-    }
-
-    private func claimDrainAssumingStateLock(_ volumeSystemNumber: UInt64) -> Bool {
-        !hasShutdown && drainingVolumes.insert(volumeSystemNumber).inserted
-    }
-
-    private func drainPendingBatches(volumeSystemNumber: UInt64) {
-        while let (snapshot, events) = takeNextPendingBatch(volumeSystemNumber: volumeSystemNumber) {
-            deliver(snapshot: snapshot, rawEvents: events)
+            pendingEventsByGeneration.removeValue(forKey: generation)
         }
     }
 
     private func takeNextPendingBatch(
+        physicalGeneration: UInt64,
         volumeSystemNumber: UInt64
-    ) -> (DarwinSharedLocalFSEventRoutingSnapshot, [DarwinLocalFSEventRawEvent])? {
+    ) -> [DarwinLocalFSEventRawEvent]? {
         stateLock.withLock {
-            guard !hasShutdown else {
-                drainingVolumes.remove(volumeSystemNumber)
+            guard pendingGenerationByVolume[volumeSystemNumber] == physicalGeneration else {
+                pendingEventsByGeneration.removeValue(forKey: physicalGeneration)
                 return nil
             }
-            let generations = pendingDeliveryByGeneration.filter { $0.value.volumeSystemNumber == volumeSystemNumber }
-                .keys.sorted()
-            for generation in generations {
-                guard let pending = pendingDeliveryByGeneration[generation] else { continue }
-                guard case .ready(let snapshot) = pending.routingState else {
-                    // A later binder may finish first. Its callbacks cannot
-                    // overtake the earlier binder's still-unarmed handoff.
-                    drainingVolumes.remove(volumeSystemNumber)
-                    return nil
-                }
-                if !pending.bufferedEvents.isEmpty {
-                    pendingDeliveryByGeneration[generation]?.bufferedEvents = []
-                    return (snapshot, pending.bufferedEvents)
-                }
-                if observerByVolume[volumeSystemNumber]?.generation != generation {
-                    pendingDeliveryByGeneration.removeValue(forKey: generation)
-                }
-                if pendingGenerationByVolume[volumeSystemNumber] == generation {
-                    pendingGenerationByVolume.removeValue(forKey: volumeSystemNumber)
-                }
+            let pendingEvents = pendingEventsByGeneration[physicalGeneration] ?? []
+            if pendingEvents.isEmpty {
+                pendingGenerationByVolume.removeValue(forKey: volumeSystemNumber)
+                pendingEventsByGeneration.removeValue(forKey: physicalGeneration)
+                return nil
             }
-            // Release ownership atomically with observing no runnable batch.
-            // A callback arriving next can claim it without a lost wake-up.
-            drainingVolumes.remove(volumeSystemNumber)
-            return nil
+            pendingEventsByGeneration[physicalGeneration] = []
+            return pendingEvents
         }
     }
 
@@ -612,45 +459,40 @@ package final class DarwinSharedLocalFSEventObserverRegistry: @unchecked Sendabl
         guard !rawEvents.isEmpty else { return }
         recordPhysicalRawCallback(rawEvents.count)
 
-        let disposition = stateLock.withLock { () -> DarwinSharedLocalFSEventReceiveDisposition in
-            guard !hasShutdown,
-                pendingGenerationByVolume[volumeSystemNumber] == physicalGeneration
-                    || observerByVolume[volumeSystemNumber]?.generation == physicalGeneration,
-                let routingState = pendingDeliveryByGeneration[physicalGeneration]?.routingState
-            else { return .noDelivery }
-            if pendingGenerationByVolume[volumeSystemNumber] == physicalGeneration
-                || drainingVolumes.contains(volumeSystemNumber)
-            {
-                // Mutate the existing buffer in place: do not copy a growing
-                // backlog on every callback while a replay is in progress.
-                pendingDeliveryByGeneration[physicalGeneration]?.bufferedEvents.append(contentsOf: rawEvents)
-                if case .ready = routingState, claimDrainAssumingStateLock(volumeSystemNumber) {
-                    return .drain
-                }
-                return .noDelivery
+        let buffered = stateLock.withLock { () -> Bool in
+            if pendingGenerationByVolume[volumeSystemNumber] == physicalGeneration {
+                pendingEventsByGeneration[physicalGeneration, default: []].append(contentsOf: rawEvents)
+                return true
             }
-            guard case .ready(let snapshot) = routingState,
-                claimDrainAssumingStateLock(volumeSystemNumber)
-            else { return .noDelivery }
-            return .deliver(snapshot)
+            return false
         }
-        switch disposition {
-        case .noDelivery: return
-        case .drain: drainPendingBatches(volumeSystemNumber: volumeSystemNumber)
-        case .deliver(let snapshot):
-            // Ordinary callbacks keep their existing serial execution path.
-            // Any ready replacement replay follows their closing delivery.
-            deliver(snapshot: snapshot, rawEvents: rawEvents)
-            drainPendingBatches(volumeSystemNumber: volumeSystemNumber)
-        }
+        guard !buffered else { return }
+        deliver(
+            volumeSystemNumber: volumeSystemNumber,
+            physicalGeneration: physicalGeneration,
+            rawEvents: rawEvents
+        )
     }
 
     private func deliver(
-        snapshot: DarwinSharedLocalFSEventRoutingSnapshot,
+        volumeSystemNumber: UInt64,
+        physicalGeneration: UInt64,
         rawEvents: [DarwinLocalFSEventRawEvent]
     ) {
-        let observer = snapshot.physicalObserver
-        let registrations = snapshot.registrationsByKey
+        let routingState = stateLock.withLock {
+            () -> (
+                DarwinSharedLocalFSEventObserver,
+                [DarwinSharedLocalFSEventRegistrationKey: DarwinSharedLocalFSEventRegistration]
+            )? in
+            guard !hasShutdown,
+                let observer = observerByVolume[volumeSystemNumber],
+                observer.generation == physicalGeneration
+            else {
+                return nil
+            }
+            return (observer, registrationByKey)
+        }
+        guard let (observer, registrations) = routingState else { return }
         var eventsByRegistration: [DarwinSharedLocalFSEventRegistrationKey: [DarwinLocalFSEventRawEvent]] = [:]
         for event in rawEvents {
             let normalizedPath = normalizePath(event.path)
@@ -675,7 +517,7 @@ package final class DarwinSharedLocalFSEventObserverRegistry: @unchecked Sendabl
             }
         }
         for (registrationKey, matchingEvents) in eventsByRegistration {
-            registrations[registrationKey]?.deliver(matchingEvents)
+            registrations[registrationKey]?.eventHandler(matchingEvents)
         }
     }
 
@@ -706,18 +548,11 @@ package final class DarwinSharedLocalFSEventObserverRegistry: @unchecked Sendabl
 
     private func removeRegistrationsAssumingStateLock(
         _ registrationKeys: Set<DarwinSharedLocalFSEventRegistrationKey>
-    ) -> [DarwinSharedLocalFSEventRegistration] {
-        var removedRegistrations: [DarwinSharedLocalFSEventRegistration] = []
+    ) {
         for registrationKey in registrationKeys {
-            if let registration = registrationByKey.removeValue(forKey: registrationKey) {
-                // Closing admission never waits for the opaque handler while
-                // state/configuration locks are held. Joining happens outside.
-                registration.closeDeliveryAdmission()
-                removedRegistrations.append(registration)
-            }
+            registrationByKey.removeValue(forKey: registrationKey)
             volumeByRegistrationKey.removeValue(forKey: registrationKey)
         }
-        return removedRegistrations
     }
 
     private static let streamGlobalUncertaintyFlags = FSEventStreamEventFlags(
@@ -742,18 +577,15 @@ private final class DarwinSharedLocalFSEventRegistrationLease:
 {
     private let retirementLock = NSLock()
     private weak var registry: DarwinSharedLocalFSEventObserverRegistry?
-    private weak var registration: DarwinSharedLocalFSEventRegistration?
     private let registrationKey: DarwinSharedLocalFSEventRegistrationKey
     private var didRetire = false
 
     init(
         registry: DarwinSharedLocalFSEventObserverRegistry,
-        registrationKey: DarwinSharedLocalFSEventRegistrationKey,
-        registration: DarwinSharedLocalFSEventRegistration
+        registrationKey: DarwinSharedLocalFSEventRegistrationKey
     ) {
         self.registry = registry
         self.registrationKey = registrationKey
-        self.registration = registration
     }
 
     deinit {
@@ -767,18 +599,12 @@ private final class DarwinSharedLocalFSEventRegistrationLease:
 
     func retire() {
         if claimRetirement() {
-            let retainedRegistration = registration
-            retainedRegistration?.closeDeliveryAdmission()
             registry?.unbind(registrationKey: registrationKey)
-            // A newer bind may already have removed this key. The lease still
-            // joins a captured old handler without retaining it permanently.
-            retainedRegistration?.waitForDeliveryCompletion()
         }
     }
 
     func scheduleRetirement() {
         if claimRetirement() {
-            registration?.closeDeliveryAdmission()
             registry?.scheduleUnbind(registrationKey: registrationKey)
         }
     }
