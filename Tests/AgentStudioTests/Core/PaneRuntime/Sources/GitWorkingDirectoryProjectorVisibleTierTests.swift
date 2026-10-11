@@ -312,7 +312,7 @@ struct GitWorkingDirectoryProjectorVisibleTierTests {
     }
 
     @Test("160 visible worktrees stay within the visible share and make rolling progress")
-    func visibleTierGateReportsItsWaiterCount() async throws {
+    func hugeVisibleFleetUsesBoundedShareWithRollingProgress() async throws {
         let source = GitProjectorFactSource()
         let facts = try source.attach()
         let bus = EventBus<RuntimeEnvelope>()

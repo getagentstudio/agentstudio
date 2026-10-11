@@ -206,7 +206,7 @@ struct GitWorkingDirectoryProjectorAutomaticPacingTests {
         "lower-tier invalidation starts obey process pacing",
         arguments: [false, true]
     )
-    func pacingHelperClassifiesLowerTierInvalidation(
+    func lowerTierInvalidationStartsObeyProcessPacing(
         usesRemoteReferenceRefresh: Bool
     ) async throws {
         let scenario = try await prepareLowerTierPacingScenario()
