@@ -10,6 +10,7 @@ import {
 	startBridgeViewerJourneyDocumentGenerationServer,
 } from './bridge-viewer-journey-document-generation-fixture.ts';
 import { launchBridgeViewerE2EChromium } from './bridge-viewer-vite-e2e-browser.ts';
+import { runBridgeWebE2ETestBody } from './bridge-web-e2e-test-retirement.ts';
 
 // A reload waiter is armed for the next page document. It must settle only on a
 // response to a request issued by that document's worker, never on a request
@@ -28,140 +29,152 @@ describe('Bridge product journey document generations in a real browser', () => 
 		await server?.close();
 	});
 
-	test('a same-document pushState does not start a new generation for the worker', async () => {
-		await withJourneyPage(async (journey): Promise<void> => {
-			// Arrange
-			const reloadJoin = journey.armReloadJoinWaiters();
-			await journey.page.evaluate((): void => {
-				history.pushState({}, '', '/journey.html?pushed');
+	test('a same-document pushState does not start a new generation for the worker', async (bridgeWebTestContext) => {
+		return await runBridgeWebE2ETestBody(bridgeWebTestContext, async (): Promise<void> => {
+			await withJourneyPage(async (journey): Promise<void> => {
+				// Arrange
+				const reloadJoin = journey.armReloadJoinWaiters();
+				await journey.page.evaluate((): void => {
+					history.pushState({}, '', '/journey.html?pushed');
+				});
+
+				// Act
+				const sameDocumentRequestId = await journey.sendSubscriptionReceipt();
+				const generationAfterSameDocumentNavigation = journey.currentGeneration();
+				const nextDocumentRequestId = await journey.reloadAndSendSubscriptionReceipt();
+
+				// Assert: only the next document's acknowledgement settles the reload waiter.
+				expect(await acknowledgedRequestId(reloadJoin)).toBe(nextDocumentRequestId);
+				expect(nextDocumentRequestId).not.toBe(sameDocumentRequestId);
+				expect(generationAfterSameDocumentNavigation).toBe(1);
+				expect(journey.currentGeneration()).toBe(2);
 			});
-
-			// Act
-			const sameDocumentRequestId = await journey.sendSubscriptionReceipt();
-			const generationAfterSameDocumentNavigation = journey.currentGeneration();
-			const nextDocumentRequestId = await journey.reloadAndSendSubscriptionReceipt();
-
-			// Assert: only the next document's acknowledgement settles the reload waiter.
-			expect(await acknowledgedRequestId(reloadJoin)).toBe(nextDocumentRequestId);
-			expect(nextDocumentRequestId).not.toBe(sameDocumentRequestId);
-			expect(generationAfterSameDocumentNavigation).toBe(1);
-			expect(journey.currentGeneration()).toBe(2);
 		});
 	});
 
-	test('a hash navigation does not start a new generation for the worker', async () => {
-		await withJourneyPage(async (journey): Promise<void> => {
-			// Arrange
-			const reloadJoin = journey.armReloadJoinWaiters();
-			await journey.page.evaluate((): void => {
-				location.hash = 'moved';
+	test('a hash navigation does not start a new generation for the worker', async (bridgeWebTestContext) => {
+		return await runBridgeWebE2ETestBody(bridgeWebTestContext, async (): Promise<void> => {
+			await withJourneyPage(async (journey): Promise<void> => {
+				// Arrange
+				const reloadJoin = journey.armReloadJoinWaiters();
+				await journey.page.evaluate((): void => {
+					location.hash = 'moved';
+				});
+
+				// Act
+				await journey.sendSubscriptionReceipt();
+				const generationBeforeReload = journey.currentGeneration();
+				const nextDocumentRequestId = await journey.reloadAndSendSubscriptionReceipt();
+
+				// Assert
+				expect(await acknowledgedRequestId(reloadJoin)).toBe(nextDocumentRequestId);
+				expect(generationBeforeReload).toBe(1);
+				expect(journey.currentGeneration()).toBe(2);
 			});
-
-			// Act
-			await journey.sendSubscriptionReceipt();
-			const generationBeforeReload = journey.currentGeneration();
-			const nextDocumentRequestId = await journey.reloadAndSendSubscriptionReceipt();
-
-			// Assert
-			expect(await acknowledgedRequestId(reloadJoin)).toBe(nextDocumentRequestId);
-			expect(generationBeforeReload).toBe(1);
-			expect(journey.currentGeneration()).toBe(2);
 		});
 	});
 
-	test('a reload starts the next generation, whose worker settles the reload waiter', async () => {
-		await withJourneyPage(async (journey): Promise<void> => {
-			// Arrange
-			const reloadJoin = journey.armReloadJoinWaiters();
+	test('a reload starts the next generation, whose worker settles the reload waiter', async (bridgeWebTestContext) => {
+		return await runBridgeWebE2ETestBody(bridgeWebTestContext, async (): Promise<void> => {
+			await withJourneyPage(async (journey): Promise<void> => {
+				// Arrange
+				const reloadJoin = journey.armReloadJoinWaiters();
 
-			// Act
-			const nextDocumentRequestId = await journey.reloadAndSendSubscriptionReceipt();
+				// Act
+				const nextDocumentRequestId = await journey.reloadAndSendSubscriptionReceipt();
 
-			// Assert
-			expect(await acknowledgedRequestId(reloadJoin)).toBe(nextDocumentRequestId);
-			expect(journey.currentGeneration()).toBe(2);
-		});
-	});
-
-	test('a redirected navigation commits one new generation', async () => {
-		await withJourneyPage(async (journey): Promise<void> => {
-			// Arrange
-			const reloadJoin = journey.armReloadJoinWaiters();
-
-			// Act
-			await journey.page.goto(`${journey.origin}/redirect-to-journey`, { waitUntil: 'load' });
-			await journey.waitForWorkerReady();
-			const redirectedDocumentRequestId = await journey.sendSubscriptionReceipt();
-
-			// Assert
-			expect(await acknowledgedRequestId(reloadJoin)).toBe(redirectedDocumentRequestId);
-			expect(journey.currentGeneration()).toBe(2);
-		});
-	});
-
-	test('an aborted navigation keeps the old generation for the old worker', async () => {
-		await withJourneyPage(async (journey): Promise<void> => {
-			// Arrange
-			const reloadJoin = journey.armReloadJoinWaiters();
-			await journey.page.route('**/aborted-navigation', async (route): Promise<void> => {
-				await route.abort('aborted');
+				// Assert
+				expect(await acknowledgedRequestId(reloadJoin)).toBe(nextDocumentRequestId);
+				expect(journey.currentGeneration()).toBe(2);
 			});
-			await expect(journey.page.goto(`${journey.origin}/aborted-navigation`)).rejects.toThrow(
-				/ERR_ABORTED/u,
-			);
-
-			// Act
-			await journey.sendSubscriptionReceipt();
-			const generationBeforeReload = journey.currentGeneration();
-			const nextDocumentRequestId = await journey.reloadAndSendSubscriptionReceipt();
-
-			// Assert
-			expect(await acknowledgedRequestId(reloadJoin)).toBe(nextDocumentRequestId);
-			expect(generationBeforeReload).toBe(1);
-			expect(journey.currentGeneration()).toBe(2);
 		});
 	});
 
-	test('a request the old document sends while a navigation is pending keeps the old generation', async () => {
-		await withJourneyPage(async (journey): Promise<void> => {
-			// Arrange: the next document's response is held, so the navigation is issued but
-			// has not committed and the old document and its worker are still live. The old
-			// worker sends its request once the server has seen the navigation request.
-			const reloadJoin = journey.armReloadJoinWaiters();
-			const heldDocument = journey.holdNextDocument();
-			const pendingWindowRequestId = uuidv7();
-			const pendingWindowResponse = journey.page.waitForResponse(
-				(response: Response): boolean =>
-					new URL(response.url()).searchParams.get('requestId') === pendingWindowRequestId,
-			);
-			await journey.page.evaluate((requestId: string): void => {
-				(
-					window as unknown as {
-						readonly bridgeJourneyWorkerSendDuringHeldNavigation: (
-							kind: string,
-							requestId: string,
-						) => void;
-					}
-				).bridgeJourneyWorkerSendDuringHeldNavigation('subscription.acknowledge', requestId);
-			}, pendingWindowRequestId);
+	test('a redirected navigation commits one new generation', async (bridgeWebTestContext) => {
+		return await runBridgeWebE2ETestBody(bridgeWebTestContext, async (): Promise<void> => {
+			await withJourneyPage(async (journey): Promise<void> => {
+				// Arrange
+				const reloadJoin = journey.armReloadJoinWaiters();
 
-			// Act
-			await journey.page.evaluate((): void => {
-				location.href = '/held-journey.html';
+				// Act
+				await journey.page.goto(`${journey.origin}/redirect-to-journey`, { waitUntil: 'load' });
+				await journey.waitForWorkerReady();
+				const redirectedDocumentRequestId = await journey.sendSubscriptionReceipt();
+
+				// Assert
+				expect(await acknowledgedRequestId(reloadJoin)).toBe(redirectedDocumentRequestId);
+				expect(journey.currentGeneration()).toBe(2);
 			});
-			await heldDocument.requested;
-			await pendingWindowResponse;
-			const generationWhilePending = journey.currentGeneration();
-			heldDocument.release();
-			await journey.page.waitForURL('**/held-journey.html', { waitUntil: 'load' });
-			await journey.waitForWorkerReady();
-			const nextDocumentRequestId = await journey.sendSubscriptionReceipt();
+		});
+	});
 
-			// Assert
-			expect(await acknowledgedRequestId(reloadJoin)).toBe(nextDocumentRequestId);
-			expect(nextDocumentRequestId).not.toBe(pendingWindowRequestId);
-			expect(generationWhilePending).toBe(1);
-			expect(journey.currentGeneration()).toBe(2);
+	test('an aborted navigation keeps the old generation for the old worker', async (bridgeWebTestContext) => {
+		return await runBridgeWebE2ETestBody(bridgeWebTestContext, async (): Promise<void> => {
+			await withJourneyPage(async (journey): Promise<void> => {
+				// Arrange
+				const reloadJoin = journey.armReloadJoinWaiters();
+				await journey.page.route('**/aborted-navigation', async (route): Promise<void> => {
+					await route.abort('aborted');
+				});
+				await expect(journey.page.goto(`${journey.origin}/aborted-navigation`)).rejects.toThrow(
+					/ERR_ABORTED/u,
+				);
+
+				// Act
+				await journey.sendSubscriptionReceipt();
+				const generationBeforeReload = journey.currentGeneration();
+				const nextDocumentRequestId = await journey.reloadAndSendSubscriptionReceipt();
+
+				// Assert
+				expect(await acknowledgedRequestId(reloadJoin)).toBe(nextDocumentRequestId);
+				expect(generationBeforeReload).toBe(1);
+				expect(journey.currentGeneration()).toBe(2);
+			});
+		});
+	});
+
+	test('a request the old document sends while a navigation is pending keeps the old generation', async (bridgeWebTestContext) => {
+		return await runBridgeWebE2ETestBody(bridgeWebTestContext, async (): Promise<void> => {
+			await withJourneyPage(async (journey): Promise<void> => {
+				// Arrange: the next document's response is held, so the navigation is issued but
+				// has not committed and the old document and its worker are still live. The old
+				// worker sends its request once the server has seen the navigation request.
+				const reloadJoin = journey.armReloadJoinWaiters();
+				const heldDocument = journey.holdNextDocument();
+				const pendingWindowRequestId = uuidv7();
+				const pendingWindowResponse = journey.page.waitForResponse(
+					(response: Response): boolean =>
+						new URL(response.url()).searchParams.get('requestId') === pendingWindowRequestId,
+				);
+				await journey.page.evaluate((requestId: string): void => {
+					(
+						window as unknown as {
+							readonly bridgeJourneyWorkerSendDuringHeldNavigation: (
+								kind: string,
+								requestId: string,
+							) => void;
+						}
+					).bridgeJourneyWorkerSendDuringHeldNavigation('subscription.acknowledge', requestId);
+				}, pendingWindowRequestId);
+
+				// Act
+				await journey.page.evaluate((): void => {
+					location.href = '/held-journey.html';
+				});
+				await heldDocument.requested;
+				await pendingWindowResponse;
+				const generationWhilePending = journey.currentGeneration();
+				heldDocument.release();
+				await journey.page.waitForURL('**/held-journey.html', { waitUntil: 'load' });
+				await journey.waitForWorkerReady();
+				const nextDocumentRequestId = await journey.sendSubscriptionReceipt();
+
+				// Assert
+				expect(await acknowledgedRequestId(reloadJoin)).toBe(nextDocumentRequestId);
+				expect(nextDocumentRequestId).not.toBe(pendingWindowRequestId);
+				expect(generationWhilePending).toBe(1);
+				expect(journey.currentGeneration()).toBe(2);
+			});
 		});
 	});
 

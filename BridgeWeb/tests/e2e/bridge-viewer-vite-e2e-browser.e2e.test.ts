@@ -6,6 +6,7 @@ import {
 	defineConsoleErrorGuardProbe,
 } from '../console-error-guard-probe.ts';
 import { launchBridgeViewerE2EChromium } from './bridge-viewer-vite-e2e-browser.ts';
+import { runBridgeWebE2ETestBody } from './bridge-web-e2e-test-retirement.ts';
 
 const notWrappedInActWarning = `An update to ${actWarningProbeComponentName} inside a test was not wrapped in act(...).`;
 const notConfiguredForActWarning =
@@ -14,6 +15,7 @@ const notConfiguredForActWarning =
 // Both React act() warning forms, logged by a real page in a browser launched
 // for E2E journeys, fail the running test through the page-console relay.
 defineConsoleErrorGuardProbe({
+	runOwnedBody: runBridgeWebE2ETestBody,
 	emitActWarning: async (): Promise<void> => {
 		await logFromRealPage(notWrappedInActWarning);
 	},
@@ -21,6 +23,7 @@ defineConsoleErrorGuardProbe({
 });
 
 defineConsoleErrorGuardProbe({
+	runOwnedBody: runBridgeWebE2ETestBody,
 	emitActWarning: async (): Promise<void> => {
 		await logFromRealPage(notConfiguredForActWarning);
 	},
@@ -28,9 +31,11 @@ defineConsoleErrorGuardProbe({
 	suiteName: 'E2E page console (environment not configured for act)',
 });
 
-test('an E2E page console.error that is not an act() warning does not fail the test', async () => {
-	// The console error guard fails this test if the relay re-reports the message.
-	await logFromRealPage('Bridge page diagnostic that is not a React act() warning');
+test('an E2E page console.error that is not an act() warning does not fail the test', async (bridgeWebTestContext) => {
+	return await runBridgeWebE2ETestBody(bridgeWebTestContext, async (): Promise<void> => {
+		// The console error guard fails this test if the relay re-reports the message.
+		await logFromRealPage('Bridge page diagnostic that is not a React act() warning');
+	});
 });
 
 // Logs `message` with console.error inside a real page and returns once the
