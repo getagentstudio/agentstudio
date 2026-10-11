@@ -1,31 +1,28 @@
 import { afterEach, beforeEach } from 'vitest';
 
-import { createBridgeProductDeferred } from '../core/comm-worker/bridge-product-async-queue.js';
-import { BridgeProductTestFactRecorder } from '../core/comm-worker/test-fixtures/bridge-product-test-fact-recorder.js';
+import { BridgeTestFactRecorder } from '../../tests/test-support/bridge-test-fact-recorder.js';
 
 type FocusFrameFact =
-	| { readonly kind: 'completed' | 'cancelled'; readonly index: number }
+	| { readonly kind: 'completed' | 'cancelled' | 'held'; readonly index: number }
 	| { readonly kind: 'failed'; readonly index: number; readonly error: unknown };
 
-let facts = new BridgeProductTestFactRecorder<FocusFrameFact>();
+let facts = new BridgeTestFactRecorder<FocusFrameFact>();
 let requestedCount = 0;
 let restoreFrameClock: (() => void) | null = null;
 let holdNextFrame = false;
 let heldFrame: { readonly index: number; readonly callback: FrameRequestCallback } | null = null;
-let heldArrival: ReturnType<typeof createBridgeProductDeferred<void>> | null = null;
 const activeFocusObservations = new Set<() => void>();
 let currentTestSignal: AbortSignal | undefined;
 
 beforeEach((context): void => {
 	currentTestSignal = context.signal;
 	restoreFrameClock?.();
-	facts = new BridgeProductTestFactRecorder<FocusFrameFact>();
+	facts = new BridgeTestFactRecorder<FocusFrameFact>();
 	const ownerFacts = facts;
 	let isClosed = false;
 	requestedCount = 0;
 	holdNextFrame = false;
 	heldFrame = null;
-	heldArrival = null;
 	const requestFrame = window.requestAnimationFrame;
 	const cancelFrame = window.cancelAnimationFrame;
 	const ownedFrames = new Map<number, number>();
@@ -58,7 +55,7 @@ beforeEach((context): void => {
 					run(index, callback, timestamp);
 				},
 			};
-			heldArrival?.resolve();
+			ownerFacts.record({ kind: 'held', index });
 			return handle;
 		}
 		let handle = 0;
@@ -85,7 +82,6 @@ beforeEach((context): void => {
 		for (const handle of ownedFrames.keys()) cancelFrame.call(window, handle);
 		ownedFrames.clear();
 		const error = new Error('Context focus handoff observation closed.');
-		heldArrival?.reject(error);
 		ownerFacts.close(error);
 		context.signal.removeEventListener('abort', close);
 	};
@@ -107,7 +103,10 @@ export function nextContextFocusHandoff(): number {
 }
 
 export async function awaitContextFocusHandoff(index: number): Promise<void> {
-	const outcome = await facts.waitFor((fact): boolean => fact.index === index);
+	const outcome = await facts.waitFor(
+		(fact): boolean => fact.index === index && fact.kind !== 'held',
+		`Context focus handoff ${index} completed`,
+	);
 	if (outcome.kind === 'cancelled') throw new Error(`Context focus handoff ${index} cancelled.`);
 	if (outcome.kind === 'failed') throw outcome.error;
 }
@@ -117,10 +116,16 @@ export function holdNextContextFocusHandoff(): {
 	readonly release: () => void;
 } {
 	holdNextFrame = true;
-	heldArrival = createBridgeProductDeferred<void>();
-	void heldArrival.promise.catch((): void => {});
+	const index = nextContextFocusHandoff();
+	const arrived = facts
+		.waitFor(
+			(fact): boolean => fact.kind === 'held' && fact.index === index,
+			`Context focus handoff ${index} held arrival`,
+		)
+		.then((): void => {});
+	void arrived.catch((): void => {});
 	return {
-		arrived: heldArrival.promise,
+		arrived,
 		release: (): void => {
 			const frame = heldFrame;
 			if (frame === null) throw new Error('Expected the owned context focus handoff to be held.');
@@ -135,18 +140,21 @@ export function observeContextFocusIn(matchesTarget: (target: EventTarget | null
 	readonly close: () => void;
 	readonly inspect: () => void;
 } {
-	const arrival = createBridgeProductDeferred<void>();
+	const focusFacts = new BridgeTestFactRecorder<'focused'>();
+	const arrived = focusFacts
+		.waitFor((fact): boolean => fact === 'focused', 'Context focus target focused')
+		.then((): void => {});
 	// Teardown may reject before the caller starts awaiting; preserve the promise
 	// rejection for its eventual await without creating an unhandled secondary error.
-	void arrival.promise.catch((): void => {});
+	void arrived.catch((): void => {});
 	const ownerSignal = currentTestSignal;
 	let isClosed = false;
 	let hasArrived = false;
 	const resolveArrival = (): void => {
 		if (isClosed) return;
 		hasArrived = true;
+		focusFacts.record('focused');
 		close();
-		arrival.resolve();
 	};
 	const onFocusIn = (event: FocusEvent): void => {
 		if (!matchesTarget(event.target) || isClosed) return;
@@ -158,15 +166,19 @@ export function observeContextFocusIn(matchesTarget: (target: EventTarget | null
 		document.removeEventListener('focusin', onFocusIn, true);
 		ownerSignal?.removeEventListener('abort', close);
 		activeFocusObservations.delete(close);
-		if (!hasArrived) {
-			arrival.reject(new Error('Context focus observation closed before the target focused.'));
-		}
+		focusFacts.close(
+			new Error(
+				hasArrived
+					? 'Context focus observation completed.'
+					: 'Context focus observation closed before the target focused.',
+			),
+		);
 	};
 	document.addEventListener('focusin', onFocusIn, true);
 	ownerSignal?.addEventListener('abort', close, { once: true });
 	activeFocusObservations.add(close);
 	return {
-		arrived: arrival.promise,
+		arrived,
 		close,
 		inspect: (): void => {
 			if (matchesTarget(document.activeElement)) resolveArrival();

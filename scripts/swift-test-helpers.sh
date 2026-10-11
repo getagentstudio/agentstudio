@@ -1553,6 +1553,9 @@ aggregate_serial_non_webkit_suite_filters() {
       'Tests/AgentStudioAppIPCTests/AppIPCCLIStoreReadThroughTests.swift' \
       'AppIPCCLIStoreReadThroughTests'
     printf '%s:%s\n' \
+      'Tests/AgentStudioAppIPCTests/AppIPCCLICallDeadlineTests.swift' \
+      'AppIPCCLICallDeadlineTests'
+    printf '%s:%s\n' \
       'Tests/AgentStudioAppIPCTests/AppIPCErrorCorrectionTests.swift' \
       'AppIPCErrorCorrectionTests'
     printf '%s:%s\n' \
