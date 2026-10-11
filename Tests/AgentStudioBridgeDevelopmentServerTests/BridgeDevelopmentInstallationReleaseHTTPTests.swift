@@ -70,11 +70,14 @@ struct BridgeDevelopmentInstallationReleaseHTTPTests {
                 client: client, connection: connection, workerInstanceId: "wrong-worker")
             #expect(wrongIdentity.status == .conflict)
             let acknowledged = try await release(client: client, connection: connection)
-            #expect(acknowledged.status == .noContent)
+            try #require(
+                acknowledged.status == .noContent, "Acknowledged release must succeed before joining the metadata drain"
+            )
             #expect(acknowledged.body.readableBytes == 0)
-            #expect(
+            try #require(
                 await host.productSessionOwner.schemeRouter.metadataStreamHasEnded(
-                    for: connection.bootstrap.workerInstanceId))
+                    for: connection.bootstrap.workerInstanceId),
+                "Acknowledged release must end the metadata stream before joining its drain")
             _ = await stream.drain.result
 
             let successor = try await client.execute(
