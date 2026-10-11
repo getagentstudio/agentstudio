@@ -103,7 +103,7 @@ async function runSelfHostedBridgeViewerPerformanceVerifier(): Promise<void> {
 		}
 		process.env['BRIDGE_VIEWER_WORKTREE_DEV_SERVER_URL'] =
 			`http://127.0.0.1:${serverAddress.port}/?fixture=worktree&viewer=file&workers=on&scenario=current-worktree`;
-		await waitForBridgeProductBackendReady(`http://127.0.0.1:${serverAddress.port}`);
+		await waitForBridgeProductBackendReady(`http://127.0.0.1:${serverAddress.port}`, launch);
 
 		const loadedRunner: unknown = await viteServer.ssrLoadModule(
 			'/scripts/verify-bridge-viewer-worktree-dev-server/runner.ts',
@@ -222,7 +222,7 @@ async function runCompleteJourneyLaunchLifecycle(props: {
 		const viteOrigin = `http://127.0.0.1:${serverAddress.port}`;
 		process.env['BRIDGE_VIEWER_WORKTREE_DEV_SERVER_URL'] =
 			`${viteOrigin}/?fixture=worktree&viewer=file&workers=on&scenario=current-worktree`;
-		await waitForBridgeProductBackendReady(viteOrigin);
+		await waitForBridgeProductBackendReady(viteOrigin, launch);
 		const loadedRunner: unknown = await viteServer.ssrLoadModule(
 			'/scripts/verify-bridge-viewer-worktree-dev-server/runner.ts',
 		);
@@ -304,7 +304,7 @@ async function runColdStartupSurfaceLifecycle(props: {
 		const viteOrigin = `http://127.0.0.1:${serverAddress.port}`;
 		process.env['BRIDGE_VIEWER_WORKTREE_DEV_SERVER_URL'] =
 			`${viteOrigin}/?fixture=worktree&viewer=${props.surface}&workers=on&scenario=current-worktree`;
-		await waitForBridgeProductBackendReady(viteOrigin);
+		await waitForBridgeProductBackendReady(viteOrigin, launch);
 		const loadedRunner: unknown = await viteServer.ssrLoadModule(
 			'/scripts/verify-bridge-viewer-worktree-dev-server/runner.ts',
 		);
@@ -359,8 +359,14 @@ function coldStartupSurfaceResultFromUnknown(
 	return value as ColdStartupSurfaceResult;
 }
 
-async function waitForBridgeProductBackendReady(viteOrigin: string): Promise<void> {
-	const response = await fetch(new URL('/__bridge-product/health', viteOrigin));
+async function waitForBridgeProductBackendReady(
+	viteOrigin: string,
+	launch: BridgeWebTestLaunch,
+): Promise<void> {
+	const response = await launch.runStep(
+		'proxied backend health',
+		async (signal) => await fetch(new URL('/__bridge-product/health', viteOrigin), { signal }),
+	);
 	if (response.status !== 204)
 		throw new Error(`Owned Bridge development backend health failed: ${response.status}`);
 }

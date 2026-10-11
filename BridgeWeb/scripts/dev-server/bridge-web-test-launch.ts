@@ -16,11 +16,25 @@ import {
 	type OwnedBridgeDevelopmentServerCleanup,
 } from './bridge-development-server-process.ts';
 import {
+	activeLaunches,
+	installExitHooks,
+	removeUnusedExitHooks,
+} from './bridge-web-test-launch-registry.ts';
+import {
+	currentBridgeWebLaunchScope,
+	runWithBridgeWebLaunchScope,
+} from './bridge-web-test-launch-scope.ts';
+import {
 	handleLaunchPromise,
 	type HandledLaunchPromise,
 	type LaunchPromiseOutcome,
 } from './handled-launch-promise.ts';
 import { reserveLoopbackPort } from './reserve-loopback-port.ts';
+
+export interface BridgeWebOwnedProductDataClient {
+	readonly close: () => Promise<void>;
+	readonly abort: (reason: unknown) => Promise<void>;
+}
 
 interface LaunchCleanupOperation {
 	readonly name: string;
@@ -42,64 +56,12 @@ export interface BridgeWebTestLaunchSpec {
 		'dataRootPath' | 'onSpawn'
 	>;
 	readonly dataRootPrefix?: string;
+	readonly signal?: AbortSignal;
 }
 
 export interface BridgeWebTestLaunchDependencies {
 	readonly startBackend: typeof startOwnedBridgeDevelopmentServer;
-}
-
-// A process has one exit backstop, shared by every launch in it. Normal callers
-// still await dispose(); a fatal process event reports its error and exits only
-// after every registered owner has attempted cleanup.
-const registryKey = Symbol.for('agentstudio.bridge-web-test-launch.registry');
-interface LaunchRegistry {
-	readonly launches: Set<BridgeWebTestLaunch>;
-	removeExitHooks: (() => void) | null;
-	fatalCleanup: Promise<void> | null;
-}
-const registryGlobal = globalThis as typeof globalThis & { [registryKey]?: LaunchRegistry };
-const registry = (registryGlobal[registryKey] ??= {
-	launches: new Set(),
-	removeExitHooks: null,
-	fatalCleanup: null,
-});
-const activeLaunches = registry.launches;
-
-function installExitHooks(): void {
-	if (registry.removeExitHooks !== null) return;
-	const terminate = (error: unknown, exitCode: number): void => {
-		registry.fatalCleanup ??= (async (): Promise<void> => {
-			process.stderr.write(`BridgeWeb test launch terminated: ${String(error)}\n`);
-			const results = await Promise.allSettled(
-				[...activeLaunches].map((launch) => launch.dispose()),
-			);
-			for (const result of results) {
-				if (result.status === 'rejected')
-					process.stderr.write(`BridgeWeb teardown failed: ${String(result.reason)}\n`);
-			}
-			process.exit(exitCode);
-		})();
-		// The backstop itself cannot create an unhandled rejection.
-		void registry.fatalCleanup.catch((failure: unknown): void => {
-			process.stderr.write(`BridgeWeb fatal teardown failed: ${String(failure)}\n`);
-			process.exit(exitCode);
-		});
-	};
-	const unhandled = (error: unknown): void => terminate(error, 1);
-	const uncaught = (error: Error): void => terminate(error, 1);
-	const interrupt = (): void => terminate('SIGINT', 130);
-	const terminated = (): void => terminate('SIGTERM', 143);
-	process.on('unhandledRejection', unhandled);
-	process.on('uncaughtException', uncaught);
-	process.on('SIGINT', interrupt);
-	process.on('SIGTERM', terminated);
-	registry.removeExitHooks = (): void => {
-		process.off('unhandledRejection', unhandled);
-		process.off('uncaughtException', uncaught);
-		process.off('SIGINT', interrupt);
-		process.off('SIGTERM', terminated);
-		registry.removeExitHooks = null;
-	};
+	readonly startViteChild?: typeof BridgeViewerOwnedViteServer.start;
 }
 
 export class BridgeWebTestLaunch {
@@ -117,7 +79,15 @@ export class BridgeWebTestLaunch {
 	#disposal: HandledLaunchPromise<BridgeWebTestLaunchCleanup> | null = null;
 	#closed = false;
 	readonly #pendingSteps = new Map<symbol, string>();
-	#journeySignal: AbortSignal | null = null;
+	readonly #children = new Set<BridgeWebTestLaunch>();
+	readonly #signal: AbortSignal;
+	readonly #deadline: ReturnType<typeof createOwnedVerifierJourneyDeadline> | null;
+	readonly #cancelClients = new Set<BridgeWebOwnedProductDataClient>();
+	readonly #dependencies: BridgeWebTestLaunchDependencies;
+	#parent: BridgeWebTestLaunch | null = null;
+	readonly #onAbort = (): void => {
+		void handleLaunchPromise(this.dispose(), 'abort-driven owned teardown').settled;
+	};
 	#cleanup: BridgeWebTestLaunchCleanup = {
 		backend: null,
 		browserDisconnected: true,
@@ -127,10 +97,31 @@ export class BridgeWebTestLaunch {
 		viteProcess: null,
 	};
 
-	private constructor(dataRootPath: Promise<string>) {
-		this.#root = handleLaunchPromise(dataRootPath, 'create data root');
+	private constructor(
+		dataRootPath: Promise<string>,
+		spec: BridgeWebTestLaunchSpec,
+		dependencies: BridgeWebTestLaunchDependencies,
+	) {
+		this.#dependencies = dependencies;
+		this.#root = this.observeStep('create data root', dataRootPath);
 		activeLaunches.add(this);
 		installExitHooks();
+		const ownerSignal = spec.signal ?? currentBridgeWebLaunchScope()?.signal;
+		this.#deadline =
+			ownerSignal === undefined
+				? createOwnedVerifierJourneyDeadline({
+						pendingSteps: (): readonly string[] => this.pendingSteps,
+						closePages: async (): Promise<void> => {
+							await this.dispose();
+						},
+					})
+				: null;
+		const signal = ownerSignal ?? this.#deadline?.signal;
+		if (signal === undefined) throw new Error('Launch lifetime has no bound owner.');
+		this.#signal = signal;
+		this.#signal.addEventListener('abort', this.#onAbort, { once: true });
+		this.#attachScope(true);
+		if (this.#signal.aborted) this.#onAbort();
 	}
 
 	static async start(
@@ -141,28 +132,13 @@ export class BridgeWebTestLaunch {
 	): Promise<BridgeWebTestLaunch> {
 		const launch = new BridgeWebTestLaunch(
 			mkdtemp(join(tmpdir(), spec.dataRootPrefix ?? 'bridge-web-test-launch-')),
+			spec,
+			dependencies,
 		);
 		try {
 			launch.#dataRootPath = await launch.#root.value();
 			launch.#requireOpen();
-			if (spec.backend !== undefined) {
-				await launch.#acquire(
-					dependencies.startBackend({
-						...spec.backend,
-						dataRootPath: launch.dataRootPath,
-						onSpawn: (backend): void => {
-							launch.#backend = backend;
-							if (launch.#closed) {
-								const stopping = handleLaunchPromise(backend.stop(), 'late Swift spawn teardown');
-								launch.#acquisitions.add(stopping.settled);
-							}
-						},
-					}),
-					(backend): void => {
-						launch.#backend = backend;
-					},
-				);
-			}
+			if (spec.backend !== undefined) await launch.#startBackend(spec.backend, launch.dataRootPath);
 			launch.#requireOpen();
 			return launch;
 		} catch (error: unknown) {
@@ -177,8 +153,8 @@ export class BridgeWebTestLaunch {
 
 	// Browser-only proofs have their own complete launch scope. A browser used
 	// inside a shared stack instead closes only that browser's owned resource.
-	static async startBrowser(options: LaunchOptions): Promise<Browser> {
-		const launch = await BridgeWebTestLaunch.start();
+	static async startBrowser(options: LaunchOptions, signal?: AbortSignal): Promise<Browser> {
+		const launch = await BridgeWebTestLaunch.start(signal === undefined ? {} : { signal });
 		const browser = await launch.launchBrowser(options);
 		browser.close = async (closeOptions): Promise<void> => {
 			launch.#browserCloseOptions = closeOptions;
@@ -206,23 +182,65 @@ export class BridgeWebTestLaunch {
 		return observation;
 	}
 
+	get signal(): AbortSignal {
+		return this.#signal;
+	}
+	get pendingSteps(): readonly string[] {
+		return [
+			...this.#pendingSteps.values(),
+			...[...this.#children].flatMap((child) => child.pendingSteps),
+		];
+	}
 	startJourneyHangBound(): AbortSignal {
 		this.#requireOpen();
-		if (this.#journeySignal !== null) return this.#journeySignal;
-		const deadline = createOwnedVerifierJourneyDeadline({
-			pendingSteps: (): readonly string[] => [...this.#pendingSteps.values()],
-			closePages: async (reason): Promise<void> => {
-				await Promise.allSettled(
-					(this.#browser?.contexts() ?? [])
-						.flatMap((context) => context.pages())
-						.map((page) => page.close({ reason })),
-				);
-				await this.#closeBrowser?.({ reason });
+		return this.#signal;
+	}
+
+	async run<TValue>(operation: () => Promise<TValue>): Promise<TValue> {
+		return await runWithBridgeWebLaunchScope(
+			{
+				signal: this.#signal,
+				ownLaunch: (child): void => {
+					if (child !== this) this.#children.add(child);
+				},
 			},
-		});
-		this.#journeySignal = deadline.signal;
-		this.ownFixture('verifier hang bound', deadline.dispose);
-		return deadline.signal;
+			operation,
+		);
+	}
+
+	async runStep<TValue>(
+		name: string,
+		operation: (signal: AbortSignal) => Promise<TValue>,
+	): Promise<TValue> {
+		this.#requireOpen();
+		try {
+			return await this.#acquire(operation(this.#signal), (): void => {}, name);
+		} catch (error: unknown) {
+			return await this.disposeAfterFailure(error);
+		}
+	}
+
+	async #startBackend(
+		spec: NonNullable<BridgeWebTestLaunchSpec['backend']>,
+		dataRootPath: string,
+	): Promise<void> {
+		await this.#acquire(
+			this.#dependencies.startBackend({
+				...spec,
+				dataRootPath,
+				onSpawn: (server): void => {
+					this.#backend = server;
+					if (this.#closed)
+						this.#acquisitions.add(
+							handleLaunchPromise(server.stop(), 'late Swift spawn teardown').settled,
+						);
+				},
+			}),
+			(server): void => {
+				this.#backend = server;
+			},
+			'Swift readiness',
+		);
 	}
 
 	async startVite(configuration: InlineConfig): Promise<ViteDevServer> {
@@ -264,10 +282,13 @@ export class BridgeWebTestLaunch {
 		this.#requireOpen();
 		if (this.#browser !== null) throw new Error('Test launch already owns a browser.');
 		try {
-			const browser = await this.#acquire(chromium.launch(options), (ownedBrowser): void => {
-				this.#browser = ownedBrowser;
-				this.#closeBrowser = ownedBrowser.close.bind(ownedBrowser);
-			});
+			const browser = await this.#acquire(
+				chromium.launch({ ...options, timeout: 0 }),
+				(ownedBrowser): void => {
+					this.#browser = ownedBrowser;
+					this.#closeBrowser = ownedBrowser.close.bind(ownedBrowser);
+				},
+			);
 			this.#browser = browser;
 			this.#cleanup = { ...this.#cleanup, browserDisconnected: false };
 			if (this.#closed) {
@@ -291,28 +312,14 @@ export class BridgeWebTestLaunch {
 		backend: NonNullable<BridgeWebTestLaunchSpec['backend']>,
 	): Promise<BridgeWebTestLaunch> {
 		this.#requireOpen();
-		const child = await BridgeWebTestLaunch.start();
+		const child = await BridgeWebTestLaunch.start({ signal: this.#signal }, this.#dependencies);
+		child.#parent = this;
+		child.#attachScope();
 		try {
 			this.ownFixture('child stack', async (): Promise<void> => {
 				await child.dispose();
 			});
-			await child.#acquire(
-				startOwnedBridgeDevelopmentServer({
-					...backend,
-					dataRootPath: this.dataRootPath,
-					onSpawn: (server): void => {
-						child.#backend = server;
-						if (child.#closed) {
-							child.#acquisitions.add(
-								handleLaunchPromise(server.stop(), 'late child spawn teardown').settled,
-							);
-						}
-					},
-				}),
-				(server): void => {
-					child.#backend = server;
-				},
-			);
+			await child.#startBackend(backend, this.dataRootPath);
 			child.#requireOpen();
 			return child;
 		} catch (error: unknown) {
@@ -320,32 +327,37 @@ export class BridgeWebTestLaunch {
 		}
 	}
 
-	// Pre-navigation reads are a scoped lifetime. Their client is closed even
-	// when the read fails, before plain data is returned to the page journey.
+	// Own clients before open() suspends; normal completion acknowledges release,
+	// while expiry aborts their HTTP/stream owners before joining their work.
 	async readProductData<TValue>(
-		read: () => Promise<TValue>,
-		closeClient: () => Promise<void>,
+		read: (ownClient: (client: BridgeWebOwnedProductDataClient) => void) => Promise<TValue>,
 	): Promise<TValue> {
 		this.#requireOpen();
-		let closing: HandledLaunchPromise<void> | null = null;
-		const close = async (): Promise<void> => {
-			closing ??= handleLaunchPromise(closeClient(), 'release product data client');
-			await closing.value();
+		const clients = new Set<BridgeWebOwnedProductDataClient>();
+		const ownClient = (client: BridgeWebOwnedProductDataClient): void => {
+			clients.add(client);
+			this.#cancelClients.add(client);
 		};
-		this.ownFixture('product data client', close);
-		const outcome = await handleLaunchPromise(read(), 'pre-navigation product data read').settled;
 		try {
-			await close();
-		} catch (error: unknown) {
-			throw new AggregateError(
-				outcome.kind === 'failed' ? [outcome.error, error] : [error],
-				'Product data read/client release failed.',
-				{ cause: error },
+			const result = await this.#acquire(
+				read(ownClient),
+				(): void => {},
+				'pre-navigation product data read',
 			);
+			for (const client of clients) {
+				// oxlint-disable-next-line no-await-in-loop -- Release each owned installation before allowing page bootstrap.
+				await this.#acquire(
+					client.close(),
+					(): void => {},
+					'acknowledged product installation release',
+				);
+				this.#cancelClients.delete(client);
+			}
+			this.#requireOpen();
+			return result;
+		} catch (error: unknown) {
+			return await this.disposeAfterFailure(error);
 		}
-		if (outcome.kind === 'failed') throw outcome.error;
-		this.#requireOpen();
-		return outcome.value;
 	}
 
 	async startViteChild(props: {
@@ -357,7 +369,11 @@ export class BridgeWebTestLaunch {
 			throw new Error('Test launch already owns Vite.');
 		try {
 			return await this.#acquire(
-				BridgeViewerOwnedViteServer.start({
+				(
+					this.#dependencies.startViteChild ??
+					((props: Parameters<typeof BridgeViewerOwnedViteServer.start>[0]) =>
+						BridgeViewerOwnedViteServer.start(props))
+				)({
 					...props,
 					bridgeDevelopmentServerOrigin: this.backend.origin,
 					environment: {
@@ -375,6 +391,7 @@ export class BridgeWebTestLaunch {
 				(server): void => {
 					this.#viteProcess = server;
 				},
+				'Vite readiness',
 			);
 		} catch (error: unknown) {
 			return await this.disposeAfterFailure(error);
@@ -419,6 +436,21 @@ export class BridgeWebTestLaunch {
 
 	async #dispose(): Promise<BridgeWebTestLaunchCleanup> {
 		this.#closed = true;
+		const childStops = [...this.#children].map((child) =>
+			handleLaunchPromise(child.dispose(), 'retire nested launch'),
+		);
+		const clientCancellations = [...this.#cancelClients].map((client) =>
+			handleLaunchPromise(
+				Promise.resolve().then(
+					async (): Promise<void> =>
+						await client.abort(this.#signal.reason ?? new Error('owned launch disposed')),
+				),
+				'abort product client',
+			),
+		);
+		const cancelledClients = await Promise.all(
+			clientCancellations.map((cancellation) => cancellation.settled),
+		);
 		// Stop a child already registered before readiness before joining pending
 		// acquisition: its exit is what releases a stuck readiness operation.
 		const earlyViteStop =
@@ -430,6 +462,7 @@ export class BridgeWebTestLaunch {
 				? null
 				: handleLaunchPromise(this.#backend.stop(), 'stop starting backend');
 		await Promise.all(this.#acquisitions);
+		const childOutcomes = await Promise.all(childStops.map((stopping) => stopping.settled));
 		const rootOutcome = await this.#root.settled;
 		if (rootOutcome.kind === 'succeeded') this.#dataRootPath = rootOutcome.value;
 		const operations: LaunchCleanupOperation[] = [
@@ -475,10 +508,18 @@ export class BridgeWebTestLaunch {
 			...this.#operations,
 		];
 		const results = await Promise.allSettled(
-			operations.map(async (operation): Promise<void> => await operation.run()),
+			operations.map(
+				async (operation): Promise<void> =>
+					await this.observeStep(
+						`retire ${operation.name}`,
+						Promise.resolve().then(operation.run),
+					).value(),
+			),
 		);
-		const failures: unknown[] = [];
-		const failureNames: string[] = [];
+		const failures: unknown[] = [...cancelledClients, ...childOutcomes].flatMap((outcome) =>
+			outcome.kind === 'failed' ? [outcome.error] : [],
+		);
+		const failureNames: string[] = failures.map(() => 'retire owned dependent');
 		for (const [index, result] of results.entries()) {
 			if (result.status === 'rejected') {
 				failures.push(result.reason);
@@ -503,8 +544,10 @@ export class BridgeWebTestLaunch {
 				failureNames.push('data root');
 			}
 		this.#cleanup = { ...this.#cleanup, failures: failureNames };
+		this.#deadline?.cancel();
+		this.#signal.removeEventListener('abort', this.#onAbort);
 		activeLaunches.delete(this);
-		if (activeLaunches.size === 0) registry.removeExitHooks?.();
+		removeUnusedExitHooks();
 		if (failures.length > 0)
 			throw new AggregateError(
 				failures,
@@ -516,23 +559,42 @@ export class BridgeWebTestLaunch {
 	async #acquire<TResource>(
 		promise: Promise<TResource>,
 		register: (resource: TResource) => void,
+		name: string = 'acquire owned resource',
 	): Promise<TResource> {
-		const observation = handleLaunchPromise(
+		const observation = this.observeStep(
+			name,
 			promise.then((resource): TResource => {
 				register(resource);
 				return resource;
 			}),
-			'acquire owned resource',
 		);
 		this.#acquisitions.add(observation.settled);
 		try {
-			return await observation.value();
+			const value = await observation.value();
+			this.#requireOpen();
+			return value;
+		} catch (error: unknown) {
+			if (this.#signal.aborted)
+				throw new Error(`BridgeWeb launch aborted: ${String(this.#signal.reason)}`, {
+					cause: error,
+				});
+			throw error;
 		} finally {
 			this.#acquisitions.delete(observation.settled);
 		}
 	}
 
+	#attachScope(created: boolean = false): void {
+		const scope = currentBridgeWebLaunchScope();
+		if (scope !== undefined) {
+			scope.ownLaunch(this, created);
+			if (this.#parent !== null) this.#parent.#attachScope();
+		}
+	}
+
 	#requireOpen(): void {
+		this.#attachScope();
+		this.#signal.throwIfAborted();
 		if (this.#closed) throw new Error('BridgeWeb test launch is disposed.');
 	}
 }

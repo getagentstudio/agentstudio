@@ -94,6 +94,7 @@ interface BridgeVerifierProductAuthority {
 
 export class BridgeVerifierProductFileSession {
 	readonly #baseUrl: string;
+	readonly #abortController = new AbortController();
 	#authority: BridgeVerifierProductAuthority | null = null;
 	readonly #metadataStreamId = `verifier-file-stream-${randomUUID()}`;
 	readonly #scenarioName: string;
@@ -117,6 +118,15 @@ export class BridgeVerifierProductFileSession {
 
 	get state(): BridgeVerifierProductFileSessionState {
 		return this.#state;
+	}
+
+	async abort(reason: unknown): Promise<void> {
+		this.#state = 'closing';
+		this.#abortController.abort(reason);
+		await this.#metadataStream?.close();
+		this.#metadataStream = null;
+		this.#authority = null;
+		this.#state = 'closed';
 	}
 
 	async open(): Promise<BridgeVerifierProductFileSource> {
@@ -320,6 +330,7 @@ export class BridgeVerifierProductFileSession {
 			body: JSON.stringify(contentRequest),
 			headers: this.#headers(),
 			method: 'POST',
+			signal: this.#abortController.signal,
 		});
 		if (response.status !== 200 || response.body === null) {
 			throw new Error(
@@ -432,6 +443,7 @@ export class BridgeVerifierProductFileSession {
 			headers: this.#headers(),
 			paneSessionId: this.#paneSessionId,
 			workerInstanceId: this.#workerInstanceId,
+			signal: this.#abortController.signal,
 		});
 		await metadataStream.close();
 		this.#metadataStream = null;
@@ -452,6 +464,7 @@ export class BridgeVerifierProductFileSession {
 			} satisfies BridgeProductDevBootstrapRequest),
 			headers: { 'Content-Type': BRIDGE_PRODUCT_DEV_BOOTSTRAP_REQUEST_MEDIA_TYPE },
 			method: 'POST',
+			signal: this.#abortController.signal,
 		});
 		if (
 			response.status !== 200 ||
@@ -549,6 +562,7 @@ export class BridgeVerifierProductFileSession {
 			body: JSON.stringify(body),
 			headers: this.#headers(),
 			method: 'POST',
+			signal: this.#abortController.signal,
 		});
 		const responseText = await response.text();
 		if (response.status !== 200) {
@@ -560,7 +574,7 @@ export class BridgeVerifierProductFileSession {
 	}
 
 	async #openMetadataStream(): Promise<BridgeVerifierMetadataStream> {
-		const abortController = new AbortController();
+		const abortController = this.#abortController;
 		const request = bridgeProductMetadataStreamRequestSchema.parse({
 			kind: 'metadataStream.open',
 			metadataStreamId: this.#metadataStreamId,
@@ -647,6 +661,7 @@ export class BridgeVerifierProductFileSession {
 			body: JSON.stringify(body),
 			headers: this.#headers(),
 			method: 'POST',
+			signal: this.#abortController.signal,
 		});
 		const responseText = await response.text();
 		if (response.status === 404) {

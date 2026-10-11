@@ -6,6 +6,7 @@ import { endToEndTestTimeoutMilliseconds } from '../../tests/vitest-hang-bounds.
 import { makeDeferred } from '../verify-bridge-viewer-worktree-dev-server/utils.ts';
 import type { OwnedBridgeDevelopmentServerCleanup } from './bridge-development-server-process.ts';
 import { BridgeWebTestLaunch } from './bridge-web-test-launch.ts';
+import { handleLaunchPromise } from './handled-launch-promise.ts';
 
 const backendSpec = {
 	initialTarget: 'HEAD',
@@ -100,29 +101,35 @@ test.each(['closed', 'failed'] as const)(
 		const arrival = makeDeferred<void>();
 		const released = makeDeferred<void>();
 		const data = { pathCount: 4 };
-		const result = launch.readProductData(
-			async () => data,
-			async (): Promise<void> => {
-				arrival.resolve();
-				await released.promise;
-				if (disposition === 'failed') throw new Error('release refused');
-			},
+		const result = handleLaunchPromise(
+			launch.readProductData(async (ownClient) => {
+				ownClient({
+					abort: async (): Promise<void> => {},
+					close: async (): Promise<void> => {
+						arrival.resolve();
+						await released.promise;
+						if (disposition === 'failed') throw new Error('release refused');
+					},
+				});
+				return data;
+			}),
+			'product data release',
 		);
 		await arrival.promise;
 		released.resolve();
 		if (disposition === 'failed') {
-			await expect(result).rejects.toThrow('client release failed');
-			await expect(launch.dispose()).rejects.toThrow('owned stack teardown');
+			await expect(result.value()).rejects.toThrow('release refused');
+			expect(launch.cleanup.dataRootRemoved).toBe(true);
 		} else {
-			expect(await result).toBe(data);
+			expect(await result.value()).toBe(data);
 			await launch.dispose();
 		}
 	},
 );
 
 test('one journey hang bound names pending owner facts and clears on disposal', async () => {
-	const launch = await BridgeWebTestLaunch.start();
 	vi.useFakeTimers();
+	const launch = await BridgeWebTestLaunch.start();
 	const stderr = vi.spyOn(process.stderr, 'write').mockReturnValue(true);
 	const metadata = makeDeferred<void>();
 	try {
@@ -142,5 +149,122 @@ test('one journey hang bound names pending owner facts and clears on disposal', 
 		vi.useRealTimers();
 		stderr.mockRestore();
 		await launch.dispose();
+	}
+});
+
+test('expiry itself retires a held pre-navigation read and its root', async () => {
+	vi.useFakeTimers();
+	const stderr = vi.spyOn(process.stderr, 'write').mockReturnValue(true);
+	const launch = await BridgeWebTestLaunch.start();
+	let rejectRead: (reason: unknown) => void = (): void => {};
+	const stuckRead = new Promise<void>((_resolve, reject): void => {
+		rejectRead = reject;
+	});
+	const reading = handleLaunchPromise(
+		launch.readProductData(async (ownClient): Promise<void> => {
+			ownClient({
+				close: async (): Promise<void> => {
+					throw new Error('must not release a still-opening client');
+				},
+				abort: async (reason): Promise<void> => {
+					rejectRead(reason);
+				},
+			});
+			await stuckRead;
+		}),
+		'held data read',
+	);
+	launch.startJourneyHangBound();
+	try {
+		await vi.advanceTimersByTimeAsync(endToEndTestTimeoutMilliseconds);
+		expect((await reading.settled).kind).toBe('failed');
+		expect(launch.cleanup.dataRootRemoved).toBe(true);
+		expect(String(launch.signal.reason)).toContain('pre-navigation product data read');
+	} finally {
+		await launch.dispose();
+		await reading.settled;
+		stderr.mockRestore();
+		vi.useRealTimers();
+	}
+});
+
+test('the bound covers Swift acquisition before a browser or launch handle is available', async () => {
+	vi.useFakeTimers();
+	const stderr = vi.spyOn(process.stderr, 'write').mockReturnValue(true);
+	const spawned = makeDeferred<void>();
+	let dataRootPath = '';
+	let rejectReadiness: (reason: unknown) => void = (): void => {};
+	const readiness = new Promise<never>((_resolve, reject): void => {
+		rejectReadiness = reject;
+	});
+	const starting = handleLaunchPromise(
+		BridgeWebTestLaunch.start(
+			{ backend: backendSpec },
+			{
+				startBackend: async (props) => {
+					dataRootPath = props.dataRootPath;
+					props.onSpawn?.({
+						origin: 'http://127.0.0.1:1',
+						pid: 0,
+						stderrTail: (): string => '',
+						stdoutTail: (): string => '',
+						whenExited: Promise.resolve(),
+						stop: async () => {
+							rejectReadiness(new Error('owned child exited'));
+							return stoppedBackend;
+						},
+					});
+					spawned.resolve();
+					return await readiness;
+				},
+			},
+		),
+		'held Swift startup',
+	);
+	try {
+		await spawned.promise;
+		await vi.advanceTimersByTimeAsync(endToEndTestTimeoutMilliseconds);
+		await expect(starting.value()).rejects.toThrow('waiting=Swift readiness');
+		await expect(access(dataRootPath)).rejects.toMatchObject({ code: 'ENOENT' });
+	} finally {
+		await starting.settled;
+		stderr.mockRestore();
+		vi.useRealTimers();
+	}
+});
+
+test('expiry aborts a held installation release and completes checked teardown', async () => {
+	vi.useFakeTimers();
+	const stderr = vi.spyOn(process.stderr, 'write').mockReturnValue(true);
+	const launch = await BridgeWebTestLaunch.start();
+	const releasing = makeDeferred<void>();
+	let rejectRelease: (reason: unknown) => void = (): void => {};
+	const release = new Promise<never>((_resolve, reject): void => {
+		rejectRelease = reject;
+	});
+	const reading = handleLaunchPromise(
+		launch.readProductData(async (ownClient): Promise<void> => {
+			ownClient({
+				close: async (): Promise<void> => {
+					releasing.resolve();
+					await release;
+				},
+				abort: async (reason): Promise<void> => {
+					rejectRelease(reason);
+				},
+			});
+		}),
+		'held release',
+	);
+	try {
+		await releasing.promise;
+		await vi.advanceTimersByTimeAsync(endToEndTestTimeoutMilliseconds);
+		await expect(reading.value()).rejects.toThrow('acknowledged product installation release');
+		expect(launch.cleanup.dataRootRemoved).toBe(true);
+	} finally {
+		await launch.dispose();
+		await reading.settled;
+		stderr.mockRestore();
+		vi.useRealTimers();
 	}
 });

@@ -8,7 +8,6 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { reserveLoopbackPort } from '../dev-server/reserve-loopback-port.ts';
-const serverStartupTimeoutMilliseconds = 30_000;
 const serverShutdownTimeoutMilliseconds = 10_000;
 const maximumServerLogTailCharacters = 8_192;
 export interface BridgeViewerViteServerStartProof {
@@ -59,39 +58,61 @@ export class BridgeViewerOwnedViteServer {
 		this.#startProof = props.startProof;
 	}
 
-	static async start(props: {
-		readonly bridgeDevelopmentServerOrigin: string;
-		readonly bridgeWebRootPath: string;
-		readonly environment?: Readonly<Record<string, string>>;
-		readonly onSpawn: (server: BridgeViewerOwnedViteServer) => void;
-	}): Promise<BridgeViewerOwnedViteServer> {
+	static async start(
+		props: {
+			readonly bridgeDevelopmentServerOrigin: string;
+			readonly bridgeWebRootPath: string;
+			readonly environment?: Readonly<Record<string, string>>;
+			readonly onSpawn: (server: BridgeViewerOwnedViteServer) => void;
+		},
+		dependencies?: {
+			readonly spawnChild: (props: {
+				readonly port: number;
+				readonly cliPath: string;
+				readonly rootPath: string;
+				readonly environment: NodeJS.ProcessEnv;
+			}) => ChildProcessWithoutNullStreams;
+		},
+	): Promise<BridgeViewerOwnedViteServer> {
 		const viteCLIPath = join(props.bridgeWebRootPath, 'node_modules/vite/bin/vite.js');
 		await access(viteCLIPath);
 		const port = await reserveLoopbackPort();
-		const child = spawn(
-			process.execPath,
-			[
-				'--import',
-				fileURLToPath(
-					new URL('../dev-server/bridge-web-test-launch-vite-input-lifetime.ts', import.meta.url),
-				),
-				viteCLIPath,
-				'--host',
-				'127.0.0.1',
-				'--port',
-				String(port),
-				'--strictPort',
-			],
-			{
-				cwd: props.bridgeWebRootPath,
-				env: {
-					...process.env,
-					BRIDGE_WEB_DEV_BACKEND_ORIGIN: props.bridgeDevelopmentServerOrigin,
-					...props.environment,
-				},
-				stdio: ['pipe', 'pipe', 'pipe'],
+		const spawnChild =
+			dependencies?.spawnChild ??
+			((processProps): ChildProcessWithoutNullStreams =>
+				spawn(
+					process.execPath,
+					[
+						'--import',
+						fileURLToPath(
+							new URL(
+								'../dev-server/bridge-web-test-launch-vite-input-lifetime.ts',
+								import.meta.url,
+							),
+						),
+						processProps.cliPath,
+						'--host',
+						'127.0.0.1',
+						'--port',
+						String(processProps.port),
+						'--strictPort',
+					],
+					{
+						cwd: processProps.rootPath,
+						env: processProps.environment,
+						stdio: ['pipe', 'pipe', 'pipe'],
+					},
+				));
+		const child = spawnChild({
+			port,
+			cliPath: viteCLIPath,
+			rootPath: props.bridgeWebRootPath,
+			environment: {
+				...process.env,
+				BRIDGE_WEB_DEV_BACKEND_ORIGIN: props.bridgeDevelopmentServerOrigin,
+				...props.environment,
 			},
-		);
+		});
 		const exitPromise = new Promise<ChildProcessExit>((resolve): void => {
 			child.once('exit', (code, signal): void => resolve({ code, signal }));
 			child.once('error', (): void => resolve({ code: null, signal: null }));
@@ -116,31 +137,13 @@ export class BridgeViewerOwnedViteServer {
 		let readyOutput: string;
 		try {
 			props.onSpawn(server);
-			readyOutput = await withBoundedTimeout(
-				new Promise<string>((resolve, reject): void => {
-					const inspectOutput = (): void => {
-						const normalizedOutput = stripANSI(`${stdoutTail}\n${stderrTail}`);
-						if (normalizedOutput.includes(`http://127.0.0.1:${port}/`)) {
-							resolve(normalizedOutput);
-						}
-					};
-					child.stdout.on('data', inspectOutput);
-					child.stderr.on('data', inspectOutput);
-					void exitPromise.then((exit): void => {
-						reject(
-							new Error(
-								`Owned Vite exited before readiness: ${JSON.stringify({
-									exit,
-									stderrTail,
-									stdoutTail,
-								})}`,
-							),
-						);
-					});
-				}),
-				serverStartupTimeoutMilliseconds,
-				'owned loopback Vite readiness',
-			);
+			readyOutput = await waitForOwnedViteReadiness({
+				stdout: child.stdout,
+				stderr: child.stderr,
+				exitPromise,
+				port,
+				readOutput: (): string => `${stdoutTail}\n${stderrTail}`,
+			});
 		} catch (error: unknown) {
 			await server.stop();
 			throw error;
@@ -198,14 +201,36 @@ function processIsAlive(pid: number): boolean {
 		);
 	}
 }
-async function withBoundedTimeout<TValue>(
-	promise: Promise<TValue>,
-	timeoutMilliseconds: number,
-	label: string,
-): Promise<TValue> {
-	const result = await withBoundedTimeoutOrNull(promise, timeoutMilliseconds);
-	if (result === null) throw new Error(`Timed out waiting for ${label}.`);
-	return result;
+export function waitForOwnedViteReadiness(props: {
+	readonly stdout: Pick<NodeJS.ReadableStream, 'on' | 'off'>;
+	readonly stderr: Pick<NodeJS.ReadableStream, 'on' | 'off'>;
+	readonly exitPromise: Promise<BridgeViewerOwnedViteProcessExit>;
+	readonly port: number;
+	readonly readOutput: () => string;
+}): Promise<string> {
+	return new Promise<string>((resolve, reject): void => {
+		const finish = (): void => {
+			props.stdout.off('data', inspectOutput);
+			props.stderr.off('data', inspectOutput);
+		};
+		const inspectOutput = (): void => {
+			const output = stripANSI(props.readOutput());
+			if (!output.includes(`http://127.0.0.1:${props.port}/`)) return;
+			finish();
+			resolve(output);
+		};
+		props.stdout.on('data', inspectOutput);
+		props.stderr.on('data', inspectOutput);
+		void props.exitPromise.then((exit): void => {
+			finish();
+			reject(
+				new Error(
+					`Owned Vite exited before readiness: ${JSON.stringify({ exit, output: props.readOutput() })}`,
+				),
+			);
+		});
+		inspectOutput();
+	});
 }
 
 async function withBoundedTimeoutOrNull<TValue>(

@@ -218,32 +218,28 @@ test('a harness data read releases its client before the real page bootstraps', 
 			baseUrl: origin,
 			scenarioName: 'current-worktree',
 		});
-		const source = await launch.readProductData(
-			async () => {
-				const opened = await client.open();
-				await client.demandDescriptor('README.md');
-				// Negative control at the real ownership layer: before release,
-				// the page's different-tab initial bootstrap is refused.
-				const overlap = await fetch(`${origin}/__bridge-product/bootstrap`, {
-					method: 'POST',
-					headers: { 'Content-Type': 'application/json' },
-					body: JSON.stringify({
-						reason: 'initial',
-						tabId: 'harness-page-tab',
-						navigationIntent: {
-							commandId: 'open-file-view',
-							commandKind: 'activateContext',
-							surface: 'file',
-						},
-					}),
-				});
-				expect(overlap.status).toBe(409);
-				return opened;
-			},
-			async (): Promise<void> => {
-				if (client.state === 'open') await client.close();
-			},
-		);
+		const source = await launch.readProductData(async (ownClient) => {
+			ownClient(client);
+			const opened = await client.open();
+			await client.demandDescriptor('README.md');
+			// Negative control at the real ownership layer: before release,
+			// the page's different-tab initial bootstrap is refused.
+			const overlap = await fetch(`${origin}/__bridge-product/bootstrap`, {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({
+					reason: 'initial',
+					tabId: 'harness-page-tab',
+					navigationIntent: {
+						commandId: 'open-file-view',
+						commandKind: 'activateContext',
+						surface: 'file',
+					},
+				}),
+			});
+			expect(overlap.status).toBe(409);
+			return opened;
+		});
 		expect(source.installations.length).toBeGreaterThan(0);
 		expect(client.state).toBe('closed');
 		const bootstrap = handleLaunchPromise(

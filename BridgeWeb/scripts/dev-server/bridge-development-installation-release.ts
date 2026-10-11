@@ -6,6 +6,7 @@ export async function releaseBridgeDevelopmentInstallation(props: {
 	readonly headers: HeadersInit;
 	readonly paneSessionId: string;
 	readonly workerInstanceId: string;
+	readonly signal: AbortSignal;
 }): Promise<void> {
 	const response = await fetch(props.endpoint, {
 		body: JSON.stringify({
@@ -14,6 +15,7 @@ export async function releaseBridgeDevelopmentInstallation(props: {
 		}),
 		headers: props.headers,
 		method: 'POST',
+		signal: props.signal,
 	});
 	if (response.status !== 204 || (await response.text()).length !== 0)
 		throw new Error(`Development installation release failed with status ${response.status}.`);

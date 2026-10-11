@@ -225,11 +225,11 @@ export async function verifyWorktreeDevServerPerformanceOnly(
 	launch: BridgeWebTestLaunch,
 ): Promise<WorktreeDevServerPerformanceOnlyResult> {
 	const page = await makeVerificationPage();
-	const { surface, descriptors } = await launch.readProductData(async () => {
-		const surface = await fetchWorktreeSurface();
+	const { surface, descriptors } = await launch.readProductData(async (ownClient) => {
+		const surface = await fetchWorktreeSurface(ownClient);
 		const descriptors = await fetchPerformanceWorktreeFileDescriptors(surface);
 		return { surface, descriptors };
-	}, closeAllWorktreeFileSurfaces);
+	});
 	const startupLoadTiming = await collectWorktreeStartupLoadTimingProof({
 		page,
 	});
