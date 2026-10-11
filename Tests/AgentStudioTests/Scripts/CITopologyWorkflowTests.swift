@@ -15,7 +15,8 @@ struct CITopologyWorkflowTests {
         let swiftHeader = try topologyBlock(
             startingWith: "  swift-test-suite:\n", endingBefore: "    steps:", in: swiftJob)
         #expect(bridgeHeader.contains("github.event_name != 'push'"))
-        #expect(swiftHeader.contains("needs.changes.outputs.docs_only != 'true'"))
+        #expect(swiftHeader.contains("needs.changes.result != 'success'"))
+        #expect(swiftHeader.contains("needs.changes.outputs.scope != 'docs'"))
         #expect(swiftHeader.contains("\n    needs: changes"))
         #expect(!swiftJob.contains("needs.bridge-web"))
         for stepName in ["Compute Swift cache compatibility prefix", "Inventory Swift build inputs before prebuild"] {
@@ -193,7 +194,7 @@ struct CITopologyWorkflowTests {
         #expect(inputScript.contains("swift-build-v1-"))
         #expect(workflow.contains("steps.swift-cache-prefix.outputs.prefix"))
     }
-    @Test("heavy CI jobs depend only on classification while code quality stays independent")
+    @Test("scoped CI jobs keep fail-closed classification guards")
     func ciJobsDependOnlyOnClassification() throws {
         let workflow = try String(contentsOfFile: ".github/workflows/ci.yml", encoding: .utf8)
         #expect(!workflow.contains("marketing-site-validation"))
@@ -204,10 +205,16 @@ struct CITopologyWorkflowTests {
             "swift-test-suite",
         ] {
             let job = try topologyJob(named: jobName, in: workflow)
+            #expect(job.contains("\n    needs: changes"))
+            let header = job.components(separatedBy: "    steps:").first ?? ""
+            #expect(header.contains("!cancelled()"))
             if jobName == "code-quality" {
-                #expect(!job.contains("\n    needs:"))
+                #expect(header.contains("if: ${{ !cancelled() }}"))
+                #expect(job.contains("name: Check changed documentation links"))
+                #expect(job.contains("needs.changes.outputs.scope != 'docs'"))
             } else {
-                #expect(job.contains("\n    needs: changes"))
+                #expect(header.contains("needs.changes.result != 'success'"))
+                #expect(header.contains("needs.changes.outputs.scope != 'docs'"))
             }
         }
     }

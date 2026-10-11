@@ -111,10 +111,16 @@ package typealias BridgePaneReviewBuildAdmissionFactSink =
 
 @MainActor
 extension BridgePaneController {
+    func reviewBuildAdmissionFactScope(for attemptID: UUID) -> BridgePaneReviewBuildAdmissionScope? {
+        guard reviewBuildAdmissionFactSink != nil else { return nil }
+        return .attempt(attemptID)
+    }
+
     func recordReviewBuildAdmissionFact(
         _ fact: BridgePaneReviewBuildAdmissionFact,
-        scope: BridgePaneReviewBuildAdmissionScope
+        scope: BridgePaneReviewBuildAdmissionScope?
     ) {
+        guard let reviewBuildAdmissionFactSink, let scope else { return }
         reviewBuildAdmissionFactSink(scope, fact)
     }
 }

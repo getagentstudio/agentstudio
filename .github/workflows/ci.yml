@@ -24,6 +24,8 @@ permissions:
 jobs:
   code-quality:
     name: Code quality
+    needs: changes
+    if: ${{ !cancelled() }}
     runs-on: ubuntu-24.04
     container: swift@sha256:8de8ea332a61e961ead4ef41029c2552b18e1a70dd5942d25ecf7d8de2eec5b5
     defaults:
@@ -92,14 +94,17 @@ jobs:
         run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
 
       - name: Check changed documentation links
-        if: github.event_name == 'pull_request'
         env:
+          EVENT_NAME: ${{ github.event_name }}
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: |
           mkdir -p tmp/ci-docs
-          merge_base="$(git merge-base "$BASE_SHA" "$HEAD_SHA")"
-          git diff --name-only -z --no-renames "$merge_base" "$HEAD_SHA" -- > tmp/ci-docs/changed-paths
+          : > tmp/ci-docs/changed-paths
+          if [ "$EVENT_NAME" = "pull_request" ]; then
+            merge_base="$(git merge-base "$BASE_SHA" "$HEAD_SHA")"
+            git diff --name-only -z --no-renames "$merge_base" "$HEAD_SHA" -- > tmp/ci-docs/changed-paths
+          fi
           python3 scripts/check-changed-doc-links.py --changed-files tmp/ci-docs/changed-paths
 
       - name: Setup mise
@@ -112,15 +117,18 @@ jobs:
           cache: false
 
       - name: Install lint tools
+        if: ${{ !cancelled() && (needs.changes.result != 'success' || (needs.changes.outputs.scope != 'docs')) }}
         run: bash scripts/install-ci-lint-tools.sh
 
       - name: Verify lint tools on PATH
+        if: ${{ !cancelled() && (needs.changes.result != 'success' || (needs.changes.outputs.scope != 'docs')) }}
         run: |
           swift-format --version
           swiftlint version
 
       - name: Restore architecture lint build cache
         id: architecture-cache-restore
+        if: ${{ !cancelled() && (needs.changes.result != 'success' || (needs.changes.outputs.scope != 'docs')) }}
         uses: actions/cache/restore@v4
         with:
           path: .build-ci/architecture-lint
@@ -129,19 +137,22 @@ jobs:
             architecture-lint-linux-${{ runner.arch }}-swift-6.3.3-image-8de8ea332a61-
 
       - name: AgentStudio architecture lint tool tests
+        if: ${{ !cancelled() && (needs.changes.result != 'success' || (needs.changes.outputs.scope != 'docs')) }}
         run: mise run test:architecture
 
       - name: Save architecture lint build cache
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.architecture-cache-restore.outputs.cache-hit != 'true'
+        if: ${{ !cancelled() && (needs.changes.result != 'success' || (needs.changes.outputs.scope != 'docs')) && github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.architecture-cache-restore.outputs.cache-hit != 'true' }}
         uses: actions/cache/save@v4
         with:
           path: .build-ci/architecture-lint
           key: ${{ steps.architecture-cache-restore.outputs.cache-primary-key }}
 
       - name: Lint
+        if: ${{ !cancelled() && (needs.changes.result != 'success' || (needs.changes.outputs.scope != 'docs')) }}
         run: mise run lint:portable
 
       - name: Debt ledger ratchet
+        if: ${{ !cancelled() && (needs.changes.result != 'success' || (needs.changes.outputs.scope != 'docs')) }}
         env:
           BASE_REF: ${{ github.event.pull_request.base.ref || 'main' }}
         run: /bin/bash Tools/AgentStudioArchitectureLint/check-ledger-ratchet.sh "origin/${BASE_REF}"
@@ -150,7 +161,7 @@ jobs:
     name: Changed-file classification
     runs-on: ubuntu-24.04
     outputs:
-      docs_only: ${{ steps.classify.outputs.docs_only }}
+      scope: ${{ steps.classify.outputs.scope }}
     steps:
       - *first-attempt-gate
 
@@ -167,14 +178,16 @@ jobs:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: |
-          python3 scripts/ci-docs-changes.py classify \
+          set -euo pipefail
+          mkdir -p tmp/ci-docs
+          python3 scripts/ci-change-scope.py classify \
             --event "$EVENT_NAME" --base "$BASE_SHA" --head "$HEAD_SHA" \
             --receipt tmp/ci-docs/changes.json --github-output "$GITHUB_OUTPUT"
 
   bridge-web:
     name: BridgeWeb
     needs: changes
-    if: ${{ !cancelled() && github.event_name != 'push' && (github.event_name != 'pull_request' || needs.changes.outputs.docs_only != 'true') }}
+    if: ${{ !cancelled() && github.event_name != 'push' && (needs.changes.result != 'success' || (needs.changes.outputs.scope != 'docs')) }}
     runs-on: xcode-27
     env:
       SWIFT_BUILD_DIR: .build-ci
@@ -417,7 +430,7 @@ jobs:
   swift-test-suite:
     name: Swift test suite
     needs: changes
-    if: ${{ !cancelled() && (github.event_name != 'pull_request' || needs.changes.outputs.docs_only != 'true') }}
+    if: ${{ !cancelled() && (needs.changes.result != 'success' || (needs.changes.outputs.scope != 'docs')) }}
     runs-on: xcode-27
     permissions:
       contents: read
@@ -775,7 +788,7 @@ jobs:
 
   prune-swift-build-cache:
     name: Prune Swift build cache
-    if: always() && github.event_name == 'push' && github.ref == 'refs/heads/main' && (needs.swift-test-suite.outputs.swift_cache_disposition == 'saved' || needs.swift-test-suite.outputs.swift_cache_disposition == 'skipped-budget')
+    if: always() && github.event_name == 'push' && github.ref == 'refs/heads/main' && needs.swift-test-suite.result != 'skipped' && (needs.swift-test-suite.outputs.swift_cache_disposition == 'saved' || needs.swift-test-suite.outputs.swift_cache_disposition == 'skipped-budget')
     needs: swift-test-suite
     runs-on: ubuntu-24.04
     permissions:
