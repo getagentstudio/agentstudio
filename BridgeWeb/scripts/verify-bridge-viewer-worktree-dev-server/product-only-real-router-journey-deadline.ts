@@ -10,7 +10,7 @@ export interface OwnedProductJourneyDeadline {
 export function createOwnedProductJourneyDeadline(props: {
 	readonly browser: Pick<Browser, 'close'>;
 	readonly page: Pick<Page, 'close'>;
-	readonly onDeadline?: (reason: Error) => void;
+	readonly onDeadline?: (reason: Error) => boolean | undefined;
 }): OwnedProductJourneyDeadline {
 	let deadlineCleanup: Promise<void> | null = null;
 	const deadlineReason = 'BRIDGE_PRODUCT_JOURNEY_DEADLINE_EXCEEDED';
@@ -18,15 +18,17 @@ export function createOwnedProductJourneyDeadline(props: {
 	const waiters = new Map<(error: Error) => void, string>();
 	const timeout = setTimeout((): void => {
 		expired = true;
-		props.onDeadline?.(new Error(deadlineReason));
+		const hasObserverWaiters = props.onDeadline?.(new Error(deadlineReason)) ?? false;
+		const hasDeadlineWaiters = waiters.size > 0;
 		for (const [reject, label] of waiters)
 			reject(new Error(`${deadlineReason}: awaiting ${label}`));
 		waiters.clear();
-		deadlineCleanup = closeOwnedProductJourneyBrowser({
-			browser: props.browser,
-			page: props.page,
-			reason: deadlineReason,
-		});
+		if (!hasObserverWaiters && !hasDeadlineWaiters)
+			deadlineCleanup = closeOwnedProductJourneyBrowser({
+				browser: props.browser,
+				page: props.page,
+				reason: deadlineReason,
+			});
 	}, productJourneyOwnedDeadlineMilliseconds);
 	return {
 		waitFor: <TValue>(promise: Promise<TValue>, label: string): Promise<TValue> => {

@@ -19,7 +19,7 @@ type PageEventName = 'request' | 'requestfailed' | 'requestfinished' | 'response
 type PageEventHandler = (event: unknown) => void;
 
 describe('BridgeViewerRealRouterObserver', () => {
-	test('the journey deadline also ends a missed worker close during cleanup', async (): Promise<void> => {
+	test('the journey deadline rejects a missed worker close for the journey finally block', async (): Promise<void> => {
 		vi.useFakeTimers();
 		const pageClose = vi.fn(async (): Promise<void> => {});
 		const browserClose = vi.fn(async (): Promise<void> => {});
@@ -38,8 +38,8 @@ describe('BridgeViewerRealRouterObserver', () => {
 		try {
 			await vi.advanceTimersByTimeAsync(120_000);
 			expect(await joined).toContain('awaiting observed-worker-closure');
-			expect(browserClose).toHaveBeenCalledOnce();
-			expect(pageClose).toHaveBeenCalledOnce();
+			expect(browserClose).not.toHaveBeenCalled();
+			expect(pageClose).not.toHaveBeenCalled();
 		} finally {
 			closeWorker();
 			await joined;
@@ -57,18 +57,14 @@ describe('BridgeViewerRealRouterObserver', () => {
 				harness.page,
 				documentGenerationsAt((): number => 1),
 			);
-			let announceClosed!: () => void;
-			const closed = new Promise<'closed-with-wait-pending'>((resolve): void => {
-				announceClosed = (): void => resolve('closed-with-wait-pending');
-			});
 			const pageClose = vi.fn(async (): Promise<void> => {
-				announceClosed();
+				throw new Error('page close should wait for journey finally');
 			});
 			const browserClose = vi.fn(async (): Promise<void> => {});
 			const deadline = createOwnedProductJourneyDeadline({
 				page: { close: pageClose },
 				browser: { close: browserClose },
-				onDeadline: (reason: Error): void => observer.close(reason),
+				onDeadline: (reason: Error): boolean => observer.close(reason),
 			});
 			const request =
 				waiterName === 'legacy-metadata-completion'
@@ -97,7 +93,6 @@ describe('BridgeViewerRealRouterObserver', () => {
 			);
 			try {
 				await vi.advanceTimersByTimeAsync(120_000);
-				await closed;
 				await deadline.dispose();
 				expect(observedOutcome).toContain(waiterName);
 				expect(observedOutcome).toContain('BRIDGE_PRODUCT_JOURNEY_DEADLINE_EXCEEDED');
@@ -105,8 +100,8 @@ describe('BridgeViewerRealRouterObserver', () => {
 					documentGeneration: 1,
 					name: waiterName,
 				});
-				expect(pageClose).toHaveBeenCalledOnce();
-				expect(browserClose).toHaveBeenCalledOnce();
+				expect(pageClose).not.toHaveBeenCalled();
+				expect(browserClose).not.toHaveBeenCalled();
 			} finally {
 				// Release the old implementation too, so the deterministic red leaves no wait.
 				if (waiterName === 'legacy-metadata-completion')
@@ -122,6 +117,62 @@ describe('BridgeViewerRealRouterObserver', () => {
 			}
 		},
 	);
+
+	test('deadline closes immediately when no registered waiter is pending', async (): Promise<void> => {
+		vi.useFakeTimers();
+		const pageClose = vi.fn(async (): Promise<void> => {});
+		const browserClose = vi.fn(async (): Promise<void> => {});
+		const deadline = createOwnedProductJourneyDeadline({
+			page: { close: pageClose },
+			browser: { close: browserClose },
+		});
+		try {
+			await vi.advanceTimersByTimeAsync(120_000);
+			await deadline.dispose();
+			expect(pageClose).toHaveBeenCalledOnce();
+			expect(browserClose).toHaveBeenCalledOnce();
+		} finally {
+			await deadline.dispose();
+			vi.useRealTimers();
+		}
+	});
+
+	test('deadline leaves the page alive for pending observer capture', async (): Promise<void> => {
+		vi.useFakeTimers();
+		const events: string[] = [];
+		const pageClose = vi.fn(async (): Promise<void> => {
+			events.push('page-close');
+		});
+		const browserClose = vi.fn(async (): Promise<void> => {
+			events.push('browser-close');
+		});
+		const pending = new Promise<void>(() => {});
+		const deadline = createOwnedProductJourneyDeadline({
+			page: { close: pageClose },
+			browser: { close: browserClose },
+			onDeadline: (): boolean => {
+				events.push('failure-capture');
+				return true;
+			},
+		});
+		const rejected = deadline
+			.waitFor(pending, 'legacy-metadata-completion')
+			.catch((error: unknown) => {
+				events.push(`rejected:${String(error)}`);
+			});
+		try {
+			await vi.advanceTimersByTimeAsync(120_000);
+			await rejected;
+			await deadline.dispose();
+			expect(events[0]).toBe('failure-capture');
+			expect(events.some((event): boolean => event.startsWith('rejected:'))).toBe(true);
+			expect(pageClose).not.toHaveBeenCalled();
+			expect(browserClose).not.toHaveBeenCalled();
+		} finally {
+			await deadline.dispose();
+			vi.useRealTimers();
+		}
+	});
 
 	test('records the scrub-safe product call method in failure transport evidence', () => {
 		// Arrange

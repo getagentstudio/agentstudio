@@ -138,7 +138,7 @@ export async function runBridgeViewerProductOnlyJourney(props: {
 	const ownedJourneyDeadline = createOwnedProductJourneyDeadline({
 		browser,
 		page,
-		onDeadline: (reason): void => deadlineObserver?.close(reason),
+		onDeadline: (reason): boolean => deadlineObserver?.close(reason) ?? false,
 	});
 	let journeyCompleted = false;
 	const documentGenerations = await installBridgeViewerDocumentGenerations(page);
@@ -518,8 +518,8 @@ export class BridgeViewerRealRouterObserver {
 		page.on('response', (response): void => this.#observeResponse(response));
 	}
 
-	close(reason: Error): void {
-		if (this.#closedError !== null) return;
+	close(reason: Error): boolean {
+		if (this.#closedError !== null) return this.#terminatedWaiters.length > 0;
 		this.#terminatedWaiters = this.failureTransportSnapshot().unresolvedWaiters;
 		this.#closedError = reason;
 		this.#legacyCompletion.close(reason);
@@ -531,6 +531,7 @@ export class BridgeViewerRealRouterObserver {
 				),
 			);
 		}
+		return this.#terminatedWaiters.length > 0;
 	}
 
 	productRouteTranscript(): readonly BridgeViewerProductRouteTranscriptEntry[] {
