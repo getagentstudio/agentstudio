@@ -843,8 +843,9 @@ describe('Bridge Viewer product-only real-router regression contract', () => {
 
 	test('bounds Review hydration settlement and owns browser cleanup before journey timeout returns', async () => {
 		// Arrange
-		const [journeySource, reviewProofSource, settlementSource] = await Promise.all([
+		const [journeySource, deadlineSource, reviewProofSource, settlementSource] = await Promise.all([
 			readFile(new URL('./product-only-real-router-page.ts', import.meta.url), 'utf8'),
+			readFile(new URL('./product-only-real-router-journey-deadline.ts', import.meta.url), 'utf8'),
 			readFile(new URL('./product-only-real-router-review-proof.ts', import.meta.url), 'utf8'),
 			readFile(new URL('./product-only-real-router-settlement.ts', import.meta.url), 'utf8'),
 		]);
@@ -856,7 +857,9 @@ describe('Bridge Viewer product-only real-router regression contract', () => {
 		const frameSettlementIsBounded = reviewProofSource.includes(
 			'waitForFreshReviewFrameSettlement',
 		);
-		const journeyOwnsDeadlineCleanup = journeySource.includes('createOwnedProductJourneyDeadline');
+		const journeyOwnsDeadlineCleanup =
+			journeySource.includes('createOwnedProductJourneyDeadline') &&
+			deadlineSource.includes('BRIDGE_PRODUCT_JOURNEY_DEADLINE_EXCEEDED');
 		const initialHydrationSettlementIndex = reviewProofSource.indexOf(
 			'const initialHydrationWindow = await captureFreshReviewHydrationWindow',
 		);
@@ -906,7 +909,7 @@ describe('Bridge Viewer product-only real-router regression contract', () => {
 		expect(traversalHydrationSettlementIndex).toBeGreaterThan(traversalLoopIndex);
 		expect(traversalObservedHeaderSnapshotIndex).toBeGreaterThan(traversalHydrationSettlementIndex);
 		expect(traversalMountedOrderSnapshotIndex).toBeGreaterThan(traversalHydrationSettlementIndex);
-		expect(journeySource).toContain('BRIDGE_PRODUCT_JOURNEY_DEADLINE_EXCEEDED');
+		expect(deadlineSource).toContain('BRIDGE_PRODUCT_JOURNEY_DEADLINE_EXCEEDED');
 		expect(journeySource).not.toContain('requestAnimationFrame');
 		expect(reviewProofSource).not.toContain('requestAnimationFrame');
 		expect(settlementSource).toContain('page.waitForFunction');
@@ -925,7 +928,9 @@ describe('Bridge Viewer product-only real-router regression contract', () => {
 		const failureCaptureIndex = journeySource.indexOf(
 			'captureBridgeViewerProductOnlyJourneyFailure',
 		);
-		const pageCloseIndex = journeySource.indexOf('await page.close()');
+		const pageCloseIndex = journeySource.indexOf(
+			'Promise.allSettled([page.close(), browser.close()])',
+		);
 
 		// Assert
 		expect(failureCaptureIndex).toBeGreaterThan(0);

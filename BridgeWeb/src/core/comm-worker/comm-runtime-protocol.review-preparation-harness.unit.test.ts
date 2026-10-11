@@ -1,9 +1,11 @@
 import { afterEach, describe, expect, test, vi } from 'vitest';
 
+import { createBridgeProductDeferred } from './bridge-product-async-queue.js';
 import {
 	createReviewPreparationObservations as makeReviewPreparationObservations,
 	cleanupReviewPreparationFixtures,
 	driveReviewPreparationUntil,
+	requirePreparationContinuationBeforeDrainCompletion,
 } from './comm-runtime-protocol.review-preparation.test-support.js';
 
 afterEach((): void => {
@@ -12,6 +14,38 @@ afterEach((): void => {
 });
 
 describe('Review preparation harness guards', () => {
+	test('retires the continuation wait when the first drain fails', async (): Promise<void> => {
+		const observations = makeReviewPreparationObservations();
+		const failure = new Error('first drain failed');
+		await expect(
+			requirePreparationContinuationBeforeDrainCompletion({
+				firstDrainCompletion: Promise.reject(failure),
+				isContinuationScheduled: (fact): boolean =>
+					fact.kind === 'drainScheduled' && fact.index === 1,
+				observations,
+			}),
+		).rejects.toBe(failure);
+		expect(() => observations.facts.record({ kind: 'retryDeadlineRegistered' })).toThrow(
+			'first drain failed',
+		);
+		expect(() =>
+			observations.schedule(async () => ({ completedIds: [], yielded: false })),
+		).not.toThrow();
+	});
+
+	test('rejects when the actual drain completion precedes continuation scheduling', async (): Promise<void> => {
+		const observations = makeReviewPreparationObservations();
+		const firstDrainCompletion = (async (): Promise<void> => {})();
+		await expect(
+			requirePreparationContinuationBeforeDrainCompletion({
+				firstDrainCompletion,
+				isContinuationScheduled: (fact): boolean =>
+					fact.kind === 'drainScheduled' && fact.index === 1,
+				observations,
+			}),
+		).rejects.toThrow('completed before its continuation was scheduled');
+	});
+
 	test('drain failure retires the recording wrapper before later callbacks arrive', async (): Promise<void> => {
 		const observations = makeReviewPreparationObservations();
 		const failure = new Error('held drain failed');
@@ -76,6 +110,27 @@ describe('Review preparation harness guards', () => {
 			expect(outcome).toBe(kind === 'rejecting' ? failure : null);
 		},
 	);
+
+	test('joins a pending installation after source retirement', async (): Promise<void> => {
+		const installation = createBridgeProductDeferred<void>();
+		let sourceClosed = false;
+		const cleanup = cleanupReviewPreparationFixtures({
+			sources: [
+				{
+					close: (): void => {
+						sourceClosed = true;
+						installation.resolve();
+					},
+					pendingSourceInstallation: (): Promise<void> => installation.promise,
+				},
+			],
+			observations: [],
+			restore: (): void => {},
+		});
+		await Promise.resolve();
+		expect(sourceClosed).toBe(true);
+		await cleanup;
+	});
 
 	test('fails a retired preparation wait instead of returning at an attempt cap', async (): Promise<void> => {
 		vi.useFakeTimers();

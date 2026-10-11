@@ -19,13 +19,13 @@ import {
 	makeWorkerReviewContentMetadata,
 	openReviewContentFromDescriptorMap,
 } from './bridge-comm-worker-runtime-protocol.test-support.js';
-import { createBridgeProductDeferred } from './bridge-product-async-queue.js';
 import { createWorkerContentPreparationPump } from './bridge-worker-content-preparation-pump.js';
 import {
 	createReviewPreparationObservations as makeReviewPreparationObservations,
 	cleanupReviewPreparationFixtures,
 	type ReviewPreparationObservations,
 	driveReviewPreparationUntil,
+	requirePreparationContinuationBeforeDrainCompletion,
 	queueLatestReviewPublication,
 	unexpectedEOFReviewContentStream,
 } from './comm-runtime-protocol.review-preparation.test-support.js';
@@ -714,13 +714,8 @@ describe('Bridge comm worker runtime protocol Review preparation', () => {
 	});
 
 	test('schedules selected Review continuation before awaiting its completion', async () => {
-		const firstDrainCompletion =
-			createBridgeProductDeferred<Awaited<ReturnType<BridgeCommWorkerPreparationDrain>>>();
 		let firstDrainSettled = false;
 		let settledAtContinuationSchedule: boolean | undefined;
-		void firstDrainCompletion.promise.then((): void => {
-			firstDrainSettled = true;
-		});
 		let clockMs = 0;
 		let advanceClockPerRead = false;
 		let createSequence = createBridgeWorkerSequenceCounter(41);
@@ -789,20 +784,27 @@ describe('Bridge comm worker runtime protocol Review preparation', () => {
 		expect(postedMessages[0]?.transferList).toBeUndefined();
 		expect(postedMessages[1]?.transferList).toBeUndefined();
 		advanceClockPerRead = true;
-		const firstDrainTask = assertBridgeCommWorkerPreparationDrain(scheduledDrains[0])();
-		void firstDrainTask.then(
-			(result): void => firstDrainCompletion.resolve(result),
-			(error: unknown): void => firstDrainCompletion.reject(error),
+		const firstDrainCompletion = assertBridgeCommWorkerPreparationDrain(scheduledDrains[0])();
+		const firstDrainObservation = firstDrainCompletion.then(
+			(): void => {
+				firstDrainSettled = true;
+			},
+			(error: unknown): void => {
+				observations.close(error instanceof Error ? error : new Error(String(error)));
+			},
 		);
 		advanceClockPerRead = false;
-		await observations.facts.waitFor(
-			(fact): boolean => fact.kind === 'drainScheduled' && fact.index === 1,
-		);
+		await requirePreparationContinuationBeforeDrainCompletion({
+			firstDrainCompletion,
+			observations,
+			isContinuationScheduled: (fact): boolean =>
+				fact.kind === 'drainScheduled' && fact.index === 1,
+		});
 
 		const continuationDrain = assertBridgeCommWorkerPreparationDrain(scheduledDrains[1]);
 		const continuationDrainResult = await continuationDrain();
-		const firstDrainResult = await firstDrainCompletion.promise;
-		await firstDrainTask;
+		const firstDrainResult = await firstDrainCompletion;
+		await firstDrainObservation;
 		const publishedReviewJob = postedMessages.find(
 			({ message }) => message.kind === 'reviewPierreRenderJob' && message.job.itemId === 'item-1',
 		)?.message;

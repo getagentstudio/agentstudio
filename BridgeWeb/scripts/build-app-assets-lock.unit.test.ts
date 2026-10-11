@@ -9,7 +9,7 @@ import { withBridgeWebAppBuildLock } from './build-app-assets-lock.ts';
 const buildLockParentDirectoryPath = new URL('../../tmp/bridge-web-assets/', import.meta.url);
 const buildLockDirectoryPath = join(buildLockParentDirectoryPath.pathname, 'build-app-assets.lock');
 const buildLockOwnerFilePath = join(buildLockDirectoryPath, 'owner.json');
-const staleLockTimestamp = new Date(Date.now() - 121_000);
+const staleLockTimestamp = new Date(Date.now() - 120_001);
 
 describe('BridgeWeb app asset build lock', () => {
 	beforeEach(async () => {
@@ -36,6 +36,7 @@ describe('BridgeWeb app asset build lock', () => {
 	});
 
 	test('recovers a stale ownerless lock directory', async () => {
+		expect(Date.now() - staleLockTimestamp.getTime()).toBeGreaterThan(120_000);
 		await mkdir(buildLockDirectoryPath, { recursive: true });
 		await utimes(buildLockDirectoryPath, staleLockTimestamp, staleLockTimestamp);
 
@@ -96,18 +97,7 @@ async function expectBuildLockRecovery(
 		didEnterCriticalSection = true;
 		await runCriticalSection();
 	});
-	const outcomeClock = Date.now();
-	// Time is controlled input to the production failure branch, not a test verdict.
-	// A failed reap must throw the lock owner's named error before the equal runner bound.
-	const deadlineClock = vi
-		.spyOn(Date, 'now')
-		.mockReturnValueOnce(outcomeClock)
-		.mockReturnValue(outcomeClock + 120_001);
-	try {
-		await buildLockPromise;
-	} finally {
-		deadlineClock.mockRestore();
-	}
+	await buildLockPromise;
 	expect(didEnterCriticalSection).toBe(true);
 	await expect(readFile(buildLockOwnerFilePath)).rejects.toMatchObject({ code: 'ENOENT' });
 }

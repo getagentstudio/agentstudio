@@ -100,6 +100,33 @@ export async function driveReviewPreparationUntil(props: {
 	completed = true;
 }
 
+export async function requirePreparationContinuationBeforeDrainCompletion(props: {
+	readonly firstDrainCompletion: Promise<unknown>;
+	readonly observations: ReviewPreparationObservations;
+	readonly isContinuationScheduled: (fact: ReviewPreparationObservation) => boolean;
+}): Promise<void> {
+	let firstDrainFailure: Error | undefined;
+	const firstDrainOutcome = props.firstDrainCompletion.then(
+		(): { readonly kind: 'completed' } => ({ kind: 'completed' }),
+		(error: unknown): { readonly error: Error; readonly kind: 'failed' } => {
+			firstDrainFailure = error instanceof Error ? error : new Error(String(error));
+			props.observations.close(firstDrainFailure);
+			return { error: firstDrainFailure, kind: 'failed' };
+		},
+	);
+	const continuationOutcome = props.observations.facts.waitFor(props.isContinuationScheduled).then(
+		(): { readonly kind: 'scheduled' } => ({ kind: 'scheduled' }),
+		(error: unknown): { readonly error: Error; readonly kind: 'failed' } => ({
+			error: firstDrainFailure ?? (error instanceof Error ? error : new Error(String(error))),
+			kind: 'failed',
+		}),
+	);
+	const outcome = await Promise.race([firstDrainOutcome, continuationOutcome]);
+	if (outcome.kind === 'failed') throw outcome.error;
+	if (outcome.kind === 'completed')
+		throw new Error('First preparation drain completed before its continuation was scheduled.');
+}
+
 export async function cleanupReviewPreparationFixtures(props: {
 	readonly sources: readonly {
 		readonly close: () => void;

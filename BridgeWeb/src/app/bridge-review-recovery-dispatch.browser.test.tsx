@@ -180,6 +180,7 @@ async function mountInstalledReview(
 	const reviewClient = {
 		...harness.reviewClient,
 		send: (command: BridgeWorkerRpcCommandInput): string => {
+			activeRetryCommands?.push(command);
 			if (
 				isHoldingSelection &&
 				(command.command === 'select' || command.command === 'markFileViewed')
@@ -187,7 +188,6 @@ async function mountInstalledReview(
 				heldSelectionCommands.push(command);
 				return `held-selection-${heldSelectionCommands.length}`;
 			}
-			activeRetryCommands?.push(command);
 			return sendCommand(command);
 		},
 	};
