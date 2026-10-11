@@ -80,15 +80,13 @@ describe('Bridge comm worker Review source reset', () => {
 			});
 
 			// Act
-			let resolvedBeforeOwner = false;
-			const continuation = drainFacts
-				.waitFor((drain): boolean => drain === 1)
-				.then((): void => {
-					resolvedBeforeOwner = drainCount === 0;
-				});
+			const continuation = drainFacts.waitFor((drain): boolean => drain === 1);
 			try {
 				if (holdTask) {
 					await vi.runOnlyPendingTimersAsync();
+					expect(drainCount, 'Pending timers must not advance the held reset continuation.').toBe(
+						0,
+					);
 					const callback = heldCallback as (() => void) | null;
 					if (callback === null) throw new Error('Expected a held reset continuation.');
 					callback();
@@ -100,7 +98,6 @@ describe('Bridge comm worker Review source reset', () => {
 				// Assert
 				expect(store.getState().rowById.has(addedRow.id)).toBe(true);
 				expect(store.getState().contentMetadataByItemId.has(addedRow.id)).toBe(true);
-				expect(resolvedBeforeOwner).toBe(false);
 			} finally {
 				timerSpy.mockRestore();
 				vi.useRealTimers();

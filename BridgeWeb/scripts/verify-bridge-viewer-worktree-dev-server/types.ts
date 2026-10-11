@@ -704,7 +704,10 @@ export interface WorktreeFileOpenLoadTelemetryProof {
 export interface ReviewRouteProbe {
 	readonly contentHitCount: () => number;
 	readonly contentHitUrls: () => readonly string[];
-	readonly waitForContentHits: (matches: (hitUrls: readonly string[]) => boolean) => Promise<void>;
+	readonly waitForContentHits: (
+		matches: (hitUrls: readonly string[]) => boolean,
+		label?: string,
+	) => Promise<void>;
 	readonly dispose: () => Promise<void>;
 	readonly metadataHitCount: () => number;
 	readonly metadataHitUrls: () => readonly string[];

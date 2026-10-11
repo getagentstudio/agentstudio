@@ -203,6 +203,7 @@ export async function flushBridgeWorkerRuntimeContinuations(): Promise<void> {
 export interface BridgeCommWorkerReviewProductTestSource {
 	readonly close: () => void;
 	readonly waitForSourceInstallation: () => Promise<void>;
+	readonly pendingSourceInstallation: () => Promise<void> | null;
 	readonly productTransport: BridgeProductTransportSession;
 	readonly viewScopes: ReviewViewScopeRequest[];
 	readonly publishReplacementSource: (
@@ -323,6 +324,7 @@ export function createBridgeCommWorkerReviewProductTestSource(
 			lifecycleEvents.close(true);
 		},
 		productTransport,
+		pendingSourceInstallation: (): Promise<void> | null => latestInstallation,
 		waitForSourceInstallation: (): Promise<void> => {
 			if (latestInstallation === null)
 				throw new Error('No Review source installation was published.');

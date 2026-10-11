@@ -12,6 +12,7 @@ import {
 	type ReviewContentRouteDeltaProof,
 	type ReviewMetadataBeforeContentProof,
 } from '../verify-bridge-viewer-worktree-review-proof.ts';
+import { currentVerifierJourneySignal } from './browser-session.ts';
 import {
 	scenarioNameFromDevServerUrl,
 	worktreeDevServerOrigin,
@@ -159,19 +160,29 @@ export async function installFileContentRouteGate(props: {
 
 export async function installReviewRouteProbe(
 	page: ReviewRouteProbePage,
-	options: { readonly contentGate?: Deferred<void> } = {},
+	options: { readonly contentGate?: Deferred<void>; readonly signal?: AbortSignal } = {},
 ): Promise<ReviewRouteProbe> {
 	const metadataHitUrls: string[] = [];
 	const contentHitUrls: string[] = [];
 	const contentHitFacts = new BridgeProductTestFactRecorder<string>();
 	let isClosed = false;
+	const signal = options.signal ?? currentVerifierJourneySignal();
+	let closeReason = new Error('Review content route probe closed.');
+	const abortObservation = (): void => {
+		closeReason =
+			signal?.reason instanceof Error ? signal.reason : new Error(String(signal?.reason));
+		closeObservation();
+	};
 	const closeObservation = (): void => {
 		if (isClosed) return;
 		isClosed = true;
-		contentHitFacts.close(new Error('Review content route probe closed.'));
+		contentHitFacts.close(closeReason);
+		signal?.removeEventListener('abort', abortObservation);
 		page.off('close', closeObservation);
 	};
 	page.on('close', closeObservation);
+	signal?.addEventListener('abort', abortObservation, { once: true });
+	if (signal?.aborted) abortObservation();
 	const metadataRoutePattern = '**/__bridge-worktree/review-metadata**';
 	const contentRoutePattern = '**/__bridge-worktree/review-content/**';
 	const assertReviewRouteOrigin = async (route: ReviewProbeRoute): Promise<boolean> => {
@@ -209,10 +220,17 @@ export async function installReviewRouteProbe(
 	return {
 		contentHitCount: (): number => contentHitUrls.length,
 		contentHitUrls: (): readonly string[] => contentHitUrls,
-		waitForContentHits: async (matches): Promise<void> => {
-			if (isClosed) throw new Error('Review content route probe closed.');
-			if (matches(contentHitUrls)) return;
-			await contentHitFacts.waitFor((): boolean => matches(contentHitUrls));
+		waitForContentHits: async (matches, label = 'Review content route'): Promise<void> => {
+			try {
+				if (isClosed) throw closeReason;
+				if (matches(contentHitUrls)) return;
+				await contentHitFacts.waitFor((): boolean => matches(contentHitUrls));
+			} catch (error: unknown) {
+				throw new Error(
+					`${String(error)}; awaiting ${label}; contentHitUrls=${JSON.stringify(contentHitUrls)}`,
+					{ cause: error },
+				);
+			}
 		},
 		dispose: async (): Promise<void> => {
 			closeObservation();
@@ -426,8 +444,9 @@ export async function waitForReviewContentRouteHitContaining(props: {
 	readonly needle: string;
 	readonly routeProbe: ReviewRouteProbe;
 }): Promise<void> {
-	await props.routeProbe.waitForContentHits((hitUrls): boolean =>
-		hitUrls.some((url): boolean => url.includes(props.needle)),
+	await props.routeProbe.waitForContentHits(
+		(hitUrls): boolean => hitUrls.some((url): boolean => url.includes(props.needle)),
+		`needle=${props.needle}`,
 	);
 }
 
@@ -437,6 +456,7 @@ export async function waitForReviewContentRouteHitCountAbove(props: {
 }): Promise<void> {
 	await props.routeProbe.waitForContentHits(
 		(hitUrls): boolean => hitUrls.length >= props.minHitCount,
+		`minimum count=${props.minHitCount}`,
 	);
 }
 
@@ -455,8 +475,9 @@ export async function waitForReviewContentRouteHitAfterIndex(props: {
 				? {}
 				: { expectedContentDescriptorIds: props.expectedContentDescriptorIds }),
 		});
-	await props.routeProbe.waitForContentHits((hitUrls): boolean =>
-		reviewContentRouteDeltaSatisfied(readProof(hitUrls)),
+	await props.routeProbe.waitForContentHits(
+		(hitUrls): boolean => reviewContentRouteDeltaSatisfied(readProof(hitUrls)),
+		`item=${props.expectedItemId}; descriptors=${JSON.stringify(props.expectedContentDescriptorIds ?? [])}; after=${props.beforeHitCount}`,
 	);
 	return readProof(props.routeProbe.contentHitUrls());
 }

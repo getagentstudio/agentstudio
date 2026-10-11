@@ -1,5 +1,11 @@
+import { onTestFinished } from 'vitest';
+
+import { encodeBridgeWorkerRenderDispositionCommand } from './bridge-comm-worker-protocol.js';
 import type { BridgeCommWorkerPreparationDrain } from './bridge-comm-worker-runtime-protocol.js';
+import type { createRecordingBridgeCommWorkerPort } from './bridge-comm-worker-runtime-protocol.test-support.js';
+import type { BridgeProductContentStream } from './bridge-product-transport-contract.js';
 import type { BridgeWorkerServerToMainMessage } from './bridge-worker-contracts.js';
+import { bridgeWorkerRenderDispositionReceiptSchema } from './bridge-worker-render-fulfillment.js';
 import { BridgeProductTestFactRecorder } from './test-fixtures/bridge-product-test-fact-recorder.js';
 
 type ReviewPreparationObservation =
@@ -19,7 +25,7 @@ export interface ReviewPreparationObservations {
 	readonly beforePostMessage: (message: BridgeWorkerServerToMainMessage) => void;
 	readonly contentOpened: (descriptorId: string) => void;
 	readonly retryDeadlineRegistered: () => void;
-	readonly close: () => void;
+	readonly close: (reason?: Error) => void;
 }
 
 export function createReviewPreparationObservations(): ReviewPreparationObservations {
@@ -44,19 +50,27 @@ export function createReviewPreparationObservations(): ReviewPreparationObservat
 		retryDeadlineRegistered: (): void => {
 			if (!isClosed) facts.record({ kind: 'retryDeadlineRegistered' });
 		},
-		close: (): void => {
+		close: (reason = new Error('Review preparation observation closed.')): void => {
 			isClosed = true;
-			facts.close(new Error('Review preparation observation closed.'));
+			facts.close(reason);
 		},
 	};
 }
 
 export async function driveReviewPreparationUntil(props: {
 	readonly hasExpectedEvent: () => boolean;
+	readonly label?: string;
 	readonly observations: ReviewPreparationObservations;
 	readonly startIndex: number;
 }): Promise<void> {
 	let observationPosition = 0;
+	const label = props.label ?? `Review preparation: ${props.hasExpectedEvent.toString()}`;
+	let lastObserved = 'no owner facts';
+	let completed = false;
+	onTestFinished((context): void => {
+		if (!completed && (context.signal.aborted || context.task.result?.state === 'fail'))
+			console.info(`Awaiting ${label}; last observed ${lastObserved}`);
+	});
 	const drainTasks: ReturnType<BridgeCommWorkerPreparationDrain>[] = [];
 	try {
 		while (!props.hasExpectedEvent()) {
@@ -66,15 +80,100 @@ export async function driveReviewPreparationUntil(props: {
 				(): boolean => true,
 				++observationPosition,
 			);
+			lastObserved =
+				fact.kind === 'drainScheduled'
+					? `drainScheduled:${fact.index}`
+					: fact.kind === 'messagePosted'
+						? `messagePosted:${fact.message.kind}`
+						: fact.kind;
 			if (fact.kind !== 'drainScheduled' || fact.index < props.startIndex) continue;
 			const task = fact.drain();
 			// A drain can depend on a later scheduled drain: retain it, then keep driving events.
 			void task.catch((error: unknown): void => {
-				props.observations.facts.close(error instanceof Error ? error : new Error(String(error)));
+				props.observations.close(error instanceof Error ? error : new Error(String(error)));
 			});
 			drainTasks.push(task);
 		}
 	} finally {
 		await Promise.all(drainTasks);
 	}
+	completed = true;
 }
+
+export async function cleanupReviewPreparationFixtures(props: {
+	readonly sources: readonly {
+		readonly close: () => void;
+		readonly pendingSourceInstallation: () => Promise<void> | null;
+	}[];
+	readonly observations: readonly { readonly close: () => void }[];
+	readonly restore: () => void;
+}): Promise<void> {
+	try {
+		const results = await Promise.allSettled(
+			props.sources.map(async (source): Promise<void> => {
+				source.close();
+				const installation = source.pendingSourceInstallation();
+				if (installation !== null) await installation;
+			}),
+		);
+		const errors = results.flatMap((result): unknown[] =>
+			result.status === 'rejected' ? [result.reason] : [],
+		);
+		if (errors.length === 1) throw errors[0];
+		if (errors.length > 1)
+			throw new AggregateError(errors, 'Review preparation installation cleanup failed.');
+	} finally {
+		try {
+			for (const observation of props.observations) observation.close();
+		} finally {
+			props.restore();
+		}
+	}
+}
+
+export function queueLatestReviewPublication(
+	dispatch: ReturnType<typeof createRecordingBridgeCommWorkerPort>['dispatch'],
+	postedMessages: ReturnType<typeof createRecordingBridgeCommWorkerPort>['postedMessages'],
+	requestLabel: string,
+): void {
+	const publication = postedMessages
+		.flatMap((postedMessage) =>
+			postedMessage.message.kind === 'reviewPierreRenderJob' ? [postedMessage.message] : [],
+		)
+		.at(-1);
+	if (publication === undefined) throw new Error('Expected a Review publication to queue.');
+	dispatch.message(
+		encodeBridgeWorkerRenderDispositionCommand({
+			epoch: publication.workerDerivationEpoch,
+			receipts: [
+				bridgeWorkerRenderDispositionReceiptSchema.parse({
+					...publication.renderReceiptIdentity,
+					disposition: 'queued',
+					kind: 'render.disposition',
+					receivedAtMilliseconds: 0,
+				}),
+			],
+			requestId: `request-queue-${requestLabel}`,
+		}),
+	);
+}
+
+export function unexpectedEOFReviewContentStream(
+	descriptorId: string,
+): BridgeProductContentStream<'review.content'> {
+	return {
+		contentKind: 'review.content',
+		contentRequestId: `unexpected-eof-${descriptorId}`,
+		frames: emptyReviewContentFrames(),
+		terminal: Promise.resolve({
+			code: 'internal',
+			contentKind: 'review.content',
+			descriptorId,
+			kind: 'error',
+			retryable: true,
+			safeMessage: 'Unexpected EOF while reading Review content.',
+		}),
+	};
+}
+
+async function* emptyReviewContentFrames(): AsyncIterable<never> {}

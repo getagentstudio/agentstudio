@@ -3,9 +3,10 @@ import type {
 	Request as PlaywrightRequest,
 	Response as PlaywrightResponse,
 } from 'playwright';
-import { describe, expect, test } from 'vitest';
+import { describe, expect, test, vi } from 'vitest';
 
 import type { BridgeViewerDocumentGenerations } from './product-only-real-router-document-generations.ts';
+import { createOwnedProductJourneyDeadline } from './product-only-real-router-journey-deadline.ts';
 import {
 	BridgeViewerRealRouterObserver,
 	freshReviewInitialWindowRequiresTraversal,
@@ -18,6 +19,110 @@ type PageEventName = 'request' | 'requestfailed' | 'requestfinished' | 'response
 type PageEventHandler = (event: unknown) => void;
 
 describe('BridgeViewerRealRouterObserver', () => {
+	test('the journey deadline also ends a missed worker close during cleanup', async (): Promise<void> => {
+		vi.useFakeTimers();
+		const pageClose = vi.fn(async (): Promise<void> => {});
+		const browserClose = vi.fn(async (): Promise<void> => {});
+		const deadline = createOwnedProductJourneyDeadline({
+			page: { close: pageClose },
+			browser: { close: browserClose },
+		});
+		let closeWorker!: () => void;
+		const workerClosed = new Promise<void>((resolve): void => {
+			closeWorker = resolve;
+		});
+		const joined = deadline.waitFor(workerClosed, 'observed-worker-closure').then(
+			(): string => 'closed',
+			(error: unknown): string => String(error),
+		);
+		try {
+			await vi.advanceTimersByTimeAsync(120_000);
+			expect(await joined).toContain('awaiting observed-worker-closure');
+			expect(browserClose).toHaveBeenCalledOnce();
+			expect(pageClose).toHaveBeenCalledOnce();
+		} finally {
+			closeWorker();
+			await joined;
+			await deadline.dispose();
+			vi.useRealTimers();
+		}
+	});
+
+	test.each(['legacy-metadata-completion', 'product-response-quiescence'] as const)(
+		'owner deadline rejects %s and reaches browser cleanup',
+		async (waiterName): Promise<void> => {
+			vi.useFakeTimers();
+			const harness = makeObserverHarness();
+			const observer = new BridgeViewerRealRouterObserver(
+				harness.page,
+				documentGenerationsAt((): number => 1),
+			);
+			let announceClosed!: () => void;
+			const closed = new Promise<'closed-with-wait-pending'>((resolve): void => {
+				announceClosed = (): void => resolve('closed-with-wait-pending');
+			});
+			const pageClose = vi.fn(async (): Promise<void> => {
+				announceClosed();
+			});
+			const browserClose = vi.fn(async (): Promise<void> => {});
+			const deadline = createOwnedProductJourneyDeadline({
+				page: { close: pageClose },
+				browser: { close: browserClose },
+				onDeadline: (reason: Error): void => observer.close(reason),
+			});
+			const request =
+				waiterName === 'legacy-metadata-completion'
+					? makeLegacyMetadataRequest()
+					: ({
+							url: (): string => 'http://127.0.0.1:5173/__bridge-product/stream',
+							method: (): string => 'POST',
+							postData: (): null => null,
+						} as unknown as PlaywrightRequest);
+			harness.emit('request', request);
+			if (waiterName === 'legacy-metadata-completion') {
+				harness.emit('response', makeLegacyMetadataResponse(request, 'next'));
+				await observer.flushResponseParsers();
+			}
+			const wait =
+				waiterName === 'legacy-metadata-completion'
+					? observer.waitForObservedLegacyMetadataCompletion()
+					: observer.waitForAllProductResponses();
+			let observedOutcome: string | undefined;
+			const result = wait.then(
+				(): string => 'unexpected success',
+				(error: unknown): string => {
+					observedOutcome = String(error);
+					return observedOutcome;
+				},
+			);
+			try {
+				await vi.advanceTimersByTimeAsync(120_000);
+				await closed;
+				await deadline.dispose();
+				expect(observedOutcome).toContain(waiterName);
+				expect(observedOutcome).toContain('BRIDGE_PRODUCT_JOURNEY_DEADLINE_EXCEEDED');
+				expect(observer.failureTransportSnapshot().unresolvedWaiters).toContainEqual({
+					documentGeneration: 1,
+					name: waiterName,
+				});
+				expect(pageClose).toHaveBeenCalledOnce();
+				expect(browserClose).toHaveBeenCalledOnce();
+			} finally {
+				// Release the old implementation too, so the deterministic red leaves no wait.
+				if (waiterName === 'legacy-metadata-completion')
+					harness.emit('response', makeLegacyMetadataResponse(request, null));
+				else {
+					harness.emit('response', makeSuccessfulResponse(request));
+					await flushMicrotasks();
+					if (harness.pendingAnimationFrameCount() > 0) harness.resolveNextAnimationFrame();
+				}
+				await result;
+				await deadline.dispose();
+				vi.useRealTimers();
+			}
+		},
+	);
+
 	test('records the scrub-safe product call method in failure transport evidence', () => {
 		// Arrange
 		const harness = makeObserverHarness();

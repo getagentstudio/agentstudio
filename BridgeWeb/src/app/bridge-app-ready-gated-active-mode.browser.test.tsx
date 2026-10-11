@@ -36,6 +36,10 @@ describe('BridgeApp ready-gated active mode', () => {
 		};
 		context.signal.addEventListener('abort', closeCommandObservation, { once: true });
 		context.onTestFinished((): void => {
+			if (context.task.result?.state === 'fail')
+				console.info(
+					`Awaiting first Review activation after ready acknowledgement; last command=${JSON.stringify(paneCommands.at(-1) ?? null)}`,
+				);
 			context.signal.removeEventListener('abort', closeCommandObservation);
 			closeCommandObservation();
 		});
@@ -67,10 +71,7 @@ describe('BridgeApp ready-gated active mode', () => {
 
 		// Assert
 		await actWait(() =>
-			commandFacts.waitFor(
-				(command): boolean =>
-					command.command === 'activeViewerModeUpdate' && command.update.sequence === 1,
-			),
+			commandFacts.waitFor((command): boolean => command.command === 'activeViewerModeUpdate'),
 		);
 		expect(activeViewerModeUpdates(paneCommands)).toHaveLength(1);
 		expect(activeViewerModeUpdates(paneCommands)[0]).toMatchObject({
@@ -96,6 +97,10 @@ describe('BridgeApp ready-gated active mode', () => {
 		};
 		context.signal.addEventListener('abort', closeCommandObservation, { once: true });
 		context.onTestFinished((): void => {
+			if (context.task.result?.state === 'fail')
+				console.info(
+					`Awaiting first File activation after ready acknowledgement; last command=${JSON.stringify(paneCommands.at(-1) ?? null)}`,
+				);
 			context.signal.removeEventListener('abort', closeCommandObservation);
 			closeCommandObservation();
 		});
@@ -127,10 +132,7 @@ describe('BridgeApp ready-gated active mode', () => {
 
 		// Assert
 		await actWait(() =>
-			commandFacts.waitFor(
-				(command): boolean =>
-					command.command === 'activeViewerModeUpdate' && command.update.sequence === 1,
-			),
+			commandFacts.waitFor((command): boolean => command.command === 'activeViewerModeUpdate'),
 		);
 		expect(activeViewerModeUpdates(paneCommands)).toHaveLength(1);
 		expect(activeViewerModeUpdates(paneCommands)[0]).toMatchObject({

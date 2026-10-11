@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, test, vi } from 'vitest';
 
 import { createBridgeProductDeferred } from '../../src/core/comm-worker/bridge-product-async-queue.js';
+import { endToEndTestTimeoutMilliseconds } from '../../tests/vitest-hang-bounds.ts';
 import { worktreeDevServerOrigin } from './config.js';
 import { assertSelectedContentRouteProof } from './content-state.js';
 import {
@@ -15,6 +16,7 @@ import {
 	type ReviewRouteProbePage,
 } from './route-probes.ts';
 import type { WorktreeFileContentRouteProbe } from './types.js';
+import { createOwnedVerifierJourneyDeadline } from './verifier-journey-deadline.ts';
 
 const routeProbesSourcePath = fileURLToPath(new URL('./route-probes.ts', import.meta.url));
 
@@ -92,6 +94,60 @@ describe('Bridge viewer product File content route probe', () => {
 });
 
 describe('Review route probe owner completion', () => {
+	test('the standalone runner deadline closes a withheld probe and its owned page', async (): Promise<void> => {
+		vi.useFakeTimers();
+		const page = recordingReviewProbePage();
+		const closePage = vi.fn(async (): Promise<void> => {
+			for (const [event, listener] of page.on.mock.calls) if (event === 'close') listener();
+		});
+		const deadline = createOwnedVerifierJourneyDeadline({ closePages: closePage });
+		const probe = await installReviewRouteProbe(page, { signal: deadline.signal });
+		const outcome = waitForReviewContentRouteHitAfterIndex({
+			beforeHitCount: 0,
+			expectedItemId: 'withheld-item',
+			routeProbe: probe,
+		}).then(
+			(): string => 'unexpected completion',
+			(error: unknown): string => String(error),
+		);
+		try {
+			await vi.advanceTimersByTimeAsync(endToEndTestTimeoutMilliseconds);
+			expect(await outcome).toContain('BRIDGE_VERIFIER_JOURNEY_DEADLINE_EXCEEDED');
+			expect(await outcome).toContain('withheld-item');
+			expect(await outcome).toContain('contentHitUrls=[]');
+			expect(closePage).toHaveBeenCalledOnce();
+		} finally {
+			await probe.dispose();
+			await deadline.dispose();
+			vi.useRealTimers();
+		}
+		expect(page.unroute).toHaveBeenCalledTimes(2);
+	});
+
+	test('runner cancellation names the withheld request and observed URL history before cleanup', async (): Promise<void> => {
+		const page = recordingReviewProbePage();
+		const controller = new AbortController();
+		const probe = await installReviewRouteProbe(page, { signal: controller.signal });
+		const observed = waitForReviewContentRouteHitContaining({
+			needle: 'withheld-target',
+			routeProbe: probe,
+		}).then(
+			(): string => 'unexpected completion',
+			(error: unknown): string => String(error),
+		);
+		controller.abort(new Error('BRIDGE_VERIFIER_JOURNEY_DEADLINE_EXCEEDED'));
+		// Old implementation ignores the runner signal; release its pending wait too.
+		for (const [event, listener] of page.on.mock.calls) if (event === 'close') listener();
+		try {
+			expect(await observed).toContain('BRIDGE_VERIFIER_JOURNEY_DEADLINE_EXCEEDED');
+			expect(await observed).toContain('withheld-target');
+			expect(await observed).toContain('contentHitUrls=[]');
+		} finally {
+			await probe.dispose();
+		}
+		expect(page.unroute).toHaveBeenCalledTimes(2);
+	});
+
 	test.each(['containing', 'count', 'descriptorDelta'] as const)(
 		'closes a pending %s observation when its probe is disposed',
 		async (waitKind): Promise<void> => {

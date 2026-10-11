@@ -136,6 +136,9 @@ export function observeContextFocusIn(matchesTarget: (target: EventTarget | null
 	readonly inspect: () => void;
 } {
 	const arrival = createBridgeProductDeferred<void>();
+	// Teardown may reject before the caller starts awaiting; preserve the promise
+	// rejection for its eventual await without creating an unhandled secondary error.
+	void arrival.promise.catch((): void => {});
 	const ownerSignal = currentTestSignal;
 	let isClosed = false;
 	let hasArrived = false;

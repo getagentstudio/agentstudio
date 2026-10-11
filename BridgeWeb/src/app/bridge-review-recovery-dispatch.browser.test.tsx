@@ -15,7 +15,6 @@ import { createBridgeTelemetryRecorder } from '../foundation/telemetry/bridge-te
 import { parseBridgeCodeViewDiffForBrowserTest } from '../review-viewer/code-view/bridge-code-view-browser-test-diff.js';
 import {
 	makeReviewSurfaceHarness,
-	requireHTMLElement,
 	reviewDisplayEventWithContribution,
 	settleRenderedReviewFrame,
 	type ReviewSurfaceHarness,
@@ -40,7 +39,10 @@ interface InstalledReviewFixture {
 	readonly rendered: Awaited<ReturnType<typeof render>>;
 	readonly retainedItem: BridgeMainCodeViewItem;
 	readonly releaseSelectionCommands: () => void;
-	readonly recordRetryDispatch: (dispatch: () => void) => readonly BridgeWorkerRpcCommandInput[];
+	readonly recordRetryDispatch: (
+		dispatch: () => Promise<void>,
+	) => Promise<readonly BridgeWorkerRpcCommandInput[]>;
+	readonly heldSelectionCommandCount: () => number;
 }
 
 test.each(['ready', 'metadataFailure', 'installationFailure'] as const)(
@@ -76,18 +78,21 @@ test.each(['ready', 'metadataFailure', 'installationFailure'] as const)(
 				failure === 'metadataFailure' ? 'failedRetryable' : 'ready',
 			);
 			await expect.element(fixture.rendered.getByRole('alert')).toBeVisible();
-			let retryCommands: readonly BridgeWorkerRpcCommandInput[] = [];
-			await act(async (): Promise<void> => {
-				// Deliver actual earlier selection intents at the adverse hosted ordering.
-				fixture.releaseSelectionCommands();
-				// Retry's controller sends synchronously. Native click return closes this
-				// exact dispatch interval; the surrounding act then flushes its UI effects.
-				retryCommands = fixture.recordRetryDispatch((): void => {
-					requireHTMLElement(
-						fixture.rendered.getByRole('button', { name: 'Retry', exact: true }).element(),
-					).click();
-				});
+			let retryAct = Promise.resolve();
+			const retryCommands = await fixture.recordRetryDispatch((): Promise<void> => {
+				retryAct = (async (): Promise<void> => {
+					await act(async (): Promise<void> => {
+						await fixture.rendered.getByRole('button', { name: 'Retry', exact: true }).click();
+					});
+				})();
+				return retryAct;
 			});
+			await retryAct;
+			expect(
+				fixture.heldSelectionCommandCount(),
+				'The adverse selection delivery must be held.',
+			).toBeGreaterThan(0);
+			fixture.releaseSelectionCommands();
 			expect(retryCommands).toEqual([
 				...(failure === 'ready'
 					? []
@@ -109,6 +114,7 @@ test.each(['ready', 'metadataFailure', 'installationFailure'] as const)(
 			expectRetainedRegions('updating');
 			await expect.element(fixture.rendered.getByText('Updating…', { exact: true })).toBeVisible();
 		} finally {
+			fixture.releaseSelectionCommands();
 			fixture.owner.retire(installedView.subscriptionId);
 			await act(async (): Promise<void> => {
 				await fixture.rendered.unmount();
@@ -174,7 +180,6 @@ async function mountInstalledReview(
 	const reviewClient = {
 		...harness.reviewClient,
 		send: (command: BridgeWorkerRpcCommandInput): string => {
-			activeRetryCommands?.push(command);
 			if (
 				isHoldingSelection &&
 				(command.command === 'select' || command.command === 'markFileViewed')
@@ -182,6 +187,7 @@ async function mountInstalledReview(
 				heldSelectionCommands.push(command);
 				return `held-selection-${heldSelectionCommands.length}`;
 			}
+			activeRetryCommands?.push(command);
 			return sendCommand(command);
 		},
 	};
@@ -189,12 +195,14 @@ async function mountInstalledReview(
 		isHoldingSelection = false;
 		for (const command of heldSelectionCommands.splice(0)) sendCommand(command);
 	};
-	const recordRetryDispatch = (dispatch: () => void): readonly BridgeWorkerRpcCommandInput[] => {
+	const recordRetryDispatch = async (
+		dispatch: () => Promise<void>,
+	): Promise<readonly BridgeWorkerRpcCommandInput[]> => {
 		if (activeRetryCommands !== null) throw new Error('Retry dispatch observation already open.');
 		const commands: BridgeWorkerRpcCommandInput[] = [];
 		activeRetryCommands = commands;
 		try {
-			dispatch();
+			await dispatch();
 			return [...commands];
 		} finally {
 			activeRetryCommands = null;
@@ -309,6 +317,7 @@ async function mountInstalledReview(
 		releaseResnapshot,
 		rendered,
 		retainedItem,
+		heldSelectionCommandCount: (): number => heldSelectionCommands.length,
 		releaseSelectionCommands,
 		recordRetryDispatch,
 	};

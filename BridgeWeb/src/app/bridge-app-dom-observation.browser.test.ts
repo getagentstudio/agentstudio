@@ -1,5 +1,6 @@
 import { expect, test, vi } from 'vitest';
 
+import { createBridgeProductDeferred } from '../core/comm-worker/bridge-product-async-queue.js';
 import { observeBridgeAppDomValue } from './bridge-app-dom-observation.browser.test-support.js';
 
 test('a retired app DOM observation closes through its signal instead of a timer result', async (): Promise<void> => {
@@ -29,16 +30,31 @@ test('observes the exact target in a newly mounted open shadow root', async (): 
 	const host = document.createElement('div');
 	const owner = new AbortController();
 	let targetShadowRoot: ShadowRoot | null = null;
+	let inspectedShadowTarget = false;
 	const observed = observeBridgeAppDomValue({
 		root: document,
-		getValue: (): Element | null =>
-			targetShadowRoot?.querySelector('[data-bw-target="ready"]') ?? null,
+		getValue: (): Element | null => {
+			const target = targetShadowRoot?.querySelector('[data-bw-target="ready"]') ?? null;
+			if (target !== null) inspectedShadowTarget = true;
+			return target;
+		},
 		isSatisfied: (value): boolean => value !== null,
 		signal: owner.signal,
 	});
+	void observed.catch((): void => {});
+	const mounted = createBridgeProductDeferred<void>();
+	const mountObserver = new MutationObserver((): void => {
+		if (host.isConnected) mounted.resolve();
+	});
+	mountObserver.observe(document.body, { childList: true });
 	const root = host.attachShadow({ mode: 'open' });
 	targetShadowRoot = root;
 	document.body.append(host);
+	await mounted.promise;
+	mountObserver.disconnect();
+	const shadowMutation = createBridgeProductDeferred<void>();
+	const shadowObserver = new MutationObserver((): void => shadowMutation.resolve());
+	shadowObserver.observe(root, { childList: true });
 	const unrelated = document.createElement('span');
 	unrelated.dataset['bwTarget'] = 'unrelated';
 	root.append(unrelated);
@@ -46,9 +62,15 @@ test('observes the exact target in a newly mounted open shadow root', async (): 
 	target.dataset['bwTarget'] = 'ready';
 	root.append(target);
 	try {
+		await shadowMutation.promise;
+		expect(inspectedShadowTarget, 'Target-only shadow mutation must wake the app observer.').toBe(
+			true,
+		);
 		expect(await observed).toBe(target);
 	} finally {
 		owner.abort();
+		shadowObserver.disconnect();
+		await observed.catch((): void => {});
 		host.remove();
 	}
 });

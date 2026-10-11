@@ -42,7 +42,31 @@ describe('BridgeWeb app asset build lock', () => {
 		await expectBuildLockRecovery();
 	});
 
-	test('follows a held critical section through release instead of a recovery timer', async () => {
+	test('reports the production lock deadline before the runner bound for a live owner', async (): Promise<void> => {
+		await mkdir(buildLockDirectoryPath, { recursive: true });
+		await writeFile(
+			buildLockOwnerFilePath,
+			JSON.stringify({
+				pid: process.pid,
+				acquiredAtMilliseconds: Date.now(),
+				token: 'live-test-owner',
+			}),
+		);
+		const startedAt = Date.now();
+		const clock = vi
+			.spyOn(Date, 'now')
+			.mockReturnValueOnce(startedAt)
+			.mockReturnValue(startedAt + 120_001);
+		try {
+			await expect(withBridgeWebAppBuildLock(async (): Promise<void> => {})).rejects.toThrow(
+				'Timed out waiting for BridgeWeb app asset build lock:',
+			);
+		} finally {
+			clock.mockRestore();
+		}
+	});
+
+	test('harness guard follows a held critical section through release instead of a timer', async () => {
 		vi.useFakeTimers();
 		const criticalSectionEntered = createBridgeProductDeferred<void>();
 		const releaseCriticalSection = createBridgeProductDeferred<void>();
@@ -72,7 +96,18 @@ async function expectBuildLockRecovery(
 		didEnterCriticalSection = true;
 		await runCriticalSection();
 	});
-	await buildLockPromise;
+	const outcomeClock = Date.now();
+	// Time is controlled input to the production failure branch, not a test verdict.
+	// A failed reap must throw the lock owner's named error before the equal runner bound.
+	const deadlineClock = vi
+		.spyOn(Date, 'now')
+		.mockReturnValueOnce(outcomeClock)
+		.mockReturnValue(outcomeClock + 120_001);
+	try {
+		await buildLockPromise;
+	} finally {
+		deadlineClock.mockRestore();
+	}
 	expect(didEnterCriticalSection).toBe(true);
 	await expect(readFile(buildLockOwnerFilePath)).rejects.toMatchObject({ code: 'ENOENT' });
 }

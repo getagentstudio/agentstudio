@@ -1,13 +1,15 @@
-import { afterEach, beforeEach } from 'vitest';
+import { afterEach, beforeEach, type TestContext } from 'vitest';
 
 import { BridgeProductTestFactRecorder } from '../core/comm-worker/test-fixtures/bridge-product-test-fact-recorder.js';
 
 type AppDomObservationRoot = Document | HTMLElement | ShadowRoot;
 
+let currentTestContext: TestContext | undefined;
 let currentTestSignal: AbortSignal | undefined;
 const activeObservations = new Set<() => void>();
 
 beforeEach((context): void => {
+	currentTestContext = context;
 	currentTestSignal = context.signal;
 });
 
@@ -15,11 +17,13 @@ afterEach((): void => {
 	for (const close of activeObservations) close();
 	activeObservations.clear();
 	currentTestSignal = undefined;
+	currentTestContext = undefined;
 });
 
 /** Read only DOM-owned state; callback/counter waits must use their own fact recorder. */
 export async function observeBridgeAppDomValue<TValue>(props: {
 	readonly root?: AppDomObservationRoot;
+	readonly label?: string;
 	readonly getValue: () => TValue;
 	readonly isSatisfied: (value: TValue) => boolean;
 	readonly signal?: AbortSignal;
@@ -30,13 +34,24 @@ export async function observeBridgeAppDomValue<TValue>(props: {
 	const facts = new BridgeProductTestFactRecorder<TValue>();
 	const observedRoots = new WeakSet<Node>();
 	let isClosed = false;
+	let didComplete = false;
+	let lastObserved: unknown = 'no inspection yet';
+	const label = props.label ?? `DOM observation ${props.getValue.toString().slice(0, 300)}`;
+	const diagnostic = (): string =>
+		`${label}; last observed=${lastObserved instanceof Element ? lastObserved.outerHTML.slice(0, 400) : String(lastObserved)}`;
+	const context = currentTestContext;
+	context?.onTestFinished((): void => {
+		if (!didComplete && (context.signal.aborted || context.task.result?.state === 'fail'))
+			console.info(`Awaiting ${diagnostic()}`);
+	});
 	const close = (): void => {
 		isClosed = true;
-		facts.close(new Error('App DOM observation aborted or test owner retired.'));
+		facts.close(new Error(`App DOM observation aborted or test owner retired: ${diagnostic()}`));
 	};
 	const inspect = (): void => {
 		if (isClosed) return;
 		const value = props.getValue();
+		lastObserved = value;
 		if (props.isSatisfied(value)) facts.record(value);
 	};
 	const observeRoot = (nextRoot: AppDomObservationRoot): void => {
@@ -75,7 +90,9 @@ export async function observeBridgeAppDomValue<TValue>(props: {
 		else inspect();
 		// The caller awaits its writer inside act. Keeping act open while waiting for
 		// a React DOM commit would prevent that same commit from draining the act queue.
-		return await facts.waitFor();
+		const value = await facts.waitFor();
+		didComplete = true;
+		return value;
 	} finally {
 		isClosed = true;
 		observer.disconnect();
@@ -93,6 +110,7 @@ export function observeBridgeAppDomUntilEqual<TValue>(
 ): Promise<TValue> {
 	return observeBridgeAppDomValue({
 		getValue,
+		label: `DOM value equals ${String(expectedValue)}: ${getValue.toString().slice(0, 200)}`,
 		isSatisfied: (value): boolean => value === expectedValue,
 		...(root === undefined ? {} : { root }),
 	});
