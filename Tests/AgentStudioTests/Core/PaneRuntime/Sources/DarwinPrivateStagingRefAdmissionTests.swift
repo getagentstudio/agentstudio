@@ -40,6 +40,36 @@ struct DarwinPrivateStagingRefAdmissionTests {
         #expect(isPrivateStagingPath == expected)
     }
 
+    @Test(
+        "bridged NSString paths preserve staging admission with non-contiguous UTF-8",
+        arguments: [
+            ("/工程/仓库/.git/refs/agentstudio/staged/attempt", true),
+            ("refs/agentstudio/staged/工程/仓库", true),
+            ("/工程/仓库/.git/refs/agentstudio/staged", true),
+            (" \t/工程/仓库/.git/refs/agentstudio/staged/attempt\n", true),
+            ("/工程/仓库/.git/refs/agentstudio/staged-x/attempt", false),
+            ("/工程/仓库/otherrefs/agentstudio/staged/attempt", false),
+            ("/工程/仓库/.git/refs/agentstudio/stag\u{0}ed/attempt", false),
+            ("/工程/仓库/\u{0}/.git/refs/agentstudio/staged/attempt", true),
+            ("/工程/仓库/源代码/文件.swift", false),
+        ])
+    func bridgedPrivateStagingFormsPreserveLiteralContract(path: String, expected: Bool) throws {
+        // Arrange: construct Cocoa UTF-16 storage instead of bridging a native Swift string back.
+        let codeUnits = Array(path.utf16)
+        let bridgedPath = try codeUnits.withUnsafeBufferPointer { buffer in
+            let baseAddress = try #require(buffer.baseAddress)
+            return NSString(characters: baseAddress, length: buffer.count) as String
+        }
+        #expect(bridgedPath.utf8.withContiguousStorageIfAvailable { _ in true } == nil)
+
+        // Act
+        let isPrivateStagingPath = FilesystemPathFilter.isAgentStudioPrivateStagingRefPath(bridgedPath)
+
+        // Assert
+        #expect(isPrivateStagingPath == expected)
+        #expect(FilesystemPathFilter.isAgentStudioPrivateStagingRefPath(path) == expected)
+    }
+
     @Test("raw events and ordinary paths share one private-staging classification site")
     func privateStagingAdmissionHasOneClassificationSite() throws {
         // Arrange: protect the source contraction boundary independently of elapsed time.

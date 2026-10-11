@@ -1,3 +1,4 @@
+import Darwin
 import Foundation
 import os
 
@@ -139,14 +140,14 @@ package struct FilesystemPathFilter: Sendable {
 
     package static func isAgentStudioPrivateStagingRefPath(_ path: String) -> Bool {
         // Normalization cannot introduce these bytes; every admitted form already contains them.
-        guard path.utf8.firstRange(of: "refs/agentstudio/staged".utf8) != nil else {
+        guard containsUTF8Substring("refs/agentstudio/staged", in: path) else {
             return false
         }
         let normalizedPath = normalized(relativePath: path)
         return normalizedPath == "refs/agentstudio/staged"
             || normalizedPath.hasPrefix("refs/agentstudio/staged/")
             || normalizedPath.hasSuffix("/refs/agentstudio/staged")
-            || normalizedPath.utf8.firstRange(of: "/refs/agentstudio/staged/".utf8) != nil
+            || containsUTF8Substring("/refs/agentstudio/staged/", in: normalizedPath)
     }
 
     private static func normalized(relativePath: String) -> String {
@@ -193,6 +194,32 @@ package struct FilesystemPathFilter: Sendable {
     }
 }
 
+private func containsUTF8Substring(_ substring: StaticString, in path: String) -> Bool {
+    substring.withUTF8Buffer { needle in
+        guard !needle.isEmpty else { return true }
+        if let found = path.utf8.withContiguousStorageIfAvailable({ bytes in
+            guard bytes.count >= needle.count, let pathStart = bytes.baseAddress, let needleStart = needle.baseAddress
+            else { return false }
+            return memmem(pathStart, bytes.count, needleStart, needle.count) != nil
+        }) {
+            return found
+        }
+
+        // Foreign NSString storage can lack a contiguous UTF-8 buffer.
+        let bytes = path.utf8
+        for start in bytes.indices {
+            var position = start
+            var matchedBytes = 0
+            while position != bytes.endIndex, bytes[position] == needle[matchedBytes] {
+                matchedBytes += 1
+                if matchedBytes == needle.count { return true }
+                position = bytes.index(after: position)
+            }
+        }
+        return false
+    }
+}
+
 package enum RepositoryLocalActivityPathClassifier {
     package static func qualifiesWorktreePath(
         relativePath: String,
@@ -220,8 +247,8 @@ package enum RepositoryLocalActivityPathClassifier {
         if leaf == "HEAD" || leaf == "index" || leaf == "FETCH_HEAD" || leaf == "packed-refs" {
             return true
         }
-        return normalizedPath.contains("/refs/heads/")
-            || normalizedPath.contains("/refs/remotes/")
+        return containsUTF8Substring("/refs/heads/", in: normalizedPath)
+            || containsUTF8Substring("/refs/remotes/", in: normalizedPath)
             || normalizedPath.hasPrefix("refs/heads/")
             || normalizedPath.hasPrefix("refs/remotes/")
     }
