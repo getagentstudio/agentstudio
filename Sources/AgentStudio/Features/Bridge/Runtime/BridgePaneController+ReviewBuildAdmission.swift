@@ -87,7 +87,7 @@ extension BridgePaneController {
         else { return }
 
         let taskId = UUIDv7.generate()
-        let factScope: BridgePaneReviewBuildAdmissionScope = .attempt(taskId)
+        let factScope = reviewBuildAdmissionFactScope(for: taskId)
         recordReviewBuildAdmissionFact(.admitted(attempt: taskId), scope: factScope)
         let reviewAuthorityGeneration = refreshAdmissionCoordinator.currentAuthorityGeneration(
             for: .review

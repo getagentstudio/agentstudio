@@ -319,42 +319,55 @@ package actor GitWorkingDirectoryProjector {
 
     private func handleAndRecordRuntimeEnvelope(_ envelope: RuntimeEnvelope, lifetime: UInt64) {
         let disposition = handleIncomingRuntimeEnvelope(envelope)
-        didHandleRuntimeEnvelope(lifetime: lifetime, seq: envelope.seq, disposition: disposition)
+        if factSink != nil {
+            didHandleRuntimeEnvelope(lifetime: lifetime, seq: envelope.seq, disposition: disposition)
+        }
     }
 
     private func handleIncomingRuntimeEnvelope(_ envelope: RuntimeEnvelope) -> GitProjectorEnvelopeDisposition {
         switch envelope {
         case .system(let systemEnvelope):
-            guard systemEnvelope.source == .builtin(.filesystemWatcher) else { return .ignored }
-            guard case .topology(let topologyEvent) = systemEnvelope.event else { return .ignored }
+            guard systemEnvelope.source == .builtin(.filesystemWatcher),
+                case .topology(let topologyEvent) = systemEnvelope.event
+            else {
+                return .ignored
+            }
             switch topologyEvent {
             case .worktreeRegistered(let worktreeId, let repoId, let rootPath):
                 let context = WorktreeFilesystemContext(repoId: repoId, rootPath: rootPath)
-                guard acceptsLifecycleRegistration(worktreeId: worktreeId, context: context) else { return .ignored }
-                applyRegistration(
-                    worktreeId: worktreeId,
-                    context: context,
-                    timestamp: systemEnvelope.timestamp
-                )
+                guard acceptsLifecycleRegistration(worktreeId: worktreeId, context: context) else {
+                    return .ignored
+                }
+                applyRegistration(worktreeId: worktreeId, context: context, timestamp: systemEnvelope.timestamp)
             case .worktreeUnregistered(let worktreeId, let repoId):
                 guard latestTopologyAssertion == nil else { return .ignored }
                 applyUnregistration(worktreeId: worktreeId, repoId: repoId)
             case .repoDiscovered, .reposDiscovered, .repoRemoved, .watchedFolderReconciled:
                 return .ignored
             }
+            return .routed
         case .worktree(let worktreeEnvelope):
-            guard worktreeEnvelope.source == .system(.builtin(.filesystemWatcher)) else { return .ignored }
-            guard case .filesystem(.filesChanged(let changeset)) = worktreeEnvelope.event else { return .ignored }
+            guard worktreeEnvelope.source == .system(.builtin(.filesystemWatcher)),
+                case .filesystem(.filesChanged(let changeset)) = worktreeEnvelope.event
+            else {
+                return .ignored
+            }
             let worktreeId = changeset.worktreeId
             observeIntakeFact(worktreeId: worktreeId, batchSeq: changeset.batchSeq)
             guard !suppressedWorktreeIds.contains(worktreeId) else {
                 closeIntakeFactOnce(
-                    worktreeId: worktreeId, batchSeq: changeset.batchSeq, fact: .changesetDropped(.stale))
+                    worktreeId: worktreeId,
+                    batchSeq: changeset.batchSeq,
+                    fact: .changesetDropped(.stale)
+                )
                 return .ignored
             }
             guard acceptsFilesystemChanges(changeset) else {
                 closeIntakeFactOnce(
-                    worktreeId: worktreeId, batchSeq: changeset.batchSeq, fact: .changesetDropped(.stale))
+                    worktreeId: worktreeId,
+                    batchSeq: changeset.batchSeq,
+                    fact: .changesetDropped(.stale)
+                )
                 return .ignored
             }
             if exactCleanAuthorityByWorktreeId.removeValue(forKey: worktreeId) != nil {
@@ -364,12 +377,18 @@ package actor GitWorkingDirectoryProjector {
                 aggregatePerformance.increment(\.suppressedInput)
                 flushAggregatePerformanceSnapshotIfNeeded()
                 closeIntakeFactOnce(
-                    worktreeId: worktreeId, batchSeq: changeset.batchSeq, fact: .changesetDropped(.equal))
+                    worktreeId: worktreeId,
+                    batchSeq: changeset.batchSeq,
+                    fact: .changesetDropped(.equal)
+                )
                 return .ignored
             }
             guard admitFileChangeAfterQuarantine(worktreeId: worktreeId, rootPath: changeset.rootPath) else {
                 closeIntakeFactOnce(
-                    worktreeId: worktreeId, batchSeq: changeset.batchSeq, fact: .changesetDropped(.stale))
+                    worktreeId: worktreeId,
+                    batchSeq: changeset.batchSeq,
+                    fact: .changesetDropped(.stale)
+                )
                 return .ignored
             }
             repoIdByWorktreeId[worktreeId] = changeset.repoId
@@ -386,9 +405,7 @@ package actor GitWorkingDirectoryProjector {
             // A queued immediate full refresh covers changes observed before
             // it starts. Once its task is running, retain one merged pending
             // invalidation so later mutations cannot disappear behind it.
-            if !immediateRefreshWorktreeIds.contains(worktreeId)
-                || worktreeTasks[worktreeId] != nil
-            {
+            if !immediateRefreshWorktreeIds.contains(worktreeId) || worktreeTasks[worktreeId] != nil {
                 pendingByWorktreeId[worktreeId] = mergeTrackedChangesets(
                     pendingByWorktreeId[worktreeId],
                     with: changeset
@@ -396,18 +413,19 @@ package actor GitWorkingDirectoryProjector {
                 recordRequiredIntent(changeset: changeset, triggerSource: .filesystemChange)
                 refreshAttribution.triggerSourceByWorktreeId[worktreeId] = .filesystemChange
             } else if let coveringChangeset = pendingByWorktreeId[worktreeId] {
-                recordRequiredIntent(
-                    changeset: coveringChangeset,
-                    triggerSource: .filesystemChange
+                recordRequiredIntent(changeset: coveringChangeset, triggerSource: .filesystemChange)
+                closeIntakeFactOnce(
+                    worktreeId: worktreeId,
+                    batchSeq: changeset.batchSeq,
+                    fact: .changesetAccepted
                 )
-                closeIntakeFactOnce(worktreeId: worktreeId, batchSeq: changeset.batchSeq, fact: .changesetAccepted)
             }
             grantDemandEligibility(worktreeId: worktreeId)
             admitPendingWorktrees()
+            return .routed
         case .pane:
             return .ignored
         }
-        return .routed
     }
 
     package func assertTopology(_ assertion: FilesystemTopologyAssertion) {
@@ -486,7 +504,12 @@ package actor GitWorkingDirectoryProjector {
         let taskGeneration = nextWorktreeTaskGeneration
         worktreeTaskGenerationByWorktreeId[worktreeId] = taskGeneration
         let lifetime = observationLifetimesByWorktreeID[worktreeId]
-        let refreshFactScope = openRefreshFactScopeByWorktreeId[worktreeId]
+        let refreshFactScope: GitProjectorScope?
+        if factSink != nil {
+            refreshFactScope = openRefreshFactScopeByWorktreeId[worktreeId]
+        } else {
+            refreshFactScope = nil
+        }
         let task = Task { [weak self] in
             guard let self else { return }
             await RepositoryObservationRequestContext.$worktree.withValue(lifetime) {
@@ -732,21 +755,32 @@ package actor GitWorkingDirectoryProjector {
         let shouldCoalesce = immediateRefreshWorktreeIds.remove(worktreeId) == nil && coalescingWindow > .zero
         if shouldCoalesce {
             coalescingWorktreeIds.insert(worktreeId)
-            let coalescingScope = GitProjectorScope.deadline(
-                worktreeId: worktreeId,
-                kind: .coalescingWindow,
-                generation: taskGeneration
-            )
-            factSink?(coalescingScope, .deadlineRegistered(.coalescingWindow))
+            let coalescingFactScope: GitProjectorScope?
+            if factSink != nil {
+                coalescingFactScope = .deadline(
+                    worktreeId: worktreeId,
+                    kind: .coalescingWindow,
+                    generation: taskGeneration
+                )
+            } else {
+                coalescingFactScope = nil
+            }
+            if let factSink, let coalescingFactScope {
+                factSink(coalescingFactScope, .deadlineRegistered(.coalescingWindow))
+            }
             do {
                 try await delay.wait(coalescingWindow)
             } catch is CancellationError {
                 coalescingWorktreeIds.remove(worktreeId)
-                factSink?(coalescingScope, .deadlineDisposition(.cancelled))
+                if let factSink, let coalescingFactScope {
+                    factSink(coalescingFactScope, .deadlineDisposition(.cancelled))
+                }
                 return
             } catch {
                 coalescingWorktreeIds.remove(worktreeId)
-                factSink?(coalescingScope, .deadlineDisposition(.cancelled))
+                if let factSink, let coalescingFactScope {
+                    factSink(coalescingFactScope, .deadlineDisposition(.cancelled))
+                }
                 Self.logger.warning(
                     "Unexpected projector sleep failure for worktree \(worktreeId.uuidString, privacy: .public): \(String(describing: error), privacy: .public)"
                 )
@@ -754,7 +788,9 @@ package actor GitWorkingDirectoryProjector {
             }
             coalescingWorktreeIds.remove(worktreeId)
             guard !Task.isCancelled else {
-                factSink?(coalescingScope, .deadlineDisposition(.cancelled))
+                if let factSink, let coalescingFactScope {
+                    factSink(coalescingFactScope, .deadlineDisposition(.cancelled))
+                }
                 return
             }
             if let newer = pendingByWorktreeId.removeValue(forKey: worktreeId) {
@@ -768,7 +804,9 @@ package actor GitWorkingDirectoryProjector {
                 )
                 _ = immediateRefreshWorktreeIds.remove(worktreeId)
             }
-            factSink?(coalescingScope, .deadlineDisposition(.admitted))
+            if let factSink, let coalescingFactScope {
+                factSink(coalescingFactScope, .deadlineDisposition(.admitted))
+            }
         }
 
         await computeAndEmit(changeset: nextChangeset, refreshFactScope: refreshFactScope)

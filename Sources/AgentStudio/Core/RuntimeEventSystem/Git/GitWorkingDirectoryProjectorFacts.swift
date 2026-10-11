@@ -259,6 +259,7 @@ extension GitWorkingDirectoryProjector {
     }
 
     func cancelDeadlineFact(worktreeId: UUID, sourceKind: GitRefreshDeadlineKind) {
+        guard factSink != nil else { return }
         closeDeadlineFact(worktreeId: worktreeId, sourceKind: sourceKind, disposition: .cancelled)
     }
 

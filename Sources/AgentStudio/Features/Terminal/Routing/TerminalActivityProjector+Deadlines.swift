@@ -6,7 +6,6 @@ extension TerminalActivityProjector {
         cancelUnseenWindow(for: paneID, disposition: .superseded)
         guard let window = state.unseenWindow ?? state.activityWindow else { return }
         let deadlineClock = self.deadlineClock
-        let recordsFacts = factSink != nil
         let duration = unseenQuietDuration
         let retirementTask = unseenRetirementTasks.removeValue(forKey: paneID)
         let closeTarget = ActivityWindowCloseTarget(
@@ -17,27 +16,35 @@ extension TerminalActivityProjector {
             unseenWindow: state.unseenWindow,
             activityWindow: state.activityWindow
         )
-        let scope = TerminalActivityDeadlineScope(
-            paneID: paneID, windowID: closeTarget.windowID, kind: .unseen,
-            generation: closeTarget.generation)
-        if factSink != nil { unseenDeadlineScopes[paneID] = scope }
+        let factScope: TerminalActivityDeadlineScope?
+        if factSink != nil {
+            let scope = TerminalActivityDeadlineScope(
+                paneID: paneID, windowID: closeTarget.windowID, kind: .unseen,
+                generation: closeTarget.generation)
+            unseenDeadlineScopes[paneID] = scope
+            factScope = scope
+        } else {
+            factScope = nil
+        }
         unseenCloseTasks[paneID] = Task { [weak self] in
             await retirementTask?.value
             guard !Task.isCancelled else { return }
             // This is the old relative sleep's start, after predecessor retirement.
             // Capture before notifying observers so an early clock advance is safe.
             let deadline = deadlineClock.now + duration
-            if recordsFacts {
-                guard await self?.registerDeadline(scope, at: deadline) == true else { return }
+            if let factScope {
+                guard await self?.registerDeadline(factScope, at: deadline) == true else { return }
             }
             do {
                 try await deadlineClock.sleep(until: deadline)
             } catch {
-                if recordsFacts { await self?.closeDeadline(scope, as: .cancelled) }
+                if let factScope { await self?.closeDeadline(factScope, as: .cancelled) }
                 return
             }
             let fired = await self?.closeUnseenWindow(target: closeTarget) ?? false
-            if recordsFacts { await self?.closeDeadline(scope, as: fired ? .fired : .superseded) }
+            if let factScope {
+                await self?.closeDeadline(factScope, as: fired ? .fired : .superseded)
+            }
         }
     }
 
@@ -45,7 +52,6 @@ extension TerminalActivityProjector {
         cancelAgentCandidate(for: paneID, disposition: .superseded)
         guard let candidate = state.agentCandidate else { return }
         let deadlineClock = self.deadlineClock
-        let recordsFacts = factSink != nil
         let duration = agentSettledQuietDuration
         let retirementTask = agentRetirementTasks.removeValue(forKey: paneID)
         let closeTarget = ActivityWindowCloseTarget(
@@ -54,27 +60,35 @@ extension TerminalActivityProjector {
             paneID: candidate.paneID,
             generation: candidate.generation
         )
-        let scope = TerminalActivityDeadlineScope(
-            paneID: paneID, windowID: closeTarget.windowID, kind: .agentSettled,
-            generation: closeTarget.generation)
-        if factSink != nil { agentDeadlineScopes[paneID] = scope }
+        let factScope: TerminalActivityDeadlineScope?
+        if factSink != nil {
+            let scope = TerminalActivityDeadlineScope(
+                paneID: paneID, windowID: closeTarget.windowID, kind: .agentSettled,
+                generation: closeTarget.generation)
+            agentDeadlineScopes[paneID] = scope
+            factScope = scope
+        } else {
+            factScope = nil
+        }
         agentCloseTasks[paneID] = Task { [weak self] in
             await retirementTask?.value
             guard !Task.isCancelled else { return }
             // This is the old relative sleep's start, after predecessor retirement.
             // Capture before notifying observers so an early clock advance is safe.
             let deadline = deadlineClock.now + duration
-            if recordsFacts {
-                guard await self?.registerDeadline(scope, at: deadline) == true else { return }
+            if let factScope {
+                guard await self?.registerDeadline(factScope, at: deadline) == true else { return }
             }
             do {
                 try await deadlineClock.sleep(until: deadline)
             } catch {
-                if recordsFacts { await self?.closeDeadline(scope, as: .cancelled) }
+                if let factScope { await self?.closeDeadline(factScope, as: .cancelled) }
                 return
             }
             let fired = await self?.closeAgentCandidate(target: closeTarget) ?? false
-            if recordsFacts { await self?.closeDeadline(scope, as: fired ? .fired : .superseded) }
+            if let factScope {
+                await self?.closeDeadline(factScope, as: fired ? .fired : .superseded)
+            }
         }
     }
 
@@ -85,7 +99,7 @@ extension TerminalActivityProjector {
 
     func cancelUnseenWindow(for paneID: UUID, disposition: TerminalActivityDeadlineDisposition = .cancelled) {
         guard let closeTask = unseenCloseTasks.removeValue(forKey: paneID) else { return }
-        if let scope = unseenDeadlineScopes.removeValue(forKey: paneID) {
+        if factSink != nil, let scope = unseenDeadlineScopes.removeValue(forKey: paneID) {
             closeDeadline(scope, as: disposition)
         }
         closeTask.cancel()
@@ -98,7 +112,7 @@ extension TerminalActivityProjector {
 
     func cancelAgentCandidate(for paneID: UUID, disposition: TerminalActivityDeadlineDisposition = .cancelled) {
         guard let closeTask = agentCloseTasks.removeValue(forKey: paneID) else { return }
-        if let scope = agentDeadlineScopes.removeValue(forKey: paneID) {
+        if factSink != nil, let scope = agentDeadlineScopes.removeValue(forKey: paneID) {
             closeDeadline(scope, as: disposition)
         }
         closeTask.cancel()
@@ -126,6 +140,7 @@ extension TerminalActivityProjector {
     }
 
     func closeAllDeadlineFacts() {
+        guard factSink != nil else { return }
         for scope in Array(openDeadlineScopes) { closeDeadline(scope, as: .cancelled) }
         unseenDeadlineScopes.removeAll()
         agentDeadlineScopes.removeAll()

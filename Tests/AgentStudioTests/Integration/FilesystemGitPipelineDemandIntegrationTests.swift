@@ -152,18 +152,16 @@ struct FilesystemGitPipelineDemandIntegrationTests {
         let gitClock = TestPushClock()
         let projectorFactSource = GitProjectorFactSource()
         let projectorFacts = try projectorFactSource.attach()
-        let pipeline = FilesystemGitPipeline(
-            bus: bus,
-            registrationDiscoveryProvider: DemandIntegrationRegistrationDiscoveryProvider(),
-            gitWorkingTreeProvider: gitProvider,
-            remoteReferenceRefreshProvider: remoteReferenceProvider,
-            forgeStatusProvider: forgeProvider,
-            fseventStreamClient: fseventStreamClient,
-            filesystemDebounceWindow: .zero,
-            filesystemMaxFlushLatency: .zero,
-            gitCoalescingWindow: .zero,
-            gitSleepClock: gitClock,
-            projectorFactSink: projectorFactSource.sink
+        let pipeline = makeFactEnabledPipeline(
+            FactEnabledPipelineDependencies(
+                bus: bus,
+                gitProvider: gitProvider,
+                remoteReferenceProvider: remoteReferenceProvider,
+                forgeStatusProvider: forgeProvider,
+                fseventStreamClient: fseventStreamClient,
+                gitClock: gitClock,
+                factSource: projectorFactSource
+            )
         )
         let rootPath = demandIntegrationFixtureRootPath()
         try FileManager.default.createDirectory(at: rootPath, withIntermediateDirectories: true)
@@ -247,6 +245,33 @@ struct FilesystemGitPipelineDemandIntegrationTests {
 
         await shutdown(demandCoordinator: demandCoordinator, pipeline: pipeline, cacheCoordinator: cacheCoordinator)
         try await projectorFacts.finish()
+    }
+
+    private func makeFactEnabledPipeline(
+        _ dependencies: FactEnabledPipelineDependencies
+    ) -> FilesystemGitPipeline {
+        let projectorConnection = FilesystemGitProjectorConnection(
+            remoteReferenceRefreshProvider: dependencies.remoteReferenceProvider
+        )
+        let gitProjector = GitWorkingDirectoryProjector(
+            bus: dependencies.bus,
+            gitWorkingTreeProvider: dependencies.gitProvider,
+            coalescingWindow: .zero,
+            sleepClock: dependencies.gitClock,
+            factSink: dependencies.factSource.sink,
+            remoteReferenceOriginHandler: projectorConnection.remoteReferenceOriginHandler,
+            pathExistenceProbe: GitWorkingDirectoryProjector.liveRootPathProbe
+        )
+        return FilesystemGitPipeline(
+            bus: dependencies.bus,
+            registrationDiscoveryProvider: DemandIntegrationRegistrationDiscoveryProvider(),
+            forgeStatusProvider: dependencies.forgeStatusProvider,
+            fseventStreamClient: dependencies.fseventStreamClient,
+            filesystemDebounceWindow: .zero,
+            filesystemMaxFlushLatency: .zero,
+            gitWorkingDirectoryProjector: gitProjector,
+            projectorConnection: projectorConnection
+        )
     }
 
     private func proveInitialBaselineAndPromotionReuse(
@@ -559,6 +584,16 @@ struct FilesystemGitPipelineDemandIntegrationTests {
         await pipeline.shutdown()
         await cacheCoordinator.shutdown()
     }
+}
+
+private struct FactEnabledPipelineDependencies {
+    let bus: EventBus<RuntimeEnvelope>
+    let gitProvider: DemandIntegrationGitStatusProvider
+    let remoteReferenceProvider: DemandIntegrationRemoteReferenceProvider
+    let forgeStatusProvider: DemandIntegrationForgeProvider
+    let fseventStreamClient: DemandIntegrationSilentFSEventStreamClient
+    let gitClock: TestPushClock
+    let factSource: GitProjectorFactSource
 }
 
 private struct InitialRefreshProofContext {

@@ -71,6 +71,84 @@ protocol WatchedFolderCommandHandling: AnyObject, Sendable {
     ) async -> WatchedFolderRefreshSummary
 }
 
+/// Owns the callbacks that connect Git projection with remote-reference refresh.
+/// It never accepts an owner-local fact sink.
+struct FilesystemGitProjectorConnection: Sendable {
+    let remoteReferenceRefreshActor: RemoteReferenceRefreshActor
+    let remoteReferenceOriginHandler: @Sendable (UUID, String?, RepositoryObservationLifetime?) async -> Void
+    private let authoritySink: RemoteReferenceAuthoritySink
+
+    init(
+        remoteReferenceRefreshProvider: any RemoteReferenceRefreshProviding =
+            AgentStudioGitRemoteReferenceRefreshProvider(),
+        performanceTraceRecorder: AgentStudioPerformanceTraceRecorder? = nil
+    ) {
+        let authoritySink = RemoteReferenceAuthoritySink()
+        let remoteReferenceRefreshActor = RemoteReferenceRefreshActor(
+            provider: remoteReferenceRefreshProvider,
+            performanceRecorder: performanceTraceRecorder,
+            onAuthorityUpdate: { update in
+                await authoritySink.send(update)
+            },
+            onPromotedRecomputation: { acceptance in
+                await authoritySink.waitForRecomputation(acceptance: acceptance)
+            }
+        )
+        self.authoritySink = authoritySink
+        self.remoteReferenceRefreshActor = remoteReferenceRefreshActor
+        remoteReferenceOriginHandler = { repoId, expectedOrigin, expectedLifetime in
+            await remoteReferenceRefreshActor.setOrigin(
+                repoId: repoId,
+                expectedOrigin: expectedOrigin,
+                expectedLifetime: expectedLifetime
+            )
+        }
+    }
+
+    func connect(projector: GitWorkingDirectoryProjector) {
+        authoritySink.install { update in
+            await projector.applyRemoteReferenceAuthorityUpdate(update)
+        } waitForRecomputation: { acceptance in
+            await projector.startAndWaitForRemoteReferenceRecomputation(
+                acceptance: acceptance
+            )
+        }
+    }
+}
+
+private final class RemoteReferenceAuthoritySink: @unchecked Sendable {
+    typealias Handler = @Sendable (RemoteReferenceAuthorityUpdate) async -> Void
+    typealias RecomputationHandler =
+        @Sendable (RemoteReferenceAcceptance) async -> RepositoryFactSourceUpdateOutcome
+
+    private let lock = NSLock()
+    private var handler: Handler?
+    private var recomputationHandler: RecomputationHandler?
+
+    func install(
+        _ handler: @escaping Handler,
+        waitForRecomputation recomputationHandler: @escaping RecomputationHandler
+    ) {
+        lock.lock()
+        self.handler = handler
+        self.recomputationHandler = recomputationHandler
+        lock.unlock()
+    }
+
+    func send(_ update: RemoteReferenceAuthorityUpdate) async {
+        let handler = lock.withLock { self.handler }
+        await handler?(update)
+    }
+
+    func waitForRecomputation(
+        acceptance: RemoteReferenceAcceptance
+    ) async -> RepositoryFactSourceUpdateOutcome {
+        let handler = lock.withLock { recomputationHandler }
+        guard let handler else { return .obsolete }
+        return await handler(acceptance)
+    }
+}
+
 /// Composition root for app-wide filesystem facts + derived local git facts.
 ///
 /// `FilesystemActor` owns filesystem ingestion/routing and emits filesystem facts.
@@ -90,19 +168,14 @@ final class FilesystemGitPipeline: WorkspaceFilesystemSourceManaging, WatchedFol
         bus: EventBus<RuntimeEnvelope> = PaneRuntimeEventBus.shared,
         registrationDiscoveryProvider: any RepoScanner.GitRepositoryDiscoveryProvider =
             RepoScannerGitDiscoveryClient(),
-        gitWorkingTreeProvider: any GitWorkingTreeStatusProvider,
-        remoteReferenceRefreshProvider: any RemoteReferenceRefreshProviding =
-            AgentStudioGitRemoteReferenceRefreshProvider(),
         forgeStatusProvider: any ForgeStatusProvider = GitHubCLIForgeStatusProvider(),
         fseventStreamClient: any FSEventStreamClient = DarwinFSEventStreamClient(),
         watchedFolderScanScheduler: WatchedFolderScanScheduler = .production(),
         repositoryLocalActivityProjector: RepositoryLocalActivityProjector? = nil,
         filesystemDebounceWindow: Duration = AppPolicies.GitRefresh.filesystemDebounceWindow,
         filesystemMaxFlushLatency: Duration = AppPolicies.GitRefresh.filesystemMaxFlushLatency,
-        gitCoalescingWindow: Duration = AppPolicies.GitRefresh.filesystemDerivedCoalescingWindow,
-        gitRefreshPolicy: AppPolicies.GitRefresh.Policy = AppPolicies.GitRefresh.defaultPolicy,
-        gitSleepClock: any Clock<Duration> & Sendable = ContinuousClock(),
-        projectorFactSink: GitProjectorFactSink? = nil,
+        gitWorkingDirectoryProjector: GitWorkingDirectoryProjector,
+        projectorConnection: FilesystemGitProjectorConnection,
         performanceTraceRecorder: AgentStudioPerformanceTraceRecorder? = nil,
         repositoryFactDemandPerformanceRecorder:
             (any RepositoryFactDemandPerformanceRecording)? = nil
@@ -118,42 +191,9 @@ final class FilesystemGitPipeline: WorkspaceFilesystemSourceManaging, WatchedFol
             maxFlushLatency: filesystemMaxFlushLatency,
             performanceTraceRecorder: performanceTraceRecorder
         )
-        let remoteReferenceAuthoritySink = RemoteReferenceAuthoritySink()
-        let remoteReferenceRefreshActor = RemoteReferenceRefreshActor(
-            provider: remoteReferenceRefreshProvider,
-            performanceRecorder: performanceTraceRecorder,
-            onAuthorityUpdate: { update in
-                await remoteReferenceAuthoritySink.send(update)
-            },
-            onPromotedRecomputation: { acceptance in
-                await remoteReferenceAuthoritySink.waitForRecomputation(
-                    acceptance: acceptance
-                )
-            }
-        )
-        self.remoteReferenceRefreshActor = remoteReferenceRefreshActor
-        let gitWorkingDirectoryProjector = GitWorkingDirectoryProjector(
-            bus: bus,
-            gitWorkingTreeProvider: gitWorkingTreeProvider,
-            coalescingWindow: gitCoalescingWindow,
-            sleepClock: gitSleepClock,
-            refreshPolicy: gitRefreshPolicy,
-            performanceTraceRecorder: performanceTraceRecorder,
-            factSink: projectorFactSink,
-            remoteReferenceOriginHandler: { repoId, expectedOrigin, expectedLifetime in
-                await remoteReferenceRefreshActor.setOrigin(
-                    repoId: repoId, expectedOrigin: expectedOrigin, expectedLifetime: expectedLifetime)
-            },
-            pathExistenceProbe: GitWorkingDirectoryProjector.liveRootPathProbe
-        )
+        self.remoteReferenceRefreshActor = projectorConnection.remoteReferenceRefreshActor
         self.gitWorkingDirectoryProjector = gitWorkingDirectoryProjector
-        remoteReferenceAuthoritySink.install { update in
-            await gitWorkingDirectoryProjector.applyRemoteReferenceAuthorityUpdate(update)
-        } waitForRecomputation: { acceptance in
-            await gitWorkingDirectoryProjector.startAndWaitForRemoteReferenceRecomputation(
-                acceptance: acceptance
-            )
-        }
+        projectorConnection.connect(projector: gitWorkingDirectoryProjector)
         self.registrationValidator = GitWorktreeRegistrationValidator(
             discoveryProvider: registrationDiscoveryProvider
         )
@@ -162,6 +202,56 @@ final class FilesystemGitPipeline: WorkspaceFilesystemSourceManaging, WatchedFol
             statusProvider: forgeStatusProvider,
             providerName: "github",
             performanceTraceRecorder: performanceTraceRecorder
+        )
+    }
+
+    convenience init(
+        bus: EventBus<RuntimeEnvelope> = PaneRuntimeEventBus.shared,
+        registrationDiscoveryProvider: any RepoScanner.GitRepositoryDiscoveryProvider =
+            RepoScannerGitDiscoveryClient(),
+        gitWorkingTreeProvider: any GitWorkingTreeStatusProvider,
+        remoteReferenceRefreshProvider: any RemoteReferenceRefreshProviding =
+            AgentStudioGitRemoteReferenceRefreshProvider(),
+        forgeStatusProvider: any ForgeStatusProvider = GitHubCLIForgeStatusProvider(),
+        fseventStreamClient: any FSEventStreamClient = DarwinFSEventStreamClient(),
+        watchedFolderScanScheduler: WatchedFolderScanScheduler = .production(),
+        repositoryLocalActivityProjector: RepositoryLocalActivityProjector? = nil,
+        filesystemDebounceWindow: Duration = AppPolicies.GitRefresh.filesystemDebounceWindow,
+        filesystemMaxFlushLatency: Duration = AppPolicies.GitRefresh.filesystemMaxFlushLatency,
+        gitCoalescingWindow: Duration = AppPolicies.GitRefresh.filesystemDerivedCoalescingWindow,
+        gitRefreshPolicy: AppPolicies.GitRefresh.Policy = AppPolicies.GitRefresh.defaultPolicy,
+        gitSleepClock: any Clock<Duration> & Sendable = ContinuousClock(),
+        performanceTraceRecorder: AgentStudioPerformanceTraceRecorder? = nil,
+        repositoryFactDemandPerformanceRecorder:
+            (any RepositoryFactDemandPerformanceRecording)? = nil
+    ) {
+        let projectorConnection = FilesystemGitProjectorConnection(
+            remoteReferenceRefreshProvider: remoteReferenceRefreshProvider,
+            performanceTraceRecorder: performanceTraceRecorder
+        )
+        let projector = GitWorkingDirectoryProjector(
+            bus: bus,
+            gitWorkingTreeProvider: gitWorkingTreeProvider,
+            coalescingWindow: gitCoalescingWindow,
+            sleepClock: gitSleepClock,
+            refreshPolicy: gitRefreshPolicy,
+            performanceTraceRecorder: performanceTraceRecorder,
+            remoteReferenceOriginHandler: projectorConnection.remoteReferenceOriginHandler,
+            pathExistenceProbe: GitWorkingDirectoryProjector.liveRootPathProbe
+        )
+        self.init(
+            bus: bus,
+            registrationDiscoveryProvider: registrationDiscoveryProvider,
+            forgeStatusProvider: forgeStatusProvider,
+            fseventStreamClient: fseventStreamClient,
+            watchedFolderScanScheduler: watchedFolderScanScheduler,
+            repositoryLocalActivityProjector: repositoryLocalActivityProjector,
+            filesystemDebounceWindow: filesystemDebounceWindow,
+            filesystemMaxFlushLatency: filesystemMaxFlushLatency,
+            gitWorkingDirectoryProjector: projector,
+            projectorConnection: projectorConnection,
+            performanceTraceRecorder: performanceTraceRecorder,
+            repositoryFactDemandPerformanceRecorder: repositoryFactDemandPerformanceRecorder
         )
     }
 
@@ -434,40 +524,6 @@ extension FilesystemGitPipeline: WorktreePublicationHolding {
 
     func refreshWatchedFolder(_ watchedPathID: UUID, among watchedPaths: [WatchedPath]) async {
         _ = await filesystemActor.refreshWatchedFolders(watchedPaths, scanning: [watchedPathID])
-    }
-}
-
-private final class RemoteReferenceAuthoritySink: @unchecked Sendable {
-    typealias Handler = @Sendable (RemoteReferenceAuthorityUpdate) async -> Void
-    typealias RecomputationHandler =
-        @Sendable (RemoteReferenceAcceptance) async ->
-        RepositoryFactSourceUpdateOutcome
-
-    private let lock = NSLock()
-    private var handler: Handler?
-    private var recomputationHandler: RecomputationHandler?
-
-    func install(
-        _ handler: @escaping Handler,
-        waitForRecomputation recomputationHandler: @escaping RecomputationHandler
-    ) {
-        lock.lock()
-        self.handler = handler
-        self.recomputationHandler = recomputationHandler
-        lock.unlock()
-    }
-
-    func send(_ update: RemoteReferenceAuthorityUpdate) async {
-        let handler = lock.withLock { self.handler }
-        await handler?(update)
-    }
-
-    func waitForRecomputation(
-        acceptance: RemoteReferenceAcceptance
-    ) async -> RepositoryFactSourceUpdateOutcome {
-        let handler = lock.withLock { recomputationHandler }
-        guard let handler else { return .obsolete }
-        return await handler(acceptance)
     }
 }
 

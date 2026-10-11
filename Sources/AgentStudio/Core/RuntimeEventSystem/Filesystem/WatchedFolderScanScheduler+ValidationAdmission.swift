@@ -14,9 +14,15 @@ extension WatchedFolderScanScheduler {
             return
         }
         precondition(validationAdmissionsByRequestID[requestID] == nil, "validation admission must have one owner")
+        let observationScope: WatchedFolderScanValidationScope?
+        if factSink != nil {
+            observationScope = awaiting.validationScope
+        } else {
+            observationScope = nil
+        }
         let task = Task { await settleValidationAdmission(awaiting) }
         validationAdmissionsByRequestID[requestID] = InFlightValidationAdmission(
-            scope: awaiting.validationScope, task: task, disposition: .submitting
+            scope: observationScope, task: task, disposition: .submitting
         )
         await task.value
     }

@@ -170,7 +170,9 @@ extension GitWorkingDirectoryProjector {
     func expireCapacityRetry(worktreeId: UUID) {
         capacityFallbackDeadlineByWorktreeId.removeValue(forKey: worktreeId)
         guard capacityRetryWorktreeIds.remove(worktreeId) != nil else { return }
-        defer { closeCapacityFact(worktreeId: worktreeId, outcome: .expired) }
+        defer {
+            closeCapacityFact(worktreeId: worktreeId, outcome: .expired)
+        }
         capacityRetryReasonByWorktreeId.removeValue(forKey: worktreeId)
         guard !isShuttingDown else {
             capacityRearmedWorktreeIds.remove(worktreeId)

@@ -87,6 +87,7 @@ enum ArchitectureRuleRegistry {
         ProbeReportsOffMainRule(),
         TestAdHocGateRule(),
         TestWaitHelperReturnsObservationRule(),
+        OwnerFactSinkBoundaryRule(),
     ]
 
     static let documentRules: [any ArchitectureDocumentRule] = [

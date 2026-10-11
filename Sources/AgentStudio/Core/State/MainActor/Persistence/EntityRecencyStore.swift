@@ -116,7 +116,12 @@ package final class EntityRecencyStore {
         guard isApplicationHydrated else { return }
         applicationSaveTask?.cancel()
         applicationSaveTask = nil
-        let saveScope = beginSaveFact(in: .application)
+        let saveScope: EntityRecencyStoreSaveScope?
+        if factSink != nil {
+            saveScope = beginSaveFact(in: .application)
+        } else {
+            saveScope = nil
+        }
         do {
             try await sqliteDatastore.saveApplicationEntityRecency(applicationAtom.recentEntities)
             if let saveScope { factSink?(saveScope, .saveCompleted) }
@@ -134,7 +139,12 @@ package final class EntityRecencyStore {
         }
         workspaceSaveTask?.cancel()
         workspaceSaveTask = nil
-        let saveScope = beginSaveFact(in: .workspace(workspaceID))
+        let saveScope: EntityRecencyStoreSaveScope?
+        if factSink != nil {
+            saveScope = beginSaveFact(in: .workspace(workspaceID))
+        } else {
+            saveScope = nil
+        }
         do {
             try await sqliteDatastore.saveWorkspaceEntityRecency(
                 workspaceAtom.recentEntities,
