@@ -91,7 +91,6 @@ import type {
 	WorktreeRenderedContentState,
 } from './types.ts';
 import { hashText, makeDeferred } from './utils.ts';
-import { createOwnedVerifierJourneyDeadline } from './verifier-journey-deadline.ts';
 import {
 	assertWorktreeTreeExtentMatchesSurfaceFacts,
 	bridgeWorktreeDevRootTokenForPath,
@@ -133,18 +132,7 @@ export async function runBridgeViewerWorktreeDevServerVerifier(
 	launch: BridgeWebTestLaunch,
 ): Promise<void> {
 	const browser = await launch.launchBrowser({ headless: true });
-	const deadline = createOwnedVerifierJourneyDeadline({
-		closePages: async (reason): Promise<void> => {
-			await Promise.allSettled(
-				browser
-					.contexts()
-					.flatMap((context) => context.pages())
-					.map((page) => page.close({ reason })),
-			);
-			await browser.close({ reason });
-		},
-	});
-	installVerifierBrowser(browser, deadline.signal);
+	installVerifierBrowser(browser, launch.startJourneyHangBound(), launch);
 	try {
 		if (performanceOnlyMode) {
 			const result = await verifyWorktreeDevServerPerformanceOnly(launch);
@@ -179,11 +167,7 @@ export async function runBridgeViewerWorktreeDevServerVerifier(
 		}
 	} finally {
 		clearVerifierBrowser();
-		try {
-			await closeAllWorktreeFileSurfaces();
-		} finally {
-			await deadline.dispose();
-		}
+		await closeAllWorktreeFileSurfaces();
 	}
 }
 
@@ -192,18 +176,7 @@ export async function runBridgeViewerWorktreeDevServerStartupSurfaceVerifier(
 	launch: BridgeWebTestLaunch,
 ): Promise<WorktreeDevServerStartupSurfaceResult> {
 	const browser = await launch.launchBrowser({ headless: true });
-	const deadline = createOwnedVerifierJourneyDeadline({
-		closePages: async (reason): Promise<void> => {
-			await Promise.allSettled(
-				browser
-					.contexts()
-					.flatMap((context) => context.pages())
-					.map((page) => page.close({ reason })),
-			);
-			await browser.close({ reason });
-		},
-	});
-	installVerifierBrowser(browser, deadline.signal);
+	installVerifierBrowser(browser, launch.startJourneyHangBound(), launch);
 	try {
 		const page = await makeVerificationPage();
 		if (surface === 'file') {
@@ -228,11 +201,7 @@ export async function runBridgeViewerWorktreeDevServerStartupSurfaceVerifier(
 		};
 	} finally {
 		clearVerifierBrowser();
-		try {
-			await closeAllWorktreeFileSurfaces();
-		} finally {
-			await deadline.dispose();
-		}
+		await closeAllWorktreeFileSurfaces();
 	}
 }
 
@@ -243,27 +212,12 @@ export async function runBridgeViewerWorktreeDevServerCompleteJourneyLaunch(prop
 	readonly sourceHead: string;
 }): Promise<Awaited<ReturnType<typeof collectBridgeDevelopmentCompleteJourneyLaunch>>> {
 	const browser = await props.launch.launchBrowser({ headless: true });
-	const deadline = createOwnedVerifierJourneyDeadline({
-		closePages: async (reason): Promise<void> => {
-			await Promise.allSettled(
-				browser
-					.contexts()
-					.flatMap((context) => context.pages())
-					.map((page) => page.close({ reason })),
-			);
-			await browser.close({ reason });
-		},
-	});
-	installVerifierBrowser(browser, deadline.signal);
+	installVerifierBrowser(browser, props.launch.startJourneyHangBound(), props.launch);
 	try {
 		return await collectBridgeDevelopmentCompleteJourneyLaunch(props);
 	} finally {
 		clearVerifierBrowser();
-		try {
-			await closeAllWorktreeFileSurfaces();
-		} finally {
-			await deadline.dispose();
-		}
+		await closeAllWorktreeFileSurfaces();
 	}
 }
 

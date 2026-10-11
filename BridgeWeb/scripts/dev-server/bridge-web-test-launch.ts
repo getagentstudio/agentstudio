@@ -9,6 +9,7 @@ import {
 	BridgeViewerOwnedViteServer,
 	type BridgeViewerViteServerCleanupProof,
 } from '../verify-bridge-viewer-worktree-dev-server/product-only-real-router-regression.ts';
+import { createOwnedVerifierJourneyDeadline } from '../verify-bridge-viewer-worktree-dev-server/verifier-journey-deadline.ts';
 import {
 	startOwnedBridgeDevelopmentServer,
 	type OwnedBridgeDevelopmentServer,
@@ -111,9 +112,12 @@ export class BridgeWebTestLaunch {
 	#viteProcess: BridgeViewerOwnedViteServer | null = null;
 	#closeBrowser: Browser['close'] | null = null;
 	#browserCloseOptions: Parameters<Browser['close']>[0];
+	#browserDisposal: HandledLaunchPromise<void> | null = null;
 	#operations: LaunchCleanupOperation[] = [];
 	#disposal: HandledLaunchPromise<BridgeWebTestLaunchCleanup> | null = null;
 	#closed = false;
+	readonly #pendingSteps = new Map<symbol, string>();
+	#journeySignal: AbortSignal | null = null;
 	#cleanup: BridgeWebTestLaunchCleanup = {
 		backend: null,
 		browserDisconnected: true,
@@ -171,6 +175,18 @@ export class BridgeWebTestLaunch {
 		return this.#dataRootPath;
 	}
 
+	// Browser-only proofs have their own complete launch scope. A browser used
+	// inside a shared stack instead closes only that browser's owned resource.
+	static async startBrowser(options: LaunchOptions): Promise<Browser> {
+		const launch = await BridgeWebTestLaunch.start();
+		const browser = await launch.launchBrowser(options);
+		browser.close = async (closeOptions): Promise<void> => {
+			launch.#browserCloseOptions = closeOptions;
+			await launch.dispose();
+		};
+		return browser;
+	}
+
 	get backend(): OwnedBridgeDevelopmentServer {
 		if (this.#backend === null) throw new Error('Test launch has no Swift backend.');
 		return this.#backend;
@@ -178,6 +194,35 @@ export class BridgeWebTestLaunch {
 
 	get cleanup(): BridgeWebTestLaunchCleanup {
 		return this.#cleanup;
+	}
+
+	observeStep<TValue>(name: string, promise: Promise<TValue>): HandledLaunchPromise<TValue> {
+		const observation = handleLaunchPromise(promise, name);
+		const identity = Symbol(name);
+		this.#pendingSteps.set(identity, name);
+		void observation.settled.then((): void => {
+			this.#pendingSteps.delete(identity);
+		});
+		return observation;
+	}
+
+	startJourneyHangBound(): AbortSignal {
+		this.#requireOpen();
+		if (this.#journeySignal !== null) return this.#journeySignal;
+		const deadline = createOwnedVerifierJourneyDeadline({
+			pendingSteps: (): readonly string[] => [...this.#pendingSteps.values()],
+			closePages: async (reason): Promise<void> => {
+				await Promise.allSettled(
+					(this.#browser?.contexts() ?? [])
+						.flatMap((context) => context.pages())
+						.map((page) => page.close({ reason })),
+				);
+				await this.#closeBrowser?.({ reason });
+			},
+		});
+		this.#journeySignal = deadline.signal;
+		this.ownFixture('verifier hang bound', deadline.dispose);
+		return deadline.signal;
 	}
 
 	async startVite(configuration: InlineConfig): Promise<ViteDevServer> {
@@ -230,11 +275,11 @@ export class BridgeWebTestLaunch {
 				this.#requireOpen();
 			}
 			this.#requireOpen();
-			// Preserve the existing collectors' Browser API. close() delegates to
-			// this owner; teardown calls the captured native close exactly once.
+			// Preserve the Browser API while this harness owns resource closure.
+			// Closing a journey's browser must not stop a suite's shared stack.
 			browser.close = async (closeOptions): Promise<void> => {
 				this.#browserCloseOptions = closeOptions;
-				await this.dispose();
+				await this.#disposeBrowser();
 			};
 			return browser;
 		} catch (error: unknown) {
@@ -295,6 +340,7 @@ export class BridgeWebTestLaunch {
 			throw new AggregateError(
 				outcome.kind === 'failed' ? [outcome.error, error] : [error],
 				'Product data read/client release failed.',
+				{ cause: error },
 			);
 		}
 		if (outcome.kind === 'failed') throw outcome.error;
@@ -347,7 +393,7 @@ export class BridgeWebTestLaunch {
 			await this.dispose();
 		} catch (cleanupError: unknown) {
 			throw new AggregateError([error, cleanupError], 'BridgeWeb launch and teardown failed.', {
-				cause: error,
+				cause: cleanupError,
 			});
 		}
 		throw error;
@@ -356,6 +402,19 @@ export class BridgeWebTestLaunch {
 	async dispose(): Promise<BridgeWebTestLaunchCleanup> {
 		this.#disposal ??= handleLaunchPromise(this.#dispose(), 'owned stack teardown');
 		return await this.#disposal.value();
+	}
+
+	async #disposeBrowser(): Promise<void> {
+		this.#browserDisposal ??= handleLaunchPromise(
+			(async (): Promise<void> => {
+				await this.#closeBrowser?.(this.#browserCloseOptions);
+				const browserDisconnected = !(this.#browser?.isConnected() ?? false);
+				this.#cleanup = { ...this.#cleanup, browserDisconnected };
+				if (!browserDisconnected) throw new Error('Owned browser remained connected after close.');
+			})(),
+			'close owned browser',
+		);
+		await this.#browserDisposal.value();
 	}
 
 	async #dispose(): Promise<BridgeWebTestLaunchCleanup> {
@@ -377,11 +436,7 @@ export class BridgeWebTestLaunch {
 			{
 				name: 'browser',
 				run: async (): Promise<void> => {
-					await this.#closeBrowser?.(this.#browserCloseOptions);
-					const browserDisconnected = !(this.#browser?.isConnected() ?? false);
-					this.#cleanup = { ...this.#cleanup, browserDisconnected };
-					if (!browserDisconnected)
-						throw new Error('Owned browser remained connected after close.');
+					await this.#disposeBrowser();
 				},
 			},
 			{

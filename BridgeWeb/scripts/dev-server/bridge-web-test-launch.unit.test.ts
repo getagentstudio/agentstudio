@@ -1,7 +1,9 @@
 import { access } from 'node:fs/promises';
 
-import { expect, test } from 'vitest';
+import { expect, test, vi } from 'vitest';
 
+import { endToEndTestTimeoutMilliseconds } from '../../tests/vitest-hang-bounds.ts';
+import { makeDeferred } from '../verify-bridge-viewer-worktree-dev-server/utils.ts';
 import type { OwnedBridgeDevelopmentServerCleanup } from './bridge-development-server-process.ts';
 import { BridgeWebTestLaunch } from './bridge-web-test-launch.ts';
 
@@ -95,25 +97,19 @@ test.each(['closed', 'failed'] as const)(
 	'product data is gated by client release: %s',
 	async (disposition) => {
 		const launch = await BridgeWebTestLaunch.start();
-		let arrive: () => void = (): void => {};
-		const arrived = new Promise<void>((resolve): void => {
-			arrive = resolve;
-		});
-		let release: () => void = (): void => {};
-		const heldRelease = new Promise<void>((resolve): void => {
-			release = resolve;
-		});
+		const arrival = makeDeferred<void>();
+		const released = makeDeferred<void>();
 		const data = { pathCount: 4 };
 		const result = launch.readProductData(
 			async () => data,
 			async (): Promise<void> => {
-				arrive();
-				await heldRelease;
+				arrival.resolve();
+				await released.promise;
 				if (disposition === 'failed') throw new Error('release refused');
 			},
 		);
-		await arrived;
-		release();
+		await arrival.promise;
+		released.resolve();
 		if (disposition === 'failed') {
 			await expect(result).rejects.toThrow('client release failed');
 			await expect(launch.dispose()).rejects.toThrow('owned stack teardown');
@@ -123,3 +119,28 @@ test.each(['closed', 'failed'] as const)(
 		}
 	},
 );
+
+test('one journey hang bound names pending owner facts and clears on disposal', async () => {
+	const launch = await BridgeWebTestLaunch.start();
+	vi.useFakeTimers();
+	const stderr = vi.spyOn(process.stderr, 'write').mockReturnValue(true);
+	const metadata = makeDeferred<void>();
+	try {
+		const observation = launch.observeStep('startup file.metadata', metadata.promise);
+		const signal = launch.startJourneyHangBound();
+		expect(launch.startJourneyHangBound()).toBe(signal);
+		expect(vi.getTimerCount()).toBe(1);
+		await vi.advanceTimersByTimeAsync(endToEndTestTimeoutMilliseconds);
+		expect(signal.aborted).toBe(true);
+		expect(String(signal.reason)).toContain('waiting=startup file.metadata');
+		metadata.resolve();
+		await observation.value();
+		await launch.dispose();
+		expect(vi.getTimerCount()).toBe(0);
+	} finally {
+		metadata.resolve();
+		vi.useRealTimers();
+		stderr.mockRestore();
+		await launch.dispose();
+	}
+});

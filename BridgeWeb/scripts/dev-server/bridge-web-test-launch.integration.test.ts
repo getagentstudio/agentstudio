@@ -92,6 +92,7 @@ test('unsafe startup promise bypasses finally in the negative control', async ()
 
 test.each([
 	'startup-rejection',
+	'swift-startup-rejection',
 	'unhandled-rejection',
 	'unhandled-strict',
 	'SIGTERM',
@@ -107,7 +108,8 @@ test.each([
 		await expect(access(ready.dataRootPath)).rejects.toMatchObject({ code: 'ENOENT' });
 		const backendPid = ready.backendPid;
 		expect(() => process.kill(backendPid, 0)).toThrow();
-		if (mode === 'startup-rejection') expect(fixture.stderr()).toContain('File metadata startup');
+		if (mode === 'startup-rejection' || mode === 'swift-startup-rejection')
+			expect(fixture.stderr()).toContain('File metadata startup');
 		if (mode === 'unhandled-rejection' || mode === 'unhandled-strict')
 			expect(fixture.stderr()).toContain('injected unhandled startup step');
 	} finally {
@@ -220,6 +222,22 @@ test('a harness data read releases its client before the real page bootstraps', 
 			async () => {
 				const opened = await client.open();
 				await client.demandDescriptor('README.md');
+				// Negative control at the real ownership layer: before release,
+				// the page's different-tab initial bootstrap is refused.
+				const overlap = await fetch(`${origin}/__bridge-product/bootstrap`, {
+					method: 'POST',
+					headers: { 'Content-Type': 'application/json' },
+					body: JSON.stringify({
+						reason: 'initial',
+						tabId: 'harness-page-tab',
+						navigationIntent: {
+							commandId: 'open-file-view',
+							commandKind: 'activateContext',
+							surface: 'file',
+						},
+					}),
+				});
+				expect(overlap.status).toBe(409);
 				return opened;
 			},
 			async (): Promise<void> => {
@@ -241,6 +259,10 @@ test('a harness data read releases its client before the real page bootstraps', 
 		expect((await bootstrap.value()).status()).toBe(200);
 		await page.getByTestId('bridge-file-viewer-shell').waitFor({ state: 'visible' });
 		expect(await page.getByTestId('bridge-dev-session-inactive').count()).toBe(0);
+		await browser.close();
+		expect(launch.cleanup.browserDisconnected).toBe(true);
+		await expect(access(launch.dataRootPath)).resolves.toBeUndefined();
+		expect((await fetch(`${origin}/__bridge-product/health`)).status).toBe(204);
 	} finally {
 		try {
 			await launch?.dispose();

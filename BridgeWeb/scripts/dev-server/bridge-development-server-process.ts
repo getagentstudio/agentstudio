@@ -2,7 +2,7 @@ import { spawn } from 'node:child_process';
 import { access } from 'node:fs/promises';
 import { join } from 'node:path';
 
-import { reserveLoopbackPort as reserveBridgeDevelopmentServerPort } from './reserve-loopback-port.js';
+import { reserveLoopbackPort as reserveBridgeDevelopmentServerPort } from './reserve-loopback-port.ts';
 
 export { reserveBridgeDevelopmentServerPort };
 

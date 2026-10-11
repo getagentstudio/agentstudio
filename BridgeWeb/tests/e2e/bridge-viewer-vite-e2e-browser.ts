@@ -8,8 +8,7 @@ import { isReactActWarning } from '../react-act-warning.ts';
 // the test process's console.error, which ../console-error-guard.ts (loaded by
 // vitest.e2e.config.ts) turns into a failure of the running test.
 export async function launchBridgeViewerE2EChromium(): Promise<Browser> {
-	const launch = await BridgeWebTestLaunch.start();
-	const browser = await launch.launchBrowser({ channel: 'chrome', headless: true });
+	const browser = await BridgeWebTestLaunch.startBrowser({ channel: 'chrome', headless: true });
 	browser.on('context', (context: BrowserContext): void => {
 		context.on('console', reportPageActWarning);
 	});

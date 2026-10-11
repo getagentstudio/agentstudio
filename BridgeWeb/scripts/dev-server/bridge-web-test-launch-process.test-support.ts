@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import { startOwnedBridgeDevelopmentServer } from './bridge-development-server-process.ts';
 import { BridgeWebTestLaunch } from './bridge-web-test-launch.ts';
 import { handleLaunchPromise } from './handled-launch-promise.ts';
 
@@ -39,6 +40,17 @@ export async function runLaunchProcessFixture(): Promise<void> {
 					{ backend },
 					{
 						startBackend: async (props) => {
+							if (mode === 'swift-startup-rejection') {
+								const failure = handleLaunchPromise(
+									Promise.reject(new Error('injected File metadata startup step')),
+									'File metadata startup',
+								);
+								const server = await startOwnedBridgeDevelopmentServer(props);
+								process.stdout.write(
+									`${JSON.stringify({ event: 'ready', dataRootPath: props.dataRootPath, backendPid: server.pid })}\n`,
+								);
+								return await failure.value();
+							}
 							const earlyFailure =
 								mode === 'startup-rejection'
 									? handleLaunchPromise(

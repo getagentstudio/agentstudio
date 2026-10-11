@@ -4,5 +4,4 @@ process.stdin.resume();
 process.stdin.once('end', (): void => {
 	process.kill(process.pid, 'SIGTERM');
 });
-
-export {};
+import process from 'node:process';

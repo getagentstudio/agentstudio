@@ -1,9 +1,7 @@
 import type { Page, Request } from 'playwright';
 
-import {
-	handleLaunchPromise,
-	type HandledLaunchPromise,
-} from '../dev-server/handled-launch-promise.ts';
+import { type HandledLaunchPromise } from '../dev-server/handled-launch-promise.ts';
+import { observeVerifierStartupStep } from './browser-session.ts';
 
 interface WorktreeFileContentRouteTimingObservation {
 	readonly requestStartedMilliseconds: HandledLaunchPromise<number>;
@@ -13,21 +11,18 @@ interface WorktreeFileContentRouteTimingObservation {
 export function observeWorktreeFileContentRouteTiming(props: {
 	readonly page: Page;
 	readonly startedAt: number;
-	readonly timeoutMilliseconds: number;
 }): WorktreeFileContentRouteTimingObservation {
-	const requestStartedMilliseconds = handleLaunchPromise(
-		props.page
-			.waitForRequest(requestIsWorktreeFileContent, { timeout: props.timeoutMilliseconds })
-			.then((): number => Math.max(0, performance.now() - props.startedAt)),
+	const requestStartedMilliseconds = observeVerifierStartupStep(
 		'initial File content request',
-	);
-	const responseStartedMilliseconds = handleLaunchPromise(
 		props.page
-			.waitForResponse((response): boolean => requestIsWorktreeFileContent(response.request()), {
-				timeout: props.timeoutMilliseconds,
-			})
+			.waitForRequest(requestIsWorktreeFileContent)
 			.then((): number => Math.max(0, performance.now() - props.startedAt)),
+	);
+	const responseStartedMilliseconds = observeVerifierStartupStep(
 		'initial File content response',
+		props.page
+			.waitForResponse((response): boolean => requestIsWorktreeFileContent(response.request()))
+			.then((): number => Math.max(0, performance.now() - props.startedAt)),
 	);
 	return { requestStartedMilliseconds, responseStartedMilliseconds };
 }

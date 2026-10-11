@@ -15,6 +15,8 @@ export async function makeVerificationPage(): Promise<Page> {
 			height: 980,
 		},
 	});
+	page.setDefaultTimeout(0);
+	page.setDefaultNavigationTimeout(0);
 	const observedTelemetryBatchKeys = new Set<string>();
 	page.on('request', (request): void => {
 		if (request.method() !== 'POST') {
