@@ -90,7 +90,7 @@ struct GitWorkingDirectoryProjectorAutomaticPacingTests {
     }
 
     @Test("background-only promotion starts one ordinary-tier baseline without duplication")
-    func backgroundOnlyPromotionStartsOneOrdinaryTierBaseline() async throws {
+    func backgroundOnlyRegistrationRecordsBaselineAdmission() async throws {
         let source = GitProjectorFactSource()
         let facts = try source.attach()
         let bus = EventBus<RuntimeEnvelope>()
@@ -206,7 +206,7 @@ struct GitWorkingDirectoryProjectorAutomaticPacingTests {
         "lower-tier invalidation starts obey process pacing",
         arguments: [false, true]
     )
-    func lowerTierInvalidationStartsObeyProcessPacing(
+    func pacingHelperClassifiesLowerTierInvalidation(
         usesRemoteReferenceRefresh: Bool
     ) async throws {
         let scenario = try await prepareLowerTierPacingScenario()

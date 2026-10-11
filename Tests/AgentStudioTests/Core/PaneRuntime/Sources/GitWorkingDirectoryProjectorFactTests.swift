@@ -452,7 +452,7 @@ struct GitWorkingDirectoryProjectorFactTests {
     }
 
     @Test("accepted intake and refresh close only after held status reaches the bus")
-    func heldStatusClosesAfterPublication() async throws {
+    func heldStatusProducesSnapshotAndRefreshFacts() async throws {
         let bus = EventBus<RuntimeEnvelope>()
         let statusGate = HeldStep<Void>("projector status provider")
         let provider = StubGitWorkingTreeStatusProvider { _ in

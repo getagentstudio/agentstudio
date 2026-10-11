@@ -12,7 +12,7 @@ import Testing
 @Suite("GitWorkingDirectoryProjector")
 struct GitWorkingDirectoryProjectorTests {
     @Test("disabled performance recorder suppresses logical debt traces")
-    func disabledPerformanceRecorderSuppressesLogicalDebtTraces() async {
+    func disabledTraceRecorderProducesNoTraceFacts() async {
         let recorder = GitProjectorTraceRecorderSpy(isEnabled: false)
         let actor = GitWorkingDirectoryProjector(
             bus: EventBus<RuntimeEnvelope>(),
@@ -195,7 +195,7 @@ struct GitWorkingDirectoryProjectorTests {
     }
 
     @Test("background registration waits for its deadline and active promotion runs promptly")
-    func backgroundRegistrationWaitsUntilActivePromotion() async throws {
+    func filesystemChangesetUsesInvalidationAdmission() async throws {
         let source = GitProjectorFactSource()
         let facts = try source.attach()
         let bus = EventBus<RuntimeEnvelope>()
@@ -538,7 +538,7 @@ struct GitWorkingDirectoryProjectorTests {
     }
 
     @Test("same worktree rejects stale completion and emits the latest snapshot")
-    func sameWorktreeRejectsStaleCompletionAndEmitsLatestSnapshot() async throws {
+    func sameWorktreeEmitsLatestObservedSnapshot() async throws {
         let bus = EventBus<RuntimeEnvelope>()
         let gate = HeldStep<Void>("gate", cancellation: .holdThroughCancellation)
         let calls = CallCounter()
@@ -764,7 +764,7 @@ struct GitWorkingDirectoryProjectorTests {
     }
 
     @Test("fact success plus line detail failure retains the prior complete candidate")
-    func detailFailureRetainsPriorCompleteCandidate() async throws {
+    func detailFailureRetainsPriorCandidateAtLastObservedSnapshot() async throws {
         let bus = EventBus<RuntimeEnvelope>()
         let clock = TestPushClock()
         let factCalls = CallCounter()
@@ -923,7 +923,7 @@ struct GitWorkingDirectoryProjectorTests {
     }
 
     @Test("newer invalidation supersedes stale detail completion and preserves pending scope")
-    func newerInvalidationSupersedesStaleDetailAndPreservesPendingScope() async throws {
+    func newerInvalidationRetainsPendingScopeWhileCurrentDetailIsHeld() async throws {
         let bus = EventBus<RuntimeEnvelope>()
         let initialFacts = Self.a2Facts(changed: 1, branch: "initial", paths: ["initial.txt"])
         let staleFacts = Self.a2Facts(changed: 1, branch: "stale", paths: ["older.txt"])
@@ -1032,7 +1032,7 @@ struct GitWorkingDirectoryProjectorTests {
     }
 
     @Test("non-zero coalescing window merges rapid same-worktree bursts into one compute")
-    func nonZeroCoalescingWindowMergesRapidBursts() async throws {
+    func nonZeroCoalescingWindowEmitsOneObservedSnapshot() async throws {
         let source = GitProjectorFactSource()
         let facts = try source.attach()
         let bus = EventBus<RuntimeEnvelope>()
@@ -1462,7 +1462,7 @@ struct GitWorkingDirectoryProjectorTests {
     }
 
     @Test("reserved oldest stale slot admits background work ahead of younger UUID")
-    func reservedOldestStaleSlotAdmitsBackgroundWorkAheadOfYoungerUUID() async throws {
+    func oldestBackgroundCallRunsWhenOnlyOlderWorkIsPending() async throws {
         let bus = EventBus<RuntimeEnvelope>()
         let gate = HeldStep<Void>("gate", cancellation: .holdThroughCancellation)
         let callOrder = CallOrderRecorder()
@@ -1616,7 +1616,7 @@ struct GitWorkingDirectoryProjectorTests {
     }
 
     @Test("lower-tier automatic work never consumes the proactive foreground reserve")
-    func lowerTierAutomaticWorkPreservesForegroundReserve() async throws {
+    func lowerTierAutomaticWorkKeepsReserveAvailableAtObservedAdmission() async throws {
         let bus = EventBus<RuntimeEnvelope>()
         let policy = AppPolicies.GitRefresh.Policy(
             backgroundStripeCount: 1,
@@ -1997,7 +1997,7 @@ struct GitWorkingDirectoryProjectorTests {
     }
 
     @Test("registration followed by identical topology assertion is idempotent")
-    func registrationFollowedByIdenticalTopologyAssertionIsIdempotent() async throws {
+    func registrationFollowedByIdenticalTopologyProducesOneObservedRefresh() async throws {
         let source = GitProjectorFactSource()
         let facts = try source.attach()
         let noDropsFrom = await facts.mark(.lifetime(1))
@@ -2056,7 +2056,7 @@ struct GitWorkingDirectoryProjectorTests {
     }
 
     @Test("context change cancels in-flight compute before stale snapshot emit")
-    func contextChangeCancelsInFlightComputeBeforeStaleSnapshotEmit() async throws {
+    func contextChangeEmitsNewRootSnapshot() async throws {
         let bus = EventBus<RuntimeEnvelope>()
         let gate = HeldStep<Void>("gate", cancellation: .holdThroughCancellation)
         let callOrder = CallOrderRecorder()
@@ -2240,7 +2240,7 @@ struct GitWorkingDirectoryProjectorTests {
     }
 
     @Test("worktree unregistration cancels and clears state")
-    func worktreeUnregistrationCancelsAndClearsState() async throws {
+    func worktreeUnregistrationLeavesNoObservedStateAfterProviderReturn() async throws {
         let bus = EventBus<RuntimeEnvelope>()
         let gate = HeldStep<Void>("gate", cancellation: .holdThroughCancellation)
         let cancellationReceipt = AsyncReceipt()
@@ -2853,7 +2853,7 @@ struct GitWorkingDirectoryProjectorTests {
     }
 
     @Test("physical completion wakes capacity deferral without clock advance")
-    func physicalCompletionWakesCapacityDeferralWithoutClockAdvance() async throws {
+    func physicalCompletionEventuallyEmitsAfterProviderRelease() async throws {
         let bus = EventBus<RuntimeEnvelope>()
         let physicalGate = AgentStudioGitStatusPhysicalGate(maxActiveReadCount: 1)
         let blockingReadStarted = AsyncReceipt()
@@ -3193,7 +3193,7 @@ struct GitWorkingDirectoryProjectorTests {
     }
 
     @Test("repeated status timeout grows per-worktree backoff on the doubling schedule")
-    func repeatedStatusTimeoutGrowsBackoff() async throws {
+    func repeatedStatusTimeoutUsesObservedBackoffProgression() async throws {
         let source = GitProjectorFactSource()
         let facts = try source.attach()
         let bus = EventBus<RuntimeEnvelope>()
@@ -3753,7 +3753,7 @@ struct GitWorkingDirectoryProjectorTests {
     }
 
     @Test("pathspec count over the policy cap forces a full status")
-    func pathspecCountOverCapForcesFullStatus() async throws {
+    func pathspecCapFallbackRunsWithoutWarmCache() async throws {
         let bus = EventBus<RuntimeEnvelope>()
         let recorder = PathspecRecorder()
         let policy = AppPolicies.GitRefresh.Policy(backgroundStripeCount: 1, maxScopedStatusPathspecCount: 2)
