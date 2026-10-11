@@ -102,6 +102,18 @@ struct IPCCompiledInvocationResolverTests {
         #expect(observation.helpSchemaNames.isEmpty)
     }
 
+    @Test("overview help advertises the local worktree CLI")
+    func overviewHelpIncludesWorktreeCLI() throws {
+        let resolver = IPCCompiledInvocationResolver(index: IPCBuiltInMethodIndex())
+        let rendered = try resolver.localHelp(arguments: ["help"], inputs: inputs)
+        let help = try #require(rendered)
+
+        #expect(
+            help.contains(
+                "  agentstudio worktree new|list|remove|prune [OPTIONS]  (local Git worktrees; see agentstudio worktree --help)"
+            ))
+    }
+
     @Test("detailed help retains options and correlation text and builds only the selected method's example")
     func detailedHelpConstructsOnlySelectedDescriptor() throws {
         let observation = ResolverFactoryObservation()

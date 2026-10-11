@@ -1,5 +1,0 @@
-# Vitest Browser Mode failure output (attachments and failure screenshots).
-.vitest-attachments/
-tests/__screenshots__/
-# Scene bundles for the media team's HyperFrames projects (pnpm --dir web run build:scene-bundles).
-dist-scene-bundles/

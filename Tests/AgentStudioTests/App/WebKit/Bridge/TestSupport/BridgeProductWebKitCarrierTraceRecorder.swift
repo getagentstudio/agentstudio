@@ -61,10 +61,14 @@ actor BridgeProductWebKitCarrierTraceRecorder: BridgePerformanceTraceRecording {
     }
 
     func prepareForegroundCatchUp(
-        dirtyFact: BridgePaneRefreshDirtyFact?
+        dirtyFact: BridgePaneRefreshDirtyFact?,
+        reviewModeIdentity: BridgeProductWebKitActiveViewerModeIdentity
     ) -> BridgeProductWebKitCatchUpTerminalExpectation {
         precondition(foregroundCatchUp == nil)
-        let expectation = BridgeProductWebKitCatchUpTerminalExpectation(dirtyFact: dirtyFact)
+        let expectation = BridgeProductWebKitCatchUpTerminalExpectation(
+            dirtyFact: dirtyFact,
+            reviewModeIdentity: reviewModeIdentity
+        )
         foregroundCatchUp = expectation
         return expectation
     }
@@ -174,6 +178,27 @@ actor BridgeProductWebKitCarrierTraceRecorder: BridgePerformanceTraceRecording {
                 "slice=\(slice)",
                 "taskKind=\(taskKind)",
             ].joined(separator: " ")
+        }
+    }
+
+    func operationLifecycleEvents() -> [BridgeOperationLifecycleTraceEvent] {
+        samples.compactMap { sample in
+            guard sample.name == "performance.bridge.swift.operation_lifecycle",
+                let operationCorrelationID = sample.stringAttributes["agentstudio.bridge.operation.id"],
+                let stageValue = sample.stringAttributes["agentstudio.bridge.phase"],
+                let stage = BridgeOperationLifecycleTraceEvent.Stage(rawValue: stageValue),
+                let resultValue = sample.stringAttributes["agentstudio.bridge.result"],
+                let result = BridgeOperationLifecycleTraceEvent.Result(rawValue: resultValue),
+                let surfaceValue = sample.stringAttributes["agentstudio.bridge.viewer"],
+                let surface = BridgeProductSurface(rawValue: surfaceValue)
+            else { return nil }
+            return BridgeOperationLifecycleTraceEvent(
+                operationCorrelationID: operationCorrelationID,
+                result: result,
+                stage: stage,
+                stageAttempt: Int(sample.numericAttributes["agentstudio.bridge.stage.attempt"] ?? 0),
+                surface: surface
+            )
         }
     }
 

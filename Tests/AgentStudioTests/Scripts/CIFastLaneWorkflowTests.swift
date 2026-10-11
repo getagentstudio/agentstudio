@@ -112,7 +112,6 @@ struct CIFastLaneWorkflowTests {
 
         for jobName in [
             "code-quality",
-            "marketing-site-validation",
             "bridge-web",
             "swift-test-suite",
         ] {

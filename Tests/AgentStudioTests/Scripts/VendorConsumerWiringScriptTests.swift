@@ -384,7 +384,7 @@ struct VendorConsumerWiringScriptTests {
         #expect(setupTask.contains("flag \"--use-local-vendors\""))
         #expect(
             setupTask.contains(
-                "depends = [\"bridge-web-install\", \"web-install\", \"install-hooks\"]"
+                "depends = [\"bridge-web-install\", \"install-hooks\"]"
             )
         )
         #expect(!setupTask.contains("depends = [\"copy-xcframework\""))

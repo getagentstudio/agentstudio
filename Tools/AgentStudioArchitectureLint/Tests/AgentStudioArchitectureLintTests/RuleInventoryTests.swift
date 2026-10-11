@@ -71,6 +71,7 @@ enum ExpectedRuleInventory {
         ExpectedRule(id: "agentstudio_probe_reports_off_main", severity: .error),
         ExpectedRule(id: "agentstudio_test_ad_hoc_gate", severity: .error),
         ExpectedRule(id: "agentstudio_test_wait_helper_returns_observation", severity: .error),
+        ExpectedRule(id: "agentstudio_owner_fact_sink_boundary", severity: .error),
         ExpectedRule(id: "agentstudio_agent_doc_reference_resolves", severity: .error),
     ]
 }

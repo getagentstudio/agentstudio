@@ -130,7 +130,8 @@ extension SwiftLaneRunnerReportTests {
         let lines = laneOutputLines(result.output)
         #expect(result.exitCode == 0, Comment(rawValue: result.output))
         switch innerWatchdog {
-        case .unarmed:
+        case .unarmed, .armedByFixture:
+            // The command exits without printing the arm line, so neither arms the watchdog.
             #expect(lines.contains("EXITED_COMMAND_STATUS=0"), Comment(rawValue: result.output))
             #expect(!result.output.contains("ERROR: no output progress"), Comment(rawValue: result.output))
         case .armed:
