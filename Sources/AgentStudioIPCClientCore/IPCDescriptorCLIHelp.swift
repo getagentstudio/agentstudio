@@ -39,7 +39,9 @@ enum IPCDescriptorCLIHelp {
                 "       agentstudio METHOD --help",
                 "       agentstudio help [--live]",
                 "Methods:",
-            ] + PaneCLIVerb.allCases.map { "  agentstudio \($0.usage)" } + methods + [
+            ] + PaneCLIVerb.allCases.map { "  agentstudio \($0.usage)" } + [
+                "  agentstudio worktree new|list|remove|prune [OPTIONS]  (local Git worktrees; see agentstudio worktree --help)"
+            ] + methods + [
                 "Method help: agentstudio <method> --help",
                 "Live commands: agentstudio help --live",
                 "Use --json '{...}' or --stdin for a JSON parameter object.",

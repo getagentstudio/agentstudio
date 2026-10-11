@@ -14,6 +14,75 @@ struct WorktreeCommandLineTests {
         let exitCode: Int32
     }
 
+    static func runnerThatWouldFailIfCalled() -> WorktreeOperationRunner {
+        let start = URL(fileURLWithPath: "/path/that/does/not/exist", isDirectory: true)
+        let repository = URL(fileURLWithPath: "/path/that/does/not/exist/repository", isDirectory: true)
+        let repositoryID = GitRepositoryID(rawValue: "common:/path/that/does/not/exist/repository.git")
+        let snapshot = GitWorktreeSnapshot(
+            id: GitWorktreeID(rawValue: "help|worktree:source"),
+            repositoryID: repositoryID,
+            displayName: "main",
+            path: start,
+            canonicalPath: start,
+            gitDirectory: start.appending(path: ".git"),
+            indexPath: start.appending(path: ".git/index"),
+            isMainWorktree: true,
+            isLocked: false,
+            lockReason: nil,
+            head: nil
+        )
+        let identity = GitRepositoryIdentity(
+            id: repositoryID,
+            canonicalCommonDirectory: repository.appending(path: ".git"),
+            mainWorktreePath: repository
+        )
+        let client = WorktreeOperationClientStub(
+            startPath: start,
+            snapshot: snapshot,
+            identity: identity,
+            failsWorktreeListing: true,
+            failsDefaultTargetResolution: true
+        )
+        return WorktreeOperationRunner(client: client)
+    }
+
+    @Test(
+        "worktree help prints the overview without invoking the runner",
+        arguments: [[], ["--help"], ["-h"], ["help"]])
+    func printsOverviewHelp(arguments: [String]) async {
+        let probe = WorktreeCommandLineTestProbe()
+        let exitCode = await WorktreeCommandLine.run(
+            arguments: arguments,
+            currentDirectory: URL(fileURLWithPath: "/path/that/does/not/exist", isDirectory: true),
+            output: { probe.appendOutput($0) },
+            errorOutput: { probe.appendErrorOutput($0) },
+            runner: Self.runnerThatWouldFailIfCalled())
+
+        #expect(exitCode == 0)
+        #expect(probe.outputSnapshot() == [WorktreeCommandLineHelp.overview])
+        #expect(probe.errorOutputSnapshot().isEmpty)
+    }
+
+    @Test(
+        "each worktree verb help prints its usage without invoking the runner",
+        arguments: ["new", "list", "remove", "prune"])
+    func printsVerbHelp(command: String) async {
+        let expected = WorktreeCommandLineHelp.usage(for: command) ?? ""
+        for helpFlag in ["--help", "-h"] {
+            let probe = WorktreeCommandLineTestProbe()
+            let exitCode = await WorktreeCommandLine.run(
+                arguments: [command, helpFlag],
+                currentDirectory: URL(fileURLWithPath: "/path/that/does/not/exist", isDirectory: true),
+                output: { probe.appendOutput($0) },
+                errorOutput: { probe.appendErrorOutput($0) },
+                runner: Self.runnerThatWouldFailIfCalled())
+
+            #expect(exitCode == 0)
+            #expect(probe.outputSnapshot() == [expected])
+            #expect(probe.errorOutputSnapshot().isEmpty)
+        }
+    }
+
     @Test("argument parsing maps list --repo to an absolute start")
     func parsesListRepositoryPath() throws {
         let currentDirectory = URL(fileURLWithPath: "/tmp/worktree-cli", isDirectory: true)
@@ -174,8 +243,10 @@ struct WorktreeCommandLineTests {
 
     @Test("malformed arguments write one usage line to stderr and return 64")
     func reportsMalformedArgumentsAsUsageErrors() async {
+        // A bare `worktree` prints help (LR32); an option with no command is still a usage error.
         let malformedForms: [[String]] = [
-            [],
+            ["--json"],
+            ["help", "unknown"],
             ["unknown"],
             ["list", "--unknown"],
             ["list", "--no-fetch", "--no-fetch"],
@@ -504,7 +575,7 @@ struct WorktreeCommandLineTests {
     }
 }
 
-private final class WorktreeCommandLineTestProbe: @unchecked Sendable {
+final class WorktreeCommandLineTestProbe: @unchecked Sendable {
     private let lock = NSLock()
     private var outputs: [String] = []
     private var errorOutputs: [String] = []
