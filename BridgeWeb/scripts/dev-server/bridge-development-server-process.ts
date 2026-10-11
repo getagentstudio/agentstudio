@@ -96,6 +96,7 @@ export function parseBridgeDevelopmentServerReadinessLine(
 export async function startOwnedBridgeDevelopmentServer(props: {
 	readonly dataRootPath: string;
 	readonly initialTarget: string;
+	readonly onSpawn?: (server: OwnedBridgeDevelopmentServer) => void;
 	readonly paneId: string;
 	readonly port?: number;
 	readonly repoRootPath: string;
@@ -139,7 +140,20 @@ export async function startOwnedBridgeDevelopmentServer(props: {
 	child.stderr.on('data', (chunk: string): void => {
 		stderrTail = appendBoundedTail(stderrTail, chunk);
 	});
+	let stopPromise: Promise<OwnedBridgeDevelopmentServerCleanup> | null = null;
+	const ownedServer: OwnedBridgeDevelopmentServer = {
+		origin,
+		pid: child.pid ?? 0,
+		stderrTail: (): string => stderrTail,
+		stop: async (): Promise<OwnedBridgeDevelopmentServerCleanup> => {
+			stopPromise ??= stopOwnedBridgeDevelopmentServerProcess(child, lifecycleOutcome);
+			return await stopPromise;
+		},
+		stdoutTail: (): string => stdoutTail,
+		whenExited: lifecycleOutcome.then((): void => {}),
+	};
 	try {
+		props.onSpawn?.(ownedServer);
 		await waitForBridgeDevelopmentServerReadiness({
 			expectedProcess: { pid: child.pid ?? 0, port },
 			lifecycleOutcome,
@@ -153,18 +167,10 @@ export async function startOwnedBridgeDevelopmentServer(props: {
 			stdoutTail: (): string => stdoutTail,
 		});
 	} catch (error: unknown) {
-		await stopOwnedBridgeDevelopmentServerProcess(child, lifecycleOutcome);
+		await ownedServer.stop();
 		throw error;
 	}
-	return {
-		origin,
-		pid: child.pid ?? 0,
-		stderrTail: (): string => stderrTail,
-		stop: async (): Promise<OwnedBridgeDevelopmentServerCleanup> =>
-			await stopOwnedBridgeDevelopmentServerProcess(child, lifecycleOutcome),
-		stdoutTail: (): string => stdoutTail,
-		whenExited: lifecycleOutcome.then((): void => {}),
-	};
+	return ownedServer;
 }
 
 export async function resolveBridgeDevelopmentServerPort(props: {

@@ -110,7 +110,10 @@ export async function collectWorktreeStartupTimingSample(
 		timeoutMilliseconds: 20_000,
 	});
 	const [contentRequestStartedMilliseconds, contentResponseStartedMilliseconds] = await Promise.all(
-		[contentRouteTiming.requestStartedMilliseconds, contentRouteTiming.responseStartedMilliseconds],
+		[
+			contentRouteTiming.requestStartedMilliseconds.value(),
+			contentRouteTiming.responseStartedMilliseconds.value(),
+		],
 	);
 	const contentReadyMilliseconds = await waitForWorktreeOpenFileReadyMilliseconds({
 		page,
