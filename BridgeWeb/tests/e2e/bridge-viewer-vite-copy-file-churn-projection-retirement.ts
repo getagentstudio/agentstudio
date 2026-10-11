@@ -20,9 +20,11 @@ export async function holdEditedProjectionAcrossFileRefresh(props: {
 }): Promise<{
 	readonly evidence: () => EditedProjectionRetirementEvidence;
 	readonly stop: () => Promise<void>;
+	readonly waitForRetirement: () => Promise<void>;
 }> {
 	const releaseFileContent = makeDeferred<void>();
 	const releaseOldProjection = makeDeferred<void>();
+	const requestRetirement = makeDeferred<'retired' | 'aborted'>();
 	const demandedProjectionCorrelations = new Set<string>();
 	const successorDescriptorIds = new Set<string>();
 	const pendingRoutes = new Set<Promise<void>>();
@@ -59,12 +61,14 @@ export async function holdEditedProjectionAcrossFileRefresh(props: {
 	const observeRetirement = (request: Request): void => {
 		if (request !== heldRequest) return;
 		retiredRequestFailure = request.failure()?.errorText ?? 'request failed';
+		requestRetirement.resolve('retired');
 	};
 	const releaseHolds = (): void => {
 		releaseFileContent.resolve();
 		releaseOldProjection.resolve();
 	};
 	const onAbort = (): void => {
+		requestRetirement.resolve('aborted');
 		console.error(
 			`TQ45 edited projection/File refresh await aborted: heldDescriptor=${heldDescriptorId ?? 'none'} retired=${retiredRequestFailure ?? 'none'} successors=${JSON.stringify([...successorDescriptorIds])}`,
 		);
@@ -120,6 +124,11 @@ export async function holdEditedProjectionAcrossFileRefresh(props: {
 			retiredRequestFailure,
 			successorDescriptorIds: [...successorDescriptorIds],
 		}),
+		waitForRetirement: async (): Promise<void> => {
+			if ((await requestRetirement.promise) !== 'retired') {
+				throw new Error('Edited projection request retirement was not observed before test abort.');
+			}
+		},
 		stop: async (): Promise<void> => {
 			releaseHolds();
 			await props.page.unroute(pattern, handler);

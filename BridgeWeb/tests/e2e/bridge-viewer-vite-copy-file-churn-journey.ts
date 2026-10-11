@@ -127,6 +127,7 @@ export async function runCopyFileChurnReproduction(props: {
 					if (editResult.status === 'rejected') throw editResult.reason;
 					if (burstResult.status === 'rejected') throw burstResult.reason;
 					completedBurstCount += 1;
+					await retirement?.waitForRetirement();
 					return {
 						savedBody: editedBody,
 						selectedFileReadiness: editBurst.expectedReadiness,
