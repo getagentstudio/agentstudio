@@ -16,14 +16,15 @@ test('V1 resumed aborted A cannot acquire a browser while B is active', async ()
 	const ownerB = new AbortController();
 	const browserA = makeControlledBrowser();
 	const browserB = makeControlledBrowser();
-	vi.spyOn(chromium, 'launch')
+	const launchChromium = vi
+		.spyOn(chromium, 'launch')
 		.mockResolvedValueOnce(browserB.browser)
 		.mockResolvedValueOnce(browserA.browser);
 	ownerA.abort();
 	await launchBridgeViewerE2EChromium({ testSignal: ownerB.signal });
 	try {
 		await expect(launchBridgeViewerE2EChromium({ testSignal: ownerA.signal })).rejects.toThrow();
-		expect(chromium.launch).toHaveBeenCalledTimes(1);
+		expect(launchChromium).toHaveBeenCalledTimes(1);
 		expect(browserA.closed()).toBe(false); // No A browser was acquired; B remains owned by B.
 		expect(browserB.closed()).toBe(false);
 		await closeBridgeViewerE2ETestBrowsers(ownerA.signal);
@@ -43,9 +44,9 @@ test('V2a finished cleanup joins a held launch and its held browser closure', as
 		closeEntered.resolve();
 		await heldClose.promise;
 	});
-	vi.spyOn(chromium, 'launch').mockReturnValue(heldLaunch.promise);
+	const launchChromium = vi.spyOn(chromium, 'launch').mockReturnValue(heldLaunch.promise);
 	const acquisitionStarted = createControlledPromise<void>();
-	vi.mocked(chromium.launch).mockImplementation(() => {
+	launchChromium.mockImplementation(() => {
 		acquisitionStarted.resolve();
 		return heldLaunch.promise;
 	});
