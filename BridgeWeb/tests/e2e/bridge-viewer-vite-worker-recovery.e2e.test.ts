@@ -380,8 +380,6 @@ test('re-establishes annotation demand after an in-place worker replacement so C
 		const page = await browser.newPage({ viewport: { height: 980, width: 1728 } });
 		const reviewFile = fixture.oracle.reviewFiles[0];
 		if (reviewFile === undefined) throw new Error('Demand replay requires a real Review file.');
-		page.setDefaultTimeout(0);
-		page.setDefaultNavigationTimeout(0);
 		let mainFrameNavigationCount = 0;
 		page.on('framenavigated', (frame): void => {
 			if (frame === page.mainFrame()) mainFrameNavigationCount += 1;

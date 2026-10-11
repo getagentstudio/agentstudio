@@ -55,8 +55,6 @@ test('File and Review semantic part faults recover on the live Vite and Swift st
 		page = await browser.newPage({ viewport: { height: 980, width: 1728 } });
 		const activePage = page;
 		const reviewContentRequests = observeReviewContentRequests(page);
-		page.setDefaultTimeout(0);
-		page.setDefaultNavigationTimeout(0);
 		await page.goto(bridgeViewerViteProductFileUrl(proxy.origin, fixture.oracle.largeFilePath), {
 			waitUntil: 'domcontentloaded',
 		});

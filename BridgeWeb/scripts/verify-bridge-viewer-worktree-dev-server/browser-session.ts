@@ -1,4 +1,4 @@
-import type { Browser } from 'playwright';
+import type { Browser, BrowserContext } from 'playwright';
 
 let verifierBrowser: Browser | null = null;
 let verifierJourneySignal: AbortSignal | undefined;
@@ -6,11 +6,17 @@ let verifierJourneySignal: AbortSignal | undefined;
 export function installVerifierBrowser(browser: Browser, signal?: AbortSignal): void {
 	verifierBrowser = browser;
 	verifierJourneySignal = signal;
+	browser.on('context', configureVerifierBrowserContext);
 }
 
 export function clearVerifierBrowser(): void {
 	verifierBrowser = null;
 	verifierJourneySignal = undefined;
+}
+
+function configureVerifierBrowserContext(context: BrowserContext): void {
+	context.setDefaultTimeout(0);
+	context.setDefaultNavigationTimeout(0);
 }
 
 export function requireVerifierBrowser(): Browser {

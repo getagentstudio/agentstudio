@@ -9,6 +9,8 @@ import { isReactActWarning } from '../react-act-warning.ts';
 export async function launchBridgeViewerE2EChromium(): Promise<Browser> {
 	const browser = await chromium.launch({ channel: 'chrome', headless: true });
 	browser.on('context', (context: BrowserContext): void => {
+		context.setDefaultTimeout(0);
+		context.setDefaultNavigationTimeout(0);
 		context.on('console', reportPageActWarning);
 	});
 	return browser;

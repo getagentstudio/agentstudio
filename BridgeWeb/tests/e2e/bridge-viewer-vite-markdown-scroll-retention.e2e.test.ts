@@ -32,8 +32,6 @@ test.each(['mode round-trip', 'content refresh'] as const)(
 			browser = await launchBridgeViewerE2EChromium();
 			const page = await browser.newPage({ viewport: { width: 1728, height: 980 } });
 			// The vitest hang bound is the only clock this journey is allowed.
-			page.setDefaultTimeout(0);
-			page.setDefaultNavigationTimeout(0);
 			diagnostics = observeBrowserRuntimeDiagnostics(page);
 			await page.goto(bridgeViewerViteProductFileUrl(server.origin, 'docs/guide.md'), {
 				waitUntil: 'domcontentloaded',

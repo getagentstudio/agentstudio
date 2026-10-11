@@ -61,8 +61,6 @@ test('retains the scrolled selected File through sixteen distinct worktree edits
 		phase = 'page-creating';
 		page = await browser.newPage({ viewport: { width: 1728, height: 980 } });
 		// The vitest hang bound is the only clock this journey is allowed.
-		page.setDefaultTimeout(0);
-		page.setDefaultNavigationTimeout(0);
 		page.on('pageerror', (error: Error): void => {
 			pageErrors.push(error.message);
 		});

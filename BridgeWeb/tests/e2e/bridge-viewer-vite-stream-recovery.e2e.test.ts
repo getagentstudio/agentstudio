@@ -37,8 +37,6 @@ test.each(['direct', 'healthy', 'disconnected'] as const)(
 			browser = await launchBridgeViewerE2EChromium();
 			page = await browser.newPage({ viewport: { height: 980, width: 1728 } });
 			// The vitest hang bound is the only clock this journey is allowed.
-			page.setDefaultTimeout(0);
-			page.setDefaultNavigationTimeout(0);
 			diagnostics = observeBrowserRuntimeDiagnostics(page);
 			failures = await observeInteractionProfileFailures(page);
 			await page.goto(

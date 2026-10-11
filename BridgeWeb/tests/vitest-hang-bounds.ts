@@ -13,6 +13,13 @@ export const nodeIntegrationTestTimeoutMilliseconds = 120_000;
 
 export const browserIntegrationTestTimeoutMilliseconds = 60_000;
 
+// Keep the named DOM-poll failure ahead of the browser lane's generic hang
+// failure while allowing slow CI conditions to settle the application state.
+export const browserExpectPollHangBoundMilliseconds = 50_000;
+
+// Keep benchmark polls below their shorter 15 s benchmark lane hang bound.
+export const browserBenchmarkExpectPollHangBoundMilliseconds = 10_000;
+
 export const browserBenchmarkTestTimeoutMilliseconds = 15_000;
 
 export const scriptBenchmarkTestTimeoutMilliseconds = 5_000;

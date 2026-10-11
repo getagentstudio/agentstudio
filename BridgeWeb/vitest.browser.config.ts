@@ -9,7 +9,9 @@ import { bridgeViteOptimizedDependencies } from './bridge-vite-optimized-depende
 import { everyConsoleErrorGuardScope } from './tests/console-error-guard-scope.ts';
 import {
 	browserBenchmarkTestTimeoutMilliseconds,
+	browserBenchmarkExpectPollHangBoundMilliseconds,
 	browserIntegrationTestTimeoutMilliseconds,
+	browserExpectPollHangBoundMilliseconds,
 } from './tests/vitest-hang-bounds.ts';
 
 const bridgeWebPackageRoot = dirname(fileURLToPath(import.meta.url));
@@ -72,6 +74,9 @@ export default defineConfig({
 					setupFiles: ['./tests/console-error-guard.ts', './tests/vitest-browser-setup.ts'],
 					browser: browserConfig,
 					testTimeout: browserIntegrationTestTimeoutMilliseconds,
+					expect: {
+						poll: { timeout: browserExpectPollHangBoundMilliseconds },
+					},
 					include: [
 						'src/**/*.browser.test.ts',
 						'src/**/*.browser.test.tsx',
@@ -103,6 +108,9 @@ export default defineConfig({
 				test: {
 					name: 'benchmarks-browser',
 					testTimeout: browserBenchmarkTestTimeoutMilliseconds,
+					expect: {
+						poll: { timeout: browserBenchmarkExpectPollHangBoundMilliseconds },
+					},
 					provide: everyConsoleErrorGuardScope,
 					setupFiles: ['./tests/console-error-guard.ts', './tests/vitest-browser-setup.ts'],
 					browser: {

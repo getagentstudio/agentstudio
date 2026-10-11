@@ -6,7 +6,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import ts from 'typescript';
 
 import { loadDebtLedger, reconcileDebtLedger } from './check-bridgeweb-architecture-debt-ledger.ts';
-import { findTimedWaitsInTestImportClosure } from './check-bridgeweb-architecture-timed-waits.ts';
+import * as timedWaits from './check-bridgeweb-architecture-timed-waits.ts';
 
 type RuleId =
 	| 'max-file-lines'
@@ -24,7 +24,7 @@ type RuleId =
 	| 'no-typescript-live-product-authority'
 	| 'core-imports-app-protocol'
 	| 'product-endpoint-boundary'
-	| 'no-timed-wait-in-tests';
+	| timedWaits.TimedWaitRuleId;
 
 export interface ArchitectureViolation {
 	readonly ruleId: RuleId;
@@ -41,7 +41,6 @@ export interface ArchitectureReport {
 
 export interface CheckBridgeWebArchitectureProps {
 	readonly packageRootPath?: string;
-	// The package's path from the repository root, used for debt ledger paths.
 	readonly repositoryPathPrefix?: string;
 }
 
@@ -73,7 +72,12 @@ interface AddViolationProps {
 const defaultPackageRootPath = fileURLToPath(new URL('../', import.meta.url));
 const checkedExtensions = new Set(['.ts', '.tsx']);
 const debtLedgerRelativePath = 'architecture-debt-ledger.tsv';
-const debtLedgerRuleIds: ReadonlySet<string> = new Set<RuleId>(['no-timed-wait-in-tests']);
+const debtLedgerRuleIds: ReadonlySet<string> = new Set<RuleId>([
+	'no-timed-wait-in-tests',
+	'no-vitest-wait-options',
+	'no-vitest-wait-calls',
+	'no-playwright-timeout-options',
+]);
 const ignoredDirectoryNames = new Set(['node_modules', 'dist', 'coverage', '.vite']);
 const maxSourceFileLineCount = 1000;
 const bridgeProductEndpointAdapterPaths = new Set([
@@ -135,13 +139,14 @@ export async function checkBridgeWebArchitecture(
 			repositoryPathPrefix,
 			sites: [
 				...parsedSourceFiles.flatMap(checkSourceFile),
-				// Judged across files: a test answers for the harness modules it imports.
-				...findTimedWaitsInTestImportClosure({
+				...timedWaits.findTimedWaitsInTestImportClosure({
 					packageRootPath,
 					sourceFiles: parsedSourceFiles,
-				}).map(
-					(finding): ArchitectureViolation => ({ ...finding, ruleId: 'no-timed-wait-in-tests' }),
-				),
+				}),
+				...timedWaits.findHiddenTimedWaitsInSourceFiles({
+					packageRootPath,
+					sourceFiles: parsedSourceFiles,
+				}),
 			],
 		},
 		(entry, message): ArchitectureViolation => ({

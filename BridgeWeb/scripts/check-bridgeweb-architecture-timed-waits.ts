@@ -28,6 +28,12 @@ export interface TimedWaitSourceFile {
 	readonly sourceFile: ts.SourceFile;
 }
 
+export type TimedWaitRuleId =
+	| 'no-timed-wait-in-tests'
+	| 'no-vitest-wait-options'
+	| 'no-vitest-wait-calls'
+	| 'no-playwright-timeout-options';
+
 export interface FindTimedWaitsInTestImportClosureProps {
 	readonly packageRootPath: string;
 	readonly sourceFiles: readonly TimedWaitSourceFile[];
@@ -38,6 +44,7 @@ export interface TimedWaitFinding {
 	readonly line: number;
 	readonly message: string;
 	readonly relativePath: string;
+	readonly ruleId: TimedWaitRuleId;
 }
 
 const vitestConfigPathPattern = /^vitest(?:\.[\w-]+)?\.config\.ts$/u;
@@ -97,12 +104,219 @@ export function findTimedWaitsInTestImportClosure(
 				column: position.character + 1,
 				line: position.line + 1,
 				relativePath,
+				ruleId: 'no-timed-wait-in-tests',
 				message: `${timedWaitDescription} in a ${reachability}; a test wait must complete on an application event or DOM condition, and a timer may only bound it with a hang bound from ${hangBoundModulePath}`,
 			});
 		});
 	}
 
 	return findings;
+}
+
+export function findHiddenTimedWaitsInSourceFiles(props: {
+	readonly packageRootPath: string;
+	readonly sourceFiles: readonly TimedWaitSourceFile[];
+}): readonly TimedWaitFinding[] {
+	const resolution: ModuleResolutionContext = {
+		compilerOptions: readPackageCompilerOptions(props.packageRootPath),
+		packageRootPath: props.packageRootPath,
+		sourceFilesByPath: new Map(
+			props.sourceFiles.map((sourceFile): [string, TimedWaitSourceFile] => [
+				sourceFile.relativePath,
+				sourceFile,
+			]),
+		),
+	};
+	const productionModulePaths = collectProductionModulePaths(resolution);
+	const testImportClosure = collectTestImportClosure(resolution, productionModulePaths);
+	const findings: TimedWaitFinding[] = [];
+
+	const candidatePaths = new Set(testImportClosure.keys());
+	for (const sourceFile of props.sourceFiles) {
+		if (isPlaywrightVerifierPath(sourceFile.relativePath))
+			candidatePaths.add(sourceFile.relativePath);
+	}
+	for (const relativePath of candidatePaths) {
+		const sourceFile = resolution.sourceFilesByPath.get(relativePath);
+		if (sourceFile === undefined) continue;
+		visitNodes(sourceFile.sourceFile, (node: ts.Node): void => {
+			for (const vitestRuleId of describeVitestHiddenWaits(node)) {
+				findings.push(
+					makeTimedWaitFinding(sourceFile, node, vitestRuleId, vitestRuleMessage(vitestRuleId)),
+				);
+			}
+			if (isPlaywrightVerifierPath(relativePath)) {
+				const playwrightMessage = describePlaywrightTimeoutOption(node);
+				if (playwrightMessage !== null) {
+					findings.push(
+						makeTimedWaitFinding(
+							sourceFile,
+							node,
+							'no-playwright-timeout-options',
+							playwrightMessage,
+						),
+					);
+				}
+			}
+		});
+	}
+
+	return findings;
+}
+
+function makeTimedWaitFinding(
+	sourceFile: TimedWaitSourceFile,
+	node: ts.Node,
+	ruleId: TimedWaitRuleId,
+	description: string,
+): TimedWaitFinding {
+	const position = sourceFile.sourceFile.getLineAndCharacterOfPosition(
+		node.getStart(sourceFile.sourceFile),
+	);
+	return {
+		column: position.character + 1,
+		line: position.line + 1,
+		message: description,
+		relativePath: sourceFile.relativePath,
+		ruleId,
+	};
+}
+
+function describeVitestHiddenWaits(node: ts.Node): readonly TimedWaitRuleId[] {
+	if (!ts.isCallExpression(node) || !ts.isPropertyAccessExpression(node.expression)) return [];
+	const receiver = node.expression.expression;
+	const method = node.expression.name.text;
+	if (
+		ts.isIdentifier(receiver) &&
+		receiver.text === 'vi' &&
+		(method === 'waitFor' || method === 'waitUntil')
+	) {
+		return hasWaitOption(node, ['timeout', 'interval'])
+			? ['no-vitest-wait-options', 'no-vitest-wait-calls']
+			: ['no-vitest-wait-calls'];
+	}
+	if (
+		ts.isIdentifier(receiver) &&
+		receiver.text === 'expect' &&
+		(method === 'poll' || method === 'element')
+	) {
+		return hasWaitOption(node, ['timeout', 'interval']) ? ['no-vitest-wait-options'] : [];
+	}
+	return [];
+}
+
+function vitestRuleMessage(ruleId: TimedWaitRuleId): string {
+	if (ruleId === 'no-vitest-wait-options') {
+		return 'Vitest wait options may not set timeout or interval; await the owner fact or use the shared configuration hang bound';
+	}
+	return 'vi.waitFor() and vi.waitUntil() are timed waits; replace them with an owner fact or event';
+}
+
+function hasWaitOption(call: ts.CallExpression, optionNames: readonly string[]): boolean {
+	const options = call.arguments[1];
+	if (options === undefined || !ts.isObjectLiteralExpression(options)) return false;
+	return options.properties.some((property): boolean => {
+		if (!ts.isPropertyAssignment(property) && !ts.isShorthandPropertyAssignment(property))
+			return false;
+		const name = property.name;
+		return (
+			name !== undefined &&
+			propertyNameText(name) !== null &&
+			optionNames.includes(propertyNameText(name) ?? '')
+		);
+	});
+}
+
+function describePlaywrightTimeoutOption(node: ts.Node): string | null {
+	if (!ts.isCallExpression(node) || !ts.isPropertyAccessExpression(node.expression)) return null;
+	if (!playwrightTimeoutMethodNames.has(node.expression.name.text)) return null;
+	const options = node.arguments.find((argument): argument is ts.ObjectLiteralExpression =>
+		ts.isObjectLiteralExpression(argument),
+	);
+	if (options === undefined) return null;
+	const timeoutProperty = options.properties.find((property): boolean => {
+		if (!ts.isPropertyAssignment(property) && !ts.isShorthandPropertyAssignment(property))
+			return false;
+		return property.name !== undefined && propertyNameText(property.name) === 'timeout';
+	});
+	if (timeoutProperty === undefined) return null;
+	if (ts.isShorthandPropertyAssignment(timeoutProperty))
+		return 'Playwright calls may not pass a timeout option; use the shared journey hang bound';
+	if (!ts.isPropertyAssignment(timeoutProperty)) return null;
+	return isNumericOrConstantExpression(timeoutProperty.initializer)
+		? 'Playwright page, locator, and wait calls may not pass an explicit timeout option; use the shared journey hang bound'
+		: null;
+}
+
+const playwrightTimeoutMethodNames = new Set([
+	'click',
+	'dblclick',
+	'dispatchEvent',
+	'dragTo',
+	'evaluate',
+	'evaluateAll',
+	'evaluateHandle',
+	'fill',
+	'focus',
+	'getAttribute',
+	'goBack',
+	'goForward',
+	'hover',
+	'innerHTML',
+	'innerText',
+	'inputValue',
+	'isChecked',
+	'isDisabled',
+	'isEditable',
+	'isEnabled',
+	'isVisible',
+	'press',
+	'reload',
+	'screenshot',
+	'scrollIntoViewIfNeeded',
+	'selectOption',
+	'setContent',
+	'setInputFiles',
+	'tap',
+	'textContent',
+	'type',
+	'uncheck',
+	'waitFor',
+	'waitForEvent',
+	'waitForFunction',
+	'waitForLoadState',
+	'waitForNavigation',
+	'waitForRequest',
+	'waitForResponse',
+	'waitForSelector',
+	'waitForURL',
+	'goto',
+]);
+
+function isPlaywrightVerifierPath(relativePath: string): boolean {
+	return (
+		relativePath.startsWith('tests/e2e/') ||
+		relativePath.startsWith('scripts/verify-bridge-viewer-worktree-dev-server/')
+	);
+}
+
+function propertyNameText(name: ts.PropertyName): string | null {
+	if (ts.isIdentifier(name) || ts.isStringLiteral(name) || ts.isNumericLiteral(name))
+		return name.text;
+	return null;
+}
+
+function isNumericOrConstantExpression(expression: ts.Expression): boolean {
+	if (
+		ts.isNumericLiteral(expression) ||
+		ts.isIdentifier(expression) ||
+		ts.isPropertyAccessExpression(expression)
+	)
+		return true;
+	if (ts.isAsExpression(expression) || ts.isTypeAssertionExpression(expression)) {
+		return isNumericOrConstantExpression(expression.expression);
+	}
+	return false;
 }
 
 function readPackageCompilerOptions(packageRootPath: string): ts.CompilerOptions {

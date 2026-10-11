@@ -127,8 +127,6 @@ async function runReleasedDraftReloadJourney(props: {
 	try {
 		page = await browser.newPage({ viewport: { height: 980, width: 1728 } });
 		// The vitest hang bound is the only clock this journey is allowed.
-		page.setDefaultTimeout(0);
-		page.setDefaultNavigationTimeout(0);
 		const reviewFile = props.oracle.reviewFiles[0];
 		if (reviewFile === undefined) {
 			throw new Error('Review released-draft journey requires a changed review file.');
@@ -213,8 +211,6 @@ export async function runAnnotationSaveJourney(props: {
 	try {
 		page = await browser.newPage({ viewport: { height: 980, width: 1728 } });
 		// The vitest hang bound is the only clock this journey is allowed.
-		page.setDefaultTimeout(0);
-		page.setDefaultNavigationTimeout(0);
 		transportFailures = await observeInteractionProfileFailures(page);
 		observeAnnotationJourneyDiagnostics(page, diagnostics);
 		await props.setupPage?.(page);

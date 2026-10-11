@@ -78,8 +78,6 @@ test.for(['shared-profile', 'separate-profile'] as const)(
 			checkpoint.begin('create first browser context and page');
 			const context = await browser.newContext({ viewport: { width: 1728, height: 980 } });
 			// The vitest hang bound is the only clock this journey is allowed.
-			context.setDefaultTimeout(0);
-			context.setDefaultNavigationTimeout(0);
 			const pageErrors: string[] = [];
 			context.on('page', (createdPage): void => {
 				createdPage.on('pageerror', (error): void => {
@@ -114,8 +112,6 @@ test.for(['shared-profile', 'separate-profile'] as const)(
 				profileTopology === 'shared-profile'
 					? context
 					: await browser.newContext({ viewport: { width: 1728, height: 980 } });
-			secondContext.setDefaultTimeout(0);
-			secondContext.setDefaultNavigationTimeout(0);
 			const secondTab = await secondContext.newPage();
 			checkpoint.begin('install second tab document correlation');
 			const documentGenerations = await installBridgeViewerDocumentGenerations(secondTab);
