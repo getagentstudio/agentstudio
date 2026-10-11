@@ -1,9 +1,166 @@
+import AgentStudioTestHarness
 import Foundation
 import Testing
 
 @testable import AgentStudioInfrastructure
 
 extension RepoScannerSessionTests {
+    @Test("private retained target created after suspension keeps the inspection-time skip")
+    func privateRetainedTargetCreatedAfterSuspensionIsSkipped() async throws {
+        // Arrange: the shortened alias does not exist when custody captures its keys.
+        let targetName = "repo-scanner-private-continuation-\(UUIDv7.generate().uuidString)"
+        let retainedPath = URL(fileURLWithPath: "/private/tmp/\(targetName)")
+        defer { try? FileManager.default.removeItem(at: retainedPath) }
+        #expect(retainedPath.standardizedFileURL.path == "/private/tmp/\(targetName)")
+        let session = RepoScanner().makeSession(
+            in: URL(fileURLWithPath: "/"),
+            maxDepth: 0,
+            retainedCheckoutPaths: [retainedPath],
+            quantumBudget: try oneItemQuantumBudget(),
+            serviceClock: TestPushClock()
+        )
+        defer { _ = session.cancel() }
+        let rootOutcome = await session.advanceOneQuantum()
+        guard case .suspended(let rootUsage) = rootOutcome else {
+            Issue.record("expected root inspection to suspend before retained continuation, got \(rootOutcome)")
+            return
+        }
+        #expect(rootUsage.enumeratedItemCount == 1)
+        #expect(rootUsage.candidateValidationCount == 0)
+        let facts = FactRecorder<RepoScannerSessionID, RepoScannerQuantumOutcome>(
+            vocabulary: FactVocabulary(
+                describeScope: { $0.rawValue.uuidString },
+                describeFact: { String(describing: $0) },
+                isClosing: { _, outcome in
+                    if case .finished = outcome { return true }
+                    return false
+                }
+            )
+        )
+        let opening = await facts.mark(session.id)
+
+        // Act: Foundation now shortens this spelling, before its continuation turn.
+        try FileManager.default.createDirectory(
+            at: retainedPath.appending(path: ".git"),
+            withIntermediateDirectories: true
+        )
+        #expect(retainedPath.standardizedFileURL.path == "/tmp/\(targetName)")
+        var resumedUsages: [RepoScannerQuantumUsage] = []
+        let result: RepoScannerResult
+        scanQuanta: while true {
+            let outcome = await session.advanceOneQuantum()
+            facts.append(scope: session.id, fact: outcome)
+            switch outcome {
+            case .suspended(let usage):
+                resumedUsages.append(usage)
+            case .validationRequired(let request):
+                // Settle any unexpected request so the negative closes at real completion.
+                #expect(
+                    session.consumeValidationCompletion(
+                        .init(
+                            request: request,
+                            outcome: .authoritativeNegative(.notAValidWorktree),
+                            validationServiceDuration: .zero
+                        )
+                    ) == .consumed
+                )
+            case .finished(let completed):
+                result = completed
+                break scanQuanta
+            }
+        }
+
+        // Assert: one skipped retained item, then exhaustion; no validation in this session.
+        await #expect(throws: Never.self) {
+            try await facts.expectNone(
+                of: {
+                    if case .validationRequired = $0 { return true }
+                    return false
+                },
+                "retained validation request",
+                from: opening,
+                closedBy: { $0 == .finished(result) }
+            )
+        }
+        try await facts.finish()
+        guard case .completeAuthoritative(let completeScan) = result else {
+            Issue.record("expected inspection-time skip to remain complete, got \(result)")
+            return
+        }
+        #expect(completeScan.verifiedEntries.isEmpty)
+        #expect(
+            completeScan.counts
+                == RepoScannerEvidenceCounts(
+                    directoryVisitCount: 1,
+                    directoryTraversalFailureCount: 0,
+                    entryMetadataFailureCount: 0,
+                    gitCandidateCount: 0,
+                    validationSuccessCount: 0,
+                    validationAuthoritativeNegativeCount: 0,
+                    validationTimeoutCount: 0,
+                    validationCancellationCount: 0,
+                    validationFailureCount: 0,
+                    scannerServiceInvocationCount: 3
+                )
+        )
+        #expect(resumedUsages.count == 1)
+        #expect(resumedUsages.first?.enumeratedItemCount == 1)
+        #expect(resumedUsages.first?.candidateValidationCount == 0)
+        #expect(await session.advanceOneQuantum() == .finished(result))
+    }
+
+    @Test("private entry and root keys follow the filesystem at inspection", arguments: ["/private", "/"])
+    func privateEntryMembershipUsesInspectionTimeKey(rootPath: String) throws {
+        // Arrange: cover a private-spelled root and a private-spelled retained match.
+        let targetName = "repo-scanner-private-membership-\(UUIDv7.generate().uuidString)"
+        let retainedPath = URL(fileURLWithPath: "/private/tmp/\(targetName)")
+        defer { try? FileManager.default.removeItem(at: retainedPath) }
+        let rootURL = URL(fileURLWithPath: rootPath)
+        let index = RepoScannerTraversalSession.RetainedTargetIndex(
+            rootURL: rootURL,
+            retainedCheckoutPaths: [retainedPath]
+        )
+        let rootVisitIndex = RepoScannerTraversalSession.RetainedTargetIndex(
+            rootURL: retainedPath,
+            retainedCheckoutPaths: [retainedPath]
+        )
+        let session = RepoScannerTraversalSession(
+            rootURL: rootURL,
+            maxDepth: 3,
+            retainedCheckoutPaths: [retainedPath],
+            retainedTargetPreparationFailure: nil,
+            quantumBudget: .productionDefault,
+            capacity: .productionDefault,
+            serviceClock: TestPushClock()
+        )
+        var state = RepoScannerTraversalSession.TraversalState(
+            rootURL: rootURL,
+            maxDepth: 3,
+            retainedCheckoutPaths: [retainedPath],
+            retainedTargetPreparationFailure: nil,
+            position: .inspectRoot
+        )
+        let entry = RepoScannerTraversalSession.PendingEnumerationEntry(
+            url: retainedPath,
+            depth: rootPath == "/" ? 3 : 2
+        )
+        let initialKeys: Set<String> = ["/private/tmp/\(targetName)"]
+        #expect(state.remainingRetainedPathKeys == initialKeys)
+        #expect(index.pathKey(for: entry) == "/private/tmp/\(targetName)")
+        #expect(rootVisitIndex.rootPathKey == "/private/tmp/\(targetName)")
+
+        // Act
+        try FileManager.default.createDirectory(at: retainedPath, withIntermediateDirectories: true)
+        let matchedPath = index.pathKey(for: entry)
+        session.removeRetainedTargetExaminedByTraversal(entry, isSymbolicLink: false, state: &state)
+
+        // Assert: root plus the final depth components now shortens to /tmp.
+        // That new key cannot remove the original private-spelled custody key.
+        #expect(matchedPath == "/tmp/\(targetName)")
+        #expect(state.remainingRetainedPathKeys == initialKeys)
+        #expect(rootVisitIndex.rootPathKey == "/tmp/\(targetName)")
+    }
+
     @Test("retained entry identities match the normalized rule table")
     func retainedEntryIdentitiesMatchNormalizedRuleTable() throws {
         // Arrange

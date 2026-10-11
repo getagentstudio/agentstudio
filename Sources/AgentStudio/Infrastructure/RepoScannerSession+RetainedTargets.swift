@@ -2,29 +2,52 @@ import Foundation
 
 extension RepoScannerTraversalSession {
     struct RetainedTargetIndex: Sendable {
-        let rootPathKey: String
         let retainedPathKeys: [String]
+        private let rootURL: URL
+        private let rootUsesPrivateSpelling: Bool
+        private let cachedRootPathKey: String
         private let pathKeyByEntryComponents: [ArraySlice<String>: String]
+        private let privateEntryComponents: Set<ArraySlice<String>>
+
+        var rootPathKey: String {
+            rootUsesPrivateSpelling ? rootURL.standardizedFileURL.path : cachedRootPathKey
+        }
 
         init(rootURL: URL, retainedCheckoutPaths: [URL]) {
+            self.rootURL = rootURL
+            rootUsesPrivateSpelling = rootURL.pathComponents.starts(with: ["/", "private"])
             let standardizedRootURL = rootURL.standardizedFileURL
             let rootComponents = standardizedRootURL.pathComponents
-            rootPathKey = standardizedRootURL.path
+            cachedRootPathKey = standardizedRootURL.path
             retainedPathKeys = retainedCheckoutPaths.map { $0.standardizedFileURL.path }
 
             var pathKeysByComponents: [ArraySlice<String>: String] = [:]
-            for retainedPathKey in retainedPathKeys {
+            var privateComponents: Set<ArraySlice<String>> = []
+            for (retainedPath, retainedPathKey) in zip(retainedCheckoutPaths, retainedPathKeys) {
                 let retainedComponents = URL(fileURLWithPath: retainedPathKey).pathComponents
                 guard retainedComponents.starts(with: rootComponents) else { continue }
-                pathKeysByComponents[retainedComponents.dropFirst(rootComponents.count)] = retainedPathKey
+                let entryComponents = retainedComponents.dropFirst(rootComponents.count)
+                pathKeysByComponents[entryComponents] = retainedPathKey
+                if retainedPath.pathComponents.starts(with: ["/", "private"]) {
+                    privateComponents.insert(entryComponents)
+                }
             }
             pathKeyByEntryComponents = pathKeysByComponents
+            privateEntryComponents = privateComponents
         }
 
         func pathKey(for entry: PendingEnumerationEntry) -> String? {
             // Enumeration can use a physical root alias. Its level identifies
             // the root-relative components without normalizing another URL.
-            pathKeyByEntryComponents[entry.url.pathComponents.suffix(entry.depth)]
+            let entryComponents = entry.url.pathComponents.suffix(entry.depth)
+            // Foundation shortens a leading /private only while the shortened
+            // path exists. Preserve inspection-time identity for those spellings.
+            if rootUsesPrivateSpelling || privateEntryComponents.contains(entryComponents) {
+                return entryComponents.reduce(rootURL) { partialPath, component in
+                    partialPath.appending(path: component)
+                }.standardizedFileURL.path
+            }
+            return pathKeyByEntryComponents[entryComponents]
         }
     }
 
@@ -59,7 +82,7 @@ extension RepoScannerTraversalSession {
 
         let retainedCheckoutPath = traversalLease.state.retainedCheckoutPaths[nextIndex]
         let followingPosition = TraversalPosition.retainedTargets(nextIndex: nextIndex + 1)
-        let retainedPathKey = retainedTargetIndex.retainedPathKeys[nextIndex]
+        let retainedPathKey = retainedCheckoutPath.standardizedFileURL.path
         guard traversalLease.state.remainingRetainedPathKeys.contains(retainedPathKey) else {
             usage.enumeratedItemCount += 1
             traversalLease.state.position = followingPosition
