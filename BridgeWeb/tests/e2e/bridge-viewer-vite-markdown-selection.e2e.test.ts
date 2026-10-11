@@ -27,7 +27,6 @@ test.each(['Markdown', 'code'] as const)(
 			server = await startBridgeViewerOwnedViteProductServer(fixture.oracle);
 			browser = await launchBridgeViewerE2EChromium();
 			const page = await browser.newPage({ viewport: { width: 1728, height: 980 } });
-			// The vitest hang bound is the only clock this journey is allowed.
 			diagnostics = observeBrowserRuntimeDiagnostics(page);
 			failures = await observeInteractionProfileFailures(page);
 			await page.goto(bridgeViewerViteProductFileUrl(server.origin, 'README.md'), {

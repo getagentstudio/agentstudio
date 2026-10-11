@@ -77,7 +77,6 @@ test.for(['shared-profile', 'separate-profile'] as const)(
 			browser = await launchBridgeViewerE2EChromium();
 			checkpoint.begin('create first browser context and page');
 			const context = await browser.newContext({ viewport: { width: 1728, height: 980 } });
-			// The vitest hang bound is the only clock this journey is allowed.
 			const pageErrors: string[] = [];
 			context.on('page', (createdPage): void => {
 				createdPage.on('pageerror', (error): void => {

@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 
 import type {
+	Browser,
 	Page,
 	Request as PlaywrightRequest,
 	Response as PlaywrightResponse,
@@ -119,11 +120,18 @@ export interface BridgeViewerFileProofTargets {
 }
 
 export async function runBridgeViewerProductOnlyJourney(props: {
+	readonly browser?: Browser;
 	readonly baseUrl: string;
 	readonly expectedReviewItemIds: readonly string[];
 	readonly fileProofTargets: BridgeViewerFileProofTargets;
 }): Promise<BridgeViewerProductOnlyJourneyProof> {
-	const browser = await chromium.launch({ channel: 'chrome', headless: true });
+	const browser = props.browser ?? (await chromium.launch({ channel: 'chrome', headless: true }));
+	if (props.browser === undefined) {
+		browser.on('context', (context): void => {
+			context.setDefaultTimeout(0);
+			context.setDefaultNavigationTimeout(0);
+		});
+	}
 	const observedWorkers: MutableObservedWorker[] = [];
 	const observedWorkerClosePromises: Promise<void>[] = [];
 	let closedWorkerCount = 0;

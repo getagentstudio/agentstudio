@@ -13,12 +13,11 @@ export const nodeIntegrationTestTimeoutMilliseconds = 120_000;
 
 export const browserIntegrationTestTimeoutMilliseconds = 60_000;
 
-// Keep the named DOM-poll failure ahead of the browser lane's generic hang
-// failure while allowing slow CI conditions to settle the application state.
+// A 50 s poll names its failure only when it starts within the first 10 s of
+// the 60 s browser test. Later polls can end at the generic test hang bound.
+// No current hooks poll; hook polls are out of contract (30 s hook bound).
+// TQ78 owns remaining-test-time capping and pending-wait diagnostics.
 export const browserExpectPollHangBoundMilliseconds = 50_000;
-
-// Keep benchmark polls below their shorter 15 s benchmark lane hang bound.
-export const browserBenchmarkExpectPollHangBoundMilliseconds = 10_000;
 
 export const browserBenchmarkTestTimeoutMilliseconds = 15_000;
 
@@ -27,5 +26,8 @@ export const scriptBenchmarkTestTimeoutMilliseconds = 5_000;
 // A real-backend journey on a 3-vCPU runner may legitimately be slow, so the
 // E2E bound is wide; it still only stops a wedged run from hanging forever.
 export const endToEndTestTimeoutMilliseconds = 600_000;
+
+// Keep E2E polls below the 600 s journey bound so a named poll failure wins.
+export const endToEndExpectPollHangBoundMilliseconds = 500_000;
 
 export const endToEndHookTimeoutMilliseconds = 60_000;

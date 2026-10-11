@@ -22,6 +22,7 @@ ledger_paths=(
   "Tools/AgentStudioArchitectureLint/adhoc-continuation-wait-ledger.tsv"
   "Tools/AgentStudioArchitectureLint/process-singleton-ledger.tsv"
   "BridgeWeb/architecture-debt-ledger.tsv"
+  "BridgeWeb/architecture-debt-ledger-wait-budgets.tsv"
 )
 
 if ! merge_base="$(git merge-base HEAD "$base_ref")"; then

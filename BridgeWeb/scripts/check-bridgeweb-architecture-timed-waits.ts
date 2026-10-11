@@ -3,6 +3,12 @@ import { dirname, join, matchesGlob, relative } from 'node:path';
 
 import ts from 'typescript';
 
+import {
+	createWaitBudgetTypeChecker,
+	hasExplicitWaitOption,
+	playwrightTimeoutOptionsIndex,
+} from './check-bridgeweb-wait-budget-options.ts';
+
 // Rule `no-timed-wait-in-tests`: a BridgeWeb test wait completes because an
 // application event or a DOM condition occurred, never because time passed.
 //
@@ -22,6 +28,10 @@ import ts from 'typescript';
 // - any other timer that settles a promise, unless the promise is written directly
 //   in a `Promise.race([...])` array and its delay is exactly a hang-bound constant
 //   imported from `tests/vitest-hang-bounds.ts`.
+//
+// The same source inventory also records hidden per-call budgets: Vitest wait
+// options/calls and timeout options on Playwright page, frame, locator, and
+// element-handle APIs in the test and verifier harnesses.
 
 export interface TimedWaitSourceFile {
 	readonly relativePath: string;
@@ -72,28 +82,28 @@ interface ModuleResolutionContext {
 export function findTimedWaitsInTestImportClosure(
 	props: FindTimedWaitsInTestImportClosureProps,
 ): readonly TimedWaitFinding[] {
-	const resolution: ModuleResolutionContext = {
-		compilerOptions: readPackageCompilerOptions(props.packageRootPath),
-		packageRootPath: props.packageRootPath,
-		sourceFilesByPath: new Map(
-			props.sourceFiles.map((sourceFile: TimedWaitSourceFile): [string, TimedWaitSourceFile] => [
-				sourceFile.relativePath,
-				sourceFile,
-			]),
-		),
-	};
-	const productionModulePaths = collectProductionModulePaths(resolution);
-	const reachingTestRootByPath = collectTestImportClosure(resolution, productionModulePaths);
+	return findTimedWaitsFromAnalysis(makeTimedWaitAnalysis(props));
+}
+
+export function findAllTimedWaitsInTestImportClosure(props: {
+	readonly packageRootPath: string;
+	readonly sourceFiles: readonly TimedWaitSourceFile[];
+}): readonly TimedWaitFinding[] {
+	const analysis = makeTimedWaitAnalysis(props);
+	return [...findTimedWaitsFromAnalysis(analysis), ...findHiddenTimedWaitsFromAnalysis(analysis)];
+}
+
+function findTimedWaitsFromAnalysis(analysis: TimedWaitAnalysis): readonly TimedWaitFinding[] {
 	const findings: TimedWaitFinding[] = [];
 
-	for (const [relativePath, reachingTestRoot] of reachingTestRootByPath) {
-		const closureFile = resolution.sourceFilesByPath.get(relativePath);
+	for (const [relativePath, reachingTestRoot] of analysis.testImportClosure) {
+		const closureFile = analysis.resolution.sourceFilesByPath.get(relativePath);
 		if (closureFile === undefined) continue;
 		const reachability =
 			reachingTestRoot === relativePath
 				? 'test file'
 				: `module imported by test file ${reachingTestRoot}`;
-		const hangBoundNames = importedHangBoundNames(closureFile, resolution);
+		const hangBoundNames = importedHangBoundNames(closureFile, analysis.resolution);
 		visitNodes(closureFile.sourceFile, (node: ts.Node): void => {
 			const timedWaitDescription = describeTimedWait(node, hangBoundNames);
 			if (timedWaitDescription === null) return;
@@ -117,6 +127,18 @@ export function findHiddenTimedWaitsInSourceFiles(props: {
 	readonly packageRootPath: string;
 	readonly sourceFiles: readonly TimedWaitSourceFile[];
 }): readonly TimedWaitFinding[] {
+	return findHiddenTimedWaitsFromAnalysis(makeTimedWaitAnalysis(props));
+}
+
+interface TimedWaitAnalysis {
+	readonly resolution: ModuleResolutionContext;
+	readonly testImportClosure: ReadonlyMap<string, string>;
+}
+
+function makeTimedWaitAnalysis(props: {
+	readonly packageRootPath: string;
+	readonly sourceFiles: readonly TimedWaitSourceFile[];
+}): TimedWaitAnalysis {
 	const resolution: ModuleResolutionContext = {
 		compilerOptions: readPackageCompilerOptions(props.packageRootPath),
 		packageRootPath: props.packageRootPath,
@@ -127,26 +149,42 @@ export function findHiddenTimedWaitsInSourceFiles(props: {
 			]),
 		),
 	};
-	const productionModulePaths = collectProductionModulePaths(resolution);
-	const testImportClosure = collectTestImportClosure(resolution, productionModulePaths);
-	const findings: TimedWaitFinding[] = [];
+	return {
+		resolution,
+		testImportClosure: collectTestImportClosure(
+			resolution,
+			collectProductionModulePaths(resolution),
+		),
+	};
+}
 
-	const candidatePaths = new Set(testImportClosure.keys());
-	for (const sourceFile of props.sourceFiles) {
+function findHiddenTimedWaitsFromAnalysis(
+	analysis: TimedWaitAnalysis,
+): readonly TimedWaitFinding[] {
+	const findings: TimedWaitFinding[] = [];
+	const checker = createWaitBudgetTypeChecker({
+		compilerOptions: analysis.resolution.compilerOptions,
+		sourceFiles: [...analysis.resolution.sourceFilesByPath.values()].map(
+			(file): ts.SourceFile => file.sourceFile,
+		),
+	});
+
+	const candidatePaths = new Set(analysis.testImportClosure.keys());
+	for (const sourceFile of analysis.resolution.sourceFilesByPath.values()) {
 		if (isPlaywrightVerifierPath(sourceFile.relativePath))
 			candidatePaths.add(sourceFile.relativePath);
 	}
 	for (const relativePath of candidatePaths) {
-		const sourceFile = resolution.sourceFilesByPath.get(relativePath);
+		const sourceFile = analysis.resolution.sourceFilesByPath.get(relativePath);
 		if (sourceFile === undefined) continue;
 		visitNodes(sourceFile.sourceFile, (node: ts.Node): void => {
-			for (const vitestRuleId of describeVitestHiddenWaits(node)) {
+			for (const vitestRuleId of describeVitestHiddenWaits(node, checker)) {
 				findings.push(
 					makeTimedWaitFinding(sourceFile, node, vitestRuleId, vitestRuleMessage(vitestRuleId)),
 				);
 			}
 			if (isPlaywrightVerifierPath(relativePath)) {
-				const playwrightMessage = describePlaywrightTimeoutOption(node);
+				const playwrightMessage = describePlaywrightTimeoutOption(node, checker);
 				if (playwrightMessage !== null) {
 					findings.push(
 						makeTimedWaitFinding(
@@ -182,27 +220,43 @@ function makeTimedWaitFinding(
 	};
 }
 
-function describeVitestHiddenWaits(node: ts.Node): readonly TimedWaitRuleId[] {
+function describeVitestHiddenWaits(
+	node: ts.Node,
+	checker: ts.TypeChecker,
+): readonly TimedWaitRuleId[] {
 	if (!ts.isCallExpression(node) || !ts.isPropertyAccessExpression(node.expression)) return [];
 	const receiver = node.expression.expression;
 	const method = node.expression.name.text;
-	if (
-		ts.isIdentifier(receiver) &&
-		receiver.text === 'vi' &&
-		(method === 'waitFor' || method === 'waitUntil')
-	) {
-		return hasWaitOption(node, ['timeout', 'interval'])
+	const receiverName = vitestReceiverName(receiver, checker);
+	const hasOptions = hasExplicitWaitOption({
+		expression: node.arguments[1],
+		optionNames: ['timeout', 'interval'],
+		checker,
+	});
+	if (receiverName === 'vi' && (method === 'waitFor' || method === 'waitUntil')) {
+		const optionsArgument = node.arguments[1];
+		const numericOptions =
+			optionsArgument !== undefined &&
+			(checker.getTypeAtLocation(optionsArgument).flags & ts.TypeFlags.NumberLike) !== 0;
+		return hasOptions || numericOptions
 			? ['no-vitest-wait-options', 'no-vitest-wait-calls']
 			: ['no-vitest-wait-calls'];
 	}
-	if (
-		ts.isIdentifier(receiver) &&
-		receiver.text === 'expect' &&
-		(method === 'poll' || method === 'element')
-	) {
-		return hasWaitOption(node, ['timeout', 'interval']) ? ['no-vitest-wait-options'] : [];
+	if (receiverName === 'expect' && (method === 'poll' || method === 'element')) {
+		return hasOptions ? ['no-vitest-wait-options'] : [];
 	}
 	return [];
+}
+
+function vitestReceiverName(receiver: ts.Expression, checker: ts.TypeChecker): string | null {
+	if (!ts.isIdentifier(receiver)) return null;
+	const declarations = checker.getSymbolAtLocation(receiver)?.declarations ?? [];
+	for (const declaration of declarations) {
+		if (ts.isImportSpecifier(declaration)) {
+			return (declaration.propertyName ?? declaration.name).text;
+		}
+	}
+	return receiver.text;
 }
 
 function vitestRuleMessage(ruleId: TimedWaitRuleId): string {
@@ -212,111 +266,27 @@ function vitestRuleMessage(ruleId: TimedWaitRuleId): string {
 	return 'vi.waitFor() and vi.waitUntil() are timed waits; replace them with an owner fact or event';
 }
 
-function hasWaitOption(call: ts.CallExpression, optionNames: readonly string[]): boolean {
-	const options = call.arguments[1];
-	if (options === undefined || !ts.isObjectLiteralExpression(options)) return false;
-	return options.properties.some((property): boolean => {
-		if (!ts.isPropertyAssignment(property) && !ts.isShorthandPropertyAssignment(property))
-			return false;
-		const name = property.name;
-		return (
-			name !== undefined &&
-			propertyNameText(name) !== null &&
-			optionNames.includes(propertyNameText(name) ?? '')
-		);
-	});
-}
-
-function describePlaywrightTimeoutOption(node: ts.Node): string | null {
-	if (!ts.isCallExpression(node) || !ts.isPropertyAccessExpression(node.expression)) return null;
-	if (!playwrightTimeoutMethodNames.has(node.expression.name.text)) return null;
-	const options = node.arguments.find((argument): argument is ts.ObjectLiteralExpression =>
-		ts.isObjectLiteralExpression(argument),
-	);
-	if (options === undefined) return null;
-	const timeoutProperty = options.properties.find((property): boolean => {
-		if (!ts.isPropertyAssignment(property) && !ts.isShorthandPropertyAssignment(property))
-			return false;
-		return property.name !== undefined && propertyNameText(property.name) === 'timeout';
-	});
-	if (timeoutProperty === undefined) return null;
-	if (ts.isShorthandPropertyAssignment(timeoutProperty))
-		return 'Playwright calls may not pass a timeout option; use the shared journey hang bound';
-	if (!ts.isPropertyAssignment(timeoutProperty)) return null;
-	return isNumericOrConstantExpression(timeoutProperty.initializer)
-		? 'Playwright page, locator, and wait calls may not pass an explicit timeout option; use the shared journey hang bound'
+function describePlaywrightTimeoutOption(node: ts.Node, checker: ts.TypeChecker): string | null {
+	if (!ts.isCallExpression(node)) return null;
+	const optionsIndex = playwrightTimeoutOptionsIndex(node, checker);
+	if (optionsIndex === null) return null;
+	return hasExplicitWaitOption({
+		expression: node.arguments[optionsIndex],
+		optionNames: ['timeout'],
+		checker,
+	})
+		? 'Playwright timeout options must use the shared journey hang bound instead of a per-call budget'
 		: null;
 }
-
-const playwrightTimeoutMethodNames = new Set([
-	'click',
-	'dblclick',
-	'dispatchEvent',
-	'dragTo',
-	'evaluate',
-	'evaluateAll',
-	'evaluateHandle',
-	'fill',
-	'focus',
-	'getAttribute',
-	'goBack',
-	'goForward',
-	'hover',
-	'innerHTML',
-	'innerText',
-	'inputValue',
-	'isChecked',
-	'isDisabled',
-	'isEditable',
-	'isEnabled',
-	'isVisible',
-	'press',
-	'reload',
-	'screenshot',
-	'scrollIntoViewIfNeeded',
-	'selectOption',
-	'setContent',
-	'setInputFiles',
-	'tap',
-	'textContent',
-	'type',
-	'uncheck',
-	'waitFor',
-	'waitForEvent',
-	'waitForFunction',
-	'waitForLoadState',
-	'waitForNavigation',
-	'waitForRequest',
-	'waitForResponse',
-	'waitForSelector',
-	'waitForURL',
-	'goto',
-]);
 
 function isPlaywrightVerifierPath(relativePath: string): boolean {
 	return (
 		relativePath.startsWith('tests/e2e/') ||
-		relativePath.startsWith('scripts/verify-bridge-viewer-worktree-dev-server/')
+		relativePath.startsWith('scripts/verify-bridge-viewer-worktree-dev-server/') ||
+		relativePath.startsWith('scripts/verify-bridge-viewer-dev-server/') ||
+		relativePath === 'scripts/verify-bridge-viewer-dev-server.ts' ||
+		relativePath === 'scripts/capture-bridge-viewer-dev-visual-proof.ts'
 	);
-}
-
-function propertyNameText(name: ts.PropertyName): string | null {
-	if (ts.isIdentifier(name) || ts.isStringLiteral(name) || ts.isNumericLiteral(name))
-		return name.text;
-	return null;
-}
-
-function isNumericOrConstantExpression(expression: ts.Expression): boolean {
-	if (
-		ts.isNumericLiteral(expression) ||
-		ts.isIdentifier(expression) ||
-		ts.isPropertyAccessExpression(expression)
-	)
-		return true;
-	if (ts.isAsExpression(expression) || ts.isTypeAssertionExpression(expression)) {
-		return isNumericOrConstantExpression(expression.expression);
-	}
-	return false;
 }
 
 function readPackageCompilerOptions(packageRootPath: string): ts.CompilerOptions {

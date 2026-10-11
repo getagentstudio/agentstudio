@@ -5,7 +5,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 
 import ts from 'typescript';
 
-import { loadDebtLedger, reconcileDebtLedger } from './check-bridgeweb-architecture-debt-ledger.ts';
+import { reconcileArchitectureLedgers } from './check-bridgeweb-architecture-ledgers.ts';
 import * as timedWaits from './check-bridgeweb-architecture-timed-waits.ts';
 
 type RuleId =
@@ -41,6 +41,7 @@ export interface ArchitectureReport {
 
 export interface CheckBridgeWebArchitectureProps {
 	readonly packageRootPath?: string;
+	// The package's path from the repository root, used for debt ledger paths.
 	readonly repositoryPathPrefix?: string;
 }
 
@@ -71,7 +72,6 @@ interface AddViolationProps {
 
 const defaultPackageRootPath = fileURLToPath(new URL('../', import.meta.url));
 const checkedExtensions = new Set(['.ts', '.tsx']);
-const debtLedgerRelativePath = 'architecture-debt-ledger.tsv';
 const debtLedgerRuleIds: ReadonlySet<string> = new Set<RuleId>([
 	'no-timed-wait-in-tests',
 	'no-vitest-wait-options',
@@ -127,35 +127,27 @@ export async function checkBridgeWebArchitecture(
 		),
 	);
 	const repositoryPathPrefix = props.repositoryPathPrefix ?? 'BridgeWeb/';
-	const ledger = await loadDebtLedger({
-		filePath: join(packageRootPath, debtLedgerRelativePath),
-		isLedgerRuleId,
-		sourcePath: `${repositoryPathPrefix}${debtLedgerRelativePath}`,
+	// One import-closure analysis covers all wait rules; product deadlines stay excluded.
+	const timedWaitSites = timedWaits.findAllTimedWaitsInTestImportClosure({
+		packageRootPath,
+		sourceFiles: parsedSourceFiles,
 	});
-	const violations = reconcileDebtLedger(
-		{
-			ledger,
-			lintedPaths: new Set(parsedSourceFiles.map((parsed): string => parsed.relativePath)),
+	const standardSites = [
+		...parsedSourceFiles.flatMap(checkSourceFile),
+		...timedWaitSites.filter((site): boolean => site.ruleId === 'no-timed-wait-in-tests'),
+	];
+	const waitBudgetSites = timedWaitSites.filter(
+		(site): boolean => site.ruleId !== 'no-timed-wait-in-tests',
+	);
+	const violations = (
+		await reconcileArchitectureLedgers({
+			packageRootPath,
+			parsedSourceFiles,
 			repositoryPathPrefix,
-			sites: [
-				...parsedSourceFiles.flatMap(checkSourceFile),
-				...timedWaits.findTimedWaitsInTestImportClosure({
-					packageRootPath,
-					sourceFiles: parsedSourceFiles,
-				}),
-				...timedWaits.findHiddenTimedWaitsInSourceFiles({
-					packageRootPath,
-					sourceFiles: parsedSourceFiles,
-				}),
-			],
-		},
-		(entry, message): ArchitectureViolation => ({
-			column: 1,
-			line: entry.line,
-			message,
-			relativePath: debtLedgerRelativePath,
-			ruleId: entry.ruleId,
-		}),
+			standardSites,
+			waitBudgetSites,
+			isLedgerRuleId,
+		})
 	).toSorted(compareViolations);
 
 	return {

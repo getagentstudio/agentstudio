@@ -112,7 +112,6 @@ test.each([
 			}
 			browser = await launchBridgeViewerE2EChromium();
 			page = await browser.newPage({ viewport: { height: 980, width: 1728 } });
-			// The vitest hang bound is the only clock this journey is allowed.
 			await page.goto(
 				surface === 'file'
 					? bridgeViewerViteProductFileUrl(server.origin, fixture.oracle.largeFilePath)
