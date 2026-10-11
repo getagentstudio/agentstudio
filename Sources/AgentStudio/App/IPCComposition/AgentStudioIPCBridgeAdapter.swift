@@ -34,7 +34,7 @@ struct AgentStudioIPCBridgeAdapter: AppIPCBridgePort, @unchecked Sendable {
         }
         return IPCBridgeReviewOpenResult(
             paneId: pane.id,
-            handle: "pane:\(pane.id.uuidString)",
+            handle: pane.id.uuidString,
             correlationId: params.correlationId
         )
     }
@@ -45,7 +45,7 @@ struct AgentStudioIPCBridgeAdapter: AppIPCBridgePort, @unchecked Sendable {
         }
         return IPCBridgeFileViewOpenResult(
             paneId: pane.id,
-            handle: "pane:\(pane.id.uuidString)",
+            handle: pane.id.uuidString,
             correlationId: params.correlationId
         )
     }
