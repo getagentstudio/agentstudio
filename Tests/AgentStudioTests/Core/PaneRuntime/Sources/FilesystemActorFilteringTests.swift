@@ -8,6 +8,62 @@ import Testing
 
 @Suite(.serialized)
 struct FilesystemActorFilteringTests {
+    @Test("ignored build burst closes with only its projected path")
+    func ignoredBuildBurstClosesWithOnlyProjectedPath() async throws {
+        // Arrange
+        let bus = EventBus<RuntimeEnvelope>()
+        let actor = makeActor(bus: bus)
+        let worktreeId = UUIDv7.generate()
+        let rootPath = FileManager.default.temporaryDirectory.appending(path: "ignored-build-burst-\(worktreeId)")
+        try FileManager.default.createDirectory(at: rootPath, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: rootPath) }
+        try ".build-*/\n".write(to: rootPath.appending(path: ".gitignore"), atomically: true, encoding: .utf8)
+        await actor.register(worktreeId: worktreeId, repoId: worktreeId, rootPath: rootPath)
+        let closingPath = "Sources/burst-close-\(UUIDv7.generate()).swift"
+        let ignoredPaths = (0..<512).map { ".build-agent-1/checkouts/dep/Sources/file-\($0).swift" }
+        let subscription = await bus.subscribe(policy: .criticalUnbounded, subscriberName: #function)
+        let recorder = EventBusFactSource.attach(
+            subscription: subscription,
+            vocabulary: FactVocabulary<UUID, FileChangeset>(
+                describeScope: { $0.uuidString }, describeFact: { "changeset \($0.batchSeq): \($0.paths)" },
+                isClosing: { _, fact in fact.paths.contains(closingPath) }),
+            replayWasTruncated: {
+                if case .possiblyTruncated = subscription.replayStatus { return true }
+                return false
+            },
+            classify: { envelope in
+                guard case .worktree(let worktree) = envelope,
+                    case .filesystem(.filesChanged(let changeset)) = worktree.event
+                else { return nil }
+                return (changeset.worktreeId, changeset)
+            })
+        let opening = await recorder.mark(worktreeId)
+
+        do {
+            // Act
+            await actor.enqueueRawPaths(worktreeId: worktreeId, paths: ignoredPaths + [closingPath])
+
+            // Assert: consume all facts through the correlated real flush, so
+            // ignored-only or Git-internal changesets cannot precede the close.
+            let closingChangeset = try await recorder.expectNext(
+                in: worktreeId, where: { $0.paths.contains(closingPath) }, "build burst changeset close")
+            #expect(closingChangeset.paths == [closingPath])
+            #expect(closingChangeset.suppressedIgnoredPathCount == ignoredPaths.count)
+            try await recorder.expectNone(
+                of: {
+                    $0.paths != [closingPath] || $0.containsGitInternalChanges || $0.suppressedGitInternalPathCount > 0
+                },
+                "extra projected paths or Git invalidation in build burst", from: opening,
+                closedBy: { $0.paths.contains(closingPath) })
+        } catch {
+            await actor.shutdown()
+            try? await recorder.finish()
+            throw error
+        }
+        await actor.shutdown()
+        try await recorder.finish()
+    }
+
     @Test("ignored nested Git ingress emits no Git invalidation through its correlated changeset close")
     func ignoredNestedGitIngressDoesNotInvalidateOwningWorktree() async throws {
         // Arrange

@@ -6,6 +6,84 @@ import Testing
 
 @Suite("FilesystemPathFilter")
 struct FilesystemPathFilterTests {
+    @Test("batch ancestor cache preserves the path-only ignore rule table")
+    func batchAncestorCachePreservesPathOnlyRuleTable() throws {
+        // Arrange
+        let rootPath = try makeRootWithGitIgnore(
+            lines: [
+                ".build-*/", "!.build-agent-1/keep.log", "*.log", "!keep.log",
+                "/root-only.txt", "unanchored/", "cache/", ".git/",
+            ]
+        )
+        defer { try? FileManager.default.removeItem(at: rootPath) }
+        try "regular file".write(to: rootPath.appending(path: "cache"), atomically: true, encoding: .utf8)
+        let filter = FilesystemPathFilter.load(forRootPath: rootPath)
+        let expectations: [(path: String, ignored: Bool, disposition: FilesystemPathDisposition)] = [
+            (".build-agent-1/checkouts/dep/Sources/file.swift", true, .ignoredByPolicy),
+            (".build-agent-1/checkouts/dep/.git/index", true, .ignoredByPolicy),
+            // A negated descendant cannot reopen an ignored directory.
+            (".build-agent-1/keep.log", true, .ignoredByPolicy),
+            ("logs/app.log", true, .ignoredByPolicy),
+            ("logs/keep.log", false, .projected),
+            ("beside/keep.log", false, .projected),
+            ("root-only.txt", true, .ignoredByPolicy),
+            ("nested/root-only.txt", false, .projected),
+            ("unanchored/child.txt", true, .ignoredByPolicy),
+            ("nested/unanchored/deep/child.txt", true, .ignoredByPolicy),
+            // Known v2 limitation: directory-only rules also match a same-named
+            // leaf file because this path-only policy has no file-kind input.
+            ("cache", true, .ignoredByPolicy),
+            ("cache/deep/child.txt", true, .ignoredByPolicy),
+            // Raw ignore matching sees .git/, but classification always bypasses
+            // that policy for the owning repository's status-relevant Git state.
+            (".git/index", true, .gitInternal),
+            (".git/config", true, .projected),
+            (".git/objects/aa/bb", true, .gitObjectDatabase),
+        ]
+
+        for orderedExpectations in [expectations, Array(expectations.reversed())] {
+            var ancestorCache = FilesystemPathFilter.DirectoryIgnoreCache()
+            for expectation in orderedExpectations {
+                // Act
+                let disposition = filter.classify(relativePath: expectation.path, ancestorCache: &ancestorCache)
+                let ignored = filter.isIgnored(relativePath: expectation.path, ancestorCache: &ancestorCache)
+
+                // Assert: literal outcomes come from rule ordering and terminal
+                // excluded ancestors, including the admitted path-only limitation.
+                #expect(disposition == expectation.disposition)
+                #expect(ignored == expectation.ignored)
+            }
+        }
+    }
+
+    @Test("batch ancestor decisions reset when the filter generation changes")
+    func batchAncestorDecisionsResetWithFilterGeneration() throws {
+        // Arrange
+        let rootPath = try makeRootWithGitIgnore(lines: ["blocked/"])
+        defer { try? FileManager.default.removeItem(at: rootPath) }
+        let originalFilter = FilesystemPathFilter.load(forRootPath: rootPath)
+        let copiedFilter = originalFilter
+        try "other/\n".write(to: rootPath.appending(path: ".gitignore"), atomically: true, encoding: .utf8)
+        let reloadedFilter = FilesystemPathFilter.load(forRootPath: rootPath)
+        let expectations: [(filter: FilesystemPathFilter, path: String, ignored: Bool)] = [
+            (originalFilter, "blocked/deep/first", true),
+            (copiedFilter, "blocked/deep/second", true),
+            (reloadedFilter, "blocked/deep/third", false),
+            (reloadedFilter, "other/deep/first", true),
+            (originalFilter, "other/deep/second", false),
+            (originalFilter, "blocked/deep/fourth", true),
+        ]
+        var ancestorCache = FilesystemPathFilter.DirectoryIgnoreCache()
+
+        for expectation in expectations {
+            // Act
+            let ignored = expectation.filter.isIgnored(relativePath: expectation.path, ancestorCache: &ancestorCache)
+
+            // Assert: switching generations resets both true and false decisions.
+            #expect(ignored == expectation.ignored)
+        }
+    }
+
     @Test("own Git internals bypass ignore policy while ignored nested Git internals do not")
     func classifiesGitInternalsBeforeIgnorePolicy() throws {
         let rootPath = try makeRootWithGitIgnore(lines: ["*"])
