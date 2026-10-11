@@ -11,7 +11,7 @@ import { expect, test } from 'vitest';
 
 import { BridgeVerifierProductFileSession } from '../verify-bridge-viewer-worktree-dev-server/product-file-session.ts';
 import { BridgeWebTestLaunch } from './bridge-web-test-launch.ts';
-import { handleLaunchPromise } from './handled-launch-promise.ts';
+import { handleLaunchPromise, type HandledLaunchPromise } from './handled-launch-promise.ts';
 
 const bridgeWebRootPath = fileURLToPath(new URL('../../', import.meta.url));
 const driver = `import { createServer } from 'vite';
@@ -32,7 +32,7 @@ function startFixture(mode: string): {
 		stdio: ['pipe', 'pipe', 'pipe'],
 	});
 	if (child.stdout === null || child.stderr === null) throw new Error('Fixture pipes missing.');
-	const exit = handleLaunchPromise(once(child, 'exit'), 'harness process exit');
+	const exit = handleLaunchPromise(once(child, 'close'), 'harness process and pipe closure');
 	let stderr = '';
 	child.stderr.setEncoding('utf8');
 	child.stderr.on('data', (chunk: string): void => {
@@ -113,6 +113,7 @@ test.each(['swift-parent-kill', 'vite-parent-kill'] as const)(
 		const fixture = startFixture(mode);
 		let ready: Awaited<typeof fixture.ready> | null = null;
 		let observer: ReturnType<typeof spawn> | null = null;
+		let observerExit: HandledLaunchPromise<readonly unknown[]> | null = null;
 		try {
 			ready = await fixture.ready;
 			// kqueue observes this exact PID's exit. Registration is acknowledged
@@ -134,7 +135,11 @@ print('exited', flush=True)
 				{ stdio: ['ignore', 'pipe', 'pipe'] },
 			);
 			if (observer.stdout === null) throw new Error('Exit observer pipe missing.');
-			const observed = handleLaunchPromise(once(observer, 'exit'), 'Swift NOTE_EXIT observer');
+			const observed = handleLaunchPromise(
+				once(observer, 'close'),
+				'owned child NOTE_EXIT observer',
+			);
+			observerExit = observed;
 			await Promise.race([
 				once(observer.stdout, 'data'),
 				observed.settled.then((): never => {
@@ -147,6 +152,7 @@ print('exited', flush=True)
 		} finally {
 			fixture.child.kill('SIGKILL');
 			observer?.kill('SIGTERM');
+			await observerExit?.settled;
 			await fixture.exit.settled;
 			if (ready !== null) await rm(ready.dataRootPath, { recursive: true, force: true });
 		}

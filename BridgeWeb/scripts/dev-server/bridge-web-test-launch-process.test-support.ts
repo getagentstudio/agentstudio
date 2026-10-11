@@ -39,10 +39,13 @@ export async function runLaunchProcessFixture(): Promise<void> {
 					{ backend },
 					{
 						startBackend: async (props) => {
-							const earlyFailure = handleLaunchPromise(
-								Promise.reject(new Error('injected File metadata startup step')),
-								'File metadata startup',
-							);
+							const earlyFailure =
+								mode === 'startup-rejection'
+									? handleLaunchPromise(
+											Promise.reject(new Error('injected File metadata startup step')),
+											'File metadata startup',
+										)
+									: null;
 							const child = spawn(
 								process.execPath,
 								[
@@ -85,7 +88,7 @@ export async function runLaunchProcessFixture(): Promise<void> {
 								process.stdout.write(
 									`${JSON.stringify({ event: 'ready', dataRootPath: props.dataRootPath, backendPid: server.pid })}\n`,
 								);
-							if (mode === 'startup-rejection') return await earlyFailure.value();
+							if (earlyFailure !== null) return await earlyFailure.value();
 							return server;
 						},
 					},
