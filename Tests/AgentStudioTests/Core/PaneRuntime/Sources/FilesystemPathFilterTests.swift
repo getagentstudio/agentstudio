@@ -6,6 +6,32 @@ import Testing
 
 @Suite("FilesystemPathFilter")
 struct FilesystemPathFilterTests {
+    @Test("batch ancestor cache distinguishes composed and decomposed prefixes")
+    func batchAncestorCacheDistinguishesUnicodeSpellings() throws {
+        // Arrange: the existing regex wildcard consumes one scalar after caf,
+        // so it matches NFC é but not the two-scalar NFD e + combining acute.
+        let rootPath = try makeRootWithGitIgnore(lines: ["caf?"])
+        defer { try? FileManager.default.removeItem(at: rootPath) }
+        let filter = FilesystemPathFilter.load(forRootPath: rootPath)
+        let expectations: [(path: String, ignored: Bool, disposition: FilesystemPathDisposition)] = [
+            ("caf\u{00E9}/first.swift", true, .ignoredByPolicy),
+            ("cafe\u{0301}/second.swift", false, .projected),
+        ]
+
+        for orderedExpectations in [expectations, Array(expectations.reversed())] {
+            var ancestorCache = FilesystemPathFilter.DirectoryIgnoreCache()
+            for expectation in orderedExpectations {
+                // Act
+                let disposition = filter.classify(relativePath: expectation.path, ancestorCache: &ancestorCache)
+                let ignored = filter.isIgnored(relativePath: expectation.path, ancestorCache: &ancestorCache)
+
+                // Assert: either batch order must preserve the literal rule outcomes.
+                #expect(disposition == expectation.disposition)
+                #expect(ignored == expectation.ignored)
+            }
+        }
+    }
+
     @Test("batch ancestor cache preserves the path-only ignore rule table")
     func batchAncestorCachePreservesPathOnlyRuleTable() throws {
         // Arrange

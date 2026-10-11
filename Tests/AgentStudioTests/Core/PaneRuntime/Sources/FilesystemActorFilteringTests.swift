@@ -8,6 +8,68 @@ import Testing
 
 @Suite(.serialized)
 struct FilesystemActorFilteringTests {
+    @Test("Unicode prefix spellings retain their distinct batch changeset outcomes", arguments: [true, false])
+    func unicodePrefixSpellingsRetainChangesetOutcomes(composedFirst: Bool) async throws {
+        // Arrange
+        let bus = EventBus<RuntimeEnvelope>()
+        let actor = makeActor(bus: bus)
+        let worktreeId = UUIDv7.generate()
+        let rootPath = FileManager.default.temporaryDirectory.appending(path: "unicode-prefix-batch-\(worktreeId)")
+        try FileManager.default.createDirectory(at: rootPath, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: rootPath) }
+        try "caf?\n".write(to: rootPath.appending(path: ".gitignore"), atomically: true, encoding: .utf8)
+        await actor.register(worktreeId: worktreeId, repoId: worktreeId, rootPath: rootPath)
+        let composedPath = "caf\u{00E9}/first.swift"
+        let decomposedPath = "cafe\u{0301}/second.swift"
+        let closingPath = "Sources/unicode-close-\(UUIDv7.generate()).swift"
+        let projectedPaths = [closingPath, decomposedPath]
+        let batchPaths = composedFirst ? [composedPath, decomposedPath] : [decomposedPath, composedPath]
+        // Native ingress supplies absolute strings. Avoid the relative-path URL
+        // append, which can decompose Unicode before the lexical routing path.
+        let rawPaths = (batchPaths + [closingPath]).map { rootPath.path + "/" + $0 }
+        let subscription = await bus.subscribe(policy: .criticalUnbounded, subscriberName: #function)
+        let recorder = EventBusFactSource.attach(
+            subscription: subscription,
+            vocabulary: FactVocabulary<UUID, FileChangeset>(
+                describeScope: { $0.uuidString }, describeFact: { "changeset \($0.batchSeq): \($0.paths)" },
+                isClosing: { _, fact in fact.paths.contains(closingPath) }),
+            replayWasTruncated: {
+                if case .possiblyTruncated = subscription.replayStatus { return true }
+                return false
+            },
+            classify: { envelope in
+                guard case .worktree(let worktree) = envelope,
+                    case .filesystem(.filesChanged(let changeset)) = worktree.event
+                else { return nil }
+                return (changeset.worktreeId, changeset)
+            })
+        let opening = await recorder.mark(worktreeId)
+
+        do {
+            // Act
+            await actor.enqueueRawPaths(worktreeId: worktreeId, paths: rawPaths)
+
+            // Assert: caf? excludes only the composed ancestor. Distinct leaves
+            // prevent full-path set equality from concealing a prefix-cache error.
+            let closingChangeset = try await recorder.expectNext(
+                in: worktreeId, where: { $0.paths.contains(closingPath) }, "Unicode batch changeset close")
+            #expect(closingChangeset.paths == projectedPaths)
+            #expect(closingChangeset.suppressedIgnoredPathCount == 1)
+            try await recorder.expectNone(
+                of: {
+                    $0.paths != projectedPaths || $0.containsGitInternalChanges || $0.suppressedGitInternalPathCount > 0
+                },
+                "incorrect Unicode projected paths or Git invalidation", from: opening,
+                closedBy: { $0.paths.contains(closingPath) })
+        } catch {
+            await actor.shutdown()
+            try? await recorder.finish()
+            throw error
+        }
+        await actor.shutdown()
+        try await recorder.finish()
+    }
+
     @Test("ignored build burst closes with only its projected path")
     func ignoredBuildBurstClosesWithOnlyProjectedPath() async throws {
         // Arrange

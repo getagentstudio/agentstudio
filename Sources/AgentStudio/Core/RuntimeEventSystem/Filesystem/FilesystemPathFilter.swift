@@ -27,7 +27,7 @@ package struct FilesystemPathFilter: Sendable {
     /// Caller-owned scratch state for one ingress batch, never shared by filter values.
     struct DirectoryIgnoreCache: Sendable {
         fileprivate var filterGenerationID: UUID?
-        fileprivate var ignoredByDirectoryPrefix: [String: Bool] = [:]
+        fileprivate var ignoredByDirectoryPrefix: [[UInt8]: Bool] = [:]
     }
 
     package var estimatedRetainedByteCount: Int {
@@ -120,11 +120,14 @@ package struct FilesystemPathFilter: Sendable {
             if componentCount < pathComponents.count {
                 // Only proper ancestors are known to be directories. The leaf
                 // keeps the existing path-only rule evaluation on every call.
-                if let cachedDecision = ancestorCache.ignoredByDirectoryPrefix[candidatePath] {
+                // String equality merges Unicode spellings that the regex matcher
+                // distinguishes, so memo identity must preserve the input bytes.
+                let prefixBytes = Array(candidatePath.utf8)
+                if let cachedDecision = ancestorCache.ignoredByDirectoryPrefix[prefixBytes] {
                     isIgnored = cachedDecision
                 } else {
                     isIgnored = rulesIgnoreExactPath(candidatePath)
-                    ancestorCache.ignoredByDirectoryPrefix[candidatePath] = isIgnored
+                    ancestorCache.ignoredByDirectoryPrefix[prefixBytes] = isIgnored
                 }
             } else {
                 isIgnored = rulesIgnoreExactPath(candidatePath)
