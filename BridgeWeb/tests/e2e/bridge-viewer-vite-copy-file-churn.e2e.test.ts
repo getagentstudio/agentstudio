@@ -8,9 +8,16 @@ import {
 	type BridgeViewerOwnedViteProductServer,
 } from './bridge-viewer-vite-product-fixture.ts';
 
-test.for([false, true])(
-	'copies a current saved File annotation while the next real file refresh is pending (retire edited projection: %s)',
-	async (retireEditedProjectionDuringRefresh, context) => {
+test.for([
+	'retire edited projection: false',
+	'retire edited projection: true',
+	'retire initial draft projection: true',
+])(
+	'copies a current saved File annotation while the next real file refresh is pending (%s)',
+	async (scenario, context) => {
+		const retireEditedProjectionDuringRefresh = scenario === 'retire edited projection: true';
+		const retireInitialDraftProjectionDuringRefresh =
+			scenario === 'retire initial draft projection: true';
 		const fixture = await createBridgeViewerViteProductFixture();
 		let server: BridgeViewerOwnedViteProductServer | null = null;
 		let primaryFailure: unknown = null;
@@ -19,6 +26,7 @@ test.for([false, true])(
 			const observations = await runCopyFileChurnReproduction({
 				testSignal: context.signal,
 				retireEditedProjectionDuringRefresh,
+				retireInitialDraftProjectionDuringRefresh,
 				oracle: fixture.oracle,
 				server,
 			});
@@ -34,6 +42,20 @@ test.for([false, true])(
 				).toBeGreaterThan(0);
 			} else {
 				expect(observations.editedProjectionRetirement).toBeNull();
+			}
+			if (retireInitialDraftProjectionDuringRefresh) {
+				expect(observations.initialProjectionRetirement?.heldDescriptorId).toBeTypeOf('string');
+				expect(observations.initialProjectionRetirement?.retiredRequestFailure).toContain(
+					'ERR_ABORTED',
+				);
+				expect(
+					observations.initialProjectionRetirement?.successorDescriptorIds.length,
+				).toBeGreaterThan(0);
+				expect(observations.initialProjectionRetirement?.sourceRefreshRequestCount).toBeGreaterThan(
+					0,
+				);
+			} else {
+				expect(observations.initialProjectionRetirement).toBeNull();
 			}
 			expect(observations.evidence.copyRefreshOverlap).toMatchObject({
 				interceptedBeforeCopy: true,

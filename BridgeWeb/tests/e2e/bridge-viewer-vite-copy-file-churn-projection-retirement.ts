@@ -4,21 +4,26 @@ import { makeDeferred } from '../../scripts/verify-bridge-viewer-worktree-dev-se
 import { bridgeProductContentRequestSchema } from '../../src/core/comm-worker/bridge-product-content-contracts.js';
 import { bridgeProductControlRequestSchema } from '../../src/core/comm-worker/bridge-product-session-contracts.js';
 
-export interface EditedProjectionRetirementEvidence {
+export interface AnnotationProjectionRetirementEvidence {
 	readonly heldDescriptorId: string | null;
+	readonly sourceRefreshRequestCount: number;
 	readonly retiredRequestFailure: string | null;
 	readonly successorDescriptorIds: readonly string[];
 }
 
-// The pending File transfer finishes while the edited annotation's first rich
-// projection is held. The real worker invalidates that projection and requests
-// its successor. No response is fabricated and no clock releases either hold.
-export async function holdEditedProjectionAcrossFileRefresh(props: {
+// Hold the first demanded projection across a real File refresh. The initial
+// draft case refreshes identical bytes so its composer keeps the same source;
+// the edited Save case releases a pending changed-content transfer. The real
+// worker retires the first projection. No response or timed release is fabricated.
+export async function holdAnnotationProjectionAcrossFileRefresh(props: {
+	readonly ordering:
+		| { readonly kind: 'edited-save' }
+		| { readonly kind: 'initial-draft'; readonly writeFileRefresh: () => Promise<void> };
 	readonly expectedFileSha256: string;
 	readonly page: Page;
 	readonly testSignal: AbortSignal;
 }): Promise<{
-	readonly evidence: () => EditedProjectionRetirementEvidence;
+	readonly evidence: () => AnnotationProjectionRetirementEvidence;
 	readonly stop: () => Promise<void>;
 	readonly waitForRetirement: () => Promise<void>;
 }> {
@@ -28,7 +33,9 @@ export async function holdEditedProjectionAcrossFileRefresh(props: {
 	const demandedProjectionCorrelations = new Set<string>();
 	const successorDescriptorIds = new Set<string>();
 	const pendingRoutes = new Set<Promise<void>>();
-	let saveSequence: number | null = null;
+	let anchorSequence: number | null = null;
+	let sourceRefreshRequestCount = 0;
+	const anchorOperation = props.ordering.kind === 'initial-draft' ? 'root.create' : 'draft.save';
 	let heldRequest: Request | null = null;
 	let heldCorrelationId: string | null = null;
 	let heldDescriptorId: string | null = null;
@@ -43,13 +50,19 @@ export async function holdEditedProjectionAcrossFileRefresh(props: {
 		if (
 			control.call.method === 'file.annotations.command' &&
 			isRecord(callRequest['operation']) &&
-			callRequest['operation']['kind'] === 'draft.save'
+			callRequest['operation']['kind'] === anchorOperation
 		) {
-			saveSequence = control.requestSequence;
+			anchorSequence = control.requestSequence;
 		}
 		if (
-			saveSequence !== null &&
-			control.requestSequence > saveSequence &&
+			control.call.method === 'file.annotations.command' &&
+			isRecord(callRequest['operation']) &&
+			callRequest['operation']['kind'] === 'source.refresh'
+		)
+			sourceRefreshRequestCount += 1;
+		if (
+			anchorSequence !== null &&
+			control.requestSequence > anchorSequence &&
 			control.call.method === 'file.annotations.projection.query' &&
 			Array.isArray(callRequest['sessionIds']) &&
 			callRequest['sessionIds'].length > 0 &&
@@ -70,7 +83,7 @@ export async function holdEditedProjectionAcrossFileRefresh(props: {
 	const onAbort = (): void => {
 		requestRetirement.resolve('aborted');
 		console.error(
-			`TQ45 edited projection/File refresh await aborted: heldDescriptor=${heldDescriptorId ?? 'none'} retired=${retiredRequestFailure ?? 'none'} successors=${JSON.stringify([...successorDescriptorIds])}`,
+			`TQ45 ${props.ordering.kind} projection/File refresh await aborted: heldDescriptor=${heldDescriptorId ?? 'none'} sourceRefreshRequests=${sourceRefreshRequestCount} retired=${retiredRequestFailure ?? 'none'} successors=${JSON.stringify([...successorDescriptorIds])}`,
 		);
 		releaseHolds();
 	};
@@ -80,6 +93,7 @@ export async function holdEditedProjectionAcrossFileRefresh(props: {
 			const content = parsed.data;
 			if (
 				content.contentKind === 'file.content' &&
+				(props.ordering.kind === 'edited-save' || heldRequest !== null) &&
 				content.descriptor.expectedSha256 === props.expectedFileSha256
 			) {
 				await releaseFileContent.promise;
@@ -93,6 +107,7 @@ export async function holdEditedProjectionAcrossFileRefresh(props: {
 					heldCorrelationId = content.operationCorrelationId;
 					heldDescriptorId = content.descriptor.descriptorId;
 					releaseFileContent.resolve();
+					if (props.ordering.kind === 'initial-draft') await props.ordering.writeFileRefresh();
 					await releaseOldProjection.promise;
 				} else if (content.operationCorrelationId !== heldCorrelationId) {
 					successorDescriptorIds.add(content.descriptor.descriptorId);
@@ -119,14 +134,17 @@ export async function holdEditedProjectionAcrossFileRefresh(props: {
 	props.page.on('requestfailed', observeRetirement);
 	props.testSignal.addEventListener('abort', onAbort, { once: true });
 	return {
-		evidence: (): EditedProjectionRetirementEvidence => ({
+		evidence: (): AnnotationProjectionRetirementEvidence => ({
 			heldDescriptorId,
+			sourceRefreshRequestCount,
 			retiredRequestFailure,
 			successorDescriptorIds: [...successorDescriptorIds],
 		}),
 		waitForRetirement: async (): Promise<void> => {
 			if ((await requestRetirement.promise) !== 'retired') {
-				throw new Error('Edited projection request retirement was not observed before test abort.');
+				throw new Error(
+					'Annotation projection request retirement was not observed before test abort.',
+				);
 			}
 		},
 		stop: async (): Promise<void> => {

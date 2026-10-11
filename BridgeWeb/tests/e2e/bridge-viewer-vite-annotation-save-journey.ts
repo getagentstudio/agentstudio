@@ -2,6 +2,7 @@ import type { Page, Request, Response, Route } from 'playwright';
 import { expect, test } from 'vitest';
 
 import { selectReviewTreeFilePath } from '../../scripts/verify-bridge-viewer-worktree-dev-server/review-tree-click.ts';
+import { createProjectedAnnotationDraft } from './bridge-viewer-vite-annotation-initial-draft.ts';
 import {
 	drainAnnotationLifecycleTelemetry,
 	requiredAnnotationLifecycleStageCount,
@@ -20,7 +21,6 @@ import {
 	annotationProjectionContentRequestDiagnostic,
 	annotationProjectionQueryResultDiagnostic,
 	annotationProjectionUiDiagnostic,
-	waitForDemandedAnnotationProjectionContent,
 } from './bridge-viewer-vite-annotation-projection-test-support.ts';
 import {
 	reviewAdditionRangeBounds,
@@ -202,6 +202,7 @@ export async function runAnnotationSaveJourney(props: {
 	readonly oracle: BridgeViewerViteProductFixtureOracle;
 	readonly server: BridgeViewerOwnedViteProductServer;
 	readonly setupPage?: (page: Page) => Promise<void>;
+	readonly afterInitialDraftProjection?: () => Promise<void>;
 	readonly surface: 'file' | 'review';
 }): Promise<AnnotationSaveJourneyObservations> {
 	const browser = await launchBridgeViewerE2EChromium({ testSignal: props.testSignal });
@@ -223,6 +224,8 @@ export async function runAnnotationSaveJourney(props: {
 		if (props.surface === 'review' && reviewFile !== undefined) {
 			await installReviewRenderObservation({ itemId: reviewFile.itemId, page });
 		}
+		const initialMainProjection =
+			props.surface === 'file' ? observeAnnotationMainProjection(page) : null;
 		const initialReviewProjectionReceived =
 			props.surface === 'review' ? waitForAnnotationProjectionContentResponse(page) : null;
 		await page.goto(
@@ -238,6 +241,7 @@ export async function runAnnotationSaveJourney(props: {
 		);
 		if (props.surface === 'file') {
 			await waitForSelectedFileReady({ oracle: props.oracle, page });
+			await initialMainProjection?.install();
 		} else {
 			await selectReviewFile({ page, path: reviewFile?.path ?? '' });
 			await waitForSelectedReviewReady({ itemId: reviewFile?.itemId ?? '', page });
@@ -245,47 +249,19 @@ export async function runAnnotationSaveJourney(props: {
 		}
 		await selectRangeForAnnotation({ endLine: 5, page, startLine: 2, surface: props.surface });
 
-		const rootCreateCommitted = waitForCommittedAnnotationCommand(
-			page,
-			'root.create',
-			props.surface,
-		);
-		const sourceRefreshCommitted =
-			props.surface === 'file'
-				? waitForCommittedAnnotationCommand(page, 'source.refresh', 'file')
-				: null;
-		// Request sequence numbers are a total order, not a causal one. `source.refresh` and the
-		// demanded projection query are issued concurrently by one `acquireSession`, so anchor the
-		// gate to `root.create`, which the session genuinely cannot exist before.
-		const demandedDraftProjectionCommitted =
-			sourceRefreshCommitted === null
-				? null
-				: waitForDemandedAnnotationProjectionContent({
-						afterRequestSequence: rootCreateCommitted.then((receipt) => receipt.requestSequence),
-						page,
-						sessionId: rootCreateCommitted.then((receipt) => {
-							if (receipt.sessionId === null) {
-								throw new Error('Committed root annotation did not identify its session.');
-							}
-							return receipt.sessionId;
-						}),
-					});
 		const savedBody = `${props.surface === 'file' ? 'File' : 'Review'} Save must settle from its exact command receipt.`;
 		expectedSavedBody = savedBody;
-		await page.getByRole('textbox', { name: 'Write an annotation in Markdown' }).fill(savedBody);
-		await rootCreateCommitted;
-		if (sourceRefreshCommitted !== null) await sourceRefreshCommitted;
-		if (demandedDraftProjectionCommitted !== null) await demandedDraftProjectionCommitted;
-		await page
-			.locator('[data-testid="worktree-annotation-message"][data-annotation-draft="present"]')
-			.waitFor({ state: 'visible' });
-		await page.waitForFunction((): boolean => {
-			const saveButton = document.querySelector<HTMLButtonElement>(
-				'[aria-label="Save annotation"]',
-			);
-			return saveButton !== null && !saveButton.disabled;
-		}, undefined);
+		await createProjectedAnnotationDraft({
+			page,
+			savedBody,
+			sourceRefreshCommitted:
+				props.surface === 'file'
+					? waitForCommittedAnnotationCommand(page, 'source.refresh', 'file')
+					: null,
+			surface: props.surface,
+		});
 
+		await props.afterInitialDraftProjection?.();
 		const projectionGate = createDeferred<void>();
 		let gatedProjectionRequestCount = 0;
 		let savingControlCountAfterCommit = 0;

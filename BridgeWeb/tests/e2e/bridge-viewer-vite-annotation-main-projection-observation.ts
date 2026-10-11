@@ -64,7 +64,7 @@ export function observeAnnotationMainProjection(page: Page): {
 				// Subscribe to the owning store, including its current snapshot. A retired
 				// HTTP descriptor is not the installation fact for a saved message.
 				Object.defineProperty(globalThis, '__bridgeAnnotationMainProjectionAwaitReceipt', {
-					value: receipt => new Promise(resolve => {
+					value: ({ receipt, messageState }) => new Promise(resolve => {
 						const subscriptions = new Map();
 						let completed = false;
 						const inspect = store => {
@@ -77,7 +77,7 @@ export function observeAnnotationMainProjection(page: Page): {
 							const projected = snapshot.threads.flatMap(thread => thread.messages).find(message =>
 								message.sessionId === receipt.sessionId && message.messageId === receipt.messageId);
 							if (projected === undefined || projected.messageRevision < receipt.messageRevision ||
-								projected.savedRevision === null || projected.draft !== null ||
+								(messageState === 'draft' ? projected.draft === null : projected.savedRevision === null || projected.draft !== null) ||
 								projected.sessionRevision < receipt.sessionRevision || projected.threadRevision < receipt.threadRevision) return;
 							completed = true;
 							storeObservers.delete(observeStore);
@@ -110,15 +110,19 @@ export async function readAnnotationMainProjectionObservation(page: Page): Promi
 export async function waitForAnnotationMainProjectionReceipt(props: {
 	readonly page: Page;
 	readonly receipt: CommittedAnnotationOutcome;
+	readonly messageState: 'draft' | 'saved';
 }): Promise<void> {
-	await props.page.evaluate(async (receipt): Promise<void> => {
-		const waitForReceipt: unknown = Reflect.get(
-			globalThis,
-			'__bridgeAnnotationMainProjectionAwaitReceipt',
-		);
-		if (typeof waitForReceipt !== 'function') {
-			throw new Error('Main annotation projection receipt observer was not installed.');
-		}
-		await Reflect.apply(waitForReceipt, globalThis, [receipt]);
-	}, props.receipt);
+	await props.page.evaluate(
+		async (expected): Promise<void> => {
+			const waitForReceipt: unknown = Reflect.get(
+				globalThis,
+				'__bridgeAnnotationMainProjectionAwaitReceipt',
+			);
+			if (typeof waitForReceipt !== 'function') {
+				throw new Error('Main annotation projection receipt observer was not installed.');
+			}
+			await Reflect.apply(waitForReceipt, globalThis, [expected]);
+		},
+		{ receipt: props.receipt, messageState: props.messageState },
+	);
 }

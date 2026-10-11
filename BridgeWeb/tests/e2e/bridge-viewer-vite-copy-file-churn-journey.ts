@@ -6,10 +6,7 @@ import type { Page, Request, Route } from 'playwright';
 
 import { bridgeProductContentRequestSchema } from '../../src/core/comm-worker/bridge-product-content-contracts.js';
 import { bridgeProductControlRequestSchema } from '../../src/core/comm-worker/bridge-product-session-contracts.js';
-import {
-	observeAnnotationMainProjection,
-	waitForAnnotationMainProjectionReceipt,
-} from './bridge-viewer-vite-annotation-main-projection-observation.ts';
+import { waitForAnnotationMainProjectionReceipt } from './bridge-viewer-vite-annotation-main-projection-observation.ts';
 import {
 	runAnnotationSaveJourney,
 	type AnnotationSaveJourneyObservations,
@@ -23,8 +20,8 @@ import {
 	type ChurnEvidenceObserver,
 } from './bridge-viewer-vite-copy-file-churn-evidence.ts';
 import {
-	holdEditedProjectionAcrossFileRefresh,
-	type EditedProjectionRetirementEvidence,
+	holdAnnotationProjectionAcrossFileRefresh,
+	type AnnotationProjectionRetirementEvidence,
 } from './bridge-viewer-vite-copy-file-churn-projection-retirement.ts';
 import type {
 	BridgeViewerOwnedViteProductServer,
@@ -47,13 +44,15 @@ interface ChurnBurst {
 export interface CopyFileChurnReproductionObservations {
 	readonly annotationJourney: AnnotationSaveJourneyObservations;
 	readonly completedBurstCount: number;
-	readonly editedProjectionRetirement: EditedProjectionRetirementEvidence | null;
+	readonly editedProjectionRetirement: AnnotationProjectionRetirementEvidence | null;
+	readonly initialProjectionRetirement: AnnotationProjectionRetirementEvidence | null;
 	readonly evidence: ChurnEvidence;
 }
 
 export async function runCopyFileChurnReproduction(props: {
 	readonly testSignal: AbortSignal;
 	readonly retireEditedProjectionDuringRefresh?: boolean;
+	readonly retireInitialDraftProjectionDuringRefresh?: boolean;
 	readonly oracle: BridgeViewerViteProductFixtureOracle;
 	readonly server: BridgeViewerOwnedViteProductServer;
 }): Promise<CopyFileChurnReproductionObservations> {
@@ -76,24 +75,32 @@ export async function runCopyFileChurnReproduction(props: {
 		),
 	);
 	let completedBurstCount = 0;
-	let mainProjectionObserver: ReturnType<typeof observeAnnotationMainProjection> | null = null;
-	let editedProjectionRetirement: EditedProjectionRetirementEvidence | null = null;
+	let editedProjectionRetirement: AnnotationProjectionRetirementEvidence | null = null;
+	let initialProjectionRetirement: AnnotationProjectionRetirementEvidence | null = null;
+	const initialRetirementRef: {
+		current: Awaited<ReturnType<typeof holdAnnotationProjectionAcrossFileRefresh>> | null;
+	} = { current: null };
 	const evidenceObserverRef: { current: ChurnEvidenceObserver | null } = { current: null };
 	const ongoingCopyBurstRef: { current: ChurnBurst | null } = { current: null };
 
 	try {
 		const annotationJourney = await runAnnotationSaveJourney({
 			testSignal: props.testSignal,
+			afterInitialDraftProjection: async (): Promise<void> => {
+				if (initialRetirementRef.current === null) return;
+				await initialRetirementRef.current.waitForRetirement();
+				initialProjectionRetirement = initialRetirementRef.current.evidence();
+				await initialRetirementRef.current.stop();
+				initialRetirementRef.current = null;
+			},
 			afterProjectedSave: async ({
 				page,
 				savedBody,
 			}): Promise<AnnotationSaveJourneyPostSaveResult> => {
-				if (mainProjectionObserver === null)
-					throw new Error('Main annotation projection observer missing.');
-				await mainProjectionObserver.install();
 				const retirement =
 					props.retireEditedProjectionDuringRefresh === true
-						? await holdEditedProjectionAcrossFileRefresh({
+						? await holdAnnotationProjectionAcrossFileRefresh({
+								ordering: { kind: 'edited-save' },
 								expectedFileSha256: createHash('sha256')
 									.update(selectedBodyForBurst(selectedOriginalBody, 2))
 									.digest('hex'),
@@ -238,7 +245,20 @@ export async function runCopyFileChurnReproduction(props: {
 			server: props.server,
 			setupPage: async (page): Promise<void> => {
 				evidenceObserverRef.current = observeChurnEvidence(page);
-				mainProjectionObserver = observeAnnotationMainProjection(page);
+				if (props.retireInitialDraftProjectionDuringRefresh === true) {
+					const refreshedBody = selectedOriginalBody;
+					initialRetirementRef.current = await holdAnnotationProjectionAcrossFileRefresh({
+						ordering: {
+							kind: 'initial-draft',
+							writeFileRefresh: async (): Promise<void> => {
+								await writeFile(selectedPath, refreshedBody);
+							},
+						},
+						expectedFileSha256: createHash('sha256').update(refreshedBody).digest('hex'),
+						page,
+						testSignal: props.testSignal,
+					});
+				}
 			},
 			surface: 'file',
 		});
@@ -247,6 +267,7 @@ export async function runCopyFileChurnReproduction(props: {
 			annotationJourney,
 			completedBurstCount,
 			editedProjectionRetirement,
+			initialProjectionRetirement,
 			evidence: evidenceObserverRef.current?.evidence ?? {
 				annotationOutcomes: [],
 				copyRefreshOverlap: null,
@@ -265,6 +286,8 @@ export async function runCopyFileChurnReproduction(props: {
 			`Copy-under-file-churn reproduction failed after ${completedBurstCount} settled bursts: evidence=${JSON.stringify(evidenceObserverRef.current?.evidence)} server=${props.server.diagnostics()}`,
 			{ cause: error },
 		);
+	} finally {
+		await initialRetirementRef.current?.stop();
 	}
 }
 
@@ -344,7 +367,11 @@ async function editAndSaveCurrentAnnotation(props: {
 	const [receipt] = await Promise.all([save, committedSave]);
 	// The File refresh can retire a successful query's descriptor before transfer.
 	// Installation of this receipt in the owning Main store survives that retirement.
-	await waitForAnnotationMainProjectionReceipt({ page: props.page, receipt });
+	await waitForAnnotationMainProjectionReceipt({
+		page: props.page,
+		receipt,
+		messageState: 'saved',
+	});
 	await message
 		.getByText(props.editedBody, { exact: true })
 		.waitFor({ state: 'visible', timeout: churnTimeoutMilliseconds });
