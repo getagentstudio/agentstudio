@@ -443,7 +443,7 @@ def wait_for_terminal_pane(timeout=20):
         pane = next((item for item in panes if item.get("contentKind") == "terminal"), None)
         if pane is not None: return pane
         time.sleep(0.25)
-    raise RuntimeError("timed out waiting for sidebar-performance-proof terminal")
+    raise RuntimeError("timed out waiting for verifier-created terminal")
 def wait_for_startup_diagnostic_completion(timeout=20):
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
@@ -493,6 +493,13 @@ show_repos_result = request(
 # IPCCommandExecutionResult.swift:204 encodes the kind discriminator.
 if show_repos_result.get("kind") != "applied":
     raise RuntimeError(f"showReposSidebar did not apply: {show_repos_result}")
+# The sidebar proof creates no terminal; the verifier opens its own through IPC.
+new_tab_result = request(
+    "command.execute",
+    {"commandId":"newTab","correlationId":str(uuid.uuid4()),"arguments":workspace_window_arguments},
+)
+if new_tab_result.get("kind") != "applied":
+    raise RuntimeError(f"newTab did not apply: {new_tab_result}")
 pane = wait_for_terminal_pane()
 wait_for_startup_diagnostic_completion()
 # IPCTargetSelector.swift:19-21 uses bare UUIDs for canonical selectors.
