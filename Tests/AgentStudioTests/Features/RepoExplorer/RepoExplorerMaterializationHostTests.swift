@@ -273,7 +273,10 @@ struct RepoExplorerMaterializationHostTests {
             proposedRevision: 1,
             presentation: makeContentPresentation(fingerprint: 10)
         )
-        guard case .accepted = fixture.host.apply(contentCandidate) else { return }
+        guard case .accepted = fixture.host.apply(contentCandidate) else {
+            Issue.record("Initial content candidate was not accepted")
+            return
+        }
 
         let emptyCandidate = fixture.candidate(
             id: 2,
@@ -303,7 +306,10 @@ struct RepoExplorerMaterializationHostTests {
             proposedRevision: 1,
             presentation: firstPresentation
         )
-        guard case .accepted = fixture.host.apply(firstCandidate) else { return }
+        guard case .accepted = fixture.host.apply(firstCandidate) else {
+            Issue.record("Initial content candidate was not accepted")
+            return
+        }
 
         let secondPresentation = makeContentPresentation(fingerprint: 11)
         let secondCandidate = fixture.candidate(
@@ -332,7 +338,10 @@ struct RepoExplorerMaterializationHostTests {
             proposedRevision: 1,
             presentation: makeContentPresentation(fingerprint: 10)
         )
-        guard case .accepted = fixture.host.apply(contentCandidate) else { return }
+        guard case .accepted = fixture.host.apply(contentCandidate) else {
+            Issue.record("Initial content candidate was not accepted")
+            return
+        }
         let contentBaseline = try #require(fixture.host.acceptedBaseline)
         var wasReadyDuringSuspend = false
         var resumedDemandEpoch: UInt64?
@@ -379,7 +388,10 @@ struct RepoExplorerMaterializationHostTests {
             presentation: makeContentPresentation(fingerprint: 10)
         )
 
-        guard case .rejected = fixture.host.apply(candidate) else { return }
+        guard case .rejected = fixture.host.apply(candidate) else {
+            Issue.record("Child disposition was not rejected for response \(response)")
+            return
+        }
 
         #expect(fixture.host.acceptedBaseline == initialBaseline)
         #expect(fixture.host.isPresentationReady)
@@ -410,7 +422,10 @@ struct RepoExplorerMaterializationHostTests {
             proposedRevision: 1,
             presentation: makeContentPresentation(fingerprint: 10)
         )
-        guard case .accepted = fixture.host.apply(contentCandidate) else { return }
+        guard case .accepted = fixture.host.apply(contentCandidate) else {
+            Issue.record("Initial content candidate was not accepted")
+            return
+        }
         let contentBaseline = try #require(fixture.host.acceptedBaseline)
         fixture.child.removalResponse = response
         let rowlessCandidate = fixture.candidate(
@@ -421,7 +436,10 @@ struct RepoExplorerMaterializationHostTests {
             presentation: .rowless(.noTabs)
         )
 
-        guard case .rejected = fixture.host.apply(rowlessCandidate) else { return }
+        guard case .rejected = fixture.host.apply(rowlessCandidate) else {
+            Issue.record("Invalid removal disposition was not rejected for response \(response)")
+            return
+        }
 
         #expect(fixture.host.acceptedBaseline == contentBaseline)
         #expect(fixture.host.presentedChildView === fixture.child.view)
@@ -465,7 +483,10 @@ struct RepoExplorerMaterializationHostTests {
         ]
 
         for candidate in invalidCandidates {
-            guard case .rejected = fixture.host.apply(candidate) else { return }
+            guard case .rejected = fixture.host.apply(candidate) else {
+                Issue.record("Stale candidate \(candidate.id) was not rejected")
+                return
+            }
         }
         #expect(fixture.host.acceptedBaseline == initialBaseline)
 
@@ -476,9 +497,15 @@ struct RepoExplorerMaterializationHostTests {
             proposedRevision: 1,
             presentation: presentation
         )
-        guard case .accepted = fixture.host.apply(acceptedCandidate) else { return }
+        guard case .accepted = fixture.host.apply(acceptedCandidate) else {
+            Issue.record("Valid candidate was not accepted")
+            return
+        }
         let acceptedBaseline = try #require(fixture.host.acceptedBaseline)
-        guard case .rejected = fixture.host.apply(acceptedCandidate) else { return }
+        guard case .rejected = fixture.host.apply(acceptedCandidate) else {
+            Issue.record("Duplicate candidate was not rejected")
+            return
+        }
         #expect(fixture.host.acceptedBaseline == acceptedBaseline)
 
         let afterDetach = fixture.candidate(
@@ -489,7 +516,10 @@ struct RepoExplorerMaterializationHostTests {
             presentation: .rowless(.noTabs)
         )
         fixture.host.detach()
-        guard case .rejected(.hostDetached) = fixture.host.apply(afterDetach) else { return }
+        guard case .rejected(.hostDetached) = fixture.host.apply(afterDetach) else {
+            Issue.record("Detached host accepted a candidate")
+            return
+        }
         #expect(fixture.host.acceptedBaseline == nil)
         #expect(!fixture.host.isPresentationReady)
     }
@@ -549,7 +579,10 @@ struct RepoExplorerMaterializationHostTests {
             reentrantDisposition = fixture.host.apply(reentrantCandidate)
         }
 
-        guard case .accepted = fixture.host.apply(firstCandidate) else { return }
+        guard case .accepted = fixture.host.apply(firstCandidate) else {
+            Issue.record("Initial content candidate was not accepted")
+            return
+        }
         let baseline = try #require(fixture.host.acceptedBaseline)
 
         #expect(reentrantDisposition == .rejected(.candidateInProgress))

@@ -503,6 +503,7 @@ struct BridgeReviewPublicationCoordinatorTests {
                     productAdmission: productAdmission.context
                 )
             else {
+                Issue.record("Publication B was no longer current before delayed delivery")
                 return
             }
             await deliveryProbe.recordDelivery(publicationId: committedB.publicationId)

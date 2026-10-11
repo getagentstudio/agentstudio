@@ -185,7 +185,10 @@ struct EagerDerivedAtomTests {
                 gate: predecessorGate,
                 projectionCount: projectionCount
             ))
-        guard await predecessorGate.waitUntilStarted() else { return }
+        guard await predecessorGate.waitUntilStarted() else {
+            Issue.record("Predecessor projection did not start")
+            return
+        }
 
         atom.admit(
             makeEagerDerivedAtomTestRequest(
@@ -207,12 +210,18 @@ struct EagerDerivedAtomTests {
             await completionRecorder.wait(for: .superseded(1)),
             await completionRecorder.wait(for: .superseded(2)),
             await latestPendingGate.waitUntilStarted()
-        else { return }
+        else {
+            Issue.record("Pending projections did not supersede before the latest projection started")
+            return
+        }
         #expect(projectionCount.count == 2)
         #expect(atom.freshness == .running(3))
 
         latestPendingGate.release()
-        guard await completionRecorder.wait(for: .published(3)) else { return }
+        guard await completionRecorder.wait(for: .published(3)) else {
+            Issue.record("Latest projection did not publish")
+            return
+        }
         #expect(atom.value?.content == 111)
         #expect(atom.freshness == .current(3))
     }
