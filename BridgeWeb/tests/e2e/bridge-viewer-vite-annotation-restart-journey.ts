@@ -32,7 +32,7 @@ const annotationRestartJourneyTimeoutMilliseconds = 120_000;
 const annotationComposedConvergenceTimeoutMilliseconds = 30_000;
 
 export function registerBridgeViewerViteAnnotationSystemJourneyTests(): void {
-	test('restores distinct File and Review annotations after a cold Vite and Swift restart', async () => {
+	test('restores distinct File and Review annotations after a cold Vite and Swift restart', async (context) => {
 		const fixture = await createBridgeViewerViteProductFixture();
 		let serverA: BridgeViewerOwnedViteProductServer | null = null;
 		let serverB: BridgeViewerOwnedViteProductServer | null = null;
@@ -42,11 +42,13 @@ export function registerBridgeViewerViteAnnotationSystemJourneyTests(): void {
 		try {
 			serverA = await startBridgeViewerOwnedViteProductServer(fixture.oracle);
 			const fileBeforeRestart = await runAnnotationSaveJourney({
+				testSignal: context.signal,
 				oracle: fixture.oracle,
 				server: serverA,
 				surface: 'file',
 			});
 			const reviewBeforeRestart = await runAnnotationSaveJourney({
+				testSignal: context.signal,
 				oracle: fixture.oracle,
 				server: serverA,
 				surface: 'review',
@@ -59,7 +61,7 @@ export function registerBridgeViewerViteAnnotationSystemJourneyTests(): void {
 			serverA = null;
 
 			serverB = await startBridgeViewerOwnedViteProductServer(fixture.oracle);
-			browser = await launchBridgeViewerE2EChromium();
+			browser = await launchBridgeViewerE2EChromium({ testSignal: context.signal });
 			page = await browser.newPage({ viewport: { height: 980, width: 1728 } });
 			await page.goto(
 				bridgeViewerViteProductFileUrl(serverB.origin, fixture.oracle.largeFilePath),
@@ -157,7 +159,7 @@ export function registerBridgeViewerViteAnnotationSystemJourneyTests(): void {
 		// backend health by reloading the document, which replaces that worker.
 	});
 
-	test('holds a promoted Review update for Apply now and auto-installs after focus leaves', async () => {
+	test('holds a promoted Review update for Apply now and auto-installs after focus leaves', async (context) => {
 		const fixture = await createBridgeViewerViteProductFixture();
 		let server: BridgeViewerOwnedViteProductServer | null = null;
 		let browser: Browser | null = null;
@@ -165,7 +167,7 @@ export function registerBridgeViewerViteAnnotationSystemJourneyTests(): void {
 		let primaryFailure: { readonly error: unknown } | null = null;
 		try {
 			server = await startBridgeViewerOwnedViteProductServer(fixture.oracle);
-			browser = await launchBridgeViewerE2EChromium();
+			browser = await launchBridgeViewerE2EChromium({ testSignal: context.signal });
 			page = await browser.newPage({ viewport: { height: 980, width: 1728 } });
 			const runtimeDiagnostics = observeBrowserRuntimeDiagnostics(page);
 			const annotationCommandTrace = observeReviewAnnotationCommandTrace(page);

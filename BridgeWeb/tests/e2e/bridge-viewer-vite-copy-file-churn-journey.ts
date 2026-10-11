@@ -81,6 +81,7 @@ export interface CopyFileChurnReproductionObservations {
 }
 
 export async function runCopyFileChurnReproduction(props: {
+	readonly testSignal: AbortSignal;
 	readonly oracle: BridgeViewerViteProductFixtureOracle;
 	readonly server: BridgeViewerOwnedViteProductServer;
 }): Promise<CopyFileChurnReproductionObservations> {
@@ -108,6 +109,7 @@ export async function runCopyFileChurnReproduction(props: {
 
 	try {
 		const annotationJourney = await runAnnotationSaveJourney({
+			testSignal: props.testSignal,
 			afterProjectedSave: async ({
 				page,
 				savedBody,

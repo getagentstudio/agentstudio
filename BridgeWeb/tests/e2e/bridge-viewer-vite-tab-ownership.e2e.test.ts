@@ -74,7 +74,7 @@ test.for(['shared-profile', 'separate-profile'] as const)(
 			checkpoint.begin('start Vite and Swift');
 			server = await startBridgeViewerOwnedViteProductServer(fixture.oracle);
 			checkpoint.begin('launch Chromium');
-			browser = await launchBridgeViewerE2EChromium();
+			browser = await launchBridgeViewerE2EChromium({ testSignal: testContext.signal });
 			checkpoint.begin('create first browser context and page');
 			const context = await browser.newContext({ viewport: { width: 1728, height: 980 } });
 			const pageErrors: string[] = [];

@@ -18,9 +18,9 @@ import {
 	type BridgeStreamFaultProxy,
 } from './bridge-viewer-vite-stream-fault-proxy.ts';
 
-test.each(['direct', 'healthy', 'disconnected'] as const)(
+test.for(['direct', 'healthy', 'disconnected'] as const)(
 	'updates the selected File without user interaction after a %s metadata stream',
-	async (streamState): Promise<void> => {
+	async (streamState, context): Promise<void> => {
 		// Arrange — production browser worker, Vite and Swift with a transparent wire seam.
 		const fixture = await createBridgeViewerViteProductFixture();
 		let browser: Browser | null = null;
@@ -34,7 +34,7 @@ test.each(['direct', 'healthy', 'disconnected'] as const)(
 		try {
 			server = await startBridgeViewerOwnedViteProductServer(fixture.oracle);
 			if (streamState !== 'direct') proxy = await startBridgeStreamFaultProxy(server.origin);
-			browser = await launchBridgeViewerE2EChromium();
+			browser = await launchBridgeViewerE2EChromium({ testSignal: context.signal });
 			page = await browser.newPage({ viewport: { height: 980, width: 1728 } });
 			diagnostics = observeBrowserRuntimeDiagnostics(page);
 			failures = await observeInteractionProfileFailures(page);

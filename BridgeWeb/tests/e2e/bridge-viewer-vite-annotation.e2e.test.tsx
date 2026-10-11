@@ -84,12 +84,12 @@ async function readFailureDiagnostic(page: Page | null): Promise<unknown> {
 	}
 }
 
-test.each([
+test.for([
 	['File', 'file'],
 	['Review', 'review'],
 ] as const)(
 	'persists a saved %s comment across a reload',
-	async (_label, surface): Promise<void> => {
+	async ([_label, surface], context): Promise<void> => {
 		let page: Page | null = null;
 		let server: BridgeViewerOwnedViteProductServer | null = null;
 		onTestFailed(async (): Promise<void> => {
@@ -110,7 +110,7 @@ test.each([
 			if (surface === 'review' && reviewFile === undefined) {
 				throw new Error('Review annotation persistence journey requires a changed review file.');
 			}
-			browser = await launchBridgeViewerE2EChromium();
+			browser = await launchBridgeViewerE2EChromium({ testSignal: context.signal });
 			page = await browser.newPage({ viewport: { height: 980, width: 1728 } });
 			await page.goto(
 				surface === 'file'

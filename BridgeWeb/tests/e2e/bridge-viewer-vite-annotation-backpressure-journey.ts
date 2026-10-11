@@ -228,7 +228,7 @@ async function withBoundedTimeout<TResult>(
 }
 
 export function registerBridgeViewerViteAnnotationBackpressureJourneyTests(): void {
-	test('1,699-item Review keeps root and five replies responsive and durable', async (): Promise<void> => {
+	test('1,699-item Review keeps root and five replies responsive and durable', async (context): Promise<void> => {
 		const milestones = new AnnotationBackpressureMilestones();
 		let fixture: Awaited<ReturnType<typeof createBridgeViewerViteProductFixture>> | null = null;
 		let server: BridgeViewerOwnedViteProductServer | null = null;
@@ -254,6 +254,7 @@ export function registerBridgeViewerViteAnnotationBackpressureJourneyTests(): vo
 				operation: async () => startBridgeViewerOwnedViteProductServer(createdFixture.oracle),
 			});
 			const fileSeed = await runAnnotationSaveJourney({
+				testSignal: context.signal,
 				oracle: createdFixture.oracle,
 				server,
 				surface: 'file',
@@ -266,6 +267,7 @@ export function registerBridgeViewerViteAnnotationBackpressureJourneyTests(): vo
 				sourceThreadId: fileSeed.outputIdentity.threadId,
 			});
 			const observations = await runAnnotationBackpressureJourney({
+				testSignal: context.signal,
 				milestones,
 				oracle: createdFixture.oracle,
 				releaseLargeCatalogFixture,
@@ -411,6 +413,7 @@ interface AnnotationCatalogTelemetryObservation {
 }
 
 async function runAnnotationBackpressureJourney(props: {
+	readonly testSignal: AbortSignal;
 	readonly milestones: AnnotationBackpressureMilestones;
 	readonly oracle: BridgeViewerViteProductFixtureOracle;
 	readonly releaseLargeCatalogFixture: () => Promise<void>;
@@ -421,7 +424,7 @@ async function runAnnotationBackpressureJourney(props: {
 		after: 'browser.ready',
 		before: 'browser.launching',
 		milestones: props.milestones,
-		operation: async () => launchBridgeViewerE2EChromium(),
+		operation: async () => launchBridgeViewerE2EChromium({ testSignal: props.testSignal }),
 	});
 	let page: Page | null = null;
 	const exactSavedBodies: string[] = [];

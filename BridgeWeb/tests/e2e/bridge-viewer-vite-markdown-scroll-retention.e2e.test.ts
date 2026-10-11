@@ -18,9 +18,9 @@ import {
 	type BrowserRuntimeDiagnostics,
 } from './bridge-viewer-vite-review-comparison-observation.ts';
 
-test.each(['mode round-trip', 'content refresh'] as const)(
+test.for(['mode round-trip', 'content refresh'] as const)(
 	'retains the selected Markdown scroll position after a %s',
-	async (transition): Promise<void> => {
+	async (transition, context): Promise<void> => {
 		// Arrange — the existing long Markdown/Mermaid fixture and real Vite/Swift route.
 		const fixture = await createBridgeViewerExplorationFixture();
 		let browser: Browser | null = null;
@@ -29,7 +29,7 @@ test.each(['mode round-trip', 'content refresh'] as const)(
 		let primaryFailure: { readonly error: unknown } | null = null;
 		try {
 			server = await startBridgeViewerOwnedViteProductServer(fixture.oracle);
-			browser = await launchBridgeViewerE2EChromium();
+			browser = await launchBridgeViewerE2EChromium({ testSignal: context.signal });
 			const page = await browser.newPage({ viewport: { width: 1728, height: 980 } });
 			diagnostics = observeBrowserRuntimeDiagnostics(page);
 			await page.goto(bridgeViewerViteProductFileUrl(server.origin, 'docs/guide.md'), {

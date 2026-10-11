@@ -3,6 +3,7 @@ import { dirname, join, matchesGlob, relative } from 'node:path';
 
 import ts from 'typescript';
 
+import { resolveVitestWaitIdentity } from './check-bridgeweb-vitest-wait-identity.ts';
 import {
 	createWaitBudgetTypeChecker,
 	hasExplicitWaitOption,
@@ -224,16 +225,14 @@ function describeVitestHiddenWaits(
 	node: ts.Node,
 	checker: ts.TypeChecker,
 ): readonly TimedWaitRuleId[] {
-	if (!ts.isCallExpression(node) || !ts.isPropertyAccessExpression(node.expression)) return [];
-	const receiver = node.expression.expression;
-	const method = node.expression.name.text;
-	const receiverName = vitestReceiverName(receiver, checker);
+	if (!ts.isCallExpression(node)) return [];
+	const waitIdentity = resolveVitestWaitIdentity(node.expression, checker);
 	const hasOptions = hasExplicitWaitOption({
 		expression: node.arguments[1],
 		optionNames: ['timeout', 'interval'],
 		checker,
 	});
-	if (receiverName === 'vi' && (method === 'waitFor' || method === 'waitUntil')) {
+	if (waitIdentity === 'waitFor' || waitIdentity === 'waitUntil') {
 		const optionsArgument = node.arguments[1];
 		const numericOptions =
 			optionsArgument !== undefined &&
@@ -242,21 +241,10 @@ function describeVitestHiddenWaits(
 			? ['no-vitest-wait-options', 'no-vitest-wait-calls']
 			: ['no-vitest-wait-calls'];
 	}
-	if (receiverName === 'expect' && (method === 'poll' || method === 'element')) {
+	if (waitIdentity === 'poll' || waitIdentity === 'element') {
 		return hasOptions ? ['no-vitest-wait-options'] : [];
 	}
 	return [];
-}
-
-function vitestReceiverName(receiver: ts.Expression, checker: ts.TypeChecker): string | null {
-	if (!ts.isIdentifier(receiver)) return null;
-	const declarations = checker.getSymbolAtLocation(receiver)?.declarations ?? [];
-	for (const declaration of declarations) {
-		if (ts.isImportSpecifier(declaration)) {
-			return (declaration.propertyName ?? declaration.name).text;
-		}
-	}
-	return receiver.text;
 }
 
 function vitestRuleMessage(ruleId: TimedWaitRuleId): string {

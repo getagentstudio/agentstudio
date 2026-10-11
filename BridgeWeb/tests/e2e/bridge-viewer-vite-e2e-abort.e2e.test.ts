@@ -45,7 +45,7 @@ test
 				await cleanupFinished;
 			});
 			try {
-				browser = await launchBridgeViewerE2EChromium();
+				browser = await launchBridgeViewerE2EChromium({ testSignal: context.signal });
 				const page = await browser.newPage();
 				if (server === null) throw new Error('Abort probe needs the owned backend');
 				await page.goto(server.origin, { waitUntil: 'domcontentloaded' });

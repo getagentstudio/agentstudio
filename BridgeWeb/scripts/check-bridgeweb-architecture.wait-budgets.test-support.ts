@@ -21,6 +21,84 @@ const playwrightTypes = join(
 );
 
 export function registerWaitBudgetArchitectureFixtures(): void {
+	test('V3 budgets use constant computed keys', async (): Promise<void> => {
+		const violations = await inspectFixture({
+			'tests/e2e/waits.e2e.test.ts': `
+				import type { Locator, Page } from 'playwright';
+				declare const locator: Locator, page: Page;
+				const timeoutKey = 'timeout'; const intervalKey = 'interval';
+				locator.click({ [timeoutKey]: 1000 });
+				expect.poll(() => true, { [intervalKey]: 10 });
+				page.evaluate((data) => data.timeout, { [timeoutKey]: 1000 });
+				locator.click({});
+			`,
+		});
+		expect(violations.map((site): string => site.ruleId)).toEqual([
+			'no-playwright-timeout-options',
+			'no-vitest-wait-options',
+		]);
+	});
+
+	test('V3 budgets assigned to options before a call retain payload and unbounded negatives', async (): Promise<void> => {
+		const violations = await inspectFixture({
+			'tests/e2e/waits.e2e.test.ts': `
+				import type { Locator, Page } from 'playwright';
+				declare const locator: Locator, page: Page;
+				const options: Parameters<Locator['click']>[0] = {};
+				options.timeout = 1000;
+				locator.click(options);
+				page.evaluate((data) => data.timeout, options);
+				const unbounded: Parameters<Locator['click']>[0] = {};
+				locator.click(unbounded);
+				unbounded.timeout = 1000;
+				const pollOptions: { interval?: number } = {};
+				pollOptions.interval = 10;
+				expect.poll(() => true, pollOptions);
+			`,
+		});
+		expect(violations.map((site): string => site.ruleId)).toEqual([
+			'no-playwright-timeout-options',
+			'no-vitest-wait-options',
+		]);
+	});
+
+	test('V4 Vitest aliases namespaces and destructured waits preserve provenance', async (): Promise<void> => {
+		const violations = await inspectFixture({
+			'src/waits.unit.test.ts': `
+				import { vi, expect } from 'vitest';
+				import * as v from 'vitest';
+				const tools = vi; tools.waitFor(() => true);
+				const checkCondition = expect; checkCondition.poll(() => true, { timeout: 1 });
+				v.vi.waitUntil(() => true);
+				v.expect.element(null, { interval: 1 });
+				const { waitUntil } = vi; waitUntil(() => true);
+				const { waitFor: awaitCondition } = v.vi; awaitCondition(() => true, 5000);
+				const { poll } = expect; poll(() => true, { timeout: 1 });
+			`,
+		});
+		expect(
+			violations.filter((site): boolean => site.ruleId === 'no-vitest-wait-calls'),
+		).toHaveLength(4);
+		expect(
+			violations.filter((site): boolean => site.ruleId === 'no-vitest-wait-options'),
+		).toHaveLength(4);
+	});
+
+	test('V4 unrelated vi and imports are not Vitest wait APIs', async (): Promise<void> => {
+		const violations = await inspectFixture({
+			'src/waits.unit.test.ts': `
+				import { expect as otherExpect } from './unrelated.ts';
+				const vi = { waitFor: (fn) => fn(), waitUntil: (fn) => fn() };
+				vi.waitFor(() => true, { timeout: 1 });
+				const tools = vi; tools.waitUntil(() => true);
+				const { waitUntil } = vi; waitUntil(() => true);
+				otherExpect.poll(() => true, { timeout: 1 });
+			`,
+			'src/unrelated.ts': `export const expect = { poll: (fn) => fn() };`,
+		});
+		expect(violations).toEqual([]);
+	});
+
 	test('no-vitest-wait-options catches every named wait API and indirect budgets', async (): Promise<void> => {
 		const forbidden = [
 			'expect.poll(() => true, { timeout: 1 })',
@@ -122,7 +200,11 @@ async function inspectFixture(
 				module: 'NodeNext',
 				moduleResolution: 'NodeNext',
 				noEmit: true,
-				paths: { playwright: [playwrightTypes] },
+				paths: {
+					playwright: [playwrightTypes],
+					vitest: [join(dirname(require.resolve('vitest/package.json')), 'dist/index.d.ts')],
+				},
+				types: [join(dirname(require.resolve('vitest/package.json')), 'globals.d.ts')],
 			},
 		}),
 		'vitest.config.ts': `export default { test: { include: ['src/**/*.unit.test.ts'] } };`,

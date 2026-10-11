@@ -30,9 +30,9 @@ import {
 	readReviewRenderObservation,
 } from './bridge-viewer-vite-review-render-observation.ts';
 
-test.each(['proxy502', 'abortedDelivery'] as const)(
+test.for(['proxy502', 'abortedDelivery'] as const)(
 	'replaces the worker after exhausted installed receipts (%s) and installs the next Review revision',
-	async (lostReplyMode) => {
+	async (lostReplyMode, context) => {
 		// Arrange — intercept only installed receipts; all source, metadata and content remain real.
 		const fixture = await createBridgeViewerViteProductFixture();
 		let server: BridgeViewerOwnedViteProductServer | null = null;
@@ -48,7 +48,7 @@ test.each(['proxy502', 'abortedDelivery'] as const)(
 		};
 		try {
 			markPhase('browser-starting');
-			browser = await launchBridgeViewerE2EChromium();
+			browser = await launchBridgeViewerE2EChromium({ testSignal: context.signal });
 			markPhase('server-starting');
 			server = await startBridgeViewerOwnedViteProductServer(fixture.oracle);
 			const page = await browser.newPage({ viewport: { height: 980, width: 1728 } });
@@ -241,13 +241,13 @@ test.each(['proxy502', 'abortedDelivery'] as const)(
 	},
 );
 
-test('reclaims a durable Review draft after worker failure and one unavailable replacement bootstrap', async () => {
+test('reclaims a durable Review draft after worker failure and one unavailable replacement bootstrap', async (context) => {
 	// Arrange — real Vite, Swift, comm worker, metadata and content establish a usable Review.
 	const fixture = await createBridgeViewerViteProductFixture();
 	let server: BridgeViewerOwnedViteProductServer | null = null;
 	let browser: Browser | null = null;
 	try {
-		browser = await launchBridgeViewerE2EChromium();
+		browser = await launchBridgeViewerE2EChromium({ testSignal: context.signal });
 		server = await startBridgeViewerOwnedViteProductServer(fixture.oracle);
 		const page = await browser.newPage({ viewport: { height: 980, width: 1728 } });
 		const reviewFile = fixture.oracle.reviewFiles[0];
@@ -368,14 +368,14 @@ test('reclaims a durable Review draft after worker failure and one unavailable r
 	}
 });
 
-test('re-establishes annotation demand after an in-place worker replacement so Copy is enabled without reload', async () => {
+test('re-establishes annotation demand after an in-place worker replacement so Copy is enabled without reload', async (context) => {
 	// Arrange — a saved Review annotation makes the drawer's output controls usable.
 	const fixture = await createBridgeViewerViteProductFixture();
 	let server: BridgeViewerOwnedViteProductServer | null = null;
 	let browser: Browser | null = null;
 	let phase = 'fixture-ready';
 	try {
-		browser = await launchBridgeViewerE2EChromium();
+		browser = await launchBridgeViewerE2EChromium({ testSignal: context.signal });
 		server = await startBridgeViewerOwnedViteProductServer(fixture.oracle);
 		const page = await browser.newPage({ viewport: { height: 980, width: 1728 } });
 		const reviewFile = fixture.oracle.reviewFiles[0];

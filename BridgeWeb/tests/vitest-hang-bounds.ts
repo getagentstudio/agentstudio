@@ -27,7 +27,10 @@ export const scriptBenchmarkTestTimeoutMilliseconds = 5_000;
 // E2E bound is wide; it still only stops a wedged run from hanging forever.
 export const endToEndTestTimeoutMilliseconds = 600_000;
 
-// Keep E2E polls below the 600 s journey bound so a named poll failure wins.
+// A configured 500 s poll can name its failure first only when at least 500 s
+// remain in the test (within the first 100 s of the default 600 s journey).
+// Later polls and shorter per-test bounds can end in an unnamed runner failure.
+// TQ78 owns remaining-test-time capping and pending-wait diagnostics.
 export const endToEndExpectPollHangBoundMilliseconds = 500_000;
 
 export const endToEndHookTimeoutMilliseconds = 60_000;

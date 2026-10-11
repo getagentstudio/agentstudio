@@ -20,7 +20,7 @@ import {
 
 const roundTripTimeoutMilliseconds = 60_000;
 
-test('Review settles after switching the comparison target to another branch and back to main', async () => {
+test('Review settles after switching the comparison target to another branch and back to main', async (context) => {
 	// Arrange: a real Swift backend with Review settled on the initial target.
 	const fixture = await createBridgeViewerViteProductFixture();
 	let browser: Browser | null = null;
@@ -28,7 +28,7 @@ test('Review settles after switching the comparison target to another branch and
 	let primaryError: unknown;
 	try {
 		server = await startBridgeViewerOwnedViteProductServer(fixture.oracle);
-		browser = await launchBridgeViewerE2EChromium();
+		browser = await launchBridgeViewerE2EChromium({ testSignal: context.signal });
 		const page = await browser.newPage({ viewport: { height: 980, width: 1728 } });
 		const diagnostics = observeBrowserRuntimeDiagnostics(page);
 		await page.goto(

@@ -89,14 +89,14 @@ describe('Bridge Viewer dedicated Vite product E2E', () => {
 		}
 	});
 
-	test('correlates the disposable live-worktree journey through the product provider, worker, Pierre, and painted DOM', async () => {
+	test('correlates the disposable live-worktree journey through the product provider, worker, Pierre, and painted DOM', async (context) => {
 		const oracle = requireFixtureOracle();
 		const server = requireOwnedServer();
 		expect(oracle.changedPaths).toHaveLength(16);
 		expect(oracle.reviewFiles).toHaveLength(oracle.changedPaths.length);
 		expect(oracle.fileProofCodeContent.length).toBeLessThanOrEqual(160);
 
-		const browser = await launchBridgeViewerE2EChromium();
+		const browser = await launchBridgeViewerE2EChromium({ testSignal: context.signal });
 		const journeyObservations = await runBridgeViewerProductOnlyJourney({
 			browser,
 			baseUrl: server.origin,
@@ -108,10 +108,10 @@ describe('Bridge Viewer dedicated Vite product E2E', () => {
 		assertJourneyFreshness({ journeyObservations, oracle, server });
 	});
 
-	test('observes Review base/head body truth, request leases, painted publication correlation, and directory disclosure interaction', async () => {
+	test('observes Review base/head body truth, request leases, painted publication correlation, and directory disclosure interaction', async (context) => {
 		const oracle = requireFixtureOracle();
 		const server = requireOwnedServer();
-		const browser = await launchBridgeViewerE2EChromium();
+		const browser = await launchBridgeViewerE2EChromium({ testSignal: context.signal });
 		let page: Page | null = null;
 		try {
 			page = await browser.newPage({ viewport: { height: 980, width: 1728 } });
@@ -205,7 +205,7 @@ describe('Bridge Viewer dedicated Vite product E2E', () => {
 		}
 	});
 
-	test('paints complete final File bytes after deep scroll with descriptor, role, request, source, and disposition correlation', async () => {
+	test('paints complete final File bytes after deep scroll with descriptor, role, request, source, and disposition correlation', async (context) => {
 		const fixture = await createBridgeViewerViteProductFixture();
 		const oracle = fixture.oracle;
 		let browser: Browser | null = null;
@@ -216,7 +216,7 @@ describe('Bridge Viewer dedicated Vite product E2E', () => {
 		let contentRequests: readonly ProductContentRequestObservation[] = [];
 		try {
 			server = await startBridgeViewerOwnedViteProductServer(oracle);
-			browser = await launchBridgeViewerE2EChromium();
+			browser = await launchBridgeViewerE2EChromium({ testSignal: context.signal });
 			page = await browser.newPage({ viewport: { height: 980, width: 1728 } });
 			contentRequests = observeProductContentRequests(page);
 			const workerUrls: string[] = [];
@@ -400,12 +400,12 @@ describe('Bridge Viewer dedicated Vite product E2E', () => {
 		}
 	});
 
-	test('restores a UI-committed symbolic comparison across backend restart and resolves the moved Git target', async () => {
+	test('restores a UI-committed symbolic comparison across backend restart and resolves the moved Git target', async (context) => {
 		// Arrange
 		const fixture = await createBridgeViewerViteProductFixture();
 		let serverA: BridgeViewerOwnedViteProductServer | null = null;
 		let serverB: BridgeViewerOwnedViteProductServer | null = null;
-		const browser = await launchBridgeViewerE2EChromium();
+		const browser = await launchBridgeViewerE2EChromium({ testSignal: context.signal });
 		try {
 			serverA = await startBridgeViewerOwnedViteProductServer(fixture.oracle);
 			const pageA = await browser.newPage({ viewport: { height: 980, width: 1728 } });
