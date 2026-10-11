@@ -516,6 +516,58 @@ describe('BridgeViewerRealRouterObserver', () => {
 			{ documentGeneration: 2, name: 'review-metadata-open' },
 		]);
 	});
+
+	test('deadline closes an expiry with only reload-join waiters pending', async (): Promise<void> => {
+		vi.useFakeTimers();
+		const harness = makeObserverHarness();
+		let documentGeneration = 1;
+		const observer = new BridgeViewerRealRouterObserver(
+			harness.page,
+			documentGenerationsAt((): number => documentGeneration),
+		);
+		const reloadJoin = observer.armReloadJoinWaiters();
+		documentGeneration = 2;
+		const reloadWaits = [
+			reloadJoin.subscriptionReceipt,
+			reloadJoin.fileMetadataOpen,
+			reloadJoin.reviewMetadataOpen,
+		];
+		for (const reloadWait of reloadWaits) void reloadWait.catch((): void => {});
+		const pageClose = vi.fn(async (): Promise<void> => {});
+		const browserClose = vi.fn(async (): Promise<void> => {});
+		const deadline = createOwnedProductJourneyDeadline({
+			page: { close: pageClose },
+			browser: { close: browserClose },
+			onDeadline: (reason: Error): void => observer.close(reason),
+		});
+		try {
+			await vi.advanceTimersByTimeAsync(120_000);
+			await deadline.dispose();
+			expect(pageClose).toHaveBeenCalledOnce();
+			expect(pageClose).toHaveBeenCalledWith({
+				reason: 'BRIDGE_PRODUCT_JOURNEY_DEADLINE_EXCEEDED',
+			});
+			expect(browserClose).toHaveBeenCalledOnce();
+			expect(browserClose).toHaveBeenCalledWith({
+				reason: 'BRIDGE_PRODUCT_JOURNEY_DEADLINE_EXCEEDED',
+			});
+			for (const name of [
+				'subscription-receipt',
+				'file-metadata-open',
+				'review-metadata-open',
+			] as const)
+				expect(observer.failureTransportSnapshot().unresolvedWaiters).toContainEqual({
+					documentGeneration: 2,
+					name,
+				});
+		} finally {
+			observer.close(new Error('Reload-join test cleanup.'));
+			harness.close();
+			await Promise.allSettled(reloadWaits);
+			await deadline.dispose();
+			vi.useRealTimers();
+		}
+	});
 });
 
 describe('mountedHeaderOrderViolationForExpectedOrder', () => {
@@ -700,6 +752,7 @@ function documentGenerationsAt(currentGeneration: () => number): BridgeViewerDoc
 
 function makeObserverHarness(): {
 	readonly emit: (eventName: PageEventName, event: unknown) => void;
+	readonly close: () => void;
 	readonly page: Page;
 	readonly pendingAnimationFrameCount: () => number;
 	readonly resolveNextAnimationFrame: () => void;
@@ -710,6 +763,7 @@ function makeObserverHarness(): {
 	const responseWaiters: Array<{
 		readonly predicate: (response: PlaywrightResponse) => boolean;
 		readonly resolve: (response: PlaywrightResponse) => void;
+		readonly reject: (error: Error) => void;
 	}> = [];
 	const animationFrameResolvers: Array<() => void> = [];
 	let activeFrameSettlement:
@@ -736,8 +790,8 @@ function makeObserverHarness(): {
 		waitForResponse: async (
 			predicate: (response: PlaywrightResponse) => boolean,
 		): Promise<PlaywrightResponse> =>
-			await new Promise<PlaywrightResponse>((resolve): void => {
-				responseWaiters.push({ predicate, resolve });
+			await new Promise<PlaywrightResponse>((resolve, reject): void => {
+				responseWaiters.push({ predicate, reject, resolve });
 			}),
 		waitForFunction: async (): Promise<void> => {
 			const frameSettlement = activeFrameSettlement;
@@ -752,6 +806,10 @@ function makeObserverHarness(): {
 	};
 
 	return {
+		close: (): void => {
+			for (const waiter of responseWaiters) waiter.reject(new Error('Page closed.'));
+			responseWaiters.length = 0;
+		},
 		emit: (eventName, event): void => {
 			for (const eventHandler of eventHandlers.get(eventName) ?? []) eventHandler(event);
 			if (eventName !== 'response') return;

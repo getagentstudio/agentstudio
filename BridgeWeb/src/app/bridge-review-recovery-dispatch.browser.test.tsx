@@ -36,6 +36,7 @@ interface InstalledReviewFixture {
 	readonly host: (isActive: boolean) => ReactElement;
 	readonly owner: ReturnType<typeof createTestViewScopeOwner>;
 	readonly releaseResnapshot: ReturnType<typeof createBridgeProductDeferred<void>>;
+	readonly awaitSelectionSetup: () => Promise<void>;
 	readonly rendered: Awaited<ReturnType<typeof render>>;
 	readonly retainedItem: BridgeMainCodeViewItem;
 	readonly releaseSelectionCommands: () => void;
@@ -50,6 +51,9 @@ test.each(['ready', 'metadataFailure', 'installationFailure'] as const)(
 	async (failure): Promise<void> => {
 		const fixture = await mountInstalledReview(true);
 		try {
+			await fixture.awaitSelectionSetup();
+			const setupHeldSelectionCommandCount = fixture.heldSelectionCommandCount();
+			expect(setupHeldSelectionCommandCount).toBeGreaterThan(0);
 			await act(async (): Promise<void> => {
 				if (failure === 'metadataFailure')
 					fixture.owner.failRenderView(installedView.subscriptionId);
@@ -174,9 +178,24 @@ async function mountInstalledReview(
 ): Promise<InstalledReviewFixture> {
 	const harness = makeReviewSurfaceHarness();
 	const heldSelectionCommands: BridgeWorkerRpcCommandInput[] = [];
+	const selectionSetupReady = createBridgeProductDeferred<void>();
+	let didResolveSelectionSetup = false;
 	const sendCommand = harness.reviewClient.send;
 	let isHoldingSelection = holdSelectionCommands;
 	let activeRetryCommands: BridgeWorkerRpcCommandInput[] | null = null;
+	const resolveSelectionSetupIfReady = (): void => {
+		if (didResolveSelectionSetup) return;
+		const hasProgrammaticSelect = heldSelectionCommands.some(
+			(command): boolean =>
+				command.command === 'select' && command.selectedSource === 'programmatic',
+		);
+		const hasProgrammaticViewed = heldSelectionCommands.some(
+			(command): boolean => command.command === 'markFileViewed',
+		);
+		if (!hasProgrammaticSelect || !hasProgrammaticViewed) return;
+		didResolveSelectionSetup = true;
+		selectionSetupReady.resolve();
+	};
 	const reviewClient = {
 		...harness.reviewClient,
 		send: (command: BridgeWorkerRpcCommandInput): string => {
@@ -186,6 +205,7 @@ async function mountInstalledReview(
 				(command.command === 'select' || command.command === 'markFileViewed')
 			) {
 				heldSelectionCommands.push(command);
+				resolveSelectionSetupIfReady();
 				return `held-selection-${heldSelectionCommands.length}`;
 			}
 			return sendCommand(command);
@@ -315,6 +335,7 @@ async function mountInstalledReview(
 		host,
 		owner,
 		releaseResnapshot,
+		awaitSelectionSetup: (): Promise<void> => selectionSetupReady.promise,
 		rendered,
 		retainedItem,
 		heldSelectionCommandCount: (): number => heldSelectionCommands.length,
