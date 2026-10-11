@@ -1,5 +1,4 @@
-import { chromium } from 'playwright';
-
+import type { BridgeWebTestLaunch } from '../dev-server/bridge-web-test-launch.ts';
 import {
 	reviewInteractionPerformanceSatisfied,
 	reviewStartupLoadTimingSatisfied,
@@ -130,8 +129,10 @@ export type WorktreeDevServerStartupSurfaceResult =
 			readonly surface: 'review';
 	  });
 
-export async function runBridgeViewerWorktreeDevServerVerifier(): Promise<void> {
-	const browser = await chromium.launch({ headless: true });
+export async function runBridgeViewerWorktreeDevServerVerifier(
+	launch: BridgeWebTestLaunch,
+): Promise<void> {
+	const browser = await launch.launchBrowser({ headless: true });
 	const deadline = createOwnedVerifierJourneyDeadline({
 		closePages: async (reason): Promise<void> => {
 			await Promise.allSettled(
@@ -146,7 +147,7 @@ export async function runBridgeViewerWorktreeDevServerVerifier(): Promise<void> 
 	installVerifierBrowser(browser, deadline.signal);
 	try {
 		if (performanceOnlyMode) {
-			const result = await verifyWorktreeDevServerPerformanceOnly();
+			const result = await verifyWorktreeDevServerPerformanceOnly(launch);
 			const proofArtifactPath = await writeWorktreeDevServerPerformanceProofArtifact(result);
 			console.log(
 				JSON.stringify(
@@ -181,19 +182,16 @@ export async function runBridgeViewerWorktreeDevServerVerifier(): Promise<void> 
 		try {
 			await closeAllWorktreeFileSurfaces();
 		} finally {
-			try {
-				await browser.close();
-			} finally {
-				await deadline.dispose();
-			}
+			await deadline.dispose();
 		}
 	}
 }
 
 export async function runBridgeViewerWorktreeDevServerStartupSurfaceVerifier(
 	surface: 'file' | 'review',
+	launch: BridgeWebTestLaunch,
 ): Promise<WorktreeDevServerStartupSurfaceResult> {
-	const browser = await chromium.launch({ headless: true });
+	const browser = await launch.launchBrowser({ headless: true });
 	const deadline = createOwnedVerifierJourneyDeadline({
 		closePages: async (reason): Promise<void> => {
 			await Promise.allSettled(
@@ -233,21 +231,18 @@ export async function runBridgeViewerWorktreeDevServerStartupSurfaceVerifier(
 		try {
 			await closeAllWorktreeFileSurfaces();
 		} finally {
-			try {
-				await browser.close();
-			} finally {
-				await deadline.dispose();
-			}
+			await deadline.dispose();
 		}
 	}
 }
 
 export async function runBridgeViewerWorktreeDevServerCompleteJourneyLaunch(props: {
+	readonly launch: BridgeWebTestLaunch;
 	readonly attemptCount: number;
 	readonly launchId: string;
 	readonly sourceHead: string;
 }): Promise<Awaited<ReturnType<typeof collectBridgeDevelopmentCompleteJourneyLaunch>>> {
-	const browser = await chromium.launch({ headless: true });
+	const browser = await props.launch.launchBrowser({ headless: true });
 	const deadline = createOwnedVerifierJourneyDeadline({
 		closePages: async (reason): Promise<void> => {
 			await Promise.allSettled(
@@ -267,19 +262,20 @@ export async function runBridgeViewerWorktreeDevServerCompleteJourneyLaunch(prop
 		try {
 			await closeAllWorktreeFileSurfaces();
 		} finally {
-			try {
-				await browser.close();
-			} finally {
-				await deadline.dispose();
-			}
+			await deadline.dispose();
 		}
 	}
 }
 
-export async function verifyWorktreeDevServerPerformanceOnly(): Promise<WorktreeDevServerPerformanceOnlyResult> {
+export async function verifyWorktreeDevServerPerformanceOnly(
+	launch: BridgeWebTestLaunch,
+): Promise<WorktreeDevServerPerformanceOnlyResult> {
 	const page = await makeVerificationPage();
-	const surface = await fetchWorktreeSurface();
-	const descriptors = await fetchPerformanceWorktreeFileDescriptors(surface);
+	const { surface, descriptors } = await launch.readProductData(async () => {
+		const surface = await fetchWorktreeSurface();
+		const descriptors = await fetchPerformanceWorktreeFileDescriptors(surface);
+		return { surface, descriptors };
+	}, closeAllWorktreeFileSurfaces);
 	const startupLoadTiming = await collectWorktreeStartupLoadTimingProof({
 		page,
 	});

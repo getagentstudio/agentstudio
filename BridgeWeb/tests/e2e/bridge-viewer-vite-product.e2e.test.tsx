@@ -97,6 +97,7 @@ describe('Bridge Viewer dedicated Vite product E2E', () => {
 		expect(oracle.fileProofCodeContent.length).toBeLessThanOrEqual(160);
 
 		const journeyObservations = await runBridgeViewerProductOnlyJourney({
+			launch: ownedServer.testLaunch,
 			baseUrl: server.origin,
 			expectedReviewItemIds: oracle.expectedReviewItemIds,
 			fileProofTargets: oracle.fileProofTargets,

@@ -18,7 +18,7 @@ import {
 	bridgeReviewOraclePathOrder,
 	bridgeViewerCleanupProofAfterOwnedStops,
 	bridgeViewerProductOnlyRegressionPhase,
-} from './product-only-real-router-regression.ts';
+} from './product-only-real-router-regression-runner.ts';
 import { classifyFreshReviewHydrationWindow } from './product-only-real-router-review-hydration-window.ts';
 import { waitForFreshReviewManifestState } from './product-only-real-router-review-proof.ts';
 
@@ -794,7 +794,7 @@ describe('Bridge Viewer product-only real-router regression contract', () => {
 				browserConfigSource,
 			);
 		const realRouterUsesInstalledChrome =
-			/chromium\.launch\(\{\s*channel:\s*'chrome',\s*headless:\s*true\s*\}\)/u.test(
+			/props\.launch\.launchBrowser\(\{\s*channel:\s*'chrome',\s*headless:\s*true\s*\}\)/u.test(
 				realRouterPageSource,
 			);
 
@@ -920,7 +920,7 @@ describe('Bridge Viewer product-only real-router regression contract', () => {
 		// Arrange
 		const [journeySource, regressionSource, reviewProofSource] = await Promise.all([
 			readFile(new URL('./product-only-real-router-page.ts', import.meta.url), 'utf8'),
-			readFile(new URL('./product-only-real-router-regression.ts', import.meta.url), 'utf8'),
+			readFile(new URL('./product-only-real-router-regression-runner.ts', import.meta.url), 'utf8'),
 			readFile(new URL('./product-only-real-router-review-proof.ts', import.meta.url), 'utf8'),
 		]);
 

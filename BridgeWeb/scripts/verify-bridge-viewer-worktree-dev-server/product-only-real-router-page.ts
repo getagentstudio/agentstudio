@@ -5,8 +5,8 @@ import type {
 	Request as PlaywrightRequest,
 	Response as PlaywrightResponse,
 } from 'playwright';
-import { chromium } from 'playwright';
 
+import type { BridgeWebTestLaunch } from '../dev-server/bridge-web-test-launch.ts';
 import {
 	bridgeViewerProductOnlySelectors,
 	summarizeBridgeProductRequestBody,
@@ -119,11 +119,12 @@ export interface BridgeViewerFileProofTargets {
 }
 
 export async function runBridgeViewerProductOnlyJourney(props: {
+	readonly launch: BridgeWebTestLaunch;
 	readonly baseUrl: string;
 	readonly expectedReviewItemIds: readonly string[];
 	readonly fileProofTargets: BridgeViewerFileProofTargets;
 }): Promise<BridgeViewerProductOnlyJourneyProof> {
-	const browser = await chromium.launch({ channel: 'chrome', headless: true });
+	const browser = await props.launch.launchBrowser({ channel: 'chrome', headless: true });
 	const observedWorkers: MutableObservedWorker[] = [];
 	const observedWorkerClosePromises: Promise<void>[] = [];
 	let closedWorkerCount = 0;

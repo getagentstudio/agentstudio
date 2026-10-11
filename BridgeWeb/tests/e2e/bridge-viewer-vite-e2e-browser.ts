@@ -1,5 +1,6 @@
-import { chromium, type Browser, type BrowserContext, type ConsoleMessage } from 'playwright';
+import { type Browser, type BrowserContext, type ConsoleMessage } from 'playwright';
 
+import { BridgeWebTestLaunch } from '../../scripts/dev-server/bridge-web-test-launch.ts';
 import { isReactActWarning } from '../react-act-warning.ts';
 
 // Every Vite E2E journey launches Chromium here so a React act() warning inside
@@ -7,7 +8,8 @@ import { isReactActWarning } from '../react-act-warning.ts';
 // the test process's console.error, which ../console-error-guard.ts (loaded by
 // vitest.e2e.config.ts) turns into a failure of the running test.
 export async function launchBridgeViewerE2EChromium(): Promise<Browser> {
-	const browser = await chromium.launch({ channel: 'chrome', headless: true });
+	const launch = await BridgeWebTestLaunch.start();
+	const browser = await launch.launchBrowser({ channel: 'chrome', headless: true });
 	browser.on('context', (context: BrowserContext): void => {
 		context.on('console', reportPageActWarning);
 	});

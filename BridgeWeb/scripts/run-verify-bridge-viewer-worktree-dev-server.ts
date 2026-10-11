@@ -1,6 +1,7 @@
-import { createServer as createViteServer } from 'vite';
+import { BridgeWebTestLaunch } from './dev-server/bridge-web-test-launch.ts';
 
-const moduleLoader = await createViteServer({
+const launch = await BridgeWebTestLaunch.start();
+const moduleLoader = await launch.startVite({
 	configFile: false,
 	optimizeDeps: { noDiscovery: true },
 	server: { hmr: false, middlewareMode: true },
@@ -9,5 +10,5 @@ const moduleLoader = await createViteServer({
 try {
 	await moduleLoader.ssrLoadModule('/scripts/verify-bridge-viewer-worktree-dev-server.ts');
 } finally {
-	await moduleLoader.close();
+	await launch.dispose();
 }

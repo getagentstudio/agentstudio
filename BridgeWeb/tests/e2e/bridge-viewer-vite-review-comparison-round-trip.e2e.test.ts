@@ -1,7 +1,8 @@
-import { chromium, type Browser } from 'playwright';
+import { type Browser } from 'playwright';
 import { expect, test } from 'vitest';
 
 import { runAllOwnedCleanupOperations } from '../../scripts/dev-server/bridge-development-server-process.ts';
+import { launchBridgeViewerE2EChromium } from './bridge-viewer-vite-e2e-browser.ts';
 import {
 	createBridgeViewerViteProductFixture,
 	startBridgeViewerOwnedViteProductServer,
@@ -27,7 +28,7 @@ test('Review settles after switching the comparison target to another branch and
 	let primaryError: unknown;
 	try {
 		server = await startBridgeViewerOwnedViteProductServer(fixture.oracle);
-		browser = await chromium.launch({ channel: 'chrome', headless: true });
+		browser = await launchBridgeViewerE2EChromium();
 		const page = await browser.newPage({ viewport: { height: 980, width: 1728 } });
 		const diagnostics = observeBrowserRuntimeDiagnostics(page);
 		await page.goto(
