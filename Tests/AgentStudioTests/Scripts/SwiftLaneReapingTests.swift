@@ -12,7 +12,6 @@ struct SwiftLaneReapingTests {
         try FileManager.default.createDirectory(atPath: workDirectory, withIntermediateDirectories: true)
         let childLockPath = workDirectory + "/child.lock"
         let childPIDPath = workDirectory + "/child.pid"
-        let watchdogArmPath = workDirectory + "/watchdog.arm"
         let childReleasePath = workDirectory + "/child.release"
         let childFixturePath = workDirectory + "/reap-child.sh"
         // The shell ignores TERM before exec and records $$ before the watchdog is
@@ -23,23 +22,21 @@ struct SwiftLaneReapingTests {
             trap '' TERM
             child_pid_file="$1"
             lock_path="$2"
-            arm_path="$3"
-            release_path="$4"
+            release_path="$3"
             printf '%s\n' "$$" >"$child_pid_file"
             exec /usr/bin/perl -MFcntl=:flock -e '
               $| = 1;
               $SIG{INT} = "DEFAULT";
-              my ($lock_path, $arm_path, $release_path) = @ARGV;
+              my ($lock_path, $release_path) = @ARGV;
               open(my $lock, ">>", $lock_path) or die $!;
               flock($lock, LOCK_EX) or die $!;
               print "LOCK_HELD\n";
-              open(my $arm, ">", $arm_path) or die $!;
-              close($arm) or die $!;
+              print "\#(laneWatchdogArmLine)\n";
               open(my $release, "<", $release_path) or die $!;
               <$release>;
               # The shell inherited TERM ignore protects this blocked handler setup.
               $SIG{TERM} = "IGNORE";
-            ' "$lock_path" "$arm_path" "$release_path"
+            ' "$lock_path" "$release_path"
             """#
         try childFixture.write(toFile: childFixturePath, atomically: true, encoding: .utf8)
 
@@ -51,11 +48,10 @@ struct SwiftLaneReapingTests {
                 + "mkfifo '\(childReleasePath)'; "
                 + "PATH='\(workDirectory)/bin':\"$PATH\"; export PATH; "
                 + "LOG_PREFIX=lane; TIMEOUT_SECONDS=2; BUILD_PATH='\(workDirectory)/build'; "
-                + "LANE_WATCHDOG_ARM_PATH='\(watchdogArmPath)'; export LANE_WATCHDOG_ARM_PATH; "
                 + "export LANE_EVENT_STREAM_DIR='\(workDirectory)/ci-runs'; "
                 + "source scripts/swift-test-helpers.sh; set +e; "
                 + "run_swift_with_timeout 'reap probe' 2 /bin/bash '\(childFixturePath)' "
-                + "'\(childPIDPath)' '\(childLockPath)' '\(watchdogArmPath)' '\(childReleasePath)' "
+                + "'\(childPIDPath)' '\(childLockPath)' '\(childReleasePath)' "
                 + "|| returned=$?; echo \"RETURNED=${returned:-0}\"; "
                 + "child_pid=$(cat '\(childPIDPath)' 2>/dev/null || echo 0); "
                 + "echo \"CHILD_PID=${child_pid:-0}\"; "
@@ -67,7 +63,7 @@ struct SwiftLaneReapingTests {
                 + "'\(childLockPath)'; then echo LOCK_AVAILABLE=yes; "
                 + "else echo LOCK_AVAILABLE=no; fi; "
                 + "if [ \"$child_alive\" = yes ]; then kill -9 \"$child_pid\" 2>/dev/null || true; fi",
-            innerWatchdog: .armed
+            innerWatchdog: .armedByFixture
         )
 
         #expect(!laneOutput.contains("CHILD_PID=0"))

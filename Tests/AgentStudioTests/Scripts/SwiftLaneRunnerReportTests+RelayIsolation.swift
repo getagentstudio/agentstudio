@@ -248,7 +248,7 @@ extension SwiftLaneRunnerReportTests {
             .replacingOccurrences(of: "__PROBE_COMMAND__", with: probeCommand)
 
         // Armed by name: this proof drives the watchdog through its own clock. The
-        // nested worker inherits no LANE_WATCHDOG_ARM_PATH, so its watchdog is armed.
+        // nested worker inherits no LANE_WATCHDOG_ARM_REQUIRED, so its watchdog is armed.
         let result = try await runLaneScriptBash(command, innerWatchdog: .armed)
         // The driver has exited: no legitimate writer can still own this lock.
         let releasedLock = try await runCommandToExit(
