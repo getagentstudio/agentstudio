@@ -2,16 +2,14 @@ import { createHash } from 'node:crypto';
 import { readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
-import type { Page, Request, Response, Route } from 'playwright';
+import type { Page, Request, Route } from 'playwright';
 
 import { bridgeProductContentRequestSchema } from '../../src/core/comm-worker/bridge-product-content-contracts.js';
-import {
-	bridgeProductAdmissionResponseSchema,
-	bridgeProductOperationResultResponseSchema,
-} from '../../src/core/comm-worker/bridge-product-operation-wire-contracts.js';
 import { bridgeProductControlRequestSchema } from '../../src/core/comm-worker/bridge-product-session-contracts.js';
-import { bridgeProductWorktreeAnnotationCommandOutcomeSchema } from '../../src/core/comm-worker/bridge-product-worktree-annotation-contracts.js';
-import { waitForDemandedAnnotationProjectionContent } from './bridge-viewer-vite-annotation-projection-test-support.ts';
+import {
+	observeAnnotationMainProjection,
+	waitForAnnotationMainProjectionReceipt,
+} from './bridge-viewer-vite-annotation-main-projection-observation.ts';
 import {
 	runAnnotationSaveJourney,
 	type AnnotationSaveJourneyObservations,
@@ -19,6 +17,15 @@ import {
 	waitForCommittedAnnotationCommand,
 } from './bridge-viewer-vite-annotation-save-journey.ts';
 import { waitForCommittedAnnotationOutcome } from './bridge-viewer-vite-annotation-wire-response-observation.ts';
+import {
+	observeChurnEvidence,
+	type ChurnEvidence,
+	type ChurnEvidenceObserver,
+} from './bridge-viewer-vite-copy-file-churn-evidence.ts';
+import {
+	holdEditedProjectionAcrossFileRefresh,
+	type EditedProjectionRetirementEvidence,
+} from './bridge-viewer-vite-copy-file-churn-projection-retirement.ts';
 import type {
 	BridgeViewerOwnedViteProductServer,
 	BridgeViewerViteProductFixtureOracle,
@@ -37,51 +44,16 @@ interface ChurnBurst {
 	readonly writesCommitted: Promise<void>;
 }
 
-export interface ChurnEvidence {
-	readonly annotationOutcomes: Array<{
-		readonly operationKind: string;
-		readonly status: string;
-	}>;
-	copyRefreshOverlap: {
-		readonly expectedSha256: string;
-		readonly interceptedBeforeCopy: boolean;
-		readonly paintedBeforeCopy: boolean;
-		releasedBy: 'cleanup' | 'output.scope.commit' | null;
-		readonly workerDerivationEpoch: number | null;
-	} | null;
-	readonly fileAnnotationOpens: Array<{
-		readonly workerDerivationEpoch: number;
-		readonly workerInstanceId: string;
-	}>;
-	readonly subscriptionRetirements: Array<{
-		readonly subscriptionId: string;
-		readonly subscriptionKind: string;
-		readonly workerDerivationEpoch: number;
-	}>;
-	fileScopeUpdateCount: number;
-	readonly transportRequests: Array<{
-		readonly kind: string;
-		readonly method: string | null;
-		readonly operationKind: string | null;
-		readonly subscriptionId: string | null;
-		readonly subscriptionKind: string | null;
-		readonly workerDerivationEpoch: number | null;
-	}>;
-}
-
-interface ChurnEvidenceObserver {
-	readonly drain: () => Promise<void>;
-	readonly evidence: ChurnEvidence;
-}
-
 export interface CopyFileChurnReproductionObservations {
 	readonly annotationJourney: AnnotationSaveJourneyObservations;
 	readonly completedBurstCount: number;
+	readonly editedProjectionRetirement: EditedProjectionRetirementEvidence | null;
 	readonly evidence: ChurnEvidence;
 }
 
 export async function runCopyFileChurnReproduction(props: {
 	readonly testSignal: AbortSignal;
+	readonly retireEditedProjectionDuringRefresh?: boolean;
 	readonly oracle: BridgeViewerViteProductFixtureOracle;
 	readonly server: BridgeViewerOwnedViteProductServer;
 }): Promise<CopyFileChurnReproductionObservations> {
@@ -104,6 +76,8 @@ export async function runCopyFileChurnReproduction(props: {
 		),
 	);
 	let completedBurstCount = 0;
+	let mainProjectionObserver: ReturnType<typeof observeAnnotationMainProjection> | null = null;
+	let editedProjectionRetirement: EditedProjectionRetirementEvidence | null = null;
 	const evidenceObserverRef: { current: ChurnEvidenceObserver | null } = { current: null };
 	const ongoingCopyBurstRef: { current: ChurnBurst | null } = { current: null };
 
@@ -114,35 +88,55 @@ export async function runCopyFileChurnReproduction(props: {
 				page,
 				savedBody,
 			}): Promise<AnnotationSaveJourneyPostSaveResult> => {
-				await startChurnBurst({
-					auxiliaryOriginalBodies,
-					burstOrdinal: 1,
-					oracle: props.oracle,
-					page,
-					selectedOriginalBody,
-				}).settled;
-				completedBurstCount += 1;
+				if (mainProjectionObserver === null)
+					throw new Error('Main annotation projection observer missing.');
+				await mainProjectionObserver.install();
+				const retirement =
+					props.retireEditedProjectionDuringRefresh === true
+						? await holdEditedProjectionAcrossFileRefresh({
+								expectedFileSha256: createHash('sha256')
+									.update(selectedBodyForBurst(selectedOriginalBody, 2))
+									.digest('hex'),
+								page,
+								testSignal: props.testSignal,
+							})
+						: null;
+				try {
+					await startChurnBurst({
+						auxiliaryOriginalBodies,
+						burstOrdinal: 1,
+						oracle: props.oracle,
+						page,
+						selectedOriginalBody,
+					}).settled;
+					completedBurstCount += 1;
 
-				const editBurst = startChurnBurst({
-					auxiliaryOriginalBodies,
-					burstOrdinal: 2,
-					oracle: props.oracle,
-					page,
-					selectedOriginalBody,
-				});
-				await editBurst.writesCommitted;
-				const editedBody = `${savedBody} Edited while File refresh is pending.`;
-				const [editResult, burstResult] = await Promise.allSettled([
-					editAndSaveCurrentAnnotation({ editedBody, page, savedBody }),
-					editBurst.settled,
-				]);
-				if (editResult.status === 'rejected') throw editResult.reason;
-				if (burstResult.status === 'rejected') throw burstResult.reason;
-				completedBurstCount += 1;
-				return {
-					savedBody: editedBody,
-					selectedFileReadiness: editBurst.expectedReadiness,
-				};
+					const editBurst = startChurnBurst({
+						auxiliaryOriginalBodies,
+						burstOrdinal: 2,
+						oracle: props.oracle,
+						page,
+						selectedOriginalBody,
+					});
+					await editBurst.writesCommitted;
+					const editedBody = `${savedBody} Edited while File refresh is pending.`;
+					const [editResult, burstResult] = await Promise.allSettled([
+						editAndSaveCurrentAnnotation({ editedBody, page, savedBody }),
+						editBurst.settled,
+					]);
+					if (editResult.status === 'rejected') throw editResult.reason;
+					if (burstResult.status === 'rejected') throw burstResult.reason;
+					completedBurstCount += 1;
+					return {
+						savedBody: editedBody,
+						selectedFileReadiness: editBurst.expectedReadiness,
+					};
+				} finally {
+					if (retirement !== null) {
+						editedProjectionRetirement = retirement.evidence();
+						await retirement.stop();
+					}
+				}
 			},
 			captureOutput: async ({ captureDefaultOutput, page }) => {
 				const releaseFileContent = deferred<void>();
@@ -243,6 +237,7 @@ export async function runCopyFileChurnReproduction(props: {
 			server: props.server,
 			setupPage: async (page): Promise<void> => {
 				evidenceObserverRef.current = observeChurnEvidence(page);
+				mainProjectionObserver = observeAnnotationMainProjection(page);
 			},
 			surface: 'file',
 		});
@@ -250,6 +245,7 @@ export async function runCopyFileChurnReproduction(props: {
 		return {
 			annotationJourney,
 			completedBurstCount,
+			editedProjectionRetirement,
 			evidence: evidenceObserverRef.current?.evidence ?? {
 				annotationOutcomes: [],
 				copyRefreshOverlap: null,
@@ -343,108 +339,14 @@ async function editAndSaveCurrentAnnotation(props: {
 	await flush;
 	const save = waitForCommittedAnnotationOutcome(props.page, 'draft.save', 'file');
 	const committedSave = waitForCommittedAnnotationCommand(props.page, 'draft.save', 'file');
-	const projectedSave = waitForDemandedAnnotationProjectionContent({
-		afterRequestSequence: committedSave.then(({ requestSequence }) => requestSequence),
-		page: props.page,
-		sessionId: committedSave.then(({ sessionId }) => {
-			if (sessionId === null)
-				throw new Error('Edited annotation save omitted its session identity.');
-			return sessionId;
-		}),
-	});
 	await message.getByRole('button', { name: 'Save annotation', exact: true }).click();
-	await Promise.all([save, committedSave, projectedSave]);
+	const [receipt] = await Promise.all([save, committedSave]);
+	// The File refresh can retire a successful query's descriptor before transfer.
+	// Installation of this receipt in the owning Main store survives that retirement.
+	await waitForAnnotationMainProjectionReceipt({ page: props.page, receipt });
 	await message
 		.getByText(props.editedBody, { exact: true })
 		.waitFor({ state: 'visible', timeout: churnTimeoutMilliseconds });
-}
-
-function observeChurnEvidence(page: Page): ChurnEvidenceObserver {
-	const evidence: ChurnEvidence = {
-		annotationOutcomes: [],
-		copyRefreshOverlap: null,
-		fileAnnotationOpens: [],
-		subscriptionRetirements: [],
-		fileScopeUpdateCount: 0,
-		transportRequests: [],
-	};
-	const pendingOutcomeReads = new Set<Promise<void>>();
-	const operationKindById = new Map<string, string>();
-	const resultByOperationId = new Map<string, unknown>();
-	const recordedOperationIds = new Set<string>();
-	page.on('request', (request): void => recordTransportRequest(evidence, request));
-	page.on('response', (response): void => {
-		const read = recordAnnotationOutcome({
-			evidence,
-			operationKindById,
-			recordedOperationIds,
-			response,
-			resultByOperationId,
-		}).finally((): void => {
-			pendingOutcomeReads.delete(read);
-		});
-		pendingOutcomeReads.add(read);
-	});
-	return {
-		drain: async (): Promise<void> => {
-			await Promise.allSettled(pendingOutcomeReads);
-		},
-		evidence,
-	};
-}
-
-function recordTransportRequest(evidence: ChurnEvidence, request: Request): void {
-	if (
-		request.method() !== 'POST' ||
-		new URL(request.url()).pathname !== '/__bridge-product/command'
-	)
-		return;
-	const parsed = bridgeProductControlRequestSchema.safeParse(request.postDataJSON());
-	if (!parsed.success) return;
-	const control = parsed.data;
-	const call = control.kind === 'product.call' ? control.call : null;
-	const callRequest: unknown = call?.request;
-	const operation = isRecord(callRequest) ? callRequest['operation'] : null;
-	if (
-		control.kind === 'subscription.open' &&
-		control.subscription.subscriptionKind === 'file.annotations'
-	) {
-		evidence.fileAnnotationOpens.push({
-			workerDerivationEpoch: control.workerDerivationEpoch,
-			workerInstanceId: control.workerInstanceId,
-		});
-	}
-	if (control.kind === 'subscription.setScope' && control.subscriptionKind === 'file.metadata') {
-		evidence.fileScopeUpdateCount += 1;
-	}
-	if (control.kind === 'subscription.cancel') {
-		evidence.subscriptionRetirements.push({
-			subscriptionId: control.subscriptionId,
-			subscriptionKind: control.subscriptionKind,
-			workerDerivationEpoch: control.workerDerivationEpoch,
-		});
-	}
-	evidence.transportRequests.push({
-		kind: control.kind,
-		method: call?.method ?? null,
-		operationKind:
-			isRecord(operation) && typeof operation['kind'] === 'string' ? operation['kind'] : null,
-		subscriptionId:
-			'subscriptionId' in control && typeof control.subscriptionId === 'string'
-				? control.subscriptionId
-				: null,
-		subscriptionKind:
-			'subscriptionKind' in control && typeof control.subscriptionKind === 'string'
-				? control.subscriptionKind
-				: control.kind === 'subscription.open'
-					? control.subscription.subscriptionKind
-					: null,
-		workerDerivationEpoch:
-			'workerDerivationEpoch' in control && typeof control.workerDerivationEpoch === 'number'
-				? control.workerDerivationEpoch
-				: null,
-	});
-	if (evidence.transportRequests.length > 128) evidence.transportRequests.shift();
 }
 
 function isExactFileContentRequest(body: unknown, expectedSha256: string | undefined): boolean {
@@ -480,97 +382,6 @@ function isOutputScopeCommitRequest(request: Request): boolean {
 		callRequest['operation']['kind'] === 'output.scope.commit' &&
 		callRequest['operation']['outputKind'] === 'clipboardMarkdown'
 	);
-}
-
-async function recordAnnotationOutcome(props: {
-	readonly evidence: ChurnEvidence;
-	readonly operationKindById: Map<string, string>;
-	readonly recordedOperationIds: Set<string>;
-	readonly response: Response;
-	readonly resultByOperationId: Map<string, unknown>;
-}): Promise<void> {
-	const { evidence, operationKindById, recordedOperationIds, response, resultByOperationId } =
-		props;
-	const request = response.request();
-	if (
-		request.method() !== 'POST' ||
-		new URL(request.url()).pathname !== '/__bridge-product/command'
-	)
-		return;
-	const requestBody: unknown = request.postDataJSON();
-	if (!isRecord(requestBody)) return;
-	if (requestBody['kind'] === 'product.call') {
-		const admission = bridgeProductAdmissionResponseSchema.safeParse(
-			await response.json().catch((): null => null),
-		);
-		if (!admission.success || admission.data.kind !== 'operation.admitted') return;
-		const call = requestBody['call'];
-		if (
-			!isRecord(call) ||
-			(call['method'] !== 'file.annotations.command' &&
-				call['method'] !== 'review.annotations.command') ||
-			!isRecord(call['request'])
-		)
-			return;
-		const operation = call['request']['operation'];
-		if (!isRecord(operation) || typeof operation['kind'] !== 'string') return;
-		operationKindById.set(admission.data.operationId, operation['kind']);
-		const priorResult = resultByOperationId.get(admission.data.operationId);
-		if (priorResult !== undefined) {
-			recordSettledAnnotationOutcome(
-				evidence,
-				operation['kind'],
-				priorResult,
-				admission.data.operationId,
-				recordedOperationIds,
-			);
-		}
-		return;
-	}
-	if (requestBody['kind'] !== 'operation.result') return;
-	const settlement = bridgeProductOperationResultResponseSchema.safeParse(
-		await response.json().catch((): null => null),
-	);
-	if (
-		!settlement.success ||
-		settlement.data.outcome !== 'succeeded' ||
-		settlement.data.operationId !== requestBody['operationId']
-	)
-		return;
-	resultByOperationId.set(settlement.data.operationId, settlement.data.result);
-	const operationKind = operationKindById.get(settlement.data.operationId);
-	if (operationKind !== undefined) {
-		recordSettledAnnotationOutcome(
-			evidence,
-			operationKind,
-			settlement.data.result,
-			settlement.data.operationId,
-			recordedOperationIds,
-		);
-	}
-}
-
-function recordSettledAnnotationOutcome(
-	evidence: ChurnEvidence,
-	operationKind: string,
-	responseBody: unknown,
-	operationId: string,
-	recordedOperationIds: Set<string>,
-): void {
-	if (recordedOperationIds.has(operationId)) return;
-	if (!isRecord(responseBody) || !isRecord(responseBody['call'])) return;
-	const result = responseBody['call']['result'];
-	if (!isRecord(result) || !isRecord(result['outcome'])) return;
-	const outcome = bridgeProductWorktreeAnnotationCommandOutcomeSchema.safeParse(result['outcome']);
-	if (!outcome.success) return;
-	recordedOperationIds.add(operationId);
-	evidence.annotationOutcomes.push({
-		operationKind,
-		status:
-			outcome.data.status.kind === 'failed'
-				? `failed:${outcome.data.status.code}`
-				: outcome.data.status.kind,
-	});
 }
 
 async function waitForPaintedFileHash(page: Page, expectedSha256: string): Promise<void> {
