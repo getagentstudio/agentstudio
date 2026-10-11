@@ -3,11 +3,13 @@ import type {
 	Request as PlaywrightRequest,
 	Response as PlaywrightResponse,
 } from 'playwright';
-import { describe, expect, test } from 'vitest';
+import { describe, expect, test, vi } from 'vitest';
 
 import type { BridgeViewerDocumentGenerations } from './product-only-real-router-document-generations.ts';
+import { createOwnedProductJourneyDeadline } from './product-only-real-router-journey-deadline.ts';
 import {
 	BridgeViewerRealRouterObserver,
+	captureBridgeViewerProductOnlyJourneyFailure,
 	freshReviewInitialWindowRequiresTraversal,
 	mountedHeaderOrderViolationForExpectedOrder,
 	nextFreshReviewTraversalScrollTop,
@@ -18,6 +20,153 @@ type PageEventName = 'request' | 'requestfailed' | 'requestfinished' | 'response
 type PageEventHandler = (event: unknown) => void;
 
 describe('BridgeViewerRealRouterObserver', () => {
+	test('the journey deadline also ends a missed worker close during cleanup', async (): Promise<void> => {
+		vi.useFakeTimers();
+		const pageClose = vi.fn(async (): Promise<void> => {});
+		const browserClose = vi.fn(async (): Promise<void> => {});
+		const deadline = createOwnedProductJourneyDeadline({
+			page: { close: pageClose },
+			browser: { close: browserClose },
+		});
+		let closeWorker!: () => void;
+		const workerClosed = new Promise<void>((resolve): void => {
+			closeWorker = resolve;
+		});
+		const joined = deadline.waitFor(workerClosed, 'observed-worker-closure').then(
+			(): string => 'closed',
+			(error: unknown): string => String(error),
+		);
+		try {
+			await vi.advanceTimersByTimeAsync(120_000);
+			expect(await joined).toContain('awaiting observed-worker-closure');
+			expect(browserClose).toHaveBeenCalledOnce();
+			expect(pageClose).toHaveBeenCalledOnce();
+		} finally {
+			closeWorker();
+			await joined;
+			await deadline.dispose();
+			vi.useRealTimers();
+		}
+	});
+
+	test.each(['legacy-metadata-completion', 'product-response-quiescence'] as const)(
+		'owner deadline rejects %s and reaches browser cleanup',
+		async (waiterName): Promise<void> => {
+			vi.useFakeTimers();
+			const harness = makeObserverHarness();
+			const observer = new BridgeViewerRealRouterObserver(
+				harness.page,
+				documentGenerationsAt((): number => 1),
+			);
+			const pageClose = vi.fn(async (): Promise<void> => {});
+			const browserClose = vi.fn(async (): Promise<void> => {});
+			const deadline = createOwnedProductJourneyDeadline({
+				page: { close: pageClose },
+				browser: { close: browserClose },
+				onDeadline: (reason: Error): void => observer.close(reason),
+			});
+			const request =
+				waiterName === 'legacy-metadata-completion'
+					? makeLegacyMetadataRequest()
+					: ({
+							url: (): string => 'http://127.0.0.1:5173/__bridge-product/stream',
+							method: (): string => 'POST',
+							postData: (): null => null,
+						} as unknown as PlaywrightRequest);
+			harness.emit('request', request);
+			if (waiterName === 'legacy-metadata-completion') {
+				harness.emit('response', makeLegacyMetadataResponse(request, 'next'));
+				await observer.flushResponseParsers();
+			}
+			const wait =
+				waiterName === 'legacy-metadata-completion'
+					? observer.waitForObservedLegacyMetadataCompletion()
+					: observer.waitForAllProductResponses();
+			let observedOutcome: string | undefined;
+			const result = wait.then(
+				(): string => 'unexpected success',
+				(error: unknown): string => {
+					observedOutcome = String(error);
+					return observedOutcome;
+				},
+			);
+			try {
+				await vi.advanceTimersByTimeAsync(120_000);
+				await deadline.dispose();
+				expect(observedOutcome).toContain(waiterName);
+				expect(observedOutcome).toContain('BRIDGE_PRODUCT_JOURNEY_DEADLINE_EXCEEDED');
+				expect(observer.failureTransportSnapshot().unresolvedWaiters).toContainEqual({
+					documentGeneration: 1,
+					name: waiterName,
+				});
+				expect(pageClose).toHaveBeenCalledOnce();
+				expect(browserClose).toHaveBeenCalledOnce();
+			} finally {
+				// Release the old implementation too, so the deterministic red leaves no wait.
+				if (waiterName === 'legacy-metadata-completion')
+					harness.emit('response', makeLegacyMetadataResponse(request, null));
+				else {
+					harness.emit('response', makeSuccessfulResponse(request));
+					await flushMicrotasks();
+					if (harness.pendingAnimationFrameCount() > 0) harness.resolveNextAnimationFrame();
+				}
+				await result;
+				await deadline.dispose();
+				vi.useRealTimers();
+			}
+		},
+	);
+
+	test('deadline checkpoint keeps transport evidence when the closed page loses DOM capture', async (): Promise<void> => {
+		vi.useFakeTimers();
+		const harness = makeObserverHarness();
+		const observer = new BridgeViewerRealRouterObserver(
+			harness.page,
+			documentGenerationsAt((): number => 1),
+		);
+		const request = makeLegacyMetadataRequest();
+		harness.emit('request', request);
+		harness.emit('response', makeLegacyMetadataResponse(request, 'next'));
+		await observer.flushResponseParsers();
+		const wait = observer.waitForObservedLegacyMetadataCompletion();
+		void wait.catch((): void => {});
+		const pageClose = vi.fn(async (): Promise<void> => {});
+		const browserClose = vi.fn(async (): Promise<void> => {});
+		const deadline = createOwnedProductJourneyDeadline({
+			page: { close: pageClose },
+			browser: { close: browserClose },
+			onDeadline: (reason: Error): void => observer.close(reason),
+		});
+		const closedPage = {
+			evaluate: async (): Promise<never> => {
+				throw new Error('Target page, context or browser has been closed');
+			},
+		} as unknown as Page;
+		try {
+			await vi.advanceTimersByTimeAsync(120_000);
+			await expect(wait).rejects.toThrow('BRIDGE_PRODUCT_JOURNEY_DEADLINE_EXCEEDED');
+			const checkpoint = await captureBridgeViewerProductOnlyJourneyFailure({
+				browserDiagnostics: [],
+				documentGeneration: 1,
+				error: new Error('BRIDGE_PRODUCT_JOURNEY_DEADLINE_EXCEEDED'),
+				failedResponses: [],
+				page: closedPage,
+				routeObserver: observer,
+			});
+			expect(checkpoint.captureStatus).toBe('unavailable');
+			expect(checkpoint.failureCode).toContain('BRIDGE_PRODUCT_JOURNEY_DEADLINE_EXCEEDED');
+			expect(checkpoint.transport.unresolvedWaiters).toContainEqual({
+				documentGeneration: 1,
+				name: 'legacy-metadata-completion',
+			});
+			expect(pageClose).toHaveBeenCalledOnce();
+			expect(browserClose).toHaveBeenCalledOnce();
+		} finally {
+			await deadline.dispose();
+			vi.useRealTimers();
+		}
+	});
+
 	test('records the scrub-safe product call method in failure transport evidence', () => {
 		// Arrange
 		const harness = makeObserverHarness();
@@ -367,6 +516,58 @@ describe('BridgeViewerRealRouterObserver', () => {
 			{ documentGeneration: 2, name: 'review-metadata-open' },
 		]);
 	});
+
+	test('deadline closes an expiry with only reload-join waiters pending', async (): Promise<void> => {
+		vi.useFakeTimers();
+		const harness = makeObserverHarness();
+		let documentGeneration = 1;
+		const observer = new BridgeViewerRealRouterObserver(
+			harness.page,
+			documentGenerationsAt((): number => documentGeneration),
+		);
+		const reloadJoin = observer.armReloadJoinWaiters();
+		documentGeneration = 2;
+		const reloadWaits = [
+			reloadJoin.subscriptionReceipt,
+			reloadJoin.fileMetadataOpen,
+			reloadJoin.reviewMetadataOpen,
+		];
+		for (const reloadWait of reloadWaits) void reloadWait.catch((): void => {});
+		const pageClose = vi.fn(async (): Promise<void> => {});
+		const browserClose = vi.fn(async (): Promise<void> => {});
+		const deadline = createOwnedProductJourneyDeadline({
+			page: { close: pageClose },
+			browser: { close: browserClose },
+			onDeadline: (reason: Error): void => observer.close(reason),
+		});
+		try {
+			await vi.advanceTimersByTimeAsync(120_000);
+			await deadline.dispose();
+			expect(pageClose).toHaveBeenCalledOnce();
+			expect(pageClose).toHaveBeenCalledWith({
+				reason: 'BRIDGE_PRODUCT_JOURNEY_DEADLINE_EXCEEDED',
+			});
+			expect(browserClose).toHaveBeenCalledOnce();
+			expect(browserClose).toHaveBeenCalledWith({
+				reason: 'BRIDGE_PRODUCT_JOURNEY_DEADLINE_EXCEEDED',
+			});
+			for (const name of [
+				'subscription-receipt',
+				'file-metadata-open',
+				'review-metadata-open',
+			] as const)
+				expect(observer.failureTransportSnapshot().unresolvedWaiters).toContainEqual({
+					documentGeneration: 2,
+					name,
+				});
+		} finally {
+			observer.close(new Error('Reload-join test cleanup.'));
+			harness.close();
+			await Promise.allSettled(reloadWaits);
+			await deadline.dispose();
+			vi.useRealTimers();
+		}
+	});
 });
 
 describe('mountedHeaderOrderViolationForExpectedOrder', () => {
@@ -551,6 +752,7 @@ function documentGenerationsAt(currentGeneration: () => number): BridgeViewerDoc
 
 function makeObserverHarness(): {
 	readonly emit: (eventName: PageEventName, event: unknown) => void;
+	readonly close: () => void;
 	readonly page: Page;
 	readonly pendingAnimationFrameCount: () => number;
 	readonly resolveNextAnimationFrame: () => void;
@@ -561,6 +763,7 @@ function makeObserverHarness(): {
 	const responseWaiters: Array<{
 		readonly predicate: (response: PlaywrightResponse) => boolean;
 		readonly resolve: (response: PlaywrightResponse) => void;
+		readonly reject: (error: Error) => void;
 	}> = [];
 	const animationFrameResolvers: Array<() => void> = [];
 	let activeFrameSettlement:
@@ -587,8 +790,8 @@ function makeObserverHarness(): {
 		waitForResponse: async (
 			predicate: (response: PlaywrightResponse) => boolean,
 		): Promise<PlaywrightResponse> =>
-			await new Promise<PlaywrightResponse>((resolve): void => {
-				responseWaiters.push({ predicate, resolve });
+			await new Promise<PlaywrightResponse>((resolve, reject): void => {
+				responseWaiters.push({ predicate, reject, resolve });
 			}),
 		waitForFunction: async (): Promise<void> => {
 			const frameSettlement = activeFrameSettlement;
@@ -603,6 +806,10 @@ function makeObserverHarness(): {
 	};
 
 	return {
+		close: (): void => {
+			for (const waiter of responseWaiters) waiter.reject(new Error('Page closed.'));
+			responseWaiters.length = 0;
+		},
 		emit: (eventName, event): void => {
 			for (const eventHandler of eventHandlers.get(eventName) ?? []) eventHandler(event);
 			if (eventName !== 'response') return;

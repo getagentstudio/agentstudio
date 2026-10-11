@@ -1,6 +1,7 @@
 import type { Page, Route } from 'playwright';
 import { z } from 'zod';
 
+import { BridgeProductTestFactRecorder } from '../../src/core/comm-worker/test-fixtures/bridge-product-test-fact-recorder.js';
 import {
 	parseBridgeWorktreeDevFileContentRouteRequest,
 	type BridgeWorktreeDevFileContentRouteRequest,
@@ -11,6 +12,7 @@ import {
 	type ReviewContentRouteDeltaProof,
 	type ReviewMetadataBeforeContentProof,
 } from '../verify-bridge-viewer-worktree-review-proof.ts';
+import { currentVerifierJourneySignal } from './browser-session.ts';
 import {
 	scenarioNameFromDevServerUrl,
 	worktreeDevServerOrigin,
@@ -31,6 +33,29 @@ import {
 	type WorktreeReviewRouteProof,
 } from './types.ts';
 import type { Deferred } from './utils.ts';
+
+interface ReviewProbeRoute {
+	readonly request: () => { readonly url: () => string };
+	readonly continue: () => Promise<void>;
+	readonly fulfill: (response: {
+		readonly status: number;
+		readonly contentType: string;
+		readonly body: string;
+	}) => Promise<void>;
+}
+
+export interface ReviewRouteProbePage {
+	readonly route: (
+		pattern: string,
+		handler: (route: ReviewProbeRoute) => Promise<void>,
+	) => Promise<unknown>;
+	readonly unroute: (
+		pattern: string,
+		handler: (route: ReviewProbeRoute) => Promise<void>,
+	) => Promise<void>;
+	readonly on: (event: 'close', listener: () => void) => unknown;
+	readonly off: (event: 'close', listener: () => void) => unknown;
+}
 
 export async function readBridgeWorktreeVerifierTelemetrySamples(
 	page: Page,
@@ -134,14 +159,33 @@ export async function installFileContentRouteGate(props: {
 }
 
 export async function installReviewRouteProbe(
-	page: Page,
-	options: { readonly contentGate?: Deferred<void> } = {},
+	page: ReviewRouteProbePage,
+	options: { readonly contentGate?: Deferred<void>; readonly signal?: AbortSignal } = {},
 ): Promise<ReviewRouteProbe> {
 	const metadataHitUrls: string[] = [];
 	const contentHitUrls: string[] = [];
+	const contentHitFacts = new BridgeProductTestFactRecorder<string>();
+	let isClosed = false;
+	const signal = options.signal ?? currentVerifierJourneySignal();
+	let closeReason = new Error('Review content route probe closed.');
+	const abortObservation = (): void => {
+		closeReason =
+			signal?.reason instanceof Error ? signal.reason : new Error(String(signal?.reason));
+		closeObservation();
+	};
+	const closeObservation = (): void => {
+		if (isClosed) return;
+		isClosed = true;
+		contentHitFacts.close(closeReason);
+		signal?.removeEventListener('abort', abortObservation);
+		page.off('close', closeObservation);
+	};
+	page.on('close', closeObservation);
+	signal?.addEventListener('abort', abortObservation, { once: true });
+	if (signal?.aborted) abortObservation();
 	const metadataRoutePattern = '**/__bridge-worktree/review-metadata**';
 	const contentRoutePattern = '**/__bridge-worktree/review-content/**';
-	const assertReviewRouteOrigin = async (route: Route): Promise<boolean> => {
+	const assertReviewRouteOrigin = async (route: ReviewProbeRoute): Promise<boolean> => {
 		const requestUrl = route.request().url();
 		if (bridgeWorktreeDevReviewRouteUsesOrigin(requestUrl)) {
 			return true;
@@ -153,18 +197,19 @@ export async function installReviewRouteProbe(
 		});
 		return false;
 	};
-	const metadataRouteHandler = async (route: Route): Promise<void> => {
+	const metadataRouteHandler = async (route: ReviewProbeRoute): Promise<void> => {
 		if (!(await assertReviewRouteOrigin(route))) {
 			return;
 		}
 		metadataHitUrls.push(route.request().url());
 		await route.continue();
 	};
-	const contentRouteHandler = async (route: Route): Promise<void> => {
+	const contentRouteHandler = async (route: ReviewProbeRoute): Promise<void> => {
 		if (!(await assertReviewRouteOrigin(route))) {
 			return;
 		}
 		contentHitUrls.push(route.request().url());
+		if (!isClosed) contentHitFacts.record(route.request().url());
 		if (options.contentGate !== undefined) {
 			await options.contentGate.promise;
 		}
@@ -175,9 +220,31 @@ export async function installReviewRouteProbe(
 	return {
 		contentHitCount: (): number => contentHitUrls.length,
 		contentHitUrls: (): readonly string[] => contentHitUrls,
+		waitForContentHits: async (matches, label = 'Review content route'): Promise<void> => {
+			try {
+				if (isClosed) throw closeReason;
+				if (matches(contentHitUrls)) return;
+				await contentHitFacts.waitFor((): boolean => matches(contentHitUrls));
+			} catch (error: unknown) {
+				throw new Error(
+					`${String(error)}; awaiting ${label}; contentHitUrls=${JSON.stringify(contentHitUrls)}`,
+					{ cause: error },
+				);
+			}
+		},
 		dispose: async (): Promise<void> => {
-			await page.unroute(metadataRoutePattern, metadataRouteHandler);
-			await page.unroute(contentRoutePattern, contentRouteHandler);
+			closeObservation();
+			const results = await Promise.allSettled([
+				page.unroute(metadataRoutePattern, metadataRouteHandler),
+				page.unroute(contentRoutePattern, contentRouteHandler),
+			]);
+			const failures = results.filter((result) => result.status === 'rejected');
+			if (failures.length > 0) {
+				throw new AggregateError(
+					failures.map((result): unknown => result.reason),
+					'Review route probe cleanup failed.',
+				);
+			}
 		},
 		metadataHitCount: (): number => metadataHitUrls.length,
 		metadataHitUrls: (): readonly string[] => metadataHitUrls,
@@ -375,86 +442,42 @@ export function bridgeWorktreeDevReviewRouteUsesOrigin(url: string): boolean {
 
 export async function waitForReviewContentRouteHitContaining(props: {
 	readonly needle: string;
-	readonly remainingAttempts?: number;
 	readonly routeProbe: ReviewRouteProbe;
 }): Promise<void> {
-	const remainingAttempts = props.remainingAttempts ?? 1_000;
-	if (props.routeProbe.contentHitUrls().some((url) => url.includes(props.needle))) {
-		return;
-	}
-	if (remainingAttempts <= 0) {
-		throw new Error(
-			`Timed out waiting for Worktree/Review content route hit containing ${props.needle}: ${JSON.stringify(props.routeProbe.contentHitUrls())}`,
-		);
-	}
-	await new Promise<void>((resolve): void => {
-		setTimeout(resolve, 10);
-	});
-	await waitForReviewContentRouteHitContaining({
-		needle: props.needle,
-		remainingAttempts: remainingAttempts - 1,
-		routeProbe: props.routeProbe,
-	});
+	await props.routeProbe.waitForContentHits(
+		(hitUrls): boolean => hitUrls.some((url): boolean => url.includes(props.needle)),
+		`needle=${props.needle}`,
+	);
 }
 
 export async function waitForReviewContentRouteHitCountAbove(props: {
 	readonly minHitCount: number;
-	readonly remainingAttempts?: number;
 	readonly routeProbe: ReviewRouteProbe;
 }): Promise<void> {
-	const remainingAttempts = props.remainingAttempts ?? 1_000;
-	if (props.routeProbe.contentHitCount() >= props.minHitCount) {
-		return;
-	}
-	if (remainingAttempts <= 0) {
-		throw new Error(
-			`Timed out waiting for Worktree/Review content route hit count ${props.minHitCount}; observed ${props.routeProbe.contentHitCount()}: ${JSON.stringify(props.routeProbe.contentHitUrls())}`,
-		);
-	}
-	await new Promise<void>((resolve): void => {
-		setTimeout(resolve, 10);
-	});
-	await waitForReviewContentRouteHitCountAbove({
-		minHitCount: props.minHitCount,
-		remainingAttempts: remainingAttempts - 1,
-		routeProbe: props.routeProbe,
-	});
+	await props.routeProbe.waitForContentHits(
+		(hitUrls): boolean => hitUrls.length >= props.minHitCount,
+		`minimum count=${props.minHitCount}`,
+	);
 }
 
 export async function waitForReviewContentRouteHitAfterIndex(props: {
 	readonly beforeHitCount: number;
 	readonly expectedContentDescriptorIds?: readonly string[];
 	readonly expectedItemId: string;
-	readonly remainingAttempts?: number;
 	readonly routeProbe: ReviewRouteProbe;
 }): Promise<ReviewContentRouteDeltaProof> {
-	const routeProof = buildReviewContentRouteDeltaProof({
-		allHitUrls: props.routeProbe.contentHitUrls(),
-		beforeHitCount: props.beforeHitCount,
-		expectedItemId: props.expectedItemId,
-		...(props.expectedContentDescriptorIds === undefined
-			? {}
-			: { expectedContentDescriptorIds: props.expectedContentDescriptorIds }),
-	});
-	if (reviewContentRouteDeltaSatisfied(routeProof)) {
-		return routeProof;
-	}
-	const remainingAttempts = props.remainingAttempts ?? 1_000;
-	if (remainingAttempts <= 0) {
-		throw new Error(
-			`Timed out waiting for post-click Worktree/Review content route hit for ${props.expectedItemId}: ${JSON.stringify(routeProof)}`,
-		);
-	}
-	await new Promise<void>((resolve): void => {
-		setTimeout(resolve, 10);
-	});
-	return waitForReviewContentRouteHitAfterIndex({
-		beforeHitCount: props.beforeHitCount,
-		expectedItemId: props.expectedItemId,
-		remainingAttempts: remainingAttempts - 1,
-		routeProbe: props.routeProbe,
-		...(props.expectedContentDescriptorIds === undefined
-			? {}
-			: { expectedContentDescriptorIds: props.expectedContentDescriptorIds }),
-	});
+	const readProof = (allHitUrls: readonly string[]): ReviewContentRouteDeltaProof =>
+		buildReviewContentRouteDeltaProof({
+			allHitUrls,
+			beforeHitCount: props.beforeHitCount,
+			expectedItemId: props.expectedItemId,
+			...(props.expectedContentDescriptorIds === undefined
+				? {}
+				: { expectedContentDescriptorIds: props.expectedContentDescriptorIds }),
+		});
+	await props.routeProbe.waitForContentHits(
+		(hitUrls): boolean => reviewContentRouteDeltaSatisfied(readProof(hitUrls)),
+		`item=${props.expectedItemId}; descriptors=${JSON.stringify(props.expectedContentDescriptorIds ?? [])}; after=${props.beforeHitCount}`,
+	);
+	return readProof(props.routeProbe.contentHitUrls());
 }

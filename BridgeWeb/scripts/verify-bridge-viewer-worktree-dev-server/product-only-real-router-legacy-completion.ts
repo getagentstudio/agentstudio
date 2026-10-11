@@ -9,7 +9,10 @@ export class BridgeViewerLegacyMetadataCompletion {
 	readonly #finalWindowGenerations = new Set<number>();
 	// Pending waiters per generation; a generation's list is removed the moment its
 	// final window arrives, so the failure diagnostic never lists a settled wait.
-	readonly #waitersByGeneration = new Map<number, Set<() => void>>();
+	readonly #waitersByGeneration = new Map<
+		number,
+		Set<{ readonly resolve: () => void; readonly reject: (error: Error) => void }>
+	>();
 
 	observeMetadataResponse(documentGeneration: number): void {
 		this.#observedGenerations.add(documentGeneration);
@@ -18,7 +21,7 @@ export class BridgeViewerLegacyMetadataCompletion {
 	observeFinalWindow(documentGeneration: number): void {
 		this.#finalWindowGenerations.add(documentGeneration);
 		for (const resolveWaiter of this.#waitersByGeneration.get(documentGeneration) ?? []) {
-			resolveWaiter();
+			resolveWaiter.resolve();
 		}
 		this.#waitersByGeneration.delete(documentGeneration);
 	}
@@ -36,20 +39,37 @@ export class BridgeViewerLegacyMetadataCompletion {
 		) {
 			return;
 		}
-		let resolveCompletion: () => void = (): void => {};
-		const completion = new Promise<void>((resolve): void => {
+		let resolveCompletion!: () => void;
+		let rejectCompletion!: (error: Error) => void;
+		const completion = new Promise<void>((resolve, reject): void => {
 			resolveCompletion = resolve;
+			rejectCompletion = reject;
 		});
-		const waiters = this.#waitersByGeneration.get(documentGeneration) ?? new Set<() => void>();
-		waiters.add(resolveCompletion);
+		void completion.catch((): void => {});
+		const waiter = { resolve: resolveCompletion, reject: rejectCompletion };
+		const waiters =
+			this.#waitersByGeneration.get(documentGeneration) ??
+			new Set<{ readonly resolve: () => void; readonly reject: (error: Error) => void }>();
+		waiters.add(waiter);
 		this.#waitersByGeneration.set(documentGeneration, waiters);
 		try {
 			await bound(completion);
 		} finally {
-			waiters.delete(resolveCompletion);
+			waiters.delete(waiter);
 			if (waiters.size === 0 && this.#waitersByGeneration.get(documentGeneration) === waiters) {
 				this.#waitersByGeneration.delete(documentGeneration);
 			}
+		}
+	}
+
+	close(reason: Error): void {
+		for (const [generation, waiters] of this.#waitersByGeneration) {
+			for (const waiter of waiters)
+				waiter.reject(
+					new Error(`${reason.message}: awaiting legacy-metadata-completion:g${generation}`, {
+						cause: reason,
+					}),
+				);
 		}
 	}
 
