@@ -1,7 +1,6 @@
 import { createHash } from 'node:crypto';
 
 import type {
-	Browser,
 	Page,
 	Request as PlaywrightRequest,
 	Response as PlaywrightResponse,
@@ -38,6 +37,10 @@ import {
 	selectFileProofPath,
 	waitForFileProductTerminalState,
 } from './product-only-real-router-file-proof.ts';
+import {
+	createOwnedProductJourneyDeadline,
+	type OwnedProductJourneyDeadline,
+} from './product-only-real-router-journey-deadline.ts';
 import { BridgeViewerLegacyMetadataCompletion } from './product-only-real-router-legacy-completion.ts';
 import { BridgeViewerProductOpenSettlementCorrelator } from './product-only-real-router-operation-settlements.ts';
 import { installBridgeViewerBrowserErrorCapture } from './product-only-real-router-page-error.ts';
@@ -70,7 +73,6 @@ export { bridgeViewerProductOnlyJourneyFailureFromError } from './product-only-r
 
 const productJourneyTimeoutMilliseconds = 120_000;
 const productCompositionSettleTimeoutMilliseconds = 10_000;
-const productJourneyOwnedDeadlineMilliseconds = 120_000;
 const maximumCapturedConsoleErrors = 32;
 const maximumCapturedConsoleErrorCharacters = 500;
 
@@ -132,10 +134,20 @@ export async function runBridgeViewerProductOnlyJourney(props: {
 		deviceScaleFactor: 1,
 		viewport: { height: 980, width: 1728 },
 	});
-	const ownedJourneyDeadline = createOwnedProductJourneyDeadline({ browser, page });
+	let deadlineObserver: BridgeViewerRealRouterObserver | null = null;
+	const ownedJourneyDeadline = createOwnedProductJourneyDeadline({
+		browser,
+		page,
+		onDeadline: (reason): void => deadlineObserver?.close(reason),
+	});
 	let journeyCompleted = false;
 	const documentGenerations = await installBridgeViewerDocumentGenerations(page);
-	const routeObserver = new BridgeViewerRealRouterObserver(page, documentGenerations);
+	const routeObserver = new BridgeViewerRealRouterObserver(
+		page,
+		documentGenerations,
+		ownedJourneyDeadline,
+	);
+	deadlineObserver = routeObserver;
 	page.on('worker', (worker): void => {
 		const workerOrigin = documentGenerations.observedWorker(worker.url());
 		const observedWorker = classifyObservedWorker(
@@ -330,16 +342,16 @@ export async function runBridgeViewerProductOnlyJourney(props: {
 			routeObserver,
 		});
 	} finally {
-		await ownedJourneyDeadline.dispose();
-		await page.close();
-		await browser.close();
-		try {
-			await withBoundedTimeout(
-				Promise.all(observedWorkerClosePromises),
-				productCompositionSettleTimeoutMilliseconds,
-				'observed worker closure',
+		await Promise.allSettled([page.close(), browser.close()]);
+		await ownedJourneyDeadline
+			.waitFor(Promise.all(observedWorkerClosePromises), 'observed-worker-closure')
+			.then(
+				(): void => {},
+				(error: unknown): void => {
+					console.info(`Worker closure incomplete: ${String(error)}`);
+				},
 			);
-		} catch {}
+		await ownedJourneyDeadline.dispose();
 	}
 	const browserCleanup: BridgeViewerProductOnlyJourneyProof['browserCleanup'] = {
 		browserConnectedAfterClose: browser.isConnected(),
@@ -371,7 +383,7 @@ export async function runBridgeViewerProductOnlyJourney(props: {
 	};
 }
 
-async function captureBridgeViewerProductOnlyJourneyFailure(props: {
+export async function captureBridgeViewerProductOnlyJourneyFailure(props: {
 	readonly browserDiagnostics: readonly BridgeViewerConsoleDiagnostic[];
 	readonly documentGeneration: number;
 	readonly error: unknown;
@@ -467,6 +479,7 @@ async function readMainWindowProductRouteTranscript(
 export class BridgeViewerRealRouterObserver {
 	readonly #documentGenerations: BridgeViewerDocumentGenerations;
 	readonly #page: Page;
+	readonly #journeyDeadline: Pick<OwnedProductJourneyDeadline, 'waitFor'> | undefined;
 	readonly #legacyCompletion = new BridgeViewerLegacyMetadataCompletion();
 	readonly #legacyEntries: MutableLegacyRouteTranscriptEntry[] = [];
 	readonly #productEntries: MutableProductRouteTranscriptEntry[] = [];
@@ -480,19 +493,44 @@ export class BridgeViewerRealRouterObserver {
 	>();
 	readonly #responseParsers = new GenerationScopedResponseParsers();
 	readonly #openSettlements = new BridgeViewerProductOpenSettlementCorrelator();
-	readonly #productResponseClosureWaiters = new Set<() => void>();
+	readonly #productResponseClosureWaiters = new Set<{
+		readonly resolve: () => void;
+		readonly reject: (error: Error) => void;
+	}>();
+	#closedError: Error | null = null;
+	#terminatedWaiters: BridgeViewerProductFailureTransportSnapshot['unresolvedWaiters'] = [];
 	readonly #unfinishedProductRequests = new Set<PlaywrightRequest>();
 	readonly #reloadJoinDiagnostics = new BridgeViewerReloadJoinDiagnosticRecorder();
 	#productActivityRevision = 0;
 	#nextOrdinal = 1;
 
-	constructor(page: Page, documentGenerations: BridgeViewerDocumentGenerations) {
+	constructor(
+		page: Page,
+		documentGenerations: BridgeViewerDocumentGenerations,
+		journeyDeadline?: Pick<OwnedProductJourneyDeadline, 'waitFor'>,
+	) {
+		this.#journeyDeadline = journeyDeadline;
 		this.#documentGenerations = documentGenerations;
 		this.#page = page;
 		page.on('request', (request): void => this.#observeRequest(request));
 		page.on('requestfailed', (request): void => this.#observeRequestSettled(request));
 		page.on('requestfinished', (request): void => this.#observeRequestSettled(request));
 		page.on('response', (response): void => this.#observeResponse(response));
+	}
+
+	close(reason: Error): void {
+		if (this.#closedError !== null) return;
+		this.#terminatedWaiters = this.failureTransportSnapshot().unresolvedWaiters;
+		this.#closedError = reason;
+		this.#legacyCompletion.close(reason);
+		for (const waiter of this.#productResponseClosureWaiters) {
+			waiter.reject(
+				new Error(
+					`${reason.message}: awaiting product-response-quiescence:g${this.#documentGenerations.currentGeneration()}`,
+					{ cause: reason },
+				),
+			);
+		}
 	}
 
 	productRouteTranscript(): readonly BridgeViewerProductRouteTranscriptEntry[] {
@@ -528,6 +566,7 @@ export class BridgeViewerRealRouterObserver {
 				})
 				.toSorted((left, right): number => left - right),
 			unresolvedWaiters: [
+				...this.#terminatedWaiters,
 				...this.#reloadJoinDiagnostics.unresolvedWaiters(),
 				...this.#legacyCompletion.unresolvedWaiters(),
 				...(this.#productResponseClosureWaiters.size > 0
@@ -549,30 +588,29 @@ export class BridgeViewerRealRouterObserver {
 	}
 
 	async flushResponseParsers(): Promise<void> {
-		await this.#responseParsers.flush(this.#documentGenerations.currentGeneration());
+		const parsing = this.#responseParsers.flush(this.#documentGenerations.currentGeneration());
+		await (this.#journeyDeadline === undefined
+			? parsing
+			: this.#journeyDeadline.waitFor(parsing, 'active-response-parsers'));
 	}
 
 	async waitForObservedLegacyMetadataCompletion(): Promise<void> {
+		if (this.#closedError !== null)
+			throw new Error(`${this.#closedError.message}: awaiting legacy-metadata-completion`, {
+				cause: this.#closedError,
+			});
 		await this.#legacyCompletion.waitForGeneration(
 			this.#documentGenerations.currentGeneration(),
 			async (completion: Promise<void>): Promise<void> => {
 				// A final window already received may still be parsing.
 				await this.flushResponseParsers();
-				await withBoundedTimeout(
-					completion,
-					productJourneyTimeoutMilliseconds,
-					'legacy Review metadata completion',
-				);
+				await completion;
 			},
 		);
 	}
 
 	async waitForAllProductResponses(): Promise<void> {
-		await withBoundedTimeout(
-			this.#waitForStableProductRequestQuiescence(),
-			productCompositionSettleTimeoutMilliseconds,
-			'all issued product request responses',
-		);
+		await this.#waitForStableProductRequestQuiescence();
 	}
 
 	#observeRequest(request: PlaywrightRequest): void {
@@ -676,16 +714,20 @@ export class BridgeViewerRealRouterObserver {
 	}
 
 	async #waitForProductRequestQuiescence(): Promise<void> {
+		if (this.#closedError !== null)
+			throw new Error(`${this.#closedError.message}: awaiting product-response-quiescence`, {
+				cause: this.#closedError,
+			});
 		if (this.#productRequestsAreQuiescent()) return;
-		let resolveClosure: (() => void) | null = null;
-		const closure = new Promise<void>((resolve): void => {
-			resolveClosure = resolve;
-			this.#productResponseClosureWaiters.add(resolveClosure);
+		let waiter!: { readonly resolve: () => void; readonly reject: (error: Error) => void };
+		const closure = new Promise<void>((resolve, reject): void => {
+			waiter = { resolve, reject };
+			this.#productResponseClosureWaiters.add(waiter);
 		});
 		try {
 			await closure;
 		} finally {
-			if (resolveClosure !== null) this.#productResponseClosureWaiters.delete(resolveClosure);
+			this.#productResponseClosureWaiters.delete(waiter);
 		}
 	}
 
@@ -707,7 +749,7 @@ export class BridgeViewerRealRouterObserver {
 
 	#resolveProductResponseClosureWaitersIfQuiescent(): void {
 		if (!this.#productRequestsAreQuiescent()) return;
-		for (const resolveClosure of this.#productResponseClosureWaiters) resolveClosure();
+		for (const waiter of this.#productResponseClosureWaiters) waiter.resolve();
 		this.#productResponseClosureWaiters.clear();
 	}
 
@@ -741,42 +783,6 @@ export class BridgeViewerRealRouterObserver {
 		entry.finalWindow = responseBody?.['nextWindowCursor'] === null;
 		if (entry.finalWindow) this.#legacyCompletion.observeFinalWindow(entry.documentGeneration);
 	}
-}
-
-interface OwnedProductJourneyDeadline {
-	readonly dispose: () => Promise<void>;
-}
-
-function createOwnedProductJourneyDeadline(props: {
-	readonly browser: Browser;
-	readonly page: Page;
-}): OwnedProductJourneyDeadline {
-	let deadlineCleanup: Promise<void> | null = null;
-	const deadlineReason = 'BRIDGE_PRODUCT_JOURNEY_DEADLINE_EXCEEDED';
-	const timeout = setTimeout((): void => {
-		deadlineCleanup = closeOwnedProductJourneyBrowser({
-			browser: props.browser,
-			page: props.page,
-			reason: deadlineReason,
-		});
-	}, productJourneyOwnedDeadlineMilliseconds);
-	return {
-		dispose: async (): Promise<void> => {
-			clearTimeout(timeout);
-			await deadlineCleanup;
-		},
-	};
-}
-
-async function closeOwnedProductJourneyBrowser(props: {
-	readonly browser: Browser;
-	readonly page: Page;
-	readonly reason: string;
-}): Promise<void> {
-	await Promise.allSettled([
-		props.page.close({ reason: props.reason }),
-		props.browser.close({ reason: props.reason }),
-	]);
 }
 
 async function installLegacyIntakeObserver(page: Page): Promise<void> {
@@ -962,25 +968,4 @@ function classifyObservedWorker(url: string, documentGeneration: number): Mutabl
 function safeWorkerUrl(url: string): string {
 	const parsedUrl = new URL(url);
 	return `${parsedUrl.pathname}${parsedUrl.search}`;
-}
-
-async function withBoundedTimeout<TValue>(
-	promise: Promise<TValue>,
-	timeoutMilliseconds: number,
-	label: string,
-): Promise<TValue> {
-	let timeout: ReturnType<typeof setTimeout> | null = null;
-	try {
-		return await Promise.race([
-			promise,
-			new Promise<TValue>((_resolve, reject): void => {
-				timeout = setTimeout(
-					(): void => reject(new Error(`Timed out waiting for ${label}`)),
-					timeoutMilliseconds,
-				);
-			}),
-		]);
-	} finally {
-		if (timeout !== null) clearTimeout(timeout);
-	}
 }

@@ -92,6 +92,7 @@ import type {
 	WorktreeRenderedContentState,
 } from './types.ts';
 import { hashText, makeDeferred } from './utils.ts';
+import { createOwnedVerifierJourneyDeadline } from './verifier-journey-deadline.ts';
 import {
 	assertWorktreeTreeExtentMatchesSurfaceFacts,
 	bridgeWorktreeDevRootTokenForPath,
@@ -131,7 +132,18 @@ export type WorktreeDevServerStartupSurfaceResult =
 
 export async function runBridgeViewerWorktreeDevServerVerifier(): Promise<void> {
 	const browser = await chromium.launch({ headless: true });
-	installVerifierBrowser(browser);
+	const deadline = createOwnedVerifierJourneyDeadline({
+		closePages: async (reason): Promise<void> => {
+			await Promise.allSettled(
+				browser
+					.contexts()
+					.flatMap((context) => context.pages())
+					.map((page) => page.close({ reason })),
+			);
+			await browser.close({ reason });
+		},
+	});
+	installVerifierBrowser(browser, deadline.signal);
 	try {
 		if (performanceOnlyMode) {
 			const result = await verifyWorktreeDevServerPerformanceOnly();
@@ -169,7 +181,11 @@ export async function runBridgeViewerWorktreeDevServerVerifier(): Promise<void> 
 		try {
 			await closeAllWorktreeFileSurfaces();
 		} finally {
-			await browser.close();
+			try {
+				await browser.close();
+			} finally {
+				await deadline.dispose();
+			}
 		}
 	}
 }
@@ -178,7 +194,18 @@ export async function runBridgeViewerWorktreeDevServerStartupSurfaceVerifier(
 	surface: 'file' | 'review',
 ): Promise<WorktreeDevServerStartupSurfaceResult> {
 	const browser = await chromium.launch({ headless: true });
-	installVerifierBrowser(browser);
+	const deadline = createOwnedVerifierJourneyDeadline({
+		closePages: async (reason): Promise<void> => {
+			await Promise.allSettled(
+				browser
+					.contexts()
+					.flatMap((context) => context.pages())
+					.map((page) => page.close({ reason })),
+			);
+			await browser.close({ reason });
+		},
+	});
+	installVerifierBrowser(browser, deadline.signal);
 	try {
 		const page = await makeVerificationPage();
 		if (surface === 'file') {
@@ -206,7 +233,11 @@ export async function runBridgeViewerWorktreeDevServerStartupSurfaceVerifier(
 		try {
 			await closeAllWorktreeFileSurfaces();
 		} finally {
-			await browser.close();
+			try {
+				await browser.close();
+			} finally {
+				await deadline.dispose();
+			}
 		}
 	}
 }
@@ -217,7 +248,18 @@ export async function runBridgeViewerWorktreeDevServerCompleteJourneyLaunch(prop
 	readonly sourceHead: string;
 }): Promise<Awaited<ReturnType<typeof collectBridgeDevelopmentCompleteJourneyLaunch>>> {
 	const browser = await chromium.launch({ headless: true });
-	installVerifierBrowser(browser);
+	const deadline = createOwnedVerifierJourneyDeadline({
+		closePages: async (reason): Promise<void> => {
+			await Promise.allSettled(
+				browser
+					.contexts()
+					.flatMap((context) => context.pages())
+					.map((page) => page.close({ reason })),
+			);
+			await browser.close({ reason });
+		},
+	});
+	installVerifierBrowser(browser, deadline.signal);
 	try {
 		return await collectBridgeDevelopmentCompleteJourneyLaunch(props);
 	} finally {
@@ -225,7 +267,11 @@ export async function runBridgeViewerWorktreeDevServerCompleteJourneyLaunch(prop
 		try {
 			await closeAllWorktreeFileSurfaces();
 		} finally {
-			await browser.close();
+			try {
+				await browser.close();
+			} finally {
+				await deadline.dispose();
+			}
 		}
 	}
 }

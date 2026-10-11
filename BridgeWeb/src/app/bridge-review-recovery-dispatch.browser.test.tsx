@@ -10,6 +10,7 @@ import type { BridgeMainReviewPublicationIdentity } from '../core/comm-worker/br
 import type { BridgeMainPanelChromeSlice } from '../core/comm-worker/bridge-main-review-comparison-presentation.js';
 import { createBridgeProductDeferred } from '../core/comm-worker/bridge-product-async-queue.js';
 import { createTestViewScopeOwner } from '../core/comm-worker/bridge-product-view-scope-owner.test-support.js';
+import type { BridgeWorkerRpcCommandInput } from '../core/comm-worker/bridge-worker-rpc-client.js';
 import { createBridgeTelemetryRecorder } from '../foundation/telemetry/bridge-telemetry-recorder.js';
 import { parseBridgeCodeViewDiffForBrowserTest } from '../review-viewer/code-view/bridge-code-view-browser-test-diff.js';
 import {
@@ -35,15 +36,24 @@ interface InstalledReviewFixture {
 	readonly host: (isActive: boolean) => ReactElement;
 	readonly owner: ReturnType<typeof createTestViewScopeOwner>;
 	readonly releaseResnapshot: ReturnType<typeof createBridgeProductDeferred<void>>;
+	readonly awaitSelectionSetup: () => Promise<void>;
 	readonly rendered: Awaited<ReturnType<typeof render>>;
 	readonly retainedItem: BridgeMainCodeViewItem;
+	readonly releaseSelectionCommands: () => void;
+	readonly recordRetryDispatch: (
+		dispatch: () => Promise<void>,
+	) => Promise<readonly BridgeWorkerRpcCommandInput[]>;
+	readonly heldSelectionCommandCount: () => number;
 }
 
 test.each(['ready', 'metadataFailure', 'installationFailure'] as const)(
 	'pane Retry dispatches the comparison job with %s',
 	async (failure): Promise<void> => {
-		const fixture = await mountInstalledReview();
+		const fixture = await mountInstalledReview(true);
 		try {
+			await fixture.awaitSelectionSetup();
+			const setupHeldSelectionCommandCount = fixture.heldSelectionCommandCount();
+			expect(setupHeldSelectionCommandCount).toBeGreaterThan(0);
 			await act(async (): Promise<void> => {
 				if (failure === 'metadataFailure')
 					fixture.owner.failRenderView(installedView.subscriptionId);
@@ -72,11 +82,22 @@ test.each(['ready', 'metadataFailure', 'installationFailure'] as const)(
 				failure === 'metadataFailure' ? 'failedRetryable' : 'ready',
 			);
 			await expect.element(fixture.rendered.getByRole('alert')).toBeVisible();
-			const commandStart = fixture.harness.sentCommands.length;
-			await act(async (): Promise<void> => {
-				await fixture.rendered.getByRole('button', { name: 'Retry', exact: true }).click();
+			let retryAct = Promise.resolve();
+			const retryCommands = await fixture.recordRetryDispatch((): Promise<void> => {
+				retryAct = (async (): Promise<void> => {
+					await act(async (): Promise<void> => {
+						await fixture.rendered.getByRole('button', { name: 'Retry', exact: true }).click();
+					});
+				})();
+				return retryAct;
 			});
-			expect(fixture.harness.sentCommands.slice(commandStart)).toEqual([
+			await retryAct;
+			expect(
+				fixture.heldSelectionCommandCount(),
+				'The adverse selection delivery must be held.',
+			).toBeGreaterThan(0);
+			fixture.releaseSelectionCommands();
+			expect(retryCommands).toEqual([
 				...(failure === 'ready'
 					? []
 					: [
@@ -97,6 +118,7 @@ test.each(['ready', 'metadataFailure', 'installationFailure'] as const)(
 			expectRetainedRegions('updating');
 			await expect.element(fixture.rendered.getByText('Updating…', { exact: true })).toBeVisible();
 		} finally {
+			fixture.releaseSelectionCommands();
 			fixture.owner.retire(installedView.subscriptionId);
 			await act(async (): Promise<void> => {
 				await fixture.rendered.unmount();
@@ -151,8 +173,61 @@ test('real W2 resnapshot recovery marks the retained bank Updating until certifi
 	}
 });
 
-async function mountInstalledReview(): Promise<InstalledReviewFixture> {
+async function mountInstalledReview(
+	holdSelectionCommands = false,
+): Promise<InstalledReviewFixture> {
 	const harness = makeReviewSurfaceHarness();
+	const heldSelectionCommands: BridgeWorkerRpcCommandInput[] = [];
+	const selectionSetupReady = createBridgeProductDeferred<void>();
+	let didResolveSelectionSetup = false;
+	const sendCommand = harness.reviewClient.send;
+	let isHoldingSelection = holdSelectionCommands;
+	let activeRetryCommands: BridgeWorkerRpcCommandInput[] | null = null;
+	const resolveSelectionSetupIfReady = (): void => {
+		if (didResolveSelectionSetup) return;
+		const hasProgrammaticSelect = heldSelectionCommands.some(
+			(command): boolean =>
+				command.command === 'select' && command.selectedSource === 'programmatic',
+		);
+		const hasProgrammaticViewed = heldSelectionCommands.some(
+			(command): boolean => command.command === 'markFileViewed',
+		);
+		if (!hasProgrammaticSelect || !hasProgrammaticViewed) return;
+		didResolveSelectionSetup = true;
+		selectionSetupReady.resolve();
+	};
+	const reviewClient = {
+		...harness.reviewClient,
+		send: (command: BridgeWorkerRpcCommandInput): string => {
+			activeRetryCommands?.push(command);
+			if (
+				isHoldingSelection &&
+				(command.command === 'select' || command.command === 'markFileViewed')
+			) {
+				heldSelectionCommands.push(command);
+				resolveSelectionSetupIfReady();
+				return `held-selection-${heldSelectionCommands.length}`;
+			}
+			return sendCommand(command);
+		},
+	};
+	const releaseSelectionCommands = (): void => {
+		isHoldingSelection = false;
+		for (const command of heldSelectionCommands.splice(0)) sendCommand(command);
+	};
+	const recordRetryDispatch = async (
+		dispatch: () => Promise<void>,
+	): Promise<readonly BridgeWorkerRpcCommandInput[]> => {
+		if (activeRetryCommands !== null) throw new Error('Retry dispatch observation already open.');
+		const commands: BridgeWorkerRpcCommandInput[] = [];
+		activeRetryCommands = commands;
+		try {
+			await dispatch();
+			return [...commands];
+		} finally {
+			activeRetryCommands = null;
+		}
+	};
 	const releaseResnapshot = createBridgeProductDeferred<void>();
 	const owner = createTestViewScopeOwner({
 		createIdentifier: (): string => installedView.handle,
@@ -197,7 +272,7 @@ async function mountInstalledReview(): Promise<InstalledReviewFixture> {
 				isNavigationCommandStillEligible={(): boolean => true}
 				onActiveSourceChange={(): void => {}}
 				onNavigationSourceChange={(): void => {}}
-				reviewClient={harness.reviewClient}
+				reviewClient={reviewClient}
 				telemetryRecorderRef={{ current: createBridgeTelemetryRecorder(null) }}
 				viewerContextSwitcher={<span>Review</span>}
 			/>
@@ -255,7 +330,18 @@ async function mountInstalledReview(): Promise<InstalledReviewFixture> {
 	});
 	await expect.element(rendered.getByTestId('review-viewer-shell')).toBeVisible();
 	expectRetainedRegions('content');
-	return { harness, host, owner, releaseResnapshot, rendered, retainedItem };
+	return {
+		harness,
+		host,
+		owner,
+		releaseResnapshot,
+		awaitSelectionSetup: (): Promise<void> => selectionSetupReady.promise,
+		rendered,
+		retainedItem,
+		heldSelectionCommandCount: (): number => heldSelectionCommands.length,
+		releaseSelectionCommands,
+		recordRetryDispatch,
+	};
 }
 
 function publishComparison(
