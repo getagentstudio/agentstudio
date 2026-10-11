@@ -34,6 +34,7 @@ package final class TerminalActivityRouter {
     private let lastOutputLineReader: @MainActor (UUID) -> TerminalViewportTextReadResult
     private let recordSettledActivityStatus: @MainActor (UUID, String?) -> Void
     private let clearPaneActivityStatus: @MainActor (UUID) -> Void
+    private let factSink: TerminalActivityRouterFactSink?
 
     private var busTask: Task<Void, Never>?
     private var derivedActivityPostTask: Task<Void, Never>?
@@ -69,7 +70,8 @@ package final class TerminalActivityRouter {
         unseenActivityClock: (any Clock<Duration> & Sendable)? = nil,
         nowMilliseconds _: @escaping @Sendable () -> Int64 = {
             Int64(DispatchTime.now().uptimeNanoseconds / 1_000_000)
-        }
+        },
+        factSink: TerminalActivityRouterFactSink? = nil
     ) {
         self.bus = bus
         self.projector =
@@ -96,6 +98,7 @@ package final class TerminalActivityRouter {
             lastOutputLineReader ?? { SurfaceManager.shared.readViewportTrailingText(forSurfaceID: $0) }
         self.recordSettledActivityStatus = recordSettledActivityStatus ?? { _, _ in }
         self.clearPaneActivityStatus = clearPaneActivityStatus ?? { _ in }
+        self.factSink = factSink
     }
 
     deinit {
@@ -128,10 +131,12 @@ package final class TerminalActivityRouter {
             }
         }
         lifecycleOperationTask = operation
+        factSink?(.lifecycle(sequence), .lifecycleEnqueued(starting ? .start : .stop))
         await operation.value
         if lifecycleOperationSequence == sequence {
             lifecycleOperationTask = nil
         }
+        factSink?(.lifecycle(sequence), .lifecycleCompleted)
     }
 
     private func performStart() async {
@@ -335,6 +340,9 @@ package final class TerminalActivityRouter {
             }
         }
         await traceTerminalActivity(paneEnvelope)
+        factSink?(
+            .runtimeEnvelope(paneID: paneEnvelope.paneId.uuid, eventID: paneEnvelope.eventId),
+            .runtimeEnvelopeHandled)
     }
 
     private func derivedActivityEnvelope(_ event: TerminalActivityEvent, paneID: UUID) -> RuntimeEnvelope {
