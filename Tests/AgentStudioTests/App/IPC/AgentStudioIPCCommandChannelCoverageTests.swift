@@ -43,6 +43,48 @@ struct AgentStudioIPCCommandChannelCoverageTests {
         }
     }
 
+    @Test("a pane agent cannot execute any targetless debug command")
+    func paneAgentCannotExecuteTargetlessDebugCommands() async throws {
+        let catalogHarness = CommandAdapterHarness(channel: .debug)
+        let catalog = try await makeIPCCommandCatalogOffMain(
+            from: catalogHarness.adapter,
+            channel: catalogHarness.channel
+        )
+        let targetlessCommands = try catalog.commands.filter { descriptor in
+            let command = try #require(AppCommand(rawValue: descriptor.id.rawValue))
+            return command.ipcSpec.allowedTargetKinds.isEmpty
+        }
+        #expect(targetlessCommands.count == 18)
+
+        let harness = try await PaneAgentControlHarness.make(channel: .debug)
+        do {
+            let token = try harness.agentToken(boundTo: harness.mainPaneId)
+            let before = harness.workspaceFacts()
+            for descriptor in targetlessCommands {
+                let command = try #require(AppCommand(rawValue: descriptor.id.rawValue))
+                let response = try await harness.response(
+                    token: token,
+                    method: "command.execute",
+                    params: try harness.command(command, arguments: .noArguments)
+                )
+
+                #expect(response.error?.code == -32_011)
+                #expect(response.error?.message == "not yet allowed")
+                #expect(
+                    response.error?.data
+                        == .object([
+                            "reason": .string("notYetAllowed"), "name": .string(command.rawValue),
+                        ])
+                )
+            }
+            #expect(harness.workspaceFacts() == before)
+        } catch {
+            await harness.tearDown()
+            throw error
+        }
+        await harness.tearDown()
+    }
+
     @Test("debug discovery exposes every AppCommand and labels the debug-only ones")
     func debugCatalogExposesEveryAppCommand() async throws {
         let harness = CommandAdapterHarness(channel: .debug)
