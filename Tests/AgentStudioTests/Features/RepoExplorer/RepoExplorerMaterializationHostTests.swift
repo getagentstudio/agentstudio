@@ -612,6 +612,7 @@ struct RepoExplorerMaterializationHostTests {
         #expect(baseline.revision == 0)
         #expect(baseline.visibleGeneration == 0)
         guard case .rejected(.lifetimeMismatch) = replacement.host.apply(staleCandidate) else {
+            Issue.record("Replacement host accepted a stale lifetime candidate")
             return
         }
         #expect(replacement.host.acceptedBaseline == baseline)

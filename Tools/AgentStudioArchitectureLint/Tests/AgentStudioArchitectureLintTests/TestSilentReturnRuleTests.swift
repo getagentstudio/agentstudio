@@ -25,12 +25,11 @@ struct TestSilentReturnRuleTests {
                         consume(value)
                     }
 
-                    @Test func closureWait() {
-                        let check = {
+                    @Test func nestedFunctionIsIgnored() {
+                        func helper() {
                             guard condition else { return }
-                            consume()
                         }
-                        check()
+                        helper()
                     }
 
                     private func helper() {
@@ -42,7 +41,7 @@ struct TestSilentReturnRuleTests {
 
         let diagnostics = TestSilentReturnRule().validate(context: context)
 
-        #expect(diagnostics.map(\.line) == [5, 9, 13, 19])
+        #expect(diagnostics.map(\.line) == [5, 9, 13])
         #expect(diagnostics.allSatisfy { $0.ruleID == "agentstudio_no_silent_test_return" })
         #expect(diagnostics.allSatisfy { $0.severity == .error })
     }
@@ -79,7 +78,7 @@ struct TestSilentReturnRuleTests {
                         guard condition else { fatalError("setup failed") }
                     }
 
-                    private func helperClosureReturnDoesNotExitTest() {
+                    @Test func closureReturnDoesNotExitTest() {
                         let check = {
                             guard condition else { return }
                             consume()
@@ -91,6 +90,70 @@ struct TestSilentReturnRuleTests {
         )
 
         #expect(TestSilentReturnRule().validate(context: context).isEmpty)
+    }
+
+    @Test("paired expectations exempt only exact matching guard expressions")
+    func pairedExpectationExemptionRequiresExactMatch() {
+        let context = LintTestSupport.repositoryContext(
+            path: "Tests/AgentStudioTests/PairedExpectationExamples.swift",
+            source: """
+                import Testing
+
+                struct Examples {
+                    @Test func exactMatch() {
+                        #expect(condition)
+                        guard condition else { return }
+                        #expect(otherCondition, "the message form also matches")
+                        guard otherCondition else { return }
+                    }
+
+                    @Test func driftedMatch() {
+                        #expect(condition)
+                        guard otherCondition else { return }
+                    }
+                }
+                """
+        )
+
+        #expect(TestSilentReturnRule().validate(context: context).map(\.line) == [13])
+    }
+
+    @Test("nested control-flow returns require a signal on their own path")
+    func nestedControlFlowRequiresPathSignal() {
+        let context = LintTestSupport.repositoryContext(
+            path: "Tests/AgentStudioTests/NestedReturnExamples.swift",
+            source: """
+                import Testing
+
+                struct Examples {
+                    @Test func nestedIfReturn() {
+                        guard condition else {
+                            if shouldReturn { return }
+                        }
+                    }
+
+                    @Test func nestedSwitchReturn() {
+                        guard condition else {
+                            switch state {
+                            case .bad: return
+                            default: break
+                            }
+                        }
+                    }
+
+                    @Test func nestedSignalsDominateReturns() {
+                        guard condition else {
+                            if shouldReturn {
+                                Issue.record("setup failed")
+                                return
+                            }
+                        }
+                    }
+                }
+                """
+        )
+
+        #expect(TestSilentReturnRule().validate(context: context).map(\.line) == [5, 11])
     }
 
     @Test("production sources and the shared harness are ignored")

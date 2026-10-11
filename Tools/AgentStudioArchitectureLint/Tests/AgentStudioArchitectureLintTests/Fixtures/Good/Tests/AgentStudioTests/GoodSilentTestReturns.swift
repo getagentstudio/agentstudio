@@ -21,6 +21,36 @@ struct GoodSilentTestReturns {
         }
     }
 
+    @Test func exactExpectationMatch() {
+        #expect(condition)
+        guard condition else { return }
+        #expect(otherCondition, "message form")
+        guard otherCondition else { return }
+    }
+
+    @Test func nestedSignalDominatesReturn() {
+        guard condition else {
+            if shouldReturn {
+                Issue.record("setup failed")
+                return
+            }
+        }
+    }
+
+    @Test func nestedFunctionIsIgnored() {
+        func helper() {
+            guard condition else { return }
+        }
+        helper()
+    }
+
+    @Test func closureIsIgnored() {
+        let callback = {
+            guard condition else { return }
+        }
+        callback()
+    }
+
     private func helper() {
         guard condition else { return }
     }

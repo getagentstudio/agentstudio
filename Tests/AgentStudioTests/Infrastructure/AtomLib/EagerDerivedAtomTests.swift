@@ -185,9 +185,8 @@ struct EagerDerivedAtomTests {
                 gate: predecessorGate,
                 projectionCount: projectionCount
             ))
-        guard await predecessorGate.waitUntilStarted() else {
-            Issue.record("Predecessor projection did not start")
-            return
+        _ = await requireEagerDerivedAtomTestEvent("predecessor projection start") {
+            await predecessorGate.waitUntilStarted()
         }
 
         atom.admit(
@@ -206,21 +205,21 @@ struct EagerDerivedAtomTests {
             ))
         predecessorGate.release()
 
-        guard
-            await completionRecorder.wait(for: .superseded(1)),
-            await completionRecorder.wait(for: .superseded(2)),
+        _ = await requireEagerDerivedAtomTestEvent("first pending projection supersession") {
+            await completionRecorder.wait(for: .superseded(1))
+        }
+        _ = await requireEagerDerivedAtomTestEvent("second pending projection supersession") {
+            await completionRecorder.wait(for: .superseded(2))
+        }
+        _ = await requireEagerDerivedAtomTestEvent("latest pending projection start") {
             await latestPendingGate.waitUntilStarted()
-        else {
-            Issue.record("Pending projections did not supersede before the latest projection started")
-            return
         }
         #expect(projectionCount.count == 2)
         #expect(atom.freshness == .running(3))
 
         latestPendingGate.release()
-        guard await completionRecorder.wait(for: .published(3)) else {
-            Issue.record("Latest projection did not publish")
-            return
+        _ = await requireEagerDerivedAtomTestEvent("latest projection publication") {
+            await completionRecorder.wait(for: .published(3))
         }
         #expect(atom.value?.content == 111)
         #expect(atom.freshness == .current(3))

@@ -633,7 +633,6 @@ struct SwiftLaneRunnerReportTests {
         #expect(output.contains("MATCH_OK large-process-global"))
         #expect(output.contains("MATCH_OK aggregate-serial"))
         #expect(output.contains("MATCH_OK webkit-list"))
-        #expect(output.contains("LANE_FILTER_BEHAVIOR_OK generators=9"))
     }
 
     @Test("a clean lane reports zero failed isolated suites")

@@ -2,6 +2,8 @@ import SwiftSyntax
 
 /// A guard in a test body must report a failed setup condition before it
 /// returns. A bare return makes a broken prerequisite look like a passing test.
+/// The paired `#expect(E)` then `guard E else { return }` form is already a
+/// named failure and is exempted only while the two expressions stay equal.
 struct TestSilentReturnRule: ArchitectureRule {
     let id = "agentstudio_no_silent_test_return"
     let severity = ArchitectureSeverity.error
@@ -56,65 +58,139 @@ private final class TestBodyGuardVisitor: SyntaxVisitor {
         .skipChildren
     }
 
+    override func visit(_ node: ClosureExprSyntax) -> SyntaxVisitorContinueKind {
+        // Callback and task closures own their returns; the test body does not.
+        .skipChildren
+    }
+
     override func visitPost(_ node: GuardStmtSyntax) {
-        guard node.body.statements.contains(where: Self.isBareReturn),
-            !FailureSignalVisitor.containsFailureSignal(in: Syntax(node.body))
+        guard !hasPairedExpectation(for: node),
+            SilentReturnPathVisitor.hasUnsignaledReturn(in: node.body)
         else {
             return
         }
         positions.append(node.positionAfterSkippingLeadingTrivia)
     }
 
-    private static func isBareReturn(_ item: CodeBlockItemSyntax) -> Bool {
-        guard let returnStatement = item.item.as(ReturnStmtSyntax.self) else {
+    private func hasPairedExpectation(for node: GuardStmtSyntax) -> Bool {
+        guard node.conditions.count == 1,
+            let condition = node.conditions.first?.condition,
+            let item = node.parent?.as(CodeBlockItemSyntax.self),
+            let block = item.parent?.as(CodeBlockItemListSyntax.self)
+        else {
             return false
         }
-        return returnStatement.expression == nil
+
+        guard let itemIndex = block.firstIndex(where: { $0.id == item.id }), itemIndex > block.startIndex else {
+            return false
+        }
+        let previous = block[block.index(before: itemIndex)]
+        guard let expectedExpression = Self.expectationExpression(in: previous) else {
+            return false
+        }
+        return Self.normalized(expectedExpression) == Self.normalized(condition.trimmedDescription)
+    }
+
+    private static func expectationExpression(in item: CodeBlockItemSyntax) -> String? {
+        let macro: MacroExpansionExprSyntax?
+        if let direct = item.item.as(MacroExpansionExprSyntax.self) {
+            macro = direct
+        } else if let expression = item.item.as(ExpressionStmtSyntax.self) {
+            macro = expression.expression.as(MacroExpansionExprSyntax.self)
+        } else {
+            macro = nil
+        }
+        guard let macro, macro.macroName.text == "expect", let firstArgument = macro.arguments.first else {
+            return nil
+        }
+        return firstArgument.expression.trimmedDescription
+    }
+
+    private static func normalized(_ text: String) -> String {
+        text.filter { !$0.isWhitespace }
     }
 }
 
-private final class FailureSignalVisitor: SyntaxVisitor {
-    private(set) var foundFailureSignal = false
+/// Walks the guard's else block one path at a time. Signals in one branch do
+/// not suppress a bare return in a sibling branch, and nested functions or
+/// closures are outside the guard's return paths.
+private final class SilentReturnPathVisitor: SyntaxVisitor {
+    private var signalStack: [Bool] = []
+    private(set) var hasUnsignaledReturn = false
 
-    static func containsFailureSignal(in syntax: Syntax) -> Bool {
+    static func hasUnsignaledReturn(in body: CodeBlockSyntax) -> Bool {
         let visitor = Self()
-        visitor.walk(syntax)
-        return visitor.foundFailureSignal
+        visitor.walk(body)
+        return visitor.hasUnsignaledReturn
     }
 
     override init(viewMode: SyntaxTreeViewMode = .sourceAccurate) {
         super.init(viewMode: viewMode)
     }
 
+    override func visit(_ node: CodeBlockSyntax) -> SyntaxVisitorContinueKind {
+        signalStack.append(signalStack.last ?? false)
+        return .visitChildren
+    }
+
+    override func visitPost(_ node: CodeBlockSyntax) {
+        signalStack.removeLast()
+    }
+
+    override func visit(_ node: SwitchCaseSyntax) -> SyntaxVisitorContinueKind {
+        signalStack.append(signalStack.last ?? false)
+        return .visitChildren
+    }
+
+    override func visitPost(_ node: SwitchCaseSyntax) {
+        signalStack.removeLast()
+    }
+
+    override func visit(_ node: FunctionDeclSyntax) -> SyntaxVisitorContinueKind {
+        .skipChildren
+    }
+
+    override func visit(_ node: ClosureExprSyntax) -> SyntaxVisitorContinueKind {
+        .skipChildren
+    }
+
+    override func visit(_ node: ReturnStmtSyntax) -> SyntaxVisitorContinueKind {
+        if node.expression == nil, signalStack.last != true {
+            hasUnsignaledReturn = true
+        }
+        return .skipChildren
+    }
+
     override func visit(_ node: MacroExpansionExprSyntax) -> SyntaxVisitorContinueKind {
         if ["expect", "require"].contains(node.macroName.text) {
-            foundFailureSignal = true
+            signalStack[signalStack.index(before: signalStack.endIndex)] = true
         }
         return .visitChildren
     }
 
     override func visit(_ node: ThrowStmtSyntax) -> SyntaxVisitorContinueKind {
-        foundFailureSignal = true
+        signalStack[signalStack.index(before: signalStack.endIndex)] = true
         return .skipChildren
     }
 
     override func visit(_ node: FunctionCallExprSyntax) -> SyntaxVisitorContinueKind {
-        let calleeName: String?
+        let isFatalError: Bool
         let isIssueRecord: Bool
         if let reference = node.calledExpression.as(DeclReferenceExprSyntax.self) {
-            calleeName = reference.baseName.text
+            isFatalError = reference.baseName.text == "fatalError"
             isIssueRecord = false
         } else if let member = node.calledExpression.as(MemberAccessExprSyntax.self) {
-            calleeName = member.declName.baseName.text
+            isFatalError = member.declName.baseName.text == "fatalError"
             let base = member.base?.trimmedDescription ?? ""
-            isIssueRecord = calleeName == "record" && (base == "Issue" || base.hasSuffix(".Issue"))
+            isIssueRecord =
+                member.declName.baseName.text == "record"
+                && (base == "Issue" || base.hasSuffix(".Issue"))
         } else {
-            calleeName = nil
+            isFatalError = false
             isIssueRecord = false
         }
-
-        if calleeName == "fatalError" || isIssueRecord {
-            foundFailureSignal = true
+        if isFatalError || isIssueRecord {
+            signalStack[signalStack.index(before: signalStack.endIndex)] = true
         }
         return .visitChildren
     }
