@@ -12,6 +12,7 @@ import {
 	type BridgeDevTelemetrySink,
 	type BridgeDevTelemetrySnapshot,
 } from './scripts/dev-server/bridge-dev-telemetry.js';
+import { bridgeDevelopmentInstallationReleaseRoute } from './scripts/dev-server/bridge-development-installation-release.ts';
 import { reserveBridgeDevelopmentServerPort } from './scripts/dev-server/bridge-development-server-process.js';
 import { createBridgeDevelopmentServerVitePlugin } from './scripts/dev-server/bridge-development-server-vite-plugin.js';
 import {
@@ -188,6 +189,7 @@ export function bridgeProductDevProxyConfiguration(
 	return {
 		[BRIDGE_PRODUCT_DEV_HEALTH_ROUTE]: proxy,
 		[BRIDGE_PRODUCT_DEV_BOOTSTRAP_ROUTE]: proxy,
+		[bridgeDevelopmentInstallationReleaseRoute]: proxy,
 		[BRIDGE_PRODUCT_HTTP_COMMAND_ENDPOINT]: proxy,
 		[BRIDGE_PRODUCT_HTTP_STREAM_ENDPOINT]: {
 			...proxy,

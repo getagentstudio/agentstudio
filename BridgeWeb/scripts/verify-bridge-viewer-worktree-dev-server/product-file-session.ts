@@ -49,6 +49,10 @@ import {
 	bridgeProductViewAcknowledgementRequestSchema,
 	type BridgeProductViewScopeRequest,
 } from '../../src/core/comm-worker/bridge-product-view-control-wire-contracts.js';
+import {
+	bridgeDevelopmentInstallationReleaseRoute,
+	releaseBridgeDevelopmentInstallation,
+} from '../dev-server/bridge-development-installation-release.ts';
 import { BridgeVerifierMetadataFrames } from './product-file-session-metadata-frames.js';
 
 export type BridgeVerifierProductFileSessionState =
@@ -421,6 +425,14 @@ export class BridgeVerifierProductFileSession {
 			(frame) =>
 				frame.kind === 'subscription.cancelled' && frame.subscriptionId === this.#subscriptionId,
 		);
+		// Local abort cannot prove server retirement. Keep the reader alive until
+		// the authenticated release acknowledges that this installation drained.
+		await releaseBridgeDevelopmentInstallation({
+			endpoint: this.#endpoint(bridgeDevelopmentInstallationReleaseRoute),
+			headers: this.#headers(),
+			paneSessionId: this.#paneSessionId,
+			workerInstanceId: this.#workerInstanceId,
+		});
 		await metadataStream.close();
 		this.#metadataStream = null;
 		this.#authority = null;
