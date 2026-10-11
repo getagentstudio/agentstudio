@@ -12,7 +12,7 @@ import Testing
 @Suite("GitWorkingDirectoryProjector")
 struct GitWorkingDirectoryProjectorTests {
     @Test("disabled performance recorder suppresses logical debt traces")
-    func disabledPerformanceRecorderSuppressesLogicalDebtTraces() async {
+    func disabledTraceRecorderProducesNoTraceFacts() async {
         let recorder = GitProjectorTraceRecorderSpy(isEnabled: false)
         let actor = GitWorkingDirectoryProjector(
             bus: EventBus<RuntimeEnvelope>(),
