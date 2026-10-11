@@ -5,9 +5,9 @@ extension RepoScannerTraversalSession {
         let retainedPathKeys: [String]
         private let rootURL: URL
         private let rootUsesPrivateSpelling: Bool
+        private let rootIsFilesystemRoot: Bool
         private let cachedRootPathKey: String
         private let pathKeyByEntryComponents: [ArraySlice<String>: String]
-        private let privateEntryComponents: Set<ArraySlice<String>>
 
         var rootPathKey: String {
             rootUsesPrivateSpelling ? rootURL.standardizedFileURL.path : cachedRootPathKey
@@ -16,24 +16,20 @@ extension RepoScannerTraversalSession {
         init(rootURL: URL, retainedCheckoutPaths: [URL]) {
             self.rootURL = rootURL
             rootUsesPrivateSpelling = rootURL.pathComponents.starts(with: ["/", "private"])
+            rootIsFilesystemRoot = rootURL.pathComponents == ["/"]
             let standardizedRootURL = rootURL.standardizedFileURL
             let rootComponents = standardizedRootURL.pathComponents
             cachedRootPathKey = standardizedRootURL.path
             retainedPathKeys = retainedCheckoutPaths.map { $0.standardizedFileURL.path }
 
             var pathKeysByComponents: [ArraySlice<String>: String] = [:]
-            var privateComponents: Set<ArraySlice<String>> = []
-            for (retainedPath, retainedPathKey) in zip(retainedCheckoutPaths, retainedPathKeys) {
+            for retainedPathKey in retainedPathKeys {
                 let retainedComponents = URL(fileURLWithPath: retainedPathKey).pathComponents
                 guard retainedComponents.starts(with: rootComponents) else { continue }
                 let entryComponents = retainedComponents.dropFirst(rootComponents.count)
                 pathKeysByComponents[entryComponents] = retainedPathKey
-                if retainedPath.pathComponents.starts(with: ["/", "private"]) {
-                    privateComponents.insert(entryComponents)
-                }
             }
             pathKeyByEntryComponents = pathKeysByComponents
-            privateEntryComponents = privateComponents
         }
 
         func pathKey(for entry: PendingEnumerationEntry) -> String? {
@@ -41,8 +37,8 @@ extension RepoScannerTraversalSession {
             // the root-relative components without normalizing another URL.
             let entryComponents = entry.url.pathComponents.suffix(entry.depth)
             // Foundation shortens a leading /private only while the shortened
-            // path exists. Preserve inspection-time identity for those spellings.
-            if rootUsesPrivateSpelling || privateEntryComponents.contains(entryComponents) {
+            // path exists. Classify root plus entry spelling before cached lookup.
+            if rootUsesPrivateSpelling || (rootIsFilesystemRoot && entryComponents.first == "private") {
                 return entryComponents.reduce(rootURL) { partialPath, component in
                     partialPath.appending(path: component)
                 }.standardizedFileURL.path

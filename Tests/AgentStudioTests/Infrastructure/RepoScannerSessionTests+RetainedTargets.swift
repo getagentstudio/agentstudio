@@ -5,6 +5,53 @@ import Testing
 @testable import AgentStudioInfrastructure
 
 extension RepoScannerSessionTests {
+    @Test(
+        "private-prefixed entries remove targets already shortened at initialization",
+        arguments: ["/tmp", "/private/tmp"]
+    )
+    func privatePrefixedEntryRemovesAlreadyExistingRetainedTarget(retainedParentPath: String) throws {
+        // Arrange: both literal retained spellings shorten before the index is built.
+        let targetName = "repo-scanner-private-existing-\(UUIDv7.generate().uuidString)"
+        let privatePath = URL(fileURLWithPath: "/private/tmp/\(targetName)")
+        try FileManager.default.createDirectory(at: privatePath, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: privatePath) }
+        let retainedPath = URL(fileURLWithPath: "\(retainedParentPath)/\(targetName)")
+        let rootURL = URL(fileURLWithPath: "/")
+        let index = RepoScannerTraversalSession.RetainedTargetIndex(
+            rootURL: rootURL,
+            retainedCheckoutPaths: [retainedPath]
+        )
+        let session = RepoScannerTraversalSession(
+            rootURL: rootURL,
+            maxDepth: 3,
+            retainedCheckoutPaths: [retainedPath],
+            retainedTargetPreparationFailure: nil,
+            quantumBudget: .productionDefault,
+            capacity: .productionDefault,
+            serviceClock: TestPushClock()
+        )
+        var state = RepoScannerTraversalSession.TraversalState(
+            rootURL: rootURL,
+            maxDepth: 3,
+            retainedCheckoutPaths: [retainedPath],
+            retainedTargetPreparationFailure: nil,
+            position: .inspectRoot
+        )
+        let entry = RepoScannerTraversalSession.PendingEnumerationEntry(url: privatePath, depth: 3)
+        let expectedPathKey = "/tmp/\(targetName)"
+        #expect(index.retainedPathKeys == [expectedPathKey])
+        #expect(state.remainingRetainedPathKeys == Set([expectedPathKey]))
+
+        // Act
+        let matchedPath = index.pathKey(for: entry)
+        session.removeRetainedTargetExaminedByTraversal(entry, isSymbolicLink: false, state: &state)
+
+        // Assert: root / plus private/tmp/name uses the inspection-time key,
+        // regardless of the retained spelling. The synchronous removal is settled.
+        #expect(matchedPath == expectedPathKey)
+        #expect(state.remainingRetainedPathKeys.isEmpty)
+    }
+
     @Test("private retained target created after suspension keeps the inspection-time skip")
     func privateRetainedTargetCreatedAfterSuspensionIsSkipped() async throws {
         // Arrange: the shortened alias does not exist when custody captures its keys.
