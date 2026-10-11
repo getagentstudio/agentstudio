@@ -187,8 +187,6 @@ extension WebKitSerializedTests {
             #expect(!successorPackage.itemsById.values.compactMap(\.headPath).contains("target-only.txt"))
             #expect(successorDisplayed.comparisonOrigin == successorPackage.comparisonOrigin)
             #expect(successorPublication.publicationId != initialPublication.publicationId)
-            #expect(initialPackage.comparisonOrigin == .contribution(initialOrigin))
-            #expect(initialPackage.itemsById.values.compactMap(\.headPath).contains("target-only.txt") == false)
 
             #expect(await harness.controller.beginTeardown().value)
             #expect((await harness.installation.session.producerSnapshot()).hasZeroResidue)

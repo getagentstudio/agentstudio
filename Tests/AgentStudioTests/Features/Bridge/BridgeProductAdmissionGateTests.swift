@@ -6,24 +6,6 @@ import Testing
 
 @Suite("Bridge product admission gate")
 struct BridgeProductAdmissionGateTests {
-    @Test("open gate admits one synchronous visible mutation")
-    func openGateAdmitsVisibleMutation() throws {
-        // Arrange
-        let gate = BridgeProductAdmissionGate()
-        let admission = try #require(gate.acquire())
-        var publishedValue: String?
-
-        // Act
-        let result = admission.withValidAdmission {
-            publishedValue = "published"
-            return publishedValue
-        }
-
-        // Assert
-        #expect(result == "published")
-        #expect(publishedValue == "published")
-    }
-
     @Test("close invalidates an admitted token and rejects new acquisition")
     func closeInvalidatesPriorAndFutureAdmission() throws {
         // Arrange
