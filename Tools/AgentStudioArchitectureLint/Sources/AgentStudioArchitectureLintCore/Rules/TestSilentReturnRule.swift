@@ -85,13 +85,14 @@ private final class TestBodyGuardVisitor: SyntaxVisitor {
             return false
         }
         let previous = block[block.index(before: itemIndex)]
-        guard let expectedExpression = Self.expectationExpression(in: previous) else {
+        guard let expectedTokens = Self.expectationTokens(in: previous) else {
             return false
         }
-        return Self.normalized(expectedExpression) == Self.normalized(condition.trimmedDescription)
+        let conditionTokens = condition.tokens(viewMode: .sourceAccurate).map(\.text)
+        return expectedTokens == conditionTokens
     }
 
-    private static func expectationExpression(in item: CodeBlockItemSyntax) -> String? {
+    private static func expectationTokens(in item: CodeBlockItemSyntax) -> [String]? {
         let macro: MacroExpansionExprSyntax?
         if let direct = item.item.as(MacroExpansionExprSyntax.self) {
             macro = direct
@@ -103,11 +104,7 @@ private final class TestBodyGuardVisitor: SyntaxVisitor {
         guard let macro, macro.macroName.text == "expect", let firstArgument = macro.arguments.first else {
             return nil
         }
-        return firstArgument.expression.trimmedDescription
-    }
-
-    private static func normalized(_ text: String) -> String {
-        text.filter { !$0.isWhitespace }
+        return firstArgument.expression.tokens(viewMode: .sourceAccurate).map(\.text)
     }
 }
 
@@ -189,9 +186,32 @@ private final class SilentReturnPathVisitor: SyntaxVisitor {
             isFatalError = false
             isIssueRecord = false
         }
-        if isFatalError || isIssueRecord {
+        if !Self.isConditionallyEvaluated(node), isFatalError || isIssueRecord {
             signalStack[signalStack.index(before: signalStack.endIndex)] = true
         }
         return .visitChildren
+    }
+
+    private static func isConditionallyEvaluated(_ node: FunctionCallExprSyntax) -> Bool {
+        var ancestor = node.parent
+        while let current = ancestor {
+            if current.is(TernaryExprSyntax.self) {
+                return true
+            }
+            if let sequence = current.as(SequenceExprSyntax.self),
+                sequence.elements.contains(where: { element in
+                    let text = element.trimmedDescription
+                    return ["&&", "||", "??"].contains { text.contains($0) }
+                        || (text.contains("?") && text.contains(":"))
+                })
+            {
+                return true
+            }
+            if current.is(CodeBlockItemSyntax.self) || current.is(CodeBlockSyntax.self) {
+                return false
+            }
+            ancestor = current.parent
+        }
+        return false
     }
 }

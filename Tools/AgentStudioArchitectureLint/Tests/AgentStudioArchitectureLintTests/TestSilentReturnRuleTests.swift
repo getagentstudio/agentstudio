@@ -156,6 +156,46 @@ struct TestSilentReturnRuleTests {
         #expect(TestSilentReturnRule().validate(context: context).map(\.line) == [5, 11])
     }
 
+    @Test("paired string literals do not match after whitespace removal")
+    func pairedStringLiteralDriftIsDiagnosed() {
+        let context = LintTestSupport.repositoryContext(
+            path: "Tests/AgentStudioTests/StringLiteralDriftExamples.swift",
+            source: """
+                import Testing
+
+                struct Examples {
+                    @Test func stringLiteralDrift() {
+                        #expect(actual == "two words")
+                        guard actual == "twowords" else { return }
+                    }
+                }
+                """
+        )
+
+        #expect(TestSilentReturnRule().validate(context: context).map(\.line) == [6])
+    }
+
+    @Test("conditional failure calls do not dominate a bare return")
+    func conditionalSignalDoesNotDominateReturn() {
+        let context = LintTestSupport.repositoryContext(
+            path: "Tests/AgentStudioTests/ConditionalSignalExamples.swift",
+            source: """
+                import Testing
+
+                struct Examples {
+                    @Test func ternarySignal() {
+                        guard condition else {
+                            let _ = flag ? Issue.record("setup failed") : ()
+                            return
+                        }
+                    }
+                }
+                """
+        )
+
+        #expect(TestSilentReturnRule().validate(context: context).map(\.line) == [5])
+    }
+
     @Test("production sources and the shared harness are ignored")
     func ignoresProductionAndHarnessSources() {
         let production = LintTestSupport.repositoryContext(
