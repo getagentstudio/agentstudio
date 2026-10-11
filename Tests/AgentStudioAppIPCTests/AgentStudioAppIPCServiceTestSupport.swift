@@ -210,7 +210,7 @@ struct FakeBridgePort: AppIPCBridgePort {
     func openReview(_ params: IPCBridgeReviewOpenParams) throws -> IPCBridgeReviewOpenResult {
         IPCBridgeReviewOpenResult(
             paneId: paneId,
-            handle: "pane:\(paneId.uuidString)",
+            handle: paneId.uuidString,
             correlationId: params.correlationId
         )
     }
@@ -218,7 +218,7 @@ struct FakeBridgePort: AppIPCBridgePort {
     func openFileView(_ params: IPCBridgeFileViewOpenParams) throws -> IPCBridgeFileViewOpenResult {
         IPCBridgeFileViewOpenResult(
             paneId: paneId,
-            handle: "pane:\(paneId.uuidString)",
+            handle: paneId.uuidString,
             correlationId: params.correlationId
         )
     }
