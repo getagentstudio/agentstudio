@@ -1,7 +1,6 @@
 rule_id	path	count
 no-timed-wait-in-tests	BridgeWeb/scripts/verify-bridge-viewer-worktree-dev-server/content-state.ts	2
 no-timed-wait-in-tests	BridgeWeb/scripts/verify-bridge-viewer-worktree-dev-server/file-search-filter.ts	1
-no-timed-wait-in-tests	BridgeWeb/scripts/verify-bridge-viewer-worktree-dev-server/product-only-real-router-page.ts	1
 no-timed-wait-in-tests	BridgeWeb/scripts/verify-bridge-viewer-worktree-dev-server/product-only-real-router-regression.ts	1
 no-timed-wait-in-tests	BridgeWeb/src/app/bridge-app-browser-test-actions.ts	1
 no-timed-wait-in-tests	BridgeWeb/src/review-viewer/test-support/bridge-viewer-browser.recovery-witness-scroll.test-support.ts	1

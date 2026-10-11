@@ -334,11 +334,7 @@ export async function runBridgeViewerProductOnlyJourney(props: {
 		await page.close();
 		await browser.close();
 		try {
-			await withBoundedTimeout(
-				Promise.all(observedWorkerClosePromises),
-				productCompositionSettleTimeoutMilliseconds,
-				'observed worker closure',
-			);
+			await Promise.all(observedWorkerClosePromises);
 		} catch {}
 	}
 	const browserCleanup: BridgeViewerProductOnlyJourneyProof['browserCleanup'] = {
@@ -558,21 +554,13 @@ export class BridgeViewerRealRouterObserver {
 			async (completion: Promise<void>): Promise<void> => {
 				// A final window already received may still be parsing.
 				await this.flushResponseParsers();
-				await withBoundedTimeout(
-					completion,
-					productJourneyTimeoutMilliseconds,
-					'legacy Review metadata completion',
-				);
+				await completion;
 			},
 		);
 	}
 
 	async waitForAllProductResponses(): Promise<void> {
-		await withBoundedTimeout(
-			this.#waitForStableProductRequestQuiescence(),
-			productCompositionSettleTimeoutMilliseconds,
-			'all issued product request responses',
-		);
+		await this.#waitForStableProductRequestQuiescence();
 	}
 
 	#observeRequest(request: PlaywrightRequest): void {
@@ -962,25 +950,4 @@ function classifyObservedWorker(url: string, documentGeneration: number): Mutabl
 function safeWorkerUrl(url: string): string {
 	const parsedUrl = new URL(url);
 	return `${parsedUrl.pathname}${parsedUrl.search}`;
-}
-
-async function withBoundedTimeout<TValue>(
-	promise: Promise<TValue>,
-	timeoutMilliseconds: number,
-	label: string,
-): Promise<TValue> {
-	let timeout: ReturnType<typeof setTimeout> | null = null;
-	try {
-		return await Promise.race([
-			promise,
-			new Promise<TValue>((_resolve, reject): void => {
-				timeout = setTimeout(
-					(): void => reject(new Error(`Timed out waiting for ${label}`)),
-					timeoutMilliseconds,
-				);
-			}),
-		]);
-	} finally {
-		if (timeout !== null) clearTimeout(timeout);
-	}
 }
