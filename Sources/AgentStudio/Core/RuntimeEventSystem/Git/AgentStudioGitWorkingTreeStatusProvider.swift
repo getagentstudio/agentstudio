@@ -60,7 +60,7 @@ package struct AgentStudioGitWorkingTreeStatusProvider: GitExactCleanStatusProvi
                 try await client.statusFacts(for: worktreePath, options: options).facts
             },
             lineDetailReader: { worktreePath in
-                try await client.exactLineCountDetail(for: worktreePath)
+                try await client.exactLineCountDetail(for: worktreePath, excludeSubmodules: true)
             },
             statusReader: { worktreePath, options in
                 try await client.completeStatus(for: worktreePath, options: options)
@@ -90,7 +90,8 @@ package struct AgentStudioGitWorkingTreeStatusProvider: GitExactCleanStatusProvi
             }
         self.lineDetailReader =
             lineDetailReader ?? { rootPath in
-                try await statusReader(rootPath, AgentStudioGit.GitStatusOptions()).lineCountDetail
+                try await statusReader(rootPath, AgentStudioGit.GitStatusOptions(excludeSubmodules: true))
+                    .lineCountDetail
             }
         self.slowThreshold = slowThreshold
         self.slowObservationScheduler = slowObservationScheduler
@@ -119,7 +120,8 @@ package struct AgentStudioGitWorkingTreeStatusProvider: GitExactCleanStatusProvi
                     AgentStudioGit.GitStatusOptions(
                         includeIgnored: false,
                         includeUntracked: true,
-                        pathspecs: pathspecs
+                        pathspecs: pathspecs,
+                        excludeSubmodules: true
                     )
                 )
             }
@@ -167,7 +169,8 @@ package struct AgentStudioGitWorkingTreeStatusProvider: GitExactCleanStatusProvi
                     AgentStudioGit.GitStatusOptions(
                         includeIgnored: false,
                         includeUntracked: true,
-                        pathspecs: nil
+                        pathspecs: nil,
+                        excludeSubmodules: true
                     ),
                     observationPlan
                 )
@@ -286,7 +289,8 @@ package struct AgentStudioGitWorkingTreeStatusProvider: GitExactCleanStatusProvi
                     AgentStudioGit.GitStatusOptions(
                         includeIgnored: false,
                         includeUntracked: true,
-                        pathspecs: pathspecs
+                        pathspecs: pathspecs,
+                        excludeSubmodules: true
                     )
                 )
             }
