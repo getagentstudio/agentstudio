@@ -1,5 +1,6 @@
 import Foundation
 import Testing
+import WebKit
 
 @testable import AgentStudioBridge
 
@@ -56,11 +57,7 @@ struct DevelopmentDisplayMetadataStream {
         while true {
             let frame = try await nextFrame()
             if case .batch(.part(let part)) = frame {
-                do {
-                    try await worker.acknowledge(part)
-                } catch {
-                    throw DevelopmentDisplayWorkerClientError.reviewCreditRejected(part.deliverySequence)
-                }
+                try await returnReviewCredit(for: part, using: worker)
             }
             switch frame {
             case .subscriptionAccepted(let accepted):
@@ -154,6 +151,22 @@ struct DevelopmentDisplayMetadataStream {
     func stop() async {
         consumer.cancel()
         await consumer.value
+    }
+
+    /// Acknowledges one delivered part, carrying why the credit was not returned so a
+    /// time-limit cancellation is never mistaken for a host refusal.
+    private func returnReviewCredit(
+        for part: BridgeProductBatchPartFrame,
+        using worker: DevelopmentDisplayWorkerClient
+    ) async throws {
+        do throws(DevelopmentDisplayAcknowledgementFailure) {
+            try await worker.acknowledge(part)
+        } catch {
+            throw DevelopmentDisplayWorkerClientError.reviewCreditRejected(
+                deliverySequence: part.deliverySequence,
+                underlying: error
+            )
+        }
     }
 
     private mutating func nextFrame() async throws -> BridgeProductMetadataFrame {
@@ -368,7 +381,9 @@ final class DevelopmentDisplayWorkerClient {
         )
     }
 
-    func acknowledge(_ part: BridgeProductBatchPartFrame) async throws {
+    func acknowledge(
+        _ part: BridgeProductBatchPartFrame
+    ) async throws(DevelopmentDisplayAcknowledgementFailure) {
         let identity = part.identity
         let requestObject: [String: Any] = [
             "kind": "subscription.acknowledge",
@@ -381,24 +396,38 @@ final class DevelopmentDisplayWorkerClient {
             "wireVersion": identity.frame.wireVersion,
             "workerInstanceId": identity.frame.workerInstanceId,
         ]
-        let requestBytes = try JSONSerialization.data(withJSONObject: requestObject, options: [.sortedKeys])
-        let request = try BridgeProductStrictJSON.decode(
-            BridgeProductViewAcknowledgementRequest.self,
-            from: requestBytes
-        )
-        let response = try await collectRouteResponse(
-            try routedRequest(
+        let request: BridgeProductViewAcknowledgementRequest
+        let acknowledgementRequest: URLRequest
+        do {
+            let requestBytes = try JSONSerialization.data(withJSONObject: requestObject, options: [.sortedKeys])
+            request = try BridgeProductStrictJSON.decode(
+                BridgeProductViewAcknowledgementRequest.self,
+                from: requestBytes
+            )
+            acknowledgementRequest = try routedRequest(
                 route: BridgeProductWireContract.commandRoute,
                 body: requestObject
             )
-        )
-        guard response.statusCode == 200 else {
-            throw DevelopmentDisplayWorkerClientError.unexpectedFrameAcknowledgementResponse
+        } catch {
+            throw DevelopmentDisplayAcknowledgementFailure.malformedAcknowledgementRequest(
+                String(reflecting: error)
+            )
         }
-        let acknowledged = try BridgeProductStrictJSON.decode(
-            BridgeProductViewAcknowledgedResponse.self,
-            from: response.body
+        let responseBody = try await collectDevelopmentAcknowledgementReply(
+            await host.route(acknowledgementRequest)
         )
+        let acknowledged: BridgeProductViewAcknowledgedResponse
+        do {
+            acknowledged = try BridgeProductStrictJSON.decode(
+                BridgeProductViewAcknowledgedResponse.self,
+                from: responseBody
+            )
+        } catch {
+            // A cancelled awaiting task can end a 200 reply before its body arrives.
+            throw Task.isCancelled
+                ? DevelopmentDisplayAcknowledgementFailure.awaitingTaskCancelled(receivedStatusCode: 200)
+                : DevelopmentDisplayAcknowledgementFailure.undecodableAcknowledgement(String(reflecting: error))
+        }
         #expect(acknowledged == .init(correlating: request))
     }
 
@@ -489,22 +518,11 @@ final class DevelopmentDisplayWorkerClient {
     private func collectRouteResponse(
         _ request: URLRequest
     ) async throws -> (statusCode: Int, body: Data) {
-        var body = Data()
-        var statusCode: Int?
-        for try await result in await host.route(request) {
-            switch result {
-            case .response(let response):
-                statusCode = (response as? HTTPURLResponse)?.statusCode
-            case .data(let data):
-                body.append(data)
-            @unknown default:
-                throw DevelopmentDisplayWorkerClientError.unexpectedControlResponse
-            }
-        }
-        guard let statusCode else {
+        let reply = try await collectDevelopmentRouteReply(await host.route(request))
+        guard let statusCode = reply.statusCode else {
             throw DevelopmentDisplayWorkerClientError.unexpectedControlResponse
         }
-        return (statusCode, body)
+        return (statusCode, reply.body)
     }
 
     private func controlIdentity(
@@ -605,6 +623,83 @@ private func decodeDevelopmentDisplayBootstrapEnvelope(
     )
 }
 
+/// Why one `subscription.acknowledge` did not return its Review credit. The replay helper
+/// carries it so a suite time-limit cancellation reads differently from a real host refusal.
+enum DevelopmentDisplayAcknowledgementFailure: Error, Equatable {
+    /// The task awaiting the reply was cancelled before the reply completed, as when the
+    /// suite time limit fires mid-replay; carries the status the host had sent by then.
+    case awaitingTaskCancelled(receivedStatusCode: Int?)
+    /// The reply finished with no status while its awaiting task was still live.
+    case replyEndedWithoutStatus
+    /// The reply stream itself threw.
+    case replyFailed(String)
+    /// The host answered with a status other than 200: it refused the credit.
+    case hostRefused(statusCode: Int)
+    /// A 200 reply whose body is not the correlated `subscription.acknowledged` response.
+    case undecodableAcknowledgement(String)
+    /// The worker client could not build the acknowledgement request.
+    case malformedAcknowledgementRequest(String)
+}
+
+/// Collects one acknowledgement reply and classifies how it fell short of a host answer.
+/// Cancellation is read on the awaiting task: a cancelled consumer ends its reply stream
+/// with nothing delivered, which alone looks the same as a reply that lost its producer.
+func collectDevelopmentAcknowledgementReply(
+    _ reply: AsyncThrowingStream<URLSchemeTaskResult, any Error>
+) async throws(DevelopmentDisplayAcknowledgementFailure) -> Data {
+    let collectedReply: DevelopmentRouteReply
+    do {
+        collectedReply = try await collectDevelopmentRouteReply(reply)
+    } catch {
+        throw DevelopmentDisplayAcknowledgementFailure.replyFailed(String(reflecting: error))
+    }
+    guard let statusCode = collectedReply.statusCode else {
+        throw Task.isCancelled
+            ? DevelopmentDisplayAcknowledgementFailure.awaitingTaskCancelled(receivedStatusCode: nil)
+            : DevelopmentDisplayAcknowledgementFailure.replyEndedWithoutStatus
+    }
+    guard statusCode == 200 else {
+        throw DevelopmentDisplayAcknowledgementFailure.hostRefused(statusCode: statusCode)
+    }
+    return collectedReply.body
+}
+
+/// The acknowledgement failure a Review replay error carries when the replay stopped on a
+/// rejected credit, so a test can read it without widening the private error type.
+func carriedReviewCreditRejection(
+    in error: any Error
+) -> (deliverySequence: Int, failure: DevelopmentDisplayAcknowledgementFailure)? {
+    guard
+        case .reviewCreditRejected(let deliverySequence, let failure)? =
+            error as? DevelopmentDisplayWorkerClientError
+    else { return nil }
+    return (deliverySequence, failure)
+}
+
+/// One host reply as it arrived: the status, when the host sent one, and the body bytes.
+private struct DevelopmentRouteReply {
+    let statusCode: Int?
+    let body: Data
+}
+
+private func collectDevelopmentRouteReply(
+    _ reply: AsyncThrowingStream<URLSchemeTaskResult, any Error>
+) async throws -> DevelopmentRouteReply {
+    var body = Data()
+    var statusCode: Int?
+    for try await result in reply {
+        switch result {
+        case .response(let response):
+            statusCode = (response as? HTTPURLResponse)?.statusCode
+        case .data(let data):
+            body.append(data)
+        @unknown default:
+            throw DevelopmentDisplayWorkerClientError.unexpectedControlResponse
+        }
+    }
+    return DevelopmentRouteReply(statusCode: statusCode, body: body)
+}
+
 private enum DevelopmentDisplayWorkerClientError: Error {
     case expectedMetadataStreamOpening
     case incompleteReviewMetadataLifecycle(String)
@@ -612,9 +707,11 @@ private enum DevelopmentDisplayWorkerClientError: Error {
     case invalidRoute
     case metadataStreamEndedBeforeExpectedFrame
     case reviewMetadataTerminatedBeforeFinalWindow
-    case reviewCreditRejected(Int)
+    case reviewCreditRejected(
+        deliverySequence: Int,
+        underlying: DevelopmentDisplayAcknowledgementFailure
+    )
     case unexpectedControlResponse
-    case unexpectedFrameAcknowledgementResponse
     case unexpectedMetadataStreamResponse
     case unexpectedReviewItemCount(expected: Int, received: Int)
 }
