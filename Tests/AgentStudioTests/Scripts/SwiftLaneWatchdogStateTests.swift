@@ -14,7 +14,7 @@ struct SwiftLaneWatchdogStateTests {
         let blockedFIFO = evidenceDirectory + "/blocked.fifo"
         let startupFIFO = evidenceDirectory + "/startup.fifo"
         let startupReady = evidenceDirectory + "/startup.ready"
-        let watchdogArm = evidenceDirectory + "/watchdog.arm"
+        let childAnnounced = evidenceDirectory + "/child.announced"
         let command = #"""
             mkdir -p '__EVIDENCE__'
             mkfifo '__FIFO__'
@@ -22,12 +22,12 @@ struct SwiftLaneWatchdogStateTests {
             LOG_PREFIX=watchdog-state
             BUILD_PATH='__EVIDENCE__/build'
             LANE_EVENT_STREAM_DIR='__EVIDENCE__'
-            export LANE_WATCHDOG_ARM_PATH='__ARM__'
+            export WATCHDOG_STATE_CHILD_ANNOUNCED='__ANNOUNCED__'
             source scripts/swift-test-helpers.sh
             # The runner calls this before its inactivity-arm check. Only inject
             # failure after the child has closed its PID write and announced it.
             swift_test_watchdog_state() {
-              if [ ! -e "$LANE_WATCHDOG_ARM_PATH" ]; then
+              if [ ! -e "$WATCHDOG_STATE_CHILD_ANNOUNCED" ]; then
                 if [ '__HOLD__' = 1 ] && [ -e '__STARTUP_READY__' ] && \
                     [ ! -e '__STARTUP_READY__.released' ]; then
                   printf 'start\n' > '__STARTUP_FIFO__'
@@ -45,7 +45,7 @@ struct SwiftLaneWatchdogStateTests {
                  read -r startup < "$5"
                fi
                echo "$$" > "$1"
-               : > "$LANE_WATCHDOG_ARM_PATH"
+               : > "$WATCHDOG_STATE_CHILD_ANNOUNCED"
                read -r blocked < "$2"' \
               bash '__PID__' '__FIFO__' '__HOLD__' '__STARTUP_READY__' '__STARTUP_FIFO__' || status=$?
             echo STATUS=$status
@@ -65,13 +65,13 @@ struct SwiftLaneWatchdogStateTests {
             .replacingOccurrences(of: "__FIFO__", with: blockedFIFO)
             .replacingOccurrences(of: "__STARTUP_FIFO__", with: startupFIFO)
             .replacingOccurrences(of: "__STARTUP_READY__", with: startupReady)
-            .replacingOccurrences(of: "__ARM__", with: watchdogArm)
+            .replacingOccurrences(of: "__ANNOUNCED__", with: childAnnounced)
             .replacingOccurrences(of: "__HOLD__", with: holdBeforeIdentity ? "1" : "0")
         let result = try await runLaneScriptBash(command, innerWatchdog: .armed)
         #expect(result.exitCode == 0, Comment(rawValue: result.output))
         #expect(result.output.contains("STATUS=1"))
         #expect(result.output.contains("CHILD_REAPED"))
-        #expect(FileManager.default.fileExists(atPath: watchdogArm))
+        #expect(FileManager.default.fileExists(atPath: childAnnounced))
         if holdBeforeIdentity {
             #expect(FileManager.default.fileExists(atPath: startupReady + ".released"))
         }

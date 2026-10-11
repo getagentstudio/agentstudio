@@ -2,6 +2,7 @@ import AgentStudioInfrastructure
 import AgentStudioTestSupport
 import Foundation
 import Testing
+import WebKit
 
 @testable import AgentStudioBridge
 @testable import AgentStudioCore
@@ -106,6 +107,143 @@ struct BridgeDevelopmentHostReviewReplayTests {
             Issue.record("Review replay failed during \(replayStage): \(error)")
         }
     }
+
+    @Test("an acknowledgement reply without a status names whether its awaiting task was cancelled")
+    func acknowledgementReplyWithoutStatusNamesAwaitingTaskCancellation() async {
+        // Arrange — two replies the host never answers: one whose awaiting task is cancelled,
+        // as the suite time limit does mid-replay, and one that ends while its task is live.
+        let (unansweredReply, unansweredReplyContinuation) =
+            AsyncThrowingStream<URLSchemeTaskResult, any Error>.makeStream()
+        let (endedReply, endedReplyContinuation) =
+            AsyncThrowingStream<URLSchemeTaskResult, any Error>.makeStream()
+        endedReplyContinuation.finish()
+        let cancelledAcknowledgement = Task { () -> (any Error)? in
+            do {
+                _ = try await collectDevelopmentAcknowledgementReply(unansweredReply)
+                return nil
+            } catch {
+                return error
+            }
+        }
+
+        // Act — cancelling the awaiting task ends its unanswered reply with nothing delivered.
+        cancelledAcknowledgement.cancel()
+        let cancelledOutcome = await cancelledAcknowledgement.value
+        unansweredReplyContinuation.finish()
+        var endedOutcome: (any Error)?
+        do {
+            _ = try await collectDevelopmentAcknowledgementReply(endedReply)
+        } catch {
+            endedOutcome = error
+        }
+
+        // Assert
+        #expect(
+            cancelledOutcome as? DevelopmentDisplayAcknowledgementFailure
+                == .awaitingTaskCancelled(receivedStatusCode: nil)
+        )
+        #expect(endedOutcome as? DevelopmentDisplayAcknowledgementFailure == .replyEndedWithoutStatus)
+    }
+
+    @Test("a host refusal of a Review credit is carried with the part's delivery sequence")
+    func hostRefusedReviewCreditIsCarriedWithDeliverySequence() async throws {
+        // Arrange
+        let repositoryURL = try await FilesystemTestGitRepo.create(
+            named: "bridge-development-product-host-review-credit-refusal"
+        )
+        defer { FilesystemTestGitRepo.destroy(repositoryURL) }
+        let provider = makeReviewReplayProvider(itemCount: 1)
+        let host = try await BridgeDevelopmentProductHost(
+            source: makeDevelopmentProductSource(worktreeRoot: repositoryURL),
+            operationDeadlineClock: TestPushClock(),
+            contributionTargetCommit: developmentContributionTargetCommit(
+                worktreeRoot: repositoryURL
+            ),
+            makeReviewProvider: { _, _ in provider }
+        )
+
+        try await withMainActorShutdownDevelopmentProductHost(host) {
+            let worker = try DevelopmentDisplayWorkerClient(
+                host: host,
+                delivery: await host.issueBootstrap(
+                    for: developmentDisplayBootstrapRequest(reason: "initial", surface: "file")
+                )
+            )
+            try await worker.openSession()
+            let refusedDeliverySequence = 7
+            var metadataStream = try makeMetadataStreamDeliveringOnePart(
+                makeUnopenedSubscriptionReviewPart(
+                    for: worker,
+                    deliverySequence: refusedDeliverySequence
+                )
+            )
+
+            // Act — the replay helper acknowledges the part through the real host, which
+            // holds no view for that subscription and so refuses the credit.
+            var replayError: (any Error)?
+            do {
+                _ = try await metadataStream.consumeCompleteReviewPublication(
+                    expectedItemCount: 1,
+                    using: worker
+                )
+            } catch {
+                replayError = error
+            }
+            await metadataStream.stop()
+
+            // Assert
+            let carried = try #require(replayError.flatMap { carriedReviewCreditRejection(in: $0) })
+            #expect(carried.deliverySequence == refusedDeliverySequence)
+            #expect(carried.failure == .hostRefused(statusCode: 400))
+        }
+    }
+}
+
+/// A metadata stream that has delivered exactly one Review batch part and then ended,
+/// so the replay helper's acknowledgement of that part is the only host round trip.
+@MainActor
+private func makeMetadataStreamDeliveringOnePart(
+    _ part: BridgeProductBatchPartFrame
+) -> DevelopmentDisplayMetadataStream {
+    let (frames, framesContinuation) =
+        AsyncThrowingStream<BridgeProductMetadataFrame, any Error>.makeStream()
+    framesContinuation.yield(.batch(.part(part)))
+    framesContinuation.finish()
+    return DevelopmentDisplayMetadataStream(
+        frameIterator: frames.makeAsyncIterator(),
+        consumer: Task {}
+    )
+}
+
+/// A Review batch part for the worker's real session on a subscription it never opened,
+/// so the host has no credit window to return it to.
+@MainActor
+private func makeUnopenedSubscriptionReviewPart(
+    for worker: DevelopmentDisplayWorkerClient,
+    deliverySequence: Int
+) throws -> BridgeProductBatchPartFrame {
+    let frameObject: [String: Any] = [
+        "batchId": "review-batch-never-begun",
+        "deliverySequence": deliverySequence,
+        "domain": BridgeProductViewDomain.singleDomain.rawValue,
+        "handle": "review-view-never-opened",
+        "incarnation": "review-incarnation-never-opened",
+        "kind": "subscription.batchPart",
+        "metadataStreamId": "metadata-stream-never-opened",
+        "paneSessionId": worker.paneSessionId,
+        "part": ["key": "publication", "operation": "evict"],
+        "partIndex": 0,
+        "scopeRevision": 1,
+        "streamSequence": 1,
+        "subscriptionId": "review-subscription-never-opened",
+        "subscriptionKind": "review.metadata",
+        "wireVersion": BridgeProductWireContract.version,
+        "workerInstanceId": worker.workerInstanceId,
+    ]
+    return try BridgeProductStrictJSON.decode(
+        BridgeProductBatchPartFrame.self,
+        from: JSONSerialization.data(withJSONObject: frameObject, options: [.sortedKeys])
+    )
 }
 
 @MainActor

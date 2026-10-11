@@ -1,5 +1,6 @@
 import AgentStudioCore
 import AgentStudioInfrastructure
+import AgentStudioTestHarness
 import AgentStudioTestSupport
 import Foundation
 import Testing
@@ -54,228 +55,252 @@ struct TerminalActivityDerivedEventTests {
     }
 
     @Test("scrollback growth does not emit unseen activity before quiet")
-    func scrollbackGrowthDoesNotEmitUnseenActivityBeforeQuiet() async {
+    func scrollbackGrowthDoesNotEmitUnseenActivityBeforeQuiet() async throws {
         let bus = EventBus<RuntimeEnvelope>()
-        let subscriber = RecordingSubscriber(
-            subscription: await bus.subscribe(policy: .criticalUnbounded, subscriberName: #function))
+        let events = await TerminalActivityEventFactSource.attach(bus: bus, subscriberName: #function)
+        let factSource = TerminalActivityRouterFactSource()
+        let facts = try factSource.attach()
         let atom = TerminalActivityAtom(outputBurstThreshold: 30)
         let clock = TestPushClock()
+        let deadlines = try TerminalActivityDeadlineFacts(clock: clock)
+        let projector = TerminalActivityProjector(
+            unseenQuietDuration: .milliseconds(750), clock: clock, factSink: deadlines.sink)
         let router = TerminalActivityRouter(
             bus: bus,
             activityAtom: atom,
+            projector: projector,
             surfaceIDForPaneID: { $0 },
             unseenActivityDebounceDuration: .milliseconds(750),
-            unseenActivityClock: clock
+            unseenActivityClock: clock,
+            factSink: factSource.sink
         )
         let paneId = PaneId.generateUUIDv7()
 
-        await router.start()
-        await waitForBusSubscriberCount(bus, atLeast: 2)
-        let initialSleepGeneration = clock.scheduledSleepGeneration
-        await postScrollbackBurst(paneId: paneId, totals: [100, 120, 140], through: router)
-        await waitForLatestRows(140, paneId: paneId, atom: atom)
-        await waitForLatestPendingDebounce(
-            clock: clock,
-            initialGeneration: initialSleepGeneration,
-            eventCount: 1
-        )
-
-        #expect(await derivedActivities(from: subscriber).isEmpty)
-
-        await router.stop()
-        await subscriber.shutdown()
+        do {
+            _ = try await facts.startRouter(router)
+            await bus.waitForSubscriberRegistration(subscriberName: "TerminalActivityRouter")
+            let noSettleFrom = await events.mark(paneId.uuid)
+            await postScrollbackBurst(paneId: paneId, totals: [100, 120, 140], through: router)
+            #expect(atom.snapshot(for: paneId.uuid)?.scrollbarState?.total == 140)
+            let deadline = try await deadlines.expectNextRegistration(paneID: paneId.uuid)
+            _ = try await events.expectNextPaneObservation(paneID: paneId.uuid, isPinnedToBottom: false)
+            clock.advance(to: deadlines.origin.advanced(by: deadline.deadline - .milliseconds(1)))
+            #expect(deadline.deadline == .milliseconds(750))
+            let stopScope = try await facts.stopRouter(router)
+            _ = try await deadlines.expectDisposition(for: deadline, .cancelled)
+            _ = try await events.expectNoUnseenActivityThroughStoppedProducer(
+                paneID: paneId.uuid, from: noSettleFrom, stopScope: stopScope)
+            try await deadlines.finish()
+            try await events.finish()
+            try await facts.finish()
+        } catch {
+            await router.stop()
+            try? await deadlines.finish()
+            try? await events.finish()
+            try? await facts.finish()
+            throw error
+        }
     }
 
     @Test("scrollback growth emits one settled activity after quiet")
     func scrollbackGrowthEmitsOneSettledActivityAfterQuiet() async throws {
         let bus = EventBus<RuntimeEnvelope>()
-        let subscriber = RecordingSubscriber(
-            subscription: await bus.subscribe(policy: .criticalUnbounded, subscriberName: #function))
+        let events = await TerminalActivityEventFactSource.attach(bus: bus, subscriberName: #function)
+        let factSource = TerminalActivityRouterFactSource()
+        let facts = try factSource.attach()
         let atom = TerminalActivityAtom(outputBurstThreshold: 30)
         let clock = TestPushClock()
+        let deadlines = try TerminalActivityDeadlineFacts(clock: clock)
+        let projector = TerminalActivityProjector(
+            unseenQuietDuration: .milliseconds(750), clock: clock, factSink: deadlines.sink)
         let nowMilliseconds = MillisecondBox(2000)
         let router = TerminalActivityRouter(
             bus: bus,
             activityAtom: atom,
+            projector: projector,
             surfaceIDForPaneID: { $0 },
             unseenActivityDebounceDuration: .milliseconds(750),
             unseenActivityClock: clock,
-            nowMilliseconds: { nowMilliseconds.get() }
+            nowMilliseconds: { nowMilliseconds.get() },
+            factSink: factSource.sink
         )
         let paneId = PaneId.generateUUIDv7()
 
-        await router.start()
-        await waitForBusSubscriberCount(bus, atLeast: 2)
-        let initialSleepGeneration = clock.scheduledSleepGeneration
-        await postScrollbackBurst(
-            paneId: paneId,
-            totals: [100, 120, 140],
-            through: router,
-            startedAtMilliseconds: 2000
-        )
-        await waitForLatestRows(140, paneId: paneId, atom: atom)
-        await waitForLatestPendingDebounce(
-            clock: clock,
-            initialGeneration: initialSleepGeneration,
-            eventCount: 1
-        )
-        clock.advance(by: .milliseconds(749))
-        #expect(await derivedActivities(from: subscriber).isEmpty)
+        do {
+            _ = try await facts.startRouter(router)
+            await bus.waitForSubscriberRegistration(subscriberName: "TerminalActivityRouter")
+            await postScrollbackBurst(
+                paneId: paneId,
+                totals: [100, 120, 140],
+                through: router,
+                startedAtMilliseconds: 2000
+            )
+            #expect(atom.snapshot(for: paneId.uuid)?.scrollbarState?.total == 140)
+            let deadline = try await deadlines.expectNextRegistration(paneID: paneId.uuid)
+            _ = try await events.expectNextPaneObservation(paneID: paneId.uuid, isPinnedToBottom: false)
+            clock.advance(by: .milliseconds(749))
+            #expect(deadline.deadline == .milliseconds(750))
 
-        clock.advance(by: .milliseconds(1))
-        await assertEventuallyAsync("quiet settle should emit one derived activity") {
-            await derivedActivities(from: subscriber).count == 1
+            _ = try await deadlines.fire(deadline)
+            let settled = try await events.expectNextUnseenActivity(
+                paneID: paneId.uuid, windowID: deadline.scope.windowID)
+            let activity = settled.activity
+            #expect(activity.rowsAdded == 40)
+            #expect(activity.thresholdRows == 30)
+            #expect(activity.eventCount == 3)
+            #expect(activity.latestRows == 140)
+            #expect(activity.baselineRows == 100)
+            #expect(activity.startedAtMilliseconds == 2000)
+            #expect(activity.settledAtMilliseconds == 2000 + 200 + 750)
+
+            let noAdditionalSettles = await events.mark(paneId.uuid)
+            let stopScope = try await facts.stopRouter(router)
+            _ = try await events.expectNoUnseenActivityThroughStoppedProducer(
+                paneID: paneId.uuid, from: noAdditionalSettles, stopScope: stopScope)
+            try await deadlines.finish()
+            try await events.finish()
+            try await facts.finish()
+        } catch {
+            await router.stop()
+            try? await deadlines.finish()
+            try? await events.finish()
+            try? await facts.finish()
+            throw error
         }
-        let activity = try #require(await derivedActivities(from: subscriber).first)
-        #expect(activity.rowsAdded == 40)
-        #expect(activity.thresholdRows == 30)
-        #expect(activity.eventCount == 3)
-        #expect(activity.latestRows == 140)
-        #expect(activity.baselineRows == 100)
-        #expect(activity.startedAtMilliseconds == 2000)
-        #expect(activity.settledAtMilliseconds == 2000 + 200 + 750)
-
-        await router.stop()
-        await subscriber.shutdown()
     }
 
     @Test("observing pane before quiet cancels settled activity")
-    func observingPaneBeforeQuietCancelsSettledActivity() async {
+    func observingPaneBeforeQuietCancelsSettledActivity() async throws {
         let bus = EventBus<RuntimeEnvelope>()
-        let subscriber = RecordingSubscriber(
-            subscription: await bus.subscribe(policy: .criticalUnbounded, subscriberName: #function))
+        let events = await TerminalActivityEventFactSource.attach(bus: bus, subscriberName: #function)
+        let factSource = TerminalActivityRouterFactSource()
+        let facts = try factSource.attach()
         let atom = TerminalActivityAtom(outputBurstThreshold: 30)
         let clock = TestPushClock()
+        let deadlines = try TerminalActivityDeadlineFacts(clock: clock)
+        let projector = TerminalActivityProjector(
+            unseenQuietDuration: .milliseconds(750), clock: clock, factSink: deadlines.sink)
         let paneId = PaneId.generateUUIDv7()
         let attendedPaneIds = PaneSetBox()
         let router = TerminalActivityRouter(
             bus: bus,
             activityAtom: atom,
+            projector: projector,
             surfaceIDForPaneID: { $0 },
             isPaneCurrentlyAttended: { attendedPaneIds.contains($0) },
             unseenActivityDebounceDuration: .milliseconds(750),
-            unseenActivityClock: clock
+            unseenActivityClock: clock,
+            factSink: factSource.sink
         )
 
-        await router.start()
-        await waitForBusSubscriberCount(bus, atLeast: 2)
-        let initialSleepGeneration = clock.scheduledSleepGeneration
-        await postScrollbackBurst(paneId: paneId, totals: [100], through: router)
-        await waitForLatestPendingDebounce(
-            clock: clock,
-            initialGeneration: initialSleepGeneration,
-            eventCount: 1
-        )
+        do {
+            _ = try await facts.startRouter(router)
+            await bus.waitForSubscriberRegistration(subscriberName: "TerminalActivityRouter")
+            let noSettleFrom = await events.mark(paneId.uuid)
+            await postScrollbackBurst(paneId: paneId, totals: [100], through: router)
+            let deadline = try await deadlines.expectNextRegistration(paneID: paneId.uuid)
+            _ = try await events.expectNextPaneObservation(paneID: paneId.uuid, isPinnedToBottom: false)
 
-        attendedPaneIds.insert(paneId.uuid)
-        await postScrollbackBurst(
-            paneId: paneId,
-            totals: [100, 140],
-            through: router,
-            isAttended: true
-        )
-        await clock.waitForPendingSleepCount(exactly: 0)
-
-        clock.advance(by: .milliseconds(750))
-
-        #expect(await derivedActivities(from: subscriber).isEmpty)
-
-        await router.stop()
-        await subscriber.shutdown()
+            attendedPaneIds.insert(paneId.uuid)
+            await postScrollbackBurst(
+                paneId: paneId,
+                totals: [100, 140],
+                through: router,
+                isAttended: true
+            )
+            // The awaited ingest made the scheduling decision: attending cancels, never postpones.
+            // `#require` stops here on a regression; the pending-sleep wait below would never end.
+            try #require(await projector.scheduledTimerCount == 0)
+            _ = try await deadlines.expectDisposition(for: deadline, .superseded)
+            await clock.waitForPendingSleepCount(exactly: 0)
+            clock.advance(by: .milliseconds(750))
+            let stopScope = try await facts.stopRouter(router)
+            _ = try await events.expectNoUnseenActivityThroughStoppedProducer(
+                paneID: paneId.uuid, from: noSettleFrom, stopScope: stopScope)
+            try await deadlines.finish()
+            try await events.finish()
+            try await facts.finish()
+        } catch {
+            await router.stop()
+            try? await deadlines.finish()
+            try? await events.finish()
+            try? await facts.finish()
+            throw error
+        }
     }
 
     @Test("settled activity events use independent monotonic source sequence")
-    func settledActivityEventsUseIndependentMonotonicSourceSequence() async {
+    func settledActivityEventsUseIndependentMonotonicSourceSequence() async throws {
         let bus = EventBus<RuntimeEnvelope>()
-        let subscriber = RecordingSubscriber(
-            subscription: await bus.subscribe(policy: .criticalUnbounded, subscriberName: #function))
+        let events = await TerminalActivityEventFactSource.attach(bus: bus, subscriberName: #function)
+        let factSource = TerminalActivityRouterFactSource()
+        let facts = try factSource.attach()
         let atom = TerminalActivityAtom(outputBurstThreshold: 30)
         let clock = TestPushClock()
+        let deadlines = try TerminalActivityDeadlineFacts(clock: clock)
+        let projector = TerminalActivityProjector(
+            unseenQuietDuration: .milliseconds(750), clock: clock, factSink: deadlines.sink)
         let router = TerminalActivityRouter(
             bus: bus,
             activityAtom: atom,
+            projector: projector,
             surfaceIDForPaneID: { $0 },
             unseenActivityDebounceDuration: .milliseconds(750),
-            unseenActivityClock: clock
+            unseenActivityClock: clock,
+            factSink: factSource.sink
         )
         let paneId = PaneId.generateUUIDv7()
 
-        await router.start()
-        await waitForBusSubscriberCount(bus, atLeast: 2)
-        let firstInitialSleepGeneration = clock.scheduledSleepGeneration
-        await postScrollbackBurst(paneId: paneId, totals: [100, 120, 140], through: router)
-        await waitForLatestRows(140, paneId: paneId, atom: atom)
-        await waitForLatestPendingDebounce(
-            clock: clock,
-            initialGeneration: firstInitialSleepGeneration,
-            eventCount: 1
-        )
-        clock.advance(by: .milliseconds(750))
-        await assertEventuallyAsync("first window should settle") {
-            await derivedPaneEvents(from: subscriber).count == 1
-        }
+        do {
+            _ = try await facts.startRouter(router)
+            await bus.waitForSubscriberRegistration(subscriberName: "TerminalActivityRouter")
+            await postScrollbackBurst(paneId: paneId, totals: [100, 120, 140], through: router)
+            #expect(atom.snapshot(for: paneId.uuid)?.scrollbarState?.total == 140)
+            let firstDeadline = try await deadlines.expectNextRegistration(paneID: paneId.uuid)
+            let observation = try await events.expectNextPaneObservation(paneID: paneId.uuid, isPinnedToBottom: false)
+            _ = try await deadlines.fire(firstDeadline)
+            let firstSettle = try await events.expectNextUnseenActivity(
+                paneID: paneId.uuid, windowID: firstDeadline.scope.windowID)
 
-        await router.consumeTerminalActivityInput(
-            .orderedControl(
-                surfaceID: paneId.uuid,
-                paneID: paneId.uuid,
-                precedingAggregate: nil,
-                control: .observed
+            await router.consumeTerminalActivityInput(
+                .orderedControl(
+                    surfaceID: paneId.uuid,
+                    paneID: paneId.uuid,
+                    precedingAggregate: nil,
+                    control: .observed
+                )
             )
-        )
-        let secondInitialSleepGeneration = clock.scheduledSleepGeneration
-        await postScrollbackBurst(paneId: paneId, totals: [200, 220, 240], through: router)
-        await waitForLatestRows(240, paneId: paneId, atom: atom)
-        await waitForLatestPendingDebounce(
-            clock: clock,
-            initialGeneration: secondInitialSleepGeneration,
-            eventCount: 1
-        )
-        clock.advance(by: .milliseconds(750))
+            await postScrollbackBurst(paneId: paneId, totals: [200, 220, 240], through: router)
+            #expect(atom.snapshot(for: paneId.uuid)?.scrollbarState?.total == 240)
+            let secondDeadline = try await deadlines.expectNextRegistration(paneID: paneId.uuid)
+            _ = try await deadlines.fire(secondDeadline)
+            let secondSettle = try await events.expectNextUnseenActivity(
+                paneID: paneId.uuid, windowID: secondDeadline.scope.windowID)
+            #expect([observation.seq, firstSettle.envelope.seq, secondSettle.envelope.seq] == [1, 2, 3])
+            let settledEvents: [SettledEventRecord] = [
+                (firstSettle.envelope.source, firstSettle.envelope.seq, firstSettle.activity),
+                (secondSettle.envelope.source, secondSettle.envelope.seq, secondSettle.activity),
+            ]
+            #expect(
+                settledEvents.map(\.source) == [
+                    .system(.builtin(.terminalActivityRouter)),
+                    .system(.builtin(.terminalActivityRouter)),
+                ])
+            #expect(settledEvents.map(\.seq) == [2, 3])
 
-        await assertEventuallyAsync("second window should settle") {
-            await derivedPaneEvents(from: subscriber).count == 2
-        }
-        let allEvents = await derivedTerminalActivityEvents(from: subscriber)
-        #expect(allEvents.map(\.seq) == [1, 2, 3])
-        let events: [SettledEventRecord] = allEvents.compactMap { record in
-            guard case .unseenActivitySettled(let activity) = record.event else { return nil }
-            return (source: record.source, seq: record.seq, activity: activity)
-        }
-        #expect(
-            events.map(\.source) == [
-                .system(.builtin(.terminalActivityRouter)),
-                .system(.builtin(.terminalActivityRouter)),
-            ])
-        #expect(events.map(\.seq) == [2, 3])
-
-        await router.stop()
-        await subscriber.shutdown()
-    }
-
-    private func derivedActivities(
-        from subscriber: RecordingSubscriber<RuntimeEnvelope>
-    ) async -> [TerminalSettledActivity] {
-        await derivedPaneEvents(from: subscriber).map(\.activity)
-    }
-
-    private func derivedPaneEvents(
-        from subscriber: RecordingSubscriber<RuntimeEnvelope>
-    ) async -> [(source: EventSource, seq: UInt64, activity: TerminalSettledActivity)] {
-        await derivedTerminalActivityEvents(from: subscriber).compactMap { record in
-            guard case .unseenActivitySettled(let activity) = record.event else {
-                return nil
-            }
-            return (source: record.source, seq: record.seq, activity: activity)
-        }
-    }
-
-    private func derivedTerminalActivityEvents(
-        from subscriber: RecordingSubscriber<RuntimeEnvelope>
-    ) async -> [(source: EventSource, seq: UInt64, event: TerminalActivityEvent)] {
-        RuntimeEnvelopeHarness.paneEvents(from: await subscriber.snapshot()).compactMap { record in
-            guard case .terminalActivity(let event) = record.event else { return nil }
-            return (source: record.source, seq: record.seq, event: event)
+            let noAdditionalSettles = await events.mark(paneId.uuid)
+            let stopScope = try await facts.stopRouter(router)
+            _ = try await events.expectNoUnseenActivityThroughStoppedProducer(
+                paneID: paneId.uuid, from: noAdditionalSettles, stopScope: stopScope)
+            try await deadlines.finish()
+            try await events.finish()
+            try await facts.finish()
+        } catch {
+            await router.stop()
+            try? await deadlines.finish()
+            try? await events.finish()
+            try? await facts.finish()
+            throw error
         }
     }
 
@@ -314,22 +339,4 @@ struct TerminalActivityDerivedEventTests {
         )
     }
 
-    private func waitForLatestRows(
-        _ latestRows: Int,
-        paneId: PaneId,
-        atom: TerminalActivityAtom
-    ) async {
-        await assertEventuallyMain("terminal activity atom should observe latest rows") {
-            atom.snapshot(for: paneId.uuid)?.scrollbarState?.total == latestRows
-        }
-    }
-
-    private func waitForLatestPendingDebounce(
-        clock: TestPushClock,
-        initialGeneration: Int,
-        eventCount: Int
-    ) async {
-        let latestPendingGeneration = initialGeneration + eventCount - 1
-        await clock.waitForPendingSleepGeneration(latestPendingGeneration)
-    }
 }

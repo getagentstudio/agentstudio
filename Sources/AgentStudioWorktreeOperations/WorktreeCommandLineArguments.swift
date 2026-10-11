@@ -60,6 +60,27 @@ package enum WorktreeCommandLineArgumentError: Error, Equatable, Sendable {
 }
 
 package enum WorktreeCommandLineArgumentParser {
+    package static let pathOptions: Set<String> = ["--repo", "--from", "--archive-to"]
+    package static let valueOptions: Set<String> = ["--from-branch"]
+    private static let commonFlags: Set<String> = ["--json", "--no-fetch"]
+    private static let creationFlags: Set<String> = ["-c", "--create", "--changes-only", "--no-fork"]
+    private static let removalFlags: Set<String> = [
+        "-f", "--force", "-D", "--no-delete-branch", "--archive-to-main", "--discard-tmp",
+        "--remove-stale-lock", "--dry-run",
+    ]
+    fileprivate static let flagOptions: Set<String> =
+        commonFlags.union(creationFlags).union(removalFlags).union(["--apply"])
+
+    package static func optionNames(for command: String) throws -> Set<String> {
+        switch command {
+        case "new": commonFlags.union(creationFlags).union(["--repo", "--from"]).union(valueOptions)
+        case "list": commonFlags.union(["--repo"])
+        case "remove": commonFlags.union(removalFlags).union(["--repo", "--archive-to"])
+        case "prune": commonFlags.union(["--repo", "--archive-to", "--archive-to-main", "--apply"])
+        default: throw WorktreeCommandLineArgumentError.unknownSubcommand
+        }
+    }
+
     package static func parse(
         _ arguments: [String],
         currentDirectory: URL
@@ -68,21 +89,9 @@ package enum WorktreeCommandLineArgumentParser {
             throw WorktreeCommandLineArgumentError.missingSubcommand
         }
 
-        let allowedPathOptions: Set<String>
-        let allowedValueOptions: Set<String>
-        switch subcommand {
-        case "new":
-            allowedPathOptions = ["--repo", "--from"]
-            allowedValueOptions = ["--from-branch"]
-        case "list":
-            allowedPathOptions = ["--repo"]
-            allowedValueOptions = []
-        case "remove", "prune":
-            allowedPathOptions = ["--repo", "--archive-to"]
-            allowedValueOptions = []
-        default:
-            throw WorktreeCommandLineArgumentError.unknownSubcommand
-        }
+        let allowedOptions = try optionNames(for: subcommand)
+        let allowedPathOptions = allowedOptions.intersection(pathOptions)
+        let allowedValueOptions = allowedOptions.intersection(valueOptions)
 
         let parsedArguments = try parseArguments(
             arguments.dropFirst(),
@@ -322,6 +331,10 @@ private struct ParsedArgumentAccumulator {
     private var seenFlags: Set<String> = []
 
     mutating func consumeFlag(_ argument: String, subcommand: String) throws -> Bool {
+        guard WorktreeCommandLineArgumentParser.flagOptions.contains(argument) else { return false }
+        guard try WorktreeCommandLineArgumentParser.optionNames(for: subcommand).contains(argument) else {
+            throw WorktreeCommandLineArgumentError.unsupportedOption
+        }
         if argument == "--json" {
             guard seenFlags.insert(argument).inserted else {
                 throw WorktreeCommandLineArgumentError.duplicateOption(argument)
@@ -330,9 +343,6 @@ private struct ParsedArgumentAccumulator {
             return true
         }
         if argument == "-c" || argument == "--create" {
-            guard subcommand == "new" else {
-                throw WorktreeCommandLineArgumentError.unsupportedOption
-            }
             guard seenFlags.insert("-c").inserted else {
                 throw WorktreeCommandLineArgumentError.duplicateOption(argument)
             }
@@ -340,9 +350,6 @@ private struct ParsedArgumentAccumulator {
             return true
         }
         if argument == "--changes-only" || argument == "--no-fork" {
-            guard subcommand == "new" else {
-                throw WorktreeCommandLineArgumentError.unsupportedOption
-            }
             guard seenFlags.insert(argument).inserted else {
                 throw WorktreeCommandLineArgumentError.duplicateOption(argument)
             }
@@ -358,18 +365,11 @@ private struct ParsedArgumentAccumulator {
             return true
         }
         if argument == "--apply" {
-            guard subcommand == "prune" else {
-                throw WorktreeCommandLineArgumentError.unsupportedOption
-            }
             guard seenFlags.insert(argument).inserted else {
                 throw WorktreeCommandLineArgumentError.duplicateOption(argument)
             }
             apply = true
             return true
-        }
-        guard Self.removeFlags.contains(argument) else { return false }
-        guard subcommand == "remove" || (subcommand == "prune" && argument == "--archive-to-main") else {
-            throw WorktreeCommandLineArgumentError.unsupportedOption
         }
         let flagIdentity = argument == "--force" ? "-f" : argument
         guard seenFlags.insert(flagIdentity).inserted else {
@@ -399,7 +399,7 @@ private struct ParsedArgumentAccumulator {
         currentDirectory: URL,
         index: inout ArraySlice<String>.Index
     ) throws -> Bool {
-        guard Self.pathOptions.contains(argument) else { return false }
+        guard WorktreeCommandLineArgumentParser.pathOptions.contains(argument) else { return false }
         guard allowedPathOptions.contains(argument) else {
             throw WorktreeCommandLineArgumentError.unsupportedOption
         }
@@ -440,7 +440,7 @@ private struct ParsedArgumentAccumulator {
         allowedValueOptions: Set<String>,
         index: inout ArraySlice<String>.Index
     ) throws -> Bool {
-        guard Self.valueOptions.contains(argument) else { return false }
+        guard WorktreeCommandLineArgumentParser.valueOptions.contains(argument) else { return false }
         guard allowedValueOptions.contains(argument) else {
             throw WorktreeCommandLineArgumentError.unsupportedOption
         }
@@ -493,11 +493,4 @@ private struct ParsedArgumentAccumulator {
             apply: apply
         )
     }
-
-    private static let removeFlags: Set<String> = [
-        "-f", "--force", "-D", "--no-delete-branch", "--archive-to-main", "--discard-tmp",
-        "--remove-stale-lock", "--dry-run",
-    ]
-    private static let pathOptions: Set<String> = ["--repo", "--from", "--archive-to"]
-    private static let valueOptions: Set<String> = ["--from-branch"]
 }

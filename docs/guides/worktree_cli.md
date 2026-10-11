@@ -62,6 +62,8 @@ Helpers path:
 ASW="/Applications/AgentStudio.app/Contents/Helpers/agentstudio"   # production 0.0.106+
 ```
 
+Run `"$ASW" worktree --help` or `"$ASW" worktree <command> --help` for the same information.
+
 The Beta helper at `/Applications/AgentStudio Beta.app/Contents/Helpers/agentstudio`
 has the same verbs once your Beta includes 0.0.106's changes. Prefer the
 production helper.

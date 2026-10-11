@@ -117,14 +117,14 @@ extension WatchedFolderScanScheduler {
             recordStaleScanRunDrop(sourceID: sourceID)
             return
         }
-        if awaiting.executorRequest == executorRequest {
+        if awaiting.executorRequest == executorRequest, let factSink {
             let settlement: WatchedFolderScanValidationSettlement
             switch executorCompletion {
             case .finished: settlement = .finished
             case .timedOut: settlement = .timedOut
             case .cancelled: settlement = .cancelled
             }
-            factSink?(awaiting.validationScope, .validationSettled(settlement))
+            factSink(awaiting.validationScope, .validationSettled(settlement))
         }
         guard awaiting.executorRequest == executorRequest,
             awaiting.scannerRequest.requestID.rawValue == executorRequest.requestID.rawValue,
