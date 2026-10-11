@@ -180,6 +180,7 @@ package final class DarwinSharedExactItemObserverRegistry: @unchecked Sendable {
         let streamLifetime: any DarwinSharedExactItemStreamLifetime
         var exactPathsByWorktreeId: [UUID: Set<String>]
         var worktreeIdsByExactPath: [String: Set<UUID>]
+        var exactPathIndex = DarwinFSEventWatchedPathIndex(normalizedPaths: [])
         var latestEventId: FSEventStreamEventId?
         var latestActivitySettledEventId: FSEventStreamEventId?
         var pendingActivityDeliveryCount: Int
@@ -704,8 +705,8 @@ package final class DarwinSharedExactItemObserverRegistry: @unchecked Sendable {
             if rawEvent.flags & Self.uncertaintyFlags != 0 || cursorRegressed {
                 result.uncertainWorktreeIds.formUnion(dependentWorktreeIds)
             } else {
-                for (exactPath, worktreeIds) in observer.worktreeIdsByExactPath
-                where exactPath.hasPrefix(normalizedPath + "/") {
+                for exactPath in observer.exactPathIndex.strictDescendants(of: normalizedPath) {
+                    let worktreeIds = observer.worktreeIdsByExactPath[exactPath] ?? []
                     for worktreeId in worktreeIds where bindingValidationByWorktreeId[worktreeId]?.isCurrent() == true {
                         ancestorItemsByWorktreeId[worktreeId, default: []].insert(exactPath)
                         ancestorEventIdByWorktreeId[worktreeId] = max(
@@ -784,6 +785,7 @@ package final class DarwinSharedExactItemObserverRegistry: @unchecked Sendable {
 
         for parentKey in allParentKeys {
             guard var observer = observerByParent[parentKey] else { continue }
+            let previousExactPathKeys = Set(observer.worktreeIdsByExactPath.keys)
             observer.unresolvedAncestorEntriesByWorktreeId.removeValue(forKey: worktreeId)
             let previousExactPaths = previousExactItemsByParent[parentKey] ?? []
             let desiredExactPaths = desiredExactItemsByParent[parentKey] ?? []
@@ -807,6 +809,11 @@ package final class DarwinSharedExactItemObserverRegistry: @unchecked Sendable {
                 observerByParent.removeValue(forKey: parentKey)
                 retiredStreamLifetimes.append(observer.streamLifetime)
             } else {
+                let exactPathKeys = Set(observer.worktreeIdsByExactPath.keys)
+                if exactPathKeys != previousExactPathKeys {
+                    // Bindings can change paths without replacing the parent stream.
+                    observer.exactPathIndex = DarwinFSEventWatchedPathIndex(normalizedPaths: Array(exactPathKeys))
+                }
                 observerByParent[parentKey] = observer
             }
         }

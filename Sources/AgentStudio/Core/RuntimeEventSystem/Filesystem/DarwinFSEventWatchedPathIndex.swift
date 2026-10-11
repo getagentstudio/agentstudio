@@ -52,6 +52,18 @@ struct DarwinFSEventWatchedPathIndex: Sendable {
         lookup(normalizedPath, includingDescendants: true)
     }
 
+    /// Matches the exact-item observer's literal `path + "/"` prefix rule.
+    func strictDescendants(of normalizedPath: String) -> Set<String> {
+        if normalizedPath == "/" {
+            // Unlike component containment, the literal root prefix is '//'.
+            guard let absoluteNodeIndex = pathNodes[0].children[""],
+                let doubleSeparatorNodeIndex = pathNodes[absoluteNodeIndex].children[""]
+            else { return [] }
+            return pathNodes[doubleSeparatorNodeIndex].descendantPaths
+        }
+        return descendants(of: normalizedPath).subtracting([normalizedPath])
+    }
+
     func containsAncestor(of normalizedPath: String) -> Bool {
         if normalizedPath.isEmpty {
             guard let absoluteNodeIndex = pathNodes[0].children[""] else { return false }
