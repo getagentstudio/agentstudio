@@ -5,12 +5,11 @@ import Testing
 @MainActor
 @Suite("Eager derived atom drain", .serialized)
 struct EagerDerivedAtomDrainTests {
-    @Test("stop and drain waits for detached completion bookkeeping")
-    func stopAndDrainWaitsForDetachedCompletionBookkeeping() async {
+    @Test("stop and drain clears a released cancelled projection")
+    func stopAndDrainClearsReleasedCancelledProjection() async {
         var gate: EagerDerivedAtomProjectionGate? = EagerDerivedAtomProjectionGate()
         weak let retainedGate = gate
         let cancellationSignal = EagerDerivedAtomTestSignal()
-        let drainCompleted = EagerDerivedAtomTestSignal()
         let completionRecorder = EagerDerivedAtomCompletionRecorder()
         let atom = makeEagerDerivedAtomTestNode(completionRecorder: completionRecorder)
 
@@ -33,13 +32,10 @@ struct EagerDerivedAtomDrainTests {
         #expect(atom.hasUnsettledProjectionTasks)
 
         async let drain: Void = atom.stopAndDrain()
-        #expect(!drainCompleted.isSignaled)
         #expect(retainedGate != nil)
         retainedGate?.release()
         await drain
-        drainCompleted.signal()
 
-        #expect(drainCompleted.isSignaled)
         #expect(!atom.hasUnsettledProjectionTasks)
         #expect(atom.value == nil)
         #expect(retainedGate == nil)
