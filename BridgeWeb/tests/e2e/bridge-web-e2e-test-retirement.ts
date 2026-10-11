@@ -66,18 +66,25 @@ export async function runBridgeWebE2ETestBody(
 export async function finishBridgeWebE2ETest(taskId: string, failed: boolean): Promise<void> {
 	const retirement = retirements.get(taskId);
 	if (retirement === undefined) return;
+	const joined = new Set<BridgeWebTestLaunch>();
+	const errors: unknown[] = [];
 	const disposeLaunches = async (): Promise<void> => {
-		const results = await Promise.allSettled(
-			[...retirement.launches]
-				.filter(([, created]) => retirement.signal.aborted || failed || created)
-				.map(async ([launch]): Promise<void> => {
+		// Each pass joins concrete new registrations, including work caused by a
+		// retiring launch. Keep this live map until every eligible launch is joined.
+		for (;;) {
+			const pending = [...retirement.launches].filter(
+				([launch, created]) =>
+					!joined.has(launch) && (retirement.signal.aborted || failed || created),
+			);
+			if (pending.length === 0) return;
+			for (const [launch] of pending) joined.add(launch);
+			const results = await Promise.allSettled(
+				pending.map(async ([launch]): Promise<void> => {
 					await launch.dispose();
 				}),
-		);
-		const errors = results.flatMap((result) =>
-			result.status === 'rejected' ? [result.reason] : [],
-		);
-		if (errors.length > 0) throw new AggregateError(errors, 'E2E owned launch retirement failed');
+			);
+			for (const result of results) if (result.status === 'rejected') errors.push(result.reason);
+		}
 	};
 	try {
 		// Abort disposal starts before joining the body: child/page/client closure
@@ -90,6 +97,10 @@ export async function finishBridgeWebE2ETest(taskId: string, failed: boolean): P
 		await earlyDisposal?.value();
 		// Include launches acquired by a resumed, already-aborted body.
 		await disposeLaunches();
+		if (errors.length > 0) {
+			if (bodyOutcome.kind === 'failed') errors.push(bodyOutcome.error);
+			throw new AggregateError(errors, 'E2E owned launch retirement failed');
+		}
 		if (bodyOutcome.kind === 'failed' && retirement.signal.aborted) throw bodyOutcome.error;
 	} finally {
 		retirement.removeAbortListener();
