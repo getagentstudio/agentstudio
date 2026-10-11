@@ -1,5 +1,6 @@
 import AgentStudioTestHarness
 import Foundation
+import Testing
 
 @testable import AgentStudioBridge
 
@@ -34,7 +35,8 @@ struct BridgePaneReviewBuildAdmissionTrace {
 
     func expectNoAdmission(
         for input: BridgePaneReviewBuildAdmissionInput,
-        from opening: OpeningPosition<BridgePaneReviewBuildAdmissionScope>
+        from opening: OpeningPosition<BridgePaneReviewBuildAdmissionScope>,
+        sourceLocation: SourceLocation = #_sourceLocation
     ) async -> Bool {
         do {
             try await recorder.expectNone(
@@ -47,6 +49,7 @@ struct BridgePaneReviewBuildAdmissionTrace {
             )
             return true
         } catch {
+            Issue.record(error, sourceLocation: sourceLocation)
             return false
         }
     }

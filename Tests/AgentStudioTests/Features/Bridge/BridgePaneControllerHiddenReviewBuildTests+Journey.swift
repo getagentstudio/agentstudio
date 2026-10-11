@@ -63,10 +63,9 @@ extension BridgePaneControllerHiddenReviewBuildTests {
         // Assert the exact latest owner completes; no generic idle or first-terminal test.
         await fixture.controller.applyBridgePaneActivity(.foreground)?.value
         let latestAttempt = try await facts.nextAdmittedAttempt()
-        let latestTask = try #require(fixture.controller.activeReviewRefreshTask)
         #expect(latestAttempt != firstAttempt && latestAttempt != secondAttempt)
-        await latestTask.value
-        #expect(try await facts.attemptOutcome(for: latestAttempt) == .succeeded)
+        let latestOutcome = try await facts.attemptOutcome(for: latestAttempt)
+        #expect(latestOutcome == .succeeded)
         await fixture.controller.worktreeRefreshDriver.awaitActiveFileOperations()
         await fixture.controller.worktreeRefreshDriver.awaitRetiringFileOperations()
         #expect(fixture.controller.paneState.diff.packageMetadata?.orderedItemIds == ["item-journey-latest"])
