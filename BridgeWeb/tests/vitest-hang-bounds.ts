@@ -5,6 +5,10 @@
 // other value remains the established bound for its suite.
 export const unitTestTimeoutMilliseconds = 120_000;
 
+// Vitest's own default hook bound, declared so unit teardown hooks have a named
+// shared bound rather than an implicit library default.
+export const unitHookTimeoutMilliseconds = 10_000;
+
 export const nodeIntegrationTestTimeoutMilliseconds = 120_000;
 
 export const browserIntegrationTestTimeoutMilliseconds = 60_000;

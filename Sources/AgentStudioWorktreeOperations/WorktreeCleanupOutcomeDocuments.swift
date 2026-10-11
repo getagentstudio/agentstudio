@@ -9,6 +9,8 @@ package struct WorktreeCleanupLeftoverDocument: Encodable, Sendable, Equatable {
     package let kind: String
     package let location: String
     package let base: String
+    package let fromCommit: String?
+    package let toCommit: String?
 }
 
 package enum WorktreeCleanupLeftoversFormatter {
@@ -23,7 +25,8 @@ package enum WorktreeCleanupLeftoversFormatter {
         case .incomplete(let items):
             guard !items.isEmpty else { return "incomplete" }
             let descriptions = items.map { item in
-                "\(item.kind.rawValue) \(item.location) (\(humanBase(item.base)))"
+                let move = item.branchMove.map { " from \($0.fromCommit) to \($0.toCommit)" } ?? ""
+                return "\(item.kind.rawValue) \(item.location)\(move) (\(humanBase(item.base)))"
             }
             return "incomplete [\(descriptions.joined(separator: "; "))]"
         }
@@ -44,7 +47,9 @@ package enum WorktreeCleanupLeftoversFormatter {
                     WorktreeCleanupLeftoverDocument(
                         kind: $0.kind.rawValue,
                         location: $0.location,
-                        base: jsonBase($0.base)
+                        base: jsonBase($0.base),
+                        fromCommit: $0.branchMove?.fromCommit,
+                        toCommit: $0.branchMove?.toCommit
                     )
                 }
             )

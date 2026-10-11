@@ -303,14 +303,13 @@ struct SwiftLaneResourceWrapperTests {
         defer { fixture.remove() }
         let timer = try fixture.makeTimer()
         let release = fixture.root.appending(path: "release.fifo")
-        let arm = fixture.root.appending(path: "armed")
         let result = try await fixture.run(
-            "/usr/bin/perl -e '\u{0024}SIG{TERM}=q{IGNORE}; open(my \u{0024}armed,q{>},shift) or die \u{0024}!; "
-                + "close(\u{0024}armed); print qq{PARKED\\n}; open(my \u{0024}release,q{<},shift) or die \u{0024}!; <\u{0024}release>;' "
-                + "'\(arm.path)' '\(release.path)'",
-            setup: "SWIFT_TEST_RESOURCE_TIMER='\(timer.path)'; LANE_WATCHDOG_ARM_PATH='\(arm.path)'; "
+            "/usr/bin/perl -e '\u{0024}|=1; \u{0024}SIG{TERM}=q{IGNORE}; print qq{PARKED\\n}; "
+                + "print qq{\(laneWatchdogArmLine)\\n}; open(my \u{0024}release,q{<},shift) or die \u{0024}!; <\u{0024}release>;' "
+                + "'\(release.path)'",
+            setup: "SWIFT_TEST_RESOURCE_TIMER='\(timer.path)'; "
                 + "mkfifo '\(release.path)'; swift_test_watchdog_timeout_status() { return 1; }; ",
-            innerWatchdog: .armed)
+            innerWatchdog: .armedByFixture)
         #expect(result.output.contains("STATUS=124"))
         #expect(result.record["timed_out"] as? Bool == true)
         let timerPID = try String(contentsOf: fixture.root.appending(path: "timer.pid"), encoding: .utf8)
@@ -403,7 +402,7 @@ struct InvocationReceiptFixture {
     }
 
     /// Runs `command` under the real lane runner, with the lane launchers' inner
-    /// watchdog default; a timeout proof passes `.armed`.
+    /// watchdog default; a timeout proof passes `.armed` or `.armedByFixture`.
     func run(
         _ command: String, eventStream: Bool = false, setup: String = "", helper: URL? = nil,
         innerWatchdog: LaneFixtureInnerWatchdog = .unarmed

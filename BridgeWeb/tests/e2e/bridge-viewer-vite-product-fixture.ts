@@ -533,23 +533,21 @@ export async function startBridgeViewerOwnedViteProductServer(
 				backend: Awaited<ReturnType<typeof bridgeDevelopmentServer.stop>> | null;
 				vite: BridgeViewerOwnedViteProductServerCleanup | null;
 			} = { backend: null, vite: null };
-			await runAllOwnedCleanupOperations({
-				operations: [
-					{
-						name: 'Vite',
-						run: async (): Promise<void> => {
-							cleanupResults.vite = await stopOwnedViteServer({ child, exitPromise });
-						},
+			await stopBridgeViewerOwnedViteProductProcesses([
+				{
+					name: 'Vite',
+					run: async (): Promise<void> => {
+						cleanupResults.vite = await stopOwnedViteServer({ child, exitPromise });
 					},
-					{
-						name: 'Swift development backend',
-						run: async (): Promise<void> => {
-							cleanupResults.backend = await bridgeDevelopmentServer.stop();
-						},
+				},
+				{
+					name: 'Swift development backend',
+					run: async (): Promise<void> => {
+						cleanupResults.backend = await bridgeDevelopmentServer.stop();
 					},
-					{ name: 'telemetry receiver', run: telemetryReceiver.stop },
-				],
-			});
+				},
+				{ name: 'telemetry receiver', run: telemetryReceiver.stop },
+			]);
 			if (cleanupResults.vite === null || cleanupResults.backend === null) {
 				throw new Error('Owned Bridge product server cleanup did not return process facts.');
 			}
@@ -579,6 +577,30 @@ export async function startBridgeViewerOwnedViteProductServer(
 		stop,
 		version: /VITE v(?<version>\d+\.\d+\.\d+)/u.exec(readinessOutput)?.groups?.['version'] ?? null,
 	};
+}
+
+/** No owned process may wait for another process's stop to finish before receiving stop. */
+export async function stopBridgeViewerOwnedViteProductProcesses(
+	operations: readonly { readonly name: string; readonly run: () => Promise<void> }[],
+): Promise<void> {
+	const results = await Promise.allSettled(
+		operations.map(async (operation): Promise<void> => {
+			try {
+				await operation.run();
+			} catch (error: unknown) {
+				throw new Error(`Owned product server cleanup failed: ${operation.name}.`, {
+					cause: error,
+				});
+			}
+		}),
+	);
+	const failures = results.filter((result) => result.status === 'rejected');
+	if (failures.length > 0) {
+		throw new AggregateError(
+			failures.map((result): unknown => result.reason),
+			'Owned product server cleanup failed.',
+		);
+	}
 }
 
 async function writeFixtureFiles(props: {

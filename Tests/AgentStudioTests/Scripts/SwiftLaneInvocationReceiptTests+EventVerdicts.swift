@@ -237,14 +237,12 @@ extension SwiftLaneInvocationReceiptTests {
         let fixture = try InvocationReceiptFixture()
         defer { fixture.remove() }
         try writeCapturedInvocation(fixture, selecting: "recordsFailure()", closingRun: false)
-        let armedPath = fixture.root.appending(path: "armed").path
         let releasePath = fixture.root.appending(path: "release.fifo").path
         let result = try await fixture.run(
-            "/bin/bash -c 'cp \"$1\" \"${@: -1}\"; : > \"$2\"; read line < \"$3\"' fixture '\(fixture.events.path)' '\(armedPath)' '\(releasePath)' swiftpm-testing-helper",
+            "/bin/bash -c 'cp \"$1\" \"${@: -1}\"; echo \"\(laneWatchdogArmLine)\"; read line < \"$2\"' fixture '\(fixture.events.path)' '\(releasePath)' swiftpm-testing-helper",
             eventStream: true,
-            setup:
-                "mkfifo '\(releasePath)'; LANE_WATCHDOG_ARM_PATH='\(armedPath)'; swift_test_watchdog_timeout_status() { return 1; }; ",
-            innerWatchdog: .armed
+            setup: "mkfifo '\(releasePath)'; swift_test_watchdog_timeout_status() { return 1; }; ",
+            innerWatchdog: .armedByFixture
         )
         #expect(result.output.contains("STATUS=124"), Comment(rawValue: result.output))
         #expect(

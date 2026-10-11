@@ -134,7 +134,7 @@ package final class BridgePaneController {
     let telemetryScopeGate: BridgeTelemetryScopeGate
     let telemetryRecorder: (any BridgePerformanceTraceRecording)?
     let traceContextFactory: BridgeTraceContextFactory
-    let reviewBuildAdmissionFactSink: BridgePaneReviewBuildAdmissionFactSink
+    let reviewBuildAdmissionFactSink: BridgePaneReviewBuildAdmissionFactSink?
     var lastReviewPackageTraceContext: BridgeTraceContext?
 
     // MARK: - Init
@@ -177,7 +177,7 @@ package final class BridgePaneController {
             (@MainActor @Sendable (WorkspaceReviewContributionTarget) -> BridgePaneStateMutationResult)? = nil,
         contributionTargetCommit:
             (@MainActor @Sendable (WorkspaceReviewContributionTarget) -> BridgePaneStateMutationResult)? = nil,
-        reviewBuildAdmissionFactSink: @escaping BridgePaneReviewBuildAdmissionFactSink = { _, _ in },
+        reviewBuildAdmissionFactSink: BridgePaneReviewBuildAdmissionFactSink? = nil,
         pageCommandRunner: (@MainActor @Sendable (BridgePageCommand, UUID) -> Void)? = nil
     ) {
         (self.paneId, self.bridgePaneState) = (paneId, state)

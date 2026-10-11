@@ -19,6 +19,13 @@ SWIFT_TEST_HELPERS_SOURCE_PATH="${BASH_SOURCE[0]:-}"
 # AsyncProcess.swift:223-245 at the swift-6.3.3-RELEASE tag.
 SWIFT_TEST_SIGINT_CANCELLATION_GRACE_SECONDS=35
 
+# With LANE_WATCHDOG_ARM_REQUIRED=1 (hang-test fixtures only), the inactivity
+# watchdog may time a command out only once the command has printed this exact,
+# newline-terminated line. It travels the same pipe as the command's earlier
+# output, so when tee has written it to the output file, every line printed
+# before it is already there for the timeout report.
+SWIFT_TEST_WATCHDOG_ARM_LINE='[agentstudio-lane-watchdog] armed'
+
 # shellcheck source=scripts/xcb-helpers.sh
 source "$(dirname "${BASH_SOURCE[0]}")/xcb-helpers.sh"
 # shellcheck source=scripts/swift-package-sandbox.sh
@@ -126,6 +133,46 @@ SWIFT_TEST_WEBKIT_PROCESS_CONCURRENCY=1
 
 swift_test_webkit_process_concurrency() {
   echo "$SWIFT_TEST_WEBKIT_PROCESS_CONCURRENCY"
+}
+
+# Console lock can suspend WebContent without producing a test issue. Read it
+# at the invocation boundary and again before timeout diagnostics, since the
+# owner's desktop can lock while a lane is running. Only the boolean is kept.
+swift_test_console_lock_state() {
+  local console_properties
+  if ! console_properties="$(ioreg -n Root -d1 2>/dev/null)"; then
+    echo unavailable
+    return 0
+  fi
+  printf '%s\n' "$console_properties" | /usr/bin/awk '
+    {
+      remaining = $0
+      while (match(remaining, /"IOConsoleLocked"[[:space:]]*=[[:space:]]*(Yes|No)/)) {
+        state = substr(remaining, RSTART, RLENGTH)
+        sub(/^.*=[[:space:]]*/, "", state)
+        if (observed != "" && observed != state) conflicting = 1
+        observed = state
+        remaining = substr(remaining, RSTART + RLENGTH)
+      }
+    }
+    END {
+      if (observed == "" || conflicting) print "unavailable"
+      else print observed
+    }
+  ' || echo unavailable
+  return 0
+}
+
+swift_test_report_webkit_console_lock() {
+  local label="$1"
+  local phase="$2"
+  case "$label" in
+    *WebKitSerializedTests*) ;;
+    *) return 0 ;;
+  esac
+  printf '[%s] lane-report console_locked=%s phase=%s label=%s\n' \
+    "$LOG_PREFIX" "$(swift_test_console_lock_state)" "$phase" "$label"
+  return 0
 }
 
 # Largest number of test cases RUNNING at once, from Swift Testing's JSON event
@@ -1020,6 +1067,7 @@ fast|SwiftBuildSlotScriptTests|concurrent
 large|SwiftLaneHangEvidenceTests|concurrent
 large|SwiftLaneHelperCancellationTests|concurrent
 large|SwiftLaneIsolationListGateTests|concurrent
+large|SwiftLaneWebKitSuiteListGateTests|concurrent
 large|SwiftLaneReceiptTests|concurrent
 large|SwiftLaneReapingTests|concurrent
 large|SwiftLaneOutputRelayTests|concurrent
@@ -1037,6 +1085,7 @@ large|WatchedFolderPublicationHoldIntegrationTests|concurrent
 fast|WebInteractionManagementScriptTests|concurrent
 webkit|WebKitSerializedTests|serial
 webkit|WebKitSerializedTests/BridgeContentWorldIsolationTests|serial
+webkit|WebKitSerializedTests/BridgeDocumentWaitTeardownContractTests|serial
 webkit|WebKitSerializedTests/BridgeTransportIntegrationTests|serial
 webkit|WebKitSerializedTests/BridgeWebKitSpikeTests|serial
 webkit|WebKitSerializedTests/WorkspaceBridgeConstructionIntegrationTests|serial
@@ -1503,6 +1552,9 @@ aggregate_serial_non_webkit_suite_filters() {
     printf '%s:%s\n' \
       'Tests/AgentStudioAppIPCTests/AppIPCCLIStoreReadThroughTests.swift' \
       'AppIPCCLIStoreReadThroughTests'
+    printf '%s:%s\n' \
+      'Tests/AgentStudioAppIPCTests/AppIPCCLICallDeadlineTests.swift' \
+      'AppIPCCLICallDeadlineTests'
     printf '%s:%s\n' \
       'Tests/AgentStudioAppIPCTests/AppIPCErrorCorrectionTests.swift' \
       'AppIPCErrorCorrectionTests'
@@ -2177,17 +2229,21 @@ webkit_suite_filters() {
 WebKitSerializedTests/BridgePaneControllerTests
 WebKitSerializedTests/BridgePaneControllerContentAuthorityTests
 WebKitSerializedTests/BridgePaneControllerInitialLoadTests
+WebKitSerializedTests/BridgePaneControllerNoSourceTests
 WebKitSerializedTests/BridgeSchemeHandlerSpikeTests
 WebKitSerializedTests/BridgeContentWorldIsolationTests
+WebKitSerializedTests/BridgeDocumentWaitTeardownContractTests
 WebKitSerializedTests/BridgePaneControllerIPCProjectionTests
 WebKitSerializedTests/BridgePaneControllerRealGitReviewLoadTests
 WebKitSerializedTests/BridgePaneControllerTelemetryTests
 WebKitSerializedTests/BridgePaneProductActiveViewerModeTests
 WebKitSerializedTests/BridgePaneProductActiveViewerModeTelemetryTests
+WebKitSerializedTests/BridgePanePageCommandTests
 WebKitSerializedTests/BridgeURLSchemeEnvelopeCapacityTests
 WebKitSerializedTests/BridgeProductRealGitFileAndReviewWebKitTests
 WebKitSerializedTests/BridgeReviewComparisonPresentationTests
 WebKitSerializedTests/BridgeReviewContentStreamTransportTests
+WebKitSerializedTests/BridgeFailingReviewMetadataSourceTests
 WebKitSerializedTests/WorkspaceSurfaceCoordinatorViewFactoryTests
 WebKitSerializedTests/WorkspaceBridgeGitReadActivityOrderingTests
 WebKitSerializedTests/WorkspaceBridgePaneRefreshIntegrationTests
@@ -2204,6 +2260,7 @@ WebKitSerializedTests/WorkspaceActionExecutorWebKitTests
 WebKitSerializedTests/BridgePaneControllerProductBootstrapDeliveryTests
 WebKitSerializedTests/BridgePaneControllerBootstrapSupersessionTests
 WebKitSerializedTests/ReviewNativeProgressDeadlineTests
+WebKitSerializedTests/ReviewCatchUpSupersessionTests
 WebKitSerializedTests/BridgeTelemetryBootstrapDeliveryTests
 WebKitSerializedTests/BridgeProductBootstrapFailureReplyTests
 WebKitSerializedTests/BridgeProductInstallationIngressTests
@@ -2261,6 +2318,26 @@ swift_test_watchdog_timeout_status() {
     return 124
   fi
   return 0
+}
+
+# Succeeds when the inactivity watchdog may time the command out. A lane leaves
+# LANE_WATCHDOG_ARM_REQUIRED unset and is armed from the start. With it set to 1,
+# the command arms the watchdog by printing SWIFT_TEST_WATCHDOG_ARM_LINE as a
+# whole line; a longer line that only mentions it does not arm. Only a
+# newline-terminated record counts: an unterminated last line may still be
+# growing into a longer one.
+swift_test_watchdog_is_armed() {
+  local output_file="$1"
+
+  [ "${LANE_WATCHDOG_ARM_REQUIRED:-}" = "1" ] || return 0
+  /usr/bin/perl -e '
+    my ($arm_line, $output_path) = @ARGV;
+    open(my $output, "<", $output_path) or exit 1;
+    while (my $record = <$output>) {
+      exit 0 if $record eq "$arm_line\n";
+    }
+    exit 1;
+  ' "$SWIFT_TEST_WATCHDOG_ARM_LINE" "$output_file" 2>/dev/null
 }
 
 # Epoch milliseconds share a clock domain across the wrapper and its child.
@@ -2617,12 +2694,15 @@ swift_test_run_with_timeout_body() {
   shift
 
   echo "[$LOG_PREFIX] >>> $label (inactivity-timeout=${timeout_seconds}s)"
+  swift_test_report_webkit_console_lock "$label" start
   local start_epoch
   start_epoch=$(date +%s)
   local last_heartbeat="$start_epoch"
   local last_progress_epoch="$start_epoch"
   local last_output_size=0
   local watchdog_state
+  local watchdog_armed=0
+  local arm_checked_output_size=unchecked
   local timed_out=0
 
   local xcb_pipe
@@ -2726,8 +2806,16 @@ swift_test_run_with_timeout_body() {
     read -r last_output_size last_progress_epoch <<<"$watchdog_state"
     local inactive_seconds=$((now_epoch - last_progress_epoch))
 
-    # Hang tests arm the watchdog only after their child is parked.
-    if [ -z "${LANE_WATCHDOG_ARM_PATH:-}" ] || [ -e "$LANE_WATCHDOG_ARM_PATH" ]; then
+    # Hang tests arm the watchdog from their own output once their child is
+    # parked. The arm line can only arrive by growing the output file, so the
+    # file is searched again only when it has grown, and never once armed.
+    if [ "$watchdog_armed" -eq 0 ] && [ "$output_size" != "$arm_checked_output_size" ]; then
+      arm_checked_output_size="$output_size"
+      if swift_test_watchdog_is_armed "$output_file"; then
+        watchdog_armed=1
+      fi
+    fi
+    if [ "$watchdog_armed" -eq 1 ]; then
       if ! swift_test_watchdog_timeout_status \
         "$last_progress_epoch" \
         "$now_epoch" \
@@ -2753,6 +2841,7 @@ swift_test_run_with_timeout_body() {
   done
 
   if [ "$timed_out" -eq 1 ]; then
+    swift_test_report_webkit_console_lock "$label" timeout
     echo "[$LOG_PREFIX] ERROR: no output progress from '$label' for ${timeout_seconds}s"
     # Read the stream before terminating anything: this names what was still
     # executing at the timeout, not what survived the kill.

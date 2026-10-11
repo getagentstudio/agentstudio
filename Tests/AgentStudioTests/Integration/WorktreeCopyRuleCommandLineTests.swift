@@ -75,7 +75,7 @@ struct WorktreeCopyRuleCommandLineTests {
             #expect(text.contains("sourceIndexUnreadable"))
             #expect(!text.contains("changesUnknown"))
             #expect(text.contains("retry"))
-            #expect(text.contains("--tracked-only"))
+            #expect(text.contains("--no-fork"))
         }
         try await expectAbsent(repository: repository, destination: destination, branch: branch)
     }
@@ -94,23 +94,32 @@ struct WorktreeCopyRuleCommandLineTests {
             #expect(exit == 1)
             #expect(text.contains("sourceIndexUnsupported"))
             #expect(!text.contains("changesUnknown"))
-            #expect(text.contains("--tracked-only"))
+            #expect(text.contains("--no-fork"))
             #expect(!text.contains("retry"))
         }
         try await expectAbsent(repository: repository, destination: destination, branch: branch)
     }
 
-    @Test("human creation prints all three copy-rule report fields")
-    func humanOutputIncludesCopyRuleReport() async throws {
+    @Test("human creation prints one line and the copy-rule report stays in --json")
+    func humanOutputIsOneLineAndJSONCarriesCopyRuleReport() async throws {
         let repository = try await makeRepository(named: "cli-copy-rules-human", include: ["included/"])
         defer { FilesystemTestGitRepo.destroy(repository) }
         let destination = try siblingDestination(repository: repository, branch: "feature/human")
         defer { try? FileManager.default.removeItem(at: destination) }
         let (exit, text) = try await runNew(repository: repository, branch: "feature/human", json: false)
         #expect(exit == 0)
-        #expect(text.contains("ignoredIncludedPatterns=[included/]"))
-        #expect(text.contains("ignoredExcludedCount=2"))
-        #expect(text.contains("nestedWorktreesSkipped=[]"))
+        #expect(text == "created feature/human at \(destination.path) (copy-on-write)")
+
+        let jsonBranch = "feature/human-json"
+        let jsonDestination = try siblingDestination(repository: repository, branch: jsonBranch)
+        defer { try? FileManager.default.removeItem(at: jsonDestination) }
+        let (jsonExit, json) = try await runNew(repository: repository, branch: jsonBranch, json: true)
+        #expect(jsonExit == 0)
+        let document = try #require(JSONSerialization.jsonObject(with: Data(json.utf8)) as? [String: Any])
+        let materialization = try #require(document["materialization"] as? [String: Any])
+        #expect(materialization["ignoredIncludedPatterns"] as? [String] == ["included/"])
+        #expect(materialization["ignoredExcludedCount"] as? Int == 2)
+        #expect((materialization["nestedWorktreesSkipped"] as? [String])?.isEmpty == true)
     }
 
     private func makeRepository(named name: String, include: [String]?) async throws -> URL {
@@ -137,7 +146,7 @@ struct WorktreeCopyRuleCommandLineTests {
         let probe = WorktreeCreationCommandLineProbe()
         let source = explicitSource ? ["--from", repository.path] : []
         let exit = await WorktreeCommandLine.run(
-            arguments: ["new", branch, "--repo", repository.path] + source + (json ? ["--json"] : []),
+            arguments: ["new", "-c", branch, "--repo", repository.path] + source + (json ? ["--json"] : []),
             currentDirectory: repository,
             output: { probe.appendOutput($0) }, errorOutput: { probe.appendError($0) })
         #expect(probe.errorSnapshot().isEmpty)

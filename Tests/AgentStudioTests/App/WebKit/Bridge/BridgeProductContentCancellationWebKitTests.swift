@@ -15,10 +15,36 @@ extension WebKitSerializedTests.BridgeProductRealGitFileAndReviewWebKitTests {
         let requestBody: String
     }
 
+    /// The command route's reply to the late ACK. The page reads it as text, so an
+    /// accepted ACK's empty 204 body is a named value here instead of a page
+    /// `SyntaxError` from `Response.json()`.
+    private struct LateContentAcknowledgementReply {
+        let statusCode: Int
+        let body: String
+
+        init?(scriptResult: String) {
+            guard let separator = scriptResult.firstIndex(of: ":"),
+                let statusCode = Int(scriptResult[..<separator])
+            else { return nil }
+            self.statusCode = statusCode
+            body = String(scriptResult[scriptResult.index(after: separator)...])
+        }
+
+        var refusalReason: BridgeProductContentAcknowledgementRefusalReason? {
+            (try? JSONDecoder().decode(
+                BridgeProductContentAcknowledgementRefusedResponse.self,
+                from: Data(body.utf8)
+            ))?.reason
+        }
+    }
+
     /// Link 1: the page reader's finite-progress deadline aborts its fetch signal
     /// (bridge-product-transport-content-progress.unit.test.ts). Link 2: this
     /// packaged WebKit fetch uses that signal path and proves an ACK0-parked
-    /// native content producer retires when the fetch is aborted.
+    /// native content producer retires when the fetch is aborted. The late ACK is
+    /// sent only after the claim's finish fact, because the producer retires
+    /// asynchronously after the abort; an ACK that reaches a live admission is
+    /// accepted (TQ65).
     @Test("aborted packaged content fetch retires its ACK0-parked native producer")
     func abortedContentFetchRetiresACK0ParkedProducer() async throws {
         let repoURL = try await FilesystemTestGitRepo.create(named: "bridge-product-content-abort-webkit")
@@ -56,7 +82,8 @@ extension WebKitSerializedTests.BridgeProductRealGitFileAndReviewWebKitTests {
             )
         }
 
-        #expect(run.value == "404:unknownRead")
+        #expect(run.value.statusCode == 404, "late ACK reply body: \(run.value.body)")
+        #expect(run.value.refusalReason == .unknownRead, "late ACK reply body: \(run.value.body)")
         #expect(run.teardownSnapshot.hasZeroResidue)
     }
     private func makeContentAbortRequest(
@@ -134,12 +161,12 @@ extension WebKitSerializedTests.BridgeProductRealGitFileAndReviewWebKitTests {
         controller hostedController: BridgePaneController,
         installation: BridgeProductSessionInstallation,
         request: ContentAbortRequest
-    ) async throws -> String? {
+    ) async throws -> LateContentAcknowledgementReply {
         let schemeRouter = await hostedController.productSessionOwner.schemeRouter
         let finishEvents = await schemeRouter.observeContentClaimFinish(
             for: request.contentRequestId
         )
-        let contentFetch = Task { @MainActor in
+        let contentAbort = Task { @MainActor in
             try await hostedController.page.callJavaScript(
                 """
                 const controller = new AbortController();
@@ -163,29 +190,19 @@ extension WebKitSerializedTests.BridgeProductRealGitFileAndReviewWebKitTests {
                 await abortRequested;
                 controller.abort();
                 await reader.cancel().catch(() => {});
-                const lateAck = await fetch(commandURL, {
-                  method: 'POST',
-                  headers: {
-                    'Content-Type': 'application/json',
-                    'X-AgentStudio-Bridge-Product-Capability': capability
-                  },
-                  body: acknowledgementBody
-                });
-                const refusal = await lateAck.json();
-                return `${lateAck.status}:${refusal.reason}`;
+                return 'aborted';
                 """,
                 arguments: [
                     "contentURL": BridgeProductWireContract.contentRoute,
-                    "commandURL": BridgeProductWireContract.commandRoute,
                     "capability": request.capability,
                     "requestBody": request.requestBody,
-                    "acknowledgementBody": request.acknowledgementBody,
                 ]
             ) as? String
         }
         try await WebPageEventWaits.waitForDocumentSelector(
             hostedController.page,
-            "html[data-bridge-test-ack0-opening=\"received\"]"
+            "html[data-bridge-test-ack0-opening=\"received\"]",
+            milestone: "TQ65 ACK0-parked content opening received"
         )
         #expect(await schemeRouter.hasActiveContentClaim(for: request.contentRequestId))
         #expect(
@@ -197,17 +214,50 @@ extension WebKitSerializedTests.BridgeProductRealGitFileAndReviewWebKitTests {
         _ = try await hostedController.page.callJavaScript(
             "window.dispatchEvent(new Event('bridge-test-abort-content'));"
         )
-        let lateAcknowledgement = try await contentFetch.value
-        var finishIterator = finishEvents.makeAsyncIterator()
-        #expect(await finishIterator.next() != nil)
+        let abortOutcome = try await awaitBridgeWebKitMilestone("TQ65 page aborted its content fetch") {
+            try await contentAbort.value
+        }
+        #expect(abortOutcome == "aborted")
+        // The producer retires asynchronously after the abort, and the claim's
+        // finish fact follows that retirement. Only then is the late ACK late.
+        let claimFinished = try await awaitBridgeWebKitMilestone("TQ65 aborted content claim finish") {
+            var finishIterator = finishEvents.makeAsyncIterator()
+            return await finishIterator.next() != nil
+        }
+        #expect(claimFinished)
         #expect(!(await schemeRouter.hasActiveContentClaim(for: request.contentRequestId)))
-        #expect(
+        try #require(
             !(await installation.session.hasContentAdmission(
                 contentRequestId: request.contentRequestId,
                 leaseId: request.leaseId
-            ))
+            )),
+            "the aborted producer's content admission must retire before the late ACK is sent"
         )
-        return lateAcknowledgement
+        let lateAcknowledgement = try await awaitBridgeWebKitMilestone("TQ65 late ACK reply") {
+            try await hostedController.page.callJavaScript(
+                """
+                const lateAck = await fetch(commandURL, {
+                  method: 'POST',
+                  headers: {
+                    'Content-Type': 'application/json',
+                    'X-AgentStudio-Bridge-Product-Capability': capability
+                  },
+                  body: acknowledgementBody
+                });
+                return `${lateAck.status}:${await lateAck.text()}`;
+                """,
+                arguments: [
+                    "commandURL": BridgeProductWireContract.commandRoute,
+                    "capability": request.capability,
+                    "acknowledgementBody": request.acknowledgementBody,
+                ]
+            ) as? String
+        }
+        let scriptResult = try #require(lateAcknowledgement, "the late ACK script returned no text")
+        return try #require(
+            LateContentAcknowledgementReply(scriptResult: scriptResult),
+            "the late ACK script result is not status:body: \(scriptResult)"
+        )
     }
 
 }

@@ -16,7 +16,7 @@ final class WorkspaceCacheCoordinator {
             case branch
         }
 
-        var scope: WorkspaceCacheApplicationScope
+        var scope: WorkspaceCacheApplicationScope?
         var observationLifetime: RepositoryFactObservationLifetime
         var enrichment: WorktreeEnrichment
         var shouldRefreshTraceIdentity: Bool
@@ -151,7 +151,10 @@ final class WorkspaceCacheCoordinator {
         let factSink = self.factSink
         // swiftlint:disable:next no_task_detached
         consumeTask = Task.detached {
-            var observationTasks: [Task<Void, Never>] = []
+            var observationTasks: [Task<Void, Never>]?
+            if factSink != nil {
+                observationTasks = []
+            }
             for await envelope in subscription {
                 if Task.isCancelled {
                     // Keep iterating so termination awaits subscriber removal.
@@ -164,18 +167,32 @@ final class WorkspaceCacheCoordinator {
                     }
                 }
                 if Self.isCoalescableEnrichment(envelope) {
-                    let acknowledgement = Self.enqueueCoalescedEnrichment(envelope, on: enrichmentApplyGovernor)
-                    if let factSink, let acknowledgement, let scope = Self.applicationScope(for: envelope) {
-                        observationTasks.append(
+                    let scope: WorkspaceCacheApplicationScope?
+                    if factSink != nil {
+                        scope = Self.applicationScope(for: envelope)
+                    } else {
+                        scope = nil
+                    }
+                    let acknowledgement = Self.enqueueCoalescedEnrichment(
+                        envelope, scope: scope, on: enrichmentApplyGovernor)
+                    if let factSink, let acknowledgement, let scope {
+                        observationTasks?.append(
                             Self.observeAcknowledgement(
                                 scope: scope, factSink: factSink,
                                 wasSuperseded: { await acknowledgement.result() == .superseded }))
                     }
                 } else if Self.isRepositoryProjection(envelope) {
+                    let scope: WorkspaceCacheApplicationScope?
+                    if factSink != nil {
+                        scope = Self.applicationScope(for: envelope)
+                    } else {
+                        scope = nil
+                    }
                     let acknowledgement = Self.enqueueCoalescedRepositoryProjection(
-                        envelope, on: repositoryProjectionApplyGovernor)
-                    if let factSink, let (scope, receipt) = acknowledgement {
-                        observationTasks.append(
+                        envelope, scope: scope, on: repositoryProjectionApplyGovernor)
+                    if let factSink, let acknowledgement, let scope = acknowledgement.0 {
+                        let receipt = acknowledgement.1
+                        observationTasks?.append(
                             Self.observeAcknowledgement(
                                 scope: scope, factSink: factSink,
                                 wasSuperseded: { await receipt.result() == .superseded }))
@@ -189,7 +206,9 @@ final class WorkspaceCacheCoordinator {
             await enrichmentApplyGovernor.shutdown()
             await repositoryProjectionApplyGovernor.shutdown()
             // Shutdown resolves every acknowledgement before joining its optional observer.
-            for observation in observationTasks { await observation.value }
+            if let observationTasks {
+                for observation in observationTasks { await observation.value }
+            }
         }
     }
 
@@ -326,11 +345,11 @@ final class WorkspaceCacheCoordinator {
 
     nonisolated private static func enqueueCoalescedEnrichment(
         _ envelope: RuntimeEnvelope,
+        scope: WorkspaceCacheApplicationScope?,
         on governor: BackgroundFactApplyGovernor<UUID, PendingWorktreeEnrichment>
     ) -> BackgroundFactApplyGovernor<UUID, PendingWorktreeEnrichment>.Acknowledgement? {
         guard case .worktree(let worktreeEnvelope) = envelope,
-            case .gitWorkingDirectory(let gitEvent) = worktreeEnvelope.event,
-            let scope = applicationScope(for: envelope)
+            case .gitWorkingDirectory(let gitEvent) = worktreeEnvelope.event
         else { return nil }
         switch gitEvent {
         case .snapshotChanged(let snapshot):
@@ -397,12 +416,12 @@ final class WorkspaceCacheCoordinator {
 
     nonisolated private static func enqueueCoalescedRepositoryProjection(
         _ envelope: RuntimeEnvelope,
+        scope: WorkspaceCacheApplicationScope?,
         on governor: BackgroundFactApplyGovernor<UUID, PendingRepositoryProjection>
     ) -> (
-        WorkspaceCacheApplicationScope, BackgroundFactApplyGovernor<UUID, PendingRepositoryProjection>.Acknowledgement
+        WorkspaceCacheApplicationScope?, BackgroundFactApplyGovernor<UUID, PendingRepositoryProjection>.Acknowledgement
     )? {
         guard case .worktree(let worktreeEnvelope) = envelope,
-            let scope = applicationScope(for: envelope),
             case .forge(
                 .pullRequestRepositoryProjectionChanged(let repoId, let projection, _)
             ) = worktreeEnvelope.event
@@ -435,7 +454,7 @@ final class WorkspaceCacheCoordinator {
                 pending.observationLifetime, repositoryID: pending.enrichment.repoId, worktreeID: worktreeId
             )
         else {
-            factSink?(pending.scope, .ignored)
+            if let factSink, let scope = pending.scope { factSink(scope, .ignored) }
             return
         }
         let enrichment: WorktreeEnrichment
@@ -453,7 +472,7 @@ final class WorkspaceCacheCoordinator {
         if pending.shouldRefreshTraceIdentity {
             refreshTraceIdentity()
         }
-        factSink?(pending.scope, .applied)
+        if let factSink, let scope = pending.scope { factSink(scope, .applied) }
     }
 
     func applyCoalescedRepositoryProjection(

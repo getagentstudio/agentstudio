@@ -109,7 +109,7 @@ struct SwiftLaneHangEvidenceTests {
           >> "$AGENTSTUDIO_HELD_STEP_LOG"
         printf 'expecting\\tchild-1\\trefreshClosed\\tworktree-1\\tSuite.swift test()\\tSuite.swift:42 test()\\n' \
           >> "$AGENTSTUDIO_HELD_STEP_LOG"
-        touch "$LANE_WATCHDOG_ARM_PATH"
+        echo '\(laneWatchdogArmLine)'
         while true; do sleep 1; done
 
         """.write(toFile: workDirectory + "/wedged-test.sh", atomically: true, encoding: .utf8)
@@ -123,12 +123,11 @@ struct SwiftLaneHangEvidenceTests {
         let laneOutput = try await laneBashAllowingFailure(
             "LOG_PREFIX=lane; TIMEOUT_SECONDS=0; BUILD_PATH='\(workDirectory)/build'; "
                 + "export LANE_EVENT_STREAM_DIR='\(evidenceDirectory)'; "
-                + "export LANE_WATCHDOG_ARM_PATH='\(workDirectory)/watchdog-armed'; "
                 + "export PATH='\(workDirectory)/bin':$PATH; "
                 + "source scripts/swift-test-helpers.sh; set +e; "
                 + "run_swift_with_timeout 'evidence probe' 0 /bin/bash '\(workDirectory)/wedged-test.sh' "
                 + "swiftpm-testing-helper AgentStudioTests.xctest || returned=$?; echo \"RETURNED=${returned:-0}\"",
-            innerWatchdog: .armed
+            innerWatchdog: .armedByFixture
         )
         let evidenceFiles = try FileManager.default.contentsOfDirectory(atPath: evidenceDirectory).sorted()
         let ledger = try #require(evidenceFiles.first { $0.hasSuffix(".events.jsonl") })
@@ -244,7 +243,7 @@ struct SwiftLaneHangEvidenceTests {
         try FileManager.default.createDirectory(atPath: workDirectory, withIntermediateDirectories: true)
         try """
         echo '[agentstudio-test-log] unavailable path=/missing/events.log errno=2' >&2
-        touch "$LANE_WATCHDOG_ARM_PATH"
+        echo '\(laneWatchdogArmLine)'
         while true; do sleep 1; done
 
         """.write(toFile: workDirectory + "/wedged-test.sh", atomically: true, encoding: .utf8)
@@ -252,11 +251,10 @@ struct SwiftLaneHangEvidenceTests {
         let report = try await laneBashAllowingFailure(
             "LOG_PREFIX=lane; TIMEOUT_SECONDS=0; BUILD_PATH='\(workDirectory)/build'; "
                 + "export LANE_EVENT_STREAM_DIR='\(workDirectory)/ci-runs'; "
-                + "export LANE_WATCHDOG_ARM_PATH='\(workDirectory)/armed'; "
                 + "source scripts/swift-test-helpers.sh; set +e; "
                 + "run_swift_with_timeout 'unavailable probe' 0 /bin/bash '\(workDirectory)/wedged-test.sh' "
                 + "swiftpm-testing-helper AgentStudioTests.xctest || returned=$?; echo \"RETURNED=${returned:-0}\"",
-            innerWatchdog: .armed
+            innerWatchdog: .armedByFixture
         )
         let unavailableRange = try #require(report.range(of: "lane-report held_step_log_unavailable"))
         let reapRange = try #require(report.range(of: "lane-report timeout_reap="))

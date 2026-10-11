@@ -50,7 +50,7 @@ class MainWindowController: NSWindowController, NSWindowDelegate {
             @escaping @MainActor @Sendable (UUID, UUID) -> Void = { _, _ in },
         closeTransitionCoordinator: PaneCloseTransitionCoordinator = PaneCloseTransitionCoordinator()
     ) {
-        let window = NSWindow(
+        let window = PaneResponderTrackingWindow(
             contentRect: NSRect(x: 0, y: 0, width: 1200, height: 800),
             styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
             backing: .buffered,

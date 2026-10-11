@@ -202,6 +202,8 @@ export async function flushBridgeWorkerRuntimeContinuations(): Promise<void> {
 
 export interface BridgeCommWorkerReviewProductTestSource {
 	readonly close: () => void;
+	readonly waitForSourceInstallation: () => Promise<void>;
+	readonly pendingSourceInstallation: () => Promise<void> | null;
 	readonly productTransport: BridgeProductTransportSession;
 	readonly viewScopes: ReviewViewScopeRequest[];
 	readonly publishReplacementSource: (
@@ -238,6 +240,7 @@ export function createBridgeCommWorkerReviewProductTestSource(
 ): BridgeCommWorkerReviewProductTestSource {
 	let currentWorkerDerivationEpoch = 0;
 	let currentRevision = 0;
+	let latestInstallation: Promise<void> | null = null;
 	let batchSinks: BridgeProductBatchFrameSinks | null = null;
 	let closed = false;
 	const lifecycleEvents = new BridgeProductBoundedAsyncQueue<never>(1);
@@ -321,6 +324,12 @@ export function createBridgeCommWorkerReviewProductTestSource(
 			lifecycleEvents.close(true);
 		},
 		productTransport,
+		pendingSourceInstallation: (): Promise<void> | null => latestInstallation,
+		waitForSourceInstallation: (): Promise<void> => {
+			if (latestInstallation === null)
+				throw new Error('No Review source installation was published.');
+			return latestInstallation;
+		},
 		viewScopes,
 		publishReplacementSource: publishSource,
 		publishSource,
@@ -344,6 +353,7 @@ export function createBridgeCommWorkerReviewProductTestSource(
 			if (closed) return;
 			await installedSinks.install(batch);
 		});
+		latestInstallation = installation;
 		pendingReviewBatchInstalls.add(installation);
 		void installation.then(
 			(): void => {

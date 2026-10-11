@@ -138,6 +138,204 @@ struct PaneHostViewTests {
         #expect(host.contentContainerViewForTesting.frame.size == resizedAllocation)
         #expect(mountedContent.frame.size == resizedAllocation)
     }
+
+    @Test("pane host restores focus after same-window SwiftUI container remount")
+    func paneHostRestoresFocusAfterSameWindowSwiftUIContainerRemount() throws {
+        let window = makePaneHostFocusWindow()
+        defer { window.close() }
+        let host = PaneHostView(paneId: UUIDv7.generate())
+        let contentView = try #require(window.contentView)
+        contentView.addSubview(host)
+
+        #expect(window.makeFirstResponder(host))
+        #expect(window.firstResponder === host)
+
+        let container = host.swiftUIContainer
+        contentView.addSubview(container)
+
+        #expect(window.firstResponder === host)
+    }
+
+    @Test("pane host does not override focus taken during same-window remount")
+    func paneHostDoesNotOverrideFocusTakenDuringSameWindowRemount() throws {
+        let window = makePaneHostFocusWindow()
+        defer { window.close() }
+        let host = PaneHostView(paneId: UUIDv7.generate())
+        let otherResponder = TestFocusablePaneView()
+        let contentView = try #require(window.contentView)
+        contentView.addSubview(host)
+        contentView.addSubview(otherResponder)
+
+        #expect(window.makeFirstResponder(host))
+        let container = host.swiftUIContainer
+        #expect(window.makeFirstResponder(otherResponder))
+        contentView.addSubview(container)
+
+        #expect(window.firstResponder === otherResponder)
+    }
+
+    @Test("pane host does not restore focus after an intentional clear during remount")
+    func paneHostDoesNotRestoreFocusAfterIntentionalClearDuringRemount() throws {
+        let window = makePaneHostFocusWindow()
+        defer { window.close() }
+        let host = PaneHostView(paneId: UUIDv7.generate())
+        let contentView = try #require(window.contentView)
+        contentView.addSubview(host)
+
+        #expect(window.makeFirstResponder(host))
+        let container = host.swiftUIContainer
+        #expect(window.makeFirstResponder(nil))
+        contentView.addSubview(container)
+
+        #expect(window.firstResponder !== host)
+    }
+
+    @Test("pane host does not restore focus when remounted in another window")
+    func paneHostDoesNotRestoreFocusWhenRemountedInAnotherWindow() throws {
+        let sourceWindow = makePaneHostFocusWindow()
+        let destinationWindow = makePaneHostFocusWindow()
+        defer {
+            sourceWindow.close()
+            destinationWindow.close()
+        }
+        let host = PaneHostView(paneId: UUIDv7.generate())
+        let sourceContentView = try #require(sourceWindow.contentView)
+        let destinationContentView = try #require(destinationWindow.contentView)
+        sourceContentView.addSubview(host)
+
+        #expect(sourceWindow.makeFirstResponder(host))
+        let container = host.swiftUIContainer
+        destinationContentView.addSubview(container)
+
+        #expect(destinationWindow.firstResponder !== host)
+    }
+
+    @Test("pane host does not restore focus under a hidden ancestor")
+    func paneHostDoesNotRestoreFocusUnderHiddenAncestor() throws {
+        let window = makePaneHostFocusWindow()
+        defer { window.close() }
+        let host = PaneHostView(paneId: UUIDv7.generate())
+        let hiddenAncestor = NSView(frame: .zero)
+        hiddenAncestor.isHidden = true
+        let contentView = try #require(window.contentView)
+        contentView.addSubview(host)
+        contentView.addSubview(hiddenAncestor)
+
+        #expect(window.makeFirstResponder(host))
+        let container = host.swiftUIContainer
+        hiddenAncestor.addSubview(container)
+
+        #expect(window.firstResponder !== host)
+    }
+
+    @Test("pane host clears remount focus memory after one attach")
+    func paneHostClearsRemountFocusMemoryAfterOneAttach() throws {
+        let sourceWindow = makePaneHostFocusWindow()
+        let destinationWindow = makePaneHostFocusWindow()
+        defer {
+            sourceWindow.close()
+            destinationWindow.close()
+        }
+        let host = PaneHostView(paneId: UUIDv7.generate())
+        let otherResponder = TestFocusablePaneView()
+        let hiddenAncestor = NSView(frame: .zero)
+        hiddenAncestor.isHidden = true
+        let sourceContentView = try #require(sourceWindow.contentView)
+        sourceContentView.addSubview(host)
+        sourceContentView.addSubview(otherResponder)
+        sourceContentView.addSubview(hiddenAncestor)
+
+        #expect(sourceWindow.makeFirstResponder(host))
+        let container = host.swiftUIContainer
+        hiddenAncestor.addSubview(container)
+        hiddenAncestor.isHidden = false
+        #expect(sourceWindow.firstResponder !== host)
+
+        let stagingView = NSView(frame: .zero)
+        stagingView.addSubview(container)
+        sourceContentView.addSubview(container)
+
+        #expect(sourceWindow.firstResponder !== host)
+    }
+
+    @Test("pane host restores a focused descendant after same-window remount")
+    func paneHostRestoresFocusedDescendantAfterSameWindowRemount() throws {
+        let window = makePaneHostFocusWindow()
+        defer { window.close() }
+        let host = PaneHostView(paneId: UUIDv7.generate())
+        let descendant = TestFocusableMountedContentView()
+        let contentView = try #require(window.contentView)
+        contentView.addSubview(host)
+        host.mountContentView(descendant)
+
+        #expect(window.makeFirstResponder(descendant))
+        let container = host.swiftUIContainer
+        contentView.addSubview(container)
+
+        #expect(window.firstResponder === descendant)
+    }
+
+    @Test("pane host does not restore a removed focused descendant")
+    func paneHostDoesNotRestoreRemovedFocusedDescendant() throws {
+        let window = makePaneHostFocusWindow()
+        defer { window.close() }
+        let host = PaneHostView(paneId: UUIDv7.generate())
+        let descendant = TestFocusableMountedContentView()
+        let contentView = try #require(window.contentView)
+        contentView.addSubview(host)
+        host.mountContentView(descendant)
+
+        #expect(window.makeFirstResponder(descendant))
+        let container = host.swiftUIContainer
+        host.unmountContentView()
+        contentView.addSubview(container)
+
+        #expect(window.firstResponder !== descendant)
+    }
+
+    @Test("pane host teardown does not retain a deallocating window")
+    func paneHostTeardownDoesNotRetainADeallocatingWindow() {
+        var window: PaneResponderTrackingWindow? = makePaneHostFocusWindow()
+        let host = PaneHostView(paneId: UUIDv7.generate())
+        window?.contentView?.addSubview(host)
+
+        #expect(window?.makeFirstResponder(host) == true)
+        window?.close()
+        window = nil
+    }
+}
+
+@MainActor
+private func makePaneHostFocusWindow() -> PaneResponderTrackingWindow {
+    let window = PaneResponderTrackingWindow(
+        contentRect: NSRect(x: -10_000, y: -10_000, width: 800, height: 600),
+        styleMask: [.titled],
+        backing: .buffered,
+        defer: true
+    )
+    window.isReleasedWhenClosed = false
+    window.makeKeyAndOrderFront(nil)
+    return window
+}
+
+@MainActor
+private final class TestFocusablePaneView: NSView {
+    override var acceptsFirstResponder: Bool { true }
+}
+
+@MainActor
+private final class TestFocusableMountedContentView: NSView, PaneMountedContent {
+    init() {
+        super.init(frame: .zero)
+    }
+
+    override var acceptsFirstResponder: Bool { true }
+
+    func setContentInteractionEnabled(_: Bool) {}
+
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) not supported")
+    }
 }
 
 @MainActor

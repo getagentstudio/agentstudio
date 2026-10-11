@@ -29,7 +29,9 @@ package enum AppIPCCommandMethodRegistrations {
                         parameters: prepared, canonicalHandle: prepared.canonicalHandle,
                         target: prepared.target, requiredScopes: prepared.requiredScopes,
                         resolvedPaneIds: prepared.resolvedPaneIds,
-                        commandId: prepared.request.commandId.rawValue, agentArgumentRule: prepared.agentArgumentRule)
+                        commandId: prepared.request.commandId.rawValue,
+                        commandAllowedTargetKinds: prepared.allowedTargetKinds,
+                        agentArgumentRule: prepared.agentArgumentRule)
                 },
                 connectionHandler: { parameters, context, _ in
                     let result = try await port.executeCommand(

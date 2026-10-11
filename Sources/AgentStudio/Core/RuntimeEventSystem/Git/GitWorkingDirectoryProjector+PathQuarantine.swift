@@ -19,9 +19,11 @@ extension GitWorkingDirectoryProjector {
 
     /// Checks one worktree only after projector task capacity, demand, tier
     /// capacity, and process pacing have otherwise selected it. Shared physical
-    /// capacity is acquired later by the provider; a capacity-only rejection keeps
-    /// this exact-root validation for retry. A missing root is quarantined without
-    /// consuming the projector slot so selection can continue.
+    /// capacity is acquired later by the provider. Successful status acceptance
+    /// retains this exact-root validation for ordinary re-enqueue; capacity-only
+    /// rejection retains it for retry. Unsuccessful drains and lifecycle changes
+    /// invalidate it. A missing root is quarantined without consuming the
+    /// projector slot so selection can continue.
     func admitPendingWorktreeAfterPathCheck(worktreeId: UUID) -> Bool {
         guard let rootPath = pendingByWorktreeId[worktreeId]?.rootPath else { return false }
         guard !quarantinedWorktreeIds.contains(worktreeId) else { return false }

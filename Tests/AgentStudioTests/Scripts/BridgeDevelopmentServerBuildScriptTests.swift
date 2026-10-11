@@ -23,8 +23,8 @@ struct BridgeDevelopmentServerBuildScriptTests {
         // This fixture proves argument forwarding, not inactivity. Keep the
         // inner watchdog unarmed; only the outer lane owns a hang bound, even
         // when compiler startup or output draining is slow on a loaded host.
-        producerEnvironment["LANE_WATCHDOG_ARM_PATH"] =
-            fixture.buildSlot.rootURL.appending(path: "unused-watchdog.arm").path
+        // The fake compiler never prints the arm line.
+        producerEnvironment["LANE_WATCHDOG_ARM_REQUIRED"] = "1"
         let startupProof: String
         if holdCompilerStartup {
             producerEnvironment["BRIDGE_FIXTURE_STARTUP_RELEASE_PATH"] =
