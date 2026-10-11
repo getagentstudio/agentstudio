@@ -1,12 +1,12 @@
 import { onTestFinished } from 'vitest';
 
+import { BridgeTestFactRecorder } from '../../../tests/test-support/bridge-test-fact-recorder.js';
 import { encodeBridgeWorkerRenderDispositionCommand } from './bridge-comm-worker-protocol.js';
 import type { BridgeCommWorkerPreparationDrain } from './bridge-comm-worker-runtime-protocol.js';
 import type { createRecordingBridgeCommWorkerPort } from './bridge-comm-worker-runtime-protocol.test-support.js';
 import type { BridgeProductContentStream } from './bridge-product-transport-contract.js';
 import type { BridgeWorkerServerToMainMessage } from './bridge-worker-contracts.js';
 import { bridgeWorkerRenderDispositionReceiptSchema } from './bridge-worker-render-fulfillment.js';
-import { BridgeProductTestFactRecorder } from './test-fixtures/bridge-product-test-fact-recorder.js';
 
 type ReviewPreparationObservation =
 	| {
@@ -19,7 +19,7 @@ type ReviewPreparationObservation =
 	| { readonly kind: 'retryDeadlineRegistered' };
 
 export interface ReviewPreparationObservations {
-	readonly facts: BridgeProductTestFactRecorder<ReviewPreparationObservation>;
+	readonly facts: BridgeTestFactRecorder<ReviewPreparationObservation>;
 	readonly scheduledDrains: BridgeCommWorkerPreparationDrain[];
 	readonly schedule: (drain: BridgeCommWorkerPreparationDrain) => void;
 	readonly beforePostMessage: (message: BridgeWorkerServerToMainMessage) => void;
@@ -29,9 +29,14 @@ export interface ReviewPreparationObservations {
 }
 
 export function createReviewPreparationObservations(): ReviewPreparationObservations {
-	const facts = new BridgeProductTestFactRecorder<ReviewPreparationObservation>();
+	const facts = new BridgeTestFactRecorder<ReviewPreparationObservation>();
 	const scheduledDrains: BridgeCommWorkerPreparationDrain[] = [];
 	let isClosed = false;
+	const close = (reason = new Error('Review preparation observation closed.')): void => {
+		isClosed = true;
+		facts.close(reason);
+	};
+	onTestFinished((): void => close());
 	return {
 		facts,
 		scheduledDrains,
@@ -50,10 +55,7 @@ export function createReviewPreparationObservations(): ReviewPreparationObservat
 		retryDeadlineRegistered: (): void => {
 			if (!isClosed) facts.record({ kind: 'retryDeadlineRegistered' });
 		},
-		close: (reason = new Error('Review preparation observation closed.')): void => {
-			isClosed = true;
-			facts.close(reason);
-		},
+		close,
 	};
 }
 
@@ -78,6 +80,7 @@ export async function driveReviewPreparationUntil(props: {
 			// oxlint-disable-next-line no-await-in-loop -- A recorder observation is a protocol event, never a scheduler poll.
 			const fact = await props.observations.facts.waitFor(
 				(): boolean => true,
+				label,
 				++observationPosition,
 			);
 			lastObserved =
@@ -114,13 +117,18 @@ export async function requirePreparationContinuationBeforeDrainCompletion(props:
 			return { error: firstDrainFailure, kind: 'failed' };
 		},
 	);
-	const continuationOutcome = props.observations.facts.waitFor(props.isContinuationScheduled).then(
-		(): { readonly kind: 'scheduled' } => ({ kind: 'scheduled' }),
-		(error: unknown): { readonly error: Error; readonly kind: 'failed' } => ({
-			error: firstDrainFailure ?? (error instanceof Error ? error : new Error(String(error))),
-			kind: 'failed',
-		}),
-	);
+	const continuationOutcome = props.observations.facts
+		.waitFor(
+			props.isContinuationScheduled,
+			'Review preparation continuation scheduled before first drain completion',
+		)
+		.then(
+			(): { readonly kind: 'scheduled' } => ({ kind: 'scheduled' }),
+			(error: unknown): { readonly error: Error; readonly kind: 'failed' } => ({
+				error: firstDrainFailure ?? (error instanceof Error ? error : new Error(String(error))),
+				kind: 'failed',
+			}),
+		);
 	const outcome = await Promise.race([firstDrainOutcome, continuationOutcome]);
 	if (outcome.kind === 'failed') throw outcome.error;
 	if (outcome.kind === 'completed')

@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, type TestContext } from 'vitest';
 
-import { BridgeProductTestFactRecorder } from '../core/comm-worker/test-fixtures/bridge-product-test-fact-recorder.js';
+import { BridgeTestFactRecorder } from '../../tests/test-support/bridge-test-fact-recorder.js';
 
 type AppDomObservationRoot = Document | HTMLElement | ShadowRoot;
 
@@ -31,7 +31,7 @@ export async function observeBridgeAppDomValue<TValue>(props: {
 	const root = props.root ?? document;
 	const signal = props.signal ?? currentTestSignal;
 	if (signal === undefined) throw new Error('App DOM observation has no test owner signal.');
-	const facts = new BridgeProductTestFactRecorder<TValue>();
+	const facts = new BridgeTestFactRecorder<TValue>();
 	const observedRoots = new WeakSet<Node>();
 	let isClosed = false;
 	let didComplete = false;
@@ -90,7 +90,7 @@ export async function observeBridgeAppDomValue<TValue>(props: {
 		else inspect();
 		// The caller awaits its writer inside act. Keeping act open while waiting for
 		// a React DOM commit would prevent that same commit from draining the act queue.
-		const value = await facts.waitFor();
+		const value = await facts.waitFor((): boolean => true, label);
 		didComplete = true;
 		return value;
 	} finally {

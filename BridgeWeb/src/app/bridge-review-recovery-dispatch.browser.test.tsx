@@ -1,7 +1,9 @@
 import { act, type ReactElement } from 'react';
-import { expect, test } from 'vitest';
+import { expect, onTestFinished, test } from 'vitest';
 import { render } from 'vitest-browser-react';
 import { page } from 'vitest/browser';
+
+import { BridgeTestFactRecorder } from '../../tests/test-support/bridge-test-fact-recorder.js';
 
 // oxlint-disable-next-line import/no-unassigned-import -- Exercise mounted production Review recovery presentation.
 import './bridge-app.css';
@@ -178,7 +180,10 @@ async function mountInstalledReview(
 ): Promise<InstalledReviewFixture> {
 	const harness = makeReviewSurfaceHarness();
 	const heldSelectionCommands: BridgeWorkerRpcCommandInput[] = [];
-	const selectionSetupReady = createBridgeProductDeferred<void>();
+	const selectionSetupFacts = new BridgeTestFactRecorder<'ready'>();
+	onTestFinished((): void =>
+		selectionSetupFacts.close(new Error('Retry selection setup owner retired.')),
+	);
 	let didResolveSelectionSetup = false;
 	const sendCommand = harness.reviewClient.send;
 	let isHoldingSelection = holdSelectionCommands;
@@ -194,7 +199,7 @@ async function mountInstalledReview(
 		);
 		if (!hasProgrammaticSelect || !hasProgrammaticViewed) return;
 		didResolveSelectionSetup = true;
-		selectionSetupReady.resolve();
+		selectionSetupFacts.record('ready');
 	};
 	const reviewClient = {
 		...harness.reviewClient,
@@ -335,7 +340,12 @@ async function mountInstalledReview(
 		host,
 		owner,
 		releaseResnapshot,
-		awaitSelectionSetup: (): Promise<void> => selectionSetupReady.promise,
+		awaitSelectionSetup: async (): Promise<void> => {
+			await selectionSetupFacts.waitFor(
+				(fact): boolean => fact === 'ready',
+				'Retry setup programmatic select and viewed commands held',
+			);
+		},
 		rendered,
 		retainedItem,
 		heldSelectionCommandCount: (): number => heldSelectionCommands.length,
