@@ -1,5 +1,10 @@
 type FactPredicate<TFact> = (fact: TFact) => boolean;
 
+interface NegativeFactExpectationOptions {
+	readonly from: number;
+	readonly label: string;
+}
+
 interface FactWaiter<TFact> {
 	readonly inspect: (facts: readonly TFact[]) => boolean;
 	readonly reject: (error: Error) => void;
@@ -10,17 +15,18 @@ interface FactWaiter<TFact> {
 export class BridgeTestFactRecorder<TFact> {
 	readonly #facts: TFact[] = [];
 	readonly #waiters = new Set<FactWaiter<TFact>>();
-	#closedError: Error | null = null;
+	#closedSource: { readonly error: Error; readonly factCount: number } | null = null;
 
 	record(fact: TFact): void {
-		if (this.#closedError !== null) throw this.#closedError;
 		this.#facts.push(fact);
+		// Late source emissions remain diagnostic evidence; they cannot reopen observations.
+		if (this.#closedSource !== null) return;
 		for (const waiter of this.#waiters) {
 			if (waiter.inspect(this.#facts)) this.#waiters.delete(waiter);
 		}
 	}
 
-	/** Occurrence counts owner facts, never attempts or scheduler turns. */
+	/** Matches recorded or future facts; correlate the predicate to its operation. Occurrence counts matching facts. */
 	waitFor(predicate: FactPredicate<TFact>, label: string, occurrence = 1): Promise<TFact> {
 		if (!Number.isInteger(occurrence) || occurrence < 1)
 			return Promise.reject(new Error(`Invalid fact occurrence for ${label}: ${occurrence}`));
@@ -36,16 +42,28 @@ export class BridgeTestFactRecorder<TFact> {
 		});
 	}
 
-	/** Prove absence from attachment through the correlated closing fact, including that fact. */
+	/** Mark before the stimulus; negatives observe only facts at or after this opening position. */
+	mark(): number {
+		return this.#facts.length;
+	}
+
+	/** Prove absence from the opening position through the correlated close, inclusive; label names that close. */
 	expectNone(
 		predicate: FactPredicate<TFact>,
 		closingFact: FactPredicate<TFact>,
-		label = 'no forbidden fact before closing fact',
+		options: NegativeFactExpectationOptions,
 	): Promise<void> {
-		return this.#observe(label, (facts, resolve, reject): boolean => {
-			for (const fact of facts) {
+		return this.#observe(options.label, (facts, resolve, reject): boolean => {
+			for (const fact of facts.slice(options.from)) {
 				if (predicate(fact)) {
-					reject(this.#failure(new Error('Forbidden fact observed before closing fact.'), label));
+					reject(
+						this.#failure(
+							new Error(
+								`Forbidden fact ${this.#describeFact(fact)} observed before closing fact (${options.label}).`,
+							),
+							options.label,
+						),
+					);
 					return true;
 				}
 				if (closingFact(fact)) {
@@ -58,16 +76,17 @@ export class BridgeTestFactRecorder<TFact> {
 	}
 
 	close(error: Error): void {
-		if (this.#closedError !== null) return;
-		this.#closedError = error;
-		for (const waiter of this.#waiters) {
+		if (this.#closedSource !== null) return;
+		this.#closedSource = { error, factCount: this.#facts.length };
+		const pendingWaiters = [...this.#waiters];
+		this.#waiters.clear();
+		for (const waiter of pendingWaiters) {
 			const failure = this.#failure(error, waiter.label);
 			// Vitest's runner can report only its generic hang error. Retain the owner
 			// label in raw output when teardown rejects a still-pending observation.
 			console.info(failure.message);
 			waiter.reject(failure);
 		}
-		this.#waiters.clear();
 	}
 
 	#observe<TResult>(
@@ -84,9 +103,13 @@ export class BridgeTestFactRecorder<TFact> {
 				reject,
 				inspect: (facts: readonly TFact[]): boolean => inspect(facts, resolve, reject),
 			} satisfies FactWaiter<TFact>;
-			if (waiter.inspect(this.#facts)) return;
-			if (this.#closedError !== null) {
-				reject(this.#failure(this.#closedError, label));
+			const observableFacts =
+				this.#closedSource === null
+					? this.#facts
+					: this.#facts.slice(0, this.#closedSource.factCount);
+			if (waiter.inspect(observableFacts)) return;
+			if (this.#closedSource !== null) {
+				reject(this.#failure(this.#closedSource.error, label));
 				return;
 			}
 			this.#waiters.add(waiter);
@@ -94,18 +117,26 @@ export class BridgeTestFactRecorder<TFact> {
 	}
 
 	#failure(error: Error, label: string): Error {
-		const recentFacts = this.#facts.slice(-10).map((fact): string => {
-			try {
-				return JSON.stringify(fact) ?? String(fact);
-			} catch {
-				return String(fact);
-			}
-		});
+		const recentFacts = this.#facts.slice(-10).map((fact): string => this.#describeFact(fact));
 		return new Error(
 			`Awaiting ${label}: ${error.message}; last recorded facts=[${recentFacts.join(', ')}]`,
 			{
 				cause: error,
 			},
 		);
+	}
+
+	#describeFact(fact: TFact): string {
+		let description: string;
+		try {
+			description = JSON.stringify(fact) ?? String(fact);
+		} catch {
+			try {
+				description = String(fact);
+			} catch {
+				description = '<unformattable fact>';
+			}
+		}
+		return description.length > 400 ? `${description.slice(0, 397)}...` : description;
 	}
 }

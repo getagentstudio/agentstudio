@@ -25,8 +25,11 @@ describe('Review preparation harness guards', () => {
 				observations,
 			}),
 		).rejects.toBe(failure);
-		expect(() => observations.facts.record({ kind: 'retryDeadlineRegistered' })).toThrow(
-			'first drain failed',
+		expect(() => observations.facts.record({ kind: 'retryDeadlineRegistered' })).not.toThrow();
+		await expect(
+			observations.facts.waitFor((): boolean => false, 'retired continuation history'),
+		).rejects.toThrow(
+			/Awaiting retired continuation history: first drain failed; last recorded facts=.*retryDeadlineRegistered/,
 		);
 		expect(() =>
 			observations.schedule(async () => ({ completedIds: [], yielded: false })),
