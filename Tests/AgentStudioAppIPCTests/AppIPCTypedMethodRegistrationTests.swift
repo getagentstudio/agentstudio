@@ -606,12 +606,13 @@ private struct TypedRegistrationFixture {
     }
 }
 
-private enum TypedTargetValidationBranch: String, CaseIterable, CustomStringConvertible, Sendable {
+enum TypedTargetValidationBranch: String, CaseIterable, CustomStringConvertible, Sendable {
     case commandWithoutSelectedKinds
     case commandWithNonEmptySelectedKinds
     case commandWithEmptySelectedKinds
     case nonCommandWithNilHandle
-    case commandWithNonNilHandle
+    case commandWithNonNilHandleDescriptorGate
+    case commandWithNonNilHandleWithoutSelectedKinds
 
     var description: String { rawValue }
 
@@ -626,7 +627,7 @@ private enum TypedTargetValidationBranch: String, CaseIterable, CustomStringConv
 
     var descriptorTargetKinds: Set<IPCHandleKind> {
         switch self {
-        case .commandWithNonNilHandle:
+        case .commandWithNonNilHandleDescriptorGate:
             []
         default:
             [.pane]
@@ -635,7 +636,7 @@ private enum TypedTargetValidationBranch: String, CaseIterable, CustomStringConv
 
     var canonicalHandle: IPCHandle? {
         switch self {
-        case .commandWithNonNilHandle:
+        case .commandWithNonNilHandleDescriptorGate, .commandWithNonNilHandleWithoutSelectedKinds:
             IPCHandle(kind: .pane, reference: .canonicalUUID(UUIDv7.generate()))
         default:
             nil
@@ -644,7 +645,7 @@ private enum TypedTargetValidationBranch: String, CaseIterable, CustomStringConv
 
     var target: IPCTargetScope {
         switch self {
-        case .commandWithNonNilHandle:
+        case .commandWithNonNilHandleDescriptorGate, .commandWithNonNilHandleWithoutSelectedKinds:
             .pane(UUIDv7.generate().uuidString)
         default:
             .workspace(UUIDv7.generate())
@@ -657,17 +658,19 @@ private enum TypedTargetValidationBranch: String, CaseIterable, CustomStringConv
 
     var commandAllowedTargetKinds: Set<IPCHandleKind>? {
         switch self {
-        case .commandWithoutSelectedKinds, .commandWithNonNilHandle:
+        case .commandWithoutSelectedKinds, .commandWithNonNilHandleWithoutSelectedKinds:
             nil
         case .commandWithNonEmptySelectedKinds:
             [.pane]
         case .commandWithEmptySelectedKinds, .nonCommandWithNilHandle:
             []
+        case .commandWithNonNilHandleDescriptorGate:
+            [.pane]
         }
     }
 
     var reachesAuthorization: Bool {
-        self == .commandWithEmptySelectedKinds
+        self == .commandWithEmptySelectedKinds || self == .commandWithNonNilHandleWithoutSelectedKinds
     }
 }
 
