@@ -99,7 +99,7 @@ struct GitWorkingDirectoryProjectorQuiescenceTests {
     }
 
     @Test("coalesced provider work and a later input settle after the provider exits")
-    func coalescedProviderAndLaterInput() async throws {
+    func coalescedProviderAndLaterInputEmitsAfterProviderExit() async throws {
         let source = GitProjectorFactSource()
         let facts = try source.attach()
         let bus = EventBus<RuntimeEnvelope>()
@@ -252,15 +252,26 @@ struct GitWorkingDirectoryProjectorQuiescenceTests {
         let facts = try source.attach()
         let bus = EventBus<RuntimeEnvelope>()
         let providerStep = HeldStep<Void>("shutdown provider", cancellation: .holdThroughCancellation)
+        let providerReturned = Mutex(false)
+        let shutdownClosedBeforeProviderReturn = Mutex(false)
         let provider = StubGitWorkingTreeStatusProvider { _ in
             try? await providerStep.arrive(())
+            providerReturned.withLock { $0 = true }
             return cleanStatus()
+        }
+        let factSink: GitProjectorFactSink = { scope, fact in
+            if case .lifetime(1) = scope, fact == .shutdownCompleted,
+                !providerReturned.withLock({ $0 })
+            {
+                shutdownClosedBeforeProviderReturn.withLock { $0 = true }
+            }
+            source.sink(scope, fact)
         }
         let projector = GitWorkingDirectoryProjector(
             bus: bus,
             gitWorkingTreeProvider: provider,
             coalescingWindow: .zero,
-            factSink: source.sink
+            factSink: factSink
         )
         await projector.start()
         let worktreeID = UUIDv7.generate()
@@ -275,6 +286,7 @@ struct GitWorkingDirectoryProjectorQuiescenceTests {
         await shutdownTask.value
         #expect(try await facts.expectShutdownCompleted() == 0)
         #expect(await projector.outstandingDrainTasks.isEmpty)
+        #expect(!shutdownClosedBeforeProviderReturn.withLock { $0 })
     }
 
     @Test("status failure debt remains outstanding until controlled backoff retries it")
@@ -389,7 +401,7 @@ struct GitWorkingDirectoryProjectorQuiescenceTests {
     }
 
     @Test("a due periodic deadline stays active through exact-clean renewal")
-    func activeDeadlineRenewal() async throws {
+    func activeDeadlineRenewalSettlesAfterControlledRenewal() async throws {
         let source = GitProjectorFactSource()
         let facts = try source.attach()
         let bus = EventBus<RuntimeEnvelope>()

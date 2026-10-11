@@ -164,9 +164,10 @@ struct RemoteReferenceRepositoryCardinalityTests {
         #expect(await statusGate.completedCount == 0)
 
         await statusGate.releaseAll()
-        await statusGate.waitForCompletedCount(1)
-        #expect(await statusGate.aggregateOutcome == nil)
         await statusGate.waitForStartedCount(2)
+        _ = try? await statusGate.secondStatusRead.firstArrival()
+        #expect(await statusGate.aggregateOutcome == nil)
+        statusGate.secondStatusRead.release()
         await statusGate.releaseAll()
         #expect(await recomputationTask.value == .completed)
         #expect(await statusGate.completedCount == 2)
@@ -176,6 +177,10 @@ struct RemoteReferenceRepositoryCardinalityTests {
 }
 
 private actor RepositoryCardinalityStatusGate {
+    nonisolated let secondStatusRead = HeldStep<Void>(
+        "repository cardinality second status read",
+        cancellation: .holdThroughCancellation
+    )
     private var startedCount = 0
     private(set) var startedRootPaths: Set<URL> = []
     private(set) var completedCount = 0
@@ -190,6 +195,9 @@ private actor RepositoryCardinalityStatusGate {
         let readyWaiters = startedCountWaiters.filter { $0.count <= startedCount }
         startedCountWaiters.removeAll { $0.count <= startedCount }
         for waiter in readyWaiters { waiter.continuation.resume() }
+        if startedCount == 2 {
+            try? await secondStatusRead.arrive(())
+        }
         await withCheckedContinuation { continuation in
             releaseContinuations.append(continuation)
         }
