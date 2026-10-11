@@ -26,6 +26,7 @@ import {
 	currentBridgeWebLaunchScope,
 	runWithBridgeWebLaunchScope,
 } from './bridge-web-test-launch-scope.ts';
+import { BridgeWebOwnedViteLifetime } from './bridge-web-test-launch-vite-lifetime.ts';
 import {
 	handleLaunchPromise,
 	type HandledLaunchPromise,
@@ -50,7 +51,7 @@ export class BridgeWebTestLaunch {
 	readonly #acquisitions = new Set<Promise<LaunchPromiseOutcome<unknown>>>();
 	#backend: OwnedBridgeDevelopmentServer | null = null;
 	#browser: Browser | null = null;
-	#vite: ViteDevServer | null = null;
+	readonly #viteLifetime = new BridgeWebOwnedViteLifetime();
 	#viteProcess: BridgeViewerOwnedViteServer | null = null;
 	#closeBrowser: Browser['close'] | null = null;
 	#browserCloseOptions: Parameters<Browser['close']>[0];
@@ -74,6 +75,7 @@ export class BridgeWebTestLaunch {
 		dataRootRemoved: false,
 		failures: [],
 		viteClosed: true,
+		lateViteListenerRetirement: { kind: 'not-required' },
 		viteProcess: null,
 	};
 
@@ -149,7 +151,11 @@ export class BridgeWebTestLaunch {
 	}
 
 	get cleanup(): BridgeWebTestLaunchCleanup {
-		return this.#cleanup;
+		return {
+			...this.#cleanup,
+			viteClosed: this.#viteLifetime.listenerClosed,
+			lateViteListenerRetirement: this.#viteLifetime.lateListenerRetirement,
+		};
 	}
 
 	observeStep<TValue>(name: string, promise: Promise<TValue>): HandledLaunchPromise<TValue> {
@@ -227,13 +233,14 @@ export class BridgeWebTestLaunch {
 
 	async startVite(configuration: InlineConfig): Promise<ViteDevServer> {
 		this.#requireOpen();
-		if (this.#vite !== null || this.#viteProcess !== null)
+		if (this.#viteLifetime.owned || this.#viteProcess !== null)
 			throw new Error('Test launch already owns Vite.');
 		try {
 			const vite = await this.#acquire(
 				(async (): Promise<ViteDevServer> =>
 					await createServer({
 						...configuration,
+						plugins: [this.#viteLifetime.plugin, ...(configuration.plugins ?? [])],
 						cacheDir: join(this.dataRootPath, 'vite-cache'),
 						server: {
 							...configuration.server,
@@ -242,17 +249,9 @@ export class BridgeWebTestLaunch {
 							strictPort: true,
 						},
 					}))(),
-				(server): void => {
-					this.#vite = server;
-				},
+				(): void => {},
 				'Vite acquisition',
 			);
-			this.#vite = vite;
-			this.#cleanup = { ...this.#cleanup, viteClosed: false };
-			if (this.#closed) {
-				await vite.close();
-				this.#requireOpen();
-			}
 			this.#requireOpen();
 			if (configuration.server?.middlewareMode !== true)
 				await this.#acquire(vite.listen(), (): void => {}, 'Vite listener readiness');
@@ -345,7 +344,7 @@ export class BridgeWebTestLaunch {
 		readonly environment?: Readonly<Record<string, string>>;
 	}): Promise<BridgeViewerOwnedViteServer> {
 		this.#requireOpen();
-		if (this.#vite !== null || this.#viteProcess !== null)
+		if (this.#viteLifetime.owned || this.#viteProcess !== null)
 			throw new Error('Test launch already owns Vite.');
 		try {
 			return await this.#acquire(
@@ -441,6 +440,7 @@ export class BridgeWebTestLaunch {
 			this.#backend === null
 				? null
 				: handleLaunchPromise(this.#backend.stop(), 'stop starting backend');
+		const earlyViteClose = handleLaunchPromise(this.#viteLifetime.close(), 'close starting Vite');
 		await Promise.all(this.#acquisitions);
 		const childOutcomes = await Promise.all(childStops.map((stopping) => stopping.settled));
 		const rootOutcome = await this.#root.settled;
@@ -455,8 +455,14 @@ export class BridgeWebTestLaunch {
 			{
 				name: 'Vite',
 				run: async (): Promise<void> => {
-					await this.#vite?.close();
-					const viteClosed = !(this.#vite?.httpServer?.listening ?? false);
+					await earlyViteClose.value();
+					// A capture can arrive during acquisition after early close found no server.
+					await this.#viteLifetime.close();
+					await this.observeStep(
+						'retire late Vite listener',
+						this.#viteLifetime.retireLateListener(),
+					).value();
+					const viteClosed = this.#viteLifetime.listenerClosed;
 					this.#cleanup = { ...this.#cleanup, viteClosed };
 					if (!viteClosed) throw new Error('Owned Vite listener survived close.');
 				},

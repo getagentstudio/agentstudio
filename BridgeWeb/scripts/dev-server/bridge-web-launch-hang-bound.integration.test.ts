@@ -2,7 +2,8 @@ import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
 import { access } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 
-import { expect, test, vi } from 'vitest';
+import type { ViteDevServer } from 'vite';
+import { expect, test, vi, type MockInstance } from 'vitest';
 
 import {
 	BridgeProductMetadataFrameDecoder,
@@ -21,6 +22,87 @@ import { makeDeferred } from '../verify-bridge-viewer-worktree-dev-server/utils.
 import { createOwnedVerifierJourneyDeadline } from '../verify-bridge-viewer-worktree-dev-server/verifier-journey-deadline.ts';
 import { BridgeWebTestLaunch } from './bridge-web-test-launch.ts';
 import { handleLaunchPromise } from './handled-launch-promise.ts';
+
+test.each(['configureServer', 'listener initialization'] as const)(
+	'expiry closes Vite held in %s before joining acquisition and removing its root',
+	async (phase) => {
+		vi.useFakeTimers();
+		const stderr = vi.spyOn(process.stderr, 'write').mockReturnValue(true);
+		const launch = await BridgeWebTestLaunch.start();
+		const configuring = makeDeferred<ViteDevServer>();
+		const configurationClosed = makeDeferred<void>();
+		let closeServer: MockInstance<ViteDevServer['close']> | undefined;
+		let capturedServer: ViteDevServer | undefined;
+		const starting = handleLaunchPromise(
+			launch.startVite({
+				configFile: false,
+				logLevel: 'silent',
+				server: { watch: null, hmr: false },
+				plugins: [
+					{
+						name: 'held-configuration-until-owner-close',
+						enforce: 'pre',
+						configureServer: {
+							order: 'pre',
+							handler: async (server): Promise<void> => {
+								capturedServer = server;
+								const nativeClose = server.close.bind(server);
+								closeServer = vi
+									.spyOn(server, 'close')
+									.mockImplementation(async (): Promise<void> => {
+										configurationClosed.resolve();
+										await nativeClose();
+									});
+								if (phase === 'configureServer') {
+									configuring.resolve(server);
+									await configurationClosed.promise;
+								}
+							},
+						},
+						buildStart: async (): Promise<void> => {
+							if (phase !== 'listener initialization') return;
+							if (capturedServer === undefined)
+								throw new Error('Vite owner was not captured before buildStart');
+							configuring.resolve(capturedServer);
+							await configurationClosed.promise;
+						},
+					},
+				],
+			}),
+			'held Vite configuration',
+		);
+		const server = await configuring.promise;
+		try {
+			const pendingStep =
+				phase === 'configureServer' ? 'Vite acquisition' : 'Vite listener readiness';
+			expect(launch.pendingSteps).toContain(pendingStep);
+			await vi.advanceTimersByTimeAsync(endToEndTestTimeoutMilliseconds);
+			expect(closeServer).toHaveBeenCalled();
+			expect(String(launch.signal.reason)).toContain(`waiting=${pendingStep}`);
+			await expect(starting.value()).rejects.toThrow('held Vite configuration');
+			expect(launch.cleanup.viteClosed).toBe(true);
+			expect(server.httpServer?.listening).toBe(false);
+			expect(launch.cleanup.lateViteListenerRetirement).toEqual(
+				phase === 'listener initialization'
+					? { kind: 'closed', closeEventObserved: true }
+					: { kind: 'not-required' },
+			);
+			expect(launch.cleanup.dataRootRemoved).toBe(true);
+			await expect(access(launch.dataRootPath)).rejects.toMatchObject({ code: 'ENOENT' });
+		} finally {
+			// Rescue only on a red implementation; the green assertions precede this.
+			try {
+				server.httpServer?.close();
+				await server.close();
+				await starting.settled;
+				await handleLaunchPromise(launch.dispose(), 'Vite proof cleanup').settled;
+			} finally {
+				stderr.mockRestore();
+				vi.useRealTimers();
+			}
+		}
+	},
+);
 
 test('held Vite readiness outlives 30 seconds and only the launch bound retires it', async () => {
 	vi.useFakeTimers();
