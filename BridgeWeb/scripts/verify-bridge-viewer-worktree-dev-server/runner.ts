@@ -99,6 +99,7 @@ import {
 	fetchPerformanceWorktreeFileDescriptors,
 	fetchWorktreeFileContent,
 	fetchWorktreeSurface,
+	makeWorktreeProductDataClient,
 	readBrowserProof,
 	resolveTargetDescriptor,
 	restoreWorktreeFileModifiedFixture,
@@ -225,11 +226,14 @@ export async function verifyWorktreeDevServerPerformanceOnly(
 	launch: BridgeWebTestLaunch,
 ): Promise<WorktreeDevServerPerformanceOnlyResult> {
 	const page = await makeVerificationPage();
-	const { surface, descriptors } = await launch.readProductData(async (ownClient) => {
-		const surface = await fetchWorktreeSurface(ownClient);
-		const descriptors = await fetchPerformanceWorktreeFileDescriptors(surface);
-		return { surface, descriptors };
-	});
+	const { surface, descriptors } = await launch.readProductData(
+		makeWorktreeProductDataClient,
+		async (client) => {
+			const surface = await fetchWorktreeSurface(client);
+			const descriptors = await fetchPerformanceWorktreeFileDescriptors(surface);
+			return { surface, descriptors };
+		},
+	);
 	const startupLoadTiming = await collectWorktreeStartupLoadTimingProof({
 		page,
 	});

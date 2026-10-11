@@ -17,8 +17,8 @@ import { runBridgeWebE2ETestBody } from './bridge-web-e2e-test-retirement.ts';
 
 const treeSettlementTimeoutMilliseconds = 30_000;
 
-test('filters the native Git working-tree review by every status and clears combined facets', async (bridgeWebTestContext): Promise<void> => {
-	return await runBridgeWebE2ETestBody(bridgeWebTestContext, async (): Promise<void> => {
+test('filters the native Git working-tree review by every status and clears combined facets', async (context): Promise<void> => {
+	return await runBridgeWebE2ETestBody(context, async (): Promise<void> => {
 		const fixture = await createBridgeViewerGitStatusFixture();
 		let browser: Browser | null = null;
 		let server: BridgeViewerOwnedViteProductServer | null = null;
@@ -26,7 +26,7 @@ test('filters the native Git working-tree review by every status and clears comb
 		let primaryFailure: { readonly error: unknown } | null = null;
 		try {
 			server = await startBridgeViewerOwnedViteProductServer(fixture.oracle);
-			browser = await launchBridgeViewerE2EChromium();
+			browser = await launchBridgeViewerE2EChromium({ testSignal: context.signal });
 			const page = await browser.newPage({ viewport: { height: 980, width: 1728 } });
 			diagnostics = observeBrowserRuntimeDiagnostics(page);
 

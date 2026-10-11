@@ -1,6 +1,6 @@
 import type { Browser, Page, Response } from 'playwright';
 import { uuidv7 } from 'uuidv7';
-import { afterAll, beforeAll, describe, expect, test } from 'vitest';
+import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'vitest';
 
 import { installBridgeViewerDocumentGenerations } from '../../scripts/verify-bridge-viewer-worktree-dev-server/product-only-real-router-document-generations.ts';
 import { BridgeViewerRealRouterObserver } from '../../scripts/verify-bridge-viewer-worktree-dev-server/product-only-real-router-page.ts';
@@ -21,7 +21,10 @@ describe('Bridge product journey document generations in a real browser', () => 
 
 	beforeAll(async (): Promise<void> => {
 		server = await startBridgeViewerJourneyDocumentGenerationServer();
-		browser = await launchBridgeViewerE2EChromium();
+	});
+
+	beforeEach(async (context): Promise<void> => {
+		browser = await launchBridgeViewerE2EChromium({ testSignal: context.signal });
 	});
 
 	afterAll(async (): Promise<void> => {

@@ -16,8 +16,8 @@ import { runBridgeWebE2ETestBody } from './bridge-web-e2e-test-retirement.ts';
 
 test.for(['Markdown', 'code'] as const)(
 	'renders a second %s file after a completed Markdown and Mermaid document',
-	async (targetKind, bridgeWebTestContext): Promise<void> => {
-		return await runBridgeWebE2ETestBody(bridgeWebTestContext, async (): Promise<void> => {
+	async (targetKind, context): Promise<void> => {
+		return await runBridgeWebE2ETestBody(context, async (): Promise<void> => {
 			// Arrange — this is the two-click failure independently observed through Chrome CUA.
 			const fixture = await createBridgeViewerExplorationFixture();
 			let server: BridgeViewerOwnedViteProductServer | null = null;
@@ -27,11 +27,8 @@ test.for(['Markdown', 'code'] as const)(
 			let primaryFailure: { readonly error: unknown } | null = null;
 			try {
 				server = await startBridgeViewerOwnedViteProductServer(fixture.oracle);
-				browser = await launchBridgeViewerE2EChromium();
+				browser = await launchBridgeViewerE2EChromium({ testSignal: context.signal });
 				const page = await browser.newPage({ viewport: { width: 1728, height: 980 } });
-				// The vitest hang bound is the only clock this journey is allowed.
-				page.setDefaultTimeout(0);
-				page.setDefaultNavigationTimeout(0);
 				diagnostics = observeBrowserRuntimeDiagnostics(page);
 				failures = await observeInteractionProfileFailures(page);
 				await page.goto(bridgeViewerViteProductFileUrl(server.origin, 'README.md'), {

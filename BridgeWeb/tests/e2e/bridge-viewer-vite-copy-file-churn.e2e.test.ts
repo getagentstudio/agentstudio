@@ -9,14 +9,15 @@ import {
 } from './bridge-viewer-vite-product-fixture.ts';
 import { runBridgeWebE2ETestBody } from './bridge-web-e2e-test-retirement.ts';
 
-test('copies a current saved File annotation while the next real file refresh is pending', async (bridgeWebTestContext) => {
-	return await runBridgeWebE2ETestBody(bridgeWebTestContext, async (): Promise<void> => {
+test('copies a current saved File annotation while the next real file refresh is pending', async (context) => {
+	return await runBridgeWebE2ETestBody(context, async (): Promise<void> => {
 		const fixture = await createBridgeViewerViteProductFixture();
 		let server: BridgeViewerOwnedViteProductServer | null = null;
 		let primaryFailure: unknown = null;
 		try {
 			server = await startBridgeViewerOwnedViteProductServer(fixture.oracle);
 			const observations = await runCopyFileChurnReproduction({
+				testSignal: context.signal,
 				oracle: fixture.oracle,
 				server,
 			});

@@ -90,8 +90,8 @@ test.for([
 	['Review', 'review'],
 ] as const)(
 	'persists a saved %s comment across a reload',
-	async ([_label, surface], bridgeWebTestContext): Promise<void> => {
-		return await runBridgeWebE2ETestBody(bridgeWebTestContext, async (): Promise<void> => {
+	async ([_label, surface], context): Promise<void> => {
+		return await runBridgeWebE2ETestBody(context, async (): Promise<void> => {
 			let page: Page | null = null;
 			let server: BridgeViewerOwnedViteProductServer | null = null;
 			onTestFailed(async (): Promise<void> => {
@@ -112,11 +112,8 @@ test.for([
 				if (surface === 'review' && reviewFile === undefined) {
 					throw new Error('Review annotation persistence journey requires a changed review file.');
 				}
-				browser = await launchBridgeViewerE2EChromium();
+				browser = await launchBridgeViewerE2EChromium({ testSignal: context.signal });
 				page = await browser.newPage({ viewport: { height: 980, width: 1728 } });
-				// The vitest hang bound is the only clock this journey is allowed.
-				page.setDefaultTimeout(0);
-				page.setDefaultNavigationTimeout(0);
 				await page.goto(
 					surface === 'file'
 						? bridgeViewerViteProductFileUrl(server.origin, fixture.oracle.largeFilePath)

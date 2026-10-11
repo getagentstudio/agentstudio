@@ -5,16 +5,18 @@ import { join } from 'node:path';
 import { chromium, type Browser, type LaunchOptions } from 'playwright';
 import { createServer, type InlineConfig, type ViteDevServer } from 'vite';
 
-import {
-	BridgeViewerOwnedViteServer,
-	type BridgeViewerViteServerCleanupProof,
-} from '../verify-bridge-viewer-worktree-dev-server/product-only-real-router-regression.ts';
+import { BridgeViewerOwnedViteServer } from '../verify-bridge-viewer-worktree-dev-server/product-only-real-router-regression.ts';
 import { createOwnedVerifierJourneyDeadline } from '../verify-bridge-viewer-worktree-dev-server/verifier-journey-deadline.ts';
 import {
 	startOwnedBridgeDevelopmentServer,
 	type OwnedBridgeDevelopmentServer,
-	type OwnedBridgeDevelopmentServerCleanup,
 } from './bridge-development-server-process.ts';
+import type {
+	BridgeWebOwnedProductDataClient,
+	BridgeWebTestLaunchCleanup,
+	BridgeWebTestLaunchSpec,
+	BridgeWebTestLaunchDependencies,
+} from './bridge-web-test-launch-contracts.ts';
 import {
 	activeLaunches,
 	installExitHooks,
@@ -29,39 +31,17 @@ import {
 	type HandledLaunchPromise,
 	type LaunchPromiseOutcome,
 } from './handled-launch-promise.ts';
+export type {
+	BridgeWebOwnedProductDataClient,
+	BridgeWebTestLaunchCleanup,
+	BridgeWebTestLaunchSpec,
+	BridgeWebTestLaunchDependencies,
+} from './bridge-web-test-launch-contracts.ts';
 import { reserveLoopbackPort } from './reserve-loopback-port.ts';
-
-export interface BridgeWebOwnedProductDataClient {
-	readonly close: () => Promise<void>;
-	readonly abort: (reason: unknown) => Promise<void>;
-}
 
 interface LaunchCleanupOperation {
 	readonly name: string;
 	readonly run: () => Promise<void>;
-}
-
-export interface BridgeWebTestLaunchCleanup {
-	readonly backend: OwnedBridgeDevelopmentServerCleanup | null;
-	readonly browserDisconnected: boolean;
-	readonly dataRootRemoved: boolean;
-	readonly failures: readonly string[];
-	readonly viteClosed: boolean;
-	readonly viteProcess: BridgeViewerViteServerCleanupProof | null;
-}
-
-export interface BridgeWebTestLaunchSpec {
-	readonly backend?: Omit<
-		Parameters<typeof startOwnedBridgeDevelopmentServer>[0],
-		'dataRootPath' | 'onSpawn'
-	>;
-	readonly dataRootPrefix?: string;
-	readonly signal?: AbortSignal;
-}
-
-export interface BridgeWebTestLaunchDependencies {
-	readonly startBackend: typeof startOwnedBridgeDevelopmentServer;
-	readonly startViteChild?: typeof BridgeViewerOwnedViteServer.start;
 }
 
 export class BridgeWebTestLaunch {
@@ -176,6 +156,8 @@ export class BridgeWebTestLaunch {
 		const observation = handleLaunchPromise(promise, name);
 		const identity = Symbol(name);
 		this.#pendingSteps.set(identity, name);
+		if (this.#closed && this.#signal.aborted)
+			process.stderr.write(`BRIDGE_LAUNCH_RETIREMENT waiting=${name}\n`);
 		void observation.settled.then((): void => {
 			this.#pendingSteps.delete(identity);
 		});
@@ -263,6 +245,7 @@ export class BridgeWebTestLaunch {
 				(server): void => {
 					this.#vite = server;
 				},
+				'Vite acquisition',
 			);
 			this.#vite = vite;
 			this.#cleanup = { ...this.#cleanup, viteClosed: false };
@@ -271,7 +254,8 @@ export class BridgeWebTestLaunch {
 				this.#requireOpen();
 			}
 			this.#requireOpen();
-			if (configuration.server?.middlewareMode !== true) await vite.listen();
+			if (configuration.server?.middlewareMode !== true)
+				await this.#acquire(vite.listen(), (): void => {}, 'Vite listener readiness');
 			return vite;
 		} catch (error: unknown) {
 			return await this.disposeAfterFailure(error);
@@ -288,6 +272,7 @@ export class BridgeWebTestLaunch {
 					this.#browser = ownedBrowser;
 					this.#closeBrowser = ownedBrowser.close.bind(ownedBrowser);
 				},
+				'Chromium acquisition',
 			);
 			this.#browser = browser;
 			this.#cleanup = { ...this.#cleanup, browserDisconnected: false };
@@ -329,30 +314,25 @@ export class BridgeWebTestLaunch {
 
 	// Own clients before open() suspends; normal completion acknowledges release,
 	// while expiry aborts their HTTP/stream owners before joining their work.
-	async readProductData<TValue>(
-		read: (ownClient: (client: BridgeWebOwnedProductDataClient) => void) => Promise<TValue>,
+	async readProductData<TClient extends BridgeWebOwnedProductDataClient, TValue>(
+		createClient: () => TClient,
+		read: (client: TClient) => Promise<TValue>,
 	): Promise<TValue> {
 		this.#requireOpen();
-		const clients = new Set<BridgeWebOwnedProductDataClient>();
-		const ownClient = (client: BridgeWebOwnedProductDataClient): void => {
-			clients.add(client);
-			this.#cancelClients.add(client);
-		};
 		try {
+			const client = createClient();
+			this.#cancelClients.add(client);
 			const result = await this.#acquire(
-				read(ownClient),
+				read(client),
 				(): void => {},
 				'pre-navigation product data read',
 			);
-			for (const client of clients) {
-				// oxlint-disable-next-line no-await-in-loop -- Release each owned installation before allowing page bootstrap.
-				await this.#acquire(
-					client.close(),
-					(): void => {},
-					'acknowledged product installation release',
-				);
-				this.#cancelClients.delete(client);
-			}
+			await this.#acquire(
+				client.close(),
+				(): void => {},
+				'acknowledged product installation release',
+			);
+			this.#cancelClients.delete(client);
 			this.#requireOpen();
 			return result;
 		} catch (error: unknown) {

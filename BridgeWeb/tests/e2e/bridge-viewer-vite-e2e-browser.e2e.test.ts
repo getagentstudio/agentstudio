@@ -16,33 +16,36 @@ const notConfiguredForActWarning =
 // for E2E journeys, fail the running test through the page-console relay.
 defineConsoleErrorGuardProbe({
 	runOwnedBody: runBridgeWebE2ETestBody,
-	emitActWarning: async (): Promise<void> => {
-		await logFromRealPage(notWrappedInActWarning);
+	emitActWarning: async (context): Promise<void> => {
+		await logFromRealPage(notWrappedInActWarning, context.signal);
 	},
 	suiteName: 'E2E page console (update not wrapped in act)',
 });
 
 defineConsoleErrorGuardProbe({
 	runOwnedBody: runBridgeWebE2ETestBody,
-	emitActWarning: async (): Promise<void> => {
-		await logFromRealPage(notConfiguredForActWarning);
+	emitActWarning: async (context): Promise<void> => {
+		await logFromRealPage(notConfiguredForActWarning, context.signal);
 	},
 	expectedWarningText: notConfiguredForActWarning,
 	suiteName: 'E2E page console (environment not configured for act)',
 });
 
-test('an E2E page console.error that is not an act() warning does not fail the test', async (bridgeWebTestContext) => {
-	return await runBridgeWebE2ETestBody(bridgeWebTestContext, async (): Promise<void> => {
+test('an E2E page console.error that is not an act() warning does not fail the test', async (context) => {
+	return await runBridgeWebE2ETestBody(context, async (): Promise<void> => {
 		// The console error guard fails this test if the relay re-reports the message.
-		await logFromRealPage('Bridge page diagnostic that is not a React act() warning');
+		await logFromRealPage(
+			'Bridge page diagnostic that is not a React act() warning',
+			context.signal,
+		);
 	});
 });
 
 // Logs `message` with console.error inside a real page and returns once the
 // browser context has delivered that console event; the relay listens on the same
 // context and was registered first, so it has already run.
-async function logFromRealPage(message: string): Promise<void> {
-	const browser: Browser = await launchBridgeViewerE2EChromium();
+async function logFromRealPage(message: string, testSignal: AbortSignal): Promise<void> {
+	const browser: Browser = await launchBridgeViewerE2EChromium({ testSignal });
 	try {
 		const context = await browser.newContext();
 		const page = await context.newPage();

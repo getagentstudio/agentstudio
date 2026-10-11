@@ -19,8 +19,8 @@ type CategoryViewerSurface = 'file' | 'review';
 
 const treeSettlementTimeoutMilliseconds = 30_000;
 
-test('filters File and Review trees with native-classified filesystem metadata', async (bridgeWebTestContext): Promise<void> => {
-	return await runBridgeWebE2ETestBody(bridgeWebTestContext, async (): Promise<void> => {
+test('filters File and Review trees with native-classified filesystem metadata', async (context): Promise<void> => {
+	return await runBridgeWebE2ETestBody(context, async (): Promise<void> => {
 		const fixture = await createBridgeViewerCategoryFixture();
 		let browser: Browser | null = null;
 		let server: BridgeViewerOwnedViteProductServer | null = null;
@@ -28,7 +28,7 @@ test('filters File and Review trees with native-classified filesystem metadata',
 		let primaryFailure: { readonly error: unknown } | null = null;
 		try {
 			server = await startBridgeViewerOwnedViteProductServer(fixture.oracle);
-			browser = await launchBridgeViewerE2EChromium();
+			browser = await launchBridgeViewerE2EChromium({ testSignal: context.signal });
 			const page = await browser.newPage({ viewport: { height: 980, width: 1728 } });
 			diagnostics = observeBrowserRuntimeDiagnostics(page);
 

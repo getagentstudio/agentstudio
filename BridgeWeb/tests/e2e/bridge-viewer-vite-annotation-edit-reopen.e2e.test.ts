@@ -19,8 +19,8 @@ import { runBridgeWebE2ETestBody } from './bridge-web-e2e-test-retirement.ts';
 
 const journeyTimeoutMilliseconds = 120_000;
 
-test('keeps one File annotation stable through repeated edit, reply, resolve, and reopen', async (bridgeWebTestContext) => {
-	return await runBridgeWebE2ETestBody(bridgeWebTestContext, async (): Promise<void> => {
+test('keeps one File annotation stable through repeated edit, reply, resolve, and reopen', async (context) => {
+	return await runBridgeWebE2ETestBody(context, async (): Promise<void> => {
 		const fixture = await createBridgeViewerViteProductFixture();
 		let browser: Browser | null = null;
 		let page: Page | null = null;
@@ -29,7 +29,7 @@ test('keeps one File annotation stable through repeated edit, reply, resolve, an
 		let commandObservation: AnnotationCommandObservation | null = null;
 		try {
 			server = await startBridgeViewerOwnedViteProductServer(fixture.oracle);
-			browser = await launchBridgeViewerE2EChromium();
+			browser = await launchBridgeViewerE2EChromium({ testSignal: context.signal });
 			page = await browser.newPage({ viewport: { height: 980, width: 1728 } });
 			commandObservation = observeAnnotationCommandOutcomes(page, (): string => phase);
 

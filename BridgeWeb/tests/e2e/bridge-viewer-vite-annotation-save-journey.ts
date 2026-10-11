@@ -86,10 +86,11 @@ export function registerBridgeViewerViteAnnotationSaveJourneyTests(props: {
 	readonly oracle: () => BridgeViewerViteProductFixtureOracle;
 	readonly server: () => BridgeViewerOwnedViteProductServer;
 }): void {
-	test.each(['file', 'review'] as const)(
+	test.for(['file', 'review'] as const)(
 		'keeps an exact committed annotation visible while the %s projection is gated',
-		async (surface) => {
+		async (surface, context) => {
 			const observations = await runAnnotationSaveJourney({
+				testSignal: context.signal,
 				oracle: props.oracle(),
 				server: props.server(),
 				surface,
@@ -106,8 +107,9 @@ export function registerBridgeViewerViteAnnotationSaveJourneyTests(props: {
 		},
 	);
 
-	test('restores a released Review root draft after a full document reload', async () => {
+	test('restores a released Review root draft after a full document reload', async (context) => {
 		const observations = await runReleasedDraftReloadJourney({
+			testSignal: context.signal,
 			oracle: props.oracle(),
 			server: props.server(),
 		});
@@ -119,16 +121,14 @@ export function registerBridgeViewerViteAnnotationSaveJourneyTests(props: {
 }
 
 async function runReleasedDraftReloadJourney(props: {
+	readonly testSignal: AbortSignal;
 	readonly oracle: BridgeViewerViteProductFixtureOracle;
 	readonly server: BridgeViewerOwnedViteProductServer;
 }): Promise<ReleasedDraftReloadJourneyObservations> {
-	const browser = await launchBridgeViewerE2EChromium();
+	const browser = await launchBridgeViewerE2EChromium({ testSignal: props.testSignal });
 	let page: Page | null = null;
 	try {
 		page = await browser.newPage({ viewport: { height: 980, width: 1728 } });
-		// The vitest hang bound is the only clock this journey is allowed.
-		page.setDefaultTimeout(0);
-		page.setDefaultNavigationTimeout(0);
 		const reviewFile = props.oracle.reviewFiles[0];
 		if (reviewFile === undefined) {
 			throw new Error('Review released-draft journey requires a changed review file.');
@@ -192,6 +192,7 @@ async function runReleasedDraftReloadJourney(props: {
 }
 
 export async function runAnnotationSaveJourney(props: {
+	readonly testSignal: AbortSignal;
 	readonly afterProjectedSave?: (
 		context: AnnotationSaveJourneyHookContext,
 	) => Promise<AnnotationSaveJourneyPostSaveResult | undefined>;
@@ -203,7 +204,7 @@ export async function runAnnotationSaveJourney(props: {
 	readonly setupPage?: (page: Page) => Promise<void>;
 	readonly surface: 'file' | 'review';
 }): Promise<AnnotationSaveJourneyObservations> {
-	const browser = await launchBridgeViewerE2EChromium();
+	const browser = await launchBridgeViewerE2EChromium({ testSignal: props.testSignal });
 	const diagnostics: string[] = [];
 	let page: Page | null = null;
 	let expectedSavedBody: string | null = null;
@@ -212,9 +213,6 @@ export async function runAnnotationSaveJourney(props: {
 		null;
 	try {
 		page = await browser.newPage({ viewport: { height: 980, width: 1728 } });
-		// The vitest hang bound is the only clock this journey is allowed.
-		page.setDefaultTimeout(0);
-		page.setDefaultNavigationTimeout(0);
 		transportFailures = await observeInteractionProfileFailures(page);
 		observeAnnotationJourneyDiagnostics(page, diagnostics);
 		await props.setupPage?.(page);

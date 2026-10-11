@@ -90,16 +90,18 @@ describe('Bridge Viewer dedicated Vite product E2E', () => {
 		}
 	});
 
-	test('correlates the disposable live-worktree journey through the product provider, worker, Pierre, and painted DOM', async (bridgeWebTestContext) => {
-		return await runBridgeWebE2ETestBody(bridgeWebTestContext, async (): Promise<void> => {
+	test('correlates the disposable live-worktree journey through the product provider, worker, Pierre, and painted DOM', async (context) => {
+		return await runBridgeWebE2ETestBody(context, async (): Promise<void> => {
 			const oracle = requireFixtureOracle();
 			const server = requireOwnedServer();
 			expect(oracle.changedPaths).toHaveLength(16);
 			expect(oracle.reviewFiles).toHaveLength(oracle.changedPaths.length);
 			expect(oracle.fileProofCodeContent.length).toBeLessThanOrEqual(160);
 
+			const browser = await launchBridgeViewerE2EChromium({ testSignal: context.signal });
 			const journeyObservations = await runBridgeViewerProductOnlyJourney({
-				launch: ownedServer.testLaunch,
+				launch: server.testLaunch,
+				browser,
 				baseUrl: server.origin,
 				expectedReviewItemIds: oracle.expectedReviewItemIds,
 				fileProofTargets: oracle.fileProofTargets,
@@ -110,11 +112,11 @@ describe('Bridge Viewer dedicated Vite product E2E', () => {
 		});
 	});
 
-	test('observes Review base/head body truth, request leases, painted publication correlation, and directory disclosure interaction', async (bridgeWebTestContext) => {
-		return await runBridgeWebE2ETestBody(bridgeWebTestContext, async (): Promise<void> => {
+	test('observes Review base/head body truth, request leases, painted publication correlation, and directory disclosure interaction', async (context) => {
+		return await runBridgeWebE2ETestBody(context, async (): Promise<void> => {
 			const oracle = requireFixtureOracle();
 			const server = requireOwnedServer();
-			const browser = await launchBridgeViewerE2EChromium();
+			const browser = await launchBridgeViewerE2EChromium({ testSignal: context.signal });
 			let page: Page | null = null;
 			try {
 				page = await browser.newPage({ viewport: { height: 980, width: 1728 } });
@@ -212,8 +214,8 @@ describe('Bridge Viewer dedicated Vite product E2E', () => {
 		});
 	});
 
-	test('paints complete final File bytes after deep scroll with descriptor, role, request, source, and disposition correlation', async (bridgeWebTestContext) => {
-		return await runBridgeWebE2ETestBody(bridgeWebTestContext, async (): Promise<void> => {
+	test('paints complete final File bytes after deep scroll with descriptor, role, request, source, and disposition correlation', async (context) => {
+		return await runBridgeWebE2ETestBody(context, async (): Promise<void> => {
 			const fixture = await createBridgeViewerViteProductFixture();
 			const oracle = fixture.oracle;
 			let browser: Browser | null = null;
@@ -224,7 +226,7 @@ describe('Bridge Viewer dedicated Vite product E2E', () => {
 			let contentRequests: readonly ProductContentRequestObservation[] = [];
 			try {
 				server = await startBridgeViewerOwnedViteProductServer(oracle);
-				browser = await launchBridgeViewerE2EChromium();
+				browser = await launchBridgeViewerE2EChromium({ testSignal: context.signal });
 				page = await browser.newPage({ viewport: { height: 980, width: 1728 } });
 				contentRequests = observeProductContentRequests(page);
 				const workerUrls: string[] = [];
@@ -409,13 +411,13 @@ describe('Bridge Viewer dedicated Vite product E2E', () => {
 		});
 	});
 
-	test('restores a UI-committed symbolic comparison across backend restart and resolves the moved Git target', async (bridgeWebTestContext) => {
-		return await runBridgeWebE2ETestBody(bridgeWebTestContext, async (): Promise<void> => {
+	test('restores a UI-committed symbolic comparison across backend restart and resolves the moved Git target', async (context) => {
+		return await runBridgeWebE2ETestBody(context, async (): Promise<void> => {
 			// Arrange
 			const fixture = await createBridgeViewerViteProductFixture();
 			let serverA: BridgeViewerOwnedViteProductServer | null = null;
 			let serverB: BridgeViewerOwnedViteProductServer | null = null;
-			const browser = await launchBridgeViewerE2EChromium();
+			const browser = await launchBridgeViewerE2EChromium({ testSignal: context.signal });
 			try {
 				serverA = await startBridgeViewerOwnedViteProductServer(fixture.oracle);
 				const pageA = await browser.newPage({ viewport: { height: 980, width: 1728 } });

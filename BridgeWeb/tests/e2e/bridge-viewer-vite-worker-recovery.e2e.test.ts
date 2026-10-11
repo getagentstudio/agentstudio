@@ -33,8 +33,8 @@ import { runBridgeWebE2ETestBody } from './bridge-web-e2e-test-retirement.ts';
 
 test.for(['proxy502', 'abortedDelivery'] as const)(
 	'replaces the worker after exhausted installed receipts (%s) and installs the next Review revision',
-	async (lostReplyMode, bridgeWebTestContext) => {
-		return await runBridgeWebE2ETestBody(bridgeWebTestContext, async (): Promise<void> => {
+	async (lostReplyMode, context) => {
+		return await runBridgeWebE2ETestBody(context, async (): Promise<void> => {
 			// Arrange — intercept only installed receipts; all source, metadata and content remain real.
 			const fixture = await createBridgeViewerViteProductFixture();
 			let server: BridgeViewerOwnedViteProductServer | null = null;
@@ -50,7 +50,7 @@ test.for(['proxy502', 'abortedDelivery'] as const)(
 			};
 			try {
 				markPhase('browser-starting');
-				browser = await launchBridgeViewerE2EChromium();
+				browser = await launchBridgeViewerE2EChromium({ testSignal: context.signal });
 				markPhase('server-starting');
 				server = await startBridgeViewerOwnedViteProductServer(fixture.oracle);
 				const page = await browser.newPage({ viewport: { height: 980, width: 1728 } });
@@ -246,14 +246,14 @@ test.for(['proxy502', 'abortedDelivery'] as const)(
 	},
 );
 
-test('reclaims a durable Review draft after worker failure and one unavailable replacement bootstrap', async (bridgeWebTestContext) => {
-	return await runBridgeWebE2ETestBody(bridgeWebTestContext, async (): Promise<void> => {
+test('reclaims a durable Review draft after worker failure and one unavailable replacement bootstrap', async (context) => {
+	return await runBridgeWebE2ETestBody(context, async (): Promise<void> => {
 		// Arrange — real Vite, Swift, comm worker, metadata and content establish a usable Review.
 		const fixture = await createBridgeViewerViteProductFixture();
 		let server: BridgeViewerOwnedViteProductServer | null = null;
 		let browser: Browser | null = null;
 		try {
-			browser = await launchBridgeViewerE2EChromium();
+			browser = await launchBridgeViewerE2EChromium({ testSignal: context.signal });
 			server = await startBridgeViewerOwnedViteProductServer(fixture.oracle);
 			const page = await browser.newPage({ viewport: { height: 980, width: 1728 } });
 			const reviewFile = fixture.oracle.reviewFiles[0];
@@ -377,21 +377,19 @@ test('reclaims a durable Review draft after worker failure and one unavailable r
 	});
 });
 
-test('re-establishes annotation demand after an in-place worker replacement so Copy is enabled without reload', async (bridgeWebTestContext) => {
-	return await runBridgeWebE2ETestBody(bridgeWebTestContext, async (): Promise<void> => {
+test('re-establishes annotation demand after an in-place worker replacement so Copy is enabled without reload', async (context) => {
+	return await runBridgeWebE2ETestBody(context, async (): Promise<void> => {
 		// Arrange — a saved Review annotation makes the drawer's output controls usable.
 		const fixture = await createBridgeViewerViteProductFixture();
 		let server: BridgeViewerOwnedViteProductServer | null = null;
 		let browser: Browser | null = null;
 		let phase = 'fixture-ready';
 		try {
-			browser = await launchBridgeViewerE2EChromium();
+			browser = await launchBridgeViewerE2EChromium({ testSignal: context.signal });
 			server = await startBridgeViewerOwnedViteProductServer(fixture.oracle);
 			const page = await browser.newPage({ viewport: { height: 980, width: 1728 } });
 			const reviewFile = fixture.oracle.reviewFiles[0];
 			if (reviewFile === undefined) throw new Error('Demand replay requires a real Review file.');
-			page.setDefaultTimeout(0);
-			page.setDefaultNavigationTimeout(0);
 			let mainFrameNavigationCount = 0;
 			page.on('framenavigated', (frame): void => {
 				if (frame === page.mainFrame()) mainFrameNavigationCount += 1;

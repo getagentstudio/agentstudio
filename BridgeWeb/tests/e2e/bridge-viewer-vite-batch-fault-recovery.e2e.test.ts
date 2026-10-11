@@ -37,8 +37,8 @@ interface ReviewContentRequestObservation {
 
 type BatchBegin = Extract<BridgeProductMetadataFrame, { readonly kind: 'subscription.batchBegin' }>;
 
-test('File and Review semantic part faults recover on the live Vite and Swift stream', async (bridgeWebTestContext) => {
-	return await runBridgeWebE2ETestBody(bridgeWebTestContext, async (): Promise<void> => {
+test('File and Review semantic part faults recover on the live Vite and Swift stream', async (context) => {
+	return await runBridgeWebE2ETestBody(context, async (): Promise<void> => {
 		const fixture = await createBridgeViewerViteProductFixture();
 		let server: BridgeViewerOwnedViteProductServer | null = null;
 		let proxy: BridgeStreamFaultProxy | null = null;
@@ -53,12 +53,10 @@ test('File and Review semantic part faults recover on the live Vite and Swift st
 				onMetadataFrame: metadataFrames.record,
 				semanticBatchFaults: true,
 			});
-			browser = await launchBridgeViewerE2EChromium();
+			browser = await launchBridgeViewerE2EChromium({ testSignal: context.signal });
 			page = await browser.newPage({ viewport: { height: 980, width: 1728 } });
 			const activePage = page;
 			const reviewContentRequests = observeReviewContentRequests(page);
-			page.setDefaultTimeout(0);
-			page.setDefaultNavigationTimeout(0);
 			await page.goto(bridgeViewerViteProductFileUrl(proxy.origin, fixture.oracle.largeFilePath), {
 				waitUntil: 'domcontentloaded',
 			});

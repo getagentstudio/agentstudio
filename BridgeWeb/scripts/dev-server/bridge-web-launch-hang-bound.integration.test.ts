@@ -154,10 +154,12 @@ test('runner-boundary abort joins the real opening client, backend and fixture r
 						scenarioName: 'current-worktree',
 					});
 					try {
-						await launch.readProductData(async (ownClient) => {
-							ownClient(client);
-							return await client.open();
-						});
+						await launch.readProductData(
+							() => client,
+							async (client) => {
+								return await client.open();
+							},
+						);
 					} finally {
 						await server.stop();
 					}

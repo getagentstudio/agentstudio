@@ -21,8 +21,8 @@ import { runBridgeWebE2ETestBody } from './bridge-web-e2e-test-retirement.ts';
 
 test.for(['direct', 'healthy', 'disconnected'] as const)(
 	'updates the selected File without user interaction after a %s metadata stream',
-	async (streamState, bridgeWebTestContext): Promise<void> => {
-		return await runBridgeWebE2ETestBody(bridgeWebTestContext, async (): Promise<void> => {
+	async (streamState, context): Promise<void> => {
+		return await runBridgeWebE2ETestBody(context, async (): Promise<void> => {
 			// Arrange — production browser worker, Vite and Swift with a transparent wire seam.
 			const fixture = await createBridgeViewerViteProductFixture();
 			let browser: Browser | null = null;
@@ -36,11 +36,8 @@ test.for(['direct', 'healthy', 'disconnected'] as const)(
 			try {
 				server = await startBridgeViewerOwnedViteProductServer(fixture.oracle);
 				if (streamState !== 'direct') proxy = await startBridgeStreamFaultProxy(server.origin);
-				browser = await launchBridgeViewerE2EChromium();
+				browser = await launchBridgeViewerE2EChromium({ testSignal: context.signal });
 				page = await browser.newPage({ viewport: { height: 980, width: 1728 } });
-				// The vitest hang bound is the only clock this journey is allowed.
-				page.setDefaultTimeout(0);
-				page.setDefaultNavigationTimeout(0);
 				diagnostics = observeBrowserRuntimeDiagnostics(page);
 				failures = await observeInteractionProfileFailures(page);
 				await page.goto(

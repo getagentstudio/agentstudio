@@ -4,7 +4,6 @@ import type { Page } from 'playwright';
 
 import { installBridgeProductFileBatch } from '../../src/core/comm-worker/bridge-product-file-batch-installer.ts';
 import type { BridgeProductViewInstallation } from '../../src/core/comm-worker/bridge-product-view-batch-receiver.ts';
-import type { BridgeWebOwnedProductDataClient } from '../dev-server/bridge-web-test-launch.ts';
 import { resolveBridgeWorktreeVerifierWritePath } from '../verify-bridge-viewer-worktree-dev-server-paths.ts';
 import { requireVerifierBrowser } from './browser-session.ts';
 import {
@@ -40,15 +39,17 @@ const productFileSessionByDescriptor = new WeakMap<
 >();
 const liveProductFileSurfaces = new Set<WorktreeFileSurface>();
 
-export async function fetchWorktreeSurface(
-	ownClient?: (client: BridgeWebOwnedProductDataClient) => void,
-): Promise<WorktreeFileSurface> {
-	await closeAllWorktreeFileSurfaces();
-	const session = new BridgeVerifierProductFileSession({
+export function makeWorktreeProductDataClient(): BridgeVerifierProductFileSession {
+	return new BridgeVerifierProductFileSession({
 		baseUrl: new URL(worktreeDevServerUrl).origin,
 		scenarioName: scenarioNameFromDevServerUrl(worktreeDevServerUrl),
 	});
-	ownClient?.(session);
+}
+
+export async function fetchWorktreeSurface(
+	session: BridgeVerifierProductFileSession = makeWorktreeProductDataClient(),
+): Promise<WorktreeFileSurface> {
+	await closeAllWorktreeFileSurfaces();
 	const productSource = await session.open();
 	const pathCount = worktreeFileTreeRows(productSource.installations).length;
 	const surface: WorktreeFileSurface = {

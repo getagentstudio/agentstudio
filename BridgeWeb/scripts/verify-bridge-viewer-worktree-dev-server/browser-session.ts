@@ -1,4 +1,4 @@
-import type { Browser } from 'playwright';
+import type { Browser, BrowserContext } from 'playwright';
 
 import type { BridgeWebTestLaunch } from '../dev-server/bridge-web-test-launch.ts';
 import type { HandledLaunchPromise } from '../dev-server/handled-launch-promise.ts';
@@ -13,6 +13,10 @@ export function installVerifierBrowser(
 	launch: BridgeWebTestLaunch,
 ): void {
 	verifierBrowser = browser;
+	browser.on('context', (context: BrowserContext): void => {
+		context.setDefaultTimeout(0);
+		context.setDefaultNavigationTimeout(0);
+	});
 	verifierJourneySignal = signal;
 	verifierLaunch = launch;
 }

@@ -1,20 +1,23 @@
 import type { Page } from 'playwright';
 
 import type { ReviewMetadataBeforeContentProof } from '../verify-bridge-viewer-worktree-review-proof.ts';
-import { requireVerifierBrowser } from './browser-session.ts';
+import { observeVerifierStartupStep, requireVerifierBrowser } from './browser-session.ts';
 import type {
 	WorktreeBridgeTelemetrySampleProof,
 	WorktreeVerifierBrowserHelpers,
 } from './types.ts';
 
 export async function makeVerificationPage(): Promise<Page> {
-	const page = await requireVerifierBrowser().newPage({
-		deviceScaleFactor: 1,
-		viewport: {
-			width: 1728,
-			height: 980,
-		},
-	});
+	const page = await observeVerifierStartupStep(
+		'verifier page acquisition',
+		requireVerifierBrowser().newPage({
+			deviceScaleFactor: 1,
+			viewport: {
+				width: 1728,
+				height: 980,
+			},
+		}),
+	).value();
 	page.setDefaultTimeout(0);
 	page.setDefaultNavigationTimeout(0);
 	const observedTelemetryBatchKeys = new Set<string>();

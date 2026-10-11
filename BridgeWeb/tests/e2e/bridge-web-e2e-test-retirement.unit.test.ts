@@ -57,6 +57,9 @@ test('the actual runner boundary joins held fixture cleanup and the timed-out ra
 			'actual task boundary',
 		);
 		await cleanupStarted.promise;
+		expect(stderr).toHaveBeenCalledWith(
+			'BRIDGE_LAUNCH_RETIREMENT waiting=retire held fixture cleanup\n',
+		);
 		expect(nextTestEntered).toBe(false);
 		expect(bodyRetired).toBe(false);
 		cleanupRelease.resolve();

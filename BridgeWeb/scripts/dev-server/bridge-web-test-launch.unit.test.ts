@@ -102,17 +102,19 @@ test.each(['closed', 'failed'] as const)(
 		const released = makeDeferred<void>();
 		const data = { pathCount: 4 };
 		const result = handleLaunchPromise(
-			launch.readProductData(async (ownClient) => {
-				ownClient({
+			launch.readProductData(
+				() => ({
 					abort: async (): Promise<void> => {},
 					close: async (): Promise<void> => {
 						arrival.resolve();
 						await released.promise;
 						if (disposition === 'failed') throw new Error('release refused');
 					},
-				});
-				return data;
-			}),
+				}),
+				async () => {
+					return data;
+				},
+			),
 			'product data release',
 		);
 		await arrival.promise;
@@ -161,17 +163,19 @@ test('expiry itself retires a held pre-navigation read and its root', async () =
 		rejectRead = reject;
 	});
 	const reading = handleLaunchPromise(
-		launch.readProductData(async (ownClient): Promise<void> => {
-			ownClient({
+		launch.readProductData(
+			() => ({
 				close: async (): Promise<void> => {
 					throw new Error('must not release a still-opening client');
 				},
-				abort: async (reason): Promise<void> => {
+				abort: async (reason: unknown): Promise<void> => {
 					rejectRead(reason);
 				},
-			});
-			await stuckRead;
-		}),
+			}),
+			async () => {
+				await stuckRead;
+			},
+		),
 		'held data read',
 	);
 	launch.startJourneyHangBound();
@@ -243,17 +247,18 @@ test('expiry aborts a held installation release and completes checked teardown',
 		rejectRelease = reject;
 	});
 	const reading = handleLaunchPromise(
-		launch.readProductData(async (ownClient): Promise<void> => {
-			ownClient({
+		launch.readProductData(
+			() => ({
 				close: async (): Promise<void> => {
 					releasing.resolve();
 					await release;
 				},
-				abort: async (reason): Promise<void> => {
+				abort: async (reason: unknown): Promise<void> => {
 					rejectRelease(reason);
 				},
-			});
-		}),
+			}),
+			async () => {},
+		),
 		'held release',
 	);
 	try {
