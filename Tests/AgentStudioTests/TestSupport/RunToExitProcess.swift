@@ -9,12 +9,20 @@ package struct ExitedProcessOutput: Sendable {
     package let standardError: Data
 }
 
-/// A fixture owns its relay configuration; the enclosing lane's cached paths
-/// must not cross this subprocess boundary. Other caller values stay intact.
-package func testProcessEnvironmentWithoutRelayPaths(_ environment: [String: String]? = nil) -> [String: String] {
+/// A fixture owns runner state. Parent registries, PIDs, receipts, relays and
+/// build-slot claims must not cross this subprocess boundary, including when a
+/// caller supplies an environment copied from its parent. Other caller values
+/// remain intact; fixture-owned runner state is configured inside its script.
+package func testProcessEnvironmentWithoutLaneState(_ environment: [String: String]? = nil) -> [String: String] {
     var isolatedEnvironment = environment ?? ProcessInfo.processInfo.environment
-    isolatedEnvironment.removeValue(forKey: "SWIFT_TEST_OUTPUT_RELAY_LOCK_PATH")
-    isolatedEnvironment.removeValue(forKey: "SWIFT_TEST_OUTPUT_RELAY_SCRIPT_PATH")
+    for name in Array(isolatedEnvironment.keys) {
+        if name.hasPrefix("LANE_") || name.hasPrefix("SWIFT_TEST_")
+            || name.hasPrefix("SWIFT_BUILD_") || name == "AGENTSTUDIO_HELD_STEP_LOG"
+            || name == "BUILD_PATH"
+        {
+            isolatedEnvironment.removeValue(forKey: name)
+        }
+    }
     return isolatedEnvironment
 }
 
@@ -74,7 +82,7 @@ package func runProcessToExit(
     if let currentDirectoryURL {
         process.currentDirectoryURL = currentDirectoryURL
     }
-    process.environment = testProcessEnvironmentWithoutRelayPaths(environment)
+    process.environment = testProcessEnvironmentWithoutLaneState(environment)
     process.standardOutput = standardOutputHandle
     process.standardError = standardErrorHandle
     if let standardInput { process.standardInput = standardInput }

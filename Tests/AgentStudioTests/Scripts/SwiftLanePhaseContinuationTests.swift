@@ -195,7 +195,7 @@ struct SwiftLanePhaseContinuationTests {
         """
         set -euo pipefail
         source scripts/swift-test-helpers.sh
-        LOG_PREFIX=tq99 TIMEOUT_SECONDS=600 BUILD_PATH=.build-probe
+        LOG_PREFIX=tq99 TIMEOUT_SECONDS=600
         SWIFT_TEST_PARALLEL=\(parallel ? 1 : 0)
         fast_non_webkit_skip_pattern() { echo SkipFixture; }
         aggregate_serial_non_webkit_suite_filters() { echo AggregateFixture; }
