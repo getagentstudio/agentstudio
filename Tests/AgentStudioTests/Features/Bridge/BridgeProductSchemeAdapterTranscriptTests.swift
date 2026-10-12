@@ -1,3 +1,4 @@
+import AgentStudioTestHarness
 import Foundation
 import Testing
 import WebKit
@@ -70,14 +71,14 @@ struct BridgeProductSchemeAdapterTranscriptTests {
                 harness: harness
             )
         } catch {
-            _ = await harness.teardown(
+            _ = try? await harness.teardown(
                 routingTasks: retainedReplies.map(\.routingTask)
             )
             throw error
         }
 
         // Assert teardown
-        let teardown = await harness.teardown(
+        let teardown = try await harness.teardown(
             routingTasks: retainedReplies.map(\.routingTask)
         )
         #expect(teardown.revoked)
@@ -208,6 +209,19 @@ struct BridgeProductSchemeAdapterTranscriptTests {
                 ]
             )
 
+            let metadataLease = try await harness.provider.metadataProducerLease()
+            let contentLease = try await harness.provider.contentProducerLease()
+            let metadataWaiter = try await harness.frameWaiterFacts.expectNext(
+                in: .init(lease: metadataLease, nextSequence: 2),
+                where: { if case .registered = $0 { true } else { false } },
+                "metadata next-frame waiter after review subscription.accepted")
+            let contentWaiter = try await harness.frameWaiterFacts.expectNext(
+                in: .init(lease: contentLease, nextSequence: 1),
+                where: { if case .registered = $0 { true } else { false } },
+                "content next-frame waiter after content.accepted")
+            guard case .registered = metadataWaiter, case .registered = contentWaiter else {
+                throw BridgeProductSchemeAdapterTranscriptTestError.unexpectedReplyEvent
+            }
             let pacedSnapshot = await harness.session.producerSnapshot()
             #expect(pacedSnapshot.activeContentLeaseCount == 1)
             #expect(
