@@ -245,8 +245,8 @@ struct BridgeTelemetryProofReportTests {
         #expect(report.commProducerHighWatermark == 3)
     }
 
-    @Test("proof sample hashes identity and exposes exact settlement facts")
-    func proofSampleHashesIdentityAndExposesExactSettlementFacts() {
+    @Test("proof sample omits raw identity and exposes a 64-character identity attribute and settlement flags")
+    func proofSampleOmitsRawIdentityAndExposesSettlementFlags() {
         let report = BridgeTelemetryProofReport.drain(
             telemetrySessionId: "telemetry-session-1",
             sidecar: BridgeTelemetrySidecarDrainResult(

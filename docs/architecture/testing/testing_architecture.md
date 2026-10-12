@@ -291,6 +291,11 @@ In short:
   forbidden in tests (`agentstudio_no_forbidden_test_wait`); remaining uses are
   debt in `Tools/AgentStudioArchitectureLint/forbidden-test-wait-ledger.tsv`,
   which only goes down.
+- A guard in an `@Test` function records setup failure before returning; the
+  `agentstudio_no_silent_test_return` rule checks nested control-flow paths and
+  exempts only an exact preceding `#expect(E)` / `guard E else { return }` pair.
+  Nested helper functions and closures own their returns. Remaining sites are
+  debt in `Tools/AgentStudioArchitectureLint/silent-return-test-ledger.tsv`.
 
 <a id="quiescence"></a>
 
@@ -585,9 +590,9 @@ did, from #463 until TQ50).
 [`SwiftLaneWebKitSuiteListGateTests`](../../../Tests/AgentStudioTests/Scripts/SwiftLaneWebKitSuiteListGateTests.swift)
 fails when a source suite is unlisted, when a suite listed test by test is missing one of its tests, or when a listed entry no longer selects anything; it scans source text, so it does not evaluate `#if` conditional compilation.
 Lint debt — polling waits, blocking waits, ad-hoc gates, void wait helpers and
-the MainActor shapes — lives in one file,
-[`architecture-debt-ledger.tsv`](../../../Tools/AgentStudioArchitectureLint/architecture-debt-ledger.tsv),
-as a permitted site count per rule and file. Every lint run requires each file
+the MainActor shapes — lives in the general and specialized rule ledgers,
+including [`architecture-debt-ledger.tsv`](../../../Tools/AgentStudioArchitectureLint/architecture-debt-ledger.tsv),
+as permitted site counts per rule and file. Every lint run requires each file
 to hold exactly its count, so the ledger always states the real debt; the CI
 ratchet rejects a raised count or a new row. The ledger and the ratchet are
 described in the
@@ -622,7 +627,9 @@ See [`BridgeWeb/AGENTS.md` — Test Waits](../../../BridgeWeb/AGENTS.md#test-wai
 | [`TestBlockingWaitOffCooperativePoolRule.swift`](../../../Tools/AgentStudioArchitectureLint/Sources/AgentStudioArchitectureLintCore/Rules/TestBlockingWaitOffCooperativePoolRule.swift) | `agentstudio_test_blocking_wait_off_cooperative_pool` |
 | [`TestTaskSleepRule.swift`](../../../Tools/AgentStudioArchitectureLint/Sources/AgentStudioArchitectureLintCore/Rules/TestTaskSleepRule.swift) | `agentstudio_no_task_sleep_in_tests` |
 | [`TestElapsedTimeBudgetRule.swift`](../../../Tools/AgentStudioArchitectureLint/Sources/AgentStudioArchitectureLintCore/Rules/TestElapsedTimeBudgetRule.swift) | `agentstudio_no_test_elapsed_time_budget` |
-| [`architecture-debt-ledger.tsv`](../../../Tools/AgentStudioArchitectureLint/architecture-debt-ledger.tsv) | Permitted site counts per lint rule and file; only ever lowered |
+| [`TestSilentReturnRule.swift`](../../../Tools/AgentStudioArchitectureLint/Sources/AgentStudioArchitectureLintCore/Rules/TestSilentReturnRule.swift) | `agentstudio_no_silent_test_return` |
+| [`silent-return-test-ledger.tsv`](../../../Tools/AgentStudioArchitectureLint/silent-return-test-ledger.tsv) | Specialized residual counts for silent test returns |
+| [`architecture-debt-ledger.tsv`](../../../Tools/AgentStudioArchitectureLint/architecture-debt-ledger.tsv) and specialized ledgers | Permitted site counts per lint rule and file; only ever lowered |
 | [`check-ledger-ratchet.sh`](../../../Tools/AgentStudioArchitectureLint/check-ledger-ratchet.sh) | The CI step that rejects a raised count or a new ledger row against the merge base |
 | [`ArchitectureAllowlists.swift`](../../../Tools/AgentStudioArchitectureLint/Sources/AgentStudioArchitectureLintCore/Paths/ArchitectureAllowlists.swift) | Named owners of blocking waits and other allowed sites (ownership, not debt) |
 | [`Tests/AgentStudioTests/TestSupport/`](../../../Tests/AgentStudioTests/TestSupport) | The `AgentStudioTestSupport` harnesses |

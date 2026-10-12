@@ -4,6 +4,7 @@ import type { BridgeProductFileBatchRow } from '../../src/core/comm-worker/bridg
 import type { BridgeProductFileMemberStatusRecord } from '../../src/core/comm-worker/bridge-product-file-member-status-contracts.ts';
 import type { BridgeProductViewInstallation } from '../../src/core/comm-worker/bridge-product-view-batch-receiver.ts';
 import type { BridgeWorktreeDevFileContentRouteRequest } from '../bridge-worktree-dev-reload-diagnostics.ts';
+import { bridgeOperationLifecyclePhaseFamilies } from '../dev-server/bridge-dev-operation-lifecycle-reducer.js';
 import type {
 	ReviewCollapseControlProof,
 	ReviewContentRouteDeltaProof,
@@ -30,6 +31,49 @@ export const bridgeDevTelemetryStatusSampleSchema = z
 
 export type BridgeDevTelemetryStatusSample = z.infer<typeof bridgeDevTelemetryStatusSampleSchema>;
 
+const bridgeOperationLifecycleMalformedKindSchema = z.enum([
+	'duplicate_start',
+	'duplicate_terminal',
+	'capacity_exceeded',
+	'invalid_stage_attempt',
+	'invalid_operation_correlation',
+	'late_terminal',
+	'noncontiguous_stage_attempt',
+	'terminal_without_start',
+	'unknown_phase',
+]);
+
+const bridgeOperationLifecyclePhaseFamilySchema = z.enum(bridgeOperationLifecyclePhaseFamilies);
+
+const bridgeOperationLifecycleSchema = z
+	.object({
+		completedOperationIds: z.array(z.string()).readonly(),
+		malformed: z
+			.array(
+				z
+					.object({
+						kind: bridgeOperationLifecycleMalformedKindSchema,
+						operationCorrelationId: z.string(),
+						phaseFamily: z.string(),
+						stageAttempt: z.number().int(),
+					})
+					.strict(),
+			)
+			.readonly(),
+		missingTerminals: z
+			.array(
+				z
+					.object({
+						operationCorrelationId: z.string(),
+						phaseFamily: bridgeOperationLifecyclePhaseFamilySchema,
+						stageAttempt: z.number().int(),
+					})
+					.strict(),
+			)
+			.readonly(),
+	})
+	.strict();
+
 export const bridgeDevTelemetryStatusSchema = z
 	.object({
 		acceptedBatchCount: z.number().int().nonnegative(),
@@ -37,6 +81,7 @@ export const bridgeDevTelemetryStatusSchema = z
 		failedBatchCount: z.number().int().nonnegative(),
 		lastError: z.string().nullable(),
 		marker: z.string().min(1),
+		operationLifecycle: bridgeOperationLifecycleSchema,
 		recentSamples: z.array(bridgeDevTelemetryStatusSampleSchema).readonly(),
 		serviceVersion: z.string().min(1),
 		worktreeHash: z.string().min(1),
@@ -416,19 +461,9 @@ export interface WorktreeFileProductControlsProof {
 	readonly allRenderedPathSample: readonly string[];
 	readonly allTreeSizePixels: number | null;
 	readonly allTreeSizeSource: WorktreeFileTreeExtentSource | null;
-	readonly expectedFetchableTreeSizePixels: number | null;
 	readonly expectedInvalidRegexTreeSizePixels: number;
 	readonly expectedRegexTreeSizePixels: number;
 	readonly expectedSearchTreeSizePixels: number;
-	readonly expectedUnavailableTreeSizePixels: number | null;
-	readonly fetchableFilterActive: boolean;
-	readonly fetchableFilterVisibleCount: number;
-	readonly fetchableRenderedPathSample: readonly string[];
-	readonly fetchableTreeSizePixels: number | null;
-	readonly fetchableTreeSizeSource: WorktreeFileTreeExtentSource | null;
-	readonly expectedFetchableFilterCount: number;
-	readonly expectedUnavailableFilterCount: number;
-	readonly expectedUnavailablePath: string | null;
 	readonly initialVisibleCount: number;
 	readonly initialRenderedPathSample: readonly string[];
 	readonly initialTreeSizeSource: WorktreeFileTreeExtentSource | null;
@@ -452,12 +487,7 @@ export interface WorktreeFileProductControlsProof {
 	readonly searchVisibleCount: number;
 	readonly targetPath: string;
 	readonly totalTreeRowCount: number;
-	readonly unavailableFilterActive: boolean;
-	readonly unavailableFilterVisibleCount: number;
 	readonly unavailableOpenProof: WorktreeFileUnavailableOpenProof | null;
-	readonly unavailableRenderedPathSample: readonly string[];
-	readonly unavailableTreeSizePixels: number | null;
-	readonly unavailableTreeSizeSource: WorktreeFileTreeExtentSource | null;
 }
 
 export interface WorktreeFileSharedShellProof {

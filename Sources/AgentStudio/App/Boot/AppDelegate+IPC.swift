@@ -157,7 +157,7 @@ extension AppDelegate {
             return
         }
         didRecordAppIPCStartOutcome = true
-        startupTraceRecorder?.recordAppStartup(
+        startupTraceRecorder.recordAppStartup(
             "app.ipc.start",
             phase: "app_ipc",
             outcome: reason == nil ? "started" : "unavailable",
@@ -436,7 +436,8 @@ extension AppDelegate {
             workspaceId: store.identityAtom.workspaceId,
             channel: appIPCServerChannel,
             targetAuthorizer: WorkspaceDurableTargetAuthorizationPort(workspaceStore: store),
-            shellCommandHandler: self
+            shellCommandHandler: self,
+            commandDispatcher: commandDispatcherForBoot()
         )
         let commandCatalogProjectionInputs = commandPort.commandCatalogProjectionInputs()
         let ports = AgentStudioAppIPCPorts(

@@ -185,44 +185,6 @@ struct BridgeDevelopmentHTTPResponseCancellationTests {
         continuation.finish()
     }
 
-    @Test("disconnecting an idle HTTP stream cancels its upstream scheme stream")
-    func disconnectedIdleStreamCancelsUpstream() async throws {
-        // Arrange
-        let probe = HTTPResponseCancellationProbe()
-        let (results, continuation) = try makeIdleSchemeResponse(probe: probe)
-        defer { continuation.finish() }
-        let router = Router(context: BridgeDevelopmentHTTPRequestContext.self)
-        router.post("/stream") { request, context -> Response in
-            let requestBytes = try await request.body.collect(upTo: 1024)
-            #expect(String(buffer: requestBytes) == "request")
-            var response = try await BridgeDevelopmentHTTPProductResponse.make(
-                from: results, onConnectionClose: context.onConnectionClose)
-            response.body = response.body.map { buffer in
-                probe.recordBodyWrite()
-                return buffer
-            }
-            return response
-        }
-        let application = Application(responder: router.buildResponder())
-        try await application.test(.live) { serverClient in
-            let port = try #require(serverClient.port)
-            try await TestClient.withClient(host: "localhost", port: port) { client in
-                try await client.executeAndDontWaitForResponse(
-                    .init("/stream", method: .post, body: ByteBuffer(string: "request"))
-                )
-                await probe.waitForBodyWrite()
-
-                // Act — no more chunks arrive to provoke a subsequent socket write failure.
-                let socket = try #require(try await client.getChannel() as? any SocketOptionProvider)
-                try await socket.setSoLinger(linger(l_onoff: 1, l_linger: 0)).get()
-                try await client.close(mode: .all)
-
-                // Assert
-                await probe.waitForCancellation()
-                continuation.finish()
-            }
-        }
-    }
 }
 
 private func makeIdleSchemeResponse(

@@ -2,6 +2,7 @@ import type { Page, Request, Response, Route } from 'playwright';
 import { expect, test } from 'vitest';
 
 import { selectReviewTreeFilePath } from '../../scripts/verify-bridge-viewer-worktree-dev-server/review-tree-click.ts';
+import { createProjectedAnnotationDraft } from './bridge-viewer-vite-annotation-initial-draft.ts';
 import {
 	drainAnnotationLifecycleTelemetry,
 	requiredAnnotationLifecycleStageCount,
@@ -20,7 +21,6 @@ import {
 	annotationProjectionContentRequestDiagnostic,
 	annotationProjectionQueryResultDiagnostic,
 	annotationProjectionUiDiagnostic,
-	waitForDemandedAnnotationProjectionContent,
 } from './bridge-viewer-vite-annotation-projection-test-support.ts';
 import {
 	reviewAdditionRangeBounds,
@@ -44,6 +44,7 @@ import {
 	readReviewRenderObservation,
 } from './bridge-viewer-vite-review-render-observation.ts';
 import { observeSelectedItemApplies } from './bridge-viewer-vite-selected-item-apply-observation.ts';
+import { runBridgeWebE2ETestBody } from './bridge-web-e2e-test-retirement.ts';
 
 const annotationProjectionResponseTimeoutMilliseconds = 30_000;
 export interface AnnotationSaveJourneyObservations {
@@ -86,49 +87,53 @@ export function registerBridgeViewerViteAnnotationSaveJourneyTests(props: {
 	readonly oracle: () => BridgeViewerViteProductFixtureOracle;
 	readonly server: () => BridgeViewerOwnedViteProductServer;
 }): void {
-	test.each(['file', 'review'] as const)(
+	test.for(['file', 'review'] as const)(
 		'keeps an exact committed annotation visible while the %s projection is gated',
-		async (surface) => {
-			const observations = await runAnnotationSaveJourney({
-				oracle: props.oracle(),
-				server: props.server(),
-				surface,
-			});
+		async (surface, context) => {
+			return await runBridgeWebE2ETestBody(context, async (): Promise<void> => {
+				const observations = await runAnnotationSaveJourney({
+					testSignal: context.signal,
+					oracle: props.oracle(),
+					server: props.server(),
+					surface,
+				});
 
-			expect(observations.gatedProjectionRequestCount).toBeGreaterThan(0);
-			expect(observations.savingControlCountAfterCommit).toBe(0);
-			expect(observations.committedBodyCountWhileProjectionGated).toBe(1);
-			expect(observations.correlatedLifecycleStageCount).toBe(
-				requiredAnnotationLifecycleStageCount,
-			);
-			expect(observations.projectedSavedMessageCount).toBe(1);
-			expect(observations.reloadedSavedMessageCount).toBe(1);
+				expect(observations.gatedProjectionRequestCount).toBeGreaterThan(0);
+				expect(observations.savingControlCountAfterCommit).toBe(0);
+				expect(observations.committedBodyCountWhileProjectionGated).toBe(1);
+				expect(observations.correlatedLifecycleStageCount).toBe(
+					requiredAnnotationLifecycleStageCount,
+				);
+				expect(observations.projectedSavedMessageCount).toBe(1);
+				expect(observations.reloadedSavedMessageCount).toBe(1);
+			});
 		},
 	);
 
-	test('restores a released Review root draft after a full document reload', async () => {
-		const observations = await runReleasedDraftReloadJourney({
-			oracle: props.oracle(),
-			server: props.server(),
-		});
+	test('restores a released Review root draft after a full document reload', async (context) => {
+		return await runBridgeWebE2ETestBody(context, async (): Promise<void> => {
+			const observations = await runReleasedDraftReloadJourney({
+				testSignal: context.signal,
+				oracle: props.oracle(),
+				server: props.server(),
+			});
 
-		expect(observations.reloadedCollapsedDraftCount).toBe(1);
-		expect(observations.reloadedDraftLabelCount).toBeGreaterThan(0);
-		expect(observations.removedDraftCount).toBe(0);
+			expect(observations.reloadedCollapsedDraftCount).toBe(1);
+			expect(observations.reloadedDraftLabelCount).toBeGreaterThan(0);
+			expect(observations.removedDraftCount).toBe(0);
+		});
 	});
 }
 
 async function runReleasedDraftReloadJourney(props: {
+	readonly testSignal: AbortSignal;
 	readonly oracle: BridgeViewerViteProductFixtureOracle;
 	readonly server: BridgeViewerOwnedViteProductServer;
 }): Promise<ReleasedDraftReloadJourneyObservations> {
-	const browser = await launchBridgeViewerE2EChromium();
+	const browser = await launchBridgeViewerE2EChromium({ testSignal: props.testSignal });
 	let page: Page | null = null;
 	try {
 		page = await browser.newPage({ viewport: { height: 980, width: 1728 } });
-		// The vitest hang bound is the only clock this journey is allowed.
-		page.setDefaultTimeout(0);
-		page.setDefaultNavigationTimeout(0);
 		const reviewFile = props.oracle.reviewFiles[0];
 		if (reviewFile === undefined) {
 			throw new Error('Review released-draft journey requires a changed review file.');
@@ -192,6 +197,7 @@ async function runReleasedDraftReloadJourney(props: {
 }
 
 export async function runAnnotationSaveJourney(props: {
+	readonly testSignal: AbortSignal;
 	readonly afterProjectedSave?: (
 		context: AnnotationSaveJourneyHookContext,
 	) => Promise<AnnotationSaveJourneyPostSaveResult | undefined>;
@@ -201,9 +207,10 @@ export async function runAnnotationSaveJourney(props: {
 	readonly oracle: BridgeViewerViteProductFixtureOracle;
 	readonly server: BridgeViewerOwnedViteProductServer;
 	readonly setupPage?: (page: Page) => Promise<void>;
+	readonly afterInitialDraftProjection?: () => Promise<void>;
 	readonly surface: 'file' | 'review';
 }): Promise<AnnotationSaveJourneyObservations> {
-	const browser = await launchBridgeViewerE2EChromium();
+	const browser = await launchBridgeViewerE2EChromium({ testSignal: props.testSignal });
 	const diagnostics: string[] = [];
 	let page: Page | null = null;
 	let expectedSavedBody: string | null = null;
@@ -212,9 +219,6 @@ export async function runAnnotationSaveJourney(props: {
 		null;
 	try {
 		page = await browser.newPage({ viewport: { height: 980, width: 1728 } });
-		// The vitest hang bound is the only clock this journey is allowed.
-		page.setDefaultTimeout(0);
-		page.setDefaultNavigationTimeout(0);
 		transportFailures = await observeInteractionProfileFailures(page);
 		observeAnnotationJourneyDiagnostics(page, diagnostics);
 		await props.setupPage?.(page);
@@ -225,6 +229,8 @@ export async function runAnnotationSaveJourney(props: {
 		if (props.surface === 'review' && reviewFile !== undefined) {
 			await installReviewRenderObservation({ itemId: reviewFile.itemId, page });
 		}
+		const initialMainProjection =
+			props.surface === 'file' ? observeAnnotationMainProjection(page) : null;
 		const initialReviewProjectionReceived =
 			props.surface === 'review' ? waitForAnnotationProjectionContentResponse(page) : null;
 		await page.goto(
@@ -240,6 +246,7 @@ export async function runAnnotationSaveJourney(props: {
 		);
 		if (props.surface === 'file') {
 			await waitForSelectedFileReady({ oracle: props.oracle, page });
+			await initialMainProjection?.install();
 		} else {
 			await selectReviewFile({ page, path: reviewFile?.path ?? '' });
 			await waitForSelectedReviewReady({ itemId: reviewFile?.itemId ?? '', page });
@@ -247,47 +254,19 @@ export async function runAnnotationSaveJourney(props: {
 		}
 		await selectRangeForAnnotation({ endLine: 5, page, startLine: 2, surface: props.surface });
 
-		const rootCreateCommitted = waitForCommittedAnnotationCommand(
-			page,
-			'root.create',
-			props.surface,
-		);
-		const sourceRefreshCommitted =
-			props.surface === 'file'
-				? waitForCommittedAnnotationCommand(page, 'source.refresh', 'file')
-				: null;
-		// Request sequence numbers are a total order, not a causal one. `source.refresh` and the
-		// demanded projection query are issued concurrently by one `acquireSession`, so anchor the
-		// gate to `root.create`, which the session genuinely cannot exist before.
-		const demandedDraftProjectionCommitted =
-			sourceRefreshCommitted === null
-				? null
-				: waitForDemandedAnnotationProjectionContent({
-						afterRequestSequence: rootCreateCommitted.then((receipt) => receipt.requestSequence),
-						page,
-						sessionId: rootCreateCommitted.then((receipt) => {
-							if (receipt.sessionId === null) {
-								throw new Error('Committed root annotation did not identify its session.');
-							}
-							return receipt.sessionId;
-						}),
-					});
 		const savedBody = `${props.surface === 'file' ? 'File' : 'Review'} Save must settle from its exact command receipt.`;
 		expectedSavedBody = savedBody;
-		await page.getByRole('textbox', { name: 'Write an annotation in Markdown' }).fill(savedBody);
-		await rootCreateCommitted;
-		if (sourceRefreshCommitted !== null) await sourceRefreshCommitted;
-		if (demandedDraftProjectionCommitted !== null) await demandedDraftProjectionCommitted;
-		await page
-			.locator('[data-testid="worktree-annotation-message"][data-annotation-draft="present"]')
-			.waitFor({ state: 'visible' });
-		await page.waitForFunction((): boolean => {
-			const saveButton = document.querySelector<HTMLButtonElement>(
-				'[aria-label="Save annotation"]',
-			);
-			return saveButton !== null && !saveButton.disabled;
-		}, undefined);
+		await createProjectedAnnotationDraft({
+			page,
+			savedBody,
+			sourceRefreshCommitted:
+				props.surface === 'file'
+					? waitForCommittedAnnotationCommand(page, 'source.refresh', 'file')
+					: null,
+			surface: props.surface,
+		});
 
+		await props.afterInitialDraftProjection?.();
 		const projectionGate = createDeferred<void>();
 		let gatedProjectionRequestCount = 0;
 		let savingControlCountAfterCommit = 0;

@@ -29,21 +29,9 @@ struct WorkspaceSurfaceCoordinatorTopologyTraceTests {
         let recorder = AgentStudioPerformanceTraceRecorder(traceRuntime: runtime)
         let paneEventBus = makeTestPaneRuntimeEventBus()
         let store = try makeWorkspaceJournalTestStore()
-        let coordinator = WorkspaceSurfaceCoordinator(
+        let coordinator = makeTopologyTraceCoordinator(
             store: store,
-            viewRegistry: ViewRegistry(),
-            runtime: SessionRuntime(store: store),
-            surfaceManager: MockPaneTabCommandSurfaceManager(
-                createSurfaceResult: .failure(.ghosttyNotInitialized)
-            ),
-            runtimeRegistry: RuntimeRegistry(),
             paneEventBus: paneEventBus,
-            gitWorkingTreeStatusProvider: StubGitWorkingTreeStatusProvider { _ in nil },
-            gitStatusPhysicalGate: AgentStudioGitStatusPhysicalGate(),
-            filesystemSource: TopologyTraceRecordingFilesystemSource(),
-            windowLifecycleStore: WindowLifecycleAtom(),
-            ipcLifecycle: .testUnavailable,
-            bridgePaneAttendance: BridgePaneAttendanceAtom(),
             performanceTraceRecorder: recorder
         )
         do {
@@ -121,6 +109,33 @@ struct WorkspaceSurfaceCoordinatorTopologyTraceTests {
         }
         await coordinator.shutdown()
         try await runtime.shutdown()
+    }
+
+    private func makeTopologyTraceCoordinator(
+        store: WorkspaceStore,
+        paneEventBus: EventBus<RuntimeEnvelope>,
+        performanceTraceRecorder: AgentStudioPerformanceTraceRecorder
+    ) -> WorkspaceSurfaceCoordinator {
+        let fixtureSurfaceManager = MockPaneTabCommandSurfaceManager(
+            createSurfaceResult: .failure(.ghosttyNotInitialized)
+        )
+        return WorkspaceSurfaceCoordinator(
+            store: store,
+            viewRegistry: ViewRegistry(),
+            runtime: SessionRuntime(store: store),
+            surfaceManager: fixtureSurfaceManager,
+            terminalSurfaceCommandDispatcher: AppTerminalFixtureSurfaceCommands(),
+            terminalSurfaceOperations: makeAppTerminalFixtureMountOperations(surfaceManager: fixtureSurfaceManager),
+            runtimeRegistry: RuntimeRegistry(),
+            paneEventBus: paneEventBus,
+            gitWorkingTreeStatusProvider: StubGitWorkingTreeStatusProvider { _ in nil },
+            gitStatusPhysicalGate: AgentStudioGitStatusPhysicalGate(),
+            filesystemSource: TopologyTraceRecordingFilesystemSource(),
+            windowLifecycleStore: WindowLifecycleAtom(),
+            ipcLifecycle: .testUnavailable,
+            bridgePaneAttendance: BridgePaneAttendanceAtom(),
+            performanceTraceRecorder: performanceTraceRecorder
+        )
     }
 
     private func makeCWDOnlyBridgePane(

@@ -94,7 +94,8 @@ struct PaneTabViewControllerToolbarPresentationTests {
 
     @Test("pane toolbar uses targeted dispatcher capability and activation")
     func paneToolbarUsesTargetedDispatcher() async throws {
-        let harness = makeHarness()
+        let shellProbe = ToolbarShellCommandProbe()
+        let harness = makeHarness(shellCommandOwner: shellProbe)
         defer { try? FileManager.default.removeItem(at: harness.tempDir) }
         let terminalPane = harness.store.createPane()
         let tab = Tab(paneId: terminalPane.id)
@@ -102,14 +103,9 @@ struct PaneTabViewControllerToolbarPresentationTests {
         harness.store.setActiveTab(tab.id)
         harness.store.setActivePane(terminalPane.id, inTab: tab.id)
         atom(\.workspaceFocusOwner).focusMainPane(terminalPane.id)
-        let shellProbe = ToolbarShellCommandProbe()
-
-        try await withIsolatedCommandDispatcher(
-            configure: {
-                AppCommandDispatcher.shared.appCommandRouter = shellProbe
-                AppCommandDispatcher.shared.handler = harness.controller
-            },
-            body: {
+        try await withCommandDispatcher(
+            harness.commandDispatcher,
+            body: { _ in
                 let presentation =
                     harness.controller.normalPaneSurfaceToolbarPresentation(for: terminalPane.id)
                 let zoomAction = try #require(

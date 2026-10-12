@@ -69,30 +69,6 @@ struct RepoExplorerNativeTablePilotTests {
         #expect(membership.movesFromOldToNewSpace.isEmpty)
     }
 
-    @Test("recorded synchronous facade timeout is rejected evidence")
-    func recordedSynchronousFalsifierRemainsRejected() {
-        let elapsedSeconds = 30.004
-        let visibleGeneration: UInt64 = 0
-        let baselineMeasurementCount = 0
-        let doubledMeasurementCount = 0
-
-        #expect(elapsedSeconds > 30)
-        #expect(visibleGeneration == 0)
-        #expect(baselineMeasurementCount == 0)
-        #expect(doubledMeasurementCount == 0)
-    }
-
-    @Test("recorded 440-projection async falsifiers remain rejected")
-    func recordedAsyncFullProjectionFalsifiersRemainRejected() {
-        let attemptedFullProjectionCount = 440
-        let measurementCount = 0
-        let crashedDuringUndrainedTeardown = true
-
-        #expect(attemptedFullProjectionCount == 440)
-        #expect(measurementCount == 0)
-        #expect(crashedDuringUndrainedTeardown)
-    }
-
     @Test("injected deadline latches timeout and drains cooperative projection before return")
     func injectedDeadlineDrainsBeforeReturningFailure() async {
         let clock = TestPushClock()

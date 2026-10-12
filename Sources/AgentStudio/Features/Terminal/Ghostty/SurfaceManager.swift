@@ -13,7 +13,6 @@ private let logger = Logger(subsystem: "com.agentstudio", category: "SurfaceMana
 @MainActor
 @Observable
 package final class SurfaceManager {
-    package static let shared = SurfaceManager()
 
     package struct SurfaceCWDChangeEvent: Sendable {
         let surfaceId: UUID
@@ -114,11 +113,16 @@ package final class SurfaceManager {
 
     /// Not `private`: read from `SurfaceManager+RendererState.swift`.
     weak var performanceTraceRecorder: AgentStudioPerformanceTraceRecorder?
-    private var appCommandDispatcher: (any AppCommandDispatching)?
+    private let appCommandDispatcher: any AppCommandDispatching
+    private let engineAccess: @MainActor () -> GhosttyEngineAvailability
+    let callbackHandlingAccess: @MainActor () -> Ghostty.ActionRouter?
 
     // MARK: - Initialization
 
     package init(
+        appCommandDispatcher: any AppCommandDispatching,
+        engineAccess: @escaping @MainActor () -> GhosttyEngineAvailability,
+        callbackHandlingAccess: @escaping @MainActor () -> Ghostty.ActionRouter?,
         maxCreationRetries: Int = 2,
         healthCheckInterval: TimeInterval = 2.0,
         rendererStateDelivery: any SurfaceRendererStateDelivery = LiveSurfaceRendererStateDelivery.shared,
@@ -126,6 +130,9 @@ package final class SurfaceManager {
         nativeSurfaceRetirement: @escaping @MainActor (Ghostty.SurfaceView) -> Void = { $0.retireNativeSurface() },
         processExitedCheck: @escaping @MainActor (Ghostty.SurfaceView) -> Bool = { $0.processExited }
     ) {
+        self.appCommandDispatcher = appCommandDispatcher
+        self.engineAccess = engineAccess
+        self.callbackHandlingAccess = callbackHandlingAccess
         self.maxCreationRetries = maxCreationRetries
         self.healthCheckInterval = healthCheckInterval
         self.rendererStateDelivery = rendererStateDelivery
@@ -157,14 +164,6 @@ package final class SurfaceManager {
 
     package var surfaceCWDChanges: AsyncStream<SurfaceCWDChangeEvent> {
         cwdChangeStream
-    }
-
-    package func setPerformanceTraceRecorder(_ recorder: AgentStudioPerformanceTraceRecorder?) {
-        performanceTraceRecorder = recorder
-    }
-
-    package func setAppCommandDispatcher(_ dispatcher: any AppCommandDispatching) {
-        appCommandDispatcher = dispatcher
     }
 
     /// Registers (or clears, passing `nil`) the `onAttachedBindingsChanged` handler.
@@ -204,10 +203,6 @@ package final class SurfaceManager {
         config: Ghostty.SurfaceConfiguration,
         metadata: SurfaceMetadata
     ) -> Result<ManagedSurface, SurfaceError> {
-        guard let appCommandDispatcher else {
-            preconditionFailure("SurfaceManager requires an App command dispatcher before creating surfaces")
-        }
-
         RestoreTrace.log(
             "SurfaceManager.createSurface begin pane=\(metadata.paneId?.uuidString ?? "nil") title=\(metadata.title) cwd=\(metadata.cwd?.path ?? "nil") cmd=\(metadata.command ?? "nil")"
         )
@@ -222,8 +217,7 @@ package final class SurfaceManager {
                 logger.warning("Surface creation retry \(attempt)/\(self.maxCreationRetries)")
             }
 
-            // Check if Ghostty is initialized (don't call .shared which fatalErrors)
-            guard Ghostty.isInitialized else {
+            guard case .available(let engine) = engineAccess() else {
                 logger.error("Ghostty app not initialized")
                 if attempt == maxCreationRetries {
                     return .failure(.ghosttyNotInitialized)
@@ -234,10 +228,18 @@ package final class SurfaceManager {
             // Create surface view using Ghostty.App (not ghostty_app_t)
             let managedSurfaceID = UUIDv7.generate()
             let surfaceView = Ghostty.SurfaceView(
-                app: Ghostty.shared,
+                app: engine,
                 managedSurfaceID: managedSurfaceID,
                 config: mutableConfig,
                 appCommandDispatcher: appCommandDispatcher,
+                paneIDForViewObjectID: { [weak self] viewID in
+                    guard let self, let surfaceID = self.surfaceId(forViewObjectId: viewID) else { return nil }
+                    return self.paneId(for: surfaceID)
+                },
+                didBecomeFirstResponder: { [weak self] viewID in
+                    guard let self, let surfaceID = self.surfaceId(forViewObjectId: viewID) else { return }
+                    self.surfaceDidBecomeFirstResponder(surfaceID)
+                },
                 performanceTraceRecorder: performanceTraceRecorder
             )
 
@@ -423,7 +425,8 @@ package final class SurfaceManager {
         case .close:
             detachTerminalLocalActions(
                 surfaceID: surfaceId,
-                paneID: previousPaneAttachmentId
+                paneID: previousPaneAttachmentId,
+                handling: callbackHandlingAccess()
             )
             managed.state = .pendingUndo
 
@@ -461,7 +464,9 @@ package final class SurfaceManager {
         }
 
         if case .active(let previousPaneID) = managed.state, previousPaneID != targetPaneId {
-            detachTerminalLocalActions(surfaceID: surfaceId, paneID: previousPaneID)
+            detachTerminalLocalActions(
+                surfaceID: surfaceId, paneID: previousPaneID, handling: callbackHandlingAccess()
+            )
         }
 
         managed.setAttachment(paneId: targetPaneId)
@@ -541,7 +546,9 @@ package final class SurfaceManager {
             ?? undoStack.first(where: { $0.surface.id == surfaceId })?.surface.surface
         _ = deliverVisibility(surfaceId, visible: false)
         emitRendererLifecycleReleasedBeforeRemoval(surfaceId)
-        detachTerminalLocalActions(surfaceID: surfaceId, paneID: paneId(for: surfaceId))
+        detachTerminalLocalActions(
+            surfaceID: surfaceId, paneID: paneId(for: surfaceId), handling: callbackHandlingAccess()
+        )
         // Remove from all collections
         var removedFromActive = false
         if let managed = activeSurfaces.removeValue(forKey: surfaceId) {
@@ -880,18 +887,13 @@ extension SurfaceManager {
         return managed.attachmentPaneId
     }
 
-    /// Reverse-lookup: SurfaceView → surfaceId via ObjectIdentifier map.
-    func surfaceId(forView surfaceView: Ghostty.SurfaceView) -> UUID? {
-        surfaceId(forViewObjectId: ObjectIdentifier(surfaceView))
-    }
-
     /// Reverse-lookup: SurfaceView ObjectIdentifier → surfaceId.
     func surfaceId(forViewObjectId viewObjectId: ObjectIdentifier) -> UUID? {
         surfaceViewToId[viewObjectId]
     }
 
     /// Reverse-lookup: paneId → surfaceId.
-    func surfaceId(forPaneId paneId: UUID) -> UUID? {
+    package func surfaceId(forPaneId paneId: UUID) -> UUID? {
         if let activeMatch = activeSurfaces.first(where: { _, managed in
             managed.attachmentPaneId == paneId
         }) {

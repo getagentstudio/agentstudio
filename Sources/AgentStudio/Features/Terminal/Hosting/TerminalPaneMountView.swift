@@ -57,6 +57,26 @@ package final class TerminalPaneMountView: NSView, PaneMountedContent, SurfaceHe
     private let showsRestorePresentationDuringStartup: Bool
     private let startupGraceDuration: Duration
     private let performanceTraceRecorder: AgentStudioPerformanceTraceRecorder?
+    package struct SurfaceOperations: Sendable {
+        let registerHealthDelegate: @MainActor @Sendable (TerminalPaneMountView) -> Void
+        let destroySurface: @MainActor @Sendable (UUID) -> Void
+        let hasProcessExited: @MainActor @Sendable (UUID) -> Bool
+        let setFocus: @MainActor @Sendable (UUID, Bool) -> Void
+
+        package init(
+            registerHealthDelegate: @escaping @MainActor @Sendable (TerminalPaneMountView) -> Void,
+            destroySurface: @escaping @MainActor @Sendable (UUID) -> Void,
+            hasProcessExited: @escaping @MainActor @Sendable (UUID) -> Bool,
+            setFocus: @escaping @MainActor @Sendable (UUID, Bool) -> Void
+        ) {
+            self.registerHealthDelegate = registerHealthDelegate
+            self.destroySurface = destroySurface
+            self.hasProcessExited = hasProcessExited
+            self.setFocus = setFocus
+        }
+    }
+
+    private let surfaceOperations: SurfaceOperations
     private let appEventBus: EventBus<AppEvent>
     private var startupPresentationTask: Task<Void, Never>?
     private var startupPresentationActive = false
@@ -77,6 +97,7 @@ package final class TerminalPaneMountView: NSView, PaneMountedContent, SurfaceHe
     /// Primary initializer — used by WorkspaceSurfaceCoordinator for worktree-bound panes.
     /// Does NOT create a surface; caller must attach one via displaySurface().
     package init(
+        surfaceOperations: SurfaceOperations,
         worktree: Worktree,
         repo: Repo,
         restoredSurfaceId: UUID,
@@ -87,6 +108,7 @@ package final class TerminalPaneMountView: NSView, PaneMountedContent, SurfaceHe
         appEventBus: EventBus<AppEvent> = AppEventBus.shared,
         terminationAcknowledgementClock: (any Clock<Duration> & Sendable)? = nil
     ) {
+        self.surfaceOperations = surfaceOperations
         self.paneId = paneId
         self.worktree = worktree
         self.repo = repo
@@ -101,13 +123,14 @@ package final class TerminalPaneMountView: NSView, PaneMountedContent, SurfaceHe
         setupMountView()
 
         // Register for health updates
-        SurfaceManager.shared.addHealthDelegate(self)
+        surfaceOperations.registerHealthDelegate(self)
         self.isProcessRunning = true
     }
 
     /// Floating terminal initializer — used for drawers and standalone terminals.
     /// No worktree/repo context required.
     package init(
+        surfaceOperations: SurfaceOperations,
         restoredSurfaceId: UUID,
         paneId: UUID,
         title: String = "Terminal",
@@ -117,6 +140,7 @@ package final class TerminalPaneMountView: NSView, PaneMountedContent, SurfaceHe
         appEventBus: EventBus<AppEvent> = AppEventBus.shared,
         terminationAcknowledgementClock: (any Clock<Duration> & Sendable)? = nil
     ) {
+        self.surfaceOperations = surfaceOperations
         self.paneId = paneId
         self.worktree = nil
         self.repo = nil
@@ -130,18 +154,20 @@ package final class TerminalPaneMountView: NSView, PaneMountedContent, SurfaceHe
         super.init(frame: NSRect(x: 0, y: 0, width: 800, height: 600))
         setupMountView()
 
-        SurfaceManager.shared.addHealthDelegate(self)
+        surfaceOperations.registerHealthDelegate(self)
         self.isProcessRunning = true
     }
 
     /// Placeholder-only initializer used before a surface exists.
     package init(
+        surfaceOperations: SurfaceOperations,
         paneId: UUID,
         title: String,
         performanceTraceRecorder: AgentStudioPerformanceTraceRecorder? = nil,
         appEventBus: EventBus<AppEvent> = AppEventBus.shared,
         terminationAcknowledgementClock: (any Clock<Duration> & Sendable)? = nil
     ) {
+        self.surfaceOperations = surfaceOperations
         self.paneId = paneId
         self.worktree = nil
         self.repo = nil
@@ -407,8 +433,7 @@ package final class TerminalPaneMountView: NSView, PaneMountedContent, SurfaceHe
         }
         if displayPlan.installsCloseCallback {
             surfaceView.onCloseRequested = { [weak self] processExited in
-                // fire-and-forget: surface callback; the termination event is delivered on the app event bus
-                _ = self?.handleSurfaceClose(processExited: processExited)
+                self?.handleSurfaceClose(processExited: processExited)
             }
         }
         scheduleGeometryCoherenceVerification(reason: geometryVerificationReason)
@@ -596,7 +621,7 @@ package final class TerminalPaneMountView: NSView, PaneMountedContent, SurfaceHe
         guard let oldSurfaceId = surfaceId else { return }
 
         // Destroy old surface
-        SurfaceManager.shared.destroy(oldSurfaceId)
+        surfaceOperations.destroySurface(oldSurfaceId)
         removeSurface()
 
         // Request coordinator to recreate the surface
@@ -691,7 +716,7 @@ package final class TerminalPaneMountView: NSView, PaneMountedContent, SurfaceHe
     func terminateProcess() {
         guard isProcessRunning, let surfaceId else { return }
         isProcessRunning = false
-        SurfaceManager.shared.destroy(surfaceId)
+        surfaceOperations.destroySurface(surfaceId)
         self.surfaceId = nil
         shouldSuppressProcessExitedOverlayAfterTermination = false
         hasObservedEffectiveTerminationDelivery = false
@@ -761,7 +786,7 @@ package final class TerminalPaneMountView: NSView, PaneMountedContent, SurfaceHe
 
     var processExited: Bool {
         guard let surfaceId else { return true }
-        return SurfaceManager.shared.hasProcessExited(surfaceId)
+        return surfaceOperations.hasProcessExited(surfaceId)
     }
 
     package func setContentInteractionEnabled(_ enabled: Bool) {
@@ -775,7 +800,7 @@ package final class TerminalPaneMountView: NSView, PaneMountedContent, SurfaceHe
     package override func becomeFirstResponder() -> Bool {
         if let surface = ghosttySurface, let window {
             if let surfaceId {
-                SurfaceManager.shared.setFocus(surfaceId, focused: true)
+                surfaceOperations.setFocus(surfaceId, true)
             }
             RestoreTrace.log(
                 "TerminalPaneMountView.becomeFirstResponder pane=\(paneId) surface=\(surfaceId?.uuidString ?? "nil")")
@@ -786,7 +811,7 @@ package final class TerminalPaneMountView: NSView, PaneMountedContent, SurfaceHe
 
     package override func resignFirstResponder() -> Bool {
         if let surfaceId {
-            SurfaceManager.shared.setFocus(surfaceId, focused: false)
+            surfaceOperations.setFocus(surfaceId, false)
         }
         RestoreTrace.log(
             "TerminalPaneMountView.resignFirstResponder pane=\(paneId) surface=\(surfaceId?.uuidString ?? "nil")")

@@ -75,7 +75,7 @@ struct PaneLeafContainer: View {
         editorChooser: EditorChooserState,
         closeTransitionCoordinator: PaneCloseTransitionCoordinator,
         actionDispatcher: PaneActionDispatching,
-        commandDispatcher: any AppCommandDispatching = AppCommandDispatcher.shared,
+        commandDispatcher: any AppCommandDispatching,
         onPaneFocusTrigger: @escaping PaneFocusTriggerHandler,
         onOpenPaneGitHub: @escaping (UUID) -> Void,
         dropTargetCoordinateSpace: String? = "tabContainer",
@@ -295,6 +295,7 @@ struct PaneLeafContainer: View {
                             workspaceWindowId: workspaceWindowId,
                             owningPaneSize: paneGeometry.size,
                             actionDispatcher: actionDispatcher,
+                            commandDispatcher: commandDispatcher,
                             onPaneFocusTrigger: onPaneFocusTrigger
                         )
                         .fixedSize(horizontal: false, vertical: true)

@@ -84,10 +84,10 @@ extension AppDelegate {
             switch action.kind {
             case .newTab:
                 await Task.yield()
-                AppCommandDispatcher.shared.dispatch(.newTab)
+                self.commandDispatcherForBoot().dispatch(.newTab)
             case .commandBarRepoFilter:
                 await Task.yield()
-                AppCommandDispatcher.shared.dispatch(.showCommandBarEverything)
+                self.commandDispatcherForBoot().dispatch(.showCommandBarEverything)
                 await Task.yield()
                 self.commandBarController.setQueryText("# repo")
                 self.startupTraceRecorder.recordAppStartup(

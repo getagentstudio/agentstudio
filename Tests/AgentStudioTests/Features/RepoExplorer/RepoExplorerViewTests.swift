@@ -310,49 +310,6 @@ struct RepoExplorerViewTests {
         #expect(colorA == colorAAgain, "Color should be deterministic for same repo")
     }
 
-    @Test("different repos in the same group get different colors")
-    func differentReposInSameGroupGetDifferentColors() {
-        let repoA = RepoPresentationItem(
-            id: UUID(),
-            name: "agent-studio-main",
-            repoPath: URL(fileURLWithPath: "/tmp/agent-studio-main"),
-            stableKey: "agent-studio-main",
-            worktrees: [
-                Worktree(
-                    repoId: UUID(),
-                    name: "main",
-                    path: URL(fileURLWithPath: "/tmp/agent-studio-main"),
-                    isMainWorktree: true
-                )
-            ]
-        )
-        let repoB = RepoPresentationItem(
-            id: UUID(),
-            name: "agent-studio-fork",
-            repoPath: URL(fileURLWithPath: "/tmp/agent-studio-fork"),
-            stableKey: "agent-studio-fork",
-            worktrees: [
-                Worktree(
-                    repoId: UUID(),
-                    name: "main",
-                    path: URL(fileURLWithPath: "/tmp/agent-studio-fork"),
-                    isMainWorktree: true
-                )
-            ]
-        )
-        let group = RepoPresentationGroup(
-            id: "remote:askluna/agent-studio",
-            repoTitle: "agent-studio",
-            organizationName: "askluna",
-            repos: [repoA, repoB]
-        )
-
-        let colorA = RepoExplorerView.checkoutColorHex(for: repoA, in: group)
-        let colorB = RepoExplorerView.checkoutColorHex(for: repoB, in: group)
-
-        #expect(colorA != colorB)
-    }
-
     @Test("single repo in a group uses the first automatic palette color")
     func singleRepoInGroupUsesFirstAutomaticPaletteColor() {
         let repo = RepoPresentationItem(

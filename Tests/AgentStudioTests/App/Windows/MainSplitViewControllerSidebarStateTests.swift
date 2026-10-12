@@ -540,6 +540,7 @@ struct MainSplitViewControllerSidebarStateTests {
                 )
 
                 let previewMount = TerminalPaneMountView(
+                    surfaceOperations: makeAppTerminalFixtureMountOperations(),
                     restoredSurfaceId: UUIDv7.generate(),
                     paneId: previewPane.id
                 )
@@ -649,6 +650,7 @@ struct MainSplitViewControllerSidebarStateTests {
                 }
 
                 let previewMount = TerminalPaneMountView(
+                    surfaceOperations: makeAppTerminalFixtureMountOperations(),
                     restoredSurfaceId: UUIDv7.generate(),
                     paneId: previewPane.id
                 )

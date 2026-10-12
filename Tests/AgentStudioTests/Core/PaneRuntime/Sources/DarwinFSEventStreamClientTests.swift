@@ -745,13 +745,6 @@ struct DarwinFSEventStreamClientTests {
 }
 
 extension DarwinFSEventStreamClientTests {
-    @Test("conforms to FSEventStreamClient protocol")
-    func conformsToProtocol() {
-        let client: any FSEventStreamClient = DarwinFSEventStreamClient()
-        _ = client.events()
-        client.shutdown()
-    }
-
     @Test("register/unregister lifecycle is idempotent")
     func registerUnregisterLifecycleIsIdempotent() async {
         let client = DarwinFSEventStreamClient()

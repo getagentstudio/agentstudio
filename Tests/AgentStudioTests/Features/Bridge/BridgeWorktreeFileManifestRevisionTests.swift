@@ -171,11 +171,13 @@ struct BridgeWorktreeFileManifestRevisionTests {
             for: canonicalKey, productAdmission: fixture.productAdmission.context
         )
         #expect(retained != nil)
-        let secondAttempt = await index.reserveDescriptorAttempt(
-            for: row.path, source: source, memberIncarnation: "default", interestRevision: 2,
-            productAdmission: fixture.productAdmission.context, foregroundWorkAdmission: foreground
-        )
-        if let secondAttempt { #expect(await index.acceptDescriptorOutcome(second, for: secondAttempt)) }
+        let secondAttempt = try #require(
+            await index.reserveDescriptorAttempt(
+                for: row.path, source: source, memberIncarnation: "default", interestRevision: 2,
+                productAdmission: fixture.productAdmission.context, foregroundWorkAdmission: foreground
+            ), "Descriptor B must reserve its successor attempt")
+        #expect(await index.acceptDescriptorOutcome(second, for: secondAttempt))
+        #expect((await index.captureKeyedSnapshot()).records.first?.descriptorOutcome == second)
         if case .available(let firstDescriptor) = first.availability {
             #expect(
                 await index.issuedDescriptorOutcome(

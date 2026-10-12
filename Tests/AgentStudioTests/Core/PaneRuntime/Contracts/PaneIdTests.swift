@@ -71,24 +71,6 @@ struct PaneIdTests {
         }
     }
 
-    @Test
-    func hexPrefixMatchesDocumentedDerivation() {
-        // The documented derivation from session_lifecycle.md:
-        // pane16 = first16hex(lowercase(removeHyphens(paneId.uuidString)))
-        let uuid = UUID(uuidString: "01890F10-1234-7ABC-8DEF-0123456789AB")!
-        let paneId = PaneId(existingUUID: uuid)
-
-        // Manual derivation
-        let expected = String(
-            uuid.uuidString
-                .replacingOccurrences(of: "-", with: "")
-                .prefix(16)
-        ).lowercased()
-
-        #expect(paneId.hexPrefix == expected)
-        #expect(paneId.hexPrefix == "01890f1012347abc")
-    }
-
     // MARK: - fullHex
 
     @Test

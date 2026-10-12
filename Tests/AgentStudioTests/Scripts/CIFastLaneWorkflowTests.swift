@@ -194,8 +194,8 @@ struct CIFastLaneWorkflowTests {
         #expect(swiftJob.contains("uses: actions/cache@v4"))
     }
 
-    @Test("Swift jobs always build cold without caching build outputs")
-    func swiftJobsAlwaysBuildColdWithoutCachingBuildOutputs() throws {
+    @Test("Swift prebuild runs unconditionally through the canonical task")
+    func swiftPrebuildRunsUnconditionallyThroughCanonicalTask() throws {
         let ciWorkflow = try String(contentsOfFile: ".github/workflows/ci.yml", encoding: .utf8)
         let backendJob = try workflowJob(named: "bridge-web", in: ciWorkflow)
         let swiftJob = try workflowJob(named: "swift-test-suite", in: ciWorkflow)

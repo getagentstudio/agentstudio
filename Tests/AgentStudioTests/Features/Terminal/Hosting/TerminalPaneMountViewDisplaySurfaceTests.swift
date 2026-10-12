@@ -113,6 +113,7 @@ struct TerminalPaneMountViewDisplaySurfaceTests {
     func redisplayingSameSurfacePreservesMountedWrapperAndHost() throws {
         let surfaceID = UUIDv7.generate()
         let mountView = TerminalPaneMountView(
+            surfaceOperations: makeTerminalFixtureMountOperations(),
             restoredSurfaceId: surfaceID,
             paneId: UUIDv7.generate(),
             title: "Mount reuse"
@@ -123,7 +124,6 @@ struct TerminalPaneMountViewDisplaySurfaceTests {
         )
         defer {
             mountView.removeSurface()
-            SurfaceManager.shared.removeHealthDelegate(mountView)
         }
 
         mountView.displaySurface(surface)
@@ -141,6 +141,9 @@ struct TerminalPaneMountViewDisplaySurfaceTests {
 
 @MainActor
 private final class NoOpTerminalMountTestDispatcher: AppCommandDispatching {
+    func dispatchKeyboardShortcut(_: AppShortcut) {}
+    func dispatchExtractPaneToTab(tabId _: UUID, paneId _: UUID, targetTabInsertionIndex _: Int?) {}
+
     func dispatch(_: AppCommand) -> Bool { false }
     func dispatch(_: AppCommand, target _: UUID, targetType _: SearchItemType) {}
     func canDispatch(_: AppCommand) -> Bool { false }

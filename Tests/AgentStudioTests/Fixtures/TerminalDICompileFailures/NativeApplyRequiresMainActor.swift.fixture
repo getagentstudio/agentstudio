@@ -1,0 +1,6 @@
+import Foundation
+@testable import AgentStudioTerminal
+
+func nativeApplyRequiresMainActor(host: GhosttyActionRoutingHost, surfaceID: UUID, viewObjectID: ObjectIdentifier) -> Bool {
+    host.isCurrentSurfaceLifetime(surfaceID: surfaceID, viewObjectID: viewObjectID)
+}

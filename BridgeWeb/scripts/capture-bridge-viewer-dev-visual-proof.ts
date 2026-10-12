@@ -1,8 +1,10 @@
 import { mkdir, writeFile } from 'node:fs/promises';
 import { basename, resolve } from 'node:path';
 
-import { chromium, type Page } from 'playwright';
+import type { Page } from 'playwright';
 import { z } from 'zod';
+
+import { BridgeWebTestLaunch } from './dev-server/bridge-web-test-launch.ts';
 
 const defaultDevServerUrl =
 	'http://127.0.0.1:5173/?fixture=large-diffshub&workers=on&scenario=scroll';
@@ -85,7 +87,7 @@ const artifactDirectory =
 
 await mkdir(artifactDirectory, { recursive: true });
 
-const browser = await chromium.launch({ headless: true });
+const browser = await BridgeWebTestLaunch.startBrowser({ headless: true });
 
 try {
 	const diffshubReference = await captureDiffshubReference();

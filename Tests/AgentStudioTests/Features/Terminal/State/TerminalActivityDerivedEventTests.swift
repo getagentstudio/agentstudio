@@ -68,8 +68,10 @@ struct TerminalActivityDerivedEventTests {
         let router = TerminalActivityRouter(
             bus: bus,
             activityAtom: atom,
+            callbackHandlingAccess: { nil },
             projector: projector,
             surfaceIDForPaneID: { $0 },
+            lastOutputLineReader: { _ in .surfaceStale },
             unseenActivityDebounceDuration: .milliseconds(750),
             unseenActivityClock: clock,
             factSink: factSource.sink
@@ -117,8 +119,10 @@ struct TerminalActivityDerivedEventTests {
         let router = TerminalActivityRouter(
             bus: bus,
             activityAtom: atom,
+            callbackHandlingAccess: { nil },
             projector: projector,
             surfaceIDForPaneID: { $0 },
+            lastOutputLineReader: { _ in .surfaceStale },
             unseenActivityDebounceDuration: .milliseconds(750),
             unseenActivityClock: clock,
             nowMilliseconds: { nowMilliseconds.get() },
@@ -185,9 +189,11 @@ struct TerminalActivityDerivedEventTests {
         let router = TerminalActivityRouter(
             bus: bus,
             activityAtom: atom,
+            callbackHandlingAccess: { nil },
             projector: projector,
             surfaceIDForPaneID: { $0 },
             isPaneCurrentlyAttended: { attendedPaneIds.contains($0) },
+            lastOutputLineReader: { _ in .surfaceStale },
             unseenActivityDebounceDuration: .milliseconds(750),
             unseenActivityClock: clock,
             factSink: factSource.sink
@@ -243,8 +249,10 @@ struct TerminalActivityDerivedEventTests {
         let router = TerminalActivityRouter(
             bus: bus,
             activityAtom: atom,
+            callbackHandlingAccess: { nil },
             projector: projector,
             surfaceIDForPaneID: { $0 },
+            lastOutputLineReader: { _ in .surfaceStale },
             unseenActivityDebounceDuration: .milliseconds(750),
             unseenActivityClock: clock,
             factSink: factSource.sink

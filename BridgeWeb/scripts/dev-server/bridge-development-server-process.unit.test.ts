@@ -21,6 +21,9 @@ describe('owned Bridge development server executable', () => {
 		expectTypeOf(startOwnedBridgeDevelopmentServer).parameter(0).toEqualTypeOf<{
 			readonly dataRootPath: string;
 			readonly initialTarget: string;
+			readonly onSpawn?: (
+				server: import('./bridge-development-server-process.ts').OwnedBridgeDevelopmentServer,
+			) => void;
 			readonly paneId: string;
 			readonly port?: number;
 			readonly repoRootPath: string;

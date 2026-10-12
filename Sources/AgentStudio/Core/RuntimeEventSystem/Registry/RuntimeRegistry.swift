@@ -5,7 +5,6 @@ private let runtimeRegistryLogger = Logger(subsystem: "com.agentstudio", categor
 
 @MainActor
 package final class RuntimeRegistry {
-    package static let shared = RuntimeRegistry()
 
     package init() {}
 

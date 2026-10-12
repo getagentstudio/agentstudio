@@ -6,7 +6,7 @@ import { promisify } from 'node:util';
 
 import { expect, test } from 'vitest';
 
-import { readExpectedReviewItemIds } from './product-only-real-router-regression.ts';
+import { readExpectedReviewItemIds } from './product-only-real-router-regression-runner.ts';
 
 const execFileAsync = promisify(execFile);
 

@@ -8,6 +8,9 @@ import {
 	type ArchitectureViolation,
 	checkBridgeWebArchitecture,
 } from './check-bridgeweb-architecture.ts';
+import { registerWaitBudgetArchitectureFixtures } from './check-bridgeweb-architecture.wait-budgets.test-support.ts';
+
+registerWaitBudgetArchitectureFixtures();
 
 describe('BridgeWeb architecture checker', () => {
 	test('reports every TypeScript and TSX file over one thousand lines', async () => {

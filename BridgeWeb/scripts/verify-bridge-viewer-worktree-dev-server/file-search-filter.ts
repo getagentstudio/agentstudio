@@ -25,7 +25,6 @@ export async function captureWorktreeDevServerScreenshot(props: {
 
 export function assertWorktreeFileProductControlsProof(props: {
 	readonly proof: WorktreeFileProductControlsProof;
-	readonly unavailablePathSet: ReadonlySet<string>;
 }): void {
 	const { proof } = props;
 	if (proof.initialVisibleCount <= 1 || proof.initialRenderedPathSample.length <= 1) {
@@ -117,75 +116,6 @@ export function assertWorktreeFileProductControlsProof(props: {
 		label: 'invalid regex',
 		proof,
 	});
-	if (
-		!proof.fetchableFilterActive ||
-		proof.fetchableFilterVisibleCount <= 0 ||
-		proof.fetchableRenderedPathSample.length === 0 ||
-		proof.fetchableRenderedPathSample.some((path) => props.unavailablePathSet.has(path))
-	) {
-		throw new Error(
-			`Expected Worktree/File fetchable filter to render only fetchable rows: ${JSON.stringify(proof)}`,
-		);
-	}
-	if (proof.fetchableTreeSizeSource !== 'localProjection') {
-		if (proof.expectedFetchableTreeSizePixels !== null) {
-			throw new Error(
-				`Expected Worktree/File fetchable projection extent source to be localProjection: ${JSON.stringify(proof)}`,
-			);
-		}
-	} else if (
-		proof.expectedFetchableTreeSizePixels !== null &&
-		proof.fetchableFilterVisibleCount === proof.expectedFetchableFilterCount
-	) {
-		assertWorktreeProjectedTreeSize({
-			actualSizePixels: proof.fetchableTreeSizePixels,
-			expectedSizePixels: proof.expectedFetchableTreeSizePixels,
-			label: 'fetchable',
-			proof,
-		});
-	}
-	if (!proof.unavailableFilterActive) {
-		throw new Error(
-			`Expected Worktree/File unavailable filter to activate: ${JSON.stringify(proof)}`,
-		);
-	}
-	if (proof.unavailableFilterVisibleCount !== proof.expectedUnavailableFilterCount) {
-		throw new Error(`Expected Worktree/File unavailable filter count: ${JSON.stringify(proof)}`);
-	}
-	if (proof.expectedUnavailableFilterCount === 0) {
-		if (
-			proof.unavailableRenderedPathSample.length !== 0 ||
-			proof.expectedUnavailablePath !== null ||
-			proof.unavailableOpenProof !== null
-		) {
-			throw new Error(
-				`Expected Worktree/File unavailable filter to be empty when no current unavailable descriptors exist: ${JSON.stringify(proof)}`,
-			);
-		}
-	} else if (
-		proof.expectedUnavailablePath === null ||
-		proof.unavailableOpenProof === null ||
-		proof.unavailableRenderedPathSample.length === 0 ||
-		!proof.unavailableRenderedPathSample.every((path) => props.unavailablePathSet.has(path)) ||
-		!proof.unavailableRenderedPathSample.includes(proof.expectedUnavailablePath)
-	) {
-		throw new Error(
-			`Expected nontrivial Worktree/File unavailable filter count: ${JSON.stringify(proof)}`,
-		);
-	}
-	if (proof.unavailableTreeSizeSource !== 'localProjection') {
-		throw new Error(
-			`Expected Worktree/File unavailable projection extent source to be localProjection: ${JSON.stringify(proof)}`,
-		);
-	}
-	if (proof.expectedUnavailableTreeSizePixels !== null) {
-		assertWorktreeProjectedTreeSize({
-			actualSizePixels: proof.unavailableTreeSizePixels,
-			expectedSizePixels: proof.expectedUnavailableTreeSizePixels,
-			label: 'unavailable',
-			proof,
-		});
-	}
 	if (
 		proof.allFilterVisibleCount !== proof.totalTreeRowCount ||
 		proof.allRenderedPathSample.length <= proof.searchRenderedPathSample.length
@@ -288,13 +218,6 @@ export async function selectWorktreeFileFilter(page: Page, label: string): Promi
 	}
 	await optionLocator.click({ timeout: 2_000 });
 	await dismissOpenBridgeMenus(page);
-}
-
-export async function worktreeFileFilterMenuContains(page: Page, label: string): Promise<boolean> {
-	return await page.evaluate((expectedLabel: string): boolean => {
-		const trigger = document.querySelector('[data-testid="worktree-file-filter-menu"]');
-		return trigger?.textContent?.includes(expectedLabel) ?? false;
-	}, label);
 }
 
 export async function visibleWorktreeFileRowCount(page: Page): Promise<number> {

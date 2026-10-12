@@ -11,6 +11,7 @@ public struct ArchitectureLintCommand {
         "forbidden-test-wait-ledger.tsv": "agentstudio_no_forbidden_test_wait",
         "adhoc-continuation-wait-ledger.tsv": "agentstudio_no_adhoc_continuation_wait",
         "process-singleton-ledger.tsv": "agentstudio_no_new_process_singletons",
+        "silent-return-test-ledger.tsv": "agentstudio_no_silent_test_return",
     ]
 
     private let fileManager: FileManager

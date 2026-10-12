@@ -6,6 +6,7 @@ import { dirname, join } from 'node:path';
 import { promisify } from 'node:util';
 
 import { runAllOwnedCleanupOperations } from '../../scripts/dev-server/bridge-development-server-process.ts';
+import { BridgeWebTestLaunch } from '../../scripts/dev-server/bridge-web-test-launch.ts';
 import type { BridgeViewerViteProductFixtureOracle } from './bridge-viewer-vite-product-fixture.ts';
 
 const execFileAsync = promisify(execFile);
@@ -80,9 +81,13 @@ const fixtureFiles: readonly CategoryFixtureFile[] = [
 
 export async function createBridgeViewerCategoryFixture(): Promise<BridgeViewerCategoryFixture> {
 	const worktreeRoot = await mkdtemp(join(tmpdir(), 'bridge-viewer-category-e2e-'));
+	let testLaunch: BridgeWebTestLaunch | null = null;
 	let dataRootPath: string | null = null;
 	try {
-		dataRootPath = await mkdtemp(join(tmpdir(), 'bridge-viewer-category-data-'));
+		testLaunch = await BridgeWebTestLaunch.start({
+			dataRootPrefix: 'bridge-viewer-category-data-',
+		});
+		dataRootPath = testLaunch.dataRootPath;
 		await writeFixturePhase(worktreeRoot, 'baseBody');
 		await runFixtureGit(worktreeRoot, ['init', '--initial-branch=main']);
 		await runFixtureGit(worktreeRoot, ['config', 'user.name', 'Bridge Category E2E']);
@@ -118,6 +123,7 @@ export async function createBridgeViewerCategoryFixture(): Promise<BridgeViewerC
 		return {
 			categoryCases,
 			dispose: async (): Promise<void> => {
+				await testLaunch?.dispose();
 				await runAllOwnedCleanupOperations({
 					operations: [
 						{
@@ -129,9 +135,7 @@ export async function createBridgeViewerCategoryFixture(): Promise<BridgeViewerC
 						{
 							name: 'category fixture data root',
 							run: async (): Promise<void> => {
-								if (dataRootPath !== null) {
-									await rm(dataRootPath, { force: true, recursive: true });
-								}
+								await testLaunch?.dispose();
 							},
 						},
 					],
@@ -140,6 +144,7 @@ export async function createBridgeViewerCategoryFixture(): Promise<BridgeViewerC
 			expectedAllTreePaths,
 			expectedReviewDefaultTreePaths,
 			oracle: {
+				testLaunch,
 				baseRef,
 				changedPaths,
 				comparisonTargetName: 'main',
@@ -174,9 +179,7 @@ export async function createBridgeViewerCategoryFixture(): Promise<BridgeViewerC
 				{
 					name: 'category fixture data root',
 					run: async (): Promise<void> => {
-						if (dataRootPath !== null) {
-							await rm(dataRootPath, { force: true, recursive: true });
-						}
+						await testLaunch?.dispose();
 					},
 				},
 			],
