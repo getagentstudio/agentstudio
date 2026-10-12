@@ -91,10 +91,12 @@ private func proveForgeSettlementFollowsHeldRead(failProvider: Bool, afterRateLi
     let provider = ForgeHeldReadProvider(terminalRead: terminalRead, rateRead: rateRead)
     let probe = try ForgePublicationProbe()
     let clock = TestPushClock()
+    let performanceRecorder = ForgePerformanceSnapshotRecorderSpy()
     let monotonic = ManualForgeMonotonicNow()
     let actor = ForgeActor(
         bus: EventBus<RuntimeEnvelope>(), statusProvider: provider, providerName: "causal-test",
-        monotonicNow: { monotonic.value }, sleepClock: clock, providerRequestDidReturn: { probe.returned($0) })
+        monotonicNow: { monotonic.value }, sleepClock: clock, performanceTraceRecorder: performanceRecorder,
+        providerRequestDidReturn: { probe.returned($0) })
     let repoID = UUIDv7.generate()
     await actor.register(
         worktreeId: UUIDv7.generate(), repoId: repoID,
@@ -107,6 +109,7 @@ private func proveForgeSettlementFollowsHeldRead(failProvider: Bool, afterRateLi
         rateRead.release()
         try await probe.expectReturn(1)
         #expect(await actor.refreshStateByRepoId[repoID]?.backoffUntil == Duration.seconds(300))
+        await clock.waitForPendingSleepCount(atLeast: 1)
         monotonic.advance(by: .seconds(300))
         clock.advance(by: .seconds(300))
     }
@@ -117,6 +120,10 @@ private func proveForgeSettlementFollowsHeldRead(failProvider: Bool, afterRateLi
     await actor.shutdown()
     try await probe.finish()
     #expect(outcome == (failProvider ? .failed : .completed))
+    #expect(performanceRecorder.totalExecutionCount(\.explicitAdmitted) == 1)
+    #expect(performanceRecorder.totalExecutionCount(\.explicitSettledCompleted) == (failProvider ? 0 : 1))
+    #expect(performanceRecorder.totalExecutionCount(\.explicitSettledFailed) == (failProvider ? 1 : 0))
+    #expect(performanceRecorder.totalExecutionCount(\.automaticWithoutDemandStarted) == 0)
 }
 
 private enum ForgeHeldReadFailure: Error { case unavailable }
@@ -143,5 +150,11 @@ private actor ForgeHeldReadProvider: ForgeStatusProvider {
         } catch {
             return .failed(message: "held provider unavailable")
         }
+    }
+}
+
+extension ForgePerformanceSnapshotRecorderSpy {
+    fileprivate func totalExecutionCount(_ counter: KeyPath<ForgePerformanceSnapshot.Execution, UInt64>) -> UInt64 {
+        snapshots.reduce(0) { $0 + $1.execution[keyPath: counter] }
     }
 }

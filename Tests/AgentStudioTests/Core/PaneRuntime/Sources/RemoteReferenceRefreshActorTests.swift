@@ -109,11 +109,12 @@ struct RemoteReferenceRefreshActorTests {
     @Test("cold explicit repository update remains admitted through remote child settlement", arguments: [true, false])
     func coldExplicitRepositoryUpdateWaitsForPhysicalSettlement(failStage: Bool) async throws {
         let fixture = RemoteReferenceRefreshFixture()
+        let performanceRecorder = RemoteReferencePerformanceRecorderSpy()
         let stage = HeldStep<GitRemoteTrackingSnapshot>(
             "cold remote-reference stage", cancellation: .holdThroughCancellation)
         let actor = RemoteReferenceRefreshActor(
             provider: RemoteReferenceHeldStageProvider(base: fixture.provider, stage: stage, promotion: nil),
-            monotonicNow: { .zero }, sleepClock: TestPushClock())
+            monotonicNow: { .zero }, sleepClock: TestPushClock(), performanceRecorder: performanceRecorder)
         await actor.register(
             repoId: fixture.repoId, worktreeId: fixture.worktreeId, repositoryPath: fixture.repositoryPath,
             remoteName: "origin", expectedOrigin: fixture.originA)
@@ -126,6 +127,11 @@ struct RemoteReferenceRefreshActorTests {
         let outcome = await lease.settlement()
         await actor.shutdown()
         #expect(outcome == (failStage ? .failed : .completed))
+        let performance = performanceRecorder.combinedSnapshot
+        #expect(performance.explicitAdmitted == 1)
+        #expect(performance.explicitSettledCompleted == (failStage ? 0 : 1))
+        #expect(performance.explicitSettledFailed == (failStage ? 1 : 0))
+        #expect(performance.automaticWithoutDemandStarted == 0)
     }
 
     @Test("current demanded stage promotes and targets represented worktrees")
@@ -501,7 +507,7 @@ struct RemoteReferenceRefreshActorTests {
     }
 
     @Test("initial origin discovery accepts local refs once but later rediscovery waits for fetch")
-    func initialOriginDiscoveryAcceptsLocalRefsOnlyOnce() async {
+    func initialOriginDiscoveryAcceptsLocalRefsOnlyOnce() async throws {
         let fixture = RemoteReferenceRefreshFixture()
         let actor = RemoteReferenceRefreshActor(
             provider: fixture.provider,
@@ -521,9 +527,11 @@ struct RemoteReferenceRefreshActorTests {
 
         #expect(await fixture.acceptanceRecorder.localAcceptanceOrigins == [fixture.originA])
 
+        let priorAcceptance = try #require(await fixture.acceptanceRecorder.lastLocalAcceptance)
         let invalidationsBefore = await fixture.acceptanceRecorder.invalidationCount
         await actor.setOrigin(repoId: fixture.repoId, expectedOrigin: nil)
-        #expect(await fixture.acceptanceRecorder.invalidationCount == invalidationsBefore + 1)
+        try await fixture.acceptanceRecorder.expectInvalidation(
+            after: invalidationsBefore, repoId: fixture.repoId, priorAcceptance: priorAcceptance)
         await fixture.provider.configureSnapshot(remoteURL: fixture.originB, references: [])
         await actor.setOrigin(repoId: fixture.repoId, expectedOrigin: fixture.originB)
 
@@ -533,7 +541,7 @@ struct RemoteReferenceRefreshActorTests {
     }
 
     @Test("final unregister does not reopen initial origin discovery")
-    func finalUnregisterPreservesResolvedOriginHistory() async {
+    func finalUnregisterPreservesResolvedOriginHistory() async throws {
         let fixture = RemoteReferenceRefreshFixture()
         let actor = RemoteReferenceRefreshActor(
             provider: fixture.provider,
@@ -550,9 +558,11 @@ struct RemoteReferenceRefreshActorTests {
         )
         await actor.setOrigin(repoId: fixture.repoId, expectedOrigin: fixture.originA)
 
+        let priorAcceptance = try #require(await fixture.acceptanceRecorder.lastLocalAcceptance)
         let invalidationsBefore = await fixture.acceptanceRecorder.invalidationCount
         await actor.unregister(worktreeId: fixture.worktreeId, repoId: fixture.repoId)
-        #expect(await fixture.acceptanceRecorder.invalidationCount == invalidationsBefore + 1)
+        try await fixture.acceptanceRecorder.expectInvalidation(
+            after: invalidationsBefore, repoId: fixture.repoId, priorAcceptance: priorAcceptance)
         await fixture.provider.configureSnapshot(remoteURL: fixture.originB, references: [])
         await actor.register(
             repoId: fixture.repoId,
@@ -569,7 +579,7 @@ struct RemoteReferenceRefreshActorTests {
     }
 
     @Test("topology removal does not reopen initial origin discovery")
-    func topologyRemovalPreservesResolvedOriginHistory() async {
+    func topologyRemovalPreservesResolvedOriginHistory() async throws {
         let fixture = RemoteReferenceRefreshFixture()
         let actor = RemoteReferenceRefreshActor(
             provider: fixture.provider,
@@ -586,9 +596,11 @@ struct RemoteReferenceRefreshActorTests {
         )
         await actor.setOrigin(repoId: fixture.repoId, expectedOrigin: fixture.originA)
 
+        let priorAcceptance = try #require(await fixture.acceptanceRecorder.lastLocalAcceptance)
         let invalidationsBefore = await fixture.acceptanceRecorder.invalidationCount
         await actor.assertTopology(.init(generation: 0, contextsByWorktreeId: [:]))
-        #expect(await fixture.acceptanceRecorder.invalidationCount == invalidationsBefore + 1)
+        try await fixture.acceptanceRecorder.expectInvalidation(
+            after: invalidationsBefore, repoId: fixture.repoId, priorAcceptance: priorAcceptance)
         await fixture.provider.configureSnapshot(remoteURL: fixture.originB, references: [])
         await actor.assertTopology(
             .init(
@@ -720,6 +732,7 @@ struct RemoteReferenceRefreshActorTests {
         await actor.setDemand(repositoryIds: [fixture.repoId])
         _ = try await promotion.firstArrival()
 
+        let priorAcceptance = try #require(await fixture.acceptanceRecorder.lastLocalAcceptance)
         let invalidationsBefore = await fixture.acceptanceRecorder.invalidationCount
         let originChangeTask = Task {
             await actor.setOrigin(repoId: fixture.repoId, expectedOrigin: fixture.originB)
@@ -727,7 +740,8 @@ struct RemoteReferenceRefreshActorTests {
         await fixture.provider.waitForCleanupCount(1)
         promotion.release()
         _ = await originChangeTask.value
-        #expect(await fixture.acceptanceRecorder.invalidationCount == invalidationsBefore + 1)
+        try await fixture.acceptanceRecorder.expectInvalidation(
+            after: invalidationsBefore, repoId: fixture.repoId, priorAcceptance: priorAcceptance)
 
         #expect(await fixture.provider.promotionMutationCount == 0)
         #expect(await fixture.acceptanceRecorder.acceptanceCount == acceptanceCountBeforeFetch)
