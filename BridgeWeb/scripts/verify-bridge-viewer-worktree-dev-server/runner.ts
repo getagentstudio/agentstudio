@@ -1,3 +1,4 @@
+import { bridgeViewerFileCategoryOptions } from '../../src/app/bridge-viewer-file-class-options.tsx';
 import type { BridgeWebTestLaunch } from '../dev-server/bridge-web-test-launch.ts';
 import {
 	reviewInteractionPerformanceSatisfied,
@@ -237,8 +238,14 @@ export async function verifyWorktreeDevServerPerformanceOnly(
 	const startupLoadTiming = await collectWorktreeStartupLoadTimingProof({
 		page,
 	});
+	const resetFilterOption = bridgeViewerFileCategoryOptions.find(
+		(option) => option.value === 'all',
+	);
+	if (resetFilterOption === undefined)
+		throw new Error('Product File category reset option is missing.');
 	await resetWorktreeFileTreeForPerformanceSamples({
 		page,
+		resetFilterLabel: resetFilterOption.label,
 		totalMetadataTreeRowCount: worktreeFileTreeRows(surface.frames).length,
 	});
 	const interactionPerformanceProof = await collectWorktreeInteractionPerformanceProof({
@@ -543,6 +550,7 @@ export async function verifyWorktreeDevServer(): Promise<WorktreeDevServerVerifi
 			await fetchPerformanceWorktreeFileDescriptors(performanceSurface);
 		await resetWorktreeFileTreeForPerformanceSamples({
 			page,
+			resetFilterLabel: 'All files',
 			totalMetadataTreeRowCount: worktreeFileTreeRows(performanceSurface.frames).length,
 		});
 		const interactionPerformanceProof = await collectWorktreeInteractionPerformanceProof({
