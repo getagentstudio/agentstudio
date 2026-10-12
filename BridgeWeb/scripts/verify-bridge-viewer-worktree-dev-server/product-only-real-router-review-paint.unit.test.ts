@@ -94,6 +94,7 @@ describe('Bridge Viewer Review paint diagnostics', () => {
 	});
 
 	test('fails targeted paint coverage when a receipt is missing', () => {
+		// Arrange
 		const passingProof = makePassingProductOnlyProof();
 		const proof = {
 			...passingProof,
@@ -111,10 +112,15 @@ describe('Bridge Viewer Review paint diagnostics', () => {
 				),
 			},
 		};
+
+		// Act
 		const violationCodes = collectBridgeViewerProductOnlyContractViolations(proof).map(
 			(violation) => violation.code,
 		);
+
+		// Assert: a missing receipt is a paint failure, not an unreadable milestone.
 		expect(violationCodes).toContain('REVIEW_FRESH_ROUTE_VISIBLE_PAINT_COVERAGE_MISSING');
+		expect(violationCodes).not.toContain('REVIEW_FRESH_ROUTE_VISIBLE_READABLE_MISSING');
 	});
 
 	test('does not fail paint coverage for a passive painted-set deficit', () => {
