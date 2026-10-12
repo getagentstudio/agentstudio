@@ -1,6 +1,7 @@
 import AgentStudioCore
 import AgentStudioTestHarness
 import Foundation
+import Synchronization
 import Testing
 
 @testable import AgentStudioBridge
@@ -220,7 +221,8 @@ actor ReconnectFileMetadataSource: BridgePaneProductFileMetadataProducing {
 }
 
 func makeReconnectSubscriptionContext(
-    emissionWaitObserver: BridgeProductSession.ViewEmissionWaiterRegistrationObserver? = nil
+    emissionWaitObserver: BridgeProductSession.ViewEmissionWaiterRegistrationObserver? = nil,
+    lifecycleTraceRecorder: (any BridgeProductMetadataLifecycleTraceRecording)? = nil
 ) async throws -> ReconnectSubscriptionContext {
     let harness = try await BridgeProductSessionLifecycleHarness.opened(
         viewEmissionWaiterRegistrationObserver: emissionWaitObserver)
@@ -231,7 +233,8 @@ func makeReconnectSubscriptionContext(
         reviewMetadataSource: BridgeUnavailablePaneProductReviewMetadataSource(),
         reviewContentSource: BridgeUnavailablePaneProductReviewContentSource(),
         markReviewItemViewed: { _, _ in },
-        refreshWorkAdmissionSource: refreshWorkAdmission.source
+        refreshWorkAdmissionSource: refreshWorkAdmission.source,
+        lifecycleTraceRecorder: lifecycleTraceRecorder
     )
     let dispatcher = makeBridgeProductSchemeControlDispatcher(
         session: harness.session,
@@ -521,4 +524,27 @@ enum ReconnectSubscriptionTestError: Error {
     case expectedSubscriptionAcceptance
     case expectedBatch
     case expectedScopeAcceptance
+}
+
+/// Observes the existing owner's bootstrap close after retained demand finishes.
+final class ReconnectBootstrapCompletionProbe: BridgeProductMetadataLifecycleTraceRecording {
+    private let completionOrdinal = Mutex(0)
+    let source = LocalFactSource<Int, BridgeProductMetadataLifecycleTraceEvent>(
+        vocabulary: .init(
+            describeScope: { "File bootstrap completion \($0)" },
+            describeFact: { $0.stage.rawValue },
+            isClosing: { _, event in event.stage == .bootstrapFinished }
+        )
+    )
+
+    func record(_ event: BridgeProductMetadataLifecycleTraceEvent) async {
+        guard event.stage == .bootstrapFinished else { return }
+        let ordinal = completionOrdinal.withLock { ordinal in
+            ordinal += 1
+            return ordinal
+        }
+        source.sink(ordinal, event)
+    }
+
+    func record(_: BridgeProductReviewMetadataPublicationTraceEvent) async {}
 }
