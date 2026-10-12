@@ -150,9 +150,10 @@ struct GitWorkingDirectoryProjectorVisibleTierTests {
 
             clock.advance(by: policy.backgroundCadence)
             await calls.waitForCount(1)
-            _ = try await source.expectDeadlineRegistered(facts: facts, kind: .governorPacing)
-            await clock.waitForPendingSleepCount(exactly: 1)
-            let pacingObservation = await observeGitProjectorPacingDeadline(actor, clock: clock)
+            let pacingScope = try await source.expectDeadlineRegistered(facts: facts, kind: .governorPacing)
+            let pacingObservation = try await observeHeldGitProjectorPacingDeadline(
+                actor, scope: pacingScope, clock: clock)
+            #expect(pacingObservation.scope == pacingScope)
             #expect(pacingObservation.scheduledStart == (await actor.deadlineClock.now) + .milliseconds(10))
             #expect(pacingObservation.registeredSleep == clock.now.advanced(by: .milliseconds(10)))
             clock.advance(by: .milliseconds(9))
