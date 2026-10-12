@@ -47,7 +47,7 @@ declare global {
 	}
 }
 
-test('profiles repeated mode switches, Open in Files, Markdown and Mermaid through the real backend', async () => {
+test('profiles repeated mode switches, Open in Files, Markdown and Mermaid through the real backend', async (context) => {
 	// Arrange — a real disposable worktree, Swift backend and production worker/renderers.
 	const iterationCount = Number(process.env['BRIDGE_INTERACTION_PROFILE_ITERATIONS'] ?? '10');
 	if (!Number.isSafeInteger(iterationCount) || iterationCount < 1 || iterationCount > 100) {
@@ -89,7 +89,7 @@ test('profiles repeated mode switches, Open in Files, Markdown and Mermaid throu
 				'',
 			].join('\n'),
 		);
-		browser = await launchBridgeViewerE2EChromium();
+		browser = await launchBridgeViewerE2EChromium({ testSignal: context.signal });
 		server = await startBridgeViewerOwnedViteProductServer(fixture.oracle);
 		const page = await browser.newPage({ viewport: { width: 1728, height: 980 } });
 		profilePage = page;
