@@ -4,7 +4,9 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, test, vi } from 'vitest';
 
 import { createBridgeProductDeferred } from '../../src/core/comm-worker/bridge-product-async-queue.js';
+import type { BridgeTelemetrySample } from '../../src/foundation/telemetry/bridge-telemetry-event.js';
 import { endToEndTestTimeoutMilliseconds } from '../../tests/vitest-hang-bounds.ts';
+import { createBridgeDevTelemetrySink } from '../dev-server/bridge-dev-telemetry.js';
 import { worktreeDevServerOrigin } from './config.js';
 import { assertSelectedContentRouteProof } from './content-state.js';
 import {
@@ -15,10 +17,76 @@ import {
 	waitForReviewContentRouteHitCountAbove,
 	type ReviewRouteProbePage,
 } from './route-probes.ts';
+import { bridgeDevTelemetryStatusSchema } from './types.js';
 import type { WorktreeFileContentRouteProbe } from './types.js';
 import { createOwnedVerifierJourneyDeadline } from './verifier-journey-deadline.ts';
 
 const routeProbesSourcePath = fileURLToPath(new URL('./route-probes.ts', import.meta.url));
+
+describe('Bridge dev telemetry status contract', () => {
+	test('verifier schema accepts the product telemetry snapshot lifecycle contract', async () => {
+		// Arrange
+		const operationCorrelationId = 'a'.repeat(64);
+		const sink = createBridgeDevTelemetrySink({
+			collectorLogsUrl: 'http://127.0.0.1:4318/v1/logs',
+			collectorMetricsUrl: 'http://127.0.0.1:4318/v1/metrics',
+			fetchImpl: async (): Promise<Response> => new Response('', { status: 200 }),
+			marker: 'vite-dev-schema-test',
+			nowUnixNano: () => '1782218790000000000',
+			serviceVersion: 'vite-dev',
+			worktreeHash: 'worktree-hash',
+		});
+		const lifecycleSample = (phase: string): BridgeTelemetrySample => ({
+			booleanAttributes: {},
+			durationMilliseconds: null,
+			name: 'performance.bridge.web.operation_lifecycle',
+			numericAttributes: { 'agentstudio.bridge.stage.attempt': 0 },
+			scope: 'web',
+			stringAttributes: {
+				'agentstudio.bridge.operation.id': operationCorrelationId,
+				'agentstudio.bridge.phase': phase,
+				'agentstudio.bridge.plane': 'data',
+				'agentstudio.bridge.priority': 'hot',
+				'agentstudio.bridge.result': phase.endsWith('_started') ? 'started' : 'success',
+				'agentstudio.bridge.slice': 'review_projection',
+				'agentstudio.bridge.transport': 'worker',
+				'agentstudio.bridge.viewer': 'review',
+			},
+			traceContext: null,
+		});
+
+		// Act
+		await expect(
+			sink.recordNativeObservation({
+				source: 'server',
+				scenario: 'schema-test',
+				samples: [
+					lifecycleSample('metadata_enqueue_started'),
+					lifecycleSample('metadata_enqueue_terminal'),
+					lifecycleSample('metadata_enqueue_started'),
+				],
+			}),
+		).resolves.toBe(true);
+
+		// Assert
+		const parsed = bridgeDevTelemetryStatusSchema.safeParse(
+			JSON.parse(JSON.stringify(sink.snapshot())),
+		);
+		if (!parsed.success)
+			throw new Error(
+				`Verifier telemetry schema rejected the product snapshot: ${parsed.error.message}`,
+			);
+		expect(parsed.data.operationLifecycle.completedOperationIds).toEqual([]);
+		expect(parsed.data.operationLifecycle.malformed).toEqual([
+			{
+				kind: 'duplicate_start',
+				operationCorrelationId,
+				phaseFamily: 'metadata_enqueue',
+				stageAttempt: 0,
+			},
+		]);
+	});
+});
 
 describe('Bridge viewer product File content route probe', () => {
 	test('correlates multiplexed product POST hits by typed descriptor identity', () => {
